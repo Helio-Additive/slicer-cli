@@ -4,12 +4,12 @@ on:
   push:
     branches: ["main", "dev", "release/**"]
     paths:
-      - "cli/**"
+      - "**"
       - "libslic3r/bambustudio/**"
       - ".github/workflows/slicer-cli-*.yml"
   pull_request:
     paths:
-      - "cli/**"
+      - "**"
       - "libslic3r/bambustudio/**"
       - ".github/workflows/slicer-cli-*.yml"
 
@@ -50,7 +50,7 @@ jobs:
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: bash cli/install_deps.sh
+        run: bash install_deps.sh
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -68,24 +68,24 @@ jobs:
       - name: Configure (macOS / Linux)
         if: runner.os != 'Windows'
         run: |
-          cmake -S cli -B cli/build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
             ${{ matrix.cmake_preset }}
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -S cli -B cli/build `
+          cmake -S . -B build `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
             ${{ matrix.cmake_preset }}
 
       - name: Build
-        run: cmake --build cli/build --config Release --parallel
+        run: cmake --build build --config Release --parallel
 
       - name: Assert package metadata
         if: runner.os != 'Windows'
         run: |
-          cd cli/build
+          cd build
           METADATA=$(cpack --config CPackConfig.cmake -G TGZ 2>&1 || true)
           # Inspect the cmake-generated CPackConfig for the key fields
           if grep -q "CPACK_PACKAGE_NAME.*slicer_cli" CPackConfig.cmake; then
@@ -98,27 +98,27 @@ jobs:
 
       - name: Run feature-exclusion regression tests
         if: runner.os != 'Windows'
-        run: bash cli/tests/test_excluded_features.sh cli/build/slicer_cli
+        run: bash tests/test_excluded_features.sh build/slicer_cli
 
       - name: Run feature-exclusion regression tests (Windows)
         if: runner.os == 'Windows'
         run: |
           # Adapted for PowerShell; minimal smoke only
-          $b = "cli\build\Release\slicer_cli.exe"
-          if (-not (Test-Path $b)) { $b = "cli\build\slicer_cli.exe" }
+          $b = "build\Release\slicer_cli.exe"
+          if (-not (Test-Path $b)) { $b = "build\slicer_cli.exe" }
           & $b --help
           if ($LASTEXITCODE -ne 0) { Write-Error "slicer_cli --help failed"; exit 1 }
 
       - name: Bundle for macOS (arm64 only)
         if: matrix.os == 'macOS-arm64'
         run: |
-          bash cli/scripts/bundle-macos.sh cli/build/slicer_cli dist
-          bash cli/scripts/smoke-clean-host.sh dist/slicer_cli
+          bash scripts/bundle-macos.sh build/slicer_cli dist
+          bash scripts/smoke-clean-host.sh dist/slicer_cli
 
       - name: Upload artefact
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: slicer_cli-${{ matrix.os }}
-          path: cli/build/slicer_cli
+          path: build/slicer_cli
           if-no-files-found: error
