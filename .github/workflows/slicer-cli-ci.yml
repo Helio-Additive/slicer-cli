@@ -110,13 +110,18 @@ jobs:
             qhull:x64-windows cereal:x64-windows nlopt:x64-windows \
             openssl:x64-windows libpng:x64-windows zlib:x64-windows \
             expat:x64-windows freetype:x64-windows
-          # libnoise (Bambu fork) — not in vcpkg, build from source
-          git clone --depth=1 https://github.com/bambulab/libnoise.git /c/libnoise
-          cmake -S /c/libnoise -B /c/libnoise/build \
+          # libnoise (Bambu fork) — not in vcpkg, build from source.
+          # Use the workspace drive (D:) rather than C:\ — GHA Windows runners
+          # restrict subdir creation under C:\ for non-admin msbuild steps,
+          # which makes `cmake --target install` fail with "Maybe need
+          # administrative privileges" trying to create install/lib.
+          git clone --depth=1 https://github.com/bambulab/libnoise.git "${RUNNER_TEMP}/libnoise"
+          cmake -S "${RUNNER_TEMP}/libnoise" -B "${RUNNER_TEMP}/libnoise/build" \
             -G "Visual Studio 17 2022" -A x64 \
-            -DCMAKE_INSTALL_PREFIX=/c/libnoise/install \
+            -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/libnoise/install" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-          cmake --build /c/libnoise/build --config Release --target install
+          cmake --build "${RUNNER_TEMP}/libnoise/build" --config Release --target install
+          echo "LIBNOISE_ROOT=${RUNNER_TEMP}/libnoise/install" >> $GITHUB_ENV
 
       - name: Configure (macOS / Linux)
         if: runner.os != 'Windows'
@@ -131,11 +136,17 @@ jobs:
         run: |
           cmake -S . -B build `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
+            -DCMAKE_PREFIX_PATH="$env:LIBNOISE_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
             ${{ matrix.cmake_preset }}
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        # Explicit parallel job count — `--parallel` alone can degrade to
+        # single-threaded with some toolchains. macos-14 has 3 cores,
+        # ubuntu-22.04 has 4, windows-2022 has 4. Use 4 across the matrix
+        # (extra jobs queue, not contend) to keep the BBS source compile
+        # (~1500 .cpp files) under an hour.
+        run: cmake --build build --config Release --parallel 4
 
       - name: Assert package metadata
         if: runner.os != 'Windows'
