@@ -75,34 +75,23 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
-          # Windows deps via vcpkg (pre-installed on GitHub Actions runners)
+          # vcpkg is pre-installed on GitHub Actions Windows runners
           vcpkg install \
-            tbb:x64-windows \
-            eigen3:x64-windows \
-            boost-filesystem:x64-windows \
-            boost-thread:x64-windows \
-            boost-log:x64-windows \
-            boost-regex:x64-windows \
-            boost-locale:x64-windows \
-            cgal:x64-windows \
-            opencv[core]:x64-windows \
-            opencascade:x64-windows \
-            qhull:x64-windows \
-            cereal:x64-windows \
-            nlopt:x64-windows \
-            openssl:x64-windows \
-            libpng:x64-windows \
-            zlib:x64-windows \
-            expat:x64-windows \
-            freetype:x64-windows
-          # libnoise — Bambu's fork
-          git clone --depth=1 --branch v1.0.0 `
-            https://github.com/bambulab/libnoise.git C:\libnoise
-          cmake -S C:\libnoise -B C:\libnoise\build `
-            -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_INSTALL_PREFIX=C:\libnoise\install
-          cmake --build C:\libnoise\build --config Release --target install
+            tbb:x64-windows eigen3:x64-windows \
+            boost-filesystem:x64-windows boost-thread:x64-windows \
+            boost-log:x64-windows boost-regex:x64-windows boost-locale:x64-windows \
+            cgal:x64-windows "opencv[core]:x64-windows" opencascade:x64-windows \
+            qhull:x64-windows cereal:x64-windows nlopt:x64-windows \
+            openssl:x64-windows libpng:x64-windows zlib:x64-windows \
+            expat:x64-windows freetype:x64-windows
+          # libnoise (Bambu fork) — not in vcpkg, build from source
+          git clone --depth=1 --branch v1.0.0 https://github.com/bambulab/libnoise.git /c/libnoise
+          cmake -S /c/libnoise -B /c/libnoise/build \
+            -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_INSTALL_PREFIX=/c/libnoise/install
+          cmake --build /c/libnoise/build --config Release --target install
 
       - name: Configure (macOS / Linux)
         if: runner.os != 'Windows'
