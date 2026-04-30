@@ -47,10 +47,36 @@ jobs:
             cmake ninja-build pkg-config \
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
             libexpat1-dev libssl-dev libboost-all-dev \
-            libcgal-dev libopencv-dev libocct-modeling-algorithms-dev \
-            libocct-data-exchange-dev libocct-foundation-dev \
+            libcgal-dev libopencv-dev \
+            libocct-modeling-algorithms-dev libocct-data-exchange-dev \
+            libocct-foundation-dev libocct-draw-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
-            libnlopt-dev
+            libnlopt-dev libicu-dev
+          git clone --depth=1 --branch v1.0.0 \
+            https://github.com/bambulab/libnoise.git /tmp/libnoise
+          cmake -S /tmp/libnoise -B /tmp/libnoise/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local
+          sudo cmake --build /tmp/libnoise/build --target install --parallel
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install `
+            tbb:x64-windows eigen3:x64-windows `
+            boost-filesystem:x64-windows boost-thread:x64-windows `
+            boost-log:x64-windows boost-regex:x64-windows `
+            boost-locale:x64-windows cgal:x64-windows `
+            opencv[core]:x64-windows opencascade:x64-windows `
+            qhull:x64-windows cereal:x64-windows nlopt:x64-windows `
+            openssl:x64-windows libpng:x64-windows zlib:x64-windows `
+            expat:x64-windows freetype:x64-windows
+          git clone --depth=1 --branch v1.0.0 `
+            https://github.com/bambulab/libnoise.git C:\libnoise
+          cmake -S C:\libnoise -B C:\libnoise\build `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_INSTALL_PREFIX=C:\libnoise\install
+          cmake --build C:\libnoise\build --config Release --target install
 
       - name: Configure
         if: runner.os != 'Windows'
@@ -60,7 +86,8 @@ jobs:
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config Release --parallel
