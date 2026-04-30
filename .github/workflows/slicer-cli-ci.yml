@@ -96,6 +96,10 @@ jobs:
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         shell: bash
+        env:
+          # Prevent vcpkg from trying to download a newer cmake/powershell
+          VCPKG_FEATURE_FLAGS: -compilertracking
+          VCPKG_FORCE_SYSTEM_BINARIES: 1
         run: |
           # vcpkg is pre-installed on GitHub Actions Windows runners
           vcpkg install \
