@@ -83,7 +83,8 @@ jobs:
       - name: Configure
         if: runner.os != 'Windows'
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade"
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
