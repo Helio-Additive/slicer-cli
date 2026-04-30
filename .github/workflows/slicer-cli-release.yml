@@ -1,0 +1,139 @@
+name: slicer-cli Release
+
+on:
+  push:
+    tags:
+      - "slicer-cli/v*"   # e.g. slicer-cli/v1.0.0
+
+permissions:
+  contents: write  # needed to create a GitHub Release
+
+jobs:
+  release:
+    name: Release — ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macOS-arm64
+            runner: macos-14
+            artifact_name: slicer_cli-macos-arm64
+          - os: macOS-x86_64
+            runner: macos-13
+            artifact_name: slicer_cli-macos-x86_64
+          - os: Linux-x86_64
+            runner: ubuntu-22.04
+            artifact_name: slicer_cli-linux-x86_64
+          - os: Windows-x86_64
+            runner: windows-2022
+            artifact_name: slicer_cli-windows-x86_64.exe
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: bash cli/install_deps.sh
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
+            libexpat1-dev libssl-dev libboost-all-dev \
+            libcgal-dev libopencv-dev libocct-modeling-algorithms-dev \
+            libocct-data-exchange-dev libocct-foundation-dev \
+            libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
+            libnlopt-dev
+
+      - name: Configure
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S cli -B cli/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S cli -B cli/build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build cli/build --config Release --parallel
+
+      - name: Assert package metadata
+        if: runner.os != 'Windows'
+        run: |
+          if grep -q "CPACK_PACKAGE_NAME.*slicer_cli" cli/build/CPackConfig.cmake; then
+            echo "PASS: CPACK_PACKAGE_NAME is slicer_cli"
+          else
+            echo "FAIL: package name regressed — expected slicer_cli"
+            grep "CPACK_PACKAGE_NAME" cli/build/CPackConfig.cmake || true
+            exit 1
+          fi
+
+      - name: Run exclusion regression tests
+        if: runner.os != 'Windows'
+        run: bash cli/tests/test_excluded_features.sh cli/build/slicer_cli
+
+      - name: Bundle (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          bash cli/scripts/bundle-macos.sh cli/build/slicer_cli dist
+          bash cli/scripts/smoke-clean-host.sh dist/slicer_cli
+
+      # ── Code signing (macOS) ───────────────────────────────────────────────
+      # Requires APPLE_DEVELOPER_CERTIFICATE_P12 + APPLE_DEVELOPER_CERTIFICATE_PASSWORD
+      # secrets. Leave steps stubbed so the workflow is syntactically valid even
+      # before certs are provisioned; add `if: env.APPLE_DEVELOPER_CERTIFICATE_P12 != ''`
+      # guards when secrets are configured.
+      - name: Sign (macOS) — TODO
+        if: runner.os == 'macOS'
+        run: |
+          echo "TODO: codesign -s 'Developer ID Application: Helio Additive ...' dist/slicer_cli"
+          echo "TODO: xcrun notarytool submit dist/slicer_cli.zip --apple-id ... --team-id ..."
+          echo "TODO: xcrun stapler staple dist/slicer_cli"
+
+      # ── Code signing (Windows) ─────────────────────────────────────────────
+      - name: Sign (Windows) — TODO
+        if: runner.os == 'Windows'
+        run: |
+          Write-Host "TODO: signtool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a slicer_cli.exe"
+
+      - name: Package binary + SHA-256
+        if: runner.os != 'Windows'
+        run: |
+          BINARY=cli/build/slicer_cli
+          [ -f dist/slicer_cli ] && BINARY=dist/slicer_cli
+          TARBALL="${{ matrix.artifact_name }}.tar.gz"
+          tar czf "$TARBALL" -C "$(dirname "$BINARY")" "$(basename "$BINARY")"
+          # SHA-256 checksum — slicer-updater expects <binary_name>.sha256
+          # containing just the hex digest (no filename suffix).
+          shasum -a 256 "$TARBALL" | awk '{print $1}' > "$TARBALL.sha256"
+          echo "SHA-256: $(cat "$TARBALL.sha256")"
+
+      - name: Package binary + SHA-256 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $b = "cli\build\Release\slicer_cli.exe"
+          if (-not (Test-Path $b)) { $b = "cli\build\slicer_cli.exe" }
+          $dest = "${{ matrix.artifact_name }}"
+          Copy-Item $b $dest
+          # SHA-256 checksum
+          $hash = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
+          $hash | Out-File -NoNewline "$dest.sha256"
+          Write-Host "SHA-256: $hash"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.artifact_name }}*
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,124 @@
+slicer-cli
+Copyright (C) 2026 Helio Additive
+
+This product includes software developed by the projects listed below.
+Unless otherwise noted, all included software is licensed under the GNU
+Affero General Public License v3.0 (see LICENSE).
+
+================================================================================
+Lineage
+================================================================================
+
+`slicer-cli` is derived from BambuStudio, which is itself derived from
+PrusaSlicer, which is derived from Slic3r. Each layer's contributions are
+preserved under AGPLv3.
+
+  Slic3r              — Original FOSS slicer.
+                        Copyright (c) 2011 Alessandro Ranellucci and others.
+                        https://slic3r.org/
+                        AGPLv3.
+
+  PrusaSlicer         — Fork of Slic3r maintained by Prusa Research, with
+                        extensive contributions to mesh processing, gcode
+                        generation, multi-material handling, and the
+                        Arachne wall generator.
+                        Copyright (c) 2016 Prusa Research s.r.o.
+                        https://github.com/prusa3d/PrusaSlicer
+                        AGPLv3.
+
+  BambuStudio         — Fork of PrusaSlicer maintained by Bambu Lab, with
+                        contributions to multi-color printing, AMS support,
+                        BBL printer profiles, and the slice/preset
+                        infrastructure this CLI inherits.
+                        Copyright (c) 2022 Bambu Lab Co. Ltd.
+                        https://github.com/bambulab/BambuStudio
+                        AGPLv3.
+
+`slicer-cli` carries forward this lineage. Modifications made for the
+CLI build (CGAL 6.x compatibility patches, Eigen 3.4 SparseMatrix
+migration in libigl, Boost ≥ 1.85 compatibility shims, headless
+operation) are licensed under AGPLv3 and contributed back where
+practical.
+
+================================================================================
+Bundled sub-libraries (compiled into slicer-cli from the BambuStudio submodule)
+================================================================================
+
+  admesh             — STL processing utilities.
+                       AGPLv3 (inherited from PrusaSlicer/BambuStudio).
+
+  Clipper / Clipper2 — Polygon-clipping library by Angus Johnson.
+                       BSL 1.0.
+                       https://github.com/AngusJohnson/Clipper2
+
+  miniz              — zlib-compatible deflate / zip implementation.
+                       MIT.
+                       https://github.com/richgel999/miniz
+
+  glu-libtess        — GLU tessellator (subset).
+                       SGI Free Software License B 2.0.
+
+  libnest2d          — 2D bin-packing library.
+                       LGPLv3.
+                       https://github.com/tamasmeszaros/libnest2d
+
+  mcut               — Mesh cutting library.
+                       LGPLv3.
+                       https://github.com/cutdigital/mcut
+
+  semver             — Semantic Version C++ library.
+                       MIT.
+
+  Boost.Nowide       — Cross-platform UTF-8 file/stream wrappers.
+                       Boost Software License 1.0.
+
+  libigl             — Geometry processing library.
+                       MPL 2.0.
+                       Patched for Eigen 3.4 compatibility — see
+                       libslic3r/bambustudio/libigl/README.md.
+                       https://libigl.github.io/
+
+  nanosvg            — Single-header SVG parser.
+                       Zlib.
+
+================================================================================
+External dependencies (linked, not bundled — see install_deps.sh)
+================================================================================
+
+  TBB                — Apache 2.0
+  Boost              — Boost Software License 1.0
+  Eigen3             — MPL 2.0
+  CGAL               — GPLv3 / commercial dual-license; this build links
+                       only against the GPL components, contributing the
+                       AGPL boundary upward.
+  OpenCASCADE (OCCT) — LGPLv2.1 with OCCT exception
+  OpenCV (core)      — Apache 2.0
+  Qhull              — Custom permissive (Qhull license)
+  Cereal             — BSD 3-clause
+  libnoise (Bambu)   — LGPLv3 (Bambu's fork at https://github.com/bambulab/libnoise)
+  NLopt              — LGPLv2.1 (optional)
+  libpng / zlib /    — Their respective permissive licenses (zlib/libpng,
+  libexpat /           zlib, MIT, Apache).
+  OpenSSL
+  Freetype /         — Their respective licenses (FTL, MIT, Unicode).
+  Fontconfig / ICU
+
+The combined work is distributed under the AGPLv3 in compliance with the
+upstream copyleft chain. License compatibility for each linked dependency
+is verified against the AGPLv3 distribution requirement; see
+docs/slicer-cli-license-compatibility.md (TODO — separate audit doc) if
+re-checking before a release.
+
+================================================================================
+AGPL § 13 — Network use
+================================================================================
+
+If you run a modified version of this program on a server, AGPL § 13
+requires you to offer the source code to users interacting with that
+server over a network. The recommended way is to display a "Source" link
+in the user-facing UI of any service that wraps `slicer-cli`. The Helio
+closed apps (commercial Tauri shell + cloud server) wrap `slicer-cli`
+via subprocess invocation only — they do NOT link the AGPL code, so
+their UI is not bound by AGPL § 13. Direct consumers of `slicer-cli`
+(for example, third-party services) ARE bound by § 13 and must offer
+the source.

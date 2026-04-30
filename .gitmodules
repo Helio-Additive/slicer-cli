@@ -1,0 +1,4 @@
+[submodule "references/BambuStudio"]
+	path = references/BambuStudio
+	url = https://github.com/bambulab/BambuStudio.git
+	shallow = true

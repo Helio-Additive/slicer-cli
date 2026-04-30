@@ -1,0 +1,25 @@
+# CMake build outputs
+build/
+output/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# Generated headers (produced by cmake configure_file)
+libslic3r_version.h
+standalone_compat.hpp
+nanosvg_impl.cpp
+
+# Compiled artefacts
+*.a
+*.o
+*.dylib
+*.so
+*.dll
+
+# macOS
+.DS_Store

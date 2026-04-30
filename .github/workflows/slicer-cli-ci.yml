@@ -1,0 +1,124 @@
+name: slicer-cli CI
+
+on:
+  push:
+    branches: ["main", "dev", "release/**"]
+    paths:
+      - "cli/**"
+      - "libslic3r/bambustudio/**"
+      - ".github/workflows/slicer-cli-*.yml"
+  pull_request:
+    paths:
+      - "cli/**"
+      - "libslic3r/bambustudio/**"
+      - ".github/workflows/slicer-cli-*.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test — ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macOS-arm64
+            runner: macos-14          # Apple Silicon
+            cmake_preset: ""
+          - os: macOS-x86_64
+            runner: macos-13          # Intel
+            cmake_preset: ""
+          - os: Linux-x86_64
+            runner: ubuntu-22.04
+            cmake_preset: ""
+          # Linux arm64 requires a self-hosted runner or QEMU
+          # - os: Linux-arm64
+          #   runner: ubuntu-22.04-arm
+          #   cmake_preset: ""
+          - os: Windows-x86_64
+            runner: windows-2022
+            cmake_preset: "-G \"Visual Studio 17 2022\" -A x64"
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: bash cli/install_deps.sh
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
+            libexpat1-dev libssl-dev libboost-all-dev \
+            libcgal-dev libopencv-dev libocct-modeling-algorithms-dev \
+            libocct-data-exchange-dev libocct-foundation-dev \
+            libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
+            libnlopt-dev
+
+      - name: Configure (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S cli -B cli/build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
+            ${{ matrix.cmake_preset }}
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S cli -B cli/build `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
+            ${{ matrix.cmake_preset }}
+
+      - name: Build
+        run: cmake --build cli/build --config Release --parallel
+
+      - name: Assert package metadata
+        if: runner.os != 'Windows'
+        run: |
+          cd cli/build
+          METADATA=$(cpack --config CPackConfig.cmake -G TGZ 2>&1 || true)
+          # Inspect the cmake-generated CPackConfig for the key fields
+          if grep -q "CPACK_PACKAGE_NAME.*slicer_cli" CPackConfig.cmake; then
+            echo "PASS: CPACK_PACKAGE_NAME is slicer_cli"
+          else
+            echo "FAIL: CPACK_PACKAGE_NAME does not contain slicer_cli"
+            grep "CPACK_PACKAGE_NAME" CPackConfig.cmake
+            exit 1
+          fi
+
+      - name: Run feature-exclusion regression tests
+        if: runner.os != 'Windows'
+        run: bash cli/tests/test_excluded_features.sh cli/build/slicer_cli
+
+      - name: Run feature-exclusion regression tests (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Adapted for PowerShell; minimal smoke only
+          $b = "cli\build\Release\slicer_cli.exe"
+          if (-not (Test-Path $b)) { $b = "cli\build\slicer_cli.exe" }
+          & $b --help
+          if ($LASTEXITCODE -ne 0) { Write-Error "slicer_cli --help failed"; exit 1 }
+
+      - name: Bundle for macOS (arm64 only)
+        if: matrix.os == 'macOS-arm64'
+        run: |
+          bash cli/scripts/bundle-macos.sh cli/build/slicer_cli dist
+          bash cli/scripts/smoke-clean-host.sh dist/slicer_cli
+
+      - name: Upload artefact
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slicer_cli-${{ matrix.os }}
+          path: cli/build/slicer_cli
+          if-no-files-found: error
