@@ -48,6 +48,19 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         fi
     done
 
+    # libnoise (Bambu fork) — not in Homebrew, must build from source
+    if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
+        echo "  Installing libnoise (Bambu fork)..."
+        LIBNOISE_TMP=$(mktemp -d)
+        git clone --depth=1 --branch v1.0.0 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
+        cmake -S "$LIBNOISE_TMP" -B "$LIBNOISE_TMP/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+        cmake --build "$LIBNOISE_TMP/build" --parallel
+        sudo cmake --install "$LIBNOISE_TMP/build"
+        rm -rf "$LIBNOISE_TMP"
+    else
+        echo "  ✓ libnoise (already installed)"
+    fi
+
 elif [[ -f /etc/debian_version ]]; then
     echo -e "${GREEN}Debian/Ubuntu detected — using apt${NC}"
     echo ""
