@@ -28,16 +28,16 @@ jobs:
           - os: macOS-arm64
             runner: macos-14          # Apple Silicon — primary dev target
             cmake_preset: ""
-          # Linux and Windows re-enable once macOS is green and vcpkg cache is warm
+          - os: Windows-x86_64
+            runner: windows-2022
+            cmake_preset: "-G \"Visual Studio 17 2022\" -A x64"
+          # Linux re-enable when ready
           # - os: macOS-x86_64
           #   runner: macos-13
           #   cmake_preset: ""
           # - os: Linux-x86_64
           #   runner: ubuntu-22.04
           #   cmake_preset: ""
-          # - os: Windows-x86_64
-          #   runner: windows-2022
-          #   cmake_preset: "-G \"Visual Studio 17 2022\" -A x64"
 
     steps:
       - name: Checkout (with submodules)
@@ -84,6 +84,14 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=/usr/local \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           sudo cmake --build /tmp/libnoise/build --target install --parallel
+
+      - name: Cache vcpkg packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-v1-${{ hashFiles('.github/workflows/slicer-cli-ci.yml') }}
+          restore-keys: vcpkg-x64-windows-v1-
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
