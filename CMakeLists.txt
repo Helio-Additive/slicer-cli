@@ -646,7 +646,7 @@ set(CPACK_PACKAGE_NAME             "slicer_cli")
 set(CPACK_PACKAGE_VENDOR           "Helio Additive")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Standalone command-line FDM slicer derived from BambuStudio (AGPLv3)")
-set(CPACK_PACKAGE_HOMEPAGE_URL     "https://github.com/helioadditive/slicer-cli")
+set(CPACK_PACKAGE_HOMEPAGE_URL     "https://github.com/helio-additive/slicer-cli")
 set(CPACK_RESOURCE_FILE_LICENSE    "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_RESOURCE_FILE_README     "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 set(CPACK_PACKAGE_VERSION_MAJOR    ${PROJECT_VERSION_MAJOR})
