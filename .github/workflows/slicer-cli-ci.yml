@@ -26,27 +26,39 @@ jobs:
       matrix:
         include:
           - os: macOS-arm64
-            runner: macos-14          # Apple Silicon
+            runner: macos-14          # Apple Silicon — primary dev target
             cmake_preset: ""
-          - os: macOS-x86_64
-            runner: macos-13          # Intel
-            cmake_preset: ""
-          - os: Linux-x86_64
-            runner: ubuntu-22.04
-            cmake_preset: ""
-          # Linux arm64 requires a self-hosted runner or QEMU
-          # - os: Linux-arm64
-          #   runner: ubuntu-22.04-arm
+          # Linux and Windows re-enable once macOS is green and vcpkg cache is warm
+          # - os: macOS-x86_64
+          #   runner: macos-13
           #   cmake_preset: ""
-          - os: Windows-x86_64
-            runner: windows-2022
-            cmake_preset: "-G \"Visual Studio 17 2022\" -A x64"
+          # - os: Linux-x86_64
+          #   runner: ubuntu-22.04
+          #   cmake_preset: ""
+          # - os: Windows-x86_64
+          #   runner: windows-2022
+          #   cmake_preset: "-G \"Visual Studio 17 2022\" -A x64"
 
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Cache Homebrew packages
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /opt/homebrew/Cellar
+            /opt/homebrew/lib
+            /opt/homebrew/include
+            /opt/homebrew/bin
+            /usr/local/lib/libnoise*
+            /usr/local/include/libnoise
+          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v2
+          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
