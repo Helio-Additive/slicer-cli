@@ -6,10 +6,10 @@ project(slicer_cli VERSION 1.0.0)
 # Source tree layout:
 #
 #   Primary source (read-only reference — do not edit):
-#     ../references/BambuStudio/src/libslic3r/
+#     references/BambuStudio/src/libslic3r/
 #
 #   Override/patch layer (files here shadow the reference 1-for-1):
-#     ../libslic3r/bambustudio/libslic3r/
+#     libslic3r/bambustudio/libslic3r/
 #
 #   To replace a reference file, create a file at the same relative path
 #   inside the override layer.  It will be compiled instead of the reference
@@ -17,18 +17,18 @@ project(slicer_cli VERSION 1.0.0)
 #   Files with no override are compiled directly from the reference tree.
 #
 #   Bundled sub-libraries — compiled directly from the BambuStudio reference tree:
-#     ../references/BambuStudio/src/admesh/
-#     ../references/BambuStudio/src/clipper/
-#     ../references/BambuStudio/src/clipper2/
-#     ../references/BambuStudio/src/miniz/
-#     ../references/BambuStudio/src/glu-libtess/
-#     ../references/BambuStudio/src/semver/
-#     ../references/BambuStudio/src/libnest2d/
-#     ../references/BambuStudio/src/mcut/
-#     ../references/BambuStudio/src/boost/         — Boost.Nowide
+#     references/BambuStudio/src/admesh/
+#     references/BambuStudio/src/clipper/
+#     references/BambuStudio/src/clipper2/
+#     references/BambuStudio/src/miniz/
+#     references/BambuStudio/src/glu-libtess/
+#     references/BambuStudio/src/semver/
+#     references/BambuStudio/src/libnest2d/
+#     references/BambuStudio/src/mcut/
+#     references/BambuStudio/src/boost/         — Boost.Nowide
 #
 #   Bundled sub-libraries — kept under the VENDOR override layer (patched):
-#     ../libslic3r/bambustudio/libigl/             — 4 source files patched to replace
+#     libslic3r/bambustudio/libigl/             — 4 source files patched to replace
 #                                                    removed Eigen::DynamicSparseMatrix API
 #                                                    (cat/diag/slice/slice_into).
 #                                                    Full tree required: the override works
@@ -78,8 +78,8 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # get_filename_component ABSOLUTE resolves the ".." so that paths returned by
 # file(GLOB_RECURSE) — which are always normalized — match the strings we
 # construct for list(REMOVE_ITEM) and EXISTS checks.
-get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/../libslic3r/bambustudio"      ABSOLUTE)
-get_filename_component(REF_SRC     "${CMAKE_CURRENT_SOURCE_DIR}/../references/BambuStudio/src" ABSOLUTE)
+get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio"      ABSOLUTE)
+get_filename_component(REF_SRC     "${CMAKE_CURRENT_SOURCE_DIR}/references/BambuStudio/src" ABSOLUTE)
 
 # Primary source: exact BambuStudio reference files (do not edit these)
 set(LIBSLIC3R_REF_DIR "${REF_SRC}/libslic3r")
