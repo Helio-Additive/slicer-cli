@@ -86,24 +86,6 @@ jobs:
           bash cli/scripts/bundle-macos.sh cli/build/slicer_cli dist
           bash cli/scripts/smoke-clean-host.sh dist/slicer_cli
 
-      # ── Code signing (macOS) ───────────────────────────────────────────────
-      # Requires APPLE_DEVELOPER_CERTIFICATE_P12 + APPLE_DEVELOPER_CERTIFICATE_PASSWORD
-      # secrets. Leave steps stubbed so the workflow is syntactically valid even
-      # before certs are provisioned; add `if: env.APPLE_DEVELOPER_CERTIFICATE_P12 != ''`
-      # guards when secrets are configured.
-      - name: Sign (macOS) — TODO
-        if: runner.os == 'macOS'
-        run: |
-          echo "TODO: codesign -s 'Developer ID Application: Helio Additive ...' dist/slicer_cli"
-          echo "TODO: xcrun notarytool submit dist/slicer_cli.zip --apple-id ... --team-id ..."
-          echo "TODO: xcrun stapler staple dist/slicer_cli"
-
-      # ── Code signing (Windows) ─────────────────────────────────────────────
-      - name: Sign (Windows) — TODO
-        if: runner.os == 'Windows'
-        run: |
-          Write-Host "TODO: signtool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a slicer_cli.exe"
-
       - name: Package binary + SHA-256
         if: runner.os != 'Windows'
         run: |
