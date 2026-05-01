@@ -116,10 +116,12 @@ jobs:
           VCPKG_FORCE_SYSTEM_BINARIES: 1
         run: |
           # vcpkg is pre-installed on GitHub Actions Windows runners
+          # Use vcpkg meta-package "boost" instead of individual components:
+          # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
+          # which aren't in our previous explicit list. Meta-package installs all.
           vcpkg install \
             tbb:x64-windows eigen3:x64-windows \
-            boost-filesystem:x64-windows boost-thread:x64-windows \
-            boost-log:x64-windows boost-regex:x64-windows boost-locale:x64-windows \
+            boost:x64-windows \
             cgal:x64-windows "opencv[core]:x64-windows" opencascade:x64-windows \
             qhull:x64-windows cereal:x64-windows nlopt:x64-windows \
             openssl:x64-windows libpng:x64-windows zlib:x64-windows \
