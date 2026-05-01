@@ -49,6 +49,14 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         fi
     done
 
+    # Homebrew bash 5 depends on ncurses. On CI runners, bash may be listed as
+    # "already installed" but ncurses missing/unlinked, causing bash itself to
+    # crash. Force a reinstall to ensure the dylib is present.
+    if ! [ -f /opt/homebrew/opt/ncurses/lib/libncursesw.6.dylib ]; then
+        echo "  ncurses dylib missing — reinstalling to fix Homebrew bash dep..."
+        brew reinstall ncurses bash
+    fi
+
     # libnoise (Bambu fork) — not in Homebrew, must build from source
     if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
         echo "  Installing libnoise (Bambu fork)..."
