@@ -55,12 +55,13 @@ resolve_rpath() {
         RP="${RP//\(.*\)/}"
         RP="${RP//[[:space:]]/}"
         [[ "$RP" == @* ]] && continue
-        [[ -f "$RP/$BASENAME" ]] && echo "$RP/$BASENAME" && return
-    done < <(otool -l "$CURRENT_FILE" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}')
+        [[ -f "$RP/$BASENAME" ]] && echo "$RP/$BASENAME" && return 0
+    done < <(otool -l "$CURRENT_FILE" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}' || true)
     # 2. Fall back to global rpath pool (main binary's absolute rpaths)
     for DIR in "${GLOBAL_RPATH_DIRS[@]}"; do
-        [[ -f "$DIR/$BASENAME" ]] && echo "$DIR/$BASENAME" && return
+        [[ -f "$DIR/$BASENAME" ]] && echo "$DIR/$BASENAME" && return 0
     done
+    return 0  # not found — caller checks for empty FOUND
 }
 
 while [ "${#QUEUE[@]}" -gt 0 ]; do
