@@ -49,27 +49,20 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         fi
     done
 
-    # Cold-cache hardening: macOS GHA runner images sometimes ship Homebrew
-    # packages "installed" per `brew list` but with missing dylibs / cmake
-    # configs / broken symlinks. Force-reinstall a critical subset to guarantee
-    # working state. Slow on the first cold-cache run; subsequent runs skip
-    # install_deps.sh entirely thanks to the Homebrew cache.
-    echo ""
-    echo "  Verifying critical packages..."
-    REINSTALL_NEEDED=()
-    [ -f /opt/homebrew/opt/ncurses/lib/libncursesw.6.dylib ] || REINSTALL_NEEDED+=(ncurses bash)
-    [ -f /opt/homebrew/opt/eigen/share/eigen3/cmake/Eigen3Config.cmake ] || REINSTALL_NEEDED+=(eigen)
-    [ -f /opt/homebrew/opt/opencascade/lib/libTKDESTEP.7.9.dylib ] || REINSTALL_NEEDED+=(opencascade)
-    [ -f /opt/homebrew/opt/cgal/share/cmake/CGAL/CGALConfig.cmake ] || REINSTALL_NEEDED+=(cgal)
-    [ -f /opt/homebrew/opt/tbb/lib/libtbb.12.dylib ] || REINSTALL_NEEDED+=(tbb)
-    [ -f /opt/homebrew/opt/opencv/lib/libopencv_core.413.dylib ] || REINSTALL_NEEDED+=(opencv)
-    [ -f /opt/homebrew/opt/libpng/lib/libpng16.16.dylib ] || REINSTALL_NEEDED+=(libpng)
-
-    if [ ${#REINSTALL_NEEDED[@]} -gt 0 ]; then
-        echo "  Reinstalling broken packages: ${REINSTALL_NEEDED[*]}"
-        brew reinstall "${REINSTALL_NEEDED[@]}"
+    # Cold-cache hardening: macOS GHA runner images often ship Homebrew
+    # packages "installed" per `brew list` but with missing dylibs (nlopt,
+    # opencascade, etc. all observed broken on different runner image versions).
+    # Detect cold-cache by checking if a sentinel cache marker exists; if not,
+    # force-reinstall every package to guarantee clean state. The Homebrew
+    # cache action will save the result, so warm-cache runs skip this entirely.
+    if ! [ -f /opt/homebrew/.slicer_cli_v3_warm ]; then
+        echo ""
+        echo "  Cold cache detected — force-reinstalling all packages for clean state..."
+        brew reinstall "${PACKAGES[@]}"
+        touch /opt/homebrew/.slicer_cli_v3_warm
+        echo "  ✓ All packages reinstalled, marker set"
     else
-        echo "  ✓ All critical artifacts present"
+        echo "  ✓ Cache marker present; skipping reinstall"
     fi
 
     # libnoise (Bambu fork) — not in Homebrew, must build from source
