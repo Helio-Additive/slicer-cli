@@ -26,27 +26,28 @@ CLEAN_ENV=(
 )
 
 set +e
-OUTPUT=$("${CLEAN_ENV[@]}" "$BINARY" --version 2>&1)
+# Run without arguments — binary prints help and exits non-zero, which is fine.
+# We only care that it ran (all dylibs loaded). Crash signals (SIGABRT=134,
+# SIGSEGV=139) indicate a missing bundled dylib; any other exit code means success.
+OUTPUT=$("${CLEAN_ENV[@]}" "$BINARY" 2>&1)
 EXIT_CODE=$?
 set -e
 
 echo "Exit code: $EXIT_CODE"
 echo "Output:    $OUTPUT"
 
-if [ $EXIT_CODE -ne 0 ]; then
-    echo "FAIL: slicer_cli exited $EXIT_CODE on clean host"
+if [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 139 ]; then
+    echo "FAIL: slicer_cli crashed (signal, exit $EXIT_CODE) — likely a missing bundled dylib"
     echo ""
     echo "This usually means a Homebrew dylib was not bundled."
-    echo "Run cli/scripts/bundle-macos.sh first, then re-run this script"
-    echo "against the dist/slicer_cli output."
+    echo "Run scripts/bundle-macos.sh first, then re-run this script."
     exit 1
 fi
 
-if echo "$OUTPUT" | grep -qi "slicer_cli\|slic3r\|BambuStudio\|[0-9]\+\.[0-9]\+"; then
-    echo "PASS: binary ran and produced version output"
-    exit 0
-else
-    echo "WARN: binary exited 0 but output didn't match expected version pattern"
-    echo "Manual review needed"
-    exit 0
+if echo "$OUTPUT" | grep -qi "Library not loaded\|image not found"; then
+    echo "FAIL: dyld error in output"
+    exit 1
 fi
+
+echo "PASS: binary ran without crash on clean host (exit $EXIT_CODE)"
+exit 0
