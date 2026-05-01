@@ -164,6 +164,10 @@ jobs:
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             LIBPNG=$(brew --prefix libpng)
             EXTRA+=(-DPNG_PNG_INCLUDE_DIR="$LIBPNG/include" -DPNG_LIBRARY="$LIBPNG/lib/libpng.dylib")
+            # Homebrew eigen's cmake config may not be symlinked into /opt/homebrew
+            # on all runner images — pass the keg-dir explicitly so find_package
+            # doesn't have to traverse CMAKE_PREFIX_PATH to find it.
+            EXTRA+=(-DEigen3_DIR="$(brew --prefix eigen)/share/eigen3/cmake")
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
