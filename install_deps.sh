@@ -23,6 +23,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 
     PACKAGES=(
         cmake
+        bash          # macOS /bin/bash is 3.2; scripts/bundle-macos.sh uses declare -A
         boost
         tbb
         eigen

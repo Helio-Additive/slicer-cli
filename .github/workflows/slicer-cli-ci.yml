@@ -67,7 +67,7 @@ jobs:
             /opt/homebrew/bin
             /usr/local/lib/libnoise*
             /usr/local/include/libnoise
-          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v2
+          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v3
           restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies (macOS)
@@ -216,8 +216,10 @@ jobs:
         # The scripts use `declare -A` (associative arrays) which require bash 4+.
         # macOS's /bin/bash is 3.2, so invoke Homebrew's bash directly.
         run: |
+          # Use Homebrew bash 5 (installed via install_deps.sh) for declare -A support.
+          # smoke-clean-host.sh is bash 3.2 compatible; plain bash is fine for it.
           /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
-          /opt/homebrew/bin/bash scripts/smoke-clean-host.sh dist/slicer_cli
+          bash scripts/smoke-clean-host.sh dist/slicer_cli
 
       - name: Upload artefact
         if: runner.os != 'Windows'
