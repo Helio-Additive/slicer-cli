@@ -52,6 +52,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# MSVC needs _USE_MATH_DEFINES to expose M_PI etc. from <math.h>/<cmath>;
+# NOMINMAX prevents <windows.h> min/max macros from clashing with std::min/max.
+if(MSVC)
+  add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
