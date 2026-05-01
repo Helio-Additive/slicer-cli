@@ -111,24 +111,50 @@ jobs:
             openssl:x64-windows libpng:x64-windows zlib:x64-windows \
             expat:x64-windows freetype:x64-windows
           # libnoise (Bambu fork) — not in vcpkg, build from source.
-          # Use the workspace drive (D:) rather than C:\ — GHA Windows runners
-          # restrict subdir creation under C:\ for non-admin msbuild steps,
-          # which makes `cmake --target install` fail with "Maybe need
-          # administrative privileges" trying to create install/lib.
+          # Previous run failed at install with "cmake_install.cmake:39 file
+          # cannot create directory: D:/a/_temp/libnoise/INSTALL/lib" despite
+          # passing -DCMAKE_INSTALL_PREFIX=.../libnoise/install (lowercase).
+          # libnoise's CMakeLists.txt is innocent — uses GNUInstallDirs.
+          # Workarounds:
+          #   1. Use a prefix dir without "install" substring to sidestep any
+          #      MSBuild INSTALL.vcxproj target name collision.
+          #   2. Two-step build then `cmake --install --prefix` — bypasses
+          #      MSBuild's INSTALL target entirely and runs cmake_install.cmake
+          #      directly. --prefix overrides the cached prefix at install time.
+          # Diagnostic head -60 cmake_install.cmake makes the next failure log
+          # informative if this still doesn't work.
           git clone --depth=1 https://github.com/bambulab/libnoise.git "${RUNNER_TEMP}/libnoise"
           cmake -S "${RUNNER_TEMP}/libnoise" -B "${RUNNER_TEMP}/libnoise/build" \
             -G "Visual Studio 17 2022" -A x64 \
-            -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/libnoise/install" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-          cmake --build "${RUNNER_TEMP}/libnoise/build" --config Release --target install
-          echo "LIBNOISE_ROOT=${RUNNER_TEMP}/libnoise/install" >> $GITHUB_ENV
+          cmake --build "${RUNNER_TEMP}/libnoise/build" --config Release
+          echo "--- DIAGNOSTIC: head of cmake_install.cmake ---"
+          head -60 "${RUNNER_TEMP}/libnoise/build/cmake_install.cmake"
+          echo "--- END DIAGNOSTIC ---"
+          cmake --install "${RUNNER_TEMP}/libnoise/build" --config Release \
+            --prefix "${RUNNER_TEMP}/libnoise-prefix"
+          echo "LIBNOISE_ROOT=${RUNNER_TEMP}/libnoise-prefix" >> $GITHUB_ENV
 
       - name: Configure (macOS / Linux)
         if: runner.os != 'Windows'
         run: |
+          # Mono.framework (pre-installed on macos-14) ships libpng 1.4 headers
+          # in /Library/Frameworks/Mono.framework/Headers/png.h. CMake's default
+          # CMAKE_FIND_FRAMEWORK=FIRST searches frameworks before regular paths,
+          # so find_package(PNG) picks up Mono's stale png.h while linking
+          # against Homebrew's current libpng — header/library mismatch breaks
+          # PNGReadWrite.cpp on png_const_bytep (libpng 1.6+ symbol).
+          # Setting both PNG_PNG_INCLUDE_DIR and PNG_LIBRARY short-circuits
+          # FindPNG's search entirely.
+          EXTRA=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            LIBPNG=$(brew --prefix libpng)
+            EXTRA+=(-DPNG_PNG_INCLUDE_DIR="$LIBPNG/include" -DPNG_LIBRARY="$LIBPNG/lib/libpng.dylib")
+          fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
             -DCMAKE_PREFIX_PATH="/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
+            "${EXTRA[@]}" \
             ${{ matrix.cmake_preset }}
 
       - name: Configure (Windows)
