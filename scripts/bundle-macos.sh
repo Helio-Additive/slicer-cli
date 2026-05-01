@@ -7,7 +7,7 @@
 # This script:
 #   1. Copies the external shared dylibs needed at runtime into a Frameworks/
 #      directory next to the binary.
-#   2. Rewrites the binary's load commands to use @executable_path/../Frameworks/
+#   2. Rewrites the binary's load commands to use @executable_path/Frameworks/
 #      instead of absolute Homebrew paths.
 #
 # Usage (run from the cli/build directory after cmake --build .):
@@ -41,25 +41,33 @@ while [ "${#QUEUE[@]}" -gt 0 ]; do
 
     while IFS= read -r LIB; do
         LIB="$(echo "$LIB" | awk '{print $1}')"
-        # Skip self, @rpath placeholders, system libs
+        [[ -z "$LIB" ]] && continue
+        # Resolve @rpath/X against the current file's LC_RPATH entries.
+        # Only Homebrew-style absolute paths can be resolved here; skip any
+        # @executable_path / @loader_path rpaths (they're runtime-relative).
+        if [[ "$LIB" == @rpath/* ]]; then
+            BASENAME="${LIB#@rpath/}"
+            FOUND=""
+            while IFS= read -r RP; do
+                RP="${RP//\(.*\)/}"
+                RP="${RP//[[:space:]]/}"
+                [[ "$RP" == @* ]] && continue
+                CANDIDATE="$RP/$BASENAME"
+                if [[ -f "$CANDIDATE" ]]; then
+                    FOUND="$CANDIDATE"
+                    break
+                fi
+            done < <(otool -l "$CURRENT" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}')
+            [[ -z "$FOUND" ]] && continue
+            LIB="$FOUND"
+        fi
+        # Skip remaining @-prefixed (self, @loader_path, etc.), system libs
         [[ "$LIB" == @* ]] && continue
         [[ "$LIB" =~ ^/usr/lib/ ]] && continue
         [[ "$LIB" =~ ^/System/ ]] && continue
-        [[ -z "$LIB" ]] && continue
         [[ -n "${SEEN[$LIB]+x}" ]] && continue
         SEEN["$LIB"]=1
-        # Resolve @rpath to actual absolute path if needed
         RESOLVED="$LIB"
-        if [[ ! -f "$RESOLVED" ]]; then
-            # Try resolving via DYLD_FALLBACK_LIBRARY_PATH
-            for DIR in /opt/homebrew/lib /usr/local/lib; do
-                CANDIDATE="$DIR/$(basename "$LIB")"
-                if [[ -f "$CANDIDATE" ]]; then
-                    RESOLVED="$CANDIDATE"
-                    break
-                fi
-            done
-        fi
         [[ ! -f "$RESOLVED" ]] && { echo "WARNING: cannot resolve $LIB"; continue; }
         DEST="$FRAMEWORKS/$(basename "$RESOLVED")"
         [[ -f "$DEST" ]] && continue
@@ -77,7 +85,7 @@ rewrite_refs() {
         local BASENAME
         BASENAME="$(basename "$SRC_LIB")"
         install_name_tool -change "$SRC_LIB" \
-            "@executable_path/../Frameworks/$BASENAME" \
+            "@executable_path/Frameworks/$BASENAME" \
             "$TARGET" 2>/dev/null || true
     done
     # Also fix @rpath references
@@ -87,7 +95,7 @@ rewrite_refs() {
         local BASENAME="${RPATH_LIB#@rpath/}"
         [[ -f "$FRAMEWORKS/$BASENAME" ]] && \
             install_name_tool -change "$RPATH_LIB" \
-                "@executable_path/../Frameworks/$BASENAME" \
+                "@executable_path/Frameworks/$BASENAME" \
                 "$TARGET" 2>/dev/null || true
     done < <(otool -L "$TARGET" 2>/dev/null | tail -n +2)
     # Remove all rpaths that point to Homebrew
