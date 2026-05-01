@@ -10,8 +10,8 @@
 #   2. Rewrites the binary's load commands to use @executable_path/Frameworks/
 #      instead of absolute Homebrew paths.
 #
-# Usage (run from the cli/build directory after cmake --build .):
-#   bash ../scripts/bundle-macos.sh slicer_cli [output_dir]
+# Usage:
+#   bash scripts/bundle-macos.sh build/slicer_cli [output_dir]
 #
 # Output: <output_dir>/slicer_cli   (default: dist/)
 #                     /Frameworks/  (bundled dylibs)
@@ -28,12 +28,40 @@ FRAMEWORKS="$OUTPUT/Frameworks"
 mkdir -p "$OUTPUT" "$FRAMEWORKS"
 cp "$BINARY" "$OUTPUT/slicer_cli"
 
+# ── Global rpath pool ───────────────────────────────────────────────────────
+# Collect ALL absolute LC_RPATH entries from the main binary up-front.
+# These are used as a fallback when per-file @rpath resolution fails (e.g.
+# transitive GCC runtime libs whose copies in Frameworks/ have @loader_path
+# rpaths that become meaningless after the copy).
+declare -a GLOBAL_RPATH_DIRS=()
+while IFS= read -r RP; do
+    RP="${RP//\(.*\)/}"
+    RP="${RP//[[:space:]]/}"
+    [[ "$RP" == @* ]] && continue
+    [[ -d "$RP" ]] && GLOBAL_RPATH_DIRS+=("$RP")
+done < <(otool -l "$OUTPUT/slicer_cli" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}')
+
 # ── Collect non-system shared deps ─────────────────────────────────────────
-# We recurse through otool -L until no new libs are discovered.
+# Recurse through otool -L output until no new deps are found.
 # "Non-system" = anything NOT under /usr/lib or /System/Library.
 
 declare -A SEEN
 QUEUE=("$OUTPUT/slicer_cli")
+
+resolve_rpath() {
+    local BASENAME="$1" CURRENT_FILE="$2"
+    # 1. Try absolute LC_RPATH entries of the current file
+    while IFS= read -r RP; do
+        RP="${RP//\(.*\)/}"
+        RP="${RP//[[:space:]]/}"
+        [[ "$RP" == @* ]] && continue
+        [[ -f "$RP/$BASENAME" ]] && echo "$RP/$BASENAME" && return
+    done < <(otool -l "$CURRENT_FILE" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}')
+    # 2. Fall back to global rpath pool (main binary's absolute rpaths)
+    for DIR in "${GLOBAL_RPATH_DIRS[@]}"; do
+        [[ -f "$DIR/$BASENAME" ]] && echo "$DIR/$BASENAME" && return
+    done
+}
 
 while [ "${#QUEUE[@]}" -gt 0 ]; do
     CURRENT="${QUEUE[0]}"
@@ -42,37 +70,24 @@ while [ "${#QUEUE[@]}" -gt 0 ]; do
     while IFS= read -r LIB; do
         LIB="$(echo "$LIB" | awk '{print $1}')"
         [[ -z "$LIB" ]] && continue
-        # Resolve @rpath/X against the current file's LC_RPATH entries.
-        # Only Homebrew-style absolute paths can be resolved here; skip any
-        # @executable_path / @loader_path rpaths (they're runtime-relative).
+        # Resolve @rpath/X: first try per-file LC_RPATH, then global pool.
         if [[ "$LIB" == @rpath/* ]]; then
             BASENAME="${LIB#@rpath/}"
-            FOUND=""
-            while IFS= read -r RP; do
-                RP="${RP//\(.*\)/}"
-                RP="${RP//[[:space:]]/}"
-                [[ "$RP" == @* ]] && continue
-                CANDIDATE="$RP/$BASENAME"
-                if [[ -f "$CANDIDATE" ]]; then
-                    FOUND="$CANDIDATE"
-                    break
-                fi
-            done < <(otool -l "$CURRENT" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}')
+            FOUND="$(resolve_rpath "$BASENAME" "$CURRENT")"
             [[ -z "$FOUND" ]] && continue
             LIB="$FOUND"
         fi
-        # Skip remaining @-prefixed (self, @loader_path, etc.), system libs
+        # Skip remaining @-prefixed refs, system libs
         [[ "$LIB" == @* ]] && continue
         [[ "$LIB" =~ ^/usr/lib/ ]] && continue
         [[ "$LIB" =~ ^/System/ ]] && continue
         [[ -n "${SEEN[$LIB]+x}" ]] && continue
         SEEN["$LIB"]=1
-        RESOLVED="$LIB"
-        [[ ! -f "$RESOLVED" ]] && { echo "WARNING: cannot resolve $LIB"; continue; }
-        DEST="$FRAMEWORKS/$(basename "$RESOLVED")"
+        [[ ! -f "$LIB" ]] && { echo "WARNING: cannot find $LIB"; continue; }
+        DEST="$FRAMEWORKS/$(basename "$LIB")"
         [[ -f "$DEST" ]] && continue
-        echo "Bundling: $RESOLVED → $DEST"
-        cp "$RESOLVED" "$DEST"
+        echo "Bundling: $LIB → $DEST"
+        cp "$LIB" "$DEST"
         QUEUE+=("$DEST")
     done < <(otool -L "$CURRENT" 2>/dev/null | tail -n +2)
 done
@@ -81,6 +96,7 @@ done
 rewrite_refs() {
     local TARGET="$1"
     chmod +w "$TARGET"
+    # Rewrite absolute Homebrew paths
     for SRC_LIB in "${!SEEN[@]}"; do
         local BASENAME
         BASENAME="$(basename "$SRC_LIB")"
@@ -88,7 +104,7 @@ rewrite_refs() {
             "@executable_path/Frameworks/$BASENAME" \
             "$TARGET" 2>/dev/null || true
     done
-    # Also fix @rpath references
+    # Rewrite @rpath/X references for bundled libs
     while IFS= read -r RPATH_LIB; do
         RPATH_LIB="$(echo "$RPATH_LIB" | awk '{print $1}')"
         [[ "$RPATH_LIB" != @rpath/* ]] && continue
@@ -98,7 +114,7 @@ rewrite_refs() {
                 "@executable_path/Frameworks/$BASENAME" \
                 "$TARGET" 2>/dev/null || true
     done < <(otool -L "$TARGET" 2>/dev/null | tail -n +2)
-    # Remove all rpaths that point to Homebrew
+    # Remove Homebrew rpaths (now replaced with @executable_path refs)
     while IFS= read -r RPATH; do
         RPATH="${RPATH//\(.*\)/}"
         RPATH="${RPATH//[[:space:]]/}"
