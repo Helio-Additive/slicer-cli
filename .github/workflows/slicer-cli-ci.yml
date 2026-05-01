@@ -72,7 +72,11 @@ jobs:
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: bash install_deps.sh
+        # Use /bin/bash (macOS system bash 3.2) to avoid PATH resolution
+        # picking up Homebrew's bash 5, which depends on ncurses — a dep that
+        # is absent on a cold cache. install_deps.sh is bash 3.2 compatible.
+        shell: /bin/bash -e {0}
+        run: /bin/bash install_deps.sh
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
