@@ -279,10 +279,17 @@ if(NOT TARGET nowide)
   add_subdirectory("${REF_SRC}/boost" "${CMAKE_CURRENT_BINARY_DIR}/boost")
 endif()
 
-# Qhull — wrap in a single interface target
+# Qhull — wrap in a single interface target.
+# Homebrew's qhull provides qhullstatic_r; vcpkg's port ships qhull_r only.
 add_library(qhull INTERFACE)
 if(TARGET Qhull::qhullcpp)
-  target_link_libraries(qhull INTERFACE Qhull::qhullcpp Qhull::qhullstatic_r)
+  if(TARGET Qhull::qhullstatic_r)
+    target_link_libraries(qhull INTERFACE Qhull::qhullcpp Qhull::qhullstatic_r)
+  elseif(TARGET Qhull::qhull_r)
+    target_link_libraries(qhull INTERFACE Qhull::qhullcpp Qhull::qhull_r)
+  else()
+    message(FATAL_ERROR "Qhull found via CMake config but neither Qhull::qhullstatic_r nor Qhull::qhull_r exists")
+  endif()
 else()
   target_link_libraries(qhull INTERFACE ${QHULL_CPP_LIB} ${QHULL_STATIC_LIB})
   if(QHULL_INCLUDE_DIR)

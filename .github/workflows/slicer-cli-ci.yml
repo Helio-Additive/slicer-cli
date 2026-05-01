@@ -213,9 +213,11 @@ jobs:
 
       - name: Bundle for macOS (arm64 only)
         if: matrix.os == 'macOS-arm64'
+        # The scripts use `declare -A` (associative arrays) which require bash 4+.
+        # macOS's /bin/bash is 3.2, so invoke Homebrew's bash directly.
         run: |
-          bash scripts/bundle-macos.sh build/slicer_cli dist
-          bash scripts/smoke-clean-host.sh dist/slicer_cli
+          /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
+          /opt/homebrew/bin/bash scripts/smoke-clean-host.sh dist/slicer_cli
 
       - name: Upload artefact
         if: runner.os != 'Windows'
