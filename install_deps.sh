@@ -57,6 +57,13 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         brew reinstall ncurses bash
     fi
 
+    # Eigen3 cmake config must be present for find_package(Eigen3). Runner images
+    # sometimes ship eigen without the cmake config properly linked.
+    if ! [ -f /opt/homebrew/opt/eigen/share/eigen3/cmake/Eigen3Config.cmake ]; then
+        echo "  Eigen3 cmake config missing — reinstalling..."
+        brew reinstall eigen
+    fi
+
     # libnoise (Bambu fork) — not in Homebrew, must build from source
     if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
         echo "  Installing libnoise (Bambu fork)..."
