@@ -238,8 +238,16 @@ include_directories(
 # Eigen — add the include path globally so sub-libraries (admesh, clipper, etc.)
 # that use #include <Eigen/...> can find the headers without each needing to
 # link against Eigen3::Eigen explicitly.
+# FindEigen3 (module mode, Homebrew) sets EIGEN3_INCLUDE_DIR.
+# Eigen3Config (config mode, vcpkg) sets Eigen3::Eigen target but may not set
+# the legacy variable. Fall back to extracting from the target.
 if(EIGEN3_INCLUDE_DIR)
   include_directories(SYSTEM "${EIGEN3_INCLUDE_DIR}")
+elseif(TARGET Eigen3::Eigen)
+  get_target_property(_eigen3_incs Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+  if(_eigen3_incs)
+    include_directories(SYSTEM ${_eigen3_incs})
+  endif()
 endif()
 
 # On macOS, Homebrew Eigen may also live here
