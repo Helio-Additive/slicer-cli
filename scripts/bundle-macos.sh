@@ -46,6 +46,7 @@ done < <(otool -l "$OUTPUT/slicer_cli" 2>/dev/null | grep -A2 'LC_RPATH' | grep 
 # "Non-system" = anything NOT under /usr/lib or /System/Library.
 
 declare -A SEEN
+declare -A SRC_OF   # maps dist/Frameworks/X → original absolute path of X
 QUEUE=("$OUTPUT/slicer_cli")
 
 resolve_rpath() {
@@ -57,7 +58,15 @@ resolve_rpath() {
         [[ "$RP" == @* ]] && continue
         [[ -f "$RP/$BASENAME" ]] && echo "$RP/$BASENAME" && return 0
     done < <(otool -l "$CURRENT_FILE" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}' || true)
-    # 2. Fall back to global rpath pool (main binary's absolute rpaths)
+    # 2. Resolve @loader_path via original source directory (copies in
+    #    dist/Frameworks/ lose their @loader_path context after being moved).
+    local ORIG="${SRC_OF[$CURRENT_FILE]:-}"
+    if [[ -n "$ORIG" ]]; then
+        local ORIG_DIR
+        ORIG_DIR="$(dirname "$ORIG")"
+        [[ -f "$ORIG_DIR/$BASENAME" ]] && echo "$ORIG_DIR/$BASENAME" && return 0
+    fi
+    # 3. Fall back to global rpath pool (main binary's absolute rpaths)
     for DIR in "${GLOBAL_RPATH_DIRS[@]}"; do
         [[ -f "$DIR/$BASENAME" ]] && echo "$DIR/$BASENAME" && return 0
     done
@@ -89,6 +98,7 @@ while [ "${#QUEUE[@]}" -gt 0 ]; do
         [[ -f "$DEST" ]] && continue
         echo "Bundling: $LIB → $DEST"
         cp "$LIB" "$DEST"
+        SRC_OF["$DEST"]="$LIB"
         QUEUE+=("$DEST")
     done < <(otool -L "$CURRENT" 2>/dev/null | tail -n +2)
 done
