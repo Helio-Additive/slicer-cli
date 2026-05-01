@@ -100,8 +100,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-v1-${{ hashFiles('.github/workflows/slicer-cli-ci.yml') }}
-          restore-keys: vcpkg-x64-windows-v1-
+          key: vcpkg-x64-windows-v2
+          restore-keys: vcpkg-x64-windows-
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
