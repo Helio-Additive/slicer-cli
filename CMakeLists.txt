@@ -290,7 +290,17 @@ if(NOT TARGET boost_headeronly)
   target_include_directories(boost_headeronly INTERFACE ${Boost_INCLUDE_DIRS})
 endif()
 if(NOT TARGET nowide)
-  add_subdirectory("${REF_SRC}/boost" "${CMAKE_CURRENT_BINARY_DIR}/boost")
+  if(WIN32)
+    # On Windows, use vcpkg's boost-nowide DLL. Building from the bundled
+    # source as a static lib produces LNK2019 unresolved externals on
+    # boost::nowide::cerr/cout because consumer TUs see __declspec(dllimport)
+    # whenever vcpkg's boost auto-defines BOOST_ALL_DYN_LINK.
+    find_package(Boost CONFIG REQUIRED COMPONENTS nowide)
+    add_library(nowide INTERFACE)
+    target_link_libraries(nowide INTERFACE Boost::nowide)
+  else()
+    add_subdirectory("${REF_SRC}/boost" "${CMAKE_CURRENT_BINARY_DIR}/boost")
+  endif()
 endif()
 
 # Qhull — wrap in a single interface target.
