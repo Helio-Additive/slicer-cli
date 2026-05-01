@@ -45,6 +45,16 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Remove Mono framework (shadows libpng headers)
+        if: runner.os == 'macOS'
+        # macos-14 pre-installs Mono. Even with explicit -DPNG_PNG_INCLUDE_DIR
+        # pointing at Homebrew, the compiler still resolves <png.h> to
+        # /Library/Frameworks/Mono.framework/Headers/png.h (libpng 1.4) — likely
+        # via implicit framework search (-F /Library/Frameworks). Nuking Mono
+        # makes the conflict impossible. We don't use Mono for anything in this
+        # build; runner is ephemeral.
+        run: sudo rm -rf /Library/Frameworks/Mono.framework
+
       - name: Cache Homebrew packages
         if: runner.os == 'macOS'
         uses: actions/cache@v4
