@@ -232,10 +232,18 @@ jobs:
           /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
           bash scripts/smoke-clean-host.sh dist/slicer_cli
 
-      - name: Upload artefact
+      - name: Upload artefact (macOS / Linux)
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: slicer_cli-${{ matrix.os }}
           path: build/slicer_cli
+          if-no-files-found: error
+
+      - name: Upload artefact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slicer_cli-${{ matrix.os }}
+          path: build/Release/slicer_cli.exe
           if-no-files-found: error
