@@ -441,9 +441,29 @@ if(EXISTS "${LIBSLIC3R_DIR}/pchheader.hpp")
 else()
   set(_pch "${LIBSLIC3R_REF_DIR}/pchheader.hpp")
 endif()
-target_precompile_headers(libslic3r_core PRIVATE
-    "${_pch}"
-    "${COMPAT_HEADER}")
+
+if(MSVC)
+  # The bundled BambuStudio nowide headers (REF_SRC/boost/nowide/) use the old
+  # namespace boost::nowide::details (with 's'); vcpkg's Boost.Nowide 1.90 DLL
+  # exports boost::nowide::detail (no 's') — causing LNK2019 on cerr/cout.
+  # The PCH (pchheader.hpp) includes <boost/nowide/iostream.hpp>, so the old
+  # declarations get baked into cmake_pch.pch before any /FI can help.
+  # Fix: inject vcpkg's iostream.hpp as the FIRST entry in target_precompile_headers
+  # so it is compiled into the PCH before pchheader.hpp sees the bundled headers.
+  # The shared include guard (BOOST_NOWIDE_IOSTREAM_HPP_INCLUDED) then prevents
+  # the old bundled header from being processed anywhere in the TU.
+  set(_nowide_fwd "${CMAKE_CURRENT_BINARY_DIR}/nowide_fwd.hpp")
+  file(WRITE "${_nowide_fwd}"
+    "#pragma once\n// Compiled first in the PCH to ensure vcpkg Boost.Nowide 1.90\n// (namespace boost::nowide::detail) precedes the bundled BambuStudio headers\n// (namespace boost::nowide::details) in every translation unit.\n#include \"${Boost_INCLUDE_DIRS}/boost/nowide/iostream.hpp\"\n")
+  target_precompile_headers(libslic3r_core PRIVATE
+      "${_nowide_fwd}"
+      "${_pch}"
+      "${COMPAT_HEADER}")
+else()
+  target_precompile_headers(libslic3r_core PRIVATE
+      "${_pch}"
+      "${COMPAT_HEADER}")
+endif()
 
 target_compile_definitions(libslic3r_core PUBLIC
     USE_TBB
