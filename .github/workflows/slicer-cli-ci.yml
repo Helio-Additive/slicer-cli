@@ -314,6 +314,9 @@ jobs:
           $bin = "build\Release\slicer_cli.exe"
           if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
           Copy-Item $bin dist\package\slicer-cli\slicer_cli.exe
+          $binDir = Split-Path $bin
+          Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination dist\package\slicer-cli\
           Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL dist\package\slicer-cli\resources\profiles\BBL
           Copy-Item LICENSE, NOTICE, README.md dist\package\slicer-cli\
           @{
