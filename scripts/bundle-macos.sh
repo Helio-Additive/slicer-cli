@@ -139,6 +139,17 @@ for DYLIB in "$FRAMEWORKS"/*.dylib; do
     rewrite_refs "$DYLIB"
 done
 
+# install_name_tool mutates Mach-O load commands after the linker creates the
+# original ad-hoc signatures. macOS 15 can then kill the downloaded binary at
+# dyld load time with "Code Signature Invalid". Re-sign every copied dylib first
+# and the launcher last so the package remains runnable after extraction.
+if command -v codesign >/dev/null 2>&1; then
+    for DYLIB in "$FRAMEWORKS"/*.dylib; do
+        codesign --force --sign - "$DYLIB"
+    done
+    codesign --force --sign - "$OUTPUT/slicer_cli"
+fi
+
 echo ""
 echo "Relocatable bundle written to $OUTPUT/"
 echo ""
