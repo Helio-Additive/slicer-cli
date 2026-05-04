@@ -3,6 +3,9 @@ name: slicer-cli CI
 on:
   push:
     branches: ["main", "dev", "release/**"]
+    tags:
+      - "v*"
+      - "slicer-cli/v*"
     paths:
       - "**"
       - "libslic3r/bambustudio/**"
@@ -16,6 +19,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -232,6 +238,115 @@ jobs:
           /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
           bash scripts/smoke-clean-host.sh dist/slicer_cli
 
+      - name: Package engine release asset (macOS arm64)
+        if: matrix.os == 'macOS-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#slicer-cli/v}"
+          VERSION="${VERSION#v}"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            VERSION="0.0.0-${GITHUB_SHA::12}"
+          fi
+          PLATFORM="macos-arm64"
+          ASSET="slicer-cli-v${VERSION}-${PLATFORM}.tar.gz"
+          rm -rf dist/package dist/release
+          mkdir -p dist/package/slicer-cli/resources/profiles dist/release
+          BIN="build/slicer_cli"
+          if [[ -x "dist/slicer_cli" ]]; then
+            BIN="dist/slicer_cli"
+          fi
+          cp "$BIN" dist/package/slicer-cli/slicer_cli
+          if [[ -d "dist/Frameworks" ]]; then
+            cp -R dist/Frameworks dist/package/slicer-cli/Frameworks
+          fi
+          cp -R references/BambuStudio/resources/profiles/BBL dist/package/slicer-cli/resources/profiles/BBL
+          cp LICENSE NOTICE README.md dist/package/slicer-cli/
+          cat > dist/package/slicer-cli/manifest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "gitSha": "${GITHUB_SHA}",
+            "platform": "${PLATFORM}",
+            "executablePath": "slicer-cli/slicer_cli",
+            "profilesPath": "slicer-cli/resources/profiles/BBL"
+          }
+          EOF
+          tar -C dist/package -czf "dist/release/${ASSET}" slicer-cli
+          HASH="$(shasum -a 256 "dist/release/${ASSET}" | awk '{print $1}')"
+          printf '%s  %s\n' "$HASH" "$ASSET" > "dist/release/${ASSET}.sha256"
+          cat > "dist/release/engine-platform-${PLATFORM}.json" <<EOF
+          {
+            "platform": "${PLATFORM}",
+            "assetFilename": "${ASSET}",
+            "sha256": "${HASH}",
+            "executablePath": "slicer-cli/slicer_cli",
+            "profilesPath": "slicer-cli/resources/profiles/BBL"
+          }
+          EOF
+
+      - name: Validate packaged engine asset (macOS arm64)
+        if: matrix.os == 'macOS-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET="$(ls dist/release/slicer-cli-v*-macos-arm64.tar.gz)"
+          rm -rf dist/verify
+          mkdir -p dist/verify
+          tar -C dist/verify -xzf "$ASSET"
+          test -x dist/verify/slicer-cli/slicer_cli
+          test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
+          test -d dist/verify/slicer-cli/resources/profiles/BBL/process
+          test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
+          dist/verify/slicer-cli/slicer_cli --help >/dev/null
+
+      - name: Package engine release asset (Windows x86_64)
+        if: matrix.os == 'Windows-x86_64'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^slicer-cli/v','' -replace '^v',''
+          if ($env:GITHUB_REF_TYPE -ne 'tag') {
+            $version = "0.0.0-$($env:GITHUB_SHA.Substring(0, 12))"
+          }
+          $platform = "windows-x86_64"
+          $asset = "slicer-cli-v$version-$platform.zip"
+          Remove-Item -Recurse -Force dist\package, dist\release -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force dist\package\slicer-cli\resources\profiles, dist\release | Out-Null
+          $bin = "build\Release\slicer_cli.exe"
+          if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
+          Copy-Item $bin dist\package\slicer-cli\slicer_cli.exe
+          Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL dist\package\slicer-cli\resources\profiles\BBL
+          Copy-Item LICENSE, NOTICE, README.md dist\package\slicer-cli\
+          @{
+            version = $version
+            gitSha = $env:GITHUB_SHA
+            platform = $platform
+            executablePath = "slicer-cli/slicer_cli.exe"
+            profilesPath = "slicer-cli/resources/profiles/BBL"
+          } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 dist\package\slicer-cli\manifest.json
+          Compress-Archive -Path dist\package\slicer-cli -DestinationPath "dist\release\$asset"
+          $hash = (Get-FileHash "dist\release\$asset" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $asset" | Set-Content -Encoding ASCII "dist\release\$asset.sha256"
+          @{
+            platform = $platform
+            assetFilename = $asset
+            sha256 = $hash
+            executablePath = "slicer-cli/slicer_cli.exe"
+            profilesPath = "slicer-cli/resources/profiles/BBL"
+          } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 "dist\release\engine-platform-$platform.json"
+
+      - name: Validate packaged engine asset (Windows x86_64)
+        if: matrix.os == 'Windows-x86_64'
+        shell: pwsh
+        run: |
+          $asset = Get-ChildItem dist\release\slicer-cli-v*-windows-x86_64.zip | Select-Object -First 1
+          Remove-Item -Recurse -Force dist\verify -ErrorAction SilentlyContinue
+          Expand-Archive -Path $asset.FullName -DestinationPath dist\verify
+          if (-not (Test-Path dist\verify\slicer-cli\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\machine)) { throw "missing machine profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\process)) { throw "missing process profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\filament)) { throw "missing filament profiles" }
+          & dist\verify\slicer-cli\slicer_cli.exe --help
+
       - name: Upload artefact (macOS / Linux)
         if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
@@ -247,3 +362,48 @@ jobs:
           name: slicer_cli-${{ matrix.os }}
           path: build/Release/slicer_cli.exe
           if-no-files-found: error
+
+      - name: Upload engine release package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: slicer-cli-release-${{ matrix.os }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish slicer-cli release assets
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged engine assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: slicer-cli-release-*
+          merge-multiple: true
+          path: dist/release
+
+      - name: Build aggregate engine manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#slicer-cli/v}"
+          VERSION="${VERSION#v}"
+          jq -s \
+            --arg version "$VERSION" \
+            --arg gitSha "$GITHUB_SHA" \
+            '{version: $version, gitSha: $gitSha, platforms: .}' \
+            dist/release/engine-platform-*.json > dist/release/engine-manifest.json
+          rm dist/release/engine-platform-*.json
+
+      - name: Upload GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "slicer-cli engine package"
+          gh release upload "$GITHUB_REF_NAME" dist/release/* --clobber
