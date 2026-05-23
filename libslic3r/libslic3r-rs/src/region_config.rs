@@ -1,0 +1,891 @@
+//! Print region configuration.
+//!
+//! This module provides the PrintRegionConfig type for controlling
+//! region-specific print settings, mirroring BambuStudio's PrintRegionConfig.
+
+use crate::perimeter_generator::WallGeneratorMode;
+use crate::print_config::{InfillPattern, SeamPosition, WallSequence};
+use crate::CoordF;
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Configuration for a specific print region
+/// PrintConfig.hpp:939-1050
+pub struct PrintRegionConfig {
+    // === Perimeters ===
+    /// Number of perimeters/shells
+    /// PrintConfig.hpp:998
+    pub perimeters: u32,
+
+    /// External perimeter extrusion width (mm, 0 = auto)
+    /// C++ name: outer_wall_line_width
+    /// PrintConfig.hpp:954
+    pub outer_wall_line_width: CoordF,
+
+    /// Perimeter extrusion width (mm, 0 = auto)
+    /// C++ name: inner_wall_line_width
+    /// PrintConfig.hpp:996
+    pub inner_wall_line_width: CoordF,
+
+    /// External perimeter speed (mm/s)
+    /// PrintConfig.hpp:956
+    pub external_perimeter_speed: CoordF,
+
+    /// Perimeter speed (mm/s)
+    /// PrintConfig.hpp:997
+    pub perimeter_speed: CoordF,
+
+    /// Small perimeter speed (mm/s)
+    /// PrintConfig.hpp:997
+    pub small_perimeter_speed: CoordF,
+
+    /// Enable thin walls detection
+    /// PrintConfig.hpp:998
+    pub thin_walls: bool,
+
+    /// Enable detect bridging perimeters
+    /// PrintConfig.hpp:989
+    pub overhangs: bool,
+
+    /// Extra perimeters if needed for vertical shells
+    /// PrintConfig.hpp:949
+    pub extra_perimeters: bool,
+
+    /// Extra perimeters on overhangs
+    /// PrintConfig.hpp:949
+    pub extra_perimeters_on_overhangs: bool,
+
+    // === Infill ===
+    /// Infill density (0.0 - 1.0)
+    /// PrintConfig.hpp:965
+    pub fill_density: CoordF,
+
+    /// Infill pattern
+    /// PrintConfig.hpp:968
+    pub fill_pattern: InfillPattern,
+
+    /// Solid infill pattern (for top/bottom)
+    /// PrintConfig.hpp:952
+    pub solid_fill_pattern: InfillPattern,
+
+    /// Top solid infill pattern
+    /// PrintConfig.hpp:950
+    pub top_fill_pattern: InfillPattern,
+
+    /// Bottom solid infill pattern
+    /// PrintConfig.hpp:948
+    pub bottom_fill_pattern: InfillPattern,
+
+    /// Infill angle (degrees)
+    /// PrintConfig.hpp:955
+    pub fill_angle: CoordF,
+
+    /// Infill extrusion width (mm, 0 = auto)
+    /// C++ name: sparse_infill_line_width
+    /// PrintConfig.hpp:973
+    pub sparse_infill_line_width: CoordF,
+
+    /// Solid infill extrusion width (mm, 0 = auto)
+    /// C++ name: internal_solid_infill_line_width
+    /// PrintConfig.hpp:975
+    pub internal_solid_infill_line_width: CoordF,
+
+    /// Top solid infill extrusion width (mm, 0 = auto)
+    /// C++ name: top_surface_line_width
+    /// PrintConfig.hpp:974
+    pub top_surface_line_width: CoordF,
+
+    /// Infill speed (mm/s)
+    /// PrintConfig.hpp:978
+    pub infill_speed: CoordF,
+
+    /// Solid infill speed (mm/s)
+    /// PrintConfig.hpp:978
+    pub solid_infill_speed: CoordF,
+
+    /// Top solid infill speed (mm/s)
+    /// PrintConfig.hpp:978
+    pub top_solid_infill_speed: CoordF,
+
+    /// Infill overlap with perimeters (ratio, 0.0 - 1.0)
+    /// PrintConfig.hpp:972
+    pub infill_overlap: CoordF,
+
+    /// Infill anchor length (mm)
+    /// PrintConfig.hpp:966
+    pub infill_anchor: CoordF,
+
+    /// Maximum infill anchor length (mm)
+    /// PrintConfig.hpp:967
+    pub infill_anchor_max: CoordF,
+
+    // === Solid Layers ===
+    /// Number of solid top layers
+    /// PrintConfig.hpp:944
+    pub top_solid_layers: u32,
+
+    /// Number of solid bottom layers
+    /// PrintConfig.hpp:943
+    pub bottom_solid_layers: u32,
+
+    /// Minimum shell thickness (mm) for solid infill
+    /// PrintConfig.hpp:944
+    pub top_solid_min_thickness: CoordF,
+
+    /// Minimum shell thickness (mm) for solid infill
+    /// PrintConfig.hpp:943
+    pub bottom_solid_min_thickness: CoordF,
+
+    // === Bridges ===
+    /// Bridge speed (mm/s)
+    /// PrintConfig.hpp:947
+    pub bridge_speed: CoordF,
+
+    /// Bridge flow ratio
+    /// PrintConfig.hpp:946
+    pub bridge_flow_ratio: CoordF,
+
+    /// Bridge angle (degrees, 0 = auto)
+    /// PrintConfig.hpp:945
+    pub bridge_angle: CoordF,
+
+    // === Gap Fill ===
+    /// Enable gap fill
+    /// PrintConfig.hpp:976
+    pub gap_fill_enabled: bool,
+
+    /// Gap fill speed (mm/s)
+    /// PrintConfig.hpp:976
+    pub gap_fill_speed: CoordF,
+
+    // === Seam ===
+    /// Seam position preference
+    /// PrintConfig.hpp:1000
+    pub seam_position: SeamPosition,
+
+    /// Seam angle cost (for seam placement algorithm)
+    /// PrintConfig.hpp:1000
+    pub seam_angle_cost: CoordF,
+
+    /// Seam travel cost (for seam placement algorithm)
+    /// PrintConfig.hpp:1000
+    pub seam_travel_cost: CoordF,
+
+    // === Ironing ===
+    /// Enable ironing (smoothing top surfaces)
+    /// PrintConfig.hpp:980
+    pub ironing: bool,
+
+    /// Ironing type
+    /// PrintConfig.hpp:980
+    pub ironing_type: IroningType,
+
+    /// Ironing flow rate ratio
+    /// PrintConfig.hpp:982
+    pub ironing_flow_rate: CoordF,
+
+    /// Ironing spacing (mm)
+    /// PrintConfig.hpp:983
+    pub ironing_spacing: CoordF,
+
+    /// Ironing speed (mm/s)
+    /// PrintConfig.hpp:986
+    pub ironing_speed: CoordF,
+
+    // === Fuzzy Skin ===
+    /// Enable fuzzy skin
+    /// PrintConfig.hpp:969
+    pub fuzzy_skin: bool,
+
+    /// Fuzzy skin mode
+    /// PrintConfig.hpp:969
+    pub fuzzy_skin_mode: FuzzySkinMode,
+
+    /// Fuzzy skin thickness (mm)
+    /// PrintConfig.hpp:970
+    pub fuzzy_skin_thickness: CoordF,
+
+    /// Fuzzy skin point distance (mm)
+    /// PrintConfig.hpp:971
+    pub fuzzy_skin_point_distance: CoordF,
+
+    // === Wall Generation Mode ===
+    /// Perimeter generator mode (Classic or Arachne).
+    /// BambuStudio: `wall_generator` / `perimeter_generator`.
+    pub wall_generator_mode: WallGeneratorMode,
+
+    /// Wall sequence (inner/outer ordering).
+    /// BambuStudio: `wall_sequence` in PrintRegionConfig.
+    pub wall_sequence: WallSequence,
+
+    // === Misc ===
+    /// Region identifier/name
+    /// PrintConfig.hpp:939
+    pub region_id: usize,
+
+    /// Wall filament extruder (1-based, C++ uses wall_filament)
+    /// PrintConfig.hpp:993
+    pub wall_filament: usize,
+
+    /// Sparse infill filament extruder (1-based, C++ uses sparse_infill_filament)
+    /// PrintConfig.hpp:977
+    pub sparse_infill_filament: usize,
+
+    /// Solid infill filament extruder (1-based, C++ uses solid_infill_filament)
+    /// PrintConfig.hpp:977
+    pub solid_infill_filament: usize,
+}
+
+/// Implementation of PrintRegionConfig methods
+/// PrintConfig.hpp:939-1050
+impl PrintRegionConfig {
+    // Create a new PrintRegionConfig with default values
+    // PrintConfig.hpp:939
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a config with a specific region ID
+    /// PrintConfig.hpp:939
+    pub fn with_region_id(region_id: usize) -> Self {
+        Self {
+            region_id,
+            ..Default::default()
+        }
+    }
+
+    /// Builder method: set number of perimeters
+    /// PrintConfig.hpp:998
+    pub fn perimeters(mut self, count: u32) -> Self {
+        // PrintConfig.hpp:998
+        self.perimeters = count;
+        // PrintConfig.hpp:998
+        self
+    }
+
+    /// Builder method: set infill density
+    /// PrintConfig.hpp:965
+    pub fn fill_density(mut self, density: CoordF) -> Self {
+        // PrintConfig.hpp:965
+        self.fill_density = density;
+        // PrintConfig.hpp:965
+        self
+    }
+
+    /// Builder method: set infill pattern
+    /// PrintConfig.hpp:968
+    pub fn fill_pattern(mut self, pattern: InfillPattern) -> Self {
+        // PrintConfig.hpp:968
+        self.fill_pattern = pattern;
+        // PrintConfig.hpp:968
+        self
+    }
+
+    /// Builder method: set top solid layers
+    /// PrintConfig.hpp:944
+    pub fn top_solid_layers(mut self, layers: u32) -> Self {
+        // PrintConfig.hpp:944
+        self.top_solid_layers = layers;
+        // PrintConfig.hpp:944
+        self
+    }
+
+    /// Builder method: set bottom solid layers
+    /// PrintConfig.hpp:943
+    pub fn bottom_solid_layers(mut self, layers: u32) -> Self {
+        // PrintConfig.hpp:943
+        self.bottom_solid_layers = layers;
+        // PrintConfig.hpp:943
+        self
+    }
+
+    /// Builder method: set wall filament extruder (1-based)
+    /// PrintConfig.hpp:993
+    pub fn wall_filament(mut self, extruder: usize) -> Self {
+        // PrintConfig.hpp:993
+        self.wall_filament = extruder;
+        // PrintConfig.hpp:993
+        self
+    }
+
+    /// Builder method: enable/disable ironing
+    /// PrintConfig.hpp:980
+    pub fn ironing(mut self, enabled: bool) -> Self {
+        // PrintConfig.hpp:980
+        self.ironing = enabled;
+        // PrintConfig.hpp:980
+        self
+    }
+
+    /// Builder method: enable/disable fuzzy skin
+    /// PrintConfig.hpp:969
+    pub fn fuzzy_skin(mut self, enabled: bool) -> Self {
+        // PrintConfig.hpp:969
+        self.fuzzy_skin = enabled;
+        // PrintConfig.hpp:969
+        self
+    }
+
+    /// Get the effective infill extruder (falls back to perimeter extruder)
+    /// PrintConfig.hpp:977
+    pub fn effective_infill_extruder(&self) -> usize {
+        // PrintConfig.hpp:977
+        if self.sparse_infill_filament > 0 {
+            // PrintConfig.hpp:977
+            self.sparse_infill_filament
+        } else {
+            // PrintConfig.hpp:977
+            // PrintConfig.hpp:993
+            self.wall_filament
+        }
+    }
+
+    /// Get the effective solid infill extruder
+    /// PrintConfig.hpp:977
+    pub fn effective_solid_infill_extruder(&self) -> usize {
+        // PrintConfig.hpp:977
+        if self.solid_infill_filament > 0 {
+            // PrintConfig.hpp:977
+            self.solid_infill_filament
+        } else {
+            self.effective_infill_extruder()
+        }
+    }
+
+    /// Check if this region has sparse infill
+    /// PrintConfig.hpp:965
+    pub fn has_sparse_infill(&self) -> bool {
+        // PrintConfig.hpp:965
+        self.fill_density > 0.0 && self.fill_density < 1.0
+    }
+
+    /// Check if this region has solid infill (100% density)
+    /// PrintConfig.hpp:965
+    pub fn is_solid(&self) -> bool {
+        // PrintConfig.hpp:965
+        self.fill_density >= 1.0
+    }
+
+    /// Check if this region has no infill
+    /// PrintConfig.hpp:965
+    pub fn is_hollow(&self) -> bool {
+        // PrintConfig.hpp:965
+        self.fill_density == 0.0
+    }
+}
+
+impl PrintRegionConfig {
+    /// Apply a key-value pair from BambuStudio project_settings JSON.
+    /// Returns true if the key was recognized and applied.
+    pub fn set_deserialize(&mut self, key: &str, value: &str) -> bool {
+        use crate::print_config::{parse_bool, parse_f64, parse_pct, parse_u32};
+
+        match key {
+            // === Perimeters ===
+            "wall_loops" => {
+                if let Some(v) = parse_u32(value) {
+                    self.perimeters = v;
+                }
+                true
+            }
+            "outer_wall_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.outer_wall_line_width = v;
+                }
+                true
+            }
+            "inner_wall_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.inner_wall_line_width = v;
+                }
+                true
+            }
+            "outer_wall_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.external_perimeter_speed = v;
+                }
+                true
+            }
+            "inner_wall_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.perimeter_speed = v;
+                }
+                true
+            }
+            "small_perimeter_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.small_perimeter_speed = v;
+                }
+                true
+            }
+            "detect_thin_wall" => {
+                if let Some(v) = parse_bool(value) {
+                    self.thin_walls = v;
+                }
+                true
+            }
+            "detect_overhang_wall" => {
+                if let Some(v) = parse_bool(value) {
+                    self.overhangs = v;
+                }
+                true
+            }
+            "extra_perimeters_on_overhangs" => {
+                if let Some(v) = parse_bool(value) {
+                    self.extra_perimeters = v;
+                    self.extra_perimeters_on_overhangs = v;
+                }
+                true
+            }
+
+            // === Infill ===
+            "sparse_infill_density" => {
+                if let Some(v) = parse_pct(value) {
+                    self.fill_density = v;
+                }
+                true
+            }
+            "sparse_infill_pattern" => {
+                self.fill_pattern = match value {
+                    "grid" => InfillPattern::Grid,
+                    "line" | "rectilinear" => InfillPattern::Rectilinear,
+                    "gyroid" => InfillPattern::Gyroid,
+                    "honeycomb" => InfillPattern::Honeycomb,
+                    "concentric" => InfillPattern::Concentric,
+                    "cubic" => InfillPattern::Cubic,
+                    "lightning" => InfillPattern::Lightning,
+                    "triangles" => InfillPattern::Triangles,
+                    "adaptivecubic" => InfillPattern::AdaptiveCubic,
+                    _ => self.fill_pattern,
+                };
+                true
+            }
+            "top_surface_pattern" => {
+                self.top_fill_pattern = match value {
+                    "monotonic" | "monotonicline" | "rectilinear" => InfillPattern::Rectilinear,
+                    _ => InfillPattern::Rectilinear,
+                };
+                true
+            }
+            "bottom_surface_pattern" => {
+                self.bottom_fill_pattern = match value {
+                    "monotonic" | "monotonicline" | "rectilinear" => InfillPattern::Rectilinear,
+                    _ => InfillPattern::Rectilinear,
+                };
+                true
+            }
+            "infill_direction" => {
+                if let Some(v) = parse_f64(value) {
+                    self.fill_angle = v;
+                }
+                true
+            }
+            "sparse_infill_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.sparse_infill_line_width = v;
+                }
+                true
+            }
+            "internal_solid_infill_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.internal_solid_infill_line_width = v;
+                }
+                true
+            }
+            "top_surface_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.top_surface_line_width = v;
+                }
+                true
+            }
+            "sparse_infill_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.infill_speed = v;
+                }
+                true
+            }
+            "internal_solid_infill_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.solid_infill_speed = v;
+                }
+                true
+            }
+            "top_surface_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.top_solid_infill_speed = v;
+                }
+                true
+            }
+            "infill_wall_overlap" => {
+                if let Some(v) = parse_pct(value) {
+                    self.infill_overlap = v;
+                }
+                true
+            }
+            "infill_anchor" => {
+                if let Some(v) = parse_f64(value) {
+                    self.infill_anchor = v;
+                }
+                true
+            }
+            "infill_anchor_max" => {
+                if let Some(v) = parse_f64(value) {
+                    self.infill_anchor_max = v;
+                }
+                true
+            }
+
+            // === Solid Layers ===
+            "top_shell_layers" => {
+                if let Some(v) = parse_u32(value) {
+                    self.top_solid_layers = v;
+                }
+                true
+            }
+            "bottom_shell_layers" => {
+                if let Some(v) = parse_u32(value) {
+                    self.bottom_solid_layers = v;
+                }
+                true
+            }
+            "top_shell_thickness" => {
+                if let Some(v) = parse_f64(value) {
+                    self.top_solid_min_thickness = v;
+                }
+                true
+            }
+            "bottom_shell_thickness" => {
+                if let Some(v) = parse_f64(value) {
+                    self.bottom_solid_min_thickness = v;
+                }
+                true
+            }
+
+            // === Bridges ===
+            "bridge_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.bridge_speed = v;
+                }
+                true
+            }
+            "bridge_flow" => {
+                if let Some(v) = parse_f64(value) {
+                    self.bridge_flow_ratio = v;
+                }
+                true
+            }
+            "bridge_angle" => {
+                if let Some(v) = parse_f64(value) {
+                    self.bridge_angle = v;
+                }
+                true
+            }
+
+            // === Gap Fill ===
+            "gap_infill_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.gap_fill_speed = v;
+                }
+                true
+            }
+
+            // === Seam ===
+            "seam_position" => {
+                self.seam_position = match value {
+                    "aligned" => SeamPosition::Aligned,
+                    "random" => SeamPosition::Random,
+                    "back" | "rear" => SeamPosition::Rear,
+                    "nearest" => SeamPosition::Nearest,
+                    _ => self.seam_position,
+                };
+                true
+            }
+
+            // === Ironing ===
+            "ironing_type" => {
+                self.ironing = value != "no ironing" && !value.is_empty();
+                self.ironing_type = match value {
+                    "top" => IroningType::TopSurfaces,
+                    "topmost" => IroningType::TopmostOnly,
+                    "solid" => IroningType::AllSolid,
+                    _ => IroningType::TopSurfaces,
+                };
+                true
+            }
+            "ironing_flow" => {
+                if let Some(v) = parse_f64(value) {
+                    self.ironing_flow_rate = v;
+                }
+                true
+            }
+            "ironing_spacing" => {
+                if let Some(v) = parse_f64(value) {
+                    self.ironing_spacing = v;
+                }
+                true
+            }
+            "ironing_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.ironing_speed = v;
+                }
+                true
+            }
+
+            // === Fuzzy Skin ===
+            "fuzzy_skin" => {
+                self.fuzzy_skin = value == "1"
+                    || value == "true"
+                    || value == "external"
+                    || value == "allwalls"
+                    || value == "all";
+                self.fuzzy_skin_mode = match value {
+                    "allwalls" | "all" => FuzzySkinMode::All,
+                    "external" => FuzzySkinMode::External,
+                    _ => FuzzySkinMode::None,
+                };
+                true
+            }
+            "fuzzy_skin_thickness" => {
+                if let Some(v) = parse_f64(value) {
+                    self.fuzzy_skin_thickness = v;
+                }
+                true
+            }
+            "fuzzy_skin_point_distance" | "fuzzy_skin_point_dist" => {
+                if let Some(v) = parse_f64(value) {
+                    self.fuzzy_skin_point_distance = v;
+                }
+                true
+            }
+
+            // === Wall Sequence ===
+            "wall_sequence" => {
+                self.wall_sequence = match value {
+                    "outer_wall_first" | "outer/inner" => WallSequence::OuterInner,
+                    "inner_outer_inner" | "inner/outer/inner" => WallSequence::InnerOuterInner,
+                    _ => WallSequence::InnerOuter, // "inner_outer_first" / "inner/outer"
+                };
+                true
+            }
+
+            _ => false,
+        }
+    }
+}
+
+/// Default trait implementation for PrintRegionConfig
+/// PrintConfig.hpp:939
+impl Default for PrintRegionConfig {
+    // Create default PrintRegionConfig with standard values
+    // PrintConfig.hpp:939
+    fn default() -> Self {
+        // PrintConfig.hpp:939-1050
+        Self {
+            // Perimeters
+            perimeters: 3,
+            outer_wall_line_width: 0.4,
+            inner_wall_line_width: 0.4,
+            external_perimeter_speed: 25.0,
+            perimeter_speed: 45.0,
+            small_perimeter_speed: 25.0,
+            thin_walls: true,
+            overhangs: true,
+            extra_perimeters: true,
+            extra_perimeters_on_overhangs: false,
+
+            // Infill
+            fill_density: 0.2,
+            fill_pattern: InfillPattern::Grid,
+            solid_fill_pattern: InfillPattern::Rectilinear,
+            top_fill_pattern: InfillPattern::Rectilinear,
+            bottom_fill_pattern: InfillPattern::Rectilinear,
+            fill_angle: 45.0,
+            sparse_infill_line_width: 0.4,
+            internal_solid_infill_line_width: 0.4,
+            top_surface_line_width: 0.4,
+            infill_speed: 80.0,
+            solid_infill_speed: 40.0,
+            top_solid_infill_speed: 30.0,
+            infill_overlap: 0.25,
+            infill_anchor: 2.5,
+            infill_anchor_max: 12.0,
+
+            // Solid Layers (BambuStudio reference: top_shell_layers = 5)
+            top_solid_layers: 5,
+            bottom_solid_layers: 3,
+            top_solid_min_thickness: 0.0,
+            bottom_solid_min_thickness: 0.0,
+
+            // Bridges
+            bridge_speed: 25.0,
+            bridge_flow_ratio: 1.0,
+            bridge_angle: 0.0,
+
+            // Gap Fill
+            gap_fill_enabled: true,
+            gap_fill_speed: 20.0,
+
+            // Seam
+            seam_position: SeamPosition::Aligned,
+            seam_angle_cost: 1.0,
+            seam_travel_cost: 1.0,
+
+            // Ironing
+            ironing: false,
+            ironing_type: IroningType::TopSurfaces,
+            ironing_flow_rate: 0.15,
+            ironing_spacing: 0.1,
+            ironing_speed: 15.0,
+
+            // Fuzzy Skin
+            fuzzy_skin: false,
+            fuzzy_skin_mode: FuzzySkinMode::None,
+            fuzzy_skin_thickness: 0.3,
+            fuzzy_skin_point_distance: 0.8,
+
+            // Wall Generation Mode
+            wall_generator_mode: WallGeneratorMode::Classic,
+            wall_sequence: WallSequence::InnerOuter,
+
+            // Misc
+            region_id: 0,
+            wall_filament: 1, // 1-based in C++
+            sparse_infill_filament: 1,
+            solid_infill_filament: 1,
+        }
+    }
+}
+
+/// Display trait implementation for PrintRegionConfig
+/// PrintConfig.hpp:939
+impl fmt::Display for PrintRegionConfig {
+    // Format PrintRegionConfig for display
+    // PrintConfig.hpp:939
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "PrintRegionConfig(region={}, perimeters={}, infill={:.0}%)",
+            self.region_id,
+            self.perimeters,
+            self.fill_density * 100.0
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Ironing type - which surfaces to iron
+/// PrintConfig.hpp:980
+pub enum IroningType {
+    /// Iron all top surfaces
+    /// PrintConfig.hpp:980
+    #[default]
+    TopSurfaces,
+    /// Iron only the topmost surface
+    /// PrintConfig.hpp:980
+    TopmostOnly,
+    /// Iron all solid surfaces
+    /// PrintConfig.hpp:980
+    AllSolid,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Fuzzy skin mode
+/// PrintConfig.hpp:969
+pub enum FuzzySkinMode {
+    /// No fuzzy skin
+    /// PrintConfig.hpp:969
+    #[default]
+    None,
+    /// Fuzzy skin on external perimeters only
+    /// PrintConfig.hpp:969
+    External,
+    /// Fuzzy skin on all perimeters
+    /// PrintConfig.hpp:969
+    All,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_print_region_config_default() {
+        let config = PrintRegionConfig::default();
+        assert_eq!(config.perimeters, 3);
+        assert!((config.fill_density - 0.2).abs() < 1e-6);
+        assert_eq!(config.fill_pattern, InfillPattern::Grid);
+        assert_eq!(config.top_solid_layers, 5);
+        assert_eq!(config.bottom_solid_layers, 3);
+    }
+
+    #[test]
+    fn test_print_region_config_builder() {
+        let config = PrintRegionConfig::new()
+            .perimeters(5)
+            .fill_density(0.4)
+            .fill_pattern(InfillPattern::Gyroid)
+            .top_solid_layers(6)
+            .wall_filament(1);
+
+        assert_eq!(config.perimeters, 5);
+        assert!((config.fill_density - 0.4).abs() < 1e-6);
+        assert_eq!(config.fill_pattern, InfillPattern::Gyroid);
+        assert_eq!(config.top_solid_layers, 6);
+        assert_eq!(config.wall_filament, 1);
+    }
+
+    #[test]
+    fn test_print_region_config_with_region_id() {
+        let config = PrintRegionConfig::with_region_id(5);
+        assert_eq!(config.region_id, 5);
+    }
+
+    #[test]
+    fn test_effective_extruders() {
+        let mut config = PrintRegionConfig::default();
+        config.wall_filament = 1;
+        config.sparse_infill_filament = 0;
+        config.solid_infill_filament = 0;
+
+        assert_eq!(config.effective_infill_extruder(), 1);
+        assert_eq!(config.effective_solid_infill_extruder(), 1);
+
+        config.sparse_infill_filament = 2;
+        assert_eq!(config.effective_infill_extruder(), 2);
+        assert_eq!(config.effective_solid_infill_extruder(), 2);
+
+        config.solid_infill_filament = 3;
+        assert_eq!(config.effective_solid_infill_extruder(), 3);
+    }
+
+    #[test]
+    fn test_infill_classification() {
+        let mut config = PrintRegionConfig::default();
+
+        config.fill_density = 0.0;
+        assert!(config.is_hollow());
+        assert!(!config.has_sparse_infill());
+        assert!(!config.is_solid());
+
+        config.fill_density = 0.5;
+        assert!(!config.is_hollow());
+        assert!(config.has_sparse_infill());
+        assert!(!config.is_solid());
+
+        config.fill_density = 1.0;
+        assert!(!config.is_hollow());
+        assert!(!config.has_sparse_infill());
+        assert!(config.is_solid());
+    }
+
+    #[test]
+    fn test_ironing_type_default() {
+        assert_eq!(IroningType::default(), IroningType::TopSurfaces);
+    }
+
+    #[test]
+    fn test_fuzzy_skin_mode_default() {
+        assert_eq!(FuzzySkinMode::default(), FuzzySkinMode::None);
+    }
+}

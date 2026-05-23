@@ -23,3 +23,15 @@ nanosvg_impl.cpp
 
 # macOS
 .DS_Store
+
+# Rust / cargo
+target/
+
+# devbox
+.devbox/
+*.log
+
+# example recipe artifacts
+example/3DBenchy.stl
+example/benchy-jobspec.json
+example/*.gcode

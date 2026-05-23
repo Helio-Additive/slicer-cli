@@ -28,7 +28,7 @@ project(slicer_cli VERSION 1.0.0)
 #     references/BambuStudio/src/boost/         — Boost.Nowide
 #
 #   Bundled sub-libraries — kept under the VENDOR override layer (patched):
-#     libslic3r/bambustudio/libigl/             — 4 source files patched to replace
+#     libslic3r/bambustudio/patches/libigl/     — 4 source files patched to replace
 #                                                    removed Eigen::DynamicSparseMatrix API
 #                                                    (cat/diag/slice/slice_into).
 #                                                    Full tree required: the override works
@@ -128,10 +128,23 @@ set(Boost_NO_WARN_NEW_VERSIONS ON)
 set(Boost_USE_STATIC_LIBS ON)
 find_package(Boost 1.73 QUIET COMPONENTS
     filesystem thread log log_setup regex atomic locale)
-if(NOT Boost_FOUND)
+# Boost_FOUND alone isn't enough: BoostConfig.cmake can succeed with just
+# headers but skip imported targets for components whose static libs are
+# missing (e.g. Nix ships shared-only). Probe a target we actually need.
+if(NOT Boost_FOUND OR NOT TARGET Boost::filesystem)
   set(Boost_USE_STATIC_LIBS OFF)
+  unset(Boost_FOUND CACHE)
   find_package(Boost 1.73 REQUIRED COMPONENTS
         filesystem thread log log_setup regex atomic locale)
+endif()
+
+# Boost.Log uses ABI-tagged namespaces (v2s_mt_posix vs v2_mt_posix etc.)
+# whose tags depend on whether the consumer expects a static or shared lib.
+# When Boost was built shared (e.g. Nix's pkgs), every consumer must define
+# BOOST_ALL_DYN_LINK or the symbols won't match at link time. Detect via
+# Boost_USE_STATIC_LIBS — `OFF` means we're consuming shared libs.
+if(NOT Boost_USE_STATIC_LIBS)
+  add_compile_definitions(BOOST_ALL_DYN_LINK)
 endif()
 
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
@@ -219,7 +232,7 @@ configure_file("${_ver_in}" "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h" @O
 # Listed in priority order — the first matching directory wins for #include.
 #
 #   1. VENDOR        → override layer: "libslic3r/..." overrides
-#   2. VENDOR/libigl → patched libigl tree; must come before REF_SRC/libigl so that
+#   2. VENDOR/patches/libigl → patched libigl tree; must come before REF_SRC/libigl so that
 #                      angle-bracket includes like <igl/copyleft/cgal/mesh_boolean.h>
 #                      resolve to VENDOR first, anchoring all subsequent relative
 #                      ../../ includes to the patched files (e.g. patched slice.cpp).
@@ -228,7 +241,7 @@ configure_file("${_ver_in}" "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h" @O
 #
 include_directories(
     "${VENDOR}"                   # override: "libslic3r/..." overrides
-    "${VENDOR}/libigl"            # libigl patched tree (full copy, 4 files patched)
+    "${VENDOR}/patches/libigl"    # libigl patched tree (full copy, 4 files patched)
     "${REF_SRC}"                  # reference: "libslic3r/..." fallback + all sub-lib headers
     "${REF_SRC}/libigl"           # libigl fallback (VENDOR tree shadows all used files)
     "${REF_SRC}/nanosvg"          # nanosvg bare-include path: #include "nanosvg.h"
@@ -267,7 +280,7 @@ add_subdirectory("${REF_SRC}/miniz"       "${CMAKE_CURRENT_BINARY_DIR}/miniz")
 add_subdirectory("${REF_SRC}/glu-libtess" "${CMAKE_CURRENT_BINARY_DIR}/glu-libtess")
 add_subdirectory("${REF_SRC}/semver"      "${CMAKE_CURRENT_BINARY_DIR}/semver")
 add_subdirectory("${REF_SRC}/libnest2d"   "${CMAKE_CURRENT_BINARY_DIR}/libnest2d")
-add_subdirectory("${VENDOR}/libigl"       "${CMAKE_CURRENT_BINARY_DIR}/libigl")     # patched
+add_subdirectory("${VENDOR}/patches/libigl" "${CMAKE_CURRENT_BINARY_DIR}/libigl")   # patched
 add_subdirectory("${REF_SRC}/mcut"        "${CMAKE_CURRENT_BINARY_DIR}/mcut")
 
 # Boost.Nowide
@@ -348,7 +361,9 @@ libslic3r_src(_ip  "IntersectionPoints.cpp")
 libslic3r_src(_mb  "MeshBoolean.cpp")
 libslic3r_src(_tcs "TryCatchSignal.cpp")
 libslic3r_src(_tri "Triangulation.cpp")
-set(LIBSLIC3R_CGAL_SOURCES "${_ip}" "${_mb}" "${_tcs}" "${_tri}")
+libslic3r_src(_vor "Geometry/Voronoi.cpp")
+libslic3r_src(_vuc "Geometry/VoronoiUtilsCgal.cpp")
+set(LIBSLIC3R_CGAL_SOURCES "${_ip}" "${_mb}" "${_tcs}" "${_tri}" "${_vor}" "${_vuc}")
 
 # Also exclude CutSurface.cpp from the main GLOB (it would have been removed
 # anyway, but be explicit since it's no longer in the CGAL list either).
@@ -434,7 +449,9 @@ target_include_directories(libslic3r_core PUBLIC
 
 target_include_directories(libslic3r_core PRIVATE
     "${EXPAT_INCLUDE_DIRS}"
-    "${REF_SRC}/miniz")
+    "${REF_SRC}/miniz"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/cxx")
 
 # ─── libslic3r_cgal ────────────────────────────────────────────────────────
 add_library(libslic3r_cgal STATIC ${LIBSLIC3R_CGAL_SOURCES})
@@ -466,7 +483,7 @@ if(_opts)
   target_compile_options(libslic3r_cgal PRIVATE "${_bad}")
 endif()
 
-target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} libigl mcut)
+target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} libigl mcut cereal)
 
 # ─── OpenCASCADE libraries ─────────────────────────────────────────────────
 if(APPLE)
@@ -526,9 +543,11 @@ target_link_libraries(libslic3r_core PUBLIC
     ${CMAKE_DL_LIBS}
     PNG::PNG
     ZLIB::ZLIB
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,--start-group>
+    # Apple ld64 doesn't recognise --start-group / --end-group; it resolves
+    # archive cycles automatically, so skip the flags on Darwin.
+    $<$<AND:$<CXX_COMPILER_ID:GNU,Clang>,$<NOT:$<PLATFORM_ID:Darwin>>>:-Wl,--start-group>
     ${OCCT_LIBS}
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,--end-group>
+    $<$<AND:$<CXX_COMPILER_ID:GNU,Clang>,$<NOT:$<PLATFORM_ID:Darwin>>>:-Wl,--end-group>
     mcut
     ${OpenCV_LIBS}
     Threads::Threads
@@ -602,34 +621,28 @@ set_target_properties(libslic3r_core PROPERTIES
 # Alias that libnest2d's CMakeLists.txt expects
 add_library(libslic3r ALIAS libslic3r_core)
 
-# ─── CLI executable ────────────────────────────────────────────────────────
-add_executable(slicer_cli main.cpp)
-target_link_libraries(slicer_cli PRIVATE libslic3r_core)
-target_include_directories(slicer_cli PRIVATE
+# ─── Rust FFI shim ─────────────────────────────────────────────────────────
+# Compiled separately so build.rs can force-load it and satisfy cxx bridge
+# symbol references without pulling in all of libslic3r_core.
+add_library(slicer_shim STATIC libslic3r/bambustudio/shim.cpp)
+target_link_libraries(slicer_shim PRIVATE libslic3r_core)
+target_include_directories(slicer_shim PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/cxx"
     "${VENDOR}"
     "${REF_SRC}"
     "${LIBSLIC3R_DIR}"
     "${LIBSLIC3R_REF_DIR}"
     "${REF_SRC}/miniz"
-    "${OpenCASCADE_INCLUDE_DIR}")
-
-# On macOS, ICU is keg-only — add the lib dir directly to the executable's
-# link command so the linker can resolve icudata (a transitive dep of icuuc).
-if(APPLE AND ICU_UC_LIB)
-  get_filename_component(_icu_lib_dir "${ICU_UC_LIB}" DIRECTORY)
-  target_link_directories(slicer_cli PRIVATE "${_icu_lib_dir}")
-endif()
+    "${OpenCASCADE_INCLUDE_DIR}"
+    "${Boost_INCLUDE_DIRS}")
 
 message(STATUS "============================================")
 message(STATUS "  Library:    libslic3r_core")
-message(STATUS "  Executable: slicer_cli")
 message(STATUS "============================================")
 
 # ─── Install rules ─────────────────────────────────────────────────────────
 include(GNUInstallDirs)
-install(TARGETS slicer_cli
-        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-        COMPONENT Runtime)
 install(FILES
           "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
           "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE"
