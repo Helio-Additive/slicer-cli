@@ -109,8 +109,8 @@ pub fn bicubic_interpolate(coeffs: &BicubicCoeffs, x: f64, y: f64) -> f64 {
     // C++:     return c.a00 + c.a01 * y + c.a02 * y2 + c.a03 * y3 +
     // C++:            c.a10 * x + c.a11 * x * y + c.a12 * x * y2 + c.a13 * x * y3 +
     // C++:            c.a20 * x2 + c.a21 * x2 * y + c.a22 * x2 * y2 + c.a23 * x2 * y3 +
-    /// C++:            c.a30 * x3 + c.a31 * x3 * y + c.a32 * x3 * y2 + c.a33 * x3 * y3;
-    /// C++: }
+    // C++:            c.a30 * x3 + c.a31 * x3 * y + c.a32 * x3 * y2 + c.a33 * x3 * y3;
+    // C++: }
     let x2 = x * x;
     let x3 = x2 * x;
     let y2 = y * y;
@@ -155,13 +155,13 @@ pub fn bicubic_grid_interpolate(
     // C++:     double neighborhood[4][4];
     // C++:     for (int dy = -1; dy <= 2; ++dy) {
     // C++:         for (int dx = -1; dx <= 2; ++dx) {
-    /// C++:             int sx = std::clamp(xi + dx, 0, width - 1);
-    /// C++:             int sy = std::clamp(yi + dy, 0, height - 1);
-    /// C++:             neighborhood[dy + 1][dx + 1] = grid[sy * width + sx];
-    /// C++:         }
-    /// C++:     }
-    /// C++:
-    /// C++:     // Calculate coefficients and interpolate
+    // C++:             int sx = std::clamp(xi + dx, 0, width - 1);
+    // C++:             int sy = std::clamp(yi + dy, 0, height - 1);
+    // C++:             neighborhood[dy + 1][dx + 1] = grid[sy * width + sx];
+    // C++:         }
+    // C++:     }
+    // C++:
+    // C++:     // Calculate coefficients and interpolate
     /// C++:     BicubicCoeffs c = calculate_bicubic_coeffs(neighborhood);
     /// C++:     double fx = x - xi;
     /// C++:     double fy = y - yi;

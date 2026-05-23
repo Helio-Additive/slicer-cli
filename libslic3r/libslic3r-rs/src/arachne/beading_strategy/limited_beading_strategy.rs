@@ -91,11 +91,11 @@ impl BeadingStrategy for LimitedBeadingStrategy {
         // C++:     {
         // C++:         const coord_t innermost_toolpath_location = ret.toolpath_locations[max_bead_count / 2 - 1];
         // C++:         const coord_t innermost_toolpath_width = ret.bead_widths[max_bead_count / 2 - 1];
-        /// C++:         ret.toolpath_locations.insert(ret.toolpath_locations.begin() + max_bead_count / 2, innermost_toolpath_location + innermost_toolpath_width / 2);
-        /// C++:         ret.bead_widths.insert(ret.bead_widths.begin() + max_bead_count / 2, WallContourMarkedWidth);
-        /// C++:     }
-        /// C++:     return ret;
-        /// C++: }
+        // C++:         ret.toolpath_locations.insert(ret.toolpath_locations.begin() + max_bead_count / 2, innermost_toolpath_location + innermost_toolpath_width / 2);
+        // C++:         ret.bead_widths.insert(ret.bead_widths.begin() + max_bead_count / 2, WallContourMarkedWidth);
+        // C++:     }
+        // C++:     return ret;
+        // C++: }
         if bead_count <= self.max_bead_count {
             let mut ret = self.parent.compute(thickness, bead_count);
             let bead_count = ret.toolpath_locations.len() as Coord;
@@ -175,10 +175,10 @@ impl BeadingStrategy for LimitedBeadingStrategy {
         // C++:
         // C++: //Symmetry on both sides. Symmetry is guaranteed since this code is stopped early if the bead_count <= max_bead_count, and never reaches this point then.
         // C++: const size_t opposite_bead = bead_count - (max_bead_count / 2 - 1);
-        /// C++: innermost_toolpath_location = ret.toolpath_locations[opposite_bead];
-        /// C++: innermost_toolpath_width = ret.bead_widths[opposite_bead];
-        /// C++: ret.toolpath_locations.insert(ret.toolpath_locations.begin() + opposite_bead, innermost_toolpath_location - innermost_toolpath_width / 2);
-        /// C++: ret.bead_widths.insert(ret.bead_widths.begin() + opposite_bead, WallContourMarkedWidth);
+        // C++: innermost_toolpath_location = ret.toolpath_locations[opposite_bead];
+        // C++: innermost_toolpath_width = ret.bead_widths[opposite_bead];
+        // C++: ret.toolpath_locations.insert(ret.toolpath_locations.begin() + opposite_bead, innermost_toolpath_location - innermost_toolpath_width / 2);
+        // C++: ret.bead_widths.insert(ret.bead_widths.begin() + opposite_bead, WallContourMarkedWidth);
         let idx = (self.max_bead_count / 2 - 1) as usize;
         let innermost_toolpath_location = ret.toolpath_locations[idx];
         let innermost_toolpath_width = ret.bead_widths[idx];

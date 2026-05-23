@@ -84,13 +84,13 @@ pub fn segment_polyline(
     // C++:     Vec2d current_direction = (polyline.points[1] - polyline.points[0]).normalized();
     // C++:
     // C++:     for (size_t i = 1; i < polyline.points.size() - 1; ++i) {
-    /// C++:         Vec2d next_direction = (polyline.points[i + 1] - polyline.points[i]).normalized();
-    /// C++:         double angle = std::acos(current_direction.dot(next_direction)) * 180.0 / M_PI;
-    /// C++:
-    /// C++:         if (angle > params.max_angle || i - segment_start >= params.min_segment_length) {
-    /// C++:             // Create segment
-    /// C++:             LineSegment segment;
-    /// C++:             segment.start_index = segment_start;
+    // C++:         Vec2d next_direction = (polyline.points[i + 1] - polyline.points[i]).normalized();
+    // C++:         double angle = std::acos(current_direction.dot(next_direction)) * 180.0 / M_PI;
+    // C++:
+    // C++:         if (angle > params.max_angle || i - segment_start >= params.min_segment_length) {
+    // C++:             // Create segment
+    // C++:             LineSegment segment;
+    // C++:             segment.start_index = segment_start;
     /// C++:             segment.end_index = i;
     /// C++:             segment.direction = current_direction;
     /// C++:             segment.length = calculate_segment_length(polyline, segment_start, i);

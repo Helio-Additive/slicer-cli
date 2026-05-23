@@ -675,13 +675,13 @@ impl PrintObject {
         // C++: m_print->throw_if_canceled();
         // TODO: Port bridge_over_infill()
 
-        /// PrintObject.cpp:725-727
-        /// C++: this->combine_infill();
-        /// C++: m_print->throw_if_canceled();
+        // PrintObject.cpp:725-727
+        // C++: this->combine_infill();
+        // C++: m_print->throw_if_canceled();
         // TODO: Port combine_infill()
 
-        /// PrintObject.cpp:748
-        /// C++: this->set_done(posPrepareInfill);
+        // PrintObject.cpp:748
+        // C++: this->set_done(posPrepareInfill);
         self.set_step_done(PrintObjectStep::PrepareInfill);
         Ok(())
     }
@@ -889,7 +889,7 @@ impl PrintObject {
                         // C++:                 ApplySafetyOffset::Yes),
                         // C++:             offset),
                         // C++:         stBottom);
-                        /// C++: }
+                        // C++: }
                         if interface_shells {
                             let intersection_result =
                                 intersection_surfaces_expolygons(current_slices, lower_lslices);
@@ -1070,7 +1070,7 @@ impl PrintObject {
             // C++:             LayerRegion *layerm = m_layers[idx_layer]->m_regions[region_id];
             // C++:             layerm->slices_to_fill_surfaces_clipped();
             // C++:         }
-            /// C++:     });
+            // C++:     });
             for idx_layer in 0..self.layers.len() {
                 if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(crate::Error::Cancelled);
@@ -1559,12 +1559,12 @@ impl PrintObject {
                         // C++:         for (const Surface& surface : neighbor_layerm->fill_surfaces.surfaces)
                         // C++:             if (surface.is_internal() && !surface.is_bridge())
                         // C++:                 polygons_append(internal, to_polygons(surface.expolygon));
-                        /// C++:         polygons_append(new_internal_solid,
-                        /// C++:             intersection(
-                        /// C++:                 expand(too_narrow, +margin),
-                        /// C++:                 internal));
-                        /// C++:     }
-                        /// C++: }
+                        // C++:         polygons_append(new_internal_solid,
+                        // C++:             intersection(
+                        // C++:                 expand(too_narrow, +margin),
+                        // C++:                 internal));
+                        // C++:     }
+                        // C++: }
                         {
                             let margin = 3.0 * 0.4 * 1000.0; // TODO: Get from layerm->flow(frSolidInfill).scaled_width()
 
@@ -1624,11 +1624,11 @@ impl PrintObject {
                         // C++: polygons_append(polygons_internal, to_polygons(std::move(internal)));
                         // C++: backup.keep_types({ stTop, stBottom, stBottomBridge });
                         // C++: std::vector<SurfacesPtr> top_bottom_groups;
-                        /// C++: backup.group(&top_bottom_groups);
-                        /// C++: for (SurfacesPtr& group : top_bottom_groups)
-                        /// C++:     neighbor_layerm->fill_surfaces.append(
-                        /// C++:         diff_ex(group, polygons_internal),
-                        /// C++:         *group.front());
+                        // C++: backup.group(&top_bottom_groups);
+                        // C++: for (SurfacesPtr& group : top_bottom_groups)
+                        // C++:     neighbor_layerm->fill_surfaces.append(
+                        // C++:         diff_ex(group, polygons_internal),
+                        // C++:         *group.front());
                         // Backup current fill_surfaces
                         let backup = self.layers[n_usize].regions()[region_id]
                             .fill_surfaces

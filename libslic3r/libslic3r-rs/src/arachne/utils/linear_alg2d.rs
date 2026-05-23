@@ -109,7 +109,7 @@ pub fn is_inside_corner(a: Point, b: Point, c: Point, query_point: Point) -> boo
         // C++:     // * A is to the right of B (project_a_perpendicular > 0) and C is below A (project_c_parallel < project_a_parallel), or
         // C++:     // * A is to the left of B (project_a_perpendicular < 0) and C is above A (project_c_parallel > project_a_parallel).
         // C++:     return (project_c_parallel < project_a_parallel) == (project_a_perpendicular > 0.);
-        /// C++: }
+        // C++: }
         let project_a_parallel = ba.x as f64 * bq_x + ba.y as f64 * bq_y;
         let project_c_parallel = bc.x as f64 * bq_x + bc.y as f64 * bq_y;
 

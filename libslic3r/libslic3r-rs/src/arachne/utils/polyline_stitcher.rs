@@ -375,10 +375,10 @@ impl PolylineStitcher {
             // C++:     PathsPointIndex<Paths> ppi_here(&lines, line_idx, 0);
             // C++:     if ( ! canReverse(ppi_here))
             // C++:     {
-            /// C++:         chain.reverse();
-            /// C++:     }
-            /// C++:     result_lines.emplace_back(chain);
-            /// C++: }
+            // C++:         chain.reverse();
+            // C++:     }
+            // C++:     result_lines.emplace_back(chain);
+            // C++: }
             if closest_is_closing_polygon {
                 result_polygons.push(chain);
             } else {

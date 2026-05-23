@@ -679,8 +679,8 @@ pub fn extrude_entity(
     // C++: return this->_extrude(*static_cast<const ExtrusionEntityCollection*>(&entity), description, speed);
     // C++: } else {
     // C++: throw std::runtime_error("Unknown extrusion entity type");
-    /// C++: }
-    /// C++: }
+    // C++: }
+    // C++: }
     match entity {
         // Dispatch to loop handler
         // GCode.cpp:3122-3125
@@ -722,7 +722,7 @@ pub fn extrude_entity(
     // GCode.cpp:3210-3250
     // C++: if (!description.empty()) {
     // C++: gcode += "; " + description + "\n";
-    /// C++: }
+    // C++: }
     Ok(())
 }
 
@@ -910,13 +910,13 @@ pub fn travel_to(point: Point, writer: &mut GCodeWriter, config: &TravelConfig) 
     // GCode.cpp:6447-6465
     // C++: if (needs_retraction) {
     // C++: if (m_config.reduce_crossing_wall && could_be_wipe_disabled && !m_last_scarf_seam_flag)
-    /// C++: m_wipe.reset_path();
-    /// C++: Point last_post_before_retract = this->last_pos();
-    /// C++: gcode += this->retract(false, false, lift_type);
-    /// C++: ...
-    /// C++: } else {
-    /// C++: m_wipe.reset_path();
-    /// C++: }
+    // C++: m_wipe.reset_path();
+    // C++: Point last_post_before_retract = this->last_pos();
+    // C++: gcode += this->retract(false, false, lift_type);
+    // C++: ...
+    // C++: } else {
+    // C++: m_wipe.reset_path();
+    // C++: }
     if needs_retraction {
         retract(writer, false)?;
     }
@@ -1175,12 +1175,12 @@ pub fn wipe(
         // C++: //FIXME one shall not generate the unnecessary G1 Fxxx commands, here wipe_speed is a constant inside this cycle.
         // C++: // Is it here for the cooling markers? Or should it be outside of the cycle?
         // C++: //gcode += gcodegen.writer().set_speed(wipe_speed * 60, "", gcodegen.enable_cooling_markers() ? ";_WIPE" : "");
-        /// C++: gcode += gcodegen.writer().extrude_to_xy(
-        /// C++: gcodegen.point_to_gcode(line.b),
-        /// C++: -dE,
-        /// C++: "wipe and retract"
-        /// C++: );
-        /// C++: }
+        // C++: gcode += gcodegen.writer().extrude_to_xy(
+        // C++: gcodegen.point_to_gcode(line.b),
+        // C++: -dE,
+        // C++: "wipe and retract"
+        // C++: );
+        // C++: }
         for i in 1..wipe_polyline.points.len() {
             let from = wipe_polyline.points[i - 1];
             let to = wipe_polyline.points[i];
@@ -1305,13 +1305,13 @@ pub fn set_extruder(
     // C++: m_writer.add_object_end_labels(gcode);
     // TODO: Implement object change labels for sequential printing
 
-    /// Process filament end G-code if current filament exists
-    /// GCode.cpp:6778-6794
-    /// C++: bool add_change_filament_624 = false;
-    /// C++: if (m_writer.filament() != nullptr) {
-    /// C++: // Process the custom filament_end_gcode. set_extruder() is only called if there is no wipe tower
-    /// C++: // so it should not be injected twice.
-    /// C++: unsigned int old_filament_id = m_writer.filament()->id();
+    // Process filament end G-code if current filament exists
+    // GCode.cpp:6778-6794
+    // C++: bool add_change_filament_624 = false;
+    // C++: if (m_writer.filament() != nullptr) {
+    // C++: // Process the custom filament_end_gcode. set_extruder() is only called if there is no wipe tower
+    // C++: // so it should not be injected twice.
+    // C++: unsigned int old_filament_id = m_writer.filament()->id();
     /// C++: const std::string &filament_end_gcode = m_config.filament_end_gcode.get_at(old_filament_id);
     /// C++: if (! filament_end_gcode.empty()) {
     /// C++: ...
@@ -1364,15 +1364,15 @@ pub fn set_extruder(
     // C++: const std::string &filament_start_gcode = m_config.filament_start_gcode.get_at(new_filament_id);
     // C++: if (! filament_start_gcode.empty()) {
     // C++: // Process the filament_start_gcode for the filament.
-    /// C++: DynamicConfig config;
-    /// C++: ...
-    /// C++: gcode += this->placeholder_parser_process("filament_start_gcode", filament_start_gcode, new_filament_id, &config);
-    /// C++: check_add_eol(gcode);
-    /// C++: }
+    // C++: DynamicConfig config;
+    // C++: ...
+    // C++: gcode += this->placeholder_parser_process("filament_start_gcode", filament_start_gcode, new_filament_id, &config);
+    // C++: check_add_eol(gcode);
+    // C++: }
     // TODO: Process filament_start_gcode custom G-code
 
-    /// Update active extruder state
-    /// GCode.cpp:6949
+    // Update active extruder state
+    // GCode.cpp:6949
     /// C++: return gcode;
     writer.set_extruder(new_extruder_id);
 

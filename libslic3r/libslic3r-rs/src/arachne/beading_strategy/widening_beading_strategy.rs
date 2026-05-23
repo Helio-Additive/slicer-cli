@@ -87,8 +87,8 @@ impl BeadingStrategy for WideningBeadingStrategy {
         // C++:         ret.toolpath_locations.emplace_back(thickness / 2);
         // C++:     } else {
         // C++:         ret.left_over = thickness;
-        /// C++:     }
-        /// C++:     return ret;
+        // C++:     }
+        // C++:     return ret;
         if thickness < self.parent.optimal_width() {
             let mut ret = Beading::default();
             ret.total_thickness = thickness;

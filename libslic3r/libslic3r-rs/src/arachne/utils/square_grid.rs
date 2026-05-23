@@ -213,12 +213,12 @@ impl SquareGrid {
             // C++: {
             // C++:     const int64_t area = int64_t(end.x() - start.x()) * int64_t(nearest_next_y - start.y());
             // C++:     int64_t corresponding_x = int64_t(start.x()) + area / y_diff;
-            /// C++:     x_cell_end = toGridCoord(corresponding_x + ((corresponding_x < 0) && ((area % y_diff) != 0)));
-            /// C++:     if (x_cell_end < start_cell.x())
-            /// C++:     {
-            /// C++:         x_cell_end = x_cell_start;
-            /// C++:     }
-            /// C++: }
+            // C++:     x_cell_end = toGridCoord(corresponding_x + ((corresponding_x < 0) && ((area % y_diff) != 0)));
+            // C++:     if (x_cell_end < start_cell.x())
+            // C++:     {
+            // C++:         x_cell_end = x_cell_start;
+            // C++:     }
+            // C++: }
             let x_cell_end = if y_diff == 0 {
                 end_cell.x()
             } else {
@@ -246,9 +246,9 @@ impl SquareGrid {
             // C++:     }
             // C++:     if (grid_loc == end_cell)
             // C++:     {
-            /// C++:         return true;
-            /// C++:     }
-            /// C++: }
+            // C++:         return true;
+            // C++:     }
+            // C++: }
             for cell_x in x_cell_start..=x_cell_end {
                 let grid_loc = Point::new(cell_x, cell_y);
                 if !process_cell_func(grid_loc) {
