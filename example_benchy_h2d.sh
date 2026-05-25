@@ -14,14 +14,14 @@ echo -e "${BLUE}║  Slicing 3DBenchy with Bambu Lab H2D + PLA Basic         ║
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Paths — everything is relative to this script
+# Paths — everything is relative to this script at the repo root.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$SCRIPT_DIR/build"
+REPO_ROOT="$SCRIPT_DIR"
+BUILD_DIR="$REPO_ROOT/libslic3r/bambustudio/build"
 SLICER="$BUILD_DIR/slicer_cli"
 
 # BambuStudio profiles ship inside the vendored source tree
-PROFILES_DIR="$REPO_ROOT/libslic3r/bambustudio/resources/profiles/BBL"
+PROFILES_DIR="$REPO_ROOT/libslic3r/bambustudio/references/BambuStudio/resources/profiles/BBL"
 
 # Output
 OUTPUT_GCODE="$SCRIPT_DIR/3DBenchy_H2D_PLA.gcode"
@@ -37,9 +37,8 @@ if [ ! -f "$SLICER" ]; then
     echo -e "${RED}Error: slicer_cli not found at $SLICER${NC}"
     echo ""
     echo "Build it first:"
-    echo "  mkdir -p $BUILD_DIR && cd $BUILD_DIR"
-    echo "  cmake .."
-    echo "  make -j\$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
+    echo "  devbox run setup"
+    echo "  devbox run native:build"
     exit 1
 fi
 
@@ -47,8 +46,8 @@ fi
 INPUT_STL=""
 if [ -n "$1" ]; then
     INPUT_STL="$1"
-elif [ -f "$REPO_ROOT/libslic3r/bambustudio/resources/model/3DBenchy.stl" ]; then
-    INPUT_STL="$REPO_ROOT/libslic3r/bambustudio/resources/model/3DBenchy.stl"
+elif [ -f "$REPO_ROOT/libslic3r/bambustudio/references/BambuStudio/resources/model/3DBenchy.stl" ]; then
+    INPUT_STL="$REPO_ROOT/libslic3r/bambustudio/references/BambuStudio/resources/model/3DBenchy.stl"
 fi
 
 if [ -z "$INPUT_STL" ] || [ ! -f "$INPUT_STL" ]; then
@@ -67,7 +66,7 @@ for pair in "Machine:$MACHINE_CONFIG" "Filament:$FILAMENT_CONFIG" "Process:$PROC
         echo "  $path"
         echo ""
         echo "If you don't have BambuStudio resources, copy them into:"
-        echo "  $REPO_ROOT/libslic3r/bambustudio/resources/"
+        echo "  $REPO_ROOT/libslic3r/bambustudio/references/BambuStudio/resources/"
         exit 1
     fi
 done

@@ -49,22 +49,45 @@ behaviour.
 
 ## Build
 
-Dependencies are system packages — see `install_deps.sh`.
+The quickest local path is devbox, which pins the Rust and native package
+versions used by this repo:
 
 ```sh
 git clone --recurse-submodules https://github.com/<org>/slicer-cli.git
 cd slicer-cli
-./install_deps.sh        # installs Homebrew / apt packages
-mkdir -p cli/build && cd cli/build
-cmake ..
-cmake --build . -j
-./slicer_cli --help
+devbox run setup
+devbox run native:build
+cargo test
+cargo run -- --help
 ```
 
-Submodule pin: `references/BambuStudio` is pinned at a known-good commit
-(see `.gitmodules`). Bumping the pin is a deliberate maintenance action —
-it can ripple through the override layer and the patched libigl tree. Test on
-a feature branch first.
+Without devbox, install system dependencies with `./install_deps.sh`, build
+`libslic3r/bambustudio/references/libnoise`, then configure the native engine:
+
+```sh
+cmake -S libslic3r/bambustudio -B libslic3r/bambustudio/build -DCMAKE_BUILD_TYPE=Release
+cmake --build libslic3r/bambustudio/build --parallel
+```
+
+Submodule pin: `libslic3r/bambustudio/references/BambuStudio` is pinned at a
+known-good commit (see `.gitmodules`). Bumping the pin is a deliberate
+maintenance action because it can ripple through the override layer and the
+libigl patch overlay. Test on a feature branch first.
+
+## Example
+
+The Rust wrapper reads one Jsonnet job config, resolves the embedded
+BambuStudio profile imports into one flat slicer config, and passes that config
+plus the STL to the native slicer:
+
+```sh
+devbox run example
+```
+
+The example uses `examples/3DBenchy.stl` and `examples/config.jsonnet`, wrapping
+the same BBL H2D machine, PLA Basic filament, and 0.20mm process profiles used
+by `example_benchy_h2d.sh`. It writes `examples/out/resolved-config.json` and
+`examples/out/3DBenchy_H2D_PLA.gcode`.
 
 ## Releases
 
@@ -75,8 +98,18 @@ Release builds are produced by GitHub Actions (`.github/workflows/`) for:
 - Windows x86_64 (Authenticode-signed)
 
 Each release is a relocatable binary: non-system dylibs are bundled inside
-the package with corrected install names. A clean-host smoke test in CI
-verifies the binary runs on a host with no Homebrew dependencies preinstalled.
+the package with corrected install names. CI extracts the CPack archive and
+runs both packaged executables in a clean environment to verify that macOS
+packages do not depend on Homebrew paths.
+Local release-style packages can be produced with:
+
+```sh
+devbox run package
+```
+
+The package contains `bin/slicer-cli` (the Rust wrapper), `bin/slicer_cli`
+(the native BambuStudio engine), bundled macOS dylibs under `Frameworks/`,
+and Bambu profiles under `resources/profiles/BBL`.
 
 Package metadata identifies the artefact as `slicer_cli` (not `BambuStudio`).
 A CI assertion fails the build if the metadata regresses.

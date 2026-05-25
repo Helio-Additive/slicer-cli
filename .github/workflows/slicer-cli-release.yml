@@ -27,7 +27,7 @@ jobs:
             artifact_name: slicer_cli-linux-x86_64
           - os: Windows-x86_64
             runner: windows-2022
-            artifact_name: slicer_cli-windows-x86_64.exe
+            artifact_name: slicer_cli-windows-x86_64.zip
 
     steps:
       - name: Checkout (with submodules)
@@ -83,17 +83,21 @@ jobs:
       - name: Configure
         if: runner.os != 'Windows'
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S libslic3r/bambustudio -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade"
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -S libslic3r/bambustudio -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="C:\libnoise\install" `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake"
 
       - name: Build
         run: cmake --build build --config Release --parallel
+
+      - name: Build Rust wrapper
+        run: cargo build --release
 
       - name: Assert package metadata
         if: runner.os != 'Windows'
@@ -110,35 +114,61 @@ jobs:
         if: runner.os != 'Windows'
         run: bash tests/test_excluded_features.sh build/slicer_cli
 
-      - name: Bundle (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          bash scripts/bundle-macos.sh build/slicer_cli dist
-          bash scripts/smoke-clean-host.sh dist/slicer_cli
-
-      - name: Package binary + SHA-256
+      - name: Package + SHA-256
         if: runner.os != 'Windows'
         run: |
-          BINARY=build/slicer_cli
-          [ -f dist/slicer_cli ] && BINARY=dist/slicer_cli
           TARBALL="${{ matrix.artifact_name }}.tar.gz"
-          tar czf "$TARBALL" -C "$(dirname "$BINARY")" "$(basename "$BINARY")"
+          cpack --config build/CPackConfig.cmake -G TGZ
+          mv slicer_cli-*.tar.gz "$TARBALL"
           # SHA-256 checksum — slicer-updater expects <binary_name>.sha256
           # containing just the hex digest (no filename suffix).
           shasum -a 256 "$TARBALL" | awk '{print $1}' > "$TARBALL.sha256"
           echo "SHA-256: $(cat "$TARBALL.sha256")"
+          rm -rf verify
+          mkdir -p verify
+          tar -C verify -xzf "$TARBALL"
+          ROOT="$(find verify -maxdepth 1 -type d -name 'slicer_cli-*' | head -1)"
+          test -x "$ROOT/bin/slicer_cli"
+          test -x "$ROOT/bin/slicer-cli"
+          test -d "$ROOT/resources/profiles/BBL/machine"
+          test -d "$ROOT/resources/profiles/BBL/process"
+          test -d "$ROOT/resources/profiles/BBL/filament"
+          env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" "$ROOT/bin/slicer_cli" --help >/dev/null
+          env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" "$ROOT/bin/slicer-cli" --help >/dev/null
 
-      - name: Package binary + SHA-256 (Windows)
+      - name: Package + SHA-256 (Windows)
         if: runner.os == 'Windows'
         run: |
           $b = "build\Release\slicer_cli.exe"
           if (-not (Test-Path $b)) { $b = "build\slicer_cli.exe" }
           $dest = "${{ matrix.artifact_name }}"
-          Copy-Item $b $dest
+          Remove-Item -Recurse -Force package, verify -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force package\slicer-cli\bin, package\slicer-cli\resources\profiles | Out-Null
+          Copy-Item $b package\slicer-cli\bin\slicer_cli.exe
+          Copy-Item target\release\slicer-cli.exe package\slicer-cli\bin\slicer-cli.exe
+          $binDir = Split-Path $b
+          Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination package\slicer-cli\bin\
+          Copy-Item -Recurse libslic3r\bambustudio\references\BambuStudio\resources\profiles\BBL package\slicer-cli\resources\profiles\BBL
+          Copy-Item LICENSE, NOTICE, README.md package\slicer-cli\
+          @{
+            executablePath = "slicer-cli/bin/slicer-cli.exe"
+            nativeExecutablePath = "slicer-cli/bin/slicer_cli.exe"
+            profilesPath = "slicer-cli/resources/profiles/BBL"
+          } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 package\slicer-cli\manifest.json
+          Compress-Archive -Path package\slicer-cli -DestinationPath $dest
           # SHA-256 checksum
           $hash = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
           $hash | Out-File -NoNewline "$dest.sha256"
           Write-Host "SHA-256: $hash"
+          Expand-Archive -Path $dest -DestinationPath verify
+          if (-not (Test-Path verify\slicer-cli\bin\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
+          if (-not (Test-Path verify\slicer-cli\bin\slicer-cli.exe)) { throw "missing slicer-cli.exe" }
+          if (-not (Test-Path verify\slicer-cli\resources\profiles\BBL\machine)) { throw "missing machine profiles" }
+          if (-not (Test-Path verify\slicer-cli\resources\profiles\BBL\process)) { throw "missing process profiles" }
+          if (-not (Test-Path verify\slicer-cli\resources\profiles\BBL\filament)) { throw "missing filament profiles" }
+          & verify\slicer-cli\bin\slicer_cli.exe --help
+          & verify\slicer-cli\bin\slicer-cli.exe --help
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2

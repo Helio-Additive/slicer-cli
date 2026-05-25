@@ -1,4 +1,8 @@
-[submodule "references/BambuStudio"]
-	path = references/BambuStudio
+[submodule "libslic3r/bambustudio/references/BambuStudio"]
+	path = libslic3r/bambustudio/references/BambuStudio
 	url = https://github.com/bambulab/BambuStudio.git
+	shallow = true
+[submodule "libslic3r/bambustudio/references/libnoise"]
+	path = libslic3r/bambustudio/references/libnoise
+	url = https://github.com/bambulab/libnoise.git
 	shallow = true

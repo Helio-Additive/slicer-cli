@@ -19,11 +19,12 @@ The CLA bot will comment on your first PR with instructions.
 Good first contributions:
 - **Bug fixes** in the supported-feature matrix (see `docs/slicer-cli-supported-features.md`)
 - **Dependency updates** — when a system dep (Boost, Eigen, CGAL) releases a
-  new major version, the compat shims in `cli/CMakeLists.txt` may need updating
+  new major version, the compat shims in `libslic3r/bambustudio/CMakeLists.txt`
+  may need updating
 - **Platform CI fixes** — if a release target (Linux arm64, Windows, etc.)
   breaks, a PR that restores it is very welcome
 - **Profile additions / corrections** for printers and filaments under
-  `references/BambuStudio/resources/profiles/` — but note these go upstream to
+  `libslic3r/bambustudio/references/BambuStudio/resources/profiles/` — but note these go upstream to
   BambuStudio first; file there, then bump our submodule pin here
 
 **Not accepted (for now)**:
@@ -45,10 +46,10 @@ The CI matrix is in `.github/workflows/slicer-cli-*.yml`.
 
 ## Style
 
-The reference source (`references/BambuStudio/src/libslic3r/`) is **not
+The reference source (`libslic3r/bambustudio/references/BambuStudio/src/libslic3r/`) is **not
 editable** — it tracks the BambuStudio upstream byte-for-byte. If you need to
 change the behaviour of a reference file, add an override file at the same
 relative path under `libslic3r/bambustudio/libslic3r/`. See the override
-mechanism description in `cli/CMakeLists.txt`.
+mechanism description in `libslic3r/bambustudio/CMakeLists.txt`.
 
 C++17, same conventions as BambuStudio.

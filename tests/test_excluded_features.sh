@@ -6,7 +6,7 @@
 # mis-process. This script runs as part of CI after the build succeeds.
 #
 # Usage:
-#   cli/tests/test_excluded_features.sh [path-to-slicer_cli]
+#   tests/test_excluded_features.sh [path-to-slicer_cli]
 #
 # Defaults to slicer_cli on PATH; set $1 to an explicit binary path.
 #

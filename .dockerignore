@@ -1,0 +1,6 @@
+.devbox/
+.git/
+target/
+libslic3r/bambustudio/build/
+examples/out/
+**/.DS_Store

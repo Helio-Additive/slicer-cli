@@ -1,0 +1,144 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.1/.schema/devbox.schema.json",
+  "packages": {
+    "rustc": "1.94.1",
+    "cargo": "1.94.1",
+    "rustfmt": "1.94.1",
+    "clippy": "1.94.1",
+    "cmake": "3.31.6",
+    "ninja": "1.12.1",
+    "pkg-config": "0.29.2",
+    "git": "2.48.1",
+    "go-jsonnet": "0.20.0",
+    "just": "1.51.0",
+    "boost": {
+      "version": "1.87.0",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "tbb_2022_0": {
+      "version": "2022.0.0",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "eigen": "3.4.0",
+    "libpng": {
+      "version": "1.6.46",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "zlib": {
+      "version": "1.3.1",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "expat": {
+      "version": "2.6.4",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "openssl": {
+      "version": "3.4.1",
+      "outputs": [
+        "bin",
+        "out",
+        "dev"
+      ]
+    },
+    "gmp": {
+      "version": "6.3.0",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "mpfr": {
+      "version": "4.2.2",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "cgal": "6.0.1",
+    "opencv": "4.9.0",
+    "opencascade-occt": "7.8.1",
+    "qhull": "2020.2",
+    "cereal": "1.3.2",
+    "nlopt": "2.10.0",
+    "icu": {
+      "version": "76.1",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "freetype": {
+      "version": "2.13.3",
+      "outputs": [
+        "out",
+        "dev"
+      ]
+    },
+    "fontconfig": {
+      "version": "2.15.0",
+      "outputs": [
+        "bin",
+        "out",
+        "dev",
+        "lib"
+      ]
+    }
+  },
+  "env": {
+    "BAMBUSTUDIO_SLICER": "$PWD/libslic3r/bambustudio/build/slicer_cli",
+    "CMAKE_PREFIX_PATH": "$PWD/libslic3r/bambustudio/build/libnoise-prefix"
+  },
+  "shell": {
+    "init_hook": [
+      "echo 'devbox: devbox run setup | cargo test | devbox run example' > /dev/null"
+    ],
+    "scripts": {
+      "submodules": [
+        "if [ -d .git ]; then git submodule update --init --recursive; else echo 'Skipping submodule update: .git directory not present'; fi"
+      ],
+      "setup": [
+        "if [ -d .git ]; then git submodule update --init --recursive; else echo 'Skipping submodule update: .git directory not present'; fi",
+        "cmake -S libslic3r/bambustudio/references/libnoise -B libslic3r/bambustudio/build/libnoise-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/libslic3r/bambustudio/build/libnoise-prefix -DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+        "cmake --build libslic3r/bambustudio/build/libnoise-build --target install --parallel",
+        "cmake -S libslic3r/bambustudio -B libslic3r/bambustudio/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_PREFIX_PATH=$PWD/libslic3r/bambustudio/build/libnoise-prefix:$DEVBOX_PACKAGES_DIR"
+      ],
+      "libnoise:build": [
+        "cmake -S libslic3r/bambustudio/references/libnoise -B libslic3r/bambustudio/build/libnoise-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/libslic3r/bambustudio/build/libnoise-prefix -DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+        "cmake --build libslic3r/bambustudio/build/libnoise-build --target install --parallel"
+      ],
+      "native:configure": [
+        "cmake -S libslic3r/bambustudio -B libslic3r/bambustudio/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_PREFIX_PATH=$PWD/libslic3r/bambustudio/build/libnoise-prefix:$DEVBOX_PACKAGES_DIR"
+      ],
+      "native:build": [
+        "devbox run setup",
+        "cmake --build libslic3r/bambustudio/build --parallel"
+      ],
+      "package": [
+        "devbox run native:build",
+        "cargo build --release",
+        "cpack --config libslic3r/bambustudio/build/CPackConfig.cmake"
+      ],
+      "test": [
+        "cargo test"
+      ],
+      "example": [
+        "cargo run -- run --config examples/config.jsonnet"
+      ]
+    }
+  }
+}

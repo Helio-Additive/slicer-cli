@@ -9,7 +9,8 @@ standalone `slicer-cli` build, with:
 The intent is to ensure excluded features **fail loudly** rather than
 silently mis-processing. A CI test per row runs on every build.
 
-See `cli/CMakeLists.txt:327-355` for the CMake filter/exclusion statements.
+See `libslic3r/bambustudio/CMakeLists.txt` for the CMake filter/exclusion
+statements.
 
 ---
 
@@ -32,7 +33,7 @@ See `cli/CMakeLists.txt:327-355` for the CMake filter/exclusion statements.
 ### `GCodeSender.cpp`
 **Reason:** Sends gcode to a network printer (octoprint / Bambu network push). Not in scope for a CLI tool that writes to a file.
 **User-visible behaviour:** No `--send-to-printer` flag exists. If a future flag is added that exercises this code path, the linker will surface the missing symbol immediately.
-**Regression test:** `cli/tests/test_excluded_features.sh` — asserts `--send-to-printer` produces an "Unknown argument" error.
+**Regression test:** `tests/test_excluded_features.sh` — asserts `--send-to-printer` produces an "Unknown argument" error.
 
 ---
 
@@ -72,7 +73,10 @@ See `cli/CMakeLists.txt:327-355` for the CMake filter/exclusion statements.
 ---
 
 ### `NSVGUtils.cpp` (reference)
-**Reason:** The reference `NSVGUtils.cpp` is excluded so that `libslic3r/bambustudio/libslic3r/NSVGUtils.cpp` (the override version, which removes the UI-only `wxImage` path) is compiled instead.
+**Reason:** The reference `NSVGUtils.cpp` is excluded from the main source glob
+and then re-added through the override-aware resolver. If an override exists at
+`libslic3r/bambustudio/libslic3r/NSVGUtils.cpp`, that file is compiled;
+otherwise the reference file is used.
 **User-visible behaviour:** n/a.
 **Regression:** Build succeeds; the override file is used.
 
@@ -105,12 +109,12 @@ See `cli/CMakeLists.txt:327-355` for the CMake filter/exclusion statements.
 
 ## Regression test script
 
-`cli/tests/test_excluded_features.sh` — runs on every CI build as a post-build
+`tests/test_excluded_features.sh` — runs on every CI build as a post-build
 check. Requires the built `slicer_cli` binary in the PATH or as `$1`.
 
 ```sh
 #!/usr/bin/env bash
-# See cli/tests/test_excluded_features.sh
+# See tests/test_excluded_features.sh
 ```
 
 The script is the canonical source; this doc lists intent. When adding a new

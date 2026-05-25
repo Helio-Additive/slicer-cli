@@ -1,6 +1,10 @@
 # CMake build outputs
 build/
+target/
+node_modules/
 output/
+examples/out/*.gcode
+examples/out/*.json
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -8,6 +12,7 @@ Makefile
 compile_commands.json
 CPackConfig.cmake
 CPackSourceConfig.cmake
+_CPack_Packages/
 
 # Generated headers (produced by cmake configure_file)
 libslic3r_version.h
@@ -23,3 +28,8 @@ nanosvg_impl.cpp
 
 # macOS
 .DS_Store
+*.log
+
+# Archives
+*.zip
+*.tar.gz

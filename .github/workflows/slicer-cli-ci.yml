@@ -178,7 +178,7 @@ jobs:
             EIGEN3_CMAKE_DIR="$(dirname "$(find /opt/homebrew -name "Eigen3Config.cmake" 2>/dev/null | head -1)" 2>/dev/null)"
             [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
           fi
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S libslic3r/bambustudio -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
             -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
             "${EXTRA[@]}" \
@@ -187,7 +187,7 @@ jobs:
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
-          cmake -S . -B build `
+          cmake -S libslic3r/bambustudio -B build `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
             -DCMAKE_PREFIX_PATH="$env:LIBNOISE_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
@@ -201,11 +201,13 @@ jobs:
         # (~1500 .cpp files) under an hour.
         run: cmake --build build --config Release --parallel 4
 
+      - name: Build Rust wrapper
+        run: cargo build --release
+
       - name: Assert package metadata
         if: runner.os != 'Windows'
         run: |
           cd build
-          METADATA=$(cpack --config CPackConfig.cmake -G TGZ 2>&1 || true)
           # Inspect the cmake-generated CPackConfig for the key fields
           if grep -q "CPACK_PACKAGE_NAME.*slicer_cli" CPackConfig.cmake; then
             echo "PASS: CPACK_PACKAGE_NAME is slicer_cli"
@@ -228,16 +230,6 @@ jobs:
           & $b --help
           if ($LASTEXITCODE -ne 0) { Write-Error "slicer_cli --help failed"; exit 1 }
 
-      - name: Bundle for macOS (arm64 only)
-        if: matrix.os == 'macOS-arm64'
-        # The scripts use `declare -A` (associative arrays) which require bash 4+.
-        # macOS's /bin/bash is 3.2, so invoke Homebrew's bash directly.
-        run: |
-          # Use Homebrew bash 5 (installed via install_deps.sh) for declare -A support.
-          # smoke-clean-host.sh is bash 3.2 compatible; plain bash is fine for it.
-          /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
-          bash scripts/smoke-clean-host.sh dist/slicer_cli
-
       - name: Package engine release asset (macOS arm64)
         if: matrix.os == 'macOS-arm64'
         shell: bash
@@ -250,28 +242,10 @@ jobs:
           fi
           PLATFORM="macos-arm64"
           ASSET="slicer-cli-v${VERSION}-${PLATFORM}.tar.gz"
-          rm -rf dist/package dist/release
-          mkdir -p dist/package/slicer-cli/resources/profiles dist/release
-          BIN="build/slicer_cli"
-          if [[ -x "dist/slicer_cli" ]]; then
-            BIN="dist/slicer_cli"
-          fi
-          cp "$BIN" dist/package/slicer-cli/slicer_cli
-          if [[ -d "dist/Frameworks" ]]; then
-            cp -R dist/Frameworks dist/package/slicer-cli/Frameworks
-          fi
-          cp -R references/BambuStudio/resources/profiles/BBL dist/package/slicer-cli/resources/profiles/BBL
-          cp LICENSE NOTICE README.md dist/package/slicer-cli/
-          cat > dist/package/slicer-cli/manifest.json <<EOF
-          {
-            "version": "${VERSION}",
-            "gitSha": "${GITHUB_SHA}",
-            "platform": "${PLATFORM}",
-            "executablePath": "slicer-cli/slicer_cli",
-            "profilesPath": "slicer-cli/resources/profiles/BBL"
-          }
-          EOF
-          tar -C dist/package -czf "dist/release/${ASSET}" slicer-cli
+          rm -rf dist/release
+          mkdir -p dist/release
+          cpack --config build/CPackConfig.cmake -G TGZ
+          mv slicer_cli-*-Darwin-*.tar.gz "dist/release/${ASSET}"
           HASH="$(shasum -a 256 "dist/release/${ASSET}" | awk '{print $1}')"
           printf '%s  %s\n' "$HASH" "$ASSET" > "dist/release/${ASSET}.sha256"
           cat > "dist/release/engine-platform-${PLATFORM}.json" <<EOF
@@ -279,8 +253,9 @@ jobs:
             "platform": "${PLATFORM}",
             "assetFilename": "${ASSET}",
             "sha256": "${HASH}",
-            "executablePath": "slicer-cli/slicer_cli",
-            "profilesPath": "slicer-cli/resources/profiles/BBL"
+            "executablePath": "bin/slicer-cli",
+            "nativeExecutablePath": "bin/slicer_cli",
+            "profilesPath": "resources/profiles/BBL"
           }
           EOF
 
@@ -293,11 +268,14 @@ jobs:
           rm -rf dist/verify
           mkdir -p dist/verify
           tar -C dist/verify -xzf "$ASSET"
-          test -x dist/verify/slicer-cli/slicer_cli
-          test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
-          test -d dist/verify/slicer-cli/resources/profiles/BBL/process
-          test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
-          dist/verify/slicer-cli/slicer_cli --help >/dev/null
+          ROOT="$(find dist/verify -maxdepth 1 -type d -name 'slicer_cli-*' | head -1)"
+          test -x "$ROOT/bin/slicer_cli"
+          test -x "$ROOT/bin/slicer-cli"
+          test -d "$ROOT/resources/profiles/BBL/machine"
+          test -d "$ROOT/resources/profiles/BBL/process"
+          test -d "$ROOT/resources/profiles/BBL/filament"
+          env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" "$ROOT/bin/slicer_cli" --help >/dev/null
+          env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" "$ROOT/bin/slicer-cli" --help >/dev/null
 
       - name: Package engine release asset (Windows x86_64)
         if: matrix.os == 'Windows-x86_64'
@@ -310,20 +288,22 @@ jobs:
           $platform = "windows-x86_64"
           $asset = "slicer-cli-v$version-$platform.zip"
           Remove-Item -Recurse -Force dist\package, dist\release -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force dist\package\slicer-cli\resources\profiles, dist\release | Out-Null
+          New-Item -ItemType Directory -Force dist\package\slicer-cli\bin, dist\package\slicer-cli\resources\profiles, dist\release | Out-Null
           $bin = "build\Release\slicer_cli.exe"
           if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
-          Copy-Item $bin dist\package\slicer-cli\slicer_cli.exe
+          Copy-Item $bin dist\package\slicer-cli\bin\slicer_cli.exe
+          Copy-Item target\release\slicer-cli.exe dist\package\slicer-cli\bin\slicer-cli.exe
           $binDir = Split-Path $bin
           Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
-            Copy-Item -Destination dist\package\slicer-cli\
-          Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL dist\package\slicer-cli\resources\profiles\BBL
+            Copy-Item -Destination dist\package\slicer-cli\bin\
+          Copy-Item -Recurse libslic3r\bambustudio\references\BambuStudio\resources\profiles\BBL dist\package\slicer-cli\resources\profiles\BBL
           Copy-Item LICENSE, NOTICE, README.md dist\package\slicer-cli\
           @{
             version = $version
             gitSha = $env:GITHUB_SHA
             platform = $platform
-            executablePath = "slicer-cli/slicer_cli.exe"
+            executablePath = "slicer-cli/bin/slicer-cli.exe"
+            nativeExecutablePath = "slicer-cli/bin/slicer_cli.exe"
             profilesPath = "slicer-cli/resources/profiles/BBL"
           } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 dist\package\slicer-cli\manifest.json
           Compress-Archive -Path dist\package\slicer-cli -DestinationPath "dist\release\$asset"
@@ -333,7 +313,8 @@ jobs:
             platform = $platform
             assetFilename = $asset
             sha256 = $hash
-            executablePath = "slicer-cli/slicer_cli.exe"
+            executablePath = "slicer-cli/bin/slicer-cli.exe"
+            nativeExecutablePath = "slicer-cli/bin/slicer_cli.exe"
             profilesPath = "slicer-cli/resources/profiles/BBL"
           } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 "dist\release\engine-platform-$platform.json"
 
@@ -344,11 +325,13 @@ jobs:
           $asset = Get-ChildItem dist\release\slicer-cli-v*-windows-x86_64.zip | Select-Object -First 1
           Remove-Item -Recurse -Force dist\verify -ErrorAction SilentlyContinue
           Expand-Archive -Path $asset.FullName -DestinationPath dist\verify
-          if (-not (Test-Path dist\verify\slicer-cli\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
+          if (-not (Test-Path dist\verify\slicer-cli\bin\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
+          if (-not (Test-Path dist\verify\slicer-cli\bin\slicer-cli.exe)) { throw "missing slicer-cli.exe" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\machine)) { throw "missing machine profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\process)) { throw "missing process profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\filament)) { throw "missing filament profiles" }
-          & dist\verify\slicer-cli\slicer_cli.exe --help
+          & dist\verify\slicer-cli\bin\slicer_cli.exe --help
+          & dist\verify\slicer-cli\bin\slicer-cli.exe --help
 
       - name: Upload artefact (macOS / Linux)
         if: runner.os != 'Windows'

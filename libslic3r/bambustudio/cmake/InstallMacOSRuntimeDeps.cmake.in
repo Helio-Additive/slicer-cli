@@ -1,0 +1,97 @@
+set(_install_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+set(_native_exe "${_install_prefix}/@CMAKE_INSTALL_BINDIR@/@SLICER_CLI_NATIVE_EXE@")
+set(_frameworks "${_install_prefix}/Frameworks")
+
+if(NOT EXISTS "${_native_exe}")
+  message(FATAL_ERROR "Native slicer executable not installed: ${_native_exe}")
+endif()
+
+file(MAKE_DIRECTORY "${_frameworks}")
+
+file(GET_RUNTIME_DEPENDENCIES
+     EXECUTABLES "${_native_exe}"
+     RESOLVED_DEPENDENCIES_VAR _resolved_deps
+     UNRESOLVED_DEPENDENCIES_VAR _unresolved_deps
+     CONFLICTING_DEPENDENCIES_PREFIX _conflicting_deps
+     PRE_EXCLUDE_REGEXES
+       "^/System/"
+       "^/usr/lib/"
+     POST_EXCLUDE_REGEXES
+       "^/System/"
+       "^/usr/lib/")
+
+foreach(_dep IN LISTS _resolved_deps)
+  if(EXISTS "${_dep}" AND NOT _dep MATCHES "^/System/" AND NOT _dep MATCHES "^/usr/lib/")
+    get_filename_component(_dep_name "${_dep}" NAME)
+    file(COPY_FILE "${_dep}" "${_frameworks}/${_dep_name}" ONLY_IF_DIFFERENT)
+  endif()
+endforeach()
+
+# Nix can expose duplicate dylib basenames from different store paths. CMake
+# reports those as conflicts; package the first candidate so CPack can still
+# produce a self-contained tree instead of aborting.
+foreach(_filename IN LISTS _conflicting_deps_FILENAMES)
+  set(_candidates "${_conflicting_deps_${_filename}}")
+  list(GET _candidates 0 _dep)
+  if(EXISTS "${_dep}" AND NOT _dep MATCHES "^/System/" AND NOT _dep MATCHES "^/usr/lib/")
+    message(STATUS "Runtime dependency basename conflict for ${_filename}; packaging ${_dep}")
+    file(COPY_FILE "${_dep}" "${_frameworks}/${_filename}" ONLY_IF_DIFFERENT)
+  endif()
+endforeach()
+
+if(_unresolved_deps)
+  message(WARNING "Unresolved runtime dependencies: ${_unresolved_deps}")
+endif()
+
+function(_rewrite_macho_refs target)
+  if(NOT EXISTS "${target}")
+    return()
+  endif()
+
+  execute_process(
+      COMMAND otool -L "${target}"
+      OUTPUT_VARIABLE _otool_out
+      ERROR_QUIET)
+
+  string(REPLACE "\n" ";" _otool_lines "${_otool_out}")
+  foreach(_line IN LISTS _otool_lines)
+    string(STRIP "${_line}" _line)
+    if(_line MATCHES "^([^ ]+) ")
+      set(_lib "${CMAKE_MATCH_1}")
+      get_filename_component(_lib_name "${_lib}" NAME)
+      if(EXISTS "${_frameworks}/${_lib_name}")
+        execute_process(
+            COMMAND install_name_tool -change "${_lib}" "@executable_path/../Frameworks/${_lib_name}" "${target}"
+            RESULT_VARIABLE _change_result
+            ERROR_QUIET)
+      endif()
+    endif()
+  endforeach()
+
+  execute_process(
+      COMMAND otool -l "${target}"
+      OUTPUT_VARIABLE _load_commands
+      ERROR_QUIET)
+  string(REPLACE "\n" ";" _load_lines "${_load_commands}")
+  foreach(_line IN LISTS _load_lines)
+    string(STRIP "${_line}" _line)
+    if(_line MATCHES "^path (.+) \\(offset [0-9]+\\)$")
+      set(_rpath "${CMAKE_MATCH_1}")
+      if(_rpath MATCHES "/nix/store|/opt/homebrew|/usr/local")
+        execute_process(
+            COMMAND install_name_tool -delete_rpath "${_rpath}" "${target}"
+            ERROR_QUIET)
+      endif()
+    endif()
+  endforeach()
+
+  execute_process(COMMAND codesign --force --sign - "${target}" ERROR_QUIET)
+endfunction()
+
+file(GLOB _packaged_dylibs "${_frameworks}/*.dylib")
+foreach(_dylib IN LISTS _packaged_dylibs)
+  get_filename_component(_dylib_name "${_dylib}" NAME)
+  execute_process(COMMAND install_name_tool -id "@executable_path/../Frameworks/${_dylib_name}" "${_dylib}" ERROR_QUIET)
+  _rewrite_macho_refs("${_dylib}")
+endforeach()
+_rewrite_macho_refs("${_native_exe}")
