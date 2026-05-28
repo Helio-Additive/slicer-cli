@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   discover:
-    name: Check upstream master
+    name: Check latest stable release
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout

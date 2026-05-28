@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JobConfig",
+  "type": "object",
+  "properties": {
+    "callback": true,
+    "config": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ConfigSource"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "input": {
+      "$ref": "#/$defs/JobInput"
+    },
+    "native_binary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "output": {
+      "$ref": "#/$defs/JobOutput"
+    }
+  },
+  "required": [
+    "input",
+    "output"
+  ],
+  "$defs": {
+    "Base64Config": {
+      "type": "object",
+      "properties": {
+        "base64": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "base64"
+      ]
+    },
+    "ConfigSource": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Base64Config"
+        },
+        {
+          "$ref": "#/$defs/FileConfig"
+        },
+        {
+          "$ref": "#/$defs/LocationConfig"
+        },
+        {
+          "$ref": "#/$defs/PathConfig"
+        },
+        {
+          "$ref": "#/$defs/UriConfig"
+        },
+        {
+          "type": "object",
+          "additionalProperties": true
+        }
+      ]
+    },
+    "FileConfig": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file"
+      ]
+    },
+    "JobInput": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "file": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "JobOutput": {
+      "type": "object",
+      "properties": {
+        "callback": true,
+        "file": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gcode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved_config": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Location": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": true
+        }
+      ]
+    },
+    "LocationConfig": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "location"
+      ]
+    },
+    "PathConfig": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ]
+    },
+    "UriConfig": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "uri"
+      ]
+    }
+  }
+}

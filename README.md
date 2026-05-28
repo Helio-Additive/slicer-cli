@@ -47,47 +47,33 @@ Any of these surfacing as a CLI flag returns a clear capability error rather
 than silently mis-processing. A regression test per excluded feature pins the
 behaviour.
 
-## Build
+## How to build and run
 
-The quickest local path is devbox, which pins the Rust and native package
-versions used by this repo:
+> [!IMPORTANT]
+> Before building, please ensure you have first ran `git submodule update --init --recursive`
 
-```sh
-git clone --recurse-submodules https://github.com/<org>/slicer-cli.git
-cd slicer-cli
-devbox run setup
-devbox run native:build
-cargo test
-cargo run -- --help
+We maintain two reliable ways to build this project for different platforms, namely **DevBox** and **Docker**.
+### DevBox
+
+```bash
+just build
+just example devbox
 ```
 
-Without devbox, install system dependencies with `./install_deps.sh`, build
-`libslic3r/bambustudio/references/libnoise`, then configure the native engine:
+### Docker
 
-```sh
-cmake -S libslic3r/bambustudio -B libslic3r/bambustudio/build -DCMAKE_BUILD_TYPE=Release
-cmake --build libslic3r/bambustudio/build --parallel
+```bash
+just image
+just example docker
 ```
 
-Submodule pin: `libslic3r/bambustudio/references/BambuStudio` is pinned at a
-known-good commit (see `.gitmodules`). Bumping the pin is a deliberate
-maintenance action because it can ripple through the override layer and the
-libigl patch overlay. Test on a feature branch first.
+## Tests
 
-## Example
+Tests cover unit tests and integration tests, all of which can be ran with:
 
-The Rust wrapper reads one Jsonnet job config, resolves the embedded
-BambuStudio profile imports into one flat slicer config, and passes that config
-plus the STL to the native slicer:
-
-```sh
-devbox run example
+```bash
+just tests
 ```
-
-The example uses `examples/3DBenchy.stl` and `examples/config.jsonnet`, wrapping
-the same BBL H2D machine, PLA Basic filament, and 0.20mm process profiles used
-by `example_benchy_h2d.sh`. It writes `examples/out/resolved-config.json` and
-`examples/out/3DBenchy_H2D_PLA.gcode`.
 
 ## Releases
 

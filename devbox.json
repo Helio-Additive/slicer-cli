@@ -137,7 +137,7 @@
         "cargo test"
       ],
       "example": [
-        "cargo run -- run --config examples/config.jsonnet"
+        "cargo run -- slice --config examples/config.jsonnet"
       ]
     }
   }

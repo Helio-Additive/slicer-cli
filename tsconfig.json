@@ -8,5 +8,5 @@
     "target": "ES2022",
     "types": ["bun"]
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts", "tests/**/*.ts"]
 }

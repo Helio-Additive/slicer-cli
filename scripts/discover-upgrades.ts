@@ -4,7 +4,6 @@ import { Octokit } from "@octokit/rest";
 
 const upstreamOwner = env("BAMBU_UPSTREAM_OWNER", "bambulab");
 const upstreamRepo = env("BAMBU_UPSTREAM_REPO", "BambuStudio");
-const upstreamBranch = env("BAMBU_UPSTREAM_BRANCH", "master");
 const submodulePath = env(
   "BAMBU_SUBMODULE_PATH",
   "libslic3r/bambustudio/references/BambuStudio",
@@ -16,23 +15,19 @@ const baseBranch = env("BAMBU_UPGRADE_BASE_BRANCH", env("GITHUB_REF_NAME", "main
 const [repoOwner, repoName] = parseRepository(githubRepository);
 const octokit = new Octokit({ auth: token });
 
-const latest = await octokit.repos.getBranch({
-  owner: upstreamOwner,
-  repo: upstreamRepo,
-  branch: upstreamBranch,
-});
-const latestSha = latest.data.commit.sha;
+const latestRelease = await latestStableRelease();
+const latestSha = await releaseTargetSha(latestRelease.tag_name);
 const currentSha = await currentSubmoduleSha(submodulePath);
 
 if (currentSha === latestSha) {
   console.log(
-    `BambuStudio submodule is already up to date at ${shortSha(currentSha)}.`,
+    `BambuStudio submodule is already up to date at stable release ${latestRelease.tag_name} (${shortSha(currentSha)}).`,
   );
   process.exit(0);
 }
 
-const branchName = `bump/bambustudio-${shortSha(latestSha)}`;
-const title = `Bump BambuStudio submodule to ${shortSha(latestSha)}`;
+const branchName = `bump/bambustudio-${safeRefPart(latestRelease.tag_name)}`;
+const title = `Bump BambuStudio submodule to ${latestRelease.tag_name}`;
 
 const existingPr = await findOpenPullRequest(branchName);
 if (existingPr) {
@@ -45,7 +40,7 @@ await configureGit();
 await $`git fetch origin ${baseBranch} --depth=1`;
 await $`git checkout -B ${branchName} FETCH_HEAD`;
 await $`git submodule update --init --recursive -- ${submodulePath}`;
-await $`git -C ${submodulePath} fetch origin ${upstreamBranch} --depth=1`;
+await $`git -C ${submodulePath} fetch origin tag ${latestRelease.tag_name} --depth=1`;
 await $`git -C ${submodulePath} checkout ${latestSha}`;
 await $`git add ${submodulePath}`;
 
@@ -65,8 +60,10 @@ const pr = await octokit.pulls.create({
   head: branchName,
   base: baseBranch,
   body: [
-    `Updates \`${submodulePath}\` to BambuStudio \`${upstreamBranch}\`.`,
+    `Updates \`${submodulePath}\` to the latest stable BambuStudio release.`,
     "",
+    `- Release: ${latestRelease.html_url}`,
+    `- Tag: \`${latestRelease.tag_name}\``,
     `- Previous: ${commitUrl(currentSha)}`,
     `- Latest: ${commitUrl(latestSha)}`,
     issue ? `- Tracking issue: #${issue.number}` : undefined,
@@ -119,6 +116,52 @@ async function currentSubmoduleSha(path: string): Promise<string> {
   return match[1];
 }
 
+async function latestStableRelease() {
+  for await (const response of octokit.paginate.iterator(octokit.repos.listReleases, {
+    owner: upstreamOwner,
+    repo: upstreamRepo,
+    per_page: 100,
+  })) {
+    const release = response.data.find((candidate) => {
+      return !candidate.draft && !candidate.prerelease;
+    });
+    if (release) {
+      return release;
+    }
+  }
+  throw new Error(`no stable releases found for ${upstreamOwner}/${upstreamRepo}`);
+}
+
+async function releaseTargetSha(tag: string): Promise<string> {
+  const ref = await octokit.git.getRef({
+    owner: upstreamOwner,
+    repo: upstreamRepo,
+    ref: `tags/${tag}`,
+  });
+
+  if (ref.data.object.type === "commit") {
+    return ref.data.object.sha;
+  }
+
+  if (ref.data.object.type !== "tag") {
+    throw new Error(`release tag ${tag} points to unsupported object type ${ref.data.object.type}`);
+  }
+
+  const tagObject = await octokit.git.getTag({
+    owner: upstreamOwner,
+    repo: upstreamRepo,
+    tag_sha: ref.data.object.sha,
+  });
+
+  if (tagObject.data.object.type !== "commit") {
+    throw new Error(
+      `annotated release tag ${tag} points to unsupported object type ${tagObject.data.object.type}`,
+    );
+  }
+
+  return tagObject.data.object.sha;
+}
+
 async function configureGit(): Promise<void> {
   await $`git config user.name ${env("BAMBU_UPGRADE_GIT_NAME", "bambustudio-upgrade-bot")}`;
   await $`git config user.email ${env(
@@ -164,8 +207,10 @@ async function ensureIssue(
     repo: repoName,
     title,
     body: [
-      `BambuStudio \`${upstreamBranch}\` has moved ahead of the pinned submodule.`,
+      "A new stable BambuStudio release is available for the pinned submodule.",
       "",
+      `- Release: ${latestRelease.html_url}`,
+      `- Tag: \`${latestRelease.tag_name}\``,
       `- Previous: ${commitUrl(previousSha)}`,
       `- Latest: ${commitUrl(latestSha)}`,
       prUrl ? `- Existing PR: ${prUrl}` : undefined,
@@ -186,6 +231,10 @@ function authenticatedRemoteUrl(): string {
 
 function shortSha(sha: string): string {
   return sha.slice(0, 12);
+}
+
+function safeRefPart(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 async function quiet(command: any): Promise<{ stdout: Buffer }> {

@@ -33,3 +33,11 @@ nanosvg_impl.cpp
 # Archives
 *.zip
 *.tar.gz
+
+# TypeScript test fixtures
+tests/.tmp/
+tests/**/out.gcode
+tests/*.out.gcode
+
+# Misc
+_downloads
