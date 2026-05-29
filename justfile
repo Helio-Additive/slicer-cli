@@ -16,6 +16,16 @@ build: setup
 package: setup
     devbox run package
 
+format:
+    devbox run cargo fmt
+    devbox run bash -eu -o pipefail -c 'git ls-files "*.c" "*.cc" "*.cpp" "*.cxx" "*.h" "*.hh" "*.hpp" "*.hxx" | grep -Ev "^(libslic3r/bambustudio/references/|libslic3r/bambustudio/build/)" | xargs -r clang-format -i'
+    devbox run bash -eu -o pipefail -c 'cargo clippy --all-targets -- -D warnings'
+
+format-check:
+    devbox run cargo fmt -- --check
+    devbox run bash -eu -o pipefail -c 'git ls-files "*.c" "*.cc" "*.cpp" "*.cxx" "*.h" "*.hh" "*.hpp" "*.hxx" | grep -Ev "^(libslic3r/bambustudio/references/|libslic3r/bambustudio/build/)" | xargs -r clang-format --dry-run --Werror'
+    devbox run bash -eu -o pipefail -c 'cargo clippy --all-targets -- -D warnings'
+
 # Run the bundled Benchy example with either the local devbox build or Docker image.
 example target="devbox":
     @case "{{target}}" in \

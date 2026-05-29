@@ -1,0 +1,26 @@
+name: PR
+
+on:
+  pull_request:
+  push:
+    branches: ["main", "dev", "release/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Rust and C++ format
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format just
+          rustup component add rustfmt clippy
+
+      - name: Check formatting and lints
+        run: just format-check

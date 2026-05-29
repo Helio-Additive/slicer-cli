@@ -172,7 +172,7 @@ fn first_location<'a, I>(locations: I, context: &str) -> Result<String, String>
 where
     I: IntoIterator<Item = Option<&'a Location>>,
 {
-    for location in locations.into_iter().flatten() {
+    if let Some(location) = locations.into_iter().flatten().next() {
         return location.as_location_string();
     }
     Err(format!("{context} requires one of: model, file, location"))

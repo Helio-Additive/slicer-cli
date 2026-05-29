@@ -67,6 +67,14 @@ pub fn resolve_config_refs(
     process: &str,
     extra_roots: &[PathBuf],
 ) -> Result<Map<String, Value>, String> {
+    if let (Some(machine), Some(filament), Some(process)) = (
+        existing_profile_path(machine),
+        existing_profile_path(filament),
+        existing_profile_path(process),
+    ) {
+        return resolve_config(&machine, &filament, &process, extra_roots);
+    }
+
     let profile_paths = [machine, filament, process]
         .into_iter()
         .filter_map(existing_profile_path)

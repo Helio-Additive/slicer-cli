@@ -27,8 +27,8 @@
 #include <boost/filesystem.hpp>
 
 #ifdef __APPLE__
-#include <mach-o/dyld.h>   // _NSGetExecutablePath
-#include <climits>         // PATH_MAX
+#include <mach-o/dyld.h> // _NSGetExecutablePath
+#include <climits>       // PATH_MAX
 #endif
 using json = nlohmann::json;
 
@@ -59,11 +59,16 @@ constexpr const char* SLICER_EVENT_PREFIX = "[[SLICER_EVENT]] ";
 const char* slicing_notification_tag(int t) {
     using NT = Slic3r::PrintStateBase::SlicingNotificationType;
     switch (static_cast<NT>(t)) {
-        case NT::SlicingDefaultNotification:    return "SlicingDefaultNotification";
-        case NT::SlicingReplaceInitEmptyLayers: return "SlicingReplaceInitEmptyLayers";
-        case NT::SlicingNeedSupportOn:          return "SlicingNeedSupportOn";
-        case NT::SlicingEmptyGcodeLayers:       return "SlicingEmptyGcodeLayers";
-        case NT::SlicingGcodeOverlap:           return "SlicingGcodeOverlap";
+    case NT::SlicingDefaultNotification:
+        return "SlicingDefaultNotification";
+    case NT::SlicingReplaceInitEmptyLayers:
+        return "SlicingReplaceInitEmptyLayers";
+    case NT::SlicingNeedSupportOn:
+        return "SlicingNeedSupportOn";
+    case NT::SlicingEmptyGcodeLayers:
+        return "SlicingEmptyGcodeLayers";
+    case NT::SlicingGcodeOverlap:
+        return "SlicingGcodeOverlap";
     }
     return "SlicingUnknown";
 }
@@ -74,13 +79,20 @@ const char* warning_level_tag(Slic3r::PrintStateBase::WarningLevel l) {
 
 const char* string_exception_tag(Slic3r::StringExceptionType t) {
     switch (t) {
-        case Slic3r::STRING_EXCEPT_NOT_DEFINED:                   return "STRING_EXCEPT_NOT_DEFINED";
-        case Slic3r::STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE:   return "STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE";
-        case Slic3r::STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP:      return "STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP";
-        case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT: return "STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT";
-        case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT: return "STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT";
-        case Slic3r::STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT:    return "STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT";
-        case Slic3r::STRING_EXCEPT_COUNT:                         return "STRING_EXCEPT_COUNT";
+    case Slic3r::STRING_EXCEPT_NOT_DEFINED:
+        return "STRING_EXCEPT_NOT_DEFINED";
+    case Slic3r::STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE:
+        return "STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE";
+    case Slic3r::STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP:
+        return "STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP";
+    case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT:
+        return "STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT";
+    case Slic3r::STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT:
+        return "STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT";
+    case Slic3r::STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT:
+        return "STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT";
+    case Slic3r::STRING_EXCEPT_COUNT:
+        return "STRING_EXCEPT_COUNT";
     }
     return "STRING_EXCEPT_UNKNOWN";
 }
@@ -95,31 +107,34 @@ void emit_event(const json& payload) {
 
 void emit_status_warning(const Slic3r::PrintBase::SlicingStatus& s) {
     using FB = Slic3r::PrintBase::SlicingStatus::FlagBits;
-    const bool is_warning =
-        (s.flags & (FB::UPDATE_PRINT_STEP_WARNINGS | FB::UPDATE_PRINT_OBJECT_STEP_WARNINGS)) != 0;
-    if (!is_warning) return;
+    const bool is_warning = (s.flags & (FB::UPDATE_PRINT_STEP_WARNINGS | FB::UPDATE_PRINT_OBJECT_STEP_WARNINGS)) != 0;
+    if (!is_warning)
+        return;
     json e;
-    e["event"]    = "warning";
-    e["tag"]      = slicing_notification_tag(static_cast<int>(s.message_type));
-    e["level"]    = warning_level_tag(s.warning_level);
-    e["message"]  = s.text;
-    e["step"]     = s.warning_step;
-    e["scope"]    = (s.flags & FB::UPDATE_PRINT_OBJECT_STEP_WARNINGS) ? "object" : "print";
+    e["event"] = "warning";
+    e["tag"] = slicing_notification_tag(static_cast<int>(s.message_type));
+    e["level"] = warning_level_tag(s.warning_level);
+    e["message"] = s.text;
+    e["step"] = s.warning_step;
+    e["scope"] = (s.flags & FB::UPDATE_PRINT_OBJECT_STEP_WARNINGS) ? "object" : "print";
     emit_event(e);
 }
 
 void emit_validation_event(const Slic3r::StringObjectException& v) {
     json e;
-    e["event"]    = v.is_warning ? "validation_warning" : "validation_error";
-    e["tag"]      = string_exception_tag(v.type);
-    e["message"]  = v.string;
-    if (!v.opt_key.empty()) e["opt_key"] = v.opt_key;
-    if (!v.params.empty())  e["params"]  = v.params;
-    if (!v.hypetext.empty()) e["hypertext"] = v.hypetext;
+    e["event"] = v.is_warning ? "validation_warning" : "validation_error";
+    e["tag"] = string_exception_tag(v.type);
+    e["message"] = v.string;
+    if (!v.opt_key.empty())
+        e["opt_key"] = v.opt_key;
+    if (!v.params.empty())
+        e["params"] = v.params;
+    if (!v.hypetext.empty())
+        e["hypertext"] = v.hypetext;
     emit_event(e);
 }
 
-}  // namespace
+} // namespace
 
 void print_usage(const char* prog_name) {
     std::cout << "Usage: " << prog_name << " [options] <input.stl|input.3mf>\n"
@@ -193,8 +208,7 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 // the auto-grouping path re-solving an already-constrained dual-nozzle setup
 // into a different logical order than BambuStudio desktop.
 // Returns true if it actually derived and applied a cross-nozzle filament_map.
-bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config)
-{
+bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config) {
     // If the plate-level filament_maps were already applied (mode set to "Nozzle Manual"
     // before calling this function), skip re-derivation — the mapping is already correct.
     {
@@ -222,8 +236,7 @@ bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config)
         // filament_map is 1-based.  Map physical nozzle -> 1-based logical extruder
         // index.  physical_extruder_map[logical_idx] gives the physical nozzle for
         // logical extruder logical_idx; we invert that to get physical -> logical.
-        physical_to_logical[physical_extruder_map->values[logical_idx]] =
-            static_cast<int>(logical_idx) + 1;
+        physical_to_logical[physical_extruder_map->values[logical_idx]] = static_cast<int>(logical_idx) + 1;
     }
     if (physical_to_logical.size() < extruder_count)
         return false;
@@ -269,8 +282,7 @@ bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config)
 // This only runs when apply_explicit_nozzle_mapping returned true, meaning the
 // plate had filament_maps="1 1" (auto) but filament_nozzle_map showed a cross-
 // nozzle split.  Explicit plate maps (e.g. "2 1") skip this path entirely.
-void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config)
-{
+void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config) {
     const auto* filament_map = config.option<Slic3r::ConfigOptionInts>("filament_map");
     const auto* physical_extruder_map = config.option<Slic3r::ConfigOptionInts>("physical_extruder_map");
     if (!filament_map || !physical_extruder_map)
@@ -295,7 +307,7 @@ void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::Dynam
     // Find the filament slot (1-based) that maps to the master logical extruder.
     // filament_map[i] is the 1-based logical extruder for filament i.
     int master_extruder_1based = master_logical_idx + 1;
-    int master_filament_slot = -1;  // 1-based filament slot
+    int master_filament_slot = -1; // 1-based filament slot
     for (size_t i = 0; i < filament_map->values.size(); ++i) {
         if (filament_map->values[i] == master_extruder_1based) {
             master_filament_slot = static_cast<int>(i) + 1;
@@ -390,8 +402,8 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
     // This prevents the "filament maps changed" condition at Print.cpp:2670 from triggering
     // the problematic update_values_to_printer_extruders_for_multiple_filaments call
     /// Print.cpp:2670
-    /// C++: if ((m_config.filament_map.values != f_maps) || (m_config.filament_volume_map.values != f_volume_maps) || ...)
-    /// By setting these correctly up front, the condition will be FALSE and skip the hang
+    /// C++: if ((m_config.filament_map.values != f_maps) || (m_config.filament_volume_map.values != f_volume_maps) ||
+    /// ...) By setting these correctly up front, the condition will be FALSE and skip the hang
 
     // For single extruder setup:
     // - filament_map: which extruder each filament uses (1-indexed)
@@ -401,13 +413,13 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
     // Ensure filament_map is exactly what the analysis expects
     auto filament_map_opt = config.option<Slic3r::ConfigOptionInts>("filament_map", true);
     if (filament_map_opt->values.empty() || filament_map_opt->values[0] != 1) {
-        filament_map_opt->values = {1};  // Single filament uses extruder 1
+        filament_map_opt->values = {1}; // Single filament uses extruder 1
     }
 
     // Ensure filament_volume_map matches extruder nozzle types
     auto filament_volume_map_opt = config.option<Slic3r::ConfigOptionInts>("filament_volume_map", true);
     if (filament_volume_map_opt->values.empty() || filament_volume_map_opt->values[0] != 0) {
-        filament_volume_map_opt->values = {0};  // nvtStandard
+        filament_volume_map_opt->values = {0}; // nvtStandard
     }
 
     // Ensure filament_nozzle_map is set (may prevent other code paths)
@@ -432,15 +444,15 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
     // crashes with extruder_nozzle_volume_count=0 / "different nozzle volume processing".
     auto filament_map_2_opt = config.option<Slic3r::ConfigOptionInts>("filament_map_2", true);
     if (filament_map_2_opt->values.empty()) {
-        filament_map_2_opt->values = {0};  // 0-based: extruder 1 is at index 0
+        filament_map_2_opt->values = {0}; // 0-based: extruder 1 is at index 0
     }
 
     // CRITICAL: Initialize print_extruder_variant and print_extruder_id
     // These are needed by get_index_for_extruder when processing filament_map_2
     /// Print.cpp:2707
-    /// C++: m_config.filament_map_2.values[index] = m_ori_full_print_config.get_index_for_extruder(f_maps[index], "print_extruder_id", ...)
-    /// PrintConfig.cpp:7248
-    /// C++: const ConfigOptionInts* id_opt = id_name.empty()?nullptr: dynamic_cast<const ConfigOptionInts*>(this->option(id_name));
+    /// C++: m_config.filament_map_2.values[index] = m_ori_full_print_config.get_index_for_extruder(f_maps[index],
+    /// "print_extruder_id", ...) PrintConfig.cpp:7248 C++: const ConfigOptionInts* id_opt = id_name.empty()?nullptr:
+    /// dynamic_cast<const ConfigOptionInts*>(this->option(id_name));
 
     // print_extruder_variant: matches filament_extruder_variant format
     auto print_extruder_variant_opt = config.option<Slic3r::ConfigOptionStrings>("print_extruder_variant", true);
@@ -510,7 +522,7 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
 
     // Initialize all filament_options_with_variant keys with safe defaults
     // Use correct types: coFloats, coInts, coBools, coPercents
-    init_filament_opt_float("filament_flow_ratio", 1.0);  // coFloats, ratio (1.0 = 100%)
+    init_filament_opt_float("filament_flow_ratio", 1.0); // coFloats, ratio (1.0 = 100%)
     init_filament_opt_float("filament_max_volumetric_speed", 0.0);
     init_filament_opt_float("filament_ramming_volumetric_speed", 0.0);
     init_filament_opt_int("filament_pre_cooling_temperature", 0);
@@ -542,7 +554,8 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
     // These are ConfigOptionBoolsNullable/FloatsNullable in PrintConfig and will crash
     // with SIGSEGV in PerimeterGenerator::is_enable_overhang_speed if empty
     // PerimeterGenerator.cpp:273-276
-    // C++: bool use_filament_overhang_speed = perimeter_generator.print_config->override_process_overhang_speed.get_at(filament_idx);
+    // C++: bool use_filament_overhang_speed =
+    // perimeter_generator.print_config->override_process_overhang_speed.get_at(filament_idx);
     init_filament_opt_bool("override_process_overhang_speed", false);
     init_filament_opt_bool("filament_enable_overhang_speed", false);
     init_filament_opt_bool("filament_adaptive_volumetric_speed", false);
@@ -562,20 +575,16 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
     /// These are required for GCode::_do_export to work properly
     /// If empty, placeholder parser may fail
     if (!config.has("machine_start_gcode") || config.opt_string("machine_start_gcode").empty()) {
-        config.set_key_value("machine_start_gcode", new Slic3r::ConfigOptionString(
-            "; Minimal start G-code\n"
-            "G28 ; home all axes\n"
-            "G1 Z5 F5000 ; lift nozzle\n"
-        ));
+        config.set_key_value("machine_start_gcode", new Slic3r::ConfigOptionString("; Minimal start G-code\n"
+                                                                                   "G28 ; home all axes\n"
+                                                                                   "G1 Z5 F5000 ; lift nozzle\n"));
     }
 
     if (!config.has("machine_end_gcode") || config.opt_string("machine_end_gcode").empty()) {
-        config.set_key_value("machine_end_gcode", new Slic3r::ConfigOptionString(
-            "; Minimal end G-code\n"
-            "G1 E-1 F300 ; retract\n"
-            "G28 X0 Y0 ; home X Y\n"
-            "M84 ; disable motors\n"
-        ));
+        config.set_key_value("machine_end_gcode", new Slic3r::ConfigOptionString("; Minimal end G-code\n"
+                                                                                 "G1 E-1 F300 ; retract\n"
+                                                                                 "G28 X0 Y0 ; home X Y\n"
+                                                                                 "M84 ; disable motors\n"));
     }
 
     // Ensure temperature settings exist (prevent null pointer access)
@@ -596,9 +605,11 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
 void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
     // Helper: Ensure vector config options exist with at least min_size elements
     // This prevents null pointer crashes in multi-extruder code
-    auto ensure_vector_option = [&config](const std::string& key, size_t min_size, const std::string& default_val = "") {
-        auto* opt = config.option(key, true);  // Create if doesn't exist
-        if (!opt) return;
+    auto ensure_vector_option = [&config](const std::string& key, size_t min_size,
+                                          const std::string& default_val = "") {
+        auto* opt = config.option(key, true); // Create if doesn't exist
+        if (!opt)
+            return;
 
         if (auto vec_opt = dynamic_cast<Slic3r::ConfigOptionInts*>(opt)) {
             while (vec_opt->values.size() < min_size) {
@@ -654,13 +665,16 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
     // CRITICAL: extruder_type and nozzle_volume_type must be explicitly initialized
     // update_values_to_printer_extruders_for_multiple_filaments crashes if these don't exist or are empty
     /// PrintConfig.cpp:8114-8115, 8129
-    /// C++: auto opt_extruder_type = dynamic_cast<const ConfigOptionEnumsGeneric*>(printer_config.option("extruder_type"));
-    /// C++: ExtruderType extruder_type = (ExtruderType)(opt_extruder_type->get_at(filament_maps[f_index] - 1));
+    /// C++: auto opt_extruder_type = dynamic_cast<const
+    /// ConfigOptionEnumsGeneric*>(printer_config.option("extruder_type")); C++: ExtruderType extruder_type =
+    /// (ExtruderType)(opt_extruder_type->get_at(filament_maps[f_index] - 1));
     // Explicitly create with default values: etDirectDrive (0) and nvtStandard (0)
-    if (!config.has("extruder_type") || config.option<Slic3r::ConfigOptionEnumsGeneric>("extruder_type")->values.empty()) {
+    if (!config.has("extruder_type") ||
+        config.option<Slic3r::ConfigOptionEnumsGeneric>("extruder_type")->values.empty()) {
         config.set_key_value("extruder_type", new Slic3r::ConfigOptionEnumsGeneric({0})); // etDirectDrive
     }
-    if (!config.has("nozzle_volume_type") || config.option<Slic3r::ConfigOptionEnumsGeneric>("nozzle_volume_type")->values.empty()) {
+    if (!config.has("nozzle_volume_type") ||
+        config.option<Slic3r::ConfigOptionEnumsGeneric>("nozzle_volume_type")->values.empty()) {
         config.set_key_value("nozzle_volume_type", new Slic3r::ConfigOptionEnumsGeneric({0})); // nvtStandard
     }
     // Size per-extruder arrays to match the actual extruder count.
@@ -676,15 +690,16 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
         size_t n_extruders = 1;
         if (auto* nd = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter"))
             n_extruders = std::max(n_extruders, nd->values.size());
-        ensure_vector_option("extruder_type",             n_extruders);
-        ensure_vector_option("nozzle_volume_type",        n_extruders);
+        ensure_vector_option("extruder_type", n_extruders);
+        ensure_vector_option("nozzle_volume_type", n_extruders);
         ensure_vector_option("extruder_max_nozzle_count", n_extruders);
 
         auto* nvt = config.option<Slic3r::ConfigOptionEnumsGeneric>("nozzle_volume_type", true);
         auto* default_nvt = config.option<Slic3r::ConfigOptionEnumsGeneric>("default_nozzle_volume_type", false);
         if (nvt && default_nvt && !default_nvt->values.empty()) {
             for (size_t i = 0; i < n_extruders; ++i) {
-                const int fallback = i < default_nvt->values.size() ? default_nvt->values[i] : default_nvt->values.back();
+                const int fallback =
+                    i < default_nvt->values.size() ? default_nvt->values[i] : default_nvt->values.back();
                 if (i >= nvt->values.size())
                     nvt->values.push_back(fallback);
                 else if (nvt->values[i] == 0)
@@ -694,12 +709,15 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
 
         auto* max_count = config.option<Slic3r::ConfigOptionIntsNullable>("extruder_max_nozzle_count", true);
         auto* stats = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats", true);
-        if (nvt && max_count && stats && (stats->values.size() != n_extruders ||
-                                          std::any_of(stats->values.begin(), stats->values.end(), [](const std::string& s) { return s.empty(); }))) {
+        if (nvt && max_count && stats &&
+            (stats->values.size() != n_extruders ||
+             std::any_of(stats->values.begin(), stats->values.end(), [](const std::string& s) { return s.empty(); }))) {
             std::vector<std::map<Slic3r::NozzleVolumeType, int>> raw_stats(n_extruders);
             for (size_t i = 0; i < n_extruders; ++i) {
-                const int volume_type = i < nvt->values.size() ? nvt->values[i] : int(Slic3r::NozzleVolumeType::nvtStandard);
-                const int nozzle_count = i < max_count->values.size() && max_count->values[i] > 0 ? max_count->values[i] : 1;
+                const int volume_type =
+                    i < nvt->values.size() ? nvt->values[i] : int(Slic3r::NozzleVolumeType::nvtStandard);
+                const int nozzle_count =
+                    i < max_count->values.size() && max_count->values[i] > 0 ? max_count->values[i] : 1;
                 raw_stats[i][Slic3r::NozzleVolumeType(volume_type)] = nozzle_count;
             }
             stats->values = Slic3r::save_extruder_nozzle_stats_to_string(raw_stats);
@@ -713,7 +731,8 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
     // filament_map_2 is a 0-based index — pad with 0, not 1.
     {
         auto* opt = config.option<Slic3r::ConfigOptionInts>("filament_map_2", true);
-        if (opt && opt->values.empty()) opt->values.push_back(0);
+        if (opt && opt->values.empty())
+            opt->values.push_back(0);
     }
     ensure_vector_option("print_extruder_variant", 1, "Direct Drive Standard");
     ensure_vector_option("print_extruder_id", 1);
@@ -788,8 +807,7 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
     {
         auto* fp = config.option<Slic3r::ConfigOptionInts>("filament_printable", true);
         if (!fp || fp->values.empty()) {
-            config.set_key_value("filament_printable",
-                new Slic3r::ConfigOptionInts({std::numeric_limits<int>::max()}));
+            config.set_key_value("filament_printable", new Slic3r::ConfigOptionInts({std::numeric_limits<int>::max()}));
         } else {
             for (auto& v : fp->values)
                 v = std::numeric_limits<int>::max();
@@ -809,7 +827,7 @@ int main(int argc, char** argv) {
     std::string process_config;
     std::string bundle_config;
     bool verbose = false;
-    int plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
+    int plate_id = 0; // 0 = all plates (default); >0 = slice only that plate
 
     // Override settings
     std::map<std::string, std::string> overrides;
@@ -883,17 +901,15 @@ int main(int argc, char** argv) {
         // never touches the read-only /bamboo_model network path.
         model.set_backup_path(boost::filesystem::temp_directory_path().string() + "/slicer_cli_backup");
         bool is_bbl_3mf = false;
-        Slic3r::PlateDataPtrs plate_data;  // hoisted so it is accessible after the 3mf block
+        Slic3r::PlateDataPtrs plate_data; // hoisted so it is accessible after the 3mf block
 
-        if (input_file.find(".stl") != std::string::npos ||
-            input_file.find(".STL") != std::string::npos) {
+        if (input_file.find(".stl") != std::string::npos || input_file.find(".STL") != std::string::npos) {
             bool result = Slic3r::load_stl(input_file.c_str(), &model);
             if (!result) {
                 std::cerr << "Failed to load STL file\n";
                 return 1;
             }
-        } else if (input_file.find(".3mf") != std::string::npos ||
-                   input_file.find(".3MF") != std::string::npos) {
+        } else if (input_file.find(".3mf") != std::string::npos || input_file.find(".3MF") != std::string::npos) {
             Slic3r::ConfigSubstitutionContext config_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
             std::vector<Slic3r::Preset*> presets;
             Slic3r::Semver file_version;
@@ -906,22 +922,14 @@ int main(int argc, char** argv) {
             // LoadStrategy must include LoadModel (parse geometry) and LoadConfig
             // (parse Metadata/project_settings.config).  AddDefaultInstances ensures
             // each object gets at least one instance.
-            auto strategy = Slic3r::LoadStrategy::LoadModel
-                          | Slic3r::LoadStrategy::LoadConfig
-                          | Slic3r::LoadStrategy::AddDefaultInstances;
-            bool result = Slic3r::load_bbs_3mf(
-                input_file.c_str(),
-                &config,
-                &config_subst,
-                &model,
-                &plate_data,
-                &presets,
-                &is_bbl_3mf,
-                &file_version,
-                nullptr,   // proFn (progress callback)
-                strategy,
-                nullptr,   // BBLProject
-                plate_id   // 0 = all plates, >0 = specific plate
+            auto strategy = Slic3r::LoadStrategy::LoadModel | Slic3r::LoadStrategy::LoadConfig |
+                            Slic3r::LoadStrategy::AddDefaultInstances;
+            bool result = Slic3r::load_bbs_3mf(input_file.c_str(), &config, &config_subst, &model, &plate_data,
+                                               &presets, &is_bbl_3mf, &file_version,
+                                               nullptr, // proFn (progress callback)
+                                               strategy,
+                                               nullptr, // BBLProject
+                                               plate_id // 0 = all plates, >0 = specific plate
             );
             if (!result) {
                 std::cerr << "Failed to load 3MF file\n";
@@ -930,8 +938,8 @@ int main(int argc, char** argv) {
 
             // Validate --plate against actual plate count
             if (plate_id > 0 && (int)plate_data.size() < plate_id) {
-                std::cerr << "Error: --plate " << plate_id
-                          << " but 3MF only has " << plate_data.size() << " plate(s)\n";
+                std::cerr << "Error: --plate " << plate_id << " but 3MF only has " << plate_data.size()
+                          << " plate(s)\n";
                 return 1;
             }
 
@@ -976,7 +984,8 @@ int main(int argc, char** argv) {
                                 }
                                 if (plate_json.contains("is_seq_print"))
                                     is_seq_print_plate = plate_json["is_seq_print"].get<bool>();
-                            } catch (...) {}
+                            } catch (...) {
+                            }
                         }
                     }
                     mz_zip_reader_end(&zip);
@@ -986,23 +995,19 @@ int main(int argc, char** argv) {
                 double offset_y = expected_min_y - actual_bbox.min.y();
                 if (std::abs(offset_x) > 1.0 || std::abs(offset_y) > 1.0) {
                     if (verbose)
-                        std::cout << "Plate " << plate_id << " coord translation: ("
-                                  << offset_x << ", " << offset_y << ")\n";
+                        std::cout << "Plate " << plate_id << " coord translation: (" << offset_x << ", " << offset_y
+                                  << ")\n";
                     for (auto* obj : model.objects) {
                         for (auto* inst : obj->instances) {
                             Slic3r::Vec3d off = inst->get_offset();
-                            inst->set_offset(Slic3r::Vec3d(
-                                off.x() + offset_x,
-                                off.y() + offset_y,
-                                off.z()));
+                            inst->set_offset(Slic3r::Vec3d(off.x() + offset_x, off.y() + offset_y, off.z()));
                         }
                     }
                 }
 
                 // Apply sequential print flag from plate metadata
                 if (is_seq_print_plate) {
-                    Slic3r::ConfigSubstitutionContext seq_subst(
-                        Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+                    Slic3r::ConfigSubstitutionContext seq_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
                     config.set_deserialize("print_sequence", "by object", seq_subst);
                     if (verbose)
                         std::cout << "Plate " << plate_id << " uses sequential (by-object) printing\n";
@@ -1027,23 +1032,34 @@ int main(int argc, char** argv) {
                     char pathbuf[PATH_MAX];
                     uint32_t size = sizeof(pathbuf);
                     if (_NSGetExecutablePath(pathbuf, &size) == 0) {
-                        try { exe_dir = boost::filesystem::canonical(pathbuf).parent_path(); } catch (...) {}
+                        try {
+                            exe_dir = boost::filesystem::canonical(pathbuf).parent_path();
+                        } catch (...) {
+                        }
                     }
                 }
 #else
-                try { exe_dir = boost::filesystem::canonical("/proc/self/exe").parent_path(); } catch (...) {}
+                try {
+                    exe_dir = boost::filesystem::canonical("/proc/self/exe").parent_path();
+                } catch (...) {
+                }
 #endif
                 // Final fallback: derive from argv[0]
                 if (exe_dir.empty()) {
-                    try { exe_dir = boost::filesystem::canonical(argv[0]).parent_path(); } catch (...) {}
+                    try {
+                        exe_dir = boost::filesystem::canonical(argv[0]).parent_path();
+                    } catch (...) {
+                    }
                 }
                 boost::filesystem::path profiles_dir;
                 for (const auto& p : std::vector<boost::filesystem::path>{
-                    exe_dir / ".." / "references" / "BambuStudio" / "resources" / "profiles",
-                    exe_dir / ".." / ".." / "libslic3r" / "bambustudio" / "references" / "BambuStudio" / "resources" / "profiles",
-                    exe_dir / ".." / "resources" / "profiles",
-                    boost::filesystem::path("/home/user/slicer/libslic3r/bambustudio/references/BambuStudio/resources/profiles"),
-                }) {
+                         exe_dir / ".." / "references" / "BambuStudio" / "resources" / "profiles",
+                         exe_dir / ".." / ".." / "libslic3r" / "bambustudio" / "references" / "BambuStudio" /
+                             "resources" / "profiles",
+                         exe_dir / ".." / "resources" / "profiles",
+                         boost::filesystem::path(
+                             "/home/user/slicer/libslic3r/bambustudio/references/BambuStudio/resources/profiles"),
+                     }) {
                     if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p)) {
                         profiles_dir = boost::filesystem::canonical(p);
                         break;
@@ -1064,14 +1080,13 @@ int main(int argc, char** argv) {
                         for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
                             auto dst = sysdir / entry.path().filename();
                             if (boost::filesystem::is_directory(entry.path()))
-                                boost::filesystem::create_directory_symlink(
-                                    boost::filesystem::canonical(entry.path()), dst);
+                                boost::filesystem::create_directory_symlink(boost::filesystem::canonical(entry.path()),
+                                                                            dst);
                             else if (entry.path().extension() == ".json")
                                 boost::filesystem::copy_file(entry.path(), dst);
                         }
                         Slic3r::set_data_dir(tmpdir.string());
-                        Slic3r::set_resources_dir(
-                            (profiles_dir / "..").string());
+                        Slic3r::set_resources_dir((profiles_dir / "..").string());
 
                         Slic3r::PresetBundle preset_bundle;
 
@@ -1083,20 +1098,19 @@ int main(int argc, char** argv) {
                             if (dir_entry.path().extension() != ".json")
                                 continue;
                             std::string vname = dir_entry.path().stem().string();
-                            if (vname == "blacklist") continue;
+                            if (vname == "blacklist")
+                                continue;
                             try {
                                 if (first_vendor) {
                                     preset_bundle.load_vendor_configs_from_json(
-                                        sysdir.string(), vname,
-                                        Slic3r::PresetBundle::LoadSystem,
+                                        sysdir.string(), vname, Slic3r::PresetBundle::LoadSystem,
                                         Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
                                     first_vendor = false;
                                 } else {
                                     // load_vendor_configs_from_json without LoadSystem
                                     // won't reset — it appends to existing presets
                                     preset_bundle.load_vendor_configs_from_json(
-                                        sysdir.string(), vname,
-                                        Slic3r::PresetBundle::LoadConfigBundleAttributes(),
+                                        sysdir.string(), vname, Slic3r::PresetBundle::LoadConfigBundleAttributes(),
                                         Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
                                 }
                             } catch (...) {
@@ -1106,35 +1120,33 @@ int main(int argc, char** argv) {
 
                         // Read preset names from the 3MF config
                         std::string printer_name = config.opt_string("printer_settings_id");
-                        std::string print_name   = config.opt_string("print_settings_id");
+                        std::string print_name = config.opt_string("print_settings_id");
                         std::string filament_name;
                         if (auto* fsi = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id"))
                             if (!fsi->values.empty())
                                 filament_name = fsi->values[0];
 
-                        std::cout << "  Preset lookup: printer='" << printer_name
-                                  << "' print='" << print_name
+                        std::cout << "  Preset lookup: printer='" << printer_name << "' print='" << print_name
                                   << "' filament='" << filament_name << "'\n";
 
                         if (!printer_name.empty() && !print_name.empty() && !filament_name.empty()) {
-                            bool ok_printer  = preset_bundle.printers.select_preset_by_name(printer_name, true);
-                            bool ok_print    = preset_bundle.prints.select_preset_by_name(print_name, true);
+                            bool ok_printer = preset_bundle.printers.select_preset_by_name(printer_name, true);
+                            bool ok_print = preset_bundle.prints.select_preset_by_name(print_name, true);
                             bool ok_filament = preset_bundle.filaments.select_preset_by_name(filament_name, true);
 
-                            std::cout << "  Preset match: printer=" << ok_printer
-                                      << " (resolved='" << preset_bundle.printers.get_edited_preset().name << "')"
-                                      << " print=" << ok_print
-                                      << " (resolved='" << preset_bundle.prints.get_edited_preset().name << "')"
-                                      << " filament=" << ok_filament
-                                      << " (resolved='" << preset_bundle.filaments.get_edited_preset().name << "')\n";
+                            std::cout << "  Preset match: printer=" << ok_printer << " (resolved='"
+                                      << preset_bundle.printers.get_edited_preset().name << "')"
+                                      << " print=" << ok_print << " (resolved='"
+                                      << preset_bundle.prints.get_edited_preset().name << "')"
+                                      << " filament=" << ok_filament << " (resolved='"
+                                      << preset_bundle.filaments.get_edited_preset().name << "')\n";
 
                             // Only use PresetBundle config if ALL three presets were found
                             // (not just the default fallbacks)
-                            if (ok_printer && ok_print && ok_filament
-                                && preset_bundle.printers.get_edited_preset().name == printer_name
-                                && preset_bundle.prints.get_edited_preset().name == print_name
-                                && preset_bundle.filaments.get_edited_preset().name == filament_name)
-                            {
+                            if (ok_printer && ok_print && ok_filament &&
+                                preset_bundle.printers.get_edited_preset().name == printer_name &&
+                                preset_bundle.prints.get_edited_preset().name == print_name &&
+                                preset_bundle.filaments.get_edited_preset().name == filament_name) {
                                 // Same flow as BambuStudio desktop:
                                 // full_config() builds defaults → printer → process → filament
                                 // then apply project_settings.config on top.
@@ -1144,9 +1156,8 @@ int main(int argc, char** argv) {
                                 preset_loaded = true;
 
                                 if (verbose)
-                                    std::cout << "  Presets: " << printer_name
-                                              << " / " << print_name
-                                              << " / " << filament_name << "\n";
+                                    std::cout << "  Presets: " << printer_name << " / " << print_name << " / "
+                                              << filament_name << "\n";
                             }
                         }
                     } catch (const std::exception& e) {
@@ -1190,8 +1201,8 @@ int main(int argc, char** argv) {
 
         std::cout << "Model loaded successfully:\n";
         for (const auto* obj : model.objects) {
-            std::cout << "  - " << obj->name << " (" << obj->volumes.size()
-                      << " volumes, " << obj->instances.size() << " instances)\n";
+            std::cout << "  - " << obj->name << " (" << obj->volumes.size() << " volumes, " << obj->instances.size()
+                      << " instances)\n";
         }
 
         // Load config files in order (later ones can override earlier ones)
@@ -1239,10 +1250,10 @@ int main(int argc, char** argv) {
 
             // Keys that must NOT be touched (polygon/group semantics)
             static const std::unordered_set<std::string> skip_pad = {
-                "printable_area",           // bed shape polygon (4+ points)
-                "bed_exclude_area",         // exclusion zones
+                "printable_area",   // bed shape polygon (4+ points)
+                "bed_exclude_area", // exclusion zones
                 "thumbnails",
-                "extruder_printable_area",  // per-extruder bed polygons
+                "extruder_printable_area", // per-extruder bed polygons
             };
 
             // Only pad empty vectors to extruder_count; do NOT truncate.
@@ -1258,28 +1269,30 @@ int main(int argc, char** argv) {
                     continue;
 
                 auto* opt = config.option(key, false);
-                if (!opt) continue;
+                if (!opt)
+                    continue;
 
-#define NORM_VEC(Type, zero_val) \
-                if (auto v = dynamic_cast<Slic3r::Type*>(opt)) { \
-                    if (v->values.empty()) { \
-                        while (v->values.size() < extruder_count) v->values.push_back(zero_val); \
-                    } \
-                } else
-                NORM_VEC(ConfigOptionBoolsNullable,          (unsigned char)0)
-                NORM_VEC(ConfigOptionBools,                  (unsigned char)0)
-                NORM_VEC(ConfigOptionIntsNullable,           0)
-                NORM_VEC(ConfigOptionInts,                   0)
-                NORM_VEC(ConfigOptionFloatsNullable,         0.0)
-                NORM_VEC(ConfigOptionFloats,                 0.0)
-                NORM_VEC(ConfigOptionPercentsNullable,       0.0)
-                NORM_VEC(ConfigOptionPercents,               0.0)
+#define NORM_VEC(Type, zero_val)                                                                                       \
+    if (auto v = dynamic_cast<Slic3r::Type*>(opt)) {                                                                   \
+        if (v->values.empty()) {                                                                                       \
+            while (v->values.size() < extruder_count)                                                                  \
+                v->values.push_back(zero_val);                                                                         \
+        }                                                                                                              \
+    } else
+                NORM_VEC(ConfigOptionBoolsNullable, (unsigned char)0)
+                NORM_VEC(ConfigOptionBools, (unsigned char)0)
+                NORM_VEC(ConfigOptionIntsNullable, 0)
+                NORM_VEC(ConfigOptionInts, 0)
+                NORM_VEC(ConfigOptionFloatsNullable, 0.0)
+                NORM_VEC(ConfigOptionFloats, 0.0)
+                NORM_VEC(ConfigOptionPercentsNullable, 0.0)
+                NORM_VEC(ConfigOptionPercents, 0.0)
                 NORM_VEC(ConfigOptionFloatsOrPercentsNullable, (Slic3r::FloatOrPercent{0.0, false}))
-                NORM_VEC(ConfigOptionFloatsOrPercents,       (Slic3r::FloatOrPercent{0.0, false}))
-                NORM_VEC(ConfigOptionStrings,                std::string{})
-                NORM_VEC(ConfigOptionEnumsGenericNullable,   0)
-                NORM_VEC(ConfigOptionEnumsGeneric,           0)
-                { /* ConfigOptionPoints, ConfigOptionPointsGroups, etc. — leave alone */ }
+                NORM_VEC(ConfigOptionFloatsOrPercents, (Slic3r::FloatOrPercent{0.0, false}))
+                NORM_VEC(ConfigOptionStrings, std::string{})
+                NORM_VEC(ConfigOptionEnumsGenericNullable, 0)
+                NORM_VEC(ConfigOptionEnumsGeneric,
+                         0) { /* ConfigOptionPoints, ConfigOptionPointsGroups, etc. — leave alone */ }
 #undef NORM_VEC
             }
 
@@ -1293,8 +1306,10 @@ int main(int argc, char** argv) {
             // ToolOrdering::get_recommended_filament_maps() uses master_extruder_id-1
             // as an index into nozzle_list, which has extruder_count entries.
             if (auto* mid = config.option<Slic3r::ConfigOptionInt>("master_extruder_id", false)) {
-                if (mid->value < 1) mid->value = 1;
-                if (mid->value > (int)extruder_count) mid->value = (int)extruder_count;
+                if (mid->value < 1)
+                    mid->value = 1;
+                if (mid->value > (int)extruder_count)
+                    mid->value = (int)extruder_count;
             }
         }
 
@@ -1317,18 +1332,19 @@ int main(int argc, char** argv) {
         int plate_data_idx = (plate_id > 0 && (int)plate_data.size() >= plate_id) ? plate_id - 1 : 0;
         if (!plate_data.empty() && plate_data[plate_data_idx] != nullptr) {
             const auto& pm = plate_data[plate_data_idx]->filament_maps;
-            bool has_diverse_values = pm.size() >= 2 &&
-                std::adjacent_find(pm.begin(), pm.end(), std::not_equal_to<int>()) != pm.end();
+            bool has_diverse_values =
+                pm.size() >= 2 && std::adjacent_find(pm.begin(), pm.end(), std::not_equal_to<int>()) != pm.end();
             bool is_manual_mode = false;
             {
-                auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", false);
+                auto* mode_opt =
+                    config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", false);
                 if (mode_opt && mode_opt->value == Slic3r::FilamentMapMode::fmmNozzleManual)
                     is_manual_mode = true;
             }
             bool has_explicit = pm.size() >= 2 && (has_diverse_values || is_manual_mode);
             if (has_explicit) {
                 auto* fm = config.option<Slic3r::ConfigOptionInts>("filament_map", true);
-                fm->values = pm;  // already 1-based per PlateData docs
+                fm->values = pm; // already 1-based per PlateData docs
 
                 // Also sync filament_map_2 (0-based mirror used by some code paths)
                 auto* fm2 = config.option<Slic3r::ConfigOptionInts>("filament_map_2", true);
@@ -1381,11 +1397,11 @@ int main(int argc, char** argv) {
                     auto* fc = config.option<Slic3r::ConfigOptionStrings>("filament_colour", false);
                     auto* fm = config.option<Slic3r::ConfigOptionInts>("filament_map", false);
                     bool all_same_color = fc && !fc->values.empty() &&
-                        std::all_of(fc->values.begin(), fc->values.end(),
-                                    [&](const std::string& c){ return c == fc->values[0]; });
-                    bool all_same_extruder = fm && !fm->values.empty() &&
-                        std::all_of(fm->values.begin(), fm->values.end(),
-                                    [&](int v){ return v == fm->values[0]; });
+                                          std::all_of(fc->values.begin(), fc->values.end(),
+                                                      [&](const std::string& c) { return c == fc->values[0]; });
+                    bool all_same_extruder =
+                        fm && !fm->values.empty() &&
+                        std::all_of(fm->values.begin(), fm->values.end(), [&](int v) { return v == fm->values[0]; });
                     if (all_same_color && all_same_extruder)
                         disable = true;
                 }
@@ -1491,7 +1507,8 @@ int main(int argc, char** argv) {
             try {
                 /// Export G-code with a result object (must not be nullptr — GCode.cpp:1738 dereferences it)
                 /// Print.hpp:848
-                /// C++: std::string export_gcode(const std::string &path, GCodeProcessorResult* result, ThumbnailsGeneratorCallback thumbnail_cb);
+                /// C++: std::string export_gcode(const std::string &path, GCodeProcessorResult* result,
+                /// ThumbnailsGeneratorCallback thumbnail_cb);
                 Slic3r::GCodeProcessorResult gcode_result;
                 print.export_gcode(output_file, &gcode_result, nullptr);
 
@@ -1499,43 +1516,67 @@ int main(int argc, char** argv) {
                 std::cout << "\nOutput file: " << output_file << "\n";
 
             } catch (const Slic3r::RuntimeError& e) {
-                emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
+                emit_event({{"event", "slicing_error"},
+                            {"phase", "export_gcode"},
+                            {"kind", "RuntimeError"},
+                            {"message", std::string(e.what())}});
                 std::cerr << "\n❌ G-code export failed (RuntimeError): " << e.what() << "\n";
                 std::cerr << "\nSlicing succeeded, but export needs additional configuration.\n";
                 return 1;
             } catch (const std::length_error& e) {
-                emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","length_error"},{"message",std::string(e.what())}});
+                emit_event({{"event", "slicing_error"},
+                            {"phase", "export_gcode"},
+                            {"kind", "length_error"},
+                            {"message", std::string(e.what())}});
                 std::cerr << "\n❌ G-code export failed (length_error): " << e.what() << "\n";
                 return 1;
             } catch (const std::exception& e) {
-                emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind",typeid(e).name()},{"message",std::string(e.what())}});
+                emit_event({{"event", "slicing_error"},
+                            {"phase", "export_gcode"},
+                            {"kind", typeid(e).name()},
+                            {"message", std::string(e.what())}});
                 std::cerr << "\n❌ G-code export failed (" << typeid(e).name() << "): " << e.what() << "\n";
                 std::cerr << "\nSlicing succeeded, but export needs additional configuration.\n";
                 return 1;
             } catch (...) {
-                emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","unknown"},{"message","unknown exception"}});
+                emit_event({{"event", "slicing_error"},
+                            {"phase", "export_gcode"},
+                            {"kind", "unknown"},
+                            {"message", "unknown exception"}});
                 std::cerr << "\n❌ G-code export failed (unknown exception)\n";
                 return 1;
             }
 
         } catch (const Slic3r::RuntimeError& e) {
-            emit_event({{"event","slicing_error"},{"phase","process"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
+            emit_event({{"event", "slicing_error"},
+                        {"phase", "process"},
+                        {"kind", "RuntimeError"},
+                        {"message", std::string(e.what())}});
             std::cerr << "Slicing RuntimeError: " << e.what() << "\n";
             std::cerr << "\nThis may indicate missing or incomplete configuration.\n";
             std::cerr << "Try using BambuStudio config files with --machine, --filament, --process\n";
             return 1;
         } catch (const std::length_error& e) {
-            emit_event({{"event","slicing_error"},{"phase","process"},{"kind","length_error"},{"message",std::string(e.what())}});
+            emit_event({{"event", "slicing_error"},
+                        {"phase", "process"},
+                        {"kind", "length_error"},
+                        {"message", std::string(e.what())}});
             std::cerr << "Slicing length_error: " << e.what() << "\n";
             return 1;
         } catch (const std::exception& e) {
-            emit_event({{"event","slicing_error"},{"phase","process"},{"kind",typeid(e).name()},{"message",std::string(e.what())}});
+            emit_event({{"event", "slicing_error"},
+                        {"phase", "process"},
+                        {"kind", typeid(e).name()},
+                        {"message", std::string(e.what())}});
             std::cerr << "Slicing error (" << typeid(e).name() << "): " << e.what() << "\n";
             std::cerr << "\nThis may indicate missing or incomplete configuration.\n";
             std::cerr << "Try using BambuStudio config files with --machine, --filament, --process\n";
             return 1;
         } catch (...) {
-            emit_event({{"event","slicing_error"},{"phase","process"},{"kind","unknown"},{"message","unknown exception"}});
+            emit_event({{"event", "slicing_error"},
+                        {"phase", "process"},
+                        {"kind", "unknown"},
+                        {"message", "unknown exception"}});
             std::cerr << "Slicing error: unknown exception\n";
             return 1;
         }

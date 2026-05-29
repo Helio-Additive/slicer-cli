@@ -27,7 +27,6 @@ bool is_macos_support_boost_add_file_log() {
     return false;
 }
 
-
 // LogSinkBackend implementations - we excluded LogSink.cpp but utils.cpp still references it
 LogSinkBackend::LogSinkBackend(const std::string& base_path, const LogEncOptions& options)
     : boost::log::sinks::text_file_backend(), m_log_enc_options(options) {

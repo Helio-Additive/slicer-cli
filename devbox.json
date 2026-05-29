@@ -5,6 +5,7 @@
     "cargo": "1.94.1",
     "rustfmt": "1.94.1",
     "clippy": "1.94.1",
+    "clang-tools": "21.1.8",
     "cmake": "3.31.6",
     "ninja": "1.12.1",
     "pkg-config": "0.29.2",
