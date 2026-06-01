@@ -115,8 +115,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-v2
-          restore-keys: vcpkg-x64-windows-
+          # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
+          # so the previous cache (OCCT 8.0.0, which fails to compile against the
+          # pinned BambuStudio source) is NOT restored — it would shadow the pin.
+          key: vcpkg-x64-windows-occt793-v1
+          restore-keys: vcpkg-x64-windows-occt793-
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -126,7 +129,20 @@ jobs:
           VCPKG_FEATURE_FLAGS: -compilertracking
           VCPKG_FORCE_SYSTEM_BINARIES: 1
         run: |
-          # vcpkg is pre-installed on GitHub Actions Windows runners
+          # vcpkg is pre-installed on GitHub Actions Windows runners, but it is
+          # UNPINNED — `vcpkg install` resolves each port to whatever the runner
+          # image's vcpkg checkout has at build time. Between 2026-05-07 (last
+          # green `main`) and 2026-06-01 its OpenCASCADE moved 7.9.3 → 8.0.0; the
+          # 8.0 header reorganisation breaks the pinned BambuStudio source
+          # (Format/STEP.cpp + Shape/TextShape.cpp: TDF_LabelSequence /
+          # TColStd_SequenceOfHAsciiString "undeclared identifier"). Pin the
+          # runner's vcpkg to a 2026-05-06 baseline (OCCT 7.9.3) so the build is
+          # reproducible and matches the proven-good toolchain. (macOS uses brew
+          # OCCT and is unaffected.)
+          VCPKG_PIN=de03680510e75aa77d07750159adac4e570a6a81
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin "$VCPKG_PIN"
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach "$VCPKG_PIN"
+          "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
