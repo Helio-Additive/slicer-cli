@@ -2,7 +2,7 @@ name: slicer-cli CI
 
 on:
   push:
-    branches: ["main", "dev", "release/**"]
+    branches: ["main", "dev", "release/**", "feat/orca-engine"]  # TODO: drop feat branch before merge to main
     tags:
       - "v*"
       - "slicer-cli/v*"
