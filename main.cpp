@@ -114,7 +114,10 @@ void emit_validation_event(const Slic3r::StringObjectException& v) {
     e["message"]  = v.string;
     if (!v.opt_key.empty()) e["opt_key"] = v.opt_key;
     if (!v.params.empty())  e["params"]  = v.params;
+#ifdef ENGINE_BAMBU
+    // `hypetext` (sic) is a BambuStudio-only field on StringObjectException.
     if (!v.hypetext.empty()) e["hypertext"] = v.hypetext;
+#endif
     emit_event(e);
 }
 
@@ -240,6 +243,14 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 // the auto-grouping path re-solving an already-constrained dual-nozzle setup
 // into a different logical order than BambuStudio desktop.
 // Returns true if it actually derived and applied a cross-nozzle filament_map.
+#ifdef ENGINE_BAMBU
+// ── BBS-only config-normalization helpers ───────────────────────────────────
+// These four helpers (apply_explicit_nozzle_mapping, reassign_objects_to_master_
+// nozzle, set_default_config, ensure_vector_config_sizes) exist solely to coax
+// the Bambu engine into accepting a non-Bambu printer config. Their bodies use
+// Bambu-only config keys/enums (e.g. fmmNozzleManual, filament_extruder_variant),
+// so they are compiled only for ENGINE_BAMBU and called only from the gated
+// front-end blocks in main(). OrcaSlicer needs none of them.
 bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config)
 {
     // If the plate-level filament_maps were already applied (mode set to "Nozzle Manual"
@@ -815,6 +826,7 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
         }
     }
 }
+#endif // ENGINE_BAMBU — BBS-only config-normalization helpers
 
 int main(int argc, char** argv) {
     // Initialize libslic3r
@@ -892,8 +904,17 @@ int main(int argc, char** argv) {
         std::cout << "\nConfiguring print settings...\n";
         Slic3r::DynamicPrintConfig config;
 
-        // Start with BambuStudio's full defaults (ensures all keys exist with correct types)
+#ifdef ENGINE_BAMBU
+        // Start with BambuStudio's full defaults (ensures all keys exist with correct
+        // types) PLUS the BBS-specific extruder-variant normalization that coaxes the
+        // Bambu engine into accepting a non-Bambu (e.g. Snapmaker U1) printer config.
         set_default_config(config);
+#else
+        // OrcaSlicer handles non-Bambu printers (U1/Prusa/Voron/…) natively, so none of
+        // the BBS variant-array normalization is needed.  Just seed every key with the
+        // engine's defaults; load_bbs_3mf (next) overlays the 3MF's project_settings.config.
+        config.apply(Slic3r::FullPrintConfig::defaults(), true);
+#endif
 
         // Load model
         std::cout << "Loading model: " << input_file << "\n";
@@ -928,6 +949,26 @@ int main(int argc, char** argv) {
             auto strategy = Slic3r::LoadStrategy::LoadModel
                           | Slic3r::LoadStrategy::LoadConfig
                           | Slic3r::LoadStrategy::AddDefaultInstances;
+#ifdef ENGINE_ORCA
+            // OrcaSlicer's load_bbs_3mf inserts a bool* is_orca_3mf between is_bbl_3mf
+            // and file_version (and drops the two trailing Bambu-only params).
+            bool is_orca_3mf = false;
+            bool result = Slic3r::load_bbs_3mf(
+                input_file.c_str(),
+                &config,
+                &config_subst,
+                &model,
+                &plate_data,
+                &presets,
+                &is_bbl_3mf,
+                &is_orca_3mf,
+                &file_version,
+                nullptr,   // proFn (progress callback)
+                strategy,
+                nullptr,   // BBLProject
+                plate_id   // 0 = all plates, >0 = specific plate
+            );
+#else
             bool result = Slic3r::load_bbs_3mf(
                 input_file.c_str(),
                 &config,
@@ -942,6 +983,7 @@ int main(int argc, char** argv) {
                 nullptr,   // BBLProject
                 plate_id   // 0 = all plates, >0 = specific plate
             );
+#endif
             if (!result) {
                 std::cerr << "Failed to load 3MF file\n";
                 return 1;
@@ -1028,6 +1070,7 @@ int main(int argc, char** argv) {
                 }
             }
 
+#ifdef ENGINE_BAMBU
             // ── Rebuild config via PresetBundle ──────────────────────────
             // The 3MF's project_settings.config is a merged flat file with
             // multi-element arrays from the printer profile's variant support.
@@ -1183,6 +1226,8 @@ int main(int argc, char** argv) {
                         std::cout << "  profiles_dir: <not found>\n";
                 }
             }
+#endif // ENGINE_BAMBU — PresetBundle preset-resolution + staging symlinks.
+       // OrcaSlicer slices directly from the flat 3MF project_settings.config.
         } else {
             std::cerr << "Unsupported file format. Use .stl or .3mf\n";
             return 1;
@@ -1237,6 +1282,14 @@ int main(int argc, char** argv) {
             }
         }
 
+#ifdef ENGINE_BAMBU
+        // ── BBS toolchanger / per-extruder normalizations ───────────────────
+        // Everything from here to the matching #endif exists to make the Bambu
+        // engine accept a non-Bambu printer config (vector-array padding/collapse,
+        // explicit nozzle-map derivation, master-nozzle reassignment, prime-tower
+        // disable heuristics).  OrcaSlicer handles all of this natively, so the
+        // Orca driver skips the whole region and slices from the flat 3MF config.
+        //
         // Pad empty vector config options and preserve 3MF multi-element values.
         //
         // The 3MF project_settings.config contains per-extruder arrays from the
@@ -1410,6 +1463,18 @@ int main(int argc, char** argv) {
                     ept->value = false;
             }
         }
+#endif // ENGINE_BAMBU — BBS toolchanger / per-extruder normalizations
+
+#ifdef ENGINE_ORCA
+        // Toolchanger filament-map (U1/Prusa-XL class): the flat 3MF stores
+        // filament_map_mode="Auto For Flush" with a placeholder filament_map. With
+        // is_BBL_printer() initialized deterministically (see below, next to print
+        // construction) the engine's native Auto-For-Flush resolution computes the
+        // per-filament→tool map from the per-volume extruders we already load, matching
+        // golden B — so no driver-side filament_map injection is needed here. Model
+        // per-extruder static tables (setExtruderParams/setPrintSpeedTable) are still set
+        // after apply(), exactly as Orca's own headless CLI does.
+#endif // ENGINE_ORCA
 
         // Apply command-line overrides
         for (const auto& [key, value] : overrides) {
@@ -1457,8 +1522,28 @@ int main(int argc, char** argv) {
         // Enable BBL printer features (M981 spaghetti detector, M1003 powerlost
         // recovery, etc.) when the 3MF was generated by BambuStudio.
         // Matches BackgroundSlicingProcess.cpp:199.
+#ifdef ENGINE_BAMBU
+        // set_BBL_Printer is a BambuStudio-only Print method (enables M981/M1003
+        // BBL printer features).  OrcaSlicer's Print has no such method.
         if (is_bbl_3mf)
             print.set_BBL_Printer(true);
+#endif
+#ifdef ENGINE_ORCA
+        // Orca's Print::m_isBBLPrinter (Print.hpp:1143) has NO default initializer and
+        // no set_BBL_Printer() method. Left uninitialized it is read with an
+        // indeterminate value (UB) across the slice/export phases — driving both the
+        // wipe_tower_type() Type1/Type2 choice (Print.hpp:1072), the GCode dialect
+        // (GCode.cpp:2046), and the ;Z_HEIGHT vs ;Z: comment (GCode.cpp:4486). The
+        // inconsistent reads make process()'s wipe-tower tool ordering disagree with the
+        // sequence read at export → "append_tcr ... toolchange it didn't expect".
+        // Mirror OrcaSlicer's own headless CLI (OrcaSlicer.cpp:5972-5986): the flag is
+        // true iff the printer_model preset begins with "Bambu Lab" — false for the
+        // Snapmaker U1, which selects Type2 + the Orca/Prusa-style gcode dialect (golden B).
+        {
+            const std::string pm = config.opt_string("printer_model", true);
+            print.is_BBL_printer() = (pm.rfind("Bambu Lab", 0) == 0);
+        }
+#endif
 
         /// Set plate origin to (0,0,0) for standalone mode
         /// Print.hpp:986
@@ -1474,6 +1559,22 @@ int main(int argc, char** argv) {
             // stream as slicing-time warnings. Pure stdout side-effect — does
             // not change print state, exit codes, or G-code output.
             print.set_status_callback(emit_status_warning);
+
+#ifdef ENGINE_ORCA
+            // Orca's headless CLI (OrcaSlicer.cpp ~6065) populates these static Model maps
+            // between apply() and process(); our driver must too, or slicing uses empty
+            // extruder/speed tables (affects brim, speed and — per the wipe-tower export
+            // assertion — tool-ordering construction).
+            {
+                int filament_count = 1;
+                if (auto* fc = config.option<Slic3r::ConfigOptionStrings>("filament_colour", false))
+                    filament_count = std::max<int>(1, (int)fc->values.size());
+                Slic3r::Model::setExtruderParams(config, filament_count);
+                Slic3r::Model::setPrintSpeedTable(config, print.config());
+                std::cout << "  [orca] setExtruderParams/setPrintSpeedTable (filaments="
+                          << filament_count << ")\n";
+            }
+#endif
 
             std::cout << "Validating...\n";
             // Option C — pass a warning out-pointer so BBS routes is_warning-

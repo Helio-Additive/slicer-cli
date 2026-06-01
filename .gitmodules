@@ -2,3 +2,7 @@
 	path = references/BambuStudio
 	url = https://github.com/bambulab/BambuStudio.git
 	shallow = true
+[submodule "references/OrcaSlicer"]
+	path = references/OrcaSlicer
+	url = https://github.com/SoftFever/OrcaSlicer.git
+	shallow = true
