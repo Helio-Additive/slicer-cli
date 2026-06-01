@@ -355,6 +355,10 @@ jobs:
             if [ -d "$d/Frameworks" ]; then mkdir -p "$P/Frameworks"; cp -R "$d/Frameworks/." "$P/Frameworks/"; fi
           done
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
+          # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
+          # slice-resolvable by name via the orca engine. The browse listing is
+          # gated server-side to Snapmaker by default (orca_browse_vendors).
+          cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
           cat > "$P/manifest.json" <<EOF
           {
@@ -363,6 +367,7 @@ jobs:
             "platform": "${PLATFORM}",
             "executablePath": "slicer-cli/slicer_cli",
             "profilesPath": "slicer-cli/resources/profiles/BBL",
+            "orcaProfilesPath": "slicer-cli/resources/profiles-orca",
             "engines": [
               { "engine": "bambustudio", "path": "slicer-cli/slicer_cli" },
               { "engine": "orcaslicer",  "path": "slicer-cli/slicer_cli-orcaslicer" }
@@ -381,7 +386,7 @@ jobs:
             "profilesPath": "slicer-cli/resources/profiles/BBL"
           }
           EOF
-          # Validate: BOTH engine binaries run; BBL profiles present.
+          # Validate: BOTH engine binaries run; BBL + Orca profiles present.
           rm -rf dist/verify; mkdir -p dist/verify
           tar -C dist/verify -xzf "dist/release/${ASSET}"
           test -x dist/verify/slicer-cli/slicer_cli
@@ -389,6 +394,9 @@ jobs:
           test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
           test -d dist/verify/slicer-cli/resources/profiles/BBL/process
           test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/machine
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/process
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/filament
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
 
@@ -409,11 +417,16 @@ jobs:
           Get-ChildItem engine-bambu, engine-orca -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination "$P\" -Force
           Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL "$P\resources\profiles\BBL"
+          # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
+          # slice-resolvable by name via the orca engine. Browse listing is
+          # gated server-side to Snapmaker by default (orca_browse_vendors).
+          Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
           Copy-Item LICENSE, NOTICE, README.md "$P\"
           @{
             version = $version; gitSha = $env:GITHUB_SHA; platform = $platform
             executablePath = "slicer-cli/slicer_cli.exe"
             profilesPath = "slicer-cli/resources/profiles/BBL"
+            orcaProfilesPath = "slicer-cli/resources/profiles-orca"
             engines = @(
               @{ engine = "bambustudio"; path = "slicer-cli/slicer_cli.exe" },
               @{ engine = "orcaslicer";  path = "slicer-cli/slicer_cli-orcaslicer.exe" }
@@ -427,7 +440,7 @@ jobs:
             executablePath = "slicer-cli/slicer_cli.exe"
             profilesPath = "slicer-cli/resources/profiles/BBL"
           } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 "dist\release\engine-platform-$platform.json"
-          # Validate: BOTH engine binaries run; BBL profiles present.
+          # Validate: BOTH engine binaries run; BBL + Orca profiles present.
           Remove-Item -Recurse -Force dist\verify -ErrorAction SilentlyContinue
           Expand-Archive -Path "dist\release\$asset" -DestinationPath dist\verify
           if (-not (Test-Path dist\verify\slicer-cli\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
@@ -435,6 +448,9 @@ jobs:
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\machine)) { throw "missing machine profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\process)) { throw "missing process profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\filament)) { throw "missing filament profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\machine)) { throw "missing orca Snapmaker machine profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\process)) { throw "missing orca Snapmaker process profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\filament)) { throw "missing orca Snapmaker filament profiles" }
           & dist\verify\slicer-cli\slicer_cli.exe --help
           & dist\verify\slicer-cli\slicer_cli-orcaslicer.exe --help
 
