@@ -4,7 +4,11 @@
 
 #include <string>
 #include <functional>
+#ifdef ENGINE_BAMBU
+// LogSink is a BambuStudio-only facility (encrypted remote logging). OrcaSlicer
+// has no LogSink.hpp / LogSink.cpp, and nothing in its libslic3r references it.
 #include "libslic3r/LogSink.hpp"
+#endif
 
 namespace Slic3r {
 
@@ -28,7 +32,20 @@ bool is_macos_support_boost_add_file_log() {
 }
 
 
+#ifdef ENGINE_ORCA
+// Format/DRC.cpp (Google-Draco .drc reader) is excluded from the Orca build to
+// avoid the external draco dependency, but Model.cpp's read_from_file references
+// load_drc(). The .3mf→gcode path never loads a .drc, so stub both overloads.
+// Pointer parameters only need forward declarations (we're already in namespace Slic3r).
+class TriangleMesh;
+class Model;
+bool load_drc(const char* /*path*/, TriangleMesh* /*meshptr*/) { return false; }
+bool load_drc(const char* /*path*/, Model* /*model*/, const char* /*object_name*/) { return false; }
+#endif // ENGINE_ORCA
+
+#ifdef ENGINE_BAMBU
 // LogSinkBackend implementations - we excluded LogSink.cpp but utils.cpp still references it
+// (BambuStudio only — OrcaSlicer has no LogSink).
 LogSinkBackend::LogSinkBackend(const std::string& base_path, const LogEncOptions& options)
     : boost::log::sinks::text_file_backend(), m_log_enc_options(options) {
     // Minimal initialization - no encryption in standalone
@@ -43,5 +60,6 @@ void LogSinkBackend::consume(const boost::log::record_view& rec, const std::stri
     // In standalone, just write to the base text_file_backend without encryption
     boost::log::sinks::text_file_backend::consume(rec, formatted_message);
 }
+#endif // ENGINE_BAMBU
 
 } // namespace Slic3r

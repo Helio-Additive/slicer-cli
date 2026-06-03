@@ -25,11 +25,16 @@ permissions:
 
 jobs:
   build:
-    name: Build & Test — ${{ matrix.os }}
+    name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        # Engine is a compile-time choice (-DENGINE=bambu|orca → mutually-exclusive
+        # #ifdef paths against two libslic3r forks). Build both; the package job
+        # fans them into one package and the app routes per printer at slice time.
+        engine: [bambu, orca]
+        os: [macOS-arm64, Windows-x86_64]
         include:
           - os: macOS-arm64
             runner: macos-14          # Apple Silicon — primary dev target
@@ -96,7 +101,7 @@ jobs:
             libocct-modeling-algorithms-dev libocct-data-exchange-dev \
             libocct-foundation-dev libocct-draw-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
-            libnlopt-dev libicu-dev
+            libnlopt-dev libicu-dev libjpeg-dev
           # libnoise — Bambu's fork, not in apt
           git clone --depth=1 https://github.com/bambulab/libnoise.git /tmp/libnoise
           cmake -S /tmp/libnoise -B /tmp/libnoise/build \
@@ -110,8 +115,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-v2
-          restore-keys: vcpkg-x64-windows-
+          # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
+          # so the previous cache (OCCT 8.0.0, which fails to compile against the
+          # pinned BambuStudio source) is NOT restored — it would shadow the pin.
+          key: vcpkg-x64-windows-occt793-v1
+          restore-keys: vcpkg-x64-windows-occt793-
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -121,7 +129,20 @@ jobs:
           VCPKG_FEATURE_FLAGS: -compilertracking
           VCPKG_FORCE_SYSTEM_BINARIES: 1
         run: |
-          # vcpkg is pre-installed on GitHub Actions Windows runners
+          # vcpkg is pre-installed on GitHub Actions Windows runners, but it is
+          # UNPINNED — `vcpkg install` resolves each port to whatever the runner
+          # image's vcpkg checkout has at build time. Between 2026-05-07 (last
+          # green `main`) and 2026-06-01 its OpenCASCADE moved 7.9.3 → 8.0.0; the
+          # 8.0 header reorganisation breaks the pinned BambuStudio source
+          # (Format/STEP.cpp + Shape/TextShape.cpp: TDF_LabelSequence /
+          # TColStd_SequenceOfHAsciiString "undeclared identifier"). Pin the
+          # runner's vcpkg to a 2026-05-06 baseline (OCCT 7.9.3) so the build is
+          # reproducible and matches the proven-good toolchain. (macOS uses brew
+          # OCCT and is unaffected.)
+          VCPKG_PIN=de03680510e75aa77d07750159adac4e570a6a81
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin "$VCPKG_PIN"
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach "$VCPKG_PIN"
+          "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
@@ -131,7 +152,7 @@ jobs:
             cgal:x64-windows "opencv[core]:x64-windows" opencascade:x64-windows \
             qhull:x64-windows cereal:x64-windows nlopt:x64-windows \
             openssl:x64-windows libpng:x64-windows zlib:x64-windows \
-            expat:x64-windows freetype:x64-windows
+            expat:x64-windows freetype:x64-windows libjpeg-turbo:x64-windows
           # libnoise (Bambu fork) — not in vcpkg, build from source.
           # Previous run failed at install with "cmake_install.cmake:39 file
           # cannot create directory: D:/a/_temp/libnoise/INSTALL/lib" despite
@@ -179,6 +200,7 @@ jobs:
             [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DENGINE=${{ matrix.engine }} \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
             -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
             "${EXTRA[@]}" \
@@ -188,6 +210,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cmake -S . -B build `
+            -DENGINE=${{ matrix.engine }} `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
             -DCMAKE_PREFIX_PATH="$env:LIBNOISE_ROOT" `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
@@ -202,7 +225,7 @@ jobs:
         run: cmake --build build --config Release --parallel 4
 
       - name: Assert package metadata
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: |
           cd build
           METADATA=$(cpack --config CPackConfig.cmake -G TGZ 2>&1 || true)
@@ -215,9 +238,15 @@ jobs:
             exit 1
           fi
 
-      - name: Run feature-exclusion regression tests
-        if: runner.os != 'Windows'
+      - name: Run feature-exclusion regression tests (bambu)
+        # BambuStudio-specific excluded-source set; orca's differs, so this gates
+        # the bambu engine only. Orca gets a plain --help smoke below.
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_excluded_features.sh build/slicer_cli
+
+      - name: Smoke --help (orca, macOS/Linux)
+        if: runner.os != 'Windows' && matrix.engine == 'orca'
+        run: build/slicer_cli --help
 
       - name: Run feature-exclusion regression tests (Windows)
         if: runner.os == 'Windows'
@@ -238,37 +267,127 @@ jobs:
           /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
           bash scripts/smoke-clean-host.sh dist/slicer_cli
 
-      - name: Package engine release asset (macOS arm64)
+      # Stage this engine's binary under the in-package filename convention used by
+      # the app + slicer-updater: default engine = plain slicer_cli[.exe]; others are
+      # slicer_cli-<engine-key>[.exe]. Keys match slicer.engine (bambu→plain
+      # =bambustudio, orca→slicer_cli-orcaslicer). The package job fans both engines in.
+      - name: Stage engine binary (macOS / Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="build/slicer_cli"
+          [ -x "dist/slicer_cli" ] && BIN="dist/slicer_cli"
+          mkdir -p staged
+          if [ "${{ matrix.engine }}" = "bambu" ]; then
+            cp "$BIN" staged/slicer_cli
+          else
+            cp "$BIN" staged/slicer_cli-orcaslicer
+          fi
+          # macOS: carry this engine's bundled Frameworks; the package job unions both
+          # engines' sets (orca links libjpeg that bambu does not).
+          if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/Frameworks ]; then
+            cp -R dist/Frameworks staged/Frameworks
+          fi
+
+      - name: Stage engine binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = "build\Release\slicer_cli.exe"
+          if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
+          New-Item -ItemType Directory -Force staged | Out-Null
+          if ("${{ matrix.engine }}" -eq "bambu") {
+            Copy-Item $bin staged\slicer_cli.exe
+          } else {
+            Copy-Item $bin staged\slicer_cli-orcaslicer.exe
+          }
+          # Carry runtime DLLs beside the binary; package job unions both engines'.
+          $binDir = Split-Path $bin
+          Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination staged\
+
+      - name: Upload engine binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.os }}-${{ matrix.engine }}
+          path: staged/
+          if-no-files-found: error
+
+  # Assemble ONE package per platform containing BOTH engine binaries + BBL profiles
+  # (per docs/engine-distribution.md). Plain slicer_cli = default engine (bambustudio);
+  # slicer_cli-orcaslicer = orca. slicer-updater discovers engines by this convention,
+  # so the manifest's executablePath still points at the default binary.
+  package:
+    name: Package — ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macOS-arm64, Windows-x86_64]
+        include:
+          - os: macOS-arm64
+            runner: macos-14
+            platform: macos-arm64
+          - os: Windows-x86_64
+            runner: windows-2022
+            platform: windows-x86_64
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download engine binary (bambu)
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-${{ matrix.os }}-bambu
+          path: engine-bambu
+
+      - name: Download engine binary (orca)
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-${{ matrix.os }}-orca
+          path: engine-orca
+
+      - name: Assemble + validate package (macOS arm64)
         if: matrix.os == 'macOS-arm64'
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#slicer-cli/v}"
-          VERSION="${VERSION#v}"
-          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
-            VERSION="0.0.0-${GITHUB_SHA::12}"
-          fi
+          VERSION="${GITHUB_REF_NAME#slicer-cli/v}"; VERSION="${VERSION#v}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then VERSION="0.0.0-${GITHUB_SHA::12}"; fi
           PLATFORM="macos-arm64"
           ASSET="slicer-cli-v${VERSION}-${PLATFORM}.tar.gz"
           rm -rf dist/package dist/release
-          mkdir -p dist/package/slicer-cli/resources/profiles dist/release
-          BIN="build/slicer_cli"
-          if [[ -x "dist/slicer_cli" ]]; then
-            BIN="dist/slicer_cli"
-          fi
-          cp "$BIN" dist/package/slicer-cli/slicer_cli
-          if [[ -d "dist/Frameworks" ]]; then
-            cp -R dist/Frameworks dist/package/slicer-cli/Frameworks
-          fi
-          cp -R references/BambuStudio/resources/profiles/BBL dist/package/slicer-cli/resources/profiles/BBL
-          cp LICENSE NOTICE README.md dist/package/slicer-cli/
-          cat > dist/package/slicer-cli/manifest.json <<EOF
+          P=dist/package/slicer-cli
+          mkdir -p "$P/resources/profiles" dist/release
+          cp engine-bambu/slicer_cli "$P/slicer_cli"
+          cp engine-orca/slicer_cli-orcaslicer "$P/slicer_cli-orcaslicer"
+          chmod +x "$P/slicer_cli" "$P/slicer_cli-orcaslicer"
+          # Union both engines' bundled Frameworks.
+          for d in engine-bambu engine-orca; do
+            if [ -d "$d/Frameworks" ]; then mkdir -p "$P/Frameworks"; cp -R "$d/Frameworks/." "$P/Frameworks/"; fi
+          done
+          cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
+          # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
+          # slice-resolvable by name via the orca engine. The browse listing is
+          # gated server-side to Snapmaker by default (orca_browse_vendors).
+          cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
+          cp LICENSE NOTICE README.md "$P/"
+          cat > "$P/manifest.json" <<EOF
           {
             "version": "${VERSION}",
             "gitSha": "${GITHUB_SHA}",
             "platform": "${PLATFORM}",
             "executablePath": "slicer-cli/slicer_cli",
-            "profilesPath": "slicer-cli/resources/profiles/BBL"
+            "profilesPath": "slicer-cli/resources/profiles/BBL",
+            "orcaProfilesPath": "slicer-cli/resources/profiles-orca",
+            "engines": [
+              { "engine": "bambustudio", "path": "slicer-cli/slicer_cli" },
+              { "engine": "orcaslicer",  "path": "slicer-cli/slicer_cli-orcaslicer" }
+            ]
           }
           EOF
           tar -C dist/package -czf "dist/release/${ASSET}" slicer-cli
@@ -283,88 +402,73 @@ jobs:
             "profilesPath": "slicer-cli/resources/profiles/BBL"
           }
           EOF
-
-      - name: Validate packaged engine asset (macOS arm64)
-        if: matrix.os == 'macOS-arm64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ASSET="$(ls dist/release/slicer-cli-v*-macos-arm64.tar.gz)"
-          rm -rf dist/verify
-          mkdir -p dist/verify
-          tar -C dist/verify -xzf "$ASSET"
+          # Validate: BOTH engine binaries run; BBL + Orca profiles present.
+          rm -rf dist/verify; mkdir -p dist/verify
+          tar -C dist/verify -xzf "dist/release/${ASSET}"
           test -x dist/verify/slicer-cli/slicer_cli
+          test -x dist/verify/slicer-cli/slicer_cli-orcaslicer
           test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
           test -d dist/verify/slicer-cli/resources/profiles/BBL/process
           test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/machine
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/process
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/filament
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
+          dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
 
-      - name: Package engine release asset (Windows x86_64)
+      - name: Assemble + validate package (Windows x86_64)
         if: matrix.os == 'Windows-x86_64'
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^slicer-cli/v','' -replace '^v',''
-          if ($env:GITHUB_REF_TYPE -ne 'tag') {
-            $version = "0.0.0-$($env:GITHUB_SHA.Substring(0, 12))"
-          }
+          if ($env:GITHUB_REF_TYPE -ne 'tag') { $version = "0.0.0-$($env:GITHUB_SHA.Substring(0,12))" }
           $platform = "windows-x86_64"
           $asset = "slicer-cli-v$version-$platform.zip"
           Remove-Item -Recurse -Force dist\package, dist\release -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force dist\package\slicer-cli\resources\profiles, dist\release | Out-Null
-          $bin = "build\Release\slicer_cli.exe"
-          if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
-          Copy-Item $bin dist\package\slicer-cli\slicer_cli.exe
-          $binDir = Split-Path $bin
-          Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
-            Copy-Item -Destination dist\package\slicer-cli\
-          Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL dist\package\slicer-cli\resources\profiles\BBL
-          Copy-Item LICENSE, NOTICE, README.md dist\package\slicer-cli\
+          $P = "dist\package\slicer-cli"
+          New-Item -ItemType Directory -Force "$P\resources\profiles", dist\release | Out-Null
+          Copy-Item engine-bambu\slicer_cli.exe "$P\slicer_cli.exe"
+          Copy-Item engine-orca\slicer_cli-orcaslicer.exe "$P\slicer_cli-orcaslicer.exe"
+          # Union runtime DLLs from both engine artifacts (orca adds libjpeg).
+          Get-ChildItem engine-bambu, engine-orca -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination "$P\" -Force
+          Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL "$P\resources\profiles\BBL"
+          # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
+          # slice-resolvable by name via the orca engine. Browse listing is
+          # gated server-side to Snapmaker by default (orca_browse_vendors).
+          Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
+          Copy-Item LICENSE, NOTICE, README.md "$P\"
           @{
-            version = $version
-            gitSha = $env:GITHUB_SHA
-            platform = $platform
+            version = $version; gitSha = $env:GITHUB_SHA; platform = $platform
             executablePath = "slicer-cli/slicer_cli.exe"
             profilesPath = "slicer-cli/resources/profiles/BBL"
-          } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 dist\package\slicer-cli\manifest.json
-          Compress-Archive -Path dist\package\slicer-cli -DestinationPath "dist\release\$asset"
+            orcaProfilesPath = "slicer-cli/resources/profiles-orca"
+            engines = @(
+              @{ engine = "bambustudio"; path = "slicer-cli/slicer_cli.exe" },
+              @{ engine = "orcaslicer";  path = "slicer-cli/slicer_cli-orcaslicer.exe" }
+            )
+          } | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 "$P\manifest.json"
+          Compress-Archive -Path "$P" -DestinationPath "dist\release\$asset"
           $hash = (Get-FileHash "dist\release\$asset" -Algorithm SHA256).Hash.ToLower()
           "$hash  $asset" | Set-Content -Encoding ASCII "dist\release\$asset.sha256"
           @{
-            platform = $platform
-            assetFilename = $asset
-            sha256 = $hash
+            platform = $platform; assetFilename = $asset; sha256 = $hash
             executablePath = "slicer-cli/slicer_cli.exe"
             profilesPath = "slicer-cli/resources/profiles/BBL"
           } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 "dist\release\engine-platform-$platform.json"
-
-      - name: Validate packaged engine asset (Windows x86_64)
-        if: matrix.os == 'Windows-x86_64'
-        shell: pwsh
-        run: |
-          $asset = Get-ChildItem dist\release\slicer-cli-v*-windows-x86_64.zip | Select-Object -First 1
+          # Validate: BOTH engine binaries run; BBL + Orca profiles present.
           Remove-Item -Recurse -Force dist\verify -ErrorAction SilentlyContinue
-          Expand-Archive -Path $asset.FullName -DestinationPath dist\verify
+          Expand-Archive -Path "dist\release\$asset" -DestinationPath dist\verify
           if (-not (Test-Path dist\verify\slicer-cli\slicer_cli.exe)) { throw "missing slicer_cli.exe" }
+          if (-not (Test-Path dist\verify\slicer-cli\slicer_cli-orcaslicer.exe)) { throw "missing slicer_cli-orcaslicer.exe" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\machine)) { throw "missing machine profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\process)) { throw "missing process profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL\filament)) { throw "missing filament profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\machine)) { throw "missing orca Snapmaker machine profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\process)) { throw "missing orca Snapmaker process profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\filament)) { throw "missing orca Snapmaker filament profiles" }
           & dist\verify\slicer-cli\slicer_cli.exe --help
-
-      - name: Upload artefact (macOS / Linux)
-        if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: slicer_cli-${{ matrix.os }}
-          path: build/slicer_cli
-          if-no-files-found: error
-
-      - name: Upload artefact (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: slicer_cli-${{ matrix.os }}
-          path: build/Release/slicer_cli.exe
-          if-no-files-found: error
+          & dist\verify\slicer-cli\slicer_cli-orcaslicer.exe --help
 
       - name: Upload engine release package artifact
         uses: actions/upload-artifact@v4
@@ -376,7 +480,7 @@ jobs:
   release:
     name: Publish slicer-cli release assets
     if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')
-    needs: build
+    needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: write

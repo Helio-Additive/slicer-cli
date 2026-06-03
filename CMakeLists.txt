@@ -84,20 +84,62 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # get_filename_component ABSOLUTE resolves the ".." so that paths returned by
 # file(GLOB_RECURSE) — which are always normalized — match the strings we
 # construct for list(REMOVE_ITEM) and EXISTS checks.
-get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio"      ABSOLUTE)
-get_filename_component(REF_SRC     "${CMAKE_CURRENT_SOURCE_DIR}/references/BambuStudio/src" ABSOLUTE)
+# ─── Engine selection (bambu | orca) ────────────────────────────────────────
+# The CLI driver (main.cpp) compiles against ONE engine's libslic3r at a time:
+#   -DENGINE=bambu  (default)  → references/BambuStudio  + libslic3r/bambustudio
+#   -DENGINE=orca              → references/OrcaSlicer    + libslic3r/orcaslicer
+# Both are PrusaSlicer forks sharing the same public API (Model, Print, etc.).
+# Differences captured below:
+#   * ENGINE_ROOT — submodule root.  REF_SRC = ENGINE_ROOT/src.
+#   * SUBLIB_DIR  — where the bundled sub-libraries live:
+#                     BambuStudio: src/        (admesh, clipper, …)
+#                     OrcaSlicer:  deps_src/   (admesh, clipper, …)
+#   * ENGINE_BAMBU / ENGINE_ORCA compile define → gates the divergent front-end
+#     blocks in main.cpp (preset/staging resolution, toolchanger normalizations).
+set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio) or orca (OrcaSlicer)")
+set_property(CACHE ENGINE PROPERTY STRINGS bambu orca)
+set(ENGINE_EXTRA_LIBS "")   # engine-specific extra link libraries (populated below)
 
-# Primary source: exact BambuStudio reference files (do not edit these)
+if(ENGINE STREQUAL "orca")
+  get_filename_component(ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/OrcaSlicer"   ABSOLUTE)
+  get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/orcaslicer"    ABSOLUTE)
+  set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")   # Orca bundles sub-libs under deps_src/
+  add_compile_definitions(ENGINE_ORCA)
+  message(STATUS "ENGINE = orca (OrcaSlicer)")
+elseif(ENGINE STREQUAL "bambu")
+  get_filename_component(ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/BambuStudio"  ABSOLUTE)
+  get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio"   ABSOLUTE)
+  set(SUBLIB_DIR "${ENGINE_ROOT}/src")        # BambuStudio bundles sub-libs under src/
+  add_compile_definitions(ENGINE_BAMBU)
+  message(STATUS "ENGINE = bambu (BambuStudio)")
+else()
+  message(FATAL_ERROR "Unknown ENGINE='${ENGINE}'. Use -DENGINE=bambu or -DENGINE=orca")
+endif()
+
+get_filename_component(REF_SRC "${ENGINE_ROOT}/src" ABSOLUTE)
+
+# Primary source: exact engine reference files (do not edit these)
 set(LIBSLIC3R_REF_DIR "${REF_SRC}/libslic3r")
 
 # Override/patch layer: place files here to shadow the reference 1-for-1
 set(LIBSLIC3R_DIR "${VENDOR}/libslic3r")
 
+# libigl tree.  BambuStudio ships a patched copy under the VENDOR override layer
+# (4 files patched for removed Eigen::DynamicSparseMatrix APIs); OrcaSlicer ships
+# its own under deps_src/libigl.  Prefer the override copy when present, else the
+# engine's bundled copy.
+if(EXISTS "${VENDOR}/libigl/CMakeLists.txt")
+  set(LIBIGL_DIR "${VENDOR}/libigl")
+elseif(EXISTS "${SUBLIB_DIR}/libigl/CMakeLists.txt")
+  set(LIBIGL_DIR "${SUBLIB_DIR}/libigl")
+else()
+  set(LIBIGL_DIR "${REF_SRC}/libigl")
+endif()
+
 if(NOT EXISTS "${LIBSLIC3R_REF_DIR}")
   message(FATAL_ERROR
         "Reference libslic3r not found at ${LIBSLIC3R_REF_DIR}\n"
-        "Ensure the BambuStudio submodule is initialised:\n"
-        "  git submodule update --init references/BambuStudio")
+        "Ensure the ${ENGINE} submodule is initialised under ${ENGINE_ROOT}")
 endif()
 
 message(STATUS "============================================")
@@ -212,6 +254,11 @@ set(SLIC3R_BUILD_TIME       "standalone-cli")
 set(SLIC3R_COMPILE_VERSION  "standalone-cli")
 set(BBL_RELEASE_TO_PUBLIC   1)
 set(BBL_INTERNAL_TESTING    0)
+# OrcaSlicer's libslic3r_version.h.in references @ORCA_CHECK_GCODE_PLACEHOLDERS@.
+# Orca's own CMake sets it to 1 only in debug; left unset, configure_file would
+# substitute an empty string → "#define ORCA_CHECK_GCODE_PLACEHOLDERS " → a
+# "#if <empty>" preprocessor error in GCode.hpp. Disable it for the release CLI.
+set(ORCA_CHECK_GCODE_PLACEHOLDERS 0)
 
 # Use the override version template if present, otherwise fall back to reference.
 if(EXISTS "${LIBSLIC3R_DIR}/libslic3r_version.h.in")
@@ -234,10 +281,10 @@ configure_file("${_ver_in}" "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h" @O
 #
 include_directories(
     "${VENDOR}"                   # override: "libslic3r/..." overrides
-    "${VENDOR}/libigl"            # libigl patched tree (full copy, 4 files patched)
-    "${REF_SRC}"                  # reference: "libslic3r/..." fallback + all sub-lib headers
-    "${REF_SRC}/libigl"           # libigl fallback (VENDOR tree shadows all used files)
-    "${REF_SRC}/nanosvg"          # nanosvg bare-include path: #include "nanosvg.h"
+    "${LIBIGL_DIR}"               # libigl tree (patched copy for BBS, deps_src for Orca)
+    "${REF_SRC}"                  # reference: "libslic3r/..." fallback + (BBS) sub-lib headers
+    "${SUBLIB_DIR}"               # sub-lib roots (nanosvg/, etc.) — == REF_SRC for bambu
+    "${SUBLIB_DIR}/nanosvg"       # nanosvg bare-include path: #include "nanosvg.h"
     "${CMAKE_CURRENT_BINARY_DIR}" # libslic3r_version.h
 )
 
@@ -274,15 +321,25 @@ endif()
 # All sub-libraries are compiled directly from the BambuStudio reference tree.
 # The VENDOR path is used only for the libslic3r override layer.
 #
-add_subdirectory("${REF_SRC}/admesh"      "${CMAKE_CURRENT_BINARY_DIR}/admesh")
-add_subdirectory("${REF_SRC}/clipper"     "${CMAKE_CURRENT_BINARY_DIR}/clipper")
-add_subdirectory("${REF_SRC}/clipper2"    "${CMAKE_CURRENT_BINARY_DIR}/clipper2")
-add_subdirectory("${REF_SRC}/miniz"       "${CMAKE_CURRENT_BINARY_DIR}/miniz")
-add_subdirectory("${REF_SRC}/glu-libtess" "${CMAKE_CURRENT_BINARY_DIR}/glu-libtess")
-add_subdirectory("${REF_SRC}/semver"      "${CMAKE_CURRENT_BINARY_DIR}/semver")
-add_subdirectory("${REF_SRC}/libnest2d"   "${CMAKE_CURRENT_BINARY_DIR}/libnest2d")
-add_subdirectory("${VENDOR}/libigl"       "${CMAKE_CURRENT_BINARY_DIR}/libigl")     # patched
-add_subdirectory("${REF_SRC}/mcut"        "${CMAKE_CURRENT_BINARY_DIR}/mcut")
+add_subdirectory("${SUBLIB_DIR}/admesh"      "${CMAKE_CURRENT_BINARY_DIR}/admesh")
+add_subdirectory("${SUBLIB_DIR}/clipper"     "${CMAKE_CURRENT_BINARY_DIR}/clipper")
+add_subdirectory("${SUBLIB_DIR}/clipper2"    "${CMAKE_CURRENT_BINARY_DIR}/clipper2")
+add_subdirectory("${SUBLIB_DIR}/miniz"       "${CMAKE_CURRENT_BINARY_DIR}/miniz")
+add_subdirectory("${SUBLIB_DIR}/glu-libtess" "${CMAKE_CURRENT_BINARY_DIR}/glu-libtess")
+add_subdirectory("${SUBLIB_DIR}/semver"      "${CMAKE_CURRENT_BINARY_DIR}/semver")
+add_subdirectory("${SUBLIB_DIR}/libnest2d"   "${CMAKE_CURRENT_BINARY_DIR}/libnest2d")
+add_subdirectory("${LIBIGL_DIR}"             "${CMAKE_CURRENT_BINARY_DIR}/libigl")
+add_subdirectory("${SUBLIB_DIR}/mcut"        "${CMAKE_CURRENT_BINARY_DIR}/mcut")
+
+# OrcaSlicer's GCode/Thumbnails.cpp compresses thumbnails as JPG (<jpeglib.h>) and
+# QOI (bundled deps_src/qoi). BambuStudio handles thumbnails differently and needs
+# neither. Wire them up only for the Orca engine.
+if(ENGINE STREQUAL "orca")
+  find_package(JPEG REQUIRED)
+  add_subdirectory("${SUBLIB_DIR}/qoi" "${CMAKE_CURRENT_BINARY_DIR}/qoi")
+  list(APPEND ENGINE_EXTRA_LIBS JPEG::JPEG qoi)
+  message(STATUS "  JPEG:           ${JPEG_LIBRARIES}")
+endif()
 
 # Boost.Nowide
 if(NOT TARGET boost_headeronly)
@@ -298,8 +355,14 @@ if(NOT TARGET nowide)
     find_package(Boost CONFIG REQUIRED COMPONENTS nowide)
     add_library(nowide INTERFACE)
     target_link_libraries(nowide INTERFACE Boost::nowide)
+  elseif(EXISTS "${SUBLIB_DIR}/boost/nowide")
+    # BambuStudio bundles Boost.Nowide source under src/boost.
+    add_subdirectory("${SUBLIB_DIR}/boost" "${CMAKE_CURRENT_BINARY_DIR}/boost")
   else()
-    add_subdirectory("${REF_SRC}/boost" "${CMAKE_CURRENT_BINARY_DIR}/boost")
+    # OrcaSlicer does NOT bundle Boost.Nowide — use the system Boost component.
+    find_package(Boost CONFIG REQUIRED COMPONENTS nowide)
+    add_library(nowide INTERFACE)
+    target_link_libraries(nowide INTERFACE Boost::nowide)
   endif()
 endif()
 
@@ -358,7 +421,11 @@ endforeach()
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*pchheader\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*ExPolygonCollection\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*GCodeSender\\.cpp$")
-list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*PressureEqualizer\\.cpp$")
+if(ENGINE STREQUAL "bambu")
+  # BambuStudio's GCode.cpp does not reference PressureEqualizer; OrcaSlicer's
+  # GCode.cpp (_do_export / process_layers) does, so Orca MUST compile it.
+  list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*PressureEqualizer\\.cpp$")
+endif()
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*OpenVDBUtils\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*SLA/Hollowing\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*TryCatchSignalSEH\\.cpp$")
@@ -366,6 +433,10 @@ list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*LogSink\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*NSVGUtils\\.cpp$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*Print\\.cpp\\.ANNOTATED$")
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*PostProcessor\\.cpp$")
+# OrcaSlicer-only: Format/DRC.cpp is a Google-Draco (.drc) mesh-compression reader
+# pulling <draco/...> (an external find_package(draco) in Orca's build). It is off
+# the .3mf→gcode slice/export path, so exclude it rather than add the Draco dep.
+list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*Format/DRC\\.cpp$")
 
 if(NOT APPLE)
   list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*\\.mm$")
@@ -485,7 +556,7 @@ target_include_directories(libslic3r_core PUBLIC
 
 target_include_directories(libslic3r_core PRIVATE
     "${EXPAT_INCLUDE_DIRS}"
-    "${REF_SRC}/miniz")
+    "${SUBLIB_DIR}/miniz")
 
 # ─── libslic3r_cgal ────────────────────────────────────────────────────────
 add_library(libslic3r_cgal STATIC ${LIBSLIC3R_CGAL_SOURCES})
@@ -582,6 +653,7 @@ target_link_libraries(libslic3r_core PUBLIC
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,--end-group>
     mcut
     ${OpenCV_LIBS}
+    ${ENGINE_EXTRA_LIBS}
     Threads::Threads
     OpenSSL::SSL
     OpenSSL::Crypto)
@@ -661,7 +733,7 @@ target_include_directories(slicer_cli PRIVATE
     "${REF_SRC}"
     "${LIBSLIC3R_DIR}"
     "${LIBSLIC3R_REF_DIR}"
-    "${REF_SRC}/miniz"
+    "${SUBLIB_DIR}/miniz"
     "${OpenCASCADE_INCLUDE_DIR}")
 
 # On macOS, ICU is keg-only — add the lib dir directly to the executable's

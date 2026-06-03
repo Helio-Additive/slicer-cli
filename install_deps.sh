@@ -38,6 +38,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         cereal
         opencascade
         freetype
+        jpeg-turbo     # ENGINE=orca: OrcaSlicer's GCode/Thumbnails.cpp needs libjpeg (find_package(JPEG))
     )
 
     for pkg in "${PACKAGES[@]}"; do
@@ -98,6 +99,7 @@ elif [[ -f /etc/debian_version ]]; then
         libqhull-dev
         libfreetype6-dev
         libfontconfig1-dev
+        libjpeg-dev    # ENGINE=orca: OrcaSlicer's GCode/Thumbnails.cpp needs libjpeg (find_package(JPEG))
         libocct-modeling-algorithms-dev
         libocct-data-exchange-dev
         libocct-foundation-dev
