@@ -780,7 +780,7 @@ impl Default for PerimeterGenerator {
 /// Convert ThickPolylines to ExtrusionPaths with variable width
 /// VariableWidth.cpp:214-230
 /// C++: void variable_width(const ThickPolylines& polylines, ExtrusionRole role, const Flow& flow, std::vector<ExtrusionEntity*>& out)
-fn convert_thin_walls_to_extrusion_paths(
+pub(crate) fn convert_thin_walls_to_extrusion_paths(
     thick_polylines: &ThickPolylines,
     role: crate::extrusion_entity::ExtrusionRole,
     flow: &Flow,

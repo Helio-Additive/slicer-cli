@@ -430,39 +430,59 @@ impl LayerRegion {
             self.fill_expolygons.push(fill_surface.expolygon);
         }
 
-        // Store gap fills as thin fill extrusion entities
-        // In C++, gap fills go through medial axis to produce thin fill lines.
-        // As a simplified approximation, we convert thin gap regions to
-        // polyline paths along their contour, filtering out regions that
-        // are too large (not actually thin gaps).
+        // Gap fill — faithful port of PerimeterGenerator.cpp:1327-1374.
+        // The previous version traced each gap polygon's CONTOUR at full perimeter
+        // width, which over-extruded ~4.6x (contour ~2x length, full width vs thin).
+        // C++ instead: collapse the gaps to the truly-thin band, run medial_axis to get
+        // variable-width centerlines, and emit those via variable_width().
         if !result.gap_fills.is_empty() {
-            use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionPath, ExtrusionRole};
-            use crate::geometry::Polyline as GeoPolyline;
-            let gap_fill_flow = self
-                .flow_with_config(FlowRole::Perimeter, layer_height, config, layer_id == 0)
-                .unwrap_or(perimeter_flow.clone());
-            let ext_pw = config.outer_wall_line_width.max(0.4);
-            let max_gap_area = 100.0; // 100mm² — only filter truly huge polygons
-            for gap_poly in &result.gap_fills {
-                let area = gap_poly.contour.area().abs();
-                // Only process thin gap regions (area in scaled² units)
-                if area < 1.0 {
-                    continue; // skip degenerate polygons
+            use crate::clipper_utils::{difference, offset2, opening_ex, OffsetJoinType};
+            use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
+            use crate::perimeter_generator::convert_thin_walls_to_extrusion_paths;
+
+            let perimeter_width = perimeter_flow.width();
+            let perimeter_spacing = perimeter_flow.spacing();
+            // PerimeterGenerator.cpp:1329-1330 (INSET_OVERLAP_TOLERANCE = 0.45)
+            let min = 0.2 * perimeter_width * (1.0 - 0.45);
+            let max = 2.0 * perimeter_spacing;
+            // ClipperSafetyOffset = 10 scaled units = 1e-5 mm
+            const CLIPPER_SAFETY_OFFSET: f64 = 0.00001;
+
+            // PerimeterGenerator.cpp:1331-1334 — keep only the band wider than `min`
+            // (opening by min/2) and narrower than `max` (subtract the max-opening).
+            let opened_min = opening_ex(&result.gap_fills, min / 2.0);
+            let wide_part = offset2(
+                &result.gap_fills,
+                max / 2.0,
+                max / 2.0 + CLIPPER_SAFETY_OFFSET,
+                OffsetJoinType::Square,
+            );
+            let gaps_ex = difference(&opened_min, &wide_part);
+
+            // PerimeterGenerator.cpp:1335-1340 — medial axis of each thin gap region.
+            let mut polylines: crate::geometry::ThickPolylines = Vec::new();
+            for ex in &gaps_ex {
+                ex.medial_axis(min, max, &mut polylines);
+            }
+
+            // PerimeterGenerator.cpp:1357-1360 — filter tiny gap fills
+            // (config.filter_out_gap_fill default 0.0 in this profile -> no extra filter).
+
+            // PerimeterGenerator.cpp:1364 — variable_width(polylines, erGapFill, solid_infill_flow)
+            if !polylines.is_empty() {
+                let gap_fill_flow = self
+                    .flow_with_config(FlowRole::SolidInfill, layer_height, config, layer_id == 0)
+                    .unwrap_or_else(|_| perimeter_flow.clone());
+                let paths = convert_thin_walls_to_extrusion_paths(
+                    &polylines,
+                    ExtrusionRole::GapFill,
+                    &gap_fill_flow,
+                );
+                for path in paths {
+                    self.thin_fills
+                        .entities
+                        .push(ExtrusionEntityType::Path(path));
                 }
-                let points = gap_poly.contour.points();
-                if points.len() < 3 {
-                    continue;
-                }
-                let mut path = ExtrusionPath::new(ExtrusionRole::GapFill);
-                path.polyline = GeoPolyline {
-                    points: points.to_vec(),
-                };
-                path.mm3_per_mm = gap_fill_flow.mm3_per_mm().unwrap_or(0.0);
-                path.width = gap_fill_flow.width();
-                path.height = gap_fill_flow.height();
-                self.thin_fills
-                    .entities
-                    .push(ExtrusionEntityType::Path(path));
             }
         }
 
