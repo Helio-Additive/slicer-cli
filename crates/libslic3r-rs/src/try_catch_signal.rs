@@ -1,58 +1,81 @@
-//! Signal handling utilities for catching crashes and exceptions
+//! Signal-catching dispatch header.
 //!
 //! C++ Reference:
 //! - TryCatchSignal.hpp (lines 1-20)
 //! - TryCatchSignal.cpp (lines 1-5)
 //!
-//! This module provides platform-specific signal handling to catch crashes
-//! like segmentation faults, illegal instructions, and floating-point errors.
-//! On Unix-like systems, it uses signal handlers; on Windows it delegates to
-//! the SEH (Structured Exception Handling) implementation.
+//! Faithful 1:1 port of `TryCatchSignal.{cpp,hpp}`.
 //!
-//! **NOTE:** The Rust implementation is simplified compared to C++. True signal
-//! handling requires unsafe FFI and platform-specific crates. This version
-//! provides the API surface for compatibility but does not catch actual signals.
+//! The C++ `.cpp` is a pure dispatch translation unit:
+//! ```cpp
+//! #include "TryCatchSignal.hpp"
+//! #ifdef _MSC_VER
+//! #include "TryCatchSignalSEH.cpp"
+//! #endif
+//! ```
+//! and the `.hpp`, on every NON-MSVC compiler (Unix, MinGW, wasm, ...), defines
+//! `try_catch_signal` as a template whose entire body is `fn();` — i.e. it does
+//! NOT catch any signal. Only when compiled with MSVC (`_MSC_VER`) does it
+//! delegate to the SEH implementation in `TryCatchSignalSEH.{cpp,hpp}` (ported
+//! separately in `try_catch_signal_seh`).
+//!
+//! Rust has no `_MSC_VER` macro; the faithful equivalent of the MSVC gate is
+//! `cfg(target_env = "msvc")`. The SEH body uses MSVC-only `__try`/`__except`,
+//! so MinGW (a non-MSVC Windows env) takes the plain `fn()` path here, exactly
+//! as in C++.
 
-use crate::{Error, Result};
-
-/// Signal type alias matching C++ SignalT
+/// Signal type alias matching C++ `SignalT`.
 ///
 /// TryCatchSignal.hpp:9
 /// C++: using SignalT = decltype (SIGSEGV);
 pub type SignalT = i32;
 
-#[cfg(windows)]
+// On MSVC the `.cpp` pulls in the SEH translation unit, and the `.hpp` template
+// forwards to `detail::try_catch_signal_seh`. Mirror that by re-exporting the
+// SEH implementation (ported in `try_catch_signal_seh`).
+//
+// TryCatchSignal.cpp:3-5
+// C++: #ifdef _MSC_VER
+// C++: #include "TryCatchSignalSEH.cpp"
+// C++: #endif
+#[cfg(target_env = "msvc")]
 pub use crate::try_catch_signal_seh::{try_catch_signal, SIGFPE, SIGILL, SIGSEGV};
 
-/// Execute a function with signal catching (Unix implementation)
+/// Run `try_fn`, ignoring the requested signals and the catch handler.
 ///
-/// TryCatchSignal.hpp:11-15
+/// TryCatchSignal.hpp:12-16
 /// C++: template<class TryFn, class CatchFn, int N>
 /// C++: void try_catch_signal(const SignalT (&/*sigs*/)[N], TryFn &&fn, CatchFn &&/*cfn*/)
 /// C++: {
 /// C++:     fn();
 /// C++: }
 ///
-/// Note: The C++ Unix implementation doesn't actually catch signals - it just
-/// runs the function directly. This is a faithful port of that behavior.
-#[cfg(not(windows))]
-pub fn try_catch_signal<TryFn, CatchFn>(_signals: &[SignalT], try_fn: TryFn, _catch_fn: CatchFn)
+/// This is the non-MSVC body verbatim: the signal array and the catch function
+/// are unused (the C++ comments out their names `/*sigs*/` and `/*cfn*/`), and
+/// the function simply invokes `fn()`. No signal is actually caught.
+#[cfg(not(target_env = "msvc"))]
+pub fn try_catch_signal<TryFn, CatchFn>(_sigs: &[SignalT], fn_: TryFn, _cfn: CatchFn)
 where
     TryFn: FnOnce(),
     CatchFn: FnOnce(),
 {
-    // C++ implementation on Unix just calls fn() without any signal handling
-    // TryCatchSignal.hpp:14
-    try_fn();
+    // TryCatchSignal.hpp:15
+    fn_();
 }
 
-// Common signal constants (Unix values)
-#[cfg(not(windows))]
-pub const SIGSEGV: SignalT = 11;
-#[cfg(not(windows))]
-pub const SIGILL: SignalT = 4;
-#[cfg(not(windows))]
-pub const SIGFPE: SignalT = 8;
+// `SignalT` values come from `<csignal>` in C++ (the `.hpp` includes it via the
+// `decltype(SIGSEGV)` alias). On non-MSVC targets, where this module owns the
+// `try_catch_signal` definition, expose the same signal numbers used by the SEH
+// port so callers have a single source of truth for the signal set.
+//
+// glibc/BSD/MSVC-CRT all agree on these values, so they are byte-identical to
+// `<csignal>`'s `SIGILL`, `SIGFPE`, and `SIGSEGV`.
+#[cfg(not(target_env = "msvc"))]
+pub const SIGILL: SignalT = 4; // Illegal instruction
+#[cfg(not(target_env = "msvc"))]
+pub const SIGFPE: SignalT = 8; // Floating-point exception
+#[cfg(not(target_env = "msvc"))]
+pub const SIGSEGV: SignalT = 11; // Segmentation fault
 
 #[cfg(test)]
 mod tests {
@@ -60,13 +83,14 @@ mod tests {
 
     #[test]
     fn test_try_catch_signal_success() {
+        // The non-MSVC body just runs `fn()`; the catch fn is never invoked.
         let mut executed = false;
         let mut caught = false;
 
-        let signals = [SIGSEGV, SIGILL, SIGFPE];
+        let sigs = [SIGSEGV, SIGILL, SIGFPE];
 
         try_catch_signal(
-            &signals,
+            &sigs,
             || {
                 executed = true;
             },
@@ -76,9 +100,8 @@ mod tests {
         );
 
         assert!(executed, "Try function should execute");
-        // On Unix without handler, catch function is never called
-        #[cfg(unix)]
-        assert!(!caught, "Catch function should not be called on success");
+        #[cfg(not(target_env = "msvc"))]
+        assert!(!caught, "Catch function is never called on non-MSVC targets");
     }
 
     #[test]
@@ -96,17 +119,16 @@ mod tests {
         assert!(executed);
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(target_env = "msvc"))]
     #[test]
     fn test_signal_constants() {
-        // Just verify the constants are defined and distinct
+        // The constants mirror `<csignal>` and must stay distinct and positive.
+        assert_eq!(SIGILL, 4);
+        assert_eq!(SIGFPE, 8);
+        assert_eq!(SIGSEGV, 11);
+
         assert_ne!(SIGSEGV, SIGILL);
         assert_ne!(SIGSEGV, SIGFPE);
         assert_ne!(SIGILL, SIGFPE);
-
-        // Typical Unix values (may vary by platform)
-        assert!(SIGSEGV > 0);
-        assert!(SIGILL > 0);
-        assert!(SIGFPE > 0);
     }
 }

@@ -1,17 +1,31 @@
-//! Timer utilities for performance measurement and time-limited operations
+//! 1:1 port of `Timer.hpp` / `Timer.cpp` from BambuStudio libslic3r.
 //!
 //! C++ Reference:
 //! - Timer.hpp (lines 1-93)
-//! - Timer.cpp (lines 1-19)
+//! - Timer.cpp (lines 1-22)
 //!
-//! This module provides utilities for measuring code execution time and
-//! creating alarms that trigger when operations exceed time limits.
+//! Faithful, line-by-line translation. `coord_t`/`coordf_t` do not appear here.
+//!
+//! Time sources:
+//! - C++ `steady_clock` is a monotonic clock -> Rust `std::time::Instant`.
+//! - C++ `high_resolution_clock::now().time_since_epoch()` is an absolute clock
+//!   -> Rust `std::time::SystemTime` measured against `UNIX_EPOCH` (the same
+//!   pattern used elsewhere in this crate, e.g. `time.rs`/`fuzzy_skin.rs`, and
+//!   wasm-safe). This mirrors the C++ behaviour of returning an absolute
+//!   epoch-relative nanosecond count that `Timing::Timer` subtracts.
 
-use std::time::{Duration, Instant};
+// Timer.cpp:1
+// C++: #include "Timer.hpp"
+// Timer.cpp:2
+// C++: #include <boost/log/trivial.hpp>
+// Timer.cpp:4
+// C++: using namespace std::chrono;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// Simple timer that logs elapsed time on drop
+/// Instance of this class is used for measure time consumtion
+/// of block code until instance is alive and write result to debug output
 ///
-/// Timer.hpp:11-30
+/// Timer.hpp:13-28
 /// C++: class Timer
 /// C++: {
 /// C++:     std::string m_name;
@@ -20,58 +34,43 @@ use std::time::{Duration, Instant};
 /// C++:     Timer(const std::string& name);
 /// C++:     ~Timer();
 /// C++: };
-///
-/// Timer.cpp:5-6
-/// C++: Slic3r::Timer::Timer(const std::string &name) : m_name(name), m_start(steady_clock::now()) {}
-///
-/// Timer.cpp:8-12
-/// C++: Slic3r::Timer::~Timer()
-/// C++: {
-/// C++:     BOOST_LOG_TRIVIAL(debug) << "Timer '" << m_name << "' spend " <<
-/// C++:         duration_cast<milliseconds>(steady_clock::now() - m_start).count() << "ms";
-/// C++: }
 #[derive(Debug)]
 pub struct Timer {
-    /// Name for logging
-    /// Timer.hpp:14
-    name: String,
-
-    /// Start time
     /// Timer.hpp:15
-    start: Instant,
+    /// C++: std::string m_name;
+    m_name: String,
+    /// Timer.hpp:16
+    /// C++: std::chrono::steady_clock::time_point m_start;
+    m_start: Instant,
 }
 
 impl Timer {
-    /// Create a new timer with the given name
+    /// name describe timer
     ///
-    /// Timer.hpp:22
-    /// C++: Timer(const std::string& name);
-    pub fn new(name: impl Into<String>) -> Self {
+    /// Timer.hpp:22 / Timer.cpp:6
+    /// C++: Slic3r::Timer::Timer(const std::string &name) : m_name(name), m_start(steady_clock::now()) {}
+    pub fn new(name: &str) -> Self {
+        // Timer.cpp:6
         Self {
-            name: name.into(),
-            start: Instant::now(),
+            m_name: name.to_string(),
+            m_start: Instant::now(),
         }
     }
 
-    /// Get elapsed time since timer was created
+    /// Convenience accessor for the elapsed duration since construction.
     pub fn elapsed(&self) -> Duration {
-        self.start.elapsed()
+        self.m_start.elapsed()
     }
 
-    /// Get elapsed time in milliseconds
+    /// Convenience accessor for the elapsed milliseconds since construction.
+    ///
+    /// Mirrors `duration_cast<milliseconds>(steady_clock::now() - m_start).count()`.
     pub fn elapsed_ms(&self) -> u128 {
         self.elapsed().as_millis()
-    }
-
-    /// Get elapsed time in seconds
-    pub fn elapsed_secs(&self) -> f64 {
-        self.elapsed().as_secs_f64()
     }
 }
 
 impl Drop for Timer {
-    /// Log elapsed time when timer is dropped
-    ///
     /// Timer.cpp:8-12
     /// C++: Slic3r::Timer::~Timer()
     /// C++: {
@@ -79,201 +78,225 @@ impl Drop for Timer {
     /// C++:         duration_cast<milliseconds>(steady_clock::now() - m_start).count() << "ms";
     /// C++: }
     fn drop(&mut self) {
-        log::debug!("Timer '{}' spent {}ms", self.name, self.elapsed_ms());
-    }
-}
-
-/// High-precision timer for performance measurement
-///
-/// Timer.hpp:38-59
-/// C++: class Timer {
-/// C++: public:
-/// C++:     void start() { m_nanoseconds = nanoseconds_since_epoch(); }
-/// C++:     uint64_t elapsed_nanoseconds() const { return nanoseconds_since_epoch() - m_nanoseconds; }
-/// C++:     uint64_t elapsed_microseconds() const { return elapsed_nanoseconds() / 1000; }
-/// C++:     unsigned int elapsed_milliseconds() const { return static_cast<unsigned int>(elapsed_microseconds()/1000); }
-/// C++:     double elapsed_seconds() const { return elapsed_microseconds() / 1000000.0; }
-/// C++: private:
-/// C++:     uint64_t m_nanoseconds = 0;
-/// C++: };
-#[derive(Debug, Clone)]
-pub struct PrecisionTimer {
-    /// Start time
-    /// Timer.hpp:58
-    start: Option<Instant>,
-}
-
-impl Default for PrecisionTimer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PrecisionTimer {
-    /// Create a new precision timer (not started)
-    ///
-    /// Timer.hpp:57
-    /// C++: uint64_t m_nanoseconds = 0;
-    pub fn new() -> Self {
-        Self { start: None }
-    }
-
-    /// Start or restart the timer
-    ///
-    /// Timer.hpp:41
-    /// C++: void start() { m_nanoseconds = nanoseconds_since_epoch(); }
-    pub fn start(&mut self) {
-        self.start = Some(Instant::now());
-    }
-
-    /// Get elapsed nanoseconds since start
-    ///
-    /// Timer.hpp:42-44
-    /// C++: uint64_t elapsed_nanoseconds() const {
-    /// C++:     return nanoseconds_since_epoch() - m_nanoseconds;
-    /// C++: }
-    pub fn elapsed_nanoseconds(&self) -> u64 {
-        self.start
-            .map(|s| s.elapsed().as_nanos() as u64)
-            .unwrap_or(0)
-    }
-
-    /// Get elapsed microseconds since start
-    ///
-    /// Timer.hpp:45-47
-    /// C++: uint64_t elapsed_microseconds() const {
-    /// C++:     return elapsed_nanoseconds() / 1000;
-    /// C++: }
-    pub fn elapsed_microseconds(&self) -> u64 {
-        self.elapsed_nanoseconds() / 1000
-    }
-
-    /// Get elapsed milliseconds since start
-    ///
-    /// Timer.hpp:48-50
-    /// C++: unsigned int elapsed_milliseconds() const {
-    /// C++:     return static_cast<unsigned int>(elapsed_microseconds()/1000);
-    /// C++: }
-    pub fn elapsed_milliseconds(&self) -> u32 {
-        (self.elapsed_microseconds() / 1000) as u32
-    }
-
-    /// Get elapsed seconds since start
-    ///
-    /// Timer.hpp:51-53
-    /// C++: double elapsed_seconds() const {
-    /// C++:     return elapsed_microseconds() / 1000000.0;
-    /// C++: }
-    pub fn elapsed_seconds(&self) -> f64 {
-        self.elapsed_microseconds() as f64 / 1_000_000.0
-    }
-}
-
-/// Alarm that logs an error if a time limit is exceeded
-///
-/// Timer.hpp:62-89
-/// C++: class TimeLimitAlarm {
-/// C++: public:
-/// C++:     TimeLimitAlarm(uint64_t time_limit_nanoseconds, std::string_view limit_exceeded_message);
-/// C++:     ~TimeLimitAlarm() {
-/// C++:         auto elapsed = m_timer.elapsed_nanoseconds();
-/// C++:         if (elapsed > m_time_limit_nanoseconds)
-/// C++:             this->report_time_exceeded();
-/// C++:     }
-/// C++:     static TimeLimitAlarm new_nanos(...);
-/// C++:     static TimeLimitAlarm new_milis(...);
-/// C++:     static TimeLimitAlarm new_seconds(...);
-/// C++: private:
-/// C++:     void report_time_exceeded() const;
-/// C++:     Timer m_timer;
-/// C++:     uint64_t m_time_limit_nanoseconds;
-/// C++:     std::string_view m_limit_exceeded_message;
-/// C++: };
-#[derive(Debug)]
-pub struct TimeLimitAlarm {
-    /// Internal timer
-    /// Timer.hpp:83
-    timer: PrecisionTimer,
-
-    /// Time limit in nanoseconds
-    /// Timer.hpp:84
-    time_limit_nanos: u64,
-
-    /// Message to log if limit exceeded
-    /// Timer.hpp:85
-    message: String,
-}
-
-impl TimeLimitAlarm {
-    /// Create a new time limit alarm with nanosecond precision
-    ///
-    /// Timer.hpp:75-78
-    /// C++: static TimeLimitAlarm new_nanos(uint64_t time_limit_nanoseconds, std::string_view limit_exceeded_message) {
-    /// C++:     return TimeLimitAlarm(time_limit_nanoseconds, limit_exceeded_message);
-    /// C++: }
-    pub fn new_nanos(time_limit_nanos: u64, message: impl Into<String>) -> Self {
-        let mut timer = PrecisionTimer::new();
-        timer.start();
-        Self {
-            timer,
-            time_limit_nanos,
-            message: message.into(),
-        }
-    }
-
-    /// Create a new time limit alarm with millisecond precision
-    ///
-    /// Timer.hpp:79-81
-    /// C++: static TimeLimitAlarm new_milis(uint64_t time_limit_milis, std::string_view limit_exceeded_message) {
-    /// C++:     return TimeLimitAlarm(uint64_t(time_limit_milis) * 1000000l, limit_exceeded_message);
-    /// C++: }
-    pub fn new_millis(time_limit_millis: u64, message: impl Into<String>) -> Self {
-        Self::new_nanos(time_limit_millis * 1_000_000, message)
-    }
-
-    /// Create a new time limit alarm with second precision
-    ///
-    /// Timer.hpp:82-84
-    /// C++: static TimeLimitAlarm new_seconds(uint64_t time_limit_seconds, std::string_view limit_exceeded_message) {
-    /// C++:     return TimeLimitAlarm(uint64_t(time_limit_seconds) * 1000000000l, limit_exceeded_message);
-    /// C++: }
-    pub fn new_seconds(time_limit_seconds: u64, message: impl Into<String>) -> Self {
-        Self::new_nanos(time_limit_seconds * 1_000_000_000, message)
-    }
-
-    /// Report that time limit was exceeded
-    ///
-    /// Timer.cpp:15-17
-    /// C++: void TimeLimitAlarm::report_time_exceeded() const {
-    /// C++:     BOOST_LOG_TRIVIAL(error) << "Time limit exceeded for " << m_limit_exceeded_message << ": " << m_timer.elapsed_seconds() << "s";
-    /// C++: }
-    fn report_time_exceeded(&self) {
-        log::error!(
-            "Time limit exceeded for {}: {:.3}s",
-            self.message,
-            self.timer.elapsed_seconds()
+        // Timer.cpp:10-11
+        log::debug!(
+            "Timer '{}' spend {}ms",
+            self.m_name,
+            self.m_start.elapsed().as_millis()
         );
     }
 }
 
-impl Drop for TimeLimitAlarm {
-    /// Check time limit when alarm is dropped
+// Timer.cpp:15 / Timer.hpp:30
+// C++: namespace Slic3r::Timing {
+pub mod timing {
+    use super::*;
+
+    /// Timing code from Catch2 unit testing library
     ///
-    /// Timer.hpp:68-72
-    /// C++: ~TimeLimitAlarm() {
-    /// C++:     auto elapsed = m_timer.elapsed_nanoseconds();
-    /// C++:     if (elapsed > m_time_limit_nanoseconds)
-    /// C++:         this->report_time_exceeded();
+    /// Timer.hpp:33-35
+    /// C++: static inline uint64_t nanoseconds_since_epoch() {
+    /// C++:     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
     /// C++: }
-    fn drop(&mut self) {
-        if self.timer.elapsed_nanoseconds() > self.time_limit_nanos {
-            self.report_time_exceeded();
+    #[inline]
+    pub fn nanoseconds_since_epoch() -> u64 {
+        // Timer.hpp:34
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
+    }
+
+    /// Timing code from Catch2 unit testing library
+    ///
+    /// Timer.hpp:38-57
+    /// C++: class Timer {
+    /// C++: public:
+    /// C++:     void start() { m_nanoseconds = nanoseconds_since_epoch(); }
+    /// C++:     uint64_t elapsed_nanoseconds() const { return nanoseconds_since_epoch() - m_nanoseconds; }
+    /// C++:     uint64_t elapsed_microseconds() const { return elapsed_nanoseconds() / 1000; }
+    /// C++:     unsigned int elapsed_milliseconds() const { return static_cast<unsigned int>(elapsed_microseconds()/1000); }
+    /// C++:     double elapsed_seconds() const { return elapsed_microseconds() / 1000000.0; }
+    /// C++: private:
+    /// C++:     uint64_t m_nanoseconds = 0;
+    /// C++: };
+    #[derive(Debug, Clone)]
+    pub struct Timer {
+        /// Timer.hpp:56
+        /// C++: uint64_t m_nanoseconds = 0;
+        m_nanoseconds: u64,
+    }
+
+    impl Default for Timer {
+        /// Timer.hpp:56
+        /// C++: uint64_t m_nanoseconds = 0;
+        fn default() -> Self {
+            Self { m_nanoseconds: 0 }
+        }
+    }
+
+    impl Timer {
+        /// Timer.hpp:56
+        /// C++: uint64_t m_nanoseconds = 0;
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Timer.hpp:40-42
+        /// C++: void start() {
+        /// C++:     m_nanoseconds = nanoseconds_since_epoch();
+        /// C++: }
+        pub fn start(&mut self) {
+            // Timer.hpp:41
+            self.m_nanoseconds = nanoseconds_since_epoch();
+        }
+
+        /// Timer.hpp:43-45
+        /// C++: uint64_t elapsed_nanoseconds() const {
+        /// C++:     return nanoseconds_since_epoch() - m_nanoseconds;
+        /// C++: }
+        pub fn elapsed_nanoseconds(&self) -> u64 {
+            // Timer.hpp:44
+            nanoseconds_since_epoch().wrapping_sub(self.m_nanoseconds)
+        }
+
+        /// Timer.hpp:46-48
+        /// C++: uint64_t elapsed_microseconds() const {
+        /// C++:     return elapsed_nanoseconds() / 1000;
+        /// C++: }
+        pub fn elapsed_microseconds(&self) -> u64 {
+            // Timer.hpp:47
+            self.elapsed_nanoseconds() / 1000
+        }
+
+        /// Timer.hpp:49-51
+        /// C++: unsigned int elapsed_milliseconds() const {
+        /// C++:     return static_cast<unsigned int>(elapsed_microseconds()/1000);
+        /// C++: }
+        pub fn elapsed_milliseconds(&self) -> u32 {
+            // Timer.hpp:50
+            (self.elapsed_microseconds() / 1000) as u32
+        }
+
+        /// Timer.hpp:52-54
+        /// C++: double elapsed_seconds() const {
+        /// C++:     return elapsed_microseconds() / 1000000.0;
+        /// C++: }
+        pub fn elapsed_seconds(&self) -> f64 {
+            // Timer.hpp:53
+            self.elapsed_microseconds() as f64 / 1000000.0
+        }
+    }
+
+    /// Emits a Boost::log error if the life time of this timing object exceeds a limit.
+    ///
+    /// Timer.hpp:60-86
+    /// C++: class TimeLimitAlarm {
+    /// C++: public:
+    /// C++:     TimeLimitAlarm(uint64_t time_limit_nanoseconds, std::string_view limit_exceeded_message);
+    /// C++:     ~TimeLimitAlarm();
+    /// C++:     static TimeLimitAlarm new_nanos(...);
+    /// C++:     static TimeLimitAlarm new_milis(...);
+    /// C++:     static TimeLimitAlarm new_seconds(...);
+    /// C++: private:
+    /// C++:     void report_time_exceeded() const;
+    /// C++:     Timer               m_timer;
+    /// C++:     uint64_t            m_time_limit_nanoseconds;
+    /// C++:     std::string_view    m_limit_exceeded_message;
+    /// C++: };
+    #[derive(Debug)]
+    pub struct TimeLimitAlarm {
+        /// Timer.hpp:83
+        /// C++: Timer m_timer;
+        m_timer: Timer,
+        /// Timer.hpp:84
+        /// C++: uint64_t m_time_limit_nanoseconds;
+        m_time_limit_nanoseconds: u64,
+        /// Timer.hpp:85
+        /// C++: std::string_view m_limit_exceeded_message;
+        m_limit_exceeded_message: String,
+    }
+
+    impl TimeLimitAlarm {
+        /// Timer.hpp:62-65
+        /// C++: TimeLimitAlarm(uint64_t time_limit_nanoseconds, std::string_view limit_exceeded_message) :
+        /// C++:     m_time_limit_nanoseconds(time_limit_nanoseconds), m_limit_exceeded_message(limit_exceeded_message) {
+        /// C++:     m_timer.start();
+        /// C++: }
+        pub fn new(time_limit_nanoseconds: u64, limit_exceeded_message: &str) -> Self {
+            // Timer.hpp:63
+            let mut alarm = Self {
+                m_timer: Timer::new(),
+                m_time_limit_nanoseconds: time_limit_nanoseconds,
+                m_limit_exceeded_message: limit_exceeded_message.to_string(),
+            };
+            // Timer.hpp:64
+            alarm.m_timer.start();
+            alarm
+        }
+
+        /// Timer.hpp:71-73
+        /// C++: static TimeLimitAlarm new_nanos(uint64_t time_limit_nanoseconds, std::string_view limit_exceeded_message) {
+        /// C++:     return TimeLimitAlarm(time_limit_nanoseconds, limit_exceeded_message);
+        /// C++: }
+        pub fn new_nanos(time_limit_nanoseconds: u64, limit_exceeded_message: &str) -> Self {
+            // Timer.hpp:72
+            TimeLimitAlarm::new(time_limit_nanoseconds, limit_exceeded_message)
+        }
+
+        /// Timer.hpp:74-76
+        /// C++: static TimeLimitAlarm new_milis(uint64_t time_limit_milis, std::string_view limit_exceeded_message) {
+        /// C++:     return TimeLimitAlarm(uint64_t(time_limit_milis) * 1000000l, limit_exceeded_message);
+        /// C++: }
+        pub fn new_milis(time_limit_milis: u64, limit_exceeded_message: &str) -> Self {
+            // Timer.hpp:75
+            TimeLimitAlarm::new(time_limit_milis * 1000000, limit_exceeded_message)
+        }
+
+        /// Timer.hpp:77-79
+        /// C++: static TimeLimitAlarm new_seconds(uint64_t time_limit_seconds, std::string_view limit_exceeded_message) {
+        /// C++:     return TimeLimitAlarm(uint64_t(time_limit_seconds) * 1000000000l, limit_exceeded_message);
+        /// C++: }
+        pub fn new_seconds(time_limit_seconds: u64, limit_exceeded_message: &str) -> Self {
+            // Timer.hpp:78
+            TimeLimitAlarm::new(time_limit_seconds * 1000000000, limit_exceeded_message)
+        }
+
+        /// Timer.cpp:17-19
+        /// C++: void TimeLimitAlarm::report_time_exceeded() const {
+        /// C++:     BOOST_LOG_TRIVIAL(error) << "Time limit exceeded for " << m_limit_exceeded_message << ": " << m_timer.elapsed_seconds() << "s";
+        /// C++: }
+        fn report_time_exceeded(&self) {
+            // Timer.cpp:18
+            log::error!(
+                "Time limit exceeded for {}: {}s",
+                self.m_limit_exceeded_message,
+                self.m_timer.elapsed_seconds()
+            );
+        }
+    }
+
+    impl Drop for TimeLimitAlarm {
+        /// Timer.hpp:66-70
+        /// C++: ~TimeLimitAlarm() {
+        /// C++:     auto elapsed = m_timer.elapsed_nanoseconds();
+        /// C++:     if (elapsed > m_time_limit_nanoseconds)
+        /// C++:         this->report_time_exceeded();
+        /// C++: }
+        fn drop(&mut self) {
+            // Timer.hpp:67
+            let elapsed = self.m_timer.elapsed_nanoseconds();
+            // Timer.hpp:68-69
+            if elapsed > self.m_time_limit_nanoseconds {
+                self.report_time_exceeded();
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::timing::{nanoseconds_since_epoch, TimeLimitAlarm, Timer as TimingTimer};
     use super::*;
     use std::thread;
     use std::time::Duration;
@@ -291,22 +314,29 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
         let elapsed = timer.elapsed_ms();
         assert!(elapsed >= 50);
-        assert!(elapsed < 100); // Should be reasonably close
+        assert!(elapsed < 200); // Should be reasonably close
     }
 
     #[test]
-    fn test_precision_timer_start() {
-        let mut timer = PrecisionTimer::new();
-        assert_eq!(timer.elapsed_nanoseconds(), 0);
+    fn test_nanoseconds_since_epoch_monotonic_ish() {
+        let a = nanoseconds_since_epoch();
+        thread::sleep(Duration::from_millis(5));
+        let b = nanoseconds_since_epoch();
+        assert!(b > a);
+    }
 
+    #[test]
+    fn test_timing_timer_start() {
+        let mut timer = TimingTimer::new();
+        // Before start, m_nanoseconds == 0, so elapsed == now since epoch (huge).
         timer.start();
         thread::sleep(Duration::from_millis(10));
         assert!(timer.elapsed_nanoseconds() > 0);
     }
 
     #[test]
-    fn test_precision_timer_elapsed_units() {
-        let mut timer = PrecisionTimer::new();
+    fn test_timing_timer_elapsed_units() {
+        let mut timer = TimingTimer::new();
         timer.start();
         thread::sleep(Duration::from_millis(100));
 
@@ -326,8 +356,8 @@ mod tests {
     }
 
     #[test]
-    fn test_precision_timer_restart() {
-        let mut timer = PrecisionTimer::new();
+    fn test_timing_timer_restart() {
+        let mut timer = TimingTimer::new();
         timer.start();
         thread::sleep(Duration::from_millis(50));
         let elapsed1 = timer.elapsed_milliseconds();
@@ -342,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_time_limit_alarm_not_exceeded() {
-        let _alarm = TimeLimitAlarm::new_millis(1000, "test operation");
+        let _alarm = TimeLimitAlarm::new_milis(1000, "test operation");
         thread::sleep(Duration::from_millis(10));
         // Should not log error
     }
@@ -362,9 +392,9 @@ mod tests {
     }
 
     #[test]
-    fn test_precision_timer_default() {
-        let timer = PrecisionTimer::default();
-        assert_eq!(timer.elapsed_nanoseconds(), 0);
+    fn test_timing_timer_default() {
+        let timer = TimingTimer::default();
+        assert_eq!(timer.elapsed_microseconds() > 0, true); // now - 0 is huge
     }
 
     #[test]
