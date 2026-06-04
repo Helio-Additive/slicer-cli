@@ -73,7 +73,7 @@
     "rust": "crates/libslic3r-rs/src/common_defs.rs",
     "rust_exists": true,
     "loc": 22,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -84,7 +84,7 @@
     "rust": "crates/libslic3r-rs/src/object_id.rs",
     "rust_exists": true,
     "loc": 24,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -95,7 +95,7 @@
     "rust": "crates/libslic3r-rs/src/ex_polygon_serialize.rs",
     "rust_exists": true,
     "loc": 28,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -103,10 +103,10 @@
     "hpp": "I18N.hpp",
     "kind": "hpp",
     "area": "root",
-    "rust": "crates/libslic3r-rs/src/i18_n.rs",
-    "rust_exists": false,
+    "rust": "crates/libslic3r-rs/src/i18n.rs",
+    "rust_exists": true,
     "loc": 37,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -117,7 +117,7 @@
     "rust": "crates/libslic3r-rs/src/vector_formatter.rs",
     "rust_exists": true,
     "loc": 40,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {

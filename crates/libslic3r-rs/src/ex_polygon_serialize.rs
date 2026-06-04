@@ -1,230 +1,157 @@
-//! Serialization support for ExPolygon types using Serde
+//! External serialization of ExPolygons.
 //!
 //! C++ Reference:
 //! - ExPolygonSerialize.hpp
 //!
-//! This module provides serialization/deserialization support for ExPolygon and Polygon
-//! types. The C++ version uses Cereal library; Rust uses Serde which is the standard
-//! serialization framework in the Rust ecosystem.
+//! ## C++ -> Rust mapping
 //!
-//! ## C++ to Rust Mapping
+//! The C++ header provides *external* Cereal `serialize()` template functions for
+//! `Slic3r::Polygon` and `Slic3r::ExPolygon`. Cereal dispatches a single `serialize`
+//! function for both saving and loading, archiving the listed members in order:
 //!
-//! C++ uses Cereal's `serialize()` template functions:
 //! ```cpp
 //! template<class Archive>
 //! void serialize(Archive &archive, Slic3r::Polygon &polygon) {
 //!     archive(polygon.points);
 //! }
+//!
+//! template<class Archive>
+//! void serialize(Archive &archive, Slic3r::ExPolygon &expoly) {
+//!     archive(expoly.contour, expoly.holes);
+//! }
 //! ```
 //!
-//! Rust uses Serde's `#[derive(Serialize, Deserialize)]` attributes on the
-//! Polygon and ExPolygon types directly (in geometry/mod.rs).
+//! In Rust the equivalent of an external Cereal `serialize` is the `serde::Serialize`
+//! / `serde::Deserialize` implementation. `Polygon`, `ExPolygon` and `Point` all derive
+//! these traits in `crate::geometry`, with their fields declared in the same order the
+//! C++ archives them (`Polygon::points`; `ExPolygon::contour` then `ExPolygon::holes`),
+//! so the derived serialization mirrors the C++ member order byte-for-byte for a given
+//! data format.
+//!
+//! The two free functions below mirror the two C++ template functions 1:1 — each takes a
+//! generic archive (a `serde::Serializer`) and archives exactly the same members in the
+//! same order as the C++ code.
 
-use crate::geometry::{ExPolygon, Point, Polygon};
-use serde::{Deserialize, Serialize};
+use crate::geometry::{ExPolygon, Polygon};
+use serde::ser::{SerializeTuple, Serializer};
+use serde::Serialize;
 
-/// Re-export Polygon with serialization support
-/// ExPolygonSerialize.hpp:18-20
-/// C++: template<class Archive> void serialize(Archive &archive, Slic3r::Polygon &polygon)
-///
-/// In Rust, the Polygon type should already derive Serialize/Deserialize.
-/// This module ensures the serialization trait bounds are available.
-pub trait PolygonSerialize: Serialize + for<'de> Deserialize<'de> {}
+// ExPolygonSerialize.hpp:15  namespace cereal {
 
-impl PolygonSerialize for Polygon {}
+/// ExPolygonSerialize.hpp:17-20
+/// C++:
+/// ```cpp
+/// template<class Archive>
+/// void serialize(Archive &archive, Slic3r::Polygon &polygon) {
+///     archive(polygon.points);
+/// }
+/// ```
+pub fn serialize_polygon<A>(archive: A, polygon: &Polygon) -> Result<A::Ok, A::Error>
+where
+    A: Serializer,
+{
+    // archive(polygon.points);
+    polygon.points.serialize(archive)
+}
 
-/// Re-export ExPolygon with serialization support
 /// ExPolygonSerialize.hpp:22-25
-/// C++: template<class Archive> void serialize(Archive &archive, Slic3r::ExPolygon &expoly)
-///
-/// In Rust, the ExPolygon type should already derive Serialize/Deserialize.
-/// This module ensures the serialization trait bounds are available.
-pub trait ExPolygonSerialize: Serialize + for<'de> Deserialize<'de> {}
-
-impl ExPolygonSerialize for ExPolygon {}
-
-/// Serialize a Polygon to JSON string
-/// Convenience function for common use case
-pub fn serialize_polygon_to_json(polygon: &Polygon) -> Result<String, serde_json::Error> {
-    serde_json::to_string(polygon)
+/// C++:
+/// ```cpp
+/// template<class Archive>
+/// void serialize(Archive &archive, Slic3r::ExPolygon &expoly) {
+///     archive(expoly.contour, expoly.holes);
+/// }
+/// ```
+pub fn serialize_ex_polygon<A>(archive: A, expoly: &ExPolygon) -> Result<A::Ok, A::Error>
+where
+    A: Serializer,
+{
+    // archive(expoly.contour, expoly.holes);
+    // Cereal archives the listed members as a flat sequence; mirror that ordering by
+    // serializing contour then holes as a 2-element tuple.
+    let mut tup = archive.serialize_tuple(2)?;
+    tup.serialize_element(&expoly.contour)?;
+    tup.serialize_element(&expoly.holes)?;
+    tup.end()
 }
 
-/// Deserialize a Polygon from JSON string
-/// Convenience function for common use case
-pub fn deserialize_polygon_from_json(json: &str) -> Result<Polygon, serde_json::Error> {
-    serde_json::from_str(json)
-}
-
-/// Serialize an ExPolygon to JSON string
-/// Convenience function for common use case
-pub fn serialize_expolygon_to_json(expolygon: &ExPolygon) -> Result<String, serde_json::Error> {
-    serde_json::to_string(expolygon)
-}
-
-/// Deserialize an ExPolygon from JSON string
-/// Convenience function for common use case
-pub fn deserialize_expolygon_from_json(json: &str) -> Result<ExPolygon, serde_json::Error> {
-    serde_json::from_str(json)
-}
-
-/// Serialize a vector of ExPolygons to JSON string
-pub fn serialize_expolygons_to_json(expolygons: &[ExPolygon]) -> Result<String, serde_json::Error> {
-    serde_json::to_string(expolygons)
-}
-
-/// Deserialize a vector of ExPolygons from JSON string
-pub fn deserialize_expolygons_from_json(json: &str) -> Result<Vec<ExPolygon>, serde_json::Error> {
-    serde_json::from_str(json)
-}
+// ExPolygonSerialize.hpp:27  } // namespace cereal
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{Point, Polygon};
 
-    #[test]
-    fn test_polygon_json_roundtrip() {
-        let points = vec![
-            Point::new(0, 0),
-            Point::new(1000, 0),
-            Point::new(1000, 1000),
-            Point::new(0, 1000),
-        ];
-        let polygon = Polygon::new(points);
-
-        // Serialize to JSON
-        let json = serialize_polygon_to_json(&polygon).unwrap();
-        assert!(!json.is_empty());
-
-        // Deserialize back
-        let deserialized = deserialize_polygon_from_json(&json).unwrap();
-        assert_eq!(polygon, deserialized);
+    fn square(o: crate::Coord, s: crate::Coord) -> Polygon {
+        Polygon::from_points(vec![
+            Point::new(o, o),
+            Point::new(o + s, o),
+            Point::new(o + s, o + s),
+            Point::new(o, o + s),
+        ])
     }
 
     #[test]
-    fn test_expolygon_json_roundtrip() {
-        let contour_points = vec![
-            Point::new(0, 0),
-            Point::new(2000, 0),
-            Point::new(2000, 2000),
-            Point::new(0, 2000),
-        ];
-        let contour = Polygon::new(contour_points);
+    fn serialize_polygon_matches_derive() {
+        // serialize_polygon must produce exactly the same output as serializing
+        // `polygon.points`, since that is all the C++ function archives.
+        let polygon = square(0, 1000);
 
-        let hole_points = vec![
-            Point::new(500, 500),
-            Point::new(1500, 500),
-            Point::new(1500, 1500),
-            Point::new(500, 1500),
-        ];
-        let hole = Polygon::new(hole_points);
+        let mut buf_fn = Vec::new();
+        {
+            let mut ser = serde_json::Serializer::new(&mut buf_fn);
+            serialize_polygon(&mut ser, &polygon).unwrap();
+        }
 
-        let expolygon = ExPolygon::new(contour, vec![hole]);
+        let buf_points = serde_json::to_vec(&polygon.points).unwrap();
+        assert_eq!(buf_fn, buf_points);
 
-        // Serialize to JSON
-        let json = serialize_expolygon_to_json(&expolygon).unwrap();
-        assert!(!json.is_empty());
-
-        // Deserialize back
-        let deserialized = deserialize_expolygon_from_json(&json).unwrap();
-        assert_eq!(expolygon, deserialized);
+        // And the whole-struct derive serializes the single `points` field, so the
+        // derived form round-trips through the dedicated function's data.
+        let derived = serde_json::to_string(&polygon).unwrap();
+        let back: Polygon = serde_json::from_str(&derived).unwrap();
+        assert_eq!(polygon, back);
     }
 
     #[test]
-    fn test_expolygons_vector_roundtrip() {
-        let poly1 = ExPolygon::new(
-            Polygon::new(vec![
-                Point::new(0, 0),
-                Point::new(1000, 0),
-                Point::new(1000, 1000),
-                Point::new(0, 1000),
-            ]),
-            vec![],
-        );
+    fn serialize_ex_polygon_orders_contour_then_holes() {
+        let contour = square(0, 2000);
+        let hole = square(500, 1000);
+        let expoly = ExPolygon::with_holes(contour.clone(), vec![hole.clone()]);
 
-        let poly2 = ExPolygon::new(
-            Polygon::new(vec![
-                Point::new(2000, 2000),
-                Point::new(3000, 2000),
-                Point::new(3000, 3000),
-                Point::new(2000, 3000),
-            ]),
-            vec![],
-        );
+        let mut buf_fn = Vec::new();
+        {
+            let mut ser = serde_json::Serializer::new(&mut buf_fn);
+            serialize_ex_polygon(&mut ser, &expoly).unwrap();
+        }
 
-        let expolygons = vec![poly1, poly2];
-
-        // Serialize to JSON
-        let json = serialize_expolygons_to_json(&expolygons).unwrap();
-        assert!(!json.is_empty());
-
-        // Deserialize back
-        let deserialized = deserialize_expolygons_from_json(&json).unwrap();
-        assert_eq!(expolygons.len(), deserialized.len());
-        assert_eq!(expolygons[0], deserialized[0]);
-        assert_eq!(expolygons[1], deserialized[1]);
+        // contour then holes, as a flat sequence (mirroring archive(contour, holes)).
+        let expected = serde_json::to_vec(&(&contour, &vec![hole])).unwrap();
+        assert_eq!(buf_fn, expected);
     }
 
     #[test]
-    fn test_expolygon_with_multiple_holes() {
-        let contour = Polygon::new(vec![
-            Point::new(0, 0),
-            Point::new(5000, 0),
-            Point::new(5000, 5000),
-            Point::new(0, 5000),
-        ]);
+    fn ex_polygon_derive_roundtrip() {
+        // The derived Serialize/Deserialize is the actual Cereal-equivalent path used by
+        // the rest of the crate; verify it round-trips for a polygon with no holes and
+        // one with multiple holes.
+        let no_holes = ExPolygon::new(square(0, 1000));
+        let json = serde_json::to_string(&no_holes).unwrap();
+        let back: ExPolygon = serde_json::from_str(&json).unwrap();
+        assert_eq!(no_holes, back);
 
-        let hole1 = Polygon::new(vec![
-            Point::new(500, 500),
-            Point::new(1500, 500),
-            Point::new(1500, 1500),
-            Point::new(500, 1500),
-        ]);
-
-        let hole2 = Polygon::new(vec![
-            Point::new(3000, 3000),
-            Point::new(4000, 3000),
-            Point::new(4000, 4000),
-            Point::new(3000, 4000),
-        ]);
-
-        let expolygon = ExPolygon::new(contour, vec![hole1, hole2]);
-
-        // Serialize and deserialize
-        let json = serialize_expolygon_to_json(&expolygon).unwrap();
-        let deserialized = deserialize_expolygon_from_json(&json).unwrap();
-
-        assert_eq!(expolygon.contour, deserialized.contour);
-        assert_eq!(expolygon.holes.len(), deserialized.holes.len());
-        assert_eq!(expolygon.holes[0], deserialized.holes[0]);
-        assert_eq!(expolygon.holes[1], deserialized.holes[1]);
+        let multi = ExPolygon::with_holes(square(0, 5000), vec![square(500, 1000), square(3000, 1000)]);
+        let json = serde_json::to_string(&multi).unwrap();
+        let back: ExPolygon = serde_json::from_str(&json).unwrap();
+        assert_eq!(multi, back);
     }
 
     #[test]
-    fn test_empty_polygon() {
-        let polygon = Polygon::new(vec![]);
-
-        let json = serialize_polygon_to_json(&polygon).unwrap();
-        let deserialized = deserialize_polygon_from_json(&json).unwrap();
-
-        assert_eq!(polygon, deserialized);
-        assert!(deserialized.points.is_empty());
-    }
-
-    #[test]
-    fn test_expolygon_no_holes() {
-        let contour = Polygon::new(vec![
-            Point::new(0, 0),
-            Point::new(1000, 0),
-            Point::new(1000, 1000),
-            Point::new(0, 1000),
-        ]);
-
-        let expolygon = ExPolygon::new(contour, vec![]);
-
-        let json = serialize_expolygon_to_json(&expolygon).unwrap();
-        let deserialized = deserialize_expolygon_from_json(&json).unwrap();
-
-        assert_eq!(expolygon, deserialized);
-        assert!(deserialized.holes.is_empty());
+    fn empty_polygon_roundtrip() {
+        let polygon = Polygon::new();
+        let json = serde_json::to_string(&polygon).unwrap();
+        let back: Polygon = serde_json::from_str(&json).unwrap();
+        assert_eq!(polygon, back);
+        assert!(back.points.is_empty());
     }
 }

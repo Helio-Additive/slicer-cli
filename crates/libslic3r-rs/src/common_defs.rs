@@ -1,12 +1,15 @@
-//! Common definitions and enumerations shared across the library
-//!
-//! Provides common type definitions consistent across the codebase,
-//! particularly nozzle types for printer hardware specifications.
+//! CommonDefs.hpp
+//! ---------------
+//! This header provides common definitions and enumerations shared across multiple libraries.
+//! It is intended for use in projects that require consistent type definitions, such as nozzle types.
+//! The contents of this file are designed to be reusable and maintainable for cross-library integration.
 //!
 //! C++ Reference: CommonDefs.hpp
 
+// BBS
+// CommonDefs.hpp:11
 /// Nozzle material type enumeration
-/// CommonDefs.hpp:13-21
+/// CommonDefs.hpp:12-21
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum NozzleType {

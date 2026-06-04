@@ -6,7 +6,7 @@
 //! This module provides wrapper types that implement Display for pretty-printing
 //! collections in log output. Useful for debugging and diagnostic messages.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// Wrapper for formatting vectors and slices with Display trait
@@ -54,18 +54,22 @@ impl<'a, T: fmt::Display> fmt::Debug for VectorFormatter<'a, T> {
     }
 }
 
-/// Wrapper for formatting HashMaps with Display trait
+/// Wrapper for formatting maps with Display trait
+///
+/// C++ uses `std::map<T1, T2>`, which iterates in sorted key order. The faithful
+/// Rust equivalent is `BTreeMap` (ordered by key); `HashMap` would yield
+/// nondeterministic iteration order and break byte-exact log output.
 /// VectorFormatter.hpp:26-40
 pub struct MapFormatter<'a, K, V> {
     /// Reference to the map to format
     /// VectorFormatter.hpp:28
-    map: &'a HashMap<K, V>,
+    map: &'a BTreeMap<K, V>,
 }
 
 impl<'a, K, V> MapFormatter<'a, K, V> {
-    /// Create a new MapFormatter wrapping a HashMap
+    /// Create a new MapFormatter wrapping a BTreeMap
     /// VectorFormatter.hpp:29
-    pub fn new(map: &'a HashMap<K, V>) -> Self {
+    pub fn new(map: &'a BTreeMap<K, V>) -> Self {
         Self { map }
     }
 }
@@ -105,7 +109,7 @@ pub fn format_vec<T>(vec: &[T]) -> VectorFormatter<T> {
 }
 
 /// Convenience function to create a MapFormatter
-pub fn format_map<K, V>(map: &HashMap<K, V>) -> MapFormatter<K, V> {
+pub fn format_map<K, V>(map: &BTreeMap<K, V>) -> MapFormatter<K, V> {
     MapFormatter::new(map)
 }
 
@@ -143,14 +147,14 @@ mod tests {
 
     #[test]
     fn test_map_formatter_empty() {
-        let map: HashMap<i32, &str> = HashMap::new();
+        let map: BTreeMap<i32, &str> = BTreeMap::new();
         let formatted = MapFormatter::new(&map);
         assert_eq!(format!("{}", formatted), "[]");
     }
 
     #[test]
     fn test_map_formatter_single() {
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert(1, "one");
         let formatted = MapFormatter::new(&map);
         assert_eq!(format!("{}", formatted), "[1 : one]");
@@ -158,19 +162,13 @@ mod tests {
 
     #[test]
     fn test_map_formatter_multiple() {
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("a", 1);
         map.insert("b", 2);
         map.insert("c", 3);
         let formatted = MapFormatter::new(&map);
-        let output = format!("{}", formatted);
-
-        // HashMap iteration order is not guaranteed, so check components
-        assert!(output.starts_with("["));
-        assert!(output.ends_with("]"));
-        assert!(output.contains("a : 1"));
-        assert!(output.contains("b : 2"));
-        assert!(output.contains("c : 3"));
+        // BTreeMap iterates in sorted key order, matching C++ std::map
+        assert_eq!(format!("{}", formatted), "[a : 1, b : 2, c : 3]");
     }
 
     #[test]
@@ -178,7 +176,7 @@ mod tests {
         let vec = vec![10, 20, 30];
         assert_eq!(format!("{}", format_vec(&vec)), "[10, 20, 30]");
 
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
         map.insert("x", 100);
         let output = format!("{}", format_map(&map));
         assert_eq!(output, "[x : 100]");

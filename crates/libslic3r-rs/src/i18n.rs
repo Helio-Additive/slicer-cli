@@ -34,7 +34,8 @@ pub fn clear_translate_callback() {
 }
 
 /// Translate a string using the registered callback, or return as-is
-/// I18N.hpp:18
+/// I18N.hpp:18 (translate(const std::string&)) and I18N.hpp:19 (translate(const char*));
+/// the two C++ overloads collapse into one Rust fn since `&str` covers both cases.
 pub fn translate(s: &str) -> String {
     if let Ok(fn_guard) = TRANSLATE_FN.lock() {
         if let Some(callback) = *fn_guard {
@@ -49,7 +50,7 @@ pub fn translate(s: &str) -> String {
 }
 
 /// Macro for marking strings as translatable (no-op in library mode)
-/// I18N.hpp:29
+/// I18N.hpp:31
 #[macro_export]
 macro_rules! L {
     ($s:expr) => {
@@ -58,7 +59,7 @@ macro_rules! L {
 }
 
 /// Macro for marking strings with context (no-op in library mode)
-/// I18N.hpp:30
+/// I18N.hpp:32
 #[macro_export]
 macro_rules! L_CONTEXT {
     ($s:expr, $context:expr) => {
@@ -67,7 +68,7 @@ macro_rules! L_CONTEXT {
 }
 
 /// Macro for translating strings at runtime
-/// I18N.hpp:31
+/// I18N.hpp:33
 #[macro_export]
 macro_rules! _u8L {
     ($s:expr) => {
