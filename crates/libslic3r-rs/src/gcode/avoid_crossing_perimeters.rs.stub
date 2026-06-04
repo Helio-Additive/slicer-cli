@@ -1,0 +1,122 @@
+//! Placeholder module for gcode/avoid_crossing_perimeters.rs
+//!
+//! C++ Reference:
+//! - GCode/AvoidCrossingPerimeters.hpp
+//! - GCode/AvoidCrossingPerimeters.cpp
+//!
+//! **STATUS:** Stub placeholder - implementation needed
+//!
+//! This file was auto-generated to maintain structural parity with libslic3r.
+//! Each type and function needs to be ported from the C++ source.
+
+use crate::{Result, Error};
+
+/// Placeholder for C++ class `AvoidCrossingPerimeters`
+/// GCode/AvoidCrossingPerimeters.hpp
+#[derive(Debug, Clone)]
+pub struct AvoidCrossingPerimeters {
+    // TODO: Port fields from C++ class
+    _placeholder: (),
+}
+
+impl AvoidCrossingPerimeters {
+    // Placeholder constructor
+    // GCode/AvoidCrossingPerimeters.hpp
+    pub fn new() -> Self {
+        unimplemented!("TODO: Port from C++")
+    }
+}
+
+/// Placeholder for C++ class `Boundary`
+/// GCode/AvoidCrossingPerimeters.hpp
+#[derive(Debug, Clone)]
+pub struct Boundary {
+    // TODO: Port fields from C++ class
+    _placeholder: (),
+}
+
+impl Boundary {
+    // Placeholder constructor
+    // GCode/AvoidCrossingPerimeters.hpp
+    pub fn new() -> Self {
+        unimplemented!("TODO: Port from C++")
+    }
+}
+
+/// Placeholder for C++ class `Point`
+/// GCode/AvoidCrossingPerimeters.hpp
+#[derive(Debug, Clone)]
+pub struct Point {
+    // TODO: Port fields from C++ class
+    _placeholder: (),
+}
+
+impl Point {
+    // Placeholder constructor
+    // GCode/AvoidCrossingPerimeters.hpp
+    pub fn new() -> Self {
+        unimplemented!("TODO: Port from C++")
+    }
+}
+
+/// Placeholder for C++ class `GCode`
+/// GCode/AvoidCrossingPerimeters.hpp
+#[derive(Debug, Clone)]
+pub struct GCode {
+    // TODO: Port fields from C++ class
+    _placeholder: (),
+}
+
+impl GCode {
+    // Placeholder constructor
+    // GCode/AvoidCrossingPerimeters.hpp
+    pub fn new() -> Self {
+        unimplemented!("TODO: Port from C++")
+    }
+}
+
+/// Placeholder for C++ class `Layer`
+/// GCode/AvoidCrossingPerimeters.hpp
+#[derive(Debug, Clone)]
+pub struct Layer {
+    // TODO: Port fields from C++ class
+    _placeholder: (),
+}
+
+impl Layer {
+    // Placeholder constructor
+    // GCode/AvoidCrossingPerimeters.hpp
+    pub fn new() -> Self {
+        unimplemented!("TODO: Port from C++")
+    }
+}
+
+/// Placeholder function
+/// GCode/AvoidCrossingPerimeters.hpp
+pub fn travel_to() -> Result<()> {
+    unimplemented!("TODO: Port from C++")
+}
+
+/// Placeholder function
+/// GCode/AvoidCrossingPerimeters.hpp
+pub fn used_external_mp_once() -> Result<()> {
+    unimplemented!("TODO: Port from C++")
+}
+
+/// Placeholder function
+/// GCode/AvoidCrossingPerimeters.hpp
+pub fn use_external_mp() -> Result<()> {
+    unimplemented!("TODO: Port from C++")
+}
+
+/// Placeholder function
+/// GCode/AvoidCrossingPerimeters.hpp
+pub fn clear() -> Result<()> {
+    unimplemented!("TODO: Port from C++")
+}
+
+/// Placeholder function
+/// GCode/AvoidCrossingPerimeters.hpp
+pub fn reset_once_modifiers() -> Result<()> {
+    unimplemented!("TODO: Port from C++")
+}

@@ -1,0 +1,3 @@
+# libslic3r-rs
+
+Pretty simple, this is pure 1-to-1 rewrite of libslic3r in Rust, with no system dependencies we could run this in browser as WASM, lambda, etc...

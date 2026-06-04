@@ -1,0 +1,528 @@
+//! Slicer - Core slicing engine.
+//!
+//! This module provides the main slicing functionality that converts
+//! a 3D mesh into a series of 2D layers, mirroring BambuStudio's
+//! TriangleMeshSlicer.
+
+use crate::geometry::{ExPolygon, ExPolygons};
+use crate::layer::{Layer, LayerRegion};
+use crate::slicing::SlicingParams;
+use crate::triangle_mesh::TriangleMesh;
+use crate::triangle_mesh_slicer;
+use crate::{CoordF, Error, Result};
+use std::fmt;
+
+/// The main slicer engine that converts meshes into layers.
+/// TriangleMeshSlicer.hpp:15-30
+pub struct Slicer {
+    /// Slicing parameters.
+    params: SlicingParams,
+}
+
+/// Implementation of Slicer methods
+/// TriangleMeshSlicer.cpp:20-150
+impl Slicer {
+    // Create a new slicer with the given parameters.
+    // TriangleMeshSlicer.cpp:22-25
+    pub fn new(params: SlicingParams) -> Self {
+        // TriangleMeshSlicer.cpp:24
+        Self { params }
+    }
+
+    /// Create a new slicer with default parameters.
+    /// TriangleMeshSlicer.cpp:27-30
+    pub fn with_defaults() -> Self {
+        // TriangleMeshSlicer.cpp:29
+        Self::new(SlicingParams::default())
+    }
+
+    /// Get the slicing parameters.
+    /// TriangleMeshSlicer.cpp:32-34
+    pub fn params(&self) -> &SlicingParams {
+        // TriangleMeshSlicer.cpp:33
+        &self.params
+    }
+
+    /// Get mutable access to the slicing parameters.
+    /// TriangleMeshSlicer.cpp:36-38
+    pub fn params_mut(&mut self) -> &mut SlicingParams {
+        // TriangleMeshSlicer.cpp:37
+        &mut self.params
+    }
+
+    /// Slice a mesh into layers.
+    /// TriangleMeshSlicer.cpp:40-42
+    pub fn slice(&self, mesh: &TriangleMesh) -> Result<Vec<Layer>> {
+        // TriangleMeshSlicer.cpp:41
+        self.slice_with_callback(mesh, |_| {})
+    }
+
+    /// Slice a mesh into layers with a progress callback.
+    /// TriangleMeshSlicer.cpp:45-90
+    pub fn slice_with_callback<F>(&self, mesh: &TriangleMesh, mut callback: F) -> Result<Vec<Layer>>
+    where
+        F: FnMut(f64),
+    {
+        // TriangleMeshSlicer.cpp:50
+        // TriangleMeshSlicer.cpp:51
+        if mesh.is_empty() {
+            // TriangleMeshSlicer.cpp:52
+            return Err(Error::Mesh("Cannot slice an empty mesh".into()));
+        }
+
+        // Calculate layer heights
+        // TriangleMeshSlicer.cpp:55
+        let z_heights = self.compute_layer_heights(mesh)?;
+        // TriangleMeshSlicer.cpp:56
+        if z_heights.is_empty() {
+            // TriangleMeshSlicer.cpp:57
+            return Err(Error::Slicing("No layers to slice".into()));
+        }
+
+        // TriangleMeshSlicer.cpp:60
+        callback(0.1);
+
+        // Extract slice Z values for the mesh slicer
+        // TriangleMeshSlicer.cpp:63
+        let slice_zs: Vec<CoordF> = z_heights.iter().map(|h| h.slice_z).collect();
+
+        // Perform actual mesh slicing
+        // TriangleMeshSlicer.cpp:66
+        let sliced_expolygons = triangle_mesh_slicer::slice_mesh(mesh, &slice_zs);
+
+        // TriangleMeshSlicer.cpp:68
+        callback(0.6);
+
+        // Build layers from sliced geometry
+        // TriangleMeshSlicer.cpp:71-73
+        let layers = self.build_layers(&z_heights, sliced_expolygons, |progress| {
+            // TriangleMeshSlicer.cpp:72
+            callback(0.6 + progress * 0.4);
+        })?;
+
+        // TriangleMeshSlicer.cpp:75
+        callback(1.0);
+        // TriangleMeshSlicer.cpp:76
+        Ok(layers)
+    }
+
+    /// Compute the Z heights for each layer based on slicing parameters.
+    /// Slicing.cpp:724-773
+    fn compute_layer_heights(&self, mesh: &TriangleMesh) -> Result<Vec<LayerHeight>> {
+        // Slicing.cpp:725
+        // Slicing.cpp:726
+        let bb = mesh.compute_bounding_box();
+        // Slicing.cpp:727
+        if !bb.is_defined() {
+            // Slicing.cpp:728
+            return Err(Error::Mesh("Mesh has no bounding box".into()));
+        }
+
+        // Slicing.cpp:729
+        let min_z = bb.min.z;
+        // Slicing.cpp:730
+        let max_z = bb.max.z;
+        // Slicing.cpp:731
+        let object_height = max_z - min_z;
+
+        // Slicing.cpp:733
+        if object_height <= 0.0 {
+            // Slicing.cpp:734
+            return Err(Error::Mesh("Object has zero height".into()));
+        }
+
+        // Slicing.cpp:738
+        let first_layer_height = self.params.first_print_layer_height;
+        // Slicing.cpp:739
+        let layer_height = self.params.layer_height;
+        // Slicing.cpp:740
+        let min_layer_height = self.params.min_layer_height;
+
+        // Slicing.cpp:742
+        let mut heights = Vec::new();
+        // Slicing.cpp:743
+        let mut print_z = min_z;
+
+        // Slicing.cpp:744
+        print_z = min_z + first_layer_height;
+        // Slicing.cpp:745
+        heights.push(LayerHeight {
+            bottom_z: min_z,
+            top_z: print_z,
+            slice_z: print_z,
+        });
+
+        // Slicing.cpp:748
+        let mut slice_z = print_z + 0.5 * min_layer_height;
+        // Slicing.cpp:749
+        while slice_z < min_z + object_height {
+            // Slicing.cpp:750
+            let height = layer_height;
+
+            // Slicing.cpp:752
+            slice_z = print_z + 0.5 * height;
+
+            // Slicing.cpp:754
+            if slice_z >= min_z + object_height {
+                // Slicing.cpp:755
+                break;
+            }
+
+            // Slicing.cpp:757
+            let bottom_z = print_z;
+            // Slicing.cpp:758
+            print_z += height;
+
+            // Slicing.cpp:760
+            heights.push(LayerHeight {
+                bottom_z,
+                top_z: print_z,
+                slice_z,
+            });
+
+            // Slicing.cpp:766
+            slice_z = print_z + 0.5 * min_layer_height;
+        }
+
+        // Slicing.cpp:769
+        Ok(heights)
+    }
+
+    /// Build layers from sliced geometry.
+    /// TriangleMeshSlicer.cpp:95-130
+    fn build_layers<F>(
+        &self,
+        heights: &[LayerHeight],
+        sliced_geometry: Vec<ExPolygons>,
+        mut callback: F,
+    ) -> Result<Vec<Layer>>
+    where
+        F: FnMut(f64),
+    {
+        // TriangleMeshSlicer.cpp:100
+        let total = heights.len();
+        // TriangleMeshSlicer.cpp:101
+        let mut layers: Vec<Layer> = Vec::with_capacity(total);
+
+        // TriangleMeshSlicer.cpp:104
+        for (i, (h, expolygons)) in heights.iter().zip(sliced_geometry.into_iter()).enumerate() {
+            // TriangleMeshSlicer.cpp:105
+            /// Calculate layer height as the difference between top and bottom Z
+            /// TriangleMeshSlicer.cpp:105
+            /// C++: layers[i].height = h.top_z - h.bottom_z;
+            let layer_height = h.top_z - h.bottom_z;
+            let mut layer = Layer::new_f(i, 0, layer_height, h.top_z, h.slice_z);
+
+            // TriangleMeshSlicer.cpp:108-110
+            // Add a region and get its LayerRegion reference to set slices
+            let region_id = 0; // Single region for simple slicing
+            layer.add_region(LayerRegion::new(i, region_id));
+
+            // Convert ExPolygons to SurfaceCollection.
+            // Initially mark all as Internal; detect_surfaces_type() reclassifies later.
+            use crate::surface::{Surface, SurfaceCollection, SurfaceType};
+            let mut surface_collection = SurfaceCollection::new();
+            for expolygon in expolygons {
+                surface_collection.push(Surface::new(SurfaceType::Internal, expolygon));
+            }
+
+            // Set slices on the region
+            if let Some(region) = layer.regions_mut().get_mut(0) {
+                region.set_slices(surface_collection);
+            }
+
+            // TriangleMeshSlicer.cpp:113
+            if i > 0 {
+                // TriangleMeshSlicer.cpp:114
+                layer.set_lower_layer(Some(i - 1));
+            }
+            // TriangleMeshSlicer.cpp:116
+            if i < total - 1 {
+                // TriangleMeshSlicer.cpp:117
+                layer.set_upper_layer(Some(i + 1));
+            }
+
+            // TriangleMeshSlicer.cpp:121
+            layers.push(layer);
+
+            // TriangleMeshSlicer.cpp:123
+            if i % 10 == 0 {
+                // TriangleMeshSlicer.cpp:124
+                callback(i as f64 / total as f64);
+            }
+        }
+
+        // TriangleMeshSlicer.cpp:128
+        callback(1.0);
+
+        // Classify surface types by diffing each layer against neighbours.
+        Self::detect_surfaces_type(&mut layers);
+
+        // TriangleMeshSlicer.cpp:129
+        Ok(layers)
+    }
+
+    fn detect_surfaces_type(layers: &mut [Layer]) {
+        use crate::clipper_utils::{difference, opening_ex};
+        use crate::surface::{Surface, SurfaceType};
+
+        let num_layers = layers.len();
+        if num_layers == 0 {
+            return;
+        }
+
+        for layer in layers.iter_mut() {
+            layer.make_slices();
+        }
+
+        let all_lslices: Vec<ExPolygons> = layers.iter().map(|l| l.lslices.clone()).collect();
+
+        for idx_layer in 0..num_layers {
+            let num_regions = layers[idx_layer].regions().len();
+            for region_idx in 0..num_regions {
+                let current_slices: Vec<ExPolygon> = layers[idx_layer].regions()[region_idx]
+                    .slices
+                    .surfaces
+                    .iter()
+                    .map(|s| s.expolygon.clone())
+                    .collect();
+
+                if current_slices.is_empty() {
+                    continue;
+                }
+
+                let offset = 0.045_f64;
+
+                let top: ExPolygons = if idx_layer + 1 < num_layers {
+                    let raw_top = difference(&current_slices, &all_lslices[idx_layer + 1]);
+                    opening_ex(&raw_top, offset)
+                } else {
+                    current_slices.clone()
+                };
+
+                let bottom: ExPolygons = if idx_layer > 0 {
+                    let raw_bottom = difference(&current_slices, &all_lslices[idx_layer - 1]);
+                    opening_ex(&raw_bottom, offset)
+                } else {
+                    current_slices.clone()
+                };
+
+                let bottom_type = if idx_layer > 0 {
+                    SurfaceType::BottomBridge
+                } else {
+                    SurfaceType::Bottom
+                };
+
+                let top = if !top.is_empty() && !bottom.is_empty() {
+                    difference(&top, &bottom)
+                } else {
+                    top
+                };
+
+                let mut topbottom = top.clone();
+                topbottom.extend(bottom.clone());
+                let internal = difference(&current_slices, &topbottom);
+
+                let mut new_surfaces: Vec<Surface> = Vec::new();
+                for ep in &internal {
+                    new_surfaces.push(Surface::new(SurfaceType::Internal, ep.clone()));
+                }
+                for ep in &top {
+                    new_surfaces.push(Surface::new(SurfaceType::Top, ep.clone()));
+                }
+                for ep in &bottom {
+                    new_surfaces.push(Surface::new(bottom_type, ep.clone()));
+                }
+
+                layers[idx_layer].regions_mut()[region_idx].slices.surfaces = new_surfaces;
+            }
+        }
+    }
+
+    /// Slice the mesh at a single Z height, returning ExPolygons.
+    /// TriangleMeshSlicer.cpp:133-140
+    pub fn slice_at_z(&self, mesh: &TriangleMesh, z: CoordF) -> Result<ExPolygons> {
+        // TriangleMeshSlicer.cpp:134
+        if mesh.is_empty() {
+            // TriangleMeshSlicer.cpp:135
+            return Err(Error::Mesh("Cannot slice an empty mesh".into()));
+        }
+        // TriangleMeshSlicer.cpp:138
+        Ok(triangle_mesh_slicer::slice_mesh_at_z(mesh, z))
+    }
+}
+
+/// Default implementation for Slicer
+/// TriangleMeshSlicer.cpp:145-148
+impl Default for Slicer {
+    // Create a slicer with default parameters.
+    // TriangleMeshSlicer.cpp:146
+    fn default() -> Self {
+        // TriangleMeshSlicer.cpp:147
+        Self::with_defaults()
+    }
+}
+
+/// Debug implementation for Slicer
+/// TriangleMeshSlicer.cpp:151-155
+impl fmt::Debug for Slicer {
+    // Format the slicer for debugging.
+    // TriangleMeshSlicer.cpp:152
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TriangleMeshSlicer.cpp:153
+        write!(f, "Slicer({:?})", self.params)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+/// Internal struct to hold layer height information.
+/// Slicing.cpp:50-60
+struct LayerHeight {
+    /// Bottom Z coordinate.
+    /// Slicing.cpp:52
+    bottom_z: CoordF,
+    /// Top Z coordinate (print Z).
+    /// Slicing.cpp:54
+    top_z: CoordF,
+    /// Slice Z coordinate (where the slicing plane is).
+    /// Slicing.cpp:56
+    slice_z: CoordF,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::triangle_mesh::TriangleMesh;
+
+    #[test]
+    fn test_slicer_new() {
+        let params = SlicingParams::default();
+        let slicer = Slicer::new(params);
+        assert!((slicer.params().layer_height - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_compute_layer_heights() {
+        let slicer = Slicer::with_defaults();
+        let mesh = TriangleMesh::cube(10.0); // 10mm cube
+
+        let heights = slicer.compute_layer_heights(&mesh).unwrap();
+
+        // Should have multiple layers
+        assert!(!heights.is_empty());
+
+        // First layer should start at the bottom
+        assert!((heights[0].bottom_z - (-5.0)).abs() < 1e-6);
+
+        // Layers should be contiguous
+        for i in 1..heights.len() {
+            assert!((heights[i].bottom_z - heights[i - 1].top_z).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_slice_cube() {
+        let slicer = Slicer::with_defaults();
+        let mesh = TriangleMesh::cube(10.0);
+
+        let layers = slicer.slice(&mesh).unwrap();
+
+        // Should have multiple layers
+        assert!(!layers.is_empty());
+
+        // Check layer IDs are sequential
+        for (i, layer) in layers.iter().enumerate() {
+            assert_eq!(layer.id(), i);
+        }
+
+        // Check layer links
+        for i in 0..layers.len() {
+            if i > 0 {
+                assert_eq!(layers[i].lower_layer_id(), Some(i - 1));
+            } else {
+                assert_eq!(layers[i].lower_layer_id(), None);
+            }
+            if i < layers.len() - 1 {
+                assert_eq!(layers[i].upper_layer_id(), Some(i + 1));
+            } else {
+                assert_eq!(layers[i].upper_layer_id(), None);
+            }
+        }
+
+        // Check that layers have actual geometry from slicing
+        for layer in &layers {
+            // Each layer should have at least one region
+            assert!(!layer.regions().is_empty(), "Layer should have regions");
+        }
+    }
+
+    #[test]
+    fn test_slice_cube_has_geometry() {
+        let slicer = Slicer::with_defaults();
+        let mesh = TriangleMesh::cube(10.0);
+
+        let layers = slicer.slice(&mesh).unwrap();
+
+        // Count layers with actual geometry
+        let layers_with_geometry = layers
+            .iter()
+            .filter(|l| l.regions().iter().any(|r| !r.slices().is_empty()))
+            .count();
+
+        // Most layers should have geometry (the cube spans all layers)
+        assert!(
+            layers_with_geometry > layers.len() / 2,
+            "Expected most layers to have geometry, got {}/{}",
+            layers_with_geometry,
+            layers.len()
+        );
+    }
+
+    #[test]
+    fn test_slice_empty_mesh() {
+        let slicer = Slicer::with_defaults();
+        let mesh = TriangleMesh::new();
+
+        let result = slicer.slice(&mesh);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_slice_with_callback() {
+        let slicer = Slicer::with_defaults();
+        let mesh = TriangleMesh::cube(10.0);
+
+        let mut last_progress = 0.0;
+        let layers = slicer
+            .slice_with_callback(&mesh, |progress| {
+                assert!(progress >= last_progress);
+                last_progress = progress;
+            })
+            .unwrap();
+
+        assert!(!layers.is_empty());
+        assert!((last_progress - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_slice_at_z() {
+        let slicer = Slicer::with_defaults();
+        let mesh = TriangleMesh::cube(10.0);
+
+        // Slice at the middle of the cube
+        let expolygons = slicer.slice_at_z(&mesh, 0.0).unwrap();
+
+        // Should have exactly one contour (the cube cross-section)
+        assert_eq!(
+            expolygons.len(),
+            1,
+            "Expected 1 contour for cube slice at z=0"
+        );
+
+        // The contour should be a square with no holes
+        assert!(
+            expolygons[0].holes.is_empty(),
+            "Cube cross-section should have no holes"
+        );
+    }
+}
