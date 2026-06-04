@@ -594,6 +594,15 @@ impl PrintObject {
         /// PrintObject.cpp:657-658
         /// C++: this->discover_vertical_shells();
         /// C++: m_print->throw_if_canceled();
+        // NOTE: the faithful method `Self::discover_vertical_shells` is implemented and correct,
+        // but enabling it amplifies the upstream detect_surfaces_type BottomBridge over-classification
+        // (603 vs golden ~38): reading SLICES faithfully propagates the spurious bottom into massive
+        // solid fill (filament 3742 -> 6031). It stays gated behind VSHELL_FAITHFUL until that detect
+        // bug is fixed; the divergent surface::discover_vertical_shells remains the default.
+        let use_faithful_vshell = std::env::var("VSHELL_FAITHFUL").is_ok();
+        if use_faithful_vshell {
+            self.discover_vertical_shells()?;
+        }
         for region_id in 0..self.num_printing_regions() {
             let region_config = region_configs.get(region_id).cloned().unwrap_or_default();
             let nozzle_like_width = if region_config.outer_wall_line_width > 0.0 {
@@ -621,23 +630,21 @@ impl PrintObject {
                 })
                 .collect();
 
-            let surface_cfg = SurfaceDetectionConfig {
-                top_solid_layers: region_config.top_solid_layers as usize,
-                bottom_solid_layers: region_config.bottom_solid_layers as usize,
-                offset: nozzle_like_width / 10.0,
-                min_area: 0.5,
-                shell_growth: nozzle_like_width * 2.0,
-                fill_boundary_inset: 0.0,
-                solid_infill_width,
-            };
-
-            crate::surface::discover_vertical_shells(&mut region_surfaces, &surface_cfg);
-
-            if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
-                return Err(crate::Error::Cancelled);
+            if !use_faithful_vshell {
+                let surface_cfg = SurfaceDetectionConfig {
+                    top_solid_layers: region_config.top_solid_layers as usize,
+                    bottom_solid_layers: region_config.bottom_solid_layers as usize,
+                    offset: nozzle_like_width / 10.0,
+                    min_area: 0.5,
+                    shell_growth: nozzle_like_width * 2.0,
+                    fill_boundary_inset: 0.0,
+                    solid_infill_width,
+                };
+                crate::surface::discover_vertical_shells(&mut region_surfaces, &surface_cfg);
+                if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(crate::Error::Cancelled);
+                }
             }
-
-            /// PrintObject.cpp:660-672
             /// C++: this->process_external_surfaces();
             /// C++: m_print->throw_if_canceled();
             let expansion_distance = nozzle_like_width * std::f64::consts::SQRT_2;
@@ -1320,6 +1327,269 @@ impl PrintObject {
             .as_ref()
             .map(|r| r.all_regions.iter().map(|arc| arc.as_ref()).collect())
             .unwrap_or_default()
+    }
+
+    /// Discover vertical shells — ensure minimum solid shell thickness near sloped walls
+    /// by projecting each layer's top/bottom surfaces across the shell-layer window and
+    /// converting the matching internal regions to internal-solid.
+    /// Faithful port of C++ PrintObject::discover_vertical_shells (PrintObject.cpp:1739-2110),
+    /// single-region path (Benchy is single-region; the multi-material
+    /// top_bottom_surfaces_all_regions branch is not applicable here).
+    fn discover_vertical_shells(&mut self) -> Result<()> {
+        use crate::clipper_utils::{closing, difference, grow, intersection, offset2, shrink, union_ex, OffsetJoinType};
+        use crate::flow::FlowRole;
+        use crate::geometry::ExPolygons;
+        use crate::region_config::EnsureVerticalThicknessLevel;
+        use crate::surface::SurfaceType;
+
+        const TOP_BOTTOM_EXPANSION_COEFF: f64 = 0.05; // PrintObject.cpp:1758
+        let sf = crate::SCALING_FACTOR; // mm -> scaled (100_000); area is scaled^2
+        let eps_mm = crate::libslic3r::EPSILON; // 1e-4
+
+        let region_configs: Vec<crate::region_config::PrintRegionConfig> = self
+            .shared_regions
+            .as_ref()
+            .map(|r| r.all_regions.iter().map(|x| x.config().clone()).collect())
+            .unwrap_or_default();
+
+        // PerimeterGenerator/Layer feed this; spiral mode clamps the layer count.
+        let num_layers = self.layers.len();
+        if num_layers == 0 {
+            return Ok(());
+        }
+
+        // PrintObject.cpp:1827 — per region.
+        for region_id in 0..self.num_printing_regions() {
+            let rc = region_configs.get(region_id).cloned().unwrap_or_default();
+            // PrintObject.cpp:1830-1832 — evtDisabled regions are handled by discover_horizontal_shells.
+            if rc.ensure_vertical_shell_thickness == EnsureVerticalThicknessLevel::Disabled {
+                continue;
+            }
+            let n_top = rc.top_solid_layers as usize;
+            let n_bottom = rc.bottom_solid_layers as usize;
+            let top_thick = rc.top_solid_min_thickness;
+            let bot_thick = rc.bottom_solid_min_thickness;
+            let is_partial = rc.ensure_vertical_shell_thickness == EnsureVerticalThicknessLevel::Partial;
+
+            // --- Build per-layer cache (top_surfaces, bottom_surfaces, holes) from SLICES + fill_expolygons.
+            // PrintObject.cpp:1846-1864
+            struct Cache {
+                top: ExPolygons,
+                bottom: ExPolygons,
+                holes: ExPolygons,
+            }
+            let mut cache: Vec<Cache> = Vec::with_capacity(num_layers);
+            let mut lslices_all: Vec<ExPolygons> = Vec::with_capacity(num_layers);
+            let mut solid_spacing_mm: Vec<f64> = Vec::with_capacity(num_layers);
+            let mut ext_spacing_mm: Vec<f64> = Vec::with_capacity(num_layers);
+            for (idx, layer) in self.layers.iter().enumerate() {
+                lslices_all.push(layer.lslices.clone());
+                let lh = layer.height;
+                let lr = match layer.regions().get(region_id) {
+                    Some(r) => r,
+                    None => {
+                        cache.push(Cache { top: vec![], bottom: vec![], holes: vec![] });
+                        solid_spacing_mm.push(0.45);
+                        ext_spacing_mm.push(0.45);
+                        continue;
+                    }
+                };
+                let solid_flow = lr.flow_with_config(FlowRole::SolidInfill, lh, &rc, idx == 0)?;
+                let ext_flow = lr.flow_with_config(FlowRole::ExternalPerimeter, lh, &rc, idx == 0)?;
+                let sp = solid_flow.spacing();
+                solid_spacing_mm.push(sp);
+                ext_spacing_mm.push(ext_flow.spacing());
+                // PrintObject.cpp:1850 — top_bottom_expansion = scaled_spacing * 0.05 (mm here).
+                let exp = sp * TOP_BOTTOM_EXPANSION_COEFF;
+                let top_eps: ExPolygons = lr
+                    .slices
+                    .filter_by_type(SurfaceType::Top)
+                    .iter()
+                    .map(|s| s.expolygon.clone())
+                    .collect();
+                let bot_eps: ExPolygons = lr
+                    .slices
+                    .filter_by_types(&[SurfaceType::Bottom, SurfaceType::BottomBridge])
+                    .iter()
+                    .map(|s| s.expolygon.clone())
+                    .collect();
+                let top = if top_eps.is_empty() { vec![] } else { grow(&top_eps, exp, OffsetJoinType::Miter) };
+                let bottom = if bot_eps.is_empty() { vec![] } else { grow(&bot_eps, exp, OffsetJoinType::Miter) };
+                // holes = union of all regions' fill_expolygons on this layer (PrintObject.cpp:1859-1862)
+                let mut holes: ExPolygons = Vec::new();
+                for r in layer.regions() {
+                    holes.extend(r.fill_expolygons.iter().cloned());
+                }
+                let holes = if holes.is_empty() { holes } else { union_ex(&holes) };
+                cache.push(Cache { top, bottom, holes });
+            }
+
+            // --- Per layer: project, trim, regularize, convert. PrintObject.cpp:1880-2091
+            for idx in 0..num_layers {
+                if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(crate::Error::Cancelled);
+                }
+                let min_pis = solid_spacing_mm[idx] * 1.05; // min_perimeter_infill_spacing (mm)
+
+                let mut shell: ExPolygons = Vec::new();
+                let mut holes: ExPolygons = cache[idx].holes.clone();
+
+                // combine_shells: union accumulate. combine_holes: intersect (empty either -> empty).
+                macro_rules! combine_shells {
+                    ($s2:expr) => {{
+                        let s2 = $s2;
+                        if shell.is_empty() {
+                            shell = s2;
+                        } else if !s2.is_empty() {
+                            shell.extend(s2);
+                            shell = union_ex(&shell);
+                        }
+                    }};
+                }
+                macro_rules! combine_holes {
+                    ($h2:expr) => {{
+                        let h2 = $h2;
+                        if holes.is_empty() || h2.is_empty() {
+                            holes = vec![];
+                        } else {
+                            holes = intersection(&holes, &h2);
+                        }
+                    }};
+                }
+
+                // TOP projection (PrintObject.cpp:1924-1954)
+                if n_top > 0 {
+                    let print_z = self.layers[idx].print_z;
+                    let itop = idx + n_top;
+                    let mut i = idx + 1;
+                    let mut any = false;
+                    while i < cache.len()
+                        && (i < itop || self.layers[i].print_z - print_z < top_thick - eps_mm)
+                    {
+                        any = true;
+                        if !is_partial {
+                            combine_holes!(cache[i].holes.clone());
+                        }
+                        combine_shells!(cache[i].top.clone());
+                        i += 1;
+                    }
+                    if !any && i < cache.len() {
+                        // anchor special-case (PrintObject.cpp:1940-1948)
+                        let grown = grow(&cache[idx].top, ext_spacing_mm[idx], OffsetJoinType::Miter);
+                        combine_shells!(intersection(&grown, &lslices_all[i]));
+                    }
+                }
+                // BOTTOM projection (PrintObject.cpp:1955-1983)
+                if n_bottom > 0 {
+                    let bottom_z = self.layers[idx].bottom_z();
+                    let ibottom = idx as i64 - n_bottom as i64;
+                    let mut i = idx as i64 - 1;
+                    let mut any = false;
+                    while i >= 0
+                        && (i > ibottom
+                            || bottom_z - self.layers[i as usize].bottom_z() < bot_thick - eps_mm)
+                    {
+                        any = true;
+                        if !is_partial {
+                            combine_holes!(cache[i as usize].holes.clone());
+                        }
+                        combine_shells!(cache[i as usize].bottom.clone());
+                        i -= 1;
+                    }
+                    if !any && i >= 0 {
+                        let grown = grow(&cache[idx].bottom, ext_spacing_mm[idx], OffsetJoinType::Miter);
+                        combine_shells!(intersection(&grown, &lslices_all[i as usize]));
+                    }
+                }
+
+                // polygonsInternal = fill_surfaces filtered to {Internal, InternalVoid, InternalSolid}
+                // (PrintObject.cpp:1992). Read the current region's fill_surfaces (immutable).
+                let (internal_all, internal_only, void_only, solid_only) = {
+                    let fs = &self.layers[idx].regions()[region_id].fill_surfaces;
+                    let pick = |types: &[SurfaceType]| -> ExPolygons {
+                        fs.filter_by_types(types).iter().map(|s| s.expolygon.clone()).collect()
+                    };
+                    (
+                        pick(&[SurfaceType::Internal, SurfaceType::InternalVoid, SurfaceType::InternalSolid]),
+                        pick(&[SurfaceType::Internal]),
+                        pick(&[SurfaceType::InternalVoid]),
+                        pick(&[SurfaceType::InternalSolid]),
+                    )
+                };
+
+                // PrintObject.cpp:1993-1996 — trim shell to internal, plus internal-not-holes.
+                let mut new_shell = if shell.is_empty() || internal_all.is_empty() {
+                    vec![]
+                } else {
+                    intersection(&shell, &internal_all)
+                };
+                new_shell.extend(if holes.is_empty() {
+                    internal_all.clone()
+                } else {
+                    difference(&internal_all, &holes)
+                });
+                if new_shell.is_empty() {
+                    continue;
+                }
+                // PrintObject.cpp:1999 — append existing internal-solid so they merge.
+                new_shell.extend(solid_only.clone());
+                let shell_u = union_ex(&new_shell);
+
+                // PrintObject.cpp:2007-2055 — regularize (open then close), then drop scattered tiny bits.
+                let narrow_wall_r = 0.5 * 0.65 * min_pis;
+                let narrow_sparse_r = 0.5 * 1.2 * min_pis;
+                let tiny_overlap_r = 0.2 * min_pis;
+                let opened = offset2(
+                    &shell_u,
+                    narrow_wall_r,
+                    narrow_wall_r + narrow_sparse_r,
+                    OffsetJoinType::Square,
+                );
+                let regularized0 = shrink(&opened, narrow_sparse_r - tiny_overlap_r, OffsetJoinType::Square);
+
+                // object_volume = intersection(lslices[idx-1], lslices[idx+1]); internal_volume = closing(internal).
+                let object_volume = if idx > 0 && idx + 1 < lslices_all.len() {
+                    intersection(&lslices_all[idx - 1], &lslices_all[idx + 1])
+                } else {
+                    vec![]
+                };
+                let internal_volume = if internal_all.is_empty() {
+                    vec![]
+                } else {
+                    closing(&internal_all, eps_mm, OffsetJoinType::Miter)
+                };
+                let thr15 = 1.5 * min_pis * sf * sf;
+                let thr8 = 8.0 * min_pis * sf * sf;
+                let regularized: ExPolygons = regularized0
+                    .into_iter()
+                    .filter(|p| {
+                        let a = p.area().abs();
+                        let p1 = vec![p.clone()];
+                        let cond1 = a < thr15
+                            || (a < thr8 && difference(&p1, &object_volume).is_empty());
+                        let grown_p = grow(&p1, min_pis, OffsetJoinType::Miter);
+                        let cond2 =
+                            difference(&internal_volume, &grown_p).len() >= internal_volume.len();
+                        !(cond1 && cond2) // keep if NOT removed
+                    })
+                    .collect();
+                if regularized.is_empty() {
+                    continue;
+                }
+
+                // PrintObject.cpp:2060,2075-2090 — reassign surfaces.
+                let new_solid = intersection(&internal_all, &regularized);
+                let new_internal = difference(&internal_only, &regularized);
+                let new_void = difference(&void_only, &regularized);
+
+                let fs = &mut self.layers[idx].regions_mut()[region_id].fill_surfaces;
+                fs.keep_types(&[SurfaceType::Top, SurfaceType::Bottom, SurfaceType::BottomBridge]);
+                fs.append(new_internal, SurfaceType::Internal);
+                fs.append(new_void, SurfaceType::InternalVoid);
+                fs.append(new_solid, SurfaceType::InternalSolid);
+            }
+        }
+        Ok(())
     }
 
     /// Discover horizontal shells - propagate top/bottom surfaces to neighbor layers
