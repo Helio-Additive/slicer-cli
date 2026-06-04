@@ -396,6 +396,22 @@ impl SurfaceCollection {
             .collect()
     }
 
+    /// Get all surfaces whose type is in `types`.
+    /// C++ SurfaceCollection::filter_by_types(const SurfaceType *types, int ntypes)
+    pub fn filter_by_types(&self, types: &[SurfaceType]) -> Vec<&Surface> {
+        self.surfaces
+            .iter()
+            .filter(|s| types.contains(&s.surface_type))
+            .collect()
+    }
+
+    /// Keep only surfaces whose type is in `types` (drop the rest).
+    /// C++ SurfaceCollection::keep_types(const SurfaceType *types, int ntypes)
+    pub fn keep_types(&mut self, types: &[SurfaceType]) {
+        self.surfaces
+            .retain(|surface| types.contains(&surface.surface_type));
+    }
+
     /// Get all top surfaces.
     pub fn top_surfaces(&self) -> Vec<&Surface> {
         self.surfaces.iter().filter(|s| s.is_top()).collect()
