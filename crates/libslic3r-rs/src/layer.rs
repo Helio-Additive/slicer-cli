@@ -243,6 +243,7 @@ impl LayerRegion {
                     .append(intersected, SurfaceType::from_u8(surface_type_idx as u8));
             }
         }
+
     }
 
     /// Prepare fill surfaces

@@ -8,7 +8,8 @@
 use crate::{
     arachne::{generate_arachne_walls, ArachneConfig, ExtrusionLine as ArachneExtrusionLine},
     clipper_utils::{
-        difference, grow, offset2, opening, shrink, union_ex, union_polygons_ex, OffsetJoinType,
+        difference, grow, intersection, offset2, offset_expolygons, opening, shrink, union_ex,
+        union_polygons_ex, OffsetJoinType,
     },
     extrusion_entity::{
         ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole,
@@ -367,6 +368,11 @@ impl PerimeterGenerator {
         /// C++: ExPolygons gaps;
         let mut gaps: ExPolygons = Vec::new();
 
+        // PerimeterGenerator.cpp:949-950 — top_fills/fill_clip (only_one_wall_top), merged into
+        // the infill area at the end so fill_expolygons covers the top skin.
+        let mut top_fills: ExPolygons = Vec::new();
+        let mut fill_clip: ExPolygons = Vec::new();
+
         /// PerimeterGenerator.cpp:954
         /// C++: for (int i = 0;; ++ i) {
         let mut i = 0;
@@ -595,7 +601,34 @@ impl PerimeterGenerator {
             // C++: last = std::move(offsets);
             last = offsets;
 
-            // TODO: Port top_one_wall_type (Alltop) top_fills handling (PerimeterGenerator.cpp:1116-1183).
+            // PerimeterGenerator.cpp:1116-1183 — only_one_wall_top (Alltop) top split + top_fills.
+            // Gated behind env TOP_FILLS: the geometry is implemented but the perimeter-derived top
+            // region is over-inset vs the detect-derived top slices, so the clip keeps only thin
+            // overlap slivers (~no Top features) and it regresses filament (3742->4062). Preserved
+            // for the broader faithful audit of process_classic; default path omits it (no regression).
+            if i == 0
+                && i != loop_number
+                && self.config.top_one_wall
+                && std::env::var("TOP_FILLS").is_ok()
+                && self.config.upper_slices.as_ref().map(|u| !u.is_empty()).unwrap_or(false)
+            {
+                let upper = self.config.upper_slices.as_ref().unwrap();
+                let wl = self.config.perimeter_count as f64;
+                let mut ots = if self.config.perimeter_count == 0 { 0.0 } else { 1.5 * (ext_perimeter_width + perimeter_spacing * (wl - 1.0)) };
+                let red = if self.config.perimeter_count <= 1 { 0.0 } else { 0.9 * perimeter_spacing * (wl - 1.0) };
+                ots = if ots > red { ots - red } else { 0.0 };
+                let mwts = (self.config.top_area_threshold / 100.0) * (ext_perimeter_spacing / 2.0).max(perimeter_width / 2.0);
+                let upper_grown = grow(upper, mwts, OffsetJoinType::Miter);
+                let fill_clip_inner = offset_expolygons(&last, -ext_perimeter_spacing, OffsetJoinType::Miter);
+                let top0 = difference(&last, &upper_grown);
+                let inner = difference(&last, &grow(&top0, ots + mwts - ext_perimeter_spacing / 2.0, OffsetJoinType::Miter));
+                let top = difference(&fill_clip_inner, &inner);
+                let mut merged = std::mem::take(&mut top_fills);
+                merged.extend(top);
+                top_fills = union_ex(&merged);
+                fill_clip = offset_expolygons(&last, ext_perimeter_spacing / 2.0 - perimeter_spacing / 2.0, OffsetJoinType::Miter);
+                last = intersection(&inner, &last);
+            }
             // First faithful attempt (upper-slice threading is in place via PerimeterConfig.upper_slices)
             // regressed filament + only moved Top surface 1->2: top_fills geometry came out over-large
             // (fill_expolygons bloated past the slice) AND a downstream stage re-types the kept top.
@@ -759,9 +792,16 @@ impl PerimeterGenerator {
             }
         }
 
-        // PerimeterGenerator.cpp:1096
-        // C++: last is the remaining infill area
-        result.infill_area = last;
+        // PerimeterGenerator.cpp:1407-1413 — merge top_fills into infill area (covers top skin).
+        let mut infill_area = last;
+        if !top_fills.is_empty() && !fill_clip.is_empty() {
+            let grown_top = offset_expolygons(&top_fills, ext_perimeter_spacing / 2.0, OffsetJoinType::Miter);
+            let top_infill_exp = intersection(&fill_clip, &grown_top);
+            let mut merged = infill_area;
+            merged.extend(top_infill_exp);
+            infill_area = union_ex(&merged);
+        }
+        result.infill_area = infill_area;
 
         // PerimeterGenerator.cpp:952
         // C++: gaps collected during generation
