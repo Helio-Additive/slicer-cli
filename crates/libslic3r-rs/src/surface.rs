@@ -1259,7 +1259,10 @@ pub fn process_external_surfaces(
         return;
     }
 
-    let min_area_scaled = min_area_mm2 * 1e12;
+    // Area is in scaled^2 units: 1 mm^2 = SCALING_FACTOR^2 (= 1e10, since SCALING_FACTOR=1e5).
+    // The previous `* 1e12` assumed SCALING_FACTOR=1e6, making this threshold 100x too large
+    // (50 mm^2 instead of 0.5 mm^2) — which deleted nearly every Top/Bottom surface here.
+    let min_area_scaled = min_area_mm2 * crate::SCALING_FACTOR * crate::SCALING_FACTOR;
 
     for layer_surfaces in surfaces.iter_mut() {
         // Collect the "available fill area" = union of (Internal ∪ InternalSolid).

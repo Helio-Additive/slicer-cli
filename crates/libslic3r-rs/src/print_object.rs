@@ -535,6 +535,7 @@ impl PrintObject {
             return Ok(());
         }
 
+
         /// PrintObject.cpp:626-633
         /// C++: m_print->set_status(25, L("Generating infill regions"));
         // TODO: Port status callback
