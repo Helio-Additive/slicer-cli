@@ -44,6 +44,28 @@ use std::f64::consts::PI;
 // RegionExpansionParameters
 // ============================================================================
 
+/// `ClipperUtils.hpp:44` — `static constexpr const double ClipperOffsetShortestEdgeFactor = 0.005;`
+pub const CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR: f64 = 0.005;
+
+// Calculating radius discretization according to ClipperLib offsetter code, see void ClipperOffset::DoOffset(double delta)
+// RegionExpansion.cpp:19
+pub fn clipper_round_offset_error(offset: f64, arc_tolerance: f64) -> f64 {
+    // RegionExpansion.cpp:21
+    const DEF_ARC_TOLERANCE: f64 = 0.25;
+    // RegionExpansion.cpp:22-27
+    let y = if arc_tolerance <= 0.0 {
+        DEF_ARC_TOLERANCE
+    } else if arc_tolerance > offset * DEF_ARC_TOLERANCE {
+        offset * DEF_ARC_TOLERANCE
+    } else {
+        arc_tolerance
+    };
+    // RegionExpansion.cpp:28
+    let steps = (PI / (1.0 - y / offset).acos()).min(offset * PI);
+    // RegionExpansion.cpp:29
+    offset * (1.0 - (PI / steps).cos())
+}
+
 /// Parameters controlling the wave expansion algorithm.
 ///
 /// Port of `Slic3r::Algorithm::RegionExpansionParameters` from RegionExpansion.hpp.
@@ -71,6 +93,11 @@ pub struct RegionExpansionParameters {
 
     /// Maximum total inflation. Used to trim boundary for performance.
     pub max_inflation: CoordF,
+
+    /// RegionExpansion.hpp:31 — Accuracy of the offsetter for wave propagation.
+    pub arc_tolerance: f64,
+    /// RegionExpansion.hpp:32
+    pub shortest_edge_length: f64,
 }
 
 impl RegionExpansionParameters {
@@ -93,20 +120,29 @@ impl RegionExpansionParameters {
         assert!(expansion_step > 0.0);
         assert!(max_nr_expansion_steps > 0);
 
-        // Initial expansion of src to make the source regions intersect with boundary
-        // regions just a bit. The expansion should not be too tiny, but also small enough
-        // so the following expansion will compensate for tiny_expansion and bring the wave
-        // back to the boundary without producing ugly cusps where it touches the boundary.
+        // RegionExpansion.cpp:45-48
+        // Initial expansion of src to make the source regions intersect with boundary regions just a bit.
+        // The expansion should not be too tiny, but also small enough, so the following expansion will
+        // compensate for tiny_expansion and bring the wave back to the boundary without producing
+        // ugly cusps where it touches the boundary.
+        // RegionExpansion.cpp:49 — `out.tiny_expansion = std::min(0.25f * full_expansion, scaled<float>(0.05f));`
+        // NOTE: this module operates in mm (unscaled), so `scaled<float>(0.05f)` is kept as the
+        // mm literal 0.05 to remain internally consistent with the rest of the module.
         let mut tiny_expansion = (0.25 * full_expansion).min(0.05);
 
+        // RegionExpansion.cpp:50
         let mut nsteps = ((full_expansion - tiny_expansion) / expansion_step).ceil() as usize;
+        // RegionExpansion.cpp:51-52
         if max_nr_expansion_steps > 0 {
             nsteps = nsteps.min(max_nr_expansion_steps);
         }
+        // RegionExpansion.cpp:53 — assert(nsteps > 0)
         nsteps = nsteps.max(1);
 
+        // RegionExpansion.cpp:54
         let mut initial_step = (full_expansion - tiny_expansion) / nsteps as CoordF;
 
+        // RegionExpansion.cpp:55-59
         if nsteps > 1 && 0.25 * initial_step < tiny_expansion {
             // Decrease the step size by lowering number of steps.
             nsteps = (((full_expansion - tiny_expansion) / (4.0 * tiny_expansion)).floor()
@@ -115,18 +151,30 @@ impl RegionExpansionParameters {
             initial_step = (full_expansion - tiny_expansion) / nsteps as CoordF;
         }
 
+        // RegionExpansion.cpp:60-63 — NOTE: C++ does NOT modify nsteps here.
         if 0.25 * initial_step < tiny_expansion || nsteps == 1 {
             tiny_expansion = 0.2 * full_expansion;
             initial_step = 0.8 * full_expansion;
-            // Recalculate nsteps for the fallback
-            nsteps = 1;
         }
 
+        // RegionExpansion.cpp:64
         let other_step = initial_step;
-        let num_other_steps = if nsteps > 0 { nsteps - 1 } else { 0 };
+        // RegionExpansion.cpp:65
+        let num_other_steps = nsteps - 1;
 
-        // Maximum inflation for boundary trimming (with 10% margin).
+        // RegionExpansion.cpp:71-75
+        // Maximum inflation of seed contours over the boundary. Used to trim boundary to speed up
+        // clipping during wave propagation. Needs to be in sync with the offsetter accuracy.
+        // Clipper positive round offset should rather offset less than more.
+        // Still a little bit of additional offset was added.
         let max_inflation = (tiny_expansion + nsteps as CoordF * initial_step) * 1.1;
+
+        // RegionExpansion.cpp:67-69
+        // Accuracy of the offsetter for wave propagation.
+        // RegionExpansion.cpp:68 — `out.arc_tolerance = scaled<double>(0.1);` (kept in mm: 0.1)
+        let arc_tolerance = 0.1;
+        // RegionExpansion.cpp:69
+        let shortest_edge_length = initial_step * CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR;
 
         Self {
             tiny_expansion,
@@ -134,6 +182,8 @@ impl RegionExpansionParameters {
             other_step,
             num_other_steps,
             max_inflation,
+            arc_tolerance,
+            shortest_edge_length,
         }
     }
 }

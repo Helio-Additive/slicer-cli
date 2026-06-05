@@ -27,6 +27,8 @@ mod convex_hull;
 pub mod curves;
 pub mod elephant_foot;
 mod expolygon;
+// Geometry.cpp / Geometry.hpp — Transformation family + header math helpers.
+pub mod geometry;
 mod line;
 mod medial_axis;
 mod point;
@@ -54,7 +56,7 @@ pub use circle::{
 };
 pub use convex_hull::{
     convex_hull_3d, convex_hull_expolygons, convex_hull_points, convex_hull_polygons,
-    convex_hull_polylines,
+    convex_hull_polylines, decompose_convex_polygon_top_bottom, inside_convex_polygon,
 };
 pub use elephant_foot::{
     calculate_compensation, compensate_expolygon, compensate_expolygons, compensate_polygon,
@@ -69,12 +71,28 @@ pub use expolygon::{
     to_lines_expoly, to_points, to_polygons, to_polygons_expoly, to_polylines, to_polylines_expoly,
     translate_expolygons, ExPolygon, ExPolygons,
 };
+// Geometry.cpp / Geometry.hpp — Transformation family + transform helpers.
+// NOTE: `geometry::geometry::{Vec3d, Vec2d, Orientation}` are intentionally NOT
+// re-exported here to avoid clobbering the existing `geometry::Vec3d` (aabb
+// `Vec3`) and `geometry::Orientation` (Point.hpp). Use the fully-qualified path
+// `crate::geometry::geometry::*` for those.
+pub use geometry::{
+    angle_to_0_2pi, arrange, assemble_transform, assemble_transform_into, contains, deg2rad,
+    extract_euler_angles, extract_euler_angles_from_matrix, extract_rotation, generate_transform,
+    is_rotation_ninety_degrees, is_rotation_ninety_degrees_angle, mat_around_a_point_rotate,
+    rad2deg, rotation_diff_z, rotation_from_two_vectors, rotation_transform, rotation_xyz_diff,
+    scale_transform, scale_transform_into, scale_transform_uniform, scale_transform_uniform_into,
+    to_range_pi_pi, transform3d_from_string, translation_transform, Axis as TransformAxis,
+    Transformation, TransformationSVD,
+};
 pub use line::{Line, Lines};
 pub use medial_axis::{
     compute_medial_axis, compute_medial_axis_multi, compute_medial_axis_thick,
     distance_to_boundary, MedialAxisConfig,
 };
-pub use point::{collect_duplicates, Point, Point3, Point3F, PointF, Points, Points3};
+pub use point::{
+    collect_duplicates, has_duplicate_points, Point, Point3, Point3F, PointF, Points, Points3,
+};
 pub use polygon::{Polygon, Polygons};
 pub use polyline::{Polyline, Polylines};
 pub use simplify::{

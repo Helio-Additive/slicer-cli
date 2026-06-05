@@ -60,6 +60,7 @@ pub mod elephant_foot_compensation;
 pub mod emboss;
 pub mod emboss_shape;
 pub mod enum_bitmask;
+pub mod ex_polygon;
 pub mod ex_polygon_collection;
 pub mod ex_polygon_serialize;
 pub mod ex_polygons_index;

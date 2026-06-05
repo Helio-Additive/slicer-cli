@@ -86,10 +86,25 @@ impl ExPolygon {
     }
 
     /// Calculate the area of the ExPolygon (contour area minus hole areas).
+    ///
+    /// Faithful port of `double ExPolygon::area() const` (ExPolygon.cpp:52-58).
+    /// C++ `Polygon::area()` returns the *signed* area (CCW positive, CW
+    /// negative), so we use `signed_area()` here. The C++ body is:
+    /// ```cpp
+    /// double a = this->contour.area();
+    /// for (const Polygon &hole : holes)
+    ///     a -= - hole.area();  // holes have negative area  (== a += hole.area())
+    /// return a;
+    /// ```
     pub fn area(&self) -> CoordF {
-        let contour_area = self.contour.area();
-        let holes_area: CoordF = self.holes.iter().map(|h| h.area()).sum();
-        contour_area - holes_area
+        // ExPolygon.cpp:54
+        let mut a = self.contour.signed_area();
+        // ExPolygon.cpp:55-56  (the double-negative `a -= -x` is `a += x`)
+        for hole in &self.holes {
+            a -= -hole.signed_area();
+        }
+        // ExPolygon.cpp:57
+        a
     }
 
     /// Calculate the signed area of the ExPolygon.
@@ -334,17 +349,22 @@ impl ExPolygon {
     }
 
     /// Check if the ExPolygon is valid.
+    ///
+    /// Faithful port of `bool ExPolygon::is_valid() const` (ExPolygon.cpp:60-67):
+    /// the contour must be valid AND counter-clockwise, and every hole must be
+    /// valid AND NOT counter-clockwise (i.e. clockwise).
     pub fn is_valid(&self) -> bool {
-        if !self.contour.is_valid() {
+        // ExPolygon.cpp:62
+        if !self.contour.is_valid() || !self.contour.is_counter_clockwise() {
             return false;
         }
-
+        // ExPolygon.cpp:63-65
         for hole in &self.holes {
-            if !hole.is_valid() {
+            if !hole.is_valid() || hole.is_counter_clockwise() {
                 return false;
             }
         }
-
+        // ExPolygon.cpp:66
         true
     }
 

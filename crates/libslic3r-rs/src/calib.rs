@@ -21,22 +21,41 @@
 //!
 //! ## Note on Implementation
 //!
-//! The GCode generation functions are complex (766 lines in C++) and are provided as
-//! documented stubs. Full implementation would require:
-//! - Complete GCodeWriter integration
-//! - Model manipulation for custom G-code injection
-//! - Flow calculation integration
-//! - Extensive testing with real printer hardware
+//! This is a faithful 1:1 port of `Calib.cpp`. The pure-math primitives
+//! (`e_per_mm`, `convert_number_to_string`, `get_distance`, `to_radians`,
+//! `speed_adjust`, `number_spacing`, `delta_scale_bed_ext`) are ported exactly.
+//!
+//! The G-code-emitting members (`move_to`, `draw_digit`, `draw_number`,
+//! `draw_line`, `draw_box`, `find_optimal_PA_speed`,
+//! `CalibPressureAdvanceLine::*`, `CalibPressureAdvancePattern::*`) are BLOCKED:
+//! they require BambuStudio's `DynamicPrintConfig` config-reflection API
+//! (`option<ConfigOptionFloatsNullable>(...)->get_at(...)`, `get_abs_value(...)`,
+//! `apply(...)`, `full_print_config()`), the string-returning `GCodeWriter`
+//! (`retract()`/`travel_to_xy()`/`unretract()`/`extrude_to_xy()`/`set_speed()`/
+//! `set_pressure_advance()`/`travel_to_z()`/`apply_print_config()`/
+//! `set_xy_offset()`/`set_extruders()`/...), the `GCode` gcodegen wrapper
+//! (`config()`/`writer()`), and `Model::plates_custom_gcodes` /
+//! `CustomGCode::Info`. None of these exist in the Rust crate in the form
+//! required for a faithful translation, so those symbols are intentionally left
+//! unported rather than faked. See the parity ledger for status.
 
-use crate::geometry::{BoundingBox, BoundingBoxF, Point, PointF};
-use crate::{CoordF, Error, Result};
+use crate::flow::Flow;
+use crate::geometry::{BoundingBoxF, PointF};
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 /// Dynamic print configuration (placeholder for full implementation)
 /// PrintConfig.hpp
+///
+/// NOTE: BambuStudio's `DynamicPrintConfig` is a reflective key/value config
+/// store accessed via `option<T>(name)->get_at(idx)` / `get_abs_value(name)`.
+/// The Rust crate models configuration with concrete typed structs
+/// (`crate::print_config::PrintConfig`), so this remains a placeholder until the
+/// reflective config layer is ported. The G-code generation members of this
+/// module are blocked on it.
 #[derive(Debug, Clone, Default)]
 pub struct DynamicPrintConfig {
-    // TODO: Port full configuration system
+    // TODO: Port full reflective configuration system (DynamicPrintConfig).
     _placeholder: (),
 }
 
@@ -827,19 +846,19 @@ impl Default for SuggestedConfigCalibPAPattern {
 }
 
 // ============================================================================
-// Base Calibration Class (Stubs)
+// Base Calibration Class
 // ============================================================================
 
 /// Base class for Pressure Advance calibration with common drawing primitives.
 ///
-/// **NOTE:** The actual GCode generation methods are complex (400+ lines in C++)
-/// and are provided as stubs. Full implementation requires:
-/// - GCodeWriter integration
-/// - Flow calculation
-/// - Coordinate transformation for delta printers
-/// - Precise extrusion calculations
+/// The pure-math primitives (`e_per_mm`, `convert_number_to_string`,
+/// `get_distance`, `to_radians`, `speed_adjust`, `number_spacing`,
+/// `delta_scale_bed_ext`) are ported faithfully. The G-code-emitting
+/// primitives (`move_to`, `draw_digit`, `draw_number`, `draw_line`,
+/// `draw_box`) and `find_optimal_PA_speed` are BLOCKED on the string-returning
+/// `GCodeWriter` and `DynamicPrintConfig` reflection (see member docs).
 ///
-/// Calib.hpp:189-217
+/// Calib.hpp:193-235
 #[derive(Debug, Clone)]
 pub struct CalibPressureAdvance {
     /// Last position for movement calculations
@@ -888,8 +907,11 @@ impl CalibPressureAdvance {
 
     /// Find optimal PA test speed based on volumetric limits
     ///
-    /// **STUB:** This function calculates the optimal print speed for PA calibration
-    /// based on filament max volumetric speed and line flow rate.
+    /// **BLOCKED:** Faithful translation requires the reflective
+    /// `DynamicPrintConfig` API
+    /// (`option<ConfigOptionFloatsNullable>("filament_max_volumetric_speed")
+    /// ->get_at(filament_idx)`, `..."nozzle_diameter"->get_at(extruder_id)`,
+    /// `..."outer_wall_speed"->get_at(extruder_id)`), which is not ported.
     ///
     /// Calib.hpp:191
     /// Calib.cpp:9-18
@@ -900,47 +922,93 @@ impl CalibPressureAdvance {
         _extruder_id: usize,
         _filament_idx: usize,
     ) -> Result<f32> {
-        // TODO: Implement PA speed calculation
-        // C++ implementation:
-        // 1. Get filament_max_volumetric_speed from config
-        // 2. Calculate flow using Flow(line_width, layer_height, nozzle_diameter)
-        // 3. Calculate: min(max(100.0, outer_wall_speed), max_volumetric / flow.mm3_per_mm())
-        // 4. Return floor(pa_speed)
-        Ok(100.0)
+        // BLOCKED on DynamicPrintConfig reflective option API. C++ Calib.cpp:9-18:
+        //   const double general_suggested_min_speed   = 100.0;
+        //   double filament_max_volumetric_speed =
+        //       config.option<ConfigOptionFloatsNullable>("filament_max_volumetric_speed")->get_at(filament_idx);
+        //   Flow pattern_line = Flow(line_width, layer_height,
+        //       config.option<ConfigOptionFloatsNullable>("nozzle_diameter")->get_at(extruder_id));
+        //   auto pa_speed = std::min(std::max(general_suggested_min_speed,
+        //       config.option<ConfigOptionFloatsNullable>("outer_wall_speed")->get_at(extruder_id)),
+        //       filament_max_volumetric_speed / pattern_line.mm3_per_mm());
+        //   return std::floor(pa_speed);
+        Err(Error::Config(
+            "CalibPressureAdvance::find_optimal_PA_speed blocked on DynamicPrintConfig reflective option API"
+                .to_string(),
+        ))
+    }
+
+    /// Compute extrusion length per mm of travel for the given line geometry.
+    /// Calib.hpp:204
+    /// Calib.cpp:33-39
+    pub fn e_per_mm(
+        &self,
+        line_width: f64,
+        layer_height: f64,
+        nozzle_diameter: f32,
+        filament_diameter: f32,
+        print_flow_ratio: f32,
+    ) -> Result<f64> {
+        // Calib.cpp:35
+        let line_flow = Flow::new(line_width, layer_height, nozzle_diameter as f64)?;
+        // Calib.cpp:36
+        let filament_area =
+            std::f64::consts::PI * (filament_diameter as f64 / 2.0).powi(2);
+
+        // Calib.cpp:38
+        Ok(line_flow.mm3_per_mm()? / filament_area * print_flow_ratio as f64)
+    }
+
+    /// Convert a number to its trailing-zero-stripped decimal string.
+    /// Calib.hpp:201
+    /// Calib.cpp:41-48
+    pub fn convert_number_to_string(&self, num: f64) -> String {
+        // Calib.cpp:43 — std::to_string(double) formats with %f (6 decimals).
+        let mut s_number = format!("{:.6}", num);
+        // Calib.cpp:44 — erase trailing zeros.
+        if let Some(pos) = s_number.rfind(|c| c != '0') {
+            s_number.truncate(pos + 1);
+        }
+        // Calib.cpp:45 — erase a trailing '.' if it is now last.
+        if let Some(pos) = s_number.rfind(|c| c != '.') {
+            s_number.truncate(pos + 1);
+        }
+
+        // Calib.cpp:47
+        s_number
     }
 
     /// Convert degrees to radians
-    /// Calib.hpp:211
+    /// Calib.hpp:215 — `double to_radians(double degrees) const { return degrees * M_PI / 180; }`
     pub fn to_radians(&self, degrees: f64) -> f64 {
         degrees * std::f64::consts::PI / 180.0
     }
 
     /// Get distance between two points
-    /// Calib.hpp:212
-    /// Calib.cpp:205
+    /// Calib.hpp:216
+    /// Calib.cpp:205 — `return std::hypot((to.x() - from.x()), (to.y() - from.y()));`
     pub fn get_distance(&self, from: PointF, to: PointF) -> f64 {
-        let dx = to.x - from.x;
-        let dy = to.y - from.y;
-        (dx * dx + dy * dy).sqrt()
+        (to.x - from.x).hypot(to.y - from.y)
     }
 
     /// Adjust speed for G-code output (convert mm/s to mm/min)
-    /// Calib.hpp:207
+    /// Calib.hpp:204 — `double speed_adjust(int speed) const { return speed * 60; }`
     pub fn speed_adjust(&self, speed: i32) -> i32 {
         speed * 60
     }
 
     /// Calculate number spacing for label positioning
-    /// Calib.hpp:204
+    /// Calib.hpp:206 — `double number_spacing() const { return m_digit_segment_len + m_digit_gap_len; }`
     pub fn number_spacing(&self) -> f64 {
         self.digit_segment_len + self.digit_gap_len
     }
 
     /// Scale bed extents for delta printers
-    /// Calib.hpp:200
+    /// Calib.hpp:200 — `void delta_scale_bed_ext(BoundingBoxf &bed_ext) const { bed_ext.scale(1.0f / 1.41421f); }`
     pub fn delta_scale_bed_ext(&self, bed_ext: &mut BoundingBoxF) {
-        // Scale by 1/sqrt(2) for delta printers
-        let scale = 1.0 / 1.41421;
+        // BoundingBoxf::scale(factor) multiplies both min and max by factor.
+        // 1.0f / 1.41421f computed in f32 to match the C++ literal precision.
+        let scale = (1.0f32 / 1.41421f32) as f64;
         bed_ext.min.x *= scale;
         bed_ext.min.y *= scale;
         bed_ext.max.x *= scale;
@@ -949,7 +1017,7 @@ impl CalibPressureAdvance {
 }
 
 // ============================================================================
-// Derived Calibration Classes (Stubs)
+// Derived Calibration Classes
 // ============================================================================
 
 /// Pressure Advance line test calibration.
@@ -957,9 +1025,12 @@ impl CalibPressureAdvance {
 /// Generates a series of horizontal lines with varying PA values and speeds
 /// to visualize the effect of pressure advance settings.
 ///
-/// **STUB:** Full implementation requires GCodeWriter and extensive G-code generation.
+/// **PARTIAL:** `delta_modify_start` and `set_speed` are ported; the
+/// G-code-emitting members (`generate_test`, `print_pa_lines`, `is_delta`) are
+/// BLOCKED on the `GCode` gcodegen wrapper and the string-returning
+/// `GCodeWriter` (see member docs).
 ///
-/// Calib.hpp:219-259
+/// Calib.hpp:237-274
 #[derive(Debug, Clone)]
 pub struct CalibPressureAdvanceLine {
     /// Base calibration functionality
@@ -1033,9 +1104,13 @@ impl CalibPressureAdvanceLine {
 
     /// Generate PA line test G-code
     ///
-    /// **STUB:** This would generate a series of test lines with varying PA values.
+    /// **BLOCKED:** Faithful translation requires the `GCode` gcodegen wrapper
+    /// (`config()`/`writer()`), the string-returning `GCodeWriter`
+    /// (`set_pressure_advance`, `travel_to_xy`, `extrude_to_xy`, `set_speed`, ...)
+    /// and `get_extents(printable_area.values)` — none ported in the required
+    /// form. See Calib.cpp:415-431 / print_pa_lines Calib.cpp:435-490.
     ///
-    /// Calib.hpp:225
+    /// Calib.hpp:243
     /// Calib.cpp:415-431
     pub fn generate_test(
         &mut self,
@@ -1043,34 +1118,40 @@ impl CalibPressureAdvanceLine {
         _step_pa: f64,
         _count: usize,
     ) -> Result<String> {
-        // TODO: Implement PA line test generation
-        // C++ implementation (400+ lines):
-        // 1. Calculate bed extents and starting position
-        // 2. Generate priming moves
-        // 3. For each PA value:
-        //    - Draw slow section (anchor)
-        //    - Draw fast section (test)
-        //    - Draw slow section (anchor)
-        //    - Draw value label if enabled
-        // 4. Move to next line position
         Err(Error::Config(
-            "PA line test generation not yet implemented".to_string(),
+            "CalibPressureAdvanceLine::generate_test blocked on GCode gcodegen + string GCodeWriter"
+                .to_string(),
         ))
     }
 
     /// Check if printer is delta type
-    /// Calib.hpp:239
+    ///
+    /// **BLOCKED:** C++ Calib.cpp:433 reads
+    /// `mp_gcodegen->config().printable_area.values.size() > 4`, which requires
+    /// the `GCode` gcodegen wrapper and the reflective config. Not ported.
+    ///
+    /// Calib.hpp:253
     /// Calib.cpp:433
     pub fn is_delta(&self) -> bool {
-        // TODO: Check printer type from config
+        // BLOCKED on GCode gcodegen / printable_area config.
         false
     }
 
     /// Set speed parameters
-    /// Calib.hpp:227-231
+    /// Calib.hpp:245-249
     pub fn set_speed(&mut self, fast: f64, slow: f64) {
-        self.fast_speed = fast;
+        // Calib.hpp:247-248 — m_slow_speed = slow; m_fast_speed = fast;
         self.slow_speed = slow;
+        self.fast_speed = fast;
+    }
+
+    /// Shift the start position for delta printers.
+    /// Calib.hpp:259
+    /// Calib.cpp:492-496
+    pub fn delta_modify_start(&self, startx: &mut f64, starty: &mut f64, count: i32) {
+        // Calib.cpp:494-495
+        *startx = -*startx;
+        *starty = -(count as f64 * self.space_y) / 2.0;
     }
 }
 
@@ -1079,9 +1160,11 @@ impl CalibPressureAdvanceLine {
 /// Generates a grid of test patterns with varying PA values, using
 /// corner features to visualize the effect of pressure advance.
 ///
-/// **STUB:** Full implementation requires Model manipulation and custom G-code injection.
+/// **PARTIAL:** The G-code-emitting members and config-derived dimension
+/// getters are BLOCKED on `DynamicPrintConfig` reflection, the string-returning
+/// `GCodeWriter`, and `Model`/`CustomGCode` injection (see member docs).
 ///
-/// Calib.hpp:284-337
+/// Calib.hpp:289-360
 #[derive(Debug, Clone)]
 pub struct CalibPressureAdvancePattern {
     /// Base calibration functionality
@@ -1134,11 +1217,20 @@ pub struct CalibPressureAdvancePattern {
 
 impl CalibPressureAdvancePattern {
     /// Create a new PA pattern calibration
-    /// Calib.hpp:287
+    /// Calib.hpp:294
     /// Calib.cpp:498-504
+    ///
+    /// NOTE: the C++ ctor also calls `refresh_setup(config, is_bbl_machine,
+    /// model, origin)` (Calib.cpp:503), which is BLOCKED on `DynamicPrintConfig`
+    /// reflection, `Model`, and the `GCodeWriter` setup chain. That call is
+    /// omitted here; the field initializers below mirror the C++ member defaults.
     pub fn new(params: CalibParams, config: DynamicPrintConfig) -> Self {
         Self {
-            base: CalibPressureAdvance::new(config),
+            base: CalibPressureAdvance {
+                // Calib.cpp:501 — this->m_draw_digit_mode = DrawDigitMode::Bottom_To_Top;
+                draw_digit_mode: DrawDigitMode::BottomToTop,
+                ..CalibPressureAdvance::new(config)
+            },
             params,
             starting_point: (0.0, 0.0, 0.0),
             is_start_point_fixed: false,
@@ -1155,22 +1247,17 @@ impl CalibPressureAdvancePattern {
 
     /// Generate custom G-codes for PA pattern test
     ///
-    /// **STUB:** This would inject custom G-code into the model for each pattern.
+    /// **BLOCKED:** Faithful translation requires `DynamicPrintConfig`
+    /// reflection, the string-returning `GCodeWriter`, `Model` /
+    /// `Model::plates_custom_gcodes`, and `CustomGCode::Info`/`Item` injection —
+    /// none ported in the required form.
     ///
-    /// Calib.hpp:295
-    /// Calib.cpp:506-648
+    /// Calib.hpp:302
+    /// Calib.cpp:506-656
     pub fn generate_custom_gcodes(&mut self) -> Result<()> {
-        // TODO: Implement PA pattern generation
-        // C++ implementation (140+ lines):
-        // 1. Calculate pattern positions and dimensions
-        // 2. For each PA value:
-        //    - Generate custom G-code item
-        //    - Draw box perimeters at corners
-        //    - Draw value labels
-        //    - Add to custom G-code list
-        // 3. Inject into Model's custom G-code info
         Err(Error::Config(
-            "PA pattern test generation not yet implemented".to_string(),
+            "CalibPressureAdvancePattern::generate_custom_gcodes blocked on DynamicPrintConfig + string GCodeWriter + Model custom gcode injection"
+                .to_string(),
         ))
     }
 
@@ -1202,24 +1289,46 @@ impl CalibPressureAdvancePattern {
     }
 
     /// Get total print size X
-    /// Calib.hpp:291
+    ///
+    /// **BLOCKED:** C++ `print_size_x() = object_size_x() + pattern_shift()`
+    /// (Calib.hpp:298); both `object_size_x()` (Calib.cpp:734) and
+    /// `pattern_shift()` (Calib.cpp:806) read `m_config` through the reflective
+    /// `DynamicPrintConfig` option API (`line_width()`, `wall_count()`,
+    /// `line_spacing_first_layer()`, ...). Not ported.
+    ///
+    /// Calib.hpp:298
     pub fn print_size_x(&self) -> f64 {
-        // TODO: Calculate from object_size_x() + pattern_shift()
-        100.0
+        unimplemented!(
+            "CalibPressureAdvancePattern::print_size_x blocked on DynamicPrintConfig option API"
+        )
     }
 
     /// Get total print size Y
-    /// Calib.hpp:292
+    ///
+    /// **BLOCKED:** C++ `print_size_y() = object_size_y()` (Calib.hpp:299),
+    /// where `object_size_y()` (Calib.cpp:740) reads `m_config` through the
+    /// reflective `DynamicPrintConfig` option API. Not ported.
+    ///
+    /// Calib.hpp:299
     pub fn print_size_y(&self) -> f64 {
-        // TODO: Calculate from object_size_y()
-        100.0
+        unimplemented!(
+            "CalibPressureAdvancePattern::print_size_y blocked on DynamicPrintConfig option API"
+        )
     }
 
     /// Get maximum layer Z height
-    /// Calib.hpp:293
+    ///
+    /// **BLOCKED:** C++ `max_layer_z() = height_first_layer() +
+    /// ((m_num_layers - 1) * height_layer())` (Calib.hpp:300), where
+    /// `height_first_layer()` / `height_layer()` read
+    /// `m_config.option<ConfigOptionFloat>("initial_layer_print_height"|"layer_height")->value`.
+    /// Not ported.
+    ///
+    /// Calib.hpp:300
     pub fn max_layer_z(&self) -> f64 {
-        // TODO: Calculate from layer heights
-        self.num_layers as f64 * 0.2
+        unimplemented!(
+            "CalibPressureAdvancePattern::max_layer_z blocked on DynamicPrintConfig option API"
+        )
     }
 }
 
@@ -1350,5 +1459,66 @@ mod tests {
         assert_eq!(config.floats_pairs.len(), 1);
         assert_eq!(config.nozzle_ratio_pairs.len(), 2);
         assert_eq!(config.int_pairs.len(), 2);
+    }
+
+    #[test]
+    fn test_convert_number_to_string() {
+        // Calib.cpp:41-48 — strips trailing zeros, then a trailing '.'.
+        let calib = CalibPressureAdvance::new(DynamicPrintConfig::default());
+        assert_eq!(calib.convert_number_to_string(0.02), "0.02");
+        assert_eq!(calib.convert_number_to_string(0.0), "0");
+        assert_eq!(calib.convert_number_to_string(1.0), "1");
+        assert_eq!(calib.convert_number_to_string(0.125), "0.125");
+        assert_eq!(calib.convert_number_to_string(10.5), "10.5");
+    }
+
+    #[test]
+    fn test_e_per_mm() {
+        // Calib.cpp:33-39 — mm3_per_mm / filament_area * print_flow_ratio.
+        let calib = CalibPressureAdvance::new(DynamicPrintConfig::default());
+        let line_width = 0.45;
+        let layer_height = 0.2;
+        let nozzle_diameter = 0.4_f32;
+        let filament_diameter = 1.75_f32;
+        let print_flow_ratio = 0.98_f32;
+
+        let e = calib
+            .e_per_mm(
+                line_width,
+                layer_height,
+                nozzle_diameter,
+                filament_diameter,
+                print_flow_ratio,
+            )
+            .expect("e_per_mm");
+
+        let flow = crate::flow::Flow::new(line_width, layer_height, nozzle_diameter as f64).unwrap();
+        let filament_area =
+            std::f64::consts::PI * (filament_diameter as f64 / 2.0).powi(2);
+        let expected = flow.mm3_per_mm().unwrap() / filament_area * print_flow_ratio as f64;
+        assert!((e - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_delta_modify_start() {
+        // Calib.cpp:492-496 — startx = -startx; starty = -(count * m_space_y) / 2.
+        let line = CalibPressureAdvanceLine::new(DynamicPrintConfig::default());
+        let mut startx = 12.0;
+        let mut starty = 99.0;
+        line.delta_modify_start(&mut startx, &mut starty, 10);
+        assert_eq!(startx, -12.0);
+        assert_eq!(starty, -(10.0 * line.space_y) / 2.0);
+    }
+
+    #[test]
+    fn test_delta_scale_bed_ext() {
+        // Calib.hpp:200 — bed_ext.scale(1.0f / 1.41421f).
+        let calib = CalibPressureAdvance::new(DynamicPrintConfig::default());
+        let mut bbox =
+            BoundingBoxF::from_points_minmax(PointF::new(0.0, 0.0), PointF::new(200.0, 200.0));
+        calib.delta_scale_bed_ext(&mut bbox);
+        let scale = (1.0f32 / 1.41421f32) as f64;
+        assert!((bbox.max.x - 200.0 * scale).abs() < 1e-9);
+        assert!((bbox.max.y - 200.0 * scale).abs() < 1e-9);
     }
 }

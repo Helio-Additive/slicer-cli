@@ -1096,7 +1096,7 @@
     "rust": "crates/libslic3r-rs/src/g_code_sender.rs",
     "rust_exists": false,
     "loc": 580,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1107,7 +1107,7 @@
     "rust": "crates/libslic3r-rs/src/build_volume.rs",
     "rust_exists": true,
     "loc": 620,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1118,7 +1118,7 @@
     "rust": "crates/libslic3r-rs/src/region_expansion.rs",
     "rust_exists": true,
     "loc": 625,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1127,9 +1127,9 @@
     "kind": "cpp",
     "area": "root",
     "rust": "crates/libslic3r-rs/src/ex_polygon.rs",
-    "rust_exists": false,
+    "rust_exists": true,
     "loc": 642,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1184,7 +1184,7 @@
     "rust": "crates/libslic3r-rs/src/cut_utils.rs",
     "rust_exists": true,
     "loc": 721,
-    "status": "pending",
+    "status": "deferred",
     "priority": 2
   },
   {
@@ -1206,7 +1206,7 @@
     "rust": "crates/libslic3r-rs/src/svg.rs",
     "rust_exists": true,
     "loc": 772,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1217,7 +1217,7 @@
     "rust": "crates/libslic3r-rs/src/orient.rs",
     "rust_exists": true,
     "loc": 788,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1228,7 +1228,7 @@
     "rust": "crates/libslic3r-rs/src/calib.rs",
     "rust_exists": true,
     "loc": 808,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1247,10 +1247,10 @@
     "hpp": "Geometry.hpp",
     "kind": "cpp",
     "area": "root",
-    "rust": "crates/libslic3r-rs/src/geometry.rs",
-    "rust_exists": false,
+    "rust": "crates/libslic3r-rs/src/geometry/geometry.rs",
+    "rust_exists": true,
     "loc": 827,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
