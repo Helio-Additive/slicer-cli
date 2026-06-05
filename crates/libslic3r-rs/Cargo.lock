@@ -1445,6 +1445,7 @@ dependencies = [
  "criterion",
  "earcutr",
  "env_logger",
+ "flate2",
  "geo",
  "geo-clipper",
  "indicatif",

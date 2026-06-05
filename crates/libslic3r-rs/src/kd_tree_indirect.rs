@@ -22,7 +22,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use slicer::kd_tree_indirect::KDTreeIndirect;
+//! use slicer::kd_tree_indirect::{KDTreeIndirect, find_closest_point};
 //!
 //! // Build a 2D tree over point data
 //! let points = vec![(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)];
@@ -30,21 +30,19 @@
 //!     if dim == 0 { points[idx].0 } else { points[idx].1 }
 //! };
 //!
-//! let mut tree = KDTreeIndirect::new(coord_fn);
+//! let mut tree = KDTreeIndirect::<2, f64, _>::new(coord_fn);
 //! tree.build(points.len());
 //!
 //! // Find closest point to (0.5, 0.5)
-//! let closest = tree.find_closest_point([0.5, 0.5], |_| true);
+//! let closest = find_closest_point(&tree, &[0.5, 0.5], |_| true);
 //! ```
 
+use crate::libslic3r::EPSILON;
 use crate::utils::next_highest_power_of_2;
 
 /// Sentinel value indicating "no position"
 /// KDTreeIndirect.hpp:28-30
 pub const NPOS: usize = usize::MAX;
-
-/// Small epsilon for floating-point comparisons
-const EPSILON: f64 = 1e-9;
 
 /// Visitor return mask controlling tree traversal
 /// KDTreeIndirect.hpp:14-17
@@ -122,17 +120,24 @@ where
     }
 
     /// Build tree from index vector
-    /// KDTreeIndirect.hpp:50-61
+    /// KDTreeIndirect.hpp:49-59
     pub fn build_from_vec(&mut self, mut indices: Vec<usize>) {
+        // KDTreeIndirect.hpp:51-52
         if indices.is_empty() {
             self.clear();
         } else {
-            // Allocate enough memory for a full binary tree
+            // Allocate enough memory for a full binary tree.
+            // std::vector::assign replaces the entire contents, resetting every node to npos.
+            // KDTreeIndirect.hpp:55
             let size = next_highest_power_of_2(indices.len() + 1);
+            self.nodes.clear();
             self.nodes.resize(size, NPOS);
+            // KDTreeIndirect.hpp:56
             let indices_len = indices.len();
             self.build_recursive(&mut indices, 0, 0, 0, indices_len - 1);
         }
+        // indices.clear(); // KDTreeIndirect.hpp:58 (input vector consumed by value)
+        indices.clear();
     }
 
     /// Check if tree is empty
@@ -182,8 +187,11 @@ where
         self.build_recursive(input, node * 2 + 2, next_dimension, center + 1, right);
     }
 
-    /// Partition input using QuickSelect to find k-th element
-    /// KDTreeIndirect.hpp:118-170
+    // Partition the input m_nodes <left, right> at "k" and "dimension" using the QuickSelect method:
+    // https://en.wikipedia.org/wiki/Quickselect
+    // Items left of the k'th item are lower than the k'th item in the "dimension",
+    // items right of the k'th item are higher than the k'th item in the "dimension",
+    /// KDTreeIndirect.hpp:114-167
     fn partition_input(
         &self,
         input: &mut [usize],
@@ -193,75 +201,79 @@ where
         k: usize,
     ) {
         while left < right {
+            // KDTreeIndirect.hpp:117
             let center = (left + right) / 2;
             let pivot: T;
-
             {
-                // Bubble sort three values to get median
-                let left_value = (self.coordinate)(input[left], dimension);
+                // Bubble sort the input[left], input[center], input[right], so that a median of the three values
+                // will end up in input[center].
+                // KDTreeIndirect.hpp:122-124
+                let mut left_value = (self.coordinate)(input[left], dimension);
                 let mut center_value = (self.coordinate)(input[center], dimension);
                 let mut right_value = (self.coordinate)(input[right], dimension);
-
+                // KDTreeIndirect.hpp:125-128
                 if left_value > center_value {
                     input.swap(left, center);
-                    center_value = left_value;
+                    std::mem::swap(&mut left_value, &mut center_value);
                 }
-                if (self.coordinate)(input[left], dimension) > right_value {
+                // KDTreeIndirect.hpp:129-132
+                if left_value > right_value {
                     input.swap(left, right);
-                    right_value = (self.coordinate)(input[left], dimension);
+                    right_value = left_value;
                 }
+                // KDTreeIndirect.hpp:133-136
                 if center_value > right_value {
                     input.swap(center, right);
                     center_value = right_value;
                 }
+                // KDTreeIndirect.hpp:137
                 pivot = center_value;
             }
-
+            // KDTreeIndirect.hpp:139-141
             if right <= left + 2 {
-                // Already sorted
+                // The <left, right> interval is already sorted.
                 break;
             }
-
+            // KDTreeIndirect.hpp:142-144
             let mut i = left;
             let mut j = right - 1;
             input.swap(center, j);
-
-            // Partition based on pivot
+            // Partition the set based on the pivot.
+            // KDTreeIndirect.hpp:146
             loop {
-                // Skip left points already in correct position
+                // Skip left points that are already at correct positions.
+                // Search will certainly stop at position (right - 1), which stores the pivot.
+                // KDTreeIndirect.hpp:149
                 loop {
                     i += 1;
                     if !((self.coordinate)(input[i], dimension) < pivot) {
                         break;
                     }
                 }
-
-                // Skip right points already in correct position
+                // Skip right points that are already at correct positions.
+                // KDTreeIndirect.hpp:151
                 loop {
-                    if i >= j {
-                        break;
-                    }
-                    if !((self.coordinate)(input[j], dimension) > pivot) {
-                        break;
-                    }
                     j -= 1;
+                    if !((self.coordinate)(input[j], dimension) > pivot && i < j) {
+                        break;
+                    }
                 }
-
+                // KDTreeIndirect.hpp:152-153
                 if i >= j {
                     break;
                 }
-
+                // KDTreeIndirect.hpp:154
                 input.swap(i, j);
             }
-
-            // Restore pivot to center
+            // Restore pivot to the center of the sequence.
+            // KDTreeIndirect.hpp:157
             input.swap(i, right - 1);
-
-            // Which side is k on?
+            // Which side the kth element is in?
+            // KDTreeIndirect.hpp:159-165
             if k < i {
                 right = i - 1;
             } else if k == i {
-                // k is at its place
+                // Sequence is partitioned, kth element is at its place.
                 break;
             } else {
                 left = i + 1;
@@ -270,7 +282,7 @@ where
     }
 
     /// Calculate descent mask for tree traversal
-    /// KDTreeIndirect.hpp:63-72
+    /// KDTreeIndirect.hpp:61-70
     pub fn descent_mask(
         &self,
         point_coord: T,
@@ -281,17 +293,16 @@ where
     where
         T: std::ops::Sub<Output = T> + std::ops::Add<Output = T> + From<f64>,
     {
+        // KDTreeIndirect.hpp:64
         let dist = point_coord - (self.coordinate)(idx, dimension);
-        let radius_sq = search_radius + T::from(EPSILON);
-
-        if dist * dist < radius_sq {
-            // Plane intersects hypersphere - search both sides
+        // KDTreeIndirect.hpp:65-69
+        if dist * dist < search_radius + T::from(EPSILON) {
+            // The plane intersects a hypersphere centered at point_coord of search_radius.
             (VisitorReturnMask::ContinueLeft as u32) | (VisitorReturnMask::ContinueRight as u32)
         } else if dist > T::default() {
-            // Search right only
+            // The plane does not intersect the hypersphere.
             VisitorReturnMask::ContinueRight as u32
         } else {
-            // Search left only
             VisitorReturnMask::ContinueLeft as u32
         }
     }
@@ -355,44 +366,60 @@ where
     P: std::ops::Index<usize, Output = T>,
     Filter: Fn(usize) -> bool,
 {
+    // results.fill(std::make_pair(npos, numeric_limits<CoordT>::max()));
+    // KDTreeIndirect.hpp:218-220
     let mut results = [(NPOS, T::from(f64::MAX)); K];
 
+    // KDTreeIndirect.hpp:221-244
     let mut visitor = |idx: usize, dimension: usize| -> u32 {
         if filter(idx) {
+            // KDTreeIndirect.hpp:224-228
             let mut dist = T::default();
             for i in 0..N {
                 let d = point[i] - (kdtree.coordinate)(idx, i);
                 dist += d * d;
             }
 
-            // Find insertion point
-            let mut insert_pos = K;
+            // auto res = std::make_pair(idx, dist);
+            // KDTreeIndirect.hpp:230
+            let res = (idx, dist);
+            // auto it = std::lower_bound(results.begin(), results.end(), res,
+            //     [](auto &r1, auto &r2) { return r1.second < r2.second; });
+            // lower_bound returns the first position whose value does not compare less than dist,
+            // i.e. the first i for which !(results[i].1 < dist).
+            // KDTreeIndirect.hpp:231-234
+            let mut it = K;
             for i in 0..K {
-                if dist < results[i].1 {
-                    insert_pos = i;
+                if !(results[i].1 < dist) {
+                    it = i;
                     break;
                 }
             }
 
-            // Insert if better than worst result
-            if insert_pos < K {
-                // Shift worse results down
-                for i in ((insert_pos + 1)..K).rev() {
+            // KDTreeIndirect.hpp:236-239
+            if it != K {
+                // std::rotate(it, std::prev(results.end()), results.end());
+                // Move the last element to position `it`, shifting [it, K-1) right by one.
+                for i in ((it + 1)..K).rev() {
                     results[i] = results[i - 1];
                 }
-                results[insert_pos] = (idx, dist);
+                // *it = res;
+                results[it] = res;
             }
         }
 
+        // KDTreeIndirect.hpp:241-243
         kdtree.descent_mask(point[dimension], results[0].1, idx, dimension)
     };
 
+    // KDTreeIndirect.hpp:247
     kdtree.visit(visitor);
-
+    // KDTreeIndirect.hpp:248-249
     let mut ret = [NPOS; K];
     for i in 0..K {
         ret[i] = results[i].0;
     }
+    // KDTreeIndirect.hpp:251
     ret
 }
 

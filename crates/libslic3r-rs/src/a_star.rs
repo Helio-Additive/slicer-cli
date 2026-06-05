@@ -140,10 +140,11 @@ pub fn search_route<T>(
     tracer: &T,
     source: &T::Node,
     out: &mut Vec<T::Node>,
-    cached_nodes: HashMap<usize, QNode<T::Node>>,
+    cached_nodes: &mut HashMap<usize, QNode<T::Node>>,
 ) -> bool
 where
     T: TracerTraits,
+    T::Node: Clone,
 {
     // AStar.hpp:77-79
     // using Node = TracerNodeT<Tracer>;
@@ -152,9 +153,13 @@ where
     //
     // The node cache is shared by reference between the queue's closures
     // (LessPred / index setter) and this routine, matching the C++ semantics
-    // where both capture `cached_nodes` by reference.
+    // where both capture `cached_nodes` by reference. The caller passes the map
+    // by mutable reference (C++ passes it by `&`); the final state is written
+    // back before returning so the caller can reconstruct paths from it
+    // (JumpPointSearch.cpp:228-241 fallback).
+    let cached_nodes_returned: &mut HashMap<usize, QNode<T::Node>> = cached_nodes;
     let cached_nodes: Rc<RefCell<HashMap<usize, QNode<T::Node>>>> =
-        Rc::new(RefCell::new(cached_nodes));
+        Rc::new(RefCell::new(std::mem::take(cached_nodes_returned)));
 
     // AStar.hpp:81-85
     // struct LessPred { NodeMap &m;
@@ -327,6 +332,10 @@ where
         }
     }
 
+    // Write the final cache state back to the caller's map (C++ passes the map
+    // by `&`, so it remains live and populated for the caller after the call).
+    *cached_nodes_returned = cached_nodes.borrow().clone();
+
     // AStar.hpp:152
     // return goal_id != Unassigned;
     goal_id != UNASSIGNED
@@ -418,7 +427,8 @@ mod tests {
 
         let source = GridNode { x: 0, y: 0 };
         let mut path = Vec::new();
-        let found = search_route(&tracer, &source, &mut path, HashMap::new());
+        let mut cache = HashMap::new();
+        let found = search_route(&tracer, &source, &mut path, &mut cache);
 
         assert!(found);
         assert!(!path.is_empty());
@@ -435,7 +445,8 @@ mod tests {
 
         let source = GridNode { x: 0, y: 0 };
         let mut path = Vec::new();
-        let found = search_route(&tracer, &source, &mut path, HashMap::new());
+        let mut cache = HashMap::new();
+        let found = search_route(&tracer, &source, &mut path, &mut cache);
 
         // When source is goal, search succeeds but path is empty (parent is
         // Unassigned), matching C++ where the while loop never runs.
@@ -478,7 +489,8 @@ mod tests {
         let tracer = UnreachableTracer;
         let source = GridNode { x: 0, y: 0 };
         let mut path = Vec::new();
-        let found = search_route(&tracer, &source, &mut path, HashMap::new());
+        let mut cache = HashMap::new();
+        let found = search_route(&tracer, &source, &mut path, &mut cache);
 
         assert!(!found); // No path possible
         assert!(path.is_empty());

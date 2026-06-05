@@ -27,6 +27,7 @@
 use std::f64::consts::PI;
 use thiserror::Error;
 
+use crate::libslic3r::EPSILON;
 use crate::{scale, Coord};
 
 /// Extra spacing between bridge threads (mm)
@@ -314,10 +315,12 @@ impl Flow {
     ///
     /// Allows some perimeter squish (see INSET_OVERLAP_TOLERANCE in libslic3r).
     /// An overlap of 0.2× external perimeter spacing is allowed.
+    // Flow.hpp:80
     #[inline]
     pub fn scaled_elephant_foot_spacing(&self) -> Coord {
-        // 0.5 × (width + 0.6 × spacing)
-        scale(0.5 * (self.width + 0.6 * self.spacing))
+        // coord_t(0.5f * float(this->scaled_width() + 0.6f * this->scaled_spacing()))
+        // Computed on the scaled (coord_t) values, matching C++ ordering / rounding.
+        (0.5 * (self.scaled_width() as f64 + 0.6 * self.scaled_spacing() as f64)) as Coord
     }
 
     // === Flow Modification Methods ===
@@ -328,7 +331,8 @@ impl Flow {
     ///
     /// Panics if this is a bridge flow (bridges have fixed width = height).
     pub fn with_width(&self, width: f64) -> FlowResult<Self> {
-        assert!(!self.bridge, "Cannot modify width of bridge flow");
+        // Flow.hpp:92
+        debug_assert!(!self.bridge, "Cannot modify width of bridge flow");
         let spacing = Self::rounded_rectangle_extrusion_spacing(width, self.height)?;
         Ok(Self::new_with_spacing(
             width,
@@ -345,7 +349,8 @@ impl Flow {
     ///
     /// Panics if this is a bridge flow.
     pub fn with_height(&self, height: f64) -> FlowResult<Self> {
-        assert!(!self.bridge, "Cannot modify height of bridge flow");
+        // Flow.hpp:96
+        debug_assert!(!self.bridge, "Cannot modify height of bridge flow");
         let spacing = Self::rounded_rectangle_extrusion_spacing(self.width, height)?;
         Ok(Self::new_with_spacing(
             self.width,
@@ -361,38 +366,34 @@ impl Flow {
     /// This adjusts width/height to achieve the new spacing while keeping the
     /// gap between extrusions constant.
     pub fn with_spacing(&self, new_spacing: f64) -> FlowResult<Self> {
+        // Flow.cpp:140
+        let mut out = *self;
         if self.bridge {
-            // For bridge: adjust diameter, maintaining gap
+            // Diameter of the rounded extrusion.
+            // Flow.cpp:143
+            debug_assert!(self.width == self.height);
+            // Flow.cpp:144
             let gap = self.spacing - self.width;
+            // Flow.cpp:145
             let new_diameter = new_spacing - gap;
-            if new_diameter <= 0.0 {
-                return Err(FlowError::InvalidArgument(
-                    "New spacing too small for bridge flow".to_string(),
-                ));
-            }
-            Ok(Self::new_with_spacing(
-                new_diameter,
-                new_diameter,
-                new_spacing,
-                self.nozzle_diameter,
-                true,
-            ))
+            // Flow.cpp:146
+            out.width = new_diameter;
+            out.height = new_diameter;
         } else {
-            // For non-bridge: adjust width to achieve new spacing
-            let new_width = self.width + (new_spacing - self.spacing);
-            if new_width < self.height {
+            // Flow.cpp:148
+            debug_assert!(self.width >= self.height);
+            // Flow.cpp:149
+            out.width += new_spacing - self.spacing;
+            // Flow.cpp:150-151
+            if out.width < out.height {
                 return Err(FlowError::InvalidArgument(
-                    "New spacing produces width < height".to_string(),
+                    "Invalid spacing supplied to Flow::with_spacing()".to_string(),
                 ));
             }
-            Ok(Self::new_with_spacing(
-                new_width,
-                self.height,
-                new_spacing,
-                self.nozzle_diameter,
-                false,
-            ))
         }
+        // Flow.cpp:153
+        out.spacing = new_spacing;
+        Ok(out)
     }
 
     /// Create a new Flow with adjusted width/height to reach a target cross-section area
@@ -404,69 +405,63 @@ impl Flow {
     ///
     /// * `area_new` - Target cross-sectional area (mm²)
     pub fn with_cross_section(&self, area_new: f64) -> FlowResult<Self> {
-        assert!(!self.bridge, "Cannot adjust cross section of bridge flow");
-        assert!(
+        // Flow.cpp:160
+        debug_assert!(!self.bridge, "Cannot adjust cross section of bridge flow");
+        // Flow.cpp:161
+        debug_assert!(
             self.width >= self.height,
             "Flow width must be >= height for cross section adjustment"
         );
 
+        // Adjust for bridge_flow, maintain the extrusion spacing.
+        // Flow.cpp:164
         let area = self.mm3_per_mm()?;
-        const EPSILON: f64 = 1e-9;
-
         if area_new > area + EPSILON {
-            // Increasing flow rate
+            // Increasing the flow rate.
+            // Flow.cpp:166-167
             let new_full_spacing = area_new / self.height;
             if new_full_spacing > self.spacing {
-                // Would create air gap - grow height instead
+                // Filling up the spacing without an air gap. Grow the extrusion in height.
+                // Flow.cpp:169-171
                 let height = area_new / self.spacing;
-                let width =
-                    Self::rounded_rectangle_extrusion_width_from_spacing(self.spacing, height);
                 Ok(Self::new_with_spacing(
-                    width,
+                    Self::rounded_rectangle_extrusion_width_from_spacing(self.spacing, height),
                     height,
                     self.spacing,
                     self.nozzle_diameter,
                     false,
                 ))
             } else {
-                // Can fit in current spacing - adjust width
-                let width = Self::rounded_rectangle_extrusion_width_from_spacing(
-                    area_new / self.height,
+                // Flow.cpp:173
+                self.with_width(Self::rounded_rectangle_extrusion_width_from_spacing(
+                    area / self.height,
                     self.height,
-                );
-                Ok(Self::new_with_spacing(
-                    width,
-                    self.height,
-                    self.spacing,
-                    self.nozzle_diameter,
-                    false,
                 ))
             }
         } else if area_new < area - EPSILON {
-            // Decreasing flow rate
+            // Decreasing the flow rate.
+            // Flow.cpp:177
             let width_new = self.width - (area - area_new) / self.height;
+            // Flow.cpp:178
+            debug_assert!(width_new > 0.0);
             if width_new > self.height {
-                // Still a rounded rectangle - shrink width
+                // Shrink the extrusion width.
+                // Flow.cpp:181
+                self.with_width(width_new)
+            } else {
+                // Create a rounded extrusion.
+                // Flow.cpp:184-185
+                let dmr = (area_new / PI).sqrt();
                 Ok(Self::new_with_spacing(
-                    width_new,
-                    self.height,
+                    dmr,
+                    dmr,
                     self.spacing,
                     self.nozzle_diameter,
                     false,
                 ))
-            } else {
-                // Would become taller than wide - create circular extrusion
-                let diameter = (area_new / PI).sqrt() * 2.0;
-                Ok(Self::new_with_spacing(
-                    diameter,
-                    diameter,
-                    self.spacing,
-                    self.nozzle_diameter,
-                    false, // Not a bridge, just small
-                ))
             }
         } else {
-            // No change needed
+            // Flow.cpp:188
             Ok(*self)
         }
     }

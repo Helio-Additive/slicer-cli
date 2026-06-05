@@ -308,10 +308,7 @@ pub use slicing::SlicingParams;
 pub use triangle_mesh::{Triangle, TriangleMesh};
 
 // Re-export adaptive layer heights
-pub use slicing_adaptive::{
-    compute_adaptive_heights, compute_adaptive_heights_with_quality, AdaptiveHeightsConfig,
-    AdaptiveLayerHeight, AdaptiveSlicing, FaceZ, SlopeErrorMetric,
-};
+pub use slicing_adaptive::{FaceZ, SlicingAdaptive};
 
 // Re-export clipper operations
 pub use clipper_utils::{
@@ -406,11 +403,12 @@ pub use support::tree_support_settings::{
     SupportElement, SupportElementState, SupportElementStateBits, TreeSupportMeshGroupSettings,
 };
 
-// Re-export bridge detection
+// Re-export bridge detection (faithful 1:1 port of BridgeDetector.{hpp,cpp})
 pub use bridge_detector::{
-    detect_bridges, detect_bridging_direction, detect_internal_bridges, generate_bridge_infill,
-    Bridge, BridgeConfig, BridgeDetector, InternalBridgeConfig, InternalBridgeDetector,
+    detect_bridging_direction, detect_bridging_direction_areas, BridgeDetector,
 };
+// InternalBridgeDetector lives in its own module (InternalBridgeDetector.{hpp,cpp}).
+pub use internal_bridge_detector::InternalBridgeDetector;
 
 // Re-export edge grid
 pub use edge_grid::{ClosestPointResult, Contour, EdgeGrid, Intersection};

@@ -66,6 +66,10 @@ clap = { version = "4.4", features = ["derive"] }
 indicatif = "0.17"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 quick-xml = "0.31"
+# PNG codec backend for PNGReadWrite.cpp (libpng replacement).
+# C++ uses native libpng (<png.h>) which is not wasm-safe; flate2 + miniz_oxide
+# is pure-Rust and wasm-safe, already present transitively via `zip`.
+flate2 = "1.0"
 
 # Async (for MCP server)
 tokio = { version = "1.34", features = ["full"] }
