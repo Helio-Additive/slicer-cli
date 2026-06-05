@@ -1,218 +1,165 @@
-//! Parameter utilities for print configuration and extruder management
+//! Parameter utilities.
 //!
-//! Provides utilities for managing layer print sequences and extruder
-//! parameter indexing in multi-extruder configurations.
+//! 1:1 port of `ParameterUtils.cpp` / `ParameterUtils.hpp` from BambuStudio.
 //!
 //! C++ Reference: ParameterUtils.hpp, ParameterUtils.cpp
 
-/// Layer print sequence: ((start_layer, end_layer), [extruder_ids])
-/// ParameterUtils.hpp:9
+// ParameterUtils.hpp:9
+// using LayerPrintSequence = std::pair<std::pair<int, int>, std::vector<int>>;
+/// `LayerPrintSequence = ((int, int), Vec<int>)`
 pub type LayerPrintSequence = ((i32, i32), Vec<i32>);
 
-/// Extruder type enumeration
-/// ParameterUtils.hpp:13 (from PrintConfig.hpp)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ExtruderType {
-    /// Standard FDM extruder
-    Standard,
-    /// Multi-material unit (MMU)
-    MultiMaterial,
-    /// Direct drive extruder
-    DirectDrive,
-    /// Bowden extruder
-    Bowden,
-}
-
-/// Nozzle volume type for purge calculations
-/// ParameterUtils.hpp:13 (from PrintConfig.hpp)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum NozzleVolumeType {
-    /// Standard volume nozzle
-    Standard,
-    /// High flow nozzle
-    HighFlow,
-    /// Low volume nozzle
-    LowVolume,
-}
-
-/// Get print sequences for other layers based on a reference sequence
-/// ParameterUtils.hpp:10
+// ParameterUtils.cpp:7
+// std::vector<LayerPrintSequence> get_other_layers_print_sequence(int sequence_nums, const std::vector<int> &sequence)
+/// Decode a flat `sequence` buffer of `sequence_nums` equally-sized items into
+/// `LayerPrintSequence` records. Each item's first two ints form the (first,
+/// second) pair and the remainder is the int vector.
 pub fn get_other_layers_print_sequence(
     sequence_nums: i32,
     sequence: &[i32],
 ) -> Vec<LayerPrintSequence> {
-    let mut result = Vec::new();
-
-    if sequence.is_empty() || sequence_nums <= 0 {
-        return result;
+    // ParameterUtils.cpp:9
+    let mut res: Vec<LayerPrintSequence> = Vec::new();
+    // ParameterUtils.cpp:10-11
+    if sequence_nums == 0 || sequence.is_empty() {
+        return res;
     }
 
-    // Generate sequences by repeating the pattern
+    // ParameterUtils.cpp:13
+    debug_assert!(sequence.len() % sequence_nums as usize == 0);
+
+    // ParameterUtils.cpp:15
+    res.reserve(sequence_nums as usize);
+    // ParameterUtils.cpp:16
+    let item_nums = sequence.len() / sequence_nums as usize;
+
+    // ParameterUtils.cpp:18
     for i in 0..sequence_nums {
-        let start_layer = i * sequence.len() as i32;
-        let end_layer = start_layer + sequence.len() as i32 - 1;
-        result.push(((start_layer, end_layer), sequence.to_vec()));
+        // ParameterUtils.cpp:19-20
+        let item: Vec<i32> = sequence
+            [(i as usize * item_nums)..((i as usize + 1) * item_nums)]
+            .to_vec();
+
+        // ParameterUtils.cpp:22
+        debug_assert!(item.len() > 2);
+        // ParameterUtils.cpp:23-26
+        let mut res_item: LayerPrintSequence = ((0, 0), Vec::new());
+        res_item.0 .0 = item[0];
+        res_item.0 .1 = item[1];
+        res_item.1 = item[2..].to_vec();
+        // ParameterUtils.cpp:27
+        res.push(res_item);
     }
 
-    result
+    // ParameterUtils.cpp:30
+    res
 }
 
-/// Extract print sequences back into sequence_nums and sequence vector
-/// ParameterUtils.hpp:11
-pub fn extract_print_sequence(
+// ParameterUtils.cpp:33
+// void get_other_layers_print_sequence(const std::vector<LayerPrintSequence> &customize_sequences, int &sequence_nums, std::vector<int> &sequence)
+/// Encode `customize_sequences` back into the flat (`sequence_nums`,
+/// `sequence`) representation. Overload of the function above; renamed to
+/// `set_other_layers_print_sequence` because Rust lacks overloading.
+pub fn set_other_layers_print_sequence(
     customize_sequences: &[LayerPrintSequence],
     sequence_nums: &mut i32,
     sequence: &mut Vec<i32>,
 ) {
-    sequence.clear();
+    // ParameterUtils.cpp:35
     *sequence_nums = 0;
-
+    // ParameterUtils.cpp:36
+    sequence.clear();
+    // ParameterUtils.cpp:37
     if customize_sequences.is_empty() {
         return;
     }
 
-    // Use the first sequence as the pattern
-    if let Some(first) = customize_sequences.first() {
-        *sequence = first.1.clone();
-        *sequence_nums = customize_sequences.len() as i32;
+    // ParameterUtils.cpp:39
+    *sequence_nums = customize_sequences.len() as i32;
+    // ParameterUtils.cpp:40
+    for customize_sequence in customize_sequences {
+        // ParameterUtils.cpp:41
+        sequence.push(customize_sequence.0 .0);
+        // ParameterUtils.cpp:42
+        sequence.push(customize_sequence.0 .1);
+        // ParameterUtils.cpp:43
+        sequence.extend_from_slice(&customize_sequence.1);
     }
 }
 
-/// Get the configuration index for a given extruder parameter
-/// ParameterUtils.hpp:13
-pub fn get_index_for_extruder_parameter(
-    opt_key: &str,
-    cur_extruder_id: i32,
-    _extruder_type: ExtruderType,
-    _nozzle_volume_type: NozzleVolumeType,
-) -> i32 {
-    // Default implementation: return the current extruder ID
-    // More sophisticated logic would look up in DynamicPrintConfig
-    // and handle per-extruder vs global parameters
-
-    // Some parameters are global (not per-extruder)
-    match opt_key {
-        "layer_height" | "first_layer_height" | "support_material" => {
-            // Global parameters: use index 0
-            0
-        }
-        _ => {
-            // Per-extruder parameters: use current extruder ID
-            cur_extruder_id
-        }
-    }
-}
-
-/// Check if a parameter key is per-extruder or global
-/// ParameterUtils.hpp (utility)
-pub fn is_per_extruder_parameter(opt_key: &str) -> bool {
-    matches!(
-        opt_key,
-        "nozzle_diameter"
-            | "filament_diameter"
-            | "extrusion_multiplier"
-            | "retract_length"
-            | "retract_speed"
-            | "retract_before_travel"
-            | "wipe"
-            | "retract_layer_change"
-            | "filament_color"
-            | "filament_notes"
-            | "filament_max_volumetric_speed"
-            | "temperature"
-            | "first_layer_temperature"
-            | "bed_temperature"
-            | "first_layer_bed_temperature"
-    )
-}
-
-/// Get default extruder type
-/// ParameterUtils.hpp (utility)
-impl Default for ExtruderType {
-    fn default() -> Self {
-        ExtruderType::Standard
-    }
-}
-
-/// Get default nozzle volume type
-/// ParameterUtils.hpp (utility)
-impl Default for NozzleVolumeType {
-    fn default() -> Self {
-        NozzleVolumeType::Standard
-    }
-}
+// ParameterUtils.cpp:47
+// int get_index_for_extruder_parameter(const DynamicPrintConfig &config, const std::string &opt_key, int cur_extruder_id, ExtruderType extruder_type, NozzleVolumeType nozzle_volume_type)
+//
+// BLOCKED: not ported. This function dispatches on the global variant option
+// sets (`printer_options_with_variant_1`, `printer_options_with_variant_2`,
+// `filament_options_with_variant`, `print_options_with_variant`) and then calls
+// `DynamicPrintConfig::get_index_for_extruder(...)` (PrintConfig.cpp:7586),
+// which in turn relies on `ConfigOptionStrings`/`ConfigOptionInts` dynamic
+// option lookup via `config.option(name)`, plus `get_extruder_variant_string`
+// and the `ExtruderType`/`NozzleVolumeType` enums from PrintConfig.hpp.
+//
+// None of that dynamic-config machinery exists in the Rust crate yet:
+// `print_config.rs` exposes only a flat typed `PrintConfig` struct with no
+// generic `option(name)` accessor, no `ConfigOption*` variants, and no variant
+// option sets. Porting this faithfully requires that infrastructure to be
+// translated first (PrintConfig.cpp). Implementing a hardcoded match here would
+// be a fake and is forbidden, so the symbol is left unported until
+// PrintConfig's dynamic config is available.
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // Round-trip: encode then decode reproduces the original records.
     #[test]
-    fn test_layer_print_sequence() {
-        let sequence = vec![0, 1, 2];
-        let sequences = get_other_layers_print_sequence(3, &sequence);
+    fn test_get_other_layers_print_sequence_decode() {
+        // Two items, each of size 4: pair (first, second) + 2 trailing ints.
+        let sequence = vec![0, 5, 1, 2, /*item 2*/ 6, 9, 3, 4];
+        let res = get_other_layers_print_sequence(2, &sequence);
 
-        assert_eq!(sequences.len(), 3);
-        assert_eq!(sequences[0], ((0, 2), vec![0, 1, 2]));
-        assert_eq!(sequences[1], ((3, 5), vec![0, 1, 2]));
-        assert_eq!(sequences[2], ((6, 8), vec![0, 1, 2]));
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0], ((0, 5), vec![1, 2]));
+        assert_eq!(res[1], ((6, 9), vec![3, 4]));
     }
 
     #[test]
-    fn test_extract_print_sequence() {
-        let sequences = vec![((0, 2), vec![0, 1, 2]), ((3, 5), vec![0, 1, 2])];
+    fn test_get_other_layers_print_sequence_empty() {
+        let res = get_other_layers_print_sequence(0, &[]);
+        assert!(res.is_empty());
 
+        let res = get_other_layers_print_sequence(5, &[]);
+        assert!(res.is_empty());
+    }
+
+    #[test]
+    fn test_set_other_layers_print_sequence_encode() {
+        let customize = vec![((0, 5), vec![1, 2]), ((6, 9), vec![3, 4])];
         let mut sequence_nums = 0;
         let mut sequence = Vec::new();
-
-        extract_print_sequence(&sequences, &mut sequence_nums, &mut sequence);
+        set_other_layers_print_sequence(&customize, &mut sequence_nums, &mut sequence);
 
         assert_eq!(sequence_nums, 2);
-        assert_eq!(sequence, vec![0, 1, 2]);
+        assert_eq!(sequence, vec![0, 5, 1, 2, 6, 9, 3, 4]);
     }
 
     #[test]
-    fn test_extruder_parameter_index() {
-        let idx = get_index_for_extruder_parameter(
-            "nozzle_diameter",
-            2,
-            ExtruderType::Standard,
-            NozzleVolumeType::Standard,
-        );
-        assert_eq!(idx, 2); // Per-extruder parameter
+    fn test_set_other_layers_print_sequence_empty() {
+        let mut sequence_nums = 7;
+        let mut sequence = vec![1, 2, 3];
+        set_other_layers_print_sequence(&[], &mut sequence_nums, &mut sequence);
 
-        let idx = get_index_for_extruder_parameter(
-            "layer_height",
-            2,
-            ExtruderType::Standard,
-            NozzleVolumeType::Standard,
-        );
-        assert_eq!(idx, 0); // Global parameter
+        assert_eq!(sequence_nums, 0);
+        assert!(sequence.is_empty());
     }
 
     #[test]
-    fn test_is_per_extruder_parameter() {
-        assert!(is_per_extruder_parameter("nozzle_diameter"));
-        assert!(is_per_extruder_parameter("temperature"));
-        assert!(!is_per_extruder_parameter("layer_height"));
-        assert!(!is_per_extruder_parameter("support_material"));
-    }
+    fn test_round_trip() {
+        let customize = vec![((1, 100), vec![2, 0, 1]), ((101, 200), vec![0, 1, 2])];
+        let mut sequence_nums = 0;
+        let mut sequence = Vec::new();
+        set_other_layers_print_sequence(&customize, &mut sequence_nums, &mut sequence);
 
-    #[test]
-    fn test_empty_sequence() {
-        let sequences = get_other_layers_print_sequence(0, &[]);
-        assert!(sequences.is_empty());
-
-        let sequences = get_other_layers_print_sequence(5, &[]);
-        assert!(sequences.is_empty());
-    }
-
-    #[test]
-    fn test_extruder_type_default() {
-        assert_eq!(ExtruderType::default(), ExtruderType::Standard);
-    }
-
-    #[test]
-    fn test_nozzle_volume_type_default() {
-        assert_eq!(NozzleVolumeType::default(), NozzleVolumeType::Standard);
+        let decoded = get_other_layers_print_sequence(sequence_nums, &sequence);
+        assert_eq!(decoded, customize);
     }
 }

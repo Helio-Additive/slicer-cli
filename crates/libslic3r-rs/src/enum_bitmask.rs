@@ -330,11 +330,33 @@ macro_rules! enable_enum_bitmask {
     ($enum_type:ty) => {
         impl $crate::enum_bitmask::EnumBitmaskType for $enum_type {}
 
+        // enum_bitmask.hpp:54-58
+        // C++: template <class option_type>
+        //      constexpr std::enable_if_t<is_enum_bitmask_type_v<option_type>, enum_bitmask<option_type>>
+        //      operator|(option_type lhs, option_type rhs) {
+        //          static_assert(std::is_enum_v<option_type>);
+        //          return enum_bitmask<option_type>{lhs} | rhs;
+        //      }
         impl std::ops::BitOr for $enum_type {
             type Output = $crate::enum_bitmask::EnumBitmask<Self>;
 
             fn bitor(self, rhs: Self) -> Self::Output {
                 $crate::enum_bitmask::EnumBitmask::new(self).with(rhs)
+            }
+        }
+
+        // enum_bitmask.hpp:60-64
+        // C++: template <class option_type>
+        //      constexpr std::enable_if_t<is_enum_bitmask_type_v<option_type>, enum_bitmask<option_type>>
+        //      operator|(option_type lhs, enum_bitmask<option_type> rhs) {
+        //          static_assert(std::is_enum_v<option_type>);
+        //          return enum_bitmask<option_type>{lhs} | rhs;
+        //      }
+        impl std::ops::BitOr<$crate::enum_bitmask::EnumBitmask<$enum_type>> for $enum_type {
+            type Output = $crate::enum_bitmask::EnumBitmask<Self>;
+
+            fn bitor(self, rhs: $crate::enum_bitmask::EnumBitmask<Self>) -> Self::Output {
+                $crate::enum_bitmask::EnumBitmask::new(self).union(rhs)
             }
         }
     };
@@ -360,6 +382,40 @@ mod tests {
     }
 
     impl EnumBitmaskType for TestOptions {}
+
+    impl std::ops::BitOr for TestOptions {
+        type Output = EnumBitmask<Self>;
+        fn bitor(self, rhs: Self) -> Self::Output {
+            EnumBitmask::new(self).with(rhs)
+        }
+    }
+
+    impl std::ops::BitOr<EnumBitmask<TestOptions>> for TestOptions {
+        type Output = EnumBitmask<Self>;
+        fn bitor(self, rhs: EnumBitmask<Self>) -> Self::Output {
+            EnumBitmask::new(self).union(rhs)
+        }
+    }
+
+    // enum_bitmask.hpp:54-58 : operator|(option_type lhs, option_type rhs)
+    #[test]
+    fn test_free_operator_or_enum_enum() {
+        let mask = TestOptions::Opt1 | TestOptions::Opt2;
+        assert!(mask.has(TestOptions::Opt1));
+        assert!(mask.has(TestOptions::Opt2));
+        assert_eq!(mask.bits(), 0b0011);
+    }
+
+    // enum_bitmask.hpp:60-64 : operator|(option_type lhs, enum_bitmask<option_type> rhs)
+    #[test]
+    fn test_free_operator_or_enum_mask() {
+        let rhs = EnumBitmask::new(TestOptions::Opt2).with(TestOptions::Opt3);
+        let mask = TestOptions::Opt1 | rhs;
+        assert!(mask.has(TestOptions::Opt1));
+        assert!(mask.has(TestOptions::Opt2));
+        assert!(mask.has(TestOptions::Opt3));
+        assert_eq!(mask.bits(), 0b0111);
+    }
 
     #[test]
     fn test_empty() {

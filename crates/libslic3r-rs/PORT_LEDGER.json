@@ -238,7 +238,7 @@
     "rust": "crates/libslic3r-rs/src/custom_g_code.rs",
     "rust_exists": true,
     "loc": 76,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -249,7 +249,7 @@
     "rust": "crates/libslic3r-rs/src/parameter_utils.rs",
     "rust_exists": true,
     "loc": 79,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -260,7 +260,7 @@
     "rust": "crates/libslic3r-rs/src/enum_bitmask.rs",
     "rust_exists": true,
     "loc": 80,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -271,7 +271,7 @@
     "rust": "crates/libslic3r-rs/src/ex_polygons_index.rs",
     "rust_exists": true,
     "loc": 82,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -282,7 +282,7 @@
     "rust": "crates/libslic3r-rs/src/blacklisted_library_check.rs",
     "rust_exists": true,
     "loc": 84,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
