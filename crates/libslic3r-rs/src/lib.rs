@@ -154,6 +154,7 @@ pub mod sla_print;
 pub mod sla_print_steps;
 pub mod slicer;
 pub mod slices_to_mesh;
+pub mod slices_to_triangle_mesh;
 pub mod slicing;
 pub mod slicing_adaptive;
 pub mod stl;

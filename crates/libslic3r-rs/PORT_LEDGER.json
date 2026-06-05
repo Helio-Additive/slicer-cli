@@ -392,7 +392,7 @@
     "rust": "crates/libslic3r-rs/src/slices_to_triangle_mesh.rs",
     "rust_exists": true,
     "loc": 138,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -403,7 +403,7 @@
     "rust": "crates/libslic3r-rs/src/minimum_spanning_tree.rs",
     "rust_exists": true,
     "loc": 140,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -414,7 +414,7 @@
     "rust": "crates/libslic3r-rs/src/principal_components2_d.rs",
     "rust_exists": true,
     "loc": 140,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -425,7 +425,7 @@
     "rust": "crates/libslic3r-rs/src/mt_utils.rs",
     "rust_exists": true,
     "loc": 141,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -436,7 +436,7 @@
     "rust": "crates/libslic3r-rs/src/normal_utils.rs",
     "rust_exists": true,
     "loc": 142,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -447,7 +447,7 @@
     "rust": "crates/libslic3r-rs/src/internal_bridge_detector.rs",
     "rust_exists": true,
     "loc": 144,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -458,7 +458,7 @@
     "rust": "crates/libslic3r-rs/src/any_ptr.rs",
     "rust_exists": true,
     "loc": 144,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -480,7 +480,7 @@
     "rust": "crates/libslic3r-rs/src/platform.rs",
     "rust_exists": true,
     "loc": 146,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {

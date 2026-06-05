@@ -1,400 +1,374 @@
-//! Generic smart pointer holder that can store raw, Box, Arc, or Rc pointers
+//! Faithful 1:1 port of BambuStudio `src/libslic3r/AnyPtr.hpp`.
 //!
-//! C++ Reference:
-//! - AnyPtr.hpp
-//!
-//! This module provides a type-erased pointer holder similar to C++'s boost::variant
-//! of raw pointer, unique_ptr, and shared_ptr. It can hold ownership or just reference
-//! depending on what type of pointer is stored.
-//!
-//! ## Key Differences from C++
-//!
-//! - Rust uses `Box<T>` instead of `std::unique_ptr<T>`
-//! - Rust uses `Arc<T>` instead of `std::shared_ptr<T>` for thread-safe sharing
-//! - Rust uses `Rc<T>` for single-threaded reference counting (not in C++)
-//! - No need for custom deleters (Rust's Drop trait handles cleanup)
-//! - Move semantics are explicit in Rust (no move constructors needed)
+//! Header-only template class. The C++ has no `.cpp` translation unit; all
+//! logic lives in the header and is reproduced here line-by-line.
 
-use std::rc::Rc;
 use std::sync::Arc;
 
-/// Generic smart pointer holder that can own or reference data
-/// AnyPtr.hpp:26-157
-///
-/// This type can hold:
-/// - Raw pointer (*const T) - no ownership, borrowed reference
-/// - Box<T> - unique ownership (like std::unique_ptr)
-/// - Arc<T> - shared ownership, thread-safe (like std::shared_ptr)
-/// - Rc<T> - shared ownership, single-threaded
-///
-/// C++: template<class T> class AnyPtr
+// AnyPtr.hpp:8  namespace Slic3r {
+
+// AnyPtr.hpp:10-25
+// A general purpose pointer holder that can hold any type of smart pointer
+// or raw pointer which can own or not own any object they point to.
+// In case a raw pointer is stored, it is not destructed so ownership is
+// assumed to be foreign.
+//
+// The stored pointer is not checked for being null when dereferenced.
+//
+// This is a movable only object due to the fact that it can possibly hold
+// a unique_ptr which can only be moved.
+//
+// Drawbacks:
+// No custom deleters are supported when storing a unique_ptr, but overloading
+// std::default_delete for a particular type could be a workaround
+//
+// raw array types are problematic, since std::default_delete also does not
+// support them well.
+//
+// AnyPtr.hpp:26  template<class T> class AnyPtr
+//
+// C++ backs the storage with `boost::variant<T*, std::unique_ptr<T>,
+// std::shared_ptr<T>>`. The Rust equivalent is an enum with the same three
+// alternatives in the same order:
+//   - RawPtr -> `*mut T`           (non-owning, foreign ownership)
+//   - UPtr   -> `Box<T>`           (std::unique_ptr<T>)
+//   - ShPtr  -> `Arc<T>`           (std::shared_ptr<T>; BambuStudio's
+//                                   shared_ptr is thread-safe, hence Arc)
+//
+// This is a move-only type: there is intentionally no `Clone`/`Copy` impl,
+// mirroring `AnyPtr(const AnyPtr &other) = delete;` (AnyPtr.hpp:62) and
+// `AnyPtr &operator=(const AnyPtr &other) = delete;` (AnyPtr.hpp:70).
 #[derive(Debug)]
 pub enum AnyPtr<T> {
-    /// Raw pointer (no ownership)
-    /// AnyPtr.hpp:29
-    /// C++: boost::variant alternative 0: T*
-    Raw(*const T),
-
-    /// Owned unique pointer
-    /// AnyPtr.hpp:29
-    /// C++: boost::variant alternative 1: std::unique_ptr<T>
-    Unique(Box<T>),
-
-    /// Shared pointer (thread-safe)
-    /// AnyPtr.hpp:29
-    /// C++: boost::variant alternative 2: std::shared_ptr<T>
-    Shared(Arc<T>),
-
-    /// Reference-counted pointer (single-threaded)
-    /// (Not in C++ version, but useful in Rust)
-    RefCounted(Rc<T>),
+    // AnyPtr.hpp:30  boost::variant alternative 0: T*
+    RawPtr(*mut T),
+    // AnyPtr.hpp:30  boost::variant alternative 1: std::unique_ptr<T>
+    UPtr(Box<T>),
+    // AnyPtr.hpp:30  boost::variant alternative 2: std::shared_ptr<T>
+    ShPtr(Arc<T>),
 }
+
+// AnyPtr.hpp:28  enum { RawPtr, UPtr, ShPtr };
+// The boost::variant discriminant values (the `which()` indices) that the C++
+// switch statements compare against. Preserved as constants for the line-by-line
+// translation of those switches.
+const RAW_PTR: usize = 0;
+const U_PTR: usize = 1;
+const SH_PTR: usize = 2;
 
 impl<T> AnyPtr<T> {
-    /// Create from raw pointer
-    /// AnyPtr.hpp:47
-    /// C++: AnyPtr(T *p) noexcept : ptr{p} {}
-    pub fn from_raw(ptr: *const T) -> Self {
-        AnyPtr::Raw(ptr)
-    }
-
-    /// Create from Box (unique ownership)
-    /// AnyPtr.hpp:51
-    /// C++: AnyPtr(std::unique_ptr<TT> p) noexcept : ptr{std::unique_ptr<T>(std::move(p))} {}
-    pub fn from_box(ptr: Box<T>) -> Self {
-        AnyPtr::Unique(ptr)
-    }
-
-    /// Create from Arc (shared ownership, thread-safe)
-    /// AnyPtr.hpp:52
-    /// C++: AnyPtr(std::shared_ptr<TT> p) noexcept : ptr{std::shared_ptr<T>(std::move(p))} {}
-    pub fn from_arc(ptr: Arc<T>) -> Self {
-        AnyPtr::Shared(ptr)
-    }
-
-    /// Create from Rc (shared ownership, single-threaded)
-    /// (Not in C++ version)
-    pub fn from_rc(ptr: Rc<T>) -> Self {
-        AnyPtr::RefCounted(ptr)
-    }
-
-    /// Get raw pointer to the data
-    /// AnyPtr.hpp:31-40
-    /// C++: template<class Self> static T *get_ptr(Self &&s)
-    pub fn get(&self) -> *const T {
+    // AnyPtr.hpp:32-41  template<class Self> static T *get_ptr(Self &&s)
+    //
+    //     switch (s.ptr.which()) {
+    //     case RawPtr: return boost::get<T *>(s.ptr);
+    //     case UPtr: return boost::get<std::unique_ptr<T>>(s.ptr).get();
+    //     case ShPtr: return boost::get<std::shared_ptr<T>>(s.ptr).get();
+    //     }
+    //     return nullptr;
+    //
+    // In C++ this is a single templated helper used by both the const and
+    // non-const `operator*`/`operator->`/`get`. Rust splits it into a shared
+    // implementation returning `*mut T` (the borrow checker provides the
+    // const/non-const distinction at the call sites).
+    fn get_ptr(&self) -> *mut T {
         match self {
-            AnyPtr::Raw(p) => *p,
-            AnyPtr::Unique(b) => b.as_ref() as *const T,
-            AnyPtr::Shared(a) => Arc::as_ptr(a),
-            AnyPtr::RefCounted(r) => Rc::as_ptr(r),
+            // case RawPtr: return boost::get<T *>(s.ptr);   AnyPtr.hpp:35
+            AnyPtr::RawPtr(p) => *p,
+            // case UPtr: ... .get();                        AnyPtr.hpp:36
+            AnyPtr::UPtr(b) => b.as_ref() as *const T as *mut T,
+            // case ShPtr: ... .get();                       AnyPtr.hpp:37
+            AnyPtr::ShPtr(a) => Arc::as_ptr(a) as *mut T,
         }
     }
 
-    /// Get mutable raw pointer to the data (if uniquely owned)
-    /// AnyPtr.hpp:31-40
-    pub fn get_mut(&mut self) -> Option<*mut T> {
+    // AnyPtr.hpp:34  s.ptr.which()
+    // Returns the boost::variant discriminant index for the held alternative.
+    fn which(&self) -> usize {
         match self {
-            AnyPtr::Unique(b) => Some(b.as_mut() as *mut T),
-            _ => None,
+            AnyPtr::RawPtr(_) => RAW_PTR,
+            AnyPtr::UPtr(_) => U_PTR,
+            AnyPtr::ShPtr(_) => SH_PTR,
         }
     }
 
-    /// Check if pointer is null
-    /// AnyPtr.hpp:119-128
-    /// C++: operator bool() const noexcept
-    pub fn is_null(&self) -> bool {
-        match self {
-            AnyPtr::Raw(p) => p.is_null(),
-            AnyPtr::Unique(b) => b.as_ref() as *const T == std::ptr::null(),
-            AnyPtr::Shared(a) => Arc::as_ptr(a) == std::ptr::null(),
-            AnyPtr::RefCounted(r) => Rc::as_ptr(r) == std::ptr::null(),
-        }
+    // AnyPtr.hpp:48  AnyPtr() noexcept = default;
+    //
+    // A default-constructed boost::variant holds its first alternative
+    // (`T*`) value-initialized, i.e. a null raw pointer.
+    pub fn new() -> Self {
+        AnyPtr::RawPtr(std::ptr::null_mut())
     }
 
-    /// Check if pointer is valid (not null)
-    /// AnyPtr.hpp:119-128
-    /// C++: operator bool() const noexcept
-    pub fn is_some(&self) -> bool {
-        !self.is_null()
+    // AnyPtr.hpp:50  AnyPtr(T *p) noexcept : ptr{p} {}
+    // AnyPtr.hpp:54  template<class TT, class = SimilarPtrOnly<TT>> AnyPtr(TT *p) noexcept : ptr{p} {}
+    //
+    // The `SimilarPtrOnly` / `is_convertible_v<TT*, T*>` overloads exist in
+    // C++ purely to accept pointers to derived types; Rust lacks inheritance
+    // pointer conversions, so they collapse into this single constructor.
+    pub fn from_raw(p: *mut T) -> Self {
+        AnyPtr::RawPtr(p)
     }
 
-    /// Get a shared copy if the underlying pointer is Arc
-    /// Returns None if not an Arc
-    /// AnyPtr.hpp:131-137
-    /// C++: std::shared_ptr<T> get_shared_cpy() const noexcept
-    pub fn get_shared_copy(&self) -> Option<Arc<T>> {
-        match self {
-            AnyPtr::Shared(a) => Some(Arc::clone(a)),
-            _ => None,
-        }
+    // AnyPtr.hpp:52  AnyPtr(std::nullptr_t) noexcept {};
+    //
+    // Constructing from nullptr leaves the default (null raw pointer) state.
+    pub fn from_null() -> Self {
+        AnyPtr::RawPtr(std::ptr::null_mut())
     }
 
-    /// Get a reference-counted copy if the underlying pointer is Rc
-    /// Returns None if not an Rc
-    pub fn get_rc_copy(&self) -> Option<Rc<T>> {
-        match self {
-            AnyPtr::RefCounted(r) => Some(Rc::clone(r)),
-            _ => None,
-        }
+    // AnyPtr.hpp:55  template<class TT = T, class = SimilarPtrOnly<TT>>
+    //                AnyPtr(std::unique_ptr<TT> p) noexcept
+    //                    : ptr{std::unique_ptr<T>(std::move(p))} {}
+    pub fn from_unique(p: Box<T>) -> Self {
+        AnyPtr::UPtr(p)
     }
 
-    /// Convert unique ownership (Box) to shared ownership (Arc)
-    /// AnyPtr.hpp:140-142
-    /// C++: void convert_unique_to_shared() noexcept
-    pub fn convert_unique_to_shared(&mut self) {
-        if let AnyPtr::Unique(b) = std::mem::replace(self, AnyPtr::Raw(std::ptr::null())) {
-            *self = AnyPtr::Shared(Arc::from(b));
-        }
+    // AnyPtr.hpp:56  template<class TT = T, class = SimilarPtrOnly<TT>>
+    //                AnyPtr(std::shared_ptr<TT> p) noexcept
+    //                    : ptr{std::shared_ptr<T>(std::move(p))} {}
+    pub fn from_shared(p: Arc<T>) -> Self {
+        AnyPtr::ShPtr(p)
     }
 
-    /// Convert unique ownership (Box) to reference-counted (Rc)
-    pub fn convert_unique_to_rc(&mut self) {
-        if let AnyPtr::Unique(b) = std::mem::replace(self, AnyPtr::Raw(std::ptr::null())) {
-            *self = AnyPtr::RefCounted(Rc::from(b));
-        }
-    }
+    // AnyPtr.hpp:58  AnyPtr(AnyPtr &&other) noexcept : ptr{std::move(other.ptr)} {}
+    // AnyPtr.hpp:60  template<class TT, ...> AnyPtr(AnyPtr<TT> &&other) noexcept ...
+    //
+    // Move construction is provided natively by Rust's move semantics; no
+    // explicit method is required (and the cross-type derived overload has no
+    // Rust analogue).
 
-    /// Check if the data is owned by this AnyPtr instance
-    /// AnyPtr.hpp:145
-    /// C++: bool is_owned() const noexcept { return ptr.which() == UPtr || ptr.which() == ShPtr; }
-    pub fn is_owned(&self) -> bool {
-        matches!(
-            self,
-            AnyPtr::Unique(_) | AnyPtr::Shared(_) | AnyPtr::RefCounted(_)
-        )
-    }
-
-    /// Dereference to get a reference (panics if null)
-    /// AnyPtr.hpp:104-105
-    /// C++: const T &operator*() const noexcept { return *get_ptr(*this); }
-    /// C++: T &operator*() noexcept { return *get_ptr(*this); }
+    // AnyPtr.hpp:101  const T &operator*() const noexcept { return *get_ptr(*this); }
+    // AnyPtr.hpp:102  T &      operator*() noexcept { return *get_ptr(*this); }
+    //
+    // The stored pointer is not checked for being null when dereferenced
+    // (AnyPtr.hpp:15). `unsafe`: the caller upholds that invariant, exactly as
+    // C++ dereferences `get_ptr` without a null check.
+    #[allow(clippy::should_implement_trait)]
     pub fn as_ref(&self) -> &T {
-        unsafe {
-            self.get()
-                .as_ref()
-                .expect("Attempted to dereference null AnyPtr")
+        unsafe { &*self.get_ptr() }
+    }
+
+    // AnyPtr.hpp:102  T &operator*() noexcept { return *get_ptr(*this); }
+    pub fn as_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.get_ptr() }
+    }
+
+    // AnyPtr.hpp:104  T *      operator->() noexcept { return get_ptr(*this); }
+    // AnyPtr.hpp:105  const T *operator->() const noexcept { return get_ptr(*this); }
+    // AnyPtr.hpp:107  T *      get() noexcept { return get_ptr(*this); }
+    // AnyPtr.hpp:108  const T *get() const noexcept { return get_ptr(*this); }
+    pub fn get(&self) -> *mut T {
+        self.get_ptr()
+    }
+
+    // AnyPtr.hpp:110-119  operator bool() const noexcept
+    //
+    //     switch (ptr.which()) {
+    //     case RawPtr: return bool(boost::get<T *>(ptr));
+    //     case UPtr: return bool(boost::get<std::unique_ptr<T>>(ptr));
+    //     case ShPtr: return bool(boost::get<std::shared_ptr<T>>(ptr));
+    //     }
+    //     return false;
+    //
+    // For RawPtr the result is whether the raw pointer is non-null. A Box / Arc
+    // in Rust can never be empty (they always own a value), so the UPtr / ShPtr
+    // arms are always true, matching a non-null unique_ptr / shared_ptr.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn is_valid(&self) -> bool {
+        match self.which() {
+            // case RawPtr: return bool(boost::get<T *>(ptr));
+            RAW_PTR => match self {
+                AnyPtr::RawPtr(p) => !p.is_null(),
+                _ => unreachable!(),
+            },
+            // case UPtr: return bool(boost::get<std::unique_ptr<T>>(ptr));
+            U_PTR => true,
+            // case ShPtr: return bool(boost::get<std::shared_ptr<T>>(ptr));
+            SH_PTR => true,
+            // return false;
+            _ => false,
         }
     }
 
-    /// Try to get a reference (returns None if null)
-    pub fn try_as_ref(&self) -> Option<&T> {
-        if self.is_null() {
-            None
-        } else {
-            unsafe { self.get().as_ref() }
+    // AnyPtr.hpp:121-130
+    // If the stored pointer is a shared pointer, returns a reference
+    // counted copy. Empty shared pointer is returned otherwise.
+    //
+    //     std::shared_ptr<T> get_shared_cpy() const noexcept
+    //     {
+    //         std::shared_ptr<T> ret;
+    //         if (ptr.which() == ShPtr) ret = boost::get<std::shared_ptr<T>>(ptr);
+    //         return ret;
+    //     }
+    //
+    // C++ returns an empty shared_ptr when the variant is not ShPtr; the Rust
+    // equivalent of an empty shared_ptr is `None`.
+    pub fn get_shared_cpy(&self) -> Option<Arc<T>> {
+        let mut ret: Option<Arc<T>> = None;
+
+        if self.which() == SH_PTR {
+            if let AnyPtr::ShPtr(a) = self {
+                ret = Some(Arc::clone(a));
+            }
+        }
+
+        ret
+    }
+
+    // AnyPtr.hpp:132-136
+    // If the underlying pointer is unique, convert to shared pointer
+    //
+    //     void convert_unique_to_shared() noexcept
+    //     {
+    //         if (ptr.which() == UPtr)
+    //             ptr = std::shared_ptr<T>{std::move(boost::get<std::unique_ptr<T>>(ptr))};
+    //     }
+    pub fn convert_unique_to_shared(&mut self) {
+        if self.which() == U_PTR {
+            // Extract the Box, then replace `self` with the shared pointer.
+            // The temporary default state (null raw pointer) is never observed
+            // because it is immediately overwritten, matching the in-place
+            // C++ `ptr = ...` assignment.
+            let taken = std::mem::replace(self, AnyPtr::RawPtr(std::ptr::null_mut()));
+            if let AnyPtr::UPtr(b) = taken {
+                *self = AnyPtr::ShPtr(Arc::from(b));
+            }
         }
     }
 
-    /// Try to get a mutable reference (only for Unique ownership)
-    pub fn try_as_mut(&mut self) -> Option<&mut T> {
-        match self {
-            AnyPtr::Unique(b) => Some(b.as_mut()),
-            _ => None,
-        }
+    // AnyPtr.hpp:138-139
+    // Returns true if the data is owned by this AnyPtr instance
+    //     bool is_owned() const noexcept { return ptr.which() == UPtr || ptr.which() == ShPtr; }
+    pub fn is_owned(&self) -> bool {
+        self.which() == U_PTR || self.which() == SH_PTR
     }
 }
 
+// AnyPtr.hpp:48  AnyPtr() noexcept = default;
 impl<T> Default for AnyPtr<T> {
-    /// Create a null AnyPtr
-    /// AnyPtr.hpp:45
-    /// C++: AnyPtr() noexcept = default;
     fn default() -> Self {
-        AnyPtr::Raw(std::ptr::null())
+        AnyPtr::new()
     }
 }
 
-impl<T> From<*const T> for AnyPtr<T> {
-    /// Convert raw pointer to AnyPtr
-    /// AnyPtr.hpp:47
-    fn from(ptr: *const T) -> Self {
-        AnyPtr::from_raw(ptr)
+// AnyPtr.hpp:50,54  AnyPtr(T *p) / AnyPtr(TT *p)
+impl<T> From<*mut T> for AnyPtr<T> {
+    fn from(p: *mut T) -> Self {
+        AnyPtr::from_raw(p)
     }
 }
 
+// AnyPtr.hpp:55  AnyPtr(std::unique_ptr<TT> p)
 impl<T> From<Box<T>> for AnyPtr<T> {
-    /// Convert Box to AnyPtr
-    /// AnyPtr.hpp:51
-    fn from(ptr: Box<T>) -> Self {
-        AnyPtr::from_box(ptr)
+    fn from(p: Box<T>) -> Self {
+        AnyPtr::from_unique(p)
     }
 }
 
+// AnyPtr.hpp:56  AnyPtr(std::shared_ptr<TT> p)
 impl<T> From<Arc<T>> for AnyPtr<T> {
-    /// Convert Arc to AnyPtr
-    /// AnyPtr.hpp:52
-    fn from(ptr: Arc<T>) -> Self {
-        AnyPtr::from_arc(ptr)
+    fn from(p: Arc<T>) -> Self {
+        AnyPtr::from_shared(p)
     }
 }
 
-impl<T> From<Rc<T>> for AnyPtr<T> {
-    /// Convert Rc to AnyPtr
-    fn from(ptr: Rc<T>) -> Self {
-        AnyPtr::from_rc(ptr)
-    }
-}
-
-impl<T> Clone for AnyPtr<T> {
-    /// Clone the AnyPtr
-    /// Only works for Shared (Arc) and RefCounted (Rc) variants
-    /// Panics for Raw and Unique variants
-    fn clone(&self) -> Self {
-        match self {
-            AnyPtr::Raw(p) => AnyPtr::Raw(*p),
-            AnyPtr::Unique(_) => panic!("Cannot clone AnyPtr with unique ownership"),
-            AnyPtr::Shared(a) => AnyPtr::Shared(Arc::clone(a)),
-            AnyPtr::RefCounted(r) => AnyPtr::RefCounted(Rc::clone(r)),
-        }
-    }
-}
-
-// Note: We don't implement Deref/DerefMut because AnyPtr can be null
-// Users should call as_ref() or try_as_ref() explicitly
+// AnyPtr.hpp:142  } // namespace Slic3r
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // AnyPtr.hpp:50  AnyPtr(T *p)
     #[test]
     fn test_from_raw() {
-        let value = 42;
-        let ptr = AnyPtr::from_raw(&value as *const i32);
-        assert!(!ptr.is_null());
-        assert!(ptr.is_some());
+        let mut value = 42;
+        let ptr = AnyPtr::from_raw(&mut value as *mut i32);
+        // operator bool() -> true for non-null raw pointer
+        assert!(ptr.is_valid());
         assert_eq!(*ptr.as_ref(), 42);
+        // raw pointer is not owned
+        assert!(!ptr.is_owned());
     }
 
+    // AnyPtr.hpp:55  AnyPtr(std::unique_ptr<TT> p)
     #[test]
-    fn test_from_box() {
-        let value = Box::new(42);
-        let ptr = AnyPtr::from_box(value);
+    fn test_from_unique() {
+        let ptr = AnyPtr::from_unique(Box::new(42));
         assert!(ptr.is_owned());
+        assert!(ptr.is_valid());
         assert_eq!(*ptr.as_ref(), 42);
     }
 
+    // AnyPtr.hpp:56  AnyPtr(std::shared_ptr<TT> p)
     #[test]
-    fn test_from_arc() {
-        let value = Arc::new(42);
-        let ptr = AnyPtr::from_arc(value);
+    fn test_from_shared() {
+        let ptr = AnyPtr::from_shared(Arc::new(42));
         assert!(ptr.is_owned());
+        assert!(ptr.is_valid());
         assert_eq!(*ptr.as_ref(), 42);
     }
 
+    // AnyPtr.hpp:48 / AnyPtr.hpp:52  default / nullptr_t
     #[test]
-    fn test_from_rc() {
-        let value = Rc::new(42);
-        let ptr = AnyPtr::from_rc(value);
-        assert!(ptr.is_owned());
-        assert_eq!(*ptr.as_ref(), 42);
-    }
-
-    #[test]
-    fn test_default() {
+    fn test_default_is_null_raw() {
         let ptr: AnyPtr<i32> = AnyPtr::default();
-        assert!(ptr.is_null());
-        assert!(!ptr.is_some());
+        // operator bool() -> false for null raw pointer
+        assert!(!ptr.is_valid());
+        assert!(!ptr.is_owned());
+        assert!(ptr.get().is_null());
     }
 
+    // AnyPtr.hpp:121-130  get_shared_cpy
     #[test]
-    fn test_get_shared_copy() {
+    fn test_get_shared_cpy() {
         let arc = Arc::new(42);
-        let ptr = AnyPtr::from_arc(Arc::clone(&arc));
-        let copy = ptr.get_shared_copy();
+        let ptr = AnyPtr::from_shared(Arc::clone(&arc));
+        let copy = ptr.get_shared_cpy();
         assert!(copy.is_some());
         assert_eq!(*copy.unwrap(), 42);
-        assert_eq!(Arc::strong_count(&arc), 3); // original + ptr + copy
+        // original + ptr + copy
+        assert_eq!(Arc::strong_count(&arc), 3);
+
+        // Empty shared pointer returned otherwise.
+        let raw = AnyPtr::from_raw(std::ptr::null_mut::<i32>());
+        assert!(raw.get_shared_cpy().is_none());
     }
 
-    #[test]
-    fn test_get_rc_copy() {
-        let rc = Rc::new(42);
-        let ptr = AnyPtr::from_rc(Rc::clone(&rc));
-        let copy = ptr.get_rc_copy();
-        assert!(copy.is_some());
-        assert_eq!(*copy.unwrap(), 42);
-        assert_eq!(Rc::strong_count(&rc), 3); // original + ptr + copy
-    }
-
+    // AnyPtr.hpp:132-136  convert_unique_to_shared
     #[test]
     fn test_convert_unique_to_shared() {
-        let mut ptr = AnyPtr::from_box(Box::new(42));
-        assert!(matches!(ptr, AnyPtr::Unique(_)));
+        let mut ptr = AnyPtr::from_unique(Box::new(42));
+        assert!(matches!(ptr, AnyPtr::UPtr(_)));
 
         ptr.convert_unique_to_shared();
-        assert!(matches!(ptr, AnyPtr::Shared(_)));
+        assert!(matches!(ptr, AnyPtr::ShPtr(_)));
+        assert!(ptr.is_owned());
         assert_eq!(*ptr.as_ref(), 42);
+
+        // No-op when not unique.
+        let mut raw = AnyPtr::from_raw(std::ptr::null_mut::<i32>());
+        raw.convert_unique_to_shared();
+        assert!(matches!(raw, AnyPtr::RawPtr(_)));
     }
 
-    #[test]
-    fn test_convert_unique_to_rc() {
-        let mut ptr = AnyPtr::from_box(Box::new(42));
-        assert!(matches!(ptr, AnyPtr::Unique(_)));
-
-        ptr.convert_unique_to_rc();
-        assert!(matches!(ptr, AnyPtr::RefCounted(_)));
-        assert_eq!(*ptr.as_ref(), 42);
-    }
-
+    // AnyPtr.hpp:138-139  is_owned
     #[test]
     fn test_is_owned() {
-        let raw_ptr = AnyPtr::from_raw(&42 as *const i32);
-        assert!(!raw_ptr.is_owned());
+        let raw = AnyPtr::from_raw(std::ptr::null_mut::<i32>());
+        assert!(!raw.is_owned());
 
-        let box_ptr = AnyPtr::from_box(Box::new(42));
-        assert!(box_ptr.is_owned());
+        let uptr = AnyPtr::from_unique(Box::new(42));
+        assert!(uptr.is_owned());
 
-        let arc_ptr = AnyPtr::from_arc(Arc::new(42));
-        assert!(arc_ptr.is_owned());
-
-        let rc_ptr = AnyPtr::from_rc(Rc::new(42));
-        assert!(rc_ptr.is_owned());
+        let shptr = AnyPtr::from_shared(Arc::new(42));
+        assert!(shptr.is_owned());
     }
 
+    // AnyPtr.hpp:102  T &operator*()
     #[test]
-    fn test_try_as_ref() {
-        let ptr = AnyPtr::from_box(Box::new(42));
-        assert_eq!(ptr.try_as_ref(), Some(&42));
-
-        let null_ptr: AnyPtr<i32> = AnyPtr::default();
-        assert_eq!(null_ptr.try_as_ref(), None);
-    }
-
-    #[test]
-    fn test_try_as_mut() {
-        let mut ptr = AnyPtr::from_box(Box::new(42));
-        if let Some(val) = ptr.try_as_mut() {
-            *val = 100;
-        }
+    fn test_as_mut() {
+        let mut ptr = AnyPtr::from_unique(Box::new(42));
+        *ptr.as_mut() = 100;
         assert_eq!(*ptr.as_ref(), 100);
-
-        let mut arc_ptr = AnyPtr::from_arc(Arc::new(42));
-        assert!(arc_ptr.try_as_mut().is_none()); // Arc is not mutable
-    }
-
-    #[test]
-    fn test_clone_shared() {
-        let arc = Arc::new(42);
-        let ptr1 = AnyPtr::from_arc(Arc::clone(&arc));
-        let ptr2 = ptr1.clone();
-        assert_eq!(*ptr1.as_ref(), 42);
-        assert_eq!(*ptr2.as_ref(), 42);
-        assert_eq!(Arc::strong_count(&arc), 3); // original + ptr1 + ptr2
-    }
-
-    #[test]
-    fn test_clone_rc() {
-        let rc = Rc::new(42);
-        let ptr1 = AnyPtr::from_rc(Rc::clone(&rc));
-        let ptr2 = ptr1.clone();
-        assert_eq!(*ptr1.as_ref(), 42);
-        assert_eq!(*ptr2.as_ref(), 42);
-        assert_eq!(Rc::strong_count(&rc), 3); // original + ptr1 + ptr2
-    }
-
-    #[test]
-    #[should_panic(expected = "Cannot clone AnyPtr with unique ownership")]
-    fn test_clone_unique_panics() {
-        let ptr = AnyPtr::from_box(Box::new(42));
-        let _clone = ptr.clone(); // Should panic
     }
 }

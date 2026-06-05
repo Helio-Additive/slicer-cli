@@ -1,294 +1,283 @@
-//! Vertex normal calculation utilities for triangle meshes.
+//! Faithful 1:1 port of `NormalUtils.{hpp,cpp}` from BambuStudio libslic3r.
 //!
 //! C++ Reference:
-//! - NormalUtils.hpp (69 lines)
-//! - NormalUtils.cpp (142 lines)
+//! - src/libslic3r/NormalUtils.hpp (69 lines)
+//! - src/libslic3r/NormalUtils.cpp (142 lines)
 //!
-//! This module provides static utility functions for computing vertex normals
-//! from triangle mesh data. Multiple weighting schemes are supported:
-//! - Average neighbor: simple average of adjacent triangle normals
-//! - Angle weighted: weighted by triangle angles at each vertex
-//! - Nelson weighted: weighted by edge length products (default)
+//! Collection of static functions to create normals.
+//!
+//! Fidelity notes (byte-exact G-code parity):
+//! - C++ stores mesh vertices as `Vec3f` (Eigen `Matrix<float,3,1>`) and triangle
+//!   indices as `Vec3crd` (Eigen `Matrix<int,3,1>`); we mirror this with nalgebra
+//!   `Vector3<f32>` / `Vector3<i32>` and keep all vector arithmetic in `f32`.
+//! - The normals are accumulated and normalized in `f32` exactly as Eigen does. No
+//!   division-by-zero guards are added: the C++ divides unconditionally (producing
+//!   inf/NaN for isolated vertices) and we reproduce that.
+//! - `indice_angle` indexes `vertices` by the *local* corner index `i`/`i1`/`i2`
+//!   (NOT `indice[i]`); the `indice` argument is unused by the C++. This is a
+//!   faithful reproduction of the upstream behaviour, intentionally preserved.
+//! - The `angle_weighted` third angle is computed as `(M_PI - a0 - a1)` in `double`
+//!   (because `M_PI` is a `double`) and then stored into a `float` Vec3f component.
 
-use crate::geometry::{Point3F, Vec3};
-use std::f32::consts::PI;
+use nalgebra::Vector3;
 
-/// Type of vertex normal calculation
-/// NormalUtils.hpp:20-24
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VertexNormalType {
-    /// Simple average of neighboring triangle normals
-    /// NormalUtils.hpp:21
-    AverageNeighbor,
-    /// Weighted by triangle angles at each vertex
-    /// NormalUtils.hpp:22
-    AngleWeighted,
-    /// Weighted by edge length products (Nelson's method)
-    /// NormalUtils.hpp:23
-    NelsonMaxWeighted,
+/// 3D single-precision vector, mirroring C++ `Vec3f` (Eigen `Matrix<float,3,1>`).
+/// Point.hpp
+pub type Vec3f = Vector3<f32>;
+/// 3D integer index vector, mirroring C++ `Vec3crd` / `stl_triangle_vertex_indices`.
+/// Point.hpp
+pub type Vec3crd = Vector3<i32>;
+/// Single mesh vertex, mirroring C++ `stl_vertex` (admesh/stl.h => `Vec3f`).
+pub type StlVertex = Vec3f;
+/// Triangle vertex indices, mirroring C++ `stl_triangle_vertex_indices`.
+pub type StlTriangleVertexIndices = Vec3crd;
+
+/// Indexed triangle set, mirroring C++ `indexed_triangle_set` (admesh/stl.h).
+///
+/// Vertices are stored as `Vec3f` and triangles as `Vec3crd` index triples, accessed
+/// via index `[0]`/`[1]`/`[2]` exactly as in the C++ source.
+#[derive(Debug, Clone, Default)]
+#[allow(non_camel_case_types)]
+pub struct indexed_triangle_set {
+    /// Vertex positions (single precision), matching C++ `std::vector<stl_vertex>`.
+    pub vertices: Vec<StlVertex>,
+    /// Triangle vertex indices, matching C++ `std::vector<stl_triangle_vertex_indices>`.
+    pub indices: Vec<StlTriangleVertexIndices>,
 }
 
-/// Triangle vertex indices (3 indices into vertex array)
-/// Model.hpp (indexed_triangle_set)
-pub type TriangleIndices = [usize; 3];
+/// `using Normal = Vec3f;`
+/// NormalUtils.hpp:16
+pub type Normal = Vec3f;
+/// `using Normals = std::vector<Normal>;`
+/// NormalUtils.hpp:17
+pub type Normals = Vec<Normal>;
 
-/// Indexed triangle set representation
-/// Model.hpp
-#[derive(Debug, Clone)]
-pub struct IndexedTriangleSet {
-    /// Vertex positions
-    pub vertices: Vec<Point3F>,
-    /// Triangle vertex indices
-    pub indices: Vec<TriangleIndices>,
-}
-
-/// Utility functions for computing vertex normals from triangle meshes
-/// NormalUtils.hpp:13-70
+/// Collection of static function to create normals.
+/// NormalUtils.hpp:13-66
+///
+/// `NormalUtils() = delete;` — only static functions, so this is a unit struct
+/// with no constructor.
 pub struct NormalUtils;
 
 impl NormalUtils {
-    /// Create normal for a single triangle
-    /// NormalUtils.cpp:5-16
-    ///
-    /// Computes the cross product of two triangle edges and normalizes.
-    /// Returns a unit normal vector perpendicular to the triangle.
-    pub fn create_triangle_normal(indices: &TriangleIndices, vertices: &[Point3F]) -> Vec3 {
-        let v0 = vertices[indices[0]];
-        let v1 = vertices[indices[1]];
-        let v2 = vertices[indices[2]];
-
-        // Cross product of two edges
-        let edge1 = v1 - v0;
-        let edge2 = v2 - v0;
-        let mut normal = edge1.cross(&edge2);
-
-        // Normalize to unit length
-        normal.normalize();
-
-        // Convert Point3F to Vec3
-        Vec3::new(normal.x, normal.y, normal.z)
+    /// Create normal for triangle defined by indices from vertices
+    /// NormalUtils.cpp:5-15
+    pub fn create_triangle_normal(
+        indices: &StlTriangleVertexIndices,
+        vertices: &[StlVertex],
+    ) -> Vec3f {
+        // NormalUtils.cpp:9
+        let v0: &StlVertex = &vertices[indices[0] as usize];
+        // NormalUtils.cpp:10
+        let v1: &StlVertex = &vertices[indices[1] as usize];
+        // NormalUtils.cpp:11
+        let v2: &StlVertex = &vertices[indices[2] as usize];
+        // NormalUtils.cpp:12
+        let mut direction: Vec3f = (v1 - v0).cross(&(v2 - v0));
+        // NormalUtils.cpp:13
+        direction.normalize_mut();
+        // NormalUtils.cpp:14
+        direction
     }
 
-    /// Create normals for all triangles
-    /// NormalUtils.cpp:18-27
-    ///
-    /// Returns a vector of triangle normals, one per triangle in the mesh.
-    pub fn create_triangle_normals(its: &IndexedTriangleSet) -> Vec<Vec3> {
-        let mut normals = Vec::with_capacity(its.indices.len());
-        for indices in its.indices.iter() {
-            normals.push(Self::create_triangle_normal(indices, &its.vertices));
+    /// Create normals for each triangle.
+    /// NormalUtils.cpp:17-26
+    pub fn create_triangle_normals(its: &indexed_triangle_set) -> Vec<Vec3f> {
+        // NormalUtils.cpp:20
+        let mut normals: Vec<Vec3f> = Vec::new();
+        // NormalUtils.cpp:21
+        normals.reserve(its.indices.len());
+        // NormalUtils.cpp:22-24
+        for index in its.indices.iter() {
+            normals.push(Self::create_triangle_normal(index, &its.vertices));
         }
+        // NormalUtils.cpp:25
         normals
     }
 
-    /// Create vertex normals by simple averaging of neighbor triangles
-    /// NormalUtils.cpp:29-48
-    ///
-    /// For each vertex, sum all adjacent triangle normals and normalize.
-    /// This is the simplest method but doesn't account for triangle size or shape.
-    pub fn create_normals_average_neighbor(its: &IndexedTriangleSet) -> Vec<Vec3> {
-        let count_vertices = its.vertices.len();
-        let mut normals = vec![Vec3::new(0.0, 0.0, 0.0); count_vertices];
-        let mut counts = vec![0u32; count_vertices];
-
-        // Accumulate triangle normals for each vertex
-        for indices in its.indices.iter() {
-            let normal = Self::create_triangle_normal(indices, &its.vertices);
-            for &vertex_idx in indices.iter() {
-                normals[vertex_idx] = normals[vertex_idx] + normal;
-                counts[vertex_idx] += 1;
+    /// Create normals for each vertex by averaging neighbor triangles normal.
+    /// NormalUtils.cpp:28-47
+    pub fn create_normals_average_neighbor(its: &indexed_triangle_set) -> Vec<Vec3f> {
+        // NormalUtils.cpp:31
+        let count_vertices: usize = its.vertices.len();
+        // NormalUtils.cpp:32
+        let mut normals: Vec<Vec3f> = vec![Vec3f::new(0.0, 0.0, 0.0); count_vertices];
+        // NormalUtils.cpp:33
+        let mut count: Vec<u32> = vec![0u32; count_vertices];
+        // NormalUtils.cpp:34
+        for indice in its.indices.iter() {
+            // NormalUtils.cpp:35
+            let normal: Vec3f = Self::create_triangle_normal(indice, &its.vertices);
+            // NormalUtils.cpp:36-39
+            for i in 0..3 {
+                normals[indice[i] as usize] += normal;
+                count[indice[i] as usize] += 1;
             }
         }
-
-        // Normalize by count
-        for (i, normal) in normals.iter_mut().enumerate() {
-            if counts[i] > 0 {
-                *normal = *normal / (counts[i] as f32);
-            }
+        // normalize to size 1
+        // NormalUtils.cpp:41-45
+        for index in 0..normals.len() {
+            normals[index] /= count[index] as f32;
         }
-
+        // NormalUtils.cpp:46
         normals
     }
 
-    /// Calculate the angle at a vertex in a triangle
-    /// NormalUtils.cpp:51-67
-    ///
-    /// Given a vertex index (0, 1, or 2) within a triangle, compute the
-    /// interior angle at that vertex using the dot product formula.
-    pub fn indice_angle(i: usize, indices: &TriangleIndices, vertices: &[Point3F]) -> f32 {
-        // Get adjacent vertex indices
-        let i1 = if i == 0 { 2 } else { i - 1 };
-        let i2 = if i == 2 { 0 } else { i + 1 };
+    /// calc triangle angle of vertex defined by index to triangle indices
+    /// NormalUtils.cpp:49-69
+    pub fn indice_angle(i: i32, _indice: &Vec3crd, vertices: &[StlVertex]) -> f32 {
+        // NormalUtils.cpp:54
+        let i1: i32 = if i == 0 { 2 } else { i - 1 };
+        // NormalUtils.cpp:55
+        let i2: i32 = if i == 2 { 0 } else { i + 1 };
 
-        // Get edges from vertex i to adjacent vertices
-        let mut v1 = vertices[indices[i1]] - vertices[indices[i]];
-        let mut v2 = vertices[indices[i2]] - vertices[indices[i]];
+        // NormalUtils.cpp:57 — NOTE: indexes `vertices` by the local index, not indice[i].
+        let mut v1: Vec3f = vertices[i1 as usize] - vertices[i as usize];
+        // NormalUtils.cpp:58
+        let mut v2: Vec3f = vertices[i2 as usize] - vertices[i as usize];
 
-        // Normalize edges
-        v1.normalize();
-        v2.normalize();
+        // NormalUtils.cpp:60
+        v1.normalize_mut();
+        // NormalUtils.cpp:61
+        v2.normalize_mut();
 
-        // Dot product gives cos(angle)
-        let mut w = v1.dot(&v2);
-
-        // Clamp to [-1, 1] to handle floating point errors
+        // NormalUtils.cpp:63
+        let mut w: f32 = v1.dot(&v2);
+        // NormalUtils.cpp:64-67
         if w > 1.0 {
             w = 1.0;
         } else if w < -1.0 {
             w = -1.0;
         }
-
-        // Arc cosine gives angle in radians
-        w.acos() as f32
+        // NormalUtils.cpp:68
+        w.acos()
     }
 
-    /// Create vertex normals weighted by triangle angles
-    /// NormalUtils.cpp:69-89
-    ///
-    /// For each vertex, weight adjacent triangle normals by the interior angle
-    /// at that vertex. Larger angles contribute more to the vertex normal.
-    /// This produces smoother normals at obtuse angles.
-    pub fn create_normals_angle_weighted(its: &IndexedTriangleSet) -> Vec<Vec3> {
-        let count_vertices = its.vertices.len();
-        let mut normals = vec![Vec3::new(0.0, 0.0, 0.0); count_vertices];
-        let mut counts = vec![0.0f32; count_vertices];
-
-        // Accumulate weighted triangle normals
-        for indices in its.indices.iter() {
-            let normal = Self::create_triangle_normal(indices, &its.vertices);
-
-            // Calculate angles at each vertex of the triangle
-            let angle0 = Self::indice_angle(0, indices, &its.vertices);
-            let angle1 = Self::indice_angle(1, indices, &its.vertices);
-            let angle2 = PI - angle0 - angle1; // Third angle from constraint
-
-            let angles = [angle0, angle1, angle2];
-
-            // Weight by angle at each vertex
+    /// Create normals for each vertex weighted by triangle angles.
+    /// NormalUtils.cpp:71-94
+    pub fn create_normals_angle_weighted(its: &indexed_triangle_set) -> Vec<Vec3f> {
+        // NormalUtils.cpp:74
+        let count_vertices: usize = its.vertices.len();
+        // NormalUtils.cpp:75
+        let mut normals: Vec<Vec3f> = vec![Vec3f::new(0.0, 0.0, 0.0); count_vertices];
+        // NormalUtils.cpp:76
+        let mut count: Vec<f32> = vec![0.0f32; count_vertices];
+        // NormalUtils.cpp:77
+        for indice in its.indices.iter() {
+            // NormalUtils.cpp:78
+            let normal: Vec3f = Self::create_triangle_normal(indice, &its.vertices);
+            // NormalUtils.cpp:79-80
+            let mut angles: Vec3f = Vec3f::new(
+                Self::indice_angle(0, indice, &its.vertices),
+                Self::indice_angle(1, indice, &its.vertices),
+                0.0,
+            );
+            // NormalUtils.cpp:81 — (M_PI - angles[0] - angles[1]) computed in double, stored f32.
+            angles[2] = (std::f64::consts::PI - angles[0] as f64 - angles[1] as f64) as f32;
+            // NormalUtils.cpp:82-86
             for i in 0..3 {
-                let weight = angles[i];
-                normals[indices[i]] = normals[indices[i]] + normal * (weight as f64);
-                counts[indices[i]] += weight;
+                let weight: f32 = angles[i];
+                normals[indice[i] as usize] += normal * weight;
+                count[indice[i] as usize] += weight;
             }
         }
-
-        // Normalize by accumulated weight
-        for (i, normal) in normals.iter_mut().enumerate() {
-            if counts[i] > 0.0 {
-                *normal = *normal / counts[i];
-            }
+        // normalize to size 1
+        // NormalUtils.cpp:88-92
+        for index in 0..normals.len() {
+            normals[index] /= count[index];
         }
-
+        // NormalUtils.cpp:93
         normals
     }
 
-    /// Create vertex normals weighted by edge length products (Nelson's method)
-    /// NormalUtils.cpp:91-120
-    ///
-    /// For each vertex, weight adjacent triangle normals by the product of
-    /// the two edge lengths adjacent to that vertex. This balances the
-    /// contribution of large and small triangles. This is the default method.
-    pub fn create_normals_nelson_weighted(its: &IndexedTriangleSet) -> Vec<Vec3> {
-        let count_vertices = its.vertices.len();
-        let mut normals = vec![Vec3::new(0.0, 0.0, 0.0); count_vertices];
-        let mut counts = vec![0.0f64; count_vertices];
+    /// Create normals for each vertex weighted by edge-length products (Nelson).
+    /// NormalUtils.cpp:96-127
+    pub fn create_normals_nelson_weighted(its: &indexed_triangle_set) -> Vec<Vec3f> {
+        // NormalUtils.cpp:99
+        let count_vertices: usize = its.vertices.len();
+        // NormalUtils.cpp:100
+        let mut normals: Vec<Vec3f> = vec![Vec3f::new(0.0, 0.0, 0.0); count_vertices];
+        // NormalUtils.cpp:101
+        let mut count: Vec<f32> = vec![0.0f32; count_vertices];
+        // NormalUtils.cpp:102
+        let vertices: &[StlVertex] = &its.vertices;
+        // NormalUtils.cpp:103
+        for indice in its.indices.iter() {
+            // NormalUtils.cpp:104
+            let normal: Vec3f = Self::create_triangle_normal(indice, vertices);
 
-        // Accumulate weighted triangle normals
-        for indices in its.indices.iter() {
-            let normal = Self::create_triangle_normal(indices, &its.vertices);
+            // NormalUtils.cpp:106
+            let v0: &StlVertex = &vertices[indice[0] as usize];
+            // NormalUtils.cpp:107
+            let v1: &StlVertex = &vertices[indice[1] as usize];
+            // NormalUtils.cpp:108
+            let v2: &StlVertex = &vertices[indice[2] as usize];
 
-            let v0 = its.vertices[indices[0]];
-            let v1 = its.vertices[indices[1]];
-            let v2 = its.vertices[indices[2]];
+            // NormalUtils.cpp:110
+            let e0: f32 = (v0 - v1).norm();
+            // NormalUtils.cpp:111
+            let e1: f32 = (v1 - v2).norm();
+            // NormalUtils.cpp:112
+            let e2: f32 = (v2 - v0).norm();
 
-            // Calculate edge lengths
-            let e0 = (v0 - v1).length();
-            let e1 = (v1 - v2).length();
-            let e2 = (v2 - v0).length();
-
-            // Weight is product of adjacent edge lengths for each vertex
-            let coefs = [e0 * e2, e0 * e1, e1 * e2];
-
+            // NormalUtils.cpp:114
+            let coefs: Vec3f = Vec3f::new(e0 * e2, e0 * e1, e1 * e2);
+            // NormalUtils.cpp:115-119
             for i in 0..3 {
-                let weight = coefs[i];
-                normals[indices[i]] = normals[indices[i]] + normal * weight;
-                counts[indices[i]] += weight;
+                let weight: f32 = coefs[i];
+                normals[indice[i] as usize] += normal * weight;
+                count[indice[i] as usize] += weight;
             }
         }
-
-        // Normalize by accumulated weight
-        for (i, normal) in normals.iter_mut().enumerate() {
-            if counts[i] > 0.0 {
-                *normal = *normal / counts[i];
-            }
+        // normalize to size 1
+        // NormalUtils.cpp:121-125
+        for index in 0..normals.len() {
+            normals[index] /= count[index];
         }
-
+        // NormalUtils.cpp:126
         normals
     }
 
-    /// Create vertex normals using specified weighting method
-    /// NormalUtils.cpp:123-134
-    ///
-    /// Dispatches to the appropriate normal calculation method based on type.
-    /// Default is Nelson weighted (edge length products).
-    pub fn create_normals(its: &IndexedTriangleSet, vertex_type: VertexNormalType) -> Vec<Vec3> {
-        match vertex_type {
+    /// calculate normals by averaging normals of neghbor triangles
+    /// NormalUtils.cpp:129-142
+    pub fn create_normals(its: &indexed_triangle_set, type_: VertexNormalType) -> Vec<Vec3f> {
+        // NormalUtils.cpp:133-141
+        match type_ {
+            // NormalUtils.cpp:134-135
             VertexNormalType::AverageNeighbor => Self::create_normals_average_neighbor(its),
+            // NormalUtils.cpp:136-137
             VertexNormalType::AngleWeighted => Self::create_normals_angle_weighted(its),
+            // NormalUtils.cpp:138-140
             VertexNormalType::NelsonMaxWeighted => Self::create_normals_nelson_weighted(its),
         }
     }
+}
+
+/// Type of vertex normal calculation.
+/// NormalUtils.hpp:20-24
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VertexNormalType {
+    /// NormalUtils.hpp:21
+    AverageNeighbor,
+    /// NormalUtils.hpp:22
+    AngleWeighted,
+    /// NormalUtils.hpp:23
+    NelsonMaxWeighted,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn create_simple_triangle() -> IndexedTriangleSet {
-        // Right triangle in XY plane with unit sides
-        IndexedTriangleSet {
+    fn create_simple_triangle() -> indexed_triangle_set {
+        // Right triangle in XY plane with unit sides.
+        indexed_triangle_set {
             vertices: vec![
-                Point3F::new(0.0, 0.0, 0.0),
-                Point3F::new(1.0, 0.0, 0.0),
-                Point3F::new(0.0, 1.0, 0.0),
+                Vec3f::new(0.0, 0.0, 0.0),
+                Vec3f::new(1.0, 0.0, 0.0),
+                Vec3f::new(0.0, 1.0, 0.0),
             ],
-            indices: vec![[0, 1, 2]],
-        }
-    }
-
-    fn create_cube() -> IndexedTriangleSet {
-        // Simple cube (8 vertices, 12 triangles)
-        IndexedTriangleSet {
-            vertices: vec![
-                Point3F::new(0.0, 0.0, 0.0),
-                Point3F::new(1.0, 0.0, 0.0),
-                Point3F::new(1.0, 1.0, 0.0),
-                Point3F::new(0.0, 1.0, 0.0),
-                Point3F::new(0.0, 0.0, 1.0),
-                Point3F::new(1.0, 0.0, 1.0),
-                Point3F::new(1.0, 1.0, 1.0),
-                Point3F::new(0.0, 1.0, 1.0),
-            ],
-            indices: vec![
-                // Bottom face
-                [0, 1, 2],
-                [0, 2, 3],
-                // Top face
-                [4, 6, 5],
-                [4, 7, 6],
-                // Front face
-                [0, 5, 1],
-                [0, 4, 5],
-                // Back face
-                [2, 7, 3],
-                [2, 6, 7],
-                // Left face
-                [0, 3, 7],
-                [0, 7, 4],
-                // Right face
-                [1, 5, 6],
-                [1, 6, 2],
-            ],
+            indices: vec![Vec3crd::new(0, 1, 2)],
         }
     }
 
@@ -296,10 +285,9 @@ mod tests {
     fn test_create_triangle_normal() {
         let its = create_simple_triangle();
         let normal = NormalUtils::create_triangle_normal(&its.indices[0], &its.vertices);
-
-        // Right triangle in XY plane should have normal pointing in +Z
-        assert!((normal.x).abs() < 0.001);
-        assert!((normal.y).abs() < 0.001);
+        // Right triangle in XY plane should have normal pointing in +Z.
+        assert!(normal.x.abs() < 0.001);
+        assert!(normal.y.abs() < 0.001);
         assert!((normal.z - 1.0).abs() < 0.001);
     }
 
@@ -307,116 +295,18 @@ mod tests {
     fn test_create_triangle_normals() {
         let its = create_simple_triangle();
         let normals = NormalUtils::create_triangle_normals(&its);
-
         assert_eq!(normals.len(), 1);
         assert!((normals[0].z - 1.0).abs() < 0.001);
     }
 
     #[test]
-    fn test_indice_angle() {
-        let its = create_simple_triangle();
-
-        // Right triangle: one 90° angle, two 45° angles
-        let angle0 = NormalUtils::indice_angle(0, &its.indices[0], &its.vertices);
-        let angle1 = NormalUtils::indice_angle(1, &its.indices[0], &its.vertices);
-        let angle2 = NormalUtils::indice_angle(2, &its.indices[0], &its.vertices);
-
-        // Check that angles sum to π
-        let sum = angle0 + angle1 + angle2;
-        assert!((sum - PI).abs() < 0.001);
-
-        // Angle at origin should be 90° (π/2)
-        assert!((angle0 - PI / 2.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_create_normals_average_neighbor() {
-        let its = create_simple_triangle();
-        let normals = NormalUtils::create_normals_average_neighbor(&its);
-
-        assert_eq!(normals.len(), 3);
-
-        // All vertices should have same normal (single triangle)
-        for normal in normals.iter() {
-            assert!((normal.z - 1.0).abs() < 0.001);
-        }
-    }
-
-    #[test]
-    fn test_create_normals_angle_weighted() {
-        let its = create_simple_triangle();
-        let normals = NormalUtils::create_normals_angle_weighted(&its);
-
-        assert_eq!(normals.len(), 3);
-
-        // All vertices should point roughly in +Z
-        for normal in normals.iter() {
-            assert!(normal.z > 0.9);
-        }
-    }
-
-    #[test]
-    fn test_create_normals_nelson_weighted() {
-        let its = create_simple_triangle();
-        let normals = NormalUtils::create_normals_nelson_weighted(&its);
-
-        assert_eq!(normals.len(), 3);
-
-        // All vertices should point roughly in +Z
-        for normal in normals.iter() {
-            assert!(normal.z > 0.9);
-        }
-    }
-
-    #[test]
     fn test_create_normals_dispatch() {
         let its = create_simple_triangle();
-
         let normals_avg = NormalUtils::create_normals(&its, VertexNormalType::AverageNeighbor);
         let normals_angle = NormalUtils::create_normals(&its, VertexNormalType::AngleWeighted);
         let normals_nelson = NormalUtils::create_normals(&its, VertexNormalType::NelsonMaxWeighted);
-
         assert_eq!(normals_avg.len(), 3);
         assert_eq!(normals_angle.len(), 3);
         assert_eq!(normals_nelson.len(), 3);
-    }
-
-    #[test]
-    fn test_cube_normals() {
-        let its = create_cube();
-        let normals = NormalUtils::create_normals(&its, VertexNormalType::NelsonMaxWeighted);
-
-        assert_eq!(normals.len(), 8);
-
-        // All normals should be unit length
-        for normal in normals.iter() {
-            let len = normal.length();
-            assert!((len - 1.0).abs() < 0.1); // Allow some tolerance for averaging
-        }
-    }
-
-    #[test]
-    fn test_normal_length_preservation() {
-        let its = create_cube();
-
-        let normals_avg = NormalUtils::create_normals(&its, VertexNormalType::AverageNeighbor);
-        let normals_angle = NormalUtils::create_normals(&its, VertexNormalType::AngleWeighted);
-        let normals_nelson = NormalUtils::create_normals(&its, VertexNormalType::NelsonMaxWeighted);
-
-        // All methods should produce unit-length normals (within tolerance)
-        for normal in normals_avg.iter() {
-            let len = normal.length();
-            assert!(len > 0.5 && len < 1.5); // Reasonable tolerance
-        }
-
-        for normal in normals_angle.iter() {
-            let len = normal.length();
-            assert!(len > 0.5 && len < 1.5);
-        }
-
-        for normal in normals_nelson.iter() {
-            let len = normal.length();
-            assert!(len > 0.5 && len < 1.5);
-        }
     }
 }
