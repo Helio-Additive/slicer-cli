@@ -6,9 +6,9 @@
 //! with different curve degrees. This is used to adjust printing speed based on the
 //! sharpness of curves.
 
-use crate::extrusion_entity::{ExtrusionPath, ExtrusionRole};
-use crate::geometry::{Point, Polygon, Polyline};
-use crate::{scale, CoordF, Error, Result, SCALING_FACTOR};
+use crate::extrusion_entity::ExtrusionPath;
+use crate::geometry::{Point, Polygon};
+use crate::{scale, CoordF, Result};
 use std::f64::consts::PI;
 
 /// Constants for curvature analysis
@@ -69,8 +69,7 @@ impl CurveAnalyzer {
             return Ok(());
         }
 
-        // Step 1: Build polygon and track path lengths
-        // CurveAnalyzer.cpp:23-35
+        // CurveAnalyzer.cpp:23-33
         let mut polygon = Polygon::new();
         let mut paths_length = Vec::with_capacity(paths.len());
 
@@ -96,10 +95,11 @@ impl CurveAnalyzer {
             return Ok(());
         }
 
-        // Step 2: Densify polygon to have points every ~1mm
-        // CurveAnalyzer.cpp:36-37
-        // C++ uses scale_(curvatures_densify_width) but densify expects float/double
-        polygon.densify(CURVATURES_DENSIFY_WIDTH);
+        // 1 generate point series which is on the line of polygon, point distance along the polygon is smaller than 1mm
+        // CurveAnalyzer.cpp:34-36
+        // C++: polygon.densify(scale_(curvatures_densify_width));
+        // C++: std::vector<float> polygon_length = polygon.parameter_by_length();
+        polygon.densify(scale(CURVATURES_DENSIFY_WIDTH) as CoordF);
         let polygon_length = polygon.parameter_by_length();
 
         let point_num = polygon.points.len();
@@ -107,8 +107,8 @@ impl CurveAnalyzer {
             return Ok(());
         }
 
-        // Step 3: Calculate angle at each segment
-        // CurveAnalyzer.cpp:39-55
+        // 2 calculate angle of every segment
+        // CurveAnalyzer.cpp:38-52
         let mut angles = vec![0.0_f32; point_num];
         for i in 0..point_num {
             let curr = i;
@@ -136,67 +136,63 @@ impl CurveAnalyzer {
             angles[curr] = (cross as f64).atan2(dot as f64) as f32;
         }
 
-        // Step 4: Calculate average curvatures using sliding window
-        // CurveAnalyzer.cpp:57-94
+        // 3 generate sum of angle and length of the adjacent segment for eveny point, range is approximately curvatures_sampling_width.
+        //   And then calculate the curvature
+        // CurveAnalyzer.cpp:54-87
+        let mut sum_angles = vec![0.0_f32; point_num];
         let mut average_curvatures = vec![0.0_f64; point_num];
-        let total_length = *paths_length.last().unwrap_or(&0.0);
-        // C++ compares paths_length.back() (double) with scale_(width) (int64)
-        // In Rust we need explicit conversion - compare in unscaled space
-        let sampling_width_scaled = CURVATURES_SAMPLING_WIDTH;
-
-        if total_length < sampling_width_scaled {
-            // Loop too short - use maximum curvature
-            // CurveAnalyzer.cpp:61-65
-            let temp = 1000.0 * 2.0 * PI / (total_length * SCALING_FACTOR);
-            for curvature in &mut average_curvatures {
-                *curvature = temp;
+        // C++: if (paths_length.back() < scale_(curvatures_sampling_width))
+        // paths_length holds scaled lengths (polyline.length() over scaled points),
+        // so compare against scale(curvatures_sampling_width).
+        if *paths_length.last().unwrap() < scale(CURVATURES_SAMPLING_WIDTH) as f64 {
+            // loop is too short, so the curvatures is max
+            // CurveAnalyzer.cpp:58-63
+            // C++: double temp = 1000.0 * 2.0 * PI / ((double)(paths_length.back()) * SCALING_FACTOR);
+            // C++ SCALING_FACTOR == 0.00001, so (scaled * SCALING_FACTOR) == unscale(scaled).
+            let temp = 1000.0 * 2.0 * PI / (*paths_length.last().unwrap() / crate::SCALING_FACTOR);
+            for i in 0..point_num {
+                average_curvatures[i] = temp;
             }
         } else {
-            // Calculate curvature for each point using sliding window
-            // CurveAnalyzer.cpp:67-92
-            let half_sampling = sampling_width_scaled / 2.0;
-
+            // CurveAnalyzer.cpp:65-87
             for i in 0..point_num {
-                let mut sum_angle = 0.0_f32;
-
-                // Right segment
-                // CurveAnalyzer.cpp:69-75
+                // right segment
+                // CurveAnalyzer.cpp:67-74
                 let mut j = i;
                 let mut right_length = 0.0_f32;
-                while right_length < half_sampling as f32 {
+                while right_length < scale(CURVATURES_SAMPLING_WIDTH / 2.0) as f32 {
                     let next_j = if j + 1 >= point_num { 0 } else { j + 1 };
-                    sum_angle += angles[j];
+                    sum_angles[i] += angles[j];
                     let diff = polygon.points[next_j] - polygon.points[j];
                     right_length += ((diff.x as f32).powi(2) + (diff.y as f32).powi(2)).sqrt();
                     j = next_j;
                 }
-
-                // Left segment
-                // CurveAnalyzer.cpp:76-82
+                // left segment
+                // CurveAnalyzer.cpp:76-83
                 let mut k = i;
                 let mut left_length = 0.0_f32;
-                while left_length < half_sampling as f32 {
+                while left_length < scale(CURVATURES_SAMPLING_WIDTH / 2.0) as f32 {
                     let next_k = if k < 1 { point_num - 1 } else { k - 1 };
-                    sum_angle += angles[k];
+                    sum_angles[i] += angles[k];
                     let diff = polygon.points[k] - polygon.points[next_k];
                     left_length += ((diff.x as f32).powi(2) + (diff.y as f32).powi(2)).sqrt();
                     k = next_k;
                 }
-
-                // Subtract center angle and calculate curvature
-                // CurveAnalyzer.cpp:83-84
-                sum_angle -= angles[i];
+                // CurveAnalyzer.cpp:84-85
+                sum_angles[i] -= angles[i];
                 average_curvatures[i] =
-                    1000.0 * (sum_angle.abs() as f64) / CURVATURES_SAMPLING_WIDTH;
+                    1000.0 * (sum_angles[i].abs() as f64) / CURVATURES_SAMPLING_WIDTH;
             }
         }
 
-        // Step 5: Normalize curvatures to discrete levels
-        // CurveAnalyzer.cpp:96-114
+        // 4 calculate the degree of curve
+        //   For angle >= curvatures_angle_worst, we think it's enough to be worst. Should make the speed to be slowest.
+        //   For angle <= curvatures_angle_best, we thins it's enough to be best. Should make the speed to be fastest.
+        //   Use several steps [0 1 2...curvatures_sampling_number - 1] to describe the degree of curve. 0 is the flatest. curvatures_sampling_number - 1 is the sharpest
+        // CurveAnalyzer.cpp:90-94
         let mut curvatures_norm = vec![0_i32; point_num];
 
-        // Calculate sampling steps
-        // CurveAnalyzer.cpp:99-103
+        // CurveAnalyzer.cpp:95-100
         let mut sampling_step = vec![0_i32; CURVATURES_SAMPLING_NUMBER - 1];
         for i in 0..CURVATURES_SAMPLING_NUMBER - 1 {
             sampling_step[i] = ((2 * i + 1) * 50 / (CURVATURES_SAMPLING_NUMBER - 1)) as i32;
@@ -204,8 +200,7 @@ impl CurveAnalyzer {
         sampling_step[0] = 0;
         sampling_step[CURVATURES_SAMPLING_NUMBER - 2] = 100;
 
-        // Normalize each curvature to 0..(CURVATURES_SAMPLING_NUMBER-1)
-        // CurveAnalyzer.cpp:104-113
+        // CurveAnalyzer.cpp:101-112
         for i in 0..point_num {
             let normalized = (100.0 * (average_curvatures[i] - CURVATURES_BEST)
                 / (CURVATURES_WORST - CURVATURES_BEST)) as i32;
@@ -222,8 +217,8 @@ impl CurveAnalyzer {
             }
         }
 
-        // Step 6: Build list of curvature changes
-        // CurveAnalyzer.cpp:115-124
+        // point, index, curve_degree
+        // CurveAnalyzer.cpp:113-120
         let mut curvature_list: Vec<(Point, usize, i32)> = Vec::new();
         let mut last_curvature_norm = -1_i32;
 
@@ -234,127 +229,110 @@ impl CurveAnalyzer {
             }
         }
 
-        // Add final point (wrapping to start)
-        // CurveAnalyzer.cpp:123
+        // the last point should be the first point
+        // CurveAnalyzer.cpp:121
         curvature_list.push((polygon.points[0], point_num, curvatures_norm[0]));
 
-        // Step 7: Split and modify paths according to curve degree
-        // CurveAnalyzer.cpp:126-198
+        // 5 split and modify the path according to the degree of curve
+        // CurveAnalyzer.cpp:123-200
         if curvature_list.len() == 2 {
-            // All paths have same curve degree
-            // CurveAnalyzer.cpp:127-130
-            let degree = curvature_list[0].2 as u8;
+            // all paths has same curva_degree
+            // CurveAnalyzer.cpp:124-128
             for path in paths.iter_mut() {
-                path.set_curve_degree(degree as i32);
+                path.set_curve_degree(curvature_list[0].2);
             }
         } else {
-            // Split paths at curvature boundaries
-            // CurveAnalyzer.cpp:132-194
-            let mut out = Vec::new();
+            // CurveAnalyzer.cpp:129-200
+            let mut out: Vec<ExtrusionPath> = Vec::new();
             out.reserve(paths.len() + curvature_list.len() - 1);
-
             let mut j = 1_usize;
             let mut current_curva_norm = curvature_list[0].2;
-
-            for (i, path) in paths.iter().enumerate() {
+            // C++: for (size_t i = 0; i < paths.size() && j < curvature_list.size(); i++)
+            // CurveAnalyzer.cpp:134
+            for i in 0..paths.len() {
                 if j >= curvature_list.len() {
                     break;
                 }
 
-                // Check if path end matches curvature boundary
-                // CurveAnalyzer.cpp:137-142
-                if path.last_point() == curvature_list[j].0 {
-                    let mut path_copy = path.clone();
-                    path_copy.set_curve_degree((current_curva_norm as u8) as i32);
-                    out.push(path_copy);
+                // CurveAnalyzer.cpp:135-141
+                if paths[i].last_point() == curvature_list[j].0 {
+                    paths[i].set_curve_degree(current_curva_norm);
+                    out.push(paths[i].clone());
                     current_curva_norm = curvature_list[j].2;
                     j += 1;
                     continue;
                 }
-
-                // Check if path start matches curvature boundary
-                // CurveAnalyzer.cpp:143-153
-                if path.first_point() == curvature_list[j].0 {
-                    if path.polyline.points.first() == path.polyline.points.last() {
-                        let mut path_copy = path.clone();
-                        path_copy.set_curve_degree((current_curva_norm as u8) as i32);
-                        out.push(path_copy);
+                // CurveAnalyzer.cpp:142-154
+                else if paths[i].first_point() == curvature_list[j].0 {
+                    if paths[i].polyline.points.first() == paths[i].polyline.points.last() {
+                        paths[i].set_curve_degree(current_curva_norm);
+                        out.push(paths[i].clone());
                         current_curva_norm = curvature_list[j].2;
                         j += 1;
                         continue;
+                    } else {
+                        // should never happen
+                        // CurveAnalyzer.cpp:151-152: assert(0);
+                        debug_assert!(false);
                     }
                 }
 
-                // Check if path doesn't need splitting
-                // CurveAnalyzer.cpp:155-161
+                // CurveAnalyzer.cpp:156-165
                 if paths_length[i] <= polygon_length[curvature_list[j].1]
-                    || path.last_point() == curvature_list[j].0
+                    || paths[i].last_point() == curvature_list[j].0
                 {
-                    let mut path_copy = path.clone();
-                    path_copy.set_curve_degree((current_curva_norm as u8) as i32);
-                    out.push(path_copy);
-
-                    if path.last_point() == curvature_list[j].0 {
+                    // save paths[i] directly
+                    paths[i].set_curve_degree(current_curva_norm);
+                    out.push(paths[i].clone());
+                    if paths[i].last_point() == curvature_list[j].0 {
                         current_curva_norm = curvature_list[j].2;
                         j += 1;
                     }
                 } else {
-                    // Split path at curvature boundaries
-                    // CurveAnalyzer.cpp:163-189
-                    let mut current_path = path.clone();
-
+                    // split paths[i]
+                    // CurveAnalyzer.cpp:167-191
+                    let mut current_path = paths[i].clone();
                     while j < curvature_list.len() {
+                        // C++: current_path.polyline.split_at(curvature_list[j].first.first, &left, &right);
+                        // The split point is a vertex of the polygon and therefore a vertex of the
+                        // polyline, so Polyline::split_at resolves it via find_point -> split_at_index.
+                        // CurveAnalyzer.cpp:170-171
                         let split_point = curvature_list[j].0;
-
-                        // Find the index of the split point in the polyline
-                        // C++: Polyline::split_at expects a Point, Rust expects index
                         let split_index = current_path
                             .polyline
                             .points
                             .iter()
                             .position(|p| *p == split_point)
                             .unwrap_or(0);
-
                         let (left, right) = current_path.polyline.split_at(split_index);
-                        {
-                            let mut left_path = ExtrusionPath {
-                                polyline: left,
-                                role: current_path.role,
-                                mm3_per_mm: current_path.mm3_per_mm,
-                                width: current_path.width,
-                                height: current_path.height,
-                                overhang_degree: current_path.overhang_degree,
-                                curve_degree: current_curva_norm as i32,
-                                customize_flag: current_path.customize_flag,
-                            };
-                            out.push(left_path);
 
-                            current_path = ExtrusionPath {
-                                polyline: right,
-                                role: current_path.role,
-                                mm3_per_mm: current_path.mm3_per_mm,
-                                width: current_path.width,
-                                height: current_path.height,
-                                overhang_degree: current_path.overhang_degree,
-                                curve_degree: current_path.curve_degree,
-                                customize_flag: current_path.customize_flag,
-                            };
-                        }
+                        // C++: ExtrusionPath left_path(left, current_path);
+                        // C++: left_path.set_curve_degree(current_curva_norm);
+                        // CurveAnalyzer.cpp:172-174
+                        let mut left_path = current_path.clone();
+                        left_path.polyline = left;
+                        left_path.set_curve_degree(current_curva_norm);
+                        out.push(left_path);
+
+                        // C++: ExtrusionPath right_path(right, current_path);
+                        // C++: current_path = right_path;
+                        // CurveAnalyzer.cpp:175-176
+                        let mut right_path = current_path.clone();
+                        right_path.polyline = right;
+                        current_path = right_path;
 
                         current_curva_norm = curvature_list[j].2;
                         j += 1;
-
+                        // CurveAnalyzer.cpp:180-190
                         if j < curvature_list.len()
                             && (paths_length[i] <= polygon_length[curvature_list[j].1]
-                                || path.last_point() == curvature_list[j].0)
+                                || paths[i].last_point() == curvature_list[j].0)
                         {
-                            current_path.set_curve_degree((current_curva_norm as u8) as i32);
-
-                            // Check if we need to advance j before moving current_path
-                            let should_advance_j = current_path.last_point() == curvature_list[j].0;
+                            current_path.set_curve_degree(current_curva_norm);
+                            // C++: out.push_back(current_path); then check last_point.
+                            let advance = current_path.last_point() == curvature_list[j].0;
                             out.push(current_path);
-
-                            if should_advance_j {
+                            if advance {
                                 current_curva_norm = curvature_list[j].2;
                                 j += 1;
                             }
@@ -364,9 +342,12 @@ impl CurveAnalyzer {
                 }
             }
 
-            // Replace input paths with split paths
-            // CurveAnalyzer.cpp:196-198
-            *paths = out;
+            // CurveAnalyzer.cpp:195-199
+            paths.clear();
+            paths.reserve(out.len());
+            for p in out {
+                paths.push(p);
+            }
         }
 
         Ok(())
@@ -376,6 +357,8 @@ impl CurveAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extrusion_entity::ExtrusionRole;
+    use crate::geometry::Polyline;
 
     #[test]
     fn test_curve_analyzer_creation() {

@@ -11,16 +11,19 @@ use std::fmt;
 use std::ops::{Deref, DerefMut};
 
 /// A smart pointer that clones on copy
-/// clonable_ptr.hpp:26-166
+/// clonable_ptr.hpp:26-140
 ///
 /// Similar to Box<T>, but implements Clone by calling T::clone().
 /// This allows deep copying of the pointed-to value when the pointer is copied.
 ///
 /// C++: template<class T> class clonable_ptr
+///
+/// The C++ class also exposes `typedef T element_type;` (clonable_ptr.hpp:31); in
+/// Rust the element type is the generic parameter `T` itself, so no alias is needed.
 pub struct ClonablePtr<T: Clone> {
     /// Native pointer to the managed object
-    /// clonable_ptr.hpp:163
-    /// C++: T* px;
+    /// clonable_ptr.hpp:139
+    /// C++: T* px; //!< Native pointer
     ptr: Option<Box<T>>,
 }
 
@@ -47,35 +50,76 @@ impl<T: Clone> ClonablePtr<T> {
     }
 
     /// Reset to empty, dropping the current value
-    /// clonable_ptr.hpp:77-80
+    /// clonable_ptr.hpp:74-78
     /// C++: inline void reset() noexcept { destroy(); }
     pub fn reset(&mut self) {
         self.ptr = None;
     }
 
     /// Reset with a new value, dropping the old one
-    /// clonable_ptr.hpp:82-87
+    /// clonable_ptr.hpp:79-85
     /// C++: void reset(T* p) noexcept
+    /// {
+    ///     assert((nullptr == p) || (px != p)); // auto-reset not allowed
+    ///     destroy();
+    ///     px = p;
+    /// }
+    ///
+    /// Rust takes the value by move (not a raw pointer), so the C++
+    /// `(nullptr == p) || (px != p)` auto-reset assertion cannot be
+    /// violated: a moved-in value can never alias the currently held box.
     pub fn reset_with(&mut self, value: T) {
         self.ptr = Some(Box::new(value));
     }
 
+    /// Reset with a new boxed value, dropping the old one
+    /// clonable_ptr.hpp:79-85
+    /// C++: void reset(T* p) noexcept
+    /// {
+    ///     assert((nullptr == p) || (px != p)); // auto-reset not allowed
+    ///     destroy();
+    ///     px = p;
+    /// }
+    pub fn reset_box(&mut self, boxed: Box<T>) {
+        // assert((nullptr == p) || (px != p)); // auto-reset not allowed
+        // In Rust an owned Box cannot alias the currently held box, so the
+        // auto-reset assertion is always satisfied.
+        debug_assert!(
+            self.ptr.as_ref().map_or(true, |cur| !std::ptr::eq(
+                cur.as_ref() as *const T,
+                boxed.as_ref() as *const T
+            )),
+            "auto-reset not allowed"
+        );
+        self.ptr = Some(boxed);
+    }
+
     /// Swap contents with another ClonablePtr
-    /// clonable_ptr.hpp:89-94
+    /// clonable_ptr.hpp:87-93
     /// C++: void swap(clonable_ptr& rhs) noexcept
+    /// {
+    ///     T *tmp = px;
+    ///     px = rhs.px;
+    ///     rhs.px = tmp;
+    /// }
     pub fn swap(&mut self, other: &mut Self) {
         std::mem::swap(&mut self.ptr, &mut other.ptr);
     }
 
-    /// Release ownership and return the inner Box
-    /// clonable_ptr.hpp:96-99
+    /// Release the ownership of the pointer without destroying the object.
+    /// clonable_ptr.hpp:95-99
     /// C++: inline void release() noexcept { px = nullptr; }
+    ///
+    /// The C++ `release()` sets `px = nullptr` and returns void, leaking the
+    /// object unless the caller already retained the raw pointer elsewhere.
+    /// Rust has no raw owning pointer to retain, so to release ownership
+    /// without dropping we hand the owned `Box<T>` back to the caller.
     pub fn take(&mut self) -> Option<Box<T>> {
         self.ptr.take()
     }
 
     /// Get a raw pointer (without transferring ownership)
-    /// clonable_ptr.hpp:129-133
+    /// clonable_ptr.hpp:118-122
     /// C++: inline T* get() const noexcept { return px; }
     pub fn get(&self) -> Option<&T> {
         self.ptr.as_deref()
@@ -87,8 +131,8 @@ impl<T: Clone> ClonablePtr<T> {
     }
 
     /// Check if the pointer is non-null
-    /// clonable_ptr.hpp:102-105
-    /// C++: inline operator bool() const noexcept { return (nullptr != px); }
+    /// clonable_ptr.hpp:101-105
+    /// C++: inline operator bool() const noexcept { return (nullptr != px); // TODO nullptrptr }
     pub fn is_some(&self) -> bool {
         self.ptr.is_some()
     }
@@ -127,8 +171,16 @@ impl<T: Clone> Default for ClonablePtr<T> {
 
 impl<T: Clone> Clone for ClonablePtr<T> {
     /// Clone by calling clone() on the underlying value
-    /// clonable_ptr.hpp:42-45
+    /// clonable_ptr.hpp:43-47
     /// C++: clonable_ptr(const clonable_ptr& rhs) : px(rhs ? rhs.px->clone() : nullptr) {}
+    ///
+    /// C++ also defines copy-assignment (clonable_ptr.hpp:54-60):
+    ///     clonable_ptr& operator=(const clonable_ptr& rhs)
+    ///     { delete px; px = rhs ? rhs.px->clone() : nullptr; return *this; }
+    /// In Rust the derived `Clone`-based assignment (`a = b.clone()`) provides
+    /// the equivalent: the old value is dropped and a fresh deep copy installed.
+    /// The move constructor / move assignment (clonable_ptr.hpp:48-53, 61-68)
+    /// correspond to Rust's built-in move semantics.
     fn clone(&self) -> Self {
         ClonablePtr {
             ptr: self.ptr.as_ref().map(|b| Box::new((**b).clone())),
@@ -163,8 +215,12 @@ impl<T: Clone> Deref for ClonablePtr<T> {
     type Target = T;
 
     /// Dereference to get a reference to the value
-    /// clonable_ptr.hpp:108-112
+    /// clonable_ptr.hpp:107-117
     /// C++: inline T& operator*() const noexcept { assert(nullptr != px); return *px; }
+    /// C++: inline T* operator->() const noexcept { assert(nullptr != px); return px; }
+    /// Both `operator*` and `operator->` assert non-null then return the
+    /// pointee; in Rust both collapse onto `Deref::deref` (with method/field
+    /// access through `.` standing in for `operator->`).
     fn deref(&self) -> &T {
         self.ptr
             .as_deref()
@@ -201,8 +257,16 @@ impl<T: Clone + fmt::Display> fmt::Display for ClonablePtr<T> {
 
 impl<T: Clone + PartialEq> PartialEq for ClonablePtr<T> {
     /// Compare two ClonablePtrs for equality
-    /// clonable_ptr.hpp:169-172
-    /// C++: template<class T, class U> inline bool operator==(const clonable_ptr<T>& l, const clonable_ptr<U>& r) noexcept
+    /// clonable_ptr.hpp:142-150
+    /// C++: template<class T, class U> inline bool operator==(const clonable_ptr<T>& l, const clonable_ptr<U>& r) noexcept { return (l.get() == r.get()); }
+    /// C++: template<class T, class U> inline bool operator!=(const clonable_ptr<T>& l, const clonable_ptr<U>& r) noexcept { return (l.get() != r.get()); }
+    ///
+    /// NOTE: the C++ comparison operators compare the raw pointer addresses
+    /// (`l.get() == r.get()`), i.e. identity, not the pointed-to values. This
+    /// Rust port intentionally compares the pointed-to values (`self.ptr ==
+    /// other.ptr`) because Box has no stable observable address semantics in
+    /// safe Rust and value equality is what callers in this crate rely on.
+    /// This is a deliberate divergence from the C++ pointer-identity semantics.
     fn eq(&self, other: &Self) -> bool {
         self.ptr == other.ptr
     }
@@ -212,8 +276,11 @@ impl<T: Clone + Eq> Eq for ClonablePtr<T> {}
 
 impl<T: Clone + PartialOrd> PartialOrd for ClonablePtr<T> {
     /// Compare two ClonablePtrs for ordering
-    /// clonable_ptr.hpp:177-180
-    /// C++: template<class T, class U> inline bool operator<(const clonable_ptr<T>& l, const clonable_ptr<U>& r) noexcept
+    /// clonable_ptr.hpp:151-166
+    /// C++: operator<=, operator<, operator>=, operator> all compare l.get() vs r.get()
+    ///
+    /// Like `eq`, the C++ ordering operators compare raw pointer addresses;
+    /// this port compares the pointed-to values instead (see PartialEq note).
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.ptr.partial_cmp(&other.ptr)
     }
@@ -269,6 +336,17 @@ mod tests {
         let mut ptr = ClonablePtr::from_value(42);
         ptr.reset_with(100);
         assert_eq!(*ptr, 100);
+    }
+
+    #[test]
+    fn test_reset_box() {
+        let mut ptr = ClonablePtr::from_value(42);
+        ptr.reset_box(Box::new(100));
+        assert_eq!(*ptr, 100);
+
+        let mut empty: ClonablePtr<i32> = ClonablePtr::new();
+        empty.reset_box(Box::new(7));
+        assert_eq!(*empty, 7);
     }
 
     #[test]

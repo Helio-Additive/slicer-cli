@@ -623,7 +623,7 @@
     "rust": "crates/libslic3r-rs/src/surface_mesh.rs",
     "rust_exists": true,
     "loc": 167,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -634,7 +634,7 @@
     "rust": "crates/libslic3r-rs/src/clonable_ptr.rs",
     "rust_exists": true,
     "loc": 168,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -645,7 +645,7 @@
     "rust": "crates/libslic3r-rs/src/text_configuration.rs",
     "rust_exists": true,
     "loc": 181,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -656,7 +656,7 @@
     "rust": "crates/libslic3r-rs/src/model_arrange.rs",
     "rust_exists": true,
     "loc": 185,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -667,7 +667,7 @@
     "rust": "crates/libslic3r-rs/src/short_edge_collapse.rs",
     "rust_exists": true,
     "loc": 187,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -678,7 +678,7 @@
     "rust": "crates/libslic3r-rs/src/project_task.rs",
     "rust_exists": true,
     "loc": 196,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -689,7 +689,7 @@
     "rust": "crates/libslic3r-rs/src/curve_analyzer.rs",
     "rust_exists": true,
     "loc": 203,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -700,7 +700,7 @@
     "rust": "crates/libslic3r-rs/src/clipper2_utils.rs",
     "rust_exists": true,
     "loc": 211,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
