@@ -122,6 +122,86 @@ pub fn cross2f(v1: PointF, v2: PointF) -> CoordF {
     v1.x * v2.y - v1.y * v2.x
 }
 
+/// Returns true if the two line segments (ip1,ip2) and (jp1,jp2) intersect,
+/// including the collinear-overlap case.
+/// Geometry.hpp:117-167
+pub fn segments_intersect(ip1: Point, ip2: Point, jp1: Point, jp2: Point) -> bool {
+    // Geometry.hpp:121-122
+    //assert(ip1 != ip2);
+    //assert(jp1 != jp2);
+
+    // Geometry.hpp:124-137
+    let segments_could_intersect = |ip1: Point, ip2: Point, jp1: Point, jp2: Point| -> (i32, i32) {
+        // Geometry.hpp:128-130
+        let iv = ip2 - ip1;
+        let vij1 = jp1 - ip1;
+        let vij2 = jp2 - ip1;
+        // Geometry.hpp:131-132
+        let tij1 = cross2(iv, vij1);
+        let tij2 = cross2(iv, vij2);
+        // Geometry.hpp:133-136 — signum
+        (
+            if tij1 > 0 {
+                1
+            } else if tij1 < 0 {
+                -1
+            } else {
+                0
+            },
+            if tij2 > 0 {
+                1
+            } else if tij2 < 0 {
+                -1
+            } else {
+                0
+            },
+        )
+    };
+
+    // Geometry.hpp:139-142
+    let sign1 = segments_could_intersect(ip1, ip2, jp1, jp2);
+    let sign2 = segments_could_intersect(jp1, jp2, ip1, ip2);
+    let test1 = sign1.0 * sign1.1;
+    let test2 = sign2.0 * sign2.1;
+    // Geometry.hpp:143
+    if test1 <= 0 && test2 <= 0 {
+        // The segments possibly intersect. They may also be collinear, but not intersect.
+        // Geometry.hpp:145-147
+        if test1 != 0 || test2 != 0 {
+            // Certainly not collinear, then the segments intersect.
+            return true;
+        }
+        // If the first segment is collinear with the other, the other is collinear with the first segment.
+        // Geometry.hpp:149
+        debug_assert!((sign1.0 == 0 && sign1.1 == 0) == (sign2.0 == 0 && sign2.1 == 0));
+        // Geometry.hpp:150
+        if sign1.0 == 0 && sign1.1 == 0 {
+            // The segments are certainly collinear. Now verify whether they overlap.
+            // Geometry.hpp:152
+            let vi = ip2 - ip1;
+            // Project both on the longer coordinate of vi.
+            // Geometry.hpp:154
+            let axis = if vi.x.abs() > vi.y.abs() { 0 } else { 1 };
+            // Geometry.hpp:155-158
+            let mut i = if axis == 0 { ip1.x } else { ip1.y };
+            let mut j = if axis == 0 { ip2.x } else { ip2.y };
+            let mut k = if axis == 0 { jp1.x } else { jp1.y };
+            let mut l = if axis == 0 { jp2.x } else { jp2.y };
+            // Geometry.hpp:159-162
+            if i > j {
+                std::mem::swap(&mut i, &mut j);
+            }
+            if k > l {
+                std::mem::swap(&mut k, &mut l);
+            }
+            // Geometry.hpp:163
+            return (k >= i && k <= j) || (i >= k && i <= l);
+        }
+    }
+    // Geometry.hpp:166
+    false
+}
+
 /// True if two directions (radians) are parallel within `max_diff` (+EPSILON).
 /// Geometry.cpp:29 `directions_parallel`.
 pub fn directions_parallel(angle1: CoordF, angle2: CoordF, max_diff: CoordF) -> bool {

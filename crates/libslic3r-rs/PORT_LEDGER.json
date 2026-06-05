@@ -128,7 +128,7 @@
     "rust": "crates/libslic3r-rs/src/try_catch_signal_seh.rs",
     "rust_exists": true,
     "loc": 43,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -150,7 +150,7 @@
     "rust": "crates/libslic3r-rs/src/file_parser_error.rs",
     "rust_exists": true,
     "loc": 52,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -161,7 +161,7 @@
     "rust": "crates/libslic3r-rs/src/exception.rs",
     "rust_exists": true,
     "loc": 53,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -172,7 +172,7 @@
     "rust": "crates/libslic3r-rs/src/triangle_mesh_deal.rs",
     "rust_exists": true,
     "loc": 55,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -183,7 +183,7 @@
     "rust": "crates/libslic3r-rs/src/polygon_trimmer.rs",
     "rust_exists": true,
     "loc": 57,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {

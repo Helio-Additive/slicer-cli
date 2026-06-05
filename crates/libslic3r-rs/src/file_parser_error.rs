@@ -10,8 +10,9 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::path::Path;
 
+// Generic file parser error, mostly copied from boost::property_tree::file_parser_error
 /// Generic file parser error with location information
-/// FileParserError.hpp:12-49
+/// FileParserError.hpp:13-48
 #[derive(Debug, Clone)]
 pub struct FileParserError {
     /// Error message (without line and file info)
@@ -33,7 +34,7 @@ pub struct FileParserError {
 
 impl FileParserError {
     /// Create a new file parser error with message, filename, and optional line number
-    /// FileParserError.hpp:15-17
+    /// FileParserError.hpp:16-18
     pub fn new(msg: impl Into<String>, file: impl Into<String>, line: u64) -> Self {
         let message = msg.into();
         let filename = file.into();
@@ -48,7 +49,7 @@ impl FileParserError {
     }
 
     /// Create a new file parser error from a Path
-    /// FileParserError.hpp:18-20
+    /// FileParserError.hpp:19-21
     pub fn from_path(msg: impl Into<String>, file: &Path, line: u64) -> Self {
         let filename = file.to_string_lossy().into_owned();
         Self::new(msg, filename, line)

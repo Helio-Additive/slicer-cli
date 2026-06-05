@@ -314,6 +314,36 @@ impl EdgeGrid {
         &self.contours
     }
 
+    /// Return the (contour_idx, segment_idx) entries stored in the cell at (row, col).
+    /// Mirrors the C++ `cell_data_range`, which returns a pair of iterators over the
+    /// cell's slice of `m_cell_data`.
+    /// EdgeGrid.hpp:387-393
+    pub fn cell_data_range_at(&self, row: usize, col: usize) -> &[(usize, usize)] {
+        // EdgeGrid.hpp:391-392
+        self.cell_data_range(row, col)
+    }
+
+    /// Return the segment (start, end) referenced by a (contour_idx, segment_idx) pair.
+    /// EdgeGrid.hpp:395-400
+    pub fn segment(&self, contour_and_segment_idx: (usize, usize)) -> Line {
+        // EdgeGrid.hpp:397-399
+        let contour = &self.contours[contour_and_segment_idx.0];
+        let iseg = contour_and_segment_idx.1;
+        Line::new(*contour.segment_start(iseg), *contour.segment_end(iseg))
+    }
+
+    /// Visit all grid cells intersected by the line segment (p1, p2), calling
+    /// `visitor(iy, ix)` for each. Equivalent to the C++ template method without the
+    /// `need_consider_eps` extension (the PolygonTrimmer call site never sets it).
+    /// EdgeGrid.hpp:291-366
+    pub fn visit_cells_intersecting_line<F>(&self, p1: Point, p2: Point, mut visitor: F)
+    where
+        F: FnMut(usize, usize),
+    {
+        // EdgeGrid.hpp:360-365 — single start/end pair when need_consider_eps is false.
+        self.visit_cells_for_segment(&p1, &p2, |row, col| visitor(row, col));
+    }
+
     /// Create the grid from polygons
     /// EdgeGrid.cpp:28-38
     pub fn create_from_polygons(&mut self, polygons: &[Polygon], resolution: i64) {
