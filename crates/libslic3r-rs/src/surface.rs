@@ -34,56 +34,88 @@ use std::fmt;
 /// - Top/bottom surfaces get solid infill
 /// - Internal surfaces get sparse infill
 /// - Bridge surfaces need special handling
+///
+/// The variant ORDER must match the C++ `enum SurfaceType` exactly, because the
+/// discriminant is round-tripped through `usize` in `LayerRegion` and used to
+/// index `std::array<SurfacesPtr, size_t(stCount)>`.
+/// Surface.hpp:9-30
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SurfaceType {
-    /// Top surface (visible from above).
+    // Top horizontal surface, visible from the top.
+    /// Surface.hpp:11 stTop
     Top,
-    /// Bottom surface (visible from below, or first layer).
+    // Bottom horizontal surface, visible from the bottom, printed with a normal extrusion flow.
+    /// Surface.hpp:13 stBottom
     Bottom,
-    /// Bottom surface that bridges over air/support.
+    // Bottom horizontal surface, visible from the bottom, unsupported, printed with a bridging extrusion flow.
+    /// Surface.hpp:15 stBottomBridge
     BottomBridge,
-    /// Internal solid surface (between top/bottom and infill).
+    // Normal sparse infill.
+    /// Surface.hpp:17 stInternal
     #[default]
-    InternalSolid,
-    /// Internal surface that will receive sparse infill.
     Internal,
-    /// Internal bridge surface.
+    /// Surface.hpp:18 stFloatingVerticalShell
+    FloatingVerticalShell,
+    // Full infill, supporting the top surfaces and/or defining the verticall wall thickness.
+    /// Surface.hpp:20 stInternalSolid
+    InternalSolid,
+    // 1st layer of dense infill over sparse infill, printed with a bridging extrusion flow.
+    /// Surface.hpp:22 stInternalBridge
     InternalBridge,
-    /// Internal void (empty space, no infill).
+    // stInternal turns into void surfaces if the sparse infill is used for supports only,
+    // or if sparse infill layers get combined into a single layer.
+    /// Surface.hpp:25 stInternalVoid
     InternalVoid,
+    // Inner/outer perimeters.
+    /// Surface.hpp:27 stPerimeter
+    Perimeter,
+    // Number of SurfaceType enums.
+    // Surface.hpp:29 stCount
 }
 
 impl SurfaceType {
-    /// Convert from u8 index (for array indexing from C++)
-    /// Surface.hpp enum ordering
+    /// Number of SurfaceType enums (C++ stCount).
+    /// Surface.hpp:29
+    pub const COUNT: usize = 9;
+
+    /// Convert from u8 index (for array indexing from C++).
+    /// Inverse of `self as u8`; ordering matches Surface.hpp:9-30.
     pub fn from_u8(value: u8) -> Self {
         match value {
             0 => SurfaceType::Top,
             1 => SurfaceType::Bottom,
             2 => SurfaceType::BottomBridge,
-            3 => SurfaceType::InternalSolid,
-            4 => SurfaceType::Internal,
-            5 => SurfaceType::InternalBridge,
-            6 => SurfaceType::InternalVoid,
+            3 => SurfaceType::Internal,
+            4 => SurfaceType::FloatingVerticalShell,
+            5 => SurfaceType::InternalSolid,
+            6 => SurfaceType::InternalBridge,
+            7 => SurfaceType::InternalVoid,
+            8 => SurfaceType::Perimeter,
             _ => SurfaceType::Internal, // Default fallback
         }
     }
 }
 
 impl SurfaceType {
-    // Check if this surface type is a top surface.
+    // The following methods do not test for stPerimeter.
+    // Surface.hpp:104
+
+    // bool is_top() const { return this->surface_type == stTop; }
+    /// Surface.hpp:105
     #[inline]
     pub fn is_top(&self) -> bool {
         matches!(self, SurfaceType::Top)
     }
 
-    /// Check if this surface type is a bottom surface.
+    // bool is_bottom() const { return this->surface_type == stBottom || this->surface_type == stBottomBridge; }
+    /// Surface.hpp:106
     #[inline]
     pub fn is_bottom(&self) -> bool {
         matches!(self, SurfaceType::Bottom | SurfaceType::BottomBridge)
     }
 
-    /// Check if this surface type is a bridge.
+    // bool is_bridge() const { return this->surface_type == stBottomBridge || this->surface_type == stInternalBridge; }
+    /// Surface.hpp:107
     #[inline]
     pub fn is_bridge(&self) -> bool {
         matches!(
@@ -92,47 +124,59 @@ impl SurfaceType {
         )
     }
 
-    /// Check if this surface type requires solid infill.
-    #[inline]
-    pub fn is_solid(&self) -> bool {
-        matches!(
-            self,
-            SurfaceType::Top
-                | SurfaceType::Bottom
-                | SurfaceType::BottomBridge
-                | SurfaceType::InternalSolid
-                | SurfaceType::InternalBridge
-        )
-    }
-
-    /// Check if this surface type is internal (not top or bottom).
-    #[inline]
-    pub fn is_internal(&self) -> bool {
-        matches!(
-            self,
-            SurfaceType::Internal
-                | SurfaceType::InternalSolid
-                | SurfaceType::InternalBridge
-                | SurfaceType::InternalVoid
-        )
-    }
-
-    /// Check if this surface type is external (top or bottom).
+    // bool is_external() const { return this->is_top() || this->is_bottom(); }
+    /// Surface.hpp:108
     #[inline]
     pub fn is_external(&self) -> bool {
-        !self.is_internal()
+        self.is_top() || self.is_bottom()
+    }
+
+    // bool is_internal() const { return ! this->is_external(); }
+    /// Surface.hpp:109
+    #[inline]
+    pub fn is_internal(&self) -> bool {
+        !self.is_external()
+    }
+
+    // bool is_floating_vertical_shell() const { return this->surface_type == stFloatingVerticalShell; }
+    /// Surface.hpp:110
+    #[inline]
+    pub fn is_floating_vertical_shell(&self) -> bool {
+        matches!(self, SurfaceType::FloatingVerticalShell)
+    }
+
+    // bool is_solid() const { return this->is_external() || this->is_floating_vertical_shell() || this->surface_type == stInternalSolid || this->surface_type == stInternalBridge; }
+    /// Surface.hpp:111
+    #[inline]
+    pub fn is_solid(&self) -> bool {
+        self.is_external()
+            || self.is_floating_vertical_shell()
+            || matches!(
+                self,
+                SurfaceType::InternalSolid | SurfaceType::InternalBridge
+            )
+    }
+
+    // bool is_solid_infill() const { return this->surface_type == stInternalSolid; }
+    /// Surface.hpp:112
+    #[inline]
+    pub fn is_solid_infill(&self) -> bool {
+        matches!(self, SurfaceType::InternalSolid)
     }
 
     /// Get a human-readable name for this surface type.
+    /// (Derived from `surface_type_to_color_name` labels in Surface.cpp.)
     pub fn name(&self) -> &'static str {
         match self {
             SurfaceType::Top => "top",
             SurfaceType::Bottom => "bottom",
             SurfaceType::BottomBridge => "bottom bridge",
-            SurfaceType::InternalSolid => "internal solid",
             SurfaceType::Internal => "internal",
+            SurfaceType::FloatingVerticalShell => "floating vertical shell",
+            SurfaceType::InternalSolid => "internal solid",
             SurfaceType::InternalBridge => "internal bridge",
             SurfaceType::InternalVoid => "internal void",
+            SurfaceType::Perimeter => "perimeter",
         }
     }
 }
@@ -262,6 +306,20 @@ impl Surface {
         self.surface_type.is_external()
     }
 
+    // bool is_floating_vertical_shell() const ...
+    /// Surface.hpp:110
+    #[inline]
+    pub fn is_floating_vertical_shell(&self) -> bool {
+        self.surface_type.is_floating_vertical_shell()
+    }
+
+    // bool is_solid_infill() const { return this->surface_type == stInternalSolid; }
+    /// Surface.hpp:112
+    #[inline]
+    pub fn is_solid_infill(&self) -> bool {
+        self.surface_type.is_solid_infill()
+    }
+
     /// Set the surface type.
     pub fn set_type(&mut self, surface_type: SurfaceType) {
         self.surface_type = surface_type;
@@ -314,12 +372,199 @@ impl From<ExPolygon> for Surface {
 /// Type alias for a collection of surfaces.
 pub type Surfaces = Vec<Surface>;
 
-/// Helper function to append ExPolygons as surfaces with given type
-/// Surface.cpp helper
+// typedef std::vector<Surface*> SurfacesPtr;
+/// Surface.hpp:116
+pub type SurfacesPtr<'a> = Vec<&'a Surface>;
+
+// Helper function to append ExPolygons as surfaces with given type
+// inline void surfaces_append(Surfaces &dst, ExPolygons &&src, SurfaceType surfaceType)
+/// Surface.hpp:261
 pub fn surfaces_append(surfaces: &mut Surfaces, expolygons: ExPolygons, surface_type: SurfaceType) {
+    surfaces.reserve(surfaces.len() + expolygons.len());
     for expolygon in expolygons {
         surfaces.push(Surface::new(surface_type, expolygon));
     }
+}
+
+// inline void surfaces_append(Surfaces &dst, ExPolygons &&src, const Surface &surfaceTempl)
+/// Surface.hpp:269
+pub fn surfaces_append_templ(surfaces: &mut Surfaces, expolygons: ExPolygons, surface_templ: &Surface) {
+    surfaces.reserve(surfaces.len() + number_polygons_ex(&expolygons));
+    for expolygon in expolygons {
+        // C++ Surface(surfaceTempl, std::move(*it)) copies all template fields but the expolygon.
+        let mut s = surface_templ.clone();
+        s.expolygon = expolygon;
+        surfaces.push(s);
+    }
+}
+
+// inline void surfaces_append(Surfaces &dst, Surfaces &&src)
+/// Surface.hpp:277
+pub fn surfaces_append_surfaces(dst: &mut Surfaces, mut src: Surfaces) {
+    if dst.is_empty() {
+        *dst = std::mem::take(&mut src);
+    } else {
+        dst.append(&mut src);
+        src.clear();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Surface.hpp inline free functions
+// ---------------------------------------------------------------------------
+
+// inline Polygons to_polygons(const Surfaces &src)
+// (Already faithfully ported as `crate::clipper_utils::to_polygons(&[Surface])`;
+//  re-exported here for call sites matching the Surface.hpp signature.)
+/// Surface.hpp:128
+pub fn to_polygons(src: &[Surface]) -> crate::geometry::Polygons {
+    let mut num: usize = 0;
+    for it in src {
+        num += it.expolygon.holes.len() + 1;
+    }
+    let mut polygons: crate::geometry::Polygons = Vec::with_capacity(num);
+    for it in src {
+        polygons.push(it.expolygon.contour.clone());
+        for ith in &it.expolygon.holes {
+            polygons.push(ith.clone());
+        }
+    }
+    polygons
+}
+
+// inline ExPolygons to_expolygons(const Surfaces &src)
+/// Surface.hpp:158
+pub fn to_expolygons(src: &[Surface]) -> ExPolygons {
+    let mut expolygons: ExPolygons = Vec::with_capacity(src.len());
+    for it in src {
+        expolygons.push(it.expolygon.clone());
+    }
+    expolygons
+}
+
+// Count a number of polygons stored inside the vector of expolygons.
+// Useful for allocating space for polygons when converting expolygons to polygons.
+// inline size_t number_polygons(const Surfaces &surfaces)
+/// Surface.hpp:188
+pub fn number_polygons(surfaces: &[Surface]) -> usize {
+    let mut n_polygons: usize = 0;
+    for it in surfaces {
+        n_polygons += it.expolygon.holes.len() + 1;
+    }
+    n_polygons
+}
+
+// Same helper, counting over a vector of ExPolygons (used by surfaces_append).
+fn number_polygons_ex(expolygons: &[ExPolygon]) -> usize {
+    let mut n_polygons: usize = 0;
+    for it in expolygons {
+        n_polygons += it.holes.len() + 1;
+    }
+    n_polygons
+}
+
+// Append a vector of Surfaces at the end of another vector of polygons.
+// inline void polygons_append(Polygons &dst, const Surfaces &src)
+/// Surface.hpp:204
+pub fn polygons_append(dst: &mut crate::geometry::Polygons, src: &[Surface]) {
+    dst.reserve(dst.len() + number_polygons(src));
+    for it in src {
+        dst.push(it.expolygon.contour.clone());
+        dst.extend(it.expolygon.holes.iter().cloned());
+    }
+}
+
+// inline bool surfaces_could_merge(const Surface &s1, const Surface &s2)
+/// Surface.hpp:291
+pub fn surfaces_could_merge(s1: &Surface, s2: &Surface) -> bool {
+    s1.surface_type == s2.surface_type
+        && s1.thickness == s2.thickness
+        && s1.thickness_layers == s2.thickness_layers
+        && s1.bridge_angle == s2.bridge_angle
+}
+
+// ---------------------------------------------------------------------------
+// Surface.cpp free functions
+// ---------------------------------------------------------------------------
+
+// BoundingBox get_extents(const Surface &surface)
+/// Surface.cpp:7
+pub fn get_extents(surface: &Surface) -> crate::geometry::BoundingBox {
+    // return get_extents(surface.expolygon.contour);                    Surface.cpp:9
+    surface.expolygon.contour.bounding_box()
+}
+
+// BoundingBox get_extents(const Surfaces &surfaces)
+/// Surface.cpp:12
+pub fn get_extents_surfaces(surfaces: &[Surface]) -> crate::geometry::BoundingBox {
+    // BoundingBox bbox;                                 Surface.cpp:14
+    let mut bbox = crate::geometry::BoundingBox::new();
+    // if (! surfaces.empty()) {                         Surface.cpp:15
+    if !surfaces.is_empty() {
+        // bbox = get_extents(surfaces.front());         Surface.cpp:16
+        bbox = get_extents(&surfaces[0]);
+        // for (size_t i = 1; i < surfaces.size(); ++ i)
+        //     bbox.merge(get_extents(surfaces[i]));     Surface.cpp:17-18
+        for i in 1..surfaces.len() {
+            bbox.merge(&get_extents(&surfaces[i]));
+        }
+    }
+    // return bbox;                                      Surface.cpp:20
+    bbox
+}
+
+// BoundingBox get_extents(const SurfacesPtr &surfaces)
+/// Surface.cpp:23
+pub fn get_extents_surfaces_ptr(surfaces: &[&Surface]) -> crate::geometry::BoundingBox {
+    // BoundingBox bbox;                                 Surface.cpp:25
+    let mut bbox = crate::geometry::BoundingBox::new();
+    // if (! surfaces.empty()) {                         Surface.cpp:26
+    if !surfaces.is_empty() {
+        // bbox = get_extents(*surfaces.front());        Surface.cpp:27
+        bbox = get_extents(surfaces[0]);
+        // for (size_t i = 1; i < surfaces.size(); ++ i)
+        //     bbox.merge(get_extents(*surfaces[i]));     Surface.cpp:28-29
+        for i in 1..surfaces.len() {
+            bbox.merge(&get_extents(surfaces[i]));
+        }
+    }
+    // return bbox;                                      Surface.cpp:31
+    bbox
+}
+
+// const char* surface_type_to_color_name(const SurfaceType surface_type)
+/// Surface.cpp:34
+pub fn surface_type_to_color_name(surface_type: SurfaceType) -> &'static str {
+    // switch (surface_type) {                                            Surface.cpp:36
+    match surface_type {
+        // case stTop:             return "rgb(255,0,0)"; // "red";       Surface.cpp:37
+        SurfaceType::Top => "rgb(255,0,0)", // "red";
+        // case stBottom:          return "rgb(0,255,0)"; // "green";     Surface.cpp:38
+        SurfaceType::Bottom => "rgb(0,255,0)", // "green";
+        // case stBottomBridge:    return "rgb(0,0,255)"; // "blue";      Surface.cpp:39
+        SurfaceType::BottomBridge => "rgb(0,0,255)", // "blue";
+        // case stInternal:        return "rgb(255,255,128)"; // yellow   Surface.cpp:40
+        SurfaceType::Internal => "rgb(255,255,128)", // yellow
+        // case stFloatingVerticalShell:
+        // case stInternalSolid:   return "rgb(255,0,255)"; // magenta    Surface.cpp:41-42
+        SurfaceType::FloatingVerticalShell | SurfaceType::InternalSolid => "rgb(255,0,255)", // magenta
+        // case stInternalBridge:  return "rgb(0,255,255)";               Surface.cpp:43
+        SurfaceType::InternalBridge => "rgb(0,255,255)",
+        // case stInternalVoid:    return "rgb(128,128,128)";             Surface.cpp:44
+        SurfaceType::InternalVoid => "rgb(128,128,128)",
+        // case stPerimeter:       return "rgb(128,0,0)"; // maroon       Surface.cpp:45
+        SurfaceType::Perimeter => "rgb(128,0,0)", // maroon
+        // default:                return "rgb(64,64,64)";  (SurfaceType(-1))  Surface.cpp:46
+        #[allow(unreachable_patterns)]
+        _ => "rgb(64,64,64)",
+    }
+}
+
+// Point export_surface_type_legend_to_svg_box_size()
+/// Surface.cpp:50
+pub fn export_surface_type_legend_to_svg_box_size() -> crate::geometry::Point {
+    // return Point(scale_(1.+10.*8.), scale_(3.));                       Surface.cpp:52
+    crate::geometry::Point::new(crate::scale(1. + 10. * 8.), crate::scale(3.))
 }
 
 /// Extension trait for Surfaces to add helper methods

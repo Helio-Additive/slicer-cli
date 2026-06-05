@@ -214,7 +214,7 @@ impl LayerRegion {
         /// C++: std::array<SurfacesPtr, size_t(stCount)> by_surface;
         /// C++: for (Surface &surface : this->slices.surfaces)
         /// C++:     by_surface[size_t(surface.surface_type)].emplace_back(&surface);
-        const ST_COUNT: usize = 8; // stCount from C++
+        const ST_COUNT: usize = crate::surface::SurfaceType::COUNT; // stCount from C++ (Surface.hpp:29)
         let mut by_surface: Vec<Vec<usize>> = vec![Vec::new(); ST_COUNT];
         for (idx, surface) in self.slices.surfaces.iter().enumerate() {
             let surface_type_idx = surface.surface_type as usize;

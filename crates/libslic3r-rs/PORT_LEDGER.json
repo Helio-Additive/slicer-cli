@@ -293,7 +293,7 @@
     "rust": "crates/libslic3r-rs/src/locales_utils.rs",
     "rust_exists": true,
     "loc": 89,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -304,7 +304,7 @@
     "rust": "crates/libslic3r-rs/src/face_detector.rs",
     "rust_exists": true,
     "loc": 90,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -315,7 +315,7 @@
     "rust": "crates/libslic3r-rs/src/print_region.rs",
     "rust_exists": true,
     "loc": 95,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -326,7 +326,7 @@
     "rust": "crates/libslic3r-rs/src/surface.rs",
     "rust_exists": true,
     "loc": 96,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -337,7 +337,7 @@
     "rust": "crates/libslic3r-rs/src/channel.rs",
     "rust_exists": true,
     "loc": 101,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {

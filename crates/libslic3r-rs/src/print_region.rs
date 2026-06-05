@@ -1,55 +1,49 @@
 //! Print region configuration and Flow generation.
 //!
-//! This module provides PrintRegion, a direct port of BambuStudio's PrintRegion.cpp.
-//! A PrintRegion represents a group of volumes with the same print settings and generates
-//! Flow objects for different extrusion roles (perimeter, infill, etc.).
+//! Faithful 1:1 port of BambuStudio's `src/libslic3r/PrintRegion.cpp`.
+//! A `PrintRegion` represents a group of volumes sharing the same print
+//! settings (including the same assigned extruder(s)).
 //!
 //! Reference: BambuStudio/src/libslic3r/PrintRegion.cpp
+//!
+//! Porting notes (divergences forced by the current Rust crate state, see the
+//! module-level documentation and the parity ledger):
+//!   * C++ `PrintConfig::nozzle_diameter` / `filament_diameter` are
+//!     `ConfigOptionFloats` (per-extruder vectors). The Rust `PrintConfig`
+//!     currently models them as scalars, so the per-extruder `get_at(i-1)`
+//!     access is emulated through `&[f64]` slice parameters that the caller
+//!     supplies. `get_at` in libslic3r falls back to the zeroth element on
+//!     out-of-range indices; that fallback is reproduced here.
+//!   * C++ `PrintRegion::flow(const PrintObject&, ...)` reaches through
+//!     `object.print()->config()` and `object.config()`. The Rust
+//!     `PrintObject` does not yet expose those accessors / back-references, so
+//!     the relevant scalars (`initial_layer_line_width`, the object
+//!     `line_width`, the nozzle diameter) are threaded in as parameters
+//!     instead of being read off the hierarchy.
 
 use crate::flow::{Flow, FlowRole};
 use crate::region_config::PrintRegionConfig;
 use crate::CoordF;
 
-/// A print region - volumes sharing the same config and extruder assignments.
-///
-/// This is a direct port of C++ PrintRegion class. It holds configuration
-/// and generates Flow objects on-demand for different extrusion roles.
-///
-/// Unlike the previous simplified version, this matches C++ behavior exactly:
-/// - Stores PrintRegionConfig directly
-/// - Generates Flow objects based on role and layer height
-/// - Handles extruder assignment per role
-/// - Provides methods matching C++ PrintRegion API
-/// A print region - volumes sharing the same config and extruder assignments.
-/// Print.hpp:111
+/// A PrintRegion object represents a group of volumes to print
+/// sharing the same config (including the same assigned extruder(s))
+/// Print.hpp:110-158
 #[derive(Clone, Debug)]
-/// Print region with configuration and IDs
-/// Print.hpp:111
 pub struct PrintRegion {
-    /// Region configuration (all print settings for this region).
-    /// Print.hpp:152
-    config: PrintRegionConfig,
-
-    /// Configuration hash for change detection.
     /// Print.hpp:153
-    config_hash: usize,
-
-    /// Print region ID (identifier in Print::m_print_regions).
+    config: PrintRegionConfig,
     /// Print.hpp:154
+    config_hash: usize,
+    /// Identifier of this PrintRegion in the list of Print::m_print_regions.
+    /// Print.hpp:155
     print_region_id: i32,
-
-    /// Print object region ID.
-    /// Print.hpp:127
+    /// Print.hpp:156
     print_object_region_id: i32,
 }
 
-/// Implementation of PrintRegion methods
-/// Print.hpp:111-160
 impl PrintRegion {
-    // Create a new PrintRegion from config.
-    // Print.hpp:115
+    // Print.hpp:115 / PrintRegion ctor from config.
     pub fn new(config: PrintRegionConfig) -> Self {
-        // Print.hpp:116
         let config_hash = Self::hash_config(&config);
         Self {
             config,
@@ -59,250 +53,271 @@ impl PrintRegion {
         }
     }
 
-    /// Create with explicit IDs and hash.
-    /// PrintRegion.cpp:21
+    // Print.hpp:117 : PrintRegion(const PrintRegionConfig &config, const size_t config_hash, int print_object_region_id = -1)
     pub fn with_ids(
         config: PrintRegionConfig,
-        print_region_id: i32,
+        config_hash: usize,
         print_object_region_id: i32,
     ) -> Self {
-        // PrintRegion.cpp:22
-        let config_hash = Self::hash_config(&config);
         Self {
             config,
             config_hash,
-            print_region_id,
+            print_region_id: -1,
             print_object_region_id,
         }
     }
 
-    /// Get the region configuration.
-    /// Print.hpp:123
+    /// Print.hpp:124
     pub fn config(&self) -> &PrintRegionConfig {
         &self.config
     }
 
-    /// Get configuration hash.
-    /// Print.hpp:124
+    /// Print.hpp:125
     pub fn config_hash(&self) -> usize {
         self.config_hash
     }
 
-    /// Get print region ID.
-    /// Print.hpp:126
+    /// Identifier of this PrintRegion in the list of Print::m_print_regions.
+    /// Print.hpp:127
     pub fn print_region_id(&self) -> i32 {
         self.print_region_id
     }
 
-    /// Get print object region ID.
-    /// Print.hpp:127
+    /// Print.hpp:128
     pub fn print_object_region_id(&self) -> i32 {
         self.print_object_region_id
     }
 
-    /// Get 1-based extruder identifier for this region and role.
-    /// PrintRegion.cpp:7-19
-    pub fn extruder(&self, role: FlowRole) -> usize {
-        // PrintRegion.cpp:8-18
-        match role {
-            FlowRole::ExternalPerimeter | FlowRole::Perimeter => self.config.wall_filament,
-            FlowRole::Infill => self.config.effective_infill_extruder(),
-            FlowRole::SolidInfill | FlowRole::TopSolidInfill => {
-                self.config.effective_solid_infill_extruder()
-            }
-            FlowRole::SupportMaterial | FlowRole::SupportMaterialInterface => {
-                // Support uses region extruder by default
-                self.config.wall_filament
-            }
-            FlowRole::SupportTransition => self.config.wall_filament,
+    // 1-based extruder identifier for this region and role.
+    // PrintRegion.cpp:7
+    pub fn extruder(&self, role: FlowRole) -> Result<u32, String> {
+        // PrintRegion.cpp:9
+        let extruder: usize;
+        // PrintRegion.cpp:10
+        if role == FlowRole::Perimeter || role == FlowRole::ExternalPerimeter {
+            // PrintRegion.cpp:11
+            extruder = self.config.wall_filament;
+        // PrintRegion.cpp:12
+        } else if role == FlowRole::Infill {
+            // PrintRegion.cpp:13
+            extruder = self.config.sparse_infill_filament;
+        // PrintRegion.cpp:14
+        } else if role == FlowRole::SolidInfill || role == FlowRole::TopSolidInfill {
+            // PrintRegion.cpp:15
+            extruder = self.config.solid_infill_filament;
+        // PrintRegion.cpp:16
+        } else {
+            // PrintRegion.cpp:17
+            return Err("Unknown role".to_string());
         }
+        // PrintRegion.cpp:18
+        Ok(extruder as u32)
     }
 
-    /// Generate Flow object for a specific role and layer height.
-    /// PrintRegion.cpp:21-50
+    // PrintRegion.cpp:21
+    // Faithful port of:
+    //   Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_height, bool first_layer) const
+    //
+    // The Rust `PrintObject` does not yet expose `print()->config()` nor
+    // `config()`, so the data that the C++ reads off the hierarchy is threaded
+    // in explicitly:
+    //   * `initial_layer_line_width` = print_config.initial_layer_line_width.value
+    //   * `object_line_width`        = object.config().line_width
+    //   * `nozzle_diameters`         = print_config.nozzle_diameter (per-extruder)
+    #[allow(clippy::too_many_arguments)]
     pub fn flow(
         &self,
         role: FlowRole,
-        nozzle_diameter: CoordF,
         layer_height: CoordF,
         first_layer: bool,
         initial_layer_line_width: CoordF,
+        object_line_width: CoordF,
+        nozzle_diameters: &[CoordF],
     ) -> Result<Flow, String> {
-        // Get extrusion width from configuration
-        // (might be an absolute value, or a percent value, or zero for auto)
-        // PrintRegion.cpp:24-42
         // PrintRegion.cpp:24
-        let config_width =
-            // PrintRegion.cpp:24
-            if first_layer && initial_layer_line_width > 0.0 {
-            // PrintRegion.cpp:25
-            initial_layer_line_width
+        let mut config_width: CoordF;
+        // Get extrusion width from configuration.
+        // (might be an absolute value, or a percent value, or zero for auto)
+        // PrintRegion.cpp:27
+        if first_layer && initial_layer_line_width > 0.0 {
+            // PrintRegion.cpp:28
+            config_width = initial_layer_line_width;
+        // PrintRegion.cpp:29
+        } else if role == FlowRole::ExternalPerimeter {
+            // PrintRegion.cpp:30
+            config_width = self.config.outer_wall_line_width;
+        // PrintRegion.cpp:31
+        } else if role == FlowRole::Perimeter {
+            // PrintRegion.cpp:32
+            config_width = self.config.inner_wall_line_width;
+        // PrintRegion.cpp:33
+        } else if role == FlowRole::Infill {
+            // PrintRegion.cpp:34
+            config_width = self.config.sparse_infill_line_width;
+        // PrintRegion.cpp:35
+        } else if role == FlowRole::SolidInfill {
+            // PrintRegion.cpp:36
+            config_width = self.config.internal_solid_infill_line_width;
+        // PrintRegion.cpp:37
+        } else if role == FlowRole::TopSolidInfill {
+            // PrintRegion.cpp:38
+            config_width = self.config.top_surface_line_width;
+        // PrintRegion.cpp:39
         } else {
-            // PrintRegion.cpp:27-41
-            match role {
-                FlowRole::ExternalPerimeter => self.config.outer_wall_line_width,
-                FlowRole::Perimeter => self.config.inner_wall_line_width,
-                FlowRole::Infill => self.config.sparse_infill_line_width,
-                FlowRole::SolidInfill => self.config.internal_solid_infill_line_width,
-                FlowRole::TopSolidInfill => self.config.top_surface_line_width,
-                FlowRole::SupportMaterial | FlowRole::SupportMaterialInterface => {
-                    // Support uses infill width
-                    self.config.sparse_infill_line_width
-                }
-                FlowRole::SupportTransition => self.config.sparse_infill_line_width,
-            }
-        };
+            // PrintRegion.cpp:40
+            return Err("Unknown role".to_string());
+        }
 
-        // Create Flow using the C++ new_from_config_width method
-        Flow::new_from_config_width(role, config_width, nozzle_diameter, layer_height)
-            .map_err(|e| format!("Failed to create flow for role {:?}: {:?}", role, e))
+        // PrintRegion.cpp:43
+        if config_width == 0.0 {
+            // PrintRegion.cpp:44
+            config_width = object_line_width;
+        }
+
+        // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
+        // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
+        // PrintRegion.cpp:48
+        let nozzle_diameter =
+            get_at(nozzle_diameters, (self.extruder(role)? as usize).wrapping_sub(1)) as f32;
+        // PrintRegion.cpp:49
+        Flow::new_from_config_width(
+            role,
+            config_width,
+            nozzle_diameter as CoordF,
+            layer_height,
+        )
+        .map_err(|e| format!("{:?}", e))
     }
 
-    /// Calculate average nozzle diameter for this region.
-    /// PrintRegion.cpp:52-57
+    // PrintRegion.cpp:52
+    // Average diameter of nozzles participating on extruding this region.
     pub fn nozzle_dmr_avg(&self, nozzle_diameters: &[CoordF]) -> CoordF {
-        // PrintRegion.cpp:53
-        let wall_nozzle = nozzle_diameters
-            .get(self.config.wall_filament)
-            .copied()
-            .unwrap_or(0.4);
         // PrintRegion.cpp:54
-        let sparse_nozzle = nozzle_diameters
-            .get(self.config.effective_infill_extruder())
-            .copied()
-            .unwrap_or(0.4);
-        // PrintRegion.cpp:55
-        let solid_nozzle = nozzle_diameters
-            .get(self.config.effective_solid_infill_extruder())
-            .copied()
-            .unwrap_or(0.4);
-
-        (wall_nozzle + sparse_nozzle + solid_nozzle) / 3.0
+        (get_at(nozzle_diameters, self.config.wall_filament.wrapping_sub(1))
+            + get_at(nozzle_diameters, self.config.sparse_infill_filament.wrapping_sub(1))
+            + get_at(nozzle_diameters, self.config.solid_infill_filament.wrapping_sub(1)))
+            / 3.
     }
 
-    /// Calculate average bridging height for this region.
-    /// PrintRegion.cpp:59-62
+    // PrintRegion.cpp:59
+    // Average diameter of nozzles participating on extruding this region.
     pub fn bridging_height_avg(&self, nozzle_diameters: &[CoordF]) -> CoordF {
+        // PrintRegion.cpp:61
         self.nozzle_dmr_avg(nozzle_diameters) * self.config.bridge_flow_ratio.sqrt()
     }
 
-    /// Update configuration.
-    /// Print.hpp:142
+    // PrintRegion.cpp:64
+    // Collect 0-based extruder indices used to print this region's object.
+    //
+    // Static helper. The C++ derives `num_extruders` from
+    // `print_config.filament_diameter.size()`; the Rust `PrintConfig` models
+    // `filament_diameter` as a scalar, so `num_extruders` is taken from the
+    // supplied `num_extruders` argument (the caller passes the number of
+    // configured printer extruders). The branch predicates use the equivalent
+    // Rust `PrintRegionConfig` field names:
+    //   wall_loops            -> perimeters
+    //   sparse_infill_density -> fill_density
+    //   top_shell_layers      -> top_solid_layers
+    //   bottom_shell_layers   -> bottom_solid_layers
+    pub fn collect_object_printing_extruders_static(
+        num_extruders: i32,
+        region_config: &PrintRegionConfig,
+        has_brim: bool,
+        object_extruders: &mut Vec<u32>,
+    ) {
+        // These checks reflect the same logic used in the GUI for enabling/disabling extruder selection fields.
+        // BBS
+        // PrintRegion.cpp:69
+        let emplace_extruder = |extruder_id: i32, object_extruders: &mut Vec<u32>| {
+            // PrintRegion.cpp:70
+            let i = std::cmp::max(0, extruder_id - 1);
+            // PrintRegion.cpp:71
+            object_extruders.push(if i >= num_extruders { 0 } else { i as u32 });
+        };
+        // PrintRegion.cpp:73
+        if region_config.perimeters > 0 || has_brim {
+            // PrintRegion.cpp:74
+            emplace_extruder(region_config.wall_filament as i32, object_extruders);
+        }
+        // PrintRegion.cpp:75
+        if region_config.fill_density > 0.0 {
+            // PrintRegion.cpp:76
+            emplace_extruder(region_config.sparse_infill_filament as i32, object_extruders);
+        }
+        // PrintRegion.cpp:77
+        if region_config.top_solid_layers > 0 || region_config.bottom_solid_layers > 0 {
+            // PrintRegion.cpp:78
+            emplace_extruder(region_config.solid_infill_filament as i32, object_extruders);
+        }
+    }
+
+    // PrintRegion.cpp:81
+    // Collect 0-based extruder indices used to print this region's object.
+    //
+    // Member overload. C++ reads `print.config()` and `print.has_brim()`; the
+    // Rust caller supplies `num_extruders` (number of configured printer
+    // extruders, == `print.config().filament_diameter.size()`) and `has_brim`
+    // directly. The `#ifndef NDEBUG` asserts validate that each region's
+    // filament index is within range.
+    pub fn collect_object_printing_extruders(
+        &self,
+        num_extruders: i32,
+        has_brim: bool,
+        object_extruders: &mut Vec<u32>,
+    ) {
+        // PrintRegion, if used by some PrintObject, shall have all the extruders set to an existing printer extruder.
+        // If not, then there must be something wrong with the Print::apply() function.
+        // PrintRegion.cpp:85 (#ifndef NDEBUG)
+        // BBS
+        // PrintRegion.cpp:88
+        debug_assert!(self.config().wall_filament as i32 <= num_extruders);
+        // PrintRegion.cpp:89
+        debug_assert!(self.config().sparse_infill_filament as i32 <= num_extruders);
+        // PrintRegion.cpp:90
+        debug_assert!(self.config().solid_infill_filament as i32 <= num_extruders);
+        // PrintRegion.cpp:92
+        Self::collect_object_printing_extruders_static(
+            num_extruders,
+            self.config(),
+            has_brim,
+            object_extruders,
+        );
+    }
+
+    // Print.hpp:143 : void set_config(const PrintRegionConfig &config)
     pub fn set_config(&mut self, config: PrintRegionConfig) {
         // Print.hpp:143
         self.config_hash = Self::hash_config(&config);
-        // Print.hpp:144
         self.config = config;
     }
 
-    /// Simple hash function for config (for now just use basic hash).
-    /// In production, this should match C++ PrintRegionConfig::hash().
-    /// Print.hpp:147
+    // Local stand-in for `PrintRegionConfig::hash()` (ConfigBase::hash()).
+    // The Rust `PrintRegionConfig` does not yet expose a faithful config hash;
+    // a stable hash over the change-relevant fields is used so that
+    // `config_hash` mirrors C++ usage (change detection). NOTE: this is NOT
+    // byte-identical to the C++ ConfigBase::hash() and must not be relied on
+    // for cross-language equality. See parity ledger.
     fn hash_config(config: &PrintRegionConfig) -> usize {
-        // Simplified hash - in real impl should match C++ exactly
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-
-        // Print.hpp:148
         let mut hasher = DefaultHasher::new();
-        // Print.hpp:149
         config.perimeters.hash(&mut hasher);
-        // Print.hpp:150
         ((config.fill_density * 1000.0) as u32).hash(&mut hasher);
         hasher.finish() as usize
     }
 }
 
-/// Default implementation for PrintRegion
-/// Print.hpp:111
-impl Default for PrintRegion {
-    // Create default PrintRegion with default config
-    // Print.hpp:115
-    fn default() -> Self {
-        Self::new(PrintRegionConfig::default())
-    }
-}
-
-/// Helper to create Flow objects for all roles at once.
-///
-/// This is useful for pre-calculating all flows for a layer to avoid
-/// repeated lookups during generation.
-#[derive(Clone, Debug)]
-/// Helper struct for pre-calculated Flow objects
-/// PrintRegion.cpp:64
-pub struct RegionFlows {
-    pub external_perimeter_flow: Flow,
-    pub perimeter_flow: Flow,
-    pub infill_flow: Flow,
-    pub solid_infill_flow: Flow,
-    pub top_solid_infill_flow: Flow,
-}
-
-/// Implementation of RegionFlows methods
-/// PrintRegion.cpp:64-90
-impl RegionFlows {
-    // Create all flows for a region at a specific layer height.
-    // PrintRegion.cpp:67
-    pub fn new(
-        region: &PrintRegion,
-        nozzle_diameter: CoordF,
-        layer_height: CoordF,
-        first_layer: bool,
-        initial_layer_line_width: CoordF,
-    ) -> Result<Self, String> {
-        Ok(Self {
-            external_perimeter_flow: region.flow(
-                FlowRole::ExternalPerimeter,
-                nozzle_diameter,
-                layer_height,
-                first_layer,
-                initial_layer_line_width,
-            )?,
-            perimeter_flow: region.flow(
-                FlowRole::Perimeter,
-                nozzle_diameter,
-                layer_height,
-                first_layer,
-                initial_layer_line_width,
-            )?,
-            infill_flow: region.flow(
-                FlowRole::Infill,
-                nozzle_diameter,
-                layer_height,
-                first_layer,
-                initial_layer_line_width,
-            )?,
-            solid_infill_flow: region.flow(
-                FlowRole::SolidInfill,
-                nozzle_diameter,
-                layer_height,
-                first_layer,
-                initial_layer_line_width,
-            )?,
-            top_solid_infill_flow: region.flow(
-                FlowRole::TopSolidInfill,
-                nozzle_diameter,
-                layer_height,
-                first_layer,
-                initial_layer_line_width,
-            )?,
-        })
-    }
-
-    /// Get flow for a specific role.
-    /// PrintRegion.cpp:85
-    pub fn get_flow(&self, role: FlowRole) -> &Flow {
-        // PrintRegion.cpp:86
-        match role {
-            FlowRole::ExternalPerimeter => &self.external_perimeter_flow,
-            FlowRole::Perimeter => &self.perimeter_flow,
-            FlowRole::Infill => &self.infill_flow,
-            FlowRole::SolidInfill => &self.solid_infill_flow,
-            FlowRole::TopSolidInfill => &self.top_solid_infill_flow,
-            FlowRole::SupportMaterial
-            | FlowRole::SupportMaterialInterface
-            | FlowRole::SupportTransition => &self.infill_flow, // Fallback
-        }
+// `get_at` reproduces Slic3r::ConfigOptionVector::get_at: the value at index
+// `i`, or the zeroth element when `i` is out of range (and `0` when empty).
+// ConfigOptionVector models. See PrintRegion.cpp:48 commentary.
+#[inline]
+fn get_at(values: &[CoordF], i: usize) -> CoordF {
+    if values.is_empty() {
+        0.
+    } else if i < values.len() {
+        values[i]
+    } else {
+        values[0]
     }
 }
 
@@ -320,14 +335,19 @@ mod tests {
 
     #[test]
     fn test_extruder_assignment() {
-        let config = PrintRegionConfig::default();
+        let mut config = PrintRegionConfig::default();
+        config.wall_filament = 1;
+        config.sparse_infill_filament = 2;
+        config.solid_infill_filament = 3;
         let region = PrintRegion::new(config);
 
-        // All should use default extruder (0)
-        assert_eq!(region.extruder(FlowRole::ExternalPerimeter), 0);
-        assert_eq!(region.extruder(FlowRole::Perimeter), 0);
-        assert_eq!(region.extruder(FlowRole::Infill), 0);
-        assert_eq!(region.extruder(FlowRole::SolidInfill), 0);
+        assert_eq!(region.extruder(FlowRole::ExternalPerimeter).unwrap(), 1);
+        assert_eq!(region.extruder(FlowRole::Perimeter).unwrap(), 1);
+        assert_eq!(region.extruder(FlowRole::Infill).unwrap(), 2);
+        assert_eq!(region.extruder(FlowRole::SolidInfill).unwrap(), 3);
+        assert_eq!(region.extruder(FlowRole::TopSolidInfill).unwrap(), 3);
+        // Roles outside the C++ switch throw "Unknown role".
+        assert!(region.extruder(FlowRole::SupportMaterial).is_err());
     }
 
     #[test]
@@ -335,46 +355,43 @@ mod tests {
         let config = PrintRegionConfig::default();
         let region = PrintRegion::new(config);
 
-        let nozzle_diameter = 0.4;
-        let layer_height = 0.2;
-        let first_layer = false;
-        let initial_width = 0.0;
-
+        let nozzles = [0.4];
         let flow = region
-            .flow(
-                FlowRole::Perimeter,
-                nozzle_diameter,
-                layer_height,
-                first_layer,
-                initial_width,
-            )
+            .flow(FlowRole::Perimeter, 0.2, false, 0.0, 0.45, &nozzles)
             .expect("Flow creation failed");
 
         assert!(flow.width() > 0.0);
-        assert!((flow.height() - layer_height).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_region_flows() {
-        let config = PrintRegionConfig::default();
-        let region = PrintRegion::new(config);
-
-        let flows =
-            RegionFlows::new(&region, 0.4, 0.2, false, 0.0).expect("Failed to create region flows");
-
-        assert!(flows.perimeter_flow.width() > 0.0);
-        assert!(flows.external_perimeter_flow.width() > 0.0);
-        assert!(flows.infill_flow.width() > 0.0);
+        assert!((flow.height() - 0.2).abs() < 0.001);
     }
 
     #[test]
     fn test_nozzle_diameter_avg() {
-        let config = PrintRegionConfig::default();
+        let mut config = PrintRegionConfig::default();
+        config.wall_filament = 1;
+        config.sparse_infill_filament = 1;
+        config.solid_infill_filament = 1;
         let region = PrintRegion::new(config);
 
         let nozzles = vec![0.4, 0.6, 0.8];
         let avg = region.nozzle_dmr_avg(&nozzles);
+        assert!((avg - 0.4).abs() < 0.01); // all use extruder 1 (index 0)
+    }
 
-        assert!((avg - 0.4).abs() < 0.01); // All use extruder 0 by default
+    #[test]
+    fn test_collect_object_printing_extruders() {
+        let mut config = PrintRegionConfig::default();
+        config.wall_filament = 1;
+        config.sparse_infill_filament = 2;
+        config.solid_infill_filament = 3;
+        config.perimeters = 2;
+        config.fill_density = 0.15;
+        config.top_solid_layers = 3;
+        config.bottom_solid_layers = 3;
+        let region = PrintRegion::new(config);
+
+        let mut extruders = Vec::new();
+        region.collect_object_printing_extruders(8, false, &mut extruders);
+        // 0-based indices: wall(1)->0, sparse(2)->1, solid(3)->2
+        assert_eq!(extruders, vec![0u32, 1u32, 2u32]);
     }
 }

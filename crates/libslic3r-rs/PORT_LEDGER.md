@@ -1,31 +1,27 @@
-**Progress: 43/278 units ported** (15.5%) · partial 2 · deferred 0
+**Progress: 47/278 units ported** (17%) · partial 3 · deferred 0
 
 | Area | Done | Total |
 |------|------|-------|
-| root | 33 | 152 |
-| Geometry | 5 | 10 |
 | Algorithm | 0 | 1 |
 | Arachne | 0 | 26 |
-| Shape | 0 | 1 |
-| Fill | 1 | 18 |
-| GCode | 0 | 17 |
-| Execution | 0 | 3 |
 | CSGMesh | 4 | 7 |
-| Optimize | 0 | 3 |
-| Support | 0 | 8 |
+| Execution | 0 | 3 |
+| Fill | 1 | 18 |
 | Format | 0 | 10 |
+| GCode | 0 | 17 |
+| Geometry | 5 | 10 |
 | Interlocking | 0 | 2 |
+| Optimize | 0 | 3 |
 | SLA | 0 | 20 |
+| Shape | 0 | 1 |
+| Support | 0 | 8 |
+| root | 37 | 152 |
 
 ## Next pending
 
 - [ ] `TryCatchSignalSEH.cpp` (43 loc) -> `crates/libslic3r-rs/src/try_catch_signal_seh.rs`
 - [ ] `ParameterUtils.cpp` (79 loc) -> `crates/libslic3r-rs/src/parameter_utils.rs`
-- [ ] `LocalesUtils.cpp` (89 loc) -> `crates/libslic3r-rs/src/locales_utils.rs`
-- [ ] `FaceDetector.cpp` (90 loc) -> `crates/libslic3r-rs/src/face_detector.rs`
-- [ ] `PrintRegion.cpp` (95 loc) -> `crates/libslic3r-rs/src/print_region.rs`
 - [ ] `Surface.cpp` (96 loc) -> `crates/libslic3r-rs/src/surface.rs`
-- [ ] `Channel.hpp` (101 loc) -> `crates/libslic3r-rs/src/channel.rs`
 - [ ] `MinAreaBoundingBox.cpp` (106 loc) -> `crates/libslic3r-rs/src/min_area_bounding_box.rs`
 - [ ] `FlushVolCalc.cpp` (130 loc) -> `crates/libslic3r-rs/src/flush_vol_calc.rs`
 - [ ] `ExPolygonCollection.cpp` (136 loc) -> `crates/libslic3r-rs/src/ex_polygon_collection.rs`
@@ -44,3 +40,7 @@
 - [ ] `ArcFitter.cpp` (153 loc) -> `crates/libslic3r-rs/src/arc_fitter.rs`
 - [ ] `PrintBase.cpp` (155 loc) -> `crates/libslic3r-rs/src/print_base.rs`
 - [ ] `AStar.hpp` (157 loc) -> `crates/libslic3r-rs/src/a_star.rs`
+- [ ] `ExtrusionEntityCollection.cpp` (158 loc) -> `crates/libslic3r-rs/src/extrusion_entity_collection.rs`
+- [ ] `TriangulateWall.cpp` (159 loc) -> `crates/libslic3r-rs/src/triangulate_wall.rs`
+- [ ] `miniz_extension.cpp` (159 loc) -> `crates/libslic3r-rs/src/miniz_extension.rs`
+- [ ] `SurfaceCollection.cpp` (164 loc) -> `crates/libslic3r-rs/src/surface_collection.rs`

@@ -3,10 +3,82 @@
 //! This module provides the TriangleMesh type representing a 3D mesh
 //! composed of triangles, mirroring BambuStudio's indexed_triangle_set.
 
-use crate::geometry::{BoundingBox3F, Point3F};
+use crate::geometry::{BoundingBox3F, Point3F, Transform3D};
 use crate::{CoordF, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+/// Triangle face type classification.
+///
+/// admesh/stl.h:51-57
+/// C++:
+/// ```text
+/// typedef enum {
+///     eNormal,  // normal face
+///     eSmallOverhang,  // small overhang
+///     eSmallHole,      // face with small hole
+///     eExteriorAppearance,  // exterior appearance
+///     eMaxNumFaceTypes
+/// }EnumFaceTypes;
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(i32)]
+pub enum EnumFaceTypes {
+    /// normal face
+    /// admesh/stl.h:52
+    ENormal = 0,
+    /// small overhang
+    /// admesh/stl.h:53
+    ESmallOverhang = 1,
+    /// face with small hole
+    /// admesh/stl.h:54
+    ESmallHole = 2,
+    /// exterior appearance
+    /// admesh/stl.h:55
+    EExteriorAppearance = 3,
+    /// admesh/stl.h:56
+    EMaxNumFaceTypes = 4,
+}
+
+/// Triangle face property.
+///
+/// admesh/stl.h:172-218
+/// C++:
+/// ```text
+/// struct FaceProperty
+/// {   // triangle face property
+///     EnumFaceTypes type;
+///     double area;
+/// };
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FaceProperty {
+    /// admesh/stl.h:174
+    pub type_: EnumFaceTypes,
+    /// admesh/stl.h:175
+    pub area: f64,
+}
+
+impl Default for FaceProperty {
+    fn default() -> Self {
+        // admesh/stl.h: properties default to eNormal with zero area.
+        Self {
+            type_: EnumFaceTypes::ENormal,
+            area: 0.0,
+        }
+    }
+}
+
+/// Mesh statistics, mirroring the relevant subset of `stl_stats`.
+///
+/// admesh/stl.h:101-150
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MeshStats {
+    /// Should always match the number of facets stored inside the indexed
+    /// triangle set's `indices`.
+    /// admesh/stl.h:110
+    pub number_of_facets: u32,
+}
 
 /// A single triangle defined by three vertex indices.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -82,6 +154,10 @@ pub struct TriangleMesh {
     vertices: Vec<Point3F>,
     /// Triangle indices into the vertex array.
     indices: Vec<Triangle>,
+    /// Per-face properties (face-type classification, area).
+    /// admesh/stl.h:245 (`indexed_triangle_set::properties`)
+    #[serde(default)]
+    properties: Vec<FaceProperty>,
     /// Cached bounding box (lazily computed).
     #[serde(skip)]
     bounding_box: Option<BoundingBox3F>,
@@ -94,6 +170,7 @@ impl TriangleMesh {
         Self {
             vertices: Vec::new(),
             indices: Vec::new(),
+            properties: Vec::new(),
             bounding_box: None,
         }
     }
@@ -103,15 +180,19 @@ impl TriangleMesh {
         Self {
             vertices: Vec::with_capacity(vertex_count),
             indices: Vec::with_capacity(triangle_count),
+            properties: Vec::with_capacity(triangle_count),
             bounding_box: None,
         }
     }
 
     /// Create a mesh from vertices and indices.
     pub fn from_parts(vertices: Vec<Point3F>, indices: Vec<Triangle>) -> Self {
+        // admesh/stl.h:224 — indexed_triangle_set sizes `properties` to match `indices`.
+        let properties = vec![FaceProperty::default(); indices.len()];
         Self {
             vertices,
             indices,
+            properties,
             bounding_box: None,
         }
     }
@@ -170,11 +251,13 @@ impl TriangleMesh {
     /// Add a triangle.
     pub fn add_triangle(&mut self, tri: Triangle) {
         self.indices.push(tri);
+        self.properties.push(FaceProperty::default());
     }
 
     /// Add a triangle from vertex indices.
     pub fn add_triangle_indices(&mut self, v0: u32, v1: u32, v2: u32) {
         self.indices.push(Triangle::new(v0, v1, v2));
+        self.properties.push(FaceProperty::default());
     }
 
     /// Get a vertex by index.
@@ -230,6 +313,77 @@ impl TriangleMesh {
             bb.merge_point(*v);
         }
         bb
+    }
+
+    /// Get mesh statistics.
+    ///
+    /// Mirrors C++ `TriangleMesh::stats()` for the `number_of_facets` field
+    /// used by FaceDetector. admesh/stl.h:110
+    #[inline]
+    pub fn stats(&self) -> MeshStats {
+        MeshStats {
+            // admesh/stl.h:110 — number_of_facets matches indices count.
+            number_of_facets: self.indices.len() as u32,
+        }
+    }
+
+    /// Get the per-face property for a facet, growing the property store to
+    /// match `indices` if it is out of sync.
+    ///
+    /// admesh/stl.h:255-261
+    /// C++:
+    /// ```text
+    /// FaceProperty& get_property(int face_idx) {
+    ///     if (properties.size() != indices.size()) {
+    ///         properties.clear();
+    ///         properties.resize(indices.size());
+    ///     }
+    ///     return properties[face_idx];
+    /// }
+    /// ```
+    pub fn get_property(&mut self, face_idx: usize) -> &mut FaceProperty {
+        // admesh/stl.h:256-259
+        if self.properties.len() != self.indices.len() {
+            self.properties.clear();
+            self.properties
+                .resize(self.indices.len(), FaceProperty::default());
+        }
+        // admesh/stl.h:260
+        &mut self.properties[face_idx]
+    }
+
+    /// Apply an affine transform to every vertex.
+    ///
+    /// Mirrors C++ `TriangleMesh::transform(const Transform3d&)`, which maps
+    /// each vertex through the matrix.
+    pub fn transform(&mut self, trafo: &Transform3D) {
+        for vertex in &mut self.vertices {
+            *vertex = trafo.apply(*vertex);
+        }
+        self.bounding_box = None;
+    }
+
+    /// Merge another mesh into this one, appending its vertices, triangles
+    /// (with shifted vertex indices), and per-face properties.
+    ///
+    /// Mirrors C++ `TriangleMesh::merge(TriangleMesh&&)`.
+    pub fn merge(&mut self, mut other: TriangleMesh) {
+        let vertex_offset = self.vertices.len() as u32;
+        self.vertices.append(&mut other.vertices);
+        for tri in &mut other.indices {
+            tri.indices[0] += vertex_offset;
+            tri.indices[1] += vertex_offset;
+            tri.indices[2] += vertex_offset;
+        }
+        self.indices.append(&mut other.indices);
+        // Append the incoming face properties, then keep the property store
+        // aligned with the new triangle count.
+        self.properties.append(&mut other.properties);
+        if self.properties.len() != self.indices.len() {
+            self.properties
+                .resize(self.indices.len(), FaceProperty::default());
+        }
+        self.bounding_box = None;
     }
 
     /// Get the center of the mesh.
