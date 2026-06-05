@@ -10,10 +10,11 @@
 
 use crate::circle::{
     ArcDirection, ArcSegment, DEFAULT_ARC_LENGTH_PERCENT_TOLERANCE, DEFAULT_SCALED_MAX_RADIUS,
-    DEFAULT_SCALED_RESOLUTION,
 };
 use crate::geometry::{Point, Polyline};
-use crate::{Error, Result};
+use crate::libslic3r::SCALED_EPSILON;
+use crate::multi_point;
+use crate::Result;
 
 /// Type of movement path
 /// ArcFitter.hpp:11-17
@@ -125,22 +126,22 @@ pub struct ArcFitter;
 
 impl ArcFitter {
     // Analyze points and fit arcs where possible
-    // ArcFitter.cpp:8-102
-    // C++: static void do_arc_fitting(const Points& points, std::vector<PathFittingData> &result, double tolerance)
+    // ArcFitter.cpp:9-95
+    // C++: void ArcFitter::do_arc_fitting(const Points& points, std::vector<PathFittingData>& result, double tolerance)
     pub fn do_arc_fitting(
         points: &[Point],
         result: &mut Vec<PathFittingData>,
         tolerance: f64,
     ) -> Result<()> {
         // Clear output and reserve space
-        // ArcFitter.cpp:23-24
+        // ArcFitter.cpp:27-28
         // C++: result.clear();
-        // C++: result.reserve(points.size() / 2);
+        // C++: result.reserve(points.size() / 2);  //worst case size
         result.clear();
         result.reserve(points.len() / 2);
 
         // Handle trivial case of less than 3 points
-        // ArcFitter.cpp:25-31
+        // ArcFitter.cpp:29-36
         // C++: if (points.size() < 3) {
         // C++:     PathFittingData data;
         // C++:     data.start_point_index = 0;
@@ -160,31 +161,33 @@ impl ArcFitter {
         }
 
         // Initialize segment tracking variables
-        // ArcFitter.cpp:33-38
+        // ArcFitter.cpp:38-44
         // C++: size_t front_index = 0;
         // C++: size_t back_index = 0;
         // C++: ArcSegment last_arc;
         // C++: bool can_fit = false;
         // C++: Points current_segment;
         // C++: current_segment.reserve(points.size());
+        // C++: ArcSegment target_arc;
         let mut front_index = 0;
         let mut back_index = 0;
         let mut last_arc = ArcSegment::new();
         let mut current_segment = Vec::with_capacity(points.len());
 
         // Iterate through all points
-        // ArcFitter.cpp:40
+        // ArcFitter.cpp:45
         // C++: for (size_t i = 0; i < points.size(); i++)
         for i in 0..points.len() {
             // Add point to current segment
-            // ArcFitter.cpp:42-44
+            // ArcFitter.cpp:46-48
+            // BBS: point in stack is not enough, build stack first
             // C++: back_index = i;
             // C++: current_segment.push_back(points[i]);
             back_index = i;
             current_segment.push(points[i]);
 
             // Need at least 3 points to fit an arc
-            // ArcFitter.cpp:45-46
+            // ArcFitter.cpp:49-50
             // C++: if (back_index - front_index < 2)
             // C++:     continue;
             if back_index - front_index < 2 {
@@ -195,7 +198,7 @@ impl ArcFitter {
             let approximate_length = Polyline::from_points(current_segment.clone()).length();
 
             // Try to fit current segment as an arc
-            // ArcFitter.cpp:48-52
+            // ArcFitter.cpp:52-55
             // C++: can_fit = ArcSegment::try_create_arc(current_segment, target_arc, Polyline(current_segment).length(),
             // C++:                                       DEFAULT_SCALED_MAX_RADIUS,
             // C++:                                       tolerance,
@@ -210,12 +213,13 @@ impl ArcFitter {
 
             if let Some(target_arc) = can_fit {
                 // Successfully fit as arc, save it temporarily
-                // ArcFitter.cpp:54
+                // ArcFitter.cpp:56-58
+                // BBS: can be fit as arc, then save arc data temperarily
                 // C++: last_arc = target_arc;
                 last_arc = target_arc;
 
                 // If this is the last point, save the arc
-                // ArcFitter.cpp:55-61
+                // ArcFitter.cpp:59-65
                 // C++: if (back_index == points.size() - 1) {
                 // C++:     result.emplace_back(std::move(PathFittingData{ front_index,
                 // C++:                        back_index,
@@ -224,10 +228,11 @@ impl ArcFitter {
                 // C++:     front_index = back_index;
                 // C++: }
                 if back_index == points.len() - 1 {
-                    let path_type = match last_arc.direction {
-                        ArcDirection::CounterClockwise => EMovePathType::ArcMoveCcw,
-                        ArcDirection::Clockwise => EMovePathType::ArcMoveCw,
-                        ArcDirection::Unknown => EMovePathType::LinearMove,
+                    // C++: last_arc.direction == ArcDirection::Arc_Dir_CCW ? Arc_move_ccw : Arc_move_cw
+                    let path_type = if last_arc.direction == ArcDirection::CounterClockwise {
+                        EMovePathType::ArcMoveCcw
+                    } else {
+                        EMovePathType::ArcMoveCw
                     };
                     result.push(PathFittingData::new(
                         front_index,
@@ -241,15 +246,18 @@ impl ArcFitter {
                 // Cannot fit as arc
                 if back_index - front_index > 2 {
                     // Previous segment (without current point) was a valid arc
-                    // ArcFitter.cpp:64-68
+                    // ArcFitter.cpp:67-73
+                    // BBS: althought current point_stack can't be fit as arc,
+                    // but previous must can be fit if removing the top in stack, so save last arc
                     // C++: result.emplace_back(std::move(PathFittingData{ front_index,
                     // C++:                    back_index - 1,
                     // C++:                    last_arc.direction == ArcDirection::Arc_Dir_CCW ? EMovePathType::Arc_move_ccw : EMovePathType::Arc_move_cw,
                     // C++:                    last_arc }));
-                    let path_type = match last_arc.direction {
-                        ArcDirection::CounterClockwise => EMovePathType::ArcMoveCcw,
-                        ArcDirection::Clockwise => EMovePathType::ArcMoveCw,
-                        ArcDirection::Unknown => EMovePathType::LinearMove,
+                    // C++: last_arc.direction == ArcDirection::Arc_Dir_CCW ? Arc_move_ccw : Arc_move_cw
+                    let path_type = if last_arc.direction == ArcDirection::CounterClockwise {
+                        EMovePathType::ArcMoveCcw
+                    } else {
+                        EMovePathType::ArcMoveCw
                     };
                     result.push(PathFittingData::new(
                         front_index,
@@ -258,8 +266,8 @@ impl ArcFitter {
                         last_arc.clone(),
                     ));
                 } else {
-                    // First segment couldn't fit as arc, save as line
-                    // ArcFitter.cpp:70-74
+                    // BBS: save the first segment as line move when 3 point-line can't be fit as arc move
+                    // ArcFitter.cpp:75-79
                     // C++: if (result.empty() || result.back().path_type != EMovePathType::Linear_move)
                     // C++:     result.emplace_back(std::move(PathFittingData{front_index, front_index + 1, EMovePathType::Linear_move, ArcSegment()}));
                     // C++: else if(result.back().path_type == EMovePathType::Linear_move)
@@ -279,7 +287,7 @@ impl ArcFitter {
                 }
 
                 // Reset for next segment
-                // ArcFitter.cpp:76-79
+                // ArcFitter.cpp:81-84
                 // C++: front_index = back_index - 1;
                 // C++: current_segment.clear();
                 // C++: current_segment.push_back(points[front_index]);
@@ -292,7 +300,8 @@ impl ArcFitter {
         }
 
         // Handle remaining data
-        // ArcFitter.cpp:82-86
+        // BBS: handle the remain data
+        // ArcFitter.cpp:88-93
         // C++: if (front_index != back_index) {
         // C++:     if (result.empty() || result.back().path_type != EMovePathType::Linear_move)
         // C++:         result.emplace_back(std::move(PathFittingData{front_index, back_index, EMovePathType::Linear_move, ArcSegment()}));
@@ -313,7 +322,7 @@ impl ArcFitter {
         }
 
         // Shrink result to actual size
-        // ArcFitter.cpp:88
+        // ArcFitter.cpp:94
         // C++: result.shrink_to_fit();
         result.shrink_to_fit();
 
@@ -321,7 +330,7 @@ impl ArcFitter {
     }
 
     // Perform arc fitting and simplify linear segments with Douglas-Peucker
-    // ArcFitter.cpp:91-162
+    // ArcFitter.cpp:97-151
     // C++: void ArcFitter::do_arc_fitting_and_simplify(Points& points, std::vector<PathFittingData>& result, double tolerance)
     pub fn do_arc_fitting_and_simplify(
         points: &mut Vec<Point>,
@@ -329,13 +338,11 @@ impl ArcFitter {
         tolerance: f64,
     ) -> Result<()> {
         // Step 1: Do arc fitting first
-        // ArcFitter.cpp:93-96
+        // ArcFitter.cpp:99-102
         // C++: if (abs(tolerance) > SCALED_EPSILON)
         // C++:     ArcFitter::do_arc_fitting(points, result, tolerance);
         // C++: else
         // C++:     result.push_back(PathFittingData{ 0, points.size() - 1, EMovePathType::Linear_move, ArcSegment() });
-        const SCALED_EPSILON: f64 = 0.0001 * 1_000_000.0; // 0.0001mm in scaled units
-
         if tolerance.abs() > SCALED_EPSILON {
             Self::do_arc_fitting(points, result, tolerance)?;
         } else {
@@ -348,22 +355,21 @@ impl ArcFitter {
         }
 
         // Step 2: Simplify linear segments with Douglas-Peucker
-        // ArcFitter.cpp:101-104
+        // ArcFitter.cpp:107-111
         // C++: if (result.size() == 1 && result[0].path_type == EMovePathType::Linear_move) {
         // C++:     points = MultiPoint::_douglas_peucker(points, tolerance);
         // C++:     result[0].end_point_index = points.size() - 1;
         // C++:     return;
         // C++: }
         if result.len() == 1 && result[0].path_type == EMovePathType::LinearMove {
-            let polyline = Polyline::from_points(points.clone());
-            let simplified = Polyline::douglas_peucker(&polyline, tolerance);
-            *points = simplified.points;
+            *points = multi_point::douglas_peucker(points, tolerance);
             result[0].end_point_index = points.len() - 1;
             return Ok(());
         }
 
         // Mixed arc and linear segments - simplify each independently
-        // ArcFitter.cpp:105-111
+        // BBS: has both arc part and straight part, we should spilit the straight part out and do DP simplify
+        // ArcFitter.cpp:114-117
         // C++: Points simplified_points;
         // C++: simplified_points.reserve(points.size());
         // C++: simplified_points.push_back(points[0]);
@@ -373,14 +379,14 @@ impl ArcFitter {
         let mut reduce_count = vec![0; result.len()];
 
         // Process each segment
-        // ArcFitter.cpp:112
+        // ArcFitter.cpp:118
         // C++: for (size_t i = 0; i < result.size(); i++)
         for i in 0..result.len() {
             let start_index = result[i].start_point_index;
             let end_index = result[i].end_point_index;
 
             // Extract segment points
-            // ArcFitter.cpp:114-121
+            // ArcFitter.cpp:127-130
             // C++: Points straight_or_arc_part;
             // C++: straight_or_arc_part.reserve(end_index - start_index + 1);
             // C++: for (size_t j = start_index; j <= end_index; j++)
@@ -391,19 +397,17 @@ impl ArcFitter {
             }
 
             // Simplify segment with Douglas-Peucker
-            // ArcFitter.cpp:122
+            // ArcFitter.cpp:131
             // C++: straight_or_arc_part = MultiPoint::_douglas_peucker(straight_or_arc_part, tolerance);
-            let polyline = Polyline::from_points(segment_points);
-            let simplified = Polyline::douglas_peucker(&polyline, tolerance);
-            segment_points = simplified.points;
+            let segment_points = multi_point::douglas_peucker(&segment_points, tolerance);
 
             // Track how many points were reduced
-            // ArcFitter.cpp:124
+            // ArcFitter.cpp:133
             // C++: reduce_count[i] = end_index - start_index + 1 - straight_or_arc_part.size();
             reduce_count[i] = (end_index - start_index + 1) - segment_points.len();
 
             // Append simplified points (skip first to avoid duplication)
-            // ArcFitter.cpp:126-128
+            // ArcFitter.cpp:135-137
             // C++: for (size_t j = 1; j < straight_or_arc_part.size(); j++) {
             // C++:     simplified_points.push_back(straight_or_arc_part[j]);
             // C++: }
@@ -413,12 +417,12 @@ impl ArcFitter {
         }
 
         // Replace input points with simplified version
-        // ArcFitter.cpp:131
+        // ArcFitter.cpp:140
         // C++: points = simplified_points;
         *points = simplified_points;
 
         // Update indices in result to match simplified points
-        // ArcFitter.cpp:133-134
+        // ArcFitter.cpp:142-143
         // C++: for (size_t j = 1; j < reduce_count.size(); j++)
         // C++:     reduce_count[j] += reduce_count[j - 1];
         for j in 1..reduce_count.len() {
@@ -426,7 +430,7 @@ impl ArcFitter {
         }
 
         // Adjust segment indices
-        // ArcFitter.cpp:135-139
+        // ArcFitter.cpp:144-149
         // C++: for (size_t j = 0; j < result.size(); j++) {
         // C++:     result[j].end_point_index -= reduce_count[j];
         // C++:     if (j != result.size() - 1)

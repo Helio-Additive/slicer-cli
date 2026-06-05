@@ -38,6 +38,7 @@ pub mod bridge_detector;
 pub mod brim;
 pub mod brim_ears_point;
 pub mod build_volume;
+pub mod by_object_print_data;
 pub mod calib;
 pub mod channel;
 pub mod circle;

@@ -448,6 +448,39 @@ where
     }
 }
 
+/// Construct a [`MutablePriorityQueue`].
+/// MutablePriorityQueue.hpp:51-56
+/// C++:
+/// ```text
+/// template<typename T, const bool ResetIndexWhenRemoved, typename IndexSetter, typename LessPredicate>
+/// MutablePriorityQueue<T, IndexSetter, LessPredicate, ResetIndexWhenRemoved>
+/// make_mutable_priority_queue(IndexSetter &&index_setter, LessPredicate &&less_predicate)
+/// {
+///     return MutablePriorityQueue<T, IndexSetter, LessPredicate, ResetIndexWhenRemoved>(
+///         std::forward<IndexSetter>(index_setter), std::forward<LessPredicate>(less_predicate));
+/// }
+/// ```
+///
+/// In C++ `ResetIndexWhenRemoved` is a compile-time template bool; here it is a
+/// runtime `bool` argument selecting the same behaviour
+/// (`with_reset_on_remove` vs `new`).
+pub fn make_mutable_priority_queue<T, F, L>(
+    reset_index_when_removed: bool,
+    index_setter: F,
+    less_predicate: L,
+) -> MutablePriorityQueue<T, F, L>
+where
+    T: Copy,
+    F: FnMut(&T, usize),
+    L: Fn(&T, &T) -> bool,
+{
+    if reset_index_when_removed {
+        MutablePriorityQueue::with_reset_on_remove(index_setter, less_predicate)
+    } else {
+        MutablePriorityQueue::new(index_setter, less_predicate)
+    }
+}
+
 impl<T, F, L> Drop for MutablePriorityQueue<T, F, L>
 where
     T: Copy,

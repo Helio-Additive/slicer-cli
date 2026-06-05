@@ -2,49 +2,62 @@
 //!
 //! C++ Reference:
 //! - Frustum.hpp (61 lines)
-//! - Frustum.cpp (169 lines)
+//! - Frustum.cpp (151 lines)
 //!
 //! This module provides frustum culling functionality for 3D rendering and visibility testing.
 //! A frustum is defined by 6 planes and can test intersection with bounding boxes, points,
 //! line segments, and triangles.
+//!
+//! Fidelity note: the C++ `Frustum::Plane` stores its coefficients as a `Vec4f`
+//! (`Eigen::Matrix<float,4,1>`) and performs all plane math in single precision
+//! (`float`). The point/segment/triangle overloads take `Vec3f` (float). Only the
+//! bounding-box overload reads `BoundingBoxf3` (double) corners and then
+//! `.cast<float>()`s them before computing the distance. We mirror that exactly:
+//! `Vec4f`/`Vec3f` are `f32`-based and the box corners (`f64`) are cast to `f32`.
 
-use crate::geometry::{BoundingBox3F, Point3F};
+use crate::geometry::BoundingBox3F;
 
-/// 4D vector type (used for plane coefficients [a, b, c, d])
-type Vec4f = [f64; 4];
+/// 3D vector type (float), mirrors C++ `Vec3f = Eigen::Matrix<float,3,1>`.
+/// Point.hpp:44
+type Vec3f = [f32; 3];
+
+/// 4D vector type (float), mirrors C++ `Vec4f = Eigen::Matrix<float,4,1>`.
+/// Used for plane coefficients [a, b, c, d].
+/// Point.hpp:48
+type Vec4f = [f32; 4];
 
 /// Clip mask bits for each frustum plane
-/// Frustum.hpp:47-54
+/// Frustum.hpp:45-52
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum FrustumClipMask {
-    /// Frustum.hpp:48
+    /// Frustum.hpp:46
     PositiveX = 1 << 0,
-    /// Frustum.hpp:49
+    /// Frustum.hpp:47
     NegativeX = 1 << 1,
-    /// Frustum.hpp:50
+    /// Frustum.hpp:48
     PositiveY = 1 << 2,
-    /// Frustum.hpp:51
+    /// Frustum.hpp:49
     NegativeY = 1 << 3,
-    /// Frustum.hpp:52
+    /// Frustum.hpp:50
     PositiveZ = 1 << 4,
-    /// Frustum.hpp:53
+    /// Frustum.hpp:51
     NegativeZ = 1 << 5,
 }
 
 /// Array of frustum clip masks for all 6 planes
-/// Frustum.hpp:56-58
-pub const FRUSTUM_CLIP_MASK_ARRAY: [u32; 6] = [
-    FrustumClipMask::PositiveX as u32,
-    FrustumClipMask::NegativeX as u32,
-    FrustumClipMask::PositiveY as u32,
-    FrustumClipMask::NegativeY as u32,
-    FrustumClipMask::PositiveZ as u32,
-    FrustumClipMask::NegativeZ as u32,
+/// Frustum.hpp:54-56
+pub const FRUSTUM_CLIP_MASK_ARRAY: [i32; 6] = [
+    FrustumClipMask::PositiveX as i32,
+    FrustumClipMask::NegativeX as i32,
+    FrustumClipMask::PositiveY as i32,
+    FrustumClipMask::NegativeY as i32,
+    FrustumClipMask::PositiveZ as i32,
+    FrustumClipMask::NegativeZ as i32,
 ];
 
 /// Plane coefficients for each frustum clip plane
-/// Frustum.hpp:60
+/// Frustum.hpp:58
 pub const FRUSTUM_CLIP_PLANE: [Vec4f; 6] = [
     [-1.0, 0.0, 0.0, 1.0],
     [1.0, 0.0, 0.0, 1.0],
@@ -55,34 +68,30 @@ pub const FRUSTUM_CLIP_PLANE: [Vec4f; 6] = [
 ];
 
 /// Result of plane intersection test
-/// Frustum.hpp:14
+/// Frustum.hpp:15
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaneIntersects {
-    /// Geometry crosses the plane
-    /// Frustum.hpp:14
-    Cross = 0,
-    /// Geometry is tangent to the plane
-    /// Frustum.hpp:14
-    Tangent = 1,
-    /// Geometry is in front of the plane
-    /// Frustum.hpp:14
-    Front = 2,
-    /// Geometry is behind the plane
-    /// Frustum.hpp:14
-    Back = 3,
+    /// Frustum.hpp:15
+    IntersectsCross = 0,
+    /// Frustum.hpp:15
+    IntersectsTangent = 1,
+    /// Frustum.hpp:15
+    IntersectsFront = 2,
+    /// Frustum.hpp:15
+    IntersectsBack = 3,
 }
 
 /// A plane in 3D space defined by equation ax + by + cz + d = 0
-/// Frustum.hpp:13-30
+/// Frustum.hpp:13-32
 #[derive(Debug, Clone)]
 pub struct Plane {
     /// Plane coefficients [a, b, c, d] where ax + by + cz + d = 0
-    /// Frustum.hpp:29
+    /// Frustum.hpp:31
     m_abcd: Vec4f,
 }
 
 impl Plane {
-    /// Create a new plane with default coefficients (0, 0, 0, 0)
+    /// Create a new plane with default (zero) coefficients.
     /// Frustum.hpp:13
     pub fn new() -> Self {
         Self {
@@ -92,7 +101,7 @@ impl Plane {
 
     /// Set plane coefficients
     /// Frustum.cpp:5-11
-    pub fn set_abcd(&mut self, a: f64, b: f64, c: f64, d: f64) {
+    pub fn set_abcd(&mut self, a: f32, b: f32, c: f32, d: f32) {
         // Frustum.cpp:7
         self.m_abcd[0] = a;
         // Frustum.cpp:8
@@ -105,171 +114,173 @@ impl Plane {
 
     /// Get plane coefficients
     /// Frustum.cpp:13-16
-    pub fn get_abcd(&self) -> Vec4f {
+    pub fn get_abcd(&self) -> &Vec4f {
         // Frustum.cpp:15
-        self.m_abcd
+        &self.m_abcd
     }
 
-    /// Normalize the plane equation so that the normal vector (a, b, c) has unit length
-    /// Frustum.cpp:18-25
-    pub fn normalize(&mut self) {
-        // Calculate magnitude of normal vector
+    /// Normalize the plane equation so that the normal vector (a, b, c) has unit length.
+    /// Frustum.cpp:18-26
+    pub fn normailze(&mut self) {
         // Frustum.cpp:20
-        let mag = (self.m_abcd[0] * self.m_abcd[0]
+        let mag: f32;
+        // Frustum.cpp:21
+        mag = (self.m_abcd[0] * self.m_abcd[0]
             + self.m_abcd[1] * self.m_abcd[1]
             + self.m_abcd[2] * self.m_abcd[2])
             .sqrt();
-
-        // Normalize all coefficients by magnitude
-        // Frustum.cpp:21-24
-        self.m_abcd[0] /= mag;
-        self.m_abcd[1] /= mag;
-        self.m_abcd[2] /= mag;
-        self.m_abcd[3] /= mag;
+        // Frustum.cpp:22
+        self.m_abcd[0] = self.m_abcd[0] / mag;
+        // Frustum.cpp:23
+        self.m_abcd[1] = self.m_abcd[1] / mag;
+        // Frustum.cpp:24
+        self.m_abcd[2] = self.m_abcd[2] / mag;
+        // Frustum.cpp:25
+        self.m_abcd[3] = self.m_abcd[3] / mag;
     }
 
-    /// Calculate signed distance from point to plane
-    /// Frustum.cpp:27-36
-    pub fn distance(&self, pt: &Point3F) -> f64 {
-        // Initialize result to zero
-        // Frustum.cpp:29
-        let mut result = 0.0f64;
+    /// Calculate signed distance from point to plane.
+    /// Frustum.cpp:28-38
+    pub fn distance(&self, pt: &Vec3f) -> f32 {
+        // Frustum.cpp:30
+        let mut result: f32 = 0.0;
+        // Frustum.cpp:31-33
+        for i in 0..3 {
+            result += pt[i] * self.m_abcd[i];
+        }
 
-        // Accumulate dot product of point with normal (a, b, c)
-        // Frustum.cpp:30-32
-        result += pt.x * self.m_abcd[0];
-        result += pt.y * self.m_abcd[1];
-        result += pt.z * self.m_abcd[2];
-
-        // Add the d coefficient
-        // Frustum.cpp:34
+        // Frustum.cpp:35
         result += self.m_abcd[3];
 
-        // Frustum.cpp:36
+        // Frustum.cpp:37
         result
     }
 
-    /// Test intersection of plane with axis-aligned bounding box
-    /// See: https://cgvr.cs.uni-bremen.de/teaching/cg_literatur/lighthouse3d_view_frustum_culling/index.html
-    /// Frustum.cpp:38-76
-    pub fn intersects_box(&self, bbox: &BoundingBox3F) -> PlaneIntersects {
-        // Find the "positive vertex" - the corner of the box most in the direction of the plane normal
-        // Frustum.cpp:42-47
-        let mut positive_v = bbox.min;
+    /// Test intersection of plane with axis-aligned bounding box.
+    /// see https://cgvr.cs.uni-bremen.de/teaching/cg_literatur/lighthouse3d_view_frustum_culling/index.html
+    /// Frustum.cpp:40-74
+    pub fn intersects_box(&self, box_: &BoundingBox3F) -> PlaneIntersects {
+        // Frustum.cpp:44
+        let mut positive_v = box_.min;
+        // Frustum.cpp:45-46
         if self.m_abcd[0] > 0.0 {
-            positive_v.x = bbox.max.x;
+            positive_v.x = box_.max.x();
         }
+        // Frustum.cpp:47-48
         if self.m_abcd[1] > 0.0 {
-            positive_v.y = bbox.max.y;
+            positive_v.y = box_.max.y();
         }
+        // Frustum.cpp:49-50
         if self.m_abcd[2] > 0.0 {
-            positive_v.z = bbox.max.z;
+            positive_v.z = box_.max.z();
         }
 
-        // If positive vertex is behind plane, entire box is behind
-        // Frustum.cpp:49-52
-        let dis_positive = self.distance(&positive_v);
+        // Frustum.cpp:52
+        let dis_positive = self.distance(&[
+            positive_v.x as f32,
+            positive_v.y as f32,
+            positive_v.z as f32,
+        ]);
+        // Frustum.cpp:53-56
         if dis_positive < 0.0 {
-            return PlaneIntersects::Back;
+            return PlaneIntersects::IntersectsBack;
         }
 
-        // Find the "negative vertex" - the corner most opposite to the plane normal
-        // Frustum.cpp:54-59
-        let mut negative_v = bbox.max;
+        // Frustum.cpp:58
+        let mut negitive_v = box_.max;
+        // Frustum.cpp:59-60
         if self.m_abcd[0] > 0.0 {
-            negative_v.x = bbox.min.x;
+            negitive_v.x = box_.min.x();
         }
+        // Frustum.cpp:61-62
         if self.m_abcd[1] > 0.0 {
-            negative_v.y = bbox.min.y;
+            negitive_v.y = box_.min.y();
         }
+        // Frustum.cpp:63-64
         if self.m_abcd[2] > 0.0 {
-            negative_v.z = bbox.min.z;
+            negitive_v.z = box_.min.z();
         }
 
-        // Check if negative vertex is behind plane
-        // Frustum.cpp:61
-        let dis_negative = self.distance(&negative_v);
+        // Frustum.cpp:66
+        let dis_negitive = self.distance(&[
+            negitive_v.x as f32,
+            negitive_v.y as f32,
+            negitive_v.z as f32,
+        ]);
 
-        // If negative vertex is also behind, box crosses the plane
-        // Frustum.cpp:63-66
-        if dis_negative < 0.0 {
-            return PlaneIntersects::Cross;
+        // Frustum.cpp:68-71
+        if dis_negitive < 0.0 {
+            return PlaneIntersects::IntersectsCross;
         }
 
-        // Otherwise, entire box is in front of plane
-        // Frustum.cpp:68
-        PlaneIntersects::Front
+        // Frustum.cpp:73
+        PlaneIntersects::IntersectsFront
     }
 
-    /// Test intersection of plane with a point
-    /// Frustum.cpp:77-83
-    pub fn intersects_point(&self, p0: &Point3F) -> PlaneIntersects {
-        // Calculate distance from point to plane
-        // Frustum.cpp:79
+    /// Test intersection of plane with a point (world space).
+    /// Frustum.cpp:75-82
+    pub fn intersects_point(&self, p0: &Vec3f) -> PlaneIntersects {
+        // Frustum.cpp:77
         let d = self.distance(p0);
-
-        // Frustum.cpp:80-82
+        // Frustum.cpp:78-80
         if d == 0.0 {
-            PlaneIntersects::Tangent
-        } else if d > 0.0 {
-            PlaneIntersects::Front
+            return PlaneIntersects::IntersectsTangent;
+        }
+        // Frustum.cpp:81
+        if d > 0.0 {
+            PlaneIntersects::IntersectsFront
         } else {
-            PlaneIntersects::Back
+            PlaneIntersects::IntersectsBack
         }
     }
 
-    /// Test intersection of plane with a line segment
-    /// Frustum.cpp:84-96
-    pub fn intersects_segment(&self, p0: &Point3F, p1: &Point3F) -> PlaneIntersects {
-        // Test both endpoints
-        // Frustum.cpp:86-87
+    /// Test intersection of plane with a line segment (world space).
+    /// Frustum.cpp:83-95
+    pub fn intersects_segment(&self, p0: &Vec3f, p1: &Vec3f) -> PlaneIntersects {
+        // Frustum.cpp:85
         let state0 = self.intersects_point(p0);
+        // Frustum.cpp:86
         let state1 = self.intersects_point(p1);
-
-        // If both endpoints have same state, segment has that state
-        // Frustum.cpp:88-90
+        // Frustum.cpp:87-89
         if state0 == state1 {
             return state0;
         }
-
-        // If either endpoint is tangent, segment is tangent
-        // Frustum.cpp:91-93
-        if state0 == PlaneIntersects::Tangent || state1 == PlaneIntersects::Tangent {
-            return PlaneIntersects::Tangent;
+        // Frustum.cpp:90-92
+        if state0 == PlaneIntersects::IntersectsTangent
+            || state1 == PlaneIntersects::IntersectsTangent
+        {
+            return PlaneIntersects::IntersectsTangent;
         }
 
-        // Otherwise, endpoints are on opposite sides, so segment crosses
-        // Frustum.cpp:95
-        PlaneIntersects::Cross
+        // Frustum.cpp:94
+        PlaneIntersects::IntersectsCross
     }
 
-    /// Test intersection of plane with a triangle
-    /// Frustum.cpp:97-111
-    pub fn intersects_triangle(&self, p0: &Point3F, p1: &Point3F, p2: &Point3F) -> PlaneIntersects {
-        // Test all three edges of the triangle
-        // Frustum.cpp:99-101
+    /// Test intersection of plane with a triangle (world space).
+    /// Frustum.cpp:96-110
+    pub fn intersects_triangle(&self, p0: &Vec3f, p1: &Vec3f, p2: &Vec3f) -> PlaneIntersects {
+        // Frustum.cpp:98
         let state0 = self.intersects_segment(p0, p1);
+        // Frustum.cpp:99
         let state1 = self.intersects_segment(p0, p2);
+        // Frustum.cpp:100
         let state2 = self.intersects_segment(p1, p2);
 
-        // If all edges have same state, triangle has that state
-        // Frustum.cpp:103-104
+        // Frustum.cpp:102-103
         if state0 == state1 && state0 == state2 {
             return state0;
         }
 
-        // If any edge crosses, triangle crosses
-        // Frustum.cpp:106-108
-        if state0 == PlaneIntersects::Cross
-            || state1 == PlaneIntersects::Cross
-            || state2 == PlaneIntersects::Cross
+        // Frustum.cpp:105-107
+        if state0 == PlaneIntersects::IntersectsCross
+            || state1 == PlaneIntersects::IntersectsCross
+            || state2 == PlaneIntersects::IntersectsCross
         {
-            return PlaneIntersects::Cross;
+            return PlaneIntersects::IntersectsCross;
         }
 
-        // Otherwise, triangle is tangent
-        // Frustum.cpp:110
-        PlaneIntersects::Tangent
+        // Frustum.cpp:109
+        PlaneIntersects::IntersectsTangent
     }
 }
 
@@ -279,17 +290,17 @@ impl Default for Plane {
     }
 }
 
-/// A view frustum defined by 6 planes (left, right, top, bottom, near, far)
-/// Frustum.hpp:8-44
+/// A view frustum defined by 6 planes.
+/// Frustum.hpp:7-43
 #[derive(Debug, Clone)]
 pub struct Frustum {
-    /// The 6 planes defining the frustum
-    /// Frustum.hpp:43
+    /// The 6 planes defining the frustum.
+    /// Frustum.hpp:42
     pub planes: [Plane; 6],
 }
 
 impl Frustum {
-    /// Create a new frustum with default planes
+    /// Create a new frustum with default planes.
     /// Frustum.hpp:10
     pub fn new() -> Self {
         Self {
@@ -304,65 +315,59 @@ impl Frustum {
         }
     }
 
-    /// Test if frustum intersects with an axis-aligned bounding box
-    /// Returns false if box is completely outside frustum (culled)
-    /// Frustum.cpp:113-123
-    pub fn intersects_box(&self, bbox: &BoundingBox3F) -> bool {
-        // Test box against each plane
-        // Frustum.cpp:115-120
+    /// Test if frustum intersects with an axis-aligned bounding box.
+    /// Frustum.cpp:112-122
+    pub fn intersects_box(&self, box_: &BoundingBox3F) -> bool {
+        // Frustum.cpp:114-119
         for plane in &self.planes {
-            let rt = plane.intersects_box(bbox);
-            // If box is behind any plane, it's outside the frustum
-            // Frustum.cpp:117-119
-            if rt == PlaneIntersects::Back {
+            // Frustum.cpp:115
+            let rt = plane.intersects_box(box_);
+            // Frustum.cpp:116-118
+            if PlaneIntersects::IntersectsBack == rt {
                 return false;
             }
         }
 
-        // Box intersects or is inside frustum
-        // Frustum.cpp:122
+        // Frustum.cpp:121
         true
     }
 
-    /// Test if frustum intersects with a point
-    /// Frustum.cpp:125-131
-    pub fn intersects_point(&self, p0: &Point3F) -> bool {
-        // Test point against each plane
-        // Frustum.cpp:126-128
+    /// Test if frustum intersects with a point (world space).
+    /// Frustum.cpp:124-129
+    pub fn intersects_point(&self, p0: &Vec3f) -> bool {
+        // Frustum.cpp:125-127
         for plane in &self.planes {
-            if plane.intersects_point(p0) == PlaneIntersects::Back {
+            if plane.intersects_point(p0) == PlaneIntersects::IntersectsBack {
                 return false;
             }
         }
-        // Frustum.cpp:129
+        // Frustum.cpp:128
         true
     }
 
-    /// Test if frustum intersects with a line segment
-    /// Frustum.cpp:133-143
-    pub fn intersects_segment(&self, p0: &Point3F, p1: &Point3F) -> bool {
-        // Test segment against each plane
-        // Frustum.cpp:135-140
+    /// Test if frustum intersects with a line segment (world space).
+    /// Frustum.cpp:131-139
+    pub fn intersects_segment(&self, p0: &Vec3f, p1: &Vec3f) -> bool {
+        // Frustum.cpp:133-138
         for plane in &self.planes {
-            if plane.intersects_segment(p0, p1) == PlaneIntersects::Back {
+            if plane.intersects_segment(p0, p1) == PlaneIntersects::IntersectsBack {
                 return false;
             }
         }
-        // Frustum.cpp:141
+        // Frustum.cpp:138
         true
     }
 
-    /// Test if frustum intersects with a triangle
-    /// Frustum.cpp:145-155
-    pub fn intersects_triangle(&self, p0: &Point3F, p1: &Point3F, p2: &Point3F) -> bool {
-        // Test triangle against each plane
-        // Frustum.cpp:147-152
+    /// Test if frustum intersects with a triangle (world space).
+    /// Frustum.cpp:141-149
+    pub fn intersects_triangle(&self, p0: &Vec3f, p1: &Vec3f, p2: &Vec3f) -> bool {
+        // Frustum.cpp:143-148
         for plane in &self.planes {
-            if plane.intersects_triangle(p0, p1, p2) == PlaneIntersects::Back {
+            if plane.intersects_triangle(p0, p1, p2) == PlaneIntersects::IntersectsBack {
                 return false;
             }
         }
-        // Frustum.cpp:153
+        // Frustum.cpp:148
         true
     }
 }
@@ -397,10 +402,10 @@ mod tests {
     }
 
     #[test]
-    fn test_plane_normalize() {
+    fn test_plane_normailze() {
         let mut plane = Plane::new();
         plane.set_abcd(3.0, 4.0, 0.0, 5.0);
-        plane.normalize();
+        plane.normailze();
         let abcd = plane.get_abcd();
         let mag = (abcd[0] * abcd[0] + abcd[1] * abcd[1] + abcd[2] * abcd[2]).sqrt();
         assert!((mag - 1.0).abs() < 1e-6);
@@ -412,11 +417,11 @@ mod tests {
         // Plane: z = 0 (xy-plane)
         plane.set_abcd(0.0, 0.0, 1.0, 0.0);
 
-        let p1 = Point3F::new(0.0, 0.0, 5.0);
+        let p1: Vec3f = [0.0, 0.0, 5.0];
         let d1 = plane.distance(&p1);
         assert_eq!(d1, 5.0);
 
-        let p2 = Point3F::new(0.0, 0.0, -3.0);
+        let p2: Vec3f = [0.0, 0.0, -3.0];
         let d2 = plane.distance(&p2);
         assert_eq!(d2, -3.0);
     }
@@ -426,14 +431,23 @@ mod tests {
         let mut plane = Plane::new();
         plane.set_abcd(0.0, 0.0, 1.0, -1.0); // z = 1
 
-        let p_front = Point3F::new(0.0, 0.0, 2.0);
-        assert_eq!(plane.intersects_point(&p_front), PlaneIntersects::Front);
+        let p_front: Vec3f = [0.0, 0.0, 2.0];
+        assert_eq!(
+            plane.intersects_point(&p_front),
+            PlaneIntersects::IntersectsFront
+        );
 
-        let p_back = Point3F::new(0.0, 0.0, 0.0);
-        assert_eq!(plane.intersects_point(&p_back), PlaneIntersects::Back);
+        let p_back: Vec3f = [0.0, 0.0, 0.0];
+        assert_eq!(
+            plane.intersects_point(&p_back),
+            PlaneIntersects::IntersectsBack
+        );
 
-        let p_on = Point3F::new(0.0, 0.0, 1.0);
-        assert_eq!(plane.intersects_point(&p_on), PlaneIntersects::Tangent);
+        let p_on: Vec3f = [0.0, 0.0, 1.0];
+        assert_eq!(
+            plane.intersects_point(&p_on),
+            PlaneIntersects::IntersectsTangent
+        );
     }
 
     #[test]
@@ -441,13 +455,19 @@ mod tests {
         let mut plane = Plane::new();
         plane.set_abcd(0.0, 0.0, 1.0, 0.0); // z = 0
 
-        let p1 = Point3F::new(0.0, 0.0, 1.0);
-        let p2 = Point3F::new(0.0, 0.0, -1.0);
-        assert_eq!(plane.intersects_segment(&p1, &p2), PlaneIntersects::Cross);
+        let p1: Vec3f = [0.0, 0.0, 1.0];
+        let p2: Vec3f = [0.0, 0.0, -1.0];
+        assert_eq!(
+            plane.intersects_segment(&p1, &p2),
+            PlaneIntersects::IntersectsCross
+        );
 
-        let p3 = Point3F::new(0.0, 0.0, 1.0);
-        let p4 = Point3F::new(0.0, 0.0, 2.0);
-        assert_eq!(plane.intersects_segment(&p3, &p4), PlaneIntersects::Front);
+        let p3: Vec3f = [0.0, 0.0, 1.0];
+        let p4: Vec3f = [0.0, 0.0, 2.0];
+        assert_eq!(
+            plane.intersects_segment(&p3, &p4),
+            PlaneIntersects::IntersectsFront
+        );
     }
 
     #[test]
@@ -459,8 +479,7 @@ mod tests {
     #[test]
     fn test_frustum_intersects_point() {
         let mut frustum = Frustum::new();
-        // Set up a simple frustum: all planes pass through origin, normals point outward
-        // This creates a frustum that contains points near the origin
+        // Set up a simple frustum from the clip planes.
         for i in 0..6 {
             frustum.planes[i].set_abcd(
                 FRUSTUM_CLIP_PLANE[i][0],
@@ -470,7 +489,7 @@ mod tests {
             );
         }
 
-        let p_inside = Point3F::new(0.0, 0.0, 0.0);
+        let p_inside: Vec3f = [0.0, 0.0, 0.0];
         assert!(frustum.intersects_point(&p_inside));
     }
 

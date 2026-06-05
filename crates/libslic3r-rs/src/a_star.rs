@@ -1,342 +1,335 @@
 //! A* pathfinding algorithm implementation
 //!
-//! This module provides a generic A* search algorithm that can work with any
-//! domain (grids, point clouds, graphs, etc.) by implementing the `TracerTraits` trait.
+//! C++ Reference:
+//! - BambuStudio/src/libslic3r/AStar.hpp
 //!
-//! C++ Reference: AStar.hpp
+//! This is a faithful 1:1 line-by-line port of the header-only `Slic3r::astar`
+//! namespace. The C++ implementation is fully templated on a `Tracer` type that
+//! describes the search domain (grid, point cloud, graph, ...) via the
+//! `TracerTraits_` traits struct. Rust models this with the [`TracerTraits`]
+//! trait.
+//!
+//! The open set is the ported [`MutablePriorityQueue`], constructed via
+//! `make_mutable_priority_queue::<size_t, true>` in C++. Its comparison
+//! predicate reads the `f()` score out of the node cache, and its index setter
+//! writes the live `queue_id` back into the cache. To share the node cache
+//! between the queue's closures and `search_route`, the cache is wrapped in an
+//! `Rc<RefCell<..>>`, preserving the exact heap behaviour (same comparisons,
+//! same `push` vs `update` decisions) as the C++ raw-reference closures.
 
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
-/// Sentinel value indicating no assignment (equivalent to SIZE_MAX in C++)
-/// AStar.hpp:45
-pub const UNASSIGNED: usize = usize::MAX;
+use crate::mutable_priority_queue::{make_mutable_priority_queue, INVALID_QUEUE_ID};
 
-/// Trait defining the interface for A* algorithm tracer implementations
-/// AStar.hpp:16-41
+// AStar.hpp:11-12
+// Borrowed from C++20
+// template<class T> using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<T>>;
+// (Not needed in Rust; the traits-based dispatch below handles cv/ref removal.)
+
+/// Input interface for the Astar algorithm. Specialize this struct for a
+/// particular type and implement all the 4 methods and specify the Node type
+/// to register the new type for the astar implementation.
+/// AStar.hpp:14-39 (TracerTraits_)
 pub trait TracerTraits {
-    /// The type of node used by this tracer (e.g., a point in space, graph vertex, etc.)
+    // AStar.hpp:19-20
+    /// The type of a node used by this tracer. Usually a point in space.
     type Node: Clone;
 
-    /// Call the provided function for every node reachable from the source node
-    /// AStar.hpp:23
+    // AStar.hpp:22-24
+    /// Call fn for every new node reachable from node 'src'. fn should have the
+    /// candidate node as its only argument.
     fn foreach_reachable<F>(&self, src: &Self::Node, f: F)
     where
         F: FnMut(&Self::Node) -> bool;
 
-    /// Get the distance from node 'a' to node 'b' (the g value in A* terminology)
-    /// AStar.hpp:27
+    // AStar.hpp:26-28
+    /// Get the distance from node 'a' to node 'b'. This is sometimes referred
+    /// to as the g value of a node in AStar context.
     fn distance(&self, a: &Self::Node, b: &Self::Node) -> f32;
 
-    /// Get the estimated distance heuristic from node 'n' to the destination (the h value)
-    /// AStar.hpp:32
+    // AStar.hpp:30-35
+    /// Get the estimated distance heuristic from node 'n' to the destination.
+    /// This is referred to as the h value in AStar context.
+    /// If node 'n' is the goal, this function should return a negative value.
+    /// Note that this heuristic should be admissible (never bigger than the real
+    /// cost) in order for Astar to work.
     fn goal_heuristic(&self, n: &Self::Node) -> f32;
 
-    /// Return a unique identifier (hash) for the given node
-    /// AStar.hpp:35
+    // AStar.hpp:37-38
+    /// Return a unique identifier (hash) for node 'n'.
     fn unique_id(&self, n: &Self::Node) -> usize;
 }
 
-/// Queue node structure tracking A* scores (g, h, f)
-/// AStar.hpp:47-59
+// AStar.hpp:42
+// Helper definition to get the node type of a tracer
+// template<class T> using TracerNodeT = typename TracerTraits_<remove_cvref_t<T>>::Node;
+// In Rust this is `<T as TracerTraits>::Node`.
+
+/// AStar.hpp:44
+/// constexpr auto Unassigned = std::numeric_limits<size_t>::max();
+pub const UNASSIGNED: usize = usize::MAX;
+
+/// Queue node. Keeps track of scores g, and h
+/// AStar.hpp:46-58 (template<class Tracer> struct QNode)
 #[derive(Debug, Clone)]
 pub struct QNode<N> {
-    /// The actual node data
-    /// AStar.hpp:49
+    // AStar.hpp:48
+    /// The actual node itself
     pub node: N,
 
-    /// Position in the open queue or UNASSIGNED if closed
-    /// AStar.hpp:50
+    // AStar.hpp:49
+    /// Position in the open queue or Unassigned if closed
     pub queue_id: usize,
 
-    /// Unique ID of the parent node, or UNASSIGNED if no parent
-    /// AStar.hpp:51
+    // AStar.hpp:50
+    /// unique id of the parent or Unassigned
     pub parent: usize,
 
-    /// Cost from start to this node (g value)
-    /// AStar.hpp:53
+    // AStar.hpp:52
     pub g: f32,
-
-    /// Estimated cost from this node to goal (h value)
-    /// AStar.hpp:53
     pub h: f32,
 }
 
-/// QNode implementation methods
-/// AStar.hpp:56-59
 impl<N> QNode<N> {
-    /// Create a new queue node
-    /// AStar.hpp:56-59
-    pub fn new(node: N, parent: usize, g: f32, h: f32) -> Self {
+    /// AStar.hpp:55-57
+    /// QNode(TracerNodeT<Tracer> n = {}, size_t p = Unassigned,
+    ///       float gval = std::numeric_limits<float>::infinity(), float hval = 0.f)
+    ///     : node{std::move(n)}, parent{p}, queue_id{InvalidQueueID}, g{gval}, h{hval}
+    pub fn new(n: N, p: usize, gval: f32, hval: f32) -> Self {
         Self {
-            node,
-            queue_id: UNASSIGNED,
-            parent,
-            g,
-            h,
+            node: n,
+            parent: p,
+            queue_id: INVALID_QUEUE_ID,
+            g: gval,
+            h: hval,
         }
     }
 
-    /// Calculate the f-score (total estimated cost)
-    /// AStar.hpp:54
+    // AStar.hpp:53
+    /// float f() const { return g + h; }
     pub fn f(&self) -> f32 {
         self.g + self.h
     }
 }
 
-/// Helper struct for priority queue ordering (min-heap based on f-score)
-/// AStar.hpp:84-87
-#[derive(Debug, Clone)]
-struct PQEntry {
-    id: usize,
-    f_score: f32,
-}
-
-/// PartialEq implementation for PQEntry
-/// AStar.hpp:84-87
-impl PartialEq for PQEntry {
-    /// Compare two priority queue entries for equality based on f-score
-    /// AStar.hpp:84-87
-    fn eq(&self, other: &Self) -> bool {
-        self.f_score == other.f_score
-    }
-}
-
-/// Eq implementation for PQEntry
-/// AStar.hpp:84-87
-impl Eq for PQEntry {}
-
-/// PartialOrd implementation for PQEntry (min-heap using reverse ordering)
-/// AStar.hpp:84-87
-impl PartialOrd for PQEntry {
-    /// Compare two priority queue entries for ordering (reversed for min-heap)
-    /// AStar.hpp:84-87
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // Reverse order for min-heap (BinaryHeap is max-heap by default)
-        other.f_score.partial_cmp(&self.f_score)
-    }
-}
-
-/// Ord implementation for PQEntry
-/// AStar.hpp:84-87
-impl Ord for PQEntry {
-    /// Total ordering for priority queue entries
-    /// AStar.hpp:84-87
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
-    }
-}
-
-/// Run the A* search algorithm on a tracer implementation
-/// AStar.hpp:77-155
+/// Run the AStar algorithm on a tracer implementation.
+/// The 'tracer' argument encapsulates the domain (grid, point cloud, etc...)
+/// The 'source' argument is the starting node.
+/// The 'out' argument is the output iterator into which the output nodes are
+/// written. For performance reasons, the order is reverse, from the destination
+/// to the source -- (destination included, source is not).
+/// The 'cached_nodes' argument is an optional associative container to hold a
+/// QNode entry for each visited node. Any compatible container can be used
+/// (like std::map or maps with different allocators, even a sufficiently large
+/// std::vector).
+///
+/// Note that no destination node is given in the signature. The tracer's
+/// goal_heuristic() method should return a negative value if a node is a
+/// destination node.
+///
+/// AStar.hpp:60-153 (template ... bool search_route(...))
+///
+/// The C++ writes the result through an output iterator in reverse order
+/// (destination first, source excluded). This Rust port collects that same
+/// reverse-order sequence into `out` (push order == C++ `*out = ...; ++out;`)
+/// and returns the C++ boolean as `out.is_empty() == false` is *not* used;
+/// the boolean is returned directly.
 pub fn search_route<T>(
     tracer: &T,
     source: &T::Node,
-    cached_nodes: Option<HashMap<usize, QNode<T::Node>>>,
-) -> Option<Vec<T::Node>>
+    out: &mut Vec<T::Node>,
+    cached_nodes: HashMap<usize, QNode<T::Node>>,
+) -> bool
 where
     T: TracerTraits,
-    T::Node: Clone,
 {
-    // Initialize the node cache with the provided map or create a new one
-    // AStar.hpp:77
-    // AStar.hpp:77
-    let mut cached_nodes = cached_nodes.unwrap_or_else(HashMap::new);
+    // AStar.hpp:77-79
+    // using Node = TracerNodeT<Tracer>;
+    // using QNode = QNode<Tracer>;
+    // using TracerTraits = TracerTraits_<remove_cvref_t<Tracer>>;
+    //
+    // The node cache is shared by reference between the queue's closures
+    // (LessPred / index setter) and this routine, matching the C++ semantics
+    // where both capture `cached_nodes` by reference.
+    let cached_nodes: Rc<RefCell<HashMap<usize, QNode<T::Node>>>> =
+        Rc::new(RefCell::new(cached_nodes));
 
-    // Create the priority queue (min-heap based on f-score)
-    // AStar.hpp:86
-    // AStar.hpp:86
-    let mut qopen: BinaryHeap<PQEntry> = BinaryHeap::new();
+    // AStar.hpp:81-85
+    // struct LessPred { NodeMap &m;
+    //     bool operator()(size_t node_a, size_t node_b) { return m[node_a].f() < m[node_b].f(); } };
+    let less_pred = {
+        let m = Rc::clone(&cached_nodes);
+        move |node_a: &usize, node_b: &usize| -> bool {
+            let map = m.borrow();
+            map[node_a].f() < map[node_b].f()
+        }
+    };
 
-    // Create initial node with source position, no parent, g=0
-    // AStar.hpp:88
-    // AStar.hpp:88
+    // AStar.hpp:87
+    // auto qopen = make_mutable_priority_queue<size_t, true>(
+    //     [&cached_nodes](size_t el, size_t qidx) { cached_nodes[el].queue_id = qidx; },
+    //     LessPred{cached_nodes});
+    let index_setter = {
+        let m = Rc::clone(&cached_nodes);
+        move |el: &usize, qidx: usize| {
+            m.borrow_mut().get_mut(el).unwrap().queue_id = qidx;
+        }
+    };
+    let mut qopen = make_mutable_priority_queue::<usize, _, _>(true, index_setter, less_pred);
+
+    // AStar.hpp:89-92
+    // QNode initial{source, /*parent = */ Unassigned, /*g = */ 0.f};
+    // size_t source_id = TracerTraits::unique_id(tracer, source);
+    // cached_nodes[source_id] = initial;
+    // qopen.push(source_id);
     let initial = QNode::new(source.clone(), UNASSIGNED, 0.0, 0.0);
-
-    // Get unique ID for source node and store in cache
-    // AStar.hpp:89-90
-    // AStar.hpp:89
     let source_id = tracer.unique_id(source);
-    // AStar.hpp:90
-    cached_nodes.insert(source_id, initial);
+    cached_nodes.borrow_mut().insert(source_id, initial);
+    qopen.push(source_id);
 
-    // Push source onto the open queue
-    // AStar.hpp:91
-    // AStar.hpp:91
-    qopen.push(PQEntry {
-        id: source_id,
-        f_score: 0.0,
-    });
+    // AStar.hpp:94
+    // size_t goal_id = TracerTraits::goal_heuristic(tracer, source) < 0.f ? source_id : Unassigned;
+    let mut goal_id = if tracer.goal_heuristic(source) < 0.0 {
+        source_id
+    } else {
+        UNASSIGNED
+    };
 
-    // Check if source is already the goal
-    // AStar.hpp:93
-    // AStar.hpp:93
-    let mut goal_id =
-        // AStar.hpp:93
-        if tracer.goal_heuristic(source) < 0.0 {
-            source_id
-        } else {
-            UNASSIGNED
+    // AStar.hpp:96
+    // while (goal_id == Unassigned && !qopen.empty()) {
+    while goal_id == UNASSIGNED && !qopen.is_empty() {
+        // AStar.hpp:97-99
+        // size_t q_id = qopen.top();
+        // qopen.pop();
+        // QNode &q = cached_nodes[q_id];
+        let q_id = *qopen.top().unwrap();
+        qopen.pop();
+
+        // The current node's scalar fields are snapshotted here. `q` is a
+        // reference into `cached_nodes` in C++; the only fields read inside the
+        // closure below are `q.node`, `q.g` and the captured `q_id`.
+        let (q_node, q_g) = {
+            let map = cached_nodes.borrow();
+            let q = &map[&q_id];
+            // AStar.hpp:102
+            // This should absolutely be initialized in the cache already
+            // assert(!std::isinf(q.g));
+            debug_assert!(!q.g.is_infinite());
+            (q.node.clone(), q.g)
         };
 
-    // Main A* search loop - continue until goal found or queue empty
-    // AStar.hpp:95
-    while goal_id == UNASSIGNED && !qopen.is_empty() {
-        // Get the node with lowest f-score from the open queue
-        // AStar.hpp:96-97
-        // AStar.hpp:96-97
-        let q_id =
-            // AStar.hpp:96-97
-            match qopen.pop() {
-                Some(entry) => entry.id,
-                None => break,
-            };
-
-        // Get reference to current node (must exist in cache)
-        // AStar.hpp:98
-        // AStar.hpp:98
-        let q_g = cached_nodes[&q_id].g;
-        // AStar.hpp:98
-        let q_node = cached_nodes[&q_id].node.clone();
-
-        // Verify node is initialized (g should not be infinite)
-        // AStar.hpp:101
-        // AStar.hpp:101
-        debug_assert!(q_g.is_finite(), "Node g-value should be finite");
-
-        // Explore all reachable neighbors from current node
-        // AStar.hpp:103
-        // AStar.hpp:103
-        let mut found_goal = false;
-        // AStar.hpp:103
+        // AStar.hpp:104
+        // TracerTraits::foreach_reachable(tracer, q.node, [&](const Node &succ_nd) {
         tracer.foreach_reachable(&q_node, |succ_nd| {
-            // Early exit if goal already found
-            // AStar.hpp:104
-            // AStar.hpp:104
+            // AStar.hpp:105
+            // if (goal_id != Unassigned) return true;
             if goal_id != UNASSIGNED {
-                // AStar.hpp:104
                 return true;
             }
 
-            // Calculate heuristic for successor node
-            // AStar.hpp:106
-            // AStar.hpp:106
+            // AStar.hpp:107-110
+            // float  h       = TracerTraits::goal_heuristic(tracer, succ_nd);
+            // float  dst     = TracerTraits::distance(tracer, q.node, succ_nd);
+            // size_t succ_id = TracerTraits::unique_id(tracer, succ_nd);
+            // QNode  qsucc_nd{succ_nd, q_id, q.g + dst, h};
             let h = tracer.goal_heuristic(succ_nd);
-
-            // Calculate distance from current to successor
-            // AStar.hpp:107
-            // AStar.hpp:107
             let dst = tracer.distance(&q_node, succ_nd);
-
-            // Get unique ID for successor
-            // AStar.hpp:108
-            // AStar.hpp:108
             let succ_id = tracer.unique_id(succ_nd);
-
-            // Create queue node for successor with updated g-score
-            // AStar.hpp:109
-            // AStar.hpp:109
             let qsucc_nd = QNode::new(succ_nd.clone(), q_id, q_g + dst, h);
 
-            // Check if this successor is the goal (negative heuristic)
-            // AStar.hpp:111-114
-            // AStar.hpp:111
-            // AStar.hpp:111
+            // AStar.hpp:112
+            // if (h < 0.f) {
             if h < 0.0 {
-                // AStar.hpp:112
+                // AStar.hpp:113-114
+                // goal_id               = succ_id;
+                // cached_nodes[succ_id] = qsucc_nd;
                 goal_id = succ_id;
-                // AStar.hpp:113
-                cached_nodes.insert(succ_id, qsucc_nd);
-                // AStar.hpp:113
-                found_goal = true;
+                cached_nodes.borrow_mut().insert(succ_id, qsucc_nd);
             } else {
-                // Get or create entry for this successor in cache
-                // AStar.hpp:116
-                // AStar.hpp:116
-                let prev_g =
-                    // AStar.hpp:116
-                    cached_nodes
-                        .get(&succ_id)
-                        .map(|n| n.g)
-                        .unwrap_or(f32::INFINITY);
+                // AStar.hpp:116-117
+                // If succ_id is not in cache, it gets created with g = infinity
+                // QNode &prev_nd = cached_nodes[succ_id];
+                //
+                // Snapshot the previous g (defaulting to +inf as the default
+                // QNode constructor does) before any mutation.
+                let prev_g = {
+                    let map = cached_nodes.borrow();
+                    match map.get(&succ_id) {
+                        Some(prev_nd) => prev_nd.g,
+                        None => f32::INFINITY,
+                    }
+                };
 
-                // If new route is better than previous, update
-                // AStar.hpp:118
-                // AStar.hpp:118
-                // AStar.hpp:118
+                // AStar.hpp:119
+                // if (qsucc_nd.g < prev_nd.g) {
                 if qsucc_nd.g < prev_g {
-                    // Update cache with new better route
-                    // AStar.hpp:124
-                    // AStar.hpp:124
-                    let f_score = qsucc_nd.f();
-                    // AStar.hpp:124
-                    cached_nodes.insert(succ_id, qsucc_nd);
+                    // new route is better, apply it:
 
-                    // Add to priority queue (no update operation needed with BinaryHeap)
-                    // AStar.hpp:126-130
-                    // AStar.hpp:126
-                    qopen.push(PQEntry {
-                        id: succ_id,
-                        f_score,
-                    });
+                    // AStar.hpp:122-123
+                    // Save the old queue id, it would be lost after the next line
+                    // size_t queue_id = prev_nd.queue_id;
+                    let queue_id = {
+                        let map = cached_nodes.borrow();
+                        match map.get(&succ_id) {
+                            Some(prev_nd) => prev_nd.queue_id,
+                            None => INVALID_QUEUE_ID,
+                        }
+                    };
+
+                    // AStar.hpp:125-126
+                    // The cache needs to be updated either way
+                    // prev_nd = qsucc_nd;
+                    cached_nodes.borrow_mut().insert(succ_id, qsucc_nd);
+
+                    // AStar.hpp:128-132
+                    // if (queue_id == InvalidQueueID)
+                    //     // was in closed or unqueued, rescheduling
+                    //     qopen.push(succ_id);
+                    // else // was in open, updating
+                    //     qopen.update(queue_id);
+                    if queue_id == INVALID_QUEUE_ID {
+                        // was in closed or unqueued, rescheduling
+                        qopen.push(succ_id);
+                    } else {
+                        // was in open, updating
+                        qopen.update(queue_id);
+                    }
                 }
             }
 
-            // Signal whether to continue iteration (stop if goal found)
-            // AStar.hpp:135
-            // AStar.hpp:135
-            found_goal
+            // AStar.hpp:136
+            // return goal_id != Unassigned;
+            goal_id != UNASSIGNED
         });
-
-        // Break loop if goal was found
-        // AStar.hpp:95
-        if found_goal {
-            // AStar.hpp:95
-            break;
-        }
     }
 
-    // Write output path by backtracking from goal to source
-    // AStar.hpp:139-149
-    // AStar.hpp:139
-    // AStar.hpp:139
+    // AStar.hpp:140-150
+    // Write the output, do not reverse. Clients can do so if they need to.
+    // if (goal_id != Unassigned) {
+    //     const QNode *q = &cached_nodes[goal_id];
+    //     while (q->parent != Unassigned) {
+    //         assert(!std::isinf(q->g)); // Uninitialized nodes are NOT allowed
+    //         *out = q->node;
+    //         ++out;
+    //         q = &cached_nodes[q->parent];
+    //     }
+    // }
     if goal_id != UNASSIGNED {
-        // AStar.hpp:140
-        let mut path = Vec::new();
-        // AStar.hpp:140
-        let mut current_id = goal_id;
+        let map = cached_nodes.borrow();
+        let mut q = &map[&goal_id];
+        while q.parent != UNASSIGNED {
+            debug_assert!(!q.g.is_infinite()); // Uninitialized nodes are NOT allowed
 
-        // Backtrack from goal to source following parent links
-        // AStar.hpp:141-147
-        // AStar.hpp:141
-        // AStar.hpp:141
-        while current_id != UNASSIGNED {
-            // AStar.hpp:141
-            // AStar.hpp:141
-            if let Some(q) = cached_nodes.get(&current_id) {
-                // AStar.hpp:142
-                debug_assert!(q.g.is_finite(), "Path node g-value should be finite");
-                // AStar.hpp:143
-                path.push(q.node.clone());
-
-                // Move to parent node
-                // AStar.hpp:146
-                // AStar.hpp:146
-                current_id = q.parent;
-            } else {
-                // AStar.hpp:147
-                break;
-            }
+            out.push(q.node.clone());
+            q = &map[&q.parent];
         }
-
-        // Return path (in reverse order, from goal to source, excluding source)
-        // AStar.hpp:151
-        // AStar.hpp:151
-        Some(path)
-    } else {
-        // AStar.hpp:151
-        None
     }
+
+    // AStar.hpp:152
+    // return goal_id != Unassigned;
+    goal_id != UNASSIGNED
 }
 
 #[cfg(test)]
@@ -389,10 +382,9 @@ mod tests {
                     && neighbor.x < self.width
                     && neighbor.y >= 0
                     && neighbor.y < self.height
+                    && f(neighbor)
                 {
-                    if f(neighbor) {
-                        break;
-                    }
+                    break;
                 }
             }
         }
@@ -425,10 +417,10 @@ mod tests {
         };
 
         let source = GridNode { x: 0, y: 0 };
-        let path = search_route(&tracer, &source, None);
+        let mut path = Vec::new();
+        let found = search_route(&tracer, &source, &mut path, HashMap::new());
 
-        assert!(path.is_some());
-        let path = path.unwrap();
+        assert!(found);
         assert!(!path.is_empty());
         assert_eq!(path[0], GridNode { x: 3, y: 3 }); // First in path is goal
     }
@@ -442,10 +434,13 @@ mod tests {
         };
 
         let source = GridNode { x: 0, y: 0 };
-        let path = search_route(&tracer, &source, None);
+        let mut path = Vec::new();
+        let found = search_route(&tracer, &source, &mut path, HashMap::new());
 
-        // When source is goal, path should be empty (no moves needed)
-        assert!(path.is_some());
+        // When source is goal, search succeeds but path is empty (parent is
+        // Unassigned), matching C++ where the while loop never runs.
+        assert!(found);
+        assert!(path.is_empty());
     }
 
     #[test]
@@ -482,8 +477,10 @@ mod tests {
 
         let tracer = UnreachableTracer;
         let source = GridNode { x: 0, y: 0 };
-        let path = search_route(&tracer, &source, None);
+        let mut path = Vec::new();
+        let found = search_route(&tracer, &source, &mut path, HashMap::new());
 
-        assert!(path.is_none()); // No path possible
+        assert!(!found); // No path possible
+        assert!(path.is_empty());
     }
 }

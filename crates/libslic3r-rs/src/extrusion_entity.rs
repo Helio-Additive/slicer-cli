@@ -549,15 +549,28 @@ impl ExtrusionEntityCollection {
         self.orig_indices.clear();
     }
 
+    // ExtrusionEntityCollection.cpp:67
+    // void ExtrusionEntityCollection::reverse()
     pub fn reverse(&mut self) {
-        self.entities.reverse();
+        // ExtrusionEntityCollection.cpp:69-73
+        // for (ExtrusionEntity *ptr : this->entities)
+        //     // Don't reverse it if it's a loop, as it doesn't change anything in terms of elements ordering
+        //     // and caller might rely on winding order
+        //     if (! ptr->is_loop())
+        //         ptr->reverse();
         for entity in &mut self.entities {
             match entity {
+                // ExtrusionPath::is_loop() == false -> reverse
                 ExtrusionEntityType::Path(path) => path.reverse(),
-                ExtrusionEntityType::Loop(loop_) => loop_.reverse(),
+                // ExtrusionLoop::is_loop() == true -> do NOT reverse
+                ExtrusionEntityType::Loop(_) => {}
+                // ExtrusionEntityCollection::is_loop() == false -> reverse
                 ExtrusionEntityType::Collection(coll) => coll.reverse(),
             }
         }
+        // ExtrusionEntityCollection.cpp:74
+        // std::reverse(this->entities.begin(), this->entities.end());
+        self.entities.reverse();
     }
 
     pub fn first_point(&self) -> Option<Point> {
@@ -582,7 +595,12 @@ impl ExtrusionEntityCollection {
         })
     }
 
-    pub fn flatten(&self) -> Vec<&ExtrusionPath> {
+    /// Rust convenience helper (NOT a direct C++ port): returns references to all
+    /// `ExtrusionPath`s contained anywhere in this collection, descending into loops
+    /// and nested collections. For the faithful C++ `ExtrusionEntityCollection::flatten`
+    /// (which returns an `ExtrusionEntityCollection` and keeps loops intact), see
+    /// `crate::extrusion_entity_collection`.
+    pub fn flatten_paths(&self) -> Vec<&ExtrusionPath> {
         let mut result = Vec::new();
         for entity in &self.entities {
             match entity {
@@ -593,7 +611,7 @@ impl ExtrusionEntityCollection {
                     }
                 }
                 ExtrusionEntityType::Collection(coll) => {
-                    result.extend(coll.flatten());
+                    result.extend(coll.flatten_paths());
                 }
             }
         }

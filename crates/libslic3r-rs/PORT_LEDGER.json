@@ -491,7 +491,7 @@
     "rust": "crates/libslic3r-rs/src/zipper.rs",
     "rust_exists": true,
     "loc": 150,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -502,7 +502,7 @@
     "rust": "crates/libslic3r-rs/src/frustum.rs",
     "rust_exists": true,
     "loc": 151,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -513,7 +513,7 @@
     "rust": "crates/libslic3r-rs/src/by_object_print_data.rs",
     "rust_exists": false,
     "loc": 152,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -524,7 +524,7 @@
     "rust": "crates/libslic3r-rs/src/arc_fitter.rs",
     "rust_exists": true,
     "loc": 153,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -535,7 +535,7 @@
     "rust": "crates/libslic3r-rs/src/print_base.rs",
     "rust_exists": true,
     "loc": 155,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -546,7 +546,7 @@
     "rust": "crates/libslic3r-rs/src/a_star.rs",
     "rust_exists": true,
     "loc": 157,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -557,7 +557,7 @@
     "rust": "crates/libslic3r-rs/src/extrusion_entity_collection.rs",
     "rust_exists": true,
     "loc": 158,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -568,7 +568,7 @@
     "rust": "crates/libslic3r-rs/src/triangulate_wall.rs",
     "rust_exists": true,
     "loc": 159,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {

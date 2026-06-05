@@ -7,8 +7,19 @@
 //! This module provides a high-level interface for creating ZIP archives.
 //! It wraps the `zip` crate to provide an API similar to the C++ Zipper class.
 //!
-//! The C++ implementation uses miniz library; this Rust version uses the
-//! `zip` crate for better Rust ecosystem integration.
+//! The C++ implementation uses the miniz library (`mz_zip_writer_add_mem`);
+//! this Rust version uses the pure-Rust `zip` crate (deflate via `miniz_oxide`)
+//! so the port stays wasm-safe with no native/dylib dependency.
+//!
+//! DIVERGENCE (documented, not a logic bug): the local-file-header layout and
+//! the high-level control flow are mirrored 1:1, and the miniz compression
+//! levels are mapped faithfully (MZ_NO_COMPRESSION -> Stored,
+//! MZ_BEST_SPEED -> deflate level 1, MZ_BEST_COMPRESSION -> deflate level 9).
+//! However the raw deflate bitstream produced by `miniz_oxide` is NOT
+//! guaranteed byte-identical to miniz's `tdefl` for the compressed (FAST /
+//! TIGHT) levels. Stored entries (NO_COMPRESSION) are byte-identical.
+//! Achieving byte-exact deflate output for the compressed levels would require
+//! vendoring miniz itself (a native dependency), which is intentionally avoided.
 
 use crate::{Error, Result};
 use std::fs::File;
@@ -148,12 +159,27 @@ impl Zipper {
         Self::new(path, Compression::Fast)
     }
 
+    /// Whether the archive is still open for writing.
+    ///
+    /// miniz_extension.hpp:27-30 (MZ_Archive::is_alive) / Zipper.cpp:36-39
+    /// C++: bool is_alive()
+    /// C++: {
+    /// C++:     return arch.m_zip_mode != MZ_ZIP_MODE_WRITING_HAS_BEEN_FINALIZED;
+    /// C++: }
+    ///
+    /// In this Rust port the writer is consumed (taken) by `finalize()`, after
+    /// which the archive has been finalized; `writer` therefore being `None` is
+    /// the equivalent of `m_zip_mode == MZ_ZIP_MODE_WRITING_HAS_BEEN_FINALIZED`.
+    fn is_alive(&self) -> bool {
+        self.writer.is_some()
+    }
+
     /// Add a new entry (file) to the archive
     ///
     /// Zipper.hpp:48
     /// C++: void add_entry(const std::string& name);
     ///
-    /// Zipper.cpp:90-95
+    /// Zipper.cpp:87-93
     /// C++: void Zipper::add_entry(const std::string &name)
     /// C++: {
     /// C++:     if(!m_impl->is_alive()) return;
@@ -161,10 +187,15 @@ impl Zipper {
     /// C++:     m_entry = name;
     /// C++: }
     pub fn add_entry(&mut self, name: &str) -> Result<()> {
-        // Finish any previous entry
+        // Zipper.cpp:89
+        if !self.is_alive() {
+            return Ok(());
+        }
+
+        // Zipper.cpp:91 - finish previous business
         self.finish_entry()?;
 
-        // Store the new entry name
+        // Zipper.cpp:92 - store the new entry name
         self.current_entry = Some(name.to_string());
 
         Ok(())
@@ -175,7 +206,7 @@ impl Zipper {
     /// Zipper.hpp:51
     /// C++: void add_entry(const std::string& name, const void* data, size_t bytes);
     ///
-    /// Zipper.cpp:97-110
+    /// Zipper.cpp:95-112
     /// C++: void Zipper::add_entry(const std::string &name, const void *data, size_t l)
     /// C++: {
     /// C++:     if(!m_impl->is_alive()) return;
@@ -192,13 +223,22 @@ impl Zipper {
     /// C++:     m_data.clear();
     /// C++: }
     pub fn add_entry_with_data(&mut self, name: &str, data: &[u8]) -> Result<()> {
-        // Finish any previous entry
+        // Zipper.cpp:97
+        if !self.is_alive() {
+            return Ok(());
+        }
+
+        // Zipper.cpp:99 - finish previous business
         self.finish_entry()?;
 
-        // Create options with compression level
+        // Zipper.cpp:100-105 - select compression level from m_compression.
+        // The miniz level constants are folded into `create_file_options`:
+        //   NO_COMPRESSION   -> MZ_NO_COMPRESSION    (store, level 0)
+        //   FAST_COMPRESSION -> MZ_BEST_SPEED        (deflate, level 1)
+        //   TIGHT_COMPRESSION-> MZ_BEST_COMPRESSION  (deflate, level 9)
         let options = self.create_file_options();
 
-        // Write the entry directly
+        // Zipper.cpp:107-108 - mz_zip_writer_add_mem; blow up on failure.
         if let Some(ref mut writer) = self.writer {
             writer.start_file(name, options).map_err(|e| {
                 Error::IO(format!(
@@ -214,6 +254,10 @@ impl Zipper {
                 ))
             })?;
         }
+
+        // Zipper.cpp:110-111 - m_entry.clear(); m_data.clear();
+        self.current_entry = None;
+        self.buffer.clear();
 
         Ok(())
     }
@@ -258,7 +302,7 @@ impl Zipper {
     /// C++: /// file is up to minz after the erroneous write.
     /// C++: void finish_entry();
     ///
-    /// Zipper.cpp:112-133
+    /// Zipper.cpp:114-135
     /// C++: void Zipper::finish_entry()
     /// C++: {
     /// C++:     if(!m_impl->is_alive()) return;
@@ -278,12 +322,19 @@ impl Zipper {
     /// C++:     m_entry.clear();
     /// C++: }
     pub fn finish_entry(&mut self) -> Result<()> {
-        // Only write if we have both an entry name and buffered data
+        // Zipper.cpp:116
+        if !self.is_alive() {
+            return Ok(());
+        }
+
+        // Zipper.cpp:118 - only write if we have both an entry name and data.
         if let Some(ref entry_name) = self.current_entry {
             if !self.buffer.is_empty() {
+                // Zipper.cpp:119-125 - select compression (folded into options).
                 let options = self.create_file_options();
 
                 if let Some(ref mut writer) = self.writer {
+                    // Zipper.cpp:127-130 - mz_zip_writer_add_mem; blow up on failure.
                     writer.start_file(entry_name, options).map_err(|e| {
                         Error::IO(format!(
                             "Failed to start ZIP entry '{}' in '{}': {}",
@@ -301,7 +352,7 @@ impl Zipper {
             }
         }
 
-        // Clear state
+        // Zipper.cpp:133-134 - m_data.clear(); m_entry.clear();
         self.current_entry = None;
         self.buffer.clear();
 
@@ -310,10 +361,10 @@ impl Zipper {
 
     /// Finalize the ZIP archive
     ///
-    /// Zipper.hpp:89
+    /// Zipper.hpp:85
     /// C++: void finalize();
     ///
-    /// Zipper.cpp:135-141
+    /// Zipper.cpp:137-143
     /// C++: void Zipper::finalize()
     /// C++: {
     /// C++:     finish_entry();
@@ -321,10 +372,11 @@ impl Zipper {
     /// C++:         m_impl->blow_up();
     /// C++: }
     pub fn finalize(&mut self) -> Result<()> {
-        // Finish any pending entry
+        // Zipper.cpp:139 - finish any pending entry
         self.finish_entry()?;
 
-        // Finalize the archive
+        // Zipper.cpp:141-142 - if(m_impl->is_alive()) finalize the archive.
+        // Taking the writer leaves us in the finalized state (is_alive() == false).
         if let Some(mut writer) = self.writer.take() {
             writer.finish().map_err(|e| {
                 Error::IO(format!(
@@ -339,10 +391,10 @@ impl Zipper {
 
     /// Get the filename of the ZIP archive
     ///
-    /// Zipper.hpp:91
+    /// Zipper.hpp:87
     /// C++: const std::string & get_filename() const;
     ///
-    /// Zipper.cpp:143-146
+    /// Zipper.cpp:145-148
     /// C++: const std::string &Zipper::get_filename() const
     /// C++: {
     /// C++:     return m_impl->m_zipname;
@@ -368,7 +420,7 @@ impl Zipper {
 impl Drop for Zipper {
     /// Ensure the archive is finalized on drop
     ///
-    /// Zipper.cpp:56-69
+    /// Zipper.cpp:56-71
     /// C++: Zipper::~Zipper()
     /// C++: {
     /// C++:     if(m_impl->is_alive()) {
