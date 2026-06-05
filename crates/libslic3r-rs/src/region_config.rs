@@ -215,6 +215,34 @@ pub struct PrintRegionConfig {
     /// PrintConfig.hpp:971
     pub fuzzy_skin_point_distance: CoordF,
 
+    /// Fuzzy skin type (which contours/holes/walls are fuzzified).
+    /// PrintConfig.hpp:1052 (ConfigOptionEnum<FuzzySkinType> fuzzy_skin)
+    pub fuzzy_skin_type: FuzzySkinType,
+
+    /// Whether the first layer is fuzzified.
+    /// PrintConfig.hpp:1055 (ConfigOptionBool fuzzy_skin_first_layer)
+    pub fuzzy_skin_first_layer: bool,
+
+    /// Noise function driving the fuzzy displacement.
+    /// PrintConfig.hpp:1056 (ConfigOptionEnum<NoiseType> fuzzy_skin_noise_type)
+    pub fuzzy_skin_noise_type: NoiseType,
+
+    /// Noise scale (mm) for the procedural noise modules.
+    /// PrintConfig.hpp:1057 (ConfigOptionFloat fuzzy_skin_scale)
+    pub fuzzy_skin_scale: CoordF,
+
+    /// Octave count for fractal noise modules.
+    /// PrintConfig.hpp:1058 (ConfigOptionInt fuzzy_skin_octaves)
+    pub fuzzy_skin_octaves: i32,
+
+    /// Persistence for fractal noise modules.
+    /// PrintConfig.hpp:1059 (ConfigOptionFloat fuzzy_skin_persistence)
+    pub fuzzy_skin_persistence: CoordF,
+
+    /// How the fuzzy displacement is applied to extrusion lines.
+    /// PrintConfig.hpp:1060 (ConfigOptionEnum<FuzzySkinMode> fuzzy_skin_mode)
+    pub fuzzy_skin_displacement_mode: FuzzySkinDisplacementMode,
+
     // === Wall Generation Mode ===
     /// Perimeter generator mode (Classic or Arachne).
     /// BambuStudio: `wall_generator` / `perimeter_generator`.
@@ -658,6 +686,12 @@ impl PrintRegionConfig {
                     "external" => FuzzySkinMode::External,
                     _ => FuzzySkinMode::None,
                 };
+                self.fuzzy_skin_type = match value {
+                    "external" => FuzzySkinType::External,
+                    "all" => FuzzySkinType::All,
+                    "allwalls" => FuzzySkinType::AllWalls,
+                    _ => FuzzySkinType::None,
+                };
                 true
             }
             "fuzzy_skin_thickness" => {
@@ -759,6 +793,13 @@ impl Default for PrintRegionConfig {
             fuzzy_skin_mode: FuzzySkinMode::None,
             fuzzy_skin_thickness: 0.3,
             fuzzy_skin_point_distance: 0.8,
+            fuzzy_skin_type: FuzzySkinType::None,
+            fuzzy_skin_first_layer: false,
+            fuzzy_skin_noise_type: NoiseType::Classic,
+            fuzzy_skin_scale: 1.0,
+            fuzzy_skin_octaves: 4,
+            fuzzy_skin_persistence: 0.5,
+            fuzzy_skin_displacement_mode: FuzzySkinDisplacementMode::Displacement,
 
             // Wall Generation Mode
             wall_generator_mode: WallGeneratorMode::Classic,
@@ -819,6 +860,57 @@ pub enum FuzzySkinMode {
     /// Fuzzy skin on all perimeters
     /// PrintConfig.hpp:969
     All,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Fuzzy skin type (which walls/contours/holes get fuzzified).
+/// PrintConfig.hpp:46-52 (enum class FuzzySkinType)
+pub enum FuzzySkinType {
+    /// PrintConfig.hpp:47
+    #[default]
+    None,
+    /// PrintConfig.hpp:48
+    External,
+    /// PrintConfig.hpp:49
+    All,
+    /// PrintConfig.hpp:50
+    AllWalls,
+    /// PrintConfig.hpp:51
+    DisabledFuzzy,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Noise function used to drive the fuzzy-skin displacement.
+/// PrintConfig.hpp:54-60 (enum class NoiseType)
+pub enum NoiseType {
+    /// Classic uniform random noise (backward compatible).
+    /// PrintConfig.hpp:55
+    #[default]
+    Classic,
+    /// PrintConfig.hpp:56
+    Perlin,
+    /// PrintConfig.hpp:57
+    Billow,
+    /// PrintConfig.hpp:58
+    RidgedMulti,
+    /// PrintConfig.hpp:59
+    Voronoi,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// How the fuzzy displacement is applied to an extrusion line.
+/// PrintConfig.hpp:62-66 (enum class FuzzySkinMode)
+pub enum FuzzySkinDisplacementMode {
+    /// Move the centerline perpendicular to the path.
+    /// PrintConfig.hpp:63
+    #[default]
+    Displacement,
+    /// Vary the extrusion width instead of moving the centerline.
+    /// PrintConfig.hpp:64
+    Extrusion,
+    /// Combine displacement and width variation.
+    /// PrintConfig.hpp:65
+    Combined,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]

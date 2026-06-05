@@ -1,7 +1,14 @@
-**Progress: 47/278 units ported** (17%) · partial 3 · deferred 0
+# libslic3r C++ → Rust faithful port ledger
+
+**Progress: 74/278 units ported** (26%)  ·  partial 17  ·  deferred 0  ·  source of truth: `PORT_LEDGER.json`
+
+Each unit = one C++ `.cpp` (line-by-line port to the mirrored snake_case Rust file) or a header-only `.hpp`. Driven by the `libslic3r-systematic-port` workflow (one phase per file, build-gated, resumable).
+
+## By area
 
 | Area | Done | Total |
 |------|------|-------|
+| root | 64 | 152 |
 | Algorithm | 0 | 1 |
 | Arachne | 0 | 26 |
 | CSGMesh | 4 | 7 |
@@ -15,32 +22,31 @@
 | SLA | 0 | 20 |
 | Shape | 0 | 1 |
 | Support | 0 | 8 |
-| root | 37 | 152 |
 
 ## Next pending
 
-- [ ] `TryCatchSignalSEH.cpp` (43 loc) -> `crates/libslic3r-rs/src/try_catch_signal_seh.rs`
-- [ ] `ParameterUtils.cpp` (79 loc) -> `crates/libslic3r-rs/src/parameter_utils.rs`
-- [ ] `Surface.cpp` (96 loc) -> `crates/libslic3r-rs/src/surface.rs`
-- [ ] `MinAreaBoundingBox.cpp` (106 loc) -> `crates/libslic3r-rs/src/min_area_bounding_box.rs`
-- [ ] `FlushVolCalc.cpp` (130 loc) -> `crates/libslic3r-rs/src/flush_vol_calc.rs`
-- [ ] `ExPolygonCollection.cpp` (136 loc) -> `crates/libslic3r-rs/src/ex_polygon_collection.rs`
-- [ ] `OpenVDBUtils.cpp` (136 loc) -> `crates/libslic3r-rs/src/open_vdb_utils.rs`
-- [ ] `SlicesToTriangleMesh.cpp` (138 loc) -> `crates/libslic3r-rs/src/slices_to_triangle_mesh.rs`
-- [ ] `MinimumSpanningTree.cpp` (140 loc) -> `crates/libslic3r-rs/src/minimum_spanning_tree.rs`
-- [ ] `PrincipalComponents2D.cpp` (140 loc) -> `crates/libslic3r-rs/src/principal_components2_d.rs`
-- [ ] `MTUtils.hpp` (141 loc) -> `crates/libslic3r-rs/src/mt_utils.rs`
-- [ ] `NormalUtils.cpp` (142 loc) -> `crates/libslic3r-rs/src/normal_utils.rs`
-- [ ] `InternalBridgeDetector.cpp` (144 loc) -> `crates/libslic3r-rs/src/internal_bridge_detector.rs`
-- [ ] `AnyPtr.hpp` (144 loc) -> `crates/libslic3r-rs/src/any_ptr.rs`
-- [ ] `Platform.cpp` (146 loc) -> `crates/libslic3r-rs/src/platform.rs`
-- [ ] `Zipper.cpp` (150 loc) -> `crates/libslic3r-rs/src/zipper.rs`
-- [ ] `Frustum.cpp` (151 loc) -> `crates/libslic3r-rs/src/frustum.rs`
-- [ ] `ByObjectPrintData.cpp` (152 loc) -> `crates/libslic3r-rs/src/by_object_print_data.rs`
-- [ ] `ArcFitter.cpp` (153 loc) -> `crates/libslic3r-rs/src/arc_fitter.rs`
-- [ ] `PrintBase.cpp` (155 loc) -> `crates/libslic3r-rs/src/print_base.rs`
-- [ ] `AStar.hpp` (157 loc) -> `crates/libslic3r-rs/src/a_star.rs`
-- [ ] `ExtrusionEntityCollection.cpp` (158 loc) -> `crates/libslic3r-rs/src/extrusion_entity_collection.rs`
-- [ ] `TriangulateWall.cpp` (159 loc) -> `crates/libslic3r-rs/src/triangulate_wall.rs`
-- [ ] `miniz_extension.cpp` (159 loc) -> `crates/libslic3r-rs/src/miniz_extension.rs`
-- [ ] `SurfaceCollection.cpp` (164 loc) -> `crates/libslic3r-rs/src/surface_collection.rs`
+- [ ] `SurfaceMesh.hpp` (167 loc) → `crates/libslic3r-rs/src/surface_mesh.rs`
+- [ ] `clonable_ptr.hpp` (168 loc) → `crates/libslic3r-rs/src/clonable_ptr.rs`
+- [ ] `TextConfiguration.hpp` (181 loc) → `crates/libslic3r-rs/src/text_configuration.rs`
+- [ ] `ModelArrange.cpp` (185 loc) → `crates/libslic3r-rs/src/model_arrange.rs`
+- [ ] `ShortEdgeCollapse.cpp` (187 loc) → `crates/libslic3r-rs/src/short_edge_collapse.rs`
+- [ ] `ProjectTask.cpp` (196 loc) → `crates/libslic3r-rs/src/project_task.rs`
+- [ ] `CurveAnalyzer.cpp` (203 loc) → `crates/libslic3r-rs/src/curve_analyzer.rs`
+- [ ] `Clipper2Utils.cpp` (211 loc) → `crates/libslic3r-rs/src/clipper2_utils.rs`
+- [ ] `SlicingAdaptive.cpp` (216 loc) → `crates/libslic3r-rs/src/slicing_adaptive.rs`
+- [ ] `Flow.cpp` (266 loc) → `crates/libslic3r-rs/src/flow.rs`
+- [ ] `MeshSplitImpl.hpp` (346 loc) → `crates/libslic3r-rs/src/mesh_split_impl.rs`
+- [ ] `JumpPointSearch.cpp` (349 loc) → `crates/libslic3r-rs/src/jump_point_search.rs`
+- [ ] `PNGReadWrite.cpp` (363 loc) → `crates/libslic3r-rs/src/png_read_write.rs`
+- [ ] `AABBTreeLines.hpp` (364 loc) → `crates/libslic3r-rs/src/aabb_tree_lines.rs`
+- [ ] `KDTreeIndirect.hpp` (374 loc) → `crates/libslic3r-rs/src/kd_tree_indirect.rs`
+- [ ] `BridgeDetector.cpp` (387 loc) → `crates/libslic3r-rs/src/bridge_detector.rs`
+- [ ] `MutablePolygon.cpp` (387 loc) → `crates/libslic3r-rs/src/mutable_polygon.rs`
+- [ ] `MeasureUtils.hpp` (390 loc) → `crates/libslic3r-rs/src/measure_utils.rs`
+- [ ] `LogSink.cpp` (448 loc) → `crates/libslic3r-rs/src/log_sink.rs`
+- [ ] `MarchingSquares.hpp` (448 loc) → `crates/libslic3r-rs/src/marching_squares.rs`
+- [ ] `MutablePriorityQueue.hpp` (453 loc) → `crates/libslic3r-rs/src/mutable_priority_queue.rs`
+- [ ] `Color.cpp` (486 loc) → `crates/libslic3r-rs/src/color.rs`
+- [ ] `OverhangDetector.cpp` (508 loc) → `crates/libslic3r-rs/src/overhang_detector.rs`
+- [ ] `NSVGUtils.cpp` (543 loc) → `crates/libslic3r-rs/src/nsvg_utils.rs`
+- [ ] `GCodeSender.cpp` (580 loc) → `crates/libslic3r-rs/src/g_code_sender.rs`

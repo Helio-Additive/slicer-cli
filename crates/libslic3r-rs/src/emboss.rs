@@ -45,7 +45,9 @@ const MAX_HEAL_ITERATION_OF_TEXT: u32 = 10;
 
 /// Result of polygon healing operation
 /// Emboss.hpp:109
-#[derive(Debug, Clone)]
+/// EmbossShape.hpp:213 cereal serialize archives `expolygons` then `is_healed`; the
+/// derived serde impls mirror that field order.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HealedExPolygons {
     /// The healed polygons
     /// Emboss.hpp:109

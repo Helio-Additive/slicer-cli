@@ -13,41 +13,48 @@
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
-/// 128-bit signed integer for exact geometric computations
-/// Int128.hpp:74-124
+/// Int128 class (enables safe math on signed 64bit integers)
+/// eg Int128 val1((int64_t)9223372036854775807); //ie 2^63 -1
+///    Int128 val2((int64_t)9223372036854775807);
+///    Int128 val3 = val1 * val2;
+/// Int128.hpp:72
+///
+/// The Rust port uses the native `i128` type, mirroring the C++
+/// `HAS_INTRINSIC_128_TYPE` branch (Int128.hpp:75-121).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Int128 {
-    /// Internal 128-bit value
-    /// Int128.hpp:78
+    /// `__int128 value;`
+    /// Int128.hpp:80
     value: i128,
 }
 
 impl Int128 {
-    /// Create a new Int128 from an i64
-    /// Int128.hpp:80
+    /// `Int128(int64_t lo = 0) : value(lo) {}`
+    /// Int128.hpp:82
     pub fn new(lo: i64) -> Self {
         Self { value: lo as i128 }
     }
 
     /// Create Int128 from raw i128 value
+    /// (mirrors the implicit `Int128(__int128)` used at Int128.hpp:106)
     pub fn from_i128(value: i128) -> Self {
         Self { value }
     }
 
-    /// Get the low 64 bits as unsigned
-    /// Int128.hpp:84
+    /// `uint64_t lo() const { return uint64_t(value); }`
+    /// Int128.hpp:87
     pub fn lo(&self) -> u64 {
         self.value as u64
     }
 
-    /// Get the high 64 bits as signed
-    /// Int128.hpp:85
+    /// `int64_t hi() const { return int64_t(value >> 64); }`
+    /// Int128.hpp:88
     pub fn hi(&self) -> i64 {
         (self.value >> 64) as i64
     }
 
-    /// Get the sign: -1 for negative, 0 for zero, 1 for positive
-    /// Int128.hpp:86
+    /// `int sign() const { return (value > 0) - (value < 0); }`
+    /// Int128.hpp:89
     pub fn sign(&self) -> i32 {
         match self.value.cmp(&0) {
             Ordering::Greater => 1,
@@ -56,19 +63,19 @@ impl Int128 {
         }
     }
 
-    /// Multiply two i64 values producing an Int128 result
-    /// Int128.hpp:101
+    /// `static inline Int128 multiply(int64_t lhs, int64_t rhs) { return Int128(__int128(lhs) * __int128(rhs)); }`
+    /// Int128.hpp:106
     pub fn multiply(lhs: i64, rhs: i64) -> Self {
         Self {
             value: (lhs as i128) * (rhs as i128),
         }
     }
 
-    /// Evaluate the signum of a 2x2 determinant
-    /// Int128.hpp:104-108
+    /// Evaluate signum of a 2x2 determinant.
+    /// Int128.hpp:108-113
     ///
-    /// Computes sign(a11*a22 - a12*a21) using exact 128-bit arithmetic.
-    /// Returns -1, 0, or 1.
+    /// `__int128 det = __int128(a11) * __int128(a22) - __int128(a12) * __int128(a21);`
+    /// `return (det > 0) - (det < 0);`
     pub fn sign_determinant_2x2(a11: i64, a12: i64, a21: i64, a22: i64) -> i32 {
         let det = (a11 as i128) * (a22 as i128) - (a12 as i128) * (a21 as i128);
         match det.cmp(&0) {
@@ -78,12 +85,12 @@ impl Int128 {
         }
     }
 
-    /// Compare two rational numbers p1/q1 and p2/q2
-    /// Int128.hpp:111-116
+    /// Compare two rational numbers.
+    /// Int128.hpp:115-121
     ///
-    /// Compares p1/q1 vs p2/q2 using exact arithmetic by cross-multiplying:
-    /// sign(p1*q2 - p2*q1) with sign correction for negative denominators.
-    /// Returns -1 if p1/q1 < p2/q2, 0 if equal, 1 if p1/q1 > p2/q2.
+    /// `int invert = ((q1 < 0) == (q2 < 0)) ? 1 : -1;`
+    /// `__int128 det = __int128(p1) * __int128(q2) - __int128(p2) * __int128(q1);`
+    /// `return ((det > 0) - (det < 0)) * invert;`
     pub fn compare_rationals(p1: i64, q1: i64, p2: i64, q2: i64) -> i32 {
         let invert = if (q1 < 0) == (q2 < 0) { 1 } else { -1 };
         let det = (p1 as i128) * (q2 as i128) - (p2 as i128) * (q1 as i128);
@@ -95,26 +102,24 @@ impl Int128 {
         sign * invert
     }
 
-    /// Evaluate signum of a 2x2 determinant with numeric filtering
-    /// Int128.hpp:316-330
-    ///
-    /// Uses a fast approximate calculation on the upper 31 bits first.
-    /// If the approximate result is conclusive, returns immediately.
-    /// Otherwise falls back to exact 128-bit arithmetic.
+    /// Evaluate signum of a 2x2 determinant, use a numeric filter to avoid 128 bit multiply if possible.
+    /// Int128.hpp:265-281
     pub fn sign_determinant_2x2_filtered(a11: i64, a12: i64, a21: i64, a22: i64) -> i32 {
-        // Round to upper 31 bits (divide by 2^32 with rounding)
+        // First try to calculate the determinant over the upper 31 bits.
+        // Round p1, p2, q1, q2 to 31 bits.
+        // Int128.hpp:269-272
         let a11s = (a11 + (1 << 31)) >> 32;
         let a12s = (a12 + (1 << 31)) >> 32;
         let a21s = (a21 + (1 << 31)) >> 32;
         let a22s = (a22 + (1 << 31)) >> 32;
-
-        // Approximate determinant (fits in 63 bits)
+        // Result fits 63 bits, it is an approximate of the determinant divided by 2^64.
+        // Int128.hpp:274
         let det = a11s * a22s - a12s * a21s;
-
-        // Maximum possible error in the approximation
+        // Maximum absolute of the remainder of the exact determinant, divided by 2^64.
+        // Int128.hpp:276
         let err = ((a11s.abs() + a12s.abs() + a21s.abs() + a22s.abs()) << 1) + 1;
-
-        // If approximate result is conclusive, use it
+        // assert (Int128.hpp:277) elided: the exact path validates this in debug C++ only.
+        // Int128.hpp:278-280
         if det.abs() > err {
             if det > 0 {
                 1
@@ -122,45 +127,42 @@ impl Int128 {
                 -1
             }
         } else {
-            // Fall back to exact calculation
             Self::sign_determinant_2x2(a11, a12, a21, a22)
         }
     }
 
-    /// Compare two rational numbers with numeric filtering
-    /// Int128.hpp:333-349
-    ///
-    /// Uses a fast approximate calculation on the upper 31 bits first.
-    /// If the approximate result is conclusive, returns immediately.
-    /// Otherwise falls back to exact 128-bit arithmetic.
+    /// Compare two rational numbers, use a numeric filter to avoid 128 bit multiply if possible.
+    /// Int128.hpp:284-303
     pub fn compare_rationals_filtered(p1: i64, q1: i64, p2: i64, q2: i64) -> i32 {
+        // First try to calculate the determinant over the upper 31 bits.
+        // Round p1, p2, q1, q2 to 31 bits.
+        // Int128.hpp:288
         let invert = if (q1 < 0) == (q2 < 0) { 1 } else { -1 };
-
-        // Round to upper 31 bits
+        // Int128.hpp:289-290
         let q1s = (q1 + (1 << 31)) >> 32;
         let q2s = (q2 + (1 << 31)) >> 32;
-
         if q1s != 0 && q2s != 0 {
+            // Int128.hpp:292-293
             let p1s = (p1 + (1 << 31)) >> 32;
             let p2s = (p2 + (1 << 31)) >> 32;
-
-            // Approximate determinant
+            // Result fits 63 bits, it is an approximate of the determinant divided by 2^64.
+            // Int128.hpp:295
             let det = p1s * q2s - p2s * q1s;
-
-            // Maximum possible error
+            // Maximum absolute of the remainder of the exact determinant, divided by 2^64.
+            // Int128.hpp:297
             let err = ((p1s.abs() + q1s.abs() + p2s.abs() + q2s.abs()) << 1) + 1;
-
+            // assert (Int128.hpp:298) elided.
+            // Int128.hpp:299-300
             if det.abs() > err {
                 return if det > 0 { 1 } else { -1 } * invert;
             }
         }
-
-        // Fall back to exact calculation
+        // Int128.hpp:302
         Self::sign_determinant_2x2(p1, q1, p2, q2) * invert
     }
 
-    /// Convert to f64 (may lose precision for very large values)
-    /// Int128.hpp:99
+    /// `operator double() const { return double(value); }`
+    /// Int128.hpp:104
     pub fn to_f64(&self) -> f64 {
         self.value as f64
     }
@@ -174,32 +176,39 @@ impl Int128 {
 // Trait implementations
 
 impl From<i64> for Int128 {
+    /// `Int128(int64_t lo = 0)` / `Int128& operator=(const int64_t &rhs)`
+    /// Int128.hpp:82, 85
     fn from(val: i64) -> Self {
         Self::new(val)
     }
 }
 
 impl From<i128> for Int128 {
+    /// Implicit `Int128(__int128)` used at Int128.hpp:106
     fn from(val: i128) -> Self {
         Self::from_i128(val)
     }
 }
 
 impl From<Int128> for f64 {
+    /// `operator double() const`
+    /// Int128.hpp:104
     fn from(val: Int128) -> Self {
         val.to_f64()
     }
 }
 
 impl PartialOrd for Int128 {
-    /// Int128.hpp:88-92
+    /// `operator>`/`operator<`/`operator>=`/`operator<=`
+    /// Int128.hpp:93-96
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for Int128 {
-    /// Int128.hpp:88-92
+    /// `operator>`/`operator<`/`operator>=`/`operator<=`
+    /// Int128.hpp:93-96
     fn cmp(&self, other: &Self) -> Ordering {
         self.value.cmp(&other.value)
     }
@@ -208,7 +217,8 @@ impl Ord for Int128 {
 impl Add for Int128 {
     type Output = Self;
 
-    /// Int128.hpp:94-95
+    /// `Int128 operator+ (const Int128 &rhs) const { return Int128(value + rhs.value); }`
+    /// Int128.hpp:99
     fn add(self, rhs: Self) -> Self::Output {
         Self {
             value: self.value + rhs.value,
@@ -217,7 +227,8 @@ impl Add for Int128 {
 }
 
 impl AddAssign for Int128 {
-    /// Int128.hpp:93
+    /// `Int128& operator+=(const Int128 &rhs) { value += rhs.value; return *this; }`
+    /// Int128.hpp:98
     fn add_assign(&mut self, rhs: Self) {
         self.value += rhs.value;
     }
@@ -226,7 +237,8 @@ impl AddAssign for Int128 {
 impl Sub for Int128 {
     type Output = Self;
 
-    /// Int128.hpp:97
+    /// `Int128 operator -(const Int128 &rhs) const { return Int128(value - rhs.value); }`
+    /// Int128.hpp:101
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             value: self.value - rhs.value,
@@ -235,7 +247,8 @@ impl Sub for Int128 {
 }
 
 impl SubAssign for Int128 {
-    /// Int128.hpp:96
+    /// `Int128& operator-=(const Int128 &rhs) { value -= rhs.value; return *this; }`
+    /// Int128.hpp:100
     fn sub_assign(&mut self, rhs: Self) {
         self.value -= rhs.value;
     }
@@ -244,7 +257,8 @@ impl SubAssign for Int128 {
 impl Neg for Int128 {
     type Output = Self;
 
-    /// Int128.hpp:98
+    /// `Int128 operator -() const { return Int128(- value); }`
+    /// Int128.hpp:102
     fn neg(self) -> Self::Output {
         Self { value: -self.value }
     }

@@ -984,8 +984,15 @@ fn create_default_region_config(perimeters: u32, infill_density: f64) -> PrintRe
         // Fuzzy Skin
         fuzzy_skin: false,
         fuzzy_skin_mode: slicer::region_config::FuzzySkinMode::None,
+        fuzzy_skin_type: slicer::region_config::FuzzySkinType::None,
         fuzzy_skin_thickness: 0.3,
         fuzzy_skin_point_distance: 0.8,
+        fuzzy_skin_first_layer: false,
+        fuzzy_skin_noise_type: slicer::region_config::NoiseType::Classic,
+        fuzzy_skin_scale: 1.0,
+        fuzzy_skin_octaves: 4,
+        fuzzy_skin_persistence: 0.5,
+        fuzzy_skin_displacement_mode: slicer::region_config::FuzzySkinDisplacementMode::Displacement,
 
         // Wall Generation Mode
         wall_generator_mode: slicer::perimeter_generator::WallGeneratorMode::Classic,

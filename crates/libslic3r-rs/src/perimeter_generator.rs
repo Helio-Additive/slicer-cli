@@ -1430,7 +1430,7 @@ fn apply_fuzzy_skin_to_entity(
             if should_apply && path.polyline.points.len() >= 3 {
                 // Create a polygon from the polyline for fuzzy skin processing
                 let polygon = crate::geometry::Polygon::from_points(path.polyline.points.clone());
-                let fuzzied = crate::fuzzy_skin::apply_fuzzy_skin_polygon(
+                let fuzzied = crate::fuzzy_skin::apply_fuzzy_skin_polygon_adapter(
                     &polygon, config, 1, 0,
                     true, // layer_idx=1 to enable fuzzy (0 is skipped for adhesion)
                 );
@@ -1449,7 +1449,7 @@ fn apply_fuzzy_skin_to_entity(
                 if should_apply && lpath.polyline.points.len() >= 3 {
                     let polygon =
                         crate::geometry::Polygon::from_points(lpath.polyline.points.clone());
-                    let fuzzied = crate::fuzzy_skin::apply_fuzzy_skin_polygon(
+                    let fuzzied = crate::fuzzy_skin::apply_fuzzy_skin_polygon_adapter(
                         &polygon, config, 1, 0,
                         true, // layer_idx=1 to enable fuzzy (0 is skipped for adhesion)
                     );

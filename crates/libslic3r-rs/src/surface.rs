@@ -625,37 +625,12 @@ impl SurfaceCollection {
         self.surfaces.clear();
     }
 
-    /// Remove surfaces of specific types.
-    ///
-    /// Reference: SurfaceCollection.cpp
-    pub fn remove_types(&mut self, types: &[SurfaceType]) {
-        self.surfaces
-            .retain(|surface| !types.contains(&surface.surface_type));
-    }
-
-    /// Get all surfaces of a specific type.
-    pub fn filter_by_type(&self, surface_type: SurfaceType) -> Vec<&Surface> {
-        self.surfaces
-            .iter()
-            .filter(|s| s.surface_type == surface_type)
-            .collect()
-    }
-
-    /// Get all surfaces whose type is in `types`.
-    /// C++ SurfaceCollection::filter_by_types(const SurfaceType *types, int ntypes)
-    pub fn filter_by_types(&self, types: &[SurfaceType]) -> Vec<&Surface> {
-        self.surfaces
-            .iter()
-            .filter(|s| types.contains(&s.surface_type))
-            .collect()
-    }
-
-    /// Keep only surfaces whose type is in `types` (drop the rest).
-    /// C++ SurfaceCollection::keep_types(const SurfaceType *types, int ntypes)
-    pub fn keep_types(&mut self, types: &[SurfaceType]) {
-        self.surfaces
-            .retain(|surface| types.contains(&surface.surface_type));
-    }
+    // NOTE: `remove_types`, `filter_by_type`, `filter_by_types`, `keep_types`,
+    // `set_type`, `set`, and `append` are the methods declared in
+    // `SurfaceCollection.{hpp,cpp}` and are faithfully ported in
+    // `crate::surface_collection` (a separate `impl SurfaceCollection` block,
+    // mirroring the C++ file split). They were removed from here to avoid
+    // duplicate definitions and the previous non-faithful `retain`-based logic.
 
     /// Get all top surfaces.
     pub fn top_surfaces(&self) -> Vec<&Surface> {
@@ -701,13 +676,9 @@ impl SurfaceCollection {
         }
     }
 
-    /// Set all surfaces to a given type
-    /// Surface.cpp
-    pub fn set_type(&mut self, surface_type: SurfaceType) {
-        for surface in &mut self.surfaces {
-            surface.surface_type = surface_type;
-        }
-    }
+    // `set_type` is declared in `SurfaceCollection.hpp` and is faithfully
+    // ported in `crate::surface_collection`; removed here to avoid a duplicate
+    // method definition.
 
     /// Append ExPolygons as surfaces with given type
     /// Surface.cpp helper

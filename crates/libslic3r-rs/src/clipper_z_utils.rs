@@ -27,18 +27,19 @@ use std::cmp::Ordering;
 // ============================================================================
 
 /// Clipper Z-aware point type
-/// ClipperZUtils.hpp:14
-/// C++: using ZPoint = ClipperLib_Z::IntPoint;
+/// ClipperZUtils.hpp:18
+/// C++: using ZPoint  = ClipperLib_Z::IntPoint;
 pub type ZPoint = (i64, i64, i64); // (x, y, z)
 
-/// Clipper Z-aware path type (single contour)
-/// ClipperZUtils.hpp:15
-/// C++: using ZPath = ClipperLib_Z::Path;
+/// Clipper Z-aware points/path type (single contour)
+/// ClipperZUtils.hpp:19-20
+/// C++: using ZPoints = ClipperLib_Z::Path;
+/// C++: using ZPath   = ClipperLib_Z::Path;
 pub type ZPath = Vec<ZPoint>;
 
 /// Clipper Z-aware paths type (multiple contours)
-/// ClipperZUtils.hpp:16
-/// C++: using ZPaths = ClipperLib_Z::Paths;
+/// ClipperZUtils.hpp:21
+/// C++: using ZPaths  = ClipperLib_Z::Paths;
 pub type ZPaths = Vec<ZPath>;
 
 // ============================================================================
@@ -46,7 +47,7 @@ pub type ZPaths = Vec<ZPath>;
 // ============================================================================
 
 /// Compare two Z-points lexicographically (x, then y, then z)
-/// ClipperZUtils.hpp:18-21
+/// ClipperZUtils.hpp:23-26
 /// C++: inline bool zpoint_lower(const ZPoint &l, const ZPoint &r)
 /// C++: {
 /// C++:     return l.x() < r.x() || (l.x() == r.x() && (l.y() < r.y() || (l.y() == r.y() && l.z() < r.z())));
@@ -56,8 +57,9 @@ pub fn zpoint_lower(l: &ZPoint, r: &ZPoint) -> bool {
     l.0 < r.0 || (l.0 == r.0 && (l.1 < r.1 || (l.1 == r.1 && l.2 < r.2)))
 }
 
-/// Ordering implementation for sorting Z-points
-/// ClipperZUtils.hpp:18-21 (derived)
+/// Ordering implementation for sorting Z-points.
+/// NOT in C++ source; derived from zpoint_lower (ClipperZUtils.hpp:23-26) as a
+/// convenience for Rust `sort_by`. Total order is consistent with zpoint_lower.
 #[inline]
 pub fn zpoint_cmp(l: &ZPoint, r: &ZPoint) -> Ordering {
     match l.0.cmp(&r.0) {
@@ -73,8 +75,9 @@ pub fn zpoint_cmp(l: &ZPoint, r: &ZPoint) -> Ordering {
 // Conversion: Slic3r → Clipper Z-types
 // ============================================================================
 
-/// Convert a single path to zpath with a given Z coordinate
-/// ClipperZUtils.hpp:24-36
+/// Convert a single path to path with a given Z coordinate.
+/// If Open, then duplicate the first point at the end.
+/// ClipperZUtils.hpp:28-42
 /// C++: template<bool Open = false>
 /// C++: inline ZPath to_zpath(const Points &path, coord_t z)
 /// C++: {
@@ -103,8 +106,9 @@ pub fn to_zpath(path: &[Point], z: i64, open: bool) -> ZPath {
     out
 }
 
-/// Convert multiple paths to zpaths with a given Z coordinate
-/// ClipperZUtils.hpp:39-48
+/// Convert multiple paths to paths with a given Z coordinate.
+/// If Open, then duplicate the first point of each path at its end.
+/// ClipperZUtils.hpp:44-54
 /// C++: template<bool Open = false>
 /// C++: inline ZPaths to_zpaths(const VecOfPoints &paths, coord_t z)
 /// C++: {
@@ -122,8 +126,10 @@ pub fn to_zpaths(paths: &[Vec<Point>], z: i64, open: bool) -> ZPaths {
     out
 }
 
-/// Convert multiple expolygons into zpaths with Z specified by index offset by base_idx
-/// ClipperZUtils.hpp:52-66
+/// Convert multiple expolygons into z-paths with Z specified by an index of the
+/// source expolygon offsetted by base_index.
+/// If Open, then duplicate the first point of each path at its end.
+/// ClipperZUtils.hpp:56-72
 /// C++: template<bool Open = false>
 /// C++: inline ZPaths expolygons_to_zpaths(const ExPolygons &src, coord_t &base_idx)
 /// C++: {
@@ -140,7 +146,7 @@ pub fn to_zpaths(paths: &[Vec<Point>], z: i64, open: bool) -> ZPaths {
 /// C++: }
 pub fn expolygons_to_zpaths(src: &[ExPolygon], base_idx: &mut i64, open: bool) -> ZPaths {
     // Helper to count total contours
-    // ClipperZUtils.hpp:54-55
+    // ClipperZUtils.hpp:63-64
     fn count_contours(expolygons: &[ExPolygon]) -> usize {
         expolygons.iter().map(|e| e.num_contours()).sum()
     }
@@ -148,12 +154,12 @@ pub fn expolygons_to_zpaths(src: &[ExPolygon], base_idx: &mut i64, open: bool) -
     let mut out = Vec::with_capacity(count_contours(src));
     for expoly in src {
         // Add outer contour
-        // ClipperZUtils.hpp:61
+        // ClipperZUtils.hpp:66
         // C++: out.emplace_back(to_zpath<Open>(expoly.contour.points, base_idx));
         out.push(to_zpath(&expoly.contour.points, *base_idx, open));
 
         // Add holes
-        // ClipperZUtils.hpp:62-63
+        // ClipperZUtils.hpp:67-68
         // C++: for (const Polygon &hole : expoly.holes)
         // C++:     out.emplace_back(to_zpath<Open>(hole.points, base_idx));
         for hole in &expoly.holes {
@@ -161,15 +167,16 @@ pub fn expolygons_to_zpaths(src: &[ExPolygon], base_idx: &mut i64, open: bool) -
         }
 
         // Increment base index for next expolygon
-        // ClipperZUtils.hpp:64
+        // ClipperZUtils.hpp:69
         // C++: ++ base_idx;
         *base_idx += 1;
     }
     out
 }
 
-/// Convert multiple expolygons into zpaths with a given Z coordinate
-/// ClipperZUtils.hpp:69-82
+/// Convert multiple expolygons into z-paths with a given Z coordinate.
+/// If Open, then duplicate the first point of each path at its end.
+/// ClipperZUtils.hpp:74-90
 /// C++: template<bool Open> inline ZPaths expolygons_to_zpaths_with_same_z(const ExPolygons &src, const coord_t z)
 /// C++: {
 /// C++:     ZPaths out;
@@ -187,7 +194,7 @@ pub fn expolygons_to_zpaths(src: &[ExPolygon], base_idx: &mut i64, open: bool) -
 /// C++: }
 pub fn expolygons_to_zpaths_with_same_z(src: &[ExPolygon], z: i64, open: bool) -> ZPaths {
     // Helper to count total contours
-    // ClipperZUtils.hpp:71-73
+    // ClipperZUtils.hpp:79-81
     fn count_contours(expolygons: &[ExPolygon]) -> usize {
         expolygons.iter().map(|e| e.num_contours()).sum()
     }
@@ -195,12 +202,12 @@ pub fn expolygons_to_zpaths_with_same_z(src: &[ExPolygon], z: i64, open: bool) -
     let mut out = Vec::with_capacity(count_contours(src));
     for expoly in src {
         // Add outer contour with same Z
-        // ClipperZUtils.hpp:74
+        // ClipperZUtils.hpp:83
         // C++: out.emplace_back(to_zpath<Open>(expoly.contour.points, z));
         out.push(to_zpath(&expoly.contour.points, z, open));
 
         // Add holes with same Z
-        // ClipperZUtils.hpp:75-77
+        // ClipperZUtils.hpp:84-86
         // C++: for (const Polygon &hole : expoly.holes) {
         // C++:     out.emplace_back(to_zpath<Open>(hole.points, z));
         // C++: }
@@ -215,8 +222,9 @@ pub fn expolygons_to_zpaths_with_same_z(src: &[ExPolygon], z: i64, open: bool) -
 // Conversion: Clipper Z-types → Slic3r
 // ============================================================================
 
-/// Convert a zpath back to 2D Points
-/// ClipperZUtils.hpp:86-97
+/// Convert a single path to path with a given Z coordinate.
+/// If Open, then duplicate the first point at the end.
+/// ClipperZUtils.hpp:92-106
 /// C++: template<bool Open = false>
 /// C++: inline Points from_zpath(const ZPoints &path)
 /// C++: {
@@ -245,8 +253,9 @@ pub fn from_zpath(path: &ZPath, open: bool) -> Vec<Point> {
     out
 }
 
-/// Convert multiple zpaths back to 2D paths (appending to existing vector)
-/// ClipperZUtils.hpp:100-106
+/// Convert multiple paths to paths with a given Z coordinate.
+/// If Open, then duplicate the first point of each path at its end.
+/// ClipperZUtils.hpp:108-116
 /// C++: template<bool Open = false>
 /// C++: inline void from_zpaths(const ZPaths &paths, VecOfPoints &out)
 /// C++: {
@@ -262,7 +271,7 @@ pub fn from_zpaths_append(paths: &ZPaths, out: &mut Vec<Vec<Point>>, open: bool)
 }
 
 /// Convert multiple zpaths back to 2D paths (new vector)
-/// ClipperZUtils.hpp:107-112
+/// ClipperZUtils.hpp:117-123
 /// C++: template<bool Open = false>
 /// C++: inline VecOfPoints from_zpaths(const ZPaths &paths)
 /// C++: {
@@ -281,12 +290,12 @@ pub fn from_zpaths(paths: &ZPaths, open: bool) -> Vec<Vec<Point>> {
 // ============================================================================
 
 /// Intersection pair: (source_z_1, source_z_2)
-/// ClipperZUtils.hpp:116
-/// C++: using Intersection = std::pair<coord_t, coord_t>;
+/// ClipperZUtils.hpp:127
+/// C++: using Intersection  = std::pair<coord_t, coord_t>;
 pub type Intersection = (i64, i64);
 
 /// Vector of intersection pairs
-/// ClipperZUtils.hpp:117
+/// ClipperZUtils.hpp:128
 /// C++: using Intersections = std::vector<Intersection>;
 pub type Intersections = Vec<Intersection>;
 
@@ -296,7 +305,7 @@ pub type Intersections = Vec<Intersection>;
 /// Clipper boolean operations. When two edges intersect, their source Z-values
 /// are paired and stored.
 ///
-/// ClipperZUtils.hpp:114-143
+/// ClipperZUtils.hpp:125-160
 /// C++: class ClipperZIntersectionVisitor {
 /// C++: public:
 /// C++:     using Intersection  = std::pair<coord_t, coord_t>;
@@ -310,16 +319,21 @@ pub type Intersections = Vec<Intersection>;
 /// C++: private:
 /// C++:     std::vector<std::pair<coord_t, coord_t>> &m_intersections;
 /// C++: };
+///
+/// NOTE: In C++ the visitor holds a *reference* to a caller-owned
+/// `Intersections`. Here the visitor owns the vector directly; callers read it
+/// back through `intersections()` / `into_intersections()`. The observable
+/// behavior (the contents of the vector after a run) is identical.
 pub struct ClipperZIntersectionVisitor {
     // Storage for detected intersections
-    // ClipperZUtils.hpp:142
+    // ClipperZUtils.hpp:159
     // C++: std::vector<std::pair<coord_t, coord_t>> &m_intersections;
     intersections: Intersections,
 }
 
 impl ClipperZIntersectionVisitor {
     // Create a new intersection visitor
-    // ClipperZUtils.hpp:118
+    // ClipperZUtils.hpp:129
     // C++: ClipperZIntersectionVisitor(Intersections &intersections) : m_intersections(intersections) {}
     pub fn new() -> Self {
         Self {
@@ -327,7 +341,7 @@ impl ClipperZIntersectionVisitor {
         }
     }
 
-    // Create with pre-allocated capacity
+    // Create with pre-allocated capacity (Rust convenience; not in C++).
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             intersections: Vec::with_capacity(capacity),
@@ -335,18 +349,20 @@ impl ClipperZIntersectionVisitor {
     }
 
     // Reset intersection storage
-    // ClipperZUtils.hpp:119
+    // ClipperZUtils.hpp:130
     // C++: void reset() { m_intersections.clear(); }
     pub fn reset(&mut self) {
         self.intersections.clear();
     }
 
-    // Process an intersection between two edges
+    // Process an intersection between two edges.
     //
-    // When edges from two different source contours intersect, their Z-values
-    // (which encode source contour indices) are paired and stored.
+    // Mirrors the C++ `operator()`. Clipper passes `pt` as an in/out parameter
+    // whose x/y coordinates it has already computed; this callback only writes
+    // `pt.z()`. We therefore take `pt` as `&mut ZPoint` and modify only its
+    // Z component, leaving x/y untouched (NOT fabricating a midpoint).
     //
-    // ClipperZUtils.hpp:120-135
+    // ClipperZUtils.hpp:131-149
     // C++: void operator()(const ZPoint &e1bot, const ZPoint &e1top, const ZPoint &e2bot, const ZPoint &e2top, ZPoint &pt) {
     // C++:     coord_t srcs[4]{ e1bot.z(), e1top.z(), e2bot.z(), e2top.z() };
     // C++:     coord_t *begin = srcs;
@@ -372,14 +388,15 @@ impl ClipperZIntersectionVisitor {
         e1top: &ZPoint,
         e2bot: &ZPoint,
         e2top: &ZPoint,
-    ) -> ZPoint {
+        pt: &mut ZPoint,
+    ) {
         // Collect all source Z values from edge endpoints
-        // ClipperZUtils.hpp:121
+        // ClipperZUtils.hpp:132
         // C++: coord_t srcs[4]{ e1bot.z(), e1top.z(), e2bot.z(), e2top.z() };
         let mut srcs = [e1bot.2, e1top.2, e2bot.2, e2top.2];
 
         // Sort and deduplicate to find unique source contours
-        // ClipperZUtils.hpp:122-126
+        // ClipperZUtils.hpp:133-137
         // C++: coord_t *begin = srcs;
         // C++: coord_t *end = srcs + 4;
         // C++: //FIXME bubble sort manually?
@@ -394,13 +411,8 @@ impl ClipperZIntersectionVisitor {
             }
         }
 
-        // Calculate intersection point (midpoint of edge intersections)
-        // Not explicitly in C++ (Clipper handles geometry internally)
-        let pt_x = (e1bot.0 + e1top.0 + e2bot.0 + e2top.0) / 4;
-        let pt_y = (e1bot.1 + e1top.1 + e2bot.1 + e2top.1) / 4;
-
         // Handle result based on number of unique sources
-        // ClipperZUtils.hpp:127-134
+        // ClipperZUtils.hpp:138-148
         // C++: if (begin + 1 == end) {
         // C++:     // Self intersection may happen on source contour. Just copy the Z value.
         // C++:     pt.z() = *begin;
@@ -412,21 +424,41 @@ impl ClipperZIntersectionVisitor {
         // C++:         pt.z() = -coord_t(m_intersections.size());
         // C++:     }
         // C++: }
-        let pt_z = if unique_count == 1 {
-            // Self-intersection: both edges from same source
-            srcs[0]
+        if unique_count == 1 {
+            // Self intersection may happen on source contour. Just copy the Z value.
+            pt.2 = srcs[0];
         } else {
-            // True intersection: edges from different sources
-            debug_assert!(unique_count == 2, "Expected 1 or 2 unique source contours");
-            self.intersections.push((srcs[0], srcs[1]));
-            -(self.intersections.len() as i64)
-        };
+            // assert(begin + 2 == end);
+            debug_assert!(unique_count == 2);
+            if unique_count == 2 {
+                // store a -1 based negative index into the "intersections" vector here.
+                self.intersections.push((srcs[0], srcs[1]));
+                pt.2 = -(self.intersections.len() as i64);
+            }
+        }
+    }
 
-        (pt_x, pt_y, pt_z)
+    // Build a clipper-style ZFill callback closure that delegates to
+    // process_intersection. The returned closure captures `&mut self` and
+    // matches Clipper's ZFillCallback signature
+    // (e1bot, e1top, e2bot, e2top, &mut pt).
+    //
+    // ClipperZUtils.hpp:150-154
+    // C++: ClipperLib_Z::ZFillCallback clipper_callback() {
+    // C++:     return [this](const ZPoint &e1bot, const ZPoint &e1top,
+    // C++:              const ZPoint &e2bot, const ZPoint &e2top, ZPoint &pt)
+    // C++:     { return (*this)(e1bot, e1top, e2bot, e2top, pt); };
+    // C++: }
+    pub fn clipper_callback(
+        &mut self,
+    ) -> impl FnMut(&ZPoint, &ZPoint, &ZPoint, &ZPoint, &mut ZPoint) + '_ {
+        move |e1bot, e1top, e2bot, e2top, pt| {
+            self.process_intersection(e1bot, e1top, e2bot, e2top, pt);
+        }
     }
 
     // Get reference to collected intersections
-    // ClipperZUtils.hpp:140
+    // ClipperZUtils.hpp:156
     // C++: const std::vector<std::pair<coord_t, coord_t>>& intersections() const { return m_intersections; }
     pub fn intersections(&self) -> &Intersections {
         &self.intersections
@@ -545,19 +577,23 @@ mod tests {
     }
 
     // Test intersection visitor
-    // ClipperZUtils.hpp:114-143
+    // ClipperZUtils.hpp:125-160
     #[test]
     fn test_intersection_visitor() {
         let mut visitor = ClipperZIntersectionVisitor::new();
 
-        // Self-intersection (same Z on all endpoints)
+        // Self-intersection (same Z on all endpoints). Clipper would have
+        // pre-filled pt.x/pt.y; we only check that z is set and x/y untouched.
         let e1bot = (0, 0, 5);
         let e1top = (100, 100, 5);
         let e2bot = (0, 100, 5);
         let e2top = (100, 0, 5);
 
-        let pt = visitor.process_intersection(&e1bot, &e1top, &e2bot, &e2top);
-        assert_eq!(pt.2, 5); // Z unchanged for self-intersection
+        let mut pt = (50, 50, 0);
+        visitor.process_intersection(&e1bot, &e1top, &e2bot, &e2top, &mut pt);
+        assert_eq!(pt.0, 50); // x preserved
+        assert_eq!(pt.1, 50); // y preserved
+        assert_eq!(pt.2, 5); // Z set for self-intersection
         assert_eq!(visitor.intersections().len(), 0);
 
         // True intersection (different Z values)
@@ -567,10 +603,21 @@ mod tests {
         let e2bot = (0, 100, 20);
         let e2top = (100, 0, 20);
 
-        let pt = visitor.process_intersection(&e1bot, &e1top, &e2bot, &e2top);
+        let mut pt = (50, 50, 0);
+        visitor.process_intersection(&e1bot, &e1top, &e2bot, &e2top, &mut pt);
         assert_eq!(pt.2, -1); // Negative index into intersections
         assert_eq!(visitor.intersections().len(), 1);
         assert_eq!(visitor.intersections()[0], (10, 20));
+
+        // Exercise the clipper_callback wrapper.
+        visitor.reset();
+        {
+            let mut cb = visitor.clipper_callback();
+            let mut pt2 = (0, 0, 0);
+            cb(&(0, 0, 1), &(1, 1, 1), &(0, 1, 2), &(1, 0, 2), &mut pt2);
+            assert_eq!(pt2.2, -1);
+        }
+        assert_eq!(visitor.intersections()[0], (1, 2));
     }
 
     // Test expolygons_to_zpaths_with_same_z

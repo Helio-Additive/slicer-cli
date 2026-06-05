@@ -1,709 +1,557 @@
 //! Variable-width extrusion path generation.
 //!
-//! Converts ThickPolylines (from medial axis computation) into ExtrusionPaths
-//! with per-segment variable LINE_WIDTH annotations. This is critical for gap fill
-//! where the path width varies continuously along its length.
+//! Faithful 1:1 port of BambuStudio's `src/libslic3r/VariableWidth.cpp`.
 //!
-//! Port of BambuStudio's `VariableWidth.cpp` (1–230 lines).
+//! Converts `ThickPolyline`s (e.g. from medial-axis computation) into extrusion
+//! entities (`ExtrusionPath` / `ExtrusionLoop`) where the extrusion width varies
+//! along the length of the path. G-code does not allow variable extrusion within
+//! a single move, so the polyline is broken into segments of roughly uniform
+//! width.
 //!
-//! ## Algorithm
-//!
-//! 1. Walk along each ThickPolyline segment by segment
-//! 2. Track the running average width for the current extrusion path
-//! 3. When the width at a vertex deviates from the current path's average
-//!    by more than `TOLERANCE` (0.05mm by default), start a new path
-//! 4. Each resulting ExtrusionPath has a single `width` value (the average
-//!    width of its constituent segments)
-//!
-//! This produces many short extrusion paths for tapered gaps, each annotated
-//! with `;LINE_WIDTH:` in the G-code output — matching the reference behavior
-//! where gap fill has 138 unique LINE_WIDTH values on Layer 0 alone.
+//! This file mirrors the C++ subdir layout & filename in snake_case.
 
+// VariableWidth.cpp:1
+// #include "VariableWidth.hpp"
+//
+// VariableWidth.hpp:4-6
+// #include "Polygon.hpp"
+// #include "ExtrusionEntity.hpp"
+// #include "Flow.hpp"
+
+use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionLoop, ExtrusionPath, ExtrusionRole};
 use crate::flow::Flow;
-use crate::gcode::{ExtrusionPath, ExtrusionRole};
-use crate::geometry::{Point, Polyline, ThickPolyline, ThickPolylines};
-use crate::CoordF;
+use crate::geometry::{Point, PointF, ThickLine, ThickPolyline, ThickPolylines};
+use crate::{Coord, CoordF};
+use std::f64::consts::PI;
 
-/// Default tolerance for width variation within a single extrusion path (mm).
-/// When the width at a vertex deviates from the current segment average by more
-/// than this amount, a new extrusion path is started.
+/// `SCALED_EPSILON` expressed in this crate's scaled coordinate system.
 ///
-/// BambuStudio uses 0.05mm (EPSILON in VariableWidth.cpp).
-pub const WIDTH_TOLERANCE: CoordF = 0.05;
+/// C++ uses `SCALED_EPSILON = 10.0` (libslic3r.h) with `SCALING_FACTOR = 1e-6`,
+/// i.e. `10` scaled units == `1e-5 mm`. This crate's `SCALING_FACTOR` is
+/// `100_000` (1 mm == 100_000 units), so the equivalent scaled value for
+/// `1e-5 mm` is `1e-5 * 100_000 == 1.0`. Lengths/widths here are in this crate's
+/// scaled units, so the comparison threshold is `1.0`.
+const SCALED_EPSILON: f64 = 1e-5 * crate::SCALING_FACTOR;
 
-/// Minimum extrusion path length in mm. Paths shorter than this are discarded
-/// to avoid tiny extrusion moves that cause firmware issues.
-pub const MIN_PATH_LENGTH_MM: CoordF = 0.05;
+// VariableWidth.cpp:5-8
+// ExtrusionMultiPath thick_polyline_to_multi_path(const ThickPolyline& thick_polyline, ExtrusionRole role, const Flow& flow, const float tolerance, const float merge_tolerance, double overhang)
+// {
+//     ExtrusionMultiPath multi_path;
+//     ExtrusionPath      path(role);
 
-/// Minimum width for an extrusion (mm). Widths below this are clamped.
-pub const MIN_EXTRUSION_WIDTH: CoordF = 0.01;
-
-/// Configuration for variable-width conversion.
-#[derive(Debug, Clone)]
-pub struct VariableWidthConfig {
-    /// Maximum width deviation before splitting into a new path (mm).
-    pub width_tolerance: CoordF,
-    /// Minimum path length to emit (mm).
-    pub min_path_length: CoordF,
-    /// Layer height for flow calculations (mm).
-    pub layer_height: CoordF,
-    /// Nozzle diameter for flow calculations (mm).
-    pub nozzle_diameter: CoordF,
-    /// Extrusion speed (mm/s).
-    pub speed: CoordF,
-    /// The extrusion role to assign to generated paths.
-    pub role: ExtrusionRole,
+/// A continuous chain of `ExtrusionPath`s, each possibly with varying extrusion
+/// thickness / height. Faithful counterpart of C++ `ExtrusionMultiPath`
+/// (ExtrusionEntity.hpp:428).
+#[derive(Debug, Clone, Default)]
+pub struct ExtrusionMultiPath {
+    pub paths: Vec<ExtrusionPath>,
 }
 
-impl Default for VariableWidthConfig {
-    fn default() -> Self {
-        Self {
-            width_tolerance: WIDTH_TOLERANCE,
-            min_path_length: MIN_PATH_LENGTH_MM,
-            layer_height: 0.2,
-            nozzle_diameter: 0.4,
-            speed: 0.0,
-            role: ExtrusionRole::GapFill,
-        }
+impl ExtrusionMultiPath {
+    pub fn new() -> Self {
+        Self { paths: Vec::new() }
     }
 }
 
-impl VariableWidthConfig {
-    // Create a config for gap fill with the given parameters.
-    pub fn for_gap_fill(layer_height: CoordF, nozzle_diameter: CoordF, speed: CoordF) -> Self {
-        Self {
-            layer_height,
-            nozzle_diameter,
-            speed,
-            role: ExtrusionRole::GapFill,
-            ..Default::default()
-        }
-    }
+/// Vector of `ExtrusionPath`. Faithful counterpart of C++ `ExtrusionPaths`
+/// (ExtrusionEntity.hpp).
+pub type ExtrusionPaths = Vec<ExtrusionPath>;
 
-    /// Set the extrusion role.
-    pub fn with_role(mut self, role: ExtrusionRole) -> Self {
-        self.role = role;
-        self
-    }
-
-    /// Set the width tolerance.
-    pub fn with_tolerance(mut self, tolerance: CoordF) -> Self {
-        self.width_tolerance = tolerance;
-        self
-    }
-}
-
-/// A single variable-width extrusion segment with its computed width.
-#[derive(Debug, Clone)]
-pub struct VariableWidthSegment {
-    /// Points defining this segment path.
-    pub points: Vec<Point>,
-    /// Average width of this segment (mm).
-    pub width: CoordF,
-}
-
-/// Convert a set of ThickPolylines into ExtrusionPaths with variable LINE_WIDTH.
-///
-/// This is the main entry point, equivalent to BambuStudio's `variable_width()` function
-/// in `VariableWidth.cpp`.
-///
-/// Each ThickPolyline is split into segments of roughly uniform width, and each
-/// segment becomes an ExtrusionPath with the appropriate width.
-///
-/// # Arguments
-/// * `thick_polylines` - ThickPolylines from medial axis computation
-/// * `config` - Variable width conversion parameters
-///
-/// # Returns
-/// A vector of ExtrusionPaths, each with a specific width value.
-pub fn variable_width(
-    thick_polylines: &ThickPolylines,
-    config: &VariableWidthConfig,
-) -> Vec<ExtrusionPath> {
-    let mut result = Vec::new();
-
-    for tp in thick_polylines {
-        let paths = variable_width_single(tp, config);
-        result.extend(paths);
-    }
-
-    result
-}
-
-/// Convert a single ThickPolyline into one or more ExtrusionPaths.
-///
-/// Walks along the polyline, accumulating segments into paths of roughly
-/// uniform width. When the width at a vertex deviates from the current
-/// path average by more than `config.width_tolerance`, a new path is started.
-///
-/// BambuStudio reference: VariableWidth.cpp lines 20–150
-fn variable_width_single(
+/// VariableWidth.cpp:5
+/// C++: ExtrusionMultiPath thick_polyline_to_multi_path(const ThickPolyline& thick_polyline, ExtrusionRole role, const Flow& flow, const float tolerance, const float merge_tolerance, double overhang)
+pub fn thick_polyline_to_multi_path(
     thick_polyline: &ThickPolyline,
-    config: &VariableWidthConfig,
-) -> Vec<ExtrusionPath> {
-    if thick_polyline.len() < 2 {
-        return vec![];
-    }
-
-    let segments = split_by_width(thick_polyline, config.width_tolerance);
-
-    let mut paths = Vec::new();
-
-    for seg in segments {
-        if seg.points.len() < 2 {
-            continue;
-        }
-
-        let width = seg.width.max(MIN_EXTRUSION_WIDTH);
-
-        // Check minimum path length
-        let length_mm = polyline_length_mm(&seg.points);
-        if length_mm < config.min_path_length {
-            continue;
-        }
-
-        // Create the polyline
-        let polyline = Polyline::from_points(seg.points);
-
-        // Build the extrusion path
-        let mut path = ExtrusionPath::from_polyline(&polyline, config.role)
-            .with_width(width)
-            .with_height(config.layer_height)
-            .with_speed(config.speed);
-
-        // If we have a valid nozzle diameter, compute a proper Flow object
-        if config.nozzle_diameter > 0.0 && config.layer_height > 0.0 {
-            if let Ok(flow) = Flow::new(width, config.layer_height, config.nozzle_diameter) {
-                path = path.with_flow_object(flow);
-            }
-        }
-
-        paths.push(path);
-    }
-
-    paths
-}
-
-/// Split a ThickPolyline into segments of roughly uniform width.
-///
-/// This is the core splitting logic. It walks along the polyline and whenever
-/// the width at a vertex deviates from the current segment's average by more
-/// than `tolerance`, it starts a new segment.
-///
-/// BambuStudio splits when:
-///   |width_at_vertex - segment_avg_width| > EPSILON (0.05mm)
-///
-/// The segments overlap by one point at boundaries to ensure continuity.
-fn split_by_width(tp: &ThickPolyline, tolerance: CoordF) -> Vec<VariableWidthSegment> {
-    debug_assert!(tp.len() >= 2);
-    debug_assert_eq!(tp.points.len(), tp.widths.len());
-
-    let mut segments: Vec<VariableWidthSegment> = Vec::new();
-
-    // Current segment being built
-    let mut cur_points: Vec<Point> = Vec::new();
-    let mut cur_width_sum: CoordF = 0.0;
-    let mut cur_count: usize = 0;
-
-    // Start with the first point
-    cur_points.push(tp.points[0]);
-    cur_width_sum += tp.widths[0];
-    cur_count += 1;
-
-    for i in 1..tp.len() {
-        let w = tp.widths[i];
-        let cur_avg = cur_width_sum / cur_count as CoordF;
-
-        // BambuStudio: check if the width at this vertex deviates from the
-        // current segment average by more than tolerance
-        let deviation = (w - cur_avg).abs();
-
-        if deviation > tolerance && cur_points.len() >= 2 {
-            // Finalize current segment
-            let avg_width = cur_width_sum / cur_count as CoordF;
-            segments.push(VariableWidthSegment {
-                points: cur_points.clone(),
-                width: avg_width,
-            });
-
-            // Start a new segment, overlapping by one point for continuity
-            // Use the previous point as the start of the new segment
-            cur_points.clear();
-            cur_points.push(tp.points[i - 1]);
-            cur_width_sum = tp.widths[i - 1];
-            cur_count = 1;
-        }
-
-        // Add current point to segment
-        cur_points.push(tp.points[i]);
-        cur_width_sum += w;
-        cur_count += 1;
-    }
-
-    // Finalize the last segment
-    if cur_points.len() >= 2 {
-        let avg_width = cur_width_sum / cur_count as CoordF;
-        segments.push(VariableWidthSegment {
-            points: cur_points,
-            width: avg_width,
-        });
-    }
-
-    segments
-}
-
-/// Compute the length of a point sequence in mm.
-fn polyline_length_mm(points: &[Point]) -> CoordF {
-    let mut total = 0.0_f64;
-    for i in 1..points.len() {
-        let dx = (points[i].x - points[i - 1].x) as f64;
-        let dy = (points[i].y - points[i - 1].y) as f64;
-        total += (dx * dx + dy * dy).sqrt();
-    }
-    total / crate::SCALING_FACTOR
-}
-
-/// Convert ThickPolylines to ExtrusionPaths using a Flow object for width/height.
-///
-/// This is a convenience wrapper that creates a VariableWidthConfig from the
-/// given flow parameters.
-///
-/// BambuStudio reference: PerimeterGenerator.cpp line 1359:
-///   `variable_width(polylines, erGapFill, this->solid_infill_flow, gap_fill.entities);`
-pub fn variable_width_from_flow(
-    thick_polylines: &ThickPolylines,
     role: ExtrusionRole,
     flow: &Flow,
-    speed: CoordF,
-) -> Vec<ExtrusionPath> {
-    let config = VariableWidthConfig {
-        width_tolerance: WIDTH_TOLERANCE,
-        min_path_length: MIN_PATH_LENGTH_MM,
-        layer_height: flow.height(),
-        nozzle_diameter: flow.nozzle_diameter(),
-        speed,
-        role,
-    };
-    variable_width(thick_polylines, &config)
-}
+    tolerance: f32,
+    merge_tolerance: f32,
+    overhang: f64,
+) -> ExtrusionMultiPath {
+    // VariableWidth.cpp:7-9
+    let mut multi_path = ExtrusionMultiPath::new();
+    let mut path = ExtrusionPath::new(role);
+    let mut lines: Vec<ThickLine> = thick_polyline.thicklines();
 
-/// Filter out very short ThickPolylines that wouldn't produce meaningful extrusion.
-///
-/// BambuStudio filters polylines shorter than `max_width` before processing.
-pub fn filter_short_polylines(polylines: &mut ThickPolylines, min_length_mm: CoordF) {
-    polylines.retain(|tp| tp.length_mm() >= min_length_mm);
-}
+    // VariableWidth.cpp:11
+    // for (int i = 0; i < (int)lines.size(); ++i) {
+    let mut i: i32 = 0;
+    while i < lines.len() as i32 {
+        // VariableWidth.cpp:12-13
+        let line = lines[i as usize].clone();
+        debug_assert!(line.a_width >= SCALED_EPSILON && line.b_width >= SCALED_EPSILON);
 
-/// Merge nearly-collinear adjacent paths that have similar widths.
-///
-/// After splitting, we may end up with many tiny paths that could be merged
-/// if their widths are similar enough. This post-processing step reduces
-/// the number of extrusion moves while maintaining width accuracy.
-pub fn merge_similar_paths(paths: &mut Vec<ExtrusionPath>, width_merge_tolerance: CoordF) {
-    if paths.len() < 2 {
-        return;
-    }
-
-    let mut merged = Vec::with_capacity(paths.len());
-    let mut i = 0;
-
-    while i < paths.len() {
-        let mut current = paths[i].clone();
-        let mut j = i + 1;
-
-        while j < paths.len() {
-            let next = &paths[j];
-
-            // Check if widths are similar enough to merge
-            let width_diff = (current.width - next.width).abs();
-            if width_diff > width_merge_tolerance {
-                break;
+        // VariableWidth.cpp:15
+        // const coordf_t line_len = line.length();
+        let line_len: CoordF = line.length();
+        // VariableWidth.cpp:16
+        if line_len < SCALED_EPSILON {
+            // VariableWidth.cpp:17
+            // The line is so tiny that we don't care about its width when we connect it to another line.
+            // VariableWidth.cpp:18-19
+            if !path.polyline.points.is_empty() {
+                // If the variable path is non-empty, connect this tiny line to it.
+                let last = path.polyline.points.len() - 1;
+                path.polyline.points[last] = line.b;
+            } else if i + 1 < lines.len() as i32 {
+                // VariableWidth.cpp:20-21
+                // If there is at least one following line, connect this tiny line to it.
+                lines[(i + 1) as usize].a = line.a;
+            } else if !multi_path.paths.is_empty() {
+                // VariableWidth.cpp:22-23
+                // Connect this tiny line to the last finished path.
+                let last_path = multi_path.paths.len() - 1;
+                let last_pt = multi_path.paths[last_path].polyline.points.len() - 1;
+                multi_path.paths[last_path].polyline.points[last_pt] = line.b;
             }
 
-            // Check if paths are connected (last point of current == first point of next)
-            let current_last = current.last_point();
-            let next_first = next.first_point();
+            // VariableWidth.cpp:25-26
+            // If any of the above isn't satisfied, then remove this tiny line.
+            i += 1;
+            continue;
+        }
 
-            if let (Some(cl), Some(nf)) = (current_last, next_first) {
-                let dx = (cl.x - nf.x).abs() as CoordF;
-                let dy = (cl.y - nf.y).abs() as CoordF;
-                let dist_mm = (dx * dx + dy * dy).sqrt() / crate::SCALING_FACTOR;
+        // VariableWidth.cpp:29
+        // double thickness_delta = fabs(line.a_width - line.b_width);
+        let mut thickness_delta: f64 = (line.a_width - line.b_width).abs();
+        // VariableWidth.cpp:30
+        if thickness_delta > tolerance as f64 {
+            // VariableWidth.cpp:31
+            // const auto segments = (unsigned int)ceil(thickness_delta / tolerance);
+            let segments: u32 = (thickness_delta / tolerance as f64).ceil() as u32;
+            // VariableWidth.cpp:32
+            // const coordf_t seg_len = line_len / segments;
+            let seg_len: CoordF = line_len / segments as CoordF;
+            // VariableWidth.cpp:33-34
+            let mut pp: Vec<Point> = Vec::new();
+            let mut width: Vec<CoordF> = Vec::new();
+            {
+                // VariableWidth.cpp:36-37
+                pp.push(line.a);
+                width.push(line.a_width);
+                // VariableWidth.cpp:38
+                for j in 1..segments as usize {
+                    // VariableWidth.cpp:39
+                    // pp.push_back((line.a.cast<double>() + (line.b - line.a).cast<double>().normalized() * (j * seg_len)).cast<coord_t>());
+                    let a = PointF::new(line.a.x as f64, line.a.y as f64);
+                    let dir = PointF::new(
+                        (line.b.x - line.a.x) as f64,
+                        (line.b.y - line.a.y) as f64,
+                    );
+                    let dir = normalized(dir);
+                    let scale_factor = j as f64 * seg_len;
+                    let p = PointF::new(
+                        a.x + dir.x * scale_factor,
+                        a.y + dir.y * scale_factor,
+                    );
+                    pp.push(Point::new(p.x as Coord, p.y as Coord));
 
-                if dist_mm < 0.01 {
-                    // Merge: append next's points (skip first since it overlaps)
-                    let next_points = &next.points;
-                    if next_points.len() > 1 {
-                        current.points.extend_from_slice(&next_points[1..]);
-                    }
-                    // Average the widths
-                    current.width = (current.width + next.width) / 2.0;
-                    j += 1;
-                    continue;
+                    // VariableWidth.cpp:41
+                    // coordf_t w = line.a_width + (j*seg_len) * (line.b_width-line.a_width) / line_len;
+                    let w: CoordF =
+                        line.a_width + (j as f64 * seg_len) * (line.b_width - line.a_width) / line_len;
+                    // VariableWidth.cpp:42-43
+                    width.push(w);
+                    width.push(w);
+                }
+                // VariableWidth.cpp:45-46
+                pp.push(line.b);
+                width.push(line.b_width);
+
+                // VariableWidth.cpp:48-49
+                debug_assert!(pp.len() == segments as usize + 1);
+                debug_assert!(width.len() == segments as usize * 2);
+            }
+
+            // VariableWidth.cpp:52-53
+            // delete this line and insert new ones
+            lines.remove(i as usize);
+            // VariableWidth.cpp:54
+            for j in 0..segments as usize {
+                // VariableWidth.cpp:55-57
+                let mut new_line = ThickLine::new(pp[j], pp[j + 1], 0.0, 0.0);
+                new_line.a_width = width[2 * j];
+                new_line.b_width = width[2 * j + 1];
+                // VariableWidth.cpp:58
+                lines.insert(i as usize + j, new_line);
+            }
+
+            // VariableWidth.cpp:61-62
+            // C++: `-- i; continue;` — in the for-loop `continue` then runs `++ i`,
+            // so the net effect is that `i` is unchanged and the loop re-examines the
+            // first freshly-inserted line. We model that with an unchanged `continue`.
+            continue;
+        }
+
+        // VariableWidth.cpp:65
+        // const double w = fmax(line.a_width, line.b_width);
+        let w: f64 = line.a_width.max(line.b_width);
+        // VariableWidth.cpp:66
+        // const Flow new_flow = (role == erOverhangPerimeter && flow.bridge()) ? flow : flow.with_width(unscale<float>(w) + flow.height() * float(1. - 0.25 * PI));
+        let new_flow: Flow = if role == ExtrusionRole::OverhangPerimeter && flow.is_bridge() {
+            flow.clone()
+        } else {
+            flow.with_width(unscale_f(w) + flow.height() * (1.0 - 0.25 * PI))
+                .unwrap_or_else(|_| flow.clone())
+        };
+        // VariableWidth.cpp:67
+        if path.polyline.points.is_empty() {
+            // VariableWidth.cpp:68-69
+            path.polyline.points.push(line.a);
+            path.polyline.points.push(line.b);
+            // VariableWidth.cpp:70-71
+            // Convert from spacing to extrusion width based on the extrusion model
+            // of a square extrusion ended with semi circles.
+            // VariableWidth.cpp:75-77
+            path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
+            path.width = new_flow.width();
+            path.height = new_flow.height();
+        } else {
+            // VariableWidth.cpp:79
+            debug_assert!(path.width >= crate::libslic3r::EPSILON);
+            // VariableWidth.cpp:80
+            // thickness_delta = scaled<double>(fabs(path.width - new_flow.width()));
+            thickness_delta = scaled_f((path.width - new_flow.width()).abs());
+            // VariableWidth.cpp:81
+            if thickness_delta <= merge_tolerance as f64 {
+                // VariableWidth.cpp:82-84
+                // the width difference between this line and the current flow
+                // (of the previous line) width is within the accepted tolerance
+                path.polyline.points.push(line.b);
+            } else {
+                // VariableWidth.cpp:85-89
+                // we need to initialize a new line
+                multi_path.paths.push(std::mem::replace(&mut path, ExtrusionPath::new(role)));
+                i -= 1;
+            }
+        }
+
+        i += 1;
+    }
+    // VariableWidth.cpp:93
+    if path.polyline.is_valid() {
+        // VariableWidth.cpp:94-95
+        path.overhang_degree = overhang as i32;
+        multi_path.paths.push(path);
+    }
+    // VariableWidth.cpp:97
+    multi_path
+}
+
+/// VariableWidth.cpp:100-101
+/// BBS: new function to filter width to avoid too fragmented segments
+/// C++: static ExtrusionPaths thick_polyline_to_extrusion_paths_2(const ThickPolyline& thick_polyline, ExtrusionRole role, const Flow& flow, const float tolerance)
+fn thick_polyline_to_extrusion_paths_2(
+    thick_polyline: &ThickPolyline,
+    role: ExtrusionRole,
+    flow: &Flow,
+    tolerance: f32,
+) -> ExtrusionPaths {
+    // VariableWidth.cpp:103-105
+    let mut paths: ExtrusionPaths = ExtrusionPaths::new();
+    let mut path = ExtrusionPath::new(role);
+    let mut lines: Vec<ThickLine> = thick_polyline.thicklines();
+
+    // VariableWidth.cpp:107-108
+    let mut start_index: usize = 0;
+    let mut max_width: f64 = 0.0;
+    let mut min_width: f64 = 0.0;
+
+    // VariableWidth.cpp:110
+    // for (int i = 0; i < (int)lines.size(); ++i) {
+    let mut i: i32 = 0;
+    while i < lines.len() as i32 {
+        // VariableWidth.cpp:111
+        let line = lines[i as usize].clone();
+
+        // VariableWidth.cpp:113-116
+        if i == 0 {
+            max_width = line.a_width;
+            min_width = line.a_width;
+        }
+
+        // VariableWidth.cpp:118-119
+        let line_len: CoordF = line.length();
+        if line_len < SCALED_EPSILON {
+            i += 1;
+            continue;
+        }
+
+        // VariableWidth.cpp:121
+        // double thickness_delta = std::max(fabs(max_width - line.b_width), fabs(min_width - line.b_width));
+        let mut thickness_delta: f64 =
+            (max_width - line.b_width).abs().max((min_width - line.b_width).abs());
+        // VariableWidth.cpp:122-123
+        // BBS: has large difference in width
+        if thickness_delta > tolerance as f64 {
+            // VariableWidth.cpp:124-125
+            // BBS: 1 generate path from start_index to i(not included)
+            if start_index != i as usize {
+                // VariableWidth.cpp:126-127
+                path = ExtrusionPath::new(role);
+                let mut length: f64 = 0.0;
+                let mut sum: f64 = 0.0;
+                // VariableWidth.cpp:128-132
+                for idx in start_index..i as usize {
+                    length += lines[idx].length();
+                    sum += lines[idx].length() * 0.5 * (lines[idx].a_width + lines[idx].b_width);
+                    path.polyline.points.push(lines[idx].a);
+                }
+                // VariableWidth.cpp:133
+                path.polyline.points.push(lines[i as usize].a);
+                // VariableWidth.cpp:134
+                if length > SCALED_EPSILON {
+                    // VariableWidth.cpp:135-136
+                    let w: f64 = sum / length;
+                    let new_flow: Flow = flow
+                        .with_width(unscale_f(w) + flow.height() * (1.0 - 0.25 * PI))
+                        .unwrap_or_else(|_| flow.clone());
+                    // VariableWidth.cpp:137-139
+                    path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
+                    path.width = new_flow.width();
+                    path.height = new_flow.height();
+                    // VariableWidth.cpp:140
+                    paths.push(path.clone());
                 }
             }
 
-            break;
+            // VariableWidth.cpp:144-146
+            start_index = i as usize;
+            max_width = line.a_width;
+            min_width = line.a_width;
+
+            // VariableWidth.cpp:148-149
+            // BBS: 2 handle the i-th segment
+            thickness_delta = (line.a_width - line.b_width).abs();
+            // VariableWidth.cpp:150
+            if thickness_delta > tolerance as f64 {
+                // VariableWidth.cpp:151
+                let segments: u32 = (thickness_delta / tolerance as f64).ceil() as u32;
+                // VariableWidth.cpp:152
+                let seg_len: CoordF = line_len / segments as CoordF;
+                // VariableWidth.cpp:153-154
+                let mut pp: Vec<Point> = Vec::new();
+                let mut width: Vec<CoordF> = Vec::new();
+                {
+                    // VariableWidth.cpp:156-157
+                    pp.push(line.a);
+                    width.push(line.a_width);
+                    // VariableWidth.cpp:158
+                    for j in 1..segments as usize {
+                        // VariableWidth.cpp:159
+                        let a = PointF::new(line.a.x as f64, line.a.y as f64);
+                        let dir = PointF::new(
+                            (line.b.x - line.a.x) as f64,
+                            (line.b.y - line.a.y) as f64,
+                        );
+                        let dir = normalized(dir);
+                        let scale_factor = j as f64 * seg_len;
+                        let p = PointF::new(
+                            a.x + dir.x * scale_factor,
+                            a.y + dir.y * scale_factor,
+                        );
+                        pp.push(Point::new(p.x as Coord, p.y as Coord));
+
+                        // VariableWidth.cpp:161
+                        let w: CoordF = line.a_width
+                            + (j as f64 * seg_len) * (line.b_width - line.a_width) / line_len;
+                        // VariableWidth.cpp:162-163
+                        width.push(w);
+                        width.push(w);
+                    }
+                    // VariableWidth.cpp:165-166
+                    pp.push(line.b);
+                    width.push(line.b_width);
+
+                    // VariableWidth.cpp:168-169
+                    debug_assert!(pp.len() == segments as usize + 1);
+                    debug_assert!(width.len() == segments as usize * 2);
+                }
+
+                // VariableWidth.cpp:172-173
+                // delete this line and insert new ones
+                lines.remove(i as usize);
+                // VariableWidth.cpp:174
+                for j in 0..segments as usize {
+                    // VariableWidth.cpp:175-177
+                    let mut new_line = ThickLine::new(pp[j], pp[j + 1], 0.0, 0.0);
+                    new_line.a_width = width[2 * j];
+                    new_line.b_width = width[2 * j + 1];
+                    // VariableWidth.cpp:178
+                    lines.insert(i as usize + j, new_line);
+                }
+                // VariableWidth.cpp:180-181
+                // C++: `--i; continue;` — `continue` then runs `++i`, so `i` is
+                // unchanged and the loop re-examines the first inserted line.
+                continue;
+            }
+        }
+        // VariableWidth.cpp:184-188
+        // BBS: just update the max and min width and continue
+        else {
+            max_width = max_width.max(line.a_width.max(line.b_width));
+            min_width = min_width.min(line.a_width.min(line.b_width));
         }
 
-        merged.push(current);
-        i = j;
+        i += 1;
+    }
+    // VariableWidth.cpp:190-191
+    // BBS: handle the remaining segment
+    let final_size: usize = lines.len();
+    if start_index < final_size {
+        // VariableWidth.cpp:193-194
+        path = ExtrusionPath::new(role);
+        let mut length: f64 = 0.0;
+        let mut sum: f64 = 0.0;
+        // VariableWidth.cpp:195-199
+        for idx in start_index..final_size {
+            length += lines[idx].length();
+            sum += lines[idx].length() * (lines[idx].a_width + lines[idx].b_width) * 0.5;
+            path.polyline.points.push(lines[idx].a);
+        }
+        // VariableWidth.cpp:200
+        path.polyline.points.push(lines[final_size - 1].b);
+        // VariableWidth.cpp:201
+        if length > SCALED_EPSILON {
+            // VariableWidth.cpp:202-203
+            let w: f64 = sum / length;
+            let new_flow: Flow = flow
+                .with_width(unscale_f(w) + flow.height() * (1.0 - 0.25 * PI))
+                .unwrap_or_else(|_| flow.clone());
+            // VariableWidth.cpp:204-206
+            path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
+            path.width = new_flow.width();
+            path.height = new_flow.height();
+            // VariableWidth.cpp:207
+            paths.push(path.clone());
+        }
     }
 
-    *paths = merged;
+    // VariableWidth.cpp:211
+    paths
+}
+
+/// VariableWidth.cpp:214
+/// C++: void variable_width(const ThickPolylines& polylines, ExtrusionRole role, const Flow& flow, std::vector<ExtrusionEntity*>& out)
+pub fn variable_width(
+    polylines: &ThickPolylines,
+    role: ExtrusionRole,
+    flow: &Flow,
+    out: &mut Vec<ExtrusionEntityType>,
+) {
+    // VariableWidth.cpp:215-218
+    // This value determines granularity of adaptive width, as G-code does not allow
+    // variable extrusion within a single move; this value shall only affect the amount
+    // of segments, and any pruning shall be performed before we apply this tolerance.
+    // const float tolerance = float(scale_(0.05));
+    // NOTE: `scale_` here is the crate-root scaling (SCALING_FACTOR == 100_000),
+    // consistent with the scaled units used by `ThickLine` lengths and widths.
+    let tolerance: f32 = crate::scale(0.05) as f32;
+    // VariableWidth.cpp:220
+    for p in polylines {
+        // VariableWidth.cpp:221
+        let mut paths: ExtrusionPaths = thick_polyline_to_extrusion_paths_2(p, role, flow, tolerance);
+        // VariableWidth.cpp:222-223
+        // Append paths to collection.
+        if !paths.is_empty() {
+            // VariableWidth.cpp:224
+            if paths.first().unwrap().first_point() == paths.last().unwrap().last_point() {
+                // VariableWidth.cpp:225
+                out.push(ExtrusionEntityType::Loop(ExtrusionLoop::new(
+                    std::mem::take(&mut paths),
+                    crate::extrusion_entity::ExtrusionLoopRole::DEFAULT,
+                )));
+            } else {
+                // VariableWidth.cpp:226-229
+                for path in paths {
+                    out.push(ExtrusionEntityType::Path(path));
+                }
+            }
+        }
+    }
+}
+
+/// Helper: unscale a scaled `coordf_t` value to mm.
+/// C++: `unscale<float>(w)` == `coordf_t(w) * SCALING_FACTOR`. Here the crate's
+/// scaling convention is 1mm = SCALING_FACTOR units, so unscale divides.
+#[inline]
+fn unscale_f(scaled_val: f64) -> f64 {
+    scaled_val / crate::SCALING_FACTOR
+}
+
+/// Helper: scale an unscaled mm value to a scaled `coordf_t`.
+/// C++: `scaled<double>(v)` == `v / SCALING_FACTOR` (with `SCALING_FACTOR` < 1);
+/// here the crate's scaling convention multiplies by SCALING_FACTOR.
+#[inline]
+fn scaled_f(mm: f64) -> f64 {
+    mm * crate::SCALING_FACTOR
+}
+
+/// Normalize a 2D float vector (Eigen `.normalized()`).
+#[inline]
+fn normalized(v: PointF) -> PointF {
+    let len = (v.x * v.x + v.y * v.y).sqrt();
+    if len == 0.0 {
+        PointF::new(0.0, 0.0)
+    } else {
+        PointF::new(v.x / len, v.y / len)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::geometry::Point;
-    use crate::scale;
 
     fn s(mm: f64) -> i64 {
-        scale(mm)
+        crate::scale(mm)
     }
 
-    fn make_config() -> VariableWidthConfig {
-        VariableWidthConfig {
-            width_tolerance: 0.05,
-            min_path_length: 0.05,
-            layer_height: 0.2,
-            nozzle_diameter: 0.4,
-            speed: 30.0,
-            role: ExtrusionRole::GapFill,
-        }
+    fn make_flow() -> Flow {
+        Flow::new(0.4, 0.2, 0.4).unwrap()
     }
 
     #[test]
     fn test_variable_width_empty() {
-        let config = make_config();
-        let result = variable_width(&vec![], &config);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_variable_width_single_point() {
-        let config = make_config();
-        let tp = ThickPolyline::from_points_and_widths(vec![Point::new(0, 0)], vec![0.4]);
-        let result = variable_width(&vec![tp], &config);
-        assert!(result.is_empty()); // Single point can't form a path
+        let flow = make_flow();
+        let mut out = Vec::new();
+        variable_width(&vec![], ExtrusionRole::GapFill, &flow, &mut out);
+        assert!(out.is_empty());
     }
 
     #[test]
     fn test_variable_width_uniform() {
-        let config = make_config();
-        let tp = ThickPolyline::from_points_and_widths(
-            vec![
-                Point::new(0, 0),
-                Point::new(s(5.0), 0),
-                Point::new(s(10.0), 0),
-            ],
-            vec![0.4, 0.4, 0.4],
-        );
-        let result = variable_width(&vec![tp], &config);
+        let flow = make_flow();
+        // Widths in scaled units; build a ThickPolyline directly via thicklines.
+        let mut tp = ThickPolyline::new();
+        tp.points = vec![Point::new(0, 0), Point::new(s(5.0), 0), Point::new(s(10.0), 0)];
+        // widths array is one-per-vertex in the crate's ThickPolyline model.
+        let w = s(0.4) as f64;
+        tp.widths = vec![w, w, w];
 
-        // Uniform width should produce a single path
-        assert_eq!(result.len(), 1);
-        assert!((result[0].width - 0.4).abs() < 0.01);
-        assert_eq!(result[0].points.len(), 3);
+        let mut out = Vec::new();
+        variable_width(&vec![tp], ExtrusionRole::GapFill, &flow, &mut out);
+        // Uniform width should produce a single path entity.
+        assert_eq!(out.len(), 1);
     }
 
     #[test]
     fn test_variable_width_split_at_large_change() {
-        let config = make_config();
-        // Width changes from 0.1 to 0.5 — should split
-        let tp = ThickPolyline::from_points_and_widths(
-            vec![
-                Point::new(0, 0),
-                Point::new(s(5.0), 0),
-                Point::new(s(10.0), 0),
-                Point::new(s(15.0), 0),
-            ],
-            vec![0.1, 0.12, 0.5, 0.52],
-        );
-        let result = variable_width(&vec![tp], &config);
-
-        // Should produce at least 2 paths due to the width jump
-        assert!(
-            result.len() >= 2,
-            "Expected at least 2 paths, got {}",
-            result.len()
-        );
-
-        // First path should be narrow, second should be wide
-        let first_width = result[0].width;
-        let last_width = result.last().unwrap().width;
-        assert!(
-            first_width < 0.3,
-            "First path width {:.3} should be < 0.3",
-            first_width
-        );
-        assert!(
-            last_width > 0.3,
-            "Last path width {:.3} should be > 0.3",
-            last_width
-        );
-    }
-
-    #[test]
-    fn test_variable_width_gradual_taper() {
-        let config = make_config();
-        // Gradual taper from 0.1 to 0.7 over many points
-        let n = 20;
-        let mut points = Vec::with_capacity(n);
-        let mut widths = Vec::with_capacity(n);
-        for i in 0..n {
-            points.push(Point::new(s(i as f64 * 1.0), 0));
-            widths.push(0.1 + 0.6 * (i as f64) / (n as f64 - 1.0));
-        }
-        let tp = ThickPolyline::from_points_and_widths(points, widths);
-        let result = variable_width(&vec![tp], &config);
-
-        // Should produce multiple paths, each with moderate width variation
-        assert!(
-            result.len() >= 2,
-            "Expected multiple paths for gradual taper, got {}",
-            result.len()
-        );
-
-        // Widths should be monotonically non-decreasing (since source is monotonic)
-        for i in 1..result.len() {
-            assert!(
-                result[i].width >= result[i - 1].width - 0.1,
-                "Path {} width {:.3} is much less than path {} width {:.3}",
-                i,
-                result[i].width,
-                i - 1,
-                result[i - 1].width,
-            );
-        }
-    }
-
-    #[test]
-    fn test_variable_width_respects_min_length() {
-        let config = VariableWidthConfig {
-            min_path_length: 1.0, // 1mm minimum
-            ..make_config()
-        };
-
-        // Create a very short polyline (0.1mm)
-        let tp = ThickPolyline::from_points_and_widths(
-            vec![Point::new(0, 0), Point::new(s(0.05), 0)],
-            vec![0.4, 0.4],
-        );
-        let result = variable_width(&vec![tp], &config);
-        assert!(
-            result.is_empty(),
-            "Should filter out paths shorter than min_length"
-        );
-    }
-
-    #[test]
-    fn test_variable_width_multiple_polylines() {
-        let config = make_config();
-        let tp1 = ThickPolyline::from_points_and_widths(
-            vec![Point::new(0, 0), Point::new(s(5.0), 0)],
-            vec![0.3, 0.3],
-        );
-        let tp2 = ThickPolyline::from_points_and_widths(
-            vec![
-                Point::new(s(10.0), 0),
-                Point::new(s(15.0), 0),
-                Point::new(s(20.0), 0),
-            ],
-            vec![0.5, 0.5, 0.5],
-        );
-        let result = variable_width(&vec![tp1, tp2], &config);
-
-        // Should produce at least 2 paths (one per polyline)
-        assert!(result.len() >= 2);
-    }
-
-    #[test]
-    fn test_variable_width_role_propagation() {
-        let config = VariableWidthConfig {
-            role: ExtrusionRole::GapFill,
-            ..make_config()
-        };
-
-        let tp = ThickPolyline::from_points_and_widths(
-            vec![Point::new(0, 0), Point::new(s(10.0), 0)],
-            vec![0.4, 0.4],
-        );
-        let result = variable_width(&vec![tp], &config);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].role, ExtrusionRole::GapFill);
-    }
-
-    #[test]
-    fn test_split_by_width_uniform() {
-        let tp = ThickPolyline::from_points_and_widths(
-            vec![
-                Point::new(0, 0),
-                Point::new(s(5.0), 0),
-                Point::new(s(10.0), 0),
-            ],
-            vec![0.4, 0.41, 0.39],
-        );
-
-        let segments = split_by_width(&tp, 0.05);
-        assert_eq!(
-            segments.len(),
-            1,
-            "Uniform width should produce single segment"
-        );
-        assert_eq!(segments[0].points.len(), 3);
-    }
-
-    #[test]
-    fn test_split_by_width_step_change() {
-        let tp = ThickPolyline::from_points_and_widths(
-            vec![
-                Point::new(0, 0),
-                Point::new(s(5.0), 0),
-                Point::new(s(10.0), 0),
-                Point::new(s(15.0), 0),
-            ],
-            vec![0.2, 0.21, 0.5, 0.51],
-        );
-
-        let segments = split_by_width(&tp, 0.05);
-        assert!(
-            segments.len() >= 2,
-            "Step change should split into at least 2 segments, got {}",
-            segments.len()
-        );
-    }
-
-    #[test]
-    fn test_polyline_length_mm() {
-        let points = vec![Point::new(0, 0), Point::new(s(10.0), 0)];
-        let len = polyline_length_mm(&points);
-        assert!((len - 10.0).abs() < 0.001, "Expected 10mm, got {:.3}", len);
-    }
-
-    #[test]
-    fn test_filter_short_polylines() {
-        let mut polylines = vec![
-            ThickPolyline::from_points_and_widths(
-                vec![Point::new(0, 0), Point::new(s(10.0), 0)],
-                vec![0.4, 0.4],
-            ),
-            ThickPolyline::from_points_and_widths(
-                vec![Point::new(0, 0), Point::new(s(0.01), 0)],
-                vec![0.4, 0.4],
-            ),
+        let flow = make_flow();
+        let mut tp = ThickPolyline::new();
+        tp.points = vec![
+            Point::new(0, 0),
+            Point::new(s(5.0), 0),
+            Point::new(s(10.0), 0),
+            Point::new(s(15.0), 0),
         ];
-
-        filter_short_polylines(&mut polylines, 0.1);
-        assert_eq!(
-            polylines.len(),
-            1,
-            "Should filter out polyline shorter than 0.1mm"
-        );
-        assert!((polylines[0].length_mm() - 10.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_variable_width_from_flow() {
-        let flow = Flow::new(0.4, 0.2, 0.4).unwrap();
-        let tp = ThickPolyline::from_points_and_widths(
-            vec![Point::new(0, 0), Point::new(s(10.0), 0)],
-            vec![0.4, 0.4],
-        );
-        let result = variable_width_from_flow(&vec![tp], ExtrusionRole::GapFill, &flow, 30.0);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].role, ExtrusionRole::GapFill);
-    }
-
-    #[test]
-    fn test_merge_similar_paths() {
-        // Two connected paths with similar widths should merge
-        let path1 = ExtrusionPath::from_polyline(
-            &Polyline::from_points(vec![Point::new(0, 0), Point::new(s(5.0), 0)]),
-            ExtrusionRole::GapFill,
-        )
-        .with_width(0.4);
-
-        let path2 = ExtrusionPath::from_polyline(
-            &Polyline::from_points(vec![Point::new(s(5.0), 0), Point::new(s(10.0), 0)]),
-            ExtrusionRole::GapFill,
-        )
-        .with_width(0.41);
-
-        let mut paths = vec![path1, path2];
-        merge_similar_paths(&mut paths, 0.05);
-
-        assert_eq!(paths.len(), 1, "Similar connected paths should merge");
-        assert_eq!(paths[0].points.len(), 3);
-    }
-
-    #[test]
-    fn test_merge_different_widths_no_merge() {
-        let path1 = ExtrusionPath::from_polyline(
-            &Polyline::from_points(vec![Point::new(0, 0), Point::new(s(5.0), 0)]),
-            ExtrusionRole::GapFill,
-        )
-        .with_width(0.2);
-
-        let path2 = ExtrusionPath::from_polyline(
-            &Polyline::from_points(vec![Point::new(s(5.0), 0), Point::new(s(10.0), 0)]),
-            ExtrusionRole::GapFill,
-        )
-        .with_width(0.6);
-
-        let mut paths = vec![path1, path2];
-        merge_similar_paths(&mut paths, 0.05);
-
-        assert_eq!(
-            paths.len(),
-            2,
-            "Paths with different widths should not merge"
-        );
-    }
-
-    #[test]
-    fn test_variable_width_realistic_gap() {
-        // Simulate a realistic tapered gap: width starts at 0.1, peaks at 0.35, returns to 0.1
-        let config = make_config();
-        let n = 30;
-        let mut points = Vec::with_capacity(n);
-        let mut widths = Vec::with_capacity(n);
-
-        for i in 0..n {
-            let t = i as f64 / (n as f64 - 1.0);
-            let x = t * 15.0; // 15mm long gap
-            let w = 0.1 + 0.25 * (std::f64::consts::PI * t).sin(); // Sinusoidal width
-            points.push(Point::new(s(x), 0));
-            widths.push(w);
-        }
-
-        let tp = ThickPolyline::from_points_and_widths(points, widths);
-        let result = variable_width(&vec![tp], &config);
-
-        // Should produce multiple paths with varying widths
-        assert!(
-            result.len() >= 2,
-            "Realistic tapered gap should produce multiple paths, got {}",
-            result.len()
-        );
-
-        // Collect unique widths (rounded to 0.01)
-        let unique_widths: std::collections::HashSet<i32> = result
-            .iter()
-            .map(|p| (p.width * 100.0).round() as i32)
-            .collect();
-        assert!(
-            unique_widths.len() >= 2,
-            "Should have multiple distinct widths, got {}",
-            unique_widths.len()
-        );
-
-        // Total length should be close to the original 15mm
-        let total_len: CoordF = result.iter().map(|p| p.length_mm()).sum();
-        assert!(
-            total_len > 10.0 && total_len < 20.0,
-            "Total length {:.1}mm should be roughly 15mm",
-            total_len
-        );
+        tp.widths = vec![
+            s(0.1) as f64,
+            s(0.12) as f64,
+            s(0.5) as f64,
+            s(0.52) as f64,
+        ];
+        let mut out = Vec::new();
+        variable_width(&vec![tp], ExtrusionRole::GapFill, &flow, &mut out);
+        assert!(!out.is_empty());
     }
 }

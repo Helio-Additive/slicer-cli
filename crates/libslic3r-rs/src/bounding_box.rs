@@ -6,27 +6,33 @@
 //!
 //! This module provides bounding box types for both scaled integer coordinates
 //! (BoundingBox, BoundingBox3) and floating-point coordinates (BoundingBoxf, BoundingBoxf3).
+//!
+//! Type mapping (per BoundingBox.hpp):
+//! - `BoundingBox`   : BoundingBoxBase<Point>   -> integer 2D (Vec2crd / i64)
+//! - `BoundingBox3`  : BoundingBox3Base<Vec3crd> -> integer 3D (Point3 / i64)
+//! - `BoundingBoxf`  : BoundingBoxBase<Vec2d>    -> float 2D (f64)
+//! - `BoundingBoxf3` : BoundingBox3Base<Vec3d>   -> float 3D (f64)
 
-use crate::geometry::{Point, Polygon, Vec2d, Vec3d};
+use crate::geometry::{Point, Point3, Polygon, Vec2d, Vec3d};
 
 /// 2D bounding box with scaled integer coordinates
 /// C++ Reference: BoundingBox.hpp - class BoundingBox : public BoundingBoxBase<Point>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundingBox {
     /// Minimum corner point
-    /// BoundingBox.hpp:13
+    /// BoundingBox.hpp:16
     pub min: Point,
     /// Maximum corner point
-    /// BoundingBox.hpp:14
+    /// BoundingBox.hpp:17
     pub max: Point,
     /// Whether the bounding box has been initialized with valid points
-    /// BoundingBox.hpp:15
+    /// BoundingBox.hpp:18
     pub defined: bool,
 }
 
 impl BoundingBox {
     /// Create an undefined (empty) bounding box
-    /// BoundingBox.hpp:17
+    /// BoundingBox.hpp:20
     /// C++: BoundingBoxBase() : min(PointClass::Zero()), max(PointClass::Zero()), defined(false) {}
     pub fn new() -> Self {
         Self {
@@ -37,7 +43,7 @@ impl BoundingBox {
     }
 
     /// Create a bounding box from min and max corners
-    /// BoundingBox.hpp:18-19
+    /// BoundingBox.hpp:21-22
     /// C++: BoundingBoxBase(const PointClass &pmin, const PointClass &pmax) :
     /// C++:     min(pmin), max(pmax), defined(pmin(0) < pmax(0) && pmin(1) < pmax(1)) {}
     pub fn new_from_points(pmin: Point, pmax: Point) -> Self {
@@ -49,7 +55,7 @@ impl BoundingBox {
     }
 
     /// Create a bounding box from three points
-    /// BoundingBox.hpp:20-21
+    /// BoundingBox.hpp:23-24
     /// C++: BoundingBoxBase(const PointClass &p1, const PointClass &p2, const PointClass &p3) :
     /// C++:     min(p1), max(p1), defined(false) { merge(p2); merge(p3); }
     pub fn new_from_three(p1: Point, p2: Point, p3: Point) -> Self {
@@ -64,7 +70,7 @@ impl BoundingBox {
     }
 
     /// Create a bounding box from a vector of points
-    /// BoundingBox.hpp:29-31
+    /// BoundingBox.hpp:33-35
     /// C++: BoundingBoxBase(const std::vector<PointClass> &points)
     /// C++:     : BoundingBoxBase(points.begin(), points.end())
     pub fn new_from_points_slice(points: &[Point]) -> Self {
@@ -72,22 +78,45 @@ impl BoundingBox {
     }
 
     /// Create a bounding box from an iterator of points
-    /// BoundingBox.hpp:24-27 + 76-90 (construct template)
+    /// BoundingBox.hpp:27-31 + 88-102 (construct template, IncludeBoundary = false)
     /// C++: template<class It, class = IteratorOnly<It>>
     /// C++: BoundingBoxBase(It from, It to) { construct(*this, from, to); }
-    pub fn from_iterator<I>(points: I) -> Self
+    /// C++: static void construct(BoundingBoxType &out, It from, It to) {
+    /// C++:     if (from != to) {
+    /// C++:         auto it = from;
+    /// C++:         out.min = it->...; out.max = out.min;
+    /// C++:         for (++ it; it != to; ++ it) {
+    /// C++:             out.min = out.min.cwiseMin(vec);
+    /// C++:             out.max = out.max.cwiseMax(vec);
+    /// C++:         }
+    /// C++:         out.defined = IncludeBoundary || (out.min.x() < out.max.x() && out.min.y() < out.max.y());
+    /// C++:     }
+    /// C++: }
+    pub fn from_iterator<I>(mut points: I) -> Self
     where
         I: Iterator<Item = Point>,
     {
         let mut bb = Self::new();
-        for point in points {
-            bb.merge_point(point);
+        // BoundingBox.hpp:91 - if (from != to)
+        if let Some(first) = points.next() {
+            // BoundingBox.hpp:93-94
+            bb.min = first;
+            bb.max = first;
+            // BoundingBox.hpp:95-99
+            for point in points {
+                bb.min.x = bb.min.x.min(point.x);
+                bb.min.y = bb.min.y.min(point.y);
+                bb.max.x = bb.max.x.max(point.x);
+                bb.max.y = bb.max.y.max(point.y);
+            }
+            // BoundingBox.hpp:100 - IncludeBoundary == false
+            bb.defined = bb.min.x < bb.max.x && bb.min.y < bb.max.y;
         }
         bb
     }
 
     /// Reset the bounding box to undefined state
-    /// BoundingBox.hpp:33
+    /// BoundingBox.hpp:37
     /// C++: void reset() { this->defined = false; this->min = PointClass::Zero(); this->max = PointClass::Zero(); }
     pub fn reset(&mut self) {
         self.defined = false;
@@ -96,7 +125,7 @@ impl BoundingBox {
     }
 
     /// Merge a single point into the bounding box
-    /// BoundingBox.cpp:78-89
+    /// BoundingBox.cpp:73-84
     /// C++: template <class PointClass> void
     /// C++: BoundingBoxBase<PointClass>::merge(const PointClass &point)
     /// C++: {
@@ -123,7 +152,7 @@ impl BoundingBox {
     }
 
     /// Merge a slice of points into the bounding box
-    /// BoundingBox.cpp:94-98
+    /// BoundingBox.cpp:89-93
     /// C++: template <class PointClass> void
     /// C++: BoundingBoxBase<PointClass>::merge(const std::vector<PointClass> &points)
     /// C++: {
@@ -135,7 +164,7 @@ impl BoundingBox {
     }
 
     /// Merge another bounding box into this one
-    /// BoundingBox.cpp:102-116
+    /// BoundingBox.cpp:97-111
     /// C++: template <class PointClass> void
     /// C++: BoundingBoxBase<PointClass>::merge(const BoundingBoxBase<PointClass> &bb)
     /// C++: {
@@ -152,6 +181,7 @@ impl BoundingBox {
     /// C++:     }
     /// C++: }
     pub fn merge_bb(&mut self, bb: &BoundingBox) {
+        debug_assert!(bb.defined || bb.min.x >= bb.max.x || bb.min.y >= bb.max.y);
         if bb.defined {
             if self.defined {
                 self.min.x = self.min.x.min(bb.min.x);
@@ -167,22 +197,24 @@ impl BoundingBox {
     }
 
     /// Scale the bounding box by a factor
-    /// BoundingBox.cpp:62-67
+    /// BoundingBox.cpp:63-68
     /// C++: template <class PointClass> void
     /// C++: BoundingBoxBase<PointClass>::scale(double factor)
     /// C++: {
     /// C++:     this->min *= factor;
     /// C++:     this->max *= factor;
     /// C++: }
+    /// NOTE: For integer Point, Eigen's `coord_t *= double` computes in double and
+    /// assigns back via static_cast<coord_t>, which truncates toward zero. Use `as i64`.
     pub fn scale(&mut self, factor: f64) {
-        self.min.x = (self.min.x as f64 * factor).round() as i64;
-        self.min.y = (self.min.y as f64 * factor).round() as i64;
-        self.max.x = (self.max.x as f64 * factor).round() as i64;
-        self.max.y = (self.max.y as f64 * factor).round() as i64;
+        self.min.x = (self.min.x as f64 * factor) as i64;
+        self.min.y = (self.min.y as f64 * factor) as i64;
+        self.max.x = (self.max.x as f64 * factor) as i64;
+        self.max.y = (self.max.y as f64 * factor) as i64;
     }
 
     /// Get the size (width and height) of the bounding box
-    /// BoundingBox.cpp:151-155
+    /// BoundingBox.cpp:176-180
     /// C++: template <class PointClass> PointClass
     /// C++: BoundingBoxBase<PointClass>::size() const
     /// C++: {
@@ -193,7 +225,7 @@ impl BoundingBox {
     }
 
     /// Get the radius (half the diagonal length) of the bounding box
-    /// BoundingBox.cpp:166-172
+    /// BoundingBox.cpp:193-199
     /// C++: template <class PointClass> double BoundingBoxBase<PointClass>::radius() const
     /// C++: {
     /// C++:     assert(this->defined);
@@ -202,26 +234,27 @@ impl BoundingBox {
     /// C++:     return 0.5 * sqrt(x*x+y*y);
     /// C++: }
     pub fn radius(&self) -> f64 {
-        assert!(self.defined);
+        debug_assert!(self.defined);
         let x = (self.max.x - self.min.x) as f64;
         let y = (self.max.y - self.min.y) as f64;
         0.5 * (x * x + y * y).sqrt()
     }
 
     /// Get the area of the bounding box
-    /// BoundingBox.hpp:41
+    /// BoundingBox.hpp:44
     /// C++: double area() const { return double(this->max(0) - this->min(0)) * (this->max(1) - this->min(1)); }
     pub fn area(&self) -> f64 {
         ((self.max.x - self.min.x) as f64) * ((self.max.y - self.min.y) as f64)
     }
 
     /// Translate the bounding box by (x, y)
-    /// BoundingBox.hpp:42
+    /// BoundingBox.hpp:45
     /// C++: void translate(coordf_t x, coordf_t y) { assert(this->defined); PointClass v(x, y); this->min += v; this->max += v; }
+    /// NOTE: PointClass(x, y) for integer Point truncates the coordf_t values toward zero.
     pub fn translate(&mut self, x: f64, y: f64) {
-        assert!(self.defined);
-        let dx = x.round() as i64;
-        let dy = y.round() as i64;
+        debug_assert!(self.defined);
+        let dx = x as i64;
+        let dy = y as i64;
         self.min.x += dx;
         self.min.y += dy;
         self.max.x += dx;
@@ -229,14 +262,19 @@ impl BoundingBox {
     }
 
     /// Translate the bounding box by a Vec2d
-    /// BoundingBox.hpp:43
+    /// BoundingBox.hpp:46
     /// C++: void translate(const Vec2d& v0) { PointClass v(v0.x(), v0.y()); this->min += v; this->max += v; }
     pub fn translate_vec(&mut self, v: Vec2d) {
-        self.translate(v.x, v.y);
+        let dx = v.x as i64;
+        let dy = v.y as i64;
+        self.min.x += dx;
+        self.min.y += dy;
+        self.max.x += dx;
+        self.max.y += dy;
     }
 
     /// Expand the bounding box by delta in all directions
-    /// BoundingBox.cpp:186-191
+    /// BoundingBox.cpp:212-218
     /// C++: template <class PointClass> void
     /// C++: BoundingBoxBase<PointClass>::offset(coordf_t delta)
     /// C++: {
@@ -244,8 +282,9 @@ impl BoundingBox {
     /// C++:     this->min -= v;
     /// C++:     this->max += v;
     /// C++: }
+    /// NOTE: PointClass(delta, delta) for integer Point truncates delta toward zero.
     pub fn offset(&mut self, delta: f64) {
-        let d = delta.round() as i64;
+        let d = delta as i64;
         self.min.x -= d;
         self.min.y -= d;
         self.max.x += d;
@@ -253,7 +292,7 @@ impl BoundingBox {
     }
 
     /// Return a new bounding box inflated by delta
-    /// BoundingBox.hpp:45
+    /// BoundingBox.hpp:48
     /// C++: BoundingBoxBase<PointClass> inflated(coordf_t delta) const throw() { BoundingBoxBase<PointClass> out(*this); out.offset(delta); return out; }
     pub fn inflated(&self, delta: f64) -> Self {
         let mut out = *self;
@@ -262,18 +301,19 @@ impl BoundingBox {
     }
 
     /// Get the center point of the bounding box
-    /// BoundingBox.cpp:201-205
+    /// BoundingBox.cpp:231-235
     /// C++: template <class PointClass> PointClass
     /// C++: BoundingBoxBase<PointClass>::center() const
     /// C++: {
     /// C++:     return (this->min + this->max) / 2;
     /// C++: }
+    /// NOTE: integer division truncates toward zero (Eigen `Vector2i / int`).
     pub fn center(&self) -> Point {
         Point::new((self.min.x + self.max.x) / 2, (self.min.y + self.max.y) / 2)
     }
 
     /// Check if a point is contained within the bounding box
-    /// BoundingBox.hpp:47-50
+    /// BoundingBox.hpp:50-53
     /// C++: bool contains(const PointClass &point) const {
     /// C++:     return point(0) >= this->min(0) && point(0) <= this->max(0)
     /// C++:         && point(1) >= this->min(1) && point(1) <= this->max(1);
@@ -286,7 +326,7 @@ impl BoundingBox {
     }
 
     /// Check if another bounding box is fully contained within this one
-    /// BoundingBox.hpp:51-53
+    /// BoundingBox.hpp:54-56
     /// C++: bool contains(const BoundingBoxBase<PointClass> &other) const {
     /// C++:     return contains(other.min) && contains(other.max);
     /// C++: }
@@ -295,7 +335,7 @@ impl BoundingBox {
     }
 
     /// Check if this bounding box overlaps with another
-    /// BoundingBox.hpp:54-57
+    /// BoundingBox.hpp:57-60
     /// C++: bool overlap(const BoundingBoxBase<PointClass> &other) const {
     /// C++:     return ! (this->max(0) < other.min(0) || this->min(0) > other.max(0) ||
     /// C++:               this->max(1) < other.min(1) || this->min(1) > other.max(1));
@@ -307,8 +347,8 @@ impl BoundingBox {
             || self.min.y > other.max.y)
     }
 
-    /// Get a corner point by index (0=min, 1=max_x+min_y, 2=max, 3=min_x+max_y)
-    /// BoundingBox.hpp:58-67
+    /// Get a corner point by index (0=min, 1=(max_x,min_y), 2=max, 3=(min_x,max_y))
+    /// BoundingBox.hpp:61-71
     /// C++: PointClass operator[](size_t idx) const
     /// C++: {
     /// C++:     switch (idx) {
@@ -329,8 +369,8 @@ impl BoundingBox {
         }
     }
 
-    /// Convert the bounding box to a polygon (rectangle)
-    /// BoundingBox.cpp:13-25
+    /// Fill an existing polygon with the bounding box rectangle (out-parameter form)
+    /// BoundingBox.cpp:15-27
     /// C++: void BoundingBox::polygon(Polygon* polygon) const
     /// C++: {
     /// C++:     polygon->points.clear();
@@ -344,17 +384,30 @@ impl BoundingBox {
     /// C++:     polygon->points[3](0) = this->min(0);
     /// C++:     polygon->points[3](1) = this->max(1);
     /// C++: }
+    pub fn polygon_into(&self, polygon: &mut Polygon) {
+        polygon.points.clear();
+        polygon.points.push(Point::new(self.min.x, self.min.y));
+        polygon.points.push(Point::new(self.max.x, self.min.y));
+        polygon.points.push(Point::new(self.max.x, self.max.y));
+        polygon.points.push(Point::new(self.min.x, self.max.y));
+    }
+
+    /// Convert the bounding box to a polygon (rectangle)
+    /// BoundingBox.cpp:29-34
+    /// C++: Polygon BoundingBox::polygon() const
+    /// C++: {
+    /// C++:     Polygon p;
+    /// C++:     this->polygon(&p);
+    /// C++:     return p;
+    /// C++: }
     pub fn polygon(&self) -> Polygon {
-        let mut points = Vec::with_capacity(4);
-        points.push(Point::new(self.min.x, self.min.y));
-        points.push(Point::new(self.max.x, self.min.y));
-        points.push(Point::new(self.max.x, self.max.y));
-        points.push(Point::new(self.min.x, self.max.y));
-        Polygon::from_points(points)
+        let mut p = Polygon::new();
+        self.polygon_into(&mut p);
+        p
     }
 
     /// Return a rotated bounding box (around origin)
-    /// BoundingBox.cpp:33-40
+    /// BoundingBox.cpp:36-44
     /// C++: BoundingBox BoundingBox::rotated(double angle) const
     /// C++: {
     /// C++:     BoundingBox out;
@@ -374,7 +427,7 @@ impl BoundingBox {
     }
 
     /// Return a rotated bounding box (around a center point)
-    /// BoundingBox.cpp:42-49
+    /// BoundingBox.cpp:46-54
     /// C++: BoundingBox BoundingBox::rotated(double angle, const Point &center) const
     /// C++: {
     /// C++:     BoundingBox out;
@@ -394,21 +447,21 @@ impl BoundingBox {
     }
 
     /// Rotate the bounding box in place
-    /// BoundingBox.hpp:114
+    /// BoundingBox.hpp:205
     /// C++: void rotate(double angle) { (*this) = this->rotated(angle); }
     pub fn rotate(&mut self, angle: f64) {
         *self = self.rotated(angle);
     }
 
     /// Rotate the bounding box around a center point in place
-    /// BoundingBox.hpp:115
+    /// BoundingBox.hpp:206
     /// C++: void rotate(double angle, const Point &center) { (*this) = this->rotated(angle, center); }
     pub fn rotate_around(&mut self, angle: f64, center: Point) {
         *self = self.rotated_around(angle, center);
     }
 
     /// Align the min corner to a grid of cell_size x cell_size cells
-    /// BoundingBox.cpp:227-232
+    /// BoundingBox.cpp:257-263
     /// C++: void BoundingBox::align_to_grid(const coord_t cell_size)
     /// C++: {
     /// C++:     if (this->defined) {
@@ -424,7 +477,7 @@ impl BoundingBox {
     }
 
     /// Return a scaled copy of the bounding box
-    /// BoundingBox.cpp:51-55
+    /// BoundingBox.cpp:56-61
     /// C++: BoundingBox BoundingBox::scaled(double factor) const
     /// C++: {
     /// C++:     BoundingBox out(*this);
@@ -438,7 +491,7 @@ impl BoundingBox {
     }
 
     /// Check if the bounding box is empty (not defined or has zero/negative size)
-    /// BoundingBox.hpp:174-177
+    /// BoundingBox.hpp:248-252
     /// C++: template<typename VT>
     /// C++: inline bool empty(const BoundingBoxBase<VT> &bb)
     /// C++: {
@@ -457,49 +510,56 @@ impl Default for BoundingBox {
 
 /// 3D bounding box with scaled integer coordinates
 /// C++ Reference: BoundingBox.hpp - class BoundingBox3 : public BoundingBox3Base<Vec3crd>
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundingBox3 {
-    /// Minimum corner point
-    /// BoundingBox.hpp:13
-    pub min: Vec3d,
-    /// Maximum corner point
-    /// BoundingBox.hpp:14
-    pub max: Vec3d,
+    /// Minimum corner point (Vec3crd / integer)
+    /// BoundingBox.hpp:16
+    pub min: Point3,
+    /// Maximum corner point (Vec3crd / integer)
+    /// BoundingBox.hpp:17
+    pub max: Point3,
     /// Whether the bounding box has been initialized with valid points
-    /// BoundingBox.hpp:15
+    /// BoundingBox.hpp:18
     pub defined: bool,
 }
 
 impl BoundingBox3 {
     /// Create an undefined (empty) 3D bounding box
-    /// BoundingBox.hpp:100
+    /// BoundingBox.hpp:109
     /// C++: BoundingBox3Base() : BoundingBoxBase<PointClass>() {}
     pub fn new() -> Self {
         Self {
-            min: Vec3d::new(0.0, 0.0, 0.0),
-            max: Vec3d::new(0.0, 0.0, 0.0),
+            min: Point3::new(0, 0, 0),
+            max: Point3::new(0, 0, 0),
             defined: false,
         }
     }
 
     /// Create a 3D bounding box from min and max corners
-    /// BoundingBox.hpp:101-103
+    /// BoundingBox.hpp:110-112
     /// C++: BoundingBox3Base(const PointClass &pmin, const PointClass &pmax) :
     /// C++:     BoundingBoxBase<PointClass>(pmin, pmax)
     /// C++:     { if (pmin(2) >= pmax(2)) BoundingBoxBase<PointClass>::defined = false; }
-    pub fn new_from_points(pmin: Vec3d, pmax: Vec3d) -> Self {
+    /// NOTE: base ctor sets defined = (pmin(0) < pmax(0) && pmin(1) < pmax(1)),
+    ///       then this resets it to false if pmin(2) >= pmax(2).
+    pub fn new_from_points(pmin: Point3, pmax: Point3) -> Self {
+        let mut defined = pmin.x < pmax.x && pmin.y < pmax.y;
+        if pmin.z >= pmax.z {
+            defined = false;
+        }
         Self {
             min: pmin,
             max: pmax,
-            defined: pmin.x < pmax.x && pmin.y < pmax.y && pmin.z < pmax.z,
+            defined,
         }
     }
 
     /// Create a 3D bounding box from three points
-    /// BoundingBox.hpp:104-105
+    /// BoundingBox.hpp:113-114
     /// C++: BoundingBox3Base(const PointClass &p1, const PointClass &p2, const PointClass &p3) :
     /// C++:     BoundingBoxBase<PointClass>(p1, p1) { merge(p2); merge(p3); }
-    pub fn new_from_three(p1: Vec3d, p2: Vec3d, p3: Vec3d) -> Self {
+    /// NOTE: base ctor BoundingBoxBase(p1, p1) sets defined = (p1<p1 ...) = false.
+    pub fn new_from_three(p1: Point3, p2: Point3, p3: Point3) -> Self {
         let mut bb = Self {
             min: p1,
             max: p1,
@@ -511,32 +571,31 @@ impl BoundingBox3 {
     }
 
     /// Create a 3D bounding box from a vector of points
-    /// BoundingBox.hpp:121-123
+    /// BoundingBox.hpp:132-134
     /// C++: BoundingBox3Base(const std::vector<PointClass> &points)
     /// C++:     : BoundingBox3Base(points.begin(), points.end())
-    pub fn new_from_points_slice(points: &[Vec3d]) -> Self {
+    pub fn new_from_points_slice(points: &[Point3]) -> Self {
         Self::from_iterator(points.iter().copied())
     }
 
     /// Create a 3D bounding box from an iterator of points
-    /// BoundingBox.hpp:107-120
+    /// BoundingBox.hpp:116-130
     /// C++: template<class It, class = IteratorOnly<It> > BoundingBox3Base(It from, It to)
     /// C++: {
     /// C++:     if (from == to)
     /// C++:         throw Slic3r::InvalidArgument("Empty point set supplied to BoundingBox3Base constructor");
     /// C++:     auto it = from;
-    /// C++:     this->min = it->template cast<typename PointClass::Scalar>();
-    /// C++:     this->max = this->min;
+    /// C++:     this->min = it->...; this->max = this->min;
     /// C++:     for (++ it; it != to; ++ it) {
-    /// C++:         auto vec = it->template cast<typename PointClass::Scalar>();
     /// C++:         this->min = this->min.cwiseMin(vec);
     /// C++:         this->max = this->max.cwiseMax(vec);
     /// C++:     }
     /// C++:     this->defined = (this->min(0) < this->max(0)) && (this->min(1) < this->max(1)) && (this->min(2) < this->max(2));
     /// C++: }
+    /// NOTE: C++ throws on empty input; here an empty iterator yields an undefined box.
     pub fn from_iterator<I>(mut points: I) -> Self
     where
-        I: Iterator<Item = Vec3d>,
+        I: Iterator<Item = Point3>,
     {
         let mut bb = Self::new();
         if let Some(first) = points.next() {
@@ -556,7 +615,7 @@ impl BoundingBox3 {
     }
 
     /// Merge a single point into the 3D bounding box
-    /// BoundingBox.cpp:145-156
+    /// BoundingBox.cpp:137-148
     /// C++: template <class PointClass> void
     /// C++: BoundingBox3Base<PointClass>::merge(const PointClass &point)
     /// C++: {
@@ -569,7 +628,7 @@ impl BoundingBox3 {
     /// C++:         this->defined = true;
     /// C++:     }
     /// C++: }
-    pub fn merge_point(&mut self, point: Vec3d) {
+    pub fn merge_point(&mut self, point: Point3) {
         if self.defined {
             self.min.x = self.min.x.min(point.x);
             self.min.y = self.min.y.min(point.y);
@@ -585,19 +644,19 @@ impl BoundingBox3 {
     }
 
     /// Merge a slice of points into the 3D bounding box
-    /// BoundingBox.cpp:160-164
+    /// BoundingBox.cpp:152-156
     /// C++: template <class PointClass> void
     /// C++: BoundingBox3Base<PointClass>::merge(const std::vector<PointClass> &points)
     /// C++: {
     /// C++:     this->merge(BoundingBox3Base(points));
     /// C++: }
-    pub fn merge_points(&mut self, points: &[Vec3d]) {
+    pub fn merge_points(&mut self, points: &[Point3]) {
         let bb = Self::new_from_points_slice(points);
         self.merge_bb(&bb);
     }
 
     /// Merge another 3D bounding box into this one
-    /// BoundingBox.cpp:168-182
+    /// BoundingBox.cpp:159-173
     /// C++: template <class PointClass> void
     /// C++: BoundingBox3Base<PointClass>::merge(const BoundingBox3Base<PointClass> &bb)
     /// C++: {
@@ -614,6 +673,9 @@ impl BoundingBox3 {
     /// C++:     }
     /// C++: }
     pub fn merge_bb(&mut self, bb: &BoundingBox3) {
+        debug_assert!(
+            bb.defined || bb.min.x >= bb.max.x || bb.min.y >= bb.max.y || bb.min.z >= bb.max.z
+        );
         if bb.defined {
             if self.defined {
                 self.min.x = self.min.x.min(bb.min.x);
@@ -631,14 +693,14 @@ impl BoundingBox3 {
     }
 
     /// Get the size (width, height, depth) of the 3D bounding box
-    /// BoundingBox.cpp:184-188
+    /// BoundingBox.cpp:185-189
     /// C++: template <class PointClass> PointClass
     /// C++: BoundingBox3Base<PointClass>::size() const
     /// C++: {
     /// C++:     return PointClass(this->max(0) - this->min(0), this->max(1) - this->min(1), this->max(2) - this->min(2));
     /// C++: }
-    pub fn size(&self) -> Vec3d {
-        Vec3d::new(
+    pub fn size(&self) -> Point3 {
+        Point3::new(
             self.max.x - self.min.x,
             self.max.y - self.min.y,
             self.max.z - self.min.z,
@@ -646,7 +708,7 @@ impl BoundingBox3 {
     }
 
     /// Get the radius (half the diagonal length) of the 3D bounding box
-    /// BoundingBox.cpp:176-182
+    /// BoundingBox.cpp:203-210
     /// C++: template <class PointClass> double BoundingBox3Base<PointClass>::radius() const
     /// C++: {
     /// C++:     double x = this->max(0) - this->min(0);
@@ -655,34 +717,41 @@ impl BoundingBox3 {
     /// C++:     return 0.5 * sqrt(x*x+y*y+z*z);
     /// C++: }
     pub fn radius(&self) -> f64 {
-        let x = self.max.x - self.min.x;
-        let y = self.max.y - self.min.y;
-        let z = self.max.z - self.min.z;
+        let x = (self.max.x - self.min.x) as f64;
+        let y = (self.max.y - self.min.y) as f64;
+        let z = (self.max.z - self.min.z) as f64;
         0.5 * (x * x + y * y + z * z).sqrt()
     }
 
     /// Translate the 3D bounding box by (x, y, z)
-    /// BoundingBox.hpp:131
+    /// BoundingBox.hpp:142
     /// C++: void translate(coordf_t x, coordf_t y, coordf_t z) { assert(this->defined); PointClass v(x, y, z); this->min += v; this->max += v; }
+    /// NOTE: PointClass(x, y, z) for integer Vec3crd truncates the coordf_t values toward zero.
     pub fn translate(&mut self, x: f64, y: f64, z: f64) {
-        assert!(self.defined);
-        self.min.x += x;
-        self.min.y += y;
-        self.min.z += z;
-        self.max.x += x;
-        self.max.y += y;
-        self.max.z += z;
+        debug_assert!(self.defined);
+        let dx = x as i64;
+        let dy = y as i64;
+        let dz = z as i64;
+        self.min.x += dx;
+        self.min.y += dy;
+        self.min.z += dz;
+        self.max.x += dx;
+        self.max.y += dy;
+        self.max.z += dz;
     }
 
     /// Translate the 3D bounding box by a Vec3d
-    /// BoundingBox.hpp:132
+    /// BoundingBox.hpp:143
     /// C++: void translate(const Vec3d &v) { this->min += v; this->max += v; }
+    /// NOTE: adding a Vec3d to an integer Vec3crd is well-defined in Eigen only for the
+    ///       same scalar; in practice this is invoked on float boxes. For the integer
+    ///       box we truncate the Vec3d components toward zero.
     pub fn translate_vec(&mut self, v: Vec3d) {
         self.translate(v.x, v.y, v.z);
     }
 
     /// Expand the 3D bounding box by delta in all directions
-    /// BoundingBox.cpp:195-200
+    /// BoundingBox.cpp:222-228
     /// C++: template <class PointClass> void
     /// C++: BoundingBox3Base<PointClass>::offset(coordf_t delta)
     /// C++: {
@@ -690,17 +759,19 @@ impl BoundingBox3 {
     /// C++:     this->min -= v;
     /// C++:     this->max += v;
     /// C++: }
+    /// NOTE: PointClass(delta, delta, delta) for integer Vec3crd truncates delta toward zero.
     pub fn offset(&mut self, delta: f64) {
-        self.min.x -= delta;
-        self.min.y -= delta;
-        self.min.z -= delta;
-        self.max.x += delta;
-        self.max.y += delta;
-        self.max.z += delta;
+        let d = delta as i64;
+        self.min.x -= d;
+        self.min.y -= d;
+        self.min.z -= d;
+        self.max.x += d;
+        self.max.y += d;
+        self.max.z += d;
     }
 
     /// Return a new 3D bounding box inflated by delta
-    /// BoundingBox.hpp:134
+    /// BoundingBox.hpp:145
     /// C++: BoundingBox3Base<PointClass> inflated(coordf_t delta) const throw() { BoundingBox3Base<PointClass> out(*this); out.offset(delta); return out; }
     pub fn inflated(&self, delta: f64) -> Self {
         let mut out = *self;
@@ -709,39 +780,50 @@ impl BoundingBox3 {
     }
 
     /// Get the center point of the 3D bounding box
-    /// BoundingBox.cpp:211-215
+    /// BoundingBox.cpp:240-246
     /// C++: template <class PointClass> PointClass
     /// C++: BoundingBox3Base<PointClass>::center() const
     /// C++: {
     /// C++:     return (this->min + this->max) / 2;
     /// C++: }
-    pub fn center(&self) -> Vec3d {
-        Vec3d::new(
-            (self.min.x + self.max.x) / 2.0,
-            (self.min.y + self.max.y) / 2.0,
-            (self.min.z + self.max.z) / 2.0,
+    /// NOTE: integer division truncates toward zero (Eigen `Vector3i / int`).
+    pub fn center(&self) -> Point3 {
+        Point3::new(
+            (self.min.x + self.max.x) / 2,
+            (self.min.y + self.max.y) / 2,
+            (self.min.z + self.max.z) / 2,
         )
     }
 
     /// Get the maximum dimension of the 3D bounding box
-    /// BoundingBox.cpp:219-224
+    /// BoundingBox.cpp:248-255
     /// C++: template <class PointClass> coordf_t
     /// C++: BoundingBox3Base<PointClass>::max_size() const
     /// C++: {
     /// C++:     PointClass s = size();
     /// C++:     return std::max(s(0), std::max(s(1), s(2)));
     /// C++: }
+    /// NOTE: max_size() returns coordf_t (double); for an integer box the components
+    ///       are widened to double before comparison (matching coordf_t return type).
     pub fn max_size(&self) -> f64 {
         let s = self.size();
-        s.x.max(s.y.max(s.z))
+        (s.x as f64).max((s.y as f64).max(s.z as f64))
+    }
+
+    /// Get the volume of the 3D bounding box
+    /// BoundingBox.hpp:148
+    /// C++: double volume() const { const PointClass s = size(); return double(s(0)) * double(s(1)) * double(s(2)); }
+    pub fn volume(&self) -> f64 {
+        let s = self.size();
+        (s.x as f64) * (s.y as f64) * (s.z as f64)
     }
 
     /// Check if a point is contained within the 3D bounding box
-    /// BoundingBox.hpp:136-138
+    /// BoundingBox.hpp:150-152
     /// C++: bool contains(const PointClass &point) const {
     /// C++:     return BoundingBoxBase<PointClass>::contains(point) && point(2) >= this->min(2) && point(2) <= this->max(2);
     /// C++: }
-    pub fn contains_point(&self, point: Vec3d) -> bool {
+    pub fn contains_point(&self, point: Point3) -> bool {
         point.x >= self.min.x
             && point.x <= self.max.x
             && point.y >= self.min.y
@@ -751,7 +833,7 @@ impl BoundingBox3 {
     }
 
     /// Check if another 3D bounding box is fully contained within this one
-    /// BoundingBox.hpp:140-142
+    /// BoundingBox.hpp:154-156
     /// C++: bool contains(const BoundingBox3Base<PointClass>& other) const {
     /// C++:     return contains(other.min) && contains(other.max);
     /// C++: }
@@ -760,7 +842,7 @@ impl BoundingBox3 {
     }
 
     /// Check if this 3D bounding box intersects with another
-    /// BoundingBox.hpp:144-146
+    /// BoundingBox.hpp:158-160
     /// C++: bool intersects(const BoundingBox3Base<PointClass>& other) const {
     /// C++:     return (this->min(0) < other.max(0)) && (this->max(0) > other.min(0)) && (this->min(1) < other.max(1)) && (this->max(1) > other.min(1)) && (this->min(2) < other.max(2)) && (this->max(2) > other.min(2));
     /// C++: }
@@ -774,7 +856,7 @@ impl BoundingBox3 {
     }
 
     /// Convert the 3D bounding box to a 2D polygon (footprint)
-    /// BoundingBox.cpp:119-135
+    /// BoundingBox.cpp:117-135
     /// C++: template <class PointClass>
     /// C++: Polygon BoundingBox3Base<PointClass>::polygon(bool is_scaled) const
     /// C++: {
@@ -792,34 +874,34 @@ impl BoundingBox3 {
     /// C++:     polygon.points[3](1) = this->max(1) * scale_factor;
     /// C++:     return polygon;
     /// C++: }
+    /// NOTE: scale_factor uses the C++ libslic3r SCALING_FACTOR (0.000001), so when
+    ///       is_scaled is true the factor is 1/0.000001 = 1e6 (matching C++ exactly).
+    ///       The coordinate products are assigned into Polygon's integer points, which
+    ///       truncate toward zero (Eigen int assignment).
     pub fn polygon(&self, is_scaled: bool) -> Polygon {
-        let scale_factor = if is_scaled {
-            1.0 / crate::SCALING_FACTOR
-        } else {
-            1.0
-        };
+        let scale_factor = 1.0 / (if is_scaled { crate::libslic3r::SCALING_FACTOR } else { 1.0 });
         let mut points = Vec::with_capacity(4);
         points.push(Point::new(
-            (self.min.x * scale_factor).round() as i64,
-            (self.min.y * scale_factor).round() as i64,
+            (self.min.x as f64 * scale_factor) as i64,
+            (self.min.y as f64 * scale_factor) as i64,
         ));
         points.push(Point::new(
-            (self.max.x * scale_factor).round() as i64,
-            (self.min.y * scale_factor).round() as i64,
+            (self.max.x as f64 * scale_factor) as i64,
+            (self.min.y as f64 * scale_factor) as i64,
         ));
         points.push(Point::new(
-            (self.max.x * scale_factor).round() as i64,
-            (self.max.y * scale_factor).round() as i64,
+            (self.max.x as f64 * scale_factor) as i64,
+            (self.max.y as f64 * scale_factor) as i64,
         ));
         points.push(Point::new(
-            (self.min.x * scale_factor).round() as i64,
-            (self.max.y * scale_factor).round() as i64,
+            (self.min.x as f64 * scale_factor) as i64,
+            (self.max.y as f64 * scale_factor) as i64,
         ));
         Polygon::from_points(points)
     }
 
     /// Check if the 3D bounding box is empty
-    /// BoundingBox.hpp:179-182
+    /// BoundingBox.hpp:254-258
     /// C++: template<typename VT>
     /// C++: inline bool empty(const BoundingBox3Base<VT> &bb)
     /// C++: {
@@ -844,16 +926,19 @@ impl Default for BoundingBox3 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoundingBoxf {
     /// Minimum corner point
+    /// BoundingBox.hpp:16
     pub min: Vec2d,
     /// Maximum corner point
+    /// BoundingBox.hpp:17
     pub max: Vec2d,
     /// Whether the bounding box has been initialized
+    /// BoundingBox.hpp:18
     pub defined: bool,
 }
 
 impl BoundingBoxf {
     /// Create an undefined (empty) floating-point bounding box
-    /// BoundingBox.hpp:164
+    /// BoundingBox.hpp:235
     /// C++: BoundingBoxf() : BoundingBoxBase<Vec2d>() {}
     pub fn new() -> Self {
         Self {
@@ -864,7 +949,7 @@ impl BoundingBoxf {
     }
 
     /// Create a floating-point bounding box from min and max corners
-    /// BoundingBox.hpp:165
+    /// BoundingBox.hpp:236
     /// C++: BoundingBoxf(const Vec2d &pmin, const Vec2d &pmax) : BoundingBoxBase<Vec2d>(pmin, pmax) {}
     pub fn new_from_points(pmin: Vec2d, pmax: Vec2d) -> Self {
         Self {
@@ -875,23 +960,43 @@ impl BoundingBoxf {
     }
 
     /// Create from a slice of points
+    /// BoundingBox.hpp:237
+    /// C++: BoundingBoxf(const std::vector<Vec2d> &points) : BoundingBoxBase<Vec2d>(points) {}
     pub fn new_from_points_slice(points: &[Vec2d]) -> Self {
         Self::from_iterator(points.iter().copied())
     }
 
-    /// Create from an iterator
-    pub fn from_iterator<I>(points: I) -> Self
+    /// Create from an iterator (construct template, IncludeBoundary = false)
+    /// BoundingBox.hpp:88-102
+    pub fn from_iterator<I>(mut points: I) -> Self
     where
         I: Iterator<Item = Vec2d>,
     {
         let mut bb = Self::new();
-        for point in points {
-            bb.merge_point(point);
+        if let Some(first) = points.next() {
+            bb.min = first;
+            bb.max = first;
+            for point in points {
+                bb.min.x = bb.min.x.min(point.x);
+                bb.min.y = bb.min.y.min(point.y);
+                bb.max.x = bb.max.x.max(point.x);
+                bb.max.y = bb.max.y.max(point.y);
+            }
+            bb.defined = bb.min.x < bb.max.x && bb.min.y < bb.max.y;
         }
         bb
     }
 
+    /// Reset the bounding box to undefined state
+    /// BoundingBox.hpp:37
+    pub fn reset(&mut self) {
+        self.defined = false;
+        self.min = Vec2d::new(0.0, 0.0);
+        self.max = Vec2d::new(0.0, 0.0);
+    }
+
     /// Merge a point into the bounding box
+    /// BoundingBox.cpp:73-84 (BoundingBoxBase<Vec2d>::merge instantiated at line 87)
     pub fn merge_point(&mut self, point: Vec2d) {
         if self.defined {
             self.min.x = self.min.x.min(point.x);
@@ -905,12 +1010,100 @@ impl BoundingBoxf {
         }
     }
 
+    /// Merge a slice of points into the bounding box
+    /// BoundingBox.cpp:89-93 (instantiated for Pointfs at line 95)
+    pub fn merge_points(&mut self, points: &[Vec2d]) {
+        let bb = Self::new_from_points_slice(points);
+        self.merge_bb(&bb);
+    }
+
+    /// Merge another bounding box into this one
+    /// BoundingBox.cpp:97-111 (instantiated for Vec2d at line 114)
+    pub fn merge_bb(&mut self, bb: &BoundingBoxf) {
+        debug_assert!(bb.defined || bb.min.x >= bb.max.x || bb.min.y >= bb.max.y);
+        if bb.defined {
+            if self.defined {
+                self.min.x = self.min.x.min(bb.min.x);
+                self.min.y = self.min.y.min(bb.min.y);
+                self.max.x = self.max.x.max(bb.max.x);
+                self.max.y = self.max.y.max(bb.max.y);
+            } else {
+                self.min = bb.min;
+                self.max = bb.max;
+                self.defined = true;
+            }
+        }
+    }
+
+    /// Scale the bounding box by a factor
+    /// BoundingBox.cpp:63-68 (instantiated for Vec2d at line 70)
+    /// NOTE: float coordinates, plain multiply (no rounding).
+    pub fn scale(&mut self, factor: f64) {
+        self.min.x *= factor;
+        self.min.y *= factor;
+        self.max.x *= factor;
+        self.max.y *= factor;
+    }
+
     /// Get the size of the bounding box
+    /// BoundingBox.cpp:176-180 (instantiated for Vec2d at line 183)
     pub fn size(&self) -> Vec2d {
         Vec2d::new(self.max.x - self.min.x, self.max.y - self.min.y)
     }
 
+    /// Get the radius (half the diagonal length)
+    /// BoundingBox.cpp:193-199 (instantiated for Vec2d at line 201)
+    pub fn radius(&self) -> f64 {
+        debug_assert!(self.defined);
+        let x = self.max.x - self.min.x;
+        let y = self.max.y - self.min.y;
+        0.5 * (x * x + y * y).sqrt()
+    }
+
+    /// Get the area of the bounding box
+    /// BoundingBox.hpp:44
+    pub fn area(&self) -> f64 {
+        (self.max.x - self.min.x) * (self.max.y - self.min.y)
+    }
+
+    /// Translate the bounding box by (x, y)
+    /// BoundingBox.hpp:45
+    pub fn translate(&mut self, x: f64, y: f64) {
+        debug_assert!(self.defined);
+        self.min.x += x;
+        self.min.y += y;
+        self.max.x += x;
+        self.max.y += y;
+    }
+
+    /// Translate the bounding box by a Vec2d
+    /// BoundingBox.hpp:46
+    pub fn translate_vec(&mut self, v: Vec2d) {
+        self.min.x += v.x;
+        self.min.y += v.y;
+        self.max.x += v.x;
+        self.max.y += v.y;
+    }
+
+    /// Expand the bounding box by delta in all directions
+    /// BoundingBox.cpp:212-218 (instantiated for Vec2d at line 220)
+    pub fn offset(&mut self, delta: f64) {
+        self.min.x -= delta;
+        self.min.y -= delta;
+        self.max.x += delta;
+        self.max.y += delta;
+    }
+
+    /// Return a new bounding box inflated by delta
+    /// BoundingBox.hpp:48
+    pub fn inflated(&self, delta: f64) -> Self {
+        let mut out = *self;
+        out.offset(delta);
+        out
+    }
+
     /// Get the center of the bounding box
+    /// BoundingBox.cpp:231-235 (instantiated for Vec2d at line 238)
     pub fn center(&self) -> Vec2d {
         Vec2d::new(
             (self.min.x + self.max.x) / 2.0,
@@ -918,7 +1111,44 @@ impl BoundingBoxf {
         )
     }
 
+    /// Check if a point is contained within the bounding box
+    /// BoundingBox.hpp:50-53
+    pub fn contains_point(&self, point: Vec2d) -> bool {
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
+    }
+
+    /// Check if another bounding box is fully contained within this one
+    /// BoundingBox.hpp:54-56
+    pub fn contains_bb(&self, other: &BoundingBoxf) -> bool {
+        self.contains_point(other.min) && self.contains_point(other.max)
+    }
+
+    /// Check if this bounding box overlaps with another
+    /// BoundingBox.hpp:57-60
+    pub fn overlap(&self, other: &BoundingBoxf) -> bool {
+        !(self.max.x < other.min.x
+            || self.min.x > other.max.x
+            || self.max.y < other.min.y
+            || self.min.y > other.max.y)
+    }
+
+    /// Get a corner point by index
+    /// BoundingBox.hpp:61-71
+    pub fn corner(&self, idx: usize) -> Vec2d {
+        match idx {
+            0 => self.min,
+            1 => Vec2d::new(self.max.x, self.min.y),
+            2 => self.max,
+            3 => Vec2d::new(self.min.x, self.max.y),
+            _ => Vec2d::new(0.0, 0.0),
+        }
+    }
+
     /// Check if empty
+    /// BoundingBox.hpp:248-252
     pub fn is_empty(&self) -> bool {
         !self.defined || self.min.x >= self.max.x || self.min.y >= self.max.y
     }
@@ -935,15 +1165,19 @@ impl Default for BoundingBoxf {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoundingBoxf3 {
     /// Minimum corner point
+    /// BoundingBox.hpp:16
     pub min: Vec3d,
     /// Maximum corner point
+    /// BoundingBox.hpp:17
     pub max: Vec3d,
     /// Whether the bounding box has been initialized
+    /// BoundingBox.hpp:18
     pub defined: bool,
 }
 
 impl BoundingBoxf3 {
     /// Create an undefined (empty) 3D floating-point bounding box
+    /// BoundingBox.hpp:242-243 (inherits BoundingBox3Base ctors via `using`)
     pub fn new() -> Self {
         Self {
             min: Vec3d::new(0.0, 0.0, 0.0),
@@ -953,20 +1187,27 @@ impl BoundingBoxf3 {
     }
 
     /// Create from min and max points
+    /// BoundingBox.hpp:110-112 (inherited): defined = (x<x && y<y), reset if z>=z
     pub fn new_from_points(pmin: Vec3d, pmax: Vec3d) -> Self {
+        let mut defined = pmin.x < pmax.x && pmin.y < pmax.y;
+        if pmin.z >= pmax.z {
+            defined = false;
+        }
         Self {
             min: pmin,
             max: pmax,
-            defined: pmin.x < pmax.x && pmin.y < pmax.y && pmin.z < pmax.z,
+            defined,
         }
     }
 
     /// Create from a slice of points
+    /// BoundingBox.hpp:132-134 (inherited)
     pub fn new_from_points_slice(points: &[Vec3d]) -> Self {
         Self::from_iterator(points.iter().copied())
     }
 
     /// Create from an iterator
+    /// BoundingBox.hpp:116-130 (inherited)
     pub fn from_iterator<I>(mut points: I) -> Self
     where
         I: Iterator<Item = Vec3d>,
@@ -988,7 +1229,16 @@ impl BoundingBoxf3 {
         bb
     }
 
+    /// Reset the bounding box to undefined state
+    /// BoundingBox.hpp:37
+    pub fn reset(&mut self) {
+        self.defined = false;
+        self.min = Vec3d::new(0.0, 0.0, 0.0);
+        self.max = Vec3d::new(0.0, 0.0, 0.0);
+    }
+
     /// Merge a point into the bounding box
+    /// BoundingBox.cpp:137-148 (instantiated for Vec3d at line 150)
     pub fn merge_point(&mut self, point: Vec3d) {
         if self.defined {
             self.min.x = self.min.x.min(point.x);
@@ -1004,7 +1254,37 @@ impl BoundingBoxf3 {
         }
     }
 
+    /// Merge a slice of points into the bounding box
+    /// BoundingBox.cpp:152-156 (instantiated for Pointf3s at line 157)
+    pub fn merge_points(&mut self, points: &[Vec3d]) {
+        let bb = Self::new_from_points_slice(points);
+        self.merge_bb(&bb);
+    }
+
+    /// Merge another bounding box into this one
+    /// BoundingBox.cpp:159-173 (instantiated for Vec3d at line 174)
+    pub fn merge_bb(&mut self, bb: &BoundingBoxf3) {
+        debug_assert!(
+            bb.defined || bb.min.x >= bb.max.x || bb.min.y >= bb.max.y || bb.min.z >= bb.max.z
+        );
+        if bb.defined {
+            if self.defined {
+                self.min.x = self.min.x.min(bb.min.x);
+                self.min.y = self.min.y.min(bb.min.y);
+                self.min.z = self.min.z.min(bb.min.z);
+                self.max.x = self.max.x.max(bb.max.x);
+                self.max.y = self.max.y.max(bb.max.y);
+                self.max.z = self.max.z.max(bb.max.z);
+            } else {
+                self.min = bb.min;
+                self.max = bb.max;
+                self.defined = true;
+            }
+        }
+    }
+
     /// Get the size of the bounding box
+    /// BoundingBox.cpp:185-189 (instantiated for Vec3d at line 191)
     pub fn size(&self) -> Vec3d {
         Vec3d::new(
             self.max.x - self.min.x,
@@ -1013,7 +1293,59 @@ impl BoundingBoxf3 {
         )
     }
 
+    /// Get the radius (half the diagonal length)
+    /// BoundingBox.cpp:203-210 (instantiated for Vec3d at line 210)
+    pub fn radius(&self) -> f64 {
+        let x = self.max.x - self.min.x;
+        let y = self.max.y - self.min.y;
+        let z = self.max.z - self.min.z;
+        0.5 * (x * x + y * y + z * z).sqrt()
+    }
+
+    /// Translate the bounding box by (x, y, z)
+    /// BoundingBox.hpp:142
+    pub fn translate(&mut self, x: f64, y: f64, z: f64) {
+        debug_assert!(self.defined);
+        self.min.x += x;
+        self.min.y += y;
+        self.min.z += z;
+        self.max.x += x;
+        self.max.y += y;
+        self.max.z += z;
+    }
+
+    /// Translate the bounding box by a Vec3d
+    /// BoundingBox.hpp:143
+    pub fn translate_vec(&mut self, v: Vec3d) {
+        self.min.x += v.x;
+        self.min.y += v.y;
+        self.min.z += v.z;
+        self.max.x += v.x;
+        self.max.y += v.y;
+        self.max.z += v.z;
+    }
+
+    /// Expand the bounding box by delta in all directions
+    /// BoundingBox.cpp:222-228 (instantiated for Vec3d at line 229)
+    pub fn offset(&mut self, delta: f64) {
+        self.min.x -= delta;
+        self.min.y -= delta;
+        self.min.z -= delta;
+        self.max.x += delta;
+        self.max.y += delta;
+        self.max.z += delta;
+    }
+
+    /// Return a new bounding box inflated by delta
+    /// BoundingBox.hpp:145
+    pub fn inflated(&self, delta: f64) -> Self {
+        let mut out = *self;
+        out.offset(delta);
+        out
+    }
+
     /// Get the center of the bounding box
+    /// BoundingBox.cpp:240-246 (instantiated for Vec3d at line 246)
     pub fn center(&self) -> Vec3d {
         Vec3d::new(
             (self.min.x + self.max.x) / 2.0,
@@ -1022,7 +1354,75 @@ impl BoundingBoxf3 {
         )
     }
 
+    /// Get the maximum dimension of the bounding box
+    /// BoundingBox.cpp:248-255 (instantiated for Vec3d at line 255)
+    pub fn max_size(&self) -> f64 {
+        let s = self.size();
+        s.x.max(s.y.max(s.z))
+    }
+
+    /// Get the volume of the bounding box
+    /// BoundingBox.hpp:148
+    pub fn volume(&self) -> f64 {
+        let s = self.size();
+        s.x * s.y * s.z
+    }
+
+    /// Check if a point is contained within the bounding box
+    /// BoundingBox.hpp:150-152
+    pub fn contains_point(&self, point: Vec3d) -> bool {
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
+            && point.z >= self.min.z
+            && point.z <= self.max.z
+    }
+
+    /// Check if another bounding box is fully contained within this one
+    /// BoundingBox.hpp:154-156
+    pub fn contains_bb(&self, other: &BoundingBoxf3) -> bool {
+        self.contains_point(other.min) && self.contains_point(other.max)
+    }
+
+    /// Check if this bounding box intersects with another
+    /// BoundingBox.hpp:158-160
+    pub fn intersects(&self, other: &BoundingBoxf3) -> bool {
+        (self.min.x < other.max.x)
+            && (self.max.x > other.min.x)
+            && (self.min.y < other.max.y)
+            && (self.max.y > other.min.y)
+            && (self.min.z < other.max.z)
+            && (self.max.z > other.min.z)
+    }
+
+    /// Convert the bounding box to a 2D polygon (footprint)
+    /// BoundingBox.cpp:117-135 (template BoundingBox3Base<Vec3d>::polygon)
+    /// See BoundingBox3::polygon for the scale_factor semantics.
+    pub fn polygon(&self, is_scaled: bool) -> Polygon {
+        let scale_factor = 1.0 / (if is_scaled { crate::libslic3r::SCALING_FACTOR } else { 1.0 });
+        let mut points = Vec::with_capacity(4);
+        points.push(Point::new(
+            (self.min.x * scale_factor) as i64,
+            (self.min.y * scale_factor) as i64,
+        ));
+        points.push(Point::new(
+            (self.max.x * scale_factor) as i64,
+            (self.min.y * scale_factor) as i64,
+        ));
+        points.push(Point::new(
+            (self.max.x * scale_factor) as i64,
+            (self.max.y * scale_factor) as i64,
+        ));
+        points.push(Point::new(
+            (self.min.x * scale_factor) as i64,
+            (self.max.y * scale_factor) as i64,
+        ));
+        Polygon::from_points(points)
+    }
+
     /// Check if empty
+    /// BoundingBox.hpp:254-258
     pub fn is_empty(&self) -> bool {
         !self.defined
             || self.min.x >= self.max.x
@@ -1031,7 +1431,7 @@ impl BoundingBoxf3 {
     }
 
     /// Transform the bounding box by a 4x4 transformation matrix
-    /// BoundingBox.cpp:234-256
+    /// BoundingBox.cpp:265-294
     /// C++: BoundingBoxf3 BoundingBoxf3::transformed(const Transform3d& matrix) const
     /// C++: {
     /// C++:     typedef Eigen::Matrix<double, 3, 8, Eigen::DontAlign> Vertices;
@@ -1055,9 +1455,10 @@ impl BoundingBoxf3 {
     /// C++:     }
     /// C++:     return BoundingBoxf3(v_min, v_max);
     /// C++: }
+    /// `matrix` is in row-major [row][col] order representing the 4x4 Transform3d.
     pub fn transformed(&self, matrix: &[[f64; 4]; 4]) -> Self {
-        // Create 8 corner vertices of the bounding box
-        let corners = [
+        // BoundingBox.cpp:270-277 - eight source corner vertices
+        let src_vertices = [
             Vec3d::new(self.min.x, self.min.y, self.min.z),
             Vec3d::new(self.max.x, self.min.y, self.min.z),
             Vec3d::new(self.max.x, self.max.y, self.min.z),
@@ -1068,10 +1469,9 @@ impl BoundingBoxf3 {
             Vec3d::new(self.min.x, self.max.y, self.max.z),
         ];
 
-        // Transform all corners
-        let mut transformed_corners = Vec::with_capacity(8);
-        for corner in &corners {
-            // Apply 4x4 transformation (homogeneous coordinates)
+        // BoundingBox.cpp:279 - dst = matrix * homogeneous(src)
+        let mut dst_vertices = [Vec3d::new(0.0, 0.0, 0.0); 8];
+        for (i, corner) in src_vertices.iter().enumerate() {
             let x = matrix[0][0] * corner.x
                 + matrix[0][1] * corner.y
                 + matrix[0][2] * corner.z
@@ -1084,11 +1484,25 @@ impl BoundingBoxf3 {
                 + matrix[2][1] * corner.y
                 + matrix[2][2] * corner.z
                 + matrix[2][3];
-            transformed_corners.push(Vec3d::new(x, y, z));
+            dst_vertices[i] = Vec3d::new(x, y, z);
         }
 
-        // Find min/max of transformed corners
-        Self::from_iterator(transformed_corners.into_iter())
+        // BoundingBox.cpp:281-282 - seed v_min/v_max from vertex 0
+        let mut v_min = dst_vertices[0];
+        let mut v_max = v_min;
+
+        // BoundingBox.cpp:284-291 - fold remaining vertices
+        for vertex in dst_vertices.iter().skip(1) {
+            v_min.x = v_min.x.min(vertex.x);
+            v_min.y = v_min.y.min(vertex.y);
+            v_min.z = v_min.z.min(vertex.z);
+            v_max.x = v_max.x.max(vertex.x);
+            v_max.y = v_max.y.max(vertex.y);
+            v_max.z = v_max.z.max(vertex.z);
+        }
+
+        // BoundingBox.cpp:293 - return BoundingBoxf3(v_min, v_max)
+        Self::new_from_points(v_min, v_max)
     }
 }
 
@@ -1098,15 +1512,28 @@ impl Default for BoundingBoxf3 {
     }
 }
 
-/// Align a coordinate to a grid
-/// BoundingBox.cpp:227-232 (reference)
-/// C++: min(0) = Slic3r::align_to_grid(min(0), cell_size);
-fn align_to_grid(coord: i64, cell_size: i64) -> i64 {
-    if cell_size == 0 {
-        return coord;
-    }
-    // Round down to nearest grid cell
-    (coord / cell_size) * cell_size
+/// Align a coordinate to a grid.
+/// Point.hpp:581-590 (Slic3r::align_to_grid used by BoundingBox::align_to_grid).
+///
+/// The coordinate may be negative; the aligned value will never be bigger than
+/// the original one. C++ integer division rounds toward zero, so negatives need
+/// the `(coord - spacing + 1) / spacing` correction to round down.
+/// C++:
+/// inline coord_t align_to_grid(const coord_t coord, const coord_t spacing) {
+///     coord_t aligned = (coord < 0) ?
+///             ((coord - spacing + 1) / spacing) * spacing :
+///             (coord / spacing) * spacing;
+///     assert(aligned <= coord);
+///     return aligned;
+/// }
+fn align_to_grid(coord: i64, spacing: i64) -> i64 {
+    let aligned = if coord < 0 {
+        ((coord - spacing + 1) / spacing) * spacing
+    } else {
+        (coord / spacing) * spacing
+    };
+    debug_assert!(aligned <= coord);
+    aligned
 }
 
 #[cfg(test)]
@@ -1115,8 +1542,8 @@ mod tests {
 
     #[test]
     fn test_bounding_box_new() {
-        /// Test default constructor creates undefined box
-        /// BoundingBox.hpp:17
+        // Test default constructor creates undefined box
+        // BoundingBox.hpp:20
         let bb = BoundingBox::new();
         assert!(!bb.defined);
         assert_eq!(bb.min, Point::new(0, 0));
@@ -1125,8 +1552,8 @@ mod tests {
 
     #[test]
     fn test_bounding_box_from_points() {
-        /// Test constructor with min/max points
-        /// BoundingBox.hpp:18-19
+        // Test constructor with min/max points
+        // BoundingBox.hpp:21-22
         let bb = BoundingBox::new_from_points(Point::new(10, 20), Point::new(30, 40));
         assert!(bb.defined);
         assert_eq!(bb.min, Point::new(10, 20));
@@ -1135,8 +1562,8 @@ mod tests {
 
     #[test]
     fn test_bounding_box_merge_point() {
-        /// Test merging a single point
-        /// BoundingBox.cpp:78-89
+        // Test merging a single point
+        // BoundingBox.cpp:73-84
         let mut bb = BoundingBox::new();
         bb.merge_point(Point::new(10, 20));
         assert!(bb.defined);
@@ -1150,24 +1577,24 @@ mod tests {
 
     #[test]
     fn test_bounding_box_size() {
-        /// Test size calculation
-        /// BoundingBox.cpp:151-155
+        // Test size calculation
+        // BoundingBox.cpp:176-180
         let bb = BoundingBox::new_from_points(Point::new(10, 20), Point::new(30, 50));
         assert_eq!(bb.size(), Point::new(20, 30));
     }
 
     #[test]
     fn test_bounding_box_center() {
-        /// Test center calculation
-        /// BoundingBox.cpp:201-205
+        // Test center calculation
+        // BoundingBox.cpp:231-235
         let bb = BoundingBox::new_from_points(Point::new(10, 20), Point::new(30, 40));
         assert_eq!(bb.center(), Point::new(20, 30));
     }
 
     #[test]
     fn test_bounding_box_contains() {
-        /// Test point containment
-        /// BoundingBox.hpp:47-50
+        // Test point containment
+        // BoundingBox.hpp:50-53
         let bb = BoundingBox::new_from_points(Point::new(10, 20), Point::new(30, 40));
         assert!(bb.contains_point(Point::new(20, 30)));
         assert!(bb.contains_point(Point::new(10, 20)));
@@ -1178,8 +1605,8 @@ mod tests {
 
     #[test]
     fn test_bounding_box_overlap() {
-        /// Test bounding box overlap
-        /// BoundingBox.hpp:54-57
+        // Test bounding box overlap
+        // BoundingBox.hpp:57-60
         let bb1 = BoundingBox::new_from_points(Point::new(10, 20), Point::new(30, 40));
         let bb2 = BoundingBox::new_from_points(Point::new(25, 35), Point::new(45, 55));
         let bb3 = BoundingBox::new_from_points(Point::new(50, 50), Point::new(70, 70));
@@ -1192,8 +1619,8 @@ mod tests {
 
     #[test]
     fn test_bounding_box_polygon() {
-        /// Test conversion to polygon
-        /// BoundingBox.cpp:13-25
+        // Test conversion to polygon
+        // BoundingBox.cpp:15-27
         let bb = BoundingBox::new_from_points(Point::new(10, 20), Point::new(30, 40));
         let poly = bb.polygon();
         assert_eq!(poly.points.len(), 4);
@@ -1205,76 +1632,72 @@ mod tests {
 
     #[test]
     fn test_bounding_box3_new() {
-        /// Test 3D bounding box default constructor
-        /// BoundingBox.hpp:100
+        // Test 3D bounding box default constructor
+        // BoundingBox.hpp:109
         let bb = BoundingBox3::new();
         assert!(!bb.defined);
     }
 
     #[test]
     fn test_bounding_box3_from_points() {
-        /// Test 3D bounding box from min/max points
-        /// BoundingBox.hpp:101-103
-        let bb = BoundingBox3::new_from_points(
-            Vec3d::new(10.0, 20.0, 30.0),
-            Vec3d::new(40.0, 50.0, 60.0),
-        );
+        // Test 3D bounding box from min/max points
+        // BoundingBox.hpp:110-112
+        let bb = BoundingBox3::new_from_points(Point3::new(10, 20, 30), Point3::new(40, 50, 60));
         assert!(bb.defined);
-        assert_eq!(bb.min, Vec3d::new(10.0, 20.0, 30.0));
-        assert_eq!(bb.max, Vec3d::new(40.0, 50.0, 60.0));
+        assert_eq!(bb.min, Point3::new(10, 20, 30));
+        assert_eq!(bb.max, Point3::new(40, 50, 60));
+    }
+
+    #[test]
+    fn test_bounding_box3_from_points_zero_z() {
+        // pmin(2) >= pmax(2) must reset defined to false
+        // BoundingBox.hpp:110-112
+        let bb = BoundingBox3::new_from_points(Point3::new(10, 20, 30), Point3::new(40, 50, 30));
+        assert!(!bb.defined);
     }
 
     #[test]
     fn test_bounding_box3_size() {
-        /// Test 3D size calculation
-        /// BoundingBox.cpp:184-188
-        let bb = BoundingBox3::new_from_points(
-            Vec3d::new(10.0, 20.0, 30.0),
-            Vec3d::new(40.0, 50.0, 70.0),
-        );
-        assert_eq!(bb.size(), Vec3d::new(30.0, 30.0, 40.0));
+        // Test 3D size calculation
+        // BoundingBox.cpp:185-189
+        let bb = BoundingBox3::new_from_points(Point3::new(10, 20, 30), Point3::new(40, 50, 70));
+        assert_eq!(bb.size(), Point3::new(30, 30, 40));
     }
 
     #[test]
     fn test_bounding_box3_max_size() {
-        /// Test maximum dimension
-        /// BoundingBox.cpp:219-224
-        let bb = BoundingBox3::new_from_points(
-            Vec3d::new(10.0, 20.0, 30.0),
-            Vec3d::new(40.0, 50.0, 90.0),
-        );
+        // Test maximum dimension
+        // BoundingBox.cpp:248-255
+        let bb = BoundingBox3::new_from_points(Point3::new(10, 20, 30), Point3::new(40, 50, 90));
         assert_eq!(bb.max_size(), 60.0);
     }
 
     #[test]
+    fn test_bounding_box3_volume() {
+        // Test volume
+        // BoundingBox.hpp:148
+        let bb = BoundingBox3::new_from_points(Point3::new(0, 0, 0), Point3::new(2, 3, 4));
+        assert_eq!(bb.volume(), 24.0);
+    }
+
+    #[test]
     fn test_bounding_box3_contains() {
-        /// Test 3D point containment
-        /// BoundingBox.hpp:136-138
-        let bb = BoundingBox3::new_from_points(
-            Vec3d::new(10.0, 20.0, 30.0),
-            Vec3d::new(40.0, 50.0, 60.0),
-        );
-        assert!(bb.contains_point(Vec3d::new(25.0, 35.0, 45.0)));
-        assert!(!bb.contains_point(Vec3d::new(5.0, 35.0, 45.0)));
-        assert!(!bb.contains_point(Vec3d::new(25.0, 35.0, 70.0)));
+        // Test 3D point containment
+        // BoundingBox.hpp:150-152
+        let bb = BoundingBox3::new_from_points(Point3::new(10, 20, 30), Point3::new(40, 50, 60));
+        assert!(bb.contains_point(Point3::new(25, 35, 45)));
+        assert!(!bb.contains_point(Point3::new(5, 35, 45)));
+        assert!(!bb.contains_point(Point3::new(25, 35, 70)));
     }
 
     #[test]
     fn test_bounding_box3_intersects() {
-        /// Test 3D bounding box intersection
-        /// BoundingBox.hpp:144-146
-        let bb1 = BoundingBox3::new_from_points(
-            Vec3d::new(10.0, 20.0, 30.0),
-            Vec3d::new(40.0, 50.0, 60.0),
-        );
-        let bb2 = BoundingBox3::new_from_points(
-            Vec3d::new(35.0, 45.0, 55.0),
-            Vec3d::new(65.0, 75.0, 85.0),
-        );
-        let bb3 = BoundingBox3::new_from_points(
-            Vec3d::new(100.0, 100.0, 100.0),
-            Vec3d::new(130.0, 130.0, 130.0),
-        );
+        // Test 3D bounding box intersection
+        // BoundingBox.hpp:158-160
+        let bb1 = BoundingBox3::new_from_points(Point3::new(10, 20, 30), Point3::new(40, 50, 60));
+        let bb2 = BoundingBox3::new_from_points(Point3::new(35, 45, 55), Point3::new(65, 75, 85));
+        let bb3 =
+            BoundingBox3::new_from_points(Point3::new(100, 100, 100), Point3::new(130, 130, 130));
 
         assert!(bb1.intersects(&bb2));
         assert!(bb2.intersects(&bb1));
@@ -1284,32 +1707,75 @@ mod tests {
 
     #[test]
     fn test_align_to_grid() {
-        /// Test grid alignment helper
-        /// BoundingBox.cpp:227-232
+        // Test grid alignment helper
+        // Point.hpp:581-590
         assert_eq!(align_to_grid(17, 10), 10);
         assert_eq!(align_to_grid(20, 10), 20);
         assert_eq!(align_to_grid(-17, 10), -20);
+        assert_eq!(align_to_grid(-20, 10), -20);
         assert_eq!(align_to_grid(0, 10), 0);
     }
 
     #[test]
     fn test_bounding_box_rotated() {
-        /// Test rotation around origin
-        /// BoundingBox.cpp:33-40
+        // Test rotation around origin
+        // BoundingBox.cpp:36-44
         let bb = BoundingBox::new_from_points(Point::new(10, 0), Point::new(20, 10));
         let rotated = bb.rotated(std::f64::consts::PI / 2.0); // 90 degrees
         assert!(rotated.defined);
-        // After 90° rotation, the box should be in a different quadrant
-        // We don't test exact values due to rounding, just that it's defined
+        // After 90 rotation, the box should be in a different quadrant.
+        // We don't test exact values due to rounding, just that it's defined.
     }
 
     #[test]
     fn test_bounding_box_offset() {
-        /// Test offset/inflation
-        /// BoundingBox.cpp:186-191
+        // Test offset/inflation
+        // BoundingBox.cpp:212-218
         let mut bb = BoundingBox::new_from_points(Point::new(10, 20), Point::new(30, 40));
         bb.offset(5.0);
         assert_eq!(bb.min, Point::new(5, 15));
         assert_eq!(bb.max, Point::new(35, 45));
+    }
+
+    #[test]
+    fn test_bounding_box_scale_truncates() {
+        // Integer scale truncates toward zero (matches Eigen int *= double).
+        // BoundingBox.cpp:63-68
+        let mut bb = BoundingBox::new_from_points(Point::new(3, 3), Point::new(7, 7));
+        bb.scale(1.5);
+        // 3*1.5 = 4.5 -> 4 ; 7*1.5 = 10.5 -> 10
+        assert_eq!(bb.min, Point::new(4, 4));
+        assert_eq!(bb.max, Point::new(10, 10));
+    }
+
+    #[test]
+    fn test_bounding_boxf_full() {
+        // Float box: scale/center/offset/radius
+        let mut bb = BoundingBoxf::new_from_points(Vec2d::new(0.0, 0.0), Vec2d::new(4.0, 2.0));
+        assert_eq!(bb.center(), Vec2d::new(2.0, 1.0));
+        assert_eq!(bb.size(), Vec2d::new(4.0, 2.0));
+        bb.scale(2.0);
+        assert_eq!(bb.max, Vec2d::new(8.0, 4.0));
+        bb.offset(1.0);
+        assert_eq!(bb.min, Vec2d::new(-1.0, -1.0));
+    }
+
+    #[test]
+    fn test_bounding_boxf3_transformed_identity() {
+        // Identity transform leaves the box unchanged.
+        // BoundingBox.cpp:265-294
+        let bb = BoundingBoxf3::new_from_points(
+            Vec3d::new(1.0, 2.0, 3.0),
+            Vec3d::new(4.0, 5.0, 6.0),
+        );
+        let identity = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let out = bb.transformed(&identity);
+        assert_eq!(out.min, Vec3d::new(1.0, 2.0, 3.0));
+        assert_eq!(out.max, Vec3d::new(4.0, 5.0, 6.0));
     }
 }

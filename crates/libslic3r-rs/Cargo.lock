@@ -1443,6 +1443,7 @@ dependencies = [
  "clap",
  "clipper2",
  "criterion",
+ "earcutr",
  "env_logger",
  "geo",
  "geo-clipper",

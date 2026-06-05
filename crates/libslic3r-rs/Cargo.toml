@@ -29,6 +29,9 @@ geo-clipper = "0.8"
 clipper2 = "0.5"
 ordered-float = "4.2"
 boostvoronoi = "0.12"
+# Polygon tessellation (pure-Rust earcut; wasm-safe). Backend for Tesselate.cpp.
+# C++ uses native glu-libtess which is not wasm-safe; see src/tesselate.rs.
+earcutr = "0.4"
 
 # Time handling
 chrono = "0.4"

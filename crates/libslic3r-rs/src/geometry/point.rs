@@ -169,8 +169,19 @@ impl Point {
     /// Point.cpp:48-58
     #[inline]
     pub fn rotate_around(&self, angle: CoordF, center: Point) -> Self {
-        let translated = *self - center;
-        translated.rotate(angle) + center
+        // Point.cpp:50-57
+        let cur_x = self.x as CoordF; // (double)(*this)(0)
+        let cur_y = self.y as CoordF; // (double)(*this)(1)
+        let s = angle.sin(); // ::sin(angle)
+        let c = angle.cos(); // ::cos(angle)
+        let dx = cur_x - center.x as CoordF; // cur_x - (double)center(0)
+        let dy = cur_y - center.y as CoordF; // cur_y - (double)center(1)
+        Self {
+            // (coord_t)round( (double)center(0) + c * dx - s * dy )
+            x: (center.x as CoordF + c * dx - s * dy).round() as Coord,
+            // (coord_t)round( (double)center(1) + c * dy + s * dx )
+            y: (center.y as CoordF + c * dy + s * dx).round() as Coord,
+        }
     }
 
     /// Rotate 90 degrees counter-clockwise.
@@ -212,57 +223,238 @@ impl Point {
         (self.x as i128) * (other.x as i128) + (self.y as i128) * (other.y as i128)
     }
 
-    /// Calculate the CCW (counter-clockwise) value for three points.
-    /// Positive if p1->self->p2 is counter-clockwise.
-    ///
+    /* Three points are a counter-clockwise turn if ccw > 0, clockwise if
+     * ccw < 0, and collinear if ccw = 0 because ccw is a determinant that
+     * gives the signed area of the triangle formed by p1, p2 and this point.
+     * In other words it is the 2D cross product of p1-p2 and p1-this, i.e.
+     * z-component of their 3D cross product.
+     * We return double because it must be big enough to hold 2*max(|coordinate|)^2
+     */
     /// Point.cpp:118-123
     #[inline]
-    pub fn ccw(&self, p1: &Point, p2: &Point) -> i128 {
-        let v1 = *p1 - *self;
-        let v2 = *p2 - *self;
-        v1.cross(&v2)
+    pub fn ccw(&self, p1: &Point, p2: &Point) -> CoordF {
+        // static_assert(sizeof(coord_t) == 4, "Point::ccw() requires a 32 bit coord_t");
+        // Point.cpp:121: return cross2((p2 - p1).cast<int64_t>(), (*this - p1).cast<int64_t>());
+        let a = *p2 - *p1;
+        let b = *self - *p1;
+        (a.x as i64 as i128 * b.y as i64 as i128 - a.y as i64 as i128 * b.x as i64 as i128) as CoordF
+    }
+
+    /// Point.cpp:125-128
+    #[inline]
+    pub fn ccw_line(&self, line: &crate::geometry::Line) -> CoordF {
+        // Point.cpp:127: return this->ccw(line.a, line.b);
+        self.ccw(&line.a, &line.b)
+    }
+
+    /// returns the CCW angle between this-p1 and this-p2
+    /// i.e. this assumes a CCW rotation from p1 to p2 around this
+    /// Point.cpp:132-139
+    #[inline]
+    pub fn ccw_angle(&self, p1: &Point, p2: &Point) -> CoordF {
+        // FIXME this calculates an atan2 twice! Project one vector into the other!
+        // Point.cpp:135-136
+        let angle = (p1.x() as CoordF - self.x() as CoordF).atan2(p1.y() as CoordF - self.y() as CoordF)
+            - (p2.x() as CoordF - self.x() as CoordF).atan2(p2.y() as CoordF - self.y() as CoordF);
+        // we only want to return only positive angles
+        // Point.cpp:138
+        if angle <= 0.0 {
+            angle + 2.0 * std::f64::consts::PI
+        } else {
+            angle
+        }
     }
 
     /// Find the nearest point in a slice of points, returning its index.
+    /// Returns -1 if `points` is empty.
     ///
-    /// Point.cpp:60-92
-    pub fn nearest_point_index(&self, points: &[Point]) -> Option<usize> {
-        if points.is_empty() {
-            return None;
-        }
+    /// Point.cpp:60-101 (Points / PointConstPtrs / PointPtrs overloads collapse
+    /// to a single slice-based implementation, matching the PointConstPtrs core
+    /// at Point.cpp:69-92).
+    pub fn nearest_point_index(&self, points: &[Point]) -> i32 {
+        // Point.cpp:71-72
+        let mut idx: i32 = -1;
+        // double because long is limited to 2147483647 on some platforms and it's not enough
+        let mut distance: CoordF = -1.0;
 
-        let mut min_dist = i128::MAX;
-        let mut min_idx = 0;
+        // Point.cpp:74
+        for (i, it) in points.iter().enumerate() {
+            /* If the X distance of the candidate is > than the total distance of the
+               best previous candidate, we know we don't want it */
+            // Point.cpp:77: double d = sqr<double>((*this)(0) - (*it)->x());
+            let dx = (self.x() - it.x()) as CoordF;
+            let mut d = dx * dx;
+            // Point.cpp:78
+            if distance != -1.0 && d > distance {
+                continue;
+            }
 
-        for (i, p) in points.iter().enumerate() {
-            let dist = self.distance_squared(p);
-            if dist < min_dist {
-                min_dist = dist;
-                min_idx = i;
+            /* If the Y distance of the candidate is > than the total distance of the
+               best previous candidate, we know we don't want it */
+            // Point.cpp:82: d += sqr<double>((*this)(1) - (*it)->y());
+            let dy = (self.y() - it.y()) as CoordF;
+            d += dy * dy;
+            // Point.cpp:83
+            if distance != -1.0 && d > distance {
+                continue;
+            }
+
+            // Point.cpp:85-86
+            idx = i as i32;
+            distance = d;
+
+            // Point.cpp:88
+            if distance < crate::libslic3r::EPSILON {
+                break;
             }
         }
 
-        Some(min_idx)
+        // Point.cpp:91
+        idx
+    }
+
+    /// Point.cpp:103-109
+    pub fn nearest_point(&self, points: &[Point], point: &mut Point) -> bool {
+        // Point.cpp:105
+        let idx = self.nearest_point_index(points);
+        // Point.cpp:106
+        if idx == -1 {
+            return false;
+        }
+        // Point.cpp:107
+        *point = points[idx as usize];
+        // Point.cpp:108
+        true
     }
 
     /// Project this point onto a line segment defined by two points.
     ///
-    /// Point.cpp:157-180
+    /// Point.cpp:157-180 (`Point::projection_onto(const Line &line)`)
     pub fn project_onto_segment(&self, a: Point, b: Point) -> Point {
-        let ab = b - a;
-        let ap = *self - a;
-
-        let ab_len_sq = ab.length_squared();
-        if ab_len_sq == 0 {
+        // Point.cpp:159: if (line.a == line.b) return line.a;
+        if a == b {
             return a;
         }
 
-        let t = (ap.dot(&ab) as CoordF / ab_len_sq as CoordF).clamp(0.0, 1.0);
+        /*
+            (Ported from VisiLibity by Karl J. Obermeyer)
+            The projection of point_temp onto the line determined by
+            line_segment_temp can be represented as an affine combination
+            expressed in the form projection of
+            Point = theta*line_segment_temp.first + (1.0-theta)*line_segment_temp.second.
+            If theta is outside the interval [0,1], then one of the Line_Segment's endpoints
+            must be closest to calling Point.
+        */
+        // Point.cpp:170-171
+        let lx = (b.x - a.x) as CoordF;
+        let ly = (b.y - a.y) as CoordF;
+        // Point.cpp:172-173
+        let theta = ((b.x - self.x) as CoordF * lx + (b.y - self.y) as CoordF * ly)
+            / (lx * lx + ly * ly);
 
-        Point::new(
-            (a.x as CoordF + t * ab.x as CoordF).round() as Coord,
-            (a.y as CoordF + t * ab.y as CoordF).round() as Coord,
-        )
+        // Point.cpp:175-176
+        if (0.0..=1.0).contains(&theta) {
+            return Point::new(
+                (theta * a.x as CoordF + (1.0 - theta) * b.x as CoordF) as Coord,
+                (theta * a.y as CoordF + (1.0 - theta) * b.y as CoordF) as Coord,
+            );
+        }
+
+        // Else pick closest endpoint.
+        // Point.cpp:179
+        if (a - *self).length_squared() < (b - *self).length_squared() {
+            a
+        } else {
+            b
+        }
+    }
+
+    /// Point.cpp:141-155 (`Point::projection_onto(const MultiPoint &poly)`)
+    pub fn projection_onto_multipoint(&self, poly: &[Point]) -> Point {
+        // Point.cpp:143: Point running_projection = poly.first_point();
+        let mut running_projection = poly[0];
+        // Point.cpp:144
+        let mut running_min = (running_projection - *self).to_f64().length();
+
+        // Point.cpp:146: Lines lines = poly.lines();
+        // MultiPoint::lines() yields consecutive segments (a, b) along the polyline.
+        // Point.cpp:147
+        for w in poly.windows(2) {
+            let line = crate::geometry::Line::new(w[0], w[1]);
+            // Point.cpp:148
+            let point_temp = self.project_onto_segment(line.a, line.b);
+            // Point.cpp:149
+            if (point_temp - *self).to_f64().length() < running_min {
+                // Point.cpp:150-151
+                running_projection = point_temp;
+                running_min = (running_projection - *self).to_f64().length();
+            }
+        }
+        // Point.cpp:154
+        running_projection
+    }
+
+    /// Point.cpp:183-223 (`Point::is_in_lines(const Points &pts)`)
+    pub fn is_in_lines(&self, pts: &[Point]) -> bool {
+        // Point.cpp:185
+        let check_point = *self;
+        // Point.cpp:186
+        for pt_idx in 1..pts.len() {
+            // Point.cpp:187-188
+            let pt = pts[pt_idx];
+            let prev_pt = pts[pt_idx - 1];
+
+            // if on the endpoints
+            // Point.cpp:191
+            if (check_point.x() == pt.x() && check_point.y() == pt.y())
+                || (check_point.x() == prev_pt.x() && check_point.y() == prev_pt.y())
+            {
+                return true;
+            }
+
+            // Point.cpp:194-195
+            let in_x_range = (check_point.x() > pt.x()) != (check_point.x() > prev_pt.x());
+            let in_y_range = (check_point.y() > pt.y()) != (check_point.y() > prev_pt.y());
+
+            // on vert line
+            // Point.cpp:198
+            if pt.x() == prev_pt.x() {
+                // Point.cpp:199
+                if in_y_range && pt.x() == check_point.x() {
+                    return true;
+                }
+                continue;
+            }
+
+            // on hori line
+            // Point.cpp:205
+            if pt.y() == prev_pt.y() {
+                // Point.cpp:206
+                if in_x_range && pt.y() == check_point.y() {
+                    return true;
+                }
+                continue;
+            }
+
+            // not right range
+            // Point.cpp:212
+            if !in_x_range || !in_y_range {
+                continue;
+            }
+
+            // check if in line
+            // Point.cpp:216-217: Line line(prev_pt, pt); double distance = line.distance_to(*this);
+            // Line::distance_to(point) => distance to the (clamped) segment.
+            let line = crate::geometry::Line::new(prev_pt, pt);
+            let distance = line.distance_to_point(&check_point);
+            // Point.cpp:218
+            if distance.abs() < crate::libslic3r::SCALED_EPSILON {
+                return true;
+            }
+        }
+
+        // Point.cpp:222
+        false
     }
 
     /// Check if this point coincides with another within a tolerance.
@@ -1140,6 +1332,212 @@ pub type PointsF = Vec<PointF>;
 /// Type alias for a collection of 3D floating-point points.
 pub type Points3F = Vec<Point3F>;
 
+// ---------------------------------------------------------------------------
+// Free functions (Point.cpp:10-301)
+// ---------------------------------------------------------------------------
+
+/// Point.cpp:29-46 (`Pointf3s transform(const Pointf3s&, const Transform3d&)`)
+///
+/// Applies an affine transform to a vector of 3D points (homogeneous).
+/// Mirrors `dst = t * src.colwise().homogeneous();`.
+///
+/// NOTE: The C++ float overload `transform(const std::vector<Vec3f>&, const Transform3f&)`
+/// (Point.cpp:10-27) is identical in structure but operates on f32. The crate's
+/// `Transform3D` is f64-based, so both overloads collapse to this single f64 path.
+pub fn transform(points: &[Point3F], t: &crate::geometry::Transform3D) -> Vec<Point3F> {
+    // Point.cpp:31-32
+    let vertices_count = points.len();
+    if vertices_count == 0 {
+        // Point.cpp:33
+        return Vec::new();
+    }
+
+    // Point.cpp:37-44: src/dst Eigen matrices, dst = t * src.colwise().homogeneous();
+    let mut ret_points: Vec<Point3F> = Vec::with_capacity(vertices_count);
+    for p in points {
+        ret_points.push(t.apply(*p));
+    }
+    // Point.cpp:45
+    ret_points
+}
+
+/// Test for duplicate points in a vector of points.
+/// The points are copied, sorted and checked for duplicates globally.
+/// Point.cpp:225-232 (`bool has_duplicate_points(std::vector<Point> &&pts)`)
+pub fn has_duplicate_points(mut pts: Vec<Point>) -> bool {
+    // Point.cpp:227
+    pts.sort();
+    // Point.cpp:228-230
+    for i in 1..pts.len() {
+        if pts[i - 1] == pts[i] {
+            return true;
+        }
+    }
+    // Point.cpp:231
+    false
+}
+
+/// Collect adjecent(duplicit points)
+/// Point.cpp:234-249 (`Points collect_duplicates(Points pts /* Copy */)`)
+pub fn collect_duplicates(mut pts: Points) -> Points {
+    // Point.cpp:236
+    pts.sort();
+    // Point.cpp:237
+    let mut duplicits: Points = Vec::new();
+    // Point.cpp:238: const Point *prev = &pts.front();
+    let mut prev = pts[0];
+    // Point.cpp:239
+    for i in 1..pts.len() {
+        // Point.cpp:240: const Point *act = &pts[i];
+        let act = pts[i];
+        // Point.cpp:241
+        if prev == act {
+            // duplicit point
+            // Point.cpp:243: only unique duplicits
+            if !duplicits.is_empty() && *duplicits.last().unwrap() == act {
+                continue;
+            }
+            // Point.cpp:244
+            duplicits.push(act);
+        }
+        // Point.cpp:246
+        prev = act;
+    }
+    // Point.cpp:248
+    duplicits
+}
+
+/// Test for duplicate points in a vector of points.
+/// Only successive points are checked for equality.
+/// Point.hpp:331-337 (`has_duplicate_successive_points`)
+pub fn has_duplicate_successive_points(pts: &[Point]) -> bool {
+    // Point.hpp:333-335
+    for i in 1..pts.len() {
+        if pts[i - 1] == pts[i] {
+            return true;
+        }
+    }
+    // Point.hpp:336
+    false
+}
+
+/// Test for duplicate points in a vector of points.
+/// Only successive points are checked for equality. Additionally, first and last points are compared for equality.
+/// Point.hpp:341-344 (`has_duplicate_successive_points_closed`)
+pub fn has_duplicate_successive_points_closed(pts: &[Point]) -> bool {
+    // Point.hpp:343
+    has_duplicate_successive_points(pts) || (pts.len() >= 2 && pts[0] == *pts.last().unwrap())
+}
+
+/// Point.hpp:266-270 (`is_approx(const Point&, const Point&, coord_t)`)
+#[inline]
+pub fn is_approx(p1: &Point, p2: &Point, epsilon: Coord) -> bool {
+    // Point.hpp:268: Point d = (p2 - p1).cwiseAbs();
+    let d = *p2 - *p1;
+    // Point.hpp:269
+    d.x.abs() < epsilon && d.y.abs() < epsilon
+}
+
+/// Point.hpp:272 (`turn90_ccw`)
+#[inline]
+pub fn turn90_ccw(pt: Point) -> Point {
+    Point::new(-pt.y, pt.x)
+}
+
+/// Point.hpp:298-302 (`lerp(const Point &a, const Point &b, double t)`)
+#[inline]
+pub fn lerp(a: &Point, b: &Point, t: CoordF) -> Point {
+    // assert((t >= -EPSILON) && (t <= 1. + EPSILON));
+    debug_assert!(t >= -crate::libslic3r::EPSILON && t <= 1.0 + crate::libslic3r::EPSILON);
+    // Point.hpp:301: ((1. - t) * a.cast<double>() + t * b.cast<double>()).cast<coord_t>()
+    Point::new(
+        ((1.0 - t) * a.x as CoordF + t * b.x as CoordF) as Coord,
+        ((1.0 - t) * a.y as CoordF + t * b.y as CoordF) as Coord,
+    )
+}
+
+/// Point.hpp:349-356 (`shorter_then(const Point& p0, const coord_t len)`)
+#[inline]
+pub fn shorter_then(p0: &Point, len: Coord) -> bool {
+    // Point.hpp:351-352
+    if p0.x > len || p0.x < -len {
+        return false;
+    }
+    // Point.hpp:353-354
+    if p0.y > len || p0.y < -len {
+        return false;
+    }
+    // Point.hpp:355: p0.cast<int64_t>().squaredNorm() <= Slic3r::sqr(int64_t(len))
+    p0.length_squared() <= (len as i128) * (len as i128)
+}
+
+/// Align a coordinate to a grid. The coordinate may be negative,
+/// the aligned value will never be bigger than the original one.
+/// Point.hpp:581-590 (`align_to_grid(coord_t, coord_t)`)
+#[inline]
+pub fn align_to_grid(coord: Coord, spacing: Coord) -> Coord {
+    // Current C++ standard defines the result of integer division to be rounded to zero,
+    // for both positive and negative numbers. Here we want to round down for negative
+    // numbers as well.
+    // Point.hpp:585-587
+    let aligned = if coord < 0 {
+        ((coord - spacing + 1) / spacing) * spacing
+    } else {
+        (coord / spacing) * spacing
+    };
+    debug_assert!(aligned <= coord);
+    aligned
+}
+
+/// Point.hpp:591-592 (`align_to_grid(Point, Point)`)
+#[inline]
+pub fn align_to_grid_point(coord: Point, spacing: Point) -> Point {
+    Point::new(
+        align_to_grid(coord.x, spacing.x),
+        align_to_grid(coord.y, spacing.y),
+    )
+}
+
+/// Point.hpp:593-594 (`align_to_grid(coord_t, coord_t, coord_t)`)
+#[inline]
+pub fn align_to_grid_base(coord: Coord, spacing: Coord, base: Coord) -> Coord {
+    base + align_to_grid(coord - base, spacing)
+}
+
+/// Point.hpp:595-596 (`align_to_grid(Point, Point, Point)`)
+#[inline]
+pub fn align_to_grid_point_base(coord: Point, spacing: Point, base: Point) -> Point {
+    Point::new(
+        align_to_grid_base(coord.x, spacing.x, base.x),
+        align_to_grid_base(coord.y, spacing.y, base.y),
+    )
+}
+
+/// Point.cpp:287-301 / Point.hpp:358-365 — exact orientation predicates.
+pub mod int128 {
+    use super::Point;
+    use crate::int128::Int128;
+
+    /// Exact orientation predicate,
+    /// returns +1: CCW, 0: collinear, -1: CW.
+    /// Point.cpp:289-294 (`int orient(const Vec2crd&, const Vec2crd&, const Vec2crd&)`)
+    pub fn orient(p1: &Point, p2: &Point, p3: &Point) -> i32 {
+        // Point.cpp:291-292
+        let v1 = *p2 - *p1; // Slic3r::Vector v1(p2 - p1);
+        let v2 = *p3 - *p1; // Slic3r::Vector v2(p3 - p1);
+        // Point.cpp:293
+        Int128::sign_determinant_2x2_filtered(v1.x, v1.y, v2.x, v2.y)
+    }
+
+    /// Exact orientation predicate,
+    /// returns +1: CCW, 0: collinear, -1: CW.
+    /// Point.cpp:296-299 (`int cross(const Vec2crd&, const Vec2crd&)`)
+    pub fn cross(v1: &Point, v2: &Point) -> i32 {
+        // Point.cpp:298
+        Int128::sign_determinant_2x2_filtered(v1.x, v1.y, v2.x, v2.y)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1260,7 +1658,9 @@ mod tests {
     fn test_nearest_point_index() {
         let target = Point::new(0, 0);
         let points = vec![Point::new(100, 100), Point::new(10, 10), Point::new(50, 50)];
-        assert_eq!(target.nearest_point_index(&points), Some(1));
+        assert_eq!(target.nearest_point_index(&points), 1);
+        // empty -> -1 (Point.cpp:71,91)
+        assert_eq!(target.nearest_point_index(&[]), -1);
     }
 
     #[test]

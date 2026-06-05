@@ -74,7 +74,7 @@ pub use medial_axis::{
     compute_medial_axis, compute_medial_axis_multi, compute_medial_axis_thick,
     distance_to_boundary, MedialAxisConfig,
 };
-pub use point::{Point, Point3, Point3F, PointF, Points, Points3};
+pub use point::{collect_duplicates, Point, Point3, Point3F, PointF, Points, Points3};
 pub use polygon::{Polygon, Polygons};
 pub use polyline::{Polyline, Polylines};
 pub use simplify::{

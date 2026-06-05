@@ -72,6 +72,8 @@ pub mod extrusion_simulator;
 pub mod face_detector;
 pub mod filament_group;
 pub mod filament_group_utils;
+pub mod filament_mixer;
+pub mod filament_mixer_model;
 pub mod file_parser_error;
 pub mod fill;
 pub mod flow;
@@ -82,8 +84,8 @@ pub mod format;
 pub mod frustum;
 pub mod function_trace;
 pub mod fuzzy_skin;
+pub mod g_code_reader;
 pub mod gcode;
-pub mod gcode_reader;
 pub mod gcode_sender;
 pub mod geometry;
 pub mod i18n;
@@ -324,9 +326,10 @@ pub use perimeter_generator::{
 
 // Re-export fuzzy skin
 pub use fuzzy_skin::{
-    apply_fuzzy_skin_extrusion, apply_fuzzy_skin_polygon, fuzzy_extrusion_line,
-    fuzzy_extrusion_line_params, fuzzy_polygon, fuzzy_polygon_params, fuzzy_polyline,
-    should_fuzzify, FuzzySkinConfig,
+    apply_fuzzy_skin_extrusion, apply_fuzzy_skin_extrusion_adapter, apply_fuzzy_skin_polygon,
+    apply_fuzzy_skin_polygon_adapter, fuzzy_extrusion_line, fuzzy_extrusion_line_params,
+    fuzzy_polygon, fuzzy_polygon_params, fuzzy_polyline, should_fuzzify, FuzzySkinConfig,
+    PerimeterRegion,
 };
 
 // Re-export Arachne variable-width perimeter generation

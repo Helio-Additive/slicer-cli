@@ -1,73 +1,67 @@
-//! Fuzzy skin implementation for adding random texture to perimeters.
+//! Fuzzy skin: adds random texture to perimeters.
 //!
-//! This module provides fuzzy skin functionality that adds random perturbations
-//! to perimeter polygons, creating a textured surface finish on the printed object.
+//! Faithful 1:1 port of `src/libslic3r/FuzzySkin.cpp` (+ `FuzzySkin.hpp`) from
+//! BambuStudio. Functions appear in the same order, with the same names
+//! (snake_case), signatures, control flow, constants and rounding as the C++.
 //!
-//! # Overview
+//! coord_t -> i64, coordf_t -> f64.
 //!
-//! Fuzzy skin works by:
-//! 1. Iterating along each edge of a perimeter polygon
-//! 2. Inserting new points at configurable intervals
-//! 3. Displacing each point perpendicular to the edge by a random amount
-//!
-//! The result is a "fuzzy" or textured appearance on the outer surface of the print.
-//!
-//! # Configuration
-//!
-//! - `thickness`: Maximum displacement distance from the original surface (mm)
-//! - `point_distance`: Average distance between points along edges (mm)
-//!
-//! # BambuStudio Reference
-//!
-//! This module corresponds to:
-//! - `src/libslic3r/FuzzySkin.cpp`
-//! - `src/libslic3r/FuzzySkin.hpp`
+//! NATIVE-DEP NOTE: the procedural noise modules (Perlin / Billow / RidgedMulti
+//! / Voronoi) come from the bundled libnoise (`noise.h`), a native C++ library
+//! that is not available in this crate and is not wasm-safe. Only the
+//! `Classic` / `UniformNoise` path is portable, so `get_noise_module` returns
+//! the `UniformNoise` for every `NoiseType`. The non-Classic branches are
+//! BLOCKED on a Rust noise backend; their dispatch structure is preserved.
 
 use crate::arachne::{ExtrusionJunction, ExtrusionLine};
-use crate::geometry::{Point, Polygon, Polyline};
-use crate::region_config::FuzzySkinMode;
-use crate::{scale, Coord, CoordF};
+use crate::geometry::{Point, PointF, Polygon, Polyline};
+use crate::region_config::{FuzzySkinDisplacementMode, FuzzySkinType, NoiseType, PrintRegionConfig};
+use crate::{unscale, Coord, CoordF};
 use std::cell::RefCell;
 
+// FuzzySkin.cpp:18
+// Produces a random value between 0 and 1. Thread-safe.
+//
+// NATIVE-DEP NOTE: C++ uses `std::mt19937` seeded from `std::random_device`.
+// That exact bit-stream is not reproducible from Rust's std, so the RNG is a
+// divergence by construction (fuzzy skin is intentionally random, so this does
+// not change G-code structure, only the random offsets). A thread-local
+// generator is used to match the C++ `thread_local` semantics.
 thread_local! {
-    /// Thread-local random number generator for fuzzy skin.
-    /// Uses a simple xorshift algorithm for fast random number generation.
-    static RNG: RefCell<XorShift64> = RefCell::new(XorShift64::new());
+    // FuzzySkin.cpp:21-23
+    static FUZZY_RNG: RefCell<Mt19937Like> = RefCell::new(Mt19937Like::new());
 }
 
-/// Simple xorshift64 random number generator.
-/// Fast and adequate for fuzzy skin noise generation.
-struct XorShift64 {
+/// Minimal thread-local PRNG standing in for `std::mt19937` +
+/// `std::uniform_real_distribution<double>(0.0, 1.0)`. See the NATIVE-DEP NOTE
+/// on `random_value` for why an exact match is not possible.
+struct Mt19937Like {
     state: u64,
 }
 
-impl XorShift64 {
-    // Create a new RNG with a seed based on thread ID and time.
+impl Mt19937Like {
     fn new() -> Self {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         use std::thread;
         use std::time::{SystemTime, UNIX_EPOCH};
 
+        // FuzzySkin.cpp:22 — seed from a hash of the thread id (mirrors the C++
+        // fallback `std::hash<std::thread::id>()(std::this_thread::get_id())`),
+        // combined with time for entropy.
         let mut hasher = DefaultHasher::new();
         thread::current().id().hash(&mut hasher);
         let thread_hash = hasher.finish();
-
         let time_seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0x5DEECE66D);
-
-        // Combine thread ID and time for unique seed per thread
         let seed = thread_hash ^ time_seed;
-
-        // Ensure non-zero seed
         Self {
             state: if seed == 0 { 0x5DEECE66D } else { seed },
         }
     }
 
-    /// Generate a random u64.
     fn next_u64(&mut self) -> u64 {
         let mut x = self.state;
         x ^= x << 13;
@@ -77,429 +71,637 @@ impl XorShift64 {
         x
     }
 
-    /// Generate a random f64 in [0, 1).
+    // uniform_real_distribution<double>(0.0, 1.0): value in [0, 1).
     fn next_f64(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 / ((1u64 << 53) as f64)
     }
 }
 
-/// Get a random value in [0, 1) using thread-local RNG.
+// FuzzySkin.cpp:19-25
+// Produces a random value between 0 and 1. Thread-safe.
 fn random_value() -> f64 {
-    RNG.with(|rng| rng.borrow_mut().next_f64())
+    FUZZY_RNG.with(|rng| rng.borrow_mut().next_f64())
 }
 
-/// Configuration for fuzzy skin generation.
+// FuzzySkin.cpp:27-33
+// Classic uniform random noise for fuzzy skin (backward compatible)
+//
+// `noise::module::Module` is a libnoise type; we model only the single method
+// that FuzzySkin uses, `GetValue(x, y, z) -> f64`.
+trait Module {
+    // FuzzySkin.cpp:31
+    #[allow(dead_code)]
+    fn get_source_module_count(&self) -> i32 {
+        0
+    }
+    // noise::module::Module::GetValue
+    fn get_value(&self, x: f64, y: f64, z: f64) -> f64;
+}
+
+// FuzzySkin.cpp:28-33
+struct UniformNoise;
+
+impl Module for UniformNoise {
+    // FuzzySkin.cpp:31
+    fn get_source_module_count(&self) -> i32 {
+        0
+    }
+    // FuzzySkin.cpp:32
+    fn get_value(&self, _x: f64, _y: f64, _z: f64) -> f64 {
+        random_value() * 2. - 1.
+    }
+}
+
+// FuzzySkin.cpp:35-66
+fn get_noise_module(cfg: &PrintRegionConfig) -> Box<dyn Module> {
+    // FuzzySkin.cpp:37
+    let type_ = cfg.fuzzy_skin_noise_type;
+    // FuzzySkin.cpp:38
+    let _scale = (0.01_f64).max(cfg.fuzzy_skin_scale);
+    // FuzzySkin.cpp:39-64
+    //
+    // NATIVE-DEP NOTE: Perlin / Billow / RidgedMulti / Voronoi require libnoise
+    // (`noise::module::*`), which is unavailable and wasm-unsafe. Their dispatch
+    // structure is preserved but every branch falls back to `UniformNoise`.
+    match type_ {
+        // FuzzySkin.cpp:39-45 — Perlin (BLOCKED: needs libnoise)
+        NoiseType::Perlin => Box::new(UniformNoise),
+        // FuzzySkin.cpp:46-52 — Billow (BLOCKED: needs libnoise)
+        NoiseType::Billow => Box::new(UniformNoise),
+        // FuzzySkin.cpp:53-58 — RidgedMulti (BLOCKED: needs libnoise)
+        NoiseType::RidgedMulti => Box::new(UniformNoise),
+        // FuzzySkin.cpp:59-64 — Voronoi (BLOCKED: needs libnoise)
+        NoiseType::Voronoi => Box::new(UniformNoise),
+        // FuzzySkin.cpp:65
+        NoiseType::Classic => Box::new(UniformNoise),
+    }
+}
+
+/// Eigen `Vec2d::cast<coord_t>()` — truncation toward zero (C++ static_cast).
+#[inline]
+fn cast_coord(v: PointF) -> Point {
+    Point::new(v.x as Coord, v.y as Coord)
+}
+
+// FuzzySkin.cpp:68-103
+pub fn fuzzy_polyline(poly: &mut Vec<Point>, closed: bool, slice_z: CoordF, config: &PrintRegionConfig) {
+    // FuzzySkin.cpp:70
+    let thickness = scaled_f(config.fuzzy_skin_thickness);
+    // FuzzySkin.cpp:71
+    let point_distance = scaled_f(config.fuzzy_skin_point_distance);
+    // FuzzySkin.cpp:72
+    let min_dist_between_points = point_distance * 3. / 4.;
+    // FuzzySkin.cpp:73
+    let range_random_point_dist = point_distance / 2.;
+    // FuzzySkin.cpp:74
+    let mut dist_left_over = random_value() * (min_dist_between_points / 2.);
+
+    // FuzzySkin.cpp:76
+    let noise = get_noise_module(config);
+
+    // FuzzySkin.cpp:78-79
+    let mut out: Vec<Point> = Vec::with_capacity(poly.len());
+    // FuzzySkin.cpp:80
+    // Point *p0 = closed ? &poly.back() : &poly.front();
+    let mut p0: Point = if closed { *poly.last().unwrap() } else { poly[0] };
+    // FuzzySkin.cpp:81
+    // for (it_pt1 = closed ? begin() : next(begin()); it_pt1 != end(); ++it_pt1)
+    let start = if closed { 0 } else { 1 };
+    for i in start..poly.len() {
+        // FuzzySkin.cpp:82
+        let p1 = poly[i];
+        // FuzzySkin.cpp:83
+        let p0p1 = PointF::new((p1.x - p0.x) as f64, (p1.y - p0.y) as f64);
+        // FuzzySkin.cpp:84
+        let p0p1_size = p0p1.length();
+        // FuzzySkin.cpp:85
+        let mut p0pa_dist = dist_left_over;
+        // FuzzySkin.cpp:86
+        while p0pa_dist < p0p1_size {
+            // FuzzySkin.cpp:87
+            let pa = p0 + cast_coord(PointF::new(p0p1.x * (p0pa_dist / p0p1_size), p0p1.y * (p0pa_dist / p0p1_size)));
+            // FuzzySkin.cpp:88
+            let r = noise.get_value(unscale(pa.x), unscale(pa.y), slice_z) * thickness;
+            // FuzzySkin.cpp:89
+            let perp_n = p0p1.perp().normalize();
+            out.push(pa + cast_coord(PointF::new(perp_n.x * r, perp_n.y * r)));
+            // FuzzySkin.cpp:86 (loop increment)
+            p0pa_dist += min_dist_between_points + random_value() * range_random_point_dist;
+        }
+        // FuzzySkin.cpp:91
+        dist_left_over = p0pa_dist - p0p1_size;
+        // FuzzySkin.cpp:92
+        p0 = p1;
+    }
+
+    // FuzzySkin.cpp:95-100
+    while out.len() < 3 {
+        // FuzzySkin.cpp:96 — point_idx is recomputed each iteration, so the
+        // C++ `--point_idx` at FuzzySkin.cpp:99 has no observable effect.
+        let point_idx = poly.len() - 2;
+        // FuzzySkin.cpp:97
+        out.push(poly[point_idx]);
+        // FuzzySkin.cpp:98
+        if point_idx == 0 {
+            break;
+        }
+        // FuzzySkin.cpp:99 (dead `--point_idx`)
+    }
+    // FuzzySkin.cpp:101-102
+    if out.len() >= 3 {
+        *poly = out;
+    }
+}
+
+// FuzzySkin.cpp:105-108
+pub fn fuzzy_polygon(polygon: &mut Polygon, slice_z: CoordF, config: &PrintRegionConfig) {
+    // FuzzySkin.cpp:107
+    fuzzy_polyline(&mut polygon.points, true, slice_z, config);
+}
+
+// FuzzySkin.cpp:110-173
+pub fn fuzzy_extrusion_line(ext_lines: &mut ExtrusionLine, slice_z: CoordF, config: &PrintRegionConfig) {
+    // FuzzySkin.cpp:112
+    let thickness = scaled_f(config.fuzzy_skin_thickness);
+    // FuzzySkin.cpp:113
+    let point_distance = scaled_f(config.fuzzy_skin_point_distance);
+    // FuzzySkin.cpp:114
+    let min_dist_between_points = point_distance * 3. / 4.;
+    // FuzzySkin.cpp:115
+    let range_random_point_dist = point_distance / 2.;
+    // FuzzySkin.cpp:116
+    let min_extrusion_width = scaled_f(0.01); // minimum line width (mm) for Extrusion/Combined
+    // FuzzySkin.cpp:117
+    let mut dist_left_over = random_value() * (min_dist_between_points / 2.);
+
+    // FuzzySkin.cpp:119
+    let noise = get_noise_module(config);
+    // FuzzySkin.cpp:120
+    let mode = config.fuzzy_skin_displacement_mode;
+
+    // FuzzySkin.cpp:122
+    // Arachne::ExtrusionJunction *p0 = &ext_lines.front();
+    let mut p0: ExtrusionJunction = ext_lines.junctions[0];
+    // FuzzySkin.cpp:123-124
+    let mut out: Vec<ExtrusionJunction> = Vec::with_capacity(ext_lines.junctions.len());
+    // FuzzySkin.cpp:125
+    for idx in 0..ext_lines.junctions.len() {
+        let p1 = ext_lines.junctions[idx];
+        // FuzzySkin.cpp:126
+        if p0.position == p1.position {
+            // FuzzySkin.cpp:127
+            out.push(ExtrusionJunction::new(p1.position, p1.width, p1.perimeter_index));
+            // FuzzySkin.cpp:128
+            continue;
+        }
+        // FuzzySkin.cpp:130
+        let p0p1 = PointF::new((p1.position.x - p0.position.x) as f64, (p1.position.y - p0.position.y) as f64);
+        // FuzzySkin.cpp:131
+        let p0p1_size = p0p1.length();
+        // FuzzySkin.cpp:132
+        let mut p0pa_dist = dist_left_over;
+        // FuzzySkin.cpp:133
+        while p0pa_dist < p0p1_size {
+            // FuzzySkin.cpp:134
+            let pa = p0.position
+                + cast_coord(PointF::new(p0p1.x * (p0pa_dist / p0p1_size), p0p1.y * (p0pa_dist / p0p1_size)));
+            // FuzzySkin.cpp:135
+            let r = noise.get_value(unscale(pa.x), unscale(pa.y), slice_z) * thickness;
+            // FuzzySkin.cpp:136
+            let perp_n = p0p1.perp().normalize();
+            // FuzzySkin.cpp:137
+            match mode {
+                // FuzzySkin.cpp:138-140
+                FuzzySkinDisplacementMode::Displacement => {
+                    out.push(ExtrusionJunction::new(
+                        pa + cast_coord(PointF::new(perp_n.x * r, perp_n.y * r)),
+                        p1.width,
+                        p1.perimeter_index,
+                    ));
+                }
+                // FuzzySkin.cpp:141-143
+                FuzzySkinDisplacementMode::Extrusion => {
+                    out.push(ExtrusionJunction::new(
+                        pa,
+                        ((p1.width as f64 + r + min_extrusion_width).max(min_extrusion_width)) as Coord,
+                        p1.perimeter_index,
+                    ));
+                }
+                // FuzzySkin.cpp:144-148
+                FuzzySkinDisplacementMode::Combined => {
+                    let rad = (p1.width as f64 + r + min_extrusion_width).max(min_extrusion_width);
+                    out.push(ExtrusionJunction::new(
+                        pa + cast_coord(PointF::new(
+                            perp_n.x * ((rad - p1.width as f64) / 2.),
+                            perp_n.y * ((rad - p1.width as f64) / 2.),
+                        )),
+                        rad as Coord,
+                        p1.perimeter_index,
+                    ));
+                }
+            }
+            // FuzzySkin.cpp:133 (loop increment)
+            p0pa_dist += min_dist_between_points + random_value() * range_random_point_dist;
+        }
+        // FuzzySkin.cpp:151
+        dist_left_over = p0pa_dist - p0p1_size;
+        // FuzzySkin.cpp:152
+        p0 = p1;
+    }
+
+    // FuzzySkin.cpp:155-163
+    while out.len() < 3 {
+        // FuzzySkin.cpp:156 — point_idx is recomputed each iteration, so the
+        // C++ `--point_idx` at FuzzySkin.cpp:162 has no observable effect.
+        let point_idx = ext_lines.junctions.len() - 2;
+        // FuzzySkin.cpp:157
+        let j = ext_lines.junctions[point_idx];
+        out.push(ExtrusionJunction::new(j.position, j.width, j.perimeter_index));
+        // FuzzySkin.cpp:158-160
+        if point_idx == 0 {
+            break;
+        }
+        // FuzzySkin.cpp:162 (dead `--point_idx`)
+    }
+
+    // FuzzySkin.cpp:165-168
+    if ext_lines.junctions.last().unwrap().position == ext_lines.junctions.first().unwrap().position {
+        // FuzzySkin.cpp:166
+        let back = *out.last().unwrap();
+        out.first_mut().unwrap().position = back.position;
+        // FuzzySkin.cpp:167
+        out.first_mut().unwrap().width = back.width;
+    }
+
+    // FuzzySkin.cpp:170-172
+    if out.len() >= 3 {
+        ext_lines.junctions = out;
+    }
+}
+
+// FuzzySkin.cpp:175-188
+pub fn should_fuzzify(
+    config: &PrintRegionConfig,
+    layer_idx: usize,
+    perimeter_idx: usize,
+    is_contour: bool,
+) -> bool {
+    // FuzzySkin.cpp:177
+    let fuzzy_skin_type = config.fuzzy_skin_type;
+
+    // FuzzySkin.cpp:179-180
+    if fuzzy_skin_type == FuzzySkinType::None || fuzzy_skin_type == FuzzySkinType::DisabledFuzzy {
+        return false;
+    }
+    // FuzzySkin.cpp:181-182
+    // C++: layer_idx is size_t, so `layer_idx <= 0` is equivalent to `layer_idx == 0`.
+    if !config.fuzzy_skin_first_layer && layer_idx == 0 {
+        return false;
+    }
+
+    // FuzzySkin.cpp:184
+    let fuzzify_contours = perimeter_idx == 0 || fuzzy_skin_type == FuzzySkinType::AllWalls;
+    // FuzzySkin.cpp:185
+    let fuzzify_holes = fuzzify_contours
+        && (fuzzy_skin_type == FuzzySkinType::All || fuzzy_skin_type == FuzzySkinType::AllWalls);
+
+    // FuzzySkin.cpp:187
+    if is_contour {
+        fuzzify_contours
+    } else {
+        fuzzify_holes
+    }
+}
+
+// FuzzySkin.cpp:190-234
+pub fn apply_fuzzy_skin_polygon(
+    polygon: &Polygon,
+    base_config: &PrintRegionConfig,
+    perimeter_regions: &[PerimeterRegion],
+    layer_idx: usize,
+    perimeter_idx: usize,
+    is_contour: bool,
+    slice_z: CoordF,
+) -> Polygon {
+    // FuzzySkin.cpp:194-201
+    let apply_fuzzy_skin_on_polygon = |polygon: &Polygon, config: &PrintRegionConfig| -> Polygon {
+        // FuzzySkin.cpp:195
+        if should_fuzzify(config, layer_idx, perimeter_idx, is_contour) {
+            // FuzzySkin.cpp:196
+            let mut fuzzified_polygon = polygon.clone();
+            // FuzzySkin.cpp:197
+            fuzzy_polygon(&mut fuzzified_polygon, slice_z, config);
+            // FuzzySkin.cpp:198
+            return fuzzified_polygon;
+        }
+        // FuzzySkin.cpp:200
+        polygon.clone()
+    };
+
+    // FuzzySkin.cpp:203-204
+    if perimeter_regions.is_empty() {
+        return apply_fuzzy_skin_on_polygon(polygon, base_config);
+    }
+
+    // FuzzySkin.cpp:206
+    let mut segments = polygon_segmentation(polygon, base_config, perimeter_regions);
+    // FuzzySkin.cpp:207-208
+    if segments.len() == 1 {
+        return apply_fuzzy_skin_on_polygon(polygon, &segments[0].config);
+    }
+
+    // FuzzySkin.cpp:210
+    let mut fuzzified_polygon = Polygon::new();
+    // FuzzySkin.cpp:211
+    for segment in &mut segments {
+        // FuzzySkin.cpp:212
+        let config = &segment.config;
+        // FuzzySkin.cpp:213-214
+        if should_fuzzify(config, layer_idx, perimeter_idx, is_contour) {
+            fuzzy_polyline(&mut segment.polyline.points, false, slice_z, config);
+        }
+
+        // FuzzySkin.cpp:216
+        debug_assert!(!segment.polyline.is_empty());
+        // FuzzySkin.cpp:217-222
+        if segment.polyline.is_empty() {
+            continue;
+        } else if !fuzzified_polygon.is_empty()
+            && *fuzzified_polygon.points.last().unwrap() == segment.polyline.points[0]
+        {
+            // Remove the last point to avoid duplicate points.
+            fuzzified_polygon.points.pop();
+        }
+
+        // FuzzySkin.cpp:224
+        append(&mut fuzzified_polygon.points, std::mem::take(&mut segment.polyline.points));
+    }
+
+    // FuzzySkin.cpp:227
+    debug_assert!(!fuzzified_polygon.is_empty());
+    // FuzzySkin.cpp:228-231
+    if fuzzified_polygon.points.first() == fuzzified_polygon.points.last() {
+        // Remove the last point to avoid duplicity between the first and the last point.
+        fuzzified_polygon.points.pop();
+    }
+
+    // FuzzySkin.cpp:233
+    fuzzified_polygon
+}
+
+// FuzzySkin.cpp:236-272
+pub fn apply_fuzzy_skin_extrusion(
+    extrusion: &ExtrusionLine,
+    base_config: &PrintRegionConfig,
+    perimeter_regions: &[PerimeterRegion],
+    layer_idx: usize,
+    perimeter_idx: usize,
+    is_contour: bool,
+    slice_z: CoordF,
+) -> ExtrusionLine {
+    // FuzzySkin.cpp:241-248
+    if perimeter_regions.is_empty() {
+        // FuzzySkin.cpp:242
+        if should_fuzzify(base_config, layer_idx, perimeter_idx, is_contour) {
+            // FuzzySkin.cpp:243
+            let mut fuzzified_extrusion = extrusion.clone();
+            // FuzzySkin.cpp:244
+            fuzzy_extrusion_line(&mut fuzzified_extrusion, slice_z, base_config);
+            // FuzzySkin.cpp:245
+            return fuzzified_extrusion;
+        }
+        // FuzzySkin.cpp:247
+        return extrusion.clone();
+    }
+
+    // FuzzySkin.cpp:250
+    let mut segments = extrusion_segmentation(extrusion, base_config, perimeter_regions);
+    // FuzzySkin.cpp:251
+    let mut fuzzified_extrusion =
+        ExtrusionLine::new(extrusion.inset_idx, extrusion.is_odd, extrusion.is_closed);
+
+    // FuzzySkin.cpp:253
+    for segment in &mut segments {
+        // FuzzySkin.cpp:254
+        let config = &segment.config;
+        // FuzzySkin.cpp:255-256
+        if should_fuzzify(config, layer_idx, perimeter_idx, is_contour) {
+            fuzzy_extrusion_line(&mut segment.extrusion, slice_z, config);
+        }
+
+        // FuzzySkin.cpp:258
+        debug_assert!(!segment.extrusion.junctions.is_empty());
+        // FuzzySkin.cpp:259-264
+        if segment.extrusion.junctions.is_empty() {
+            continue;
+        } else if !fuzzified_extrusion.junctions.is_empty()
+            && fuzzified_extrusion.junctions.last().unwrap().position
+                == segment.extrusion.junctions[0].position
+        {
+            // Remove the last point to avoid duplicate points (We don't care if the width of both points is different.).
+            fuzzified_extrusion.junctions.pop();
+        }
+
+        // FuzzySkin.cpp:266
+        append(
+            &mut fuzzified_extrusion.junctions,
+            std::mem::take(&mut segment.extrusion.junctions),
+        );
+    }
+
+    // FuzzySkin.cpp:269
+    debug_assert!(!fuzzified_extrusion.junctions.is_empty());
+
+    // FuzzySkin.cpp:271
+    fuzzified_extrusion
+}
+
+/// `scaled<double>(v)` — `v / SCALING_FACTOR` returned as f64 (no rounding).
+/// Point.hpp:527-530. In this crate `SCALING_FACTOR` is stored as its inverse
+/// (`100_000.0`), so `scaled<double>(v) == v * SCALING_FACTOR_rust`.
+#[inline]
+fn scaled_f(v: CoordF) -> CoordF {
+    v * crate::SCALING_FACTOR
+}
+
+/// `Slic3r::append(dst, src)` — move-append `src` onto `dst`.
+#[inline]
+fn append<T>(dst: &mut Vec<T>, mut src: Vec<T>) {
+    dst.append(&mut src);
+}
+
+// ------------------------------------------------------------------------
+// PerimeterRegion / segmentation support
+//
+// PerimeterGenerator.hpp:15-30 — `struct PerimeterRegion { const PrintRegion*
+// region; ExPolygons expolygons; BoundingBox bbox; }` and
+// `using PerimeterRegions = std::vector<PerimeterRegion>;`.
+//
+// The full PerimeterRegion (with PrintRegion pointer + ExPolygons + BoundingBox)
+// and the Clipper-Z based segmentation in
+// Algorithm/LineSegmentation/LineSegmentation.cpp are not yet fully ported
+// (the Rust `line_segmentation` module returns whole-line single segments).
+// We model the minimal config-bearing view FuzzySkin actually consumes: each
+// PerimeterRegion carries the PrintRegionConfig used to fuzzify its segment.
+// ------------------------------------------------------------------------
+
+/// PerimeterGenerator.hpp:15-28 (config-bearing view).
+#[derive(Debug, Clone)]
+pub struct PerimeterRegion {
+    /// The region config used when fuzzifying segments in this region.
+    /// PerimeterGenerator.hpp:17 (`const PrintRegion *region;` -> its config)
+    pub config: PrintRegionConfig,
+}
+
+/// A polyline segment tagged with the config of the region it falls in.
+/// LineSegmentation.hpp:32-38 (PolylineRegionSegment).
+struct PolylineRegionSegment {
+    polyline: Polyline,
+    config: PrintRegionConfig,
+}
+
+/// An extrusion segment tagged with the config of the region it falls in.
+/// LineSegmentation.hpp:46-52 (ExtrusionRegionSegment).
+struct ExtrusionRegionSegment {
+    extrusion: ExtrusionLine,
+    config: PrintRegionConfig,
+}
+
+/// LineSegmentation::polygon_segmentation.
+///
+/// BLOCKED: the real Clipper-Z segmentation (LineSegmentation.cpp) is not yet
+/// ported; the Rust `line_segmentation` module returns the whole subject as a
+/// single segment. We mirror that: a single segment carrying `base_config`.
+fn polygon_segmentation(
+    polygon: &Polygon,
+    base_config: &PrintRegionConfig,
+    _perimeter_regions: &[PerimeterRegion],
+) -> Vec<PolylineRegionSegment> {
+    vec![PolylineRegionSegment {
+        polyline: polygon.to_polyline(),
+        config: base_config.clone(),
+    }]
+}
+
+/// LineSegmentation::extrusion_segmentation.
+///
+/// BLOCKED: see `polygon_segmentation`.
+fn extrusion_segmentation(
+    extrusion: &ExtrusionLine,
+    base_config: &PrintRegionConfig,
+    _perimeter_regions: &[PerimeterRegion],
+) -> Vec<ExtrusionRegionSegment> {
+    vec![ExtrusionRegionSegment {
+        extrusion: extrusion.clone(),
+        config: base_config.clone(),
+    }]
+}
+
+// ========================================================================
+// Rust-side compatibility adapter (NOT part of FuzzySkin.cpp)
+//
+// `perimeter_generator.rs` drives fuzzy skin through a small `FuzzySkinConfig`
+// + `FuzzySkinMode` (None/External/All). These adapters bridge that caller to
+// the faithful functions above without changing the C++ logic.
+// ========================================================================
+
+use crate::region_config::FuzzySkinMode;
+
+/// Adapter config used by `perimeter_generator.rs`.
 #[derive(Debug, Clone)]
 pub struct FuzzySkinConfig {
     /// Maximum thickness/displacement from original surface (mm).
     pub thickness: CoordF,
-
     /// Target distance between points along edges (mm).
     pub point_distance: CoordF,
-
-    /// Fuzzy skin mode (which perimeters to fuzzify).
+    /// Which perimeters to fuzzify (None/External/All).
     pub mode: FuzzySkinMode,
 }
 
-impl Default for FuzzySkinConfig {
-    fn default() -> Self {
-        Self {
-            thickness: 0.3,
-            point_distance: 0.8,
-            mode: FuzzySkinMode::External,
-        }
-    }
-}
-
 impl FuzzySkinConfig {
-    // Create a new fuzzy skin config with specified parameters.
-    pub fn new(thickness: CoordF, point_distance: CoordF) -> Self {
-        Self {
-            thickness,
-            point_distance,
-            mode: FuzzySkinMode::External,
-        }
-    }
-
-    /// Builder: set fuzzy skin mode.
-    pub fn with_mode(mut self, mode: FuzzySkinMode) -> Self {
-        self.mode = mode;
-        self
-    }
-
-    /// Check if fuzzy skin is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.mode != FuzzySkinMode::None && self.thickness > 0.0 && self.point_distance > 0.0
-    }
-}
-
-/// Apply fuzzy skin to a polyline (open or closed).
-///
-/// # Arguments
-///
-/// * `points` - The points to modify (modified in place)
-/// * `closed` - Whether the polyline is closed (polygon)
-/// * `thickness` - Maximum displacement in scaled units
-/// * `point_distance` - Target distance between points in scaled units
-fn fuzzy_polyline_impl(
-    points: &mut Vec<Point>,
-    closed: bool,
-    thickness: Coord,
-    point_distance: Coord,
-) {
-    if points.len() < 2 {
-        return;
-    }
-
-    // Hardcoded: the point distance may vary between 3/4 and 5/4 the supplied value
-    let min_dist_between_points = (point_distance * 3) / 4;
-    let range_random_point_dist = point_distance / 2;
-
-    // The distance to be traversed on the line before making the first new point
-    let mut dist_left_over =
-        (random_value() * (min_dist_between_points as f64 / 2.0)).round() as Coord;
-
-    let mut out = Vec::with_capacity(points.len() * 2);
-
-    // Get the starting point index
-    let start_idx = if closed { 0 } else { 1 };
-
-    // Get p0 - for closed polygons, start with the last point
-    let mut p0_idx = if closed { points.len() - 1 } else { 0 };
-
-    for i in start_idx..points.len() {
-        let p0 = points[p0_idx];
-        let p1 = points[i];
-
-        // Calculate vector from p0 to p1
-        let p0p1_x = (p1.x - p0.x) as f64;
-        let p0p1_y = (p1.y - p0.y) as f64;
-        let p0p1_size = (p0p1_x * p0p1_x + p0p1_y * p0p1_y).sqrt();
-
-        if p0p1_size < 1.0 {
-            p0_idx = i;
-            continue;
-        }
-
-        // Perpendicular vector (normalized)
-        let perp_x = -p0p1_y / p0p1_size;
-        let perp_y = p0p1_x / p0p1_size;
-
-        // Insert new points along the edge
-        let mut p0pa_dist = dist_left_over as f64;
-        while p0pa_dist < p0p1_size {
-            // Random displacement perpendicular to the edge
-            let r = random_value() * (thickness as f64 * 2.0) - thickness as f64;
-
-            // Calculate new point position
-            let t = p0pa_dist / p0p1_size;
-            let new_x = p0.x as f64 + p0p1_x * t + perp_x * r;
-            let new_y = p0.y as f64 + p0p1_y * t + perp_y * r;
-
-            out.push(Point::new(new_x.round() as Coord, new_y.round() as Coord));
-
-            // Move to next point position with some randomness in spacing
-            p0pa_dist +=
-                min_dist_between_points as f64 + random_value() * range_random_point_dist as f64;
-        }
-
-        dist_left_over = (p0pa_dist - p0p1_size).round() as Coord;
-        p0_idx = i;
-    }
-
-    // Ensure we have at least 3 points for a valid polygon
-    while out.len() < 3 && points.len() >= 2 {
-        let point_idx = if points.len() >= 2 {
-            points.len() - 2
-        } else {
-            0
+    /// Build a faithful `PrintRegionConfig` view from this adapter config.
+    fn to_region_config(&self) -> PrintRegionConfig {
+        let mut cfg = PrintRegionConfig::default();
+        cfg.fuzzy_skin_thickness = self.thickness;
+        cfg.fuzzy_skin_point_distance = self.point_distance;
+        cfg.fuzzy_skin_type = match self.mode {
+            FuzzySkinMode::None => FuzzySkinType::None,
+            FuzzySkinMode::External => FuzzySkinType::External,
+            FuzzySkinMode::All => FuzzySkinType::All,
         };
-        out.push(points[point_idx]);
-        if point_idx == 0 {
-            break;
-        }
-    }
-
-    if out.len() >= 3 {
-        *points = out;
+        cfg.fuzzy_skin_mode = self.mode;
+        // perimeter_generator applies fuzzy after seam/loop ordering on layer 1+
+        // and relies on layer_idx == 0 being skipped, so first-layer fuzz stays
+        // off to match the historical adapter behaviour.
+        cfg.fuzzy_skin_first_layer = false;
+        cfg
     }
 }
 
-/// Apply fuzzy skin to a polygon.
-///
-/// # Arguments
-///
-/// * `polygon` - The polygon to fuzzify (modified in place)
-/// * `config` - Fuzzy skin configuration
-pub fn fuzzy_polygon(polygon: &mut Polygon, config: &FuzzySkinConfig) {
-    let thickness = scale(config.thickness);
-    let point_distance = scale(config.point_distance);
-    let points = polygon.points_mut();
-    fuzzy_polyline_impl(points, true, thickness, point_distance);
+/// Adapter: fuzzify a polygon in place (slice_z = 0) using the C++ port.
+pub fn fuzzy_polygon_params(polygon: &mut Polygon, thickness_mm: CoordF, point_distance_mm: CoordF) {
+    let mut cfg = PrintRegionConfig::default();
+    cfg.fuzzy_skin_thickness = thickness_mm;
+    cfg.fuzzy_skin_point_distance = point_distance_mm;
+    fuzzy_polygon(polygon, 0.0, &cfg);
 }
 
-/// Apply fuzzy skin to a polygon with explicit parameters.
-///
-/// # Arguments
-///
-/// * `polygon` - The polygon to fuzzify (modified in place)
-/// * `thickness_mm` - Maximum displacement from surface (mm)
-/// * `point_distance_mm` - Target distance between points (mm)
-pub fn fuzzy_polygon_params(
-    polygon: &mut Polygon,
-    thickness_mm: CoordF,
-    point_distance_mm: CoordF,
-) {
-    let thickness = scale(thickness_mm);
-    let point_distance = scale(point_distance_mm);
-    let points = polygon.points_mut();
-    fuzzy_polyline_impl(points, true, thickness, point_distance);
-}
-
-/// Apply fuzzy skin to a polyline (open path).
-///
-/// # Arguments
-///
-/// * `polyline` - The polyline to fuzzify (modified in place)
-/// * `config` - Fuzzy skin configuration
-pub fn fuzzy_polyline(polyline: &mut Polyline, config: &FuzzySkinConfig) {
-    let thickness = scale(config.thickness);
-    let point_distance = scale(config.point_distance);
-    let points = polyline.points_mut();
-    fuzzy_polyline_impl(points, false, thickness, point_distance);
-}
-
-/// Apply fuzzy skin to an Arachne extrusion line.
-///
-/// # Arguments
-///
-/// * `extrusion` - The extrusion line to fuzzify (modified in place)
-/// * `config` - Fuzzy skin configuration
-pub fn fuzzy_extrusion_line(extrusion: &mut ExtrusionLine, config: &FuzzySkinConfig) {
-    let thickness = scale(config.thickness);
-    let point_distance = scale(config.point_distance);
-    fuzzy_extrusion_line_impl(extrusion, thickness, point_distance);
-}
-
-/// Apply fuzzy skin to an Arachne extrusion line with explicit parameters.
-///
-/// # Arguments
-///
-/// * `extrusion` - The extrusion line to fuzzify (modified in place)
-/// * `thickness_mm` - Maximum displacement from surface (mm)
-/// * `point_distance_mm` - Target distance between points (mm)
+/// Adapter: fuzzify an extrusion line in place (slice_z = 0) using the C++ port.
 pub fn fuzzy_extrusion_line_params(
     extrusion: &mut ExtrusionLine,
     thickness_mm: CoordF,
     point_distance_mm: CoordF,
 ) {
-    let thickness = scale(thickness_mm);
-    let point_distance = scale(point_distance_mm);
-    fuzzy_extrusion_line_impl(extrusion, thickness, point_distance);
+    let mut cfg = PrintRegionConfig::default();
+    cfg.fuzzy_skin_thickness = thickness_mm;
+    cfg.fuzzy_skin_point_distance = point_distance_mm;
+    fuzzy_extrusion_line(extrusion, 0.0, &cfg);
 }
 
-fn fuzzy_extrusion_line_impl(
-    extrusion: &mut ExtrusionLine,
-    thickness: Coord,
-    point_distance: Coord,
-) {
-    if extrusion.junctions.len() < 2 {
-        return;
-    }
-
-    // Hardcoded: the point distance may vary between 3/4 and 5/4 the supplied value
-    let min_dist_between_points = (point_distance * 3) / 4;
-    let range_random_point_dist = point_distance / 2;
-
-    // The distance to be traversed on the line before making the first new point
-    let mut dist_left_over =
-        (random_value() * (min_dist_between_points as f64 / 2.0)).round() as Coord;
-
-    let mut out: Vec<ExtrusionJunction> = Vec::with_capacity(extrusion.junctions.len() * 2);
-
-    let mut p0_idx = 0;
-    for i in 0..extrusion.junctions.len() {
-        let p0 = &extrusion.junctions[p0_idx];
-        let p1 = &extrusion.junctions[i];
-
-        if p0.position == p1.position {
-            // Copy the first point
-            out.push(ExtrusionJunction {
-                position: p1.position,
-                width: p1.width,
-                perimeter_index: p1.perimeter_index,
-            });
-            continue;
-        }
-
-        // Calculate vector from p0 to p1
-        let p0p1_x = (p1.position.x - p0.position.x) as f64;
-        let p0p1_y = (p1.position.y - p0.position.y) as f64;
-        let p0p1_size = (p0p1_x * p0p1_x + p0p1_y * p0p1_y).sqrt();
-
-        // Perpendicular vector (normalized)
-        let perp_x = -p0p1_y / p0p1_size;
-        let perp_y = p0p1_x / p0p1_size;
-
-        // Insert new points along the edge
-        let mut p0pa_dist = dist_left_over as f64;
-        while p0pa_dist < p0p1_size {
-            // Random displacement perpendicular to the edge
-            let r = random_value() * (thickness as f64 * 2.0) - thickness as f64;
-
-            // Calculate new point position
-            let t = p0pa_dist / p0p1_size;
-            let new_x = p0.position.x as f64 + p0p1_x * t + perp_x * r;
-            let new_y = p0.position.y as f64 + p0p1_y * t + perp_y * r;
-
-            out.push(ExtrusionJunction {
-                position: Point::new(new_x.round() as Coord, new_y.round() as Coord),
-                width: p1.width,
-                perimeter_index: p1.perimeter_index,
-            });
-
-            // Move to next point position with some randomness in spacing
-            p0pa_dist +=
-                min_dist_between_points as f64 + random_value() * range_random_point_dist as f64;
-        }
-
-        dist_left_over = (p0pa_dist - p0p1_size).round() as Coord;
-        p0_idx = i;
-    }
-
-    // Ensure we have at least 3 points
-    while out.len() < 3 && extrusion.junctions.len() >= 2 {
-        let point_idx = if extrusion.junctions.len() >= 2 {
-            extrusion.junctions.len() - 2
-        } else {
-            0
-        };
-        let j = &extrusion.junctions[point_idx];
-        out.push(ExtrusionJunction {
-            position: j.position,
-            width: j.width,
-            perimeter_index: j.perimeter_index,
-        });
-        if point_idx == 0 {
-            break;
-        }
-    }
-
-    // Connect endpoints for closed extrusion lines
-    if extrusion.is_closed && out.len() >= 2 && extrusion.junctions.len() >= 2 {
-        let first_pos = extrusion.junctions.first().map(|j| j.position);
-        let last_pos = extrusion.junctions.last().map(|j| j.position);
-        if first_pos == last_pos {
-            if let (Some(first), Some(last)) = (out.first().cloned(), out.last().cloned()) {
-                if let Some(first_mut) = out.first_mut() {
-                    first_mut.position = last.position;
-                }
-            }
-        }
-    }
-
-    if out.len() >= 3 {
-        extrusion.junctions = out;
-    }
-}
-
-/// Determine if a perimeter should have fuzzy skin applied.
-///
-/// # Arguments
-///
-/// * `mode` - The fuzzy skin mode setting
-/// * `layer_idx` - The layer index (0-based)
-/// * `perimeter_idx` - The perimeter index (0 = outermost)
-/// * `is_contour` - Whether this is a contour (outer boundary) or hole (inner)
-///
-/// # Returns
-///
-/// True if fuzzy skin should be applied to this perimeter.
-pub fn should_fuzzify(
-    mode: FuzzySkinMode,
-    layer_idx: usize,
-    perimeter_idx: usize,
-    is_contour: bool,
-) -> bool {
-    // Don't fuzzify first layer for better bed adhesion
-    if layer_idx == 0 {
-        return false;
-    }
-
-    match mode {
-        FuzzySkinMode::None => false,
-        FuzzySkinMode::External => {
-            // Only external perimeters (perimeter_idx == 0) and only contours (not holes)
-            perimeter_idx == 0 && is_contour
-        }
-        FuzzySkinMode::All => {
-            // All perimeters, both contours and holes
-            true
-        }
-    }
-}
-
-/// Apply fuzzy skin to a polygon if conditions are met.
-///
-/// # Arguments
-///
-/// * `polygon` - The polygon to potentially fuzzify
-/// * `config` - Fuzzy skin configuration
-/// * `layer_idx` - Layer index (0-based)
-/// * `perimeter_idx` - Perimeter index (0 = outermost)
-/// * `is_contour` - Whether this is a contour or hole
-///
-/// # Returns
-///
-/// A new polygon (fuzzified if applicable, or a clone if not).
-pub fn apply_fuzzy_skin_polygon(
+/// Adapter used by `perimeter_generator.rs` for polygon fuzzification.
+pub fn apply_fuzzy_skin_polygon_adapter(
     polygon: &Polygon,
     config: &FuzzySkinConfig,
     layer_idx: usize,
     perimeter_idx: usize,
     is_contour: bool,
 ) -> Polygon {
-    if should_fuzzify(config.mode, layer_idx, perimeter_idx, is_contour) && config.is_enabled() {
-        let mut fuzzified = polygon.clone();
-        fuzzy_polygon(&mut fuzzified, config);
-        fuzzified
-    } else {
-        polygon.clone()
-    }
+    let region_config = config.to_region_config();
+    apply_fuzzy_skin_polygon(
+        polygon,
+        &region_config,
+        &[],
+        layer_idx,
+        perimeter_idx,
+        is_contour,
+        0.0,
+    )
 }
 
-/// Apply fuzzy skin to an extrusion line if conditions are met.
-///
-/// # Arguments
-///
-/// * `extrusion` - The extrusion line to potentially fuzzify
-/// * `config` - Fuzzy skin configuration
-/// * `layer_idx` - Layer index (0-based)
-/// * `perimeter_idx` - Perimeter index (0 = outermost)
-/// * `is_contour` - Whether this is a contour or hole
-///
-/// # Returns
-///
-/// A new extrusion line (fuzzified if applicable, or a clone if not).
-pub fn apply_fuzzy_skin_extrusion(
+/// Adapter used by `perimeter_generator.rs` for extrusion fuzzification.
+pub fn apply_fuzzy_skin_extrusion_adapter(
     extrusion: &ExtrusionLine,
     config: &FuzzySkinConfig,
     layer_idx: usize,
     perimeter_idx: usize,
     is_contour: bool,
 ) -> ExtrusionLine {
-    if should_fuzzify(config.mode, layer_idx, perimeter_idx, is_contour) && config.is_enabled() {
-        let mut fuzzified = extrusion.clone();
-        fuzzy_extrusion_line(&mut fuzzified, config);
-        fuzzified
-    } else {
-        extrusion.clone()
-    }
+    let region_config = config.to_region_config();
+    apply_fuzzy_skin_extrusion(
+        extrusion,
+        &region_config,
+        &[],
+        layer_idx,
+        perimeter_idx,
+        is_contour,
+        0.0,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scale;
 
     fn make_square(size_mm: CoordF) -> Polygon {
         let s = scale(size_mm);
@@ -511,176 +713,104 @@ mod tests {
         ])
     }
 
-    fn make_line() -> Polyline {
-        let s = scale(10.0);
-        Polyline::from_points(vec![Point::new(0, 0), Point::new(s, 0)])
-    }
-
-    #[test]
-    fn test_fuzzy_skin_config_default() {
-        let config = FuzzySkinConfig::default();
-        assert!((config.thickness - 0.3).abs() < 1e-6);
-        assert!((config.point_distance - 0.8).abs() < 1e-6);
-        assert_eq!(config.mode, FuzzySkinMode::External);
-        assert!(config.is_enabled());
-    }
-
-    #[test]
-    fn test_fuzzy_skin_config_disabled() {
-        let config = FuzzySkinConfig::default().with_mode(FuzzySkinMode::None);
-        assert!(!config.is_enabled());
+    fn external_config() -> PrintRegionConfig {
+        let mut cfg = PrintRegionConfig::default();
+        cfg.fuzzy_skin_thickness = 0.3;
+        cfg.fuzzy_skin_point_distance = 0.8;
+        cfg.fuzzy_skin_type = FuzzySkinType::External;
+        cfg
     }
 
     #[test]
     fn test_fuzzy_polygon_adds_points() {
         let original = make_square(10.0);
         let original_count = original.points().len();
-
         let mut fuzzified = original.clone();
-        let config = FuzzySkinConfig::new(0.3, 0.8);
-        fuzzy_polygon(&mut fuzzified, &config);
-
-        // Fuzzy skin should add more points
-        assert!(fuzzified.points().len() > original_count);
-    }
-
-    #[test]
-    fn test_fuzzy_polygon_displacement() {
-        let original = make_square(10.0);
-        let mut fuzzified = original.clone();
-        let config = FuzzySkinConfig::new(0.3, 0.8);
-        fuzzy_polygon(&mut fuzzified, &config);
-
-        // Points should be displaced but within thickness bounds
-        // This is a weak test - just checking the polygon is still valid
-        assert!(fuzzified.points().len() >= 3);
-    }
-
-    #[test]
-    fn test_fuzzy_polyline() {
-        let original = make_line();
-        let original_count = original.points().len();
-
-        let mut fuzzified = original.clone();
-        let config = FuzzySkinConfig::new(0.3, 0.8);
-        fuzzy_polyline(&mut fuzzified, &config);
-
-        // Should add points (10mm line with 0.8mm spacing should have ~12 points)
+        let cfg = external_config();
+        fuzzy_polygon(&mut fuzzified, 0.0, &cfg);
         assert!(fuzzified.points().len() > original_count);
     }
 
     #[test]
     fn test_should_fuzzify_first_layer() {
-        // First layer should never be fuzzified
-        assert!(!should_fuzzify(FuzzySkinMode::External, 0, 0, true));
-        assert!(!should_fuzzify(FuzzySkinMode::All, 0, 0, true));
+        let cfg = external_config();
+        // first layer skipped unless fuzzy_skin_first_layer
+        assert!(!should_fuzzify(&cfg, 0, 0, true));
+        let mut allc = external_config();
+        allc.fuzzy_skin_type = FuzzySkinType::All;
+        assert!(!should_fuzzify(&allc, 0, 0, true));
     }
 
     #[test]
-    fn test_should_fuzzify_external_mode() {
-        // External mode: only outer perimeter contours
-        assert!(should_fuzzify(FuzzySkinMode::External, 1, 0, true));
-        assert!(!should_fuzzify(FuzzySkinMode::External, 1, 0, false)); // hole
-        assert!(!should_fuzzify(FuzzySkinMode::External, 1, 1, true)); // inner perimeter
+    fn test_should_fuzzify_external() {
+        let cfg = external_config();
+        assert!(should_fuzzify(&cfg, 1, 0, true)); // outer contour
+        assert!(!should_fuzzify(&cfg, 1, 0, false)); // hole
+        assert!(!should_fuzzify(&cfg, 1, 1, true)); // inner perimeter
     }
 
     #[test]
-    fn test_should_fuzzify_all_mode() {
-        // All mode: everything (except first layer)
-        assert!(should_fuzzify(FuzzySkinMode::All, 1, 0, true));
-        assert!(should_fuzzify(FuzzySkinMode::All, 1, 0, false));
-        assert!(should_fuzzify(FuzzySkinMode::All, 1, 1, true));
-        assert!(should_fuzzify(FuzzySkinMode::All, 1, 2, false));
+    fn test_should_fuzzify_all_walls() {
+        let mut cfg = external_config();
+        cfg.fuzzy_skin_type = FuzzySkinType::AllWalls;
+        assert!(should_fuzzify(&cfg, 1, 0, true));
+        assert!(should_fuzzify(&cfg, 1, 1, true));
+        assert!(should_fuzzify(&cfg, 1, 1, false)); // holes too
     }
 
     #[test]
-    fn test_should_fuzzify_none_mode() {
-        // None mode: nothing
-        assert!(!should_fuzzify(FuzzySkinMode::None, 1, 0, true));
-        assert!(!should_fuzzify(FuzzySkinMode::None, 5, 0, true));
+    fn test_should_fuzzify_none_and_disabled() {
+        let mut none = external_config();
+        none.fuzzy_skin_type = FuzzySkinType::None;
+        assert!(!should_fuzzify(&none, 1, 0, true));
+        let mut disabled = external_config();
+        disabled.fuzzy_skin_type = FuzzySkinType::DisabledFuzzy;
+        assert!(!should_fuzzify(&disabled, 1, 0, true));
     }
 
     #[test]
-    fn test_apply_fuzzy_skin_polygon() {
+    fn test_apply_fuzzy_skin_polygon_no_regions() {
         let original = make_square(10.0);
-        let config = FuzzySkinConfig::default();
-
-        // Layer 0 should not be fuzzified
-        let result = apply_fuzzy_skin_polygon(&original, &config, 0, 0, true);
-        assert_eq!(result.points().len(), original.points().len());
-
-        // Layer 1 external contour should be fuzzified
-        let result = apply_fuzzy_skin_polygon(&original, &config, 1, 0, true);
-        assert!(result.points().len() > original.points().len());
-
-        // Layer 1 inner perimeter should not be fuzzified (External mode)
-        let result = apply_fuzzy_skin_polygon(&original, &config, 1, 1, true);
-        assert_eq!(result.points().len(), original.points().len());
+        let cfg = external_config();
+        // layer 0: not fuzzified
+        let r = apply_fuzzy_skin_polygon(&original, &cfg, &[], 0, 0, true, 0.0);
+        assert_eq!(r.points().len(), original.points().len());
+        // layer 1 outer contour: fuzzified
+        let r = apply_fuzzy_skin_polygon(&original, &cfg, &[], 1, 0, true, 0.0);
+        assert!(r.points().len() > original.points().len());
     }
 
     #[test]
-    fn test_fuzzy_extrusion_line() {
-        let original = ExtrusionLine {
-            junctions: vec![
-                ExtrusionJunction {
-                    position: Point::new(0, 0),
-                    width: scale(0.4),
-                    perimeter_index: 0,
-                },
-                ExtrusionJunction {
-                    position: Point::new(scale(10.0), 0),
-                    width: scale(0.4),
-                    perimeter_index: 0,
-                },
+    fn test_fuzzy_extrusion_line_displacement() {
+        let original = ExtrusionLine::from_junctions(
+            vec![
+                ExtrusionJunction::new(Point::new(0, 0), scale(0.4), 0),
+                ExtrusionJunction::new(Point::new(scale(10.0), 0), scale(0.4), 0),
             ],
-            inset_idx: 0,
-            is_odd: false,
-            is_closed: false,
-        };
-
+            0,
+            false,
+            false,
+        );
         let mut fuzzified = original.clone();
-        let config = FuzzySkinConfig::new(0.3, 0.8);
-        fuzzy_extrusion_line(&mut fuzzified, &config);
-
-        // Should add more junctions
+        let cfg = external_config();
+        fuzzy_extrusion_line(&mut fuzzified, 0.0, &cfg);
         assert!(fuzzified.junctions.len() > original.junctions.len());
     }
 
     #[test]
     fn test_random_value_range() {
-        // Test that random values are in [0, 1)
         for _ in 0..100 {
             let v = random_value();
-            assert!(v >= 0.0 && v < 1.0);
+            assert!((0.0..1.0).contains(&v));
         }
     }
 
     #[test]
-    fn test_xorshift_not_zero() {
-        let mut rng = XorShift64::new();
-        // Ensure it produces non-zero values
-        let mut seen_nonzero = false;
-        for _ in 0..10 {
-            if rng.next_u64() != 0 {
-                seen_nonzero = true;
-                break;
-            }
+    fn test_uniform_noise_range() {
+        let m = UniformNoise;
+        for _ in 0..100 {
+            let v = m.get_value(0.0, 0.0, 0.0);
+            assert!((-1.0..1.0).contains(&v));
         }
-        assert!(seen_nonzero);
-    }
-
-    #[test]
-    fn test_fuzzy_preserves_minimum_points() {
-        // A very small polygon should still have at least 3 points
-        let tiny = Polygon::from_points(vec![
-            Point::new(0, 0),
-            Point::new(100, 0),
-            Point::new(50, 100),
-        ]);
-        let mut fuzzified = tiny.clone();
-        let config = FuzzySkinConfig::new(0.001, 10.0); // Large point distance
-        fuzzy_polygon(&mut fuzzified, &config);
-
-        assert!(fuzzified.points().len() >= 3);
     }
 }
