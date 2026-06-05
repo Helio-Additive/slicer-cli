@@ -348,7 +348,7 @@
     "rust": "crates/libslic3r-rs/src/min_area_bounding_box.rs",
     "rust_exists": true,
     "loc": 106,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -357,9 +357,9 @@
     "kind": "cpp",
     "area": "root",
     "rust": "crates/libslic3r-rs/src/flush_vol_calc.rs",
-    "rust_exists": false,
+    "rust_exists": true,
     "loc": 130,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -370,7 +370,7 @@
     "rust": "crates/libslic3r-rs/src/ex_polygon_collection.rs",
     "rust_exists": false,
     "loc": 136,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -381,7 +381,7 @@
     "rust": "crates/libslic3r-rs/src/open_vdb_utils.rs",
     "rust_exists": true,
     "loc": 136,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {

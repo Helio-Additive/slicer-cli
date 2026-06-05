@@ -239,6 +239,24 @@ pub fn var_path(file_name: &str) -> PathBuf {
     var_dir().join(file_name)
 }
 
+/// Resources directory path (set by GUI or CLI)
+/// Utils.hpp:107-109
+static mut RESOURCES_DIR: Option<PathBuf> = None;
+
+/// Set the path with various resources
+/// Utils.hpp:107
+pub fn set_resources_dir(path: impl AsRef<Path>) {
+    unsafe {
+        RESOURCES_DIR = Some(path.as_ref().to_path_buf());
+    }
+}
+
+/// Return the full path to the resources directory
+/// Utils.hpp:109
+pub fn resources_dir() -> PathBuf {
+    unsafe { RESOURCES_DIR.clone().unwrap_or_else(|| PathBuf::from(".")) }
+}
+
 /// Format memory size in MB with comma separators
 /// Utils.hpp:86
 pub fn format_memsize_mb(bytes: usize) -> String {
