@@ -315,135 +315,125 @@ where
         self.heap.iter()
     }
 
-    /// Bubble element up the heap (child has higher priority than parent)
+    /// Bubble element up the heap.
     /// MutablePriorityQueue.hpp:136-157
     /// C++: void update_heap_up(size_t top, size_t bottom)
+    ///
+    /// NOTE: A faithful 1:1 translation. The C++ loop does NOT break after a
+    /// successful (or skipped) comparison; it always shifts up to `top`,
+    /// carrying `child` along (`child = parent`). The previous Rust version
+    /// added an early `break` on the predicate, which diverged from C++ in the
+    /// `index_setter` side-effect ordering; that has been corrected.
     fn update_heap_up(&mut self, top: usize, bottom: usize) {
-        // Start at bottom (newly inserted element)
         // MutablePriorityQueue.hpp:138-139
         // C++: size_t childIdx = bottom;
         // C++: T *child = &m_heap[childIdx];
         let mut child_idx = bottom;
-
+        // `child` mirrors `T *child` by carrying the value across iterations.
+        let mut child = self.heap[child_idx];
+        // MutablePriorityQueue.hpp:140
+        // C++: for (;;) {
         loop {
-            // Calculate parent index
             // MutablePriorityQueue.hpp:141
             // C++: size_t parentIdx = (childIdx - 1) >> 1;
-            let parent_idx = if child_idx == 0 {
-                break;
-            } else {
-                (child_idx - 1) / 2
-            };
-
-            // Stop at top boundary or root
+            let parent_idx = (child_idx.wrapping_sub(1)) >> 1;
             // MutablePriorityQueue.hpp:142-143
             // C++: if (childIdx == 0 || parentIdx < top) break;
-            if parent_idx < top {
+            if child_idx == 0 || parent_idx < top {
                 break;
             }
-
-            // Check if swap is needed (child has higher priority)
-            // MutablePriorityQueue.hpp:145-146
-            // C++: if (! m_less_predicate(*parent, *child))
-            let child = self.heap[child_idx];
+            // MutablePriorityQueue.hpp:144
+            // C++: T *parent = &m_heap[parentIdx];
             let parent = self.heap[parent_idx];
-
-            if (self.less_predicate)(&parent, &child) {
-                // Parent has higher priority - heap property satisfied
-                break;
+            // switch nodes
+            // MutablePriorityQueue.hpp:145-152
+            // C++: if (! m_less_predicate(*parent, *child)) {
+            if !(self.less_predicate)(&parent, &child) {
+                // C++: T tmp = *parent;
+                // C++: m_index_setter(tmp,    childIdx);
+                // C++: m_index_setter(*child, parentIdx);
+                // C++: m_heap[parentIdx] = *child;
+                // C++: m_heap[childIdx]  = tmp;
+                let tmp = parent;
+                (self.index_setter)(&tmp, child_idx);
+                (self.index_setter)(&child, parent_idx);
+                self.heap[parent_idx] = child;
+                self.heap[child_idx] = tmp;
             }
-
-            // Swap parent and child
-            // MutablePriorityQueue.hpp:147-151
-            // C++: T tmp = *parent;
-            // C++: m_index_setter(tmp, childIdx);
-            // C++: m_index_setter(*child, parentIdx);
-            // C++: m_heap[parentIdx] = *child;
-            // C++: m_heap[childIdx] = tmp;
-            (self.index_setter)(&parent, child_idx);
-            (self.index_setter)(&child, parent_idx);
-            self.heap[parent_idx] = child;
-            self.heap[child_idx] = parent;
-
-            // Move up the tree
+            // shift up
             // MutablePriorityQueue.hpp:153-155
             // C++: childIdx = parentIdx;
+            // C++: child = parent;
             child_idx = parent_idx;
+            // `child = parent` carries the value at `m_heap[parentIdx]`. Note that
+            // after a swap `m_heap[parentIdx]` now holds the old child value, but
+            // C++ keeps `child` pointing at that address, so `child` becomes the
+            // value now residing at `parentIdx`.
+            child = self.heap[parent_idx];
         }
     }
 
-    /// Bubble element down the heap (parent has lower priority than children)
+    /// Bubble element down the heap.
     /// MutablePriorityQueue.hpp:160-189
     /// C++: void update_heap_down(size_t top, size_t bottom)
     fn update_heap_down(&mut self, top: usize, bottom: usize) {
-        // Start at top (root or hole position)
         // MutablePriorityQueue.hpp:162-163
         // C++: size_t parentIdx = top;
         // C++: T *parent = &m_heap[parentIdx];
         let mut parent_idx = top;
-
+        let mut parent = self.heap[parent_idx];
+        // MutablePriorityQueue.hpp:164
+        // C++: for (;;) {
         loop {
-            // Calculate left child index
             // MutablePriorityQueue.hpp:165
             // C++: size_t childIdx = (parentIdx << 1) + 1;
-            let child_idx = parent_idx * 2 + 1;
-
-            // Check if left child exists
+            let mut child_idx = (parent_idx << 1) + 1;
             // MutablePriorityQueue.hpp:166-167
             // C++: if (childIdx > bottom) break;
             if child_idx > bottom {
                 break;
             }
-
-            // Get left child
             // MutablePriorityQueue.hpp:168
             // C++: T *child = &m_heap[childIdx];
-            let mut min_child_idx = child_idx;
-
-            // Check if right child exists and has higher priority
+            let mut child = self.heap[child_idx];
             // MutablePriorityQueue.hpp:169-176
             // C++: size_t child2Idx = childIdx + 1;
-            // C++: if (child2Idx <= bottom) {
-            // C++:     T *child2 = &m_heap[child2Idx];
-            // C++:     if (! m_less_predicate(*child, *child2)) {
-            // C++:         child = child2;
-            // C++:         childIdx = child2Idx;
             let child2_idx = child_idx + 1;
+            // C++: if (child2Idx <= bottom) {
             if child2_idx <= bottom {
-                let child = self.heap[child_idx];
+                // C++: T *child2 = &m_heap[child2Idx];
                 let child2 = self.heap[child2_idx];
+                // C++: if (! m_less_predicate(*child, *child2)) {
                 if !(self.less_predicate)(&child, &child2) {
-                    min_child_idx = child2_idx;
+                    // C++: child = child2;
+                    // C++: childIdx = child2Idx;
+                    child = child2;
+                    child_idx = child2_idx;
                 }
             }
-
-            // Check if parent already has higher priority than best child
-            // MutablePriorityQueue.hpp:178-179
+            // MutablePriorityQueue.hpp:177-178
             // C++: if (m_less_predicate(*parent, *child)) return;
-            let parent = self.heap[parent_idx];
-            let min_child = self.heap[min_child_idx];
-
-            if (self.less_predicate)(&parent, &min_child) {
-                // Parent has higher priority - heap property satisfied
+            if (self.less_predicate)(&parent, &child) {
                 return;
             }
-
-            // Swap parent with minimum child
-            // MutablePriorityQueue.hpp:180-184
+            // switch nodes
+            // MutablePriorityQueue.hpp:179-184
             // C++: T tmp = *parent;
-            // C++: m_index_setter(tmp, childIdx);
+            // C++: m_index_setter(tmp,    childIdx);
             // C++: m_index_setter(*child, parentIdx);
             // C++: m_heap[parentIdx] = *child;
             // C++: m_heap[childIdx] = tmp;
-            (self.index_setter)(&parent, min_child_idx);
-            (self.index_setter)(&min_child, parent_idx);
-            self.heap[parent_idx] = min_child;
-            self.heap[min_child_idx] = parent;
-
-            // Move down the tree
-            // MutablePriorityQueue.hpp:186-187
+            let tmp = parent;
+            (self.index_setter)(&tmp, child_idx);
+            (self.index_setter)(&child, parent_idx);
+            self.heap[parent_idx] = child;
+            self.heap[child_idx] = tmp;
+            // shift down
+            // MutablePriorityQueue.hpp:185-187
             // C++: parentIdx = childIdx;
-            parent_idx = min_child_idx;
+            // C++: parent = child;
+            parent_idx = child_idx;
+            parent = self.heap[child_idx];
         }
     }
 }
@@ -490,6 +480,573 @@ where
     /// Destructor - clear queue
     /// MutablePriorityQueue.hpp:18
     /// C++: ~MutablePriorityQueue() { clear(); }
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+// Binary heap addressing of a hierarchy of binary miniheaps by a higher level binary heap.
+// Conceptually it works the same as a plain binary heap, however it is cache friendly.
+// A binary block of "block_size" implements a binary miniheap of (block_size / 2) leaves and
+// ((block_size / 2) - 1) nodes, thus wasting a single element. To make addressing simpler,
+// the zero'th element inside each miniheap is wasted, thus for example a single element heap is
+// 2 elements long and the 1st element starts at address 1.
+//
+// Mostly copied from the following great source:
+// https://playfulprogramming.blogspot.com/2015/08/cache-optimizing-priority-queue.html
+// https://github.com/rollbear/prio_queue/blob/master/prio_queue.hpp
+// original source Copyright Björn Fahller 2015, Boost Software License, Version 1.0, http://www.boost.org/LICENSE_1_0.txt
+// MutablePriorityQueue.hpp:191-251
+// C++: template <std::size_t blocking> struct SkipHeapAddressing
+///
+/// Cache-friendly skip-heap addressing helper. In C++ `blocking` is a
+/// compile-time `std::size_t` template parameter; here it is a runtime `usize`
+/// (`block_size`) carried inside the struct so that the same arithmetic can be
+/// performed without const generics.
+#[derive(Clone, Copy)]
+pub struct SkipHeapAddressing {
+    /// MutablePriorityQueue.hpp:206
+    /// C++: static const constexpr std::size_t block_size = blocking;
+    pub block_size: usize,
+    /// MutablePriorityQueue.hpp:207
+    /// C++: static const constexpr std::size_t block_mask = block_size - 1;
+    pub block_mask: usize,
+}
+
+impl SkipHeapAddressing {
+    /// Construct addressing for the given block size.
+    /// MutablePriorityQueue.hpp:206-208
+    /// C++: static_assert((block_size & block_mask) == 0U, "block size must be 2^n for some integer n");
+    pub fn new(block_size: usize) -> Self {
+        let block_mask = block_size - 1;
+        // C++ static_assert: block size must be 2^n for some integer n.
+        debug_assert!((block_size & block_mask) == 0, "block size must be 2^n for some integer n");
+        Self { block_size, block_mask }
+    }
+
+    /// MutablePriorityQueue.hpp:210-218
+    /// C++: static inline std::size_t child_of(std::size_t node_no) noexcept
+    #[inline]
+    pub fn child_of(&self, node_no: usize) -> usize {
+        // MutablePriorityQueue.hpp:211-215
+        // C++: if (! is_block_leaf(node_no))
+        if !self.is_block_leaf(node_no) {
+            // If not a leaf, then it is sufficient to just traverse down inside a miniheap.
+            // The following line is equivalent to, but quicker than
+            // return block_base(node_no) + 2 * block_offset(node_no);
+            // C++: return node_no + block_offset(node_no);
+            return node_no + self.block_offset(node_no);
+        }
+        // Otherwise skip to a root of a child miniheap.
+        // MutablePriorityQueue.hpp:217
+        // C++: return (block_base(node_no) + 1 + child_no(node_no) * 2) * block_size + 1;
+        (self.block_base(node_no) + 1 + self.child_no(node_no) * 2) * self.block_size + 1
+    }
+
+    /// MutablePriorityQueue.hpp:220-235
+    /// C++: static inline std::size_t parent_of(std::size_t node_no) noexcept
+    #[inline]
+    pub fn parent_of(&self, node_no: usize) -> usize {
+        // MutablePriorityQueue.hpp:221
+        // C++: auto const node_root = block_base(node_no); // 16
+        let node_root = self.block_base(node_no); // 16
+        // MutablePriorityQueue.hpp:222-224
+        // C++: if (! is_block_root(node_no))
+        if !self.is_block_root(node_no) {
+            // If not a block (miniheap) root, then it is sufficient to just traverse up inside a miniheap.
+            // C++: return node_root + block_offset(node_no) / 2;
+            return node_root + self.block_offset(node_no) / 2;
+        }
+        // Otherwise skipping from a root of one miniheap into leaf of another miniheap.
+        // Address of a parent miniheap block. One miniheap branches at (block_size / 2) leaves to (block_size) miniheaps.
+        // MutablePriorityQueue.hpp:227
+        // C++: auto const parent_base = block_base(node_root / block_size - 1); // 0
+        let parent_base = self.block_base(node_root / self.block_size - 1); // 0
+        // Index of a leaf of a parent miniheap, which is a parent of node_no.
+        // MutablePriorityQueue.hpp:229
+        // C++: auto const child = ((node_no - block_size) / block_size - parent_base) / 2;
+        let child = ((node_no - self.block_size) / self.block_size - parent_base) / 2;
+        // MutablePriorityQueue.hpp:230-234
+        // C++: return parent_base + block_size / 2 + child; // 30
+        // Address of a parent miniheap
+        parent_base +
+            // Address of a leaf of a parent miniheap
+            self.block_size / 2 + child // 30
+    }
+
+    /// Leafs are stored inside the second half of a block.
+    /// MutablePriorityQueue.hpp:238
+    /// C++: static inline bool is_block_leaf(std::size_t node_no) noexcept { return (node_no & (block_size >> 1)) != 0U; }
+    #[inline]
+    pub fn is_block_leaf(&self, node_no: usize) -> bool {
+        (node_no & (self.block_size >> 1)) != 0
+    }
+
+    /// Unused space aka padding to facilitate quick addressing.
+    /// MutablePriorityQueue.hpp:240
+    /// C++: static inline bool is_padding(std::size_t node_no) noexcept { return block_offset(node_no) == 0U; }
+    #[inline]
+    pub fn is_padding(&self, node_no: usize) -> bool {
+        self.block_offset(node_no) == 0
+    }
+
+    // Following methods are internal, but made public for unit tests.
+    //private:
+    /// Address is a root of a block (of a miniheap).
+    /// MutablePriorityQueue.hpp:244
+    /// C++: static inline bool is_block_root(std::size_t node_no) noexcept { return block_offset(node_no) == 1U; }
+    #[inline]
+    pub fn is_block_root(&self, node_no: usize) -> bool {
+        self.block_offset(node_no) == 1
+    }
+
+    /// Offset inside a block (inside a miniheap).
+    /// MutablePriorityQueue.hpp:246
+    /// C++: static inline std::size_t block_offset(std::size_t node_no) noexcept { return node_no & block_mask; }
+    #[inline]
+    pub fn block_offset(&self, node_no: usize) -> usize {
+        node_no & self.block_mask
+    }
+
+    /// Base address of a block (a miniheap).
+    /// MutablePriorityQueue.hpp:248
+    /// C++: static inline std::size_t block_base(std::size_t node_no) noexcept { return node_no & ~block_mask; }
+    #[inline]
+    pub fn block_base(&self, node_no: usize) -> usize {
+        node_no & !self.block_mask
+    }
+
+    /// Index of a leaf.
+    /// MutablePriorityQueue.hpp:250
+    /// C++: static inline std::size_t child_no(std::size_t node_no) noexcept { assert(is_block_leaf(node_no)); return node_no & (block_mask >> 1); }
+    #[inline]
+    pub fn child_no(&self, node_no: usize) -> usize {
+        debug_assert!(self.is_block_leaf(node_no));
+        node_no & (self.block_mask >> 1)
+    }
+}
+
+/// Default block size (`blocking`) for [`MutableSkipHeapPriorityQueue`].
+/// MutablePriorityQueue.hpp:255
+/// C++: std::size_t blocking = 32
+pub const DEFAULT_SKIP_HEAP_BLOCKING: usize = 32;
+
+/// Cache friendly variant of MutablePriorityQueue, implemented as a binary heap of binary miniheaps,
+/// building upon SkipHeapAddressing.
+/// MutablePriorityQueue.hpp:253-299
+/// C++: template<typename T, typename IndexSetter, typename LessPredicate, std::size_t blocking = 32, const bool ResetIndexWhenRemoved = false> class MutableSkipHeapPriorityQueue
+///
+/// `T` must be trivially copyable (`Copy`) and constructible (`Default`, used
+/// to create the padding element — C++ `T()`).
+pub struct MutableSkipHeapPriorityQueue<T, F, L>
+where
+    T: Copy + Default,
+    F: FnMut(&T, usize),
+    L: Fn(&T, &T) -> bool,
+{
+    /// MutablePriorityQueue.hpp:296
+    /// C++: std::vector<T> m_heap;
+    heap: Vec<T>,
+    /// MutablePriorityQueue.hpp:297
+    /// C++: IndexSetter m_index_setter;
+    index_setter: F,
+    /// MutablePriorityQueue.hpp:298
+    /// C++: LessPredicate m_less_predicate;
+    less_predicate: L,
+    /// `using address = SkipHeapAddressing<blocking>;`
+    /// MutablePriorityQueue.hpp:260
+    address: SkipHeapAddressing,
+    /// Runtime mirror of the C++ `ResetIndexWhenRemoved` template bool.
+    /// MutablePriorityQueue.hpp:255
+    reset_on_remove: bool,
+}
+
+impl<T, F, L> MutableSkipHeapPriorityQueue<T, F, L>
+where
+    T: Copy + Default,
+    F: FnMut(&T, usize),
+    L: Fn(&T, &T) -> bool,
+{
+    /// MutablePriorityQueue.hpp:263-266
+    /// C++: MutableSkipHeapPriorityQueue(IndexSetter &&index_setter, LessPredicate &&less_predicate)
+    ///
+    /// `blocking` is the C++ template `std::size_t blocking` (default 32) and
+    /// `reset_on_remove` is the C++ template `ResetIndexWhenRemoved` (default false).
+    pub fn new(blocking: usize, reset_on_remove: bool, index_setter: F, less_predicate: L) -> Self {
+        Self {
+            heap: Vec::new(),
+            index_setter,
+            less_predicate,
+            address: SkipHeapAddressing::new(blocking),
+            reset_on_remove,
+        }
+    }
+
+    /// Clear all elements from the queue.
+    /// MutablePriorityQueue.hpp:309-323
+    /// C++: void clear()
+    pub fn clear(&mut self) {
+        // Only mark as removed from the queue in release mode, if configured so.
+        // MutablePriorityQueue.hpp:314
+        // C++: if (ResetIndexWhenRemoved)
+        if self.reset_on_remove {
+            // MutablePriorityQueue.hpp:317-320
+            // C++: for (size_t idx = 0; idx < m_heap.size(); ++ idx)
+            for idx in 0..self.heap.len() {
+                // Mark as removed from the queue.
+                // C++: if (! address::is_padding(idx))
+                if !self.address.is_padding(idx) {
+                    // C++: m_index_setter(m_heap[idx], std::numeric_limits<size_t>::max());
+                    (self.index_setter)(&self.heap[idx], INVALID_QUEUE_ID);
+                }
+            }
+        }
+        // MutablePriorityQueue.hpp:322
+        // C++: m_heap.clear();
+        self.heap.clear();
+    }
+
+    /// Reserve capacity. Reserve one unused element per miniheap.
+    /// MutablePriorityQueue.hpp:270-271
+    /// C++: void reserve(size_t cnt) { m_heap.reserve(cnt + ((cnt + (address::block_size - 1)) / (address::block_size - 1))); }
+    #[inline]
+    pub fn reserve(&mut self, cnt: usize) {
+        self.heap
+            .reserve(cnt + ((cnt + (self.address.block_size - 1)) / (self.address.block_size - 1)));
+    }
+
+    /// Push a new element (by value; mirrors both C++ `push(const T&)` and `push(T&&)`).
+    /// MutablePriorityQueue.hpp:325-345
+    /// C++: void push(const T &item) / void push(T &&item)
+    pub fn push(&mut self, item: T) {
+        // MutablePriorityQueue.hpp:328-329
+        // C++: if (address::is_padding(m_heap.size())) m_heap.emplace_back(T());
+        if self.address.is_padding(self.heap.len()) {
+            self.heap.push(T::default());
+        }
+        // MutablePriorityQueue.hpp:330
+        // C++: size_t idx = m_heap.size();
+        let idx = self.heap.len();
+        // MutablePriorityQueue.hpp:331
+        // C++: m_heap.emplace_back(item);
+        self.heap.push(item);
+        // MutablePriorityQueue.hpp:332
+        // C++: m_index_setter(m_heap.back(), idx);
+        (self.index_setter)(&self.heap[idx], idx);
+        // MutablePriorityQueue.hpp:333
+        // C++: update_heap_up(1, idx);
+        self.update_heap_up(1, idx);
+    }
+
+    /// Remove the top (minimum) element.
+    /// MutablePriorityQueue.hpp:347-367
+    /// C++: void pop()
+    ///
+    /// Returns the removed top element (`None` if empty); C++ returns `void`
+    /// and asserts non-empty.
+    pub fn pop(&mut self) -> Option<T> {
+        // MutablePriorityQueue.hpp:350
+        // C++: assert(! m_heap.empty());
+        if self.heap.is_empty() {
+            return None;
+        }
+        // The top is at index 1 (index 0 is padding).
+        let top = self.heap[1];
+        // Only mark as removed from the queue in release mode, if configured so.
+        // MutablePriorityQueue.hpp:353-357
+        // C++: if (ResetIndexWhenRemoved) m_index_setter(m_heap[1], std::numeric_limits<size_t>::max());
+        if self.reset_on_remove {
+            (self.index_setter)(&self.heap[1], INVALID_QUEUE_ID);
+        }
+        // Zero'th element is padding, thus non-empty queue must have at least two elements.
+        // MutablePriorityQueue.hpp:360-366
+        // C++: if (m_heap.size() > 2) {
+        if self.heap.len() > 2 {
+            // C++: m_heap[1] = m_heap.back();
+            self.heap[1] = self.heap[self.heap.len() - 1];
+            // C++: this->pop_back();
+            self.pop_back();
+            // C++: m_index_setter(m_heap[1], 1);
+            (self.index_setter)(&self.heap[1], 1);
+            // C++: update_heap_down(1, m_heap.size() - 1);
+            self.update_heap_down(1, self.heap.len() - 1);
+        } else {
+            // C++: m_heap.clear();
+            self.heap.clear();
+        }
+        Some(top)
+    }
+
+    /// Get reference to the top (minimum) element.
+    /// MutablePriorityQueue.hpp:275
+    /// C++: T& top() { return m_heap[1]; }
+    #[inline]
+    pub fn top(&self) -> Option<&T> {
+        self.heap.get(1)
+    }
+
+    /// Remove element at index `idx`.
+    /// MutablePriorityQueue.hpp:369-391
+    /// C++: void remove(size_t idx)
+    pub fn remove(&mut self, idx: usize) {
+        // MutablePriorityQueue.hpp:372-373
+        // C++: assert(idx < m_heap.size());
+        // C++: assert(! address::is_padding(idx));
+        debug_assert!(idx < self.heap.len());
+        debug_assert!(!self.address.is_padding(idx));
+        // Only mark as removed from the queue in release mode, if configured so.
+        // MutablePriorityQueue.hpp:376-380
+        // C++: if (ResetIndexWhenRemoved) m_index_setter(m_heap[idx], std::numeric_limits<size_t>::max());
+        if self.reset_on_remove {
+            (self.index_setter)(&self.heap[idx], INVALID_QUEUE_ID);
+        }
+        // MutablePriorityQueue.hpp:382-385
+        // C++: if (idx + 1 == m_heap.size()) { this->pop_back(); return; }
+        if idx + 1 == self.heap.len() {
+            self.pop_back();
+            return;
+        }
+        // MutablePriorityQueue.hpp:386-388
+        // C++: m_heap[idx] = m_heap.back();
+        // C++: m_index_setter(m_heap[idx], idx);
+        // C++: this->pop_back();
+        self.heap[idx] = self.heap[self.heap.len() - 1];
+        (self.index_setter)(&self.heap[idx], idx);
+        self.pop_back();
+        // MutablePriorityQueue.hpp:389-390
+        // C++: update_heap_down(idx, m_heap.size() - 1);
+        // C++: update_heap_up(1, idx);
+        self.update_heap_down(idx, self.heap.len() - 1);
+        self.update_heap_up(1, idx);
+    }
+
+    /// Re-sort element at `idx` after its priority changed (remove + re-insert).
+    /// MutablePriorityQueue.hpp:277
+    /// C++: void update(size_t idx) { assert(! address::is_padding(idx)); T item = m_heap[idx]; remove(idx); push(item); }
+    pub fn update(&mut self, idx: usize) {
+        debug_assert!(!self.address.is_padding(idx));
+        let item = self.heap[idx];
+        self.remove(idx);
+        self.push(item);
+    }
+
+    /// Number of elements in the queue.
+    /// There is one padding element stored at each miniheap, thus lower the number of elements by the number of miniheaps.
+    /// MutablePriorityQueue.hpp:279
+    /// C++: size_t size() const noexcept { return m_heap.size() - (m_heap.size() + address::block_size - 1) / address::block_size; }
+    #[inline]
+    pub fn size(&self) -> usize {
+        self.heap.len() - (self.heap.len() + self.address.block_size - 1) / self.address.block_size
+    }
+
+    /// Whether the queue is empty.
+    /// MutablePriorityQueue.hpp:280
+    /// C++: bool empty() const { return m_heap.empty(); }
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.heap.is_empty()
+    }
+
+    /// Indexed access (mirrors C++ `operator[]`).
+    /// MutablePriorityQueue.hpp:281
+    /// C++: T& operator[](std::size_t idx) noexcept { assert(! address::is_padding(idx)); return m_heap[idx]; }
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&T> {
+        debug_assert!(!self.address.is_padding(idx));
+        self.heap.get(idx)
+    }
+
+    /// Mutable indexed access (mirrors C++ `operator[]`).
+    /// MutablePriorityQueue.hpp:281
+    /// C++: T& operator[](std::size_t idx) noexcept { assert(! address::is_padding(idx)); return m_heap[idx]; }
+    #[inline]
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
+        debug_assert!(!self.address.is_padding(idx));
+        self.heap.get_mut(idx)
+    }
+
+    /// Pop the trailing element, plus a trailing padding element if present.
+    /// MutablePriorityQueue.hpp:287-293
+    /// C++: void pop_back() noexcept
+    fn pop_back(&mut self) {
+        // C++: assert(m_heap.size() > 1);
+        // C++: assert(! address::is_padding(m_heap.size() - 1));
+        debug_assert!(self.heap.len() > 1);
+        debug_assert!(!self.address.is_padding(self.heap.len() - 1));
+        // C++: m_heap.pop_back();
+        self.heap.pop();
+        // C++: if (address::is_padding(m_heap.size() - 1)) m_heap.pop_back();
+        if self.address.is_padding(self.heap.len() - 1) {
+            self.heap.pop();
+        }
+    }
+
+    /// Bubble element up the skip-heap.
+    /// MutablePriorityQueue.hpp:393-417
+    /// C++: void update_heap_up(size_t top, size_t bottom)
+    fn update_heap_up(&mut self, top: usize, bottom: usize) {
+        // MutablePriorityQueue.hpp:396-397
+        // C++: assert(! address::is_padding(top));
+        // C++: assert(! address::is_padding(bottom));
+        debug_assert!(!self.address.is_padding(top));
+        debug_assert!(!self.address.is_padding(bottom));
+        // MutablePriorityQueue.hpp:398-399
+        // C++: size_t childIdx = bottom;
+        // C++: T *child = &m_heap[childIdx];
+        let mut child_idx = bottom;
+        let mut child = self.heap[child_idx];
+        // MutablePriorityQueue.hpp:400
+        // C++: for (;;) {
+        loop {
+            // MutablePriorityQueue.hpp:401
+            // C++: size_t parentIdx = address::parent_of(childIdx);
+            let parent_idx = self.address.parent_of(child_idx);
+            // MutablePriorityQueue.hpp:402-403
+            // C++: if (childIdx == 1 || parentIdx < top) break;
+            if child_idx == 1 || parent_idx < top {
+                break;
+            }
+            // MutablePriorityQueue.hpp:404
+            // C++: T *parent = &m_heap[parentIdx];
+            let parent = self.heap[parent_idx];
+            // switch nodes
+            // MutablePriorityQueue.hpp:405-412
+            // C++: if (! m_less_predicate(*parent, *child)) {
+            if !(self.less_predicate)(&parent, &child) {
+                // C++: T tmp = *parent;
+                // C++: m_index_setter(tmp,    childIdx);
+                // C++: m_index_setter(*child, parentIdx);
+                // C++: m_heap[parentIdx] = *child;
+                // C++: m_heap[childIdx]  = tmp;
+                let tmp = parent;
+                (self.index_setter)(&tmp, child_idx);
+                (self.index_setter)(&child, parent_idx);
+                self.heap[parent_idx] = child;
+                self.heap[child_idx] = tmp;
+            }
+            // shift up
+            // MutablePriorityQueue.hpp:413-415
+            // C++: childIdx = parentIdx;
+            // C++: child = parent;
+            child_idx = parent_idx;
+            child = self.heap[parent_idx];
+        }
+    }
+
+    /// Bubble element down the skip-heap.
+    /// MutablePriorityQueue.hpp:419-451
+    /// C++: void update_heap_down(size_t top, size_t bottom)
+    fn update_heap_down(&mut self, top: usize, bottom: usize) {
+        // MutablePriorityQueue.hpp:422-423
+        // C++: assert(! address::is_padding(top));
+        // C++: assert(! address::is_padding(bottom));
+        debug_assert!(!self.address.is_padding(top));
+        debug_assert!(!self.address.is_padding(bottom));
+        // MutablePriorityQueue.hpp:424-425
+        // C++: size_t parentIdx = top;
+        // C++: T *parent = &m_heap[parentIdx];
+        let mut parent_idx = top;
+        let mut parent = self.heap[parent_idx];
+        // MutablePriorityQueue.hpp:426
+        // C++: for (;;) {
+        loop {
+            // MutablePriorityQueue.hpp:427
+            // C++: size_t childIdx = address::child_of(parentIdx);
+            let mut child_idx = self.address.child_of(parent_idx);
+            // MutablePriorityQueue.hpp:428-429
+            // C++: if (childIdx > bottom) break;
+            if child_idx > bottom {
+                break;
+            }
+            // MutablePriorityQueue.hpp:430
+            // C++: T *child = &m_heap[childIdx];
+            let mut child = self.heap[child_idx];
+            // MutablePriorityQueue.hpp:431
+            // C++: size_t child2Idx = childIdx + (address::is_block_leaf(parentIdx) ? address::block_size : 1);
+            let child2_idx = child_idx
+                + if self.address.is_block_leaf(parent_idx) {
+                    self.address.block_size
+                } else {
+                    1
+                };
+            // MutablePriorityQueue.hpp:432-438
+            // C++: if (child2Idx <= bottom) {
+            if child2_idx <= bottom {
+                // C++: T *child2 = &m_heap[child2Idx];
+                let child2 = self.heap[child2_idx];
+                // C++: if (! m_less_predicate(*child, *child2)) {
+                if !(self.less_predicate)(&child, &child2) {
+                    // C++: child = child2;
+                    // C++: childIdx = child2Idx;
+                    child = child2;
+                    child_idx = child2_idx;
+                }
+            }
+            // MutablePriorityQueue.hpp:439-440
+            // C++: if (m_less_predicate(*parent, *child)) return;
+            if (self.less_predicate)(&parent, &child) {
+                return;
+            }
+            // switch nodes
+            // MutablePriorityQueue.hpp:441-446
+            // C++: T tmp = *parent;
+            // C++: m_index_setter(tmp,    childIdx);
+            // C++: m_index_setter(*child, parentIdx);
+            // C++: m_heap[parentIdx] = *child;
+            // C++: m_heap[childIdx]  = tmp;
+            let tmp = parent;
+            (self.index_setter)(&tmp, child_idx);
+            (self.index_setter)(&child, parent_idx);
+            self.heap[parent_idx] = child;
+            self.heap[child_idx] = tmp;
+            // shift down
+            // MutablePriorityQueue.hpp:447-449
+            // C++: parentIdx = childIdx;
+            // C++: parent = child;
+            parent_idx = child_idx;
+            parent = self.heap[child_idx];
+        }
+    }
+}
+
+/// Construct a [`MutableSkipHeapPriorityQueue`].
+/// MutablePriorityQueue.hpp:301-307
+/// C++:
+/// ```text
+/// template<typename T, std::size_t BlockSize, const bool ResetIndexWhenRemoved, typename IndexSetter, typename LessPredicate>
+/// MutableSkipHeapPriorityQueue<T, IndexSetter, LessPredicate, BlockSize, ResetIndexWhenRemoved>
+///     make_miniheap_mutable_priority_queue(IndexSetter &&index_setter, LessPredicate &&less_predicate)
+/// {
+///     return MutableSkipHeapPriorityQueue<T, IndexSetter, LessPredicate, BlockSize, ResetIndexWhenRemoved>(
+///         std::forward<IndexSetter>(index_setter), std::forward<LessPredicate>(less_predicate));
+/// }
+/// ```
+///
+/// In C++ `BlockSize` and `ResetIndexWhenRemoved` are compile-time template
+/// parameters; here they are runtime arguments selecting the same behaviour.
+pub fn make_miniheap_mutable_priority_queue<T, F, L>(
+    block_size: usize,
+    reset_index_when_removed: bool,
+    index_setter: F,
+    less_predicate: L,
+) -> MutableSkipHeapPriorityQueue<T, F, L>
+where
+    T: Copy + Default,
+    F: FnMut(&T, usize),
+    L: Fn(&T, &T) -> bool,
+{
+    MutableSkipHeapPriorityQueue::new(block_size, reset_index_when_removed, index_setter, less_predicate)
+}
+
+impl<T, F, L> Drop for MutableSkipHeapPriorityQueue<T, F, L>
+where
+    T: Copy + Default,
+    F: FnMut(&T, usize),
+    L: Fn(&T, &T) -> bool,
+{
+    /// Destructor - clear queue.
+    /// MutablePriorityQueue.hpp:267
+    /// C++: ~MutableSkipHeapPriorityQueue() { clear(); }
     fn drop(&mut self) {
         self.clear();
     }

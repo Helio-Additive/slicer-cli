@@ -24,7 +24,7 @@ use crate::geometry::{Line, Point, PointF};
 // stored as `f64` since the AABBTreeLines distancers query with a `Floating` origin.
 // ===========================================================================
 
-mod aabb_tree_indirect_2d {
+pub mod aabb_tree_indirect_2d {
     // AABBTreeIndirect.hpp:47-52
     // Node is not used
     // AABBTreeIndirect.hpp:49
@@ -383,7 +383,7 @@ mod aabb_tree_indirect_2d {
     }
 }
 
-use aabb_tree_indirect_2d as tree2d;
+pub use aabb_tree_indirect_2d as tree2d;
 
 // ===========================================================================
 // line_alg helpers (Line.hpp) specialized to the integer Line type.
