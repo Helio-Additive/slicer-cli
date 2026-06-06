@@ -21,9 +21,9 @@ use crate::{
 use std::f64::consts::PI;
 
 /// Overlap tolerance for perimeter insets
-/// PerimeterGenerator.cpp:24
-/// C++: static constexpr double INSET_OVERLAP_TOLERANCE = 0.45;
-const INSET_OVERLAP_TOLERANCE: f64 = 0.45;
+/// libslic3r.h:72
+/// C++: static constexpr double INSET_OVERLAP_TOLERANCE = 0.4;
+const INSET_OVERLAP_TOLERANCE: f64 = 0.4;
 
 /// Overlap tolerance for smaller external perimeter insets
 /// PerimeterGenerator.cpp:28
@@ -225,12 +225,27 @@ impl PerimeterLoop {
         }
     }
 
-    /// PerimeterGenerator.cpp:58
-    /// C++: bool is_internal_contour() const {
-    /// C++:     return this->is_contour && this->depth > 0;
+    /// PerimeterGenerator.cpp:1830-1839
+    /// C++: bool PerimeterGeneratorLoop::is_internal_contour() const {
+    /// C++:     // An internal contour is a contour containing no other contours
+    /// C++:     if (! this->is_contour)
+    /// C++:         return false;
+    /// C++:     for (const PerimeterGeneratorLoop &loop : this->children)
+    /// C++:         if (loop.is_contour)
+    /// C++:             return false;
+    /// C++:     return true;
     /// C++: }
     pub fn is_internal_contour(&self) -> bool {
-        self.is_contour && self.perimeter_index > 0
+        // An internal contour is a contour containing no other contours
+        if !self.is_contour {
+            return false;
+        }
+        for loop_item in &self.children {
+            if loop_item.is_contour {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -305,8 +320,13 @@ impl PerimeterGenerator {
     fn generate_classic_one(&self, slice: &ExPolygon) -> PerimeterResult {
         let mut result = PerimeterResult::new();
 
-        /// PerimeterGenerator.cpp:909
-        let surface_simplify_resolution = if self.config.arc_fitting_enabled {
+        /// PerimeterGenerator.cpp:914
+        /// C++: double surface_simplify_resolution = (print_config->enable_arc_fitting &&
+        ///          this->config->fuzzy_skin == FuzzySkinType::None) ? 0.2 * m_scaled_resolution : m_scaled_resolution;
+        // The 0.2x reduction only applies when arc fitting is enabled AND fuzzy skin is None.
+        let surface_simplify_resolution = if self.config.arc_fitting_enabled
+            && self.config.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None
+        {
             0.2 * self.config.surface_simplify_resolution
         } else {
             self.config.surface_simplify_resolution
@@ -636,10 +656,15 @@ impl PerimeterGenerator {
             // offset2_ex/infill_peri_overlap end-merge + a downstream top-preservation fix. See memory
             // project_benchy_parity_gap. Threading retained for the next attempt.
 
-            /// PerimeterGenerator.cpp:1252-1253
+            /// PerimeterGenerator.cpp:1185-1189
             /// C++: if (i == loop_number && (! has_gap_fill || this->config->sparse_infill_density.value == 0)) {
             /// C++:     break;
             /// C++: }
+            // DIVERGENCE (blocked): the `sparse_infill_density == 0` disjunct is omitted because
+            // sparse_infill_density is not threaded into this flat PerimeterConfig (it lives in
+            // PrintRegionConfig). When density is 0 and gap fill is enabled, C++ still breaks here
+            // but the Rust path runs one extra (gap-collection-only) iteration. Re-thread
+            // sparse_infill_density to restore fidelity.
             if i == loop_number && !has_gap_fill {
                 break;
             }
@@ -1079,8 +1104,16 @@ fn traverse_loops(
         // in PerimeterGenerator::generate() after traverse_loops returns.
         let polygon = &loop_item.polygon;
 
-        /// PerimeterGenerator.cpp:346-444 — Overhang detection
-        /// Simplified: check if >50% of external perimeter is unsupported
+        /// PerimeterGenerator.cpp:346-432 — Overhang detection.
+        /// DIVERGENCE (non-faithful substitute): C++ clips the loop polyline against the
+        /// grown lower-slice series (m_lower_polygons_series / m_external_lower_polygons_series)
+        /// via intersection_pl_2 / diff_pl_2, then calls detect_overhang_degree() and
+        /// detect_bridge_wall() to split the loop into graded overhang/bridge ExtrusionPaths.
+        /// Those inputs (the per-width lower_polygons_series and overhang_dist_boundary pairs
+        /// produced by generate_lower_polygons_series()/dist_boundary()) are NOT computed in
+        /// this flat-config adapter, so a coarse "single role" heuristic is used instead:
+        /// if less than 90% of the external loop overlaps the grown lower slices, the whole loop
+        /// is marked erOverhangPerimeter. This is a known parity gap, not the C++ algorithm.
         let effective_role =
             if is_external && config.detect_overhang_wall && config.layer_id > config.raft_layers {
                 if let Some(ref lower) = config.lower_slices {

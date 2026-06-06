@@ -51,6 +51,7 @@ pub mod clonable_ptr;
 pub mod color;
 pub mod color_space_convert;
 pub mod common_defs;
+pub mod config;
 pub mod csg_mesh;
 pub mod curve_analyzer;
 pub mod custom_g_code;

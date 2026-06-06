@@ -1371,7 +1371,7 @@
     "rust": "crates/libslic3r-rs/src/sla_print_steps.rs",
     "rust_exists": true,
     "loc": 1143,
-    "status": "pending",
+    "status": "deferred",
     "priority": 2
   },
   {
@@ -1382,7 +1382,7 @@
     "rust": "crates/libslic3r-rs/src/sla_print.rs",
     "rust_exists": true,
     "loc": 1261,
-    "status": "pending",
+    "status": "deferred",
     "priority": 2
   },
   {
@@ -1393,7 +1393,7 @@
     "rust": "crates/libslic3r-rs/src/measure.rs",
     "rust_exists": true,
     "loc": 1434,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1404,7 +1404,7 @@
     "rust": "crates/libslic3r-rs/src/print_object_slice.rs",
     "rust_exists": true,
     "loc": 1434,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1426,7 +1426,7 @@
     "rust": "crates/libslic3r-rs/src/app_config.rs",
     "rust_exists": true,
     "loc": 1500,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1437,7 +1437,7 @@
     "rust": "crates/libslic3r-rs/src/utils.rs",
     "rust_exists": true,
     "loc": 1550,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1448,7 +1448,7 @@
     "rust": "crates/libslic3r-rs/src/placeholder_parser.rs",
     "rust_exists": true,
     "loc": 1557,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1470,7 +1470,7 @@
     "rust": "crates/libslic3r-rs/src/filament_group.rs",
     "rust_exists": true,
     "loc": 1716,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1481,7 +1481,7 @@
     "rust": "crates/libslic3r-rs/src/perimeter_generator.rs",
     "rust_exists": true,
     "loc": 1906,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1490,9 +1490,9 @@
     "kind": "cpp",
     "area": "root",
     "rust": "crates/libslic3r-rs/src/config.rs",
-    "rust_exists": false,
+    "rust_exists": true,
     "loc": 1945,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {

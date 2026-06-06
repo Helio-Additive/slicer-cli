@@ -732,6 +732,71 @@ pub fn custom_shapes_dir() -> String {
         .into_owned()
 }
 
+// Utils.cpp:281  static std::atomic<bool> debug_out_path_called(false);
+static DEBUG_OUT_PATH_CALLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+// Utils.cpp:283  std::string debug_out_path(const char *name, ...)
+// The C++ takes printf-style varargs; the Rust port takes the already-formatted
+// name (callers format their own string), since Rust has no C varargs. The
+// directory bookkeeping (create g_data_dir/SVG, optionally a subdir) is preserved.
+pub fn debug_out_path(name: &str) -> String {
+    // Utils.cpp:286  auto svg_folder = boost::filesystem::path(g_data_dir) / "SVG/";
+    let svg_folder = std::path::Path::new(&data_dir()).join("SVG/");
+    // Utils.cpp:287-293  if (! debug_out_path_called.exchange(true)) { ... }
+    if !DEBUG_OUT_PATH_CALLED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // Utils.cpp:288-290
+        if !svg_folder.exists() {
+            let _ = std::fs::create_dir(&svg_folder);
+        }
+        // Utils.cpp:291-292  print the absolute output directory.
+        let path = std::fs::canonicalize(&svg_folder)
+            .unwrap_or_else(|_| svg_folder.clone())
+            .to_string_lossy()
+            .into_owned();
+        println!("Debugging output files will be written to {}", path);
+    }
+    // Utils.cpp:294-300  format the name into buf (already-formatted here).
+    let buf = name.to_string();
+    // Utils.cpp:301-304  if a '/' is present, create the leading sub directory.
+    let svg_folder_str = svg_folder.to_string_lossy().into_owned();
+    if let Some(pos) = buf.find('/') {
+        let sub_dir = &buf[0..pos];
+        let _ = std::fs::create_dir(format!("{}{}", svg_folder_str, sub_dir));
+    }
+    // Utils.cpp:305  return svg_folder.string() + std::string(buffer);
+    format!("{}{}", svg_folder_str, buf)
+}
+
+// Utils.cpp:310  bool is_log_trivival_valid()
+// BLOCKED: tracks the boost::log sink pointer g_log_sink. No boost::log backend
+// is ported (native dep), so faithfully reports false (no sink installed).
+pub fn is_log_trivival_valid() -> bool {
+    // Utils.cpp:312  return g_log_sink != nullptr;
+    false
+}
+
+// Utils.cpp:320  void set_log_path_and_level(const std::string& file, unsigned int level, const LogEncOptions&)
+// BLOCKED: installs a boost::log file sink (g_log_sink / LogSinkBackend) — native
+// logging backend, not wasm-safe. Faithfully applies only the level (Utils.cpp:342).
+pub fn set_log_path_and_level(_file: &str, level: u32, _enc_options: &LogEncOptions) {
+    // Utils.cpp:330-340  create the LogSink backend + sink: boost::log only.
+    // Utils.cpp:342  set_logging_level(level);
+    set_logging_level(level);
+}
+
+// Utils.cpp:346  void update_log_sink(const std::string& file, const LogEncOptions& enc_options)
+// BLOCKED: forwards to g_log_sink_backend->update_enc_option — boost::log backend.
+pub fn update_log_sink(_file: &str, _enc_options: &LogEncOptions) {
+    // Utils.cpp:348-350  if (g_log_sink_backend) g_log_sink_backend->update_enc_option(...);
+}
+
+// Utils.cpp:353  void flush_logs()
+// BLOCKED: flushes the boost::log sink g_log_sink — boost::log backend.
+pub fn flush_logs() {
+    // Utils.cpp:355-356  if (g_log_sink) g_log_sink->flush();
+}
+
 // Utils.cpp:610  std::error_code rename_file(const std::string &from, const std::string &to)
 // On non-Windows: remove(to); rename(from, to). Returns true on success.
 pub fn rename_file(from: &str, to: &str) -> std::io::Result<()> {
@@ -781,6 +846,73 @@ pub fn copy_file(
     ret_val
 }
 
+// Utils.cpp:949  bool copy_framework(const std::string &from, const std::string &to)
+pub fn copy_framework(from: &str, to: &str) -> bool {
+    // Utils.cpp:951  boost::filesystem::path src(from), dst(to);
+    let src = std::path::Path::new(from);
+    let dst = std::path::Path::new(to);
+    // Utils.cpp:952-973  try { ... } catch (filesystem_error) { log; }
+    // Utils.cpp:953-956  if (!is_directory(src)) { cerr; return false; }
+    if !src.is_dir() {
+        eprintln!("Error: Source is not a directory: {}", src.display());
+        return false;
+    }
+    // Utils.cpp:957  boost::filesystem::create_directories(dst);
+    if std::fs::create_dir_all(dst).is_err() {
+        // Utils.cpp:971-973  filesystem_error -> log error, fall through to return false.
+        return false;
+    }
+    // Utils.cpp:958  for (directory_iterator it(src); ...; ++it)
+    let entries = match std::fs::read_dir(src) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for it in entries {
+        let entry = match it {
+            Ok(e) => e.path(),
+            Err(_) => return false,
+        };
+        // Utils.cpp:959-960  const auto &entry = it->path(); dest_path = dst / entry.filename();
+        let dest_path = dst.join(entry.file_name().unwrap_or_default());
+        // Utils.cpp:962-963  if (is_symlink(entry)) copy_symlink(entry, dest_path);
+        let meta = match std::fs::symlink_metadata(&entry) {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        if meta.file_type().is_symlink() {
+            #[cfg(unix)]
+            {
+                let target = match std::fs::read_link(&entry) {
+                    Ok(t) => t,
+                    Err(_) => return false,
+                };
+                if std::os::unix::fs::symlink(target, &dest_path).is_err() {
+                    return false;
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                // boost::filesystem::copy_symlink on non-unix; best-effort copy.
+                if std::fs::copy(&entry, &dest_path).is_err() {
+                    return false;
+                }
+            }
+        } else if entry.is_dir() {
+            // Utils.cpp:964-965  else if (is_directory(entry)) copy_framework(...);
+            if !copy_framework(&entry.to_string_lossy(), &dest_path.to_string_lossy()) {
+                return false;
+            }
+        } else {
+            // Utils.cpp:966-967  else copy(entry, dest_path, overwrite_existing);
+            if std::fs::copy(&entry, &dest_path).is_err() {
+                return false;
+            }
+        }
+    }
+    // Utils.cpp:970  return true;
+    true
+}
+
 // Utils.cpp:977  CopyFileResult check_copy(const std::string& origin, const std::string& copy)
 pub fn check_copy(origin: &str, copy: &str) -> CopyFileResult {
     // Utils.cpp:979-985  open both in binary; report which failed to open.
@@ -803,6 +935,34 @@ pub fn check_copy(origin: &str, copy: &str) -> CopyFileResult {
     CopyFileResult::Success
 }
 
+// Utils.cpp:1015  bool is_plain_file(const boost::filesystem::directory_entry &dir_entry)
+// Ignore system and hidden files, which may be created by the DropBox synchronisation process.
+pub fn is_plain_file(dir_entry: &std::fs::DirEntry) -> bool {
+    // Utils.cpp:1017-1018  if (! is_regular_file(status())) return false;
+    match dir_entry.metadata() {
+        Ok(m) => {
+            if !m.is_file() {
+                return false;
+            }
+        }
+        Err(_) => return false,
+    }
+    // Utils.cpp:1019-1024  on non-MSVC: return true (no hidden/system attribute check).
+    true
+}
+
+// Utils.cpp:1027  bool is_ini_file(const boost::filesystem::directory_entry &dir_entry)
+pub fn is_ini_file(dir_entry: &std::fs::DirEntry) -> bool {
+    // Utils.cpp:1029  is_plain_file(...) && strcasecmp(extension, ".ini") == 0
+    is_plain_file(dir_entry) && strcasecmp(&dir_entry_extension(dir_entry), ".ini") == 0
+}
+
+// Utils.cpp:1032  bool is_idx_file(const boost::filesystem::directory_entry &dir_entry)
+pub fn is_idx_file(dir_entry: &std::fs::DirEntry) -> bool {
+    // Utils.cpp:1034  is_plain_file(...) && strcasecmp(extension, ".idx") == 0
+    is_plain_file(dir_entry) && strcasecmp(&dir_entry_extension(dir_entry), ".idx") == 0
+}
+
 // Utils.cpp:1038  bool is_gcode_file(const std::string &path)
 pub fn is_gcode_file(path: &str) -> bool {
     // Utils.cpp:1040  boost::iends_with(path, ".gcode");
@@ -819,6 +979,12 @@ pub fn is_json_file(path: &str) -> bool {
 pub fn is_img_file(path: &str) -> bool {
     // Utils.cpp:1051  iends_with(path, ".png") || iends_with(path, ".svg");
     iends_with(path, ".png") || iends_with(path, ".svg")
+}
+
+// Utils.cpp:1054  bool is_gallery_file(const boost::filesystem::directory_entry& dir_entry, char const* type)
+pub fn is_gallery_file_entry(dir_entry: &std::fs::DirEntry, ty: &str) -> bool {
+    // Utils.cpp:1056  is_plain_file(...) && strcasecmp(extension, type) == 0
+    is_plain_file(dir_entry) && strcasecmp(&dir_entry_extension(dir_entry), ty) == 0
 }
 
 // Utils.cpp:1059  bool is_gallery_file(const std::string &path, char const* type)
@@ -918,6 +1084,15 @@ pub mod perl_utils {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default()
     }
+}
+
+// Utils.cpp:1147  std::string string_printf(const char *format, ...)
+// The C++ takes printf-style varargs and runs vsnprintf into a growing buffer.
+// Rust has no C varargs, so callers pre-format their string; this faithfully
+// returns that string (the vsnprintf round-trip is identity for the result).
+pub fn string_printf(formatted: &str) -> String {
+    // Utils.cpp:1149-1166  vsnprintf into INITIAL_LEN buffer, grow if truncated.
+    formatted.to_string()
 }
 
 // libslic3r_version.h:4  #define SLIC3R_APP_NAME "BambuStudio"  (from version.inc)
@@ -1206,6 +1381,32 @@ pub fn load_string_file(p: &std::path::Path, s: &mut String) -> std::io::Result<
 // ----------------------------------------------------------------------------
 // Local helpers (not in the C++ public API; replicate boost behaviour used above).
 // ----------------------------------------------------------------------------
+
+// strcasecmp(a, b) == 0 : case-insensitive equality of two C strings (ASCII).
+// Used by is_ini_file/is_idx_file/is_gallery_file to compare file extensions.
+fn strcasecmp(a: &str, b: &str) -> i32 {
+    let abytes = a.as_bytes();
+    let bbytes = b.as_bytes();
+    let n = abytes.len().min(bbytes.len());
+    for i in 0..n {
+        let ca = abytes[i].to_ascii_lowercase();
+        let cb = bbytes[i].to_ascii_lowercase();
+        if ca != cb {
+            return ca as i32 - cb as i32;
+        }
+    }
+    abytes.len() as i32 - bbytes.len() as i32
+}
+
+// boost::filesystem::path(dir_entry).extension().string(): the extension
+// including the leading dot, or "" if none.
+fn dir_entry_extension(dir_entry: &std::fs::DirEntry) -> String {
+    let path = dir_entry.path();
+    match path.extension() {
+        Some(ext) => format!(".{}", ext.to_string_lossy()),
+        None => String::new(),
+    }
+}
 
 // boost::iends_with: case-insensitive suffix test.
 fn iends_with(haystack: &str, suffix: &str) -> bool {
