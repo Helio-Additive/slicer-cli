@@ -188,6 +188,31 @@ pub fn get_filament_config_idx(config: &GCodeConfig, filament_id: u32) -> usize 
     ) as usize
 }
 
+// PrintConfig.cpp:109
+// size_t get_process_config_idx(const GCodeConfig& config, unsigned int filament_id)
+pub fn get_process_config_idx(config: &GCodeConfig, filament_id: u32) -> usize {
+    // PrintConfig.cpp:111
+    let volume_type =
+        NozzleVolumeType::from_i32(config.filament_volume_map.get_at(filament_id as usize));
+    // PrintConfig.cpp:112
+    let extruder_id = get_extruder_index(config, filament_id) as i32;
+    // PrintConfig.cpp:113
+    let extruder_type =
+        ExtruderType::from_i32(config.extruder_type.get_at(extruder_id as usize));
+    // PrintConfig.cpp:114
+    let print_extruder_id = &config.printer_extruder_id.values;
+    // PrintConfig.cpp:115
+    let variant_list = &config.printer_extruder_variant.values;
+    // PrintConfig.cpp:116
+    get_config_index_base(
+        volume_type,
+        extruder_type,
+        extruder_id + 1,
+        variant_list,
+        print_extruder_id,
+    ) as usize
+}
+
 // ===========================================================================
 // Module-local faithful model of the subset of `GCodeConfig` that `Extruder`
 // reads, using `ConfigOptionVector`-faithful `get_at` semantics
@@ -253,6 +278,22 @@ pub struct GCodeConfig {
     pub retract_restart_extra: ConfigOptionVector<f64>,
     pub retract_length_toolchange: ConfigOptionVector<f64>,
     pub retract_restart_extra_toolchange: ConfigOptionVector<f64>,
+    // Additional fields read by GCodeWriter (PrintConfig.hpp). These complete the
+    // subset of GCodeConfig that the writer requires.
+    pub gcode_flavor: crate::print_config::GCodeFlavor,
+    pub travel_speed: ConfigOptionVector<f64>,
+    pub travel_speed_z: ConfigOptionVector<f64>,
+    pub retract_lift_above: ConfigOptionVector<f64>,
+    pub retract_lift_below: ConfigOptionVector<f64>,
+    // ConfigOptionFloat `.value` scalars.
+    pub prime_tower_lift_height: f64,
+    pub prime_tower_lift_speed: f64,
+    pub use_firmware_retraction: bool,
+    pub accel_to_decel_enable: bool,
+    pub accel_to_decel_factor: f64,
+    // get_process_config_idx() inputs (PrintConfig.cpp:114-115).
+    pub printer_extruder_id: ConfigOptionVector<i32>,
+    pub printer_extruder_variant: ConfigOptionVector<String>,
 }
 
 // ===========================================================================

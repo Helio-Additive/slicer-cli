@@ -491,51 +491,72 @@ impl LayerRegion {
     }
 
     /// Process external surfaces
-    /// LayerRegion.cpp:272-520
+    /// LayerRegion.cpp:518-640
+    ///
+    /// The full wave-expansion port of this LayerRegion member lives as the free
+    /// function `crate::surface::process_external_surfaces` (re-exported from
+    /// `crate::layer_region`), and is driven from `print_object.rs`. This thin
+    /// member shim forwards to it so the `LayerRegion`-method spelling still works.
     pub fn process_external_surfaces(
         &mut self,
-        lower_layer_covered: &ExPolygons,
-        config: &PrintRegionConfig,
+        expansion_distance: f64,
+        min_area_mm2: f64,
     ) -> Result<()> {
-        // Constants from C++
-        // LayerRegion.cpp:312
-        const EXPANSION_STEP: f64 = 0.1; // mm
-                                         // LayerRegion.cpp:315
-        const MAX_NR_EXPANSION_STEPS: usize = 5;
-
-        // Get bridge and overhang surfaces
-        // LayerRegion.cpp:322-340
-        let bridge_surfaces = self
-            .slices
-            .surfaces
-            .iter()
-            .filter(|s| s.surface_type == SurfaceType::BottomBridge)
-            .cloned()
-            .collect::<Vec<_>>();
-
-        // Expand surfaces to detect bridges and overhangs
-        // LayerRegion.cpp:342-400
-        if !bridge_surfaces.is_empty() {
-            // TODO: Port complete bridge detection from C++
-            // LayerRegion.cpp:350-500
-            // This requires proper RegionExpansionParameters setup
-            // Currently stubbed out - bridge detection happens elsewhere
-        }
-
+        // LayerRegion.cpp:518 — operate on this region's fill_surfaces in place.
+        let mut surfaces = vec![std::mem::take(&mut self.fill_surfaces.surfaces)];
+        crate::surface::process_external_surfaces(&mut surfaces, expansion_distance, min_area_mm2);
+        self.fill_surfaces.surfaces = surfaces.into_iter().next().unwrap_or_default();
         Ok(())
     }
 
     /// Calculate infill area threshold
-    /// LayerRegion.cpp:522-525
+    /// LayerRegion.cpp:690-694
+    /// C++: double LayerRegion::infill_area_threshold() const
+    /// C++: {
+    /// C++:     double ss = this->flow(frSolidInfill).scaled_spacing();
+    /// C++:     return ss*ss;
+    /// C++: }
+    ///
+    /// C++ reads `this->flow(frSolidInfill)`; this crate has no `Print` back-pointer
+    /// on `LayerRegion`, so the solid-infill flow is supplied by the caller.
+    pub fn infill_area_threshold_with_flow(&self, solid_infill_flow: &Flow) -> f64 {
+        // LayerRegion.cpp:692
+        let ss = solid_infill_flow.scaled_spacing() as f64;
+        // LayerRegion.cpp:693
+        ss * ss
+    }
+
+    /// Calculate infill area threshold (legacy 1mm² fallback retained for callers
+    /// that have no flow handy; the faithful version is
+    /// `infill_area_threshold_with_flow`).
+    /// LayerRegion.cpp:690-694
     pub fn infill_area_threshold(&self) -> f64 {
-        // TODO: Implement based on config
         scale(1.0) as f64 // 1mm² threshold
     }
 
-    /// Trim surfaces
-    /// LayerRegion.cpp:527-535
-    pub fn trim_surfaces(&mut self, _trimming_polygons: &Polygons) {
-        // TODO: Port from LayerRegion.cpp:527-535
+    /// Trim surfaces by trimming polygons. Used by the elephant foot compensation at the 1st layer.
+    /// LayerRegion.cpp:696-703
+    /// C++: void LayerRegion::trim_surfaces(const Polygons &trimming_polygons)
+    pub fn trim_surfaces(&mut self, trimming_polygons: &Polygons) {
+        // LayerRegion.cpp:698-701
+        // #ifndef NDEBUG
+        //     for (const Surface &surface : this->slices.surfaces)
+        //         assert(surface.surface_type == stInternal);
+        // #endif
+        debug_assert!(self
+            .slices
+            .surfaces
+            .iter()
+            .all(|s| s.surface_type == SurfaceType::Internal));
+
+        // LayerRegion.cpp:702
+        // this->slices.set(intersection_ex(this->slices.surfaces, trimming_polygons), stInternal);
+        let clip: ExPolygons = trimming_polygons
+            .iter()
+            .map(|p| crate::geometry::ExPolygon::from(p.clone()))
+            .collect();
+        let trimmed = crate::clipper_utils::intersection_ex(&self.slices.surfaces, &clip);
+        self.slices.set_expolygons(trimmed, SurfaceType::Internal);
     }
 
     /// Apply elephant foot compensation

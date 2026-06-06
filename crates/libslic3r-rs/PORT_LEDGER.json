@@ -1261,7 +1261,7 @@
     "rust": "crates/libslic3r-rs/src/layer_region.rs",
     "rust_exists": true,
     "loc": 844,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1272,7 +1272,7 @@
     "rust": "crates/libslic3r-rs/src/multi_nozzle_utils.rs",
     "rust_exists": true,
     "loc": 927,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1294,7 +1294,7 @@
     "rust": "crates/libslic3r-rs/src/utils.rs",
     "rust_exists": true,
     "loc": 931,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1305,7 +1305,7 @@
     "rust": "crates/libslic3r-rs/src/mesh_boolean.rs",
     "rust_exists": true,
     "loc": 937,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1316,7 +1316,7 @@
     "rust": "crates/libslic3r-rs/src/quadric_edge_collapse.rs",
     "rust_exists": false,
     "loc": 969,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1338,7 +1338,7 @@
     "rust": "crates/libslic3r-rs/src/extrusion_simulator.rs",
     "rust_exists": true,
     "loc": 1030,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1349,7 +1349,7 @@
     "rust": "crates/libslic3r-rs/src/g_code_writer.rs",
     "rust_exists": false,
     "loc": 1033,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1360,7 +1360,7 @@
     "rust": "crates/libslic3r-rs/src/arrange.rs",
     "rust_exists": true,
     "loc": 1138,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {

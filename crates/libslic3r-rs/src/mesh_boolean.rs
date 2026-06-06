@@ -1,678 +1,305 @@
-//! Mesh boolean operations.
+//! Mesh boolean operations — port of BambuStudio `src/libslic3r/MeshBoolean.cpp`.
 //!
-//! This module provides CSG (Constructive Solid Geometry) operations
-//! mirroring BambuStudio's MeshBoolean.cpp.
+//! IMPORTANT (native backends): the C++ `MeshBoolean.cpp` is built entirely on top
+//! of three native, non-wasm-safe C/C++ libraries:
+//!
+//!   * **libigl** (`igl::copyleft::cgal::mesh_boolean`) — the free-function
+//!     `Slic3r::MeshBoolean::minus` / `self_union` overloads (MeshBoolean.cpp:38-105).
+//!   * **CGAL** (`Surface_mesh`, `Polygon_mesh_processing::corefine_and_compute_*`,
+//!     `does_self_intersect`, `does_bound_a_volume`, `sdf_values`,
+//!     `segmentation_from_sdf_values`, hole filling, …) — the entire
+//!     `Slic3r::MeshBoolean::cgal` namespace (MeshBoolean.cpp:107-483).
+//!   * **mcut** (`mcCreateContext`, `mcDispatch`, `mcGetConnectedComponents`, …) — the
+//!     boolean compute kernel `do_boolean_single` inside the
+//!     `Slic3r::MeshBoolean::mcut` namespace (MeshBoolean.cpp:623-822).
+//!
+//! None of these have a Rust equivalent in this crate, and the crate is wasm-safe
+//! (no system/dylib deps), so the compute kernels are deliberately NOT bound here.
+//! See the BLOCKED list at the bottom of this file.
+//!
+//! What IS ported faithfully (and needs no native backend) is the `mcut` namespace's
+//! pure data-marshalling layer: the `McutMesh` array-of-doubles / array-of-uint32
+//! representation and the conversions to and from our `TriangleMesh`. These are exact
+//! 1:1 translations and feed the (native) mcut dispatch in the C++ build.
+//!
+//! `coord_t -> i64`, `coordf_t -> f64`. Vertices are stored single-precision
+//! (`Vec3f` / `Point3F`) exactly as in C++ `indexed_triangle_set`.
 
-use crate::geometry::{BoundingBox3F, Point3F};
+use crate::geometry::Point3F;
 use crate::triangle_mesh::{Triangle, TriangleMesh};
-use crate::{Error, Result};
-use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-/// Boolean operation type enumeration for mesh CSG operations.
-/// MeshBoolean.hpp:19-23
-pub enum BooleanOp {
-    /// Union operation combines two meshes.
-    /// MeshBoolean.cpp:436-441
-    Union,
-    /// Intersection operation keeps shared volume.
-    /// MeshBoolean.cpp:443-448
-    Intersection,
-    /// Difference operation subtracts second mesh from first.
-    /// MeshBoolean.cpp:429-434
-    Difference,
-    /// Symmetric difference keeps non-overlapping volume.
-    /// MeshBoolean.cpp:256-268
-    SymmetricDifference,
-}
+// MeshBoolean.cpp:32   namespace Slic3r {
+// MeshBoolean.cpp:33   namespace MeshBoolean {
+//
+// The free-function igl overloads (eigen_to_triangle_mesh, triangle_mesh_to_eigen,
+// minus, self_union — MeshBoolean.cpp:38-105) require libigl + CGAL and are BLOCKED.
+// The whole `cgal` namespace (MeshBoolean.cpp:107-483) requires CGAL and is BLOCKED.
 
-/// BooleanOp helper methods for string conversion.
-/// MeshBoolean.hpp:19-23
-impl BooleanOp {
-    // Get the operation name as a string constant.
-    // MeshBoolean.hpp:19-23
-    pub fn name(&self) -> &'static str {
-        // MeshBoolean.hpp:19-23
-        match self {
-            BooleanOp::Union => "union",
-            BooleanOp::Intersection => "intersection",
-            BooleanOp::Difference => "difference",
-            BooleanOp::SymmetricDifference => "symmetric_difference",
+// MeshBoolean.cpp:486   namespace mcut {
+pub mod mcut {
+    use super::*;
+
+    /// MeshBoolean.cpp:487-496
+    /// /* BBS: MusangKing
+    ///  * mcut mesh array format for Boolean Opts calculation
+    ///  */
+    /// struct McutMesh
+    /// {
+    ///     // variables for mesh data in a format suited for mcut
+    ///     std::vector<uint32_t> faceSizesArray;
+    ///     std::vector<uint32_t> faceIndicesArray;
+    ///     std::vector<double>   vertexCoordsArray;
+    /// };
+    #[derive(Debug, Clone, Default)]
+    pub struct McutMesh {
+        // variables for mesh data in a format suited for mcut
+        /// MeshBoolean.cpp:493
+        pub face_sizes_array: Vec<u32>,
+        /// MeshBoolean.cpp:494
+        pub face_indices_array: Vec<u32>,
+        /// MeshBoolean.cpp:495
+        pub vertex_coords_array: Vec<f64>,
+    }
+
+    // MeshBoolean.cpp:497   void McutMeshDeleter::operator()(McutMesh *ptr) { delete ptr; }
+    // (Rust manages the lifetime of `McutMesh` directly; the C++ custom deleter for the
+    //  `unique_ptr<McutMesh, McutMeshDeleter>` PIMPL has no Rust analog.)
+
+    /// MeshBoolean.cpp:499
+    /// `bool empty(const McutMesh &mesh)`
+    pub fn empty(mesh: &McutMesh) -> bool {
+        // MeshBoolean.cpp:499
+        mesh.vertex_coords_array.is_empty() || mesh.face_indices_array.is_empty()
+    }
+
+    /// MeshBoolean.cpp:500-524
+    /// `void triangle_mesh_to_mcut(const TriangleMesh &src_mesh, McutMesh &srcMesh,
+    ///                             const Transform3d &src_nm = Transform3d::Identity())`
+    ///
+    /// NOTE on the `src_nm` transform argument (MeshBoolean.cpp:500): the only caller in
+    /// this file (`make_boolean`, MeshBoolean.cpp:899-900) relies on the default
+    /// `Transform3d::Identity()`, so this port applies the identity directly
+    /// (`v = its.vertices[i].cast<double>()`). The transform code path is BLOCKED on the
+    /// `Transform3d` matrix-vector product that the C++ default never exercises; it is
+    /// noted here for parity completeness.
+    pub fn triangle_mesh_to_mcut(src_mesh: &TriangleMesh, src_mesh_out: &mut McutMesh) {
+        // MeshBoolean.cpp:503  vertices precision convention and copy
+        // srcMesh.vertexCoordsArray.reserve(src_mesh.its.vertices.size() * 3);
+        src_mesh_out
+            .vertex_coords_array
+            .reserve(src_mesh.vertices().len() * 3);
+        // MeshBoolean.cpp:504-509
+        // for (int i = 0; i < src_mesh.its.vertices.size(); ++i) {
+        for i in 0..src_mesh.vertices().len() {
+            // const Vec3d v = src_nm * src_mesh.its.vertices[i].cast<double>();
+            // src_nm == Transform3d::Identity() at the sole call site.
+            let v = src_mesh.vertices()[i];
+            // srcMesh.vertexCoordsArray.push_back(v[0]);
+            src_mesh_out.vertex_coords_array.push(v.x as f64);
+            // srcMesh.vertexCoordsArray.push_back(v[1]);
+            src_mesh_out.vertex_coords_array.push(v.y as f64);
+            // srcMesh.vertexCoordsArray.push_back(v[2]);
+            src_mesh_out.vertex_coords_array.push(v.z as f64);
+        }
+
+        // MeshBoolean.cpp:511  faces copy
+        // srcMesh.faceIndicesArray.reserve(src_mesh.its.indices.size() * 3);
+        src_mesh_out
+            .face_indices_array
+            .reserve(src_mesh.indices().len() * 3);
+        // MeshBoolean.cpp:513
+        // srcMesh.faceSizesArray.reserve(src_mesh.its.indices.size());
+        src_mesh_out
+            .face_sizes_array
+            .reserve(src_mesh.indices().len());
+        // MeshBoolean.cpp:514-523
+        // for (int i = 0; i < src_mesh.its.indices.size(); ++i) {
+        for i in 0..src_mesh.indices().len() {
+            // const int &f0 = src_mesh.its.indices[i][0];
+            let f0 = src_mesh.indices()[i].indices[0];
+            // const int &f1 = src_mesh.its.indices[i][1];
+            let f1 = src_mesh.indices()[i].indices[1];
+            // const int &f2 = src_mesh.its.indices[i][2];
+            let f2 = src_mesh.indices()[i].indices[2];
+            // srcMesh.faceIndicesArray.push_back(f0);
+            src_mesh_out.face_indices_array.push(f0);
+            // srcMesh.faceIndicesArray.push_back(f1);
+            src_mesh_out.face_indices_array.push(f1);
+            // srcMesh.faceIndicesArray.push_back(f2);
+            src_mesh_out.face_indices_array.push(f2);
+
+            // srcMesh.faceSizesArray.push_back((uint32_t) 3);
+            src_mesh_out.face_sizes_array.push(3u32);
         }
     }
-}
 
-/// Perform a boolean operation on two meshes using voxel-based approach.
-/// MeshBoolean.cpp:274-293
-pub fn boolean_operation(
-    mesh_a: &TriangleMesh,
-    mesh_b: &TriangleMesh,
-    operation: BooleanOp,
-) -> Result<TriangleMesh> {
-    // Validate that first mesh is manifold
-    // MeshBoolean.cpp:275-276
-    if !is_manifold(mesh_a) {
-        // MeshBoolean.cpp:276
-        return Err(Error::Mesh(
-            "First mesh is not manifold (watertight)".to_string(),
-        ));
-    }
-    // Validate that second mesh is manifold
-    // MeshBoolean.cpp:277
-    if !is_manifold(mesh_b) {
-        // MeshBoolean.cpp:277
-        return Err(Error::Mesh(
-            "Second mesh is not manifold (watertight)".to_string(),
-        ));
+    /// MeshBoolean.cpp:526-532
+    /// `McutMeshPtr triangle_mesh_to_mcut(const indexed_triangle_set &M)`
+    ///
+    /// In C++ this takes an `indexed_triangle_set`, wraps it in a temporary
+    /// `TriangleMesh` and forwards to the overload above. The crate's primary mesh type
+    /// already is the `TriangleMesh`, so this port takes the `TriangleMesh` directly and
+    /// returns the owned `McutMesh` (the C++ `unique_ptr<McutMesh, McutMeshDeleter>` PIMPL
+    /// becomes a plain owned value in Rust).
+    pub fn triangle_mesh_to_mcut_from_its(m: &TriangleMesh) -> McutMesh {
+        // MeshBoolean.cpp:528  std::unique_ptr<McutMesh, McutMeshDeleter> out(new McutMesh{});
+        let mut out = McutMesh::default();
+        // MeshBoolean.cpp:529  TriangleMesh trimesh(M);
+        // MeshBoolean.cpp:530  triangle_mesh_to_mcut(trimesh, *out.get());
+        triangle_mesh_to_mcut(m, &mut out);
+        // MeshBoolean.cpp:531  return out;
+        out
     }
 
-    // Compute bounding boxes for overlap test
-    // MeshBoolean.cpp:278-279
-    let bbox_a = compute_bounding_box(mesh_a);
-    // MeshBoolean.cpp:279
-    let bbox_b = compute_bounding_box(mesh_b);
+    /// MeshBoolean.cpp:534-564
+    /// `TriangleMesh mcut_to_triangle_mesh(const McutMesh &mcutmesh)`
+    pub fn mcut_to_triangle_mesh(mcutmesh: &McutMesh) -> TriangleMesh {
+        // MeshBoolean.cpp:536  uint32_t ccVertexCount = mcutmesh.vertexCoordsArray.size() / 3;
+        let cc_vertex_count: u32 = (mcutmesh.vertex_coords_array.len() / 3) as u32;
+        // MeshBoolean.cpp:537  auto &ccVertices = mcutmesh.vertexCoordsArray;
+        let cc_vertices = &mcutmesh.vertex_coords_array;
+        // MeshBoolean.cpp:538  auto &ccFaceIndices = mcutmesh.faceIndicesArray;
+        let cc_face_indices = &mcutmesh.face_indices_array;
+        // MeshBoolean.cpp:539  auto &faceSizes = mcutmesh.faceSizesArray;
+        let face_sizes = &mcutmesh.face_sizes_array;
+        // MeshBoolean.cpp:540  uint32_t ccFaceCount = faceSizes.size();
+        let cc_face_count: u32 = face_sizes.len() as u32;
+        // MeshBoolean.cpp:541  rearrange vertices/faces and save into result mesh
+        // MeshBoolean.cpp:542  std::vector<Vec3f> vertices(ccVertexCount);
+        let mut vertices: Vec<Point3F> = vec![Point3F::zero(); cc_vertex_count as usize];
+        // MeshBoolean.cpp:543-547
+        // for (uint32_t i = 0; i < ccVertexCount; i++) {
+        for i in 0..cc_vertex_count {
+            // vertices[i][0] = (float) ccVertices[(uint64_t) i * 3 + 0];
+            vertices[i as usize].x = cc_vertices[(i as u64 * 3 + 0) as usize] as f32 as f64;
+            // vertices[i][1] = (float) ccVertices[(uint64_t) i * 3 + 1];
+            vertices[i as usize].y = cc_vertices[(i as u64 * 3 + 1) as usize] as f32 as f64;
+            // vertices[i][2] = (float) ccVertices[(uint64_t) i * 3 + 2];
+            vertices[i as usize].z = cc_vertices[(i as u64 * 3 + 2) as usize] as f32 as f64;
+        }
 
-    // Fast path when bounding boxes don't overlap
-    // MeshBoolean.cpp:280-290
-    if !bbox_a.intersects(&bbox_b) {
-        // MeshBoolean.cpp:281-289
-        let result =
-        // MeshBoolean.cpp:281-289
-        match operation {
-            // MeshBoolean.cpp:282
-            BooleanOp::Union => Ok(merge_meshes(mesh_a, mesh_b)),
-            // MeshBoolean.cpp:284
-            BooleanOp::Intersection => Ok(TriangleMesh::new()),
-            // MeshBoolean.cpp:286
-            BooleanOp::Difference => Ok(mesh_a.clone()),
-            // MeshBoolean.cpp:288
-            BooleanOp::SymmetricDifference => Ok(merge_meshes(mesh_a, mesh_b)),
-        };
-        // MeshBoolean.cpp:289
-        return result;
-    }
+        // MeshBoolean.cpp:549-550  output faces
+        // int faceVertexOffsetBase = 0;
+        let mut face_vertex_offset_base: i32 = 0;
 
-    // Main path: dispatch to voxel-based boolean
-    // MeshBoolean.cpp:291-293
-    voxel_boolean_operation(mesh_a, mesh_b, operation)
-}
+        // MeshBoolean.cpp:552-553  for each face in CC
+        // std::vector<Vec3i> faces(ccFaceCount);
+        let mut faces: Vec<Triangle> = vec![Triangle::new(0, 0, 0); cc_face_count as usize];
+        // MeshBoolean.cpp:554-560
+        // for (uint32_t f = 0; f < ccFaceCount; ++f) {
+        for f in 0..cc_face_count {
+            // int faceSize = faceSizes.at(f);
+            let face_size: i32 = face_sizes[f as usize] as i32;
 
-/// Voxel-based boolean operation implementation.
-/// MeshBoolean.cpp:274-293
-fn voxel_boolean_operation(
-    mesh_a: &TriangleMesh,
-    mesh_b: &TriangleMesh,
-    operation: BooleanOp,
-) -> Result<TriangleMesh> {
-    // Estimate voxel resolution from mesh sizes
-    // MeshBoolean.cpp:274
-    let voxel_size = estimate_voxel_size(mesh_a, mesh_b);
-    // Voxelize both input meshes
-    // MeshBoolean.cpp:274
-    let grid_a = voxelize_mesh(mesh_a, voxel_size);
-    // MeshBoolean.cpp:274
-    let grid_b = voxelize_mesh(mesh_b, voxel_size);
-
-    // MeshBoolean.cpp:274-293
-    let result_grid =
-    // MeshBoolean.cpp:274-293
-    match operation {
-        // MeshBoolean.cpp:275
-        BooleanOp::Union => boolean_union(&grid_a, &grid_b),
-        // MeshBoolean.cpp:280
-        BooleanOp::Intersection => boolean_intersection(&grid_a, &grid_b),
-        // MeshBoolean.cpp:285
-        BooleanOp::Difference => boolean_difference(&grid_a, &grid_b),
-        // MeshBoolean.cpp:290
-        BooleanOp::SymmetricDifference => boolean_symmetric_difference(&grid_a, &grid_b),
-    };
-
-    // Convert result voxels back to triangle mesh
-    // MeshBoolean.cpp:227-231
-    mesh_from_voxels(&result_grid, voxel_size)
-}
-
-/// Voxel grid type alias for boolean operations.
-/// MeshBoolean.cpp:274
-type VoxelGrid = HashMap<(i64, i64, i64), bool>;
-
-/// Estimate appropriate voxel size based on mesh bounding box dimensions.
-/// MeshBoolean.cpp:274-293
-fn estimate_voxel_size(mesh_a: &TriangleMesh, mesh_b: &TriangleMesh) -> f64 {
-    // Compute bounding boxes of both meshes
-    // MeshBoolean.cpp:278
-    let bbox_a = compute_bounding_box(mesh_a);
-    // MeshBoolean.cpp:279
-    let bbox_b = compute_bounding_box(mesh_b);
-
-    // Find maximum dimension of mesh A
-    // MeshBoolean.cpp:278
-    let size_a = bbox_a.size_x().max(bbox_a.size_y()).max(bbox_a.size_z()) as f64 / 1_000_000.0;
-    // Find maximum dimension of mesh B
-    // MeshBoolean.cpp:279
-    let size_b = bbox_b.size_x().max(bbox_b.size_y()).max(bbox_b.size_z()) as f64 / 1_000_000.0;
-
-    // Use larger of the two dimensions
-    // MeshBoolean.cpp:274
-    let max_size = size_a.max(size_b);
-
-    // Use 1/100th of the largest dimension as voxel size
-    // MeshBoolean.cpp:274
-    (max_size / 100.0).max(0.01)
-}
-
-/// Convert mesh to voxel grid using ray-casting point-in-mesh test.
-/// MeshBoolean.cpp:274-293
-fn voxelize_mesh(mesh: &TriangleMesh, voxel_size: f64) -> VoxelGrid {
-    // MeshBoolean.cpp:274
-    let mut grid = VoxelGrid::new();
-    // Compute mesh bounding box for iteration bounds
-    // MeshBoolean.cpp:278
-    let bbox = compute_bounding_box(mesh);
-
-    // Calculate voxel grid bounds from bounding box
-    // MeshBoolean.cpp:274
-    let min_x = (bbox.min.x as f64 / 1_000_000.0 / voxel_size).floor() as i64;
-    // MeshBoolean.cpp:274
-    let max_x = (bbox.max.x as f64 / 1_000_000.0 / voxel_size).ceil() as i64;
-    // MeshBoolean.cpp:274
-    let min_y = (bbox.min.y as f64 / 1_000_000.0 / voxel_size).floor() as i64;
-    // MeshBoolean.cpp:274
-    let max_y = (bbox.max.y as f64 / 1_000_000.0 / voxel_size).ceil() as i64;
-    // MeshBoolean.cpp:274
-    let min_z = (bbox.min.z as f64 / 1_000_000.0 / voxel_size).floor() as i64;
-    // MeshBoolean.cpp:274
-    let max_z = (bbox.max.z as f64 / 1_000_000.0 / voxel_size).ceil() as i64;
-
-    // Iterate over all voxels in bounding box
-    // MeshBoolean.cpp:274
-    for x in min_x..=max_x {
-        // MeshBoolean.cpp:274
-        for y in min_y..=max_y {
-            // MeshBoolean.cpp:274
-            for z in min_z..=max_z {
-                // Compute voxel center point
-                // MeshBoolean.cpp:274
-                let voxel_center = Point3F::new(
-                    x as f64 * voxel_size + voxel_size / 2.0,
-                    y as f64 * voxel_size + voxel_size / 2.0,
-                    z as f64 * voxel_size + voxel_size / 2.0,
-                );
-
-                // Test if voxel center is inside mesh
-                // MeshBoolean.cpp:274
-                if point_inside_mesh(voxel_center, mesh) {
-                    // MeshBoolean.cpp:274
-                    grid.insert((x, y, z), true);
-                }
+            // for each vertex in face
+            // for (int v = 0; v < faceSize; v++) { faces[f][v] = ccFaceIndices[(uint64_t) faceVertexOffsetBase + v]; }
+            for v in 0..face_size {
+                faces[f as usize].indices[v as usize] =
+                    cc_face_indices[(face_vertex_offset_base as u64 + v as u64) as usize];
             }
+            // faceVertexOffsetBase += faceSize;
+            face_vertex_offset_base += face_size;
         }
+
+        // MeshBoolean.cpp:562  TriangleMesh out(vertices, faces);
+        // MeshBoolean.cpp:563  return out;
+        TriangleMesh::from_parts(vertices, faces)
     }
 
-    // MeshBoolean.cpp:274
-    grid
-}
-
-/// Check if a point is inside a mesh using ray casting algorithm.
-/// MeshBoolean.cpp:274-293
-fn point_inside_mesh(point: Point3F, mesh: &TriangleMesh) -> bool {
-    // Initialize intersection counter
-    // MeshBoolean.cpp:274
-    let mut intersections = 0;
-
-    // Ray origin at the test point
-    // MeshBoolean.cpp:274
-    let ray_origin = point;
-    // Cast ray in +X direction
-    // MeshBoolean.cpp:274
-    let ray_dir = Point3F::new(1.0, 0.0, 0.0);
-
-    // Test ray against all triangles
-    // MeshBoolean.cpp:274
-    for tri in mesh.triangles() {
-        // MeshBoolean.cpp:274
-        let vertices = tri.vertices;
-
-        // Check ray-triangle intersection
-        // MeshBoolean.cpp:274
-        if ray_triangle_intersect(ray_origin, ray_dir, vertices) {
-            // MeshBoolean.cpp:274
-            intersections += 1;
-        }
+    /// MeshBoolean.cpp:566-573
+    /// `void merge_mcut_meshes(McutMesh& src, const McutMesh& cut)`
+    pub fn merge_mcut_meshes(src: &mut McutMesh, cut: &McutMesh) {
+        // MeshBoolean.cpp:567  indexed_triangle_set all_its;
+        // MeshBoolean.cpp:568  TriangleMesh tri_src = mcut_to_triangle_mesh(src);
+        let mut all = TriangleMesh::new();
+        let tri_src = mcut_to_triangle_mesh(src);
+        // MeshBoolean.cpp:569  TriangleMesh tri_cut = mcut_to_triangle_mesh(cut);
+        let tri_cut = mcut_to_triangle_mesh(cut);
+        // MeshBoolean.cpp:570  its_merge(all_its, tri_src.its);
+        all.merge(tri_src);
+        // MeshBoolean.cpp:571  its_merge(all_its, tri_cut.its);
+        all.merge(tri_cut);
+        // MeshBoolean.cpp:572  src = *triangle_mesh_to_mcut(all_its);
+        *src = triangle_mesh_to_mcut_from_its(&all);
     }
 
-    // Odd number of intersections means point is inside
-    // MeshBoolean.cpp:274
-    intersections % 2 == 1
-}
+    // MeshBoolean.cpp:575-620   mcDebugOutput — debug callback for the mcut C API, BLOCKED.
+    // MeshBoolean.cpp:623-822   do_boolean_single — mcCreateContext/mcDispatch/
+    //                           mcGetConnectedComponents kernel, BLOCKED (native mcut).
+    // MeshBoolean.cpp:824-894   do_boolean — control flow over its_split parts driving
+    //                           the (BLOCKED) do_boolean_single kernel, BLOCKED.
+    // MeshBoolean.cpp:896-931   make_boolean — wraps do_boolean then split/fix-volume/
+    //                           merge post-processing; BLOCKED on do_boolean above.
+} // namespace mcut
 
-/// Ray-triangle intersection using Moller-Trumbore algorithm.
-/// MeshBoolean.cpp:274-293
-fn ray_triangle_intersect(ray_origin: Point3F, ray_dir: Point3F, tri: [Point3F; 3]) -> bool {
-    // Extract triangle vertices
-    // MeshBoolean.cpp:274
-    let v0 = tri[0];
-    // MeshBoolean.cpp:274
-    let v1 = tri[1];
-    // MeshBoolean.cpp:274
-    let v2 = tri[2];
-
-    // Compute edge vectors from v0
-    // MeshBoolean.cpp:274
-    let edge1 = Point3F::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
-    // MeshBoolean.cpp:274
-    let edge2 = Point3F::new(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
-
-    // Compute determinant via cross product
-    // MeshBoolean.cpp:274
-    let h = cross(ray_dir, edge2);
-    // MeshBoolean.cpp:274
-    let a = dot(edge1, h);
-
-    // Check if ray is parallel to triangle
-    // MeshBoolean.cpp:274
-    if a.abs() < 1e-10 {
-        // MeshBoolean.cpp:274
-        return false;
-    }
-
-    // Compute barycentric u coordinate
-    // MeshBoolean.cpp:274
-    let f = 1.0 / a;
-    // MeshBoolean.cpp:274
-    let s = Point3F::new(
-        ray_origin.x - v0.x,
-        ray_origin.y - v0.y,
-        ray_origin.z - v0.z,
-    );
-    // MeshBoolean.cpp:274
-    let u = f * dot(s, h);
-
-    // Check u bounds
-    // MeshBoolean.cpp:274
-    if u < 0.0 || u > 1.0 {
-        // MeshBoolean.cpp:274
-        return false;
-    }
-
-    // Compute barycentric v coordinate
-    // MeshBoolean.cpp:274
-    let q = cross(s, edge1);
-    // MeshBoolean.cpp:274
-    let v = f * dot(ray_dir, q);
-
-    // Check v bounds and u+v bounds
-    // MeshBoolean.cpp:274
-    if v < 0.0 || u + v > 1.0 {
-        // MeshBoolean.cpp:274
-        return false;
-    }
-
-    // Compute intersection distance along ray
-    // MeshBoolean.cpp:274
-    let t = f * dot(edge2, q);
-
-    // Intersection is valid if in front of ray origin
-    // MeshBoolean.cpp:274
-    t > 1e-10
-}
-
-/// Dot product of two 3D vectors.
-/// MeshBoolean.cpp:274-293
-fn dot(a: Point3F, b: Point3F) -> f64 {
-    // MeshBoolean.cpp:274
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-/// Cross product of two 3D vectors.
-/// MeshBoolean.cpp:274-293
-fn cross(a: Point3F, b: Point3F) -> Point3F {
-    // MeshBoolean.cpp:274
-    Point3F::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
-}
-
-/// Boolean union of two voxel grids.
-/// MeshBoolean.cpp:436-441
-fn boolean_union(grid_a: &VoxelGrid, grid_b: &VoxelGrid) -> VoxelGrid {
-    // Start with copy of grid A
-    // MeshBoolean.cpp:436
-    let mut result = grid_a.clone();
-    // Add all voxels from grid B
-    // MeshBoolean.cpp:437-440
-    for (key, _) in grid_b {
-        // MeshBoolean.cpp:438
-        result.insert(*key, true);
-    }
-    // MeshBoolean.cpp:441
-    result
-}
-
-/// Boolean intersection of two voxel grids.
-/// MeshBoolean.cpp:443-448
-fn boolean_intersection(grid_a: &VoxelGrid, grid_b: &VoxelGrid) -> VoxelGrid {
-    // MeshBoolean.cpp:443
-    let mut result = VoxelGrid::new();
-    // Keep only voxels present in both grids
-    // MeshBoolean.cpp:444-447
-    for (key, _) in grid_a {
-        // MeshBoolean.cpp:445
-        if grid_b.contains_key(key) {
-            // MeshBoolean.cpp:446
-            result.insert(*key, true);
-        }
-    }
-    // MeshBoolean.cpp:448
-    result
-}
-
-/// Boolean difference of two voxel grids.
-/// MeshBoolean.cpp:429-434
-fn boolean_difference(grid_a: &VoxelGrid, grid_b: &VoxelGrid) -> VoxelGrid {
-    // MeshBoolean.cpp:429
-    let mut result = VoxelGrid::new();
-    // Keep voxels from A that are not in B
-    // MeshBoolean.cpp:430-433
-    for (key, _) in grid_a {
-        // MeshBoolean.cpp:431
-        if !grid_b.contains_key(key) {
-            // MeshBoolean.cpp:432
-            result.insert(*key, true);
-        }
-    }
-    // MeshBoolean.cpp:434
-    result
-}
-
-/// Boolean symmetric difference of two voxel grids.
-/// MeshBoolean.cpp:256-268
-fn boolean_symmetric_difference(grid_a: &VoxelGrid, grid_b: &VoxelGrid) -> VoxelGrid {
-    // MeshBoolean.cpp:256
-    let mut result = VoxelGrid::new();
-
-    // Add voxels from A that are not in B
-    // MeshBoolean.cpp:257-261
-    for (key, _) in grid_a {
-        // MeshBoolean.cpp:258
-        if !grid_b.contains_key(key) {
-            // MeshBoolean.cpp:259
-            result.insert(*key, true);
-        }
-    }
-
-    // Add voxels from B that are not in A
-    // MeshBoolean.cpp:262-266
-    for (key, _) in grid_b {
-        // MeshBoolean.cpp:263
-        if !grid_a.contains_key(key) {
-            // MeshBoolean.cpp:264
-            result.insert(*key, true);
-        }
-    }
-
-    // MeshBoolean.cpp:268
-    result
-}
-
-/// Convert voxel grid back to triangle mesh.
-/// MeshBoolean.cpp:227-231
-fn mesh_from_voxels(grid: &VoxelGrid, voxel_size: f64) -> Result<TriangleMesh> {
-    // Return empty mesh for empty grid
-    // MeshBoolean.cpp:227
-    if grid.is_empty() {
-        // MeshBoolean.cpp:228
-        return Ok(TriangleMesh::new());
-    }
-
-    // Allocate vertex and triangle storage
-    // MeshBoolean.cpp:229
-    let mut vertices = Vec::new();
-    // MeshBoolean.cpp:229
-    let mut triangles = Vec::new();
-
-    // Create cube geometry for each filled voxel
-    // MeshBoolean.cpp:230
-    for (key, _) in grid {
-        // MeshBoolean.cpp:230
-        let (x, y, z) = *key;
-        // MeshBoolean.cpp:230
-        let base_x = x as f64 * voxel_size;
-        // MeshBoolean.cpp:230
-        let base_y = y as f64 * voxel_size;
-        // MeshBoolean.cpp:230
-        let base_z = z as f64 * voxel_size;
-
-        // Track base vertex index for this cube
-        // MeshBoolean.cpp:230
-        let base_idx = vertices.len() as u32;
-
-        // Define 8 corner vertices of the voxel cube
-        // MeshBoolean.cpp:230
-        let corners = [
-            Point3F::new(base_x, base_y, base_z),
-            Point3F::new(base_x + voxel_size, base_y, base_z),
-            Point3F::new(base_x + voxel_size, base_y + voxel_size, base_z),
-            Point3F::new(base_x, base_y + voxel_size, base_z),
-            Point3F::new(base_x, base_y, base_z + voxel_size),
-            Point3F::new(base_x + voxel_size, base_y, base_z + voxel_size),
-            Point3F::new(
-                base_x + voxel_size,
-                base_y + voxel_size,
-                base_z + voxel_size,
-            ),
-            Point3F::new(base_x, base_y + voxel_size, base_z + voxel_size),
-        ];
-
-        // MeshBoolean.cpp:230
-        vertices.extend(corners);
-
-        // Define 12 triangles for 6 cube faces
-        // MeshBoolean.cpp:230
-        let indices: [[u32; 3]; 12] = [
-            [0, 1, 2],
-            [0, 2, 3],
-            [4, 6, 5],
-            [4, 7, 6],
-            [0, 4, 5],
-            [0, 5, 1],
-            [2, 6, 7],
-            [2, 7, 3],
-            [0, 3, 7],
-            [0, 7, 4],
-            [1, 5, 6],
-            [1, 6, 2],
-        ];
-
-        // Create triangle for each face index triple
-        // MeshBoolean.cpp:230
-        for tri_indices in &indices {
-            // MeshBoolean.cpp:230
-            let v0 = base_idx + tri_indices[0];
-            // MeshBoolean.cpp:230
-            let v1 = base_idx + tri_indices[1];
-            // MeshBoolean.cpp:230
-            let v2 = base_idx + tri_indices[2];
-
-            // MeshBoolean.cpp:230
-            triangles.push(Triangle::new(v0, v1, v2));
-        }
-    }
-
-    // Construct mesh from vertices and triangles
-    // MeshBoolean.cpp:231
-    Ok(TriangleMesh::from_parts(vertices, triangles))
-}
-
-/// Compute bounding box encompassing all mesh triangles.
-/// MeshBoolean.cpp:274-293
-fn compute_bounding_box(mesh: &TriangleMesh) -> BoundingBox3F {
-    // MeshBoolean.cpp:278
-    let mut bbox = BoundingBox3F::new();
-    // Iterate over all triangles to find bounds
-    // MeshBoolean.cpp:278
-    for tri in mesh.triangles() {
-        // Merge each vertex into the bounding box
-        // MeshBoolean.cpp:278
-        for vertex in tri.vertices {
-            // MeshBoolean.cpp:278
-            bbox.merge_point(vertex);
-        }
-    }
-    // MeshBoolean.cpp:278
-    bbox
-}
-
-/// Merge two meshes by concatenating vertices and triangles.
-/// MeshBoolean.cpp:380-403
-fn merge_meshes(mesh_a: &TriangleMesh, mesh_b: &TriangleMesh) -> TriangleMesh {
-    // Clone first mesh as base
-    // MeshBoolean.cpp:381
-    let mut result = mesh_a.clone();
-
-    // Offset triangle indices by vertex count of first mesh
-    // MeshBoolean.cpp:382
-    let offset = result.vertex_count() as u32;
-    // Append triangles from second mesh with adjusted indices
-    // MeshBoolean.cpp:383-402
-    for tri in mesh_b.triangles() {
-        // MeshBoolean.cpp:384-401
-        result.add_triangle(Triangle::new(
-            tri.indices[0] + offset,
-            tri.indices[1] + offset,
-            tri.indices[2] + offset,
-        ));
-    }
-
-    // MeshBoolean.cpp:403
-    result
-}
-
-/// Union two meshes (A union B).
-/// MeshBoolean.cpp:436-441
-pub fn union(mesh_a: &TriangleMesh, mesh_b: &TriangleMesh) -> Result<TriangleMesh> {
-    // MeshBoolean.cpp:437
-    boolean_operation(mesh_a, mesh_b, BooleanOp::Union)
-}
-
-/// Intersect two meshes (A intersect B).
-/// MeshBoolean.cpp:443-448
-pub fn intersection(mesh_a: &TriangleMesh, mesh_b: &TriangleMesh) -> Result<TriangleMesh> {
-    // MeshBoolean.cpp:444
-    boolean_operation(mesh_a, mesh_b, BooleanOp::Intersection)
-}
-
-/// Subtract mesh B from mesh A (A minus B).
-/// MeshBoolean.cpp:429-434
-pub fn difference(mesh_a: &TriangleMesh, mesh_b: &TriangleMesh) -> Result<TriangleMesh> {
-    // MeshBoolean.cpp:430
-    boolean_operation(mesh_a, mesh_b, BooleanOp::Difference)
-}
-
-/// Check if a mesh is manifold with all edges shared by exactly 2 triangles.
-/// MeshBoolean.cpp:459-471
-pub fn is_manifold(mesh: &TriangleMesh) -> bool {
-    // Empty mesh is trivially manifold
-    // MeshBoolean.cpp:460
-    if mesh.is_empty() {
-        // MeshBoolean.cpp:461
-        return true;
-    }
-
-    // Build edge-to-face-count map
-    // MeshBoolean.cpp:462
-    let mut edge_count: HashMap<(u32, u32), usize> = HashMap::new();
-
-    // Count occurrences of each edge across all triangles
-    // MeshBoolean.cpp:463-468
-    for tri in mesh.triangles() {
-        // MeshBoolean.cpp:464
-        let v = tri.indices;
-
-        // Normalize edge vertex ordering for consistent lookup
-        // MeshBoolean.cpp:465
-        let edges = [
-            (v[0].min(v[1]), v[0].max(v[1])),
-            (v[1].min(v[2]), v[1].max(v[2])),
-            (v[2].min(v[0]), v[2].max(v[0])),
-        ];
-
-        // Increment count for each edge
-        // MeshBoolean.cpp:466-467
-        for edge in edges {
-            // MeshBoolean.cpp:467
-            *edge_count.entry(edge).or_insert(0) += 1;
-        }
-    }
-
-    // Manifold requires every edge shared by exactly 2 triangles
-    // MeshBoolean.cpp:469-471
-    edge_count.values().all(|&count| count == 2)
-}
-
-/// Get mesh statistics including triangle count and manifold status.
-/// MeshBoolean.cpp:459-471
-pub fn mesh_stats(mesh: &TriangleMesh) -> MeshStats {
-    // MeshBoolean.cpp:459
-    MeshStats {
-        // MeshBoolean.cpp:460
-        triangle_count: mesh.triangle_count(),
-        // MeshBoolean.cpp:461
-        vertex_count: mesh.vertex_count(),
-        // MeshBoolean.cpp:462
-        is_manifold: is_manifold(mesh),
-        // MeshBoolean.cpp:463
-        bounding_box: compute_bounding_box(mesh),
-    }
-}
-
-#[derive(Debug, Clone)]
-/// Mesh statistics container with geometry and topology info.
-/// MeshBoolean.cpp:459-471
-pub struct MeshStats {
-    /// Number of triangles in the mesh.
-    /// MeshBoolean.cpp:459
-    pub triangle_count: usize,
-    /// Number of vertices in the mesh.
-    /// MeshBoolean.cpp:459
-    pub vertex_count: usize,
-    /// Whether the mesh is manifold (watertight).
-    /// MeshBoolean.cpp:459
-    pub is_manifold: bool,
-    /// Axis-aligned bounding box of the mesh.
-    /// MeshBoolean.cpp:459
-    pub bounding_box: BoundingBox3F,
-}
+// MeshBoolean.cpp:936   } // namespace MeshBoolean
+// MeshBoolean.cpp:937   } // namespace Slic3r
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::mcut::*;
+    use crate::geometry::Point3F;
+    use crate::triangle_mesh::{Triangle, TriangleMesh};
 
-    #[test]
-    fn test_boolean_union_empty() {
-        let mesh_a = TriangleMesh::new();
-        let mesh_b = TriangleMesh::new();
-
-        let result = union(&mesh_a, &mesh_b).unwrap();
-        assert!(result.is_empty());
+    fn unit_tri_mesh() -> TriangleMesh {
+        let vertices = vec![
+            Point3F::new(0.0, 0.0, 0.0),
+            Point3F::new(1.0, 0.0, 0.0),
+            Point3F::new(0.0, 1.0, 0.0),
+        ];
+        let faces = vec![Triangle::new(0, 1, 2)];
+        TriangleMesh::from_parts(vertices, faces)
     }
 
     #[test]
-    fn test_is_manifold_empty() {
-        let mesh = TriangleMesh::new();
-        assert!(is_manifold(&mesh));
+    fn test_empty_mcut_mesh() {
+        let m = McutMesh::default();
+        assert!(empty(&m));
     }
 
     #[test]
-    fn test_boolean_op_names() {
-        assert_eq!(BooleanOp::Union.name(), "union");
-        assert_eq!(BooleanOp::Intersection.name(), "intersection");
-        assert_eq!(BooleanOp::Difference.name(), "difference");
-        assert_eq!(
-            BooleanOp::SymmetricDifference.name(),
-            "symmetric_difference"
-        );
+    fn test_triangle_mesh_to_mcut_roundtrip() {
+        let mesh = unit_tri_mesh();
+        let mut mc = McutMesh::default();
+        triangle_mesh_to_mcut(&mesh, &mut mc);
+
+        // 3 vertices * 3 coords each.
+        assert_eq!(mc.vertex_coords_array.len(), 9);
+        // 1 face * 3 indices.
+        assert_eq!(mc.face_indices_array.len(), 3);
+        // 1 face, size 3.
+        assert_eq!(mc.face_sizes_array, vec![3u32]);
+        assert!(!empty(&mc));
+
+        // First vertex coords (0,0,0), second (1,0,0).
+        assert_eq!(mc.vertex_coords_array[0], 0.0);
+        assert_eq!(mc.vertex_coords_array[3], 1.0);
+
+        let back = mcut_to_triangle_mesh(&mc);
+        assert_eq!(back.vertex_count(), 3);
+        assert_eq!(back.triangle_count(), 1);
+        assert_eq!(back.indices()[0].indices, [0, 1, 2]);
+    }
+
+    #[test]
+    fn test_triangle_mesh_to_mcut_from_its() {
+        let mesh = unit_tri_mesh();
+        let mc = triangle_mesh_to_mcut_from_its(&mesh);
+        assert_eq!(mc.vertex_coords_array.len(), 9);
+        assert_eq!(mc.face_sizes_array.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_mcut_meshes() {
+        let mesh = unit_tri_mesh();
+        let mut src = McutMesh::default();
+        triangle_mesh_to_mcut(&mesh, &mut src);
+        let mut cut = McutMesh::default();
+        triangle_mesh_to_mcut(&mesh, &mut cut);
+
+        merge_mcut_meshes(&mut src, &cut);
+        // After merge: 6 vertices, 2 faces.
+        assert_eq!(src.vertex_coords_array.len(), 18);
+        assert_eq!(src.face_sizes_array.len(), 2);
     }
 }
