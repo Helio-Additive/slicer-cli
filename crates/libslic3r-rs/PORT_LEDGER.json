@@ -2284,7 +2284,7 @@
     "rust": "crates/libslic3r-rs/src/fill/fill_rectilinear.rs",
     "rust_exists": true,
     "loc": 3588,
-    "status": "pending",
+    "status": "partial",
     "priority": 4
   },
   {
@@ -2295,7 +2295,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/thumbnail_data.rs",
     "rust_exists": true,
     "loc": 32,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2306,7 +2306,7 @@
     "rust": "crates/libslic3r-rs/src/execution/execution_tbb.rs",
     "rust_exists": true,
     "loc": 78,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2328,7 +2328,7 @@
     "rust": "crates/libslic3r-rs/src/execution/execution_seq.rs",
     "rust_exists": true,
     "loc": 84,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2339,7 +2339,7 @@
     "rust": "crates/libslic3r-rs/src/csg_mesh/csg_mesh.rs",
     "rust_exists": true,
     "loc": 87,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2372,7 +2372,7 @@
     "rust": "crates/libslic3r-rs/src/csg_mesh/voxelize_csg_mesh.rs",
     "rust_exists": true,
     "loc": 116,
-    "status": "pending",
+    "status": "partial",
     "priority": 5
   },
   {
@@ -2383,7 +2383,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/retract_when_crossing_perimeters.rs",
     "rust_exists": true,
     "loc": 119,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2394,7 +2394,7 @@
     "rust": "crates/libslic3r-rs/src/execution/execution.rs",
     "rust_exists": true,
     "loc": 128,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {

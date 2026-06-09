@@ -32,9 +32,24 @@ pub static EX_SEQ: SequentialPolicy = SequentialPolicy;
 pub struct NoOpMutex;
 
 impl NoOpMutex {
+    // ExecutionSeq.hpp:36: `inline void lock() {}`
     pub fn lock(&self) {}
+    // ExecutionSeq.hpp:36: `inline void unlock() {}`
     pub fn unlock(&self) {}
 }
+
+/// Spinning mutex type for sequential policy.
+///
+/// The sequential `Traits` specialization aliases both mutex types to the
+/// no-op `_Mtx` since there is no concurrency.
+///
+/// ExecutionSeq.hpp:51: `using SpinningMutex = _Mtx;`
+pub type SpinningMutex = NoOpMutex;
+
+/// Blocking mutex type for sequential policy.
+///
+/// ExecutionSeq.hpp:52: `using BlockingMutex = _Mtx;`
+pub type BlockingMutex = NoOpMutex;
 
 impl ExecutionPolicy for SequentialPolicy {
     /// Sequential for_each: simple loop from `from` to `to`.

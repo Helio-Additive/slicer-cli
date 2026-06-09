@@ -1,88 +1,83 @@
-//! CSG (Constructive Solid Geometry) mesh representation and operations.
+//! Faithful 1:1 port of BambuStudio `src/libslic3r/CSGMesh/CSGMesh.hpp`.
 //!
-//! This module provides types and functions for representing CSG operations on meshes.
-//! A collection of CSGPart objects can be interpreted as one model and used in various
-//! contexts (assembled with CGAL or OpenVDB, rendered with OpenCSG, or provided to ray-tracers).
+//! Header-only file; there is no `.cpp` translation unit, so every definition
+//! lives in the header and is reproduced here line-by-line. Line references
+//! point into `CSGMesh.hpp`.
 //!
-//! C++ Reference:
-//! - CSGMesh/CSGMesh.hpp
-//!
-//! Key Concepts:
-//! - CSGPart: A mesh + transformation + CSG operation
-//! - CSGType: Union, Difference, or Intersection
-//! - CSGStackOp: Push/Pop operations for expression evaluation (parentheses)
-//!
-//! Example CSG Expression:
-//! ```text
-//! CUBE1 - (CUBE2 + CUBE3)
-//! ```
-//! Represented as:
-//! ```text
-//! [
-//!   CSGPart { mesh: cube1, op: Union,      stack_op: Continue },
-//!   CSGPart { mesh: cube2, op: Difference, stack_op: Push },
-//!   CSGPart { mesh: cube3, op: Union,      stack_op: Pop },
-//! ]
-//! ```
+//! Divergence note: the C++ `CSGPart` stores `AnyPtr<const indexed_triangle_set>`
+//! (see `crate::any_ptr::AnyPtr`) and a `Transform3f` (Eigen
+//! `Transform<float,3,Affine>`). This crate's CSGMesh module
+//! (`csg_mesh_copy`, `model_to_csg_mesh`, `slice_csg_mesh`,
+//! `perform_csg_mesh_booleans`, `voxelize_csg_mesh`, ...) was built around
+//! `crate::triangle_mesh::TriangleMesh` and `crate::geometry::Transform3D`
+//! through a local `MeshPtr` enum that mirrors `AnyPtr`'s three alternatives
+//! (raw/owned/shared, here None/Owned/Shared plus an extra Rc). Those
+//! higher-level types are retained so the whole module stays consistent; the
+//! field semantics and the four accessor templates below match the C++ exactly.
 
 use crate::geometry::Transform3D;
 use crate::triangle_mesh::TriangleMesh;
 use std::rc::Rc;
 use std::sync::Arc;
 
-/// Supported CSG operation types
-/// CSGMesh.hpp:18
+// CSGMesh.hpp:7  namespace Slic3r { namespace csg {
+
+// CSGMesh.hpp:9-17
+// A CSGPartT should be an object that can provide at least a mesh + trafo and an
+// associated csg operation. A collection of CSGPartT objects can then
+// be interpreted as one model and used in various contexts. It can be assembled
+// with CGAL or OpenVDB, rendered with OpenCSG or provided to a ray-tracer to
+// deal with various parts of it according to the supported CSG types...
+//
+// A few simple templated interface functions are provided here and a default
+// CSGPart class that implements the necessary means to be usable as a
+// CSGPartT object.
+
+// CSGMesh.hpp:19  Supported CSG operation types
+// CSGMesh.hpp:20  enum class CSGType { Union, Difference, Intersection };
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CSGType {
-    /// Union operation (A ∪ B) - combines two meshes
-    /// CSGMesh.hpp:18
     Union,
-
-    /// Difference operation (A - B) - subtracts B from A
-    /// CSGMesh.hpp:18
     Difference,
-
-    /// Intersection operation (A ∩ B) - only the overlapping volume
-    /// CSGMesh.hpp:18
     Intersection,
 }
 
 impl Default for CSGType {
-    /// Default CSG operation is Union
-    /// CSGMesh.hpp:60
+    // The C++ `CSGPart` constructor defaults `op` to `CSGType::Union`
+    // (CSGMesh.hpp:76).
     fn default() -> Self {
         CSGType::Union
     }
 }
 
-/// Stack operation for CSG expression evaluation.
-///
-/// A CSG part can instruct the processing to push the sub-result onto a stack
-/// until a new CSG part with a pop instruction appears. This implements
-/// parentheses in a CSG expression represented by a collection of CSG parts.
-///
-/// When a CSG part contains a Push instruction, the CSG operation it contains
-/// refers to the whole collection spanning to the nearest part with a Pop instruction.
-///
-/// CSGMesh.hpp:25-37
+// CSGMesh.hpp:22-37
+// A CSG part can instruct the processing to push the sub-result until a new
+// csg part with a pop instruction appears. This can be used to implement
+// parentheses in a CSG expression represented by the collection of csg parts.
+// A CSG part can not contain another CSG collection, only a mesh, this is why
+// its easier to do this stacking instead of recursion in the data definition.
+// CSGStackOp::Continue means no stack operation required.
+// When a CSG part contains a Push instruction, it is expected that the CSG
+// operation it contains refers to the whole collection spanning to the nearest
+// part with a Pop instruction.
+// e.g.:
+// {
+//      CUBE1: { mesh: cube, op: Union, stack op: Continue },
+//      CUBE2: { mesh: cube, op: Difference, stack op: Push},
+//      CUBE3: { mesh: cube, op: Union, stack op: Pop}
+// }
+// is a collection of csg parts representing the expression CUBE1 - (CUBE2 + CUBE3)
+// CSGMesh.hpp:38  enum class CSGStackOp { Push, Continue, Pop };
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CSGStackOp {
-    /// Push the current result onto the stack
-    /// CSGMesh.hpp:25
     Push,
-
-    /// Continue without stack operations (default)
-    /// CSGMesh.hpp:25
     Continue,
-
-    /// Pop from the stack and apply the operation
-    /// CSGMesh.hpp:25
     Pop,
 }
 
 impl Default for CSGStackOp {
-    /// Default stack operation is Continue
-    /// CSGMesh.hpp:64
+    // The C++ `CSGPart` constructor always sets `stack_operation` to
+    // `CSGStackOp::Continue` (CSGMesh.hpp:80).
     fn default() -> Self {
         CSGStackOp::Continue
     }
@@ -90,10 +85,10 @@ impl Default for CSGStackOp {
 
 /// A pointer type that can hold either owned or borrowed mesh data.
 ///
-/// This is the Rust equivalent of C++'s AnyPtr<const indexed_triangle_set>.
+/// This is the Rust equivalent of C++'s `AnyPtr<const indexed_triangle_set>`.
 /// It supports multiple ownership patterns to work with different contexts.
 ///
-/// CSGMesh.hpp:9 (AnyPtr)
+/// CSGMesh.hpp:69 (`AnyPtr<const indexed_triangle_set> its_ptr;`)
 #[derive(Debug, Clone)]
 pub enum MeshPtr {
     /// No mesh (empty/null)
@@ -181,40 +176,45 @@ impl From<Rc<TriangleMesh>> for MeshPtr {
     }
 }
 
+// CSGMesh.hpp:67  Default implementation
 /// A CSG part: mesh + transformation + CSG operation.
 ///
-/// Default implementation of a CSGPartT object that implements the necessary
-/// interface to be usable in CSG contexts. A CSG part cannot contain another
-/// CSG collection, only a mesh - this is why stack operations are used instead
-/// of recursion in the data definition.
+/// Default implementation of a `CSGPartT` object that implements the necessary
+/// means to be usable as a `CSGPartT` object. A CSG part can not contain
+/// another CSG collection, only a mesh — this is why stack operations are used
+/// instead of recursion in the data definition.
 ///
-/// CSGMesh.hpp:57-68
+/// CSGMesh.hpp:68-83  struct CSGPart { ... };
 #[derive(Debug, Clone)]
 pub struct CSGPart {
-    /// Pointer to the indexed triangle set (mesh)
-    /// CSGMesh.hpp:58
+    /// CSGMesh.hpp:69  AnyPtr<const indexed_triangle_set> its_ptr;
     pub mesh: MeshPtr,
 
-    /// Transformation matrix associated with the mesh
-    /// CSGMesh.hpp:59
+    /// CSGMesh.hpp:70  Transform3f trafo;
     pub transform: Transform3D,
 
-    /// CSG operation type (Union, Difference, Intersection)
-    /// CSGMesh.hpp:60
+    /// CSGMesh.hpp:71  CSGType operation;
     pub operation: CSGType,
 
-    /// Stack operation for expression evaluation
-    /// CSGMesh.hpp:61
+    /// CSGMesh.hpp:72  CSGStackOp stack_operation;
     pub stack_operation: CSGStackOp,
 
-    /// Optional name for debugging/identification
-    /// CSGMesh.hpp:62
+    /// CSGMesh.hpp:73  std::string name;
     pub name: String,
 }
 
 impl CSGPart {
-    /// Create a new CSG part with default values
-    /// CSGMesh.hpp:64-68
+    // CSGMesh.hpp:75-82
+    // CSGPart(AnyPtr<const indexed_triangle_set> ptr = {},
+    //         CSGType                            op  = CSGType::Union,
+    //         const Transform3f                 &tr  = Transform3f::Identity())
+    //     : its_ptr{std::move(ptr)}
+    //     , operation{op}
+    //     , stack_operation{CSGStackOp::Continue}
+    //     , trafo{tr}
+    // {}
+    /// Create a new CSG part with the C++ default arguments
+    /// (empty `its_ptr`, `CSGType::Union`, identity transform).
     pub fn new() -> Self {
         Self {
             mesh: MeshPtr::None,
@@ -225,8 +225,9 @@ impl CSGPart {
         }
     }
 
-    /// Create a CSG part from a mesh pointer
-    /// CSGMesh.hpp:64-68
+    /// Create a CSG part from a mesh pointer (C++ ctor with `ptr` supplied,
+    /// `op`/`tr` defaulted).
+    /// CSGMesh.hpp:75-82
     pub fn from_mesh(mesh: MeshPtr) -> Self {
         Self {
             mesh,
@@ -237,8 +238,9 @@ impl CSGPart {
         }
     }
 
-    /// Create a CSG part with mesh, operation, and transform
-    /// CSGMesh.hpp:64-68
+    /// Create a CSG part with mesh, operation, and transform (C++ ctor with all
+    /// three positional arguments supplied).
+    /// CSGMesh.hpp:75-82
     pub fn from_parts(mesh: MeshPtr, operation: CSGType, transform: Transform3D) -> Self {
         Self {
             mesh,
@@ -297,58 +299,61 @@ impl CSGPart {
 }
 
 impl Default for CSGPart {
-    /// Create a default CSG part
-    /// CSGMesh.hpp:64-68
+    /// Create a default CSG part (C++ default-constructed `CSGPart`).
+    /// CSGMesh.hpp:75-82
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Get the CSG operation of a part.
-///
-/// This is a generic function that can be overridden for custom types.
-/// For CSGPart, it simply returns the operation field.
-///
-/// CSGMesh.hpp:40-43
+// CSGMesh.hpp:40  Get the CSG operation of the part. Can be overriden for any type
+// CSGMesh.hpp:41-44
+// template<class CSGPartT> CSGType get_operation(const CSGPartT &part)
+// {
+//     return part.operation;
+// }
 #[inline]
 pub fn get_operation(part: &CSGPart) -> CSGType {
-    // CSGMesh.hpp:42
+    // CSGMesh.hpp:43  return part.operation;
     part.operation
 }
 
-/// Get the stack operation required by the CSG part.
-///
-/// This is a generic function that can be overridden for custom types.
-/// For CSGPart, it simply returns the stack_operation field.
-///
-/// CSGMesh.hpp:45-48
+// CSGMesh.hpp:46  Get the stack operation required by the CSG part.
+// CSGMesh.hpp:47-50
+// template<class CSGPartT> CSGStackOp get_stack_operation(const CSGPartT &part)
+// {
+//     return part.stack_operation;
+// }
 #[inline]
 pub fn get_stack_operation(part: &CSGPart) -> CSGStackOp {
-    // CSGMesh.hpp:47
+    // CSGMesh.hpp:49  return part.stack_operation;
     part.stack_operation
 }
 
-/// Get the mesh for the part.
-///
-/// This is a generic function that can be overridden for custom types.
-/// For CSGPart, it returns a reference to the mesh if available.
-///
-/// CSGMesh.hpp:50-53
+// CSGMesh.hpp:52  Get the mesh for the part. Can be overriden for any type
+// CSGMesh.hpp:53-57
+// template<class CSGPartT>
+// const indexed_triangle_set *get_mesh(const CSGPartT &part)
+// {
+//     return part.its_ptr.get();
+// }
 #[inline]
 pub fn get_mesh(part: &CSGPart) -> Option<&TriangleMesh> {
-    // CSGMesh.hpp:52
+    // CSGMesh.hpp:56  return part.its_ptr.get();
     part.mesh.get()
 }
 
-/// Get the transformation associated with the mesh inside a CSGPart object.
-///
-/// This is a generic function that can be overridden for custom types.
-/// For CSGPart, it returns a copy of the transformation matrix.
-///
-/// CSGMesh.hpp:55-58
+// CSGMesh.hpp:59-60  Get the transformation associated with the mesh inside a
+// CSGPartT object. Can be overriden for any type.
+// CSGMesh.hpp:61-65
+// template<class CSGPartT>
+// Transform3f get_transform(const CSGPartT &part)
+// {
+//     return part.trafo;
+// }
 #[inline]
 pub fn get_transform(part: &CSGPart) -> Transform3D {
-    // CSGMesh.hpp:57
+    // CSGMesh.hpp:64  return part.trafo;
     part.transform
 }
 

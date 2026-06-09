@@ -20,6 +20,13 @@
 /// Each execution policy (sequential, parallel) implements this trait.
 ///
 /// Execution/Execution.hpp:26
+///
+/// In C++ the namespace-level alias templates
+/// `template<class EP> using SpinningMutex = typename Traits<EP>::SpinningMutex;`
+/// and `template<class EP> using BlockingMutex = typename Traits<EP>::BlockingMutex;`
+/// (Execution/Execution.hpp:30-33) forward to per-policy mutex types. In this Rust
+/// port those mutex types are exposed as concrete `type` aliases inside each policy
+/// module (see `execution_seq::{SpinningMutex, BlockingMutex}` and the TBB equivalent).
 pub trait ExecutionPolicy: Send + Sync {
     /// Execute a function for each element in a range.
     ///

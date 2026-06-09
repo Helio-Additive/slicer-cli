@@ -503,9 +503,11 @@ impl ExPolygonWithOffset {
         };
 
         // Compute inner offset
-        let polygons_inner = if aoffset2 < 0 {
+        // FillRectilinear.cpp:482 — shrink(polygons_outer, float(aoffset1 - aoffset2), ...).
+        // shrink() offsets by a negative amount; aoffset1 - aoffset2 > 0 here (aoffset2 more
+        // negative than aoffset1), so we offset polygons_outer inward by (aoffset1 - aoffset2).
+        let mut polygons_inner = if aoffset2 < 0 {
             let shrink_amount = unscale(aoffset1 - aoffset2);
-            let outer_as_expolygons = polygons_to_expolygons_simple(&polygons_outer);
             let result =
                 offset_polygons(&polygons_outer, -shrink_amount.abs(), OffsetJoinType::Miter);
             expolygons_to_polygons(&result)
@@ -513,27 +515,36 @@ impl ExPolygonWithOffset {
             Vec::new()
         };
 
-        // Filter small contours
+        // Filter out contours with zero area or small area, contours with 2 points only.
+        // FillRectilinear.cpp:485 — min_area = 0.01 * aoffset2 * aoffset2 (scaled units).
         let min_area_threshold = 0.01 * (aoffset2 as f64) * (aoffset2 as f64);
-        let polygons_outer: Vec<Polygon> = polygons_outer
+        // remove_small keeps polygons with abs(area) >= min_area. FillRectilinear.cpp:486-487
+        let mut polygons_outer: Vec<Polygon> = polygons_outer
             .into_iter()
-            .filter(|p| p.area().abs() > min_area_threshold.abs())
+            .filter(|p| p.area().abs() >= min_area_threshold)
             .collect();
-        let polygons_inner: Vec<Polygon> = polygons_inner
-            .into_iter()
-            .filter(|p| p.area().abs() > min_area_threshold.abs())
-            .collect();
+        polygons_inner.retain(|p| p.area().abs() >= min_area_threshold);
+        // remove_sticks(polygons_outer); remove_sticks(polygons_inner); FillRectilinear.cpp:488-489
+        for poly in &mut polygons_outer {
+            remove_sticks_polygon(poly);
+        }
+        for poly in &mut polygons_inner {
+            remove_sticks_polygon(poly);
+        }
 
         let n_contours_outer = polygons_outer.len();
         let n_contours_inner = polygons_inner.len();
         let n_contours = n_contours_outer + n_contours_inner;
 
-        // Determine CCW for each contour
+        // FillRectilinear.cpp:493-498 — polygons_ccw.assign(n_contours, false); for each
+        // contour: remove_duplicate_points(), then record is_ccw(contour(i)).
         let mut polygons_ccw = Vec::with_capacity(n_contours);
         for i in 0..n_contours_outer {
+            crate::multi_point::remove_duplicate_points(polygons_outer[i].points_mut());
             polygons_ccw.push(polygons_outer[i].is_counter_clockwise());
         }
         for i in 0..n_contours_inner {
+            crate::multi_point::remove_duplicate_points(polygons_inner[i].points_mut());
             polygons_ccw.push(polygons_inner[i].is_counter_clockwise());
         }
 
@@ -609,6 +620,11 @@ pub struct FillRectilinearParams {
     pub full_infill: bool,
     /// Whether to adjust spacing for solid layers.
     pub dont_adjust: bool,
+    /// Whether the infill pattern must be consistent between layers (ZigZag /
+    /// CrossZag / LockedZag). FillRectilinear.hpp:152 `has_consistent_pattern()`.
+    /// When true, traversal switches between forward and backward passes by line
+    /// index and never connects to the previous vertical line.
+    pub consistent_pattern: bool,
 }
 
 impl Default for FillRectilinearParams {
@@ -620,6 +636,7 @@ impl Default for FillRectilinearParams {
             link_max_length: 0,
             full_infill: true,
             dont_adjust: false,
+            consistent_pattern: false,
         }
     }
 }
@@ -832,17 +849,24 @@ pub fn slice_region_by_vertical_lines(
                 (p2.x, p1.x)
             };
 
-            // il, ir: indices of vertical lines that intersect this segment
-            let mut il = ((l - x0) as f64 / line_spacing as f64).ceil() as i64;
-            if il < 0 {
-                il = 0;
+            // il, ir are the left / right indices of vertical lines intersecting a segment
+            // FillRectilinear.cpp:845 — use exact integer arithmetic (C division truncates
+            // toward zero), NOT floating-point ceil/floor, for byte-exact parity.
+            let mut il = (l - x0) / line_spacing; // FillRectilinear.cpp:845
+            while il * line_spacing + x0 < l {
+                // FillRectilinear.cpp:846
+                il += 1;
             }
-            let mut ir = ((r - x0) as f64 / line_spacing as f64).floor() as i64;
-            if ir >= n_vlines as i64 {
-                ir = n_vlines as i64 - 1;
+            il = std::cmp::max(0, il); // FillRectilinear.cpp:848
+            let mut ir = (r - x0 + line_spacing) / line_spacing; // FillRectilinear.cpp:849
+            while ir * line_spacing + x0 > r {
+                // FillRectilinear.cpp:850
+                ir -= 1;
             }
-
+            ir = std::cmp::min(segs.len() as Coord - 1, ir); // FillRectilinear.cpp:852
             if il > ir {
+                // No vertical line intersects this segment.
+                // FillRectilinear.cpp:853
                 continue;
             }
 
@@ -911,25 +935,18 @@ pub fn slice_region_by_vertical_lines(
         }
     }
 
-    // Sort intersections on each vertical line by Y position and clean up duplicates
+    // Sort the intersections along their segments, specify the intersection types.
+    // FillRectilinear.cpp:918
     for sil in &mut segs {
-        // Sort by Y position, with type as tiebreaker for same-position same-contour
-        sil.intersections.sort_by(|a, b| {
-            let pos_cmp = if a.pos_equal(b) {
-                if a.i_contour == b.i_contour {
-                    a.itype.cmp(&b.itype)
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            } else if a.pos_less_than(b) {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            };
-            if pos_cmp != std::cmp::Ordering::Equal {
-                return pos_cmp;
+        // Sort the intersection points using exact rational arithmetic.
+        // BBS: if the LOW and HIGH has seam y pos, LOW should be first
+        // FillRectilinear.cpp:922 — comparator uses the integer-rounded pos(), with type
+        // as the tiebreaker only when pos() and iContour are equal.
+        sil.intersections.sort_by(|l, r| {
+            if l.pos() == r.pos() && l.i_contour == r.i_contour {
+                return l.itype.cmp(&r.itype);
             }
-            a.pos().cmp(&b.pos())
+            l.pos().cmp(&r.pos())
         });
 
         // Apply the type-order fix-up (adjust_sort_for_segment_intersections)
@@ -1645,26 +1662,34 @@ pub fn traverse_graph_generate_polylines(
 
     loop {
         if i_intersection == -1 {
-            // Find the next unconsumed starting point (sweep left to right).
+            // The path has been interrupted. Find a next starting point.
+            // FillRectilinear.cpp:1462
             let mut found = false;
             for iv in 0..segs.len() {
                 let vline = &segs[iv];
                 if vline.intersections.is_empty() {
                     continue;
                 }
-                for i in 0..vline.intersections.len() {
-                    let intrsctn = &vline.intersections[i];
+                // For infill that needs to be consistent between layers (like Zig Zag),
+                // we are switching between forward and backward passes based on the line
+                // index. FillRectilinear.cpp:1472-1474
+                let forward_pass = !params.consistent_pattern || (iv % 2 == 0);
+                let n = vline.intersections.len();
+                for i in 0..n {
+                    // FillRectilinear.cpp:1476
+                    let intrsctn_idx = if forward_pass { i } else { n - i - 1 };
+                    let intrsctn = &vline.intersections[intrsctn_idx];
                     if intrsctn.is_outer() {
                         let consumed = if intrsctn.is_low() {
                             intrsctn.consumed_vertical_up
-                        } else if i > 0 {
-                            vline.intersections[i - 1].consumed_vertical_up
+                        } else if intrsctn_idx > 0 {
+                            vline.intersections[intrsctn_idx - 1].consumed_vertical_up
                         } else {
                             true
                         };
                         if !consumed {
                             i_vline = iv as i32;
-                            i_intersection = i as i32;
+                            i_intersection = intrsctn_idx as i32;
                             found = true;
                             break;
                         }
@@ -1759,9 +1784,13 @@ pub fn traverse_graph_generate_polylines(
             let i_prev = it.left_horizontal();
             let i_next = it.right_horizontal();
 
+            // To ensure pattern consistency between layers for Zig Zag infill, we always
+            // try to connect to the next vertical line and never to the previous vertical
+            // line. FillRectilinear.cpp:1560
             let prev_valid = i_prev >= 0
                 && iv > 0
-                && intersection_on_prev_vertical_line_valid(segs, iv, current_ii);
+                && intersection_on_prev_vertical_line_valid(segs, iv, current_ii)
+                && !params.consistent_pattern;
             let next_valid = i_next >= 0
                 && iv + 1 < segs.len()
                 && intersection_on_next_vertical_line_valid(segs, iv, current_ii);
@@ -1950,13 +1979,18 @@ pub fn traverse_graph_generate_polylines(
             }
         }
 
-        // Clean up the polyline
+        // Handle duplicate points and zero length segments.
+        // FillRectilinear.cpp:1647 — remove_duplicate_points() before the pop-back check.
+        if let Some(last_polyline) = polylines_out.last_mut() {
+            crate::multi_point::remove_duplicate_points(last_polyline.points_mut());
+        }
+        // Handle nearly zero length edges. FillRectilinear.cpp:1650
         if let Some(last_polyline) = polylines_out.last() {
             let pts = last_polyline.points();
             let should_remove = pts.len() <= 1
                 || (pts.len() == 2
-                    && (pts[0].x - pts[1].x).abs() < SCALED_EPSILON
-                    && (pts[0].y - pts[1].y).abs() < SCALED_EPSILON);
+                    && (pts[0].x - pts[pts.len() - 1].x).abs() < SCALED_EPSILON
+                    && (pts[0].y - pts[pts.len() - 1].y).abs() < SCALED_EPSILON);
             if should_remove {
                 polylines_out.pop();
             }
@@ -2056,12 +2090,12 @@ pub fn fill_surface_by_lines(
     // Traverse the graph to generate polylines
     traverse_graph_generate_polylines(&poly_with_offset, params, &mut segs, &mut polylines_out);
 
-    // Rotate polylines back to original coordinate space
+    // paths must be rotated back. FillRectilinear.cpp:2967
     for polyline in &mut polylines_out {
-        // Remove duplicate points first
-        polyline.points_mut().dedup();
-        // Rotate back
+        // Rotate back by rotate_vector.first, then remove duplicate points (rotation may
+        // collapse distinct scaled points). FillRectilinear.cpp:2971-2974
         polyline.rotate(angle);
+        crate::multi_point::remove_duplicate_points(polyline.points_mut());
     }
 
     // Filter out degenerate polylines
@@ -2120,6 +2154,7 @@ pub fn generate_fill_rectilinear(
         dont_adjust: false,
         monotonic: false,
         link_max_length: config.link_max_length,
+        consistent_pattern: false,
     };
 
     for expoly in fill_area {
@@ -4083,6 +4118,7 @@ pub fn generate_fill_rectilinear_monotonic(
         dont_adjust: false,
         monotonic,
         link_max_length: config.link_max_length,
+        consistent_pattern: false,
     };
 
     let fill_fn = if monotonic {
@@ -4421,7 +4457,7 @@ mod tests {
     fn test_generate_fill_rectilinear() {
         let square = make_square(0.0, 0.0, 20.0);
         let config = InfillConfig {
-            pattern: crate::infill::InfillPattern::Rectilinear,
+            pattern: super::InfillPattern::Rectilinear,
             density: 1.0,
             extrusion_width: 0.45,
             angle: 45.0,
@@ -4441,7 +4477,7 @@ mod tests {
     fn test_generate_fill_rectilinear_grid() {
         let square = make_square(0.0, 0.0, 20.0);
         let config = InfillConfig {
-            pattern: crate::infill::InfillPattern::Grid,
+            pattern: super::InfillPattern::Grid,
             density: 0.2,
             extrusion_width: 0.45,
             angle: 0.0,

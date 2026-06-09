@@ -367,6 +367,102 @@ pub mod aabb_tree_indirect_2d {
         }
     }
 
+    /// Wrap a 2D Slic3r own `BoundingBox` to be passed to `Tree::build()` and similar
+    /// to build an AABBTree over `coord_t` 2D bounding boxes.
+    /// AABBTreeIndirect.hpp:223-236 `class BoundingBoxWrapper`
+    pub struct BoundingBoxWrapper {
+        // AABBTreeIndirect.hpp:234
+        m_idx: usize,
+        // AABBTreeIndirect.hpp:235 — `Eigen::AlignedBox<coord_t, 2>` inflated by SCALED_EPSILON.
+        m_bbox: BoundingBox,
+    }
+
+    impl BoundingBoxWrapper {
+        // AABBTreeIndirect.hpp:226-229
+        // C++: BoundingBoxWrapper(const size_t idx, const Slic3r::BoundingBox &bbox) :
+        // C++:     m_idx(idx),
+        // C++:     // Inflate the bounding box a bit to account for numerical issues.
+        // C++:     m_bbox(bbox.min - Point(SCALED_EPSILON, SCALED_EPSILON), bbox.max + Point(SCALED_EPSILON, SCALED_EPSILON)) {}
+        pub fn new(idx: usize, bbox: &crate::geometry::BoundingBox) -> Self {
+            // SCALED_EPSILON = 10.0; integer Point(delta, delta) truncates toward zero -> 10.
+            let eps = crate::libslic3r::SCALED_EPSILON as i64;
+            Self {
+                m_idx: idx,
+                m_bbox: BoundingBox {
+                    min: [(bbox.min.x - eps) as f64, (bbox.min.y - eps) as f64],
+                    max: [(bbox.max.x + eps) as f64, (bbox.max.y + eps) as f64],
+                },
+            }
+        }
+    }
+
+    impl SourceNode for BoundingBoxWrapper {
+        // AABBTreeIndirect.hpp:230
+        fn idx(&self) -> usize {
+            self.m_idx
+        }
+        // AABBTreeIndirect.hpp:232 — ((min.cast<int64_t>() + max.cast<int64_t>()) / 2).cast<int32_t>()
+        fn centroid(&self) -> [f64; 2] {
+            [
+                ((self.m_bbox.min[0] as i64 + self.m_bbox.max[0] as i64) / 2) as f64,
+                ((self.m_bbox.min[1] as i64 + self.m_bbox.max[1] as i64) / 2) as f64,
+            ]
+        }
+        // AABBTreeIndirect.hpp:231
+        fn bbox(&self) -> BoundingBox {
+            self.m_bbox
+        }
+    }
+
+    /// Recursive traversal helper.
+    /// AABBTreeIndirect.hpp:943-971 `detail::traverse_recurse`
+    /// Returns true in case traversal should continue,
+    /// returns false if traversal should stop (for example if the first hit was found).
+    fn traverse_recurse<P, F>(tree: &Tree, idx: usize, pred: &mut P, callback: &mut F) -> bool
+    where
+        P: FnMut(&Node) -> bool,
+        F: FnMut(&Node) -> bool,
+    {
+        // AABBTreeIndirect.hpp:949
+        debug_assert!(tree.node(idx).is_valid());
+
+        // AABBTreeIndirect.hpp:951-953
+        if !pred(tree.node(idx)) {
+            // Continue traversal.
+            return true;
+        }
+
+        // AABBTreeIndirect.hpp:955-970
+        if tree.node(idx).is_leaf() {
+            // Callback returns true to continue traversal, false to stop traversal.
+            // AABBTreeIndirect.hpp:957
+            callback(tree.node(idx))
+        } else {
+            // Left / right child node index.
+            // Returns true if both children allow the traversal to continue.
+            // AABBTreeIndirect.hpp:968-969
+            traverse_recurse(tree, Tree::left_child_idx(idx), pred, callback)
+                && traverse_recurse(tree, Tree::right_child_idx(idx), pred, callback)
+        }
+    }
+
+    /// Tree traversal with a predicate.
+    /// AABBTreeIndirect.hpp:980-987 `traverse`
+    /// Callback shall return true to continue traversal, false if it wants to stop
+    /// traversal, for example if it found the answer.
+    pub fn traverse<P, F>(tree: &Tree, mut pred: P, mut callback: F)
+    where
+        P: FnMut(&Node) -> bool,
+        F: FnMut(&Node) -> bool,
+    {
+        // AABBTreeIndirect.hpp:983
+        if tree.empty() {
+            return;
+        }
+        // AABBTreeIndirect.hpp:985
+        traverse_recurse(tree, 0, &mut pred, &mut callback);
+    }
+
     /// Calculate next highest power of 2 (Utils.hpp).
     fn next_highest_power_of_2(mut v: usize) -> usize {
         if v == 0 {

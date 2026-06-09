@@ -6,6 +6,17 @@
 //! Implements the ExecutionPolicy trait using rayon for parallel execution.
 //! This is the Rust equivalent of the C++ TBB-based execution policy.
 //! Rayon provides work-stealing parallelism similar to TBB.
+//!
+//! Faithfulness notes (the C++ is a header-only template specialization that
+//! cannot be expressed verbatim in Rust):
+//! - C++ uses template specialization + SFINAE (`execution::Traits<ExecutionTBB>`,
+//!   `IsExecutionPolicy_<ExecutionTBB> : std::true_type`). Rust uses the
+//!   `ExecutionPolicy` trait (see execution.rs) implemented by `ParallelPolicy`.
+//! - The two private `loop_` helpers (ExecutionTBB.hpp:24-34) dispatch on whether
+//!   the range is over iterators or integers; in Rust the integer-range loop is
+//!   `from..to` and the slice loop is `par_iter`, folded directly into each method.
+//! - TBB native backend (`tbb::*`) is replaced by rayon, which is pure-Rust and
+//!   wasm-safe (no system/dylib dependency).
 
 use super::execution::ExecutionPolicy;
 use rayon::prelude::*;
@@ -15,13 +26,16 @@ use rayon::prelude::*;
 /// This is the Rust equivalent of C++'s `ExecutionTBB` which uses Intel TBB.
 /// Rayon provides similar work-stealing parallelism.
 ///
-/// ExecutionTBB.hpp:15
+/// ExecutionTBB.hpp:15: `struct ExecutionTBB {};`
+/// ExecutionTBB.hpp:16: `template<> struct IsExecutionPolicy_<ExecutionTBB> : public std::true_type {};`
 #[derive(Debug, Clone, Copy)]
 pub struct ParallelPolicy;
 
 /// Global instance of the parallel execution policy.
 ///
-/// ExecutionTBB.hpp:19: `static constexpr ExecutionTBB ex_tbb = {};`
+/// ExecutionTBB.hpp:18-19:
+/// `// Execution policy using Intel TBB library under the hood.`
+/// `static constexpr ExecutionTBB ex_tbb = {};`
 pub static EX_TBB: ParallelPolicy = ParallelPolicy;
 
 /// Spinning mutex type for parallel policy.
@@ -41,8 +55,21 @@ pub type BlockingMutex<T> = std::sync::Mutex<T>;
 impl ExecutionPolicy for ParallelPolicy {
     /// Parallel for_each using rayon.
     ///
-    /// ExecutionTBB.hpp:40-48
-    /// C++: tbb::parallel_for(tbb::blocked_range{from, to, granularity}, ...)
+    /// ExecutionTBB.hpp:40-48:
+    /// ```cpp
+    /// template<class It, class Fn>
+    /// static void for_each(const ExecutionTBB &,
+    ///                      It from, It to, Fn &&fn, size_t granularity)
+    /// {
+    ///     tbb::parallel_for(tbb::blocked_range{from, to, granularity},
+    ///                       [&fn](const auto &range) {
+    ///         loop_(range, std::forward<Fn>(fn));
+    ///     });
+    /// }
+    /// ```
+    /// The integer `loop_` (ExecutionTBB.hpp:30-34) iterates `i` from `range.begin()`
+    /// to `range.end()`; rayon partitions `from..to` and applies `fn` to each `i`.
+    /// Granularity is ignored: rayon manages its own work-splitting.
     fn for_each<F>(&self, from: usize, to: usize, f: F, _granularity: usize)
     where
         F: Fn(usize) + Send + Sync,
@@ -70,8 +97,21 @@ impl ExecutionPolicy for ParallelPolicy {
 
     /// Parallel reduce using rayon.
     ///
-    /// ExecutionTBB.hpp:50-68
-    /// C++: tbb::parallel_reduce(tbb::blocked_range{from, to, granularity}, init, ...)
+    /// ExecutionTBB.hpp:50-68:
+    /// ```cpp
+    /// return tbb::parallel_reduce(
+    ///     tbb::blocked_range{from, to, granularity}, init,
+    ///     [&](const auto &range, T subinit) {
+    ///         T acc = subinit;
+    ///         loop_(range, [&](auto &i) { acc = mergefn(acc, access(i)); });
+    ///         return acc;
+    ///     },
+    ///     std::forward<MergeFn>(mergefn));
+    /// ```
+    /// In TBB `init` is the identity seed supplied as `subinit` to each leaf range.
+    /// rayon's `reduce` takes an identity closure `|| init.clone()` and the same
+    /// `merge` (mergefn) for both leaf folding and inter-range combination, matching
+    /// TBB's two uses of `mergefn`.
     fn reduce<T, MergeFn, AccessFn>(
         &self,
         from: usize,
@@ -106,8 +146,13 @@ impl ExecutionPolicy for ParallelPolicy {
 
     /// Query the number of rayon threads available.
     ///
-    /// ExecutionTBB.hpp:70-73
-    /// C++: return tbb::this_task_arena::max_concurrency();
+    /// ExecutionTBB.hpp:70-73:
+    /// ```cpp
+    /// static size_t max_concurrency(const ExecutionTBB &)
+    /// {
+    ///     return tbb::this_task_arena::max_concurrency();
+    /// }
+    /// ```
     fn max_concurrency(&self) -> usize {
         rayon::current_num_threads()
     }

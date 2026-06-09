@@ -9,7 +9,7 @@
 //! - Support generation
 //! - Layer boolean operations
 
-use crate::geometry::{ExPolygon, ExPolygons, Point, Polygon, Polyline};
+use crate::geometry::{BoundingBox, ExPolygon, ExPolygons, Point, Polygon, Polyline};
 use crate::surface::Surface;
 use crate::{unscale, Coord, CoordF};
 use geo::{Coord as GeoCoord, LineString, MultiLineString, MultiPolygon, Polygon as GeoPolygon};
@@ -1041,6 +1041,131 @@ fn point_in_expolygons(pt: Point, expolygons: &[ExPolygon]) -> bool {
 ///
 /// # Returns
 /// A vector of polylines representing the portions outside the clip regions.
+// Clip source polygon to be used as a clipping polygon with a bounding box around the source (to be clipped) polygon.
+// Useful as an optimization for expensive ClipperLib operations, for example when clipping source polygons one by one
+// with a set of polygons covering the whole layer below.
+// ClipperUtils.cpp:66-118 `clip_clipper_polygon_with_subject_bbox_templ`
+fn clip_clipper_polygon_with_subject_bbox_points(
+    src: &[Point],
+    bbox: &BoundingBox,
+    out: &mut Vec<Point>,
+    get_entire_polygons: bool,
+) {
+    // ClipperUtils.cpp:68
+    out.clear();
+    // ClipperUtils.cpp:69-70
+    let cnt = src.len();
+    if cnt < 3 {
+        return;
+    }
+
+    // ClipperUtils.cpp:72-77
+    // enum class Side { Left = 1, Right = 2, Top = 4, Bottom = 8 };
+    const SIDE_LEFT: i32 = 1;
+    const SIDE_RIGHT: i32 = 2;
+    const SIDE_TOP: i32 = 4;
+    const SIDE_BOTTOM: i32 = 8;
+
+    // ClipperUtils.cpp:78-83
+    let sides = |p: &Point| -> i32 {
+        (p.x < bbox.min.x) as i32 * SIDE_LEFT
+            + (p.x > bbox.max.x) as i32 * SIDE_RIGHT
+            + (p.y < bbox.min.y) as i32 * SIDE_BOTTOM
+            + (p.y > bbox.max.y) as i32 * SIDE_TOP
+    };
+
+    // ClipperUtils.cpp:85-87
+    let mut sides_prev = sides(&src[cnt - 1]);
+    let mut sides_this = sides(&src[0]);
+    let last = cnt - 1;
+    // ClipperUtils.cpp:88-102
+    for i in 0..last {
+        let sides_next = sides(&src[i + 1]);
+        if
+        // This point is inside. Take it.
+        sides_this == 0 ||
+            // Either this point is outside and previous or next is inside, or
+            // the edge possibly cuts corner of the bounding box.
+            (sides_prev & sides_this & sides_next) == 0
+        {
+            // ClipperUtils.cpp:95-96
+            out.push(src[i]);
+            sides_prev = sides_this;
+        } else {
+            // ClipperUtils.cpp:98-100
+            // All the three points (this, prev, next) are outside at the same side.
+            // Ignore this point.
+        }
+        // ClipperUtils.cpp:101
+        sides_this = sides_next;
+    }
+
+    // ClipperUtils.cpp:104-116
+    // Never produce just a single point output polygon.
+    if !out.is_empty() {
+        if get_entire_polygons {
+            // ClipperUtils.cpp:107
+            *out = src.to_vec();
+        } else {
+            // ClipperUtils.cpp:109-115
+            let sides_next = sides(&out[0]);
+            if
+            // The last point is inside. Take it.
+            sides_this == 0 ||
+                // Either this point is outside and previous or next is inside, or
+                // the edge possibly cuts corner of the bounding box.
+                (sides_prev & sides_this & sides_next) == 0
+            {
+                out.push(src[cnt - 1]);
+            }
+        }
+    }
+}
+
+// ClipperUtils.cpp:137-142 `Polygon clip_clipper_polygon_with_subject_bbox(const Polygon &src, const BoundingBox &bbox, const bool get_entire_polygons)`
+fn clip_clipper_polygon_with_subject_bbox(
+    src: &Polygon,
+    bbox: &BoundingBox,
+    get_entire_polygons: bool,
+) -> Polygon {
+    // ClipperUtils.cpp:139-141
+    let mut out = Polygon::new();
+    clip_clipper_polygon_with_subject_bbox_points(
+        src.points(),
+        bbox,
+        out.points_mut(),
+        get_entire_polygons,
+    );
+    out
+}
+
+// ClipperUtils.cpp:152-160 `Polygons clip_clipper_polygons_with_subject_bbox(const ExPolygon &src, const BoundingBox &bbox, const bool get_entire_polygons)`
+pub fn clip_clipper_polygons_with_subject_bbox_expolygon(
+    src: &ExPolygon,
+    bbox: &BoundingBox,
+    get_entire_polygons: bool,
+) -> Vec<Polygon> {
+    // ClipperUtils.cpp:154-155
+    let mut out: Vec<Polygon> = Vec::with_capacity(src.num_contours());
+    // ClipperUtils.cpp:156
+    out.push(clip_clipper_polygon_with_subject_bbox(
+        &src.contour,
+        bbox,
+        get_entire_polygons,
+    ));
+    // ClipperUtils.cpp:157
+    for p in &src.holes {
+        out.push(clip_clipper_polygon_with_subject_bbox(
+            p,
+            bbox,
+            get_entire_polygons,
+        ));
+    }
+    // ClipperUtils.cpp:158
+    out.retain(|polygon| !polygon.is_empty());
+    out
+}
+
 pub fn diff_pl(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
     if polylines.is_empty() {
         return vec![];
