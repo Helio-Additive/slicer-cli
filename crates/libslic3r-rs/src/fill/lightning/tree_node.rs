@@ -77,9 +77,7 @@ impl Node {
         let mut result = Vec::new();
         for child in &self.children {
             // Edge from self to child
-            result.push(Polyline {
-                points: vec![self.location, child.location],
-            });
+            result.push(Polyline::from_points(vec![self.location, child.location]));
             // Recurse into child's subtree
             result.extend(child.to_polylines());
         }

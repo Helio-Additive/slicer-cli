@@ -33,7 +33,7 @@
 //! let intersects = grid.line_intersects_any(&Point::new(500000, -100000), &Point::new(500000, 500000));
 //! ```
 
-use crate::geometry::{BoundingBox, Line, Point, Polygon, Polyline};
+use crate::geometry::{BoundingBox, ExPolygon, Line, Point, Polygon, Polyline};
 
 /// A contour represents a sequence of points forming either an open polyline or closed polygon
 /// EdgeGrid.hpp:15-89
@@ -132,6 +132,17 @@ impl Contour {
             &self.points[self.points.len() - 1]
         } else {
             &self.points[idx - 1]
+        }
+    }
+
+    /// Index of a segment following `idx` (closed contour wraps to 0).
+    /// EdgeGrid.hpp:57-62 — `++ idx; return m_begin + idx == m_end ? 0 : idx;`
+    pub fn segment_idx_next(&self, idx: usize) -> usize {
+        let idx = idx + 1;
+        if idx == self.points.len() {
+            0
+        } else {
+            idx
         }
     }
 
@@ -372,6 +383,60 @@ impl EdgeGrid {
             .chain(polylines.iter().map(Contour::from_polyline))
             .collect();
         self.create_from_contours(resolution);
+    }
+
+    /// Create the grid from an ExPolygon (outer contour + holes, all closed).
+    /// EdgeGrid.cpp:104-115
+    pub fn create_from_expolygon(&mut self, expoly: &ExPolygon, resolution: i64) {
+        // EdgeGrid.cpp:106-112
+        self.contours = Vec::new();
+        if !expoly.contour.points().is_empty() {
+            self.contours.push(Contour::new_closed(expoly.contour.points().to_vec()));
+        }
+        for hole in &expoly.holes {
+            if !hole.points().is_empty() {
+                self.contours.push(Contour::new_closed(hole.points().to_vec()));
+            }
+        }
+        // EdgeGrid.cpp:114
+        self.create_from_contours(resolution);
+    }
+
+    /// Visit all grid cells intersected by the bounding box `bbox`, calling
+    /// `visitor(iy, ix)` for each. The visitor returns `false` to stop early.
+    /// EdgeGrid.hpp:368-385
+    pub fn visit_cells_intersecting_box<F>(&self, bbox: BoundingBox, mut visitor: F)
+    where
+        F: FnMut(usize, usize) -> bool,
+    {
+        // EdgeGrid.hpp:371-372 — End points of the line segment.
+        let mut bmin = Point::new(bbox.min.x - self.bbox.min.x, bbox.min.y - self.bbox.min.y);
+        let mut bmax = Point::new(
+            bbox.max.x - (self.bbox.min.x + 1),
+            bbox.max.y - (self.bbox.min.y + 1),
+        );
+        // EdgeGrid.hpp:374-375 — Get the cells of the end points.
+        bmin.x /= self.resolution;
+        bmin.y /= self.resolution;
+        bmax.x /= self.resolution;
+        bmax.y /= self.resolution;
+        // EdgeGrid.hpp:377-380 — Trim with the cells.
+        bmin.x = bmin.x.max(0);
+        bmin.y = bmin.y.max(0);
+        bmax.x = bmax.x.min(self.cols as i64 - 1);
+        bmax.y = bmax.y.min(self.rows as i64 - 1);
+        // EdgeGrid.hpp:381-384
+        let mut iy = bmin.y;
+        while iy <= bmax.y {
+            let mut ix = bmin.x;
+            while ix <= bmax.x {
+                if !visitor(iy as usize, ix as usize) {
+                    return;
+                }
+                ix += 1;
+            }
+            iy += 1;
+        }
     }
 
     /// Internal: create the grid from stored contours

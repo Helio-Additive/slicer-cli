@@ -778,7 +778,7 @@ impl PerimeterGenerator {
                         Vec::new();
                     for entity in result.entities.entities.drain(..) {
                         let is_second_peri = match &entity {
-                            ExtrusionEntityType::Loop(l) => l.role.contains(
+                            ExtrusionEntityType::Loop(l) => l.loop_role.contains(
                                 crate::extrusion_entity::ExtrusionLoopRole::SECOND_PERIMETER,
                             ),
                             _ => false,
@@ -1171,7 +1171,7 @@ fn traverse_loops(
             None, // TODO: pass previous layer's seam position for alignment
             &crate::gcode::seam_placer::SeamPlacerConfig::default(),
         );
-        path.polyline = polygon.split_at_index(seam_idx);
+        path.polyline = polygon.split_at_index(seam_idx as i32);
         path.overhang_degree = 0;
         path.curve_degree = 0;
         path.mm3_per_mm = extrusion_mm3_per_mm;

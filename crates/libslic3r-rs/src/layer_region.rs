@@ -145,11 +145,11 @@ pub fn simplify_path(
         } else {
             scaled_resolution
         };
-        path.polyline.simplify(tol as crate::Coord);
+        path.polyline.simplify(tol);
     } else {
         // LayerRegion.cpp:800
         // path->simplify(scaled_resolution);
-        path.polyline.simplify(scaled_resolution as crate::Coord);
+        path.polyline.simplify(scaled_resolution);
     }
 }
 
@@ -181,11 +181,11 @@ pub fn simplify_loop(
             } else {
                 scaled_resolution
             };
-            path.polyline.simplify(tol as crate::Coord);
+            path.polyline.simplify(tol);
         } else {
             // LayerRegion.cpp:839
             // loop->paths[i].simplify(scaled_resolution);
-            path.polyline.simplify(scaled_resolution as crate::Coord);
+            path.polyline.simplify(scaled_resolution);
         }
     }
 }

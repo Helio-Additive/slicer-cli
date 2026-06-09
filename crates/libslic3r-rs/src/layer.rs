@@ -1182,17 +1182,17 @@ impl Layer {
                                     current_segment.push(*pt);
                                 } else {
                                     if current_segment.len() >= 2 {
-                                        clipped.push(InfillPath::Line(crate::geometry::Polyline {
-                                            points: current_segment,
-                                        }));
+                                        clipped.push(InfillPath::Line(
+                                            crate::geometry::Polyline::from_points(current_segment),
+                                        ));
                                     }
                                     current_segment = Vec::new();
                                 }
                             }
                             if current_segment.len() >= 2 {
-                                clipped.push(InfillPath::Line(crate::geometry::Polyline {
-                                    points: current_segment,
-                                }));
+                                clipped.push(InfillPath::Line(
+                                    crate::geometry::Polyline::from_points(current_segment),
+                                ));
                             }
                         }
                         clipped

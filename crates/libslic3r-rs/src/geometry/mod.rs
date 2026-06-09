@@ -85,7 +85,7 @@ pub use geometry::{
     to_range_pi_pi, transform3d_from_string, translation_transform, Axis as TransformAxis,
     Transformation, TransformationSVD,
 };
-pub use line::{Line, Lines};
+pub use line::{Line, LineF, Lines};
 pub use medial_axis::{
     compute_medial_axis, compute_medial_axis_multi, compute_medial_axis_thick,
     distance_to_boundary, MedialAxisConfig,
@@ -94,7 +94,21 @@ pub use point::{
     collect_duplicates, has_duplicate_points, Point, Point3, Point3F, PointF, Points, Points3,
 };
 pub use polygon::{Polygon, Polygons};
-pub use polyline::{Polyline, Polylines};
+// Polygon.cpp free functions. Names that would collide with the ExPolygon-variant
+// re-exports (get_extents, count_points, to_lines, to_points, to_polylines,
+// to_polygons, polygons_append, remove_same_neighbor, get_extents_vector, area,
+// contains) are intentionally NOT glob-re-exported; reach them via
+// `crate::geometry::polygon::*`.
+pub use polygon::{
+    area_polygons, contains_polygon, contains_polygons, get_extents_polygons,
+    get_extents_rotated, get_extents_rotated_polygons, has_duplicate_points as has_duplicate_points_polygons,
+    make_circle, make_circle_num_segments, overlaps as overlaps_polygons, polygon_is_convex,
+    polygon_is_convex_poly, polygons_match, polygons_reverse, polygons_rotate, polygons_simplify,
+    remove_collinear, remove_collinear_polygons, remove_degenerate,
+    remove_same_neighbor_polygons, remove_small as remove_small_polygons, remove_sticks,
+    remove_sticks_polygons, total_length,
+};
+pub use polyline::{foot_pt, Polyline, Polylines};
 pub use simplify::{
     douglas_peucker, douglas_peucker_polygon, douglas_peucker_polyline, remove_collinear_points,
     remove_duplicate_points, simplify_comprehensive, simplify_polygon,

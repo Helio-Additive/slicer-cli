@@ -100,9 +100,7 @@ pub fn generate_line_infill(
         let mut idx = 0i32;
         while x <= bb.max.x {
             let (p1, p2) = filler.line_segment(idx, x, bb.min.y, bb.max.y);
-            result.push(Polyline {
-                points: vec![p1, p2],
-            });
+            result.push(Polyline::from_points(vec![p1, p2]));
             x += filler.line_spacing;
             idx += 1;
         }

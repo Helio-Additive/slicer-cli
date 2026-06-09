@@ -373,7 +373,7 @@ impl Honeycomb3DGenerator {
         // Simplify polylines
         let simplify_tolerance = (5.0 * spacing_scaled) as Coord;
         for pl in &mut polylines {
-            pl.simplify(simplify_tolerance);
+            pl.simplify(simplify_tolerance as f64);
         }
 
         // Clip to boundary

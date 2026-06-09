@@ -727,9 +727,7 @@ pub fn generate_infill(
                         (x as f64 * cos_a - bb.max.y as f64 * sin_a) as Coord,
                         (x as f64 * sin_a + bb.max.y as f64 * cos_a) as Coord,
                     );
-                    all_polylines.push(Polyline {
-                        points: vec![p1, p2],
-                    });
+                    all_polylines.push(Polyline::from_points(vec![p1, p2]));
                     x += spacing_scaled;
                 }
             }

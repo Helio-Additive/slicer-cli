@@ -461,6 +461,62 @@ impl ArcSegment {
 
         Some(arc)
     }
+
+    // Check if a point lies within the arc's angular span.
+    // Circle.cpp:242-254
+    // C++: bool ArcSegment::is_point_inside(const Point& point) const
+    pub fn is_point_inside(&self, point: Point) -> bool {
+        // Circle.cpp:244
+        let polar_theta = self.circle.get_polar_radians(point);
+        // Circle.cpp:245
+        let mut radian_delta = polar_theta - self.polar_start_theta;
+        // Circle.cpp:246-247
+        if radian_delta > 0.0 && self.direction == ArcDirection::Clockwise {
+            radian_delta -= 2.0 * std::f64::consts::PI;
+        // Circle.cpp:248-249
+        } else if radian_delta < 0.0 && self.direction == ArcDirection::CounterClockwise {
+            radian_delta += 2.0 * std::f64::consts::PI;
+        }
+
+        // Circle.cpp:251-253
+        if self.direction == ArcDirection::CounterClockwise {
+            radian_delta > 0.0 && radian_delta < self.angle_radians
+        } else {
+            radian_delta < 0.0 && radian_delta > self.angle_radians
+        }
+    }
+
+    // Clip the start of the arc at the given point.
+    // Circle.cpp:214-221
+    // C++: bool ArcSegment::clip_start(const Point &point)
+    pub fn clip_start(&mut self, point: Point) -> bool {
+        // Circle.cpp:216-217
+        if !self.is_valid() || point == self.circle.center || !self.is_point_inside(point) {
+            return false;
+        }
+        // Circle.cpp:218
+        self.start_point = self.circle.get_closest_point(point);
+        // Circle.cpp:219
+        self.update_angle_and_length();
+        // Circle.cpp:220
+        true
+    }
+
+    // Clip the end of the arc at the given point.
+    // Circle.cpp:223-230
+    // C++: bool ArcSegment::clip_end(const Point &point)
+    pub fn clip_end(&mut self, point: Point) -> bool {
+        // Circle.cpp:225-226
+        if !self.is_valid() || point == self.circle.center || !self.is_point_inside(point) {
+            return false;
+        }
+        // Circle.cpp:227
+        self.end_point = self.circle.get_closest_point(point);
+        // Circle.cpp:228
+        self.update_angle_and_length();
+        // Circle.cpp:229
+        true
+    }
 }
 
 impl Default for ArcSegment {

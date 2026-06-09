@@ -99,7 +99,7 @@ impl CurveAnalyzer {
         // CurveAnalyzer.cpp:34-36
         // C++: polygon.densify(scale_(curvatures_densify_width));
         // C++: std::vector<float> polygon_length = polygon.parameter_by_length();
-        polygon.densify(scale(CURVATURES_DENSIFY_WIDTH) as CoordF);
+        polygon.densify(scale(CURVATURES_DENSIFY_WIDTH) as f32, None);
         let polygon_length = polygon.parameter_by_length();
 
         let point_num = polygon.points.len();
@@ -278,7 +278,7 @@ impl CurveAnalyzer {
                 }
 
                 // CurveAnalyzer.cpp:156-165
-                if paths_length[i] <= polygon_length[curvature_list[j].1]
+                if paths_length[i] <= polygon_length[curvature_list[j].1] as f64
                     || paths[i].last_point() == curvature_list[j].0
                 {
                     // save paths[i] directly
@@ -325,7 +325,7 @@ impl CurveAnalyzer {
                         j += 1;
                         // CurveAnalyzer.cpp:180-190
                         if j < curvature_list.len()
-                            && (paths_length[i] <= polygon_length[curvature_list[j].1]
+                            && (paths_length[i] <= polygon_length[curvature_list[j].1] as f64
                                 || paths[i].last_point() == curvature_list[j].0)
                         {
                             current_path.set_curve_degree(current_curva_norm);

@@ -333,9 +333,9 @@ impl ExPolygon {
 
     /// Simplify the ExPolygon by removing collinear and duplicate points.
     pub fn simplify(&mut self, tolerance: Coord) {
-        self.contour.simplify(tolerance);
+        self.contour.simplify_in_place(tolerance);
         for hole in &mut self.holes {
-            hole.simplify(tolerance);
+            hole.simplify_in_place(tolerance);
         }
         // Remove degenerate holes
         self.holes.retain(|h| h.len() >= 3);

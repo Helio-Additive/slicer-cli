@@ -12,8 +12,8 @@
 use crate::geometry::{ExPolygon, ExPolygons, Point, Polygon, Polyline};
 use crate::surface::Surface;
 use crate::{unscale, Coord, CoordF};
-use geo::{Coord as GeoCoord, LineString, MultiPolygon, Polygon as GeoPolygon};
-use geo_clipper::{Clipper, EndType, JoinType};
+use geo::{Coord as GeoCoord, LineString, MultiLineString, MultiPolygon, Polygon as GeoPolygon};
+use geo_clipper::{Clipper, ClipperOpen, EndType, JoinType};
 
 /// Safety offset behavior for boolean operations
 /// ClipperUtils.hpp:445
@@ -344,6 +344,51 @@ pub fn xor(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 // ============================================================================
 // Offset Operations
 // ============================================================================
+
+/// Offset an open polyline by a given (scaled) distance, returning closed polygons.
+///
+/// Faithful port of `ClipperUtils.cpp:418` `Slic3r::Polygons offset(const Slic3r::Polyline
+/// &polyline, const float delta, JoinType joinType = jtSquare, double miterLimit = 0,
+/// EndType end_type = etOpenButt)`. The polyline is treated as an OPEN path
+/// (`EndType::OpenButt`) with a square join (`JoinType::Square`), matching
+/// BambuStudio's `DefaultLineJoinType` / `DefaultEndType`.
+///
+/// `delta` is expressed in scaled (`coord_t`) units exactly as the C++ caller passes it
+/// (e.g. `float(scale_(width/2)) + scaled_epsilon`); it is unscaled internally because
+/// the geo-clipper backend operates in mm.
+pub fn offset_polyline(polyline: &Polyline, delta_scaled: CoordF) -> Vec<Polygon> {
+    if polyline.points().len() < 2 {
+        return Vec::new();
+    }
+    // ClipperUtils.cpp: open path subject for ClipperOffset.
+    let coords: Vec<GeoCoord<f64>> = polyline
+        .points()
+        .iter()
+        .map(|p| GeoCoord {
+            x: unscale(p.x),
+            y: unscale(p.y),
+        })
+        .collect();
+    let line: LineString<f64> = LineString::new(coords);
+    // `ClipperOpen`/`ToOwnedPolygon` is implemented for `MultiLineString`, not a bare
+    // `LineString`, so wrap the single open path.
+    let mline: MultiLineString<f64> = MultiLineString::new(vec![line]);
+    // DefaultLineJoinType = jtSquare, DefaultEndType = etOpenButt.
+    let result: MultiPolygon<f64> = ClipperOpen::offset(
+        &mline,
+        unscale_delta(delta_scaled),
+        JoinType::Square,
+        EndType::OpenButt,
+        GEO_CLIPPER_SCALE,
+    );
+    result.0.iter().map(geo_to_polygon).collect()
+}
+
+/// Unscale a scaled (coord_t) delta to mm for the geo-clipper backend.
+#[inline]
+fn unscale_delta(delta_scaled: CoordF) -> CoordF {
+    unscale(delta_scaled.round() as Coord)
+}
 
 /// Offset a polygon by a given distance.
 ///

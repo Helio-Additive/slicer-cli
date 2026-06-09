@@ -115,7 +115,7 @@ impl FillHoneycomb {
         let mut all_polylines = Vec::new();
         let mut x = bb.min.x;
         while x <= bb.max.x {
-            let mut p = Polyline { points: Vec::new() };
+            let mut p = Polyline::new();
             let mut ax = [x + m.x_offset, x + m.distance - m.x_offset];
 
             for i in 0..2usize {

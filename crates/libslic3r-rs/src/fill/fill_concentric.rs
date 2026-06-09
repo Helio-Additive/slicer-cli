@@ -68,14 +68,14 @@ pub fn generate_concentric_infill(fill_area: &[ExPolygon], spacing: CoordF) -> V
                     let mut pts = ep.contour.points.clone();
                     // Close the loop by appending the first point
                     pts.push(pts[0]);
-                    result.push(Polyline { points: pts });
+                    result.push(Polyline::from_points(pts));
                 }
                 // Also add hole contours as separate polylines
                 for hole in &ep.holes {
                     if hole.points.len() >= 3 {
                         let mut pts = hole.points.clone();
                         pts.push(pts[0]);
-                        result.push(Polyline { points: pts });
+                        result.push(Polyline::from_points(pts));
                     }
                 }
             }

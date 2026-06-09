@@ -1140,7 +1140,7 @@
     "rust": "crates/libslic3r-rs/src/elephant_foot_compensation.rs",
     "rust_exists": true,
     "loc": 647,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1162,7 +1162,7 @@
     "rust": "crates/libslic3r-rs/src/geometry/polyline.rs",
     "rust_exists": true,
     "loc": 687,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1173,7 +1173,7 @@
     "rust": "crates/libslic3r-rs/src/extrusion_entity.rs",
     "rust_exists": true,
     "loc": 691,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1195,7 +1195,7 @@
     "rust": "crates/libslic3r-rs/src/geometry/polygon.rs",
     "rust_exists": true,
     "loc": 747,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1547,7 +1547,7 @@
     "rust": "crates/libslic3r-rs/src/triangle_selector.rs",
     "rust_exists": true,
     "loc": 2288,
-    "status": "pending",
+    "status": "done",
     "priority": 2
   },
   {
@@ -1558,7 +1558,7 @@
     "rust": "crates/libslic3r-rs/src/emboss.rs",
     "rust_exists": true,
     "loc": 2459,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1569,7 +1569,7 @@
     "rust": "crates/libslic3r-rs/src/triangle_mesh_slicer.rs",
     "rust_exists": true,
     "loc": 2635,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1580,7 +1580,7 @@
     "rust": "crates/libslic3r-rs/src/multi_material_segmentation.rs",
     "rust_exists": true,
     "loc": 2652,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
