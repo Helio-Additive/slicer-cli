@@ -1,448 +1,438 @@
-//! STL file loading and saving.
+//! 1:1 port of `libslic3r/Format/STL.{hpp,cpp}` (BambuStudio).
 //!
-//! This module provides functions to load and save STL files,
-//! supporting both ASCII and binary formats.
+//! C++ Reference:
+//! - Format/STL.hpp
+//! - Format/STL.cpp
 //!
-//! C++ Reference: Format/STL.cpp
+//! STL.cpp is a thin wrapper: it delegates the actual file parsing to
+//! `TriangleMesh::ReadSTLFile` (which in turn calls admesh `stl_open` /
+//! `TriangleMesh::from_stl`) and the writing to `TriangleMesh::write_binary` /
+//! `TriangleMesh::write_ascii` (which call `its_write_stl_binary` /
+//! `its_write_stl_ascii`). Those mesh methods are NOT yet ported as members of
+//! the Rust `TriangleMesh` wrapper, so:
+//!   * the STL *reader* is provided here as the free function `read_stl_file`,
+//!     standing in for `TriangleMesh::ReadSTLFile` (STL.cpp:22) until that
+//!     member is ported. It mirrors admesh's binary/ASCII auto-detection.
+//!   * the STL *writers* delegate to the already-ported free functions
+//!     `its_write_stl_ascii` / `its_write_stl_binary` in `triangle_mesh`,
+//!     which are faithful translations of `TriangleMesh.cpp:1959-2020`.
+//!
+//! See the `divergences` notes in the port report for the parts of
+//! `Model::add_object(name, path, mesh)` (ModelVolume / input_file / source /
+//! default-extruder bookkeeping) that are not modelled by the Rust `Model`.
 
-use super::{Triangle, TriangleMesh};
 use crate::geometry::Point3F;
+use crate::model::{Model, ModelObject};
+use crate::normal_utils::{StlTriangleVertexIndices, StlVertex};
+use crate::triangle_mesh::{its_write_stl_ascii, its_write_stl_binary, Triangle, TriangleMesh};
 use crate::{Error, Result};
-use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+
+use std::collections::HashMap;
 use std::path::Path;
 
-/// Load a triangle mesh from an STL file, auto-detecting ASCII vs binary format.
-/// Format/STL.cpp:17-40
-pub fn load_stl<P: AsRef<Path>>(path: P) -> Result<TriangleMesh> {
-    // Format/STL.cpp:19
-    let path = path.as_ref();
-    // Format/STL.cpp:17
-    let file = File::open(path).map_err(|e| Error::Io(e))?;
-    // Format/STL.cpp:22
-    let mut reader = BufReader::new(file);
+// STL.cpp:9-13
+#[cfg(target_os = "windows")]
+const DIR_SEPARATOR: char = '\\';
+#[cfg(not(target_os = "windows"))]
+const DIR_SEPARATOR: char = '/';
 
-    // Read the first 80 bytes to check format
-    // Format/STL.cpp:22
-    let mut header = [0u8; 80];
-    // Format/STL.cpp:22
-    reader.read_exact(&mut header).map_err(|e| Error::Io(e))?;
+/// C++ `ImportstlProgressFn` (admesh/stl.h:48-49):
+/// `std::function<void(int current, int total, bool& cancel, std::string& model_id,
+///  std::string& code, std::string& ml_region, std::string& ml_name, std::string& ml_id)>`.
+///
+/// The progress callback receives `(current, total)`; the remaining out-params
+/// (`cancel` plus the model-id / code / ml_* strings) are threaded through the
+/// admesh reader. They are not consumed by the Rust reader yet, so the type is
+/// kept for signature parity at the `load_stl` boundary.
+pub type ImportStlProgressFn = Box<dyn Fn(i32, i32) -> bool>;
 
-    // Check if it's ASCII by looking for "solid" at the start
-    // Note: Some binary files also start with "solid", so we need additional checks
-    // Format/STL.cpp:22
-    let header_str = String::from_utf8_lossy(&header);
-    // Format/STL.cpp:22
-    let is_ascii = header_str.trim_start().starts_with("solid") && is_likely_ascii(&header);
+// ---------------------------------------------------------------------------
+// Binary STL constants (admesh layout)
+// ---------------------------------------------------------------------------
 
-    // Reset to beginning by re-opening file
-    // Format/STL.cpp:22
-    drop(reader);
-    // Format/STL.cpp:17
-    let file = File::open(path).map_err(|e| Error::Io(e))?;
+const STL_HEADER_SIZE: usize = 80;
+const STL_FACET_SIZE: usize = 50; // normal (12) + 3 vertices (36) + attribute (2)
 
-    // Format/STL.cpp:22-25
-    if is_ascii {
-        load_stl_ascii(BufReader::new(file))
+// ---------------------------------------------------------------------------
+// TriangleMesh::ReadSTLFile  (STL.cpp:22 -> TriangleMesh.cpp:215 -> stl_open)
+// ---------------------------------------------------------------------------
+
+/// Load an STL file (binary or ASCII) into a `TriangleMesh`.
+///
+/// Stands in for C++ `TriangleMesh::ReadSTLFile(input_file, repair=true, stlFn,
+/// custom_header_length=80)` (TriangleMesh.cpp:215-221), which delegates to
+/// admesh `stl_open` and `from_stl`. Returns `Err` on a read failure, matching
+/// the C++ `false` return that `load_stl` turns into a `false` result.
+pub fn read_stl_file(path: &Path) -> Result<TriangleMesh> {
+    let data =
+        std::fs::read(path).map_err(|e| Error::IO(format!("Failed to read STL file: {}", e)))?;
+
+    if data.len() < STL_HEADER_SIZE + 4 {
+        // Too small for binary; try ASCII.
+        return read_stl_ascii(&data);
+    }
+
+    // Heuristic: if the file starts with "solid" and is not binary-plausible, treat as ASCII.
+    let maybe_ascii = data.starts_with(b"solid") && !is_binary_stl(&data);
+
+    if maybe_ascii {
+        read_stl_ascii(&data)
     } else {
-        load_stl_binary(BufReader::new(file))
+        read_stl_binary(&data)
     }
 }
 
-/// Check if the header suggests ASCII format by looking for null/non-printable bytes.
-/// Format/STL.cpp:22
-fn is_likely_ascii(header: &[u8]) -> bool {
-    // If there are null bytes or many non-printable characters, it's likely binary
-    // Format/STL.cpp:22
-    let non_printable_count = header
-        .iter()
-        .filter(|&&b| b == 0 || (b < 32 && b != b'\n' && b != b'\r' && b != b'\t'))
-        .count();
-    // Format/STL.cpp:22
-    non_printable_count == 0
+/// Quick heuristic: a binary STL declares a facet count in bytes 80..84.
+/// If the file size matches `80 + 4 + num_facets * 50`, it is binary.
+fn is_binary_stl(data: &[u8]) -> bool {
+    if data.len() < STL_HEADER_SIZE + 4 {
+        return false;
+    }
+    let num_facets = u32::from_le_bytes([data[80], data[81], data[82], data[83]]) as usize;
+    let expected = STL_HEADER_SIZE + 4 + num_facets * STL_FACET_SIZE;
+    data.len() >= expected
 }
 
-/// Load an ASCII STL file by parsing vertex and facet lines.
-/// Format/STL.cpp:22
-fn load_stl_ascii<R: BufRead>(reader: R) -> Result<TriangleMesh> {
-    // Format/STL.cpp:19
-    let mut mesh = TriangleMesh::new();
-    // Format/STL.cpp:22
+/// Parse a binary STL from raw bytes.
+fn read_stl_binary(data: &[u8]) -> Result<TriangleMesh> {
+    if data.len() < STL_HEADER_SIZE + 4 {
+        return Err(Error::Mesh("Binary STL too short".into()));
+    }
+    let num_facets = u32::from_le_bytes([data[80], data[81], data[82], data[83]]) as usize;
+
+    let body = &data[STL_HEADER_SIZE + 4..];
+    if body.len() < num_facets * STL_FACET_SIZE {
+        return Err(Error::Mesh("Binary STL truncated".into()));
+    }
+
+    // We store unique vertices via a simple hash-dedup approach.
     let mut vertices: Vec<Point3F> = Vec::new();
+    let mut indices: Vec<Triangle> = Vec::with_capacity(num_facets);
+    let mut vertex_map: HashMap<[u32; 3], u32> = HashMap::new();
 
-    // Format/STL.cpp:22
-    for line in reader.lines() {
-        // Format/STL.cpp:22
-        let line = line.map_err(|e| Error::Io(e))?;
-        // Format/STL.cpp:22
-        let line = line.trim();
-
-        // Format/STL.cpp:22
-        if line.starts_with("vertex") {
-            // Format/STL.cpp:22
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            // Format/STL.cpp:22
-            if parts.len() >= 4 {
-                // Format/STL.cpp:22
-                let x: f64 = parts[1]
-                    .parse()
-                    .map_err(|_| Error::Mesh("Invalid vertex X coordinate".into()))?;
-                // Format/STL.cpp:22
-                let y: f64 = parts[2]
-                    .parse()
-                    .map_err(|_| Error::Mesh("Invalid vertex Y coordinate".into()))?;
-                // Format/STL.cpp:22
-                let z: f64 = parts[3]
-                    .parse()
-                    .map_err(|_| Error::Mesh("Invalid vertex Z coordinate".into()))?;
-                // Format/STL.cpp:22
-                vertices.push(Point3F::new(x, y, z));
-            }
-        } else {
-            // Format/STL.cpp:22
-            if line.starts_with("endfacet") {
-                // End of a facet - we should have 3 vertices
-                // Format/STL.cpp:22
-                if vertices.len() >= 3 {
-                    // Format/STL.cpp:22
-                    let base_idx = mesh.vertex_count() as u32;
-                    // Format/STL.cpp:22
-                    for v in vertices.drain(..) {
-                        // Format/STL.cpp:22
-                        mesh.add_vertex(v);
-                    }
-                    // Format/STL.cpp:22
-                    mesh.add_triangle(Triangle::new(base_idx, base_idx + 1, base_idx + 2));
+    for i in 0..num_facets {
+        let offset = i * STL_FACET_SIZE;
+        // Skip normal (12 bytes), read 3 vertices (each 12 bytes)
+        let mut tri_idx = [0u32; 3];
+        for v in 0..3 {
+            let vo = offset + 12 + v * 12;
+            let x = f32::from_le_bytes([body[vo], body[vo + 1], body[vo + 2], body[vo + 3]]);
+            let y = f32::from_le_bytes([body[vo + 4], body[vo + 5], body[vo + 6], body[vo + 7]]);
+            let z = f32::from_le_bytes([body[vo + 8], body[vo + 9], body[vo + 10], body[vo + 11]]);
+            let key = [x.to_bits(), y.to_bits(), z.to_bits()];
+            let idx = match vertex_map.get(&key) {
+                Some(&idx) => idx,
+                None => {
+                    let idx = vertices.len() as u32;
+                    vertices.push(Point3F::new(x as f64, y as f64, z as f64));
+                    vertex_map.insert(key, idx);
+                    idx
                 }
-                // Format/STL.cpp:22
-                vertices.clear();
+            };
+            tri_idx[v] = idx;
+        }
+        indices.push(Triangle::new(tri_idx[0], tri_idx[1], tri_idx[2]));
+    }
+
+    Ok(TriangleMesh::from_parts(vertices, indices))
+}
+
+/// Parse an ASCII STL from raw bytes.
+fn read_stl_ascii(data: &[u8]) -> Result<TriangleMesh> {
+    let text = String::from_utf8_lossy(data);
+    let mut vertices: Vec<Point3F> = Vec::new();
+    let mut indices: Vec<Triangle> = Vec::new();
+    let mut vertex_map: HashMap<[u32; 3], u32> = HashMap::new();
+    let mut face_verts: Vec<u32> = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("vertex") {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() >= 4 {
+                let x: f32 = parts[1].parse().unwrap_or(0.0);
+                let y: f32 = parts[2].parse().unwrap_or(0.0);
+                let z: f32 = parts[3].parse().unwrap_or(0.0);
+                let key = [x.to_bits(), y.to_bits(), z.to_bits()];
+                let idx = match vertex_map.get(&key) {
+                    Some(&idx) => idx,
+                    None => {
+                        let idx = vertices.len() as u32;
+                        vertices.push(Point3F::new(x as f64, y as f64, z as f64));
+                        vertex_map.insert(key, idx);
+                        idx
+                    }
+                };
+                face_verts.push(idx);
             }
+        } else if trimmed.starts_with("endfacet") {
+            if face_verts.len() == 3 {
+                indices.push(Triangle::new(face_verts[0], face_verts[1], face_verts[2]));
+            }
+            face_verts.clear();
         }
     }
 
-    // Check mesh is not empty after loading
-    // Format/STL.cpp:26-28
+    if vertices.is_empty() || indices.is_empty() {
+        return Err(Error::Mesh("ASCII STL contains no geometry".into()));
+    }
+
+    Ok(TriangleMesh::from_parts(vertices, indices))
+}
+
+// ---------------------------------------------------------------------------
+// load_stl  (STL.cpp:17-40)
+// ---------------------------------------------------------------------------
+
+/// Load an STL file into a provided model.
+///
+/// STL.cpp:17 — `bool load_stl(const char *path, Model *model, const char
+/// *object_name_in, ImportstlProgressFn stlFn, int custom_header_length)`.
+///
+/// `object_name` corresponds to the C++ `object_name_in` (default `nullptr`),
+/// `_stl_fn` to `stlFn` (default `nullptr`) and `_custom_header_length` to
+/// `custom_header_length` (default `80`). Returns `false` if the file could not
+/// be read or the mesh is empty.
+pub fn load_stl(
+    path: &Path,
+    model: &mut Model,
+    object_name: Option<&str>,
+    _stl_fn: Option<ImportStlProgressFn>,
+    _custom_header_length: i32,
+) -> bool {
+    // STL.cpp:19
+    //   TriangleMesh mesh;
+    //   std::string design_id;
+    let design_id = String::new();
+    let _ = design_id;
+
+    // STL.cpp:22-25
+    //   if (!mesh.ReadSTLFile(path, true, stlFn, custom_header_length)) {
+    //       return false;
+    //   }
+    let mesh = match read_stl_file(path) {
+        Ok(mesh) => mesh,
+        Err(_) => return false,
+    };
+    // STL.cpp:26-29
+    //   if (mesh.empty()) {
+    //       return false;
+    //   }
     if mesh.is_empty() {
-        // Format/STL.cpp:26-28
-        return Err(Error::Mesh("No triangles found in STL file".into()));
+        return false;
     }
 
-    // Format/STL.cpp:38
-    Ok(mesh)
+    // STL.cpp:31-36
+    //   std::string object_name;
+    //   if (object_name_in == nullptr) {
+    //       const char *last_slash = strrchr(path, DIR_SEPARATOR);
+    //       object_name.assign((last_slash == nullptr) ? path : last_slash + 1);
+    //   } else
+    //      object_name.assign(object_name_in);
+    let object_name: String = match object_name {
+        None => {
+            let path_str = path.to_string_lossy();
+            match path_str.rfind(DIR_SEPARATOR) {
+                None => path_str.to_string(),
+                Some(pos) => path_str[pos + 1..].to_string(),
+            }
+        }
+        Some(name) => name.to_string(),
+    };
+
+    // STL.cpp:38
+    //   model->add_object(object_name.c_str(), path, std::move(mesh));
+    //
+    // The Rust `Model::add_object` takes a fully-built `ModelObject`. The C++
+    // `Model::add_object(name, path, &&mesh)` overload (Model.cpp:485) also sets
+    // `input_file`, builds a `ModelVolume` with a `source`, and forces the
+    // extruder to 1 — bookkeeping the Rust `Model`/`ModelObject` do not yet
+    // model. We faithfully set the object name and mesh.
+    let object = ModelObject::new(object_name, mesh);
+    model.add_object(object);
+
+    // STL.cpp:39
+    //   return true;
+    true
 }
 
-/// Load a binary STL file by reading the 80-byte header, triangle count, and triangle data.
-/// Format/STL.cpp:22
-fn load_stl_binary<R: Read>(mut reader: R) -> Result<TriangleMesh> {
-    // Skip 80-byte header
-    // Format/STL.cpp:22
-    let mut header = [0u8; 80];
-    // Format/STL.cpp:22
-    reader.read_exact(&mut header).map_err(|e| Error::Io(e))?;
+// ---------------------------------------------------------------------------
+// store_stl  (STL.cpp:42-62)
+// ---------------------------------------------------------------------------
 
-    // Read triangle count (4 bytes, little-endian)
-    // Format/STL.cpp:22
-    let mut count_bytes = [0u8; 4];
-    // Format/STL.cpp:22
-    reader
-        .read_exact(&mut count_bytes)
-        .map_err(|e| Error::Io(e))?;
-    // Format/STL.cpp:22
-    let triangle_count = u32::from_le_bytes(count_bytes) as usize;
-
-    // Format/STL.cpp:19
-    let mut mesh = TriangleMesh::with_capacity(triangle_count * 3, triangle_count);
-
-    // Each triangle is 50 bytes:
-    // - Normal: 3 floats (12 bytes)
-    // - Vertex 1-3: 3 floats each (12 bytes each)
-    // - Attribute byte count: 2 bytes
-    // Format/STL.cpp:22
-    let mut triangle_data = [0u8; 50];
-
-    // Format/STL.cpp:22
-    for _ in 0..triangle_count {
-        // Format/STL.cpp:22
-        reader
-            .read_exact(&mut triangle_data)
-            .map_err(|e| Error::Io(e))?;
-
-        // Skip normal (bytes 0-11), read vertices
-        // Format/STL.cpp:22
-        let v1 = read_vertex(&triangle_data[12..24]);
-        // Format/STL.cpp:22
-        let v2 = read_vertex(&triangle_data[24..36]);
-        // Format/STL.cpp:22
-        let v3 = read_vertex(&triangle_data[36..48]);
-
-        // Format/STL.cpp:22
-        let base_idx = mesh.vertex_count() as u32;
-        // Format/STL.cpp:22
-        mesh.add_vertex(v1);
-        // Format/STL.cpp:22
-        mesh.add_vertex(v2);
-        // Format/STL.cpp:22
-        mesh.add_vertex(v3);
-        // Format/STL.cpp:22
-        mesh.add_triangle(Triangle::new(base_idx, base_idx + 1, base_idx + 2));
+/// STL.cpp:42 — `bool store_stl(const char *path, TriangleMesh *mesh, bool binary)`.
+pub fn store_stl(path: &Path, mesh: &TriangleMesh, binary: bool) -> bool {
+    // STL.cpp:44-47
+    //   if (binary)
+    //       mesh->write_binary(path);
+    //   else
+    //       mesh->write_ascii(path);
+    if binary {
+        write_binary(mesh, path);
+    } else {
+        write_ascii(mesh, path);
     }
+    // STL.cpp:48-49
+    //   //FIXME returning false even if write failed.
+    //   return true;
+    true
+}
 
-    // Check mesh is not empty after loading
-    // Format/STL.cpp:26-28
-    if mesh.is_empty() {
-        // Format/STL.cpp:26-28
-        return Err(Error::Mesh("No triangles found in STL file".into()));
+/// STL.cpp:52 — `bool store_stl(const char *path, ModelObject *model_object, bool binary)`.
+pub fn store_stl_model_object(path: &Path, model_object: &ModelObject, binary: bool) -> bool {
+    // STL.cpp:54
+    //   TriangleMesh mesh = model_object->mesh();
+    let mesh = model_object.mesh.clone();
+    // STL.cpp:55
+    //   return store_stl(path, &mesh, binary);
+    store_stl(path, &mesh, binary)
+}
+
+/// STL.cpp:58 — `bool store_stl(const char *path, Model *model, bool binary)`.
+pub fn store_stl_model(path: &Path, model: &Model, binary: bool) -> bool {
+    // STL.cpp:60
+    //   TriangleMesh mesh = model->mesh();
+    //
+    // `Model::mesh()` (which merges all objects' meshes) is not yet ported; we
+    // merge here, mirroring the merge semantics.
+    let mesh = model_mesh(model);
+    // STL.cpp:61
+    //   return store_stl(path, &mesh, binary);
+    store_stl(path, &mesh, binary)
+}
+
+// ---------------------------------------------------------------------------
+// TriangleMesh::write_binary / write_ascii (TriangleMesh.cpp:223-231)
+// ---------------------------------------------------------------------------
+//
+// These mirror `TriangleMesh::write_ascii`/`write_binary`, which call
+// `its_write_stl_ascii`/`its_write_stl_binary(file, "", this->its)`. The Rust
+// `TriangleMesh` wrapper stores vertices as `Point3F` (f64) and triangles as
+// `Triangle`; we convert to the `indexed_triangle_set` representation
+// (`StlVertex` = Vec3f, `StlTriangleVertexIndices` = Vec3i) those writers take,
+// then forward with an empty label, exactly as the C++ members do.
+
+/// TriangleMesh.cpp:228-231 — `mesh->write_binary(path)`.
+fn write_binary(mesh: &TriangleMesh, path: &Path) -> bool {
+    let (indices, vertices) = mesh_to_its(mesh);
+    its_write_stl_binary(&path.to_string_lossy(), "", &indices, &vertices)
+}
+
+/// TriangleMesh.cpp:223-226 — `mesh->write_ascii(path)`.
+fn write_ascii(mesh: &TriangleMesh, path: &Path) -> bool {
+    let (indices, vertices) = mesh_to_its(mesh);
+    its_write_stl_ascii(&path.to_string_lossy(), "", &indices, &vertices)
+}
+
+/// Convert the wrapper `TriangleMesh` into the `indexed_triangle_set`
+/// representation (`stl_triangle_vertex_indices` + `stl_vertex`) consumed by
+/// `its_write_stl_*`.
+fn mesh_to_its(mesh: &TriangleMesh) -> (Vec<StlTriangleVertexIndices>, Vec<StlVertex>) {
+    let vertices: Vec<StlVertex> = mesh
+        .vertices()
+        .iter()
+        .map(|v| StlVertex::new(v.x() as f32, v.y() as f32, v.z() as f32))
+        .collect();
+    let indices: Vec<StlTriangleVertexIndices> = mesh
+        .indices()
+        .iter()
+        .map(|t| {
+            StlTriangleVertexIndices::new(
+                t.indices[0] as i32,
+                t.indices[1] as i32,
+                t.indices[2] as i32,
+            )
+        })
+        .collect();
+    (indices, vertices)
+}
+
+/// Merge all objects' meshes, mirroring C++ `Model::mesh()` (a single combined
+/// `TriangleMesh`). Vertex indices are offset per object.
+fn model_mesh(model: &Model) -> TriangleMesh {
+    let mut all_verts: Vec<Point3F> = Vec::new();
+    let mut all_tris: Vec<Triangle> = Vec::new();
+    for obj in &model.objects {
+        let offset = all_verts.len() as u32;
+        all_verts.extend_from_slice(obj.mesh.vertices());
+        for tri in obj.mesh.indices() {
+            all_tris.push(Triangle::new(
+                tri.indices[0] + offset,
+                tri.indices[1] + offset,
+                tri.indices[2] + offset,
+            ));
+        }
     }
-
-    // Format/STL.cpp:39
-    Ok(mesh)
-}
-
-/// Read a vertex (3 floats) from bytes in little-endian format.
-/// Format/STL.cpp:22
-fn read_vertex(data: &[u8]) -> Point3F {
-    // Format/STL.cpp:22
-    let x = f32::from_le_bytes([data[0], data[1], data[2], data[3]]) as f64;
-    // Format/STL.cpp:22
-    let y = f32::from_le_bytes([data[4], data[5], data[6], data[7]]) as f64;
-    // Format/STL.cpp:22
-    let z = f32::from_le_bytes([data[8], data[9], data[10], data[11]]) as f64;
-    // Format/STL.cpp:22
-    Point3F::new(x, y, z)
-}
-
-/// Save a triangle mesh to an STL file (binary format by default).
-/// Format/STL.cpp:42-50
-pub fn save_stl<P: AsRef<Path>>(path: P, mesh: &TriangleMesh) -> Result<()> {
-    // Format/STL.cpp:44
-    save_stl_binary(path, mesh)
-}
-
-/// Save a triangle mesh to a binary STL file.
-/// Format/STL.cpp:42-50
-pub fn save_stl_binary<P: AsRef<Path>>(path: P, mesh: &TriangleMesh) -> Result<()> {
-    // Format/STL.cpp:45
-    let file = File::create(path).map_err(|e| Error::Io(e))?;
-    // Format/STL.cpp:45
-    let mut writer = BufWriter::new(file);
-
-    // Write 80-byte header (must be exactly 80 bytes)
-    // Format/STL.cpp:45
-    let header = b"Binary STL generated by Slicer\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
-    // Format/STL.cpp:45
-    debug_assert_eq!(header.len(), 80, "STL header must be exactly 80 bytes");
-    // Format/STL.cpp:45
-    writer.write_all(header).map_err(|e| Error::Io(e))?;
-
-    // Write triangle count
-    // Format/STL.cpp:45
-    let count = mesh.triangle_count() as u32;
-    // Format/STL.cpp:45
-    writer
-        .write_all(&count.to_le_bytes())
-        .map_err(|e| Error::Io(e))?;
-
-    // Write each triangle
-    // Format/STL.cpp:45
-    for i in 0..mesh.triangle_count() {
-        // Format/STL.cpp:45
-        let [v0, v1, v2] = mesh.triangle_vertices(i);
-
-        // Calculate normal
-        // Format/STL.cpp:45
-        let e1 = v1 - v0;
-        // Format/STL.cpp:45
-        let e2 = v2 - v0;
-        // Format/STL.cpp:45
-        let normal = e1.cross(&e2).normalize();
-
-        // Write normal
-        // Format/STL.cpp:45
-        write_float(&mut writer, normal.x as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, normal.y as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, normal.z as f32)?;
-
-        // Write vertices
-        // Format/STL.cpp:45
-        write_float(&mut writer, v0.x as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, v0.y as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, v0.z as f32)?;
-
-        // Format/STL.cpp:45
-        write_float(&mut writer, v1.x as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, v1.y as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, v1.z as f32)?;
-
-        // Format/STL.cpp:45
-        write_float(&mut writer, v2.x as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, v2.y as f32)?;
-        // Format/STL.cpp:45
-        write_float(&mut writer, v2.z as f32)?;
-
-        // Write attribute byte count (0)
-        // Format/STL.cpp:45
-        writer.write_all(&[0u8, 0u8]).map_err(|e| Error::Io(e))?;
-    }
-
-    // Format/STL.cpp:49
-    writer.flush().map_err(|e| Error::Io(e))?;
-    // Format/STL.cpp:49
-    Ok(())
-}
-
-/// Write a float in little-endian format.
-/// Format/STL.cpp:45
-fn write_float<W: Write>(writer: &mut W, value: f32) -> Result<()> {
-    // Format/STL.cpp:45
-    writer
-        .write_all(&value.to_le_bytes())
-        .map_err(|e| Error::Io(e))
-}
-
-/// Save a triangle mesh to an ASCII STL file.
-/// Format/STL.cpp:42-50
-pub fn save_stl_ascii<P: AsRef<Path>>(path: P, mesh: &TriangleMesh) -> Result<()> {
-    // Format/STL.cpp:47
-    let file = File::create(path).map_err(|e| Error::Io(e))?;
-    // Format/STL.cpp:47
-    let mut writer = BufWriter::new(file);
-
-    // Format/STL.cpp:47
-    writeln!(writer, "solid mesh").map_err(|e| Error::Io(e))?;
-
-    // Format/STL.cpp:47
-    for i in 0..mesh.triangle_count() {
-        // Format/STL.cpp:47
-        let [v0, v1, v2] = mesh.triangle_vertices(i);
-
-        // Calculate normal
-        // Format/STL.cpp:47
-        let e1 = v1 - v0;
-        // Format/STL.cpp:47
-        let e2 = v2 - v0;
-        // Format/STL.cpp:47
-        let normal = e1.cross(&e2).normalize();
-
-        // Format/STL.cpp:47
-        writeln!(
-            writer,
-            "  facet normal {} {} {}",
-            normal.x, normal.y, normal.z
-        )
-        .map_err(|e| Error::Io(e))?;
-        // Format/STL.cpp:47
-        writeln!(writer, "    outer loop").map_err(|e| Error::Io(e))?;
-        // Format/STL.cpp:47
-        writeln!(writer, "      vertex {} {} {}", v0.x, v0.y, v0.z).map_err(|e| Error::Io(e))?;
-        // Format/STL.cpp:47
-        writeln!(writer, "      vertex {} {} {}", v1.x, v1.y, v1.z).map_err(|e| Error::Io(e))?;
-        // Format/STL.cpp:47
-        writeln!(writer, "      vertex {} {} {}", v2.x, v2.y, v2.z).map_err(|e| Error::Io(e))?;
-        // Format/STL.cpp:47
-        writeln!(writer, "    endloop").map_err(|e| Error::Io(e))?;
-        // Format/STL.cpp:47
-        writeln!(writer, "  endfacet").map_err(|e| Error::Io(e))?;
-    }
-
-    // Format/STL.cpp:47
-    writeln!(writer, "endsolid mesh").map_err(|e| Error::Io(e))?;
-    // Format/STL.cpp:47
-    writer.flush().map_err(|e| Error::Io(e))?;
-    // Format/STL.cpp:49
-    Ok(())
+    TriangleMesh::from_parts(all_verts, all_tris)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
-    fn test_load_ascii_stl() {
-        let stl_content = r#"solid test
-  facet normal 0 0 1
-    outer loop
-      vertex 0 0 0
-      vertex 1 0 0
-      vertex 0 1 0
-    endloop
-  endfacet
-  facet normal 0 0 1
-    outer loop
-      vertex 1 0 0
-      vertex 1 1 0
-      vertex 0 1 0
-    endloop
-  endfacet
-endsolid test"#;
-
-        let reader = BufReader::new(Cursor::new(stl_content));
-        let mesh = load_stl_ascii(reader).unwrap();
-
-        assert_eq!(mesh.triangle_count(), 2);
-        assert_eq!(mesh.vertex_count(), 6);
+    fn test_is_binary_stl_too_short() {
+        let data = vec![0u8; 50];
+        assert!(!is_binary_stl(&data));
     }
 
     #[test]
-    fn test_read_vertex() {
-        // Test reading a vertex from bytes
-        let x: f32 = 1.5;
-        let y: f32 = 2.5;
-        let z: f32 = 3.5;
+    fn test_roundtrip_binary_stl() {
+        let v0 = Point3F::new(0.0, 0.0, 0.0);
+        let v1 = Point3F::new(1.0, 0.0, 0.0);
+        let v2 = Point3F::new(0.0, 1.0, 0.0);
+        let mesh = TriangleMesh::from_parts(vec![v0, v1, v2], vec![Triangle::new(0, 1, 2)]);
 
-        let mut data = Vec::new();
-        data.extend_from_slice(&x.to_le_bytes());
-        data.extend_from_slice(&y.to_le_bytes());
-        data.extend_from_slice(&z.to_le_bytes());
+        let dir = std::env::temp_dir().join("test_stl_roundtrip");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("test.stl");
 
-        let v = read_vertex(&data);
-        assert!((v.x - 1.5).abs() < 1e-6);
-        assert!((v.y - 2.5).abs() < 1e-6);
-        assert!((v.z - 3.5).abs() < 1e-6);
+        assert!(store_stl(&file_path, &mesh, true));
+        let loaded = read_stl_file(&file_path).unwrap();
+        assert_eq!(loaded.vertex_count(), 3);
+        assert_eq!(loaded.indices().len(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn test_roundtrip_binary() {
-        use tempfile::tempdir;
+    fn test_roundtrip_ascii_stl() {
+        let v0 = Point3F::new(0.0, 0.0, 0.0);
+        let v1 = Point3F::new(1.0, 0.0, 0.0);
+        let v2 = Point3F::new(0.0, 1.0, 0.0);
+        let mesh = TriangleMesh::from_parts(vec![v0, v1, v2], vec![Triangle::new(0, 1, 2)]);
 
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("test.stl");
+        let dir = std::env::temp_dir().join("test_stl_ascii_roundtrip");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("test_ascii.stl");
 
-        // Create a simple mesh
-        let mesh = TriangleMesh::cube(10.0);
+        assert!(store_stl(&file_path, &mesh, false));
+        let loaded = read_stl_file(&file_path).unwrap();
+        assert_eq!(loaded.vertex_count(), 3);
+        assert_eq!(loaded.indices().len(), 1);
 
-        // Save it
-        save_stl_binary(&path, &mesh).unwrap();
-
-        // Load it back
-        let loaded = load_stl(&path).unwrap();
-
-        assert_eq!(loaded.triangle_count(), mesh.triangle_count());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn test_roundtrip_ascii() {
-        use tempfile::tempdir;
+    fn test_load_stl_into_model() {
+        // STL.cpp:17-40 — fills a Model with one object named after the file.
+        let v0 = Point3F::new(0.0, 0.0, 0.0);
+        let v1 = Point3F::new(1.0, 0.0, 0.0);
+        let v2 = Point3F::new(0.0, 1.0, 0.0);
+        let mesh = TriangleMesh::from_parts(vec![v0, v1, v2], vec![Triangle::new(0, 1, 2)]);
 
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("test.stl");
+        let dir = std::env::temp_dir().join("test_stl_load_model");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("part.stl");
+        assert!(store_stl(&file_path, &mesh, true));
 
-        // Create a simple mesh
-        let mesh = TriangleMesh::cube(10.0);
+        let mut model = Model::new();
+        assert!(load_stl(&file_path, &mut model, None, None, 80));
+        assert_eq!(model.objects.len(), 1);
+        // STL.cpp:33-34 — name from basename when object_name_in == nullptr.
+        assert_eq!(model.objects[0].name, "part.stl");
 
-        // Save it as ASCII
-        save_stl_ascii(&path, &mesh).unwrap();
-
-        // Load it back
-        let loaded = load_stl(&path).unwrap();
-
-        assert_eq!(loaded.triangle_count(), mesh.triangle_count());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

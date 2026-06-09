@@ -675,7 +675,7 @@ pub fn load_model(path: &PathBuf) -> crate::Result<Model> {
         Some("stl") => {
             // Load STL file and wrap in Model
             // Model.cpp:247-300
-            let mesh = crate::stl::load_stl(path)?;
+            let mesh = crate::stl::read_stl_file(path)?;
             // Create empty model
             // Model.cpp:248
             let mut model = Model::new();

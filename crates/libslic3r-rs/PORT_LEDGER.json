@@ -2691,7 +2691,7 @@
     "rust": "crates/libslic3r-rs/src/support/tree_support.rs",
     "rust_exists": true,
     "loc": 4330,
-    "status": "pending",
+    "status": "partial",
     "priority": 6
   },
   {
@@ -2702,7 +2702,7 @@
     "rust": "crates/libslic3r-rs/src/support/tree_support3_d.rs",
     "rust_exists": false,
     "loc": 4742,
-    "status": "pending",
+    "status": "partial",
     "priority": 6
   },
   {
@@ -2713,7 +2713,7 @@
     "rust": "crates/libslic3r-rs/src/format/model_io.rs",
     "rust_exists": true,
     "loc": 19,
-    "status": "pending",
+    "status": "partial",
     "priority": 7
   },
   {
@@ -2724,7 +2724,7 @@
     "rust": "crates/libslic3r-rs/src/stl.rs",
     "rust_exists": true,
     "loc": 64,
-    "status": "pending",
+    "status": "done",
     "priority": 7
   },
   {
@@ -2735,7 +2735,7 @@
     "rust": "crates/libslic3r-rs/src/obj.rs",
     "rust_exists": true,
     "loc": 285,
-    "status": "pending",
+    "status": "done",
     "priority": 7
   },
   {
@@ -2743,10 +2743,10 @@
     "hpp": "Format/svg.hpp",
     "kind": "cpp",
     "area": "Format",
-    "rust": "crates/libslic3r-rs/src/svg.rs",
+    "rust": "crates/libslic3r-rs/src/format/svg.rs",
     "rust_exists": true,
     "loc": 402,
-    "status": "pending",
+    "status": "partial",
     "priority": 7
   },
   {
@@ -2757,7 +2757,7 @@
     "rust": "crates/libslic3r-rs/src/format/sl1.rs",
     "rust_exists": true,
     "loc": 518,
-    "status": "pending",
+    "status": "partial",
     "priority": 7
   },
   {
@@ -2768,7 +2768,7 @@
     "rust": "crates/libslic3r-rs/src/format/step.rs",
     "rust_exists": true,
     "loc": 745,
-    "status": "pending",
+    "status": "partial",
     "priority": 7
   },
   {

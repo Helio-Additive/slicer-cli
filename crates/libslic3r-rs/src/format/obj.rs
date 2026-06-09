@@ -6,10 +6,12 @@
 //!
 //! Higher-level OBJ I/O that uses `objparser` to build `TriangleMesh` / `Model`.
 
+use crate::color::ColorRGBA;
 use crate::format::objparser::{self, MtlData, ObjData, ObjUseMtl, OBJ_VERTEX_LENGTH};
 use crate::geometry::Point3F;
 use crate::model::{Model, ModelObject};
-use crate::triangle_mesh::{Triangle, TriangleMesh};
+use crate::normal_utils::{indexed_triangle_set, StlTriangleVertexIndices, StlVertex};
+use crate::triangle_mesh::{its_flip_triangles, its_volume, Triangle, TriangleMesh};
 use crate::{Error, Result};
 
 use log::error;
@@ -167,19 +169,6 @@ impl ObjDialogInOut {
 }
 
 // ---------------------------------------------------------------------------
-// Gamma correction helper
-// ---------------------------------------------------------------------------
-
-/// Apply sRGB gamma correction to a linear value.
-fn gamma_correct(v: f32) -> f32 {
-    if v <= 0.003_130_8 {
-        v * 12.92
-    } else {
-        1.055 * v.powf(1.0 / 2.4) - 0.055
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Loading  (OBJ.cpp:25-245)
 // ---------------------------------------------------------------------------
 
@@ -293,21 +282,24 @@ pub fn load_obj(
             data.coordinates[j + 1] as f64,
             data.coordinates[j + 2] as f64,
         ));
+        // OBJ.cpp:118
         if data.has_vertex_color {
+            // OBJ.cpp:119
             let mut color: RGBA = [
                 data.coordinates[j + 3],
                 data.coordinates[j + 4],
                 data.coordinates[j + 5],
                 data.coordinates[j + 6],
             ];
+            // OBJ.cpp:120-122 — ColorRGBA::gamma_correct(color) corrects ALL four channels.
             if do_gamma_correct {
-                for c in color.iter_mut().take(3) {
-                    *c = gamma_correct(*c);
-                }
+                ColorRGBA::gamma_correct_rgba(&mut color);
             }
+            // OBJ.cpp:123-125 — clamp all four channels into [0, 1].
             for c in color.iter_mut() {
                 *c = c.clamp(0.0, 1.0);
             }
+            // OBJ.cpp:126
             obj_info.vertex_colors.push(color);
         }
     }
@@ -349,30 +341,40 @@ pub fn load_obj(
             ));
             let current_face_index = indices.len() as i32 - 1;
 
-            // Get face colour from MTL
+            // OBJ.cpp:155-170 — get_face_color lambda.
             let get_face_color = |mtl_name: &str, fc: &mut RGBA| -> bool {
+                // OBJ.cpp:156
                 if let Some(mtl) = mtl_data.new_mtl_unmap.get(mtl_name) {
+                    // OBJ.cpp:157 — 0.1 is light ambient
                     for n in 0..3 {
+                        // OBJ.cpp:158
                         let object_ka = if mtl.ka[n] > 0.01 && mtl.ka[n] < 0.99 {
+                            // OBJ.cpp:160
                             mtl.ka[n] * 0.1
                         } else {
                             0.0
                         };
+                        // OBJ.cpp:162
                         let value = object_ka + mtl.kd[n];
+                        // OBJ.cpp:163
                         let temp = if do_gamma_correct {
-                            gamma_correct(value)
+                            ColorRGBA::gamma_correct_value(value)
                         } else {
                             value
                         };
+                        // OBJ.cpp:164
                         fc[n] = temp.clamp(0.0, 1.0);
                     }
+                    // OBJ.cpp:166 — alpha
                     fc[3] = if do_gamma_correct {
-                        gamma_correct(mtl.tr)
+                        ColorRGBA::gamma_correct_value(mtl.tr)
                     } else {
                         mtl.tr
                     };
+                    // OBJ.cpp:167
                     true
                 } else {
+                    // OBJ.cpp:169
                     false
                 }
             };
@@ -382,10 +384,11 @@ pub fn load_obj(
                                   obj_info: &mut ObjInfo,
                                   data: &ObjData,
                                   mtl_data: &MtlData| {
+                // OBJ.cpp:172
                 if mtl_data.new_mtl_unmap.contains_key(mtl_name) {
+                    // OBJ.cpp:173-174 — RGBA face_color; get_face_color(mtl_name, face_color);
                     let mut face_color = [0.0f32; 4];
                     let mtl = &mtl_data.new_mtl_unmap[mtl_name];
-                    // Compute face color
                     for n in 0..3 {
                         let object_ka = if mtl.ka[n] > 0.01 && mtl.ka[n] < 0.99 {
                             mtl.ka[n] * 0.1
@@ -394,41 +397,53 @@ pub fn load_obj(
                         };
                         let value = object_ka + mtl.kd[n];
                         let temp = if do_gamma_correct {
-                            gamma_correct(value)
+                            ColorRGBA::gamma_correct_value(value)
                         } else {
                             value
                         };
                         face_color[n] = temp.clamp(0.0, 1.0);
                     }
                     face_color[3] = if do_gamma_correct {
-                        gamma_correct(mtl.tr)
+                        ColorRGBA::gamma_correct_value(mtl.tr)
                     } else {
                         mtl.tr
                     };
 
+                    // OBJ.cpp:175-180
                     if !mtl.map_kd.is_empty() {
-                        obj_info.has_uv_png = true;
+                        // OBJ.cpp:176
                         let png_name = mtl.map_kd.clone();
+                        // OBJ.cpp:177
+                        obj_info.has_uv_png = true;
+                        // OBJ.cpp:178
                         obj_info.pngs.entry(png_name.clone()).or_insert(false);
+                        // OBJ.cpp:179
                         obj_info.uv_map_pngs.insert(face_index, png_name);
                     }
-                    if !data.texture_coordinates.is_empty()
-                        && (local_uvs[0] >= 0 && local_uvs[1] >= 0 && local_uvs[2] >= 0)
-                    {
+                    // OBJ.cpp:181 — if (data.textureCoordinates.size() > 0)
+                    if !data.texture_coordinates.is_empty() {
                         let tc = &data.texture_coordinates;
-                        let u0 = local_uvs[0] as usize * 2;
-                        let u1 = local_uvs[1] as usize * 2;
-                        let u2 = local_uvs[2] as usize * 2;
-                        if u0 + 1 < tc.len() && u1 + 1 < tc.len() && u2 + 1 < tc.len() {
-                            obj_info.uvs.push([
-                                [tc[u0], tc[u0 + 1]],
-                                [tc[u1], tc[u1 + 1]],
-                                [tc[u2], tc[u2 + 1]],
-                            ]);
-                        }
+                        // OBJ.cpp:182-185
+                        let uv0 = [
+                            tc[local_uvs[0] as usize * 2],
+                            tc[local_uvs[0] as usize * 2 + 1],
+                        ];
+                        let uv1 = [
+                            tc[local_uvs[1] as usize * 2],
+                            tc[local_uvs[1] as usize * 2 + 1],
+                        ];
+                        let uv2 = [
+                            tc[local_uvs[2] as usize * 2],
+                            tc[local_uvs[2] as usize * 2 + 1],
+                        ];
+                        // OBJ.cpp:186
+                        obj_info.uvs.push([uv0, uv1, uv2]);
                     }
+                    // OBJ.cpp:188
                     obj_info.face_colors.push(face_color);
-                } else if obj_info.lost_material_name.is_empty() {
+                }
+                // OBJ.cpp:190-194
+                else if obj_info.lost_material_name.is_empty() {
                     obj_info.lost_material_name = mtl_name.to_string();
                 }
             };
@@ -493,13 +508,55 @@ pub fn load_obj(
         }
     }
 
-    let mesh = TriangleMesh::from_parts(vertices, indices);
+    // OBJ.cpp:236 — *meshptr = TriangleMesh(std::move(its));
+    let mut mesh = TriangleMesh::from_parts(vertices, indices);
+    // OBJ.cpp:237
     if mesh.is_empty() {
-        error!("load_obj: OBJ file is empty: {:?}", path);
+        // OBJ.cpp:238
+        error!(
+            "load_obj: This OBJ file couldn't be read because it's empty. {:?}",
+            path
+        );
+        // OBJ.cpp:239
         *message = "This OBJ file couldn't be read because it's empty.".to_string();
+        // OBJ.cpp:240
         return Err(Error::Mesh(message.clone()));
     }
-    // Note: volume check and flip_triangles handled at model level if needed.
+    // OBJ.cpp:242-243 — if (meshptr->volume() < 0) meshptr->flip_triangles();
+    //
+    // `TriangleMesh::volume()` is `its_volume(its)`, a *signed* volume computed on
+    // the single-precision `indexed_triangle_set`. Reconstruct that `its` from the
+    // mesh (the f64 `Point3F` coordinates are exact widenings of the original f32
+    // OBJ values, so narrowing back recovers the same f32 bits the C++ used).
+    {
+        let mut its = indexed_triangle_set::default();
+        its.vertices = mesh
+            .vertices()
+            .iter()
+            .map(|v| StlVertex::new(v.x as f32, v.y as f32, v.z as f32))
+            .collect();
+        its.indices = mesh
+            .indices()
+            .iter()
+            .map(|t| {
+                StlTriangleVertexIndices::new(
+                    t.indices[0] as i32,
+                    t.indices[1] as i32,
+                    t.indices[2] as i32,
+                )
+            })
+            .collect();
+        if its_volume(&its) < 0.0 {
+            // TriangleMesh::flip_triangles() -> its_flip_triangles(its): swap face(1)/face(2).
+            its_flip_triangles(&mut its);
+            for (t, f) in mesh.indices_mut().iter_mut().zip(its.indices.iter()) {
+                t.indices[0] = f[0] as u32;
+                t.indices[1] = f[1] as u32;
+                t.indices[2] = f[2] as u32;
+            }
+        }
+    }
+    // OBJ.cpp:244
     Ok(mesh)
 }
 
@@ -554,6 +611,15 @@ pub fn store_obj(path: &Path, mesh: &TriangleMesh) -> Result<()> {
         .map_err(|e| Error::IO(format!("Write error: {}", e)))?;
     }
     Ok(())
+}
+
+/// Store a `ModelObject` to an OBJ file.
+/// OBJ.cpp:273-277
+pub fn store_obj_object(path: &Path, model_object: &ModelObject) -> Result<()> {
+    // OBJ.cpp:275 — TriangleMesh mesh = model_object->mesh();
+    let mesh = model_object.mesh.clone();
+    // OBJ.cpp:276 — return store_obj(path, &mesh);
+    store_obj(path, &mesh)
 }
 
 /// Store a `Model` to an OBJ file (merges all object meshes).

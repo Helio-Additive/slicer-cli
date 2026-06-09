@@ -47,6 +47,13 @@ pub mod support_layer;
 pub mod support_material;
 pub mod support_parameters;
 pub mod tree_model_volumes;
+// Faithful 1:1 port of the standalone helpers/data-structures of
+// `Support/TreeSupport.{hpp,cpp}` (the 2D tree-support algorithm). The
+// `TreeSupport`/`TreeSupportData` class methods are blocked on PrintObject/Layer
+// and remain documented but unported; see the module for the blocked-symbol list.
+// Exposed as a module (no glob re-export) to avoid clashing with the active
+// `tree_support_3d` types (SupportNode, OverhangType, TreeNodeType, LayerHeightData).
+pub mod tree_support;
 pub mod tree_support_3d;
 // Faithful 1:1 port of `Support/TreeSupportCommon.hpp`. Exposed as a module
 // (no glob re-export) to avoid name clashes with the older, divergent

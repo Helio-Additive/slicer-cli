@@ -15,7 +15,7 @@ use slicer::geometry::Point3F;
 use slicer::print::{Print, PrintObject};
 use slicer::print_config::{PrintConfig, PrintObjectConfig};
 use slicer::region_config::PrintRegionConfig;
-use slicer::stl::load_stl;
+use slicer::stl::read_stl_file as load_stl;
 use slicer::{Triangle, TriangleMesh};
 
 #[derive(Parser)]
