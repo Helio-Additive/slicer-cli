@@ -129,6 +129,24 @@ impl BoundingBox {
         Point::new((self.min.x + self.max.x) / 2, (self.min.y + self.max.y) / 2)
     }
 
+    /// Build the axis-aligned rectangle polygon (CCW) for this bounding box.
+    ///
+    /// BoundingBox.cpp:15-28 — `void BoundingBox::polygon(Polygon* polygon) const`
+    /// and BoundingBox.cpp:29-34 — `Polygon BoundingBox::polygon() const`.
+    pub fn polygon(&self) -> super::Polygon {
+        // BoundingBox.cpp:18-19 — points.clear(); points.resize(4);
+        super::Polygon::from_points(vec![
+            // BoundingBox.cpp:20-21 — points[0] = (min.x, min.y)
+            Point::new(self.min.x, self.min.y),
+            // BoundingBox.cpp:22-23 — points[1] = (max.x, min.y)
+            Point::new(self.max.x, self.min.y),
+            // BoundingBox.cpp:24-25 — points[2] = (max.x, max.y)
+            Point::new(self.max.x, self.max.y),
+            // BoundingBox.cpp:26-27 — points[3] = (min.x, max.y)
+            Point::new(self.min.x, self.max.y),
+        ])
+    }
+
     /// Get the area of the bounding box.
     #[inline]
     pub fn area(&self) -> i128 {

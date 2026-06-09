@@ -4,83 +4,148 @@
 //! - Fill/FillLightning.hpp
 //! - Fill/FillLightning.cpp
 //!
-//! Lightning infill generates tree-like structures that branch from the top
-//! surface down to the bottom, providing support with minimal material usage.
-//! The pattern uses the Lightning/ submodule for tree generation and distance
-//! field computation.
-//!
-//! The generator builds a forest of lightning trees layer by layer from top
-//! to bottom. Each tree grows from overhang regions toward grounded regions.
+//! Faithful 1:1 port of `Slic3r::FillLightning` (FillLightning.cpp). Lightning
+//! infill generates tree-like structures that branch from the top surface down
+//! to the bottom, providing support with minimal material usage. The tree
+//! forest is produced by the `lightning` submodule (`Lightning/Generator.cpp`
+//! etc.) and this file turns the per-layer forest into infill polylines.
 
-use crate::geometry::{ExPolygon, Polyline};
-use crate::CoordF;
+// FillLightning.cpp:1-6
+//   #include "../Print.hpp"
+//   #include "../ShortestPath.hpp"
+//   #include "ClipperUtils.hpp"
+//   #include "FillLightning.hpp"
+//   #include "Lightning/Generator.hpp"
+use super::lightning::generator::Generator;
+use super::{connect_infill_expolygon, multiline_fill, FillParams};
+use crate::clipper_utils::intersection_pl;
+use crate::geometry::{ExPolygon, Point, Polyline};
+use crate::shortest_path::chain_polylines;
+use crate::{scaled, CoordF};
 
-/// Lightning infill generator.
-///
-/// Maintains the tree forest across layers and delegates to the Lightning/
-/// submodule for actual tree growth.
-///
-/// FillLightning.hpp: class Generator
-#[derive(Debug, Clone, Default)]
-pub struct Generator {
-    /// Layer-by-layer tree data. Each entry holds the tree forest for one layer.
-    pub layers: Vec<super::lightning::layer::Layer>,
-}
-
-impl Generator {
-    /// Create a new empty lightning generator.
-    pub fn new() -> Self {
-        Self { layers: Vec::new() }
-    }
-
-    /// Generate lightning infill trees for the given layers.
-    ///
-    /// FillLightning.cpp: Generator::generate()
-    pub fn generate(&mut self, _layer_outlines: &[Vec<ExPolygon>], _spacing: CoordF) {
-        // Full implementation would build distance fields per layer and grow
-        // tree nodes from unsupported points toward grounded regions.
-        // Currently a no-op; returns empty layers.
-        self.layers.clear();
-    }
-}
+// FillLightning.cpp:8 — namespace Slic3r::FillLightning
 
 /// Lightning fill pattern entry point.
 ///
-/// FillLightning.hpp: class Filler
+/// FillLightning.hpp:19 — `class Filler : public Slic3r::Fill`.
+///
+/// The base `Slic3r::Fill` members that this filler actually reads
+/// (`layer_id`, `spacing`, `overlap`) are held here directly, mirroring the
+/// inherited C++ fields. `generator` is the raw pointer to the tree forest the
+/// G-code pipeline owns (FillLightning.hpp:25 — `Generator *generator`).
 #[derive(Debug, Clone, Default)]
-pub struct Filler {
-    /// Reference to the generator that holds the tree data.
+pub struct Filler<'a> {
+    /// Base `Fill::layer_id` (FillBase.hpp:111).
+    pub layer_id: usize,
+    /// Base `Fill::spacing` in unscaled coordinates (FillBase.hpp:115).
     pub spacing: CoordF,
+    /// Base `Fill::overlap`, infill / perimeter overlap, unscaled (FillBase.hpp:117).
+    pub overlap: CoordF,
+    /// FillLightning.hpp:25 — `Generator *generator { nullptr }`.
+    pub generator: Option<&'a Generator>,
 }
 
-impl Filler {
-    /// Create a new lightning filler with the given spacing.
-    pub fn new(spacing: CoordF) -> Self {
-        Self { spacing }
+impl<'a> Filler<'a> {
+    /// FillLightning.hpp:23 — `bool is_self_crossing() override { return false; }`.
+    pub fn is_self_crossing(&self) -> bool {
+        false
     }
 
-    /// Generate lightning infill polylines for a single layer.
-    ///
-    /// Converts the tree structure at the given layer index into polylines.
-    pub fn fill_layer(
+    /// FillLightning.hpp:36 — `bool no_sort() const override { return false; }`.
+    /// Let the G-code export reorder the infill lines.
+    pub fn no_sort(&self) -> bool {
+        false
+    }
+
+    /// FillLightning.cpp:10 — `void Filler::_fill_surface_single(...)`.
+    pub fn fill_surface_single(
         &self,
-        _generator: &Generator,
-        _layer_idx: usize,
-        _fill_area: &[ExPolygon],
-    ) -> Vec<Polyline> {
-        // Full implementation would traverse the tree nodes for this layer
-        // and emit polylines along tree edges.
-        Vec::new()
+        params: &FillParams,
+        _thickness_layers: u32,
+        _direction: &(f32, Point),
+        expolygon: ExPolygon,
+        polylines_out: &mut Vec<Polyline>,
+    ) {
+        // FillLightning.cpp:17
+        let generator = match self.generator {
+            Some(g) => g,
+            None => return,
+        };
+        // FillLightning.cpp:18
+        let layer = generator.get_trees_for_layer(self.layer_id);
+        // FillLightning.cpp:19
+        let mut fill_lines: Vec<Polyline> = layer.convert_to_lines(
+            &expolygon.to_polygons(),
+            scaled(0.5 * self.spacing - self.overlap),
+        );
+
+        // FillLightning.cpp:21
+        // Apply multiline offset if needed
+        // FillLightning.cpp:22
+        multiline_fill(&mut fill_lines, params, self.spacing as f32);
+        // FillLightning.cpp:23
+        let all_polylines: Vec<Polyline> = intersection_pl(&fill_lines, std::slice::from_ref(&expolygon));
+        // FillLightning.cpp:24
+        if params.dont_connect() || all_polylines.len() <= 1 {
+            // FillLightning.cpp:25
+            append(polylines_out, chain_polylines(all_polylines, None));
+        } else {
+            // FillLightning.cpp:27
+            // Fill::connect_infill(std::move(all_polylines), expolygon,
+            //   polylines_out, this->spacing, params)
+            // `connect_infill_expolygon` (fill/mod.rs) is the ExPolygon overload
+            // of Fill::connect_infill (FillBase.cpp:1164).
+            connect_infill_expolygon(all_polylines, &expolygon, self.spacing, params, polylines_out);
+        }
     }
 }
 
-/// Custom deleter for Generator (Rust uses Drop, this is a compatibility type).
-/// FillLightning.hpp: GeneratorDeleter
-#[derive(Debug, Clone, Default)]
+/// Custom deleter for `Generator`.
+///
+/// FillLightning.hpp:14 — `struct GeneratorDeleter { void operator()(Generator *p); }`.
+/// In Rust ownership/`Drop` handles destruction; this type is kept as a
+/// faithful structural mirror of the C++ deleter used by `GeneratorPtr`.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GeneratorDeleter;
 
 impl GeneratorDeleter {
-    pub fn new() -> Self {
-        Self
+    /// FillLightning.cpp:30 — `void GeneratorDeleter::operator()(Generator *p) { delete p; }`.
+    /// Consuming the box drops (frees) the `Generator`, equivalent to `delete p`.
+    pub fn call(&self, p: Box<Generator>) {
+        // FillLightning.cpp:31 — delete p;
+        drop(p);
+    }
+}
+
+/// FillLightning.cpp:34 — `GeneratorPtr build_generator(const PrintObject &print_object, ...)`.
+///
+/// BLOCKED: the body `return GeneratorPtr(new Generator(print_object,
+/// throw_on_cancel_callback));` requires:
+///   1. `PrintObject`, which is not yet threaded through the fill pipeline, and
+///   2. `Generator::generateTrees` (Lightning/Generator.cpp), the R-tree /
+///      distance-field tree-growth algorithm, which is a separate not-yet-ported
+///      dependency (currently only stubbed in `lightning/generator.rs`).
+///
+/// Once `PrintObject` and the Lightning generator are ported, this becomes:
+/// `Box::new(Generator::new(print_object, throw_on_cancel_callback))`.
+//
+// pub fn build_generator(
+//     print_object: &PrintObject,
+//     throw_on_cancel_callback: &dyn Fn(),
+// ) -> Box<Generator> {
+//     // FillLightning.cpp:36
+//     Box::new(Generator::new(print_object, throw_on_cancel_callback))
+// }
+
+// FillLightning.cpp:39 — } // namespace Slic3r::FillAdaptive
+
+/// `append(dst, src)` — Slic3r helper that moves all elements of `src` onto the
+/// end of `dst`. Used at FillLightning.cpp:25.
+#[inline]
+fn append(dst: &mut Vec<Polyline>, mut src: Vec<Polyline>) {
+    if dst.is_empty() {
+        *dst = src;
+    } else {
+        dst.append(&mut src);
     }
 }

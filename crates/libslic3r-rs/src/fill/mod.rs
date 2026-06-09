@@ -30,7 +30,7 @@
 //! - FillConcentric.cpp → fill_concentric.rs (TODO)
 //! - FillGyroid.cpp → fill_gyroid.rs (TODO)
 //! - FillHoneycomb.cpp → fill_honeycomb.rs (TODO)
-//! - FillLine.cpp → fill_line.rs (TODO)
+//! - FillLine.cpp → fill_line.rs
 //! - FillLightning.cpp → fill_lightning.rs (delegating to lightning/ subdir)
 //!
 //! NOTE: The fill_base.rs content is currently in this mod.rs file for convenience.
@@ -825,10 +825,21 @@ pub fn generate_infill(
         }
         InfillPattern::Honeycomb => {
             // FillHoneycomb.cpp - 2D hexagonal honeycomb infill
-            let filler = fill_honeycomb::FillHoneycomb::new(line_spacing, 0.2);
+            let mut filler = fill_honeycomb::FillHoneycomb::new(line_spacing);
+            let mut params = FillParams::new();
+            params.density = 0.2; // default density
+            // dont_connect() so we just chain the lines in this simplified helper.
+            params.anchor_length_max = 0.0;
+            let direction = (angle as f32, Point::new(0, 0));
             let mut all_polylines = Vec::new();
             for expoly in fill_area {
-                all_polylines.extend(filler.fill_surface(expoly));
+                filler.fill_surface_single(
+                    &params,
+                    1,
+                    &direction,
+                    expoly.clone(),
+                    &mut all_polylines,
+                );
             }
             Ok(all_polylines)
         }
@@ -857,7 +868,8 @@ pub fn generate_infill(
             // Lightning infill requires layer-by-layer tree generation context
             // that is not available in this single-layer API. Return empty
             // polylines; the full lightning pipeline should be invoked through
-            // the fill_lightning::Generator / fill_lightning::Filler API.
+            // the fill_lightning::Filler (FillLightning.cpp) +
+            // lightning::generator::Generator (Lightning/Generator.cpp) API.
             Ok(Vec::new())
         }
     }
@@ -889,6 +901,15 @@ pub struct FillParams {
     pub anchor_length: f64,
     /// Maximum anchor length (mm, scaled).
     pub anchor_length_max: f64,
+    /// Number of parallel lines to replicate per infill path (multiline infill).
+    /// FillBase.hpp:58 — `int multiline{ 1 }`.
+    pub multiline: i32,
+    /// Layer height for Concentric infill with Arachne (unscaled, mm).
+    /// FillBase.hpp — `coordf_t layer_height { 0.f }`.
+    pub layer_height: f64,
+    /// Don't adjust spacing to fill the space evenly.
+    /// FillBase.hpp:68 — `bool dont_adjust { true }`.
+    pub dont_adjust: bool,
 }
 
 impl FillParams {
@@ -907,7 +928,22 @@ impl FillParams {
             }),
             anchor_length: 1000.0,
             anchor_length_max: 1000.0,
+            multiline: 1,
+            layer_height: 0.0,
+            dont_adjust: true,
         }
+    }
+
+    /// Don't connect the fill lines around the inner perimeter.
+    /// FillBase.hpp:56 — `bool dont_connect() const { return anchor_length_max < 0.05; }`.
+    pub fn dont_connect(&self) -> bool {
+        self.anchor_length_max < 0.05
+    }
+}
+
+impl Default for FillParams {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1153,3 +1189,99 @@ pub fn connect_infill_expolygon(
     }
     connect_infill(infill_ordered, &polygons, spacing, params, polylines_out);
 }
+
+/// Apply a multi-line offset to a set of infill polylines.
+///
+/// When `params.multiline > 1`, each input polyline is replicated `multiline`
+/// times, offset to both sides of the original along the local normal, so that
+/// a single infill path becomes a band of parallel paths.
+///
+/// FillBase.cpp:2615
+pub fn multiline_fill(polylines: &mut Vec<Polyline>, params: &FillParams, spacing: f32) {
+    // FillBase.cpp:2617
+    if params.multiline > 1 {
+        // FillBase.cpp:2618
+        let n_lines = params.multiline;
+        // FillBase.cpp:2619
+        let n_polylines = polylines.len() as i32;
+        // FillBase.cpp:2620-2621
+        let mut all_polylines: Vec<Polyline> = Vec::with_capacity((n_lines * n_polylines) as usize);
+
+        // FillBase.cpp:2623
+        let center = (n_lines - 1) as f32 / 2.0f32;
+
+        // FillBase.cpp:2625
+        // current polyline as the center line, offset to both sides
+        // FillBase.cpp:2626
+        for line in 0..n_lines {
+            // FillBase.cpp:2627
+            let offset = (line as f32 - center) * spacing;
+
+            // FillBase.cpp:2629
+            for pl in polylines.iter() {
+                // FillBase.cpp:2630
+                let n = pl.points.len();
+                // FillBase.cpp:2631-2634
+                if n < 2 {
+                    all_polylines.push(pl.clone());
+                    continue;
+                }
+
+                // FillBase.cpp:2636-2637
+                let mut new_points: Vec<Point> = Vec::with_capacity(n);
+                // FillBase.cpp:2638
+                // Offset each point along the normal direction
+                // FillBase.cpp:2639
+                for i in 0..n {
+                    // FillBase.cpp:2640
+                    let tangent: (f32, f32);
+                    // FillBase.cpp:2641-2642
+                    if i == 0 {
+                        tangent = (
+                            (pl.points[1].x() - pl.points[0].x()) as f32,
+                            (pl.points[1].y() - pl.points[0].y()) as f32,
+                        );
+                    // FillBase.cpp:2643-2644
+                    } else if i == n - 1 {
+                        tangent = (
+                            (pl.points[n - 1].x() - pl.points[n - 2].x()) as f32,
+                            (pl.points[n - 1].y() - pl.points[n - 2].y()) as f32,
+                        );
+                    } else {
+                        // FillBase.cpp:2647
+                        tangent = (
+                            (pl.points[i + 1].x() - pl.points[i - 1].x()) as f32,
+                            (pl.points[i + 1].y() - pl.points[i - 1].y()) as f32,
+                        );
+                        // FillBase.cpp:2648-2656 (commented out in C++)
+                    }
+                    // FillBase.cpp:2658
+                    let mut len = tangent.0.hypot(tangent.1);
+                    // FillBase.cpp:2659-2660
+                    if len == 0.0 {
+                        len = 1.0f32;
+                    }
+                    // FillBase.cpp:2661
+                    let tangent = (tangent.0 / len, tangent.1 / len);
+                    // FillBase.cpp:2662
+                    let normal = (-tangent.1, tangent.0);
+
+                    // FillBase.cpp:2664
+                    let mut p = pl.points[i];
+                    // FillBase.cpp:2665
+                    p.x += crate::scale((normal.0 * offset) as f64);
+                    // FillBase.cpp:2666
+                    p.y += crate::scale((normal.1 * offset) as f64);
+                    // FillBase.cpp:2667
+                    new_points.push(p);
+                }
+
+                // FillBase.cpp:2670
+                all_polylines.push(Polyline::from_points(new_points));
+            }
+        }
+        // FillBase.cpp:2673
+        *polylines = all_polylines;
+    }
+}
+

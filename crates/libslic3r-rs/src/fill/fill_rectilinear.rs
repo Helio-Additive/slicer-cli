@@ -4131,6 +4131,91 @@ pub fn generate_fill_rectilinear_monotonic(
 }
 
 // ---------------------------------------------------------------------------
+// sample_grid_pattern
+// ---------------------------------------------------------------------------
+
+// Lightning infill assumes that the distance between any two sampled points is always
+// at least equal to the value of spacing. To meet this assumption, we need to use
+// BoundingBox for whole layers instead of bounding box just around processing ExPolygon.
+// Using just BoundingBox around processing ExPolygon could produce two points closer
+// than spacing (in cases where two ExPolygon are closer than spacing).
+//
+// FillRectilinear.cpp:3204-3224
+pub fn sample_grid_pattern(
+    expolygon: &ExPolygon,
+    spacing: Coord,
+    global_bounding_box: &BoundingBox,
+) -> Vec<Point> {
+    // FillRectilinear.cpp:3206
+    let poly_with_offset = ExPolygonWithOffset::new(expolygon, 0.0, 0, 0);
+    // FillRectilinear.cpp:3207-3211
+    let segs = slice_region_by_vertical_lines(
+        &poly_with_offset,
+        ((global_bounding_box.max.x() - global_bounding_box.min.x() + spacing - 1) / spacing)
+            as usize,
+        global_bounding_box.min.x(),
+        spacing,
+    );
+
+    // FillRectilinear.cpp:3213
+    let mut out: Vec<Point> = Vec::new();
+    // FillRectilinear.cpp:3214
+    for sil in &segs {
+        // FillRectilinear.cpp:3215
+        let mut i = 0;
+        while i < sil.intersections.len() {
+            // FillRectilinear.cpp:3216
+            let a = sil.intersections[i].pos();
+            // FillRectilinear.cpp:3217
+            let b = sil.intersections[i + 1].pos();
+            // FillRectilinear.cpp:3218
+            let mut y = a - (a % spacing) - spacing;
+            while y < b {
+                // FillRectilinear.cpp:3219
+                if y > a {
+                    // FillRectilinear.cpp:3220
+                    out.push(Point::new(sil.pos, y));
+                }
+                y += spacing;
+            }
+            i += 2;
+        }
+    }
+    // FillRectilinear.cpp:3223
+    out
+}
+
+// FillRectilinear.cpp:3226-3232
+pub fn sample_grid_pattern_expolygons(
+    expolygons: &[ExPolygon],
+    spacing: Coord,
+    global_bounding_box: &BoundingBox,
+) -> Vec<Point> {
+    // FillRectilinear.cpp:3228
+    let mut out: Vec<Point> = Vec::new();
+    // FillRectilinear.cpp:3229-3230
+    for expoly in expolygons {
+        out.extend(sample_grid_pattern(expoly, spacing, global_bounding_box));
+    }
+    // FillRectilinear.cpp:3231
+    out
+}
+
+// FillRectilinear.cpp:3234-3237
+pub fn sample_grid_pattern_polygons(
+    polygons: &[Polygon],
+    spacing: Coord,
+    global_bounding_box: &BoundingBox,
+) -> Vec<Point> {
+    // FillRectilinear.cpp:3236 — return sample_grid_pattern(union_ex(polygons), ...);
+    sample_grid_pattern_expolygons(
+        &crate::clipper2_utils::union_ex_2(polygons),
+        spacing,
+        global_bounding_box,
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

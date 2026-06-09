@@ -34,6 +34,17 @@ impl Generator {
         }
     }
 
+    /// Return the tree forest for the given layer.
+    ///
+    /// Generator.cpp:155 — `const Layer& Generator::getTreesForLayer(const
+    /// size_t& layer_id) const`. C++ asserts `layer_id < m_lightning_layers.size()`.
+    pub fn get_trees_for_layer(&self, layer_id: usize) -> &Layer {
+        // Generator.cpp:157
+        debug_assert!(layer_id < self.layers.len());
+        // Generator.cpp:158
+        &self.layers[layer_id]
+    }
+
     /// Generate lightning infill trees for all layers.
     ///
     /// Generator.cpp: Generator::generate()

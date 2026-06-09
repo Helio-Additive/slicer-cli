@@ -477,6 +477,61 @@ impl ThickPolyline {
         }
         bbox
     }
+
+    /// MultiPoint.hpp:122 `bool is_valid() const { return this->points.size() >= 2; }`
+    ///
+    /// `ThickPolyline` inherits `is_valid()` from `Polyline`/`MultiPoint` in C++.
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        self.points.len() >= 2
+    }
+
+    /// Polyline.cpp:52-90 `void Polyline::clip_end(double distance)`
+    ///
+    /// `ThickPolyline` inherits `clip_end` from `Polyline` in C++; it operates only
+    /// on `points` (the per-segment `width` vector is intentionally left untouched,
+    /// matching the base-class behaviour). `ThickPolyline` has no `fitting_result`,
+    /// so the fitting-result clipping tail of `Polyline::clip_end` does not apply.
+    pub fn clip_end(&mut self, mut distance: f64) {
+        // Polyline.cpp:54
+        let mut last_point_inserted = false;
+        // Polyline.cpp:56
+        while distance > 0.0 {
+            // Polyline.cpp:57 — cast<double>() is a raw integer-to-double cast.
+            let last_point = (
+                self.points.last().unwrap().x as f64,
+                self.points.last().unwrap().y as f64,
+            );
+            // Polyline.cpp:58
+            self.points.pop();
+            // Polyline.cpp:60-63
+            if self.points.is_empty() {
+                return;
+            }
+            // Polyline.cpp:64 — v = last_point() - last_point
+            let vx = self.points.last().unwrap().x as f64 - last_point.0;
+            let vy = self.points.last().unwrap().y as f64 - last_point.1;
+            // Polyline.cpp:65 — lsqr = v.squaredNorm()
+            let lsqr = vx * vx + vy * vy;
+            // Polyline.cpp:66
+            if lsqr > distance * distance {
+                // Polyline.cpp:67 — (last_point + v * (distance / sqrt(lsqr))).cast<coord_t>()
+                // cast<coord_t> truncates toward zero.
+                let s = distance / lsqr.sqrt();
+                let nx = last_point.0 + vx * s;
+                let ny = last_point.1 + vy * s;
+                self.points.push(Point::new(nx as Coord, ny as Coord));
+                // Polyline.cpp:68
+                last_point_inserted = true;
+                // Polyline.cpp:69
+                break;
+            }
+            // Polyline.cpp:71
+            distance -= lsqr.sqrt();
+        }
+        // C++ `last_point_inserted` is assigned but unused below; silence warning.
+        let _ = last_point_inserted;
+    }
 }
 
 impl fmt::Debug for ThickPolyline {

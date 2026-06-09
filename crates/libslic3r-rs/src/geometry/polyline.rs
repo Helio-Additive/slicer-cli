@@ -1179,6 +1179,15 @@ impl Polyline {
         result
     }
 
+    /// Rotate every point about `center`.
+    ///
+    /// MultiPoint.cpp:37-46 — `void MultiPoint::rotate(double angle, const Point &center)`.
+    pub fn rotate_around(&mut self, angle: CoordF, center: Point) {
+        for p in &mut self.points {
+            *p = p.rotate_around(angle, center);
+        }
+    }
+
     /// Rust-only: index-based two-way split, using C++ `split_at_index` semantics.
     /// Returns (p1, p2). Retained for crate callers (e.g. curve_analyzer).
     pub fn split_at(&self, index: usize) -> (Self, Self) {

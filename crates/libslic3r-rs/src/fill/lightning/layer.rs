@@ -59,15 +59,34 @@ impl Layer {
         }
     }
 
-    /// Convert the tree forest to polylines for infill extrusion.
+    /// Convert the tree forest to polylines for infill extrusion, clipped to
+    /// the given outline.
     ///
-    /// Layer.cpp: convert_to_lines()
-    pub fn convert_to_lines(&self) -> Vec<Polyline> {
-        let mut result = Vec::new();
-        for root in &self.tree_roots {
-            result.extend(root.to_polylines());
+    /// Layer.cpp:436 — `Layer::convertToLines(const Polygons& limit_to_outline,
+    /// const coord_t line_overlap)`
+    ///
+    /// NOTE: `Node::convertToPolylines(output, line_overlap)` lives in
+    /// TreeNode.cpp (a separate, not-yet-fully-ported file). Here it is routed
+    /// through the existing `Node::to_polylines()` representation; once
+    /// TreeNode.cpp is ported faithfully, `line_overlap` will participate in the
+    /// per-node polyline construction. The Layer-level control flow below is a
+    /// faithful 1:1 translation of Layer.cpp:436-446.
+    pub fn convert_to_lines(&self, limit_to_outline: &[Polygon], line_overlap: Coord) -> Vec<Polyline> {
+        // Layer.cpp:438-439
+        if self.tree_roots.is_empty() {
+            return Vec::new();
         }
-        result
+
+        // Layer.cpp:441
+        let mut result_lines: Vec<Polyline> = Vec::new();
+        // Layer.cpp:442-443
+        for tree in &self.tree_roots {
+            let _ = line_overlap; // forwarded to Node::convertToPolylines once ported
+            result_lines.extend(tree.to_polylines());
+        }
+
+        // Layer.cpp:445
+        crate::clipper2_utils::intersection_pl_2(&result_lines, limit_to_outline)
     }
 
     /// Reconnect tree roots that may have become disconnected after

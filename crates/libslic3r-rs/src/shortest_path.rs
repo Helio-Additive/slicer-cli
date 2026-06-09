@@ -1157,18 +1157,44 @@ pub fn chain_polylines_ref(src: &Polylines, start_near: Option<&Point>) -> Polyl
 }
 
 // ShortestPath.hpp:28-40
-// template<typename T> reorder_by_shortest_traverse
-pub fn reorder_by_shortest_traverse(polylines_out: &mut Vec<Polyline>) {
+// template<typename T> inline void reorder_by_shortest_traverse(std::vector<T> &polylines_out)
+//
+// The C++ template only requires that `T` exposes `T::points` with a `.front()`.
+// In Rust this is modelled by the `ReorderByShortestTraverse` trait, which yields
+// the first point of the polyline-like `T`. Implemented for `Polyline` and
+// `ThickPolyline` (the two instantiations used in libslic3r).
+pub trait ReorderByShortestTraverse {
+    /// `contour.points.front()` — first point of the polyline-like contour.
+    fn front_point(&self) -> Point;
+}
+
+impl ReorderByShortestTraverse for Polyline {
+    #[inline]
+    fn front_point(&self) -> Point {
+        self.points[0]
+    }
+}
+
+impl ReorderByShortestTraverse for crate::geometry::ThickPolyline {
+    #[inline]
+    fn front_point(&self) -> Point {
+        self.points[0]
+    }
+}
+
+pub fn reorder_by_shortest_traverse<T: ReorderByShortestTraverse + Default>(
+    polylines_out: &mut Vec<T>,
+) {
     // ShortestPath.hpp:30-32
     let mut start_point: Vec<Point> = Vec::with_capacity(polylines_out.len());
     for contour in polylines_out.iter() {
-        start_point.push(contour.points[0]);
+        start_point.push(contour.front_point());
     }
     // ShortestPath.hpp:34
     let order = chain_points(&start_point, None);
     // ShortestPath.hpp:36-39
     let mut temp = std::mem::take(polylines_out);
-    let mut result: Vec<Polyline> = Vec::with_capacity(temp.len());
+    let mut result: Vec<T> = Vec::with_capacity(temp.len());
     for i in order {
         result.push(std::mem::take(&mut temp[i]));
     }
