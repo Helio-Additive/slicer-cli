@@ -1,0 +1,56 @@
+# libslic3r C++ → Rust port — session handoff
+
+**Goal:** faithful, line-by-line 1:1 port of C++ `libslic3r` (BambuStudio) to Rust in
+`crates/libslic3r-rs`, so the Rust engine produces **byte-identical 3DBenchy G-code** to the
+C++ slicer. No shortcuts: same functions, same order, same names (snake_case), same control
+flow / constants / rounding / locations. wasm-safe (no system/dylib deps).
+
+## Where things stand (committed @ branch `alex/libslic3r-parity-engine`)
+- **Ledger: 147 done / 100 partial / 4 deferred / 27 pending of 278 units.**
+- lib **and** bin build green; 3DBenchy slices to **filament 3817.65 mm** (golden 3858.97, ~0.99×), 240 layers, top=5.
+- The 27 pending are deliberately last: **19 SLA** files (resin; off the FFF/Benchy path),
+  **5 big Format importers** (3mf/bbs_3mf 9455loc/AMF/objparser/STEP — file I/O, not slicing math),
+  2 Interlocking, 1 Arachne header, 1 Algorithm.
+- **`partial` (100)** = faithfully ported except symbols blocked on the **config-hierarchy
+  threading** (Print→PrintObject→Layer→PrintRegion) not yet wired, or a not-yet-ported dep.
+  This is the main follow-up track and is why byte-parity isn't reached yet.
+
+## Source of truth + dashboard
+- `crates/libslic3r-rs/PORT_LEDGER.json` — array of units `{cpp,hpp,rust,area,loc,status}`.
+  `status ∈ {pending,partial,deferred,done}`. **This drives the workflow.**
+- `crates/libslic3r-rs/PORT_LEDGER.md` — human dashboard (X/278 + per-area table).
+- `crates/libslic3r-rs/PROGRESS.md` + memory `project_benchy_parity_gap` — parity history/insights.
+
+## How to keep porting (the workflow)
+Saved script (self-contained, resumable, pending-driven):
+`/Users/alex/.claude/projects/-Users-alex-Code-Helio-Additive-worktrees-slicer-cli-lofty-dawn-slicer-cli/a86c8d24-2124-4cc9-be67-a594321213dd/workflows/scripts/libslic3r-systematic-port-v2.js`
+
+Invoke it with the **Workflow tool**: `Workflow({scriptPath: "<that path>"})`.
+It reads the ledger, ports each `pending` unit one-phase-per-file (faithful, build-gated,
+restore-on-fail), updates the ledger, and **git-commits a green checkpoint every 8 files**.
+It runs for hours; a fresh `Workflow({scriptPath})` call always resumes from the ledger
+(no resumeFromRunId needed — that's session-bound; the ledger is the durable state).
+
+## Per-run operating loop (do this each time a run completes/fails)
+1. `devbox run cargo build --manifest-path crates/libslic3r-rs/Cargo.toml` (lib) and `… --bin slicer-cli` (bin) — **both must be exit 0.**
+2. If a porter left a **broken tail** (it happens — the commit-agent refuses to commit red), fix it. Recurring kinds, all mechanical:
+   - a config struct grew (e.g. `PrintRegionConfig`) → update struct literals in `src/bin/slicer-cli.rs` (`create_default_region_config`) to add the new fields;
+   - module path / `pub use` visibility (e.g. `crate::geometry::geometry::is_approx`; `pub use … indexed_triangle_set`);
+   - missing `#[derive(Copy)]` on trivial index handles.
+   If unfixable after real effort: `git checkout -- <file>` and set that unit back to `pending` in the ledger.
+3. **Parity check (must not regress):**
+   `crates/libslic3r-rs/target/debug/slicer-cli slice -i examples/3DBenchy.stl --settings examples/out/resolved-config.json -o /tmp/rb.gcode` → check `; total filament length` ≈ **3817–3820** (golden 3858.97), 240 layers.
+4. Commit `crates/` with a `Systematic port: …` message, regenerate `PORT_LEDGER.md`.
+5. Re-fire the workflow until `pending == 0`.
+
+## Hard rules / gotchas
+- **ALL builds via `devbox run …`** — never bare cargo/cmake (devbox provides the toolchain).
+- The crate's **test target has ~150 pre-existing unrelated compile errors** (known harness breakage). Only the **lib + bin** builds must be green; ignore `cargo test` failures unless they reference a file you just touched.
+- coord_t→i64, coordf_t→f64. Reuse existing crate primitives (grep before adding). No stubs/fakes — block honestly as `partial`.
+- 3DBenchy parity is currently a near-match by *volume* but **not byte-identical**; remaining gap is feature distribution (Top surface 5 vs 142, Bridge/Floating-shell missing), all traced to the config-threading blocker + an unsolved `top_fills` coverage issue. See `project_benchy_parity_gap` memory and `PROGRESS.md`.
+
+## After pending→0 (next tracks, in priority order)
+1. **Config-hierarchy threading** — wire PrintConfig/PrintObjectConfig/PrintRegionConfig refs through Print→PrintObject→Layer→LayerRegion so the 100 `partial` units' blocked symbols can be completed. Highest leverage for parity.
+2. Re-attempt all `partial` units (now unblocked) → `done`.
+3. `top_fills` coverage fix (gated behind env `TOP_FILLS`) + faithful `discover_vertical_shells` (gated `VSHELL_FAITHFUL`) — see memory.
+4. Format importers + SLA (only if needed).
