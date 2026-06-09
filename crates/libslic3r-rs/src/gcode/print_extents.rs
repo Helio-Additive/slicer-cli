@@ -1,230 +1,221 @@
-//! GCodePrintExtents.rs - Computes print extents for visualization.
-//!
-//! This module calculates the spatial extents of G-code toolpaths,
-//! mirroring BambuStudio's GCode/PrintExtents.cpp.
-//!
-//! Used for:
-//! - Bed visualization
-//! - Print preview bounds
-//! - Collision detection
-//! - Camera framing
+// Calculate extents of the extrusions assigned to Print / PrintObject.
+// The extents are used for assessing collisions of the print with the priming towers,
+// to decide whether to pause the print after the priming towers are extruded
+// to let the operator remove them from the print bed.
+//
+// Faithful 1:1 port of BambuStudio's src/libslic3r/GCode/PrintExtents.cpp.
+// coord_t -> i64, coordf_t -> f64.
 
-use crate::gcode::{ExtrusionRole, GCodeMove, ParsedGCode};
-use crate::geometry::{BoundingBox3F, Point3F};
+use crate::extrusion_entity::{
+    ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionMultiPath,
+    ExtrusionPath,
+};
+use crate::geometry::{BoundingBox, BoundingBoxF, Polyline};
+use crate::print::Print;
+use crate::{scale, Coord};
 
-/// Print extent information.
-#[derive(Debug, Clone, Default)]
-pub struct PrintExtents {
-    /// Overall bounding box
-    pub bbox: BoundingBox3F,
-    /// Extents by extrusion role
-    pub extents_by_role: Vec<(ExtrusionRole, BoundingBox3F)>,
-    /// Layer count
-    pub layer_count: usize,
-    /// Min and max Z
-    pub z_range: (f64, f64),
-    /// Estimated print time (seconds)
-    pub estimated_time: f64,
+// PrintExtents.cpp:249-252 (BoundingBox.hpp Slic3r::empty()) —
+//   return ! bb.defined || bb.min(0) >= bb.max(0) || bb.min(1) >= bb.max(1);
+// BoundingBox::is_empty() only tests `defined`, so we reproduce the full predicate here
+// to match the C++ `empty()` free function used below.
+#[inline]
+fn empty_bbox(bb: &BoundingBox) -> bool {
+    !bb.is_defined() || bb.min.x >= bb.max.x || bb.min.y >= bb.max.y
 }
 
-impl PrintExtents {
-    // Create new empty extents.
-    pub fn new() -> Self {
-        Self {
-            bbox: BoundingBox3F::empty(),
-            extents_by_role: Vec::new(),
-            layer_count: 0,
-            z_range: (f64::INFINITY, f64::NEG_INFINITY),
-            estimated_time: 0.0,
+// PrintExtents.cpp:17-29
+fn extrusion_polyline_extents(polyline: &Polyline, radius: Coord) -> BoundingBox {
+    // PrintExtents.cpp:19
+    let mut bbox = BoundingBox::new();
+    // PrintExtents.cpp:20-21
+    if !polyline.points.is_empty() {
+        bbox.merge_point(polyline.points[0]);
+    }
+    // PrintExtents.cpp:22-27
+    for pt in &polyline.points {
+        bbox.min.x = bbox.min.x.min(pt.x - radius);
+        bbox.min.y = bbox.min.y.min(pt.y - radius);
+        bbox.max.x = bbox.max.x.max(pt.x + radius);
+        bbox.max.y = bbox.max.y.max(pt.y + radius);
+    }
+    // PrintExtents.cpp:28
+    bbox
+}
+
+// PrintExtents.cpp:31-41
+fn extrusionentity_extents_path(extrusion_path: &ExtrusionPath) -> BoundingBoxF {
+    // PrintExtents.cpp:33
+    let bbox = extrusion_polyline_extents(
+        &extrusion_path.polyline,
+        scale(0.5 * extrusion_path.width) as Coord,
+    );
+    // PrintExtents.cpp:34
+    let mut bboxf = BoundingBoxF::new();
+    // PrintExtents.cpp:35-39
+    if !empty_bbox(&bbox) {
+        // bboxf.min = unscale(bbox.min); bboxf.max = unscale(bbox.max); bboxf.defined = true;
+        // `from_points_minmax` sets `defined = true`, mirroring the three C++ assignments.
+        bboxf = BoundingBoxF::from_points_minmax(bbox.min.to_f64(), bbox.max.to_f64());
+    }
+    // PrintExtents.cpp:40
+    bboxf
+}
+
+// PrintExtents.cpp:43-55
+fn extrusionentity_extents_loop(extrusion_loop: &ExtrusionLoop) -> BoundingBoxF {
+    // PrintExtents.cpp:45
+    let mut bbox = BoundingBox::new();
+    // PrintExtents.cpp:46-47
+    for extrusion_path in &extrusion_loop.paths {
+        bbox.merge(&extrusion_polyline_extents(
+            &extrusion_path.polyline,
+            scale(0.5 * extrusion_path.width) as Coord,
+        ));
+    }
+    // PrintExtents.cpp:48
+    let mut bboxf = BoundingBoxF::new();
+    // PrintExtents.cpp:49-53
+    if !empty_bbox(&bbox) {
+        // bboxf.min = unscale(bbox.min); bboxf.max = unscale(bbox.max); bboxf.defined = true;
+        // `from_points_minmax` sets `defined = true`, mirroring the three C++ assignments.
+        bboxf = BoundingBoxF::from_points_minmax(bbox.min.to_f64(), bbox.max.to_f64());
+    }
+    // PrintExtents.cpp:54
+    bboxf
+}
+
+// PrintExtents.cpp:57-69
+// Faithfully ported overload. Not reachable from the `ExtrusionEntityType` dispatch because this
+// crate's enum has no MultiPath variant (see `extrusionentity_extents_entity`); retained verbatim
+// so callers holding an `ExtrusionMultiPath` directly get identical extents.
+#[allow(dead_code)]
+fn extrusionentity_extents_multi_path(extrusion_multi_path: &ExtrusionMultiPath) -> BoundingBoxF {
+    // PrintExtents.cpp:59
+    let mut bbox = BoundingBox::new();
+    // PrintExtents.cpp:60-61
+    for extrusion_path in &extrusion_multi_path.paths {
+        bbox.merge(&extrusion_polyline_extents(
+            &extrusion_path.polyline,
+            scale(0.5 * extrusion_path.width) as Coord,
+        ));
+    }
+    // PrintExtents.cpp:62
+    let mut bboxf = BoundingBoxF::new();
+    // PrintExtents.cpp:63-67
+    if !empty_bbox(&bbox) {
+        // bboxf.min = unscale(bbox.min); bboxf.max = unscale(bbox.max); bboxf.defined = true;
+        // `from_points_minmax` sets `defined = true`, mirroring the three C++ assignments.
+        bboxf = BoundingBoxF::from_points_minmax(bbox.min.to_f64(), bbox.max.to_f64());
+    }
+    // PrintExtents.cpp:68
+    bboxf
+}
+
+// PrintExtents.cpp:71 (forward declaration)
+// PrintExtents.cpp:73-79
+fn extrusionentity_extents_collection(
+    extrusion_entity_collection: &ExtrusionEntityCollection,
+) -> BoundingBoxF {
+    // PrintExtents.cpp:75
+    let mut bbox = BoundingBoxF::new();
+    // PrintExtents.cpp:76-77
+    for extrusion_entity in &extrusion_entity_collection.entities {
+        bbox.merge(&extrusionentity_extents_entity(extrusion_entity));
+    }
+    // PrintExtents.cpp:78
+    bbox
+}
+
+// PrintExtents.cpp:81-99
+//
+// C++ dispatches via dynamic_cast over ExtrusionPath / ExtrusionLoop / ExtrusionMultiPath /
+// ExtrusionEntityCollection. The Rust `ExtrusionEntityType` enum only models Path / Loop /
+// Collection (there is no MultiPath variant in this crate), so the ExtrusionMultiPath branch
+// (PrintExtents.cpp:91-93) cannot be reached through the enum dispatch; the dedicated
+// `extrusionentity_extents_multi_path` overload above is still ported for completeness and for
+// callers holding an `ExtrusionMultiPath` directly.
+fn extrusionentity_extents_entity(extrusion_entity: &ExtrusionEntityType) -> BoundingBoxF {
+    // PrintExtents.cpp:83-84: the `nullptr` case is impossible for a borrowed enum value.
+    match extrusion_entity {
+        // PrintExtents.cpp:85-87
+        ExtrusionEntityType::Path(extrusion_path) => extrusionentity_extents_path(extrusion_path),
+        // PrintExtents.cpp:88-90
+        ExtrusionEntityType::Loop(extrusion_loop) => extrusionentity_extents_loop(extrusion_loop),
+        // PrintExtents.cpp:94-96
+        ExtrusionEntityType::Collection(extrusion_entity_collection) => {
+            extrusionentity_extents_collection(extrusion_entity_collection)
         }
     }
-
-    /// Check if extents are valid (non-empty).
-    pub fn is_valid(&self) -> bool {
-        self.bbox.is_valid()
-    }
-
-    /// Get print width (X dimension).
-    pub fn width(&self) -> f64 {
-        self.bbox.size_x()
-    }
-
-    /// Get print depth (Y dimension).
-    pub fn depth(&self) -> f64 {
-        self.bbox.size_y()
-    }
-
-    /// Get print height (Z dimension).
-    pub fn height(&self) -> f64 {
-        self.bbox.size_z()
-    }
-
-    /// Get center point of the print.
-    pub fn center(&self) -> Point3F {
-        self.bbox.center()
-    }
-
-    /// Get extent for a specific role.
-    pub fn extent_for_role(&self, role: ExtrusionRole) -> Option<&BoundingBox3F> {
-        self.extents_by_role
-            .iter()
-            .find(|(r, _)| *r == role)
-            .map(|(_, bbox)| bbox)
-    }
+    // PrintExtents.cpp:97: throw on unexpected type — unreachable, the match above is exhaustive.
 }
 
-/// Calculates print extents from parsed G-code.
-pub struct PrintExtentsCalculator;
-
-impl PrintExtentsCalculator {
-    // Calculate extents from G-code.
-    pub fn calculate(gcode: &ParsedGCode) -> PrintExtents {
-        let mut extents = PrintExtents::new();
-        let mut role_extents: std::collections::HashMap<ExtrusionRole, BoundingBox3F> =
-            std::collections::HashMap::new();
-
-        let mut current_z = 0.0_f64;
-        let mut current_feedrate = 0.0_f64;
-        let mut total_time = 0.0_f64;
-
-        for move_ in &gcode.moves {
-            let start = Point3F::new(move_.x, move_.y, move_.z);
-            let end = Point3F::new(
-                move_.x + move_.dx.unwrap_or(0.0),
-                move_.y + move_.dy.unwrap_or(0.0),
-                move_.z,
-            );
-
-            // Update Z range
-            extents.z_range.0 = extents.z_range.0.min(move_.z);
-            extents.z_range.1 = extents.z_range.1.max(move_.z);
-            current_z = move_.z;
-
-            // Update overall bbox
-            extents.bbox.merge_point(&start);
-            extents.bbox.merge_point(&end);
-
-            // Track by role
-            if let Some(ref role) = move_.role {
-                let entry = role_extents.entry(role.clone()).or_default();
-                entry.merge_point(&start);
-                entry.merge_point(&end);
-            }
-
-            // Estimate time based on feedrate
-            if move_.feedrate > 0.0 {
-                current_feedrate = move_.feedrate;
-            }
-
-            if current_feedrate > 0.0 {
-                let distance = move_.dx.unwrap_or(0.0).hypot(move_.dy.unwrap_or(0.0));
-                let time = distance / current_feedrate * 60.0; // convert mm/min to mm/s
-                total_time += time;
-            }
-        }
-
-        // Count unique Z values as layers
-        let mut z_values: Vec<f64> = gcode
-            .moves
-            .iter()
-            .map(|m| m.z)
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        z_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        extents.layer_count = z_values.len();
-
-        // Convert role extents to vec
-        extents.extents_by_role = role_extents
-            .into_iter()
-            .map(|(role, bbox)| (role, bbox))
-            .collect();
-
-        extents.estimated_time = total_time;
-
-        extents
-    }
-
-    /// Calculate extents for a subset of moves.
-    pub fn calculate_for_moves(moves: &[GCodeMove]) -> PrintExtents {
-        let mut extents = PrintExtents::new();
-        let mut role_extents: std::collections::HashMap<ExtrusionRole, BoundingBox3F> =
-            std::collections::HashMap::new();
-
-        for move_ in moves {
-            let start = Point3F::new(move_.x, move_.y, move_.z);
-            let end = Point3F::new(
-                move_.x + move_.dx.unwrap_or(0.0),
-                move_.y + move_.dy.unwrap_or(0.0),
-                move_.z,
-            );
-
-            extents.z_range.0 = extents.z_range.0.min(move_.z);
-            extents.z_range.1 = extents.z_range.1.max(move_.z);
-
-            extents.bbox.merge_point(&start);
-            extents.bbox.merge_point(&end);
-
-            if let Some(ref role) = move_.role {
-                let entry = role_extents.entry(role.clone()).or_default();
-                entry.merge_point(&start);
-                entry.merge_point(&end);
-            }
-        }
-
-        extents.extents_by_role = role_extents
-            .into_iter()
-            .map(|(role, bbox)| (role, bbox))
-            .collect();
-
-        extents
-    }
-}
-
-/// Convenience function to calculate print extents.
-pub fn calculate_extents(gcode: &ParsedGCode) -> PrintExtents {
-    PrintExtentsCalculator::calculate(gcode)
-}
-
-/// Calculate extents for specific roles only.
-pub fn calculate_extents_for_roles(gcode: &ParsedGCode, roles: &[ExtrusionRole]) -> PrintExtents {
-    let filtered_moves: Vec<_> = gcode
-        .moves
-        .iter()
-        .filter(|m| m.role.as_ref().map(|r| roles.contains(r)).unwrap_or(false))
-        .cloned()
-        .collect();
-
-    PrintExtentsCalculator::calculate_for_moves(&filtered_moves)
+// PrintExtents.cpp:101-106
+pub fn get_print_extrusions_extents(print: &Print) -> BoundingBoxF {
+    //BBS: usage of m_brim are deleted, the bbx of skrit is always larger than that of brim
+    // PrintExtents.cpp:104
+    let bbox = extrusionentity_extents_collection(print.skirt());
+    // PrintExtents.cpp:105
+    bbox
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extrusion_entity::ExtrusionRole;
+    use crate::geometry::{Point, Polyline};
 
-    #[test]
-    fn test_print_extents_new() {
-        let extents = PrintExtents::new();
-        assert!(!extents.is_valid());
-        assert_eq!(extents.layer_count, 0);
+    fn make_path(points: Vec<Point>, width: f64) -> ExtrusionPath {
+        let mut path = ExtrusionPath::new(ExtrusionRole::Perimeter);
+        path.polyline = Polyline::from_points(points);
+        path.width = width;
+        path
     }
 
     #[test]
-    fn test_calculate_empty_gcode() {
-        let gcode = ParsedGCode::default();
-        let extents = calculate_extents(&gcode);
-        assert!(!extents.is_valid());
+    fn test_extrusion_polyline_extents_empty() {
+        let polyline = Polyline::new();
+        let bbox = extrusion_polyline_extents(&polyline, scale(0.5));
+        assert!(!bbox.is_defined());
     }
 
     #[test]
-    fn test_extents_dimensions() {
-        let mut extents = PrintExtents::new();
-        extents.bbox =
-            BoundingBox3F::new(Point3F::new(0.0, 0.0, 0.0), Point3F::new(100.0, 50.0, 20.0));
+    fn test_extrusion_polyline_extents_single_segment() {
+        // Two points; radius adds margin on every side.
+        let polyline =
+            Polyline::from_points(vec![Point::new_scale(0.0, 0.0), Point::new_scale(10.0, 0.0)]);
+        let radius = scale(0.2);
+        let bbox = extrusion_polyline_extents(&polyline, radius);
+        assert!(bbox.is_defined());
+        assert_eq!(bbox.min.x, Point::new_scale(0.0, 0.0).x - radius);
+        assert_eq!(bbox.min.y, Point::new_scale(0.0, 0.0).y - radius);
+        assert_eq!(bbox.max.x, Point::new_scale(10.0, 0.0).x + radius);
+        assert_eq!(bbox.max.y, Point::new_scale(0.0, 0.0).y + radius);
+    }
 
-        assert!(extents.is_valid());
-        assert_eq!(extents.width(), 100.0);
-        assert_eq!(extents.depth(), 50.0);
-        assert_eq!(extents.height(), 20.0);
+    #[test]
+    fn test_extrusionentity_extents_path() {
+        let path = make_path(
+            vec![Point::new_scale(0.0, 0.0), Point::new_scale(10.0, 5.0)],
+            0.4,
+        );
+        let bboxf = extrusionentity_extents_path(&path);
+        assert!(bboxf.is_defined());
+        // The path width contributes 0.5 * 0.4 = 0.2 mm of radius.
+        assert!((bboxf.min.x - (0.0 - 0.2)).abs() < 1e-6);
+        assert!((bboxf.max.x - (10.0 + 0.2)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_empty_collection() {
+        let collection = ExtrusionEntityCollection::new();
+        let bboxf = extrusionentity_extents_collection(&collection);
+        assert!(!bboxf.is_defined());
+    }
+
+    #[test]
+    fn test_print_extrusions_extents_empty_skirt() {
+        let print = Print::new();
+        let bboxf = get_print_extrusions_extents(&print);
+        assert!(!bboxf.is_defined());
     }
 }

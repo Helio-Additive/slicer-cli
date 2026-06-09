@@ -232,6 +232,12 @@ impl Print {
         &mut self.objects
     }
 
+    /// Get reference to the skirt extrusions.
+    /// Print.hpp:911 `const ExtrusionEntityCollection& skirt() const { return m_skirt; }`
+    pub fn skirt(&self) -> &ExtrusionEntityCollection {
+        &self.skirt
+    }
+
     /// Get reference to config
     pub fn config(&self) -> &PrintConfig {
         &self.config

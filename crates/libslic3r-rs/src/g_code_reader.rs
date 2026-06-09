@@ -583,7 +583,7 @@ pub type RawLineCallbackT<'a> = dyn FnMut(&mut GCodeReader, &[u8]) + 'a;
 
 /// G-code reader that parses files or buffers line by line.
 /// GCodeReader.hpp:14-192
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GCodeReader {
     /// GCodeReader.hpp:187: GCodeConfig m_config;
     m_config: GCodeConfig,

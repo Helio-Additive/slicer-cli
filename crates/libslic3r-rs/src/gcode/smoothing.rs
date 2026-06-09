@@ -1,366 +1,496 @@
-//! GCodeSmoothing.rs - Applies smoothing passes to G-code paths.
+//! Smoothing.rs - 1:1 faithful port of BambuStudio `GCode/Smoothing.cpp` (+ `.hpp`).
 //!
-//! This module implements path smoothing algorithms for G-code,
-//! mirroring BambuStudio's GCode/Smoothing.cpp.
+//! C++ Reference:
+//! - GCode/Smoothing.hpp
+//! - GCode/Smoothing.cpp
 //!
-//! Smoothing algorithms:
-//! - Douglas-Peucker simplification
-//! - Moving average smoothing
-//! - Bezier curve fitting
-//! - Arc fitting (additional to main arc_fitting.rs)
+//! The `SmoothCalculator` applies gaussian smoothing passes to the outer-wall
+//! feedrate and to the per-layer cooling time, so that the cooling-driven speed
+//! changes vary smoothly between layers (avoiding visible surface defects from
+//! abrupt speed steps).
+//!
+//! coord_t -> i64, coordf_t -> f64.  The C++ uses `std::map<int, CoolingNode>`
+//! (an ordered map) so we mirror it with `BTreeMap<i32, CoolingNode>`.
 
-use crate::gcode::GCodeMove;
-use crate::geometry::{Point2F, Point3F};
+// Smoothing.hpp:1-5
+use std::collections::BTreeMap;
 
-/// Smoothing algorithm type.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SmoothingAlgorithm {
-    /// Douglas-Peucker simplification
-    DouglasPeucker,
-    /// Moving average smoothing
-    MovingAverage,
-    /// Chaikin subdivision
-    Chaikin,
-    /// Gaussian smoothing
-    Gaussian,
-}
+use crate::gcode::gcode_editor::{CoolingLineType, PerExtruderAdjustments};
 
-/// Configuration for path smoothing.
+// Smoothing.hpp:9-13
+const GUASSIAN_WINDOW_SIZE: i32 = 11;
+const GUASSIAN_R: i32 = 2;
+const GUASSIAN_STOP_THRESHOLD: i32 = 5;
+const GUASSIAN_LAYER_TIME_STOP_THRESHOLD: f32 = 3.0;
+const MAX_STEPS_COUNT: i32 = 1000;
+
+// Smoothing.hpp:15-22
 #[derive(Debug, Clone)]
-pub struct SmoothingConfig {
-    /// Algorithm to use
-    pub algorithm: SmoothingAlgorithm,
-    /// Tolerance or strength parameter
-    pub tolerance: f64,
-    /// Number of iterations
-    pub iterations: usize,
-    /// Minimum segment length to preserve
-    pub min_segment_length: f64,
-    /// Preserve endpoints
-    pub preserve_endpoints: bool,
+pub struct CoolingNode {
+    // extruder pos, line pos;
+    pub outwall_line: Vec<(i32, i32)>,
+    pub max_feedrate: f32,
+    pub filter_feedrate: f32,
+    pub rate: f64,
 }
 
-impl Default for SmoothingConfig {
+impl Default for CoolingNode {
     fn default() -> Self {
         Self {
-            algorithm: SmoothingAlgorithm::DouglasPeucker,
-            tolerance: 0.05,
-            iterations: 1,
-            min_segment_length: 0.01,
-            preserve_endpoints: true,
+            outwall_line: Vec::new(),
+            max_feedrate: 0.0,
+            filter_feedrate: 0.0,
+            rate: 1.0,
         }
     }
 }
 
-/// Path smoother for G-code moves.
-pub struct PathSmoother {
-    config: SmoothingConfig,
+impl CoolingNode {
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
-impl PathSmoother {
-    // Create a new path smoother.
-    pub fn new(config: SmoothingConfig) -> Self {
-        Self { config }
+// Smoothing.hpp:24-28
+#[derive(Debug, Clone, Default)]
+pub struct OutwallCollection {
+    pub object_id: i32,
+    pub cooling_nodes: BTreeMap<i32, CoolingNode>,
+}
+
+impl OutwallCollection {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+// Smoothing.hpp:30-99
+pub struct SmoothCalculator {
+    // public:
+    pub objects_node_range: Vec<BTreeMap<i32, (i32, i32)>>,
+    pub layers_wall_collection: Vec<Vec<OutwallCollection>>,
+    pub layers_cooling_time: Vec<f32>,
+
+    // private:
+    // guassian filter
+    guassian_filter: Vec<f64>,
+    filter_sum: f64,
+    layer_time_smoothing_threshold: f32,
+}
+
+impl SmoothCalculator {
+    // Smoothing.hpp:38-42
+    pub fn with_gap_limit(objects_size: i32, gap_limit: f64) -> Self {
+        let mut calc = Self {
+            objects_node_range: Vec::new(),
+            layers_wall_collection: Vec::new(),
+            layers_cooling_time: Vec::new(),
+            guassian_filter: Vec::new(),
+            filter_sum: 0.0f32 as f64,
+            layer_time_smoothing_threshold: gap_limit as f32,
+        };
+        calc.guassian_filter_generator();
+        calc.objects_node_range
+            .resize_with(objects_size as usize, BTreeMap::new);
+        calc
     }
 
-    /// Create with default configuration.
-    pub fn default_smoother() -> Self {
-        Self::new(SmoothingConfig::default())
+    // Smoothing.hpp:44-48
+    pub fn new(objects_size: i32) -> Self {
+        let mut calc = Self {
+            objects_node_range: Vec::new(),
+            layers_wall_collection: Vec::new(),
+            layers_cooling_time: Vec::new(),
+            guassian_filter: Vec::new(),
+            filter_sum: 0.0f32 as f64,
+            layer_time_smoothing_threshold: 30.0f32,
+        };
+        calc.guassian_filter_generator();
+        calc.objects_node_range
+            .resize_with(objects_size as usize, BTreeMap::new);
+        calc
     }
 
-    /// Smooth a sequence of points.
-    pub fn smooth_points(&self, points: &[Point3F]) -> Vec<Point3F> {
-        if points.len() < 3 {
-            return points.to_vec();
-        }
-
-        match self.config.algorithm {
-            SmoothingAlgorithm::DouglasPeucker => {
-                self.douglas_peucker(points, self.config.tolerance)
-            }
-            SmoothingAlgorithm::MovingAverage => {
-                self.moving_average(points, self.config.iterations)
-            }
-            SmoothingAlgorithm::Chaikin => self.chaikin(points, self.config.iterations),
-            SmoothingAlgorithm::Gaussian => self.gaussian(points, self.config.iterations),
-        }
+    // Smoothing.hpp:50-54
+    pub fn append_data(&mut self, wall_collection: &[OutwallCollection], cooling_time: f32) {
+        self.layers_wall_collection.push(wall_collection.to_vec());
+        self.layers_cooling_time.push(cooling_time);
     }
 
-    /// Smooth G-code moves.
-    pub fn smooth_moves(&self, moves: &[GCodeMove]) -> Vec<GCodeMove> {
-        // Extract points from moves
-        let mut points: Vec<Point3F> = moves.iter().map(|m| Point3F::new(m.x, m.y, m.z)).collect();
-
-        // Add end points of last move
-        if let Some(last) = moves.last() {
-            points.push(Point3F::new(
-                last.x + last.dx.unwrap_or(0.0),
-                last.y + last.dy.unwrap_or(0.0),
-                last.z,
-            ));
-        }
-
-        // Smooth points
-        let smoothed = self.smooth_points(&points);
-
-        // Reconstruct moves (simplified)
-        moves.to_vec()
+    // Smoothing.hpp:56-59
+    pub fn append_data_no_time(&mut self, wall_collection: &[OutwallCollection]) {
+        self.layers_wall_collection.push(wall_collection.to_vec());
     }
 
-    /// Douglas-Peucker simplification algorithm.
-    fn douglas_peucker(&self, points: &[Point3F], epsilon: f64) -> Vec<Point3F> {
-        if points.len() <= 2 {
-            return points.to_vec();
-        }
-
-        let epsilon_sq = epsilon * epsilon;
-        let mut keep: Vec<bool> = vec![false; points.len()];
-        keep[0] = true;
-        *keep.last_mut().unwrap() = true;
-
-        self.douglas_peucker_recursive(points, 0, points.len() - 1, epsilon_sq, &mut keep);
-
-        points
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| keep[*i])
-            .map(|(_, p)| *p)
-            .collect()
-    }
-
-    fn douglas_peucker_recursive(
-        &self,
-        points: &[Point3F],
-        start: usize,
-        end: usize,
-        epsilon_sq: f64,
-        keep: &mut [bool],
+    // Smoothing.cpp:5-43
+    pub fn build_node(
+        wall_collection: &mut Vec<OutwallCollection>,
+        object_label: &[i32],
+        per_extruder_adjustments: &[PerExtruderAdjustments],
     ) {
-        if end <= start + 1 {
+        if per_extruder_adjustments.is_empty() {
             return;
         }
+        // BBS: update outwall feedrate
+        // update feedrate of outwall after initial cooling process
+        // initial and arrange node collection seq
+        for object_idx in 0..object_label.len() {
+            let mut object_level = OutwallCollection::new();
+            object_level.object_id = object_label[object_idx];
+            wall_collection.push(object_level);
+        }
 
-        let start_pt = points[start];
-        let end_pt = points[end];
+        for extruder_idx in 0..per_extruder_adjustments.len() {
+            let extruder_adjustments = &per_extruder_adjustments[extruder_idx];
+            for line_idx in 0..extruder_adjustments.lines.len() {
+                let line = &extruder_adjustments.lines[line_idx];
+                if line.outwall_smooth_mark {
+                    // search node id
+                    if !wall_collection[line.object_id as usize]
+                        .cooling_nodes
+                        .contains_key(&line.cooling_node_id)
+                    {
+                        let node = CoolingNode::new();
+                        wall_collection[line.object_id as usize]
+                            .cooling_nodes
+                            .insert(line.cooling_node_id, node);
+                    }
 
-        // Find point with maximum distance from line segment
-        let mut max_dist_sq = 0.0;
-        let mut max_idx = start;
-
-        for i in start + 1..end {
-            let dist_sq = Self::point_to_segment_dist_sq(points[i], start_pt, end_pt);
-            if dist_sq > max_dist_sq {
-                max_dist_sq = dist_sq;
-                max_idx = i;
+                    let node = wall_collection[line.object_id as usize]
+                        .cooling_nodes
+                        .get_mut(&line.cooling_node_id)
+                        .unwrap();
+                    if (line.line_type & CoolingLineType::EXTERNAL_PERIMETER) != 0 {
+                        node.outwall_line
+                            .push((line_idx as i32, extruder_idx as i32));
+                        if node.max_feedrate < line.feedrate {
+                            node.max_feedrate = line.feedrate;
+                            node.filter_feedrate = node.max_feedrate;
+                        }
+                    }
+                }
             }
         }
-
-        // If max distance is greater than epsilon, keep the point and recurse
-        if max_dist_sq > epsilon_sq {
-            keep[max_idx] = true;
-            self.douglas_peucker_recursive(points, start, max_idx, epsilon_sq, keep);
-            self.douglas_peucker_recursive(points, max_idx, end, epsilon_sq, keep);
-        }
     }
 
-    fn point_to_segment_dist_sq(p: Point3F, a: Point3F, b: Point3F) -> f64 {
-        let ab = b - a;
-        let ap = p - a;
-
-        let ab_len_sq = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
-
-        if ab_len_sq == 0.0 {
-            // a and b are the same point
-            let dx = p.x - a.x;
-            let dy = p.y - a.y;
-            let dz = p.z - a.z;
-            return dx * dx + dy * dy + dz * dz;
-        }
-
-        // Project p onto line ab, clamped to segment
-        let t = (ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / ab_len_sq;
-        let t = t.clamp(0.0, 1.0);
-
-        let closest = Point3F::new(a.x + t * ab.x, a.y + t * ab.y, a.z + t * ab.z);
-
-        let dx = p.x - closest.x;
-        let dy = p.y - closest.y;
-        let dz = p.z - closest.z;
-
-        dx * dx + dy * dy + dz * dz
-    }
-
-    /// Moving average smoothing.
-    fn moving_average(&self, points: &[Point3F], iterations: usize) -> Vec<Point3F> {
-        let mut result = points.to_vec();
-
-        for _ in 0..iterations {
-            let mut new_points = result.clone();
-
-            for i in 1..result.len() - 1 {
-                new_points[i] = Point3F::new(
-                    (result[i - 1].x + result[i].x + result[i + 1].x) / 3.0,
-                    (result[i - 1].y + result[i].y + result[i + 1].y) / 3.0,
-                    (result[i - 1].z + result[i].z + result[i + 1].z) / 3.0,
+    // Smoothing.cpp:71-88
+    pub fn recaculate_layer_time(
+        &mut self,
+        layer_id: i32,
+        extruder_adjustments: &mut [PerExtruderAdjustments],
+    ) -> f32 {
+        // rewrite feedrate
+        for obj_id in 0..self.layers_wall_collection[layer_id as usize].len() {
+            // NOTE: C++ iterates the std::map<int, CoolingNode> with `node_id` used
+            // as the integer key 0..size() via operator[]. operator[] inserts a
+            // default-constructed node if the key is absent, so the map can GROW and
+            // the loop bound `cooling_nodes.size()` is RE-EVALUATED each iteration.
+            // Mirror that exactly (re-read len() per iteration; entry() inserts).
+            let mut node_id: usize = 0;
+            while node_id
+                < self.layers_wall_collection[layer_id as usize][obj_id]
+                    .cooling_nodes
+                    .len()
+            {
+                let node = self.layers_wall_collection[layer_id as usize][obj_id]
+                    .cooling_nodes
+                    .entry(node_id as i32)
+                    .or_insert_with(CoolingNode::new)
+                    .clone();
+                // set outwall speed
+                let rate = exclude_participate_in_speed_slowdown(
+                    &node.outwall_line,
+                    extruder_adjustments,
+                    &node,
                 );
-            }
+                // Write back the rate mutated by exclude_participate_in_speed_slowdown.
+                let stored = self.layers_wall_collection[layer_id as usize][obj_id]
+                    .cooling_nodes
+                    .get_mut(&(node_id as i32))
+                    .unwrap();
+                stored.rate = rate;
 
-            result = new_points;
+                node_id += 1;
+            }
         }
 
-        result
+        let mut layer_time = 0.0f32;
+        for extruder in extruder_adjustments.iter() {
+            layer_time += extruder.collection_line_times_of_extruder();
+        }
+
+        layer_time
     }
 
-    /// Chaikin subdivision smoothing.
-    fn chaikin(&self, points: &[Point3F], iterations: usize) -> Vec<Point3F> {
-        let mut result = points.to_vec();
+    // Smoothing.cpp:90-106
+    pub fn init_object_node_range(&mut self) {
+        for object_id in 0..self.objects_node_range.len() {
+            for layer_id in 1..self.layers_wall_collection.len() {
+                let each_object = &self.layers_wall_collection[layer_id][object_id];
+                // auto it = each_object.cooling_nodes.begin();
+                let keys: Vec<i32> = each_object.cooling_nodes.keys().copied().collect();
+                for first in keys {
+                    if !self.objects_node_range[object_id].contains_key(&first) {
+                        self.objects_node_range[object_id]
+                            .insert(first, (layer_id as i32, layer_id as i32));
+                    } else {
+                        self.objects_node_range[object_id].get_mut(&first).unwrap().1 =
+                            layer_id as i32;
+                    }
+                }
+            }
+        }
+    }
 
-        for _ in 0..iterations {
-            if result.len() < 2 {
+    // Smoothing.cpp:108-123
+    pub fn smooth_layer_speed(&mut self) {
+        self.init_object_node_range();
+
+        for obj_id in 0..self.objects_node_range.len() {
+            // auto it = objects_node_range[obj_id].begin();
+            let node_ids: Vec<i32> = self.objects_node_range[obj_id].keys().copied().collect();
+            for first in node_ids {
+                let mut step_count = 0;
+                while step_count < MAX_STEPS_COUNT
+                    && self.speed_filter_continue(obj_id as i32, first)
+                {
+                    step_count += 1;
+                    self.layer_speed_filter(obj_id as i32, first);
+                }
+            }
+        }
+    }
+
+    // Smoothing.cpp:125-161
+    fn layer_speed_filter(&mut self, object_id: i32, node_id: i32) {
+        let start_pos = self.guassian_filter.len() as i32 / 2;
+        // first layer don't need to be smoothed
+        let layer_start = self.objects_node_range[object_id as usize][&node_id].0;
+        let layer_end = self.objects_node_range[object_id as usize][&node_id].1;
+
+        // BBS: some layers may empty as the support has indenpendent layer
+        let mut layer_id = layer_start;
+        while layer_id <= layer_end {
+            if self.layers_wall_collection[layer_id as usize].is_empty() {
+                layer_id += 1;
+                continue;
+            }
+
+            if !self.layers_wall_collection[layer_id as usize][object_id as usize]
+                .cooling_nodes
+                .contains_key(&node_id)
+            {
                 break;
             }
 
-            let mut new_points = Vec::new();
-
-            // Add first point
-            new_points.push(result[0]);
-
-            // Add subdivided points
-            for i in 0..result.len() - 1 {
-                let p0 = result[i];
-                let p1 = result[i + 1];
-
-                let q = Point3F::new(
-                    0.75 * p0.x + 0.25 * p1.x,
-                    0.75 * p0.y + 0.25 * p1.y,
-                    0.75 * p0.z + 0.25 * p1.z,
-                );
-
-                let r = Point3F::new(
-                    0.25 * p0.x + 0.75 * p1.x,
-                    0.25 * p0.y + 0.75 * p1.y,
-                    0.25 * p0.z + 0.75 * p1.z,
-                );
-
-                new_points.push(q);
-                new_points.push(r);
+            // node.outwall_line.empty() check (CoolingNode &node = ...)
+            if self.layers_wall_collection[layer_id as usize][object_id as usize].cooling_nodes
+                [&node_id]
+                .outwall_line
+                .is_empty()
+            {
+                layer_id += 1;
+                continue;
             }
 
-            // Add last point
-            new_points.push(*result.last().unwrap());
+            let node_filter_feedrate = self.layers_wall_collection[layer_id as usize]
+                [object_id as usize]
+                .cooling_nodes[&node_id]
+                .filter_feedrate;
 
-            result = new_points;
+            let mut conv_sum = 0.0f64;
+            for filter_pos_idx in 0..self.guassian_filter.len() as i32 {
+                let mut remap_data_pos = layer_id - start_pos + filter_pos_idx;
+
+                if remap_data_pos < layer_start {
+                    remap_data_pos = layer_start;
+                } else if remap_data_pos > layer_end {
+                    remap_data_pos = layer_end;
+                }
+
+                // some node may not start at layer 1
+                // C++: layers_wall_collection[remap_data_pos][object_id].cooling_nodes[node_id]
+                // uses operator[] which default-constructs the node if absent.
+                let mut remap_data = node_filter_feedrate as f64;
+                let remap_node = self.layers_wall_collection[remap_data_pos as usize]
+                    [object_id as usize]
+                    .cooling_nodes
+                    .entry(node_id)
+                    .or_insert_with(CoolingNode::new);
+                if !remap_node.outwall_line.is_empty() {
+                    remap_data = remap_node.filter_feedrate as f64;
+                }
+
+                conv_sum += self.guassian_filter[filter_pos_idx as usize] * remap_data;
+            }
+            let filter_res = conv_sum / self.filter_sum;
+            let node = self.layers_wall_collection[layer_id as usize][object_id as usize]
+                .cooling_nodes
+                .get_mut(&node_id)
+                .unwrap();
+            if (filter_res as f32) < node.filter_feedrate {
+                node.filter_feedrate = filter_res as f32;
+            }
+
+            layer_id += 1;
+        }
+    }
+
+    // Smoothing.cpp:163-175
+    fn speed_filter_continue(&mut self, object_id: i32, node_id: i32) -> bool {
+        let mut layer_id = self.objects_node_range[object_id as usize][&node_id].0;
+        let layer_end = self.objects_node_range[object_id as usize][&node_id].1;
+
+        // BBS: some layers may empty as the support has indenpendent layer
+        while layer_id < layer_end {
+            // C++ uses operator[] on the maps which default-constructs missing nodes.
+            let next = self.layers_wall_collection[(layer_id + 1) as usize][object_id as usize]
+                .cooling_nodes
+                .entry(node_id)
+                .or_insert_with(CoolingNode::new)
+                .filter_feedrate;
+            let cur = self.layers_wall_collection[layer_id as usize][object_id as usize]
+                .cooling_nodes
+                .entry(node_id)
+                .or_insert_with(CoolingNode::new)
+                .filter_feedrate;
+            if (next - cur).abs() > GUASSIAN_STOP_THRESHOLD as f32 {
+                return true;
+            }
+            layer_id += 1;
+        }
+        false
+    }
+
+    // Smoothing.cpp:177-202
+    fn filter_layer_time(&mut self) {
+        let start_pos = self.guassian_filter.len() as i32 / 2;
+        // first layer don't need to be smoothed
+        for layer_id in 1..self.layers_cooling_time.len() as i32 {
+            if self.layers_cooling_time[layer_id as usize] > self.layer_time_smoothing_threshold {
+                continue;
+            }
+
+            let mut conv_sum = 0.0f64;
+            for filter_pos_idx in 0..self.guassian_filter.len() as i32 {
+                let mut remap_data_pos = layer_id - start_pos + filter_pos_idx;
+
+                if remap_data_pos < 1 {
+                    remap_data_pos = 1;
+                } else if remap_data_pos > self.layers_cooling_time.len() as i32 - 1 {
+                    remap_data_pos = self.layers_cooling_time.len() as i32 - 1;
+                }
+
+                // if the layer time big enough, surface defact will disappear
+                let data_temp =
+                    if self.layers_cooling_time[remap_data_pos as usize]
+                        > self.layer_time_smoothing_threshold
+                    {
+                        self.layer_time_smoothing_threshold
+                    } else {
+                        self.layers_cooling_time[remap_data_pos as usize]
+                    };
+
+                conv_sum += self.guassian_filter[filter_pos_idx as usize] * data_temp as f64;
+            }
+            let mut filter_res = conv_sum / self.filter_sum;
+            filter_res = if filter_res > self.layer_time_smoothing_threshold as f64 {
+                self.layer_time_smoothing_threshold as f64
+            } else {
+                filter_res
+            };
+            if filter_res > self.layers_cooling_time[layer_id as usize] as f64 {
+                self.layers_cooling_time[layer_id as usize] = filter_res as f32;
+            }
+        }
+    }
+
+    // Smoothing.cpp:204-213
+    fn layer_time_filter_continue(&self) -> bool {
+        for layer_id in 1..self.layers_cooling_time.len() as i32 - 1 {
+            let layer_time = if self.layers_cooling_time[layer_id as usize]
+                > self.layer_time_smoothing_threshold
+            {
+                self.layer_time_smoothing_threshold
+            } else {
+                self.layers_cooling_time[layer_id as usize]
+            };
+            let layer_time_cmp = if self.layers_cooling_time[(layer_id + 1) as usize]
+                > self.layer_time_smoothing_threshold
+            {
+                self.layer_time_smoothing_threshold
+            } else {
+                self.layers_cooling_time[(layer_id + 1) as usize]
+            };
+
+            if (layer_time - layer_time_cmp).abs() > GUASSIAN_LAYER_TIME_STOP_THRESHOLD {
+                return true;
+            }
+        }
+        false
+    }
+
+    // Smoothing.cpp:215-222
+    pub fn smooth_layer_time(&mut self) {
+        let mut step_count = 0;
+        while step_count < MAX_STEPS_COUNT && self.layer_time_filter_continue() {
+            step_count += 1;
+            self.filter_layer_time();
+        }
+    }
+
+    // Smoothing.hpp:69-71
+    fn guassian_function(&self, x: f64, r: f64) -> f64 {
+        (-x * x / (2.0 * r * r)).exp() / (r * (2.0 * std::f64::consts::PI).sqrt())
+    }
+
+    // Smoothing.hpp:73-81
+    fn guassian_filter_generator(&mut self) {
+        let r = GUASSIAN_R as f64;
+        let half_win_size = GUASSIAN_WINDOW_SIZE / 2;
+        let mut start = -half_win_size;
+        while start <= half_win_size {
+            let y = self.guassian_function(start as f64, r);
+            self.filter_sum += y;
+            self.guassian_filter.push(y);
+            start += 1;
+        }
+    }
+}
+
+// Smoothing.cpp:46-69
+//
+// Returns the (possibly updated) `node.rate`. In C++ `node` is a mutable
+// reference and this function writes `node.rate`; Rust borrow rules require us
+// to return the value and let the caller write it back.
+fn exclude_participate_in_speed_slowdown(
+    lines: &[(i32, i32)],
+    per_extruder_adjustments: &mut [PerExtruderAdjustments],
+    node: &CoolingNode,
+) -> f64 {
+    // BBS: add protect, feedrate will be 0 if the outwall is overhang. just apply not adjust flage
+    let apply_speed = node.max_feedrate > 0.0 && node.filter_feedrate > 0.0;
+    let mut rate = node.rate;
+    if apply_speed {
+        rate = (node.filter_feedrate / node.max_feedrate) as f64;
+    }
+
+    for line_pos in lines {
+        let line = &mut per_extruder_adjustments[line_pos.1 as usize].lines[line_pos.0 as usize];
+        if apply_speed && line.feedrate > node.filter_feedrate {
+            line.feedrate = node.filter_feedrate;
+            line.slowdown = true;
         }
 
-        result
+        // not adjust outwal line speed
+        line.line_type &= !CoolingLineType::ADJUSTABLE;
+        // update time cost
+        if line.feedrate == 0.0 || line.length == 0.0 {
+            line.time = 0.0;
+        } else {
+            line.time = line.length / line.feedrate;
+        }
     }
 
-    /// Gaussian smoothing.
-    fn gaussian(&self, points: &[Point3F], iterations: usize) -> Vec<Point3F> {
-        // Similar to moving average but with Gaussian weights
-        self.moving_average(points, iterations)
-    }
-}
-
-/// Convenience function to smooth points.
-pub fn smooth_points(points: &[Point3F], tolerance: f64) -> Vec<Point3F> {
-    let smoother = PathSmoother::default_smoother();
-    smoother.smooth_points(points)
-}
-
-/// Smooth with specific algorithm.
-pub fn smooth_with_algorithm(
-    points: &[Point3F],
-    algorithm: SmoothingAlgorithm,
-    tolerance: f64,
-) -> Vec<Point3F> {
-    let config = SmoothingConfig {
-        algorithm,
-        tolerance,
-        ..Default::default()
-    };
-    let smoother = PathSmoother::new(config);
-    smoother.smooth_points(points)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_smoother_default() {
-        let smoother = PathSmoother::default_smoother();
-        assert_eq!(
-            smoother.config.algorithm,
-            SmoothingAlgorithm::DouglasPeucker
-        );
-    }
-
-    #[test]
-    fn test_douglas_peucker_empty() {
-        let points: Vec<Point3F> = vec![];
-        let smoother = PathSmoother::default_smoother();
-        let result = smoother.smooth_points(&points);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_douglas_peucker_two_points() {
-        let points = vec![Point3F::new(0.0, 0.0, 0.0), Point3F::new(10.0, 0.0, 0.0)];
-        let smoother = PathSmoother::default_smoother();
-        let result = smoother.smooth_points(&points);
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn test_moving_average() {
-        let points = vec![
-            Point3F::new(0.0, 0.0, 0.0),
-            Point3F::new(1.0, 0.0, 0.0),
-            Point3F::new(2.0, 0.0, 0.0),
-        ];
-
-        let config = SmoothingConfig {
-            algorithm: SmoothingAlgorithm::MovingAverage,
-            iterations: 1,
-            ..Default::default()
-        };
-
-        let smoother = PathSmoother::new(config);
-        let result = smoother.smooth_points(&points);
-
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[1].x, 1.0); // Middle point should be averaged
-    }
-
-    #[test]
-    fn test_chaikin() {
-        let points = vec![
-            Point3F::new(0.0, 0.0, 0.0),
-            Point3F::new(10.0, 0.0, 0.0),
-            Point3F::new(20.0, 0.0, 0.0),
-        ];
-
-        let config = SmoothingConfig {
-            algorithm: SmoothingAlgorithm::Chaikin,
-            iterations: 1,
-            ..Default::default()
-        };
-
-        let smoother = PathSmoother::new(config);
-        let result = smoother.smooth_points(&points);
-
-        // Chaikin should add more points
-        assert!(result.len() > 3);
-    }
-
-    #[test]
-    fn test_point_to_segment_distance() {
-        let p = Point3F::new(0.0, 1.0, 0.0);
-        let a = Point3F::new(0.0, 0.0, 0.0);
-        let b = Point3F::new(10.0, 0.0, 0.0);
-
-        let dist_sq = PathSmoother::point_to_segment_dist_sq(p, a, b);
-        assert!((dist_sq - 1.0).abs() < 0.001);
-    }
+    rate
 }

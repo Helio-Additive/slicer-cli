@@ -49,6 +49,22 @@ impl Default for AdjustableFeatureType {
     }
 }
 
+/// Cooling slowdown logic type for an extruder.
+/// Corresponds to C++ `CoolingSlowdownLogicType` (PrintConfig.hpp:262-265).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoolingSlowdownLogicType {
+    /// Default: slow down all features equally.
+    CslUniformCooling = 0,
+    /// Prioritize slowing infill/internal perimeters first.
+    CslConsistentSurface = 1,
+}
+
+impl Default for CoolingSlowdownLogicType {
+    fn default() -> Self {
+        Self::CslUniformCooling
+    }
+}
+
 /// Type flags for cooling line classification.
 /// Corresponds to C++ CoolingLine::Type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,19 +199,49 @@ impl CoolingLine {
 /// Corresponds to C++ PerExtruderAdjustments.
 #[derive(Debug, Clone)]
 pub struct PerExtruderAdjustments {
-    pub lines: Vec<CoolingLine>,
+    // Extruder, for which the G-code will be adjusted. // GCodeEditor.hpp:389
+    pub extruder_id: u32,
+    // Is the cooling slow down logic enabled for this extruder's material? // GCodeEditor.hpp:391
+    pub cooling_slow_down_enabled: bool,
+    // Slow down the print down to slow_down_min_speed if the total layer time is below slow_down_layer_time. // GCodeEditor.hpp:393
+    pub slow_down_layer_time: f32,
+    // Minimum print speed allowed for this extruder. // GCodeEditor.hpp:395
     pub slow_down_min_speed: f32,
+    // Cooling slowdown logic type for this extruder (Uniform or ConsistentSurface) // GCodeEditor.hpp:398
+    pub cooling_slowdown_logic: CoolingSlowdownLogicType,
+    // Distance before perimeters where speed transitions back to normal // GCodeEditor.hpp:400
+    pub cooling_perimeter_transition_distance: f32,
+    // Parsed lines. // GCodeEditor.hpp:403
+    pub lines: Vec<CoolingLine>,
+    // Number of adjustable lines, at the start of lines. // GCodeEditor.hpp:406
     pub n_lines_adjustable: usize,
+    // Non-adjustable time of lines starting with n_lines_adjustable. // GCodeEditor.hpp:408
     pub time_non_adjustable: f32,
+    // Current total time for this extruder. // GCodeEditor.hpp:410
+    pub time_total: f32,
+    // Maximum time for this extruder, when the maximum slow down is applied. // GCodeEditor.hpp:412
+    pub time_maximum: f32,
+    // Temporaries for processing the slow down. Both thresholds go from 0 to n_lines_adjustable. // GCodeEditor.hpp:415
+    pub idx_line_begin: usize,
+    pub idx_line_end: usize,
 }
 
 impl PerExtruderAdjustments {
     pub fn new() -> Self {
         Self {
-            lines: Vec::new(),
+            extruder_id: 0,
+            cooling_slow_down_enabled: false,
+            slow_down_layer_time: 0.0,
             slow_down_min_speed: 0.0,
+            cooling_slowdown_logic: CoolingSlowdownLogicType::CslUniformCooling,
+            cooling_perimeter_transition_distance: 5.0,
+            lines: Vec::new(),
             n_lines_adjustable: 0,
             time_non_adjustable: 0.0,
+            time_total: 0.0,
+            time_maximum: 0.0,
+            idx_line_begin: 0,
+            idx_line_end: 0,
         }
     }
 
@@ -328,6 +374,149 @@ impl PerExtruderAdjustments {
     pub fn collection_line_times_of_extruder(&self) -> f32 {
         self.lines.iter().map(|l| l.time).sum()
     }
+
+    // --- ConsistentSurface cooling methods --- // GCodeEditor.hpp:267
+
+    // Calculate the maximum time stretch when slowing down to min_feedrate,
+    // considering only features allowed by additional_slowdown_features. // GCodeEditor.hpp:269-280
+    pub fn time_stretch_when_slowing_down_to_feedrate_features(
+        &self,
+        min_feedrate: f32,
+        additional_slowdown_features: AdjustableFeatureType,
+    ) -> f32 {
+        let mut time_stretch = 0.0f32;
+        for i in 0..self.n_lines_adjustable {
+            let line = &self.lines[i];
+            if line.adjustable_with_features(additional_slowdown_features)
+                && line.feedrate > min_feedrate
+            {
+                time_stretch += line.adjustable_time * (line.feedrate / min_feedrate - 1.0);
+            }
+        }
+        time_stretch
+    }
+
+    // Slow down all lines matching the feature type to min_feedrate. // GCodeEditor.hpp:282-294
+    pub fn slow_down_to_feedrate_features(
+        &mut self,
+        min_feedrate: f32,
+        additional_slowdown_features: AdjustableFeatureType,
+    ) {
+        for i in 0..self.n_lines_adjustable {
+            let line = &mut self.lines[i];
+            if line.adjustable_with_features(additional_slowdown_features)
+                && line.feedrate > min_feedrate
+            {
+                line.adjustable_time = line.adjustable_length / min_feedrate;
+                line.time = line.adjustable_time + line.non_adjustable_time;
+                line.feedrate = min_feedrate;
+                line.slowdown = true;
+            }
+        }
+    }
+
+    // Calculate maximum time after slowdown for features matching the type. // GCodeEditor.hpp:296-310
+    pub fn maximum_time_after_slowdown_features(
+        &self,
+        additional_slowdown_features: AdjustableFeatureType,
+    ) -> f32 {
+        let mut time_total = 0.0f32;
+        for line in &self.lines {
+            if line.adjustable_with_features(additional_slowdown_features) {
+                if line.adjustable_time_max == f32::MAX {
+                    return f32::MAX;
+                }
+                time_total += line.adjustable_time_max + line.non_adjustable_time;
+            } else {
+                time_total += line.time;
+            }
+        }
+        time_total
+    }
+
+    // Calculate adjustable time for features matching the type. // GCodeEditor.hpp:312-321
+    pub fn adjustable_time_for_features(
+        &self,
+        additional_slowdown_features: AdjustableFeatureType,
+    ) -> f32 {
+        let mut time_total = 0.0f32;
+        for line in &self.lines {
+            if line.adjustable_with_features(additional_slowdown_features) {
+                time_total += line.adjustable_time;
+            }
+        }
+        time_total
+    }
+
+    // Slow down to minimum feedrate for features matching the type. // GCodeEditor.hpp:323-338
+    pub fn slowdown_to_minimum_feedrate_features(
+        &mut self,
+        additional_slowdown_features: AdjustableFeatureType,
+    ) -> f32 {
+        let mut time_total = 0.0f32;
+        for line in &mut self.lines {
+            if line.adjustable_with_features(additional_slowdown_features) {
+                line.slowdown = true;
+                line.adjustable_time = line.adjustable_time_max;
+                line.time = line.adjustable_time + line.non_adjustable_time;
+                if line.adjustable_length > 0.0 {
+                    line.feedrate = line.adjustable_length / line.adjustable_time;
+                }
+            }
+            time_total += line.time;
+        }
+        time_total
+    }
+
+    // Create non-adjustable segments at the end of perimeter loops for transition smoothing.
+    // This preserves speed in the last 'non_adjustable_length' mm of each perimeter. // GCodeEditor.hpp:340-384
+    pub fn create_non_adjustable_segments(&mut self, non_adjustable_length: f32) {
+        if non_adjustable_length <= 0.0 {
+            return;
+        }
+
+        // Process lines in reverse to accumulate length from the end of each perimeter loop
+        let mut accumulated_length = 0.0f32;
+        for line in self.lines.iter_mut().rev() {
+            // Reset accumulator at perimeter boundaries (non-adjustable lines or different feature types)
+            if (line.line_type & CoolingLineType::ADJUSTABLE) == 0
+                || (line.line_type & CoolingLineType::EXTRUDE_END) != 0
+            {
+                accumulated_length = 0.0;
+                continue;
+            }
+
+            // Initialize adjustable fields if not set
+            if line.adjustable_length == 0.0 && line.length > 0.0 {
+                line.adjustable_length = line.length;
+                line.adjustable_time = line.time;
+                line.adjustable_time_max = line.time_max;
+            }
+
+            let remaining_non_adjustable = non_adjustable_length - accumulated_length;
+            if remaining_non_adjustable > 0.0 && line.adjustable_length > 0.0 {
+                let convert_length = line.adjustable_length.min(remaining_non_adjustable);
+                let convert_ratio = convert_length / line.adjustable_length;
+
+                line.non_adjustable_length += convert_length;
+                line.non_adjustable_time += line.adjustable_time * convert_ratio;
+                line.adjustable_length -= convert_length;
+                line.adjustable_time -= line.adjustable_time * convert_ratio;
+                line.adjustable_time_max =
+                    if line.adjustable_length > 0.0 && self.slow_down_min_speed > 0.0 {
+                        line.adjustable_length / self.slow_down_min_speed
+                    } else {
+                        0.0
+                    };
+
+                accumulated_length += convert_length;
+            } else {
+                accumulated_length += line.length;
+            }
+        }
+    }
+
+    // --- End ConsistentSurface cooling methods --- // GCodeEditor.hpp:386
 }
 
 /// G-code editor state for managing layer editing.

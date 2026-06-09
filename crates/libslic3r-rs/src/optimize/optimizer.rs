@@ -69,11 +69,14 @@ impl Bound {
 }
 
 impl Default for Bound {
-    /// Default bound: [f64::MIN, f64::MAX]
+    /// Default bound: [numeric_limits<double>::min(), numeric_limits<double>::max()].
+    /// NOTE: `std::numeric_limits<double>::min()` is the smallest *positive*
+    /// normalized value (~2.2e-308), which maps to `f64::MIN_POSITIVE` in Rust,
+    /// NOT `f64::MIN` (the most negative value).
     /// Optimizer.hpp:27-28
     fn default() -> Self {
         Self {
-            min: f64::MIN,
+            min: f64::MIN_POSITIVE,
             max: f64::MAX,
         }
     }
@@ -170,16 +173,19 @@ impl StopCriteria {
     }
 
     /// Set the maximum number of iterations.
-    /// Optimizer.hpp:79-81
-    pub fn max_iterations(&mut self, val: u32) -> &mut Self {
-        self.max_iterations = val;
+    /// In C++ the parameter is `double val` and it is assigned into the
+    /// `unsigned m_max_iterations` member, truncating toward zero.
+    /// Optimizer.hpp:82-85
+    pub fn max_iterations(&mut self, val: f64) -> &mut Self {
+        self.max_iterations = val as u32;
         self
     }
 
     /// Get the maximum number of iterations.
-    /// Optimizer.hpp:83
-    pub fn get_max_iterations(&self) -> u32 {
-        self.max_iterations
+    /// In C++ this getter returns `double` despite the member being `unsigned`.
+    /// Optimizer.hpp:87
+    pub fn get_max_iterations(&self) -> f64 {
+        self.max_iterations as f64
     }
 
     /// Set the stop condition predicate.
@@ -269,6 +275,23 @@ pub enum OptDir {
     Max,
 }
 
+// Optimizer.hpp:107-108
+//   template<class T> struct always_false { enum { value = false }; };
+// This is a C++ template-metaprogramming helper used solely inside the
+// unimplemented primary `Optimizer` template (Optimizer.hpp:114-118) so that
+// `static_assert(always_false<Method>::value, ...)` fires only when the base
+// template is instantiated for a method that has no specialization. In Rust the
+// equivalent guarantee is provided by the trait system itself: a type that does
+// not implement the `Optimizer` trait simply fails to compile at the use site,
+// so there is no runtime/compile helper to materialize here.
+
+// Optimizer.hpp:110-153 — the unimplemented primary template
+//   template<class Method, class Enable = void> class Optimizer { ... };
+// Its members (to_min/to_max returning *this, set_criteria, get_criteria,
+// optimize returning {}, seed) exist only to produce the static_assert error.
+// The faithful Rust representation is the `Optimizer` trait below: concrete
+// methods (Bruteforce / NLopt) are the C++ partial specializations.
+
 /// Generic optimizer trait.
 ///
 /// Optimizer.hpp:111-153
@@ -305,6 +328,14 @@ pub trait Optimizer<const N: usize> {
     fn seed(&mut self, _s: u64) {}
 }
 
+// Optimizer.hpp:155-171 — namespace detail
+//   template<size_t N, class T> auto to_arr(const T *a) { ... std::copy ... }
+//   template<size_t N, class T> auto to_arr(const T (&a) [N]) { ... }
+// These convert a C-style array into a std::array (the header notes "The copy
+// should be optimized away with modern compilers"). In Rust, `[T; N]` is
+// already a value type, so the `bounds`/`initvals`/`score_gradient` helpers
+// below accept `[T; N]` directly and no `to_arr` conversion is required.
+
 /// Helper to create bounds from an array.
 ///
 /// Optimizer.hpp:174
@@ -333,7 +364,8 @@ mod tests {
     #[test]
     fn test_bound_default() {
         let b = Bound::default();
-        assert_eq!(b.min(), f64::MIN);
+        // C++ std::numeric_limits<double>::min() == smallest positive normal.
+        assert_eq!(b.min(), f64::MIN_POSITIVE);
         assert_eq!(b.max(), f64::MAX);
     }
 

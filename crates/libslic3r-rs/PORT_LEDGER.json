@@ -2416,7 +2416,7 @@
     "rust": "crates/libslic3r-rs/src/optimize/bruteforce_optimizer.rs",
     "rust_exists": true,
     "loc": 140,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2427,7 +2427,7 @@
     "rust": "crates/libslic3r-rs/src/optimize/optimizer.rs",
     "rust_exists": true,
     "loc": 183,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2438,7 +2438,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/print_extents.rs",
     "rust_exists": true,
     "loc": 192,
-    "status": "pending",
+    "status": "partial",
     "priority": 5
   },
   {
@@ -2449,7 +2449,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/spiral_vase.rs",
     "rust_exists": true,
     "loc": 218,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2460,7 +2460,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/smoothing.rs",
     "rust_exists": true,
     "loc": 224,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {
@@ -2471,7 +2471,7 @@
     "rust": "crates/libslic3r-rs/src/optimize/n_lopt_optimizer.rs",
     "rust_exists": true,
     "loc": 233,
-    "status": "pending",
+    "status": "partial",
     "priority": 5
   },
   {
@@ -2482,7 +2482,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/conflict_checker.rs",
     "rust_exists": true,
     "loc": 316,
-    "status": "pending",
+    "status": "partial",
     "priority": 5
   },
   {
@@ -2493,7 +2493,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/cooling_buffer.rs",
     "rust_exists": true,
     "loc": 351,
-    "status": "pending",
+    "status": "done",
     "priority": 5
   },
   {

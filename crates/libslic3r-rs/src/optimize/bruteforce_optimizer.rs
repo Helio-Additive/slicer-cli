@@ -9,13 +9,22 @@
 
 use super::optimizer::{Bound, Bounds, Input, OptDir, OptResult, Optimizer, StopCriteria};
 
-/// Return the iteration number for a given grid position.
-///
-/// BruteforceOptimizer.hpp:13-18
-fn num_iter<const N: usize>(idx: &[usize; N], grid_size: usize) -> u64 {
-    let mut ret: u64 = 0;
+// Implementing a bruteforce optimizer
+
+// Return the number of iterations needed to reach a specific grid position (idx)
+//
+// BruteforceOptimizer.hpp:12-18
+//
+// C++ uses `long ret` (signed) and `std::pow(gridsz, i)` (double precision).
+// The statement `ret += idx[i] * std::pow(gridsz, i)` evaluates the right hand
+// side in `double`, promotes the running `long ret` to `double`, adds, then
+// converts the resulting `double` back to `long` (truncation toward zero) on
+// each iteration. We reproduce that promote/add/truncate sequence exactly.
+fn num_iter<const N: usize>(idx: &[usize; N], gridsz: usize) -> i64 {
+    let mut ret: i64 = 0;
+    // BruteforceOptimizer.hpp:16
     for i in 0..N {
-        ret += idx[i] as u64 * (grid_size as u64).pow(i as u32);
+        ret = (ret as f64 + idx[i] as f64 * (gridsz as f64).powi(i as i32)) as i64;
     }
     ret
 }
@@ -66,43 +75,59 @@ impl AlgBruteForce {
         }
 
         if dim < 0 {
-            // Evaluate the function
+            // Let's evaluate fn
             // BruteforceOptimizer.hpp:44-68
+            // Input<N> inp;
 
-            // Check max iterations
+            // auto max_iter = stc.max_iterations();
+            // if (max_iter && num_iter(idx, gridsz) >= max_iter)
+            //     return false;
             // BruteforceOptimizer.hpp:47-49
-            let max_iter = self.stc.get_max_iterations();
-            if max_iter > 0 && num_iter(idx, self.grid_size) >= max_iter as u64 {
+            //
+            // The C++ getter returns `double`; `if (max_iter && ...)` is a
+            // nonzero test and `num_iter(...) >= max_iter` promotes the `long`
+            // return value to `double` before comparing.
+            let max_iter = self.stc.get_max_iterations() as f64;
+            if max_iter != 0.0 && num_iter(idx, self.grid_size) as f64 >= max_iter {
                 return false;
             }
 
-            // Compute input values from grid indices
+            // for (size_t d = 0; d < N; ++d) {
+            //     const Bound &b = bounds[d];
+            //     double step = (b.max() - b.min()) / (gridsz - 1);
+            //     inp[d] = b.min() + idx[d] * step;
+            // }
             // BruteforceOptimizer.hpp:51-55
-            let mut inp = [0.0f64; N];
+            let mut inp: Input<N> = [0.0f64; N];
             for d in 0..N {
                 let b = &bounds[d];
                 let step = (b.max() - b.min()) / (self.grid_size as f64 - 1.0);
                 inp[d] = b.min() + idx[d] as f64 * step;
             }
 
-            // Evaluate function
+            // auto score = fn(inp);
             // BruteforceOptimizer.hpp:57
             let score = func(&inp);
 
-            // Compare and update best
-            // BruteforceOptimizer.hpp:58-67
+            // if (cmp(score, result.score)) { // Change current score to the new
+            // BruteforceOptimizer.hpp:58-68
             if cmp(score, result.score) {
-                let abs_diff = (score - result.score).abs();
+                let absdiff = (score - result.score).abs();
 
                 result.score = score;
                 result.optimum = inp;
 
-                // Check precision criteria
-                // BruteforceOptimizer.hpp:65-67
-                let abs_thresh = self.stc.get_abs_score_diff();
-                let rel_thresh = self.stc.get_rel_score_diff();
-                if (!abs_thresh.is_nan() && abs_diff < abs_thresh)
-                    || (!rel_thresh.is_nan() && abs_diff < rel_thresh * score.abs())
+                // Check if the required precision is reached.
+                // if (absdiff < stc.abs_score_diff() ||
+                //     absdiff < stc.rel_score_diff() * std::abs(score))
+                //     return false;
+                // BruteforceOptimizer.hpp:64-67
+                //
+                // abs_score_diff()/rel_score_diff() default to NaN; the `<`
+                // comparison against NaN is always false (IEEE 754), matching
+                // C++ exactly without explicit NaN guards.
+                if absdiff < self.stc.get_abs_score_diff()
+                    || absdiff < self.stc.get_rel_score_diff() * score.abs()
                 {
                     return false;
                 }
@@ -283,7 +308,7 @@ mod tests {
     #[test]
     fn test_brute_force_with_max_iterations() {
         let mut stc = StopCriteria::new();
-        stc.max_iterations(10);
+        stc.max_iterations(10.0);
         let mut opt = BruteForceOptimizer::new(stc, 100);
         opt.to_min();
         let result: OptResult<1> =

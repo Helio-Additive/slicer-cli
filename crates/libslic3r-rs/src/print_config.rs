@@ -147,6 +147,9 @@ pub struct PrintConfig {
     // === Misc ===
     /// Enable spiral/vase mode.
     pub spiral_vase: bool,
+    /// PrintConfig.hpp:1442: spiral_mode_smooth — interpolate XY with the previous
+    /// layer so there is no seam at layer changes. Consumed by SpiralVase.
+    pub spiral_mode_smooth: bool,
     /// G-code flavor.
     pub gcode_flavor: GCodeFlavor,
     /// Resolution for G-code output (mm).
@@ -951,6 +954,7 @@ impl Default for PrintConfig {
 
             // Misc
             spiral_vase: false,
+            spiral_mode_smooth: false,
             gcode_flavor: GCodeFlavor::Marlin,
             resolution: 0.01, // Match C++ BambuStudio
 

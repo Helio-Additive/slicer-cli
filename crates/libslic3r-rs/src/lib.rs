@@ -247,7 +247,7 @@ pub use gcode::ironing::{
 };
 
 // Re-export spiral vase types
-pub use gcode::spiral_vase::{SpiralPoint, SpiralVase, SpiralVaseConfig};
+pub use gcode::spiral_vase::{SpiralPoint, SpiralVase};
 
 // Re-export seam placer types
 pub use gcode::seam_placer::{

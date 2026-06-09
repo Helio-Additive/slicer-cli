@@ -6,6 +6,7 @@
 pub mod arc_fitting;
 pub mod avoid_crossing_perimeters;
 pub mod compare;
+pub mod conflict_checker;
 pub mod cooling;
 pub mod cooling_buffer;
 pub mod curve_analyzer;
@@ -20,10 +21,12 @@ pub mod multi_material;
 mod path;
 pub mod placeholder_parser;
 pub mod pressure_equalizer;
+pub mod print_extents;
 pub mod reader;
 pub mod retract_crossing;
 pub mod retract_when_crossing_perimeters;
 pub mod seam_placer;
+pub mod smoothing;
 pub mod spiral_vase;
 pub mod thumbnail_data;
 pub mod timelapse_pos_picker;
@@ -75,10 +78,7 @@ pub use seam_placer::{
     LayerSeams, Perimeter, PerimeterOutline, Point3f, SeamCandidate, SeamPlacer, SeamPlacerConfig,
     SeamPlacerStats, SeamPositionMode,
 };
-pub use spiral_vase::{
-    extract_vase_perimeter, is_vase_mode_compatible, SpiralLayer, SpiralPoint, SpiralResult,
-    SpiralVase, SpiralVaseConfig,
-};
+pub use spiral_vase::{spiral_vase_helpers, SpiralPoint, SpiralVase};
 pub use tool_ordering::{
     calculate_flush_volume, find_optimal_ordering_exhaustive, generate_all_orderings,
     optimize_extruder_sequence, CustomGCodeItem, CustomGCodeType, ExtrusionRoleType,
