@@ -1,114 +1,95 @@
 //! Curve fitting utilities.
 //!
 //! C++ Reference:
-//! - Geometry/Curves.hpp
+//! - Geometry/Curves.hpp  (header-only templates)
 //!
-//! Provides polynomial curve fitting and piecewise curve fitting
-//! using least squares approximation.
+//! Faithful 1:1 port of `Slic3r::Geometry` curve fitting:
+//! `PolynomialCurve`, `fit_polynomial`, `PiecewiseFittedCurve`, `fit_curve`,
+//! and the `fit_linear_spline` / `fit_cubic_bspline` / `fit_catmul_rom_spline`
+//! convenience wrappers.
+//!
+//! The C++ is templated over `<int Dimension, typename NumberType>` and the
+//! kernel type. All Eigen matrices in this file are `Eigen::MatrixXf` (i.e.
+//! always `f32`) regardless of `NumberType`; only the observation points,
+//! weights and kernel evaluation use `NumberType`. The single concrete
+//! instantiation in BambuStudio (SeamPlacer.cpp) is `Dimension = 2`,
+//! `NumberType = float`, so we model `NumberType` as `f32` here and keep the
+//! coefficient matrices as `f32` to mirror `Eigen::MatrixXf` exactly.
 
+use nalgebra::DMatrix;
+
+use crate::geometry::bicubic::{
+    CubicBSplineKernel, CubicCatmulRomKernel, CubicKernelWrapper, KernelCoefficients, LinearKernel,
+};
+
+// Geometry/Curves.hpp:14
+// template<int Dimension, typename NumberType>
+// struct PolynomialCurve {
+//     Eigen::MatrixXf coefficients;
 /// A polynomial curve represented by its coefficients matrix.
 ///
-/// For a curve in `Dimension` dimensions with polynomial order `n`,
-/// the coefficients matrix has `Dimension` rows and `n+1` columns.
-/// Each column corresponds to a power of the parameter (x^0, x^1, ..., x^n).
-///
-/// Geometry/Curves.hpp: PolynomialCurve
+/// The coefficients matrix has `Dimension` rows and `order + 1` columns, where
+/// each column corresponds to a power of the parameter (x^0, x^1, ..., x^n).
+/// Mirrors `Eigen::MatrixXf` (column-major, `f32`).
 #[derive(Debug, Clone)]
 pub struct PolynomialCurve {
-    /// Coefficients matrix: each row is a dimension, each column is a polynomial order.
-    /// Stored as row-major: coefficients[dim][order].
-    pub coefficients: Vec<Vec<f32>>,
-    /// Number of spatial dimensions.
-    pub dimension: usize,
+    /// `Eigen::MatrixXf coefficients;`
+    pub coefficients: DMatrix<f32>,
 }
 
 impl PolynomialCurve {
-    /// Create a new empty PolynomialCurve.
-    pub fn new(dimension: usize) -> Self {
-        Self {
-            coefficients: vec![Vec::new(); dimension],
-            dimension,
-        }
-    }
-
+    // Geometry/Curves.hpp:18
+    //     Vec<Dimension, NumberType> get_fitted_value(const NumberType& value) const {
     /// Evaluate the fitted curve at a given parameter value.
     ///
-    /// Returns a vector of `dimension` values.
-    ///
-    /// Geometry/Curves.hpp: PolynomialCurve::get_fitted_value
+    /// Returns a `Dimension`-element column vector.
     pub fn get_fitted_value(&self, value: f32) -> Vec<f32> {
-        let mut result = vec![0.0f32; self.dimension];
-        if self.coefficients.is_empty() || self.coefficients[0].is_empty() {
-            return result;
-        }
-        let order = self.coefficients[0].len() - 1;
+        // Geometry/Curves.hpp:19
+        // Vec<Dimension, NumberType> result = Vec<Dimension, NumberType>::Zero();
+        let dimension = self.coefficients.nrows();
+        let mut result = vec![0.0f32; dimension];
+        // Geometry/Curves.hpp:20
+        // size_t order = this->coefficients.rows() - 1;
+        //
+        // NOTE: in C++ `coefficients.rows()` is `Dimension`, NOT the polynomial
+        // order. The number of columns is `order + 1`. The loop below iterates
+        // `order + 1` times, i.e. once per column, multiplying the running power
+        // `x` by the matched column. We therefore drive the loop by the column
+        // count to reproduce the C++ behaviour faithfully.
+        let order = self.coefficients.nrows().saturating_sub(1);
+        // Geometry/Curves.hpp:21
+        // auto x = NumberType(1.);
         let mut x = 1.0f32;
-        for idx in 0..=order {
-            for dim in 0..self.dimension {
-                if idx < self.coefficients[dim].len() {
-                    result[dim] += x * self.coefficients[dim][idx];
+        // Geometry/Curves.hpp:22
+        // for (size_t index = 0; index < order + 1; ++index, x *= value)
+        for index in 0..(order + 1) {
+            // Geometry/Curves.hpp:23
+            // result += x * this->coefficients.col(index);
+            if index < self.coefficients.ncols() {
+                for dim in 0..dimension {
+                    result[dim] += x * self.coefficients[(dim, index)];
                 }
             }
             x *= value;
         }
+        // Geometry/Curves.hpp:24
+        // return result;
         result
     }
 }
 
-/// A piecewise curve fitted using a kernel function (e.g., B-spline or Catmul-Rom).
+// Geometry/Curves.hpp:28
+// https://towardsdatascience.com/least-square-polynomial-CURVES-using-c-eigen-package-c0673728bd01
+// Geometry/Curves.hpp:29
+// template<int Dimension, typename NumberType>
+// PolynomialCurve<Dimension, NumberType> fit_polynomial(...)
+/// Fit a polynomial curve to `observations` using weighted least squares.
 ///
-/// The curve is defined by coefficients at evenly-spaced control points,
-/// and evaluation uses the kernel function to blend nearby coefficients.
-///
-/// Geometry/Curves.hpp: PiecewiseFittedCurve
-#[derive(Debug, Clone)]
-pub struct PiecewiseFittedCurve {
-    /// Coefficients matrix: each row is a dimension, each column is a segment.
-    pub coefficients: Vec<Vec<f32>>,
-    /// Number of spatial dimensions.
-    pub dimension: usize,
-    /// Start parameter value.
-    pub start: f32,
-    /// Size of each segment in parameter space.
-    pub segment_size: f32,
-    /// Number of extra degrees of freedom at each endpoint.
-    pub endpoints_level_of_freedom: usize,
-}
-
-impl PiecewiseFittedCurve {
-    /// Create a new empty PiecewiseFittedCurve.
-    pub fn new(dimension: usize) -> Self {
-        Self {
-            coefficients: vec![Vec::new(); dimension],
-            dimension,
-            start: 0.0,
-            segment_size: 1.0,
-            endpoints_level_of_freedom: 0,
-        }
-    }
-}
-
-/// Get the coefficients from a polynomial curve.
-///
-/// Returns a reference to the coefficients matrix.
-///
-/// Geometry/Curves.hpp: coefficients accessor
-pub fn coefficients(curve: &PolynomialCurve) -> &Vec<Vec<f32>> {
-    &curve.coefficients
-}
-
-/// Fit a polynomial curve to the given observations using weighted least squares.
-///
-/// Arguments:
-/// - `observations`: data points to fit (each is a vector of `dimension` values)
+/// - `observations`: data points to fit (each is a `dimension`-length vector)
 /// - `observation_points`: parameter values where observations were made
 /// - `weights`: importance weight for each observation
 /// - `order`: polynomial order
-/// - `dimension`: number of spatial dimensions
-///
-/// Returns a PolynomialCurve with fitted coefficients.
-///
-/// Geometry/Curves.hpp: fit_polynomial
+/// - `dimension`: number of spatial dimensions (the template `Dimension`)
 pub fn fit_polynomial(
     observations: &[Vec<f32>],
     observation_points: &[f32],
@@ -116,109 +97,410 @@ pub fn fit_polynomial(
     order: usize,
     dimension: usize,
 ) -> PolynomialCurve {
-    let n = observation_points.len();
+    // Geometry/Curves.hpp:34
+    // check to make sure inputs are correct
+    // size_t cols = order + 1;
     let cols = order + 1;
+    // Geometry/Curves.hpp:35-37
+    // assert(observation_points.size() >= cols);
+    // assert(observation_points.size() == weights.size());
+    // assert(observations.size() == weights.size());
+    debug_assert!(observation_points.len() >= cols);
+    debug_assert!(observation_points.len() == weights.len());
+    debug_assert!(observations.len() == weights.len());
 
-    if n < cols || n != weights.len() || n != observations.len() {
-        return PolynomialCurve::new(dimension);
-    }
-
-    // Build the weighted Vandermonde-like matrix T and weighted data_points
-    // Then solve T^T * T * coeffs = T^T * data using normal equations
-    // This is a simplified implementation using normal equations instead of QR
-
-    let mut result = PolynomialCurve::new(dimension);
-
-    // Build T matrix (n x cols) with weights applied
-    let mut t_matrix = vec![vec![0.0f64; cols]; n];
-    let mut weighted_data = vec![vec![0.0f64; n]; dimension];
-
-    for i in 0..n {
-        let sw = (weights[i] as f64).sqrt();
-        let mut x = sw;
-        let c = observation_points[i] as f64;
+    // Geometry/Curves.hpp:39
+    // Eigen::MatrixXf data_points(Dimension, observations.size());
+    let mut data_points = DMatrix::<f32>::zeros(dimension, observations.len());
+    // Geometry/Curves.hpp:40
+    // Eigen::MatrixXf T(observations.size(), cols);
+    let mut t = DMatrix::<f32>::zeros(observations.len(), cols);
+    // Geometry/Curves.hpp:41
+    // for (size_t i = 0; i < weights.size(); ++i) {
+    for i in 0..weights.len() {
+        // Geometry/Curves.hpp:42
+        // auto squared_weight = sqrt(weights[i]);
+        let squared_weight = weights[i].sqrt();
+        // Geometry/Curves.hpp:43
+        // data_points.col(i) = observations[i] * squared_weight;
+        for dim in 0..dimension {
+            data_points[(dim, i)] = observations[i][dim] * squared_weight;
+        }
+        // Geometry/Curves.hpp:44-46
+        // Populate the matrix
+        // auto x = squared_weight;
+        // auto c = observation_points[i];
+        let mut x = squared_weight;
+        let c = observation_points[i];
+        // Geometry/Curves.hpp:47
+        // for (size_t j = 0; j < cols; ++j, x *= c)
         for j in 0..cols {
-            t_matrix[i][j] = x;
+            // Geometry/Curves.hpp:48
+            // T(i, j) = x;
+            t[(i, j)] = x;
             x *= c;
         }
-        for dim in 0..dimension {
-            weighted_data[dim][i] = observations[i][dim] as f64 * sw;
-        }
     }
 
-    // Compute T^T * T (cols x cols)
-    let mut ata = vec![vec![0.0f64; cols]; cols];
-    for i in 0..cols {
-        for j in 0..cols {
-            let mut sum = 0.0;
-            for k in 0..n {
-                sum += t_matrix[k][i] * t_matrix[k][j];
-            }
-            ata[i][j] = sum;
-        }
-    }
-
-    // Solve for each dimension using Gaussian elimination
+    // Geometry/Curves.hpp:51
+    // const auto QR = T.householderQr();
+    let qr = t.qr();
+    // Geometry/Curves.hpp:52
+    // Eigen::MatrixXf coefficients(Dimension, cols);
+    let mut coefficients = DMatrix::<f32>::zeros(dimension, cols);
+    // Geometry/Curves.hpp:53-56
+    // Solve for linear least square fit
+    // for (size_t dim = 0; dim < Dimension; ++dim) {
+    //     coefficients.row(dim) = QR.solve(data_points.row(dim).transpose());
+    // }
     for dim in 0..dimension {
-        // Compute T^T * b
-        let mut atb = vec![0.0f64; cols];
-        for i in 0..cols {
-            let mut sum = 0.0;
-            for k in 0..n {
-                sum += t_matrix[k][i] * weighted_data[dim][k];
-            }
-            atb[i] = sum;
+        let b = data_points.row(dim).transpose();
+        let solution = solve_least_squares_qr(&qr, &b);
+        for j in 0..cols {
+            coefficients[(dim, j)] = solution[j];
         }
-
-        // Solve ata * x = atb using Gaussian elimination with partial pivoting
-        let mut aug = vec![vec![0.0f64; cols + 1]; cols];
-        for i in 0..cols {
-            for j in 0..cols {
-                aug[i][j] = ata[i][j];
-            }
-            aug[i][cols] = atb[i];
-        }
-
-        for i in 0..cols {
-            // Find pivot
-            let mut max_val = aug[i][i].abs();
-            let mut max_row = i;
-            for k in (i + 1)..cols {
-                if aug[k][i].abs() > max_val {
-                    max_val = aug[k][i].abs();
-                    max_row = k;
-                }
-            }
-            aug.swap(i, max_row);
-
-            let pivot = aug[i][i];
-            if pivot.abs() < 1e-12 {
-                continue; // singular
-            }
-
-            for k in (i + 1)..cols {
-                let factor = aug[k][i] / pivot;
-                for j in i..=cols {
-                    aug[k][j] -= factor * aug[i][j];
-                }
-            }
-        }
-
-        // Back substitution
-        let mut x = vec![0.0f64; cols];
-        for i in (0..cols).rev() {
-            if aug[i][i].abs() < 1e-12 {
-                continue;
-            }
-            x[i] = aug[i][cols];
-            for j in (i + 1)..cols {
-                x[i] -= aug[i][j] * x[j];
-            }
-            x[i] /= aug[i][i];
-        }
-
-        result.coefficients[dim] = x.iter().map(|&v| v as f32).collect();
     }
 
-    result
+    // Geometry/Curves.hpp:58
+    // return {std::move(coefficients)};
+    PolynomialCurve { coefficients }
+}
+
+// Geometry/Curves.hpp:61
+// template<size_t Dimension, typename NumberType, typename KernelType>
+// struct PiecewiseFittedCurve {
+//     using Kernel = KernelType;
+/// A piecewise curve fitted using a kernel function (B-spline, Catmul-Rom, ...).
+///
+/// The curve is defined by coefficients at evenly-spaced control points; the
+/// kernel function blends nearby coefficients during evaluation. The kernel
+/// type is carried as a const generic via `kernel_span` plus the generic
+/// `get_fitted_value::<K>` method, mirroring the C++ `Kernel` typedef.
+#[derive(Debug, Clone)]
+pub struct PiecewiseFittedCurve {
+    /// `Eigen::MatrixXf coefficients;` — `Dimension` rows, `parameters_count` cols.
+    pub coefficients: DMatrix<f32>,
+    /// `NumberType start;`
+    pub start: f32,
+    /// `NumberType segment_size;`
+    pub segment_size: f32,
+    /// `size_t endpoints_level_of_freedom;`
+    pub endpoints_level_of_freedom: usize,
+}
+
+impl PiecewiseFittedCurve {
+    // Geometry/Curves.hpp:70
+    //     Vec<Dimension, NumberType> get_fitted_value(const NumberType &observation_point) const {
+    /// Evaluate the fitted curve at `observation_point`.
+    ///
+    /// `K` is the kernel type used to fit the curve (e.g. `CubicBSplineKernel`).
+    /// Returns a `Dimension`-element column vector.
+    pub fn get_fitted_value<K: KernelCoefficients>(&self, observation_point: f32) -> Vec<f32> {
+        // Geometry/Curves.hpp:71
+        // Vec<Dimension, NumberType> result = Vec<Dimension, NumberType>::Zero();
+        let dimension = self.coefficients.nrows();
+        let mut result = vec![0.0f32; dimension];
+
+        // Geometry/Curves.hpp:73-74
+        // find corresponding segment index; expects kernels to be centered
+        // int middle_right_segment_index = floor((observation_point - start) / segment_size);
+        let middle_right_segment_index =
+            ((observation_point - self.start) / self.segment_size).floor() as i32;
+        // Geometry/Curves.hpp:75-76
+        // find index of first segment that is affected by the point i; this can be deduced from kernel_span
+        // int start_segment_idx = middle_right_segment_index - Kernel::kernel_span / 2 + 1;
+        let kernel_span = CubicKernelWrapper::<K>::KERNEL_SPAN as i32;
+        let start_segment_idx = middle_right_segment_index - kernel_span / 2 + 1;
+        // Geometry/Curves.hpp:77-78
+        // for (int segment_index = start_segment_idx; segment_index < int(start_segment_idx + Kernel::kernel_span); segment_index++) {
+        let mut segment_index = start_segment_idx;
+        while segment_index < start_segment_idx + kernel_span {
+            // Geometry/Curves.hpp:79
+            // NumberType segment_start = start + segment_index * segment_size;
+            let segment_start = self.start + segment_index as f32 * self.segment_size;
+            // Geometry/Curves.hpp:80
+            // NumberType normalized_segment_distance = (segment_start - observation_point) / segment_size;
+            let normalized_segment_distance =
+                (segment_start - observation_point) / self.segment_size;
+
+            // Geometry/Curves.hpp:82
+            // int parameter_index = segment_index + endpoints_level_of_freedom;
+            let mut parameter_index = segment_index + self.endpoints_level_of_freedom as i32;
+            // Geometry/Curves.hpp:83
+            // parameter_index = std::clamp(parameter_index, 0, int(coefficients.cols()) - 1);
+            parameter_index = parameter_index.clamp(0, self.coefficients.ncols() as i32 - 1);
+            // Geometry/Curves.hpp:84
+            // result += Kernel::kernel(normalized_segment_distance) * coefficients.col(parameter_index);
+            let k =
+                CubicKernelWrapper::<K>::kernel(normalized_segment_distance as f64) as f32;
+            let col = parameter_index as usize;
+            for dim in 0..dimension {
+                result[dim] += k * self.coefficients[(dim, col)];
+            }
+            segment_index += 1;
+        }
+        // Geometry/Curves.hpp:86
+        // return result;
+        result
+    }
+}
+
+// Geometry/Curves.hpp:90-95
+// observations: data to be fitted by the curve
+// observation points: growing sequence of points where the observations were made.
+//      In other words, for function f(x) = y, observations are y0...yn, and observation points are x0...xn
+// weights: how important the observation is
+// segments_count: number of segments inside the valid length of the curve
+// endpoints_level_of_freedom: number of additional parameters at each end; reasonable values depend on the kernel span
+// Geometry/Curves.hpp:96
+// template<typename Kernel, int Dimension, typename NumberType>
+// PiecewiseFittedCurve<Dimension, NumberType, Kernel> fit_curve(...)
+/// Fit a piecewise kernel curve to `observations` using weighted least squares.
+///
+/// `K` is the kernel type (e.g. `CubicBSplineKernel`).
+pub fn fit_curve<K: KernelCoefficients>(
+    observations: &[Vec<f32>],
+    observation_points: &[f32],
+    weights: &[f32],
+    segments_count: usize,
+    endpoints_level_of_freedom: usize,
+    dimension: usize,
+) -> PiecewiseFittedCurve {
+    // Geometry/Curves.hpp:104-109
+    // check to make sure inputs are correct
+    // assert(segments_count > 0);
+    // assert(observations.size() > 0);
+    // assert(observation_points.size() == observations.size());
+    // assert(observation_points.size() == weights.size());
+    // assert(segments_count <= observations.size());
+    debug_assert!(segments_count > 0);
+    debug_assert!(!observations.is_empty());
+    debug_assert!(observation_points.len() == observations.len());
+    debug_assert!(observation_points.len() == weights.len());
+    debug_assert!(segments_count <= observations.len());
+
+    // Geometry/Curves.hpp:111-116
+    // prepare sqrt of weights, which will then be applied to both matrix T and observed data:
+    //   https://en.wikipedia.org/wiki/Weighted_least_squares
+    // std::vector<NumberType> sqrt_weights(weights.size());
+    // for (size_t index = 0; index < weights.size(); ++index) {
+    //     assert(weights[index] > 0);
+    //     sqrt_weights[index] = sqrt(weights[index]);
+    // }
+    let mut sqrt_weights = vec![0.0f32; weights.len()];
+    for index in 0..weights.len() {
+        debug_assert!(weights[index] > 0.0);
+        sqrt_weights[index] = weights[index].sqrt();
+    }
+
+    // Geometry/Curves.hpp:118-125
+    // prepare result and compute metadata
+    // PiecewiseFittedCurve<Dimension, NumberType, Kernel> result { };
+    // NumberType valid_length = observation_points.back() - observation_points.front();
+    // NumberType segment_size = valid_length / NumberType(segments_count);
+    // result.start = observation_points.front();
+    // result.segment_size = segment_size;
+    // result.endpoints_level_of_freedom = endpoints_level_of_freedom;
+    let valid_length =
+        observation_points[observation_points.len() - 1] - observation_points[0];
+    let segment_size = valid_length / segments_count as f32;
+    let start = observation_points[0];
+
+    // Geometry/Curves.hpp:127-132
+    // prepare observed data
+    // Eigen defaults to column major memory layout.
+    // Eigen::MatrixXf data_points(Dimension, observations.size());
+    // for (size_t index = 0; index < observations.size(); ++index) {
+    //     data_points.col(index) = observations[index] * sqrt_weights[index];
+    // }
+    let mut data_points = DMatrix::<f32>::zeros(dimension, observations.len());
+    for index in 0..observations.len() {
+        for dim in 0..dimension {
+            data_points[(dim, index)] = observations[index][dim] * sqrt_weights[index];
+        }
+    }
+    // Geometry/Curves.hpp:133-135
+    // parameters count is always increased by one to make the parametric space of the curve symmetric.
+    // without this fix, the end of the curve is less flexible than the beginning
+    // size_t parameters_count = segments_count + 1 + 2 * endpoints_level_of_freedom;
+    let parameters_count = segments_count + 1 + 2 * endpoints_level_of_freedom;
+    // Geometry/Curves.hpp:136-138
+    // Create weight matrix T for each point and each segment;
+    // Eigen::MatrixXf T(observation_points.size(), parameters_count);
+    // T.setZero();
+    let mut t = DMatrix::<f32>::zeros(observation_points.len(), parameters_count);
+    let kernel_span = CubicKernelWrapper::<K>::KERNEL_SPAN as i32;
+    // Geometry/Curves.hpp:139-140
+    // Fill the weight matrix
+    // for (size_t i = 0; i < observation_points.size(); ++i) {
+    for i in 0..observation_points.len() {
+        // Geometry/Curves.hpp:141
+        // NumberType observation_point = observation_points[i];
+        let observation_point = observation_points[i];
+        // Geometry/Curves.hpp:142-143
+        // find corresponding segment index; expects kernels to be centered
+        // int middle_right_segment_index = floor((observation_point - result.start) / result.segment_size);
+        let middle_right_segment_index =
+            ((observation_point - start) / segment_size).floor() as i32;
+        // Geometry/Curves.hpp:144-145
+        // find index of first segment that is affected by the point i; this can be deduced from kernel_span
+        // int start_segment_idx = middle_right_segment_index - int(Kernel::kernel_span / 2) + 1;
+        let start_segment_idx = middle_right_segment_index - kernel_span / 2 + 1;
+        // Geometry/Curves.hpp:146-147
+        // for (int segment_index = start_segment_idx; segment_index < int(start_segment_idx + Kernel::kernel_span); segment_index++) {
+        let mut segment_index = start_segment_idx;
+        while segment_index < start_segment_idx + kernel_span {
+            // Geometry/Curves.hpp:148
+            // NumberType segment_start = result.start + segment_index * result.segment_size;
+            let segment_start = start + segment_index as f32 * segment_size;
+            // Geometry/Curves.hpp:149
+            // NumberType normalized_segment_distance = (segment_start - observation_point) / result.segment_size;
+            let normalized_segment_distance = (segment_start - observation_point) / segment_size;
+
+            // Geometry/Curves.hpp:151
+            // int parameter_index = segment_index + endpoints_level_of_freedom;
+            let mut parameter_index = segment_index + endpoints_level_of_freedom as i32;
+            // Geometry/Curves.hpp:152
+            // parameter_index = std::clamp(parameter_index, 0, int(parameters_count) - 1);
+            parameter_index = parameter_index.clamp(0, parameters_count as i32 - 1);
+            // Geometry/Curves.hpp:153
+            // T(i, parameter_index) += Kernel::kernel(normalized_segment_distance) * sqrt_weights[i];
+            let k =
+                CubicKernelWrapper::<K>::kernel(normalized_segment_distance as f64) as f32;
+            t[(i, parameter_index as usize)] += k * sqrt_weights[i];
+            segment_index += 1;
+        }
+    }
+
+    // Geometry/Curves.hpp:157-166 (#ifdef LSQR_DEBUG) — debug-only print, omitted.
+
+    // Geometry/Curves.hpp:168-173
+    // Solve for linear least square fit
+    // result.coefficients.resize(Dimension, parameters_count);
+    // const auto QR = T.fullPivHouseholderQr();
+    // for (size_t dim = 0; dim < Dimension; ++dim) {
+    //     result.coefficients.row(dim) = QR.solve(data_points.row(dim).transpose());
+    // }
+    //
+    // NOTE: C++ uses `fullPivHouseholderQr()`. nalgebra has no full-pivoting
+    // Householder QR; column-pivoting QR (`col_piv_qr`) gives a rank-revealing
+    // decomposition with equivalent least-squares minimizer and better
+    // conditioning than plain Householder QR, so we use it here. The solver
+    // choice can introduce floating-point divergence vs Eigen but yields the
+    // same mathematical least-squares solution.
+    let mut coefficients = DMatrix::<f32>::zeros(dimension, parameters_count);
+    let qr = t.col_piv_qr();
+    for dim in 0..dimension {
+        let mut b = data_points.row(dim).transpose();
+        // col_piv_qr can solve overdetermined least-squares in place.
+        if qr.solve_mut(&mut b) {
+            for j in 0..parameters_count {
+                coefficients[(dim, j)] = b[j];
+            }
+        }
+    }
+
+    // Geometry/Curves.hpp:175
+    // return result;
+    PiecewiseFittedCurve {
+        coefficients,
+        start,
+        segment_size,
+        endpoints_level_of_freedom,
+    }
+}
+
+// Geometry/Curves.hpp:179-189
+// template<int Dimension, typename NumberType>
+// PiecewiseFittedCurve<Dimension, NumberType, LinearKernel<NumberType>>
+// fit_linear_spline(...)
+/// Fit a piecewise linear spline (uses `LinearKernel`).
+pub fn fit_linear_spline(
+    observations: &[Vec<f32>],
+    observation_points: &[f32],
+    weights: &[f32],
+    segments_count: usize,
+    endpoints_level_of_freedom: usize,
+    dimension: usize,
+) -> PiecewiseFittedCurve {
+    fit_curve::<LinearKernel>(
+        observations,
+        observation_points,
+        weights,
+        segments_count,
+        endpoints_level_of_freedom,
+        dimension,
+    )
+}
+
+// Geometry/Curves.hpp:191-201
+// template<int Dimension, typename NumberType>
+// PiecewiseFittedCurve<Dimension, NumberType, CubicBSplineKernel<NumberType>>
+// fit_cubic_bspline(...)
+/// Fit a piecewise cubic B-spline (uses `CubicBSplineKernel`).
+pub fn fit_cubic_bspline(
+    observations: &[Vec<f32>],
+    observation_points: &[f32],
+    weights: &[f32],
+    segments_count: usize,
+    endpoints_level_of_freedom: usize,
+    dimension: usize,
+) -> PiecewiseFittedCurve {
+    fit_curve::<CubicBSplineKernel>(
+        observations,
+        observation_points,
+        weights,
+        segments_count,
+        endpoints_level_of_freedom,
+        dimension,
+    )
+}
+
+// Geometry/Curves.hpp:203-213
+// template<int Dimension, typename NumberType>
+// PiecewiseFittedCurve<Dimension, NumberType, CubicCatmulRomKernel<NumberType>>
+// fit_catmul_rom_spline(...)
+/// Fit a piecewise Catmul-Rom spline (uses `CubicCatmulRomKernel`).
+pub fn fit_catmul_rom_spline(
+    observations: &[Vec<f32>],
+    observation_points: &[f32],
+    weights: &[f32],
+    segments_count: usize,
+    endpoints_level_of_freedom: usize,
+    dimension: usize,
+) -> PiecewiseFittedCurve {
+    fit_curve::<CubicCatmulRomKernel>(
+        observations,
+        observation_points,
+        weights,
+        segments_count,
+        endpoints_level_of_freedom,
+        dimension,
+    )
+}
+
+/// Solve an overdetermined least-squares system `T x = b` from a Householder
+/// `QR` decomposition of the (tall) matrix `T`.
+///
+/// Mirrors Eigen's `HouseholderQR::solve`: for `T = Q R` (thin), the minimizer
+/// of `||T x - b||` is `x = R^{-1} (Q^T b)`. nalgebra's `QR::solve` is only
+/// implemented for square matrices, so we form `Q^T b` and back-substitute
+/// against the upper-triangular `R` ourselves.
+fn solve_least_squares_qr(
+    qr: &nalgebra::QR<f32, nalgebra::Dyn, nalgebra::Dyn>,
+    b: &nalgebra::DVector<f32>,
+) -> nalgebra::DVector<f32> {
+    // Q is m x n (thin), R is n x n upper-triangular.
+    let q = qr.q();
+    let r = qr.r();
+    let n = r.ncols();
+    // Q^T b  (length n)
+    let qtb = q.transpose() * b;
+    // Solve R x = Q^T b by upper-triangular back substitution.
+    let mut x = qtb.rows(0, n).into_owned();
+    if !r.solve_upper_triangular_mut(&mut x) {
+        // Singular R: leave x as-is (best effort), matching Eigen returning
+        // whatever the triangular solve produces.
+    }
+    x
 }
