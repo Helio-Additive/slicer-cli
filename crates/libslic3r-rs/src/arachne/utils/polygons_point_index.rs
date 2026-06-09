@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 
 /// Identity function for points (used to make templated algorithms work)
 ///
-/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:14
+/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:17
 /// C++: inline const Point &make_point(const Point &p) { return p; }
 #[inline]
 pub fn make_point(p: &Point) -> Point {
@@ -19,7 +19,7 @@ pub fn make_point(p: &Point) -> Point {
 
 /// A class for iterating over the points in one of the polygons in a Polygons object
 ///
-/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:16-121
+/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:22-128
 /// C++: template<typename Paths>
 /// C++: class PathsPointIndex
 /// C++: {
@@ -32,17 +32,17 @@ pub fn make_point(p: &Point) -> Point {
 #[derive(Debug, Clone, Copy)]
 pub struct PathsPointIndex<'a> {
     /// The polygons into which this index is indexing (pointer to const polygons)
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:21
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:29
     /// C++: const Paths* polygons;
     pub polygons: Option<&'a Polygons>,
 
     /// The index of the polygon in polygons
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:23
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:31
     /// C++: unsigned int poly_idx;
     pub poly_idx: usize,
 
     /// The index of the point in the polygon
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:25
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:33
     /// C++: unsigned int point_idx;
     pub point_idx: usize,
 }
@@ -53,7 +53,7 @@ impl<'a> PathsPointIndex<'a> {
     /// This is used as a placeholder for when there is a zero-construction needed.
     /// Since the `polygons` field is const you can't ever make this initialisation useful.
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:27-35
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:35-42
     /// C++: PathsPointIndex() : polygons(nullptr), poly_idx(0), point_idx(0) {}
     pub fn new() -> Self {
         Self {
@@ -65,7 +65,7 @@ impl<'a> PathsPointIndex<'a> {
 
     /// Constructs a new point index to a vertex of a polygon
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:37-45
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:44-50
     /// C++: PathsPointIndex(const Paths *polygons, unsigned int poly_idx, unsigned int point_idx)
     /// C++:     : polygons(polygons), poly_idx(poly_idx), point_idx(point_idx) {}
     pub fn with_indices(polygons: &'a Polygons, poly_idx: usize, point_idx: usize) -> Self {
@@ -78,7 +78,7 @@ impl<'a> PathsPointIndex<'a> {
 
     /// Get the point this index refers to
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:52-58
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:57-63
     /// C++: Point p() const
     /// C++: {
     /// C++:     if (!polygons)
@@ -88,22 +88,16 @@ impl<'a> PathsPointIndex<'a> {
     /// C++: }
     pub fn p(&self) -> Point {
         match self.polygons {
+            // PolygonsPointIndex.hpp:59-60
             None => Point::new(0, 0),
-            Some(polys) => {
-                if self.poly_idx < polys.len() {
-                    let poly = &polys[self.poly_idx];
-                    if self.point_idx < poly.points.len() {
-                        return poly.points[self.point_idx];
-                    }
-                }
-                Point::new(0, 0)
-            }
+            // PolygonsPointIndex.hpp:62
+            Some(polys) => make_point(&polys[self.poly_idx][self.point_idx]),
         }
     }
 
     /// Returns whether this point is initialised
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:60-65
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:65-68
     /// C++: bool initialized() const { return polygons; }
     pub fn initialized(&self) -> bool {
         self.polygons.is_some()
@@ -111,7 +105,7 @@ impl<'a> PathsPointIndex<'a> {
 
     /// Get the polygon to which this index refers
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:67-72
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:70-73
     /// C++: const Polygon &getPolygon() const { return (*polygons)[poly_idx]; }
     pub fn get_polygon(&self) -> Option<&'a Polygon> {
         self.polygons.map(|polys| &polys[self.poly_idx])
@@ -119,7 +113,7 @@ impl<'a> PathsPointIndex<'a> {
 
     /// Move the iterator forward (and wrap around at the end)
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:95-99
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:100-105
     /// C++: PathsPointIndex &operator++()
     /// C++: {
     /// C++:     point_idx = (point_idx + 1) % (*polygons)[poly_idx].size();
@@ -127,14 +121,14 @@ impl<'a> PathsPointIndex<'a> {
     /// C++: }
     pub fn increment(&mut self) {
         if let Some(polys) = self.polygons {
-            let poly_size = polys[self.poly_idx].points.len();
-            self.point_idx = (self.point_idx + 1) % poly_size;
+            // PolygonsPointIndex.hpp:103
+            self.point_idx = (self.point_idx + 1) % polys[self.poly_idx].len();
         }
     }
 
     /// Move the iterator backward (and wrap around at the beginning)
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:101-108
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:107-113
     /// C++: PathsPointIndex &operator--()
     /// C++: {
     /// C++:     if (point_idx == 0)
@@ -144,17 +138,18 @@ impl<'a> PathsPointIndex<'a> {
     /// C++: }
     pub fn decrement(&mut self) {
         if let Some(polys) = self.polygons {
-            let poly_size = polys[self.poly_idx].points.len();
+            // PolygonsPointIndex.hpp:109-110
             if self.point_idx == 0 {
-                self.point_idx = poly_size;
+                self.point_idx = polys[self.poly_idx].len();
             }
+            // PolygonsPointIndex.hpp:111
             self.point_idx -= 1;
         }
     }
 
     /// Move the iterator forward (and wrap around at the end)
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:110-115
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:114-120
     /// C++: PathsPointIndex next() const
     /// C++: {
     /// C++:     PathsPointIndex ret(*this);
@@ -169,7 +164,7 @@ impl<'a> PathsPointIndex<'a> {
 
     /// Move the iterator backward (and wrap around at the beginning)
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:117-122
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:121-127
     /// C++: PathsPointIndex prev() const
     /// C++: {
     /// C++:     PathsPointIndex ret(*this);
@@ -192,7 +187,7 @@ impl<'a> Default for PathsPointIndex<'a> {
 impl<'a> PartialEq for PathsPointIndex<'a> {
     /// Test whether two iterators refer to the same polygon in the same polygon list
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:74-84
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:81-88
     /// C++: bool operator==(const PathsPointIndex &other) const
     /// C++: {
     /// C++:     return polygons == other.polygons && poly_idx == other.poly_idx && point_idx == other.point_idx;
@@ -217,7 +212,7 @@ impl<'a> Eq for PathsPointIndex<'a> {}
 impl<'a> PartialOrd for PathsPointIndex<'a> {
     /// Compare two point indices by their point coordinates
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:85-88
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:89-92
     /// C++: bool operator<(const PathsPointIndex &other) const
     /// C++: {
     /// C++:     return this->p() < other.p();
@@ -229,6 +224,9 @@ impl<'a> PartialOrd for PathsPointIndex<'a> {
 
 impl<'a> Ord for PathsPointIndex<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Point::operator< (Point.hpp:250-253):
+        //   l.x() < r.x() || (l.x() == r.x() && l.y() < r.y())
+        // i.e. lexicographic comparison, x first then y.
         let p1 = self.p();
         let p2 = other.p();
 
@@ -242,7 +240,7 @@ impl<'a> Ord for PathsPointIndex<'a> {
 impl<'a> Hash for PathsPointIndex<'a> {
     /// Hash function for PathsPointIndex
     ///
-    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:152-160
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:168-175
     /// C++: template <>
     /// C++: struct hash<Slic3r::Arachne::PolygonsPointIndex>
     /// C++: {
@@ -251,22 +249,34 @@ impl<'a> Hash for PathsPointIndex<'a> {
     /// C++:         return Slic3r::PointHash{}(lpi.p());
     /// C++:     }
     /// C++: };
+    ///
+    /// Slic3r::PointHash (Point.hpp:368-372):
+    /// C++: struct PointHash {
+    /// C++:     size_t operator()(const Vec2crd &pt) const {
+    /// C++:         return coord_t((89 * 31 + int64_t(pt.x())) * 31 + pt.y());
+    /// C++:     }
+    /// C++: };
     fn hash<H: Hasher>(&self, state: &mut H) {
         let p = self.p();
-        p.x().hash(state);
-        p.y().hash(state);
+        // coord_t == i64; reproduce the exact PointHash mixing with wrapping i64
+        // arithmetic, then feed the resulting size_t to the Rust hasher.
+        let h: i64 = (89i64 * 31)
+            .wrapping_add(p.x())
+            .wrapping_mul(31)
+            .wrapping_add(p.y());
+        state.write_u64(h as u64);
     }
 }
 
 /// Type alias for the common case of PathsPointIndex with Polygons
 ///
-/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:123
+/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:130
 /// C++: using PolygonsPointIndex = PathsPointIndex<Polygons>;
 pub type PolygonsPointIndex<'a> = PathsPointIndex<'a>;
 
 /// Locator to extract a line segment out of a PolygonsPointIndex
 ///
-/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:125-136
+/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:132-145
 /// C++: struct PolygonsPointIndexSegmentLocator
 /// C++: {
 /// C++:     std::pair<Point, Point> operator()(const PolygonsPointIndex &val) const
@@ -285,17 +295,22 @@ impl PolygonsPointIndexSegmentLocator {
     /// Get the line segment starting at the indexed point
     pub fn locate(&self, val: &PolygonsPointIndex) -> Option<(Point, Point)> {
         let polys = val.polygons?;
+        // PolygonsPointIndex.hpp:139
         let poly = &polys[val.poly_idx];
-        let start = poly.points[val.point_idx];
-        let next_point_idx = (val.point_idx + 1) % poly.points.len();
-        let end = poly.points[next_point_idx];
+        // PolygonsPointIndex.hpp:140
+        let start = poly[val.point_idx];
+        // PolygonsPointIndex.hpp:141
+        let next_point_idx = (val.point_idx + 1) % poly.len();
+        // PolygonsPointIndex.hpp:142
+        let end = poly[next_point_idx];
+        // PolygonsPointIndex.hpp:143
         Some((start, end))
     }
 }
 
 /// Locator of a PathsPointIndex
 ///
-/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:138-147
+/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:147-157
 /// C++: template<typename Paths>
 /// C++: struct PathsPointIndexLocator
 /// C++: {
@@ -309,13 +324,14 @@ pub struct PathsPointIndexLocator;
 
 impl PathsPointIndexLocator {
     /// Get the point from a PathsPointIndex
+    /// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:155
     pub fn locate(&self, val: &PathsPointIndex) -> Point {
         make_point(&val.p())
     }
 }
 
 /// Implement LocatorTrait for SparsePointGrid compatibility
-/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:145-148
+/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:153-156
 impl crate::arachne::utils::sparse_point_grid::LocatorTrait<PathsPointIndex<'_>>
     for PathsPointIndexLocator
 {
@@ -326,7 +342,7 @@ impl crate::arachne::utils::sparse_point_grid::LocatorTrait<PathsPointIndex<'_>>
 
 /// Type alias for the common case
 ///
-/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:149
+/// C++ Reference: Arachne/utils/PolygonsPointIndex.hpp:159
 /// C++: using PolygonsPointIndexLocator = PathsPointIndexLocator<Polygons>;
 pub type PolygonsPointIndexLocator = PathsPointIndexLocator;
 

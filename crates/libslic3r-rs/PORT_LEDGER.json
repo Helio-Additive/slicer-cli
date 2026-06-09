@@ -2009,7 +2009,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/sparse_grid.rs",
     "rust_exists": true,
     "loc": 133,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -2020,7 +2020,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/square_grid.rs",
     "rust_exists": true,
     "loc": 147,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -2031,7 +2031,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/polygons_point_index.rs",
     "rust_exists": true,
     "loc": 180,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -2042,7 +2042,7 @@
     "rust": "crates/libslic3r-rs/src/shape/text_shape.rs",
     "rust_exists": true,
     "loc": 272,
-    "status": "pending",
+    "status": "partial",
     "priority": 3
   },
   {
@@ -2053,7 +2053,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/extrusion_line.rs",
     "rust_exists": true,
     "loc": 311,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -2064,7 +2064,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/skeletal_trapezoidation_graph.rs",
     "rust_exists": true,
     "loc": 476,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -2075,7 +2075,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/wall_tool_paths.rs",
     "rust_exists": true,
     "loc": 903,
-    "status": "pending",
+    "status": "partial",
     "priority": 3
   },
   {
@@ -2086,7 +2086,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/skeletal_trapezoidation.rs",
     "rust_exists": true,
     "loc": 2144,
-    "status": "pending",
+    "status": "partial",
     "priority": 3
   },
   {

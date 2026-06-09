@@ -10,7 +10,15 @@
 //! Each polyline is a sequence of ExtrusionJunction points with per-vertex widths.
 
 use crate::arachne::utils::extrusion_junction::ExtrusionJunction;
-use crate::geometry::{Coord, CoordF, Line, Polygon};
+use crate::geometry::{cross2f, Coord, CoordF, Line, Point, Polygon, ThickPolyline};
+use crate::scaled;
+
+/// `scaled<double>(v)` — scale a millimetre value to the crate's coordinate space
+/// as a floating-point value (the double-typed counterpart of [`crate::scaled`]).
+#[inline]
+fn scaled_f(mm: f64) -> f64 {
+    mm * crate::SCALING_FACTOR
+}
 
 /// Represents a polyline (not just a line) that is to be extruded with variable line width.
 /// ExtrusionLine.hpp:25-163
@@ -208,14 +216,6 @@ impl ExtrusionLine {
         allowed_error_distance_squared: Coord,
         maximum_extrusion_area_deviation: Coord,
     ) {
-        // Scaled 0.025mm (25 microns)
-        // ExtrusionLine.cpp:96
-        const ALWAYS_REMOVE_THRESHOLD_SQUARED: Coord = 625; // scaled<coord_t>(0.025) squared
-
-        // Scaled 0.001mm (1 micron)
-        // ExtrusionLine.cpp:118
-        const COLINEAR_THRESHOLD: CoordF = 1_000.0; // scaled<double>(0.001) in micrometers
-
         let min_path_size = if self.is_closed { 3 } else { 2 };
         if self.junctions.len() <= min_path_size {
             return;
@@ -259,11 +259,13 @@ impl ExtrusionLine {
                 - (next.p.y as Coord) * (previous.p.x as Coord);
             accumulated_area_removed += removed_area_next;
 
+            // const int64_t length2 = (current - previous).cast<int64_t>().squaredNorm();
+            // ExtrusionLine.cpp:96
             let length2 = (current.p - previous.p).length_squared() as Coord;
-
-            // Always remove segments of less than 25 microns
-            // ExtrusionLine.cpp:96-100
-            if length2 < ALWAYS_REMOVE_THRESHOLD_SQUARED {
+            // ExtrusionLine.cpp:97
+            if length2 < scaled(0.025) {
+                // We're allowed to always delete segments of less than 5 micron. The width in this case doesn't matter that much.
+                // ExtrusionLine.cpp:99-100
                 continue;
             }
 
@@ -292,13 +294,14 @@ impl ExtrusionLine {
                 &mut weighted_average_width,
             );
 
-            // Check if almost exactly colinear
-            // ExtrusionLine.cpp:119-127
-            if height_2 <= COLINEAR_THRESHOLD as Coord
-                && Line::distance_to_infinite(current.p, previous.p, next.p) <= COLINEAR_THRESHOLD
+            // ExtrusionLine.cpp:120-123
+            if (height_2 <= scaled(0.001) //Almost exactly colinear (barring rounding errors).
+                && Line::distance_to_infinite(current.p, previous.p, next.p) <= scaled_f(0.001)) // Make sure that height_2 is not small because of cancellation of positive and negative areas
+                // We shouldn't remove middle junctions of colinear segments if the area changed for the C-P segment is exceeding the maximum allowed
                 && extrusion_area_error <= maximum_extrusion_area_deviation
             {
-                // Remove the current junction (vertex)
+                // Remove the current junction (vertex).
+                // ExtrusionLine.cpp:125-126
                 continue;
             }
 
@@ -328,12 +331,13 @@ impl ExtrusionLine {
                             && (intersection_point - next.p).length_squared() as Coord
                                 <= smallest_line_segment_squared
                         {
-                            // New point is valid
-                            // ExtrusionLine.cpp:152
-                            let new_to_add = ExtrusionJunction::new(
+                            // New point seems like a valid one.
+                            // ExtrusionLine.cpp:151-152
+                            let new_to_add = ExtrusionJunction::with_hole_compensation(
                                 intersection_point,
                                 current.w,
                                 current.perimeter_index,
+                                current.hole_compensation_flag,
                             );
 
                             // If there was a previous point added, remove it
@@ -476,25 +480,225 @@ impl ExtrusionLine {
     ///
     /// ExtrusionLine.cpp:265-278
     pub fn area(&self) -> f64 {
-        assert!(self.is_closed);
-
+        // ExtrusionLine.cpp:267
+        debug_assert!(self.is_closed);
+        // ExtrusionLine.cpp:268
         let mut a = 0.0;
+        // ExtrusionLine.cpp:269
         if self.junctions.len() >= 3 {
-            let mut p1 = self.back().p.to_f64();
+            // ExtrusionLine.cpp:270 — Vec2d p1 = this->junctions.back().p.cast<double>();
+            let mut p1 = self.junctions.last().unwrap().p.to_f64();
+            // ExtrusionLine.cpp:271
             for junction in &self.junctions {
+                // ExtrusionLine.cpp:272 — Vec2d p2 = junction.p.cast<double>();
                 let p2 = junction.p.to_f64();
-                a += p1.cross(&p2);
+                // ExtrusionLine.cpp:273 — a += cross2(p1, p2);
+                a += cross2f(p1, p2);
+                // ExtrusionLine.cpp:274
                 p1 = p2;
             }
         }
-
+        // ExtrusionLine.cpp:277
         0.5 * a
     }
+}
+
+// ExtrusionLine.hpp:201-219 — static inline Slic3r::ThickPolyline to_thick_polyline(const Arachne::ExtrusionLine &line_junctions)
+//
+// NOTE: The crate's `ThickPolyline.widths` is `Vec<CoordF>` (the scaled width
+// stored as a float), whereas C++ `ThickPolyline.width` is `std::vector<coord_t>`.
+// The scaled junction width `w` (a `coord_t`/`i64`) is therefore widened to `f64`
+// when pushed, mirroring how `variable_width.rs` consumes these widths.
+pub fn to_thick_polyline(line_junctions: &ExtrusionLine) -> ThickPolyline {
+    // ExtrusionLine.hpp:203
+    debug_assert!(line_junctions.size() >= 2);
+    // ExtrusionLine.hpp:204
+    let mut out = ThickPolyline::new();
+    // ExtrusionLine.hpp:205-206
+    out.points.push(line_junctions.front().p);
+    out.widths.push(line_junctions.front().w as CoordF);
+    // ExtrusionLine.hpp:207-208
+    out.points.push(line_junctions.junctions[1].p);
+    out.widths.push(line_junctions.junctions[1].w as CoordF);
+
+    // ExtrusionLine.hpp:210 — auto it_prev = line_junctions.begin() + 1;
+    let mut it_prev = 1usize;
+    // ExtrusionLine.hpp:211-216
+    for it in 2..line_junctions.junctions.len() {
+        out.points.push(line_junctions.junctions[it].p);
+        out.widths.push(line_junctions.junctions[it_prev].w as CoordF);
+        out.widths.push(line_junctions.junctions[it].w as CoordF);
+        it_prev = it;
+    }
+
+    // ExtrusionLine.hpp:218
+    out
+}
+
+// ExtrusionLine.hpp:221-239 — static inline Slic3r::ThickPolyline to_thick_polyline(const ClipperLib_Z::Path &path)
+//
+// `ClipperLib_Z::Path` maps to the crate's `ZPath` (`Vec<ZPoint>` where
+// `ZPoint = (x, y, z)`); the `z` component carries the scaled width.
+pub fn to_thick_polyline_z(path: &crate::clipper_z_utils::ZPath) -> ThickPolyline {
+    // ExtrusionLine.hpp:223
+    debug_assert!(path.len() >= 2);
+    // ExtrusionLine.hpp:224
+    let mut out = ThickPolyline::new();
+    // ExtrusionLine.hpp:225-226
+    out.points.push(Point::new(path[0].0, path[0].1));
+    out.widths.push(path[0].2 as CoordF);
+    // ExtrusionLine.hpp:227-228
+    out.points.push(Point::new(path[1].0, path[1].1));
+    out.widths.push(path[1].2 as CoordF);
+
+    // ExtrusionLine.hpp:230 — auto it_prev = path.begin() + 1;
+    let mut it_prev = 1usize;
+    // ExtrusionLine.hpp:231-236
+    for it in 2..path.len() {
+        out.points.push(Point::new(path[it].0, path[it].1));
+        out.widths.push(path[it_prev].2 as CoordF);
+        out.widths.push(path[it].2 as CoordF);
+        it_prev = it;
+    }
+
+    // ExtrusionLine.hpp:238
+    out
+}
+
+// ExtrusionLine.hpp:241-250 — static inline Polygon to_polygon(const ExtrusionLine &line)
+pub fn to_polygon(line: &ExtrusionLine) -> Polygon {
+    // ExtrusionLine.hpp:243
+    let mut out = Polygon::new();
+    // ExtrusionLine.hpp:244-245
+    debug_assert!(line.junctions.len() >= 3);
+    debug_assert!(line.junctions.first().unwrap().p == line.junctions.last().unwrap().p);
+    // ExtrusionLine.hpp:246
+    out.points.reserve(line.junctions.len() - 1);
+    // ExtrusionLine.hpp:247-248 — for (auto it = line.junctions.begin(); it != line.junctions.end() - 1; ++it)
+    for it in 0..(line.junctions.len() - 1) {
+        out.points.push(line.junctions[it].p);
+    }
+    // ExtrusionLine.hpp:249
+    out
 }
 
 /// Collection of variable-width extrusion lines generated by Arachne
 /// ExtrusionLine.hpp:279
 pub type VariableWidthLines = Vec<ExtrusionLine>;
+
+// ============================================================================
+// namespace Slic3r { ... } — ExtrusionLine.cpp:282-311
+//
+// These free functions convert Arachne extrusion geometry into the classic
+// `ExtrusionPath` representation via `thick_polyline_to_multi_path`. The fixed
+// arguments mirror C++: `scaled<float>(0.05)` tolerance and `float(SCALED_EPSILON)`
+// merge tolerance.
+// ============================================================================
+
+use crate::clipper_z_utils::ZPaths;
+use crate::extrusion_entity::{ExtrusionPath, ExtrusionRole};
+use crate::flow::Flow;
+use crate::variable_width::{thick_polyline_to_multi_path, ExtrusionPaths};
+
+// ExtrusionLine.cpp:284-291 — void extrusion_paths_append(std::list<ExtrusionPath> &dst, const ClipperLib_Z::Paths &extrusion_paths, const ExtrusionRole role, const Flow &flow, double overhang)
+//
+// C++ uses `std::list<ExtrusionPath>` here; the crate has no idiomatic linked
+// list, so a `Vec<ExtrusionPath>` is used with the same append-to-end semantics.
+pub fn extrusion_paths_append_list(
+    dst: &mut Vec<ExtrusionPath>,
+    extrusion_paths: &ZPaths,
+    role: ExtrusionRole,
+    flow: &Flow,
+    overhang: f64,
+) {
+    // ExtrusionLine.cpp:286
+    for extrusion_path in extrusion_paths {
+        // ExtrusionLine.cpp:287
+        let thick_polyline = to_thick_polyline_z(extrusion_path);
+        // ExtrusionLine.cpp:288
+        let path = thick_polyline_to_multi_path(
+            &thick_polyline,
+            role,
+            flow,
+            scaled_f(0.05) as f32,
+            crate::libslic3r::SCALED_EPSILON as f32,
+            overhang,
+        )
+        .paths;
+        // ExtrusionLine.cpp:289 — dst.insert(dst.end(), std::make_move_iterator(path.begin()), std::make_move_iterator(path.end()));
+        dst.extend(path);
+    }
+}
+
+// ExtrusionLine.cpp:293-299 — void extrusion_paths_append(ExtrusionPaths &dst, const ClipperLib_Z::Paths &extrusion_paths, const ExtrusionRole role, const Flow &flow, double overhang)
+pub fn extrusion_paths_append_zpaths(
+    dst: &mut ExtrusionPaths,
+    extrusion_paths: &ZPaths,
+    role: ExtrusionRole,
+    flow: &Flow,
+    overhang: f64,
+) {
+    // ExtrusionLine.cpp:295
+    for extrusion_path in extrusion_paths {
+        // ExtrusionLine.cpp:296
+        let thick_polyline = to_thick_polyline_z(extrusion_path);
+        // ExtrusionLine.cpp:297 — Slic3r::append(dst, thick_polyline_to_multi_path(...).paths);
+        let path = thick_polyline_to_multi_path(
+            &thick_polyline,
+            role,
+            flow,
+            scaled_f(0.05) as f32,
+            crate::libslic3r::SCALED_EPSILON as f32,
+            overhang,
+        )
+        .paths;
+        dst.extend(path);
+    }
+}
+
+// ExtrusionLine.cpp:301-305 — void extrusion_paths_append(ExtrusionPaths &dst, const Arachne::ExtrusionLine &extrusion, const ExtrusionRole role, const Flow &flow, double overhang)
+pub fn extrusion_paths_append_line(
+    dst: &mut ExtrusionPaths,
+    extrusion: &ExtrusionLine,
+    role: ExtrusionRole,
+    flow: &Flow,
+    overhang: f64,
+) {
+    // ExtrusionLine.cpp:303
+    let thick_polyline = to_thick_polyline(extrusion);
+    // ExtrusionLine.cpp:304 — Slic3r::append(dst, thick_polyline_to_multi_path(...).paths);
+    let path = thick_polyline_to_multi_path(
+        &thick_polyline,
+        role,
+        flow,
+        scaled_f(0.05) as f32,
+        crate::libslic3r::SCALED_EPSILON as f32,
+        overhang,
+    )
+    .paths;
+    dst.extend(path);
+}
+
+// ExtrusionLine.cpp:307-310 — void extrusion_path_append(ExtrusionPaths &dst, const ThickPolyline &thick_polyline, const ExtrusionRole role, const Flow &flow, double overhang)
+pub fn extrusion_path_append(
+    dst: &mut ExtrusionPaths,
+    thick_polyline: &ThickPolyline,
+    role: ExtrusionRole,
+    flow: &Flow,
+    overhang: f64,
+) {
+    // ExtrusionLine.cpp:309 — Slic3r::append(dst, thick_polyline_to_multi_path(...).paths);
+    let path = thick_polyline_to_multi_path(
+        thick_polyline,
+        role,
+        flow,
+        scaled_f(0.05) as f32,
+        crate::libslic3r::SCALED_EPSILON as f32,
+        overhang,
+    )
+    .paths;
+    dst.extend(path);
+}
 
 #[cfg(test)]
 mod tests {
