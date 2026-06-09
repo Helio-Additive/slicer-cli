@@ -2592,7 +2592,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/tool_ordering.rs",
     "rust_exists": true,
     "loc": 2933,
-    "status": "pending",
+    "status": "deferred",
     "priority": 5
   },
   {
@@ -2603,7 +2603,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/wipe_tower.rs",
     "rust_exists": true,
     "loc": 5258,
-    "status": "pending",
+    "status": "partial",
     "priority": 5
   },
   {
@@ -2614,7 +2614,7 @@
     "rust": "crates/libslic3r-rs/src/gcode/g_code_processor.rs",
     "rust_exists": false,
     "loc": 6771,
-    "status": "pending",
+    "status": "partial",
     "priority": 5
   },
   {
@@ -2625,7 +2625,7 @@
     "rust": "crates/libslic3r-rs/src/support/support_layer.rs",
     "rust_exists": true,
     "loc": 153,
-    "status": "pending",
+    "status": "done",
     "priority": 6
   },
   {
@@ -2636,7 +2636,7 @@
     "rust": "crates/libslic3r-rs/src/support/support_parameters.rs",
     "rust_exists": true,
     "loc": 326,
-    "status": "pending",
+    "status": "partial",
     "priority": 6
   },
   {
@@ -2647,7 +2647,7 @@
     "rust": "crates/libslic3r-rs/src/support/tree_support_common.rs",
     "rust_exists": true,
     "loc": 741,
-    "status": "pending",
+    "status": "partial",
     "priority": 6
   },
   {
@@ -2658,7 +2658,7 @@
     "rust": "crates/libslic3r-rs/src/support/tree_model_volumes.rs",
     "rust_exists": true,
     "loc": 904,
-    "status": "pending",
+    "status": "partial",
     "priority": 6
   },
   {
@@ -2669,7 +2669,7 @@
     "rust": "crates/libslic3r-rs/src/support/support_common.rs",
     "rust_exists": true,
     "loc": 2202,
-    "status": "pending",
+    "status": "partial",
     "priority": 6
   },
   {
@@ -2680,7 +2680,7 @@
     "rust": "crates/libslic3r-rs/src/support/support_material.rs",
     "rust_exists": true,
     "loc": 3294,
-    "status": "pending",
+    "status": "partial",
     "priority": 6
   },
   {

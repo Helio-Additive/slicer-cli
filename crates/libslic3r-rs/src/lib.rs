@@ -375,7 +375,8 @@ pub use support::{
 pub use support::tree_model_volumes::{
     find_nearest_safe_position, is_safe_position, point_inside_polygons, AvoidanceType,
     RadiusLayerKey, RadiusLayerPolygonCache, TreeModelVolumes, TreeModelVolumesConfig,
-    COLLISION_RESOLUTION, EXPONENTIAL_FACTOR, EXPONENTIAL_THRESHOLD,
+    SUPPORT_TREE_COLLISION_RESOLUTION, SUPPORT_TREE_EXPONENTIAL_FACTOR,
+    SUPPORT_TREE_EXPONENTIAL_THRESHOLD,
 };
 pub use support::tree_support_3d::{
     LayerSupportElements, LineInformation, LineInformations, SupportElements, TreeSupport3D,

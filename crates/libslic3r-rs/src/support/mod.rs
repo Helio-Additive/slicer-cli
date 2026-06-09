@@ -39,8 +39,20 @@
 
 pub mod branch_mesh;
 pub mod organic_smooth;
+// Faithful 1:1 port of the self-contained leaf utilities from `Support/SupportCommon.{hpp,cpp}`
+// (idx search helpers, safe_union, safe_offset_inc). The heavy pipeline functions remain
+// blocked on not-yet-ported support types (see module docs).
+pub mod support_common;
+pub mod support_layer;
+pub mod support_material;
+pub mod support_parameters;
 pub mod tree_model_volumes;
 pub mod tree_support_3d;
+// Faithful 1:1 port of `Support/TreeSupportCommon.hpp`. Exposed as a module
+// (no glob re-export) to avoid name clashes with the older, divergent
+// `tree_support_settings` types (`TreeSupportSettings`, `LineStatus`,
+// `InterfacePreference`) that are still wired into `tree_support_3d`.
+pub mod tree_support_common;
 pub mod tree_support_settings;
 
 // Re-export tree support types for convenience

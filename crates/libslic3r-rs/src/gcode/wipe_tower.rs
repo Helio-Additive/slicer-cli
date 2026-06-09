@@ -24,7 +24,7 @@
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
-use crate::geometry::{BoundingBoxF, PointF, Polyline};
+use crate::geometry::{BoundingBoxF, Line, Point, PointF, Polygon, Polyline};
 
 // ============================================================================
 // Constants
@@ -2088,36 +2088,132 @@ impl WipeTower {
 }
 
 // ============================================================================
-// Utility Functions
+// Utility Functions (faithful free-function ports from WipeTower.cpp)
 // ============================================================================
 
-/// Align a value to the nearest multiple of base
+// WipeTower.cpp:27
+// inline float align_round(float value, float base)
+// {
+//     return std::round(value / base) * base;
+// }
 #[inline]
 pub fn align_round(value: f32, base: f32) -> f32 {
     (value / base).round() * base
 }
 
-/// Align a value to the ceiling multiple of base
+// WipeTower.cpp:32
+// inline float align_ceil(float value, float base)
+// {
+//     return std::ceil(value / base) * base;
+// }
 #[inline]
 pub fn align_ceil(value: f32, base: f32) -> f32 {
     (value / base).ceil() * base
 }
 
-/// Align a value to the floor multiple of base
+// WipeTower.cpp:37
+// inline float align_floor(float value, float base)
+// {
+//     return std::floor((value) / base) * base;
+// }
 #[inline]
 pub fn align_floor(value: f32, base: f32) -> f32 {
     (value / base).floor() * base
 }
 
-/// Check if G-code string is valid (contains actual commands, not just comments)
+// WipeTower.cpp:42
+// static bool is_valid_gcode(const std::string &gcode)
+// Walks the gcode string line by line, trimming spaces; returns true as soon as
+// a non-empty line is found that does not start with ';'.
 pub fn is_valid_gcode(gcode: &str) -> bool {
-    for line in gcode.lines() {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() && !trimmed.starts_with(';') {
-            return true;
+    // WipeTower.cpp:48-66 — iterate over '\n'-terminated lines, skipping the
+    // trailing partial line (the C++ loop only inspects a line when it sees the
+    // terminating '\n', so a final line without a newline is ignored).
+    let bytes = gcode.as_bytes();
+    let str_size = bytes.len();
+    let mut start_index = 0usize;
+    let mut end_index = 0usize;
+    let mut is_valid = false;
+    while end_index < str_size {
+        if bytes[end_index] != b'\n' {
+            end_index += 1;
+            continue;
         }
+
+        if end_index > start_index {
+            // WipeTower.cpp:55-57 — substr then erase leading/trailing spaces.
+            let line_str = &gcode[start_index..end_index];
+            let trimmed = line_str.trim_matches(' ');
+            if !trimmed.is_empty() && trimmed.as_bytes()[0] != b';' {
+                is_valid = true;
+                break;
+            }
+        }
+
+        start_index = end_index + 1;
+        end_index = start_index;
     }
-    false
+
+    is_valid
+}
+
+// WipeTower.cpp:259
+// Polygon generate_rectange(const Line &line, coord_t offset)
+// Builds an oriented rectangle of the given half-width `offset` around `line`.
+// Faithful 1:1 port reusing the crate `Line`/`Point`/`Polygon` primitives.
+// `coord_t` -> `i64`, `coordf_t`/`double` -> `f64`.
+pub fn generate_rectange(line: &Line, offset: i64) -> Polygon {
+    // WipeTower.cpp:261-262
+    let p1 = line.a;
+    let p2 = line.b;
+
+    // WipeTower.cpp:264-265
+    let dx = (p2.x() - p1.x()) as f64;
+    let dy = (p2.y() - p1.y()) as f64;
+
+    // WipeTower.cpp:267
+    let length = (dx * dx + dy * dy).sqrt();
+
+    // WipeTower.cpp:269-270
+    let ux = dx / length;
+    let uy = dy / length;
+
+    // WipeTower.cpp:272-273
+    let vx = -uy;
+    let vy = ux;
+
+    // WipeTower.cpp:275-276
+    let ox = vx * offset as f64;
+    let oy = vy * offset as f64;
+
+    // WipeTower.cpp:278-283
+    // Points rect; rect.resize(4);
+    // rect[0] = {p1.x() + ox, p1.y() + oy};
+    // rect[1] = {p1.x() - ox, p1.y() - oy};
+    // rect[2] = {p2.x() - ox, p2.y() - oy};
+    // rect[3] = {p2.x() + ox, p2.y() + oy};
+    // NOTE: C++ assigns f64 expressions into coord_t (i64) Point components,
+    // which truncates toward zero. Mirror that with `as i64`.
+    let mut rect: Vec<Point> = Vec::with_capacity(4);
+    rect.push(Point::new(
+        (p1.x() as f64 + ox) as i64,
+        (p1.y() as f64 + oy) as i64,
+    ));
+    rect.push(Point::new(
+        (p1.x() as f64 - ox) as i64,
+        (p1.y() as f64 - oy) as i64,
+    ));
+    rect.push(Point::new(
+        (p2.x() as f64 - ox) as i64,
+        (p2.y() as f64 - oy) as i64,
+    ));
+    rect.push(Point::new(
+        (p2.x() as f64 + ox) as i64,
+        (p2.y() as f64 + oy) as i64,
+    ));
+
+    // WipeTower.cpp:284-285
+    Polygon::from_points(rect)
 }
 
 // ============================================================================
