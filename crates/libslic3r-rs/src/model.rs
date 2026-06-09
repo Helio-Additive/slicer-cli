@@ -2,10 +2,325 @@
 //!
 //! This module provides Model and related types for representing 3D models
 //! with multiple objects, instances, and metadata. Mirrors BambuStudio's Model.cpp.
+//!
+//! PORTING STATUS (Model.cpp / Model.hpp):
+//! ----------------------------------------
+//! The full C++ `Model` / `ModelObject` / `ModelVolume` / `ModelInstance` class
+//! hierarchy is deeply coupled to infrastructure that is not yet ported into this
+//! crate (the `ObjectBase` unique-ID system, `ModelConfigObject` wrapping
+//! `DynamicPrintConfig`, per-volume `Geometry::Transformation`, cereal
+//! serialization, the native 3MF/STEP/AMF loaders via boost/Eigen/OpenCASCADE,
+//! `MeshBoolean`, `TriangleSelector`, `BuildVolume`, and `ModelArrange`).
+//!
+//! In particular, C++ `ModelObject` owns a `ModelVolumePtrs volumes` collection,
+//! whereas the existing Rust `ModelObject` (used by the format loaders in this
+//! crate: `threemf.rs`, `format/{stl,obj,amf,svg,step}.rs`, `obj.rs`,
+//! `slicing_adaptive.rs`) stores a single merged `mesh: TriangleMesh`. Reworking
+//! that into the C++ `volumes` model is a coordinated cross-module change that
+//! must not be done piecemeal without breaking those consumers.
+//!
+//! This file therefore ports faithfully (1:1, line-referenced) the standalone,
+//! consumer-safe pieces of Model.hpp / Model.cpp — the enums, plain-old-data
+//! structs, constants, the BBS speed/extruder tables, and the pure
+//! string<->type conversion functions — and retains the pre-existing simplified
+//! domain `Model`/`ModelObject`/`Instance` shim that the loaders depend on. See
+//! the "blocked" list in PORT_LEDGER / report for the symbols that require the
+//! infrastructure above.
 
 use crate::geometry::{BoundingBox3F, Point3F, Transform3D};
 use crate::triangle_mesh::TriangleMesh;
+use crate::Polygon;
 use std::path::PathBuf;
+
+// BBS initialization of static variables / const filament table.
+// Model.cpp:50-53
+//   const std::vector<std::string> CONST_FILAMENTS = { ... };
+pub const CONST_FILAMENTS: [&str; 33] = [
+    // Model.cpp:51
+    "", "4", "8", "0C", "1C", "2C", "3C", "4C", "5C", "6C", "7C", "8C", "9C", "AC", "BC", "CC",
+    "DC", // 16
+    // Model.cpp:52
+    "EC", "0FC", "1FC", "2FC", "3FC", "4FC", "5FC", "6FC", "7FC", "8FC", "9FC", "AFC", "BFC",
+    "CFC", "DFC", "EFC", // 32
+]; //      1                         5                                 10                                 15    16
+
+// Model.hpp:241-244
+//   enum class CutMode : int { cutPlanar, cutTongueAndGroove };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum CutMode {
+    CutPlanar,
+    CutTongueAndGroove,
+}
+
+// Model.hpp:246-252
+//   enum class CutConnectorType : int { Plug, Dowel, Snap, Thread, Undef };
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(i32)]
+pub enum CutConnectorType {
+    Plug,
+    Dowel,
+    Snap,
+    Thread,
+    Undef,
+}
+
+// Model.hpp:254-259
+//   enum class CutConnectorStyle : int { Prizm, Frustum, Undef //,Claw };
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(i32)]
+pub enum CutConnectorStyle {
+    Prizm,
+    Frustum,
+    Undef,
+    //,Claw
+}
+
+// Model.hpp:261-268
+//   enum class CutConnectorShape : int { Triangle, Square, Hexagon, Circle, Undef //,D-shape };
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(i32)]
+pub enum CutConnectorShape {
+    Triangle,
+    Square,
+    Hexagon,
+    Circle,
+    Undef,
+    //,D-shape
+}
+
+// Model.hpp:269-273
+//   struct CutConnectorParas { float snap_space_proportion{0.3}; float snap_bulge_proportion{0.15}; };
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CutConnectorParas {
+    /// Model.hpp:271
+    pub snap_space_proportion: f32,
+    /// Model.hpp:272
+    pub snap_bulge_proportion: f32,
+}
+
+// Model.hpp:271-272 default member initializers.
+impl Default for CutConnectorParas {
+    fn default() -> Self {
+        Self {
+            // Model.hpp:271 — float snap_space_proportion{0.3};
+            snap_space_proportion: 0.3,
+            // Model.hpp:272 — float snap_bulge_proportion{0.15};
+            snap_bulge_proportion: 0.15,
+        }
+    }
+}
+
+// Model.hpp:275-298
+//   struct CutConnectorAttributes { CutConnectorType type; CutConnectorStyle style; CutConnectorShape shape; ... };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CutConnectorAttributes {
+    /// Model.hpp:277 — CutConnectorType type{CutConnectorType::Plug};
+    pub type_: CutConnectorType,
+    /// Model.hpp:278 — CutConnectorStyle style{CutConnectorStyle::Prizm};
+    pub style: CutConnectorStyle,
+    /// Model.hpp:279 — CutConnectorShape shape{CutConnectorShape::Circle};
+    pub shape: CutConnectorShape,
+}
+
+impl CutConnectorAttributes {
+    // Model.hpp:283 — CutConnectorAttributes(CutConnectorType t, CutConnectorStyle st, CutConnectorShape sh)
+    pub fn with(type_: CutConnectorType, style: CutConnectorStyle, shape: CutConnectorShape) -> Self {
+        Self { type_, style, shape }
+    }
+}
+
+// Model.hpp:281 — default constructor uses default member initializers.
+impl Default for CutConnectorAttributes {
+    fn default() -> Self {
+        Self {
+            // Model.hpp:277
+            type_: CutConnectorType::Plug,
+            // Model.hpp:278
+            style: CutConnectorStyle::Prizm,
+            // Model.hpp:279
+            shape: CutConnectorShape::Circle,
+        }
+    }
+}
+
+// Model.hpp:291-295
+//   bool operator<(const CutConnectorAttributes &other) const
+impl PartialOrd for CutConnectorAttributes {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CutConnectorAttributes {
+    // Model.hpp:293-294
+    //   return this->type < other.type || (this->type == other.type && this->style < other.style) ||
+    //          (this->type == other.type && this->style == other.style && this->shape < other.shape);
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.type_
+            .cmp(&other.type_)
+            .then(self.style.cmp(&other.style))
+            .then(self.shape.cmp(&other.shape))
+    }
+}
+
+// Declared outside of ModelVolume, so it could be forward declared.
+// Model.hpp:328-335
+//   enum class ModelVolumeType : int { INVALID = -1, MODEL_PART = 0, NEGATIVE_VOLUME,
+//       PARAMETER_MODIFIER, SUPPORT_BLOCKER, SUPPORT_ENFORCER };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum ModelVolumeType {
+    /// Model.hpp:329
+    Invalid = -1,
+    /// Model.hpp:330
+    ModelPart = 0,
+    /// Model.hpp:331
+    NegativeVolume,
+    /// Model.hpp:332
+    ParameterModifier,
+    /// Model.hpp:333
+    SupportBlocker,
+    /// Model.hpp:334
+    SupportEnforcer,
+}
+
+impl ModelVolumeType {
+    //BBS: refine the model part names
+    // Model.cpp:3313-3329
+    //   ModelVolumeType ModelVolume::type_from_string(const std::string &s)
+    pub fn type_from_string(s: &str) -> ModelVolumeType {
+        // New type (supporting the support enforcers & blockers)
+        // Model.cpp:3316-3317
+        if s == "normal_part" {
+            return ModelVolumeType::ModelPart;
+        }
+        // Model.cpp:3318-3319
+        if s == "negative_part" {
+            return ModelVolumeType::NegativeVolume;
+        }
+        // Model.cpp:3320-3321
+        if s == "modifier_part" {
+            return ModelVolumeType::ParameterModifier;
+        }
+        // Model.cpp:3322-3323
+        if s == "support_enforcer" {
+            return ModelVolumeType::SupportEnforcer;
+        }
+        // Model.cpp:3324-3325
+        if s == "support_blocker" {
+            return ModelVolumeType::SupportBlocker;
+        }
+        //assert(s == "0");
+        // Default value if invalud type string received.
+        // Model.cpp:3328
+        ModelVolumeType::ModelPart
+    }
+
+    //BBS: refine the model part names
+    // Model.cpp:3332-3344
+    //   std::string ModelVolume::type_to_string(const ModelVolumeType t)
+    pub fn type_to_string(t: ModelVolumeType) -> &'static str {
+        // Model.cpp:3334-3343
+        match t {
+            // Model.cpp:3335
+            ModelVolumeType::ModelPart => "normal_part",
+            // Model.cpp:3336
+            ModelVolumeType::NegativeVolume => "negative_part",
+            // Model.cpp:3337
+            ModelVolumeType::ParameterModifier => "modifier_part",
+            // Model.cpp:3338
+            ModelVolumeType::SupportEnforcer => "support_enforcer",
+            // Model.cpp:3339
+            ModelVolumeType::SupportBlocker => "support_blocker",
+            // Model.cpp:3340-3342 — default: assert(false); return "normal_part";
+            _ => "normal_part",
+        }
+    }
+}
+
+// Model.hpp:755-760
+//   enum class ConversionType : int { CONV_TO_INCH, CONV_FROM_INCH, CONV_TO_METER, CONV_FROM_METER };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum ConversionType {
+    ConvToInch,
+    ConvFromInch,
+    ConvToMeter,
+    ConvFromMeter,
+}
+
+// Model.hpp:762-766
+//   enum class En3mfType : int { From_BBS, From_Prusa, From_Other };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum En3mfType {
+    FromBBS,
+    FromPrusa,
+    FromOther,
+}
+
+// Model.hpp:1328-1335
+//   enum ModelInstanceEPrintVolumeState : unsigned char { ... };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ModelInstanceEPrintVolumeState {
+    /// Model.hpp:1330
+    ModelInstancePvsInside,
+    /// Model.hpp:1331
+    ModelInstancePvsLimited,
+    /// Model.hpp:1332
+    ModelInstancePvsPartlyOutside,
+    /// Model.hpp:1333
+    ModelInstancePvsFullyOutside,
+    /// Model.hpp:1334
+    ModelInstanceNumBedStates,
+}
+
+// BBS structure stores extruder parameters and speed map of all models
+// Model.hpp:1513-1520
+//   struct ExtruderParams { std::string materialName; int bedTemp; double heatEndTemp; };
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ExtruderParams {
+    /// Model.hpp:1516
+    pub material_name: String,
+    //std::array<double, BedType::btCount> bedTemp;
+    /// Model.hpp:1518
+    pub bed_temp: i32,
+    /// Model.hpp:1519
+    pub heat_end_temp: f64,
+}
+
+// Model.hpp:1522-1533
+//   struct GlobalSpeedMap { double perimeterSpeed; ...; Polygon bed_poly; };
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GlobalSpeedMap {
+    /// Model.hpp:1524
+    pub perimeter_speed: f64,
+    /// Model.hpp:1525
+    pub external_perimeter_speed: f64,
+    /// Model.hpp:1526
+    pub infill_speed: f64,
+    /// Model.hpp:1527
+    pub solid_infill_speed: f64,
+    /// Model.hpp:1528
+    pub top_solid_infill_speed: f64,
+    /// Model.hpp:1529
+    pub support_speed: f64,
+    /// Model.hpp:1530
+    pub small_perimeter_speed: f64,
+    /// Model.hpp:1531
+    pub max_speed: f64,
+    /// Model.hpp:1532
+    pub bed_poly: Polygon,
+}
+
+// Model.hpp:1839
+//   static const float SINKING_Z_THRESHOLD = -0.001f;
+pub const SINKING_Z_THRESHOLD: f32 = -0.001;
+// Model.hpp:1840
+//   static const double SINKING_MIN_Z_THRESHOLD = 0.05;
+pub const SINKING_MIN_Z_THRESHOLD: f64 = 0.05;
 
 #[derive(Debug, Clone, Default)]
 /// Container for all objects in a 3D print job with associated metadata.

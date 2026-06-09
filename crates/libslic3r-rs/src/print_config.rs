@@ -5082,6 +5082,405 @@ impl PrintObjectConfig {
     }
 }
 
+// ===========================================================================
+// Faithful 1:1 port of the self-contained helpers from BambuStudio's
+// PrintConfig.cpp top section. The bulk of PrintConfig.cpp (PrintConfigDef
+// and DynamicPrintConfig method implementations) is built on the Config.hpp
+// class hierarchy (ConfigOptionDef, ConfigDef::add, coXxx option types,
+// ConfigOptionEnum<T>, ConfigBase/DynamicConfig) which has not yet been
+// ported; those symbols are listed as blocked. The helpers below depend only
+// on standard string/container operations (and the already-ported BBS enums
+// in crate::extruder), so they are ported here verbatim.
+//
+// NOTE: Several other PrintConfig.cpp helpers (get_extruder_index:92,
+// get_filament_config_idx:100, get_process_config_idx:109,
+// get_extruder_variant_string:528, get_config_index_base:549,
+// get_nozzle_volume_type_string:563, enum_names_from_keys_map:119 for the
+// NozzleVolumeType map) were already ported into crate::extruder and
+// crate::multi_nozzle_utils and are not duplicated here.
+// ===========================================================================
+
+use crate::extruder::{NozzleVolumeType, NVT_MAX_NOZZLE_VOLUME_TYPE};
+use std::collections::{BTreeMap, BTreeSet};
+
+// PrintConfig.cpp:19  (anonymous namespace)
+// std::set<std::string> SplitStringAndRemoveDuplicateElement(const std::string &str, const std::string &separator)
+pub fn split_string_and_remove_duplicate_element(str: &str, separator: &str) -> BTreeSet<String> {
+    // PrintConfig.cpp:21
+    let mut result: BTreeSet<String> = BTreeSet::new();
+    // PrintConfig.cpp:22  if (str.empty()) return result;
+    if str.is_empty() {
+        return result;
+    }
+
+    // PrintConfig.cpp:24  std::string strs = str + separator;
+    let strs = format!("{}{}", str, separator);
+    let strs_bytes = strs.as_bytes();
+    // PrintConfig.cpp:26  size_t size = strs.size();
+    let size = strs.len();
+
+    // PrintConfig.cpp:28  for (int i = 0; i < size; ++i)
+    let mut i: usize = 0;
+    while i < size {
+        // PrintConfig.cpp:29  pos = strs.find(separator, i);
+        // std::string::find returns std::string::npos when not found.
+        let pos = find_from(strs_bytes, separator.as_bytes(), i);
+        // PrintConfig.cpp:30  if (pos < size)
+        if let Some(pos) = pos {
+            if pos < size {
+                // PrintConfig.cpp:31  std::string sub_str = strs.substr(i, pos - i);
+                let sub_str = strs[i..pos].to_string();
+                // PrintConfig.cpp:32  result.insert(sub_str);
+                result.insert(sub_str);
+                // PrintConfig.cpp:33  i = pos + separator.size() - 1;
+                // (the for-loop's ++i then advances past the separator)
+                i = pos + separator.len() - 1;
+            }
+        }
+        i += 1;
+    }
+
+    // PrintConfig.cpp:37
+    result
+}
+
+// PrintConfig.cpp:40  (anonymous namespace)
+// void ReplaceString(std::string &resource_str, const std::string &old_str, const std::string &new_str)
+pub fn replace_string(resource_str: &mut String, old_str: &str, new_str: &str) {
+    // PrintConfig.cpp:42  std::string::size_type pos = 0;
+    let mut pos: usize = 0;
+    // PrintConfig.cpp:43  size_t new_size = 0;
+    let mut new_size: usize = 0;
+    // PrintConfig.cpp:44  while ((pos = resource_str.find(old_str, pos + new_size)) != std::string::npos)
+    loop {
+        let start = pos + new_size;
+        match find_from(resource_str.as_bytes(), old_str.as_bytes(), start) {
+            Some(found) => {
+                pos = found;
+                // PrintConfig.cpp:46  resource_str.replace(pos, old_str.length(), new_str);
+                resource_str.replace_range(pos..pos + old_str.len(), new_str);
+                // PrintConfig.cpp:47  new_size = new_str.size();
+                new_size = new_str.len();
+            }
+            None => break,
+        }
+    }
+}
+
+// Helper mirroring std::string::find(needle, from): returns the byte index of
+// the first occurrence of `needle` in `haystack` at or after `from`, or None
+// (std::string::npos). An empty needle matches at `from` (clamped to len),
+// matching libstdc++ semantics.
+fn find_from(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    if from > haystack.len() {
+        return None;
+    }
+    if needle.is_empty() {
+        return Some(from);
+    }
+    if needle.len() > haystack.len() {
+        return None;
+    }
+    let last = haystack.len() - needle.len();
+    let mut i = from;
+    while i <= last {
+        if &haystack[i..i + needle.len()] == needle {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+// PrintConfig.cpp:60
+// const std::vector<std::string> filament_extruder_override_keys = { ... };
+pub const FILAMENT_EXTRUDER_OVERRIDE_KEYS: [&str; 15] = [
+    // floats
+    "filament_retraction_length",                  // PrintConfig.cpp:62
+    "filament_z_hop",                              // PrintConfig.cpp:63
+    "filament_z_hop_types",                        // PrintConfig.cpp:64
+    "filament_retract_lift_above",  //not in filament_options_with_variant, not used? // PrintConfig.cpp:65
+    "filament_retract_lift_below",  //not in filament_options_with_variant, not used? // PrintConfig.cpp:66
+    "filament_retraction_speed",                   // PrintConfig.cpp:67
+    "filament_deretraction_speed",                 // PrintConfig.cpp:68
+    "filament_retract_restart_extra",  //not in filament_options_with_variant, added on 20250816 // PrintConfig.cpp:69
+    "filament_retraction_minimum_travel",          // PrintConfig.cpp:70
+    // BBS: floats
+    "filament_wipe_distance",                      // PrintConfig.cpp:72
+    // bools
+    "filament_retract_when_changing_layer",        // PrintConfig.cpp:74
+    "filament_wipe",                               // PrintConfig.cpp:75
+    // percents
+    "filament_retract_before_wipe",                // PrintConfig.cpp:77
+    "filament_long_retractions_when_cut",          // PrintConfig.cpp:78
+    "filament_retraction_distances_when_cut",      // PrintConfig.cpp:79
+];
+
+// PrintConfig.cpp:82
+// const std::vector<std::string> filament_overhang_override_keys = { ... };
+pub const FILAMENT_OVERHANG_OVERRIDE_KEYS: [&str; 7] = [
+    "filament_enable_overhang_speed", // PrintConfig.cpp:83
+    "filament_bridge_speed",          // PrintConfig.cpp:84
+    "filament_overhang_1_4_speed",    // PrintConfig.cpp:85
+    "filament_overhang_2_4_speed",    // PrintConfig.cpp:86
+    "filament_overhang_3_4_speed",    // PrintConfig.cpp:87
+    "filament_overhang_4_4_speed",    // PrintConfig.cpp:88
+    "filament_overhang_totally_speed", // PrintConfig.cpp:89
+];
+
+// PrintConfig.cpp:119  static t_config_enum_names enum_names_from_keys_map(const t_config_enum_values &enum_keys_map)
+// Inverts an enum key->value map into a value-indexed name vector.
+pub fn enum_names_from_keys_map(enum_keys_map: &BTreeMap<String, i32>) -> Vec<String> {
+    // PrintConfig.cpp:121  t_config_enum_names names;
+    // PrintConfig.cpp:122  int cnt = 0;
+    let mut cnt: i32 = 0;
+    // PrintConfig.cpp:123  for (const auto& kvp : enum_keys_map) cnt = std::max(cnt, kvp.second);
+    for kvp in enum_keys_map.iter() {
+        cnt = cnt.max(*kvp.1);
+    }
+    // PrintConfig.cpp:125  cnt += 1;
+    cnt += 1;
+    // PrintConfig.cpp:126  names.assign(cnt, "");
+    let mut names: Vec<String> = vec![String::new(); cnt as usize];
+    // PrintConfig.cpp:127  for (const auto& kvp : enum_keys_map) names[kvp.second] = kvp.first;
+    for kvp in enum_keys_map.iter() {
+        names[*kvp.1 as usize] = kvp.0.clone();
+    }
+    // PrintConfig.cpp:129
+    names
+}
+
+// PrintConfig.cpp:489  static const t_config_enum_values s_keys_map_NozzleVolumeType = { ... };
+// Reconstructed as a key->value map for use by convert_to_nvt_type and the
+// nozzle-stat parsers below.
+fn s_keys_map_nozzle_volume_type() -> BTreeMap<String, i32> {
+    let mut m: BTreeMap<String, i32> = BTreeMap::new();
+    m.insert("Standard".to_string(), NozzleVolumeType::NvtStandard as i32); // PrintConfig.cpp:490
+    m.insert("High Flow".to_string(), NozzleVolumeType::NvtHighFlow as i32); // PrintConfig.cpp:491
+    m.insert(
+        "TPU High Flow".to_string(),
+        NozzleVolumeType::NvtTPUHighFlow as i32,
+    ); // PrintConfig.cpp:492
+    m.insert("Hybrid".to_string(), NozzleVolumeType::NvtHybrid as i32); // PrintConfig.cpp:493
+    m
+}
+
+// PrintConfig.cpp:483  static const t_config_enum_values s_keys_map_ExtruderType = { ... };
+// The enum *names* (value-indexed) used by convert_to_nvt_type:
+//   s_keys_names_ExtruderType = ["Direct Drive", "Bowden"]
+const S_KEYS_NAMES_EXTRUDER_TYPE: [&str; 2] = ["Direct Drive", "Bowden"];
+
+// PrintConfig.cpp:609
+// std::vector<std::map<int, int>> get_extruder_ams_count(const std::vector<std::string>& strs)
+pub fn get_extruder_ams_count(strs: &[String]) -> Vec<BTreeMap<i32, i32>> {
+    // PrintConfig.cpp:611
+    let mut extruder_ams_counts: Vec<BTreeMap<i32, i32>> = Vec::new();
+    // PrintConfig.cpp:612  for (const std::string& str : strs)
+    for str in strs.iter() {
+        // PrintConfig.cpp:613
+        let mut ams_count_info: BTreeMap<i32, i32> = BTreeMap::new();
+        // PrintConfig.cpp:614  if (str.empty())
+        if str.is_empty() {
+            // PrintConfig.cpp:615
+            extruder_ams_counts.push(ams_count_info);
+            // PrintConfig.cpp:616
+            continue;
+        }
+        // PrintConfig.cpp:618-619  boost::algorithm::split(ams_infos, str, is_any_of("|"));
+        let ams_infos: Vec<&str> = str.split('|').collect();
+        // PrintConfig.cpp:620  for (const std::string& ams_info : ams_infos)
+        for ams_info in ams_infos.iter() {
+            // PrintConfig.cpp:621-622  boost::algorithm::split(numbers, ams_info, is_any_of("#"));
+            let numbers: Vec<&str> = ams_info.split('#').collect();
+            // PrintConfig.cpp:623  assert(numbers.size() == 2);
+            debug_assert!(numbers.len() == 2);
+            // PrintConfig.cpp:624  ams_count_info.insert(make_pair(stoi(numbers[0]), stoi(numbers[1])));
+            let key = stoi(numbers[0]);
+            let val = stoi(numbers[1]);
+            // std::map::insert keeps the first value for a duplicate key.
+            ams_count_info.entry(key).or_insert(val);
+        }
+        // PrintConfig.cpp:626
+        extruder_ams_counts.push(ams_count_info);
+    }
+    // PrintConfig.cpp:628
+    extruder_ams_counts
+}
+
+// PrintConfig.cpp:631
+// std::vector<std::map<NozzleVolumeType,int>> get_extruder_nozzle_stats(const std::vector<std::string>& strs)
+pub fn get_extruder_nozzle_stats(strs: &[String]) -> Vec<BTreeMap<NozzleVolumeType, i32>> {
+    // PrintConfig.cpp:633
+    let mut extruder_nozzle_counts: Vec<BTreeMap<NozzleVolumeType, i32>> = Vec::new();
+    let keys_map = s_keys_map_nozzle_volume_type();
+    // PrintConfig.cpp:634  for (const std::string& str : strs)
+    for str in strs.iter() {
+        // PrintConfig.cpp:635
+        let mut nozzle_count_map: BTreeMap<NozzleVolumeType, i32> = BTreeMap::new();
+        // PrintConfig.cpp:636  if(str.empty())
+        if str.is_empty() {
+            // PrintConfig.cpp:637
+            extruder_nozzle_counts.push(nozzle_count_map);
+            // PrintConfig.cpp:638
+            continue;
+        }
+        // PrintConfig.cpp:640-641  boost::algorithm::split(nozzle_infos, str, is_any_of("|"));
+        let nozzle_infos: Vec<&str> = str.split('|').collect();
+        // PrintConfig.cpp:642  for (auto& nozzle_info : nozzle_infos)
+        for nozzle_info in nozzle_infos.iter() {
+            // PrintConfig.cpp:643-644  boost::algorithm::split(attr, nozzle_info, is_any_of("#"));
+            let attr: Vec<&str> = nozzle_info.split('#').collect();
+            // PrintConfig.cpp:645  NozzleVolumeType volume_type = NozzleVolumeType(s_keys_map_NozzleVolumeType.at(attr[0]));
+            let volume_type = NozzleVolumeType::from_i32(keys_map[attr[0]]);
+            // PrintConfig.cpp:646  int nozzle_count = std::atoi(attr[1].c_str());
+            let nozzle_count = atoi(attr[1]);
+            // PrintConfig.cpp:647  nozzle_count_map[volume_type] = nozzle_count;
+            nozzle_count_map.insert(volume_type, nozzle_count);
+        }
+        // PrintConfig.cpp:649
+        extruder_nozzle_counts.push(nozzle_count_map);
+    }
+    // PrintConfig.cpp:651
+    extruder_nozzle_counts
+}
+
+// PrintConfig.cpp:655
+// std::vector<std::string> save_extruder_ams_count_to_string(const std::vector<std::map<int, int>> &extruder_ams_count)
+pub fn save_extruder_ams_count_to_string(extruder_ams_count: &[BTreeMap<i32, i32>]) -> Vec<String> {
+    // PrintConfig.cpp:657
+    let mut extruder_ams_count_str: Vec<String> = Vec::new();
+    // PrintConfig.cpp:658  for (size_t i = 0; i < extruder_ams_count.size(); ++i)
+    for i in 0..extruder_ams_count.len() {
+        // PrintConfig.cpp:659  std::ostringstream oss;
+        let mut oss = String::new();
+        // PrintConfig.cpp:660  const auto &item = extruder_ams_count[i];
+        let item = &extruder_ams_count[i];
+        // PrintConfig.cpp:661  for (auto it = item.begin(); it != item.end(); ++it)
+        let mut it = item.iter().peekable();
+        while let Some((k, v)) = it.next() {
+            // PrintConfig.cpp:662  oss << it->first << "#" << it->second;
+            oss.push_str(&format!("{}#{}", k, v));
+            // PrintConfig.cpp:663  if (std::next(it) != item.end()) oss << "|";
+            if it.peek().is_some() {
+                oss.push('|');
+            }
+        }
+        // PrintConfig.cpp:667  extruder_ams_count_str.push_back(oss.str());
+        extruder_ams_count_str.push(oss);
+    }
+    // PrintConfig.cpp:669
+    extruder_ams_count_str
+}
+
+// PrintConfig.cpp:672  NozzleVolumeType convert_to_nvt_type(const std::string &variant_str)
+pub fn convert_to_nvt_type(variant_str: &str) -> NozzleVolumeType {
+    // PrintConfig.cpp:673  const auto &ext_types = ConfigOptionEnum<ExtruderType>::get_enum_names();
+    let ext_types = &S_KEYS_NAMES_EXTRUDER_TYPE;
+    let keys_map = s_keys_map_nozzle_volume_type();
+
+    // PrintConfig.cpp:675-678  trim lambda (std::string trim of " \t\r\n").
+    let trim = |s: &str| -> String { s.trim_matches([' ', '\t', '\r', '\n']).to_string() };
+
+    // PrintConfig.cpp:680  for (auto ext_type : ext_types)
+    for ext_type in ext_types.iter() {
+        // PrintConfig.cpp:681  size_t pos = variant_str.find(ext_type);
+        // PrintConfig.cpp:682  if (pos == std::string::npos) continue;
+        let pos = match find_from(variant_str.as_bytes(), ext_type.as_bytes(), 0) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // PrintConfig.cpp:685  std::string result = variant_str;
+        let mut result = variant_str.to_string();
+        // PrintConfig.cpp:686  result.erase(pos, ext_type.size());
+        result.replace_range(pos..pos + ext_type.len(), "");
+        // PrintConfig.cpp:687  trim(result);
+        let result = trim(&result);
+
+        // PrintConfig.cpp:689  auto iter = s_keys_map_NozzleVolumeType.find(result);
+        // PrintConfig.cpp:690  if (iter != s_keys_map_NozzleVolumeType.end())
+        if let Some(v) = keys_map.get(&result) {
+            // PrintConfig.cpp:691  return NozzleVolumeType(iter->second);
+            return NozzleVolumeType::from_i32(*v);
+        }
+    }
+
+    // PrintConfig.cpp:694  return nvtHybrid;
+    NozzleVolumeType::NvtHybrid
+}
+
+// PrintConfig.cpp:697
+// std::vector<std::string> save_extruder_nozzle_stats_to_string(const std::vector<std::map<NozzleVolumeType,int>>& extruder_nozzle_stats)
+pub fn save_extruder_nozzle_stats_to_string(
+    extruder_nozzle_stats: &[BTreeMap<NozzleVolumeType, i32>],
+) -> Vec<String> {
+    // PrintConfig.cpp:699
+    let mut extruder_nozzle_count_str: Vec<String> = Vec::new();
+    // PrintConfig.cpp:700  for (size_t idx = 0; idx < extruder_nozzle_stats.size(); ++idx)
+    for idx in 0..extruder_nozzle_stats.len() {
+        // PrintConfig.cpp:701  std::ostringstream oss;
+        let mut oss = String::new();
+        // PrintConfig.cpp:702  const auto& item = extruder_nozzle_stats[idx];
+        let item = &extruder_nozzle_stats[idx];
+        // PrintConfig.cpp:703  for (auto it = item.begin(); it != item.end(); ++it)
+        let mut it = item.iter().peekable();
+        while let Some((k, v)) = it.next() {
+            // PrintConfig.cpp:704  oss << get_nozzle_volume_type_string(it->first) << "#" << it->second;
+            oss.push_str(&format!("{}#{}", nozzle_volume_type_string(*k), v));
+            // PrintConfig.cpp:705  if (std::next(it) != item.end()) oss << "|";
+            if it.peek().is_some() {
+                oss.push('|');
+            }
+        }
+        // PrintConfig.cpp:708  extruder_nozzle_count_str.emplace_back(oss.str());
+        extruder_nozzle_count_str.push(oss);
+    }
+    // PrintConfig.cpp:710
+    extruder_nozzle_count_str
+}
+
+// PrintConfig.cpp:563  std::string get_nozzle_volume_type_string(NozzleVolumeType nozzle_volume_type)
+// Local copy used by save_extruder_nozzle_stats_to_string (the canonical port
+// lives in crate::multi_nozzle_utils but is private there).
+fn nozzle_volume_type_string(nozzle_volume_type: NozzleVolumeType) -> String {
+    // s_keys_names_NozzleVolumeType is the value-indexed inversion of
+    // s_keys_map_NozzleVolumeType (PrintConfig.cpp:489):
+    //   ["Standard", "High Flow", "Hybrid", "TPU High Flow"]
+    const S_KEYS_NAMES_NOZZLE_VOLUME_TYPE: [&str; 4] =
+        ["Standard", "High Flow", "Hybrid", "TPU High Flow"];
+    // PrintConfig.cpp:565  if (nozzle_volume_type > nvtMaxNozzleVolumeType) return "";
+    if (nozzle_volume_type as i32) > NVT_MAX_NOZZLE_VOLUME_TYPE {
+        return String::new();
+    }
+    // PrintConfig.cpp:569  return s_keys_names_NozzleVolumeType[nozzle_volume_type];
+    S_KEYS_NAMES_NOZZLE_VOLUME_TYPE[nozzle_volume_type as usize].to_string()
+}
+
+// Faithful equivalents of std::stoi / std::atoi over the leading numeric
+// prefix of a string (used by the parsers above). std::atoi returns 0 on
+// failure; std::stoi throws — but the C++ call sites only ever pass valid
+// integer tokens, so we mirror atoi's lenient leading-prefix behavior.
+fn stoi(s: &str) -> i32 {
+    parse_leading_int(s)
+}
+
+fn atoi(s: &str) -> i32 {
+    parse_leading_int(s)
+}
+
+fn parse_leading_int(s: &str) -> i32 {
+    let trimmed = s.trim_start();
+    let bytes = trimmed.as_bytes();
+    let mut end = 0;
+    if end < bytes.len() && (bytes[end] == b'+' || bytes[end] == b'-') {
+        end += 1;
+    }
+    while end < bytes.len() && bytes[end].is_ascii_digit() {
+        end += 1;
+    }
+    trimmed[..end].parse::<i32>().unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

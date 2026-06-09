@@ -98,6 +98,25 @@ pub enum PrintStep {
     ConflictCheck,
 }
 
+// Print.hpp:808-813
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FilamentTempType {
+    HighTemp = 0,
+    LowTemp,
+    HighLowCompatible,
+    Undefine,
+}
+
+// Print.hpp:815-820
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilamentCompatibilityType {
+    Compatible,
+    HighLowMixed,
+    HighMidMixed,
+    LowMidMixed,
+}
+
 /// Print - Main container for print job orchestration
 /// Manages PrintObjects, configuration, and slicing pipeline
 /// Print.hpp:695-955 (261 lines)
@@ -1626,6 +1645,134 @@ impl Print {
         /// Print.cpp:61-63
         for object in &mut self.objects {
             object.invalidate_all_steps();
+        }
+    }
+}
+
+// Faithful 1:1 port of the filament-temperature compatibility cluster from
+// Print.cpp. These are `static` member functions in C++ (no `this`), so they are
+// associated functions here. They depend only on string/int data and the
+// FilamentTempType / FilamentCompatibilityType enums above, so they are fully
+// tractable to port even though the surrounding Print class is not.
+impl Print {
+    // Print.cpp:2618
+    // BBS: Look up the temperature class of a filament by its type string.
+    // The C++ reads `resources_dir()/info/filament_info.json` and falls back to a
+    // hard-coded table on parse error. The filesystem read is wasm-unsafe and the
+    // resource file is not shipped with this crate, so the port faithfully
+    // reproduces the deterministic fallback table (Print.cpp:2642-2644) directly.
+    // See divergence note in StructuredOutput.
+    pub fn get_filament_temp_type(filament_type: &str) -> FilamentTempType {
+        // Print.cpp:2620-2622
+        // const static std::string HighTempFilamentStr = "high_temp_filament"; ... (unused as keys here)
+        // Print.cpp:2642 : high_temp fallback set
+        const HIGH_TEMP_FILAMENT: &[&str] = &[
+            "ABS", "ASA", "PC", "PA", "PA-CF", "PA-GF", "PA6-CF", "PET-CF", "PPS", "PPS-CF",
+            "PPA-GF", "PPA-CF", "ABS-Aero", "ABS-GF",
+        ];
+        // Print.cpp:2643 : low_temp fallback set
+        const LOW_TEMP_FILAMENT: &[&str] =
+            &["PLA", "TPU", "PLA-CF", "PLA-AERO", "PVA", "BVOH"];
+        // Print.cpp:2644 : high_low_compatible fallback set
+        const HIGH_LOW_COMPATIBLE_FILAMENT: &[&str] =
+            &["HIPS", "PETG", "PCTG", "PE", "PP", "EVA", "PE-CF", "PP-CF", "PP-GF", "PHA"];
+
+        // Print.cpp:2648-2649
+        if HIGH_LOW_COMPATIBLE_FILAMENT.contains(&filament_type) {
+            return FilamentTempType::HighLowCompatible;
+        }
+        // Print.cpp:2650-2651
+        if HIGH_TEMP_FILAMENT.contains(&filament_type) {
+            return FilamentTempType::HighTemp;
+        }
+        // Print.cpp:2652-2653
+        if LOW_TEMP_FILAMENT.contains(&filament_type) {
+            return FilamentTempType::LowTemp;
+        }
+        // Print.cpp:2654
+        FilamentTempType::Undefine
+    }
+
+    // Print.cpp:1035
+    pub fn check_multi_filaments_compatibility(
+        filament_types: &[String],
+    ) -> FilamentCompatibilityType {
+        // Print.cpp:1037-1039
+        let mut has_high_temperature_filament = false;
+        let mut has_low_temperature_filament = false;
+        let mut has_mid_temperature_filament = false;
+
+        // Print.cpp:1041-1048
+        for type_ in filament_types {
+            if Self::get_filament_temp_type(type_) == FilamentTempType::HighTemp {
+                has_high_temperature_filament = true;
+            } else if Self::get_filament_temp_type(type_) == FilamentTempType::LowTemp {
+                has_low_temperature_filament = true;
+            } else if Self::get_filament_temp_type(type_) == FilamentTempType::HighLowCompatible {
+                has_mid_temperature_filament = true;
+            }
+        }
+
+        // Print.cpp:1050-1057
+        if has_high_temperature_filament && has_low_temperature_filament {
+            FilamentCompatibilityType::HighLowMixed
+        } else if has_high_temperature_filament && has_mid_temperature_filament {
+            FilamentCompatibilityType::HighMidMixed
+        } else if has_low_temperature_filament && has_mid_temperature_filament {
+            FilamentCompatibilityType::LowMidMixed
+        } else {
+            FilamentCompatibilityType::Compatible
+        }
+    }
+
+    // Print.cpp:1060
+    pub fn is_filaments_compatible(filament_types: &[i32]) -> bool {
+        // Print.cpp:1062-1063
+        let mut has_high_temperature_filament = false;
+        let mut has_low_temperature_filament = false;
+
+        // Print.cpp:1065-1070
+        for &type_ in filament_types {
+            if type_ == FilamentTempType::HighTemp as i32 {
+                has_high_temperature_filament = true;
+            } else if type_ == FilamentTempType::LowTemp as i32 {
+                has_low_temperature_filament = true;
+            }
+        }
+
+        // Print.cpp:1072-1073
+        if has_high_temperature_filament && has_low_temperature_filament {
+            return false;
+        }
+
+        // Print.cpp:1075
+        true
+    }
+
+    // Print.cpp:1077
+    pub fn get_compatible_filament_type(filament_types: &std::collections::BTreeSet<i32>) -> i32 {
+        // Print.cpp:1079-1080
+        let mut has_high_temperature_filament = false;
+        let mut has_low_temperature_filament = false;
+
+        // Print.cpp:1082-1087
+        for &type_ in filament_types {
+            if type_ == FilamentTempType::HighTemp as i32 {
+                has_high_temperature_filament = true;
+            } else if type_ == FilamentTempType::LowTemp as i32 {
+                has_low_temperature_filament = true;
+            }
+        }
+
+        // Print.cpp:1089-1095
+        if has_high_temperature_filament && has_low_temperature_filament {
+            FilamentTempType::HighLowCompatible as i32
+        } else if has_high_temperature_filament {
+            FilamentTempType::HighTemp as i32
+        } else if has_low_temperature_filament {
+            FilamentTempType::LowTemp as i32
+        } else {
+            FilamentTempType::HighLowCompatible as i32
         }
     }
 }

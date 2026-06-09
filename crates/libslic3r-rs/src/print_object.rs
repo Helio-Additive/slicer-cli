@@ -1330,6 +1330,287 @@ impl PrintObject {
             .unwrap_or_default()
     }
 
+    /// Merge perimeter loop nodes of a layer into connected cooling components.
+    /// PrintObject.cpp:135-194
+    /// C++: void PrintObject::merge_layer_node(const size_t layer_id, int &max_merged_id,
+    ///          std::map<int, std::vector<std::pair<int, int>>> &node_record)
+    ///
+    /// `merged_id` is stored as Option<usize> in Rust's LoopNode (C++ `int merged_id = -1`):
+    /// `None` == the C++ sentinel `-1`. Every id assigned by this routine is >= 1, so the
+    /// min comparison `min_merged_id == -1 || min_merged_id > id` maps cleanly onto Option
+    /// ordering (`None < Some(_)`).
+    pub fn merge_layer_node(
+        &mut self,
+        layer_id: usize,
+        max_merged_id: &mut i32,
+        node_record: &mut std::collections::BTreeMap<i32, Vec<(i32, i32)>>,
+    ) {
+        // PrintObject.cpp:137-138
+        // C++: Layer *this_layer = m_layers[layer_id];
+        // C++: std::vector<LoopNode> &loop_nodes = this_layer->loop_nodes;
+        let loop_nodes_len = self.layers[layer_id].loop_nodes.len();
+        // PrintObject.cpp:139
+        for idx in 0..loop_nodes_len {
+            // PrintObject.cpp:140-148
+            // C++: //new cool node
+            // C++: if (loop_nodes[idx].lower_node_id.empty()) {
+            if self.layers[layer_id].loop_nodes[idx].lower_node_ids.is_empty() {
+                // PrintObject.cpp:142
+                *max_merged_id += 1;
+                // PrintObject.cpp:143
+                self.layers[layer_id].loop_nodes[idx].merged_id = Some(*max_merged_id as usize);
+                // PrintObject.cpp:144-146
+                // C++: std::vector<std::pair<int, int>> node_pos;
+                // C++: node_pos.emplace_back(layer_id, idx);
+                // C++: node_record.emplace(max_merged_id, node_pos);
+                let node_pos = vec![(layer_id as i32, idx as i32)];
+                node_record.insert(*max_merged_id, node_pos);
+                // PrintObject.cpp:147
+                continue;
+            }
+
+            // PrintObject.cpp:150-155
+            // C++: //it should finds key in map
+            // C++: if (loop_nodes[idx].lower_node_id.size() == 1) {
+            if self.layers[layer_id].loop_nodes[idx].lower_node_ids.len() == 1 {
+                // PrintObject.cpp:152
+                // C++: loop_nodes[idx].merged_id = m_layers[layer_id - 1]->loop_nodes[loop_nodes[idx].lower_node_id.front()].merged_id;
+                let lower = self.layers[layer_id].loop_nodes[idx].lower_node_ids[0];
+                let merged_id = self.layers[layer_id - 1].loop_nodes[lower].merged_id;
+                self.layers[layer_id].loop_nodes[idx].merged_id = merged_id;
+                // PrintObject.cpp:153
+                // C++: node_record[loop_nodes[idx].merged_id].emplace_back(layer_id, idx);
+                if let Some(id) = merged_id {
+                    node_record
+                        .entry(id as i32)
+                        .or_default()
+                        .push((layer_id as i32, idx as i32));
+                }
+                // PrintObject.cpp:154
+                continue;
+            }
+
+            // PrintObject.cpp:157-165
+            // C++: //min index
+            // C++: int min_merged_id = -1;
+            // C++: std::vector<int> appear_id;
+            let mut min_merged_id: Option<usize> = None;
+            let mut appear_id: Vec<Option<usize>> = Vec::new();
+            let lower_node_ids = self.layers[layer_id].loop_nodes[idx].lower_node_ids.clone();
+            for &lower in &lower_node_ids {
+                // PrintObject.cpp:161
+                // C++: int id = m_layers[layer_id - 1]->loop_nodes[loop_nodes[idx].lower_node_id[lower_idx]].merged_id;
+                let id = self.layers[layer_id - 1].loop_nodes[lower].merged_id;
+                // PrintObject.cpp:162-163
+                // C++: if (min_merged_id == -1 || min_merged_id > id)
+                // C++:     min_merged_id = id;
+                if min_merged_id.is_none() || min_merged_id > id {
+                    min_merged_id = id;
+                }
+                // PrintObject.cpp:164
+                appear_id.push(id);
+            }
+
+            // PrintObject.cpp:167-168
+            // C++: loop_nodes[idx].merged_id = min_merged_id;
+            // C++: node_record[min_merged_id].emplace_back(layer_id, idx);
+            self.layers[layer_id].loop_nodes[idx].merged_id = min_merged_id;
+            if let Some(min_id) = min_merged_id {
+                node_record
+                    .entry(min_id as i32)
+                    .or_default()
+                    .push((layer_id as i32, idx as i32));
+            }
+
+            // PrintObject.cpp:170-192
+            // C++: //update other node merged id
+            // C++: for (size_t appear_node_idx = 0; appear_node_idx < appear_id.size(); ++appear_node_idx) {
+            for &appear in &appear_id {
+                // PrintObject.cpp:172-173
+                // C++: if (appear_id[appear_node_idx] == min_merged_id)
+                // C++:     continue;
+                if appear == min_merged_id {
+                    continue;
+                }
+
+                // PrintObject.cpp:175-178
+                // C++: auto it = node_record.find(appear_id[appear_node_idx]);
+                // C++: //protect
+                // C++: if (it == node_record.end())
+                // C++:     continue;
+                let appear_key = match appear {
+                    Some(a) => a as i32,
+                    None => -1,
+                };
+                let appear_node_pos = match node_record.get(&appear_key) {
+                    Some(v) => v.clone(),
+                    None => continue,
+                };
+
+                // PrintObject.cpp:182-190
+                // C++: for (size_t node_idx = 0; node_idx < appear_node_pos.size(); ++node_idx) {
+                for &(node_layer, node_pos) in &appear_node_pos {
+                    // PrintObject.cpp:186-188
+                    // C++: LoopNode &node = m_layers[node_layer]->loop_nodes[node_pos];
+                    // C++: node.merged_id = min_merged_id;
+                    self.layers[node_layer as usize].loop_nodes[node_pos as usize].merged_id =
+                        min_merged_id;
+                    // PrintObject.cpp:189
+                    // C++: node_record[min_merged_id].emplace_back(node_layer, node_pos);
+                    if let Some(min_id) = min_merged_id {
+                        node_record
+                            .entry(min_id as i32)
+                            .or_default()
+                            .push((node_layer, node_pos));
+                    }
+                }
+                // PrintObject.cpp:191
+                // C++: node_record.erase(it);
+                node_record.remove(&appear_key);
+            }
+        }
+    }
+
+    /// Clear all layers.
+    /// PrintObject.cpp:1007-1014
+    /// C++: void PrintObject::clear_layers() — guarded by `if (!m_shared_object)`.
+    /// The Rust port stores layers by value (no shared-object aliasing), so the
+    /// guard is unconditionally true here.
+    pub fn clear_layers(&mut self) {
+        // PrintObject.cpp:1010-1012
+        self.layers.clear();
+    }
+
+    /// Append a new (empty) layer and return its index.
+    /// PrintObject.cpp:1016-1020
+    /// C++: Layer* PrintObject::add_layer(int id, coordf_t height, coordf_t print_z, coordf_t slice_z)
+    /// returns Layer*; the Rust port returns the index into `layers` (which is the
+    /// stable handle equivalent given layers are stored by value).
+    pub fn add_layer(&mut self, id: i32, height: f64, print_z: f64, slice_z: f64) -> usize {
+        // PrintObject.cpp:1018
+        // C++: m_layers.emplace_back(new Layer(id, this, height, print_z, slice_z));
+        self.layers
+            .push(Layer::new(id as usize, self.model_object_id, height, print_z, slice_z));
+        // PrintObject.cpp:1019
+        // C++: return m_layers.back();
+        self.layers.len() - 1
+    }
+
+    /// Get the support layer (index) approximately at `print_z` within `epsilon`.
+    /// PrintObject.cpp:1022-1027
+    /// C++: const SupportLayer* PrintObject::get_support_layer_at_printz(coordf_t print_z, coordf_t epsilon) const
+    pub fn get_support_layer_at_printz(&self, print_z: f64, epsilon: f64) -> Option<usize> {
+        // PrintObject.cpp:1024
+        let limit = print_z - epsilon;
+        // PrintObject.cpp:1025
+        // C++: auto it = lower_bound_by_predicate(..., [limit](const SupportLayer* layer) { return layer->print_z < limit; });
+        let it = self
+            .support_layers
+            .iter()
+            .position(|layer| !(layer.print_z < limit));
+        // PrintObject.cpp:1026
+        // C++: return (it == end || (*it)->print_z > print_z + epsilon) ? nullptr : *it;
+        match it {
+            Some(i) if self.support_layers[i].print_z <= print_z + epsilon => Some(i),
+            _ => None,
+        }
+    }
+
+    /// Clear all support layers.
+    /// PrintObject.cpp:1034-1046
+    /// C++: void PrintObject::clear_support_layers() — guarded by `if (!m_shared_object)`.
+    pub fn clear_support_layers(&mut self) {
+        // PrintObject.cpp:1037-1039
+        self.support_layers.clear();
+        // PrintObject.cpp:1040-1044
+        // C++: for (auto l : m_layers) { l->sharp_tails.clear(); l->sharp_tails_height.clear(); l->cantilevers.clear(); }
+        for l in &mut self.layers {
+            l.sharp_tails.clear();
+            l.sharp_tails_height = 0.0;
+            l.cantilevers.clear();
+        }
+    }
+
+    /// Get a layer index approximately at `print_z` (default epsilon = EPSILON).
+    /// PrintObject.cpp:4086, 4091-4095
+    /// C++: const Layer* PrintObject::get_layer_at_printz(coordf_t print_z, coordf_t epsilon) const
+    pub fn get_layer_at_printz(&self, print_z: f64, epsilon: f64) -> Option<usize> {
+        // PrintObject.cpp:4092
+        let limit = print_z - epsilon;
+        // PrintObject.cpp:4093
+        // C++: auto it = lower_bound_by_predicate(..., [limit](const Layer *layer) { return layer->print_z < limit; });
+        let it = self.layers.iter().position(|layer| !(layer.print_z < limit));
+        // PrintObject.cpp:4094
+        // C++: return (it == end || (*it)->print_z > print_z + epsilon) ? nullptr : *it;
+        match it {
+            Some(i) if self.layers[i].print_z <= print_z + epsilon => Some(i),
+            _ => None,
+        }
+    }
+
+    /// Get the first layer index strictly below `print_z` (within epsilon).
+    /// PrintObject.cpp:4101-4106
+    /// C++: const Layer *PrintObject::get_first_layer_bellow_printz(coordf_t print_z, coordf_t epsilon) const
+    pub fn get_first_layer_bellow_printz(&self, print_z: f64, epsilon: f64) -> Option<usize> {
+        // PrintObject.cpp:4103
+        let limit = print_z + epsilon;
+        // PrintObject.cpp:4104
+        let it = self.layers.iter().position(|layer| !(layer.print_z < limit));
+        // PrintObject.cpp:4105
+        // C++: return (it == begin) ? nullptr : *(--it);
+        match it {
+            Some(0) => None,
+            Some(i) => Some(i - 1),
+            // it == end(): the C++ `--it` yields the last element.
+            None => {
+                if self.layers.is_empty() {
+                    None
+                } else {
+                    Some(self.layers.len() - 1)
+                }
+            }
+        }
+    }
+
+    /// Get the layer index near `print_z`, or -1 if it would be the first layer.
+    /// PrintObject.cpp:4107-4111
+    /// C++: int PrintObject::get_layer_idx_get_printz(coordf_t print_z, coordf_t epsilon)
+    pub fn get_layer_idx_get_printz(&self, print_z: f64, epsilon: f64) -> i32 {
+        // PrintObject.cpp:4108
+        let limit = print_z + epsilon;
+        // PrintObject.cpp:4109
+        let it = self.layers.iter().position(|layer| !(layer.print_z < limit));
+        // PrintObject.cpp:4110
+        // C++: return (it == begin) ? -1 : std::distance(begin, it);
+        match it {
+            Some(0) => -1,
+            Some(i) => i as i32,
+            // it == end(): std::distance(begin, end) == size().
+            None => self.layers.len() as i32,
+        }
+    }
+
+    /// Get a layer index whose bottom_z is approximately `bottom_z` (within epsilon).
+    /// PrintObject.cpp:4113-4123
+    /// C++: const Layer* PrintObject::get_layer_at_bottomz(coordf_t bottom_z, coordf_t epsilon) const
+    pub fn get_layer_at_bottomz(&self, bottom_z: f64, epsilon: f64) -> Option<usize> {
+        // PrintObject.cpp:4114-4115
+        let limit_upper = bottom_z + epsilon;
+        let limit_lower = bottom_z - epsilon;
+        // PrintObject.cpp:4117-4121
+        for (i, layer) in self.layers.iter().enumerate() {
+            if layer.bottom_z() > limit_lower {
+                return if layer.bottom_z() < limit_upper {
+                    Some(i)
+                } else {
+                    None
+                };
+            }
+        }
+        // PrintObject.cpp:4122
+        None
+    }
+
     /// Discover vertical shells — ensure minimum solid shell thickness near sloped walls
     /// by projecting each layer's top/bottom surfaces across the shell-layer window and
     /// converting the matching internal regions to internal-solid.

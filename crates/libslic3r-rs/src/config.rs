@@ -92,6 +92,24 @@ pub mod config_helpers {
 }
 
 // ===========================================================================
+// PrinterTechnology (Config.hpp:210-220)
+// ===========================================================================
+
+// Config.hpp:210  enum PrinterTechnology : unsigned char
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[repr(u8)]
+pub enum PrinterTechnology {
+    // Fused Filament Fabrication
+    PtFFF,
+    // Stereolitography
+    PtSLA,
+    // Unknown, useful for command line processing
+    PtUnknown,
+    // Any technology, useful for parameters compatible with both ptFFF and ptSLA
+    PtAny,
+}
+
+// ===========================================================================
 // ForwardCompatibilitySubstitutionRule (Config.hpp:222-234)
 // ===========================================================================
 

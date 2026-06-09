@@ -1591,7 +1591,7 @@
     "rust": "crates/libslic3r-rs/src/preset.rs",
     "rust_exists": true,
     "loc": 4039,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1602,7 +1602,7 @@
     "rust": "crates/libslic3r-rs/src/cut_surface.rs",
     "rust_exists": true,
     "loc": 4082,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1613,7 +1613,7 @@
     "rust": "crates/libslic3r-rs/src/print_object.rs",
     "rust_exists": true,
     "loc": 4128,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1624,7 +1624,7 @@
     "rust": "crates/libslic3r-rs/src/model.rs",
     "rust_exists": true,
     "loc": 4554,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1635,7 +1635,7 @@
     "rust": "crates/libslic3r-rs/src/print.rs",
     "rust_exists": true,
     "loc": 4834,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1646,7 +1646,7 @@
     "rust": "crates/libslic3r-rs/src/preset_bundle.rs",
     "rust_exists": true,
     "loc": 6031,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1657,7 +1657,7 @@
     "rust": "crates/libslic3r-rs/src/g_code.rs",
     "rust_exists": false,
     "loc": 7703,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1668,7 +1668,7 @@
     "rust": "crates/libslic3r-rs/src/print_config.rs",
     "rust_exists": true,
     "loc": 9849,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {

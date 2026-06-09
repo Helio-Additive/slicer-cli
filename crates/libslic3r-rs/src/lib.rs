@@ -87,6 +87,7 @@ pub mod format;
 pub mod frustum;
 pub mod function_trace;
 pub mod fuzzy_skin;
+pub mod g_code;
 pub mod g_code_reader;
 pub mod g_code_writer;
 pub mod gcode;
