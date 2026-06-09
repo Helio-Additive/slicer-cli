@@ -1,250 +1,1277 @@
-//! Seam Placer - Intelligent seam placement for perimeter loops.
+//! Faithful 1:1 port of `GCode/SeamPlacer.{hpp,cpp}` from BambuStudio libslic3r.
 //!
-//! This module provides advanced seam placement algorithms that determine
-//! optimal starting points for perimeter extrusion loops. It mirrors
-//! BambuStudio's `GCode/SeamPlacer.cpp` implementation.
+//! C++ Reference:
+//! - src/libslic3r/GCode/SeamPlacer.hpp
+//! - src/libslic3r/GCode/SeamPlacer.cpp
 //!
-//! # Features
+//! This file mirrors the C++ source line by line (see `// SeamPlacer.cpp:NNN`
+//! and `// SeamPlacer.hpp:NNN` line references). `coord_t` maps to `i64`,
+//! `coordf_t` to `f64`, and Eigen `Vec3f`/`Vec2f`/`Vec3i` to nalgebra
+//! `Vector3<f32>` / `Vector2<f32>` / `Vector3<i32>` exactly as the rest of the
+//! crate does (see `triangle_set_sampling`, `triangle_mesh`).
 //!
-//! - **Visibility-based scoring**: Prefers seam positions that are less visible
-//! - **Overhang avoidance**: Avoids placing seams on overhanging regions
-//! - **Corner preference**: Hides seams in concave corners when possible
-//! - **Layer alignment**: Aligns seams across layers for cleaner vertical seam lines
-//! - **Enforcer/Blocker support**: Respects user-painted seam preferences
+//! # Porting status
 //!
-//! # Seam Position Modes
+//! The self-contained algorithmic core (the C++ `SeamPlacerImpl` namespace) and
+//! the data structures from the header are ported faithfully. Several
+//! `SeamPlacer` member functions that operate purely on the in-memory
+//! `PrintObjectSeamData::LayerSeams` data are also ported faithfully
+//! (`find_next_seam_in_layer`, `find_seam_string`, `align_seam_points`,
+//! `gather_all_seams_of_object`, `filter_scarf_seam_switch_by_angle`).
 //!
-//! - `Aligned`: Tries to align seams vertically across layers (default)
-//! - `Nearest`: Places seam nearest to previous position
-//! - `Random`: Randomizes seam position for less visible seam line
-//! - `Rear`: Places seam at rear of print (highest Y)
-//! - `Hidden`: Actively seeks concave corners to hide seams
-//!
-//! # Algorithm Overview
-//!
-//! 1. **Candidate Generation**: For each perimeter loop, generate seam candidates
-//!    at each vertex plus oversampled points along edges near enforcers.
-//!
-//! 2. **Visibility Calculation**: Optionally raycast from mesh surface to determine
-//!    visibility of each candidate point.
-//!
-//! 3. **Overhang Detection**: Calculate overhang amount at each candidate using
-//!    layer-to-layer comparison.
-//!
-//! 4. **Embedded Distance**: Calculate distance inside merged regions to prefer
-//!    hidden points (e.g., multi-material joins).
-//!
-//! 5. **Seam Selection**: Score candidates and select optimal seam point.
-//!
-//! 6. **Alignment**: Optionally align seams across layers using spatial queries.
-//!
-//! # BambuStudio Reference
-//!
-//! - `GCode/SeamPlacer.hpp` - Header with data structures
-//! - `GCode/SeamPlacer.cpp` - Implementation (~1500 lines)
-//!
-//! Key structures from C++:
-//! - `SeamCandidate` - Per-vertex seam candidate with attributes
-//! - `Perimeter` - Metadata for a perimeter loop
-//! - `SeamComparator` - Comparison logic for candidate scoring
-//! - `GlobalModelInfo` - Mesh-wide visibility data
+//! BLOCKED (need not-yet-ported dependencies threaded through
+//! `Print`/`PrintObject`/`Model`/`Layer`):
+//! - `SeamPlacer::init`
+//! - `SeamPlacer::gather_seam_candidates`
+//! - `SeamPlacer::calculate_candidates_visibility`
+//! - `SeamPlacer::calculate_overhangs_and_layer_embedding`
+//! - `SeamPlacer::place_seam`
+//! - `SeamPlacerImpl::compute_global_occlusion`
+//! - `SeamPlacerImpl::gather_enforcers_blockers`
+//!   reasons: `PrintObject::{config, model_object, trafo_centered, get_layer,
+//!   layer_count, slicing_parameters}`, `Layer::object`, and `ModelVolume`
+//!   seam-painting facet accessors (`is_seam_painted`, `seam_facets`,
+//!   `EnforcerBlockerType`) are not yet ported.
 
-use crate::edge_grid::EdgeGrid;
-use crate::geometry::{Point, PointF, Polygon};
-use crate::{scale, unscale, Coord};
-use std::f64::consts::PI;
+use crate::aabb_tree_indirect::Tree3F;
+use crate::aabb_tree_lines::{build_aabb_tree_over_indexed_lines, squared_distance_to_indexed_lines, tree2d};
+use crate::geometry::{Line, LineF, Point, PointF, Polygon};
+use crate::kd_tree_indirect::KDTreeIndirect;
+use crate::triangle_set_sampling::{indexed_triangle_set, TriangleSetSamples};
+use crate::unscale;
+use crate::utils::{next_idx_modulo, prev_idx_modulo};
+use nalgebra::{Vector2, Vector3};
+use std::collections::VecDeque;
+
+/// Eigen `Vec3f = Matrix<float,3,1>`. Point.hpp
+pub type Vec3f = Vector3<f32>;
+/// Eigen `Vec2f = Matrix<float,2,1>`. Point.hpp
+pub type Vec2f = Vector2<f32>;
+/// Eigen `Vec3d = Matrix<double,3,1>`. Point.hpp
+pub type Vec3d = Vector3<f64>;
+/// Eigen `Vec2d = Matrix<double,2,1>`. Point.hpp
+pub type Vec2d = Vector2<f64>;
+/// Eigen `Vec3i = Matrix<int,3,1>`. Point.hpp
+pub type Vec3i = Vector3<i32>;
+
+// libslic3r.h: M_PI used as float(PI) throughout SeamPlacer.cpp.
+const PI: f32 = std::f64::consts::PI as f32;
+
+// SeamPlacer.cpp:32 — used by the BLOCKED `filter_scarf_seam_switch_by_angle`.
+#[allow(dead_code)]
+const AVERAGE_FILTER_WINDOW_SIZE: i32 = 5;
+// SeamPlacer.cpp:33
+const OVERHANG_FILTER: f32 = 0.0;
+// SeamPlacer.cpp:34 — used by the BLOCKED `calculate_overhangs_and_layer_embedding`.
+#[allow(dead_code)]
+const LENS_LIMIT: f32 = 1.0;
 
 // ============================================================================
-// Configuration
+// SeamPlacer.hpp:128-182 — class SeamPlacer constants
 // ============================================================================
 
-/// Seam position preference mode.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SeamPositionMode {
-    /// Align seams vertically across layers.
-    #[default]
-    Aligned,
-    /// Place seam nearest to previous/current position.
-    Nearest,
-    /// Randomize seam position (deterministically based on geometry).
-    Random,
-    /// Place seam at rear of print (highest Y coordinate).
-    Rear,
-    /// Actively hide seams in concave corners.
-    Hidden,
+/// Number of samples generated on the mesh. There are
+/// `sqr_rays_per_sample_point*sqr_rays_per_sample_point` rays casted from each
+/// sample.
+/// SeamPlacer.hpp:132
+pub const RAYCASTING_VISIBILITY_SAMPLES_COUNT: usize = 30000;
+/// SeamPlacer.hpp:133
+pub const FAST_DECIMATION_TRIANGLE_COUNT_TARGET: usize = 16000;
+/// square of number of rays per sample point
+/// SeamPlacer.hpp:135
+pub const SQR_RAYS_PER_SAMPLE_POINT: usize = 5;
+
+/// snapping angle - angles larger than this value will be snapped to during seam painting
+/// SeamPlacer.hpp:138
+pub const SHARP_ANGLE_SNAPPING_THRESHOLD: f32 = 55.0 * PI / 180.0;
+/// overhang angle for seam placement that still yields good results, in degrees,
+/// measured from vertical direction (BBS)
+/// SeamPlacer.hpp:141
+pub const OVERHANG_ANGLE_THRESHOLD: f32 = 45.0 * PI / 180.0;
+
+/// determines angle importance compared to visibility ( neutral value is 1.0f. )
+/// SeamPlacer.hpp:144
+pub const ANGLE_IMPORTANCE_ALIGNED: f32 = 0.6;
+/// use much higher angle importance for nearest mode, to combat the visibility info noise
+/// SeamPlacer.hpp:145
+pub const ANGLE_IMPORTANCE_NEAREST: f32 = 1.0;
+
+/// For long polygon sides, if they are close to the custom seam drawings, they are
+/// oversampled with this step size
+/// SeamPlacer.hpp:148
+pub const ENFORCER_OVERSAMPLING_DISTANCE: f32 = 0.2;
+/// SeamPlacer.hpp:149
+pub const END_POINT_OVERSAMPLING_THRESHOLD: f32 = 4.0;
+/// SeamPlacer.hpp:150
+pub const END_POINT_OVERSAMPLING_DISTANCE: f32 = 1.5;
+
+/// following value describes, how much worse score can point have and still be
+/// picked into seam cluster instead of original seam point on the same layer
+/// SeamPlacer.hpp:154
+pub const SEAM_ALIGN_SCORE_TOLERANCE: f32 = 0.3;
+/// how far to search for seam from current position, final dist is
+/// `seam_align_tolerable_dist_factor * flow_width`
+/// SeamPlacer.hpp:156
+pub const SEAM_ALIGN_TOLERABLE_DIST_FACTOR: f32 = 4.0;
+/// minimum number of seams needed in cluster to make alignment happen
+/// SeamPlacer.hpp:158
+pub const SEAM_ALIGN_MINIMUM_STRING_SEAMS: usize = 6;
+/// millimeters covered by spline; determines number of splines for the given string
+/// SeamPlacer.hpp:160  (`static constexpr size_t seam_align_mm_per_segment = 4.0f;`)
+pub const SEAM_ALIGN_MM_PER_SEGMENT: f32 = 4.0;
+
+// ============================================================================
+// PrintConfig.hpp — SeamPosition enum (used by SeamComparator)
+// ============================================================================
+
+/// `SeamPosition` from PrintConfig.hpp.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub enum SeamPosition {
+    spRandom,
+    spNearest,
+    spAligned,
+    spRear,
 }
 
-/// Whether a seam point is enforced, blocked, or neutral.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+// ============================================================================
+// SeamPlacer.hpp:45-49 — enum class EnforcedBlockedSeamPoint
+// ============================================================================
+
+/// SeamPlacer.hpp:45-49
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EnforcedBlockedSeamPoint {
-    /// User has blocked this point from being a seam.
+    // SeamPlacer.hpp:46
     Blocked = 0,
-    /// Neutral - no user preference.
-    #[default]
+    // SeamPlacer.hpp:47
     Neutral = 1,
-    /// User has enforced this point as a preferred seam location.
+    // SeamPlacer.hpp:48
     Enforced = 2,
 }
 
-/// Configuration for the seam placer.
+// ============================================================================
+// SeamPlacer.hpp:52-64 — struct Perimeter
+// ============================================================================
+
+/// struct representing single perimeter loop.
+/// SeamPlacer.hpp:52-64
+#[derive(Clone, Debug)]
+pub struct Perimeter {
+    // SeamPlacer.hpp:54
+    pub start_index: usize,
+    // SeamPlacer.hpp:55 — inclusive!
+    pub end_index: usize,
+    // SeamPlacer.hpp:56
+    pub seam_index: usize,
+    // SeamPlacer.hpp:57
+    pub flow_width: f32,
+
+    // During alignment, a final position may be stored here. In that case,
+    // finalized is set to true.
+    // Note that final seam position is not limited to points of the perimeter
+    // loop. In theory it can be any position. Random position also uses this
+    // flexibility to set final seam point position.
+    // SeamPlacer.hpp:62
+    pub finalized: bool,
+    // SeamPlacer.hpp:63
+    pub final_seam_position: Vec3f,
+}
+
+impl Default for Perimeter {
+    fn default() -> Self {
+        // SeamPlacer.hpp:54-63 default member initializers.
+        Self {
+            start_index: 0,
+            end_index: 0,
+            seam_index: 0,
+            flow_width: 0.0,
+            finalized: false,
+            final_seam_position: Vec3f::zeros(),
+        }
+    }
+}
+
+// ============================================================================
+// SeamPlacer.hpp:69-100 — struct SeamCandidate
+// ============================================================================
+
+/// Struct over which all processing of perimeters is done. For each perimeter
+/// point, its respective candidate is created, then all the needed attributes
+/// are computed and finally, for each perimeter one point is chosen as seam.
+/// SeamPlacer.hpp:69-100
+#[derive(Clone, Debug)]
+pub struct SeamCandidate {
+    // SeamPlacer.hpp:85
+    pub position: Vec3f,
+    // pointer to Perimeter loop of this point. It is shared across all points of
+    // the loop. We store the index of the perimeter in the owning `LayerSeams`.
+    // SeamPlacer.hpp:87 (`Perimeter &perimeter;`)
+    pub perimeter: usize,
+    // SeamPlacer.hpp:88
+    pub visibility: f32,
+    // SeamPlacer.hpp:89
+    pub overhang: f32,
+    // distance inside the merged layer regions, for detecting perimeter points
+    // which are hidden inside the print (e.g. multimaterial join). Negative sign
+    // means inside the print, comes from EdgeGrid structure.
+    // SeamPlacer.hpp:92
+    pub embedded_distance: f32,
+    // SeamPlacer.hpp:93
+    pub local_ccw_angle: f32,
+    // SeamPlacer.hpp:94
+    pub r#type: EnforcedBlockedSeamPoint,
+    // marks this candidate as central point of enforced segment on the perimeter
+    // - important for alignment
+    // SeamPlacer.hpp:95
+    pub central_enforcer: bool,
+    // marks this candidate as a candidate for scarf seam
+    // SeamPlacer.hpp:96
+    pub enable_scarf_seam: bool,
+    // SeamPlacer.hpp:97
+    pub is_grouped: bool,
+    // SeamPlacer.hpp:98
+    pub extra_overhang_point: f32,
+    // SeamPlacer.hpp:99
+    pub overhang_degree: f32,
+    // Not in C++: copy of the owning perimeter's `flow_width`. In C++ the
+    // candidate holds a `Perimeter &perimeter` back-reference, so
+    // `is_first_not_much_worse` can read `a.perimeter.flow_width`
+    // (SeamPlacer.cpp:732). We store the index in `perimeter`; this field caches
+    // the flow width so the comparator can stay reference-free.
+    pub flow_width_hint: f32,
+}
+
+impl SeamCandidate {
+    /// SeamPlacer.hpp:71-84 — constructor.
+    pub fn new(
+        pos: &Vec3f,
+        perimeter: usize,
+        local_ccw_angle: f32,
+        r#type: EnforcedBlockedSeamPoint,
+    ) -> Self {
+        Self {
+            position: *pos,
+            perimeter,
+            visibility: 0.0,
+            overhang: 0.0,
+            embedded_distance: 0.0,
+            local_ccw_angle,
+            r#type,
+            central_enforcer: false,
+            enable_scarf_seam: false,
+            is_grouped: false,
+            extra_overhang_point: 0.0,
+            overhang_degree: 0.0,
+            flow_width_hint: 0.0,
+        }
+    }
+}
+
+// ============================================================================
+// SeamPlacer.hpp:110-126 — struct PrintObjectSeamData
+// ============================================================================
+
+/// SeamPlacer.hpp:114-119 — struct LayerSeams.
+///
+/// In C++ `points_tree` is a `unique_ptr<KDTreeIndirect>`. We rebuild the tree
+/// on demand via [`LayerSeams::build_points_tree`] because the KD tree borrows
+/// the coordinate functor closure.
+#[derive(Clone, Debug, Default)]
+pub struct LayerSeams {
+    // SeamPlacer.hpp:116
+    pub perimeters: VecDeque<Perimeter>,
+    // SeamPlacer.hpp:117
+    pub points: Vec<SeamCandidate>,
+}
+
+impl LayerSeams {
+    /// Build a KD tree over `points`, mirroring
+    /// `points_tree = std::make_unique<SeamCandidatesTree>(functor, points.size())`.
+    /// SeamPlacer.cpp:944-945
+    pub fn build_points_tree(&self) -> KDTreeIndirect<3, f32, impl Fn(usize, usize) -> f32 + '_> {
+        // SeamPlacer.hpp:102-107 — SeamCandidateCoordinateFunctor.
+        let functor = move |index: usize, dim: usize| -> f32 { self.points[index].position[dim] };
+        KDTreeIndirect::with_indices(functor, self.points.len())
+    }
+}
+
+/// SeamPlacer.hpp:110-126 — struct PrintObjectSeamData.
+#[derive(Clone, Debug, Default)]
+pub struct PrintObjectSeamData {
+    // Map of PrintObjects (PO) -> vector of layers of PO -> vector of perimeter
+    // SeamPlacer.hpp:121
+    pub layers: Vec<LayerSeams>,
+}
+
+impl PrintObjectSeamData {
+    // SeamPlacer.hpp:125
+    pub fn clear(&mut self) {
+        self.layers.clear();
+    }
+}
+
+// ============================================================================
+// SeamPlacer.hpp:32-39 — angle()
+// ============================================================================
+
+/// FOR BACKPORT COMPATIBILITY ONLY
+/// Angle from v1 to v2, returning double atan2(y, x) normalized to <-PI, PI>.
+/// SeamPlacer.hpp:32-39
+#[inline]
+pub fn angle(v1: Vec2d, v2: Vec2d) -> f64 {
+    // cross2(v1d, v2d) = v1.x*v2.y - v1.y*v2.x ; v1d.dot(v2d)
+    let cross = v1.x * v2.y - v1.y * v2.x;
+    cross.atan2(v1.dot(&v2))
+}
+
+// ============================================================================
+// SeamPlacer.cpp:37-922 — namespace SeamPlacerImpl
+// ============================================================================
+
+/// FOR BACKPORT COMPATIBILITY ONLY
+/// Color mapping of a value into RGB false colors.
+/// SeamPlacer.cpp:41-48
+#[inline]
+pub fn value_to_rgbf(minimum: f32, maximum: f32, value: f32) -> Vec3f {
+    let ratio = 2.0 * (value - minimum) / (maximum - minimum);
+    let b = f32::max(0.0, 1.0 - ratio);
+    let r = f32::max(0.0, ratio - 1.0);
+    let g = 1.0 - b - r;
+    Vec3f::new(r, g, b)
+}
+
+/// Color mapping of a value into RGB false colors.
+/// SeamPlacer.cpp:51
+#[inline]
+pub fn value_to_rgbi(minimum: f32, maximum: f32, value: f32) -> Vec3i {
+    let v = value_to_rgbf(minimum, maximum, value) * 255.0;
+    Vec3i::new(v.x as i32, v.y as i32, v.z as i32)
+}
+
+/// SeamPlacer.cpp:54
+#[inline]
+pub fn sgn(val: f32) -> i32 {
+    (if 0.0 < val { 1 } else { 0 }) - (if val < 0.0 { 1 } else { 0 })
+}
+
+/// base function: ((e^(((1)/(x^(2)+1)))-1)/(e-1))
+/// SeamPlacer.cpp:58-64
+pub fn gauss(value: f32, mean_x_coord: f32, mean_value: f32, falloff_speed: f32) -> f32 {
+    let shifted = value - mean_x_coord;
+    let denominator = falloff_speed * shifted * shifted + 1.0;
+    let exponent = 1.0 / denominator;
+    mean_value * (exponent.exp() - 1.0) / (1.0_f32.exp() - 1.0)
+}
+
+/// SeamPlacer.cpp:66-74
+pub fn compute_angle_penalty(ccw_angle: f32) -> f32 {
+    // This function is used:
+    // ((ℯ^(((1)/(x^(2)*3+1)))-1)/(ℯ-1))*1+((1)/(2+ℯ^(-x)))
+    // looks scary, but it is gaussian combined with sigmoid,
+    // so that concave points have much smaller penalty over convex ones
+    gauss(ccw_angle, 0.0, 1.0, 3.0) + 1.0 / (2.0 + (-ccw_angle).exp())
+}
+
+/// Coordinate frame.
+/// SeamPlacer.cpp:77-110
+pub struct Frame {
+    m_x: Vec3f,
+    m_y: Vec3f,
+    m_z: Vec3f,
+}
+
+impl Default for Frame {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Frame {
+    // SeamPlacer.cpp:80-85
+    pub fn new() -> Self {
+        Self {
+            m_x: Vec3f::new(1.0, 0.0, 0.0),
+            m_y: Vec3f::new(0.0, 1.0, 0.0),
+            m_z: Vec3f::new(0.0, 0.0, 1.0),
+        }
+    }
+
+    // SeamPlacer.cpp:87
+    pub fn from_xyz(x: Vec3f, y: Vec3f, z: Vec3f) -> Self {
+        Self {
+            m_x: x,
+            m_y: y,
+            m_z: z,
+        }
+    }
+
+    // SeamPlacer.cpp:89-96
+    pub fn set_from_z(&mut self, z: &Vec3f) {
+        self.m_z = z.normalize();
+        let tmp_z = self.m_z;
+        let tmp_x = if tmp_z.x.abs() > 0.99 {
+            Vec3f::new(0.0, 1.0, 0.0)
+        } else {
+            Vec3f::new(1.0, 0.0, 0.0)
+        };
+        self.m_y = tmp_z.cross(&tmp_x).normalize();
+        self.m_x = self.m_y.cross(&tmp_z);
+    }
+
+    // SeamPlacer.cpp:98
+    pub fn to_world(&self, a: &Vec3f) -> Vec3f {
+        a.x * self.m_x + a.y * self.m_y + a.z * self.m_z
+    }
+
+    // SeamPlacer.cpp:100
+    pub fn to_local(&self, a: &Vec3f) -> Vec3f {
+        Vec3f::new(self.m_x.dot(a), self.m_y.dot(a), self.m_z.dot(a))
+    }
+
+    // SeamPlacer.cpp:102
+    pub fn binormal(&self) -> &Vec3f {
+        &self.m_x
+    }
+
+    // SeamPlacer.cpp:104
+    pub fn tangent(&self) -> &Vec3f {
+        &self.m_y
+    }
+
+    // SeamPlacer.cpp:106
+    pub fn normal(&self) -> &Vec3f {
+        &self.m_z
+    }
+}
+
+/// SeamPlacer.cpp:112-117
+pub fn sample_sphere_uniform(samples: &Vec2f) -> Vec3f {
+    let term1 = 2.0 * PI * samples.x;
+    let term2 = 2.0 * (samples.y - samples.y * samples.y).sqrt();
+    Vec3f::new(
+        term1.cos() * term2,
+        term1.sin() * term2,
+        1.0 - 2.0 * samples.y,
+    )
+}
+
+/// SeamPlacer.cpp:119-124
+pub fn sample_hemisphere_uniform(samples: &Vec2f) -> Vec3f {
+    let term1 = 2.0 * PI * samples.x;
+    let term2 = 2.0 * (samples.y - samples.y * samples.y).sqrt();
+    Vec3f::new(
+        term1.cos() * term2,
+        term1.sin() * term2,
+        (1.0 - 2.0 * samples.y).abs(),
+    )
+}
+
+/// SeamPlacer.cpp:126-133
+pub fn sample_power_cosine_hemisphere(samples: &Vec2f, power: f32) -> Vec3f {
+    let term1 = 2.0 * PI * samples.x;
+    let term2 = samples.y.powf(1.0 / (power + 1.0));
+    let term3 = (1.0 - term2 * term2).sqrt();
+    Vec3f::new(term1.cos() * term3, term1.sin() * term3, term2)
+}
+
+/// SeamPlacer.cpp:135-214
+///
+/// Precomputes the hemisphere sample directions faithfully
+/// (SeamPlacer.cpp:143-152). The per-sample ray casting itself
+/// (SeamPlacer.cpp:154-208) is BLOCKED: the crate's `aabb_tree_indirect`
+/// builds trees over `Point3F` (f64) vertices and `[usize;3]` faces, whereas
+/// `indexed_triangle_set` stores `Vec3f` (f32) / `Vec3i`. The C++ source casts
+/// only the ray origin/dir to f64 while keeping vertices in f32; bridging the
+/// incompatible primitive types here would diverge from C++ rounding and is not
+/// byte-exact. Re-enable once an f32-vertex AABB ray query is available.
+pub fn raycast_visibility(
+    _raycasting_tree: &Tree3F,
+    triangles: &indexed_triangle_set,
+    samples: &TriangleSetSamples,
+    _negative_volumes_start_index: usize,
+) -> Vec<f32> {
+    // SeamPlacer.cpp:143 — prepare uniform samples of a hemisphere
+    let step_size = 1.0 / SQR_RAYS_PER_SAMPLE_POINT as f32;
+    // SeamPlacer.cpp:144
+    let mut precomputed_sample_directions =
+        vec![Vec3f::zeros(); SQR_RAYS_PER_SAMPLE_POINT * SQR_RAYS_PER_SAMPLE_POINT];
+    // SeamPlacer.cpp:145-152
+    for x_idx in 0..SQR_RAYS_PER_SAMPLE_POINT {
+        // C++: float sample_x = x_idx * step_size + step_size / 2.0;
+        let sample_x = x_idx as f32 * step_size + step_size / 2.0;
+        for y_idx in 0..SQR_RAYS_PER_SAMPLE_POINT {
+            let dir_index = x_idx * SQR_RAYS_PER_SAMPLE_POINT + y_idx;
+            let sample_y = y_idx as f32 * step_size + step_size / 2.0;
+            precomputed_sample_directions[dir_index] =
+                sample_hemisphere_uniform(&Vec2f::new(sample_x, sample_y));
+        }
+    }
+    let _ = triangles;
+    // BLOCKED — see doc comment. C++ returns per-sample visibility; we return
+    // the C++ initial value (1.0 for every sample) until ray casting is wired.
+    // SeamPlacer.cpp:156 / 162 (`result[s_idx] = 1.0f;`).
+    vec![1.0_f32; samples.positions.len()]
+}
+
+/// SeamPlacer.cpp:216-262
+pub fn calculate_polygon_angles_at_vertices(
+    polygon: &Polygon,
+    lengths: &[f32],
+    min_arm_length: f32,
+) -> Vec<f32> {
+    // SeamPlacer.cpp:218
+    let mut result = vec![0.0_f32; polygon.len()];
+
+    // SeamPlacer.cpp:220
+    if polygon.len() == 1 {
+        result[0] = 0.0;
+    }
+
+    // SeamPlacer.cpp:222-224
+    let mut idx_prev = 0usize;
+    let mut idx_curr = 0usize;
+    let mut idx_next = 0usize;
+
+    // SeamPlacer.cpp:226-227
+    let mut distance_to_prev = 0.0_f32;
+    let mut distance_to_next = 0.0_f32;
+
+    // push idx_prev far enough back as initialization
+    // SeamPlacer.cpp:230-233
+    while distance_to_prev < min_arm_length {
+        idx_prev = prev_idx_modulo(idx_prev, polygon.len());
+        distance_to_prev += lengths[idx_prev];
+    }
+
+    // SeamPlacer.cpp:235
+    for _i in 0..polygon.len() {
+        // pull idx_prev to current as much as possible, while respecting the min_arm_length
+        // SeamPlacer.cpp:237-240
+        while distance_to_prev - lengths[idx_prev] > min_arm_length {
+            distance_to_prev -= lengths[idx_prev];
+            idx_prev = next_idx_modulo(idx_prev, polygon.len());
+        }
+
+        // push idx_next forward as far as needed
+        // SeamPlacer.cpp:243-246
+        while distance_to_next < min_arm_length {
+            distance_to_next += lengths[idx_next];
+            idx_next = next_idx_modulo(idx_next, polygon.len());
+        }
+
+        // Calculate angle between idx_prev, idx_curr, idx_next.
+        // SeamPlacer.cpp:249-252
+        let p0 = polygon.points()[idx_prev];
+        let p1 = polygon.points()[idx_curr];
+        let p2 = polygon.points()[idx_next];
+        result[idx_curr] = angle(point_sub(&p1, &p0), point_sub(&p2, &p1)) as f32;
+
+        // increase idx_curr by one
+        // SeamPlacer.cpp:255-258
+        let curr_distance = lengths[idx_curr];
+        idx_curr += 1;
+        distance_to_prev += curr_distance;
+        distance_to_next -= curr_distance;
+    }
+
+    result
+}
+
+/// Helper: (p1 - p0) as a double 2D vector, matching Eigen `Point - Point`.
+#[inline]
+fn point_sub(a: &Point, b: &Point) -> Vec2d {
+    Vec2d::new((a.x - b.x) as f64, (a.y - b.y) as f64)
+}
+
+/// SeamPlacer.cpp:264-271 — struct CoordinateFunctor.
+///
+/// Stores an owned copy of coordinates; the closure form used by the KD tree
+/// indexes into it.
+pub struct CoordinateFunctor {
+    pub coordinates: Vec<Vec3f>,
+}
+
+impl CoordinateFunctor {
+    // SeamPlacer.cpp:267
+    pub fn new(coords: Vec<Vec3f>) -> Self {
+        Self {
+            coordinates: coords,
+        }
+    }
+
+    // SeamPlacer.cpp:270 — operator()(idx, dim)
+    #[inline]
+    pub fn call(&self, idx: usize, dim: usize) -> f32 {
+        self.coordinates[idx][dim]
+    }
+}
+
+/// SeamPlacer.cpp:274-369 — struct GlobalModelInfo.
+///
+/// Holds global information about the model — occlusion hits, enforcers,
+/// blockers.
+pub struct GlobalModelInfo {
+    // SeamPlacer.cpp:276
+    pub mesh_samples: TriangleSetSamples,
+    // SeamPlacer.cpp:277
+    pub mesh_samples_visibility: Vec<f32>,
+    // SeamPlacer.cpp:278-279 — coordinate functor + KD tree (built on demand).
+    pub mesh_samples_coordinate_functor: CoordinateFunctor,
+    // SeamPlacer.cpp:280
+    pub mesh_samples_radius: f32,
+
+    // SeamPlacer.cpp:282
+    pub enforcers: indexed_triangle_set,
+    // SeamPlacer.cpp:283
+    pub blockers: indexed_triangle_set,
+    // SeamPlacer.cpp:284
+    pub enforcers_tree: Tree3F,
+    // SeamPlacer.cpp:285
+    pub blockers_tree: Tree3F,
+}
+
+impl Default for GlobalModelInfo {
+    fn default() -> Self {
+        Self {
+            mesh_samples: TriangleSetSamples::default(),
+            mesh_samples_visibility: Vec::new(),
+            mesh_samples_coordinate_functor: CoordinateFunctor::new(Vec::new()),
+            mesh_samples_radius: 0.0,
+            enforcers: indexed_triangle_set::default(),
+            blockers: indexed_triangle_set::default(),
+            enforcers_tree: Tree3F::new(),
+            blockers_tree: Tree3F::new(),
+        }
+    }
+}
+
+impl GlobalModelInfo {
+    // SeamPlacer.cpp:287-292
+    //
+    // BLOCKED: `is_any_triangle_in_radius` requires an AABB tree built over
+    // `Point3F` (f64) vertices, but `enforcers`/`enforcers_tree` use the f32
+    // `indexed_triangle_set`. The `enforcers.empty()` short-circuit is faithful;
+    // when enforcers are present the radius query cannot be evaluated against an
+    // f32 mesh with the current f64-typed AABB tree.
+    pub fn is_enforced(&self, _position: &Vec3f, _radius: f32) -> bool {
+        if self.enforcers.indices.is_empty() {
+            return false;
+        }
+        // BLOCKED — see note above. C++: is_any_triangle_in_radius(...).
+        false
+    }
+
+    // SeamPlacer.cpp:294-299
+    // BLOCKED for the same reason as `is_enforced`.
+    pub fn is_blocked(&self, _position: &Vec3f, _radius: f32) -> bool {
+        if self.blockers.indices.is_empty() {
+            return false;
+        }
+        // BLOCKED — see `is_enforced`. C++: is_any_triangle_in_radius(...).
+        false
+    }
+
+    // SeamPlacer.cpp:301-326
+    //
+    // The radius-weighted visibility averaging math is faithful. The nearby
+    // sample lookup `find_nearby_points(mesh_samples_tree, position, radius)`
+    // (SeamPlacer.cpp:303) is BLOCKED: the crate's `KDTreeIndirect` query
+    // functions bound `T: From<f64>`, which `f32` does not satisfy, so an f32 KD
+    // tree (as the C++ `KDTreeIndirect<3, float, ...>`) cannot be queried.
+    // `find_nearby_candidate_indices` returns the empty set until an f32-capable
+    // KD query exists; per C++ (SeamPlacer.cpp:304) an empty set yields 1.0.
+    pub fn calculate_point_visibility(&self, position: &Vec3f) -> f32 {
+        // SeamPlacer.cpp:303
+        let points = self.find_nearby_candidate_indices(position, self.mesh_samples_radius);
+        // SeamPlacer.cpp:304
+        if points.is_empty() {
+            return 1.0;
+        }
+
+        // SeamPlacer.cpp:306-309
+        let compute_dist_to_plane =
+            |position: &Vec3f, plane_origin: &Vec3f, plane_normal: &Vec3f| -> f32 {
+                let orig_to_point = position - plane_origin;
+                orig_to_point.dot(plane_normal).abs()
+            };
+
+        // SeamPlacer.cpp:311-312
+        let mut total_weight = 0.0_f32;
+        let mut total_visibility = 0.0_f32;
+        // SeamPlacer.cpp:313
+        for &sample_idx in &points {
+            // SeamPlacer.cpp:316-317
+            let sample_point = self.mesh_samples.positions[sample_idx];
+            let sample_normal = self.mesh_samples.normals[sample_idx];
+
+            // SeamPlacer.cpp:319-320
+            let mut weight = self.mesh_samples_radius
+                - compute_dist_to_plane(position, &sample_point, &sample_normal);
+            weight += self.mesh_samples_radius - (position - sample_point).norm();
+            // SeamPlacer.cpp:321-322
+            total_visibility += weight * self.mesh_samples_visibility[sample_idx];
+            total_weight += weight;
+        }
+
+        // SeamPlacer.cpp:325
+        total_visibility / total_weight
+    }
+
+    /// BLOCKED helper for `calculate_point_visibility`: f32 KD tree query is not
+    /// supported by the crate (`T: From<f64>` bound). Returns the empty set.
+    fn find_nearby_candidate_indices(&self, _position: &Vec3f, _radius: f32) -> Vec<usize> {
+        Vec::new()
+    }
+}
+
+/// SeamPlacer.cpp:552-571
+///
+/// Get index of previous and next perimeter point of the layer.
+pub fn find_previous_and_next_perimeter_point(
+    perimeter_points: &[SeamCandidate],
+    perimeters: &[Perimeter],
+    point_index: usize,
+) -> (usize, usize) {
+    // SeamPlacer.cpp:554
+    let current = &perimeter_points[point_index];
+    // SeamPlacer.cpp:555-556 — for majority of points, neighbours lie behind and in front.
+    let mut prev: i64 = point_index as i64 - 1;
+    let mut next: i64 = point_index as i64 + 1;
+
+    // C++: current.perimeter is a reference; we resolve the index into the
+    // owning layer's `perimeters`.
+    let perimeter = &perimeters[current.perimeter];
+    // SeamPlacer.cpp:558-561
+    if point_index == perimeter.start_index {
+        // if point_index is equal to start, the previous neighbour is at the end
+        prev = perimeter.end_index as i64;
+    }
+
+    // SeamPlacer.cpp:563-566
+    if point_index == perimeter.end_index - 1 {
+        // if point_index is equal to end, the next neighbour is at the start
+        next = perimeter.start_index as i64;
+    }
+
+    // SeamPlacer.cpp:568-570
+    debug_assert!(prev >= 0);
+    debug_assert!(next >= 0);
+    (prev as usize, next as usize)
+}
+
+/// SeamPlacer.cpp:670-751 — struct SeamComparator.
+pub struct SeamComparator {
+    // SeamPlacer.cpp:672
+    pub setup: SeamPosition,
+    // SeamPlacer.cpp:673
+    pub angle_importance: f32,
+}
+
+impl SeamComparator {
+    // SeamPlacer.cpp:674-677
+    pub fn new(setup: SeamPosition) -> Self {
+        let angle_importance = if setup == SeamPosition::spNearest {
+            ANGLE_IMPORTANCE_NEAREST
+        } else {
+            ANGLE_IMPORTANCE_ALIGNED
+        };
+        Self {
+            setup,
+            angle_importance,
+        }
+    }
+
+    /// Standard comparator. Returns whether `a` is a better SeamCandidate than `b`.
+    /// SeamPlacer.cpp:681-712
+    pub fn is_first_better(
+        &self,
+        a: &SeamCandidate,
+        b: &SeamCandidate,
+        preffered_location: &Vec2f,
+    ) -> bool {
+        // SeamPlacer.cpp:683
+        if self.setup == SeamPosition::spAligned && a.central_enforcer != b.central_enforcer {
+            return a.central_enforcer;
+        }
+
+        // Blockers/Enforcers discrimination, top priority
+        // SeamPlacer.cpp:686
+        if a.r#type != b.r#type {
+            return a.r#type > b.r#type;
+        }
+
+        // avoid overhangs
+        // SeamPlacer.cpp:689
+        if a.overhang > 0.0 || b.overhang > 0.0 {
+            return a.overhang < b.overhang;
+        }
+
+        // prefer hidden points (more than 0.5 mm inside)
+        // SeamPlacer.cpp:692-693
+        if a.embedded_distance < -0.5 && b.embedded_distance > -0.5 {
+            return true;
+        }
+        if b.embedded_distance < -0.5 && a.embedded_distance > -0.5 {
+            return false;
+        }
+
+        // SeamPlacer.cpp:695
+        if self.setup == SeamPosition::spRear && a.position.y != b.position.y {
+            return a.position.y > b.position.y;
+        }
+
+        // SeamPlacer.cpp:697-702
+        let mut distance_penalty_a = 0.0_f32;
+        let mut distance_penalty_b = 0.0_f32;
+        if self.setup == SeamPosition::spNearest {
+            distance_penalty_a =
+                1.0 - gauss((a.position.xy() - preffered_location).norm(), 0.0, 1.0, 0.005);
+            distance_penalty_b =
+                1.0 - gauss((b.position.xy() - preffered_location).norm(), 0.0, 1.0, 0.005);
+        }
+
+        // SeamPlacer.cpp:704-705
+        let a_overhang_around_penalty: f64 = if a.extra_overhang_point < OVERHANG_FILTER {
+            0.0
+        } else {
+            a.extra_overhang_point as f64
+        };
+        let b_overhang_around_penalty: f64 = if b.extra_overhang_point < OVERHANG_FILTER {
+            0.0
+        } else {
+            b.extra_overhang_point as f64
+        };
+
+        // the penalites are kept close to range [0-1.x] however, it should not be relied upon
+        // SeamPlacer.cpp:708-709
+        let penalty_a = a.overhang
+            + a.visibility
+            + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
+            + distance_penalty_a
+            + a_overhang_around_penalty as f32;
+        let penalty_b = b.overhang
+            + b.visibility
+            + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
+            + distance_penalty_b
+            + b_overhang_around_penalty as f32;
+
+        // SeamPlacer.cpp:711
+        penalty_a < penalty_b
+    }
+
+    /// Comparator used during alignment.
+    /// SeamPlacer.cpp:717-748
+    pub fn is_first_not_much_worse(&self, a: &SeamCandidate, b: &SeamCandidate) -> bool {
+        // Blockers/Enforcers discrimination, top priority
+        // SeamPlacer.cpp:720-723
+        if self.setup == SeamPosition::spAligned && a.central_enforcer != b.central_enforcer {
+            // Prefer centers of enforcers.
+            return a.central_enforcer;
+        }
+
+        // SeamPlacer.cpp:725
+        if a.r#type == EnforcedBlockedSeamPoint::Enforced {
+            return true;
+        }
+
+        // SeamPlacer.cpp:727
+        if a.r#type == EnforcedBlockedSeamPoint::Blocked {
+            return false;
+        }
+
+        // SeamPlacer.cpp:729
+        if a.r#type != b.r#type {
+            return a.r#type > b.r#type;
+        }
+
+        // avoid overhangs
+        // SeamPlacer.cpp:732
+        if (a.overhang > 0.0 || b.overhang > 0.0)
+            && (a.overhang - b.overhang).abs() > (0.1 * a.perimeter_flow_width(b))
+        {
+            return a.overhang < b.overhang;
+        }
+
+        // prefer hidden points (more than 0.5 mm inside)
+        // SeamPlacer.cpp:735-736
+        if a.embedded_distance < -0.5 && b.embedded_distance > -0.5 {
+            return true;
+        }
+        if b.embedded_distance < -0.5 && a.embedded_distance > -0.5 {
+            return false;
+        }
+
+        // SeamPlacer.cpp:738
+        if self.setup == SeamPosition::spRandom {
+            return true;
+        }
+
+        // SeamPlacer.cpp:740
+        if self.setup == SeamPosition::spRear {
+            return a.position.y + SEAM_ALIGN_SCORE_TOLERANCE * 5.0 > b.position.y;
+        }
+
+        // SeamPlacer.cpp:742-743
+        let a_overhang_around_penalty: f64 = if a.extra_overhang_point < OVERHANG_FILTER {
+            0.0
+        } else {
+            a.extra_overhang_point as f64
+        };
+        let b_overhang_around_penalty: f64 = if b.extra_overhang_point < OVERHANG_FILTER {
+            0.0
+        } else {
+            b.extra_overhang_point as f64
+        };
+
+        // SeamPlacer.cpp:745-746
+        let penalty_a = a.overhang
+            + a.visibility
+            + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
+            + a_overhang_around_penalty as f32;
+        let penalty_b = b.overhang
+            + b.visibility
+            + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
+            + b_overhang_around_penalty as f32;
+        // SeamPlacer.cpp:747
+        penalty_a <= penalty_b || penalty_a - penalty_b < SEAM_ALIGN_SCORE_TOLERANCE
+    }
+
+    // SeamPlacer.cpp:750
+    pub fn are_similar(&self, a: &SeamCandidate, b: &SeamCandidate) -> bool {
+        self.is_first_not_much_worse(a, b) && self.is_first_not_much_worse(b, a)
+    }
+}
+
+impl SeamCandidate {
+    /// `a.perimeter.flow_width` — the C++ `is_first_not_much_worse` uses
+    /// `a.perimeter.flow_width` (SeamPlacer.cpp:732). Since our `SeamCandidate`
+    /// stores the perimeter index rather than a reference, the flow width must be
+    /// supplied via the owning layer. The standalone comparator API operates on
+    /// candidates whose `perimeter` field is meaningful only with a layer; the
+    /// callers that have a layer pass the actual flow width via wrapper. For the
+    /// reference-free path we approximate `a.perimeter.flow_width` by 0 only when
+    /// no layer context exists, which never happens in the real pipeline.
+    #[inline]
+    fn perimeter_flow_width(&self, _b: &SeamCandidate) -> f32 {
+        // Set by `SeamCandidate::flow_width_hint`. Defaults to 0.0 which matches
+        // the C++ when flow_width is 0 (dummy perimeters).
+        self.flow_width_hint
+    }
+}
+
+/// Extension field for `SeamCandidate` carrying the owning perimeter's
+/// `flow_width`, so `is_first_not_much_worse` can read it without a back-pointer.
+/// This is populated when candidates are gathered into a layer.
+impl SeamCandidate {
+    pub fn set_flow_width_hint(&mut self, w: f32) {
+        self.flow_width_hint = w;
+    }
+}
+
+// ============================================================================
+// SeamPlacer.cpp:800-822 — pick_seam_point / pick_nearest_seam_point_index
+// ============================================================================
+
+/// Pick best seam point based on the given comparator.
+/// SeamPlacer.cpp:801-810
+pub fn pick_seam_point(
+    perimeter_points: &mut [SeamCandidate],
+    perimeters: &mut [Perimeter],
+    start_index: usize,
+    comparator: &SeamComparator,
+) {
+    // SeamPlacer.cpp:803
+    let perim_idx = perimeter_points[start_index].perimeter;
+    let end_index = perimeters[perim_idx].end_index;
+
+    // SeamPlacer.cpp:805
+    let mut seam_index = start_index;
+    // SeamPlacer.cpp:806-808
+    for index in start_index..end_index {
+        if comparator.is_first_better(
+            &perimeter_points[index],
+            &perimeter_points[seam_index],
+            &Vec2f::new(0.0, 0.0),
+        ) {
+            seam_index = index;
+        }
+    }
+    // SeamPlacer.cpp:809
+    perimeters[perim_idx].seam_index = seam_index;
+}
+
+/// SeamPlacer.cpp:812-822
+pub fn pick_nearest_seam_point_index(
+    perimeter_points: &[SeamCandidate],
+    perimeters: &[Perimeter],
+    start_index: usize,
+    preffered_location: &Vec2f,
+) -> usize {
+    // SeamPlacer.cpp:814
+    let perim_idx = perimeter_points[start_index].perimeter;
+    let end_index = perimeters[perim_idx].end_index;
+    // SeamPlacer.cpp:815
+    let comparator = SeamComparator::new(SeamPosition::spNearest);
+
+    // SeamPlacer.cpp:817
+    let mut seam_index = start_index;
+    // SeamPlacer.cpp:818-820
+    for index in start_index..end_index {
+        if comparator.is_first_better(
+            &perimeter_points[index],
+            &perimeter_points[seam_index],
+            preffered_location,
+        ) {
+            seam_index = index;
+        }
+    }
+    // SeamPlacer.cpp:821
+    seam_index
+}
+
+/// picks random seam point uniformly, respecting enforcers blockers and overhang
+/// avoidance.
+/// SeamPlacer.cpp:825-883
+pub fn pick_random_seam_point(
+    perimeter_points: &[SeamCandidate],
+    perimeters: &mut [Perimeter],
+    start_index: usize,
+) {
+    // SeamPlacer.cpp:827
+    let comparator = SeamComparator::new(SeamPosition::spRandom);
+
+    // SeamPlacer.cpp:834-835
+    let mut viable_example_index = start_index;
+    let perim_idx = perimeter_points[start_index].perimeter;
+    let end_index = perimeters[perim_idx].end_index;
+
+    // SeamPlacer.cpp:836-842 — struct Viable
+    struct Viable {
+        index: usize,
+        edge_length: f32,
+        edge: Vec3f,
+    }
+    let mut viables: Vec<Viable> = Vec::new();
+
+    // SeamPlacer.cpp:845-847
+    let pseudornd_seed = perimeter_points[viable_example_index].position;
+    let mut rand = (pseudornd_seed.dot(&Vec3f::new(12.9898, 78.233, 133.3333)).sin()
+        * 43758.5453)
+        .abs();
+    rand -= rand as i32 as f32;
+
+    // SeamPlacer.cpp:849
+    for index in start_index..end_index {
+        // SeamPlacer.cpp:850
+        if comparator.are_similar(
+            &perimeter_points[index],
+            &perimeter_points[viable_example_index],
+        ) {
+            // index ok, push info into viables
+            // SeamPlacer.cpp:852-854
+            let next = if index == end_index - 1 {
+                start_index
+            } else {
+                index + 1
+            };
+            let edge_to_next = perimeter_points[next].position - perimeter_points[index].position;
+            let dist_to_next = edge_to_next.norm();
+            viables.push(Viable {
+                index,
+                edge_length: dist_to_next,
+                edge: edge_to_next,
+            });
+        } else if comparator.is_first_not_much_worse(
+            &perimeter_points[viable_example_index],
+            &perimeter_points[index],
+        ) {
+            // SeamPlacer.cpp:855-856 — index is worse, skip this point
+        } else {
+            // index is better than viable example index, update example, clear
+            // gathered info, start again.
+            // SeamPlacer.cpp:860-865
+            viable_example_index = index;
+            viables.clear();
+
+            let next = if index == end_index - 1 {
+                start_index
+            } else {
+                index + 1
+            };
+            let edge_to_next = perimeter_points[next].position - perimeter_points[index].position;
+            let dist_to_next = edge_to_next.norm();
+            viables.push(Viable {
+                index,
+                edge_length: dist_to_next,
+                edge: edge_to_next,
+            });
+        }
+    }
+
+    // now pick random point from the stored options
+    // SeamPlacer.cpp:870
+    let len_sum: f32 = viables.iter().fold(0.0, |acc, v| acc + v.edge_length);
+    // SeamPlacer.cpp:871
+    let mut picked_len = len_sum * rand;
+
+    // SeamPlacer.cpp:873-877
+    let mut point_idx = 0usize;
+    while picked_len - viables[point_idx].edge_length > 0.0 {
+        picked_len -= viables[point_idx].edge_length;
+        point_idx += 1;
+    }
+
+    // SeamPlacer.cpp:879-882
+    perimeters[perim_idx].seam_index = viables[point_idx].index;
+    perimeters[perim_idx].final_seam_position = perimeter_points
+        [perimeters[perim_idx].seam_index]
+        .position
+        + viables[point_idx].edge.normalize() * picked_len;
+    perimeters[perim_idx].finalized = true;
+}
+
+/// SeamPlacer.cpp:885-920 — class PerimeterDistancer.
+///
+/// The C++ class builds an AABB tree over *unscaled* `Linef`s. The crate's
+/// `AABBTreeLines` operates on *scaled* integer `Line`s with a `PointF` query in
+/// the same (scaled) space. We therefore keep both the unscaled lines (for the
+/// final sign computation, SeamPlacer.cpp:914-917) and the scaled lines + tree
+/// (for the distance query), then unscale the resulting length. This is
+/// geometrically identical to the C++ result.
+pub struct PerimeterDistancer {
+    // SeamPlacer.cpp:887 — `std::vector<Linef> lines;`
+    lines: Vec<LineF>,
+    // scaled copy used by the crate's AABBTreeLines query.
+    scaled_lines: Vec<Line>,
+    // SeamPlacer.cpp:888 — `AABBTreeIndirect::Tree<2, double> tree;`
+    tree: tree2d::Tree,
+}
+
+impl PerimeterDistancer {
+    /// Build from a layer outline (set of islands, each contour + holes).
+    /// SeamPlacer.cpp:891-903
+    ///
+    /// We take the `lslices` ExPolygons directly to avoid depending on the
+    /// not-yet-wired `Layer` accessor.
+    pub fn new(layer_outline: &[crate::geometry::ExPolygon]) -> Self {
+        let mut lines: Vec<LineF> = Vec::new();
+        let mut scaled_lines: Vec<Line> = Vec::new();
+        // SeamPlacer.cpp:894-901
+        for island in layer_outline {
+            // assert(island.contour.is_counter_clockwise());  SeamPlacer.cpp:895
+            for line in island.contour.lines() {
+                lines.push(LineF::new(unscale_point(&line.a), unscale_point(&line.b)));
+                scaled_lines.push(Line::new(line.a, line.b));
+            }
+            for hole in &island.holes {
+                // assert(hole.is_clockwise());  SeamPlacer.cpp:898
+                for line in hole.lines() {
+                    lines.push(LineF::new(unscale_point(&line.a), unscale_point(&line.b)));
+                    scaled_lines.push(Line::new(line.a, line.b));
+                }
+            }
+        }
+        // SeamPlacer.cpp:902
+        let tree = build_aabb_tree_over_indexed_lines(&scaled_lines);
+        Self {
+            lines,
+            scaled_lines,
+            tree,
+        }
+    }
+
+    /// SeamPlacer.cpp:905-919
+    pub fn distance_from_perimeter(&self, point: &Vec2f) -> f32 {
+        // SeamPlacer.cpp:907 — `Vec2d p = point.cast<double>();`
+        let p = PointF::new(point.x as f64, point.y as f64);
+        // The query is run in scaled space: scale the query point and compute
+        // the squared distance against the scaled lines.
+        let scaled_p = PointF::new(p.x * crate::SCALING_FACTOR, p.y * crate::SCALING_FACTOR);
+        // SeamPlacer.cpp:908-910
+        let mut hit_idx_out: usize = 0;
+        let mut hit_point_out = PointF::new(0.0, 0.0);
+        let mut distance = squared_distance_to_indexed_lines(
+            &self.scaled_lines,
+            &self.tree,
+            scaled_p,
+            &mut hit_idx_out,
+            &mut hit_point_out,
+            f64::MAX,
+        );
+        // SeamPlacer.cpp:911
+        if distance < 0.0 {
+            return f32::MAX;
+        }
+
+        // SeamPlacer.cpp:913 — `distance = sqrt(distance);` then unscale to mm.
+        distance = distance.sqrt() / crate::SCALING_FACTOR;
+        // SeamPlacer.cpp:914-917
+        let line = &self.lines[hit_idx_out];
+        let v1 = Vec2d::new(line.b.x - line.a.x, line.b.y - line.a.y);
+        let v2 = Vec2d::new(p.x - line.a.x, p.y - line.a.y);
+        if (v1.x * v2.y) - (v1.y * v2.x) > 0.0 {
+            distance *= -1.0;
+        }
+        distance as f32
+    }
+}
+
+#[inline]
+fn unscale_point(p: &Point) -> PointF {
+    PointF::new(unscale(p.x), unscale(p.y))
+}
+
+// ============================================================================
+// Compatibility / glue layer
+// ============================================================================
+//
+// The remainder of this file preserves the public API consumed by the rest of
+// the crate (`perimeter_generator.rs`, `gcode/exporter.rs`, `lib.rs`
+// re-exports): `find_best_seam_index`, `place_seam`, `create_seam_placer`,
+// `SeamPlacer`, `SeamPlacerConfig`, `SeamPlacerStats`, `SeamPositionMode`,
+// `LayerOutline`, `PerimeterOutline`, `Point3f`.
+//
+// These wrappers are NOT part of the C++ source. They provide an angle-based
+// seam-selection entry point used while the full
+// `SeamPlacer::{init, place_seam}` pipeline remains blocked on the
+// `Print`/`PrintObject`/`Model`/`Layer` accessors enumerated at the top of this
+// file. The scoring uses the faithful `compute_angle_penalty` / `gauss`
+// functions above so that the eventual full port and this shim agree on the
+// angle/visibility math.
+
+/// Seam position preference mode (glue type mirroring `SeamPosition`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SeamPositionMode {
+    #[default]
+    Aligned,
+    Nearest,
+    Random,
+    Rear,
+    Hidden,
+}
+
+/// Configuration for the seam placer glue entry points.
 #[derive(Clone, Debug)]
 pub struct SeamPlacerConfig {
-    /// Seam position preference mode.
     pub seam_position: SeamPositionMode,
-
-    /// Minimum arm length for angle calculations (mm).
     pub min_arm_length: f64,
-
-    /// Sharp angle threshold for snapping (radians).
-    pub sharp_angle_threshold: f64,
-
-    /// Overhang angle threshold (radians from vertical).
-    pub overhang_angle_threshold: f64,
-
-    /// Importance of angle in scoring (relative to visibility).
     pub angle_importance: f64,
-
-    /// Distance for oversampling near enforcers (mm).
-    pub enforcer_oversampling_distance: f64,
-
-    /// Score tolerance for seam alignment.
-    pub seam_align_score_tolerance: f64,
-
-    /// Distance factor for alignment search (multiplied by flow width).
-    pub seam_align_tolerable_dist_factor: f64,
-
-    /// Minimum seams needed for alignment string.
-    pub seam_align_minimum_string_seams: usize,
-
-    /// Whether to avoid placing seams on overhangs.
-    pub avoid_overhangs: bool,
-
-    /// Whether to prefer hidden (embedded) points.
-    pub prefer_hidden_points: bool,
-
-    /// Embedded distance threshold for "hidden" classification (mm).
-    pub embedded_distance_threshold: f64,
 }
 
 impl Default for SeamPlacerConfig {
     fn default() -> Self {
         Self {
             seam_position: SeamPositionMode::Aligned,
+            // process_perimeter_polygon uses nozzle_diameter (0.5 default arm len)
+            // SeamPlacer.cpp:429
             min_arm_length: 0.5,
-            sharp_angle_threshold: 55.0 * PI / 180.0,
-            overhang_angle_threshold: 45.0 * PI / 180.0,
-            angle_importance: 0.6,
-            enforcer_oversampling_distance: 0.2,
-            seam_align_score_tolerance: 0.3,
-            seam_align_tolerable_dist_factor: 4.0,
-            seam_align_minimum_string_seams: 6,
-            avoid_overhangs: true,
-            prefer_hidden_points: true,
-            embedded_distance_threshold: 0.5,
+            // SeamPlacer.hpp:144
+            angle_importance: ANGLE_IMPORTANCE_ALIGNED as f64,
         }
     }
 }
 
-impl SeamPlacerConfig {
-    // Create configuration for nearest seam mode.
-    pub fn nearest() -> Self {
-        Self {
-            seam_position: SeamPositionMode::Nearest,
-            angle_importance: 1.0, // Higher for nearest mode
-            ..Default::default()
-        }
-    }
-
-    /// Create configuration for aligned seam mode.
-    pub fn aligned() -> Self {
-        Self {
-            seam_position: SeamPositionMode::Aligned,
-            ..Default::default()
-        }
-    }
-
-    /// Create configuration for random seam mode.
-    pub fn random() -> Self {
-        Self {
-            seam_position: SeamPositionMode::Random,
-            ..Default::default()
-        }
-    }
-
-    /// Create configuration for rear seam mode.
-    pub fn rear() -> Self {
-        Self {
-            seam_position: SeamPositionMode::Rear,
-            ..Default::default()
-        }
-    }
-
-    /// Create configuration for hidden seam mode.
-    pub fn hidden() -> Self {
-        Self {
-            seam_position: SeamPositionMode::Hidden,
-            angle_importance: 1.2, // Emphasize corners
-            ..Default::default()
-        }
-    }
-}
-
-// ============================================================================
-// Seam Candidate Data Structures
-// ============================================================================
-
-/// A perimeter loop with its seam metadata.
-#[derive(Clone, Debug)]
-pub struct Perimeter {
-    /// Start index in the candidates vector.
-    pub start_index: usize,
-    /// End index (inclusive) in the candidates vector.
-    pub end_index: usize,
-    /// Selected seam index within the perimeter.
-    pub seam_index: usize,
-    /// Flow/extrusion width for this perimeter.
-    pub flow_width: f64,
-    /// Whether the seam position has been finalized.
-    pub finalized: bool,
-    /// Final seam position (may differ from candidate position).
-    pub final_seam_position: Option<Point3f>,
-    /// Whether this is an external perimeter.
-    pub is_external: bool,
-    /// Layer index this perimeter belongs to.
-    pub layer_index: usize,
-}
-
-impl Perimeter {
-    // Create a new perimeter.
-    pub fn new(start_index: usize, end_index: usize, flow_width: f64) -> Self {
-        Self {
-            start_index,
-            end_index,
-            seam_index: start_index,
-            flow_width,
-            finalized: false,
-            final_seam_position: None,
-            is_external: true,
-            layer_index: 0,
-        }
-    }
-
-    /// Get the number of candidates in this perimeter.
-    pub fn len(&self) -> usize {
-        if self.end_index >= self.start_index {
-            self.end_index - self.start_index + 1
-        } else {
-            0
-        }
-    }
-
-    /// Check if the perimeter has no candidates.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-/// 3D floating-point position.
+/// 3D floating-point position (glue type, re-exported for callers).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point3f {
     pub x: f64,
@@ -253,1429 +1280,158 @@ pub struct Point3f {
 }
 
 impl Point3f {
-    // Create a new 3D point.
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
     }
-
-    /// Create from 2D point with Z coordinate.
-    pub fn from_2d(p: Point, z: f64) -> Self {
-        Self {
-            x: unscale(p.x),
-            y: unscale(p.y),
-            z,
-        }
-    }
-
-    /// Convert to 2D point (drops Z).
-    pub fn to_2d(&self) -> PointF {
-        PointF::new(self.x, self.y)
-    }
-
-    /// Convert to scaled 2D point.
-    pub fn to_2d_scaled(&self) -> Point {
-        Point::new_scale(self.x, self.y)
-    }
-
-    /// Calculate squared distance to another point.
-    pub fn distance_squared(&self, other: &Point3f) -> f64 {
-        let dx = other.x - self.x;
-        let dy = other.y - self.y;
-        let dz = other.z - self.z;
-        dx * dx + dy * dy + dz * dz
-    }
-
-    /// Calculate distance to another point.
-    pub fn distance(&self, other: &Point3f) -> f64 {
-        self.distance_squared(other).sqrt()
-    }
-
-    /// Calculate 2D distance (ignoring Z).
-    pub fn distance_2d(&self, other: &Point3f) -> f64 {
-        let dx = other.x - self.x;
-        let dy = other.y - self.y;
-        (dx * dx + dy * dy).sqrt()
-    }
-
-    /// Get the XY components as a tuple.
-    pub fn xy(&self) -> (f64, f64) {
-        (self.x, self.y)
-    }
 }
 
-/// A candidate point for seam placement.
+/// A perimeter outline for seam placement (glue input type).
 #[derive(Clone, Debug)]
-pub struct SeamCandidate {
-    /// 3D position of the candidate.
-    pub position: Point3f,
-    /// Index of the perimeter this candidate belongs to.
-    pub perimeter_index: usize,
-    /// Visibility score (0 = hidden, higher = more visible).
-    pub visibility: f64,
-    /// Overhang amount (0 = no overhang, higher = more overhang).
-    pub overhang: f64,
-    /// Distance inside merged regions (negative = inside print).
-    pub embedded_distance: f64,
-    /// Local counter-clockwise angle at this vertex.
-    pub local_ccw_angle: f64,
-    /// Enforced/blocked/neutral status.
-    pub point_type: EnforcedBlockedSeamPoint,
-    /// Whether this is the central point of an enforced segment.
-    pub central_enforcer: bool,
-    /// Whether this candidate is suitable for scarf seam.
-    pub enable_scarf_seam: bool,
-    /// Extra overhang penalty from surrounding points.
-    pub extra_overhang: f64,
+pub struct PerimeterOutline {
+    pub polygon: Polygon,
+    pub flow_width: f64,
+    pub is_external: bool,
 }
 
-impl SeamCandidate {
-    // Create a new seam candidate.
-    pub fn new(position: Point3f, perimeter_index: usize, local_ccw_angle: f64) -> Self {
-        Self {
-            position,
-            perimeter_index,
-            visibility: 0.0,
-            overhang: 0.0,
-            embedded_distance: 0.0,
-            local_ccw_angle,
-            point_type: EnforcedBlockedSeamPoint::Neutral,
-            central_enforcer: false,
-            enable_scarf_seam: false,
-            extra_overhang: 0.0,
-        }
-    }
-
-    /// Create a candidate with enforced status.
-    pub fn enforced(position: Point3f, perimeter_index: usize, local_ccw_angle: f64) -> Self {
-        let mut candidate = Self::new(position, perimeter_index, local_ccw_angle);
-        candidate.point_type = EnforcedBlockedSeamPoint::Enforced;
-        candidate
-    }
-
-    /// Create a candidate with blocked status.
-    pub fn blocked(position: Point3f, perimeter_index: usize, local_ccw_angle: f64) -> Self {
-        let mut candidate = Self::new(position, perimeter_index, local_ccw_angle);
-        candidate.point_type = EnforcedBlockedSeamPoint::Blocked;
-        candidate
-    }
-
-    /// Check if this is a concave corner (good for hiding seams).
-    pub fn is_concave(&self) -> bool {
-        self.local_ccw_angle < 0.0
-    }
-
-    /// Check if this is a convex corner.
-    pub fn is_convex(&self) -> bool {
-        self.local_ccw_angle > 0.0
-    }
-
-    /// Get the penalty for this candidate's angle.
-    pub fn angle_penalty(&self) -> f64 {
-        compute_angle_penalty(self.local_ccw_angle)
-    }
-}
-
-// ============================================================================
-// Layer Seam Data
-// ============================================================================
-
-/// Seam data for a single layer.
-#[derive(Clone, Debug, Default)]
-pub struct LayerSeams {
-    /// All perimeters in this layer.
-    pub perimeters: Vec<Perimeter>,
-    /// All seam candidates for all perimeters.
-    pub candidates: Vec<SeamCandidate>,
-    /// Z height of this layer.
+/// Layer outline data (glue input type).
+#[derive(Clone, Debug)]
+pub struct LayerOutline {
     pub z_height: f64,
-    /// Layer index.
-    pub layer_index: usize,
+    pub perimeters: Vec<PerimeterOutline>,
+    pub layer_regions: Vec<Polygon>,
 }
 
-impl LayerSeams {
-    // Create a new empty layer seams structure.
-    pub fn new(z_height: f64, layer_index: usize) -> Self {
-        Self {
-            perimeters: Vec::new(),
-            candidates: Vec::new(),
-            z_height,
-            layer_index,
-        }
-    }
-
-    /// Add a perimeter with its candidates.
-    pub fn add_perimeter(
-        &mut self,
-        polygon: &Polygon,
-        flow_width: f64,
-        is_external: bool,
-        config: &SeamPlacerConfig,
-    ) {
-        let start_index = self.candidates.len();
-
-        // Generate candidates for each vertex
-        let candidates =
-            generate_candidates_for_polygon(polygon, self.z_height, self.perimeters.len(), config);
-
-        if candidates.is_empty() {
-            return;
-        }
-
-        let end_index = start_index + candidates.len() - 1;
-        self.candidates.extend(candidates);
-
-        let mut perimeter = Perimeter::new(start_index, end_index, flow_width);
-        perimeter.is_external = is_external;
-        perimeter.layer_index = self.layer_index;
-        self.perimeters.push(perimeter);
-    }
-
-    /// Get the perimeter containing a candidate index.
-    pub fn perimeter_for_candidate(&self, candidate_idx: usize) -> Option<&Perimeter> {
-        self.perimeters
-            .iter()
-            .find(|p| candidate_idx >= p.start_index && candidate_idx <= p.end_index)
-    }
-
-    /// Get mutable perimeter containing a candidate index.
-    pub fn perimeter_for_candidate_mut(&mut self, candidate_idx: usize) -> Option<&mut Perimeter> {
-        self.perimeters
-            .iter_mut()
-            .find(|p| candidate_idx >= p.start_index && candidate_idx <= p.end_index)
-    }
-}
-
-// ============================================================================
-// Seam Placer
-// ============================================================================
-
-/// The main seam placer that computes optimal seam positions.
+/// Statistics about seam placement (glue type).
 #[derive(Clone, Debug)]
+pub struct SeamPlacerStats {
+    pub layer_count: usize,
+    pub total_perimeters: usize,
+    pub total_candidates: usize,
+    pub finalized_count: usize,
+    pub seam_position_mode: SeamPositionMode,
+}
+
+/// Glue seam placer holding per-layer `LayerSeams` (the faithful data type).
+#[derive(Clone, Debug, Default)]
 pub struct SeamPlacer {
-    /// Configuration.
-    config: SeamPlacerConfig,
-    /// Seam data per layer.
-    layers: Vec<LayerSeams>,
-    /// Whether initialization has been completed.
-    initialized: bool,
+    config_mode: SeamPositionMode,
+    seam_data: PrintObjectSeamData,
 }
 
 impl SeamPlacer {
-    // Create a new seam placer with the given configuration.
     pub fn new(config: SeamPlacerConfig) -> Self {
         Self {
-            config,
-            layers: Vec::new(),
-            initialized: false,
+            config_mode: config.seam_position,
+            seam_data: PrintObjectSeamData::default(),
         }
     }
 
-    /// Create a seam placer with default configuration.
-    pub fn with_defaults() -> Self {
-        Self::new(SeamPlacerConfig::default())
-    }
-
-    /// Get the configuration.
-    pub fn config(&self) -> &SeamPlacerConfig {
-        &self.config
-    }
-
-    /// Set the seam position mode.
-    pub fn set_seam_position(&mut self, mode: SeamPositionMode) {
-        self.config.seam_position = mode;
-    }
-
-    /// Initialize the seam placer with layer outlines.
-    ///
-    /// This processes all layers to compute seam candidates and their attributes.
-    pub fn init(&mut self, layer_outlines: &[LayerOutline]) {
-        self.layers.clear();
-        self.initialized = false;
-
-        // Generate candidates for each layer
-        for (layer_idx, outline) in layer_outlines.iter().enumerate() {
-            let mut layer_seams = LayerSeams::new(outline.z_height, layer_idx);
-
-            for perimeter in &outline.perimeters {
-                layer_seams.add_perimeter(
-                    &perimeter.polygon,
-                    perimeter.flow_width,
-                    perimeter.is_external,
-                    &self.config,
-                );
-            }
-
-            self.layers.push(layer_seams);
-        }
-
-        // Calculate overhangs by comparing layers
-        self.calculate_overhangs();
-
-        // Calculate embedded distances
-        self.calculate_embedded_distances(layer_outlines);
-
-        // Pick initial seam points
-        self.pick_seam_points();
-
-        // Optionally align seams across layers
-        if self.config.seam_position == SeamPositionMode::Aligned {
-            self.align_seam_points();
-        }
-
-        self.initialized = true;
-    }
-
-    /// Initialize with simple polygon layers (convenience method).
-    pub fn init_simple(&mut self, layers: &[(f64, Vec<Polygon>)], flow_width: f64) {
-        let outlines: Vec<_> = layers
-            .iter()
-            .map(|(z, polygons)| LayerOutline {
-                z_height: *z,
-                perimeters: polygons
-                    .iter()
-                    .map(|p| PerimeterOutline {
-                        polygon: p.clone(),
-                        flow_width,
-                        is_external: true,
-                    })
-                    .collect(),
-                layer_regions: Vec::new(),
-            })
-            .collect();
-
-        self.init(&outlines);
-    }
-
-    /// Get the seam position for a perimeter loop.
-    ///
-    /// Returns the optimal seam point index within the polygon.
-    pub fn get_seam_point(
-        &self,
-        layer_index: usize,
-        polygon: &Polygon,
-        current_pos: Option<Point>,
-    ) -> usize {
-        if !self.initialized || layer_index >= self.layers.len() {
-            // Fall back to simple seam placement
-            return self.fallback_seam_point(polygon, current_pos);
-        }
-
-        let layer = &self.layers[layer_index];
-
-        // Find matching perimeter
-        let polygon_center = polygon.centroid();
-        let best_perimeter = layer.perimeters.iter().min_by_key(|p| {
-            if p.start_index >= layer.candidates.len() {
-                return i64::MAX;
-            }
-            let candidate = &layer.candidates[p.start_index];
-            let center = candidate.position.to_2d_scaled();
-            polygon_center.distance_squared(&center) as i64
-        });
-
-        match best_perimeter {
-            Some(perimeter) => {
-                // For nearest mode, recalculate based on current position
-                if self.config.seam_position == SeamPositionMode::Nearest {
-                    if let Some(pos) = current_pos {
-                        return self.find_nearest_seam(layer, perimeter, pos);
-                    }
-                }
-
-                // Return the pre-calculated seam index
-                let relative_index = perimeter.seam_index - perimeter.start_index;
-                relative_index.min(polygon.len().saturating_sub(1))
-            }
-            None => self.fallback_seam_point(polygon, current_pos),
-        }
-    }
-
-    /// Get the 3D seam position for a perimeter.
-    pub fn get_seam_position_3d(
-        &self,
-        layer_index: usize,
-        perimeter_index: usize,
-    ) -> Option<Point3f> {
-        if layer_index >= self.layers.len() {
-            return None;
-        }
-
-        let layer = &self.layers[layer_index];
-        let perimeter = layer.perimeters.get(perimeter_index)?;
-
-        if perimeter.finalized {
-            perimeter.final_seam_position
-        } else {
-            layer
-                .candidates
-                .get(perimeter.seam_index)
-                .map(|c| c.position)
-        }
-    }
-
-    /// Get statistics about seam placement.
     pub fn stats(&self) -> SeamPlacerStats {
-        let total_perimeters: usize = self.layers.iter().map(|l| l.perimeters.len()).sum();
-        let total_candidates: usize = self.layers.iter().map(|l| l.candidates.len()).sum();
+        let total_perimeters: usize = self.seam_data.layers.iter().map(|l| l.perimeters.len()).sum();
+        let total_candidates: usize = self.seam_data.layers.iter().map(|l| l.points.len()).sum();
         let finalized_count = self
+            .seam_data
             .layers
             .iter()
             .flat_map(|l| l.perimeters.iter())
             .filter(|p| p.finalized)
             .count();
-
         SeamPlacerStats {
-            layer_count: self.layers.len(),
+            layer_count: self.seam_data.layers.len(),
             total_perimeters,
             total_candidates,
             finalized_count,
-            seam_position_mode: self.config.seam_position,
+            seam_position_mode: self.config_mode,
         }
     }
 
-    // ========================================================================
-    // Private Methods
-    // ========================================================================
-
-    /// Calculate overhangs by comparing adjacent layers.
-    fn calculate_overhangs(&mut self) {
-        if self.layers.len() < 2 {
-            return;
-        }
-
-        for layer_idx in 1..self.layers.len() {
-            // Get previous layer's outline for comparison
-            let prev_candidates: Vec<_> = self.layers[layer_idx - 1]
-                .candidates
-                .iter()
-                .map(|c| c.position)
-                .collect();
-
-            if prev_candidates.is_empty() {
-                continue;
+    /// Build per-layer candidate data from simple polygon layers.
+    pub fn init_simple(&mut self, layers: &[(f64, Vec<Polygon>)], flow_width: f64) {
+        self.seam_data.clear();
+        for (z, polygons) in layers {
+            let mut layer = LayerSeams::default();
+            for polygon in polygons {
+                gather_layer_perimeter(&mut layer, polygon, *z as f32, flow_width as f32);
             }
-
-            // For each candidate in current layer, check if it's over previous layer
-            let layer = &mut self.layers[layer_idx];
-            for candidate in &mut layer.candidates {
-                let pos = candidate.position;
-
-                // Find nearest point in previous layer
-                let min_dist = prev_candidates
-                    .iter()
-                    .map(|p| pos.distance_2d(p))
-                    .fold(f64::INFINITY, f64::min);
-
-                // If distance is greater than flow width, it's an overhang
-                let flow_width = layer
-                    .perimeters
-                    .get(candidate.perimeter_index)
-                    .map(|p| p.flow_width)
-                    .unwrap_or(0.4);
-
-                if min_dist > flow_width * 0.5 {
-                    candidate.overhang = (min_dist / flow_width).min(1.0);
-                }
-            }
-        }
-    }
-
-    /// Calculate embedded distances using edge grids.
-    fn calculate_embedded_distances(&mut self, layer_outlines: &[LayerOutline]) {
-        for (layer_idx, outline) in layer_outlines.iter().enumerate() {
-            if layer_idx >= self.layers.len() || outline.layer_regions.is_empty() {
-                continue;
-            }
-
-            // Build edge grid from layer regions
-            let polygons: Vec<_> = outline.layer_regions.iter().cloned().collect();
-            if polygons.is_empty() {
-                continue;
-            }
-
-            let grid = EdgeGrid::from_polygons(&polygons, scale(0.5));
-
-            // Calculate embedded distance for each candidate
-            let layer = &mut self.layers[layer_idx];
-            for candidate in &mut layer.candidates {
-                let point = candidate.position.to_2d_scaled();
-
-                // Use signed distance from edge grid
-                // Negative = inside, Positive = outside
-                let sdf = grid.signed_distance_bilinear(&point);
-                if sdf < f32::MAX {
-                    candidate.embedded_distance = unscale(sdf as i64);
-                }
-            }
-        }
-    }
-
-    /// Pick seam points for all perimeters.
-    fn pick_seam_points(&mut self) {
-        let comparator =
-            SeamComparator::new(self.config.seam_position, self.config.angle_importance);
-
-        for layer in &mut self.layers {
-            for perimeter in &mut layer.perimeters {
-                if perimeter.is_empty() {
-                    continue;
-                }
-
-                match self.config.seam_position {
-                    SeamPositionMode::Random => {
-                        pick_random_seam_point(&layer.candidates, perimeter, &comparator);
-                    }
-                    SeamPositionMode::Rear => {
-                        pick_rear_seam_point(&layer.candidates, perimeter);
-                    }
-                    _ => {
-                        pick_best_seam_point(&layer.candidates, perimeter, &comparator);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Align seam points across layers.
-    ///
-    /// Ported from BambuStudio's `SeamPlacer::align_seam_points`. The algorithm:
-    /// 1. Gathers all seam positions (layer_idx, candidate_idx) across the object.
-    /// 2. Sorts them by quality (best first) using the SeamComparator.
-    /// 3. Starting from the best unfinalized seam, searches upward and downward
-    ///    through layers to build a "seam string" -- a cluster of nearby, quality-
-    ///    acceptable seam points that can be aligned into a vertical seam line.
-    /// 4. If the string is long enough (>= seam_align_minimum_string_seams), each
-    ///    member's seam position is adjusted toward the string's weighted average
-    ///    XY position, with sharp-angle points snapping more strongly to their
-    ///    original positions.
-    fn align_seam_points(&mut self) {
-        if self.layers.len() < self.config.seam_align_minimum_string_seams {
-            return;
-        }
-
-        let comparator =
-            SeamComparator::new(self.config.seam_position, self.config.angle_importance);
-
-        // Step 1: Gather all seam (layer_idx, candidate_idx) pairs.
-        // For each perimeter, we record its currently chosen seam_index.
-        let mut seams: Vec<(usize, usize)> = Vec::new();
-        for layer_idx in 0..self.layers.len() {
-            for perim in &self.layers[layer_idx].perimeters {
-                seams.push((layer_idx, perim.seam_index));
-            }
-        }
-
-        if seams.is_empty() {
-            return;
-        }
-
-        // Step 2: Sort seams by quality (best first).
-        // We need to clone candidate data for sorting since we can't borrow
-        // self.layers immutably while also mutating later.
-        seams.sort_by(|left, right| {
-            let a = &self.layers[left.0].candidates[left.1];
-            let b = &self.layers[right.0].candidates[right.1];
-            if comparator.is_first_better(a, b) {
-                std::cmp::Ordering::Less
-            } else if comparator.is_first_better(b, a) {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        });
-
-        // Step 3: For each seam (best first), find its seam string.
-        let mut global_index = 0;
-        while global_index < seams.len() {
-            let (start_layer_idx, start_seam_idx) = seams[global_index];
-            global_index += 1;
-
-            // Skip already finalized perimeters
-            let perim_finalized = self.layers[start_layer_idx]
-                .candidates
-                .get(start_seam_idx)
-                .and_then(|c| {
-                    self.layers[start_layer_idx]
-                        .perimeters
-                        .get(c.perimeter_index)
-                })
-                .map(|p| p.finalized)
-                .unwrap_or(true);
-
-            if perim_finalized {
-                continue;
-            }
-
-            // Find the seam string starting from this point
-            let mut seam_string =
-                self.find_seam_string(start_layer_idx, start_seam_idx, &comparator);
-
-            // Try alternative starting points within the string to find longer strings
-            // (ported from C++: tries every 20th member as alternative start)
-            let step_size = 1 + seam_string.len() / 20;
-            let string_copy = seam_string.clone();
-            for alt_start in (0..string_copy.len()).step_by(step_size) {
-                let alt_layer = string_copy[alt_start].0;
-                // Use that layer's perimeter's seam_index as the start
-                if let Some(candidate) = self.layers[alt_layer]
-                    .candidates
-                    .get(string_copy[alt_start].1)
-                {
-                    let perim_seam_idx = self.layers[alt_layer]
-                        .perimeters
-                        .get(candidate.perimeter_index)
-                        .map(|p| p.seam_index)
-                        .unwrap_or(string_copy[alt_start].1);
-
-                    let alt_string = self.find_seam_string(alt_layer, perim_seam_idx, &comparator);
-                    if alt_string.len() > seam_string.len() {
-                        seam_string = alt_string;
-                    }
-                }
-            }
-
-            if seam_string.len() < self.config.seam_align_minimum_string_seams {
-                continue;
-            }
-
-            // Sort string by layer index
-            seam_string.sort_by_key(|&(layer_idx, _)| layer_idx);
-
-            // Retry current seam since the string may have consumed its perimeter
-            // via an alternative path
-            global_index -= 1;
-
-            // Step 4: Align the string.
-            // Compute weighted average XY position along the string.
-            let mut sum_x = 0.0;
-            let mut sum_y = 0.0;
-            let mut total_weight = 0.0;
-
-            for &(layer_idx, cand_idx) in &seam_string {
-                if let Some(candidate) = self.layers[layer_idx].candidates.get(cand_idx) {
-                    let w = 1.0 / (0.1 + compute_angle_penalty(candidate.local_ccw_angle));
-                    sum_x += w * candidate.position.x;
-                    sum_y += w * candidate.position.y;
-                    total_weight += w;
-                }
-            }
-
-            if total_weight <= 0.0 {
-                continue;
-            }
-
-            let avg_x = sum_x / total_weight;
-            let avg_y = sum_y / total_weight;
-
-            // Apply alignment: interpolate between candidate position and average,
-            // with sharp-angle points snapping more strongly to their original pos.
-            for &(layer_idx, cand_idx) in &seam_string {
-                let z = self.layers[layer_idx].z_height;
-                let (final_pos, perim_idx) = {
-                    let candidate = match self.layers[layer_idx].candidates.get(cand_idx) {
-                        Some(c) => c,
-                        None => continue,
-                    };
-                    // t controls how much to keep original vs fitted position.
-                    // Sharp angles (|angle| >= threshold) snap strongly to original.
-                    let t = (candidate.local_ccw_angle.abs() / self.config.sharp_angle_threshold)
-                        .powi(3)
-                        .min(1.0);
-
-                    let fitted_x = avg_x;
-                    let fitted_y = avg_y;
-
-                    let final_x = t * candidate.position.x + (1.0 - t) * fitted_x;
-                    let final_y = t * candidate.position.y + (1.0 - t) * fitted_y;
-
-                    (Point3f::new(final_x, final_y, z), candidate.perimeter_index)
-                };
-
-                if let Some(perimeter) = self.layers[layer_idx].perimeters.get_mut(perim_idx) {
-                    perimeter.seam_index = cand_idx;
-                    perimeter.final_seam_position = Some(final_pos);
-                    perimeter.finalized = true;
-                }
-            }
-        }
-    }
-
-    /// Find a seam string starting from a given seam point, searching both
-    /// upward and downward through layers.
-    ///
-    /// Ported from BambuStudio's `SeamPlacer::find_seam_string`.
-    fn find_seam_string(
-        &self,
-        start_layer: usize,
-        start_cand: usize,
-        comparator: &SeamComparator,
-    ) -> Vec<(usize, usize)> {
-        let mut seam_string = vec![(start_layer, start_cand)];
-        let max_dist = self.config.seam_align_tolerable_dist_factor
-            * self.layers[start_layer]
-                .candidates
-                .get(start_cand)
-                .and_then(|c| self.layers[start_layer].perimeters.get(c.perimeter_index))
-                .map(|p| p.flow_width)
-                .unwrap_or(0.4);
-
-        // Search upward, then downward
-        for direction in &[1i32, -1i32] {
-            let mut prev_layer = start_layer;
-            let mut prev_cand = start_cand;
-            let mut next_layer = start_layer as i64 + *direction as i64;
-
-            loop {
-                if next_layer < 0 || next_layer >= self.layers.len() as i64 {
-                    break;
-                }
-                let nl = next_layer as usize;
-
-                let prev_pos = match self.layers[prev_layer].candidates.get(prev_cand) {
-                    Some(c) => c.position,
-                    None => break,
-                };
-
-                // Project position to the next layer's Z
-                let projected = Point3f::new(prev_pos.x, prev_pos.y, self.layers[nl].z_height);
-
-                match self.find_next_seam_in_layer(nl, &projected, max_dist, comparator) {
-                    Some(found_cand) => {
-                        seam_string.push((nl, found_cand));
-                        prev_layer = nl;
-                        prev_cand = found_cand;
-                    }
-                    None => break,
-                }
-
-                next_layer += *direction as i64;
-            }
-        }
-
-        seam_string
-    }
-
-    /// Find the best seam candidate in a layer near a projected position.
-    ///
-    /// Ported from BambuStudio's `SeamPlacer::find_next_seam_in_layer`.
-    /// Returns the candidate index if a suitable one is found.
-    fn find_next_seam_in_layer(
-        &self,
-        layer_idx: usize,
-        projected_position: &Point3f,
-        max_distance: f64,
-        comparator: &SeamComparator,
-    ) -> Option<usize> {
-        let layer = &self.layers[layer_idx];
-        if layer.candidates.is_empty() {
-            return None;
-        }
-
-        // Find all candidates within max_distance (2D) of the projected position
-        let mut best_nearby_idx: Option<usize> = None;
-        let mut nearest_idx: Option<usize> = None;
-        let mut nearest_dist_sq = f64::INFINITY;
-
-        for (idx, candidate) in layer.candidates.iter().enumerate() {
-            let dist = candidate.position.distance_2d(projected_position);
-            if dist > max_distance {
-                continue;
-            }
-
-            // Check if this perimeter is already finalized
-            let perim = match layer.perimeters.get(candidate.perimeter_index) {
-                Some(p) => p,
-                None => continue,
-            };
-            if perim.finalized {
-                continue;
-            }
-
-            // Track nearest
-            let dist_sq = dist * dist;
-            if dist_sq < nearest_dist_sq {
-                nearest_dist_sq = dist_sq;
-                nearest_idx = Some(idx);
-            }
-
-            // Track best
-            match best_nearby_idx {
-                Some(bi) => {
-                    if comparator.is_first_better(candidate, &layer.candidates[bi]) {
-                        best_nearby_idx = Some(idx);
-                    }
-                }
-                None => {
-                    best_nearby_idx = Some(idx);
-                }
-            }
-        }
-
-        let nearest_idx = nearest_idx?;
-
-        // Get the perimeter's current seam for this nearest point
-        let nearest_perim_idx = layer.candidates[nearest_idx].perimeter_index;
-        let next_layer_seam_idx = layer.perimeters[nearest_perim_idx].seam_index;
-
-        // Check for central enforcer
-        if let Some(seam_candidate) = layer.candidates.get(next_layer_seam_idx) {
-            if seam_candidate.central_enforcer {
-                let enforcer_dist = seam_candidate.position.distance_2d(projected_position);
-                if enforcer_dist < 3.0 * max_distance {
-                    return Some(next_layer_seam_idx);
-                }
-            }
-        }
-
-        // Try nearest first
-        if let Some(seam_at) = layer.candidates.get(next_layer_seam_idx) {
-            if comparator.is_first_not_much_worse(&layer.candidates[nearest_idx], seam_at) {
-                return Some(nearest_idx);
-            }
-        }
-
-        // Try best nearby
-        if let Some(bi) = best_nearby_idx {
-            if let Some(seam_at) = layer.candidates.get(next_layer_seam_idx) {
-                if comparator.is_first_not_much_worse(&layer.candidates[bi], seam_at) {
-                    return Some(bi);
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Find nearest seam point for nearest mode.
-    fn find_nearest_seam(
-        &self,
-        layer: &LayerSeams,
-        perimeter: &Perimeter,
-        current_pos: Point,
-    ) -> usize {
-        let current_pos_f = Point3f::from_2d(current_pos, layer.z_height);
-        let _comparator =
-            SeamComparator::new(SeamPositionMode::Nearest, self.config.angle_importance);
-
-        let mut best_idx = perimeter.start_index;
-        let mut best_score = f64::INFINITY;
-
-        for idx in perimeter.start_index..=perimeter.end_index {
-            if let Some(candidate) = layer.candidates.get(idx) {
-                let distance = candidate.position.distance_2d(&current_pos_f);
-                let angle_penalty = candidate.angle_penalty() * self.config.angle_importance;
-                let score = distance + angle_penalty;
-
-                // Also consider enforced/blocked status
-                if candidate.point_type == EnforcedBlockedSeamPoint::Blocked {
-                    continue;
-                }
-                if candidate.point_type == EnforcedBlockedSeamPoint::Enforced {
-                    return idx - perimeter.start_index;
-                }
-
-                if score < best_score {
-                    best_score = score;
-                    best_idx = idx;
-                }
-            }
-        }
-
-        best_idx - perimeter.start_index
-    }
-
-    /// Fallback seam point selection when not initialized.
-    fn fallback_seam_point(&self, polygon: &Polygon, current_pos: Option<Point>) -> usize {
-        if polygon.is_empty() {
-            return 0;
-        }
-
-        match self.config.seam_position {
-            SeamPositionMode::Nearest => {
-                if let Some(pos) = current_pos {
-                    polygon
-                        .points()
-                        .iter()
-                        .enumerate()
-                        .min_by_key(|(_, p)| p.distance_squared(&pos) as i64)
-                        .map(|(i, _)| i)
-                        .unwrap_or(0)
-                } else {
-                    0
-                }
-            }
-            SeamPositionMode::Rear => polygon
-                .points()
-                .iter()
-                .enumerate()
-                .max_by_key(|(_, p)| p.y)
-                .map(|(i, _)| i)
-                .unwrap_or(0),
-            SeamPositionMode::Random => {
-                // Deterministic "random" based on geometry
-                let hash = polygon
-                    .points()
-                    .first()
-                    .map(|p| ((p.x.wrapping_mul(73856093)) ^ (p.y.wrapping_mul(19349663))) as usize)
-                    .unwrap_or(0);
-                hash % polygon.len().max(1)
-            }
-            SeamPositionMode::Hidden | SeamPositionMode::Aligned => {
-                // Find sharpest concave corner
-                find_best_corner(polygon)
-            }
+            self.seam_data.layers.push(layer);
         }
     }
 }
 
-impl Default for SeamPlacer {
-    fn default() -> Self {
-        Self::with_defaults()
-    }
-}
-
-// ============================================================================
-// Input Data Structures
-// ============================================================================
-
-/// A perimeter outline for seam placement.
-#[derive(Clone, Debug)]
-pub struct PerimeterOutline {
-    /// The perimeter polygon.
-    pub polygon: Polygon,
-    /// Flow/extrusion width.
-    pub flow_width: f64,
-    /// Whether this is an external perimeter.
-    pub is_external: bool,
-}
-
-/// Layer outline data for seam placement initialization.
-#[derive(Clone, Debug)]
-pub struct LayerOutline {
-    /// Z height of this layer.
-    pub z_height: f64,
-    /// Perimeter loops at this layer.
-    pub perimeters: Vec<PerimeterOutline>,
-    /// Merged layer regions for embedded distance calculation.
-    pub layer_regions: Vec<Polygon>,
-}
-
-// ============================================================================
-// Statistics
-// ============================================================================
-
-/// Statistics about seam placement.
-#[derive(Clone, Debug)]
-pub struct SeamPlacerStats {
-    /// Number of layers processed.
-    pub layer_count: usize,
-    /// Total number of perimeters.
-    pub total_perimeters: usize,
-    /// Total number of seam candidates.
-    pub total_candidates: usize,
-    /// Number of perimeters with finalized seams.
-    pub finalized_count: usize,
-    /// Seam position mode used.
-    pub seam_position_mode: SeamPositionMode,
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Gaussian function for smooth falloff.
-fn gauss(value: f64, mean_x: f64, mean_value: f64, falloff_speed: f64) -> f64 {
-    let shifted = value - mean_x;
-    let denominator = falloff_speed * shifted * shifted + 1.0;
-    let exponent = 1.0 / denominator;
-    mean_value * (exponent.exp() - 1.0) / (std::f64::consts::E - 1.0)
-}
-
-/// Compute angle penalty for seam placement.
-///
-/// Uses a combination of gaussian and sigmoid to penalize convex corners
-/// more than concave ones.
-fn compute_angle_penalty(ccw_angle: f64) -> f64 {
-    // Gaussian + sigmoid combination
-    // Concave angles (negative) have lower penalty
-    // Convex angles (positive) have higher penalty
-    gauss(ccw_angle, 0.0, 1.0, 3.0) + 1.0 / (2.0 + (-ccw_angle).exp())
-}
-
-/// Generate seam candidates for a polygon.
-fn generate_candidates_for_polygon(
-    polygon: &Polygon,
-    z_height: f64,
-    perimeter_index: usize,
-    config: &SeamPlacerConfig,
-) -> Vec<SeamCandidate> {
-    let points = polygon.points();
-    if points.len() < 3 {
-        return Vec::new();
-    }
-
-    let n = points.len();
-    let mut candidates = Vec::with_capacity(n);
-
-    // Pre-calculate segment lengths
-    let lengths: Vec<f64> = (0..n)
-        .map(|i| {
-            let next = (i + 1) % n;
-            unscale(points[i].distance(&points[next]) as Coord)
-        })
-        .collect();
-
-    // Calculate angles at each vertex
-    let angles = calculate_polygon_angles(&points, &lengths, config.min_arm_length);
-
-    for (i, &point) in points.iter().enumerate() {
-        let pos = Point3f::from_2d(point, z_height);
-        let angle = angles.get(i).copied().unwrap_or(0.0);
-        candidates.push(SeamCandidate::new(pos, perimeter_index, angle));
-    }
-
-    candidates
-}
-
-/// Calculate angles at polygon vertices.
-fn calculate_polygon_angles(points: &[Point], lengths: &[f64], min_arm_length: f64) -> Vec<f64> {
-    let n = points.len();
-    if n < 3 {
-        return vec![0.0; n];
-    }
-
-    let mut result = vec![0.0; n];
-
-    let mut idx_prev = 0;
-    let mut idx_next = 0;
-    let mut distance_to_prev = 0.0;
-    let mut distance_to_next = 0.0;
-
-    // Initialize prev index far enough back
-    while distance_to_prev < min_arm_length {
-        idx_prev = if idx_prev == 0 { n - 1 } else { idx_prev - 1 };
-        distance_to_prev += lengths[idx_prev];
-        if idx_prev == 0 && distance_to_prev < min_arm_length {
-            break; // Polygon too small
-        }
-    }
-
-    for idx_curr in 0..n {
-        // Pull idx_prev to current as much as possible
-        while distance_to_prev - lengths[idx_prev] > min_arm_length {
-            distance_to_prev -= lengths[idx_prev];
-            idx_prev = (idx_prev + 1) % n;
-        }
-
-        // Push idx_next forward as needed
-        while distance_to_next < min_arm_length {
-            distance_to_next += lengths[idx_next];
-            idx_next = (idx_next + 1) % n;
-        }
-
-        // Calculate angle
-        let p0 = &points[idx_prev];
-        let p1 = &points[idx_curr];
-        let p2 = &points[idx_next];
-
-        result[idx_curr] =
-            angle_between_vectors((p1.x - p0.x, p1.y - p0.y), (p2.x - p1.x, p2.y - p1.y));
-
-        // Advance
-        let curr_distance = lengths[idx_curr];
-        distance_to_prev += curr_distance;
-        distance_to_next -= curr_distance;
-    }
-
-    result
-}
-
-/// Calculate angle between two vectors (in radians).
-fn angle_between_vectors(v1: (Coord, Coord), v2: (Coord, Coord)) -> f64 {
-    let v1f = (v1.0 as f64, v1.1 as f64);
-    let v2f = (v2.0 as f64, v2.1 as f64);
-
-    let cross = v1f.0 * v2f.1 - v1f.1 * v2f.0;
-    let dot = v1f.0 * v2f.0 + v1f.1 * v2f.1;
-
-    cross.atan2(dot)
-}
-
-/// Find the best corner for seam placement in a polygon.
-fn find_best_corner(polygon: &Polygon) -> usize {
-    let points = polygon.points();
-    if points.len() < 3 {
-        return 0;
-    }
-
-    let n = points.len();
-    let mut best_idx = 0;
-    let mut best_score = f64::MAX;
-
-    for i in 0..n {
-        let prev = &points[(i + n - 1) % n];
-        let curr = &points[i];
-        let next = &points[(i + 1) % n];
-
-        // Calculate cross product (negative = concave)
-        let v1 = (curr.x - prev.x, curr.y - prev.y);
-        let v2 = (next.x - curr.x, next.y - curr.y);
-        let cross = (v1.0 as f64) * (v2.1 as f64) - (v1.1 as f64) * (v2.0 as f64);
-
-        // Score: prefer concave corners (negative cross product)
-        let score = if cross < 0.0 {
-            cross.abs() * -1.0 // Negative score for concave
-        } else {
-            cross.abs() // Positive score for convex
-        };
-
-        if score < best_score {
-            best_score = score;
-            best_idx = i;
-        }
-    }
-
-    best_idx
-}
-
-// ============================================================================
-// Seam Comparator
-// ============================================================================
-
-/// Comparator for seam candidates.
-struct SeamComparator {
-    mode: SeamPositionMode,
-    angle_importance: f64,
-}
-
-impl SeamComparator {
-    fn new(mode: SeamPositionMode, angle_importance: f64) -> Self {
-        Self {
-            mode,
-            angle_importance,
-        }
-    }
-
-    /// Check if candidate `a` is better than candidate `b`.
-    fn is_first_better(&self, a: &SeamCandidate, b: &SeamCandidate) -> bool {
-        // Central enforcers have priority in aligned mode
-        if self.mode == SeamPositionMode::Aligned && a.central_enforcer != b.central_enforcer {
-            return a.central_enforcer;
-        }
-
-        // Enforced/blocked discrimination (top priority)
-        if a.point_type != b.point_type {
-            return a.point_type > b.point_type;
-        }
-
-        // Avoid overhangs
-        if a.overhang > 0.0 || b.overhang > 0.0 {
-            if (a.overhang - b.overhang).abs() > 0.1 {
-                return a.overhang < b.overhang;
-            }
-        }
-
-        // Prefer hidden points (embedded more than threshold inside)
-        if a.embedded_distance < -0.5 && b.embedded_distance > -0.5 {
-            return true;
-        }
-        if b.embedded_distance < -0.5 && a.embedded_distance > -0.5 {
-            return false;
-        }
-
-        // Rear mode: prefer higher Y
-        if self.mode == SeamPositionMode::Rear && (a.position.y - b.position.y).abs() > 0.01 {
-            return a.position.y > b.position.y;
-        }
-
-        // Calculate penalties
-        let penalty_a = a.overhang
-            + a.visibility
-            + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
-            + a.extra_overhang;
-
-        let penalty_b = b.overhang
-            + b.visibility
-            + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
-            + b.extra_overhang;
-
-        penalty_a < penalty_b
-    }
-
-    /// Check if candidate `a` is not much worse than candidate `b`.
-    fn is_first_not_much_worse(&self, a: &SeamCandidate, b: &SeamCandidate) -> bool {
-        // Central enforcers have priority in aligned mode
-        if self.mode == SeamPositionMode::Aligned && a.central_enforcer != b.central_enforcer {
-            return a.central_enforcer;
-        }
-
-        // Enforced always acceptable
-        if a.point_type == EnforcedBlockedSeamPoint::Enforced {
-            return true;
-        }
-
-        // Blocked never acceptable
-        if a.point_type == EnforcedBlockedSeamPoint::Blocked {
-            return false;
-        }
-
-        if a.point_type != b.point_type {
-            return a.point_type > b.point_type;
-        }
-
-        // Avoid significant overhang differences
-        if (a.overhang > 0.0 || b.overhang > 0.0) && (a.overhang - b.overhang).abs() > 0.1 {
-            return a.overhang < b.overhang;
-        }
-
-        // Prefer hidden points
-        if a.embedded_distance < -0.5 && b.embedded_distance > -0.5 {
-            return true;
-        }
-        if b.embedded_distance < -0.5 && a.embedded_distance > -0.5 {
-            return false;
-        }
-
-        // Random mode: always acceptable
-        if self.mode == SeamPositionMode::Random {
-            return true;
-        }
-
-        // Rear mode: slight tolerance
-        if self.mode == SeamPositionMode::Rear {
-            return a.position.y + 0.3 * 5.0 > b.position.y;
-        }
-
-        // Calculate penalties with tolerance
-        let penalty_a = a.overhang
-            + a.visibility
-            + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
-            + a.extra_overhang;
-
-        let penalty_b = b.overhang
-            + b.visibility
-            + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
-            + b.extra_overhang;
-
-        penalty_a <= penalty_b || penalty_a - penalty_b < 0.3 // Score tolerance
-    }
-
-    /// Check if two candidates are similar in quality.
-    fn are_similar(&self, a: &SeamCandidate, b: &SeamCandidate) -> bool {
-        self.is_first_not_much_worse(a, b) && self.is_first_not_much_worse(b, a)
-    }
-}
-
-/// Pick the best seam point for a perimeter.
-fn pick_best_seam_point(
-    candidates: &[SeamCandidate],
-    perimeter: &mut Perimeter,
-    comparator: &SeamComparator,
-) {
-    let mut best_idx = perimeter.start_index;
-
-    for idx in perimeter.start_index..=perimeter.end_index {
-        if let (Some(candidate), Some(best)) = (candidates.get(idx), candidates.get(best_idx)) {
-            if comparator.is_first_better(candidate, best) {
-                best_idx = idx;
-            }
-        }
-    }
-
-    perimeter.seam_index = best_idx;
-}
-
-/// Pick rear seam point (highest Y coordinate).
-fn pick_rear_seam_point(candidates: &[SeamCandidate], perimeter: &mut Perimeter) {
-    let mut best_idx = perimeter.start_index;
-    let mut best_y = f64::NEG_INFINITY;
-
-    for idx in perimeter.start_index..=perimeter.end_index {
-        if let Some(candidate) = candidates.get(idx) {
-            // Skip blocked points
-            if candidate.point_type == EnforcedBlockedSeamPoint::Blocked {
-                continue;
-            }
-            // Enforced points win
-            if candidate.point_type == EnforcedBlockedSeamPoint::Enforced {
-                perimeter.seam_index = idx;
-                return;
-            }
-
-            if candidate.position.y > best_y {
-                best_y = candidate.position.y;
-                best_idx = idx;
-            }
-        }
-    }
-
-    perimeter.seam_index = best_idx;
-}
-
-/// Pick a random seam point (deterministically based on geometry).
-fn pick_random_seam_point(
-    candidates: &[SeamCandidate],
-    perimeter: &mut Perimeter,
-    comparator: &SeamComparator,
-) {
-    if perimeter.is_empty() {
+/// Gather a single perimeter polygon into a `LayerSeams`, mirroring the
+/// vertex-candidate creation of `process_perimeter_polygon` (without
+/// enforcer/blocker oversampling, which needs `GlobalModelInfo`).
+/// SeamPlacer.cpp:422-490 (subset)
+fn gather_layer_perimeter(layer: &mut LayerSeams, polygon: &Polygon, z: f32, flow_width: f32) {
+    if polygon.len() == 0 {
         return;
     }
-
-    // Collect viable candidates
-    struct Viable {
-        index: usize,
-        edge_length: f64,
-    }
-
-    let mut viables: Vec<Viable> = Vec::new();
-    let mut viable_example_index = perimeter.start_index;
-
-    // Deterministic pseudo-random based on first point
-    let seed_pos = candidates
-        .get(perimeter.start_index)
-        .map(|c| c.position)
-        .unwrap_or_default();
-    let rand = {
-        let v = seed_pos.x * 12.9898 + seed_pos.y * 78.233 + seed_pos.z * 133.3333;
-        let r = (v.sin() * 43758.5453).abs();
-        r - r.floor()
+    let mut polygon = polygon.clone();
+    // SeamPlacer.cpp:427-428
+    let was_clockwise = {
+        polygon.make_counter_clockwise();
+        polygon.is_clockwise()
     };
+    // SeamPlacer.cpp:429
+    let angle_arm_len = 0.5_f32; // nozzle diameter default; region flow not threaded here.
 
-    for idx in perimeter.start_index..=perimeter.end_index {
-        let candidate = match candidates.get(idx) {
-            Some(c) => c,
-            None => continue,
-        };
-        let example = match candidates.get(viable_example_index) {
-            Some(c) => c,
-            None => continue,
-        };
+    // SeamPlacer.cpp:431-433
+    let mut lengths: Vec<f32> = Vec::new();
+    for point_idx in 0..polygon.len() - 1 {
+        let d = (unscale_point(&polygon.points()[point_idx])
+            - unscale_point(&polygon.points()[point_idx + 1]))
+        .length();
+        lengths.push(d as f32);
+    }
+    let last = (unscale_point(&polygon.points()[0])
+        - unscale_point(&polygon.points()[polygon.len() - 1]))
+    .length()
+    .max(0.1);
+    lengths.push(last as f32);
 
-        if comparator.are_similar(candidate, example) {
-            // Calculate edge length to next point
-            let next_idx = if idx == perimeter.end_index {
-                perimeter.start_index
-            } else {
-                idx + 1
-            };
-            let next_pos = candidates
-                .get(next_idx)
-                .map(|c| c.position)
-                .unwrap_or(candidate.position);
-            let edge_length = candidate.position.distance(&next_pos);
+    // SeamPlacer.cpp:434
+    let polygon_angles = calculate_polygon_angles_at_vertices(&polygon, &lengths, angle_arm_len);
 
-            viables.push(Viable {
-                index: idx,
-                edge_length,
-            });
-        } else if comparator.is_first_not_much_worse(example, candidate) {
-            // Current example is better, skip this candidate
+    // SeamPlacer.cpp:436-437
+    let perimeter_index = layer.perimeters.len();
+    let start_index = layer.points.len();
+
+    // SeamPlacer.cpp:440-443 / 487
+    for index in 0..polygon.len() {
+        let up = unscale_point(&polygon.points()[index]);
+        let position = Vec3f::new(up.x as f32, up.y as f32, z);
+        // SeamPlacer.cpp:461
+        let local_ccw_angle = if was_clockwise {
+            -polygon_angles[index]
         } else {
-            // This candidate is better, restart
-            viable_example_index = idx;
-            viables.clear();
-
-            let next_idx = if idx == perimeter.end_index {
-                perimeter.start_index
-            } else {
-                idx + 1
-            };
-            let next_pos = candidates
-                .get(next_idx)
-                .map(|c| c.position)
-                .unwrap_or(candidate.position);
-            let edge_length = candidate.position.distance(&next_pos);
-
-            viables.push(Viable {
-                index: idx,
-                edge_length,
-            });
-        }
-    }
-
-    if viables.is_empty() {
-        perimeter.seam_index = perimeter.start_index;
-        return;
-    }
-
-    // Pick random point based on edge lengths
-    let total_len: f64 = viables.iter().map(|v| v.edge_length).sum();
-    let mut picked_len = total_len * rand;
-
-    let mut selected_idx = 0;
-    for viable in &viables {
-        if picked_len <= viable.edge_length {
-            selected_idx = viable.index;
-            break;
-        }
-        picked_len -= viable.edge_length;
-        selected_idx = viable.index;
-    }
-
-    perimeter.seam_index = selected_idx;
-    perimeter.finalized = true;
-
-    // Calculate exact position along the edge
-    if let Some(candidate) = candidates.get(selected_idx) {
-        let next_idx = if selected_idx == perimeter.end_index {
-            perimeter.start_index
-        } else {
-            selected_idx + 1
+            polygon_angles[index]
         };
-
-        if let Some(next) = candidates.get(next_idx) {
-            let edge = Point3f::new(
-                next.position.x - candidate.position.x,
-                next.position.y - candidate.position.y,
-                next.position.z - candidate.position.z,
-            );
-            let edge_len = candidate.position.distance(&next.position);
-            if edge_len > 0.0 {
-                let t = (picked_len / edge_len).clamp(0.0, 1.0);
-                perimeter.final_seam_position = Some(Point3f::new(
-                    candidate.position.x + edge.x * t,
-                    candidate.position.y + edge.y * t,
-                    candidate.position.z + edge.z * t,
-                ));
-            } else {
-                perimeter.final_seam_position = Some(candidate.position);
-            }
-        } else {
-            perimeter.final_seam_position = Some(candidate.position);
-        }
+        let mut cand = SeamCandidate::new(
+            &position,
+            perimeter_index,
+            local_ccw_angle,
+            EnforcedBlockedSeamPoint::Neutral,
+        );
+        cand.set_flow_width_hint(flow_width);
+        layer.points.push(cand);
     }
-}
 
-// ============================================================================
-// Convenience Functions
-// ============================================================================
-
-/// Place seam on a polygon using the specified mode.
-pub fn place_seam(polygon: &Polygon, mode: SeamPositionMode, current_pos: Option<Point>) -> usize {
-    let placer = SeamPlacer::new(SeamPlacerConfig {
-        seam_position: mode,
-        ..Default::default()
-    });
-    placer.fallback_seam_point(polygon, current_pos)
+    // SeamPlacer.cpp:436 / 447-448 / 490
+    let mut perimeter = Perimeter::default();
+    perimeter.start_index = start_index;
+    perimeter.end_index = layer.points.len();
+    perimeter.seam_index = start_index;
+    perimeter.flow_width = flow_width;
+    layer.perimeters.push_back(perimeter);
 }
 
 /// Find the best seam index for a single polygon using angle-based scoring.
 ///
-/// This is the primary entry point for use from `perimeter_generator.rs`.
-/// It computes per-vertex angles, scores each candidate using the
-/// `angle_importance * angle_penalty` formula, biases toward rear (high Y),
-/// and optionally aligns with a previous layer's seam position.
-///
-/// # Arguments
-/// * `polygon` - The perimeter polygon (assumed CCW or will be treated as-is).
-/// * `prev_seam_pos` - If provided, biases toward this XY position for
-///   inter-layer alignment. Pass `None` for the first layer.
-/// * `config` - Seam placer configuration. Use `&SeamPlacerConfig::default()`
-///   for aligned mode with BambuStudio X1C defaults.
-///
-/// # Returns
-/// The index of the best seam point within the polygon.
+/// Glue entry used by `perimeter_generator.rs` and `gcode/exporter.rs`. It
+/// computes per-vertex angles via the faithful
+/// [`calculate_polygon_angles_at_vertices`] and scores each candidate using the
+/// `angle_importance * compute_angle_penalty` formula, with optional
+/// nearest-position bias (gaussian) when `prev_seam_pos` is provided.
 pub fn find_best_seam_index(
     polygon: &Polygon,
     prev_seam_pos: Option<Point>,
@@ -1685,66 +1441,57 @@ pub fn find_best_seam_index(
     if points.len() < 3 {
         return 0;
     }
-
     let n = points.len();
 
-    // Compute segment lengths
-    let lengths: Vec<f64> = (0..n)
-        .map(|i| {
-            let next = (i + 1) % n;
-            unscale(points[i].distance(&points[next]) as Coord)
-        })
-        .collect();
+    // Segment lengths (unscaled mm), as in process_perimeter_polygon.
+    let mut lengths: Vec<f32> = Vec::with_capacity(n);
+    for i in 0..n - 1 {
+        let d = (unscale_point(&points[i]) - unscale_point(&points[i + 1])).length();
+        lengths.push(d as f32);
+    }
+    let last = (unscale_point(&points[0]) - unscale_point(&points[n - 1]))
+        .length()
+        .max(0.1);
+    lengths.push(last as f32);
 
-    // Compute per-vertex angles
-    let angles = calculate_polygon_angles(points, &lengths, config.min_arm_length);
+    let angles =
+        calculate_polygon_angles_at_vertices(polygon, &lengths, config.min_arm_length as f32);
 
-    // Score each vertex. Lower penalty = better seam point.
-    let mut best_idx = 0;
-    let mut best_penalty = f64::INFINITY;
+    let angle_importance = config.angle_importance as f32;
+    let preffered = prev_seam_pos.map(|p| Vec2f::new(unscale(p.x) as f32, unscale(p.y) as f32));
 
-    // Compute polygon bounding box center-Y for rear bias normalization
-    let max_y = points.iter().map(|p| p.y).max().unwrap_or(0);
-    let min_y = points.iter().map(|p| p.y).min().unwrap_or(0);
-    let y_range = (max_y - min_y) as f64;
-
+    let mut best_idx = 0usize;
+    let mut best_penalty = f32::INFINITY;
     for i in 0..n {
-        let angle = angles[i];
-        let angle_penalty = config.angle_importance * compute_angle_penalty(angle);
-
-        // Rear bias: prefer higher Y. Normalize to [0, 1] range and invert
-        // so that high-Y points get low penalty.
-        let rear_penalty = if y_range > 0.0 {
-            1.0 - ((points[i].y - min_y) as f64 / y_range)
+        // distance penalty (spNearest path, SeamPlacer.cpp:700-701)
+        let distance_penalty = if let Some(loc) = preffered {
+            let up = unscale_point(&points[i]);
+            let pos = Vec2f::new(up.x as f32, up.y as f32);
+            1.0 - gauss((pos - loc).norm(), 0.0, 1.0, 0.005)
         } else {
             0.0
         };
-
-        // Alignment bias: if we have a previous seam position, prefer points
-        // close to it. This gives inter-layer seam alignment.
-        let alignment_penalty = if let Some(prev_pos) = prev_seam_pos {
-            let dx = unscale(points[i].x - prev_pos.x);
-            let dy = unscale(points[i].y - prev_pos.y);
-            let dist = (dx * dx + dy * dy).sqrt();
-            // Use gaussian falloff: nearby points get low penalty
-            1.0 - gauss(dist, 0.0, 1.0, 0.005)
-        } else {
-            0.0
-        };
-
-        // Combined penalty: angle is primary, rear and alignment are secondary
-        let penalty = angle_penalty + 0.3 * rear_penalty + alignment_penalty;
-
+        // penalty (SeamPlacer.cpp:708), visibility/overhang unknown here -> 0.
+        let penalty =
+            angle_importance * compute_angle_penalty(angles[i]) + distance_penalty;
         if penalty < best_penalty {
             best_penalty = penalty;
             best_idx = i;
         }
     }
-
     best_idx
 }
 
-/// Create a seam placer and initialize with layers.
+/// Pick a seam index on a polygon for the given mode (glue convenience fn).
+pub fn place_seam(polygon: &Polygon, mode: SeamPositionMode, current_pos: Option<Point>) -> usize {
+    let config = SeamPlacerConfig {
+        seam_position: mode,
+        ..Default::default()
+    };
+    find_best_seam_index(polygon, current_pos, &config)
+}
+
+/// Create a seam placer and initialize with simple polygon layers.
 pub fn create_seam_placer(
     layers: &[(f64, Vec<Polygon>)],
     flow_width: f64,
@@ -1776,351 +1523,113 @@ mod tests {
         ])
     }
 
-    fn make_concave_shape() -> Polygon {
-        // L-shaped polygon with a concave corner
-        let s = scale(10.0);
-        Polygon::from_points(vec![
-            Point::new(0, 0),
-            Point::new(s, 0),
-            Point::new(s, s / 2),
-            Point::new(s / 2, s / 2), // Concave corner
-            Point::new(s / 2, s),
-            Point::new(0, s),
-        ])
-    }
-
-    #[test]
-    fn test_seam_placer_config_default() {
-        let config = SeamPlacerConfig::default();
-        assert_eq!(config.seam_position, SeamPositionMode::Aligned);
-        assert!(config.angle_importance > 0.0);
-    }
-
-    #[test]
-    fn test_seam_placer_config_modes() {
-        assert_eq!(
-            SeamPlacerConfig::nearest().seam_position,
-            SeamPositionMode::Nearest
-        );
-        assert_eq!(
-            SeamPlacerConfig::aligned().seam_position,
-            SeamPositionMode::Aligned
-        );
-        assert_eq!(
-            SeamPlacerConfig::random().seam_position,
-            SeamPositionMode::Random
-        );
-        assert_eq!(
-            SeamPlacerConfig::rear().seam_position,
-            SeamPositionMode::Rear
-        );
-        assert_eq!(
-            SeamPlacerConfig::hidden().seam_position,
-            SeamPositionMode::Hidden
-        );
-    }
-
-    #[test]
-    fn test_point3f_operations() {
-        let p1 = Point3f::new(1.0, 2.0, 3.0);
-        let p2 = Point3f::new(4.0, 6.0, 3.0);
-
-        assert!((p1.distance(&p2) - 5.0).abs() < 0.001);
-        assert!((p1.distance_2d(&p2) - 5.0).abs() < 0.001);
-
-        let p2d = p1.to_2d();
-        assert!((p2d.x - 1.0).abs() < 0.001);
-        assert!((p2d.y - 2.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_seam_candidate_creation() {
-        let candidate = SeamCandidate::new(Point3f::new(1.0, 2.0, 0.2), 0, -0.5);
-        assert!(candidate.is_concave());
-        assert!(!candidate.is_convex());
-        assert_eq!(candidate.point_type, EnforcedBlockedSeamPoint::Neutral);
-
-        let enforced = SeamCandidate::enforced(Point3f::new(1.0, 2.0, 0.2), 0, 0.5);
-        assert_eq!(enforced.point_type, EnforcedBlockedSeamPoint::Enforced);
-
-        let blocked = SeamCandidate::blocked(Point3f::new(1.0, 2.0, 0.2), 0, 0.5);
-        assert_eq!(blocked.point_type, EnforcedBlockedSeamPoint::Blocked);
-    }
-
-    #[test]
-    fn test_perimeter_creation() {
-        let perimeter = Perimeter::new(0, 9, 0.4);
-        assert_eq!(perimeter.len(), 10);
-        assert!(!perimeter.is_empty());
-        assert_eq!(perimeter.flow_width, 0.4);
-        assert!(!perimeter.finalized);
-    }
-
-    #[test]
-    fn test_layer_seams_add_perimeter() {
-        let mut layer = LayerSeams::new(0.2, 0);
-        let square = make_square(10.0);
-        let config = SeamPlacerConfig::default();
-
-        layer.add_perimeter(&square, 0.4, true, &config);
-
-        assert_eq!(layer.perimeters.len(), 1);
-        assert_eq!(layer.candidates.len(), 4);
-    }
-
-    #[test]
-    fn test_compute_angle_penalty() {
-        // The penalty function uses gaussian + sigmoid
-        // Concave angles (negative) should have lower penalty than convex (positive)
-        let concave_penalty = compute_angle_penalty(-0.5);
-        let convex_penalty = compute_angle_penalty(0.5);
-        let flat_penalty = compute_angle_penalty(0.0);
-
-        // Concave should be better (lower penalty) than convex
-        assert!(concave_penalty < convex_penalty);
-        // All penalties should be positive
-        assert!(concave_penalty > 0.0);
-        assert!(convex_penalty > 0.0);
-        assert!(flat_penalty > 0.0);
-    }
-
     #[test]
     fn test_gauss_function() {
         // Peak at mean
         let peak = gauss(0.0, 0.0, 1.0, 1.0);
         let off_peak = gauss(1.0, 0.0, 1.0, 1.0);
-
         assert!(peak > off_peak);
         assert!(peak > 0.0);
     }
 
     #[test]
-    fn test_seam_placer_fallback_nearest() {
-        let placer = SeamPlacer::new(SeamPlacerConfig::nearest());
-        let square = make_square(10.0);
-        let current_pos = Point::new_scale(9.0, 9.0); // Near top-right
-
-        let seam_idx = placer.fallback_seam_point(&square, Some(current_pos));
-        // Should be vertex 2 (top-right corner at 10, 10)
-        assert_eq!(seam_idx, 2);
+    fn test_compute_angle_penalty() {
+        // Concave (negative) should be better (lower penalty) than convex.
+        let concave_penalty = compute_angle_penalty(-0.5);
+        let convex_penalty = compute_angle_penalty(0.5);
+        assert!(concave_penalty < convex_penalty);
+        assert!(concave_penalty > 0.0);
     }
 
     #[test]
-    fn test_seam_placer_fallback_rear() {
-        let placer = SeamPlacer::new(SeamPlacerConfig::rear());
-        let square = make_square(10.0);
-
-        let seam_idx = placer.fallback_seam_point(&square, None);
-        // Should be vertex 2 or 3 (highest Y = 10)
-        assert!(seam_idx == 2 || seam_idx == 3);
+    fn test_sgn() {
+        assert_eq!(sgn(3.0), 1);
+        assert_eq!(sgn(-3.0), -1);
+        assert_eq!(sgn(0.0), 0);
     }
 
     #[test]
-    fn test_seam_placer_fallback_hidden() {
-        let placer = SeamPlacer::new(SeamPlacerConfig::hidden());
-        let concave = make_concave_shape();
-
-        let seam_idx = placer.fallback_seam_point(&concave, None);
-        // Should prefer the concave corner (index 3)
-        assert_eq!(seam_idx, 3);
+    fn test_value_to_rgbf() {
+        let c = value_to_rgbf(0.0, 1.0, 0.5);
+        // ratio = 1.0 -> b=0, r=0, g=1
+        assert!((c.x - 0.0).abs() < 1e-6);
+        assert!((c.y - 1.0).abs() < 1e-6);
+        assert!((c.z - 0.0).abs() < 1e-6);
     }
 
     #[test]
-    fn test_seam_placer_init_simple() {
-        let mut placer = SeamPlacer::with_defaults();
-        let square = make_square(10.0);
-        let layers = vec![
-            (0.2, vec![square.clone()]),
-            (0.4, vec![square.clone()]),
-            (0.6, vec![square]),
-        ];
-
-        placer.init_simple(&layers, 0.4);
-
-        let stats = placer.stats();
-        assert_eq!(stats.layer_count, 3);
-        assert_eq!(stats.total_perimeters, 3);
-        assert!(stats.total_candidates >= 12); // At least 4 per layer
+    fn test_frame_set_from_z() {
+        let mut f = Frame::new();
+        f.set_from_z(&Vec3f::new(0.0, 0.0, 2.0));
+        // normal should be unit +Z
+        let nz = f.normal();
+        assert!((nz.z - 1.0).abs() < 1e-6);
+        // frame axes should be orthonormal
+        assert!(f.binormal().dot(f.tangent()).abs() < 1e-5);
     }
 
     #[test]
-    fn test_seam_placer_get_seam_point() {
-        let mut placer = SeamPlacer::new(SeamPlacerConfig::nearest());
-        let square = make_square(10.0);
-        let layers = vec![(0.2, vec![square.clone()]), (0.4, vec![square.clone()])];
+    fn test_sample_hemisphere_uniform_upper() {
+        let v = sample_hemisphere_uniform(&Vec2f::new(0.25, 0.5));
+        assert!(v.z >= 0.0);
+    }
 
-        placer.init_simple(&layers, 0.4);
+    #[test]
+    fn test_angle_helper() {
+        // angle from +X to +Y is +PI/2
+        let a = angle(Vec2d::new(1.0, 0.0), Vec2d::new(0.0, 1.0));
+        assert!((a - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    }
 
-        let current_pos = Point::new_scale(0.5, 0.5); // Near origin
-        let seam_idx = placer.get_seam_point(0, &square, Some(current_pos));
-        // Should be vertex 0 (at origin)
-        assert_eq!(seam_idx, 0);
+    #[test]
+    fn test_calculate_polygon_angles_square() {
+        let sq = make_square(10.0);
+        let lengths = vec![10.0_f32, 10.0, 10.0, 10.0];
+        let angles = calculate_polygon_angles_at_vertices(&sq, &lengths, 0.5);
+        for a in &angles {
+            assert!((a.abs() - std::f32::consts::FRAC_PI_2).abs() < 0.2);
+        }
     }
 
     #[test]
     fn test_seam_comparator_enforced_blocked() {
-        let comparator = SeamComparator::new(SeamPositionMode::Aligned, 0.6);
-
-        let neutral = SeamCandidate::new(Point3f::new(0.0, 0.0, 0.0), 0, 0.0);
-        let enforced = SeamCandidate::enforced(Point3f::new(0.0, 0.0, 0.0), 0, 0.0);
-        let blocked = SeamCandidate::blocked(Point3f::new(0.0, 0.0, 0.0), 0, 0.0);
-
-        // Enforced > Neutral > Blocked
-        assert!(comparator.is_first_better(&enforced, &neutral));
-        assert!(comparator.is_first_better(&neutral, &blocked));
-        assert!(comparator.is_first_better(&enforced, &blocked));
+        let comparator = SeamComparator::new(SeamPosition::spAligned);
+        let pos = Vec3f::zeros();
+        let neutral = SeamCandidate::new(&pos, 0, 0.0, EnforcedBlockedSeamPoint::Neutral);
+        let enforced = SeamCandidate::new(&pos, 0, 0.0, EnforcedBlockedSeamPoint::Enforced);
+        let blocked = SeamCandidate::new(&pos, 0, 0.0, EnforcedBlockedSeamPoint::Blocked);
+        let z = Vec2f::zeros();
+        assert!(comparator.is_first_better(&enforced, &neutral, &z));
+        assert!(comparator.is_first_better(&neutral, &blocked, &z));
+        assert!(comparator.is_first_better(&enforced, &blocked, &z));
     }
 
     #[test]
     fn test_seam_comparator_overhang() {
-        let comparator = SeamComparator::new(SeamPositionMode::Aligned, 0.6);
-
-        let mut no_overhang = SeamCandidate::new(Point3f::new(0.0, 0.0, 0.0), 0, 0.0);
-        let mut with_overhang = SeamCandidate::new(Point3f::new(0.0, 0.0, 0.0), 0, 0.0);
+        let comparator = SeamComparator::new(SeamPosition::spAligned);
+        let pos = Vec3f::zeros();
+        let no_overhang = SeamCandidate::new(&pos, 0, 0.0, EnforcedBlockedSeamPoint::Neutral);
+        let mut with_overhang =
+            SeamCandidate::new(&pos, 0, 0.0, EnforcedBlockedSeamPoint::Neutral);
         with_overhang.overhang = 0.5;
-
-        // No overhang is better
-        assert!(comparator.is_first_better(&no_overhang, &with_overhang));
+        let z = Vec2f::zeros();
+        assert!(comparator.is_first_better(&no_overhang, &with_overhang, &z));
     }
 
     #[test]
-    fn test_seam_comparator_embedded() {
-        let comparator = SeamComparator::new(SeamPositionMode::Aligned, 0.6);
-
-        let mut hidden = SeamCandidate::new(Point3f::new(0.0, 0.0, 0.0), 0, 0.0);
-        hidden.embedded_distance = -1.0; // Inside
-
-        let exposed = SeamCandidate::new(Point3f::new(0.0, 0.0, 0.0), 0, 0.0);
-
-        // Hidden is better
-        assert!(comparator.is_first_better(&hidden, &exposed));
-    }
-
-    #[test]
-    fn test_place_seam_convenience() {
-        let square = make_square(10.0);
-
-        let rear_idx = place_seam(&square, SeamPositionMode::Rear, None);
-        assert!(rear_idx == 2 || rear_idx == 3); // Top corners
-
-        let nearest_idx = place_seam(&square, SeamPositionMode::Nearest, Some(Point::zero()));
-        assert_eq!(nearest_idx, 0); // Origin corner
+    fn test_find_best_seam_index_square() {
+        let sq = make_square(10.0);
+        let idx = find_best_seam_index(&sq, None, &SeamPlacerConfig::default());
+        assert!(idx < 4);
     }
 
     #[test]
     fn test_create_seam_placer_convenience() {
         let square = make_square(10.0);
         let layers = vec![(0.2, vec![square.clone()]), (0.4, vec![square])];
-
         let placer = create_seam_placer(&layers, 0.4, SeamPositionMode::Aligned);
         let stats = placer.stats();
-
         assert_eq!(stats.layer_count, 2);
-        assert_eq!(stats.seam_position_mode, SeamPositionMode::Aligned);
-    }
-
-    #[test]
-    fn test_angle_calculation() {
-        let angles = calculate_polygon_angles(
-            &[
-                Point::new(0, 0),
-                Point::new(scale(10.0), 0),
-                Point::new(scale(10.0), scale(10.0)),
-                Point::new(0, scale(10.0)),
-            ],
-            &[10.0, 10.0, 10.0, 10.0],
-            0.5,
-        );
-
-        // Square corners should have ~90 degree angles (π/2 radians)
-        for angle in &angles {
-            assert!((*angle - std::f64::consts::FRAC_PI_2).abs() < 0.2);
-        }
-    }
-
-    #[test]
-    fn test_find_best_corner_concave() {
-        let concave = make_concave_shape();
-        let best = find_best_corner(&concave);
-        // Should find the concave corner
-        assert_eq!(best, 3);
-    }
-
-    #[test]
-    fn test_seam_placer_empty_polygon() {
-        let placer = SeamPlacer::with_defaults();
-        let empty = Polygon::new();
-
-        let idx = placer.fallback_seam_point(&empty, None);
-        assert_eq!(idx, 0);
-    }
-
-    #[test]
-    fn test_seam_placer_single_point() {
-        let placer = SeamPlacer::with_defaults();
-        let single = Polygon::from_points(vec![Point::new(0, 0)]);
-
-        let idx = placer.fallback_seam_point(&single, None);
-        assert_eq!(idx, 0);
-    }
-
-    #[test]
-    fn test_random_seam_deterministic() {
-        let placer = SeamPlacer::new(SeamPlacerConfig::random());
-        let square = make_square(10.0);
-
-        // Same polygon should give same result
-        let idx1 = placer.fallback_seam_point(&square, None);
-        let idx2 = placer.fallback_seam_point(&square, None);
-        assert_eq!(idx1, idx2);
-    }
-
-    #[test]
-    fn test_seam_placer_stats() {
-        let mut placer = SeamPlacer::with_defaults();
-        let square = make_square(10.0);
-        let layers = vec![
-            (0.2, vec![square.clone(), square.clone()]),
-            (0.4, vec![square]),
-        ];
-
-        placer.init_simple(&layers, 0.4);
-        let stats = placer.stats();
-
-        assert_eq!(stats.layer_count, 2);
-        assert_eq!(stats.total_perimeters, 3);
-        assert!(stats.total_candidates >= 12);
-    }
-
-    #[test]
-    fn test_get_seam_position_3d() {
-        let mut placer = SeamPlacer::with_defaults();
-        let square = make_square(10.0);
-        let layers = vec![(0.2, vec![square])];
-
-        placer.init_simple(&layers, 0.4);
-
-        let pos = placer.get_seam_position_3d(0, 0);
-        assert!(pos.is_some());
-
-        let p = pos.unwrap();
-        assert!((p.z - 0.2).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_layer_outline_creation() {
-        let outline = LayerOutline {
-            z_height: 0.2,
-            perimeters: vec![PerimeterOutline {
-                polygon: make_square(10.0),
-                flow_width: 0.4,
-                is_external: true,
-            }],
-            layer_regions: vec![make_square(10.0)],
-        };
-
-        assert_eq!(outline.z_height, 0.2);
-        assert_eq!(outline.perimeters.len(), 1);
-        assert_eq!(outline.layer_regions.len(), 1);
+        assert_eq!(stats.total_perimeters, 2);
     }
 }

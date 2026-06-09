@@ -1,723 +1,1363 @@
-//! Travel path planning module.
+//! Faithful 1:1 port of `GCode/AvoidCrossingPerimeters.cpp` (+ `.hpp`) from
+//! BambuStudio/libslic3r.
 //!
-//! This module provides travel path optimization, including the AvoidCrossingPerimeters
-//! algorithm that routes travel moves around perimeter walls to avoid crossing them.
+//! This module routes travel moves around perimeter walls to avoid crossing
+//! them. The port preserves the C++ function order, names (snake_case),
+//! control flow, constants, and integer-vs-float arithmetic.
 //!
-//! # libslic3r Mapping
+//! # Parity notes
 //!
-//! This module corresponds to `GCode/AvoidCrossingPerimeters.cpp` and
-//! `GCode/AvoidCrossingPerimeters.hpp` in BambuStudio/libslic3r.
+//! - `coord_t` -> `i64` (`Point::x`/`y` are `i64`), `coordf_t` -> `f64`.
+//! - The C++ `.cast<double>()` on integer `Point`/`Vec2crd` is a *raw* cast
+//!   of the scaled integer value to `f64`. It is NOT `Point::to_f64()`, which
+//!   *unscales*. To preserve byte-exact arithmetic this port casts the raw
+//!   `i64` coordinates with `as f64` directly (see `cast_d` helper).
+//! - The C++ `EdgeGrid::Grid::line(idx)` accessor maps to the Rust
+//!   `EdgeGrid::segment(idx)` which returns the same `Line`.
 //!
-//! # Overview
+//! # Blocked symbols (NOT ported — see module-level `// BLOCKED:` comments)
 //!
-//! When the print head travels from one point to another without extruding, crossing
-//! over already-printed perimeter walls can leave visible marks on the surface.
-//! The AvoidCrossingPerimeters algorithm finds alternative travel paths that go
-//! around perimeters instead of through them.
+//! The following depend on libslic3r infrastructure that is not yet faithfully
+//! ported into this crate and are therefore omitted rather than faked:
 //!
-//! # Algorithm
-//!
-//! 1. Build boundary polygons from layer perimeters (offset inward slightly)
-//! 2. For each travel move, check if it crosses any boundaries
-//! 3. If crossing detected, find entry/exit points on the boundaries
-//! 4. Route around the boundary using shortest path (forward or backward)
-//! 5. Simplify the resulting path to remove unnecessary points
-//!
-//! # Example
-//!
-//! ```ignore
-//! use slicer::travel::{AvoidCrossingPerimeters, TravelConfig};
-//! use slicer::geometry::{Point, Polygon, Polyline};
-//!
-//! let boundaries = vec![/* layer perimeter polygons */];
-//! let config = TravelConfig::default();
-//! let mut avoid = AvoidCrossingPerimeters::new(config);
-//!
-//! avoid.init_layer(&boundaries, 200_000); // 0.2mm perimeter spacing
-//!
-//! let start = Point::new(100_000, 100_000);
-//! let end = Point::new(900_000, 900_000);
-//!
-//! let travel_path = avoid.travel_to(&start, &end);
-//! ```
+//! - `get_default_perimeter_spacing`, `get_perimeter_spacing`,
+//!   `get_perimeter_spacing_external`, `get_external_perimeter_width`:
+//!   require `Layer::object()`/`Layer::print()` back-references and
+//!   `LayerRegion::flow(FlowRole)` (the Rust `LayerRegion` only exposes
+//!   `flow_with_config`/`flow_with_height`, and `Layer` holds no
+//!   PrintObject/Print pointer).
+//! - `inner_offset`, `get_support_polygons`, `get_boundary`,
+//!   `get_boundary_external`: require `variable_offset_inner_ex`
+//!   (ClipperUtils.cpp:1390) which is NOT yet ported (see
+//!   `elephant_foot_compensation.rs:811`), plus `SupportLayer`,
+//!   `Print::objects()` / `PrintObject::instances()` traversal.
+//! - `need_wipe`: requires the `GCode` generator class
+//!   (`gcodegen.config()`, `gcodegen.writer().filament()`), which is not
+//!   ported (the Rust `gcode::generator::GCode` is a text container, not the
+//!   path-planning generator).
+//! - `AvoidCrossingPerimeters::travel_to` and
+//!   `AvoidCrossingPerimeters::init_layer`: depend on the `GCode` generator
+//!   and `Layer` flow/region data threaded through the above.
 
-use crate::edge_grid::{EdgeGrid, Intersection};
-use crate::geometry::{BoundingBox, Point, Polygon, Polyline};
+// AvoidCrossingPerimeters.cpp:1-14 — includes
+use crate::edge_grid::EdgeGrid;
+use crate::geometry::{perp, BoundingBox, BoundingBoxF, Line, Point, PointF, Polygon, Polyline};
+use crate::utils::{next_idx_modulo, prev_idx_modulo};
+use std::collections::HashSet;
 
-/// Configuration for travel path planning.
-#[derive(Clone, Debug)]
-pub struct TravelConfig {
-    /// Whether avoid crossing perimeters is enabled.
-    pub enabled: bool,
-    /// Maximum detour as a percentage of direct travel distance.
-    /// If the detour exceeds this, fall back to direct travel.
-    pub max_detour_percent: f64,
-    /// Maximum absolute detour distance (in scaled units).
-    /// If set to 0, only percentage limit is used.
-    pub max_detour_absolute: i64,
-    /// Resolution for the edge grid (in scaled units).
-    pub grid_resolution: i64,
-    /// Epsilon for offsetting points inside boundaries.
-    pub boundary_offset: i64,
-}
+// AvoidCrossingPerimeters.cpp — `SCALED_EPSILON` (libslic3r.h, ported as f64 = 10.0).
+use crate::libslic3r::SCALED_EPSILON;
 
-impl Default for TravelConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            max_detour_percent: 200.0, // 2x direct distance
-            max_detour_absolute: 0,
-            grid_resolution: 100_000, // 0.1mm
-            boundary_offset: 1_000,   // 1 micron
-        }
+// Vec2d in libslic3r maps to the crate's PointF (f64 2D vector).
+type Vec2d = PointF;
+
+/// Raw `.cast<double>()` of a scaled integer `Point` (Eigen cast, no unscale).
+#[inline]
+fn cast_d(p: Point) -> Vec2d {
+    Vec2d {
+        x: p.x as f64,
+        y: p.y as f64,
     }
 }
 
-impl TravelConfig {
-    // Create a new travel config with defaults.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Enable or disable avoid crossing perimeters.
-    pub fn with_enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-
-    /// Set the maximum detour percentage.
-    pub fn with_max_detour_percent(mut self, percent: f64) -> Self {
-        self.max_detour_percent = percent;
-        self
-    }
-
-    /// Set the maximum absolute detour.
-    pub fn with_max_detour_absolute(mut self, distance: i64) -> Self {
-        self.max_detour_absolute = distance;
-        self
-    }
-
-    /// Set the grid resolution.
-    pub fn with_grid_resolution(mut self, resolution: i64) -> Self {
-        self.grid_resolution = resolution;
-        self
-    }
-}
-
-/// A point along the travel path with metadata.
-#[derive(Clone, Debug)]
+// AvoidCrossingPerimeters.cpp:18 — struct TravelPoint
 struct TravelPoint {
-    /// The point location.
     point: Point,
-    /// Index of the boundary polygon this point is on (-1 if not on boundary).
-    boundary_idx: i32,
-    /// Whether this point should not be removed during simplification.
-    do_not_remove: bool,
+    // Index of the polygon containing this point. A negative value indicates that the point is not on any border.
+    border_idx: i32,
+    // simplify_travel() doesn't remove this point.
+    do_not_remove: bool, // = false
 }
 
-impl TravelPoint {
-    fn new(point: Point, boundary_idx: i32) -> Self {
-        Self {
-            point,
-            boundary_idx,
-            do_not_remove: false,
+// AvoidCrossingPerimeters.cpp:27 — struct Intersection
+#[derive(Clone)]
+struct Intersection {
+    // Index of the polygon containing this point of intersection.
+    border_idx: usize,
+    // Index of the line on the polygon containing this point of intersection.
+    line_idx: usize,
+    // Point of intersection.
+    point: Point,
+    // Distance from the first point in the corresponding boundary
+    distance: f32,
+    // simplify_travel() doesn't remove this point.
+    do_not_remove: bool, // = false
+}
+
+// AvoidCrossingPerimeters.cpp:41 — struct ClosestLine
+#[derive(Clone)]
+struct ClosestLine {
+    // Index of the polygon containing this line.
+    border_idx: usize,
+    // Index of this line on the polygon containing it.
+    line_idx: usize,
+    // Closest point on the line.
+    point: Point,
+}
+
+// AvoidCrossingPerimeters.cpp:51-89 — struct AllIntersectionsVisitor
+// Finding all intersections of a set of contours with a line segment.
+//
+// In C++ this is a stateful functor invoked via grid.visit_cells_intersecting_line.
+// The Rust EdgeGrid invokes a `FnMut(usize, usize)` closure, so the visitor state
+// is held in local variables captured by the closure in `apply_*` below.
+struct AllIntersectionsVisitor<'a> {
+    grid: &'a EdgeGrid,
+    intersections: Vec<Intersection>,
+    travel_line: Line,
+    intersection_set: HashSet<(usize, usize)>,
+}
+
+impl<'a> AllIntersectionsVisitor<'a> {
+    // AvoidCrossingPerimeters.cpp:54 — AllIntersectionsVisitor(grid, intersections)
+    #[allow(dead_code)]
+    fn new(grid: &'a EdgeGrid) -> Self {
+        AllIntersectionsVisitor {
+            grid,
+            intersections: Vec::new(),
+            travel_line: Line::new(Point::new(0, 0), Point::new(0, 0)),
+            intersection_set: HashSet::new(),
         }
     }
 
-    fn with_do_not_remove(mut self, do_not_remove: bool) -> Self {
-        self.do_not_remove = do_not_remove;
-        self
+    // AvoidCrossingPerimeters.cpp:59 — AllIntersectionsVisitor(grid, intersections, travel_line)
+    fn with_line(grid: &'a EdgeGrid, travel_line: Line) -> Self {
+        AllIntersectionsVisitor {
+            grid,
+            intersections: Vec::new(),
+            travel_line,
+            intersection_set: HashSet::new(),
+        }
+    }
+
+    // AvoidCrossingPerimeters.cpp:65 — void reset()
+    #[allow(dead_code)]
+    fn reset(&mut self) {
+        self.intersection_set.clear();
+    }
+
+    // AvoidCrossingPerimeters.cpp:69 — bool operator()(coord_t iy, coord_t ix)
+    fn visit(&mut self, iy: usize, ix: usize) -> bool {
+        // Called with a row and column of the grid cell, which is intersected by a line.
+        let cell_data_range = self.grid.cell_data_range_at(iy, ix);
+        for &it_contour_and_segment in cell_data_range {
+            // AvoidCrossingPerimeters.cpp:75-79
+            if let Some(intersection_point) =
+                self.travel_line.intersection(&self.grid.segment(it_contour_and_segment))
+            {
+                if !self.intersection_set.contains(&it_contour_and_segment) {
+                    self.intersections.push(Intersection {
+                        border_idx: it_contour_and_segment.0,
+                        line_idx: it_contour_and_segment.1,
+                        point: intersection_point,
+                        distance: 0.0,
+                        do_not_remove: false,
+                    });
+                    self.intersection_set.insert(it_contour_and_segment);
+                }
+            }
+        }
+        // Continue traversing the grid along the edge.
+        true
+    }
+
+    // Run the visitor along the stored travel_line and return the collected intersections.
+    fn run(mut self) -> Vec<Intersection> {
+        let a = self.travel_line.a;
+        let b = self.travel_line.b;
+        // The C++ AllIntersectionsVisitor is invoked with the same start/end as the travel line.
+        let grid = self.grid;
+        grid.visit_cells_intersecting_line(a, b, |iy, ix| {
+            self.visit(iy, ix);
+        });
+        self.intersections
     }
 }
 
-/// Direction for walking around a boundary polygon.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// AvoidCrossingPerimeters.cpp:91-119 — struct FirstIntersectionVisitor
+// Visitor to check for any collision of a line segment with any contour stored inside the edge_grid.
+//
+// Returns whether `pt_current`..`pt_next` intersects any stored segment.
+fn first_intersection_visitor_intersect(
+    grid: &EdgeGrid,
+    pt_current: &Point,
+    pt_next: &Point,
+) -> bool {
+    // AvoidCrossingPerimeters.cpp:96-113 — operator()
+    let mut intersect = false;
+    grid.visit_cells_intersecting_line(*pt_current, *pt_next, |iy, ix| {
+        // Note: the Rust line-cell visitor does not honor early termination
+        // (it always continues), but setting `intersect = true` repeatedly is
+        // harmless and produces the same boolean result as the C++ `return false`.
+        let cell_data_range = grid.cell_data_range_at(iy, ix);
+        for &it_contour_and_segment in cell_data_range {
+            // End points of the line segment and their vector.
+            let segment = grid.segment(it_contour_and_segment);
+            if crate::geometry::segments_intersect(segment.a, segment.b, *pt_current, *pt_next) {
+                intersect = true;
+                return;
+            }
+        }
+    });
+    intersect
+}
+
+// AvoidCrossingPerimeters.cpp:121-157 — struct MinDistanceVisitor
+// Visitor to create a list of closet lines to a defined point.
+struct MinDistanceVisitor<'a> {
+    grid: &'a EdgeGrid,
+    center: Point,
+    closest_lines: Vec<ClosestLine>,
+    closest_lines_set: HashSet<(usize, usize)>,
+    max_distance_squared: f64,
+}
+
+impl<'a> MinDistanceVisitor<'a> {
+    // AvoidCrossingPerimeters.cpp:124 — MinDistanceVisitor(grid, center, max_distance_squared)
+    fn new(grid: &'a EdgeGrid, center: Point, max_distance_squared: f64) -> Self {
+        MinDistanceVisitor {
+            grid,
+            center,
+            closest_lines: Vec::new(),
+            closest_lines_set: HashSet::new(),
+            max_distance_squared,
+        }
+    }
+
+    // AvoidCrossingPerimeters.cpp:128 — void init()
+    #[allow(dead_code)]
+    fn init(&mut self) {
+        self.closest_lines.clear();
+        self.closest_lines_set.clear();
+    }
+
+    // AvoidCrossingPerimeters.cpp:134 — bool operator()(coord_t iy, coord_t ix)
+    fn visit(&mut self, iy: usize, ix: usize) -> bool {
+        // Called with a row and column of the grid cell, which is inside a bounding box.
+        let cell_data_range = self.grid.cell_data_range_at(iy, ix);
+        for &it_contour_and_segment in cell_data_range {
+            // End points of the line segment and their vector.
+            let segment = self.grid.segment(it_contour_and_segment);
+            // AvoidCrossingPerimeters.cpp:142-146
+            if !self.closest_lines_set.contains(&it_contour_and_segment) {
+                let mut closest_point = Point::new(0, 0);
+                let dist_sq = line_alg_distance_to_squared(
+                    &Line::new(segment.a, segment.b),
+                    &self.center,
+                    &mut closest_point,
+                );
+                if dist_sq <= self.max_distance_squared {
+                    self.closest_lines.push(ClosestLine {
+                        border_idx: it_contour_and_segment.0,
+                        line_idx: it_contour_and_segment.1,
+                        point: closest_point,
+                    });
+                    self.closest_lines_set.insert(it_contour_and_segment);
+                }
+            }
+        }
+        // Continue traversing the grid along the edge.
+        true
+    }
+}
+
+// `line_alg::distance_to_squared(line, point, &closest_point)` — distance squared
+// from `point` to the segment `line`, writing the closest point. Mirrors the
+// libslic3r `line_alg::distance_to_squared` semantics used by MinDistanceVisitor.
+fn line_alg_distance_to_squared(line: &Line, point: &Point, closest_point: &mut Point) -> f64 {
+    let v = cast_d(Point::new(line.b.x - line.a.x, line.b.y - line.a.y));
+    let va = cast_d(Point::new(point.x - line.a.x, point.y - line.a.y));
+    let l2 = v.x * v.x + v.y * v.y; // avoid a sqrt
+    let t = if l2 == 0.0 {
+        0.0
+    } else {
+        (va.x * v.x + va.y * v.y) / l2
+    };
+    let t = t.clamp(0.0, 1.0);
+    let foot_x = line.a.x as f64 + t * v.x;
+    let foot_y = line.a.y as f64 + t * v.y;
+    *closest_point = Point::new(foot_x as i64, foot_y as i64);
+    let dx = foot_x - point.x as f64;
+    let dy = foot_y - point.y as f64;
+    dx * dx + dy * dy
+}
+
+// AvoidCrossingPerimeters.cpp:159-170 — get_closest_lines_in_radius
+// Returns sorted list of closest lines to a passed point within a passed radius
+fn get_closest_lines_in_radius(grid: &EdgeGrid, center: &Point, search_radius: f32) -> Vec<ClosestLine> {
+    let radius_vector = Point::new(search_radius as i64, search_radius as i64);
+    let mut visitor = MinDistanceVisitor::new(grid, *center, (search_radius * search_radius) as f64);
+    grid.visit_cells_intersecting_box(
+        BoundingBox::from_points_minmax(
+            Point::new(center.x - radius_vector.x, center.y - radius_vector.y),
+            Point::new(center.x + radius_vector.x, center.y + radius_vector.y),
+        ),
+        |iy, ix| visitor.visit(iy, ix),
+    );
+    let mut closest_lines = visitor.closest_lines;
+    closest_lines.sort_by(|l, r| {
+        let dl = {
+            let d = cast_d(Point::new(center.x - l.point.x, center.y - l.point.y));
+            d.x * d.x + d.y * d.y
+        };
+        let dr = {
+            let d = cast_d(Point::new(center.x - r.point.x, center.y - r.point.y));
+            d.x * d.x + d.y * d.y
+        };
+        dl.partial_cmp(&dr).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    closest_lines
+}
+
+// AvoidCrossingPerimeters.cpp:172-295 — extend_for_closest_lines
+// When the offset is too big, then original travel doesn't have to cross created boundaries.
+// For these cases, this function adds another intersection with lines around the start and the end point of the original travel.
+fn extend_for_closest_lines(
+    intersections: &[Intersection],
+    boundary: &Boundary,
+    start: &Point,
+    end: &Point,
+    search_radius: f32,
+) -> Vec<Intersection> {
+    let start_lines = get_closest_lines_in_radius(&boundary.grid, start, search_radius);
+    let end_lines = get_closest_lines_in_radius(&boundary.grid, end, search_radius);
+
+    // AvoidCrossingPerimeters.cpp:184-187
+    // Compute distance to the closest point in the ClosestLine from begin of contour.
+    let compute_distance = |closest_line: &ClosestLine| -> f32 {
+        let dist_from_line_begin = {
+            let d = cast_d(Point::new(
+                closest_line.point.x - boundary.boundaries[closest_line.border_idx].points[closest_line.line_idx].x,
+                closest_line.point.y - boundary.boundaries[closest_line.border_idx].points[closest_line.line_idx].y,
+            ));
+            (d.x * d.x + d.y * d.y).sqrt() as f32
+        };
+        boundary.boundaries_params[closest_line.border_idx][closest_line.line_idx] + dist_from_line_begin
+    };
+
+    // AvoidCrossingPerimeters.cpp:190-203
+    // It tries to find closest lines for both start point and end point of the travel which has the same border_idx
+    let endpoints_close_to_same_boundary = || -> (usize, usize) {
+        let mut boundaries_from_start: HashSet<usize> = HashSet::new();
+        for cl_start in &start_lines {
+            boundaries_from_start.insert(cl_start.border_idx);
+        }
+        for (cl_end_idx, cl_end) in end_lines.iter().enumerate() {
+            if boundaries_from_start.contains(&cl_end.border_idx) {
+                for (cl_start_idx, cl_start) in start_lines.iter().enumerate() {
+                    if cl_start.border_idx == cl_end.border_idx {
+                        return (cl_start_idx, cl_end_idx);
+                    }
+                }
+            }
+        }
+        (usize::MAX, usize::MAX)
+    };
+
+    // AvoidCrossingPerimeters.cpp:205-218
+    // If the existing two lines within the search radius start and end point belong to the same boundary,
+    // discard all intersection points because the whole detour could be on one boundary.
+    if !start_lines.is_empty() && !end_lines.is_empty() {
+        let cl_indices = endpoints_close_to_same_boundary();
+        if cl_indices.0 != usize::MAX {
+            debug_assert!(cl_indices.1 != usize::MAX);
+            let cl_start = &start_lines[cl_indices.0];
+            let cl_end = &end_lines[cl_indices.1];
+            let mut new_intersections: Vec<Intersection> = Vec::new();
+            new_intersections.push(Intersection {
+                border_idx: cl_start.border_idx,
+                line_idx: cl_start.line_idx,
+                point: cl_start.point,
+                distance: compute_distance(cl_start),
+                do_not_remove: true,
+            });
+            new_intersections.push(Intersection {
+                border_idx: cl_end.border_idx,
+                line_idx: cl_end.line_idx,
+                point: cl_end.point,
+                distance: compute_distance(cl_end),
+                do_not_remove: true,
+            });
+            return new_intersections;
+        }
+    }
+
+    // AvoidCrossingPerimeters.cpp:220-230
+    // Returns ClosestLine which is closer to the point "close_to" then point inside passed Intersection.
+    let get_closer = |closest_lines: &[ClosestLine], intersection: &Intersection, close_to: &Point| -> usize {
+        for (idx, cl) in closest_lines.iter().enumerate() {
+            // Note: C++ uses `.cast<float>().squaredNorm()` (float accumulation).
+            let old_dist = {
+                let d = Point::new(close_to.x - intersection.point.x, close_to.y - intersection.point.y);
+                (d.x as f32) * (d.x as f32) + (d.y as f32) * (d.y as f32)
+            };
+            let cl_dist = {
+                let d = Point::new(close_to.x - cl.point.x, close_to.y - cl.point.y);
+                (d.x as f32) * (d.x as f32) + (d.y as f32) * (d.y as f32)
+            };
+            if cl.border_idx == intersection.border_idx
+                && old_dist as f64 <= (search_radius * search_radius) as f64
+                && cl_dist < old_dist
+            {
+                return idx;
+            }
+        }
+        usize::MAX
+    };
+
+    // AvoidCrossingPerimeters.cpp:232-258
+    // Try to find ClosestLine with same boundary_idx as any existing Intersection
+    let find_closest_line_with_same_boundary_idx =
+        |closest_lines: &[ClosestLine], intersections: &[Intersection], reverse: bool| -> usize {
+            let mut boundaries_indices: HashSet<usize> = HashSet::new();
+            for closest_line in closest_lines {
+                boundaries_indices.insert(closest_line.border_idx);
+            }
+
+            // This function must be called only in the case that exists closest_line with boundary_idx equals to intersection.border_idx
+            let find_closest_line_index = |intersection: &Intersection| -> usize {
+                for (idx, closest_line) in closest_lines.iter().enumerate() {
+                    if closest_line.border_idx == intersection.border_idx {
+                        return idx;
+                    }
+                }
+                // This is an invalid state.
+                debug_assert!(false);
+                usize::MAX
+            };
+
+            if reverse {
+                for intersection in intersections.iter().rev() {
+                    if boundaries_indices.contains(&intersection.border_idx) {
+                        return find_closest_line_index(intersection);
+                    }
+                }
+            } else {
+                for intersection in intersections.iter() {
+                    if boundaries_indices.contains(&intersection.border_idx) {
+                        return find_closest_line_index(intersection);
+                    }
+                }
+            }
+            usize::MAX
+        };
+
+    // AvoidCrossingPerimeters.cpp:260-276
+    let mut new_intersections: Vec<Intersection> = intersections.to_vec();
+    if !new_intersections.is_empty() && !start_lines.is_empty() {
+        let cl_start_idx = get_closer(&start_lines, &new_intersections[0], start);
+        if cl_start_idx != usize::MAX {
+            // If there is any ClosestLine around the start point closer to the Intersection, then replace this Intersection with ClosestLine.
+            let cl_start = &start_lines[cl_start_idx];
+            new_intersections[0] = Intersection {
+                border_idx: cl_start.border_idx,
+                line_idx: cl_start.line_idx,
+                point: cl_start.point,
+                distance: compute_distance(cl_start),
+                do_not_remove: true,
+            };
+        } else {
+            // Check if there is any ClosestLine with the same boundary_idx as any Intersection. If this ClosestLine exists, then add it to the
+            // vector of intersections. This allows in some cases when it is more than one around ClosestLine start point chose that one which
+            // minimizes the number of contours (also length of the detour) in result detour. If there doesn't exist any ClosestLine like this, then
+            // use the first one, which is the closest one to the start point.
+            let start_closest_lines_idx =
+                find_closest_line_with_same_boundary_idx(&start_lines, &new_intersections, true);
+            let cl_start = if start_closest_lines_idx != usize::MAX {
+                &start_lines[start_closest_lines_idx]
+            } else {
+                &start_lines[0]
+            };
+            new_intersections.insert(
+                0,
+                Intersection {
+                    border_idx: cl_start.border_idx,
+                    line_idx: cl_start.line_idx,
+                    point: cl_start.point,
+                    distance: compute_distance(cl_start),
+                    do_not_remove: true,
+                },
+            );
+        }
+    }
+
+    // AvoidCrossingPerimeters.cpp:278-293
+    if !new_intersections.is_empty() && !end_lines.is_empty() {
+        let cl_end_idx = get_closer(&end_lines, new_intersections.last().unwrap(), end);
+        if cl_end_idx != usize::MAX {
+            // If there is any ClosestLine around the end point closer to the Intersection, then replace this Intersection with ClosestLine.
+            let cl_end = &end_lines[cl_end_idx];
+            let last = new_intersections.len() - 1;
+            new_intersections[last] = Intersection {
+                border_idx: cl_end.border_idx,
+                line_idx: cl_end.line_idx,
+                point: cl_end.point,
+                distance: compute_distance(cl_end),
+                do_not_remove: true,
+            };
+        } else {
+            // Check if there is any ClosestLine with the same boundary_idx as any Intersection. If this ClosestLine exists, then add it to the
+            // vector of intersections. This allows in some cases when it is more than one around ClosestLine end point chose that one which
+            // minimizes the number of contours (also length of the detour) in result detour. If there doesn't exist any ClosestLine like this, then
+            // use the first one, which is the closest one to the end point.
+            let end_closest_lines_idx =
+                find_closest_line_with_same_boundary_idx(&end_lines, &new_intersections, false);
+            let cl_end = if end_closest_lines_idx != usize::MAX {
+                &end_lines[end_closest_lines_idx]
+            } else {
+                &end_lines[0]
+            };
+            new_intersections.push(Intersection {
+                border_idx: cl_end.border_idx,
+                line_idx: cl_end.line_idx,
+                point: cl_end.point,
+                distance: compute_distance(cl_end),
+                do_not_remove: true,
+            });
+        }
+    }
+    new_intersections
+}
+
+// AvoidCrossingPerimeters.cpp:297-314 — find_first_different_vertex<forward>
+// point_idx is the index from which is different vertex is searched.
+fn find_first_different_vertex(polygon: &Polygon, point_idx: usize, point: &Point, forward: bool) -> Point {
+    debug_assert!(point_idx < polygon.points.len());
+    // Solve case when vertex on passed index point_idx is different that pass point. This helps the following code keep simple.
+    if *point != polygon.points[point_idx] {
+        return polygon.points[point_idx];
+    }
+
+    let mut line_idx = (point_idx as i32 + 1) % polygon.points.len() as i32;
+    debug_assert!(line_idx != point_idx as i32);
+    if forward {
+        while *point == polygon.points[line_idx as usize] && line_idx != point_idx as i32 {
+            line_idx = if line_idx + 1 < polygon.points.len() as i32 {
+                line_idx + 1
+            } else {
+                0
+            };
+        }
+    } else {
+        while *point == polygon.points[line_idx as usize] && line_idx != point_idx as i32 {
+            line_idx = if line_idx - 1 >= 0 {
+                line_idx - 1
+            } else {
+                polygon.points.len() as i32 - 1
+            };
+        }
+    }
+    debug_assert!(*point != polygon.points[line_idx as usize]);
+    polygon.points[line_idx as usize]
+}
+
+// AvoidCrossingPerimeters.cpp:316-321 — three_points_inward_normal
+fn three_points_inward_normal(left: &Point, middle: &Point, right: &Point) -> Vec2d {
+    debug_assert!(left != middle);
+    debug_assert!(middle != right);
+    let n1 = vec2d_normalized(cast_d(perp(Point::new(middle.x - left.x, middle.y - left.y))));
+    let n2 = vec2d_normalized(cast_d(perp(Point::new(right.x - middle.x, right.y - middle.y))));
+    vec2d_normalized(Vec2d {
+        x: n1.x + n2.x,
+        y: n1.y + n2.y,
+    })
+}
+
+// Eigen `.normalized()` — unit vector (returns zero vector for zero input only via 0/0 -> NaN in Eigen;
+// libslic3r relies on non-degenerate inputs here, matching the asserts in the callers).
+#[inline]
+fn vec2d_normalized(v: Vec2d) -> Vec2d {
+    let n = (v.x * v.x + v.y * v.y).sqrt();
+    Vec2d {
+        x: v.x / n,
+        y: v.y / n,
+    }
+}
+
+// AvoidCrossingPerimeters.cpp:323-332 — get_polygon_vertex_inward_normal
+// Compute normal of the polygon's vertex in an inward direction
+fn get_polygon_vertex_inward_normal(polygon: &Polygon, point_idx: usize) -> Vec2d {
+    let left_idx = prev_idx_modulo(point_idx, polygon.points.len());
+    let right_idx = next_idx_modulo(point_idx, polygon.points.len());
+    let middle = polygon.points[point_idx];
+    let left = find_first_different_vertex(polygon, left_idx, &middle, false);
+    let right = find_first_different_vertex(polygon, right_idx, &middle, true);
+    three_points_inward_normal(&left, &middle, &right)
+}
+
+// AvoidCrossingPerimeters.cpp:334-338 — get_polygon_vertex_offset
+// Compute offset of point_idx of the polygon in a direction of inward normal
+fn get_polygon_vertex_offset(polygon: &Polygon, point_idx: usize, offset: i64) -> Point {
+    let normal = get_polygon_vertex_inward_normal(polygon, point_idx);
+    Point::new(
+        polygon.points[point_idx].x + (normal.x * offset as f64) as i64,
+        polygon.points[point_idx].y + (normal.y * offset as f64) as i64,
+    )
+}
+
+// AvoidCrossingPerimeters.cpp:340-346 — get_middle_point_offset
+// Compute offset (in the direction of inward normal) of the point(passed on "middle") based on the nearest points laying on the polygon (left_idx and right_idx).
+fn get_middle_point_offset(
+    polygon: &Polygon,
+    left_idx: usize,
+    right_idx: usize,
+    middle: &Point,
+    offset: i64,
+) -> Point {
+    let left = find_first_different_vertex(polygon, left_idx, middle, false);
+    let right = find_first_different_vertex(polygon, right_idx, middle, true);
+    let normal = three_points_inward_normal(&left, middle, &right);
+    Point::new(
+        middle.x + (normal.x * offset as f64) as i64,
+        middle.y + (normal.y * offset as f64) as i64,
+    )
+}
+
+// AvoidCrossingPerimeters.cpp:348-355 — to_polyline
+fn to_polyline(travel: &[TravelPoint]) -> Polyline {
+    let mut result = Polyline::new();
+    result.points.reserve(travel.len());
+    for t_point in travel {
+        result.points.push(t_point.point);
+    }
+    result
+}
+
+// AvoidCrossingPerimeters.cpp:388-389 — enum class Direction
+// Returns a direction of the shortest path along the polygon boundary
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Direction {
     Forward,
     Backward,
 }
 
-/// Boundary data for avoid crossing perimeters.
-#[derive(Clone, Debug)]
-struct Boundary {
-    /// The boundary polygons.
-    polygons: Vec<Polygon>,
-    /// Bounding box of all boundaries.
-    bbox: BoundingBox,
-    /// Pre-computed cumulative distances along each polygon.
-    polygon_params: Vec<Vec<f64>>,
-    /// Edge grid for fast intersection testing.
-    grid: EdgeGrid,
+// AvoidCrossingPerimeters.cpp:390-421 — get_shortest_direction
+// Returns a direction of the shortest path along the polygon boundary
+fn get_shortest_direction(
+    boundary: &Boundary,
+    intersection_first: &Intersection,
+    intersection_second: &Intersection,
+    contour_length: f32,
+) -> Direction {
+    debug_assert!(intersection_first.border_idx == intersection_second.border_idx);
+    let poly = &boundary.boundaries[intersection_first.border_idx];
+    let mut dist_first = intersection_first.distance;
+    let mut dist_second = intersection_second.distance;
+
+    debug_assert!(dist_first >= 0.0 && dist_first <= contour_length);
+    debug_assert!(dist_second >= 0.0 && dist_second <= contour_length);
+
+    let mut reversed = false;
+    if dist_first > dist_second {
+        std::mem::swap(&mut dist_first, &mut dist_second);
+        reversed = true;
+    }
+    let mut total_length_forward = dist_second - dist_first;
+    let mut total_length_backward = dist_first + contour_length - dist_second;
+    if reversed {
+        std::mem::swap(&mut total_length_forward, &mut total_length_backward);
+    }
+
+    let poly_size = poly.points.len();
+    total_length_forward -= {
+        let d = cast_d(Point::new(
+            intersection_first.point.x - poly.points[intersection_first.line_idx].x,
+            intersection_first.point.y - poly.points[intersection_first.line_idx].y,
+        ));
+        (d.x * d.x + d.y * d.y).sqrt() as f32
+    };
+    total_length_backward -= {
+        let idx = (intersection_first.line_idx + 1) % poly_size;
+        let d = cast_d(Point::new(
+            poly.points[idx].x - intersection_first.point.x,
+            poly.points[idx].y - intersection_first.point.y,
+        ));
+        (d.x * d.x + d.y * d.y).sqrt() as f32
+    };
+
+    total_length_forward -= {
+        let idx = (intersection_second.line_idx + 1) % poly_size;
+        let d = cast_d(Point::new(
+            poly.points[idx].x - intersection_second.point.x,
+            poly.points[idx].y - intersection_second.point.y,
+        ));
+        (d.x * d.x + d.y * d.y).sqrt() as f32
+    };
+    total_length_backward -= {
+        let d = cast_d(Point::new(
+            intersection_second.point.x - poly.points[intersection_second.line_idx].x,
+            intersection_second.point.y - poly.points[intersection_second.line_idx].y,
+        ));
+        (d.x * d.x + d.y * d.y).sqrt() as f32
+    };
+
+    if total_length_forward < total_length_backward {
+        return Direction::Forward;
+    }
+    Direction::Backward
+}
+
+// AvoidCrossingPerimeters.cpp:423-431 — ConvertBBoxToPolyline
+#[allow(non_snake_case)]
+pub fn ConvertBBoxToPolyline(bbox: &crate::bounding_box::BoundingBoxf) -> Polyline {
+    let left_bottom = Point::new(bbox.min.x as i64, bbox.min.y as i64);
+    let left_up = Point::new(bbox.min.x as i64, bbox.max.y as i64);
+    let right_up = Point::new(bbox.max.x as i64, bbox.max.y as i64);
+    let right_bottom = Point::new(bbox.max.x as i64, bbox.min.y as i64);
+
+    Polyline::from_points(vec![left_bottom, right_bottom, right_up, left_up, left_bottom])
+}
+
+// AvoidCrossingPerimeters.cpp:433-477 — simplify_travel
+// Straighten the travel path as long as it does not collide with the contours stored in edge_grid.
+fn simplify_travel(boundary: &Boundary, travel: &[TravelPoint]) -> Vec<TravelPoint> {
+    let mut simplified_path: Vec<TravelPoint> = Vec::with_capacity(travel.len());
+    simplified_path.push(TravelPoint {
+        point: travel[0].point,
+        border_idx: travel[0].border_idx,
+        do_not_remove: travel[0].do_not_remove,
+    });
+    // Try to skip some points in the path.
+    //FIXME maybe use a binary search to trim the line?
+    //FIXME how about searching tangent point at long segments?
+    let mut point_idx = 1;
+    while point_idx < travel.len() {
+        let current_point = travel[point_idx - 1].point;
+        let mut next_point = travel[point_idx].point;
+        let mut next_border_idx = travel[point_idx].border_idx;
+        let mut next_do_not_remove = travel[point_idx].do_not_remove;
+
+        if !travel[point_idx].do_not_remove {
+            let mut point_idx_2 = point_idx + 1;
+            while point_idx_2 < travel.len() {
+                if travel[point_idx_2].do_not_remove {
+                    break;
+                }
+                if travel[point_idx_2].point == current_point {
+                    next_point = travel[point_idx_2].point;
+                    next_border_idx = travel[point_idx_2].border_idx;
+                    next_do_not_remove = travel[point_idx_2].do_not_remove;
+                    point_idx = point_idx_2;
+                    point_idx_2 += 1;
+                    continue;
+                }
+
+                // Check if deleting point causes crossing a boundary
+                if !first_intersection_visitor_intersect(&boundary.grid, &current_point, &travel[point_idx_2].point) {
+                    next_point = travel[point_idx_2].point;
+                    next_border_idx = travel[point_idx_2].border_idx;
+                    next_do_not_remove = travel[point_idx_2].do_not_remove;
+                    point_idx = point_idx_2;
+                }
+                point_idx_2 += 1;
+            }
+        }
+
+        simplified_path.push(TravelPoint {
+            point: next_point,
+            border_idx: next_border_idx,
+            do_not_remove: next_do_not_remove,
+        });
+        point_idx += 1;
+    }
+
+    simplified_path
+}
+
+// AvoidCrossingPerimeters.cpp:549-688 — avoid_perimeters_inner
+//
+// PARTIAL: the C++ signature takes `const Layer &layer` solely to call
+// `get_perimeter_spacing(layer)` (BLOCKED — see module docs). This port threads
+// the resolved `perimeter_spacing` (the scaled `float` value of
+// `get_perimeter_spacing(layer)`) in directly so the rest of the algorithm is
+// faithful. Callers must supply the same value libslic3r would compute.
+fn avoid_perimeters_inner(
+    boundary: &Boundary,
+    start_point: &Point,
+    end_point: &Point,
+    perimeter_spacing: f32,
+    result_out: &mut Vec<TravelPoint>,
+) -> usize {
+    let boundaries = &boundary.boundaries;
+    let edge_grid = &boundary.grid;
+    let mut start = *start_point;
+    let mut end = *end_point;
+    // Find all intersections between boundaries and the line segment, sort them along the line segment.
+    let mut intersections: Vec<Intersection>;
+    {
+        let visitor = AllIntersectionsVisitor::with_line(edge_grid, Line::new(start, end));
+        intersections = visitor.run();
+        let mut dir = cast_d(Point::new(end.x - start.x, end.y - start.y));
+        // if do not intersect due to the boundaries inner-offset, try to find the closest point to do intersect again!
+        if intersections.is_empty() {
+            // try to find the closest point on boundaries to start/end with distance less than extend_distance, which is noted as new start_point/end_point
+            let search_radius = 1.5 * perimeter_spacing as f64;
+            let closest_line_to_start = get_closest_lines_in_radius(&boundary.grid, &start, search_radius as f32);
+            let closest_line_to_end = get_closest_lines_in_radius(&boundary.grid, &end, search_radius as f32);
+            if !(closest_line_to_start.is_empty() && closest_line_to_end.is_empty()) {
+                let new_start_point0 = if closest_line_to_start.is_empty() {
+                    start
+                } else {
+                    closest_line_to_start[0].point
+                };
+                let new_end_point0 = if closest_line_to_end.is_empty() {
+                    end
+                } else {
+                    closest_line_to_end[0].point
+                };
+                dir = cast_d(Point::new(
+                    new_end_point0.x - new_start_point0.x,
+                    new_end_point0.y - new_start_point0.y,
+                ));
+                let unit_direction = vec2d_normalized(dir);
+                // out-offset new_start_point/new_end_point epsilon along the Line(new_start_point, new_end_point) for right intersection!
+                let eps = SCALED_EPSILON as i64 as f64;
+                let new_start_point = Point::new(
+                    new_start_point0.x - (unit_direction.x * eps) as i64,
+                    new_start_point0.y - (unit_direction.y * eps) as i64,
+                );
+                let new_end_point = Point::new(
+                    new_end_point0.x + (unit_direction.x * eps) as i64,
+                    new_end_point0.y + (unit_direction.y * eps) as i64,
+                );
+                let visitor =
+                    AllIntersectionsVisitor::with_line(edge_grid, Line::new(new_start_point, new_end_point));
+                intersections = visitor.run();
+                if !intersections.is_empty() {
+                    start = new_start_point;
+                    end = new_end_point;
+                }
+            }
+        }
+
+        for intersection in intersections.iter_mut() {
+            let dist_from_line_begin = {
+                let d = cast_d(Point::new(
+                    intersection.point.x - boundary.boundaries[intersection.border_idx].points[intersection.line_idx].x,
+                    intersection.point.y - boundary.boundaries[intersection.border_idx].points[intersection.line_idx].y,
+                ));
+                (d.x * d.x + d.y * d.y).sqrt() as f32
+            };
+            intersection.distance =
+                boundary.boundaries_params[intersection.border_idx][intersection.line_idx] + dist_from_line_begin;
+        }
+        intersections.sort_by(|l, r| {
+            // (r.point - l.point).cast<double>().dot(dir) > 0.
+            let v = cast_d(Point::new(r.point.x - l.point.x, r.point.y - l.point.y));
+            let dot = v.x * dir.x + v.y * dir.y;
+            // The C++ comparator returns whether `l` should come before `r`
+            // (a "less-than" predicate). `dot > 0` means l precedes r.
+            if dot > 0.0 {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        });
+
+        // Search radius should always be at least equals to the value of offset used for computing boundaries.
+        let search_radius = 2.0 * perimeter_spacing;
+        // When the offset is too big, then original travel doesn't have to cross created boundaries.
+        // These cases are fixed by calling extend_for_closest_lines.
+        intersections = extend_for_closest_lines(&intersections, boundary, &start, &end, search_radius);
+    }
+
+    let mut result: Vec<TravelPoint> = Vec::new();
+    result.push(TravelPoint {
+        point: start,
+        border_idx: -1,
+        do_not_remove: false,
+    });
+
+    // AvoidCrossingPerimeters.cpp:610-660
+    let mut it_first = 0usize;
+    while it_first < intersections.len() {
+        // The entry point to the boundary polygon
+        let intersection_first = intersections[it_first].clone();
+        // Search for the farthest intersection different from it_first but with the same border_idx
+        // (C++: std::find_if over the reverse range [rbegin, make_reverse_iterator(it_first) - 1)).
+        let mut it_second: Option<usize> = None;
+        let mut j = intersections.len();
+        while j > it_first + 1 {
+            j -= 1;
+            if intersection_first.border_idx == intersections[j].border_idx {
+                it_second = Some(j);
+                break;
+            }
+        }
+
+        // Append the first intersection into the path
+        let left_idx = intersection_first.line_idx;
+        let right_idx = if intersection_first.line_idx + 1 == boundaries[intersection_first.border_idx].points.len() {
+            0
+        } else {
+            intersection_first.line_idx + 1
+        };
+        // Offset of the polygon's point using get_middle_point_offset is used to simplify the calculation of intersection between the
+        // boundary and the travel. The appended point is translated in the direction of inward normal. This translation ensures that the
+        // appended point will be inside the polygon and not on the polygon border.
+        result.push(TravelPoint {
+            point: get_middle_point_offset(
+                &boundaries[intersection_first.border_idx],
+                left_idx,
+                right_idx,
+                &intersection_first.point,
+                SCALED_EPSILON as i64,
+            ),
+            border_idx: intersection_first.border_idx as i32,
+            do_not_remove: intersection_first.do_not_remove,
+        });
+
+        // Check if intersection line also exit the boundary polygon
+        if let Some(it_second_idx) = it_second {
+            // The exit point from the boundary polygon
+            let intersection_second = intersections[it_second_idx].clone();
+            let shortest_direction = get_shortest_direction(
+                boundary,
+                &intersection_first,
+                &intersection_second,
+                *boundary.boundaries_params[intersection_first.border_idx].last().unwrap(),
+            );
+            // Append the path around the border into the path
+            if shortest_direction == Direction::Forward {
+                let mut line_idx = intersection_first.line_idx as i32;
+                while line_idx != intersection_second.line_idx as i32 {
+                    let bsize = boundaries[intersection_first.border_idx].points.len() as i32;
+                    let vtx_idx = if line_idx + 1 == bsize { 0 } else { line_idx + 1 } as usize;
+                    result.push(TravelPoint {
+                        point: get_polygon_vertex_offset(
+                            &boundaries[intersection_first.border_idx],
+                            vtx_idx,
+                            SCALED_EPSILON as i64,
+                        ),
+                        border_idx: intersection_first.border_idx as i32,
+                        do_not_remove: false,
+                    });
+                    line_idx = if line_idx + 1 < bsize { line_idx + 1 } else { 0 };
+                }
+            } else {
+                let mut line_idx = intersection_first.line_idx as i32;
+                while line_idx != intersection_second.line_idx as i32 {
+                    result.push(TravelPoint {
+                        point: get_polygon_vertex_offset(
+                            &boundaries[intersection_second.border_idx],
+                            (line_idx + 0) as usize,
+                            SCALED_EPSILON as i64,
+                        ),
+                        border_idx: intersection_first.border_idx as i32,
+                        do_not_remove: false,
+                    });
+                    let bsize = boundaries[intersection_first.border_idx].points.len() as i32;
+                    line_idx = if line_idx - 1 >= 0 { line_idx - 1 } else { bsize - 1 };
+                }
+            }
+
+            // Append the farthest intersection into the path
+            let left_idx = intersection_second.line_idx;
+            let right_idx = if intersection_second.line_idx >= (boundaries[intersection_second.border_idx].points.len() - 1) {
+                0
+            } else {
+                intersection_second.line_idx + 1
+            };
+            result.push(TravelPoint {
+                point: get_middle_point_offset(
+                    &boundaries[intersection_second.border_idx],
+                    left_idx,
+                    right_idx,
+                    &intersection_second.point,
+                    SCALED_EPSILON as i64,
+                ),
+                border_idx: intersection_second.border_idx as i32,
+                do_not_remove: intersection_second.do_not_remove,
+            });
+            // Skip intersections in between
+            it_first = it_second_idx;
+        }
+        it_first += 1;
+    }
+
+    result.push(TravelPoint {
+        point: end,
+        border_idx: -1,
+        do_not_remove: false,
+    });
+
+    let _result_polyline = to_polyline(&result);
+
+    if !intersections.is_empty() {
+        result = simplify_travel(boundary, &result);
+    }
+
+    let _simplified_result_polyline = to_polyline(&result);
+
+    // append(result_out, std::move(result));
+    let n = intersections.len();
+    result_out.append(&mut result);
+    n
+}
+
+// AvoidCrossingPerimeters.cpp:690-711 — avoid_perimeters
+// Called by AvoidCrossingPerimeters::travel_to()
+//
+// PARTIAL: `perimeter_spacing` threaded in place of `const Layer &layer`
+// (see avoid_perimeters_inner).
+fn avoid_perimeters(
+    boundary: &Boundary,
+    start: &Point,
+    end: &Point,
+    perimeter_spacing: f32,
+    result_out: &mut Polyline,
+) -> usize {
+    // Travel line is completely or partially inside the bounding box.
+    let mut path: Vec<TravelPoint> = Vec::new();
+    let num_intersections = avoid_perimeters_inner(boundary, start, end, perimeter_spacing, &mut path);
+    *result_out = to_polyline(&path);
+
+    num_intersections
+}
+
+// AvoidCrossingPerimeters.cpp:713-737 — any_expolygon_contains (Line)
+// Check if anyone of ExPolygons contains whole travel.
+// called by need_wipe() and AvoidCrossingPerimeters::travel_to()
+fn any_expolygon_contains_line(
+    ex_polygons: &[crate::geometry::ExPolygon],
+    ex_polygons_bboxes: &[BoundingBox],
+    grid_lslice: &EdgeGrid,
+    travel: &Line,
+) -> bool {
+    debug_assert!(ex_polygons.len() == ex_polygons_bboxes.len());
+    if !grid_lslice.bbox().contains_point(&travel.a) || !grid_lslice.bbox().contains_point(&travel.b) {
+        return false;
+    }
+
+    let intersect = first_intersection_visitor_intersect(grid_lslice, &travel.a, &travel.b);
+    if !intersect {
+        for (idx, ex_polygon) in ex_polygons.iter().enumerate() {
+            let bbox = &ex_polygons_bboxes[idx];
+            if bbox.contains_point(&travel.a) && bbox.contains_point(&travel.b) && ex_polygon.contains(&travel.a, true) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// AvoidCrossingPerimeters.cpp:739-766 — any_expolygon_contains (Polyline)
+// Check if anyone of ExPolygons contains whole travel.
+// called by need_wipe()
+fn any_expolygon_contains_polyline(
+    ex_polygons: &[crate::geometry::ExPolygon],
+    ex_polygons_bboxes: &[BoundingBox],
+    grid_lslice: &EdgeGrid,
+    travel: &Polyline,
+) -> bool {
+    debug_assert!(ex_polygons.len() == ex_polygons_bboxes.len());
+    if travel.points.iter().any(|point| !grid_lslice.bbox().contains_point(point)) {
+        return false;
+    }
+
+    let mut any_intersection = false;
+    for line_idx in 1..travel.points.len() {
+        let pt_current = travel.points[line_idx - 1];
+        let pt_next = travel.points[line_idx];
+        any_intersection = first_intersection_visitor_intersect(grid_lslice, &pt_current, &pt_next);
+        if any_intersection {
+            break;
+        }
+    }
+
+    if !any_intersection {
+        for (idx, ex_polygon) in ex_polygons.iter().enumerate() {
+            let bbox = &ex_polygons_bboxes[idx];
+            if travel.points.iter().all(|point| bbox.contains_point(point))
+                && ex_polygon.contains(&travel.points[0], true)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// AvoidCrossingPerimeters.cpp:801-833 — resample_polygon
+// Adds points around all vertices so that the offset affects only small sections around these vertices.
+fn resample_polygon(polygon: &mut Polygon, dist_from_vertex: f64, max_allowed_distance: f64) {
+    let mut resampled_poly: Vec<Point> = Vec::with_capacity(3 * polygon.points.len());
+    let n = polygon.points.len();
+    for pt_idx in 0..n {
+        resampled_poly.push(polygon.points[pt_idx]);
+
+        let p1 = polygon.points[pt_idx];
+        let p2 = polygon.points[next_idx_modulo(pt_idx, n)];
+        let line_vec = cast_d(Point::new(p2.x - p1.x, p2.y - p1.y));
+        let line_length = (line_vec.x * line_vec.x + line_vec.y * line_vec.y).sqrt();
+        let line_vec_norm = vec2d_normalized(line_vec);
+        let vertex_offset_vec = Point::new(
+            (line_vec_norm.x * dist_from_vertex) as i64,
+            (line_vec_norm.y * dist_from_vertex) as i64,
+        );
+        if line_length > 2.0 * dist_from_vertex && vertex_offset_vec != Point::new(0, 0) {
+            resampled_poly.push(Point::new(p1.x + vertex_offset_vec.x, p1.y + vertex_offset_vec.y));
+
+            let new_vertex_vec = cast_d(Point::new(
+                p2.x - p1.x - 2 * vertex_offset_vec.x,
+                p2.y - p1.y - 2 * vertex_offset_vec.y,
+            ));
+            let new_vertex_vec_length = (new_vertex_vec.x * new_vertex_vec.x + new_vertex_vec.y * new_vertex_vec.y).sqrt();
+            if new_vertex_vec_length > max_allowed_distance {
+                let prev_point = cast_d(*resampled_poly.last().unwrap());
+                let parts_count = (new_vertex_vec_length / max_allowed_distance).ceil() as usize;
+                for part_idx in 1..parts_count {
+                    let part_param = part_idx as f64 / parts_count as f64;
+                    let new_point = Vec2d {
+                        x: prev_point.x + new_vertex_vec.x * part_param,
+                        y: prev_point.y + new_vertex_vec.y * part_param,
+                    };
+                    resampled_poly.push(Point::new(new_point.x as i64, new_point.y as i64));
+                }
+            }
+
+            resampled_poly.push(Point::new(p2.x - vertex_offset_vec.x, p2.y - vertex_offset_vec.y));
+        }
+    }
+    polygon.points = resampled_poly;
+}
+
+// AvoidCrossingPerimeters.cpp:835-840 — resample_expolygon
+fn resample_expolygon(ex_polygon: &mut crate::geometry::ExPolygon, dist_from_vertex: f64, max_allowed_distance: f64) {
+    resample_polygon(&mut ex_polygon.contour, dist_from_vertex, max_allowed_distance);
+    for polygon in ex_polygon.holes.iter_mut() {
+        resample_polygon(polygon, dist_from_vertex, max_allowed_distance);
+    }
+}
+
+// AvoidCrossingPerimeters.cpp:842-846 — resample_expolygons
+fn resample_expolygons(ex_polygons: &mut [crate::geometry::ExPolygon], dist_from_vertex: f64, max_allowed_distance: f64) {
+    for ex_poly in ex_polygons.iter_mut() {
+        resample_expolygon(ex_poly, dist_from_vertex, max_allowed_distance);
+    }
+}
+
+// AvoidCrossingPerimeters.cpp:848-854 — precompute_polygon_distances
+fn precompute_polygon_distances(polygon: &Polygon, polygon_distances_out: &mut Vec<f32>) {
+    polygon_distances_out.clear();
+    polygon_distances_out.resize(polygon.points.len() + 1, 0.0);
+    let n = polygon.points.len();
+    for point_idx in 1..n {
+        let d = cast_d(Point::new(
+            polygon.points[point_idx].x - polygon.points[point_idx - 1].x,
+            polygon.points[point_idx].y - polygon.points[point_idx - 1].y,
+        ));
+        polygon_distances_out[point_idx] =
+            polygon_distances_out[point_idx - 1] + (d.x * d.x + d.y * d.y).sqrt() as f32;
+    }
+    let d = cast_d(Point::new(
+        polygon.points[n - 1].x - polygon.points[0].x,
+        polygon.points[n - 1].y - polygon.points[0].y,
+    ));
+    let last = polygon_distances_out.len() - 1;
+    polygon_distances_out[last] = polygon_distances_out[n - 1] + (d.x * d.x + d.y * d.y).sqrt() as f32;
+}
+
+// AvoidCrossingPerimeters.cpp:856-862 — precompute_expolygon_distances
+fn precompute_expolygon_distances(
+    ex_polygon: &crate::geometry::ExPolygon,
+    expolygon_distances_out: &mut Vec<Vec<f32>>,
+) {
+    expolygon_distances_out.clear();
+    expolygon_distances_out.resize(ex_polygon.holes.len() + 1, Vec::new());
+    precompute_polygon_distances(&ex_polygon.contour, &mut expolygon_distances_out[0]);
+    for hole_idx in 0..ex_polygon.holes.len() {
+        precompute_polygon_distances(&ex_polygon.holes[hole_idx], &mut expolygon_distances_out[hole_idx + 1]);
+    }
+}
+
+// AvoidCrossingPerimeters.cpp:1276-1281 — init_boundary_distances
+fn init_boundary_distances(boundary: &mut Boundary) {
+    boundary.boundaries_params.clear();
+    boundary.boundaries_params.resize(boundary.boundaries.len(), Vec::new());
+    for poly_idx in 0..boundary.boundaries.len() {
+        let mut params = Vec::new();
+        precompute_polygon_distances(&boundary.boundaries[poly_idx], &mut params);
+        boundary.boundaries_params[poly_idx] = params;
+    }
+}
+
+// AvoidCrossingPerimeters.cpp:1283-1295 — init_boundary
+pub fn init_boundary(boundary: &mut Boundary, boundary_polygons: Vec<Polygon>) {
+    boundary.clear();
+    boundary.boundaries = boundary_polygons;
+
+    let mut bbox = get_extents(&boundary.boundaries);
+    bbox.expand(SCALED_EPSILON as i64); // BoundingBox::offset(SCALED_EPSILON)
+    boundary.bbox = BoundingBoxF::from_points_minmax(
+        Vec2d { x: bbox.min.x as f64, y: bbox.min.y as f64 },
+        Vec2d { x: bbox.max.x as f64, y: bbox.max.y as f64 },
+    );
+    boundary.grid.set_bbox(bbox);
+    // FIXME 1mm grid?
+    boundary.grid.create_from_polygons(&boundary.boundaries, crate::scaled(1.0));
+    init_boundary_distances(boundary);
+}
+
+// AvoidCrossingPerimeters.cpp:1297-1312 — init_boundary (with merge points)
+pub fn init_boundary_with_merge_points(
+    boundary: &mut Boundary,
+    boundary_polygons: Vec<Polygon>,
+    merge_points: &[Point],
+) {
+    boundary.clear();
+    boundary.boundaries = boundary_polygons;
+
+    let mut bbox = get_extents(&boundary.boundaries);
+    for merge_point in merge_points {
+        bbox.merge_point(*merge_point);
+    }
+    bbox.expand(bbox_radius(&bbox) as i64); // BoundingBox::offset(bbox.radius())
+    boundary.bbox = BoundingBoxF::from_points_minmax(
+        Vec2d { x: bbox.min.x as f64, y: bbox.min.y as f64 },
+        Vec2d { x: bbox.max.x as f64, y: bbox.max.y as f64 },
+    );
+    boundary.grid.set_bbox(bbox);
+    // FIXME 1mm grid?
+    boundary.grid.create_from_polygons(&boundary.boundaries, crate::scaled(1.0));
+    init_boundary_distances(boundary);
+}
+
+// BoundingBox::radius() — half the diagonal length. (BoundingBox.hpp)
+fn bbox_radius(bbox: &BoundingBox) -> f64 {
+    let w = (bbox.max.x - bbox.min.x) as f64;
+    let h = (bbox.max.y - bbox.min.y) as f64;
+    0.5 * (w * w + h * h).sqrt()
+}
+
+// get_extents(Polygons) — bounding box of all polygon points (Geometry.hpp/BoundingBox.hpp).
+fn get_extents(polygons: &[Polygon]) -> BoundingBox {
+    let mut bbox = BoundingBox::new();
+    for poly in polygons {
+        for p in &poly.points {
+            bbox.merge_point(*p);
+        }
+    }
+    bbox
+}
+
+// AvoidCrossingPerimeters.cpp:37-52 (.hpp) — struct Boundary
+/// Collection of boundaries used for detection of crossing perimeters for travels.
+pub struct Boundary {
+    // Collection of boundaries used for detection of crossing perimeters for travels
+    pub boundaries: Vec<Polygon>,
+    // Bounding box of boundaries
+    pub bbox: BoundingBoxF,
+    // Precomputed distances of all points in boundaries
+    pub boundaries_params: Vec<Vec<f32>>,
+    // Used for detection of intersection between line and any polygon from boundaries
+    pub grid: EdgeGrid,
 }
 
 impl Boundary {
-    fn new() -> Self {
-        Self {
-            polygons: Vec::new(),
-            bbox: BoundingBox::new(),
-            polygon_params: Vec::new(),
+    pub fn new() -> Self {
+        Boundary {
+            boundaries: Vec::new(),
+            bbox: BoundingBoxF::new(),
+            boundaries_params: Vec::new(),
             grid: EdgeGrid::new(),
         }
     }
 
-    fn clear(&mut self) {
-        self.polygons.clear();
-        self.polygon_params.clear();
-        self.bbox = BoundingBox::new();
-        self.grid = EdgeGrid::new();
-    }
-
-    fn is_empty(&self) -> bool {
-        self.polygons.is_empty()
-    }
-
-    /// Initialize the boundary from polygons.
-    fn init(&mut self, polygons: Vec<Polygon>, resolution: i64) {
-        self.polygons = polygons;
-
-        // Compute bounding box
-        self.bbox = BoundingBox::new();
-        for poly in &self.polygons {
-            for point in poly.points() {
-                self.bbox.merge_point(*point);
-            }
-        }
-
-        // Pre-compute cumulative distances along each polygon
-        self.polygon_params.clear();
-        for poly in &self.polygons {
-            let mut params = Vec::with_capacity(poly.points().len());
-            let mut cumulative = 0.0;
-            params.push(cumulative);
-
-            let points = poly.points();
-            for i in 0..points.len() {
-                let next_i = if i + 1 >= points.len() { 0 } else { i + 1 };
-                let dx = (points[next_i].x - points[i].x) as f64;
-                let dy = (points[next_i].y - points[i].y) as f64;
-                cumulative += (dx * dx + dy * dy).sqrt();
-                params.push(cumulative);
-            }
-            self.polygon_params.push(params);
-        }
-
-        // Create edge grid
-        self.grid = EdgeGrid::from_polygons(&self.polygons, resolution);
-    }
-
-    /// Get the total perimeter length of a polygon.
-    fn polygon_length(&self, poly_idx: usize) -> f64 {
-        if poly_idx >= self.polygon_params.len() {
-            return 0.0;
-        }
-        let params = &self.polygon_params[poly_idx];
-        if params.is_empty() {
-            return 0.0;
-        }
-        *params.last().unwrap()
-    }
-
-    /// Get the distance along a polygon from start to a segment index.
-    fn distance_to_segment(&self, poly_idx: usize, seg_idx: usize) -> f64 {
-        if poly_idx >= self.polygon_params.len() {
-            return 0.0;
-        }
-        let params = &self.polygon_params[poly_idx];
-        if seg_idx >= params.len() {
-            return 0.0;
-        }
-        params[seg_idx]
+    // AvoidCrossingPerimeters.hpp:47 — void clear()
+    pub fn clear(&mut self) {
+        self.boundaries.clear();
+        self.boundaries_params.clear();
     }
 }
 
-/// Result of travel planning.
-#[derive(Clone, Debug)]
-pub struct TravelResult {
-    /// The travel path as a polyline.
-    pub path: Polyline,
-    /// Number of boundary crossings in the original direct path.
-    pub original_crossings: usize,
-    /// Whether the path was modified to avoid crossings.
-    pub path_modified: bool,
-    /// Whether wipe should be disabled for this travel.
-    pub wipe_disabled: bool,
-}
-
-impl TravelResult {
-    // Create a simple direct travel result.
-    pub fn direct(start: Point, end: Point) -> Self {
-        Self {
-            path: Polyline::from_points(vec![start, end]),
-            original_crossings: 0,
-            path_modified: false,
-            wipe_disabled: false,
-        }
+impl Default for Boundary {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-/// Avoid Crossing Perimeters travel planner.
-///
-/// Routes travel moves around perimeter boundaries to avoid crossing them.
+// AvoidCrossingPerimeters.hpp:15-71 — class AvoidCrossingPerimeters
+//
+// PARTIAL: the public `travel_to` and `init_layer` methods are BLOCKED (they
+// require the `GCode` generator class and full `Layer` flow/region data — see
+// module docs), so only the state and the trivial once-modifiers accessors are
+// ported here. The heavy lifting (`avoid_perimeters`, `avoid_perimeters_inner`,
+// `simplify_travel`, the boundary builders, etc.) is ported above as free
+// functions matching the C++ statics.
 pub struct AvoidCrossingPerimeters {
-    /// Configuration.
-    config: TravelConfig,
-    /// Use external (between objects) boundaries.
-    use_external: bool,
-    /// Use external boundaries for next move only.
-    use_external_once: bool,
-    /// Disable avoid crossing for next move only.
-    disabled_once: bool,
-    /// Internal boundaries (within object).
-    internal: Boundary,
-    /// External boundaries (between objects).
-    external: Boundary,
-    /// Current perimeter spacing.
-    perimeter_spacing: i64,
+    m_use_external_mp: bool,
+    // just for the next travel move
+    m_use_external_mp_once: bool,
+    // this flag disables reduce_crossing_wall just for the next travel move
+    // we enable it by default for the first travel move in print
+    m_disabled_once: bool,
+
+    // Lslices offseted by half an external perimeter width. Used for detection if line or polyline is inside of any polygon.
+    m_lslices_offset: Vec<crate::geometry::ExPolygon>,
+    m_lslices_offset_bboxes: Vec<BoundingBox>,
+    // Used for detection of line or polyline is inside of any polygon.
+    m_grid_lslice: EdgeGrid,
+    // Store all needed data for travels inside object
+    m_internal: Boundary,
+    // Store all needed data for travels outside object
+    m_external: Boundary,
 }
 
 impl AvoidCrossingPerimeters {
-    // Create a new avoid crossing perimeters planner.
-    pub fn new(config: TravelConfig) -> Self {
-        Self {
-            config,
-            use_external: false,
-            use_external_once: false,
-            disabled_once: true, // Disabled for first move
-            internal: Boundary::new(),
-            external: Boundary::new(),
-            perimeter_spacing: 400_000, // Default 0.4mm
+    pub fn new() -> Self {
+        AvoidCrossingPerimeters {
+            m_use_external_mp: false,
+            m_use_external_mp_once: false,
+            m_disabled_once: true,
+            m_lslices_offset: Vec::new(),
+            m_lslices_offset_bboxes: Vec::new(),
+            m_grid_lslice: EdgeGrid::new(),
+            m_internal: Boundary::new(),
+            m_external: Boundary::new(),
         }
     }
 
-    /// Create with default configuration.
-    pub fn with_defaults() -> Self {
-        Self::new(TravelConfig::default())
+    // AvoidCrossingPerimeters.hpp:19 — void use_external_mp(bool use = true)
+    pub fn use_external_mp(&mut self, use_: bool) {
+        self.m_use_external_mp = use_;
     }
 
-    /// Check if avoid crossing is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.config.enabled
+    // AvoidCrossingPerimeters.hpp:20 — bool used_external_mp()
+    pub fn used_external_mp(&self) -> bool {
+        self.m_use_external_mp
     }
 
-    /// Set whether to use external boundaries.
-    pub fn use_external_mp(&mut self, use_external: bool) {
-        self.use_external = use_external;
-    }
-
-    /// Set to use external boundaries for next move only.
+    // AvoidCrossingPerimeters.hpp:21 — void use_external_mp_once()
     pub fn use_external_mp_once(&mut self) {
-        self.use_external_once = true;
+        self.m_use_external_mp_once = true;
     }
 
-    /// Disable avoid crossing for next move only.
+    // AvoidCrossingPerimeters.hpp:22 — bool used_external_mp_once()
+    pub fn used_external_mp_once(&self) -> bool {
+        self.m_use_external_mp_once
+    }
+
+    // AvoidCrossingPerimeters.hpp:23 — void disable_once()
     pub fn disable_once(&mut self) {
-        self.disabled_once = true;
+        self.m_disabled_once = true;
     }
 
-    /// Reset per-move flags.
+    // AvoidCrossingPerimeters.hpp:24 — bool disabled_once() const
+    pub fn disabled_once(&self) -> bool {
+        self.m_disabled_once
+    }
+
+    // AvoidCrossingPerimeters.hpp:25 — void reset_once_modifiers()
     pub fn reset_once_modifiers(&mut self) {
-        self.use_external_once = false;
-        self.disabled_once = false;
-    }
-
-    /// Initialize for a new layer with internal boundaries.
-    pub fn init_layer(&mut self, boundaries: &[Polygon], perimeter_spacing: i64) {
-        self.internal.clear();
-        self.external.clear();
-        self.perimeter_spacing = perimeter_spacing;
-
-        if !self.config.enabled || boundaries.is_empty() {
-            return;
-        }
-
-        // Offset boundaries inward by half perimeter spacing
-        // For now, use boundaries directly (proper offset requires clipper)
-        self.internal
-            .init(boundaries.to_vec(), self.config.grid_resolution);
-    }
-
-    /// Initialize external boundaries (for multi-object prints).
-    pub fn init_external_boundaries(&mut self, boundaries: &[Polygon]) {
-        if !self.config.enabled || boundaries.is_empty() {
-            return;
-        }
-
-        self.external
-            .init(boundaries.to_vec(), self.config.grid_resolution);
-    }
-
-    /// Plan a travel move from start to end.
-    pub fn travel_to(&mut self, start: &Point, end: &Point) -> TravelResult {
-        // Check if disabled
-        if !self.config.enabled || self.disabled_once {
-            self.reset_once_modifiers();
-            return TravelResult::direct(*start, *end);
-        }
-
-        let use_external = self.use_external || self.use_external_once;
-        self.reset_once_modifiers();
-
-        // Select appropriate boundary
-        let boundary = if use_external {
-            &self.external
-        } else {
-            &self.internal
-        };
-
-        if boundary.is_empty() {
-            return TravelResult::direct(*start, *end);
-        }
-
-        // Find intersections with boundaries
-        let intersections = boundary.grid.find_intersections(start, end);
-
-        if intersections.is_empty() {
-            // No crossings, use direct path
-            return TravelResult::direct(*start, *end);
-        }
-
-        // Avoid perimeters
-        let (result_path, crossing_count) =
-            self.avoid_perimeters_inner(boundary, start, end, &intersections);
-
-        // Check if detour is acceptable
-        let direct_length = Self::distance(start, end);
-        let path_length = result_path.length();
-        let detour = path_length - direct_length;
-
-        let max_detour = if self.config.max_detour_absolute > 0 {
-            (self.config.max_detour_absolute as f64)
-                .min(direct_length * self.config.max_detour_percent / 100.0)
-        } else {
-            direct_length * self.config.max_detour_percent / 100.0
-        };
-
-        if detour > max_detour {
-            // Detour too long, use direct path
-            return TravelResult {
-                path: Polyline::from_points(vec![*start, *end]),
-                original_crossings: crossing_count,
-                path_modified: false,
-                wipe_disabled: false,
-            };
-        }
-
-        TravelResult {
-            path: result_path,
-            original_crossings: crossing_count,
-            path_modified: true,
-            wipe_disabled: crossing_count == 0,
-        }
-    }
-
-    /// Internal: avoid perimeters and build path.
-    fn avoid_perimeters_inner(
-        &self,
-        boundary: &Boundary,
-        start: &Point,
-        end: &Point,
-        intersections: &[Intersection],
-    ) -> (Polyline, usize) {
-        let mut result: Vec<TravelPoint> = Vec::new();
-        result.push(TravelPoint::new(*start, -1));
-
-        let mut it_first_idx = 0;
-
-        while it_first_idx < intersections.len() {
-            let intersection_first = &intersections[it_first_idx];
-
-            // Find the last intersection with the same boundary
-            let mut it_second_idx = None;
-            for j in (it_first_idx + 1..intersections.len()).rev() {
-                if intersections[j].contour_idx == intersection_first.contour_idx {
-                    it_second_idx = Some(j);
-                    break;
-                }
-            }
-
-            // Add entry point (offset inward)
-            let entry_point = self.offset_point_inward(
-                boundary,
-                intersection_first.contour_idx,
-                intersection_first.segment_idx,
-                &intersection_first.point,
-            );
-            result.push(TravelPoint::new(
-                entry_point,
-                intersection_first.contour_idx as i32,
-            ));
-
-            if let Some(second_idx) = it_second_idx {
-                let intersection_second = &intersections[second_idx];
-
-                // Determine shortest direction around the polygon
-                let direction = self.get_shortest_direction(
-                    boundary,
-                    intersection_first.contour_idx,
-                    intersection_first.segment_idx,
-                    intersection_second.segment_idx,
-                );
-
-                // Walk around the polygon boundary
-                let poly = &boundary.polygons[intersection_first.contour_idx];
-                let poly_len = poly.points().len();
-
-                match direction {
-                    Direction::Forward => {
-                        let mut seg_idx = intersection_first.segment_idx;
-                        while seg_idx != intersection_second.segment_idx {
-                            seg_idx = (seg_idx + 1) % poly_len;
-                            let point = poly.points()[seg_idx];
-                            let offset_point = self.offset_vertex(
-                                boundary,
-                                intersection_first.contour_idx,
-                                seg_idx,
-                            );
-                            result.push(TravelPoint::new(
-                                offset_point,
-                                intersection_first.contour_idx as i32,
-                            ));
-                            // Avoid infinite loop
-                            if result.len() > poly_len + 10 {
-                                break;
-                            }
-                        }
-                    }
-                    Direction::Backward => {
-                        let mut seg_idx = intersection_first.segment_idx;
-                        while seg_idx != intersection_second.segment_idx {
-                            let point = poly.points()[seg_idx];
-                            let offset_point = self.offset_vertex(
-                                boundary,
-                                intersection_first.contour_idx,
-                                seg_idx,
-                            );
-                            result.push(TravelPoint::new(
-                                offset_point,
-                                intersection_first.contour_idx as i32,
-                            ));
-                            seg_idx = if seg_idx == 0 {
-                                poly_len - 1
-                            } else {
-                                seg_idx - 1
-                            };
-                            // Avoid infinite loop
-                            if result.len() > poly_len + 10 {
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Add exit point
-                let exit_point = self.offset_point_inward(
-                    boundary,
-                    intersection_second.contour_idx,
-                    intersection_second.segment_idx,
-                    &intersection_second.point,
-                );
-                result.push(TravelPoint::new(
-                    exit_point,
-                    intersection_second.contour_idx as i32,
-                ));
-
-                // Skip to after the last intersection we processed
-                it_first_idx = second_idx + 1;
-            } else {
-                it_first_idx += 1;
-            }
-        }
-
-        result.push(TravelPoint::new(*end, -1));
-
-        // Simplify the path
-        let simplified = self.simplify_travel(boundary, &result);
-
-        // Convert to polyline
-        let points: Vec<Point> = simplified.iter().map(|tp| tp.point).collect();
-
-        (Polyline::from_points(points), intersections.len())
-    }
-
-    /// Get the shortest direction around a polygon between two segments.
-    fn get_shortest_direction(
-        &self,
-        boundary: &Boundary,
-        poly_idx: usize,
-        seg1: usize,
-        seg2: usize,
-    ) -> Direction {
-        let total_length = boundary.polygon_length(poly_idx);
-        if total_length <= 0.0 {
-            return Direction::Forward;
-        }
-
-        let dist1 = boundary.distance_to_segment(poly_idx, seg1);
-        let dist2 = boundary.distance_to_segment(poly_idx, seg2);
-
-        let forward_dist = if dist2 >= dist1 {
-            dist2 - dist1
-        } else {
-            total_length - dist1 + dist2
-        };
-
-        let backward_dist = total_length - forward_dist;
-
-        if forward_dist <= backward_dist {
-            Direction::Forward
-        } else {
-            Direction::Backward
-        }
-    }
-
-    /// Offset a point inward from a polygon edge.
-    fn offset_point_inward(
-        &self,
-        boundary: &Boundary,
-        poly_idx: usize,
-        seg_idx: usize,
-        point: &Point,
-    ) -> Point {
-        if poly_idx >= boundary.polygons.len() {
-            return *point;
-        }
-
-        let poly = &boundary.polygons[poly_idx];
-        let points = poly.points();
-        if points.len() < 2 {
-            return *point;
-        }
-
-        let p1 = &points[seg_idx];
-        let p2 = &points[(seg_idx + 1) % points.len()];
-
-        // Compute inward normal
-        let dx = (p2.x - p1.x) as f64;
-        let dy = (p2.y - p1.y) as f64;
-        let len = (dx * dx + dy * dy).sqrt();
-
-        if len < 1.0 {
-            return *point;
-        }
-
-        // Normal pointing inward (assuming CCW winding for outer contour)
-        let nx = dy / len;
-        let ny = -dx / len;
-
-        let offset = self.config.boundary_offset as f64;
-        Point::new(
-            (point.x as f64 + nx * offset) as i64,
-            (point.y as f64 + ny * offset) as i64,
-        )
-    }
-
-    /// Offset a polygon vertex inward.
-    fn offset_vertex(&self, boundary: &Boundary, poly_idx: usize, vertex_idx: usize) -> Point {
-        if poly_idx >= boundary.polygons.len() {
-            return Point::new(0, 0);
-        }
-
-        let poly = &boundary.polygons[poly_idx];
-        let points = poly.points();
-        let n = points.len();
-
-        if n < 3 {
-            return points.get(vertex_idx).copied().unwrap_or(Point::new(0, 0));
-        }
-
-        let prev_idx = if vertex_idx == 0 {
-            n - 1
-        } else {
-            vertex_idx - 1
-        };
-        let next_idx = (vertex_idx + 1) % n;
-
-        let prev = &points[prev_idx];
-        let curr = &points[vertex_idx];
-        let next = &points[next_idx];
-
-        // Compute inward normal as average of edge normals
-        let v1 = ((curr.x - prev.x) as f64, (curr.y - prev.y) as f64);
-        let v2 = ((next.x - curr.x) as f64, (next.y - curr.y) as f64);
-
-        let len1 = (v1.0 * v1.0 + v1.1 * v1.1).sqrt();
-        let len2 = (v2.0 * v2.0 + v2.1 * v2.1).sqrt();
-
-        if len1 < 1.0 || len2 < 1.0 {
-            return *curr;
-        }
-
-        // Normals (rotated 90 degrees)
-        let n1 = (v1.1 / len1, -v1.0 / len1);
-        let n2 = (v2.1 / len2, -v2.0 / len2);
-
-        // Average normal
-        let avg_nx = (n1.0 + n2.0) / 2.0;
-        let avg_ny = (n1.1 + n2.1) / 2.0;
-        let avg_len = (avg_nx * avg_nx + avg_ny * avg_ny).sqrt();
-
-        if avg_len < 0.01 {
-            return *curr;
-        }
-
-        let offset = self.config.boundary_offset as f64;
-        Point::new(
-            (curr.x as f64 + avg_nx / avg_len * offset) as i64,
-            (curr.y as f64 + avg_ny / avg_len * offset) as i64,
-        )
-    }
-
-    /// Simplify the travel path by removing unnecessary points.
-    fn simplify_travel(&self, boundary: &Boundary, path: &[TravelPoint]) -> Vec<TravelPoint> {
-        if path.len() <= 2 {
-            return path.to_vec();
-        }
-
-        let mut result: Vec<TravelPoint> = Vec::with_capacity(path.len());
-        result.push(path[0].clone());
-
-        let mut current_idx = 0;
-
-        while current_idx < path.len() - 1 {
-            let current = &path[current_idx];
-
-            // Try to skip to the furthest point that doesn't cause new crossings
-            let mut best_next_idx = current_idx + 1;
-
-            for try_idx in (current_idx + 2)..path.len() {
-                let try_point = &path[try_idx];
-
-                // Check if direct path causes crossings
-                if !boundary
-                    .grid
-                    .line_intersects_any(&current.point, &try_point.point)
-                {
-                    // No crossings, we can skip to this point
-                    best_next_idx = try_idx;
-                } else if path[try_idx].do_not_remove {
-                    // Can't skip past do_not_remove points
-                    break;
-                }
-            }
-
-            result.push(path[best_next_idx].clone());
-            current_idx = best_next_idx;
-        }
-
-        result
-    }
-
-    /// Calculate distance between two points.
-    fn distance(p1: &Point, p2: &Point) -> f64 {
-        let dx = (p2.x - p1.x) as f64;
-        let dy = (p2.y - p1.y) as f64;
-        (dx * dx + dy * dy).sqrt()
+        self.m_use_external_mp_once = false;
+        self.m_disabled_once = false;
     }
 }
 
 impl Default for AvoidCrossingPerimeters {
     fn default() -> Self {
-        Self::with_defaults()
+        Self::new()
     }
 }
 
@@ -725,190 +1365,61 @@ impl Default for AvoidCrossingPerimeters {
 mod tests {
     use super::*;
 
-    fn make_square_boundary() -> Vec<Polygon> {
-        vec![Polygon::from_points(vec![
-            Point::new(100_000, 100_000),
-            Point::new(900_000, 100_000),
-            Point::new(900_000, 900_000),
-            Point::new(100_000, 900_000),
-        ])]
-    }
-
-    #[test]
-    fn test_travel_config_default() {
-        let config = TravelConfig::default();
-        assert!(config.enabled);
-        assert_eq!(config.max_detour_percent, 200.0);
-    }
-
-    #[test]
-    fn test_travel_config_builder() {
-        let config = TravelConfig::new()
-            .with_enabled(false)
-            .with_max_detour_percent(150.0)
-            .with_grid_resolution(50_000);
-
-        assert!(!config.enabled);
-        assert_eq!(config.max_detour_percent, 150.0);
-        assert_eq!(config.grid_resolution, 50_000);
-    }
-
-    #[test]
-    fn test_avoid_crossing_disabled() {
-        let config = TravelConfig::new().with_enabled(false);
-        let mut avoid = AvoidCrossingPerimeters::new(config);
-
-        let boundaries = make_square_boundary();
-        avoid.init_layer(&boundaries, 400_000);
-
-        let start = Point::new(0, 500_000);
-        let end = Point::new(1_000_000, 500_000);
-
-        let result = avoid.travel_to(&start, &end);
-        assert!(!result.path_modified);
-        assert_eq!(result.path.points().len(), 2);
-    }
-
-    #[test]
-    fn test_avoid_crossing_no_intersection() {
-        let mut avoid = AvoidCrossingPerimeters::with_defaults();
-
-        let boundaries = make_square_boundary();
-        avoid.init_layer(&boundaries, 400_000);
-
-        // Travel outside the square boundary
-        let start = Point::new(0, 50_000);
-        let end = Point::new(1_000_000, 50_000);
-
-        let result = avoid.travel_to(&start, &end);
-        assert!(!result.path_modified);
-        assert_eq!(result.path.points().len(), 2);
-    }
-
-    #[test]
-    fn test_avoid_crossing_with_intersection() {
-        let mut avoid = AvoidCrossingPerimeters::with_defaults();
-
-        let boundaries = make_square_boundary();
-        avoid.init_layer(&boundaries, 400_000);
-
-        // First travel is disabled by default (disabled_once = true for first move)
-        // so we need to reset or do a first move
-        avoid.reset_once_modifiers();
-
-        // Travel through the square boundary
-        let start = Point::new(0, 500_000);
-        let end = Point::new(1_000_000, 500_000);
-
-        let result = avoid.travel_to(&start, &end);
-        assert!(result.original_crossings > 0);
-        // Path may or may not be modified depending on detour limits
-    }
-
-    #[test]
-    fn test_disable_once() {
-        let mut avoid = AvoidCrossingPerimeters::with_defaults();
-
-        let boundaries = make_square_boundary();
-        avoid.init_layer(&boundaries, 400_000);
-
-        avoid.disable_once();
-
-        let start = Point::new(0, 500_000);
-        let end = Point::new(1_000_000, 500_000);
-
-        let result = avoid.travel_to(&start, &end);
-        assert!(!result.path_modified); // Should be disabled for this move
-
-        // Next move should work normally
-        let result2 = avoid.travel_to(&start, &end);
-        // original_crossings should be detected if crossing occurs
-    }
-
-    #[test]
-    fn test_empty_boundaries() {
-        let mut avoid = AvoidCrossingPerimeters::with_defaults();
-        avoid.init_layer(&[], 400_000);
-
-        let start = Point::new(0, 500_000);
-        let end = Point::new(1_000_000, 500_000);
-
-        let result = avoid.travel_to(&start, &end);
-        assert!(!result.path_modified);
-        assert_eq!(result.path.points().len(), 2);
-    }
-
-    #[test]
-    fn test_travel_result_direct() {
-        let start = Point::new(0, 0);
-        let end = Point::new(100, 100);
-
-        let result = TravelResult::direct(start, end);
-        assert!(!result.path_modified);
-        assert_eq!(result.original_crossings, 0);
-        assert_eq!(result.path.points().len(), 2);
-    }
-
-    #[test]
-    fn test_boundary_init() {
-        let mut boundary = Boundary::new();
-        assert!(boundary.is_empty());
-
-        let polygons = make_square_boundary();
-        boundary.init(polygons, 100_000);
-
-        assert!(!boundary.is_empty());
-        assert_eq!(boundary.polygons.len(), 1);
-        assert!(!boundary.bbox.is_empty());
-    }
-
-    #[test]
-    fn test_direction_shortest() {
-        let mut avoid = AvoidCrossingPerimeters::with_defaults();
-        let boundaries = make_square_boundary();
-        avoid.init_layer(&boundaries, 400_000);
-
-        // The direction should be Forward when seg1 < seg2 and difference is small
-        let dir = avoid.get_shortest_direction(&avoid.internal, 0, 0, 1);
-        assert_eq!(dir, Direction::Forward);
-    }
-
-    #[test]
-    fn test_simplify_empty_path() {
-        let avoid = AvoidCrossingPerimeters::with_defaults();
-        let boundary = Boundary::new();
-
-        let path: Vec<TravelPoint> = vec![];
-        let simplified = avoid.simplify_travel(&boundary, &path);
-        assert!(simplified.is_empty());
-    }
-
-    #[test]
-    fn test_simplify_two_point_path() {
-        let avoid = AvoidCrossingPerimeters::with_defaults();
-        let boundary = Boundary::new();
-
-        let path = vec![
-            TravelPoint::new(Point::new(0, 0), -1),
-            TravelPoint::new(Point::new(100, 100), -1),
-        ];
-        let simplified = avoid.simplify_travel(&boundary, &path);
-        assert_eq!(simplified.len(), 2);
-    }
-
-    #[test]
-    fn test_polygon_length() {
-        let mut boundary = Boundary::new();
-        let square = Polygon::from_points(vec![
+    fn make_square() -> Polygon {
+        Polygon::from_points(vec![
             Point::new(0, 0),
             Point::new(1_000_000, 0),
             Point::new(1_000_000, 1_000_000),
             Point::new(0, 1_000_000),
-        ]);
-        boundary.init(vec![square], 100_000);
+        ])
+    }
 
-        let length = boundary.polygon_length(0);
-        // Square perimeter = 4 * 1mm = 4mm = 4_000_000 scaled units
-        assert!((length - 4_000_000.0).abs() < 1000.0);
+    #[test]
+    fn test_precompute_polygon_distances() {
+        let square = make_square();
+        let mut distances: Vec<f32> = Vec::new();
+        precompute_polygon_distances(&square, &mut distances);
+        // 4 vertices -> 5 entries (closing distance at the end)
+        assert_eq!(distances.len(), 5);
+        // Square perimeter = 4 * 1mm = 4_000_000 scaled units
+        assert!((distances[4] - 4_000_000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_to_polyline() {
+        let travel = vec![
+            TravelPoint { point: Point::new(0, 0), border_idx: -1, do_not_remove: false },
+            TravelPoint { point: Point::new(100, 100), border_idx: -1, do_not_remove: false },
+        ];
+        let pl = to_polyline(&travel);
+        assert_eq!(pl.points.len(), 2);
+    }
+
+    #[test]
+    fn test_init_boundary() {
+        let mut boundary = Boundary::new();
+        init_boundary(&mut boundary, vec![make_square()]);
+        assert_eq!(boundary.boundaries.len(), 1);
+        assert_eq!(boundary.boundaries_params.len(), 1);
+        assert_eq!(boundary.boundaries_params[0].len(), 5);
+    }
+
+    #[test]
+    fn test_once_modifiers() {
+        let mut acp = AvoidCrossingPerimeters::new();
+        assert!(acp.disabled_once()); // disabled for first move
+        acp.reset_once_modifiers();
+        assert!(!acp.disabled_once());
+        acp.use_external_mp_once();
+        assert!(acp.used_external_mp_once());
+    }
+
+    #[test]
+    fn test_find_first_different_vertex() {
+        let square = make_square();
+        let pt = Point::new(0, 0);
+        // forward from index 0 (== pt) should find next distinct vertex
+        let v = find_first_different_vertex(&square, 0, &pt, true);
+        assert_ne!(v, pt);
     }
 }

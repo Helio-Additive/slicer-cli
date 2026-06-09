@@ -13,6 +13,7 @@ pub mod curve_analyzer;
 pub mod custom_gcode;
 pub mod exporter;
 pub mod extruder;
+pub mod g_code_editor;
 pub mod gcode_editor;
 pub mod gcode_processor;
 mod generator;
@@ -20,6 +21,7 @@ pub mod ironing;
 pub mod multi_material;
 mod path;
 pub mod placeholder_parser;
+pub mod post_processor;
 pub mod pressure_equalizer;
 pub mod print_extents;
 pub mod reader;
@@ -40,7 +42,10 @@ pub use arc_fitting::{
     fit_arcs, fit_arcs_to_points, ArcDirection, ArcFitter, ArcFittingConfig, ArcFittingStats,
     FittedArc, PathSegment,
 };
-pub use avoid_crossing_perimeters::{AvoidCrossingPerimeters, TravelConfig, TravelResult};
+pub use avoid_crossing_perimeters::{
+    init_boundary, init_boundary_with_merge_points, AvoidCrossingPerimeters, Boundary,
+    ConvertBBoxToPolyline,
+};
 pub use compare::{
     compare_exact_lines, compare_gcode, compare_gcode_files, ComparisonConfig, ComparisonResult,
     ExactComparisonResult, ExtrusionMode, ExtrusionTracker, GCodeComparator, GCodeMove,

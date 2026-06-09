@@ -1,291 +1,264 @@
-//! Timelapse position picker for smooth timelapse photography.
+//! Faithful 1:1 port of `GCode/TimelapsePosPicker.{hpp,cpp}` from BambuStudio.
 //!
-//! C++ Reference:
-//! - GCode/TimelapsePosPicker.hpp
-//! - GCode/TimelapsePosPicker.cpp
+//! The timelapse position picker selects a safe location for the toolhead to
+//! move to while a timelapse photo is taken, avoiding collisions with already
+//! printed objects, the camera occlusion zone and the rod clearance area.
 //!
-//! This module picks optimal positions for the toolhead to move to when taking
-//! timelapse photos, avoiding collisions with printed objects.
+//! Porting status (see the module-level note and `PORT_LEDGER.json`): the pure
+//! geometry routine `pick_pos_internal` is ported faithfully and is fully
+//! self-contained. The `TimelapsePosPicker` class methods are BLOCKED on
+//! libslic3r types/config that are not yet ported in this crate
+//! (`PrintInstance`, `PrintObject::instances/has_raft/slicing_parameters/config`,
+//! `Print::get_fake_wipe_tower/wipe_tower_data`, and the
+//! `printable_area`/`bed_exclude_area`/`extruder_printable_area`/
+//! `extruder_printable_height`/`initial_layer_print_height` config options, plus
+//! the vector form of `nozzle_diameter` and the `TimelapseType` enum). They are
+//! intentionally NOT faked here.
 
-use crate::geometry::Point;
+// TimelapsePosPicker.cpp:1   #include "ClipperUtils.hpp"
+// TimelapsePosPicker.cpp:2   #include "TimelapsePosPicker.hpp"
+// TimelapsePosPicker.cpp:3   #include "Layer.hpp"
+use crate::clipper_utils::intersection_pl;
+use crate::geometry::{ExPolygons, Point, Polyline};
+use crate::scale;
+use crate::utils::next_idx_modulo;
 
-/// Default timelapse position (origin).
+// TimelapsePosPicker.hpp:12  const Point DefaultTimelapsePos = Point(0, 0);
 pub const DEFAULT_TIMELAPSE_POS: Point = Point { x: 0, y: 0 };
-
-/// Default camera position (origin).
+// TimelapsePosPicker.hpp:13  const Point DefaultCameraPos = Point(0, 0);
 pub const DEFAULT_CAMERA_POS: Point = Point { x: 0, y: 0 };
 
-/// Context for position picking decisions.
-/// Corresponds to C++ PosPickCtx.
-#[derive(Debug, Clone)]
-pub struct PosPickCtx {
-    /// Current toolhead position.
-    pub curr_pos: Point,
-    /// Current layer index (used to reference layer data).
-    pub curr_layer_index: Option<usize>,
-    /// Extruder ID used for taking the picture.
-    pub picture_extruder_id: i32,
-    /// Currently active extruder ID.
-    pub curr_extruder_id: i32,
-    /// Printed objects (only in by-object mode).
-    pub printed_object_count: Option<usize>,
-}
+// TimelapsePosPicker.cpp:5   constexpr int FILTER_THRESHOLD = 5;
+#[allow(dead_code)]
+pub(crate) const FILTER_THRESHOLD: i32 = 5;
+// TimelapsePosPicker.cpp:6   constexpr int MAX_CANDIDATE_SIZE = 5;
+const MAX_CANDIDATE_SIZE: usize = 5;
 
-impl PosPickCtx {
-    pub fn new() -> Self {
-        Self {
-            curr_pos: DEFAULT_TIMELAPSE_POS,
-            curr_layer_index: None,
-            picture_extruder_id: 0,
-            curr_extruder_id: 0,
-            printed_object_count: None,
-        }
-    }
-}
+/// TimelapsePosPicker.cpp:364-441
+///
+/// Selects the nearest position within the given safe areas relative to the
+/// current position.
+///
+/// This function determines the closest point in the safe areas to the provided
+/// current position. If the current position is already inside a safe area, it
+/// returns the current position. If no safe areas are defined, returns the
+/// default timelapse position.
+///
+/// * `curr_pos` - The reference point representing the current position.
+/// * `safe_areas` - A collection of extended polygons defining the safe areas.
+/// * returns the nearest point within the safe areas or the default timelapse
+///   position if no safe areas exist.
+pub fn pick_pos_internal(
+    curr_pos: &Point,
+    safe_areas: &ExPolygons,
+    path_collision_area: &ExPolygons,
+    detect_path_collision: bool,
+) -> Point {
+    // TimelapsePosPicker.cpp:366-373
+    // struct CandidatePoint { double dist; Point point; bool operator< { return dist < other.dist; } }
 
-impl Default for PosPickCtx {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Print sequence mode affecting timelapse behavior.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrintSequence {
-    ByLayer,
-    ByObject,
-}
-
-impl Default for PrintSequence {
-    fn default() -> Self {
-        PrintSequence::ByLayer
-    }
-}
-
-/// Timelapse position picker.
-/// Selects safe toolhead positions for timelapse photography.
-/// Corresponds to C++ TimelapsePosPicker.
-#[derive(Debug, Clone)]
-pub struct TimelapsePosPicker {
-    /// Printable area polygons per extruder (scaled coordinates).
-    extruder_printable_area: Vec<Vec<Point>>,
-    /// Bed polygon (scaled coordinates).
-    bed_polygon: Vec<Point>,
-    /// Plate offset (unscaled).
-    plate_offset: Point,
-    /// Plate height (unscaled).
-    plate_height: i64,
-    /// Plate width (unscaled).
-    plate_width: i64,
-    /// Print sequence mode.
-    print_seq: PrintSequence,
-    /// Whether to base position on all layers.
-    based_on_all_layer: bool,
-    /// Nozzle height to rod clearance.
-    nozzle_height_to_rod: i64,
-    /// Nozzle clearance radius.
-    nozzle_clearance_radius: i64,
-    /// Liftable extruder ID if applicable.
-    liftable_extruder_id: Option<i64>,
-    /// Extruder height gap if applicable.
-    extruder_height_gap: Option<i64>,
-    /// Cached position for all-layer mode.
-    all_layer_pos: Option<Point>,
-    /// Whether the picker has been initialized.
-    initialized: bool,
-}
-
-impl TimelapsePosPicker {
-    pub fn new() -> Self {
-        Self {
-            extruder_printable_area: Vec::new(),
-            bed_polygon: Vec::new(),
-            plate_offset: Point { x: 0, y: 0 },
-            plate_height: 0,
-            plate_width: 0,
-            print_seq: PrintSequence::ByLayer,
-            based_on_all_layer: false,
-            nozzle_height_to_rod: 0,
-            nozzle_clearance_radius: 0,
-            liftable_extruder_id: None,
-            extruder_height_gap: None,
-            all_layer_pos: None,
-            initialized: false,
-        }
+    // TimelapsePosPicker.cpp:375-376
+    // if any safe area contains curr_pos, return curr_pos
+    if safe_areas.iter().any(|p| p.contains_point(curr_pos)) {
+        return *curr_pos;
     }
 
-    /// Initialize the picker with print configuration.
-    pub fn init(&mut self, plate_offset: Point, plate_width: i64, plate_height: i64) {
-        self.plate_offset = plate_offset;
-        self.plate_width = plate_width;
-        self.plate_height = plate_height;
-        self.construct_printable_area_by_printer();
-        self.initialized = true;
+    // TimelapsePosPicker.cpp:378-379
+    if safe_areas.is_empty() {
+        return DEFAULT_TIMELAPSE_POS;
     }
 
-    /// Reset state between prints.
-    pub fn reset(&mut self) {
-        self.extruder_printable_area.clear();
-        self.bed_polygon.clear();
-        self.all_layer_pos = None;
-        self.initialized = false;
-    }
+    // TimelapsePosPicker.cpp:381  std::priority_queue<CandidatePoint> max_heap;
+    // C++ uses a max-heap (default std::priority_queue ordering by operator<,
+    // which compares `dist`). We model it with a Vec and explicit pop-of-max
+    // (see `peek_max`/`pop_max`).
+    let mut max_heap: Vec<CandidatePoint> = Vec::new();
 
-    /// Pick the best timelapse position for the given context.
-    pub fn pick_pos(&self, ctx: &PosPickCtx) -> Point {
-        if !self.initialized {
-            return DEFAULT_TIMELAPSE_POS;
-        }
+    // TimelapsePosPicker.cpp:383
+    // constexpr double candidate_point_segment = scale_(5), weight_of_camera = 1./3.;
+    let candidate_point_segment: f64 = scale(5.0) as f64;
+    let weight_of_camera: f64 = 1.0 / 3.0;
 
-        if self.based_on_all_layer {
-            if let Some(pos) = self.all_layer_pos {
-                return pos;
+    // TimelapsePosPicker.cpp:384-388
+    // move distance + Camera occlusion penalty function
+    let penalty_func = |curr_post: &Point, camera_pos: &Point, candidatet: &Point| -> f64 {
+        // (curr_post - candidatet).cwiseAbs().sum()
+        let move_l1 = ((curr_post.x - candidatet.x).abs() + (curr_post.y - candidatet.y).abs()) as f64;
+        // (CameraPos - candidatet).cwiseAbs().sum()
+        let cam_l1 = ((camera_pos.x - candidatet.x).abs() + (camera_pos.y - candidatet.y).abs()) as f64;
+        move_l1 - weight_of_camera * cam_l1
+    };
+
+    // TimelapsePosPicker.cpp:390-421
+    for expoly in safe_areas {
+        // Polygons polys = to_polygons(expoly);
+        let polys = expoly.to_polygons();
+        for poly in &polys {
+            for idx in 0..poly.points.len() {
+                // TimelapsePosPicker.cpp:394-395
+                let mut best_penalty: f64 = f64::MAX;
+                let mut best_candidate: Point = DEFAULT_TIMELAPSE_POS; // the best candidate from current line
+                //std::vector<Point> candidate_source;
+
+                // TimelapsePosPicker.cpp:397
+                let next = poly.points[next_idx_modulo(idx, poly.points.len())];
+                let seg_l1 =
+                    ((poly.points[idx].x - next.x).abs() + (poly.points[idx].y - next.y).abs()) as f64;
+                if seg_l1 < candidate_point_segment {
+                    // TimelapsePosPicker.cpp:398-399
+                    // only check the start point if the line is short
+                    best_candidate = poly.points[idx];
+                    best_penalty = penalty_func(curr_pos, &DEFAULT_CAMERA_POS, &best_candidate);
+                } else {
+                    // TimelapsePosPicker.cpp:401  Point direct_of_line = next - cur;
+                    let mut direct_of_line = next - poly.points[idx];
+                    // TimelapsePosPicker.cpp:402  double length_L1 = direct_of_line.cwiseAbs().sum();
+                    let length_l1: f64 = (direct_of_line.x.abs() + direct_of_line.y.abs()) as f64;
+                    // TimelapsePosPicker.cpp:403
+                    // for long line use 5mm segmentation to check
+                    let num_steps: i32 = (length_l1 / candidate_point_segment) as i32;
+                    // TimelapsePosPicker.cpp:404-406
+                    // divide by length_L1 instead of steps, prevent lose accuracy for the step length
+                    direct_of_line.x =
+                        (direct_of_line.x as f64 * candidate_point_segment / length_l1) as i64;
+                    direct_of_line.y =
+                        (direct_of_line.y as f64 * candidate_point_segment / length_l1) as i64;
+                    // TimelapsePosPicker.cpp:407-415
+                    for line_seg_i in 0..=num_steps {
+                        let candidate = poly.points[idx] + direct_of_line * (line_seg_i as i64);
+                        let dist = penalty_func(curr_pos, &DEFAULT_CAMERA_POS, &candidate);
+                        if dist < best_penalty {
+                            best_penalty = dist;
+                            best_candidate = candidate;
+                        } //only push the best point into heap for the whole line
+                    }
+                }
+                // TimelapsePosPicker.cpp:417  max_heap.push({best_penalty, best_candidate});
+                max_heap.push(CandidatePoint {
+                    dist: best_penalty,
+                    point: best_candidate,
+                });
+                // TimelapsePosPicker.cpp:418
+                // if (max_heap.size() > MAX_CANDIDATE_SIZE) max_heap.pop();
+                if max_heap.len() > MAX_CANDIDATE_SIZE {
+                    pop_max(&mut max_heap);
+                }
             }
         }
-
-        self.pick_pos_for_curr_layer(ctx)
     }
 
-    /// Pick position based on current layer data.
-    fn pick_pos_for_curr_layer(&self, ctx: &PosPickCtx) -> Point {
-        // Default: move to the center of the printable area
-        // In a full implementation, this would avoid printed object areas
-        if !self.bed_polygon.is_empty() {
-            // Use center of bed polygon
-            let (sum_x, sum_y) = self.bed_polygon.iter().fold((0i64, 0i64), |acc, p| {
-                (acc.0 + p.x as i64, acc.1 + p.y as i64)
-            });
-            let n = self.bed_polygon.len() as i64;
-            if n > 0 {
-                return Point {
-                    x: sum_x / n,
-                    y: sum_y / n,
-                };
-            }
+    // TimelapsePosPicker.cpp:423-428
+    let mut top_candidates: Vec<Point> = Vec::new();
+    while !max_heap.is_empty() {
+        // top_candidates.push_back(max_heap.top().point); max_heap.pop();
+        let top = peek_max(&max_heap);
+        top_candidates.push(top.point);
+        pop_max(&mut max_heap);
+    }
+    top_candidates.reverse();
+
+    // TimelapsePosPicker.cpp:430-438
+    for p in &top_candidates {
+        if !detect_path_collision {
+            return *p;
         }
 
-        // Fallback: use current position (minimal movement)
-        ctx.curr_pos
+        // Polyline path(curr_pos, p);
+        let path = Polyline::from_points(vec![*curr_pos, *p]);
+
+        // if (intersection_pl(path, path_collision_area).empty()) return p;
+        if intersection_pl(std::slice::from_ref(&path), path_collision_area).is_empty() {
+            return *p;
+        }
     }
 
-    /// Construct printable area from printer configuration.
-    fn construct_printable_area_by_printer(&mut self) {
-        // Build a rectangle for the bed polygon based on plate dimensions
-        let half_w = self.plate_width / 2;
-        let half_h = self.plate_height / 2;
-        let ox = self.plate_offset.x;
-        let oy = self.plate_offset.y;
+    // TimelapsePosPicker.cpp:440
+    DEFAULT_TIMELAPSE_POS
+}
 
-        self.bed_polygon = vec![
-            Point {
-                x: ox - half_w,
-                y: oy - half_h,
-            },
-            Point {
-                x: ox + half_w,
-                y: oy - half_h,
-            },
-            Point {
-                x: ox + half_w,
-                y: oy + half_h,
-            },
-            Point {
-                x: ox - half_w,
-                y: oy + half_h,
-            },
-        ];
+/// TimelapsePosPicker.cpp:366-373  struct CandidatePoint { double dist; Point point; }
+///
+/// `operator<` compares `dist`, so `std::priority_queue<CandidatePoint>` is a
+/// max-heap on `dist`.
+#[derive(Clone, Copy)]
+struct CandidatePoint {
+    dist: f64,
+    point: Point,
+}
+
+/// Helper modelling `std::priority_queue::top()` for the `CandidatePoint`
+/// max-heap used in `pick_pos_internal` (the element with the greatest `dist`).
+fn peek_max(heap: &[CandidatePoint]) -> CandidatePoint {
+    let mut max_i = 0usize;
+    for (i, c) in heap.iter().enumerate() {
+        if c.dist > heap[max_i].dist {
+            max_i = i;
+        }
     }
+    heap[max_i]
 }
 
-impl Default for TimelapsePosPicker {
-    fn default() -> Self {
-        Self::new()
+/// Helper modelling `std::priority_queue::pop()`: remove the element with the
+/// greatest `dist`.
+fn pop_max(heap: &mut Vec<CandidatePoint>) {
+    if heap.is_empty() {
+        return;
     }
-}
-
-/// Collect object slice data for collision avoidance.
-/// Returns area polygons for the current layer's object cross-sections.
-pub fn collect_object_slices_data() -> crate::Result<()> {
-    // In a full implementation, this collects ExPolygons from the layer's object slices
-    Ok(())
-}
-
-/// Reset the timelapse position picker.
-pub fn reset(picker: &mut TimelapsePosPicker) {
-    picker.reset();
-}
-
-/// Collect limit areas for camera clearance.
-/// Returns polygons representing areas the camera cannot reach.
-pub fn collect_limit_areas_for_camera() -> crate::Result<()> {
-    // Computes camera clearance zones based on object projections
-    Ok(())
-}
-
-/// Construct the printable area based on printer configuration.
-pub fn construct_printable_area_by_printer(picker: &mut TimelapsePosPicker) {
-    picker.construct_printable_area_by_printer();
-}
-
-/// Collect limit areas for rod clearance.
-/// Returns polygons representing areas blocked by the rod mechanism.
-pub fn collect_limit_areas_for_rod() -> crate::Result<()> {
-    // Computes rod clearance zones for CoreXY / bed-slinger printers
-    Ok(())
+    let mut max_i = 0usize;
+    for (i, c) in heap.iter().enumerate() {
+        if c.dist > heap[max_i].dist {
+            max_i = i;
+        }
+    }
+    heap.swap_remove(max_i);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{ExPolygon, Polygon};
 
+    /// A point already inside a safe area returns itself (cpp:375-376).
     #[test]
-    fn test_pos_pick_ctx_default() {
-        let ctx = PosPickCtx::new();
-        assert_eq!(ctx.curr_pos, DEFAULT_TIMELAPSE_POS);
-        assert_eq!(ctx.picture_extruder_id, 0);
+    fn test_pick_pos_internal_inside_returns_curr() {
+        let square = Polygon {
+            points: vec![
+                Point::new(scale(0.0), scale(0.0)),
+                Point::new(scale(100.0), scale(0.0)),
+                Point::new(scale(100.0), scale(100.0)),
+                Point::new(scale(0.0), scale(100.0)),
+            ],
+        };
+        let safe = vec![ExPolygon::new(square)];
+        let curr = Point::new(scale(50.0), scale(50.0));
+        let res = pick_pos_internal(&curr, &safe, &Vec::new(), false);
+        assert_eq!(res, curr);
     }
 
+    /// Empty safe areas yield the default timelapse position (cpp:378-379).
     #[test]
-    fn test_timelapse_picker_default() {
-        let picker = TimelapsePosPicker::new();
-        assert!(!picker.initialized);
+    fn test_pick_pos_internal_empty_returns_default() {
+        let curr = Point::new(scale(10.0), scale(10.0));
+        let res = pick_pos_internal(&curr, &Vec::new(), &Vec::new(), false);
+        assert_eq!(res, DEFAULT_TIMELAPSE_POS);
     }
 
+    /// With a safe area not containing curr and no path-collision detection, a
+    /// boundary point of the safe area is returned (cpp:390-432).
     #[test]
-    fn test_timelapse_picker_init_and_reset() {
-        let mut picker = TimelapsePosPicker::new();
-        picker.init(Point { x: 0, y: 0 }, 256, 256);
-        assert!(picker.initialized);
-        assert!(!picker.bed_polygon.is_empty());
-
-        picker.reset();
-        assert!(!picker.initialized);
-        assert!(picker.bed_polygon.is_empty());
-    }
-
-    #[test]
-    fn test_pick_pos_uninitialized() {
-        let picker = TimelapsePosPicker::new();
-        let ctx = PosPickCtx::new();
-        let pos = picker.pick_pos(&ctx);
-        assert_eq!(pos, DEFAULT_TIMELAPSE_POS);
-    }
-
-    #[test]
-    fn test_pick_pos_initialized() {
-        let mut picker = TimelapsePosPicker::new();
-        picker.init(Point { x: 100, y: 100 }, 200, 200);
-        let ctx = PosPickCtx::new();
-        let pos = picker.pick_pos(&ctx);
-        // Should return center of bed polygon (around plate_offset)
-        assert_eq!(pos.x, 100);
-        assert_eq!(pos.y, 100);
-    }
-
-    #[test]
-    fn test_convenience_functions() {
-        assert!(collect_object_slices_data().is_ok());
-        assert!(collect_limit_areas_for_camera().is_ok());
-        assert!(collect_limit_areas_for_rod().is_ok());
+    fn test_pick_pos_internal_outside_returns_boundary() {
+        let square = Polygon {
+            points: vec![
+                Point::new(scale(10.0), scale(10.0)),
+                Point::new(scale(20.0), scale(10.0)),
+                Point::new(scale(20.0), scale(20.0)),
+                Point::new(scale(10.0), scale(20.0)),
+            ],
+        };
+        let safe = vec![ExPolygon::new(square)];
+        let curr = Point::new(scale(0.0), scale(0.0));
+        let res = pick_pos_internal(&curr, &safe, &Vec::new(), false);
+        // Must be a real candidate, not the fallback default.
+        assert_ne!(res, DEFAULT_TIMELAPSE_POS);
     }
 }

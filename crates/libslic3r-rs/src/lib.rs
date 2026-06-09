@@ -398,7 +398,8 @@ pub use edge_grid::{ClosestPointResult, Contour, EdgeGrid, Intersection};
 
 // Re-export travel planning
 pub use crate::gcode::avoid_crossing_perimeters::{
-    AvoidCrossingPerimeters, TravelConfig, TravelResult,
+    init_boundary, init_boundary_with_merge_points, AvoidCrossingPerimeters, Boundary,
+    ConvertBBoxToPolyline,
 };
 
 /// Coordinate type used throughout the slicer.
