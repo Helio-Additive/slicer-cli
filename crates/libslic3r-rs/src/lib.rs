@@ -338,23 +338,14 @@ pub use arachne::{
 
 // Note: infill generation already re-exported in fill module (lines 196-202)
 
-// Re-export adaptive infill
+// Re-export adaptive infill (FillAdaptive.cpp/.hpp)
 pub use fill::{
-    // TODO: Re-enable once adaptive infill is fully implemented
-    // build_octree, generate_adaptive_infill_with_density,
-    // AdaptiveInfillGenerator, AdaptiveInfillResult, Vec3d,
-    generate_adaptive_infill,
-    AdaptiveInfillConfig,
-    CubeProperties,
-    Octree,
+    build_octree, generate_adaptive_infill_lines, transform_to_octree, transform_to_world,
+    triangle_aabb_intersects, Cube, CubeProperties, Octree,
 };
 
 // Re-export 3D honeycomb infill
-pub use fill::{
-    // TODO: Re-enable once 3D honeycomb is fully implemented
-    // generate_honeycomb_3d, Honeycomb3DGenerator, Honeycomb3DResult,
-    Honeycomb3DConfig,
-};
+pub use fill::Fill3DHoneycomb;
 
 // Re-export Cross Hatch infill
 pub use fill::{
@@ -365,21 +356,13 @@ pub use fill::{
 };
 
 // Re-export plan path infill (space-filling curves)
-pub use fill::{
-    // TODO: Re-enable once plan path functions are fully implemented
-    // generate_archimedean_chords, generate_hilbert_curve, generate_octagram_spiral,
-    // PlanPathGenerator, PlanPathResult,
-    PlanPathConfig,
-    PlanPathPattern,
-};
+// FillPlanePath.cpp/.hpp — FillArchimedeanChords / FillHilbertCurve / FillOctagramSpiral.
+pub use fill::{FillPlanePath, PlanPathPattern};
 
-// Re-export floating concentric infill
+// Re-export floating concentric infill (FillFloatingConcentric.cpp/.hpp)
 pub use fill::{
-    // TODO: Re-enable once floating concentric functions are fully implemented
-    // generate_floating_concentric, generate_floating_concentric_with_config,
-    // FloatingConcentricGenerator, FloatingConcentricResult,
-    // FloatingThickLine, FloatingThickPolyline,
-    FloatingConcentricConfig,
+    FloatingPolyline, FloatingPolylines, FloatingThickPolyline, FloatingThickPolylines,
+    FloatingThickline, FloatingThicklines,
 };
 
 // Re-export support generation

@@ -8,7 +8,7 @@
 //! are grown from unsupported (overhang) points toward grounded regions,
 //! and the edges of each tree become infill lines.
 
-use super::tree_node::Node;
+use super::tree_node::{self, NodeSPtr};
 use crate::geometry::{ExPolygon, Point, Polygon, Polyline};
 use crate::Coord;
 
@@ -48,7 +48,7 @@ impl Default for GroundingLocation {
 #[derive(Debug, Clone, Default)]
 pub struct Layer {
     /// Root nodes of the tree forest for this layer.
-    pub tree_roots: Vec<Node>,
+    pub tree_roots: Vec<NodeSPtr>,
 }
 
 impl Layer {
@@ -65,12 +65,9 @@ impl Layer {
     /// Layer.cpp:436 — `Layer::convertToLines(const Polygons& limit_to_outline,
     /// const coord_t line_overlap)`
     ///
-    /// NOTE: `Node::convertToPolylines(output, line_overlap)` lives in
-    /// TreeNode.cpp (a separate, not-yet-fully-ported file). Here it is routed
-    /// through the existing `Node::to_polylines()` representation; once
-    /// TreeNode.cpp is ported faithfully, `line_overlap` will participate in the
-    /// per-node polyline construction. The Layer-level control flow below is a
-    /// faithful 1:1 translation of Layer.cpp:436-446.
+    /// `Node::convertToPolylines(output, line_overlap)` is now ported faithfully
+    /// in TreeNode.cpp; this routes each tree root through it. The Layer-level
+    /// control flow below is a faithful 1:1 translation of Layer.cpp:436-446.
     pub fn convert_to_lines(&self, limit_to_outline: &[Polygon], line_overlap: Coord) -> Vec<Polyline> {
         // Layer.cpp:438-439
         if self.tree_roots.is_empty() {
@@ -81,8 +78,7 @@ impl Layer {
         let mut result_lines: Vec<Polyline> = Vec::new();
         // Layer.cpp:442-443
         for tree in &self.tree_roots {
-            let _ = line_overlap; // forwarded to Node::convertToPolylines once ported
-            result_lines.extend(tree.to_polylines());
+            tree_node::convert_to_polylines(tree, &mut result_lines, line_overlap);
         }
 
         // Layer.cpp:445
@@ -105,9 +101,10 @@ impl Layer {
     pub fn fill_locator(&self) -> Vec<Point> {
         // Returns all node locations for spatial indexing
         let mut points = Vec::new();
-        fn collect_points(node: &Node, out: &mut Vec<Point>) {
-            out.push(node.location);
-            for child in &node.children {
+        fn collect_points(node: &NodeSPtr, out: &mut Vec<Point>) {
+            let n = node.borrow();
+            out.push(n.m_p);
+            for child in n.m_children.iter() {
                 collect_points(child, out);
             }
         }

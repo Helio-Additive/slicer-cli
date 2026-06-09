@@ -155,6 +155,20 @@ impl Flow {
         }
     }
 
+    /// Default-constructed flow with all members zero.
+    ///
+    /// Mirrors the C++ default constructor `Flow flow;` used e.g. by
+    /// `SurfaceFillParams` in Fill.cpp (all fields zero-initialized).
+    pub const fn zero() -> Self {
+        Self {
+            width: 0.0,
+            height: 0.0,
+            spacing: 0.0,
+            nozzle_diameter: 0.0,
+            bridge: false,
+        }
+    }
+
     /// Create a bridging flow.
     ///
     /// Bridge extrusions have circular cross-section because unsupported

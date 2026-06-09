@@ -1,536 +1,541 @@
-//! 3D Honeycomb (Truncated Octahedron) infill pattern.
+//! Faithful 1:1 line-by-line port of BambuStudio
+//! `src/libslic3r/Fill/Fill3DHoneycomb.cpp` (+ `.hpp`).
 //!
-//! This module implements a space-filling pattern based on truncated octahedrons
-//! that creates interlocking layers for excellent strength in all directions.
+//! C++ Reference:
+//! - Fill/Fill3DHoneycomb.hpp
+//! - Fill/Fill3DHoneycomb.cpp
 //!
-//! # Algorithm
+//! `coord_t` -> `i64` (`Coord`), `coordf_t` -> `f64` (`CoordF`).
 //!
-//! The pattern creates horizontal slices through a tessellation of truncated
-//! octahedrons. The octahedrons are oriented so that square faces are horizontal
-//! with edges parallel to X and Y axes.
-//!
-//! Key characteristics:
-//! - Pattern alternates between vertical and horizontal line directions based on Z
-//! - Lines follow a truncated octagonal waveform
-//! - Adjacent layers interlock for 3D strength
-//!
-//! # BambuStudio Reference
-//!
-//! This corresponds to:
-//! - `src/libslic3r/Fill/Fill3DHoneycomb.cpp`
-//!
-//! Credits: Original algorithm by David Eccles (gringer)
+//! Modelling notes (see also the per-line comments):
+//! - The C++ class `Fill3DHoneycomb` derives from `Fill`. There is no shared `Fill`
+//!   base struct in the Rust port (the fill module is otherwise procedural), so the
+//!   base members this fill reads — `angle`, `spacing`, `z` — are carried directly on
+//!   this struct, exactly as the sibling `FillPlanePath` / `FillConcentric` ports do.
+//! - `connect_infill` (the boundary-graph variant) maps to the crate-level
+//!   `super::connect_infill_expolygon`, which is the project's simplified port of
+//!   `Fill::connect_infill`. This matches how `FillPlanePath::_fill_surface_single`
+//!   wires connection up.
+//! - C++ `triWave` computes the fractional part with a `float t` (single precision)
+//!   and `(int)t` truncation toward zero. This is reproduced exactly with `f32` and
+//!   `as i32 as f32` (NOT `floor`), since the f32 quantisation feeds directly into
+//!   scaled integer point coordinates.
 
-use crate::geometry::{ExPolygon, Point, Polyline};
-use crate::{scale, unscale, Coord, CoordF};
+// Fill3DHoneycomb.cpp:1-5
+// #include "../ClipperUtils.hpp"
+// #include "../ShortestPath.hpp"
+// #include "../Surface.hpp"
+// #include "Fill3DHoneycomb.hpp"
+use crate::clipper_utils::intersection_pl;
+use crate::geometry::{ExPolygon, Point, Polyline, Polylines};
+use crate::shortest_path::chain_polylines;
+use crate::{scale, Coord, CoordF};
 
-/// Configuration for 3D honeycomb infill.
-#[derive(Debug, Clone)]
-pub struct Honeycomb3DConfig {
-    /// Line spacing (extrusion width / density).
-    pub spacing: CoordF,
+use super::{connect_infill_expolygon, multiline_fill, FillParams};
 
-    /// Current Z height in mm.
-    pub z: CoordF,
+// Fill3DHoneycomb.cpp:7
+// namespace Slic3r {
 
-    /// Layer height in mm.
-    pub layer_height: CoordF,
-
-    /// Infill density (0.0 - 1.0).
-    pub density: CoordF,
-
-    /// Rotation angle in radians.
-    pub angle: CoordF,
-
-    /// Whether to connect infill lines.
-    pub connect_lines: bool,
-}
-
-impl Default for Honeycomb3DConfig {
-    fn default() -> Self {
-        Self {
-            spacing: 0.45,
-            z: 0.0,
-            layer_height: 0.2,
-            density: 0.2,
-            angle: 0.0,
-            connect_lines: true,
-        }
-    }
-}
-
-impl Honeycomb3DConfig {
-    // Create config from density and spacing.
-    pub fn new(density: CoordF, spacing: CoordF) -> Self {
-        Self {
-            density: density.clamp(0.01, 1.0),
-            spacing,
-            ..Default::default()
-        }
-    }
-
-    /// Set the Z height for pattern generation.
-    pub fn with_z(mut self, z: CoordF) -> Self {
-        self.z = z;
-        self
-    }
-
-    /// Set the layer height.
-    pub fn with_layer_height(mut self, height: CoordF) -> Self {
-        self.layer_height = height;
-        self
-    }
-
-    /// Set the rotation angle in degrees.
-    pub fn with_angle_degrees(mut self, angle: CoordF) -> Self {
-        self.angle = angle.to_radians();
-        self
-    }
-}
-
-/// Sign function.
-#[inline]
-fn sgn(val: CoordF) -> CoordF {
-    if val > 0.0 {
-        1.0
-    } else if val < 0.0 {
-        -1.0
-    } else {
-        0.0
-    }
-}
-
-/// Triangular wave function.
+/// Fill3DHoneycomb.hpp:12-29  class Fill3DHoneycomb : public Fill
 ///
-/// Period: gridSize * 2
-/// Amplitude: gridSize / 2
-/// The wave oscillates between 0 and gridSize/2
-#[inline]
+/// Carries the `Fill` base members this fill reads (`angle`, `spacing`, `z`).
+#[derive(Debug, Clone, Default)]
+pub struct Fill3DHoneycomb {
+    // Fill base (FillBase.hpp): `float angle;` — infill rotation, in radians.
+    pub angle: f32,
+    // Fill base (FillBase.hpp): `coordf_t spacing;` — in unscaled coordinates.
+    pub spacing: f64,
+    // Fill base (FillBase.hpp): `coordf_t z;` — current slice Z, in unscaled coordinates.
+    pub z: f64,
+}
+
+impl Fill3DHoneycomb {
+    /// Fill3DHoneycomb.hpp:18-19  bool use_bridge_flow() const override { return true; }
+    // require bridge flow since most of this pattern hangs in air
+    pub fn use_bridge_flow(&self) -> bool {
+        true
+    }
+
+    /// Fill3DHoneycomb.hpp:20  bool is_self_crossing() override { return false; }
+    pub fn is_self_crossing(&self) -> bool {
+        false
+    }
+}
+
+// Fill3DHoneycomb.cpp:9-12
+// sign function
+// template <typename T> int sgn(T val) {
+//   return (T(0) < val) - (val < T(0));
+// }
+fn sgn(val: CoordF) -> i32 {
+    (0. < val) as i32 - (val < 0.) as i32
+}
+
+/*
+Creates a contiguous sequence of points at a specified height that make
+up a horizontal slice of the edges of a space filling truncated
+octahedron tesselation. The octahedrons are oriented so that the
+square faces are in the horizontal plane with edges parallel to the X
+and Y axes.
+
+Credits: David Eccles (gringer).
+*/
+
+// Fill3DHoneycomb.cpp:24-32
+// triangular wave function
+// this has period (gridSize * 2), and amplitude (gridSize / 2),
+// with triWave(pos = 0) = 0
 fn tri_wave(pos: CoordF, grid_size: CoordF) -> CoordF {
-    let t = (pos / (grid_size * 2.0)) + 0.25;
-    let t = t - t.floor(); // Extract fractional part
-    (1.0 - (t * 8.0 - 4.0).abs()) * (grid_size / 4.0) + (grid_size / 4.0)
+    // Fill3DHoneycomb.cpp:29
+    let mut t = ((pos / (grid_size * 2.)) + 0.25) as f32; // convert relative to grid size
+    // Fill3DHoneycomb.cpp:30
+    t = t - (t as i32) as f32; // extract fractional part
+    // Fill3DHoneycomb.cpp:31
+    ((1. - ((t * 8. - 4.) as CoordF).abs()) * (grid_size / 4.)) + (grid_size / 4.)
 }
 
-/// Truncated octagonal waveform.
-///
-/// The Z position adjusts the maximum offset between -(gridSize/4) and (gridSize/4),
-/// with a period of (gridSize * 2) and troctWave(Zpos = 0) = 0.
-#[inline]
+// Fill3DHoneycomb.cpp:34-46
+// truncated octagonal waveform, with period and offset
+// as per the triangular wave function. The Z position adjusts
+// the maximum offset [between -(gridSize / 4) and (gridSize / 4)], with a
+// period of (gridSize * 2) and troctWave(Zpos = 0) = 0
 fn troct_wave(pos: CoordF, grid_size: CoordF, z_pos: CoordF) -> CoordF {
-    let z_cycle = tri_wave(z_pos, grid_size);
-    let perp_offset = z_cycle / 2.0;
-    let y = tri_wave(pos, grid_size);
-
+    // Fill3DHoneycomb.cpp:40
+    let z_cycle: CoordF = tri_wave(z_pos, grid_size);
+    // Fill3DHoneycomb.cpp:41
+    let perp_offset: CoordF = z_cycle / 2.;
+    // Fill3DHoneycomb.cpp:42
+    let y: CoordF = tri_wave(pos, grid_size);
+    // Fill3DHoneycomb.cpp:43-45
     if y.abs() > perp_offset.abs() {
-        sgn(y) * perp_offset
+        sgn(y) as CoordF * perp_offset
     } else {
-        y * sgn(perp_offset)
+        y * sgn(perp_offset) as CoordF
     }
 }
 
-/// Get critical points of curve change within a truncated octahedron wave.
-///
-/// Points represent:
-/// 1. Start of wave (always 0.0)
-/// 2. Transition to upper "horizontal" part
-/// 3. Transition from upper "horizontal" part
-/// 4. Transition to lower "horizontal" part
-/// 5. Transition from lower "horizontal" part
-///
-/// ```text
-///     o---o
-///    /     \
-///  o/       \
-///            \       /
-///             \     /
-///              o---o
-/// ```
+// Fill3DHoneycomb.cpp:48-61
+// Identify the important points of curve change within a truncated
+// octahedron wave (as waveform fraction t):
+// 1. Start of wave (always 0.0)
+// 2. Transition to upper "horizontal" part
+// 3. Transition from upper "horizontal" part
+// 4. Transition to lower "horizontal" part
+// 5. Transition from lower "horizontal" part
+/*    o---o
+ *   /     \
+ * o/       \
+ *           \       /
+ *            \     /
+ *             o---o
+ */
 fn get_critical_points(z_pos: CoordF, grid_size: CoordF) -> Vec<CoordF> {
-    let mut points = vec![0.0];
-    let perp_offset = (tri_wave(z_pos, grid_size) / 2.0).abs();
-    let normalized_offset = perp_offset / grid_size;
+    // Fill3DHoneycomb.cpp:64
+    let mut res: Vec<CoordF> = vec![0.];
+    // Fill3DHoneycomb.cpp:65
+    let perp_offset: CoordF = (tri_wave(z_pos, grid_size) / 2.).abs();
 
-    if normalized_offset > 0.0 {
-        points.push(grid_size * normalized_offset);
-        points.push(grid_size * (1.0 - normalized_offset));
-        points.push(grid_size * (1.0 + normalized_offset));
-        points.push(grid_size * (2.0 - normalized_offset));
+    // Fill3DHoneycomb.cpp:67
+    let normalised_offset: CoordF = perp_offset / grid_size;
+    // // for debugging: just generate evenly-distributed points
+    // for(coordf_t i = 0; i < 2; i += 0.05){
+    //   res.push_back(gridSize * i);
+    // }
+    // note: 0 == straight line
+    // Fill3DHoneycomb.cpp:73
+    if normalised_offset > 0. {
+        // Fill3DHoneycomb.cpp:74
+        res.push(grid_size * (0. + normalised_offset));
+        // Fill3DHoneycomb.cpp:75
+        res.push(grid_size * (1. - normalised_offset));
+        // Fill3DHoneycomb.cpp:76
+        res.push(grid_size * (1. + normalised_offset));
+        // Fill3DHoneycomb.cpp:77
+        res.push(grid_size * (2. - normalised_offset));
     }
-
-    points
+    // Fill3DHoneycomb.cpp:79
+    res
 }
 
-/// Generate colinear points (same direction as printing line).
+// Fill3DHoneycomb.cpp:82-98
+// Generate an array of points that are in the same direction as the
+// basic printing line (i.e. Y points for columns, X points for rows)
+// Note: a negative offset only causes a change in the perpendicular
+// direction
 fn colinear_points(
     _z_pos: CoordF,
     grid_size: CoordF,
     crit_points: &[CoordF],
-    base_location: CoordF,
-    grid_length: CoordF,
+    base_location: usize,
+    grid_length: usize,
 ) -> Vec<CoordF> {
-    let mut points = vec![base_location];
-
-    let mut c_loc = base_location;
-    while c_loc < grid_length {
-        for cp in crit_points {
-            points.push(base_location + c_loc + cp);
+    // Fill3DHoneycomb.cpp:89
+    let mut points: Vec<CoordF> = Vec::new();
+    // Fill3DHoneycomb.cpp:90
+    points.push(base_location as CoordF);
+    // Fill3DHoneycomb.cpp:91
+    let mut c_loc: CoordF = base_location as CoordF;
+    while c_loc < grid_length as CoordF {
+        // Fill3DHoneycomb.cpp:92
+        for &cp in crit_points {
+            // Fill3DHoneycomb.cpp:93
+            points.push(base_location as CoordF + c_loc + cp);
         }
-        c_loc += grid_size * 2.0;
+        c_loc += grid_size * 2.;
     }
-
-    points.push(grid_length);
+    // Fill3DHoneycomb.cpp:96
+    points.push(grid_length as CoordF);
+    // Fill3DHoneycomb.cpp:97
     points
 }
 
-/// Generate perpendicular points (perpendicular to printing line).
+// Fill3DHoneycomb.cpp:100-116
+// Generate an array of points for the dimension that is perpendicular to
+// the basic printing line (i.e. X points for columns, Y points for rows)
+#[allow(clippy::too_many_arguments)]
 fn perpend_points(
     z_pos: CoordF,
     grid_size: CoordF,
     crit_points: &[CoordF],
-    base_location: CoordF,
-    grid_length: CoordF,
-    offset_base: CoordF,
+    base_location: usize,
+    grid_length: usize,
+    offset_base: usize,
     perp_dir: CoordF,
 ) -> Vec<CoordF> {
-    let mut points = vec![offset_base];
-
-    let mut c_loc = base_location;
-    while c_loc < grid_length {
-        for cp in crit_points {
-            let offset = troct_wave(*cp, grid_size, z_pos);
-            points.push(offset_base + (offset * perp_dir));
+    // Fill3DHoneycomb.cpp:106
+    let mut points: Vec<CoordF> = Vec::new();
+    // Fill3DHoneycomb.cpp:107
+    points.push(offset_base as CoordF);
+    // Fill3DHoneycomb.cpp:108
+    let mut c_loc: CoordF = base_location as CoordF;
+    while c_loc < grid_length as CoordF {
+        // Fill3DHoneycomb.cpp:109
+        for &cp in crit_points {
+            // Fill3DHoneycomb.cpp:110
+            let offset: CoordF = troct_wave(cp, grid_size, z_pos);
+            // Fill3DHoneycomb.cpp:111
+            points.push(offset_base as CoordF + (offset * perp_dir));
         }
-        c_loc += grid_size * 2.0;
+        c_loc += grid_size * 2.;
     }
-
-    points.push(offset_base);
+    // Fill3DHoneycomb.cpp:114
+    points.push(offset_base as CoordF);
+    // Fill3DHoneycomb.cpp:115
     points
 }
 
-/// Zip two coordinate vectors into points.
-fn zip_points(x: &[CoordF], y: &[CoordF]) -> Vec<(CoordF, CoordF)> {
-    x.iter().zip(y.iter()).map(|(&x, &y)| (x, y)).collect()
+// Fill3DHoneycomb.cpp:118-126
+// static inline Pointfs zip(const std::vector<coordf_t> &x, const std::vector<coordf_t> &y)
+fn zip(x: &[CoordF], y: &[CoordF]) -> Vec<(CoordF, CoordF)> {
+    // Fill3DHoneycomb.cpp:120
+    debug_assert_eq!(x.len(), y.len());
+    // Fill3DHoneycomb.cpp:121-122
+    let mut out: Vec<(CoordF, CoordF)> = Vec::with_capacity(x.len());
+    // Fill3DHoneycomb.cpp:123-124
+    for i in 0..x.len() {
+        out.push((x[i], y[i]));
+    }
+    // Fill3DHoneycomb.cpp:125
+    out
 }
 
-/// Generate the actual grid of polylines for a given Z position.
+// Fill3DHoneycomb.cpp:128-160
+// Generate a set of curves (array of array of 2d points) that describe a
+// horizontal slice of a truncated regular octahedron.
 fn make_actual_grid(
     z_pos: CoordF,
     grid_size: CoordF,
-    bounds_x: CoordF,
-    bounds_y: CoordF,
+    bounds_x: usize,
+    bounds_y: usize,
 ) -> Vec<Vec<(CoordF, CoordF)>> {
-    let mut polylines = Vec::new();
-    let crit_points = get_critical_points(z_pos, grid_size);
-
-    let z_cycle = ((z_pos + grid_size / 2.0) % (grid_size * 2.0)) / (grid_size * 2.0);
-    let print_vert = z_cycle < 0.5;
-
+    // Fill3DHoneycomb.cpp:132
+    let mut points: Vec<Vec<(CoordF, CoordF)>> = Vec::new();
+    // Fill3DHoneycomb.cpp:133
+    let crit_points: Vec<CoordF> = get_critical_points(z_pos, grid_size);
+    // Fill3DHoneycomb.cpp:134
+    // C++ `fmod` is the truncated remainder (sign of dividend); Rust's `%` on f64
+    // matches `fmod` exactly (NOT `rem_euclid`, which is always non-negative).
+    let z_cycle: CoordF = (z_pos + grid_size / 2.) % (grid_size * 2.) / (grid_size * 2.);
+    // Fill3DHoneycomb.cpp:135
+    let print_vert: bool = z_cycle < 0.5;
+    // Fill3DHoneycomb.cpp:136
     if print_vert {
-        // Vertical lines
-        let mut perp_dir = -1.0;
-        let mut x = 0.0;
-        while x <= bounds_x {
-            let perp_pts =
-                perpend_points(z_pos, grid_size, &crit_points, 0.0, bounds_y, x, perp_dir);
-            let colin_pts = colinear_points(z_pos, grid_size, &crit_points, 0.0, bounds_y);
-
-            let mut new_points = zip_points(&perp_pts, &colin_pts);
-
-            if perp_dir > 0.0 {
+        // Fill3DHoneycomb.cpp:137
+        let mut perp_dir: i32 = -1;
+        // Fill3DHoneycomb.cpp:138
+        let mut x: CoordF = 0.;
+        while x <= bounds_x as CoordF {
+            // Fill3DHoneycomb.cpp:139-140
+            points.push(Vec::new());
+            let new_points = points.last_mut().unwrap();
+            // Fill3DHoneycomb.cpp:141-143
+            *new_points = zip(
+                &perpend_points(
+                    z_pos,
+                    grid_size,
+                    &crit_points,
+                    0,
+                    bounds_y,
+                    x as usize,
+                    perp_dir as CoordF,
+                ),
+                &colinear_points(z_pos, grid_size, &crit_points, 0, bounds_y),
+            );
+            // Fill3DHoneycomb.cpp:144-145
+            if perp_dir == 1 {
                 new_points.reverse();
             }
-
-            polylines.push(new_points);
+            // Fill3DHoneycomb.cpp:138 (loop increment)
             x += grid_size;
-            perp_dir *= -1.0;
+            perp_dir *= -1;
         }
     } else {
-        // Horizontal lines
-        let mut perp_dir = 1.0;
-        let mut y = grid_size;
-        while y <= bounds_y {
-            let colin_pts = colinear_points(z_pos, grid_size, &crit_points, 0.0, bounds_x);
-            let perp_pts =
-                perpend_points(z_pos, grid_size, &crit_points, 0.0, bounds_x, y, perp_dir);
-
-            let mut new_points = zip_points(&colin_pts, &perp_pts);
-
-            if perp_dir < 0.0 {
+        // Fill3DHoneycomb.cpp:148
+        let mut perp_dir: i32 = 1;
+        // Fill3DHoneycomb.cpp:149
+        let mut y: CoordF = grid_size;
+        while y <= bounds_y as CoordF {
+            // Fill3DHoneycomb.cpp:150-151
+            points.push(Vec::new());
+            let new_points = points.last_mut().unwrap();
+            // Fill3DHoneycomb.cpp:152-154
+            *new_points = zip(
+                &colinear_points(z_pos, grid_size, &crit_points, 0, bounds_x),
+                &perpend_points(
+                    z_pos,
+                    grid_size,
+                    &crit_points,
+                    0,
+                    bounds_x,
+                    y as usize,
+                    perp_dir as CoordF,
+                ),
+            );
+            // Fill3DHoneycomb.cpp:155-156
+            if perp_dir == -1 {
                 new_points.reverse();
             }
-
-            polylines.push(new_points);
+            // Fill3DHoneycomb.cpp:149 (loop increment)
             y += grid_size;
-            perp_dir *= -1.0;
+            perp_dir *= -1;
         }
     }
-
-    polylines
+    // Fill3DHoneycomb.cpp:159
+    points
 }
 
-/// Generate the grid of polylines in scaled coordinates.
+// Fill3DHoneycomb.cpp:162-179
+// Generate a set of curves (array of array of 2d points) that describe a
+// horizontal slice of a truncated regular octahedron with a specified
+// grid square size.
+// gridWidth and gridHeight define the width and height of the bounding box respectively
 fn make_grid(
     z: CoordF,
     grid_size: CoordF,
     bound_width: CoordF,
     bound_height: CoordF,
-) -> Vec<Polyline> {
-    let polylines = make_actual_grid(z, grid_size, bound_width, bound_height);
-
-    polylines
-        .into_iter()
-        .map(|pts| {
-            let points: Vec<Point> = pts
-                .into_iter()
-                .map(|(x, y)| Point::new(x.round() as Coord, y.round() as Coord))
-                .collect();
-            Polyline::from_points(points)
-        })
-        .collect()
-}
-
-/// 3D Honeycomb infill generator.
-pub struct Honeycomb3DGenerator {
-    config: Honeycomb3DConfig,
-}
-
-impl Honeycomb3DGenerator {
-    // Create a new generator with the given configuration.
-    pub fn new(config: Honeycomb3DConfig) -> Self {
-        Self { config }
-    }
-
-    /// Create a generator with default configuration.
-    pub fn with_defaults() -> Self {
-        Self::new(Honeycomb3DConfig::default())
-    }
-
-    /// Generate 3D honeycomb infill for a region.
-    pub fn generate(&self, boundary: &ExPolygon) -> Vec<Polyline> {
-        if self.config.density <= 0.0 {
-            return Vec::new();
+    _fill_evenly: bool,
+) -> Polylines {
+    // Fill3DHoneycomb.cpp:168
+    let polylines: Vec<Vec<(CoordF, CoordF)>> =
+        make_actual_grid(z, grid_size, bound_width as usize, bound_height as usize);
+    // Fill3DHoneycomb.cpp:169-170
+    let mut result: Polylines = Vec::with_capacity(polylines.len());
+    // Fill3DHoneycomb.cpp:171-177
+    for it_polylines in polylines.iter() {
+        // Fill3DHoneycomb.cpp:173-174
+        result.push(Polyline::default());
+        let polyline = result.last_mut().unwrap();
+        // Fill3DHoneycomb.cpp:175-176
+        for it in it_polylines.iter() {
+            polyline
+                .points
+                .push(Point::new(it.0 as Coord, it.1 as Coord));
         }
-
-        // Get bounding box
-        let bbox = boundary.bounding_box();
-        let bb_min = bbox.min;
-        let bb_max = bbox.max;
-
-        // Calculate Z scale factor
-        // With equally-scaled X/Y/Z, the pattern creates vertically-stretched
-        // truncated octahedrons; Z is pre-adjusted by scaling by sqrt(2)
-        let z_scale = 2.0_f64.sqrt();
-
-        // Adjustment for octagram curve distance
-        // = (sqrt(2) + 1) / 2
-        let spacing_scaled = scale(self.config.spacing) as CoordF;
-        let mut grid_size = spacing_scaled * ((z_scale + 1.0) / 2.0) / self.config.density;
-
-        let layer_height_scaled = scale(self.config.layer_height) as CoordF;
-
-        // Calculate layers per module
-        let mut layers_per_module =
-            ((grid_size * 2.0) / (z_scale * layer_height_scaled) + 0.05).floor();
-
-        let z_scale = if self.config.density > 0.42 {
-            // Exact layer pattern for >42% density
-            layers_per_module = 2.0;
-            grid_size = spacing_scaled * 1.1 / self.config.density;
-            (grid_size * 2.0) / (layers_per_module * layer_height_scaled)
-        } else {
-            if layers_per_module < 2.0 {
-                layers_per_module = 2.0;
-            }
-            let z_scale = (grid_size * 2.0) / (layers_per_module * layer_height_scaled);
-            grid_size = spacing_scaled * ((z_scale + 1.0) / 2.0) / self.config.density;
-            layers_per_module =
-                ((grid_size * 2.0) / (z_scale * layer_height_scaled) + 0.05).floor();
-            if layers_per_module < 2.0 {
-                layers_per_module = 2.0;
-            }
-            (grid_size * 2.0) / (layers_per_module * layer_height_scaled)
-        };
-
-        // Align bounding box to grid module
-        let module_size = (grid_size * 4.0) as Coord;
-        let aligned_min_x = (bb_min.x / module_size) * module_size;
-        let aligned_min_y = (bb_min.y / module_size) * module_size;
-
-        // Generate pattern
-        let z_scaled = scale(self.config.z) as CoordF * z_scale;
-        let bound_width = (bb_max.x - aligned_min_x) as CoordF;
-        let bound_height = (bb_max.y - aligned_min_y) as CoordF;
-
-        let mut polylines = make_grid(z_scaled, grid_size, bound_width, bound_height);
-
-        // Translate pattern to bounding box position
-        let offset = Point::new(aligned_min_x, aligned_min_y);
-        for pl in &mut polylines {
-            pl.translate(offset);
-        }
-
-        // Simplify polylines
-        let simplify_tolerance = (5.0 * spacing_scaled) as Coord;
-        for pl in &mut polylines {
-            pl.simplify(simplify_tolerance as f64);
-        }
-
-        // Clip to boundary
-        let clipped = clip_polylines_to_expolygon(&polylines, boundary);
-
-        // Filter out very short segments
-        let min_length = scale(0.8 * self.config.spacing);
-        clipped
-            .into_iter()
-            .filter(|pl| pl.length() >= min_length as CoordF)
-            .collect()
     }
-
-    /// Get the configuration.
-    pub fn config(&self) -> &Honeycomb3DConfig {
-        &self.config
-    }
-}
-
-/// Clip polylines to an ExPolygon boundary.
-fn clip_polylines_to_expolygon(polylines: &[Polyline], boundary: &ExPolygon) -> Vec<Polyline> {
-    let mut result = Vec::new();
-
-    for polyline in polylines {
-        let clipped = clip_polyline_to_expolygon(polyline, boundary);
-        result.extend(clipped);
-    }
-
+    // Fill3DHoneycomb.cpp:178
     result
 }
 
-/// Clip a single polyline to an ExPolygon.
-fn clip_polyline_to_expolygon(polyline: &Polyline, boundary: &ExPolygon) -> Vec<Polyline> {
-    let points = polyline.points();
-    if points.len() < 2 {
-        return Vec::new();
-    }
+// Fill3DHoneycomb.cpp:181-188
+// FillParams has the following useful information:
+// density <0 .. 1>  [proportion of space to fill]
+// anchor_length     [???]
+// anchor_length_max [???]
+// dont_connect()    [avoid connect lines]
+// dont_adjust       [avoid filling space evenly]
+// monotonic         [fill strictly left to right]
+// complete          [complete each loop]
 
-    let mut result = Vec::new();
-    let mut current_segment: Vec<Point> = Vec::new();
+impl Fill3DHoneycomb {
+    // Fill3DHoneycomb.cpp:190-298
+    // void Fill3DHoneycomb::_fill_surface_single(
+    //     const FillParams                &params,
+    //     unsigned int                     thickness_layers,
+    //     const std::pair<float, Point>   &direction,
+    //     ExPolygon                        expolygon,
+    //     Polylines                       &polylines_out)
+    pub fn _fill_surface_single(
+        &mut self,
+        params: &FillParams,
+        thickness_layers: u32,
+        _direction: &(f32, Point),
+        mut expolygon: ExPolygon,
+        polylines_out: &mut Polylines,
+    ) {
+        // no rotation is supported for this infill pattern
+        // BBL: add support for rotation
+        // Fill3DHoneycomb.cpp:199
+        let infill_angle: f32 = self.angle;
+        // Fill3DHoneycomb.cpp:200
+        if infill_angle.abs() as f64 >= EPSILON {
+            expolygon.rotate(-infill_angle as CoordF);
+        }
+        // Fill3DHoneycomb.cpp:201
+        let mut bb = expolygon.contour.bounding_box();
 
-    for point in points {
-        let inside = point_in_expolygon(point, boundary);
+        // Note: with equally-scaled X/Y/Z, the pattern will create a vertically-stretched
+        // truncated octahedron; so Z is pre-adjusted first by scaling by sqrt(2)
+        // Fill3DHoneycomb.cpp:205
+        let mut z_scale: CoordF = 2.0_f64.sqrt();
 
-        if inside {
-            current_segment.push(point.clone());
+        // adjustment to account for the additional distance of octagram curves
+        // note: this only strictly applies for a rectangular area where the total
+        //       Z travel distance is a multiple of the spacing... but it should
+        //       be at least better than the prevous estimate which assumed straight
+        //       lines
+        // = 4 * integrate(func=4*x(sqrt(2) - 1) + 1, from=0, to=0.25)
+        // = (sqrt(2) + 1) / 2 [... I think]
+        // make a first guess at the preferred grid Size
+        // Fill3DHoneycomb.cpp:215
+        let mut grid_size: CoordF = scale(self.spacing) as CoordF * ((z_scale + 1.) / 2.)
+            * params.multiline as CoordF
+            / params.density as CoordF;
+
+        // This density calculation is incorrect for many values > 25%, possibly
+        // due to quantisation error, so this value is used as a first guess, then the
+        // Z scale is adjusted to make the layer patterns consistent / symmetric
+        // This means that the resultant infill won't be an ideal truncated octahedron,
+        // but it should look better than the equivalent quantised version
+
+        // Fill3DHoneycomb.cpp:223
+        let layer_height: CoordF = scale(thickness_layers as CoordF) as CoordF;
+        // ceiling to an integer value of layers per Z
+        // (with a little nudge in case it's close to perfect)
+        // Fill3DHoneycomb.cpp:226
+        let mut layers_per_module: CoordF =
+            ((grid_size * 2.) / (z_scale * layer_height) + 0.05).floor();
+        // Fill3DHoneycomb.cpp:227
+        if params.density > 0.42 {
+            // exact layer pattern for >42% density
+            // Fill3DHoneycomb.cpp:228
+            layers_per_module = 2.;
+            // re-adjust the grid size for a partial octahedral path
+            // (scale of 1.1 guessed based on modeling)
+            // Fill3DHoneycomb.cpp:231
+            grid_size =
+                scale(self.spacing) as CoordF * 1.1 * params.multiline as CoordF / params.density as CoordF;
+            // re-adjust zScale to make layering consistent
+            // Fill3DHoneycomb.cpp:233
+            z_scale = (grid_size * 2.) / (layers_per_module * layer_height);
         } else {
-            if current_segment.len() >= 2 {
-                result.push(Polyline::from_points(current_segment));
+            // Fill3DHoneycomb.cpp:235-237
+            if layers_per_module < 2. {
+                layers_per_module = 2.;
             }
-            current_segment = Vec::new();
-        }
-    }
-
-    if current_segment.len() >= 2 {
-        result.push(Polyline::from_points(current_segment));
-    }
-
-    result
-}
-
-/// Check if a point is inside an ExPolygon.
-fn point_in_expolygon(point: &Point, expoly: &ExPolygon) -> bool {
-    if !point_in_polygon(point, &expoly.contour) {
-        return false;
-    }
-
-    for hole in &expoly.holes {
-        if point_in_polygon(point, hole) {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Check if a point is inside a polygon using ray casting.
-fn point_in_polygon(point: &Point, polygon: &crate::geometry::Polygon) -> bool {
-    let points = polygon.points();
-    let n = points.len();
-    if n < 3 {
-        return false;
-    }
-
-    let mut inside = false;
-    let x = point.x;
-    let y = point.y;
-
-    let mut j = n - 1;
-    for i in 0..n {
-        let xi = points[i].x;
-        let yi = points[i].y;
-        let xj = points[j].x;
-        let yj = points[j].y;
-
-        if ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
-            inside = !inside;
+            // re-adjust zScale to make layering consistent
+            // Fill3DHoneycomb.cpp:239
+            z_scale = (grid_size * 2.) / (layers_per_module * layer_height);
+            // re-adjust the grid size to account for the new zScale
+            // Fill3DHoneycomb.cpp:241
+            grid_size = scale(self.spacing) as CoordF * ((z_scale + 1.) / 2.)
+                * params.multiline as CoordF
+                / params.density as CoordF;
+            // re-calculate layersPerModule and zScale
+            // Fill3DHoneycomb.cpp:243
+            layers_per_module = ((grid_size * 2.) / (z_scale * layer_height) + 0.05).floor();
+            // Fill3DHoneycomb.cpp:244-246
+            if layers_per_module < 2. {
+                layers_per_module = 2.;
+            }
+            // Fill3DHoneycomb.cpp:247
+            z_scale = (grid_size * 2.) / (layers_per_module * layer_height);
         }
 
-        j = i;
-    }
+        // align bounding box to a multiple of our honeycomb grid module
+        // (a module is 2*$gridSize since one $gridSize half-module is
+        // growing while the other $gridSize half-module is shrinking)
+        // Fill3DHoneycomb.cpp:253
+        bb.merge_point(crate::geometry::align_to_grid_point(
+            bb.min,
+            Point::new((grid_size * 4.) as Coord, (grid_size * 4.) as Coord),
+        ));
 
-    inside
-}
+        // generate pattern
+        // Fill3DHoneycomb.cpp:256-262
+        let mut polylines: Polylines = make_grid(
+            scale(self.z) as CoordF * z_scale,
+            grid_size,
+            bb.size().x() as CoordF,
+            bb.size().y() as CoordF,
+            !params.dont_adjust,
+        );
 
-/// Result of 3D honeycomb infill generation.
-#[derive(Debug, Clone)]
-pub struct Honeycomb3DResult {
-    /// Generated polylines.
-    pub polylines: Vec<Polyline>,
+        // move pattern in place
+        // Fill3DHoneycomb.cpp:265-268
+        for pl in polylines.iter_mut() {
+            pl.translate(bb.min);
+            pl.simplify(5. * self.spacing);
+        }
+        // Apply multiline offset if needed
+        // Fill3DHoneycomb.cpp:270
+        multiline_fill(&mut polylines, params, self.spacing as f32);
+        // clip pattern to boundaries, chain the clipped polylines
+        // Fill3DHoneycomb.cpp:272
+        polylines = intersection_pl(&polylines, std::slice::from_ref(&expolygon));
 
-    /// Total length of infill in mm.
-    pub total_length_mm: CoordF,
-}
+        // Fill3DHoneycomb.cpp:274
+        if !polylines.is_empty() {
+            // Remove very small bits, but be careful to not remove infill lines connecting thin walls!
+            // The infill perimeter lines should be separated by around a single infill line width.
+            // Fill3DHoneycomb.cpp:277
+            let minlength: f64 = scale(0.8 * self.spacing) as f64;
+            // Fill3DHoneycomb.cpp:278-280
+            polylines.retain(|pl| pl.length() >= minlength);
+        }
 
-impl Honeycomb3DResult {
-    // Create a new result.
-    pub fn new(polylines: Vec<Polyline>) -> Self {
-        let total_length_mm = polylines.iter().map(|p| unscale(p.length() as Coord)).sum();
+        // copy from fliplines
+        // Fill3DHoneycomb.cpp:284
+        if !polylines.is_empty() {
+            // Fill3DHoneycomb.cpp:285  only rotate what belongs to us.
+            let infill_start_idx: usize = polylines_out.len();
+            // connect lines
+            // Fill3DHoneycomb.cpp:287
+            if params.dont_connect() || polylines.len() <= 1 {
+                // Fill3DHoneycomb.cpp:288
+                polylines_out.extend(chain_polylines(std::mem::take(&mut polylines), None));
+            } else {
+                // Fill3DHoneycomb.cpp:290
+                connect_infill_expolygon(polylines, &expolygon, self.spacing, params, polylines_out);
+            }
 
-        Self {
-            polylines,
-            total_length_mm,
+            // rotate back
+            // Fill3DHoneycomb.cpp:293
+            if infill_angle.abs() as f64 >= EPSILON {
+                // Fill3DHoneycomb.cpp:294-295
+                for it in polylines_out.iter_mut().skip(infill_start_idx) {
+                    it.rotate(infill_angle as CoordF);
+                }
+            }
         }
     }
-
-    /// Check if any infill was generated.
-    pub fn is_empty(&self) -> bool {
-        self.polylines.is_empty()
-    }
-
-    /// Get the number of paths.
-    pub fn path_count(&self) -> usize {
-        self.polylines.len()
-    }
 }
 
-/// Convenience function to generate 3D honeycomb infill.
-pub fn generate_honeycomb_3d(
-    boundary: &ExPolygon,
-    z: CoordF,
-    layer_height: CoordF,
-    density: CoordF,
-    spacing: CoordF,
-) -> Honeycomb3DResult {
-    let config = Honeycomb3DConfig {
-        spacing,
-        z,
-        layer_height,
-        density: density.clamp(0.01, 1.0),
-        ..Default::default()
-    };
+// Fill3DHoneycomb.cpp:300
+// } // namespace Slic3r
 
-    let generator = Honeycomb3DGenerator::new(config);
-    let polylines = generator.generate(boundary);
-    Honeycomb3DResult::new(polylines)
-}
+/// libslic3r.h:52 — `static constexpr double EPSILON = 1e-4;`
+const EPSILON: f64 = 1e-4;
 
 #[cfg(test)]
 mod tests {
@@ -549,183 +554,60 @@ mod tests {
     }
 
     #[test]
+    fn test_sgn() {
+        assert_eq!(sgn(5.0), 1);
+        assert_eq!(sgn(-5.0), -1);
+        assert_eq!(sgn(0.0), 0);
+    }
+
+    #[test]
     fn test_tri_wave() {
         let grid_size = 10.0;
-
-        // At pos=0, should be non-negative
-        let val = tri_wave(0.0, grid_size);
-        assert!(val >= 0.0);
-
-        // Wave should have period of grid_size * 2
-        let val1 = tri_wave(0.0, grid_size);
-        let val2 = tri_wave(grid_size * 2.0, grid_size);
-        assert!((val1 - val2).abs() < 1e-6);
-
-        // Value should be bounded
-        assert!(val <= grid_size);
+        // triWave(pos = 0) is gridSize/4 (the +gridSize/4 baseline at the midpoint).
+        let v0 = tri_wave(0.0, grid_size);
+        // period of (gridSize * 2)
+        let v_period = tri_wave(grid_size * 2.0, grid_size);
+        assert!((v0 - v_period).abs() < 1e-6);
+        // bounded within [0, gridSize/2]
+        assert!(v0 >= 0.0 && v0 <= grid_size / 2.0 + 1e-9);
     }
 
     #[test]
     fn test_get_critical_points() {
-        let grid_size = 10.0;
-        let points = get_critical_points(0.0, grid_size);
-
-        // Should always have at least the start point
+        let points = get_critical_points(0.0, 10.0);
         assert!(!points.is_empty());
         assert!((points[0] - 0.0).abs() < 1e-6);
     }
 
     #[test]
     fn test_make_actual_grid() {
-        let grid = make_actual_grid(0.0, 10.0, 100.0, 100.0);
-
-        // Should generate some polylines
+        let grid = make_actual_grid(0.0, 10.0, 100, 100);
         assert!(!grid.is_empty());
-
-        // Each polyline should have points
         for pl in &grid {
             assert!(pl.len() >= 2);
         }
     }
 
     #[test]
-    fn test_honeycomb_3d_config_default() {
-        let config = Honeycomb3DConfig::default();
-
-        assert!((config.density - 0.2).abs() < 1e-6);
-        assert!((config.spacing - 0.45).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_honeycomb_3d_config_builder() {
-        let config = Honeycomb3DConfig::new(0.3, 0.5)
-            .with_z(1.0)
-            .with_layer_height(0.25)
-            .with_angle_degrees(45.0);
-
-        assert!((config.density - 0.3).abs() < 1e-6);
-        assert!((config.spacing - 0.5).abs() < 1e-6);
-        assert!((config.z - 1.0).abs() < 1e-6);
-        assert!((config.layer_height - 0.25).abs() < 1e-6);
-        assert!((config.angle - std::f64::consts::FRAC_PI_4).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_honeycomb_3d_generator() {
-        let boundary = make_square_boundary(50.0); // Larger boundary for visible pattern
-        let config = Honeycomb3DConfig::new(0.3, 0.45) // Higher density
-            .with_z(0.2)
-            .with_layer_height(0.2);
-
-        let generator = Honeycomb3DGenerator::new(config);
-        let polylines = generator.generate(&boundary);
-
-        // Should generate some infill (may be empty for small regions)
-        // At least verify no crash
-        let _ = polylines.len();
-    }
-
-    #[test]
-    fn test_honeycomb_3d_layer_variation() {
-        let boundary = make_square_boundary(50.0); // Larger boundary
-
-        let config1 = Honeycomb3DConfig::new(0.3, 0.45)
-            .with_z(0.0)
-            .with_layer_height(0.2);
-        let config2 = Honeycomb3DConfig::new(0.3, 0.45)
-            .with_z(0.2)
-            .with_layer_height(0.2);
-
-        let gen1 = Honeycomb3DGenerator::new(config1);
-        let gen2 = Honeycomb3DGenerator::new(config2);
-
-        let polylines1 = gen1.generate(&boundary);
-        let polylines2 = gen2.generate(&boundary);
-
-        // Different Z heights produce different patterns
-        // Just verify generation works without crashing
-        let _ = (polylines1.len(), polylines2.len());
-    }
-
-    #[test]
-    fn test_honeycomb_3d_zero_density() {
-        let boundary = make_square_boundary(20.0);
-        let config = Honeycomb3DConfig {
-            density: 0.0,
-            ..Default::default()
+    fn test_fill_surface_single_runs() {
+        let boundary = make_square_boundary(50.0);
+        let mut fill = Fill3DHoneycomb {
+            angle: 0.0,
+            spacing: 0.45,
+            z: 0.2,
         };
-
-        let generator = Honeycomb3DGenerator::new(config);
-        let polylines = generator.generate(&boundary);
-
-        // Zero density should produce no infill
-        assert!(polylines.is_empty());
+        let mut params = FillParams::default();
+        params.density = 0.3;
+        let mut out: Polylines = Vec::new();
+        fill._fill_surface_single(&params, 0, &(0.0, Point::new(0, 0)), boundary, &mut out);
+        // Just verify no crash; output count is geometry-dependent.
+        let _ = out.len();
     }
 
     #[test]
-    fn test_honeycomb_3d_result() {
-        let polylines = vec![
-            Polyline::from_points(vec![Point::new(0, 0), Point::new(scale(10.0), 0)]),
-            Polyline::from_points(vec![
-                Point::new(0, scale(1.0)),
-                Point::new(scale(10.0), scale(1.0)),
-            ]),
-        ];
-
-        let result = Honeycomb3DResult::new(polylines);
-
-        assert_eq!(result.path_count(), 2);
-        assert!(!result.is_empty());
-        assert!(result.total_length_mm > 0.0);
-    }
-
-    #[test]
-    fn test_generate_honeycomb_3d_convenience() {
-        let boundary = make_square_boundary(50.0); // Larger boundary
-
-        let result = generate_honeycomb_3d(&boundary, 0.2, 0.2, 0.3, 0.45);
-
-        // May or may not generate infill depending on grid alignment
-        // Just verify it runs without error
-        let _ = result.path_count();
-    }
-
-    #[test]
-    fn test_sgn() {
-        assert!((sgn(5.0) - 1.0).abs() < 1e-10);
-        assert!((sgn(-5.0) - (-1.0)).abs() < 1e-10);
-        assert!((sgn(0.0) - 0.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_point_in_polygon() {
-        let square = Polygon::from_points(vec![
-            Point::new(0, 0),
-            Point::new(scale(10.0), 0),
-            Point::new(scale(10.0), scale(10.0)),
-            Point::new(0, scale(10.0)),
-        ]);
-
-        // Point inside
-        let inside = Point::new(scale(5.0), scale(5.0));
-        assert!(point_in_polygon(&inside, &square));
-
-        // Point outside
-        let outside = Point::new(scale(15.0), scale(15.0));
-        assert!(!point_in_polygon(&outside, &square));
-    }
-
-    #[test]
-    fn test_high_density() {
-        let boundary = make_square_boundary(50.0); // Larger boundary
-        let config = Honeycomb3DConfig::new(0.5, 0.45)
-            .with_z(0.2)
-            .with_layer_height(0.2);
-
-        let generator = Honeycomb3DGenerator::new(config);
-        let polylines = generator.generate(&boundary);
-
-        // Higher density should work without crashing
-        let _ = polylines.len();
+    fn test_use_bridge_flow() {
+        let fill = Fill3DHoneycomb::default();
+        assert!(fill.use_bridge_flow());
+        assert!(!fill.is_self_crossing());
     }
 }

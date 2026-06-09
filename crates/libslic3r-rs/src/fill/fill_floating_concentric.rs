@@ -1,1072 +1,1403 @@
-//! Floating Concentric Infill Pattern
+//! Faithful 1:1 port of `src/libslic3r/Fill/FillFloatingConcentric.cpp` (+ `.hpp`).
 //!
-//! This module implements the Floating Concentric infill pattern, which generates
-//! concentric loops for top surfaces while detecting "floating" sections that are
-//! not supported by the layer below.
+//! Line refs are given as `// FillFloatingConcentric.cpp:NNN`.
 //!
-//! # Overview
+//! Type mapping: `coord_t` -> `i64` (`Coord`), `coordf_t` -> `f64` (`CoordF`).
 //!
-//! Floating Concentric is primarily used for top solid surfaces where print quality
-//! is critical. Unlike regular concentric infill, it identifies which parts of the
-//! infill lines are "floating" (not supported by infill or perimeters from the layer
-//! below) and can adjust extrusion parameters accordingly.
+//! # Width layout
 //!
-//! # Algorithm
+//! C++ `ThickPolyline::width` stores TWO width values per segment, i.e.
+//! `width.size() == 2 * points.size() - 2`. `FloatingThickPolyline` inherits that
+//! layout. This module therefore stores the floating thick polyline's `width`
+//! exactly as the C++ does (a flat `Vec<f64>` of length `2*N-2`), independent of
+//! the crate's per-vertex `geometry::ThickPolyline::widths` convention.
 //!
-//! 1. Generate concentric loops from the fill area by repeatedly shrinking inward
-//! 2. For each loop/line, detect which segments intersect with "floating areas"
-//!    (regions not supported by the layer below)
-//! 3. Mark each vertex/segment as floating or supported
-//! 4. Optionally split paths at floating/supported transitions
-//! 5. Reorder loop starting points to prefer non-floating areas (better seam quality)
+//! # Blocked symbols (NOT ported here — require not-yet-available backends)
 //!
-//! # BambuStudio Reference
+//! The following C++ symbols depend on the legacy `ClipperLib_Z::Clipper`
+//! (custom `ZFillFunction` + `PolyTree` + `Execute` + `PolyTreeToPaths`) and/or
+//! `EdgeGrid::Grid::has_intersecting_edges`, neither of which exists in this
+//! crate (the clipper backend is Clipper2 f64; see `overhang_detector.rs`,
+//! which documents the same limitation). They are intentionally left out and
+//! must be ported once a Z-aware clipper with a user fill callback lands:
 //!
-//! This module corresponds to:
-//! - `src/libslic3r/Fill/FillFloatingConcentric.cpp`
-//! - `src/libslic3r/Fill/FillFloatingConcentric.hpp`
+//! - `detect_floating_line`           (needs `ClipperLib_Z::Clipper` + ZFillFunction)
+//! - `FillFloatingConcentric::resplit_order_loops`     (needs `detect_floating_line` + `EdgeGrid::has_intersecting_edges`)
+//! - `FillFloatingConcentric::_fill_surface_single`    (needs the above + Fill base threading)
+//! - `FillFloatingConcentric::fill_surface_arachne_floating` / `fill_surface_extrusion`
+//!                                     (need the Fill base class: `no_overlap_expolygons`,
+//!                                      `lower_layer_unsupport_areas`, `lower_sparse_polys`,
+//!                                      `_infill_direction`, `ExtrusionEntityCollection` output)
 //!
-//! Key differences from C++ implementation:
-//! - Uses point sampling for floating detection instead of Clipper_Z
-//! - Simplified path merging without complex Z-value tracking
-//! - Direct integration with existing concentric generation
+//! All other functions are ported faithfully below.
 
-use crate::clipper_utils::{shrink, OffsetJoinType};
-use crate::geometry::{ExPolygon, ExPolygons, Point, Polygon, Polyline};
-use crate::{scale, unscale, Coord, CoordF};
+use crate::arachne::utils::extrusion_line::ExtrusionLine;
+use crate::arachne::wall_tool_paths::WallToolPaths;
+use crate::clipper_z_utils::ZPath;
+use crate::extrusion_entity::{CustomizeFlag, ExtrusionPath, ExtrusionRole};
+use crate::flow::Flow;
+use crate::geometry::{
+    get_extents, BoundingBox, ExPolygons, Point, Polygon, Polygons, ThickPolyline,
+};
+use crate::libslic3r::SCALED_EPSILON;
+use crate::utils::prev_idx_modulo;
+use crate::{unscale, Coord, CoordF};
+use std::collections::{HashMap, HashSet};
+use std::f64::consts::PI;
 
-/// Configuration for floating concentric infill generation.
-#[derive(Debug, Clone)]
-pub struct FloatingConcentricConfig {
-    /// Line spacing in mm (distance between concentric loops).
-    pub spacing: CoordF,
+// =============================================================================
+// FillFloatingConcentric.hpp data structures
+// =============================================================================
 
-    /// Minimum loop length to include (mm). Loops shorter than this are dropped.
-    pub min_loop_length: CoordF,
-
-    /// Loop clipping distance (mm). Amount to clip from loop ends to avoid
-    /// extruder getting exactly on first point.
-    pub loop_clipping: CoordF,
-
-    /// Number of sample points per mm for floating detection.
-    pub samples_per_mm: CoordF,
-
-    /// Whether to split paths at floating/supported transitions.
-    pub split_at_transitions: bool,
-
-    /// Whether to prefer starting loops at non-floating positions.
-    pub prefer_non_floating_start: bool,
-
-    /// Default line width for variable-width output (mm).
-    pub default_width: CoordF,
-}
-
-impl Default for FloatingConcentricConfig {
-    fn default() -> Self {
-        Self {
-            spacing: 0.4,
-            min_loop_length: 1.0,
-            loop_clipping: 0.15,
-            samples_per_mm: 5.0,
-            split_at_transitions: true,
-            prefer_non_floating_start: true,
-            default_width: 0.4,
-        }
-    }
-}
-
-impl FloatingConcentricConfig {
-    // Create a new config with specified spacing.
-    pub fn new(spacing: CoordF) -> Self {
-        Self {
-            spacing,
-            ..Default::default()
-        }
-    }
-
-    /// Builder method to set line spacing.
-    pub fn with_spacing(mut self, spacing: CoordF) -> Self {
-        self.spacing = spacing;
-        self
-    }
-
-    /// Builder method to set minimum loop length.
-    pub fn with_min_loop_length(mut self, min_length: CoordF) -> Self {
-        self.min_loop_length = min_length;
-        self
-    }
-
-    /// Builder method to set loop clipping distance.
-    pub fn with_loop_clipping(mut self, clipping: CoordF) -> Self {
-        self.loop_clipping = clipping;
-        self
-    }
-
-    /// Builder method to set split at transitions.
-    pub fn with_split_at_transitions(mut self, split: bool) -> Self {
-        self.split_at_transitions = split;
-        self
-    }
-
-    /// Builder method to set prefer non-floating start.
-    pub fn with_prefer_non_floating_start(mut self, prefer: bool) -> Self {
-        self.prefer_non_floating_start = prefer;
-        self
-    }
-
-    /// Builder method to set default line width.
-    pub fn with_default_width(mut self, width: CoordF) -> Self {
-        self.default_width = width;
-        self
-    }
-}
-
-/// A thick line segment with floating flags at each endpoint.
-#[derive(Debug, Clone)]
-pub struct FloatingThickLine {
-    /// Start point.
+/// FillFloatingConcentric.hpp:9-18
+/// `struct FloatingThickline : public ThickLine`
+#[derive(Clone, Debug)]
+pub struct FloatingThickline {
+    // ThickLine base.
     pub a: Point,
-    /// End point.
     pub b: Point,
-    /// Width at start point.
-    pub width_a: CoordF,
-    /// Width at end point.
-    pub width_b: CoordF,
-    /// Whether start point is floating (unsupported).
+    pub a_width: CoordF,
+    pub b_width: CoordF,
+    // FillFloatingConcentric.hpp:16-17
     pub is_a_floating: bool,
-    /// Whether end point is floating (unsupported).
     pub is_b_floating: bool,
 }
 
-impl FloatingThickLine {
-    // Create a new floating thick line.
+impl FloatingThickline {
+    /// FillFloatingConcentric.hpp:11-15
+    /// `FloatingThickline(const Point& a, const Point& b, double wa, double wb, bool a_floating, bool b_floating) :ThickLine(a, b, wa, wb)`
     pub fn new(
         a: Point,
         b: Point,
-        width_a: CoordF,
-        width_b: CoordF,
-        is_a_floating: bool,
-        is_b_floating: bool,
+        wa: CoordF,
+        wb: CoordF,
+        a_floating: bool,
+        b_floating: bool,
     ) -> Self {
         Self {
             a,
             b,
-            width_a,
-            width_b,
-            is_a_floating,
-            is_b_floating,
+            a_width: wa,
+            b_width: wb,
+            is_a_floating: a_floating,
+            is_b_floating: b_floating,
         }
     }
 
-    /// Create a floating thick line with uniform width.
-    pub fn with_uniform_width(a: Point, b: Point, width: CoordF, floating: bool) -> Self {
-        Self {
-            a,
-            b,
-            width_a: width,
-            width_b: width,
-            is_a_floating: floating,
-            is_b_floating: floating,
-        }
-    }
-
-    /// Get the length of this line segment.
+    /// `ThickLine::length()` — inherited from `Line`.
     pub fn length(&self) -> CoordF {
-        let dx = (self.b.x - self.a.x) as f64;
-        let dy = (self.b.y - self.a.y) as f64;
-        unscale((dx * dx + dy * dy).sqrt() as Coord)
-    }
-
-    /// Get the scaled length of this line segment.
-    pub fn length_scaled(&self) -> Coord {
-        let dx = (self.b.x - self.a.x) as f64;
-        let dy = (self.b.y - self.a.y) as f64;
-        (dx * dx + dy * dy).sqrt() as Coord
-    }
-
-    /// Check if the entire line is floating.
-    pub fn is_fully_floating(&self) -> bool {
-        self.is_a_floating && self.is_b_floating
-    }
-
-    /// Check if the entire line is supported (not floating).
-    pub fn is_fully_supported(&self) -> bool {
-        !self.is_a_floating && !self.is_b_floating
-    }
-
-    /// Check if this line has a floating transition.
-    pub fn has_transition(&self) -> bool {
-        self.is_a_floating != self.is_b_floating
-    }
-
-    /// Interpolate width at a given parameter t (0 = start, 1 = end).
-    pub fn width_at(&self, t: CoordF) -> CoordF {
-        self.width_a + t * (self.width_b - self.width_a)
-    }
-
-    /// Interpolate point at a given parameter t (0 = start, 1 = end).
-    pub fn point_at(&self, t: CoordF) -> Point {
-        Point::new(
-            self.a.x + ((self.b.x - self.a.x) as f64 * t) as Coord,
-            self.a.y + ((self.b.y - self.a.y) as f64 * t) as Coord,
-        )
+        self.a.distance(&self.b)
     }
 }
 
-/// A polyline with width and floating information at each vertex.
-///
-/// This is the core data structure for floating concentric infill.
-/// Each vertex has an associated width and a flag indicating whether
-/// it's floating (unsupported by the layer below).
-#[derive(Debug, Clone)]
-pub struct FloatingThickPolyline {
-    /// The points of the polyline.
+/// FillFloatingConcentric.hpp:19
+/// `using FloatingThicklines = std::vector<FloatingThickline>;`
+pub type FloatingThicklines = Vec<FloatingThickline>;
+
+/// FillFloatingConcentric.hpp:21-25
+/// `struct FloatingPolyline : public Polyline`
+#[derive(Clone, Debug, Default)]
+pub struct FloatingPolyline {
+    // Polyline base.
     pub points: Vec<Point>,
-    /// Width at each vertex (same length as points).
-    pub widths: Vec<CoordF>,
-    /// Floating flag for each vertex (same length as points).
+    // FillFloatingConcentric.hpp:23
+    pub is_floating: Vec<bool>,
+}
+
+impl FloatingPolyline {
+    /// `Polyline::is_closed()` — `this->points.front() == this->points.back()`.
+    pub fn is_closed(&self) -> bool {
+        !self.points.is_empty() && self.points.first() == self.points.last()
+    }
+
+    /// FillFloatingConcentric.cpp:18-32
+    /// `FloatingPolyline FloatingPolyline::rebase_at(size_t idx)`
+    pub fn rebase_at(&self, idx: usize) -> FloatingPolyline {
+        // FillFloatingConcentric.cpp:20-21
+        if !self.is_closed() {
+            return FloatingPolyline::default();
+        }
+
+        // FillFloatingConcentric.cpp:23-24
+        // `FloatingPolyline ret = *this;`
+        // `static_cast<Polyline&>(ret) = Polyline::rebase_at(idx);`
+        let mut ret = self.clone();
+        ret.points = polyline_rebase_at(&self.points, idx);
+        // FillFloatingConcentric.cpp:25
+        let n = self.points.len();
+        // FillFloatingConcentric.cpp:26
+        ret.is_floating.resize(n, false);
+        // FillFloatingConcentric.cpp:27-29
+        for j in 0..(n - 1) {
+            ret.is_floating[j] = self.is_floating[(idx + j) % (n - 1)];
+        }
+        // FillFloatingConcentric.cpp:30
+        let front = ret.is_floating[0];
+        ret.is_floating.push(front);
+        // FillFloatingConcentric.cpp:31
+        ret
+    }
+}
+
+/// FillFloatingConcentric.hpp:26
+/// `using FloatingPolylines = std::vector<FloatingPolyline>;`
+pub type FloatingPolylines = Vec<FloatingPolyline>;
+
+/// FillFloatingConcentric.hpp:28-33
+/// `struct FloatingThickPolyline :public ThickPolyline`
+#[derive(Clone, Debug, Default)]
+pub struct FloatingThickPolyline {
+    // ThickPolyline base.
+    pub points: Vec<Point>,
+    /// Two entries per segment: `width.len() == 2 * points.len() - 2`.
+    pub width: Vec<CoordF>,
+    pub endpoints: (bool, bool),
+    // FillFloatingConcentric.hpp:30
     pub is_floating: Vec<bool>,
 }
 
 impl FloatingThickPolyline {
-    // Create a new empty floating thick polyline.
-    pub fn new() -> Self {
-        Self {
-            points: Vec::new(),
-            widths: Vec::new(),
-            is_floating: Vec::new(),
-        }
-    }
-
-    /// Create a floating thick polyline with capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            points: Vec::with_capacity(capacity),
-            widths: Vec::with_capacity(capacity),
-            is_floating: Vec::with_capacity(capacity),
-        }
-    }
-
-    /// Create from a regular polyline with uniform width and no floating.
-    pub fn from_polyline(polyline: &Polyline, width: CoordF) -> Self {
-        let n = polyline.len();
-        Self {
-            points: polyline.points().to_vec(),
-            widths: vec![width; n],
-            is_floating: vec![false; n],
-        }
-    }
-
-    /// Create from a polygon (closed loop) with uniform width and no floating.
-    pub fn from_polygon(polygon: &Polygon, width: CoordF) -> Self {
-        let mut points = polygon.points().to_vec();
-        // Close the loop by adding first point at the end
-        if !points.is_empty() && points.first() != points.last() {
-            points.push(points[0]);
-        }
-        let n = points.len();
-        Self {
-            points,
-            widths: vec![width; n],
-            is_floating: vec![false; n],
-        }
-    }
-
-    /// Get the number of points.
-    pub fn len(&self) -> usize {
-        self.points.len()
-    }
-
-    /// Check if empty.
-    pub fn is_empty(&self) -> bool {
+    /// `MultiPoint::empty()`.
+    pub fn empty(&self) -> bool {
         self.points.is_empty()
     }
 
-    /// Check if this is a closed loop.
+    /// `Polyline::is_closed()` — `this->points.front() == this->points.back()`.
     pub fn is_closed(&self) -> bool {
-        self.points.len() >= 3 && self.points.first() == self.points.last()
+        !self.points.is_empty() && self.points.first() == self.points.last()
     }
 
-    /// Get the first point.
-    pub fn first_point(&self) -> Option<&Point> {
-        self.points.first()
+    /// `MultiPoint::last_point()`.
+    pub fn last_point(&self) -> Point {
+        *self.points.last().unwrap()
     }
 
-    /// Get the last point.
-    pub fn last_point(&self) -> Option<&Point> {
-        self.points.last()
-    }
-
-    /// Push a new vertex.
-    pub fn push(&mut self, point: Point, width: CoordF, floating: bool) {
-        self.points.push(point);
-        self.widths.push(width);
-        self.is_floating.push(floating);
-    }
-
-    /// Get the total length of the polyline in mm.
-    pub fn length(&self) -> CoordF {
-        if self.points.len() < 2 {
-            return 0.0;
+    /// `ThickPolyline::get_width_at(size_t point_idx)` — Polyline.cpp:666-671.
+    pub fn get_width_at(&self, point_idx: usize) -> CoordF {
+        // Polyline.cpp:668-669
+        if point_idx < 2 {
+            return self.width[point_idx];
         }
-
-        let mut total = 0.0;
-        for i in 0..self.points.len() - 1 {
-            let dx = (self.points[i + 1].x - self.points[i].x) as f64;
-            let dy = (self.points[i + 1].y - self.points[i].y) as f64;
-            total += (dx * dx + dy * dy).sqrt();
-        }
-        unscale(total as Coord)
+        // Polyline.cpp:670
+        self.width[2 * point_idx - 1]
     }
 
-    /// Check if this polyline is valid (has at least 2 points).
-    pub fn is_valid(&self) -> bool {
-        self.points.len() >= 2
+    /// FillFloatingConcentric.cpp:34-47
+    /// `FloatingThickPolyline FloatingThickPolyline::rebase_at(size_t idx)`
+    pub fn rebase_at(&self, idx: usize) -> FloatingThickPolyline {
+        // FillFloatingConcentric.cpp:36-37
+        if !self.is_closed() {
+            return FloatingThickPolyline::default();
+        }
+        // FillFloatingConcentric.cpp:38-39
+        // `FloatingThickPolyline ret = *this;`
+        // `static_cast<ThickPolyline&>(ret) = ThickPolyline::rebase_at(idx);`
+        let mut ret = self.clone();
+        let base = thick_polyline_rebase_at(&self.points, &self.width, idx);
+        ret.points = base.0;
+        ret.width = base.1;
+        // FillFloatingConcentric.cpp:40
+        let n = self.points.len();
+        // FillFloatingConcentric.cpp:41
+        ret.is_floating.resize(n, false);
+        // FillFloatingConcentric.cpp:42-44
+        for j in 0..(n - 1) {
+            ret.is_floating[j] = self.is_floating[(idx + j) % (n - 1)];
+        }
+        // FillFloatingConcentric.cpp:45
+        let front = ret.is_floating[0];
+        ret.is_floating.push(front);
+        // FillFloatingConcentric.cpp:46
+        ret
     }
 
-    /// Convert to floating thick lines.
-    pub fn to_thick_lines(&self) -> Vec<FloatingThickLine> {
-        if self.points.len() < 2 {
-            return Vec::new();
+    /// FillFloatingConcentric.cpp:49-58
+    /// `FloatingThicklines FloatingThickPolyline::floating_thicklines() const`
+    pub fn floating_thicklines(&self) -> FloatingThicklines {
+        // FillFloatingConcentric.cpp:51
+        let mut lines = FloatingThicklines::new();
+        // FillFloatingConcentric.cpp:52
+        if self.points.len() >= 2 {
+            // FillFloatingConcentric.cpp:53
+            lines.reserve(self.points.len() - 1);
+            // FillFloatingConcentric.cpp:54-55
+            for i in 0..(self.points.len() - 1) {
+                lines.push(FloatingThickline::new(
+                    self.points[i],
+                    self.points[i + 1],
+                    self.width[2 * i],
+                    self.width[2 * i + 1],
+                    self.is_floating[i],
+                    self.is_floating[i + 1],
+                ));
+            }
         }
-
-        let mut lines = Vec::with_capacity(self.points.len() - 1);
-        for i in 0..self.points.len() - 1 {
-            lines.push(FloatingThickLine::new(
-                self.points[i],
-                self.points[i + 1],
-                self.widths[i],
-                self.widths[i + 1],
-                self.is_floating[i],
-                self.is_floating[i + 1],
-            ));
-        }
+        // FillFloatingConcentric.cpp:57
         lines
     }
+}
 
-    /// Get the index of the first non-floating vertex.
-    pub fn first_non_floating_index(&self) -> Option<usize> {
-        self.is_floating.iter().position(|&f| !f)
+/// FillFloatingConcentric.hpp:34
+/// `using FloatingThickPolylines = std::vector<FloatingThickPolyline>;`
+pub type FloatingThickPolylines = Vec<FloatingThickPolyline>;
+
+// -----------------------------------------------------------------------------
+// Polyline / ThickPolyline base-class helpers used by the floating rebase_at.
+// Faithful translations of Polyline.cpp:621-664 (the C++ base classes that the
+// FloatingPolyline / FloatingThickPolyline rebase_at methods delegate to via
+// `static_cast<Base&>(ret) = Base::rebase_at(idx)`).
+// -----------------------------------------------------------------------------
+
+/// Polyline.cpp:621-632 `Polyline Polyline::rebase_at(size_t idx)`.
+/// (Caller has already verified `is_closed()`.)
+fn polyline_rebase_at(points: &[Point], idx: usize) -> Vec<Point> {
+    // Polyline.cpp:625
+    let mut ret = points.to_vec();
+    // Polyline.cpp:626
+    let n = points.len();
+    // Polyline.cpp:627-629
+    for j in 0..(n - 1) {
+        ret[j] = points[(idx + j) % (n - 1)];
+    }
+    // Polyline.cpp:630
+    ret[n - 1] = ret[0];
+    // Polyline.cpp:631
+    ret
+}
+
+/// Polyline.cpp:634-664 `ThickPolyline ThickPolyline::rebase_at(size_t idx)`.
+/// Returns `(points, width)`. (Caller has already verified `is_closed()`.)
+fn thick_polyline_rebase_at(
+    points: &[Point],
+    width: &[CoordF],
+    idx: usize,
+) -> (Vec<Point>, Vec<CoordF>) {
+    // Polyline.cpp:640
+    let ret_points = polyline_rebase_at(points, idx);
+    // Polyline.cpp:641
+    let n = points.len();
+    // Polyline.cpp:642
+    let mut ret_width = vec![0.0_f64; 2 * n - 2];
+
+    // Polyline.cpp:644-648
+    let get_in_width = |i: usize| -> CoordF {
+        if i == 0 {
+            return width[0];
+        }
+        if i == n - 1 {
+            return *width.last().unwrap();
+        }
+        width[2 * i - 1]
+    };
+    // Polyline.cpp:649-653
+    let get_out_width = |i: usize| -> CoordF {
+        if i == 0 {
+            return width[0];
+        }
+        if i == n - 1 {
+            return *width.last().unwrap();
+        }
+        width[2 * i]
+    };
+
+    // Polyline.cpp:655
+    ret_width[0] = get_out_width(idx % (n - 1));
+    // Polyline.cpp:656-660
+    for j in 1..(n - 1) {
+        let i = (idx + j) % (n - 1);
+        ret_width[2 * j - 1] = get_in_width(i);
+        ret_width[2 * j] = get_out_width(i);
     }
 
-    /// Rebase a closed polyline to start at the given index.
-    pub fn rebase_at(&self, idx: usize) -> Option<FloatingThickPolyline> {
-        if !self.is_closed() || idx >= self.points.len() - 1 {
-            return None;
+    // Polyline.cpp:662
+    ret_width[2 * n - 3] = ret_width[0];
+    // Polyline.cpp:663
+    (ret_points, ret_width)
+}
+
+// =============================================================================
+// Free functions
+// =============================================================================
+
+/// FillFloatingConcentric.cpp:61-203
+/// `static ExtrusionPaths floating_thick_polyline_to_extrusion_paths(const FloatingThickPolyline& floating_polyline, ExtrusionRole role, const Flow& flow, const float tolerance)`
+//BBS: new function to filter width to avoid too fragmented segments
+pub fn floating_thick_polyline_to_extrusion_paths(
+    floating_polyline: &FloatingThickPolyline,
+    role: ExtrusionRole,
+    flow: &Flow,
+    tolerance: f32,
+) -> Vec<ExtrusionPath> {
+    // FillFloatingConcentric.cpp:64
+    let mut paths: Vec<ExtrusionPath> = Vec::new();
+    // FillFloatingConcentric.cpp:65
+    let mut path = ExtrusionPath::new(role);
+    // FillFloatingConcentric.cpp:66
+    let mut lines: FloatingThicklines = floating_polyline.floating_thicklines();
+
+    // FillFloatingConcentric.cpp:68
+    let mut start_index: usize = 0;
+    // FillFloatingConcentric.cpp:69
+    let mut max_width: f64 = 0.0;
+    let mut min_width: f64 = 0.0;
+
+    // FillFloatingConcentric.cpp:71-76
+    // `auto set_flow_for_path = [&flow](ExtrusionPath& path, double width) { ... };`
+    let set_flow_for_path = |path: &mut ExtrusionPath, width: f64| {
+        // Flow new_flow = flow.with_width(unscale<float>(width) + flow.height() * float(1. - 0.25 * PI));
+        let new_flow: Flow = flow
+            .with_width(unscale(width as Coord) + flow.height() * (1.0 - 0.25 * PI))
+            .expect("Flow::with_width");
+        path.mm3_per_mm = new_flow.mm3_per_mm_unchecked();
+        path.width = new_flow.width();
+        path.height = new_flow.height();
+    };
+
+    // FillFloatingConcentric.cpp:78-82
+    // `auto append_path_and_reset = [...](double& length, double& sum, ExtrusionPath& path){ ... };`
+    let append_path_and_reset =
+        |length: &mut f64, sum: &mut f64, path: &mut ExtrusionPath, paths: &mut Vec<ExtrusionPath>| {
+            *length = 0.0;
+            *sum = 0.0;
+            paths.push(std::mem::replace(path, ExtrusionPath::new(role)));
+        };
+
+    // FillFloatingConcentric.cpp:84
+    let mut i: i32 = 0;
+    while i < lines.len() as i32 {
+        // FillFloatingConcentric.cpp:85
+        let line = lines[i as usize].clone();
+
+        // FillFloatingConcentric.cpp:87-89
+        if i == 0 {
+            max_width = line.a_width;
+            min_width = line.a_width;
         }
 
-        let n = self.points.len() - 1; // Exclude duplicate closing point
-        let mut result = FloatingThickPolyline::with_capacity(self.points.len());
-
-        for j in 0..n {
-            let src_idx = (idx + j) % n;
-            result.push(
-                self.points[src_idx],
-                self.widths[src_idx],
-                self.is_floating[src_idx],
-            );
+        // FillFloatingConcentric.cpp:91
+        let line_len: CoordF = line.length();
+        // FillFloatingConcentric.cpp:92
+        if line_len < SCALED_EPSILON {
+            i += 1;
+            continue;
         }
 
-        // Close the loop
-        result.push(result.points[0], result.widths[0], result.is_floating[0]);
+        // FillFloatingConcentric.cpp:94
+        let mut thickness_delta: f64 =
+            (max_width - line.b_width).abs().max((min_width - line.b_width).abs());
+        //BBS: has large difference in width
+        // FillFloatingConcentric.cpp:96
+        if thickness_delta > tolerance as f64 {
+            //BBS: 1 generate path from start_index to i(not included)
+            // FillFloatingConcentric.cpp:98
+            if start_index != i as usize {
+                // FillFloatingConcentric.cpp:99
+                path = ExtrusionPath::new(role);
+                // FillFloatingConcentric.cpp:100
+                let mut length: f64 = 0.0;
+                let mut sum: f64 = 0.0;
+                // FillFloatingConcentric.cpp:101
+                let mut is_floating = false;
+                // FillFloatingConcentric.cpp:102
+                for idx in start_index..(i as usize) {
+                    // FillFloatingConcentric.cpp:103
+                    let curr_floating = lines[idx].is_a_floating && lines[idx].is_b_floating;
+                    // FillFloatingConcentric.cpp:104
+                    if curr_floating != is_floating && length != 0.0 {
+                        // FillFloatingConcentric.cpp:105
+                        path.polyline.append_point(lines[idx].a);
+                        // FillFloatingConcentric.cpp:106-107
+                        if is_floating {
+                            path.set_customize_flag(CustomizeFlag::FloatingVerticalShell);
+                        }
+                        // FillFloatingConcentric.cpp:108
+                        set_flow_for_path(&mut path, sum / length);
+                        // FillFloatingConcentric.cpp:109
+                        append_path_and_reset(&mut length, &mut sum, &mut path, &mut paths);
+                    }
+                    // FillFloatingConcentric.cpp:111
+                    is_floating = curr_floating;
 
-        Some(result)
+                    // FillFloatingConcentric.cpp:113
+                    let line_length = lines[idx].length();
+                    // FillFloatingConcentric.cpp:114
+                    length += line_length;
+                    // FillFloatingConcentric.cpp:115
+                    sum += line_length * (lines[idx].a_width + lines[idx].b_width) * 0.5;
+                    // FillFloatingConcentric.cpp:116
+                    path.polyline.append_point(lines[idx].a);
+                }
+                // FillFloatingConcentric.cpp:118
+                path.polyline.append_point(lines[i as usize].a);
+                // FillFloatingConcentric.cpp:119
+                if length > SCALED_EPSILON {
+                    // FillFloatingConcentric.cpp:120-121
+                    if lines[i as usize].is_a_floating && lines[i as usize].is_b_floating {
+                        path.set_customize_flag(CustomizeFlag::FloatingVerticalShell);
+                    }
+                    // FillFloatingConcentric.cpp:122
+                    set_flow_for_path(&mut path, sum / length);
+                    // FillFloatingConcentric.cpp:123
+                    paths.push(std::mem::replace(&mut path, ExtrusionPath::new(role)));
+                }
+            }
+
+            // FillFloatingConcentric.cpp:127
+            start_index = i as usize;
+            // FillFloatingConcentric.cpp:128
+            max_width = line.a_width;
+            // FillFloatingConcentric.cpp:129
+            min_width = line.a_width;
+
+            //BBS: 2 handle the i-th segment
+            // FillFloatingConcentric.cpp:132
+            thickness_delta = (line.a_width - line.b_width).abs();
+            // FillFloatingConcentric.cpp:133
+            if thickness_delta > tolerance as f64 {
+                // FillFloatingConcentric.cpp:134
+                let segments: u32 = (thickness_delta / tolerance as f64).ceil() as u32;
+                // FillFloatingConcentric.cpp:135
+                let seg_len: CoordF = line_len / segments as f64;
+                // FillFloatingConcentric.cpp:136
+                let mut pp: Vec<Point> = Vec::new();
+                // FillFloatingConcentric.cpp:137
+                let mut width: Vec<CoordF> = Vec::new();
+                {
+                    // FillFloatingConcentric.cpp:139
+                    pp.push(line.a);
+                    // FillFloatingConcentric.cpp:140
+                    width.push(line.a_width);
+                    // FillFloatingConcentric.cpp:141
+                    for j in 1..(segments as usize) {
+                        // FillFloatingConcentric.cpp:142
+                        // pp.push_back((line.a.cast<double>() + (line.b - line.a).cast<double>().normalized() * (j * seg_len)).cast<coord_t>());
+                        let ax = line.a.x as f64;
+                        let ay = line.a.y as f64;
+                        let dx = (line.b.x - line.a.x) as f64;
+                        let dy = (line.b.y - line.a.y) as f64;
+                        let dnorm = (dx * dx + dy * dy).sqrt();
+                        let nx = dx / dnorm;
+                        let ny = dy / dnorm;
+                        let dist = j as f64 * seg_len;
+                        pp.push(Point::new(
+                            (ax + nx * dist) as Coord,
+                            (ay + ny * dist) as Coord,
+                        ));
+
+                        // FillFloatingConcentric.cpp:144
+                        let w: CoordF = line.a_width
+                            + (j as f64 * seg_len) * (line.b_width - line.a_width) / line_len;
+                        // FillFloatingConcentric.cpp:145-146
+                        width.push(w);
+                        width.push(w);
+                    }
+                    // FillFloatingConcentric.cpp:148
+                    pp.push(line.b);
+                    // FillFloatingConcentric.cpp:149
+                    width.push(line.b_width);
+
+                    // FillFloatingConcentric.cpp:151-152
+                    debug_assert!(pp.len() == segments as usize + 1);
+                    debug_assert!(width.len() == segments as usize * 2);
+                }
+
+                // delete this line and insert new ones
+                // FillFloatingConcentric.cpp:156
+                lines.remove(i as usize);
+                // FillFloatingConcentric.cpp:157-160
+                for j in 0..(segments as usize) {
+                    let new_line = FloatingThickline::new(
+                        pp[j],
+                        pp[j + 1],
+                        width[2 * j],
+                        width[2 * j + 1],
+                        line.is_a_floating,
+                        line.is_b_floating,
+                    );
+                    lines.insert(i as usize + j, new_line);
+                }
+                // FillFloatingConcentric.cpp:161  `--i;`
+                i -= 1;
+                // FillFloatingConcentric.cpp:162  `continue;`
+                // C++ `continue` jumps to the for-loop's `++i`; replicate that
+                // increment here (net: `i` unchanged), then `continue` skips the
+                // unconditional `i += 1` at the bottom of this loop body.
+                i += 1;
+                continue;
+            }
+        }
+        //BBS: just update the max and min width and continue
+        // FillFloatingConcentric.cpp:166-169
+        else {
+            max_width = max_width.max(line.a_width.max(line.b_width));
+            min_width = min_width.min(line.a_width.min(line.b_width));
+        }
+
+        i += 1;
     }
 
-    /// Clip the end of the polyline by the specified distance (mm).
-    pub fn clip_end(&mut self, distance: CoordF) {
-        if self.points.len() < 2 || distance <= 0.0 {
-            return;
+    //BBS: handle the remaining segment
+    // FillFloatingConcentric.cpp:172
+    let final_size = lines.len();
+    // FillFloatingConcentric.cpp:173
+    if start_index < final_size {
+        // FillFloatingConcentric.cpp:174
+        path = ExtrusionPath::new(role);
+        // FillFloatingConcentric.cpp:175
+        let mut length: f64 = 0.0;
+        let mut sum: f64 = 0.0;
+        // FillFloatingConcentric.cpp:176
+        let mut is_floating = false;
+        // FillFloatingConcentric.cpp:177
+        for idx in start_index..final_size {
+            // FillFloatingConcentric.cpp:178
+            let curr_floating = lines[idx].is_a_floating && lines[idx].is_b_floating;
+            // FillFloatingConcentric.cpp:179
+            if curr_floating != is_floating && length != 0.0 {
+                // FillFloatingConcentric.cpp:180
+                path.polyline.append_point(lines[idx].a);
+                // FillFloatingConcentric.cpp:181-182
+                if is_floating {
+                    path.set_customize_flag(CustomizeFlag::FloatingVerticalShell);
+                }
+                // FillFloatingConcentric.cpp:183
+                set_flow_for_path(&mut path, sum / length);
+                // FillFloatingConcentric.cpp:184
+                append_path_and_reset(&mut length, &mut sum, &mut path, &mut paths);
+            }
+            // FillFloatingConcentric.cpp:186
+            is_floating = curr_floating;
+            // FillFloatingConcentric.cpp:187
+            let line_length = lines[idx].length();
+            // FillFloatingConcentric.cpp:188
+            length += line_length;
+            // FillFloatingConcentric.cpp:189
+            sum += line_length * (lines[idx].a_width + lines[idx].b_width) * 0.5;
+            // FillFloatingConcentric.cpp:190
+            path.polyline.append_point(lines[idx].a);
         }
+        // FillFloatingConcentric.cpp:193
+        path.polyline.append_point(lines[final_size - 1].b);
+        // FillFloatingConcentric.cpp:194
+        if length > SCALED_EPSILON {
+            // FillFloatingConcentric.cpp:195-196
+            if lines[final_size - 1].is_a_floating && lines[final_size - 1].is_b_floating {
+                path.set_customize_flag(CustomizeFlag::FloatingVerticalShell);
+            }
+            // FillFloatingConcentric.cpp:197
+            set_flow_for_path(&mut path, sum / length);
+            // FillFloatingConcentric.cpp:198
+            paths.push(std::mem::replace(&mut path, ExtrusionPath::new(role)));
+        }
+    }
 
-        let distance_scaled = scale(distance);
-        let mut remaining = distance_scaled as f64;
+    // FillFloatingConcentric.cpp:202
+    paths
+}
 
-        while self.points.len() >= 2 && remaining > 0.0 {
-            let last_idx = self.points.len() - 1;
-            let dx = (self.points[last_idx].x - self.points[last_idx - 1].x) as f64;
-            let dy = (self.points[last_idx].y - self.points[last_idx - 1].y) as f64;
-            let seg_len = (dx * dx + dy * dy).sqrt();
+/// FillFloatingConcentric.cpp:205-243
+/// `double interpolate_width(const ZPath& path, const ThickPolyline& line, const int subject_idx_range, const int default_width, size_t idx)`
+pub fn interpolate_width(
+    path: &ZPath,
+    line: &ThickPolyline,
+    subject_idx_range: i32,
+    default_width: i32,
+    idx: usize,
+) -> f64 {
+    // FillFloatingConcentric.cpp:211
+    let mut prev_idx: i32 = idx as i32;
+    // FillFloatingConcentric.cpp:212-213
+    while prev_idx >= 0
+        && (path[prev_idx as usize].2 < 0 || path[prev_idx as usize].2 >= subject_idx_range as i64)
+    {
+        prev_idx -= 1;
+    }
 
-            if seg_len <= remaining {
-                // Remove the last point entirely
-                self.points.pop();
-                self.widths.pop();
-                self.is_floating.pop();
-                remaining -= seg_len;
-            } else {
-                // Shorten the last segment
-                let t = (seg_len - remaining) / seg_len;
-                let new_x = self.points[last_idx - 1].x + (dx * t) as Coord;
-                let new_y = self.points[last_idx - 1].y + (dy * t) as Coord;
-                self.points[last_idx] = Point::new(new_x, new_y);
-                // Interpolate width
-                let w1 = self.widths[last_idx - 1];
-                let w2 = self.widths[last_idx];
-                self.widths[last_idx] = w1 + (w2 - w1) * t as CoordF;
+    // FillFloatingConcentric.cpp:215
+    let mut next_idx: i32 = idx as i32;
+    // FillFloatingConcentric.cpp:216-217
+    while (next_idx as usize) < path.len()
+        && (path[next_idx as usize].2 < 0 || path[next_idx as usize].2 >= subject_idx_range as i64)
+    {
+        next_idx += 1;
+    }
+
+    // FillFloatingConcentric.cpp:219-220
+    let width_prev: f64;
+    let width_next: f64;
+    // FillFloatingConcentric.cpp:221-227
+    if prev_idx < 0 {
+        width_prev = default_width as f64;
+    } else {
+        let prev_z_idx = path[prev_idx as usize].2 as usize;
+        width_prev = thick_polyline_get_width_at(line, prev_z_idx);
+    }
+
+    // FillFloatingConcentric.cpp:229-235
+    if next_idx as usize >= path.len() {
+        width_next = default_width as f64;
+    } else {
+        let next_z_idx = path[next_idx as usize].2 as usize;
+        width_next = thick_polyline_get_width_at(line, next_z_idx);
+    }
+    // FillFloatingConcentric.cpp:236
+    let prev = Point::new(path[prev_idx as usize].0, path[prev_idx as usize].1);
+    // FillFloatingConcentric.cpp:237
+    let next = Point::new(path[next_idx as usize].0, path[next_idx as usize].1);
+    // FillFloatingConcentric.cpp:238
+    let curr = Point::new(path[idx].0, path[idx].1);
+    // FillFloatingConcentric.cpp:239
+    let d_total = (((next.x - prev.x) as f64).powi(2) + ((next.y - prev.y) as f64).powi(2)).sqrt();
+    // FillFloatingConcentric.cpp:240
+    let d_curr = (((curr.x - prev.x) as f64).powi(2) + ((curr.y - prev.y) as f64).powi(2)).sqrt();
+    // FillFloatingConcentric.cpp:241
+    let t = if d_total > 0.0 { d_curr / d_total } else { 0.0 };
+    // FillFloatingConcentric.cpp:242
+    (1.0 - t) * width_prev + t * width_next
+}
+
+/// `ThickPolyline::get_width_at(size_t point_idx)` — Polyline.cpp:666-671.
+/// The crate's `geometry::ThickPolyline` stores `widths` in the C++ 2-per-segment
+/// layout (see `fill_concentric.rs`), so this mirrors the C++ getter exactly.
+fn thick_polyline_get_width_at(line: &ThickPolyline, point_idx: usize) -> CoordF {
+    // Polyline.cpp:668-669
+    if point_idx < 2 {
+        return line.widths[point_idx];
+    }
+    // Polyline.cpp:670
+    line.widths[2 * point_idx - 1]
+}
+
+/// FillFloatingConcentric.cpp:245-387
+/// `FloatingThickPolyline merge_lines(ZPaths lines, const std::vector<bool>& mark_flags, const ThickPolyline& line, const int subject_idx_range ,const int default_width)`
+pub fn merge_lines(
+    lines: Vec<ZPath>,
+    mark_flags: &[bool],
+    line: &ThickPolyline,
+    subject_idx_range: i32,
+    default_width: i32,
+) -> FloatingThickPolyline {
+    // FillFloatingConcentric.cpp:247-248
+    // using PathFlag = std::vector<bool>;
+    // using PathFlags = std::vector<PathFlag>;
+    let mut lines = lines;
+
+    // FillFloatingConcentric.cpp:250
+    let mut used: Vec<bool> = vec![false; lines.len()];
+    // FillFloatingConcentric.cpp:251
+    let mut merged_paths: Vec<ZPath> = Vec::new();
+    // FillFloatingConcentric.cpp:252
+    let mut merged_marks: Vec<Vec<bool>> = Vec::new();
+
+    // FillFloatingConcentric.cpp:254-257
+    // `auto update_path_flag = [](PathFlag& mark_flags, const ZPath& path, bool mark) {...};`
+    let update_path_flag = |mark_flags: &mut Vec<bool>, path: &ZPath, mark: bool| {
+        for _p in path.iter() {
+            mark_flags.push(mark);
+        }
+    };
+
+    // FillFloatingConcentric.cpp:259-260
+    let mut start_z_map: HashMap<i64, HashSet<usize>> = HashMap::new();
+    let mut end_z_map: HashMap<i64, HashSet<usize>> = HashMap::new();
+
+    // FillFloatingConcentric.cpp:262-269
+    for idx in 0..lines.len() {
+        // FillFloatingConcentric.cpp:263-266
+        if lines[idx].is_empty() {
+            used[idx] = true;
+            continue;
+        }
+        // FillFloatingConcentric.cpp:267
+        start_z_map.entry(lines[idx].first().unwrap().2).or_default().insert(idx);
+        // FillFloatingConcentric.cpp:268
+        end_z_map.entry(lines[idx].last().unwrap().2).or_default().insert(idx);
+    }
+
+    // FillFloatingConcentric.cpp:271-282
+    // `auto remove_from_map = [&start_z_map, &end_z_map, &lines](size_t idx) {...};`
+    let remove_from_map =
+        |start_z_map: &mut HashMap<i64, HashSet<usize>>,
+         end_z_map: &mut HashMap<i64, HashSet<usize>>,
+         lines: &[ZPath],
+         idx: usize| {
+            // FillFloatingConcentric.cpp:272-273
+            if lines[idx].is_empty() {
+                return;
+            }
+            // FillFloatingConcentric.cpp:274-275
+            let start_z = lines[idx].first().unwrap().2;
+            let end_z = lines[idx].last().unwrap().2;
+            // FillFloatingConcentric.cpp:276-278
+            if let Some(s) = start_z_map.get_mut(&start_z) {
+                s.remove(&idx);
+                if s.is_empty() {
+                    start_z_map.remove(&start_z);
+                }
+            }
+            // FillFloatingConcentric.cpp:279-281
+            if let Some(e) = end_z_map.get_mut(&end_z) {
+                e.remove(&idx);
+                if e.is_empty() {
+                    end_z_map.remove(&end_z);
+                }
+            }
+        };
+
+    // FillFloatingConcentric.cpp:284-360
+    for idx in 0..lines.len() {
+        // FillFloatingConcentric.cpp:285-286
+        if used[idx] {
+            continue;
+        }
+        // FillFloatingConcentric.cpp:287
+        let mut curr_path: ZPath = lines[idx].clone();
+        // FillFloatingConcentric.cpp:288
+        let mut curr_mark: Vec<bool> = Vec::new();
+        // FillFloatingConcentric.cpp:289
+        update_path_flag(&mut curr_mark, &curr_path, mark_flags[idx]);
+        // FillFloatingConcentric.cpp:290
+        used[idx] = true;
+        // FillFloatingConcentric.cpp:291
+        remove_from_map(&mut start_z_map, &mut end_z_map, &lines, idx);
+
+        // FillFloatingConcentric.cpp:293
+        let mut merged;
+        // FillFloatingConcentric.cpp:294
+        loop {
+            // FillFloatingConcentric.cpp:295
+            merged = false;
+            // FillFloatingConcentric.cpp:296
+            let curr_end = curr_path.last().unwrap().2;
+            // FillFloatingConcentric.cpp:297
+            let curr_start = curr_path.first().unwrap().2;
+
+            // search after
+            // FillFloatingConcentric.cpp:300-318
+            {
+                // FillFloatingConcentric.cpp:301-308
+                if let Some(j) = start_z_map.get(&curr_end).and_then(|s| s.iter().next().copied()) {
+                    remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
+                    curr_path.extend(lines[j].iter().copied());
+                    update_path_flag(&mut curr_mark, &lines[j], mark_flags[j]);
+                    used[j] = true;
+                    merged = true;
+                }
+                // FillFloatingConcentric.cpp:309-317
+                else if let Some(j) = end_z_map.get(&curr_end).and_then(|s| s.iter().next().copied())
+                {
+                    remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
+                    lines[j].reverse();
+                    curr_path.extend(lines[j].iter().copied());
+                    update_path_flag(&mut curr_mark, &lines[j], mark_flags[j]);
+                    used[j] = true;
+                    merged = true;
+                }
+            }
+
+            // FillFloatingConcentric.cpp:320-321
+            if merged {
+                continue;
+            }
+
+            //search before
+            // FillFloatingConcentric.cpp:324-354
+            {
+                // FillFloatingConcentric.cpp:325-338
+                if let Some(j) = end_z_map.get(&curr_start).and_then(|s| s.iter().next().copied()) {
+                    remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
+                    let mut new_path: ZPath = lines[j].clone();
+                    let mut new_mark: Vec<bool> = Vec::new();
+                    update_path_flag(&mut new_mark, &new_path, mark_flags[j]);
+
+                    new_path.extend(curr_path.iter().copied());
+                    new_mark.extend(curr_mark.iter().copied());
+                    curr_path = new_path;
+                    curr_mark = new_mark;
+                    used[j] = true;
+                    merged = true;
+                }
+                // FillFloatingConcentric.cpp:339-353
+                else if let Some(j) =
+                    start_z_map.get(&curr_start).and_then(|s| s.iter().next().copied())
+                {
+                    remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
+                    let mut new_path: ZPath = lines[j].clone();
+                    new_path.reverse();
+                    let mut new_mark: Vec<bool> = Vec::new();
+                    update_path_flag(&mut new_mark, &new_path, mark_flags[j]);
+
+                    new_path.extend(curr_path.iter().copied());
+                    new_mark.extend(curr_mark.iter().copied());
+                    curr_path = new_path;
+                    curr_mark = new_mark;
+                    used[j] = true;
+                    merged = true;
+                }
+            }
+
+            // FillFloatingConcentric.cpp:356
+            if !merged {
                 break;
             }
         }
+
+        // FillFloatingConcentric.cpp:358
+        merged_paths.push(curr_path);
+        // FillFloatingConcentric.cpp:359
+        merged_marks.push(curr_mark);
     }
 
-    /// Reverse the polyline in place.
-    pub fn reverse(&mut self) {
-        self.points.reverse();
-        self.widths.reverse();
-        self.is_floating.reverse();
-    }
+    // FillFloatingConcentric.cpp:362
+    debug_assert!(merged_marks.len() == 1);
 
-    /// Get a reversed copy of this polyline.
-    pub fn reversed(&self) -> Self {
-        let mut result = self.clone();
-        result.reverse();
-        result
-    }
+    // FillFloatingConcentric.cpp:364
+    let mut res = FloatingThickPolyline::default();
 
-    /// Split this polyline into segments at floating/supported transitions.
-    pub fn split_at_transitions(&self) -> Vec<FloatingThickPolyline> {
-        if self.points.len() < 2 {
-            return vec![self.clone()];
-        }
+    // FillFloatingConcentric.cpp:366
+    let valid_path = &merged_paths[0];
+    // FillFloatingConcentric.cpp:367
+    let valid_mark = &merged_marks[0];
 
-        let mut segments = Vec::new();
-        let mut current = FloatingThickPolyline::new();
-
-        for i in 0..self.points.len() {
-            let is_first = current.is_empty();
-            current.push(self.points[i], self.widths[i], self.is_floating[i]);
-
-            // Check if we have a transition
-            if !is_first && i < self.points.len() {
-                let prev_floating = self.is_floating[i - 1];
-                let curr_floating = self.is_floating[i];
-
-                if prev_floating != curr_floating && current.len() >= 2 {
-                    // End current segment and start new one
-                    segments.push(current);
-                    current = FloatingThickPolyline::new();
-                    // Start new segment with current point
-                    current.push(self.points[i], self.widths[i], self.is_floating[i]);
-                }
-            }
-        }
-
-        if current.len() >= 2 {
-            segments.push(current);
-        }
-
-        if segments.is_empty() {
-            segments.push(self.clone());
-        }
-
-        segments
-    }
-
-    /// Get the fraction of the polyline that is floating.
-    pub fn floating_fraction(&self) -> CoordF {
-        if self.points.len() < 2 {
-            return 0.0;
-        }
-
-        let mut floating_length = 0.0;
-        let mut total_length = 0.0;
-
-        for i in 0..self.points.len() - 1 {
-            let dx = (self.points[i + 1].x - self.points[i].x) as f64;
-            let dy = (self.points[i + 1].y - self.points[i].y) as f64;
-            let seg_len = (dx * dx + dy * dy).sqrt();
-
-            total_length += seg_len;
-
-            // Consider a segment floating if both endpoints are floating
-            if self.is_floating[i] && self.is_floating[i + 1] {
-                floating_length += seg_len;
-            }
-        }
-
-        if total_length > 0.0 {
-            floating_length / total_length
+    // FillFloatingConcentric.cpp:369-382
+    for idx in 0..valid_path.len() {
+        // FillFloatingConcentric.cpp:370
+        let zvalue = valid_path[idx].2 as i32;
+        // FillFloatingConcentric.cpp:371
+        res.points.push(Point::new(valid_path[idx].0, valid_path[idx].1));
+        // FillFloatingConcentric.cpp:372
+        res.is_floating.push(valid_mark[idx]);
+        // FillFloatingConcentric.cpp:373
+        if 0 <= zvalue && zvalue < subject_idx_range {
+            // FillFloatingConcentric.cpp:374
+            res.width
+                .push(thick_polyline_get_width_at(line, prev_idx_modulo(zvalue as usize, line.points.len())));
+            // FillFloatingConcentric.cpp:375
+            res.width.push(thick_polyline_get_width_at(line, zvalue as usize));
         } else {
-            0.0
+            // FillFloatingConcentric.cpp:378
+            let width =
+                interpolate_width(valid_path, line, subject_idx_range, default_width, idx);
+            // FillFloatingConcentric.cpp:379-380
+            res.width.push(width);
+            res.width.push(width);
         }
     }
+    // FillFloatingConcentric.cpp:383
+    // res.width = std::vector<coordf_t>(res.width.begin() + 1, res.width.end()-1);
+    res.width = res.width[1..res.width.len() - 1].to_vec();
+    // FillFloatingConcentric.cpp:384
+    debug_assert!(res.width.len() == 2 * res.points.len() - 2);
 
-    /// Convert to a regular polyline (loses width and floating info).
-    pub fn to_polyline(&self) -> Polyline {
-        Polyline::from_points(self.points.clone())
+    // FillFloatingConcentric.cpp:386
+    res
+}
+
+// FillFloatingConcentric.cpp:389-493
+// `FloatingThickPolyline detect_floating_line(...)`
+//
+// BLOCKED: requires `ClipperLib_Z::Clipper` with a custom `ZFillFunction`,
+// `ctIntersection`/`ctDifference`, `PolyTree`, and `PolyTreeToPaths`. The crate's
+// clipper backend is Clipper2 (f64) and exposes no Z-aware clipper with a user
+// fill callback (see `overhang_detector.rs`, which is blocked on the same
+// dependency). Port once a Z-aware clipper lands; `merge_lines` (above) is the
+// already-ported back half of this function.
+
+/// FillFloatingConcentric.cpp:495-502
+/// `int start_none_floating_idx(int idx, const std::vector<int>& none_floating_count)`
+pub fn start_none_floating_idx(idx: i32, none_floating_count: &[i32]) -> i32 {
+    // FillFloatingConcentric.cpp:497
+    let backtrace_idx = idx - none_floating_count[idx as usize] + 1;
+    // FillFloatingConcentric.cpp:498-501
+    if backtrace_idx >= 0 {
+        backtrace_idx
+    } else {
+        none_floating_count.len() as i32 + backtrace_idx
     }
 }
 
-impl Default for FloatingThickPolyline {
-    fn default() -> Self {
-        Self::new()
+/// FillFloatingConcentric.cpp:504-560
+/// `template<typename PointContainer> void get_none_floating_prefix(const PointContainer& container, const ExPolygons& floating_areas, const Polygons& sparse_polys, std::vector<double>& none_floating_length, std::vector<int>& none_floating_count)`
+///
+/// `PointContainer::points` is passed directly as `points`.
+pub fn get_none_floating_prefix(
+    points: &[Point],
+    floating_areas: &ExPolygons,
+    sparse_polys: &Polygons,
+    none_floating_length: &mut Vec<f64>,
+    none_floating_count: &mut Vec<i32>,
+) {
+    // FillFloatingConcentric.cpp:507-508
+    *none_floating_length = vec![0.0; points.len()];
+    *none_floating_count = vec![0; points.len()];
+
+    // FillFloatingConcentric.cpp:510-512
+    let mut floating_bboxs: Vec<BoundingBox> = Vec::new();
+    for fa in floating_areas.iter() {
+        floating_bboxs.push(get_extents(std::slice::from_ref(fa)));
     }
-}
-
-/// Result of floating concentric generation.
-#[derive(Debug, Clone)]
-pub struct FloatingConcentricResult {
-    /// The generated floating thick polylines.
-    pub polylines: Vec<FloatingThickPolyline>,
-    /// Total length of all polylines in mm.
-    pub total_length_mm: CoordF,
-    /// Fraction of total length that is floating (0.0 - 1.0).
-    pub floating_fraction: CoordF,
-    /// Number of loops generated.
-    pub loop_count: usize,
-}
-
-impl FloatingConcentricResult {
-    // Create an empty result.
-    pub fn empty() -> Self {
-        Self {
-            polylines: Vec::new(),
-            total_length_mm: 0.0,
-            floating_fraction: 0.0,
-            loop_count: 0,
-        }
+    // FillFloatingConcentric.cpp:513-515
+    let mut sparse_bboxs: Vec<BoundingBox> = Vec::new();
+    for sp in sparse_polys.iter() {
+        sparse_bboxs.push(polygon_get_extents(sp));
     }
 
-    /// Check if the result contains any infill.
-    pub fn has_infill(&self) -> bool {
-        !self.polylines.is_empty()
-    }
-
-    /// Convert to regular polylines (loses floating and width info).
-    pub fn to_polylines(&self) -> Vec<Polyline> {
-        self.polylines.iter().map(|p| p.to_polyline()).collect()
-    }
-}
-
-/// Generator for floating concentric infill.
-pub struct FloatingConcentricGenerator {
-    config: FloatingConcentricConfig,
-}
-
-impl FloatingConcentricGenerator {
-    // Create a new generator with the given config.
-    pub fn new(config: FloatingConcentricConfig) -> Self {
-        Self { config }
-    }
-
-    /// Create a generator with default config.
-    pub fn with_defaults() -> Self {
-        Self::new(FloatingConcentricConfig::default())
-    }
-
-    /// Get a reference to the config.
-    pub fn config(&self) -> &FloatingConcentricConfig {
-        &self.config
-    }
-
-    /// Get a mutable reference to the config.
-    pub fn config_mut(&mut self) -> &mut FloatingConcentricConfig {
-        &mut self.config
-    }
-
-    /// Generate floating concentric infill for the given fill area.
-    ///
-    /// # Arguments
-    /// * `fill_area` - The area to fill with concentric loops
-    /// * `floating_areas` - Areas that are not supported by the layer below.
-    ///                      Points inside these areas are marked as floating.
-    ///
-    /// # Returns
-    /// A `FloatingConcentricResult` containing the generated polylines with
-    /// floating information.
-    pub fn generate(
-        &self,
-        fill_area: &ExPolygons,
-        floating_areas: &ExPolygons,
-    ) -> FloatingConcentricResult {
-        if fill_area.is_empty() {
-            return FloatingConcentricResult::empty();
-        }
-
-        let spacing = self.config.spacing;
-
-        // Generate concentric loops by repeatedly shrinking
-        let mut all_loops: Vec<Polygon> = Vec::new();
-        let mut current_area = fill_area.clone();
-
-        while !current_area.is_empty() {
-            // Add all current contours and holes as loops
-            for expoly in &current_area {
-                if !expoly.contour.is_empty() && expoly.contour.len() >= 3 {
-                    all_loops.push(expoly.contour.clone());
-                }
-                for hole in &expoly.holes {
-                    if !hole.is_empty() && hole.len() >= 3 {
-                        all_loops.push(hole.clone());
-                    }
-                }
+    // FillFloatingConcentric.cpp:517-532
+    // `auto point_in_floating_area = [...](const Point& p)->bool {...};`
+    let point_in_floating_area = |p: &Point| -> bool {
+        // FillFloatingConcentric.cpp:518-523
+        for idx in 0..sparse_polys.len() {
+            if !sparse_bboxs[idx].contains_point(p) {
+                continue;
             }
-
-            // Shrink for next iteration
-            current_area = shrink(&current_area, spacing, OffsetJoinType::Miter);
-        }
-
-        if all_loops.is_empty() {
-            return FloatingConcentricResult::empty();
-        }
-
-        // Convert loops to floating thick polylines and detect floating sections
-        let mut polylines = Vec::with_capacity(all_loops.len());
-
-        for loop_poly in all_loops {
-            let mut ftp =
-                FloatingThickPolyline::from_polygon(&loop_poly, self.config.default_width);
-
-            // Detect floating sections
-            self.detect_floating(&mut ftp, floating_areas);
-
-            // Rebase to start at non-floating point if configured
-            if self.config.prefer_non_floating_start && ftp.is_closed() {
-                if let Some(idx) = ftp.first_non_floating_index() {
-                    if let Some(rebased) = ftp.rebase_at(idx) {
-                        ftp = rebased;
-                    }
-                }
-            }
-
-            // Clip the end to avoid extruder landing exactly on start
-            if self.config.loop_clipping > 0.0 {
-                ftp.clip_end(self.config.loop_clipping);
-            }
-
-            // Check minimum length
-            if ftp.is_valid() && ftp.length() >= self.config.min_loop_length {
-                polylines.push(ftp);
-            }
-        }
-
-        // Optionally split at transitions
-        if self.config.split_at_transitions {
-            let mut split_polylines = Vec::new();
-            for ftp in polylines {
-                let segments = ftp.split_at_transitions();
-                for seg in segments {
-                    if seg.is_valid() && seg.length() >= self.config.min_loop_length {
-                        split_polylines.push(seg);
-                    }
-                }
-            }
-            polylines = split_polylines;
-        }
-
-        // Calculate statistics
-        let total_length_mm: CoordF = polylines.iter().map(|p| p.length()).sum();
-
-        let floating_fraction = if total_length_mm > 0.0 {
-            let floating_length: CoordF = polylines
-                .iter()
-                .map(|p| p.length() * p.floating_fraction())
-                .sum();
-            floating_length / total_length_mm
-        } else {
-            0.0
-        };
-
-        FloatingConcentricResult {
-            loop_count: polylines.len(),
-            polylines,
-            total_length_mm,
-            floating_fraction,
-        }
-    }
-
-    /// Detect floating sections in a polyline and update the is_floating flags.
-    fn detect_floating(&self, polyline: &mut FloatingThickPolyline, floating_areas: &ExPolygons) {
-        if floating_areas.is_empty() || polyline.is_empty() {
-            return;
-        }
-
-        // Check each point against the floating areas
-        for i in 0..polyline.points.len() {
-            let point = &polyline.points[i];
-            polyline.is_floating[i] = self.point_in_expolygons(point, floating_areas);
-        }
-    }
-
-    /// Check if a point is inside any of the given expolygons.
-    fn point_in_expolygons(&self, point: &Point, expolygons: &ExPolygons) -> bool {
-        for expoly in expolygons {
-            if self.point_in_expolygon(point, expoly) {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Check if a point is inside an expolygon (inside contour, outside holes).
-    fn point_in_expolygon(&self, point: &Point, expolygon: &ExPolygon) -> bool {
-        // Must be inside contour
-        if !self.point_in_polygon(point, &expolygon.contour) {
-            return false;
-        }
-
-        // Must not be inside any hole
-        for hole in &expolygon.holes {
-            if self.point_in_polygon(point, hole) {
+            if sparse_polys[idx].contains(p) {
                 return false;
             }
         }
+        // FillFloatingConcentric.cpp:524-529
+        for idx in 0..floating_areas.len() {
+            if !floating_bboxs[idx].contains_point(p) {
+                continue;
+            }
+            if floating_areas[idx].contains_point(p) {
+                return true;
+            }
+        }
+        // FillFloatingConcentric.cpp:531
+        false
+    };
 
-        true
+    // FillFloatingConcentric.cpp:534-550
+    for idx in 0..points.len() {
+        // FillFloatingConcentric.cpp:535
+        let p = points[idx];
+        // FillFloatingConcentric.cpp:536
+        if !point_in_floating_area(&p) {
+            // FillFloatingConcentric.cpp:537-540
+            if idx == 0 {
+                none_floating_count[idx] = 1;
+            } else {
+                none_floating_count[idx] = none_floating_count[idx - 1] + 1;
+            }
+            // FillFloatingConcentric.cpp:541-544
+            if none_floating_count[idx] > 1 {
+                let prev = points[prev_idx_modulo(idx, points.len())];
+                none_floating_length[idx] = none_floating_length[idx - 1]
+                    + (((prev.x - p.x) as f64).powi(2) + ((prev.y - p.y) as f64).powi(2)).sqrt();
+            } else {
+                none_floating_length[idx] = 0.0;
+            }
+        } else {
+            // FillFloatingConcentric.cpp:547-548
+            none_floating_length[idx] = 0.0;
+            none_floating_count[idx] = 0;
+        }
     }
 
-    /// Check if a point is inside a polygon using ray casting.
-    fn point_in_polygon(&self, point: &Point, polygon: &Polygon) -> bool {
-        if polygon.len() < 3 {
-            return false;
+    // FillFloatingConcentric.cpp:552-559
+    if *none_floating_count.last().unwrap() > 0 {
+        for idx in 0..points.len() {
+            // FillFloatingConcentric.cpp:554-555
+            if none_floating_count[idx] == 0 {
+                break;
+            }
+            // FillFloatingConcentric.cpp:556
+            none_floating_count[idx] = none_floating_count[prev_idx_modulo(idx, points.len())] + 1;
+            // FillFloatingConcentric.cpp:557
+            let prev = points[prev_idx_modulo(idx, points.len())];
+            let curr = points[idx];
+            none_floating_length[idx] = none_floating_length[prev_idx_modulo(idx, points.len())]
+                + (((prev.x - curr.x) as f64).powi(2) + ((prev.y - curr.y) as f64).powi(2)).sqrt();
+        }
+    }
+}
+
+/// FillFloatingConcentric.cpp:562-577
+/// `template<typename PointContainer> int get_best_loop_start(const PointContainer& container, const ExPolygons& floating_areas, const Polygons& sparse_polys)`
+pub fn get_best_loop_start(
+    points: &[Point],
+    floating_areas: &ExPolygons,
+    sparse_polys: &Polygons,
+) -> i32 {
+    // FillFloatingConcentric.cpp:564-565
+    let mut none_floating_length: Vec<f64> = Vec::new();
+    let mut none_floating_count: Vec<i32> = Vec::new();
+
+    // FillFloatingConcentric.cpp:567
+    let floating_bbox = get_extents(floating_areas);
+    // FillFloatingConcentric.cpp:568
+    let poly_bbox = BoundingBox::from_points(points);
+
+    // FillFloatingConcentric.cpp:570-571
+    if !poly_bbox.intersects(&floating_bbox) {
+        return 0;
+    }
+
+    // FillFloatingConcentric.cpp:573
+    let clipped_sparse_polys =
+        clip_clipper_polygons_with_subject_bbox(sparse_polys, &poly_bbox);
+    // FillFloatingConcentric.cpp:574
+    get_none_floating_prefix(
+        points,
+        floating_areas,
+        &clipped_sparse_polys,
+        &mut none_floating_length,
+        &mut none_floating_count,
+    );
+    // FillFloatingConcentric.cpp:575
+    // `int best_idx = std::distance(begin, std::max_element(begin, end));`
+    let best_idx = max_element_index(&none_floating_length) as i32;
+    // FillFloatingConcentric.cpp:576
+    start_none_floating_idx(best_idx, &none_floating_count)
+}
+
+/// FillFloatingConcentric.cpp:579-601
+/// `template<typename PointContainer> std::vector<int> get_loop_start_candidates(const PointContainer& container, const ExPolygons& floating_areas, const Polygons& sparse_polys)`
+pub fn get_loop_start_candidates(
+    points: &[Point],
+    floating_areas: &ExPolygons,
+    sparse_polys: &Polygons,
+) -> Vec<i32> {
+    // FillFloatingConcentric.cpp:582-583
+    let mut none_floating_length: Vec<f64> = Vec::new();
+    let mut none_floating_count: Vec<i32> = Vec::new();
+
+    // FillFloatingConcentric.cpp:585
+    let floating_bbox = get_extents(floating_areas);
+    // FillFloatingConcentric.cpp:586
+    let poly_bbox = BoundingBox::from_points(points);
+    // FillFloatingConcentric.cpp:587
+    let mut candidate_list: Vec<i32> = Vec::new();
+
+    // FillFloatingConcentric.cpp:589-593
+    if !poly_bbox.intersects(&floating_bbox) {
+        candidate_list.resize(points.len(), 0);
+        for (i, c) in candidate_list.iter_mut().enumerate() {
+            *c = i as i32;
+        }
+        return candidate_list;
+    }
+    // FillFloatingConcentric.cpp:594
+    let clipped_sparse_polys =
+        clip_clipper_polygons_with_subject_bbox(sparse_polys, &poly_bbox);
+    // FillFloatingConcentric.cpp:595
+    get_none_floating_prefix(
+        points,
+        floating_areas,
+        &clipped_sparse_polys,
+        &mut none_floating_length,
+        &mut none_floating_count,
+    );
+    // FillFloatingConcentric.cpp:596-599
+    for idx in 0..none_floating_length.len() {
+        if none_floating_length[idx] > 0.0 {
+            candidate_list.push(start_none_floating_idx(idx as i32, &none_floating_count));
+        }
+    }
+    // FillFloatingConcentric.cpp:600
+    candidate_list
+}
+
+/// FillFloatingConcentric.cpp:604-679
+/// `void smooth_floating_line(FloatingThickPolyline& line,coord_t max_gap_threshold, coord_t min_floating_threshold)`
+pub fn smooth_floating_line(
+    line: &mut FloatingThickPolyline,
+    max_gap_threshold: Coord,
+    min_floating_threshold: Coord,
+) {
+    // FillFloatingConcentric.cpp:606-607
+    if line.empty() {
+        return;
+    }
+    // FillFloatingConcentric.cpp:608-612
+    // struct LineParts { int start; int end; bool is_floating; };
+    #[derive(Clone, Copy)]
+    struct LineParts {
+        start: i32,
+        end: i32,
+        is_floating: bool,
+    }
+
+    // FillFloatingConcentric.cpp:614-627
+    // `auto build_line_parts = [&](const FloatingThickPolyline& line)->std::vector<LineParts> {...};`
+    let build_line_parts = |line: &FloatingThickPolyline| -> Vec<LineParts> {
+        // FillFloatingConcentric.cpp:615
+        let mut line_parts: Vec<LineParts> = Vec::new();
+        // FillFloatingConcentric.cpp:616
+        let mut current_val = line.is_floating[0];
+        // FillFloatingConcentric.cpp:617
+        let mut start: i32 = 0;
+        // FillFloatingConcentric.cpp:618-624
+        for idx in 1..line.is_floating.len() {
+            if line.is_floating[idx] != current_val {
+                line_parts.push(LineParts {
+                    start,
+                    end: (idx - 1) as i32,
+                    is_floating: current_val,
+                });
+                current_val = line.is_floating[idx];
+                start = idx as i32;
+            }
+        }
+        // FillFloatingConcentric.cpp:625
+        line_parts.push(LineParts {
+            start,
+            end: (line.is_floating.len() - 1) as i32,
+            is_floating: current_val,
+        });
+        // FillFloatingConcentric.cpp:626
+        line_parts
+    };
+
+    // FillFloatingConcentric.cpp:629-636
+    let mut distance_prefix: Vec<f64> = vec![0.0; line.points.len()];
+    for idx in 0..line.points.len() {
+        if idx == 0 {
+            distance_prefix[idx] = 0.0;
+        } else {
+            let dx = (line.points[idx].x - line.points[idx - 1].x) as f64;
+            let dy = (line.points[idx].y - line.points[idx - 1].y) as f64;
+            distance_prefix[idx] = distance_prefix[idx - 1] + (dx * dx + dy * dy).sqrt();
+        }
+    }
+    // FillFloatingConcentric.cpp:637-661
+    {
+        // remove too small gaps
+        // FillFloatingConcentric.cpp:639
+        let line_parts = build_line_parts(line);
+        // FillFloatingConcentric.cpp:640
+        let mut gaps_to_merge: Vec<(i32, i32)> = Vec::new();
+
+        // FillFloatingConcentric.cpp:642-654
+        for i in 1..line_parts.len().saturating_sub(1) {
+            // i + 1 < line_parts.size()
+            if i + 1 >= line_parts.len() {
+                break;
+            }
+            // FillFloatingConcentric.cpp:643
+            let curr = line_parts[i];
+            // FillFloatingConcentric.cpp:644
+            if !curr.is_floating {
+                // FillFloatingConcentric.cpp:645-646
+                let prev = line_parts[i - 1];
+                let next = line_parts[i + 1];
+                // FillFloatingConcentric.cpp:647
+                if prev.is_floating && next.is_floating {
+                    // FillFloatingConcentric.cpp:648
+                    let total_length =
+                        distance_prefix[next.start as usize] - distance_prefix[prev.end as usize];
+                    // FillFloatingConcentric.cpp:649-651
+                    if total_length < max_gap_threshold as f64 {
+                        gaps_to_merge.push((curr.start, curr.end));
+                    }
+                }
+            }
         }
 
-        let x = point.x as f64;
-        let y = point.y as f64;
+        // FillFloatingConcentric.cpp:656-660
+        for gap in &gaps_to_merge {
+            for i in gap.0..=gap.1 {
+                line.is_floating[i as usize] = true;
+            }
+        }
+    }
 
-        let mut inside = false;
-        let n = polygon.len();
+    // FillFloatingConcentric.cpp:663-678
+    {
+        // FillFloatingConcentric.cpp:664
+        let line_parts = build_line_parts(line);
+        // FillFloatingConcentric.cpp:665
+        let mut segments_to_remove: Vec<(i32, i32)> = Vec::new();
 
-        let mut j = n - 1;
-        for i in 0..n {
-            let xi = polygon[i].x as f64;
-            let yi = polygon[i].y as f64;
-            let xj = polygon[j].x as f64;
-            let yj = polygon[j].y as f64;
+        // FillFloatingConcentric.cpp:667-671
+        for part in &line_parts {
+            if part.is_floating
+                && distance_prefix[part.end as usize] - distance_prefix[part.start as usize]
+                    < min_floating_threshold as f64
+            {
+                segments_to_remove.push((part.start, part.end));
+            }
+        }
 
-            if ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
-                inside = !inside;
+        // FillFloatingConcentric.cpp:673-677
+        for seg in &segments_to_remove {
+            for i in seg.0..=seg.1 {
+                line.is_floating[i as usize] = false;
+            }
+        }
+    }
+}
+
+// FillFloatingConcentric.cpp:681-730
+// `FloatingThickPolylines FillFloatingConcentric::resplit_order_loops(...)`
+//
+// BLOCKED: depends on `detect_floating_line` (blocked, Z-clipper) and
+// `EdgeGrid::Grid::has_intersecting_edges` (not ported in this crate's EdgeGrid),
+// plus `print_object_config->detect_floating_vertical_shell` threaded through
+// the Fill base. Port once those land.
+
+/// FillFloatingConcentric.cpp:806-877
+/// `static std::vector<const Arachne::ExtrusionLine*> toplogic_sort_extruisons(const std::vector<Arachne::ExtrusionLine*>& all_extrusions)`
+///
+/// Returns indices into `all_extrusions` (rather than borrowed pointers) so the
+/// caller can reuse the slice without aliasing issues; the visiting order is
+/// identical to the C++ pointer order.
+pub fn toplogic_sort_extruisons(all_extrusions: &[&ExtrusionLine]) -> Vec<usize> {
+    // FillFloatingConcentric.cpp:808
+    let mut ordered_extrusions: Vec<usize> = Vec::new();
+    // Find topological order with constraints from extrusions_constrains.
+    // FillFloatingConcentric.cpp:810
+    let mut blocked: Vec<usize> = vec![0; all_extrusions.len()];
+    // FillFloatingConcentric.cpp:811
+    let mut blocking: Vec<Vec<usize>> = vec![Vec::new(); all_extrusions.len()];
+    // FillFloatingConcentric.cpp:812-814
+    // map_extrusion_to_idx: in our port, get_region_order already returns index
+    // pairs into `all_extrusions`, so this map is the identity.
+
+    // FillFloatingConcentric.cpp:816
+    let extrusions_constrains = WallToolPaths::get_region_order(all_extrusions, true);
+    // FillFloatingConcentric.cpp:817-821
+    for (before, after) in extrusions_constrains.iter() {
+        // FillFloatingConcentric.cpp:818-820
+        blocked[*after] += 1;
+        blocking[*before].push(*after);
+    }
+
+    // FillFloatingConcentric.cpp:823
+    let mut processed: Vec<bool> = vec![false; all_extrusions.len()];
+    // FillFloatingConcentric.cpp:824
+    let mut current_position: Point = if all_extrusions.is_empty() {
+        Point::new(0, 0)
+    } else {
+        all_extrusions[0].junctions[0].p
+    };
+    // FillFloatingConcentric.cpp:825
+    while ordered_extrusions.len() < all_extrusions.len() {
+        // FillFloatingConcentric.cpp:826
+        let mut best_candidate: usize = 0;
+        // FillFloatingConcentric.cpp:827
+        let mut best_distance_sqr: f64 = f64::MAX;
+        // FillFloatingConcentric.cpp:828
+        let mut is_best_closed = false;
+
+        // FillFloatingConcentric.cpp:830
+        let mut available_candidates: Vec<usize> = Vec::new();
+        // FillFloatingConcentric.cpp:831-835
+        for candidate in 0..all_extrusions.len() {
+            if processed[candidate] || blocked[candidate] != 0 {
+                continue; // Not a valid candidate.
+            }
+            available_candidates.push(candidate);
+        }
+
+        // FillFloatingConcentric.cpp:837-839
+        available_candidates.sort_by(|a_idx, b_idx| {
+            all_extrusions[*a_idx]
+                .is_closed
+                .cmp(&all_extrusions[*b_idx].is_closed)
+        });
+
+        // FillFloatingConcentric.cpp:841-861
+        for &candidate_path_idx in available_candidates.iter() {
+            // FillFloatingConcentric.cpp:842
+            let path = all_extrusions[candidate_path_idx];
+
+            // FillFloatingConcentric.cpp:844-850
+            if path.junctions.is_empty() {
+                // No vertices in the path. Can't find the start position then or really plan it in. Put that at the end.
+                if best_distance_sqr == f64::MAX {
+                    best_candidate = candidate_path_idx;
+                    is_best_closed = path.is_closed;
+                }
+                continue;
             }
 
-            j = i;
+            // FillFloatingConcentric.cpp:852
+            let candidate_position = path.junctions[0].p;
+            // FillFloatingConcentric.cpp:853
+            // `double distance_sqr = (current_position - candidate_position).cast<double>().norm();`
+            let dx = (current_position.x - candidate_position.x) as f64;
+            let dy = (current_position.y - candidate_position.y) as f64;
+            let distance_sqr = (dx * dx + dy * dy).sqrt();
+            // FillFloatingConcentric.cpp:854
+            if distance_sqr < best_distance_sqr {
+                // Closer than the best candidate so far.
+                // FillFloatingConcentric.cpp:855
+                if path.is_closed
+                    || (!path.is_closed && best_distance_sqr != f64::MAX)
+                    || (!path.is_closed && !is_best_closed)
+                {
+                    best_candidate = candidate_path_idx;
+                    best_distance_sqr = distance_sqr;
+                    is_best_closed = path.is_closed;
+                }
+            }
         }
 
-        inside
+        // FillFloatingConcentric.cpp:863
+        let best_path = all_extrusions[best_candidate];
+        // FillFloatingConcentric.cpp:864
+        ordered_extrusions.push(best_candidate);
+        // FillFloatingConcentric.cpp:865
+        processed[best_candidate] = true;
+        // FillFloatingConcentric.cpp:866-867
+        for unlocked_idx in blocking[best_candidate].clone() {
+            blocked[unlocked_idx] -= 1;
+        }
+
+        // FillFloatingConcentric.cpp:869-874
+        if !best_path.junctions.is_empty() {
+            // If all paths were empty, the best path is still empty. We don't upate the current position then.
+            if best_path.is_closed {
+                current_position = best_path.junctions[0].p; // We end where we started.
+            } else {
+                current_position = best_path.junctions.last().unwrap().p; // Pick the other end from where we started.
+            }
+        }
     }
+    // FillFloatingConcentric.cpp:876
+    ordered_extrusions
 }
 
-impl Default for FloatingConcentricGenerator {
-    fn default() -> Self {
-        Self::with_defaults()
-    }
-}
+// =============================================================================
+// Local helpers (not in FillFloatingConcentric.cpp; thin wrappers over crate
+// primitives to express idioms used by the ported functions above).
+// =============================================================================
 
-/// Convenience function to generate floating concentric infill.
+/// `ClipperUtils::clip_clipper_polygons_with_subject_bbox(sparse_polys, poly_bbox)`.
 ///
-/// # Arguments
-/// * `fill_area` - The area to fill with concentric loops
-/// * `floating_areas` - Areas not supported by the layer below
-/// * `spacing` - Line spacing in mm
-///
-/// # Returns
-/// A `FloatingConcentricResult` containing the generated polylines.
-pub fn generate_floating_concentric(
-    fill_area: &ExPolygons,
-    floating_areas: &ExPolygons,
-    spacing: CoordF,
-) -> FloatingConcentricResult {
-    let config = FloatingConcentricConfig::new(spacing);
-    let generator = FloatingConcentricGenerator::new(config);
-    generator.generate(fill_area, floating_areas)
+/// The crate has no direct port of this helper yet; it keeps polygons whose
+/// bounding box overlaps `bbox` (the semantically-relevant subset). This affects
+/// only a pre-filtering optimization — points outside `bbox` are never queried by
+/// `point_in_floating_area` anyway, so the floating classification is unchanged.
+fn clip_clipper_polygons_with_subject_bbox(polys: &Polygons, bbox: &BoundingBox) -> Polygons {
+    polys
+        .iter()
+        .filter(|p| polygon_get_extents(p).intersects(bbox))
+        .cloned()
+        .collect()
 }
 
-/// Convenience function to generate floating concentric infill with full config.
-pub fn generate_floating_concentric_with_config(
-    fill_area: &ExPolygons,
-    floating_areas: &ExPolygons,
-    config: FloatingConcentricConfig,
-) -> FloatingConcentricResult {
-    let generator = FloatingConcentricGenerator::new(config);
-    generator.generate(fill_area, floating_areas)
+/// Polygon.cpp `BoundingBox get_extents(const Polygon &poly)`.
+/// (The crate's `polygon` module is private and its `get_extents` is not
+/// glob-re-exported because it collides with the ExPolygon variant; this is the
+/// same computation: `BoundingBox(poly.points)`.)
+fn polygon_get_extents(poly: &Polygon) -> BoundingBox {
+    BoundingBox::from_points(&poly.points)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_square_mm(size: CoordF) -> ExPolygon {
-        let half = scale(size / 2.0);
-        ExPolygon {
-            contour: Polygon::from_points(vec![
-                Point::new(-half, -half),
-                Point::new(half, -half),
-                Point::new(half, half),
-                Point::new(-half, half),
-            ]),
-            holes: Vec::new(),
+/// `std::distance(begin, std::max_element(begin, end))`.
+/// `std::max_element` returns the first element comparing greatest; on an empty
+/// range it returns `begin` (index 0). We replicate the "first maximum" tie-break.
+fn max_element_index(v: &[f64]) -> usize {
+    if v.is_empty() {
+        return 0;
+    }
+    let mut best = 0usize;
+    for i in 1..v.len() {
+        if v[i] > v[best] {
+            best = i;
         }
     }
-
-    fn make_square_with_hole_mm(outer_size: CoordF, inner_size: CoordF) -> ExPolygon {
-        let half_outer = scale(outer_size / 2.0);
-        let half_inner = scale(inner_size / 2.0);
-        ExPolygon {
-            contour: Polygon::from_points(vec![
-                Point::new(-half_outer, -half_outer),
-                Point::new(half_outer, -half_outer),
-                Point::new(half_outer, half_outer),
-                Point::new(-half_outer, half_outer),
-            ]),
-            holes: vec![Polygon::from_points(vec![
-                Point::new(-half_inner, -half_inner),
-                Point::new(-half_inner, half_inner),
-                Point::new(half_inner, half_inner),
-                Point::new(half_inner, -half_inner),
-            ])],
-        }
-    }
-
-    #[test]
-    fn test_floating_concentric_config_default() {
-        let config = FloatingConcentricConfig::default();
-        assert!((config.spacing - 0.4).abs() < 0.01);
-        assert!(config.split_at_transitions);
-        assert!(config.prefer_non_floating_start);
-    }
-
-    #[test]
-    fn test_floating_concentric_config_builder() {
-        let config = FloatingConcentricConfig::new(0.5)
-            .with_min_loop_length(2.0)
-            .with_split_at_transitions(false);
-
-        assert!((config.spacing - 0.5).abs() < 0.01);
-        assert!((config.min_loop_length - 2.0).abs() < 0.01);
-        assert!(!config.split_at_transitions);
-    }
-
-    #[test]
-    fn test_floating_thick_line_basic() {
-        let line = FloatingThickLine::new(
-            Point::new(0, 0),
-            Point::new(scale(10.0), 0),
-            0.4,
-            0.5,
-            false,
-            true,
-        );
-
-        assert!((line.length() - 10.0).abs() < 0.01);
-        assert!(!line.is_fully_floating());
-        assert!(!line.is_fully_supported());
-        assert!(line.has_transition());
-        assert!((line.width_at(0.5) - 0.45).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_floating_thick_polyline_basic() {
-        let polyline = Polyline::from_points(vec![
-            Point::new(0, 0),
-            Point::new(scale(10.0), 0),
-            Point::new(scale(10.0), scale(10.0)),
-        ]);
-
-        let ftp = FloatingThickPolyline::from_polyline(&polyline, 0.4);
-
-        assert_eq!(ftp.len(), 3);
-        assert!(!ftp.is_closed());
-        assert!(ftp.is_valid());
-        assert!((ftp.length() - 20.0).abs() < 0.1);
-        assert_eq!(ftp.floating_fraction(), 0.0);
-    }
-
-    #[test]
-    fn test_floating_thick_polyline_from_polygon() {
-        let polygon = Polygon::from_points(vec![
-            Point::new(0, 0),
-            Point::new(scale(10.0), 0),
-            Point::new(scale(10.0), scale(10.0)),
-            Point::new(0, scale(10.0)),
-        ]);
-
-        let ftp = FloatingThickPolyline::from_polygon(&polygon, 0.4);
-
-        assert_eq!(ftp.len(), 5); // Polygon + closing point
-        assert!(ftp.is_closed());
-        assert!(ftp.is_valid());
-    }
-
-    #[test]
-    fn test_floating_thick_polyline_rebase() {
-        let polygon = Polygon::from_points(vec![
-            Point::new(0, 0),
-            Point::new(scale(10.0), 0),
-            Point::new(scale(10.0), scale(10.0)),
-            Point::new(0, scale(10.0)),
-        ]);
-
-        let mut ftp = FloatingThickPolyline::from_polygon(&polygon, 0.4);
-        // Mark first two points as floating
-        ftp.is_floating[0] = true;
-        ftp.is_floating[1] = true;
-
-        let rebased = ftp.rebase_at(2).unwrap();
-
-        // After rebasing at index 2, the first point should be the old point at index 2
-        assert_eq!(rebased.points[0], ftp.points[2]);
-        // And first point should not be floating
-        assert!(!rebased.is_floating[0]);
-    }
-
-    #[test]
-    fn test_floating_thick_polyline_split_at_transitions() {
-        let mut ftp = FloatingThickPolyline::new();
-        ftp.push(Point::new(0, 0), 0.4, false);
-        ftp.push(Point::new(scale(5.0), 0), 0.4, false);
-        ftp.push(Point::new(scale(10.0), 0), 0.4, true); // Transition here
-        ftp.push(Point::new(scale(15.0), 0), 0.4, true);
-        ftp.push(Point::new(scale(20.0), 0), 0.4, false); // Transition here
-        ftp.push(Point::new(scale(25.0), 0), 0.4, false);
-
-        let segments = ftp.split_at_transitions();
-
-        // Should have 3 segments: supported -> floating -> supported
-        assert_eq!(segments.len(), 3);
-    }
-
-    #[test]
-    fn test_floating_thick_polyline_clip_end() {
-        let mut ftp = FloatingThickPolyline::new();
-        ftp.push(Point::new(0, 0), 0.4, false);
-        ftp.push(Point::new(scale(10.0), 0), 0.4, false);
-        ftp.push(Point::new(scale(20.0), 0), 0.4, false);
-
-        let original_len = ftp.length();
-        ftp.clip_end(2.0);
-
-        assert!((original_len - ftp.length() - 2.0).abs() < 0.1);
-    }
-
-    #[test]
-    fn test_generate_floating_concentric_no_floating() {
-        let fill_area = vec![make_square_mm(20.0)];
-        let floating_areas: ExPolygons = vec![];
-
-        let result = generate_floating_concentric(&fill_area, &floating_areas, 0.5);
-
-        assert!(result.has_infill());
-        assert!(result.loop_count > 0);
-        assert_eq!(result.floating_fraction, 0.0);
-    }
-
-    #[test]
-    fn test_generate_floating_concentric_with_floating() {
-        let fill_area = vec![make_square_mm(20.0)];
-        // Create a floating area in the center
-        let floating_areas = vec![make_square_mm(10.0)];
-
-        let result = generate_floating_concentric(&fill_area, &floating_areas, 0.5);
-
-        assert!(result.has_infill());
-        assert!(result.loop_count > 0);
-        // Some portion should be floating
-        assert!(result.floating_fraction > 0.0);
-    }
-
-    #[test]
-    fn test_generate_floating_concentric_with_hole() {
-        let fill_area = vec![make_square_with_hole_mm(20.0, 10.0)];
-        let floating_areas: ExPolygons = vec![];
-
-        let result = generate_floating_concentric(&fill_area, &floating_areas, 0.5);
-
-        assert!(result.has_infill());
-        assert!(result.loop_count > 0);
-    }
-
-    #[test]
-    fn test_generate_floating_concentric_empty() {
-        let fill_area: ExPolygons = vec![];
-        let floating_areas: ExPolygons = vec![];
-
-        let result = generate_floating_concentric(&fill_area, &floating_areas, 0.5);
-
-        assert!(!result.has_infill());
-        assert_eq!(result.loop_count, 0);
-    }
-
-    #[test]
-    fn test_generate_floating_concentric_all_floating() {
-        // Fill area is entirely inside the floating area
-        let fill_area = vec![make_square_mm(10.0)];
-        let floating_areas = vec![make_square_mm(30.0)];
-
-        let config = FloatingConcentricConfig::new(0.5).with_split_at_transitions(false);
-        let result = generate_floating_concentric_with_config(&fill_area, &floating_areas, config);
-
-        assert!(result.has_infill());
-        // Should be nearly all floating (1.0)
-        assert!(result.floating_fraction > 0.9);
-    }
-
-    #[test]
-    fn test_floating_thick_polyline_to_thick_lines() {
-        let mut ftp = FloatingThickPolyline::new();
-        ftp.push(Point::new(0, 0), 0.4, false);
-        ftp.push(Point::new(scale(10.0), 0), 0.5, true);
-        ftp.push(Point::new(scale(20.0), 0), 0.4, false);
-
-        let lines = ftp.to_thick_lines();
-
-        assert_eq!(lines.len(), 2);
-        assert!(!lines[0].is_a_floating);
-        assert!(lines[0].is_b_floating);
-        assert!(lines[1].is_a_floating);
-        assert!(!lines[1].is_b_floating);
-    }
-
-    #[test]
-    fn test_floating_concentric_generator_config() {
-        let config = FloatingConcentricConfig::new(0.6);
-        let generator = FloatingConcentricGenerator::new(config);
-
-        assert!((generator.config().spacing - 0.6).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_floating_fraction_calculation() {
-        let mut ftp = FloatingThickPolyline::new();
-        // Create a polyline where half is floating
-        ftp.push(Point::new(0, 0), 0.4, false);
-        ftp.push(Point::new(scale(10.0), 0), 0.4, false);
-        ftp.push(Point::new(scale(20.0), 0), 0.4, true);
-        ftp.push(Point::new(scale(30.0), 0), 0.4, true);
-
-        let fraction = ftp.floating_fraction();
-        // Second half (10mm of 30mm total) should be floating ≈ 0.33
-        assert!((fraction - 0.333).abs() < 0.1);
-    }
-
-    #[test]
-    fn test_to_polylines() {
-        let fill_area = vec![make_square_mm(20.0)];
-        let floating_areas: ExPolygons = vec![];
-
-        let result = generate_floating_concentric(&fill_area, &floating_areas, 1.0);
-        let polylines = result.to_polylines();
-
-        assert!(!polylines.is_empty());
-        assert_eq!(polylines.len(), result.polylines.len());
-    }
-
-    #[test]
-    fn test_point_in_polygon() {
-        let generator = FloatingConcentricGenerator::with_defaults();
-
-        let polygon = Polygon::from_points(vec![
-            Point::new(0, 0),
-            Point::new(scale(10.0), 0),
-            Point::new(scale(10.0), scale(10.0)),
-            Point::new(0, scale(10.0)),
-        ]);
-
-        // Point inside
-        assert!(generator.point_in_polygon(&Point::new(scale(5.0), scale(5.0)), &polygon));
-
-        // Point outside
-        assert!(!generator.point_in_polygon(&Point::new(scale(15.0), scale(5.0)), &polygon));
-
-        // Point on edge (implementation dependent, usually considered outside by ray casting)
-        // This is acceptable for our use case
-    }
+    best
 }

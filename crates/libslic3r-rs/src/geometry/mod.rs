@@ -268,6 +268,67 @@ pub fn linint(value: CoordF, oldmin: CoordF, oldmax: CoordF, newmin: CoordF, new
     (value - oldmin) * (newmax - newmin) / (oldmax - oldmin) + newmin
 }
 
+/// Liang–Barsky clip of the segment starting at `x0` with direction `v`
+/// against the axis-aligned box [bb_min,bb_max]. Returns the parametric
+/// interval `(t0, t1)` along the segment, or None if fully outside.
+/// Geometry.hpp:202-252 `liang_barsky_line_clipping_interval`.
+pub fn liang_barsky_line_clipping_interval(
+    // Geometry.hpp:205-207 — start point of the source line and its direction vector.
+    x0: (CoordF, CoordF),
+    v: (CoordF, CoordF),
+    // Geometry.hpp:209 — bounding box to clip with.
+    bb_min: (CoordF, CoordF),
+    bb_max: (CoordF, CoordF),
+) -> Option<(f64, f64)> {
+    // Geometry.hpp:212-213
+    let mut t0 = 0.0_f64;
+    let mut t1 = 1.0_f64;
+    // Geometry.hpp:214-241 — Traverse through left, right, bottom, top edges.
+    let mut clip_side = |p: CoordF, q: CoordF| -> bool {
+        if p == 0.0 {
+            if q < 0.0 {
+                // Line parallel to the bounding box edge is fully outside of the bounding box.
+                return false;
+            }
+            // else don't clip
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                if r > t1 {
+                    // Fully clipped.
+                    return false;
+                }
+                if r > t0 {
+                    // Partially clipped.
+                    t0 = r;
+                }
+            } else {
+                debug_assert!(p > 0.0);
+                if r < t0 {
+                    // Fully clipped.
+                    return false;
+                }
+                if r < t1 {
+                    // Partially clipped.
+                    t1 = r;
+                }
+            }
+        }
+        true
+    };
+
+    // Geometry.hpp:243-251
+    if clip_side(-v.0, -bb_min.0 + x0.0)
+        && clip_side(v.0, bb_max.0 - x0.0)
+        && clip_side(-v.1, -bb_min.1 + x0.1)
+        && clip_side(v.1, bb_max.1 - x0.1)
+    {
+        Some((t0, t1))
+    } else {
+        None
+    }
+}
+
 /// Liang–Barsky clip of segment (x0,x1) against the axis-aligned box [bb_min,bb_max].
 /// Returns the clipped endpoints, or None if fully outside.
 /// Geometry.hpp `liang_barsky_line_clipping` / `_interval`.

@@ -37,6 +37,11 @@
 //! It contains the main pattern generation logic from Fill.cpp and FillBase.cpp.
 
 // C++ Fill/ directory files (exact 1:1 mapping)
+// Faithful 1:1 port of Fill/Fill.cpp (self-contained subset). Distinct
+// namespace `crate::fill::fill` to avoid colliding with the simplified
+// SurfaceFillParams/SurfaceFill/group_fills currently defined in this mod.rs.
+pub mod fill;
+pub mod fill_base;
 pub mod fill3_d_honeycomb;
 pub mod fill_adaptive;
 pub mod fill_concentric;
@@ -54,10 +59,14 @@ pub mod fill_rectilinear;
 pub mod lightning;
 
 // Re-export from fill_adaptive
-pub use fill_adaptive::{generate_adaptive_infill, AdaptiveInfillConfig, CubeProperties, Octree};
+pub use fill_adaptive::{
+    build_octree, generate_infill_lines as generate_adaptive_infill_lines,
+    transform_to_octree, transform_to_world, triangle_aabb_intersects, Cube, CubeProperties,
+    Octree,
+};
 
 // Re-export from fill3_d_honeycomb
-pub use fill3_d_honeycomb::Honeycomb3DConfig;
+pub use fill3_d_honeycomb::Fill3DHoneycomb;
 
 // Re-export from fill_gyroid
 pub use fill_gyroid::{generate_gyroid_infill, GyroidConfig};
@@ -66,10 +75,13 @@ pub use fill_gyroid::{generate_gyroid_infill, GyroidConfig};
 pub use fill_cross_hatch::CrossHatchConfig;
 
 // Re-export from fill_plane_path (space-filling curves)
-pub use fill_plane_path::{PlanPathConfig, PlanPathPattern};
+pub use fill_plane_path::{FillPlanePath, PlanPathPattern};
 
-// Re-export from fill_floating_concentric
-pub use fill_floating_concentric::FloatingConcentricConfig;
+// Re-export from fill_floating_concentric (FillFloatingConcentric.cpp/.hpp)
+pub use fill_floating_concentric::{
+    FloatingPolyline, FloatingPolylines, FloatingThickPolyline, FloatingThickPolylines,
+    FloatingThickline, FloatingThicklines,
+};
 
 use crate::extrusion_entity::ExtrusionRole;
 use crate::flow::Flow;
@@ -692,6 +704,32 @@ pub struct LockRegionParam {
     // TODO: Port full structure from FillBase.hpp:47-53
 }
 
+/// Helper: drive `FillPlanePath::_fill_surface_single` over each fill area for the
+/// space-filling-curve patterns (Hilbert, Archimedean, Octagram).
+/// FillPlanePath.cpp:69-134.
+fn generate_plane_path(
+    pattern: fill_plane_path::PlanPathPattern,
+    fill_area: &[ExPolygon],
+    line_spacing: CoordF,
+    angle: CoordF,
+) -> Result<Vec<Polyline>> {
+    let mut fill = fill_plane_path::FillPlanePath::new(pattern);
+    // `line_spacing` here is already the per-line spacing; the C++ `_fill_surface_single`
+    // divides `scaled(this->spacing) / params.density`, so feed spacing*density-back via
+    // density = 1.0 and `this->spacing = line_spacing` to keep the same line pitch.
+    fill.spacing = line_spacing;
+    let mut params = FillParams::new();
+    params.density = 1.0; // solid path: snug bbox, no cross-layer object alignment needed
+    params.anchor_length_max = 0.0; // dont_connect(): chain instead of connect_infill
+    params.resolution = 0.0125;
+    let direction = (angle as f32, Point::new(0, 0));
+    let mut all_polylines = Vec::new();
+    for expoly in fill_area {
+        fill._fill_surface_single(&params, 1, &direction, expoly.clone(), &mut all_polylines);
+    }
+    Ok(all_polylines)
+}
+
 /// Main infill generation function
 /// Fill.cpp:100-200
 pub fn generate_infill(
@@ -747,25 +785,42 @@ pub fn generate_infill(
             Ok(lines1)
         }
         InfillPattern::Adaptive => {
-            // FillAdaptive.cpp - adaptive density infill
-            let config = fill_adaptive::AdaptiveInfillConfig {
-                line_spacing,
-                ..Default::default()
-            };
-            fill_adaptive::generate_adaptive_infill(fill_area, &config)
+            // FillAdaptive.cpp - adaptive density infill.
+            // The line-generation + hook-connection core is ported in `fill_adaptive`
+            // (`build_octree` + `generate_infill_lines`), but the full
+            // `Filler::_fill_surface_single` entry point requires a mesh-built octree
+            // and the `Fill` base-class state (z, spacing, params) threaded from
+            // Print/PrintObject, which is not available through this 2D
+            // `generate_infill` shim.
+            let _ = (fill_area, line_spacing, angle);
+            Err(crate::Error::Slicing(String::from(
+                "Adaptive cubic infill requires a mesh-built octree (FillAdaptive::build_octree) and Fill base-class state (z/spacing/params); not reachable via the 2D generate_infill shim. Use fill_adaptive::build_octree + generate_infill_lines.",
+            )))
         }
         InfillPattern::Honeycomb3D => {
             // Fill3DHoneycomb.cpp - 3D honeycomb infill
+            // Drive the faithful `Fill3DHoneycomb::_fill_surface_single`, mirroring
+            // `generate_plane_path`. `line_spacing` is the per-line spacing; the C++
+            // `_fill_surface_single` divides `scale(spacing) * ... / density`, so feed
+            // density = 1.0 with `this->spacing = line_spacing` to keep the line pitch.
+            let mut fill = fill3_d_honeycomb::Fill3DHoneycomb {
+                angle: angle as f32,
+                spacing: line_spacing,
+                z: 0.0, // z height - caller should provide
+            };
+            let mut params = FillParams::new();
+            params.density = 1.0;
+            params.anchor_length_max = 0.0; // dont_connect(): chain instead of connect_infill
+            let direction = (angle as f32, Point::new(0, 0));
             let mut all_polylines = Vec::new();
             for expoly in fill_area {
-                let result = fill3_d_honeycomb::generate_honeycomb_3d(
-                    expoly,
-                    0.0, // z height - caller should provide
-                    0.2, // layer height default
-                    0.2, // density default
-                    line_spacing,
+                fill._fill_surface_single(
+                    &params,
+                    1,
+                    &direction,
+                    expoly.clone(),
+                    &mut all_polylines,
                 );
-                all_polylines.extend(result.polylines);
             }
             Ok(all_polylines)
         }
@@ -790,31 +845,30 @@ pub fn generate_infill(
         }
         InfillPattern::Hilbert => {
             // FillPlanePath.cpp - Hilbert curve space-filling infill
-            let mut all_polylines = Vec::new();
-            for expoly in fill_area {
-                let result = fill_plane_path::generate_hilbert_curve(expoly, 0.2, line_spacing);
-                all_polylines.extend(result.polylines);
-            }
-            Ok(all_polylines)
+            generate_plane_path(
+                fill_plane_path::PlanPathPattern::HilbertCurve,
+                fill_area,
+                line_spacing,
+                angle,
+            )
         }
         InfillPattern::ArchimedeanChords => {
             // FillPlanePath.cpp - Archimedean chords space-filling infill
-            let mut all_polylines = Vec::new();
-            for expoly in fill_area {
-                let result =
-                    fill_plane_path::generate_archimedean_chords(expoly, 0.2, line_spacing);
-                all_polylines.extend(result.polylines);
-            }
-            Ok(all_polylines)
+            generate_plane_path(
+                fill_plane_path::PlanPathPattern::ArchimedeanChords,
+                fill_area,
+                line_spacing,
+                angle,
+            )
         }
         InfillPattern::OctagramSpiral => {
             // FillPlanePath.cpp - Octagram spiral space-filling infill
-            let mut all_polylines = Vec::new();
-            for expoly in fill_area {
-                let result = fill_plane_path::generate_octagram_spiral(expoly, 0.2, line_spacing);
-                all_polylines.extend(result.polylines);
-            }
-            Ok(all_polylines)
+            generate_plane_path(
+                fill_plane_path::PlanPathPattern::OctagramSpiral,
+                fill_area,
+                line_spacing,
+                angle,
+            )
         }
         InfillPattern::Concentric => {
             // FillConcentric.cpp - concentric offset loops
@@ -910,6 +964,13 @@ pub struct FillParams {
     /// Don't adjust spacing to fill the space evenly.
     /// FillBase.hpp:68 — `bool dont_adjust { true }`.
     pub dont_adjust: bool,
+    /// G-code resolution (unscaled, mm). Used by space-filling-curve infills to
+    /// pick the discretization angle of the Archimedean spiral.
+    /// FillBase.hpp:65 — `coordf_t resolution`.
+    pub resolution: f64,
+    /// Do not sort the lines, just simply connect them.
+    /// FillBase.hpp:93 — `bool dont_sort{ false }`.
+    pub dont_sort: bool,
 }
 
 impl FillParams {
@@ -931,6 +992,8 @@ impl FillParams {
             multiline: 1,
             layer_height: 0.0,
             dont_adjust: true,
+            resolution: 0.0125,
+            dont_sort: false,
         }
     }
 
