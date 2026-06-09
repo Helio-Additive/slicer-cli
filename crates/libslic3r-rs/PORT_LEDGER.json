@@ -1910,7 +1910,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/beading_strategy.rs",
     "rust_exists": true,
     "loc": 79,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1921,7 +1921,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/widening_beading_strategy.rs",
     "rust_exists": true,
     "loc": 82,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1932,7 +1932,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/outer_wall_contour_strategy.rs",
     "rust_exists": true,
     "loc": 83,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1954,7 +1954,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/distributed_beading_strategy.rs",
     "rust_exists": true,
     "loc": 95,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1965,7 +1965,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/redistribute_beading_strategy.rs",
     "rust_exists": true,
     "loc": 97,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1976,7 +1976,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/linear_alg2_d.rs",
     "rust_exists": false,
     "loc": 122,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1987,7 +1987,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/limited_beading_strategy.rs",
     "rust_exists": true,
     "loc": 126,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1998,7 +1998,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/skeletal_trapezoidation_edge.rs",
     "rust_exists": true,
     "loc": 133,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {

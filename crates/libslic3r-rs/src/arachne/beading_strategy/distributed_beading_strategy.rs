@@ -146,8 +146,12 @@ impl DistributedBeadingStrategy {
                 // C++: const coord_t splitup_left_over_weight = to_be_divided * weight_fraction;
                 // C++: const coord_t width = (bead_idx == bead_count - 1) ? thickness - accumulated_width : optimal_width + splitup_left_over_weight;
                 let weight_fraction = weights[bead_idx as usize] / total_weight;
-                let splitup_left_over_weight =
-                    (to_be_divided as f64 * weight_fraction as f64) as Coord;
+                // C++: const coord_t splitup_left_over_weight = to_be_divided * weight_fraction;
+                // `to_be_divided` is coord_t (int64_t) and `weight_fraction` is float (f32).
+                // Per C++ usual arithmetic conversions, the integer operand is promoted to
+                // `float`, the product is computed in f32, then truncated to coord_t.
+                // Mirror that exact order: f32 multiply, then truncate to Coord.
+                let splitup_left_over_weight = (to_be_divided as f32 * weight_fraction) as Coord;
                 let width = if bead_idx == bead_count - 1 {
                     thickness - accumulated_width
                 } else {

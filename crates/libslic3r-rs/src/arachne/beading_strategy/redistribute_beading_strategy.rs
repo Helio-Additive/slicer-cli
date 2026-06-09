@@ -75,17 +75,17 @@ impl RedistributeBeadingStrategy {
         minimum_variable_line_ratio: f64,
         parent: BeadingStrategyPtr,
     ) -> Self {
+        // The C++ constructor sets `name = "RedistributeBeadingStrategy"`, but the
+        // overridden toString() returns `"RedistributeBeadingStrategy+" + parent->toString()`.
+        // The trait's name() returns &str and is the crate's mapping for toString(),
+        // so precompute the composed value here (the parent is owned after the move).
+        let name = format!("RedistributeBeadingStrategy+{}", parent.name());
         Self {
             parent,
             optimal_width_outer,
             minimum_variable_line_ratio,
-            name: "RedistributeBeadingStrategy".to_string(),
+            name,
         }
-    }
-
-    // Get the parent strategy name for toString
-    fn parent_name(&self) -> String {
-        self.parent.name().to_string()
     }
 }
 
@@ -108,9 +108,12 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
         let mut ret = Beading::default();
 
         // Take care of all situations in which no lines are actually produced:
+        // The C++ comparison `thickness < minimum_variable_line_ratio * optimal_width_outer`
+        // promotes the coord_t `thickness` to double and compares in floating point; it does
+        // NOT truncate the RHS to an integer first. Mirror that by comparing as f64.
         if bead_count == 0
-            || thickness
-                < (self.minimum_variable_line_ratio * self.optimal_width_outer as f64) as Coord
+            || (thickness as f64)
+                < self.minimum_variable_line_ratio * self.optimal_width_outer as f64
         {
             ret.left_over = thickness;
             ret.total_thickness = thickness;
@@ -183,14 +186,15 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     // C++:     return parent->getOptimalBeadCount(thickness - 2 * optimal_width_outer) + 2;
     // C++: }
     fn get_optimal_bead_count(&self, thickness: Coord) -> Coord {
-        if thickness < (self.minimum_variable_line_ratio * self.optimal_width_outer as f64) as Coord
-        {
+        // C++ promotes `thickness` (coord_t) to double for these comparisons against
+        // double-valued RHS expressions; it does not truncate the RHS. Compare as f64.
+        if (thickness as f64) < self.minimum_variable_line_ratio * self.optimal_width_outer as f64 {
             return 0;
         }
         if thickness <= 2 * self.optimal_width_outer {
-            return if thickness
-                > ((1.0 + self.parent.get_split_middle_threshold())
-                    * self.optimal_width_outer as f64) as Coord
+            return if (thickness as f64)
+                > (1.0 + self.parent.get_split_middle_threshold())
+                    * self.optimal_width_outer as f64
             {
                 2
             } else {
@@ -296,10 +300,11 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
         self.parent.get_split_middle_threshold()
     }
 
-    // Get the wall add middle threshold (delegates to parent)
+    // Get the wall add middle threshold (delegates to parent).
+    // The C++ constructor `BeadingStrategy(*parent)` copy-constructs the base from the
+    // parent, so this base member equals the parent's wall_add_middle_threshold.
     fn wall_add_middle_threshold(&self) -> f64 {
-        // Parent strategy provides this
-        0.0 // TODO: This should come from parent if available
+        self.parent.wall_add_middle_threshold()
     }
 }
 
@@ -329,7 +334,11 @@ mod tests {
             parent,
         );
 
-        assert_eq!(strategy.name(), "RedistributeBeadingStrategy");
+        // name() mirrors C++ toString(): "RedistributeBeadingStrategy+" + parent->toString().
+        assert_eq!(
+            strategy.name(),
+            "RedistributeBeadingStrategy+DistributedBeadingStrategy"
+        );
         assert_eq!(strategy.optimal_width_outer, 400_000);
         assert!((strategy.minimum_variable_line_ratio - 0.34).abs() < 1e-10);
     }

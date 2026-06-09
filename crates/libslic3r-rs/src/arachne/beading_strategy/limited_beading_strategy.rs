@@ -62,14 +62,24 @@ impl LimitedBeadingStrategy {
     /// C++:     }
     /// C++: }
     pub fn new(max_bead_count: Coord, parent: BeadingStrategyPtr) -> Self {
+        // LimitedBeadingStrategy.cpp:33
+        // C++: if (max_bead_count % 2 == 1)
         if max_bead_count % 2 == 1 {
+            // LimitedBeadingStrategy.cpp:35
+            // C++: BOOST_LOG_TRIVIAL(warning) << "LimitedBeadingStrategy with odd bead count is odd indeed!";
             log::warn!("LimitedBeadingStrategy with odd bead count is odd indeed!");
         }
+
+        // toString() composes "LimitedBeadingStrategy+" with the parent's name.
+        // Precompute it here since the trait's name() returns &str (the parent is
+        // owned). See LimitedBeadingStrategy.cpp:13-16.
+        // C++: return std::string("LimitedBeadingStrategy+") + parent->toString();
+        let name = format!("LimitedBeadingStrategy+{}", parent.name());
 
         Self {
             max_bead_count,
             parent,
-            name: "LimitedBeadingStrategy".to_string(),
+            name,
         }
     }
 }
@@ -80,22 +90,22 @@ impl BeadingStrategy for LimitedBeadingStrategy {
     ///
     /// C++: LimitedBeadingStrategy::Beading LimitedBeadingStrategy::compute(coord_t thickness, coord_t bead_count) const
     fn compute(&self, thickness: Coord, bead_count: Coord) -> Beading {
-        /// If within limits, delegate to parent and possibly add marker bead
-        /// Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:40-54
-        /// C++: if (bead_count <= max_bead_count)
-        /// C++: {
-        /// C++:     Beading ret = parent->compute(thickness, bead_count);
-        /// C++:     bead_count = ret.toolpath_locations.size();
-        /// C++:
-        /// C++:     if (bead_count % 2 == 0 && bead_count == max_bead_count)
-        /// C++:     {
-        /// C++:         const coord_t innermost_toolpath_location = ret.toolpath_locations[max_bead_count / 2 - 1];
-        /// C++:         const coord_t innermost_toolpath_width = ret.bead_widths[max_bead_count / 2 - 1];
-        /// C++:         ret.toolpath_locations.insert(ret.toolpath_locations.begin() + max_bead_count / 2, innermost_toolpath_location + innermost_toolpath_width / 2);
-        /// C++:         ret.bead_widths.insert(ret.bead_widths.begin() + max_bead_count / 2, WallContourMarkedWidth);
-        /// C++:     }
-        /// C++:     return ret;
-        /// C++: }
+        // If within limits, delegate to parent and possibly add marker bead
+        // Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:40-54
+        // C++: if (bead_count <= max_bead_count)
+        // C++: {
+        // C++:     Beading ret = parent->compute(thickness, bead_count);
+        // C++:     bead_count = ret.toolpath_locations.size();
+        // C++:
+        // C++:     if (bead_count % 2 == 0 && bead_count == max_bead_count)
+        // C++:     {
+        // C++:         const coord_t innermost_toolpath_location = ret.toolpath_locations[max_bead_count / 2 - 1];
+        // C++:         const coord_t innermost_toolpath_width = ret.bead_widths[max_bead_count / 2 - 1];
+        // C++:         ret.toolpath_locations.insert(ret.toolpath_locations.begin() + max_bead_count / 2, innermost_toolpath_location + innermost_toolpath_width / 2);
+        // C++:         ret.bead_widths.insert(ret.bead_widths.begin() + max_bead_count / 2, WallContourMarkedWidth);
+        // C++:     }
+        // C++:     return ret;
+        // C++: }
         if bead_count <= self.max_bead_count {
             let mut ret = self.parent.compute(thickness, bead_count);
             let bead_count = ret.toolpath_locations.len() as Coord;
@@ -115,13 +125,13 @@ impl BeadingStrategy for LimitedBeadingStrategy {
             return ret;
         }
 
-        /// Assert that bead_count is at most max_bead_count + 1
-        /// Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:55-60
-        /// C++: assert(bead_count == max_bead_count + 1);
-        /// C++: if(bead_count != max_bead_count + 1)
-        /// C++: {
-        /// C++:     BOOST_LOG_TRIVIAL(warning) << "Too many beads! " << bead_count << " != " << max_bead_count + 1;
-        /// C++: }
+        // Assert that bead_count is at most max_bead_count + 1
+        // Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:55-60
+        // C++: assert(bead_count == max_bead_count + 1);
+        // C++: if(bead_count != max_bead_count + 1)
+        // C++: {
+        // C++:     BOOST_LOG_TRIVIAL(warning) << "Too many beads! " << bead_count << " != " << max_bead_count + 1;
+        // C++: }
         debug_assert_eq!(bead_count, self.max_bead_count + 1);
         if bead_count != self.max_bead_count + 1 {
             log::warn!(
@@ -131,28 +141,28 @@ impl BeadingStrategy for LimitedBeadingStrategy {
             );
         }
 
-        /// Compute at optimal thickness for max_bead_count
-        /// Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:62-66
-        /// C++: coord_t optimal_thickness = parent->getOptimalThickness(max_bead_count);
-        /// C++: Beading ret = parent->compute(optimal_thickness, max_bead_count);
-        /// C++: bead_count = ret.toolpath_locations.size();
-        /// C++: ret.left_over += thickness - ret.total_thickness;
-        /// C++: ret.total_thickness = thickness;
+        // Compute at optimal thickness for max_bead_count
+        // Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:61-65
+        // C++: coord_t optimal_thickness = parent->getOptimalThickness(max_bead_count);
+        // C++: Beading ret = parent->compute(optimal_thickness, max_bead_count);
+        // C++: bead_count = ret.toolpath_locations.size();
+        // C++: ret.left_over += thickness - ret.total_thickness;
+        // C++: ret.total_thickness = thickness;
         let optimal_thickness = self.parent.get_optimal_thickness(self.max_bead_count);
         let mut ret = self.parent.compute(optimal_thickness, self.max_bead_count);
         let bead_count = ret.toolpath_locations.len() as Coord;
         ret.left_over += thickness - ret.total_thickness;
         ret.total_thickness = thickness;
 
-        /// Enforce symmetry
-        /// Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:68-73
-        /// C++: // Enforce symmetry
-        /// C++: if (bead_count % 2 == 1) {
-        /// C++:     ret.toolpath_locations[bead_count / 2] = thickness / 2;
-        /// C++:     ret.bead_widths[bead_count / 2] = thickness - optimal_thickness;
-        /// C++: }
-        /// C++: for (coord_t bead_idx = 0; bead_idx < (bead_count + 1) / 2; bead_idx++)
-        /// C++:     ret.toolpath_locations[bead_count - 1 - bead_idx] = thickness - ret.toolpath_locations[bead_idx];
+        // Enforce symmetry
+        // Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:67-73
+        // C++: // Enforce symmetry
+        // C++: if (bead_count % 2 == 1) {
+        // C++:     ret.toolpath_locations[bead_count / 2] = thickness / 2;
+        // C++:     ret.bead_widths[bead_count / 2] = thickness - optimal_thickness;
+        // C++: }
+        // C++: for (coord_t bead_idx = 0; bead_idx < (bead_count + 1) / 2; bead_idx++)
+        // C++:     ret.toolpath_locations[bead_count - 1 - bead_idx] = thickness - ret.toolpath_locations[bead_idx];
         if bead_count % 2 == 1 {
             let mid_idx = (bead_count / 2) as usize;
             ret.toolpath_locations[mid_idx] = thickness / 2;
@@ -164,21 +174,22 @@ impl BeadingStrategy for LimitedBeadingStrategy {
             ret.toolpath_locations[opposite_idx] = thickness - ret.toolpath_locations[idx];
         }
 
-        /// Create fake inner walls with 0 width to denote boundaries
-        /// Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:75-88
-        /// C++: //Create a "fake" inner wall with 0 width to indicate the edge of the walled area.
-        /// C++: //This wall can then be used by other structures to e.g. fill the infill area adjacent to the variable-width walls.
-        /// C++: coord_t innermost_toolpath_location = ret.toolpath_locations[max_bead_count / 2 - 1];
-        /// C++: coord_t innermost_toolpath_width = ret.bead_widths[max_bead_count / 2 - 1];
-        /// C++: ret.toolpath_locations.insert(ret.toolpath_locations.begin() + max_bead_count / 2, innermost_toolpath_location + innermost_toolpath_width / 2);
-        /// C++: ret.bead_widths.insert(ret.bead_widths.begin() + max_bead_count / 2, WallContourMarkedWidth);
-        /// C++:
-        /// C++: //Symmetry on both sides. Symmetry is guaranteed since this code is stopped early if the bead_count <= max_bead_count, and never reaches this point then.
-        /// C++: const size_t opposite_bead = bead_count - (max_bead_count / 2 - 1);
-        /// C++: innermost_toolpath_location = ret.toolpath_locations[opposite_bead];
-        /// C++: innermost_toolpath_width = ret.bead_widths[opposite_bead];
-        /// C++: ret.toolpath_locations.insert(ret.toolpath_locations.begin() + opposite_bead, innermost_toolpath_location - innermost_toolpath_width / 2);
-        /// C++: ret.bead_widths.insert(ret.bead_widths.begin() + opposite_bead, WallContourMarkedWidth);
+        // Create a "fake" inner wall with 0 width to indicate the edge of the walled area.
+        // This wall can then be used by other structures to e.g. fill the infill area adjacent to the variable-width walls.
+        // Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp:75-87
+        // C++: //Create a "fake" inner wall with 0 width to indicate the edge of the walled area.
+        // C++: //This wall can then be used by other structures to e.g. fill the infill area adjacent to the variable-width walls.
+        // C++: coord_t innermost_toolpath_location = ret.toolpath_locations[max_bead_count / 2 - 1];
+        // C++: coord_t innermost_toolpath_width = ret.bead_widths[max_bead_count / 2 - 1];
+        // C++: ret.toolpath_locations.insert(ret.toolpath_locations.begin() + max_bead_count / 2, innermost_toolpath_location + innermost_toolpath_width / 2);
+        // C++: ret.bead_widths.insert(ret.bead_widths.begin() + max_bead_count / 2, WallContourMarkedWidth);
+        // C++:
+        // C++: //Symmetry on both sides. Symmetry is guaranteed since this code is stopped early if the bead_count <= max_bead_count, and never reaches this point then.
+        // C++: const size_t opposite_bead = bead_count - (max_bead_count / 2 - 1);
+        // C++: innermost_toolpath_location = ret.toolpath_locations[opposite_bead];
+        // C++: innermost_toolpath_width = ret.bead_widths[opposite_bead];
+        // C++: ret.toolpath_locations.insert(ret.toolpath_locations.begin() + opposite_bead, innermost_toolpath_location - innermost_toolpath_width / 2);
+        // C++: ret.bead_widths.insert(ret.bead_widths.begin() + opposite_bead, WallContourMarkedWidth);
         let idx = (self.max_bead_count / 2 - 1) as usize;
         let innermost_toolpath_location = ret.toolpath_locations[idx];
         let innermost_toolpath_width = ret.bead_widths[idx];
@@ -364,7 +375,8 @@ mod tests {
             parent,
         );
 
-        assert_eq!(strategy.name(), "LimitedBeadingStrategy");
+        // toString() composes "LimitedBeadingStrategy+" with the parent's name.
+        assert_eq!(strategy.name(), "LimitedBeadingStrategy+DistributedBeadingStrategy");
         assert_eq!(strategy.max_bead_count, 4);
     }
 

@@ -61,11 +61,19 @@ impl WideningBeadingStrategy {
         min_input_width: Coord,
         min_output_width: Coord,
     ) -> Self {
+        // toString() composes "Widening+" with the parent's name. Precompute it
+        // here since the trait's name() returns &str (the parent is consumed/owned).
+        // Arachne/BeadingStrategy/WideningBeadingStrategy.cpp:17-20
+        // C++: std::string WideningBeadingStrategy::toString() const
+        // C++: {
+        // C++:     return std::string("Widening+") + parent->toString();
+        // C++: }
+        let name = format!("Widening+{}", parent.name());
         Self {
             parent,
             min_input_width,
             min_output_width,
-            name: "WideningBeadingStrategy".to_string(),
+            name,
         }
     }
 }
@@ -76,19 +84,19 @@ impl BeadingStrategy for WideningBeadingStrategy {
     ///
     /// C++: WideningBeadingStrategy::Beading WideningBeadingStrategy::compute(coord_t thickness, coord_t bead_count) const
     fn compute(&self, thickness: Coord, bead_count: Coord) -> Beading {
-        /// Check if thickness is below optimal width
-        /// Arachne/BeadingStrategy/WideningBeadingStrategy.cpp:24-35
-        /// C++: if (thickness < optimal_width) {
-        /// C++:     Beading ret;
-        /// C++:     ret.total_thickness = thickness;
-        /// C++:     if (thickness >= min_input_width)
-        /// C++:     {
-        /// C++:         ret.bead_widths.emplace_back(std::max(thickness, min_output_width));
-        /// C++:         ret.toolpath_locations.emplace_back(thickness / 2);
-        /// C++:     } else {
-        /// C++:         ret.left_over = thickness;
-        /// C++:     }
-        /// C++:     return ret;
+        // Check if thickness is below optimal width
+        // Arachne/BeadingStrategy/WideningBeadingStrategy.cpp:24-35
+        // C++: if (thickness < optimal_width) {
+        // C++:     Beading ret;
+        // C++:     ret.total_thickness = thickness;
+        // C++:     if (thickness >= min_input_width)
+        // C++:     {
+        // C++:         ret.bead_widths.emplace_back(std::max(thickness, min_output_width));
+        // C++:         ret.toolpath_locations.emplace_back(thickness / 2);
+        // C++:     } else {
+        // C++:         ret.left_over = thickness;
+        // C++:     }
+        // C++:     return ret;
         if thickness < self.parent.optimal_width() {
             let mut ret = Beading::default();
             ret.total_thickness = thickness;
@@ -103,11 +111,11 @@ impl BeadingStrategy for WideningBeadingStrategy {
 
             ret
         } else {
-            /// Delegate to parent strategy if thickness is sufficient
-            /// Arachne/BeadingStrategy/WideningBeadingStrategy.cpp:36-37
-            /// C++: } else {
-            /// C++:     return parent->compute(thickness, bead_count);
-            /// C++: }
+            // Delegate to parent strategy if thickness is sufficient
+            // Arachne/BeadingStrategy/WideningBeadingStrategy.cpp:36-37
+            // C++: } else {
+            // C++:     return parent->compute(thickness, bead_count);
+            // C++: }
             self.parent.compute(thickness, bead_count)
         }
     }
@@ -269,7 +277,8 @@ mod tests {
             150_000, // min_output_width (0.15mm)
         );
 
-        assert_eq!(strategy.name(), "WideningBeadingStrategy");
+        // toString() composes "Widening+" with the parent's name.
+        assert_eq!(strategy.name(), "Widening+DistributedBeadingStrategy");
         assert_eq!(strategy.min_input_width, 100_000);
         assert_eq!(strategy.min_output_width, 150_000);
     }

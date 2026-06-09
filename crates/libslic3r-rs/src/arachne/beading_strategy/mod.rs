@@ -12,9 +12,11 @@ pub mod redistribute_beading_strategy;
 pub mod widening_beading_strategy;
 
 // Re-export key types
+pub use beading_strategy::make_strategy;
 pub use beading_strategy_factory::BeadingStrategyFactory;
 pub use distributed_beading_strategy::DistributedBeadingStrategy;
 pub use limited_beading_strategy::LimitedBeadingStrategy;
+pub use outer_wall_contour_strategy::OuterWallContourStrategy;
 pub use outer_wall_inset_beading_strategy::OuterWallInsetBeadingStrategy;
 pub use redistribute_beading_strategy::RedistributeBeadingStrategy;
 pub use widening_beading_strategy::WideningBeadingStrategy;
