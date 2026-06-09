@@ -1503,7 +1503,7 @@
     "rust": "crates/libslic3r-rs/src/print_apply.rs",
     "rust_exists": true,
     "loc": 1961,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1514,7 +1514,7 @@
     "rust": "crates/libslic3r-rs/src/brim.rs",
     "rust_exists": true,
     "loc": 1966,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1525,7 +1525,7 @@
     "rust": "crates/libslic3r-rs/src/triangle_mesh.rs",
     "rust_exists": true,
     "loc": 2022,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {
@@ -1536,7 +1536,7 @@
     "rust": "crates/libslic3r-rs/src/shortest_path.rs",
     "rust_exists": true,
     "loc": 2065,
-    "status": "pending",
+    "status": "partial",
     "priority": 2
   },
   {

@@ -216,12 +216,6 @@ pub use gcode::{
     SeamPosition,
 };
 
-// Re-export brim/adhesion types
-pub use brim::{
-    BrimConfig, BrimGenerator, BrimResult, BrimType, RaftConfig, RaftGenerator, RaftLayer,
-    RaftLayerType, RaftResult, SkirtConfig, SkirtGenerator, SkirtResult,
-};
-
 // Re-export cooling types
 pub use gcode::cooling::{
     CoolingBuffer, CoolingConfig, CoolingMove, CoolingResult, GCodeEditorState,
