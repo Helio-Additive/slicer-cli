@@ -1,48 +1,58 @@
-//! Polyline stitcher for Arachne - stitches polylines into longer polylines or polygons
-//!
-//! C++ Reference:
-//! - Arachne/utils/PolylineStitcher.hpp
-//! - Arachne/utils/PolylineStitcher.cpp
-//!
-//! **STATUS:** ✅ COMPLETE - Full implementation with C++ parity
+//Copyright (c) 2022 Ultimaker B.V.
+//CuraEngine is released under the terms of the AGPLv3 or higher.
+//
+// 1:1 faithful port of:
+//   Arachne/utils/PolylineStitcher.cpp
+//   Arachne/utils/PolylineStitcher.hpp
+//
+// coord_t -> i64 (Coord), coordf_t -> f64 (CoordF), Point mirrors C++ Slic3r::Point.
+//
+// NOTE ON SPECIALIZATIONS:
+// The C++ class is `template<typename Paths, typename Path, typename Junction>
+// PolylineStitcher`, with two explicit instantiations in the .cpp:
+//   * PolylineStitcher<Polygons, Polygon, Point>                   (fully ported below)
+//   * PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>
+// The `VariableWidthLines/ExtrusionLine` instantiation requires a
+// `PathsPointIndex<VariableWidthLines>` (and a `SparsePointGrid` over it). The
+// Rust `PathsPointIndex` (see polygons_point_index.rs) is currently hard-wired
+// to `&Polygons`, so the parts of that instantiation that index through
+// `PathsPointIndex` (`stitch` and `canReverse`) are BLOCKED on that
+// not-yet-generic dependency. The two helper specializations that depend ONLY
+// on `ExtrusionLine` (`canConnect` and `isOdd`) ARE ported below.
 
 use super::polygons_point_index::{PathsPointIndex, PathsPointIndexLocator};
 use super::sparse_point_grid::SparsePointGrid;
 
-use crate::geometry::{Point, Polygon, Polygons};
+use crate::arachne::utils::extrusion_line::ExtrusionLine;
+use crate::geometry::{Polygon, Polygons};
 use crate::scaled;
 
 /// Class for stitching polylines into longer polylines or into polygons
 ///
-/// C++ Reference: Arachne/utils/PolylineStitcher.hpp:17-207
-/// C++: template<typename Paths, typename Path, typename Junction>
-/// C++: class PolylineStitcher
-/// C++: {
-/// C++: public:
-/// C++:     static void stitch(const Paths& lines, Paths& result_lines, Paths& result_polygons,
-/// C++:                        coord_t max_stitch_distance = scaled<coord_t>(0.1),
-/// C++:                        coord_t snap_distance = scaled<coord_t>(0.01))
-/// C++:     // ... implementation ...
-/// C++: };
+/// PolylineStitcher.hpp:19-21
+/// template<typename Paths, typename Path, typename Junction>
+/// class PolylineStitcher
 pub struct PolylineStitcher;
 
 impl PolylineStitcher {
-    /// Stitch together the separate lines into result_lines and if they can be closed into result_polygons
+    /// Stitch together the separate `lines` into `result_lines` and if they
+    /// can be closed into `result_polygons`.
     ///
-    /// Only introduce new segments shorter than max_stitch_distance, and larger than snap_distance
-    /// but always try to take the shortest connection possible.
+    /// Only introduce new segments shorter than `max_stitch_distance`, and
+    /// larger than `snap_distance` but always try to take the shortest
+    /// connection possible.
     ///
-    /// Only stitch polylines into closed polygons if they are larger than 3 * max_stitch_distance,
-    /// in order to prevent small segments to accidentally get closed into a polygon.
+    /// Only stitch polylines into closed polygons if they are larger than 3 *
+    /// `max_stitch_distance`, in order to prevent small segments to
+    /// accidentally get closed into a polygon.
     ///
-    /// **Warning:** Tiny polylines (smaller than 3 * max_stitch_distance) will not be closed into polygons.
+    /// \warning Tiny polylines (smaller than 3 * max_stitch_distance) will not
+    /// be closed into polygons.
     ///
-    /// **Note:** Resulting polylines and polygons are added onto the existing containers.
-    ///
-    /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:51-191
-    /// C++: static void stitch(const Paths& lines, Paths& result_lines, Paths& result_polygons,
-    /// C++:                    coord_t max_stitch_distance = scaled<coord_t>(0.1),
-    /// C++:                    coord_t snap_distance = scaled<coord_t>(0.01))
+    /// PolylineStitcher.hpp:53 (PolylineStitcher<Polygons, Polygon, Point> instantiation)
+    /// static void stitch(const Paths& lines, Paths& result_lines, Paths& result_polygons,
+    ///                    coord_t max_stitch_distance = scaled<coord_t>(0.1),
+    ///                    coord_t snap_distance = scaled<coord_t>(0.01))
     pub fn stitch_polygons(
         lines: &Polygons,
         result_lines: &mut Polygons,
@@ -50,335 +60,315 @@ impl PolylineStitcher {
         max_stitch_distance: i64,
         snap_distance: i64,
     ) {
+        // PolylineStitcher.hpp:55-56
         if lines.is_empty() {
             return;
         }
 
-        /// Create spatial grid for efficient nearest neighbor queries
-        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:57
-        /// C++: SparsePointGrid<PathsPointIndex<Paths>, PathsPointIndexLocator<Paths>> grid(max_stitch_distance, lines.size() * 2);
+        // PolylineStitcher.hpp:58
+        // SparsePointGrid<PathsPointIndex<Paths>, PathsPointIndexLocator<Paths>> grid(max_stitch_distance, lines.size() * 2);
         let mut grid = SparsePointGrid::<PathsPointIndex, PathsPointIndexLocator>::new(
             max_stitch_distance,
             lines.len() * 2,
             1.0,
         );
 
-        /// Populate grid with start and end points of each line
-        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:59-64
-        /// C++: for (size_t line_idx = 0; line_idx < lines.size(); line_idx++)
-        /// C++: {
-        /// C++:     const auto line = lines[line_idx];
-        /// C++:     grid.insert(PathsPointIndex<Paths>(&lines, line_idx, 0));
-        /// C++:     grid.insert(PathsPointIndex<Paths>(&lines, line_idx, line.size() - 1));
-        /// C++: }
+        // populate grid
+        // PolylineStitcher.hpp:61-66
+        // for (size_t line_idx = 0; line_idx < lines.size(); line_idx++)
+        // {
+        //     const auto line = lines[line_idx];
+        //     grid.insert(PathsPointIndex<Paths>(&lines, line_idx, 0));
+        //     grid.insert(PathsPointIndex<Paths>(&lines, line_idx, line.size() - 1));
+        // }
         for line_idx in 0..lines.len() {
             let line = &lines[line_idx];
-            if !line.points.is_empty() {
-                grid.insert(PathsPointIndex::with_indices(lines, line_idx, 0));
-                grid.insert(PathsPointIndex::with_indices(
-                    lines,
-                    line_idx,
-                    line.points.len() - 1,
-                ));
-            }
+            grid.insert(PathsPointIndex::with_indices(lines, line_idx, 0));
+            grid.insert(PathsPointIndex::with_indices(
+                lines,
+                line_idx,
+                line.points.len() - 1,
+            ));
         }
 
-        /// Track which lines have been processed
-        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:66
-        /// C++: std::vector<bool> processed(lines.size(), false);
+        // PolylineStitcher.hpp:68
+        // std::vector<bool> processed(lines.size(), false);
         let mut processed = vec![false; lines.len()];
 
-        /// Process each line
-        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:68-189
-        /// C++: for (size_t line_idx = 0; line_idx < lines.size(); line_idx++)
+        // PolylineStitcher.hpp:70
+        // for (size_t line_idx = 0; line_idx < lines.size(); line_idx++)
         for line_idx in 0..lines.len() {
-            /// Skip if already processed
-            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:70-73
-            /// C++: if (processed[line_idx])
-            /// C++: {
-            /// C++:     continue;
-            /// C++: }
+            // PolylineStitcher.hpp:72-75
+            // if (processed[line_idx])
+            // {
+            //     continue;
+            // }
             if processed[line_idx] {
                 continue;
             }
-
-            // Mark as processed
-            // C++ Reference: Arachne/utils/PolylineStitcher.hpp:74
-            // C++: processed[line_idx] = true;
+            // PolylineStitcher.hpp:76
             processed[line_idx] = true;
-
-            /// Get the line
-            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:75
-            /// C++: const auto line = lines[line_idx];
+            // PolylineStitcher.hpp:77
+            // const auto line = lines[line_idx];
             let line = &lines[line_idx];
-
-            /// Check if should close (for polygons)
-            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:76
-            /// C++: bool should_close = isOdd(line);
+            // PolylineStitcher.hpp:78
+            // bool should_close = isOdd(line);
             let mut should_close = Self::is_odd_polygon(line);
 
-            /// Start the chain with current line
-            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:78
-            /// C++: Path chain = line;
+            // PolylineStitcher.hpp:80
+            // Path chain = line;
             let mut chain = line.clone();
-
-            /// Track if we found a closing segment
-            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:79
-            /// C++: bool closest_is_closing_polygon = false;
+            // PolylineStitcher.hpp:81
+            // bool closest_is_closing_polygon = false;
             let mut closest_is_closing_polygon = false;
-
-            /// Try extending chain in both directions
-            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:80-174
-            /// C++: for (bool go_in_reverse_direction : { false, true })
+            // PolylineStitcher.hpp:82-83
+            // first go in the unreversed direction, to try to prevent the chain.reverse() operation.
+            // NOTE: Implementation only works for this order; we currently only re-reverse the chain when it's closed.
             for go_in_reverse_direction in [false, true] {
-                /// Reverse chain on second iteration
-                /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:82-85
-                /// C++: if (go_in_reverse_direction)
-                /// C++: {
-                /// C++:     chain.reverse();
-                /// C++: }
+                // PolylineStitcher.hpp:84-87
+                // if (go_in_reverse_direction)
+                // { // try extending chain in the other direction
+                //     chain.reverse();
+                // }
                 if go_in_reverse_direction {
                     chain.reverse();
                 }
+                // PolylineStitcher.hpp:88
+                // int64_t chain_length = chain.polylineLength();
+                // (Polygon == MultiPoint: polylineLength() is the OPEN polyline length,
+                //  i.e. the sum of consecutive segments, NOT including the closing edge.)
+                let mut chain_length: i64 = polyline_length(&chain);
 
-                /// Track chain length
-                /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:86
-                /// C++: int64_t chain_length = chain.polylineLength();
-                let mut chain_length = (chain.perimeter() * 1_000_000.0) as i64;
-
-                /// Keep extending chain
-                /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:88-168
-                /// C++: while (true)
+                // PolylineStitcher.hpp:90
+                // while (true)
                 loop {
-                    /// Get the endpoint to extend from
-                    /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:90
-                    /// C++: Point from = make_point(chain.back());
+                    // PolylineStitcher.hpp:92
+                    // Point from = make_point(chain.back());
                     let from = *chain.points.last().unwrap();
 
-                    /// Find nearest unprocessed endpoint
-                    /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:92-94
-                    /// C++: PathsPointIndex<Paths> closest;
-                    /// C++: coord_t closest_distance = std::numeric_limits<coord_t>::max();
+                    // PolylineStitcher.hpp:94-95
+                    // PathsPointIndex<Paths> closest;
+                    // coord_t closest_distance = std::numeric_limits<coord_t>::max();
                     let mut closest: Option<PathsPointIndex> = None;
                     let mut closest_distance = i64::MAX;
-                    let mut is_closing = false;
 
-                    /// Search nearby endpoints in grid
-                    /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:95-156
-                    /// C++: grid.processNearby(from, max_stitch_distance, ...)
+                    // PolylineStitcher.hpp:96-153
+                    // grid.processNearby(from, max_stitch_distance,
+                    //     std::function<bool (const PathsPointIndex<Paths>&)> ([...](const PathsPointIndex<Paths>& nearby)->bool { ... }));
                     grid.process_nearby(from, max_stitch_distance, |nearby| {
-                        /// Calculate distance to nearby point
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:100
-                        /// C++: coord_t dist = (nearby.p().template cast<int64_t>() - from.template cast<int64_t>()).norm();
+                        // PolylineStitcher.hpp:101
+                        // bool is_closing_segment = false;
+                        let mut is_closing_segment = false;
+                        // PolylineStitcher.hpp:102
+                        // coord_t dist = (nearby.p().template cast<int64_t>() - from.template cast<int64_t>()).norm();
                         let nearby_p = nearby.p();
-                        let dx = nearby_p.x() as i64 - from.x() as i64;
-                        let dy = nearby_p.y() as i64 - from.y() as i64;
-                        let mut dist = ((dx * dx + dy * dy) as f64).sqrt() as i64;
-
-                        /// Skip if too far
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:101-104
-                        /// C++: if (dist > max_stitch_distance)
-                        /// C++: {
-                        /// C++:     return true;
-                        /// C++: }
+                        let dx = nearby_p.x() - from.x();
+                        let dy = nearby_p.y() - from.y();
+                        let mut dist = (((dx * dx + dy * dy) as f64).sqrt()) as i64;
+                        // PolylineStitcher.hpp:103-106
+                        // if (dist > max_stitch_distance)
+                        // {
+                        //     return true; // keep looking
+                        // }
                         if dist > max_stitch_distance {
                             return true; // keep looking
                         }
-
-                        /// Check if this would close the polygon
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:105-124
+                        // PolylineStitcher.hpp:107
+                        // if ((nearby.p().template cast<int64_t>() - make_point(chain.front()).template cast<int64_t>()).squaredNorm() < snap_distance * snap_distance)
                         let front_p = chain.points[0];
-                        let dx2 = nearby_p.x() as i64 - front_p.x() as i64;
-                        let dy2 = nearby_p.y() as i64 - front_p.y() as i64;
+                        let dx2 = nearby_p.x() - front_p.x();
+                        let dy2 = nearby_p.y() - front_p.y();
                         let dist_to_front = dx2 * dx2 + dy2 * dy2;
-
-                        let mut is_closing_segment = false;
                         if dist_to_front < snap_distance * snap_distance {
-                            /// Would close the polygon
-                            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:107-120
-                            /// C++: if (chain_length + dist < 3 * max_stitch_distance || chain.size() <= 2)
-                            /// C++: {
-                            /// C++:     return true;
-                            /// C++: }
+                            // PolylineStitcher.hpp:109-113
+                            // if (chain_length + dist < 3 * max_stitch_distance // prevent closing of small poly, cause it might be able to continue making a larger polyline
+                            //     || chain.size() <= 2) // don't make 2 vert polygons
+                            // {
+                            //     return true; // look for a better next line
+                            // }
                             if chain_length + dist < 3 * max_stitch_distance
                                 || chain.points.len() <= 2
                             {
-                                return true; // too small to close
+                                return true; // look for a better next line
                             }
-
+                            // PolylineStitcher.hpp:114
                             is_closing_segment = true;
-
-                            // Adjust distance based on should_close preference
-                            // C++ Reference: Arachne/utils/PolylineStitcher.hpp:114-121
-                            if should_close {
-                                dist = dist.saturating_sub(scaled(0.01));
+                            // PolylineStitcher.hpp:115-125
+                            if !should_close {
+                                // PolylineStitcher.hpp:117
+                                // dist += scaled<coord_t>(0.01); // prefer continuing polyline over closing a polygon; avoids closed zigzags from being printed separately
+                                dist += scaled(0.01);
+                                // continue to see if closing segment is also the closest
+                                // there might be a segment smaller than [max_stitch_distance] which closes the polygon better
                             } else {
-                                dist = dist.saturating_add(scaled(0.01));
+                                // PolylineStitcher.hpp:123
+                                // dist -= scaled<coord_t>(0.01); //Prefer closing the polygon if it's 100% even lines. Used to create closed contours.
+                                dist -= scaled(0.01);
+                                //Continue to see if closing segment is also the closest.
                             }
                         } else if processed[nearby.poly_idx] {
-                            /// Already processed
-                            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:122-125
-                            /// C++: else if (processed[nearby.poly_idx])
-                            /// C++: {
-                            /// C++:     return true;
-                            /// C++: }
-                            return true;
+                            // PolylineStitcher.hpp:127-130
+                            // else if (processed[nearby.poly_idx])
+                            // { // it was already moved to output
+                            //     return true; // keep looking for a connection
+                            // }
+                            return true; // keep looking for a connection
                         }
-
-                        /// Check if we can reverse the nearby line
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:126-130
-                        /// C++: bool nearby_would_be_reversed = nearby.point_idx != 0;
-                        /// C++: nearby_would_be_reversed = nearby_would_be_reversed != go_in_reverse_direction;
-                        /// C++: if (!canReverse(nearby) && nearby_would_be_reversed)
-                        /// C++: {
-                        /// C++:     return true;
-                        /// C++: }
-                        let nearby_would_be_reversed =
-                            (nearby.point_idx != 0) != go_in_reverse_direction;
-                        if !Self::can_reverse_polygon(&nearby) && nearby_would_be_reversed {
-                            return true;
+                        // PolylineStitcher.hpp:131
+                        // bool nearby_would_be_reversed = nearby.point_idx != 0;
+                        let mut nearby_would_be_reversed = nearby.point_idx != 0;
+                        // PolylineStitcher.hpp:132
+                        // nearby_would_be_reversed = nearby_would_be_reversed != go_in_reverse_direction; // flip nearby_would_be_reversed when searching in the reverse direction
+                        nearby_would_be_reversed = nearby_would_be_reversed != go_in_reverse_direction;
+                        // PolylineStitcher.hpp:133-136
+                        // if (!canReverse(nearby) && nearby_would_be_reversed)
+                        // { // connecting the segment would reverse the polygon direction
+                        //     return true; // keep looking for a connection
+                        // }
+                        if !Self::can_reverse_polygon(nearby) && nearby_would_be_reversed {
+                            return true; // keep looking for a connection
                         }
-
-                        /// Check if we can connect these paths
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:131-134
-                        /// C++: if (!canConnect(chain, (*nearby.polygons)[nearby.poly_idx]))
-                        /// C++: {
-                        /// C++:     return true;
-                        /// C++: }
+                        // PolylineStitcher.hpp:137-140
+                        // if (!canConnect(chain, (*nearby.polygons)[nearby.poly_idx]))
+                        // {
+                        //     return true; // keep looking for a connection
+                        // }
                         if let Some(nearby_polys) = nearby.polygons {
                             if !Self::can_connect_polygon(&chain, &nearby_polys[nearby.poly_idx]) {
-                                return true;
+                                return true; // keep looking for a connection
                             }
                         }
-
-                        /// Update closest if this is better
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:135-143
-                        /// C++: if (dist < closest_distance)
-                        /// C++: {
-                        /// C++:     closest_distance = dist;
-                        /// C++:     closest = nearby;
-                        /// C++:     closest_is_closing_polygon = is_closing_segment;
-                        /// C++: }
+                        // PolylineStitcher.hpp:141-146
+                        // if (dist < closest_distance)
+                        // {
+                        //     closest_distance = dist;
+                        //     closest = nearby;
+                        //     closest_is_closing_polygon = is_closing_segment;
+                        // }
                         if dist < closest_distance {
                             closest_distance = dist;
                             closest = Some(*nearby);
-                            is_closing = is_closing_segment;
+                            closest_is_closing_polygon = is_closing_segment;
                         }
-
-                        /// Stop if we found a snap-close match
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:144-147
-                        /// C++: if (dist < snap_distance)
-                        /// C++: {
-                        /// C++:     return false;
-                        /// C++: }
+                        // PolylineStitcher.hpp:147-150
+                        // if (dist < snap_distance)
+                        // { // we have found a good enough next line
+                        //     return false; // stop looking for alternatives
+                        // }
                         if dist < snap_distance {
-                            return false; // stop looking
+                            return false; // stop looking for alternatives
                         }
-
-                        true // keep processing
+                        // PolylineStitcher.hpp:151
+                        true // keep processing elements
                     });
 
-                    closest_is_closing_polygon = is_closing;
-
-                    /// Break if no more connections or closed
-                    /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:158-162
-                    /// C++: if (!closest.initialized() || closest_is_closing_polygon)
-                    /// C++: {
-                    /// C++:     break;
-                    /// C++: }
+                    // PolylineStitcher.hpp:155-160
+                    // if (!closest.initialized()          // we couldn't find any next line
+                    //     || closest_is_closing_polygon   // we closed the polygon
+                    // )
+                    // {
+                    //     break;
+                    // }
                     if closest.is_none() || closest_is_closing_polygon {
                         break;
                     }
 
-                    let closest_idx = closest.unwrap();
+                    let closest = closest.unwrap();
 
-                    /// Append the closest line to our chain
-                    /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:164-182
-                    if let Some(polys) = closest_idx.polygons {
-                        let nearby_line = &polys[closest_idx.poly_idx];
-                        let old_size = chain.points.len();
-
-                        if closest_idx.point_idx == 0 {
-                            /// Append forward
-                            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:167-173
+                    // PolylineStitcher.hpp:162
+                    // coord_t segment_dist = (make_point(chain.back()).template cast<int64_t>() - closest.p().template cast<int64_t>()).norm();
+                    let back_p = *chain.points.last().unwrap();
+                    let closest_p = closest.p();
+                    let sdx = back_p.x() - closest_p.x();
+                    let sdy = back_p.y() - closest_p.y();
+                    let segment_dist = (((sdx * sdx + sdy * sdy) as f64).sqrt()) as i64;
+                    // PolylineStitcher.hpp:163
+                    // assert(segment_dist <= max_stitch_distance + scaled<coord_t>(0.01));
+                    debug_assert!(segment_dist <= max_stitch_distance + scaled(0.01));
+                    // PolylineStitcher.hpp:164
+                    // const size_t old_size = chain.size();
+                    let old_size = chain.points.len();
+                    if let Some(polys) = closest.polygons {
+                        let nearby_line = &polys[closest.poly_idx];
+                        // PolylineStitcher.hpp:165-173
+                        if closest.point_idx == 0 {
+                            // auto start_pos = (*closest.polygons)[closest.poly_idx].begin();
+                            // if (segment_dist < snap_distance) { ++start_pos; }
+                            // chain.insert(chain.end(), start_pos, (*closest.polygons)[closest.poly_idx].end());
                             let mut start_pos = 0;
-                            if closest_distance < snap_distance {
-                                start_pos = 1;
+                            if segment_dist < snap_distance {
+                                start_pos += 1;
                             }
                             for i in start_pos..nearby_line.points.len() {
                                 chain.points.push(nearby_line.points[i]);
                             }
                         } else {
-                            /// Append reversed
-                            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:175-181
+                            // PolylineStitcher.hpp:175-182
+                            // auto start_pos = (*closest.polygons)[closest.poly_idx].rbegin();
+                            // if (segment_dist < snap_distance) { ++start_pos; }
+                            // chain.insert(chain.end(), start_pos, (*closest.polygons)[closest.poly_idx].rend());
                             let mut start_idx = nearby_line.points.len();
-                            if closest_distance < snap_distance {
+                            if segment_dist < snap_distance {
                                 start_idx -= 1;
                             }
                             for i in (0..start_idx).rev() {
                                 chain.points.push(nearby_line.points[i]);
                             }
                         }
-
-                        /// Update chain length
-                        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:183-186
-                        /// C++: for(size_t i = old_size; i < chain.size(); ++i)
-                        /// C++: {
-                        /// C++:     chain_length += (make_point(chain[i]).template cast<int64_t>() - make_point(chain[i - 1]).template cast<int64_t>()).norm();
-                        /// C++: }
+                        // PolylineStitcher.hpp:183-186
+                        // for(size_t i = old_size; i < chain.size(); ++i) //Update chain length.
+                        // {
+                        //     chain_length += (make_point(chain[i]).template cast<int64_t>() - make_point(chain[i - 1]).template cast<int64_t>()).norm();
+                        // }
                         for i in old_size..chain.points.len() {
                             let p1 = chain.points[i];
-                            let p2 = chain.points[i - 1];
-                            let dx = p1.x() as i64 - p2.x() as i64;
-                            let dy = p1.y() as i64 - p2.y() as i64;
-                            chain_length += ((dx * dx + dy * dy) as f64).sqrt() as i64;
+                            let p0 = chain.points[i - 1];
+                            let ldx = p1.x() - p0.x();
+                            let ldy = p1.y() - p0.y();
+                            chain_length += (((ldx * ldx + ldy * ldy) as f64).sqrt()) as i64;
                         }
-
-                        // Update should_close flag
-                        // C++ Reference: Arachne/utils/PolylineStitcher.hpp:187
-                        // C++: should_close = should_close & !isOdd((*closest.polygons)[closest.poly_idx]);
-                        should_close = should_close && !Self::is_odd_polygon(nearby_line);
-
-                        // Mark as processed
-                        // C++ Reference: Arachne/utils/PolylineStitcher.hpp:188
-                        // C++: processed[closest.poly_idx] = true;
-                        processed[closest_idx.poly_idx] = true;
+                        // PolylineStitcher.hpp:187
+                        // should_close = should_close & !isOdd((*closest.polygons)[closest.poly_idx]); //If we connect an even to an odd line, we should no longer try to close it.
+                        should_close = should_close & !Self::is_odd_polygon(nearby_line);
+                        // PolylineStitcher.hpp:188
+                        // assert( ! processed[closest.poly_idx]);
+                        debug_assert!(!processed[closest.poly_idx]);
+                        // PolylineStitcher.hpp:189
+                        // processed[closest.poly_idx] = true;
+                        processed[closest.poly_idx] = true;
                     }
                 }
-
-                /// Break if we closed the polygon
-                /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:169-174
-                /// C++: if (closest_is_closing_polygon)
-                /// C++: {
-                /// C++:     if (go_in_reverse_direction)
-                /// C++:     {
-                /// C++:         chain.reverse();
-                /// C++:     }
-                /// C++:     break;
-                /// C++: }
+                // PolylineStitcher.hpp:191-200
+                // if (closest_is_closing_polygon)
+                // {
+                //     if (go_in_reverse_direction)
+                //     { // re-reverse chain to retain original direction
+                //         chain.reverse();
+                //     }
+                //     break; // don't consider reverse direction
+                // }
                 if closest_is_closing_polygon {
                     if go_in_reverse_direction {
+                        // NOTE: not sure if this code could ever be reached, since if a polygon can be closed that should be already possible in the forward direction
                         chain.reverse();
                     }
-                    break;
+                    break; // don't consider reverse direction
                 }
             }
-
-            /// Add to result polygons or result lines
-            /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:175-189
-            /// C++: if (closest_is_closing_polygon)
-            /// C++: {
-            /// C++:     result_polygons.emplace_back(chain);
-            /// C++: }
-            /// C++: else
-            /// C++: {
-            /// C++:     PathsPointIndex<Paths> ppi_here(&lines, line_idx, 0);
-            /// C++:     if ( ! canReverse(ppi_here))
-            /// C++:     {
-            /// C++:         chain.reverse();
-            /// C++:     }
-            /// C++:     result_lines.emplace_back(chain);
-            /// C++: }
+            // PolylineStitcher.hpp:202-215
+            // if (closest_is_closing_polygon)
+            // {
+            //     result_polygons.emplace_back(chain);
+            // }
+            // else
+            // {
+            //     PathsPointIndex<Paths> ppi_here(&lines, line_idx, 0);
+            //     if ( ! canReverse(ppi_here))
+            //     { // ... the polyline isn't allowed to be reversed, so we re-reverse it.
+            //         chain.reverse();
+            //     }
+            //     result_lines.emplace_back(chain);
+            // }
             if closest_is_closing_polygon {
                 result_polygons.push(chain);
             } else {
@@ -391,43 +381,105 @@ impl PolylineStitcher {
         }
     }
 
-    /// Whether a polyline is allowed to be reversed (always true for Polygons)
+    // ====================================================================
+    // PolylineStitcher<Polygons, Polygon, Point> specializations
+    // ====================================================================
+
+    /// Whether a polyline is allowed to be reversed.
     ///
-    /// C++ Reference: Arachne/utils/PolylineStitcher.cpp:9-15
-    /// C++: template<> bool PolylineStitcher<Polygons, Polygon, Point>::canReverse(const PathsPointIndex<Polygons> &)
-    /// C++: {
-    /// C++:     return true;
-    /// C++: }
+    /// PolylineStitcher.cpp:17-20
+    /// template<> bool PolylineStitcher<Polygons, Polygon, Point>::canReverse(const PathsPointIndex<Polygons> &)
+    /// {
+    ///     return true;
+    /// }
     pub fn can_reverse_polygon(_polyline: &PathsPointIndex) -> bool {
         true
     }
 
-    /// Whether two paths are allowed to be connected (always true for Polygons)
+    /// Whether two paths are allowed to be connected.
     ///
-    /// C++ Reference: Arachne/utils/PolylineStitcher.cpp:17-21
-    /// C++: template<> bool PolylineStitcher<Polygons, Polygon, Point>::canConnect(const Polygon &, const Polygon &)
-    /// C++: {
-    /// C++:     return true;
-    /// C++: }
+    /// PolylineStitcher.cpp:27-30
+    /// template<> bool PolylineStitcher<Polygons, Polygon, Point>::canConnect(const Polygon &, const Polygon &)
+    /// {
+    ///     return true;
+    /// }
     pub fn can_connect_polygon(_a: &Polygon, _b: &Polygon) -> bool {
         true
     }
 
-    /// Check if a polygon is odd (always false for Polygons)
+    /// Whether a path is odd.
     ///
-    /// C++ Reference: Arachne/utils/PolylineStitcher.cpp:29-33
-    /// C++: template<> bool PolylineStitcher<Polygons, Polygon, Point>::isOdd(const Polygon &)
-    /// C++: {
-    /// C++:     return false;
-    /// C++: }
+    /// PolylineStitcher.cpp:37-40
+    /// template<> bool PolylineStitcher<Polygons, Polygon, Point>::isOdd(const Polygon &)
+    /// {
+    ///     return false;
+    /// }
     pub fn is_odd_polygon(_line: &Polygon) -> bool {
         false
     }
+
+    // ====================================================================
+    // PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>
+    // specializations.
+    //
+    // BLOCKED: `stitch` and `canReverse` for this instantiation index through
+    // `PathsPointIndex<VariableWidthLines>`, which is not yet generic in the
+    // Rust port (PathsPointIndex is hard-wired to `&Polygons`). See the module
+    // header note. The two helpers below depend only on `ExtrusionLine` and so
+    // are ported faithfully.
+    // ====================================================================
+
+    /// Whether two extrusion lines are allowed to be connected.
+    /// (Not true for an odd and an even wall.)
+    ///
+    /// PolylineStitcher.cpp:22-25
+    /// template<> bool PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>::canConnect(const ExtrusionLine &a, const ExtrusionLine &b)
+    /// {
+    ///     return a.is_odd == b.is_odd;
+    /// }
+    pub fn can_connect_extrusion(a: &ExtrusionLine, b: &ExtrusionLine) -> bool {
+        a.is_odd == b.is_odd
+    }
+
+    /// Whether an extrusion line is odd.
+    ///
+    /// PolylineStitcher.cpp:32-35
+    /// template<> bool PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>::isOdd(const ExtrusionLine &line)
+    /// {
+    ///     return line.is_odd;
+    /// }
+    pub fn is_odd_extrusion(line: &ExtrusionLine) -> bool {
+        line.is_odd
+    }
+}
+
+/// Open polyline length of a `Polygon`, i.e. the sum of the lengths of the
+/// consecutive segments without the closing edge.
+///
+/// This mirrors C++ `MultiPoint::length()` (inherited by `Polygon`), which is
+/// what `Polygon::polylineLength()` resolves to for the
+/// `PolylineStitcher<Polygons, Polygon, Point>` instantiation. The result is in
+/// scaled integer units (matching the `int64_t chain_length` used in `stitch`).
+/// MultiPoint.hpp:43 (double length() const)
+fn polyline_length(poly: &Polygon) -> i64 {
+    if poly.points.len() < 2 {
+        return 0;
+    }
+    let mut total = 0i64;
+    for i in 1..poly.points.len() {
+        let p1 = poly.points[i];
+        let p0 = poly.points[i - 1];
+        let dx = p1.x() - p0.x();
+        let dy = p1.y() - p0.y();
+        total += (((dx * dx + dy * dy) as f64).sqrt()) as i64;
+    }
+    total
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arachne::utils::extrusion_line::ExtrusionLine;
     use crate::geometry::{Point, Polygon, Polygons};
 
     fn create_simple_line(points: Vec<(i64, i64)>) -> Polygon {
@@ -440,8 +492,7 @@ mod tests {
 
     #[test]
     fn test_polyline_stitcher_empty() {
-        /// Test stitching empty lines
-        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:53-56
+        // PolylineStitcher.hpp:55-56
         let lines = Polygons::new();
         let mut result_lines = Polygons::new();
         let mut result_polygons = Polygons::new();
@@ -460,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_polyline_stitcher_single_line() {
-        /// Test stitching single line (no connections)
+        // Single line, no connections.
         let mut lines = Polygons::new();
         lines.push(create_simple_line(vec![(0, 0), (100, 0), (100, 100)]));
 
@@ -471,8 +522,8 @@ mod tests {
             &lines,
             &mut result_lines,
             &mut result_polygons,
-            100_000, // 0.1mm scaled
-            10_000,  // 0.01mm scaled
+            100_000,
+            10_000,
         );
 
         assert_eq!(result_lines.len(), 1);
@@ -481,17 +532,13 @@ mod tests {
 
     #[test]
     fn test_polyline_stitcher_close_polygon() {
-        /// Test stitching lines that form a closed polygon
-        /// C++ Reference: Arachne/utils/PolylineStitcher.hpp:175-178
+        // Lines that form a closed polygon. Coordinates are scaled large enough
+        // that the perimeter exceeds 3 * max_stitch_distance so closing is allowed.
         let mut lines = Polygons::new();
-        // Line 1: bottom
-        lines.push(create_simple_line(vec![(0, 0), (100, 0)]));
-        // Line 2: right
-        lines.push(create_simple_line(vec![(100, 0), (100, 100)]));
-        // Line 3: top
-        lines.push(create_simple_line(vec![(100, 100), (0, 100)]));
-        // Line 4: left (closes the square)
-        lines.push(create_simple_line(vec![(0, 100), (0, 0)]));
+        lines.push(create_simple_line(vec![(0, 0), (1_000_000, 0)]));
+        lines.push(create_simple_line(vec![(1_000_000, 0), (1_000_000, 1_000_000)]));
+        lines.push(create_simple_line(vec![(1_000_000, 1_000_000), (0, 1_000_000)]));
+        lines.push(create_simple_line(vec![(0, 1_000_000), (0, 0)]));
 
         let mut result_lines = Polygons::new();
         let mut result_polygons = Polygons::new();
@@ -500,19 +547,17 @@ mod tests {
             &lines,
             &mut result_lines,
             &mut result_polygons,
-            100_000, // 0.1mm scaled
-            10_000,  // 0.01mm scaled
+            100_000,
+            10_000,
         );
 
-        // Should form a closed polygon
         assert_eq!(result_polygons.len(), 1);
         assert_eq!(result_lines.len(), 0);
     }
 
     #[test]
     fn test_polyline_stitcher_can_reverse() {
-        /// Test can_reverse for polygons (always true)
-        /// C++ Reference: Arachne/utils/PolylineStitcher.cpp:15
+        // PolylineStitcher.cpp:19
         let lines = Polygons::new();
         let ppi = PathsPointIndex::with_indices(&lines, 0, 0);
         assert!(PolylineStitcher::can_reverse_polygon(&ppi));
@@ -520,8 +565,7 @@ mod tests {
 
     #[test]
     fn test_polyline_stitcher_can_connect() {
-        /// Test can_connect for polygons (always true)
-        /// C++ Reference: Arachne/utils/PolylineStitcher.cpp:21
+        // PolylineStitcher.cpp:29
         let poly1 = Polygon::new();
         let poly2 = Polygon::new();
         assert!(PolylineStitcher::can_connect_polygon(&poly1, &poly2));
@@ -529,15 +573,14 @@ mod tests {
 
     #[test]
     fn test_polyline_stitcher_is_odd() {
-        /// Test is_odd for polygons (always false)
-        /// C++ Reference: Arachne/utils/PolylineStitcher.cpp:33
+        // PolylineStitcher.cpp:39
         let poly = Polygon::new();
         assert!(!PolylineStitcher::is_odd_polygon(&poly));
     }
 
     #[test]
     fn test_polyline_stitcher_two_lines() {
-        /// Test stitching two lines that connect
+        // Two lines that connect end-to-end.
         let mut lines = Polygons::new();
         lines.push(create_simple_line(vec![(0, 0), (50, 0)]));
         lines.push(create_simple_line(vec![(50, 0), (100, 0)]));
@@ -549,13 +592,32 @@ mod tests {
             &lines,
             &mut result_lines,
             &mut result_polygons,
-            100_000, // 0.1mm scaled
-            10_000,  // 0.01mm scaled
+            100_000,
+            10_000,
         );
 
-        // Should stitch into one line
         assert_eq!(result_lines.len(), 1);
         assert_eq!(result_polygons.len(), 0);
         assert!(result_lines[0].points.len() >= 3);
+    }
+
+    #[test]
+    fn test_can_connect_extrusion() {
+        // PolylineStitcher.cpp:24 — a.is_odd == b.is_odd
+        let even_a = ExtrusionLine::new(0, false);
+        let even_b = ExtrusionLine::new(0, false);
+        let odd = ExtrusionLine::new(0, true);
+        assert!(PolylineStitcher::can_connect_extrusion(&even_a, &even_b));
+        assert!(!PolylineStitcher::can_connect_extrusion(&even_a, &odd));
+        assert!(PolylineStitcher::can_connect_extrusion(&odd, &odd));
+    }
+
+    #[test]
+    fn test_is_odd_extrusion() {
+        // PolylineStitcher.cpp:34 — line.is_odd
+        let even = ExtrusionLine::new(0, false);
+        let odd = ExtrusionLine::new(0, true);
+        assert!(!PolylineStitcher::is_odd_extrusion(&even));
+        assert!(PolylineStitcher::is_odd_extrusion(&odd));
     }
 }

@@ -1822,7 +1822,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/half_edge_node.rs",
     "rust_exists": true,
     "loc": 38,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1833,7 +1833,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/half_edge.rs",
     "rust_exists": true,
     "loc": 39,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1844,7 +1844,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/polyline_stitcher.rs",
     "rust_exists": true,
     "loc": 42,
-    "status": "pending",
+    "status": "partial",
     "priority": 3
   },
   {
@@ -1855,7 +1855,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/polygons_segment_index.rs",
     "rust_exists": true,
     "loc": 50,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1866,7 +1866,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/outer_wall_inset_beading_strategy.rs",
     "rust_exists": true,
     "loc": 59,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1877,7 +1877,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/skeletal_trapezoidation_joint.rs",
     "rust_exists": true,
     "loc": 60,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1888,7 +1888,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/beading_strategy/beading_strategy_factory.rs",
     "rust_exists": true,
     "loc": 62,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -1899,7 +1899,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/sparse_line_grid.rs",
     "rust_exists": true,
     "loc": 77,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {

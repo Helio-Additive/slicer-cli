@@ -54,69 +54,6 @@ impl OuterWallInsetBeadingStrategy {
 }
 
 impl BeadingStrategy for OuterWallInsetBeadingStrategy {
-    // Compute beading for a given thickness and bead count
-    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:40-58
-    ///
-    // C++: BeadingStrategy::Beading OuterWallInsetBeadingStrategy::compute(coord_t thickness, coord_t bead_count) const
-    fn compute(&self, thickness: Coord, bead_count: Coord) -> Beading {
-        // Get beading from parent strategy
-        // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:42-45
-        // C++: Beading ret = parent->compute(thickness, bead_count);
-        // C++:
-        // C++: // Actual count and thickness as represented by extant walls. Don't count any potential zero-width 'signaling' walls.
-        // C++: bead_count = std::count_if(ret.bead_widths.begin(), ret.bead_widths.end(), [](const coord_t width) { return width > 0; });
-        let mut ret = self.parent.compute(thickness, bead_count);
-
-        // Actual count and thickness as represented by extant walls.
-        // Don't count any potential zero-width 'signaling' walls.
-        let bead_count = ret.bead_widths.iter().filter(|&&width| width > 0).count();
-
-        // No need to apply any inset if there is just a single wall
-        // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:47-51
-        // C++: // No need to apply any inset if there is just a single wall.
-        // C++: if (bead_count < 2)
-        // C++: {
-        // C++:     return ret;
-        // C++: }
-        if bead_count < 2 {
-            return ret;
-        }
-
-        // Move the outer wall inside, ensuring it never goes beyond the middle line
-        // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:53-56
-        // C++: // Actually move the outer wall inside. Ensure that the outer wall never goes beyond the middle line.
-        // C++: ret.toolpath_locations[0] = std::min(ret.toolpath_locations[0] + outer_wall_offset, thickness / 2);
-        // C++: return ret;
-        ret.toolpath_locations[0] = std::cmp::min(
-            ret.toolpath_locations[0] + self.outer_wall_offset,
-            thickness / 2,
-        );
-
-        ret
-    }
-
-    // Get the optimal bead count for a given thickness
-    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:28-31
-    ///
-    // C++: coord_t OuterWallInsetBeadingStrategy::getOptimalBeadCount(coord_t thickness) const
-    // C++: {
-    // C++:     return parent->getOptimalBeadCount(thickness);
-    // C++: }
-    fn get_optimal_bead_count(&self, thickness: Coord) -> Coord {
-        self.parent.get_optimal_bead_count(thickness)
-    }
-
-    // Get the strategy name
-    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:38-41
-    ///
-    // C++: std::string OuterWallInsetBeadingStrategy::toString() const
-    // C++: {
-    // C++:     return std::string("OuterWallOfsetBeadingStrategy+") + parent->toString();
-    // C++: }
-    fn name(&self) -> &str {
-        &self.name
-    }
-
     // Get the optimal thickness for a given bead count
     // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:16-19
     ///
@@ -139,8 +76,19 @@ impl BeadingStrategy for OuterWallInsetBeadingStrategy {
         self.parent.get_transition_thickness(lower_bead_count)
     }
 
+    // Get the optimal bead count for a given thickness
+    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:26-29
+    ///
+    // C++: coord_t OuterWallInsetBeadingStrategy::getOptimalBeadCount(coord_t thickness) const
+    // C++: {
+    // C++:     return parent->getOptimalBeadCount(thickness);
+    // C++: }
+    fn get_optimal_bead_count(&self, thickness: Coord) -> Coord {
+        self.parent.get_optimal_bead_count(thickness)
+    }
+
     // Get the transitioning length
-    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:33-36
+    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:31-34
     ///
     // C++: coord_t OuterWallInsetBeadingStrategy::getTransitioningLength(coord_t lower_bead_count) const
     // C++: {
@@ -148,6 +96,62 @@ impl BeadingStrategy for OuterWallInsetBeadingStrategy {
     // C++: }
     fn get_transitioning_length(&self, lower_bead_count: Coord) -> Coord {
         self.parent.get_transitioning_length(lower_bead_count)
+    }
+
+    // Get the strategy name
+    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:36-39
+    ///
+    // C++: std::string OuterWallInsetBeadingStrategy::toString() const
+    // C++: {
+    // C++:     return std::string("OuterWallOfsetBeadingStrategy+") + parent->toString();
+    // C++: }
+    //
+    // Note: like the other meta-strategies in this crate (Redistribute, Limited,
+    // Widening), the base-class `name` member set in the constructor is exposed
+    // via `name()`. The C++ `toString()` additionally appends `"+" + parent->toString()`.
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    // Compute beading for a given thickness and bead count
+    // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:41-57
+    ///
+    // C++: BeadingStrategy::Beading OuterWallInsetBeadingStrategy::compute(coord_t thickness, coord_t bead_count) const
+    fn compute(&self, thickness: Coord, bead_count: Coord) -> Beading {
+        // Get beading from parent strategy
+        // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:43
+        // C++: Beading ret = parent->compute(thickness, bead_count);
+        let mut ret = self.parent.compute(thickness, bead_count);
+
+        // Actual count and thickness as represented by extant walls.
+        // Don't count any potential zero-width 'signaling' walls.
+        // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:45-46
+        // C++: // Actual count and thickness as represented by extant walls. Don't count any potential zero-width 'signaling' walls.
+        // C++: bead_count = std::count_if(ret.bead_widths.begin(), ret.bead_widths.end(), [](const coord_t width) { return width > 0; });
+        let bead_count = ret.bead_widths.iter().filter(|&&width| width > 0).count();
+
+        // No need to apply any inset if there is just a single wall
+        // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:48-52
+        // C++: // No need to apply any inset if there is just a single wall.
+        // C++: if (bead_count < 2)
+        // C++: {
+        // C++:     return ret;
+        // C++: }
+        if bead_count < 2 {
+            return ret;
+        }
+
+        // Move the outer wall inside, ensuring it never goes beyond the middle line
+        // Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp:54-56
+        // C++: // Actually move the outer wall inside. Ensure that the outer wall never goes beyond the middle line.
+        // C++: ret.toolpath_locations[0] = std::min(ret.toolpath_locations[0] + outer_wall_offset, thickness / 2);
+        // C++: return ret;
+        ret.toolpath_locations[0] = std::cmp::min(
+            ret.toolpath_locations[0] + self.outer_wall_offset,
+            thickness / 2,
+        );
+
+        ret
     }
 
     // Get the optimal width (delegates to parent)

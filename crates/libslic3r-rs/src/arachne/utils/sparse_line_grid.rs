@@ -3,7 +3,10 @@
 //! C++ Reference:
 //! - Arachne/utils/SparseLineGrid.hpp
 //!
-//! **STATUS:** ✅ COMPLETE - Full implementation with C++ parity
+//! **STATUS:** ✅ COMPLETE - Full 1:1 port. `insert` delegates to the inherited
+//! `processLineCells` (via `SparseGrid::process_line_cells` ->
+//! `SquareGrid::process_line_cells`) exactly as the C++ does, instead of
+//! reimplementing the line-traversal algorithm.
 
 use super::sparse_grid::SparseGrid;
 use super::square_grid::GridPoint;
@@ -76,104 +79,43 @@ where
     /// C++:     SparseGrid<ElemT>::processLineCells(line, process_cell_func);
     /// C++: }
     pub fn insert(&mut self, elem: Elem) {
-        /// Get the line segment from the element
-        /// C++ Reference: Arachne/utils/SparseLineGrid.hpp:58
-        /// C++: const std::pair<Point, Point> line = m_locator(elem);
+        // SparseLineGrid.hpp:57
+        // C++: const std::pair<Point, Point> line = m_locator(elem);
         let line = self.locator.locate(&elem);
+        // SparseLineGrid.hpp:58
+        // C++: using GridMap = std::unordered_multimap<GridPoint, Elem, PointHash>;
+        // below is a workaround for the fact that lambda functions cannot access private or protected members
+        // first we define a lambda which works on any GridMap and then we bind it to the actual protected GridMap of the parent class
+        //
+        // SparseLineGrid.hpp:61-64
+        // C++: std::function<bool(GridMap *, const GridPoint)> process_cell_func_ = [&elem](GridMap *m_grid, const GridPoint grid_loc) {
+        // C++:     m_grid->emplace(grid_loc, elem);
+        // C++:     return true;
+        // C++: };
+        //
+        // In Rust the borrow checker forbids mutating `self.grid` from inside a
+        // closure that is itself running an immutable borrow of `self.grid`
+        // (via `process_line_cells`, which reads the cell size from the base
+        // grid). Because the C++ `process_cell_func_` is pure-append and always
+        // returns `true`, we first collect the grid cells (running the exact
+        // same `processLineCells` traversal) and then emplace into each cell.
+        // This is observationally identical to the C++ behaviour.
+        let mut grid_locs: Vec<GridPoint> = Vec::new();
+        // SparseLineGrid.hpp:65-67
+        // C++: using namespace std::placeholders; // for _1, _2, _3...
+        // C++: GridMap *m_grid = &(this->m_grid);
+        // C++: std::function<bool(const GridPoint)> process_cell_func(std::bind(process_cell_func_, m_grid, _1));
+        let process_cell_func = |grid_loc: GridPoint| {
+            grid_locs.push(grid_loc);
+            true
+        };
 
-        /// Insert element into all grid cells the line passes through
-        /// C++ Reference: Arachne/utils/SparseLineGrid.hpp:59-70
-        /// Note: In Rust, we can access grid methods directly without the C++ workaround
-        self.insert_line_internal(line, elem);
-    }
+        // SparseLineGrid.hpp:69
+        // C++: SparseGrid<ElemT>::processLineCells(line, process_cell_func);
+        self.grid.process_line_cells(line, process_cell_func);
 
-    /// Internal method to insert an element along a line
-    fn insert_line_internal(&mut self, line: (Point, Point), elem: Elem) {
-        /// Get grid coordinates for the line endpoints
-        let start_grid = self.grid.to_grid_point(line.0);
-        let end_grid = self.grid.to_grid_point(line.1);
-
-        /// Insert into all cells along the line using process_line_cells logic
-        /// We need to manually implement the line traversal since we're modifying the grid
-        self.process_line_and_insert(line, elem, start_grid, end_grid);
-    }
-
-    /// Process all grid cells along a line and insert the element
-    fn process_line_and_insert(
-        &mut self,
-        line: (Point, Point),
-        elem: Elem,
-        _start_grid: GridPoint,
-        _end_grid: GridPoint,
-    ) {
-        /// Use a simple approach: collect all grid points along the line, then insert
-        let mut grid_points = Vec::new();
-
-        /// Calculate which cells the line passes through
-        /// This mirrors SquareGrid::processLineCells but collects points instead of calling a callback
-        let mut start = line.0;
-        let mut end = line.1;
-
-        /// Make sure X increases between start and end
-        if end.x < start.x {
-            std::mem::swap(&mut start, &mut end);
-        }
-
-        let cell_size = self.grid.get_cell_size();
-        let start_cell = self.grid.to_grid_point(start);
-        let end_cell = self.grid.to_grid_point(end);
-
-        let y_diff = end.y as i64 - start.y as i64;
-        let y_dir = if y_diff >= 0 { 1 } else { -1 };
-
-        let mut x_cell_start = start_cell.x;
-        let mut cell_y = start_cell.y;
-
-        loop {
-            if cell_y * y_dir > end_cell.y * y_dir {
-                break;
-            }
-
-            /// Calculate nearest next Y coordinate
-            let y_offset = if ((cell_y >= 0) as i64 - (cell_y < 0) as i64) == y_dir || cell_y == 0 {
-                y_dir
-            } else {
-                0
-            };
-            let nearest_next_y = (cell_y + y_offset) * cell_size;
-
-            /// Calculate X cell end
-            let x_cell_end = if y_diff == 0 {
-                end_cell.x
-            } else {
-                let area = (end.x as i64 - start.x as i64) * (nearest_next_y - start.y as i64);
-                let mut corresponding_x = start.x as i64 + area / y_diff;
-                if corresponding_x < 0 && (area % y_diff) != 0 {
-                    corresponding_x += 1;
-                }
-                let mut x_end = corresponding_x / cell_size;
-                if x_end < start_cell.x {
-                    x_end = x_cell_start;
-                }
-                x_end
-            };
-
-            /// Collect all X cells in this row
-            for cell_x in x_cell_start..=x_cell_end {
-                let grid_loc = Point::new(cell_x, cell_y);
-                grid_points.push(grid_loc);
-                if grid_loc == end_cell {
-                    break;
-                }
-            }
-
-            x_cell_start = x_cell_end;
-            cell_y += y_dir;
-        }
-
-        /// Now insert the element into all collected grid cells
-        for grid_pt in grid_points {
-            self.grid.insert_at_grid_point(grid_pt, elem.clone());
+        for grid_loc in grid_locs {
+            self.grid.insert_at_grid_point(grid_loc, elem.clone());
         }
     }
 

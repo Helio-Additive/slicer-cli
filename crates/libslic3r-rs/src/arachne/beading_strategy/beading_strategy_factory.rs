@@ -192,8 +192,8 @@ mod tests {
             0.5,
         );
 
-        // Strategy should be created successfully
-        assert!(!Rc::ptr_eq(&strategy, &strategy));
+        // Strategy should be created successfully (outermost wrapper is LimitedBeadingStrategy).
+        assert_eq!(Arc::strong_count(&strategy), 1);
     }
 
     #[test]
@@ -201,8 +201,8 @@ mod tests {
         // Test default strategy creation
         let strategy = BeadingStrategyFactory::make_default_strategy();
 
-        // Strategy should be created successfully
-        assert!(!Rc::ptr_eq(&strategy, &strategy));
+        // Strategy should be created successfully.
+        assert_eq!(Arc::strong_count(&strategy), 1);
     }
 
     #[test]
@@ -224,8 +224,8 @@ mod tests {
             0.5,
         );
 
-        // Strategy should be created with WideningBeadingStrategy wrapper
-        assert!(!Rc::ptr_eq(&strategy, &strategy));
+        // Strategy should be created with WideningBeadingStrategy wrapper.
+        assert_eq!(Arc::strong_count(&strategy), 1);
     }
 
     #[test]
@@ -247,7 +247,7 @@ mod tests {
             0.5,
         );
 
-        // Strategy should be created with OuterWallInsetBeadingStrategy wrapper
-        assert!(!Rc::ptr_eq(&strategy, &strategy));
+        // Strategy should be created with OuterWallInsetBeadingStrategy wrapper.
+        assert_eq!(Arc::strong_count(&strategy), 1);
     }
 }

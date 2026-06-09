@@ -35,7 +35,7 @@ pub struct HalfEdgeNode<EdgeData, NodeData> {
 
 impl<EdgeData, NodeData> HalfEdgeNode<EdgeData, NodeData> {
     /// Create a new HalfEdgeNode with the given data and position
-    /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:24-27
+    /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:26-29
     /// C++: HalfEdgeNode(node_data_t data, Point p)
     /// C++: : data(data)
     /// C++: , p(p)
@@ -49,7 +49,7 @@ impl<EdgeData, NodeData> HalfEdgeNode<EdgeData, NodeData> {
     }
 
     /// Check if this node equals another node (pointer equality)
-    /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:29-32
+    /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:31-34
     /// C++: bool operator==(const node_t& other)
     /// C++: {
     /// C++:     return this == &other;
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_half_edge_node_creation() {
         /// Test basic HalfEdgeNode creation
-        /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:24-27
+        /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:26-29
         let node_data = TestNodeData { id: 1 };
         let point = Point::new(100, 200);
         let node = HalfEdgeNode::<TestEdgeData, TestNodeData>::new(node_data.clone(), point);
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn test_half_edge_node_ptr_eq() {
         /// Test pointer equality
-        /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:29-32
+        /// C++ Reference: Arachne/utils/HalfEdgeNode.hpp:31-34
         let node1 = HalfEdgeNode::<TestEdgeData, TestNodeData>::new(
             TestNodeData { id: 1 },
             Point::new(0, 0),

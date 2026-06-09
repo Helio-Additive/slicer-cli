@@ -124,6 +124,64 @@ impl<'a> PolygonsSegmentIndex<'a> {
     pub fn decrement(&mut self) {
         self.point_index.decrement();
     }
+
+    /// boost::polygon segment accessor: returns the `to()` endpoint when the
+    /// direction is HIGH and the `from()` endpoint when it is LOW.
+    ///
+    /// This is the Rust equivalent of the `boost::polygon::segment_traits`
+    /// specialisation for `PolygonsSegmentIndex`. Rust has no boost.polygon
+    /// trait-specialisation system, so the `get(segment, dir)` free function is
+    /// expressed as an inherent method.
+    ///
+    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:30-48
+    /// C++: namespace boost::polygon {
+    /// C++: template<> struct geometry_concept<Slic3r::Arachne::PolygonsSegmentIndex>
+    /// C++: {
+    /// C++:     typedef segment_concept type;
+    /// C++: };
+    /// C++:
+    /// C++: template<> struct segment_traits<Slic3r::Arachne::PolygonsSegmentIndex>
+    /// C++: {
+    /// C++:     typedef coord_t       coordinate_type;
+    /// C++:     typedef Slic3r::Point point_type;
+    /// C++:
+    /// C++:     static inline point_type get(const Slic3r::Arachne::PolygonsSegmentIndex &CSegment, direction_1d dir)
+    /// C++:     {
+    /// C++:         return dir.to_int() ? CSegment.to() : CSegment.from();
+    /// C++:     }
+    /// C++: };
+    /// C++: } // namespace boost::polygon
+    pub fn segment_get(&self, dir: Direction1d) -> Point {
+        // C++: return dir.to_int() ? CSegment.to() : CSegment.from();
+        if dir.to_int() != 0 {
+            self.to()
+        } else {
+            self.from()
+        }
+    }
+}
+
+/// boost::polygon `direction_1d` for a segment endpoint: LOW selects the
+/// `from()` endpoint, HIGH selects the `to()` endpoint.
+///
+/// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:42 (boost::polygon::direction_1d)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction1d {
+    /// boost::polygon::LOW (to_int() == 0)
+    Low,
+    /// boost::polygon::HIGH (to_int() == 1)
+    High,
+}
+
+impl Direction1d {
+    /// C++ Reference: boost::polygon::direction_1d::to_int()
+    #[inline]
+    pub fn to_int(self) -> i32 {
+        match self {
+            Direction1d::Low => 0,
+            Direction1d::High => 1,
+        }
+    }
 }
 
 impl<'a> Default for PolygonsSegmentIndex<'a> {
@@ -191,6 +249,19 @@ mod tests {
 
         assert_eq!(from, Point::new(0, 0));
         assert_eq!(to, Point::new(100, 0));
+    }
+
+    #[test]
+    fn test_polygons_segment_index_segment_get() {
+        // Test boost::polygon segment_traits::get equivalent
+        // C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:42-45
+        let polygons = create_test_polygons();
+        let index = PolygonsSegmentIndex::with_indices(&polygons, 0, 0);
+
+        // dir.to_int() == 0 (LOW) -> from()
+        assert_eq!(index.segment_get(Direction1d::Low), Point::new(0, 0));
+        // dir.to_int() != 0 (HIGH) -> to()
+        assert_eq!(index.segment_get(Direction1d::High), Point::new(100, 0));
     }
 
     #[test]

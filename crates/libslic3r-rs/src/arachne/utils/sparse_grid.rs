@@ -81,6 +81,20 @@ where
         self.grid.entry(grid_pt).or_insert_with(Vec::new).push(elem);
     }
 
+    /// Process cells along a line indicated by `line`.
+    ///
+    /// Inherited from `SquareGrid` in C++. Provided here so that derived
+    /// classes such as `SparseLineGrid` can invoke it via the base
+    /// `SparseGrid` (mirroring `SparseGrid<ElemT>::processLineCells(...)`).
+    ///
+    /// C++ Reference: Arachne/utils/SquareGrid.hpp:48-57 (inherited)
+    pub fn process_line_cells<F>(&self, line: (Point, Point), process_cell_func: F) -> bool
+    where
+        F: FnMut(GridPoint) -> bool,
+    {
+        self.square_grid.process_line_cells(line, process_cell_func)
+    }
+
     /// Returns all data within radius of query_pt
     ///
     /// Finds all elements with location within radius of query_pt. May return

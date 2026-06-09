@@ -11,7 +11,7 @@ use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
 
 /// Beading propagation information for a joint
-/// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp (struct BeadingPropagation)
+/// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:18-30 (struct BeadingPropagation)
 #[derive(Debug, Clone)]
 pub struct BeadingPropagation {
     /// The beading at this joint
@@ -33,7 +33,7 @@ pub struct BeadingPropagation {
 
 impl BeadingPropagation {
     /// Create a new BeadingPropagation with a given beading
-    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:19-26
+    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:24-29
     /// C++: BeadingPropagation(const Beading& beading)
     /// C++:     : beading(beading)
     /// C++:     , dist_to_bottom_source(0)
@@ -51,7 +51,7 @@ impl BeadingPropagation {
 }
 
 /// Joint data for skeletal trapezoidation graph nodes
-/// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp (class SkeletalTrapezoidationJoint)
+/// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:14-57 (class SkeletalTrapezoidationJoint)
 #[derive(Debug, Clone)]
 pub struct SkeletalTrapezoidationJoint {
     /// Distance to the nearest boundary
@@ -74,7 +74,7 @@ pub struct SkeletalTrapezoidationJoint {
 
 impl SkeletalTrapezoidationJoint {
     /// Create a new SkeletalTrapezoidationJoint with default values
-    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:31-36
+    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:35-39
     /// C++: SkeletalTrapezoidationJoint()
     /// C++: : distance_to_boundary(-1)
     /// C++: , bead_count(-1)
@@ -90,7 +90,7 @@ impl SkeletalTrapezoidationJoint {
     }
 
     /// Check if this joint has beading information
-    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:38-41
+    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:41-44
     /// C++: bool hasBeading() const
     /// C++: {
     /// C++:     return beading.use_count() > 0;
@@ -100,7 +100,7 @@ impl SkeletalTrapezoidationJoint {
     }
 
     /// Set the beading information
-    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:42-45
+    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:45-48
     /// C++: void setBeading(std::shared_ptr<BeadingPropagation> storage)
     /// C++: {
     /// C++:     beading = storage;
@@ -110,7 +110,7 @@ impl SkeletalTrapezoidationJoint {
     }
 
     /// Get the beading information
-    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:46-49
+    /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:49-52
     /// C++: std::shared_ptr<BeadingPropagation> getBeading()
     /// C++: {
     /// C++:     return beading.lock();
@@ -133,8 +133,8 @@ mod tests {
 
     #[test]
     fn test_joint_default_values() {
-        /// Test default initialization
-        /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:31-36
+        // Test default initialization
+        // C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:35-39
         let joint = SkeletalTrapezoidationJoint::new();
 
         assert_eq!(joint.distance_to_boundary, -1);
@@ -145,8 +145,8 @@ mod tests {
 
     #[test]
     fn test_joint_beading() {
-        /// Test beading storage and retrieval
-        /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:38-49
+        // Test beading storage and retrieval
+        // C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:41-52
         let mut joint = SkeletalTrapezoidationJoint::new();
 
         assert!(!joint.has_beading());
@@ -157,7 +157,6 @@ mod tests {
             bead_widths: vec![300, 300, 400],
             toolpath_locations: vec![150, 450, 850],
             left_over: 0,
-            right_over: 0,
         };
 
         let propagation = Arc::new(RwLock::new(BeadingPropagation::new(beading)));
@@ -175,14 +174,13 @@ mod tests {
 
     #[test]
     fn test_beading_propagation() {
-        /// Test BeadingPropagation initialization
-        /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:19-26
+        // Test BeadingPropagation initialization
+        // C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:24-29
         let beading = Beading {
             total_thickness: 500,
             bead_widths: vec![250, 250],
             toolpath_locations: vec![125, 375],
             left_over: 0,
-            right_over: 0,
         };
 
         let propagation = BeadingPropagation::new(beading.clone());
@@ -195,8 +193,8 @@ mod tests {
 
     #[test]
     fn test_joint_fields() {
-        /// Test joint field assignment
-        /// C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:28-30
+        // Test joint field assignment
+        // C++ Reference: Arachne/SkeletalTrapezoidationJoint.hpp:32-34
         let mut joint = SkeletalTrapezoidationJoint::new();
 
         joint.distance_to_boundary = 1000;

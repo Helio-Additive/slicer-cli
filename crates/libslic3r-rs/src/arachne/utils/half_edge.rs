@@ -11,7 +11,18 @@ use std::ptr::NonNull;
 ///
 /// This is the Rust equivalent of C++ template class HalfEdge<node_data_t, edge_data_t, derived_node_t, derived_edge_t>
 ///
-/// C++ Reference: Arachne/utils/HalfEdge.hpp (template class HalfEdge)
+/// C++ Reference: Arachne/utils/HalfEdge.hpp:17-36 (template class HalfEdge)
+///
+/// HalfEdge.hpp:13 template<typename node_data_t, typename edge_data_t, typename derived_node_t, typename derived_edge_t>
+/// HalfEdge.hpp:18 class HalfEdge
+/// HalfEdge.hpp:20   using edge_t = derived_edge_t;
+/// HalfEdge.hpp:21   using node_t = derived_node_t;
+///
+/// The four C++ template parameters allow CRTP-style derivation where the stored
+/// edge_t/node_t are the *derived* types. This port mirrors the sibling
+/// HalfEdgeNode<EdgeData, NodeData> / HalfEdgeGraph<EdgeData, NodeData> types, so
+/// the derived_* distinction collapses (Rust has no implicit upcasting and the
+/// concrete graph uses these types directly).
 ///
 /// The half-edge data structure represents edges as pairs of directed half-edges.
 /// Each half-edge points to its twin (the opposite direction), the next/previous edges
@@ -19,27 +30,27 @@ use std::ptr::NonNull;
 #[derive(Debug)]
 pub struct HalfEdge<EdgeData, NodeData> {
     /// Data associated with this edge
-    /// C++: edge_data_t data;
+    /// HalfEdge.hpp:23   edge_data_t data;
     pub data: EdgeData,
 
     /// Twin half-edge (opposite direction)
-    /// C++: edge_t* twin = nullptr;
+    /// HalfEdge.hpp:24   edge_t* twin = nullptr;
     pub twin: Option<NonNull<HalfEdge<EdgeData, NodeData>>>,
 
     /// Next half-edge in the face
-    /// C++: edge_t* next = nullptr;
+    /// HalfEdge.hpp:25   edge_t* next = nullptr;
     pub next: Option<NonNull<HalfEdge<EdgeData, NodeData>>>,
 
     /// Previous half-edge in the face
-    /// C++: edge_t* prev = nullptr;
+    /// HalfEdge.hpp:26   edge_t* prev = nullptr;
     pub prev: Option<NonNull<HalfEdge<EdgeData, NodeData>>>,
 
     /// Source node (from)
-    /// C++: node_t* from = nullptr;
+    /// HalfEdge.hpp:27   node_t* from = nullptr;
     pub from: Option<NonNull<HalfEdgeNode<EdgeData, NodeData>>>,
 
     /// Target node (to)
-    /// C++: node_t* to = nullptr;
+    /// HalfEdge.hpp:28   node_t* to = nullptr;
     pub to: Option<NonNull<HalfEdgeNode<EdgeData, NodeData>>>,
 }
 
@@ -48,10 +59,10 @@ use super::half_edge_node::HalfEdgeNode;
 
 impl<EdgeData, NodeData> HalfEdge<EdgeData, NodeData> {
     /// Create a new HalfEdge with the given data
-    /// C++ Reference: Arachne/utils/HalfEdge.hpp:27-29
-    /// C++: HalfEdge(edge_data_t data)
-    /// C++: : data(data)
-    /// C++: {}
+    /// C++ Reference: Arachne/utils/HalfEdge.hpp:29-31
+    /// HalfEdge.hpp:29   HalfEdge(edge_data_t data)
+    /// HalfEdge.hpp:30   : data(data)
+    /// HalfEdge.hpp:31   {}
     pub fn new(data: EdgeData) -> Self {
         Self {
             data,
@@ -64,11 +75,11 @@ impl<EdgeData, NodeData> HalfEdge<EdgeData, NodeData> {
     }
 
     /// Check if this edge equals another edge (pointer equality)
-    /// C++ Reference: Arachne/utils/HalfEdge.hpp:30-33
-    /// C++: bool operator==(const edge_t& other)
-    /// C++: {
-    /// C++:     return this == &other;
-    /// C++: }
+    /// C++ Reference: Arachne/utils/HalfEdge.hpp:32-35
+    /// HalfEdge.hpp:32   bool operator==(const edge_t& other)
+    /// HalfEdge.hpp:33   {
+    /// HalfEdge.hpp:34       return this == &other;
+    /// HalfEdge.hpp:35   }
     pub fn ptr_eq(&self, other: &HalfEdge<EdgeData, NodeData>) -> bool {
         std::ptr::eq(self, other)
     }
@@ -153,7 +164,7 @@ mod tests {
     #[test]
     fn test_half_edge_creation() {
         /// Test basic HalfEdge creation
-        /// C++ Reference: Arachne/utils/HalfEdge.hpp:27-29
+        /// C++ Reference: Arachne/utils/HalfEdge.hpp:29-31
         let edge_data = TestEdgeData { value: 42 };
         let edge = HalfEdge::<TestEdgeData, TestNodeData>::new(edge_data.clone());
 
@@ -168,7 +179,7 @@ mod tests {
     #[test]
     fn test_half_edge_ptr_eq() {
         /// Test pointer equality
-        /// C++ Reference: Arachne/utils/HalfEdge.hpp:30-33
+        /// C++ Reference: Arachne/utils/HalfEdge.hpp:32-35
         let edge1 = HalfEdge::<TestEdgeData, TestNodeData>::new(TestEdgeData { value: 1 });
         let edge2 = HalfEdge::<TestEdgeData, TestNodeData>::new(TestEdgeData { value: 1 });
 
