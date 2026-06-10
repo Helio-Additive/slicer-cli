@@ -1807,6 +1807,26 @@ pub struct PrintObjectConfig {
     /// Detect floating vertical shell regions.
     /// BambuStudio: `detect_floating_vertical_shell`.
     pub detect_floating_vertical_shell: bool,
+
+    // === Interlocking (InterlockingGenerator) ===
+    /// Use beam interlocking between touching filaments.
+    /// PrintConfig.hpp:1008 ((ConfigOptionBool, interlocking_beam))
+    pub interlocking_beam: bool,
+    /// The width of the interlocking structure beams (mm).
+    /// PrintConfig.hpp:1009 ((ConfigOptionFloat, interlocking_beam_width))
+    pub interlocking_beam_width: CoordF,
+    /// Orientation of interlock beams (degrees).
+    /// PrintConfig.hpp:1010 ((ConfigOptionFloat, interlocking_orientation))
+    pub interlocking_orientation: CoordF,
+    /// The height of the interlocking beams, in layers.
+    /// PrintConfig.hpp:1011 ((ConfigOptionInt, interlocking_beam_layer_count))
+    pub interlocking_beam_layer_count: i32,
+    /// Distance from the filament boundary to generate the structure, in cells.
+    /// PrintConfig.hpp:1012 ((ConfigOptionInt, interlocking_depth))
+    pub interlocking_depth: i32,
+    /// Distance from the model outside where no structure is generated, in cells.
+    /// PrintConfig.hpp:1013 ((ConfigOptionInt, interlocking_boundary_avoidance))
+    pub interlocking_boundary_avoidance: i32,
 }
 
 /// Helper methods for resolving per-feature line widths.
@@ -2711,6 +2731,44 @@ impl PrintObjectConfig {
                 true
             }
 
+            // === Interlocking (PrintConfig.hpp:1008-1013) ===
+            "interlocking_beam" => {
+                if let Some(v) = parse_bool(value) {
+                    self.interlocking_beam = v;
+                }
+                true
+            }
+            "interlocking_beam_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.interlocking_beam_width = v;
+                }
+                true
+            }
+            "interlocking_orientation" => {
+                if let Some(v) = parse_f64(value) {
+                    self.interlocking_orientation = v;
+                }
+                true
+            }
+            "interlocking_beam_layer_count" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.interlocking_beam_layer_count = v;
+                }
+                true
+            }
+            "interlocking_depth" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.interlocking_depth = v;
+                }
+                true
+            }
+            "interlocking_boundary_avoidance" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.interlocking_boundary_avoidance = v;
+                }
+                true
+            }
+
             _ => false,
         }
     }
@@ -2949,6 +3007,14 @@ impl Default for PrintObjectConfig {
 
             // Detect floating
             detect_floating_vertical_shell: false,
+
+            // Interlocking (C++ defaults: PrintConfig.cpp:3665-3713)
+            interlocking_beam: false,
+            interlocking_beam_width: 0.8,
+            interlocking_orientation: 22.5,
+            interlocking_beam_layer_count: 2,
+            interlocking_depth: 2,
+            interlocking_boundary_avoidance: 2,
         }
     }
 }
@@ -5079,6 +5145,35 @@ impl PrintObjectConfig {
             }
             "spiral_mode" => {
                 self.spiral_vase = parse_bool(value);
+            }
+            // === Interlocking (PrintConfig.hpp:1008-1013) ===
+            "interlocking_beam" => {
+                self.interlocking_beam = parse_bool(value);
+            }
+            "interlocking_beam_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.interlocking_beam_width = v;
+                }
+            }
+            "interlocking_orientation" => {
+                if let Some(v) = parse_f64(value) {
+                    self.interlocking_orientation = v;
+                }
+            }
+            "interlocking_beam_layer_count" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.interlocking_beam_layer_count = v;
+                }
+            }
+            "interlocking_depth" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.interlocking_depth = v;
+                }
+            }
+            "interlocking_boundary_avoidance" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.interlocking_boundary_avoidance = v;
+                }
             }
             _ => return false,
         }

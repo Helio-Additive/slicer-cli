@@ -25,3 +25,6 @@ pub mod support_tree_buildsteps;
 pub mod support_tree_mesher;
 
 // Re-export key types
+// SLA/Concurrency.hpp:64-66 places `ccr`, `ccr_seq`, `ccr_par` directly in
+// the Slic3r::sla namespace.
+pub use concurrency::{ccr, ccr_par, ccr_seq, USE_FULL_CONCURRENCY};

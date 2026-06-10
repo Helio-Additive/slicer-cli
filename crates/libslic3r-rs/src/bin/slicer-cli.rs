@@ -968,6 +968,10 @@ fn create_default_region_config(perimeters: u32, infill_density: f64) -> PrintRe
         // Gap Fill
         gap_fill_enabled: true,
         gap_fill_speed: 30.0,
+        filter_out_gap_fill: 0.0,
+
+        // Embedding Wall (InterlockingGenerator)
+        embedding_wall_into_infill: false,
 
         // Seam
         seam_position: slicer::print_config::SeamPosition::Aligned,

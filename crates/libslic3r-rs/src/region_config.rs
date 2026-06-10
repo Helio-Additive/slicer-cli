@@ -268,6 +268,14 @@ pub struct PrintRegionConfig {
     /// Solid infill filament extruder (1-based, C++ uses solid_infill_filament)
     /// PrintConfig.hpp:977
     pub solid_infill_filament: usize,
+
+    /// Filter out gap fill extrusions shorter than this (mm).
+    /// PrintConfig.hpp:1122 ((ConfigOptionFloat, filter_out_gap_fill))
+    pub filter_out_gap_fill: CoordF,
+
+    /// Embed wall into infill (used by InterlockingGenerator::generate_embedding_wall).
+    /// PrintConfig.hpp:1136 ((ConfigOptionBool, embedding_wall_into_infill))
+    pub embedding_wall_into_infill: bool,
 }
 
 /// Implementation of PrintRegionConfig methods
@@ -631,6 +639,20 @@ impl PrintRegionConfig {
                 }
                 true
             }
+            "filter_out_gap_fill" => {
+                if let Some(v) = parse_f64(value) {
+                    self.filter_out_gap_fill = v;
+                }
+                true
+            }
+
+            // === Embedding Wall (InterlockingGenerator) ===
+            "embedding_wall_into_infill" => {
+                if let Some(v) = parse_bool(value) {
+                    self.embedding_wall_into_infill = v;
+                }
+                true
+            }
 
             // === Seam ===
             "seam_position" => {
@@ -810,6 +832,11 @@ impl Default for PrintRegionConfig {
             wall_filament: 1, // 1-based in C++
             sparse_infill_filament: 1,
             solid_infill_filament: 1,
+
+            // C++ default: PrintConfig.cpp:3187 (ConfigOptionFloat(0))
+            filter_out_gap_fill: 0.0,
+            // C++ default: PrintConfig.cpp:4218 (ConfigOptionBool(false))
+            embedding_wall_into_infill: false,
         }
     }
 }

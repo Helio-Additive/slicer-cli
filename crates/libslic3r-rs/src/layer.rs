@@ -884,6 +884,55 @@ impl Layer {
         true
     }
 
+    // If there is any incompatibility, separate LayerRegions have to be created.
+    // Layer.cpp:173
+    // C++: bool Layer::has_compatible_layer_regions(const PrintRegionConfig &config, const PrintRegionConfig &other_config)
+    //
+    // Porting notes (Rust PrintRegionConfig field-name mapping):
+    //   wall_loops           -> perimeters
+    //   inner_wall_speed     -> perimeter_speed (C++ per-extruder .get_at(get_process_config_idx(wall_filament)); Rust scalar)
+    //   outer_wall_speed     -> external_perimeter_speed (same per-extruder note)
+    //   gap_infill_speed     -> gap_fill_speed (same per-extruder note)
+    //   detect_overhang_wall -> overhangs
+    //   detect_thin_wall     -> thin_walls
+    //   infill_wall_overlap  -> infill_overlap
+    //   opt_serialize("inner_wall_line_width"/"outer_wall_line_width") -> direct float compare
+    // BLOCKED comparisons (fields not yet in the Rust PrintRegionConfig):
+    //   override_filament_scarf_seam_setting, seam_slope_type, seam_slope_start_height,
+    //   seam_slope_gap, seam_slope_min_length, seam_slope_conditional, seam_slope_entire_loop,
+    //   seam_slope_steps, seam_slope_inner_walls (Layer.cpp:186-195)
+    pub fn has_compatible_layer_regions(
+        &self,
+        config: &PrintRegionConfig,
+        other_config: &PrintRegionConfig,
+    ) -> bool {
+        // Layer.cpp:175
+        config.wall_filament == other_config.wall_filament
+            // Layer.cpp:176
+            && config.perimeters == other_config.perimeters
+            // Layer.cpp:177
+            && config.wall_sequence == other_config.wall_sequence
+            // Layer.cpp:178
+            && config.perimeter_speed == other_config.perimeter_speed
+            // Layer.cpp:179
+            && config.external_perimeter_speed == other_config.external_perimeter_speed
+            // Layer.cpp:180
+            && config.gap_fill_speed == other_config.gap_fill_speed
+            // Layer.cpp:181
+            && config.overhangs == other_config.overhangs
+            // Layer.cpp:182
+            && config.filter_out_gap_fill == other_config.filter_out_gap_fill
+            // Layer.cpp:183
+            && config.inner_wall_line_width == other_config.inner_wall_line_width
+            // Layer.cpp:184
+            && config.outer_wall_line_width == other_config.outer_wall_line_width
+            // Layer.cpp:185
+            && config.thin_walls == other_config.thin_walls
+            // Layer.cpp:186
+            && config.infill_overlap == other_config.infill_overlap
+        // Layer.cpp:187-195: scarf/seam-slope comparisons blocked (see note above)
+    }
+
     /// Generate perimeters for all regions
     /// Layer.cpp:201-304
     /// Make perimeters with lower layer data for overhang detection

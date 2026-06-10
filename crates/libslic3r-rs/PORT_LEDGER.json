@@ -2823,7 +2823,7 @@
     "rust": "crates/libslic3r-rs/src/interlocking/voxel_utils.rs",
     "rust_exists": true,
     "loc": 219,
-    "status": "pending",
+    "status": "done",
     "priority": 8
   },
   {
@@ -2834,7 +2834,7 @@
     "rust": "crates/libslic3r-rs/src/interlocking/interlocking_generator.rs",
     "rust_exists": true,
     "loc": 497,
-    "status": "pending",
+    "status": "done",
     "priority": 8
   },
   {
@@ -2845,7 +2845,7 @@
     "rust": "crates/libslic3r-rs/src/sla/job_controller.rs",
     "rust_exists": true,
     "loc": 32,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2856,7 +2856,7 @@
     "rust": "crates/libslic3r-rs/src/sla/reproject_points_on_mesh.rs",
     "rust_exists": true,
     "loc": 46,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
@@ -2867,7 +2867,7 @@
     "rust": "crates/libslic3r-rs/src/sla/support_point.rs",
     "rust_exists": true,
     "loc": 67,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2878,7 +2878,7 @@
     "rust": "crates/libslic3r-rs/src/sla/concurrency.rs",
     "rust_exists": true,
     "loc": 70,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2889,7 +2889,7 @@
     "rust": "crates/libslic3r-rs/src/sla/raster_base.rs",
     "rust_exists": true,
     "loc": 86,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
@@ -2900,7 +2900,7 @@
     "rust": "crates/libslic3r-rs/src/sla/raster_to_polygons.rs",
     "rust_exists": true,
     "loc": 91,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2966,7 +2966,7 @@
     "rust": "crates/libslic3r-rs/src/sla/agg_raster.rs",
     "rust_exists": true,
     "loc": 222,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
