@@ -141,7 +141,9 @@ impl<'a, 'b> IStream for ReadBufStream<'a, 'b> {
 // PNG color type constants (mirror libpng's <png.h>).
 const PNG_COLOR_TYPE_GRAY: i32 = 0;
 const PNG_COLOR_TYPE_RGB: i32 = 2;
-const PNG_COLOR_TYPE_RGB_ALPHA: i32 = 6;
+// `pub(crate)`: also used by `format::three_mf` (3mf.cpp:2472 encodes the RGBA
+// thumbnail with miniz `tdefl_write_image_to_png_file_in_memory_ex`).
+pub(crate) const PNG_COLOR_TYPE_RGB_ALPHA: i32 = 6;
 // libpng exposes both spellings; PNG_COLOR_TYPE_RGBA == PNG_COLOR_TYPE_RGB_ALPHA.
 const PNG_COLOR_TYPE_RGBA: i32 = PNG_COLOR_TYPE_RGB_ALPHA;
 

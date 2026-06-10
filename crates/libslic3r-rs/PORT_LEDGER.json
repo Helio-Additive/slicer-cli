@@ -2798,10 +2798,10 @@
     "hpp": "Format/3mf.hpp",
     "kind": "cpp",
     "area": "Format",
-    "rust": "crates/libslic3r-rs/src/format/3mf.rs",
-    "rust_exists": false,
+    "rust": "crates/libslic3r-rs/src/format/three_mf.rs",
+    "rust_exists": true,
     "loc": 3278,
-    "status": "pending",
+    "status": "partial",
     "priority": 7
   },
   {
@@ -2812,7 +2812,7 @@
     "rust": "crates/libslic3r-rs/src/format/bbs_3mf.rs",
     "rust_exists": true,
     "loc": 9455,
-    "status": "pending",
+    "status": "partial",
     "priority": 7
   },
   {

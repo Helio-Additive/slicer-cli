@@ -346,6 +346,53 @@ impl FilamentPrintableResult {
 }
 
 // ===========================================================================
+// GCodeProcessor.hpp:235-240  GCodeProcessorResult::SliceWarning
+// (`GCodeProcessorResult` itself is not yet fully ported; its nested POD types
+// live here so dependents — e.g. `Format/bbs_3mf.cpp`'s `PlateData::warnings`
+// — can be ported faithfully.)
+// ===========================================================================
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SliceWarning {
+    /// 0: normal tips, 1: warning; 2: error  GCodeProcessor.hpp:236
+    pub level: i32,
+    /// enum string  GCodeProcessor.hpp:237
+    pub msg: String,
+    /// error code for studio  GCodeProcessor.hpp:238
+    pub error_code: String,
+    /// extra msg info  GCodeProcessor.hpp:239
+    pub params: Vec<String>,
+}
+
+// ===========================================================================
+// GCodeProcessor.hpp:242-247  GCodeProcessorResult::FilamentUseInfo
+// ===========================================================================
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FilamentUseInfo {
+    /// GCodeProcessor.hpp:244  int filament_id = 0;
+    pub filament_id: i32,
+    /// GCodeProcessor.hpp:245  bool use_for_object{false};
+    pub use_for_object: bool,
+    /// GCodeProcessor.hpp:246  bool use_for_support{false};
+    pub use_for_support: bool,
+}
+
+// ===========================================================================
+// GCodeProcessor.hpp:167-175  GCodeProcessorResult::FilamentSequenceHash
+// Hash functor for `std::unordered_map<std::vector<unsigned int>, ...>` keys;
+// in Rust the corresponding maps use the default `HashMap` hasher (identical
+// map semantics — key equality is still full vector equality). The C++ hash
+// function is preserved here for reference/parity tooling.
+// ===========================================================================
+pub fn filament_sequence_hash(layer_filament: &[u32]) -> u64 {
+    // GCodeProcessor.hpp:169-173
+    let mut key: u64 = 0;
+    for &f in layer_filament {
+        key |= 1u64.wrapping_shl(f);
+    }
+    key
+}
+
+// ===========================================================================
 // GCodeProcessor.hpp:504-513  struct ThermalIndex
 // ===========================================================================
 #[derive(Debug, Clone, Copy, PartialEq)]

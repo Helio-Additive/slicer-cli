@@ -317,7 +317,10 @@ fn starts_with_ci(haystack: &[u8], needle: &[u8]) -> bool {
 /// `operator<<(double)` — i.e. printf `%.*g` — with `precision` significant
 /// digits. This chooses between fixed and scientific notation the way `%g`
 /// does and strips trailing zeros (and a trailing decimal point).
-fn general_format(value: f64, precision: usize) -> String {
+/// `pub(crate)`: also backs the `%.9g` / `setprecision(N)` stream formatting in
+/// `format::three_mf` (3mf.cpp:2726 `sprintf(buf, "%.9g", f)` and the
+/// `reset_stream` / `setprecision(max_digits10)` exporter streams).
+pub(crate) fn general_format(value: f64, precision: usize) -> String {
     // %g treats precision 0 as 1.
     let prec = if precision == 0 { 1 } else { precision };
 
