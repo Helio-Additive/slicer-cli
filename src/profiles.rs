@@ -9,6 +9,7 @@ use tempfile::TempDir;
 use walkdir::WalkDir;
 
 use crate::{
+    cli::ProfileKind,
     json_utils::{expect_object, overlay, string_value},
     locations::{is_s3_location, materialize_input, object_location},
 };
@@ -37,6 +38,184 @@ const STRIP_KEYS: &[&str] = &[
 enum ProfileSource {
     Path(PathBuf),
     Inline(Value),
+}
+
+#[derive(serde::Serialize)]
+pub struct ProfileEntry {
+    name: String,
+    kind: String,
+    path: PathBuf,
+    vendor: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct CompatibleProcessesReport {
+    printer: String,
+    matched_printers: Vec<MatchedPrinter>,
+    processes: Vec<CompatibleProcess>,
+}
+
+#[derive(serde::Serialize)]
+pub struct MatchedPrinter {
+    name: String,
+    setting_id: Option<String>,
+    printer_model: Option<String>,
+    path: PathBuf,
+    vendor: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct CompatibleProcess {
+    name: String,
+    setting_id: Option<String>,
+    path: PathBuf,
+    vendor: Option<String>,
+    compatible_printers: Vec<String>,
+}
+
+pub fn list_profiles(
+    kind: ProfileKind,
+    requested_roots: &[PathBuf],
+) -> Result<Vec<ProfileEntry>, String> {
+    let roots = profile_catalog_roots(requested_roots)?;
+    let kind = kind.as_str();
+    let mut entries = Vec::new();
+
+    for root in roots {
+        for entry in WalkDir::new(&root)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file())
+        {
+            let path = entry.path();
+            if !is_profile_file(path) || !path_matches_kind(path, kind) {
+                continue;
+            }
+
+            let value = load_profile(path)?;
+            let Some(name) = value.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+
+            let profile_type = value.get("type").and_then(Value::as_str);
+            if profile_type.is_some_and(|profile_type| profile_type != kind) {
+                continue;
+            }
+
+            entries.push(ProfileEntry {
+                name: name.to_owned(),
+                kind: kind.to_owned(),
+                path: path.to_path_buf(),
+                vendor: profile_vendor(&root, path, kind),
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| {
+        a.vendor
+            .cmp(&b.vendor)
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    Ok(entries)
+}
+
+pub fn compatible_processes_for_printer(
+    printer: &str,
+    requested_roots: &[PathBuf],
+) -> Result<CompatibleProcessesReport, String> {
+    let roots = profile_catalog_roots(requested_roots)?;
+    let mut machines = Vec::new();
+    let mut processes = Vec::new();
+    let mut process_name_to_index = HashMap::new();
+
+    for root in &roots {
+        for entry in WalkDir::new(root)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file())
+        {
+            let path = entry.path();
+            if !is_profile_file(path) {
+                continue;
+            }
+
+            let value = load_profile(path)?;
+            let Some(kind) = value.get("type").and_then(Value::as_str) else {
+                continue;
+            };
+
+            match kind {
+                "machine" => machines.push(ProfileRecord {
+                    path: path.to_path_buf(),
+                    vendor: profile_vendor(root, path, kind),
+                    value,
+                }),
+                "process" => {
+                    let index = processes.len();
+                    if let Some(name) = value.get("name").and_then(Value::as_str) {
+                        process_name_to_index.insert(name.to_owned(), index);
+                    }
+                    processes.push(ProfileRecord {
+                        path: path.to_path_buf(),
+                        vendor: profile_vendor(root, path, kind),
+                        value,
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let matched_machine_indexes = match_machine_profiles(printer, &machines);
+    if matched_machine_indexes.is_empty() {
+        return Err(format!("no machine profile found for printer: {printer}"));
+    }
+
+    let matched_printers = matched_machine_indexes
+        .iter()
+        .map(|&index| matched_printer(&machines[index]))
+        .collect::<Result<Vec<_>, _>>()?;
+    let matched_names = matched_printers
+        .iter()
+        .map(|printer| printer.name.as_str())
+        .collect::<HashSet<_>>();
+
+    let mut compatible_processes = Vec::new();
+    for process in &processes {
+        if !is_instantiated_profile(&process.value) {
+            continue;
+        }
+
+        let compatible_printers = inherited_string_array(
+            process,
+            "compatible_printers",
+            &processes,
+            &process_name_to_index,
+            &mut HashSet::new(),
+        )?;
+        if compatible_printers
+            .iter()
+            .any(|printer| matched_names.contains(printer.as_str()))
+        {
+            compatible_processes.push(compatible_process(process, compatible_printers)?);
+        }
+    }
+
+    compatible_processes.sort_by(|a, b| {
+        a.vendor
+            .cmp(&b.vendor)
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| a.path.cmp(&b.path))
+    });
+
+    Ok(CompatibleProcessesReport {
+        printer: printer.to_owned(),
+        matched_printers,
+        processes: compatible_processes,
+    })
 }
 
 pub fn resolve_config(
@@ -280,6 +459,132 @@ struct ProfilesIndex {
     path_cache: HashMap<PathBuf, Value>,
 }
 
+struct ProfileRecord {
+    path: PathBuf,
+    vendor: Option<String>,
+    value: Value,
+}
+
+fn match_machine_profiles(printer: &str, machines: &[ProfileRecord]) -> Vec<usize> {
+    if let Some(path) = existing_profile_path(printer) {
+        return machines
+            .iter()
+            .enumerate()
+            .filter_map(|(index, machine)| (machine.path == path).then_some(index))
+            .collect();
+    }
+
+    let exact = machines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, machine)| {
+            let value = &machine.value;
+            let matches_name = value.get("name").and_then(Value::as_str) == Some(printer);
+            let matches_id = value.get("setting_id").and_then(Value::as_str) == Some(printer);
+            (matches_name || matches_id).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    if !exact.is_empty() {
+        return exact;
+    }
+
+    machines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, machine)| {
+            (machine.value.get("printer_model").and_then(Value::as_str) == Some(printer))
+                .then_some(index)
+        })
+        .collect()
+}
+
+fn matched_printer(record: &ProfileRecord) -> Result<MatchedPrinter, String> {
+    let name = string_field_from_value(&record.value, "name", &record.path)?;
+    Ok(MatchedPrinter {
+        name,
+        setting_id: optional_string_from_value(&record.value, "setting_id"),
+        printer_model: optional_string_from_value(&record.value, "printer_model"),
+        path: record.path.clone(),
+        vendor: record.vendor.clone(),
+    })
+}
+
+fn compatible_process(
+    record: &ProfileRecord,
+    compatible_printers: Vec<String>,
+) -> Result<CompatibleProcess, String> {
+    let name = string_field_from_value(&record.value, "name", &record.path)?;
+    Ok(CompatibleProcess {
+        name,
+        setting_id: optional_string_from_value(&record.value, "setting_id"),
+        path: record.path.clone(),
+        vendor: record.vendor.clone(),
+        compatible_printers,
+    })
+}
+
+fn inherited_string_array(
+    record: &ProfileRecord,
+    key: &str,
+    processes: &[ProfileRecord],
+    name_to_index: &HashMap<String, usize>,
+    visited: &mut HashSet<String>,
+) -> Result<Vec<String>, String> {
+    if let Some(values) = string_array_field(record.value.get(key))? {
+        return Ok(values);
+    }
+
+    let Some(parent) = record.value.get("inherits").and_then(Value::as_str) else {
+        return Ok(Vec::new());
+    };
+    if !visited.insert(parent.to_owned()) {
+        return Err(format!("circular process inheritance at {parent}"));
+    }
+    let Some(parent_index) = name_to_index.get(parent) else {
+        return Ok(Vec::new());
+    };
+    inherited_string_array(
+        &processes[*parent_index],
+        key,
+        processes,
+        name_to_index,
+        visited,
+    )
+}
+
+fn string_array_field(value: Option<&Value>) -> Result<Option<Vec<String>>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let values = value
+        .as_array()
+        .ok_or_else(|| "compatible_printers must be an array".to_owned())?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    Ok(Some(values))
+}
+
+fn is_instantiated_profile(value: &Value) -> bool {
+    value
+        .get("instantiation")
+        .and_then(Value::as_str)
+        .is_none_or(|value| value == "true")
+}
+
+fn string_field_from_value(value: &Value, key: &str, path: &Path) -> Result<String, String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| format!("profile has no string {key}: {}", path.display()))
+}
+
+fn optional_string_from_value(value: &Value, key: &str) -> Option<String> {
+    value.get(key).and_then(Value::as_str).map(str::to_owned)
+}
+
 impl ProfilesIndex {
     fn load_roots(profile_paths: &[PathBuf], extra_roots: &[PathBuf]) -> Result<Self, String> {
         let mut roots = BTreeSet::new();
@@ -521,6 +826,61 @@ fn profile_scan_root(path: &Path) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+fn profile_catalog_roots(requested_roots: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+    if !requested_roots.is_empty() {
+        return Ok(requested_roots.to_vec());
+    }
+
+    let mut candidates = Vec::new();
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(bin_dir) = current_exe.parent() {
+            candidates.push(bin_dir.join("resources").join("profiles"));
+            if let Some(package_dir) = bin_dir.parent() {
+                candidates.push(package_dir.join("resources").join("profiles"));
+            }
+        }
+    }
+    candidates.push(PathBuf::from("resources").join("profiles"));
+    candidates.push(
+        PathBuf::from("libslic3r")
+            .join("bambustudio")
+            .join("references")
+            .join("BambuStudio")
+            .join("resources")
+            .join("profiles"),
+    );
+
+    let roots = candidates
+        .into_iter()
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    if roots.is_empty() {
+        return Err(
+            "no profile roots found; pass --profile-root pointing at a resources/profiles directory"
+                .to_owned(),
+        );
+    }
+    Ok(roots)
+}
+
+fn path_matches_kind(path: &Path, kind: &str) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == kind)
+}
+
+fn profile_vendor(root: &Path, path: &Path, kind: &str) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
+    let mut parts = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy());
+    let first = parts.next()?;
+    if first == kind {
+        None
+    } else {
+        Some(first.into_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,5 +975,121 @@ mod tests {
         assert_eq!(config["bed_temperature"], serde_json::json!([55]));
         assert_eq!(config["layer_height"], serde_json::json!(0.2));
         assert_eq!(config["filament_colour"], serde_json::json!(["#fff"]));
+    }
+
+    #[test]
+    fn lists_processes_compatible_with_machine_id() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        write_jsonnet(
+            root,
+            "machine",
+            "printer.json",
+            r#"{
+                "type": "machine",
+                "setting_id": "GM_TEST",
+                "name": "Test Printer 0.4 nozzle",
+                "printer_model": "Test Printer",
+                "instantiation": "true"
+            }"#,
+        );
+        write_jsonnet(
+            root,
+            "process",
+            "base.json",
+            r#"{
+                "type": "process",
+                "name": "base_process",
+                "instantiation": "false",
+                "compatible_printers": ["Test Printer 0.4 nozzle"]
+            }"#,
+        );
+        write_jsonnet(
+            root,
+            "process",
+            "standard.json",
+            r#"{
+                "type": "process",
+                "setting_id": "GP_TEST",
+                "name": "0.20mm Standard @Test",
+                "instantiation": "true",
+                "inherits": "base_process"
+            }"#,
+        );
+        write_jsonnet(
+            root,
+            "process",
+            "other.json",
+            r#"{
+                "type": "process",
+                "name": "0.20mm Standard @Other",
+                "instantiation": "true",
+                "compatible_printers": ["Other Printer 0.4 nozzle"]
+            }"#,
+        );
+
+        let report = compatible_processes_for_printer("GM_TEST", &[root.to_path_buf()]).unwrap();
+
+        assert_eq!(report.matched_printers.len(), 1);
+        assert_eq!(report.processes.len(), 1);
+        assert_eq!(report.processes[0].name, "0.20mm Standard @Test");
+    }
+
+    #[test]
+    fn printer_model_matches_all_nozzle_variants() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        write_jsonnet(
+            root,
+            "machine",
+            "printer-04.json",
+            r#"{
+                "type": "machine",
+                "name": "Test Printer 0.4 nozzle",
+                "printer_model": "Test Printer",
+                "instantiation": "true"
+            }"#,
+        );
+        write_jsonnet(
+            root,
+            "machine",
+            "printer-06.json",
+            r#"{
+                "type": "machine",
+                "name": "Test Printer 0.6 nozzle",
+                "printer_model": "Test Printer",
+                "instantiation": "true"
+            }"#,
+        );
+        write_jsonnet(
+            root,
+            "process",
+            "standard.json",
+            r#"{
+                "type": "process",
+                "name": "0.20mm Standard @Test",
+                "instantiation": "true",
+                "compatible_printers": ["Test Printer 0.4 nozzle"]
+            }"#,
+        );
+        write_jsonnet(
+            root,
+            "process",
+            "draft.json",
+            r#"{
+                "type": "process",
+                "name": "0.30mm Draft @Test",
+                "instantiation": "true",
+                "compatible_printers": ["Test Printer 0.6 nozzle"]
+            }"#,
+        );
+
+        let report =
+            compatible_processes_for_printer("Test Printer", &[root.to_path_buf()]).unwrap();
+
+        assert_eq!(report.matched_printers.len(), 2);
+        assert_eq!(report.processes.len(), 2);
     }
 }

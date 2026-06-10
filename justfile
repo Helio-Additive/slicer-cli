@@ -4,9 +4,6 @@ default: build
 
 setup:
     devbox install
-    bun install
-    mkdir -p _downloads
-    if [ ! -f _downloads/3DBenchy.stl ]; then curl -L --fail --show-error --output _downloads/3DBenchy.stl https://helioadditive-public.s3.ap-east-1.amazonaws.com/3DBenchy.stl; fi
 
 # Build the Rust CLI and native BambuStudio slicer binary.
 build: setup
@@ -28,10 +25,14 @@ format-check:
 
 # Run the bundled Benchy example with either the local devbox build or Docker image.
 example target="devbox":
-    @case "{{target}}" in \
+    bun install
+    mkdir -p _downloads
+    if [ ! -f _downloads/3DBenchy.stl ]; then curl -L --fail --show-error --output _downloads/3DBenchy.stl https://helioadditive-public.s3.ap-east-1.amazonaws.com/3DBenchy.stl; fi
+
+    @case "{{ target }}" in \
         devbox) devbox run example ;; \
         docker) docker run --rm --volume "$PWD:$PWD" --workdir "$PWD" slicer-cli:local slice --config examples/config.jsonnet ;; \
-        *) echo "unknown example target: {{target}} (expected devbox or docker)" >&2; exit 2 ;; \
+        *) echo "unknown example target: {{ target }} (expected devbox or docker)" >&2; exit 2 ;; \
     esac
 
 # Build the Docker image with the Rust CLI and native slicer binary.

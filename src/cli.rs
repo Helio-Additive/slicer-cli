@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -15,6 +15,8 @@ pub enum Commands {
     Slice(SliceArgs),
     /// Resolve preset files into one slicer config without slicing.
     Presets(PresetsArgs),
+    /// Inspect bundled or external BambuStudio profile catalogs.
+    Profiles(ProfilesArgs),
 }
 
 #[derive(Parser)]
@@ -41,4 +43,52 @@ pub struct PresetsArgs {
     pub output: PathBuf,
     #[arg(long)]
     pub profile_root: Vec<PathBuf>,
+}
+
+#[derive(Parser)]
+pub struct ProfilesArgs {
+    #[command(subcommand)]
+    pub command: ProfilesCommand,
+}
+
+#[derive(Subcommand)]
+pub enum ProfilesCommand {
+    /// List profile files of one kind as JSON on stdout.
+    List(ProfileListArgs),
+    /// List process profiles compatible with a machine profile name, ID, path, or printer model.
+    CompatibleProcesses(CompatibleProcessesArgs),
+}
+
+#[derive(Parser)]
+pub struct ProfileListArgs {
+    #[arg(long, value_enum)]
+    pub kind: ProfileKind,
+    #[arg(long)]
+    pub profile_root: Vec<PathBuf>,
+}
+
+#[derive(Parser)]
+pub struct CompatibleProcessesArgs {
+    /// Machine profile name, setting ID, profile path, or printer_model value.
+    #[arg(long)]
+    pub printer: String,
+    #[arg(long)]
+    pub profile_root: Vec<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum ProfileKind {
+    Machine,
+    Filament,
+    Process,
+}
+
+impl ProfileKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Machine => "machine",
+            Self::Filament => "filament",
+            Self::Process => "process",
+        }
+    }
 }

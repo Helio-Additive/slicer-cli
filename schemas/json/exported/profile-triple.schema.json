@@ -1,0 +1,151 @@
+{
+  "$defs": {
+    "FileProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "Location": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      ]
+    },
+    "LocationProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "location": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "required": [
+        "location"
+      ],
+      "type": "object"
+    },
+    "PathProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "ProfileDefinition": {
+      "additionalProperties": true,
+      "properties": {
+        "include": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringList"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inherits": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ProfileReference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/FileProfileReference"
+        },
+        {
+          "$ref": "#/$defs/LocationProfileReference"
+        },
+        {
+          "$ref": "#/$defs/PathProfileReference"
+        },
+        {
+          "$ref": "#/$defs/UriProfileReference"
+        },
+        {
+          "$ref": "#/$defs/ProfileDefinition"
+        }
+      ]
+    },
+    "StringList": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "UriProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "filament": {
+      "$ref": "#/$defs/ProfileReference"
+    },
+    "machine": {
+      "$ref": "#/$defs/ProfileReference"
+    },
+    "process": {
+      "$ref": "#/$defs/ProfileReference"
+    }
+  },
+  "required": [
+    "machine",
+    "filament",
+    "process"
+  ],
+  "title": "ProfileTriple",
+  "type": "object"
+}

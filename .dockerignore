@@ -1,6 +1,13 @@
 .devbox/
 .git/
 target/
+**/target/
 libslic3r/bambustudio/build/
 examples/out/
 **/.DS_Store
+node_modules/
+_CPack_Packages/
+_downloads/
+*.tar.gz
+*.zip
+crates

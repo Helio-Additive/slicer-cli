@@ -215,6 +215,40 @@ describe("Preset tests", () => {
   });
 });
 
+describe("Profile catalog tests", () => {
+  test("lists profiles by kind to stdout", async () => {
+    const profileRoot = join(root, "profile-catalog");
+    await mkdir(join(profileRoot, "BBL", "machine"), { recursive: true });
+    await mkdir(join(profileRoot, "BBL", "filament", "Polymaker"), { recursive: true });
+    await mkdir(join(profileRoot, "BBL", "process"), { recursive: true });
+    await writeFile(
+      join(profileRoot, "BBL", "machine", "printer.json"),
+      JSON.stringify({ name: "Catalog Printer", type: "machine" }, null, 2),
+    );
+    await writeFile(
+      join(profileRoot, "BBL", "filament", "Polymaker", "pla.json"),
+      JSON.stringify({ name: "Catalog PLA", type: "filament" }, null, 2),
+    );
+    await writeFile(
+      join(profileRoot, "BBL", "process", "standard.json"),
+      JSON.stringify({ name: "Catalog Process", type: "process" }, null, 2),
+    );
+
+    const result = await profilesList({ kind: "filament", profileRoot });
+
+    expect(result.exitCode).toBe(0);
+    const profiles = JSON.parse(result.stdout);
+    expect(profiles).toEqual([
+      {
+        name: "Catalog PLA",
+        kind: "filament",
+        path: join(profileRoot, "BBL", "filament", "Polymaker", "pla.json"),
+        vendor: "BBL",
+      },
+    ]);
+  });
+});
+
 async function slice(config: string, options: SliceOptions = {}): Promise<CommandResult> {
   const dryRun = options.dryRun ?? true;
 
@@ -268,6 +302,28 @@ async function presets(options: {
     "--profile-root",
     options.profileRoot,
   ];
+
+  if (mode === "docker") {
+    return run("docker", [
+      "run",
+      "--rm",
+      "--volume",
+      `${process.cwd()}:${process.cwd()}`,
+      "--workdir",
+      process.cwd(),
+      dockerImage,
+      ...args,
+    ]);
+  }
+
+  return run(join(process.cwd(), "target", "debug", "slicer-cli"), args);
+}
+
+async function profilesList(options: {
+  kind: "machine" | "filament" | "process";
+  profileRoot: string;
+}): Promise<CommandResult> {
+  const args = ["profiles", "list", "--kind", options.kind, "--profile-root", options.profileRoot];
 
   if (mode === "docker") {
     return run("docker", [

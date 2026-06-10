@@ -1943,7 +1943,7 @@
     "rust": "crates/libslic3r-rs/src/arachne/utils/sparse_point_grid.rs",
     "rust_exists": true,
     "loc": 90,
-    "status": "pending",
+    "status": "done",
     "priority": 3
   },
   {
@@ -2779,7 +2779,7 @@
     "rust": "crates/libslic3r-rs/src/format/objparser.rs",
     "rust_exists": true,
     "loc": 920,
-    "status": "pending",
+    "status": "done",
     "priority": 7
   },
   {
@@ -2790,7 +2790,7 @@
     "rust": "crates/libslic3r-rs/src/format/amf.rs",
     "rust_exists": true,
     "loc": 1397,
-    "status": "pending",
+    "status": "partial",
     "priority": 7
   },
   {

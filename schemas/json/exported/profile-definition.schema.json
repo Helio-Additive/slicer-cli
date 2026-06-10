@@ -1,0 +1,51 @@
+{
+  "$defs": {
+    "StringList": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "include": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StringList"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "inherits": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "ProfileDefinition",
+  "type": "object"
+}

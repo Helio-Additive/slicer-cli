@@ -338,7 +338,7 @@ fn read_png_after_signature(in_buf: &mut dyn IStream) -> Option<DecodedPng> {
 /// (None) on every row, matching libpng's `png_write_png(...,
 /// PNG_TRANSFORM_IDENTITY, ...)` data layout. `data` is `height * line_width`
 /// bytes, top row first.
-fn encode_png(width: usize, height: usize, color_type: i32, data: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn encode_png(width: usize, height: usize, color_type: i32, data: &[u8]) -> Option<Vec<u8>> {
     let channels = png_channels(color_type);
     if channels == 0 {
         return None;

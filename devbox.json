@@ -1,17 +1,17 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.1/.schema/devbox.schema.json",
   "packages": {
-    "rustc": "1.94.1",
-    "cargo": "1.94.1",
-    "rustfmt": "1.94.1",
-    "clippy": "1.94.1",
+    "rustc":       "1.94.1",
+    "cargo":       "1.94.1",
+    "rustfmt":     "1.94.1",
+    "clippy":      "1.94.1",
     "clang-tools": "21.1.8",
-    "cmake": "3.31.6",
-    "ninja": "1.12.1",
-    "pkg-config": "0.29.2",
-    "git": "2.48.1",
-    "go-jsonnet": "0.20.0",
-    "just": "1.51.0",
+    "cmake":       "3.31.6",
+    "ninja":       "1.12.1",
+    "pkg-config":  "0.29.2",
+    "git":         "2.48.1",
+    "go-jsonnet":  "0.20.0",
+    "just":        "1.51.0",
     "boost": {
       "version": "1.87.0",
       "outputs": [
@@ -70,12 +70,12 @@
         "dev"
       ]
     },
-    "cgal": "6.0.1",
-    "opencv": "4.9.0",
+    "cgal":             "6.0.1",
+    "opencv":           "4.9.0",
     "opencascade-occt": "7.8.1",
-    "qhull": "2020.2",
-    "cereal": "1.3.2",
-    "nlopt": "2.10.0",
+    "qhull":            "2020.2",
+    "cereal":           "1.3.2",
+    "nlopt":            "2.10.0",
     "icu": {
       "version": "76.1",
       "outputs": [
@@ -98,11 +98,13 @@
         "dev",
         "lib"
       ]
-    }
+    },
+    "libglvnd":    "1.7.0",
+    "xorg.libX11": "1.8.12"
   },
   "env": {
     "BAMBUSTUDIO_SLICER": "$PWD/libslic3r/bambustudio/build/slicer_cli",
-    "CMAKE_PREFIX_PATH": "$PWD/libslic3r/bambustudio/build/libnoise-prefix"
+    "CMAKE_PREFIX_PATH":  "$PWD/libslic3r/bambustudio/build/libnoise-prefix"
   },
   "shell": {
     "init_hook": [

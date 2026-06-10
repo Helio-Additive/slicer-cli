@@ -3,16 +3,11 @@ variable "IMAGE_NAME" {
 }
 
 variable "IMAGE_TAG" {
-  default = "local"
-}
-
-group "default" {
-  targets = ["slicer-cli"]
+  default = "latest"
 }
 
 target "slicer-cli" {
   context    = "."
   dockerfile = "Dockerfile"
-  target     = "runtime"
   tags       = ["${IMAGE_NAME}:${IMAGE_TAG}"]
 }

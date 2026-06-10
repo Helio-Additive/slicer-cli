@@ -3,12 +3,12 @@ use serde_json::{json, Value};
 use tempfile::NamedTempFile;
 
 use crate::{
-    cli::{PresetsArgs, SliceArgs},
+    cli::{CompatibleProcessesArgs, PresetsArgs, ProfilesArgs, ProfilesCommand, SliceArgs},
     config::JobConfig,
     json_utils::{optional_string, string_field, write_json},
     locations::{materialize_input, prepare_output, upload_output, write_json_to_location},
     native::{default_native_binary, run_native_slice},
-    profiles::resolve_config_refs,
+    profiles::{compatible_processes_for_printer, list_profiles, resolve_config_refs},
 };
 
 pub fn slice(args: SliceArgs) -> Result<u8, String> {
@@ -88,6 +88,27 @@ pub fn presets(args: PresetsArgs) -> Result<u8, String> {
         &args.profile_root,
     )?;
     write_json(&args.output, &Value::Object(config))?;
+    Ok(0)
+}
+
+pub fn profiles(args: ProfilesArgs) -> Result<u8, String> {
+    match args.command {
+        ProfilesCommand::List(args) => {
+            let profiles = list_profiles(args.kind, &args.profile_root)?;
+            serde_json::to_writer_pretty(std::io::stdout(), &profiles)
+                .map_err(|e| format!("write profiles JSON: {e}"))?;
+            println!();
+            Ok(0)
+        }
+        ProfilesCommand::CompatibleProcesses(args) => compatible_processes(args),
+    }
+}
+
+fn compatible_processes(args: CompatibleProcessesArgs) -> Result<u8, String> {
+    let report = compatible_processes_for_printer(&args.printer, &args.profile_root)?;
+    serde_json::to_writer_pretty(std::io::stdout(), &report)
+        .map_err(|e| format!("write compatible processes JSON: {e}"))?;
+    println!();
     Ok(0)
 }
 

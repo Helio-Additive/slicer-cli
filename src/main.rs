@@ -26,5 +26,6 @@ fn run_cli() -> Result<u8, String> {
     match Cli::parse().command {
         Commands::Slice(args) => commands::slice(args),
         Commands::Presets(args) => commands::presets(args),
+        Commands::Profiles(args) => commands::profiles(args),
     }
 }

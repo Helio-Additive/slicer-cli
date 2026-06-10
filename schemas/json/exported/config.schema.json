@@ -1,48 +1,16 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "JobConfig",
-  "type": "object",
-  "properties": {
-    "callback": true,
-    "config": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ConfigSource"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "input": {
-      "$ref": "#/$defs/JobInput"
-    },
-    "native_binary": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "output": {
-      "$ref": "#/$defs/JobOutput"
-    }
-  },
-  "required": [
-    "input",
-    "output"
-  ],
   "$defs": {
     "Base64Config": {
-      "type": "object",
+      "additionalProperties": false,
       "properties": {
         "base64": {
           "type": "string"
         }
       },
-      "additionalProperties": false,
       "required": [
         "base64"
-      ]
+      ],
+      "type": "object"
     },
     "ConfigSource": {
       "anyOf": [
@@ -62,25 +30,35 @@
           "$ref": "#/$defs/UriConfig"
         },
         {
-          "type": "object",
-          "additionalProperties": true
+          "$ref": "#/$defs/SlicerConfig"
         }
       ]
     },
     "FileConfig": {
-      "type": "object",
+      "additionalProperties": false,
       "properties": {
         "file": {
           "$ref": "#/$defs/Location"
         }
       },
-      "additionalProperties": false,
       "required": [
         "file"
-      ]
+      ],
+      "type": "object"
+    },
+    "FileProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
     },
     "JobInput": {
-      "type": "object",
       "properties": {
         "config": {
           "anyOf": [
@@ -134,10 +112,10 @@
             "null"
           ]
         }
-      }
+      },
+      "type": "object"
     },
     "JobOutput": {
-      "type": "object",
       "properties": {
         "callback": true,
         "file": {
@@ -180,7 +158,8 @@
             }
           ]
         }
-      }
+      },
+      "type": "object"
     },
     "Location": {
       "anyOf": [
@@ -188,46 +167,268 @@
           "type": "string"
         },
         {
-          "type": "object",
-          "additionalProperties": true
+          "additionalProperties": true,
+          "type": "object"
         }
       ]
     },
     "LocationConfig": {
-      "type": "object",
+      "additionalProperties": false,
       "properties": {
         "location": {
           "$ref": "#/$defs/Location"
         }
       },
-      "additionalProperties": false,
       "required": [
         "location"
-      ]
+      ],
+      "type": "object"
+    },
+    "LocationProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "location": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "required": [
+        "location"
+      ],
+      "type": "object"
     },
     "PathConfig": {
-      "type": "object",
+      "additionalProperties": false,
       "properties": {
         "path": {
           "type": "string"
         }
       },
-      "additionalProperties": false,
       "required": [
         "path"
+      ],
+      "type": "object"
+    },
+    "PathProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "ProfileDefinition": {
+      "additionalProperties": true,
+      "properties": {
+        "include": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringList"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inherits": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ProfileReference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/FileProfileReference"
+        },
+        {
+          "$ref": "#/$defs/LocationProfileReference"
+        },
+        {
+          "$ref": "#/$defs/PathProfileReference"
+        },
+        {
+          "$ref": "#/$defs/UriProfileReference"
+        },
+        {
+          "$ref": "#/$defs/ProfileDefinition"
+        }
+      ]
+    },
+    "ProfileTriple": {
+      "properties": {
+        "filament": {
+          "$ref": "#/$defs/ProfileReference"
+        },
+        "machine": {
+          "$ref": "#/$defs/ProfileReference"
+        },
+        "process": {
+          "$ref": "#/$defs/ProfileReference"
+        }
+      },
+      "required": [
+        "machine",
+        "filament",
+        "process"
+      ],
+      "type": "object"
+    },
+    "SlicerConfig": {
+      "additionalProperties": true,
+      "properties": {
+        "filament": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "machine": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "process": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile_root": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringList"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile_roots": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringList"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profiles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileTriple"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "StringList": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
       ]
     },
     "UriConfig": {
-      "type": "object",
+      "additionalProperties": false,
       "properties": {
         "uri": {
           "type": "string"
         }
       },
-      "additionalProperties": false,
       "required": [
         "uri"
-      ]
+      ],
+      "type": "object"
+    },
+    "UriProfileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "callback": true,
+    "config": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ConfigSource"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "input": {
+      "$ref": "#/$defs/JobInput"
+    },
+    "native_binary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "output": {
+      "$ref": "#/$defs/JobOutput"
+    }
+  },
+  "required": [
+    "input",
+    "output"
+  ],
+  "title": "JobConfig",
+  "type": "object"
 }

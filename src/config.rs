@@ -111,7 +111,8 @@ impl ConfigSource {
             }
             Self::Path(config) => load_config_location(&config.path, temp_dirs),
             Self::Uri(config) => load_config_location(&config.uri, temp_dirs),
-            Self::Inline(config) => Ok(Value::Object(config.0.clone())),
+            Self::Inline(config) => serde_json::to_value(config)
+                .map_err(|e| format!("serialize inline input.config: {e}")),
         }
     }
 }
