@@ -488,6 +488,67 @@ pub fn offset_polygons(
     expolygons
 }
 
+/// Offset Polygons by `delta` (mm) using round joins with an explicit arc
+/// tolerance (mm).
+///
+/// Mirrors ClipperUtils `offset(..., ClipperLib::jtRound, miterLimit)` where
+/// the `miterLimit` argument is interpreted as the ArcTolerance, for callers
+/// that pass a non-default arc tolerance (e.g. SLA/ConcaveHull.cpp:136-137).
+pub fn offset_polygons_round(
+    polygons: &[Polygon],
+    delta: CoordF,
+    arc_tolerance_mm: CoordF,
+) -> ExPolygons {
+    if polygons.is_empty() {
+        return vec![];
+    }
+
+    let geo_multi = polygons_to_geo_multi(polygons);
+
+    let result = geo_multi.offset(
+        delta,
+        JoinType::Round(arc_tolerance_mm),
+        EndType::ClosedPolygon,
+        GEO_CLIPPER_SCALE,
+    );
+    let mut expolygons = geo_multi_to_expolygons(&result);
+
+    // Ensure canonical winding order
+    for expoly in &mut expolygons {
+        expoly.make_canonical();
+    }
+
+    expolygons
+}
+
+/// ExPolygons variant of [`offset_polygons_round`].
+pub fn offset_expolygons_round(
+    expolygons: &[ExPolygon],
+    delta: CoordF,
+    arc_tolerance_mm: CoordF,
+) -> ExPolygons {
+    if expolygons.is_empty() {
+        return vec![];
+    }
+
+    let geo_multi = expolygons_to_geo_multi(expolygons);
+
+    let result = geo_multi.offset(
+        delta,
+        JoinType::Round(arc_tolerance_mm),
+        EndType::ClosedPolygon,
+        GEO_CLIPPER_SCALE,
+    );
+    let mut expolygons = geo_multi_to_expolygons(&result);
+
+    // Ensure canonical winding order
+    for expoly in &mut expolygons {
+        expoly.make_canonical();
+    }
+
+    expolygons
+}
+
 /// Shrink (inset) ExPolygons by a given distance.
 ///
 /// This is a convenience function that calls offset with a negative delta.

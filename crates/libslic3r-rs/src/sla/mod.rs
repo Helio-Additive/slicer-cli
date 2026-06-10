@@ -2,6 +2,7 @@
 //!
 //! Auto-generated module declaration for sla
 
+pub mod agg;
 pub mod agg_raster;
 pub mod bicubic;
 pub mod boost_adapter;

@@ -2889,7 +2889,7 @@
     "rust": "crates/libslic3r-rs/src/sla/raster_base.rs",
     "rust_exists": true,
     "loc": 86,
-    "status": "partial",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2911,7 +2911,7 @@
     "rust": "crates/libslic3r-rs/src/sla/support_tree.rs",
     "rust_exists": true,
     "loc": 98,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
@@ -2922,7 +2922,7 @@
     "rust": "crates/libslic3r-rs/src/sla/boost_adapter.rs",
     "rust_exists": true,
     "loc": 134,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2933,7 +2933,7 @@
     "rust": "crates/libslic3r-rs/src/sla/concave_hull.rs",
     "rust_exists": true,
     "loc": 145,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2944,7 +2944,7 @@
     "rust": "crates/libslic3r-rs/src/sla/clustering.rs",
     "rust_exists": true,
     "loc": 152,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2955,7 +2955,7 @@
     "rust": "crates/libslic3r-rs/src/sla/spat_index.rs",
     "rust_exists": true,
     "loc": 161,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2966,7 +2966,7 @@
     "rust": "crates/libslic3r-rs/src/sla/agg_raster.rs",
     "rust_exists": true,
     "loc": 222,
-    "status": "partial",
+    "status": "done",
     "priority": 9
   },
   {
@@ -2977,7 +2977,7 @@
     "rust": "crates/libslic3r-rs/src/sla/support_tree_builder.rs",
     "rust_exists": true,
     "loc": 225,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
@@ -2988,7 +2988,7 @@
     "rust": "crates/libslic3r-rs/src/sla/support_tree_mesher.rs",
     "rust_exists": true,
     "loc": 270,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {

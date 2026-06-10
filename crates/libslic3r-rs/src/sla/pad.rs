@@ -29,7 +29,11 @@ impl indexed_triangle_set {
 
 /// Placeholder for C++ class `PadConfig`
 /// SLA/Pad.hpp
-#[derive(Debug, Clone)]
+///
+/// `Default` derive: the C++ PadConfig is default-constructible
+/// (`PadConfig() = default;` with default member initializers in Pad.hpp);
+/// `sla::Pad` (SupportTreeBuilder.hpp:195 `Pad() = default;`) requires it.
+#[derive(Debug, Clone, Default)]
 pub struct PadConfig {
     // TODO: Port fields from C++ class
     _placeholder: (),

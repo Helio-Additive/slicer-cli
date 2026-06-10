@@ -1,4 +1,4 @@
-//! Faithful partial port of BambuStudio `src/libslic3r/SLA/AGGRaster.hpp`.
+//! Faithful 1:1 line-by-line port of BambuStudio `src/libslic3r/SLA/AGGRaster.hpp`.
 //!
 //! C++ Reference:
 //! - SLA/AGGRaster.hpp
@@ -7,33 +7,33 @@
 //! (AGGRaster.hpp:35-38). The only instantiation in libslic3r is
 //! `_RasterGrayscaleAA = AGGRaster<agg::pixfmt_gray8,
 //! agg::renderer_scanline_aa_solid>` (AGGRaster.hpp:181-182), for which
-//! `TColor` is `agg::gray8` (a single `uint8_t` gray value), `TValue` is
-//! `uint8_t`, `TPixel` is one byte and `num_components == 1`. The Rust port
-//! models that single instantiation concretely.
+//! `TColor` is `agg::gray8`, `TValue` is `uint8_t`, `TPixel` is one byte and
+//! `num_components == 1`. The Rust port models that single instantiation
+//! concretely on top of the faithful AGG kernel port in `crate::sla::agg`.
 //!
-//! PORTED (the raster's data layer): the pixel buffer, resolution, scaled
-//! pixel dimensions, trafo, foreground color state, `clear`, `read_pixel`,
-//! `trafo()`, `resolution()`, `pixel_dimensions()`, `encode()`, `getPx`/`getPy`.
-//!
-//! BLOCKED SYMBOLS (the AGG scanline rasterization kernel — the vendored AGG
-//! C++ library `agg_rasterizer_scanline_aa`, `agg_scanline_p`,
-//! `agg_renderer_scanline`, `agg_path_storage`, gamma LUTs — is a native C++
-//! dependency that has no Rust port yet):
-//! - `AGGRaster::flipy` / `flipx` (AGGRaster.hpp:63-71) — operate on
-//!   `agg::path_storage`.
-//! - `AGGRaster::to_path` / `_to_path` / `_to_path_flpxy`
-//!   (AGGRaster.hpp:75-112) — build `agg::path_storage`.
-//! - `AGGRaster::_draw` / `draw` (AGGRaster.hpp:114-122, 164) — run
-//!   `agg::render_scanlines` on the rasterizer.
-//! - The `GammaFn` constructor parameter (AGGRaster.hpp:125-131, 153) — it is
-//!   forwarded solely to `m_rasterizer.gamma(gammafn)`, part of the blocked
-//!   kernel; the Rust constructors omit it.
-//! - `RasterGrayscaleAAGammaPower` (AGGRaster.hpp:210-218) — only forwards
-//!   `agg::gamma_power(gamma)` into the blocked kernel.
-//! - The `sla::RasterBase` trait impl — requires `draw`.
+//! Ownership note: in C++ the members `m_rbuf`, `m_pixrenderer`,
+//! `m_raw_renderer` and `m_renderer` (AGGRaster.hpp:52-57) form a chain of
+//! non-owning views over `m_buf`. Such self-referential members are not
+//! expressible in safe Rust; the view chain is therefore reconstructed
+//! transiently inside `clear()` and `_draw()`. This is behavior-preserving:
+//! the only state those views carry across calls is the scanline renderer's
+//! fill color (set once at AGGRaster.hpp:150), which is kept here as
+//! `m_renderer_color`, and `renderer_base`'s clip box, which is always the
+//! full window (set at construction, never modified).
 
 use crate::geometry::{ExPolygon, Point, Polygon, Polygons};
-use crate::sla::raster_base::{EncodedRaster, PixelDim, RasterEncoder, Resolution, Trafo};
+use crate::sla::agg::color_gray::Gray8;
+use crate::sla::agg::gamma_functions::{GammaFunction, GammaPower};
+use crate::sla::agg::path_storage::PathStorage;
+use crate::sla::agg::pixfmt_gray::PixfmtGray8;
+use crate::sla::agg::rasterizer_scanline_aa::RasterizerScanlineAa;
+use crate::sla::agg::renderer_base::RendererBase;
+use crate::sla::agg::renderer_scanline::{render_scanlines, RendererScanlineAaSolid};
+use crate::sla::agg::rendering_buffer::RenderingBuffer;
+use crate::sla::agg::scanline_p::ScanlineP8;
+use crate::sla::raster_base::{
+    EncodedRaster, PixelDim, RasterBase, RasterEncoder, Resolution, Trafo,
+};
 
 // libslic3r.h:58  static constexpr double SCALING_FACTOR = 0.00001;
 // NOTE: the crate-level `crate::SCALING_FACTOR` is defined as the *reciprocal*
@@ -58,57 +58,209 @@ pub fn holes(p: &ExPolygon) -> &Polygons {
 //     static const Color Black;
 // };
 //
-// Instantiated for the gray8 color type used by `RasterGrayscaleAA`
-// (`TColor::value_type == uint8_t`).
+// Instantiated for the gray8 color type used by `RasterGrayscaleAA`. The C++
+// initializer `Color{255}` calls `gray8T(unsigned v_, unsigned a_=base_mask)`,
+// so both colors are fully opaque (a == 255).
 pub struct Colors;
 
 impl Colors {
     // AGGRaster.hpp:32  template<class Color> const Color Colors<Color>::White = Color{255};
-    pub const WHITE: u8 = 255;
+    pub const WHITE: Gray8 = Gray8 { v: 255, a: 255 };
     // AGGRaster.hpp:33  template<class Color> const Color Colors<Color>::Black = Color{0};
-    pub const BLACK: u8 = 0;
+    pub const BLACK: Gray8 = Gray8 { v: 0, a: 255 };
 }
 
 // AGGRaster.hpp:35-39
 // template<class PixelRenderer,
-//          template<class> class Renderer,
+//          template<class /*agg::renderer_base<PixelRenderer>*/> class Renderer,
 //          class Rasterizer = agg::rasterizer_scanline_aa<>,
 //          class Scanline   = agg::scanline_p8>
 // class AGGRaster: public RasterBase
-//
-// Concrete gray8 instantiation (see module docs). The AGG kernel members
-// `m_rbuf`, `m_pixrenderer`, `m_raw_renderer`, `m_scanlines`, `m_rasterizer`
-// (AGGRaster.hpp:52-61) are views/algorithms over `m_buf`; the only piece of
-// their state that outlives a `draw` call is the renderer's fill color
-// (AGGRaster.hpp:150), kept here as `m_foreground`.
-#[derive(Debug, Clone)]
 pub struct AGGRaster {
     // AGGRaster.hpp:48  Resolution m_resolution;
     m_resolution: Resolution,
     // AGGRaster.hpp:49  PixelDim m_pxdim_scaled;    // used for scaled coordinate polygons
     m_pxdim_scaled: PixelDim,
-    // AGGRaster.hpp:51  std::vector<TPixel> m_buf;  (TPixel == uint8_t for gray8)
+
+    // AGGRaster.hpp:51  std::vector<TPixel> m_buf;  (TPixel == one byte for gray8)
     m_buf: Vec<u8>,
+    // AGGRaster.hpp:52  agg::rendering_buffer m_rbuf;
+    // AGGRaster.hpp:54  PixelRenderer m_pixrenderer;
+    // AGGRaster.hpp:56  agg::renderer_base<PixelRenderer> m_raw_renderer;
+    // AGGRaster.hpp:57  Renderer<agg::renderer_base<PixelRenderer>> m_renderer;
+    // (non-owning views over m_buf; reconstructed transiently in clear()/_draw(),
+    //  see the module docs. The renderer's persistent color state lives here:)
+    m_renderer_color: Gray8,
+
     // AGGRaster.hpp:59  Trafo m_trafo;
     m_trafo: Trafo,
-    // AGGRaster.hpp:150  m_renderer.color(foreground);  (renderer state, see above)
-    #[allow(dead_code)]
-    m_foreground: u8,
+    // AGGRaster.hpp:60  Scanline m_scanlines;
+    m_scanlines: ScanlineP8,
+    // AGGRaster.hpp:61  Rasterizer m_rasterizer;
+    m_rasterizer: RasterizerScanlineAa,
 }
 
 impl AGGRaster {
+    // AGGRaster.hpp:63-66
+    // void flipy(agg::path_storage &path) const
+    // {
+    //     path.flip_y(0, double(m_resolution.height_px));
+    // }
+    fn flipy(&self, path: &mut PathStorage) {
+        path.flip_y(0.0, self.m_resolution.height_px as f64);
+    }
+
+    // AGGRaster.hpp:68-71
+    // void flipx(agg::path_storage &path) const
+    // {
+    //     path.flip_x(0, double(m_resolution.width_px));
+    // }
+    fn flipx(&self, path: &mut PathStorage) {
+        path.flip_x(0.0, self.m_resolution.width_px as f64);
+    }
+
     // AGGRaster.hpp:73  double getPx(const Point &p) { return p(0) * m_pxdim_scaled.w_mm; }
-    #[allow(dead_code)]
     #[inline]
     fn get_px(&self, p: &Point) -> f64 {
         p.x as f64 * self.m_pxdim_scaled.w_mm
     }
 
     // AGGRaster.hpp:74  double getPy(const Point &p) { return p(1) * m_pxdim_scaled.h_mm; }
-    #[allow(dead_code)]
     #[inline]
     fn get_py(&self, p: &Point) -> f64 {
         p.y as f64 * self.m_pxdim_scaled.h_mm
+    }
+
+    // AGGRaster.hpp:75  agg::path_storage to_path(const Polygon &poly) { return to_path(poly.points); }
+    fn to_path_polygon(&self, poly: &Polygon) -> PathStorage {
+        self.to_path(&poly.points)
+    }
+
+    // AGGRaster.hpp:77-87
+    // template<class PointVec> agg::path_storage _to_path(const PointVec& v)
+    // {
+    //     agg::path_storage path;
+    //
+    //     auto it = v.begin();
+    //     path.move_to(getPx(*it), getPy(*it));
+    //     while(++it != v.end()) path.line_to(getPx(*it), getPy(*it));
+    //     path.line_to(getPx(v.front()), getPy(v.front()));
+    //
+    //     return path;
+    // }
+    #[allow(non_snake_case)]
+    fn _to_path(&self, v: &[Point]) -> PathStorage {
+        let mut path = PathStorage::new();
+
+        let mut it = v.iter();
+        let first = it.next().unwrap();
+        path.move_to(self.get_px(first), self.get_py(first));
+        for p in it {
+            path.line_to(self.get_px(p), self.get_py(p));
+        }
+        path.line_to(self.get_px(&v[0]), self.get_py(&v[0]));
+
+        path
+    }
+
+    // AGGRaster.hpp:89-99
+    // template<class PointVec> agg::path_storage _to_path_flpxy(const PointVec& v)
+    // {
+    //     agg::path_storage path;
+    //
+    //     auto it = v.begin();
+    //     path.move_to(getPy(*it), getPx(*it));
+    //     while(++it != v.end()) path.line_to(getPy(*it), getPx(*it));
+    //     path.line_to(getPy(v.front()), getPx(v.front()));
+    //
+    //     return path;
+    // }
+    #[allow(non_snake_case)]
+    fn _to_path_flpxy(&self, v: &[Point]) -> PathStorage {
+        let mut path = PathStorage::new();
+
+        let mut it = v.iter();
+        let first = it.next().unwrap();
+        path.move_to(self.get_py(first), self.get_px(first));
+        for p in it {
+            path.line_to(self.get_py(p), self.get_px(p));
+        }
+        path.line_to(self.get_py(&v[0]), self.get_px(&v[0]));
+
+        path
+    }
+
+    // AGGRaster.hpp:101-112
+    // template<class PointVec> agg::path_storage to_path(const PointVec &v)
+    // {
+    //     auto path = m_trafo.flipXY ? _to_path_flpxy(v) : _to_path(v);
+    //
+    //     path.translate_all_paths(m_trafo.center_x * m_pxdim_scaled.w_mm,
+    //                              m_trafo.center_y * m_pxdim_scaled.h_mm);
+    //
+    //     if(m_trafo.mirror_x) flipx(path);
+    //     if(m_trafo.mirror_y) flipy(path);
+    //
+    //     return path;
+    // }
+    fn to_path(&self, v: &[Point]) -> PathStorage {
+        let mut path = if self.m_trafo.flip_xy {
+            self._to_path_flpxy(v)
+        } else {
+            self._to_path(v)
+        };
+
+        path.translate_all_paths(
+            self.m_trafo.center_x as f64 * self.m_pxdim_scaled.w_mm,
+            self.m_trafo.center_y as f64 * self.m_pxdim_scaled.h_mm,
+        );
+
+        if self.m_trafo.mirror_x {
+            self.flipx(&mut path);
+        }
+        if self.m_trafo.mirror_y {
+            self.flipy(&mut path);
+        }
+
+        path
+    }
+
+    // AGGRaster.hpp:114-122
+    // template<class P> void _draw(const P &poly)
+    // {
+    //     m_rasterizer.reset();
+    //
+    //     m_rasterizer.add_path(to_path(contour(poly)));
+    //     for(auto& h : holes(poly)) m_rasterizer.add_path(to_path(h));
+    //
+    //     agg::render_scanlines(m_rasterizer, m_scanlines, m_renderer);
+    // }
+    #[allow(non_snake_case)]
+    fn _draw(&mut self, poly: &ExPolygon) {
+        self.m_rasterizer.reset();
+
+        let mut path = self.to_path_polygon(contour(poly));
+        self.m_rasterizer.add_path(&mut path, 0);
+        for h in holes(poly) {
+            let mut hpath = self.to_path_polygon(h);
+            self.m_rasterizer.add_path(&mut hpath, 0);
+        }
+
+        // agg::render_scanlines(m_rasterizer, m_scanlines, m_renderer);
+        // (reconstruct the C++ member view chain m_rbuf -> m_pixrenderer ->
+        //  m_raw_renderer -> m_renderer over m_buf; see module docs)
+        let stride = (self.m_resolution.width_px * PixfmtGray8::NUM_COMPONENTS as usize) as i32;
+        let rbuf = RenderingBuffer::new(
+            &mut self.m_buf,
+            self.m_resolution.width_px as u32,
+            self.m_resolution.height_px as u32,
+            stride,
+        );
+        let pixrenderer = PixfmtGray8::new(rbuf);
+        let mut raw_renderer = RendererBase::new(pixrenderer);
+        let mut renderer = RendererScanlineAaSolid::new(&mut raw_renderer);
+        renderer.color(&self.m_renderer_color);
+        render_scanlines(&mut self.m_rasterizer, &mut self.m_scanlines, &mut renderer);
     }
 
     // AGGRaster.hpp:125-154
@@ -119,26 +271,34 @@ impl AGGRaster {
     //           const TColor &    foreground,
     //           const TColor &    background,
     //           GammaFn &&        gammafn)
-    //
-    // (The `GammaFn` parameter is omitted: AGGRaster.hpp:153
-    // `m_rasterizer.gamma(gammafn);` belongs to the blocked AGG kernel.)
-    pub fn new(
+    //     : m_resolution(res)
+    //     , m_pxdim_scaled(SCALING_FACTOR, SCALING_FACTOR)
+    //     , m_buf(res.pixels())
+    //     , m_rbuf(reinterpret_cast<TValue *>(m_buf.data()),
+    //              unsigned(res.width_px),
+    //              unsigned(res.height_px),
+    //              int(res.width_px *PixelRenderer::num_components))
+    //     , m_pixrenderer(m_rbuf)
+    //     , m_raw_renderer(m_pixrenderer)
+    //     , m_renderer(m_raw_renderer)
+    //     , m_trafo(trafo)
+    pub fn new<GammaFn: GammaFunction>(
         res: &Resolution,
         pd: &PixelDim,
         trafo: &Trafo,
-        foreground: u8,
-        background: u8,
+        foreground: &Gray8,
+        background: &Gray8,
+        gammafn: GammaFn,
     ) -> Self {
-        // AGGRaster.hpp:132  m_resolution(res)
-        let m_resolution = *res;
-        // AGGRaster.hpp:133  m_pxdim_scaled(SCALING_FACTOR, SCALING_FACTOR)
-        let mut m_pxdim_scaled = PixelDim::new(SCALING_FACTOR, SCALING_FACTOR);
-        // AGGRaster.hpp:134  m_buf(res.pixels())
-        let m_buf = vec![0u8; res.pixels()];
-        // AGGRaster.hpp:135-141  m_rbuf / m_pixrenderer / m_raw_renderer /
-        // m_renderer wire the AGG view chain over m_buf (blocked kernel state).
-        // AGGRaster.hpp:142  m_trafo(trafo)
-        let m_trafo = *trafo;
+        let mut this = Self {
+            m_resolution: *res,
+            m_pxdim_scaled: PixelDim::new(SCALING_FACTOR, SCALING_FACTOR),
+            m_buf: vec![0u8; res.pixels()],
+            m_renderer_color: Gray8::default(),
+            m_trafo: *trafo,
+            m_scanlines: ScanlineP8::new(),
+            m_rasterizer: RasterizerScanlineAa::new(),
+        };
 
         // AGGRaster.hpp:144-145
         // Visual Studio compiler gives warnings about possible division by zero.
@@ -146,22 +306,16 @@ impl AGGRaster {
         debug_assert!(pd.w_mm != 0. && pd.h_mm != 0.);
         // AGGRaster.hpp:146-149
         if pd.w_mm != 0. && pd.h_mm != 0. {
-            m_pxdim_scaled.w_mm /= pd.w_mm;
-            m_pxdim_scaled.h_mm /= pd.h_mm;
+            this.m_pxdim_scaled.w_mm /= pd.w_mm;
+            this.m_pxdim_scaled.h_mm /= pd.h_mm;
         }
-
-        let mut this = Self {
-            m_resolution,
-            m_pxdim_scaled,
-            m_buf,
-            m_trafo,
-            // AGGRaster.hpp:150  m_renderer.color(foreground);
-            m_foreground: foreground,
-        };
+        // AGGRaster.hpp:150  m_renderer.color(foreground);
+        this.m_renderer_color = *foreground;
         // AGGRaster.hpp:151  clear(background);
         this.clear(background);
 
-        // AGGRaster.hpp:153  m_rasterizer.gamma(gammafn);  (BLOCKED, see ctor docs)
+        // AGGRaster.hpp:153  m_rasterizer.gamma(gammafn);
+        this.m_rasterizer.gamma(&gammafn);
 
         this
     }
@@ -190,7 +344,9 @@ impl AGGRaster {
     }
 
     // AGGRaster.hpp:164  void draw(const ExPolygon &poly) override { _draw(poly); }
-    // BLOCKED: requires the AGG scanline rasterization kernel (see module docs).
+    pub fn draw(&mut self, poly: &ExPolygon) {
+        self._draw(poly);
+    }
 
     // AGGRaster.hpp:166-169
     // EncodedRaster encode(RasterEncoder encoder) const override
@@ -207,13 +363,37 @@ impl AGGRaster {
     }
 
     // AGGRaster.hpp:171  void clear(const TColor color) { m_raw_renderer.clear(color); }
-    //
-    // `agg::renderer_base::clear` fills every pixel of the attached buffer
-    // with `color` (one byte per pixel for gray8).
-    pub fn clear(&mut self, color: u8) {
-        for px in self.m_buf.iter_mut() {
-            *px = color;
-        }
+    pub fn clear(&mut self, color: &Gray8) {
+        // (reconstruct the m_rbuf -> m_pixrenderer -> m_raw_renderer view
+        //  chain over m_buf; see module docs)
+        let stride = (self.m_resolution.width_px * PixfmtGray8::NUM_COMPONENTS as usize) as i32;
+        let rbuf = RenderingBuffer::new(
+            &mut self.m_buf,
+            self.m_resolution.width_px as u32,
+            self.m_resolution.height_px as u32,
+            stride,
+        );
+        let pixrenderer = PixfmtGray8::new(rbuf);
+        let mut raw_renderer = RendererBase::new(pixrenderer);
+        raw_renderer.clear(color);
+    }
+}
+
+// AGGRaster.hpp:39  class AGGRaster: public RasterBase
+impl RasterBase for AGGRaster {
+    // AGGRaster.hpp:164
+    fn draw(&mut self, poly: &ExPolygon) {
+        AGGRaster::draw(self, poly);
+    }
+
+    // AGGRaster.hpp:156
+    fn trafo(&self) -> Trafo {
+        AGGRaster::trafo(self)
+    }
+
+    // AGGRaster.hpp:166-169
+    fn encode(&self, encoder: RasterEncoder) -> EncodedRaster {
+        AGGRaster::encode(self, encoder)
     }
 }
 
@@ -231,7 +411,6 @@ impl AGGRaster {
 //
 // AGGRaster.hpp:184  class RasterGrayscaleAA : public _RasterGrayscaleAA
 // (C++ public inheritance -> composition + explicit delegation in Rust.)
-#[derive(Debug, Clone)]
 pub struct RasterGrayscaleAA {
     base: AGGRaster,
 }
@@ -245,11 +424,15 @@ impl RasterGrayscaleAA {
     //                   GammaFn &&                    fn)
     //     : Base(res, pd, trafo, Colors<TColor>::White, Colors<TColor>::Black,
     //            std::forward<GammaFn>(fn))
-    //
-    // (`GammaFn` omitted — blocked, see module docs.)
-    pub fn new(res: &Resolution, pd: &PixelDim, trafo: &Trafo) -> Self {
+    // {}
+    pub fn new<GammaFn: GammaFunction>(
+        res: &Resolution,
+        pd: &PixelDim,
+        trafo: &Trafo,
+        gamma_fn: GammaFn,
+    ) -> Self {
         Self {
-            base: AGGRaster::new(res, pd, trafo, Colors::WHITE, Colors::BLACK),
+            base: AGGRaster::new(res, pd, trafo, &Colors::WHITE, &Colors::BLACK, gamma_fn),
         }
     }
 
@@ -268,10 +451,15 @@ impl RasterGrayscaleAA {
 
     // AGGRaster.hpp:207  void clear() { Base::clear(Colors<TColor>::Black); }
     pub fn clear(&mut self) {
-        self.base.clear(Colors::BLACK);
+        self.base.clear(&Colors::BLACK);
     }
 
     // --- Base class (public) interface, inherited in C++ -------------------
+
+    // AGGRaster.hpp:164 (inherited)
+    pub fn draw(&mut self, poly: &ExPolygon) {
+        self.base.draw(poly);
+    }
 
     // AGGRaster.hpp:156 (inherited)
     pub fn trafo(&self) -> Trafo {
@@ -294,6 +482,95 @@ impl RasterGrayscaleAA {
     }
 }
 
-// AGGRaster.hpp:210-218  class RasterGrayscaleAAGammaPower: public RasterGrayscaleAA
-// BLOCKED: its constructor only adds `agg::gamma_power(gamma)`, which feeds
-// the blocked AGG rasterizer kernel (see module docs).
+// (inherited RasterBase conformance, via _RasterGrayscaleAA -> AGGRaster)
+impl RasterBase for RasterGrayscaleAA {
+    fn draw(&mut self, poly: &ExPolygon) {
+        RasterGrayscaleAA::draw(self, poly);
+    }
+
+    fn trafo(&self) -> Trafo {
+        RasterGrayscaleAA::trafo(self)
+    }
+
+    fn encode(&self, encoder: RasterEncoder) -> EncodedRaster {
+        RasterGrayscaleAA::encode(self, encoder)
+    }
+}
+
+// AGGRaster.hpp:210-218
+// class RasterGrayscaleAAGammaPower: public RasterGrayscaleAA
+pub struct RasterGrayscaleAAGammaPower {
+    base: RasterGrayscaleAA,
+}
+
+impl RasterGrayscaleAAGammaPower {
+    // AGGRaster.hpp:212-217
+    // RasterGrayscaleAAGammaPower(const Resolution &res,
+    //                             const PixelDim &  pd,
+    //                             const RasterBase::Trafo &     trafo,
+    //                             double                        gamma = 1.)
+    //     : RasterGrayscaleAA(res, pd, trafo, agg::gamma_power(gamma))
+    // {}
+    pub fn new(res: &Resolution, pd: &PixelDim, trafo: &Trafo, gamma: f64) -> Self {
+        Self {
+            base: RasterGrayscaleAA::new(res, pd, trafo, GammaPower::new_with(gamma)),
+        }
+    }
+
+    /// C++ default argument `gamma = 1.`.
+    pub fn new_default_gamma(res: &Resolution, pd: &PixelDim, trafo: &Trafo) -> Self {
+        Self::new(res, pd, trafo, 1.)
+    }
+
+    // --- Inherited (public) interface ---------------------------------------
+
+    // AGGRaster.hpp:198-205 (inherited)
+    pub fn read_pixel(&self, col: usize, row: usize) -> u8 {
+        self.base.read_pixel(col, row)
+    }
+
+    // AGGRaster.hpp:207 (inherited)
+    pub fn clear(&mut self) {
+        self.base.clear();
+    }
+
+    // AGGRaster.hpp:164 (inherited)
+    pub fn draw(&mut self, poly: &ExPolygon) {
+        self.base.draw(poly);
+    }
+
+    // AGGRaster.hpp:156 (inherited)
+    pub fn trafo(&self) -> Trafo {
+        self.base.trafo()
+    }
+
+    // AGGRaster.hpp:157 (inherited)
+    pub fn resolution(&self) -> Resolution {
+        self.base.resolution()
+    }
+
+    // AGGRaster.hpp:158-162 (inherited)
+    pub fn pixel_dimensions(&self) -> PixelDim {
+        self.base.pixel_dimensions()
+    }
+
+    // AGGRaster.hpp:166-169 (inherited)
+    pub fn encode(&self, encoder: RasterEncoder) -> EncodedRaster {
+        self.base.encode(encoder)
+    }
+}
+
+// (inherited RasterBase conformance, via RasterGrayscaleAA)
+impl RasterBase for RasterGrayscaleAAGammaPower {
+    fn draw(&mut self, poly: &ExPolygon) {
+        RasterGrayscaleAAGammaPower::draw(self, poly);
+    }
+
+    fn trafo(&self) -> Trafo {
+        RasterGrayscaleAAGammaPower::trafo(self)
+    }
+
+    fn encode(&self, encoder: RasterEncoder) -> EncodedRaster {
+        RasterGrayscaleAAGammaPower::encode(self, encoder)
+    }
+}

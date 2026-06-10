@@ -16,9 +16,10 @@
 //! (`s_tdefl_png_num_probes[6] | TDEFL_WRITE_ZLIB_HEADER`), so the output is
 //! byte-identical to the C++ build. wasm-safe: no native deps.
 //!
-//! BLOCKED SYMBOL: `create_raster_grayscale_aa` (RasterBase.cpp:65-81) — see
-//! the note at the bottom of this file; it constructs the AGG-based rasterizer
-//! types from SLA/AGGRaster.hpp which are not yet ported.
+//! `create_raster_grayscale_aa` (RasterBase.cpp:65-81) constructs the
+//! AGG-based rasterizer types from `crate::sla::agg_raster`
+//! (SLA/AGGRaster.hpp) on top of the faithful AGG kernel port in
+//! `crate::sla::agg`.
 
 use std::io::Write;
 
@@ -437,22 +438,36 @@ impl PPMRasterEncoder {
 //     const PixelDim &  pxdim,
 //     double                        gamma,
 //     const RasterBase::Trafo &     tr)
-// {
-//     std::unique_ptr<RasterBase> rst;
-//
-//     if (gamma > 0)
-//         rst = std::make_unique<RasterGrayscaleAAGammaPower>(res, pxdim, tr, gamma);
-//     else if (std::abs(gamma - 1.) < 1e-6)
-//         rst = std::make_unique<RasterGrayscaleAA>(res, pxdim, tr, agg::gamma_none());
-//     else
-//         rst = std::make_unique<RasterGrayscaleAA>(res, pxdim, tr, agg::gamma_threshold(.5));
-//
-//     return rst;
-// }
-//
-// BLOCKED: not ported. The factory constructs `RasterGrayscaleAAGammaPower` /
-// `RasterGrayscaleAA` (SLA/AGGRaster.hpp) which wrap the vendored AGG C++
-// rasterizer (agg_rasterizer_scanline_aa, gamma LUTs, scanline renderers).
-// `crate::sla::agg_raster` is still an unported placeholder, so a faithful
-// implementation is impossible here without porting AGGRaster.hpp + the AGG
-// rasterization kernel first. Re-add this function when that lands.
+pub fn create_raster_grayscale_aa(
+    res: &Resolution,
+    pxdim: &PixelDim,
+    gamma: f64,
+    tr: &Trafo,
+) -> Box<dyn RasterBase> {
+    use crate::sla::agg::gamma_functions::{GammaNone, GammaThreshold};
+    use crate::sla::agg_raster::{RasterGrayscaleAA, RasterGrayscaleAAGammaPower};
+
+    // RasterBase.cpp:71  std::unique_ptr<RasterBase> rst;
+    let rst: Box<dyn RasterBase>;
+
+    // RasterBase.cpp:73-74
+    if gamma > 0. {
+        rst = Box::new(RasterGrayscaleAAGammaPower::new(res, pxdim, tr, gamma));
+    }
+    // RasterBase.cpp:75-76
+    else if (gamma - 1.).abs() < 1e-6 {
+        rst = Box::new(RasterGrayscaleAA::new(res, pxdim, tr, GammaNone));
+    }
+    // RasterBase.cpp:77-78
+    else {
+        rst = Box::new(RasterGrayscaleAA::new(
+            res,
+            pxdim,
+            tr,
+            GammaThreshold::new_with(0.5),
+        ));
+    }
+
+    // RasterBase.cpp:80  return rst;
+    rst
+}
