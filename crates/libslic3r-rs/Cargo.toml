@@ -89,3 +89,10 @@ name = "slicing_benchmarks"
 harness = false
 
 # [profile.release] and [profile.bench] hoisted to the workspace root Cargo.toml.
+
+# Parity-check profile: C++ golden gcode comes from a release build where assert() is
+# compiled out (NDEBUG); faithful ports keep those asserts as debug_assert!, so parity
+# slices must run with debug-assertions off to match C++ release semantics.
+[profile.parity]
+inherits = "dev"
+debug-assertions = false

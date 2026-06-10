@@ -145,11 +145,13 @@ impl Slicer {
 
         // Slicing.cpp:744
         print_z = min_z + first_layer_height;
-        // Slicing.cpp:745
+        // C++ slices every layer (incl. the first) at its mid-plane:
+        // generate_object_layers emits (0, first_layer_height) and new_layers
+        // sets slice_z = 0.5 * (lo + hi) (PrintObjectSlice.cpp:36).
         heights.push(LayerHeight {
             bottom_z: min_z,
             top_z: print_z,
-            slice_z: print_z,
+            slice_z: min_z + 0.5 * first_layer_height,
         });
 
         // Slicing.cpp:748

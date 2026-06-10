@@ -11,10 +11,12 @@ use crate::{Error, Result};
 // Core Constants
 // ---------------------------------------------------------------------------
 
-/// Scaling factor for coordinate precision
-/// libslic3r.h:42
-/// C++: constexpr double SCALING_FACTOR = 0.000001;
-pub const SCALING_FACTOR: f64 = 0.000001;
+/// Scaling factor for coordinate precision (1 mm = 100,000 scaled units)
+/// libslic3r.h:58
+/// C++: static constexpr double SCALING_FACTOR = 0.00001;
+/// NOTE: 0.000001 is the old PrusaSlicer value — BambuStudio uses 0.00001,
+/// matching the crate-wide convention (lib.rs SCALING_FACTOR = 100_000.0).
+pub const SCALING_FACTOR: f64 = 0.00001;
 
 /// Epsilon for floating point comparisons
 /// libslic3r.h:45

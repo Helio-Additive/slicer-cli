@@ -7,7 +7,12 @@ flow / constants / rounding / locations. wasm-safe (no system/dylib deps).
 
 ## Where things stand (committed @ branch `alex/libslic3r-parity-engine`)
 - **Ledger: 147 done / 100 partial / 4 deferred / 27 pending of 278 units.**
-- lib **and** bin build green; 3DBenchy slices to **filament 3817.65 mm** (golden 3858.97, ~0.99×), 240 layers, top=5.
+- lib **and** bin build green; 3DBenchy slices to **filament 3818.67 mm** (golden 3858.97, ~0.99×), 240 layers, top=5.
+- **2026-06-10 regression fixed:** the faithful TriangleMeshSlicer port (checkpoint 54792d7) exploded
+  gcode 13× because `src/libslic3r.rs` had `SCALING_FACTOR = 0.000001` (PrusaSlicer value; BambuStudio
+  libslic3r.h:58 is `0.00001`) → `scaled_f32` made all XY geometry 10× too large. Fixed the constant,
+  made `scaled_f32` a plain f32 division (C++ `scaled<float>`, Point.hpp:529 — no +0.5/floor), and fixed
+  layer-0 `slice_z` to mid-plane (PrintObjectSlice.cpp:36). Filament 570,107 → 3818.67.
 - The 27 pending are deliberately last: **19 SLA** files (resin; off the FFF/Benchy path),
   **5 big Format importers** (3mf/bbs_3mf 9455loc/AMF/objparser/STEP — file I/O, not slicing math),
   2 Interlocking, 1 Arachne header, 1 Algorithm.
@@ -38,8 +43,12 @@ It runs for hours; a fresh `Workflow({scriptPath})` call always resumes from the
    - module path / `pub use` visibility (e.g. `crate::geometry::geometry::is_approx`; `pub use … indexed_triangle_set`);
    - missing `#[derive(Copy)]` on trivial index handles.
    If unfixable after real effort: `git checkout -- <file>` and set that unit back to `pending` in the ledger.
-3. **Parity check (must not regress):**
-   `crates/libslic3r-rs/target/debug/slicer-cli slice -i examples/3DBenchy.stl --settings examples/out/resolved-config.json -o /tmp/rb.gcode` → check `; total filament length` ≈ **3817–3820** (golden 3858.97), 240 layers.
+3. **Parity check (must not regress):** build + run the **parity profile** binary (debug-assertions
+   off = C++ release semantics; the golden gcode comes from a release build where `assert()` is a noop,
+   and faithful `debug_assert!`s — e.g. the degenerate-slice-line assert at triangle_mesh_slicer.rs:294 —
+   legitimately fire on Benchy in the dev profile):
+   `devbox run cargo build --manifest-path crates/libslic3r-rs/Cargo.toml --profile parity --bin slicer-cli`
+   `crates/libslic3r-rs/target/parity/slicer-cli slice -i examples/3DBenchy.stl --settings examples/out/resolved-config.json -o /tmp/rb.gcode` → check `; total filament length` ≈ **3816–3820** (golden 3858.97), 240 layers, gcode lines ≈ 114k.
 4. Commit `crates/` with a `Systematic port: …` message, regenerate `PORT_LEDGER.md`.
 5. Re-fire the workflow until `pending == 0`.
 

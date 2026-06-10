@@ -1405,10 +1405,11 @@ fn slice_mesh_its(
     make_loops_layers(&mut lines, params, throw_on_cancel)
 }
 
-// `scaled<float>(p)` == coord_t(floor(p / SCALING_FACTOR + 0.5)) cast to f32.
-// SCALING_FACTOR = 1e-6. Here we keep f32 to match stl_vertex storage.
+// `scaled<float>(p)` == Tout(v / Tin(SCALING_FACTOR)) (Point.hpp:529): plain f32
+// division, NO floor/+0.5 rounding — rounding to coord_t happens later at the
+// i64 casts in slice_facet. SCALING_FACTOR = 1e-5 (libslic3r.h:58).
 fn scaled_f32(v: f32) -> f32 {
-    (v as f64 / crate::libslic3r::SCALING_FACTOR + 0.5).floor() as f32
+    v / (crate::libslic3r::SCALING_FACTOR as f32)
 }
 
 // TriangleMeshSlicer.cpp:1941-2001 — single-plane slice_mesh.
