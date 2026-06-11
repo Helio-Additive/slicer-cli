@@ -83,6 +83,14 @@ pub struct PerimeterConfig {
     /// Gap fill threshold
     pub gap_fill_threshold: f64,
 
+    /// Sparse infill density as a fraction (0.0–1.0).
+    /// C++ PerimeterGenerator reads `this->config->sparse_infill_density.value`
+    /// (a percent) only for the `== 0` comparison at PerimeterGenerator.cpp:1185;
+    /// the Rust PrintRegionConfig stores the same option (JSON key
+    /// `sparse_infill_density`) as the fraction `fill_density`, and the zero
+    /// check is equivalent for percent vs fraction.
+    pub sparse_infill_density: f64,
+
     /// Detect thin walls
     pub detect_thin_wall: bool,
 
@@ -153,6 +161,8 @@ impl Default for PerimeterConfig {
             smaller_ext_perimeter_flow: Flow::new(0.0, 0.0, 0.0).unwrap(),
             join_type: OffsetJoinType::Miter,
             gap_fill_threshold: 0.0,
+            // PrintConfig.cpp: sparse_infill_density default 20% (fraction 0.2).
+            sparse_infill_density: 0.2,
             detect_thin_wall: false,
             surface_simplify_resolution: 0.01,
             arc_fitting_enabled: false,
@@ -658,14 +668,13 @@ impl PerimeterGenerator {
 
             /// PerimeterGenerator.cpp:1185-1189
             /// C++: if (i == loop_number && (! has_gap_fill || this->config->sparse_infill_density.value == 0)) {
+            /// C++:     // The last run of this loop is executed to collect gaps for gap fill.
+            /// C++:     // As the gap fill is either disabled or not
             /// C++:     break;
             /// C++: }
-            // DIVERGENCE (blocked): the `sparse_infill_density == 0` disjunct is omitted because
-            // sparse_infill_density is not threaded into this flat PerimeterConfig (it lives in
-            // PrintRegionConfig). When density is 0 and gap fill is enabled, C++ still breaks here
-            // but the Rust path runs one extra (gap-collection-only) iteration. Re-thread
-            // sparse_infill_density to restore fidelity.
-            if i == loop_number && !has_gap_fill {
+            // sparse_infill_density is threaded from PrintRegionConfig::fill_density (a
+            // fraction; the == 0 check is equivalent to C++'s percent == 0).
+            if i == loop_number && (!has_gap_fill || self.config.sparse_infill_density == 0.0) {
                 break;
             }
 

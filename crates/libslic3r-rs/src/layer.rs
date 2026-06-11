@@ -449,6 +449,10 @@ impl LayerRegion {
             } else {
                 0.0
             },
+            // PerimeterGenerator.cpp:1185 — this->config->sparse_infill_density.value.
+            // PrintRegionConfig stores the percent option as the fraction fill_density;
+            // the consumer only performs the == 0 comparison, which is equivalent.
+            sparse_infill_density: config.fill_density,
             detect_thin_wall: config.thin_walls,
             // PerimeterGenerator.cpp:911 m_scaled_resolution = scaled<double>(print_config.resolution).
             // This is fed to ExPolygon::simplify_p() which, in this crate, scales the
