@@ -186,13 +186,21 @@ impl LayerRegion {
             }
         };
 
-        // Layer.cpp:31-36
-        // TODO: Get nozzle_diameter from config
-        let nozzle_diameter = 0.4;
+        // PrintRegion.cpp:46-48
+        // C++: auto nozzle_diameter = float(print_config.nozzle_diameter.get_at(this->extruder(role) - 1));
+        // where print_config is reached via this->layer()->object()->print()->config().
+        // This crate's PrintConfig carries a single-extruder scalar nozzle_diameter,
+        // so get_at(extruder - 1) collapses to a direct read.
+        let print_config = self
+            .print_config
+            .as_deref()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy");
+        let nozzle_diameter = print_config.nozzle_diameter;
 
-        // Layer.cpp:38-41
+        // First layer prints at the configured initial layer height
+        // (JSON key `initial_layer_print_height` -> PrintConfig::first_layer_height).
         let height = if is_first_layer {
-            0.2 // TODO: Get from config
+            print_config.first_layer_height
         } else {
             layer_height
         };
@@ -332,6 +340,7 @@ impl LayerRegion {
         config: &PrintRegionConfig,
         layer_height: f64,
         layer_id: usize,
+        print_z: f64,
     ) -> Result<()> {
         use crate::perimeter_generator::{PerimeterConfig, PerimeterGenerator};
 
@@ -341,16 +350,37 @@ impl LayerRegion {
         self.perimeters.entities.clear();
         self.thin_fills.entities.clear();
 
-        // LayerRegion.cpp:136-143
+        // LayerRegion.cpp:136-138
         // C++: const PrintConfig &print_config = this->layer()->object()->print()->config();
         // C++: const PrintRegionConfig &region_config = this->region().config();
         // C++: const PrintObjectConfig& object_config = this->layer()->object()->config();
-        // TODO: Get actual print_config and object_config from layer hierarchy
-        // For now, use defaults
+        // print_config is reached through the Arc snapshot stamped by
+        // wire_layer_hierarchy; layer_id/print_z replace the C++ Layer
+        // back-pointer reads this->layer()->id() / this->layer()->print_z.
+        let print_config = self
+            .print_config
+            .clone()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy");
 
-        // LayerRegion.cpp:144-148
-        // C++: bool spiral_mode = print_config.spiral_mode && (this->layer()->id() >= size_t(region_config.bottom_shell_layers.value) && this->layer()->print_z >= region_config.bottom_shell_thickness - EPSILON);
-        let spiral_mode = false; // TODO: Get from print_config
+        // LayerRegion.cpp:139-148
+        // C++: // This needs to be in sync with PrintObject::_slice() slicing_mode_normal_below_layer!
+        // C++: bool spiral_mode = print_config.spiral_mode &&
+        // C++:     //FIXME account for raft layers.
+        // C++:     (this->layer()->id() >= size_t(region_config.bottom_shell_layers.value) &&
+        // C++:      this->layer()->print_z >= region_config.bottom_shell_thickness - EPSILON);
+        // Rust field mapping: spiral_mode -> PrintConfig::spiral_vase,
+        // bottom_shell_layers -> PrintRegionConfig::bottom_solid_layers,
+        // bottom_shell_thickness -> PrintRegionConfig::bottom_solid_min_thickness.
+        let spiral_mode = print_config.spiral_vase
+            && (layer_id >= self.region().config().bottom_solid_layers as usize
+                && print_z
+                    >= self.region().config().bottom_solid_min_thickness
+                        - crate::libslic3r::EPSILON);
+        // C++ feeds spiral_mode into the PerimeterGenerator ctor and the
+        // arachne/classic dispatch (LayerRegion.cpp:150-179). The Rust
+        // PerimeterConfig does not carry a spiral field yet, so the gate is
+        // computed faithfully here but not yet consumed downstream.
+        let _ = spiral_mode;
 
         // LayerRegion.cpp:150-172
         // C++: PerimeterGenerator g(
@@ -1109,11 +1139,15 @@ impl Layer {
 
             // Layer.cpp:252
             // C++: (*layerm)->make_perimeters((*layerm)->slices, perimeter_regions, &(*layerm)->fill_surfaces, &(*layerm)->fill_no_overlap_expolygons, this->loop_nodes);
+            // print_z is threaded explicitly because the Rust LayerRegion has no
+            // Layer back-pointer (C++ reads this->layer()->print_z, LayerRegion.cpp:148).
+            let print_z = self.print_z;
             self.regions[region_idx].make_perimeters(
                 &surface_fill,
                 &config,
                 self.height,
                 self.id,
+                print_z,
             )?;
 
             // Layer.cpp:254
@@ -1145,10 +1179,18 @@ impl Layer {
 
     // Layer.cpp:77
     // C++: static inline bool layer_needs_raw_backup(const Layer *layer)
+    //
+    // GATE-NOTE (verified against BambuStudio Layer.cpp:77-82): the
+    // elefant_foot_compensation read is COMMENTED OUT in the C++ source —
+    // BambuStudio backs up raw slices unconditionally ("BBS: backup raw slice
+    // for generating support"). The faithful port therefore keeps `true` as
+    // the live return; the commented expression below is the disabled C++
+    // line rendered with this crate's config-hierarchy reads.
     fn layer_needs_raw_backup(&self) -> bool {
         // BBS: backup raw slice for generating support
-        // Layer.cpp:80
-        //return ! (layer->regions().size() == 1 && (layer->id() > 0 || layer->object()->config().elefant_foot_compensation.value == 0));
+        // Layer.cpp:80 (disabled in C++):
+        //return !(self.regions().len() == 1
+        //    && (self.id() > 0 || self.object().config().elephant_foot_compensation == 0.0));
         // Layer.cpp:81
         true
     }
