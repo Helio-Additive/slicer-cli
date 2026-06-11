@@ -1989,6 +1989,22 @@ pub fn parse_u32(s: &str) -> Option<u32> {
     s.parse::<u32>().ok()
 }
 
+/// Parse a C++ ConfigOptionFloatOrPercent string ("10" -> 10 mm, "10%" -> 10 percent).
+pub fn parse_float_or_percent(s: &str) -> Option<crate::config::FloatOrPercent> {
+    let trimmed = s.trim();
+    if let Some(stripped) = trimmed.strip_suffix('%') {
+        stripped
+            .parse::<f64>()
+            .ok()
+            .map(|v| crate::config::FloatOrPercent::with(v, true))
+    } else {
+        trimmed
+            .parse::<f64>()
+            .ok()
+            .map(|v| crate::config::FloatOrPercent::with(v, false))
+    }
+}
+
 impl PrintConfig {
     /// Apply a key-value pair from BambuStudio project_settings JSON.
     /// Returns true if the key was recognized and applied.

@@ -133,7 +133,7 @@ pub enum ForwardCompatibilitySubstitutionRule {
 // ===========================================================================
 
 // Config.hpp:30-43  struct FloatOrPercent
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct FloatOrPercent {
     // Config.hpp:32  double value = 0;
     pub value: f64,

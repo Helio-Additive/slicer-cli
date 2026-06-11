@@ -978,6 +978,17 @@ fn create_default_region_config(perimeters: u32, infill_density: f64) -> PrintRe
         seam_angle_cost: 1.0,
         seam_travel_cost: 1.0,
 
+        // Scarf Seam (seam slope) — C++ defaults (PrintConfig.cpp:4666-4754)
+        override_filament_scarf_seam_setting: false,
+        seam_slope_type: slicer::print_config::ScarfSeamType::None,
+        seam_slope_conditional: true,
+        seam_slope_start_height: slicer::config::FloatOrPercent::with(10.0, true),
+        seam_slope_gap: slicer::config::FloatOrPercent::with(0.0, false),
+        seam_slope_entire_loop: false,
+        seam_slope_min_length: 10.0,
+        seam_slope_steps: 10,
+        seam_slope_inner_walls: true,
+
         // Ironing
         ironing: false,
         ironing_type: slicer::region_config::IroningType::TopSurfaces,

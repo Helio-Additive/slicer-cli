@@ -1048,10 +1048,7 @@ impl Layer {
     //   detect_thin_wall     -> thin_walls
     //   infill_wall_overlap  -> infill_overlap
     //   opt_serialize("inner_wall_line_width"/"outer_wall_line_width") -> direct float compare
-    // BLOCKED comparisons (fields not yet in the Rust PrintRegionConfig):
-    //   override_filament_scarf_seam_setting, seam_slope_type, seam_slope_start_height,
-    //   seam_slope_gap, seam_slope_min_length, seam_slope_conditional, seam_slope_entire_loop,
-    //   seam_slope_steps, seam_slope_inner_walls (Layer.cpp:186-195)
+    //   override_filament_scarf_seam_setting / seam_slope_* keep their C++ names
     pub fn has_compatible_layer_regions(
         &self,
         config: &PrintRegionConfig,
@@ -1081,7 +1078,24 @@ impl Layer {
             && config.thin_walls == other_config.thin_walls
             // Layer.cpp:186
             && config.infill_overlap == other_config.infill_overlap
-        // Layer.cpp:187-195: scarf/seam-slope comparisons blocked (see note above)
+            // Layer.cpp:187
+            && config.override_filament_scarf_seam_setting == other_config.override_filament_scarf_seam_setting
+            // Layer.cpp:188
+            && config.seam_slope_type == other_config.seam_slope_type
+            // Layer.cpp:189
+            && config.seam_slope_start_height == other_config.seam_slope_start_height
+            // Layer.cpp:190
+            && config.seam_slope_gap == other_config.seam_slope_gap
+            // Layer.cpp:191
+            && config.seam_slope_min_length == other_config.seam_slope_min_length
+            // Layer.cpp:192
+            && config.seam_slope_conditional == other_config.seam_slope_conditional
+            // Layer.cpp:193
+            && config.seam_slope_entire_loop == other_config.seam_slope_entire_loop
+            // Layer.cpp:194
+            && config.seam_slope_steps == other_config.seam_slope_steps
+            // Layer.cpp:195
+            && config.seam_slope_inner_walls == other_config.seam_slope_inner_walls
     }
 
     /// Generate perimeters for all regions

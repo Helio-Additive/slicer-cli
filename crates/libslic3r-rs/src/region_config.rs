@@ -3,8 +3,9 @@
 //! This module provides the PrintRegionConfig type for controlling
 //! region-specific print settings, mirroring BambuStudio's PrintRegionConfig.
 
+use crate::config::FloatOrPercent;
 use crate::perimeter_generator::WallGeneratorMode;
-use crate::print_config::{InfillPattern, SeamPosition, WallSequence};
+use crate::print_config::{InfillPattern, ScarfSeamType, SeamPosition, WallSequence};
 use crate::CoordF;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -176,6 +177,43 @@ pub struct PrintRegionConfig {
     /// Seam travel cost (for seam placement algorithm)
     /// PrintConfig.hpp:1000
     pub seam_travel_cost: CoordF,
+
+    // === Scarf Seam (seam slope) ===
+    /// Override filament scarf seam setting (so a modifier can control it).
+    /// PrintConfig.hpp:1127 ((ConfigOptionBool, override_filament_scarf_seam_setting))
+    pub override_filament_scarf_seam_setting: bool,
+
+    /// Scarf seam type (C++ SeamScarfType: none/external/all).
+    /// PrintConfig.hpp:1128 ((ConfigOptionEnum<SeamScarfType>, seam_slope_type))
+    pub seam_slope_type: ScarfSeamType,
+
+    /// Apply scarf joints only to smooth perimeters (conditional scarf).
+    /// PrintConfig.hpp:1129 ((ConfigOptionBool, seam_slope_conditional))
+    pub seam_slope_conditional: bool,
+
+    /// Scarf start height (mm or % of layer height; ratio_over = "layer_height").
+    /// PrintConfig.hpp:1130 ((ConfigOptionFloatOrPercent, seam_slope_start_height))
+    pub seam_slope_start_height: FloatOrPercent,
+
+    /// Scarf slope gap (mm or % of nozzle diameter; ratio_over = "nozzle_diameter").
+    /// PrintConfig.hpp:1131 ((ConfigOptionFloatOrPercent, seam_slope_gap))
+    pub seam_slope_gap: FloatOrPercent,
+
+    /// The scarf extends to the entire length of the wall.
+    /// PrintConfig.hpp:1132 ((ConfigOptionBool, seam_slope_entire_loop))
+    pub seam_slope_entire_loop: bool,
+
+    /// Length of the scarf (mm); zero disables the scarf.
+    /// PrintConfig.hpp:1133 ((ConfigOptionFloat, seam_slope_min_length))
+    pub seam_slope_min_length: CoordF,
+
+    /// Minimum number of segments of each scarf.
+    /// PrintConfig.hpp:1134 ((ConfigOptionInt, seam_slope_steps))
+    pub seam_slope_steps: i32,
+
+    /// Use scarf joint for inner walls as well.
+    /// PrintConfig.hpp:1135 ((ConfigOptionBool, seam_slope_inner_walls))
+    pub seam_slope_inner_walls: bool,
 
     // === Ironing ===
     /// Enable ironing (smoothing top surfaces)
@@ -420,7 +458,9 @@ impl PrintRegionConfig {
     /// Apply a key-value pair from BambuStudio project_settings JSON.
     /// Returns true if the key was recognized and applied.
     pub fn set_deserialize(&mut self, key: &str, value: &str) -> bool {
-        use crate::print_config::{parse_bool, parse_f64, parse_pct, parse_u32};
+        use crate::print_config::{
+            parse_bool, parse_f64, parse_float_or_percent, parse_pct, parse_u32,
+        };
 
         match key {
             // === Perimeters ===
@@ -666,6 +706,60 @@ impl PrintRegionConfig {
                 true
             }
 
+            // === Scarf Seam (seam slope) ===
+            "override_filament_scarf_seam_setting" => {
+                if let Some(v) = parse_bool(value) {
+                    self.override_filament_scarf_seam_setting = v;
+                }
+                true
+            }
+            "seam_slope_type" => {
+                self.seam_slope_type = ScarfSeamType::from_str_bambu(value);
+                true
+            }
+            "seam_slope_conditional" => {
+                if let Some(v) = parse_bool(value) {
+                    self.seam_slope_conditional = v;
+                }
+                true
+            }
+            "seam_slope_start_height" => {
+                if let Some(v) = parse_float_or_percent(value) {
+                    self.seam_slope_start_height = v;
+                }
+                true
+            }
+            "seam_slope_gap" => {
+                if let Some(v) = parse_float_or_percent(value) {
+                    self.seam_slope_gap = v;
+                }
+                true
+            }
+            "seam_slope_entire_loop" => {
+                if let Some(v) = parse_bool(value) {
+                    self.seam_slope_entire_loop = v;
+                }
+                true
+            }
+            "seam_slope_min_length" => {
+                if let Some(v) = parse_f64(value) {
+                    self.seam_slope_min_length = v;
+                }
+                true
+            }
+            "seam_slope_steps" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.seam_slope_steps = v;
+                }
+                true
+            }
+            "seam_slope_inner_walls" => {
+                if let Some(v) = parse_bool(value) {
+                    self.seam_slope_inner_walls = v;
+                }
+                true
+            }
+
             // === Ironing ===
             "ironing_type" => {
                 self.ironing = value != "no ironing" && !value.is_empty();
@@ -802,6 +896,26 @@ impl Default for PrintRegionConfig {
             seam_position: SeamPosition::Aligned,
             seam_angle_cost: 1.0,
             seam_travel_cost: 1.0,
+
+            // Scarf Seam (seam slope)
+            // C++ default: PrintConfig.cpp:4710 (ConfigOptionBool(false))
+            override_filament_scarf_seam_setting: false,
+            // C++ default: PrintConfig.cpp:4725 (SeamScarfType::None)
+            seam_slope_type: ScarfSeamType::None,
+            // C++ default: PrintConfig.cpp:4671 (ConfigOptionBool(true))
+            seam_slope_conditional: true,
+            // C++ default: PrintConfig.cpp:4734 (ConfigOptionFloatOrPercent{10, true})
+            seam_slope_start_height: FloatOrPercent::with(10.0, true),
+            // C++ default: PrintConfig.cpp:4744 (ConfigOptionFloatOrPercent{0, 0})
+            seam_slope_gap: FloatOrPercent::with(0.0, false),
+            // C++ default: PrintConfig.cpp:4688 (ConfigOptionBool(false))
+            seam_slope_entire_loop: false,
+            // C++ default: PrintConfig.cpp:4753 (ConfigOptionFloat{10})
+            seam_slope_min_length: 10.0,
+            // C++ default: PrintConfig.cpp:4696 (ConfigOptionInt(10))
+            seam_slope_steps: 10,
+            // C++ default: PrintConfig.cpp:4703 (ConfigOptionBool(true))
+            seam_slope_inner_walls: true,
 
             // Ironing
             ironing: false,
