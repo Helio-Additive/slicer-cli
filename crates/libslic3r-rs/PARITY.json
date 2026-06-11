@@ -11378,5 +11378,33 @@
   },
   "generatedBy": "libslic3r-parity workflow MAP phase",
   "refRoot": "libslic3r/bambustudio/references/BambuStudio/src/libslic3r",
-  "crateRoot": "crates/libslic3r-rs"
+  "crateRoot": "crates/libslic3r-rs",
+  "configThreading": {
+    "status": "wired",
+    "date": "2026-06-12",
+    "canonicalMapping": {
+      "cpp": "this->layer()->object()->print()->config()",
+      "rust": "layer.object().print().config()",
+      "regionCpp": "layerm->region().config()",
+      "regionRust": "layer_region.region().config()"
+    },
+    "design": "Arc-distributed config snapshots over the downward ownership tree; PrintRef/ObjectRef zero-cost views (print_object.rs); Arcs stamped at sync points (Print::add_object, Print::process, wire_config_hierarchy/wire_layer_hierarchy); INVARIANT: replace Arcs wholesale, never Arc::make_mut/get_mut",
+    "clearedDivergences": [
+      "region_configs (&[PrintRegionConfig] param threading) — 0 hits crate-wide",
+      "flow_with_config shim — 0 hits crate-wide"
+    ],
+    "remaining": [
+      "layer.rs has_compatible_layer_regions: seam_slope_* fields missing from PrintRegionConfig (Layer.cpp:186-195)",
+      "fill/lightning + fill_adaptive + fill_floating_concentric + fill_concentric BLOCKED markers (missing deps, not threading)",
+      "110 partial ledger units now unblocked -> retry worklist (Benchy-path-first)"
+    ],
+    "gateRecord": {
+      "builds": "lib/bin/parity exit 0",
+      "benchy": "byte-identical to baseline",
+      "totalFilamentMm": 3818.67,
+      "layers": 240,
+      "gcodeLines": 114210,
+      "cargoTest": "91 pre-existing lib-test compile errors (stale test imports)"
+    }
+  }
 }

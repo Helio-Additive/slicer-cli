@@ -14,9 +14,9 @@ flow / constants / rounding / locations. wasm-safe (no system/dylib deps).
   made `scaled_f32` a plain f32 division (C++ `scaled<float>`, Point.hpp:529 — no +0.5/floor), and fixed
   layer-0 `slice_z` to mid-plane (PrintObjectSlice.cpp:36). Filament 570,107 → 3818.67.
 - **`partial` (110)** = faithfully ported except symbols blocked on the **config-hierarchy
-  threading** (Print→PrintObject→Layer→PrintRegion) not yet wired, a native lib
-  (OpenVDB/CGAL/OCCT/boost-Voronoi), or a not-yet-ported dep. ~544 `BLOCKED` markers across 98 files.
-  Config threading is the active track (see below); a map+design workflow output drives it.
+  threading** (Print→PrintObject→Layer→PrintRegion) — **now wired (2026-06-12, see below)** —
+  a native lib (OpenVDB/CGAL/OCCT/boost-Voronoi), or a not-yet-ported dep. BLOCKED markers
+  remain in ~75 files; the threading-blocked subset is the retry worklist (active track).
 
 ## Source of truth + dashboard
 - `crates/libslic3r-rs/PORT_LEDGER.json` — array of units `{cpp,hpp,rust,area,loc,status}`.
@@ -56,8 +56,20 @@ It runs for hours; a fresh `Workflow({scriptPath})` call always resumes from the
 - coord_t→i64, coordf_t→f64. Reuse existing crate primitives (grep before adding). No stubs/fakes — block honestly as `partial`.
 - 3DBenchy parity is currently a near-match by *volume* but **not byte-identical**; remaining gap is feature distribution (Top surface 5 vs 142, Bridge/Floating-shell missing), all traced to the config-threading blocker + an unsolved `top_fills` coverage issue. See `project_benchy_parity_gap` memory and `PROGRESS.md`.
 
-## Current track (pending hit 0 on 2026-06-11)
-1. **Config-hierarchy threading** (ACTIVE) — wire PrintConfig/PrintObjectConfig/PrintRegionConfig refs through Print→PrintObject→Layer→LayerRegion so the 110 `partial` units' blocked symbols can be completed. Highest leverage for parity. A `config-threading-map` workflow (3 readers → design → adversarial critique) produces the ownership decision, build-gated step list, and Benchy-path-first retry worklist.
-2. Re-attempt all `partial` units (now unblocked) → `done`.
+## Current track (config threading wired 2026-06-12)
+1. **Config-hierarchy threading** (DONE — steps 1–8 committed 2026-06-12) — Arc-distributed
+   config snapshots wired through Print→PrintObject→Layer→LayerRegion. Canonical mapping:
+   C++ `this->layer()->object()->print()->config()` == Rust `layer.object().print().config()`;
+   `layerm->region().config()` == `layer_region.region().config()` (view structs
+   `PrintRef<'_>`/`ObjectRef<'_>` in `print_object.rs`). `region_configs` param threading and
+   the `flow_with_config` shim are gone crate-wide (grep-verified). INVARIANT: replace config
+   Arcs wholesale at sync points (`Print::add_object`, `Print::process`,
+   `wire_config_hierarchy`/`wire_layer_hierarchy`); never `Arc::make_mut`/`get_mut`.
+   Full record: PARITY.md "Config-hierarchy threading — WIRED" + PARITY.json `configThreading`.
+   Gate held: Benchy byte-identical, filament 3818.67 mm.
+2. **Retry worklist (NEXT)** — re-attempt the 110 `partial` units (now unblocked on threading),
+   Benchy-path-first, → `done`. Note: some `partial`s remain blocked on non-threading deps
+   (Z-clipper, octree, missing `PrintRegionConfig` seam_slope_* fields) — see PARITY.md
+   remaining-items list.
 3. `top_fills` coverage fix (gated behind env `TOP_FILLS`) + faithful `discover_vertical_shells` (gated `VSHELL_FAITHFUL`) — see memory.
 4. Native-lib-blocked symbols (OpenVDB/CGAL/OCCT/boost-Voronoi) — vendored minimal Rust replacements, only the functions actually used.

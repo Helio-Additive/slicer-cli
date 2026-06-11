@@ -385,3 +385,61 @@ Integration tests (`tests/integration-tests.test.ts`) require an EXACT sha256 + 
 Per-feature over-segmentation (rust vs ref): Gap infill 42 007 vs 6 561 (**+35 446, dominant**), Internal solid 26 580 vs 6 248, Inner wall 23 205 vs 8 126, Outer wall 32 013 vs 24 351. Missing: Bridge 0 vs 1 275, Floating vertical shell 0 vs 2 607. Under: Top surface 451 vs 2 489. **Arc-fitting is effectively not working on curves** (497 vs 11 923) — the cube's near-match was luck (few curves).
 
 The cube remains a fast proxy for shared fixes, but convergence is now gated on the **Benchy** diff → SHA. Ranked benchy targets: (1) arc-fitting on curved walls (497→11 923 — also collapses wall over-segmentation), (2) gap-infill over-segmentation (+35 446), (3) internal-solid over-seg, (4) bridge + floating-shell (need CGAL-free ports), (5) per-value E/coord/format tail.
+
+---
+
+## Config-hierarchy threading — WIRED (2026-06-12, steps 1–8)
+
+The Print→PrintObject→Layer→LayerRegion config hierarchy is now wired with
+Arc-distributed config snapshots over the existing downward ownership tree.
+**This is the canonical C++ mapping going forward:**
+
+| C++ accessor chain | Rust equivalent |
+|---|---|
+| `this->layer()->object()->print()->config().first_layer_height` | `layer.object().print().config().first_layer_height` |
+| `this->object()->config()` | `layer.object().config()` |
+| `layerm->region().config().wall_loops` | `layer_region.region().config().wall_loops` |
+
+Mechanics (do not relitigate): `Print::print_regions` is `Vec<Arc<PrintRegion>>`
+shared (same Arcs) into `PrintObjectRegions::all_regions`; `PrintObject` holds
+`print_config: Arc<PrintConfig>`; `Layer` holds `object_config` + `print_config`
+Arcs; `LayerRegion` holds `region: Arc<PrintRegion>` + both config Arcs.
+Zero-cost view structs `PrintRef<'_>`/`ObjectRef<'_>` (`print_object.rs:149/169`)
+preserve the C++ call shape. Arcs are stamped at sync points
+(`Print::add_object`, top of `Print::process`, `wire_config_hierarchy` /
+`wire_layer_hierarchy` at slice/step entries) — faithful because C++ configs
+only mutate inside `Print::apply` and any diff invalidates `posSlice`.
+**INVARIANT:** always replace Arcs wholesale (clear + `Arc::new`), never
+`Arc::make_mut`/`get_mut` — forking the share silently breaks identity.
+
+**Param-threading divergences CLEARED (verified by grep, 2026-06-12):**
+- `&[PrintRegionConfig]` parameter threading (`region_configs`) — **0 hits crate-wide**
+  (was threaded through the perimeter/fill/shell paths in `print_object.rs`,
+  `layer.rs`, `fill/`). Migrated in steps 5–6; faithful C++ signatures restored
+  in step 7.
+- `flow_with_config` shim — **0 hits crate-wide**; `Flow` construction now reads
+  the wired hierarchy (step 7 flow core).
+- Remaining `unwrap_or_default` in `print_object.rs` (3) / `layer.rs` (1) are
+  collection-empty fallbacks (`shared_regions` absent → empty vec; surface vec
+  round-trip), **not** config-default divergences.
+
+**Remaining items (not threading-blocked anymore):**
+- `layer.rs:~1047` `has_compatible_layer_regions`: seam-slope comparison fields
+  (`seam_slope_type`, `seam_slope_*`, Layer.cpp:186-195) still missing from the
+  Rust `PrintRegionConfig` — config-struct field gap, not a threading gap.
+- `fill/lightning/generator.rs`, `fill/fill_adaptive.rs`,
+  `fill/fill_floating_concentric.rs`, `fill/fill_concentric.rs`,
+  `fill/fill_lightning.rs`, `fill/fill.rs` BLOCKED markers — missing deps
+  (Z-clipper `ZFillFunction`, `union_pt_chained_outside_in`, octree/SVG infra),
+  unrelated to config threading.
+- ~75 files crate-wide still carry BLOCKED markers; the 110 `partial`
+  ledger units are now unblocked on threading and form the **retry worklist**
+  (Benchy-path-first).
+
+**Step-8 gate record (2026-06-12):** lib/bin/parity builds exit 0; Benchy slice
+byte-identical to baseline (`cmp` clean); `; total filament length [mm] : 3818.67`
+(unchanged); 240 layers, 114 210 gcode lines. `cargo test` lib-test target has
+**91 pre-existing compile errors** (stale test imports: `slicer::mesh`,
+`slicer::pipeline`, `slicer::slice`, plus test-only imports of the
+step-7-deleted shadow types `slicer::layer::{PrintObject,PrintRegion}`) — parity
+is validated via build + reslice + cmp, not the test harness.
