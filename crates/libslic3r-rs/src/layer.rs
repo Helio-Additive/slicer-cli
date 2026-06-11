@@ -434,8 +434,8 @@ impl LayerRegion {
             // PerimeterGenerator.cpp:911 m_scaled_resolution = scaled<double>(print_config.resolution).
             // This is fed to ExPolygon::simplify_p() which, in this crate, scales the
             // tolerance internally (geometry::douglas_peucker), so it expects the value in
-            // **mm**. resolution default in the resolved config is 0.012mm.
-            surface_simplify_resolution: 0.012,
+            // **mm**. Read from the print config (C++: print_config->resolution).
+            surface_simplify_resolution: print_config.resolution,
             // PerimeterGenerator.cpp:914 uses print_config->enable_arc_fitting to pick the
             // surface simplify resolution factor (0.2x when arc fitting + no fuzzy skin).
             // Mirrors PrintConfig default enable_arc_fitting = true / resolved config "1".
@@ -1265,7 +1265,11 @@ impl Layer {
         // C++: const Slic3r::BoundingBox bbox = this->object()->bounding_box();
         //      const auto resolution = this->object()->print()->config().resolution.value;
         let _bbox = crate::geometry::BoundingBox::empty(); // TODO: get from object
-        let _resolution = 0.0125; // TODO: get from print config
+        // Fill.cpp:600
+        // C++: const auto resolution = this->object()->print()->config().resolution.value;
+        // Still underscore-bound: the downstream consumer (params.resolution,
+        // Fill.cpp:705, used for path simplification) is not ported yet.
+        let _resolution = self.object().print().config().resolution;
 
         // Fill.cpp:605-750
         // C++: for (SurfaceFill &surface_fill : surface_fills)
