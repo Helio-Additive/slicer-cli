@@ -126,8 +126,10 @@ pub struct Print {
     objects: Vec<PrintObject>,
 
     /// Print regions (shared material/config groups)
-    /// Print.hpp:860
-    print_regions: Vec<PrintRegion>,
+    /// Print.hpp:860 `PrintRegionPtrs m_print_regions;`
+    /// In C++ these are pointers to the same PrintRegion objects owned by
+    /// `PrintObjectRegions::all_regions`; here the identity is shared via Arc.
+    print_regions: Vec<Arc<PrintRegion>>,
 
     /// Model data structure
     /// Print.hpp:861
@@ -192,10 +194,13 @@ impl Print {
         object.set_canceled(self.canceled.clone());
 
         // Initialize with default region if none set
+        // The Arc itself is cloned (NOT the PrintRegion), so Print::print_regions
+        // and PrintObjectRegions::all_regions share the same PrintRegion identity,
+        // matching C++ where m_print_regions holds pointers into all_regions.
         if object.num_printing_regions() == 0 {
             self.ensure_default_region();
-            if let Some(default_region) = self.print_regions.first() {
-                let regions = vec![Arc::new(default_region.clone())];
+            if let Some(default_region) = self.print_regions.first().cloned() {
+                let regions = vec![default_region];
                 let shared_regions = Arc::new(
                     crate::print_object::PrintObjectRegions::with_regions(regions),
                 );
@@ -212,14 +217,20 @@ impl Print {
         if self.print_regions.is_empty() {
             use crate::region_config::PrintRegionConfig;
             self.print_regions
-                .push(PrintRegion::new(PrintRegionConfig::default()));
+                .push(Arc::new(PrintRegion::new(PrintRegionConfig::default())));
         }
     }
 
     /// Set the default region config (used by CLI to pass settings)
+    ///
+    /// INVARIANT: region Arcs are always replaced wholesale (clear + push
+    /// Arc::new), NEVER mutated in place via Arc::make_mut/get_mut — in-place
+    /// mutation would fork the share with PrintObjectRegions::all_regions and
+    /// silently break the unified PrintRegion identity. This mirrors C++ where
+    /// configs only change inside Print::apply and any diff invalidates posSlice.
     pub fn set_default_region_config(&mut self, config: crate::region_config::PrintRegionConfig) {
         self.print_regions.clear();
-        self.print_regions.push(PrintRegion::new(config));
+        self.print_regions.push(Arc::new(PrintRegion::new(config)));
     }
 
     /// Get reference to objects
