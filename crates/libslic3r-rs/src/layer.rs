@@ -291,12 +291,7 @@ impl LayerRegion {
     /// Prepare fill surfaces
     /// LayerRegion.cpp:645-689
     /// C++: void LayerRegion::prepare_fill_surfaces()
-    pub fn prepare_fill_surfaces(
-        &mut self,
-        spiral_mode: bool,
-        region_config: &crate::region_config::PrintRegionConfig,
-        minimum_sparse_infill_area: f64,
-    ) {
+    pub fn prepare_fill_surfaces(&mut self) {
         /// LayerRegion.cpp:650-652
         /// C++: Note: in order to make the psPrepareInfill step idempotent, we should never
         /// C++: alter fill_surfaces boundaries on which our idempotency relies since that's
@@ -305,6 +300,16 @@ impl LayerRegion {
         /// First clip slices to fill boundaries
         /// LayerRegion.cpp:50-66 (called before this function in the flow)
         self.slices_to_fill_surfaces_clipped();
+
+        /// LayerRegion.cpp:657
+        /// C++: bool spiral_mode = this->layer()->object()->print()->config().spiral_mode;
+        // Reached through the LayerRegion's own print-config Arc (stamped by
+        // wire_layer_hierarchy); field mapping: spiral_mode -> spiral_vase.
+        let spiral_mode = self
+            .print_config
+            .as_deref()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy")
+            .spiral_vase;
 
         /// LayerRegion.cpp:658-672 (commented out with #if 0 in C++)
         /// The top/bottom demotion logic is disabled in BambuStudio
@@ -317,7 +322,16 @@ impl LayerRegion {
         /// C++:         if (surface.surface_type == stInternal && surface.area() <= min_area)
         /// C++:             surface.surface_type = stInternalSolid;
         /// C++: }
-        if !spiral_mode && region_config.fill_density > 0.0 {
+        // Field mapping: sparse_infill_density -> fill_density on the wired
+        // region Arc. NOTE: this crate keeps minimum_sparse_infill_area on
+        // PrintObjectConfig (print_config.rs) rather than PrintRegionConfig,
+        // so it is read through the object-config Arc — same resolved value.
+        if !spiral_mode && self.region().config().fill_density > 0.0 {
+            let minimum_sparse_infill_area = self
+                .object_config
+                .as_deref()
+                .expect("config hierarchy not wired — call wire_layer_hierarchy")
+                .minimum_sparse_infill_area;
             let scale_factor = crate::SCALING_FACTOR as f64;
             let min_area = (minimum_sparse_infill_area * scale_factor * scale_factor) as i64;
 
@@ -1261,10 +1275,16 @@ impl Layer {
 
     /// Generate fill patterns for all regions
     /// Fill.cpp:586-768
-    pub fn make_fills(
-        &mut self,
-        region_configs: &[crate::region_config::PrintRegionConfig],
-    ) -> Result<()> {
+    pub fn make_fills(&mut self) -> Result<()> {
+        // Fill.cpp:600
+        // C++: const auto resolution = this->object()->print()->config().resolution.value;
+        // Read up front through the layer's own print-config Arc (stamped by
+        // wire_config_hierarchy) so no shared borrow overlaps the region
+        // mutation below. Still underscore-bound: the downstream consumer
+        // (params.resolution, Fill.cpp:705, used for path simplification) is
+        // not ported yet.
+        let _resolution = self.object().print().config().resolution;
+
         // Fill.cpp:588-590
         // C++: for (LayerRegion *layerm : m_regions)
         //          layerm->fills.clear();
@@ -1277,17 +1297,12 @@ impl Layer {
         //      set_outlook_range(lock_param);
         //      std::vector<SurfaceFill> surface_fills = group_fills(*this, lock_param);
         let mut lock_param = crate::fill::LockRegionParam::default();
-        let surface_fills = crate::fill::group_fills(self, region_configs, &mut lock_param)?;
+        let surface_fills = crate::fill::group_fills(self, &mut lock_param)?;
 
         // Fill.cpp:597-598
         // C++: const Slic3r::BoundingBox bbox = this->object()->bounding_box();
         //      const auto resolution = this->object()->print()->config().resolution.value;
         let _bbox = crate::geometry::BoundingBox::empty(); // TODO: get from object
-        // Fill.cpp:600
-        // C++: const auto resolution = this->object()->print()->config().resolution.value;
-        // Still underscore-bound: the downstream consumer (params.resolution,
-        // Fill.cpp:705, used for path simplification) is not ported yet.
-        let _resolution = self.object().print().config().resolution;
 
         // Fill.cpp:605-750
         // C++: for (SurfaceFill &surface_fill : surface_fills)

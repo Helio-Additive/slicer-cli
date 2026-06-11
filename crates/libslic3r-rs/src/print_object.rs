@@ -685,24 +685,9 @@ impl PrintObject {
         /// C++:         region->prepare_fill_surfaces();
         /// C++:         m_print->throw_if_canceled();
         /// C++:     }
-        let spiral_mode = self.config.spiral_vase;
-        let minimum_sparse_infill_area = self.config.minimum_sparse_infill_area;
-        let region_configs: Vec<crate::region_config::PrintRegionConfig> = self
-            .shared_regions
-            .as_ref()
-            .map(|regions| {
-                regions
-                    .all_regions
-                    .iter()
-                    .map(|region| region.config().clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-
         for layer in &mut self.layers {
-            for (region_idx, region) in layer.regions_mut().iter_mut().enumerate() {
-                let rc = region_configs.get(region_idx).cloned().unwrap_or_default();
-                region.prepare_fill_surfaces(spiral_mode, &rc, minimum_sparse_infill_area);
+            for region in layer.regions_mut().iter_mut() {
+                region.prepare_fill_surfaces();
                 if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(crate::Error::Cancelled);
                 }
@@ -722,7 +707,16 @@ impl PrintObject {
             self.discover_vertical_shells()?;
         }
         for region_id in 0..self.num_printing_regions() {
-            let region_config = region_configs.get(region_id).cloned().unwrap_or_default();
+            // C++: const PrintRegionConfig &region_config = this->printing_region(region_id).config();
+            // Cloning the Arc (not the config) keeps the shared snapshot alive
+            // across the mutable layer accesses below.
+            let region = self
+                .shared_regions
+                .as_ref()
+                .and_then(|r| r.all_regions.get(region_id))
+                .cloned()
+                .expect("shared_regions covers all printing regions");
+            let region_config = region.config();
             let nozzle_like_width = if region_config.outer_wall_line_width > 0.0 {
                 region_config.outer_wall_line_width
             } else if region_config.inner_wall_line_width > 0.0 {
@@ -857,12 +851,17 @@ impl PrintObject {
         for region_id in 0..self.num_printing_regions() {
             /// PrintObject.cpp:1460
             /// C++: BOOST_LOG_TRIVIAL(debug) << "Detecting solid surfaces for region " << region_id << " in parallel - start";
-            let region_config = self
+            // C++: const PrintRegionConfig &region_config = layerm->region().config();
+            // (identical for every layer of a region). Cloning the Arc (not the
+            // config) keeps the shared snapshot alive across the mutable layer
+            // accesses below.
+            let region = self
                 .shared_regions
                 .as_ref()
                 .and_then(|r| r.all_regions.get(region_id))
-                .map(|r| r.config().clone())
-                .unwrap_or_default();
+                .cloned()
+                .expect("shared_regions covers all printing regions");
+            let region_config = region.config();
 
             /// PrintObject.cpp:1466-1469
             /// C++: std::vector<Surfaces> surfaces_new;
@@ -1243,21 +1242,9 @@ impl PrintObject {
 
             // Adaptive fill octrees (currently None - TODO: implement adaptive fill)
             // PrintObject.cpp:763-770
-            // C++ uses the actual PrintRegionConfig from each shared print region.
-            // Pass the per-region configs through to Layer::make_fills() so fill
-            // parameter grouping follows the same data flow instead of falling
-            // back to synthetic defaults.
-            let region_configs: Vec<crate::region_config::PrintRegionConfig> = self
-                .shared_regions
-                .as_ref()
-                .map(|regions| {
-                    regions
-                        .all_regions
-                        .iter()
-                        .map(|region| region.config().clone())
-                        .collect()
-                })
-                .unwrap_or_default();
+            // Per-region configs are no longer threaded from here: group_fills
+            // reads each LayerRegion's own Arc<PrintRegion> (C++:
+            // layerm.region().config(), Fill.cpp:199).
 
             // Iterate through all layers and generate fills
             // PrintObject.cpp:763-770
@@ -1265,7 +1252,7 @@ impl PrintObject {
             for layer in &mut self.layers {
                 // Call Layer::make_fills() on each layer
                 // PrintObject.cpp:768
-                layer.make_fills(&region_configs)?;
+                layer.make_fills()?;
             }
 
             // Mark step as complete
@@ -1756,12 +1743,6 @@ impl PrintObject {
         let sf = crate::SCALING_FACTOR; // mm -> scaled (100_000); area is scaled^2
         let eps_mm = crate::libslic3r::EPSILON; // 1e-4
 
-        let region_configs: Vec<crate::region_config::PrintRegionConfig> = self
-            .shared_regions
-            .as_ref()
-            .map(|r| r.all_regions.iter().map(|x| x.config().clone()).collect())
-            .unwrap_or_default();
-
         // PerimeterGenerator/Layer feed this; spiral mode clamps the layer count.
         let num_layers = self.layers.len();
         if num_layers == 0 {
@@ -1770,7 +1751,17 @@ impl PrintObject {
 
         // PrintObject.cpp:1827 — per region.
         for region_id in 0..self.num_printing_regions() {
-            let rc = region_configs.get(region_id).cloned().unwrap_or_default();
+            // PrintObject.cpp:1830
+            // C++: const PrintRegionConfig &region_config = this->printing_region(region_id).config();
+            // Cloning the Arc (not the config) keeps the shared snapshot alive
+            // across the mutable layer accesses below.
+            let region = self
+                .shared_regions
+                .as_ref()
+                .and_then(|r| r.all_regions.get(region_id))
+                .cloned()
+                .expect("shared_regions covers all printing regions");
+            let rc = region.config();
             // PrintObject.cpp:1830-1832 — evtDisabled regions are handled by discover_horizontal_shells.
             if rc.ensure_vertical_shell_thickness == EnsureVerticalThicknessLevel::Disabled {
                 continue;
@@ -1804,8 +1795,8 @@ impl PrintObject {
                         continue;
                     }
                 };
-                let solid_flow = lr.flow_with_config(FlowRole::SolidInfill, lh, &rc, idx == 0)?;
-                let ext_flow = lr.flow_with_config(FlowRole::ExternalPerimeter, lh, &rc, idx == 0)?;
+                let solid_flow = lr.flow_with_config(FlowRole::SolidInfill, lh, rc, idx == 0)?;
+                let ext_flow = lr.flow_with_config(FlowRole::ExternalPerimeter, lh, rc, idx == 0)?;
                 let sp = solid_flow.spacing();
                 solid_spacing_mm.push(sp);
                 ext_spacing_mm.push(ext_flow.spacing());
@@ -2021,13 +2012,16 @@ impl PrintObject {
         for region_id in 0..self.num_printing_regions() {
             // PrintObject.cpp:3394: const PrintRegionConfig& region_config = layerm->region().config();
             // Threaded via shared_regions (indexed by region_id) instead of a
-            // LayerRegion->region() back-pointer; identical for all layers of a region.
-            let region_config = self
+            // LayerRegion->region() back-pointer; identical for all layers of a
+            // region. Cloning the Arc (not the config) keeps the shared
+            // snapshot alive across the mutable layer accesses below.
+            let region = self
                 .shared_regions
                 .as_ref()
                 .and_then(|r| r.all_regions.get(region_id))
-                .map(|r| r.config().clone())
-                .unwrap_or_default();
+                .cloned()
+                .expect("shared_regions covers all printing regions");
+            let region_config = region.config();
 
             // PrintObject.cpp:3397-3399: if ensure_vertical_shell_thickness != evtDisabled,
             // the shell work was already performed by discover_vertical_shells(); skip the

@@ -476,7 +476,6 @@ impl SurfaceFill {
 /// C++: std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_param)
 pub fn group_fills(
     layer: &crate::layer::Layer,
-    region_configs: &[crate::region_config::PrintRegionConfig],
     _lock_param: &mut LockRegionParam,
 ) -> Result<Vec<SurfaceFill>> {
     /// Fill.cpp:166
@@ -512,10 +511,9 @@ pub fn group_fills(
 
             // Build params for this surface
             // Fill.cpp:200-318
-            let region_config = region_configs
-                .get(region_id)
-                .cloned()
-                .unwrap_or_else(crate::region_config::PrintRegionConfig::default);
+            // Fill.cpp:199
+            // C++: const PrintRegionConfig &region_config = layerm.region().config();
+            let region_config = region.region().config();
 
             let extrusion_role = if surface.is_top() {
                 /// Fill.cpp:245-246
