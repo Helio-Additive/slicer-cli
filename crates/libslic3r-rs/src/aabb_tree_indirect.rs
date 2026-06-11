@@ -801,6 +801,22 @@ pub fn intersect_ray_first_hit(
     origin: &Point3F,
     dir: &Point3F,
 ) -> Option<(f64, usize, Point3F)> {
+    // AABBTreeIndirect.hpp:737: `const double eps = 0.000001` (default argument).
+    intersect_ray_first_hit_eps(vertices, faces, tree, origin, dir, 0.000001)
+}
+
+/// `intersect_ray_first_hit` with an explicit ray-triangle intersection epsilon.
+/// AABBTreeIndirect.hpp:723-753 — the C++ function takes the epsilon as a trailing
+/// defaulted parameter ("it should be proportional to an average triangle edge
+/// length"); SLA/IndexedMesh.cpp:41-42 passes its `m_triangle_ray_epsilon` here.
+pub fn intersect_ray_first_hit_eps(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    tree: &Tree,
+    origin: &Point3F,
+    dir: &Point3F,
+    eps: f64,
+) -> Option<(f64, usize, Point3F)> {
     // Traverse tree looking for ray-triangle intersections
     // AABBTreeIndirect.hpp:738-750
     // C++: hit.t = std::numeric_limits<Scalar>::infinity();
@@ -827,7 +843,7 @@ pub fn intersect_ray_first_hit(
         let v1 = &vertices[face[1]];
         let v2 = &vertices[face[2]];
 
-        if let Some((t, u, v)) = intersect_triangle(origin, dir, v0, v1, v2, 0.000001) {
+        if let Some((t, u, v)) = intersect_triangle(origin, dir, v0, v1, v2, eps) {
             if t > 0.0 && t < best_t {
                 let hit_point = Point3F {
                     x: origin.x + dir.x * t,
@@ -859,6 +875,22 @@ pub fn intersect_ray_all_hits(
     origin: &Point3F,
     dir: &Point3F,
 ) -> Vec<(f64, usize, Point3F)> {
+    // AABBTreeIndirect.hpp:770: `const double eps = 0.000001` (default argument).
+    intersect_ray_all_hits_eps(vertices, faces, tree, origin, dir, 0.000001)
+}
+
+/// `intersect_ray_all_hits` with an explicit ray-triangle intersection epsilon.
+/// AABBTreeIndirect.hpp:755-794 — the C++ function takes the epsilon as a trailing
+/// defaulted parameter; SLA/IndexedMesh.cpp:50-51 passes its
+/// `m_triangle_ray_epsilon` here.
+pub fn intersect_ray_all_hits_eps(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    tree: &Tree,
+    origin: &Point3F,
+    dir: &Point3F,
+    eps: f64,
+) -> Vec<(f64, usize, Point3F)> {
     // Traverse tree collecting all ray-triangle intersections
     // AABBTreeIndirect.hpp:769-791
     // C++: hits.clear();
@@ -884,7 +916,7 @@ pub fn intersect_ray_all_hits(
         let v1 = &vertices[face[1]];
         let v2 = &vertices[face[2]];
 
-        if let Some((t, u, v)) = intersect_triangle(origin, dir, v0, v1, v2, 0.000001) {
+        if let Some((t, u, v)) = intersect_triangle(origin, dir, v0, v1, v2, eps) {
             if t > 0.0 {
                 let hit_point = Point3F {
                     x: origin.x + dir.x * t,

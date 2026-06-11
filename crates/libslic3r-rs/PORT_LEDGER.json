@@ -2999,7 +2999,7 @@
     "rust": "crates/libslic3r-rs/src/sla/indexed_mesh.rs",
     "rust_exists": true,
     "loc": 456,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
@@ -3010,7 +3010,7 @@
     "rust": "crates/libslic3r-rs/src/sla/rotfinder.rs",
     "rust_exists": true,
     "loc": 476,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
