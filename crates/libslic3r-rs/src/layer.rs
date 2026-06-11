@@ -337,7 +337,6 @@ impl LayerRegion {
     pub fn make_perimeters(
         &mut self,
         surface_fill: &SurfaceCollection,
-        config: &PrintRegionConfig,
         layer_height: f64,
         layer_id: usize,
         print_z: f64,
@@ -354,11 +353,22 @@ impl LayerRegion {
         // C++: const PrintConfig &print_config = this->layer()->object()->print()->config();
         // C++: const PrintRegionConfig &region_config = this->region().config();
         // C++: const PrintObjectConfig& object_config = this->layer()->object()->config();
-        // print_config is reached through the Arc snapshot stamped by
-        // wire_layer_hierarchy; layer_id/print_z replace the C++ Layer
-        // back-pointer reads this->layer()->id() / this->layer()->print_z.
+        // All three are reached through the Arc snapshots stamped by
+        // wire_layer_hierarchy; the Arcs are cloned into locals up front so no
+        // borrow of self is held while building PerimeterConfig / mutating
+        // self below. layer_id/print_z replace the C++ Layer back-pointer
+        // reads this->layer()->id() / this->layer()->print_z.
         let print_config = self
             .print_config
+            .clone()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy");
+        let region = self
+            .region
+            .clone()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy");
+        let config = region.config();
+        let object_config = self
+            .object_config
             .clone()
             .expect("config hierarchy not wired — call wire_layer_hierarchy");
 
@@ -372,10 +382,8 @@ impl LayerRegion {
         // bottom_shell_layers -> PrintRegionConfig::bottom_solid_layers,
         // bottom_shell_thickness -> PrintRegionConfig::bottom_solid_min_thickness.
         let spiral_mode = print_config.spiral_vase
-            && (layer_id >= self.region().config().bottom_solid_layers as usize
-                && print_z
-                    >= self.region().config().bottom_solid_min_thickness
-                        - crate::libslic3r::EPSILON);
+            && (layer_id >= config.bottom_solid_layers as usize
+                && print_z >= config.bottom_solid_min_thickness - crate::libslic3r::EPSILON);
         // C++ feeds spiral_mode into the PerimeterGenerator ctor and the
         // arachne/classic dispatch (LayerRegion.cpp:150-179). The Rust
         // PerimeterConfig does not carry a spiral field yet, so the gate is
@@ -440,7 +448,19 @@ impl LayerRegion {
             // surface simplify resolution factor (0.2x when arc fitting + no fuzzy skin).
             // Mirrors PrintConfig default enable_arc_fitting = true / resolved config "1".
             arc_fitting_enabled: true,
-            wall_generator_mode: config.wall_generator_mode,
+            // LayerRegion.cpp:176
+            // C++: if (this->layer()->object()->config().wall_generator.value == PerimeterGeneratorType::Arachne && !spiral_mode)
+            // C++:     g.process_arachne();
+            // C++: else
+            // C++:     g.process_classic();
+            // The Classic/Arachne dispatch lives on the OBJECT config in C++;
+            // mapped here onto PerimeterConfig::wall_generator_mode, which the
+            // generator dispatches on internally. (The !spiral_mode gate is
+            // not consumed yet — see the spiral_mode note above.)
+            wall_generator_mode: match object_config.perimeter_mode {
+                crate::print_config::PerimeterMode::Classic => WallGeneratorMode::Classic,
+                crate::print_config::PerimeterMode::Arachne => WallGeneratorMode::Arachne,
+            },
             fuzzy_skin_mode: config.fuzzy_skin_mode,
             fuzzy_skin_thickness: config.fuzzy_skin_thickness,
             fuzzy_skin_point_distance: config.fuzzy_skin_point_distance,
@@ -1064,17 +1084,15 @@ impl Layer {
     /// Make perimeters with lower layer data for overhang detection
     pub fn make_perimeters_with_lower(
         &mut self,
-        region_configs: &[PrintRegionConfig],
         lower_slices: Option<&Vec<crate::geometry::ExPolygon>>,
     ) -> Result<()> {
-        self.make_perimeters_with_neighbors(region_configs, lower_slices, None)
+        self.make_perimeters_with_neighbors(lower_slices, None)
     }
 
     /// Make perimeters with both lower- and upper-layer slices.
     /// upper_slices feeds the top-surface detection (top_fills, PerimeterGenerator.cpp:1118).
     pub fn make_perimeters_with_neighbors(
         &mut self,
-        region_configs: &[PrintRegionConfig],
         lower_slices: Option<&Vec<crate::geometry::ExPolygon>>,
         upper_slices: Option<&Vec<crate::geometry::ExPolygon>>,
     ) -> Result<()> {
@@ -1089,12 +1107,11 @@ impl Layer {
                 region.upper_slices = Some(us.clone());
             }
         }
-        self.make_perimeters(region_configs, None)
+        self.make_perimeters(None)
     }
 
     pub fn make_perimeters(
         &mut self,
-        region_configs: &[PrintRegionConfig],
         _perimeter_generator_options: Option<&()>,
     ) -> Result<()> {
         // Layer.cpp:204-206
@@ -1124,9 +1141,12 @@ impl Layer {
             // Layer.cpp:217-218
             done[region_idx] = true;
 
-            // Use per-region config, falling back to default if not available
-            // C++: const PrintRegionConfig &region_config = (*layerm)->region().config();
-            let config = region_configs.get(region_idx).cloned().unwrap_or_default();
+            // Layer.cpp:218
+            // C++: const PrintRegionConfig &config = (*layerm)->region().config();
+            // C++ only uses it to find compatible regions to merge
+            // (Layer.cpp:221-245); the single-region Rust path skips merging,
+            // and LayerRegion::make_perimeters reads its own stored
+            // Arc<PrintRegion> directly, so no config is threaded from here.
 
             // Layer.cpp:248-251
             // For now, single region optimization (skip multi-region merging)
@@ -1141,14 +1161,12 @@ impl Layer {
             // C++: (*layerm)->make_perimeters((*layerm)->slices, perimeter_regions, &(*layerm)->fill_surfaces, &(*layerm)->fill_no_overlap_expolygons, this->loop_nodes);
             // print_z is threaded explicitly because the Rust LayerRegion has no
             // Layer back-pointer (C++ reads this->layer()->print_z, LayerRegion.cpp:148).
+            // Reads of self's plain fields are hoisted to locals before the
+            // &mut borrow of self.regions[region_idx] below.
             let print_z = self.print_z;
-            self.regions[region_idx].make_perimeters(
-                &surface_fill,
-                &config,
-                self.height,
-                self.id,
-                print_z,
-            )?;
+            let height = self.height;
+            let id = self.id;
+            self.regions[region_idx].make_perimeters(&surface_fill, height, id, print_z)?;
 
             // Layer.cpp:254
             // C++: (*layerm)->fill_expolygons = to_expolygons((*layerm)->fill_surfaces.surfaces);

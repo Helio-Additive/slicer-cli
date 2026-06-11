@@ -575,32 +575,13 @@ impl PrintObject {
         // Generate perimeters for each layer
         // PrintObject.cpp:557-566
         // C++: tbb::parallel_for(0, m_layers.size(), [this](...) { m_layers[layer_idx]->make_perimeters(); })
-
-        // Build per-region configs from shared_regions (same pattern as infill())
-        // C++: each LayerRegion accesses region().config() for its own PrintRegionConfig
-        let wall_mode = match self.config.perimeter_mode {
-            crate::print_config::PerimeterMode::Classic => {
-                crate::perimeter_generator::WallGeneratorMode::Classic
-            }
-            crate::print_config::PerimeterMode::Arachne => {
-                crate::perimeter_generator::WallGeneratorMode::Arachne
-            }
-        };
-        let region_configs: Vec<crate::region_config::PrintRegionConfig> = self
-            .shared_regions
-            .as_ref()
-            .map(|regions| {
-                regions
-                    .all_regions
-                    .iter()
-                    .map(|region| {
-                        let mut rc = region.config().clone();
-                        rc.wall_generator_mode = wall_mode;
-                        rc
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        //
+        // Per-region configs are no longer threaded from here: each
+        // LayerRegion reads its own stored Arc<PrintRegion> (C++:
+        // (*layerm)->region().config(), Layer.cpp:218 / LayerRegion.cpp:137),
+        // and the Classic/Arachne dispatch reads the object config Arc
+        // (C++: this->layer()->object()->config().wall_generator,
+        // LayerRegion.cpp:176).
 
         // Collect lslices from each layer for overhang detection (previous layer comparison)
         let all_lslices: Vec<Vec<crate::geometry::ExPolygon>> =
@@ -644,7 +625,7 @@ impl PrintObject {
             // Call Layer::make_perimeters() which orchestrates perimeter generation
             // This will call LayerRegion::make_perimeters() for each region
             // PrintObject.cpp:560
-            layer.make_perimeters_with_neighbors(&region_configs, lower_slices, upper_slices)?;
+            layer.make_perimeters_with_neighbors(lower_slices, upper_slices)?;
         }
 
         // TODO: Port C++ lines 583-615 - Perimeter continuity calculation
