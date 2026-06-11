@@ -10,16 +10,16 @@
 //! module-level documentation and the parity ledger):
 //!   * C++ `PrintConfig::nozzle_diameter` / `filament_diameter` are
 //!     `ConfigOptionFloats` (per-extruder vectors). The Rust `PrintConfig`
-//!     currently models them as scalars, so the per-extruder `get_at(i-1)`
-//!     access is emulated through `&[f64]` slice parameters that the caller
-//!     supplies. `get_at` in libslic3r falls back to the zeroth element on
-//!     out-of-range indices; that fallback is reproduced here.
-//!   * C++ `PrintRegion::flow(const PrintObject&, ...)` reaches through
-//!     `object.print()->config()` and `object.config()`. The Rust
-//!     `PrintObject` does not yet expose those accessors / back-references, so
-//!     the relevant scalars (`initial_layer_line_width`, the object
-//!     `line_width`, the nozzle diameter) are threaded in as parameters
-//!     instead of being read off the hierarchy.
+//!     models `nozzle_diameter` as a scalar, so `PrintRegion::flow`'s
+//!     `get_at(extruder(role) - 1)` collapses onto a direct read; the
+//!     `nozzle_dmr_avg` / `bridging_height_avg` helpers still take `&[f64]`
+//!     slices (with the libslic3r `get_at` zeroth-element fallback).
+//!   * `PrintRegion::flow(&PrintObject, ...)` keeps the C++ signature
+//!     (PrintRegion.cpp:21), reaching `object.print().config()` and
+//!     `object.config()` over the Arc-stamped config hierarchy. Its body is
+//!     factored into the crate-private `flow_from_configs` so that
+//!     `LayerRegion::flow` / `bridging_flow` (which hold config Arcs instead
+//!     of a `&PrintObject`) can share it.
 
 use crate::flow::{Flow, FlowRole};
 use crate::region_config::PrintRegionConfig;
@@ -91,102 +91,35 @@ impl PrintRegion {
     // 1-based extruder identifier for this region and role.
     // PrintRegion.cpp:7
     pub fn extruder(&self, role: FlowRole) -> Result<u32, String> {
-        // PrintRegion.cpp:9
-        let extruder: usize;
-        // PrintRegion.cpp:10
-        if role == FlowRole::Perimeter || role == FlowRole::ExternalPerimeter {
-            // PrintRegion.cpp:11
-            extruder = self.config.wall_filament;
-        // PrintRegion.cpp:12
-        } else if role == FlowRole::Infill {
-            // PrintRegion.cpp:13
-            extruder = self.config.sparse_infill_filament;
-        // PrintRegion.cpp:14
-        } else if role == FlowRole::SolidInfill || role == FlowRole::TopSolidInfill {
-            // PrintRegion.cpp:15
-            extruder = self.config.solid_infill_filament;
-        // PrintRegion.cpp:16
-        } else {
-            // PrintRegion.cpp:17
-            return Err("Unknown role".to_string());
-        }
-        // PrintRegion.cpp:18
-        Ok(extruder as u32)
+        region_extruder(&self.config, role)
     }
 
     // PrintRegion.cpp:21
     // Faithful port of:
     //   Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_height, bool first_layer) const
-    //
-    // The Rust `PrintObject` does not yet expose `print()->config()` nor
-    // `config()`, so the data that the C++ reads off the hierarchy is threaded
-    // in explicitly:
-    //   * `initial_layer_line_width` = print_config.initial_layer_line_width.value
-    //   * `object_line_width`        = object.config().line_width
-    //   * `nozzle_diameters`         = print_config.nozzle_diameter (per-extruder)
-    #[allow(clippy::too_many_arguments)]
+    // (C++ declares the default argument `first_layer = false`, Print.hpp:131;
+    // Rust callers pass it explicitly.)
     pub fn flow(
         &self,
+        object: &crate::print_object::PrintObject,
         role: FlowRole,
         layer_height: CoordF,
         first_layer: bool,
-        initial_layer_line_width: CoordF,
-        object_line_width: CoordF,
-        nozzle_diameters: &[CoordF],
     ) -> Result<Flow, String> {
-        // PrintRegion.cpp:24
-        let mut config_width: CoordF;
-        // Get extrusion width from configuration.
-        // (might be an absolute value, or a percent value, or zero for auto)
-        // PrintRegion.cpp:27
-        if first_layer && initial_layer_line_width > 0.0 {
-            // PrintRegion.cpp:28
-            config_width = initial_layer_line_width;
-        // PrintRegion.cpp:29
-        } else if role == FlowRole::ExternalPerimeter {
-            // PrintRegion.cpp:30
-            config_width = self.config.outer_wall_line_width;
-        // PrintRegion.cpp:31
-        } else if role == FlowRole::Perimeter {
-            // PrintRegion.cpp:32
-            config_width = self.config.inner_wall_line_width;
-        // PrintRegion.cpp:33
-        } else if role == FlowRole::Infill {
-            // PrintRegion.cpp:34
-            config_width = self.config.sparse_infill_line_width;
-        // PrintRegion.cpp:35
-        } else if role == FlowRole::SolidInfill {
-            // PrintRegion.cpp:36
-            config_width = self.config.internal_solid_infill_line_width;
-        // PrintRegion.cpp:37
-        } else if role == FlowRole::TopSolidInfill {
-            // PrintRegion.cpp:38
-            config_width = self.config.top_surface_line_width;
-        // PrintRegion.cpp:39
-        } else {
-            // PrintRegion.cpp:40
-            return Err("Unknown role".to_string());
-        }
-
-        // PrintRegion.cpp:43
-        if config_width == 0.0 {
-            // PrintRegion.cpp:44
-            config_width = object_line_width;
-        }
-
-        // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
-        // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
-        // PrintRegion.cpp:48
-        let nozzle_diameter =
-            get_at(nozzle_diameters, (self.extruder(role)? as usize).wrapping_sub(1)) as f32;
-        // PrintRegion.cpp:49
-        Flow::new_from_config_width(
+        // PrintRegion.cpp:23
+        // C++: const PrintConfig &print_config = object.print()->config();
+        let print_config = object.print().config();
+        // PrintRegion.cpp:24-49 — shared with LayerRegion::flow/bridging_flow,
+        // which reach the same configs through their stored Arc snapshots.
+        flow_from_configs(
             role,
-            config_width,
-            nozzle_diameter as CoordF,
             layer_height,
+            first_layer,
+            print_config.initial_layer_line_width,
+            object.config().line_width,
+            print_config.nozzle_diameter,
+            &self.config,
         )
-        .map_err(|e| format!("{:?}", e))
     }
 
     // PrintRegion.cpp:52
@@ -307,6 +240,106 @@ impl PrintRegion {
     }
 }
 
+// PrintRegion.cpp:7-19 — the body of `PrintRegion::extruder`, factored over a
+// raw `PrintRegionConfig` so that `flow_from_configs` (which has no
+// `&PrintRegion`) can reproduce the PrintRegion.cpp:48 role check.
+pub(crate) fn region_extruder(
+    config: &PrintRegionConfig,
+    role: FlowRole,
+) -> Result<u32, String> {
+    // PrintRegion.cpp:9
+    let extruder: usize;
+    // PrintRegion.cpp:10
+    if role == FlowRole::Perimeter || role == FlowRole::ExternalPerimeter {
+        // PrintRegion.cpp:11
+        extruder = config.wall_filament;
+    // PrintRegion.cpp:12
+    } else if role == FlowRole::Infill {
+        // PrintRegion.cpp:13
+        extruder = config.sparse_infill_filament;
+    // PrintRegion.cpp:14
+    } else if role == FlowRole::SolidInfill || role == FlowRole::TopSolidInfill {
+        // PrintRegion.cpp:15
+        extruder = config.solid_infill_filament;
+    // PrintRegion.cpp:16
+    } else {
+        // PrintRegion.cpp:17
+        return Err("Unknown role".to_string());
+    }
+    // PrintRegion.cpp:18
+    Ok(extruder as u32)
+}
+
+// PrintRegion.cpp:24-49 — the config-level body of `PrintRegion::flow`,
+// factored out so that `LayerRegion::flow` / `bridging_flow` (which reach the
+// configs through their stored Arc snapshots rather than a `&PrintObject`)
+// can share it. Crate-private: the public entry points are
+// `PrintRegion::flow(&PrintObject, ...)` and the `LayerRegion` members.
+//   * `initial_layer_line_width` = print_config.initial_layer_line_width
+//   * `object_line_width`        = object.config().line_width
+//   * `nozzle_diameter`          = print_config.nozzle_diameter (the C++
+//     per-extruder `get_at(extruder(role) - 1)` collapses onto this crate's
+//     scalar field; the extruder(role) role check is still evaluated for its
+//     Unknown-role error semantics).
+pub(crate) fn flow_from_configs(
+    role: FlowRole,
+    layer_height: CoordF,
+    first_layer: bool,
+    initial_layer_line_width: CoordF,
+    object_line_width: CoordF,
+    nozzle_diameter: CoordF,
+    region_config: &PrintRegionConfig,
+) -> Result<Flow, String> {
+    // PrintRegion.cpp:24
+    let mut config_width: CoordF;
+    // Get extrusion width from configuration.
+    // (might be an absolute value, or a percent value, or zero for auto)
+    // PrintRegion.cpp:27
+    if first_layer && initial_layer_line_width > 0.0 {
+        // PrintRegion.cpp:28
+        config_width = initial_layer_line_width;
+    // PrintRegion.cpp:29
+    } else if role == FlowRole::ExternalPerimeter {
+        // PrintRegion.cpp:30
+        config_width = region_config.outer_wall_line_width;
+    // PrintRegion.cpp:31
+    } else if role == FlowRole::Perimeter {
+        // PrintRegion.cpp:32
+        config_width = region_config.inner_wall_line_width;
+    // PrintRegion.cpp:33
+    } else if role == FlowRole::Infill {
+        // PrintRegion.cpp:34
+        config_width = region_config.sparse_infill_line_width;
+    // PrintRegion.cpp:35
+    } else if role == FlowRole::SolidInfill {
+        // PrintRegion.cpp:36
+        config_width = region_config.internal_solid_infill_line_width;
+    // PrintRegion.cpp:37
+    } else if role == FlowRole::TopSolidInfill {
+        // PrintRegion.cpp:38
+        config_width = region_config.top_surface_line_width;
+    // PrintRegion.cpp:39
+    } else {
+        // PrintRegion.cpp:40
+        return Err("Unknown role".to_string());
+    }
+
+    // PrintRegion.cpp:43
+    if config_width == 0.0 {
+        // PrintRegion.cpp:44
+        config_width = object_line_width;
+    }
+
+    // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
+    // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
+    // PrintRegion.cpp:48
+    let _ = region_extruder(region_config, role)?;
+    let nozzle_diameter = nozzle_diameter as f32;
+    // PrintRegion.cpp:49
+    Flow::new_from_config_width(role, config_width, nozzle_diameter as CoordF, layer_height)
+        .map_err(|e| format!("{:?}", e))
+}
+
 // `get_at` reproduces Slic3r::ConfigOptionVector::get_at: the value at index
 // `i`, or the zeroth element when `i` is out of range (and `0` when empty).
 // ConfigOptionVector models. See PrintRegion.cpp:48 commentary.
@@ -352,12 +385,10 @@ mod tests {
 
     #[test]
     fn test_flow_generation() {
+        // Exercises the shared config-level core directly; the public
+        // `PrintRegion::flow(&PrintObject, ...)` is a thin reader over it.
         let config = PrintRegionConfig::default();
-        let region = PrintRegion::new(config);
-
-        let nozzles = [0.4];
-        let flow = region
-            .flow(FlowRole::Perimeter, 0.2, false, 0.0, 0.45, &nozzles)
+        let flow = flow_from_configs(FlowRole::Perimeter, 0.2, false, 0.0, 0.45, 0.4, &config)
             .expect("Flow creation failed");
 
         assert!(flow.width() > 0.0);

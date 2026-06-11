@@ -327,6 +327,14 @@ impl PrintObject {
         }
     }
 
+    /// Object-level configuration, preserving the C++ call shape
+    /// `object.config()`.
+    /// C++: `const PrintObjectConfig& config() const { return m_config; }`
+    /// (Print.hpp:369)
+    pub fn config(&self) -> &PrintObjectConfig {
+        &self.config
+    }
+
     /// Collect the slicing parameters, to be used by variable layer thickness
     /// algorithm, by the interactive layer height editor and by the printing
     /// process itself.
@@ -601,12 +609,9 @@ impl PrintObject {
                 }
             }
 
-            // Set initial_layer_line_width on first layer regions
-            if idx == 0 {
-                for region in layer.regions_mut().iter_mut() {
-                    region.initial_layer_line_width = self.config.initial_layer_line_width;
-                }
-            }
+            // (LayerRegion::flow reads print_config.initial_layer_line_width
+            // off its stored Arc on the first layer — PrintRegion.cpp:27-28 —
+            // so no per-region width stamping is needed here.)
 
             // Pass previous layer's lslices for overhang detection
             let lower_slices = if idx > 0 {
@@ -1783,7 +1788,7 @@ impl PrintObject {
             let mut lslices_all: Vec<ExPolygons> = Vec::with_capacity(num_layers);
             let mut solid_spacing_mm: Vec<f64> = Vec::with_capacity(num_layers);
             let mut ext_spacing_mm: Vec<f64> = Vec::with_capacity(num_layers);
-            for (idx, layer) in self.layers.iter().enumerate() {
+            for layer in self.layers.iter() {
                 lslices_all.push(layer.lslices.clone());
                 let lh = layer.height;
                 let lr = match layer.regions().get(region_id) {
@@ -1795,8 +1800,11 @@ impl PrintObject {
                         continue;
                     }
                 };
-                let solid_flow = lr.flow_with_config(FlowRole::SolidInfill, lh, rc, idx == 0)?;
-                let ext_flow = lr.flow_with_config(FlowRole::ExternalPerimeter, lh, rc, idx == 0)?;
+                // C++: layerm->flow(frSolidInfill) / flow(frExternalPerimeter)
+                // (region/object/print configs read off the LayerRegion's Arcs;
+                // lr.layer_id supplies the first-layer gate internally).
+                let solid_flow = lr.flow(FlowRole::SolidInfill, lh)?;
+                let ext_flow = lr.flow(FlowRole::ExternalPerimeter, lh)?;
                 let sp = solid_flow.spacing();
                 solid_spacing_mm.push(sp);
                 ext_spacing_mm.push(ext_flow.spacing());

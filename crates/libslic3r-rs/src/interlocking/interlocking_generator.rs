@@ -27,11 +27,6 @@
 //! * C++ holds `PrintObject& print_object` as a member and mutates it from
 //!   `const` methods (the reference target is not const-qualified). Rust
 //!   stores `&mut PrintObject` and the mutating methods take `&mut self`.
-//! * The C++ `PrintRegion::flow(const PrintObject&, ...)` reaches the print
-//!   level config (`nozzle_diameter`) through `object.print()->config()`.
-//!   The Rust `PrintObject` has no back-reference to `Print`, so the
-//!   per-extruder nozzle diameters are threaded in explicitly
-//!   (`nozzle_diameters` parameter / field).
 //! * The Rust clipper layer (`crate::clipper_utils`) takes offsets in mm
 //!   (`CoordF`), so the scaled `coord_t` distances of the C++ are `unscale`d
 //!   at the call sites. The integer arithmetic that produces those distances
@@ -134,12 +129,6 @@ pub struct InterlockingGenerator<'a> {
     // will be cut off midway in a beam.
     /// InterlockingGenerator.hpp:169 `const bool air_filtering;`
     air_filtering: bool,
-    /// Rust-only: per-extruder nozzle diameters (mm). C++ `PrintRegion::flow`
-    /// reads these via `object.print()->config().nozzle_diameter`; the Rust
-    /// `PrintObject` has no back-reference to the print, so they are threaded
-    /// in by the caller (empty slice is fine for the embedding-wall path,
-    /// which never computes a flow).
-    nozzle_diameters: &'a [CoordF],
 }
 
 impl<'a> InterlockingGenerator<'a> {
@@ -251,8 +240,6 @@ impl<'a> InterlockingGenerator<'a> {
                         interface_dilation.clone(),
                         air_dilation.clone(),
                         air_filtering,
-                        // The embedding-wall path never computes a flow.
-                        &[],
                     );
                     // InterlockingGenerator.cpp:63
                     gen.generate_interlockingwall(i);
@@ -265,13 +252,7 @@ impl<'a> InterlockingGenerator<'a> {
     ///
     /// InterlockingGenerator.cpp:70
     /// C++: void InterlockingGenerator::generate_interlocking_structure(PrintObject* print_object)
-    ///
-    /// `nozzle_diameters` is the per-extruder nozzle diameter list of the
-    /// print config (see the struct-level porting notes).
-    pub fn generate_interlocking_structure(
-        print_object: &mut PrintObject,
-        nozzle_diameters: &[CoordF],
-    ) -> crate::Result<()> {
+    pub fn generate_interlocking_structure(print_object: &mut PrintObject) -> crate::Result<()> {
         // InterlockingGenerator.cpp:72
         let config = &print_object.config;
         // Check if interlocking is enabled, and avoid errors like division by zero due to invalid configuration.
@@ -354,7 +335,6 @@ impl<'a> InterlockingGenerator<'a> {
                     interface_dilation.clone(),
                     air_dilation.clone(),
                     air_filtering,
-                    nozzle_diameters,
                 );
                 // InterlockingGenerator.cpp:109
                 gen.generate_interlocking_structure_impl()?;
@@ -380,7 +360,6 @@ impl<'a> InterlockingGenerator<'a> {
         interface_dilation: DilationKernel,
         air_dilation: DilationKernel,
         air_filtering: bool,
-        nozzle_diameters: &'a [CoordF],
     ) -> Self {
         // InterlockingGenerator.hpp:79-91 (member initializer list)
         Self {
@@ -396,7 +375,6 @@ impl<'a> InterlockingGenerator<'a> {
             interface_dilation,
             air_dilation,
             air_filtering,
-            nozzle_diameters,
         }
     }
 
@@ -406,21 +384,16 @@ impl<'a> InterlockingGenerator<'a> {
     /// `print_object.printing_region(idx).flow(print_object, frExternalPerimeter, 0.1).scaled_width()`
     /// of InterlockingGenerator.cpp:117-118 and 146-147.
     fn printing_region_flow_scaled_width(&self, region_index: usize) -> crate::Result<Coord> {
-        Ok(self
-            .print_object
+        let print_object: &PrintObject = &*self.print_object;
+        Ok(print_object
             .printing_region(region_index)
             .expect("printing region out of range")
             .flow(
+                print_object,
                 FlowRole::ExternalPerimeter,
                 0.1,
-                // C++ default argument `first_layer = false`
+                // C++ default argument `first_layer = false` (Print.hpp:131)
                 false,
-                // initial_layer_line_width: only read when first_layer == true
-                // (PrintRegion.cpp:27), so the value is irrelevant here.
-                0.0,
-                // C++ PrintRegion::flow falls back to object.config().line_width
-                self.print_object.config.line_width,
-                self.nozzle_diameters,
             )
             .map_err(crate::Error::Config)?
             .scaled_width())
@@ -1247,7 +1220,6 @@ mod tests {
             DilationKernel::new([2, 2, 2], DilationKernelType::Prism),
             DilationKernel::new([2, 2, 2], DilationKernelType::Prism),
             true,
-            &[],
         )
     }
 
@@ -1330,6 +1302,6 @@ mod tests {
         let mut po = make_print_object();
         // interlocking_beam defaults to false (PrintConfig.cpp:3670).
         assert!(!po.config.interlocking_beam);
-        InterlockingGenerator::generate_interlocking_structure(&mut po, &[0.4]).unwrap();
+        InterlockingGenerator::generate_interlocking_structure(&mut po).unwrap();
     }
 }

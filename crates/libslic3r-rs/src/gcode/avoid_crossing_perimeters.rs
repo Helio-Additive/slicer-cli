@@ -22,10 +22,10 @@
 //!
 //! - `get_default_perimeter_spacing`, `get_perimeter_spacing`,
 //!   `get_perimeter_spacing_external`, `get_external_perimeter_width`:
-//!   require `Layer::object()`/`Layer::print()` back-references and
-//!   `LayerRegion::flow(FlowRole)` (the Rust `LayerRegion` only exposes
-//!   `flow_with_config`/`flow_with_height`, and `Layer` holds no
-//!   PrintObject/Print pointer).
+//!   require the one-argument C++ `LayerRegion::flow(FlowRole)` overload,
+//!   which reads `m_layer->height` through a Layer back-pointer the Rust
+//!   `LayerRegion` does not hold (its `flow(role, layer_height)` needs the
+//!   caller to thread the height in).
 //! - `inner_offset`, `get_support_polygons`, `get_boundary`,
 //!   `get_boundary_external`: require `variable_offset_inner_ex`
 //!   (ClipperUtils.cpp:1390) which is NOT yet ported (see

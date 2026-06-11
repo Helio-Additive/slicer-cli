@@ -107,6 +107,12 @@ pub struct PrintConfig {
     pub filament_diameter: CoordF,
     /// Extrusion multiplier (flow rate adjustment).
     pub extrusion_multiplier: CoordF,
+    /// Line width of initial layer (mm). 0 = use the per-role widths.
+    /// BambuStudio: `initial_layer_line_width` — lives on the PRINT config in
+    /// C++ (PrintConfig.hpp:1411, coFloat) and is read by `PrintRegion::flow`
+    /// (PrintRegion.cpp:27-28). The PrintObjectConfig carries a historical
+    /// copy of the same JSON key; this is the faithful print-level home.
+    pub initial_layer_line_width: CoordF,
 
     // === Skirt/Brim ===
     /// Number of skirt loops.
@@ -930,6 +936,8 @@ impl Default for PrintConfig {
             nozzle_diameter: 0.4,
             filament_diameter: 1.75,
             extrusion_multiplier: 1.0,
+            // PrintConfig.cpp:3004-3011 default ConfigOptionFloat(0.4)
+            initial_layer_line_width: 0.4,
 
             // Skirt/Brim
             skirt_loops: 0, // Default to no skirt (opt-in); reference 3DBenchy has skirt_loops=0
@@ -2108,6 +2116,15 @@ impl PrintConfig {
             "filament_diameter" => {
                 if let Some(v) = parse_f64(value) {
                     self.filament_diameter = v;
+                }
+                true
+            }
+            // PrintConfig.hpp:1411 — print-level option read by PrintRegion::flow
+            // (PrintRegion.cpp:27-28). The PrintObjectConfig keeps its own copy
+            // of this key; both are fed from the same JSON value.
+            "initial_layer_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.initial_layer_line_width = v;
                 }
                 true
             }

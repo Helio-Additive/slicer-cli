@@ -78,9 +78,6 @@ pub struct LayerRegion {
     /// Layer.hpp:74
     pub fills: ExtrusionEntityCollection,
 
-    /// Initial layer line width (0 = use standard widths)
-    pub initial_layer_line_width: f64,
-
     /// Lower layer slices for overhang detection (set before make_perimeters)
     pub lower_slices: Option<Vec<crate::geometry::ExPolygon>>,
 
@@ -123,7 +120,6 @@ impl LayerRegion {
             unsupported_bridge_edges: Polylines::new(),
             perimeters: ExtrusionEntityCollection::new(),
             fills: ExtrusionEntityCollection::new(),
-            initial_layer_line_width: 0.0,
             lower_slices: None,
             upper_slices: None,
             region: None,
@@ -162,83 +158,87 @@ impl LayerRegion {
         &self.slices
     }
 
-    /// Calculate flow for a given role
-    /// Layer.cpp:23-72
-    pub fn flow_with_config(
-        &self,
-        role: FlowRole,
-        layer_height: f64,
-        config: &PrintRegionConfig,
-        is_first_layer: bool,
-    ) -> Result<Flow> {
-        // Layer.cpp:27-29
-        // On first layer, use initial_layer_line_width if available (wider for adhesion)
-        let width = if is_first_layer && self.initial_layer_line_width > 0.0 {
-            self.initial_layer_line_width
-        } else {
-            match role {
-                FlowRole::ExternalPerimeter => config.outer_wall_line_width,
-                FlowRole::Perimeter => config.inner_wall_line_width,
-                FlowRole::Infill => config.sparse_infill_line_width,
-                FlowRole::SolidInfill => config.internal_solid_infill_line_width,
-                FlowRole::TopSolidInfill => config.top_surface_line_width,
-                _ => config.outer_wall_line_width,
-            }
-        };
-
-        // PrintRegion.cpp:46-48
-        // C++: auto nozzle_diameter = float(print_config.nozzle_diameter.get_at(this->extruder(role) - 1));
-        // where print_config is reached via this->layer()->object()->print()->config().
-        // This crate's PrintConfig carries a single-extruder scalar nozzle_diameter,
-        // so get_at(extruder - 1) collapses to a direct read.
+    /// Calculate flow for a given role.
+    /// LayerRegion.cpp:21-29
+    /// C++: Flow LayerRegion::flow(FlowRole role) const
+    ///          { return this->flow(role, m_layer->height); }
+    /// C++: Flow LayerRegion::flow(FlowRole role, double layer_height) const
+    ///
+    /// This crate's LayerRegion has no Layer back-pointer, so `layer_height`
+    /// (C++ `m_layer->height`) is threaded by the caller and the two C++
+    /// overloads collapse into this single method.
+    pub fn flow(&self, role: FlowRole, layer_height: f64) -> Result<Flow> {
+        // LayerRegion.cpp:28
+        // C++: return m_region->flow(*m_layer->object(), role, layer_height, m_layer->id() == 0);
+        // The object/print configs are reached through the Arc snapshots
+        // stamped by wire_layer_hierarchy instead of the C++ parent pointers;
+        // `m_layer->id()` is mirrored by this->layer_id (stamped at creation).
         let print_config = self
             .print_config
             .as_deref()
             .expect("config hierarchy not wired — call wire_layer_hierarchy");
-        let nozzle_diameter = print_config.nozzle_diameter;
-
-        // First layer prints at the configured initial layer height
-        // (JSON key `initial_layer_print_height` -> PrintConfig::first_layer_height).
-        let height = if is_first_layer {
-            print_config.first_layer_height
-        } else {
-            layer_height
-        };
-
-        // Layer.cpp:43-72
-        Flow::new(width, height, nozzle_diameter).map_err(|e| e.into())
-    }
-
-    /// Calculate flow for current layer height.
-    /// Layer.cpp:74-77
-    pub fn flow_with_height(
-        &self,
-        role: FlowRole,
-        layer_height: f64,
-        config: &PrintRegionConfig,
-        is_first_layer: bool,
-    ) -> Result<Flow> {
-        self.flow_with_config(role, layer_height, config, is_first_layer)
+        let object_config = self
+            .object_config
+            .as_deref()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy");
+        crate::print_region::flow_from_configs(
+            role,
+            layer_height,
+            self.layer_id == 0,
+            print_config.initial_layer_line_width,
+            object_config.line_width,
+            print_config.nozzle_diameter,
+            self.region().config(),
+        )
+        .map_err(crate::Error::Config)
     }
 
     /// Calculate bridging flow.
-    /// LayerRegion.cpp:31-47
-    pub fn bridging_flow(
-        &self,
-        role: FlowRole,
-        layer_height: f64,
-        config: &PrintRegionConfig,
-        nozzle_diameter: f64,
-        thick_bridge: bool,
-        is_first_layer: bool,
-    ) -> Result<Flow> {
+    /// LayerRegion.cpp:31-46
+    /// C++: Flow LayerRegion::bridging_flow(FlowRole role, bool thick_bridge) const
+    ///
+    /// The non-thick branch calls C++ `this->flow(role)` which reads
+    /// `m_layer->height`; `layer_height` is threaded by the caller for the
+    /// same reason as in [`LayerRegion::flow`].
+    pub fn bridging_flow(&self, role: FlowRole, thick_bridge: bool, layer_height: f64) -> Result<Flow> {
+        // LayerRegion.cpp:33
+        // C++: const PrintRegion &region = this->region();
+        let region = self.region();
+        // LayerRegion.cpp:34
+        // C++: const PrintRegionConfig &region_config = region.config();
+        let region_config = region.config();
+        // LayerRegion.cpp:35
+        // C++: const PrintObject &print_object = *this->layer()->object();
+        // (only used to reach print()->config(); read off the stored Arc below)
         if thick_bridge {
-            let diameter = (config.bridge_flow_ratio.sqrt()) * nozzle_diameter;
-            Ok(Flow::bridging_flow(diameter, nozzle_diameter))
+            // The old Slic3r way (different from all other slicers): Use rounded extrusions.
+            // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
+            // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
+            // LayerRegion.cpp:40
+            // C++: auto nozzle_diameter = float(print_object.print()->config().nozzle_diameter.get_at(region.extruder(role) - 1));
+            // This crate's PrintConfig nozzle_diameter is a single-extruder
+            // scalar, so get_at(extruder - 1) collapses to a direct read;
+            // region.extruder(role) is still evaluated for its Unknown-role
+            // error semantics.
+            let _ = region.extruder(role).map_err(crate::Error::Config)?;
+            let nozzle_diameter = self
+                .print_config
+                .as_deref()
+                .expect("config hierarchy not wired — call wire_layer_hierarchy")
+                .nozzle_diameter;
+            // Applies default bridge spacing.
+            // LayerRegion.cpp:42
+            // C++: return Flow::bridging_flow(float(sqrt(region_config.bridge_flow)) * nozzle_diameter, nozzle_diameter);
+            Ok(Flow::bridging_flow(
+                region_config.bridge_flow_ratio.sqrt() * nozzle_diameter,
+                nozzle_diameter,
+            ))
         } else {
-            let base_flow = self.flow_with_config(role, layer_height, config, is_first_layer)?;
-            base_flow
-                .with_flow_ratio(config.bridge_flow_ratio)
+            // The same way as other slicers: Use normal extrusions. Apply bridge_flow while maintaining the original spacing.
+            // LayerRegion.cpp:45
+            // C++: return this->flow(role).with_flow_ratio(region_config.bridge_flow);
+            self.flow(role, layer_height)?
+                .with_flow_ratio(region_config.bridge_flow_ratio)
                 .map_err(|e| e.into())
         }
     }
@@ -421,14 +421,11 @@ impl LayerRegion {
         // C++: );
 
         // Get flows for different perimeter types
-        let perimeter_flow =
-            self.flow_with_config(FlowRole::Perimeter, layer_height, config, layer_id == 0)?;
-        let external_perimeter_flow = self.flow_with_config(
-            FlowRole::ExternalPerimeter,
-            layer_height,
-            config,
-            layer_id == 0,
-        )?;
+        // C++: this->flow(frPerimeter) (LayerRegion.cpp:153) — the LayerRegion
+        // reads region/object/print configs off its stored Arcs; layer_height
+        // stands in for the missing m_layer->height back-pointer read.
+        let perimeter_flow = self.flow(FlowRole::Perimeter, layer_height)?;
+        let external_perimeter_flow = self.flow(FlowRole::ExternalPerimeter, layer_height)?;
 
         // Build PerimeterConfig from PrintRegionConfig
         let perimeter_config = PerimeterConfig {
@@ -570,7 +567,7 @@ impl LayerRegion {
             // PerimeterGenerator.cpp:1364 — variable_width(polylines, erGapFill, solid_infill_flow)
             if !polylines.is_empty() {
                 let gap_fill_flow = self
-                    .flow_with_config(FlowRole::SolidInfill, layer_height, config, layer_id == 0)
+                    .flow(FlowRole::SolidInfill, layer_height)
                     .unwrap_or_else(|_| perimeter_flow.clone());
                 let paths = convert_thin_walls_to_extrusion_paths(
                     &polylines,
@@ -718,18 +715,8 @@ impl LayerRegion {
     }
 }
 
-/// Print region configuration
-/// PrintRegion.hpp
-#[derive(Debug, Clone)]
-pub struct PrintRegion {
-    pub config: PrintRegionConfig,
-}
-
-impl PrintRegion {
-    pub fn new(config: PrintRegionConfig) -> Self {
-        Self { config }
-    }
-}
+// NOTE: the canonical PrintRegion lives in crate::print_region (shared via
+// Arc into LayerRegion::region); a dead local shadow struct was removed here.
 
 /// Convert a perimeter loop to an extrusion loop
 /// Layer.cpp:200-240
@@ -1703,18 +1690,8 @@ impl LayerRegion {
     }
 }
 
-// Placeholder for PrintObject
-// Print.hpp:150
-#[derive(Debug, Clone)]
-pub struct PrintObject {}
-
-impl PrintObject {
-    /// Get bounding box
-    /// Print.cpp:500
-    pub fn bounding_box(&self) -> BoundingBox {
-        BoundingBox::empty()
-    }
-}
+// NOTE: the canonical PrintObject lives in crate::print_object; a dead local
+// placeholder struct (empty bounding_box stub) was removed here.
 
 /// Chain points by finding nearest neighbors
 /// Layer.cpp:1334-1385
