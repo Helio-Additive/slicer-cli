@@ -158,6 +158,45 @@ impl<'a> PrintRef<'a> {
     }
 }
 
+/// Zero-cost upward view from a Layer to its owning PrintObject, preserving
+/// the C++ call shapes `layer->object()->config()` and
+/// `layer->object()->print()->config()`.
+///
+/// C++: `PrintObject* object() { return m_object; }` (Layer.hpp:139). In Rust
+/// the ownership tree points downward, so instead of a parent pointer each
+/// Layer holds Arc snapshots of the object/print configs, stamped at sync
+/// points by PrintObject::wire_layer_hierarchy.
+pub struct ObjectRef<'a> {
+    object_config: &'a PrintObjectConfig,
+    print_config: &'a PrintConfig,
+}
+
+impl<'a> ObjectRef<'a> {
+    pub(crate) fn new(
+        object_config: &'a PrintObjectConfig,
+        print_config: &'a PrintConfig,
+    ) -> Self {
+        Self {
+            object_config,
+            print_config,
+        }
+    }
+
+    /// Access the object-level configuration.
+    /// C++: `const PrintObjectConfig& config() const { return m_config; }` (Print.hpp:369)
+    pub fn config(&self) -> &'a PrintObjectConfig {
+        self.object_config
+    }
+
+    /// Upward view to the owning Print.
+    /// C++: `PrintType* print() { return m_print; }` (PrintBase.hpp:632)
+    pub fn print(&self) -> PrintRef<'a> {
+        PrintRef {
+            config: self.print_config,
+        }
+    }
+}
+
 /// PrintObject - Individual object to be printed
 /// Print.hpp:378-693 (316 lines)
 pub struct PrintObject {
@@ -413,10 +452,51 @@ impl PrintObject {
             return Err(Error::Cancelled);
         }
 
+        // Wire the config hierarchy onto the freshly created layers so that
+        // `layer.object().print().config()` / `layerm.region().config()` work.
+        // Sync point: end of PrintObject::slice — this is the load-bearing
+        // stamp (make_perimeters calls self.slice() internally). C++ does not
+        // need this because Layer/LayerRegion carry parent pointers from their
+        // ctors (Layer.hpp:125, Layer.hpp:309).
+        self.wire_layer_hierarchy();
+
         // Mark step as complete
         // PrintObjectSlice.cpp:843
         self.set_step_done(PrintObjectStep::Slice);
         Ok(())
+    }
+
+    /// Stamp the config-hierarchy Arcs onto every Layer (and support Layer)
+    /// and their LayerRegions, so that the C++ call shapes
+    /// `layer->object()->print()->config()` and `layerm->region().config()`
+    /// work without parent pointers.
+    ///
+    /// Each LayerRegion's region Arc is looked up via its region id into
+    /// shared_regions.all_regions — the very same Arcs held by
+    /// Print::print_regions, so the PrintRegion identity stays unified.
+    ///
+    /// Called at sync points (end of PrintObject::slice; support layers are
+    /// created inside generate_support_material AFTER this pass and get
+    /// stamped again at its end). Faithful because in C++ configs only mutate
+    /// inside Print::apply and any diff there invalidates posSlice, so between
+    /// sync points the snapshots cannot diverge.
+    ///
+    /// INVARIANT: Arcs are replaced wholesale (Arc::new + clone), NEVER
+    /// mutated in place via Arc::make_mut/get_mut — that would fork the share.
+    pub fn wire_layer_hierarchy(&mut self) {
+        let object_config = Arc::new(self.config.clone());
+        let print_config = self.print_config.clone();
+        let all_regions: Vec<Arc<PrintRegion>> = self
+            .shared_regions
+            .as_ref()
+            .map(|regions| regions.all_regions.clone())
+            .unwrap_or_default();
+        for layer in &mut self.layers {
+            layer.wire_config_hierarchy(&object_config, &print_config, &all_regions);
+        }
+        for layer in &mut self.support_layers {
+            layer.wire_config_hierarchy(&object_config, &print_config, &all_regions);
+        }
     }
 
     /// Generate perimeters for all layers
@@ -1266,6 +1346,17 @@ impl PrintObject {
             let mut layer = Layer::new(sl.layer_id, self.model_object_id, sl.height, sl.z, sl.z);
             layer.lslices = sl.support_regions.clone();
             self.support_layers.push(layer);
+        }
+
+        // The support layers above are created AFTER the end-of-slice
+        // wire_layer_hierarchy pass — stamp their config Arcs now so that
+        // `layer.object()`/`.print()` work on them. They carry no
+        // LayerRegions, so `LayerRegion::region` stays None (support layers
+        // are region-less; only LayerRegion::region() is fail-fast).
+        let object_config = Arc::new(self.config.clone());
+        let print_config = self.print_config.clone();
+        for layer in &mut self.support_layers {
+            layer.wire_config_hierarchy(&object_config, &print_config, &[]);
         }
 
         self.set_step_done(PrintObjectStep::SupportMaterial);

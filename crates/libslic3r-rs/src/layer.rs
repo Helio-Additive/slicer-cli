@@ -34,6 +34,8 @@ use crate::region_expansion::{
 use crate::surface::{Surface, SurfaceCollection, SurfaceType};
 use crate::{scale, unscale, Coord, CoordF, Result};
 
+use std::sync::Arc;
+
 /// Represents a region within a layer, tied to a specific print configuration.
 /// Layer.hpp:35
 #[derive(Debug, Clone)]
@@ -84,6 +86,23 @@ pub struct LayerRegion {
 
     /// Upper layer slices for top-surface detection (set before make_perimeters)
     pub upper_slices: Option<Vec<crate::geometry::ExPolygon>>,
+
+    /// Owning PrintRegion, shared via Arc with Print::print_regions and
+    /// PrintObjectRegions::all_regions (the very same Arc identity).
+    /// C++: `const PrintRegion *m_region;` (Layer.hpp:131), reached through
+    /// `LayerRegion::region()` (Layer.hpp:38). Stamped by
+    /// PrintObject::wire_layer_hierarchy at sync points; None until wired.
+    pub(crate) region: Option<Arc<crate::print_region::PrintRegion>>,
+
+    /// Snapshot of the owning PrintObject's config, shared via Arc.
+    /// C++ reaches it via the parent pointers `m_layer->m_object->config()`
+    /// (Layer.hpp:130 + Print.hpp:369). Stamped at sync points; None until wired.
+    pub(crate) object_config: Option<Arc<crate::print_config::PrintObjectConfig>>,
+
+    /// Snapshot of the owning Print's config, shared via Arc.
+    /// C++: `m_layer->m_object->print()->config()` (PrintBase.hpp:632 +
+    /// Print.hpp:885). Stamped at sync points; None until wired.
+    pub(crate) print_config: Option<Arc<crate::print_config::PrintConfig>>,
 }
 
 impl LayerRegion {
@@ -107,6 +126,9 @@ impl LayerRegion {
             initial_layer_line_width: 0.0,
             lower_slices: None,
             upper_slices: None,
+            region: None,
+            object_config: None,
+            print_config: None,
         }
     }
 
@@ -120,6 +142,18 @@ impl LayerRegion {
     /// Layer.hpp:79
     pub fn region_id(&self) -> usize {
         self.region_id
+    }
+
+    /// Get the owning PrintRegion.
+    /// C++: `const PrintRegion& region() const { return *m_region; }` (Layer.hpp:38)
+    ///
+    /// Fails fast when the config hierarchy has not been stamped yet —
+    /// support layers carry no regions, so only true printing regions reach
+    /// this accessor.
+    pub fn region(&self) -> &crate::print_region::PrintRegion {
+        self.region
+            .as_deref()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy")
     }
 
     /// Get slices
@@ -771,6 +805,19 @@ pub struct Layer {
     /// Support material fills for this layer.
     /// C++ SupportLayer::support_fills
     pub support_fills: Option<ExtrusionEntityCollection>,
+
+    /// Snapshot of the owning PrintObject's config, shared via Arc.
+    /// C++ reaches it via the parent pointer: `PrintObject *m_object;`
+    /// (Layer.hpp:309) + `object()->config()` (Print.hpp:369). Stamped by
+    /// PrintObject::wire_layer_hierarchy at sync points; None until wired.
+    /// Present on support layers too (stamped at the end of
+    /// generate_support_material).
+    pub(crate) object_config: Option<Arc<crate::print_config::PrintObjectConfig>>,
+
+    /// Snapshot of the owning Print's config, shared via Arc.
+    /// C++: `object()->print()->config()` (PrintBase.hpp:632 + Print.hpp:885).
+    /// Stamped at sync points; None until wired.
+    pub(crate) print_config: Option<Arc<crate::print_config::PrintConfig>>,
 }
 
 // Marker traits for thread safety
@@ -803,6 +850,8 @@ impl Layer {
             loop_nodes: Vec::new(),
             regions: Vec::new(),
             support_fills: None,
+            object_config: None,
+            print_config: None,
         }
     }
 
@@ -822,6 +871,53 @@ impl Layer {
     /// Layer.hpp:206
     pub fn object_id(&self) -> usize {
         self.object_id
+    }
+
+    /// Upward view to the owning PrintObject, preserving the C++ call shapes
+    /// `layer->object()->config()` and `layer->object()->print()->config()`.
+    /// C++: `PrintObject* object() { return m_object; }` (Layer.hpp:139)
+    ///
+    /// Works on region-less support layers too — they get their config Arcs
+    /// stamped at the end of generate_support_material; only
+    /// LayerRegion::region() is restricted to true printing regions.
+    pub fn object(&self) -> crate::print_object::ObjectRef<'_> {
+        crate::print_object::ObjectRef::new(
+            self.object_config
+                .as_deref()
+                .expect("config hierarchy not wired — call wire_layer_hierarchy"),
+            self.print_config
+                .as_deref()
+                .expect("config hierarchy not wired — call wire_layer_hierarchy"),
+        )
+    }
+
+    /// Stamp the config-hierarchy Arcs onto this layer and its LayerRegions.
+    /// Called by PrintObject::wire_layer_hierarchy at sync points (end of
+    /// PrintObject::slice; end of generate_support_material for the support
+    /// layers created there).
+    ///
+    /// The region Arc is looked up via each LayerRegion's region id into
+    /// `all_regions`, mirroring the C++ ctor wiring
+    /// `LayerRegion(Layer *layer, const PrintRegion *region)` (Layer.hpp:125).
+    /// Support layers have no LayerRegions, so their `region` stays None.
+    ///
+    /// INVARIANT: the Arcs are cloned/replaced wholesale — NEVER mutated in
+    /// place via Arc::make_mut/get_mut, which would fork the share. Faithful
+    /// because C++ configs only mutate inside Print::apply and any diff there
+    /// invalidates posSlice.
+    pub(crate) fn wire_config_hierarchy(
+        &mut self,
+        object_config: &Arc<crate::print_config::PrintObjectConfig>,
+        print_config: &Arc<crate::print_config::PrintConfig>,
+        all_regions: &[Arc<crate::print_region::PrintRegion>],
+    ) {
+        self.object_config = Some(object_config.clone());
+        self.print_config = Some(print_config.clone());
+        for layerm in &mut self.regions {
+            layerm.region = all_regions.get(layerm.region_id).cloned();
+            layerm.object_config = Some(object_config.clone());
+            layerm.print_config = Some(print_config.clone());
+        }
     }
 
     /// Get bottom Z coordinate
