@@ -1,54 +1,46 @@
-# libslic3r C++ → Rust faithful port ledger
-
-**Progress: 147/278 units ported** (52%)  ·  partial 100  ·  deferred 4  ·  pending 27  ·  source of truth: `PORT_LEDGER.json`
-
-Each unit = one C++ `.cpp` (line-by-line port to the mirrored snake_case Rust file) or header-only `.hpp`. Driven by the `libslic3r-systematic-port` workflow (one phase per file, build-gated, resumable).
-
-## By area
+**Progress: 164/278 units ported** (59%) · partial 110 · deferred 4
 
 | Area | Done | Total |
 |------|------|-------|
-| root | 88 | 152 |
 | Algorithm | 0 | 1 |
-| Arachne | 22 | 26 |
+| Arachne | 23 | 26 |
 | CSGMesh | 5 | 7 |
 | Execution | 3 | 3 |
 | Fill | 10 | 18 |
-| Format | 2 | 10 |
+| Format | 3 | 10 |
 | GCode | 7 | 17 |
 | Geometry | 7 | 10 |
-| Interlocking | 0 | 2 |
+| Interlocking | 2 | 2 |
 | Optimize | 2 | 3 |
-| SLA | 0 | 20 |
+| SLA | 13 | 20 |
 | Shape | 0 | 1 |
 | Support | 1 | 8 |
+| root | 88 | 152 |
 
-## Remaining pending
+## Next pending
 
-- [ ] `Arachne/utils/SparsePointGrid.hpp` (90 loc) → `crates/libslic3r-rs/src/arachne/utils/sparse_point_grid.rs`
-- [ ] `Format/objparser.cpp` (920 loc) → `crates/libslic3r-rs/src/format/objparser.rs`
-- [ ] `Format/AMF.cpp` (1397 loc) → `crates/libslic3r-rs/src/format/amf.rs`
-- [ ] `Format/3mf.cpp` (3278 loc) → `crates/libslic3r-rs/src/format/3mf.rs`
-- [ ] `Format/bbs_3mf.cpp` (9455 loc) → `crates/libslic3r-rs/src/format/bbs_3mf.rs`
-- [ ] `Interlocking/VoxelUtils.cpp` (219 loc) → `crates/libslic3r-rs/src/interlocking/voxel_utils.rs`
-- [ ] `Interlocking/InterlockingGenerator.cpp` (497 loc) → `crates/libslic3r-rs/src/interlocking/interlocking_generator.rs`
-- [ ] `SLA/JobController.hpp` (32 loc) → `crates/libslic3r-rs/src/sla/job_controller.rs`
-- [ ] `SLA/ReprojectPointsOnMesh.hpp` (46 loc) → `crates/libslic3r-rs/src/sla/reproject_points_on_mesh.rs`
-- [ ] `SLA/SupportPoint.hpp` (67 loc) → `crates/libslic3r-rs/src/sla/support_point.rs`
-- [ ] `SLA/Concurrency.hpp` (70 loc) → `crates/libslic3r-rs/src/sla/concurrency.rs`
-- [ ] `SLA/RasterBase.cpp` (86 loc) → `crates/libslic3r-rs/src/sla/raster_base.rs`
-- [ ] `SLA/RasterToPolygons.cpp` (91 loc) → `crates/libslic3r-rs/src/sla/raster_to_polygons.rs`
-- [ ] `SLA/SupportTree.cpp` (98 loc) → `crates/libslic3r-rs/src/sla/support_tree.rs`
-- [ ] `SLA/BoostAdapter.hpp` (134 loc) → `crates/libslic3r-rs/src/sla/boost_adapter.rs`
-- [ ] `SLA/ConcaveHull.cpp` (145 loc) → `crates/libslic3r-rs/src/sla/concave_hull.rs`
-- [ ] `SLA/Clustering.cpp` (152 loc) → `crates/libslic3r-rs/src/sla/clustering.rs`
-- [ ] `SLA/SpatIndex.cpp` (161 loc) → `crates/libslic3r-rs/src/sla/spat_index.rs`
-- [ ] `SLA/AGGRaster.hpp` (222 loc) → `crates/libslic3r-rs/src/sla/agg_raster.rs`
-- [ ] `SLA/SupportTreeBuilder.cpp` (225 loc) → `crates/libslic3r-rs/src/sla/support_tree_builder.rs`
-- [ ] `SLA/SupportTreeMesher.cpp` (270 loc) → `crates/libslic3r-rs/src/sla/support_tree_mesher.rs`
-- [ ] `SLA/IndexedMesh.cpp` (456 loc) → `crates/libslic3r-rs/src/sla/indexed_mesh.rs`
-- [ ] `SLA/Rotfinder.cpp` (476 loc) → `crates/libslic3r-rs/src/sla/rotfinder.rs`
-- [ ] `SLA/Pad.cpp` (538 loc) → `crates/libslic3r-rs/src/sla/pad.rs`
-- [ ] `SLA/Hollowing.cpp` (563 loc) → `crates/libslic3r-rs/src/sla/hollowing.rs`
-- [ ] `SLA/SupportPointGenerator.cpp` (668 loc) → `crates/libslic3r-rs/src/sla/support_point_generator.rs`
-- [ ] `SLA/SupportTreeBuildsteps.cpp` (1277 loc) → `crates/libslic3r-rs/src/sla/support_tree_buildsteps.rs`
+- [ ] `TryCatchSignalSEH.cpp` (43 loc) -> `crates/libslic3r-rs/src/try_catch_signal_seh.rs`
+- [ ] `ParameterUtils.cpp` (79 loc) -> `crates/libslic3r-rs/src/parameter_utils.rs`
+- [ ] `Surface.cpp` (96 loc) -> `crates/libslic3r-rs/src/surface.rs`
+- [ ] `OpenVDBUtils.cpp` (136 loc) -> `crates/libslic3r-rs/src/open_vdb_utils.rs`
+- [ ] `ByObjectPrintData.cpp` (152 loc) -> `crates/libslic3r-rs/src/by_object_print_data.rs`
+- [ ] `PrintBase.cpp` (155 loc) -> `crates/libslic3r-rs/src/print_base.rs`
+- [ ] `ExtrusionEntityCollection.cpp` (158 loc) -> `crates/libslic3r-rs/src/extrusion_entity_collection.rs`
+- [ ] `miniz_extension.cpp` (159 loc) -> `crates/libslic3r-rs/src/miniz_extension.rs`
+- [ ] `SurfaceCollection.cpp` (164 loc) -> `crates/libslic3r-rs/src/surface_collection.rs`
+- [ ] `SurfaceMesh.hpp` (167 loc) -> `crates/libslic3r-rs/src/surface_mesh.rs`
+- [ ] `ModelArrange.cpp` (185 loc) -> `crates/libslic3r-rs/src/model_arrange.rs`
+- [ ] `Clipper2Utils.cpp` (211 loc) -> `crates/libslic3r-rs/src/clipper2_utils.rs`
+- [ ] `SlicingAdaptive.cpp` (216 loc) -> `crates/libslic3r-rs/src/slicing_adaptive.rs`
+- [ ] `Extruder.cpp` (223 loc) -> `crates/libslic3r-rs/src/extruder.rs`
+- [ ] `Flow.cpp` (266 loc) -> `crates/libslic3r-rs/src/flow.rs`
+- [ ] `FuzzySkin.cpp` (274 loc) -> `crates/libslic3r-rs/src/fuzzy_skin.rs`
+- [ ] `Thread.cpp` (276 loc) -> `crates/libslic3r-rs/src/thread.rs`
+- [ ] `Point.cpp` (303 loc) -> `crates/libslic3r-rs/src/geometry/point.rs`
+- [ ] `GCodeReader.cpp` (313 loc) -> `crates/libslic3r-rs/src/g_code_reader.rs`
+- [ ] `ObjColorUtils.cpp` (321 loc) -> `crates/libslic3r-rs/src/obj_color_utils.rs`
+- [ ] `Triangulation.cpp` (329 loc) -> `crates/libslic3r-rs/src/triangulation.rs`
+- [ ] `FilamentGroupUtils.cpp` (340 loc) -> `crates/libslic3r-rs/src/filament_group_utils.rs`
+- [ ] `LogSink.cpp` (448 loc) -> `crates/libslic3r-rs/src/log_sink.rs`
+- [ ] `OverhangDetector.cpp` (508 loc) -> `crates/libslic3r-rs/src/overhang_detector.rs`
+- [ ] `NSVGUtils.cpp` (543 loc) -> `crates/libslic3r-rs/src/nsvg_utils.rs`
