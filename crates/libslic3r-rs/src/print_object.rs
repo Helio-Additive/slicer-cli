@@ -47,7 +47,7 @@
 use crate::{
     geometry::{Polygon, Polygons},
     layer::Layer,
-    print_config::PrintObjectConfig,
+    print_config::{PrintConfig, PrintObjectConfig},
     print_region::PrintRegion,
     surface::{Surface, SurfaceCollection, SurfaceDetectionConfig},
     Error, Result,
@@ -137,6 +137,27 @@ impl PrintObjectRegions {
     }
 }
 
+/// Zero-cost upward view from a PrintObject to its owning Print's config,
+/// preserving the C++ call shape `object->print()->config()`.
+///
+/// C++: `PrintType* print() { return m_print; }` (PrintBase.hpp:632). In Rust
+/// the ownership tree points downward, so instead of a parent pointer the
+/// PrintObject holds an `Arc<PrintConfig>` snapshot stamped at sync points
+/// (Print::add_object, top of Print::process). This is faithful because in
+/// C++ the print config only mutates inside Print::apply, and any diff there
+/// invalidates posSlice — so between sync points the snapshot cannot diverge.
+pub struct PrintRef<'a> {
+    config: &'a PrintConfig,
+}
+
+impl<'a> PrintRef<'a> {
+    /// Access the print-level configuration.
+    /// C++: `const PrintConfig& config() const { return m_config; }` (Print.hpp:885)
+    pub fn config(&self) -> &'a PrintConfig {
+        self.config
+    }
+}
+
 /// PrintObject - Individual object to be printed
 /// Print.hpp:378-693 (316 lines)
 pub struct PrintObject {
@@ -151,6 +172,13 @@ pub struct PrintObject {
     /// Object configuration
     /// Print.hpp:614
     pub config: PrintObjectConfig,
+
+    /// Snapshot of the owning Print's configuration, shared via Arc.
+    /// C++ reaches this through the parent pointer: `m_print->config()`
+    /// (PrintBase.hpp:632 + Print.hpp:885). Stamped wholesale at sync points
+    /// (Print::add_object, top of Print::process) — NEVER mutated in place
+    /// (no Arc::make_mut/get_mut), which would fork the share.
+    print_config: Arc<PrintConfig>,
 
     /// Reference to parent model object
     /// Print.hpp:615
@@ -197,6 +225,7 @@ impl PrintObject {
             layers: Vec::new(),
             support_layers: Vec::new(),
             config: PrintObjectConfig::default(),
+            print_config: Arc::new(PrintConfig::default()),
             model_object_id: 0,
             label_id: 0,
             state: 0,
@@ -218,6 +247,7 @@ impl PrintObject {
             layers: Vec::new(),
             support_layers: Vec::new(),
             config,
+            print_config: Arc::new(PrintConfig::default()),
             model_object_id: 0,
             label_id: 0,
             state: 0,
@@ -239,6 +269,32 @@ impl PrintObject {
     /// Print.cpp:440
     pub(crate) fn set_canceled(&mut self, canceled: Arc<AtomicBool>) {
         self.canceled = canceled;
+    }
+
+    /// Stamp the owning Print's config snapshot onto this object (called by
+    /// Print at sync points: add_object and the top of process). The Arc is
+    /// replaced wholesale, mirroring C++ where m_print is assigned once and
+    /// the pointed-to config only mutates inside Print::apply.
+    pub(crate) fn set_print_config(&mut self, print_config: Arc<PrintConfig>) {
+        self.print_config = print_config;
+    }
+
+    /// Upward view to the owning Print, preserving the C++ call shape
+    /// `object->print()->config()`.
+    /// C++: `PrintType* print() { return m_print; }` (PrintBase.hpp:632)
+    pub fn print(&self) -> PrintRef<'_> {
+        PrintRef {
+            config: &self.print_config,
+        }
+    }
+
+    /// Collect the slicing parameters, to be used by variable layer thickness
+    /// algorithm, by the interactive layer height editor and by the printing
+    /// process itself.
+    /// C++: `const SlicingParameters& slicing_parameters() const { return m_slicing_params; }`
+    /// (Print.hpp:468)
+    pub fn slicing_parameters(&self) -> &crate::slicing::SlicingParams {
+        &self.slicing_params
     }
 
     /// Set the mesh for this object

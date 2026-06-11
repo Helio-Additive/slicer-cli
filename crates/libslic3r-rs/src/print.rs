@@ -193,6 +193,12 @@ impl Print {
         // Share cancellation flag with object
         object.set_canceled(self.canceled.clone());
 
+        // Stamp the print config snapshot onto the object, mirroring C++
+        // where the PrintObject ctor stores m_print and reaches the config
+        // via m_print->config() (PrintBase.hpp:632). Re-stamped at the top of
+        // Print::process to pick up config_mut() edits made in between.
+        object.set_print_config(Arc::new(self.config.clone()));
+
         // Initialize with default region if none set
         // The Arc itself is cloned (NOT the PrintRegion), so Print::print_regions
         // and PrintObjectRegions::all_regions share the same PrintRegion identity,
@@ -1052,6 +1058,16 @@ impl Print {
         // Print.cpp:1799-1800
         if self.objects.is_empty() {
             return Ok(());
+        }
+
+        // Re-stamp the print config snapshot onto all objects (Rust-side sync
+        // point; one shared Arc for all objects). Faithful to C++ where the
+        // objects read m_print->m_config directly and the config can only
+        // have changed inside Print::apply, which invalidates posSlice.
+        // INVARIANT: replace the Arc wholesale, never Arc::make_mut/get_mut.
+        let print_config = Arc::new(self.config.clone());
+        for obj in &mut self.objects {
+            obj.set_print_config(print_config.clone());
         }
 
         // Print.cpp:1802-1803
