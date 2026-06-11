@@ -6,19 +6,17 @@ C++ slicer. No shortcuts: same functions, same order, same names (snake_case), s
 flow / constants / rounding / locations. wasm-safe (no system/dylib deps).
 
 ## Where things stand (committed @ branch `alex/libslic3r-parity-engine`)
-- **Ledger: 147 done / 100 partial / 4 deferred / 27 pending of 278 units.**
+- **Ledger: 164 done / 110 partial / 4 deferred / 0 pending of 278 units — pending drained 2026-06-11.**
 - lib **and** bin build green; 3DBenchy slices to **filament 3818.67 mm** (golden 3858.97, ~0.99×), 240 layers, top=5.
 - **2026-06-10 regression fixed:** the faithful TriangleMeshSlicer port (checkpoint 54792d7) exploded
   gcode 13× because `src/libslic3r.rs` had `SCALING_FACTOR = 0.000001` (PrusaSlicer value; BambuStudio
   libslic3r.h:58 is `0.00001`) → `scaled_f32` made all XY geometry 10× too large. Fixed the constant,
   made `scaled_f32` a plain f32 division (C++ `scaled<float>`, Point.hpp:529 — no +0.5/floor), and fixed
   layer-0 `slice_z` to mid-plane (PrintObjectSlice.cpp:36). Filament 570,107 → 3818.67.
-- The 27 pending are deliberately last: **19 SLA** files (resin; off the FFF/Benchy path),
-  **5 big Format importers** (3mf/bbs_3mf 9455loc/AMF/objparser/STEP — file I/O, not slicing math),
-  2 Interlocking, 1 Arachne header, 1 Algorithm.
-- **`partial` (100)** = faithfully ported except symbols blocked on the **config-hierarchy
-  threading** (Print→PrintObject→Layer→PrintRegion) not yet wired, or a not-yet-ported dep.
-  This is the main follow-up track and is why byte-parity isn't reached yet.
+- **`partial` (110)** = faithfully ported except symbols blocked on the **config-hierarchy
+  threading** (Print→PrintObject→Layer→PrintRegion) not yet wired, a native lib
+  (OpenVDB/CGAL/OCCT/boost-Voronoi), or a not-yet-ported dep. ~544 `BLOCKED` markers across 98 files.
+  Config threading is the active track (see below); a map+design workflow output drives it.
 
 ## Source of truth + dashboard
 - `crates/libslic3r-rs/PORT_LEDGER.json` — array of units `{cpp,hpp,rust,area,loc,status}`.
@@ -58,8 +56,8 @@ It runs for hours; a fresh `Workflow({scriptPath})` call always resumes from the
 - coord_t→i64, coordf_t→f64. Reuse existing crate primitives (grep before adding). No stubs/fakes — block honestly as `partial`.
 - 3DBenchy parity is currently a near-match by *volume* but **not byte-identical**; remaining gap is feature distribution (Top surface 5 vs 142, Bridge/Floating-shell missing), all traced to the config-threading blocker + an unsolved `top_fills` coverage issue. See `project_benchy_parity_gap` memory and `PROGRESS.md`.
 
-## After pending→0 (next tracks, in priority order)
-1. **Config-hierarchy threading** — wire PrintConfig/PrintObjectConfig/PrintRegionConfig refs through Print→PrintObject→Layer→LayerRegion so the 100 `partial` units' blocked symbols can be completed. Highest leverage for parity.
+## Current track (pending hit 0 on 2026-06-11)
+1. **Config-hierarchy threading** (ACTIVE) — wire PrintConfig/PrintObjectConfig/PrintRegionConfig refs through Print→PrintObject→Layer→LayerRegion so the 110 `partial` units' blocked symbols can be completed. Highest leverage for parity. A `config-threading-map` workflow (3 readers → design → adversarial critique) produces the ownership decision, build-gated step list, and Benchy-path-first retry worklist.
 2. Re-attempt all `partial` units (now unblocked) → `done`.
 3. `top_fills` coverage fix (gated behind env `TOP_FILLS`) + faithful `discover_vertical_shells` (gated `VSHELL_FAITHFUL`) — see memory.
-4. Format importers + SLA (only if needed).
+4. Native-lib-blocked symbols (OpenVDB/CGAL/OCCT/boost-Voronoi) — vendored minimal Rust replacements, only the functions actually used.
