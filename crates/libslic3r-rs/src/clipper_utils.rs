@@ -464,6 +464,40 @@ pub fn offset_expolygons(
     expolygons
 }
 
+/// Offset multiple ExPolygons with `ClipperLib::jtMiter` and an explicit
+/// miter limit.
+///
+/// ClipperUtils `offset_ex(const ExPolygons&, float delta, ClipperLib::jtMiter,
+/// double miterLimit)` — needed by `SLA/Pad.cpp:257-260`, which passes a miter
+/// limit of `1` instead of the crate-wide default `3.0` baked into
+/// `OffsetJoinType::Miter`.
+pub fn offset_expolygons_miter_limit(
+    expolygons: &[ExPolygon],
+    delta: CoordF,
+    miter_limit: f64,
+) -> ExPolygons {
+    if expolygons.is_empty() {
+        return vec![];
+    }
+
+    let geo_multi = expolygons_to_geo_multi(expolygons);
+
+    let result = geo_multi.offset(
+        delta,
+        JoinType::Miter(miter_limit),
+        EndType::ClosedPolygon,
+        GEO_CLIPPER_SCALE,
+    );
+    let mut expolygons = geo_multi_to_expolygons(&result);
+
+    // Ensure canonical winding order
+    for expoly in &mut expolygons {
+        expoly.make_canonical();
+    }
+
+    expolygons
+}
+
 /// Offset multiple Polygons by a given distance.
 pub fn offset_polygons(
     polygons: &[Polygon],

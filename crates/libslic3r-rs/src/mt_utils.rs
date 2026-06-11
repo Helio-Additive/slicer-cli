@@ -240,4 +240,31 @@ where
     vals
 }
 
+/// MTUtils.hpp:120-137 — `grid<T>` instantiated at `T = float`
+/// (used by `SLA/Pad.cpp:512` and `SLA/SupportTreeBuilder.cpp:40`).
+///
+/// The generic [`grid`] above cannot be instantiated at `f32` because
+/// `f32: From<i32>` does not exist in Rust; this is the identical algorithm
+/// with the C++ implicit `int -> float` promotion written as `as` casts, and
+/// all arithmetic carried out in `f32` exactly as the `T = float`
+/// instantiation does.
+#[inline]
+pub fn grid_f32(start: f32, stop: f32, stride: f32) -> Vec<f32> {
+    // MTUtils.hpp:129 std::vector<T> vals(size_t(std::ceil((stop - start) / stride)), T());
+    let count: usize = ((stop - start) / stride).ceil() as usize;
+    let mut vals: Vec<f32> = vec![0.0f32; count];
+
+    // MTUtils.hpp:131 int i = 0;
+    let mut i: i32 = 0;
+    // MTUtils.hpp:132-134 std::generate(..., [&i, start, stride] {
+    //     return start + i++ * stride; });
+    for v in vals.iter_mut() {
+        *v = start + (i as f32) * stride;
+        i += 1;
+    }
+
+    // MTUtils.hpp:136 return vals;
+    vals
+}
+
 // MTUtils.hpp:139 } // namespace Slic3r
