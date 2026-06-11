@@ -55,6 +55,11 @@ use crate::normal_utils::indexed_triangle_set;
 use crate::sla::ccr;
 use crate::sla::job_controller::JobController;
 use crate::sla::pad::PadConfig;
+use crate::sla::support_tree_mesher::{
+    get_mesh_bridge, get_mesh_diff_bridge, get_mesh_head, get_mesh_junction, get_mesh_pedestal,
+    get_mesh_pillar,
+};
+use crate::triangle_mesh::{bounding_box, its_merge, its_merge_vertices};
 
 // ---------------------------------------------------------------------------
 // SupportTreeBuilder.hpp
@@ -1204,77 +1209,119 @@ impl SupportTreeBuilder {
     // SupportTreeBuilder.hpp:421-422 (declaration, default steps = 45) /
     // SupportTreeBuilder.cpp:125-188
     // const indexed_triangle_set &SupportTreeBuilder::merged_mesh(size_t steps) const
-    // {
-    //     if (m_meshcache_valid) return m_meshcache;
-    //
-    //     indexed_triangle_set merged;
-    //
-    //     for (auto &head : m_heads) {
-    //         if (ctl().stopcondition()) break;
-    //         if (head.is_valid()) its_merge(merged, get_mesh(head, steps));
-    //     }
-    //
-    //     for (auto &pill : m_pillars) {
-    //         if (ctl().stopcondition()) break;
-    //         its_merge(merged, get_mesh(pill, steps));
-    //     }
-    //
-    //     for (auto &pedest : m_pedestals) {
-    //         if (ctl().stopcondition()) break;
-    //         its_merge(merged, get_mesh(pedest, steps));
-    //     }
-    //
-    //     for (auto &j : m_junctions) {
-    //         if (ctl().stopcondition()) break;
-    //         its_merge(merged, get_mesh(j, steps));
-    //     }
-    //
-    //     for (auto &bs : m_bridges) {
-    //         if (ctl().stopcondition()) break;
-    //         its_merge(merged, get_mesh(bs, steps));
-    //     }
-    //
-    //     for (auto &bs : m_crossbridges) {
-    //         if (ctl().stopcondition()) break;
-    //         its_merge(merged, get_mesh(bs, steps));
-    //     }
-    //
-    //     for (auto &bs : m_diffbridges) {
-    //         if (ctl().stopcondition()) break;
-    //         its_merge(merged, get_mesh(bs, steps));
-    //     }
-    //
-    //     for (auto &anch : m_anchors) {
-    //         if (ctl().stopcondition()) break;
-    //         its_merge(merged, get_mesh(anch, steps));
-    //     }
-    //
-    //     if (ctl().stopcondition()) {
-    //         // In case of failure we have to return an empty mesh
-    //         m_meshcache = {};
-    //         return m_meshcache;
-    //     }
-    //
-    //     m_meshcache = merged;
-    //
-    //     // The mesh will be passed by const-pointer to TriangleMeshSlicer,
-    //     // which will need this.
-    //     its_merge_vertices(m_meshcache);
-    //
-    //     BoundingBoxf3 bb = bounding_box(m_meshcache);
-    //     m_model_height   = bb.max(Z) - bb.min(Z);
-    //
-    //     m_meshcache_valid = true;
-    //     return m_meshcache;
-    // }
-    //
-    // BLOCKED: requires the `get_mesh(Head/Pillar/Pedestal/Junction/Bridge/
-    // DiffBridge/Anchor, steps)` overloads from SLA/SupportTreeMesher.cpp,
-    // which is still an auto-generated placeholder stub in this crate
-    // (`sla/support_tree_mesher.rs`). `its_merge`, `its_merge_vertices` and
-    // `bounding_box` are already available in `crate::triangle_mesh`. No fake
-    // is provided; port SLA/SupportTreeMesher.cpp first, then implement as
-    // `pub fn merged_mesh(&mut self, steps: usize) -> &indexed_triangle_set`.
+    // (C++ `const` with `mutable` cache members; expressed with `&mut self`.
+    //  The C++ default argument `steps = 45` cannot be expressed in Rust;
+    //  callers pass it explicitly. The `get_mesh(anch, ...)` call resolves to
+    //  `get_mesh(const Head&, ...)` since Anchor derives from Head with no
+    //  dedicated overload, hence `get_mesh_head(&anch.0, ...)` here.)
+    pub fn merged_mesh(&mut self, steps: usize) -> &indexed_triangle_set {
+        // SupportTreeBuilder.cpp:127
+        if self.m_meshcache_valid {
+            return &self.m_meshcache;
+        }
+
+        // SupportTreeBuilder.cpp:129
+        let mut merged = indexed_triangle_set::default();
+
+        // SupportTreeBuilder.cpp:131-134
+        for head in &self.m_heads {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            if head.is_valid() {
+                its_merge(&mut merged, &get_mesh_head(head, steps));
+            }
+        }
+
+        // SupportTreeBuilder.cpp:136-139
+        for pill in &self.m_pillars {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            its_merge(&mut merged, &get_mesh_pillar(pill, steps));
+        }
+
+        // SupportTreeBuilder.cpp:141-144
+        for pedest in &self.m_pedestals {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            its_merge(&mut merged, &get_mesh_pedestal(pedest, steps));
+        }
+
+        // SupportTreeBuilder.cpp:146-149
+        for j in &self.m_junctions {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            its_merge(&mut merged, &get_mesh_junction(j, steps));
+        }
+
+        // SupportTreeBuilder.cpp:151-154
+        for bs in &self.m_bridges {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            its_merge(&mut merged, &get_mesh_bridge(bs, steps));
+        }
+
+        // SupportTreeBuilder.cpp:156-159
+        for bs in &self.m_crossbridges {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            its_merge(&mut merged, &get_mesh_bridge(bs, steps));
+        }
+
+        // SupportTreeBuilder.cpp:161-164
+        for bs in &self.m_diffbridges {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            its_merge(&mut merged, &get_mesh_diff_bridge(bs, steps));
+        }
+
+        // SupportTreeBuilder.cpp:166-169
+        for anch in &self.m_anchors {
+            if (self.m_ctl.stopcondition)() {
+                break;
+            }
+            its_merge(&mut merged, &get_mesh_head(&anch.0, steps));
+        }
+
+        // SupportTreeBuilder.cpp:171-175
+        if (self.m_ctl.stopcondition)() {
+            // In case of failure we have to return an empty mesh
+            self.m_meshcache = indexed_triangle_set::default();
+            return &self.m_meshcache;
+        }
+
+        // SupportTreeBuilder.cpp:177
+        self.m_meshcache = merged;
+
+        // The mesh will be passed by const-pointer to TriangleMeshSlicer,
+        // which will need this.
+        // SupportTreeBuilder.cpp:181 — its_merge_vertices(m_meshcache);
+        // (TriangleMesh.hpp default argument `shrink_to_fit = false`)
+        its_merge_vertices(&mut self.m_meshcache, false);
+
+        // SupportTreeBuilder.cpp:183-184
+        // BoundingBoxf3 bb = bounding_box(m_meshcache);
+        // m_model_height   = bb.max(Z) - bb.min(Z);
+        // (C++ BoundingBoxf3 default-constructs min/max to Zero, so an empty
+        //  mesh yields height 0; the crate's empty BoundingBox3F holds MAX/MIN
+        //  sentinels, hence the is_defined() guard — same value.)
+        let bb = bounding_box(&self.m_meshcache);
+        self.m_model_height = if bb.is_defined() {
+            bb.max.z - bb.min.z
+        } else {
+            0.0
+        };
+
+        // SupportTreeBuilder.cpp:186-187
+        self.m_meshcache_valid = true;
+        &self.m_meshcache
+    }
 
     // WITH THE PAD
     // SupportTreeBuilder.hpp:424-425 (declaration) /

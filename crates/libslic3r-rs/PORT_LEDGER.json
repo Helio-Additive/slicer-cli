@@ -3032,7 +3032,7 @@
     "rust": "crates/libslic3r-rs/src/sla/hollowing.rs",
     "rust_exists": true,
     "loc": 563,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   },
   {
@@ -3043,7 +3043,7 @@
     "rust": "crates/libslic3r-rs/src/sla/support_point_generator.rs",
     "rust_exists": true,
     "loc": 668,
-    "status": "pending",
+    "status": "done",
     "priority": 9
   },
   {
@@ -3054,7 +3054,7 @@
     "rust": "crates/libslic3r-rs/src/sla/support_tree_buildsteps.rs",
     "rust_exists": true,
     "loc": 1277,
-    "status": "pending",
+    "status": "partial",
     "priority": 9
   }
 ]

@@ -8,7 +8,11 @@ pub type StatusFn = Box<dyn Fn(u32, &str)>;
 // JobController.hpp:14 using StopCond = std::function<bool(void)>;
 pub type StopCond = Box<dyn Fn() -> bool>;
 // JobController.hpp:15 using CancelFn = std::function<void(void)>;
-pub type CancelFn = Box<dyn Fn()>;
+// (Arc instead of Box: C++ `std::function` is copyable — SupportTreeBuildsteps
+//  copies it into its `m_thr` member (SupportTreeBuildsteps.cpp:43) while the
+//  builder stays mutably shared, and `sla::normals` shares it across worker
+//  threads (IndexedMesh.cpp:346-347), hence the `Send + Sync` bounds.)
+pub type CancelFn = std::sync::Arc<dyn Fn() + Send + Sync>;
 
 /// A Control structure for the support calculation. Consists of the status
 /// indicator callback and the stop condition predicate.
@@ -40,7 +44,7 @@ impl Default for JobController {
             // JobController.hpp:21
             stopcondition: Box::new(|| false),
             // JobController.hpp:27
-            cancelfn: Box::new(|| {}),
+            cancelfn: std::sync::Arc::new(|| {}),
         }
     }
 }

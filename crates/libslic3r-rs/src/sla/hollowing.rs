@@ -197,11 +197,13 @@ pub fn swap_normals(its: &mut indexed_triangle_set) {
 // Same formulas as the Eigen 3.4 headers compiled into BambuStudio.
 // ============================================================================
 
-/// libslic3r.h:288  `is_approx(Number value, Number test_value, Number precision = EPSILON)`
+/// libslic3r.h:287-291  `is_approx(Number value, Number test_value, Number precision = EPSILON)`
 /// C++: `return std::fabs(double(value) - double(test_value)) < double(precision);`
+/// Number = float here, so the default `precision` is the double EPSILON (1e-4)
+/// narrowed to f32, then widened back to f64 for the comparison.
 #[inline]
 fn is_approx_f32(value: f32, test_value: f32) -> bool {
-    (value as f64 - test_value as f64).abs() < EPSILON
+    (value as f64 - test_value as f64).abs() < (EPSILON as f32) as f64
 }
 
 // Eigen/src/Geometry/Hyperplane.h — `Eigen::Hyperplane<float, 3>`.
