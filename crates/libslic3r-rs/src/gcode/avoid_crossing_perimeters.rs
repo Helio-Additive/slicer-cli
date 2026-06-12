@@ -20,28 +20,30 @@
 //! The following depend on libslic3r infrastructure that is not yet faithfully
 //! ported into this crate and are therefore omitted rather than faked:
 //!
-//! - `get_default_perimeter_spacing`, `get_perimeter_spacing`,
-//!   `get_perimeter_spacing_external`, `get_external_perimeter_width`:
-//!   require the one-argument C++ `LayerRegion::flow(FlowRole)` overload,
-//!   which reads `m_layer->height` through a Layer back-pointer the Rust
-//!   `LayerRegion` does not hold (its `flow(role, layer_height)` needs the
-//!   caller to thread the height in).
 //! - `inner_offset`, `get_support_polygons`, `get_boundary`,
 //!   `get_boundary_external`: require `variable_offset_inner_ex`
 //!   (ClipperUtils.cpp:1390) which is NOT yet ported (see
 //!   `elephant_foot_compensation.rs:811`), plus `SupportLayer`,
-//!   `Print::objects()` / `PrintObject::instances()` traversal.
+//!   `PrintObject::instances()` traversal.
 //! - `need_wipe`: requires the `GCode` generator class
 //!   (`gcodegen.config()`, `gcodegen.writer().filament()`), which is not
 //!   ported (the Rust `gcode::generator::GCode` is a text container, not the
 //!   path-planning generator).
 //! - `AvoidCrossingPerimeters::travel_to` and
 //!   `AvoidCrossingPerimeters::init_layer`: depend on the `GCode` generator
-//!   and `Layer` flow/region data threaded through the above.
+//!   and on `get_boundary`/`get_boundary_external` above.
+//!
+//! The perimeter-spacing helpers (`get_default_perimeter_spacing`,
+//! `get_perimeter_spacing`, `get_perimeter_spacing_external`,
+//! `get_external_perimeter_width`) became portable once the config hierarchy
+//! was wired (`layer.object().print().config()`,
+//! `LayerRegion::region()`/`flow`) and are ported below.
 
 // AvoidCrossingPerimeters.cpp:1-14 — includes
 use crate::edge_grid::EdgeGrid;
+use crate::flow::FlowRole;
 use crate::geometry::{perp, BoundingBox, BoundingBoxF, Line, Point, PointF, Polygon, Polyline};
+use crate::layer::Layer;
 use crate::utils::{next_idx_modulo, prev_idx_modulo};
 use std::collections::HashSet;
 
@@ -764,18 +766,147 @@ fn simplify_travel(boundary: &Boundary, travel: &[TravelPoint]) -> Vec<TravelPoi
     simplified_path
 }
 
-// AvoidCrossingPerimeters.cpp:549-688 — avoid_perimeters_inner
+// AvoidCrossingPerimeters.cpp:479-489 — get_default_perimeter_spacing
+// called by get_perimeter_spacing() / get_perimeter_spacing_external()
 //
-// PARTIAL: the C++ signature takes `const Layer &layer` solely to call
-// `get_perimeter_spacing(layer)` (BLOCKED — see module docs). This port threads
-// the resolved `perimeter_spacing` (the scaled `float` value of
-// `get_perimeter_spacing(layer)`) in directly so the rest of the algorithm is
-// faithful. Callers must supply the same value libslic3r would compute.
+// C++ takes `const PrintObject &print_object`; the callers all reach it
+// through `*layer.object()`, which in Rust is the config-only upward view
+// `ObjectRef` — sufficient because the body only reads
+// `print_object.print()->config().nozzle_diameter`.
+fn get_default_perimeter_spacing(print_object: &crate::print_object::ObjectRef<'_>) -> f32 {
+    // AvoidCrossingPerimeters.cpp:482-483
+    // C++: std::vector<unsigned int> printing_extruders = print_object.object_extruders();
+    //      assert(!printing_extruders.empty());
+    // AvoidCrossingPerimeters.cpp:484-487
+    // C++: for (unsigned int extruder_id : printing_extruders)
+    //          avg_extruder += float(scale_(print_object.print()->config().nozzle_diameter.get_at(extruder_id)));
+    //      avg_extruder /= printing_extruders.size();
+    // This crate models `PrintConfig::nozzle_diameter` as a single-extruder
+    // scalar (see print_region.rs module docs), so `get_at(extruder_id)`
+    // collapses onto a direct read and the average over the asserted-non-empty
+    // printing-extruder set is exactly `float(scale_(nozzle_diameter))`,
+    // independent of which extruder ids `object_extruders()` would return.
+    // C++ `scale_(val)` is the raw macro `((val) / SCALING_FACTOR)` (libslic3r.h:81).
+    let avg_extruder =
+        (print_object.print().config().nozzle_diameter / crate::libslic3r::SCALING_FACTOR) as f32;
+    // AvoidCrossingPerimeters.cpp:488
+    avg_extruder
+}
+
+// AvoidCrossingPerimeters.cpp:491-507 — get_perimeter_spacing
+// called by get_boundary() / avoid_perimeters_inner()
+fn get_perimeter_spacing(layer: &Layer) -> f32 {
+    let mut regions_count: usize = 0;
+    let mut perimeter_spacing: f32 = 0.0;
+    // AvoidCrossingPerimeters.cpp:496-500
+    // C++: for (const LayerRegion *layer_region : layer.regions())
+    //          if (layer_region != nullptr && !layer_region->slices.empty())
+    // (Rust LayerRegions are owned values, so the nullptr check is vacuous.)
+    for layer_region in layer.regions() {
+        if !layer_region.slices.is_empty() {
+            // C++: perimeter_spacing += layer_region->flow(frPerimeter).scaled_spacing();
+            // The one-arg C++ overload reads `m_layer->height`; the Rust
+            // `flow(role, layer_height)` threads it explicitly (LayerRegion.cpp:21-23).
+            perimeter_spacing += layer_region
+                .flow(FlowRole::Perimeter, layer.height)
+                .expect("LayerRegion::flow(frPerimeter)")
+                .scaled_spacing() as f32;
+            regions_count += 1;
+        }
+    }
+
+    // AvoidCrossingPerimeters.cpp:502
+    debug_assert!(perimeter_spacing >= 0.0);
+    // AvoidCrossingPerimeters.cpp:503-506
+    if regions_count != 0 {
+        perimeter_spacing /= regions_count as f32;
+    } else {
+        perimeter_spacing = get_default_perimeter_spacing(&layer.object());
+    }
+    perimeter_spacing
+}
+
+// AvoidCrossingPerimeters.cpp:510-529 — get_perimeter_spacing_external
+// called by get_boundary_external()
+//
+// PARTIAL SIGNATURE: C++ reaches the Print through the parent pointer chain
+// `layer.object()->print()->objects()`. The Rust upward views (`ObjectRef`/
+// `PrintRef`) are config-only snapshots, so the owning `Print` is threaded in
+// by the caller — same convention as `LayerRegion::flow`'s threaded
+// `layer_height`. The body is otherwise line-by-line faithful.
+#[allow(dead_code)] // sole C++ caller get_boundary_external() is BLOCKED (see module docs)
+fn get_perimeter_spacing_external(layer: &Layer, print: &crate::print::Print) -> f32 {
+    let mut regions_count: usize = 0;
+    let mut perimeter_spacing: f32 = 0.0;
+    // AvoidCrossingPerimeters.cpp:515-521
+    // C++: for (const PrintObject *object : layer.object()->print()->objects())
+    //          if (const Layer *l = object->get_layer_at_printz(layer.print_z, EPSILON); l)
+    for object in print.objects() {
+        if let Some(l_idx) = object.get_layer_at_printz(layer.print_z, crate::libslic3r::EPSILON) {
+            let l = &object.layers()[l_idx];
+            // C++: for (const LayerRegion *layer_region : l->regions())
+            //          if (layer_region != nullptr && !layer_region->slices.empty())
+            for layer_region in l.regions() {
+                if !layer_region.slices.is_empty() {
+                    // C++: perimeter_spacing += layer_region->flow(frPerimeter).scaled_spacing();
+                    // (one-arg overload reads l->height — that layer's own height)
+                    perimeter_spacing += layer_region
+                        .flow(FlowRole::Perimeter, l.height)
+                        .expect("LayerRegion::flow(frPerimeter)")
+                        .scaled_spacing() as f32;
+                    regions_count += 1;
+                }
+            }
+        }
+    }
+
+    // AvoidCrossingPerimeters.cpp:523
+    debug_assert!(perimeter_spacing >= 0.0);
+    // AvoidCrossingPerimeters.cpp:524-527
+    if regions_count != 0 {
+        perimeter_spacing /= regions_count as f32;
+    } else {
+        perimeter_spacing = get_default_perimeter_spacing(&layer.object());
+    }
+    perimeter_spacing
+}
+
+// AvoidCrossingPerimeters.cpp:531-547 — get_external_perimeter_width
+#[allow(dead_code)] // sole C++ caller AvoidCrossingPerimeters::init_layer() is BLOCKED (see module docs)
+fn get_external_perimeter_width(layer: &Layer) -> f32 {
+    let mut regions_count: usize = 0;
+    let mut perimeter_width: f32 = 0.0;
+    // AvoidCrossingPerimeters.cpp:536-540
+    // C++: for (const LayerRegion *layer_region : layer.regions())
+    //          if (layer_region != nullptr && !layer_region->slices.empty())
+    for layer_region in layer.regions() {
+        if !layer_region.slices.is_empty() {
+            // C++: perimeter_width += float(layer_region->flow(frExternalPerimeter).scaled_width());
+            perimeter_width += layer_region
+                .flow(FlowRole::ExternalPerimeter, layer.height)
+                .expect("LayerRegion::flow(frExternalPerimeter)")
+                .scaled_width() as f32;
+            regions_count += 1;
+        }
+    }
+
+    // AvoidCrossingPerimeters.cpp:542
+    debug_assert!(perimeter_width >= 0.0);
+    // AvoidCrossingPerimeters.cpp:543-546
+    if regions_count != 0 {
+        perimeter_width /= regions_count as f32;
+    } else {
+        perimeter_width = get_default_perimeter_spacing(&layer.object());
+    }
+    perimeter_width
+}
+
+// AvoidCrossingPerimeters.cpp:549-688 — avoid_perimeters_inner
 fn avoid_perimeters_inner(
     boundary: &Boundary,
     start_point: &Point,
     end_point: &Point,
-    perimeter_spacing: f32,
+    layer: &Layer,
     result_out: &mut Vec<TravelPoint>,
 ) -> usize {
     let boundaries = &boundary.boundaries;
@@ -791,7 +922,8 @@ fn avoid_perimeters_inner(
         // if do not intersect due to the boundaries inner-offset, try to find the closest point to do intersect again!
         if intersections.is_empty() {
             // try to find the closest point on boundaries to start/end with distance less than extend_distance, which is noted as new start_point/end_point
-            let search_radius = 1.5 * perimeter_spacing as f64;
+            // C++: auto search_radius = 1.5 * get_perimeter_spacing(layer); (double)
+            let search_radius = 1.5 * get_perimeter_spacing(layer) as f64;
             let closest_line_to_start = get_closest_lines_in_radius(&boundary.grid, &start, search_radius as f32);
             let closest_line_to_end = get_closest_lines_in_radius(&boundary.grid, &end, search_radius as f32);
             if !(closest_line_to_start.is_empty() && closest_line_to_end.is_empty()) {
@@ -855,7 +987,8 @@ fn avoid_perimeters_inner(
         });
 
         // Search radius should always be at least equals to the value of offset used for computing boundaries.
-        let search_radius = 2.0 * perimeter_spacing;
+        // C++: const float search_radius = 2.0f * get_perimeter_spacing(layer);
+        let search_radius = 2.0 * get_perimeter_spacing(layer);
         // When the offset is too big, then original travel doesn't have to cross created boundaries.
         // These cases are fixed by calling extend_for_closest_lines.
         intersections = extend_for_closest_lines(&intersections, boundary, &start, &end, search_radius);
@@ -997,19 +1130,17 @@ fn avoid_perimeters_inner(
 
 // AvoidCrossingPerimeters.cpp:690-711 — avoid_perimeters
 // Called by AvoidCrossingPerimeters::travel_to()
-//
-// PARTIAL: `perimeter_spacing` threaded in place of `const Layer &layer`
-// (see avoid_perimeters_inner).
+#[allow(dead_code)] // sole C++ caller AvoidCrossingPerimeters::travel_to() is BLOCKED (see module docs)
 fn avoid_perimeters(
     boundary: &Boundary,
     start: &Point,
     end: &Point,
-    perimeter_spacing: f32,
+    layer: &Layer,
     result_out: &mut Polyline,
 ) -> usize {
     // Travel line is completely or partially inside the bounding box.
     let mut path: Vec<TravelPoint> = Vec::new();
-    let num_intersections = avoid_perimeters_inner(boundary, start, end, perimeter_spacing, &mut path);
+    let num_intersections = avoid_perimeters_inner(boundary, start, end, layer, &mut path);
     *result_out = to_polyline(&path);
 
     num_intersections
@@ -1280,11 +1411,13 @@ impl Default for Boundary {
 // AvoidCrossingPerimeters.hpp:15-71 — class AvoidCrossingPerimeters
 //
 // PARTIAL: the public `travel_to` and `init_layer` methods are BLOCKED (they
-// require the `GCode` generator class and full `Layer` flow/region data — see
-// module docs), so only the state and the trivial once-modifiers accessors are
-// ported here. The heavy lifting (`avoid_perimeters`, `avoid_perimeters_inner`,
-// `simplify_travel`, the boundary builders, etc.) is ported above as free
-// functions matching the C++ statics.
+// require the `GCode` generator class — `gcodegen.writer()`, `gcodegen.config()`,
+// `gcodegen.origin()` — plus `get_boundary`/`get_boundary_external`, which are
+// blocked on `variable_offset_inner_ex`; see module docs), so only the state
+// and the trivial once-modifiers accessors are ported here. The heavy lifting
+// (`avoid_perimeters`, `avoid_perimeters_inner`, `simplify_travel`, the
+// perimeter-spacing helpers, the boundary builders, etc.) is ported above as
+// free functions matching the C++ statics.
 pub struct AvoidCrossingPerimeters {
     m_use_external_mp: bool,
     // just for the next travel move
