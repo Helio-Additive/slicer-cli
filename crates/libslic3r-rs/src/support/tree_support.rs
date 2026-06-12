@@ -1078,33 +1078,49 @@ fn _keep_unused() {
 // BLOCKED SYMBOLS (not ported)
 // ============================================================================
 //
-// The following `TreeSupport`/`TreeSupportData` class methods are NOT ported
-// because they require runtime objects and not-yet-ported subsystems threaded
-// through as usable Rust APIs:
+// Config-hierarchy threading is WIRED (2026-06-12): PrintObject, Print, Layer,
+// LayerRegion, SlicingParameters, SupportParameters, PrintObjectConfig,
+// PrintConfig, BuildVolume are all available in Rust.  The remaining blocker
+// for ALL methods below is the TreeSupportData concurrent cache + TBB runtime:
 //
-//   TreeSupport::TreeSupport(ctor)        TreeSupport.cpp:607 — needs PrintObject, Print,
-//                                          SlicingParameters, SupportParameters, PrintObjectConfig,
-//                                          PrintConfig, BuildVolume (bed shape).
-//   TreeSupport::detect_overhangs         TreeSupport.cpp:661 — needs Layer/PrintObject mutation,
-//                                          enforcers/blockers, TBB parallel_for.
-//   TreeSupport::draw_circles             TreeSupport.cpp:2284 — needs Print/Layer/SupportLayer,
-//                                          MinimumSpanningTree pipeline, SVG, TBB.
-//   TreeSupport::drop_nodes               TreeSupport.cpp:2853 — needs node arena + MST + avoidance.
-//   TreeSupport::smooth_nodes (x2)        TreeSupport.cpp:3560,3647 — needs node arena + TreeSupport3D config.
-//   TreeSupport::plan_layer_heights       TreeSupport.cpp:3766 — needs PrintObject/Layer.
-//   TreeSupport::generate_contact_points  TreeSupport.cpp:3898 — needs PrintObject/Layer/overhang data.
-//   TreeSupport::insert_dropped_node      TreeSupport.cpp:4156 — operates on the node arena (merge logic).
-//   TreeSupport::create_node              TreeSupport.cpp:4256 — delegates to TreeSupportData arena.
-//   TreeSupport::create_tree_support_layers TreeSupport.cpp:1317 — needs PrintObject/SupportLayer.
-//   TreeSupport::generate_toolpaths       TreeSupport.cpp:1508 — needs Fill/FillLightning/SupportLayer.
-//   TreeSupport::move_bounds_to_contact_nodes TreeSupport.cpp:1946 — needs TreeSupport3D::SupportElements.
-//   TreeSupport::generate                 TreeSupport.cpp:1975 — top-level driver over all the above.
-//   TreeSupport::get_trim_support_regions TreeSupport.cpp:2208 — needs PrintObject/Layer/LayerRegion.
+//   TreeSupportData uses tbb::concurrent_unordered_map + tbb::spin_mutex
+//   (TreeSupport.hpp:307,346-350) — no Rust equivalent ported yet.
+//   Every TreeSupport class method operates on a TreeSupportData instance,
+//   so they are all transitively blocked on TBB.
+//
+//   TreeSupport::TreeSupport(ctor)        TreeSupport.cpp:607 — blocked on
+//                                          TreeSupportData/TBB node arena.
+//   TreeSupport::detect_overhangs         TreeSupport.cpp:661 — blocked on
+//                                          TBB parallel_for + TreeSupportData arena.
+//   TreeSupport::draw_circles             TreeSupport.cpp:2284 — blocked on
+//                                          TreeSupportData/TBB + SVG debug output.
+//   TreeSupport::drop_nodes               TreeSupport.cpp:2853 — blocked on
+//                                          TreeSupportData node arena + MST + avoidance.
+//   TreeSupport::smooth_nodes (x2)        TreeSupport.cpp:3560,3647 — blocked on
+//                                          TreeSupportData node arena + TreeSupport3D config.
+//   TreeSupport::plan_layer_heights       TreeSupport.cpp:3766 — blocked on
+//                                          TreeSupportData node arena (LayerHeightData).
+//   TreeSupport::generate_contact_points  TreeSupport.cpp:3898 — blocked on
+//                                          TreeSupportData node arena + detect_overhangs output.
+//   TreeSupport::insert_dropped_node      TreeSupport.cpp:4156 — blocked on
+//                                          TreeSupportData node arena (merge logic).
+//   TreeSupport::create_node              TreeSupport.cpp:4256 — blocked on
+//                                          TreeSupportData arena allocation.
+//   TreeSupport::create_tree_support_layers TreeSupport.cpp:1317 — blocked on
+//                                          TreeSupportData node arena + SupportLayer mutation.
+//   TreeSupport::generate_toolpaths       TreeSupport.cpp:1508 — blocked on
+//                                          TreeSupportData + FillLightning/SupportLayer integration.
+//   TreeSupport::move_bounds_to_contact_nodes TreeSupport.cpp:1946 — blocked on
+//                                          TreeSupport3D::SupportElements + TreeSupportData.
+//   TreeSupport::generate                 TreeSupport.cpp:1975 — top-level driver,
+//                                          blocked on all the above.
+//   TreeSupport::get_trim_support_regions TreeSupport.cpp:2208 — blocked on
+//                                          TreeSupportData + detect_overhangs output.
 //   TreeSupport::get_avoidance/get_collision/get_collision_polys TreeSupport.cpp:2136..2187 —
-//                                          delegate to TreeSupportData (caches) which need the model outlines.
+//                                          blocked on TreeSupportData TBB concurrent caches.
 //   TreeSupportData (ctor, get_collision, get_avoidance, calculate_*, ceil_radius, create_node, ...)
-//                                          TreeSupport.hpp/TreeSupport.cpp — needs PrintObject layer
-//                                          outlines, TBB concurrent caches, and the node arena.
-//   TreeSupportProfiler                   TreeSupport.cpp:91 — boost::posix_time timing, debug-only.
+//                                          TreeSupport.hpp/TreeSupport.cpp — blocked on
+//                                          tbb::concurrent_unordered_map + tbb::spin_mutex.
+//   TreeSupportProfiler                   TreeSupport.cpp:91 — boost::posix_time, debug-only.
 //   draw_contours_and_nodes_to_svg / draw_layer_mst  TreeSupport.cpp:187,249 — SVG debug only.
-//   add_overhang                          TreeSupport.cpp:644 — mutates Layer (loverhangs).
+//   add_overhang                          TreeSupport.cpp:644 — blocked on TreeSupportData arena.
