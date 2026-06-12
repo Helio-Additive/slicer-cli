@@ -2,13 +2,15 @@
 //!
 //! GCode.cpp is the central G-code generator orchestrator. The bulk of the
 //! file is the `GCode` class together with the helper classes `OozePrevention`,
-//! `Wipe` and `WipeTowerIntegration`, all of which require the full `Print` /
-//! `PrintObject` / `Layer` graph, a live `GCodeWriter`, `GCodeProcessor`,
-//! `PlaceholderParser`, `WipeTower::ToolChangeResult` instances, the TBB
-//! parallel pipeline, `DoExport`, `EdgeGrid`, `Skirt` and many other
-//! dependencies to be threaded through. Those are NOT yet wired up in this
-//! crate, so the `GCode` class methods are listed as blocked (see PORT_LEDGER
-//! and the porter report).
+//! `Wipe` and `WipeTowerIntegration`. The `Print`/`PrintObject`/`Layer` graph
+//! and the config hierarchy are now wired (PARITY.md "Config-hierarchy
+//! threading — WIRED"), and `EdgeGrid` is ported, but the class still needs a
+//! live `GCodeWriter` (partial), `GCodeProcessor` (partial),
+//! `PlaceholderParser` (partial), `WipeTower::ToolChangeResult` (partial),
+//! `ToolOrdering` (deferred), `DoExport`, the TBB parallel export pipeline and
+//! `Skirt` to be threaded through, so the `GCode` class methods remain blocked
+//! (see PORT_LEDGER and the porter report). The CLI's working G-code pipeline
+//! is the separate non-parity implementation under `src/gcode/`.
 //!
 //! This module ports the genuinely self-contained, free-standing helpers from
 //! GCode.cpp line-by-line: the module-level constants, the bed-type mapping,
