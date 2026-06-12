@@ -15,8 +15,11 @@
 //! conversion (see Point.hpp:537-540). The crate's `scale()` rounds, so this file
 //! uses the local `scaled_coord()` truncating helper to stay byte-exact.
 
+use crate::flow::{support_material_flow, support_material_interface_flow, FlowRole};
 use crate::geometry::Polygons;
 use crate::libslic3r::EPSILON;
+use crate::print_config::SupportInterfacePattern;
+use crate::print_object::PrintObject;
 use crate::slicing::SlicingParams;
 use crate::support::support_layer::{
     SupporLayerType, SupportGeneratorLayer, SupportGeneratorLayerStorage, SupportGeneratorLayersPtr,
@@ -79,15 +82,8 @@ pub enum InterfacePreference {
 // TreeSupportCommon.hpp:28  struct TreeSupportMeshGroupSettings {
 //
 // The `explicit TreeSupportMeshGroupSettings(const PrintObject&)` constructor
-// (TreeSupportCommon.hpp:30-90) is intentionally NOT ported: it threads through
-// `PrintObject::print()->config()`, `PrintObject::config()`,
-// `PrintObject::slicing_parameters()`, per-region external-perimeter flow widths,
-// and the un-ported `SupportMaterialInterfacePattern` config enum, several config
-// fields of which (`tree_support_branch_diameter_angle`,
-// `support_object_first_layer_gap`, `min_feature_size`) and the
-// `support_material_flow(&print_object, ...)` overloads do not yet exist in the
-// Rust crate. See the module-level report for the blocked-symbol list. The struct
-// itself and all of its default member initializers are ported faithfully.
+// (TreeSupportCommon.hpp:30-90) is ported as `from_print_object` below.
+// The struct itself and all of its default member initializers are also ported.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeSupportMeshGroupSettings {
     /*********************************************************************/
@@ -270,6 +266,208 @@ impl Default for TreeSupportMeshGroupSettings {
             support_tree_top_rate: 15.,
             // TreeSupportCommon.hpp:244
             support_tree_tip_diameter: scaled_coord(0.4),
+        }
+    }
+}
+
+impl TreeSupportMeshGroupSettings {
+    // TreeSupportCommon.hpp:30-90
+    // explicit TreeSupportMeshGroupSettings(const PrintObject &print_object)
+    pub fn from_print_object(print_object: &PrintObject) -> Self {
+        use std::f64::consts::PI as M_PI;
+
+        // TreeSupportCommon.hpp:32  const PrintConfig &print_config = print_object.print()->config();
+        let print_config = print_object.print().config();
+        // TreeSupportCommon.hpp:33  const PrintObjectConfig &config = print_object.config();
+        let config = print_object.config();
+        // TreeSupportCommon.hpp:34  const SlicingParameters &slicing_params = print_object.slicing_parameters();
+        let slicing_params = print_object.slicing_parameters();
+
+        // TreeSupportCommon.hpp:42-46
+        // Calculate maximum external perimeter width over all printing regions,
+        // taking into account the default layer height.
+        let mut external_perimeter_width: f64 = 0.;
+        for region_id in 0..print_object.num_printing_regions() {
+            if let Some(region) = print_object.printing_region(region_id) {
+                // TreeSupportCommon.hpp:45  region.flow(print_object, frExternalPerimeter, config.layer_height).width()
+                if let Ok(flow) =
+                    region.flow(print_object, FlowRole::ExternalPerimeter, config.layer_height, false)
+                {
+                    external_perimeter_width = external_perimeter_width.max(flow.width());
+                }
+            }
+        }
+
+        // TreeSupportCommon.hpp:48  this->layer_height = scaled<coord_t>(config.layer_height.value);
+        let layer_height = scaled_coord(config.layer_height);
+        // TreeSupportCommon.hpp:49  this->resolution = scaled<coord_t>(print_config.resolution.value);
+        let resolution = scaled_coord(print_config.resolution);
+        // TreeSupportCommon.hpp:51  this->min_feature_size = scaled<coord_t>(config.min_feature_size.value);
+        // Rust: config.arachne_min_feature_size == C++ config.min_feature_size
+        let min_feature_size = scaled_coord(config.arachne_min_feature_size);
+        // TreeSupportCommon.hpp:53  this->support_angle = 0.5 * M_PI - std::clamp<double>((config.support_threshold_angle + 1) * M_PI / 180., 0., 0.5 * M_PI);
+        let support_angle = 0.5 * M_PI
+            - ((config.support_threshold_angle + 1.0) * M_PI / 180.)
+                .clamp(0., 0.5 * M_PI);
+        // TreeSupportCommon.hpp:54  this->support_line_width = support_material_flow(&print_object, config.layer_height).scaled_width();
+        let support_line_width = support_material_flow(
+            config.support_line_width,
+            config.line_width,
+            print_config.nozzle_diameter,
+            config.layer_height,
+            config.layer_height,
+        )
+        .map(|f| f.scaled_width())
+        .unwrap_or_else(|_| scaled_coord(0.4));
+        // TreeSupportCommon.hpp:55  this->support_roof_line_width = support_material_interface_flow(&print_object, config.layer_height).scaled_width();
+        let support_roof_line_width = support_material_interface_flow(
+            config.support_line_width,
+            config.line_width,
+            print_config.nozzle_diameter,
+            config.layer_height,
+            config.layer_height,
+        )
+        .map(|f| f.scaled_width())
+        .unwrap_or_else(|_| scaled_coord(0.4));
+        // TreeSupportCommon.hpp:57  this->support_bottom_enable = config.support_interface_top_layers.value > 0 && config.support_interface_bottom_layers.value != 0;
+        let support_bottom_enable =
+            config.support_interface_top_layers > 0 && config.support_interface_bottom_layers != 0;
+        // TreeSupportCommon.hpp:58-62  this->support_bottom_height = ...
+        let support_bottom_height: Coord = if support_bottom_enable {
+            // TreeSupportCommon.hpp:59  (config.support_interface_bottom_layers.value > 0 ?
+            //                             config.support_interface_bottom_layers.value :
+            //                             config.support_interface_top_layers.value) * this->layer_height
+            let bottom_layers = if config.support_interface_bottom_layers > 0 {
+                config.support_interface_bottom_layers as Coord
+            } else {
+                config.support_interface_top_layers as Coord
+            };
+            bottom_layers * layer_height
+        } else {
+            0
+        };
+        // TreeSupportCommon.hpp:63  this->support_material_buildplate_only = config.support_on_build_plate_only;
+        let support_material_buildplate_only = config.support_on_build_plate_only;
+        // TreeSupportCommon.hpp:64  this->support_top_distance = scaled<coord_t>(slicing_params.gap_support_object);
+        let support_top_distance = scaled_coord(slicing_params.gap_support_object);
+        // TreeSupportCommon.hpp:65  this->support_bottom_distance = scaled<coord_t>(slicing_params.gap_object_support);
+        let support_bottom_distance = scaled_coord(slicing_params.gap_object_support);
+        // TreeSupportCommon.hpp:66  this->support_xy_distance = scaled<coord_t>(std::max(0.01, config.support_object_xy_distance.value));
+        let mut support_xy_distance =
+            scaled_coord(config.support_object_xy_distance.max(0.01));
+        // TreeSupportCommon.hpp:67-68  if (print_config.top_z_overrides_xy_distance) ...
+        // Rust: top_z_overrides_xy_distance is on PrintObjectConfig (config), not PrintConfig.
+        if config.top_z_overrides_xy_distance {
+            // TreeSupportCommon.hpp:68  this->support_xy_distance = std::min(this->support_xy_distance, std::max(this->support_top_distance, coord_t(scale_(0.2))));
+            let floor = support_top_distance.max(scaled_coord(0.2));
+            support_xy_distance = support_xy_distance.min(floor);
+        }
+        // TreeSupportCommon.hpp:69  this->support_xy_distance_1st_layer = scaled<coord_t>(config.support_object_first_layer_gap.value);
+        let support_xy_distance_1st_layer =
+            scaled_coord(config.support_object_first_layer_gap);
+        // TreeSupportCommon.hpp:71  this->support_xy_distance_overhang = std::min(this->support_xy_distance, scaled<coord_t>(0.5 * external_perimeter_width));
+        let support_xy_distance_overhang =
+            support_xy_distance.min(scaled_coord(0.5 * external_perimeter_width));
+        // TreeSupportCommon.hpp:72  this->support_roof_enable = config.support_interface_top_layers.value > 0;
+        let support_roof_enable = config.support_interface_top_layers > 0;
+        // TreeSupportCommon.hpp:73  this->support_roof_layers = config.support_interface_top_layers.value;
+        let support_roof_layers = config.support_interface_top_layers as Coord;
+        // TreeSupportCommon.hpp:74  this->support_floor_enable = config.support_interface_bottom_layers.value > 0;
+        let support_floor_enable = config.support_interface_bottom_layers > 0;
+        // TreeSupportCommon.hpp:75  this->support_floor_layers = config.support_interface_bottom_layers.value;
+        let support_floor_layers = config.support_interface_bottom_layers as Coord;
+        // TreeSupportCommon.hpp:76  this->support_roof_pattern = config.support_interface_pattern;
+        // Map Rust SupportInterfacePattern -> SupportMaterialInterfacePattern
+        let support_roof_pattern = match config.support_interface_pattern {
+            SupportInterfacePattern::Rectilinear => {
+                SupportMaterialInterfacePattern::smipRectilinear
+            }
+            SupportInterfacePattern::Concentric => {
+                SupportMaterialInterfacePattern::smipConcentric
+            }
+            SupportInterfacePattern::Grid => SupportMaterialInterfacePattern::smipGrid,
+        };
+        // TreeSupportCommon.hpp:77  this->support_line_spacing = scaled<coord_t>(config.support_base_pattern_spacing.value);
+        let support_line_spacing = scaled_coord(config.support_base_pattern_spacing);
+        // TreeSupportCommon.hpp:78  this->support_wall_count = std::max(1, config.tree_support_wall_count.value);
+        let support_wall_count = (config.tree_support_wall_count as i32).max(1);
+        // TreeSupportCommon.hpp:79  this->support_roof_line_distance = scaled<coord_t>(config.support_interface_spacing.value) + this->support_roof_line_width;
+        let support_roof_line_distance =
+            scaled_coord(config.support_interface_spacing) + support_roof_line_width;
+        // TreeSupportCommon.hpp:80  double support_tree_angle_slow = 25; // TODO add a setting?
+        let support_tree_angle_slow_deg: f64 = 25.;
+        // TreeSupportCommon.hpp:81  double tree_support_tip_diameter = 0.8;
+        let tree_support_tip_diameter: f64 = 0.8;
+        // TreeSupportCommon.hpp:82  this->support_tree_branch_distance = scaled<coord_t>(config.tree_support_branch_distance.value);
+        let support_tree_branch_distance = scaled_coord(config.tree_support_branch_distance);
+        // TreeSupportCommon.hpp:83  this->support_tree_angle = std::clamp<double>(config.tree_support_branch_angle * M_PI / 180., 0., 0.5 * M_PI - EPSILON);
+        let support_tree_angle =
+            (config.tree_support_branch_angle * M_PI / 180.).clamp(0., 0.5 * M_PI - EPSILON);
+        // TreeSupportCommon.hpp:84  this->support_tree_angle_slow = std::clamp<double>(support_tree_angle_slow * M_PI / 180., 0., this->support_tree_angle - EPSILON);
+        let support_tree_angle_slow =
+            (support_tree_angle_slow_deg * M_PI / 180.).clamp(0., support_tree_angle - EPSILON);
+        // TreeSupportCommon.hpp:85  this->support_tree_branch_diameter = scaled<coord_t>(config.tree_support_branch_diameter.value);
+        let support_tree_branch_diameter = scaled_coord(config.tree_support_branch_diameter);
+        // TreeSupportCommon.hpp:86  this->support_tree_branch_diameter_angle = std::clamp<double>(config.tree_support_branch_diameter_angle * M_PI / 180., 0., 0.5 * M_PI - EPSILON);
+        let support_tree_branch_diameter_angle =
+            (config.tree_support_branch_diameter_angle * M_PI / 180.)
+                .clamp(0., 0.5 * M_PI - EPSILON);
+        // TreeSupportCommon.hpp:87  this->support_tree_top_rate = 30; // percent
+        let support_tree_top_rate: f64 = 30.;
+        // TreeSupportCommon.hpp:89  this->support_tree_tip_diameter = std::clamp(scaled<coord_t>(tree_support_tip_diameter), 0, this->support_tree_branch_diameter);
+        let support_tree_tip_diameter =
+            scaled_coord(tree_support_tip_diameter).clamp(0, support_tree_branch_diameter);
+
+        Self {
+            layer_height,
+            resolution,
+            min_feature_size,
+            support_angle,
+            support_line_width,
+            support_roof_line_width,
+            support_bottom_enable,
+            support_bottom_height,
+            support_material_buildplate_only,
+            support_xy_distance,
+            support_xy_distance_1st_layer,
+            support_xy_distance_overhang,
+            support_top_distance,
+            support_bottom_distance,
+            // TreeSupportCommon.hpp:143 default; not set in constructor
+            support_interface_skip_height: scaled_coord(0.3),
+            support_roof_enable,
+            support_roof_layers,
+            support_floor_enable,
+            support_floor_layers,
+            // TreeSupportCommon.hpp:160 default; not set in constructor
+            minimum_roof_area: scaled_f64(scaled_f64(1.)),
+            // TreeSupportCommon.hpp:165 default; not set in constructor
+            support_roof_angles: Vec::new(),
+            support_roof_pattern,
+            support_line_spacing,
+            // TreeSupportCommon.hpp:174 default; not set in constructor
+            support_bottom_offset: scaled_coord(0.),
+            support_wall_count,
+            support_roof_line_distance,
+            // TreeSupportCommon.hpp:185 default; not set in constructor
+            minimum_support_area: scaled_coord(0.),
+            // TreeSupportCommon.hpp:188 default; not set in constructor
+            minimum_bottom_area: scaled_coord(1.0),
+            // TreeSupportCommon.hpp:191 default; not set in constructor
+            support_offset: scaled_coord(0.),
+            support_tree_angle,
+            support_tree_branch_diameter_angle,
+            support_tree_branch_distance,
+            support_tree_branch_diameter,
+            support_tree_angle_slow,
+            // TreeSupportCommon.hpp:227 default; not set in constructor
+            support_tree_max_diameter_increase_by_merges_when_support_to_model: scaled_coord(1.0),
+            // TreeSupportCommon.hpp:231 default; not set in constructor
+            support_tree_min_height_to_model: scaled_coord(1.0),
+            // TreeSupportCommon.hpp:235 default; not set in constructor
+            support_tree_bp_diameter: scaled_coord(7.5),
+            support_tree_top_rate,
+            support_tree_tip_diameter,
         }
     }
 }

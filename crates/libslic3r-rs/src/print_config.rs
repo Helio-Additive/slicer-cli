@@ -1717,6 +1717,11 @@ pub struct PrintObjectConfig {
     /// Tree support branch diameter (mm).
     /// BambuStudio: `tree_support_branch_diameter`.
     pub tree_support_branch_diameter: CoordF,
+    /// Tree support branch diameter angle (degrees). Controls how much
+    /// branch diameter grows per layer toward the bottom.
+    /// BambuStudio: `tree_support_branch_diameter_angle`.
+    /// C++ default: 5.0.
+    pub tree_support_branch_diameter_angle: CoordF,
     /// Tree support branch distance (mm).
     /// BambuStudio: `tree_support_branch_distance`.
     pub tree_support_branch_distance: CoordF,
@@ -3122,6 +3127,7 @@ impl Default for PrintObjectConfig {
             support_interface_loop_pattern: false,
             tree_support_branch_angle: 40.0,
             tree_support_branch_diameter: 5.0,
+            tree_support_branch_diameter_angle: 5.0,
             tree_support_branch_distance: 5.0,
             tree_support_wall_count: 0,
             tree_support_with_infill: false,
@@ -5120,6 +5126,11 @@ impl PrintObjectConfig {
             "tree_support_branch_diameter" => {
                 if let Some(v) = parse_f64(value) {
                     self.tree_support_branch_diameter = v;
+                }
+            }
+            "tree_support_branch_diameter_angle" => {
+                if let Some(v) = parse_f64(value) {
+                    self.tree_support_branch_diameter_angle = v;
                 }
             }
             "tree_support_branch_distance" => {

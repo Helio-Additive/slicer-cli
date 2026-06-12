@@ -2647,7 +2647,7 @@
     "rust": "crates/libslic3r-rs/src/support/tree_support_common.rs",
     "rust_exists": true,
     "loc": 741,
-    "status": "partial",
+    "status": "done",
     "priority": 6
   },
   {
