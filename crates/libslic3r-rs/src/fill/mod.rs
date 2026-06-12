@@ -492,6 +492,19 @@ pub fn group_fills(
     layer: &crate::layer::Layer,
     _lock_param: &mut LockRegionParam,
 ) -> Result<Vec<SurfaceFill>> {
+    // TOPDBG (diagnostics only, env-gated): Top state at the entry of the
+    // make_fills surface grouping (last stop before extrusion emission).
+    if crate::topdbg::enabled() {
+        let mut all: Vec<crate::surface::Surface> = Vec::new();
+        for region_id in 0..layer.region_count() {
+            if let Some(region) = layer.get_region(region_id) {
+                all.extend(region.fill_surfaces.surfaces.iter().cloned());
+            }
+        }
+        crate::topdbg::log_top_surfaces(layer.id(), "group_fills_entry", &all);
+        crate::topdbg::dump_top_surfaces(layer.id(), "d5_group_fills_top", &all);
+    }
+
     /// Fill.cpp:166
     /// C++: std::vector<SurfaceFill> surface_fills
     let mut surface_fills: Vec<SurfaceFill> = Vec::new();

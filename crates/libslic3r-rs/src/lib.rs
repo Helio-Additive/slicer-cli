@@ -179,6 +179,7 @@ pub mod thread;
 pub mod threemf;
 pub mod time;
 pub mod timer;
+pub mod topdbg;
 pub mod triangle_mesh;
 pub mod triangle_mesh_deal;
 pub mod triangle_mesh_slicer;

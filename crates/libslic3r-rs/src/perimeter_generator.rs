@@ -658,6 +658,14 @@ impl PerimeterGenerator {
                 top_fills = union_ex(&merged);
                 fill_clip = offset_expolygons(&last, ext_perimeter_spacing / 2.0 - perimeter_spacing / 2.0, OffsetJoinType::Miter);
                 last = intersection(&inner, &last);
+                // TOPDBG (diagnostics only, env-gated): dump the perimeter-derived
+                // top region pieces for the TOPDBG_DUMP layer.
+                crate::topdbg::dump_expolygons(self.config.layer_id, "b0_top0_raw", &top0);
+                crate::topdbg::dump_expolygons(
+                    self.config.layer_id,
+                    "b_perimeter_top_fills",
+                    &top_fills,
+                );
             }
             // First faithful attempt (upper-slice threading is in place via PerimeterConfig.upper_slices)
             // regressed filament + only moved Top surface 1->2: top_fills geometry came out over-large

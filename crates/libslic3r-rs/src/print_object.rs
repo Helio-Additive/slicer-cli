@@ -698,6 +698,18 @@ impl PrintObject {
                 }
             }
         }
+        // TOPDBG (diagnostics only, env-gated): Top state after prepare_fill_surfaces.
+        if crate::topdbg::enabled() {
+            for (idx_layer, layer) in self.layers.iter().enumerate() {
+                for region in layer.regions().iter() {
+                    crate::topdbg::log_top_surfaces(
+                        idx_layer,
+                        "prepare_fill_surfaces",
+                        &region.fill_surfaces.surfaces,
+                    );
+                }
+            }
+        }
 
         /// PrintObject.cpp:657-658
         /// C++: this->discover_vertical_shells();
@@ -762,6 +774,20 @@ impl PrintObject {
                     return Err(crate::Error::Cancelled);
                 }
             }
+            // TOPDBG (diagnostics only, env-gated): Top state after
+            // discover_vertical_shells (divergent default mutated region_surfaces
+            // in place; faithful VSHELL_FAITHFUL mutated layers before the
+            // snapshot — either way region_surfaces is the post-vshell state).
+            if crate::topdbg::enabled() {
+                for (idx_layer, layer_surfaces) in region_surfaces.iter().enumerate() {
+                    crate::topdbg::log_top_surfaces(
+                        idx_layer,
+                        "discover_vertical_shells",
+                        layer_surfaces,
+                    );
+                    crate::topdbg::dump_top_surfaces(idx_layer, "d2_vshell_top", layer_surfaces);
+                }
+            }
             /// C++: this->process_external_surfaces();
             /// C++: m_print->throw_if_canceled();
             let expansion_distance = nozzle_like_width * std::f64::consts::SQRT_2;
@@ -780,12 +806,47 @@ impl PrintObject {
                     region.fill_surfaces.surfaces = layer_surfaces;
                 }
             }
+            // TOPDBG (diagnostics only, env-gated): Top state after
+            // process_external_surfaces (read back from the layers).
+            if crate::topdbg::enabled() {
+                for (idx_layer, layer) in self.layers.iter().enumerate() {
+                    if let Some(region) = layer.regions().get(region_id) {
+                        crate::topdbg::log_top_surfaces(
+                            idx_layer,
+                            "process_external_surfaces",
+                            &region.fill_surfaces.surfaces,
+                        );
+                        crate::topdbg::dump_top_surfaces(
+                            idx_layer,
+                            "d3_process_external_top",
+                            &region.fill_surfaces.surfaces,
+                        );
+                    }
+                }
+            }
         }
 
         /// PrintObject.cpp:689-691
         /// C++: this->discover_horizontal_shells();
         /// C++: m_print->throw_if_canceled();
         self.discover_horizontal_shells()?;
+        // TOPDBG (diagnostics only, env-gated): Top state after discover_horizontal_shells.
+        if crate::topdbg::enabled() {
+            for (idx_layer, layer) in self.layers.iter().enumerate() {
+                for region in layer.regions().iter() {
+                    crate::topdbg::log_top_surfaces(
+                        idx_layer,
+                        "discover_horizontal_shells",
+                        &region.fill_surfaces.surfaces,
+                    );
+                    crate::topdbg::dump_top_surfaces(
+                        idx_layer,
+                        "d4_horizontal_shells_top",
+                        &region.fill_surfaces.surfaces,
+                    );
+                }
+            }
+        }
 
         /// PrintObject.cpp:701-702
         /// C++: if (m_config.interlocking_beam.value)
@@ -1207,11 +1268,47 @@ impl PrintObject {
             /// C++:             layerm->slices_to_fill_surfaces_clipped();
             /// C++:         }
             /// C++:     });
+            // TOPDBG (diagnostics only, env-gated, not part of the C++ port):
+            // Top state after detect typing, before the fill_expolygons clip.
+            if crate::topdbg::enabled() {
+                for idx_layer in 0..self.layers.len() {
+                    let region = &self.layers[idx_layer].regions()[region_id];
+                    crate::topdbg::log_top_surfaces(
+                        idx_layer,
+                        "detect_surfaces_type",
+                        &region.slices.surfaces,
+                    );
+                    crate::topdbg::dump_top_surfaces(
+                        idx_layer,
+                        "a_detect_top_slices",
+                        &region.slices.surfaces,
+                    );
+                    crate::topdbg::dump_expolygons(
+                        idx_layer,
+                        "c_fill_expolygons",
+                        &region.fill_expolygons,
+                    );
+                }
+            }
             for idx_layer in 0..self.layers.len() {
                 if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(crate::Error::Cancelled);
                 }
                 self.layers[idx_layer].regions_mut()[region_id].slices_to_fill_surfaces_clipped();
+                // TOPDBG: Top state after the clip by fill_expolygons.
+                if crate::topdbg::enabled() {
+                    let region = &self.layers[idx_layer].regions()[region_id];
+                    crate::topdbg::log_top_surfaces(
+                        idx_layer,
+                        "slices_to_fill_surfaces_clipped",
+                        &region.fill_surfaces.surfaces,
+                    );
+                    crate::topdbg::dump_top_surfaces(
+                        idx_layer,
+                        "d1_clip_top",
+                        &region.fill_surfaces.surfaces,
+                    );
+                }
             }
 
             /// PrintObject.cpp:1644
