@@ -7,21 +7,26 @@
 //! crate (same backend as `geometry::voronoi_diagram`).
 //!
 //! PORTING STATUS (see report): the self-contained graph + painted-line + colorize
-//! algorithms are ported line-by-line. The top-level entry points
-//! `multi_material_segmentation_by_painting` / `fuzzy_skin_segmentation_by_painting`,
-//! plus `mmu_segmentation_top_and_bottom_layers`, depend on PrintObject / Layer /
-//! LayerRegion / ModelVolume::mmu_segmentation_facets / slice_mesh_slabs /
-//! EdgeGrid::Grid::create+visit infrastructure that is not yet wired through the Rust
-//! crate; those are documented as BLOCKED below and not faked.
+//! algorithms are ported line-by-line, including the EdgeGrid-driven
+//! `PaintedLineVisitor` / `post_process_painted_lines` / `colorize_contour(s)` and the
+//! Clipper-driven `cut_segmented_layers` / `merge_segmented_layers`. The top-level
+//! entry points `multi_material_segmentation_by_painting` /
+//! `fuzzy_skin_segmentation_by_painting`, plus `mmu_segmentation_top_and_bottom_layers`,
+//! remain BLOCKED on ModelVolume::mmu_segmentation_facets / fuzzy_skin_facets (facet
+//! annotations are not stored on the Rust ModelVolume) and `slice_mesh_slabs` (not
+//! ported); those are documented as BLOCKED below and not faked.
 
 use boostvoronoi::diagram as bv_diagram;
 use boostvoronoi::prelude as bv;
 
+use crate::clipper_utils::{closing, difference, offset_expolygons, union_ex, OffsetJoinType};
+use crate::edge_grid::{Contour, EdgeGrid};
 use crate::geometry::voronoi_diagram::VoronoiDiagram;
-use crate::geometry::{BoundingBox, Line, LineF, Point, PointF, Polygon};
+use crate::geometry::{BoundingBox, ExPolygons, Line, LineF, Point, PointF, Polygon};
 use crate::libslic3r::SCALED_EPSILON;
-use crate::{scale, Coord};
+use crate::{scale, Coord, SCALING_FACTOR};
 
+use std::collections::HashSet;
 use std::f64::consts::PI;
 
 // In MultiMaterialSegmentation.cpp, `Vec2d` is a *scaled* double (a scaled-integer Point
@@ -655,11 +660,136 @@ pub struct PaintedLine {
     pub color: i32,
 }
 
-// PaintedLineVisitor (MultiMaterialSegmentation.cpp:524) operates on EdgeGrid::Grid
-// cell-iteration callbacks. The Rust EdgeGrid::Grid does not yet expose the
-// `cell_data_range` / `grid.line(seg)` / `visit_cells_intersecting_line` surface in the
-// shape this visitor needs, and the visitor is only reachable from the two BLOCKED
-// top-level entry points. See report.
+// Line.hpp:42-69 — line_alg::distance_to_squared (squared distance to the closest point
+// of the segment), computed in scaled doubles exactly as the Eigen code does. (The
+// crate-level `Line::distance_to_squared` rounds the projection to an integer Point
+// first, which is not what the C++ does here.)
+#[allow(dead_code)]
+fn line_distance_to_squared(line: &Line, point: &Point) -> f64 {
+    // Line.hpp:45-47
+    let v = pt_to_vec2d(line.b - line.a);
+    let va = pt_to_vec2d(*point - line.a);
+    let l2 = v.length_squared(); // avoid a sqrt
+    if l2 == 0.0 {
+        // a == b case
+        // Line.hpp:48-52
+        return va.length_squared();
+    }
+    // Consider the line extending the segment, parameterized as a + t (b - a).
+    // We find projection of this point onto the line.
+    // It falls where t = [(this-a) . (b-a)] / |b-a|^2
+    // Line.hpp:56
+    let t = va.dot(&v) / l2;
+    if t <= 0.0 {
+        // beyond the 'a' end of the segment
+        // Line.hpp:57-60
+        va.length_squared()
+    } else if t >= 1.0 {
+        // beyond the 'b' end of the segment
+        // Line.hpp:61-65
+        pt_to_vec2d(*point - line.b).length_squared()
+    } else {
+        // Line.hpp:67-68
+        (v * t - va).length_squared()
+    }
+}
+
+// MultiMaterialSegmentation.cpp:524
+// (The C++ visitor also carries a `std::mutex` guarding `painted_lines` for tbb; the
+// Rust port runs serially, so `painted_lines` is a plain mutable borrow instead.)
+#[allow(dead_code)]
+pub struct PaintedLineVisitor<'a> {
+    // MultiMaterialSegmentation.cpp:579-584
+    pub grid: &'a EdgeGrid,
+    pub painted_lines: &'a mut Vec<PaintedLine>,
+    pub line_to_test: Line,
+    pub painted_lines_set: HashSet<(usize, usize)>,
+    pub color: i32,
+}
+
+#[allow(dead_code)]
+impl<'a> PaintedLineVisitor<'a> {
+    // MultiMaterialSegmentation.cpp:526-529
+    pub fn new(grid: &'a EdgeGrid, painted_lines: &'a mut Vec<PaintedLine>, reserve: usize) -> Self {
+        Self {
+            grid,
+            painted_lines,
+            line_to_test: Line::default(),
+            painted_lines_set: HashSet::with_capacity(reserve),
+            color: -1,
+        }
+    }
+
+    // MultiMaterialSegmentation.cpp:531
+    pub fn reset(&mut self) {
+        self.painted_lines_set.clear();
+    }
+
+    // MultiMaterialSegmentation.cpp:533 — bool operator()(coord_t iy, coord_t ix)
+    pub fn visit(&mut self, iy: usize, ix: usize) -> bool {
+        // Called with a row and column of the grid cell, which is intersected by a line.
+        // MultiMaterialSegmentation.cpp:536-539
+        let grid = self.grid;
+        let cell_data_range = grid.cell_data_range_at(iy, ix);
+        let v1 = pt_to_vec2d(self.line_to_test.vector());
+        let v1_sqr_norm = v1.length_squared();
+        let heuristic_thr_part = self.line_to_test.length() + append_threshold();
+        for it_contour_and_segment in cell_data_range {
+            // MultiMaterialSegmentation.cpp:541-543
+            let grid_line = grid.segment(*it_contour_and_segment);
+            let v2 = pt_to_vec2d(grid_line.vector());
+            let heuristic_thr_sqr = sqr_f64(heuristic_thr_part + grid_line.length());
+
+            // An inexpensive heuristic to test whether line_to_test and grid_line can be somewhere close enough to each other.
+            // This helps filter out cases when the following expensive calculations are useless.
+            // MultiMaterialSegmentation.cpp:545-551
+            if pt_to_vec2d(grid_line.a - self.line_to_test.a).length_squared() > heuristic_thr_sqr
+                || pt_to_vec2d(grid_line.b - self.line_to_test.a).length_squared() > heuristic_thr_sqr
+                || pt_to_vec2d(grid_line.a - self.line_to_test.b).length_squared() > heuristic_thr_sqr
+                || pt_to_vec2d(grid_line.b - self.line_to_test.b).length_squared() > heuristic_thr_sqr
+            {
+                continue;
+            }
+
+            // When lines have too different length, it is necessary to normalize them
+            // MultiMaterialSegmentation.cpp:553-555
+            if sqr_f64(v1.dot(&v2)) > cos_threshold2() * v1_sqr_norm * v2.length_squared() {
+                // The two vectors are nearly collinear (their mutual angle is lower than 30 degrees)
+                if !self.painted_lines_set.contains(it_contour_and_segment) {
+                    // MultiMaterialSegmentation.cpp:557-560
+                    if line_distance_to_squared(&grid_line, &self.line_to_test.a) < append_threshold2()
+                        || line_distance_to_squared(&grid_line, &self.line_to_test.b) < append_threshold2()
+                        || line_distance_to_squared(&self.line_to_test, &grid_line.a) < append_threshold2()
+                        || line_distance_to_squared(&self.line_to_test, &grid_line.b) < append_threshold2()
+                    {
+                        // MultiMaterialSegmentation.cpp:561-562
+                        let mut line_to_test_projected = Line::default();
+                        project_line_on_line(&grid_line, &self.line_to_test, &mut line_to_test_projected);
+
+                        // MultiMaterialSegmentation.cpp:564-565
+                        if pt_to_vec2d(line_to_test_projected.a - grid_line.a).length_squared()
+                            > pt_to_vec2d(line_to_test_projected.b - grid_line.a).length_squared()
+                        {
+                            line_to_test_projected.reverse_mut();
+                        }
+
+                        // MultiMaterialSegmentation.cpp:567-571
+                        self.painted_lines_set.insert(*it_contour_and_segment);
+                        self.painted_lines.push(PaintedLine {
+                            contour_idx: it_contour_and_segment.0,
+                            line_idx: it_contour_and_segment.1,
+                            projected_line: line_to_test_projected,
+                            color: self.color,
+                        });
+                    }
+                }
+            }
+        }
+        // Continue traversing the grid along the edge.
+        // MultiMaterialSegmentation.cpp:576
+        true
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Painted-line thresholds (MultiMaterialSegmentation.cpp:587-589)
@@ -813,9 +943,74 @@ fn filter_painted_lines(
     filtered_lines
 }
 
-// post_process_painted_lines (MultiMaterialSegmentation.cpp:688) depends on
-// `EdgeGrid::Contour::segment_start` / `get_segment` which the Rust EdgeGrid does not
-// yet expose in this shape; it is only reachable from the BLOCKED entry points. See report.
+// MultiMaterialSegmentation.cpp:688
+// `painted_lines` is taken by value (the C++ takes `std::vector<PaintedLine> &&`).
+#[allow(dead_code)]
+fn post_process_painted_lines(
+    contours: &[Contour],
+    mut painted_lines: Vec<PaintedLine>,
+) -> Vec<Vec<PaintedLine>> {
+    // MultiMaterialSegmentation.cpp:690-691
+    if painted_lines.is_empty() {
+        return Vec::new();
+    }
+
+    // MultiMaterialSegmentation.cpp:693-703
+    let comp = |first: &PaintedLine, second: &PaintedLine| -> bool {
+        let first_start_p = *contours[first.contour_idx].segment_start(first.line_idx);
+        first.contour_idx < second.contour_idx
+            || (first.contour_idx == second.contour_idx
+                && (first.line_idx < second.line_idx
+                    || (first.line_idx == second.line_idx
+                        && (pt_to_vec2d(first.projected_line.a - first_start_p).length_squared()
+                            < pt_to_vec2d(second.projected_line.a - first_start_p).length_squared()
+                            || (pt_to_vec2d(first.projected_line.a - first_start_p).length_squared()
+                                == pt_to_vec2d(second.projected_line.a - first_start_p)
+                                    .length_squared()
+                                && pt_to_vec2d(first.projected_line.b - first.projected_line.a)
+                                    .length_squared()
+                                    < pt_to_vec2d(second.projected_line.b - second.projected_line.a)
+                                        .length_squared())))))
+    };
+    // MultiMaterialSegmentation.cpp:704 — std::sort with the strict-weak-order comparator.
+    painted_lines.sort_by(|a, b| {
+        if comp(a, b) {
+            std::cmp::Ordering::Less
+        } else if comp(b, a) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+
+    // MultiMaterialSegmentation.cpp:706-716
+    let mut filtered_painted_lines: Vec<Vec<PaintedLine>> = vec![Vec::new(); contours.len()];
+    let mut prev_painted_line_idx = 0usize;
+    for curr_painted_line_idx in 0..painted_lines.len() {
+        let next_painted_line_idx = curr_painted_line_idx + 1;
+        if next_painted_line_idx >= painted_lines.len()
+            || painted_lines[curr_painted_line_idx].contour_idx
+                != painted_lines[next_painted_line_idx].contour_idx
+            || painted_lines[curr_painted_line_idx].line_idx
+                != painted_lines[next_painted_line_idx].line_idx
+        {
+            // MultiMaterialSegmentation.cpp:711-713
+            let start_line = &painted_lines[prev_painted_line_idx];
+            let line_to_process = contours[start_line.contour_idx].segment(start_line.line_idx);
+            let contour_idx = painted_lines[curr_painted_line_idx].contour_idx;
+            let filtered = filter_painted_lines(
+                &line_to_process,
+                prev_painted_line_idx,
+                curr_painted_line_idx,
+                &painted_lines,
+            );
+            filtered_painted_lines[contour_idx].extend(filtered);
+            prev_painted_line_idx = next_painted_line_idx;
+        }
+    }
+
+    filtered_painted_lines
+}
 
 // MultiMaterialSegmentation.cpp:721
 #[allow(dead_code)]
@@ -1075,10 +1270,103 @@ fn filter_colorized_polygon(mut new_lines: ColoredLines) -> ColoredLines {
     new_lines
 }
 
-// colorize_contour (MultiMaterialSegmentation.cpp:896) and colorize_contours
-// (MultiMaterialSegmentation.cpp:936) consume `EdgeGrid::Contour` (get_segment /
-// get_segments / num_segments). The Rust EdgeGrid does not yet expose those, and these
-// are only reachable from the BLOCKED entry points. See report.
+// MultiMaterialSegmentation.cpp:896
+#[allow(dead_code)]
+fn colorize_contour(contour: &Contour, painted_contour: &[PaintedLine]) -> ColoredLines {
+    // MultiMaterialSegmentation.cpp:897
+    debug_assert!(
+        painted_contour.is_empty()
+            || painted_contour
+                .iter()
+                .all(|p_line| painted_contour[0].contour_idx == p_line.contour_idx)
+    );
+
+    // MultiMaterialSegmentation.cpp:899-906
+    let mut colorized_contour: ColoredLines = Vec::new();
+    if painted_contour.is_empty() {
+        // Appends contour with default color for lines before the first PaintedLine.
+        colorized_contour.reserve(contour.num_segments());
+        for line in contour.segments() {
+            colorized_contour.push(ColoredLine::new(line, 0));
+        }
+        return colorized_contour;
+    }
+
+    // MultiMaterialSegmentation.cpp:908-910
+    colorized_contour.reserve(contour.num_segments() + painted_contour.len());
+    for idx in 0..painted_contour.first().unwrap().line_idx {
+        colorized_contour.push(ColoredLine::new(contour.segment(idx), 0));
+    }
+
+    // MultiMaterialSegmentation.cpp:912-927
+    let mut prev_painted_line_idx = 0usize;
+    for curr_painted_line_idx in 0..painted_contour.len() {
+        let next_painted_line_idx = curr_painted_line_idx + 1;
+        if next_painted_line_idx >= painted_contour.len()
+            || painted_contour[curr_painted_line_idx].line_idx
+                != painted_contour[next_painted_line_idx].line_idx
+        {
+            // MultiMaterialSegmentation.cpp:916-917
+            colorized_contour.extend(colorize_line(
+                &contour.segment(painted_contour[prev_painted_line_idx].line_idx),
+                prev_painted_line_idx,
+                curr_painted_line_idx,
+                painted_contour,
+            ));
+
+            // Appends contour with default color for lines between the current and the next PaintedLine.
+            // MultiMaterialSegmentation.cpp:919-922
+            if next_painted_line_idx < painted_contour.len() {
+                for idx in (painted_contour[curr_painted_line_idx].line_idx + 1)
+                    ..painted_contour[next_painted_line_idx].line_idx
+                {
+                    colorized_contour.push(ColoredLine::new(contour.segment(idx), 0));
+                }
+            }
+
+            prev_painted_line_idx = next_painted_line_idx;
+        }
+    }
+
+    // Appends contour with default color for lines after the last PaintedLine.
+    // MultiMaterialSegmentation.cpp:929-931
+    for idx in (painted_contour.last().unwrap().line_idx + 1)..contour.num_segments() {
+        colorized_contour.push(ColoredLine::new(contour.segment(idx), 0));
+    }
+
+    debug_assert!(!colorized_contour.is_empty());
+    // MultiMaterialSegmentation.cpp:934
+    filter_colorized_polygon(colorized_contour)
+}
+
+// MultiMaterialSegmentation.cpp:937
+#[allow(dead_code)]
+fn colorize_contours(
+    contours: &[Contour],
+    painted_contours: &[Vec<PaintedLine>],
+) -> Vec<ColoredLines> {
+    // MultiMaterialSegmentation.cpp:939-944
+    debug_assert!(contours.len() == painted_contours.len());
+    let mut colorized_contours: Vec<ColoredLines> = vec![Vec::new(); contours.len()];
+    for contour_idx in 0..painted_contours.len() {
+        colorized_contours[contour_idx] =
+            colorize_contour(&contours[contour_idx], &painted_contours[contour_idx]);
+    }
+
+    // MultiMaterialSegmentation.cpp:946-955
+    let mut poly_idx = 0usize;
+    for color_lines in &mut colorized_contours {
+        let mut line_idx = 0usize;
+        for color_line_idx in 0..color_lines.len() {
+            color_lines[color_line_idx].poly_idx = poly_idx as i32;
+            color_lines[color_line_idx].local_line_idx = line_idx as i32;
+            line_idx += 1;
+        }
+        poly_idx += 1;
+    }
+
+    colorized_contours
+}
 
 // MultiMaterialSegmentation.cpp:960
 // Determines if the line points from the point between two contour lines is pointing inside polygon or outside.
@@ -1155,9 +1443,11 @@ fn has_same_color(cl1: &ColoredLine, cl2: &ColoredLine) -> bool {
 // source-index iteration in the half-edge order C++ relies on. The intersection-heavy
 // finite/infinite edge classification is ported below against the boostvoronoi 0.12
 // `Diagram` API. The Voronoi vertices are appended via `append_voronoi_vertices`.
-// NOTE: this function and its callees are only reachable from the BLOCKED entry points,
-// which assemble `color_poly` from EdgeGrid contours that are not yet available; they are
-// kept here, faithfully ported where the boostvoronoi API supports it. See report.
+// NOTE: this function and its callees are only reachable from the BLOCKED entry points.
+// The EdgeGrid contours and `colorize_contours` that assemble `color_poly` are now
+// ported (above); the entry points themselves remain blocked on ModelVolume facet
+// annotations and `slice_mesh_slabs`. Kept here, faithfully ported where the
+// boostvoronoi API supports it. See report.
 
 // MultiMaterialSegmentation.cpp:1887
 fn get_all_segments(color_poly: &[Vec<ColoredLine>]) -> Vec<Vec<(usize, usize)>> {
@@ -1279,23 +1569,149 @@ pub fn has_layer_only_one_color(colored_polygons: &[ColoredLines]) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Segmented-layer post-processing (MultiMaterialSegmentation.cpp:1284, 1968)
+// ---------------------------------------------------------------------------
+
+// MultiMaterialSegmentation.cpp:1284
+// `cut_width` / `interlocking_depth` are *scaled* floats (the C++ caller passes
+// `scale_(...)` values). The tbb::parallel_for runs serially and the
+// `throw_on_cancel_callback` parameter is omitted, per crate convention. The crate
+// clipper offsets take mm, hence the `/ SCALING_FACTOR` at the offset call site.
+#[allow(dead_code)]
+fn cut_segmented_layers(
+    input_expolygons: &[ExPolygons],
+    segmented_regions: &mut [Vec<ExPolygons>],
+    cut_width: f32,
+    interlocking_depth: f32,
+) {
+    // MultiMaterialSegmentation.cpp:1291 (computed but never read in the C++ loop;
+    // kept for parity)
+    let _interlocking_cut_width: f32 = if interlocking_depth > 0.0 {
+        (cut_width - interlocking_depth).max(0.0)
+    } else {
+        0.0
+    };
+    // MultiMaterialSegmentation.cpp:1292-1306
+    for layer_idx in 0..segmented_regions.len() {
+        // MultiMaterialSegmentation.cpp:1296-1297
+        let region_cut_width: f32 = if layer_idx % 2 == 0 && interlocking_depth != 0.0 {
+            interlocking_depth
+        } else {
+            cut_width
+        };
+        let num_extruders_plus_one = segmented_regions[layer_idx].len();
+        if region_cut_width > 0.0 {
+            // MultiMaterialSegmentation.cpp:1299-1304
+            // Indexed by extruder_id
+            let mut segmented_regions_cuts: Vec<ExPolygons> =
+                vec![Vec::new(); num_extruders_plus_one];
+            for extruder_idx in 0..num_extruders_plus_one {
+                let ex_polygons = &segmented_regions[layer_idx][extruder_idx];
+                if !ex_polygons.is_empty() {
+                    // diff_ex(ex_polygons, offset_ex(input_expolygons[layer_idx], -region_cut_width))
+                    segmented_regions_cuts[extruder_idx] = difference(
+                        ex_polygons,
+                        &offset_expolygons(
+                            &input_expolygons[layer_idx],
+                            -(region_cut_width as f64) / SCALING_FACTOR,
+                            OffsetJoinType::Miter,
+                        ),
+                    );
+                }
+            }
+            segmented_regions[layer_idx] = segmented_regions_cuts;
+        }
+    }
+}
+
+// MultiMaterialSegmentation.cpp:1968
+// `top_and_bottom_layers` is taken by value (the C++ takes
+// `std::vector<std::vector<ExPolygons>> &&`). The tbb::parallel_for runs serially and
+// the `throw_on_cancel_callback` parameter is omitted, per crate convention.
+#[allow(dead_code)]
+fn merge_segmented_layers(
+    segmented_regions: &[Vec<ExPolygons>],
+    top_and_bottom_layers: Vec<Vec<ExPolygons>>,
+    num_extruders: usize,
+) -> Vec<Vec<ExPolygons>> {
+    // MultiMaterialSegmentation.cpp:1974-1977
+    let num_layers = segmented_regions.len();
+    let mut segmented_regions_merged: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_extruders]; num_layers];
+    debug_assert!(num_extruders + 1 == top_and_bottom_layers.len());
+
+    // MultiMaterialSegmentation.cpp:1980-2006
+    for layer_idx in 0..num_layers {
+        debug_assert!(segmented_regions[layer_idx].len() == num_extruders + 1);
+        // Zero is skipped because it is the default color of the volume
+        for extruder_id in 1..(num_extruders + 1) {
+            // MultiMaterialSegmentation.cpp:1987-1994
+            if !segmented_regions[layer_idx][extruder_id].is_empty() {
+                let mut segmented_regions_trimmed: ExPolygons =
+                    segmented_regions[layer_idx][extruder_id].clone();
+                for top_and_bottom_by_extruder in &top_and_bottom_layers {
+                    if !top_and_bottom_by_extruder[layer_idx].is_empty()
+                        && !segmented_regions_trimmed.is_empty()
+                    {
+                        segmented_regions_trimmed = difference(
+                            &segmented_regions_trimmed,
+                            &top_and_bottom_by_extruder[layer_idx],
+                        );
+                    }
+                }
+
+                segmented_regions_merged[layer_idx][extruder_id - 1] = segmented_regions_trimmed;
+            }
+
+            // MultiMaterialSegmentation.cpp:1996-2004
+            if !top_and_bottom_layers[extruder_id][layer_idx].is_empty() {
+                let was_top_and_bottom_empty =
+                    segmented_regions_merged[layer_idx][extruder_id - 1].is_empty();
+                segmented_regions_merged[layer_idx][extruder_id - 1]
+                    .extend_from_slice(&top_and_bottom_layers[extruder_id][layer_idx]);
+
+                // Remove dimples (#7235) appearing after merging side segmentation of the model with tops and bottoms painted layers.
+                // offset2_ex(union_ex(...), float(SCALED_EPSILON), -float(SCALED_EPSILON))
+                // grows then shrinks by SCALED_EPSILON == crate `closing` with the
+                // equivalent mm distance.
+                if !was_top_and_bottom_empty {
+                    segmented_regions_merged[layer_idx][extruder_id - 1] = closing(
+                        &union_ex(&segmented_regions_merged[layer_idx][extruder_id - 1]),
+                        SCALED_EPSILON / SCALING_FACTOR,
+                        OffsetJoinType::Miter,
+                    );
+                }
+            }
+        }
+    }
+
+    segmented_regions_merged
+}
+
+// ---------------------------------------------------------------------------
 // Public API (MultiMaterialSegmentation.hpp:24-27)
 // ---------------------------------------------------------------------------
 //
-// BLOCKED: `multi_material_segmentation_by_painting` and
-// `fuzzy_skin_segmentation_by_painting` require a `PrintObject` carrying:
-//   - print().config().filament_colour
-//   - layers() (ConstLayerPtrsAdaptor) with LayerRegion::slices.surfaces
+// BLOCKED: `multi_material_segmentation_by_painting` (cpp:2012) and
+// `fuzzy_skin_segmentation_by_painting`, plus their helpers
+// `mmu_segmentation_top_and_bottom_layers` (cpp:1321) and `is_volume_sinking`
+// (cpp:1311), require:
 //   - model_object().volumes with ModelVolume::mmu_segmentation_facets /
-//     fuzzy_skin_facets (EnforcerBlockerType facet extraction)
-//   - trafo()/trafo_centered()/center_offset()
-//   - EdgeGrid::Grid::create + visit_cells_intersecting_line + contours()
-//   - slice_mesh_slabs / slice_mesh_ex / TriangleMeshSlicer
-//   - cut_segmented_layers / mmu_segmentation_top_and_bottom_layers /
-//     merge_segmented_layers (TBB + offset/diff/union ex pipelines)
-// none of which are wired through the Rust crate yet. These entry points are therefore
-// documented and not faked. The self-contained graph + colorize algorithms above are the
-// faithful core they call into once the infrastructure is available.
+//     fuzzy_skin_facets — per-volume facet annotations (EnforcerBlockerType) are not
+//     stored on the Rust ModelVolume (see print_apply.rs notes), so there is no
+//     painting data to segment;
+//   - slice_mesh_slabs (TriangleMeshSlicer slab functions, deliberately excluded from
+//     the Rust triangle_mesh_slicer port) to project painted facets onto layers;
+//   - PrintObject trafo()/trafo_centered()/center_offset() composition for the
+//     painted-mesh transform;
+//   - PrintConfig::filament_colour (still missing from the Rust PrintConfig).
+// The config-hierarchy wiring (print()->config()), the Layer/LayerRegion accessors,
+// and the EdgeGrid surface (create / contours / cell_data_range /
+// visit_cells_intersecting_line) ARE now available; everything those entry points call
+// into that is self-contained is ported above (graph build/colorize,
+// PaintedLineVisitor, post_process_painted_lines, colorize_contour(s),
+// cut_segmented_layers, merge_segmented_layers). The remaining gap is the
+// facet-annotation + slab-slicing infrastructure, which is documented and not faked.
 
 // ---------------------------------------------------------------------------
 // Small math helpers (mirrors Slic3r::sqr / cross2 / perp)
