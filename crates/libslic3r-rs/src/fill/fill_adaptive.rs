@@ -14,17 +14,16 @@
 //! and we also implemented adaptivity for supporting internal overhangs only.
 //!
 //! BLOCKED SYMBOLS (data-model / base-class divergence, see notes):
-//!  - `adaptive_fill_line_spacing(const PrintObject&)`: requires `PrintObject::print()`,
-//!    a `std::vector<double> nozzle_diameter`, and per-`LayerRegion` `fill_surfaces`
-//!    threaded through `Layer::regions()`. The Rust `PrintObject`/`Layer` data model
-//!    diverges (scalar nozzle_diameter, no `print()` accessor, single fill_surfaces).
 //!  - `Filler::_fill_surface_single`: requires the `Slic3r::Fill` base class state
 //!    (`this->z`, `this->spacing`, `this->adapt_fill_octree`, `multiline_fill`,
 //!    `connect_infill`) wired through the FillBase virtual-dispatch machinery, which
 //!    has no equivalent trait/state in the Rust crate yet.
 
+use crate::flow::{Flow, FlowRole};
 use crate::geometry::aabb_tree::{IndexedTriangleSet, Vec3 as Vec3d};
 use crate::geometry::{cross2f, ExPolygon, Line, Point, PointF, Polyline};
+use crate::print_config::InfillPattern;
+use crate::print_object::PrintObject;
 use crate::shortest_path::chain_polylines;
 use crate::Coord;
 use nalgebra::{UnitQuaternion, Vector3};
@@ -1887,6 +1886,164 @@ fn transform_center(pool: &mut [Cube], current_cube: usize, rot: &nalgebra::Matr
             transform_center(pool, child, rot);
         }
     }
+}
+
+// FillAdaptive.hpp:34 / FillAdaptive.cpp:276
+// std::pair<double, double> adaptive_fill_line_spacing(const PrintObject &print_object)
+//
+// Rust adaptation notes:
+//   - C++ uses `std::vector<double> nozzle_diameters = print_object.print()->config().nozzle_diameter.values`
+//     (multi-extruder). Rust carries a scalar `nozzle_diameter: f64`; single-extruder == same value.
+//   - C++ `config.sparse_infill_density` is a percentage (e.g. 15.0 for 15%).
+//     Rust `fill_density` is a fraction (0.0..1.0); formula uses `fill_density` directly
+//     (replaces `density / 100.0f` in the C++ lambda).
+//   - C++ `config.sparse_infill_pattern == ipAdaptiveCubic / ipSupportCubic` maps to
+//     Rust `config.fill_pattern == InfillPattern::AdaptiveCubic / SupportCubic`.
+pub fn adaptive_fill_line_spacing(print_object: &PrintObject) -> (f64, f64) {
+    // FillAdaptive.cpp:279-280
+    let mut adaptive_line_spacing = 0.0f64;
+    let mut support_line_spacing = 0.0f64;
+
+    // FillAdaptive.cpp:282-286  enum class Tristate { Yes, No, Maybe }
+    #[derive(PartialEq, Clone, Copy)]
+    enum Tristate {
+        Yes,
+        No,
+        Maybe,
+    }
+
+    // FillAdaptive.cpp:287-292
+    struct RegionFillData {
+        has_adaptive_infill: Tristate,
+        has_support_infill: Tristate,
+        density: f64,
+        extrusion_width: f64,
+    }
+
+    // FillAdaptive.cpp:293-298
+    // C++: const std::vector<double>& nozzle_diameters = print_object.print()->config().nozzle_diameter.values;
+    //      double max_nozzle_diameter = *std::max_element(nozzle_diameters.begin(), nozzle_diameters.end());
+    // Rust: scalar nozzle_diameter — max of a single value = the value itself.
+    let max_nozzle_diameter = print_object.print().config().nozzle_diameter;
+    // FillAdaptive.cpp:298
+    let default_infill_extrusion_width =
+        Flow::auto_extrusion_width(FlowRole::Infill, max_nozzle_diameter);
+
+    // FillAdaptive.cpp:299-312
+    let mut region_fill_data: Vec<RegionFillData> =
+        Vec::with_capacity(print_object.num_printing_regions());
+    let mut build_octree = false;
+    for region_id in 0..print_object.num_printing_regions() {
+        // FillAdaptive.cpp:300
+        let config = match print_object.printing_region(region_id) {
+            Some(r) => r.config(),
+            None => continue,
+        };
+        // FillAdaptive.cpp:301  bool nonempty = config.sparse_infill_density > 0;
+        let nonempty = config.fill_density > 0.0;
+        // FillAdaptive.cpp:302-303
+        let has_adaptive_infill = nonempty && config.fill_pattern == InfillPattern::AdaptiveCubic;
+        let has_support_infill = nonempty && config.fill_pattern == InfillPattern::SupportCubic;
+        // FillAdaptive.cpp:304  double sparse_infill_line_width = config.sparse_infill_line_width;
+        let sparse_infill_line_width = config.sparse_infill_line_width;
+        // FillAdaptive.cpp:305-310
+        region_fill_data.push(RegionFillData {
+            has_adaptive_infill: if has_adaptive_infill {
+                Tristate::Maybe
+            } else {
+                Tristate::No
+            },
+            has_support_infill: if has_support_infill {
+                Tristate::Maybe
+            } else {
+                Tristate::No
+            },
+            // FillAdaptive.cpp:308  config.sparse_infill_density (percentage) -> fill_density (0..1)
+            density: config.fill_density,
+            // FillAdaptive.cpp:309
+            extrusion_width: if sparse_infill_line_width != 0.0 {
+                sparse_infill_line_width
+            } else {
+                default_infill_extrusion_width
+            },
+        });
+        // FillAdaptive.cpp:311
+        build_octree |= has_adaptive_infill || has_support_infill;
+    }
+
+    // FillAdaptive.cpp:314
+    if build_octree {
+        // FillAdaptive.cpp:316-323: Compute whether regions actually have fill surfaces.
+        for layer in print_object.layers() {
+            for (region_id, layerm) in layer.regions().iter().enumerate() {
+                if region_id >= region_fill_data.len() {
+                    break;
+                }
+                let rd = &mut region_fill_data[region_id];
+                // FillAdaptive.cpp:319
+                if rd.has_adaptive_infill == Tristate::Maybe
+                    && !layerm.fill_surfaces.surfaces.is_empty()
+                {
+                    rd.has_adaptive_infill = Tristate::Yes;
+                }
+                // FillAdaptive.cpp:321
+                if rd.has_support_infill == Tristate::Maybe
+                    && !layerm.fill_surfaces.surfaces.is_empty()
+                {
+                    rd.has_support_infill = Tristate::Yes;
+                }
+            }
+        }
+
+        // FillAdaptive.cpp:325-330
+        let mut adaptive_fill_density = 0.0f64;
+        let mut adaptive_infill_extrusion_width = 0.0f64;
+        let mut adaptive_cnt = 0i32;
+        let mut support_fill_density = 0.0f64;
+        let mut support_infill_extrusion_width = 0.0f64;
+        let mut support_cnt = 0i32;
+
+        // FillAdaptive.cpp:332-342
+        for rd in &region_fill_data {
+            if rd.has_adaptive_infill == Tristate::Yes {
+                adaptive_fill_density += rd.density;
+                adaptive_infill_extrusion_width += rd.extrusion_width;
+                adaptive_cnt += 1;
+            } else if rd.has_support_infill == Tristate::Yes {
+                support_fill_density += rd.density;
+                support_infill_extrusion_width += rd.extrusion_width;
+                support_cnt += 1;
+            }
+        }
+
+        // FillAdaptive.cpp:344-351
+        // C++ lambda: extrusion_width / ((density / 100.0f) * 0.333333333f)
+        // Rust density is 0..1 fraction, so formula becomes:
+        //   extrusion_width / (density * 0.333333333)
+        let to_line_spacing = |cnt: i32, density: f64, extrusion_width: f64| -> f64 {
+            if cnt > 0 {
+                let density = density / cnt as f64;
+                let extrusion_width = extrusion_width / cnt as f64;
+                extrusion_width / (density * 0.333_333_333_f64)
+            } else {
+                0.0
+            }
+        };
+        // FillAdaptive.cpp:352-353
+        adaptive_line_spacing = to_line_spacing(
+            adaptive_cnt,
+            adaptive_fill_density,
+            adaptive_infill_extrusion_width,
+        );
+        support_line_spacing = to_line_spacing(
+            support_cnt,
+            support_fill_density,
+            support_infill_extrusion_width,
+        );
+    }
+
+    // FillAdaptive.cpp:356
+    (adaptive_line_spacing, support_line_spacing)
 }
 
 // FillAdaptive.hpp:41 / FillAdaptive.cpp:1469
