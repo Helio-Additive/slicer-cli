@@ -1366,6 +1366,12 @@ pub struct PrintObjectConfig {
     /// Seam position preference.
     pub seam_position: SeamPosition,
 
+    /// Ensure seam placement away from overhangs for alignment and backing modes.
+    /// C++: `((ConfigOptionBool, seam_placement_away_from_overhangs))`
+    /// (PrintConfig.hpp:924); default `false` (PrintConfig.cpp:4650-4655).
+    /// BambuStudio: `seam_placement_away_from_overhangs`.
+    pub seam_placement_away_from_overhangs: bool,
+
     // === Fuzzy Skin ===
     /// Enable fuzzy skin.
     pub fuzzy_skin: bool,
@@ -2616,6 +2622,13 @@ impl PrintObjectConfig {
                 };
                 true
             }
+            // PrintConfig.cpp:4650 — coBool, default false.
+            "seam_placement_away_from_overhangs" => {
+                if let Some(v) = parse_bool(value) {
+                    self.seam_placement_away_from_overhangs = v;
+                }
+                true
+            }
 
             // === Fuzzy Skin ===
             "fuzzy_skin" => {
@@ -2890,6 +2903,8 @@ impl Default for PrintObjectConfig {
             print_flow_ratio: 0.98, // BambuStudio H2D+PLA Basic reference
             // Seam
             seam_position: SeamPosition::Aligned,
+            // PrintConfig.cpp:4655 — ConfigOptionBool(false)
+            seam_placement_away_from_overhangs: false,
             // Fuzzy skin
             fuzzy_skin: false,
             fuzzy_skin_thickness: 0.3,

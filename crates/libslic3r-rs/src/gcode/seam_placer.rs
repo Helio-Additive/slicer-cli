@@ -13,30 +13,42 @@
 //! # Porting status
 //!
 //! The self-contained algorithmic core (the C++ `SeamPlacerImpl` namespace) and
-//! the data structures from the header are ported faithfully. Several
-//! `SeamPlacer` member functions that operate purely on the in-memory
-//! `PrintObjectSeamData::LayerSeams` data are also ported faithfully
-//! (`find_next_seam_in_layer`, `find_seam_string`, `align_seam_points`,
-//! `gather_all_seams_of_object`, `filter_scarf_seam_switch_by_angle`).
+//! the data structures from the header are ported faithfully, including
+//! `extract_perimeter_polygons` and `process_perimeter_polygon`. The
+//! `SeamPlacer` member functions unblocked by the config-hierarchy wiring
+//! (`PrintObject::{config, layers, slicing_parameters}`, `Layer::object`,
+//! `LayerRegion::{region, flow}`) are ported faithfully as well:
+//! `gather_seam_candidates`, `calculate_candidates_visibility`,
+//! `calculate_overhangs_and_layer_embedding`, `gather_all_seams_of_object`,
+//! `filter_scarf_seam_switch_by_angle`.
 //!
-//! BLOCKED (need not-yet-ported dependencies threaded through
-//! `Print`/`PrintObject`/`Model`/`Layer`):
-//! - `SeamPlacer::init`
-//! - `SeamPlacer::gather_seam_candidates`
-//! - `SeamPlacer::calculate_candidates_visibility`
-//! - `SeamPlacer::calculate_overhangs_and_layer_embedding`
-//! - `SeamPlacer::place_seam`
-//! - `SeamPlacerImpl::compute_global_occlusion`
-//! - `SeamPlacerImpl::gather_enforcers_blockers`
-//!   reasons: `PrintObject::{config, model_object, trafo_centered, get_layer,
-//!   layer_count, slicing_parameters}`, `Layer::object`, and `ModelVolume`
-//!   seam-painting facet accessors (`is_seam_painted`, `seam_facets`,
-//!   `EnforcerBlockerType`) are not yet ported.
+//! BLOCKED (still-missing non-config dependencies):
+//! - `SeamPlacer::init` (SeamPlacer.cpp:1395) — orchestrates the still-blocked
+//!   `gather_enforcers_blockers`, `compute_global_occlusion` and
+//!   `align_seam_points` below.
+//! - `SeamPlacer::place_seam` (SeamPlacer.cpp:1463) — needs
+//!   `find_closest_point` over the per-layer f32 `points_tree`; the crate's
+//!   `KDTreeIndirect` query functions bound `T: From<f64>`, which `f32` does
+//!   not satisfy.
+//! - `SeamPlacerImpl::compute_global_occlusion` (SeamPlacer.cpp:574) — needs
+//!   `PrintObject::{model_object, trafo_centered}` (not ported) and the f32
+//!   AABB ray casting blocked inside `raycast_visibility`.
+//! - `SeamPlacerImpl::gather_enforcers_blockers` (SeamPlacer.cpp:644) — needs
+//!   `ModelVolume` seam-painting facet accessors (`is_seam_painted`,
+//!   `seam_facets.get_facets_strict`, `EnforcerBlockerType`), not ported.
+//! - `SeamPlacer::{find_next_seam_in_layer, find_seam_string,
+//!   align_seam_points}` (SeamPlacer.cpp:1053/1108/1161) — need
+//!   `find_nearby_points` over the same f32 `points_tree` (the `T: From<f64>`
+//!   KD-tree query bound again).
 
 use crate::aabb_tree_indirect::Tree3F;
 use crate::aabb_tree_lines::{build_aabb_tree_over_indexed_lines, squared_distance_to_indexed_lines, tree2d};
-use crate::geometry::{Line, LineF, Point, PointF, Polygon};
+use crate::extrusion_entity::{is_perimeter, ExtrusionEntityType, ExtrusionRole};
+use crate::flow::FlowRole;
+use crate::geometry::{Line, LineF, Point, PointF, Polygon, Polygons};
 use crate::kd_tree_indirect::KDTreeIndirect;
+use crate::layer::{Layer, LayerRegion};
+use crate::print_object::PrintObject;
 use crate::triangle_set_sampling::{indexed_triangle_set, TriangleSetSamples};
 use crate::unscale;
 use crate::utils::{next_idx_modulo, prev_idx_modulo};
@@ -57,13 +69,11 @@ pub type Vec3i = Vector3<i32>;
 // libslic3r.h: M_PI used as float(PI) throughout SeamPlacer.cpp.
 const PI: f32 = std::f64::consts::PI as f32;
 
-// SeamPlacer.cpp:32 — used by the BLOCKED `filter_scarf_seam_switch_by_angle`.
-#[allow(dead_code)]
+// SeamPlacer.cpp:32 (`constexpr int average_filter_window_size = 5;`)
 const AVERAGE_FILTER_WINDOW_SIZE: i32 = 5;
 // SeamPlacer.cpp:33
 const OVERHANG_FILTER: f32 = 0.0;
-// SeamPlacer.cpp:34 — used by the BLOCKED `calculate_overhangs_and_layer_embedding`.
-#[allow(dead_code)]
+// SeamPlacer.cpp:34 (`constexpr float lensLimit = 1.0f;`)
 const LENS_LIMIT: f32 = 1.0;
 
 // ============================================================================
@@ -724,6 +734,357 @@ impl GlobalModelInfo {
     }
 }
 
+/// Virtual-dispatch helper mirroring the C++ `ExtrusionEntity::collect_points`
+/// overrides:
+/// - ExtrusionEntity.hpp:347 (`ExtrusionPath`): `append(dst, this->polyline.points);`
+/// - ExtrusionEntity.hpp:553 (`ExtrusionLoop`): appends each path's `polyline.points`.
+/// - ExtrusionEntityCollection.hpp:137-140: recurses into each entity.
+fn collect_points(entity: &ExtrusionEntityType, dst: &mut Vec<Point>) {
+    match entity {
+        // ExtrusionEntity.hpp:347
+        ExtrusionEntityType::Path(path) => dst.extend_from_slice(&path.polyline.points),
+        // ExtrusionEntity.hpp:553-556
+        ExtrusionEntityType::Loop(l) => {
+            for path in &l.paths {
+                dst.extend_from_slice(&path.polyline.points);
+            }
+        }
+        // ExtrusionEntityCollection.hpp:137-140
+        ExtrusionEntityType::Collection(coll) => {
+            for e in &coll.entities {
+                collect_points(e, dst);
+            }
+        }
+    }
+}
+
+/// Virtual-dispatch helper mirroring `ExtrusionEntity::role()`:
+/// - `ExtrusionPath::role()` returns the stored role (ExtrusionEntity.hpp:312).
+/// - `ExtrusionLoop::role()` returns `paths.front().role()` (ExtrusionEntity.hpp:535).
+/// - `ExtrusionEntityCollection::role()` collapses to `erMixed` when child roles
+///   differ (ExtrusionEntityCollection.hpp:54-61).
+fn entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
+    match entity {
+        ExtrusionEntityType::Path(path) => path.role,
+        ExtrusionEntityType::Loop(l) => l.role(),
+        ExtrusionEntityType::Collection(coll) => coll.role(),
+    }
+}
+
+/// Extract perimeter polygons of the given layer.
+/// SeamPlacer.cpp:371-417
+///
+/// C++ fills `std::vector<const LayerRegion *> &corresponding_regions_out`
+/// (entries may be `nullptr`); this port uses `Option<&LayerRegion>`.
+pub fn extract_perimeter_polygons<'a>(
+    layer: &'a Layer,
+    configured_seam_preference: SeamPosition,
+    corresponding_regions_out: &mut Vec<Option<&'a LayerRegion>>,
+) -> Polygons {
+    // SeamPlacer.cpp:374
+    let mut polygons: Polygons = Vec::new();
+    // SeamPlacer.cpp:375
+    for layer_region in layer.regions() {
+        // SeamPlacer.cpp:376
+        for ex_entity in &layer_region.perimeters.entities {
+            // SeamPlacer.cpp:377
+            if let ExtrusionEntityType::Collection(coll) = ex_entity {
+                // collection of inner, outer, and overhang perimeters
+                // SeamPlacer.cpp:378
+                for perimeter in &coll.entities {
+                    // SeamPlacer.cpp:379
+                    let mut role = entity_role(perimeter);
+                    // SeamPlacer.cpp:380-384
+                    if let ExtrusionEntityType::Loop(l) = perimeter {
+                        for path in &l.paths {
+                            if path.role == ExtrusionRole::ExternalPerimeter {
+                                role = ExtrusionRole::ExternalPerimeter;
+                            }
+                        }
+                    }
+
+                    // SeamPlacer.cpp:386-392
+                    if role == ExtrusionRole::ExternalPerimeter
+                        || (is_perimeter(role)
+                            && configured_seam_preference == SeamPosition::spRandom)
+                    {
+                        // for random seam alignment, extract all perimeters
+                        let mut p: Vec<Point> = Vec::new();
+                        collect_points(perimeter, &mut p);
+                        polygons.push(Polygon::from_points(p));
+                        corresponding_regions_out.push(Some(layer_region));
+                    }
+                }
+                // SeamPlacer.cpp:394-399
+                if polygons.is_empty() {
+                    let mut p: Vec<Point> = Vec::new();
+                    collect_points(ex_entity, &mut p);
+                    polygons.push(Polygon::from_points(p));
+                    corresponding_regions_out.push(Some(layer_region));
+                }
+            } else {
+                // SeamPlacer.cpp:400-405
+                let mut p: Vec<Point> = Vec::new();
+                collect_points(ex_entity, &mut p);
+                polygons.push(Polygon::from_points(p));
+                corresponding_regions_out.push(Some(layer_region));
+            }
+        }
+    }
+
+    // SeamPlacer.cpp:409-413
+    if polygons.is_empty() {
+        // If there are no perimeter polygons for whatever reason (disabled perimeters .. )
+        // insert dummy point. it is easier than checking everywhere if the layer is not
+        // emtpy, no seam will be placed to this layer anyway
+        polygons.push(Polygon::from_points(vec![Point::new(0, 0)]));
+        corresponding_regions_out.push(None);
+    }
+
+    // SeamPlacer.cpp:416
+    polygons
+}
+
+/// Insert SeamCandidates created from perimeter polygons in to the result vector.
+/// Compute its type (Enfrocer,Blocker), angle, and position
+/// each SeamCandidate also contains pointer to shared Perimeter structure representing the polygon
+/// if Custom Seam modifiers are present, oversamples the polygon if necessary to better fit user intentions
+/// SeamPlacer.cpp:419-549
+///
+/// C++ `region->flow(FlowRole::frExternalPerimeter)` reads `m_layer->height`
+/// through the region's Layer back-pointer; this crate's `LayerRegion::flow`
+/// takes the height explicitly, so `layer_height` is threaded by the caller
+/// (`gather_seam_candidates` passes the owning layer's `height`).
+pub fn process_perimeter_polygon(
+    orig_polygon: &Polygon,
+    z_coord: f32,
+    region: Option<&LayerRegion>,
+    layer_height: f64,
+    global_model_info: &GlobalModelInfo,
+    result: &mut LayerSeams,
+) {
+    // SeamPlacer.cpp:425
+    if orig_polygon.len() == 0 {
+        return;
+    }
+    // SeamPlacer.cpp:426-428
+    let mut polygon = orig_polygon.clone();
+    let was_clockwise = {
+        polygon.make_counter_clockwise();
+        polygon.is_clockwise()
+    };
+    // SeamPlacer.cpp:429
+    let angle_arm_len: f32 = match region {
+        Some(r) => r
+            .flow(FlowRole::ExternalPerimeter, layer_height)
+            .expect("LayerRegion::flow(frExternalPerimeter)")
+            .nozzle_diameter() as f32,
+        None => 0.5,
+    };
+
+    // SeamPlacer.cpp:431-433
+    let mut lengths: Vec<f32> = Vec::new();
+    for point_idx in 0..polygon.len() - 1 {
+        lengths.push(
+            (unscale_point(&polygon.points()[point_idx])
+                - unscale_point(&polygon.points()[point_idx + 1]))
+            .length() as f32,
+        );
+    }
+    lengths.push(
+        (unscale_point(&polygon.points()[0])
+            - unscale_point(&polygon.points()[polygon.len() - 1]))
+        .length()
+        .max(0.1) as f32,
+    );
+    // SeamPlacer.cpp:434
+    let polygon_angles = calculate_polygon_angles_at_vertices(&polygon, &lengths, angle_arm_len);
+
+    // SeamPlacer.cpp:436-437 — result.perimeters.push_back({}); Perimeter &perimeter = back();
+    result.perimeters.push_back(Perimeter::default());
+    let perim_idx = result.perimeters.len() - 1;
+
+    // SeamPlacer.cpp:439-443
+    let mut orig_polygon_points: VecDeque<Vec3f> = VecDeque::new();
+    for index in 0..polygon.len() {
+        let unscaled_p = unscale_point(&polygon.points()[index]);
+        orig_polygon_points.push_back(Vec3f::new(
+            unscaled_p.x as f32,
+            unscaled_p.y as f32,
+            z_coord,
+        ));
+    }
+    // SeamPlacer.cpp:444-449
+    let first = *orig_polygon_points.front().unwrap();
+    let mut oversampled_points: VecDeque<Vec3f> = VecDeque::new();
+    let mut orig_angle_index = 0usize;
+    result.perimeters[perim_idx].start_index = result.points.len();
+    result.perimeters[perim_idx].flow_width = match region {
+        Some(r) => r
+            .flow(FlowRole::ExternalPerimeter, layer_height)
+            .expect("LayerRegion::flow(frExternalPerimeter)")
+            .width() as f32,
+        None => 0.0,
+    };
+    let flow_width = result.perimeters[perim_idx].flow_width;
+    // SeamPlacer.cpp:450
+    let mut some_point_enforced = false;
+    // SeamPlacer.cpp:451
+    while !orig_polygon_points.is_empty() || !oversampled_points.is_empty() {
+        // SeamPlacer.cpp:452-455
+        let mut r#type = EnforcedBlockedSeamPoint::Neutral;
+        let position: Vec3f;
+        let mut local_ccw_angle = 0.0_f32;
+        let mut orig_point = false;
+        // SeamPlacer.cpp:456-464
+        if let Some(p) = oversampled_points.pop_front() {
+            position = p;
+        } else {
+            position = orig_polygon_points.pop_front().unwrap();
+            local_ccw_angle = if was_clockwise {
+                -polygon_angles[orig_angle_index]
+            } else {
+                polygon_angles[orig_angle_index]
+            };
+            orig_angle_index += 1;
+            orig_point = true;
+        }
+
+        // SeamPlacer.cpp:466
+        if global_model_info.is_enforced(&position, flow_width) {
+            r#type = EnforcedBlockedSeamPoint::Enforced;
+        }
+
+        // SeamPlacer.cpp:468
+        if global_model_info.is_blocked(&position, flow_width) {
+            r#type = EnforcedBlockedSeamPoint::Blocked;
+        }
+        // SeamPlacer.cpp:469
+        some_point_enforced = some_point_enforced || r#type == EnforcedBlockedSeamPoint::Enforced;
+
+        // SeamPlacer.cpp:471-484
+        if orig_point {
+            let pos_of_next = if orig_polygon_points.is_empty() {
+                first
+            } else {
+                *orig_polygon_points.front().unwrap()
+            };
+            let distance_to_next = (position - pos_of_next).norm();
+            // SeamPlacer.cpp:474-475
+            if distance_to_next > flow_width * flow_width * 4.0 {
+                oversampled_points.push_back((position + pos_of_next) / 2.0);
+            }
+            // SeamPlacer.cpp:476-483
+            if global_model_info.is_enforced(&position, distance_to_next) {
+                let vec_to_next = (pos_of_next - position).normalize();
+                let step_size = ENFORCER_OVERSAMPLING_DISTANCE;
+                let mut step = step_size;
+                while step < distance_to_next {
+                    oversampled_points.push_back(position + vec_to_next * step);
+                    step += step_size;
+                }
+            }
+        }
+
+        // SeamPlacer.cpp:486 — result.points.emplace_back(position, perimeter, local_ccw_angle, type);
+        let mut cand = SeamCandidate::new(&position, perim_idx, local_ccw_angle, r#type);
+        // Rust-only: cache `perimeter.flow_width` for the reference-free
+        // comparator (see `SeamCandidate::flow_width_hint`).
+        cand.set_flow_width_hint(flow_width);
+        result.points.push(cand);
+    }
+
+    // SeamPlacer.cpp:489
+    result.perimeters[perim_idx].end_index = result.points.len();
+
+    // SeamPlacer.cpp:491-548
+    if some_point_enforced {
+        // We will patches of enforced points (patch: continuous section of enforced points), choose
+        // the longest patch, and select the middle point or sharp point (depending on the angle)
+        // this point will have high priority on this perimeter
+        // SeamPlacer.cpp:495-496
+        let start_index = result.perimeters[perim_idx].start_index;
+        let end_index = result.perimeters[perim_idx].end_index;
+        let perimeter_size = end_index - start_index;
+        let next_index =
+            |idx: usize| -> usize { start_index + next_idx_modulo(idx - start_index, perimeter_size) };
+
+        // SeamPlacer.cpp:498-507
+        let mut patches_starts_ends: Vec<usize> = Vec::new();
+        for i in start_index..end_index {
+            if result.points[i].r#type != EnforcedBlockedSeamPoint::Enforced
+                && result.points[next_index(i)].r#type == EnforcedBlockedSeamPoint::Enforced
+            {
+                patches_starts_ends.push(next_index(i));
+            }
+            if result.points[i].r#type == EnforcedBlockedSeamPoint::Enforced
+                && result.points[next_index(i)].r#type != EnforcedBlockedSeamPoint::Enforced
+            {
+                patches_starts_ends.push(next_index(i));
+            }
+        }
+        // if patches_starts_ends are empty, it means that the whole perimeter is enforced..
+        // don't do anything in that case
+        // SeamPlacer.cpp:509-518
+        if !patches_starts_ends.is_empty() {
+            // if the first point in the patches is not enforced, it marks a patch end. in that
+            // case, put it to the end and start on next to simplify the processing
+            debug_assert!(patches_starts_ends.len() % 2 == 0);
+            let mut start_on_second = false;
+            if result.points[patches_starts_ends[0]].r#type != EnforcedBlockedSeamPoint::Enforced {
+                start_on_second = true;
+                patches_starts_ends.push(patches_starts_ends[0]);
+            }
+            // now pick the longest patch
+            // SeamPlacer.cpp:519-527
+            let mut longest_patch: (usize, usize) = (0, 0);
+            // C++ `patch_len` mixes absolute point indices with the perimeter
+            // *size* in size_t arithmetic, which wraps on underflow; mirrored
+            // with wrapping ops.
+            let patch_len = |start_end: (usize, usize)| -> usize {
+                if start_end.1 < start_end.0 {
+                    start_end.0.wrapping_add(perimeter_size.wrapping_sub(start_end.1))
+                } else {
+                    start_end.1 - start_end.0
+                }
+            };
+            // SeamPlacer.cpp:528-531
+            let mut patch_idx = if start_on_second { 1usize } else { 0usize };
+            while patch_idx < patches_starts_ends.len() {
+                let current_patch = (
+                    patches_starts_ends[patch_idx],
+                    patches_starts_ends[patch_idx + 1],
+                );
+                if patch_len(longest_patch) < patch_len(current_patch) {
+                    longest_patch = current_patch;
+                }
+                patch_idx += 2;
+            }
+            // SeamPlacer.cpp:532-537
+            let mut viable_points_indices: Vec<usize> = Vec::new();
+            let mut large_angle_points_indices: Vec<usize> = Vec::new();
+            let mut point_idx = longest_patch.0;
+            while point_idx != longest_patch.1 {
+                viable_points_indices.push(point_idx);
+                if result.points[point_idx].local_ccw_angle.abs() > SHARP_ANGLE_SNAPPING_THRESHOLD {
+                    large_angle_points_indices.push(point_idx);
+                }
+                point_idx = next_index(point_idx);
+            }
+            // SeamPlacer.cpp:538
+            debug_assert!(!viable_points_indices.is_empty());
+            // SeamPlacer.cpp:539-545
+            if large_angle_points_indices.is_empty() {
+                let central_idx = viable_points_indices[viable_points_indices.len() / 2];
+                result.points[central_idx].central_enforcer = true;
+            } else {
+                let central_idx = large_angle_points_indices.len() / 2;
+                result.points[large_angle_points_indices[central_idx]].central_enforcer = true;
+            }
+        }
+    }
+}
+
 /// SeamPlacer.cpp:552-571
 ///
 /// Get index of previous and next perimeter point of the layer.
@@ -1233,11 +1594,11 @@ fn unscale_point(p: &Point) -> PointF {
 //
 // These wrappers are NOT part of the C++ source. They provide an angle-based
 // seam-selection entry point used while the full
-// `SeamPlacer::{init, place_seam}` pipeline remains blocked on the
-// `Print`/`PrintObject`/`Model`/`Layer` accessors enumerated at the top of this
-// file. The scoring uses the faithful `compute_angle_penalty` / `gauss`
-// functions above so that the eventual full port and this shim agree on the
-// angle/visibility math.
+// `SeamPlacer::{init, place_seam}` pipeline remains blocked on the f32
+// KD-tree queries and `PrintObject::model_object`/`ModelVolume` accessors
+// enumerated at the top of this file. The scoring uses the faithful
+// `compute_angle_penalty` / `gauss` functions above so that the eventual full
+// port and this shim agree on the angle/visibility math.
 
 /// Seam position preference mode (glue type mirroring `SeamPosition`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1354,6 +1715,369 @@ impl SeamPlacer {
                 gather_layer_perimeter(&mut layer, polygon, *z as f32, flow_width as f32);
             }
             self.seam_data.layers.push(layer);
+        }
+    }
+
+    /// Parallel process and extract each perimeter polygon of the given print object.
+    /// Gather SeamCandidates of each layer into vector and build KDtree over them
+    /// Store results in the SeamPlacer variables m_seam_per_object
+    /// SeamPlacer.cpp:927-948
+    ///
+    /// C++ stores into `m_seam_per_object.emplace(po, PrintObjectSeamData{})`
+    /// (a map keyed by `const PrintObject *`); this port keeps a single
+    /// `PrintObjectSeamData` because the only multi-object orchestrator
+    /// (`SeamPlacer::init`, still blocked) clears the map before refilling it.
+    /// C++ runs the per-layer loop under `tbb::parallel_for`; ported serially
+    /// with identical per-layer results.
+    pub fn gather_seam_candidates(
+        &mut self,
+        po: &PrintObject,
+        global_model_info: &GlobalModelInfo,
+        configured_seam_preference: SeamPosition,
+    ) {
+        // SeamPlacer.cpp:930-931 — fresh emplace + resize(po->layer_count()).
+        let seam_data = &mut self.seam_data;
+        seam_data.layers.clear();
+        seam_data
+            .layers
+            .resize(po.layers().len(), LayerSeams::default());
+
+        // SeamPlacer.cpp:933-934
+        for layer_idx in 0..po.layers().len() {
+            // SeamPlacer.cpp:935-937
+            let layer = &po.layers()[layer_idx];
+            let unscaled_z = layer.slice_z;
+            let mut regions: Vec<Option<&LayerRegion>> = Vec::new();
+            // NOTE corresponding region ptr may be null, if the layer has zero perimeters
+            // SeamPlacer.cpp:940
+            let polygons = extract_perimeter_polygons(layer, configured_seam_preference, &mut regions);
+            // SeamPlacer.cpp:941-943
+            for poly_index in 0..polygons.len() {
+                process_perimeter_polygon(
+                    &polygons[poly_index],
+                    unscaled_z as f32,
+                    regions[poly_index],
+                    layer.height,
+                    global_model_info,
+                    &mut seam_data.layers[layer_idx],
+                );
+            }
+            // SeamPlacer.cpp:944-945 — C++ builds `points_tree` here; this port
+            // builds it on demand via `LayerSeams::build_points_tree` (the KD
+            // tree borrows the coordinate functor closure).
+        }
+    }
+
+    /// SeamPlacer.cpp:950-960
+    ///
+    /// C++ indexes `m_seam_per_object[po]`; see the map note on
+    /// [`SeamPlacer::gather_seam_candidates`]. C++ runs under
+    /// `tbb::parallel_for`; ported serially with identical results.
+    pub fn calculate_candidates_visibility(
+        &mut self,
+        _po: &PrintObject,
+        global_model_info: &GlobalModelInfo,
+    ) {
+        // SeamPlacer.cpp:954
+        let layers = &mut self.seam_data.layers;
+        // SeamPlacer.cpp:955-959
+        for layer in layers.iter_mut() {
+            for perimeter_point in layer.points.iter_mut() {
+                perimeter_point.visibility =
+                    global_model_info.calculate_point_visibility(&perimeter_point.position);
+            }
+        }
+    }
+
+    /// SeamPlacer.cpp:962-1046
+    ///
+    /// C++ runs under `tbb::parallel_for` over layer ranges, seeding each
+    /// range's `prev_layer_distancer` from `r.begin() - 1`; this serial port is
+    /// the single range `[0, layers.size())` and computes identical values.
+    /// C++ `PerimeterDistancer(po->layers()[i])` reads `layer->lslices`; the
+    /// crate's [`PerimeterDistancer::new`] takes those ExPolygons directly.
+    pub fn calculate_overhangs_and_layer_embedding(&mut self, po: &PrintObject) {
+        // SeamPlacer.cpp:965
+        let layers = &mut self.seam_data.layers;
+        // SeamPlacer.cpp:967-970 — at r.begin() == 0 there is no previous layer.
+        let mut prev_layer_distancer: Option<PerimeterDistancer> = None;
+
+        // SeamPlacer.cpp:972
+        for layer_idx in 0..layers.len() {
+            // SeamPlacer.cpp:973-977
+            let mut regions_with_perimeter = 0usize;
+            for region in po.layers()[layer_idx].regions() {
+                if !region.perimeters.entities.is_empty() {
+                    regions_with_perimeter += 1;
+                }
+            }
+            // SeamPlacer.cpp:978
+            let should_compute_layer_embedding = regions_with_perimeter > 1;
+            // SeamPlacer.cpp:979
+            let current_layer_distancer = PerimeterDistancer::new(&po.layers()[layer_idx].lslices);
+
+            // SeamPlacer.cpp:981 (`int points_size = layers[layer_idx].points.size();`)
+            let LayerSeams { perimeters, points } = &mut layers[layer_idx];
+            let points_size = points.len();
+            // SeamPlacer.cpp:982
+            for i in 0..points_size {
+                // SeamPlacer.cpp:983-984 — Vec2f point = perimeter_point.position.head<2>();
+                let point = points[i].position.xy();
+                // C++ reads `perimeter_point.perimeter.flow_width` through the
+                // candidate's Perimeter back-reference; resolved via the index.
+                let perimeter_idx = points[i].perimeter;
+                let flow_width = perimeters[perimeter_idx].flow_width;
+                // SeamPlacer.cpp:985-992
+                if let Some(prev) = prev_layer_distancer.as_ref() {
+                    // SeamPlacer.cpp:986 — `double dist_temp = ...` (float widened).
+                    let dist_temp = prev.distance_from_perimeter(&point) as f64;
+                    // SeamPlacer.cpp:987-988 — the double expression is
+                    // truncated to float on assignment; `tan` promotes the
+                    // float threshold to double (C `tan(double)`).
+                    let overhang = (dist_temp + (0.6_f32 * flow_width) as f64
+                        - (OVERHANG_ANGLE_THRESHOLD as f64).tan()
+                            * po.layers()[layer_idx].height) as f32;
+                    points[i].overhang = if overhang < 0.0 { 0.0 } else { overhang };
+
+                    // SeamPlacer.cpp:990-991
+                    let overhang_degree =
+                        ((dist_temp + (0.6_f32 * flow_width) as f64) / flow_width as f64) as f32;
+                    points[i].overhang_degree = if overhang_degree < 0.0 {
+                        0.0
+                    } else {
+                        overhang_degree
+                    };
+                }
+
+                // SeamPlacer.cpp:994-996
+                if should_compute_layer_embedding {
+                    // search for embedded perimeter points (points hidden inside the print,
+                    // e.g. multimaterial join, best position for seam)
+                    points[i].embedded_distance =
+                        current_layer_distancer.distance_from_perimeter(&point)
+                            + 0.6_f32 * flow_width;
+                }
+
+                // SeamPlacer.cpp:998-999
+                let start_index = perimeters[perimeter_idx].start_index;
+                let end_index = perimeters[perimeter_idx].end_index;
+                // SeamPlacer.cpp:1000
+                if po.config().seam_placement_away_from_overhangs
+                    && points[i].overhang_degree > 0.0
+                    && end_index - start_index > 1
+                {
+                    // BBS. extend overhang range
+                    // SeamPlacer.cpp:1002-1005
+                    let mut dist = 0.0_f32;
+                    let mut idx = i;
+                    // `double gauss_value = gauss(...)` — float widened to double.
+                    let gauss_value = gauss(0.0, 0.0, 1.0, 10.0) as f64;
+                    let overhang_degree = points[i].overhang_degree;
+                    points[i].extra_overhang_point = (overhang_degree as f64 * gauss_value) as f32;
+                    // check left
+                    // SeamPlacer.cpp:1007-1021
+                    loop {
+                        let prev = idx;
+                        idx = if idx == start_index { end_index - 1 } else { idx - 1 };
+                        if idx == i {
+                            break;
+                        }
+                        // C++ `dist += sqrt(squaredNorm)` — float squaredNorm
+                        // promoted to double for sqrt, sum truncated back to float.
+                        dist = (dist as f64
+                            + ((points[idx].position.xy() - points[prev].position.xy())
+                                .norm_squared() as f64)
+                                .sqrt()) as f32;
+                        if dist > LENS_LIMIT {
+                            break;
+                        }
+                        let gauss_value_dist = gauss(dist, 0.0, 1.0, 10.0) as f64;
+
+                        if points[idx].extra_overhang_point as f64
+                            > overhang_degree as f64 * gauss_value_dist
+                        {
+                            continue;
+                        }
+                        points[idx].extra_overhang_point =
+                            (overhang_degree as f64 * gauss_value_dist) as f32;
+                    }
+
+                    // check right
+                    // SeamPlacer.cpp:1023-1038
+                    dist = 0.0;
+                    idx = i;
+                    loop {
+                        let prev = idx;
+                        idx = if idx == end_index - 1 { start_index } else { idx + 1 };
+                        if idx == i {
+                            break;
+                        }
+                        dist = (dist as f64
+                            + ((points[idx].position.xy() - points[prev].position.xy())
+                                .norm_squared() as f64)
+                                .sqrt()) as f32;
+                        if dist > LENS_LIMIT {
+                            break;
+                        }
+                        let gauss_value_dist = gauss(dist, 0.0, 1.0, 10.0) as f64;
+
+                        if points[idx].extra_overhang_point as f64
+                            > overhang_degree as f64 * gauss_value_dist
+                        {
+                            continue;
+                        }
+                        points[idx].extra_overhang_point =
+                            (overhang_degree as f64 * gauss_value_dist) as f32;
+                    }
+                }
+            }
+
+            // SeamPlacer.cpp:1042 — prev_layer_distancer.swap(current_layer_distancer);
+            prev_layer_distancer = Some(current_layer_distancer);
+        }
+    }
+
+    /// SeamPlacer.cpp:1308-1321
+    pub fn gather_all_seams_of_object(layers: &[LayerSeams]) -> Vec<(usize, usize)> {
+        // gather vector of all seams on the print_object - pair of layer_index and
+        // seam__index within that layer
+        // SeamPlacer.cpp:1311
+        let mut seams: Vec<(usize, usize)> = Vec::new();
+        // SeamPlacer.cpp:1312-1319
+        for layer_idx in 0..layers.len() {
+            let layer_perimeter_points = &layers[layer_idx].points;
+            let mut current_point_index = 0usize;
+            while current_point_index < layer_perimeter_points.len() {
+                // C++ reads `perimeter.seam_index` / `perimeter.end_index` through
+                // the candidate's Perimeter back-reference; resolved via the index.
+                let perimeter = &layers[layer_idx].perimeters
+                    [layer_perimeter_points[current_point_index].perimeter];
+                seams.push((layer_idx, perimeter.seam_index));
+                current_point_index = perimeter.end_index;
+            }
+        }
+        seams
+    }
+
+    /// SeamPlacer.cpp:1323-1393
+    ///
+    /// C++ collects the group indices into `std::vector<int>`; this port uses
+    /// `usize` (the values are vector indices and never negative).
+    pub fn filter_scarf_seam_switch_by_angle(angle: f32, layers: &mut [LayerSeams]) {
+        // SeamPlacer.cpp:1325
+        let seams = Self::gather_all_seams_of_object(layers);
+
+        // SeamPlacer.cpp:1327
+        let max_distance = SEAM_ALIGN_TOLERABLE_DIST_FACTOR
+            * layers[seams[0].0].perimeters[layers[seams[0].0].points[seams[0].1].perimeter]
+                .flow_width;
+
+        // SeamPlacer.cpp:1329-1330
+        let mut seam_index_pos: Vec<usize> = Vec::new();
+        let mut seam_index_group: Vec<Vec<usize>> = Vec::new();
+        // get each seam line group
+        // SeamPlacer.cpp:1332
+        for seam_idx in 0..seams.len() {
+            // SeamPlacer.cpp:1333-1334
+            if layers[seams[seam_idx].0].points[seams[seam_idx].1].is_grouped {
+                continue;
+            }
+
+            // SeamPlacer.cpp:1336-1337
+            layers[seams[seam_idx].0].points[seams[seam_idx].1].is_grouped = true;
+            seam_index_pos.push(seam_idx);
+            // SeamPlacer.cpp:1338-1339
+            let mut prev_idx = seam_idx;
+            let mut next_seam = seam_idx + 1;
+            // SeamPlacer.cpp:1340
+            while next_seam < seams.len() {
+                // SeamPlacer.cpp:1341-1342
+                if layers[seams[next_seam].0].points[seams[next_seam].1].is_grouped
+                    || seams[prev_idx].0 == seams[next_seam].0
+                {
+                    next_seam += 1;
+                    continue;
+                }
+
+                // if the seam is not continous with prev layer, break
+                // SeamPlacer.cpp:1345-1346
+                if seams[prev_idx].0 + 1 != seams[next_seam].0 {
+                    break;
+                }
+
+                // SeamPlacer.cpp:1348-1349
+                if (layers[seams[prev_idx].0].points[seams[prev_idx].1].position
+                    - layers[seams[next_seam].0].points[seams[next_seam].1].position)
+                    .norm()
+                    <= max_distance
+                {
+                    // SeamPlacer.cpp:1351
+                    layers[seams[next_seam].0].points[seams[next_seam].1].is_grouped = true;
+
+                    // SeamPlacer.cpp:1353
+                    let mut next_seam_angle =
+                        layers[seams[next_seam].0].points[seams[next_seam].1].local_ccw_angle;
+
+                    // SeamPlacer.cpp:1355-1356
+                    if next_seam_angle < 0.0 {
+                        next_seam_angle *= -1.0;
+                    }
+
+                    // SeamPlacer.cpp:1358-1360
+                    if PI - angle > next_seam_angle {
+                        layers[seams[next_seam].0].points[seams[next_seam].1].enable_scarf_seam =
+                            true;
+                    }
+
+                    // SeamPlacer.cpp:1362-1363
+                    prev_idx = next_seam;
+                    seam_index_pos.push(next_seam);
+                }
+                next_seam += 1;
+            }
+
+            // SeamPlacer.cpp:1367-1368 — emplace_back(std::move(seam_index_pos)); clear();
+            seam_index_group.push(std::mem::take(&mut seam_index_pos));
+        }
+
+        // filter
+        // SeamPlacer.cpp:1372-1392
+        {
+            for k in 0..seam_index_group.len() {
+                // SeamPlacer.cpp:1374 — C++ copies the group; read-only here.
+                let seam_group = &seam_index_group[k];
+                if seam_group.len() <= 1 {
+                    continue;
+                }
+                // SeamPlacer.cpp:1376 — int division.
+                let half_window = AVERAGE_FILTER_WINDOW_SIZE / 2;
+                // average filter
+                // SeamPlacer.cpp:1378
+                for idx in 0..seam_group.len() {
+                    // SeamPlacer.cpp:1379-1380
+                    let mut sum = 0.0_f64;
+                    let mut count = 0_i32;
+
+                    // SeamPlacer.cpp:1382-1388
+                    for window_idx in -half_window..=half_window {
+                        // C++ `int index = idx + window_idx;` — signed window
+                        // offset around the unsigned idx.
+                        let index = idx as i64 + window_idx as i64;
+                        if index >= 0 && (index as usize) < seam_group.len() {
+                            let s = seams[seam_group[index as usize]];
+                            sum += if layers[s.0].points[s.1].enable_scarf_seam {
+                                1.0
+                            } else {
+                                0.0
+                            };
+                            count += 1;
+                        }
+                    }
+                    // SeamPlacer.cpp:1389
+                    let s = seams[seam_group[idx]];
+                    layers[s.0].points[s.1].enable_scarf_seam = (sum / count as f64) >= 0.5;
+                }
+            }
         }
     }
 }
@@ -1512,6 +2236,7 @@ pub fn create_seam_placer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scale;
 
     fn make_square(size: f64) -> Polygon {
         let s = scale(size);
