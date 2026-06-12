@@ -113,13 +113,105 @@ pub struct PrintRegionConfig {
     /// PrintConfig.hpp:972
     pub infill_overlap: CoordF,
 
-    /// Infill anchor length (mm)
-    /// PrintConfig.hpp:966
-    pub infill_anchor: CoordF,
+    /// Infill anchor length (mm, or % of sparse infill line width)
+    /// C++ name: sparse_infill_anchor (ConfigOptionFloatOrPercent,
+    /// ratio_over = "sparse_infill_line_width"; default 400%,
+    /// PrintConfig.cpp:3525-3551)
+    pub infill_anchor: FloatOrPercent,
 
-    /// Maximum infill anchor length (mm)
-    /// PrintConfig.hpp:967
-    pub infill_anchor_max: CoordF,
+    /// Maximum infill anchor length (mm, or % of sparse infill line width)
+    /// C++ name: sparse_infill_anchor_max (ConfigOptionFloatOrPercent;
+    /// default 20mm, PrintConfig.cpp:3553-3579)
+    pub infill_anchor_max: FloatOrPercent,
+
+    /// Number of parallel lines drawn per sparse infill path.
+    /// C++ name: fill_multiline (ConfigOptionInt, default 1,
+    /// PrintConfig.cpp:2746-2752)
+    pub fill_multiline: i32,
+
+    /// Skin pattern of the locked-zag infill.
+    /// C++ name: locked_skin_infill_pattern (default ipCrossZag,
+    /// PrintConfig.cpp:2844)
+    pub locked_skin_infill_pattern: InfillPattern,
+
+    /// Skeleton pattern of the locked-zag infill.
+    /// C++ name: locked_skeleton_infill_pattern (default ipZigZag,
+    /// PrintConfig.cpp:2885)
+    pub locked_skeleton_infill_pattern: InfillPattern,
+
+    /// Per-layer infill shift step (mm) for cross-zag / locked-zag.
+    /// C++ name: infill_shift_step (ConfigOptionFloat, default 0.4,
+    /// PrintConfig.cpp:3423)
+    pub infill_shift_step: CoordF,
+
+    /// Per-layer infill rotate step (degrees) for zig-zag cross texture.
+    /// C++ name: infill_rotate_step (ConfigOptionFloat, default 0,
+    /// PrintConfig.cpp:3433)
+    pub infill_rotate_step: CoordF,
+
+    /// Mirror the infill across the object's Y axis.
+    /// C++ name: symmetric_infill_y_axis (ConfigOptionBool, default false,
+    /// PrintConfig.cpp:3503)
+    pub symmetric_infill_y_axis: bool,
+
+    /// First lattice angle (degrees) for the 2D-lattice infill.
+    /// C++ name: sparse_infill_lattice_angle_1 (default -45,
+    /// PrintConfig.cpp:3513)
+    pub sparse_infill_lattice_angle_1: CoordF,
+
+    /// Second lattice angle (degrees) for the 2D-lattice infill.
+    /// C++ name: sparse_infill_lattice_angle_2 (default 45,
+    /// PrintConfig.cpp:3523)
+    pub sparse_infill_lattice_angle_2: CoordF,
+
+    /// Top surface density (PERCENT value, 0-100 as in the C++
+    /// ConfigOptionPercent — NOT the 0.0-1.0 ratio convention used by
+    /// `fill_density`).
+    /// C++ name: top_surface_density (default 100, PrintConfig.cpp:1858)
+    pub top_surface_density: CoordF,
+
+    /// Bottom surface density (PERCENT value, 0-100).
+    /// C++ name: bottom_surface_density (default 100, PrintConfig.cpp:1890)
+    pub bottom_surface_density: CoordF,
+
+    /// Travel into wall ratio (PERCENT of line width) for monotonic-line fill.
+    /// C++ name: monotonic_travel_into_wall (ConfigOptionPercent, default 0,
+    /// PrintConfig.cpp:1868)
+    pub monotonic_travel_into_wall: CoordF,
+
+    /// Skin (outer zone) line width of the locked-zag infill (mm).
+    /// C++ name: skin_infill_line_width (ConfigOptionFloat, default 0.4,
+    /// PrintConfig.cpp:3486)
+    pub skin_infill_line_width: CoordF,
+
+    /// Skeleton (inner zone) line width of the locked-zag infill (mm).
+    /// C++ name: skeleton_infill_line_width (ConfigOptionFloat, default 0.4,
+    /// PrintConfig.cpp:3495)
+    pub skeleton_infill_line_width: CoordF,
+
+    /// Skin infill density (PERCENT value, 0-100).
+    /// C++ name: skin_infill_density (ConfigOptionPercent, default 15,
+    /// PrintConfig.cpp:3457)
+    pub skin_infill_density: CoordF,
+
+    /// Skeleton infill density (PERCENT value, 0-100).
+    /// C++ name: skeleton_infill_density (ConfigOptionPercent, default 15,
+    /// PrintConfig.cpp:3445)
+    pub skeleton_infill_density: CoordF,
+
+    /// Depth of the locked-zag skin zone (mm).
+    /// C++ name: skin_infill_depth (ConfigOptionFloat, default 2.0,
+    /// PrintConfig.cpp:3467)
+    pub skin_infill_depth: CoordF,
+
+    /// Locked-zag transition zone depth (mm).
+    /// C++ name: infill_lock_depth (ConfigOptionFloat, default 1.0,
+    /// PrintConfig.cpp:3477)
+    pub infill_lock_depth: CoordF,
+
+    /// Replace top/bottom surfaces with infill (locked-zag).
+    /// C++ name: infill_instead_top_bottom_surfaces
+    pub infill_instead_top_bottom_surfaces: bool,
 
     // === Solid Layers ===
     /// Number of solid top layers
@@ -537,32 +629,125 @@ impl PrintRegionConfig {
                 true
             }
             "sparse_infill_pattern" => {
-                self.fill_pattern = match value {
-                    "grid" => InfillPattern::Grid,
-                    "line" | "rectilinear" => InfillPattern::Rectilinear,
-                    "gyroid" => InfillPattern::Gyroid,
-                    "honeycomb" => InfillPattern::Honeycomb,
-                    "concentric" => InfillPattern::Concentric,
-                    "cubic" => InfillPattern::Cubic,
-                    "lightning" => InfillPattern::Lightning,
-                    "triangles" => InfillPattern::Triangles,
-                    "adaptivecubic" => InfillPattern::AdaptiveCubic,
-                    _ => self.fill_pattern,
-                };
+                self.fill_pattern = InfillPattern::from_str_bambu(value);
                 true
             }
             "top_surface_pattern" => {
-                self.top_fill_pattern = match value {
-                    "monotonic" | "monotonicline" | "rectilinear" => InfillPattern::Rectilinear,
-                    _ => InfillPattern::Rectilinear,
-                };
+                self.top_fill_pattern = InfillPattern::from_str_bambu(value);
                 true
             }
             "bottom_surface_pattern" => {
-                self.bottom_fill_pattern = match value {
-                    "monotonic" | "monotonicline" | "rectilinear" => InfillPattern::Rectilinear,
-                    _ => InfillPattern::Rectilinear,
-                };
+                self.bottom_fill_pattern = InfillPattern::from_str_bambu(value);
+                true
+            }
+            "internal_solid_infill_pattern" => {
+                self.solid_fill_pattern = InfillPattern::from_str_bambu(value);
+                true
+            }
+            "locked_skin_infill_pattern" => {
+                self.locked_skin_infill_pattern = InfillPattern::from_str_bambu(value);
+                true
+            }
+            "locked_skeleton_infill_pattern" => {
+                self.locked_skeleton_infill_pattern = InfillPattern::from_str_bambu(value);
+                true
+            }
+            "fill_multiline" => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    self.fill_multiline = v;
+                }
+                true
+            }
+            "infill_shift_step" => {
+                if let Some(v) = parse_f64(value) {
+                    self.infill_shift_step = v;
+                }
+                true
+            }
+            "infill_rotate_step" => {
+                if let Some(v) = parse_f64(value) {
+                    self.infill_rotate_step = v;
+                }
+                true
+            }
+            "symmetric_infill_y_axis" => {
+                if let Some(v) = parse_bool(value) {
+                    self.symmetric_infill_y_axis = v;
+                }
+                true
+            }
+            "sparse_infill_lattice_angle_1" => {
+                if let Some(v) = parse_f64(value) {
+                    self.sparse_infill_lattice_angle_1 = v;
+                }
+                true
+            }
+            "sparse_infill_lattice_angle_2" => {
+                if let Some(v) = parse_f64(value) {
+                    self.sparse_infill_lattice_angle_2 = v;
+                }
+                true
+            }
+            // Percent options: the C++ ConfigOptionPercent stores the raw
+            // percent number (e.g. "100" / "15%" -> 100.0 / 15.0).
+            "top_surface_density" => {
+                if let Some(v) = parse_f64(value) {
+                    self.top_surface_density = v;
+                }
+                true
+            }
+            "bottom_surface_density" => {
+                if let Some(v) = parse_f64(value) {
+                    self.bottom_surface_density = v;
+                }
+                true
+            }
+            "monotonic_travel_into_wall" => {
+                if let Some(v) = parse_f64(value) {
+                    self.monotonic_travel_into_wall = v;
+                }
+                true
+            }
+            "skin_infill_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.skin_infill_line_width = v;
+                }
+                true
+            }
+            "skeleton_infill_line_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.skeleton_infill_line_width = v;
+                }
+                true
+            }
+            "skin_infill_density" => {
+                if let Some(v) = parse_f64(value) {
+                    self.skin_infill_density = v;
+                }
+                true
+            }
+            "skeleton_infill_density" => {
+                if let Some(v) = parse_f64(value) {
+                    self.skeleton_infill_density = v;
+                }
+                true
+            }
+            "skin_infill_depth" => {
+                if let Some(v) = parse_f64(value) {
+                    self.skin_infill_depth = v;
+                }
+                true
+            }
+            "infill_lock_depth" => {
+                if let Some(v) = parse_f64(value) {
+                    self.infill_lock_depth = v;
+                }
+                true
+            }
+            "infill_instead_top_bottom_surfaces" => {
+                if let Some(v) = parse_bool(value) {
+                    self.infill_instead_top_bottom_surfaces = v;
+                }
                 true
             }
             "infill_direction" => {
@@ -613,14 +798,16 @@ impl PrintRegionConfig {
                 }
                 true
             }
-            "infill_anchor" => {
-                if let Some(v) = parse_f64(value) {
+            // "infill_anchor" is the legacy alias handled by the C++
+            // composite-key remap (PrintConfig.cpp:6873-6876).
+            "sparse_infill_anchor" | "infill_anchor" => {
+                if let Some(v) = parse_float_or_percent(value) {
                     self.infill_anchor = v;
                 }
                 true
             }
-            "infill_anchor_max" => {
-                if let Some(v) = parse_f64(value) {
+            "sparse_infill_anchor_max" | "infill_anchor_max" => {
+                if let Some(v) = parse_float_or_percent(value) {
                     self.infill_anchor_max = v;
                 }
                 true
@@ -872,8 +1059,46 @@ impl Default for PrintRegionConfig {
             solid_infill_speed: 40.0,
             top_solid_infill_speed: 30.0,
             infill_overlap: 0.25,
-            infill_anchor: 2.5,
-            infill_anchor_max: 12.0,
+            // C++ default: PrintConfig.cpp:3551 ConfigOptionFloatOrPercent(400, true)
+            infill_anchor: FloatOrPercent::with(400.0, true),
+            // C++ default: PrintConfig.cpp:3579 ConfigOptionFloatOrPercent(20, false)
+            infill_anchor_max: FloatOrPercent::with(20.0, false),
+            // C++ default: PrintConfig.cpp:2752 ConfigOptionInt(1)
+            fill_multiline: 1,
+            // C++ default: PrintConfig.cpp:2844 ipCrossZag
+            locked_skin_infill_pattern: InfillPattern::CrossZag,
+            // C++ default: PrintConfig.cpp:2885 ipZigZag
+            locked_skeleton_infill_pattern: InfillPattern::ZigZag,
+            // C++ default: PrintConfig.cpp:3423 ConfigOptionFloat(0.4)
+            infill_shift_step: 0.4,
+            // C++ default: PrintConfig.cpp:3433 ConfigOptionFloat(0)
+            infill_rotate_step: 0.0,
+            // C++ default: PrintConfig.cpp:3503 ConfigOptionBool(false)
+            symmetric_infill_y_axis: false,
+            // C++ default: PrintConfig.cpp:3513 ConfigOptionFloat(-45)
+            sparse_infill_lattice_angle_1: -45.0,
+            // C++ default: PrintConfig.cpp:3523 ConfigOptionFloat(45)
+            sparse_infill_lattice_angle_2: 45.0,
+            // C++ default: PrintConfig.cpp:1858 ConfigOptionPercent(100)
+            top_surface_density: 100.0,
+            // C++ default: PrintConfig.cpp:1890 ConfigOptionPercent(100)
+            bottom_surface_density: 100.0,
+            // C++ default: PrintConfig.cpp:1868 ConfigOptionPercent(0.0)
+            monotonic_travel_into_wall: 0.0,
+            // C++ default: PrintConfig.cpp:3486 ConfigOptionFloat(0.4)
+            skin_infill_line_width: 0.4,
+            // C++ default: PrintConfig.cpp:3495 ConfigOptionFloat(0.4)
+            skeleton_infill_line_width: 0.4,
+            // C++ default: PrintConfig.cpp:3457 ConfigOptionPercent(15)
+            skin_infill_density: 15.0,
+            // C++ default: PrintConfig.cpp:3445 ConfigOptionPercent(15)
+            skeleton_infill_density: 15.0,
+            // C++ default: PrintConfig.cpp:3467 ConfigOptionFloat(2.0)
+            skin_infill_depth: 2.0,
+            // C++ default: PrintConfig.cpp:3477 ConfigOptionFloat(1.0)
+            infill_lock_depth: 1.0,
+            // C++ default: PrintConfig.cpp:5570 ConfigOptionBool(false)
+            infill_instead_top_bottom_surfaces: false,
 
             // Solid Layers (BambuStudio reference: top_shell_layers = 5)
             top_solid_layers: 5,

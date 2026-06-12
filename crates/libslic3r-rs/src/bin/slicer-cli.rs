@@ -949,8 +949,10 @@ fn create_default_region_config(perimeters: u32, infill_density: f64) -> PrintRe
         solid_infill_speed: 300.0,
         top_solid_infill_speed: 200.0,
         infill_overlap: 0.15,
-        infill_anchor: 2.5,
-        infill_anchor_max: 12.0,
+        // C++ defaults: sparse_infill_anchor = 400%, sparse_infill_anchor_max = 20mm
+        // (PrintConfig.cpp:3551/3579)
+        infill_anchor: slicer::config::FloatOrPercent::with(400.0, true),
+        infill_anchor_max: slicer::config::FloatOrPercent::with(20.0, false),
 
         // Solid Layers (H2D+PLA Basic)
         top_solid_layers: 5,
@@ -1018,6 +1020,10 @@ fn create_default_region_config(perimeters: u32, infill_density: f64) -> PrintRe
         wall_filament: 1, // 1-based extruder
         sparse_infill_filament: 1,
         solid_infill_filament: 1,
+
+        // Locked-zag / lattice / surface-density options take their faithful
+        // C++ defaults (see region_config.rs Default).
+        ..PrintRegionConfig::default()
     }
 }
 

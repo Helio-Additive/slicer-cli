@@ -99,6 +99,20 @@ pub struct PrintConfig {
     pub filament_cost: CoordF,
     /// Filament flow ratio (extrusion multiplier, e.g. 0.98).
     pub filament_flow_ratio: CoordF,
+    /// Per-filament override of `enable_overhang_speed`.
+    /// C++: `filament_enable_overhang_speed` — nullable per-filament
+    /// ConfigOptionBools cloned from "enable_overhang_speed"
+    /// (PrintConfig.cpp:82-90 `filament_overhang_override_keys` +
+    /// PrintConfig.cpp:6069-6090 `add_nullable`); default `{true}`
+    /// (PrintConfig.cpp:1309). This crate models per-filament vectors as
+    /// scalars, so `get_at(idx)` collapses onto a direct read.
+    pub filament_enable_overhang_speed: bool,
+    /// Per-filament override of `bridge_speed` (mm/s).
+    /// C++: `filament_bridge_speed` — nullable per-filament
+    /// ConfigOptionFloats cloned from "bridge_speed" (PrintConfig.cpp:82-90 +
+    /// 6069-6090); default `{25}` (PrintConfig.cpp:1440). Scalar collapse as
+    /// above.
+    pub filament_bridge_speed: CoordF,
 
     // === Extrusion ===
     /// Nozzle diameter (mm).
@@ -931,6 +945,12 @@ impl Default for PrintConfig {
             filament_density: 1.24,
             filament_cost: 0.0,
             filament_flow_ratio: 1.0,
+            // PrintConfig.cpp:1309 ConfigOptionBoolsNullable{ true } (cloned
+            // into filament_enable_overhang_speed, PrintConfig.cpp:6069-6090)
+            filament_enable_overhang_speed: true,
+            // PrintConfig.cpp:1440 ConfigOptionFloatsNullable{ 25 } (cloned
+            // into filament_bridge_speed)
+            filament_bridge_speed: 25.0,
 
             // Extrusion
             nozzle_diameter: 0.4,
@@ -2118,6 +2138,20 @@ impl PrintConfig {
             "filament_flow_ratio" => {
                 if let Some(v) = parse_f64(value) {
                     self.filament_flow_ratio = v;
+                }
+                true
+            }
+            // Per-filament nullable overrides (PrintConfig.cpp:82-90); the
+            // loader passes the first element of the per-filament JSON array.
+            "filament_enable_overhang_speed" => {
+                if let Some(v) = parse_bool(value) {
+                    self.filament_enable_overhang_speed = v;
+                }
+                true
+            }
+            "filament_bridge_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.filament_bridge_speed = v;
                 }
                 true
             }
@@ -3552,72 +3586,136 @@ pub enum GCodeFlavor {
 }
 
 /// Infill pattern type.
+///
+/// Faithful mirror of the C++ `enum InfillPattern : int` (PrintConfig.hpp:76-81).
+/// The variant ORDER (and therefore the `as u32` ordinal of each variant)
+/// matches the C++ enum exactly — `SurfaceFillParams::operator<` (Fill.cpp:89)
+/// compares `unsigned(pattern)`, so the ordinals are load-bearing for the
+/// fill processing order.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InfillPattern {
-    /// Rectilinear lines.
+    /// PrintConfig.hpp:77 — ipConcentric (= InfillPattern(0)).
+    Concentric,
+    /// PrintConfig.hpp:77 — ipRectilinear.
     Rectilinear,
-    /// Grid pattern (crossing lines).
+    /// PrintConfig.hpp:77 — ipGrid.
+    /// (#\[default\] is a Rust-struct convenience; the C++ config default for
+    /// `sparse_infill_pattern` is set per option in PrintConfig.cpp.)
     #[default]
     Grid,
-    /// Triangular pattern.
-    Triangles,
-    /// Cubic pattern.
+    /// PrintConfig.hpp:77 — ipLine.
+    Line,
+    /// PrintConfig.hpp:77 — ipCubic.
     Cubic,
-    /// Honeycomb pattern.
-    Honeycomb,
-    /// 3D Honeycomb pattern.
-    Honeycomb3D,
-    /// Gyroid pattern.
+    /// PrintConfig.hpp:77 — ipTriangles.
+    Triangles,
+    /// PrintConfig.hpp:77 — ipStars (config key "tri-hexagon").
+    Stars,
+    /// PrintConfig.hpp:77 — ipGyroid.
     Gyroid,
-    /// Concentric pattern.
-    Concentric,
-    /// Cross-hatch pattern.
-    CrossHatch,
-    /// Lightning infill.
-    Lightning,
-    /// Adaptive cubic infill.
+    /// PrintConfig.hpp:77 — ipHoneycomb.
+    Honeycomb,
+    /// PrintConfig.hpp:77 — ipAdaptiveCubic.
     AdaptiveCubic,
-    /// Monotonic (for solid surfaces).
+    /// PrintConfig.hpp:77 — ipMonotonic.
     Monotonic,
-    /// Monotonic line variant.
+    /// PrintConfig.hpp:77 — ipMonotonicLine.
     MonotonicLine,
-    /// Hilbert curve.
-    HilbertCurve,
-    /// Archimedean chords.
-    ArchimedeanChords,
-    /// Octagram spiral.
-    OctagramSpiral,
-    /// Aligned rectilinear.
+    /// PrintConfig.hpp:77 — ipAlignedRectilinear.
     AlignedRectilinear,
-    /// Support cubic pattern.
+    /// PrintConfig.hpp:77 — ip3DHoneycomb.
+    Honeycomb3D,
+    /// PrintConfig.hpp:78 — ipHilbertCurve.
+    HilbertCurve,
+    /// PrintConfig.hpp:78 — ipArchimedeanChords.
+    ArchimedeanChords,
+    /// PrintConfig.hpp:78 — ipOctagramSpiral.
+    OctagramSpiral,
+    /// PrintConfig.hpp:78 — ipSupportCubic.
     SupportCubic,
-    /// Zig-zag pattern.
+    /// PrintConfig.hpp:78 — ipSupportBase.
+    SupportBase,
+    /// PrintConfig.hpp:78 — ipConcentricInternal (BBS: internal solid infill only).
+    ConcentricInternal,
+    /// PrintConfig.hpp:79 — ipLightning.
+    Lightning,
+    /// PrintConfig.hpp:79 — ipCrossHatch.
+    CrossHatch,
+    /// PrintConfig.hpp:79 — ipZigZag.
     ZigZag,
+    /// PrintConfig.hpp:79 — ipCrossZag.
+    CrossZag,
+    /// PrintConfig.hpp:79 — ipFloatingConcentric.
+    FloatingConcentric,
+    /// PrintConfig.hpp:79 — ipLockedZag.
+    LockedZag,
+    /// PrintConfig.hpp:79 — ip2DLattice.
+    Lattice2D,
 }
 
 impl InfillPattern {
+    /// Number of patterns; mirrors the C++ `ipCount` sentinel
+    /// (PrintConfig.hpp:80). Kept as a constant instead of a Rust enum
+    /// variant so that `match` arms stay exhaustive over real patterns.
+    pub const COUNT: usize = 27;
+
     /// Parse from BambuStudio config string.
+    ///
+    /// Canonical keys follow `s_keys_map_InfillPattern`
+    /// (PrintConfig.cpp:208-233); note the legacy quirks "zig-zag" ->
+    /// ipRectilinear and "tri-hexagon" -> ipStars. A few snake_case aliases
+    /// accepted by earlier revisions of this crate are kept after the
+    /// canonical keys.
     pub fn from_str_bambu(s: &str) -> Self {
         match s.trim().to_lowercase().as_str() {
-            "rectilinear" | "line" => InfillPattern::Rectilinear,
-            "alignedrectilinear" | "aligned_rectilinear" => InfillPattern::AlignedRectilinear,
-            "grid" => InfillPattern::Grid,
-            "triangles" => InfillPattern::Triangles,
-            "cubic" => InfillPattern::Cubic,
-            "honeycomb" => InfillPattern::Honeycomb,
-            "3dhoneycomb" | "honeycomb3d" => InfillPattern::Honeycomb3D,
-            "gyroid" => InfillPattern::Gyroid,
+            // PrintConfig.cpp:209
             "concentric" => InfillPattern::Concentric,
-            "crosshatch" | "cross" => InfillPattern::CrossHatch,
-            "lightning" => InfillPattern::Lightning,
+            // PrintConfig.cpp:210 — legacy serialization of ipRectilinear.
+            "zig-zag" | "rectilinear" => InfillPattern::Rectilinear,
+            // PrintConfig.cpp:211
+            "grid" => InfillPattern::Grid,
+            // PrintConfig.cpp:212
+            "line" => InfillPattern::Line,
+            // PrintConfig.cpp:213
+            "cubic" => InfillPattern::Cubic,
+            // PrintConfig.cpp:214
+            "triangles" => InfillPattern::Triangles,
+            // PrintConfig.cpp:215
+            "tri-hexagon" => InfillPattern::Stars,
+            // PrintConfig.cpp:216
+            "gyroid" => InfillPattern::Gyroid,
+            // PrintConfig.cpp:217
+            "honeycomb" => InfillPattern::Honeycomb,
+            // PrintConfig.cpp:218
             "adaptivecubic" | "adaptive_cubic" => InfillPattern::AdaptiveCubic,
+            // PrintConfig.cpp:219
             "monotonic" => InfillPattern::Monotonic,
+            // PrintConfig.cpp:220
             "monotonicline" | "monotonic_line" => InfillPattern::MonotonicLine,
+            // PrintConfig.cpp:221
+            "alignedrectilinear" | "aligned_rectilinear" => InfillPattern::AlignedRectilinear,
+            // PrintConfig.cpp:222
+            "3dhoneycomb" | "honeycomb3d" => InfillPattern::Honeycomb3D,
+            // PrintConfig.cpp:223
             "hilbertcurve" | "hilbert_curve" => InfillPattern::HilbertCurve,
+            // PrintConfig.cpp:224
             "archimedeanchords" | "archimedean_chords" => InfillPattern::ArchimedeanChords,
+            // PrintConfig.cpp:225
             "octagramspiral" | "octagram_spiral" => InfillPattern::OctagramSpiral,
+            // PrintConfig.cpp:226
             "supportcubic" | "support_cubic" => InfillPattern::SupportCubic,
+            // PrintConfig.cpp:227
+            "lightning" => InfillPattern::Lightning,
+            // PrintConfig.cpp:228
+            "crosshatch" | "cross" => InfillPattern::CrossHatch,
+            // PrintConfig.cpp:229
             "zigzag" | "zig_zag" => InfillPattern::ZigZag,
+            // PrintConfig.cpp:230
+            "crosszag" => InfillPattern::CrossZag,
+            // PrintConfig.cpp:231
+            "lockedzag" => InfillPattern::LockedZag,
+            // PrintConfig.cpp:232
+            "2dlattice" => InfillPattern::Lattice2D,
             _ => InfillPattern::Grid,
         }
     }

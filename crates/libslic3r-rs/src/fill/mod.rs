@@ -235,7 +235,8 @@ impl From<crate::print_config::InfillPattern> for InfillPattern {
             // Keep currently unsupported print-config patterns on the nearest
             // Fill.cpp-compatible fallback instead of dropping geometry.
             crate::print_config::InfillPattern::Triangles
-            | crate::print_config::InfillPattern::Cubic => InfillPattern::Grid,
+            | crate::print_config::InfillPattern::Cubic
+            | crate::print_config::InfillPattern::Stars => InfillPattern::Grid,
             // Monotonic and variants map to Rectilinear (monotonic fill order
             // is handled at a higher level, the base pattern is rectilinear).
             crate::print_config::InfillPattern::Monotonic
@@ -245,8 +246,21 @@ impl From<crate::print_config::InfillPattern> for InfillPattern {
             crate::print_config::InfillPattern::HilbertCurve
             | crate::print_config::InfillPattern::ArchimedeanChords
             | crate::print_config::InfillPattern::OctagramSpiral => InfillPattern::Concentric,
-            crate::print_config::InfillPattern::SupportCubic => InfillPattern::Grid,
-            crate::print_config::InfillPattern::ZigZag => InfillPattern::Rectilinear,
+            crate::print_config::InfillPattern::SupportCubic
+            | crate::print_config::InfillPattern::Lattice2D => InfillPattern::Grid,
+            // C++ FillLine / FillSupportBase are rectilinear-family fillers
+            // (FillBase.cpp:44/54); the zig-zag family shares the rectilinear
+            // raster core too.
+            crate::print_config::InfillPattern::Line
+            | crate::print_config::InfillPattern::SupportBase
+            | crate::print_config::InfillPattern::ZigZag
+            | crate::print_config::InfillPattern::CrossZag
+            | crate::print_config::InfillPattern::LockedZag => InfillPattern::Rectilinear,
+            // BBS internal-solid / floating concentric specializations.
+            crate::print_config::InfillPattern::ConcentricInternal => InfillPattern::Concentric,
+            crate::print_config::InfillPattern::FloatingConcentric => {
+                InfillPattern::FloatingConcentric
+            }
         }
     }
 }
@@ -605,8 +619,16 @@ pub fn group_fills(
             let (anchor_length, anchor_length_max) = if surface.is_solid() || is_bridge {
                 (1000.0_f32, 1000.0_f32)
             } else {
-                let anchor = region_config.infill_anchor as f32;
-                let anchor_max = region_config.infill_anchor_max as f32;
+                // Fill.cpp:286-293 — percent anchors resolve over the sparse
+                // infill line spacing.
+                let mut anchor = region_config.infill_anchor.value as f32;
+                if region_config.infill_anchor.percent {
+                    anchor = (anchor as f64 * 0.01 * spacing) as f32;
+                }
+                let mut anchor_max = region_config.infill_anchor_max.value as f32;
+                if region_config.infill_anchor_max.percent {
+                    anchor_max = (anchor_max as f64 * 0.01 * spacing) as f32;
+                }
                 (anchor.min(anchor_max), anchor_max)
             };
 
@@ -695,11 +717,33 @@ pub fn group_fills(
     Ok(surface_fills)
 }
 
-/// Lock region parameters (for locked zag pattern)
-/// FillBase.hpp:47-53
+/// Lock region parameters (for the locked-zag pattern).
+/// FillBase.hpp:38-49
+///
+/// The C++ struct stores `std::map<float, ExPolygons>` /
+/// `std::map<Flow, ExPolygons>` members. This crate has no `Ord` floats, so
+/// each map is a `Vec<(key, ExPolygons)>` KEPT SORTED ASCENDING by key —
+/// the `std::map` iteration order. Insertion goes through
+/// `fill::fill::append_density_param` / `append_flow_param`
+/// (Fill.cpp:175-189), which reproduce `map::find` (comparator equivalence:
+/// `!(a<b) && !(b<a)`; for `Flow` the C++ `operator<` compares
+/// `mm3_per_mm()`, Flow.hpp:88-90) + `map::insert`.
 #[derive(Debug, Clone, Default)]
 pub struct LockRegionParam {
-    // TODO: Port full structure from FillBase.hpp:47-53
+    /// FillBase.hpp:41 — std::map<float, ExPolygons> skin_density_params;
+    pub skin_density_params: Vec<(f32, Vec<ExPolygon>)>,
+    /// FillBase.hpp:42 — std::map<float, ExPolygons> skin_depths_params;
+    pub skin_depths_params: Vec<(f32, Vec<ExPolygon>)>,
+    /// FillBase.hpp:43 — std::map<float, ExPolygons> locked_depths_params;
+    pub locked_depths_params: Vec<(f32, Vec<ExPolygon>)>,
+    /// FillBase.hpp:45 — ExPolygons outlook;
+    pub outlook: Vec<ExPolygon>,
+    /// FillBase.hpp:46 — std::map<float, ExPolygons> skeleton_density_params;
+    pub skeleton_density_params: Vec<(f32, Vec<ExPolygon>)>,
+    /// FillBase.hpp:47 — std::map<Flow, ExPolygons> skin_flow_params;
+    pub skin_flow_params: Vec<(Flow, Vec<ExPolygon>)>,
+    /// FillBase.hpp:48 — std::map<Flow, ExPolygons> skeleton_flow_params;
+    pub skeleton_flow_params: Vec<(Flow, Vec<ExPolygon>)>,
 }
 
 /// Helper: drive `FillPlanePath::_fill_surface_single` over each fill area for the

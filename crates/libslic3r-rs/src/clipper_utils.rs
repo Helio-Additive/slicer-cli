@@ -1653,6 +1653,133 @@ pub fn union_safety_offset_ex(polygons: &[Polygon]) -> ExPolygons {
     shrink(&unioned, SAFETY_OFFSET, OffsetJoinType::Miter)
 }
 
+/// `union_safety_offset_ex` over ExPolygons.
+/// ClipperUtils C++: `ExPolygons union_safety_offset_ex(const ExPolygons &expolygons)`
+/// — identical to the Polygons overload after flattening contours + holes.
+pub fn union_safety_offset_ex_expolygons(expolygons: &[ExPolygon]) -> ExPolygons {
+    union_safety_offset_ex(&crate::geometry::to_polygons(expolygons))
+}
+
+/// Difference of raw polygon sets with Polygons output.
+/// ClipperUtils C++: `Polygons diff(const Polygons &subject, const Polygons &clip, ApplySafetyOffset)`
+/// (default ApplySafetyOffset::No). Hole semantics follow the NonZero fill
+/// rule: reversed (hole) rings in either operand cancel enclosing area, which
+/// `union_polygons_ex` reproduces before the geo-backed difference.
+pub fn diff_polygons(subject: &[Polygon], clip: &[Polygon]) -> Vec<Polygon> {
+    if subject.is_empty() {
+        return Vec::new();
+    }
+    let subject_ex = union_polygons_ex(subject);
+    if clip.is_empty() {
+        return crate::geometry::to_polygons(&subject_ex);
+    }
+    let clip_ex = union_polygons_ex(clip);
+    crate::geometry::to_polygons(&difference(&subject_ex, &clip_ex))
+}
+
+/// Difference of raw polygon sets with ExPolygons output.
+/// ClipperUtils C++: `ExPolygons diff_ex(const Polygons &subject, const Polygons &clip, ApplySafetyOffset)`.
+/// The safety-offset flag is accepted for signature parity; like the other
+/// `diff_ex` variants in this module, the geo backend does not need the
+/// ClipperLib safety offset to produce closed results.
+pub fn diff_ex_polygons_polygons(
+    subject: &[Polygon],
+    clip: &[Polygon],
+    _safety_offset: ApplySafetyOffset,
+) -> ExPolygons {
+    if subject.is_empty() {
+        return Vec::new();
+    }
+    let subject_ex = union_polygons_ex(subject);
+    if clip.is_empty() {
+        return subject_ex;
+    }
+    let clip_ex = union_polygons_ex(clip);
+    difference(&subject_ex, &clip_ex)
+}
+
+/// Intersection of raw polygon sets with ExPolygons output.
+/// ClipperUtils C++: `ExPolygons intersection_ex(const Polygons &subject, const Polygons &clip, ApplySafetyOffset)`.
+pub fn intersection_ex_polygons_polygons(
+    subject: &[Polygon],
+    clip: &[Polygon],
+    _safety_offset: ApplySafetyOffset,
+) -> ExPolygons {
+    if subject.is_empty() || clip.is_empty() {
+        return Vec::new();
+    }
+    let subject_ex = union_polygons_ex(subject);
+    let clip_ex = union_polygons_ex(clip);
+    intersection(&subject_ex, &clip_ex)
+}
+
+/// Intersection of ExPolygons with raw polygons, ExPolygons output.
+/// ClipperUtils C++: `ExPolygons intersection_ex(const ExPolygons &subject, const Polygons &clip)`.
+pub fn intersection_ex_expolygons_polygons(
+    subject: &[ExPolygon],
+    clip: &[Polygon],
+) -> ExPolygons {
+    if subject.is_empty() || clip.is_empty() {
+        return Vec::new();
+    }
+    let clip_ex = union_polygons_ex(clip);
+    intersection(subject, &clip_ex)
+}
+
+/// Outward offset of raw polygons with Polygons output.
+/// ClipperUtils C++: `Polygons expand(const Polygons &polygons, const float delta, ...)`.
+/// `delta_mm` is in millimeters (this module's offset backend convention; the
+/// C++ callers pass scaled floats and the call sites unscale).
+pub fn expand_polygons(polygons: &[Polygon], delta_mm: CoordF) -> Vec<Polygon> {
+    if polygons.is_empty() {
+        return Vec::new();
+    }
+    crate::geometry::to_polygons(&offset_polygons(
+        polygons,
+        delta_mm.abs(),
+        OffsetJoinType::Miter,
+    ))
+}
+
+/// Two-radius morphological opening on raw polygons with Polygons output.
+/// ClipperUtils C++: `Polygons opening(const Polygons &polygons, const float delta1, const float delta2, ...)`
+/// = shrink by `delta1`, then grow by `delta2`. Deltas in millimeters (see
+/// [`expand_polygons`]).
+pub fn opening_polygons_2(
+    polygons: &[Polygon],
+    delta1_mm: CoordF,
+    delta2_mm: CoordF,
+) -> Vec<Polygon> {
+    if polygons.is_empty() {
+        return Vec::new();
+    }
+    let shrunk = offset_polygons(polygons, -delta1_mm.abs(), OffsetJoinType::Miter);
+    crate::geometry::to_polygons(&offset_expolygons(
+        &shrunk,
+        delta2_mm.abs(),
+        OffsetJoinType::Miter,
+    ))
+}
+
+/// `clip_clipper_polygons_with_subject_bbox` over ExPolygons.
+/// ClipperUtils.cpp:161-172 `Polygons clip_clipper_polygons_with_subject_bbox(const ExPolygons &src, const BoundingBox &bbox, const bool get_entire_polygons)`.
+pub fn clip_clipper_polygons_with_subject_bbox_expolygons(
+    src: &[ExPolygon],
+    bbox: &BoundingBox,
+    get_entire_polygons: bool,
+) -> Vec<Polygon> {
+    // ClipperUtils.cpp:163-164
+    let mut out: Vec<Polygon> = Vec::new();
+    // ClipperUtils.cpp:165-168
+    for p in src {
+        let temp = clip_clipper_polygons_with_subject_bbox_expolygon(p, bbox, get_entire_polygons);
+        out.extend(temp);
+    }
+    // ClipperUtils.cpp:170
+    out.retain(|polygon| !polygon.is_empty());
+    out
+}
+
 pub fn intersection_pl_2(subject: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
     if subject.is_empty() || clip.is_empty() {
         return vec![];
