@@ -11,17 +11,19 @@
 //! The overwhelming majority of `Brim.cpp` is orchestration over the
 //! `Print` / `PrintObject` / `Layer` / `LayerRegion` / `Flow` / `ModelVolume`
 //! / `ExtrusionEntityCollection` APIs together with `ClipperLib_Z` (Z-tagged
-//! polytree unions), `EdgeGrid::Grid`, and `tbb::parallel_for`. In this crate
-//! the Rust `Print` only exposes `objects()` and `config()`; none of the brim
-//! accessors used here are available yet:
+//! polytree unions), `EdgeGrid::Grid`, and `tbb::parallel_for`. The
+//! config-hierarchy wiring (2026-06-12: `PrintObject::config()/print()`,
+//! `Layer::object()`, `LayerRegion::region()`) unblocked the bottom-layer /
+//! brim-width helpers below, but the following accessors used by the
+//! remaining brim code are still missing from the Rust `Print`/`Model`:
 //!
-//!   Print::      brim_flow, extruders, has_support_material, has_wipe_tower,
-//!                get_object, print_object_ids, skirt, skirt_flow,
-//!                skirt_first_layer_height, get_plate_origin, get_filament_maps,
+//!   Print::      brim_flow, skirt_flow, skirt_first_layer_height, extruders,
+//!                has_support_material, has_wipe_tower, get_object,
+//!                print_object_ids, get_plate_origin, get_filament_maps,
 //!                get_extruder_printable_polygons, get_fake_wipe_tower
-//!   PrintObject: instances, has_brim, has_raft, has_support_material,
-//!                support_layers, center_offset, model_object,
-//!                firstLayerObjGroups, get_shared_object,
+//!   PrintObject: instances (PrintInstance::shift_without_plate_offset),
+//!                has_brim, has_raft, has_support_material, center_offset,
+//!                model_object, firstLayerObjGroups, get_shared_object,
 //!                firstLayerObjectBrimBoundingBox
 //!   Model::      extruderParamsMap, getThermalLength, findMaxSpeed,
 //!                getBedPolygon
@@ -33,15 +35,15 @@
 //! corrupt G-code parity):
 //!
 //!   append_and_translate (x4 overloads)        — PrintInstance::shift_without_plate_offset
-//!   max_brim_width                              — ConstPrintObjectPtrsAdaptor, object->config()
-//!   get_print_object_bottom_layer_expolygons    — PrintObject::layers/regions, closing_ex
-//!   get_print_bottom_layers_expolygons          — Print::objects()
-//!   get_top_level_objects_with_brim             — ClipperLib_Z polytree union + ObjectID
+//!   get_top_level_objects_with_brim             — ClipperLib_Z polytree union + ObjectID + instances
 //!   top_level_outer_brim_islands                — PrintObject support_layers/instances
-//!   top_level_outer_brim_area (x2)              — Print::brim_flow, object config, ObjectID maps
+//!   top_level_outer_brim_area (x2)              — Print::brim_flow (unported), ObjectID maps
 //!   inner_brim_area (x2)                        — same as above + get_bed_shape
-//!   getTemperatureFromExtruder                  — LayerRegion::extruder, PrintConfig bed temp
-//!   getadhesionCoeff                            — ModelVolume::extruder_id, Model::extruderParamsMap
+//!   getTemperatureFromExtruder                  — per-extruder ConfigOptionInts bed temps +
+//!                                                 get_bed_temp_1st_layer_key (Rust PrintConfig
+//!                                                 models bed temps as scalars, not vectors)
+//!   getadhesionCoeff                            — PrintObject::instances, ModelVolume::extruder_id,
+//!                                                 Model::extruderParamsMap
 //!   configBrimWidthByVolumes                    — ModelVolume::mesh/transformed_bounding_box
 //!   configBrimWidthByVolumeGroups               — Model::getThermalLength
 //!   make_brim_ears                              — ModelObject::brim_points, Transformation
@@ -49,19 +51,86 @@
 //!   connect_brim_lines                          — EdgeGrid::Grid, Geometry::segments_intersect
 //!   make_inner_island_brim (x2)                 — union_pt_chained_outside_in, chain_polylines, tbb
 //!   make_inner_brim (x2)                        — inner_brim_area + flow
-//!   tryExPolygonOffset                          — Print::brim_flow
+//!   tryExPolygonOffset                          — Print::brim_flow (unported), ExPolygon::douglas_peucker
 //!   makeBrimInfill                              — tbb, chain_polylines, EdgeGrid
 //!   make_brim (x2 + auto)                        — full Print pipeline + ClipperLib_Z skirt trimming
 //!
-//! What IS faithfully ported here are the self-contained, pure-geometry helpers
-//! that have no `Print`/`Model` dependency:
+//! What IS faithfully ported here:
+//!   - max_brim_width(objects)                      Brim.cpp:57
+//!   - get_print_object_bottom_layer_expolygons     Brim.cpp:67
+//!   - get_print_bottom_layers_expolygons           Brim.cpp:76
 //!   - compSecondMoment(Polygon, Vec2d&)            Brim.cpp:630
 //!   - struct ExPolyProp                            Brim.cpp:650
 //!   - compSecondMoment(ExPolygon, ExPolyProp&)     Brim.cpp:658
 //!   - compSecondMoment(ExPolygons, double, double) Brim.cpp:684
 //!   - optimize_polylines_by_reversing(Polylines*)  Brim.cpp:1146
 
+use crate::clipper_utils::{closing, OffsetJoinType};
 use crate::geometry::{cross2f, ExPolygon, ExPolygons, PointF, Polygon, Polylines};
+use crate::libslic3r::EPSILON;
+use crate::print::Print;
+use crate::print_config::BrimType;
+use crate::print_object::PrintObject;
+
+// Brim.cpp:57
+// static float max_brim_width(const ConstPrintObjectPtrsAdaptor &objects)
+//
+// In C++ this iterates the print's objects through the
+// `ConstPrintObjectPtrsAdaptor`; the Rust equivalent is the `Print::objects()`
+// slice.
+pub fn max_brim_width(objects: &[PrintObject]) -> f32 {
+    // Brim.cpp:59
+    debug_assert!(!objects.is_empty());
+    // Brim.cpp:60-63
+    objects.iter().fold(0.0_f64, |partial_result, object| {
+        partial_result.max(if object.config().brim_type == BrimType::NoBrim {
+            0.0
+        } else {
+            object.config().brim_width
+        })
+    }) as f32
+}
+
+// Brim.cpp:66
+// Returns ExPolygons of the bottom layer of the print object after elephant foot compensation.
+// Brim.cpp:67
+pub fn get_print_object_bottom_layer_expolygons(print_object: &PrintObject) -> ExPolygons {
+    // Brim.cpp:69
+    let mut ex_polygons: ExPolygons = Vec::new();
+    // Brim.cpp:70
+    for region in print_object.layers()[0].regions() {
+        // Brim.cpp:71
+        // C++: Slic3r::append(ex_polygons, closing_ex(region->slices.surfaces, float(SCALED_EPSILON)));
+        // `closing_ex(Surfaces, delta)` is `offset2_ex(surfaces, +delta, -delta)`
+        // with DefaultJoinType = jtMiter (ClipperUtils.hpp:409-415), i.e. a
+        // morphological closing of the surfaces' expolygons. SCALED_EPSILON is
+        // scale_(EPSILON), so the mm-domain closing distance of this crate's
+        // clipper wrappers is EPSILON.
+        let surfaces_ex: ExPolygons = region
+            .slices
+            .surfaces
+            .iter()
+            .map(|surface| surface.expolygon.clone())
+            .collect();
+        ex_polygons.extend(closing(&surfaces_ex, EPSILON, OffsetJoinType::Miter));
+    }
+    // Brim.cpp:72
+    ex_polygons
+}
+
+// Brim.cpp:75
+// Returns ExPolygons of bottom layer for every print object in Print after elephant foot compensation.
+// Brim.cpp:76
+pub fn get_print_bottom_layers_expolygons(print: &Print) -> Vec<ExPolygons> {
+    // Brim.cpp:78-79
+    let mut bottom_layers_expolygons: Vec<ExPolygons> = Vec::with_capacity(print.objects().len());
+    // Brim.cpp:80-81
+    for object in print.objects() {
+        bottom_layers_expolygons.push(get_print_object_bottom_layer_expolygons(object));
+    }
+    // Brim.cpp:83
+    bottom_layers_expolygons
+}
 
 // Brim.cpp:629
 // BBS: second moment of area of a polygon
@@ -273,6 +342,18 @@ mod tests {
             Point::new(half, half),
             Point::new(-half, half),
         ])
+    }
+
+    #[test]
+    fn max_brim_width_ignores_no_brim_objects() {
+        // Brim.cpp:62 — btNoBrim objects contribute 0 regardless of brim_width.
+        let mut a = PrintObject::new();
+        a.config.brim_type = BrimType::NoBrim;
+        a.config.brim_width = 50.0;
+        let mut b = PrintObject::new();
+        b.config.brim_type = BrimType::OuterOnly;
+        b.config.brim_width = 5.0;
+        assert_eq!(max_brim_width(&[a, b]), 5.0);
     }
 
     #[test]
