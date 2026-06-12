@@ -2636,7 +2636,7 @@
     "rust": "crates/libslic3r-rs/src/support/support_parameters.rs",
     "rust_exists": true,
     "loc": 326,
-    "status": "partial",
+    "status": "done",
     "priority": 6
   },
   {

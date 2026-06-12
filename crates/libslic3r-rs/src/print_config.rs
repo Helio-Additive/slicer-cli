@@ -1493,9 +1493,9 @@ pub struct PrintObjectConfig {
     pub support_interface_top_layers: u32,
 
     /// Support interface bottom layers count.
-    /// Number of interface layers at the bottom (on build plate or model).
+    /// -1 means "same as top" (C++ coInt with min -1).
     /// BambuStudio: `support_interface_bottom_layers` (in PrintObjectConfig).
-    pub support_interface_bottom_layers: u32,
+    pub support_interface_bottom_layers: i32,
 
     /// Support interface spacing (mm).
     /// Spacing between interface lines. 0 = solid interface.
@@ -1521,6 +1521,53 @@ pub struct PrintObjectConfig {
     /// Expand support base beyond detected overhang areas.
     /// BambuStudio: `support_expansion` (in PrintObjectConfig).
     pub support_expansion: CoordF,
+
+    /// Support pattern angle (degrees).
+    /// Rotate the support pattern on the horizontal plane.
+    /// BambuStudio: `support_angle` (PrintConfig.hpp:931).
+    /// C++ default: 0. Range [0, 359].
+    pub support_angle: CoordF,
+
+    /// XY separation between object and its support at the first layer (mm).
+    /// BambuStudio: `support_object_first_layer_gap` (PrintConfig.hpp:969).
+    /// C++ default: 0.2.
+    pub support_object_first_layer_gap: CoordF,
+
+    // === Support Ironing ===
+    /// Enable ironing on solid support interface layers.
+    /// BambuStudio: `enable_support_ironing` (PrintConfig.hpp:948).
+    /// C++ default: false.
+    pub enable_support_ironing: bool,
+
+    /// Support ironing pattern (ipRectilinear or ipConcentric).
+    /// BambuStudio: `support_ironing_pattern` (PrintConfig.hpp:949).
+    /// C++ default: ipRectilinear.
+    pub support_ironing_pattern: InfillPattern,
+
+    /// Support ironing flow (fraction of normal flow, e.g. 0.10 = 10%).
+    /// BambuStudio: `support_ironing_flow` (coPercent, PrintConfig.hpp:950).
+    /// C++ default: 10 (percent) → stored as ratio 0.10.
+    pub support_ironing_flow: CoordF,
+
+    /// Support ironing line spacing (mm).
+    /// BambuStudio: `support_ironing_spacing` (PrintConfig.hpp:951).
+    /// C++ default: 0.1.
+    pub support_ironing_spacing: CoordF,
+
+    /// Support ironing inset from edge (mm).
+    /// BambuStudio: `support_ironing_inset` (PrintConfig.hpp:952).
+    /// C++ default: 0.0.
+    pub support_ironing_inset: CoordF,
+
+    /// Support ironing direction (degrees).
+    /// BambuStudio: `support_ironing_direction` (PrintConfig.hpp:953).
+    /// C++ default: 0.0.
+    pub support_ironing_direction: CoordF,
+
+    /// Support ironing print speed (mm/s).
+    /// BambuStudio: `support_ironing_speed` (PrintConfig.hpp:954).
+    /// C++ default: 20.0.
+    pub support_ironing_speed: CoordF,
 
     // === Ironing ===
     /// Ironing type (none, top, topmost, all solid).
@@ -2013,6 +2060,10 @@ pub fn parse_bool(s: &str) -> Option<bool> {
 
 pub fn parse_u32(s: &str) -> Option<u32> {
     s.parse::<u32>().ok()
+}
+
+pub fn parse_i32(s: &str) -> Option<i32> {
+    s.parse::<i32>().ok()
 }
 
 /// Parse a C++ ConfigOptionFloatOrPercent string ("10" -> 10 mm, "10%" -> 10 percent).
@@ -2775,7 +2826,7 @@ impl PrintObjectConfig {
                 true
             }
             "support_interface_bottom_layers" => {
-                if let Some(v) = parse_u32(value) {
+                if let Some(v) = parse_i32(value) {
                     self.support_interface_bottom_layers = v;
                 }
                 true
@@ -2807,6 +2858,59 @@ impl PrintObjectConfig {
             "support_expansion" => {
                 if let Some(v) = parse_f64(value) {
                     self.support_expansion = v;
+                }
+                true
+            }
+            "support_angle" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_angle = v;
+                }
+                true
+            }
+            "support_object_first_layer_gap" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_object_first_layer_gap = v;
+                }
+                true
+            }
+            "enable_support_ironing" => {
+                if let Some(v) = parse_bool(value) {
+                    self.enable_support_ironing = v;
+                }
+                true
+            }
+            "support_ironing_pattern" => {
+                self.support_ironing_pattern = InfillPattern::from_str_bambu(value);
+                true
+            }
+            "support_ironing_flow" => {
+                // coPercent — stored as fraction 0..1
+                if let Some(v) = parse_pct(value) {
+                    self.support_ironing_flow = v;
+                }
+                true
+            }
+            "support_ironing_spacing" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_spacing = v;
+                }
+                true
+            }
+            "support_ironing_inset" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_inset = v;
+                }
+                true
+            }
+            "support_ironing_direction" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_direction = v;
+                }
+                true
+            }
+            "support_ironing_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_speed = v;
                 }
                 true
             }
@@ -2937,12 +3041,23 @@ impl Default for PrintObjectConfig {
             support_line_width: 0.0, // 0 = use default line_width
             support_base_pattern_spacing: 2.5,
             support_interface_top_layers: 2,
-            support_interface_bottom_layers: 2,
+            // C++ default is 0 (PrintConfig.cpp:5169); -1 means "same as top".
+            support_interface_bottom_layers: 0,
             support_interface_spacing: 0.5,
             support_top_z_distance: 0.2,
             support_bottom_z_distance: 0.2,
             support_object_xy_distance: 0.35,
             support_expansion: 0.0,
+            // Support angle/gap/ironing (C++ PrintConfig.cpp defaults)
+            support_angle: 0.0,
+            support_object_first_layer_gap: 0.2,
+            enable_support_ironing: false,
+            support_ironing_pattern: InfillPattern::Rectilinear,
+            support_ironing_flow: 0.10, // 10% (coPercent default 10 / 100)
+            support_ironing_spacing: 0.1,
+            support_ironing_inset: 0.0,
+            support_ironing_direction: 0.0,
+            support_ironing_speed: 20.0,
             use_relative_e_distances: false,
 
             // Ironing
@@ -4901,7 +5016,7 @@ impl PrintObjectConfig {
                 }
             }
             "support_interface_bottom_layers" => {
-                if let Some(v) = parse_u32(value) {
+                if let Some(v) = value.trim().parse::<i32>().ok() {
                     self.support_interface_bottom_layers = v;
                 }
             }
@@ -4928,6 +5043,47 @@ impl PrintObjectConfig {
             "support_expansion" => {
                 if let Some(v) = parse_f64(value) {
                     self.support_expansion = v;
+                }
+            }
+            "support_angle" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_angle = v;
+                }
+            }
+            "support_object_first_layer_gap" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_object_first_layer_gap = v;
+                }
+            }
+            "enable_support_ironing" => {
+                self.enable_support_ironing = parse_bool(value);
+            }
+            "support_ironing_pattern" => {
+                self.support_ironing_pattern = InfillPattern::from_str_bambu(value);
+            }
+            "support_ironing_flow" => {
+                if let Some(v) = parse_pct(value) {
+                    self.support_ironing_flow = v;
+                }
+            }
+            "support_ironing_spacing" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_spacing = v;
+                }
+            }
+            "support_ironing_inset" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_inset = v;
+                }
+            }
+            "support_ironing_direction" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_direction = v;
+                }
+            }
+            "support_ironing_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.support_ironing_speed = v;
                 }
             }
             "support_line_width" => {
