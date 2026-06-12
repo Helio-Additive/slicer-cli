@@ -19,19 +19,15 @@
 //! `generate_initial_internal_overhangs` — is ported faithfully against existing
 //! crate primitives. The two `Generator(...)` constructors and the
 //! `generate_trees` / `generate_trees_for_support` orchestration loops are
-//! BLOCKED because they delegate all real work to symbols that are not yet
-//! ported / not yet threaded through the Rust pipeline:
-//!   * `PrintObject::print()->config()` — the Rust `PrintObject` has no `Print`
-//!     back-reference and `PrintConfig::nozzle_diameter` is a scalar, not the
-//!     `std::vector<double>` the C++ `*std::max_element(...)` consumes.
-//!   * `PrintRegionConfig::sparse_infill_density` — not present as a config
-//!     field in the Rust `PrintRegionConfig`.
+//! BLOCKED. The config hierarchy is now fully wired (PrintObject::print()->config()
+//! works, nozzle_diameter scalar is equivalent to max-element over a single-nozzle
+//! vector, and sparse_infill_density is mapped to fill_density). The sole remaining
+//! blocker is:
 //!   * `Layer::generateNewTrees`, `Layer::reconnectRoots` (Fill/Lightning/Layer.cpp)
-//!     — the sibling `lightning::layer::Layer` is still a stub and lacks these.
-//!   * `Node::propagateToNextLayer`, `get_extents(const NodeSPtr&)`,
-//!     `locator_cell_size`, the `shared_ptr<Node>` (`NodeSPtr`) tree mutation
-//!     semantics (Fill/Lightning/TreeNode.cpp) — `lightning::tree_node::Node` is
-//!     a stub.
+//!     — `lightning::layer::Layer` does not yet implement these methods.
+//!     `Node::propagateToNextLayer`, `get_extents(const NodeSPtr&)`,
+//!     `locator_cell_size`, and the `NodeSPtr` (`Rc<RefCell<Node>>`) tree-mutation
+//!     semantics are all ported in `tree_node.rs`.
 //! These are listed faithfully below where they are called.
 
 // Generator.cpp:4-11
@@ -132,20 +128,15 @@ impl Generator {
     //   const std::function<void()> &throw_on_cancel_callback)`
     //
     // BLOCKED: this primary constructor cannot be ported faithfully yet.
-    //   * Generator.cpp:68 `print_object.print()->config()` — the Rust
-    //     `PrintObject` carries no back-reference to its owning `Print`, so the
-    //     `PrintConfig` is unreachable.
-    //   * Generator.cpp:71-72 `print_config.nozzle_diameter.values` +
-    //     `*std::max_element(...)` — Rust `PrintConfig::nozzle_diameter` is a
-    //     single `CoordF`, not the per-extruder `std::vector<double>` the C++
-    //     reduces over.
-    //   * Generator.cpp:70/80-81 `region_config.sparse_infill_line_width` /
-    //     `region_config.sparse_infill_density` — `sparse_infill_density` is not
-    //     a field of the Rust `PrintRegionConfig`.
     //   * Generator.cpp:90-91 `generateInitialInternalOverhangs` /
-    //     `generateTrees` — the latter is blocked (see `generate_trees`).
+    //     `generateTrees` — the config reads and `generateInitialInternalOverhangs`
+    //     are unblocked (config hierarchy is wired; `nozzle_diameter` scalar is
+    //     equivalent to max-element over a single-nozzle vector; `fill_density`
+    //     maps to `sparse_infill_density`), but `generateTrees` is still blocked
+    //     on `Layer::generateNewTrees` / `reconnectRoots` (Fill/Lightning/Layer.cpp
+    //     not ported). Until those land the whole constructor remains commented out.
     //
-    // Faithful reference for when the config thread + siblings land:
+    // Faithful reference:
     //
     //     let print_config         = print_object.print().config();
     //     let object_config        = print_object.config();
@@ -179,10 +170,10 @@ impl Generator {
     //   std::vector<Polygons>& contours, std::vector<Polygons>& overhangs,
     //   const std::function<void()> &throw_on_cancel_callback, float density)`
     //
-    // BLOCKED for the same reasons as the primary constructor (needs
-    // `print_object.print()->config()`, the nozzle-diameter vector, and the
-    // sparse-infill region config), plus `generateTreesforSupport` (see
-    // `generate_trees_for_support`).
+    // BLOCKED for the same reason as the primary constructor: config reads are
+    // unblocked (config hierarchy wired), but `generateTreesforSupport` calls
+    // `Layer::generateNewTrees` / `reconnectRoots` (Fill/Lightning/Layer.cpp not
+    // ported). See `generate_trees_for_support` below.
     //
     // Faithful reference (note the divergent magic-value formulas vs. the
     // primary ctor):
@@ -282,23 +273,18 @@ impl Generator {
     // Generator.cpp:161-215 — `void Generator::generateTrees(const PrintObject
     //   &print_object, const std::function<void()> &throw_on_cancel_callback)`
     //
-    // BLOCKED. The structure below is the faithful control flow, but every
-    // load-bearing call targets a symbol that is not yet ported:
-    //   * Generator.cpp:178-179 `EdgeGrid::Grid::create(polygons, locator_cell_size)`
-    //     — Rust `EdgeGrid::create_from_polygons` exists, but `locator_cell_size`
-    //     (`scaled<coord_t>(4.)`, TreeNode.hpp:21) and the
-    //     `BoundingBox::inflated`/`.defined` API the C++ uses live on the
-    //     `bounding_box::BoundingBox`, whereas `get_extents(Polygons)` returns the
-    //     `geometry::BoundingBox` which lacks `inflated`. Reconciling the two
-    //     BoundingBox types is a separate fix.
+    // BLOCKED. The sole blocker is:
     //   * Generator.cpp:193 `current_lightning_layer.generateNewTrees(...)` and
     //     Generator.cpp:194 `reconnectRoots(...)` — `lightning::layer::Layer`
     //     does not implement these (Fill/Lightning/Layer.cpp not ported).
-    //   * Generator.cpp:206/254 `get_extents(current_lightning_layer.tree_roots)`
-    //     — `get_extents(const NodeSPtr&)` (TreeNode.hpp:286) not ported.
-    //   * Generator.cpp:213 `tree->propagateToNextLayer(...)` — `Node` is a stub
-    //     (Fill/Lightning/TreeNode.cpp not ported), and the whole tree model uses
-    //     `shared_ptr<Node>` (`NodeSPtr`) aliasing the Rust port has not adopted.
+    //
+    // All other call targets are resolved:
+    //   - `EdgeGrid::create_from_polygons`, `EdgeGrid::set_bbox`, and
+    //     `BoundingBox::inflated`/`.defined` all exist in Rust.
+    //   - `geometry::BoundingBox` and `bounding_box::BoundingBox` are the same type.
+    //   - `LOCATOR_CELL_SIZE` (`scaled<coord_t>(4.)`) is `tree_node::LOCATOR_CELL_SIZE`.
+    //   - `get_extents(tree_roots)` is `tree_node::get_extents_roots(...)`.
+    //   - `tree->propagateToNextLayer(...)` is `tree_node::propagate_to_next_layer(...)`.
     //
     // Faithful reference:
     //
@@ -320,54 +306,74 @@ impl Generator {
     //     }
     //
     //     // For various operations its beneficial to quickly locate nearby features on the polygon:
+    //     // EdgeGrid::Grid outlines_locator(bbox) — set bbox then create.
     //     let top_layer_id = print_object.layers().len() - 1;
-    //     let mut outlines_locator =
-    //         EdgeGrid::new_with_bbox(get_extents(&infill_outlines[top_layer_id]).inflated(SCALED_EPSILON));
-    //     outlines_locator.create(&infill_outlines[top_layer_id], locator_cell_size);
+    //     let mut outlines_locator = EdgeGrid::new();
+    //     outlines_locator.set_bbox(
+    //         crate::geometry::polygon::get_extents_polygons(&infill_outlines[top_layer_id])
+    //             .inflated(crate::SCALED_EPSILON));
+    //     outlines_locator.create_from_polygons(
+    //         &infill_outlines[top_layer_id], super::tree_node::LOCATOR_CELL_SIZE);
     //
     //     // For-each layer from top to bottom:
     //     for layer_id in (0..=top_layer_id as i64).rev() {
     //         throw_on_cancel_callback();
     //         let current_outlines      = &infill_outlines[layer_id as usize];
-    //         let current_outlines_bbox = get_extents(current_outlines);
-    //         self.bboxs[layer_id as usize] = get_extents(current_outlines);
+    //         let current_outlines_bbox =
+    //             crate::geometry::polygon::get_extents_polygons(current_outlines);
+    //         self.bboxs[layer_id as usize] = current_outlines_bbox;
     //
     //         // register all trees propagated from the previous layer as to-be-reconnected
-    //         let to_be_reconnected_tree_roots = self.m_lightning_layers[layer_id as usize].tree_roots.clone();
+    //         let to_be_reconnected_tree_roots =
+    //             self.m_lightning_layers[layer_id as usize].tree_roots.clone();
     //
-    //         self.m_lightning_layers[layer_id as usize].generate_new_trees(
-    //             &self.m_overhang_per_layer[layer_id as usize], current_outlines, &current_outlines_bbox,
-    //             &outlines_locator, self.m_supporting_radius, self.m_wall_supporting_radius, throw_on_cancel_callback);
-    //         self.m_lightning_layers[layer_id as usize].reconnect_roots(
-    //             &to_be_reconnected_tree_roots, current_outlines, &current_outlines_bbox,
-    //             &outlines_locator, self.m_supporting_radius, self.m_wall_supporting_radius);
+    //         // BLOCKED: Layer::generateNewTrees / reconnectRoots not ported.
+    //         // self.m_lightning_layers[layer_id as usize].generate_new_trees(
+    //         //     &self.m_overhang_per_layer[layer_id as usize], current_outlines,
+    //         //     &current_outlines_bbox, &outlines_locator,
+    //         //     self.m_supporting_radius, self.m_wall_supporting_radius,
+    //         //     throw_on_cancel_callback);
+    //         // self.m_lightning_layers[layer_id as usize].reconnect_roots(
+    //         //     &to_be_reconnected_tree_roots, current_outlines,
+    //         //     &current_outlines_bbox, &outlines_locator,
+    //         //     self.m_supporting_radius, self.m_wall_supporting_radius);
     //
     //         // Initialize trees for next lower layer from the current one.
     //         if layer_id == 0 { return; }
     //
     //         let below_outlines = &infill_outlines[(layer_id - 1) as usize];
-    //         let mut below_outlines_bbox = get_extents(below_outlines).inflated(SCALED_EPSILON);
-    //         if outlines_locator.bbox().defined { below_outlines_bbox.merge(outlines_locator.bbox()); }
+    //         let mut below_outlines_bbox =
+    //             crate::geometry::polygon::get_extents_polygons(below_outlines)
+    //                 .inflated(crate::SCALED_EPSILON);
+    //         if outlines_locator.bbox().defined {
+    //             below_outlines_bbox.merge(outlines_locator.bbox());
+    //         }
     //         if !self.m_lightning_layers[layer_id as usize].tree_roots.is_empty() {
-    //             below_outlines_bbox.merge(&get_extents(&self.m_lightning_layers[layer_id as usize].tree_roots).inflated(SCALED_EPSILON));
+    //             below_outlines_bbox.merge(
+    //                 &super::tree_node::get_extents_roots(
+    //                     &self.m_lightning_layers[layer_id as usize].tree_roots)
+    //                     .inflated(crate::SCALED_EPSILON));
     //         }
     //         outlines_locator.set_bbox(below_outlines_bbox);
-    //         outlines_locator.create(below_outlines, locator_cell_size);
+    //         outlines_locator.create_from_polygons(
+    //             below_outlines, super::tree_node::LOCATOR_CELL_SIZE);
     //
     //         for tree in &self.m_lightning_layers[layer_id as usize].tree_roots {
-    //             tree.propagate_to_next_layer(
+    //             super::tree_node::propagate_to_next_layer(
+    //                 tree,
     //                 &mut self.m_lightning_layers[(layer_id - 1) as usize].tree_roots,
     //                 below_outlines, &outlines_locator, self.m_prune_length,
-    //                 self.m_straightening_max_distance, locator_cell_size / 2);
+    //                 self.m_straightening_max_distance,
+    //                 super::tree_node::LOCATOR_CELL_SIZE / 2);
     //         }
     //     }
 
     // Generator.cpp:217-263 — `void Generator::generateTreesforSupport(
     //   std::vector<Polygons>& contours, const std::function<void()> &throw_on_cancel_callback)`
     //
-    // BLOCKED for the same set of reasons as `generate_trees`
-    // (`Layer::generateNewTrees`/`reconnectRoots`, `Node::propagateToNextLayer`,
-    // `get_extents(NodeSPtr)`, `locator_cell_size`, the two-BoundingBox split).
+    // BLOCKED for the same sole reason as `generate_trees`:
+    //   * `Layer::generateNewTrees` / `reconnectRoots` not ported in
+    //     `lightning::layer::Layer` (Fill/Lightning/Layer.cpp).
     // Its body is `generateTrees` minus the surface-extraction prelude (it takes
     // pre-computed `contours` directly):
     //
