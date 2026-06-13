@@ -494,15 +494,15 @@ pub fn group_fills(
 ) -> Result<Vec<SurfaceFill>> {
     // TOPDBG (diagnostics only, env-gated): Top state at the entry of the
     // make_fills surface grouping (last stop before extrusion emission).
-    if crate::topdbg::enabled() {
+    if crate::debug::topdbg::enabled() {
         let mut all: Vec<crate::surface::Surface> = Vec::new();
         for region_id in 0..layer.region_count() {
             if let Some(region) = layer.get_region(region_id) {
                 all.extend(region.fill_surfaces.surfaces.iter().cloned());
             }
         }
-        crate::topdbg::log_top_surfaces(layer.id(), "group_fills_entry", &all);
-        crate::topdbg::dump_top_surfaces(layer.id(), "d5_group_fills_top", &all);
+        crate::debug::topdbg::log_top_surfaces(layer.id(), "group_fills_entry", &all);
+        crate::debug::topdbg::dump_top_surfaces(layer.id(), "d5_group_fills_top", &all);
     }
 
     /// Fill.cpp:166

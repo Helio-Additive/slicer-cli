@@ -805,7 +805,7 @@ impl PerimeterGenerator {
 
                 // TOPDBG (diagnostics only, env-gated): dump the perimeter-derived
                 // top region pieces for the TOPDBG_DUMP layer.
-                crate::topdbg::dump_expolygons(
+                crate::debug::topdbg::dump_expolygons(
                     self.config.layer_id,
                     "b_perimeter_top_fills",
                     &top_fills,

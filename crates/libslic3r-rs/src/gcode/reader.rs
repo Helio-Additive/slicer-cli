@@ -3,7 +3,7 @@
 //! This module provides the `GCodeReader` type, which mirrors the C++ `GCodeReader`
 //! functionality (currently implemented via `ParsedGCode` in the `compare` module).
 
-use crate::gcode::compare::ParsedGCode;
+use crate::debug::compare::ParsedGCode;
 
 /// G-code reader (alias for ParsedGCode).
 ///

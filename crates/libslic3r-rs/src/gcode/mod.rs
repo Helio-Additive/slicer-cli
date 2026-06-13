@@ -5,7 +5,6 @@
 
 pub mod arc_fitting;
 pub mod avoid_crossing_perimeters;
-pub mod compare;
 pub mod conflict_checker;
 pub mod cooling;
 pub mod cooling_buffer;
@@ -34,7 +33,6 @@ pub mod thumbnail_data;
 pub mod timelapse_pos_picker;
 pub mod tool_order_utils;
 pub mod tool_ordering;
-pub mod validation;
 pub mod wipe_tower;
 mod writer;
 
@@ -46,7 +44,9 @@ pub use avoid_crossing_perimeters::{
     init_boundary, init_boundary_with_merge_points, AvoidCrossingPerimeters, Boundary,
     ConvertBBoxToPolyline,
 };
-pub use compare::{
+// `compare`/`validation` moved to crate::debug (parity-diagnostic tooling, no C++ counterpart);
+// re-exported here for back-compat with existing `gcode::` dependents.
+pub use crate::debug::compare::{
     compare_exact_lines, compare_gcode, compare_gcode_files, ComparisonConfig, ComparisonResult,
     ExactComparisonResult, ExtrusionMode, ExtrusionTracker, GCodeComparator, GCodeMove,
     LayerComparison, LayerInfo, MoveComparison, ParsedGCode,
@@ -90,7 +90,7 @@ pub use tool_ordering::{
     FilamentChangeMode, FilamentChangeStats, FilamentMapMode, FlushMatrix, LayerTools,
     ToolOrdering, ToolOrderingConfig, WipingExtrusions,
 };
-pub use validation::{
+pub use crate::debug::validation::{
     validate_gcode_files, validate_gcode_files_with_config, FeatureStats, FeatureType,
     IssueCategory, IssueSeverity, LayerValidation, ReportFormat, ScoreBreakdown, ValidationConfig,
     ValidationIssue, ValidationReport, ValidationSummary,

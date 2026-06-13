@@ -57,6 +57,8 @@ pub mod curve_analyzer;
 pub mod custom_g_code;
 pub mod cut_surface;
 pub mod cut_utils;
+/// Debug / parity-diagnostic tooling — no C++ libslic3r counterpart (see debug/mod.rs).
+pub mod debug;
 pub mod edge_grid;
 pub mod elephant_foot_compensation;
 pub mod emboss;
@@ -85,7 +87,6 @@ pub mod flush_vol_predictor;
 pub mod flush_volume_calc;
 pub mod format;
 pub mod frustum;
-pub mod function_trace;
 pub mod fuzzy_skin;
 pub mod g_code;
 pub mod g_code_reader;
@@ -179,7 +180,6 @@ pub mod thread;
 pub mod threemf;
 pub mod time;
 pub mod timer;
-pub mod topdbg;
 pub mod triangle_mesh;
 pub mod triangle_mesh_deal;
 pub mod triangle_mesh_slicer;
@@ -224,14 +224,14 @@ pub use gcode::cooling::{
 };
 
 // Re-export G-code validation types
-pub use gcode::validation::{
+pub use debug::validation::{
     validate_gcode_files, validate_gcode_files_with_config, FeatureStats, FeatureType,
     IssueCategory, IssueSeverity, LayerValidation, ReportFormat, ScoreBreakdown, ValidationConfig,
     ValidationIssue, ValidationReport, ValidationSummary,
 };
 
 // Re-export G-code comparison types
-pub use gcode::compare::{
+pub use debug::compare::{
     compare_gcode, compare_gcode_files, ComparisonConfig, ComparisonResult, GCodeComparator,
     GCodeMove, LayerComparison, LayerInfo as GCodeLayerInfo, MoveComparison, ParsedGCode,
 };
