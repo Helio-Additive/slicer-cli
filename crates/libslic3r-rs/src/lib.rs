@@ -283,7 +283,6 @@ pub use gcode::multi_material::{
 // Configuration now handled by print_config module
 
 // Re-export elephant foot compensation
-pub use geometry::elephant_foot::{ElephantFootCompensator, ElephantFootConfig};
 pub use geometry::{
     BoundingBox, BoundingBox3, ExPolygon, Line, Point, Point3, Polygon, Polyline, ThickPolyline,
     ThickPolylines,

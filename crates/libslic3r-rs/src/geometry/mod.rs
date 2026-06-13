@@ -25,7 +25,6 @@ mod build_volume;
 mod circle;
 mod convex_hull;
 pub mod curves;
-pub mod elephant_foot;
 mod expolygon;
 // Geometry.cpp / Geometry.hpp — Transformation family + header math helpers.
 pub mod geometry;
@@ -57,11 +56,6 @@ pub use circle::{
 pub use convex_hull::{
     convex_hull_3d, convex_hull_expolygons, convex_hull_points, convex_hull_polygons,
     convex_hull_polylines, decompose_convex_polygon_top_bottom, inside_convex_polygon,
-};
-pub use elephant_foot::{
-    calculate_compensation, compensate_expolygon, compensate_expolygons, compensate_polygon,
-    elephant_foot_spacing, scaled_elephant_foot_spacing, ElephantFootCompensator,
-    ElephantFootConfig,
 };
 pub use expolygon::{
     area_expolygons, count_points, count_points_expoly, expolygons_append, expolygons_contain,
