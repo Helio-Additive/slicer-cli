@@ -17,6 +17,15 @@
 //! `DynamicPrintConfig` config plumbing (`get_instance_arrange_poly`) are
 //! documented as blocked at the bottom of this file. Everything tractable
 //! against the `ArrangePolygon` abstraction is ported faithfully.
+//!
+//! AUDIT (2026-06-13): the blocking root is the full C++ `Model` /
+//! `ModelObject` / `ModelInstance` / `ModelVolume` hierarchy — `model.rs`
+//! retains a divergent simplified shim (single merged mesh, POD `Instance`, no
+//! per-volume/`Geometry::Transformation`, no `extruderParamsMap`) to keep the
+//! format loaders compiling. The 2026-06-12 config-hierarchy threading covers
+//! `Layer`/`PrintObject`/`LayerRegion` (print_object.rs), NOT the Model side, so
+//! it does not unblock these. No wasm-unsafe native backend is involved. No
+//! stubs/fakes were introduced; the per-symbol blockers are enumerated below.
 
 use crate::geometry::{convex_hull_points, ExPolygon, Point, Points};
 use crate::Coord;
@@ -402,35 +411,57 @@ where
 //   return ap;                                             // :110
 
 // ---------------------------------------------------------------------------
-// BLOCKED symbols (require not-yet-ported Model.cpp / Print.cpp / config):
+// BLOCKED symbols — every one of these is gated on the full C++
+// `Model`/`ModelObject`/`ModelInstance`/`ModelVolume` class hierarchy, which is
+// NOT ported into this crate. The Rust `model.rs` deliberately retains a
+// divergent *simplified* shim (a single merged `mesh: TriangleMesh` per object,
+// a `Instance { position, rotation_z, scale }` POD, and a small `ObjectConfig`)
+// to keep the 3MF/STL/OBJ/AMF/SVG/STEP loaders working; its own module header
+// states this rework "must not be done piecemeal without breaking those
+// consumers". The 2026-06-12 config-hierarchy threading (Layer -> PrintObject ->
+// Print, LayerRegion -> PrintRegion in print_object.rs) is independent of and
+// does NOT supply the Model-side accessors below, so these stay blocked. None of
+// the missing pieces is a wasm-unsafe native backend — they are pure not-yet-
+// ported Model.cpp / Print.cpp symbols. Documented, never stubbed.
 //
 // * get_arrange_polys(const Model&, ModelInstancePtrs&)        ModelArrange.cpp:10
-//     Needs ModelInstance::get_arrange_polygon(&ap) (Model.cpp) and a faithful
-//     ModelInstancePtrs collection; current model.rs `Instance` is a divergent
-//     simplified type without these methods.
+//     Needs ModelInstance::get_arrange_polygon(&ap) (Model.cpp:4129) and a real
+//     ModelInstancePtrs collection of pointer-stable `ModelInstance*`; the Rust
+//     `Instance` POD has none of get_arrange_polygon/apply_arrange_result.
 //
 // * get_arrange_poly(const Model&) full version              ModelArrange.cpp:43
-//     The pure-geometry core is ported above (`get_arrange_poly<I>`); the
-//     `minst->get_arrange_polygon(&obj_ap)` source needs Model.cpp.
+//     The pure-geometry core (rotate/translate per-instance contour + convex
+//     hull) is ported above as `get_arrange_poly<I>`; the per-instance source
+//     `minst->get_arrange_polygon(&obj_ap)` needs Model.cpp:4129, which itself
+//     pulls in Geometry::Transformation, ModelObject::convex_hull_2d, the
+//     `ModelVolume volumes` collection (is_model_part/get_extruders), and the
+//     static Model::extruderParamsMap — none present in the model.rs shim.
 //
 // * duplicate(Model&, ArrangePolygons&, VirtualBedFn)        ModelArrange.cpp:61
-//     Needs ModelObject::add_instance(const ModelInstance&), set_offset/
-//     get_offset, unscale(Vec2crd)->Vec2d, to_3d, invalidate_bounding_box
-//     (Model.cpp) — current model.rs lacks these.
+//     Needs ModelObject::add_instance(const ModelInstance&) (copy-ctor add),
+//     ModelInstance::set_offset/get_offset (Vec3d offset, not the shim's POD),
+//     unscale(Vec2crd)->Vec2d, to_3d, ModelObject::invalidate_bounding_box.
 //
 // * duplicate_objects(Model&, size_t)                        ModelArrange.cpp:79
-//     Needs ModelObject::add_instance(const ModelInstance&) (Model.cpp).
+//     Needs ModelObject::add_instance(const ModelInstance&) (copy-ctor add).
 //
-// * get_arrange_poly<T> concrete instantiations              ModelArrange.cpp:91/113
-//     Needs PtrWrapper<ModelInstance> + ModelInstance methods (Model.cpp).
+// * get_arrange_poly<T> generic + ModelInstance* spec.       ModelArrange.cpp:91/113
+//     Needs PtrWrapper<ModelInstance> (ModelArrange.hpp:68) wrapping
+//     ModelInstance::get_arrange_polygon/apply_arrange_result and the
+//     `arrange_order` field (Model.cpp:4129/4189) — the setter-closure plumbing
+//     for this already exists on ArrangePolygon::setter above, but the concrete
+//     `T = PtrWrapper<ModelInstance>` cannot be built without those methods.
 //
 // * get_instance_arrange_poly(ModelInstance*, DynamicPrintConfig&) ModelArrange.cpp:119
-//     Needs DynamicPrintConfig accessors (curr_bed_type, nozzle_temperature,
-//     temperature_vitrification, filament_type), BedType, get_bed_temp_key /
-//     get_bed_temp_1st_layer_key, Print::get_filament_temp_type /
-//     get_compatible_filament_type (Print.cpp), and
-//     ModelObject::instance_convex_hull_bounding_box / get_config_value
-//     (Model.cpp) — none ported.
+//     Even the config-reading tail (curr_bed_type/nozzle_temperature/
+//     temperature_vitrification/filament_type, get_bed_temp_key /
+//     get_bed_temp_1st_layer_key in print_config.rs, Print::get_filament_temp_type
+//     / get_compatible_filament_type which ARE ported in print.rs:1698/1786)
+//     operates on an ArrangePolygon produced by PtrWrapper{instance}.
+//     get_arrange_polygon and reads obj->instance_convex_hull_bounding_box
+//     (Model.cpp:1604), obj->get_config_value (Model.hpp), support_type
+//     (SupportType, ported in print_config.rs:3323). All of these hang off the
+//     un-ported ModelInstance/ModelObject, so the whole function is blocked.
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]

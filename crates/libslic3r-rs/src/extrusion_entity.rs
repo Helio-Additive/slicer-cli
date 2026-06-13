@@ -2087,6 +2087,10 @@ pub struct ExtrusionEntityCollection {
     pub entities: Vec<ExtrusionEntityType>,
     pub no_sort: bool,
     pub orig_indices: Vec<usize>,
+    // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};` (private member).
+    // Controls `can_reverse()` (ExtrusionEntityCollection.hpp:63-69) and is cleared by
+    // `set_reverse()` (ExtrusionEntityCollection.hpp:70). Defaults to true.
+    pub is_reverse: bool,
 }
 
 /// Enum to hold different types of extrusion entities (replaces `ExtrusionEntity*`).
@@ -2103,6 +2107,8 @@ impl ExtrusionEntityCollection {
             entities: Vec::new(),
             no_sort: false,
             orig_indices: Vec::new(),
+            // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
+            is_reverse: true,
         }
     }
 
@@ -2139,6 +2145,29 @@ impl ExtrusionEntityCollection {
     // NOTE: `ExtrusionEntityCollection::role()` (which collapses to erMixed when child
     // roles differ) is ported in `crate::extrusion_entity_collection` alongside the rest
     // of ExtrusionEntityCollection.cpp; not redefined here to avoid a duplicate method.
+
+    // ExtrusionEntityCollection.hpp:62 `bool can_sort() const override { return !this->no_sort; }`
+    pub fn can_sort(&self) -> bool {
+        !self.no_sort
+    }
+
+    // ExtrusionEntityCollection.hpp:63-69
+    // bool can_reverse() const override {
+    //     if (this->no_sort) return false;
+    //     else return is_reverse;
+    // }
+    pub fn can_reverse(&self) -> bool {
+        if self.no_sort {
+            false
+        } else {
+            self.is_reverse
+        }
+    }
+
+    // ExtrusionEntityCollection.hpp:70 `void set_reverse() override { is_reverse = false; }`
+    pub fn set_reverse(&mut self) {
+        self.is_reverse = false;
+    }
 
     // ExtrusionEntityCollection.cpp:67-75 `void ExtrusionEntityCollection::reverse()`
     pub fn reverse(&mut self) {

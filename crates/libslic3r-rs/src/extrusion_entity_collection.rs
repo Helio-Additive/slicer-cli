@@ -152,6 +152,8 @@ impl ExtrusionEntityCollection {
             entities: Vec::new(),
             no_sort: false,
             orig_indices: Vec::new(),
+            // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
+            is_reverse: true,
         };
         out.append_paths(paths);
         out
@@ -182,8 +184,11 @@ impl ExtrusionEntityCollection {
     //     return *this;
     // }
     //
-    // In Rust this is the `Clone` impl on `ExtrusionEntityCollection` (derive), which deep-clones
-    // every entity. `loop_node_range`/`is_reverse` are Rust-extension state not modeled here.
+    // The copy-assignment operator (ExtrusionEntityCollection.cpp:29) deep-clones `entities`
+    // and copies `no_sort` only; it intentionally leaves `is_reverse`/`loop_node_range`
+    // unchanged (unlike the move-assignment at ExtrusionEntityCollection.hpp:42-49, which
+    // copies them). We mirror that: `is_reverse` is left as-is. `loop_node_range` is not
+    // modeled in the Rust struct.
     pub fn assign(&mut self, other: &ExtrusionEntityCollection) {
         // clear();
         self.clear();
@@ -286,15 +291,18 @@ impl ExtrusionEntityCollection {
     //     for (const ExtrusionEntity *entity : this->entities)
     //         entity->polygons_covered_by_width(out, scaled_epsilon);
     // }
-    //
-    // BLOCKED: depends on `ExtrusionEntity::polygons_covered_by_width`, which is defined in
-    // ExtrusionEntity.cpp and not yet ported. See module-level notes.
-    #[allow(unused_variables)]
     pub fn polygons_covered_by_width(&self, out: &mut Polygons, scaled_epsilon: f32) {
         // for (const ExtrusionEntity *entity : this->entities)
         //     entity->polygons_covered_by_width(out, scaled_epsilon);
-        // TODO(port): requires ExtrusionEntity::polygons_covered_by_width (ExtrusionEntity.cpp).
-        let _ = (out, scaled_epsilon);
+        for entity in &self.entities {
+            match entity {
+                ExtrusionEntityType::Path(p) => p.polygons_covered_by_width(out, scaled_epsilon),
+                ExtrusionEntityType::Loop(l) => l.polygons_covered_by_width(out, scaled_epsilon),
+                ExtrusionEntityType::Collection(c) => {
+                    c.polygons_covered_by_width(out, scaled_epsilon)
+                }
+            }
+        }
     }
 
     // ExtrusionEntityCollection.cpp:107
@@ -303,14 +311,18 @@ impl ExtrusionEntityCollection {
     //     for (const ExtrusionEntity *entity : this->entities)
     //         entity->polygons_covered_by_spacing(out, scaled_epsilon);
     // }
-    //
-    // BLOCKED: depends on `ExtrusionEntity::polygons_covered_by_spacing` (ExtrusionEntity.cpp).
-    #[allow(unused_variables)]
     pub fn polygons_covered_by_spacing(&self, out: &mut Polygons, scaled_epsilon: f32) {
         // for (const ExtrusionEntity *entity : this->entities)
         //     entity->polygons_covered_by_spacing(out, scaled_epsilon);
-        // TODO(port): requires ExtrusionEntity::polygons_covered_by_spacing (ExtrusionEntity.cpp).
-        let _ = (out, scaled_epsilon);
+        for entity in &self.entities {
+            match entity {
+                ExtrusionEntityType::Path(p) => p.polygons_covered_by_spacing(out, scaled_epsilon),
+                ExtrusionEntityType::Loop(l) => l.polygons_covered_by_spacing(out, scaled_epsilon),
+                ExtrusionEntityType::Collection(c) => {
+                    c.polygons_covered_by_spacing(out, scaled_epsilon)
+                }
+            }
+        }
     }
 
     // ExtrusionEntityCollection.cpp:113-114
@@ -384,6 +396,8 @@ impl ExtrusionEntityCollection {
             entities: Vec::new(),
             no_sort: false,
             orig_indices: Vec::new(),
+            // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
+            is_reverse: true,
         };
         // ExtrusionEntityCollection.cpp:146
         // flatten.recursive_do(*this);
@@ -421,6 +435,21 @@ impl ExtrusionEntityCollection {
         // return min_mm3_per_mm;
         min_mm3_per_mm
     }
+
+    // ExtrusionEntityCollection.hpp:102-103
+    // ExtrusionEntityCollection chained_path_from(const Point &start_near, ExtrusionRole role = erMixed) const
+    //     { return this->no_sort ? *this : chained_path_from(this->entities, start_near, role); }
+    pub fn chained_path_from_self(
+        &self,
+        start_near: &Point,
+        role: ExtrusionRole,
+    ) -> ExtrusionEntityCollection {
+        if self.no_sort {
+            self.clone()
+        } else {
+            chained_path_from(&self.entities, start_near, role)
+        }
+    }
 }
 
 // ExtrusionEntityCollection.cpp:89
@@ -436,10 +465,6 @@ impl ExtrusionEntityCollection {
 //     return out;
 // }
 //
-// BLOCKED: depends on `chain_and_reorder_extrusion_entities` from ShortestPath.cpp, which is
-// not yet ported (the `shortest_path` module is still a stub). The role-filtering portion is
-// fully ported via `filter_by_extrusion_role`; the chaining step is the missing dependency.
-#[allow(unused_variables)]
 pub fn chained_path_from(
     extrusion_entities: &ExtrusionEntitiesPtr,
     start_near: &Point,
@@ -447,16 +472,22 @@ pub fn chained_path_from(
 ) -> ExtrusionEntityCollection {
     // Return a filtered copy of the collection.
     let mut out = ExtrusionEntityCollection {
+        // ExtrusionEntityCollection.cpp:93 + 95-96
         // out.entities = filter_by_extrusion_role(extrusion_entities, role);
+        // // Clone the extrusion entities.
+        // for (auto &ptr : out.entities) ptr = ptr->clone();
         // (filter already returns cloned entities, fusing C++ lines 93 + 95-96.)
         entities: filter_by_extrusion_role(extrusion_entities, role),
         no_sort: false,
         orig_indices: Vec::new(),
+        // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
+        is_reverse: true,
     };
+    // ExtrusionEntityCollection.cpp:97
     // chain_and_reorder_extrusion_entities(out.entities, &start_near);
-    // TODO(port): blocked on ShortestPath.cpp::chain_and_reorder_extrusion_entities.
-    let _ = start_near;
-    let _ = &mut out;
+    crate::shortest_path::chain_and_reorder_extrusion_entities(&mut out.entities, Some(start_near));
+    // ExtrusionEntityCollection.cpp:98
+    // return out;
     out
 }
 

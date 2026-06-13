@@ -19,7 +19,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::ex_polygon::get_extents_expoly;
-use crate::extrusion_entity::ExtrusionPath;
+use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionPath};
 use crate::geometry::{ExPolygons, Point, Polyline, Polylines};
 use crate::kd_tree_indirect::{find_closest_point, KDTreeIndirect};
 use crate::mutable_priority_queue::make_mutable_priority_queue;
@@ -585,7 +585,162 @@ where
     )
 }
 
+// Entity-level accessors mirroring the `ExtrusionEntity*` virtual dispatch the C++
+// chaining lambdas use. The Rust port stores a `Vec<ExtrusionEntityType>` enum, so the
+// `ee->first_point()` / `ee->last_point()` / `ee->is_loop()` / `ee->can_reverse()` /
+// `ee->reverse()` calls dispatch over the enum instead of through a vtable.
+fn entity_first_point(ee: &ExtrusionEntityType) -> Point {
+    match ee {
+        ExtrusionEntityType::Path(p) => p.first_point(),
+        ExtrusionEntityType::Loop(l) => l.first_point(),
+        // ExtrusionEntityCollection.hpp:105 `front()->first_point()`
+        ExtrusionEntityType::Collection(c) => c.first_point().expect("first_point on empty collection"),
+    }
+}
+
+fn entity_last_point(ee: &ExtrusionEntityType) -> Point {
+    match ee {
+        ExtrusionEntityType::Path(p) => p.last_point(),
+        ExtrusionEntityType::Loop(l) => l.last_point(),
+        // ExtrusionEntityCollection.hpp:106 `back()->last_point()`
+        ExtrusionEntityType::Collection(c) => c.last_point().expect("last_point on empty collection"),
+    }
+}
+
+fn entity_is_loop(ee: &ExtrusionEntityType) -> bool {
+    // ExtrusionEntity.hpp:165 `virtual bool is_loop() const { return false; }`
+    // ExtrusionEntity.hpp:506 (ExtrusionLoop) `bool is_loop() const override { return true; }`
+    matches!(ee, ExtrusionEntityType::Loop(_))
+}
+
+fn entity_can_reverse(ee: &ExtrusionEntityType) -> bool {
+    match ee {
+        // ExtrusionEntity.hpp:166 default + ExtrusionPath::can_reverse() (m_can_reverse).
+        ExtrusionEntityType::Path(p) => p.can_reverse(),
+        // ExtrusionEntity.hpp:507 (ExtrusionLoop) `bool can_reverse() const override { return false; }`
+        ExtrusionEntityType::Loop(_) => false,
+        // ExtrusionEntityCollection.hpp:63-69
+        ExtrusionEntityType::Collection(c) => c.can_reverse(),
+    }
+}
+
+fn entity_reverse(ee: &mut ExtrusionEntityType) {
+    match ee {
+        ExtrusionEntityType::Path(p) => p.reverse(),
+        ExtrusionEntityType::Loop(l) => l.reverse(),
+        ExtrusionEntityType::Collection(c) => c.reverse(),
+    }
+}
+
 // ShortestPath.cpp:1001-1015
+// std::vector<std::pair<size_t, bool>> chain_extrusion_entities(std::vector<ExtrusionEntity*> &entities, const Point *start_near)
+pub fn chain_extrusion_entities(
+    entities: &[ExtrusionEntityType],
+    start_near: Option<&Point>,
+) -> Vec<(usize, bool)> {
+    // ShortestPath.cpp:1003
+    // auto segment_end_point = [&entities](size_t idx, bool first_point) -> const Point& { return first_point ? entities[idx]->first_point() : entities[idx]->last_point(); };
+    let segment_end_point = |idx: usize, first_point: bool| -> Point {
+        if first_point {
+            entity_first_point(&entities[idx])
+        } else {
+            entity_last_point(&entities[idx])
+        }
+    };
+    // ShortestPath.cpp:1004
+    // auto could_reverse = [&entities](size_t idx) { const ExtrusionEntity *ee = entities[idx]; return ee->is_loop() || ee->can_reverse(); };
+    let could_reverse = |idx: usize| -> bool {
+        let ee = &entities[idx];
+        entity_is_loop(ee) || entity_can_reverse(ee)
+    };
+    // ShortestPath.cpp:1005
+    // std::vector<std::pair<size_t, bool>> out = chain_segments_greedy_constrained_reversals<...>(segment_end_point, could_reverse, entities.size(), start_near);
+    let mut out =
+        chain_segments_greedy_constrained_reversals(segment_end_point, could_reverse, entities.len(), start_near);
+    // ShortestPath.cpp:1006-1013
+    // for (std::pair<size_t, bool> &segment : out) {
+    //     ExtrusionEntity *ee = entities[segment.first];
+    //     if (ee->is_loop())
+    //         // Ignore reversals for loops, as the start point equals the end point.
+    //         segment.second = false;
+    //     // Is can_reverse() respected by the reversals?
+    //     assert(ee->can_reverse() || ! segment.second);
+    // }
+    for segment in &mut out {
+        let ee = &entities[segment.0];
+        if entity_is_loop(ee) {
+            // Ignore reversals for loops, as the start point equals the end point.
+            segment.1 = false;
+        }
+        // Is can_reverse() respected by the reversals?
+        debug_assert!(entity_can_reverse(ee) || !segment.1);
+    }
+    // ShortestPath.cpp:1014
+    // return out;
+    out
+}
+
+// ShortestPath.cpp:1017-1029
+// void reorder_extrusion_entities(std::vector<ExtrusionEntity*> &entities, const std::vector<std::pair<size_t, bool>> &chain)
+pub fn reorder_extrusion_entities(
+    entities: &mut Vec<ExtrusionEntityType>,
+    chain: &[(usize, bool)],
+) {
+    // ShortestPath.cpp:1019
+    assert_eq!(entities.len(), chain.len());
+    // ShortestPath.cpp:1020-1021
+    let mut out: Vec<ExtrusionEntityType> = Vec::with_capacity(entities.len());
+    // ShortestPath.cpp:1022-1027
+    // for (const std::pair<size_t, bool> &idx : chain) {
+    //     assert(entities[idx.first] != nullptr);
+    //     out.emplace_back(entities[idx.first]);
+    //     if (idx.second)
+    //         out.back()->reverse();
+    // }
+    // C++ transplants the owned pointer into `out`; here we move the owned entity out of
+    // `entities`. The chain is a permutation, so each source slot is consumed exactly once.
+    let mut src: Vec<Option<ExtrusionEntityType>> =
+        std::mem::take(entities).into_iter().map(Some).collect();
+    for idx in chain {
+        let mut ee = src[idx.0].take().expect("chain index moved twice");
+        if idx.1 {
+            entity_reverse(&mut ee);
+        }
+        out.push(ee);
+    }
+    // ShortestPath.cpp:1028
+    // entities.swap(out);
+    *entities = out;
+}
+
+// ShortestPath.cpp:1031-1037
+// void chain_and_reorder_extrusion_entities(std::vector<ExtrusionEntity*> &entities, const Point *start_near)
+pub fn chain_and_reorder_extrusion_entities(
+    entities: &mut Vec<ExtrusionEntityType>,
+    start_near: Option<&Point>,
+) {
+    // ShortestPath.cpp:1033-1035
+    // this function crashes if there are empty elements in entities
+    // entities.erase(std::remove_if(entities.begin(), entities.end(), [](ExtrusionEntity *entity) {
+    //     return static_cast<ExtrusionEntityCollection *>(entity)->empty(); }), entities.end());
+    //
+    // NOTE: the C++ unconditionally `static_cast`s every entity to ExtrusionEntityCollection*
+    // and tests `empty()`. That is only well-defined when the entities are in fact collections
+    // (the documented use, e.g. chaining a vector of region collections). We mirror the intent:
+    // drop entities that are empty collections.
+    entities.retain(|entity| match entity {
+        ExtrusionEntityType::Collection(c) => !c.is_empty(),
+        // Non-collection entities are not erased (the C++ cast would be UB; in practice the
+        // caller only passes collections here).
+        _ => true,
+    });
+    // ShortestPath.cpp:1036
+    // reorder_extrusion_entities(entities, chain_extrusion_entities(entities, start_near));
+    let chain = chain_extrusion_entities(entities, start_near);
+    reorder_extrusion_entities(entities, &chain);
+}
+
+// ShortestPath.cpp:1039-1043
 pub fn chain_extrusion_paths(
     extrusion_paths: &[ExtrusionPath],
     start_near: Option<&Point>,

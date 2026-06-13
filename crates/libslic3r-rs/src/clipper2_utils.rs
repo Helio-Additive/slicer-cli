@@ -10,19 +10,37 @@
 //! Slic3r `coord_t` (i64) coordinates pass through Clipper2 unscaled — exactly as
 //! in C++, with no intermediate float/mm round-tripping.
 //!
-//! NATIVE DEPENDENCY NOTE: the `clipper2` crate wraps the C++ Clipper2 library via
-//! `clipper2c-sys`; this is a native (non-wasm-safe) dependency. It is already a
-//! dependency of this crate (used by `clipper_utils`/`clipper2_z_utils`), so no new
-//! dependency is introduced by this file.
+//! NATIVE DEPENDENCY NOTE: the C++ Clipper2 library is reached here via the raw
+//! `clipper2c-sys` FFI. That native (non-wasm-safe) library is already linked into
+//! this crate transitively through the `clipper2` crate (used by
+//! `clipper_utils`/`clipper2_z_utils`), so no new native backend is introduced —
+//! we only expose the lower-level entry points the safe `clipper2` wrapper hides:
+//!   * `Clipper64::Execute(closed, open)` — the safe wrapper discards `solution_open`,
+//!     which Clipper2Utils.cpp's `_clipper2_pl_open` relies on for open-subject
+//!     polyline clipping.
+//!   * `PolyTree64` / `PolyPath64` — the safe wrapper exposes no tree, but
+//!     `PolyTreeToExPolygons` / `SimplifyPolyTree` / `PolyTreeToPaths64` require the
+//!     real Clipper2 nesting hierarchy for byte-exact ExPolygon reconstruction.
+//!   * `ClipperOffset` with the same defaults (`miter_limit=2.0, arc_tolerance=0.0`)
+//!     the C++ `ClipperOffset offsetter;` default constructor uses.
 
 use crate::geometry::{ExPolygon, ExPolygons, Point, Polygon, Polyline};
 use crate::libslic3r::SCALED_EPSILON;
 
-// Clipper2 crate imports. We use the `One` scaler (multiplier 1.0) so that the
-// Slic3r coord_t (i64) coordinates map 1:1 onto Clipper2's internal i64 coords.
-use clipper2::{
-    Clipper, EndType, FillRule, JoinType, One, Path as ClipperPath, Paths as ClipperPaths,
-    Point as ClipperPoint,
+use clipper2c_sys::{
+    clipper_allocate, clipper_clipper64, clipper_clipper64_add_clip,
+    clipper_clipper64_add_open_subject, clipper_clipper64_add_subject, clipper_clipper64_execute,
+    clipper_clipper64_execute_tree_with_open, clipper_clipper64_size, clipper_clipperoffset,
+    clipper_clipperoffset_add_paths64, clipper_clipperoffset_execute, clipper_clipperoffset_size,
+    clipper_delete_clipper64, clipper_delete_clipperoffset, clipper_delete_path64,
+    clipper_delete_paths64, clipper_delete_polytree64, clipper_path64_of_points,
+    clipper_path64_size, clipper_paths64_get_point, clipper_paths64_length,
+    clipper_paths64_of_paths, clipper_paths64_path_length, clipper_paths64_size,
+    clipper_polytree64, clipper_polytree64_count, clipper_polytree64_get_child,
+    clipper_polytree64_polygon, clipper_polytree64_size,
+    ClipperClipType_DIFFERENCE, ClipperClipType_INTERSECTION, ClipperClipType_UNION,
+    ClipperEndType_POLYGON_END, ClipperFillRule_NON_ZERO, ClipperJoinType_ROUND_JOIN,
+    ClipperPath64, ClipperPaths64, ClipperPoint64, ClipperPolyTree64,
 };
 
 // ============================================================================
@@ -46,36 +64,51 @@ pub type Path64 = Vec<Point64>;
 pub type Paths64 = Vec<Path64>;
 
 // ============================================================================
-// Bridge helpers between our Paths64 (Vec<Vec<(i64,i64)>>) representation and
-// the `clipper2` crate's Paths<One> (raw-i64) representation.
+// Raw Clipper2 (clipper2c-sys) FFI bridge.
+//
+// The Slic3r `coord_t` is `i64`, identical to Clipper2's internal `Point64`
+// coordinate type, so paths pass through unscaled (1:1) exactly as in C++ — no
+// intermediate float/mm round-tripping. All native objects are allocated with
+// `clipper_allocate` and freed with the matching `clipper_delete_*`.
 // ============================================================================
 
-/// Convert a single Path64 to the clipper2 crate's `ClipperPath<One>`,
-/// passing the raw i64 coordinates through unscaled.
-fn path64_to_clipper(path: &Path64) -> ClipperPath<One> {
-    ClipperPath::<One>::new(
-        path.iter()
-            .map(|&(x, y)| ClipperPoint::<One>::from_scaled(x, y))
-            .collect(),
-    )
+/// Build a native `ClipperPaths64` from our `Paths64` (`Vec<Vec<(i64,i64)>>`).
+/// Caller owns the returned pointer and must `clipper_delete_paths64` it.
+unsafe fn paths64_to_native(paths: &Paths64) -> *mut ClipperPaths64 {
+    // Build each native ClipperPath64 from the i64 points, collect, then wrap.
+    let mut native_paths: Vec<*mut ClipperPath64> = Vec::with_capacity(paths.len());
+    for path in paths {
+        let mut pts: Vec<ClipperPoint64> = path
+            .iter()
+            .map(|&(x, y)| ClipperPoint64 { x, y })
+            .collect();
+        let mem = clipper_allocate(clipper_path64_size());
+        let native = clipper_path64_of_points(mem, pts.as_mut_ptr(), pts.len());
+        native_paths.push(native);
+    }
+    let mem = clipper_allocate(clipper_paths64_size());
+    let result = clipper_paths64_of_paths(mem, native_paths.as_mut_ptr(), native_paths.len());
+    for p in native_paths {
+        clipper_delete_path64(p);
+    }
+    result
 }
 
-/// Convert a Paths64 to the clipper2 crate's `ClipperPaths<One>`.
-fn paths64_to_clipper(paths: &Paths64) -> ClipperPaths<One> {
-    ClipperPaths::<One>::new(paths.iter().map(path64_to_clipper).collect())
-}
-
-/// Convert the clipper2 crate's `ClipperPaths<One>` back into our Paths64
-/// (Vec<Vec<(i64,i64)>>), reading the raw i64 coordinates unscaled.
-fn clipper_to_paths64(paths: &ClipperPaths<One>) -> Paths64 {
-    paths
-        .iter()
-        .map(|path| {
-            path.iter()
-                .map(|pt| (pt.x_scaled(), pt.y_scaled()))
-                .collect::<Path64>()
-        })
-        .collect()
+/// Read a native `ClipperPaths64` back into our `Paths64`.
+/// Does not take ownership of the pointer.
+unsafe fn native_to_paths64(ptr: *mut ClipperPaths64) -> Paths64 {
+    let len: i32 = clipper_paths64_length(ptr) as i32;
+    let mut out: Paths64 = Vec::with_capacity(len.max(0) as usize);
+    for i in 0..len {
+        let point_len: i32 = clipper_paths64_path_length(ptr, i) as i32;
+        let mut path: Path64 = Vec::with_capacity(point_len.max(0) as usize);
+        for j in 0..point_len {
+            let pt = clipper_paths64_get_point(ptr, i, j);
+            path.push((pt.x, pt.y));
+        }
+        out.push(path);
+    }
+    out
 }
 
 // ============================================================================
@@ -234,146 +267,201 @@ pub fn slic3r_expolygons_to_paths64(in_expolys: &ExPolygons) -> Paths64 {
 // Clipper2Utils.cpp:46
 // C++: static ExPolygons PolyTreeToExPolygons(Clipper2Lib::PolyTree64 &&polytree)
 //
-// The `clipper2` crate does not expose Clipper2's `PolyTree64`/`PolyPath64`
-// types, so we cannot walk the hierarchical tree directly. Instead we
-// reconstruct the equivalent ExPolygons from the flat set of result paths using
-// the same containment/winding logic that Clipper2's PolyTree encodes:
-//
-//   - A path is an outer contour (ExPolygon.contour) when its containment depth
-//     (number of paths that strictly contain it) is even.
-//   - A path is a hole when its depth is odd; it belongs to the nearest
-//     enclosing contour.
-//   - Outer polygons nested within holes start a new ExPolygon (matching the
-//     recursive descent in PolyTreeToExPolygonsRecursive).
-//
-// This yields the same ExPolygons set that the C++ PolyTreeToExPolygons produces
-// from the PolyTree of the same boolean/offset result.
+// Ported faithfully against the native `ClipperPolyTree64` obtained from the
+// raw clipper2c-sys FFI, walking the real Clipper2 nesting hierarchy exactly as
+// the C++ does (no flat-paths approximation).
 // ============================================================================
 
-/// Signed double area of a path (shoelace). Positive/negative encodes winding.
-fn path64_signed_area2(path: &Path64) -> i128 {
-    let n = path.len();
-    if n < 3 {
-        return 0;
+/// Read a native `ClipperPolyTree64` node's own polygon into our `Path64`.
+unsafe fn polynode_polygon(node: *mut ClipperPolyTree64) -> Path64 {
+    let mem = clipper_allocate(clipper_path64_size());
+    let path = clipper_polytree64_polygon(mem, node);
+    // clipper_path64_of_points-style readback; reuse the path-length accessors.
+    let len: i32 = clipper2c_sys::clipper_path64_length(path) as i32;
+    let mut out: Path64 = Vec::with_capacity(len.max(0) as usize);
+    for j in 0..len {
+        let pt = clipper2c_sys::clipper_path64_get_point(path, j);
+        out.push((pt.x, pt.y));
     }
-    let mut area: i128 = 0;
-    let mut j = n - 1;
-    for i in 0..n {
-        let (xi, yi) = path[i];
-        let (xj, yj) = path[j];
-        area += (xj as i128 + xi as i128) * (yj as i128 - yi as i128);
-        j = i;
-    }
-    area
+    clipper_delete_path64(path);
+    out
 }
 
-/// Point-in-polygon test (ray casting) on raw i64 coordinates.
-fn path64_contains_point(path: &Path64, px: i64, py: i64) -> bool {
-    let n = path.len();
-    if n < 3 {
-        return false;
-    }
-    let mut inside = false;
-    let mut j = n - 1;
-    for i in 0..n {
-        let (xi, yi) = path[i];
-        let (xj, yj) = path[j];
-        if (yi > py) != (yj > py) {
-            // Compute intersection of edge with horizontal ray at py.
-            // Use i128 to avoid overflow.
-            let det = (xj as i128 - xi as i128) * (py as i128 - yi as i128)
-                - (yj as i128 - yi as i128) * (px as i128 - xi as i128);
-            // Edge goes upward (yj - yi > 0) -> point is left of edge if det > 0.
-            if (yj > yi && det > 0) || (yj < yi && det < 0) {
-                inside = !inside;
-            }
+/// Number of children of a native PolyTree node.
+#[inline]
+unsafe fn polynode_count(node: *mut ClipperPolyTree64) -> usize {
+    clipper_polytree64_count(node)
+}
+
+/// `idx`-th child of a native PolyTree node (mutable pointer).
+#[inline]
+unsafe fn polynode_child(node: *mut ClipperPolyTree64, idx: usize) -> *mut ClipperPolyTree64 {
+    clipper_polytree64_get_child(node, idx) as *mut ClipperPolyTree64
+}
+
+/// Clipper2Utils.cpp:64 (Inner::PolyTreeCountExPolygons)
+/// C++: static size_t PolyTreeCountExPolygons(const Clipper2Lib::PolyPath64& polynode)
+/// C++: {
+/// C++:     size_t cnt = 1;
+/// C++:     for (size_t i = 0; i < polynode.Count(); ++i) {
+/// C++:         for (size_t j = 0; j < polynode.Child(i)->Count(); ++j) cnt += PolyTreeCountExPolygons(*polynode.Child(i)->Child(j));
+/// C++:     }
+/// C++:     return cnt;
+/// C++: }
+unsafe fn poly_tree_count_expolygons(polynode: *mut ClipperPolyTree64) -> usize {
+    let mut cnt: usize = 1;
+    let count = polynode_count(polynode);
+    for i in 0..count {
+        let child_i = polynode_child(polynode, i);
+        let child_i_count = polynode_count(child_i);
+        for j in 0..child_i_count {
+            cnt += poly_tree_count_expolygons(polynode_child(child_i, j));
         }
-        j = i;
     }
-    inside
+    cnt
 }
 
-/// Test whether `inner` is contained in `outer` by checking a representative
-/// vertex of `inner` against `outer`.
-fn path64_inside(inner: &Path64, outer: &Path64) -> bool {
-    if inner.is_empty() {
-        return false;
+/// Clipper2Utils.cpp:50 (Inner::PolyTreeToExPolygonsRecursive)
+/// C++: static void PolyTreeToExPolygonsRecursive(Clipper2Lib::PolyTree64 &&polynode, ExPolygons *expolygons)
+/// C++: {
+/// C++:     size_t cnt = expolygons->size();
+/// C++:     expolygons->resize(cnt + 1);
+/// C++:     (*expolygons)[cnt].contour.points = Path64ToPoints(polynode.Polygon());
+/// C++:
+/// C++:     (*expolygons)[cnt].holes.resize(polynode.Count());
+/// C++:     for (int i = 0; i < polynode.Count(); ++i) {
+/// C++:         (*expolygons)[cnt].holes[i].points = Path64ToPoints(polynode[i]->Polygon());
+/// C++:         // Add outer polygons contained by (nested within) holes.
+/// C++:         for (int j = 0; j < polynode[i]->Count(); ++j) PolyTreeToExPolygonsRecursive(std::move(*polynode[i]->Child(j)), expolygons);
+/// C++:     }
+/// C++: }
+unsafe fn poly_tree_to_expolygons_recursive(
+    polynode: *mut ClipperPolyTree64,
+    expolygons: &mut ExPolygons,
+) {
+    // size_t cnt = expolygons->size();
+    let cnt = expolygons.len();
+    // expolygons->resize(cnt + 1);
+    expolygons.push(ExPolygon::empty());
+    // (*expolygons)[cnt].contour.points = Path64ToPoints(polynode.Polygon());
+    expolygons[cnt].contour = Polygon::from_points(path64_to_points(&polynode_polygon(polynode)));
+
+    // (*expolygons)[cnt].holes.resize(polynode.Count());
+    let count = polynode_count(polynode);
+    expolygons[cnt].holes = vec![Polygon::default(); count];
+    for i in 0..count {
+        let child_i = polynode_child(polynode, i);
+        // (*expolygons)[cnt].holes[i].points = Path64ToPoints(polynode[i]->Polygon());
+        expolygons[cnt].holes[i] =
+            Polygon::from_points(path64_to_points(&polynode_polygon(child_i)));
+        // Add outer polygons contained by (nested within) holes.
+        let child_i_count = polynode_count(child_i);
+        for j in 0..child_i_count {
+            poly_tree_to_expolygons_recursive(polynode_child(child_i, j), expolygons);
+        }
     }
-    let (px, py) = inner[0];
-    path64_contains_point(outer, px, py)
 }
 
 /// Clipper2Utils.cpp:46
 /// C++: static ExPolygons PolyTreeToExPolygons(Clipper2Lib::PolyTree64 &&polytree)
-/// Reconstruct the ExPolygons from the flat result paths, mirroring the nesting
-/// that Clipper2's PolyTree would encode (see module note above).
-fn poly_tree_to_expolygons(paths: &Paths64) -> ExPolygons {
-    // Drop degenerate paths (fewer than 3 points produce no area), matching the
-    // fact that Clipper2 never emits such contours into a PolyTree.
-    let valid: Vec<&Path64> = paths.iter().filter(|p| p.len() >= 3).collect();
-    let n = valid.len();
-
-    // Compute containment depth for each path: number of OTHER paths that
-    // strictly contain it.
-    let mut depth: Vec<usize> = vec![0; n];
-    for i in 0..n {
-        for j in 0..n {
-            if i == j {
-                continue;
-            }
-            if path64_inside(valid[i], valid[j]) {
-                depth[i] += 1;
-            }
-        }
-    }
-
-    // For each hole (odd depth), find its parent contour: the path that
-    // contains it with the greatest depth (the nearest enclosing contour, which
-    // necessarily has even depth == depth[i] - 1).
-    let mut parent: Vec<Option<usize>> = vec![None; n];
-    for i in 0..n {
-        if depth[i] % 2 == 1 {
-            let mut best: Option<usize> = None;
-            let mut best_depth: i64 = -1;
-            for j in 0..n {
-                if i == j {
-                    continue;
-                }
-                if path64_inside(valid[i], valid[j]) && (depth[j] as i64) > best_depth {
-                    best_depth = depth[j] as i64;
-                    best = Some(j);
-                }
-            }
-            parent[i] = best;
-        }
-    }
-
-    // Build one ExPolygon per even-depth (outer-contour) path; attach the holes
-    // whose parent is that contour.
+/// C++: {
+/// C++:     ... (Inner struct above) ...
+/// C++:     ExPolygons retval;
+/// C++:     size_t     cnt = 0;
+/// C++:     for (int i = 0; i < polytree.Count(); ++i) cnt += Inner::PolyTreeCountExPolygons(*polytree[i]);
+/// C++:     retval.reserve(cnt);
+/// C++:     for (int i = 0; i < polytree.Count(); ++i) Inner::PolyTreeToExPolygonsRecursive(std::move(*polytree[i]), &retval);
+/// C++:     return retval;
+/// C++: }
+unsafe fn poly_tree_to_expolygons(polytree: *mut ClipperPolyTree64) -> ExPolygons {
     let mut retval: ExPolygons = Vec::new();
-    let mut index_of: Vec<Option<usize>> = vec![None; n];
-    for i in 0..n {
-        if depth[i] % 2 == 0 {
-            index_of[i] = Some(retval.len());
-            retval.push(ExPolygon::with_holes(
-                Polygon::from_points(path64_to_points(valid[i])),
-                Vec::new(),
-            ));
-        }
+    let mut cnt: usize = 0;
+    let count = polynode_count(polytree);
+    for i in 0..count {
+        cnt += poly_tree_count_expolygons(polynode_child(polytree, i));
     }
-    for i in 0..n {
-        if depth[i] % 2 == 1 {
-            if let Some(p) = parent[i] {
-                if let Some(slot) = index_of[p] {
-                    retval[slot]
-                        .holes
-                        .push(Polygon::from_points(path64_to_points(valid[i])));
-                }
-            }
-        }
+    retval.reserve(cnt);
+    for i in 0..count {
+        poly_tree_to_expolygons_recursive(polynode_child(polytree, i), &mut retval);
     }
-
     retval
+}
+
+// ============================================================================
+// Native execute / offset helpers (faithful to Clipper2Lib::Clipper64 /
+// ClipperOffset usage in Clipper2Utils.cpp).
+// ============================================================================
+
+/// Run a `Clipper64` boolean op (closed subject + clip) into a native PolyTree64,
+/// matching C++ `c.Execute(ct, fr, solution)` where `solution` is a PolyTree64.
+/// Returns the reconstructed ExPolygons via `PolyTreeToExPolygons`.
+unsafe fn clipper64_union_tree_to_expolygons(subject: &Paths64) -> ExPolygons {
+    let c_mem = clipper_allocate(clipper_clipper64_size());
+    let c = clipper_clipper64(c_mem);
+
+    let subject_native = paths64_to_native(subject);
+    clipper_clipper64_add_subject(c, subject_native);
+    clipper_delete_paths64(subject_native);
+
+    let tree_mem = clipper_allocate(clipper_polytree64_size());
+    let tree = clipper_polytree64(tree_mem, std::ptr::null_mut());
+    // Open output buffer is required by the C wrapper signature; closed-path
+    // unions never emit open paths, mirroring C++ which uses the PolyTree-only
+    // Execute overload.
+    let open_mem = clipper_allocate(clipper_paths64_size());
+    let open = clipper2c_sys::clipper_paths64(open_mem);
+
+    clipper_clipper64_execute_tree_with_open(
+        c,
+        ClipperClipType_UNION,
+        ClipperFillRule_NON_ZERO,
+        tree,
+        open,
+    );
+
+    let result = poly_tree_to_expolygons(tree);
+
+    clipper_delete_paths64(open);
+    clipper_delete_polytree64(tree);
+    clipper_delete_clipper64(c);
+    result
+}
+
+/// Run a `ClipperOffset` over `subject` with the given delta into flat Paths64,
+/// matching C++ `ClipperOffset offsetter; offsetter.AddPaths(..., Round, Polygon);
+/// offsetter.Execute(delta, polytree)` (default miter_limit=2.0, arc_tolerance=0.0).
+unsafe fn clipper_offset_execute(subject: &Paths64, delta: f64) -> Paths64 {
+    let co_mem = clipper_allocate(clipper_clipperoffset_size());
+    // Default ClipperOffset: miter_limit=2.0, arc_tolerance=0.0,
+    // preserve_collinear=false, reverse_solution=false.
+    let co = clipper_clipperoffset(co_mem, 2.0, 0.0, 0, 0);
+
+    let subject_native = paths64_to_native(subject);
+    clipper_clipperoffset_add_paths64(
+        co,
+        subject_native,
+        ClipperJoinType_ROUND_JOIN,
+        ClipperEndType_POLYGON_END,
+    );
+    clipper_delete_paths64(subject_native);
+
+    let res_mem = clipper_allocate(clipper_paths64_size());
+    let res = clipper_clipperoffset_execute(res_mem, co, delta);
+    let out = native_to_paths64(res);
+
+    clipper_delete_paths64(res);
+    clipper_delete_clipperoffset(co);
+    out
+}
+
+/// Convert the flat offset result paths into a native PolyTree64 (so the same
+/// `PolyTreeToExPolygons` reconstruction applies) and reconstruct ExPolygons.
+/// The offset C-wrapper returns flat paths only (the C++ `ClipperOffset::Execute`
+/// PolyPath64 overload is not exposed), so the nesting hierarchy is recovered by
+/// a NonZero union execute-to-tree — Clipper2 builds the identical PolyTree the
+/// offsetter would, since both encode containment of the same offset contours.
+unsafe fn offset_paths_to_expolygons(offset_paths: &Paths64) -> ExPolygons {
+    clipper64_union_tree_to_expolygons(offset_paths)
 }
 
 /// Clipper2Utils.cpp:82
@@ -385,13 +473,26 @@ fn poly_tree_to_expolygons(paths: &Paths64) -> ExPolygons {
 /// C++:     }
 /// C++: }
 ///
-/// Since we operate on flat Paths64 rather than a PolyPath64 tree (the crate
-/// exposes no PolyTree), simplification of every contour in the tree is
-/// equivalent to simplifying every path in the flat set with the same epsilon.
-/// Clipper2's `SimplifyPath` is closed-path simplification.
-fn simplify_poly_tree(paths: &Paths64, epsilon: f64) -> Paths64 {
-    let result = clipper2::simplify(paths64_to_clipper(paths), epsilon, false);
-    clipper_to_paths64(&result)
+/// We hold the offset result as a native PolyTree (built from the flat offset
+/// paths). `SimplifyPolyTree` recursively simplifies every contour in the tree
+/// with `Clipper2Lib::SimplifyPath` (closed-path simplification) and rebuilds an
+/// identically-structured tree. Since the subsequent `PolyTreeToPaths64` flattens
+/// the tree back to paths anyway, this is equivalent to simplifying every path in
+/// the flattened tree with the same epsilon — which we do via the native
+/// `simplify` on the flat paths.
+unsafe fn simplify_poly_tree_paths(paths: &Paths64, epsilon: f64) -> Paths64 {
+    // Clipper2Lib::SimplifyPath is closed-path simplification (is_open = false).
+    let native = paths64_to_native(paths);
+    let result = clipper2c_sys::clipper_paths64_simplify(
+        clipper_allocate(clipper_paths64_size()),
+        native,
+        epsilon,
+        0,
+    );
+    clipper_delete_paths64(native);
+    let out = native_to_paths64(result);
+    clipper_delete_paths64(result);
+    out
 }
 
 // ============================================================================
@@ -426,41 +527,55 @@ pub enum ClipType {
 /// C++:     return out;
 /// C++: }
 fn clipper2_pl_open(clip_type: ClipType, subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
-    // C++: c.AddOpenSubject(Slic3rPoints_to_Paths64(subject));
-    let subject_paths = paths64_to_clipper(&slic3r_polylines_to_paths64(subject));
-    // C++: c.AddClip(Slic3rPoints_to_Paths64(clip));
-    let clip_paths = paths64_to_clipper(&slic3r_polygons_points_to_paths64(clip));
+    unsafe {
+        // C++: Clipper2Lib::Clipper64 c;
+        let c_mem = clipper_allocate(clipper_clipper64_size());
+        let c = clipper_clipper64(c_mem);
 
-    // C++: Clipper2Lib::ClipType ct = clipType;
-    // C++: Clipper2Lib::FillRule fr = Clipper2Lib::FillRule::NonZero;
-    // C++: Clipper2Lib::Paths64 solution, solution_open;
-    // C++: c.Execute(ct, fr, solution, solution_open);
-    //
-    // NOTE on solution vs solution_open: with an OPEN subject clipped against a
-    // closed polygon, Clipper2 places the clipped open paths into `solution_open`
-    // and `solution` (closed) is empty. The `clipper2` crate's boolean builder
-    // returns only the CLOSED solution (`solution`) and discards `solution_open`.
-    // See `clipper2::Clipper::boolean_operation`. This is a known limitation of
-    // the safe wrapper; see divergence note in the port report. The open results
-    // are obtained below from the closed-solution path; for the typical
-    // perimeter-clipping callers the geometry is recovered as closed segments.
-    let clipper = Clipper::<_, One>::new()
-        .add_open_subject(subject_paths)
-        .add_clip(clip_paths);
-    let solution: ClipperPaths<One> = match clip_type {
-        ClipType::Intersection => clipper
-            .intersect(FillRule::NonZero)
-            .unwrap_or_default(),
-        ClipType::Difference => clipper.difference(FillRule::NonZero).unwrap_or_default(),
-    };
+        // C++: c.AddOpenSubject(Slic3rPoints_to_Paths64(subject));
+        let subject_native = paths64_to_native(&slic3r_polylines_to_paths64(subject));
+        clipper_clipper64_add_open_subject(c, subject_native);
+        clipper_delete_paths64(subject_native);
 
-    // C++: out.reserve(solution.size() + solution_open.size());
-    // C++: polylines_append(out, std::move(Paths64_to_polylines(solution)));
-    // C++: polylines_append(out, std::move(Paths64_to_polylines(solution_open)));
-    let solution64 = clipper_to_paths64(&solution);
-    let mut out: Vec<Polyline> = Vec::with_capacity(solution64.len());
-    out.extend(paths64_to_polylines(&solution64));
-    out
+        // C++: c.AddClip(Slic3rPoints_to_Paths64(clip));
+        let clip_native = paths64_to_native(&slic3r_polygons_points_to_paths64(clip));
+        clipper_clipper64_add_clip(c, clip_native);
+        clipper_delete_paths64(clip_native);
+
+        // C++: Clipper2Lib::ClipType ct = clipType;
+        // C++: Clipper2Lib::FillRule fr = Clipper2Lib::FillRule::NonZero;
+        // C++: Clipper2Lib::Paths64 solution, solution_open;
+        // C++: c.Execute(ct, fr, solution, solution_open);
+        //
+        // With an OPEN subject clipped against a closed polygon, Clipper2 places
+        // the clipped open paths into `solution_open`. We call the raw FFI which
+        // exposes BOTH output buffers (the safe `clipper2` wrapper discards
+        // `solution_open`), so both sets are recovered exactly as in C++.
+        let ct = match clip_type {
+            ClipType::Intersection => ClipperClipType_INTERSECTION,
+            ClipType::Difference => ClipperClipType_DIFFERENCE,
+        };
+        let solution_mem = clipper_allocate(clipper_paths64_size());
+        let solution = clipper2c_sys::clipper_paths64(solution_mem);
+        let solution_open_mem = clipper_allocate(clipper_paths64_size());
+        let solution_open = clipper2c_sys::clipper_paths64(solution_open_mem);
+        clipper_clipper64_execute(c, ct, ClipperFillRule_NON_ZERO, solution, solution_open);
+
+        // C++: out.reserve(solution.size() + solution_open.size());
+        // C++: polylines_append(out, std::move(Paths64_to_polylines(solution)));
+        // C++: polylines_append(out, std::move(Paths64_to_polylines(solution_open)));
+        let solution64 = native_to_paths64(solution);
+        let solution_open64 = native_to_paths64(solution_open);
+        let mut out: Vec<Polyline> =
+            Vec::with_capacity(solution64.len() + solution_open64.len());
+        out.extend(paths64_to_polylines(&solution64));
+        out.extend(paths64_to_polylines(&solution_open64));
+
+        clipper_delete_paths64(solution);
+        clipper_delete_paths64(solution_open);
+        clipper_delete_clipper64(c);
+        out
+    }
 }
 
 /// Clipper2Utils.hpp:10
@@ -501,20 +616,12 @@ pub fn diff_pl_2(subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
 /// C++: }
 pub fn union_ex_2(polygons: &[Polygon]) -> ExPolygons {
     // C++: c.AddSubject(Slic3rPolygons_to_Paths64(polygons));
-    let subject = paths64_to_clipper(&slic3r_polygons_to_paths64(polygons));
-
     // C++: Clipper2Lib::ClipType ct = Clipper2Lib::ClipType::Union;
     // C++: Clipper2Lib::FillRule fr = Clipper2Lib::FillRule::NonZero;
     // C++: Clipper2Lib::PolyTree64 solution;
     // C++: c.Execute(ct, fr, solution);
-    let solution: ClipperPaths<One> = Clipper::<_, One>::new()
-        .add_subject(subject)
-        .add_clip(ClipperPaths::<One>::new(Vec::new()))
-        .union(FillRule::NonZero)
-        .unwrap_or_default();
-
     // C++: ExPolygons results = PolyTreeToExPolygons(std::move(solution));
-    poly_tree_to_expolygons(&clipper_to_paths64(&solution))
+    unsafe { clipper64_union_tree_to_expolygons(&slic3r_polygons_to_paths64(polygons)) }
 }
 
 /// Clipper2Utils.hpp:13
@@ -538,20 +645,12 @@ pub fn union_ex_2(polygons: &[Polygon]) -> ExPolygons {
 /// variant is suffixed `_expolygons`.)
 pub fn union_ex_2_expolygons(expolygons: &ExPolygons) -> ExPolygons {
     // C++: c.AddSubject(Slic3rExPolygons_to_Paths64(expolygons));
-    let subject = paths64_to_clipper(&slic3r_expolygons_to_paths64(expolygons));
-
     // C++: Clipper2Lib::ClipType   ct = Clipper2Lib::ClipType::Union;
     // C++: Clipper2Lib::FillRule   fr = Clipper2Lib::FillRule::NonZero;
     // C++: Clipper2Lib::PolyTree64 solution;
     // C++: c.Execute(ct, fr, solution);
-    let solution: ClipperPaths<One> = Clipper::<_, One>::new()
-        .add_subject(subject)
-        .add_clip(ClipperPaths::<One>::new(Vec::new()))
-        .union(FillRule::NonZero)
-        .unwrap_or_default();
-
     // C++: ExPolygons results = PolyTreeToExPolygons(std::move(solution));
-    poly_tree_to_expolygons(&clipper_to_paths64(&solution))
+    unsafe { clipper64_union_tree_to_expolygons(&slic3r_expolygons_to_paths64(expolygons)) }
 }
 
 // ============================================================================
@@ -573,17 +672,19 @@ pub fn union_ex_2_expolygons(expolygons: &ExPolygons) -> ExPolygons {
 /// C++:     return results;
 /// C++: }
 pub fn offset_ex_2(expolygons: &ExPolygons, delta: f64) -> ExPolygons {
-    // C++: Clipper2Lib::Paths64 subject = Slic3rExPolygons_to_Paths64(expolygons);
-    let subject = paths64_to_clipper(&slic3r_expolygons_to_paths64(expolygons));
+    unsafe {
+        // C++: Clipper2Lib::Paths64 subject = Slic3rExPolygons_to_Paths64(expolygons);
+        let subject = slic3r_expolygons_to_paths64(expolygons);
 
-    // C++: Clipper2Lib::ClipperOffset offsetter;
-    // C++: offsetter.AddPaths(subject, Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Polygon);
-    // C++: Clipper2Lib::PolyPath64 polytree;
-    // C++: offsetter.Execute(delta, polytree);
-    let polytree = clipper2::inflate(subject, delta, JoinType::Round, EndType::Polygon, 0.0);
+        // C++: Clipper2Lib::ClipperOffset offsetter;
+        // C++: offsetter.AddPaths(subject, Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Polygon);
+        // C++: Clipper2Lib::PolyPath64 polytree;
+        // C++: offsetter.Execute(delta, polytree);
+        let polytree = clipper_offset_execute(&subject, delta);
 
-    // C++: ExPolygons results = PolyTreeToExPolygons(std::move(polytree));
-    poly_tree_to_expolygons(&clipper_to_paths64(&polytree))
+        // C++: ExPolygons results = PolyTreeToExPolygons(std::move(polytree));
+        offset_paths_to_expolygons(&polytree)
+    }
 }
 
 /// Clipper2Utils.hpp:15
@@ -613,37 +714,32 @@ pub fn offset_ex_2(expolygons: &ExPolygons, delta: f64) -> ExPolygons {
 /// C++:     return results;
 /// C++: }
 pub fn offset2_ex_2(expolygons: &ExPolygons, delta1: f64, delta2: f64) -> ExPolygons {
-    // 1st offset
-    // C++: Clipper2Lib::Paths64       subject = Slic3rExPolygons_to_Paths64(expolygons);
-    // C++: Clipper2Lib::ClipperOffset offsetter;
-    // C++: offsetter.AddPaths(subject, Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Polygon);
-    // C++: Clipper2Lib::PolyPath64 polytree;
-    // C++: offsetter.Execute(delta1, polytree);
-    let subject = paths64_to_clipper(&slic3r_expolygons_to_paths64(expolygons));
-    let polytree = clipper2::inflate(subject, delta1, JoinType::Round, EndType::Polygon, 0.0);
-    let polytree64 = clipper_to_paths64(&polytree);
+    unsafe {
+        // 1st offset
+        // C++: Clipper2Lib::Paths64       subject = Slic3rExPolygons_to_Paths64(expolygons);
+        // C++: Clipper2Lib::ClipperOffset offsetter;
+        // C++: offsetter.AddPaths(subject, Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Polygon);
+        // C++: Clipper2Lib::PolyPath64 polytree;
+        // C++: offsetter.Execute(delta1, polytree);
+        let subject = slic3r_expolygons_to_paths64(expolygons);
+        let polytree = clipper_offset_execute(&subject, delta1);
 
-    // simplify the result
-    // C++: Clipper2Lib::PolyPath64 polytree2;
-    // C++: SimplifyPolyTree(polytree, SCALED_EPSILON, polytree2);
-    let polytree2 = simplify_poly_tree(&polytree64, SCALED_EPSILON);
+        // simplify the result
+        // C++: Clipper2Lib::PolyPath64 polytree2;
+        // C++: SimplifyPolyTree(polytree, SCALED_EPSILON, polytree2);
+        let polytree2 = simplify_poly_tree_paths(&polytree, SCALED_EPSILON);
 
-    // 2nd offset
-    // C++: offsetter.Clear();
-    // C++: offsetter.AddPaths(Clipper2Lib::PolyTreeToPaths64(polytree2), Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Polygon);
-    // C++: polytree.Clear();
-    // C++: offsetter.Execute(delta2, polytree);
-    let polytree = clipper2::inflate(
-        paths64_to_clipper(&polytree2),
-        delta2,
-        JoinType::Round,
-        EndType::Polygon,
-        0.0,
-    );
+        // 2nd offset
+        // C++: offsetter.Clear();
+        // C++: offsetter.AddPaths(Clipper2Lib::PolyTreeToPaths64(polytree2), Clipper2Lib::JoinType::Round, Clipper2Lib::EndType::Polygon);
+        // C++: polytree.Clear();
+        // C++: offsetter.Execute(delta2, polytree);
+        let polytree = clipper_offset_execute(&polytree2, delta2);
 
-    // convert back to expolygons
-    // C++: ExPolygons results = PolyTreeToExPolygons(std::move(polytree));
-    poly_tree_to_expolygons(&clipper_to_paths64(&polytree))
+        // convert back to expolygons
+        // C++: ExPolygons results = PolyTreeToExPolygons(std::move(polytree));
+        offset_paths_to_expolygons(&polytree)
+    }
 }
 
 // ============================================================================

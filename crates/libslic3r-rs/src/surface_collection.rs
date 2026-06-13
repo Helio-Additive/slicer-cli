@@ -281,9 +281,51 @@ impl SurfaceCollection {
     }
 
     // void SurfaceCollection::export_to_svg(const char *path, bool show_labels)  SurfaceCollection.cpp:140
-    //
-    // BLOCKED: depends on the not-yet-ported `SVG` class (`SVG.cpp`/`SVG.hpp`),
-    // which is a debug-only utility. Omitted until `svg.rs` is faithfully ported.
+    pub fn export_to_svg(&self, path: &str, show_labels: bool) {
+        // BoundingBox bbox;                                            SurfaceCollection.cpp:142
+        let mut bbox = crate::geometry::BoundingBox::new();
+        // for (Surfaces::const_iterator surface = this->surfaces.begin(); surface != this->surfaces.end(); ++surface)  SurfaceCollection.cpp:143
+        //     bbox.merge(get_extents(surface->expolygon));             SurfaceCollection.cpp:144
+        for surface in &self.surfaces {
+            bbox.merge(&crate::geometry::get_extents_expoly(&surface.expolygon));
+        }
+        // Point legend_size = export_surface_type_legend_to_svg_box_size();  SurfaceCollection.cpp:145
+        let legend_size = crate::surface::export_surface_type_legend_to_svg_box_size();
+        // Point legend_pos(bbox.min(0), bbox.max(1));                   SurfaceCollection.cpp:146
+        let legend_pos = crate::geometry::Point::new(bbox.min.x(), bbox.max.y());
+        // bbox.merge(Point(std::max(bbox.min(0) + legend_size(0), bbox.max(0)), bbox.max(1) + legend_size(1)));  SurfaceCollection.cpp:147
+        bbox.merge_point(crate::geometry::Point::new(
+            std::cmp::max(bbox.min.x() + legend_size.x(), bbox.max.x()),
+            bbox.max.y() + legend_size.y(),
+        ));
+
+        // SVG svg(path, bbox);                                         SurfaceCollection.cpp:149
+        let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+        // const float transparency = 0.5f;                            SurfaceCollection.cpp:150
+        let transparency: f32 = 0.5f32;
+        // for (Surfaces::const_iterator surface = this->surfaces.begin(); surface != this->surfaces.end(); ++surface) {  SurfaceCollection.cpp:151
+        for (idx, surface) in self.surfaces.iter().enumerate() {
+            // svg.draw(surface->expolygon, surface_type_to_color_name(surface->surface_type), transparency);  SurfaceCollection.cpp:152
+            svg.draw_expolygon(
+                &surface.expolygon,
+                crate::surface::surface_type_to_color_name(surface.surface_type),
+                transparency,
+            );
+            // if (show_labels) {                                       SurfaceCollection.cpp:153
+            if show_labels {
+                // int idx = int(surface - this->surfaces.begin());     SurfaceCollection.cpp:154
+                // char label[64];                                      SurfaceCollection.cpp:155
+                // sprintf(label, "%d", idx);                           SurfaceCollection.cpp:156
+                let label = format!("{}", idx);
+                // svg.draw_text(surface->expolygon.contour.points.front(), label, "black");  SurfaceCollection.cpp:157
+                svg.draw_text(&surface.expolygon.contour.points[0], &label, "black", 20);
+            }
+        }
+        // export_surface_type_legend_to_svg(svg, legend_pos);          SurfaceCollection.cpp:160
+        crate::surface::export_surface_type_legend_to_svg(&mut svg, &legend_pos);
+        // svg.Close();                                                 SurfaceCollection.cpp:161
+        svg.close();
+    }
 
     // ---- SurfaceCollection.hpp inline methods ----
 

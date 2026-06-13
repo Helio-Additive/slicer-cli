@@ -2244,6 +2244,7 @@ mod tests {
             entities: Vec::new(),
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
 
         let result = extrude_collection(&collection, &mut writer);
@@ -2268,6 +2269,7 @@ mod tests {
             entities: vec![ExtrusionEntityType::Path(path)],
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
 
         let e_before = writer.e();
@@ -2300,6 +2302,7 @@ mod tests {
             ],
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
 
         let e_before = writer.e();
@@ -2326,6 +2329,7 @@ mod tests {
             entities: vec![ExtrusionEntityType::Loop(loop_entity)],
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
 
         let e_before = writer.e();
@@ -2351,12 +2355,14 @@ mod tests {
             entities: vec![ExtrusionEntityType::Path(path)],
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
 
         let outer_collection = ExtrusionEntityCollection {
             entities: vec![ExtrusionEntityType::Collection(Box::new(inner_collection))],
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
 
         let e_before = writer.e();
@@ -2406,6 +2412,7 @@ mod tests {
             entities: vec![ExtrusionEntityType::Path(path)],
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
         let entity = ExtrusionEntityType::Collection(Box::new(collection));
 
@@ -2434,6 +2441,7 @@ mod tests {
             ],
             no_sort: false,
             orig_indices: Vec::new(),
+            is_reverse: true,
         };
 
         extrude_collection(&collection, &mut writer).expect("Should extrude");

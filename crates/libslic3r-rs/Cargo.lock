@@ -1442,6 +1442,7 @@ dependencies = [
  "chrono",
  "clap",
  "clipper2",
+ "clipper2c-sys",
  "criterion",
  "earcutr",
  "env_logger",

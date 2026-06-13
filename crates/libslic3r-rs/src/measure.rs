@@ -222,7 +222,7 @@ impl VertexFaceIndex {
 }
 
 // MeshSplitImpl.hpp:293-342 — create_face_neighbors_index
-fn create_face_neighbors_index(its: &indexed_triangle_set) -> Vec<Vec3i> {
+pub(crate) fn create_face_neighbors_index(its: &indexed_triangle_set) -> Vec<Vec3i> {
     let indices = &its.indices;
     if indices.is_empty() {
         return Vec::new();
@@ -265,9 +265,21 @@ fn create_face_neighbors_index(its: &indexed_triangle_set) -> Vec<Vec3i> {
     neighbors
 }
 
-// TriangleMesh.cpp:1933-1936 — its_face_neighbors
+// TriangleMesh.cpp:1928-1931 — its_face_neighbors
 #[allow(dead_code)]
 fn its_face_neighbors(its: &indexed_triangle_set) -> Vec<Vec3i> {
+    // TriangleMesh.cpp:1930 — create_face_neighbors_index(ex_seq, its);
+    create_face_neighbors_index(its)
+}
+
+// TriangleMesh.cpp:1933-1936 — its_face_neighbors_par
+// std::vector<Vec3i> its_face_neighbors_par(const indexed_triangle_set &its)
+// { return create_face_neighbors_index(ex_tbb, its); }
+//
+// The ex_seq/ex_tbb policies differ only in parallelism; `create_face_neighbors_index`
+// produces an identical neighbor index either way (this crate's port is sequential).
+pub(crate) fn its_face_neighbors_par(its: &indexed_triangle_set) -> Vec<Vec3i> {
+    // TriangleMesh.cpp:1935 — create_face_neighbors_index(ex_tbb, its);
     create_face_neighbors_index(its)
 }
 
@@ -925,7 +937,7 @@ impl MeasuringImpl {
         debug_assert!(!self.m_face_to_plane.iter().any(|&val| val == SIZE_T_MINUS_ONE));
 
         // Now we will walk around each of the planes and save vertices which form the border.
-        let sm = SurfaceMesh::new(&self.m_its, face_neighbors.clone());
+        let sm = SurfaceMesh::new(&self.m_its);
 
         let face_to_plane = &self.m_face_to_plane;
         // Measure.cpp:197-290 — tbb::parallel_for over planes; the per-plane work

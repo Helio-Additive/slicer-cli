@@ -22,11 +22,10 @@
 //! - `point()` returns a reference to `stl_vertex` (= `Vec3f`), so we return `&Vec3f`.
 //! - The C++ constructor computes `m_face_neighbors` via `its_face_neighbors_par(its)`
 //!   (declared in `TriangleMesh.hpp`, implemented in `TriangleMesh.cpp`). That free
-//!   function is NOT yet ported to this crate (it depends on `create_face_neighbors_index`
-//!   / the `ex_tbb` execution policy in `TriangleMesh.cpp`). To keep this header port
-//!   faithful and buildable, `SurfaceMesh::new` accepts the precomputed `m_face_neighbors`
-//!   (matching the stored field). Once `its_face_neighbors_par` is ported, callers
-//!   should compute it and pass the result here, exactly as the C++ constructor does.
+//!   function is ported in this `indexed_triangle_set` domain as
+//!   `crate::measure::its_face_neighbors_par`, so `SurfaceMesh::new(its)` computes
+//!   `m_face_neighbors` internally, exactly as the C++ constructor does
+//!   (`m_face_neighbors(its_face_neighbors_par(its))`).
 //! - `boost::container::small_vector<Halfedge_index, 10>` in `degree()` is a small-buffer
 //!   optimization of a dynamic array; we use a plain `Vec<Halfedge_index>` which is
 //!   semantically identical (same elements, same order, same membership test).
@@ -192,16 +191,15 @@ impl<'a> SurfaceMesh<'a> {
     //   m_face_neighbors(its_face_neighbors_par(its))
     // {}
     //
-    // BLOCKED DEPENDENCY: `its_face_neighbors_par(its)` lives in `TriangleMesh.cpp`
-    // and is not yet ported to this crate. To remain faithful (no fakes/stubs) and
-    // keep the build green, the constructor accepts the precomputed `m_face_neighbors`
-    // — which is exactly the value the C++ constructor stores. Callers must supply
-    // `its_face_neighbors_par(its)` once that function is ported.
+    // `its_face_neighbors_par` (TriangleMesh.cpp:1933-1936) is ported in
+    // `crate::measure` in this `indexed_triangle_set` domain (the crate carries a
+    // second, structurally distinct `indexed_triangle_set` in `normal_utils`, which
+    // is what `crate::triangle_mesh::its_face_neighbors_par` operates on).
     #[inline]
-    pub fn new(its: &'a indexed_triangle_set, face_neighbors: Vec<Vec3i>) -> Self {
+    pub fn new(its: &'a indexed_triangle_set) -> Self {
         SurfaceMesh {
             m_its: its,
-            m_face_neighbors: face_neighbors,
+            m_face_neighbors: crate::measure::its_face_neighbors_par(its),
         }
     }
 
