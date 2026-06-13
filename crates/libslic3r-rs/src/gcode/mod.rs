@@ -15,7 +15,6 @@ pub mod exporter;
 pub mod extruder;
 pub mod g_code_editor;
 pub mod g_code_processor;
-pub mod gcode_editor;
 pub mod gcode_processor;
 mod generator;
 pub mod ironing;

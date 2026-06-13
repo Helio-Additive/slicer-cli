@@ -8,7 +8,7 @@
 //! calculates how much to slow down extrusion on a per-layer basis to meet
 //! minimum layer time requirements, mirroring BambuStudio's algorithm exactly.
 
-use crate::gcode::gcode_editor::{
+use crate::gcode::g_code_editor::{
     AdjustableFeatureType, CoolingLineType, CoolingSlowdownLogicType, PerExtruderAdjustments,
 };
 
@@ -693,7 +693,7 @@ fn collect_range_mut<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gcode::gcode_editor::{CoolingLine, CoolingLineType};
+    use crate::gcode::g_code_editor::{CoolingLine, CoolingLineType};
 
     fn make_adjustable_line(time: f32, time_max: f32, length: f32, feedrate: f32) -> CoolingLine {
         let mut line = CoolingLine::new(CoolingLineType::G1 | CoolingLineType::ADJUSTABLE, 0, 10);

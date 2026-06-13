@@ -15,7 +15,7 @@
 // Smoothing.hpp:1-5
 use std::collections::BTreeMap;
 
-use crate::gcode::gcode_editor::{CoolingLineType, PerExtruderAdjustments};
+use crate::gcode::g_code_editor::{CoolingLineType, PerExtruderAdjustments};
 
 // Smoothing.hpp:9-13
 const GUASSIAN_WINDOW_SIZE: i32 = 11;
