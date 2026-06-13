@@ -488,6 +488,16 @@ impl LayerRegion {
             top_one_wall: true,
             // PrintConfig.cpp:1288 default top_area_threshold = 200%.
             top_area_threshold: 200.0,
+            // PerimeterGenerator.cpp:874 — solid_infill_flow.scaled_spacing()
+            // (LayerRegion.cpp:173: g.solid_infill_flow = this->flow(frSolidInfill)).
+            solid_infill_spacing: self
+                .flow(FlowRole::SolidInfill, layer_height)
+                .map(|f| f.spacing())
+                .unwrap_or_else(|_| perimeter_flow.spacing()),
+            // PerimeterGenerator.cpp:1167 — config->sparse_infill_line_width.value.
+            sparse_infill_line_width: config.sparse_infill_line_width,
+            // PerimeterGenerator.cpp:1392 — config->infill_wall_overlap (percent -> fraction).
+            infill_wall_overlap: object_config.infill_wall_overlap,
             layer_id: layer_id,
             raft_layers: 0,
             overhang_flow: None,

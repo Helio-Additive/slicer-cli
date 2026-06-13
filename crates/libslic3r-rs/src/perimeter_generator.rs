@@ -38,6 +38,18 @@ const NARROW_LOOP_LENGTH_THRESHOLD: f64 = 10.0;
 /// Safety limit to prevent infinite loops
 const MAX_PERIMETER_ITERATIONS: usize = 1000;
 
+/// Gate for the faithful only_one_wall_top + infill-boundary-inset path
+/// (PerimeterGenerator.cpp:925-926, 1116-1183, 1378-1413).
+/// `TOP_FILLS=0` forces the legacy divergent path, any other value forces the
+/// faithful path; unset uses the compiled default.
+fn top_fills_gate() -> bool {
+    const DEFAULT_ON: bool = false;
+    match std::env::var("TOP_FILLS") {
+        Ok(v) => v != "0",
+        Err(_) => DEFAULT_ON,
+    }
+}
+
 /// Wall generator mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WallGeneratorMode {
@@ -134,6 +146,18 @@ pub struct PerimeterConfig {
     /// PerimeterConfig top_area_threshold (PrintConfig.cpp:1288, default 200).
     pub top_area_threshold: f64,
 
+    /// Solid infill flow spacing in mm.
+    /// PerimeterGenerator.cpp:874 — coord_t solid_infill_spacing = this->solid_infill_flow.scaled_spacing();
+    pub solid_infill_spacing: f64,
+
+    /// Sparse infill line width in mm.
+    /// PerimeterGenerator.cpp:1167 — double infill_spacing_unscaled = this->config->sparse_infill_line_width.value;
+    pub sparse_infill_line_width: f64,
+
+    /// Infill/wall overlap as a fraction (config `infill_wall_overlap`, percent in C++).
+    /// PerimeterGenerator.cpp:1392 — infill_wall_overlap.get_abs_value(...).
+    pub infill_wall_overlap: f64,
+
     /// Layer ID (0-based)
     pub layer_id: usize,
 
@@ -176,6 +200,9 @@ impl Default for PerimeterConfig {
             upper_slices: None,
             top_one_wall: true,
             top_area_threshold: 200.0,
+            solid_infill_spacing: 0.4,
+            sparse_infill_line_width: 0.4,
+            infill_wall_overlap: 0.15,
             layer_id: 0,
             raft_layers: 0,
             overhang_flow: None,
@@ -353,6 +380,20 @@ impl PerimeterGenerator {
         /// C++: int loop_number = this->config->wall_loops + surface.extra_perimeters - 1;
         /// perimeter_count == wall_loops (a count), so loop_number is 0-based max depth index
         let mut loop_number = self.config.perimeter_count.saturating_sub(1);
+
+        // PerimeterGenerator.cpp:925-926
+        // C++: if (loop_number > 0 && ((this->object_config->top_one_wall_type != TopOneWallType::None
+        // C++:     && this->upper_slices == nullptr) || (this->object_config->only_one_wall_first_layer && layer_id == 0)))
+        // C++:     loop_number = 0;
+        // BBS: set the topmost (no upper layer) and bottom most layer to be one wall.
+        // (only_one_wall_first_layer defaults to false and is not threaded yet.)
+        if loop_number > 0
+            && self.config.top_one_wall
+            && top_fills_gate()
+            && self.config.upper_slices.is_none()
+        {
+            loop_number = 0;
+        }
 
         /// Calculate spacing values
         /// PerimeterGenerator.cpp:880-888
@@ -631,48 +672,145 @@ impl PerimeterGenerator {
             // C++: last = std::move(offsets);
             last = offsets;
 
-            // PerimeterGenerator.cpp:1116-1183 — only_one_wall_top (Alltop) top split + top_fills.
-            // Gated behind env TOP_FILLS: the geometry is implemented but the perimeter-derived top
-            // region is over-inset vs the detect-derived top slices, so the clip keeps only thin
-            // overlap slivers (~no Top features) and it regresses filament (3742->4062). Preserved
-            // for the broader faithful audit of process_classic; default path omits it (no regression).
+            // PerimeterGenerator.cpp:1116-1183 — only_one_wall_top (TopOneWallType::Alltop)
+            // top/not-top split + top_fills. BBS: refer to superslicer.
+            // C++: if (i == 0 && i != loop_number && this->object_config->top_one_wall_type ==
+            //          TopOneWallType::Alltop && this->upper_slices != NULL) {
             if i == 0
                 && i != loop_number
                 && self.config.top_one_wall
-                && std::env::var("TOP_FILLS").is_ok()
-                && self.config.upper_slices.as_ref().map(|u| !u.is_empty()).unwrap_or(false)
+                && top_fills_gate()
+                && self.config.upper_slices.is_some()
             {
                 let upper = self.config.upper_slices.as_ref().unwrap();
+
+                // PerimeterGenerator.cpp:1121-1126
+                // C++: coord_t offset_top_surface = scale_(1.5 * (wall_loops == 0 ? 0. :
+                // C++:     unscaled(ext_perimeter_width + perimeter_spacing * (wall_loops - 1))));
+                // C++: if (offset_top_surface > 0.9 * (wall_loops <= 1 ? 0. : (perimeter_spacing * (wall_loops - 1))))
+                // C++:     offset_top_surface -= coord_t(0.9 * (...));
+                // C++: else offset_top_surface = 0;
                 let wl = self.config.perimeter_count as f64;
-                let mut ots = if self.config.perimeter_count == 0 { 0.0 } else { 1.5 * (ext_perimeter_width + perimeter_spacing * (wl - 1.0)) };
-                let red = if self.config.perimeter_count <= 1 { 0.0 } else { 0.9 * perimeter_spacing * (wl - 1.0) };
-                ots = if ots > red { ots - red } else { 0.0 };
-                let mwts = (self.config.top_area_threshold / 100.0) * (ext_perimeter_spacing / 2.0).max(perimeter_width / 2.0);
-                let upper_grown = grow(upper, mwts, OffsetJoinType::Miter);
-                let fill_clip_inner = offset_expolygons(&last, -ext_perimeter_spacing, OffsetJoinType::Miter);
-                let top0 = difference(&last, &upper_grown);
-                let inner = difference(&last, &grow(&top0, ots + mwts - ext_perimeter_spacing / 2.0, OffsetJoinType::Miter));
-                let top = difference(&fill_clip_inner, &inner);
+                let mut offset_top_surface = if self.config.perimeter_count == 0 {
+                    0.0
+                } else {
+                    1.5 * (ext_perimeter_width + perimeter_spacing * (wl - 1.0))
+                };
+                let reduction = if self.config.perimeter_count <= 1 {
+                    0.0
+                } else {
+                    0.9 * perimeter_spacing * (wl - 1.0)
+                };
+                if offset_top_surface > reduction {
+                    offset_top_surface -= reduction;
+                } else {
+                    offset_top_surface = 0.0;
+                }
+
+                // PerimeterGenerator.cpp:1128
+                // C++: double min_width_top_surface = (top_area_threshold / 100) *
+                // C++:     std::max(ext_perimeter_spacing / 2.0, perimeter_width / 2.0);
+                let min_width_top_surface = (self.config.top_area_threshold / 100.0)
+                    * (ext_perimeter_spacing / 2.0).max(perimeter_width / 2.0);
+
+                // PerimeterGenerator.cpp:1131-1136
+                // C++: Polygons upper_polygons_series_clipped =
+                // C++:     ClipperUtils::clip_clipper_polygons_with_subject_bbox(*this->upper_slices, last_box);
+                // C++: upper_polygons_series_clipped = offset(upper_polygons_series_clipped, min_width_top_surface);
+                // (the bbox clip is a performance optimization; the offset is what matters)
+                let upper_polygons_series_clipped =
+                    grow(upper, min_width_top_surface, OffsetJoinType::Miter);
+
+                // PerimeterGenerator.cpp:1139
+                // C++: fill_clip = offset_ex(last, -double(ext_perimeter_spacing));
+                fill_clip = offset_expolygons(&last, -ext_perimeter_spacing, OffsetJoinType::Miter);
+
+                // PerimeterGenerator.cpp:1144
+                // C++: ExPolygons top_polygons = diff_ex(last, upper_polygons_series_clipped, ApplySafetyOffset::Yes);
+                let mut top_polygons = difference(&last, &upper_polygons_series_clipped);
+
+                // PerimeterGenerator.cpp:1146
+                // C++: ExPolygons temp_gap = diff_ex(top_polygons, fill_clip);
+                let temp_gap = difference(&top_polygons, &fill_clip);
+
+                // PerimeterGenerator.cpp:1147-1149
+                // C++: ExPolygons inner_polygons = diff_ex(last,
+                // C++:     offset_ex(top_polygons, offset_top_surface + min_width_top_surface - double(ext_perimeter_spacing / 2)),
+                // C++:     ApplySafetyOffset::Yes);
+                let mut inner_polygons = difference(
+                    &last,
+                    &offset_expolygons(
+                        &top_polygons,
+                        offset_top_surface + min_width_top_surface - ext_perimeter_spacing / 2.0,
+                        OffsetJoinType::Miter,
+                    ),
+                );
+
+                // PerimeterGenerator.cpp:1150-1161
+                // C++: if (this->lower_slices != NULL) {
+                // C++:     Polygons lower_polygons_series_clipped = ...(*this->lower_slices, last_box);
+                // C++:     double bridge_offset = std::max(double(ext_perimeter_spacing), (double(perimeter_width)));
+                // C++:     bridge_checker = offset_ex(diff_ex(last, lower_polygons_series_clipped, ApplySafetyOffset::Yes), 1.5 * bridge_offset);
+                // C++:     if (!bridge_checker.empty() && !intersection_ex(bridge_checker, inner_polygons).empty())
+                // C++:         inner_polygons = union_ex(inner_polygons, bridge_checker);
+                // C++: }
+                // BBS: if the bridge has a connection with the non-top area it belongs to
+                // the non-top area, otherwise it stays top to get a better surface.
+                if let Some(lower) = self.config.lower_slices.as_ref() {
+                    let bridge_offset = ext_perimeter_spacing.max(perimeter_width);
+                    let bridge_checker = offset_expolygons(
+                        &difference(&last, lower),
+                        1.5 * bridge_offset,
+                        OffsetJoinType::Miter,
+                    );
+                    if !bridge_checker.is_empty()
+                        && !intersection(&bridge_checker, &inner_polygons).is_empty()
+                    {
+                        let mut merged = inner_polygons;
+                        merged.extend(bridge_checker);
+                        inner_polygons = union_ex(&merged);
+                    }
+                }
+
+                // PerimeterGenerator.cpp:1162-1163
+                // C++: top_polygons = diff_ex(fill_clip, inner_polygons, ApplySafetyOffset::Yes);
+                top_polygons = difference(&fill_clip, &inner_polygons);
+
+                // PerimeterGenerator.cpp:1164-1165
+                // C++: top_fills = union_ex(top_fills, top_polygons);
                 let mut merged = std::mem::take(&mut top_fills);
-                merged.extend(top);
+                merged.extend(top_polygons);
                 top_fills = union_ex(&merged);
-                fill_clip = offset_expolygons(&last, ext_perimeter_spacing / 2.0 - perimeter_spacing / 2.0, OffsetJoinType::Miter);
-                last = intersection(&inner, &last);
+
+                // PerimeterGenerator.cpp:1166-1168
+                // C++: double infill_spacing_unscaled = this->config->sparse_infill_line_width.value;
+                // C++: fill_clip = offset_ex(last, double(ext_perimeter_spacing / 2) - scale_(infill_spacing_unscaled / 2));
+                fill_clip = offset_expolygons(
+                    &last,
+                    ext_perimeter_spacing / 2.0 - self.config.sparse_infill_line_width / 2.0,
+                    OffsetJoinType::Miter,
+                );
+
+                // PerimeterGenerator.cpp:1169
+                // C++: last = intersection_ex(inner_polygons, last);
+                last = intersection(&inner_polygons, &last);
+
+                // PerimeterGenerator.cpp:1170-1171
+                // C++: if (has_gap_fill) last = union_ex(last, temp_gap);
+                if has_gap_fill {
+                    let mut merged = last;
+                    merged.extend(temp_gap);
+                    last = union_ex(&merged);
+                }
+
                 // TOPDBG (diagnostics only, env-gated): dump the perimeter-derived
                 // top region pieces for the TOPDBG_DUMP layer.
-                crate::topdbg::dump_expolygons(self.config.layer_id, "b0_top0_raw", &top0);
                 crate::topdbg::dump_expolygons(
                     self.config.layer_id,
                     "b_perimeter_top_fills",
                     &top_fills,
                 );
             }
-            // First faithful attempt (upper-slice threading is in place via PerimeterConfig.upper_slices)
-            // regressed filament + only moved Top surface 1->2: top_fills geometry came out over-large
-            // (fill_expolygons bloated past the slice) AND a downstream stage re-types the kept top.
-            // Needs: correct top/inner split (partial-top layers, not whole-layer) + the
-            // offset2_ex/infill_peri_overlap end-merge + a downstream top-preservation fix. See memory
-            // project_benchy_parity_gap. Threading retained for the next attempt.
 
             /// PerimeterGenerator.cpp:1185-1189
             /// C++: if (i == loop_number && (! has_gap_fill || this->config->sparse_infill_density.value == 0)) {
@@ -834,16 +972,81 @@ impl PerimeterGenerator {
             }
         }
 
-        // PerimeterGenerator.cpp:1407-1413 — merge top_fills into infill area (covers top skin).
-        let mut infill_area = last;
-        if !top_fills.is_empty() && !fill_clip.is_empty() {
-            let grown_top = offset_expolygons(&top_fills, ext_perimeter_spacing / 2.0, OffsetJoinType::Miter);
-            let top_infill_exp = intersection(&fill_clip, &grown_top);
-            let mut merged = infill_area;
-            merged.extend(top_infill_exp);
-            infill_area = union_ex(&merged);
+        // PerimeterGenerator.cpp:1378-1413 — infill boundary inset + top_fills merge.
+        if top_fills_gate() {
+            // PerimeterGenerator.cpp:1378-1388
+            // C++: // create one more offset to be used as boundary for fill
+            // C++: coord_t inset = (loop_number < 0) ? 0 :
+            // C++:     (loop_number == 0) ? ext_perimeter_spacing / 2 : perimeter_spacing / 2;
+            // (the loop_number < 0 case clears `last` above, so the inset value is moot there)
+            let mut inset = if loop_number == 0 {
+                ext_perimeter_spacing / 2.0
+            } else {
+                perimeter_spacing / 2.0
+            };
+
+            // PerimeterGenerator.cpp:1389-1394
+            // C++: coord_t infill_peri_overlap = 0;
+            // C++: if (inset > 0) {
+            // C++:     infill_peri_overlap = coord_t(scale_(this->config->infill_wall_overlap.get_abs_value(
+            // C++:         unscale<double>(inset + solid_infill_spacing / 2))));
+            // C++:     inset -= infill_peri_overlap;
+            // C++: }
+            let mut infill_peri_overlap = 0.0;
+            if inset > 0.0 {
+                infill_peri_overlap = self.config.infill_wall_overlap
+                    * (inset + self.config.solid_infill_spacing / 2.0);
+                inset -= infill_peri_overlap;
+            }
+
+            // PerimeterGenerator.cpp:1395-1399
+            // C++: Polygons pp;
+            // C++: for (ExPolygon &ex : last) ex.simplify_p(m_scaled_resolution, &pp);
+            // C++: ExPolygons not_filled_exp = union_ex(pp);
+            let mut pp: Vec<Polygon> = Vec::new();
+            for ex in &last {
+                ex.simplify_p_into(self.config.surface_simplify_resolution, &mut pp);
+            }
+            let not_filled_exp = union_polygons_ex(&pp);
+
+            // PerimeterGenerator.cpp:1400-1406
+            // C++: coord_t min_perimeter_infill_spacing = coord_t(solid_infill_spacing * (1. - INSET_OVERLAP_TOLERANCE));
+            // C++: ExPolygons infill_exp = offset2_ex(not_filled_exp,
+            // C++:     float(-inset - min_perimeter_infill_spacing / 2.),
+            // C++:     float(min_perimeter_infill_spacing / 2.));
+            let min_perimeter_infill_spacing =
+                self.config.solid_infill_spacing * (1.0 - INSET_OVERLAP_TOLERANCE);
+            let mut infill_exp = offset2(
+                &not_filled_exp,
+                inset + min_perimeter_infill_spacing / 2.0,
+                min_perimeter_infill_spacing / 2.0,
+                self.config.join_type,
+            );
+
+            // PerimeterGenerator.cpp:1407-1413
+            // C++: ExPolygons top_infill_exp = intersection_ex(fill_clip, offset_ex(top_fills, double(ext_perimeter_spacing / 2)));
+            // C++: if (!top_fills.empty()) {
+            // C++:     infill_exp = union_ex(infill_exp, offset_ex(top_infill_exp, double(infill_peri_overlap)));
+            // C++: }
+            if !top_fills.is_empty() {
+                let top_infill_exp = intersection(
+                    &fill_clip,
+                    &offset_expolygons(&top_fills, ext_perimeter_spacing / 2.0, OffsetJoinType::Miter),
+                );
+                let mut merged = infill_exp;
+                merged.extend(offset_expolygons(
+                    &top_infill_exp,
+                    infill_peri_overlap,
+                    OffsetJoinType::Miter,
+                ));
+                infill_exp = union_ex(&merged);
+            }
+            result.infill_area = infill_exp;
+        } else {
+            // Legacy divergent path (default until the faithful gauges land): the raw
+            // innermost-perimeter region without the C++ 1378-1406 inset.
+            result.infill_area = last;
         }
-        result.infill_area = infill_area;
 
         // PerimeterGenerator.cpp:952
         // C++: gaps collected during generation

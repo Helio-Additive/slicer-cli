@@ -2008,6 +2008,21 @@ impl PrintObject {
                     }
                 }
 
+                // VSHELLDBG (diagnostics only, env-gated)
+                if std::env::var("VSHELLDBG").is_ok() {
+                    let area = |e: &ExPolygons| e.iter().map(|p| p.area().abs()).sum::<f64>();
+                    eprintln!(
+                        "VSHELLDBG L{} own_holes n={} a={:.3e} comb_holes n={} a={:.3e} shell n={} a={:.3e}",
+                        idx,
+                        cache[idx].holes.len(),
+                        area(&cache[idx].holes),
+                        holes.len(),
+                        area(&holes),
+                        shell.len(),
+                        area(&shell),
+                    );
+                }
+
                 // polygonsInternal = fill_surfaces filtered to {Internal, InternalVoid, InternalSolid}
                 // (PrintObject.cpp:1992). Read the current region's fill_surfaces (immutable).
                 let (internal_all, internal_only, void_only, solid_only) = {
