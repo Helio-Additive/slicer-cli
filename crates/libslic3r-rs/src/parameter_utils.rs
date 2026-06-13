@@ -93,18 +93,39 @@ pub fn set_other_layers_print_sequence(
 // BLOCKED: not ported. This function dispatches on the global variant option
 // sets (`printer_options_with_variant_1`, `printer_options_with_variant_2`,
 // `filament_options_with_variant`, `print_options_with_variant`) and then calls
-// `DynamicPrintConfig::get_index_for_extruder(...)` (PrintConfig.cpp:7586),
-// which in turn relies on `ConfigOptionStrings`/`ConfigOptionInts` dynamic
-// option lookup via `config.option(name)`, plus `get_extruder_variant_string`
-// and the `ExtruderType`/`NozzleVolumeType` enums from PrintConfig.hpp.
+// `DynamicPrintConfig::get_index_for_extruder(...)` (PrintConfig.cpp:7586).
+// That method body is the real blocker: it does
+//     auto variant_opt = dynamic_cast<const ConfigOptionStrings*>(this->option(variant_name));
+//     const ConfigOptionInts* id_opt   = dynamic_cast<const ConfigOptionInts*>(this->option(id_name));
+// i.e. a runtime STRING-KEYED lookup `DynamicPrintConfig::option(name)` returning
+// a polymorphic `ConfigOption*` that is then down-cast to `ConfigOptionStrings`
+// / `ConfigOptionInts`. The variant_name / id_name strings ("printer_extruder_id",
+// "printer_extruder_variant", "filament_extruder_variant", "print_extruder_id",
+// "print_extruder_variant") are selected at runtime from `opt_key`, so the access
+// is inherently dynamic — there is no fixed field to read.
 //
-// None of that dynamic-config machinery exists in the Rust crate yet:
-// `print_config.rs` exposes only a flat typed `PrintConfig` struct with no
-// generic `option(name)` accessor, no `ConfigOption*` variants, and no variant
-// option sets. Porting this faithfully requires that infrastructure to be
-// translated first (PrintConfig.cpp). Implementing a hardcoded match here would
-// be a fake and is forbidden, so the symbol is left unported until
-// PrintConfig's dynamic config is available.
+// This is the Config.hpp `ConfigOption` virtual hierarchy + the
+// `ConfigBase`/`DynamicConfig`/`DynamicPrintConfig` runtime-typed dictionary,
+// which `config.rs` (see its SCOPE NOTE) and `print_config.rs:5500-5513`
+// deliberately do NOT mirror: the crate uses plain typed structs
+// (`PrintConfig`) with no generic `option(name)` accessor, no `ConfigOption*`
+// variants, and no `printer_extruder_id` / `*_extruder_variant`
+// `ConfigOptionInts`/`ConfigOptionStrings` fields at all. Both Config.cpp and
+// PrintConfig.cpp are status="partial" precisely for this reason.
+//
+// NOTE on the 2026-06-12 config-hierarchy hint: the wired hierarchy navigation
+// (`layer.object().print().config()`) hands back the typed `PrintConfig`
+// struct, NOT a `DynamicPrintConfig` with a string-keyed `option(name)`
+// dictionary, so it does NOT unblock this symbol. (The leaf helpers this would
+// otherwise need — `get_extruder_variant_string` / `get_config_index_base` /
+// the `ExtruderType`/`NozzleVolumeType` enums — ARE already ported in
+// `crate::extruder`; the sole remaining gap is the dynamic dictionary.)
+//
+// The variant option sets themselves are PrintConfig.cpp globals (PrintConfig.cpp:6986,
+// 7030, 7088, 7116) and belong to that file's port, not here — adding them in
+// this module would duplicate (rule 3). Implementing a hardcoded match here
+// would be a fake and is forbidden, so the symbol is left unported until
+// DynamicPrintConfig's dynamic `ConfigOption` dictionary is available.
 
 #[cfg(test)]
 mod tests {

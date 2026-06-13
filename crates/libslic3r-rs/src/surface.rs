@@ -432,9 +432,36 @@ pub fn to_polygons(src: &[Surface]) -> crate::geometry::Polygons {
     polygons
 }
 
+// inline Polygons to_polygons(const SurfacesPtr &src)
+/// Surface.hpp:143
+pub fn to_polygons_ptr(src: &[&Surface]) -> crate::geometry::Polygons {
+    let mut num: usize = 0;
+    for it in src {
+        num += it.expolygon.holes.len() + 1;
+    }
+    let mut polygons: crate::geometry::Polygons = Vec::with_capacity(num);
+    for it in src {
+        polygons.push(it.expolygon.contour.clone());
+        for ith in &it.expolygon.holes {
+            polygons.push(ith.clone());
+        }
+    }
+    polygons
+}
+
 // inline ExPolygons to_expolygons(const Surfaces &src)
 /// Surface.hpp:158
 pub fn to_expolygons(src: &[Surface]) -> ExPolygons {
+    let mut expolygons: ExPolygons = Vec::with_capacity(src.len());
+    for it in src {
+        expolygons.push(it.expolygon.clone());
+    }
+    expolygons
+}
+
+// inline ExPolygons to_expolygons(const SurfacesPtr &src)
+/// Surface.hpp:177
+pub fn to_expolygons_ptr(src: &[&Surface]) -> ExPolygons {
     let mut expolygons: ExPolygons = Vec::with_capacity(src.len());
     for it in src {
         expolygons.push(it.expolygon.clone());
@@ -447,6 +474,16 @@ pub fn to_expolygons(src: &[Surface]) -> ExPolygons {
 // inline size_t number_polygons(const Surfaces &surfaces)
 /// Surface.hpp:188
 pub fn number_polygons(surfaces: &[Surface]) -> usize {
+    let mut n_polygons: usize = 0;
+    for it in surfaces {
+        n_polygons += it.expolygon.holes.len() + 1;
+    }
+    n_polygons
+}
+
+// inline size_t number_polygons(const SurfacesPtr &surfaces)
+/// Surface.hpp:195
+pub fn number_polygons_ptr(surfaces: &[&Surface]) -> usize {
     let mut n_polygons: usize = 0;
     for it in surfaces {
         n_polygons += it.expolygon.holes.len() + 1;
@@ -468,6 +505,17 @@ fn number_polygons_ex(expolygons: &[ExPolygon]) -> usize {
 /// Surface.hpp:204
 pub fn polygons_append(dst: &mut crate::geometry::Polygons, src: &[Surface]) {
     dst.reserve(dst.len() + number_polygons(src));
+    for it in src {
+        dst.push(it.expolygon.contour.clone());
+        dst.extend(it.expolygon.holes.iter().cloned());
+    }
+}
+
+// Append a vector of Surfaces at the end of another vector of polygons.
+// inline void polygons_append(Polygons &dst, const SurfacesPtr &src)
+/// Surface.hpp:224
+pub fn polygons_append_ptr(dst: &mut crate::geometry::Polygons, src: &[&Surface]) {
+    dst.reserve(dst.len() + number_polygons_ptr(src));
     for it in src {
         dst.push(it.expolygon.contour.clone());
         dst.extend(it.expolygon.holes.iter().cloned());
@@ -565,6 +613,133 @@ pub fn surface_type_to_color_name(surface_type: SurfaceType) -> &'static str {
 pub fn export_surface_type_legend_to_svg_box_size() -> crate::geometry::Point {
     // return Point(scale_(1.+10.*8.), scale_(3.));                       Surface.cpp:52
     crate::geometry::Point::new(crate::scale(1. + 10. * 8.), crate::scale(3.))
+}
+
+// void export_surface_type_legend_to_svg(SVG &svg, const Point &pos)
+/// Surface.cpp:55
+pub fn export_surface_type_legend_to_svg(svg: &mut crate::svg::SVG, pos: &crate::geometry::Point) {
+    // 1st row                                                            Surface.cpp:57
+    // coord_t pos_x0 = pos(0) + scale_(1.);                             Surface.cpp:58
+    let pos_x0: crate::Coord = pos.x() + crate::scale(1.);
+    // coord_t pos_x = pos_x0;                                            Surface.cpp:59
+    let mut pos_x: crate::Coord = pos_x0;
+    // coord_t pos_y = pos(1) + scale_(1.5);                             Surface.cpp:60
+    let pos_y: crate::Coord = pos.y() + crate::scale(1.5);
+    // coord_t step_x = scale_(10.);                                      Surface.cpp:61
+    let step_x: crate::Coord = crate::scale(10.);
+    // svg.draw_legend(Point(pos_x, pos_y), "perimeter"      , surface_type_to_color_name(stPerimeter));  Surface.cpp:62
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "perimeter",
+        surface_type_to_color_name(SurfaceType::Perimeter),
+    );
+    // pos_x += step_x;                                                   Surface.cpp:63
+    pos_x += step_x;
+    // svg.draw_legend(Point(pos_x, pos_y), "top"            , surface_type_to_color_name(stTop));         Surface.cpp:64
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "top",
+        surface_type_to_color_name(SurfaceType::Top),
+    );
+    // pos_x += step_x;                                                   Surface.cpp:65
+    pos_x += step_x;
+    // svg.draw_legend(Point(pos_x, pos_y), "bottom"         , surface_type_to_color_name(stBottom));      Surface.cpp:66
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "bottom",
+        surface_type_to_color_name(SurfaceType::Bottom),
+    );
+    // pos_x += step_x;                                                   Surface.cpp:67
+    pos_x += step_x;
+    // svg.draw_legend(Point(pos_x, pos_y), "bottom bridge"  , surface_type_to_color_name(stBottomBridge)); Surface.cpp:68
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "bottom bridge",
+        surface_type_to_color_name(SurfaceType::BottomBridge),
+    );
+    // pos_x += step_x;                                                   Surface.cpp:69
+    pos_x += step_x;
+    // svg.draw_legend(Point(pos_x, pos_y), "invalid"        , surface_type_to_color_name(SurfaceType(-1))); Surface.cpp:70
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "invalid",
+        // C++ casts -1 to SurfaceType (out of range) → the switch `default:`
+        // branch returns "rgb(64,64,64)". `from_u8` maps unknown values to the
+        // Internal fallback, which would give the wrong colour here, so call the
+        // color helper through the default branch by passing an invalid value.
+        surface_type_invalid_color_name(),
+    );
+    // 2nd row                                                            Surface.cpp:71
+    // pos_x = pos_x0;                                                    Surface.cpp:72
+    pos_x = pos_x0;
+    // pos_y = pos(1)+scale_(2.8);                                        Surface.cpp:73
+    let pos_y: crate::Coord = pos.y() + crate::scale(2.8);
+    // svg.draw_legend(Point(pos_x, pos_y), "internal"       , surface_type_to_color_name(stInternal));    Surface.cpp:74
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "internal",
+        surface_type_to_color_name(SurfaceType::Internal),
+    );
+    // pos_x += step_x;                                                   Surface.cpp:75
+    pos_x += step_x;
+    // svg.draw_legend(Point(pos_x, pos_y), "internal solid" , surface_type_to_color_name(stInternalSolid)); Surface.cpp:76
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "internal solid",
+        surface_type_to_color_name(SurfaceType::InternalSolid),
+    );
+    // pos_x += step_x;                                                   Surface.cpp:77
+    pos_x += step_x;
+    // svg.draw_legend(Point(pos_x, pos_y), "internal bridge", surface_type_to_color_name(stInternalBridge)); Surface.cpp:78
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "internal bridge",
+        surface_type_to_color_name(SurfaceType::InternalBridge),
+    );
+    // pos_x += step_x;                                                   Surface.cpp:79
+    pos_x += step_x;
+    // svg.draw_legend(Point(pos_x, pos_y), "internal void"  , surface_type_to_color_name(stInternalVoid)); Surface.cpp:80
+    svg.draw_legend(
+        &crate::geometry::Point::new(pos_x, pos_y),
+        "internal void",
+        surface_type_to_color_name(SurfaceType::InternalVoid),
+    );
+}
+
+// Helper: reproduce the `surface_type_to_color_name(SurfaceType(-1))` default
+// branch (Surface.cpp:46), which the Rust enum cannot represent as a value.
+#[inline]
+fn surface_type_invalid_color_name() -> &'static str {
+    // default:                return "rgb(64,64,64)";                    Surface.cpp:46
+    "rgb(64,64,64)"
+}
+
+// bool export_to_svg(const char *path, const Surfaces &surfaces, const float transparency)
+/// Surface.cpp:83
+pub fn export_to_svg(path: &str, surfaces: &[Surface], transparency: f32) -> bool {
+    // BoundingBox bbox;                                                  Surface.cpp:85
+    let mut bbox = crate::geometry::BoundingBox::new();
+    // for (Surfaces::const_iterator surface = surfaces.begin(); surface != surfaces.end(); ++surface)
+    //     bbox.merge(get_extents(surface->expolygon));                   Surface.cpp:86-87
+    for surface in surfaces {
+        bbox.merge(&crate::geometry::get_extents_expoly(&surface.expolygon));
+    }
+
+    // SVG svg(path, bbox);                                               Surface.cpp:89
+    let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+    // for (Surfaces::const_iterator surface = surfaces.begin(); surface != surfaces.end(); ++surface)
+    //     svg.draw(surface->expolygon, surface_type_to_color_name(surface->surface_type), transparency);  Surface.cpp:90-91
+    for surface in surfaces {
+        svg.draw_expolygon(
+            &surface.expolygon,
+            surface_type_to_color_name(surface.surface_type),
+            transparency,
+        );
+    }
+    // svg.Close();                                                       Surface.cpp:92
+    svg.close();
+    // return true;                                                       Surface.cpp:93
+    true
 }
 
 /// Extension trait for Surfaces to add helper methods

@@ -383,20 +383,24 @@ pub fn fit_curve<K: KernelCoefficients>(
     // }
     //
     // NOTE: C++ uses `fullPivHouseholderQr()`. nalgebra has no full-pivoting
-    // Householder QR; column-pivoting QR (`col_piv_qr`) gives a rank-revealing
-    // decomposition with equivalent least-squares minimizer and better
-    // conditioning than plain Householder QR, so we use it here. The solver
-    // choice can introduce floating-point divergence vs Eigen but yields the
-    // same mathematical least-squares solution.
+    // Householder QR. Its column-pivoting `ColPivQR::solve_mut` is only
+    // implemented for *square* systems (it asserts `is_square()` and panics on
+    // a non-square matrix), and `T` here is tall/rectangular
+    // (observation_points.len() x parameters_count), so it cannot be used.
+    // We therefore use the plain Householder QR thin decomposition and solve
+    // the overdetermined least-squares system manually via `Q^T b` plus
+    // upper-triangular back substitution against the thin `R` (the same path as
+    // `fit_polynomial`). This is exactly Eigen's `HouseholderQR::solve` and
+    // yields the same mathematical least-squares minimizer as
+    // `fullPivHouseholderQr().solve()`; the solver choice can introduce
+    // floating-point divergence vs Eigen but the minimizer is identical.
     let mut coefficients = DMatrix::<f32>::zeros(dimension, parameters_count);
-    let qr = t.col_piv_qr();
+    let qr = t.qr();
     for dim in 0..dimension {
-        let mut b = data_points.row(dim).transpose();
-        // col_piv_qr can solve overdetermined least-squares in place.
-        if qr.solve_mut(&mut b) {
-            for j in 0..parameters_count {
-                coefficients[(dim, j)] = b[j];
-            }
+        let b = data_points.row(dim).transpose();
+        let solution = solve_least_squares_qr(&qr, &b);
+        for j in 0..parameters_count {
+            coefficients[(dim, j)] = solution[j];
         }
     }
 
@@ -480,27 +484,44 @@ pub fn fit_catmul_rom_spline(
 }
 
 /// Solve an overdetermined least-squares system `T x = b` from a Householder
-/// `QR` decomposition of the (tall) matrix `T`.
+/// `QR` decomposition of the (tall) matrix `T` (m x c).
 ///
 /// Mirrors Eigen's `HouseholderQR::solve`: for `T = Q R` (thin), the minimizer
 /// of `||T x - b||` is `x = R^{-1} (Q^T b)`. nalgebra's `QR::solve` is only
 /// implemented for square matrices, so we form `Q^T b` and back-substitute
 /// against the upper-triangular `R` ourselves.
+///
+/// The returned vector always has length `c` (the column count of `T`), so the
+/// caller can index columns `0..c` directly. For the tall/square case (m >= c,
+/// the only case that arises in the BambuStudio caller) this is the exact
+/// thin-QR least-squares solution. For a wide `T` (m < c) the thin `R` is only
+/// `m x c`, so we solve the leading `m x m` block and leave the trailing
+/// `c - m` entries at zero — a best-effort result that keeps the column count
+/// stable without panicking.
 fn solve_least_squares_qr(
     qr: &nalgebra::QR<f32, nalgebra::Dyn, nalgebra::Dyn>,
     b: &nalgebra::DVector<f32>,
 ) -> nalgebra::DVector<f32> {
-    // Q is m x n (thin), R is n x n upper-triangular.
+    // For tall/square T (m x c, m >= c): Q is m x c (thin), R is c x c.
+    // For wide T (m x c, m < c): Q is m x m, R is m x c; rank <= m.
     let q = qr.q();
     let r = qr.r();
-    let n = r.ncols();
-    // Q^T b  (length n)
+    // Number of solvable unknowns = leading square block of R = min(m, c).
+    let rank_dim = r.nrows().min(r.ncols());
+    let cols = r.ncols();
+    // Q^T b  (length = min(m, c))
     let qtb = q.transpose() * b;
-    // Solve R x = Q^T b by upper-triangular back substitution.
-    let mut x = qtb.rows(0, n).into_owned();
-    if !r.solve_upper_triangular_mut(&mut x) {
+    // Solve R[0..rank, 0..rank] x = (Q^T b)[0..rank] by back substitution.
+    let mut x_lead = qtb.rows(0, rank_dim).into_owned();
+    let r_lead = r.view((0, 0), (rank_dim, rank_dim)).into_owned();
+    if !r_lead.solve_upper_triangular_mut(&mut x_lead) {
         // Singular R: leave x as-is (best effort), matching Eigen returning
         // whatever the triangular solve produces.
+    }
+    // Pad to full column count so the caller can index columns 0..c.
+    let mut x = nalgebra::DVector::<f32>::zeros(cols);
+    for i in 0..rank_dim {
+        x[i] = x_lead[i];
     }
     x
 }

@@ -22,9 +22,16 @@
 //! dylib dependency here (it is not wasm-safe). Therefore the three public grid
 //! functions — `mesh_to_grid`, `grid_to_mesh`, `redistance_grid` — are
 //! **blocked on the native OpenVDB backend** and are documented (with exact C++
-//! line refs) rather than faked. They additionally depend on `its_split` /
-//! `its_volume`, which are themselves not yet ported (currently stubs in
-//! `mesh_split_impl.rs`).
+//! line refs) rather than faked.
+//!
+//! Note: their *non*-OpenVDB dependencies `its_split` / `its_volume` (used at
+//! `OpenVDBUtils.cpp:57` and `:60`) ARE now faithfully ported — see
+//! `triangle_mesh::its_volume` (TriangleMesh.cpp:1827-1846) and
+//! `triangle_mesh::its_split` (TriangleMesh.cpp:1863-1866, dispatching to
+//! `mesh_split_impl::its_split_collect`). So the *only* remaining blocker for the
+//! three grid functions is the native OpenVDB level-set machinery itself
+//! (`meshToVolume` / `volumeToMesh` / `csgUnion` / `levelSetRebuild` /
+//! `FloatMetadata`); the surrounding control flow is otherwise portable.
 //!
 //! What IS faithfully ported here (OpenVDB-algorithm-free, exact logic):
 //!   - `TriangleMeshDataAdapter` (the mesh -> index-space-point adapter)
@@ -145,10 +152,10 @@ impl<'a> TriangleMeshDataAdapter<'a> {
 //                                      float interiorBandWidth,
 //                                      int   flags)                         // .cpp:48-87
 // {
-//     openvdb::initialize();                                                // .cpp:55
-//     std::vector<indexed_triangle_set> meshparts = its_split(mesh);        // .cpp:57  (its_split: unported)
+//     openvdb::initialize();                                                // .cpp:55  (NATIVE OpenVDB)
+//     std::vector<indexed_triangle_set> meshparts = its_split(mesh);        // .cpp:57  (PORTED: triangle_mesh::its_split)
 //     auto it = std::remove_if(meshparts.begin(), meshparts.end(),
-//                              [](auto &m) { return its_volume(m) < EPSILON; }); // .cpp:59-60  (its_volume: unported; EPSILON=1e-4)
+//                              [](auto &m) { return its_volume(m) < EPSILON; }); // .cpp:59-60  (PORTED: triangle_mesh::its_volume; EPSILON = libslic3r::EPSILON = 1e-4)
 //     meshparts.erase(it, meshparts.end());                                 // .cpp:62
 //     openvdb::FloatGrid::Ptr grid;                                         // .cpp:64
 //     for (auto &m : meshparts) {                                           // .cpp:65
