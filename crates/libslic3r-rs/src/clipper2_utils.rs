@@ -24,13 +24,14 @@
 //!   * `ClipperOffset` with the same defaults (`miter_limit=2.0, arc_tolerance=0.0`)
 //!     the C++ `ClipperOffset offsetter;` default constructor uses.
 
-use crate::geometry::{ExPolygon, ExPolygons, Point, Polygon, Polyline};
+use crate::geometry::{cross2f, ExPolygon, ExPolygons, Point, PointF, Polygon, Polygons, Polyline};
 use crate::libslic3r::SCALED_EPSILON;
 
 use clipper2c_sys::{
     clipper_allocate, clipper_clipper64, clipper_clipper64_add_clip,
     clipper_clipper64_add_open_subject, clipper_clipper64_add_subject, clipper_clipper64_execute,
-    clipper_clipper64_execute_tree_with_open, clipper_clipper64_size, clipper_clipperoffset,
+    clipper_clipper64_execute_tree_with_open, clipper_clipper64_set_reverse_solution,
+    clipper_clipper64_size, clipper_clipperoffset,
     clipper_clipperoffset_add_paths64, clipper_clipperoffset_execute, clipper_clipperoffset_size,
     clipper_delete_clipper64, clipper_delete_clipperoffset, clipper_delete_path64,
     clipper_delete_paths64, clipper_delete_polytree64, clipper_path64_of_points,
@@ -39,7 +40,8 @@ use clipper2c_sys::{
     clipper_polytree64, clipper_polytree64_count, clipper_polytree64_get_child,
     clipper_polytree64_polygon, clipper_polytree64_size,
     ClipperClipType_DIFFERENCE, ClipperClipType_INTERSECTION, ClipperClipType_UNION,
-    ClipperEndType_POLYGON_END, ClipperFillRule_NON_ZERO, ClipperJoinType_ROUND_JOIN,
+    ClipperEndType_POLYGON_END, ClipperFillRule, ClipperFillRule_NEGATIVE, ClipperFillRule_NON_ZERO,
+    ClipperFillRule_POSITIVE, ClipperJoinType_ROUND_JOIN,
     ClipperPath64, ClipperPaths64, ClipperPoint64, ClipperPolyTree64,
 };
 
@@ -739,6 +741,591 @@ pub fn offset2_ex_2(expolygons: &ExPolygons, delta1: f64, delta2: f64) -> ExPoly
         // convert back to expolygons
         // C++: ExPolygons results = PolyTreeToExPolygons(std::move(polytree));
         offset_paths_to_expolygons(&polytree)
+    }
+}
+
+// ============================================================================
+// Variable offset (ClipperUtils.cpp). These four `variable_offset_*` entry
+// points and their helpers (`mittered_offset_path_scaled`,
+// `fix_after_inner_offset`, `fix_after_outer_offset`) live in
+// `src/libslic3r/ClipperUtils.cpp` upstream, but they are implemented here so
+// they can reuse this module's raw `clipper2c-sys` FFI plumbing
+// (`paths64_to_native`/`native_to_paths64`/`poly_tree_to_expolygons`) instead of
+// duplicating it against the geo-clipper backend used in `clipper_utils.rs`.
+//
+// BACKEND NOTE: upstream `ClipperUtils.cpp` uses the legacy Clipper1
+// (`ClipperLib::Clipper`) with `ReverseSolution()` + `pftNegative`/`pftPositive`
+// fill types. This crate links Clipper2 (no Clipper1 dependency exists, and
+// adding one would introduce a new native backend). Clipper2 exposes the same
+// winding-rule fill modes (`Positive`/`Negative`/`NonZero`) plus
+// `set_reverse_solution`, so the boolean-op semantics are reproduced 1:1 on the
+// Clipper2 FFI — matching the crate-wide convention of backing Clipper1-era C++
+// with Clipper2 (see the rest of this file). `ClipperLib::Area(path) > 0`
+// assertions map onto `Polygon::area() > 0`.
+// ============================================================================
+
+/// Internal clipper offset shortest-edge factor.
+/// ClipperUtils.hpp:44 — `static constexpr const double ClipperOffsetShortestEdgeFactor = 0.005;`
+const CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR: f64 = 0.005;
+
+// Cast a scaled integer Point to a double vector (Eigen `.cast<double>()`).
+#[inline]
+fn pt_to_d_2(p: Point) -> PointF {
+    PointF::new(p.x as f64, p.y as f64)
+}
+
+/// Run a `Clipper64` UNION over a single closed subject path into flat Paths64,
+/// with the given fill rule and `reverse_solution` flag. Mirrors the
+/// `ClipperLib::Clipper` usage in `fix_after_outer_offset` / `fix_after_inner_offset`
+/// (`c.AddPath(...); c.ReverseSolution(rev); c.Execute(ctUnion, solution, fill, fill)`).
+unsafe fn clipper64_union_paths(
+    subject: &Paths64,
+    fillrule: ClipperFillRule,
+    reverse_solution: bool,
+) -> Paths64 {
+    let c_mem = clipper_allocate(clipper_clipper64_size());
+    let c = clipper_clipper64(c_mem);
+
+    let subject_native = paths64_to_native(subject);
+    clipper_clipper64_add_subject(c, subject_native);
+    clipper_delete_paths64(subject_native);
+
+    clipper_clipper64_set_reverse_solution(c, reverse_solution as ::std::os::raw::c_int);
+
+    let solution_mem = clipper_allocate(clipper_paths64_size());
+    let solution = clipper2c_sys::clipper_paths64(solution_mem);
+    let open_mem = clipper_allocate(clipper_paths64_size());
+    let open = clipper2c_sys::clipper_paths64(open_mem);
+    clipper_clipper64_execute(c, ClipperClipType_UNION, fillrule, solution, open);
+
+    let out = native_to_paths64(solution);
+
+    clipper_delete_paths64(solution);
+    clipper_delete_paths64(open);
+    clipper_delete_clipper64(c);
+    out
+}
+
+/// Run a `Clipper64` DIFFERENCE (subject minus clip) into a native PolyTree64 and
+/// reconstruct ExPolygons. Mirrors the `ClipperLib::Clipper` difference into a
+/// `PolyTree` used by `variable_offset_inner_ex` / `variable_offset_outer_ex`.
+unsafe fn clipper64_difference_tree_to_expolygons(
+    subject: &Paths64,
+    clip: &Paths64,
+) -> ExPolygons {
+    let c_mem = clipper_allocate(clipper_clipper64_size());
+    let c = clipper_clipper64(c_mem);
+
+    let subject_native = paths64_to_native(subject);
+    clipper_clipper64_add_subject(c, subject_native);
+    clipper_delete_paths64(subject_native);
+
+    let clip_native = paths64_to_native(clip);
+    clipper_clipper64_add_clip(c, clip_native);
+    clipper_delete_paths64(clip_native);
+
+    let tree_mem = clipper_allocate(clipper_polytree64_size());
+    let tree = clipper_polytree64(tree_mem, std::ptr::null_mut());
+    let open_mem = clipper_allocate(clipper_paths64_size());
+    let open = clipper2c_sys::clipper_paths64(open_mem);
+    clipper_clipper64_execute_tree_with_open(
+        c,
+        ClipperClipType_DIFFERENCE,
+        ClipperFillRule_NON_ZERO,
+        tree,
+        open,
+    );
+
+    let result = poly_tree_to_expolygons(tree);
+
+    clipper_delete_paths64(open);
+    clipper_delete_polytree64(tree);
+    clipper_delete_clipper64(c);
+    result
+}
+
+/// Run a `Clipper64` DIFFERENCE (subject minus clip) into flat Paths64.
+/// Mirrors the `ClipperLib::Clipper` difference into `Paths` used by
+/// `variable_offset_inner` / `variable_offset_outer`.
+unsafe fn clipper64_difference_paths(subject: &Paths64, clip: &Paths64) -> Paths64 {
+    let c_mem = clipper_allocate(clipper_clipper64_size());
+    let c = clipper_clipper64(c_mem);
+
+    let subject_native = paths64_to_native(subject);
+    clipper_clipper64_add_subject(c, subject_native);
+    clipper_delete_paths64(subject_native);
+
+    let clip_native = paths64_to_native(clip);
+    clipper_clipper64_add_clip(c, clip_native);
+    clipper_delete_paths64(clip_native);
+
+    let solution_mem = clipper_allocate(clipper_paths64_size());
+    let solution = clipper2c_sys::clipper_paths64(solution_mem);
+    let open_mem = clipper_allocate(clipper_paths64_size());
+    let open = clipper2c_sys::clipper_paths64(open_mem);
+    clipper_clipper64_execute(
+        c,
+        ClipperClipType_DIFFERENCE,
+        ClipperFillRule_NON_ZERO,
+        solution,
+        open,
+    );
+
+    let out = native_to_paths64(solution);
+
+    clipper_delete_paths64(solution);
+    clipper_delete_paths64(open);
+    clipper_delete_clipper64(c);
+    out
+}
+
+/// Build a `Polygon` from a clipper `Path64` (`to_polygons` / `Slic3r::Polygon(Path&&)`).
+#[inline]
+fn path64_to_polygon(path: &Path64) -> Polygon {
+    Polygon::from_points(path64_to_points(path))
+}
+
+/// ClipperUtils.cpp:1077 — fix_after_outer_offset
+/// Outer offset shall not split the input contour into multiples. It is expected,
+/// that the solution will be non empty and it will contain just a single polygon.
+/// Defaults: filltype = pftPositive, reverse_result = false.
+fn fix_after_outer_offset(
+    input: &Path64,
+    filltype: ClipperFillRule,
+    reverse_result: bool,
+) -> Paths64 {
+    // ClipperUtils.cpp:1084-1090
+    let mut solution: Paths64 = Vec::new();
+    if !input.is_empty() {
+        // c.AddPath(input, ptSubject, true);
+        // c.ReverseSolution(reverse_result);
+        // c.Execute(ctUnion, solution, filltype, filltype);
+        solution = unsafe { clipper64_union_paths(&vec![input.clone()], filltype, reverse_result) };
+    }
+    solution
+}
+
+/// ClipperUtils.cpp:1095 — fix_after_inner_offset
+/// Inner offset may split the source contour into multiple contours, but one
+/// resulting contour shall not lie inside the other.
+/// Defaults: filltype = pftNegative, reverse_result = true.
+fn fix_after_inner_offset(
+    input: &Path64,
+    filltype: ClipperFillRule,
+    reverse_result: bool,
+) -> Paths64 {
+    // ClipperUtils.cpp:1102-1116
+    let mut solution: Paths64 = Vec::new();
+    if !input.is_empty() {
+        // ClipperLib::IntRect r = clipper.GetBounds();
+        // GetBounds() returns the bounding box of all added subject paths; at this
+        // point only `input` is added, so the bounds are the min/max over its
+        // points — computed directly (Clipper2 exposes no bounds via this FFI).
+        let mut left = input[0].0;
+        let mut top = input[0].1;
+        let mut right = input[0].0;
+        let mut bottom = input[0].1;
+        for &(x, y) in input.iter() {
+            left = left.min(x);
+            right = right.max(x);
+            top = top.min(y);
+            bottom = bottom.max(y);
+        }
+        // r.left -= 10; r.top -= 10; r.right += 10; r.bottom += 10;
+        left -= 10;
+        top -= 10;
+        right += 10;
+        bottom += 10;
+        // The bounding rectangle is wound CCW for pftPositive, CW otherwise so the
+        // big rectangle is a "hole-killer" with the right winding sign.
+        let rect: Path64 = if filltype == ClipperFillRule_POSITIVE {
+            vec![(left, bottom), (left, top), (right, top), (right, bottom)]
+        } else {
+            vec![(left, bottom), (right, bottom), (right, top), (left, top)]
+        };
+        // c.AddPath(input, ...); c.AddPath(rect, ...);
+        // c.ReverseSolution(reverse_result);
+        // c.Execute(ctUnion, solution, filltype, filltype);
+        let subject: Paths64 = vec![input.clone(), rect];
+        solution = unsafe { clipper64_union_paths(&subject, filltype, reverse_result) };
+        // if (! solution.empty()) solution.erase(solution.begin());
+        if !solution.is_empty() {
+            solution.remove(0);
+        }
+    }
+    solution
+}
+
+/// ClipperUtils.cpp:1120 — mittered_offset_path_scaled
+fn mittered_offset_path_scaled(contour: &[Point], deltas: &[f32], mut miter_limit: f64) -> Path64 {
+    debug_assert_eq!(contour.len(), deltas.len());
+
+    #[cfg(debug_assertions)]
+    {
+        // ClipperUtils.cpp:1124-1134 — deltas are either all positive or all negative.
+        let mut positive = false;
+        let mut negative = false;
+        for &delta in deltas {
+            if delta < 0.0 {
+                negative = true;
+            } else if delta > 0.0 {
+                positive = true;
+            }
+        }
+        debug_assert!(!(negative && positive));
+    }
+
+    let mut out: Path64 = Vec::new();
+
+    // ClipperUtils.cpp:1138
+    if deltas.len() > 2 {
+        out.reserve(contour.len() * 2);
+
+        // ClipperUtils.cpp:1143 — Clamp miter limit to 2.
+        miter_limit = if miter_limit > 2.0 {
+            2.0 / (miter_limit * miter_limit)
+        } else {
+            0.5
+        };
+
+        // perpenduclar vector
+        let perp = |v: PointF| -> PointF { PointF::new(v.y, -v.x) };
+
+        // ClipperUtils.cpp:1149-1152 — Add a new point to the output, round to cInt.
+        let add_offset_point = |out: &mut Path64, mut pt: PointF| {
+            pt = pt
+                + PointF::new(
+                    0.5 - ((pt.x < 0.0) as i32 as f64),
+                    0.5 - ((pt.y < 0.0) as i32 as f64),
+                );
+            out.push((pt.x as i64, pt.y as i64));
+        };
+
+        // ClipperUtils.cpp:1155-1156 — Minimum edge length, squared.
+        let lmin = deltas.iter().cloned().fold(f32::MIN, f32::max) as f64
+            * CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR;
+        let l2min = lmin * lmin;
+        // ClipperUtils.cpp:1161 — Implementation equal to Clipper.
+        let sin_min_parallel = 1.0_f64;
+
+        // ClipperUtils.cpp:1164-1171 — Find the last point further from pt by l2min.
+        let mut pt = pt_to_d_2(contour[0]);
+        let mut iprev = contour.len() - 1;
+        let mut ptprev = PointF::new(0.0, 0.0);
+        while iprev > 0 {
+            ptprev = pt_to_d_2(contour[iprev]);
+            let d = ptprev - pt;
+            if d.x * d.x + d.y * d.y > l2min {
+                break;
+            }
+            iprev -= 1;
+        }
+
+        // ClipperUtils.cpp:1173
+        if iprev != 0 {
+            let ilast = iprev;
+            // Normal to the (pt - ptprev) segment.
+            let mut nprev = normalize_pf(perp(pt - ptprev));
+            let mut i = 0usize;
+            loop {
+                // ClipperUtils.cpp:1179-1186 — Find the next point further from pt by l2min.
+                let mut j = i + 1;
+                let mut ptnext = PointF::new(0.0, 0.0);
+                while j <= ilast {
+                    ptnext = pt_to_d_2(contour[j]);
+                    let d = ptnext - pt;
+                    let l2 = d.x * d.x + d.y * d.y;
+                    if l2 > l2min {
+                        break;
+                    }
+                    j += 1;
+                }
+                // ClipperUtils.cpp:1187-1192
+                if j > ilast {
+                    debug_assert!(i <= ilast);
+                    // If the last edge is too short, merge it with the previous edge.
+                    i = ilast;
+                    ptnext = pt_to_d_2(contour[0]);
+                }
+
+                // ClipperUtils.cpp:1195 — Normal to the (ptnext - pt) segment.
+                let nnext = normalize_pf(perp(ptnext - pt));
+
+                // ClipperUtils.cpp:1197-1199
+                let delta = deltas[i] as f64;
+                let sin_a = cross2f(nprev, nnext).clamp(-1.0, 1.0);
+                let convex = sin_a * delta;
+                if convex <= -sin_min_parallel {
+                    // ClipperUtils.cpp:1201-1204 — Concave corner.
+                    add_offset_point(&mut out, pt + nprev * delta);
+                    add_offset_point(&mut out, pt);
+                    add_offset_point(&mut out, pt + nnext * delta);
+                } else {
+                    // ClipperUtils.cpp:1206
+                    let dot = nprev.x * nnext.x + nprev.y * nnext.y;
+                    if convex < sin_min_parallel && dot > 0.0 {
+                        // ClipperUtils.cpp:1207-1209 — Nearly parallel.
+                        let nd = nprev.x * nnext.x + nprev.y * nnext.y;
+                        add_offset_point(&mut out, if nd > 0.0 { pt + nprev * delta } else { pt });
+                    } else {
+                        // ClipperUtils.cpp:1211-1226 — Convex corner.
+                        let r = 1.0 + dot;
+                        if r >= miter_limit {
+                            add_offset_point(&mut out, pt + (nprev + nnext) * (delta / r));
+                        } else {
+                            let dx = (sin_a.atan2(dot) / 4.0).tan();
+                            let newpt1 = pt + (nprev - perp(nprev) * dx) * delta;
+                            let newpt2 = pt + (nnext + perp(nnext) * dx) * delta;
+                            #[cfg(debug_assertions)]
+                            {
+                                let vedge = (newpt1 + newpt2) * 0.5 - pt;
+                                let dist_norm = (vedge.x * vedge.x + vedge.y * vedge.y).sqrt();
+                                debug_assert!((dist_norm - delta.abs()).abs() < SCALED_EPSILON);
+                            }
+                            add_offset_point(&mut out, newpt1);
+                            add_offset_point(&mut out, newpt2);
+                        }
+                    }
+                }
+
+                // ClipperUtils.cpp:1230-1236
+                if i == ilast {
+                    break;
+                }
+                ptprev = pt;
+                nprev = nnext;
+                pt = ptnext;
+                i = j;
+            }
+            let _ = ptprev;
+        }
+    }
+
+    // ClipperUtils.cpp:1257
+    out
+}
+
+/// Eigen `.normalized()`: divide by Euclidean norm.
+#[inline]
+fn normalize_pf(v: PointF) -> PointF {
+    let n = (v.x * v.x + v.y * v.y).sqrt();
+    PointF::new(v.x / n, v.y / n)
+}
+
+/// ClipperUtils.cpp:1260 — variable_offset_inner
+/// hpp:668 — Polygons variable_offset_inner(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
+pub fn variable_offset_inner(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
+    #[cfg(debug_assertions)]
+    {
+        // ClipperUtils.cpp:1262-1267 — deltas are all non positive.
+        for ds in deltas {
+            for &delta in ds {
+                debug_assert!(delta <= 0.0);
+            }
+        }
+        debug_assert_eq!(expoly.holes.len() + 1, deltas.len());
+    }
+
+    // ClipperUtils.cpp:1270-1271 — 1) Offset the outer contour.
+    let contours = fix_after_inner_offset(
+        &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
+        ClipperFillRule_NEGATIVE,
+        true,
+    );
+    #[cfg(debug_assertions)]
+    for c in &contours {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1278-1281 — 2) Offset the holes one by one, collect the results.
+    let mut holes: Paths64 = Vec::new();
+    holes.reserve(expoly.holes.len());
+    for (h, hole) in expoly.holes.iter().enumerate() {
+        let mut part = fix_after_outer_offset(
+            &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
+            ClipperFillRule_NEGATIVE,
+            false,
+        );
+        holes.append(&mut part);
+    }
+    #[cfg(debug_assertions)]
+    for c in &holes {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1287-1297 — 3) Subtract holes from the contours.
+    let output: Paths64 = if holes.is_empty() {
+        contours
+    } else {
+        unsafe { clipper64_difference_paths(&contours, &holes) }
+    };
+
+    output.iter().map(path64_to_polygon).collect()
+}
+
+/// ClipperUtils.cpp:1302 — variable_offset_outer
+/// hpp:669 — Polygons variable_offset_outer(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
+pub fn variable_offset_outer(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
+    #[cfg(debug_assertions)]
+    {
+        // ClipperUtils.cpp:1304-1309 — deltas are all non negative.
+        for ds in deltas {
+            for &delta in ds {
+                debug_assert!(delta >= 0.0);
+            }
+        }
+        debug_assert_eq!(expoly.holes.len() + 1, deltas.len());
+    }
+
+    // ClipperUtils.cpp:1312-1313 — 1) Offset the outer contour.
+    let contours = fix_after_outer_offset(
+        &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
+        ClipperFillRule_POSITIVE,
+        false,
+    );
+    #[cfg(debug_assertions)]
+    for c in &contours {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1319-1323 — 2) Offset the holes one by one, collect the results.
+    let mut holes: Paths64 = Vec::new();
+    holes.reserve(expoly.holes.len());
+    for (h, hole) in expoly.holes.iter().enumerate() {
+        let mut part = fix_after_inner_offset(
+            &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
+            ClipperFillRule_POSITIVE,
+            true,
+        );
+        holes.append(&mut part);
+    }
+    #[cfg(debug_assertions)]
+    for c in &holes {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1329-1339 — 3) Subtract holes from the contours.
+    let output: Paths64 = if holes.is_empty() {
+        contours
+    } else {
+        unsafe { clipper64_difference_paths(&contours, &holes) }
+    };
+
+    output.iter().map(path64_to_polygon).collect()
+}
+
+/// ClipperUtils.cpp:1344 — variable_offset_outer_ex
+/// hpp:670 — ExPolygons variable_offset_outer_ex(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
+pub fn variable_offset_outer_ex(
+    expoly: &ExPolygon,
+    deltas: &[Vec<f32>],
+    miter_limit: f64,
+) -> ExPolygons {
+    #[cfg(debug_assertions)]
+    {
+        // ClipperUtils.cpp:1346-1351 — deltas are all non negative.
+        for ds in deltas {
+            for &delta in ds {
+                debug_assert!(delta >= 0.0);
+            }
+        }
+        debug_assert_eq!(expoly.holes.len() + 1, deltas.len());
+    }
+
+    // ClipperUtils.cpp:1354-1355 — 1) Offset the outer contour.
+    let contours = fix_after_outer_offset(
+        &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
+        ClipperFillRule_POSITIVE,
+        false,
+    );
+    #[cfg(debug_assertions)]
+    for c in &contours {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1361-1365 — 2) Offset the holes one by one, collect the results.
+    let mut holes: Paths64 = Vec::new();
+    holes.reserve(expoly.holes.len());
+    for (h, hole) in expoly.holes.iter().enumerate() {
+        let mut part = fix_after_inner_offset(
+            &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
+            ClipperFillRule_POSITIVE,
+            true,
+        );
+        holes.append(&mut part);
+    }
+    #[cfg(debug_assertions)]
+    for c in &holes {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1371-1384 — 3) Subtract holes from the contours.
+    if holes.is_empty() {
+        // output.emplace_back(std::move(path)) — each contour Path becomes an ExPolygon.
+        let mut output: ExPolygons = Vec::with_capacity(contours.len());
+        for path in &contours {
+            output.push(ExPolygon::new(path64_to_polygon(path)));
+        }
+        output
+    } else {
+        unsafe { clipper64_difference_tree_to_expolygons(&contours, &holes) }
+    }
+}
+
+/// ClipperUtils.cpp:1390 — variable_offset_inner_ex
+/// hpp:671 — ExPolygons variable_offset_inner_ex(const ExPolygon&, const std::vector<std::vector<float>>&, double miter_limit)
+pub fn variable_offset_inner_ex(
+    expoly: &ExPolygon,
+    deltas: &[Vec<f32>],
+    miter_limit: f64,
+) -> ExPolygons {
+    #[cfg(debug_assertions)]
+    {
+        // ClipperUtils.cpp:1392-1397 — deltas are all non positive.
+        for ds in deltas {
+            for &delta in ds {
+                debug_assert!(delta <= 0.0);
+            }
+        }
+        debug_assert_eq!(expoly.holes.len() + 1, deltas.len());
+    }
+
+    // ClipperUtils.cpp:1400-1401 — 1) Offset the outer contour.
+    let contours = fix_after_inner_offset(
+        &mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit),
+        ClipperFillRule_NEGATIVE,
+        true,
+    );
+    #[cfg(debug_assertions)]
+    for c in &contours {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1407-1411 — 2) Offset the holes one by one, collect the results.
+    let mut holes: Paths64 = Vec::new();
+    holes.reserve(expoly.holes.len());
+    for (h, hole) in expoly.holes.iter().enumerate() {
+        let mut part = fix_after_outer_offset(
+            &mittered_offset_path_scaled(&hole.points, &deltas[1 + h], miter_limit),
+            ClipperFillRule_NEGATIVE,
+            false,
+        );
+        holes.append(&mut part);
+    }
+    #[cfg(debug_assertions)]
+    for c in &holes {
+        debug_assert!(path64_to_polygon(c).area() > 0.0);
+    }
+
+    // ClipperUtils.cpp:1417-1429 — 3) Subtract holes from the contours.
+    if holes.is_empty() {
+        let mut output: ExPolygons = Vec::with_capacity(contours.len());
+        for path in &contours {
+            output.push(ExPolygon::new(path64_to_polygon(path)));
+        }
+        output
+    } else {
+        unsafe { clipper64_difference_tree_to_expolygons(&contours, &holes) }
     }
 }
 

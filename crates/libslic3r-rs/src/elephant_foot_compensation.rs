@@ -5,14 +5,14 @@
 //! `Vec2d`/`Vec2f` vectors are mapped onto raw `f64`/`f32` component arithmetic so
 //! the integer-vs-float and truncation behaviour matches the C++ exactly.
 //!
-//! NOTE: The body of `elephant_foot_compensation(ExPolygon, min_contour_width,
+//! The body of `elephant_foot_compensation(ExPolygon, min_contour_width,
 //! compensation)` calls `variable_offset_inner_ex` (ClipperUtils.cpp:1390), which
-//! depends on the not-yet-ported mittered-offset pipeline
-//! (`mittered_offset_path_scaled`, `fix_after_inner_offset`,
-//! `fix_after_outer_offset`). That single call is BLOCKED; see the marked return
-//! in `elephant_foot_compensation_with_width`. Everything else is faithfully
-//! ported.
+//! depends on the mittered-offset pipeline (`mittered_offset_path_scaled`,
+//! `fix_after_inner_offset`, `fix_after_outer_offset`). That pipeline is now
+//! ported in `clipper2_utils.rs` (backed by the Clipper2 FFI, matching the
+//! crate-wide convention), so the full compensation path is wired up.
 
+use crate::clipper2_utils::variable_offset_inner_ex;
 use crate::edge_grid::EdgeGrid;
 use crate::flow::Flow;
 use crate::geometry::{
@@ -807,15 +807,17 @@ pub fn elephant_foot_compensation_with_width(
             deltas.push(dists);
         }
 
-        // ElephantFootCompensation.cpp:598-613
-        // BLOCKED: variable_offset_inner_ex (ClipperUtils.cpp:1390) is not yet ported;
-        // it depends on the mittered-offset pipeline (mittered_offset_path_scaled,
-        // fix_after_inner_offset, fix_after_outer_offset). The deltas above are computed
-        // faithfully. Until that ClipperUtils unit is ported, fall back to the
-        // uncompensated input (the C++ "something went wrong, don't compensate" path,
-        // ElephantFootCompensation.cpp:603).
-        let _ = &deltas;
-        out = input_expoly.clone();
+        // ElephantFootCompensation.cpp:598
+        let mut out_vec = variable_offset_inner_ex(&resampled, &deltas, 2.0);
+        // ElephantFootCompensation.cpp:599-613
+        if out_vec.len() == 1 {
+            out = std::mem::take(&mut out_vec[0]);
+        } else {
+            // Something went wrong, don't compensate.
+            out = input_expoly.clone();
+            // ElephantFootCompensation.cpp:612 — assert(out_vec.size() == 1);
+            debug_assert_eq!(out_vec.len(), 1);
+        }
     }
 
     // ElephantFootCompensation.cpp:616-617
