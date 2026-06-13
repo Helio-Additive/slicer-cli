@@ -610,7 +610,9 @@ pub fn dump_voronoi_to_svg(
         scale = 0.01 * std::cmp::min(bbox.size().x(), bbox.size().y()) as f64;
     } else {
         // scale *= SCALING_FACTOR;
-        scale *= SCALING_FACTOR;
+        // C++ SCALING_FACTOR is 0.00001 (libslic3r.h:58); the crate constant is its
+        // reciprocal 100_000.0 (lib.rs:418), so C++'s `*= 0.00001` is `/= SCALING_FACTOR` here.
+        scale /= SCALING_FACTOR;
     }
 
     // VoronoiVisualUtils.hpp:326-344
@@ -789,8 +791,11 @@ pub fn dump_voronoi_to_svg(
                 }
                 // One fit, the other does not. Try to clip.
                 // Vec2d v = b - a; v.normalize(); v *= bbox.size().cast<double>().norm();
+                // C++ Eigen normalize() divides by the L2 norm UNCONDITIONALLY (PointF::normalize
+                // guards len>0); reproduce the bare divide so degenerate a==b matches C++ (NaN).
                 let mut v = PointF::new(b.x() - a.x(), b.y() - a.y());
-                v = v.normalize();
+                let v_norm = (v.x() * v.x() + v.y() * v.y()).sqrt();
+                v = PointF::new(v.x() / v_norm, v.y() / v_norm);
                 let size_norm =
                     ((bbox.size().x() as f64).powi(2) + (bbox.size().y() as f64).powi(2)).sqrt();
                 v = PointF::new(v.x() * size_norm, v.y() * size_norm);
