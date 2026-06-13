@@ -9,13 +9,24 @@
 //!
 //! BLOCKED symbols (see module-level NOTE): `clip_extrusion` and the Arachne
 //! `detect_overhang_degree(Flow, role, lower_polys, clip_paths, extrusion_path,
-//! nozzle_diameter)` overload depend on the legacy `ClipperLib_Z::Clipper`
-//! (custom `ZFillFunction` + `PolyTree` + `Execute`) and on
-//! `Arachne::to_thick_polyline` / `thick_polyline_to_multi_path` (via
-//! `extrusion_paths_append(std::list, ClipperLib_Z::Paths, role, Flow, overhang)`),
-//! none of which are ported yet. The crate's clipper backend is Clipper2 (f64),
-//! which has no Z-clip-with-custom-fill equivalent. These two symbols are NOT
-//! ported and are documented below.
+//! nozzle_diameter)` overload both depend on the legacy `ClipperLib_Z::Clipper`
+//! engine (custom per-edge `ZFillFunction` + `PolyTree` + `Execute` +
+//! `PolyTreeToPaths`). The crate's only clipping backend is Clipper2 via
+//! `clipper2c-sys`, which is compiled with `CLIPPER2_USINGZ=OFF` (verified in
+//! the vendored `clipper2c/CMakeLists.txt`) and the safe `clipper2` 0.5 wrapper
+//! exposes no `usingz`/`zCallback` feature at all — i.e. there is genuinely no
+//! Z-aware boolean clip with a user fill callback available, and reproducing one
+//! byte-exactly would mean porting a whole Vatti/Clipper engine. Same blocker as
+//! documented in `line_segmentation.rs` and `fill/fill_floating_concentric.rs`.
+//!
+//! NOTE (2026-06-13): the Arachne `extrusion_paths_append(std::list, ZPaths,
+//! role, Flow, overhang)` helper *is* now ported as
+//! `arachne::utils::extrusion_line::extrusion_paths_append_list` (along with
+//! `to_thick_polyline_z` / `thick_polyline_to_multi_path`). The Arachne overload
+//! is therefore blocked SOLELY on `clip_extrusion` (its first statement consumes
+//! the Z-clip result); everything downstream of that is portable. We do not
+//! emit a body that calls a faked `clip_extrusion`. These two symbols stay NOT
+//! PORTED and are documented below.
 
 use crate::aabb_tree_lines::{
     build_aabb_tree_over_indexed_lines, squared_distance_to_indexed_lines, tree2d, LinesDistancer,
@@ -67,6 +78,21 @@ fn cut_length() -> f64 {
 
 // EPSILON from libslic3r.
 use crate::libslic3r::EPSILON;
+
+/// Faithful `Point operator*(const Point&, const double&)` (Point.hpp:255-258).
+///
+/// C++: `inline Point operator*(const Point& l, const double& r) { return {
+/// coord_t(l.x() * r), coord_t(l.y() * r) }; }` — `coord_t(double)` is a *cast*
+/// (truncation toward zero), NOT rounding. The crate's `Mul<CoordF> for Point`
+/// operator uses `.round()` instead, which diverges from C++ here. Every `Point
+/// * double` in this file (`dir * t`, `front() + dir * (...)`, `pa + (pb-pa)*t`)
+/// must truncate to match byte-exact G-code, so we use this helper instead of
+/// the crate operator. (Divergence corrected — see module NOTE.)
+#[inline]
+fn point_mul_f64(l: Point, r: f64) -> Point {
+    // Point.hpp:257 — { coord_t(l.x() * r), coord_t(l.y() * r) }
+    Point::new((l.x() as f64 * r) as i64, (l.y() as f64 * r) as i64)
+}
 
 // ---------------------------------------------------------------------------
 // OverhangDetector.hpp:23-30 — class OverhangDistancer
@@ -275,7 +301,8 @@ impl SplitLines {
                     // OverhangDetector.hpp:76 — double t = ((cnt+1)*cut_length + base_length) / length;
                     let t = ((cnt + 1) as f64 * cut_length() + base_length as f64) / length;
                     // OverhangDetector.hpp:77 — end = first_point + dir * t;
-                    seg_end = first_point + dir * t;
+                    // (Point*double truncates — point_mul_f64, see NOTE.)
+                    seg_end = first_point + point_mul_f64(dir, t);
                     // OverhangDetector.hpp:78 — line.append(end);
                     line.push(seg_end);
                     // OverhangDetector.hpp:80 — out.emplace_back(SplitPoly(line));
@@ -295,9 +322,10 @@ impl SplitLines {
         // OverhangDetector.hpp:88 — double middle_length = length - trim_length;
         let middle_length = length - trim_length;
         // OverhangDetector.hpp:89 — Point start_pt = polyline.front() + dir * (trim_length / length);
-        let start_pt = polyline.first_point() + dir * (trim_length / length);
+        // (Point*double truncates — point_mul_f64, see NOTE.)
+        let start_pt = polyline.first_point() + point_mul_f64(dir, trim_length / length);
         // OverhangDetector.hpp:90 — Point end_pt = polyline.front() + dir * ((length - trim_length)/length);
-        let end_pt = polyline.first_point() + dir * ((length - trim_length) / length);
+        let end_pt = polyline.first_point() + point_mul_f64(dir, (length - trim_length) / length);
         // OverhangDetector.hpp:91 — middle.emplace_back(SplitPoly(Polyline(start_pt, end_pt)));
         middle.push(SplitPoly::new(Polyline::from_points(vec![start_pt, end_pt])));
 
@@ -429,13 +457,20 @@ pub fn add_sampling_points_paths(paths: &ZPaths, min_sampling_interval: f64) -> 
 // ---------------------------------------------------------------------------
 // OverhangDetector.cpp:168-317 — detect_overhang_degree (Arachne/Flow overload)
 //
-// NOTE (BLOCKED): the body begins with `clip_extrusion(...)` (BLOCKED, above)
-// and calls `extrusion_paths_append(std::list<ExtrusionPath>&,
-// ClipperLib_Z::Paths, role, Flow, overhang)` which is defined in
-// `Arachne/utils/ExtrusionLine.cpp` via `Arachne::to_thick_polyline` +
-// `thick_polyline_to_multi_path` — neither is ported yet. It also constructs a
-// `SignedOverhangDistancer` (float-precision divergence noted above). NOT
-// PORTED — see module header.
+// NOTE (BLOCKED): the body's FIRST statement is
+// `ZPaths paths_in_range = clip_extrusion(extrusion_path, clip_paths,
+// ClipperLib_Z::ctIntersection);` and the entire function operates on that
+// clipped, Z-width-carrying result. `clip_extrusion` is BLOCKED (above) on the
+// missing Z-aware Clipper engine, so this overload cannot be implemented without
+// fabricating that result — which the porting rules forbid.
+//
+// Everything *downstream* of the clip IS now portable: the per-Flow
+// `extrusion_paths_append(std::list<ExtrusionPath>&, ZPaths, role, Flow,
+// overhang)` is ported as
+// `arachne::utils::extrusion_line::extrusion_paths_append_list`, and
+// `SignedOverhangDistancer` is implemented above (with the documented
+// integer-query divergence). The sole remaining blocker is `clip_extrusion`.
+// NOT PORTED — see module header.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -607,7 +642,8 @@ pub fn smoothing_degrees(lines: &mut SplitLines) {
         // OverhangDetector.cpp:415 — double t = (idx + 1) * cut_gap / length;
         let t = (idx + 1) as f64 * cut_gap / length;
         // OverhangDetector.cpp:416 — end = lines.middle.front().polyline.front() + dir * t;
-        end = lines.middle[0].polyline.first_point() + dir * t;
+        // (Point*double truncates — point_mul_f64, see NOTE.)
+        end = lines.middle[0].polyline.first_point() + point_mul_f64(dir, t);
         // OverhangDetector.cpp:417 — double degree = d1 + (idx + 1) * degree_gap;
         let degree = d1 + (idx + 1) as f64 * degree_gap;
         // OverhangDetector.cpp:418 — out.push_back(SplitPoly(Polyline(start, end), degree));
@@ -647,9 +683,13 @@ pub fn check_degree(
             // OverhangDetector.cpp:429 — Point mid = (lines[i].polyline.front() + lines[i].polyline.back()) / 2;
             let mid = (lines[i].polyline.first_point() + lines[i].polyline.last_point()) / 2;
             // OverhangDetector.cpp:430 — double overhang_dist = prev_layer_distancer->distance_from_perimeter(mid.cast<float>());
-            let overhang_dist =
-                prev_layer_distancer.distance_from_perimeter(PointF::new(mid.x as f64, mid.y as f64))
-                    as f64;
+            // C++ `mid.cast<float>()` builds a Vec2f (single precision); the
+            // distancer then casts it back to double (`Vec2d p = point.cast<double>()`).
+            // Faithfully round-trip through f32 so the query point matches C++
+            // (for large scaled coords this differs from a bare `as f64`).
+            let overhang_dist = prev_layer_distancer
+                .distance_from_perimeter(PointF::new(mid.x as f32 as f64, mid.y as f32 as f64))
+                as f64;
             // OverhangDetector.cpp:431 — lines[i].degree = get_mapped_degree(overhang_dist, lower_bound, upper_bound);
             lines[i].degree = get_mapped_degree(overhang_dist, lower_bound, upper_bound);
         }

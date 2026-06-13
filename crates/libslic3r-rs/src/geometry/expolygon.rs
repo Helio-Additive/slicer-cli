@@ -280,12 +280,12 @@ impl ExPolygon {
     /// }
     /// ```
     ///
-    /// Note on the final `simplify_polygons(pp)` Clipper cleanup: every call site
-    /// in PerimeterGenerator.cpp immediately wraps the result in `union_ex(...)`
-    /// (or `offset_ex(...)`), which performs the equivalent Clipper union/cleanup.
-    /// We therefore return the Douglas-Peucker-simplified `Polygons` here and let
-    /// the caller's `union_polygons_ex` / offset perform the union, matching the
-    /// net behavior of the C++ pipeline.
+    /// The final `return simplify_polygons(pp);` (ExPolygon.cpp:250) is faithfully
+    /// reproduced via `super::simplify_polygons_clipper(&pp)` — a NonZero Clipper
+    /// union of the Douglas-Peucker-simplified contour + holes, which cleans
+    /// self-intersections and re-derives holes (ClipperUtils.cpp:1026). This is
+    /// byte-exact with the C++ pipeline regardless of whether the caller later
+    /// wraps the result in `union_ex(...)`.
     ///
     /// `tolerance` is the UNSCALED resolution in mm (e.g. `print_config.resolution`);
     /// `douglas_peucker` re-scales it internally, mirroring C++ where
@@ -293,9 +293,10 @@ impl ExPolygon {
     pub fn simplify_p(&self, tolerance: CoordF) -> Vec<Polygon> {
         use super::douglas_peucker;
 
+        // ExPolygon.cpp:233-234 — Polygons pp; pp.reserve(this->holes.size() + 1);
         let mut pp: Vec<Polygon> = Vec::with_capacity(self.holes.len() + 1);
 
-        // contour
+        // ExPolygon.cpp:235-242 — contour
         {
             let mut points = self.contour.points().to_vec();
             if !points.is_empty() {
@@ -309,7 +310,7 @@ impl ExPolygon {
             pp.push(Polygon::from_points(points));
         }
 
-        // holes
+        // ExPolygon.cpp:243-249 — holes
         for hole in &self.holes {
             let mut points = hole.points().to_vec();
             if !points.is_empty() {
@@ -320,7 +321,8 @@ impl ExPolygon {
             pp.push(Polygon::from_points(points));
         }
 
-        pp
+        // ExPolygon.cpp:250 — return simplify_polygons(pp);
+        super::simplify_polygons_clipper(&pp)
     }
 
     /// Faithful port of the overload
@@ -451,17 +453,24 @@ impl ExPolygon {
     }
 
     /// Compute medial axis with variable width (for gap fill)
-    /// ExPolygon.cpp:214-227
+    /// ExPolygon.cpp:263-371
     /// C++: void ExPolygon::medial_axis(double min_width, double max_width, ThickPolylines* polylines) const
+    ///
+    /// PARTIAL / DIVERGENT: this faithfully performs the `MedialAxis::build()`
+    /// step (ExPolygon.cpp:266-269 -> `compute_medial_axis_thick`) but OMITS the
+    /// ExPolygon-level post-processing of ExPolygon.cpp:281-368 (endpoint
+    /// extension to the contour, removal of too-short polylines, and greedy
+    /// reconnection of consecutive polylines). That post-processing manipulates
+    /// `ThickPolyline::width` under the C++ invariant
+    /// `width.size() == points.size()*2 - 2` (two widths per segment), whereas the
+    /// crate's `ThickPolyline::widths` stores ONE width per vertex
+    /// (`widths.len() == points.len()`). Faithfully porting the post-processing
+    /// therefore requires reworking the `ThickPolyline` representation (a
+    /// `Polyline.hpp` / `Geometry/MedialAxis.cpp` concern outside ExPolygon.cpp),
+    /// so it is intentionally left BLOCKED here. See PORT_LEDGER notes.
     pub fn medial_axis(&self, min_width: f64, max_width: f64, polylines: &mut ThickPolylines) {
-        // Initialize helper object
-        // ExPolygon.cpp:217
-        // C++: Slic3r::Geometry::MedialAxis ma(min_width, max_width, *this);
-
-        // Compute the Voronoi diagram and extract medial axis polylines
-        // ExPolygon.cpp:220-221
-        // C++: ThickPolylines pp;
-        // C++: ma.build(&pp);
+        // ExPolygon.cpp:266 — Slic3r::Geometry::MedialAxis ma(min_width, max_width, *this);
+        // ExPolygon.cpp:269-270 — ThickPolylines pp; ma.build(&pp);
         use super::medial_axis::MedialAxisConfig;
         let config = MedialAxisConfig {
             min_width,
@@ -469,9 +478,10 @@ impl ExPolygon {
         };
         let mut pp = compute_medial_axis_thick(self, &config);
 
-        // Append results to output
-        // ExPolygon.cpp:226
-        // C++: polylines->insert(polylines->end(), pp.begin(), pp.end());
+        // ExPolygon.cpp:281-368 — endpoint extension / short-polyline removal /
+        // reconnection OMITTED (ThickPolyline width-representation mismatch; see above).
+
+        // ExPolygon.cpp:370 — polylines->insert(polylines->end(), pp.begin(), pp.end());
         polylines.append(&mut pp);
     }
 
@@ -955,65 +965,66 @@ pub fn overlaps_expoly(expolys: &[ExPolygon], expoly: &ExPolygon) -> bool {
     false
 }
 
-/// Remove duplicate consecutive points from ExPolygons
-/// ExPolygon.hpp:482 (declared, implemented in ExPolygon.cpp)
-/// Returns true if any points were removed
-pub fn remove_same_neighbor(expolys: &mut [ExPolygon]) -> bool {
-    // Track if any changes were made
-    let mut modified = false;
+/// Faithful port of `bool remove_same_neighbor(ExPolygons &expolygons)`
+/// (BambuStudio `ExPolygon.cpp:582-595`). Collapses consecutive-duplicate points
+/// (std::unique semantics, NOT tolerance-based) on every contour and hole via the
+/// Polygon/Polygons `remove_same_neighbor`, then erases any ExPolygon whose
+/// contour collapsed to <= 2 points (only when a contour actually changed).
+/// Returns true when anything was erased.
+pub fn remove_same_neighbor(expolygons: &mut Vec<ExPolygon>) -> bool {
+    use super::remove_same_neighbor_polygon;
+    use super::remove_same_neighbor_polygons;
 
-    // Process each ExPolygon
-    use crate::geometry::simplify::remove_duplicate_points;
-    for expoly in expolys {
-        // Remove duplicates from contour
-        let contour_points = expoly.contour.points.clone();
-        expoly.contour.points = remove_duplicate_points(&contour_points, 1);
-        if expoly.contour.points.len() != contour_points.len() {
-            modified = true;
-        }
-
-        // Remove duplicates from holes
-        for hole in &mut expoly.holes {
-            let hole_points = hole.points.clone();
-            hole.points = remove_duplicate_points(&hole_points, 1);
-            if hole.points.len() != hole_points.len() {
-                modified = true;
-            }
-        }
+    // ExPolygon.cpp:584
+    if expolygons.is_empty() {
+        return false;
     }
-
-    modified
+    // ExPolygon.cpp:585-586
+    let mut remove_from_holes = false;
+    let mut remove_from_contour = false;
+    // ExPolygon.cpp:587-590
+    for expoly in expolygons.iter_mut() {
+        // ExPolygon.cpp:588 — remove_from_contour |= remove_same_neighbor(expoly.contour);
+        remove_from_contour |= remove_same_neighbor_polygon(&mut expoly.contour);
+        // ExPolygon.cpp:589 — remove_from_holes |= remove_same_neighbor(expoly.holes);
+        remove_from_holes |= remove_same_neighbor_polygons(&mut expoly.holes);
+    }
+    // ExPolygon.cpp:592-593 — Removing of expolygons without contour
+    if remove_from_contour {
+        expolygons.retain(|p| p.contour.points.len() > 2);
+    }
+    // ExPolygon.cpp:594
+    remove_from_holes || remove_from_contour
 }
 
-/// Keep only the largest contour (by area) from each ExPolygon
-/// ExPolygon.hpp:485 (declared, implemented in ExPolygon.cpp)
-pub fn keep_largest_contour_only(expolygons: &mut Vec<ExPolygon>) {
-    // Process each ExPolygon
-    for expoly in expolygons.iter_mut() {
-        if expoly.holes.is_empty() {
-            continue;
-        }
-
-        // Find the largest polygon (contour or hole)
-        let mut largest_area = expoly.contour.area();
-        let mut largest_idx = None;
-
-        for (i, hole) in expoly.holes.iter().enumerate() {
-            let hole_area = hole.area();
-            if hole_area > largest_area {
-                largest_area = hole_area;
-                largest_idx = Some(i);
+/// Faithful port of `void keep_largest_contour_only(ExPolygons &polygons)`
+/// (BambuStudio `ExPolygon.cpp:623-640`): when there is more than one ExPolygon,
+/// keep ONLY the single ExPolygon whose CONTOUR has the largest (signed) area
+/// across the whole collection; otherwise leave the collection untouched.
+pub fn keep_largest_contour_only(polygons: &mut Vec<ExPolygon>) {
+    // ExPolygon.cpp:625
+    if polygons.len() > 1 {
+        // ExPolygon.cpp:626-627
+        let mut max_area = 0.0;
+        let mut max_area_polygon: Option<usize> = None;
+        // ExPolygon.cpp:628-634
+        for (idx, p) in polygons.iter().enumerate() {
+            // ExPolygon.cpp:629 — double a = p.contour.area();  (Polygon::area() is signed)
+            let a = p.contour.area();
+            // ExPolygon.cpp:630-633
+            if a > max_area {
+                max_area = a;
+                max_area_polygon = Some(idx);
             }
         }
-
-        // If a hole is larger, make it the contour
-        if let Some(idx) = largest_idx {
-            let largest_hole = expoly.holes.remove(idx);
-            expoly.contour = largest_hole;
+        // ExPolygon.cpp:635 — assert(max_area_polygon != nullptr);
+        debug_assert!(max_area_polygon.is_some());
+        // ExPolygon.cpp:636-638
+        if let Some(idx) = max_area_polygon {
+            let p = polygons[idx].clone();
+            polygons.clear();
+            polygons.push(p);
         }
-
-        // Remove all holes
-        expoly.holes.clear();
     }
 }
 
@@ -1475,15 +1486,27 @@ mod tests {
 
     #[test]
     fn test_keep_largest_contour_only() {
-        let small_contour = Polygon::rectangle(Point::new(0, 0), Point::new(50, 50));
-        let large_hole = Polygon::rectangle(Point::new(0, 0), Point::new(100, 100));
-        let expoly = ExPolygon::with_holes(small_contour, vec![large_hole]);
-        let mut expolys = vec![expoly];
+        // Faithful C++ ExPolygon.cpp:623-640 semantics: with more than one
+        // ExPolygon, keep ONLY the single ExPolygon whose CONTOUR has the largest
+        // (signed) area; with a single ExPolygon, leave the collection untouched.
+        let small = ExPolygon::new(Polygon::rectangle(Point::new(0, 0), Point::new(50, 50)));
+        let large = ExPolygon::new(Polygon::rectangle(Point::new(0, 0), Point::new(100, 100)));
+        let mut expolys = vec![small, large];
 
         keep_largest_contour_only(&mut expolys);
 
-        // The larger hole should now be the contour
+        // Only the larger-contour ExPolygon survives.
+        assert_eq!(expolys.len(), 1);
         assert!((expolys[0].contour.area() - 10000.0).abs() < 1.0);
-        assert_eq!(expolys[0].holes.len(), 0);
+
+        // A single ExPolygon is left untouched (no >1 collection).
+        let solo = ExPolygon::with_holes(
+            Polygon::rectangle(Point::new(0, 0), Point::new(50, 50)),
+            vec![Polygon::rectangle(Point::new(10, 10), Point::new(20, 20))],
+        );
+        let mut single = vec![solo];
+        keep_largest_contour_only(&mut single);
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].holes.len(), 1);
     }
 }

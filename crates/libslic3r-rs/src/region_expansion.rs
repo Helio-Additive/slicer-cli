@@ -22,23 +22,112 @@
 //! - `LayerRegion.cpp:470-516` — `expand_merge_surfaces()`
 //! - `LayerRegion.cpp:517-643` — `LayerRegion::process_external_surfaces()`
 //!
-//! # Differences from C++
+//! # BLOCKED symbols — native Clipper2 Z-callback backend (not byte-faithful)
 //!
-//! The C++ uses Clipper2's Z-callback for precise polyline-based seed generation
-//! at the exact boundary between src and boundary contours. Our implementation
-//! uses polygon-based seeds (intersection of slightly-expanded src with boundary),
-//! which produces equivalent results because:
-//! - The seed is very thin (tiny_expansion ≈ 0.05mm)
-//! - The first wave step compensates for the difference
-//! - Subsequent wave steps + clipping produce identical geometry
+//! The C++ `wave_seeds()` (RegionExpansion.cpp:278-389) relies on the Clipper2
+//! *Z* engine to record intersection provenance:
+//!   - `Clipper2Lib_Z::Clipper64::SetZCallback(...)` to tag boolean-clip
+//!     intersection points with a negative Z index into an `Intersections` table;
+//!   - `Clipper2Lib_Z::ClipperOffset` that preserves the Z coordinate while
+//!     offsetting *open* paths (`expolygons_to_zpaths64_expanded_opened`,
+//!     RegionExpansion.cpp:108-136);
+//!   - `Clipper64::Execute(..., closed_segs, open_segs)` returning Z-tagged open
+//!     segments.
+//!
+//! The crate's Clipper2 backend (`clipper2c-sys`) exposes neither `SetZCallback`
+//! / `ZFillFunction` nor a Z-preserving offset, so these symbols cannot be made
+//! byte-faithful without porting the bundled `clipper/clipper_z` engine — the
+//! same backend gap already documented as NOT PORTED in `line_segmentation.rs`.
+//! Per the wasm-safe rule we do NOT add a system/dylib dep.
+//!
+//! BLOCKED (require the Z backend; left as documented approximations / not ported):
+//!   - `expolygons_to_zpaths_expanded_opened`  (ClipperLib_Z, RegionExpansion.cpp:83-106)
+//!   - `expolygons_to_zpaths64_expanded_opened` (Clipper2Lib_Z, RegionExpansion.cpp:108-136)
+//!   - `merge_splits` (×2, RegionExpansion.cpp:142-236) — operate on Z paths
+//!   - `wave_seeds`                              (RegionExpansion.cpp:278-389)
+//!   - `wavefront_initial`/`wavefront_step`/`wavefront_clip`/`propagate_wave_from_boundary`
+//!     (RegionExpansion.cpp:391-465) — `ClipperOffset` over open polylines (`etOpenRound`),
+//!     only reachable through `wave_seeds`.
+//!   - the `propagate_waves`/`propagate_waves_ex`/`expand_expolygons`/
+//!     `expand_merge_expolygons(src, ...)` overloads that route through `wave_seeds`.
+//!
+//! The polygon-based seed approximation below (`wave_seeds_polygon_based`) is a
+//! best-effort fallback used only by the LayerRegion.cpp orchestration helpers
+//! co-located in this file; it is NOT byte-equivalent to the C++ Z-callback path.
+//!
+//! FAITHFULLY PORTED (pure / non-native, audited 1:1 against the C++):
+//!   - `clipper_round_offset_error`             (RegionExpansion.cpp:19-30)
+//!   - `RegionExpansionParameters::build`       (RegionExpansion.cpp:32-79)
+//!   - `build_aabb_tree_over_expolygons`        (RegionExpansion.cpp:240-251)
+//!   - `sample_in_expolygons`                   (RegionExpansion.cpp:253-276)
+//!   - `merge_expansions_into_expolygons`       (RegionExpansion.cpp:564-615)
 
 use crate::clipper_utils::{
     closing, diff_pl, difference, expolygons_to_polylines, grow, intersection, offset_expolygons,
-    union_ex, OffsetJoinType,
+    union_ex, union_safety_offset_ex_expolygons, OffsetJoinType,
 };
-use crate::geometry::{BoundingBox, ExPolygon, ExPolygons, Line, PointF, Polygon, Polyline};
+use crate::geometry::{
+    BoundingBox, ExPolygon, ExPolygons, Line, Point, PointF, Polygon, Polyline,
+};
 use crate::CoordF;
 use std::f64::consts::PI;
+
+// ============================================================================
+// AABB tree over boundary expolygons — faithful RegionExpansion.cpp port
+// ============================================================================
+//
+// RegionExpansion.cpp:238 — `using AABBTreeBBoxes = AABBTreeIndirect::Tree<2, coord_t>;`
+// In the crate this is the 2D specialization `aabb_tree_lines::tree2d::Tree`,
+// built from `BoundingBoxWrapper` source nodes (AABBTreeIndirect.hpp:223-236).
+use crate::aabb_tree_lines::tree2d;
+
+/// RegionExpansion.cpp:240 — `static AABBTreeBBoxes build_aabb_tree_over_expolygons(const ExPolygons &expolygons)`
+fn build_aabb_tree_over_expolygons(expolygons: &[ExPolygon]) -> tree2d::Tree {
+    // RegionExpansion.cpp:242-243 — Calculate bounding boxes of internal slices.
+    let mut bboxes: Vec<tree2d::BoundingBoxWrapper> = Vec::with_capacity(expolygons.len());
+    // RegionExpansion.cpp:245-246 — `bboxes.emplace_back(i, get_extents(expolygons[i].contour));`
+    for (i, ep) in expolygons.iter().enumerate() {
+        // `get_extents(contour)` == the single contour's bounding box.
+        bboxes.push(tree2d::BoundingBoxWrapper::new(i, &ep.contour.bounding_box()));
+    }
+    // RegionExpansion.cpp:247-249 — Build AABB tree over bounding boxes of boundary expolygons.
+    let mut out = tree2d::Tree::new();
+    out.build_modify_input(&mut bboxes);
+    // RegionExpansion.cpp:250
+    out
+}
+
+/// RegionExpansion.cpp:253-276 — `static int sample_in_expolygons(...)`
+///
+/// Returns the index of the boundary expolygon that contains `sample`, or `-1`.
+fn sample_in_expolygons(aabb_tree: &tree2d::Tree, expolygons: &[ExPolygon], sample: &Point) -> i32 {
+    // RegionExpansion.cpp:259
+    let mut out: i32 = -1;
+    // RegionExpansion.cpp:260-274
+    tree2d::traverse(
+        aabb_tree,
+        // RegionExpansion.cpp:261-263 — predicate: descend while the node bbox contains the sample.
+        // tree2d `BoundingBox` stores coords as `[f64; 2]` (Eigen AlignedBox), so the
+        // integer sample point is widened to f64, matching the bbox build in
+        // `BoundingBoxWrapper::new`.
+        |node: &tree2d::Node| node.bbox.contains([sample.x as f64, sample.y as f64]),
+        // RegionExpansion.cpp:264-273 — leaf callback.
+        |node: &tree2d::Node| {
+            debug_assert!(node.is_leaf());
+            debug_assert!(node.is_valid());
+            // RegionExpansion.cpp:267-271
+            if expolygons[node.idx].contains_point(sample) {
+                out = node.idx as i32;
+                // Stop traversal.
+                return false;
+            }
+            // Continue traversal.
+            true
+        },
+    );
+    // RegionExpansion.cpp:275
+    out
+}
 
 // ============================================================================
 // RegionExpansionParameters
@@ -391,34 +480,40 @@ fn merge_expansions_into_expolygons(
         if acc.is_empty() {
             out.push(src_ep);
         } else {
-            // Merge source with its expansions
+            // RegionExpansion.cpp:580 — `ExPolygon &src_ex = src[last ++];`
+            // RegionExpansion.cpp:581 — assert(! src_ex.contour.empty());
+            debug_assert!(!src_ep.contour.points().is_empty());
+            // RegionExpansion.cpp:594 — `Point sample = src_ex.contour.front();`
+            let sample = src_ep.contour.points()[0];
+            // RegionExpansion.cpp:595 — `append(acc, to_polygons(std::move(src_ex)));`
             acc.push(src_ep);
-            let merged = union_ex(&acc);
-
-            // C++ uses union_safety_offset_ex and then picks the one containing
-            // a sample point if multiple expolygons result. We use union_ex which
-            // should produce a single merged region in most cases.
-            if merged.len() == 1 {
-                out.push(merged.into_iter().next().unwrap());
-            } else if !merged.is_empty() {
-                // If multiple regions, take the largest (most likely the correct one).
-                // C++ uses sample_in_expolygons to find the one containing a point
-                // from the original source. We approximate with largest-area selection.
-                let mut best = merged.into_iter().max_by(|a, b| {
-                    a.area()
-                        .abs()
-                        .partial_cmp(&b.area().abs())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                if let Some(ep) = best.take() {
-                    out.push(ep);
+            // RegionExpansion.cpp:596 — `ExPolygons merged = union_safety_offset_ex(acc);`
+            let merged = union_safety_offset_ex_expolygons(&acc);
+            // RegionExpansion.cpp:597-599
+            // Expanding one expolygon by waves should not change connectivity of the source expolygon:
+            // Single expolygon should be produced possibly with increased number of holes.
+            if merged.len() > 1 {
+                // RegionExpansion.cpp:600-608
+                // There is something wrong with the initial waves. Most likely the bridge was not valid at all
+                // or the boundary region was very close to some bridge edge, but not really touching.
+                // Pick only a single merged expolygon, which contains one sample point of the source expolygon.
+                let aabb_tree = build_aabb_tree_over_expolygons(&merged);
+                let id = sample_in_expolygons(&aabb_tree, &merged, &sample);
+                debug_assert!(id != -1);
+                // RegionExpansion.cpp:607-608
+                if id != -1 {
+                    // RegionExpansion.cpp:608 — `out.emplace_back(std::move(merged[id]));`
+                    out.push(merged.into_iter().nth(id as usize).unwrap());
                 }
+            } else if merged.len() == 1 {
+                // RegionExpansion.cpp:609-610
+                out.push(merged.into_iter().next().unwrap());
             }
         }
     }
 
-    // Any remaining expansions without matching sources (shouldn't normally happen)
-    // are dropped.
+    // RegionExpansion.cpp:612-613 — remaining untouched sources are appended by the
+    // enumerate loop above (each `src_ep` without expansions is pushed unchanged).
 
     out
 }

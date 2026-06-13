@@ -106,8 +106,9 @@ pub use polygon::{
     make_circle, make_circle_num_segments, overlaps as overlaps_polygons, polygon_is_convex,
     polygon_is_convex_poly, polygons_match, polygons_reverse, polygons_rotate, polygons_simplify,
     remove_collinear, remove_collinear_polygons, remove_degenerate,
-    remove_same_neighbor_polygons, remove_small as remove_small_polygons, remove_sticks,
-    remove_sticks_polygons, total_length,
+    remove_same_neighbor as remove_same_neighbor_polygon, remove_same_neighbor_polygons,
+    remove_small as remove_small_polygons, remove_sticks, remove_sticks_polygons,
+    simplify_polygons_clipper, total_length,
 };
 pub use polyline::{foot_pt, Polyline, Polylines};
 pub use simplify::{

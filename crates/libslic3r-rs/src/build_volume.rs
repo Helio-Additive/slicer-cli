@@ -17,7 +17,6 @@
 //! Blocked symbols (see notes at the bottom of the file):
 //! - `all_paths_inside` — depends on `GCodeProcessorResult::moves` / `MoveVertex`
 //!   (the crate's `GCodeProcessorResult` does not expose the per-move vertex list).
-//! - `bounding_mesh` — depends on `its_make_cube`, which is not ported in the crate.
 
 use crate::bounding_box::{BoundingBoxf, BoundingBoxf3};
 use crate::geometry::Transform3D;
@@ -26,6 +25,7 @@ use crate::geometry::{
     BoundingBox, Circle, Point, Point3F, Polygon, Vec2d, Vec3d,
 };
 use crate::triangle_set_sampling::{indexed_triangle_set, Vec3f, Vec3i};
+use crate::triangle_mesh::its_make_cube;
 use crate::clipper_utils::{self, OffsetJoinType};
 use crate::{scale, unscale, SCALING_FACTOR};
 
@@ -1253,6 +1253,40 @@ impl BuildVolume {
         }
     }
 
+    /// BuildVolume.cpp:609-618
+    /// C++: indexed_triangle_set BuildVolume::bounding_mesh(bool scale) const
+    pub fn bounding_mesh(&self, scale_flag: bool) -> indexed_triangle_set {
+        // BuildVolume.cpp:611
+        // C++: auto max_pt3 = m_bboxf.max;
+        let max_pt3 = self.bboxf.max;
+        // BuildVolume.cpp:612-617
+        // C++: if (scale) {
+        // C++:     return its_make_cube(scale_(max_pt3.x()), scale_(max_pt3.y()), scale_(max_pt3.z()));
+        // C++: } else {
+        // C++:     return its_make_cube(max_pt3.x(), max_pt3.y(), max_pt3.z());
+        // C++: }
+        // `its_make_cube` returns `normal_utils::indexed_triangle_set`; the field
+        // types (`Vec<Vector3<f32>>` / `Vec<Vector3<i32>>`) are identical to this
+        // module's `triangle_set_sampling::indexed_triangle_set`, so we move the
+        // vectors across to satisfy the local return type.
+        let cube = if scale_flag {
+            // C++ `scale_(val) = val / SCALING_FACTOR` (SCALING_FACTOR = 1e-6) maps to
+            // the crate's integer-scaling boundary `scale(val)` (SCALING_FACTOR = 1e5);
+            // `its_make_cube` takes doubles, so re-cast the scaled coordinate to f64.
+            its_make_cube(
+                scale(max_pt3.x) as f64,
+                scale(max_pt3.y) as f64,
+                scale(max_pt3.z) as f64,
+            )
+        } else {
+            its_make_cube(max_pt3.x, max_pt3.y, max_pt3.z)
+        };
+        indexed_triangle_set {
+            vertices: cube.vertices,
+            indices: cube.indices,
+        }
+    }
+
     // ----------------------------------------------------------------------
     // BLOCKED SYMBOLS (faithful port deferred — would require fakes today):
     //
@@ -1262,16 +1296,12 @@ impl BuildVolume {
     //                                      bool ignore_bottom) const
     //   Blocked: depends on `GCodeProcessorResult::MoveVertex` (move.type,
     //   move.extrusion_role, move.width, move.height, move.position) and the
-    //   `paths.moves` list. The crate's `gcode::gcode_processor::GCodeProcessorResult`
-    //   only exposes filament/time aggregates, not the per-move vertex list, so
-    //   porting `move_valid()` / the per-move tests would require fabricating a
-    //   `MoveVertex` type (a fake). Port once GCodeProcessor's move list is ported.
-    //
-    // BuildVolume.cpp:609-618
-    //   indexed_triangle_set BuildVolume::bounding_mesh(bool scale) const
-    //   Blocked: depends on `its_make_cube(x, y, z)` (TriangleMesh.cpp), which is
-    //   not ported in the crate (`TriangleMesh::cube` takes a single uniform size
-    //   and returns a different mesh type). Port once `its_make_cube` exists.
+    //   `paths.moves` list. The crate's `gcode::g_code_processor::GCodeProcessorResult`
+    //   is not yet fully ported — it exposes only the nested POD types
+    //   (SliceWarning / FilamentUseInfo / SettingsIds / ...) and time/filament
+    //   aggregates, not the per-move vertex list. Porting `move_valid()` / the
+    //   per-move tests would require fabricating a `MoveVertex` type (a fake).
+    //   Port once GCodeProcessor's move list is ported.
     // ----------------------------------------------------------------------
 }
 

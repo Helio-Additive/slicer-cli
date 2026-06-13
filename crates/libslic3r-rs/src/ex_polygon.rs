@@ -13,9 +13,10 @@
 //! coord_t -> i64 (`Coord`), coordf_t -> f64 (`CoordF`).
 //!
 //! NOTE on `Polygon::area()`: in C++ `Polygon::area()` returns the *signed*
-//! area (CCW positive, CW negative). The crate's `Polygon::area()` returns the
-//! *unsigned* area, while `Polygon::signed_area()` is the signed one. Wherever
-//! C++ relies on the sign we call `signed_area()`.
+//! area (CCW positive, CW negative). The crate's `Polygon::area()` is ALSO
+//! signed (`Polygon::signed_area()` is an alias of `area()`), so either call is
+//! equivalent. Where this file mirrors `std::abs(poly.area())` we therefore use
+//! `signed_area().abs()` (== `area().abs()`).
 
 #![allow(clippy::needless_range_loop)]
 
@@ -23,10 +24,12 @@ use crate::clipper_utils::{
     diff_pl, intersection, intersection_pl, offset_expolygons, OffsetJoinType,
 };
 use crate::geometry::{
-    has_duplicate_points as points_have_duplicates, to_polylines_expoly, BoundingBox, ExPolygon,
+    has_duplicate_points as points_have_duplicates, polygons_match,
+    remove_small_polygons as polygons_remove_small, remove_sticks as polygon_remove_sticks,
+    remove_sticks_polygons as polygons_remove_sticks, to_polylines_expoly, BoundingBox, ExPolygon,
     ExPolygons, Line, Point, Polygon, Polyline,
 };
-use crate::libslic3r::EPSILON;
+use crate::libslic3r::{EPSILON, SCALING_FACTOR};
 use crate::Coord;
 
 // ExPolygon.cpp:14  namespace Slic3r {
@@ -111,9 +114,17 @@ impl ExPolygon {
 
     // ExPolygon.cpp:69-74
     // void ExPolygon::douglas_peucker(double tolerance)
-    //
-    // BLOCKED: delegates to `Polygon::douglas_peucker(double)` (Polygon.cpp),
-    // which is not yet ported. Port belongs to the Polygon.cpp translation.
+    pub fn douglas_peucker(&mut self, tolerance: f64) {
+        // ExPolygon.cpp:71
+        // this->contour.douglas_peucker(tolerance);
+        self.contour.douglas_peucker(tolerance);
+        // ExPolygon.cpp:72-73
+        // for (Polygon &poly : this->holes)
+        //     poly.douglas_peucker(tolerance);
+        for poly in &mut self.holes {
+            poly.douglas_peucker(tolerance);
+        }
+    }
 
     // ExPolygon.cpp:76-79
     // bool ExPolygon::contains(const Line &line) const
@@ -186,23 +197,80 @@ impl ExPolygon {
 
     // ExPolygon.cpp:121-129
     // bool ExPolygon::on_boundary(const Point &point, double eps) const
-    //
-    // BLOCKED: delegates to `Polygon::on_boundary(const Point&, double)`
-    // (Polygon.cpp), not yet ported. The crate's `is_point_on_boundary(p,
-    // tolerance: Coord)` has a different (integer-tolerance) signature, so
-    // wiring to it would not be faithful. Port belongs to Polygon.cpp.
+    pub fn on_boundary(&self, point: &Point, eps: f64) -> bool {
+        // ExPolygon.cpp:123-124
+        // if (this->contour.on_boundary(point, eps))
+        //     return true;
+        if self.contour.on_boundary(point, eps) {
+            return true;
+        }
+        // ExPolygon.cpp:125-127
+        // for (const Polygon &hole : this->holes)
+        //     if (hole.on_boundary(point, eps))
+        //         return true;
+        for hole in &self.holes {
+            if hole.on_boundary(point, eps) {
+                return true;
+            }
+        }
+        // ExPolygon.cpp:128
+        false
+    }
 
     // ExPolygon.cpp:131-149
     // Point ExPolygon::point_projection(const Point &point) const
-    //
-    // BLOCKED: delegates to `Polygon::point_projection(const Point&)`
-    // (Polygon.cpp), not yet ported. Port belongs to Polygon.cpp.
+    // Projection of a point onto the polygon.
+    pub fn point_projection(&self, point: &Point) -> Point {
+        // ExPolygon.cpp:134-135
+        // if (this->holes.empty()) {
+        //     return this->contour.point_projection(point);
+        if self.holes.is_empty() {
+            self.contour.point_projection(point)
+        } else {
+            // ExPolygon.cpp:137-138
+            // double dist_min2 = std::numeric_limits<double>::max();
+            // Point  closest_pt_min;
+            let mut dist_min2 = f64::MAX;
+            let mut closest_pt_min = Point::new(0, 0);
+            // ExPolygon.cpp:139
+            for i in 0..self.num_contours() {
+                // ExPolygon.cpp:140
+                // Point closest_pt = this->contour_or_hole(i).point_projection(point);
+                let closest_pt = self.contour_or_hole(i).point_projection(point);
+                // ExPolygon.cpp:141
+                // double d2 = (closest_pt - point).cast<double>().squaredNorm();
+                let d2 = {
+                    let dx = (closest_pt.x - point.x) as f64;
+                    let dy = (closest_pt.y - point.y) as f64;
+                    dx * dx + dy * dy
+                };
+                // ExPolygon.cpp:142-145
+                if d2 < dist_min2 {
+                    dist_min2 = d2;
+                    closest_pt_min = closest_pt;
+                }
+            }
+            // ExPolygon.cpp:147
+            closest_pt_min
+        }
+    }
 
     // ExPolygon.cpp:151-156
     // void ExPolygon::symmetric_y(const coord_t &y_axis)
     //
-    // BLOCKED: delegates to `Polygon::symmetric_y(const coord_t&)`
-    // (Polygon.cpp), not yet ported. Port belongs to Polygon.cpp.
+    // NOTE: C++ delegates to `Polygon::symmetric_y(const coord_t&)` which is the
+    // inherited `MultiPoint::symmetric_y` (MultiPoint.cpp:472): for each point
+    // `pt(0) = 2 * y_axis - pt(0)`. That polygon-level method is not yet exposed
+    // as a crate primitive, so we inline the exact MultiPoint body here (not a
+    // fake — identical arithmetic).
+    pub fn symmetric_y(&mut self, y_axis: Coord) {
+        // ExPolygon.cpp:153
+        symmetric_y_polygon(&mut self.contour, y_axis);
+        // ExPolygon.cpp:154-155
+        for hole in &mut self.holes {
+            symmetric_y_polygon(hole, y_axis);
+        }
+    }
 
     // ExPolygon.cpp:158-184
     // bool ExPolygon::overlaps(const ExPolygon &other) const
@@ -318,24 +386,68 @@ impl ExPolygon {
     // ExPolygon.cpp:416-431
     // double ExPolygon::map_moment_to_expansion(double speed, double height) const
     //
-    // BLOCKED: depends on `compSecondMoment(const ExPolygons&, double&, double&)`
-    // declared `extern` and implemented in Brim.cpp, which is not yet ported.
-    // (The crate's principal_components2_d.rs computes different moments and is
-    // not a drop-in equivalent.) Port deferred until Brim.cpp::compSecondMoment
-    // is available.
+    // C++ uses `extern bool compSecondMoment(const ExPolygons&, double&, double&)`
+    // from Brim.cpp; the crate's faithful equivalent is
+    // `crate::brim::comp_second_moment_expolygons(&ExPolygons, &mut f64, &mut f64)`.
+    pub fn map_moment_to_expansion(&self, speed: f64, height: f64) -> f64 {
+        // ExPolygon.cpp:418
+        // if (height <= 0 || speed <= 0) return 0;
+        if height <= 0.0 || speed <= 0.0 {
+            return 0.0;
+        }
+        // ExPolygon.cpp:419
+        // double Ixx = 0, Iyy = 0;
+        let mut ixx = 0.0_f64;
+        let mut iyy = 0.0_f64;
+        // ExPolygon.cpp:420
+        // double props  = compSecondMoment({*this}, Ixx, Iyy);
+        // NOTE: C++ assigns the bool result to `props` (a double) and never uses
+        // it; we faithfully call and discard the return value.
+        let _props = crate::brim::comp_second_moment_expolygons(
+            &vec![self.clone()],
+            &mut ixx,
+            &mut iyy,
+        );
+        // ExPolygon.cpp:421
+        // Ixx = Ixx * pow(SCALING_FACTOR, 4);
+        ixx *= SCALING_FACTOR.powi(4);
+        // ExPolygon.cpp:422
+        // Iyy = Iyy * pow(SCALING_FACTOR, 4);
+        iyy *= SCALING_FACTOR.powi(4);
+
+        // ExPolygon.cpp:424
+        // auto bbox = get_extents(*this);
+        let bbox = get_extents_expoly(self);
+        // ExPolygon.cpp:425-426
+        // const double &bboxX = bbox.size()(0);
+        // const double &bboxY = bbox.size()(1);
+        let bbox_x = bbox.size().x as f64;
+        let bbox_y = bbox.size().y as f64;
+        // ExPolygon.cpp:427
+        // double height_to_area = std::max(height / Ixx * (bboxY * SCALING_FACTOR), height / Iyy * (bboxX * SCALING_FACTOR)) * height / 1920;
+        let height_to_area = f64::max(
+            height / ixx * (bbox_y * SCALING_FACTOR),
+            height / iyy * (bbox_x * SCALING_FACTOR),
+        ) * height
+            / 1920.0;
+
+        // ExPolygon.cpp:429
+        // double brim_width = height_to_area * speed;
+        let brim_width = height_to_area * speed;
+        // ExPolygon.cpp:430
+        // return std::max(std::min(brim_width, 10.), 1.);
+        f64::max(f64::min(brim_width, 10.0), 1.0)
+    }
 
     // ExPolygon.cpp:433-441
     // Lines ExPolygon::lines() const
-    //
-    // NOTE: C++ `Polygon::lines()` returns the closed loop of edges; the crate's
-    // faithful equivalent is `Polygon::edges()` (closing edge included).
     pub fn lines(&self) -> Vec<Line> {
         // ExPolygon.cpp:435
         // Lines lines = this->contour.lines();
-        let mut lines = self.contour.edges();
+        let mut lines = self.contour.lines();
         // ExPolygon.cpp:436-439
         for h in &self.holes {
-            let hole_lines = h.edges();
+            let hole_lines = h.lines();
             lines.extend(hole_lines);
         }
         // ExPolygon.cpp:440
@@ -346,8 +458,29 @@ impl ExPolygon {
     // ExPolygon.cpp:443-453
     // bool ExPolygon::remove_colinear_points()
     //
-    // BLOCKED: delegates to `Polygon::remove_colinear_points()` (Polygon.cpp),
-    // not yet ported. Port belongs to Polygon.cpp.
+    // NOTE: C++ delegates to `Polygon::remove_colinear_points()` (inherited from
+    // MultiPoint); the crate exposes that body as
+    // `crate::multi_point::remove_colinear_points(&mut Vec<Point>)`.
+    pub fn remove_colinear_points(&mut self) -> bool {
+        // ExPolygon.cpp:444
+        // bool removed = this->contour.remove_colinear_points();
+        let mut removed = crate::multi_point::remove_colinear_points(&mut self.contour.points);
+        // ExPolygon.cpp:445-449
+        // if (contour.size() < 3) { contour.points.clear(); holes.clear(); return true; }
+        if self.contour.points.len() < 3 {
+            self.contour.points.clear();
+            self.holes.clear();
+            return true;
+        }
+        // ExPolygon.cpp:450-451
+        // for (Polygon &hole : this->holes)
+        //     removed |= hole.remove_colinear_points();
+        for hole in &mut self.holes {
+            removed |= crate::multi_point::remove_colinear_points(&mut hole.points);
+        }
+        // ExPolygon.cpp:452
+        removed
+    }
 
     // ExPolygon.hpp:83-84
     // const Polygon& contour_or_hole(size_t idx) const { return (idx == 0) ? this->contour : this->holes[idx - 1]; }
@@ -471,11 +604,28 @@ pub fn is_narrow_expolygon(
 }
 
 // ExPolygon.cpp:478-488
+// Do expolygons match? If they match, they must have the same topology,
+// however their contours may be rotated.
 // bool expolygons_match(const ExPolygon &l, const ExPolygon &r)
-//
-// BLOCKED: depends on `polygons_match(const Polygon&, const Polygon&)`
-// (Polygon.cpp), which is not yet ported. Port deferred until polygons_match is
-// available.
+pub fn expolygons_match(l: &ExPolygon, r: &ExPolygon) -> bool {
+    // ExPolygon.cpp:482-483
+    // if (l.holes.size() != r.holes.size() || ! polygons_match(l.contour, r.contour))
+    //     return false;
+    if l.holes.len() != r.holes.len() || !polygons_match(&l.contour, &r.contour) {
+        return false;
+    }
+    // ExPolygon.cpp:484-486
+    // for (size_t hole_idx = 0; hole_idx < l.holes.size(); ++ hole_idx)
+    //     if (! polygons_match(l.holes[hole_idx], r.holes[hole_idx]))
+    //         return false;
+    for hole_idx in 0..l.holes.len() {
+        if !polygons_match(&l.holes[hole_idx], &r.holes[hole_idx]) {
+            return false;
+        }
+    }
+    // ExPolygon.cpp:487
+    true
+}
 
 // ExPolygon.cpp:490-493
 // BoundingBox get_extents(const ExPolygon &expolygon)
@@ -502,13 +652,31 @@ pub fn get_extents(expolygons: &[ExPolygon]) -> BoundingBox {
     bbox
 }
 
-// ExPolygon.cpp:506-509  get_extents_rotated(const ExPolygon&, double)
-// ExPolygon.cpp:511-520  get_extents_rotated(const ExPolygons&, double)
-//
-// BLOCKED: delegates to `get_extents_rotated(const Points&/Polygon&, double)`
-// (MultiPoint.cpp), which is not exposed as a reusable crate primitive (only
-// local detector helpers exist). Port deferred until that primitive is
-// available.
+// ExPolygon.cpp:506-509
+// BoundingBox get_extents_rotated(const ExPolygon &expolygon, double angle)
+pub fn get_extents_rotated_expoly(expolygon: &ExPolygon, angle: f64) -> BoundingBox {
+    // ExPolygon.cpp:508
+    // return get_extents_rotated(expolygon.contour, angle);
+    crate::geometry::get_extents_rotated(&expolygon.contour, angle)
+}
+
+// ExPolygon.cpp:511-520
+// BoundingBox get_extents_rotated(const ExPolygons &expolygons, double angle)
+pub fn get_extents_rotated(expolygons: &[ExPolygon], angle: f64) -> BoundingBox {
+    // ExPolygon.cpp:513
+    let mut bbox = BoundingBox::new();
+    // ExPolygon.cpp:514-518
+    if !expolygons.is_empty() {
+        // ExPolygon.cpp:515 — bbox = get_extents_rotated(expolygons.front().contour, angle);
+        bbox = crate::geometry::get_extents_rotated(&expolygons[0].contour, angle);
+        // ExPolygon.cpp:516-517
+        for i in 1..expolygons.len() {
+            bbox.merge(&crate::geometry::get_extents_rotated(&expolygons[i].contour, angle));
+        }
+    }
+    // ExPolygon.cpp:519
+    bbox
+}
 
 // ExPolygon.cpp:522-529
 // std::vector<BoundingBox> get_extents_vector(const ExPolygons &polygons)
@@ -578,19 +746,24 @@ pub fn has_duplicate_points(expolys: &[ExPolygon]) -> bool {
 // ExPolygon.cpp:582-595
 // bool remove_same_neighbor(ExPolygons &expolygons)
 //
-// NOTE: a divergent `remove_same_neighbor(&mut [ExPolygon])` already exists in
-// geometry/expolygon.rs (consecutive-duplicate removal without the
-// contour-erase step). The faithful version below additionally erases
-// expolygons whose contour collapsed to <= 2 points when the contour changed,
-// and relies on `Polygon`/`Polygons` `remove_same_neighbor` semantics from
-// MutablePolygon.cpp. Those polygon-level helpers are not yet ported, so this
-// faithful overload is BLOCKED. Port deferred.
+// The faithful C++ port is the canonical `crate::geometry::remove_same_neighbor`
+// (audited/corrected in place in geometry/expolygon.rs — it now uses the exact
+// std::unique-style Polygon/Polygons `remove_same_neighbor` and the contour-erase
+// step). Re-exported here under the C++ name for parity bookkeeping.
+pub use crate::geometry::remove_same_neighbor as remove_same_neighbor_expolygons;
 
 // ExPolygon.cpp:597-600
 // bool remove_sticks(ExPolygon &poly)
 //
-// BLOCKED: delegates to `remove_sticks(Polygon&)` / `remove_sticks(Polygons&)`
-// (MutablePolygon.cpp), not yet ported. Port deferred.
+// NOTE: named `remove_sticks_expoly` to avoid clashing with the existing crate
+// helpers; uses the C++-faithful Polygon/Polygons `remove_sticks`.
+pub fn remove_sticks_expoly(poly: &mut ExPolygon) -> bool {
+    // ExPolygon.cpp:599
+    // return remove_sticks(poly.contour) || remove_sticks(poly.holes);
+    // NOTE: C++ short-circuits: holes are only processed when the contour pass
+    // returns false. We replicate the `||` short-circuit exactly.
+    polygon_remove_sticks(&mut poly.contour) || polygons_remove_sticks(&mut poly.holes)
+}
 
 // ExPolygon.cpp:602-621
 // bool remove_small_and_small_holes(ExPolygons &expolygons, double min_area)
@@ -606,7 +779,7 @@ pub fn remove_small_and_small_holes(expolygons: &mut ExPolygons, min_area: f64) 
         if expolygons[expoly_idx].area().abs() >= min_area {
             // ExPolygon.cpp:609
             // modified |= remove_small(expolygons[expoly_idx].holes, min_area);
-            modified |= remove_small_polygons(&mut expolygons[expoly_idx].holes, min_area);
+            modified |= polygons_remove_small(&mut expolygons[expoly_idx].holes, min_area);
             // ExPolygon.cpp:610-613
             if free_idx < expoly_idx {
                 expolygons.swap(expoly_idx, free_idx);
@@ -629,38 +802,11 @@ pub fn remove_small_and_small_holes(expolygons: &mut ExPolygons, min_area: f64) 
 // ExPolygon.cpp:623-640
 // void keep_largest_contour_only(ExPolygons &polygons)
 //
-// NOTE: a divergent `keep_largest_contour_only` already exists in
-// geometry/expolygon.rs that operates *per-ExPolygon* on holes. The C++
-// function instead keeps only the single ExPolygon with the largest CONTOUR
-// area across the whole collection. This faithful overload is provided here as
-// `keep_largest_contour_only_collection` to avoid clashing with the existing
-// (differently-behaving) function while still exposing the correct semantics.
-pub fn keep_largest_contour_only_collection(polygons: &mut ExPolygons) {
-    // ExPolygon.cpp:625
-    if polygons.len() > 1 {
-        // ExPolygon.cpp:626
-        let mut max_area = 0.0;
-        // ExPolygon.cpp:627
-        let mut max_area_polygon: Option<usize> = None;
-        // ExPolygon.cpp:628-634
-        for (idx, p) in polygons.iter().enumerate() {
-            // NOTE: C++ Polygon::area() is signed; use signed_area().
-            let a = p.contour.signed_area();
-            if a > max_area {
-                max_area = a;
-                max_area_polygon = Some(idx);
-            }
-        }
-        // ExPolygon.cpp:635
-        debug_assert!(max_area_polygon.is_some());
-        // ExPolygon.cpp:636-638
-        if let Some(idx) = max_area_polygon {
-            let p = polygons[idx].clone();
-            polygons.clear();
-            polygons.push(p);
-        }
-    }
-}
+// The faithful C++ port is the canonical `crate::geometry::keep_largest_contour_only`
+// (audited/corrected in place in geometry/expolygon.rs — it now keeps only the
+// single ExPolygon with the largest CONTOUR area across the whole collection).
+// Re-exported here under a C++-named alias for parity bookkeeping.
+pub use crate::geometry::keep_largest_contour_only as keep_largest_contour_only_collection;
 
 // ----------------------------------------------------------------------------
 // Local helpers mirroring Slic3r free functions used by ExPolygon.cpp.
@@ -758,12 +904,12 @@ fn bounding_box_polygon(min: Point, max: Point) -> Polygon {
     ])
 }
 
-// remove_small(Polygons&, double) — keep only polygons whose |area| >= min_area;
-// returns true if any were removed. (ClipperUtils.cpp)
-fn remove_small_polygons(polygons: &mut Vec<Polygon>, min_area: f64) -> bool {
-    let before = polygons.len();
-    polygons.retain(|p| p.signed_area().abs() >= min_area);
-    polygons.len() != before
+// MultiPoint::symmetric_y(const coord_t &x_axis) (MultiPoint.cpp:472): for each
+// point `pt(0) = 2 * y_axis - pt(0)`. (Polygon inherits this from MultiPoint.)
+fn symmetric_y_polygon(polygon: &mut Polygon, y_axis: Coord) {
+    for p in &mut polygon.points {
+        p.x = 2 * y_axis - p.x;
+    }
 }
 
 // Polygon::scale(double factor_x, double factor_y) (Polygon.cpp): multiply each

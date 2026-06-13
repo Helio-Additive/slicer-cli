@@ -1093,8 +1093,8 @@
     "hpp": "GCodeSender.hpp",
     "kind": "cpp",
     "area": "root",
-    "rust": "crates/libslic3r-rs/src/g_code_sender.rs",
-    "rust_exists": false,
+    "rust": "crates/libslic3r-rs/src/gcode_sender.rs",
+    "rust_exists": true,
     "loc": 580,
     "status": "partial",
     "priority": 2

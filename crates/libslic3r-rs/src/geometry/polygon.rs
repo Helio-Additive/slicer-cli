@@ -1859,7 +1859,7 @@ pub fn to_polygons_paths(paths: &[Vec<Point>]) -> Polygons {
 /// ClipperUtils `simplify_polygons(const Polygons &subject, bool preserve_collinear=false)`.
 /// ClipperUtils.cpp:1026 — executes a NonZero union of the subject paths, cleaning
 /// self-intersections/overlaps. preserve_collinear=false (the default at the call site).
-fn simplify_polygons_clipper(subject: &[Polygon]) -> Polygons {
+pub fn simplify_polygons_clipper(subject: &[Polygon]) -> Polygons {
     if subject.is_empty() {
         return Vec::new();
     }

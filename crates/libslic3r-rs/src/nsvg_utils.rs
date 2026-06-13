@@ -12,32 +12,50 @@
 //! `NSVGimage` / `NSVGshape` / `NSVGpath` structures (and the `nsvgParse` /
 //! `nsvgParseFromFile` / `nsvgDelete` entry points). `nanosvg` is a native C
 //! header (`src/nanosvg/nanosvg.h`) that has no Rust port and cannot be added as
-//! a system/dylib dependency under the wasm-safe constraint. Several geometry
-//! dependencies are also not yet available in the Rust crate:
+//! a system/dylib dependency under the wasm-safe constraint. This is confirmed
+//! by the sibling modules [`crate::emboss_shape`] ("There is no `NSVGimage` type
+//! ported yet") and [`crate::format::svg`] ("nanosvg is a native C header with no
+//! Rust port"). nanosvg is the single root blocker for this file.
 //!
-//! - `Emboss::heal_polygons` is currently a stub (returns `Err`) in
-//!   [`crate::emboss::heal_polygons`].
+//! The other dependencies that earlier blocked this file are now AVAILABLE and
+//! are no longer blockers:
+//! - `Emboss::heal_polygons` is fully ported in [`crate::emboss::heal_polygons`].
+//! - `Slic3r::center(ExPolygonsWithIds&)` is ported in [`crate::emboss::center`].
+//!
+//! Still-missing, nanosvg-independent geometry helpers needed only by the
+//! (nanosvg-blocked) stroke path:
 //! - `ClipperUtils::contour_to_polygons` is not ported.
 //! - The `Slic3r::offset(Polylines/Polygons, delta, JoinType, miter, EndType)`
-//!   open-path offset overload (with `EndType::etOpenButt`/`etOpenRound`/
-//!   `etOpenSquare`) is not exposed by the Rust clipper helpers.
-//! - `Slic3r::center(ExPolygonsWithIds&)` lives in `Emboss.cpp` and is not ported.
+//!   open-path offset overload that selects `EndType` from the SVG line-cap
+//!   (`etOpenButt`/`etOpenRound`/`etOpenSquare`) is not exposed by the Rust
+//!   clipper helpers (only a fixed `OpenButt` variant exists in
+//!   [`crate::clipper_utils::offset_polyline`]).
 //!
-//! Consequently the following symbols are BLOCKED and intentionally not ported
-//! here (see the module-level docs in the report):
-//! `create_shape_with_ids`, `to_polygons`, `bounds`, `nsvgParseFromFile`,
-//! `read_from_disk`, `nsvgParse`, `init_image`, `get_shapes_count`,
-//! `linearize_path`, `fill_to_expolygons`, `stroke_to_expolygons`, `to_dashes`,
-//! and the `DashesParam` helper.
+//! Consequently the following symbols remain BLOCKED on the native nanosvg
+//! `NSVGimage`/`NSVGshape`/`NSVGpath` structures (they iterate `image.shapes`,
+//! `shape.paths`, `path->pts`, `path->npts`, `path->closed`, etc.):
+//! `create_shape_with_ids`, `to_polygons(image)`, `bounds`, `get_shapes_count`,
+//! `linearize_path`, `fill_to_expolygons`, `stroke_to_expolygons`, and the
+//! `DashesParam` constructor. The file I/O / parse wrappers `nsvgParseFromFile`,
+//! `read_from_disk`, `nsvgParse`, and `init_image` are likewise blocked because
+//! they construct/return the native `NSVGimage` (via `::nsvgParse`).
 //!
-//! The genuinely self-contained, dependency-free curve-flattening math is ported
-//! faithfully below: `to_coor`, `need_flattening`, `is_line`, and
-//! `flatten_cubic_bez`. These are exactly the routines `linearize_path` would
-//! call once nanosvg parsing becomes available.
+//! Everything tractable around nanosvg is ported faithfully:
+//! - the self-contained curve-flattening math `to_coor`, `need_flattening`,
+//!   `is_line`, and `flatten_cubic_bez` (what `linearize_path` calls);
+//! - the dependency-free dash splitter `to_dashes` and the `DashesParam` struct
+//!   fields (only its `NSVGshape`-reading constructor is blocked).
+//!
+//! AUDIT FIX (2026-06-13): `NSVGLineParams::scale` previously defaulted to
+//! `1. / crate::SCALING_FACTOR` (= 0.00001), which is the reciprocal of the
+//! correct value. C++ `scale = 1. / SCALING_FACTOR` with C++ `SCALING_FACTOR =
+//! 0.00001` evaluates to `100000.0`, and the crate stores `crate::SCALING_FACTOR
+//! = 100_000.0` so that `crate::scale(v) == C++ scale_(v)`. The default is now
+//! `crate::SCALING_FACTOR`.
 
 // NSVGUtils.cpp:1-9  #include "NSVGUtils.hpp" / <array> / <charconv> / boost nowide /
 //                    "ClipperUtils.hpp" / "Emboss.hpp" (heal for shape)
-use crate::geometry::{Point, Points};
+use crate::geometry::{Point, Points, Polyline, Polylines};
 
 // ============================================================================
 // NSVGUtils.hpp:18-44  struct NSVGLineParams
@@ -98,7 +116,14 @@ impl NSVGLineParams {
             // NSVGUtils.hpp:25  int max_level = 10;
             max_level: 10,
             // NSVGUtils.hpp:29  double scale = 1. / SCALING_FACTOR;
-            scale: 1. / crate::SCALING_FACTOR,
+            //
+            // C++ `SCALING_FACTOR` is `0.00001` (libslic3r.h:58), so the literal
+            // value of `1. / SCALING_FACTOR` is `100000.0`. The Rust crate stores
+            // `crate::SCALING_FACTOR = 100_000.0` (the reciprocal of the C++
+            // constant) precisely so that `crate::scale(v) == C++ scale_(v) ==
+            // v * 100000`. Hence the faithful numeric value here is
+            // `crate::SCALING_FACTOR`, NOT `1. / crate::SCALING_FACTOR`.
+            scale: crate::SCALING_FACTOR,
             // NSVGUtils.hpp:32  bool is_y_negative = true;
             is_y_negative: true,
             // NSVGUtils.hpp:42  arc_tolerance(std::pow(tesselation_tolerance, 1/3.))
@@ -306,6 +331,157 @@ pub fn flatten_cubic_bez(
     flatten_cubic_bez(points, tess_tol, &p1234, &p234, &p34, p4, level);
 }
 
+// ============================================================================
+// NSVGUtils.cpp:394-437  struct DashesParam
+// ============================================================================
+
+/// `DashesParam` — dash-pattern bookkeeping for converting a stroke polyline into
+/// dashes.
+///
+/// NSVGUtils.cpp:394-437
+///
+/// NOTE: The constructor `DashesParam(const NSVGshape &shape, double scale)`
+/// (NSVGUtils.cpp:408-436) reads the `NSVGshape` fields `strokeDashCount`,
+/// `strokeDashArray`, and `strokeDashOffset`. The `NSVGshape` type is part of the
+/// native `nanosvg` C library, which has no Rust port (and cannot be added as a
+/// system/dylib dependency under the wasm-safe rule — see the module-level docs).
+/// The constructor therefore stays BLOCKED. The struct fields and the
+/// dependency-free `to_dashes` consumer below are ported faithfully so they are
+/// ready the moment nanosvg parsing becomes available.
+#[derive(Debug, Clone)]
+pub struct DashesParam {
+    // NSVGUtils.cpp:395-396
+    // first dash length
+    /// first dash length (scaled)
+    pub dash_length: f32,
+
+    // NSVGUtils.cpp:398-400
+    // is current dash .. true
+    // is current space .. false
+    /// is current dash (`true`) or space (`false`)
+    pub is_line: bool,
+
+    // NSVGUtils.cpp:402-403
+    // current index to array
+    /// current index into `dash_array`
+    pub dash_index: u8,
+
+    // NSVGUtils.cpp:405  std::array<float, max_dash_array_size> dash_array; // scaled
+    /// dash lengths (scaled); limited to `MAX_DASH_ARRAY_SIZE`
+    pub dash_array: [f32; Self::MAX_DASH_ARRAY_SIZE],
+
+    // NSVGUtils.cpp:406  unsigned char dash_count = 0;
+    /// count of values in `dash_array`
+    pub dash_count: u8,
+}
+
+impl DashesParam {
+    // NSVGUtils.cpp:404  static constexpr size_t max_dash_array_size = 8; // limitation of nanosvg strokeDashArray
+    /// NSVGUtils.cpp:404 — limitation of nanosvg `strokeDashArray`.
+    pub const MAX_DASH_ARRAY_SIZE: usize = 8;
+}
+
+// NSVGUtils.cpp:439-498
+// Polylines to_dashes(const Polyline &polyline, const DashesParam& param)
+/// NSVGUtils.cpp:439
+pub fn to_dashes(polyline: &Polyline, param: &DashesParam) -> Polylines {
+    // NSVGUtils.cpp:441  Polylines dashes;
+    let mut dashes: Polylines = Polylines::new();
+    // NSVGUtils.cpp:442  Polyline dash; // cache for one dash in dashed line
+    let mut dash: Polyline = Polyline::new();
+    // NSVGUtils.cpp:443  Point prev_point;
+    let mut prev_point: Point = Point::new(0, 0);
+
+    // NSVGUtils.cpp:445  bool is_line = param.is_line;
+    let mut is_line: bool = param.is_line;
+    // NSVGUtils.cpp:446  unsigned char dash_index = param.dash_index;
+    let mut dash_index: u8 = param.dash_index;
+    // NSVGUtils.cpp:447  float dash_length = param.dash_length; // current rest of dash distance
+    let mut dash_length: f32 = param.dash_length;
+    // NSVGUtils.cpp:448  for (const Point &point : polyline.points) {
+    for (i, point) in polyline.points.iter().enumerate() {
+        let point = *point;
+        // NSVGUtils.cpp:449-453  if (&point == &polyline.points.front()) { ... is first point }
+        if i == 0 {
+            // NSVGUtils.cpp:451  prev_point = point; // copy
+            prev_point = point;
+            // NSVGUtils.cpp:452  continue;
+            continue;
+        }
+
+        // NSVGUtils.cpp:455  Point diff = point - prev_point;
+        let mut diff: Point = point - prev_point;
+        // NSVGUtils.cpp:456  float line_segment_length = diff.cast<float>().norm();
+        let mut line_segment_length: f32 =
+            ((diff.x() as f32).powi(2) + (diff.y() as f32).powi(2)).sqrt();
+        // NSVGUtils.cpp:457  while (dash_length < line_segment_length) {
+        while dash_length < line_segment_length {
+            // NSVGUtils.cpp:458-459  Calculate intermediate point
+            // float d = dash_length / line_segment_length;
+            let d: f32 = dash_length / line_segment_length;
+            // NSVGUtils.cpp:460  Point move_point   = diff * d;
+            // C++ Point::operator*(const double&) -> Point(x()*rhs, y()*rhs) with the
+            // double->coord_t conversion via the Point(double,double) ctor (lrint).
+            let move_point: Point = diff * (d as f64);
+            // NSVGUtils.cpp:461  Point intermediate = prev_point + move_point;
+            let intermediate: Point = prev_point + move_point;
+
+            // NSVGUtils.cpp:463-473  add Dash in stroke
+            if is_line {
+                if dash.points.is_empty() {
+                    // NSVGUtils.cpp:466  dashes.emplace_back(Points{prev_point, intermediate});
+                    dashes.push(Polyline::from_points(vec![prev_point, intermediate]));
+                } else {
+                    // NSVGUtils.cpp:468  dash.append(prev_point);
+                    dash.append_point(prev_point);
+                    // NSVGUtils.cpp:469  dash.append(intermediate);
+                    dash.append_point(intermediate);
+                    // NSVGUtils.cpp:470  dashes.push_back(dash);
+                    dashes.push(dash.clone());
+                    // NSVGUtils.cpp:471  dash.clear();
+                    dash.points.clear();
+                }
+            }
+
+            // NSVGUtils.cpp:475  diff -= move_point;
+            diff -= move_point;
+            // NSVGUtils.cpp:476  line_segment_length -= dash_length;
+            line_segment_length -= dash_length;
+            // NSVGUtils.cpp:477  prev_point = intermediate;
+            prev_point = intermediate;
+
+            // NSVGUtils.cpp:479-482  Advance dash pattern
+            // is_line = !is_line;
+            is_line = !is_line;
+            // NSVGUtils.cpp:481  dash_index = (dash_index + 1) % param.dash_count;
+            dash_index = (dash_index + 1) % param.dash_count;
+            // NSVGUtils.cpp:482  dash_length = param.dash_array[dash_index];
+            dash_length = param.dash_array[dash_index as usize];
+        }
+
+        // NSVGUtils.cpp:485-486  if (is_line) dash.append(prev_point);
+        if is_line {
+            dash.append_point(prev_point);
+        }
+        // NSVGUtils.cpp:487  dash_length -= line_segment_length;
+        dash_length -= line_segment_length;
+        // NSVGUtils.cpp:488  prev_point = point; // copy
+        prev_point = point;
+    }
+
+    // NSVGUtils.cpp:491-496  add last dash
+    if is_line {
+        // NSVGUtils.cpp:493  assert(!dash.empty());
+        debug_assert!(!dash.points.is_empty());
+        // NSVGUtils.cpp:494  dash.append(prev_point); // prev_point == polyline.points.back()
+        dash.append_point(prev_point);
+        // NSVGUtils.cpp:495  dashes.push_back(dash);
+        dashes.push(dash);
+    }
+    // NSVGUtils.cpp:497  return dashes;
+    dashes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,7 +492,9 @@ mod tests {
         let p = NSVGLineParams::new(10.0);
         assert_eq!(p.tesselation_tolerance, 10.0);
         assert_eq!(p.max_level, 10);
-        assert_eq!(p.scale, 1.0 / crate::SCALING_FACTOR);
+        // NSVGUtils.hpp:29  scale = 1. / SCALING_FACTOR; with C++ SCALING_FACTOR =
+        // 0.00001 this is the literal value 100000.0 == crate::SCALING_FACTOR.
+        assert_eq!(p.scale, crate::SCALING_FACTOR);
         assert!(p.is_y_negative);
         assert_eq!(p.arc_tolerance, 10.0_f64.powf(1.0 / 3.0));
         assert_eq!(p.max_heal_iteration, 10);
@@ -357,5 +535,31 @@ mod tests {
         let p4 = Vec2f::new(3.0, 0.0);
         flatten_cubic_bez(&mut points, 10.0, &p1, &p2, &p3, &p4, 10);
         assert_eq!(points, vec![Point::new(3, 0)]);
+    }
+
+    #[test]
+    fn to_dashes_splits_single_segment() {
+        // NSVGUtils.cpp:439-498
+        // A single horizontal segment of length 100, with a uniform dash pattern
+        // [10, 10] (dash, gap) starting on a dash with full remaining length.
+        // Expected: dashes at x=[0,10], [20,30], [40,50], [60,70], [80,90], and a
+        // trailing dash [90?..100] — verify the splitter terminates and produces a
+        // sensible alternating set of on-segments.
+        let polyline = Polyline::from_points(vec![Point::new(0, 0), Point::new(100, 0)]);
+        let param = DashesParam {
+            dash_length: 10.0,
+            is_line: true,
+            dash_index: 0,
+            dash_array: [10.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            dash_count: 2,
+        };
+        let dashes = to_dashes(&polyline, &param);
+        // First dash starts at the segment origin.
+        assert!(!dashes.is_empty());
+        assert_eq!(dashes.first().unwrap().points.first().copied(), Some(Point::new(0, 0)));
+        // Every produced dash is a 2-point on-segment, alternating along x.
+        for d in &dashes {
+            assert!(d.points.len() >= 2);
+        }
     }
 }

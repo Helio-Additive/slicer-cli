@@ -11,15 +11,20 @@
 //!   dynamic `DynamicPrintConfig::option::<ConfigOptionStrings>(key)` reflection
 //!   API which is not yet ported to the Rust crate (the local `DynamicPrintConfig`
 //!   types in calib.rs / format/*.rs are placeholders with no typed-option access).
-//! - `get_estimate_extruder_change_count`, `get_estimate_nozzle_change_count`,
-//!   `get_estimate_extruder_filament_change_count`, `build_extruder_nozzle_list`:
-//!   require `MultiNozzleUtils::LayeredNozzleGroupResult` and `NozzleInfo`
-//!   (with `extruder_id`/`group_id` fields and the `get_used_extruders` /
-//!   `get_used_nozzles_in_extruder` / `get_layer_filament_sequences` methods),
-//!   which are not yet ported (`multi_nozzle_utils.rs` is a stub).
+//!
+//! Previously blocked, now ported (2026-06-13): `get_estimate_extruder_change_count`,
+//! `get_estimate_nozzle_change_count`, `get_estimate_extruder_filament_change_count`,
+//! `build_extruder_nozzle_list` — `MultiNozzleUtils::LayeredNozzleGroupResult` and
+//! `NozzleInfo` are now fully ported in `multi_nozzle_utils.rs`. The C++ overloaded
+//! methods `get_used_extruders(layer_id)` and
+//! `get_used_nozzles_in_extruder(ext_id, layer_id)` map to the Rust
+//! `get_used_extruders_layer` / `get_used_nozzles_in_extruder_layer`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
+
+// FilamentGroupUtils.hpp:10  #include "MultiNozzleUtils.hpp"
+use crate::multi_nozzle_utils::{LayeredNozzleGroupResult, NozzleInfo};
 
 // FilamentGroupUtils.hpp:36 (FilamentInfo::usage_type) — the enum lives in
 // PrintConfig.hpp:40 and is not yet ported to the Rust print_config module, so
@@ -541,6 +546,113 @@ pub fn check_printable(groups: &[BTreeSet<i32>], unprintable: &BTreeMap<i32, i32
     true
 }
 
+// FilamentGroupUtils.cpp:278
+/// `int get_estimate_extruder_change_count(const std::vector<std::vector<unsigned int>> &layer_filaments, const MultiNozzleUtils::LayeredNozzleGroupResult &extruder_nozzle_info)`
+pub fn get_estimate_extruder_change_count(
+    layer_filaments: &[Vec<u32>],
+    extruder_nozzle_info: &LayeredNozzleGroupResult,
+) -> i32 {
+    // FilamentGroupUtils.cpp:280
+    let mut ret = 0;
+    // FilamentGroupUtils.cpp:281
+    for layer_id in 0..layer_filaments.len() {
+        // FilamentGroupUtils.cpp:282
+        // int extruder_count = extruder_nozzle_info.get_used_extruders(layer_id).size();
+        let extruder_count = extruder_nozzle_info.get_used_extruders_layer(layer_id as i32).len() as i32;
+        // FilamentGroupUtils.cpp:283
+        ret += extruder_count - 1;
+    }
+    // FilamentGroupUtils.cpp:285
+    ret
+}
+
+// FilamentGroupUtils.cpp:288
+/// `int get_estimate_nozzle_change_count(const std::vector<std::vector<unsigned int>> &layer_filaments, const MultiNozzleUtils::LayeredNozzleGroupResult &extruder_nozzle_info)`
+pub fn get_estimate_nozzle_change_count(
+    layer_filaments: &[Vec<u32>],
+    extruder_nozzle_info: &LayeredNozzleGroupResult,
+) -> i32 {
+    // FilamentGroupUtils.cpp:290
+    let mut ret = 0;
+    // FilamentGroupUtils.cpp:291
+    for layer_id in 0..layer_filaments.len() {
+        // FilamentGroupUtils.cpp:292
+        // auto& filament_list = layer_filaments[layer_id];  (unused below, kept for parity)
+        let _filament_list = &layer_filaments[layer_id];
+        // FilamentGroupUtils.cpp:293
+        // auto  extruder_list = extruder_nozzle_info.get_used_extruders(layer_id);
+        let extruder_list = extruder_nozzle_info.get_used_extruders_layer(layer_id as i32);
+        // FilamentGroupUtils.cpp:294
+        for &extruder_id in &extruder_list {
+            // FilamentGroupUtils.cpp:295
+            // int nozzle_count = extruder_nozzle_info.get_used_nozzles_in_extruder(extruder_id, layer_id).size();
+            let nozzle_count = extruder_nozzle_info
+                .get_used_nozzles_in_extruder_layer(extruder_id, layer_id as i32)
+                .len() as i32;
+            // FilamentGroupUtils.cpp:296
+            if nozzle_count > 1 {
+                ret += nozzle_count - 1;
+            }
+        }
+    }
+    // FilamentGroupUtils.cpp:299
+    ret
+}
+
+// FilamentGroupUtils.cpp:302
+/// `std::pair<int, int> get_estimate_extruder_filament_change_count(const MultiNozzleUtils::LayeredNozzleGroupResult &extruder_nozzle_info)`
+pub fn get_estimate_extruder_filament_change_count(
+    extruder_nozzle_info: &LayeredNozzleGroupResult,
+) -> (i32, i32) {
+    // FilamentGroupUtils.cpp:304
+    let mut ret: (i32, i32) = (0, 0);
+    // FilamentGroupUtils.cpp:305
+    let layer_nums = extruder_nozzle_info.get_layer_filament_sequences().len() as i32;
+    // FilamentGroupUtils.cpp:306
+    for layer_id in 0..layer_nums {
+        // FilamentGroupUtils.cpp:307
+        // std::vector<int> extruders = extruder_nozzle_info.get_used_extruders(layer_id);
+        let extruders = extruder_nozzle_info.get_used_extruders_layer(layer_id);
+        // FilamentGroupUtils.cpp:308
+        ret.0 = extruders.len() as i32 - 1;
+
+        // FilamentGroupUtils.cpp:310
+        for &ext_id in &extruders {
+            // FilamentGroupUtils.cpp:311
+            // int nozzles = extruder_nozzle_info.get_used_nozzles_in_extruder(ext_id, layer_id).size();
+            let nozzles = extruder_nozzle_info
+                .get_used_nozzles_in_extruder_layer(ext_id, layer_id)
+                .len() as i32;
+            // FilamentGroupUtils.cpp:312
+            ret.1 += nozzles;
+        }
+        // FilamentGroupUtils.cpp:314
+        ret.1 = std::cmp::max(0, ret.1 - ret.0);
+    }
+    // FilamentGroupUtils.cpp:316
+    ret
+}
+
+// FilamentGroupUtils.cpp:319
+/// `std::map<int,std::vector<int>> build_extruder_nozzle_list(const std::vector<MultiNozzleUtils::NozzleInfo>& nozzle_list)`
+pub fn build_extruder_nozzle_list(nozzle_list: &[NozzleInfo]) -> BTreeMap<i32, Vec<i32>> {
+    // FilamentGroupUtils.cpp:321
+    let mut ret: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+    // FilamentGroupUtils.cpp:322
+    for nozzle in nozzle_list {
+        // FilamentGroupUtils.cpp:323
+        ret.entry(nozzle.extruder_id).or_default().push(nozzle.group_id);
+    }
+
+    // FilamentGroupUtils.cpp:326
+    for (_key, value) in ret.iter_mut() {
+        // FilamentGroupUtils.cpp:327
+        value.sort();
+    }
+    // FilamentGroupUtils.cpp:328
+    ret
+}
+
 // FilamentGroupUtils.cpp:331
 /// `std::vector<int> update_used_filament_values(const std::vector<int>& old_values, const std::vector<int>& new_values, const std::vector<unsigned int>& used_filaments)`
 pub fn update_used_filament_values(
@@ -658,5 +770,64 @@ mod tests {
         let new = vec![5, 6, 7, 8];
         let used = vec![1u32, 3];
         assert_eq!(update_used_filament_values(&old, &new, &used), vec![0, 6, 0, 8]);
+    }
+
+    #[test]
+    fn test_build_extruder_nozzle_list() {
+        // FilamentGroupUtils.cpp:319 — group nozzles by extruder_id, sorted.
+        let mk = |extruder_id: i32, group_id: i32| NozzleInfo {
+            extruder_id,
+            group_id,
+            ..NozzleInfo::default()
+        };
+        // Out-of-order group ids on extruder 0 to exercise the per-extruder sort.
+        let nozzles = vec![mk(0, 2), mk(1, 1), mk(0, 0)];
+        let ret = build_extruder_nozzle_list(&nozzles);
+        assert_eq!(ret.get(&0), Some(&vec![0, 2]));
+        assert_eq!(ret.get(&1), Some(&vec![1]));
+    }
+
+    // Builds a layered result: 2 extruders, one nozzle each (group 0 on
+    // extruder 0, group 1 on extruder 1); filament i -> nozzle i.
+    fn make_layered() -> LayeredNozzleGroupResult {
+        let n0 = NozzleInfo { extruder_id: 0, group_id: 0, ..NozzleInfo::default() };
+        let n1 = NozzleInfo { extruder_id: 1, group_id: 1, ..NozzleInfo::default() };
+        let nozzle_list = vec![n0, n1];
+        // layer 0: only filament 0 (extruder 0); layer 1: filaments 0 and 1 (both extruders).
+        let layer_maps = vec![vec![0, 1], vec![0, 1]];
+        let sequences = vec![vec![0u32], vec![0u32, 1u32]];
+        let used = vec![0u32, 1u32];
+        LayeredNozzleGroupResult::create_layered(&layer_maps, &nozzle_list, &used, &sequences)
+            .expect("create_layered")
+    }
+
+    #[test]
+    fn test_get_estimate_extruder_change_count() {
+        // FilamentGroupUtils.cpp:278 — sum over layers of (used_extruders - 1).
+        // layer 0: 1 extruder -> 0; layer 1: 2 extruders -> 1; total = 1.
+        let info = make_layered();
+        let layer_filaments = vec![vec![0u32], vec![0u32, 1u32]];
+        assert_eq!(get_estimate_extruder_change_count(&layer_filaments, &info), 1);
+    }
+
+    #[test]
+    fn test_get_estimate_nozzle_change_count() {
+        // FilamentGroupUtils.cpp:288 — each extruder has a single nozzle here,
+        // so nozzle_count is never > 1; result is 0.
+        let info = make_layered();
+        let layer_filaments = vec![vec![0u32], vec![0u32, 1u32]];
+        assert_eq!(get_estimate_nozzle_change_count(&layer_filaments, &info), 0);
+    }
+
+    #[test]
+    fn test_get_estimate_extruder_filament_change_count() {
+        // FilamentGroupUtils.cpp:302 — ret.first is ASSIGNED each layer (last wins);
+        // layer 1 has 2 extruders so ret.first = 1. ret.second accumulates nozzles
+        // then clamps to max(0, second - first) each layer.
+        let info = make_layered();
+        let (extruder_changes, _filament_changes) =
+            get_estimate_extruder_filament_change_count(&info);
+        // layer 1 is last: 2 used extruders -> ret.first = 1.
+        assert_eq!(extruder_changes, 1);
     }
 }

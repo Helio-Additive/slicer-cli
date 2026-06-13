@@ -181,13 +181,21 @@ impl LogSinkBackend {
     /// Only the default-key selection branch (LogSink.cpp:264-275) is ported.
     /// The cloud key fetch (LogSink.cpp:277-296) requires `Slic3r::Http`
     /// (libcurl, native) and is NOT ported; see module docs.
+    ///
+    /// NOTE on `key_time`: in C++ this parameter is `time_t key_time` passed
+    /// BY VALUE (LogSink.cpp:262), so the assignments to it (LogSink.cpp:269,
+    /// 274, 288) are dead writes that never reach the caller — the caller at
+    /// LogSink.cpp:313 passes `m_log_enc_key_timestamp`, which is therefore
+    /// never updated by this call. We mirror the by-value signature exactly so
+    /// the (lack of) propagation matches; the writes are intentionally local.
+    #[allow(unused_assignments, unused_mut, unused_variables)]
     pub fn get_aes_256_cbc(
         &self,
         enc_options: &LogEncOptions,
         key_str: &mut String,
         key_iv: &mut String,
         key_tag: &mut String,
-        key_time: &mut i64,
+        mut key_time: i64,
     ) {
         // the default key
         // LogSink.cpp:265-275
@@ -195,16 +203,18 @@ impl LogSinkBackend {
             *key_tag = DEFAULT_KEY_TAG_CN_1.to_string(); // LogSink.cpp:266
             *key_str = DEFAULT_KEY_STR_CN_1.to_string(); // LogSink.cpp:267
             *key_iv = DEFAULT_KEY_IV_CN_1.to_string(); // LogSink.cpp:268
-            *key_time = DEFAULT_KEY_TIME_CN_1; // LogSink.cpp:269
+            key_time = DEFAULT_KEY_TIME_CN_1; // LogSink.cpp:269 (by-value, dead write)
         } else {
             *key_tag = DEFAULT_KEY_TAG_US_1.to_string(); // LogSink.cpp:271
             *key_str = DEFAULT_KEY_STR_US_1.to_string(); // LogSink.cpp:272
             *key_iv = DEFAULT_KEY_IV_US_1.to_string(); // LogSink.cpp:273
-            *key_time = DEFAULT_KEY_TIME_US_1; // LogSink.cpp:274
+            key_time = DEFAULT_KEY_TIME_US_1; // LogSink.cpp:274 (by-value, dead write)
         }
 
         // LogSink.cpp:277-296 : cloud key fetch via Slic3r::Http (libcurl).
         // BLOCKED — native HTTP backend not available / not wasm-safe.
+        // The cloud branch also writes `key_time = time(nullptr)` (LogSink.cpp:288),
+        // likewise a dead by-value write.
         let _ = enc_options.enc_key_url;
     }
 }
@@ -285,25 +295,30 @@ impl LogSinkUtil {
         //   auto base_path = (log_folder / buf.str()).make_preferred();
         //   return base_path.string();
         // } catch (const std::exception& e) { printf(...); }
-        let data_dir = data_dir();
-        if !data_dir.is_empty() {
-            let log_folder = std::path::Path::new(&data_dir).join("log");
-            if !log_folder.exists() {
-                // boost::filesystem::create_directories — best effort; the C++
-                // catches any exception and falls through to buf below.
-                if std::fs::create_dir_all(&log_folder).is_err() {
-                    // LogSink.cpp:442 : printf error, then fall through.
-                    return buf;
-                }
+        //
+        // NOTE: C++ does NOT special-case an empty data_dir() here. When
+        // data_dir() is empty, boost::filesystem::path("") / "log" yields the
+        // relative path "log", and the result is "log/<buf>" — NOT bare <buf>.
+        // We mirror that exactly: Path::new("").join("log") == "log".
+        // LogSink.cpp:435 : auto log_folder = path(data_dir()) / "log";
+        let log_folder = std::path::Path::new(&data_dir()).join("log");
+        // LogSink.cpp:436-438 : if (!exists(log_folder)) create_directories(log_folder);
+        if !log_folder.exists() {
+            // boost::filesystem::create_directories — best effort; the C++
+            // catches any exception (LogSink.cpp:441-443) and falls through to
+            // `return buf.str()` below.
+            if std::fs::create_dir_all(&log_folder).is_err() {
+                // LogSink.cpp:442 : printf error, then fall through.
+                // LogSink.cpp:445 : return buf.str();
+                return buf;
             }
-            let base_path = log_folder.join(&buf);
-            // .make_preferred() normalizes path separators for the platform;
-            // PathBuf already uses the native separator.
-            return base_path.to_string_lossy().into_owned();
         }
-
-        // LogSink.cpp:445 : return buf.str();
-        buf
+        // LogSink.cpp:439 : auto base_path = (log_folder / buf.str()).make_preferred();
+        // .make_preferred() normalizes path separators for the platform;
+        // PathBuf already uses the native separator.
+        let base_path = log_folder.join(&buf);
+        // LogSink.cpp:440 : return base_path.string();
+        base_path.to_string_lossy().into_owned()
     }
 }
 
@@ -362,30 +377,35 @@ mod tests {
     #[test]
     fn test_get_aes_256_cbc_defaults() {
         let backend = LogSinkBackend::default();
-        let (mut k, mut iv, mut tag, mut t) =
-            (String::new(), String::new(), String::new(), 0i64);
+        let (mut k, mut iv, mut tag) = (String::new(), String::new(), String::new());
+        // `key_time` is passed BY VALUE in C++ (LogSink.cpp:262); the writes to
+        // it (LogSink.cpp:269/274) are dead and never reach the caller, so the
+        // caller's timestamp is left unchanged. We assert that here.
+        let t = 0i64;
 
         let cn = LogEncOptions {
             enc_type: LogEncType::LogEncAes256Cbc,
             enc_key_url: String::new(),
             enc_key_host_env: "cn".to_string(),
         };
-        backend.get_aes_256_cbc(&cn, &mut k, &mut iv, &mut tag, &mut t);
+        backend.get_aes_256_cbc(&cn, &mut k, &mut iv, &mut tag, t);
         assert_eq!(k, DEFAULT_KEY_STR_CN_1);
         assert_eq!(iv, DEFAULT_KEY_IV_CN_1);
         assert_eq!(tag, DEFAULT_KEY_TAG_CN_1);
-        assert_eq!(t, DEFAULT_KEY_TIME_CN_1);
+        // by-value: caller's `t` is unchanged
+        assert_eq!(t, 0i64);
 
         let us = LogEncOptions {
             enc_type: LogEncType::LogEncAes256Cbc,
             enc_key_url: String::new(),
             enc_key_host_env: "us".to_string(),
         };
-        backend.get_aes_256_cbc(&us, &mut k, &mut iv, &mut tag, &mut t);
+        backend.get_aes_256_cbc(&us, &mut k, &mut iv, &mut tag, t);
         assert_eq!(k, DEFAULT_KEY_STR_US_1);
         assert_eq!(iv, DEFAULT_KEY_IV_US_1);
         assert_eq!(tag, DEFAULT_KEY_TAG_US_1);
-        assert_eq!(t, DEFAULT_KEY_TIME_US_1);
+        // by-value: caller's `t` is unchanged
+        assert_eq!(t, 0i64);
     }
 
     // LogSink.cpp:37-44
