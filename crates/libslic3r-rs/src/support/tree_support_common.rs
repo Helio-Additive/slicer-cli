@@ -310,25 +310,14 @@ impl TreeSupportMeshGroupSettings {
             - ((config.support_threshold_angle + 1.0) * M_PI / 180.)
                 .clamp(0., 0.5 * M_PI);
         // TreeSupportCommon.hpp:54  this->support_line_width = support_material_flow(&print_object, config.layer_height).scaled_width();
-        let support_line_width = support_material_flow(
-            config.support_line_width,
-            config.line_width,
-            print_config.nozzle_diameter,
-            config.layer_height,
-            config.layer_height,
-        )
-        .map(|f| f.scaled_width())
-        .unwrap_or_else(|_| scaled_coord(0.4));
+        let support_line_width = support_material_flow(print_object, config.layer_height)
+            .map(|f| f.scaled_width())
+            .unwrap_or_else(|_| scaled_coord(0.4));
         // TreeSupportCommon.hpp:55  this->support_roof_line_width = support_material_interface_flow(&print_object, config.layer_height).scaled_width();
-        let support_roof_line_width = support_material_interface_flow(
-            config.support_line_width,
-            config.line_width,
-            print_config.nozzle_diameter,
-            config.layer_height,
-            config.layer_height,
-        )
-        .map(|f| f.scaled_width())
-        .unwrap_or_else(|_| scaled_coord(0.4));
+        let support_roof_line_width =
+            support_material_interface_flow(print_object, config.layer_height)
+                .map(|f| f.scaled_width())
+                .unwrap_or_else(|_| scaled_coord(0.4));
         // TreeSupportCommon.hpp:57  this->support_bottom_enable = config.support_interface_top_layers.value > 0 && config.support_interface_bottom_layers.value != 0;
         let support_bottom_enable =
             config.support_interface_top_layers > 0 && config.support_interface_bottom_layers != 0;

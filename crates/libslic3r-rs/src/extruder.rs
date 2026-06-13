@@ -88,9 +88,40 @@ impl NozzleVolumeType {
 
 // PrintConfig.cpp enum key-name tables, indexed by enum value.
 // (s_keys_names_ExtruderType / s_keys_names_NozzleVolumeType)
-const S_KEYS_NAMES_EXTRUDER_TYPE: [&str; 2] = ["DirectDrive", "Bowden"];
+//
+// These are produced by CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(NAME) (PrintConfig.cpp:132)
+// via enum_names_from_keys_map (PrintConfig.cpp:119): the names vector is sized
+// max(enum value)+1 and indexed by enum value, with the KEY STRING at that index.
+//   s_keys_map_ExtruderType  (PrintConfig.cpp:483): {"Direct Drive": etDirectDrive(0), "Bowden": etBowden(1)}
+//   s_keys_map_NozzleVolumeType (PrintConfig.cpp:489): {"Standard": nvtStandard(0),
+//     "High Flow": nvtHighFlow(1), "TPU High Flow": nvtTPUHighFlow(3), "Hybrid": nvtHybrid(2)}
+// so indexed by value the tables are (note the embedded spaces in the keys):
+const S_KEYS_NAMES_EXTRUDER_TYPE: [&str; 2] = ["Direct Drive", "Bowden"];
 const S_KEYS_NAMES_NOZZLE_VOLUME_TYPE: [&str; 4] =
-    ["Standard", "HighFlow", "Hybrid", "TPUHighFlow"];
+    ["Standard", "High Flow", "Hybrid", "TPU High Flow"];
+
+// PrintConfig.hpp:391
+// static std::set<NozzleVolumeType> get_valid_nozzle_volume_type()
+//   Builds the set of *valid* nozzle volume types: every value in
+//   [0, nvtMaxNozzleVolumeType] EXCEPT nvtHybrid. (Note: this excludes
+//   nvtHybrid even though it is <= nvtMaxNozzleVolumeType.)
+pub fn get_valid_nozzle_volume_type() -> std::collections::BTreeSet<i32> {
+    // PrintConfig.hpp:392
+    let mut type_set: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
+    // PrintConfig.hpp:393  for (int i = 0; i <= nvtMaxNozzleVolumeType; ++i)
+    for i in 0..=NVT_MAX_NOZZLE_VOLUME_TYPE {
+        // PrintConfig.hpp:394  auto t = static_cast<NozzleVolumeType>(i);
+        let t = NozzleVolumeType::from_i32(i);
+        // PrintConfig.hpp:395  if (t == nvtHybrid) continue;
+        if t == NozzleVolumeType::NvtHybrid {
+            continue;
+        }
+        // PrintConfig.hpp:396  type.insert(t);
+        type_set.insert(t as i32);
+    }
+    // PrintConfig.hpp:397
+    type_set
+}
 
 // PrintConfig.cpp:528
 // std::string get_extruder_variant_string(ExtruderType extruder_type, NozzleVolumeType nozzle_volume_type)
@@ -108,9 +139,11 @@ pub fn get_extruder_variant_string(
         return variant_string;
     }
     // PrintConfig.cpp:537  auto nozzle_volume_types = get_valid_nozzle_volume_type();
+    let nozzle_volume_types = get_valid_nozzle_volume_type();
     // PrintConfig.cpp:538  if (nozzle_volume_types.count(nozzle_volume_type) == 0)
-    if (nozzle_volume_type as i32) > NVT_MAX_NOZZLE_VOLUME_TYPE {
+    if !nozzle_volume_types.contains(&(nozzle_volume_type as i32)) {
         // PrintConfig.cpp:539 (logging) — unsupported NozzleVolumeType
+        // extruder_type = etDirectDrive;
         return variant_string;
     }
     // PrintConfig.cpp:543-545
@@ -822,7 +855,7 @@ mod tests {
             nozzle_volume_type: ConfigOptionVector::new(vec![0]),
             extruder_type: ConfigOptionVector::new(vec![0]),
             filament_extruder_variant: ConfigOptionVector::new(vec![
-                "DirectDrive Standard".to_string()
+                "Direct Drive Standard".to_string()
             ]),
             filament_diameter: ConfigOptionVector::new(vec![1.75]),
             filament_density: ConfigOptionVector::new(vec![1.24]),
@@ -836,6 +869,8 @@ mod tests {
             retract_restart_extra: ConfigOptionVector::new(vec![0.0]),
             retract_length_toolchange: ConfigOptionVector::new(vec![10.0]),
             retract_restart_extra_toolchange: ConfigOptionVector::new(vec![0.0]),
+            // GCodeWriter-only fields are not exercised by Extruder; default them.
+            ..Default::default()
         }
     }
 

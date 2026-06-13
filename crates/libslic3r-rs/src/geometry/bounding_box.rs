@@ -46,6 +46,32 @@ impl BoundingBox {
         bb
     }
 
+    /// Construct the bounding box from a range of points, mirroring C++
+    /// `BoundingBox::construct<IncludeBoundary>(out, from, to)`.
+    /// BoundingBox.hpp:88-102
+    ///
+    /// if `include_boundary`, then a bounding box is defined even for a single point.
+    /// otherwise a bounding box is only defined if it has a positive area.
+    /// The output bounding box is expected to be set to "undefined" initially.
+    pub fn construct(out: &mut Self, points: &[Point], include_boundary: bool) {
+        // BoundingBox.hpp:91
+        if !points.is_empty() {
+            // BoundingBox.hpp:92-94
+            out.min = points[0];
+            out.max = out.min;
+            // BoundingBox.hpp:95-99
+            for vec in &points[1..] {
+                out.min.x = out.min.x.min(vec.x);
+                out.min.y = out.min.y.min(vec.y);
+                out.max.x = out.max.x.max(vec.x);
+                out.max.y = out.max.y.max(vec.y);
+            }
+            // BoundingBox.hpp:100
+            out.defined =
+                include_boundary || (out.min.x < out.max.x && out.min.y < out.max.y);
+        }
+    }
+
     /// Create a bounding box from floating-point coordinates (in mm).
     #[inline]
     pub fn from_coords_scale(min_x: CoordF, min_y: CoordF, max_x: CoordF, max_y: CoordF) -> Self {

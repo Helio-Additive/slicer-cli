@@ -28,6 +28,7 @@ use std::f64::consts::PI;
 use thiserror::Error;
 
 use crate::libslic3r::EPSILON;
+use crate::print_object::PrintObject;
 use crate::{scale, Coord};
 
 /// Extra spacing between bridge threads (mm)
@@ -558,6 +559,32 @@ impl Flow {
         }
     }
 
+    // === BLOCKED: Flow::extrusion_width (Flow.cpp:67-116) ===========================
+    //
+    // The two `Flow::extrusion_width(opt_key, ...)` static overloads, together with
+    // their file-local helpers `opt_key_to_flow_role` (Flow.cpp:41-59) and
+    // `throw_on_missing_variable` (Flow.cpp:61-64), are NOT portable into this crate
+    // at present.
+    //
+    // They are built entirely on the dynamic, string-keyed `ConfigOptionResolver`
+    // API:  `config.option<ConfigOptionFloatOrPercent>(opt_key)`,
+    //        `config.option(opt_key_layer_height)`,
+    //        `config.option<ConfigOptionFloatsNullable>("nozzle_diameter")`.
+    // This crate models the config as a flat struct of concrete typed fields
+    // (PrintConfig / PrintObjectConfig / PrintRegionConfig); there is no
+    // `ConfigOptionResolver` / `DynamicConfig` / runtime `option(opt_key)` lookup
+    // (see config.rs — the ConfigBase/DynamicConfig family is documented but not
+    // implemented).
+    //
+    // In C++ these two overloads are consumed ONLY by PlaceholderParser.cpp
+    // (PlaceholderParser.cpp:913 and :929) to provide hint values for `{...}`
+    // template variables. PlaceholderParser is itself a dynamic-config consumer
+    // and is not ported. No ported call site needs `Flow::extrusion_width`.
+    //
+    // Porting these faithfully would require first standing up the dynamic
+    // `ConfigOptionResolver` infrastructure; doing so now would be a stub against
+    // the flat-config reality. Left blocked until that infrastructure exists.
+
     // === E-Value Calculation Helpers ===
 
     /// Calculate E-axis distance for a given travel distance.
@@ -623,94 +650,128 @@ impl PartialOrd for Flow {
     }
 }
 
-// === Support Material Flow Helpers ===
-// These mirror the free functions in libslic3r/Flow.cpp
+// === Support Material Flow free functions (Flow.cpp:225-264) ===
+// These mirror the free functions in libslic3r/Flow.cpp. They take a
+// `&PrintObject` exactly like the C++ `const PrintObject *object`, reaching the
+// config through the now-wired view shapes `object.config()` (PrintObjectConfig)
+// and `object.print().config()` (PrintConfig).
+//
+// NOTE on `get_at(support_filament - 1)`: C++ indexes the per-extruder
+// `nozzle_diameter` vector by the support filament id. This crate models
+// `nozzle_diameter` as a scalar (CoordF), so `get_at(...)` collapses to a
+// direct read and the filament index is never consulted. The same scalar
+// collapse is documented throughout print_config.rs.
+//
+// NOTE on config layout: in C++ `support_filament` / `support_interface_filament`
+// live on PrintObjectConfig; in this crate they live on PrintConfig. Because of
+// the scalar nozzle_diameter collapse above, the index source is irrelevant to
+// the resulting Flow, so the layout difference is inert here.
 
-/// Create flow for support material.
-///
-/// # Arguments
-///
-/// * `support_line_width` - Configured support line width (0 = use default line_width)
-/// * `default_line_width` - Default line width from config
-/// * `nozzle_diameter` - Nozzle diameter for support extruder
-/// * `layer_height` - Layer height (0 = use config layer_height)
-/// * `default_layer_height` - Default layer height from config
-pub fn support_material_flow(
-    support_line_width: f64,
-    default_line_width: f64,
-    nozzle_diameter: f64,
-    layer_height: f64,
-    default_layer_height: f64,
-) -> FlowResult<Flow> {
-    let width = if support_line_width > 0.0 {
-        support_line_width
-    } else {
-        default_line_width
-    };
-    let height = if layer_height > 0.0 {
-        layer_height
-    } else {
-        default_layer_height
-    };
-
-    Flow::new_from_config_width(FlowRole::SupportMaterial, width, nozzle_diameter, height)
-}
-
-/// Create flow for support transition (tree support).
-///
-/// Support transitions use bridge flow (circular cross-section).
-pub fn support_transition_flow(nozzle_diameter: f64) -> Flow {
-    Flow::bridging_flow(nozzle_diameter, nozzle_diameter)
-}
-
-/// Create flow for first layer support material.
-pub fn support_material_1st_layer_flow(
-    initial_layer_line_width: f64,
-    support_line_width: f64,
-    default_line_width: f64,
-    nozzle_diameter: f64,
-    initial_layer_height: f64,
-) -> FlowResult<Flow> {
-    let width = if initial_layer_line_width > 0.0 {
-        initial_layer_line_width
-    } else if support_line_width > 0.0 {
-        support_line_width
-    } else {
-        default_line_width
-    };
-
+// Flow.cpp:225  Flow support_material_flow(const PrintObject *object, float layer_height)
+pub fn support_material_flow(object: &PrintObject, layer_height: f64) -> FlowResult<Flow> {
+    let object_config = object.config();
+    // Flow.cpp:227-233
     Flow::new_from_config_width(
+        // Flow.cpp:228
         FlowRole::SupportMaterial,
-        width,
-        nozzle_diameter,
-        initial_layer_height,
+        // The width parameter accepted by new_from_config_width is of type
+        // ConfigOptionFloatOrPercent, the Flow class takes care of the percent
+        // to value substitution.
+        // Flow.cpp:230  (object->config().support_line_width.value > 0) ? support_line_width : line_width
+        if object_config.support_line_width > 0.0 {
+            object_config.support_line_width
+        } else {
+            object_config.line_width
+        },
+        // Flow.cpp:232  if object->config().support_filament == 0 (which means to not
+        // trigger tool change, but use the current extruder instead), get_at will
+        // return the 0th component. Scalar collapse: read nozzle_diameter directly.
+        object.print().config().nozzle_diameter,
+        // Flow.cpp:233  (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value)
+        if layer_height > 0.0 {
+            layer_height
+        } else {
+            object_config.layer_height
+        },
     )
 }
 
-/// Create flow for support material interface.
-pub fn support_material_interface_flow(
-    support_line_width: f64,
-    default_line_width: f64,
-    nozzle_diameter: f64,
-    layer_height: f64,
-    default_layer_height: f64,
-) -> FlowResult<Flow> {
-    let width = if support_line_width > 0.0 {
-        support_line_width
-    } else {
-        default_line_width
-    };
-    let height = if layer_height > 0.0 {
-        layer_height
-    } else {
-        default_layer_height
-    };
+//BBS
+// Flow.cpp:236  Flow support_transition_flow(const PrintObject* object)
+pub fn support_transition_flow(object: &PrintObject) -> Flow {
+    //BBS: support transition of tree support is bridge flow
+    // Flow.cpp:239  float dmr = float(object->print()->config().nozzle_diameter.get_at(object->config().support_filament - 1));
+    let dmr = object.print().config().nozzle_diameter;
+    // Flow.cpp:240
+    Flow::bridging_flow(dmr, dmr)
+}
 
+// Flow.cpp:243  Flow support_material_1st_layer_flow(const PrintObject *object, float layer_height)
+pub fn support_material_1st_layer_flow(object: &PrintObject, layer_height: f64) -> FlowResult<Flow> {
+    // Flow.cpp:245  const PrintConfig &print_config = object->print()->config();
+    let print_config = object.print().config();
+    let object_config = object.config();
+    // Flow.cpp:246  const auto &width = (print_config.initial_layer_line_width.value > 0) ? initial_layer_line_width : object->config().support_line_width;
+    let width = if print_config.initial_layer_line_width > 0.0 {
+        print_config.initial_layer_line_width
+    } else {
+        object_config.support_line_width
+    };
+    // Flow.cpp:247-253
     Flow::new_from_config_width(
+        // Flow.cpp:248
+        FlowRole::SupportMaterial,
+        // The width parameter accepted by new_from_config_width is of type
+        // ConfigOptionFloatOrPercent, the Flow class takes care of the percent
+        // to value substitution.
+        // Flow.cpp:250  (width.value > 0) ? width : object->config().line_width
+        if width > 0.0 {
+            width
+        } else {
+            object_config.line_width
+        },
+        // Flow.cpp:251  float(print_config.nozzle_diameter.get_at(object->config().support_filament-1))
+        print_config.nozzle_diameter,
+        // Flow.cpp:252  (layer_height > 0.f) ? layer_height : float(print_config.initial_layer_print_height.value)
+        // In this crate the first-layer print height lives on PrintObjectConfig
+        // as `first_layer_height` (C++ keeps it on PrintConfig as
+        // `initial_layer_print_height`); the value is identical.
+        if layer_height > 0.0 {
+            layer_height
+        } else {
+            object_config.first_layer_height
+        },
+    )
+}
+
+// Flow.cpp:255  Flow support_material_interface_flow(const PrintObject *object, float layer_height)
+pub fn support_material_interface_flow(
+    object: &PrintObject,
+    layer_height: f64,
+) -> FlowResult<Flow> {
+    let object_config = object.config();
+    // Flow.cpp:257-263
+    Flow::new_from_config_width(
+        // Flow.cpp:258
         FlowRole::SupportMaterialInterface,
-        width,
-        nozzle_diameter,
-        height,
+        // The width parameter accepted by new_from_config_width is of type
+        // ConfigOptionFloatOrPercent, the Flow class takes care of the percent
+        // to value substitution.
+        // Flow.cpp:260  (object->config().support_line_width > 0) ? support_line_width : line_width
+        if object_config.support_line_width > 0.0 {
+            object_config.support_line_width
+        } else {
+            object_config.line_width
+        },
+        // Flow.cpp:262  if object->config().support_interface_filament == 0 ..., get_at
+        // returns the 0th component. Scalar collapse: read nozzle_diameter directly.
+        object.print().config().nozzle_diameter,
+        // Flow.cpp:263  (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value)
+        if layer_height > 0.0 {
+            layer_height
+        } else {
+            object_config.layer_height
+        },
     )
 }
 

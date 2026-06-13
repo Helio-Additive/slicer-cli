@@ -184,6 +184,51 @@ impl Point {
         }
     }
 
+    /// Point.hpp:201-207 (`both_comp`)
+    /// Returns true if both coordinates satisfy the comparison `op` ("&gt;" or "&lt;").
+    #[inline]
+    pub fn both_comp(&self, rhs: &Point, op: &str) -> bool {
+        // Point.hpp:202-205
+        if op == ">" {
+            self.x() > rhs.x() && self.y() > rhs.y()
+        } else if op == "<" {
+            self.x() < rhs.x() && self.y() < rhs.y()
+        } else {
+            // Point.hpp:206
+            false
+        }
+    }
+
+    /// Point.hpp:208-215 (`any_comp(const Point&, const std::string&)`)
+    /// Returns true if either coordinate satisfies the comparison `op`.
+    #[inline]
+    pub fn any_comp(&self, rhs: &Point, op: &str) -> bool {
+        // Point.hpp:210-213
+        if op == ">" {
+            self.x() > rhs.x() || self.y() > rhs.y()
+        } else if op == "<" {
+            self.x() < rhs.x() || self.y() < rhs.y()
+        } else {
+            // Point.hpp:214
+            false
+        }
+    }
+
+    /// Point.hpp:216-223 (`any_comp(const coord_t, const std::string&)`)
+    /// Returns true if either coordinate satisfies the comparison `op` against `val`.
+    #[inline]
+    pub fn any_comp_val(&self, val: Coord, op: &str) -> bool {
+        // Point.hpp:218-221
+        if op == ">" {
+            self.x() > val || self.y() > val
+        } else if op == "<" {
+            self.x() < val || self.y() < val
+        } else {
+            // Point.hpp:222
+            false
+        }
+    }
+
     /// Rotate 90 degrees counter-clockwise.
     ///
     /// Point.hpp:237
@@ -1361,6 +1406,45 @@ pub fn transform(points: &[Point3F], t: &crate::geometry::Transform3D) -> Vec<Po
     ret_points
 }
 
+/// if `include_boundary`, then a bounding box is defined even for a single point.
+/// otherwise a bounding box is only defined if it has a positive area.
+/// Point.cpp:251-259 (`BoundingBox get_extents<IncludeBoundary>(const Points &pts)`)
+pub fn get_extents(pts: &[Point], include_boundary: bool) -> crate::geometry::BoundingBox {
+    // Point.cpp:254-256
+    let mut out = crate::geometry::BoundingBox::new();
+    crate::geometry::BoundingBox::construct(&mut out, pts, include_boundary);
+    out
+}
+
+/// if `include_boundary`, then a bounding box is defined even for a single point.
+/// otherwise a bounding box is only defined if it has a positive area.
+/// Point.cpp:263-270 (`BoundingBox get_extents<IncludeBoundary>(const VecOfPoints &pts)`)
+pub fn get_extents_vec_of_points(
+    pts: &[Vec<Point>],
+    include_boundary: bool,
+) -> crate::geometry::BoundingBox {
+    // Point.cpp:266
+    let mut bbox = crate::geometry::BoundingBox::new();
+    // Point.cpp:267-268
+    for p in pts {
+        bbox.merge(&get_extents(p, include_boundary));
+    }
+    // Point.cpp:269
+    bbox
+}
+
+/// Point.cpp:274-280 (`BoundingBoxf get_extents(const std::vector<Vec2d> &pts)`)
+pub fn get_extents_vec2d(pts: &[PointF]) -> crate::geometry::BoundingBoxF {
+    // Point.cpp:276
+    let mut bbox = crate::geometry::BoundingBoxF::new();
+    // Point.cpp:277-278
+    for p in pts {
+        bbox.merge_point(*p);
+    }
+    // Point.cpp:279
+    bbox
+}
+
 /// Test for duplicate points in a vector of points.
 /// The points are copied, sorted and checked for duplicates globally.
 /// Point.cpp:225-232 (`bool has_duplicate_points(std::vector<Point> &&pts)`)
@@ -1511,6 +1595,261 @@ pub fn align_to_grid_point_base(coord: Point, spacing: Point, base: Point) -> Po
         align_to_grid_base(coord.x, spacing.x, base.x),
         align_to_grid_base(coord.y, spacing.y, base.y),
     )
+}
+
+/// MinMaxLimits
+/// Point.hpp:598-602 (`template<typename T> struct MinMax`)
+#[derive(Clone, Copy, Debug)]
+pub struct MinMax<T> {
+    pub min: T,
+    pub max: T,
+}
+
+/// Clamp `val` to the `[limit.min, limit.max]` range, returning whether it was modified.
+/// Point.hpp:608-619 (`template<typename T> static bool apply(T &val, const MinMax<T> &limit)`)
+pub fn apply<T: PartialOrd + Copy>(val: &mut T, limit: &MinMax<T>) -> bool {
+    // Point.hpp:610-613
+    if *val > limit.max {
+        *val = limit.max;
+        return true;
+    }
+    // Point.hpp:614-617
+    if *val < limit.min {
+        *val = limit.min;
+        return true;
+    }
+    // Point.hpp:618
+    false
+}
+
+/// Clamp an optional `val` to the `[limit.min, limit.max]` range.
+/// Point.hpp:603-607 (`static bool apply(std::optional<T> &val, const MinMax<T> &limit)`)
+pub fn apply_opt<T: PartialOrd + Copy>(val: &mut Option<T>, limit: &MinMax<T>) -> bool {
+    // Point.hpp:605-606
+    match val {
+        None => false,
+        Some(v) => apply(v, limit),
+    }
+}
+
+/// To be used by hash maps as a spatial hash of a point.
+/// Point.hpp:368-372 (`struct PointHash`)
+///
+/// C++: `return coord_t((89 * 31 + int64_t(pt.x())) * 31 + pt.y());`
+/// The arithmetic is performed in `int64_t` and truncated to `coord_t`
+/// (here `i64`); wrapping semantics mirror the C++ integer overflow behavior.
+#[inline]
+pub fn point_hash(pt: &Point) -> Coord {
+    (89i64
+        .wrapping_mul(31)
+        .wrapping_add(pt.x)
+        .wrapping_mul(31)
+        .wrapping_add(pt.y)) as Coord
+}
+
+/// A generic class to search for a closest Point in a given radius.
+/// It uses a multimap to implement an efficient 2D spatial hashing.
+/// The `point_accessor` has to return `Option<&Point>`.
+/// If `None` is returned, the value is ignored by the query.
+/// Point.hpp:378-509 (`template ClosestPointInRadiusLookup`)
+///
+/// `ValueType` is the stored payload; `point_accessor` maps a value to its
+/// representative `Point` (or `None` to skip it), mirroring the C++
+/// `PointAccessor` functor.
+pub struct ClosestPointInRadiusLookup<ValueType, PointAccessor>
+where
+    PointAccessor: Fn(&ValueType) -> Option<Point>,
+{
+    // Point.hpp:503-508
+    m_point_accessor: PointAccessor,
+    m_map: std::collections::HashMap<(Coord, Coord), Vec<ValueType>>,
+    m_search_radius: Coord,
+    m_grid_resolution: Coord,
+    m_grid_log2: Coord,
+}
+
+impl<ValueType, PointAccessor> ClosestPointInRadiusLookup<ValueType, PointAccessor>
+where
+    PointAccessor: Fn(&ValueType) -> Option<Point>,
+{
+    /// Point.hpp:381-411 (constructor)
+    pub fn new(search_radius: Coord, point_accessor: PointAccessor) -> Self {
+        // Point.hpp:382
+        let m_search_radius = search_radius;
+        let mut m_grid_log2: Coord = 0;
+        // Resolution of a grid, twice the search radius + some epsilon.
+        // Point.hpp:385
+        let gridres: Coord = 2 * m_search_radius + 4;
+        // Point.hpp:386
+        let mut m_grid_resolution = gridres;
+        // Point.hpp:387-388
+        debug_assert!(m_grid_resolution > 0);
+        debug_assert!(m_grid_resolution < (1 << 30));
+        // Compute m_grid_log2 = log2(m_grid_resolution)
+        // Point.hpp:390-393
+        if m_grid_resolution > 32767 {
+            m_grid_resolution >>= 16;
+            m_grid_log2 += 16;
+        }
+        // Point.hpp:394-397
+        if m_grid_resolution > 127 {
+            m_grid_resolution >>= 8;
+            m_grid_log2 += 8;
+        }
+        // Point.hpp:398-401
+        if m_grid_resolution > 7 {
+            m_grid_resolution >>= 4;
+            m_grid_log2 += 4;
+        }
+        // Point.hpp:402-405
+        if m_grid_resolution > 1 {
+            m_grid_resolution >>= 2;
+            m_grid_log2 += 2;
+        }
+        // Point.hpp:406-407
+        if m_grid_resolution > 0 {
+            m_grid_log2 += 1;
+        }
+        // Point.hpp:408
+        m_grid_resolution = 1 << m_grid_log2;
+        // Point.hpp:409-410
+        debug_assert!(m_grid_resolution >= gridres);
+        debug_assert!(gridres >= m_grid_resolution / 2);
+        Self {
+            m_point_accessor: point_accessor,
+            m_map: std::collections::HashMap::new(),
+            m_search_radius,
+            m_grid_resolution,
+            m_grid_log2,
+        }
+    }
+
+    /// Point.hpp:413-417 / Point.hpp:419-423 (`insert`)
+    pub fn insert(&mut self, value: ValueType) {
+        // Point.hpp:414-416
+        if let Some(pt) = (self.m_point_accessor)(&value) {
+            self.m_map
+                .entry((pt.x >> self.m_grid_log2, pt.y >> self.m_grid_log2))
+                .or_default()
+                .push(value);
+        }
+    }
+
+    /// Erase a data point equal to value. (`ValueType` has to implement `PartialEq`).
+    /// Returns true if the data point equal to value was found and removed.
+    /// Point.hpp:427-441 (`erase`)
+    pub fn erase(&mut self, value: &ValueType) -> bool
+    where
+        ValueType: PartialEq,
+    {
+        // Point.hpp:428-429
+        if let Some(pt) = (self.m_point_accessor)(value) {
+            // Range of fragment starts around grid_corner, close to pt.
+            // Point.hpp:431
+            let key = (pt.x >> self.m_grid_log2, pt.y >> self.m_grid_log2);
+            if let Some(bucket) = self.m_map.get_mut(&key) {
+                // Remove the first item.
+                // Point.hpp:433-438
+                if let Some(idx) = bucket.iter().position(|it| it == value) {
+                    bucket.remove(idx);
+                    return true;
+                }
+            }
+        }
+        // Point.hpp:440
+        false
+    }
+
+    /// Return a pair of `(&ValueType, distance_squared)`.
+    /// Point.hpp:444-473 (`find`)
+    pub fn find(&self, pt: &Point) -> Option<(&ValueType, CoordF)> {
+        // Iterate over 4 closest grid cells around pt,
+        // find the closest start point inside these cells to pt.
+        // Point.hpp:447-448
+        let mut value_min: Option<&ValueType> = None;
+        let mut dist_min: CoordF = CoordF::MAX;
+        // Round pt to a closest grid_cell corner.
+        // Point.hpp:450
+        let grid_corner = Point::new(
+            (pt.x + (self.m_grid_resolution >> 1)) >> self.m_grid_log2,
+            (pt.y + (self.m_grid_resolution >> 1)) >> self.m_grid_log2,
+        );
+        // For four neighbors of grid_corner:
+        // Point.hpp:452-453
+        for neighbor_y in -1..1 {
+            for neighbor_x in -1..1 {
+                // Range of fragment starts around grid_corner, close to pt.
+                // Point.hpp:455
+                let key = (grid_corner.x + neighbor_x, grid_corner.y + neighbor_y);
+                if let Some(bucket) = self.m_map.get(&key) {
+                    // Find the map entry closest to pt.
+                    // Point.hpp:457-467
+                    for value in bucket {
+                        if let Some(pt2) = (self.m_point_accessor)(value) {
+                            // const double d2 = (pt - *pt2).cast<double>().squaredNorm();
+                            let d = *pt - pt2;
+                            let d2 = (d.x as CoordF) * (d.x as CoordF)
+                                + (d.y as CoordF) * (d.y as CoordF);
+                            if d2 < dist_min {
+                                dist_min = d2;
+                                value_min = Some(value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Point.hpp:470-472
+        match value_min {
+            Some(v)
+                if dist_min < self.m_search_radius as CoordF * self.m_search_radius as CoordF =>
+            {
+                Some((v, dist_min))
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns all pairs of values and squared distances.
+    /// Point.hpp:476-500 (`find_all`)
+    pub fn find_all(&self, pt: &Point) -> Vec<(&ValueType, CoordF)> {
+        // Iterate over 4 closest grid cells around pt,
+        // Round pt to a closest grid_cell corner.
+        // Point.hpp:479
+        let grid_corner = Point::new(
+            (pt.x + (self.m_grid_resolution >> 1)) >> self.m_grid_log2,
+            (pt.y + (self.m_grid_resolution >> 1)) >> self.m_grid_log2,
+        );
+        // For four neighbors of grid_corner:
+        // Point.hpp:481-482
+        let mut out: Vec<(&ValueType, CoordF)> = Vec::new();
+        let r2 = self.m_search_radius as CoordF * self.m_search_radius as CoordF;
+        // Point.hpp:483-484
+        for neighbor_y in -1..1 {
+            for neighbor_x in -1..1 {
+                // Range of fragment starts around grid_corner, close to pt.
+                // Point.hpp:486
+                let key = (grid_corner.x + neighbor_x, grid_corner.y + neighbor_y);
+                if let Some(bucket) = self.m_map.get(&key) {
+                    // Find the map entry closest to pt.
+                    // Point.hpp:488-495
+                    for value in bucket {
+                        if let Some(pt2) = (self.m_point_accessor)(value) {
+                            // const double d2 = (pt - *pt2).cast<double>().squaredNorm();
+                            let d = *pt - pt2;
+                            let d2 = (d.x as CoordF) * (d.x as CoordF)
+                                + (d.y as CoordF) * (d.y as CoordF);
+                            if d2 <= r2 {
+                                out.push((value, d2));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Point.hpp:499
+        out
+    }
 }
 
 /// Point.cpp:287-301 / Point.hpp:358-365 — exact orientation predicates.
@@ -1671,5 +2010,90 @@ mod tests {
         let proj = p.project_onto_segment(a, b);
         assert_eq!(proj.x, 5);
         assert_eq!(proj.y, 0);
+    }
+
+    #[test]
+    fn test_get_extents() {
+        let pts = vec![Point::new(1, 2), Point::new(5, -3), Point::new(0, 4)];
+        // include_boundary = true -> defined.
+        let bb = get_extents(&pts, true);
+        assert!(bb.is_defined());
+        assert_eq!(bb.min, Point::new(0, -3));
+        assert_eq!(bb.max, Point::new(5, 4));
+        // Single point with include_boundary=false has no positive area -> undefined.
+        let bb1 = get_extents(&[Point::new(7, 7)], false);
+        assert!(!bb1.is_defined());
+        // Single point with include_boundary=true -> defined.
+        let bb2 = get_extents(&[Point::new(7, 7)], true);
+        assert!(bb2.is_defined());
+        // Empty -> undefined.
+        assert!(!get_extents(&[], false).is_defined());
+    }
+
+    #[test]
+    fn test_get_extents_vec_of_points() {
+        let a = vec![Point::new(0, 0), Point::new(2, 2)];
+        let b = vec![Point::new(-1, 5), Point::new(3, -4)];
+        let bb = get_extents_vec_of_points(&[a, b], false);
+        assert_eq!(bb.min, Point::new(-1, -4));
+        assert_eq!(bb.max, Point::new(3, 5));
+    }
+
+    #[test]
+    fn test_point_hash_matches_cpp_formula() {
+        let pt = Point::new(123, 456);
+        let expected = ((89i64 * 31 + 123) * 31 + 456) as Coord;
+        assert_eq!(point_hash(&pt), expected);
+    }
+
+    #[test]
+    fn test_both_any_comp() {
+        let a = Point::new(5, 5);
+        let b = Point::new(3, 7);
+        assert!(!a.both_comp(&b, ">"));
+        assert!(a.any_comp(&b, ">"));
+        assert!(b.both_comp(&Point::new(2, 2), ">"));
+        assert!(a.any_comp_val(4, ">"));
+        assert!(!a.any_comp_val(10, ">"));
+        assert!(!a.both_comp(&b, "=="));
+    }
+
+    #[test]
+    fn test_apply_clamp() {
+        let limit = MinMax { min: 0i64, max: 10i64 };
+        let mut v = 15i64;
+        assert!(apply(&mut v, &limit));
+        assert_eq!(v, 10);
+        let mut v2 = -5i64;
+        assert!(apply(&mut v2, &limit));
+        assert_eq!(v2, 0);
+        let mut v3 = 5i64;
+        assert!(!apply(&mut v3, &limit));
+        assert_eq!(v3, 5);
+        let mut none: Option<i64> = None;
+        assert!(!apply_opt(&mut none, &limit));
+    }
+
+    #[test]
+    fn test_closest_point_in_radius_lookup() {
+        // Stored value is the point itself; accessor returns it directly.
+        let mut lookup =
+            ClosestPointInRadiusLookup::new(100, |p: &Point| Some(*p));
+        lookup.insert(Point::new(0, 0));
+        lookup.insert(Point::new(10, 10));
+        lookup.insert(Point::new(500, 500));
+        // Query near origin: closest is (0,0), within radius.
+        let found = lookup.find(&Point::new(2, 2));
+        assert!(found.is_some());
+        let (v, d2) = found.unwrap();
+        assert_eq!(*v, Point::new(0, 0));
+        assert!((d2 - 8.0).abs() < 1e-9);
+        // Query far from everything but inside radius of (500,500) is out of grid neighbors range.
+        // find_all near origin returns the two nearby points.
+        let all = lookup.find_all(&Point::new(0, 0));
+        assert!(all.iter().any(|(p, _)| **p == Point::new(0, 0)));
+        // erase removes the value.
+        assert!(lookup.erase(&Point::new(0, 0)));
+        assert!(!lookup.erase(&Point::new(0, 0)));
     }
 }

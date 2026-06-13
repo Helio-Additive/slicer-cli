@@ -290,31 +290,18 @@ impl SupportParameters {
 
         // SupportParameters.hpp:66-68
         let first_layer_flow = support_material_1st_layer_flow(
-            print_config.initial_layer_line_width,
-            object_config.support_line_width,
-            object_config.line_width,
-            print_config.nozzle_diameter,
+            object,
             slicing_params.first_print_layer_height as f64,
         )
         .unwrap_or_else(|_| Flow::zero());
 
-        let support_material_flow = support_material_flow(
-            object_config.support_line_width,
-            object_config.line_width,
-            print_config.nozzle_diameter,
-            slicing_params.layer_height as f64,
-            object_config.layer_height as f64,
-        )
-        .unwrap_or_else(|_| Flow::zero());
+        let support_material_flow =
+            support_material_flow(object, slicing_params.layer_height as f64)
+                .unwrap_or_else(|_| Flow::zero());
 
-        let mut support_material_interface_flow = support_material_interface_flow(
-            object_config.support_line_width,
-            object_config.line_width,
-            print_config.nozzle_diameter,
-            slicing_params.layer_height as f64,
-            object_config.layer_height as f64,
-        )
-        .unwrap_or_else(|_| Flow::zero());
+        let mut support_material_interface_flow =
+            support_material_interface_flow(object, slicing_params.layer_height as f64)
+                .unwrap_or_else(|_| Flow::zero());
 
         // SupportParameters.hpp:69
         let raft_interface_flow = support_material_interface_flow.clone();

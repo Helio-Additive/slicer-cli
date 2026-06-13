@@ -6,17 +6,36 @@
 //! - Triangulation.hpp (71 lines)
 //! - Triangulation.cpp (329 lines)
 //!
-//! BLOCKED SYMBOL (native, non-wasm dependency):
+//! BLOCKED SYMBOL (native CGAL backend; byte-exactness, not just wasm):
 //! The core `triangulate(points, half_edges)` (Triangulation.cpp:86-206) is
 //! implemented in C++ entirely on top of CGAL's
 //! `Constrained_Delaunay_triangulation_2<K, Tds, Exact_predicates_tag>`
 //! (kernel `Exact_predicates_inexact_constructions_kernel`), `CGAL::spatial_sort`,
 //! and the CGAL triangulation data structure with vertex info. There is no CGAL
 //! FFI in this crate and no pure-Rust constrained-Delaunay backend is wired in
-//! (no `spade`/`cdt`/`delaunator` in Cargo.toml). CGAL is a native C++ library and
-//! is NOT wasm-safe, so per the porting rules we do NOT add it. Everything that
-//! does NOT depend on the CGAL kernel is ported faithfully below; the CGAL kernel
-//! body itself is left returning an empty index set and documented as blocked.
+//! (no `spade`/`cdt`/`delaunator` in Cargo.toml).
+//!
+//! Two reasons this stays blocked rather than swapping in a Rust CDT crate:
+//!   1. CGAL is a native C++ library and is NOT wasm-safe, so per the porting
+//!      rules we do not add it as a system/dylib dep.
+//!   2. Even a *wasm-safe* pure-Rust CDT (e.g. `spade`) could NOT reproduce this
+//!      result byte-for-byte: the emitted triangle set depends on CGAL's exact
+//!      predicates, on the specific `CGAL::spatial_sort` insertion order (which
+//!      drives the Delaunay tie-breaking), on CGAL's internal face/vertex
+//!      ordering, and on the constrained-edge flood-fill traversal order over
+//!      `cdt.finite_face_handles()`. A different backend yields a different (even
+//!      if geometrically valid) `Vec3i32` index list, breaking G-code/mesh
+//!      parity. Faking a result here would violate the no-stubs rule.
+//!
+//! Everything that does NOT depend on the CGAL kernel is ported faithfully below
+//! (all edge assembly, change-map/duplicate handling, and the precondition
+//! checks); the CGAL kernel body itself is left returning an empty index set and
+//! documented as blocked.
+//!
+//! Sole on-path C++ callers of the blocked symbol: `WipeTower.cpp` (rib-tower /
+//! rib-brim cap meshes via `its_make_rib_tower` / `its_make_rib_brim`) and
+//! `Emboss.cpp` (text-on-mesh, off the slicing path). The wipe-tower extrusion
+//! G-code itself comes from the 2D fill logic, not from these triangulated caps.
 
 use crate::geometry::{
     collect_duplicates, count_points, to_points, ExPolygon, ExPolygons, Point, Points, Polygon,

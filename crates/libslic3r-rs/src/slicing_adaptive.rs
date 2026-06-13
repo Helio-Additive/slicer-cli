@@ -81,10 +81,18 @@ fn layer_height_from_slope(face: &FaceZ, max_surface_deviation: f32) -> f32 {
 
     // Constant error measured as an area of the surface error triangle, Vojtech's formula with clamping to roughness at 90 degrees.
     // SlicingAdaptive.cpp:63-64
+    //    return std::min(max_surface_deviation / 0.184f, (face.n_cos > 1e-5) ? float(1.44 * max_surface_deviation * sqrt(face.n_sin / face.n_cos)) : FLT_MAX);
+    //
+    // Float-precision fidelity note: `face.n_sin` and `face.n_cos` are `float`, so
+    // `face.n_sin / face.n_cos` is a `float` division and `sqrt(...)` resolves to the
+    // `std::sqrt(float)` overload (float result). Only the leading `1.44` (a `double`
+    // literal) promotes the outer multiplication to `double`, which is then truncated
+    // back to `float`. Compute the division and sqrt in f32, promote to f64 only for the
+    // `1.44 *` product, then truncate to f32 to match C++ bit-for-bit.
     f32::min(
         max_surface_deviation / 0.184f32,
         if face.n_cos > 1e-5 {
-            (1.44 * f64::from(max_surface_deviation) * f64::from(face.n_sin / face.n_cos).sqrt())
+            (1.44 * f64::from(max_surface_deviation) * f64::from((face.n_sin / face.n_cos).sqrt()))
                 as f32
         } else {
             f32::MAX
@@ -131,10 +139,19 @@ impl SlicingAdaptive {
         // const ModelInstance &first_instance = *object.instances.front();
         // mesh.transform(first_instance.get_matrix(), first_instance.is_left_handed());
         //
-        // DIVERGENCE: the Rust `ModelObject` stores a single merged `mesh` (no
-        // `raw_mesh()` merging of multiple ModelVolumes), and `Instance` exposes
-        // `transform()` rather than `get_matrix()`/`is_left_handed()`. The
-        // is_left_handed winding flip is not modelled by the Rust transform.
+        // DIVERGENCE (model-level, blocked on a cross-module refactor — see model.rs:15-19):
+        // the Rust `ModelObject` stores a single merged `mesh` rather than C++'s
+        // `ModelVolumePtrs volumes`. `ModelObject::raw_mesh()` (Model.cpp:1491) iterates the
+        // model-part volumes, transforms each by its own `v->get_matrix()`, and merges them;
+        // the single-mesh representation cannot reproduce per-volume matrices, so for a
+        // multi-volume object the collected face set differs. For the common single-volume
+        // object the merged `mesh` IS the raw mesh and this is exact.
+        //
+        // The `is_left_handed()` argument to `mesh.transform(matrix, fix_left_handed)` only
+        // flips triangle WINDING (so STL normals stay outward-facing). `prepare` derives
+        // FaceZ purely from `std::abs(n.z())` (n_cos) and `sqrt(n.x()^2 + n.y()^2)` (n_sin)
+        // plus the vertex Z span — all winding/sign independent — so the missing winding flip
+        // has ZERO effect on this function's output and is not a parity concern here.
         let mut mesh = object.mesh.clone();
         let first_instance = object.instances.first().expect("object.instances.front()");
         mesh.transform(&first_instance.transform());
@@ -152,24 +169,35 @@ impl SlicingAdaptive {
             let v2 = &vertices[face.indices[2] as usize];
             // SlicingAdaptive.cpp:87
             // stl_vertex n = face_normal_normalized(vertex);
-            // face_normal_normalized(vertex) = ((v1 - v0).cross(v2 - v1)).normalized().normalized()
+            //
+            // TriangleMesh.hpp:331-332:
+            //   face_normal(vertex)            = (vertex[1] - vertex[0]).cross(vertex[2] - vertex[1]).normalized();
+            //   face_normal_normalized(vertex) = face_normal(vertex).normalized();
+            // i.e. the cross product is normalized TWICE, and all arithmetic is in `float`
+            // (`stl_vertex`/`Vec3f`). Eigen's `.normalized()` divides each component by
+            // `norm() = sqrt(x*x + y*y + z*z)` with NO zero-guard (a degenerate face yields a
+            // NaN/inf normal, exactly as in C++). Mirror that here: f32 throughout, no guard,
+            // applied twice.
             let e1x = (v1.x - v0.x) as f32;
             let e1y = (v1.y - v0.y) as f32;
             let e1z = (v1.z - v0.z) as f32;
             let e2x = (v2.x - v1.x) as f32;
             let e2y = (v2.y - v1.y) as f32;
             let e2z = (v2.z - v1.z) as f32;
-            // cross product e1 x e2
+            // cross product e1 x e2  (== (v1 - v0).cross(v2 - v1))
             let mut nx = e1y * e2z - e1z * e2y;
             let mut ny = e1z * e2x - e1x * e2z;
             let mut nz = e1x * e2y - e1y * e2x;
-            // normalize (face_normal then face_normal_normalized -> normalize once is idempotent)
-            let len = (nx * nx + ny * ny + nz * nz).sqrt();
-            if len > 0.0 {
-                nx /= len;
-                ny /= len;
-                nz /= len;
-            }
+            // face_normal: first .normalized()
+            let len1 = (nx * nx + ny * ny + nz * nz).sqrt();
+            nx /= len1;
+            ny /= len1;
+            nz /= len1;
+            // face_normal_normalized: second .normalized()
+            let len2 = (nx * nx + ny * ny + nz * nz).sqrt();
+            nx /= len2;
+            ny /= len2;
+            nz /= len2;
             // SlicingAdaptive.cpp:88-91
             // std::pair<float, float> face_z_span {
             //     std::min(std::min(vertex[0].z(), vertex[1].z()), vertex[2].z()),
@@ -257,7 +285,10 @@ impl SlicingAdaptive {
                     }
                     // skip touching facets which could otherwise cause small cusp values
                     // SlicingAdaptive.cpp:143-144
-                    if zspan.1 < print_z + EPSILON as f32 {
+                    // C++: `zspan.second < print_z + EPSILON` — EPSILON is a `double`
+                    // (libslic3r.h:52, 1e-4), so `print_z + EPSILON` promotes to double and the
+                    // `float < double` comparison is performed in double precision. Mirror in f64.
+                    if f64::from(zspan.1) < f64::from(print_z) + EPSILON {
                         ordered_id += 1;
                         continue;
                     }
@@ -288,7 +319,8 @@ impl SlicingAdaptive {
 
                 // skip touching facets which could otherwise cause small cusp values
                 // SlicingAdaptive.cpp:163-164
-                if zspan.1 < print_z + EPSILON as f32 {
+                // C++ `zspan.second < print_z + EPSILON` is evaluated in double (see note above).
+                if f64::from(zspan.1) < f64::from(print_z) + EPSILON {
                     ordered_id += 1;
                     continue;
                 }
@@ -302,7 +334,8 @@ impl SlicingAdaptive {
                 // SlicingAdaptive.cpp:170
                 if reduced_height < z_diff {
                     // SlicingAdaptive.cpp:171
-                    debug_assert!(z_diff < height + EPSILON as f32);
+                    // C++ `assert(z_diff < height + EPSILON)` — double-promoted comparison.
+                    debug_assert!(f64::from(z_diff) < f64::from(height) + EPSILON);
                     // The currently visited triangle's slope limits the next layer height so much, that
                     // the lowest point of the currently visible triangle is already above the newly proposed layer height.
                     // This means, that we need to limit the layer height so that the offending newly visited triangle

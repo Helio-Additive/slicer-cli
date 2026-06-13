@@ -24,7 +24,9 @@
 //!   render-info structures, so this symbol is blocked until those are ported.
 //!
 //! The tractable, self-contained free functions are ported faithfully below:
-//! `check_is_all_undefined_color` and `get_face_color_from_binding`.
+//! `check_is_all_undefined_color` and `get_face_color_from_binding`. Their
+//! `UNDEFINE_COLOR` / `color_is_equal` dependencies are reused from
+//! `crate::color` (the `Color.cpp` port) rather than duplicated.
 
 use std::collections::HashMap;
 
@@ -33,32 +35,13 @@ use crate::format::obj::{TriangleColor, RGBA};
 // ---------------------------------------------------------------------------
 // Color helpers from `Color.hpp` / `Color.cpp`.
 //
-// These three symbols belong to the (still pending) `Color.cpp` port. They are
-// defined locally here, as faithful copies, so this file is self-contained and
-// does not collide with the future `color.rs` port. When `Color.cpp` is ported
-// they should be re-exported from `crate::color` and these locals dropped.
+// `UNDEFINE_COLOR` (Color.hpp:10) and `color_is_equal` (Color.cpp:9-18) are now
+// provided canonically by the `Color.cpp` port in `crate::color`, so they are
+// reused here rather than duplicated. `crate::color::RGBA` and
+// `crate::format::obj::RGBA` are both `[f32; 4]`, so they interoperate.
 // ---------------------------------------------------------------------------
 
-/// `const RGBA UNDEFINE_COLOR = {0,0,0,0};`
-/// Color.hpp:10
-const UNDEFINE_COLOR: RGBA = [0.0, 0.0, 0.0, 0.0];
-
-/// `bool color_is_equal(const RGBA a, const RGBA& b)`
-/// Color.cpp:9-18
-fn color_is_equal(a: RGBA, b: &RGBA) -> bool {
-    // Color.cpp:11
-    for i in 0..4 {
-        // Color.cpp:12
-        let value = (a[i] - b[i]).abs() * 255.0;
-        // Color.cpp:13 - Floating-point precision
-        if value >= 0.9 {
-            // Color.cpp:14
-            return false;
-        }
-    }
-    // Color.cpp:17
-    true
-}
+use crate::color::{color_is_equal, UNDEFINE_COLOR};
 
 // ---------------------------------------------------------------------------
 // obj_color_deal_algo  (ObjColorUtils.cpp:7-19)

@@ -255,18 +255,23 @@ impl GCodeLine {
             // Check the name of the axis.
             if at(buf, c) == axis {
                 // Try to parse the numeric value.
-                // double v = strtod(++ c, &pend);
+                // char *pend = nullptr; double v = strtod(++ c, &pend);
                 c += 1;
                 let (v, pend) = strtod(buf, c);
-                if pend != c && is_end_of_word(at(buf, pend)) {
+                // if (pend != nullptr && is_end_of_word(*pend))
+                // strtod always sets a non-null endptr (== nptr on failure), so the
+                // `pend != nullptr` half is always true; the test reduces to is_end_of_word(*pend).
+                // NOTE: unlike parse_line_internal (which uses fast_float and tests `pend != c`),
+                // has_value mirrors strtod exactly and does NOT require any character consumed.
+                if is_end_of_word(at(buf, pend)) {
                     // The axis value has been parsed correctly.
+                    // value = float(v); return true;
                     return Some(v as f32);
                 }
-                // strtod did not advance / not end-of-word; fall through to skip the word.
-                // (Match C++: when the if-branch fails we still skip the rest of the word.)
-                c = pend;
             }
             // Skip the rest of the word.
+            // C++ resumes skip_word from `c` (already advanced past the axis char by ++c),
+            // NOT from pend.
             c = skip_word(buf, c);
         }
         None
