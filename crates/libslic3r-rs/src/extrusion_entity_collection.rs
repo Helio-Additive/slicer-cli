@@ -34,22 +34,20 @@ type ExtrusionEntitiesPtr = Vec<ExtrusionEntityType>;
 
 /// Return the role of a single entity, mirroring `ExtrusionEntity::role()`.
 ///
-/// `ExtrusionLoop::role()` / `ExtrusionEntityCollection::role()` collapse multiple
-/// distinct child roles to `erMixed` (see ExtrusionEntityCollection.hpp:54-61).
+/// Only `ExtrusionEntityCollection::role()` (ExtrusionEntityCollection.hpp:54-61)
+/// collapses distinct child roles to `erMixed`. `ExtrusionLoop::role()`
+/// (ExtrusionEntity.hpp:535) and `ExtrusionMultiPath::role()` (ibid:464) do NOT —
+/// each is `paths.empty() ? erNone : paths.front().role()`.
 fn entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
     match entity {
         ExtrusionEntityType::Path(p) => p.role,
         ExtrusionEntityType::Loop(l) => {
-            // ExtrusionLoop::role(): all paths share a role -> that role, else erMixed.
+            // ExtrusionEntity.hpp:535
+            // ExtrusionRole role() const override { return this->paths.empty() ? erNone : this->paths.front().role(); }
             if l.paths.is_empty() {
                 ExtrusionRole::None
             } else {
-                let first_role = l.paths[0].role;
-                if l.paths.iter().all(|p| p.role == first_role) {
-                    first_role
-                } else {
-                    ExtrusionRole::Mixed
-                }
+                l.paths[0].role
             }
         }
         ExtrusionEntityType::Collection(c) => c.role(),

@@ -125,7 +125,11 @@ impl Default for Halfedge_index {
 }
 
 // SurfaceMesh.hpp:41
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// No PartialEq/Eq: C++ deletes operator== (SurfaceMesh.hpp:47) to force callers
+// through SurfaceMesh::is_same_vertex (which compares underlying vertex INDICES,
+// not handle identity). Deriving PartialEq would expose the exact by-handle `==`
+// the C++ deletion forbids. Verified: no caller compares Vertex_index by value.
+#[derive(Debug, Clone, Copy)]
 pub struct Vertex_index {
     // SurfaceMesh.hpp:52
     m_face: Face_index,

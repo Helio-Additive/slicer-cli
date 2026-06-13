@@ -443,3 +443,94 @@ byte-identical to baseline (`cmp` clean); `; total filament length [mm] : 3818.6
 `slicer::pipeline`, `slicer::slice`, plus test-only imports of the
 step-7-deleted shadow types `slicer::layer::{PrintObject,PrintRegion}`) — parity
 is validated via build + reslice + cmp, not the test harness.
+
+## Retry-partial reviewer findings — FOUNDATIONAL parity blockers (2026-06-13)
+
+A reviewer-gated retry-partial workflow ran over the partial ledger
+(34 units reached the adversarial 1:1 reviewer before an OAuth-token 403 expiry
+aborted the tail; 134 agents, 3.48M tokens). **Net: 0 units reached a
+reviewer-confirmed `done`** — and that result is HONEST, not a too-strict gate.
+Every rejection traced to one of a small set of **cross-cutting primitive
+divergences** that no per-file port can fix. These are now the real parity
+worklist; fix the primitive, then the dependent units become confirmable.
+
+### F1. Geometry backend: `geo`-crate (geo-clipper) ≠ ClipperLib integer precision
+`clipper_utils.rs` `union`/`union_ex`/`union_polygons_ex` (and friends) use the
+`geo` crate's `.union` with a **fixed scale factor 1000.0** plus a `make_canonical()`
+rewind pass — NOT ClipperLib at `coord_t` integer precision (~1e5–1e6/mm). The
+1000.0 scale truncates coordinates; the rewind is not in C++ `union_ex`. So EVERY
+union/offset feeding a port is approximate. A faithful Clipper2-FFI path exists
+(`clipper2_utils.rs`) but is not used by the `clipper_utils.rs` primitives.
+- Rejected on this: SurfaceCollection.cpp (`simplify()` also DROPS the trailing
+  `ClipperLib::SimplifyPolygons`/pftNonZero cleanup that C++ `ExPolygon::simplify_p`
+  does at ExPolygon.cpp:250 — Rust `expolygon.rs:293-324` returns only Douglas-Peucker).
+- Clipper2Utils.cpp: `offset_ex_2`/`offset2_ex_2` use the FLAT
+  `clipper_clipperoffset_execute` + a SECOND independent `Clipper64` union with
+  `FillRule::NonZero`, vs C++ `ClipperOffset::Execute(delta, PolyTree64&)` whose
+  internal union is orientation-aware `Positive/Negative`. Double-union + wrong
+  fill-rule → different hole/contour classification. Blocked because clipper2c-sys
+  0.1.6 exposes no `Execute(delta, PolyTree64&)` overload.
+- **Fix:** route `clipper_utils.rs` primitives through the Clipper2 FFI at integer
+  precision; add/wrap the PolyTree offset Execute overload (vendor the binding).
+
+### F2. `Coord = i64` ≠ C++ `coord_t = int32_t` (libslic3r.h:40)
+The crate-wide `Coord = i64` (lib.rs:409) decision breaks bit-exact reproduction of
+any C++ formula that relies on int32 truncation/overflow:
+- `point_hash` (point.rs:1642-1648): C++ `coord_t((89*31 + int64_t(x))*31 + y)`
+  truncates the result to int32; Rust keeps i64 → different hash for coords whose
+  accumulated value exceeds 32 bits. (Affects spatial-hash bucketing, not lookup.)
+- `Point::ccw` static_assert(sizeof(coord_t)==4) not reproduced; overflow domain
+  differs for out-of-range coords.
+- SCALING_FACTOR magic-constant drift: Surface.cpp port mixed `1e12` (implying
+  SCALING_FACTOR=1e6) vs the rest using `(1e5)^2=1e10` (actual SCALING_FACTOR=1e5,
+  lib.rs:418) — a 100× internal inconsistency rooted in the unsettled coord scale.
+- `scale()` uses `.round()` (lib.rs:424) but C++ active `scale_()` macro does NOT
+  round (truncates; floored variant commented out, libslic3r.h:80-81).
+- **Fix (large, deferred-decision):** either narrow `Coord` to i32 to match C++, or
+  document i64 as an accepted intentional divergence and reproduce the int32
+  truncation explicitly at the formulas that need it (point_hash etc.).
+
+### F3. `surface.rs` is NOT a port of `Surface.cpp` — it's the divergent classifier
+`Surface.cpp` is 96 loc / 7 free functions; `Surface.hpp` is the Surface class +
+SurfaceType enum. But `surface.rs` is ~3610 lines: lines ~893–2383 are an ENTIRELY
+DIFFERENT module (`detect_surface_types`, `discover_vertical_shells`,
+`process_external_surfaces`, `discover_horizontal_shells`, `clip_surfaces_to_fill_boundaries`,
+`prepare_fill_surfaces`, …) that belongs to PrintObject.cpp / LayerRegion.cpp and is
+**full of self-admitted approximations**: "all unsupported areas classified as
+bridges" TODO (surface.rs:963), "~80% of the C++ behavior" wave-expansion
+(1629-1634), bespoke `SurfaceDetectionConfig` knobs whose defaults (shell_growth=0,
+fill_boundary_inset=0, solid_infill_width=0) DISABLE most ported behavior and have NO
+C++ counterpart, fabricated min-area heuristics (0.01mm², 927-931). **This is the
+root cause the Benchy-gap memory keeps circling** (Top surface 5 vs 142). Fixing it
+means porting the real PrintObject/LayerRegion classification faithfully and DELETING
+the divergent reimpl + its disable-by-default knobs — coupled with F1 (it leans on
+the approximate union/offset).
+
+### Cheaply + faithfully fixable IN-FILE (not blocked on F1/F2/F3)
+- **SurfaceMesh.hpp**: `Vertex_index` derives `PartialEq, Eq` (surface_mesh.rs:128)
+  but C++ DELETES `operator==` (SurfaceMesh.hpp:47) to force callers through
+  `is_same_vertex`. No current caller uses `==` → just remove the derive. 1-line fix.
+- **ExtrusionEntityCollection.cpp**: `entity_role()` returns `Mixed` for a loop with
+  mixed-role paths (extrusion_entity_collection.rs:42-54); C++ `ExtrusionLoop::role()`
+  is `paths.empty() ? erNone : paths.front().role()` and NEVER returns erMixed.
+- **Point.cpp**: add the missing f32 `transform(Vec<Vec3f>, Transform3f)` overload;
+  truncate `point_hash` to i32 (F2-local); the affine path should not take the
+  perspective-divide branch (Transform3D::apply divides by w when |w|>1e-10).
+
+### Debug-only / cosmetic rejections (functionally parity-safe; fix opportunistically)
+- VoronoiVisualUtils.hpp: `dump_voronoi_to_svg` SCALING_FACTOR misuse + `normalize()`
+  zero-guard — both confined to debug SVG output, no G-code effect. Core
+  discretize/clip math is a faithful 1:1.
+- Curves.hpp: `fit_curve` uses plain Householder QR vs C++ `fullPivHouseholderQr`,
+  and the bicubic kernel runs in f64 then casts to f32 vs C++ all-float. Numerically
+  divergent only for ill-conditioned/rank-deficient systems; `fit_polynomial` is 1:1.
+
+### Operational lessons for the retry workflow
+- **OAuth token expires on multi-hour runs** → a single run died after ~34 units and
+  burned the rest on 403s. Run BOUNDED batches (re-fire; ledger is durable state) and
+  commit frequently, so an expiry costs one batch, not six hours.
+- The `args` (max / commitEvery) did NOT reach the background workflow script (ran the
+  full queue at COMMIT_EVERY=8 default, not the requested max:6/every:3). Bound the
+  batch INSIDE the script or by pre-filtering the ledger, not via `args`.
+- The reviewer gate is calibrated WELL — keep it. Feed these findings back as the
+  porter worklist so each retry targets a known defect instead of re-deriving it.

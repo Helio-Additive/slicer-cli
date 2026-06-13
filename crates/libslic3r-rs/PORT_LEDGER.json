@@ -557,7 +557,7 @@
     "rust": "crates/libslic3r-rs/src/extrusion_entity_collection.rs",
     "rust_exists": true,
     "loc": 158,
-    "status": "partial",
+    "status": "done",
     "priority": 2
   },
   {
@@ -623,7 +623,7 @@
     "rust": "crates/libslic3r-rs/src/surface_mesh.rs",
     "rust_exists": true,
     "loc": 167,
-    "status": "partial",
+    "status": "done",
     "priority": 2
   },
   {

@@ -1636,15 +1636,17 @@ pub fn apply_opt<T: PartialOrd + Copy>(val: &mut Option<T>, limit: &MinMax<T>) -
 /// Point.hpp:368-372 (`struct PointHash`)
 ///
 /// C++: `return coord_t((89 * 31 + int64_t(pt.x())) * 31 + pt.y());`
-/// The arithmetic is performed in `int64_t` and truncated to `coord_t`
-/// (here `i64`); wrapping semantics mirror the C++ integer overflow behavior.
+/// The arithmetic is performed in `int64_t` and truncated to `coord_t`, which in
+/// BambuStudio is `int32_t` (libslic3r.h:40). The crate-wide `Coord` is `i64`, so
+/// the final `as i32` reproduces the C++ int32 truncation bit-for-bit before
+/// widening back to `Coord`; `wrapping_*` mirrors the C++ integer overflow.
 #[inline]
 pub fn point_hash(pt: &Point) -> Coord {
-    (89i64
+    ((89i64
         .wrapping_mul(31)
         .wrapping_add(pt.x)
         .wrapping_mul(31)
-        .wrapping_add(pt.y)) as Coord
+        .wrapping_add(pt.y)) as i32) as Coord
 }
 
 /// A generic class to search for a closest Point in a given radius.
