@@ -604,7 +604,7 @@ impl LayerRegion {
     /// LayerRegion.cpp:518-640
     ///
     /// The full wave-expansion port of this LayerRegion member lives as the free
-    /// function `crate::surface::process_external_surfaces` (re-exported from
+    /// function `crate::print_object::process_external_surfaces` (re-exported from
     /// `crate::layer_region`), and is driven from `print_object.rs`. This thin
     /// member shim forwards to it so the `LayerRegion`-method spelling still works.
     pub fn process_external_surfaces(
@@ -614,7 +614,7 @@ impl LayerRegion {
     ) -> Result<()> {
         // LayerRegion.cpp:518 — operate on this region's fill_surfaces in place.
         let mut surfaces = vec![std::mem::take(&mut self.fill_surfaces.surfaces)];
-        crate::surface::process_external_surfaces(&mut surfaces, expansion_distance, min_area_mm2);
+        crate::print_object::process_external_surfaces(&mut surfaces, expansion_distance, min_area_mm2);
         self.fill_surfaces.surfaces = surfaces.into_iter().next().unwrap_or_default();
         Ok(())
     }

@@ -49,7 +49,7 @@ pub use crate::region_expansion::{
 // Re-export the orchestrator that the C++ exposes as
 // `LayerRegion::process_external_surfaces` (LayerRegion.cpp:518-640); ported in
 // `surface.rs` and driven from `print_object.rs`.
-pub use crate::surface::process_external_surfaces;
+pub use crate::print_object::process_external_surfaces;
 
 // LayerRegion.cpp:16
 // static const double max_deviation = scale_(0.5);
