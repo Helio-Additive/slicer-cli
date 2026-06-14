@@ -150,7 +150,6 @@ pub mod print_object;
 pub mod print_object_slice;
 pub mod print_region;
 pub mod project_task;
-pub mod quadric_collapse;
 pub mod quadric_edge_collapse;
 pub mod region_config;
 pub mod region_expansion;
