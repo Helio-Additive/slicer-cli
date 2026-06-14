@@ -17,7 +17,6 @@
 //! - Use `scale()` / `scaled()` to convert from mm to internal units
 //! - Use `unscale()` / `unscaled()` to convert from internal units to mm
 
-pub mod aabb_mesh;
 pub mod aabb_tree;
 pub mod bicubic;
 mod bounding_box;
@@ -44,7 +43,6 @@ pub mod voronoi_utils;
 pub mod voronoi_utils_cgal;
 pub mod voronoi_visual_utils;
 
-pub use aabb_mesh::{AABBMesh, HitResult};
 pub use bounding_box::{BoundingBox, BoundingBox3, BoundingBox3F, BoundingBoxF};
 pub use build_volume::BuildVolume;
 pub use circle::{

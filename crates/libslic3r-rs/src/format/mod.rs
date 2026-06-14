@@ -17,7 +17,6 @@ pub mod sl1;
 /// exported at crate root.
 pub mod slic3r_format;
 pub mod step;
-pub mod stl;
 pub mod svg;
 pub mod three_mf;
 pub mod utilities;
