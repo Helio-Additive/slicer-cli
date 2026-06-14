@@ -212,10 +212,12 @@ pub use fill::{
     InfillPattern,
     InfillResult,
 };
-pub use gcode::{
-    ExtrusionPath, ExtrusionRole, GCode, GCodeWriter, LayerPaths, PathConfig, PathGenerator,
-    SeamPosition,
-};
+pub use gcode::{GCode, GCodeWriter};
+// ExtrusionPath/ExtrusionRole canonical home is extrusion_entity.rs (ExtrusionEntity.cpp port);
+// SeamPosition canonical home is print_config.rs. The Rust-only gcode/path.rs model (which used to
+// re-export divergent ExtrusionPath/ExtrusionRole + LayerPaths/PathConfig/PathGenerator) was removed.
+pub use extrusion_entity::{ExtrusionPath, ExtrusionRole};
+pub use print_config::SeamPosition;
 
 // Re-export cooling types
 pub use gcode::cooling::{

@@ -16,7 +16,6 @@ pub mod gcode_processor;
 mod generator;
 pub mod ironing;
 pub mod multi_material;
-mod path;
 pub mod placeholder_parser;
 pub mod post_processor;
 pub mod pressure_equalizer;
@@ -66,10 +65,6 @@ pub use ironing::{
 pub use multi_material::{
     MultiMaterialConfig, MultiMaterialCoordinator, MultiMaterialLayer, MultiMaterialPlan,
     ToolChange, WipeTowerBounds,
-};
-pub use path::{
-    generate_paths, generate_solid_paths, ExtrusionPath, ExtrusionRole, LayerKind, LayerPaths,
-    PathConfig, PathGenerator, SeamPosition,
 };
 pub use placeholder_parser::{PlaceholderParser, PrintContext};
 pub use pressure_equalizer::{PressureEqualizer, PressureEqualizerConfig, PressureEqualizerStats};
