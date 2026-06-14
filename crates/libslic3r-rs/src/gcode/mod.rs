@@ -8,7 +8,6 @@ pub mod avoid_crossing_perimeters;
 pub mod conflict_checker;
 pub mod cooling;
 pub mod cooling_buffer;
-pub mod custom_gcode;
 pub mod exporter;
 pub mod extruder;
 pub mod g_code_editor;
@@ -22,7 +21,6 @@ pub mod placeholder_parser;
 pub mod post_processor;
 pub mod pressure_equalizer;
 pub mod print_extents;
-pub mod retract_crossing;
 pub mod retract_when_crossing_perimeters;
 pub mod seam_placer;
 pub mod smoothing;
@@ -75,7 +73,6 @@ pub use path::{
 };
 pub use placeholder_parser::{PlaceholderParser, PrintContext};
 pub use pressure_equalizer::{PressureEqualizer, PressureEqualizerConfig, PressureEqualizerStats};
-pub use retract_crossing::{RetractCrossingConfig, RetractDecision, RetractWhenCrossingPerimeters};
 pub use seam_placer::{
     create_seam_placer, find_best_seam_index, place_seam, EnforcedBlockedSeamPoint, LayerOutline,
     LayerSeams, Perimeter, PerimeterOutline, Point3f, SeamCandidate, SeamPlacer, SeamPlacerConfig,
