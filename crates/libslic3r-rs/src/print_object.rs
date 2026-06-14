@@ -49,7 +49,8 @@ use crate::{
     layer::Layer,
     print_config::{PrintConfig, PrintObjectConfig},
     print_region::PrintRegion,
-    surface::{Surface, SurfaceCollection, SurfaceDetectionConfig},
+    surface::{Surface, SurfaceDetectionConfig},
+    surface_collection::SurfaceCollection,
     Error, Result,
 };
 
@@ -2122,7 +2123,7 @@ impl PrintObject {
             union_polygons_ex, ApplySafetyOffset, OffsetJoinType,
         };
         use crate::geometry::{to_polygons, ExPolygon, ExPolygons, Polygon, Polygons};
-        use crate::surface::{Surface, SurfaceCollection, SurfaceType};
+        use crate::surface::{Surface, SurfaceType};
 
         /// PrintObject.cpp:3387
         /// C++: BOOST_LOG_TRIVIAL(trace) << "discover_horizontal_shells()";

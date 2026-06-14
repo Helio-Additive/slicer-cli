@@ -27,7 +27,132 @@
 // namespace Slic3r {                                                   SurfaceCollection.cpp:7
 
 use crate::geometry::{polygons_append_expoly, ExPolygon, ExPolygons, Polygons};
-use crate::surface::{surfaces_append, surfaces_could_merge, Surface, SurfaceCollection, SurfaceType};
+use crate::surface::{surfaces_append, surfaces_could_merge, Surface, SurfaceType};
+use crate::CoordF;
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Collection of surfaces with utility methods.
+/// `class SurfaceCollection` — SurfaceCollection.hpp:10.
+#[derive(Clone, Default, Serialize, Deserialize, Debug)]
+pub struct SurfaceCollection {
+    /// The surfaces in this collection.
+    pub surfaces: Vec<Surface>,
+}
+
+impl SurfaceCollection {
+    // Create a new empty surface collection.
+    pub fn new() -> Self {
+        Self {
+            surfaces: Vec::new(),
+        }
+    }
+
+    /// Create a surface collection from a vector of surfaces.
+    pub fn from_surfaces(surfaces: Vec<Surface>) -> Self {
+        Self { surfaces }
+    }
+
+    /// Check if the collection is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.surfaces.is_empty()
+    }
+
+    /// Get the number of surfaces.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.surfaces.len()
+    }
+
+    /// Add a surface to the collection.
+    pub fn push(&mut self, surface: Surface) {
+        self.surfaces.push(surface);
+    }
+
+    /// Clear all surfaces.
+    pub fn clear(&mut self) {
+        self.surfaces.clear();
+    }
+
+    /// Get all top surfaces.
+    pub fn top_surfaces(&self) -> Vec<&Surface> {
+        self.surfaces.iter().filter(|s| s.is_top()).collect()
+    }
+
+    /// Get all bottom surfaces.
+    pub fn bottom_surfaces(&self) -> Vec<&Surface> {
+        self.surfaces.iter().filter(|s| s.is_bottom()).collect()
+    }
+
+    /// Get all solid surfaces.
+    pub fn solid_surfaces(&self) -> Vec<&Surface> {
+        self.surfaces.iter().filter(|s| s.is_solid()).collect()
+    }
+
+    /// Get all bridge surfaces.
+    pub fn bridge_surfaces(&self) -> Vec<&Surface> {
+        self.surfaces.iter().filter(|s| s.is_bridge()).collect()
+    }
+
+    /// Get the total area of all surfaces.
+    pub fn total_area(&self) -> CoordF {
+        self.surfaces.iter().map(|s| s.area()).sum()
+    }
+
+    /// Check if any surface has the given type.
+    pub fn has_type(&self, surface_type: SurfaceType) -> bool {
+        self.surfaces.iter().any(|s| s.surface_type == surface_type)
+    }
+
+    /// Convert all surfaces to ExPolygons
+    pub fn to_expolygons(&self) -> ExPolygons {
+        self.surfaces.iter().map(|s| s.expolygon.clone()).collect()
+    }
+
+    /// Set surfaces from ExPolygons with a given type
+    pub fn set(&mut self, expolygons: &ExPolygons, surface_type: SurfaceType) {
+        self.surfaces.clear();
+        for expolygon in expolygons {
+            self.surfaces
+                .push(Surface::new(surface_type, expolygon.clone()));
+        }
+    }
+
+    /// Append ExPolygons as surfaces with given type
+    /// Surface.cpp helper
+    pub fn append(&mut self, expolygons: ExPolygons, surface_type: SurfaceType) {
+        for expolygon in expolygons {
+            self.surfaces.push(Surface::new(surface_type, expolygon));
+        }
+    }
+}
+
+impl fmt::Display for SurfaceCollection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SurfaceCollection({} surfaces)", self.surfaces.len())
+    }
+}
+
+// Implement IntoIterator to allow for-in loops on references
+impl<'a> IntoIterator for &'a SurfaceCollection {
+    type Item = &'a Surface;
+    type IntoIter = std::slice::Iter<'a, Surface>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.surfaces.iter()
+    }
+}
+
+// Implement IntoIterator for owned collection
+impl IntoIterator for SurfaceCollection {
+    type Item = Surface;
+    type IntoIter = std::vec::IntoIter<Surface>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.surfaces.into_iter()
+    }
+}
 
 impl SurfaceCollection {
     // void SurfaceCollection::simplify(double tolerance)                SurfaceCollection.cpp:9

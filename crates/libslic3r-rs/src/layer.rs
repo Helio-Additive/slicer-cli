@@ -31,7 +31,8 @@ use crate::region_expansion::{
     expand_bridges_detect_orientations, expand_merge_surfaces, ExpansionZone,
     RegionExpansionParameters,
 };
-use crate::surface::{Surface, SurfaceCollection, SurfaceType};
+use crate::surface::{Surface, SurfaceType};
+use crate::surface_collection::SurfaceCollection;
 use crate::{scale, unscale, Coord, CoordF, Result};
 
 use std::sync::Arc;

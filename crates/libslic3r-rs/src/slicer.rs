@@ -222,7 +222,8 @@ impl Slicer {
 
             // Convert ExPolygons to SurfaceCollection.
             // Initially mark all as Internal; detect_surfaces_type() reclassifies later.
-            use crate::surface::{Surface, SurfaceCollection, SurfaceType};
+            use crate::surface::{Surface, SurfaceType};
+            use crate::surface_collection::SurfaceCollection;
             let mut surface_collection = SurfaceCollection::new();
             for expolygon in expolygons {
                 surface_collection.push(Surface::new(SurfaceType::Internal, expolygon));
