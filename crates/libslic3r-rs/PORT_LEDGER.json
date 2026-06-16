@@ -448,7 +448,8 @@
     "rust_exists": true,
     "loc": 140,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "MTUtils.hpp",
@@ -459,7 +460,8 @@
     "rust_exists": true,
     "loc": 141,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "NormalUtils.cpp",

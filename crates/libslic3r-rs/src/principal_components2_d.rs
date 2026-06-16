@@ -166,8 +166,12 @@ pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
     );
     // PrincipalComponents2D.cpp:97
     // double covariance = second_moment_of_area_covariance_accumulator / area - centroid.x() * centroid.y();
-    let covariance: f64 = (second_moment_of_area_covariance_accumulator / area) as f64
-        - (centroid.0 as f64) * (centroid.1 as f64);
+    // C++ note: both `accumulator/area` and `centroid.x()*centroid.y()` are `float`,
+    // so the subtraction is performed in `float` and only the resulting `float` is
+    // widened to `double` on assignment. Mirror that: do the subtraction in `f32`
+    // first, then widen — NOT a widen-then-subtract in `f64`.
+    let covariance: f64 =
+        (second_moment_of_area_covariance_accumulator / area - centroid.0 * centroid.1) as f64;
     // PrincipalComponents2D.cpp:98-103 (#if 0 debug prints omitted)
 
     // PrincipalComponents2D.cpp:104
@@ -193,18 +197,18 @@ pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
     // Eigenvector for eigenvalue l is any vector v such that Cv = lv
 
     // PrincipalComponents2D.cpp:119-120
-    let eigenvalue_a: f32 = 0.5_f32
-        * (variance.0
-            + variance.1
-            + ((variance.0 - variance.1) * (variance.0 - variance.1)
-                + 4.0_f32 * covariance as f32 * covariance as f32)
-                .sqrt());
+    // C++ promotion: `covariance` is a `double`, so `4.0f * covariance * covariance`
+    // is computed in `double`; `(varx-vary)*(varx-vary)` is a `float` then promoted
+    // to `double` for the `+`; `sqrt(double)` is `double`; the whole `0.5f * (...)`
+    // sum is evaluated in `double` and only truncated to `float` on assignment. The
+    // inner `variance.x()-variance.y()` difference and its square stay in `f32`.
+    let var_diff_sq: f32 = (variance.0 - variance.1) * (variance.0 - variance.1);
+    let sqrt_arg: f64 = var_diff_sq as f64 + 4.0_f32 as f64 * covariance * covariance;
+    let eigenvalue_a: f32 = (0.5_f32 as f64
+        * (variance.0 as f64 + variance.1 as f64 + sqrt_arg.sqrt())) as f32;
     // PrincipalComponents2D.cpp:121-122
-    let eigenvalue_b: f32 = 0.5_f32
-        * (variance.0 + variance.1
-            - ((variance.0 - variance.1) * (variance.0 - variance.1)
-                + 4.0_f32 * covariance as f32 * covariance as f32)
-                .sqrt());
+    let eigenvalue_b: f32 = (0.5_f32 as f64
+        * (variance.0 as f64 + variance.1 as f64 - sqrt_arg.sqrt())) as f32;
     // PrincipalComponents2D.cpp:123
     // Vec2f eigenvector_a{(eigenvalue_a - variance.y()) / covariance, 1.0f};
     let eigenvector_a: Vec2f = (((eigenvalue_a - variance.1) as f64 / covariance) as f32, 1.0_f32);
