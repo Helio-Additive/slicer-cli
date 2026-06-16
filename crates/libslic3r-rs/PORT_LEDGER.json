@@ -78,7 +78,8 @@
     "rust_exists": true,
     "loc": 22,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "ObjectID.cpp",
@@ -89,7 +90,8 @@
     "rust_exists": true,
     "loc": 24,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "ExPolygonSerialize.hpp",
@@ -100,7 +102,8 @@
     "rust_exists": true,
     "loc": 28,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "I18N.hpp",
@@ -111,7 +114,8 @@
     "rust_exists": true,
     "loc": 37,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "VectorFormatter.hpp",

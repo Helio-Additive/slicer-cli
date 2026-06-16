@@ -33,8 +33,7 @@
 //! same order as the C++ code.
 
 use crate::geometry::{ExPolygon, Polygon};
-use serde::ser::{SerializeTuple, Serializer};
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 // ExPolygonSerialize.hpp:15  namespace cereal {
 
@@ -46,12 +45,18 @@ use serde::Serialize;
 ///     archive(polygon.points);
 /// }
 /// ```
+///
+/// Cereal's `archive(polygon.points)` forwards the single member `points` to the
+/// archive's serialization of `Points`. The faithful Rust mirror is the derived
+/// `serde::Serialize` for `Polygon`, which archives exactly its single `points`
+/// field. We delegate to it so the byte layout matches the derived (cereal-equivalent)
+/// path used by the rest of the crate.
 pub fn serialize_polygon<A>(archive: A, polygon: &Polygon) -> Result<A::Ok, A::Error>
 where
     A: Serializer,
 {
     // archive(polygon.points);
-    polygon.points.serialize(archive)
+    polygon.serialize(archive)
 }
 
 /// ExPolygonSerialize.hpp:22-25
@@ -62,17 +67,19 @@ where
 ///     archive(expoly.contour, expoly.holes);
 /// }
 /// ```
+///
+/// Cereal's `archive(expoly.contour, expoly.holes)` is a *flat sequential* archiving
+/// of the two members in order (equivalent to `archive(contour); archive(holes);`) —
+/// it introduces no tuple/array grouping. The faithful Rust mirror is the derived
+/// `serde::Serialize` for `ExPolygon`, whose fields (`contour` then `holes`) are
+/// declared in the same order the C++ archives them, so it serializes the two members
+/// sequentially as struct fields with no extra wrapper.
 pub fn serialize_ex_polygon<A>(archive: A, expoly: &ExPolygon) -> Result<A::Ok, A::Error>
 where
     A: Serializer,
 {
     // archive(expoly.contour, expoly.holes);
-    // Cereal archives the listed members as a flat sequence; mirror that ordering by
-    // serializing contour then holes as a 2-element tuple.
-    let mut tup = archive.serialize_tuple(2)?;
-    tup.serialize_element(&expoly.contour)?;
-    tup.serialize_element(&expoly.holes)?;
-    tup.end()
+    expoly.serialize(archive)
 }
 
 // ExPolygonSerialize.hpp:27  } // namespace cereal
@@ -125,8 +132,10 @@ mod tests {
             serialize_ex_polygon(&mut ser, &expoly).unwrap();
         }
 
-        // contour then holes, as a flat sequence (mirroring archive(contour, holes)).
-        let expected = serde_json::to_vec(&(&contour, &vec![hole])).unwrap();
+        // Mirrors Cereal `archive(expoly.contour, expoly.holes)`: contour then holes,
+        // serialized via the derived struct impl with no tuple/array grouping. This is
+        // exactly what serializing the ExPolygon directly produces.
+        let expected = serde_json::to_vec(&expoly).unwrap();
         assert_eq!(buf_fn, expected);
     }
 
