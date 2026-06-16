@@ -10,8 +10,15 @@
 // C++: #include <libslic3r/Point.hpp>
 // coord_t->i64, coordf_t->f64. Vec3f == Eigen::Matrix<float,3,1>, Vec3d ==
 // Eigen::Matrix<double,3,1>, Transform3d == Eigen::Transform<double,3,Affine>.
+// Crate convention (geometry/geometry.rs:538, triangle_selector.rs:39): the
+// Eigen affine `Transform3d` is modelled as a raw column-major `Matrix4<f64>`,
+// so a point transform is `tr * Vector4(x, y, z, 1.0)` (linear + translation).
 use crate::libslic3r::EPSILON;
-use nalgebra::{Transform3, Vector3};
+use nalgebra::{Matrix4, Vector3, Vector4};
+
+// BrimEarsPoint.hpp: Transform3d == Eigen::Transform<double,3,Affine>.
+// Mirrors the crate-wide alias used by every other ported file.
+pub type Transform3d = Matrix4<f64>;
 
 // BrimEarsPoint.hpp:7
 // C++: namespace Slic3r {
@@ -113,19 +120,23 @@ impl BrimPoint {
 
     // BrimEarsPoint.hpp:43-47
     // C++: Vec3f transform(const Transform3d &trsf)
-    pub fn transform(&self, trsf: &Transform3<f64>) -> Vector3<f32> {
+    pub fn transform(&self, trsf: &Transform3d) -> Vector3<f32> {
         // BrimEarsPoint.hpp:45
         // C++: Vec3d result = trsf * pos.cast<double>();
-        let result = trsf.transform_point(&nalgebra::Point3::from(self.pos.cast::<f64>()));
+        // Eigen affine `Transform3d * Vec3d` applies linear part + translation;
+        // with the `Matrix4<f64>` model that is `tr * (x, y, z, 1.0)`.
+        let p = self.pos; // Vec3f
+        let v = trsf * Vector4::new(p.x as f64, p.y as f64, p.z as f64, 1.0);
+        let result = Vector3::new(v[0], v[1], v[2]);
 
         // BrimEarsPoint.hpp:46
         // C++: return result.cast<float>();
-        result.coords.cast::<f32>()
+        result.cast::<f32>()
     }
 
     // BrimEarsPoint.hpp:49-52
     // C++: void set_transform(const Transform3d& trsf)
-    pub fn set_transform(&mut self, trsf: &Transform3<f64>) {
+    pub fn set_transform(&mut self, trsf: &Transform3d) {
         // BrimEarsPoint.hpp:51
         // C++: pos = transform(trsf);
         self.pos = self.transform(trsf);
@@ -219,9 +230,11 @@ mod tests {
     fn test_transform() {
         let point = BrimPoint::from_coords(1.0, 0.0, 0.0, 1.0, -1);
 
-        // Create a translation transform (move by (2, 3, 4))
-        let mut transform = Transform3::<f64>::identity();
-        transform.append_translation_mut(&nalgebra::Vector3::new(2.0, 3.0, 4.0));
+        // Create a translation transform (move by (2, 3, 4)).
+        let mut transform = Matrix4::<f64>::identity();
+        transform[(0, 3)] = 2.0;
+        transform[(1, 3)] = 3.0;
+        transform[(2, 3)] = 4.0;
 
         let transformed_pos = point.transform(&transform);
 
@@ -235,9 +248,11 @@ mod tests {
     fn test_set_transform() {
         let mut point = BrimPoint::from_coords(1.0, 0.0, 0.0, 1.0, -1);
 
-        // Create a translation transform
-        let mut transform = Transform3::<f64>::identity();
-        transform.append_translation_mut(&nalgebra::Vector3::new(2.0, 3.0, 4.0));
+        // Create a translation transform.
+        let mut transform = Matrix4::<f64>::identity();
+        transform[(0, 3)] = 2.0;
+        transform[(1, 3)] = 3.0;
+        transform[(2, 3)] = 4.0;
 
         point.set_transform(&transform);
 
