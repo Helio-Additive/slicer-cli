@@ -162,7 +162,8 @@
     "rust_exists": true,
     "loc": 52,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Exception.hpp",
@@ -173,7 +174,8 @@
     "rust_exists": true,
     "loc": 53,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "TriangleMeshDeal.cpp",
@@ -184,7 +186,8 @@
     "rust_exists": true,
     "loc": 55,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "PolygonTrimmer.cpp",
@@ -195,7 +198,8 @@
     "rust_exists": true,
     "loc": 57,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "format.hpp",
