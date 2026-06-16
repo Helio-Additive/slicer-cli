@@ -341,7 +341,8 @@
     "rust_exists": true,
     "loc": 95,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Surface.cpp",
@@ -363,7 +364,8 @@
     "rust_exists": true,
     "loc": 101,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "MinAreaBoundingBox.cpp",
@@ -374,7 +376,8 @@
     "rust_exists": true,
     "loc": 106,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "FlushVolCalc.cpp",
@@ -385,7 +388,8 @@
     "rust_exists": true,
     "loc": 130,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ExPolygonCollection.cpp",

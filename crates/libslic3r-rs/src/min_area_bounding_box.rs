@@ -29,62 +29,105 @@ type Unit = i64;
 //   using Rational = boost::rational<boost::multiprecision::int128_t>; (Apple)
 // Reproduced as an exact 128-bit rational. Only the operations used by the
 // rotating-calipers code are implemented: construction from a `Unit`,
-// division by a `Unit`, multiplication by a `Unit`, and ordering. boost's
-// rational keeps the value in lowest terms with a positive denominator and
-// compares exactly; we replicate the exact comparison via cross multiplication
-// (the normalization to lowest terms does not affect comparisons, so it is
-// omitted, but the denominator sign is normalized to keep cross-multiplied
-// comparisons correct).
+// division by a `Unit`, multiplication by a `Unit`, and ordering.
+//
+// boost::rational keeps the value in lowest terms with a positive denominator:
+// after every arithmetic operation it calls `normalize()`, which divides the
+// numerator and denominator by their gcd and forces a positive denominator.
+// We faithfully reproduce that here (`Rational::normalize`) -- the previous
+// port omitted the gcd reduction, which both diverged from boost (boost stores
+// the canonical reduced fraction) and risked i128 overflow in the
+// cross-multiplied comparisons. Reduction does not change the rational *value*
+// or any comparison result for non-overflowing inputs; it matches boost and
+// keeps the magnitudes small.
+//
+// FIDELITY-NOTE(F2): C++ `Unit = int64_t` is the libnest2d compute type
+// (`TCompute<Point> = DoublePrecision<coord_t=int32_t> = int64_t`,
+// geometry_traits.hpp:76). The crate-wide `Coord = i64` matches this compute
+// width; the underlying coordinates are scaled int32 values in libslic3r, so
+// the i64 products here reproduce the C++ `int64_t * int32_t` arithmetic.
 #[derive(Clone, Copy, Debug)]
 struct Rational {
     num: i128,
     den: i128,
 }
 
+// gcd for i128 (Euclid). boost::math::gcd returns a non-negative value; we
+// return |gcd| to mirror that. No external crate is used (wasm-safe).
+#[inline]
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+    a = a.abs();
+    b = b.abs();
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a
+}
+
 impl Rational {
     #[inline]
     fn from_int(v: i128) -> Self {
+        // boost::rational<T>(n) constructs num=n, den=1 (already normalized).
         Rational { num: v, den: 1 }
+    }
+
+    // boost::rational::normalize(): reduce to lowest terms with den > 0.
+    #[inline]
+    fn normalize(mut self) -> Self {
+        if self.den < 0 {
+            self.num = -self.num;
+            self.den = -self.den;
+        }
+        let g = gcd_i128(self.num, self.den);
+        if g > 1 {
+            self.num /= g;
+            self.den /= g;
+        }
+        self
     }
 
     // boost::rational<T>(n) / d  -- the rotcalipers code builds rationals as
     //   Ratio(dot) / magnsq(...)
-    // which is `Rational::from_int(num) / den`. boost keeps the denominator
-    // positive, so we normalize the sign here.
+    // which is `Rational::from_int(num) / den`. boost's operator/= normalizes
+    // the result to lowest terms with a positive denominator.
     #[inline]
     fn div_int(self, d: i128) -> Self {
-        let mut num = self.num;
-        let mut den = self.den * d;
-        if den < 0 {
-            num = -num;
-            den = -den;
+        Rational {
+            num: self.num,
+            den: self.den * d,
         }
-        Rational { num, den }
+        .normalize()
     }
 
-    // m = m * b  -- multiply a rational by an integer factor.
+    // m = m * b  -- multiply a rational by an integer factor. boost's
+    // operator*= normalizes the result.
     #[inline]
     fn mul_int(self, b: i128) -> Self {
         Rational {
             num: self.num * b,
             den: self.den,
         }
+        .normalize()
     }
 }
 
 impl PartialEq for Rational {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        // Cross multiplication; denominators are normalized positive.
-        self.num as i128 * other.den == other.num as i128 * self.den
+        // Both operands are normalized (reduced, positive denominator), so two
+        // rationals are equal iff their reduced representations are identical;
+        // cross multiplication is exact on the small reduced terms.
+        self.num * other.den == other.num * self.den
     }
 }
 
 impl PartialOrd for Rational {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        // Denominators are normalized positive (see div_int / from_int), so
-        // ordering by cross multiplication is exact.
+        // Denominators are normalized positive (see normalize), so ordering by
+        // cross multiplication of the reduced terms is exact.
         let lhs = self.num * other.den;
         let rhs = other.num * self.den;
         lhs.partial_cmp(&rhs)

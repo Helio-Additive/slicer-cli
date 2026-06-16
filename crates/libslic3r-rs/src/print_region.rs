@@ -334,10 +334,20 @@ pub(crate) fn flow_from_configs(
     // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
     // PrintRegion.cpp:48
     let _ = region_extruder(region_config, role)?;
+    // C++ casts nozzle_diameter to `float` (PrintRegion.cpp:48) and layer_height
+    // to `float(layer_height)` (PrintRegion.cpp:49) — `new_from_config_width`
+    // takes `float nozzle_diameter, float height` (Flow.hpp:107). Reproduce the
+    // f32 narrowing locally before widening back to the crate's CoordF (f64).
     let nozzle_diameter = nozzle_diameter as f32;
+    let height = layer_height as f32;
     // PrintRegion.cpp:49
-    Flow::new_from_config_width(role, config_width, nozzle_diameter as CoordF, layer_height)
-        .map_err(|e| format!("{:?}", e))
+    Flow::new_from_config_width(
+        role,
+        config_width,
+        nozzle_diameter as CoordF,
+        height as CoordF,
+    )
+    .map_err(|e| format!("{:?}", e))
 }
 
 // `get_at` reproduces Slic3r::ConfigOptionVector::get_at: the value at index

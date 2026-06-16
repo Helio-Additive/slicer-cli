@@ -26,7 +26,10 @@ pub const G_MAX_FLUSH_VOLUME: i32 = 900;
 
 // FlushVolCalc.cpp:15-18
 fn to_radians(degree: f32) -> f32 {
-    degree / 180.0 * std::f32::consts::PI
+    // C++: `degree / 180.f * M_PI`. `degree / 180.f` is float; `M_PI` is a
+    // `double` macro, so `float * double` promotes to double and the result is
+    // narrowed back to float on return. Reproduce that promotion exactly.
+    ((degree / 180.0) as f64 * std::f64::consts::PI) as f32
 }
 
 // FlushVolCalc.cpp:21-24

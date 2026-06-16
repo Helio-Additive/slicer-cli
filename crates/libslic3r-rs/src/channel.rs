@@ -3,160 +3,132 @@
 //! C++ Reference:
 //! - Channel.hpp
 //!
-//! This module provides a thread-safe queue for passing messages between threads.
-//! Similar to std::mpsc::channel but with additional features like locked access
-//! and non-blocking try_pop.
+//! Faithful port of `template<class T> class Channel` (Channel.hpp:15-96).
+//!
+//! The C++ class owns a `std::deque<T>` guarded by a `std::mutex`, with a
+//! `std::condition_variable` for blocking `pop()`. It is a non-copyable owning
+//! container; sharing across threads is done by passing references/pointers to a
+//! single instance (in Rust this is `Arc<Channel<T>>` at the call site).
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 /// Thread-safe message passing channel
-/// Channel.hpp:15-105
-///
-/// A queue that allows multiple producers and consumers to safely exchange
-/// messages. Provides both blocking (pop) and non-blocking (try_pop) operations,
-/// as well as locked access to the entire queue for batch operations.
+/// Channel.hpp:15-96
 ///
 /// C++: template<class T> class Channel
 pub struct Channel<T> {
     /// Internal queue protected by mutex
-    /// Channel.hpp:99
-    /// C++: Queue m_queue;
-    queue: Arc<Mutex<VecDeque<T>>>,
+    /// Channel.hpp:93 — C++: Queue m_queue;  (using Queue = std::deque<T>;  Channel.hpp:34)
+    m_queue: Mutex<VecDeque<T>>,
+
+    /// Lock-free shadow of the queue length, kept in sync under `m_queue`'s lock.
+    /// Used by `size_hint()` to mirror the C++ unlocked (thread-unsafe) read of
+    /// `m_queue.size()`, which Rust's `Mutex` cannot do without locking.
+    m_size: AtomicUsize,
 
     /// Condition variable for blocking operations
-    /// Channel.hpp:101
-    /// C++: std::condition_variable m_condition;
-    condvar: Arc<Condvar>,
+    /// Channel.hpp:95 — C++: std::condition_variable m_condition;
+    m_condition: Condvar,
 }
 
 impl<T> Channel<T> {
-    /// Create a new empty channel
-    /// Channel.hpp:42-43
-    /// C++: Channel() {}
+    /// Channel.hpp:38 — C++: Channel() {}
     pub fn new() -> Self {
         Channel {
-            queue: Arc::new(Mutex::new(VecDeque::new())),
-            condvar: Arc::new(Condvar::new()),
+            m_queue: Mutex::new(VecDeque::new()),
+            m_size: AtomicUsize::new(0),
+            m_condition: Condvar::new(),
         }
     }
 
-    /// Push an item onto the channel
-    /// Channel.hpp:45-51
-    /// C++: void push(const T& item, bool silent = false)
+    // Channel.hpp:39 — C++: ~Channel() {}  (no-op; Rust drops members automatically)
+
+    /// Push an item onto the channel.
+    /// Channel.hpp:41-48 — C++: void push(const T& item, bool silent = false)
+    /// Channel.hpp:50-57 — C++: void push(T &&item, bool silent = false)
+    ///
+    /// The two C++ overloads (copy / move) collapse into a single by-value
+    /// signature in Rust, where `item` is always moved in.
     pub fn push(&self, item: T, silent: bool) {
         {
-            /// Lock and push item
-            /// Channel.hpp:47-49
-            /// C++: UniqueLock lock(m_mutex);
-            /// C++: m_queue.push_back(item);
-            let mut queue = self.queue.lock().unwrap();
-            queue.push_back(item);
+            // Channel.hpp:44 — C++: UniqueLock lock(m_mutex);
+            let mut lock = self.m_queue.lock().unwrap();
+            // Channel.hpp:45 — C++: m_queue.push_back(item);
+            lock.push_back(item);
+            self.m_size.store(lock.len(), Ordering::Relaxed);
         }
-
-        /// Notify waiting threads unless silent
-        /// Channel.hpp:50
-        /// C++: if (! silent) { m_condition.notify_one(); }
+        // Channel.hpp:47 — C++: if (! silent) { m_condition.notify_one(); }
         if !silent {
-            self.condvar.notify_one();
+            self.m_condition.notify_one();
         }
     }
 
-    /// Pop an item from the channel (blocking)
-    /// Waits until an item is available
-    /// Channel.hpp:59-65
-    /// C++: T pop()
+    /// Pop an item from the channel, blocking until one is available.
+    /// Channel.hpp:59-66 — C++: T pop()
     pub fn pop(&self) -> T {
-        /// Lock the queue
-        /// Channel.hpp:61
-        /// C++: UniqueLock lock(m_mutex);
-        let mut queue = self.queue.lock().unwrap();
-
-        /// Wait for queue to have items
-        /// Channel.hpp:62
-        /// C++: m_condition.wait(lock, [this]() { return !m_queue.empty(); });
-        while queue.is_empty() {
-            queue = self.condvar.wait(queue).unwrap();
+        // Channel.hpp:61 — C++: UniqueLock lock(m_mutex);
+        let mut lock = self.m_queue.lock().unwrap();
+        // Channel.hpp:62 — C++: m_condition.wait(lock, [this]() { return !m_queue.empty(); });
+        while lock.is_empty() {
+            lock = self.m_condition.wait(lock).unwrap();
         }
-
-        /// Remove and return front item
-        /// Channel.hpp:63-64
-        /// C++: auto item = std::move(m_queue.front());
-        /// C++: m_queue.pop_front();
-        queue.pop_front().unwrap()
+        // Channel.hpp:63 — C++: auto item = std::move(m_queue.front());
+        // Channel.hpp:64 — C++: m_queue.pop_front();
+        let item = lock.pop_front().unwrap();
+        self.m_size.store(lock.len(), Ordering::Relaxed);
+        // Channel.hpp:65 — C++: return item;
+        item
     }
 
-    /// Try to pop an item without blocking
-    /// Returns None if queue is empty
-    /// Channel.hpp:67-75
-    /// C++: boost::optional<T> try_pop()
+    /// Try to pop an item without blocking; returns `None` if the queue is empty.
+    /// Channel.hpp:68-78 — C++: boost::optional<T> try_pop()
     pub fn try_pop(&self) -> Option<T> {
-        /// Lock the queue
-        /// Channel.hpp:69
-        /// C++: UniqueLock lock(m_mutex);
-        let mut queue = self.queue.lock().unwrap();
-
-        /// Return None if empty, otherwise pop front
-        /// Channel.hpp:70-74
-        /// C++: if (m_queue.empty()) { return boost::none; }
-        /// C++: else { auto item = std::move(m_queue.front()); m_queue.pop(); return item; }
-        queue.pop_front()
-    }
-
-    /// Get approximate size (thread-unsafe hint)
-    /// Channel.hpp:78
-    /// C++: size_t size_hint() const noexcept { return m_queue.size(); }
-    pub fn size_hint(&self) -> usize {
-        // Note: This is deliberately lock-free and may return stale data
-        // The C++ version warns: "Thread unsafe! Keep in mind you need to re-verify the result after locking."
-        if let Ok(queue) = self.queue.try_lock() {
-            queue.len()
+        // Channel.hpp:70 — C++: UniqueLock lock(m_mutex);
+        let mut lock = self.m_queue.lock().unwrap();
+        // Channel.hpp:71-72 — C++: if (m_queue.empty()) { return boost::none; }
+        if lock.is_empty() {
+            None
         } else {
-            0 // If we can't acquire lock, return 0 as a safe default
+            // Channel.hpp:73-76 — C++: auto item = std::move(m_queue.front());
+            //                          m_queue.pop();  (a deque has no pop(); intent is pop_front)
+            //                          return item;
+            let item = lock.pop_front();
+            self.m_size.store(lock.len(), Ordering::Relaxed);
+            item
         }
     }
 
-    /// Check if the channel is empty (thread-unsafe hint)
-    pub fn is_empty_hint(&self) -> bool {
-        self.size_hint() == 0
+    /// Unlocked observer/hint. Thread unsafe! Keep in mind you need to re-verify
+    /// the result after locking.
+    /// Channel.hpp:80-81 — C++: size_t size_hint() const noexcept { return m_queue.size(); }
+    pub fn size_hint(&self) -> usize {
+        // Mirrors C++'s deliberately unsynchronized read of m_queue.size(): we read
+        // a lock-free shadow counter rather than locking the mutex.
+        self.m_size.load(Ordering::Relaxed)
     }
 
-    /// Lock the queue for read-only batch access
-    /// Returns a guard that unlocks when dropped
-    /// Channel.hpp:80-83
-    /// C++: LockedConstPtr lock_read() const
-    pub fn lock_read(&self) -> ChannelReadGuard<T> {
+    /// Lock the queue for read-only batch access.
+    /// Channel.hpp:83-86 — C++: LockedConstPtr lock_read() const
+    ///
+    /// The C++ returns a `unique_ptr<const Queue, Unlocker>` whose deleter unlocks
+    /// the mutex on destruction; the idiomatic Rust equivalent is a guard that
+    /// unlocks on drop and only exposes shared (`&`) access.
+    pub fn lock_read(&self) -> ChannelReadGuard<'_, T> {
         ChannelReadGuard {
-            guard: self.queue.lock().unwrap(),
+            guard: self.m_queue.lock().unwrap(),
         }
     }
 
-    /// Lock the queue for read-write batch access
-    /// Returns a guard that unlocks when dropped
-    /// Channel.hpp:85-88
-    /// C++: LockedPtr lock_rw()
-    pub fn lock_rw(&self) -> ChannelWriteGuard<T> {
+    /// Lock the queue for read-write batch access.
+    /// Channel.hpp:88-91 — C++: LockedPtr lock_rw()
+    pub fn lock_rw(&self) -> ChannelWriteGuard<'_, T> {
+        let guard = self.m_queue.lock().unwrap();
         ChannelWriteGuard {
-            guard: self.queue.lock().unwrap(),
+            guard,
+            size: &self.m_size,
         }
-    }
-
-    /// Clear all items from the channel
-    pub fn clear(&self) {
-        let mut queue = self.queue.lock().unwrap();
-        queue.clear();
-    }
-
-    /// Get the exact current size (thread-safe)
-    pub fn len(&self) -> usize {
-        let queue = self.queue.lock().unwrap();
-        queue.len()
-    }
-
-    /// Check if the channel is empty (thread-safe)
-    pub fn is_empty(&self) -> bool {
-        let queue = self.queue.lock().unwrap();
-        queue.is_empty()
     }
 }
 
@@ -166,46 +138,15 @@ impl<T> Default for Channel<T> {
     }
 }
 
-impl<T> Clone for Channel<T> {
-    /// Clone creates a new handle to the same channel
-    fn clone(&self) -> Self {
-        Channel {
-            queue: Arc::clone(&self.queue),
-            condvar: Arc::clone(&self.condvar),
-        }
-    }
-}
-
-/// RAII guard for read-only access to the channel queue
-/// Channel.hpp:36
-/// C++: using LockedConstPtr = std::unique_ptr<const Queue, Unlocker<const Queue>>;
+/// RAII guard for read-only access to the channel queue.
+/// Channel.hpp:35 — C++: using LockedConstPtr = std::unique_ptr<const Queue, Unlocker<const Queue>>;
+///
+/// Exposes the queue as `&VecDeque<T>` (read-only), unlocking on drop.
 pub struct ChannelReadGuard<'a, T> {
     guard: MutexGuard<'a, VecDeque<T>>,
 }
 
-impl<'a, T> ChannelReadGuard<'a, T> {
-    /// Get the queue length
-    pub fn len(&self) -> usize {
-        self.guard.len()
-    }
-
-    /// Check if queue is empty
-    pub fn is_empty(&self) -> bool {
-        self.guard.is_empty()
-    }
-
-    /// Iterate over items
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<T> {
-        self.guard.iter()
-    }
-
-    /// Get item at index
-    pub fn get(&self, index: usize) -> Option<&T> {
-        self.guard.get(index)
-    }
-}
-
-impl<'a, T> std::ops::Deref for ChannelReadGuard<'a, T> {
+impl<T> std::ops::Deref for ChannelReadGuard<'_, T> {
     type Target = VecDeque<T>;
 
     fn deref(&self) -> &Self::Target {
@@ -213,51 +154,18 @@ impl<'a, T> std::ops::Deref for ChannelReadGuard<'a, T> {
     }
 }
 
-/// RAII guard for read-write access to the channel queue
-/// Channel.hpp:37
-/// C++: using LockedPtr = std::unique_ptr<Queue, Unlocker<Queue>>;
+/// RAII guard for read-write access to the channel queue.
+/// Channel.hpp:36 — C++: using LockedPtr = std::unique_ptr<Queue, Unlocker<Queue>>;
+///
+/// Exposes the queue as `&mut VecDeque<T>`, unlocking on drop. The `size` shadow
+/// counter is refreshed on drop so `size_hint()` stays consistent with any
+/// mutations made through the guard.
 pub struct ChannelWriteGuard<'a, T> {
     guard: MutexGuard<'a, VecDeque<T>>,
+    size: &'a AtomicUsize,
 }
 
-impl<'a, T> ChannelWriteGuard<'a, T> {
-    /// Get the queue length
-    pub fn len(&self) -> usize {
-        self.guard.len()
-    }
-
-    /// Check if queue is empty
-    pub fn is_empty(&self) -> bool {
-        self.guard.is_empty()
-    }
-
-    /// Iterate over items
-    pub fn iter(&self) -> std::collections::vec_deque::Iter<T> {
-        self.guard.iter()
-    }
-
-    /// Iterate mutably over items
-    pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<T> {
-        self.guard.iter_mut()
-    }
-
-    /// Push an item to the back
-    pub fn push_back(&mut self, item: T) {
-        self.guard.push_back(item);
-    }
-
-    /// Pop an item from the front
-    pub fn pop_front(&mut self) -> Option<T> {
-        self.guard.pop_front()
-    }
-
-    /// Clear all items
-    pub fn clear(&mut self) {
-        self.guard.clear();
-    }
-}
-
-impl<'a, T> std::ops::Deref for ChannelWriteGuard<'a, T> {
+impl<T> std::ops::Deref for ChannelWriteGuard<'_, T> {
     type Target = VecDeque<T>;
 
     fn deref(&self) -> &Self::Target {
@@ -265,9 +173,15 @@ impl<'a, T> std::ops::Deref for ChannelWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T> std::ops::DerefMut for ChannelWriteGuard<'a, T> {
+impl<T> std::ops::DerefMut for ChannelWriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.guard
+    }
+}
+
+impl<T> Drop for ChannelWriteGuard<'_, T> {
+    fn drop(&mut self) {
+        self.size.store(self.guard.len(), Ordering::Relaxed);
     }
 }
 
@@ -281,19 +195,19 @@ mod tests {
     #[test]
     fn test_new() {
         let channel: Channel<i32> = Channel::new();
-        assert!(channel.is_empty());
-        assert_eq!(channel.len(), 0);
+        assert!(channel.lock_read().is_empty());
+        assert_eq!(channel.size_hint(), 0);
     }
 
     #[test]
     fn test_push_pop() {
         let channel = Channel::new();
         channel.push(42, false);
-        assert_eq!(channel.len(), 1);
+        assert_eq!(channel.size_hint(), 1);
 
         let val = channel.pop();
         assert_eq!(val, 42);
-        assert!(channel.is_empty());
+        assert!(channel.lock_read().is_empty());
     }
 
     #[test]
@@ -317,7 +231,7 @@ mod tests {
 
         // Silent push should still add item
         channel.push(42, true);
-        assert_eq!(channel.len(), 1);
+        assert_eq!(channel.size_hint(), 1);
         assert_eq!(channel.pop(), 42);
     }
 
@@ -329,18 +243,6 @@ mod tests {
         channel.push(1, false);
         channel.push(2, false);
         assert_eq!(channel.size_hint(), 2);
-    }
-
-    #[test]
-    fn test_clear() {
-        let channel = Channel::new();
-        channel.push(1, false);
-        channel.push(2, false);
-        channel.push(3, false);
-
-        channel.clear();
-        assert!(channel.is_empty());
-        assert_eq!(channel.len(), 0);
     }
 
     #[test]
@@ -384,7 +286,7 @@ mod tests {
             guard.clear();
         }
 
-        assert!(channel.is_empty());
+        assert!(channel.lock_read().is_empty());
     }
 
     #[test]
@@ -439,7 +341,7 @@ mod tests {
         }
 
         // Should have 50 items total
-        assert_eq!(channel.len(), 50);
+        assert_eq!(channel.size_hint(), 50);
 
         // Consume all items
         let mut count = 0;
@@ -450,21 +352,21 @@ mod tests {
     }
 
     #[test]
-    fn test_clone_shares_queue() {
-        let channel1 = Channel::new();
-        let channel2 = channel1.clone();
+    fn test_shared_via_arc() {
+        let channel = Arc::new(Channel::new());
+        let channel2 = Arc::clone(&channel);
 
-        // Push to channel1
-        channel1.push(42, false);
+        // Push to one handle
+        channel.push(42, false);
 
-        // Should be visible in channel2
+        // Should be visible through the other handle
         assert_eq!(channel2.pop(), 42);
 
-        // Push to channel2
+        // Push to the other handle
         channel2.push(100, false);
 
-        // Should be visible in channel1
-        assert_eq!(channel1.pop(), 100);
+        // Should be visible through the first handle
+        assert_eq!(channel.pop(), 100);
     }
 
     #[test]
