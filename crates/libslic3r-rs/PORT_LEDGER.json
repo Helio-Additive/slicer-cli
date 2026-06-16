@@ -126,7 +126,8 @@
     "rust_exists": true,
     "loc": 40,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "TryCatchSignalSEH.cpp",
@@ -137,7 +138,8 @@
     "rust_exists": true,
     "loc": 43,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "flagged"
   },
   {
     "cpp": "IntersectionPoints.cpp",
