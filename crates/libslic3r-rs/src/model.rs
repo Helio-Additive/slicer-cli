@@ -714,24 +714,48 @@ pub fn load_model(path: &PathBuf) -> crate::Result<Model> {
             Ok(model)
         }
         Some("3mf") => {
-            // Load 3MF file with multiple objects
-            // Model.cpp:351-459
-            let loaded = crate::threemf::load_3mf(path)?;
-            // Create empty model
-            // Model.cpp:352
+            // Load 3MF file with multiple objects.
+            // Mirrors Model::read_from_file's 3MF branch (Model.cpp:244-373).
+            // Construct empty `Model` to fill in-place.
+            // Model.cpp:258
             let mut model = Model::new();
-            // Add each object from loaded file
-            // Model.cpp:353-355
-            for obj in loaded.objects.into_iter() {
-                // Add individual object
-                // Model.cpp:354
-                model.add_object(obj);
+            // Temporary config + substitution context (the C++ uses local
+            // `temp_config` / `temp_config_substitutions_context` when the
+            // caller passes null).
+            // Model.cpp:260-265
+            let mut config = crate::calib::DynamicPrintConfig::default();
+            let mut config_substitutions =
+                crate::format::bbs_3mf::ConfigSubstitutionContext::default();
+            // Convert the path to the `&str` the faithful port expects.
+            let input_file = path.to_string_lossy();
+            // Call the faithful 1:1 port of `load_3mf` (Format/3mf.cpp:3249).
+            // Mirrors the `.3mf` dispatch at Model.cpp:324-329.
+            // `check_version` follows `LoadStrategy::CheckVersion` (Model.cpp:327).
+            let result = crate::format::three_mf::load_3mf(
+                &input_file,
+                &mut config,
+                &mut config_substitutions,
+                &mut model,
+                true,
+            )?;
+            // Loading failed -> error out (Model.cpp:350-355).
+            if !result {
+                return Err(crate::Error::Mesh(
+                    "Loading of a model file failed.".to_string(),
+                ));
             }
-            // Store source file path
-            // Model.cpp:356
+            // The supplied file couldn't be read because it's empty.
+            // Model.cpp:357-358
+            if model.objects.is_empty() {
+                return Err(crate::Error::Mesh(
+                    "The supplied file couldn't be read because it's empty".to_string(),
+                ));
+            }
+            // Store source file path.
+            // Model.cpp:360-361
             model.file_path = Some(path.clone());
-            // Return loaded model
-            // Model.cpp:357
+            // Return loaded model.
+            // Model.cpp:373
             Ok(model)
         }
         _ => {

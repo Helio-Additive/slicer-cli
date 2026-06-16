@@ -175,7 +175,6 @@ pub mod technologies;
 pub mod tesselate;
 pub mod text_configuration;
 pub mod thread;
-pub mod threemf;
 pub mod time;
 pub mod timer;
 pub mod triangle_mesh;
