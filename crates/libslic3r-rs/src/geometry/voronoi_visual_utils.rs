@@ -596,13 +596,19 @@ pub fn dump_voronoi_to_svg(
     }
     // bbox.min -= (0.01 * bbox.size().cast<double>()).cast<coord_t>();
     // bbox.max += (0.01 * bbox.size().cast<double>()).cast<coord_t>();
-    let size = bbox.size();
-    let off_x = (0.01 * size.x() as f64) as Coord;
-    let off_y = (0.01 * size.y() as f64) as Coord;
-    bbox.min.x -= off_x;
-    bbox.min.y -= off_y;
-    bbox.max.x += off_x;
-    bbox.max.y += off_y;
+    // NOTE: these are two sequential statements in C++; the `-=` on `bbox.min`
+    // mutates the box, so the second `bbox.size()` (for max) reads the ALREADY
+    // enlarged size (= original_size + min offset). Mirror that ordering exactly.
+    let size_min = bbox.size();
+    let off_min_x = (0.01 * size_min.x() as f64) as Coord;
+    let off_min_y = (0.01 * size_min.y() as f64) as Coord;
+    bbox.min.x -= off_min_x;
+    bbox.min.y -= off_min_y;
+    let size_max = bbox.size();
+    let off_max_x = (0.01 * size_max.x() as f64) as Coord;
+    let off_max_y = (0.01 * size_max.y() as f64) as Coord;
+    bbox.max.x += off_max_x;
+    bbox.max.y += off_max_y;
 
     // VoronoiVisualUtils.hpp:318-324
     if scale == 0.0 {

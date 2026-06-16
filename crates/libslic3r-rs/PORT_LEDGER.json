@@ -150,7 +150,8 @@
     "rust_exists": true,
     "loc": 45,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "FileParserError.hpp",
@@ -1775,7 +1776,7 @@
     "loc": 453,
     "status": "done",
     "priority": 1,
-    "fidelity": "flagged"
+    "fidelity": "fixed"
   },
   {
     "cpp": "Algorithm/LineSegmentation/LineSegmentation.cpp",

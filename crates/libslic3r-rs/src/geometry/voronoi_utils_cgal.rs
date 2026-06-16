@@ -585,6 +585,13 @@ impl VoronoiUtilsCgal {
     // the planar-by-construction default (matching the prior placeholder). The
     // angle-based variant below is the faithful, used-by-Arachne port.
     //
+    // Note on call sites: in C++ this predicate is invoked only inside
+    // `assert(Geometry::VoronoiUtilsCgal::is_voronoi_diagram_planar_intersection(...))`
+    // (Arachne/SkeletalTrapezoidation.cpp:496), i.e. a debug-only check that is
+    // compiled out in release/NDEBUG builds. Returning the planar default therefore
+    // matches the C++ release-build observable behavior exactly; only debug-mode
+    // diagnostics differ.
+    //
     // Geometry/VoronoiUtilsCgal.hpp: is_voronoi_diagram_planar_intersection
     pub fn is_voronoi_diagram_planar_intersection(_voronoi_diagram: &VoronoiDiagram) -> bool {
         // A valid Voronoi diagram is planar by construction; non-planarity only
