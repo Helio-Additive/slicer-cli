@@ -6,8 +6,21 @@
 //!
 //! Provides utility functions for working with Voronoi diagrams in the context
 //! of the Arachne variable-width algorithm.
+//!
+//! Scope note: the C++ `VoronoiUtils` also defines the boost.polygon-typed
+//! templated members `get_source_segment` (VoronoiUtils.cpp:40), `get_source_point`
+//! (VoronoiUtils.cpp:56), `get_source_point_index` (VoronoiUtils.cpp:83),
+//! `compute_segment_cell_range` (VoronoiUtils.cpp:205) and the `is_in_range`
+//! overloads (VoronoiUtils.hpp:99-115). Those operate on `VD::cell_type`/
+//! `VD::edge_type` (boost.polygon) handles, which in this crate are provided by the
+//! `boostvoronoi` (`bv`) types. Faithful ports of `get_source_segment`,
+//! `get_source_point` and `compute_segment_cell_range` against `bv::Cell`/
+//! `bv::Diagram` already live in `voronoi_utils_cgal.rs` (the only consumer,
+//! `get_parabolic_segment`). This module ports the coordinate-level helpers
+//! (`to_point`, `is_finite`, `make_rotated_vertex`) and `discretize_parabola`,
+//! which is the only member that does not need a live Voronoi cell handle.
 
-use crate::geometry::{Line, Point};
+use crate::geometry::{perp, Point};
 use crate::Coord;
 
 /// Represents the range of edges around a trapezoid-shaped Voronoi cell
@@ -54,25 +67,37 @@ pub struct VoronoiUtils;
 impl VoronoiUtils {
     /// Convert a Voronoi vertex to an integer Point by rounding coordinates.
     ///
-    /// Geometry/VoronoiUtils.hpp: to_point
+    /// VoronoiUtils.cpp:255 `VoronoiUtils::to_point(const VD::vertex_type &vertex)`.
     pub fn to_point(x: f64, y: f64) -> Point {
+        // VoronoiUtils.cpp:259 assert(std::isfinite(x) && std::isfinite(y));
+        debug_assert!(x.is_finite() && y.is_finite());
+        // VoronoiUtils.cpp:262 return {std::llround(x), std::llround(y)};
+        // f64::round() rounds half away from zero, matching std::llround.
         Point::new(x.round() as i64, y.round() as i64)
     }
 
     /// Check if a Voronoi vertex has finite coordinates.
     ///
-    /// Geometry/VoronoiUtils.hpp: is_finite
+    /// VoronoiUtils.cpp:265 `VoronoiUtils::is_finite`.
     pub fn is_finite(x: f64, y: f64) -> bool {
+        // VoronoiUtils.cpp:267 return std::isfinite(vertex.x()) && std::isfinite(vertex.y());
         x.is_finite() && y.is_finite()
     }
 
     /// Create a rotated copy of a vertex position.
     ///
-    /// Geometry/VoronoiUtils.hpp: make_rotated_vertex
+    /// VoronoiUtils.cpp:270 `VoronoiUtils::make_rotated_vertex`.
+    /// Returns the rotated `(x, y)`; the C++ also copies `incident_edge`/`color`,
+    /// which are boost.polygon vertex fields without a coordinate-level analogue.
     pub fn make_rotated_vertex(x: f64, y: f64, angle: f64) -> (f64, f64) {
+        // VoronoiUtils.cpp:272-273
         let cos_a = angle.cos();
         let sin_a = angle.sin();
-        (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
+        // VoronoiUtils.cpp:275 const double rotated_x = (cos_a * vertex.x() - sin_a * vertex.y());
+        let rotated_x = cos_a * x - sin_a * y;
+        // VoronoiUtils.cpp:276 const double rotated_y = (cos_a * vertex.y() + sin_a * vertex.x());
+        let rotated_y = cos_a * y + sin_a * x;
+        (rotated_x, rotated_y)
     }
 }
 
@@ -109,94 +134,154 @@ pub fn discretize_parabola(
     approximate_step_size: Coord,
     transitioning_angle: f32,
 ) -> Vec<Point> {
+    // VoronoiUtils.cpp:109 Points discretized;
     let mut discretized: Vec<Point> = Vec::new();
-    // x is the distance of a point projected onto the segment ab; pxx is the projection.
+    // VoronoiUtils.cpp:110-111
+    // x is distance of point projected on the segment ab
+    // xx is point projected on the segment ab
+    // VoronoiUtils.cpp:112-113 const Point a = source_segment.from(); const Point b = source_segment.to();
     let a = seg_a;
     let b = seg_b;
+    // VoronoiUtils.cpp:114-116
     let ab = b - a;
     let as_ = start - a;
     let ae = end - a;
-    let dot = |p: Point, q: Point| -> i128 {
-        p.x as i128 * q.x as i128 + p.y as i128 * q.y as i128
-    };
+
+    // C++ casts the integer Point vectors to int64_t and uses Eigen .dot()/.norm().
+    // Point::dot already returns i128 (no overflow), and .norm() is the truncated
+    // integer sqrt of the squared length (Eigen casts the double sqrt back to the
+    // scalar type, truncating toward zero).
     let isqrt = |p: Point| -> i64 {
         ((p.x as i128 * p.x as i128 + p.y as i128 * p.y as i128) as f64).sqrt() as i64
     };
-    let ab_size = isqrt(ab); // ab.cast<int64_t>().norm()
-    if ab_size == 0 {
-        discretized.push(start);
-        discretized.push(end);
-        return discretized;
-    }
-    let sx = (dot(as_, ab) / ab_size as i128) as i64;
-    let ex = (dot(ae, ab) / ab_size as i128) as i64;
+    // VoronoiUtils.cpp:117 const coord_t ab_size = ab.cast<int64_t>().norm();
+    // FIDELITY-NOTE(F2): coord_t is int32 in C++; the crate's Coord is i64, so this
+    // keeps the i64 width rather than truncating to int32 (crate-wide decision).
+    let ab_size = isqrt(ab);
+    // VoronoiUtils.cpp:118 const coord_t sx = as.cast<int64_t>().dot(ab.cast<int64_t>()) / ab_size;
+    let sx = (as_.dot(&ab) / ab_size as i128) as i64;
+    // VoronoiUtils.cpp:119 const coord_t ex = ae.cast<int64_t>().dot(ab.cast<int64_t>()) / ab_size;
+    let ex = (ae.dot(&ab) / ab_size as i128) as i64;
+    // VoronoiUtils.cpp:120 const coord_t sxex = ex - sx;
     let sxex = ex - sx;
 
+    // VoronoiUtils.cpp:122 const Point ap = source_point - a;
     let ap = source_point - a;
-    let px = (dot(ap, ab) / ab_size as i128) as i64;
+    // VoronoiUtils.cpp:123 const coord_t px = ap.cast<int64_t>().dot(ab.cast<int64_t>()) / ab_size;
+    let px = (ap.dot(&ab) / ab_size as i128) as i64;
 
-    // pxx = foot of perpendicular of source_point on the infinite line a-b.
-    let pxx = Line::new(a, b).project_point_infinite(&source_point);
+    // VoronoiUtils.cpp:125-126
+    // Point pxx; Line(a, b).distance_to_infinite_squared(source_point, &pxx);
+    // The closest point on the infinite line a-b is a + t*(b-a) with t = (ap.v)/|v|^2,
+    // cast back to integer by truncation toward zero (Eigen .cast<coord_t>()), NOT
+    // rounding. Computed inline here to match C++ exactly (project_point_infinite
+    // rounds instead, so it is not equivalent).
+    let pxx = {
+        let v = ab; // (b - a)
+        let l2 = (v.x as i128 * v.x as i128 + v.y as i128 * v.y as i128) as f64;
+        if l2 == 0.0 {
+            a // a == b case: closest point is a (Line.hpp:95)
+        } else {
+            let t = ap.dot(&v) as f64 / l2;
+            Point::new(
+                (a.x as f64 + t * v.x as f64) as Coord,
+                (a.y as f64 + t * v.y as f64) as Coord,
+            )
+        }
+    };
+    // VoronoiUtils.cpp:127-128 const Point ppxx = pxx - source_point; const coord_t d = ppxx.cast<int64_t>().norm();
     let ppxx = pxx - source_point;
     let d = isqrt(ppxx);
 
+    // VoronoiUtils.cpp:130-132 const Vec2d rot = perp(ppxx).cast<double>().normalized();
+    // perp(p) = (-p.y, p.x) (Point.hpp:99).
+    let perp_ppxx = perp(ppxx);
+    let perp_x = perp_ppxx.x as f64;
+    let perp_y = perp_ppxx.y as f64;
+    let rot_len = perp_x.hypot(perp_y);
+    // VoronoiUtils.cpp:131-132 const double rot_cos_theta = rot.x(); const double rot_sin_theta = rot.y();
+    let rot_cos_theta = perp_x / rot_len;
+    let rot_sin_theta = perp_y / rot_len;
+
+    // VoronoiUtils.cpp:134-138
     if d == 0 {
         discretized.push(start);
         discretized.push(end);
         return discretized;
     }
 
-    // rot = perp(ppxx).normalized(); perp(p) = (-p.y, p.x) (Point.hpp).
-    let perp_x = -ppxx.y as f64;
-    let perp_y = ppxx.x as f64;
-    let rot_len = perp_x.hypot(perp_y);
-    let rot_cos_theta = perp_x / rot_len;
-    let rot_sin_theta = perp_y / rot_len;
-
+    // VoronoiUtils.cpp:140 const double marking_bound = atan(transitioning_angle * 0.5);
     let marking_bound = (transitioning_angle as f64 * 0.5).atan();
-    let mut msx = (-marking_bound * d as f64) as i64; // projected marking_start
-    let mut mex = (marking_bound * d as f64) as i64; // projected marking_end
+    // VoronoiUtils.cpp:141 int64_t msx = -marking_bound * int64_t(d); // projected marking_start
+    let mut msx = (-marking_bound * d as f64) as i64;
+    // VoronoiUtils.cpp:142 int64_t mex = marking_bound * int64_t(d);  // projected marking_end
+    let mut mex = (marking_bound * d as f64) as i64;
 
+    // VoronoiUtils.cpp:144 const coord_t marking_start_end_h = msx * msx / (2 * d) + d / 2;
     let marking_start_end_h = msx * msx / (2 * d) + d / 2;
+    // VoronoiUtils.cpp:145 Point marking_start = Point(coord_t(msx), marking_start_end_h).rotated(rot_cos_theta, rot_sin_theta) + pxx;
     let mut marking_start = Point::new(msx as Coord, marking_start_end_h as Coord)
         .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
         + pxx;
+    // VoronoiUtils.cpp:146 Point marking_end = Point(coord_t(mex), marking_start_end_h).rotated(rot_cos_theta, rot_sin_theta) + pxx;
     let mut marking_end = Point::new(mex as Coord, marking_start_end_h as Coord)
         .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
         + pxx;
+    // VoronoiUtils.cpp:147 const int dir = (sx > ex) ? -1 : 1;
     let dir: i64 = if sx > ex { -1 } else { 1 };
+    // VoronoiUtils.cpp:148-151
     if dir < 0 {
         std::mem::swap(&mut marking_start, &mut marking_end);
         std::mem::swap(&mut msx, &mut mex);
     }
 
+    // VoronoiUtils.cpp:153
     let mut add_marking_start = msx * dir > (sx - px) * dir && msx * dir < (ex - px) * dir;
+    // VoronoiUtils.cpp:154
     let mut add_marking_end = mex * dir > (sx - px) * dir && mex * dir < (ex - px) * dir;
 
+    // VoronoiUtils.cpp:156 const Point apex = Point(0, d / 2).rotated(rot_cos_theta, rot_sin_theta) + pxx;
     let apex = Point::new(0, (d / 2) as Coord)
         .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
         + pxx;
+    // VoronoiUtils.cpp:157 bool add_apex = int64_t(sx - px) * int64_t(dir) < 0 && int64_t(ex - px) * int64_t(dir) > 0;
     let mut add_apex = (sx - px) * dir < 0 && (ex - px) * dir > 0;
 
+    // VoronoiUtils.cpp:159-161 assert + warning when discretization cannot place an apex/endpoint.
+    debug_assert!(!add_marking_start || !add_marking_end || add_apex);
+    if add_marking_start && add_marking_end && !add_apex {
+        log::warn!("Failing to discretize parabola! Must add an apex or one of the endpoints.");
+    }
+
+    // VoronoiUtils.cpp:163 const coord_t step_count = lround(std::abs(ex - sx) / approximate_step_size);
+    // lround rounds half away from zero, matching f64::round().
     let step_count = ((ex - sx).abs() as f64 / approximate_step_size as f64).round() as i64;
+    // VoronoiUtils.cpp:164 discretized.emplace_back(start);
     discretized.push(start);
+    // VoronoiUtils.cpp:165 for (coord_t step = 1; step < step_count; ++step)
     let mut step: i64 = 1;
     while step < step_count {
+        // VoronoiUtils.cpp:166 const int64_t x = int64_t(sx) + int64_t(sxex) * int64_t(step) / int64_t(step_count) - int64_t(px);
         let x = sx + sxex * step / step_count - px;
+        // VoronoiUtils.cpp:167 const int64_t y = int64_t(x) * int64_t(x) / int64_t(2 * d) + int64_t(d / 2);
         let y = x * x / (2 * d) + d / 2;
 
+        // VoronoiUtils.cpp:169-172
         if add_marking_start && msx * dir < x * dir {
             discretized.push(marking_start);
             add_marking_start = false;
         }
+        // VoronoiUtils.cpp:174-177
         if add_apex && x * dir > 0 {
             discretized.push(apex);
-            add_apex = false; // only add the apex just before crossing it
+            add_apex = false; // only add the apex just before the
         }
+        // VoronoiUtils.cpp:179-182
         if add_marking_end && mex * dir < x * dir {
             discretized.push(marking_end);
             add_marking_end = false;
         }
+        // VoronoiUtils.cpp:185-186 const Point result = Point(x, y).rotated(...) + pxx; discretized.emplace_back(result);
         let result = Point::new(x as Coord, y as Coord)
             .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
             + pxx;
@@ -204,12 +289,15 @@ pub fn discretize_parabola(
         step += 1;
     }
 
+    // VoronoiUtils.cpp:189-190
     if add_apex {
         discretized.push(apex);
     }
+    // VoronoiUtils.cpp:192-193
     if add_marking_end {
         discretized.push(marking_end);
     }
+    // VoronoiUtils.cpp:195-196 discretized.emplace_back(end); return discretized;
     discretized.push(end);
     discretized
 }

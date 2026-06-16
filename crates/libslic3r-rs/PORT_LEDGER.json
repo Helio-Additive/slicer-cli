@@ -1704,7 +1704,8 @@
     "rust_exists": true,
     "loc": 285,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Geometry/Bicubic.hpp",
@@ -1715,7 +1716,8 @@
     "rust_exists": true,
     "loc": 291,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "ok"
   },
   {
     "cpp": "Geometry/VoronoiUtilsCgal.cpp",
@@ -1726,7 +1728,8 @@
     "rust_exists": true,
     "loc": 326,
     "status": "partial",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Geometry/Voronoi.cpp",
@@ -1737,7 +1740,8 @@
     "rust_exists": true,
     "loc": 364,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Geometry/ConvexHull.cpp",

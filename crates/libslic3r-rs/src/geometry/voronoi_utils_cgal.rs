@@ -577,10 +577,12 @@ impl VoronoiUtilsCgal {
     // FIXME Lukas H.: Also includes parabolic segments.
     // bool VoronoiUtilsCgal::is_voronoi_diagram_planar_intersection(const VD &voronoi_diagram)
     //
-    // BLOCKED (native, non-wasm): the body builds CGAL exact segments and calls
-    // `CGAL::compute_intersection_points` (Surface_sweep_2). No pure-Rust exact
-    // segment-sweep is available in this crate, so this is left as the
-    // planar-by-construction default (matching the prior placeholder). The
+    // FIDELITY-NOTE(BLOCKED-DEP): native, non-wasm. The C++ body builds CGAL exact
+    // segments (`Exact_predicates_exact_constructions_kernel`) and calls
+    // `CGAL::compute_intersection_points` (the `Surface_sweep_2` segment-intersection
+    // enumeration). No pure-Rust exact segment-sweep equivalent is available in this
+    // crate, and CGAL is intentionally not a dependency (wasm policy). This is left as
+    // the planar-by-construction default (matching the prior placeholder). The
     // angle-based variant below is the faithful, used-by-Arachne port.
     //
     // Geometry/VoronoiUtilsCgal.hpp: is_voronoi_diagram_planar_intersection
@@ -636,6 +638,10 @@ impl VoronoiUtilsCgal {
                 }
 
                 // VoronoiUtilsCgal.cpp:307 edge = edge->rot_next();
+                // C++ `rot_next()` is infallible and always returns a valid edge, so the
+                // do-while always closes the incident-edge cycle. boostvoronoi's
+                // `edge_rot_next` is `Option`; for a well-formed diagram it returns `Some`,
+                // matching C++. The `None` arm is a defensive guard with no C++ analogue.
                 edge = match diagram.edge_rot_next(edge) {
                     Some(e) => e,
                     None => break,
