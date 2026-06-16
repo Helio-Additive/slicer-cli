@@ -826,7 +826,7 @@ impl Print {
 
         // Post-process: run GCodeProcessor to compute print time and filament usage
         {
-            use crate::gcode::gcode_processor::GCodeProcessor;
+            use crate::gcode::g_code_processor::GCodeProcessor;
 
             let gcode_content = std::fs::read_to_string(output_path).map_err(|e| {
                 Error::IO(format!("Failed to read G-code for post-processing: {}", e))
