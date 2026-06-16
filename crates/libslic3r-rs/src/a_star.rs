@@ -144,7 +144,12 @@ pub fn search_route<T>(
 ) -> bool
 where
     T: TracerTraits,
-    T::Node: Clone,
+    // C++ `cached_nodes[succ_id]` (AStar.hpp:117) is `std::unordered_map::operator[]`,
+    // which default-CONSTRUCTS and inserts a `QNode` (whose `node` is a
+    // default-constructed `Node`, i.e. `Node{}`) when the key is absent. To mirror
+    // that insert-on-access behaviour faithfully we need `Node: Default` so the stub
+    // entry's `node` field matches C++'s `n = {}`.
+    T::Node: Clone + Default,
 {
     // AStar.hpp:77-79
     // using Node = TracerNodeT<Tracer>;
@@ -257,31 +262,32 @@ where
                 // If succ_id is not in cache, it gets created with g = infinity
                 // QNode &prev_nd = cached_nodes[succ_id];
                 //
-                // Snapshot the previous g (defaulting to +inf as the default
-                // QNode constructor does) before any mutation.
-                let prev_g = {
-                    let map = cached_nodes.borrow();
-                    match map.get(&succ_id) {
-                        Some(prev_nd) => prev_nd.g,
-                        None => f32::INFINITY,
-                    }
+                // C++ `cached_nodes[succ_id]` is `std::unordered_map::operator[]`:
+                // it DEFAULT-CONSTRUCTS and INSERTS a `QNode` (node = Node{},
+                // parent = Unassigned, queue_id = InvalidQueueID, g = +inf, h = 0)
+                // whenever `succ_id` is absent, and it does so unconditionally --
+                // BEFORE the `qsucc_nd.g < prev_nd.g` test. That stub entry persists
+                // in the cache even when the route does NOT improve, which the caller
+                // relies on (JumpPointSearch.cpp:256-268 builds a KD-tree over *all*
+                // cache keys for the no-path fallback). So we must insert the default
+                // entry here, matching `operator[]`, rather than only on improvement.
+                let (prev_g, queue_id) = {
+                    let mut map = cached_nodes.borrow_mut();
+                    let prev_nd = map
+                        .entry(succ_id)
+                        .or_insert_with(|| QNode::new(T::Node::default(), UNASSIGNED, f32::INFINITY, 0.0));
+                    // AStar.hpp:119
+                    // if (qsucc_nd.g < prev_nd.g) { ... }
+                    // AStar.hpp:122-123
+                    // Save the old queue id, it would be lost after the next line
+                    // size_t queue_id = prev_nd.queue_id;
+                    (prev_nd.g, prev_nd.queue_id)
                 };
 
                 // AStar.hpp:119
                 // if (qsucc_nd.g < prev_nd.g) {
                 if qsucc_nd.g < prev_g {
                     // new route is better, apply it:
-
-                    // AStar.hpp:122-123
-                    // Save the old queue id, it would be lost after the next line
-                    // size_t queue_id = prev_nd.queue_id;
-                    let queue_id = {
-                        let map = cached_nodes.borrow();
-                        match map.get(&succ_id) {
-                            Some(prev_nd) => prev_nd.queue_id,
-                            None => INVALID_QUEUE_ID,
-                        }
-                    };
 
                     // AStar.hpp:125-126
                     // The cache needs to be updated either way
@@ -346,7 +352,7 @@ mod tests {
     use super::*;
 
     /// Simple 2D grid node for testing
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
     struct GridNode {
         x: i32,
         y: i32,

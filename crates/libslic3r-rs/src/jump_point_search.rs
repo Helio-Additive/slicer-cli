@@ -151,7 +151,11 @@ where
 // JumpPointSearch.cpp:75-80
 // Use incoming_dir [0,0] for starting points, so that all directions are checked from that point
 /// `JPSTracer::Node`
-#[derive(Clone)]
+// `Default` is required by `astar::search_route`'s `T::Node: Default` bound: the
+// C++ `cached_nodes[succ_id]` (AStar.hpp:117) default-constructs `Node{}` when
+// inserting stub entries. `Pixel` (= `Point`) derives `Default` (origin), so the
+// default `Node` is `{position: (0,0), incoming_dir: (0,0)}`, matching C++ `Node{}`.
+#[derive(Clone, Default)]
 pub struct Node {
     // JumpPointSearch.cpp:78
     pub position: Pixel,

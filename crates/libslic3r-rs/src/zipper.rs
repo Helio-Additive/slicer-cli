@@ -327,9 +327,12 @@ impl Zipper {
             return Ok(());
         }
 
-        // Zipper.cpp:118 - only write if we have both an entry name and data.
+        // Zipper.cpp:118 - if(!m_data.empty() && !m_entry.empty())
+        // Mirror C++ exactly: both the data buffer AND the entry name must be
+        // non-empty. `Some("")` (an entry added with an empty name) must NOT
+        // produce a write, matching `!m_entry.empty()` being false.
         if let Some(ref entry_name) = self.current_entry {
-            if !self.buffer.is_empty() {
+            if !self.buffer.is_empty() && !entry_name.is_empty() {
                 // Zipper.cpp:119-125 - select compression (folded into options).
                 let options = self.create_file_options();
 

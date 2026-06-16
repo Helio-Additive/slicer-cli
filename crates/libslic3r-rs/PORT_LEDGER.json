@@ -531,7 +531,8 @@
     "rust_exists": true,
     "loc": 150,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Frustum.cpp",
@@ -542,7 +543,8 @@
     "rust_exists": true,
     "loc": 151,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "ByObjectPrintData.cpp",
@@ -564,7 +566,8 @@
     "rust_exists": true,
     "loc": 153,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "PrintBase.cpp",
@@ -586,7 +589,8 @@
     "rust_exists": true,
     "loc": 157,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ExtrusionEntityCollection.cpp",
