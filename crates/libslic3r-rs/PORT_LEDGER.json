@@ -601,7 +601,8 @@
     "rust_exists": true,
     "loc": 158,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "TriangulateWall.cpp",
@@ -612,7 +613,8 @@
     "rust_exists": true,
     "loc": 159,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "miniz_extension.cpp",

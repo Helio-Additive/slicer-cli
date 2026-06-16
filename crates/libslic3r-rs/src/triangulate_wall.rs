@@ -184,7 +184,14 @@ fn trscore(onring: &Ring, offring: &Ring, pts: &[Vec3f]) -> f32 {
     let a = sq_dst(&pts[on_first], &pts[off_first]);
     let b = sq_dst(&pts[on_second], &pts[off_first]);
 
-    ((a.abs() as f64 + b.abs() as f64) / 2.0) as f32
+    // C++: return (std::abs(a) + std::abs(b)) / 2.;
+    // `std::abs(a)`/`std::abs(b)` are `float` (overload of `std::abs` for float),
+    // and `std::abs(a) + std::abs(b)` is therefore evaluated in `float`. Only the
+    // outer `/ 2.` (a `double` literal) promotes the `float` sum to `double`; the
+    // `double` result is then narrowed back to `float` on return. Compute the sum
+    // in f32 first to match the C++ rounding, then widen for the division.
+    let sum: f32 = a.abs() + b.abs();
+    ((sum as f64) / 2.0) as f32
 }
 
 /// Triangulator that greedily connects two polygon rings
