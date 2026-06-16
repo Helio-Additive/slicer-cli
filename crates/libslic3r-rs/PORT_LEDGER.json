@@ -1680,7 +1680,8 @@
     "rust_exists": true,
     "loc": 140,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Geometry/Curves.hpp",
@@ -1691,7 +1692,8 @@
     "rust_exists": true,
     "loc": 218,
     "status": "partial",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Geometry/VoronoiUtils.cpp",

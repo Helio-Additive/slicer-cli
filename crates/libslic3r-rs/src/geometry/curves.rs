@@ -52,10 +52,15 @@ impl PolynomialCurve {
         // size_t order = this->coefficients.rows() - 1;
         //
         // NOTE: in C++ `coefficients.rows()` is `Dimension`, NOT the polynomial
-        // order. The number of columns is `order + 1`. The loop below iterates
-        // `order + 1` times, i.e. once per column, multiplying the running power
-        // `x` by the matched column. We therefore drive the loop by the column
-        // count to reproduce the C++ behaviour faithfully.
+        // order (the polynomial order is `cols - 1`). This is a quirk of the
+        // upstream code: it derives `order` from the *row* count and then loops
+        // `order + 1` (= `Dimension`) times indexing `coefficients.col(index)`.
+        // For the only real instantiation (Dimension == 2 == cols, i.e. order 1)
+        // these coincide. We faithfully reproduce the C++ by driving the loop by
+        // `nrows()` (= `Dimension`), and we additionally guard the column access
+        // (`index < ncols()`) so that, unlike the C++ which would read out of
+        // bounds when `Dimension > cols`, we stay memory-safe while producing the
+        // same values whenever the C++ access is in bounds.
         let order = self.coefficients.nrows().saturating_sub(1);
         // Geometry/Curves.hpp:21
         // auto x = NumberType(1.);

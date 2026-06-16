@@ -464,37 +464,45 @@ pub fn circle_ransac(input: &[Vec2d], iterations: usize, min_error: Option<&mut 
 // The crate instantiation works over `Points` (= Vec<Point>) casting to Vec2d, matching the
 // `smallest_enclosing_circle_welzl(const Points &points)` inline at Circle.hpp:148.
 pub fn smallest_enclosing_circle2_welzl(points: &[Point], epsilon: CoordF) -> CircleSq {
+    // C++ `Point::template cast<Scalar>()` is a plain numeric cast that PRESERVES the
+    // scaled-integer magnitude (it is NOT `unscale`). The Welzl algorithm therefore
+    // operates in scaled-coordinate doubles and inflates by the *scaled* `epsilon`
+    // (SCALED_EPSILON = 10.0). Using `Point::to_f64()` here would unscale (÷ SCALING_FACTOR)
+    // and mix unit systems with `epsilon`, diverging from C++; do a raw cast instead.
+    // Downstream (build_volume.rs) unscales the resulting circle, matching scaled output.
+    let cast = |p: &Point| -> Vec2d { Vec2d::new(p.x as f64, p.y as f64) };
+
     // Circle.hpp:112
     let mut circle = CircleSq::new(Vec2d::new(0.0, 0.0), 0.0);
 
     // Circle.hpp:114
     if !points.is_empty() {
         // Circle.hpp:115: points[0].template cast<Scalar>()
-        let p0 = points[0].to_f64();
+        let p0 = cast(&points[0]);
         // Circle.hpp:116-118
         if points.len() == 1 {
             circle.center = p0;
             circle.radius2 = epsilon * epsilon;
         } else {
             // Circle.hpp:120
-            circle = CircleSq::from_two_points(p0, points[1].to_f64()).inflated(epsilon);
+            circle = CircleSq::from_two_points(p0, cast(&points[1])).inflated(epsilon);
             // Circle.hpp:121-122
             for i in 2..points.len() {
-                let p = points[i].to_f64();
+                let p = cast(&points[i]);
                 if !circle.contains(p) {
                     // p is the first point on the smallest circle enclosing points[0..i]
                     // Circle.hpp:124
                     circle = CircleSq::from_two_points(p0, p).inflated(epsilon);
                     // Circle.hpp:125-126
                     for j in 1..i {
-                        let q = points[j].to_f64();
+                        let q = cast(&points[j]);
                         if !circle.contains(q) {
                             // q is the second point on the smallest circle enclosing points[0..i]
                             // Circle.hpp:128
                             circle = CircleSq::from_two_points(p, q).inflated(epsilon);
                             // Circle.hpp:129-131
                             for k in 0..j {
-                                let r = points[k].to_f64();
+                                let r = cast(&points[k]);
                                 if !circle.contains(r) {
                                     circle = CircleSq::from_three_points(p, q, r, epsilon)
                                         .inflated(epsilon);
@@ -817,8 +825,10 @@ mod tests {
         let circle = smallest_enclosing_circle_welzl(&points);
         assert!(circle.valid());
         // All points must be enclosed (radius inflated by SCALED_EPSILON).
+        // The Welzl circle is in scaled-coordinate doubles (C++ `cast<double>()`,
+        // not `unscale`), so points must be compared with the same raw cast.
         for p in &points {
-            assert!(circle.contains(p.to_f64()));
+            assert!(circle.contains(Vec2d::new(p.x as f64, p.y as f64)));
         }
     }
 
