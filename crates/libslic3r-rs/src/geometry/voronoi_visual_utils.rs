@@ -701,6 +701,10 @@ pub fn dump_voronoi_to_svg(
                 _ => voronoi_point_color,
             };
             // VoronoiVisualUtils.hpp:390-393
+            // FIDELITY-NOTE(F2): C++ casts `it->x()` (double) to `coord_t` (int32);
+            // the `it->x() * pt.x() >= 0.` check detects int32 overflow/wraparound
+            // (sign flip). With crate `Coord = i64` the wrap threshold differs, so the
+            // validity test diverges for coordinates outside the int32 range.
             let pt = IPoint::new(v.x() as Coord, v.y() as Coord);
             if v.x() * pt.x() as f64 >= 0. && v.y() * pt.y() as f64 >= 0. {
                 // Conversion to coord_t is valid.
@@ -777,6 +781,11 @@ pub fn dump_voronoi_to_svg(
             let mut ib = IPoint::new(b.x() as Coord, b.y() as Coord);
             // Is the conversion possible? Do the resulting points fit into int32_t?
             // auto in_range = [](const Point &ip, const Vec2d &p) { return p.x() * ip.x() >= 0. && p.y() * ip.y() >= 0.; };
+            // FIDELITY-NOTE(F2): the in_range predicate exists to detect a
+            // double->int32 (`coord_t`) overflow via sign-flip. With crate
+            // `Coord = i64` the cast `as Coord` only wraps past the i64 range, so
+            // points that overflow int32 (but fit i64) are accepted here where C++
+            // would clip/skip them.
             let in_range = |ip: &IPoint, p: &PointF| -> bool {
                 p.x() * ip.x() as f64 >= 0. && p.y() * ip.y() as f64 >= 0.
             };

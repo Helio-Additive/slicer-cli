@@ -11,15 +11,27 @@
 //!
 //! ## BLOCKED symbols (see notes at the bottom of this module)
 //!
+//! FIDELITY-NOTE(F1): geometry-backend blocker (NOT a per-file fix).
+//!
 //! The core of this file, `intersection_with_region`, requires the *legacy*
-//! `ClipperLib_Z::Clipper` engine with a user-supplied `ZFillFunction`,
+//! `ClipperLib_Z::Clipper` engine with a user-supplied four-endpoint
+//! `ZFillFunction` callback (computing `new_pt.z()` from the four edge
+//! endpoints), an *open*-subject intersection
 //! `Execute(ctIntersection, PolyTree, pftNonZero, pftNonZero)` and
-//! `PolyTreeToPaths`. The crate's clipper backend is Clipper2 (f64 / Centi
-//! scaling) whose Z-fill scheme (`Clipper2ZIntersectionVisitor`, negative-index
-//! `z`) is fundamentally incompatible with the 30/31-bit `ZAttributes` provenance
-//! encoding used here, and it exposes neither a `PolyTree` traversal nor the
-//! four-endpoint `ZFillFunction` callback. This is the same blocker documented in
-//! `overhang_detector.rs` (`clip_extrusion`). Consequently `intersection_with_region`,
+//! `PolyTreeToPaths`. None of the crate's three available clipper backends
+//! provide this:
+//!   - `clipper_utils` uses the `geo` crate (geo-clipper, fixed scale 1000),
+//!   - `clipper2_utils` uses `clipper2c-sys` whose `ClipperPoint64{x,y}` has NO
+//!     `z` field and exposes no `ZFillFunction` callback,
+//!   - `clipper2_z_utils` is a header-only conversion + intersection-*visitor*
+//!     helper (negative-index `z` scheme) with NO wired engine, no `PolyTree`
+//!     traversal, and no open-subject Z `Execute`. Its negative-index `z`
+//!     provenance scheme is also fundamentally incompatible with the 30/31-bit
+//!     `ZAttributes` encoding this algorithm relies on.
+//! Re-routing this to a faithful `ClipperLib_Z` path is a CROSS-CUTTING
+//! architectural change and adding a native legacy-Clipper dep is forbidden
+//! (wasm-safety). This is the same blocker documented in `overhang_detector.rs`
+//! (`clip_extrusion`). Consequently `intersection_with_region`,
 //! `subject_segmentation`, and all public `*_segmentation` entry points are NOT
 //! PORTED. Everything tractable (the pure helpers) is ported faithfully below.
 
@@ -719,6 +731,10 @@ pub fn create_line_region_range(
 // ---------------------------------------------------------------------------
 // LineSegmentation.cpp:291-333 — intersection_with_region  [BLOCKED]
 //
+// FIDELITY-NOTE(F1): geo/clipper2 backends cannot reproduce the legacy
+// `ClipperLib_Z::Clipper` open-subject intersection with a four-endpoint
+// `ZFillFunction` + `PolyTree` traversal that this function depends on.
+//
 // NOTE (BLOCKED): Requires the legacy `ClipperLib_Z::Clipper` engine:
 //   - clipper.PreserveCollinear(true);
 //   - clipper.ZFillFunction(<four-endpoint callback computing new_pt.z()>);
@@ -877,6 +893,8 @@ pub fn create_continues_line_region_ranges(
 
 // ---------------------------------------------------------------------------
 // LineSegmentation.cpp:397-407 — subject_segmentation  [BLOCKED]
+//
+// FIDELITY-NOTE(F1): transitively blocked — body calls `intersection_with_region`.
 //
 // NOTE (BLOCKED): The body calls `intersection_with_region` (BLOCKED, above)
 // for each clip group, so it cannot be faithfully ported. NOT PORTED.
@@ -1127,6 +1145,11 @@ fn lerp_coord(a: i64, b: i64, t: f64) -> i64 {
 
 // ---------------------------------------------------------------------------
 // LineSegmentation.cpp:502-581 — public *_segmentation entry points  [BLOCKED]
+//
+// FIDELITY-NOTE(F1): transitively blocked via `subject_segmentation` /
+// `intersection_with_region` (legacy ClipperLib_Z engine). The
+// `PerimeterRegions` overloads are additionally blocked by an incomplete
+// `PerimeterRegion` (config-only view; see note below).
 //
 // NOTE (BLOCKED): Every public entry point routes through `subject_segmentation`
 // (BLOCKED, above) which calls `intersection_with_region` (the legacy

@@ -1752,7 +1752,8 @@
     "rust_exists": true,
     "loc": 423,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Geometry/VoronoiVisualUtils.hpp",
@@ -1763,7 +1764,8 @@
     "rust_exists": true,
     "loc": 453,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Algorithm/LineSegmentation/LineSegmentation.cpp",
@@ -1775,7 +1777,8 @@
     "loc": 583,
     "status": "partial",
     "priority": 1,
-    "notes": "Pure helpers all ported & audited faithful (ZAttributes, LineRegionRange, project_point_on_line, find_closest_line_to_point, create_line_region_range, create_continues_line_region_ranges, subject_to_zpath*, create_polyline_segment(s), create_extrusion_segment(s), to_clip_zpaths, lerp). BLOCKED core: intersection_with_region (cpp:291) needs legacy ClipperLib_Z engine with four-endpoint ZFillFunction writing 30/31-bit ZAttributes provenance into new_pt.z() + Execute(ctIntersection,PolyTree)+PolyTreeToPaths. The clipper2 crate (clipper2c-sys) exposes neither a Z-callback setter nor PolyTree64; no Clipper-Z intersection engine exists in-crate. Hence subject_segmentation + all public *_segmentation entry points stay blocked. PerimeterRegions overloads additionally blocked: fuzzy_skin.rs PerimeterRegion is config-only (no expolygons / no region ptr)."
+    "notes": "Pure helpers all ported & audited faithful (ZAttributes, LineRegionRange, project_point_on_line, find_closest_line_to_point, create_line_region_range, create_continues_line_region_ranges, subject_to_zpath*, create_polyline_segment(s), create_extrusion_segment(s), to_clip_zpaths, lerp). BLOCKED core: intersection_with_region (cpp:291) needs legacy ClipperLib_Z engine with four-endpoint ZFillFunction writing 30/31-bit ZAttributes provenance into new_pt.z() + Execute(ctIntersection,PolyTree)+PolyTreeToPaths. The clipper2 crate (clipper2c-sys) exposes neither a Z-callback setter nor PolyTree64; no Clipper-Z intersection engine exists in-crate. Hence subject_segmentation + all public *_segmentation entry points stay blocked. PerimeterRegions overloads additionally blocked: fuzzy_skin.rs PerimeterRegion is config-only (no expolygons / no region ptr).",
+    "fidelity": "flagged"
   },
   {
     "cpp": "Geometry/MedialAxis.cpp",
