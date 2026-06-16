@@ -602,19 +602,80 @@ impl LayerRegion {
 
     /// Process external surfaces
     /// LayerRegion.cpp:518-640
+    /// C++: void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Polygons *lower_layer_covered)
     ///
-    /// The full wave-expansion port of this LayerRegion member lives as the free
-    /// function `crate::print_object::process_external_surfaces` (re-exported from
-    /// `crate::layer_region`), and is driven from `print_object.rs`. This thin
-    /// member shim forwards to it so the `LayerRegion`-method spelling still works.
-    pub fn process_external_surfaces(
-        &mut self,
-        expansion_distance: f64,
-        min_area_mm2: f64,
-    ) -> Result<()> {
+    /// Faithful driver: builds the flow-derived expansion config exactly as the
+    /// C++ member does (shell_width / expansion_min from external-perimeter and
+    /// perimeter flows, closing_radius from the solid-infill flow), then runs the
+    /// wave-expansion port [`crate::region_expansion::process_external_surfaces_wave`]
+    /// over this region's `fill_surfaces` in place.
+    ///
+    /// The C++ `lower_layer` / `lower_layer_covered` parameters feed the void-trim
+    /// path in `PrintObject::process_external_surfaces`; the wave port does not yet
+    /// consume them, so they are omitted here. `layer_height` (C++
+    /// `m_layer->height`) is threaded by the caller, matching [`LayerRegion::flow`].
+    pub fn process_external_surfaces(&mut self, layer_height: f64) -> Result<()> {
+        use crate::region_expansion::{process_external_surfaces_wave, ExternalSurfaceConfig};
+
+        // LayerRegion.cpp:526-539 — width of the perimeters.
+        // C++: int num_perimeters = this->region().config().wall_loops;
+        let num_perimeters = self.region().config().perimeters as usize;
+
+        // LayerRegion.cpp:529-534
+        // C++: Flow external_perimeter_flow = this->flow(frExternalPerimeter);
+        // C++: Flow perimeter_flow          = this->flow(frPerimeter);
+        // ExternalSurfaceConfig::from_flows reproduces the shell_width /
+        // expansion_min computation (LayerRegion.cpp:532-534) and the
+        // num_perimeters == 0 SCALED_EPSILON fallback (LayerRegion.cpp:536-538).
+        // Note: from_flows works in mm (unscaled) widths/spacings; the wave port
+        // scales internally, so feed the unscaled flow values.
+        let (external_perimeter_width, external_perimeter_spacing) = if num_perimeters > 0 {
+            let f = self.flow(FlowRole::ExternalPerimeter, layer_height)?;
+            (f.width(), f.spacing())
+        } else {
+            (0.0, 0.0)
+        };
+        let perimeter_spacing = if num_perimeters > 0 {
+            self.flow(FlowRole::Perimeter, layer_height)?.spacing()
+        } else {
+            0.0
+        };
+
+        // LayerRegion.cpp:550
+        // C++: const float closing_radius = ... this->flow(frSolidInfill).scaled_spacing();
+        let solid_infill_spacing = self.flow(FlowRole::SolidInfill, layer_height)?.spacing();
+
+        let mut config = ExternalSurfaceConfig::from_flows(
+            external_perimeter_width,
+            external_perimeter_spacing,
+            perimeter_spacing,
+            solid_infill_spacing,
+            num_perimeters,
+        );
+
+        // LayerRegion.cpp:569 — custom bridge angle (degrees).
+        // C++: const double custom_angle = this->region().config().bridge_angle.value;
+        config.custom_bridge_angle = self.region().config().bridge_angle;
+
+        // LayerRegion.cpp:599-602 — minimum sparse infill area logic guards.
+        // C++: if (!...->config().spiral_mode && this->region().config().sparse_infill_density.value > 0)
+        // C++:     double min_area = scale_(scale_(...minimum_sparse_infill_area.value));
+        config.spiral_mode = self
+            .print_config
+            .as_deref()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy")
+            .spiral_vase;
+        config.sparse_infill_density = self.region().config().fill_density;
+        // minimum_sparse_infill_area lives on PrintObjectConfig in this crate.
+        config.minimum_sparse_infill_area = self
+            .object_config
+            .as_deref()
+            .expect("config hierarchy not wired — call wire_layer_hierarchy")
+            .minimum_sparse_infill_area;
+
         // LayerRegion.cpp:518 — operate on this region's fill_surfaces in place.
         let mut surfaces = vec![std::mem::take(&mut self.fill_surfaces.surfaces)];
-        crate::print_object::process_external_surfaces(&mut surfaces, expansion_distance, min_area_mm2);
+        process_external_surfaces_wave(&mut surfaces, &config);
         self.fill_surfaces.surfaces = surfaces.into_iter().next().unwrap_or_default();
         Ok(())
     }

@@ -46,10 +46,10 @@ use crate::layer::LayerRegion;
 pub use crate::region_expansion::{
     expand_bridges_detect_orientations, expand_merge_surfaces, ExpansionZone,
 };
-// Re-export the orchestrator that the C++ exposes as
-// `LayerRegion::process_external_surfaces` (LayerRegion.cpp:518-640); ported in
-// `surface.rs` and driven from `print_object.rs`.
-pub use crate::print_object::process_external_surfaces;
+// `LayerRegion::process_external_surfaces` (LayerRegion.cpp:518-640) is now a
+// faithful member method on `LayerRegion` (see `crate::layer`), driving the
+// wave-expansion port in `crate::region_expansion`; it no longer needs a free-
+// function re-export here.
 
 // LayerRegion.cpp:16
 // static const double max_deviation = scale_(0.5);
