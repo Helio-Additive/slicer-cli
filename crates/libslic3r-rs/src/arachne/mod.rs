@@ -19,8 +19,6 @@
 //! - `BeadingStrategy/` - Width calculation strategies
 //! - `utils/` - Supporting utilities
 
-// Main Arachne implementation
-pub mod arachne;
 pub mod beading_strategy;
 pub mod skeletal_trapezoidation;
 pub mod skeletal_trapezoidation_edge;
@@ -28,13 +26,6 @@ pub mod skeletal_trapezoidation_graph;
 pub mod skeletal_trapezoidation_joint;
 pub mod utils;
 pub mod wall_tool_paths;
-
-// Re-export main types from arachne/arachne/mod.rs
-pub use arachne::{
-    generate_arachne_walls, generate_arachne_walls_with_width, ArachneConfig, ArachneGenerator,
-    ArachneResult, BeadingCalculator, BeadingResult, BeadingStrategy, ExtrusionJunction,
-    ExtrusionLine, VariableWidthLines,
-};
 
 // Re-export wall tool paths
 pub use wall_tool_paths::WallToolPaths;

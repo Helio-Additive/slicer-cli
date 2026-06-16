@@ -6,7 +6,8 @@
 //! NO improvements, NO optimizations, EXACT algorithm only.
 
 use crate::{
-    arachne::{generate_arachne_walls, ArachneConfig, ExtrusionLine as ArachneExtrusionLine},
+    arachne::utils::extrusion_line::{ExtrusionLine as ArachneExtrusionLine, VariableWidthLines},
+    arachne::wall_tool_paths::{WallToolPaths, WallToolPathsParams},
     clipper_utils::{
         difference, grow, intersection, offset2, offset_expolygons, opening, shrink, union_ex,
         union_polygons_ex, OffsetJoinType,
@@ -16,7 +17,7 @@ use crate::{
         ExtrusionPath, ExtrusionRole,
     },
     geometry::{ExPolygons, ThickPolyline, ThickPolylines},
-    ExPolygon, Flow, Point, Polygon, Polyline, SCALING_FACTOR,
+    Coord, ExPolygon, Flow, Point, Polygon, Polyline, SCALING_FACTOR,
 };
 use std::f64::consts::PI;
 
@@ -1555,7 +1556,17 @@ fn traverse_loops(
 }
 
 impl PerimeterGenerator {
-    /// Generate perimeters using Arachne algorithm
+    /// Generate perimeters using the faithful Arachne port.
+    ///
+    /// Mirrors `PerimeterGenerator::process_arachne()`
+    /// (PerimeterGenerator.cpp:1470-1803). This drives the faithful
+    /// `Arachne::WallToolPaths` (wall_tool_paths.rs) instead of the previous
+    /// divergent simplified generator. The wall-maker backend
+    /// (`SkeletalTrapezoidation`) is not yet a working VD port, so
+    /// `WallToolPaths` currently emits empty toolpaths and the inner contour
+    /// falls back to the input outline; the control flow below remains a
+    /// line-by-line translation of the C++ so it produces correct output once
+    /// the wall-maker lands.
     fn generate_arachne(&self, slices: &[ExPolygon]) -> PerimeterResult {
         let mut result = PerimeterResult::new();
 
@@ -1564,61 +1575,224 @@ impl PerimeterGenerator {
             return result;
         }
 
-        // Create Arachne config
-        let arachne_config = ArachneConfig::new(
-            self.config.perimeter_count,
-            self.config.perimeter_extrusion_width,
+        // PerimeterGenerator.cpp:1474-1481
+        let perimeter_spacing: Coord = self.config.perimeter_flow.scaled_spacing();
+        let ext_perimeter_width: Coord = self.config.ext_perimeter_flow.scaled_width();
+        let ext_perimeter_spacing: Coord = self.config.ext_perimeter_flow.scaled_spacing();
+        let ext_perimeter_spacing2: Coord = crate::scaled(
+            0.5 * (self.config.ext_perimeter_flow.spacing() + self.config.perimeter_flow.spacing()),
         );
 
-        // Generate Arachne walls
-        let arachne_result = crate::arachne::ArachneGenerator::new(arachne_config).generate(slices);
-
-        // Convert Arachne toolpaths to ExtrusionEntityCollection
+        // PerimeterGenerator.cpp:1505  for (const Surface& surface : this->slices->surfaces)
         let mut entities = ExtrusionEntityCollection::new();
+        let mut infill_contour: ExPolygons = Vec::new();
 
-        for (wall_idx, wall_lines) in arachne_result.toolpaths.iter().enumerate() {
-            for line in wall_lines {
-                // Determine role based on wall index
-                let role = if wall_idx == 0 {
+        for surface in slices.iter() {
+            // PerimeterGenerator.cpp:1507  loop_number = wall_loops + extra_perimeters - 1
+            let loop_number: i32 = self.config.perimeter_count as i32 - 1;
+
+            // PerimeterGenerator.cpp:1511-1512  offset for the outer wall.
+            // (precise_outer_wall not modelled here -> use the simple inset.)
+            let inset = -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0);
+            let last = offset_expolygons(
+                &[surface.clone()],
+                inset / crate::SCALING_FACTOR,
+                self.config.join_type,
+            );
+
+            // PerimeterGenerator.cpp:1518-1522  Polygons last_p = to_polygons(last);
+            let last_p: crate::geometry::Polygons = expolygons_to_polygons(&last);
+
+            let mut total_perimeters: Vec<VariableWidthLines> = Vec::new();
+            let mut surface_infill: ExPolygons;
+
+            if loop_number >= 0 {
+                // PerimeterGenerator.cpp:1532  is_one_wall
+                let is_one_wall = loop_number == 0;
+
+                // PerimeterGenerator.cpp:1537-1553  WallToolPathsParams input_params.
+                let input_params = WallToolPathsParams::default();
+
+                // PerimeterGenerator.cpp:1560  coord_t wall_0_inset = 0;
+                let wall_0_inset: Coord = 0;
+                let layer_height = self.config.layer_height;
+
+                if is_one_wall {
+                    // PerimeterGenerator.cpp:1617-1621  plan wall width as one wall
+                    let mut one_wall_paths = WallToolPaths::new(
+                        last_p,
+                        ext_perimeter_spacing,
+                        perimeter_spacing,
+                        1,
+                        wall_0_inset,
+                        layer_height,
+                        input_params,
+                    );
+                    total_perimeters = one_wall_paths.get_tool_paths().clone();
+                    surface_infill = union_polygons_ex(one_wall_paths.get_inner_contour());
+                } else {
+                    // PerimeterGenerator.cpp:1625-1629  plan wall width as normal
+                    let mut normal_paths = WallToolPaths::new(
+                        last_p,
+                        ext_perimeter_spacing,
+                        perimeter_spacing,
+                        (loop_number + 1) as usize,
+                        wall_0_inset,
+                        layer_height,
+                        input_params,
+                    );
+                    total_perimeters = normal_paths.get_tool_paths().clone();
+                    surface_infill = union_polygons_ex(normal_paths.get_inner_contour());
+                }
+            } else {
+                // PerimeterGenerator.cpp:1634  infill_contour = last;
+                surface_infill = last;
+            }
+
+            // PerimeterGenerator.cpp:1654-1667  wall ordering direction.
+            let mut start_perimeter: i32 = total_perimeters.len() as i32 - 1;
+            let mut end_perimeter: i32 = -1;
+            let mut direction: i32 = -1;
+
+            let is_outer_wall_first = self.config.wall_sequence
+                == crate::print_config::WallSequence::OuterInner
+                || self.config.wall_sequence == crate::print_config::WallSequence::InnerOuterInner;
+            if is_outer_wall_first {
+                start_perimeter = 0;
+                end_perimeter = total_perimeters.len() as i32;
+                direction = 1;
+            }
+
+            // PerimeterGenerator.cpp:1669-1675  collect all_extrusions in order.
+            let mut all_extrusions: Vec<ArachneExtrusionLine> = Vec::new();
+            let mut perimeter_idx = start_perimeter;
+            while perimeter_idx != end_perimeter {
+                if let Some(perim) = total_perimeters.get(perimeter_idx as usize) {
+                    if !perim.is_empty() {
+                        for wall in perim.iter() {
+                            all_extrusions.push(wall.clone());
+                        }
+                    }
+                }
+                perimeter_idx += direction;
+            }
+
+            // PerimeterGenerator.cpp:1677-1689  region-order constraints.
+            let extrusion_refs: Vec<&ArachneExtrusionLine> = all_extrusions.iter().collect();
+            let extrusions_constrains =
+                WallToolPaths::get_region_order(&extrusion_refs, is_outer_wall_first);
+            let mut blocked: Vec<usize> = vec![0; all_extrusions.len()];
+            let mut blocking: Vec<Vec<usize>> = vec![Vec::new(); all_extrusions.len()];
+            for (before, after) in extrusions_constrains.into_iter() {
+                blocked[after] += 1;
+                blocking[before].push(after);
+            }
+
+            // PerimeterGenerator.cpp:1691-1746  greedy nearest-neighbour topo order.
+            let mut processed: Vec<bool> = vec![false; all_extrusions.len()];
+            let mut current_position: Point = if all_extrusions.is_empty() {
+                Point::new(0, 0)
+            } else {
+                all_extrusions[0].junctions[0].p
+            };
+            let mut ordered_extrusions: Vec<ArachneExtrusionLine> =
+                Vec::with_capacity(all_extrusions.len());
+
+            while ordered_extrusions.len() < all_extrusions.len() {
+                let mut best_candidate: usize = 0;
+                let mut best_distance_sqr: f64 = f64::MAX;
+                let mut is_best_closed: bool = false;
+
+                let mut available_candidates: Vec<usize> = Vec::new();
+                for candidate in 0..all_extrusions.len() {
+                    if processed[candidate] || blocked[candidate] != 0 {
+                        continue;
+                    }
+                    available_candidates.push(candidate);
+                }
+                // is_closed false sorts before true.
+                available_candidates
+                    .sort_by(|&a, &b| all_extrusions[a].is_closed.cmp(&all_extrusions[b].is_closed));
+
+                for candidate_path_idx in available_candidates.into_iter() {
+                    let path = &all_extrusions[candidate_path_idx];
+                    if path.junctions.is_empty() {
+                        if best_distance_sqr == f64::MAX {
+                            best_candidate = candidate_path_idx;
+                            is_best_closed = path.is_closed;
+                        }
+                        continue;
+                    }
+                    let candidate_position = path.junctions[0].p;
+                    let distance_sqr = (current_position - candidate_position).length();
+                    if distance_sqr < best_distance_sqr {
+                        if path.is_closed
+                            || (!path.is_closed && best_distance_sqr != f64::MAX)
+                            || (!path.is_closed && !is_best_closed)
+                        {
+                            best_candidate = candidate_path_idx;
+                            best_distance_sqr = distance_sqr;
+                            is_best_closed = path.is_closed;
+                        }
+                    }
+                }
+
+                if all_extrusions.is_empty() {
+                    break;
+                }
+                let best_path = all_extrusions[best_candidate].clone();
+                processed[best_candidate] = true;
+                for &unlocked_idx in blocking[best_candidate].iter() {
+                    blocked[unlocked_idx] -= 1;
+                }
+                if !best_path.junctions.is_empty() {
+                    current_position = if best_path.is_closed {
+                        best_path.junctions[0].p
+                    } else {
+                        best_path.junctions.last().unwrap().p
+                    };
+                }
+                ordered_extrusions.push(best_path);
+            }
+
+            // PerimeterGenerator.cpp:1792  traverse_extrusions -> append to loops.
+            for ext in ordered_extrusions.iter() {
+                let role = if ext.inset_idx == 0 {
                     ExtrusionRole::ExternalPerimeter
                 } else {
                     ExtrusionRole::Perimeter
                 };
-
-                // Convert ArachneExtrusionLine to ExtrusionPath
-                if let Some(extrusion_path) = self.arachne_line_to_extrusion_path(line, role) {
-                    // Create a loop for closed paths, or add directly for open paths
-                    if line.is_closed {
-                        let loop_role = if wall_idx == 0 {
+                if let Some(path) = self.arachne_line_to_extrusion_path(ext, role) {
+                    if ext.is_closed {
+                        let loop_role = if ext.inset_idx == 0 {
                             ExtrusionLoopRole::DEFAULT
                         } else {
                             ExtrusionLoopRole::CONTOUR_INTERNAL_PERIMETER
                         };
-                        let eloop = ExtrusionLoop::new(vec![extrusion_path], loop_role);
+                        let eloop = ExtrusionLoop::new(vec![path], loop_role);
                         entities.append(ExtrusionEntityType::Loop(eloop));
                     } else {
-                        entities.append(ExtrusionEntityType::Path(extrusion_path));
+                        entities.append(ExtrusionEntityType::Path(path));
                     }
                 }
             }
-        }
 
-        // Add thin fills
-        for line in &arachne_result.thin_fills {
-            if let Some(extrusion_path) =
-                self.arachne_line_to_extrusion_path(line, ExtrusionRole::ExternalPerimeter)
-            {
-                entities.append(ExtrusionEntityType::Path(extrusion_path));
-            }
+            // PerimeterGenerator.cpp:1795  spacing select (kept for parity; unused below).
+            let _spacing = if total_perimeters.len() == 1 {
+                ext_perimeter_spacing2
+            } else {
+                perimeter_spacing
+            };
+
+            infill_contour.append(&mut surface_infill);
         }
 
         result.entities = entities;
-        result.infill_area = arachne_result.inner_contour;
-
+        result.infill_area = infill_contour;
         result
     }
 
-    /// Convert Arachne ExtrusionLine to our ExtrusionPath
+    /// Convert a faithful Arachne `ExtrusionLine` to our `ExtrusionPath`.
     fn arachne_line_to_extrusion_path(
         &self,
         line: &ArachneExtrusionLine,
@@ -1631,7 +1805,7 @@ impl PerimeterGenerator {
         let avg_width: f64 = line
             .junctions
             .iter()
-            .map(|j| crate::unscale(j.width) as f64)
+            .map(|j| crate::unscale(j.w))
             .sum::<f64>()
             / line.junctions.len() as f64;
 
@@ -1645,11 +1819,10 @@ impl PerimeterGenerator {
         let mm3_per_mm = flow.mm3_per_mm().unwrap_or(0.0);
 
         // Convert junctions to points
-        let mut points: Vec<Point> = line.junctions.iter().map(|j| j.position).collect();
+        let mut points: Vec<Point> = line.junctions.iter().map(|j| j.p).collect();
 
         // If open path, reverse to maintain correct orientation
         if !line.is_closed && points.len() > 1 {
-            // For Arachne lines, reverse to get correct extrusion order
             points.reverse();
         }
 
@@ -1661,6 +1834,19 @@ impl PerimeterGenerator {
 
         Some(path)
     }
+}
+
+/// Flatten `ExPolygons` into `Polygons` (contour followed by holes), matching
+/// `to_polygons(const ExPolygons&)` in ClipperUtils.
+fn expolygons_to_polygons(ex: &[ExPolygon]) -> crate::geometry::Polygons {
+    let mut out: crate::geometry::Polygons = Vec::new();
+    for e in ex.iter() {
+        out.push(e.contour.clone());
+        for h in e.holes.iter() {
+            out.push(h.clone());
+        }
+    }
+    out
 }
 
 /// Apply fuzzy skin to an extrusion entity by perturbing its polyline points.

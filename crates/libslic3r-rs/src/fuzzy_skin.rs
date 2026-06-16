@@ -13,7 +13,8 @@
 //! the `UniformNoise` for every `NoiseType`. The non-Classic branches are
 //! BLOCKED on a Rust noise backend; their dispatch structure is preserved.
 
-use crate::arachne::{ExtrusionJunction, ExtrusionLine};
+use crate::arachne::utils::extrusion_junction::ExtrusionJunction;
+use crate::arachne::utils::extrusion_line::ExtrusionLine;
 use crate::geometry::{Point, PointF, Polygon, Polyline};
 use crate::region_config::{FuzzySkinDisplacementMode, FuzzySkinType, NoiseType, PrintRegionConfig};
 use crate::{unscale, Coord, CoordF};
@@ -248,14 +249,14 @@ pub fn fuzzy_extrusion_line(ext_lines: &mut ExtrusionLine, slice_z: CoordF, conf
     for idx in 0..ext_lines.junctions.len() {
         let p1 = ext_lines.junctions[idx];
         // FuzzySkin.cpp:126
-        if p0.position == p1.position {
+        if p0.p == p1.p {
             // FuzzySkin.cpp:127
-            out.push(ExtrusionJunction::new(p1.position, p1.width, p1.perimeter_index));
+            out.push(ExtrusionJunction::new(p1.p, p1.w, p1.perimeter_index));
             // FuzzySkin.cpp:128
             continue;
         }
         // FuzzySkin.cpp:130
-        let p0p1 = PointF::new((p1.position.x - p0.position.x) as f64, (p1.position.y - p0.position.y) as f64);
+        let p0p1 = PointF::new((p1.p.x - p0.p.x) as f64, (p1.p.y - p0.p.y) as f64);
         // FuzzySkin.cpp:131
         let p0p1_size = p0p1.length();
         // FuzzySkin.cpp:132
@@ -263,7 +264,7 @@ pub fn fuzzy_extrusion_line(ext_lines: &mut ExtrusionLine, slice_z: CoordF, conf
         // FuzzySkin.cpp:133
         while p0pa_dist < p0p1_size {
             // FuzzySkin.cpp:134
-            let pa = p0.position
+            let pa = p0.p
                 + cast_coord(PointF::new(p0p1.x * (p0pa_dist / p0p1_size), p0p1.y * (p0pa_dist / p0p1_size)));
             // FuzzySkin.cpp:135
             let r = noise.get_value(unscale(pa.x), unscale(pa.y), slice_z) * thickness;
@@ -275,7 +276,7 @@ pub fn fuzzy_extrusion_line(ext_lines: &mut ExtrusionLine, slice_z: CoordF, conf
                 FuzzySkinDisplacementMode::Displacement => {
                     out.push(ExtrusionJunction::new(
                         pa + cast_coord(PointF::new(perp_n.x * r, perp_n.y * r)),
-                        p1.width,
+                        p1.w,
                         p1.perimeter_index,
                     ));
                 }
@@ -283,17 +284,17 @@ pub fn fuzzy_extrusion_line(ext_lines: &mut ExtrusionLine, slice_z: CoordF, conf
                 FuzzySkinDisplacementMode::Extrusion => {
                     out.push(ExtrusionJunction::new(
                         pa,
-                        ((p1.width as f64 + r + min_extrusion_width).max(min_extrusion_width)) as Coord,
+                        ((p1.w as f64 + r + min_extrusion_width).max(min_extrusion_width)) as Coord,
                         p1.perimeter_index,
                     ));
                 }
                 // FuzzySkin.cpp:144-148
                 FuzzySkinDisplacementMode::Combined => {
-                    let rad = (p1.width as f64 + r + min_extrusion_width).max(min_extrusion_width);
+                    let rad = (p1.w as f64 + r + min_extrusion_width).max(min_extrusion_width);
                     out.push(ExtrusionJunction::new(
                         pa + cast_coord(PointF::new(
-                            perp_n.x * ((rad - p1.width as f64) / 2.),
-                            perp_n.y * ((rad - p1.width as f64) / 2.),
+                            perp_n.x * ((rad - p1.w as f64) / 2.),
+                            perp_n.y * ((rad - p1.w as f64) / 2.),
                         )),
                         rad as Coord,
                         p1.perimeter_index,
@@ -316,7 +317,7 @@ pub fn fuzzy_extrusion_line(ext_lines: &mut ExtrusionLine, slice_z: CoordF, conf
         let point_idx = ext_lines.junctions.len() - 2;
         // FuzzySkin.cpp:157
         let j = ext_lines.junctions[point_idx];
-        out.push(ExtrusionJunction::new(j.position, j.width, j.perimeter_index));
+        out.push(ExtrusionJunction::new(j.p, j.w, j.perimeter_index));
         // FuzzySkin.cpp:158-160
         if point_idx == 0 {
             break;
@@ -325,12 +326,12 @@ pub fn fuzzy_extrusion_line(ext_lines: &mut ExtrusionLine, slice_z: CoordF, conf
     }
 
     // FuzzySkin.cpp:165-168
-    if ext_lines.junctions.last().unwrap().position == ext_lines.junctions.first().unwrap().position {
+    if ext_lines.junctions.last().unwrap().p == ext_lines.junctions.first().unwrap().p {
         // FuzzySkin.cpp:166
         let back = *out.last().unwrap();
-        out.first_mut().unwrap().position = back.position;
+        out.first_mut().unwrap().p = back.p;
         // FuzzySkin.cpp:167
-        out.first_mut().unwrap().width = back.width;
+        out.first_mut().unwrap().w = back.w;
     }
 
     // FuzzySkin.cpp:170-172
@@ -478,7 +479,7 @@ pub fn apply_fuzzy_skin_extrusion(
     let mut segments = extrusion_segmentation(extrusion, base_config, perimeter_regions);
     // FuzzySkin.cpp:251
     let mut fuzzified_extrusion =
-        ExtrusionLine::new(extrusion.inset_idx, extrusion.is_odd, extrusion.is_closed);
+        ExtrusionLine::with_closed(extrusion.inset_idx, extrusion.is_odd, extrusion.is_closed);
 
     // FuzzySkin.cpp:253
     for segment in &mut segments {
@@ -495,8 +496,8 @@ pub fn apply_fuzzy_skin_extrusion(
         if segment.extrusion.junctions.is_empty() {
             continue;
         } else if !fuzzified_extrusion.junctions.is_empty()
-            && fuzzified_extrusion.junctions.last().unwrap().position
-                == segment.extrusion.junctions[0].position
+            && fuzzified_extrusion.junctions.last().unwrap().p
+                == segment.extrusion.junctions[0].p
         {
             // Remove the last point to avoid duplicate points (We don't care if the width of both points is different.).
             fuzzified_extrusion.junctions.pop();
@@ -782,15 +783,11 @@ mod tests {
 
     #[test]
     fn test_fuzzy_extrusion_line_displacement() {
-        let original = ExtrusionLine::from_junctions(
-            vec![
-                ExtrusionJunction::new(Point::new(0, 0), scale(0.4), 0),
-                ExtrusionJunction::new(Point::new(scale(10.0), 0), scale(0.4), 0),
-            ],
-            0,
-            false,
-            false,
-        );
+        let mut original = ExtrusionLine::with_closed(0, false, false);
+        original.junctions = vec![
+            ExtrusionJunction::new(Point::new(0, 0), scale(0.4), 0),
+            ExtrusionJunction::new(Point::new(scale(10.0), 0), scale(0.4), 0),
+        ];
         let mut fuzzified = original.clone();
         let cfg = external_config();
         fuzzy_extrusion_line(&mut fuzzified, 0.0, &cfg);

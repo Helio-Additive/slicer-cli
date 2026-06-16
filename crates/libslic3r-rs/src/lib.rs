@@ -328,12 +328,11 @@ pub use fuzzy_skin::{
     PerimeterRegion,
 };
 
-// Re-export Arachne variable-width perimeter generation
-pub use arachne::{
-    generate_arachne_walls, generate_arachne_walls_with_width, ArachneConfig, ArachneGenerator,
-    ArachneResult, BeadingCalculator, BeadingResult, BeadingStrategy, ExtrusionJunction,
-    ExtrusionLine, VariableWidthLines,
-};
+// Re-export Arachne variable-width perimeter generation (faithful WallToolPaths port).
+pub use arachne::beading_strategy::beading_strategy::BeadingStrategy;
+pub use arachne::utils::extrusion_junction::ExtrusionJunction;
+pub use arachne::utils::extrusion_line::{ExtrusionLine, VariableWidthLines};
+pub use arachne::WallToolPaths;
 
 // Note: infill generation already re-exported in fill module (lines 196-202)
 
