@@ -250,7 +250,9 @@ pub mod timing {
         /// C++: }
         pub fn new_milis(time_limit_milis: u64, limit_exceeded_message: &str) -> Self {
             // Timer.hpp:75
-            TimeLimitAlarm::new(time_limit_milis * 1000000, limit_exceeded_message)
+            // C++ `uint64_t(time_limit_milis) * 1000000l` is an unsigned multiply
+            // that wraps on overflow (defined behaviour); mirror with `wrapping_mul`.
+            TimeLimitAlarm::new(time_limit_milis.wrapping_mul(1000000), limit_exceeded_message)
         }
 
         /// Timer.hpp:77-79
@@ -259,7 +261,9 @@ pub mod timing {
         /// C++: }
         pub fn new_seconds(time_limit_seconds: u64, limit_exceeded_message: &str) -> Self {
             // Timer.hpp:78
-            TimeLimitAlarm::new(time_limit_seconds * 1000000000, limit_exceeded_message)
+            // C++ `uint64_t(time_limit_seconds) * 1000000000l` is an unsigned multiply
+            // that wraps on overflow (defined behaviour); mirror with `wrapping_mul`.
+            TimeLimitAlarm::new(time_limit_seconds.wrapping_mul(1000000000), limit_exceeded_message)
         }
 
         /// Timer.cpp:17-19

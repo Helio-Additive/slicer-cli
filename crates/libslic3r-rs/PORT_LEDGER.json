@@ -8,7 +8,8 @@
     "rust_exists": true,
     "loc": 1,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "TryCatchSignal.cpp",
@@ -19,7 +20,8 @@
     "rust_exists": true,
     "loc": 5,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Semver.cpp",
@@ -41,7 +43,8 @@
     "rust_exists": true,
     "loc": 10,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "clipper.cpp",
@@ -63,7 +66,8 @@
     "rust_exists": true,
     "loc": 21,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "CommonDefs.hpp",
