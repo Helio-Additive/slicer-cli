@@ -3,7 +3,6 @@
 //! This module provides types and functions for generating G-code from
 //! sliced layers, mirroring BambuStudio's GCode and GCodeWriter classes.
 
-pub mod arc_fitting;
 pub mod avoid_crossing_perimeters;
 pub mod conflict_checker;
 pub mod cooling;
@@ -31,10 +30,6 @@ pub mod tool_ordering;
 pub mod wipe_tower;
 mod writer;
 
-pub use arc_fitting::{
-    fit_arcs, fit_arcs_to_points, ArcDirection, ArcFitter, ArcFittingConfig, ArcFittingStats,
-    FittedArc, PathSegment,
-};
 pub use avoid_crossing_perimeters::{
     init_boundary, init_boundary_with_merge_points, AvoidCrossingPerimeters, Boundary,
     ConvertBBoxToPolyline,

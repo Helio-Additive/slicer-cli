@@ -47,7 +47,8 @@ pub fn format_gcode_value(v: f64, digits: usize) -> String {
     result
 }
 
-use crate::gcode::{ArcDirection, GCode, GCodeCommand, GCodeStats};
+use crate::circle::ArcDirection;
+use crate::gcode::{GCode, GCodeCommand, GCodeStats};
 use crate::geometry::PointF;
 use crate::print_config::{PrintConfig, ZHopType};
 use crate::CoordF;
@@ -874,7 +875,7 @@ impl GCodeWriter {
                     arc_angle += 2.0 * std::f64::consts::PI;
                 }
             }
-            ArcDirection::Clockwise => {
+            ArcDirection::Clockwise | ArcDirection::Unknown => {
                 if arc_angle > 0.0 {
                     arc_angle -= 2.0 * std::f64::consts::PI;
                 }
@@ -895,7 +896,7 @@ impl GCodeWriter {
 
         // Write arc command
         let cmd = match direction {
-            ArcDirection::Clockwise => GCodeCommand::ArcCW {
+            ArcDirection::Clockwise | ArcDirection::Unknown => GCodeCommand::ArcCW {
                 x,
                 y,
                 i,
@@ -1944,7 +1945,7 @@ mod tests {
 
     #[test]
     fn test_writer_arc_stats() {
-        use crate::gcode::ArcDirection;
+        use crate::circle::ArcDirection;
 
         let mut writer = GCodeWriter::new();
         writer.travel_to(10.0, 0.0, None);
