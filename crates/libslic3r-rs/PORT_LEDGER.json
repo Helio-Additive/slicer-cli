@@ -269,7 +269,8 @@
     "rust_exists": true,
     "loc": 79,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "flagged"
   },
   {
     "cpp": "enum_bitmask.hpp",
@@ -280,7 +281,8 @@
     "rust_exists": true,
     "loc": 80,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "ExPolygonsIndex.cpp",
@@ -291,7 +293,8 @@
     "rust_exists": true,
     "loc": 82,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "BlacklistedLibraryCheck.cpp",
@@ -302,7 +305,8 @@
     "rust_exists": true,
     "loc": 84,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "LocalesUtils.cpp",
