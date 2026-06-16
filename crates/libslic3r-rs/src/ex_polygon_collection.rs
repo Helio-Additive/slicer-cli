@@ -146,7 +146,11 @@ impl ExPolygonCollection {
         for it in self.expolygons.iter_mut() {
             // ExPolygon.hpp:41
             // C++: void translate(double x, double y) { this->translate(Point(coord_t(x), coord_t(y))); }
-            it.translate(Point::new(x as i64, y as i64));
+            // FIDELITY-NOTE(F2): C++ `coord_t` is `int32_t` (libslic3r.h:40), so the
+            // `coord_t(x)` cast truncates the double toward zero into 32-bit range.
+            // Crate-wide `Coord = i64`, so we reproduce the int32 truncation locally
+            // via `as i32 as i64` to match C++ wrap/clamp behaviour for huge offsets.
+            it.translate(Point::new(x as i32 as i64, y as i32 as i64));
         }
     }
 

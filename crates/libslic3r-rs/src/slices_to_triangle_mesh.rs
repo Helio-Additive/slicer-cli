@@ -406,8 +406,12 @@ pub fn slices_to_mesh_grid(
         // tesselation also can create 0 area triangles. These will be removed
         // by its_remove_degenerate_faces.
         // SlicesToTriangleMesh.cpp:96
+        // FIDELITY-NOTE(F1): C++ `diff_ex` is ClipperLib at coord_t integer
+        // precision; `difference` here is the geo-clipper approximation (fixed
+        // scale 1000). Geometry results may differ at sub-micron precision.
         let free_top: ExPolygons = difference(lower, upper);
         // SlicesToTriangleMesh.cpp:97
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib `diff_ex`.
         let overhang: ExPolygons = difference(upper, lower);
         // SlicesToTriangleMesh.cpp:98
         let free_top_tris = tesselate::triangulate_expolygons_3d(&free_top, grid[i] as f64, NORMALS_UP)
