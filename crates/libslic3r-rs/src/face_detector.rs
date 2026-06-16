@@ -115,7 +115,11 @@ impl FaceDetector {
 
         // FaceDetector.cpp:30
         // C++: sla::IndexedMesh indexed_mesh(object_mesh);
-        let indexed_mesh = AABBMesh::new(triangle_mesh_to_its(&object_mesh), true);
+        // IndexedMesh.hpp:52 — `explicit IndexedMesh(const TriangleMesh &mesh, bool calculate_epsilon = false);`
+        // The call site uses the default argument, so `calculate_epsilon == false`
+        // (triangle_ray_epsilon stays at the constant default rather than being
+        // derived from the average edge length).
+        let indexed_mesh = AABBMesh::new(triangle_mesh_to_its(&object_mesh), false);
         // FaceDetector.cpp:31
         // C++: BoundingBoxf3 bbox = object_mesh.bounding_box();
         let mut bbox = object_mesh.bounding_box();

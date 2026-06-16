@@ -250,6 +250,10 @@ fn from_chars(bytes: &[u8]) -> Option<(f64, usize)> {
         }
         if starts_with_ci(rest, b"nan") {
             // Sign on NaN is irrelevant for our purposes.
+            // DIVERGENCE (negligible): fast_float (fast_float.h:2352-2361) also
+            // consumes a trailing `nan(n-char-seq-opt)` suffix, e.g. "nan(ind)".
+            // No libslic3r caller ever parses such a string (gcode / config
+            // floats are plain numerics), so we stop after the 3 "nan" chars.
             return Some((f64::NAN, i + 3));
         }
     }
@@ -343,17 +347,32 @@ pub(crate) fn general_format(value: f64, precision: usize) -> String {
         };
     }
 
-    // Decimal exponent X of `value` (i.e. value = m * 10^X, 1 <= |m| < 10).
-    let exp = value.abs().log10().floor() as i32;
+    // C's `%g` chooses fixed vs. scientific based on the decimal exponent of
+    // the value *after* it has been rounded to `prec` significant digits — not
+    // the exponent of the raw value. Rounding can carry into the next power of
+    // ten (e.g. 999999.5 with prec 6 rounds to 1e+06, exponent 5 -> 6), which
+    // flips the format decision. We therefore first render the value in
+    // scientific form with `prec - 1` fractional mantissa digits — this rounds
+    // to exactly `prec` significant digits and yields the post-rounding decimal
+    // exponent — then decide the notation from that exponent.
+    //
+    // Mirrors glibc/MSVC `%g` (which format `%e` internally, inspect the
+    // exponent, then re-render), so boundary cases match C++ byte for byte.
+    let sci = format!("{:.*e}", prec - 1, value);
+    let exp: i32 = match sci.split_once(['e', 'E']) {
+        Some((_, e)) => e.parse().unwrap_or(0),
+        None => 0,
+    };
 
     // Per C's %g: use scientific notation if exponent < -4 or >= precision,
     // otherwise fixed notation. The number of significant digits is `prec`.
     if exp < -4 || exp >= prec as i32 {
-        // Scientific: prec-1 fractional digits in the mantissa.
-        let s = format!("{:.*e}", prec - 1, value);
-        strip_scientific(&s)
+        // Scientific: the `sci` string already carries `prec` sig. digits.
+        strip_scientific(&sci)
     } else {
         // Fixed: (prec - 1 - exp) fractional digits gives `prec` sig. digits.
+        // Render the original `value` so we get the correctly rounded fixed
+        // form (the exponent above is only used to pick the digit count).
         let frac = (prec as i32 - 1 - exp).max(0) as usize;
         let s = format!("{:.*}", frac, value);
         strip_fixed(&s)

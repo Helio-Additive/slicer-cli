@@ -317,7 +317,8 @@
     "rust_exists": true,
     "loc": 89,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "FaceDetector.cpp",
@@ -328,7 +329,8 @@
     "rust_exists": true,
     "loc": 90,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "PrintRegion.cpp",
