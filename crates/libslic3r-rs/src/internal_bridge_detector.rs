@@ -98,6 +98,10 @@ impl InternalBridgeDetector {
     // InternalBridgeDetector.cpp:19-42
     fn initialize(&mut self) {
         // InternalBridgeDetector.cpp:21
+        // C++ `offset(ExPolygons, float)` returns `Polygons`; the crate variant returns
+        // `ExPolygons`. The geometric region is the same; representation differs only.
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib (offset/diff at coord_t precision).
+        // FIDELITY-NOTE(F2): `spacing` is i64 here but coord_t=int32 in C++; `float(spacing)` cast magnitude is unaffected at logic level.
         let grown = offset_expolygons(
             &self.internal_bridge_infill,
             self.spacing as f64,
@@ -182,6 +186,10 @@ impl InternalBridgeDetector {
             let mut max_length: f64 = 0.;
             {
                 // InternalBridgeDetector.cpp:80
+                // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib — the
+                // underlying `intersection_pl` primitive clips by segment sampling rather
+                // than exact ClipperLib `_clipper_pl_open`, so clipped line endpoints may
+                // differ slightly. The front/back-of-polyline reduction matches `_clipper_ln`.
                 let clipped_lines = intersection_ln(&lines, &clip_area);
                 // InternalBridgeDetector.cpp:81
                 for i in 0..clipped_lines.len() {

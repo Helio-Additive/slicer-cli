@@ -472,7 +472,8 @@
     "rust_exists": true,
     "loc": 142,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "InternalBridgeDetector.cpp",
@@ -483,7 +484,8 @@
     "rust_exists": true,
     "loc": 144,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "AnyPtr.hpp",
@@ -494,7 +496,8 @@
     "rust_exists": true,
     "loc": 144,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Line.cpp",
@@ -516,7 +519,8 @@
     "rust_exists": true,
     "loc": 146,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Zipper.cpp",
