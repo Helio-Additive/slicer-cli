@@ -1098,12 +1098,6 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    // --input is required for every mode except the geometry-generating
-    // pressure_advance_pattern, which synthesizes its own handle cube and so
-    // needs only a CONFIG source (a 3MF via --input, or --config/--machine/
-    // --filament/--process) — the engine cannot slice from defaults alone.
-    const bool has_config_source = !machine_config.empty() || !filament_config.empty() ||
-                                   !process_config.empty() || !bundle_config.empty();
     if (input_file.empty() && !calib_self_geometry) {
         std::cerr << "Error: No input file specified\n\n";
         print_usage(argv[0]);
@@ -1111,22 +1105,25 @@ int main(int argc, char** argv) {
     }
     if (calib_self_geometry) {
         // pressure_advance_pattern DISCARDS the loaded model and generates its own
-        // geometry, so it needs only CONFIG — but config must come from a 3MF's
-        // embedded project_settings or explicit profile files. An STL provides
-        // geometry (which is thrown away) and NO config, so STL-only would slice
-        // the default/wrong printer; require a real config source.
+        // geometry, but it still needs a fully-resolved printer/filament/process
+        // config AND the 3MF's per-plate custom-gcode scaffolding. Require a real
+        // .3mf --input: a profile bundle alone is insufficient (its files load
+        // later with only a warning on failure, and no plate metadata is set up,
+        // so the pattern would silently slice the default/wrong printer). An STL
+        // supplies only geometry, which the pattern throws away.
+        //
         // Mirror the loader's dispatch (it checks .stl FIRST), so a path like
-        // `part.3mf.stl` — which loads as STL — is NOT mistaken for a config-
-        // bearing 3MF here.
+        // `part.3mf.stl` — which loads as STL — is NOT mistaken for a 3MF here.
         const bool input_is_stl = input_file.find(".stl") != std::string::npos ||
                                   input_file.find(".STL") != std::string::npos;
         const bool input_is_3mf = !input_is_stl &&
                                   (input_file.find(".3mf") != std::string::npos ||
                                    input_file.find(".3MF") != std::string::npos);
-        if (!input_is_3mf && !has_config_source) {
-            std::cerr << "Error: pressure_advance_pattern needs config from a .3mf --input "
-                         "or --config/--machine/--filament/--process (an STL supplies only "
-                         "geometry, which the pattern discards)\n\n";
+        if (!input_is_3mf) {
+            std::cerr << "Error: pressure_advance_pattern requires a .3mf --input for its "
+                         "printer/filament config (it discards the model geometry but reads the "
+                         "embedded config + plate setup; a profile bundle or STL is not "
+                         "sufficient)\n\n";
             print_usage(argv[0]);
             return 1;
         }

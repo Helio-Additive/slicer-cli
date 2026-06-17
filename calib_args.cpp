@@ -115,6 +115,14 @@ Calib_Params build_calib_params(const CalibOptions& opts)
             "temp_tower --calib-start must be greater than --calib-end (the tower descends "
             "from the start temperature)");
 
+    // The retraction tower ASCENDS from `start` (engine hook: length = start +
+    // floor(z-0.4)*step; `end` is advisory). A descending range (start > end)
+    // would climb away from the requested end, so require start < end (low → high).
+    if (params.mode == CalibMode::Calib_Retraction_tower && params.start >= params.end)
+        throw std::invalid_argument(
+            "retraction_tower --calib-start must be less than --calib-end (the tower ascends "
+            "from the start length)");
+
     return params;
 }
 
@@ -140,10 +148,16 @@ void apply_pa_pattern(const Calib_Params& params,
     // parameter) collapse to the CLI's single logical extruder.
     const int extruder_id = std::max(0, params.extruder_id);
 
+    // NB: nozzle_diameter / outer_wall_speed / initial_layer_speed are coFloats
+    // (ConfigOptionFloats) in the schema — NOT the *Nullable variant the BBS GUI's
+    // CalibUtils uses. The cli config stores the plain coFloats type, so reading
+    // them as Nullable returns null (→ a silent 0.4 / unset fallback). Use
+    // ConfigOptionFloats to match the cli's other nozzle_diameter reads.
+    //
     // Use the CALIBRATED extruder's nozzle diameter (not always nozzle 0) so a
     // second, differently-sized nozzle scales its suggested widths correctly.
     float nozzle_diameter = 0.4f;
-    if (auto* nd = config.option<ConfigOptionFloatsNullable>("nozzle_diameter"))
+    if (auto* nd = config.option<ConfigOptionFloats>("nozzle_diameter"))
         if (!nd->values.empty()) {
             const int ni = (extruder_id < static_cast<int>(nd->values.size())) ? extruder_id : 0;
             nozzle_diameter = static_cast<float>(nd->get_at(ni));
@@ -153,7 +167,7 @@ void apply_pa_pattern(const Calib_Params& params,
     for (const auto& opt : suggested.float_pairs)
         config.set_key_value(opt.first, new ConfigOptionFloat(opt.second));
     for (const auto& opt : suggested.floats_pairs)
-        config.set_key_value(opt.first, new ConfigOptionFloatsNullable(opt.second));
+        config.set_key_value(opt.first, new ConfigOptionFloats(opt.second));
     // Apply the suggested calibration line widths BEFORE optimizing the PA speed,
     // so find_optimal_PA_speed uses the width the pattern actually prints at (the
     // loaded profile's line_width can differ and would skew the result).
@@ -163,7 +177,7 @@ void apply_pa_pattern(const Calib_Params& params,
     const float wall_speed = CalibPressureAdvance::find_optimal_PA_speed(
         config, config.get_abs_value("line_width"), config.get_abs_value("layer_height"),
         extruder_id, 0);
-    if (auto* ws = config.option<ConfigOptionFloatsNullable>("outer_wall_speed")) {
+    if (auto* ws = config.option<ConfigOptionFloats>("outer_wall_speed")) {
         if (!ws->values.empty()) {
             const int idx = (extruder_id < static_cast<int>(ws->values.size())) ? extruder_id : 0;
             ws->values[idx] = wall_speed;

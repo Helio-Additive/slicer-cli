@@ -262,17 +262,27 @@ if [ -f "$BASE_3MF" ]; then
     fi
     rm -f "$GC"
 
-    # pressure_advance_pattern with an STL input + no config bundle must be
-    # rejected: the pattern discards the model, so an STL supplies no config and
-    # would otherwise slice the default/wrong printer.
+    # retraction_tower ascends from start (engine hook), so a descending range is
+    # a misconfiguration and must be rejected.
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$BASE_3MF" --calib-mode retraction_tower --calib-start 2 --calib-end 0 --calib-step 0.1
+    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "ascends"; then
+        record "calib-retraction-descending-rejected" 1
+    else
+        record "calib-retraction-descending-rejected" 0 "exit=$LAST_EXIT (want non-zero + ascends error)"
+    fi
+    rm -f "$GC"
+
+    # pressure_advance_pattern requires a .3mf --input (it discards the model but
+    # needs the embedded config + plate setup). An STL must be rejected.
     STL_TMP=$(mktemp "${TMPDIR:-/tmp}/calib_stl.XXXXXX"); mv "$STL_TMP" "$STL_TMP.stl"; STL_TMP="$STL_TMP.stl"
     printf 'solid x\nendsolid x\n' > "$STL_TMP"
     GC=$(mktmp_gcode)
     run_slice "$GC" "$STL_TMP" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
-    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "needs config"; then
+    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "requires a .3mf"; then
         record "calib-pa-pattern-stl-rejected" 1
     else
-        record "calib-pa-pattern-stl-rejected" 0 "exit=$LAST_EXIT (want non-zero + config-source error)"
+        record "calib-pa-pattern-stl-rejected" 0 "exit=$LAST_EXIT (want non-zero + 3mf-required error)"
     fi
     rm -f "$GC" "$STL_TMP"
 else
