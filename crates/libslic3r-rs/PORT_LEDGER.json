@@ -1895,7 +1895,8 @@
     "rust_exists": true,
     "loc": 19,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/utils/HalfEdgeGraph.hpp",
@@ -1906,7 +1907,8 @@
     "rust_exists": true,
     "loc": 29,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/utils/HalfEdgeNode.hpp",
@@ -1917,7 +1919,8 @@
     "rust_exists": true,
     "loc": 38,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/utils/HalfEdge.hpp",
@@ -1928,7 +1931,8 @@
     "rust_exists": true,
     "loc": 39,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/utils/PolylineStitcher.cpp",
