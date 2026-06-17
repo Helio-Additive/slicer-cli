@@ -236,8 +236,9 @@ impl MachineFilamentInfo {
         if self.type_ != other.type_ {
             return self.type_ < other.type_;
         }
-        // FilamentGroupUtils.cpp:68
-        !self.is_support & other.is_support
+        // FilamentGroupUtils.cpp:68  return is_support < other.is_support;
+        // For C++ `bool < bool`, `a < b` is equivalent to `!a && b` (false < true).
+        !self.is_support && other.is_support
     }
 }
 

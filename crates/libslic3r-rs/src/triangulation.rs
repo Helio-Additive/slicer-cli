@@ -213,15 +213,33 @@ pub fn triangulate(points: &Points, constrained_half_edges: &HalfEdges) -> Resul
     // --- BLOCKED: CGAL Constrained_Delaunay_triangulation_2 backend ---
     // Triangulation.cpp:101-205
     //
-    // The C++ body builds a CGAL CDT (Exact_predicates_inexact_constructions
-    // kernel + Exact_predicates_tag), spatial-sorts the points, inserts the
-    // vertices carrying their original index as `info`, inserts the constrained
-    // half-edges, then flood-fills face constraints to keep only the faces that
-    // lie inside the constrained region and emits them as `Vec3i32` triangles.
+    // FIDELITY-NOTE(blocked-dep): the whole triangulation body (cpp:101-205) is
+    // built on CGAL's Constrained_Delaunay_triangulation_2<K, Tds,
+    // Exact_predicates_tag> with the Exact_predicates_inexact_constructions
+    // kernel, CGAL::spatial_sort, and the CGAL triangulation data structure
+    // carrying per-vertex `info`. The C++ body:
+    //   1. spatial-sorts the points (cpp:113-123) — drives Delaunay tie-breaking,
+    //   2. inserts vertices with their original index as `info` (cpp:125-130),
+    //   3. inserts the constrained half-edges (cpp:133-134),
+    //   4. unmarks constrained edges of outside faces (cpp:139-154),
+    //   5. flood-fills the `inside` predicate across non-constrained neighbour
+    //      edges to keep only faces inside the constrained region (cpp:171-193),
+    //   6. emits the surviving faces as `Vec3i32` triangles (cpp:195-199).
     //
-    // None of CGAL is available here (native, non-wasm), and no pure-Rust
-    // constrained-Delaunay crate is wired in, so this step cannot be reproduced
-    // byte-exactly. Returning an empty index set rather than a fake result.
+    // Wiring this faithfully is a CROSS-CUTTING change, not a per-file fix:
+    //   - CGAL is a native C++ library and is NOT wasm-safe, so per the porting
+    //     rules we do not add it as a system/dylib dependency.
+    //   - No pure-Rust constrained-Delaunay backend is in Cargo.toml. The only
+    //     tessellator present, `earcutr` (used by tesselate.rs / Tesselate.cpp),
+    //     is an ear-clipping triangulator over a single ring-with-holes polygon;
+    //     it accepts neither a free point set nor constrained half-edges, and
+    //     even adapted it would emit a different (non-Delaunay) triangle index
+    //     list, breaking parity. A different backend cannot reproduce CGAL's
+    //     exact-predicate / spatial-sort-ordered output byte-for-byte.
+    //
+    // There are no on-path Rust callers of this symbol; the sole C++ callers are
+    // off the slicing path (WipeTower rib caps, Emboss text). Returning an empty
+    // index set (the least-harmful blocked behaviour) rather than a fake result.
     // Triangulation.cpp:205: return indices;
     let _ = (points, constrained_half_edges);
     Ok(Vec::new())

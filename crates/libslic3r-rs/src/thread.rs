@@ -18,7 +18,7 @@
 //! C++ would on the build platform (see per-function refs). See
 //! `name_tbb_thread_pool_threads_set_locale` for the TBB-blocked symbol.
 
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use std::thread::{self, ThreadId};
 
 // ----------------------------------------------------------------------------
@@ -107,7 +107,12 @@ pub fn get_current_thread_name() -> Option<String> {
 // Thread.cpp:191  static boost::thread::id g_main_thread_id;
 // To be called at the start of the application to save the current thread ID as
 // the main (UI) thread ID.
-static G_MAIN_THREAD_ID: OnceLock<ThreadId> = OnceLock::new();
+//
+// C++ `g_main_thread_id` is a plain mutable global that `save_main_thread_id`
+// re-assigns on every call (overwrites). Model it with RwLock<Option<ThreadId>>
+// rather than OnceLock so the overwrite semantics match; `None` models the
+// default-constructed (no-thread) boost::thread::id before the first save.
+static G_MAIN_THREAD_ID: RwLock<Option<ThreadId>> = RwLock::new(None);
 
 // Thread.cpp:193-196
 // void save_main_thread_id()
@@ -115,10 +120,7 @@ static G_MAIN_THREAD_ID: OnceLock<ThreadId> = OnceLock::new();
 //     g_main_thread_id = boost::this_thread::get_id();
 // }
 pub fn save_main_thread_id() {
-    // OnceLock can only be set once; subsequent calls in C++ overwrite the
-    // global. The main thread id is saved exactly once at startup, so set()
-    // matches the practical behaviour.
-    let _ = G_MAIN_THREAD_ID.set(thread::current().id());
+    *G_MAIN_THREAD_ID.write().unwrap() = Some(thread::current().id());
 }
 
 // Thread.cpp:199-202
@@ -130,7 +132,7 @@ pub fn save_main_thread_id() {
 pub fn get_main_thread_id() -> Option<ThreadId> {
     // C++ returns a default-constructed (no-thread) id before save; we model
     // the "not yet saved" state as None.
-    G_MAIN_THREAD_ID.get().copied()
+    *G_MAIN_THREAD_ID.read().unwrap()
 }
 
 // Thread.cpp:205-208

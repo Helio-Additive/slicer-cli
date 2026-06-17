@@ -876,7 +876,8 @@
     "rust_exists": true,
     "loc": 276,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "BoundingBox.cpp",
@@ -932,7 +933,8 @@
     "rust_exists": true,
     "loc": 321,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "AABBMesh.cpp",
@@ -954,7 +956,8 @@
     "rust_exists": true,
     "loc": 329,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "flagged"
   },
   {
     "cpp": "FilamentGroupUtils.cpp",
@@ -965,7 +968,8 @@
     "rust_exists": true,
     "loc": 340,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "flagged"
   },
   {
     "cpp": "FlushVolPredictor.cpp",
