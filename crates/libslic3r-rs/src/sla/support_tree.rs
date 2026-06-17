@@ -228,9 +228,22 @@ impl SupportableMesh {
     //                          const SupportPoints &sp,
     //                          const SupportTreeConfig &c)
     //     : emesh{trmsh}, pts{sp}, cfg{c}
-    // BLOCKED: requires the `IndexedMesh(const indexed_triangle_set&)`
-    // constructor — SLA/IndexedMesh.cpp is still a placeholder stub. No fake
-    // is provided; port IndexedMesh first, then add `pub fn new(...)` here.
+    //
+    // The `emesh{trmsh}` member-initializer invokes
+    // `IndexedMesh(const indexed_triangle_set&, calculate_epsilon = false)`
+    // (IndexedMesh.hpp:51). That constructor is now ported as
+    // `IndexedMesh::new(tmesh, calculate_epsilon)` (sla/indexed_mesh.rs:417),
+    // so the default `calculate_epsilon = false` is supplied explicitly here.
+    pub fn new(trmsh: &indexed_triangle_set, sp: &SupportPoints, c: &SupportTreeConfig) -> Self {
+        Self {
+            // SupportTree.hpp:130 — emesh{trmsh}
+            emesh: IndexedMesh::new(trmsh, false),
+            // SupportTree.hpp:130 — pts{sp}
+            pts: sp.clone(),
+            // SupportTree.hpp:130 — cfg{c}
+            cfg: c.clone(),
+        }
+    }
 
     // SupportTree.hpp:133-137
     // explicit SupportableMesh(const IndexedMesh   &em,
@@ -412,10 +425,24 @@ pub type UPtr = Box<dyn SupportTree>;
 //     return std::move(builder);
 // }
 //
-// BLOCKED: requires `SupportTreeBuilder` (with `m_ctl`, `ground_level`,
-// `merge_and_cleanup()`) from SLA/SupportTreeBuilder.cpp,
-// `SupportTreeBuildsteps::execute` from SLA/SupportTreeBuildsteps.cpp and
-// `IndexedMesh::ground_level()` from SLA/IndexedMesh.cpp — all three are
-// still auto-generated placeholder stubs in this crate. No fake
-// implementation is provided; port those files first, then implement
-// `create` here as `pub fn create(sm: &SupportableMesh, ctl: JobController) -> UPtr`.
+// BLOCKED: `SupportTreeBuilder` (with `m_ctl`, `ground_level`),
+// `SupportTreeBuildsteps::execute` and `IndexedMesh::ground_level()` are all
+// now ported. The remaining blocker is that `SupportTreeBuilder` does NOT yet
+// `impl SupportTree` — its required trait methods `merge_and_cleanup()`,
+// `add_pad()` and `retrieve_mesh()` are still commented-out BLOCKED bodies in
+// SLA/support_tree_builder.rs (they need the Pad constructor / merged_mesh
+// plumbing wired through the trait). Until `impl SupportTree for
+// SupportTreeBuilder` exists, there is no faithful way to produce the
+// `UPtr = Box<dyn SupportTree>` return value, so no fake is provided. Once the
+// builder implements the trait, this becomes:
+//     pub fn create(sm: &SupportableMesh, ctl: JobController) -> UPtr {
+//         let mut builder = Box::new(SupportTreeBuilder::default());
+//         builder.m_ctl = ctl;
+//         if sm.cfg.enabled {
+//             SupportTreeBuildsteps::execute(&mut builder, sm);
+//             builder.merge_and_cleanup();
+//         } else {
+//             builder.ground_level = sm.emesh.ground_level();
+//         }
+//         builder
+//     }

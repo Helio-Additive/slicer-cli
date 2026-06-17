@@ -3077,7 +3077,8 @@
     "rust_exists": true,
     "loc": 98,
     "status": "partial",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SLA/BoostAdapter.hpp",
@@ -3112,7 +3113,8 @@
     "rust_exists": true,
     "loc": 152,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/SpatIndex.cpp",
