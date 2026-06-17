@@ -1142,7 +1142,8 @@
     "rust_exists": true,
     "loc": 508,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Circle.cpp",
@@ -1153,7 +1154,8 @@
     "rust_exists": true,
     "loc": 516,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "NSVGUtils.cpp",

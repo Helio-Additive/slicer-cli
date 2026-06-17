@@ -121,7 +121,10 @@ impl OverhangDistancer {
         for island in layer_polygons {
             // OverhangDetector.cpp:151 — for (const auto& line : island.lines())
             //   lines.emplace_back(line.a.cast<double>(), line.b.cast<double>());
-            for line in island.edges() {
+            // NOTE: C++ `Polygon::lines()` == `to_lines()`, which emits edges only
+            // when points.size() > 2 (empty for degenerate <=2-pt polygons). Use
+            // `.lines()` not `.edges()` (the latter would emit 2 edges for a 2-pt poly).
+            for line in island.lines() {
                 lines.push(Line::new(line.a, line.b));
             }
         }
@@ -185,7 +188,9 @@ impl SignedOverhangDistancer {
         for island in layer_polygons {
             // OverhangDetector.cpp:323 — for (const auto &line : island.lines())
             //   lines.emplace_back(line.a.cast<double>(), line.b.cast<double>());
-            for line in island.edges() {
+            // NOTE: C++ `Polygon::lines()` == `to_lines()` (edges only when
+            // points.size() > 2); use `.lines()` not `.edges()`.
+            for line in island.lines() {
                 lines.push(Line::new(line.a, line.b));
             }
         }
