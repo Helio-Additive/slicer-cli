@@ -334,9 +334,11 @@ pub fn voxelize_csgmesh(parts: &[CSGPart], params: &VoxelizeParams) -> Result<Op
     let mut opstack: Vec<Frame> = Vec::new();
 
     // VoxelizeCSGMesh.hpp:81  opstack.push({CSGType::Union, mesh_to_grid({}, params)});
+    // `{}` is a default-constructed (empty) indexed_triangle_set; mirror it with
+    // `TriangleMesh::new()` passed to the single `mesh_to_grid`.
     opstack.push(Frame {
         op: CSGType::Union,
-        grid: Some(mesh_to_grid_empty(params)?),
+        grid: Some(mesh_to_grid(&TriangleMesh::new(), params)?),
     });
 
     // VoxelizeCSGMesh.hpp:83  for (auto &csgpart : csgrange) {
@@ -359,9 +361,10 @@ pub fn voxelize_csgmesh(parts: &[CSGPart], params: &VoxelizeParams) -> Result<Op
         //     op = CSGType::Union;
         // }
         if get_stack_operation(part) == CSGStackOp::Push {
+            // VoxelizeCSGMesh.hpp:92  opstack.push({op, mesh_to_grid({}, params)});
             opstack.push(Frame {
                 op,
-                grid: Some(mesh_to_grid_empty(params)?),
+                grid: Some(mesh_to_grid(&TriangleMesh::new(), params)?),
             });
             // Dead store mirrored from C++: `op` is never read after this point
             // because line 98 re-reads `get_operation(csgpart)`. Kept verbatim.
@@ -414,25 +417,28 @@ pub fn voxelize_csgmesh(parts: &[CSGPart], params: &VoxelizeParams) -> Result<Op
 // ===========================================================================
 // BLOCKED OpenVDB seam (native dependency, not wasm-safe — not added).
 //
-// These four primitives + `mesh_to_grid` are the only OpenVDB-backed pieces of
-// this header. Their signatures and call sites are kept exact so the algorithm
-// above is a faithful translation; the bodies are inert pending an OpenVDB (or
-// equivalent voxel) backend. They do not fabricate results.
+// FIDELITY-NOTE(blocked-dep): the voxel-grid backend (`mesh_to_grid`,
+// `grid_union`, `grid_difference`, `grid_intersection`, `is_grid_empty`,
+// `clone`) is OpenVDB level-set machinery (`tools::meshToVolume`,
+// `tools::csgUnion/csgDifference/csgIntersection`). OpenVDB is a native C++
+// dependency (TBB/Boost/Blosc) that is not wasm-safe and is not in the Cargo
+// dep set; there is no pure-Rust voxel backend in the crate (see the matching
+// blocked status in `open_vdb_utils.rs`). Per the port rules we do NOT add a
+// native dep and do NOT fabricate results. The pure CSG stack-machine logic
+// above (`get_voxelgrid`, `perform_csg`, `voxelize_csgmesh`) IS translated
+// faithfully; these primitives keep their exact C++ signatures and call sites
+// so an OpenVDB-equivalent backend can be dropped in without touching the
+// algorithm. They are inert (empty grid) until then.
 // ===========================================================================
 
-/// OpenVDBUtils.hpp:29-34 / VoxelizeCSGMesh.hpp:26  mesh_to_grid(*its, params)
+/// OpenVDBUtils.hpp:29-34 / VoxelizeCSGMesh.hpp:26,81,92  mesh_to_grid(its, params)
+///
+/// The single C++ `mesh_to_grid` function; the stack-seed calls pass an empty
+/// `indexed_triangle_set` (`{}`) which OpenVDB turns into an empty FloatGrid.
 ///
 /// BLOCKED: OpenVDB `meshToVolume` level-set conversion. Returns an (empty)
 /// grid placeholder; cannot voxelize without the native backend.
 fn mesh_to_grid(_mesh: &TriangleMesh, _params: &VoxelizeParams) -> Result<VoxelGrid> {
-    Ok(VoxelGrid::empty())
-}
-
-/// VoxelizeCSGMesh.hpp:81 / :92  mesh_to_grid({}, params)
-///
-/// The empty-mesh overload used to seed stack frames; OpenVDB produces an empty
-/// FloatGrid. Distinct helper so the call sites read like the C++.
-fn mesh_to_grid_empty(_params: &VoxelizeParams) -> Result<VoxelGrid> {
     Ok(VoxelGrid::empty())
 }
 

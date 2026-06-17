@@ -2472,7 +2472,8 @@
     "rust_exists": true,
     "loc": 87,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "ok"
   },
   {
     "cpp": "CSGMesh/ModelToCSGMesh.hpp",
@@ -2483,7 +2484,8 @@
     "rust_exists": true,
     "loc": 92,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "CSGMesh/TriangleMeshAdapter.hpp",
@@ -2494,7 +2496,8 @@
     "rust_exists": true,
     "loc": 95,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "CSGMesh/VoxelizeCSGMesh.hpp",
@@ -2505,7 +2508,8 @@
     "rust_exists": true,
     "loc": 116,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/RetractWhenCrossingPerimeters.cpp",
