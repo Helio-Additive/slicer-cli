@@ -5,15 +5,34 @@
 //! printed objects, the camera occlusion zone and the rod clearance area.
 //!
 //! Porting status (see the module-level note and `PORT_LEDGER.json`): the pure
-//! geometry routine `pick_pos_internal` is ported faithfully and is fully
-//! self-contained. The `TimelapsePosPicker` class methods are BLOCKED on
-//! libslic3r types/config that are not yet ported in this crate
-//! (`PrintInstance`, `PrintObject::instances/has_raft/slicing_parameters/config`,
-//! `Print::get_fake_wipe_tower/wipe_tower_data`, and the
-//! `printable_area`/`bed_exclude_area`/`extruder_printable_area`/
-//! `extruder_printable_height`/`initial_layer_print_height` config options, plus
-//! the vector form of `nozzle_diameter` and the `TimelapseType` enum). They are
-//! intentionally NOT faked here.
+//! geometry routine `pick_pos_internal` (cpp:364-441) is ported faithfully and
+//! is fully self-contained.
+//!
+//! FIDELITY-NOTE(blocked-dep): the entire `TimelapsePosPicker` class
+//! (cpp:9-112, 123-351, 443-611) cannot be ported faithfully because its
+//! collaborators do not exist in this crate in a usable shape, and the audit
+//! charter forbids faking/adding them per-file:
+//!   - `PrintInstance` — the C++ instance type (with a `print_object`
+//!     back-pointer and `get_bounding_box()`) is unported; the only
+//!     `PrintInstance` in the crate is an empty placeholder enum in
+//!     `by_object_print_data.rs` and an unrelated geometry type in
+//!     `shortest_path.rs`.
+//!   - `PrintObject::instances()` — not present (`has_raft`/`slicing_parameters`
+//!     exist on `PrintObject`/`SlicingParams`, but there is no instance list to
+//!     iterate, so `get_real_instance_bbox`/`get_object_center` cannot run).
+//!   - `Print::get_fake_wipe_tower()` / `Print::wipe_tower_data()` — no such
+//!     accessors on `Print` (same gap noted in `gcode/print_extents.rs`).
+//!   - Config options `printable_area`, `bed_exclude_area`,
+//!     `extruder_printable_area`, `extruder_printable_height` — not fields on
+//!     `PrintConfig` (only registered in preset name lists).
+//!   - `nozzle_diameter` is a scalar `CoordF` here, not the C++
+//!     `std::vector<double>`, so `nozzle_diameter.size() > 1` and the dual-
+//!     extruder height-gap logic (cpp:17-20, 490-493, 566-569) cannot be
+//!     expressed.
+//!   - `timelapse_type` is a raw `u32` and there is no `TimelapseType::tlSmooth`
+//!     enum (cpp:22), so `m_based_on_all_layer` cannot be derived faithfully.
+//! Porting the class is therefore a cross-cutting type/config rework, out of
+//! per-file scope; the methods are intentionally NOT faked here.
 
 // TimelapsePosPicker.cpp:1   #include "ClipperUtils.hpp"
 // TimelapsePosPicker.cpp:2   #include "TimelapsePosPicker.hpp"

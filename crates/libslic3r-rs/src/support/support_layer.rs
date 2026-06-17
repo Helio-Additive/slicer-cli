@@ -237,6 +237,51 @@ impl PartialEq for SupportGeneratorLayer {
 
 impl Eq for SupportGeneratorLayer {}
 
+impl SupportGeneratorLayer {
+    // SupportLayer.hpp:56-73
+    // Order the layers by lexicographically by an increasing print_z and a decreasing layer height.
+    // bool operator<(const SupportGeneratorLayer& layer2) const { ... }
+    //
+    // Faithful translation of the C++ `operator<` returning the same bool. This is
+    // a strict weak ordering; the `Ord`/`PartialOrd` impls below derive a total
+    // order from it in the standard way (Less if a<b, Greater if b<a, else Equal)
+    // so `std::sort`/`std::set` parity holds without altering the comparison.
+    fn lt(&self, layer2: &Self) -> bool {
+        // SupportLayer.hpp:58-60
+        // if (print_z < layer2.print_z) { return true; }
+        if self.print_z < layer2.print_z {
+            true
+        }
+        // SupportLayer.hpp:61
+        // else if (print_z == layer2.print_z) {
+        else if self.print_z == layer2.print_z {
+            // SupportLayer.hpp:62-63
+            // if (height > layer2.height) return true;
+            if self.height > layer2.height {
+                true
+            }
+            // SupportLayer.hpp:64
+            // else if (height == layer2.height) {
+            else if self.height == layer2.height {
+                // SupportLayer.hpp:65-66
+                // Bridging layers first.
+                // return bridging && !layer2.bridging;
+                self.bridging && !layer2.bridging
+            }
+            // SupportLayer.hpp:68-69
+            // else return false;
+            else {
+                false
+            }
+        }
+        // SupportLayer.hpp:71-72
+        // else return false;
+        else {
+            false
+        }
+    }
+}
+
 // SupportLayer.hpp:56-73 bool operator<
 impl PartialOrd for SupportGeneratorLayer {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -246,44 +291,15 @@ impl PartialOrd for SupportGeneratorLayer {
 
 impl Ord for SupportGeneratorLayer {
     // SupportLayer.hpp:57-73
-    // Order the layers by lexicographically by an increasing print_z and a decreasing layer height.
+    // Derive a total ordering from the C++ strict-weak `operator<` (`lt`).
     fn cmp(&self, layer2: &Self) -> std::cmp::Ordering {
         use std::cmp::Ordering;
-        // SupportLayer.hpp:58-60
-        // if (print_z < layer2.print_z) { return true; }
-        if self.print_z < layer2.print_z {
+        if self.lt(layer2) {
             Ordering::Less
-        }
-        // SupportLayer.hpp:61
-        // else if (print_z == layer2.print_z) {
-        else if self.print_z == layer2.print_z {
-            // SupportLayer.hpp:62-63
-            // if (height > layer2.height) return true;
-            if self.height > layer2.height {
-                Ordering::Less
-            }
-            // SupportLayer.hpp:64
-            // else if (height == layer2.height) {
-            else if self.height == layer2.height {
-                // SupportLayer.hpp:65-66
-                // Bridging layers first.
-                // return bridging && !layer2.bridging;
-                if self.bridging && !layer2.bridging {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
-            }
-            // SupportLayer.hpp:68-69
-            // else return false;
-            else {
-                Ordering::Greater
-            }
-        }
-        // SupportLayer.hpp:71-72
-        // else return false;
-        else {
+        } else if layer2.lt(self) {
             Ordering::Greater
+        } else {
+            Ordering::Equal
         }
     }
 }
@@ -304,6 +320,11 @@ impl Ord for SupportGeneratorLayer {
 //
 // The crate exposes `union_polygons_ex(&[Polygon]) -> ExPolygons`; re-flattening
 // via `to_polygons` reproduces the Polygons-returning `union_` semantics.
+//
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. The underlying
+// `union_polygons_ex` routes through the `geo` crate (geo-clipper, fixed scale
+// 1000) rather than ClipperLib at coord_t integer precision, so the union result
+// may differ at the sub-scale level from upstream.
 fn union_polygons(subject: &Polygons, subject2: &Polygons) -> Polygons {
     let mut polys = subject.clone();
     for poly in subject2 {

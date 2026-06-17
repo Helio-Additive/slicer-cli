@@ -15,7 +15,6 @@ use crate::flow::{
     support_material_1st_layer_flow, support_material_flow, support_material_interface_flow, Flow,
     FlowRole,
 };
-use crate::geometry::deg2rad;
 use crate::libslic3r::scale;
 use crate::print_config::{
     InfillPattern, SupportBasePattern, SupportInterfacePattern, SupportType, TreeSupportStyle,
@@ -386,10 +385,19 @@ impl SupportParameters {
         // the Rust PrintObject. This is conservative (may not merge when safe to).
 
         // SupportParameters.hpp:114-115
-        let base_angle =
-            deg2rad(object_config.support_angle as f64) as f32;
-        let interface_angle =
-            deg2rad((object_config.support_angle + 90.0) as f64) as f32;
+        // C++: Geometry::deg2rad(float(value)). deg2rad is a template
+        // `T deg2rad(T) { return T(PI)*angle/T(180.0); }` instantiated with
+        // T=float, so the WHOLE computation runs in f32 precision. We mirror
+        // that here (computing in f32) rather than calling the f64 deg2rad and
+        // truncating, which would differ in the low bits.
+        // Note: `support_angle + 90.` promotes to f64 first (90. is double),
+        // then is cast to float before deg2rad — reproduced below.
+        let base_angle = std::f32::consts::PI
+            * (object_config.support_angle as f32)
+            / 180.0_f32;
+        let interface_angle = std::f32::consts::PI
+            * ((object_config.support_angle + 90.0) as f32)
+            / 180.0_f32;
 
         // SupportParameters.hpp:116-121
         let interface_spacing_raw = object_config.support_interface_spacing
@@ -559,7 +567,11 @@ impl SupportParameters {
         {
             // SupportParameters.hpp:198-199
             raft_angle_1st_layer = base_angle;
-            raft_angle_interface = interface_angle + (0.5 * std::f64::consts::PI) as f32;
+            // C++: `interface_angle + 0.5 * M_PI` — no float() cast on the
+            // `0.5 * M_PI` term (unlike line 194), so float+double promotes to
+            // double, then truncates to float on assignment. Mirror in f64.
+            raft_angle_interface =
+                (interface_angle as f64 + 0.5 * std::f64::consts::PI) as f32;
         } else if slicing_params.interface_raft_layers == 1 {
             // SupportParameters.hpp:205-206
             raft_angle_1st_layer = (0.5 * std::f64::consts::PI) as f32;
@@ -583,14 +595,25 @@ impl SupportParameters {
         }
 
         // SupportParameters.hpp:221-239 — tree branch double wall area
-        // tree_support_wall_count == -1 branch is unreachable (u32 in Rust).
+        //
+        // C++ branches on `object_config.tree_support_wall_count.value`:
+        //   == -1 : auto — compute from weakest-filament impact strength
+        //           (SupportParameters.hpp:233-235). UNREACHABLE in Rust:
+        //           `tree_support_wall_count` is `u32`, so -1 cannot occur.
+        //           See FIDELITY-NOTE below.
+        //   else  : SupportParameters.hpp:238 —
+        //           `tree_support_wall_count > 1 ? 0.1 : std::numeric_limits<double>::max()`
+        // FIDELITY-NOTE: the `== -1` auto path is dropped because the Rust
+        // config type cannot represent -1 and `print_config.impact_strength_z`
+        // (per-filament vector) is not ported. Both reachable sub-branches of
+        // the C++ `else` are reproduced exactly.
         let tree_branch_diameter_double_wall_area_scaled =
             if object_config.tree_support_wall_count > 1 {
-                // SupportParameters.hpp:238: force double walls everywhere
+                // SupportParameters.hpp:238 — force double walls everywhere
                 0.1
             } else {
-                // Default: branches >= 5mm diameter get double walls
-                sqr(scale(5.0) as f64) * 0.25 * std::f64::consts::PI
+                // SupportParameters.hpp:238 — std::numeric_limits<double>::max()
+                f64::MAX
             };
 
         // SupportParameters.hpp:241
@@ -732,8 +755,11 @@ impl Default for SupportParameters {
             contact_fill_pattern: InfillPattern::default(),
             with_sheath: false,
             // SupportParameters.hpp:302 — = 0.25 * sqr(scaled<double>(5.0)) * M_PI;
+            // `scaled<double>(5.0)` is the FLOATING `scaled<Tout=double>` variant
+            // (Point.hpp:527): `double(5.0 / SCALING_FACTOR)` — a plain float
+            // division with NO flooring (unlike scale_()/scale()). Mirror that.
             tree_branch_diameter_double_wall_area_scaled: 0.25
-                * sqr(scale(5.0) as f64)
+                * sqr(5.0 / crate::libslic3r::SCALING_FACTOR)
                 * std::f64::consts::PI,
             raft_angle_1st_layer: 0.0,
             raft_angle_base: 0.0,

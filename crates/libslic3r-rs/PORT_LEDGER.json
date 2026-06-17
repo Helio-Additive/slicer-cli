@@ -2664,7 +2664,8 @@
     "rust_exists": true,
     "loc": 384,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "ok"
   },
   {
     "cpp": "GCode/TimelapsePosPicker.cpp",
@@ -2675,7 +2676,8 @@
     "rust_exists": true,
     "loc": 613,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "flagged"
   },
   {
     "cpp": "GCode/PressureEqualizer.cpp",
@@ -2774,7 +2776,8 @@
     "rust_exists": true,
     "loc": 153,
     "status": "done",
-    "priority": 6
+    "priority": 6,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Support/SupportParameters.hpp",
@@ -2785,7 +2788,8 @@
     "rust_exists": true,
     "loc": 326,
     "status": "done",
-    "priority": 6
+    "priority": 6,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Support/TreeSupportCommon.hpp",
