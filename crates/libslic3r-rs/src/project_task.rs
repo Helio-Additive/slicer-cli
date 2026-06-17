@@ -429,7 +429,16 @@ impl BBLSubTask {
                             // if (j["info"]["plate_idx"].is_number())
                             if plate_idx.is_number() {
                                 // task_partplate_idx = std::to_string(j["info"]["plate_idx"].get<int>());
-                                let v = plate_idx.as_i64().ok_or(())? as i32;
+                                // nlohmann get<int>() static_casts the stored number
+                                // to `int`: integer JSON numbers cast directly, float
+                                // JSON numbers truncate toward zero. Mirror both, then
+                                // narrow to int32 (// FIDELITY-NOTE(F2): C++ int == int32_t).
+                                let v: i32 = if let Some(i) = plate_idx.as_i64() {
+                                    i as i32
+                                } else {
+                                    // float JSON number: static_cast<int>(double)
+                                    plate_idx.as_f64().ok_or(())? as i32
+                                };
                                 self.task_partplate_idx = v.to_string();
                             } else {
                                 // task_partplate_idx = j["info"]["plate_idx"].get<std::string>();
