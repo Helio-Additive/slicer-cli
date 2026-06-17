@@ -239,6 +239,20 @@ if [ -f "$BASE_3MF" ]; then
         record "calib-pa-reversed-rejected" 0 "exit=$LAST_EXIT (want non-zero + ascending-sweep error)"
     fi
     rm -f "$GC"
+
+    # pressure_advance_pattern with an STL input + no config bundle must be
+    # rejected: the pattern discards the model, so an STL supplies no config and
+    # would otherwise slice the default/wrong printer.
+    STL_TMP=$(mktemp "${TMPDIR:-/tmp}/calib_stl.XXXXXX"); mv "$STL_TMP" "$STL_TMP.stl"; STL_TMP="$STL_TMP.stl"
+    printf 'solid x\nendsolid x\n' > "$STL_TMP"
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$STL_TMP" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
+    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "needs config"; then
+        record "calib-pa-pattern-stl-rejected" 1
+    else
+        record "calib-pa-pattern-stl-rejected" 0 "exit=$LAST_EXIT (want non-zero + config-source error)"
+    fi
+    rm -f "$GC" "$STL_TMP"
 else
     echo "SKIP [calib-*] fixture missing: $BASE_3MF"
 fi

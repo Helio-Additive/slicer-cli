@@ -118,18 +118,28 @@ void apply_pa_pattern(const Calib_Params& params,
     // ── Port of CalibUtils::calib_pa_pattern (GUI-free). The device-coupled
     // bits (MachineObject, logical-extruder remap, get_index_for_extruder_
     // parameter) collapse to the CLI's single logical extruder.
+    const int extruder_id = std::max(0, params.extruder_id);
+
+    // Use the CALIBRATED extruder's nozzle diameter (not always nozzle 0) so a
+    // second, differently-sized nozzle scales its suggested widths correctly.
     float nozzle_diameter = 0.4f;
     if (auto* nd = config.option<ConfigOptionFloatsNullable>("nozzle_diameter"))
-        if (!nd->values.empty())
-            nozzle_diameter = static_cast<float>(nd->get_at(0));
+        if (!nd->values.empty()) {
+            const int ni = (extruder_id < static_cast<int>(nd->values.size())) ? extruder_id : 0;
+            nozzle_diameter = static_cast<float>(nd->get_at(ni));
+        }
 
     const SuggestedConfigCalibPAPattern suggested;
     for (const auto& opt : suggested.float_pairs)
         config.set_key_value(opt.first, new ConfigOptionFloat(opt.second));
     for (const auto& opt : suggested.floats_pairs)
         config.set_key_value(opt.first, new ConfigOptionFloatsNullable(opt.second));
+    // Apply the suggested calibration line widths BEFORE optimizing the PA speed,
+    // so find_optimal_PA_speed uses the width the pattern actually prints at (the
+    // loaded profile's line_width can differ and would skew the result).
+    for (const auto& opt : suggested.nozzle_ratio_pairs)
+        config.set_key_value(opt.first, new ConfigOptionFloat(nozzle_diameter * opt.second / 100));
 
-    const int extruder_id = std::max(0, params.extruder_id);
     const float wall_speed = CalibPressureAdvance::find_optimal_PA_speed(
         config, config.get_abs_value("line_width"), config.get_abs_value("layer_height"),
         extruder_id, 0);
@@ -140,8 +150,6 @@ void apply_pa_pattern(const Calib_Params& params,
         }
     }
 
-    for (const auto& opt : suggested.nozzle_ratio_pairs)
-        config.set_key_value(opt.first, new ConfigOptionFloat(nozzle_diameter * opt.second / 100));
     for (const auto& opt : suggested.int_pairs)
         config.set_key_value(opt.first, new ConfigOptionInt(opt.second));
     config.set_key_value(suggested.brim_pair.first,
@@ -190,7 +198,11 @@ void apply_pa_pattern(const Calib_Params& params,
             const double current_width = bedfs[2].x() - bedfs[0].x();
             const double current_depth = bedfs[2].y() - bedfs[0].y();
             const Vec3d  half_size(pa_pattern.print_size_x() / 2, pa_pattern.print_size_y() / 2, 0);
-            const Vec3d  offset = Vec3d(current_width / 2, current_depth / 2, 0) - half_size;
+            // Anchor at the bed's MIN corner (bedfs[0]) so a centered-coordinate /
+            // offset bed (origin != 0,0) still lands the pattern in the printable
+            // area. For a 0-origin bed (the Bambu engine case) this is unchanged.
+            const Vec3d  bed_center(bedfs[0].x() + current_width / 2, bedfs[0].y() + current_depth / 2, 0);
+            const Vec3d  offset = bed_center - half_size;
             pa_pattern.set_start_offset(offset);
             // Place the handle BELOW the pattern start so it abuts (not overlaps)
             // the pattern frame. This inverts the engine's natural start formula

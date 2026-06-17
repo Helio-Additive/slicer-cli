@@ -1109,11 +1109,21 @@ int main(int argc, char** argv) {
         print_usage(argv[0]);
         return 1;
     }
-    if (calib_self_geometry && input_file.empty() && !has_config_source) {
-        std::cerr << "Error: pressure_advance_pattern needs a config source: pass an "
-                     "--input <.3mf> or --config/--machine/--filament/--process\n\n";
-        print_usage(argv[0]);
-        return 1;
+    if (calib_self_geometry) {
+        // pressure_advance_pattern DISCARDS the loaded model and generates its own
+        // geometry, so it needs only CONFIG — but config must come from a 3MF's
+        // embedded project_settings or explicit profile files. An STL provides
+        // geometry (which is thrown away) and NO config, so STL-only would slice
+        // the default/wrong printer; require a real config source.
+        const bool input_is_3mf = input_file.find(".3mf") != std::string::npos ||
+                                  input_file.find(".3MF") != std::string::npos;
+        if (!input_is_3mf && !has_config_source) {
+            std::cerr << "Error: pressure_advance_pattern needs config from a .3mf --input "
+                         "or --config/--machine/--filament/--process (an STL supplies only "
+                         "geometry, which the pattern discards)\n\n";
+            print_usage(argv[0]);
+            return 1;
+        }
     }
 
     std::cout << "libslic3r_standalone - Standalone slicing tool\n";
