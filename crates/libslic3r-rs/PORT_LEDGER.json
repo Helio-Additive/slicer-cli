@@ -2215,7 +2215,8 @@
     "rust_exists": true,
     "loc": 39,
     "status": "partial",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Fill/FillHoneycomb.cpp",

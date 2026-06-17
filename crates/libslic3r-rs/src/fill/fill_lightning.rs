@@ -74,6 +74,12 @@ impl<'a> Filler<'a> {
         // FillLightning.cpp:18
         let layer = generator.get_trees_for_layer(self.layer_id);
         // FillLightning.cpp:19
+        //   Polylines fill_lines = layer.convertToLines(to_polygons(expolygon),
+        //       scaled<coord_t>(0.5 * this->spacing - this->overlap));
+        // FIDELITY-NOTE(F2): C++ uses `scaled<coord_t>` (coord_t = int32_t,
+        // libslic3r.h:40) which truncates to 32-bit; the crate `scaled` returns
+        // `Coord = i64`. The argument (~0.5*spacing - overlap, sub-mm) scales to
+        // well within i32 range so no truncation divergence occurs in practice.
         let mut fill_lines: Vec<Polyline> = layer.convert_to_lines(
             &expolygon.to_polygons(),
             scaled(0.5 * self.spacing - self.overlap),
@@ -84,6 +90,11 @@ impl<'a> Filler<'a> {
         // FillLightning.cpp:22
         multiline_fill(&mut fill_lines, params, self.spacing as f32);
         // FillLightning.cpp:23
+        //   Polylines all_polylines = intersection_pl(std::move(fill_lines), expolygon);
+        // C++ uses the (Polylines, ExPolygon) overload (ClipperUtils.hpp:529); the
+        // single-element `&[expolygon]` slice drives the equivalent (Polylines,
+        // ExPolygons) overload (ClipperUtils.hpp:533) — same Clipper boolean.
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
         let all_polylines: Vec<Polyline> = intersection_pl(&fill_lines, std::slice::from_ref(&expolygon));
         // FillLightning.cpp:24
         if params.dont_connect() || all_polylines.len() <= 1 {
