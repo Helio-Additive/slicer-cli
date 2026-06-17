@@ -840,7 +840,8 @@
     "rust_exists": false,
     "loc": 262,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Flow.cpp",
@@ -862,7 +863,8 @@
     "rust_exists": true,
     "loc": 274,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Thread.cpp",
