@@ -174,9 +174,14 @@ void apply_pa_pattern(const Calib_Params& params,
     for (const auto& opt : suggested.nozzle_ratio_pairs)
         config.set_key_value(opt.first, new ConfigOptionFloat(nozzle_diameter * opt.second / 100));
 
+    // Cap the speed by the CALIBRATED extruder's filament, not always filament 0:
+    // the synthesized handle prints with the filament on `extruder_id`, so on a
+    // multi-nozzle (1:1 extruder→filament) setup filament index == extruder_id.
+    // For the common single-extruder case this is 0, unchanged. (Exact filament_map
+    // resolution for multi-material-per-extruder is a follow-up.)
     const float wall_speed = CalibPressureAdvance::find_optimal_PA_speed(
         config, config.get_abs_value("line_width"), config.get_abs_value("layer_height"),
-        extruder_id, 0);
+        extruder_id, extruder_id);
     if (auto* ws = config.option<ConfigOptionFloats>("outer_wall_speed")) {
         if (!ws->values.empty()) {
             const int idx = (extruder_id < static_cast<int>(ws->values.size())) ? extruder_id : 0;
