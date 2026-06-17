@@ -2544,7 +2544,8 @@
     "rust_exists": true,
     "loc": 131,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Optimize/BruteforceOptimizer.hpp",
@@ -2555,7 +2556,8 @@
     "rust_exists": true,
     "loc": 140,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Optimize/Optimizer.hpp",
@@ -2566,7 +2568,8 @@
     "rust_exists": true,
     "loc": 183,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/PrintExtents.cpp",
@@ -2577,7 +2580,8 @@
     "rust_exists": true,
     "loc": 192,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "flagged"
   },
   {
     "cpp": "GCode/SpiralVase.cpp",

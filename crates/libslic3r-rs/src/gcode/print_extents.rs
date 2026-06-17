@@ -10,8 +10,9 @@ use crate::extrusion_entity::{
     ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionMultiPath,
     ExtrusionPath,
 };
-use crate::geometry::{BoundingBox, BoundingBoxF, Polyline};
+use crate::geometry::{BoundingBox, BoundingBoxF, PointF, Polyline};
 use crate::print::Print;
+use crate::print_object::PrintObject;
 use crate::{scale, Coord};
 
 // PrintExtents.cpp:249-252 (BoundingBox.hpp Slic3r::empty()) —
@@ -155,6 +156,136 @@ pub fn get_print_extrusions_extents(print: &Print) -> BoundingBoxF {
     // PrintExtents.cpp:104
     let bbox = extrusionentity_extents_collection(print.skirt());
     // PrintExtents.cpp:105
+    bbox
+}
+
+// PrintExtents.cpp:108-132
+pub fn get_print_object_extrusions_extents(
+    print_object: &PrintObject,
+    max_print_z: f64,
+) -> BoundingBoxF {
+    // PrintExtents.cpp:110
+    let mut bbox = BoundingBoxF::new();
+    // PrintExtents.cpp:111
+    for layer in print_object.layers() {
+        // PrintExtents.cpp:112-113
+        if layer.print_z > max_print_z {
+            break;
+        }
+        // PrintExtents.cpp:114
+        let mut bbox_this = BoundingBoxF::new();
+        // PrintExtents.cpp:115
+        for layerm in layer.regions() {
+            // PrintExtents.cpp:116
+            bbox_this.merge(&extrusionentity_extents_collection(&layerm.perimeters));
+            // PrintExtents.cpp:117-119
+            for ee in &layerm.fills.entities {
+                // fill represents infill extrusions of a single island.
+                // C++ does `*dynamic_cast<const ExtrusionEntityCollection*>(ee)`; the Rust
+                // enum dispatch in `extrusionentity_extents_entity` reaches the Collection arm,
+                // matching the same extents accumulation.
+                bbox_this.merge(&extrusionentity_extents_entity(ee));
+            }
+        }
+        // PrintExtents.cpp:121-124
+        // C++ tests `dynamic_cast<const SupportLayer*>(layer)`; this crate folds the support
+        // layer into `Layer`, exposing the optional `support_fills` collection in its place.
+        if let Some(support_fills) = &layer.support_fills {
+            for extrusion_entity in &support_fills.entities {
+                bbox_this.merge(&extrusionentity_extents_entity(extrusion_entity));
+            }
+        }
+        // PrintExtents.cpp:125-129
+        // FIDELITY-NOTE(blocked-dep): C++ iterates `print_object.instances()` and merges
+        // `bbox_this` translated by `unscale(instance.shift)` for every PrintInstance. This crate
+        // does not model the PrintInstance subsystem on PrintObject (no `instances()`, and
+        // `PrintInstance` is an empty stub with no `shift` field), so we emulate the single
+        // zero-shift instance case (`bbox_translated = bbox_this`, shift == 0) and merge directly.
+        // Restoring exact parity requires adding the print-instance subsystem (cross-cutting).
+        bbox.merge(&bbox_this);
+    }
+    // PrintExtents.cpp:131
+    bbox
+}
+
+// Faithful port of the per-extrusion extent accumulation shared by
+// PrintExtents.cpp:152-162 (general wipe-tower extents) — operates on a single
+// `ToolChangeResult`'s extrusion list, applying the wipe-tower placement transform.
+//
+// `trafo` mirrors the C++ `Transform2d trafo = Translation2d(x, y) * Rotation2Dd(angle)`,
+// expressed as (translation, cos, sin) so `trafo * p == rotate(p) + translation`.
+#[allow(dead_code)]
+fn wipe_tower_toolchange_extents(
+    bbox: &mut BoundingBoxF,
+    extrusions: &[crate::gcode::wipe_tower::Extrusion],
+    translation: PointF,
+    cos_a: f64,
+    sin_a: f64,
+) {
+    // PrintExtents.cpp:153
+    for i in 1..extrusions.len() {
+        // PrintExtents.cpp:154
+        let e = &extrusions[i];
+        // PrintExtents.cpp:155
+        if e.width > 0.0 {
+            // PrintExtents.cpp:156: Vec2d delta = 0.5 * Vec2d(e.width, e.width);
+            let delta = PointF::new(0.5 * e.width as f64, 0.5 * e.width as f64);
+            // PrintExtents.cpp:157-158: p1 = trafo * (&e - 1)->pos; p2 = trafo * e.pos;
+            let prev = &extrusions[i - 1];
+            let p1 = apply_trafo(translation, cos_a, sin_a, prev.pos.x as f64, prev.pos.y as f64);
+            let p2 = apply_trafo(translation, cos_a, sin_a, e.pos.x as f64, e.pos.y as f64);
+            // PrintExtents.cpp:159: bbox.merge(p1.cwiseMin(p2) - delta);
+            bbox.merge_point(
+                PointF::new(p1.x.min(p2.x), p1.y.min(p2.y)) - delta,
+            );
+            // PrintExtents.cpp:160: bbox.merge(p1.cwiseMax(p2) + delta);
+            bbox.merge_point(
+                PointF::new(p1.x.max(p2.x), p1.y.max(p2.y)) + delta,
+            );
+        }
+    }
+}
+
+// `Transform2d trafo = Translation2d * Rotation2Dd` applied to a point:
+// rotate by `[cos -sin; sin cos]` then translate.
+#[allow(dead_code)]
+#[inline]
+fn apply_trafo(translation: PointF, cos_a: f64, sin_a: f64, x: f64, y: f64) -> PointF {
+    PointF::new(
+        cos_a * x - sin_a * y + translation.x,
+        sin_a * x + cos_a * y + translation.y,
+    )
+}
+
+// PrintExtents.cpp:134-166
+// Returns a bounding box of a projection of the wipe tower for the layers <= max_print_z.
+// The projection does not contain the priming regions.
+pub fn get_wipe_tower_extrusions_extents(_print: &Print, _max_print_z: f64) -> BoundingBoxF {
+    // FIDELITY-NOTE(blocked-dep): C++ reads `print.get_plate_index()`,
+    // `print.get_plate_origin()`, `print.config().wipe_tower_x/y.get_at(plate_idx)`,
+    // `print.config().wipe_tower_rotation_angle`, and `print.wipe_tower_data().tool_changes`
+    // (PrintExtents.cpp:140-149) to build the placement transform and walk the per-layer tool
+    // changes. This crate's `Print` models none of the WipeTowerData holder / plate-index /
+    // plate-origin / wipe_tower_rotation_angle accessors, so the faithful body cannot be wired
+    // up per-file. The per-extrusion extent math is ported verbatim in
+    // `wipe_tower_toolchange_extents`/`apply_trafo` above; this returns the C++ default
+    // (empty BoundingBoxf) until the WipeTowerData subsystem is added (cross-cutting).
+    BoundingBoxF::new()
+}
+
+// PrintExtents.cpp:168-190
+// Returns a bounding box of the wipe tower priming extrusions.
+pub fn get_wipe_tower_priming_extrusions_extents(_print: &Print) -> BoundingBoxF {
+    // PrintExtents.cpp:171
+    let bbox = BoundingBoxF::new();
+    // PrintExtents.cpp:172: `if (print.wipe_tower_data().priming != nullptr)`
+    // FIDELITY-NOTE(blocked-dep): C++ walks `*print.wipe_tower_data().priming`
+    // (PrintExtents.cpp:173-187), merging each priming extrusion's endpoints widened by
+    // `0.5 * e.width`. This crate's `Print` exposes no `wipe_tower_data()` accessor (the
+    // WipeTowerData holder, incl. its `priming` field, is unmodeled), so the priming list is
+    // never available here; this mirrors the `priming == nullptr` branch and returns the empty
+    // BoundingBoxf default. Restoring parity requires the WipeTowerData subsystem (cross-cutting).
+    // PrintExtents.cpp:189
     bbox
 }
 

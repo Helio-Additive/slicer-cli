@@ -101,7 +101,14 @@ impl AlgBruteForce {
             let mut inp: Input<N> = [0.0f64; N];
             for d in 0..N {
                 let b = &bounds[d];
-                let step = (b.max() - b.min()) / (self.grid_size as f64 - 1.0);
+                // C++: `double step = (b.max() - b.min()) / (gridsz - 1);`
+                // `gridsz` is `size_t`, so `gridsz - 1` is computed in unsigned
+                // integer arithmetic FIRST (wrapping to SIZE_MAX when gridsz==0)
+                // and only then promoted to `double` for the division. Reproduce
+                // the unsigned subtraction with `wrapping_sub` before the cast so
+                // the gridsz==0 edge case matches C++ exactly.
+                let step =
+                    (b.max() - b.min()) / (self.grid_size.wrapping_sub(1) as f64);
                 inp[d] = b.min() + idx[d] as f64 * step;
             }
 

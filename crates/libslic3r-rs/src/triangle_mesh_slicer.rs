@@ -1581,6 +1581,32 @@ pub fn slice_mesh(mesh: &TriangleMesh, zs: &[CoordF]) -> Vec<ExPolygons> {
     slice_mesh_ex_its(&its, &zs_f32, &params, &|| {})
 }
 
+/// Slice a `TriangleMesh` at multiple unscaled Zs with the given
+/// `MeshSlicingParamsEx`, returning ExPolygons for each height.
+///
+/// This is the `&TriangleMesh` front-end for the faithful
+/// `std::vector<ExPolygons> slice_mesh_ex(const indexed_triangle_set &, ...)`
+/// (TriangleMeshSlicer.cpp:2003) path. It exists so callers that hold a
+/// `TriangleMesh` (e.g. CSG slicing) can supply custom slicing params and a
+/// cancellation callback without duplicating the `indexed_triangle_set`
+/// conversion.
+///
+/// NOTE: `params.base` does NOT carry a `Transform3d trafo`; the underlying
+/// slicer applies an identity transform only (see `MeshSlicingParams`). Any
+/// caller-side trafo composition is therefore not reflected here yet.
+pub fn slice_mesh_ex(
+    mesh: &TriangleMesh,
+    zs: &[f32],
+    params: &MeshSlicingParamsEx,
+    throw_on_cancel: &dyn Fn(),
+) -> Vec<ExPolygons> {
+    if mesh.is_empty() || zs.is_empty() {
+        return vec![ExPolygons::new(); zs.len()];
+    }
+    let its = its_from_triangle_mesh(mesh);
+    slice_mesh_ex_its(&its, zs, params, throw_on_cancel)
+}
+
 #[allow(dead_code)]
 fn _unscale_marker(v: i64) -> f64 {
     unscale(v)

@@ -189,7 +189,8 @@ impl StopCriteria {
     }
 
     /// Set the stop condition predicate.
-    /// Optimizer.hpp:85-88
+    /// C++ setter overload `StopCriteria & stop_condition(Fn &&cond)`.
+    /// Optimizer.hpp:89-92
     pub fn set_stop_condition<F: Fn() -> bool + Send + Sync + 'static>(
         &mut self,
         cond: F,
@@ -199,7 +200,9 @@ impl StopCriteria {
     }
 
     /// Evaluate the stop condition. Returns true if optimization should stop.
-    /// Optimizer.hpp:90
+    /// C++ getter overload `bool stop_condition() { return m_stop_condition(); }`.
+    /// Renamed here because Rust cannot overload the setter name.
+    /// Optimizer.hpp:94
     pub fn check_stop_condition(&self) -> bool {
         match &self.stop_condition {
             Some(cond) => cond(),
