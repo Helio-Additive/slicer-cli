@@ -209,6 +209,17 @@ impl GluTessWrapper {
 
         // earcut triangulation (2D). Returns a flat list of vertex indices,
         // 3 per triangle. This replaces the native GLU tessellator core.
+        // FIDELITY-NOTE(backend): C++ uses SGI GLU libtess (glu-libtess) via
+        // gluTessVertex (Tesselate.cpp:5,35-54,76-96). GLU is a native, non
+        // wasm-safe C dependency and is forbidden here, so the polygon-with-holes
+        // is triangulated with the pure-Rust `earcutr` (MapBox earcut) crate and
+        // the resulting GL_TRIANGLES stream is fed through the faithful tess_vertex
+        // state machine below. The wrapper logic (winding/flip/Z/unscale) is
+        // 1:1; only the underlying triangle decomposition can differ from GLU for
+        // a given region (different but equally valid triangulation). GLU's
+        // self-intersection splitting (tessCombine, Tesselate.cpp:159-163) is also
+        // not reproduced by earcut. Resolving this needs a wasm-safe libtess
+        // equivalent, which is out of per-file scope.
         let indices = match earcutr::earcut(&vertices, &hole_indices, 2) {
             Ok(idx) => idx,
             // tessError is a no-op in C++ (Tesselate.cpp:165-170); on failure we

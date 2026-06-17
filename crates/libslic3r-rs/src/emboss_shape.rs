@@ -218,7 +218,15 @@ impl Default for EmbossShape {
                 is_healed: false,
             },
             // EmbossShape.hpp:144  double scale = SCALING_FACTOR;
-            scale: SCALING_FACTOR,
+            // C++ SCALING_FACTOR == 0.00001 (libslic3r.h:58): the mm-per-integer
+            // multiplier used as `mm = integer_coord * scale`. This crate inverts the
+            // convention and stores `SCALING_FACTOR = 100_000.0` (the integer-per-mm
+            // multiplier, i.e. the reciprocal). To match the C++ literal value we must use
+            // its reciprocal here, otherwise `scale` would be off by 1e10.
+            // FIDELITY-NOTE(F2): crate-wide SCALING_FACTOR uses the inverted (integer-per-mm)
+            // convention vs C++ libslic3r.h:58 SCALING_FACTOR=0.00001 (mm-per-integer);
+            // reproduce the C++ value locally as 1.0 / SCALING_FACTOR.
+            scale: 1.0 / SCALING_FACTOR,
             projection: EmbossProjection::default(),
             fix_3mf_tr: None,
             svg_file: None,
@@ -370,9 +378,11 @@ mod tests {
 
     #[test]
     fn emboss_shape_default_scale_is_scaling_factor() {
-        // EmbossShape.hpp:144  double scale = SCALING_FACTOR;
+        // EmbossShape.hpp:144  double scale = SCALING_FACTOR; (C++ SCALING_FACTOR == 0.00001)
+        // The crate's SCALING_FACTOR is the inverted (100_000.0) convention; the C++ literal
+        // value is its reciprocal. See FIDELITY-NOTE(F2) on the Default impl.
         let s = EmbossShape::default();
-        assert_eq!(s.scale, SCALING_FACTOR);
+        assert_eq!(s.scale, 1.0 / SCALING_FACTOR);
         assert!(s.shapes_with_ids.is_empty());
         assert!(s.fix_3mf_tr.is_none());
         assert!(s.svg_file.is_none());

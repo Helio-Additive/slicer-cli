@@ -26,12 +26,17 @@ use std::f64::consts::PI;
 
 /// `SCALED_EPSILON` expressed in this crate's scaled coordinate system.
 ///
-/// C++ uses `SCALED_EPSILON = 10.0` (libslic3r.h) with `SCALING_FACTOR = 1e-6`,
-/// i.e. `10` scaled units == `1e-5 mm`. This crate's `SCALING_FACTOR` is
-/// `100_000` (1 mm == 100_000 units), so the equivalent scaled value for
-/// `1e-5 mm` is `1e-5 * 100_000 == 1.0`. Lengths/widths here are in this crate's
-/// scaled units, so the comparison threshold is `1.0`.
-const SCALED_EPSILON: f64 = 1e-5 * crate::SCALING_FACTOR;
+/// libslic3r.h:84 `#define SCALED_EPSILON scale_(EPSILON)`, where
+/// libslic3r.h:81 `#define scale_(val) ((val) / SCALING_FACTOR)`,
+/// libslic3r.h:58 `SCALING_FACTOR = 0.00001`, and
+/// libslic3r.h:52 `EPSILON = 1e-4`. Therefore in C++:
+/// `SCALED_EPSILON = 1e-4 / 0.00001 = 10.0` scaled units (1 mm == 100_000 units).
+///
+/// This crate's `SCALING_FACTOR` is `100_000` (1 mm == 100_000 units), so the
+/// equivalent scaled value for `EPSILON = 1e-4 mm` is `1e-4 * 100_000 == 10.0`.
+/// Lengths here are in this crate's scaled units, so the comparison threshold
+/// is `10.0` (matching C++ exactly), NOT `1.0`.
+const SCALED_EPSILON: f64 = 1e-4 * crate::SCALING_FACTOR;
 
 // VariableWidth.cpp:5-8
 // ExtrusionMultiPath thick_polyline_to_multi_path(const ThickPolyline& thick_polyline, ExtrusionRole role, const Flow& flow, const float tolerance, const float merge_tolerance, double overhang)
@@ -471,8 +476,18 @@ pub fn variable_width(
 }
 
 /// Helper: unscale a scaled `coordf_t` value to mm.
-/// C++: `unscale<float>(w)` == `coordf_t(w) * SCALING_FACTOR`. Here the crate's
-/// scaling convention is 1mm = SCALING_FACTOR units, so unscale divides.
+/// C++: `unscale<float>(w)` (libslic3r.h:112 `unscale(v) = T(v) * T(SCALING_FACTOR)`,
+/// `SCALING_FACTOR = 0.00001`) i.e. scaled-units -> mm. Here the crate's scaling
+/// convention is 1mm = SCALING_FACTOR(=100_000) units, so unscale divides.
+///
+/// FIDELITY-NOTE(width-units, cross-cutting): C++ `medial_axis` keeps `ThickPolyline`
+/// widths in SCALED coordinates, so `VariableWidth.cpp` correctly unscales them
+/// here. This crate's `geometry/medial_axis.rs:346` instead stores widths already
+/// in mm (`widths[i] / SCALING_FACTOR`). Applying this unscale to mm widths
+/// double-unscales (off by SCALING_FACTOR). Reconciling the width-unit convention
+/// is a producer-side (medial_axis / thick_polyline) data-model change, NOT a
+/// VariableWidth logic change: matching C++ requires unscale HERE, so this file
+/// stays C++-faithful and the divergence must be fixed at the producer.
 #[inline]
 fn unscale_f(scaled_val: f64) -> f64 {
     scaled_val / crate::SCALING_FACTOR
