@@ -70,11 +70,15 @@ impl CurveAnalyzer {
         }
 
         // CurveAnalyzer.cpp:23-33
+        // C++: std::vector<float> paths_length(paths.size(), 0.0);
+        // polyline.length() returns a double; storing/accumulating in a float vector
+        // truncates each term to float precision. Mirror that with f32 here.
         let mut polygon = Polygon::new();
-        let mut paths_length = Vec::with_capacity(paths.len());
+        let mut paths_length: Vec<f32> = Vec::with_capacity(paths.len());
 
         for (i, path) in paths.iter().enumerate() {
-            let path_len = path.polyline.length();
+            // CurveAnalyzer.cpp:27/30 — paths[i].polyline.length() (double) stored into float.
+            let path_len = path.polyline.length() as f32;
             if i == 0 {
                 paths_length.push(path_len);
             } else {
@@ -141,15 +145,16 @@ impl CurveAnalyzer {
         // CurveAnalyzer.cpp:54-87
         let mut sum_angles = vec![0.0_f32; point_num];
         let mut average_curvatures = vec![0.0_f64; point_num];
-        // C++: if (paths_length.back() < scale_(curvatures_sampling_width))
-        // paths_length holds scaled lengths (polyline.length() over scaled points),
-        // so compare against scale(curvatures_sampling_width).
-        if *paths_length.last().unwrap() < scale(CURVATURES_SAMPLING_WIDTH) as f64 {
+        // CurveAnalyzer.cpp:58 — if (paths_length.back() < scale_(curvatures_sampling_width))
+        // paths_length is float; scale_(...) is coord_t (int), so the comparison is in float.
+        if *paths_length.last().unwrap() < scale(CURVATURES_SAMPLING_WIDTH) as f32 {
             // loop is too short, so the curvatures is max
             // CurveAnalyzer.cpp:58-63
             // C++: double temp = 1000.0 * 2.0 * PI / ((double)(paths_length.back()) * SCALING_FACTOR);
-            // C++ SCALING_FACTOR == 0.00001, so (scaled * SCALING_FACTOR) == unscale(scaled).
-            let temp = 1000.0 * 2.0 * PI / (*paths_length.last().unwrap() / crate::SCALING_FACTOR);
+            // C++ casts the float back() to double first. C++ SCALING_FACTOR == 0.00001,
+            // and crate SCALING_FACTOR == 100000.0, so (scaled * 0.00001) == (scaled / 100000.0).
+            let temp =
+                1000.0 * 2.0 * PI / (*paths_length.last().unwrap() as f64 / crate::SCALING_FACTOR);
             for i in 0..point_num {
                 average_curvatures[i] = temp;
             }
@@ -278,7 +283,8 @@ impl CurveAnalyzer {
                 }
 
                 // CurveAnalyzer.cpp:156-165
-                if paths_length[i] <= polygon_length[curvature_list[j].1] as f64
+                // C++ compares two floats (paths_length and polygon_length).
+                if paths_length[i] <= polygon_length[curvature_list[j].1]
                     || paths[i].last_point() == curvature_list[j].0
                 {
                     // save paths[i] directly
@@ -324,8 +330,9 @@ impl CurveAnalyzer {
                         current_curva_norm = curvature_list[j].2;
                         j += 1;
                         // CurveAnalyzer.cpp:180-190
+                        // C++ compares two floats (paths_length and polygon_length).
                         if j < curvature_list.len()
-                            && (paths_length[i] <= polygon_length[curvature_list[j].1] as f64
+                            && (paths_length[i] <= polygon_length[curvature_list[j].1]
                                 || paths[i].last_point() == curvature_list[j].0)
                         {
                             current_path.set_curve_degree(current_curva_norm);

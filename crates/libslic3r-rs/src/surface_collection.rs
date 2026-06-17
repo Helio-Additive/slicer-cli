@@ -110,21 +110,23 @@ impl SurfaceCollection {
         self.surfaces.iter().map(|s| s.expolygon.clone()).collect()
     }
 
-    /// Set surfaces from ExPolygons with a given type
+    /// Set surfaces from ExPolygons with a given type.
+    /// `void set(const ExPolygons &src, SurfaceType surfaceType) { clear(); this->append(src, surfaceType); }`
+    /// SurfaceCollection.hpp:59 — faithful: routes through `surfaces_append`
+    /// (the borrow-friendly `&ExPolygons` arg clones into the canonical path).
     pub fn set(&mut self, expolygons: &ExPolygons, surface_type: SurfaceType) {
-        self.surfaces.clear();
-        for expolygon in expolygons {
-            self.surfaces
-                .push(Surface::new(surface_type, expolygon.clone()));
-        }
+        // clear();                                                      SurfaceCollection.hpp:59
+        self.clear();
+        // this->append(src, surfaceType);                              SurfaceCollection.hpp:59
+        surfaces_append(&mut self.surfaces, expolygons.clone(), surface_type);
     }
 
-    /// Append ExPolygons as surfaces with given type
-    /// Surface.cpp helper
+    /// Append ExPolygons as surfaces with given type.
+    /// `void append(const ExPolygons &src, SurfaceType surfaceType) { surfaces_append(this->surfaces, src, surfaceType); }`
+    /// SurfaceCollection.hpp:68
     pub fn append(&mut self, expolygons: ExPolygons, surface_type: SurfaceType) {
-        for expolygon in expolygons {
-            self.surfaces.push(Surface::new(surface_type, expolygon));
-        }
+        // surfaces_append(this->surfaces, src, surfaceType);           SurfaceCollection.hpp:68
+        surfaces_append(&mut self.surfaces, expolygons, surface_type);
     }
 }
 
@@ -170,6 +172,9 @@ impl SurfaceCollection {
             // `ExPolygon::simplify(double tolerance)` is
             // `union_ex(this->simplify_p(tolerance))` where the `Polygons`
             // overload of `union_ex` maps to `union_polygons_ex`.
+            // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib —
+            // `union_polygons_ex` unions via the `geo` crate at fixed scale 1000,
+            // not ClipperLib at coord_t integer precision.
             expp.extend(crate::clipper_utils::union_polygons_ex(
                 &it_s.expolygon.simplify_p(tolerance),
             ));

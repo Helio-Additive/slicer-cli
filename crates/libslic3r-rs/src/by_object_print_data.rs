@@ -16,6 +16,16 @@
 //! body of not-yet-ported sequential-print scheduling and PrintObject-driven
 //! tool-ordering machinery. They are intentionally NOT stubbed (no fake logic).
 //!
+//! AUDIT 2026-06-17 (re-verified): the blocking dependencies below are STILL
+//! genuinely absent from the crate (every grep hit for `is_sequential_print`,
+//! `sort_object_instances_by_model_order`, `get_recommended_filament_maps`,
+//! `build_filament_group_context`, a `PrintInstance` with a `print_object`
+//! back-pointer, and a PrintObject-driven `ToolOrdering` ctor lands ONLY inside
+//! this file's own comments). The struct skeleton + `clear()` remain faithful;
+//! `build()` / `collect_filament_data()` cannot be ported without the
+//! cross-cutting sequential-print + PrintObject-driven ToolOrdering subsystem,
+//! which is out of per-file scope. Status remains: partial / flagged.
+//!
 //! AUDIT 2026-06-13: several dependencies originally listed as blockers now exist
 //! and are no longer the reason for blocking:
 //!   - `has_any_mixed_filament` / `expand_mixed_filaments` — ported in
