@@ -508,7 +508,8 @@
     "rust_exists": true,
     "loc": 145,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Platform.cpp",
@@ -908,7 +909,8 @@
     "rust_exists": true,
     "loc": 306,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCodeReader.cpp",

@@ -108,10 +108,17 @@ impl Int128 {
         // First try to calculate the determinant over the upper 31 bits.
         // Round p1, p2, q1, q2 to 31 bits.
         // Int128.hpp:269-272
-        let a11s = (a11 + (1 << 31)) >> 32;
-        let a12s = (a12 + (1 << 31)) >> 32;
-        let a21s = (a21 + (1 << 31)) >> 32;
-        let a22s = (a22 + (1 << 31)) >> 32;
+        //
+        // C++ FAITHFULNESS: in C++ `(1 << 31)` is an `int` (32-bit) literal that
+        // overflows the signed `int` range, yielding `-2147483648` (= `i32::MIN`),
+        // which is then promoted to `int64_t` before being added. So the rounding
+        // bias is actually `-2^31`, not `+2^31` (despite the "round" comment). We
+        // reproduce the exact C++ value here. (Verified: for a11=1e9 C++ yields -1.)
+        const ROUND: i64 = i32::MIN as i64; // C++ `(1 << 31)` == int(-2147483648)
+        let a11s = (a11 + ROUND) >> 32;
+        let a12s = (a12 + ROUND) >> 32;
+        let a21s = (a21 + ROUND) >> 32;
+        let a22s = (a22 + ROUND) >> 32;
         // Result fits 63 bits, it is an approximate of the determinant divided by 2^64.
         // Int128.hpp:274
         let det = a11s * a22s - a12s * a21s;
@@ -139,12 +146,17 @@ impl Int128 {
         // Int128.hpp:288
         let invert = if (q1 < 0) == (q2 < 0) { 1 } else { -1 };
         // Int128.hpp:289-290
-        let q1s = (q1 + (1 << 31)) >> 32;
-        let q2s = (q2 + (1 << 31)) >> 32;
+        //
+        // C++ FAITHFULNESS: `(1 << 31)` overflows `int` to `-2147483648` (= i32::MIN),
+        // promoted to int64_t, so the rounding bias is `-2^31`. See note in
+        // `sign_determinant_2x2_filtered`. Reproduced exactly here.
+        const ROUND: i64 = i32::MIN as i64; // C++ `(1 << 31)` == int(-2147483648)
+        let q1s = (q1 + ROUND) >> 32;
+        let q2s = (q2 + ROUND) >> 32;
         if q1s != 0 && q2s != 0 {
             // Int128.hpp:292-293
-            let p1s = (p1 + (1 << 31)) >> 32;
-            let p2s = (p2 + (1 << 31)) >> 32;
+            let p1s = (p1 + ROUND) >> 32;
+            let p2s = (p2 + ROUND) >> 32;
             // Result fits 63 bits, it is an approximate of the determinant divided by 2^64.
             // Int128.hpp:295
             let det = p1s * q2s - p2s * q1s;

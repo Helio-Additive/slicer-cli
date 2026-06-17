@@ -40,7 +40,9 @@ impl Line {
         }
     }
 
-    /// Get the direction vector (b - a).
+    /// Direction vector (b - a). Mirrors C++ `Line::vector()` (Line.hpp:179);
+    /// the C++ scalar `Line::direction()` (the angle) is `direction_angle()` below.
+    /// Kept under this name because it is used as a vector crate-wide.
     #[inline]
     pub fn direction(&self) -> Point {
         self.b - self.a
@@ -52,20 +54,29 @@ impl Line {
         self.b.to_f64() - self.a.to_f64()
     }
 
-    /// Get the direction angle in radians (0 to PI range, like BambuStudio).
-    /// This returns the angle of the line direction, normalized to [0, PI).
+    /// atan2 of the direction vector. Line.hpp:176 `double atan2_() const`.
+    #[inline]
+    pub fn atan2_(&self) -> CoordF {
+        // atan2(b(1) - a(1), b(0) - a(0))
+        ((self.b.y - self.a.y) as CoordF).atan2((self.b.x - self.a.x) as CoordF)
+    }
+
+    /// Line direction angle, folded as in C++ `Line::direction()` (Line.cpp:60).
+    /// Returns 0 for a (near-)horizontal line pointing in -x, otherwise the
+    /// atan2 of the direction shifted into (0, PI) by adding PI when negative.
     #[inline]
     pub fn direction_angle(&self) -> CoordF {
-        let dir = self.direction();
-        let mut angle = (dir.y as CoordF).atan2(dir.x as CoordF);
-        // Normalize to [0, PI)
-        if angle < 0.0 {
-            angle += std::f64::consts::PI;
+        // Line.cpp:62
+        let atan2 = self.atan2_();
+        // Line.cpp:63-65
+        let pi = std::f64::consts::PI;
+        if (atan2 - pi).abs() < crate::libslic3r::EPSILON {
+            0.0
+        } else if atan2 < 0.0 {
+            atan2 + pi
+        } else {
+            atan2
         }
-        if angle >= std::f64::consts::PI {
-            angle -= std::f64::consts::PI;
-        }
-        angle
     }
 
     /// Get the length as f64 (same as length, but explicitly named).
@@ -204,21 +215,28 @@ impl Line {
 
     /// Calculate the intersection point of two line segments.
     /// Returns None if the segments don't intersect.
+    /// Line.cpp:105 `Line::intersection` -> Line.hpp:123 `line_alg::intersection`.
     pub fn intersection(&self, other: &Line) -> Option<Point> {
+        // v1 = l1.b - l1.a, v2 = l2.b - l2.a
         let d1 = self.direction();
         let d2 = other.direction();
 
+        // denom = cross2(v1, v2); C++ rejects when |denom| < EPSILON. For integer
+        // coord_t inputs cross2 is exact, so |denom| < 1e-4 is exactly denom == 0.
         let cross = d1.cross(&d2);
         if cross == 0 {
-            // Lines are parallel
             return None;
         }
 
+        // C++ v12 = l1.a - l2.a; nume_a = cross2(v2, v12); nume_b = cross2(v1, v12);
+        // diff = l2.a - l1.a = -v12, so:
+        //   diff x d2 = cross2(-v12, v2) = cross2(v2, v12) = nume_a  => t == t1
+        //   diff x d1 = cross2(-v12, v1) = cross2(v1, v12) = nume_b  => u == t2
         let diff = other.a - self.a;
         let t = diff.cross(&d2) as CoordF / cross as CoordF;
         let u = diff.cross(&d1) as CoordF / cross as CoordF;
 
-        // Check if intersection is within both segments
+        // t1 >= 0 && t1 <= 1 && t2 >= 0 && t2 <= 1
         if t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0 {
             Some(Point::new(
                 (self.a.x as CoordF + t * d1.x as CoordF).round() as Coord,
@@ -276,12 +294,13 @@ impl Line {
         let t1 = (v12x * v2y - v12y * v2x) / denom; // cross2(v12, v2) / denom
         let rx = a1x + t1 * v1x;
         let ry = a1y + t1 * v1y;
-        // Cannot be stored in a Point without integer overflow (near-parallel inputs).
-        if rx > Coord::MAX as CoordF
-            || rx < Coord::MIN as CoordF
-            || ry > Coord::MAX as CoordF
-            || ry < Coord::MIN as CoordF
-        {
+        // Line.cpp:33-38 — if a coordinate exceeds coord_t's range the point cannot
+        // be stored without integer overflow (input lines are parallel / near-parallel).
+        // FIDELITY-NOTE(F2): C++ coord_t == int32_t, so the guard is against int32
+        // limits, not i64; reproduce the int32 bounds locally to match C++.
+        let coord_max = i32::MAX as CoordF;
+        let coord_min = i32::MIN as CoordF; // std::numeric_limits<coord_t>::lowest()
+        if rx > coord_max || rx < coord_min || ry > coord_max || ry < coord_min {
             return None;
         }
         Some(Point::new(rx as Coord, ry as Coord))
