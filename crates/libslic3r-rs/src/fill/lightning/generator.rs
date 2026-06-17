@@ -39,8 +39,8 @@
 //   #include "ExPolygon.hpp"
 use super::layer::Layer;
 use crate::bounding_box::BoundingBox;
-use crate::clipper_utils::{difference, offset_polygons, OffsetJoinType};
-use crate::geometry::{to_polygons as expolygons_to_polygons, ExPolygon, Polygon};
+use crate::clipper_utils::{diff_polygons, offset_polygons, OffsetJoinType};
+use crate::geometry::{to_polygons as expolygons_to_polygons, Polygon};
 use crate::print_object::PrintObject;
 use crate::surface::SurfaceType;
 use crate::Coord;
@@ -131,30 +131,37 @@ impl Generator {
     //   * Generator.cpp:90-91 `generateInitialInternalOverhangs` /
     //     `generateTrees` — the config reads and `generateInitialInternalOverhangs`
     //     are unblocked (config hierarchy is wired; `nozzle_diameter` scalar is
-    //     equivalent to max-element over a single-nozzle vector; `fill_density`
-    //     maps to `sparse_infill_density`), but `generateTrees` is still blocked
-    //     on `Layer::generateNewTrees` / `reconnectRoots` (Fill/Lightning/Layer.cpp
+    //     equivalent to max-element over a single-nozzle vector; the C++
+    //     `region_config.sparse_infill_density` (ConfigOptionPercent, e.g. 15)
+    //     maps to the Rust `PrintRegionConfig::fill_density` (a 0..1 fraction, so
+    //     `0.15`)), but `generateTrees` is still blocked on
+    //     `Layer::generateNewTrees` / `reconnectRoots` (Fill/Lightning/Layer.cpp
     //     not ported). Until those land the whole constructor remains commented out.
     //
-    // Faithful reference:
+    // Faithful reference (mapping C++ `region_config` accessor through the wired
+    // Rust hierarchy: `print_object.shared_regions()->all_regions.front()->config()`
+    // == `print_object.all_regions()[0].config()`):
     //
     //     let print_config         = print_object.print().config();
     //     let object_config        = print_object.config();
-    //     let region_config        = print_object.shared_regions().all_regions.front().config();
-    //     let nozzle_diameters     = &print_config.nozzle_diameter.values;
-    //     let max_nozzle_diameter  = *nozzle_diameters.iter().max();
+    //     let region_config        = print_object.all_regions()[0].config();
+    //     // C++ `nozzle_diameter.values` is a vector; Rust models a single nozzle
+    //     // as a scalar, so `*max_element(values)` == that scalar.
+    //     let max_nozzle_diameter  = print_config.nozzle_diameter;
     //     // const int infill_extruder = region_config.infill_extruder.value; (commented in C++)
     //     let default_infill_extrusion_width =
-    //         Flow::auto_extrusion_width(FlowRole::Infill, max_nozzle_diameter as f32);
+    //         Flow::auto_extrusion_width(FlowRole::Infill, max_nozzle_diameter);
     //     // Note: There's not going to be a layer below the first one, so the
     //     // 'initial layer height' doesn't have to be taken into account.
-    //     let layer_thickness = scaled(object_config.layer_height) as f64;
+    //     let layer_thickness = crate::scaled(object_config.layer_height) as f64;
     //
     //     // m_infill_extrusion_width = scaled<float>(region_config.infill_extrusion_width.percent ? ... : ...);
-    //     // m_supporting_radius = coord_t(m_infill_extrusion_width) * 100 / coord_t(region_config.fill_density.value);
-    //     self.m_infill_extrusion_width = scaled(region_config.sparse_infill_line_width) as f32;
+    //     // m_supporting_radius = coord_t(m_infill_extrusion_width) * 100 / region_config.sparse_infill_density;
+    //     self.m_infill_extrusion_width = crate::scaled(region_config.sparse_infill_line_width) as f32;
+    //     // C++ divides by the integer percent (e.g. 15). Rust `fill_density` is the
+    //     // equivalent fraction (0.15), so `* 100 / percent` == `/ fill_density`.
     //     self.m_supporting_radius =
-    //         (self.m_infill_extrusion_width as Coord) * 100 / region_config.sparse_infill_density;
+    //         ((self.m_infill_extrusion_width as f64) / region_config.fill_density) as Coord;
     //
     //     let lightning_infill_overhang_angle      = std::f64::consts::PI / 4.0; // 45 degrees
     //     let lightning_infill_prune_angle         = std::f64::consts::PI / 4.0; // 45 degrees
@@ -179,14 +186,19 @@ impl Generator {
     // primary ctor):
     //
     //     ... (same config reads as above) ...
-    //     self.m_infill_extrusion_width = scaled(region_config.sparse_infill_line_width) as f32;
+    //     self.m_infill_extrusion_width = crate::scaled(region_config.sparse_infill_line_width) as f32;
     //     // m_supporting_radius: against to the density of lightning, failures may
     //     // happen if set to high density. higher density lightning makes support
     //     // harder, more time-consuming on computing and printing, but more reliable
     //     // on supporting overhangs; lower density lightning performs opposite.
     //     // TODO: decide whether enable density controller in advanced options or not
     //     let density = density.max(0.15f32);
-    //     self.m_supporting_radius = (self.m_infill_extrusion_width as Coord) / (density as Coord);
+    //     // C++ `coord_t(m_infill_extrusion_width) / density` is integer-by-float
+    //     // division promoted to float, then truncated back to coord_t. Casting
+    //     // `density` to Coord first would truncate 0.15 -> 0 (div-by-zero), so the
+    //     // division MUST stay in float: `(coord / density as f32) as Coord`.
+    //     self.m_supporting_radius =
+    //         ((self.m_infill_extrusion_width as Coord) as f32 / density) as Coord;
     //
     //     let lightning_infill_overhang_angle      = std::f64::consts::PI / 4.0; // 45 degrees
     //     let lightning_infill_prune_angle         = std::f64::consts::PI / 4.0; // 45 degrees
@@ -239,17 +251,23 @@ impl Generator {
             // already supported by the walls.
             //   Polygons overhang = diff(offset(infill_area_here, -float(m_wall_supporting_radius)), infill_area_above);
             // `offset(Polygons, delta)` and `diff(Polygons, Polygons)` are Clipper
-            // wrappers producing `Polygons`; here composed via the ExPolygon-based
-            // crate primitives (`offset_polygons` -> `difference` -> `to_polygons`)
-            // which perform the identical Clipper boolean.
+            // wrappers that take/return `Polygons`. `offset_polygons` mirrors
+            // `offset(...)` and `diff_polygons` mirrors `diff(Polygons, Polygons)`.
+            //
+            // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
+            // `offset_polygons` runs through the `geo` crate at the fixed
+            // GEO_CLIPPER_SCALE (1000) and expects its `delta` in unscaled mm,
+            // whereas C++ `offset` works directly at coord_t (scaled) precision.
+            // The delta is therefore unscaled here so the *physical* offset
+            // distance matches C++ (`-float(m_wall_supporting_radius)` coord_t ==
+            // `-unscale(m_wall_supporting_radius)` mm); the resulting geometry is
+            // a ClipperLib approximation, not bit-identical.
             let offset_here: Vec<Polygon> = expolygons_to_polygons(&offset_polygons(
                 &infill_area_here,
-                -(self.m_wall_supporting_radius as f64),
+                -crate::unscale(self.m_wall_supporting_radius),
                 OffsetJoinType::Miter,
             ));
-            let above_ex: Vec<ExPolygon> = crate::clipper_utils::union_polygons_ex(&infill_area_above);
-            let offset_here_ex: Vec<ExPolygon> = crate::clipper_utils::union_polygons_ex(&offset_here);
-            let overhang: Vec<Polygon> = expolygons_to_polygons(&difference(&offset_here_ex, &above_ex));
+            let overhang: Vec<Polygon> = diff_polygons(&offset_here, &infill_area_above);
 
             // Generator.cpp:150
             self.m_overhang_per_layer[layer_nr as usize] = overhang;
@@ -346,10 +364,10 @@ impl Generator {
     //             crate::geometry::polygon::get_extents_polygons(below_outlines)
     //                 .inflated(crate::SCALED_EPSILON);
     //         if outlines_locator.bbox().defined {
-    //             below_outlines_bbox.merge(outlines_locator.bbox());
+    //             below_outlines_bbox.merge_bb(outlines_locator.bbox());
     //         }
     //         if !self.m_lightning_layers[layer_id as usize].tree_roots.is_empty() {
-    //             below_outlines_bbox.merge(
+    //             below_outlines_bbox.merge_bb(
     //                 &super::tree_node::get_extents_roots(
     //                     &self.m_lightning_layers[layer_id as usize].tree_roots)
     //                     .inflated(crate::SCALED_EPSILON));

@@ -448,6 +448,10 @@ impl FillCrossHatch {
         multiline_fill(&mut polylines, params, self.spacing as f32);
 
         // FillCrossHatch.cpp:211 — polylines = intersection_pl(polylines, to_polygons(expolygon));
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib — `intersection_pl`
+        // clips the infill against the ExPolygon (contour minus holes), matching
+        // `to_polygons(expolygon)` semantically, but the underlying boolean op does not run at
+        // ClipperLib coord_t integer precision.
         let mut polylines: Vec<Polyline> =
             intersection_pl(&polylines, std::slice::from_ref(&expolygon));
 

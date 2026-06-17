@@ -2275,7 +2275,8 @@
     "rust_exists": true,
     "loc": 176,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillGyroid.cpp",
@@ -2286,7 +2287,8 @@
     "rust_exists": true,
     "loc": 212,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillCrossHatch.cpp",
@@ -2297,7 +2299,8 @@
     "rust_exists": true,
     "loc": 237,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Fill/Lightning/Generator.cpp",
@@ -2308,7 +2311,8 @@
     "rust_exists": true,
     "loc": 265,
     "status": "partial",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Fill/FillPlanePath.cpp",

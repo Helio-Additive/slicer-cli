@@ -19,18 +19,27 @@ use crate::Coord;
 // The cell-size should be small compared to the radius, but not so small as to be inefficient.
 const RADIUS_PER_CELL_SIZE: Coord = 6;
 
-// DistanceField.hpp:368-372 — Slic3r::PointHash
+// Point.hpp:368-372 — Slic3r::PointHash
 // struct PointHash {
 //     size_t operator()(const Vec2crd &pt) const {
 //         return coord_t((89 * 31 + int64_t(pt.x())) * 31 + pt.y());
 //     }
 // };
+//
+// The inner expression is evaluated in int64 arithmetic, then truncated to
+// `coord_t` (int32_t, libslic3r.h:40) and finally sign-extended to `size_t`.
+// FIDELITY-NOTE(F2): crate `Coord = i64` but C++ `coord_t = int32_t`; reproduce
+// the int32 truncation + sign-extension locally so `% prime_for_hash` matches.
 #[inline]
-fn point_hash(pt: &Point) -> i64 {
-    (89i64 * 31)
+fn point_hash(pt: &Point) -> usize {
+    let e: i64 = (89i64 * 31)
         .wrapping_add(pt.x())
         .wrapping_mul(31)
-        .wrapping_add(pt.y())
+        .wrapping_add(pt.y());
+    // coord_t(e): truncate the int64 value to int32_t.
+    let truncated = e as i32;
+    // size_t operator() return: int32_t -> size_t sign-extends through i64.
+    (truncated as i64) as usize
 }
 
 /// Represents a small discrete area of infill that needs to be supported.
@@ -299,15 +308,14 @@ impl DistanceField {
             .m_unsupported_points
             .sort_by(|a: &UnsupportedCell, b: &UnsupportedCell| {
                 // DistanceField.cpp:75
-                const PRIME_FOR_HASH: i64 = 191;
+                const PRIME_FOR_HASH: usize = 191;
                 // DistanceField.cpp:76-78
                 // PointHash returns size_t (unsigned); `% prime_for_hash` converts
                 // the coord_t prime to size_t, so the modulo is unsigned.
                 let less = if (b.dist_to_boundary - a.dist_to_boundary).abs() > radius {
                     a.dist_to_boundary < b.dist_to_boundary
                 } else {
-                    ((point_hash(&a.loc) as u64) % (PRIME_FOR_HASH as u64))
-                        < ((point_hash(&b.loc) as u64) % (PRIME_FOR_HASH as u64))
+                    (point_hash(&a.loc) % PRIME_FOR_HASH) < (point_hash(&b.loc) % PRIME_FOR_HASH)
                 };
                 if less {
                     std::cmp::Ordering::Less

@@ -148,6 +148,9 @@ fn make_wave(
         }
         // FillGyroid.cpp:59 — polyline.points.emplace_back((point * scaleFactor).cast<coord_t>());
         // Eigen's `cast<coord_t>()` truncates toward zero.
+        // FIDELITY-NOTE(F2): crate Coord = i64 but C++ coord_t = int32_t
+        // (libslic3r.h:40); for large scaled coordinates the int32 truncation
+        // would wrap whereas i64 does not. Coord width is crate-wide.
         polyline.points.push(Point::new(
             (point[0] * scale_factor) as Coord,
             (point[1] * scale_factor) as Coord,
@@ -444,6 +447,9 @@ impl FillGyroid {
         multiline_fill(&mut polylines, params, self.spacing as f32);
 
         // FillGyroid.cpp:185 — polylines = intersection_pl(polylines, expolygon);
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
+        // (clipper_utils::intersection_pl uses the `geo` crate at fixed scale
+        // 1000, not ClipperLib at coord_t integer precision).
         let mut polylines: Vec<Polyline> =
             intersection_pl(&polylines, std::slice::from_ref(&expolygon));
 
