@@ -1967,7 +1967,8 @@
     "rust_exists": true,
     "loc": 59,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Arachne/SkeletalTrapezoidationJoint.hpp",
@@ -1978,7 +1979,8 @@
     "rust_exists": true,
     "loc": 60,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/BeadingStrategy/BeadingStrategyFactory.cpp",
@@ -1989,7 +1991,8 @@
     "rust_exists": true,
     "loc": 62,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/utils/SparseLineGrid.hpp",
@@ -2000,7 +2003,8 @@
     "rust_exists": true,
     "loc": 77,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Arachne/BeadingStrategy/BeadingStrategy.cpp",

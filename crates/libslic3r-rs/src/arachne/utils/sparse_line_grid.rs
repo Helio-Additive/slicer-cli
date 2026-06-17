@@ -7,6 +7,14 @@
 //! `processLineCells` (via `SparseGrid::process_line_cells` ->
 //! `SquareGrid::process_line_cells`) exactly as the C++ does, instead of
 //! reimplementing the line-traversal algorithm.
+//!
+//! FIDELITY-NOTE(F2): The C++ base `GridMap` is
+//! `std::unordered_multimap<GridPoint, Elem, PointHash>` keyed on `coord_t`
+//! (int32) grid coordinates; this crate represents it as
+//! `HashMap<GridPoint, Vec<Elem>>` with `Coord = i64` in the base `SparseGrid`.
+//! That hashing/coordinate-width difference is a crate-wide foundational item
+//! handled at the base-grid level; this file contains no per-file coordinate
+//! arithmetic that needs int32 truncation.
 
 use super::sparse_grid::SparseGrid;
 use super::square_grid::GridPoint;

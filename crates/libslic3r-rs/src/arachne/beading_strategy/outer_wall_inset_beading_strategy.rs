@@ -106,9 +106,16 @@ impl BeadingStrategy for OuterWallInsetBeadingStrategy {
     // C++:     return std::string("OuterWallOfsetBeadingStrategy+") + parent->toString();
     // C++: }
     //
-    // Note: like the other meta-strategies in this crate (Redistribute, Limited,
-    // Widening), the base-class `name` member set in the constructor is exposed
-    // via `name()`. The C++ `toString()` additionally appends `"+" + parent->toString()`.
+    // FIDELITY-NOTE: The C++ `toString()` override returns
+    // `"OuterWallOfsetBeadingStrategy+" + parent->toString()`, i.e. it recursively
+    // appends the parent's string. The crate's `BeadingStrategy::name()` returns
+    // `&str` (a borrow of the stored base-class `name` member), so it cannot build
+    // and return that owned, recursively-concatenated string without a trait
+    // signature change. This is a deliberate, crate-wide convention shared by all
+    // four meta-strategies (Redistribute, Limited, Widening, OuterWallInset): each
+    // exposes only its own base-class `name` and drops the `"+parent"` suffix. The
+    // value is debug-only and does not affect any slicing computation. Changing it
+    // would be a cross-cutting trait change, so it is left consistent here.
     fn name(&self) -> &str {
         &self.name
     }
@@ -146,6 +153,10 @@ impl BeadingStrategy for OuterWallInsetBeadingStrategy {
         // C++: // Actually move the outer wall inside. Ensure that the outer wall never goes beyond the middle line.
         // C++: ret.toolpath_locations[0] = std::min(ret.toolpath_locations[0] + outer_wall_offset, thickness / 2);
         // C++: return ret;
+        // FIDELITY-NOTE(F2): C++ coord_t is int32_t, so the addition and the
+        // `thickness / 2` integer division below are 32-bit operations; the crate
+        // uses Coord = i64. For realistic coordinate magnitudes the results are
+        // identical (no i32 overflow), so no local `as i32` truncation is applied.
         ret.toolpath_locations[0] = std::cmp::min(
             ret.toolpath_locations[0] + self.outer_wall_offset,
             thickness / 2,
