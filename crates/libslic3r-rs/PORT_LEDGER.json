@@ -1943,7 +1943,8 @@
     "rust_exists": true,
     "loc": 42,
     "status": "partial",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/utils/PolygonsSegmentIndex.hpp",
@@ -1954,7 +1955,8 @@
     "rust_exists": true,
     "loc": 50,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp",

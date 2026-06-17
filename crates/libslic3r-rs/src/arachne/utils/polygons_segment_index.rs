@@ -35,8 +35,8 @@ pub struct PolygonsSegmentIndex<'a> {
 impl<'a> PolygonsSegmentIndex<'a> {
     /// Constructs an empty segment index to no polygon
     ///
-    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:17
-    /// C++: PolygonsSegmentIndex() : PolygonsPointIndex(){}
+    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:20
+    /// C++: PolygonsSegmentIndex() : PolygonsPointIndex(){};
     pub fn new() -> Self {
         Self {
             point_index: PolygonsPointIndex::new(),
@@ -47,9 +47,9 @@ impl<'a> PolygonsSegmentIndex<'a> {
     ///
     /// The segment goes from point_idx to point_idx+1 (wrapping around)
     ///
-    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:18-19
+    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:21
     /// C++: PolygonsSegmentIndex(const Polygons *polygons, unsigned int poly_idx, unsigned int point_idx)
-    /// C++:     : PolygonsPointIndex(polygons, poly_idx, point_idx){}
+    /// C++:     : PolygonsPointIndex(polygons, poly_idx, point_idx){};
     pub fn with_indices(
         polygons: &'a crate::geometry::Polygons,
         poly_idx: usize,
@@ -62,7 +62,7 @@ impl<'a> PolygonsSegmentIndex<'a> {
 
     /// Get the start point of this segment
     ///
-    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:21
+    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:23
     /// C++: Point from() const { return PolygonsPointIndex::p(); }
     pub fn from(&self) -> Point {
         self.point_index.p()
@@ -70,7 +70,7 @@ impl<'a> PolygonsSegmentIndex<'a> {
 
     /// Get the end point of this segment
     ///
-    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:23
+    /// C++ Reference: Arachne/utils/PolygonsSegmentIndex.hpp:25
     /// C++: Point to() const { return PolygonsSegmentIndex::next().p(); }
     pub fn to(&self) -> Point {
         self.point_index.next().p()

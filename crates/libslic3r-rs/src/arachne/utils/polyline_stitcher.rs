@@ -15,10 +15,10 @@
 // The `VariableWidthLines/ExtrusionLine` instantiation requires a
 // `PathsPointIndex<VariableWidthLines>` (and a `SparsePointGrid` over it). The
 // Rust `PathsPointIndex` (see polygons_point_index.rs) is currently hard-wired
-// to `&Polygons`, so the parts of that instantiation that index through
-// `PathsPointIndex` (`stitch` and `canReverse`) are BLOCKED on that
-// not-yet-generic dependency. The two helper specializations that depend ONLY
-// on `ExtrusionLine` (`canConnect` and `isOdd`) ARE ported below.
+// to `&Polygons`, so the `stitch` template body for that instantiation is
+// BLOCKED on that not-yet-generic dependency. The three helper specializations
+// (`canReverse`, `canConnect`, `isOdd`) only touch resolved `ExtrusionLine`
+// fields, so they ARE ported below (taking `&ExtrusionLine` directly).
 
 use super::polygons_point_index::{PathsPointIndex, PathsPointIndexLocator};
 use super::sparse_point_grid::SparsePointGrid;
@@ -422,12 +422,34 @@ impl PolylineStitcher {
     // PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>
     // specializations.
     //
-    // BLOCKED: `stitch` and `canReverse` for this instantiation index through
+    // BLOCKED: `stitch` for this instantiation indexes through
     // `PathsPointIndex<VariableWidthLines>`, which is not yet generic in the
     // Rust port (PathsPointIndex is hard-wired to `&Polygons`). See the module
-    // header note. The two helpers below depend only on `ExtrusionLine` and so
-    // are ported faithfully.
+    // header note. The three helpers below depend only on `ExtrusionLine` and
+    // so are ported faithfully. `canReverse` for this instantiation reads
+    // `(*ppi.polygons)[ppi.poly_idx].is_odd`; since the only field it touches is
+    // the resolved `ExtrusionLine::is_odd`, it is ported here as a helper taking
+    // the line directly (same shape as `can_connect_extrusion`/`is_odd_extrusion`).
     // ====================================================================
+
+    /// Whether an extrusion-line polyline is allowed to be reversed.
+    /// (Not true for wall polylines which are not odd.)
+    ///
+    /// PolylineStitcher.cpp:9-15
+    /// template<> bool PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>::canReverse(const PathsPointIndex<VariableWidthLines> &ppi)
+    /// {
+    ///     if ((*ppi.polygons)[ppi.poly_idx].is_odd)
+    ///         return true;
+    ///     else
+    ///         return false;
+    /// }
+    pub fn can_reverse_extrusion(line: &ExtrusionLine) -> bool {
+        if line.is_odd {
+            true
+        } else {
+            false
+        }
+    }
 
     /// Whether two extrusion lines are allowed to be connected.
     /// (Not true for an odd and an even wall.)
@@ -610,6 +632,15 @@ mod tests {
         assert!(PolylineStitcher::can_connect_extrusion(&even_a, &even_b));
         assert!(!PolylineStitcher::can_connect_extrusion(&even_a, &odd));
         assert!(PolylineStitcher::can_connect_extrusion(&odd, &odd));
+    }
+
+    #[test]
+    fn test_can_reverse_extrusion() {
+        // PolylineStitcher.cpp:11 — return line.is_odd ? true : false
+        let even = ExtrusionLine::new(0, false);
+        let odd = ExtrusionLine::new(0, true);
+        assert!(!PolylineStitcher::can_reverse_extrusion(&even));
+        assert!(PolylineStitcher::can_reverse_extrusion(&odd));
     }
 
     #[test]
