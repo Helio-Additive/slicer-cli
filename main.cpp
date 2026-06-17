@@ -6,6 +6,8 @@
 #include <string>
 #include <memory>
 #include <map>
+#include <vector>
+#include <cstdlib>
 
 // Core libslic3r headers
 #include "libslic3r/libslic3r.h"
@@ -24,6 +26,8 @@
 #include <nlohmann/json.hpp>
 
 #include <boost/filesystem.hpp>
+
+#include "calib_args.hpp"
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>   // _NSGetExecutablePath
@@ -121,6 +125,127 @@ void emit_validation_event(const Slic3r::StringObjectException& v) {
     emit_event(e);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Driver-side normalization for the unbound placeholder `initial_no_support_filament_id`
+// (cli #4 / desktop tracker slicer #152).
+//
+// Neither BambuStudio nor OrcaSlicer bind `initial_no_support_filament_id` in the
+// PlaceholderParser. Both bind only `initial_no_support_tool` /
+// `initial_no_support_extruder` / `initial_no_support_hotend`, and the first two are
+// the SAME int `initial_non_support_extruder_id` (GCode.cpp:2458-2460). Because
+// `_tools` and `_filaments` are aliases of the same filament index, the legacy token
+// is semantically identical to `initial_no_support_extruder`.
+//
+// The token is not produced by any stock profile in this repo or upstream master
+// start-gcode; it only arrives via a hand-edited / third-party custom gcode embedded
+// in a 3MF. When present it makes the PlaceholderParser throw at export and aborts the
+// slice. The correct fix is therefore a driver-side alias at config load — NOT an
+// engine edit (engine submodules are off-limits).
+//
+// Whole-token rewrite across every coString custom-gcode key. The character on either
+// side of a match must be a non-identifier char, so a hypothetical
+// `initial_no_support_filament_idx` and any identifier that merely embeds the token are
+// never touched. (The separately-bound `initial_filament_id` is a different, shorter
+// string and is never searched for, so it is inherently safe.)
+int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config) {
+    static const std::string kLegacyToken = "initial_no_support_filament_id";
+    static const std::string kBoundToken  = "initial_no_support_extruder";
+    // Single-string (coString) custom-gcode keys.
+    // Every coString custom-gcode key either engine runs through
+    // placeholder_parser_process (PrintConfig.cpp `add("*_gcode", coString)`,
+    // minus `export_gcode` which is the output-path flag, not a template). This
+    // binary builds BOTH engines (ENGINE_BAMBU / ENGINE_ORCA), so the list is the
+    // union; keys absent from the active engine's schema are null-guarded no-ops
+    // (the `file_*` / `*_extrusion_role_*` keys are Orca-only).
+    static const std::vector<std::string> kGcodeStringKeys = {
+        "machine_start_gcode", "machine_end_gcode",
+        "before_layer_change_gcode", "layer_change_gcode",
+        "change_filament_gcode", "time_lapse_gcode",
+        "machine_pause_gcode", "printing_by_object_gcode",
+        "template_custom_gcode", "wrapping_detection_gcode",
+        // Orca-only:
+        "file_start_gcode", "change_extrusion_role_gcode",
+        "process_change_extrusion_role_gcode",
+    };
+    // Per-filament (coStrings) custom-gcode keys — these ALSO run through the
+    // PlaceholderParser (filament_start/end emission), so the unbound token can
+    // abort from them too. (`filament_change_extrusion_role_gcode` is Orca-only.)
+    static const std::vector<std::string> kGcodeStringsKeys = {
+        "filament_start_gcode", "filament_end_gcode",
+        "filament_change_extrusion_role_gcode",
+    };
+    const size_t tlen = kLegacyToken.size();
+    auto is_ident = [](char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+               (c >= '0' && c <= '9') || c == '_';
+    };
+    // Whole-token alias within one string; bumps `rewrites` per replacement.
+    auto rewrite_one = [&](const std::string& v, int& rewrites) -> std::string {
+        if (v.find(kLegacyToken) == std::string::npos) return v;
+        std::string out;
+        out.reserve(v.size());
+        size_t pos = 0;
+        while (pos < v.size()) {
+            const size_t found = v.find(kLegacyToken, pos);
+            if (found == std::string::npos) { out.append(v, pos, std::string::npos); break; }
+            const bool left_ok  = (found == 0)        || !is_ident(v[found - 1]);
+            const size_t after  = found + tlen;
+            const bool right_ok = (after >= v.size()) || !is_ident(v[after]);
+            if (left_ok && right_ok) {
+                out.append(v, pos, found - pos);
+                out.append(kBoundToken);
+                pos = after;
+                ++rewrites;
+            } else {
+                // Substring match inside a longer identifier — copy one char past the
+                // match start and keep scanning so overlapping matches still resolve.
+                out.append(v, pos, found - pos + 1);
+                pos = found + 1;
+            }
+        }
+        return out;
+    };
+    int total_rewrites = 0;
+    std::vector<std::string> rewritten_keys;
+    for (const auto& key : kGcodeStringKeys) {
+        if (!config.has(key)) continue;
+        int key_rewrites = 0;
+        const std::string out = rewrite_one(config.opt_string(key), key_rewrites);
+        if (key_rewrites > 0) {
+            config.set_key_value(key, new Slic3r::ConfigOptionString(out));
+            total_rewrites += key_rewrites;
+            rewritten_keys.push_back(key);
+        }
+    }
+    for (const auto& key : kGcodeStringsKeys) {
+        auto* opt = config.option<Slic3r::ConfigOptionStrings>(key);
+        if (!opt) continue;
+        int key_rewrites = 0;
+        std::vector<std::string> values = opt->values;
+        for (auto& s : values) s = rewrite_one(s, key_rewrites);
+        if (key_rewrites > 0) {
+            config.set_key_value(key, new Slic3r::ConfigOptionStrings(values));
+            total_rewrites += key_rewrites;
+            rewritten_keys.push_back(key);
+        }
+    }
+    if (total_rewrites > 0) {
+        json e;
+        e["event"]   = "config_normalized";
+        e["tag"]     = "LegacyGcodeTokenAliased";
+        e["message"] = "Aliased unbound placeholder '" + kLegacyToken + "' -> '" +
+                       kBoundToken + "' in " + std::to_string(rewritten_keys.size()) +
+                       " custom-gcode key(s); " + std::to_string(total_rewrites) +
+                       " occurrence(s) rewritten";
+        e["from"]    = kLegacyToken;
+        e["to"]      = kBoundToken;
+        e["keys"]    = rewritten_keys;
+        e["count"]   = total_rewrites;
+        emit_event(e);
+    }
+    return total_rewrites;
+}
+
 }  // namespace
 
 void print_usage(const char* prog_name) {
@@ -140,6 +265,22 @@ void print_usage(const char* prog_name) {
               << "\n=== Output Options ===\n"
               << "  -o, --output <file>    Output G-code file (default: output.gcode)\n"
               << "  --plate <N>            Slice only plate N from a multi-plate 3MF (1-based)\n"
+              << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
+              << "                         tokens (e.g. initial_no_support_filament_id) in\n"
+              << "                         custom G-code. Default: normalization is on.\n"
+              << "\n=== Calibration (slicer-cli #5) ===\n"
+              << "  --calib-mode <mode>    Emit a calibration test. One of:\n"
+              << "                           temp_tower, retraction_tower,\n"
+              << "                           pressure_advance_line, pressure_advance_pattern,\n"
+              << "                           pressure_advance_tower\n"
+              << "  --calib-start <n>      Sweep start value (mode-specific units)\n"
+              << "  --calib-end <n>        Sweep end value\n"
+              << "  --calib-step <n>       Sweep step (> 0)\n"
+              << "  --calib-extruder-id <n>  Logical extruder to calibrate (default 0)\n"
+              << "  --calib-no-numbers     Skip numeric labels (pressure_advance_line only;\n"
+              << "                         the pattern always labels its rows)\n"
+              << "                         Tower/line modes need an --input model; the\n"
+              << "                         pattern mode synthesizes its own handle cube.\n"
               << "  -v, --verbose          Verbose output\n"
               << "  -h, --help             Show this help message\n"
               << "\n=== Examples ===\n"
@@ -828,6 +969,34 @@ void ensure_vector_config_sizes(Slic3r::DynamicPrintConfig& config) {
 }
 #endif // ENGINE_BAMBU — BBS-only config-normalization helpers
 
+// Parse a numeric CLI argument, failing fast with usage instead of letting
+// std::stod/std::stoi throw an uncaught exception (which would SIGABRT). Used by
+// the --calib-* flags so a typo like `--calib-start abc` exits 1 cleanly.
+static double parse_cli_double(const char* flag, const char* val, const char* prog) {
+    try {
+        size_t pos = 0;
+        double d = std::stod(val, &pos);
+        if (pos != std::string(val).size()) throw std::invalid_argument("trailing");
+        return d;
+    } catch (const std::exception&) {
+        std::cerr << "Error: " << flag << " expects a number, got '" << val << "'\n\n";
+        print_usage(prog);
+        std::exit(1);
+    }
+}
+static int parse_cli_int(const char* flag, const char* val, const char* prog) {
+    try {
+        size_t pos = 0;
+        int i = std::stoi(val, &pos);
+        if (pos != std::string(val).size()) throw std::invalid_argument("trailing");
+        return i;
+    } catch (const std::exception&) {
+        std::cerr << "Error: " << flag << " expects an integer, got '" << val << "'\n\n";
+        print_usage(prog);
+        std::exit(1);
+    }
+}
+
 int main(int argc, char** argv) {
     // Initialize libslic3r
     Slic3r::set_logging_level(3); // Info level
@@ -841,6 +1010,8 @@ int main(int argc, char** argv) {
     std::string bundle_config;
     bool verbose = false;
     int plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
+    bool normalize_legacy_gcode = true;  // cli #4: alias unbound legacy placeholder tokens
+    slicer_cli::CalibOptions calib_opts;  // cli #5: --calib-* flags
 
     // Override settings
     std::map<std::string, std::string> overrides;
@@ -880,6 +1051,20 @@ int main(int argc, char** argv) {
             plate_id = std::stoi(argv[++i]);
         } else if (arg == "--input" && i + 1 < argc) {
             input_file = argv[++i];
+        } else if (arg == "--no-normalize-legacy-gcode") {
+            normalize_legacy_gcode = false;
+        } else if (arg == "--calib-mode" && i + 1 < argc) {
+            calib_opts.mode = argv[++i];
+        } else if (arg == "--calib-start" && i + 1 < argc) {
+            calib_opts.start = parse_cli_double("--calib-start", argv[++i], argv[0]); calib_opts.has_start = true;
+        } else if (arg == "--calib-end" && i + 1 < argc) {
+            calib_opts.end = parse_cli_double("--calib-end", argv[++i], argv[0]); calib_opts.has_end = true;
+        } else if (arg == "--calib-step" && i + 1 < argc) {
+            calib_opts.step = parse_cli_double("--calib-step", argv[++i], argv[0]); calib_opts.has_step = true;
+        } else if (arg == "--calib-extruder-id" && i + 1 < argc) {
+            calib_opts.extruder_id = parse_cli_int("--calib-extruder-id", argv[++i], argv[0]);
+        } else if (arg == "--calib-no-numbers") {
+            calib_opts.print_numbers = false;
         } else if (arg[0] != '-') {
             input_file = arg;
         } else {
@@ -889,8 +1074,44 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (input_file.empty()) {
+    // cli #5: resolve the calibration mode/params up front so a bad --calib-*
+    // value fails fast with usage, before any model/config work.
+    Slic3r::Calib_Params calib_params;
+    try {
+        calib_params = slicer_cli::build_calib_params(calib_opts);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+    const bool calib_enabled       = calib_params.mode != Slic3r::CalibMode::Calib_None;
+    const bool calib_self_geometry = slicer_cli::calib_mode_generates_geometry(calib_params.mode);
+
+#ifdef ENGINE_ORCA
+    // pressure_advance_pattern's geometry generator is ported only for the Bambu
+    // engine (Orca's CalibPressureAdvancePattern API differs); reject it cleanly
+    // here so the Orca binary fails fast instead of throwing from apply_pa_pattern.
+    if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
+        std::cerr << "Error: pressure_advance_pattern is not yet supported on the OrcaSlicer "
+                     "engine; use a tower or pressure_advance_line calib mode instead.\n";
+        return 1;
+    }
+#endif
+
+    // --input is required for every mode except the geometry-generating
+    // pressure_advance_pattern, which synthesizes its own handle cube and so
+    // needs only a CONFIG source (a 3MF via --input, or --config/--machine/
+    // --filament/--process) — the engine cannot slice from defaults alone.
+    const bool has_config_source = !machine_config.empty() || !filament_config.empty() ||
+                                   !process_config.empty() || !bundle_config.empty();
+    if (input_file.empty() && !calib_self_geometry) {
         std::cerr << "Error: No input file specified\n\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+    if (calib_self_geometry && input_file.empty() && !has_config_source) {
+        std::cerr << "Error: pressure_advance_pattern needs a config source: pass an "
+                     "--input <.3mf> or --config/--machine/--filament/--process\n\n";
         print_usage(argv[0]);
         return 1;
     }
@@ -1228,12 +1449,16 @@ int main(int argc, char** argv) {
             }
 #endif // ENGINE_BAMBU — PresetBundle preset-resolution + staging symlinks.
        // OrcaSlicer slices directly from the flat 3MF project_settings.config.
+        } else if (calib_self_geometry && input_file.empty()) {
+            std::cout << "No --input: pressure_advance_pattern will synthesize a handle cube.\n";
         } else {
             std::cerr << "Unsupported file format. Use .stl or .3mf\n";
             return 1;
         }
 
-        if (model.objects.empty()) {
+        // For pressure_advance_pattern the model is generated later by
+        // apply_pa_pattern (before print.apply), so an empty model here is fine.
+        if (model.objects.empty() && !calib_self_geometry) {
             std::cerr << "No objects found in model\n";
             return 1;
         }
@@ -1550,9 +1775,45 @@ int main(int argc, char** argv) {
         /// C++: void set_plate_origin(Vec3d origin) { m_origin = origin; }
         print.set_plate_origin(Slic3r::Vec3d(0.0, 0.0, 0.0));
 
+        // cli #4: alias the unbound `initial_no_support_filament_id` placeholder to the
+        // engine-bound `initial_no_support_extruder` across custom-gcode keys, BEFORE
+        // print.apply snapshots the config. Without this the PlaceholderParser throws at
+        // export when a 3MF carries the legacy token in its custom gcode. Always on;
+        // suppressed with --no-normalize-legacy-gcode.
+        if (normalize_legacy_gcode) {
+            normalize_legacy_gcode_tokens(config);
+        }
+
+        // cli #5: whether the active printer speaks the Bambu G-code dialect.
+        // Mirrors the is_BBL_printer() derivation used below for the engine.
+        const bool calib_is_bbl_machine =
+            config.opt_string("printer_model", true).rfind("Bambu Lab", 0) == 0;
+
+        // cli #5: pressure_advance_pattern generates its own geometry + per-layer
+        // custom G-code. This MUST run before print.apply (apply snapshots the
+        // model + config and reads plates_custom_gcodes). `calib_params` is a
+        // main-scope local, so the reference held by model.calib_pa_pattern
+        // stays valid through the whole slice.
+        if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
+            std::cout << "Generating pressure-advance pattern geometry...\n";
+            slicer_cli::apply_pa_pattern(calib_params, config, model, calib_is_bbl_machine);
+        }
+
         try {
             std::cout << "Applying configuration...\n";
             print.apply(model, config);
+
+            // cli #5: install calibration params after apply (which resets print
+            // state) and before validate/process so the engine's per-layer calib
+            // emission (GCode.cpp) and PA-line/pattern paths see the mode.
+            if (calib_enabled) {
+                print.set_calib_params(calib_params);
+                std::cout << "Calibration mode: "
+                          << slicer_cli::calib_mode_name(calib_params.mode)
+                          << " [start=" << calib_params.start
+                          << " end=" << calib_params.end
+                          << " step=" << calib_params.step << "]\n";
+            }
 
             // Install the structured-warning emitter BEFORE validate() / process()
             // so the TS host sees pre-slice diagnostics in the same JSON-line
