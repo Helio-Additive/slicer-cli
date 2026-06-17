@@ -84,9 +84,122 @@ pub trait ExecutionPolicy: Send + Sync {
         F: Fn(&T, &T) -> std::cmp::Ordering + Send + Sync;
 }
 
-/// Accumulate (sum) a range using an access function.
+/// Query the available threads for concurrency.
 ///
-/// This is a convenience wrapper around reduce using addition as the merge function.
+/// C++:
+/// ```cpp
+/// template<class EP, class = ExecutionPolicyOnly<EP> >
+/// size_t max_concurrency(const EP &ep)
+/// { return AsTraits<EP>::max_concurrency(ep); }
+/// ```
+///
+/// Execution/Execution.hpp:36-40
+pub fn max_concurrency<EP: ExecutionPolicy>(ep: &EP) -> usize {
+    // Execution/Execution.hpp:39: return AsTraits<EP>::max_concurrency(ep);
+    ep.max_concurrency()
+}
+
+/// foreach loop with the execution policy passed as argument. Granularity can
+/// be specified explicitly. `max_concurrency()` can be used for optimal results.
+///
+/// C++:
+/// ```cpp
+/// template<class EP, class It, class Fn, class = ExecutionPolicyOnly<EP>>
+/// void for_each(const EP &ep, It from, It to, Fn &&fn, size_t granularity = 1)
+/// { AsTraits<EP>::for_each(ep, from, to, std::forward<Fn>(fn), granularity); }
+/// ```
+///
+/// The C++ `granularity` default of `1` is reproduced by callers passing `1`.
+///
+/// Execution/Execution.hpp:44-48
+pub fn for_each<EP, F>(ep: &EP, from: usize, to: usize, f: F, granularity: usize)
+where
+    EP: ExecutionPolicy,
+    F: Fn(usize) + Send + Sync,
+{
+    // Execution/Execution.hpp:47: AsTraits<EP>::for_each(ep, from, to, std::forward<Fn>(fn), granularity);
+    ep.for_each(from, to, f, granularity);
+}
+
+/// A reduce operation with the execution policy passed as argument.
+/// `mergefn` has `T(const T&, const T&)` signature and `accessfn` has
+/// `T(I)` signature (for integral `I`) / `T(const I::value_type&)` (for iterators).
+///
+/// C++:
+/// ```cpp
+/// template<class EP, class I, class MergeFn, class T, class AccessFn,
+///          class = ExecutionPolicyOnly<EP> >
+/// T reduce(const EP &ep, I from, I to, const T &init,
+///          MergeFn &&mergefn, AccessFn &&accessfn, size_t granularity = 1)
+/// { return AsTraits<EP>::reduce(ep, from, to, init,
+///       std::forward<MergeFn>(mergefn), std::forward<AccessFn>(accessfn), granularity); }
+/// ```
+///
+/// Execution/Execution.hpp:54-72
+pub fn reduce<EP, T, MergeFn, AccessFn>(
+    ep: &EP,
+    from: usize,
+    to: usize,
+    init: T,
+    merge: MergeFn,
+    access: AccessFn,
+    granularity: usize,
+) -> T
+where
+    EP: ExecutionPolicy,
+    T: Clone + Send + Sync,
+    MergeFn: Fn(T, T) -> T + Send + Sync,
+    AccessFn: Fn(usize) -> T + Send + Sync,
+{
+    // Execution/Execution.hpp:68-71: return AsTraits<EP>::reduce(ep, from, to, init,
+    //     std::forward<MergeFn>(mergefn), std::forward<AccessFn>(accessfn), granularity);
+    ep.reduce(from, to, init, merge, access, granularity)
+}
+
+/// An overload of `reduce` to be used with iterators as `from`/`to` arguments.
+/// The access functor is omitted; the C++ overload forwards to the access-fn
+/// overload with the identity functor `[](const auto &i) { return i; }`.
+///
+/// C++:
+/// ```cpp
+/// template<class EP, class I, class MergeFn, class T, class = ExecutionPolicyOnly<EP> >
+/// T reduce(const EP &ep, I from, I to, const T &init, MergeFn &&mergefn, size_t granularity = 1)
+/// { return reduce(ep, from, to, init, std::forward<MergeFn>(mergefn),
+///       [](const auto &i) { return i; }, granularity); }
+/// ```
+///
+/// In this port the iterator/`value_type` instantiation is modelled by the
+/// per-policy `reduce_slice` trait method (the `granularity` argument is carried
+/// for parity with the C++ overload even though the slice form does not split).
+///
+/// Execution/Execution.hpp:76-91
+pub fn reduce_slice<EP, T, MergeFn>(
+    ep: &EP,
+    items: &[T],
+    init: T,
+    merge: MergeFn,
+    _granularity: usize,
+) -> T
+where
+    EP: ExecutionPolicy,
+    T: Clone + Send + Sync,
+    MergeFn: Fn(T, T) -> T + Send + Sync,
+{
+    // Execution/Execution.hpp:88-90: return reduce(ep, from, to, init,
+    //     std::forward<MergeFn>(mergefn), [](const auto &i) { return i; }, granularity);
+    ep.reduce_slice(items, init, merge)
+}
+
+/// Accumulate (sum) a range using an access function. Convenience wrapper around
+/// `reduce` using `std::plus<T>` as the merge function.
+///
+/// C++:
+/// ```cpp
+/// template<class EP, class I, class T, class AccessFn, class = ExecutionPolicyOnly<EP>>
+/// T accumulate(const EP &ep, I from, I to, const T &init, AccessFn &&accessfn, size_t granularity = 1)
+/// { return reduce(ep, from, to, init, std::plus<T>{},
+///       std::forward<AccessFn>(accessfn), granularity); }
+/// ```
 ///
 /// Execution/Execution.hpp:93-107
 pub fn accumulate<EP, T, AccessFn>(
@@ -102,56 +215,33 @@ where
     T: Clone + Send + Sync + std::ops::Add<Output = T>,
     AccessFn: Fn(usize) -> T + Send + Sync,
 {
-    ep.reduce(from, to, init, |a, b| a + b, access, granularity)
+    // Execution/Execution.hpp:105-106: return reduce(ep, from, to, init, std::plus<T>{},
+    //     std::forward<AccessFn>(accessfn), granularity);
+    reduce(ep, from, to, init, |a, b| a + b, access, granularity)
 }
 
-/// Accumulate (sum) a slice of values.
+/// Accumulate (sum) over an iterator range, with the identity access functor.
+///
+/// C++:
+/// ```cpp
+/// template<class EP, class I, class T, class = ExecutionPolicyOnly<EP> >
+/// T accumulate(const EP &ep, I from, I to, const T &init, size_t granularity = 1)
+/// { return reduce(ep, from, to, init, std::plus<T>{},
+///       [](const auto &i) { return i; }, granularity); }
+/// ```
+///
+/// Modelled over a slice via `reduce_slice` (the iterator/`value_type`
+/// instantiation), mirroring the identity-access `std::plus<T>` reduction.
 ///
 /// Execution/Execution.hpp:110-123
-pub fn accumulate_slice<EP, T>(ep: &EP, items: &[T], init: T) -> T
+pub fn accumulate_slice<EP, T>(ep: &EP, items: &[T], init: T, granularity: usize) -> T
 where
     EP: ExecutionPolicy,
     T: Clone + Send + Sync + std::ops::Add<Output = T>,
 {
-    ep.reduce_slice(items, init, |a, b| a + b)
-}
-
-/// Convenience wrapper: for_each with default granularity of 1.
-///
-/// Execution/Execution.hpp:44-48
-pub fn for_each<EP, F>(ep: &EP, from: usize, to: usize, f: F)
-where
-    EP: ExecutionPolicy,
-    F: Fn(usize) + Send + Sync,
-{
-    ep.for_each(from, to, f, 1);
-}
-
-/// Convenience wrapper: reduce with default granularity of 1.
-///
-/// Execution/Execution.hpp:54-72
-pub fn reduce<EP, T, MergeFn, AccessFn>(
-    ep: &EP,
-    from: usize,
-    to: usize,
-    init: T,
-    merge: MergeFn,
-    access: AccessFn,
-) -> T
-where
-    EP: ExecutionPolicy,
-    T: Clone + Send + Sync,
-    MergeFn: Fn(T, T) -> T + Send + Sync,
-    AccessFn: Fn(usize) -> T + Send + Sync,
-{
-    ep.reduce(from, to, init, merge, access, 1)
-}
-
-/// Query the maximum concurrency for an execution policy.
-///
-/// Execution/Execution.hpp:36-40
-pub fn max_concurrency<EP: ExecutionPolicy>(ep: &EP) -> usize {
-    ep.max_concurrency()
+    // Execution/Execution.hpp:120-122: return reduce(ep, from, to, init, std::plus<T>{},
+    //     [](const auto &i) { return i; }, granularity);
+    reduce_slice(ep, items, init, |a, b| a + b, granularity)
 }
 
 #[cfg(test)]
@@ -163,9 +253,15 @@ mod tests {
     fn test_for_each() {
         let ep = SequentialPolicy;
         let data = std::sync::Mutex::new(vec![0usize; 10]);
-        for_each(&ep, 0, 10, |i| {
-            data.lock().unwrap()[i] = i * 2;
-        });
+        for_each(
+            &ep,
+            0,
+            10,
+            |i| {
+                data.lock().unwrap()[i] = i * 2;
+            },
+            1,
+        );
         let result = data.lock().unwrap();
         for i in 0..10 {
             assert_eq!(result[i], i * 2);
@@ -175,7 +271,7 @@ mod tests {
     #[test]
     fn test_reduce() {
         let ep = SequentialPolicy;
-        let sum = reduce(&ep, 0, 10, 0usize, |a, b| a + b, |i| i);
+        let sum = reduce(&ep, 0, 10, 0usize, |a, b| a + b, |i| i, 1);
         assert_eq!(sum, 45); // 0+1+...+9
     }
 

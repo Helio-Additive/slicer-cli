@@ -227,6 +227,10 @@ impl RetractWhenCrossingPerimeters {
                 debug_assert!(node.is_valid());
                 // RetractWhenCrossingPerimeters.cpp:100
                 // Polygons clipped = ClipperUtils::clip_clipper_polygons_with_subject_bbox(*islands[node.idx], bbox_travel);
+                // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib —
+                // clip_clipper_polygons_with_subject_bbox routes through the `geo`
+                // crate (fixed scale 1000) rather than ClipperLib at coord_t integer
+                // precision, so the clipped polygons may differ at the sub-bbox edges.
                 let clipped = clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygon(
                     &islands[node.idx],
                     &bbox_travel,
@@ -234,6 +238,10 @@ impl RetractWhenCrossingPerimeters {
                 );
                 // RetractWhenCrossingPerimeters.cpp:101
                 // if (diff_pl(travel, clipped).empty()) {
+                // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib —
+                // diff_pl (inside diff_pl_polygons) uses the geo crate, not ClipperLib;
+                // the "travel is fully inside the island" test can differ by a hair near
+                // boundaries. Logic/control flow is faithful; the primitive is foundational.
                 if diff_pl_polygons(travel, &clipped).is_empty() {
                     // RetractWhenCrossingPerimeters.cpp:102
                     // Travel path is completely inside an "internal" island. Don't retract.

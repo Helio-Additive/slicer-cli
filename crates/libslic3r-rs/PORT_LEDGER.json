@@ -2520,7 +2520,8 @@
     "rust_exists": true,
     "loc": 119,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Execution/Execution.hpp",
@@ -2531,7 +2532,8 @@
     "rust_exists": true,
     "loc": 128,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "CSGMesh/SliceCSGMesh.hpp",
