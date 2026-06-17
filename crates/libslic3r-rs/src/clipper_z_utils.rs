@@ -433,6 +433,10 @@ impl ClipperZIntersectionVisitor {
             if unique_count == 2 {
                 // store a -1 based negative index into the "intersections" vector here.
                 self.intersections.push((srcs[0], srcs[1]));
+                // FIDELITY-NOTE(F2): C++ `pt.z() = -coord_t(m_intersections.size())`
+                // truncates to int32 (coord_t == int32_t); here Coord is i64 so no
+                // truncation occurs. Divergence only if intersection count exceeds
+                // i32 range (>2e9), which is unreachable in practice.
                 pt.2 = -(self.intersections.len() as i64);
             }
         }

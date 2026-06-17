@@ -625,7 +625,8 @@
     "rust_exists": true,
     "loc": 159,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "flagged"
   },
   {
     "cpp": "SurfaceCollection.cpp",
@@ -647,7 +648,8 @@
     "rust_exists": true,
     "loc": 165,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Clipper2ZUtils.hpp",
@@ -658,7 +660,8 @@
     "rust_exists": true,
     "loc": 167,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "SurfaceMesh.hpp",
@@ -669,7 +672,8 @@
     "rust_exists": true,
     "loc": 167,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "clonable_ptr.hpp",

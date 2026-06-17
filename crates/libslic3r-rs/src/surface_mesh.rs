@@ -362,7 +362,7 @@ impl<'a> SurfaceMesh<'a> {
         let orig_target = self.target(hi);
         // SurfaceMesh.hpp:106
         // Vertex_index current_target = orig_target;
-        let mut current_target = self.target(hi); // copy of orig_target (Vertex_index is not Copy)
+        let mut current_target = orig_target; // Vertex_index is Copy; this mirrors the C++ value copy
 
         // SurfaceMesh.hpp:108-115
         while !self.is_same_vertex(&current_target, &target) {
