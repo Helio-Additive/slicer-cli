@@ -376,6 +376,9 @@ pub fn load_text_shape(
     // TopoDS_Shape aTextBase;
     // Font_FontAspect aFontAspect = Font_FontAspect_UNDEFINED;
     let mut a_text_base = TopoShape { is_null: true };
+    // TextShape.cpp:252  Font_FontAspect aFontAspect = Font_FontAspect_UNDEFINED;
+    // (the UNDEFINED initializer is dead in C++ too: the exhaustive if/else
+    // below always overwrites it before any read, so we use deferred init.)
     let a_font_aspect: FontFontAspect;
     // TextShape.cpp:253-260
     // if (is_bold && is_italic)      aFontAspect = Font_FontAspect_BoldItalic;
@@ -423,6 +426,9 @@ pub fn load_text_shape(
 // Mirrors the subset of Font_FontAspect values referenced by TextShape.cpp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FontFontAspect {
+    // TextShape.cpp:252  Font_FontAspect_UNDEFINED -- present in the enum for
+    // fidelity; never constructed because the if/else in load_text_shape is
+    // exhaustive (mirrors C++ where the UNDEFINED initializer is dead).
     #[allow(dead_code)]
     Undefined,
     Regular,

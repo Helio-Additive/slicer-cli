@@ -232,7 +232,9 @@ impl ExtrusionLine {
         let mut previous = self.junctions[0];
 
         // Shoelace formula for area accumulation
-        // ExtrusionLine.cpp:82
+        // ExtrusionLine.cpp:82 — int64_t(previous.p.x()) * int64_t(initial.p.y()) - int64_t(previous.p.y()) * int64_t(initial.p.x())
+        // FIDELITY-NOTE(F2): C++ widens int32 coord_t operands to int64 for the product;
+        // Coord is i64 here, so the multiply is i64*i64. Values match for in-range coords.
         let initial = self.junctions[1];
         let mut accumulated_area_removed: Coord = (previous.p.x as Coord) * (initial.p.y as Coord)
             - (previous.p.y as Coord) * (initial.p.x as Coord);
@@ -412,10 +414,17 @@ impl ExtrusionLine {
         // Adjust width only if there's a significant difference
         // ExtrusionLine.cpp:215-227
         if width_diff > 1 {
+            // ExtrusionLine.cpp:220-221 — ab_weight/bc_weight are int64_t.
             let ab_weight = (a.w + b.w) / 2;
             let bc_weight = (b.w + c.w) / 2;
+            // ExtrusionLine.cpp:223 — weighted_average_width is a coord_t& (int32_t); the
+            // int64 division result is truncated to int32 on assignment.
+            // FIDELITY-NOTE(F2): Coord is i64 here, so reproduce the C++ int32 truncation
+            // locally with `as i32 as Coord` to match the assigned value bit-for-bit.
             *weighted_average_width =
-                (ab_length * ab_weight + bc_length * bc_weight) / (c.p - a.p).length() as Coord;
+                ((ab_length * ab_weight + bc_length * bc_weight) / (c.p - a.p).length() as Coord)
+                    as i32 as Coord;
+            // ExtrusionLine.cpp:225 — abs of (int64 weight - coord_t avg, promoted to int64).
             (ab_weight - *weighted_average_width).abs() * ab_length
                 + (bc_weight - *weighted_average_width).abs() * bc_length
         } else {

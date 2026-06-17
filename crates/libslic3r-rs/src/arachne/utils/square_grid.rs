@@ -29,6 +29,11 @@ pub struct SquareGrid {
 pub type GridPoint = Point;
 
 /// SquareGrid.hpp:39: using grid_coord_t = coord_t;
+///
+// FIDELITY-NOTE(F2): C++ `coord_t`/`grid_coord_t` are `int32_t` (libslic3r.h:40);
+// the crate-wide `Coord` is `i64`, so `GridCoord` is `i64` here. Intermediate
+// products and `to_lower_coord`/`to_grid_coord` results that would wrap/truncate
+// at int32 in C++ stay full-width in Rust. Not narrowed per-file (cross-cutting).
 pub type GridCoord = i64;
 
 impl SquareGrid {

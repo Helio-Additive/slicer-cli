@@ -2134,7 +2134,8 @@
     "rust_exists": true,
     "loc": 147,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/utils/PolygonsPointIndex.hpp",
@@ -2145,7 +2146,8 @@
     "rust_exists": true,
     "loc": 180,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Shape/TextShape.cpp",
@@ -2156,7 +2158,8 @@
     "rust_exists": true,
     "loc": 272,
     "status": "partial",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Arachne/utils/ExtrusionLine.cpp",
@@ -2167,7 +2170,8 @@
     "rust_exists": true,
     "loc": 311,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/SkeletalTrapezoidationGraph.cpp",

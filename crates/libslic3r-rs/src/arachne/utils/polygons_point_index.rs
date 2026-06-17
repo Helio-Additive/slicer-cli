@@ -258,12 +258,19 @@ impl<'a> Hash for PathsPointIndex<'a> {
     /// C++: };
     fn hash<H: Hasher>(&self, state: &mut H) {
         let p = self.p();
-        // coord_t == i64; reproduce the exact PointHash mixing with wrapping i64
-        // arithmetic, then feed the resulting size_t to the Rust hasher.
-        let h: i64 = (89i64 * 31)
+        // C++ computes the mix in int64_t (the `int64_t(pt.x())` cast forces the
+        // whole expression to 64-bit), then truncates the result to
+        // `coord_t == int32_t` (libslic3r.h:40) before the implicit widening to
+        // `size_t`. Converting that int32_t to size_t sign-extends to 64 bits, so
+        // the final value is `(value as i32) as i64 as u64`.
+        // FIDELITY-NOTE(F2): crate-wide Coord = i64 but C++ coord_t = int32_t;
+        // the `as i32` below reproduces the int32 truncation locally so the hash
+        // matches C++.
+        let mix: i64 = (89i64 * 31)
             .wrapping_add(p.x())
             .wrapping_mul(31)
             .wrapping_add(p.y());
+        let h: i64 = (mix as i32) as i64;
         state.write_u64(h as u64);
     }
 }
