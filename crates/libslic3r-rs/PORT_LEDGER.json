@@ -945,7 +945,8 @@
     "rust_exists": true,
     "loc": 322,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Triangulation.cpp",
@@ -980,7 +981,8 @@
     "rust_exists": true,
     "loc": 344,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "MeshSplitImpl.hpp",
@@ -1002,7 +1004,8 @@
     "rust_exists": true,
     "loc": 349,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "PNGReadWrite.cpp",
@@ -1035,7 +1038,8 @@
     "rust_exists": true,
     "loc": 374,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "BridgeDetector.cpp",

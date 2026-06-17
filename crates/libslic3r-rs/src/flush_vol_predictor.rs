@@ -360,6 +360,11 @@ impl FlushVolPredictor {
             let mut iter = line.split_whitespace();
             let rgb_from = iter.next();
             let rgb_to = iter.next();
+            // C++:253 `iss >> rgb_from >> rgb_to >> value` — operator>> for float is
+            // prefix-lenient (e.g. "12abc" extracts 12). Rust `parse::<f32>()` is strict
+            // and rejects a trailing-garbage token. This only differs on malformed data
+            // files (shipped flush_data_*.txt are well-formed), so behavior matches in
+            // practice; both fail the same way when a token is missing.
             let value = iter.next().and_then(|s| s.parse::<f32>().ok());
             if let (Some(rgb_from), Some(rgb_to), Some(value)) = (rgb_from, rgb_to, value) {
                 let mut from = RGBColor::default();

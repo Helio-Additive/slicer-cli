@@ -89,6 +89,14 @@ where
     // Vec2d normal = Point{y1 - y0, x1 - x0}.cast<double>().normalized();
     // `.cast<double>()` is a raw integer->double cast (NOT an unscale), so the
     // f64 components are the integer coordinate values directly.
+    //
+    // FIDELITY-NOTE: degenerate line (x0==x1 && y0==y1) yields a zero vector;
+    // Eigen `.normalized()` then produces NaN/NaN, `ceil(NaN)==NaN`, and the
+    // subsequent `NaN.cast<coord_t>()` is undefined behavior in C++ (in practice
+    // INT_MIN on x86). Rust's `NaN as Coord` saturates to 0, so the offset line
+    // differs for zero-length obstacles. This is an unreachable/benign edge
+    // (obstacle Lines come from polygon edges and pixelized segments, never
+    // degenerate) and the float math above is otherwise bit-faithful.
     let mut normal: Vec2d = {
         let vx = (y1 - y0) as CoordF;
         let vy = (x1 - x0) as CoordF;
