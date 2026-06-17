@@ -12,7 +12,11 @@
 //! the Rust `TriangleMesh` wrapper, so:
 //!   * the STL *reader* is provided here as the free function `read_stl_file`,
 //!     standing in for `TriangleMesh::ReadSTLFile` (STL.cpp:22) until that
-//!     member is ported. It mirrors admesh's binary/ASCII auto-detection.
+//!     member is ported. Its binary/ASCII auto-detection and facet counting
+//!     faithfully mirror admesh `stl_open_count_facets` (stlinit.cpp:53-152):
+//!     the file is binary iff any byte in the 128-byte window past the header
+//!     has its high bit set, and a binary file must have a size that is a whole
+//!     number of 50-byte facets and at least `STL_MIN_FILE_SIZE` (284) bytes.
 //!   * the STL *writers* delegate to the already-ported free functions
 //!     `its_write_stl_ascii` / `its_write_stl_binary` in `triangle_mesh`,
 //!     which are faithful translations of `TriangleMesh.cpp:1959-2020`.
@@ -47,11 +51,19 @@ const DIR_SEPARATOR: char = '/';
 pub type ImportStlProgressFn = Box<dyn Fn(i32, i32) -> bool>;
 
 // ---------------------------------------------------------------------------
-// Binary STL constants (admesh layout)
+// Binary STL constants (admesh layout, admesh/stl.h:34-74)
 // ---------------------------------------------------------------------------
 
-const STL_HEADER_SIZE: usize = 80;
-const STL_FACET_SIZE: usize = 50; // normal (12) + 3 vertices (36) + attribute (2)
+// admesh/stl.h:34 — `#define LABEL_SIZE 80`
+const LABEL_SIZE: usize = 80;
+// admesh/stl.h:36 — `#define NUM_FACET_SIZE 4`
+const NUM_FACET_SIZE: usize = 4;
+// admesh/stl.h:39 — `#define STL_MIN_FILE_SIZE 284`
+const STL_MIN_FILE_SIZE: usize = 284;
+// admesh/stl.h:74 — `#define SIZEOF_STL_FACET 50` (normal 12 + 3 vertices 36 + attribute 2)
+const SIZEOF_STL_FACET: usize = 50;
+// Default `custom_header_length` (STL.hpp:13, admesh uses LABEL_SIZE elsewhere).
+const DEFAULT_CUSTOM_HEADER_LENGTH: usize = LABEL_SIZE;
 
 // ---------------------------------------------------------------------------
 // TriangleMesh::ReadSTLFile  (STL.cpp:22 -> TriangleMesh.cpp:215 -> stl_open)
@@ -63,45 +75,83 @@ const STL_FACET_SIZE: usize = 50; // normal (12) + 3 vertices (36) + attribute (
 /// custom_header_length=80)` (TriangleMesh.cpp:215-221), which delegates to
 /// admesh `stl_open` and `from_stl`. Returns `Err` on a read failure, matching
 /// the C++ `false` return that `load_stl` turns into a `false` result.
+///
+/// FIDELITY-NOTE (out-of-file, TriangleMesh.cpp:215 / admesh): the binary/ASCII
+/// detection and facet-count logic below faithfully mirror admesh
+/// `stl_open_count_facets` (stlinit.cpp:53-152). The remaining `from_stl`
+/// behaviour — `repair=true` mesh repair (fix-normals, remove-degenerate,
+/// fill-holes) and admesh's tolerance-based shared-vertex generation
+/// (`stl_generate_shared_vertices`) — is NOT reproduced here; this reader
+/// dedups vertices by exact f32 bit pattern. Those belong to TriangleMesh.cpp /
+/// admesh and are ported there, not in STL.cpp.
 pub fn read_stl_file(path: &Path) -> Result<TriangleMesh> {
+    read_stl_file_with_header_length(path, DEFAULT_CUSTOM_HEADER_LENGTH as i32)
+}
+
+/// Same as [`read_stl_file`] but with an explicit `custom_header_length`,
+/// mirroring admesh `stl_open_count_facets`'s `custom_header_length` parameter
+/// (stlinit.cpp:53) that `TriangleMesh::ReadSTLFile` (TriangleMesh.cpp:215)
+/// threads through.
+pub fn read_stl_file_with_header_length(
+    path: &Path,
+    custom_header_length: i32,
+) -> Result<TriangleMesh> {
     let data =
         std::fs::read(path).map_err(|e| Error::IO(format!("Failed to read STL file: {}", e)))?;
 
-    if data.len() < STL_HEADER_SIZE + 4 {
-        // Too small for binary; try ASCII.
-        return read_stl_ascii(&data);
-    }
+    // admesh/stlinit.cpp:66 — `int header_size = custom_header_length + NUM_FACET_SIZE;`
+    let header_size = custom_header_length.max(0) as usize + NUM_FACET_SIZE;
 
-    // Heuristic: if the file starts with "solid" and is not binary-plausible, treat as ASCII.
-    let maybe_ascii = data.starts_with(b"solid") && !is_binary_stl(&data);
+    // admesh/stlinit.cpp:67-73 — seek to `header_size`, then
+    // `fread(chtest, sizeof(chtest)/*=128*/, 1, fp)`. fread returns the number
+    // of *complete* 128-byte blocks read, so unless a full 128-byte window is
+    // available past the header, it returns 0 and the file is rejected as empty.
+    const CHTEST_SIZE: usize = 128;
+    let window = match data.get(header_size..header_size + CHTEST_SIZE) {
+        Some(w) => w,
+        None => {
+            return Err(Error::Mesh(
+                "stl_open_count_facets: The input is an empty file".into(),
+            ))
+        }
+    };
 
-    if maybe_ascii {
-        read_stl_ascii(&data)
+    // admesh/stlinit.cpp:74-80 — default to ASCII; classify as binary if any of
+    // the 128 bytes past the header has the high bit set (> 127).
+    let is_binary = window.iter().any(|&b| b > 127);
+
+    if is_binary {
+        read_stl_binary(&data, header_size)
     } else {
-        read_stl_binary(&data)
+        read_stl_ascii(&data)
     }
-}
-
-/// Quick heuristic: a binary STL declares a facet count in bytes 80..84.
-/// If the file size matches `80 + 4 + num_facets * 50`, it is binary.
-fn is_binary_stl(data: &[u8]) -> bool {
-    if data.len() < STL_HEADER_SIZE + 4 {
-        return false;
-    }
-    let num_facets = u32::from_le_bytes([data[80], data[81], data[82], data[83]]) as usize;
-    let expected = STL_HEADER_SIZE + 4 + num_facets * STL_FACET_SIZE;
-    data.len() >= expected
 }
 
 /// Parse a binary STL from raw bytes.
-fn read_stl_binary(data: &[u8]) -> Result<TriangleMesh> {
-    if data.len() < STL_HEADER_SIZE + 4 {
-        return Err(Error::Mesh("Binary STL too short".into()));
+///
+/// `header_size` is `custom_header_length + NUM_FACET_SIZE` (the offset at which
+/// the facet records begin), matching admesh `stl_open_count_facets`
+/// (stlinit.cpp:66-94).
+fn read_stl_binary(data: &[u8], header_size: usize) -> Result<TriangleMesh> {
+    // admesh/stlinit.cpp:89 — reject files whose size doesn't line up with a
+    // whole number of facets, or that are below STL_MIN_FILE_SIZE.
+    let file_size = data.len();
+    if file_size < header_size
+        || (file_size - header_size) % SIZEOF_STL_FACET != 0
+        || file_size < STL_MIN_FILE_SIZE
+    {
+        return Err(Error::Mesh(
+            "stl_open_count_facets: The file has the wrong size.".into(),
+        ));
     }
-    let num_facets = u32::from_le_bytes([data[80], data[81], data[82], data[83]]) as usize;
+    // admesh/stlinit.cpp:94 — `num_facets = (file_size - header_size) / SIZEOF_STL_FACET;`
+    let num_facets = (file_size - header_size) / SIZEOF_STL_FACET;
 
-    let body = &data[STL_HEADER_SIZE + 4..];
-    if body.len() < num_facets * STL_FACET_SIZE {
+    // admesh/stlinit.cpp:100-108 — the uint32 following the header should hold
+    // the facet count; admesh only logs a warning on mismatch, it does not fail.
+
+    let body = &data[header_size..];
+    if body.len() < num_facets * SIZEOF_STL_FACET {
         return Err(Error::Mesh("Binary STL truncated".into()));
     }
 
@@ -111,7 +161,7 @@ fn read_stl_binary(data: &[u8]) -> Result<TriangleMesh> {
     let mut vertex_map: HashMap<[u32; 3], u32> = HashMap::new();
 
     for i in 0..num_facets {
-        let offset = i * STL_FACET_SIZE;
+        let offset = i * SIZEOF_STL_FACET;
         // Skip normal (12 bytes), read 3 vertices (each 12 bytes)
         let mut tri_idx = [0u32; 3];
         for v in 0..3 {
@@ -198,7 +248,7 @@ pub fn load_stl(
     model: &mut Model,
     object_name: Option<&str>,
     _stl_fn: Option<ImportStlProgressFn>,
-    _custom_header_length: i32,
+    custom_header_length: i32,
 ) -> bool {
     // STL.cpp:19
     //   TriangleMesh mesh;
@@ -210,7 +260,7 @@ pub fn load_stl(
     //   if (!mesh.ReadSTLFile(path, true, stlFn, custom_header_length)) {
     //       return false;
     //   }
-    let mesh = match read_stl_file(path) {
+    let mesh = match read_stl_file_with_header_length(path, custom_header_length) {
         Ok(mesh) => mesh,
         Err(_) => return false,
     };
@@ -370,18 +420,41 @@ fn model_mesh(model: &Model) -> TriangleMesh {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_is_binary_stl_too_short() {
-        let data = vec![0u8; 50];
-        assert!(!is_binary_stl(&data));
+    /// A unit cube: 8 vertices, 12 facets. As a binary STL this is
+    /// `80 + 4 + 12*50 = 684` bytes, comfortably above admesh's
+    /// `STL_MIN_FILE_SIZE` (284), so the faithful binary/ASCII detection
+    /// (stlinit.cpp:74-94) classifies and parses it as binary.
+    fn cube_mesh() -> TriangleMesh {
+        let verts = vec![
+            Point3F::new(0.0, 0.0, 0.0),
+            Point3F::new(1.0, 0.0, 0.0),
+            Point3F::new(1.0, 1.0, 0.0),
+            Point3F::new(0.0, 1.0, 0.0),
+            Point3F::new(0.0, 0.0, 1.0),
+            Point3F::new(1.0, 0.0, 1.0),
+            Point3F::new(1.0, 1.0, 1.0),
+            Point3F::new(0.0, 1.0, 1.0),
+        ];
+        let tris = vec![
+            Triangle::new(0, 1, 2),
+            Triangle::new(0, 2, 3),
+            Triangle::new(4, 6, 5),
+            Triangle::new(4, 7, 6),
+            Triangle::new(0, 4, 5),
+            Triangle::new(0, 5, 1),
+            Triangle::new(1, 5, 6),
+            Triangle::new(1, 6, 2),
+            Triangle::new(2, 6, 7),
+            Triangle::new(2, 7, 3),
+            Triangle::new(3, 7, 4),
+            Triangle::new(3, 4, 0),
+        ];
+        TriangleMesh::from_parts(verts, tris)
     }
 
     #[test]
     fn test_roundtrip_binary_stl() {
-        let v0 = Point3F::new(0.0, 0.0, 0.0);
-        let v1 = Point3F::new(1.0, 0.0, 0.0);
-        let v2 = Point3F::new(0.0, 1.0, 0.0);
-        let mesh = TriangleMesh::from_parts(vec![v0, v1, v2], vec![Triangle::new(0, 1, 2)]);
+        let mesh = cube_mesh();
 
         let dir = std::env::temp_dir().join("test_stl_roundtrip");
         std::fs::create_dir_all(&dir).unwrap();
@@ -389,18 +462,18 @@ mod tests {
 
         assert!(store_stl(&file_path, &mesh, true));
         let loaded = read_stl_file(&file_path).unwrap();
-        assert_eq!(loaded.vertex_count(), 3);
-        assert_eq!(loaded.indices().len(), 1);
+        assert_eq!(loaded.vertex_count(), 8);
+        assert_eq!(loaded.indices().len(), 12);
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn test_roundtrip_ascii_stl() {
-        let v0 = Point3F::new(0.0, 0.0, 0.0);
-        let v1 = Point3F::new(1.0, 0.0, 0.0);
-        let v2 = Point3F::new(0.0, 1.0, 0.0);
-        let mesh = TriangleMesh::from_parts(vec![v0, v1, v2], vec![Triangle::new(0, 1, 2)]);
+        // admesh `stl_open_count_facets` requires a full 128-byte window past
+        // the header before it will classify a file (stlinit.cpp:69), so use a
+        // mesh large enough to exceed that threshold for both encodings.
+        let mesh = cube_mesh();
 
         let dir = std::env::temp_dir().join("test_stl_ascii_roundtrip");
         std::fs::create_dir_all(&dir).unwrap();
@@ -408,8 +481,8 @@ mod tests {
 
         assert!(store_stl(&file_path, &mesh, false));
         let loaded = read_stl_file(&file_path).unwrap();
-        assert_eq!(loaded.vertex_count(), 3);
-        assert_eq!(loaded.indices().len(), 1);
+        assert_eq!(loaded.vertex_count(), 8);
+        assert_eq!(loaded.indices().len(), 12);
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -417,10 +490,7 @@ mod tests {
     #[test]
     fn test_load_stl_into_model() {
         // STL.cpp:17-40 — fills a Model with one object named after the file.
-        let v0 = Point3F::new(0.0, 0.0, 0.0);
-        let v1 = Point3F::new(1.0, 0.0, 0.0);
-        let v2 = Point3F::new(0.0, 1.0, 0.0);
-        let mesh = TriangleMesh::from_parts(vec![v0, v1, v2], vec![Triangle::new(0, 1, 2)]);
+        let mesh = cube_mesh();
 
         let dir = std::env::temp_dir().join("test_stl_load_model");
         std::fs::create_dir_all(&dir).unwrap();

@@ -315,24 +315,39 @@ pub fn load_obj(
         }
         let mut cnt = 0usize;
         while vi < data.vertices.len() {
+            // OBJ.cpp:137 — const ObjVertex &vertex = data.vertices[i++];
             let vertex = data.vertices[vi];
             vi += 1;
+            // OBJ.cpp:137-138 — if (vertex.coordIdx == -1) break;
             if vertex.coord_idx == -1 {
                 break;
             }
-            if cnt >= 4 {
-                continue;
-            }
+            // OBJ.cpp:140 — assert(cnt < OBJ_VERTEX_LENGTH);
+            // The upstream face-count validation (OBJ.cpp:82-103) rejects any
+            // face with >4 vertices, so cnt never exceeds ONE_FACE_SIZE (4) here.
+            debug_assert!(cnt < OBJ_VERTEX_LENGTH);
+            // OBJ.cpp:141-145 — invalid vertex index check (runs for every vertex).
             if vertex.coord_idx < 0 || vertex.coord_idx >= vertices.len() as i32 {
                 error!("load_obj: invalid vertex index in {:?}", path);
                 *message = "The file contains invalid vertex index.".to_string();
                 return Err(Error::Mesh(message.clone()));
             }
-            local_indices[cnt] = vertex.coord_idx;
-            local_uvs[cnt] = vertex.texture_coord_idx;
+            // OBJ.cpp:146-148 — indices[cnt]=coordIdx; uvs[cnt]=textureCoordIdx; cnt++;
+            // `local_*` mirror C++ `int indices[ONE_FACE_SIZE]` / `int uvs[ONE_FACE_SIZE]`
+            // (ONE_FACE_SIZE == 4); guard the write to avoid a Rust panic on the
+            // (validation-unreachable) path where cnt would reach 4.
+            if cnt < local_indices.len() {
+                local_indices[cnt] = vertex.coord_idx;
+                local_uvs[cnt] = vertex.texture_coord_idx;
+            }
             cnt += 1;
         }
-        if cnt >= 3 {
+        // OBJ.cpp:150 — if (cnt) { assert(cnt == 3 || cnt == 4); ... }
+        // The earlier face-count validation (OBJ.cpp:82-103) guarantees every
+        // face has exactly 3 or 4 vertices, so cnt is always 3 or 4 here; mirror
+        // the C++ `if (cnt)` guard (any nonzero count).
+        if cnt != 0 {
+            debug_assert!(cnt == 3 || cnt == 4);
             // First triangle
             indices.push(Triangle::new(
                 local_indices[0] as u32,
@@ -589,18 +604,25 @@ pub fn load_obj_to_model(
 }
 
 /// Store a `TriangleMesh` to an OBJ file.
-/// OBJ.cpp:266-271
+/// OBJ.cpp:266-271 — store_obj(path, TriangleMesh*) -> mesh->WriteOBJFile(path).
+///
+/// `TriangleMesh::WriteOBJFile` (TriangleMesh.cpp:240-243) delegates to
+/// `its_write_obj` (admesh/shared.cpp:193-208), which writes the mesh's
+/// `indexed_triangle_set` as `v %f %f %f` / `f %d %d %d` (1-based) lines under a
+/// C-numeric locale. The `%f` conversion emits 6 fractional digits, so format
+/// vertices as `{:.6}` to match byte-for-byte; index lines are 1-based ints.
 pub fn store_obj(path: &Path, mesh: &TriangleMesh) -> Result<()> {
     use std::io::Write;
     let mut file = std::fs::File::create(path)
         .map_err(|e| Error::IO(format!("Failed to create OBJ file: {}", e)))?;
 
+    // admesh/shared.cpp:202-203 — fprintf(fp, "v %f %f %f\n", ...).
     for v in mesh.vertices() {
-        writeln!(file, "v {} {} {}", v.x(), v.y(), v.z())
+        writeln!(file, "v {:.6} {:.6} {:.6}", v.x(), v.y(), v.z())
             .map_err(|e| Error::IO(format!("Write error: {}", e)))?;
     }
+    // admesh/shared.cpp:204-205 — fprintf(fp, "f %d %d %d\n", v0+1, v1+1, v2+1).
     for tri in mesh.indices() {
-        // OBJ uses 1-based indices
         writeln!(
             file,
             "f {} {} {}",
@@ -617,6 +639,12 @@ pub fn store_obj(path: &Path, mesh: &TriangleMesh) -> Result<()> {
 /// OBJ.cpp:273-277
 pub fn store_obj_object(path: &Path, model_object: &ModelObject) -> Result<()> {
     // OBJ.cpp:275 — TriangleMesh mesh = model_object->mesh();
+    // DIVERGENCE: C++ ModelObject::mesh() (Model.cpp:1476-1486) builds raw_mesh()
+    // (the merge of all is_model_part() volumes) and re-merges it once per
+    // ModelInstance after applying that instance's transform. The Rust crate has
+    // not yet ported ModelInstance transforms / multi-volume raw_mesh(), so this
+    // uses the single `mesh` field directly. Porting ModelObject::mesh() faithfully
+    // is a cross-cutting Model-stack change, out of this file's scope.
     let mesh = model_object.mesh.clone();
     // OBJ.cpp:276 — return store_obj(path, &mesh);
     store_obj(path, &mesh)
@@ -625,7 +653,11 @@ pub fn store_obj_object(path: &Path, model_object: &ModelObject) -> Result<()> {
 /// Store a `Model` to an OBJ file (merges all object meshes).
 /// OBJ.cpp:279-283
 pub fn store_obj_model(path: &Path, model: &Model) -> Result<()> {
-    // Merge all object meshes into one
+    // OBJ.cpp:281 — TriangleMesh mesh = model->mesh();
+    // DIVERGENCE: C++ Model::mesh() (Model.cpp:733-739) merges each object's
+    // ModelObject::mesh() (instance-transformed, multi-volume — see store_obj_object).
+    // The Rust crate has not ported that path, so this merges each object's single
+    // `mesh` field with a vertex-index offset. Out of this file's scope (Model stack).
     let mut all_vertices: Vec<Point3F> = Vec::new();
     let mut all_indices: Vec<Triangle> = Vec::new();
     for obj in &model.objects {

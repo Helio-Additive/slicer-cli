@@ -2866,7 +2866,8 @@
     "rust_exists": true,
     "loc": 19,
     "status": "partial",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "ok"
   },
   {
     "cpp": "Format/STL.cpp",
@@ -2877,7 +2878,8 @@
     "rust_exists": true,
     "loc": 64,
     "status": "done",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Format/OBJ.cpp",
@@ -2888,7 +2890,8 @@
     "rust_exists": true,
     "loc": 285,
     "status": "done",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Format/svg.cpp",
@@ -2899,7 +2902,8 @@
     "rust_exists": true,
     "loc": 402,
     "status": "partial",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Format/SL1.cpp",

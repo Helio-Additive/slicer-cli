@@ -323,7 +323,24 @@ fn get_svg_profile(
     _element_infos: &mut Vec<ElementInfo>,
     message: &mut String,
 ) -> bool {
-    // svg.cpp:127-132  svg_data = nsvgParseFromFile(path, "mm", 96.0f); if (==nullptr) { message = "..."; return false; }
+    // svg.cpp:127-128  svg_data = nsvgParseFromFile(path, "mm", 96.0f);
+    // BLOCKED: nanosvg is a native C header (`nanosvg/nanosvg.h`, svg.cpp:7) with
+    // no Rust port — same blocker as `crate::nsvg_utils` (`NSVGimage`/`NSVGshape`/
+    // `NSVGpath` and `nsvgParseFromFile`/`nsvgDelete` are unavailable). Without the
+    // parsed `NSVGimage*` there is no `shape->paths` / `path->pts` to iterate, so
+    // the entire body (svg.cpp:139-297) has no input. We mirror the parse-failure
+    // branch (svg.cpp:129-132) exactly.
+    //
+    // Unreachable downstream sites (left for when nanosvg becomes available):
+    //   - svg.cpp:208-237  ClipperLib::ClipperOffset / union_(polygons) stroke
+    //     expansion. FIDELITY-NOTE(F1): the crate `union_`/offset primitives use
+    //     geo-clipper (geo crate, fixed scale 1000) rather than ClipperLib at
+    //     coord_t integer precision, so this offset/union would diverge anyway.
+    //   - svg.cpp:257-296  OCCT BRepBuilderAPI_MakeWire / MakeEdge / MakeFace and
+    //     BRepPrimAPI_MakePrism — no OCCT binding crate (same blocker as
+    //     `crate::format::step`).
+
+    // svg.cpp:129-131  if (svg_data == nullptr) { message = "import svg failed: could not open svg."; return false; }
     *message = "import svg failed: could not open svg. \
                 (nanosvg parsing and OpenCascade extrusion are not available in this build)"
         .to_string();
