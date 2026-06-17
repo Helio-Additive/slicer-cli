@@ -12,8 +12,13 @@ use crate::gcode::g_code_editor::{
     AdjustableFeatureType, CoolingLineType, CoolingSlowdownLogicType, PerExtruderAdjustments,
 };
 
-// EPSILON used throughout CoolingBuffer.cpp (Slic3r::EPSILON from libslic3r.h).
-const EPSILON: f32 = 1e-4;
+// EPSILON used throughout CoolingBuffer.cpp (Slic3r::EPSILON from libslic3r.h:52).
+// C++ defines it as `static constexpr double EPSILON = 1e-4;`. In the C++ source,
+// every comparison of the form `float OP (float +/- EPSILON)` promotes the float
+// operand to `double` and evaluates the comparison in double precision. We mirror
+// that exactly by keeping EPSILON as f64 and promoting the float operands at each
+// comparison site below.
+const EPSILON: f64 = 1e-4;
 
 // CoolingBuffer.cpp:4
 fn new_feedrate_to_reach_time_stretch(
@@ -35,7 +40,8 @@ fn new_feedrate_to_reach_time_stretch(
         // CoolingBuffer.cpp:14
         for it in range.iter() {
             // CoolingBuffer.cpp:15
-            debug_assert!(it.slow_down_min_speed < min_feedrate + EPSILON);
+            // C++: float < float + double-EPSILON, evaluated in double.
+            debug_assert!((it.slow_down_min_speed as f64) < min_feedrate as f64 + EPSILON);
             // CoolingBuffer.cpp:16
             for i in 0..it.n_lines_adjustable {
                 // CoolingBuffer.cpp:17
@@ -58,9 +64,9 @@ fn new_feedrate_to_reach_time_stretch(
         // CoolingBuffer.cpp:26
         new_feedrate = (nomin / denom) as f32;
         // CoolingBuffer.cpp:27
-        debug_assert!(new_feedrate > min_feedrate - EPSILON);
+        debug_assert!(new_feedrate as f64 > min_feedrate as f64 - EPSILON);
         // CoolingBuffer.cpp:28
-        if new_feedrate < min_feedrate + EPSILON {
+        if (new_feedrate as f64) < min_feedrate as f64 + EPSILON {
             // goto finished;
             return new_feedrate;
         }
@@ -319,7 +325,7 @@ fn extruder_range_slow_down_consistent_surface(
         let adj_speed = range[by_min_print_speed[adj_pos]].slow_down_min_speed;
         let mut next = adj_pos + 1;
         while next < by_min_print_speed.len()
-            && range[by_min_print_speed[next]].slow_down_min_speed > adj_speed - EPSILON
+            && range[by_min_print_speed[next]].slow_down_min_speed as f64 > adj_speed as f64 - EPSILON
         {
             next += 1;
         }
@@ -377,7 +383,7 @@ fn extruder_range_slow_down_non_proportional(
             let adj = &mut *range[idx];
             adj.idx_line_end = adj.idx_line_begin;
             while adj.idx_line_end < adj.n_lines_adjustable
-                && adj.lines[adj.idx_line_end].feedrate > feedrate - EPSILON
+                && adj.lines[adj.idx_line_end].feedrate as f64 > feedrate as f64 - EPSILON
             {
                 adj.idx_line_end += 1;
             }
@@ -466,7 +472,7 @@ fn extruder_range_slow_down_non_proportional(
             let adj_speed = range[by_min_print_speed[adj_pos]].slow_down_min_speed;
             let mut next = adj_pos + 1;
             while next < by_min_print_speed.len()
-                && range[by_min_print_speed[next]].slow_down_min_speed > adj_speed - EPSILON
+                && range[by_min_print_speed[next]].slow_down_min_speed as f64 > adj_speed as f64 - EPSILON
             {
                 next += 1;
             }

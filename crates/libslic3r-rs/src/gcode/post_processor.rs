@@ -173,21 +173,30 @@ pub fn gcode_add_line_number(path: &str, config: &DynamicPrintConfig) {
     let mut line_number: usize = 1;
     // PostProcessor.cpp:213  std::string gcode_line;
     // PostProcessor.cpp:214  while (std::getline(fs, gcode_line)) {
-    for gcode_line in contents.split('\n') {
-        // `std::getline` stops at EOF without yielding a trailing empty record;
-        // mirror that by skipping the empty tail produced by a final newline.
-        if gcode_line.is_empty() && line_number > 1 {
-            // Only the genuine trailing empty segment (from a final '\n') is
-            // skipped; interior blank lines are preserved because getline would
-            // have returned them as empty strings too. To match getline exactly
-            // we cannot distinguish here, so we keep parity with the common case
-            // of a newline-terminated file by dropping only the final segment.
-            // (See note below.)
-        }
+    //
+    // `std::getline(fs, gcode_line)` (text-mode `std::fstream`) reads characters
+    // up to but not including the next '\n', and the loop terminates when the
+    // stream reaches EOF without extracting any characters. Concretely, for the
+    // contents "a\nb\n" getline yields "a" then "b" and then fails at EOF (it
+    // does NOT yield a trailing empty line); for "a\nb" it yields "a" then "b".
+    // Splitting on '\n' yields a spurious trailing empty element only when the
+    // file ends with '\n', so we drop exactly that final empty element while
+    // preserving every interior empty line (which getline would return).
+    let mut lines: Vec<&str> = contents.split('\n').collect();
+    if contents.ends_with('\n') {
+        // The final '\n' produces a trailing "" that getline would not return.
+        lines.pop();
+    }
+    for gcode_line in lines {
         // PostProcessor.cpp:215  char num_str[128];
         // PostProcessor.cpp:216  memset(num_str, 0, sizeof(num_str));
         // PostProcessor.cpp:217  snprintf(num_str, sizeof(num_str), "%d", line_number);
-        let num_str = format!("{}", line_number);
+        //
+        // FIDELITY-NOTE(F2): `line_number` is `size_t` but the C++ format string
+        // is `"%d"` (a signed 32-bit `int`). C++ therefore prints the value
+        // reinterpreted as `int` (the low 32 bits, sign-extended). Reproduce the
+        // truncation locally so files with >2^31-1 lines match C++ exactly.
+        let num_str = format!("{}", line_number as i32);
         // PostProcessor.cpp:218  new_gcode += std::string("N") + num_str + " " + gcode_line + "\n";
         new_gcode.push('N');
         new_gcode.push_str(&num_str);

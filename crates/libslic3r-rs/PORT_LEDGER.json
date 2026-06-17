@@ -2640,7 +2640,8 @@
     "rust_exists": true,
     "loc": 351,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/PostProcessor.cpp",
@@ -2651,7 +2652,8 @@
     "rust_exists": true,
     "loc": 379,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "CSGMesh/PerformCSGMeshBooleans.hpp",
