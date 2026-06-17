@@ -94,6 +94,15 @@ impl QuaternionF {
         // if dot == -1, vectors are nearly opposites
         // Quaternion.h: if (c < Scalar(-1) + NumTraits<Scalar>::dummy_precision())
         if c < -1.0f32 + 1e-5f32 {
+            // FIDELITY-NOTE(foundational): Eigen's antiparallel branch uses
+            // JacobiSVD (svd.matrixV().col(2)) to pick the rotation axis. Porting
+            // JacobiSVD is a numerical-library rework out of per-file scope, so we
+            // substitute Eigen's deterministic unitOrthogonal() construction. Both
+            // yield a valid unit axis orthogonal to v0; the 180-degree rotations can
+            // differ by a roll about v0 (geometrically equivalent for the radially
+            // symmetric meshes here, but not byte-identical vertices). Only triggers
+            // when the input direction is within ~1e-5 of exactly antiparallel to the
+            // reference axis (effectively never for real support elements).
             // DIVERGENCE (documented): Eigen computes the rotation axis as the
             // null-space vector of the 2x3 matrix [v0^T; v1^T] via JacobiSVD
             // (`svd.matrixV().col(2)`). Porting JacobiSVD is out of scope, so

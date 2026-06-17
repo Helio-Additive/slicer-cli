@@ -3125,7 +3125,8 @@
     "rust_exists": true,
     "loc": 161,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/AGGRaster.hpp",
@@ -3136,7 +3137,8 @@
     "rust_exists": true,
     "loc": 222,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/SupportTreeBuilder.cpp",
@@ -3158,7 +3160,8 @@
     "rust_exists": true,
     "loc": 270,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "flagged"
   },
   {
     "cpp": "SLA/IndexedMesh.cpp",
@@ -3180,7 +3183,8 @@
     "rust_exists": true,
     "loc": 476,
     "status": "partial",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "flagged"
   },
   {
     "cpp": "SLA/Pad.cpp",
