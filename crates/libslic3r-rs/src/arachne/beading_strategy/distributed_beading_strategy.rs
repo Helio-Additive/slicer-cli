@@ -79,7 +79,7 @@ impl DistributedBeadingStrategy {
     }
 
     // Compute beading for a given thickness and bead count
-    // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:24-88
+    // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:24-85
     pub fn compute(&self, thickness: Coord, bead_count: Coord) -> Beading {
         // Initialize beading result
         // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:26-27
@@ -93,18 +93,21 @@ impl DistributedBeadingStrategy {
         };
 
         // Handle case where bead_count > 2
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:28-59
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:29-60
         // C++: if (bead_count > 2) {
         if bead_count > 2 {
             // Calculate amount to be distributed among beads
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:29-30
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:30-31
             // C++: const coord_t to_be_divided = thickness - bead_count * optimal_width;
             // C++: const float middle = static_cast<float>(bead_count - 1) / 2;
+            // FIDELITY-NOTE(F2): C++ `bead_count * optimal_width` is int32*int32 and
+            // wraps at 32 bits; crate Coord is i64 so this is wider. Realistic values
+            // stay within int32 range. Narrowing Coord is the crate-wide F2 rework.
             let to_be_divided = thickness - bead_count * self.optimal_width;
             let middle = (bead_count - 1) as f32 / 2.0;
 
             // Lambda to calculate gaussian-like weight for each bead
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:32-35
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:33-36
             // C++: const auto getWeight = [middle, this](coord_t bead_idx) {
             // C++:     const float dev_from_middle = bead_idx - middle;
             // C++:     return std::max(0.0f, 1.0f - one_over_distribution_radius_squared * dev_from_middle * dev_from_middle);
@@ -119,7 +122,7 @@ impl DistributedBeadingStrategy {
             };
 
             // Calculate weights for all beads
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:37-40
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:38-41
             // C++: std::vector<float> weights;
             // C++: weights.resize(bead_count);
             // C++: for (coord_t bead_idx = 0; bead_idx < bead_count; bead_idx++)
@@ -130,27 +133,30 @@ impl DistributedBeadingStrategy {
             }
 
             // Calculate total weight for normalization
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:42
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:43
             // C++: const float total_weight = std::accumulate(weights.cbegin(), weights.cend(), 0.f);
             let total_weight: f32 = weights.iter().sum();
 
             // Distribute the extra thickness among beads according to their weights
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:43-58
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:44-58
             // C++: coord_t accumulated_width = 0;
             // C++: for (coord_t bead_idx = 0; bead_idx < bead_count; bead_idx++) {
             let mut accumulated_width = 0;
             for bead_idx in 0..bead_count {
                 // Calculate weight fraction for this bead
-                // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:44-46
+                // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:46-48
                 // C++: const float weight_fraction = weights[bead_idx] / total_weight;
                 // C++: const coord_t splitup_left_over_weight = to_be_divided * weight_fraction;
                 // C++: const coord_t width = (bead_idx == bead_count - 1) ? thickness - accumulated_width : optimal_width + splitup_left_over_weight;
                 let weight_fraction = weights[bead_idx as usize] / total_weight;
                 // C++: const coord_t splitup_left_over_weight = to_be_divided * weight_fraction;
-                // `to_be_divided` is coord_t (int64_t) and `weight_fraction` is float (f32).
+                // `to_be_divided` is coord_t and `weight_fraction` is float (f32).
                 // Per C++ usual arithmetic conversions, the integer operand is promoted to
                 // `float`, the product is computed in f32, then truncated to coord_t.
                 // Mirror that exact order: f32 multiply, then truncate to Coord.
+                // FIDELITY-NOTE(F2): C++ coord_t is int32; crate Coord is i64. The promotion
+                // of the integer operand to f32 (and the truncation back) is identical for
+                // values within int32 range, which `to_be_divided` always is in practice.
                 let splitup_left_over_weight = (to_be_divided as f32 * weight_fraction) as Coord;
                 let width = if bead_idx == bead_count - 1 {
                     thickness - accumulated_width
@@ -159,7 +165,7 @@ impl DistributedBeadingStrategy {
                 };
 
                 // Calculate toolpath location and add bead width
-                // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:48-56
+                // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:50-57
                 // C++: // Be aware that toolpath_locations is computed by dividing the width by 2, so toolpath_locations
                 // C++: // could be off by 1 because of rounding errors.
                 // C++: if (bead_idx == 0)
@@ -181,18 +187,18 @@ impl DistributedBeadingStrategy {
             }
 
             // No leftover for this case
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:57-58
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:59-60
             // C++: ret.left_over = 0;
             // C++: assert((accumulated_width + ret.left_over) == thickness);
             ret.left_over = 0;
             debug_assert_eq!(accumulated_width + ret.left_over, thickness);
 
         // Handle case where bead_count == 2
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:59-65
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:61-67
         // C++: } else if (bead_count == 2) {
         } else if bead_count == 2 {
             // Split thickness equally between two beads
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:60-64
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:62-67
             // C++: const coord_t outer_width = thickness / 2;
             // C++: ret.bead_widths.emplace_back(outer_width);
             // C++: ret.bead_widths.emplace_back(outer_width);
@@ -208,11 +214,11 @@ impl DistributedBeadingStrategy {
             ret.left_over = 0;
 
         // Handle case where bead_count == 1
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:65-69
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:68-72
         // C++: } else if (bead_count == 1) {
         } else if bead_count == 1 {
             // Single bead takes full thickness
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:66-68
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:69-71
             // C++: const coord_t outer_width = thickness;
             // C++: ret.bead_widths.emplace_back(outer_width);
             // C++: ret.toolpath_locations.emplace_back(outer_width / 2);
@@ -224,17 +230,17 @@ impl DistributedBeadingStrategy {
             ret.left_over = 0;
 
         // Handle case where bead_count == 0
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:69-71
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:73-75
         // C++: } else {
         } else {
             // All thickness is leftover
-            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:70
+            // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:74
             // C++: ret.left_over = thickness;
             ret.left_over = thickness;
         }
 
         // Assert that total bead width plus leftover equals thickness
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:73-79
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:77-82
         // C++: assert(([&ret = std::as_const(ret), thickness]() -> bool {
         // C++:     coord_t total_bead_width = 0;
         // C++:     for (const coord_t &bead_width : ret.bead_widths)
@@ -247,27 +253,30 @@ impl DistributedBeadingStrategy {
         );
 
         // Return computed beading
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:81
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:84
         // C++: return ret;
         ret
     }
 
     // Get the optimal bead count for a given thickness
-    // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:84-90
+    // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:87-93
     pub fn get_optimal_bead_count(&self, thickness: Coord) -> Coord {
         // Calculate naive count that fits for sure
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:85
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:89
         // C++: const coord_t naive_count = thickness / optimal_width; // How many lines we can fit in for sure.
         let naive_count = thickness / self.optimal_width;
 
         // Calculate remaining space
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:86
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:90
         // C++: const coord_t remainder = thickness - naive_count * optimal_width; // Space left after fitting that many lines.
         let remainder = thickness - naive_count * self.optimal_width;
 
         // Determine threshold based on whether naive_count is odd or even
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:87
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:91
         // C++: const coord_t minimum_line_width = optimal_width * (naive_count % 2 == 1 ? wall_split_middle_threshold : wall_add_middle_threshold);
+        // C++ promotes `optimal_width` (coord_t) to double, multiplies in double, then
+        // truncates the result back to coord_t. Mirror that exact order: f64 multiply,
+        // then truncate to Coord.
         let threshold = if naive_count % 2 == 1 {
             self.wall_split_middle_threshold
         } else {
@@ -276,7 +285,7 @@ impl DistributedBeadingStrategy {
         let minimum_line_width = (self.optimal_width as f64 * threshold) as Coord;
 
         // Return count plus 1 if remainder is large enough
-        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:88
+        // Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp:92
         // C++: return naive_count + (remainder >= minimum_line_width); // If there's enough space, fit an extra one.
         naive_count
             + if remainder >= minimum_line_width {

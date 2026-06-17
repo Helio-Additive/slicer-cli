@@ -66,7 +66,8 @@ impl BeadingStrategy for OuterWallContourStrategy {
 
         // OuterWallContourStrategy.cpp:67
         // C++:     assert(bead_count >= 3);
-        assert!(bead_count >= 3);
+        // C++ `assert` is compiled out under NDEBUG (release); mirror with debug_assert!.
+        debug_assert!(bead_count >= 3);
         // OuterWallContourStrategy.cpp:68
         // C++:     Beading ret = parent->compute(thickness, bead_count - 2);
         let mut ret = self.parent.compute(thickness, bead_count - 2);
@@ -82,7 +83,8 @@ impl BeadingStrategy for OuterWallContourStrategy {
         if !ret.toolpath_locations.is_empty() {
             // OuterWallContourStrategy.cpp:73
             // C++:         assert(ret.bead_widths.size()>0);
-            assert!(!ret.bead_widths.is_empty());
+            // C++ `assert` is compiled out under NDEBUG (release); mirror with debug_assert!.
+            debug_assert!(!ret.bead_widths.is_empty());
             // OuterWallContourStrategy.cpp:74
             // C++:         double location = ret.toolpath_locations.front() + ret.bead_widths.front() / 2;
             // Note: `location`/`location_reverse` are computed from the original

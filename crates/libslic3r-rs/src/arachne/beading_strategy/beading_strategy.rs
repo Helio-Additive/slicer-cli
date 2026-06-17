@@ -97,6 +97,10 @@ pub trait BeadingStrategy: Send + Sync {
         // C++: {
         // BeadingStrategy.cpp:68
         // C++:     return optimal_width * bead_count;
+        // FIDELITY-NOTE(F2): C++ multiplies two `coord_t` (int32) values, which wraps
+        // on overflow at 32 bits; crate Coord is i64 so this is wider. Realistic
+        // optimal_width * bead_count stays within int32, so behavior matches; narrowing
+        // Coord is the crate-wide F2 rework and is out of per-file scope.
         self.optimal_width() * bead_count
     }
 
@@ -146,7 +150,17 @@ pub trait BeadingStrategy: Send + Sync {
         if lower_bead_count == 0 {
             // BeadingStrategy.cpp:34
             // C++:         return scaled<coord_t>(0.01);
-            return crate::scaled(0.01);
+            // C++ `scaled<coord_t>(v)` is defined as `coord_t(v / SCALING_FACTOR)`
+            // (Point.hpp:537-541) with SCALING_FACTOR = 0.00001 — a *truncating*
+            // cast, NOT std::round. For 0.01 this is `0.01 / 0.00001`, which in f64
+            // evaluates to 999.99999999999988... and truncates to 999.
+            // crate::scaled() instead does `(v * 100000.0).round()` -> 1000, which
+            // diverges by 1 unit. Reproduce the exact C++ expression here to match.
+            // FIDELITY-NOTE(F2): result is a Coord(i64); C++ coord_t is int32. The
+            // value (999) is well within int32 range, so width does not affect this.
+            // libslic3r.h:58 -> C++ SCALING_FACTOR = 0.00001 (crate::SCALING_FACTOR
+            // is its reciprocal 100_000.0, so we use the C++ literal directly).
+            return (0.01 / 0.00001) as Coord;
         }
         // BeadingStrategy.cpp:35
         // C++:     return default_transition_length;
@@ -176,7 +190,14 @@ pub trait BeadingStrategy: Send + Sync {
         let upper_optimum = self.get_optimal_thickness(lower_bead_count + 1);
         // BeadingStrategy.cpp:43
         // C++:     return 1.0 - float(transition_point - lower_optimum) / float(upper_optimum - lower_optimum);
-        1.0 - (transition_point - lower_optimum) as f32 / (upper_optimum - lower_optimum) as f32
+        // C++ evaluation order: each integer difference is cast to `float`, the
+        // division `float / float` is done in float, then `1.0` (a *double* literal)
+        // promotes the float result to double for the subtraction, and the double
+        // result is narrowed back to `float` on return. Mirror that exactly: do the
+        // ratio in f32, the `1.0 - ...` in f64, then narrow to f32.
+        (1.0_f64
+            - ((transition_point - lower_optimum) as f32 / (upper_optimum - lower_optimum) as f32)
+                as f64) as f32
     }
 
     // Get the locations in a bead count region where compute() exhibits a bend in the widths.

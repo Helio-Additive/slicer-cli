@@ -2015,7 +2015,8 @@
     "rust_exists": true,
     "loc": 79,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/BeadingStrategy/WideningBeadingStrategy.cpp",
@@ -2026,7 +2027,8 @@
     "rust_exists": true,
     "loc": 82,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "ok"
   },
   {
     "cpp": "Arachne/BeadingStrategy/OuterWallContourStrategy.cpp",
@@ -2037,7 +2039,8 @@
     "rust_exists": true,
     "loc": 83,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/utils/SparsePointGrid.hpp",
@@ -2059,7 +2062,8 @@
     "rust_exists": true,
     "loc": 95,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp",
