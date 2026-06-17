@@ -3041,7 +3041,8 @@
     "rust_exists": true,
     "loc": 70,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/RasterBase.cpp",
@@ -3052,7 +3053,8 @@
     "rust_exists": true,
     "loc": 86,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/RasterToPolygons.cpp",
@@ -3063,7 +3065,8 @@
     "rust_exists": true,
     "loc": 91,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "flagged"
   },
   {
     "cpp": "SLA/SupportTree.cpp",
@@ -3085,7 +3088,8 @@
     "rust_exists": true,
     "loc": 134,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "flagged"
   },
   {
     "cpp": "SLA/ConcaveHull.cpp",

@@ -138,6 +138,10 @@ pub fn raster_to_polygons(rst: &RasterGrayscaleAA, windowsize: Vec2i) -> ExPolyg
 
     // RasterToPolygons.cpp:65  // reverse the raster transformations
     // RasterToPolygons.cpp:66  ExPolygons unioned = union_ex(polys);
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
+    // `union_polygons_ex` routes through the `geo` crate (geo-clipper, fixed
+    // scale 1000) rather than ClipperLib at coord_t integer precision, and adds
+    // a `make_canonical()` winding pass not present in the C++ `union_ex`.
     let mut unioned: ExPolygons = union_polygons_ex(&polys);
     // RasterToPolygons.cpp:67
     // coord_t width = scaled(cols * pxd.h_mm), height = scaled(rows * pxd.w_mm);

@@ -84,6 +84,9 @@ pub trait BoostGeometryPoint {
 // BoostAdapter.hpp:31-39
 impl BoostGeometryPoint for Point {
     type Tag = PointTag; // BoostAdapter.hpp:18
+    // FIDELITY-NOTE(F2): C++ `coord_t` is int32_t (libslic3r.h:40); crate-wide
+    // `Coord` is i64. This is a pure compile-time concept-mapping header with no
+    // arithmetic/truncation, so the wider type changes no logic here.
     type CoordinateType = Coord; // BoostAdapter.hpp:22 (coord_t)
     type CoordinateSystem = CsCartesian; // BoostAdapter.hpp:26
     const DIMENSION: usize = 2; // BoostAdapter.hpp:29
@@ -233,6 +236,8 @@ pub trait BoostGeometryBox {
 impl BoostGeometryBox for BoundingBox {
     type Tag = BoxTag; // BoostAdapter.hpp:98
     type PointType = Point; // BoostAdapter.hpp:102
+    // FIDELITY-NOTE(F2): C++ `coord_t` is int32_t (libslic3r.h:40); crate-wide
+    // `Coord` is i64. Pure concept-mapping header, no arithmetic — no logic change.
     type CoordinateType = Coord; // coord_t
 
     #[inline]
