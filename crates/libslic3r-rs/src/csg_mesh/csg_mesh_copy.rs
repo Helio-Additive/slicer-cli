@@ -13,63 +13,97 @@ use super::csg_mesh::{
 };
 use crate::geometry::Transform3D;
 use crate::triangle_mesh::TriangleMesh;
+use std::rc::Rc;
 use std::sync::Arc;
 
-/// Copy a CSG range shallowly: mesh pointers are shared, not cloned.
+/// Copy a csg range but for the meshes, only copy the pointers. If the copy
+/// is made from a CSGPart compatible object, and the pointer is a shared one,
+/// it will be copied with reference counting.
 ///
-/// If the source part has a shared (Arc) mesh pointer, the reference count
-/// is incremented. Otherwise, we store a raw pointer reference as an Arc.
-///
-/// CSGMeshCopy.hpp:12-33
+/// CSGMeshCopy.hpp:8-33
 pub fn copy_csgrange_shallow(parts: &[CSGPart]) -> Vec<CSGPart> {
     let mut out = Vec::with_capacity(parts.len());
 
+    // CSGMeshCopy.hpp:14  for (const auto &part : csgrange) {
     for part in parts {
+        // CSGMeshCopy.hpp:15-17  CSGPart cpy{{}, get_operation(part), get_transform(part)};
+        // The mesh pointer (its_ptr) is value-initialized to empty here.
         let mut cpy = CSGPart::from_parts(MeshPtr::None, get_operation(part), get_transform(part));
+
+        // CSGMeshCopy.hpp:19  cpy.stack_operation = get_stack_operation(part);
         cpy.stack_operation = get_stack_operation(part);
 
-        // Try to share the mesh pointer (equivalent to get_shared_cpy in C++)
         // CSGMeshCopy.hpp:21-25
+        //   if constexpr (std::is_convertible_v<decltype(part), const CSGPart&>) {
+        //       if (auto shptr = part.its_ptr.get_shared_cpy()) {
+        //           cpy.its_ptr = shptr;
+        //       }
+        //   }
+        // `get_shared_cpy()` only yields a non-empty pointer when the source
+        // `AnyPtr` holds a `shared_ptr` (AnyPtr.hpp:123-130); for a raw pointer
+        // or a `unique_ptr` it returns an empty shared_ptr. Both `MeshPtr::Shared`
+        // (Arc) and `MeshPtr::Rc` (Rc) model a reference-counted shared pointer,
+        // so both take the reference-counting copy path (refcount bump, no mesh
+        // data clone), mirroring `shared_ptr`'s copy.
         match &part.mesh {
             MeshPtr::Shared(arc) => {
                 cpy.mesh = MeshPtr::Shared(Arc::clone(arc));
             }
-            MeshPtr::Owned(boxed) => {
-                // Create a shared reference from owned data
-                let mesh_clone = (**boxed).clone();
-                cpy.mesh = MeshPtr::Shared(Arc::new(mesh_clone));
-            }
             MeshPtr::Rc(rc) => {
-                let mesh_clone = (**rc).clone();
-                cpy.mesh = MeshPtr::Shared(Arc::new(mesh_clone));
+                cpy.mesh = MeshPtr::Rc(Rc::clone(rc));
             }
-            MeshPtr::None => {
-                cpy.mesh = MeshPtr::None;
+            // `MeshPtr::Owned` (unique_ptr) and `MeshPtr::None` (empty/raw):
+            // `get_shared_cpy()` returns empty, so `cpy.its_ptr` stays null and
+            // we fall through to the raw-pointer wrap below (CSGMeshCopy.hpp:27-28).
+            MeshPtr::Owned(_) | MeshPtr::None => {}
+        }
+
+        // CSGMeshCopy.hpp:27-28
+        //   if (!cpy.its_ptr)
+        //       cpy.its_ptr = AnyPtr<const indexed_triangle_set>{get_mesh(part)};
+        // In C++ this wraps the raw, NON-OWNING pointer returned by
+        // `get_mesh(part)` (no mesh-data copy). `MeshPtr` has no borrowing
+        // raw-pointer variant tied to the source lifetime, and this function
+        // returns an owned `Vec<CSGPart>`, so the non-owning borrow cannot be
+        // represented; the closest faithful behaviour is an owned clone of the
+        // source mesh for the `Owned` case (`None` stays empty).
+        // FIDELITY-NOTE: MeshPtr lacks a non-owning raw-pointer variant; C++
+        // stores a borrow here, the Rust port deep-clones the Owned mesh.
+        if cpy.mesh.is_empty() {
+            if let Some(mesh) = get_mesh(part) {
+                cpy.mesh = MeshPtr::Owned(Box::new(mesh.clone()));
             }
         }
 
+        // CSGMeshCopy.hpp:30-31  *out = std::move(cpy); ++out;
         out.push(cpy);
     }
 
     out
 }
 
-/// Copy a CSG range deeply: new mesh data is allocated for each part.
+/// Copy the csg range, allocating new meshes.
 ///
-/// CSGMeshCopy.hpp:36-52
+/// CSGMeshCopy.hpp:35-52
 pub fn copy_csgrange_deep(parts: &[CSGPart]) -> Vec<CSGPart> {
     let mut out = Vec::with_capacity(parts.len());
 
+    // CSGMeshCopy.hpp:39  for (const auto &part : csgrange) {
     for part in parts {
+        // CSGMeshCopy.hpp:41  CSGPart cpy{{}, get_operation(part), get_transform(part)};
         let mut cpy = CSGPart::from_parts(MeshPtr::None, get_operation(part), get_transform(part));
 
-        // Deep clone the mesh
-        // CSGMeshCopy.hpp:42-44
-        if let Some(mesh) = get_mesh(part) {
-            cpy.mesh = MeshPtr::Owned(Box::new(mesh.clone()));
+        // CSGMeshCopy.hpp:43-45
+        //   if (auto meshptr = get_mesh(part))
+        //       cpy.its_ptr = std::make_unique<const indexed_triangle_set>(*meshptr);
+        if let Some(meshptr) = get_mesh(part) {
+            cpy.mesh = MeshPtr::Owned(Box::new(meshptr.clone()));
         }
 
+        // CSGMeshCopy.hpp:47  cpy.stack_operation = get_stack_operation(part);
         cpy.stack_operation = get_stack_operation(part);
+
+        // CSGMeshCopy.hpp:49-50  *out = std::move(cpy); ++out;
         out.push(cpy);
     }
 
@@ -79,43 +113,56 @@ pub fn copy_csgrange_deep(parts: &[CSGPart]) -> Vec<CSGPart> {
 /// Check if two CSG ranges represent the same CSG expression.
 ///
 /// Compares mesh pointers (identity), operations, stack operations,
-/// and transformations (approximate equality).
+/// and transformations (Eigen `isApprox` approximate equality).
 ///
 /// CSGMeshCopy.hpp:54-76
 pub fn is_same(a: &[CSGPart], b: &[CSGPart]) -> bool {
-    if a.len() != b.len() {
-        return false;
+    // CSGMeshCopy.hpp:57  bool ret = true;
+    let mut ret = true;
+
+    // CSGMeshCopy.hpp:59  size_t s = A.size();
+    let s = a.len();
+
+    // CSGMeshCopy.hpp:61-62  if (B.size() != s) ret = false;
+    if b.len() != s {
+        ret = false;
     }
 
-    for (part_a, part_b) in a.iter().zip(b.iter()) {
-        // Compare mesh pointers (identity check)
-        // CSGMeshCopy.hpp:69
+    // CSGMeshCopy.hpp:64-73
+    //   size_t i = 0;
+    //   auto itA = A.begin();
+    //   auto itB = B.begin();
+    //   for (; ret && i < s; ++itA, ++itB, ++i) {
+    //       ret = ret && get_mesh(*itA) == get_mesh(*itB)
+    //                 && get_operation(*itA) == get_operation(*itB)
+    //                 && get_stack_operation(*itA) == get_stack_operation(*itB)
+    //                 && get_transform(*itA).isApprox(get_transform(*itB));
+    //   }
+    // When the lengths differ `ret` is already false, so the loop guard
+    // (`ret && i < s`) short-circuits and the body never runs, exactly as in C++.
+    let mut i = 0;
+    while ret && i < s {
+        let part_a = &a[i];
+        let part_b = &b[i];
+
+        // CSGMeshCopy.hpp:69  get_mesh(*itA) == get_mesh(*itB) (raw pointer identity)
         let mesh_a = get_mesh(part_a).map(|m| m as *const TriangleMesh);
         let mesh_b = get_mesh(part_b).map(|m| m as *const TriangleMesh);
-        if mesh_a != mesh_b {
-            return false;
-        }
 
-        // Compare operations
-        // CSGMeshCopy.hpp:70
-        if get_operation(part_a) != get_operation(part_b) {
-            return false;
-        }
+        ret = ret
+            && mesh_a == mesh_b
+            // CSGMeshCopy.hpp:70  get_operation(*itA) == get_operation(*itB)
+            && get_operation(part_a) == get_operation(part_b)
+            // CSGMeshCopy.hpp:71  get_stack_operation(*itA) == get_stack_operation(*itB)
+            && get_stack_operation(part_a) == get_stack_operation(part_b)
+            // CSGMeshCopy.hpp:72  get_transform(*itA).isApprox(get_transform(*itB))
+            && get_transform(part_a).is_approx(&get_transform(part_b));
 
-        // Compare stack operations
-        // CSGMeshCopy.hpp:71
-        if get_stack_operation(part_a) != get_stack_operation(part_b) {
-            return false;
-        }
-
-        // Compare transformations (approximate)
-        // CSGMeshCopy.hpp:72
-        if get_transform(part_a) != get_transform(part_b) {
-            return false;
-        }
+        i += 1;
     }
 
-    true
+    // CSGMeshCopy.hpp:75  return ret;
+    ret
 }
 
 #[cfg(test)]

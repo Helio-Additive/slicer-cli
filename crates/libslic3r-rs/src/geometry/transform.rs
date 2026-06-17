@@ -412,6 +412,36 @@ impl Transform3D {
     pub fn has_reflection(&self) -> bool {
         self.determinant_3x3() < 0.0
     }
+
+    /// Approximate equality, mirroring Eigen's `MatrixBase::isApprox`.
+    ///
+    /// Eigen defines `a.isApprox(b, prec)` (for a dense matrix expression) as
+    /// `(a - b).squaredNorm() <= prec*prec * min(a.squaredNorm(), b.squaredNorm())`,
+    /// comparing the full underlying matrices. `Transform3f` wraps a float
+    /// `Matrix4f`, so the default precision is `NumTraits<float>::dummy_precision()`
+    /// (`1e-5`). The comparison is performed over all 16 matrix coefficients.
+    pub fn is_approx(&self, other: &Transform3D) -> bool {
+        // Eigen NumTraits<float>::dummy_precision() == 1e-5f.
+        const DUMMY_PRECISION: CoordF = 1e-5;
+        self.is_approx_prec(other, DUMMY_PRECISION)
+    }
+
+    /// Approximate equality with an explicit precision, matching Eigen's
+    /// `MatrixBase::isApprox(other, prec)` relative criterion.
+    pub fn is_approx_prec(&self, other: &Transform3D, prec: CoordF) -> bool {
+        let mut diff_sq = 0.0;
+        let mut self_sq = 0.0;
+        let mut other_sq = 0.0;
+        for k in 0..16 {
+            let a = self.matrix[k];
+            let b = other.matrix[k];
+            let d = a - b;
+            diff_sq += d * d;
+            self_sq += a * a;
+            other_sq += b * b;
+        }
+        diff_sq <= prec * prec * self_sq.min(other_sq)
+    }
 }
 
 impl Default for Transform3D {

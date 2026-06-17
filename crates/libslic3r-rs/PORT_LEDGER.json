@@ -2424,7 +2424,8 @@
     "rust_exists": true,
     "loc": 32,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "ok"
   },
   {
     "cpp": "Execution/ExecutionTBB.hpp",
@@ -2435,7 +2436,8 @@
     "rust_exists": true,
     "loc": 78,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "ok"
   },
   {
     "cpp": "CSGMesh/CSGMeshCopy.hpp",
@@ -2446,7 +2448,8 @@
     "rust_exists": true,
     "loc": 80,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Execution/ExecutionSeq.hpp",
@@ -2457,7 +2460,8 @@
     "rust_exists": true,
     "loc": 84,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "ok"
   },
   {
     "cpp": "CSGMesh/CSGMesh.hpp",
