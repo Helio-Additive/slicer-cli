@@ -138,6 +138,9 @@ impl ConcaveHull {
 
     /// ConcaveHull.cpp:54 — `void ConcaveHull::merge_polygons() { m_polys = get_contours(union_ex(m_polys)); }`
     fn merge_polygons(&mut self) {
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib —
+        // `union_polygons_ex` routes through clipper_utils' geo-crate union
+        // (fixed scale 1000) rather than ClipperLib at coord_t precision.
         self.m_polys = get_contours(&union_polygons_ex(&self.m_polys));
     }
 
@@ -293,6 +296,11 @@ pub fn offset_waffle_style(hull: &ConcaveHull, delta: Coord) -> Polygons {
     // by delta.  The crate's clipper wrappers operate in unscaled mm, hence
     // the unscale()/SCALING_FACTOR conversions of the scaled arguments.
     let arc_tolerance_mm = arc_tolerance * crate::libslic3r::SCALING_FACTOR;
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib —
+    // C++ `closing()` runs a single ClipperOffset pipeline (expand_paths then
+    // shrink_paths) at coord_t precision. Here the two offsets are separate
+    // geo-crate round offsets (fixed scale 1000) with an intermediate
+    // canonicalize/union, so the resulting paths may differ slightly.
     let grown = offset_polygons_round(hull.polygons(), unscale(2 * delta), arc_tolerance_mm);
     let closed = offset_expolygons_round(&grown, -unscale(delta), arc_tolerance_mm);
     // C++ `closing` flattens the result paths into Polygons (outer contours

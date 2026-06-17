@@ -3100,7 +3100,8 @@
     "rust_exists": true,
     "loc": 145,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SLA/Clustering.cpp",
