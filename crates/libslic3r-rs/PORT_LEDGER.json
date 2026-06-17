@@ -684,7 +684,8 @@
     "rust_exists": true,
     "loc": 168,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "TextConfiguration.hpp",
@@ -695,7 +696,8 @@
     "rust_exists": true,
     "loc": 181,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ModelArrange.cpp",
@@ -706,7 +708,8 @@
     "rust_exists": true,
     "loc": 185,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ShortEdgeCollapse.cpp",
@@ -717,7 +720,8 @@
     "rust_exists": true,
     "loc": 187,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "ProjectTask.cpp",

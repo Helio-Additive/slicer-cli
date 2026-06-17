@@ -323,6 +323,16 @@ pub fn throw_if_out_of_bed(_ap: &mut ArrangePolygon) -> crate::Result<()> {
 /// closure (Arrange.hpp:82), which is exactly how BambuStudio threads the
 /// `ModelInstance::apply_arrange_result` call (see `get_arrange_poly<T>`
 /// below, ModelArrange.cpp:99-108).
+///
+/// FIDELITY: the `instances` parameter (ModelInstancePtrs) is omitted because
+/// the C++ `Model`/`ModelInstance` hierarchy is not ported (see blocked-symbol
+/// note at the bottom of this file); the per-item `apply_arrange_result` is
+/// reached through the `setter` instead. The setter is invoked directly here
+/// (NOT through `ArrangePolygon::apply()`), to mirror the C++ call at :36-37
+/// which is an *unguarded* `instances[i]->apply_arrange_result(...)` with no
+/// `is_applied` short-circuit (the `!is_applied` guard belongs to the unrelated
+/// `ArrangePolygon::apply()`, Arrange.hpp:85, which `apply_arrange_polys` does
+/// not use).
 pub fn apply_arrange_polys(input: &mut ArrangePolygons, mut vfn: VirtualBedFn) -> bool {
     // ModelArrange.cpp:31
     let mut ret = true;
@@ -340,8 +350,13 @@ pub fn apply_arrange_polys(input: &mut ArrangePolygons, mut vfn: VirtualBedFn) -
         if input[i].bed_idx >= 0 {
             // ModelArrange.cpp:36-37
             // C++: instances[i]->apply_arrange_result(translation.cast<double>(), rotation);
-            // Delegated through the ArrangePolygon setter abstraction.
-            input[i].apply();
+            // Reached via the setter stand-in (see fn doc). Invoked directly,
+            // unconditionally, to match the unguarded C++ call — no `is_applied`
+            // gate. Clone the Rc so we don't hold a borrow of `input[i].setter`
+            // while passing `&input[i]` (the same ArrangePolygon).
+            if let Some(setter) = input[i].setter.clone() {
+                setter(&input[i]);
+            }
         }
     }
 

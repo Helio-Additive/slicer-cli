@@ -20,13 +20,20 @@ use serde::{Deserialize, Serialize};
 // libslic3r.h:288  constexpr inline bool is_approx(Number value, Number test_value, Number precision = EPSILON)
 // libslic3r.h:290  { return std::fabs(double(value) - double(test_value)) < double(precision); }
 //
-// `FontProp::operator==` relies on the scalar overload with the default
-// precision `EPSILON = 1e-4` (libslic3r.h). Reproduced here verbatim.
+// `FontProp::operator==` calls the scalar overload exclusively with `float`
+// arguments (`boldness/skew/size_in_mm` are `float`, `value_or(0)` yields
+// `float`). The template therefore deduces `Number = float`, so the default
+// `precision = EPSILON` (a `double 1e-4`, libslic3r.h:52) is *narrowed to
+// `float`* before the body re-widens it via `double(precision)`. We reproduce
+// that exact float round-trip so the comparison threshold matches C++ bit for
+// bit; the body still subtracts in `double` per `double(value) - double(test_value)`.
 use crate::libslic3r::EPSILON;
 
+// is_approx<float>(float, float, float precision = EPSILON):
+//   precision = float(EPSILON); body uses double(precision).
 #[inline]
-fn is_approx(value: f64, test_value: f64) -> bool {
-    (value - test_value).abs() < EPSILON
+fn is_approx_f32(value: f32, test_value: f32) -> bool {
+    ((value as f64) - (test_value as f64)).abs() < (EPSILON as f32) as f64
 }
 
 // TextConfiguration.hpp:13  namespace Slic3r {
@@ -146,14 +153,16 @@ impl Default for FontProp {
 impl PartialEq for FontProp {
     fn eq(&self, other: &Self) -> bool {
         // TextConfiguration.hpp:78  auto case0 = is_approx(boldness.value_or(0), other.boldness.value_or(0));
-        let case0 = is_approx(
-            self.boldness.unwrap_or(0.0) as f64,
-            other.boldness.unwrap_or(0.0) as f64,
+        // boldness is std::optional<float>; value_or(0) yields float -> is_approx<float>.
+        let case0 = is_approx_f32(
+            self.boldness.unwrap_or(0.0),
+            other.boldness.unwrap_or(0.0),
         );
         // TextConfiguration.hpp:79  auto case1 = is_approx(skew.value_or(0), other.skew.value_or(0));
-        let case1 = is_approx(
-            self.skew.unwrap_or(0.0) as f64,
-            other.skew.unwrap_or(0.0) as f64,
+        // skew is std::optional<float>; value_or(0) yields float -> is_approx<float>.
+        let case1 = is_approx_f32(
+            self.skew.unwrap_or(0.0),
+            other.skew.unwrap_or(0.0),
         );
         // TextConfiguration.hpp:80  auto case2 = line_gap.value_or(0) == other.line_gap.value_or(0);
         let case2 = self.line_gap.unwrap_or(0) == other.line_gap.unwrap_or(0);
@@ -164,7 +173,7 @@ impl PartialEq for FontProp {
         // TextConfiguration.hpp:84        && case0 && case1 && case2  &&case3;
         self.per_glyph == other.per_glyph
             && self.align == other.align
-            && is_approx(self.size_in_mm as f64, other.size_in_mm as f64)
+            && is_approx_f32(self.size_in_mm, other.size_in_mm)
             && case0
             && case1
             && case2

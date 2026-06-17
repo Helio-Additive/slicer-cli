@@ -255,40 +255,55 @@ impl<T: Clone + fmt::Display> fmt::Display for ClonablePtr<T> {
     }
 }
 
-impl<T: Clone + PartialEq> PartialEq for ClonablePtr<T> {
+impl<T: Clone> ClonablePtr<T> {
+    /// Raw pointer address of the managed object, or null when empty.
+    ///
+    /// This mirrors the C++ `get()` (clonable_ptr.hpp:118-122) which returns
+    /// the native `T* px`. The comparison operators below compare these raw
+    /// addresses, exactly as the C++ free operators compare `l.get()` vs
+    /// `r.get()` (pointer identity, NOT pointed-to value equality).
+    fn raw_ptr(&self) -> *const T {
+        match &self.ptr {
+            Some(b) => b.as_ref() as *const T,
+            None => std::ptr::null(),
+        }
+    }
+}
+
+impl<T: Clone> PartialEq for ClonablePtr<T> {
     /// Compare two ClonablePtrs for equality
     /// clonable_ptr.hpp:142-150
     /// C++: template<class T, class U> inline bool operator==(const clonable_ptr<T>& l, const clonable_ptr<U>& r) noexcept { return (l.get() == r.get()); }
     /// C++: template<class T, class U> inline bool operator!=(const clonable_ptr<T>& l, const clonable_ptr<U>& r) noexcept { return (l.get() != r.get()); }
     ///
-    /// NOTE: the C++ comparison operators compare the raw pointer addresses
-    /// (`l.get() == r.get()`), i.e. identity, not the pointed-to values. This
-    /// Rust port intentionally compares the pointed-to values (`self.ptr ==
-    /// other.ptr`) because Box has no stable observable address semantics in
-    /// safe Rust and value equality is what callers in this crate rely on.
-    /// This is a deliberate divergence from the C++ pointer-identity semantics.
+    /// The C++ comparison operators compare the raw pointer addresses
+    /// (`l.get() == r.get()`), i.e. pointer identity, NOT the pointed-to
+    /// values. We faithfully mirror that here by comparing the heap address of
+    /// the managed object (`raw_ptr()`); `!=` is the negation, matching
+    /// operator!= (clonable_ptr.hpp:147-150).
     fn eq(&self, other: &Self) -> bool {
-        self.ptr == other.ptr
+        self.raw_ptr() == other.raw_ptr()
     }
 }
 
-impl<T: Clone + Eq> Eq for ClonablePtr<T> {}
+impl<T: Clone> Eq for ClonablePtr<T> {}
 
-impl<T: Clone + PartialOrd> PartialOrd for ClonablePtr<T> {
+impl<T: Clone> PartialOrd for ClonablePtr<T> {
     /// Compare two ClonablePtrs for ordering
     /// clonable_ptr.hpp:151-166
     /// C++: operator<=, operator<, operator>=, operator> all compare l.get() vs r.get()
     ///
-    /// Like `eq`, the C++ ordering operators compare raw pointer addresses;
-    /// this port compares the pointed-to values instead (see PartialEq note).
+    /// As with `eq`, the C++ ordering operators compare raw pointer addresses,
+    /// so we order by the managed object's heap address (`raw_ptr()`).
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.ptr.partial_cmp(&other.ptr)
+        Some(self.cmp(other))
     }
 }
 
-impl<T: Clone + Ord> Ord for ClonablePtr<T> {
+impl<T: Clone> Ord for ClonablePtr<T> {
+    /// clonable_ptr.hpp:151-166: ordering by raw pointer address.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ptr.cmp(&other.ptr)
+        self.raw_ptr().cmp(&other.raw_ptr())
     }
 }
 
@@ -318,8 +333,10 @@ mod tests {
         assert_eq!(*ptr1, 42);
         assert_eq!(*ptr2, 42);
 
-        // They should be independent copies
-        assert_eq!(ptr1, ptr2);
+        // They are independent deep copies, so (matching C++ pointer-identity
+        // operator==, clonable_ptr.hpp:142-146) they compare UNEQUAL: the clone
+        // owns a distinct heap object with a different address.
+        assert_ne!(ptr1, ptr2);
     }
 
     #[test]
@@ -442,23 +459,42 @@ mod tests {
 
     #[test]
     fn test_equality() {
+        // C++ operator== compares raw pointer addresses (clonable_ptr.hpp:142-146),
+        // not pointed-to values. Two independently-allocated pointers are never
+        // equal even with the same payload; a pointer is equal only to itself.
         let ptr1 = ClonablePtr::from_value(42);
         let ptr2 = ClonablePtr::from_value(42);
         let ptr3 = ClonablePtr::from_value(100);
 
-        assert_eq!(ptr1, ptr2);
+        assert_ne!(ptr1, ptr2);
         assert_ne!(ptr1, ptr3);
+
+        #[allow(clippy::eq_op)]
+        {
+            assert_eq!(ptr1, ptr1);
+        }
+
+        // Two empty pointers both carry the null address, so they are equal.
+        let e1: ClonablePtr<i32> = ClonablePtr::new();
+        let e2: ClonablePtr<i32> = ClonablePtr::new();
+        assert_eq!(e1, e2);
     }
 
     #[test]
     fn test_ordering() {
-        let ptr1 = ClonablePtr::from_value(10);
-        let ptr2 = ClonablePtr::from_value(20);
-        let ptr3 = ClonablePtr::from_value(20);
+        // C++ ordering operators (clonable_ptr.hpp:151-166) compare raw pointer
+        // addresses, not values. A null (empty) pointer sorts before any
+        // allocated one, and a pointer is equal only to itself.
+        let empty: ClonablePtr<i32> = ClonablePtr::new();
+        let ptr = ClonablePtr::from_value(20);
 
-        assert!(ptr1 < ptr2);
-        assert!(ptr2 > ptr1);
-        assert!(ptr2 == ptr3);
+        assert!(empty < ptr);
+        assert!(ptr > empty);
+
+        #[allow(clippy::eq_op)]
+        {
+            assert!(ptr == ptr);
+        }
     }
 
     #[test]
