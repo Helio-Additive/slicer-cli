@@ -323,12 +323,16 @@ impl SmoothCalculator {
 
                 conv_sum += self.guassian_filter[filter_pos_idx as usize] * remap_data;
             }
+            // Smoothing.cpp:158-159  double filter_res = conv_sum / filter_sum;
+            //   if (filter_res < node.filter_feedrate) node.filter_feedrate = filter_res;
+            // C++ promotes node.filter_feedrate (float) to double for the compare,
+            // then truncates the double back to float on assignment.
             let filter_res = conv_sum / self.filter_sum;
             let node = self.layers_wall_collection[layer_id as usize][object_id as usize]
                 .cooling_nodes
                 .get_mut(&node_id)
                 .unwrap();
-            if (filter_res as f32) < node.filter_feedrate {
+            if filter_res < node.filter_feedrate as f64 {
                 node.filter_feedrate = filter_res as f32;
             }
 
@@ -408,22 +412,25 @@ impl SmoothCalculator {
     // Smoothing.cpp:204-213
     fn layer_time_filter_continue(&self) -> bool {
         for layer_id in 1..self.layers_cooling_time.len() as i32 - 1 {
-            let layer_time = if self.layers_cooling_time[layer_id as usize]
+            // C++: `double layer_time = ... ? threshold : value;` — the (float) ternary
+            // result is widened to double, the subtraction/abs run in double, and the
+            // (float) stop threshold is promoted to double for the compare.
+            let layer_time: f64 = if self.layers_cooling_time[layer_id as usize]
                 > self.layer_time_smoothing_threshold
             {
-                self.layer_time_smoothing_threshold
+                self.layer_time_smoothing_threshold as f64
             } else {
-                self.layers_cooling_time[layer_id as usize]
+                self.layers_cooling_time[layer_id as usize] as f64
             };
-            let layer_time_cmp = if self.layers_cooling_time[(layer_id + 1) as usize]
+            let layer_time_cmp: f64 = if self.layers_cooling_time[(layer_id + 1) as usize]
                 > self.layer_time_smoothing_threshold
             {
-                self.layer_time_smoothing_threshold
+                self.layer_time_smoothing_threshold as f64
             } else {
-                self.layers_cooling_time[(layer_id + 1) as usize]
+                self.layers_cooling_time[(layer_id + 1) as usize] as f64
             };
 
-            if (layer_time - layer_time_cmp).abs() > GUASSIAN_LAYER_TIME_STOP_THRESHOLD {
+            if (layer_time - layer_time_cmp).abs() > GUASSIAN_LAYER_TIME_STOP_THRESHOLD as f64 {
                 return true;
             }
         }

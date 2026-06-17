@@ -2592,7 +2592,8 @@
     "rust_exists": true,
     "loc": 218,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "ok"
   },
   {
     "cpp": "GCode/Smoothing.cpp",
@@ -2603,7 +2604,8 @@
     "rust_exists": true,
     "loc": 224,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Optimize/NLoptOptimizer.hpp",
@@ -2614,7 +2616,8 @@
     "rust_exists": true,
     "loc": 233,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "ok"
   },
   {
     "cpp": "GCode/ConflictChecker.cpp",
@@ -2625,7 +2628,8 @@
     "rust_exists": true,
     "loc": 316,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "flagged"
   },
   {
     "cpp": "GCode/CoolingBuffer.cpp",

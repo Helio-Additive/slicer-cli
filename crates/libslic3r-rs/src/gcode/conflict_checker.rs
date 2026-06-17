@@ -24,8 +24,10 @@ use crate::extrusion_entity::{
     ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionPath, ExtrusionRole,
 };
 use crate::geometry::{Line, Point};
+use crate::gcode::g_code_processor::{ConflictResult, ConflictResultOpt};
 use crate::layer::Layer;
 use crate::libslic3r::{EPSILON, SCALED_EPSILON};
+use crate::print_object::PrintObject;
 use crate::{scaled, unscale, CoordF};
 
 // ConflictChecker.cpp:10 `namespace Slic3r {`
@@ -578,6 +580,88 @@ pub fn get_extrusion_paths_from_entity(
     get_extrusion_path_impl(entity, paths);
 }
 
+// ConflictChecker.cpp:163 `ExtrusionLayers getExtrusionPathsFromLayer(const LayerRegionPtrs layerRegionPtrs)`
+//
+// C++ takes `LayerRegionPtrs` and reaches the owning Layer's `bottom_z()`/`height`
+// through each region's `regionPtr->layer()` back-pointer. This crate's
+// `LayerRegion` carries only `layer_id` (no `Layer*` back-pointer), so the parent
+// `Layer` cannot be recovered from a bare `&[LayerRegion]`. The single caller,
+// `getAllLayersExtrusionPathsFromObject`, already has the `Layer` in hand
+// (`layerPtr->regions()`), so we take `&Layer` here and read `bottom_z`/`height`
+// from it directly — same per-region perimeter+fill extraction, same resulting
+// `ExtrusionLayer` per region, just without the redundant back-pointer hop.
+pub fn get_extrusion_paths_from_layer(layer: &Layer) -> ExtrusionLayers {
+    // ConflictChecker.cpp:165 `ExtrusionLayers perimeters; // periments and infills`
+    let mut perimeters = ExtrusionLayers::new();
+    // ConflictChecker.cpp:166 `perimeters.resize(layerRegionPtrs.size());`
+    // ConflictChecker.cpp:167 `int i = 0;`
+    // ConflictChecker.cpp:168 `for (LayerRegion *regionPtr : layerRegionPtrs) {`
+    for region_ptr in layer.regions() {
+        let mut el = ExtrusionLayer::default();
+        // ConflictChecker.cpp:169 `perimeters[i].layer    = regionPtr->layer();`
+        el.layer = layer as *const Layer;
+        // ConflictChecker.cpp:170 `perimeters[i].bottom_z = regionPtr->layer()->bottom_z();`
+        el.bottom_z = layer.bottom_z() as f32;
+        // ConflictChecker.cpp:171 `perimeters[i].height   = regionPtr->layer()->height;`
+        el.height = layer.height as f32;
+        // ConflictChecker.cpp:172 `getExtrusionPathsFromEntity(&regionPtr->perimeters, perimeters[i].paths);`
+        get_extrusion_paths_from_entity(&region_ptr.perimeters, &mut el.paths);
+        // ConflictChecker.cpp:173 `getExtrusionPathsFromEntity(&regionPtr->fills, perimeters[i].paths);`
+        get_extrusion_paths_from_entity(&region_ptr.fills, &mut el.paths);
+        perimeters.layers.push(el);
+        // ConflictChecker.cpp:174 `++i;`
+    }
+    // ConflictChecker.cpp:176 `return perimeters;`
+    perimeters
+}
+
+// ConflictChecker.cpp:179 `ExtrusionLayer getExtrusionPathsFromSupportLayer(SupportLayer *supportLayer)`
+//
+// This crate has no distinct `SupportLayer` type: support layers are stored as
+// plain `Layer`s in `PrintObject::support_layers`, each carrying an optional
+// `support_fills` collection (C++ `SupportLayer::support_fills`). We take that
+// `&Layer` and read `support_fills`/`bottom_z()`/`height` from it.
+pub fn get_extrusion_paths_from_support_layer(support_layer: &Layer) -> ExtrusionLayer {
+    // ConflictChecker.cpp:181 `ExtrusionLayer el;`
+    let mut el = ExtrusionLayer::default();
+    // ConflictChecker.cpp:182 `getExtrusionPathsFromEntity(&supportLayer->support_fills, el.paths);`
+    if let Some(support_fills) = &support_layer.support_fills {
+        get_extrusion_paths_from_entity(support_fills, &mut el.paths);
+    }
+    // ConflictChecker.cpp:183 `el.layer    = supportLayer;`
+    el.layer = support_layer as *const Layer;
+    // ConflictChecker.cpp:184 `el.bottom_z = supportLayer->bottom_z();`
+    el.bottom_z = support_layer.bottom_z() as f32;
+    // ConflictChecker.cpp:185 `el.height   = supportLayer->height;`
+    el.height = support_layer.height as f32;
+    // ConflictChecker.cpp:186 `return el;`
+    el
+}
+
+// ConflictChecker.cpp:189 `ObjectExtrusions getAllLayersExtrusionPathsFromObject(PrintObject *obj)`
+pub fn get_all_layers_extrusion_paths_from_object(obj: &PrintObject) -> ObjectExtrusions {
+    // ConflictChecker.cpp:191 `ObjectExtrusions oe;`
+    let mut oe = ObjectExtrusions::default();
+
+    // ConflictChecker.cpp:193 `for (auto layerPtr : obj->layers()) {`
+    for layer_ptr in obj.layers() {
+        // ConflictChecker.cpp:194 `auto perimeters = getExtrusionPathsFromLayer(layerPtr->regions());`
+        let perimeters = get_extrusion_paths_from_layer(layer_ptr);
+        // ConflictChecker.cpp:195 `oe.perimeters.insert(oe.perimeters.end(), perimeters.begin(), perimeters.end());`
+        oe.perimeters.layers.extend(perimeters.layers);
+    }
+
+    // ConflictChecker.cpp:198 `for (auto supportLayerPtr : obj->support_layers()) { oe.support.push_back(getExtrusionPathsFromSupportLayer(supportLayerPtr)); }`
+    for support_layer_ptr in &obj.support_layers {
+        oe.support
+            .layers
+            .push(get_extrusion_paths_from_support_layer(support_layer_ptr));
+    }
+
+    // ConflictChecker.cpp:200 `return oe;`
+    oe
+}
+
 // ConflictChecker.cpp:289 `ConflictComputeResult ConflictChecker::line_intersect(...)` and the
 // supporting types are declared in ConflictChecker.hpp.
 
@@ -642,6 +726,111 @@ impl ConflictChecker {
             }
         }
         // ConflictChecker.cpp:220 `return {};`
+        None
+    }
+
+    // ConflictChecker.cpp:223 `ConflictResultOpt ConflictChecker::find_inter_of_lines_in_diff_objs(PrintObjectPtrs objs, std::optional<const FakeWipeTower *> wtdptr)`
+    // find the first intersection point of lines in different objects
+    //
+    // FIDELITY-NOTE(blocked-dep): the C++ `wtdptr` is `std::optional<const
+    // FakeWipeTower *>`. This crate has no `FakeWipeTower`
+    // extrusion-layer extractor (`getTrueExtrusionLayersFromWipeTower`) nor a
+    // `plate_origin`, so the wipe-tower branch (ConflictChecker.cpp:229-241,
+    // 274-281) cannot be ported faithfully. The parameter is kept as a `bool`
+    // placeholder (always pass `false`) and the wipe-tower handling is omitted;
+    // when a `FakeWipeTower` lands in the crate, restore the branch.
+    //
+    // FIDELITY-NOTE(blocked-dep): `obj->instances().front().shift` and
+    // `obj->model_object()->name` are unavailable on this crate's `PrintObject`
+    // (no `instances()` / `model_object()` accessors). The per-object offset is
+    // therefore `Point(0, 0)` and the conflicting object names are empty
+    // strings; the `ConflictResult` `_obj1`/`_obj2` pointers are also dropped by
+    // the crate's `ConflictResult` (see GCodeProcessor.hpp port).
+    pub fn find_inter_of_lines_in_diff_objs(
+        objs: &[&PrintObject],
+        wtdptr: bool,
+    ) -> ConflictResultOpt {
+        // ConflictChecker.cpp:226 `if (objs.size() <= 1 && !wtdptr) { return {}; }`
+        if objs.len() <= 1 && !wtdptr {
+            return None;
+        }
+        // ConflictChecker.cpp:227 `LinesBucketQueue conflictQueue;`
+        let mut conflict_queue = LinesBucketQueue::new();
+
+        // ConflictChecker.cpp:229-241 wipe-tower branch — omitted (see note above).
+
+        // ConflictChecker.cpp:242 `for (PrintObject *obj : objs) {`
+        for obj in objs {
+            // ConflictChecker.cpp:243 `auto layers = getAllLayersExtrusionPathsFromObject(obj);`
+            let layers = get_all_layers_extrusion_paths_from_object(obj);
+            // ConflictChecker.cpp:244 `conflictQueue.emplace_back_bucket(std::move(layers.perimeters), obj, obj->instances().front().shift);`
+            let obj_ptr = *obj as *const PrintObject as *const ();
+            conflict_queue.emplace_back_bucket(layers.perimeters, obj_ptr, Point::new(0, 0));
+            // ConflictChecker.cpp:245 `conflictQueue.emplace_back_bucket(std::move(layers.support), obj, obj->instances().front().shift);`
+            conflict_queue.emplace_back_bucket(layers.support, obj_ptr, Point::new(0, 0));
+        }
+
+        // ConflictChecker.cpp:248 `std::vector<LineWithIDs> layersLines;`
+        let mut layers_lines: Vec<LineWithIDs> = Vec::new();
+        // ConflictChecker.cpp:249 `std::vector<float>       bottomZs;`
+        let mut bottom_zs: Vec<f32> = Vec::new();
+        // ConflictChecker.cpp:250 `while (conflictQueue.valid()) {`
+        while conflict_queue.valid() {
+            // ConflictChecker.cpp:251 `LineWithIDs lines = conflictQueue.getCurLines();`
+            let lines = conflict_queue.get_cur_lines();
+            // ConflictChecker.cpp:252 `float curBottomZ = conflictQueue.getCurrBottomZ();`
+            let cur_bottom_z = conflict_queue.get_curr_bottom_z();
+            // ConflictChecker.cpp:253 `bottomZs.push_back(curBottomZ);`
+            bottom_zs.push(cur_bottom_z);
+            // ConflictChecker.cpp:254 `layersLines.push_back(std::move(lines));`
+            layers_lines.push(lines);
+        }
+
+        // ConflictChecker.cpp:257 `bool find = false;`
+        // ConflictChecker.cpp:258 `tbb::concurrent_vector<std::pair<ConflictComputeResult, float>> conflict;`
+        // FIDELITY-NOTE(blocked-dep): C++ runs the per-layer scan under
+        // `tbb::parallel_for` (ConflictChecker.cpp:259-268) and collects the
+        // first hit per worker into a concurrent_vector, then takes `conflict[0]`.
+        // We have no TBB here; a sequential scan that stops at the first
+        // conflicting layer is a faithful serialization (the C++ result is
+        // already order-nondeterministic across workers).
+        let mut find = false;
+        let mut conflict: Vec<(ConflictComputeResult, f32)> = Vec::new();
+        // ConflictChecker.cpp:259-268 `tbb::parallel_for(..., [&](range){ for i in range { ... } });`
+        for i in 0..layers_lines.len() {
+            // ConflictChecker.cpp:261 `auto interRes = find_inter_of_lines(layersLines[i]);`
+            let inter_res = Self::find_inter_of_lines(&layers_lines[i]);
+            // ConflictChecker.cpp:262 `if (interRes.has_value()) {`
+            if let Some(inter_res) = inter_res {
+                // ConflictChecker.cpp:263 `find = true;`
+                find = true;
+                // ConflictChecker.cpp:264 `conflict.emplace_back(interRes.value(), bottomZs[i]);`
+                conflict.push((inter_res, bottom_zs[i]));
+                // ConflictChecker.cpp:265 `break;`
+                break;
+            }
+        }
+
+        // ConflictChecker.cpp:270 `if (find) {`
+        if find {
+            // ConflictChecker.cpp:271 `const void *ptr1           = conflict[0].first._obj1;`
+            let ptr1 = conflict[0].0.obj1;
+            // ConflictChecker.cpp:272 `const void *ptr2           = conflict[0].first._obj2;`
+            let ptr2 = conflict[0].0.obj2;
+            // ConflictChecker.cpp:273 `float       conflictPrintZ = conflict[0].second;`
+            let conflict_print_z = conflict[0].1;
+            // ConflictChecker.cpp:274-281 wipe-tower result branch — omitted (see note above).
+            let _ = (ptr1, ptr2);
+            // ConflictChecker.cpp:282-284 `const PrintObject *obj1/obj2 = ...; return std::make_optional<ConflictResult>(obj1->model_object()->name, obj2->model_object()->name, conflictPrintZ, ptr1, ptr2);`
+            // Object names are unavailable on this crate's PrintObject (see note);
+            // the crate's ConflictResult also drops the `_obj1`/`_obj2` pointers.
+            return Some(ConflictResult::new(
+                String::new(),
+                String::new(),
+                conflict_print_z,
+            ));
+        }
+        // ConflictChecker.cpp:286 `return {};`
         None
     }
 
