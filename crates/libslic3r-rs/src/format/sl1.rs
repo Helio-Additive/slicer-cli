@@ -187,6 +187,9 @@ fn rings_to_expolygons(rings: &[marchsq::Ring], px_w: f64, px_h: f64) -> ExPolyg
 
     // SL1.cpp:151  // TODO: Is a union necessary?
     // SL1.cpp:152  return union_ex(polys);
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib — `union_ex`
+    // unions via the `geo` crate at fixed scale 1000, not ClipperLib at coord_t
+    // integer precision, so the resulting ExPolygons may differ at the boundary.
     union_ex(&polys)
 }
 

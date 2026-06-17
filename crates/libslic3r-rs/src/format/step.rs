@@ -344,27 +344,43 @@ impl StepPreProcessor {
 
     // STEP.cpp:132  bool StepPreProcessor::isGBK(const std::string str)
     //
+    // FIDELITY-NOTE(F2): C++ `std::string::operator[]` yields a `char`, which is
+    // SIGNED on every platform BambuStudio targets (x86/x64/ARM default). Each
+    // `str[i]` is therefore sign-extended to `int` before the comparisons. We
+    // reproduce that exactly by reading bytes as `i8 as i32`.
+    //
+    // Consequence (verified against g++ -O0, which emits
+    // `-Wtautological-constant-out-of-range-compare` for these very lines):
+    //   * `str[i] <= 0x7f` is ALWAYS true (a signed `char` is at most 127), so
+    //     the high-byte `else` block (STEP.cpp:139-149) is DEAD CODE and never
+    //     executes -- every byte falls through the `i++` path.
+    //   * `isGBK` consequently ALWAYS returns `true` for any input.
+    // The earlier `u8`-based translation incorrectly executed the GBK 2-byte
+    // detection and could return `false`; this restores the C++ behaviour.
+    //
     // The C++ relies on `std::string`'s NUL terminator: `str[length()]` reads
-    // '\0' (0x00) which fails the `>= 0x40` check and returns false. We replicate
-    // that by treating an out-of-range `str[i+1]` as 0x00.
+    // '\0' (0x00); we replicate that by treating an out-of-range `str[i+1]` as 0.
     fn is_gbk_bytes(str: &[u8]) -> bool {
         // STEP.cpp:133  size_t i = 0;
         let mut i: usize = 0;
         // STEP.cpp:134  while (i < str.length()) {
         while i < str.len() {
-            // STEP.cpp:135-137  if (str[i] <= 0x7f) { i++; continue; }
-            if str[i] <= 0x7f {
+            // STEP.cpp:135  if (str[i] <= 0x7f) {  -- `char` sign-extended to int.
+            let cur = (str[i] as i8) as i32;
+            if cur <= 0x7f {
+                // STEP.cpp:136-137  i++; continue;
                 i += 1;
                 continue;
             } else {
-                // STEP.cpp:139-146
+                // STEP.cpp:139-146  (dead under signed `char`; preserved 1:1)
                 //   if (str[i] >= 0x81 && str[i] <= 0xfe &&
                 //       str[i + 1] >= 0x40 && str[i + 1] <= 0xfe && str[i + 1] != 0xf7) {
                 //       i += 2; continue;
                 //   }
-                let next: u8 = if i + 1 < str.len() { str[i + 1] } else { 0x00 };
-                if str[i] >= 0x81
-                    && str[i] <= 0xfe
+                let next_byte: u8 = if i + 1 < str.len() { str[i + 1] } else { 0x00 };
+                let next = (next_byte as i8) as i32;
+                if cur >= 0x81
+                    && cur <= 0xfe
                     && next >= 0x40
                     && next <= 0xfe
                     && next != 0xf7
@@ -682,7 +698,21 @@ mod tests {
     fn test_is_utf8() {
         assert!(StepPreProcessor::is_utf8("Hello world"));
         assert!(StepPreProcessor::is_utf8(""));
-        assert!(StepPreProcessor::is_utf8("UTF-8: \u{00e9}\u{00e8}\u{00ea}"));
+        // STEP.cpp:118  `(num = preNum(str[i])) > 2` -- a 2-byte UTF-8 lead byte
+        // (110xxxxx) yields preNum == 2, and `2 > 2` is false, so the C++
+        // `isUtf8` REJECTS all 2-byte sequences (e.g. U+00E9 = 0xC3 0xA9).
+        assert!(!StepPreProcessor::is_utf8("UTF-8: \u{00e9}\u{00e8}\u{00ea}"));
+        // 3-byte sequences (1110xxxx, preNum == 3) and 4-byte (preNum == 4) pass.
+        assert!(StepPreProcessor::is_utf8("\u{4e2d}\u{6587}"));
+    }
+
+    #[test]
+    fn test_is_gbk_always_true() {
+        // FIDELITY-NOTE(F2): with signed `char`, `str[i] <= 0x7f` is always true,
+        // so isGBK never enters the high-byte branch and always returns true.
+        assert!(StepPreProcessor::is_gbk_bytes(b"Hello"));
+        assert!(StepPreProcessor::is_gbk_bytes(&[0xC8, 0xCB]));
+        assert!(StepPreProcessor::is_gbk_bytes(&[0xFF]));
     }
 
     #[test]

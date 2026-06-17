@@ -2914,7 +2914,8 @@
     "rust_exists": true,
     "loc": 518,
     "status": "partial",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Format/STEP.cpp",
@@ -2925,7 +2926,8 @@
     "rust_exists": true,
     "loc": 745,
     "status": "partial",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Format/objparser.cpp",
