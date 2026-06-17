@@ -162,10 +162,17 @@ impl FillHoneycomb {
             let mut m = CacheData::default();
             // FillHoneycomb.cpp:22 — coord_t min_spacing = coord_t(scale_(this->spacing)) * params.multiline;
             // scale_(v) == v / SCALING_FACTOR (libslic3r.h:81); coord_t(...) truncates toward zero.
+            // The crate's SCALING_FACTOR (1e5) is the reciprocal of C++'s (1e-5), so multiplying
+            // matches `scale_(v) = v / 0.00001`. `as Coord` truncates toward zero like `coord_t(...)`.
+            // FIDELITY-NOTE(F2): C++ coord_t is int32 (libslic3r.h:40); here Coord = i64, so the
+            // intermediate `coord_t(scale_(spacing))` and `min_spacing` do not wrap to int32 as in
+            // C++. For realistic honeycomb spacings these values stay well within int32 range.
             let min_spacing: Coord =
                 ((self.spacing * SCALING_FACTOR) as Coord) * params.multiline as Coord;
             // FillHoneycomb.cpp:23 — m.distance = coord_t(min_spacing / params.density);
-            m.distance = (min_spacing as f64 / params.density) as Coord;
+            // params.density is a `float` in C++ (FillBase.hpp:54), so `min_spacing / params.density`
+            // is evaluated in single precision before truncating; mirror that with f32 here.
+            m.distance = (min_spacing as f32 / params.density as f32) as Coord;
             // FillHoneycomb.cpp:24 — m.hex_side = coord_t(m.distance / (sqrt(3)/2));
             m.hex_side = (m.distance as f64 / (3.0_f64.sqrt() / 2.0)) as Coord;
             // FillHoneycomb.cpp:25 — m.hex_width = m.distance * 2; // == hex_side * sqrt(3)

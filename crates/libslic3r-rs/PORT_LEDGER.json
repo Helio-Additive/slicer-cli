@@ -2227,7 +2227,8 @@
     "rust_exists": true,
     "loc": 86,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillConcentricInternal.cpp",
@@ -2238,7 +2239,8 @@
     "rust_exists": true,
     "loc": 102,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "ok"
   },
   {
     "cpp": "Fill/FillLine.cpp",
@@ -2249,7 +2251,8 @@
     "rust_exists": true,
     "loc": 122,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillConcentric.cpp",
@@ -2260,7 +2263,8 @@
     "rust_exists": true,
     "loc": 147,
     "status": "partial",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/Lightning/DistanceField.cpp",

@@ -17,7 +17,7 @@
 //   #include "FillLine.hpp"
 use super::FillParams;
 use crate::clipper_utils::{diff_pl, intersection_pl, offset_expolygon, OffsetJoinType};
-use crate::geometry::{align_to_grid, BoundingBox, ExPolygon, Line, Point, Polyline};
+use crate::geometry::{align_to_grid_point_base, BoundingBox, ExPolygon, Line, Point, Polyline};
 use crate::shortest_path::chain_polylines;
 use crate::{scale, unscale, Coord, CoordF};
 
@@ -137,15 +137,15 @@ impl FillLine {
             // extend bounding box so that our pattern will be aligned with other layers
             // Transform the reference point to the rotated coordinate system.
             // FillLine.cpp:34-37
-            // align_to_grid(Point, Point spacing, Point base) — Point.hpp:595-596.
-            // Reconstructed from the public `align_to_grid(coord, spacing)`:
-            //   align_to_grid(c, s, b) = b + align_to_grid(c - b, s)
-            let bb_min = bounding_box.min;
-            let spacing_pt = Point::new(self._line_spacing, self._line_spacing);
-            let base_pt = direction.1.rotate(-(direction.0 as CoordF));
-            bounding_box.merge_point(Point::new(
-                base_pt.x + align_to_grid(bb_min.x - base_pt.x, spacing_pt.x),
-                base_pt.y + align_to_grid(bb_min.y - base_pt.y, spacing_pt.y),
+            //   bounding_box.merge(align_to_grid(
+            //       bounding_box.min,
+            //       Point(this->_line_spacing, this->_line_spacing),
+            //       direction.second.rotated(- direction.first)));
+            // `align_to_grid(Point coord, Point spacing, Point base)` — Point.hpp:595-596.
+            bounding_box.merge_point(align_to_grid_point_base(
+                bounding_box.min,
+                Point::new(self._line_spacing, self._line_spacing),
+                direction.1.rotate(-(direction.0 as CoordF)),
             ));
         }
 
@@ -181,7 +181,11 @@ impl FillLine {
             pts.push(it.a);
             pts.push(it.b);
         }
-        // FillLine.cpp:61
+        // FillLine.cpp:61 — intersection_pl(polylines_src, offset(expolygon, scale_(0.02)))
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. Both
+        // `offset` (jtMiter, miterLimit 3 default) and `intersection_pl` route
+        // through clipper_utils' geo-clipper backend (fixed scale 1000), not
+        // ClipperLib at coord_t integer precision.
         let mut polylines: Vec<Polyline> =
             intersection_pl(&polylines_src, &offset_expolygon(&expolygon, scale(0.02) as CoordF, OffsetJoinType::Miter));
 
@@ -226,7 +230,10 @@ impl FillLine {
             let mut expolygon_off: ExPolygon = ExPolygon::default();
             // FillLine.cpp:82
             {
-                // FillLine.cpp:83
+                // FillLine.cpp:83 — offset_ex(expolygon, this->_min_spacing/2)
+                // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
+                // (offset_ex routes through clipper_utils' geo-clipper backend).
+                // `_min_spacing / 2` is integer (coord_t) division, as in C++.
                 let mut expolygons_off: Vec<ExPolygon> = offset_expolygon(
                     &expolygon,
                     (self._min_spacing / 2) as CoordF,
@@ -334,6 +341,8 @@ fn expolygon_contains_line(expolygon: &ExPolygon, line: &Line) -> bool {
     if !bbox1.intersects(&bbox2) {
         return false;
     }
-    // ExPolygon.cpp:89
+    // ExPolygon.cpp:89 — diff_pl(polyline, *this).empty()
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
+    // (diff_pl routes through clipper_utils' geo-clipper backend).
     diff_pl(&[polyline], std::slice::from_ref(expolygon)).is_empty()
 }

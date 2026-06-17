@@ -114,6 +114,15 @@ impl<'a> FillConcentric<'a> {
         // FillConcentric.cpp:32  while (! last.empty()) {
         while !last.is_empty() {
             // FillConcentric.cpp:33  last = offset2_ex(last, -(distance + min_spacing/2), +min_spacing/2);
+            //
+            // FIDELITY-NOTE(F1): geo/Clipper2 join-type approximation. C++ `offset2_ex`
+            // defaults to `ClipperLib::jtMiter` (ClipperUtils.hpp:31,397 `DefaultJoinType`),
+            // i.e. sharp/mitered corners. The crate's `offset2_ex_2` runs the faithful
+            // Clipper2 FFI but with `JoinType::Round` (Clipper2Utils.cpp:186). Rounded vs
+            // mitered corners change the inset contour geometry slightly. Re-routing to a
+            // miter-join Clipper path is a cross-cutting backend change, not a per-file fix.
+            // The integer `coord_t` deltas are negated in integer space (matching C++) then
+            // widened to f64; for integral values `-(x as f64) == (-x) as f64`.
             last = offset2_ex_2(
                 &last,
                 -(distance + min_spacing / 2) as f64,
@@ -127,11 +136,12 @@ impl<'a> FillConcentric<'a> {
         // adhesion problems of the first central tiny loops
         // FillConcentric.cpp:39  loops = union_pt_chained_outside_in(loops);
         //
-        // BLOCKED (byte-exact): `union_pt_chained_outside_in` relies on the legacy
-        // ClipperLib `PolyTree` (`union_pt`) plus the recursive outside-in chaining
-        // `traverse_pt_outside_in`/`chain_clipper_polynodes`, neither of which the
-        // Clipper2 backend exposes. We perform the boolean union so the loop GEOMETRY
-        // is correct, but the chained ORDER is not yet reproduced byte-for-byte.
+        // FIDELITY-NOTE(F1): geo/Clipper2 backend. `union_pt_chained_outside_in` relies
+        // on the legacy `ClipperLib::PolyTree` (`union_pt`) plus the recursive outside-in
+        // chaining `traverse_pt_outside_in`/`chain_clipper_polynodes`, neither of which the
+        // Clipper2 FFI exposes. The helper below performs the boolean union (correct loop
+        // GEOMETRY) and reverses holes to CCW exactly as the C++ traversal does; only the
+        // nearest-neighbour sibling ORDER from `chain_clipper_polynodes` is not reproduced.
         loops = union_pt_chained_outside_in(&loops);
 
         // split paths using a nearest neighbor search
@@ -369,23 +379,44 @@ fn to_thick_polylines(polylines: Polylines, width: f64) -> ThickPolylines {
 
 /// ClipperUtils.cpp:1019  Polygons union_pt_chained_outside_in(const Polygons &subject)
 ///
-/// BLOCKED (byte-exact ordering): the C++ implementation traverses the
-/// `ClipperLib::PolyTree` produced by `union_pt(subject)` outside-in via
-/// `traverse_pt_outside_in`, which orders sibling nodes with
-/// `chain_clipper_polynodes(...)` and reverses hole contours to CCW. The crate's
-/// Clipper backend is Clipper2, which does not expose a `PolyTree64` traversal nor
-/// `chain_clipper_polynodes`. We perform the boolean union so the resulting loop
-/// GEOMETRY matches; the outside-in chained ORDER is not yet reproduced
-/// byte-for-byte. Tracked as a blocked dependency.
+/// C++:
+///     Polygons retval;
+///     traverse_pt_outside_in(union_pt(subject).Childs, &retval);
+///     return retval;
+///
+/// `traverse_pt_outside_in` (ClipperUtils.cpp:999) walks the `union_pt` PolyTree
+/// depth-first, pushing each node's contour and, for each hole node
+/// (`node->IsHole()`), reversing the pushed contour to CCW (ClipperUtils.cpp:1010-1013):
+///     for (PolyNode *node : chain_clipper_polynodes(ordering_points, nodes)) {
+///         retval->emplace_back(std::move(node->Contour));
+///         if (node->IsHole()) retval->back().reverse(); // CW hole -> CCW
+///         traverse_pt_outside_in(std::move(node->Childs), retval);
+///     }
+///
+/// FIDELITY-NOTE(F1): geo/Clipper2 backend. The crate's Clipper backend is Clipper2,
+/// which does not expose the legacy `ClipperLib::PolyTree` traversal nor
+/// `chain_clipper_polynodes`. We rebuild the PolyTree as `ExPolygons` via the
+/// faithful Clipper2 FFI `union_ex_2`, which yields the same loop GEOMETRY (and we
+/// reverse holes to CCW exactly as `traverse_pt_outside_in` does). What is NOT yet
+/// reproduced byte-for-byte is the sibling ORDERING: `chain_clipper_polynodes`
+/// performs a nearest-neighbour chaining of node contour-front points, whereas the
+/// ExPolygon reconstruction emits outer/holes in PolyTree iteration order. Tracked
+/// as a blocked dependency (no Clipper2 PolyTree64 traversal in the FFI surface).
 fn union_pt_chained_outside_in(subject: &Polygons) -> Polygons {
     // ClipperUtils.cpp:1021  Polygons retval;
     // ClipperUtils.cpp:1022  traverse_pt_outside_in(union_pt(subject).Childs, &retval);
     let union: ExPolygons = union_ex_2(subject);
     let mut retval: Polygons = Vec::new();
     for expoly in union.iter() {
+        // ClipperUtils.cpp:1010  retval->emplace_back(std::move(node->Contour));
+        // The outer contour is not a hole, so it is pushed as-is (CCW).
         retval.push(expoly.contour.clone());
         for hole in expoly.holes.iter() {
-            retval.push(hole.clone());
+            // ClipperUtils.cpp:1010-1013  push the hole contour, then reverse it
+            // because `node->IsHole()` is true (CW hole -> CCW for the output loop).
+            let mut hole = hole.clone();
+            hole.reverse();
+            retval.push(hole);
         }
     }
     // ClipperUtils.cpp:1023  return retval;
