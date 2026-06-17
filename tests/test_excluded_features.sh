@@ -240,6 +240,28 @@ if [ -f "$BASE_3MF" ]; then
     fi
     rm -f "$GC"
 
+    # temp_tower descends from start (engine hook), so an ascending range is a
+    # misconfiguration and must be rejected.
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$BASE_3MF" --calib-mode temp_tower --calib-start 190 --calib-end 240 --calib-step 5
+    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "descends"; then
+        record "calib-temp-ascending-rejected" 1
+    else
+        record "calib-temp-ascending-rejected" 0 "exit=$LAST_EXIT (want non-zero + descends error)"
+    fi
+    rm -f "$GC"
+
+    # --calib-extruder-id is only honored by pressure_advance_pattern; a nonzero
+    # id on another mode must be rejected (it would calibrate the wrong extruder).
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$BASE_3MF" --calib-mode temp_tower --calib-start 240 --calib-end 190 --calib-step 5 --calib-extruder-id 1
+    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "only honored"; then
+        record "calib-extruder-id-rejected-non-pattern" 1
+    else
+        record "calib-extruder-id-rejected-non-pattern" 0 "exit=$LAST_EXIT (want non-zero + only-honored error)"
+    fi
+    rm -f "$GC"
+
     # pressure_advance_pattern with an STL input + no config bundle must be
     # rejected: the pattern discards the model, so an STL supplies no config and
     # would otherwise slice the default/wrong printer.

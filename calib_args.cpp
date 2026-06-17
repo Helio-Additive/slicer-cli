@@ -75,6 +75,17 @@ Calib_Params build_calib_params(const CalibOptions& opts)
     params.extruder_id   = std::max(0, opts.extruder_id);
     params.print_numbers = opts.print_numbers;
 
+    // Only pressure_advance_pattern actually consumes Calib_Params::extruder_id
+    // (apply_pa_pattern scales widths / picks the wall speed / assigns the handle
+    // for it). The other modes go through Print::set_calib_params + the engine's
+    // per-layer hooks, which read the CURRENT writer filament — they ignore
+    // extruder_id. Accepting a nonzero id there would silently calibrate the
+    // wrong extruder, so reject it rather than mislead.
+    if (params.extruder_id != 0 && params.mode != CalibMode::Calib_PA_Pattern)
+        throw std::invalid_argument(
+            "--calib-extruder-id is only honored by pressure_advance_pattern; other modes "
+            "calibrate the model's current extruder");
+
     if (!std::isfinite(params.start) || !std::isfinite(params.end) || !std::isfinite(params.step))
         throw std::invalid_argument("--calib-start/--calib-end/--calib-step must be finite numbers");
     if (params.step <= 0.0)
@@ -94,6 +105,15 @@ Calib_Params build_calib_params(const CalibOptions& opts)
         params.end <= params.start)
         throw std::invalid_argument(
             "pressure-advance --calib-end must be greater than --calib-start (ascending sweep)");
+
+    // The temperature tower descends from `start` (engine hook: temp = start -
+    // floor(z/10.001)*5; `end` is advisory and unused). An ascending range
+    // (start < end) would sweep DOWN from the low start, away from the intended
+    // high temp — almost always a mistake. Require start > end (high → low).
+    if (params.mode == CalibMode::Calib_Temp_Tower && params.start <= params.end)
+        throw std::invalid_argument(
+            "temp_tower --calib-start must be greater than --calib-end (the tower descends "
+            "from the start temperature)");
 
     return params;
 }

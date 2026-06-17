@@ -1115,8 +1115,14 @@ int main(int argc, char** argv) {
         // embedded project_settings or explicit profile files. An STL provides
         // geometry (which is thrown away) and NO config, so STL-only would slice
         // the default/wrong printer; require a real config source.
-        const bool input_is_3mf = input_file.find(".3mf") != std::string::npos ||
-                                  input_file.find(".3MF") != std::string::npos;
+        // Mirror the loader's dispatch (it checks .stl FIRST), so a path like
+        // `part.3mf.stl` — which loads as STL — is NOT mistaken for a config-
+        // bearing 3MF here.
+        const bool input_is_stl = input_file.find(".stl") != std::string::npos ||
+                                  input_file.find(".STL") != std::string::npos;
+        const bool input_is_3mf = !input_is_stl &&
+                                  (input_file.find(".3mf") != std::string::npos ||
+                                   input_file.find(".3MF") != std::string::npos);
         if (!input_is_3mf && !has_config_source) {
             std::cerr << "Error: pressure_advance_pattern needs config from a .3mf --input "
                          "or --config/--machine/--filament/--process (an STL supplies only "
