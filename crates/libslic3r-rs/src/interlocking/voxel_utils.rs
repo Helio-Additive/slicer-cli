@@ -74,6 +74,10 @@ impl DilationKernel {
     pub fn new(kernel_size: GridPoint3, kernel_type: DilationKernelType) -> Self {
         // VoxelUtils.cpp:16
         // multiplier for division to avoid rounding and to avoid use of floating point numbers
+        // FIDELITY-NOTE(F2): C++ `coord_t mult` is int32_t (libslic3r.h:40); here `Coord = i64`.
+        // The downstream `mult * current[i] / limit[i]` arithmetic therefore widens to i64 rather
+        // than wrapping in int32. For realistic kernel_size values (small voxel counts) the products
+        // never approach the int32 range, so the truncating integer divisions are identical.
         let mult: Coord = kernel_size[0] * kernel_size[1] * kernel_size[2];
         // VoxelUtils.cpp:17
         let mut relative_cells: Vec<GridPoint3> = Vec::with_capacity(mult as usize);
@@ -587,6 +591,14 @@ fn spread_dots_area(polygons: &ExPolygon, grid_size: Point) -> Vec<Point> {
     // a full-infill request to `fill_surface_by_lines(surface, params, 0.f,
     // 0.f, polylines_out)`; the Surface wrapper only carries the expolygon
     // here (stInternal is not solid, bridge_angle/thickness_layers defaults).
+    //
+    // FIDELITY-NOTE(F1): the C++ asserts each produced polyline is a vertical
+    // 2-point segment (constant x). That invariant is a property of the
+    // crate's `fill_surface_by_lines` rectilinear traversal, which uses the
+    // geo-clipper based clipper_utils primitives rather than ClipperLib at
+    // coord_t integer precision; the dot positions can therefore drift versus
+    // C++ on degenerate/near-boundary geometry. The logic in THIS file
+    // mirrors the C++ exactly (same angle, spacing, density==1 full-infill).
     let polylines = fill_surface_by_lines(polygons, spacing, rotate_angle, 0.0, &params);
 
     // VoxelUtils.cpp:157

@@ -14,14 +14,14 @@
 //! NOTE on the mesh type: the C++ function takes `const sla::IndexedMesh &`.
 //! `sla::IndexedMesh::squared_distance(const Vec3d &p, int &i, Vec3d &c)`
 //! (IndexedMesh.cpp:308-323) delegates to
-//! `AABBTreeIndirect::squared_distance_to_indexed_triangle_set`, which is
-//! exactly what the already-ported `crate::aabb_mesh::AABBMesh::squared_distance`
-//! (AABBMesh.cpp:313-323) computes. Since `crate::sla::indexed_mesh` is not yet
-//! ported, we take `AABBMesh` here — the same query with identical math.
+//! `AABBTreeIndirect::squared_distance_to_indexed_triangle_set`. The crate now
+//! ports `sla::IndexedMesh` (crate::sla::indexed_mesh::IndexedMesh) with the
+//! identical out-parameter signature, so this port takes that type directly,
+//! matching the C++ header exactly.
 
 // namespace Slic3r { namespace sla {  // ReprojectPointsOnMesh.hpp:12
-use crate::aabb_mesh::AABBMesh;
 use crate::geometry::Vec3;
+use crate::sla::indexed_mesh::{IndexedMesh, Vec3d};
 use rayon::prelude::*;
 
 /// Accessor pair for point-like types carrying a `pos` member (`Vec3f pos`).
@@ -51,7 +51,7 @@ pub trait Pos {
 /// C++: `void reproject_support_points(const IndexedMesh &mesh, std::vector<PointType> &pts)`
 /// ReprojectPointsOnMesh.hpp:17-26
 pub fn reproject_support_points<PointType: Pos + Send>(
-    mesh: &AABBMesh,
+    mesh: &IndexedMesh,
     pts: &mut Vec<PointType>,
 ) {
     // C++: tbb::parallel_for(size_t(0), pts.size(), [&mesh, &pts](size_t idx) {
@@ -59,30 +59,40 @@ pub fn reproject_support_points<PointType: Pos + Send>(
     pts.par_iter_mut().for_each(|pt| {
         // C++: int junk;
         // ReprojectPointsOnMesh.hpp:21
+        let mut junk: i32 = 0;
         // C++: Vec3d new_pos;
         // ReprojectPointsOnMesh.hpp:22
+        let mut new_pos = Vec3d::zeros();
         // C++: mesh.squared_distance(pos(pts[idx]), junk, new_pos);
         // ReprojectPointsOnMesh.hpp:23
-        let (_sqdst, _junk, new_pos) = mesh.squared_distance(pt.pos());
+        //
+        // `IndexedMesh::squared_distance` is defined over nalgebra `Vec3d`
+        // (Eigen `Matrix<double,1,3>`), while the `Pos` accessors return the
+        // crate's geometry `Vec3`. Both losslessly represent the same Eigen
+        // `Vec3d`; bridge them coordinate-wise (no precision change).
+        let p = pt.pos();
+        let p_na = Vec3d::new(p.x, p.y, p.z);
+        mesh.squared_distance(&p_na, &mut junk, &mut new_pos);
         // C++: pos(pts[idx], new_pos);
         // ReprojectPointsOnMesh.hpp:24
-        pt.set_pos(&new_pos);
+        pt.set_pos(&Vec3::new(new_pos.x, new_pos.y, new_pos.z));
     });
 }
 
 // BLOCKED — `inline void reproject_points_and_holes(ModelObject *object)`
 // ReprojectPointsOnMesh.hpp:28-43
 //
-// Not portable yet because every input it touches is missing from the crate:
-//   - `ModelObject` (src/model.rs, Model.hpp:344-460 port) has no
-//     `sla_support_points` (Model.hpp) nor `sla_drain_holes` fields and no
-//     `raw_mesh()` method (ReprojectPointsOnMesh.hpp:30-31, 35).
-//   - `sla::SupportPoint` (crate::sla::support_point) is still a placeholder
-//     without its `Vec3f pos` field (SupportPoint.hpp:18), so the `Pos` impl
-//     for it (instantiation of ReprojectPointsOnMesh.hpp:14-15) is blocked.
-//   - `sla::DrainHole` (crate::sla::hollowing) is still a placeholder without
-//     its `Vec3f pos` field (Hollowing.hpp:33), likewise blocking its `Pos`
-//     impl.
+// Not portable yet because the `ModelObject` inputs it touches are missing from
+// the crate's (simplified) `ModelObject` (src/model.rs, Model.hpp:344-460 port):
+//   - `ModelObject` has no `sla_support_points` (Model.hpp) nor `sla_drain_holes`
+//     fields (ReprojectPointsOnMesh.hpp:30-31).
+//   - `ModelObject` has no `raw_mesh()` method (ReprojectPointsOnMesh.hpp:35); the
+//     crate stores `mesh: TriangleMesh` directly instead of a volume list.
+//   - The crate's `TriangleMesh` is a documented divergent struct (f64 vertices,
+//     no `its` member — see triangle_mesh.rs "DIVERGENCE" note), so even the
+//     `IndexedMesh emesh{rmsh}` step (ReprojectPointsOnMesh.hpp:36) has no
+//     faithful equivalent until `IndexedMesh::from_triangle_mesh` lands
+//     (see indexed_mesh.rs BLOCKED note on `IndexedMesh(const TriangleMesh&)`).
 //
 // For reference, the C++ body to port once those land:
 //   ReprojectPointsOnMesh.hpp:30  bool has_sppoints = !object->sla_support_points.empty();
@@ -98,8 +108,8 @@ pub fn reproject_support_points<PointType: Pos + Send>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aabb_mesh::IndexedTriangleSet;
-    use crate::geometry::Point3F;
+    use crate::normal_utils::indexed_triangle_set;
+    use crate::triangle_mesh::{Vec3f, Vec3i};
 
     /// Minimal stand-in for a point type with a `Vec3f pos` member, mirroring
     /// the layout of sla::SupportPoint (SupportPoint.hpp:18).
@@ -122,15 +132,15 @@ mod tests {
     #[test]
     fn reprojects_point_onto_triangle() {
         // One triangle in the z = 0 plane.
-        let its = IndexedTriangleSet::from_parts(
-            vec![
-                Point3F::new(0.0, 0.0, 0.0),
-                Point3F::new(10.0, 0.0, 0.0),
-                Point3F::new(0.0, 10.0, 0.0),
+        let its = indexed_triangle_set {
+            vertices: vec![
+                Vec3f::new(0.0, 0.0, 0.0),
+                Vec3f::new(10.0, 0.0, 0.0),
+                Vec3f::new(0.0, 10.0, 0.0),
             ],
-            vec![[0, 1, 2]],
-        );
-        let mesh = AABBMesh::new(its, false);
+            indices: vec![Vec3i::new(0, 1, 2)],
+        };
+        let mesh = IndexedMesh::new(&its, false);
 
         let mut pts = vec![TestPoint { pos: [1.0, 1.0, 5.0] }];
         reproject_support_points(&mesh, &mut pts);

@@ -2982,7 +2982,8 @@
     "rust_exists": true,
     "loc": 219,
     "status": "done",
-    "priority": 8
+    "priority": 8,
+    "fidelity": "flagged"
   },
   {
     "cpp": "Interlocking/InterlockingGenerator.cpp",
@@ -3004,7 +3005,8 @@
     "rust_exists": true,
     "loc": 32,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/ReprojectPointsOnMesh.hpp",
@@ -3015,7 +3017,8 @@
     "rust_exists": true,
     "loc": 46,
     "status": "partial",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SLA/SupportPoint.hpp",
@@ -3026,7 +3029,8 @@
     "rust_exists": true,
     "loc": 67,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/Concurrency.hpp",
