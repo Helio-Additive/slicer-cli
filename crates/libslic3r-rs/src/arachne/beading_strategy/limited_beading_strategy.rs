@@ -12,7 +12,26 @@
 use super::beading_strategy::{
     Beading, BeadingStrategy, BeadingStrategyPtr, WALL_CONTOUR_MARKED_WIDTH,
 };
-use crate::{scale, Coord};
+use crate::Coord;
+
+/// Faithful reproduction of C++ `scaled<coord_t>(v)`.
+/// Point.hpp:536-541
+/// C++: return Tout(v / Tin(SCALING_FACTOR));  // SCALING_FACTOR = 0.00001 (libslic3r.h:58)
+///
+/// This is a *truncating* cast toward zero (NOT std::round — the std::round path
+/// is commented out in C++). crate::scale()/scaled() instead does
+/// `(v * 100000.0).round()`, which diverges by 1 unit for values like 0.01
+/// (round -> 1000 vs truncate -> 999) and 1000.0 (round -> 100_000_000 vs
+/// truncate -> 99_999_999). Reproduce the exact C++ expression here to match.
+/// FIDELITY-NOTE(F2): result is a Coord(i64); C++ coord_t is int32. The values
+/// used here (999, 90_000_000, 99_999_999) are all within int32 range, so the
+/// Coord width does not affect the result.
+#[inline]
+fn scaled_coord(v: f64) -> Coord {
+    // C++ literal SCALING_FACTOR = 0.00001 used directly (crate::SCALING_FACTOR
+    // is its reciprocal 100_000.0).
+    (v / 0.00001) as Coord
+}
 
 /// Limited beading strategy that caps the maximum number of beads.
 /// Arachne/BeadingStrategy/LimitedBeadingStrategy.hpp:26-47
@@ -236,7 +255,10 @@ impl BeadingStrategy for LimitedBeadingStrategy {
         if parent_bead_count <= self.max_bead_count {
             self.parent.get_optimal_bead_count(thickness)
         } else if parent_bead_count == self.max_bead_count + 1 {
-            if thickness < self.parent.get_optimal_thickness(self.max_bead_count + 1) - scale(0.01)
+            // LimitedBeadingStrategy.cpp:118
+            // C++: if (thickness < parent->getOptimalThickness(max_bead_count + 1) - scaled<coord_t>(0.01))
+            if thickness
+                < self.parent.get_optimal_thickness(self.max_bead_count + 1) - scaled_coord(0.01)
             {
                 self.max_bead_count
             } else {
@@ -272,8 +294,11 @@ impl BeadingStrategy for LimitedBeadingStrategy {
         if bead_count <= self.max_bead_count {
             self.parent.get_optimal_thickness(bead_count)
         } else {
+            // LimitedBeadingStrategy.cpp:96-97
+            // C++: assert(false);
+            // C++: return scaled<coord_t>(1000.); // 1 meter (Cura was returning 10 meter)
             debug_assert!(false, "bead_count > max_bead_count");
-            scale(1000.0) // 1 meter
+            scaled_coord(1000.0) // 1 meter
         }
     }
 
@@ -293,12 +318,21 @@ impl BeadingStrategy for LimitedBeadingStrategy {
     /// C++: }
     fn get_transition_thickness(&self, lower_bead_count: Coord) -> Coord {
         if lower_bead_count < self.max_bead_count {
+            // LimitedBeadingStrategy.cpp:102-103
+            // C++: if (lower_bead_count < max_bead_count)
+            // C++:     return parent->getTransitionThickness(lower_bead_count);
             self.parent.get_transition_thickness(lower_bead_count)
         } else if lower_bead_count == self.max_bead_count {
-            self.parent.get_optimal_thickness(lower_bead_count + 1) - scale(0.01)
+            // LimitedBeadingStrategy.cpp:105-106
+            // C++: if (lower_bead_count == max_bead_count)
+            // C++:     return parent->getOptimalThickness(lower_bead_count + 1) - scaled<coord_t>(0.01);
+            self.parent.get_optimal_thickness(lower_bead_count + 1) - scaled_coord(0.01)
         } else {
+            // LimitedBeadingStrategy.cpp:108-109
+            // C++: assert(false);
+            // C++: return scaled<coord_t>(900.); // 0.9 meter;
             debug_assert!(false, "lower_bead_count > max_bead_count");
-            scale(900.0) // 0.9 meter
+            scaled_coord(900.0) // 0.9 meter
         }
     }
 

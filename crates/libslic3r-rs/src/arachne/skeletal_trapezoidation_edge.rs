@@ -31,6 +31,8 @@ enum Central {
 pub struct TransitionMiddle {
     /// Position along edge as measured from edge.from.p
     /// C++: coord_t pos;
+    // FIDELITY-NOTE(F2): C++ coord_t = int32_t; crate Coord = i64. Pure storage here (no
+    // arithmetic/hashing/overflow in this file), so the width difference has no logic effect.
     pub pos: Coord,
 
     /// Lower bead count at this transition
@@ -39,6 +41,7 @@ pub struct TransitionMiddle {
 
     /// The feature radius at which this transition is placed
     /// C++: coord_t feature_radius;
+    // FIDELITY-NOTE(F2): C++ coord_t = int32_t; crate Coord = i64. Pure storage, no logic effect.
     pub feature_radius: Coord,
 }
 
@@ -64,6 +67,7 @@ impl TransitionMiddle {
 pub struct TransitionEnd {
     /// Position along edge as measured from edge.from.p, where the edge is always the half edge oriented from lower to higher R
     /// C++: coord_t pos;
+    // FIDELITY-NOTE(F2): C++ coord_t = int32_t; crate Coord = i64. Pure storage, no logic effect.
     pub pos: Coord,
 
     /// Lower bead count at this transition
@@ -112,16 +116,16 @@ pub enum EdgeType {
 #[derive(Debug, Clone)]
 pub struct SkeletalTrapezoidationEdge {
     /// Type of this edge
-    /// C++: EdgeType type;
+    /// C++: EdgeType type;  (SkeletalTrapezoidationEdge.hpp:55, public)
     pub edge_type: EdgeType,
 
-    /// Whether the edge is significant; whether the source segments have a sharp angle
-    /// C++: Central is_central;
-    is_central: Central,
-
     /// Whether to apply hole compensation to this edge
-    /// C++: bool apply_hole_compensation{ false };
+    /// C++: bool apply_hole_compensation{ false };  (SkeletalTrapezoidationEdge.hpp:124)
     apply_hole_compensation: bool,
+
+    /// Whether the edge is significant; whether the source segments have a sharp angle; -1 is unknown
+    /// C++: Central is_central;  (SkeletalTrapezoidationEdge.hpp:125)
+    is_central: Central,
 
     /// Weak pointer to list of transition middles
     /// C++: std::weak_ptr<std::list<TransitionMiddle>> transitions;
@@ -150,8 +154,8 @@ impl SkeletalTrapezoidationEdge {
     pub fn with_type(edge_type: EdgeType) -> Self {
         Self {
             edge_type,
-            is_central: Central::Unknown,
             apply_hole_compensation: false,
+            is_central: Central::Unknown,
             transitions: Weak::new(),
             transition_ends: Weak::new(),
             extrusion_junctions: Weak::new(),
