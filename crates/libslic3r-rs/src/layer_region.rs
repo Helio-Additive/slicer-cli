@@ -36,7 +36,8 @@
 //!     for the C++ `this->layer()->object()->print()->config()` read.
 
 use crate::extrusion_entity::{
-    ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionPath, ExtrusionRole,
+    ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionMultiPath,
+    ExtrusionPath, ExtrusionRole,
 };
 use crate::layer::LayerRegion;
 
@@ -62,9 +63,14 @@ pub const MAX_VARIANCE: f64 =
 
 /// Sparse-infill simplify resolution used by the arc-fitting branch of the
 /// `simplify_*` family. Kept here mirroring the C++ `SCALED_SPARSE_INFILL_RESOLUTION`
-/// constant (PerimeterGenerator.hpp). In this crate, simplify operates on scaled
-/// integer tolerances; the value is `scaled<double>(0.05)`.
-const SCALED_SPARSE_INFILL_RESOLUTION: f64 = 0.05 * crate::SCALING_FACTOR;
+/// constant (libslic3r.h:65-66):
+///   `static constexpr double SPARSE_INFILL_RESOLUTION = 0.04;`
+///   `#define SCALED_SPARSE_INFILL_RESOLUTION (SPARSE_INFILL_RESOLUTION / SCALING_FACTOR)`
+/// In C++ `SCALING_FACTOR = 0.00001` and `scale_/scaled = v / SCALING_FACTOR`, so this
+/// equals `0.04 / 0.00001 = 4000` scaled integer units. This crate inverts the constant
+/// (`SCALING_FACTOR = 100_000` and `scale = v * SCALING_FACTOR`), so the faithful value
+/// is `0.04 * crate::SCALING_FACTOR = 4000`.
+const SCALED_SPARSE_INFILL_RESOLUTION: f64 = 0.04 * crate::SCALING_FACTOR;
 
 // `LayerRegion::simplify_*` member methods, defined here to mirror the C++
 // file split (bodies in LayerRegion.cpp, declarations in Layer.hpp:113-119).
@@ -146,21 +152,15 @@ impl LayerRegion {
             //     path->simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
             // else
             //     path->simplify_by_fitting_arc(scaled_resolution);
-            //
-            // BLOCKED: ExtrusionPath::simplify_by_fitting_arc (arc fitting) is not yet
-            // ported. We fall back to the plain douglas-peucker simplify at the same
-            // tolerance so the path is still reduced; this differs from C++ only in
-            // that emitted arcs are not fitted (the simplification points are identical).
-            let tol = if path.role == ExtrusionRole::InternalInfill {
-                SCALED_SPARSE_INFILL_RESOLUTION
+            if path.role == ExtrusionRole::InternalInfill {
+                path.simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
             } else {
-                scaled_resolution
-            };
-            path.polyline.simplify(tol);
+                path.simplify_by_fitting_arc(scaled_resolution);
+            }
         } else {
             // LayerRegion.cpp:800
             // path->simplify(scaled_resolution);
-            path.polyline.simplify(scaled_resolution);
+            path.simplify(scaled_resolution);
         }
     }
 
@@ -183,29 +183,56 @@ impl LayerRegion {
                 //     loop->paths[i].simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
                 // else
                 //     loop->paths[i].simplify_by_fitting_arc(scaled_resolution);
-                //
-                // BLOCKED: simplify_by_fitting_arc not ported; see simplify_path().
-                let tol = if path.role == ExtrusionRole::InternalInfill {
-                    SCALED_SPARSE_INFILL_RESOLUTION
+                if path.role == ExtrusionRole::InternalInfill {
+                    path.simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
                 } else {
-                    scaled_resolution
-                };
-                path.polyline.simplify(tol);
+                    path.simplify_by_fitting_arc(scaled_resolution);
+                }
             } else {
                 // LayerRegion.cpp:839
                 // loop->paths[i].simplify(scaled_resolution);
-                path.polyline.simplify(scaled_resolution);
+                path.simplify(scaled_resolution);
             }
         }
     }
 
-    // LayerRegion.cpp:804-822
-    // void LayerRegion::simplify_multi_path(ExtrusionMultiPath* multipath)
-    //
-    // BLOCKED: this crate has no `ExtrusionMultiPath` extrusion-entity variant
-    // (`ExtrusionEntityType` is Path | Loop | Collection). The body is identical to
-    // `simplify_loop` applied over `multipath->paths`; once a multipath type exists it
-    // should be ported here verbatim.
+    /// Simplify each path of an extrusion multi-path.
+    ///
+    /// LayerRegion.cpp:804-822
+    /// C++: void LayerRegion::simplify_multi_path(ExtrusionMultiPath* multipath)
+    ///
+    /// NOTE: `ExtrusionEntityType` (Path | Loop | Collection) has no `MultiPath`
+    /// variant, so `simplify_entity_collection`'s dispatch never reaches a
+    /// multipath. This method is still ported faithfully against the existing
+    /// `ExtrusionMultiPath` struct so it is wired up correctly once such a variant
+    /// is added.
+    pub fn simplify_multi_path(&self, multipath: &mut ExtrusionMultiPath) {
+        // LayerRegion.cpp:806-809 — same print-config reads as simplify_path.
+        let (spiral_mode, enable_arc_fitting, scaled_resolution) = self.simplify_print_params();
+
+        // LayerRegion.cpp:811
+        // for (size_t i = 0; i < multipath->paths.size(); ++i) {
+        for path in multipath.paths.iter_mut() {
+            // LayerRegion.cpp:812-813
+            // if (enable_arc_fitting && !spiral_mode) {
+            if enable_arc_fitting && !spiral_mode {
+                // LayerRegion.cpp:814-817
+                // if (multipath->paths[i].role() == erInternalInfill)
+                //     multipath->paths[i].simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
+                // else
+                //     multipath->paths[i].simplify_by_fitting_arc(scaled_resolution);
+                if path.role == ExtrusionRole::InternalInfill {
+                    path.simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
+                } else {
+                    path.simplify_by_fitting_arc(scaled_resolution);
+                }
+            } else {
+                // LayerRegion.cpp:819
+                // multipath->paths[i].simplify(scaled_resolution);
+                path.simplify(scaled_resolution);
+            }
+        }
+    }
 
     /// The three print-config reads shared by every C++ `simplify_*` member
     /// (LayerRegion.cpp:788-791 / 806-809 / 826-829):

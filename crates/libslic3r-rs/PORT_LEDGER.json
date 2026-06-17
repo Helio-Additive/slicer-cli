@@ -1166,7 +1166,8 @@
     "rust_exists": true,
     "loc": 543,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCodeSender.cpp",
@@ -1177,7 +1178,8 @@
     "rust_exists": true,
     "loc": 580,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "BuildVolume.cpp",
@@ -1320,7 +1322,8 @@
     "rust_exists": false,
     "loc": 819,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Geometry.cpp",
@@ -1342,7 +1345,8 @@
     "rust_exists": true,
     "loc": 844,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "MultiNozzleUtils.cpp",

@@ -403,7 +403,10 @@ impl GCodeSender {
                 let (do_resend, oldest) = {
                     let mut q = self.queue_mutex.lock().unwrap();
                     // C++ reads `sent`/`last_sent` here both for the condition and the body.
-                    if toresend > q.sent - q.last_sent.len() && toresend <= q.sent {
+                    // C++ `sent` and `last_sent.size()` are size_t; `sent - last_sent.size()`
+                    // wraps around on underflow (when last_sent.size() > sent). Mirror the
+                    // unsigned wraparound with wrapping_sub rather than panicking.
+                    if toresend > q.sent.wrapping_sub(q.last_sent.len()) && toresend <= q.sent {
                         // GCodeSender.cpp:373-393 (inside queue_mutex lock)
 
                         // GCodeSender.cpp:376
@@ -434,7 +437,8 @@ impl GCodeSender {
                         (true, 0)
                     } else {
                         // GCodeSender.cpp:396 -- printf oldest = sent - last_sent.size()
-                        (false, q.sent - q.last_sent.len())
+                        // size_t arithmetic in C++ wraps on underflow; mirror with wrapping_sub.
+                        (false, q.sent.wrapping_sub(q.last_sent.len()))
                     }
                 };
                 if do_resend {
@@ -608,9 +612,15 @@ impl GCodeSender {
 
         // calculate checksum
         // GCodeSender.cpp:504-506
+        //   int cs = 0;
+        //   for (std::string::const_iterator it = full_line.begin(); ...) cs = cs ^ *it;
+        // `*it` is a `char`, which is signed on the target platforms (x86/ARM
+        // Linux/macOS), so bytes >= 0x80 are sign-extended to a negative `int`
+        // before the XOR. Mirror that with `as i8 as i32` (zero-extending via
+        // `u8 as i32` would diverge for non-ASCII bytes).
         let mut cs: i32 = 0;
         for it in full_line.bytes() {
-            cs ^= it as i32;
+            cs ^= it as i8 as i32;
         }
 
         // write line to device
@@ -747,7 +757,7 @@ mod tests {
         let body = "N1 G1 X1";
         let mut cs: i32 = 0;
         for b in body.bytes() {
-            cs ^= b as i32;
+            cs ^= b as i8 as i32;
         }
         assert_eq!(out, format!("{}*{}\n", body, cs));
     }

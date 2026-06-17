@@ -36,15 +36,17 @@
 //! `shape.paths`, `path->pts`, `path->npts`, `path->closed`, etc.):
 //! `create_shape_with_ids`, `to_polygons(image)`, `bounds`, `get_shapes_count`,
 //! `linearize_path`, `fill_to_expolygons`, `stroke_to_expolygons`, and the
-//! `DashesParam` constructor. The file I/O / parse wrappers `nsvgParseFromFile`,
-//! `read_from_disk`, `nsvgParse`, and `init_image` are likewise blocked because
-//! they construct/return the native `NSVGimage` (via `::nsvgParse`).
+//! `DashesParam` constructor. The parse wrappers `nsvgParseFromFile`,
+//! `nsvgParse`, and `init_image` are likewise blocked because they
+//! construct/return the native `NSVGimage` (via `::nsvgParse`).
 //!
 //! Everything tractable around nanosvg is ported faithfully:
 //! - the self-contained curve-flattening math `to_coor`, `need_flattening`,
 //!   `is_line`, and `flatten_cubic_bez` (what `linearize_path` calls);
 //! - the dependency-free dash splitter `to_dashes` and the `DashesParam` struct
-//!   fields (only its `NSVGshape`-reading constructor is blocked).
+//!   fields (only its `NSVGshape`-reading constructor is blocked);
+//! - the pure file-I/O helper `read_from_disk` (NSVGUtils.cpp:99-107), which is
+//!   nanosvg-independent (only its caller `init_image` is blocked).
 //!
 //! AUDIT FIX (2026-06-13): `NSVGLineParams::scale` previously defaulted to
 //! `1. / crate::SCALING_FACTOR` (= 0.00001), which is the reciprocal of the
@@ -482,6 +484,43 @@ pub fn to_dashes(polyline: &Polyline, param: &DashesParam) -> Polylines {
     dashes
 }
 
+// ============================================================================
+// NSVGUtils.cpp:99-107  read_from_disk — nanosvg-independent file I/O helper
+// ============================================================================
+
+// NSVGUtils.hpp:64-65  // read text data from file
+//                      std::unique_ptr<std::string> read_from_disk(const std::string &path);
+//
+// NSVGUtils.cpp:99-107
+// std::unique_ptr<std::string> read_from_disk(const std::string &path)
+// {
+//     boost::nowide::ifstream fs{path};
+//     if (!fs.is_open())
+//         return nullptr;
+//     std::stringstream ss;
+//     ss << fs.rdbuf();
+//     return std::make_unique<std::string>(ss.str());
+// }
+//
+// This is the one public helper in NSVGUtils.cpp that does NOT touch the native
+// `nanosvg` `NSVGimage`/`NSVGshape`/`NSVGpath` structs (its only C++ caller,
+// `init_image`, is the nanosvg-blocked one). It is pure file I/O, so it is
+// ported faithfully here: `boost::nowide::ifstream` + `ss << fs.rdbuf()` reads
+// the entire file as raw bytes, returning `nullptr` if the file cannot be
+// opened. The Rust mirror returns `None` when the file cannot be read and
+// `Some(String)` with the file contents otherwise. Bytes are interpreted via a
+// lossy UTF-8 conversion to mirror the byte-for-byte `rdbuf()` slurp (SVG file
+// data is UTF-8 text in practice).
+/// NSVGUtils.cpp:99-107
+pub fn read_from_disk(path: &str) -> Option<String> {
+    // NSVGUtils.cpp:101-103  boost::nowide::ifstream fs{path}; if (!fs.is_open()) return nullptr;
+    // NSVGUtils.cpp:104-106  std::stringstream ss; ss << fs.rdbuf(); return ss.str();
+    match std::fs::read(path) {
+        Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+        Err(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,5 +600,23 @@ mod tests {
         for d in &dashes {
             assert!(d.points.len() >= 2);
         }
+    }
+
+    #[test]
+    fn read_from_disk_missing_returns_none() {
+        // NSVGUtils.cpp:101-103  if (!fs.is_open()) return nullptr;
+        assert!(read_from_disk("/nonexistent/path/that/should/not/exist.svg").is_none());
+    }
+
+    #[test]
+    fn read_from_disk_reads_contents() {
+        // NSVGUtils.cpp:104-106  ss << fs.rdbuf(); return ss.str();
+        let mut path = std::env::temp_dir();
+        path.push("nsvg_utils_read_from_disk_test.txt");
+        let body = "<svg></svg>";
+        std::fs::write(&path, body).unwrap();
+        let got = read_from_disk(path.to_str().unwrap());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(got.as_deref(), Some(body));
     }
 }
