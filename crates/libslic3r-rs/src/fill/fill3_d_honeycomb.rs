@@ -29,12 +29,23 @@
 use crate::clipper_utils::intersection_pl;
 use crate::geometry::{ExPolygon, Point, Polyline, Polylines};
 use crate::shortest_path::chain_polylines;
-use crate::{scale, Coord, CoordF};
+use crate::{Coord, CoordF, SCALING_FACTOR};
 
 use super::{connect_infill_expolygon, multiline_fill, FillParams};
 
 // Fill3DHoneycomb.cpp:7
 // namespace Slic3r {
+
+// `scale_(val)` macro — libslic3r.h:81 `#define scale_(val) ((val) / SCALING_FACTOR)`
+// where C++ `SCALING_FACTOR == 1e-5`. Dividing by `1e-5` is the same as multiplying
+// by `1e5`, and the crate's `SCALING_FACTOR` is `1e5`, so the faithful operation is a
+// multiply. This stays in floating point (`coordf_t`); the C++ macro performs NO
+// rounding, so we must NOT use `crate::scale` (which rounds to the nearest integer).
+// Callers truncate toward zero only when assigning into a `coord_t`/`Coord`.
+#[inline]
+fn scale_(val: CoordF) -> CoordF {
+    val * SCALING_FACTOR
+}
 
 /// Fill3DHoneycomb.hpp:12-29  class Fill3DHoneycomb : public Fill
 ///
@@ -91,7 +102,11 @@ fn tri_wave(pos: CoordF, grid_size: CoordF) -> CoordF {
     // Fill3DHoneycomb.cpp:30
     t = t - (t as i32) as f32; // extract fractional part
     // Fill3DHoneycomb.cpp:31
-    ((1. - ((t * 8. - 4.) as CoordF).abs()) * (grid_size / 4.)) + (grid_size / 4.)
+    // C++ computes `t * 8. - 4.` in `double` (the literals `8.`/`4.` promote the
+    // `float t` to `double` before the multiply), so the cast to `CoordF` must happen
+    // BEFORE the arithmetic, NOT after — otherwise the multiply is done in f32 and the
+    // quantisation differs.
+    ((1. - (t as CoordF * 8. - 4.).abs()) * (grid_size / 4.)) + (grid_size / 4.)
 }
 
 // Fill3DHoneycomb.cpp:34-46
@@ -408,7 +423,7 @@ impl Fill3DHoneycomb {
         // = (sqrt(2) + 1) / 2 [... I think]
         // make a first guess at the preferred grid Size
         // Fill3DHoneycomb.cpp:215
-        let mut grid_size: CoordF = scale(self.spacing) as CoordF * ((z_scale + 1.) / 2.)
+        let mut grid_size: CoordF = scale_(self.spacing) * ((z_scale + 1.) / 2.)
             * params.multiline as CoordF
             / params.density as CoordF;
 
@@ -419,7 +434,9 @@ impl Fill3DHoneycomb {
         // but it should look better than the equivalent quantised version
 
         // Fill3DHoneycomb.cpp:223
-        let layer_height: CoordF = scale(thickness_layers as CoordF) as CoordF;
+        // C++: `coordf_t layerHeight = scale_(thickness_layers);` — `thickness_layers`
+        // (`unsigned int`) is promoted to `double` inside the macro, NOT rounded.
+        let layer_height: CoordF = scale_(thickness_layers as CoordF);
         // ceiling to an integer value of layers per Z
         // (with a little nudge in case it's close to perfect)
         // Fill3DHoneycomb.cpp:226
@@ -434,7 +451,7 @@ impl Fill3DHoneycomb {
             // (scale of 1.1 guessed based on modeling)
             // Fill3DHoneycomb.cpp:231
             grid_size =
-                scale(self.spacing) as CoordF * 1.1 * params.multiline as CoordF / params.density as CoordF;
+                scale_(self.spacing) * 1.1 * params.multiline as CoordF / params.density as CoordF;
             // re-adjust zScale to make layering consistent
             // Fill3DHoneycomb.cpp:233
             z_scale = (grid_size * 2.) / (layers_per_module * layer_height);
@@ -448,7 +465,7 @@ impl Fill3DHoneycomb {
             z_scale = (grid_size * 2.) / (layers_per_module * layer_height);
             // re-adjust the grid size to account for the new zScale
             // Fill3DHoneycomb.cpp:241
-            grid_size = scale(self.spacing) as CoordF * ((z_scale + 1.) / 2.)
+            grid_size = scale_(self.spacing) * ((z_scale + 1.) / 2.)
                 * params.multiline as CoordF
                 / params.density as CoordF;
             // re-calculate layersPerModule and zScale
@@ -466,15 +483,18 @@ impl Fill3DHoneycomb {
         // (a module is 2*$gridSize since one $gridSize half-module is
         // growing while the other $gridSize half-module is shrinking)
         // Fill3DHoneycomb.cpp:253
+        // C++ `Point(gridSize*4, gridSize*4)` uses the `Point(double, double)` ctor
+        // (Point.hpp:179), which is `coord_t(lrint(x))` — rounds to nearest, NOT a
+        // truncating cast.
         bb.merge_point(crate::geometry::align_to_grid_point(
             bb.min,
-            Point::new((grid_size * 4.) as Coord, (grid_size * 4.) as Coord),
+            Point::new((grid_size * 4.).round() as Coord, (grid_size * 4.).round() as Coord),
         ));
 
         // generate pattern
         // Fill3DHoneycomb.cpp:256-262
         let mut polylines: Polylines = make_grid(
-            scale(self.z) as CoordF * z_scale,
+            scale_(self.z) * z_scale,
             grid_size,
             bb.size().x() as CoordF,
             bb.size().y() as CoordF,
@@ -492,6 +512,10 @@ impl Fill3DHoneycomb {
         multiline_fill(&mut polylines, params, self.spacing as f32);
         // clip pattern to boundaries, chain the clipped polylines
         // Fill3DHoneycomb.cpp:272
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
+        // C++ passes `to_polygons(expolygon)` (contour + holes); `intersection_pl`
+        // here takes the `ExPolygon` directly and flattens it internally to the same
+        // polygon set, so the clip geometry is equivalent.
         polylines = intersection_pl(&polylines, std::slice::from_ref(&expolygon));
 
         // Fill3DHoneycomb.cpp:274
@@ -499,7 +523,7 @@ impl Fill3DHoneycomb {
             // Remove very small bits, but be careful to not remove infill lines connecting thin walls!
             // The infill perimeter lines should be separated by around a single infill line width.
             // Fill3DHoneycomb.cpp:277
-            let minlength: f64 = scale(0.8 * self.spacing) as f64;
+            let minlength: f64 = scale_(0.8 * self.spacing);
             // Fill3DHoneycomb.cpp:278-280
             polylines.retain(|pl| pl.length() >= minlength);
         }
@@ -541,6 +565,7 @@ const EPSILON: f64 = 1e-4;
 mod tests {
     use super::*;
     use crate::geometry::Polygon;
+    use crate::scale;
 
     fn make_square_boundary(size_mm: CoordF) -> ExPolygon {
         let size = scale(size_mm);

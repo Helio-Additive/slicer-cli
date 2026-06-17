@@ -2323,7 +2323,8 @@
     "rust_exists": true,
     "loc": 282,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/Fill3DHoneycomb.cpp",
@@ -2334,7 +2335,8 @@
     "rust_exists": true,
     "loc": 300,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/Lightning/TreeNode.cpp",

@@ -18,15 +18,16 @@
 use super::{connect_infill_expolygon, FillParams};
 use crate::clipper_utils::intersection_pl;
 use crate::geometry::{get_extents_expoly, BoundingBox, ExPolygon, Point, PointF, Polyline};
+use crate::libslic3r::SCALED_EPSILON;
 use crate::shortest_path::chain_polylines;
-use crate::{scale, Coord, CoordF};
+use crate::{Coord, CoordF, SCALING_FACTOR};
 use std::f64::consts::PI;
 
 // FillPlanePath.cpp:7 — namespace Slic3r
 
-/// Scaled epsilon for geometric tolerances. libslic3r.h: `SCALED_EPSILON = scale_(EPSILON)`;
-/// matched to the sibling fills' convention in this crate (`fill_line`, `fill_rectilinear`).
-const SCALED_EPSILON: Coord = 1000;
+// libslic3r.h:84 — `#define SCALED_EPSILON scale_(EPSILON)` = EPSILON / SCALING_FACTOR
+//   = 1e-4 / 1e-5 = 10. The canonical crate constant `crate::libslic3r::SCALED_EPSILON`
+//   (= 10.0) is the faithful value; do NOT use a local 1000.
 
 // =============================================================================
 // InfillPolylineOutput / InfillPolylineClipper
@@ -299,9 +300,9 @@ impl FillPlanePath {
         // FillPlanePath.cpp:80
         let align = params.density < 0.995;
 
-        // FillPlanePath.cpp:82
+        // FillPlanePath.cpp:82 — get_extents(expolygon).inflated(SCALED_EPSILON)
         let mut snug_bounding_box: BoundingBox =
-            bbox_inflated(&get_extents_expoly(&expolygon), SCALED_EPSILON as CoordF);
+            bbox_inflated(&get_extents_expoly(&expolygon), SCALED_EPSILON);
 
         // FillPlanePath.cpp:84-90
         // Rotated bounding box of the area to fill in with the pattern.
@@ -330,8 +331,10 @@ impl FillPlanePath {
         // FillPlanePath.cpp:98
         let mut polyline = Polyline::default();
         {
-            // FillPlanePath.cpp:100
-            let distance_between_lines = (scale(self.spacing) as CoordF) / params.density as CoordF;
+            // FillPlanePath.cpp:100 — auto distance_between_lines = scaled<double>(this->spacing) / params.density;
+            //   scaled<double>(v) = v / SCALING_FACTOR (a double, NOT rounded to coord_t);
+            //   in crate terms = v * SCALING_FACTOR (= v * 1e5). Keep full float precision.
+            let distance_between_lines = (self.spacing * SCALING_FACTOR) / params.density as CoordF;
             // FillPlanePath.cpp:101
             let min_x =
                 (bounding_box.min.x() as CoordF / distance_between_lines).ceil() as Coord;
@@ -344,8 +347,9 @@ impl FillPlanePath {
             // FillPlanePath.cpp:104
             let max_y =
                 (bounding_box.max.y() as CoordF / distance_between_lines).ceil() as Coord;
-            // FillPlanePath.cpp:105
-            let resolution = (scale(params.resolution) as CoordF) / distance_between_lines;
+            // FillPlanePath.cpp:105 — auto resolution = scaled<double>(params.resolution) / distance_between_lines;
+            //   scaled<double>(v) = v * SCALING_FACTOR (full float, not rounded).
+            let resolution = (params.resolution * SCALING_FACTOR) / distance_between_lines;
             // FillPlanePath.cpp:106
             if align {
                 // FillPlanePath.cpp:107
@@ -373,8 +377,10 @@ impl FillPlanePath {
 
         // FillPlanePath.cpp:120
         if polyline.size() >= 2 {
-            // FillPlanePath.cpp:121
-            let polylines = intersection_pl(std::slice::from_ref(&polyline), std::slice::from_ref(&expolygon));
+            // FillPlanePath.cpp:121 — Polylines polylines = intersection_pl(polyline, expolygon);
+            // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib (fixed scale 1000).
+            let polylines =
+                intersection_pl(std::slice::from_ref(&polyline), std::slice::from_ref(&expolygon));
             // FillPlanePath.cpp:122
             let mut chained: Vec<Polyline>;
             // FillPlanePath.cpp:123
@@ -545,6 +551,10 @@ fn generate_hilbert_curve(
     let mut sz: usize = 2;
     let mut _pw: usize = 1;
     {
+        // FillPlanePath.cpp:219 — size_t sz0 = std::max(max_x + 1 - min_x, max_y + 1 - min_y);
+        // FIDELITY-NOTE(F2): C++ computes this in coord_t=int32; crate Coord=i64. The grid
+        // extents here are small (ceil(bbox / distance_between_lines)), so no divergence in
+        // practice; the int32-vs-i64 width only matters for pathological inputs.
         let sz0: usize = std::cmp::max(max_x + 1 - min_x, max_y + 1 - min_y) as usize;
         while sz < sz0 {
             sz <<= 1;
@@ -642,6 +652,7 @@ fn generate_octagram_spiral(
 mod tests {
     use super::*;
     use crate::geometry::Polygon;
+    use crate::scale;
 
     fn make_square_boundary(size_mm: CoordF) -> ExPolygon {
         let size = scale(size_mm);
