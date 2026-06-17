@@ -12,7 +12,7 @@ use super::beading_strategy::{Beading, BeadingStrategy, BeadingStrategyPtr};
 use crate::Coord;
 
 // A meta-beading-strategy that takes outer and inner wall widths into account.
-// Arachne/BeadingStrategy/RedistributeBeadingStrategy.hpp:19-53
+// Arachne/BeadingStrategy/RedistributeBeadingStrategy.hpp:26-53
 ///
 // The outer wall will try to keep a constant width by only applying the beading strategy
 // on the inner walls. This ensures that this outer wall doesn't react to changes happening
@@ -52,7 +52,7 @@ pub struct RedistributeBeadingStrategy {
 
 impl RedistributeBeadingStrategy {
     // Create a new redistribute beading strategy
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:11-18
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:12-21
     ///
     // # Arguments
     // * `optimal_width_outer` - Outer wall width
@@ -91,12 +91,12 @@ impl RedistributeBeadingStrategy {
 
 impl BeadingStrategy for RedistributeBeadingStrategy {
     // Compute beading for a given thickness and bead count
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:64-107
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:63-95
     ///
     // C++: BeadingStrategy::Beading RedistributeBeadingStrategy::compute(coord_t thickness, coord_t bead_count) const
     fn compute(&self, thickness: Coord, bead_count: Coord) -> Beading {
         // Initialize beading result
-        // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:66-72
+        // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:65-72
         // C++: Beading ret;
         // C++:
         // C++: // Take care of all situations in which no lines are actually produced:
@@ -175,7 +175,7 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     }
 
     // Get the optimal bead count for a given thickness
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:42-47
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:39-46
     ///
     // C++: coord_t RedistributeBeadingStrategy::getOptimalBeadCount(coord_t thickness) const
     // C++: {
@@ -207,7 +207,7 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     }
 
     // Get the strategy name
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:59-62
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:58-61
     ///
     // C++: std::string RedistributeBeadingStrategy::toString() const
     // C++: {
@@ -218,7 +218,7 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     }
 
     // Get the optimal thickness for a given bead count
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:20-25
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:23-28
     ///
     // C++: coord_t RedistributeBeadingStrategy::getOptimalThickness(coord_t bead_count) const
     // C++: {
@@ -234,7 +234,7 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     }
 
     // Get the transition thickness for a given lower bead count
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:27-33
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:30-37
     ///
     // C++: coord_t RedistributeBeadingStrategy::getTransitionThickness(coord_t lower_bead_count) const
     // C++: {
@@ -259,7 +259,7 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     }
 
     // Get the transitioning length
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:49-52
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:48-51
     ///
     // C++: coord_t RedistributeBeadingStrategy::getTransitioningLength(coord_t lower_bead_count) const
     // C++: {
@@ -270,7 +270,7 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
     }
 
     // Get the transition anchor position
-    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:54-57
+    // Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp:53-56
     ///
     // C++: float RedistributeBeadingStrategy::getTransitionAnchorPos(coord_t lower_bead_count) const
     // C++: {
