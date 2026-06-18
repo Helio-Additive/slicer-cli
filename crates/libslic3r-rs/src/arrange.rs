@@ -60,16 +60,24 @@ pub const VITRIFY_TEMP_DIFF_THRSH: i32 = 15;
 // Arrange.cpp:1001
 #[inline]
 pub fn width(box_: &BoundingBox) -> crate::Coord {
-    box_.max.x() - box_.min.x()
+    // FIDELITY-NOTE(F2): C++ `coord_t` is `int32_t` (libslic3r.h:40); the
+    // subtraction `box.max.x() - box.min.x()` is performed at int32 width and
+    // the result is an int32. Reproduce the int32 truncation locally (Coord is
+    // i64 crate-wide) so wraparound matches the C++ result.
+    (box_.max.x() as i32).wrapping_sub(box_.min.x() as i32) as crate::Coord
 }
 
 // Arrange.cpp:1002
 #[inline]
 pub fn height(box_: &BoundingBox) -> crate::Coord {
-    box_.max.y() - box_.min.y()
+    // FIDELITY-NOTE(F2): see width() — int32 subtraction in C++ (coord_t == int32_t).
+    (box_.max.y() as i32).wrapping_sub(box_.min.y() as i32) as crate::Coord
 }
 
 // Arrange.cpp:1003
+//   inline double area(const BoundingBox& box) { return double(width(box)) * height(box); }
+// `double(width(box))` promotes the int32 width to double, then multiplies by
+// the int32 height (also promoted) — a double * double product.
 #[inline]
 pub fn area(box_: &BoundingBox) -> f64 {
     width(box_) as f64 * height(box_) as f64
@@ -78,12 +86,12 @@ pub fn area(box_: &BoundingBox) -> f64 {
 // Arrange.cpp:1004
 //   inline double poly_area(const Points &pts) { return std::abs(Polygon::area(pts)); }
 //
-// `Polygon::area(pts)` is the static signed-area routine; the Rust `Polygon`
-// exposes `area()` (already the absolute value of the signed area), so we build
-// a Polygon from the points to call it, matching `std::abs(...)`.
+// `Polygon::area(pts)` is the static SIGNED-area routine (it can be negative);
+// the Rust equivalent is the static `Polygon::area_of(pts)`. `std::abs(...)`
+// then takes the magnitude.
 #[inline]
 pub fn poly_area(pts: &Points) -> f64 {
-    Polygon::from(pts.to_vec()).area().abs()
+    Polygon::area_of(pts).abs()
 }
 
 // Arrange.cpp:1005-1010
@@ -95,10 +103,14 @@ pub fn poly_area(pts: &Points) -> f64 {
 //   }
 #[inline]
 pub fn distance_to(p1: &Point, p2: &Point) -> f64 {
+    // FIDELITY-NOTE(F2): C++ `coord_t` is `int32_t` (libslic3r.h:40); each
+    // coordinate difference `p2.x() - p1.x()` is computed at int32 width before
+    // being assigned to a double. Truncate to int32 locally (Coord is i64) so
+    // the int32 wraparound matches C++ before promotion to f64.
     // Arrange.cpp:1007
-    let dx = (p2.x() - p1.x()) as f64;
+    let dx = (p2.x() as i32).wrapping_sub(p1.x() as i32) as f64;
     // Arrange.cpp:1008
-    let dy = (p2.y() - p1.y()) as f64;
+    let dy = (p2.y() as i32).wrapping_sub(p1.y() as i32) as f64;
     // Arrange.cpp:1009
     (dx * dx + dy * dy).sqrt()
 }

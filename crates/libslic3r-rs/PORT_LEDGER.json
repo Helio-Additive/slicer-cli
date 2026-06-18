@@ -1479,7 +1479,8 @@
     "rust_exists": true,
     "loc": 1138,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SLAPrintSteps.cpp",
