@@ -402,6 +402,47 @@ pub fn offset_polyline(polyline: &Polyline, delta_scaled: CoordF) -> Vec<Polygon
     result.0.iter().map(geo_to_polygon).collect()
 }
 
+/// Offset an open polyline with an explicit ClipperLib `jtMiter` join and miter limit,
+/// returning closed polygons.
+///
+/// Faithful port of `ClipperUtils.cpp:418` `offset(const Polyline&, delta, joinType,
+/// miterLimit, end_type)` for the caller `SupportCommon.cpp:2116`, which passes
+/// `offset(to_polylines(...), scaled<float>(0.002), jtMiter, 1.2)` (default
+/// `end_type = etOpenButt`). The default-argument flavour is [`offset_polyline`].
+///
+/// `delta_scaled` is in scaled (`coord_t`) units; `miter_limit` is the dimensionless
+/// ClipperLib miter limit.
+//
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
+pub fn offset_polyline_miter(
+    polyline: &Polyline,
+    delta_scaled: CoordF,
+    miter_limit: CoordF,
+) -> Vec<Polygon> {
+    if polyline.points().len() < 2 {
+        return Vec::new();
+    }
+    let coords: Vec<GeoCoord<f64>> = polyline
+        .points()
+        .iter()
+        .map(|p| GeoCoord {
+            x: unscale(p.x),
+            y: unscale(p.y),
+        })
+        .collect();
+    let line: LineString<f64> = LineString::new(coords);
+    let mline: MultiLineString<f64> = MultiLineString::new(vec![line]);
+    // jtMiter with the caller-supplied miter limit, etOpenButt end type.
+    let result: MultiPolygon<f64> = ClipperOpen::offset(
+        &mline,
+        unscale_delta(delta_scaled),
+        JoinType::Miter(miter_limit),
+        EndType::OpenButt,
+        GEO_CLIPPER_SCALE,
+    );
+    result.0.iter().map(geo_to_polygon).collect()
+}
+
 /// Unscale a scaled (coord_t) delta to mm for the geo-clipper backend.
 #[inline]
 fn unscale_delta(delta_scaled: CoordF) -> CoordF {

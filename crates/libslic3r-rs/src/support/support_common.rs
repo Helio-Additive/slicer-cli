@@ -21,8 +21,8 @@
 //! - `modulate_extrusion_by_overlapping_layers` — needs `ExtrusionPath`/`ExtrusionMultiPath`, `Flow`.
 
 use crate::clipper_utils::{
-    self, clip_clipper_polygons_with_subject_bbox_expolygon, offset_expolygons, offset_polygons,
-    offset_polyline, OffsetJoinType,
+    self, clip_clipper_polygons_with_subject_bbox_expolygon, offset_expolygons_round,
+    offset_polygons, offset_polygons_round, offset_polyline_miter, OffsetJoinType,
 };
 use crate::geometry::{
     expolygons_simplify, get_extents as get_extents_expolygons, get_extents_polygons,
@@ -196,12 +196,21 @@ fn diff_polygons(subject: &[crate::geometry::Polygon], clip: &[crate::geometry::
 }
 
 // Slic3r::offset(const Polygons&, delta, join_type, miter/arc) -> Polygons
+#[allow(dead_code)]
 fn offset_polygons_pp(
     polygons: &[crate::geometry::Polygon],
     delta: CoordF,
     join_type: OffsetJoinType,
 ) -> Polygons {
     expolygons_to_polygons(&offset_polygons(polygons, delta, join_type))
+}
+
+// Slic3r::offset(const Polygons&, delta, ClipperLib::jtRound, scaled<float>(0.01)) -> Polygons
+// Round join with an explicit arc tolerance of 0.01 mm (= scaled<float>(0.01)), matching
+// SupportCommon.cpp:2189 / :2195.
+fn offset_polygons_round_pp(polygons: &[crate::geometry::Polygon], delta: CoordF) -> Polygons {
+    // arc_tolerance_mm = 0.01 mm, i.e. C++ scaled<float>(0.01).
+    expolygons_to_polygons(&offset_polygons_round(polygons, delta, 0.01))
 }
 
 // ============================================================================
@@ -251,10 +260,10 @@ pub fn safe_union(first: &Polygons, second: &Polygons) -> Polygons {
             // SupportCommon.cpp:2116 — union_(offset(to_polylines(first), scaled<float>(0.002), jtMiter, 1.2), offset(to_polylines(second), ...))
             let mut merged: Polygons = Vec::new();
             for pl in polygons_to_polylines(first) {
-                merged.extend(offset_polyline(&pl, scaled(0.002) as CoordF));
+                merged.extend(offset_polyline_miter(&pl, scaled(0.002) as CoordF, 1.2));
             }
             for pl in polygons_to_polylines(second) {
-                merged.extend(offset_polyline(&pl, scaled(0.002) as CoordF));
+                merged.extend(offset_polyline_miter(&pl, scaled(0.002) as CoordF, 1.2));
             }
             result = union_polygons(&merged);
         }
@@ -271,8 +280,13 @@ pub fn safe_union_ex(first: &ExPolygons, second: &ExPolygons) -> ExPolygons {
     let mut result: ExPolygons = Vec::new();
     // SupportCommon.cpp:2125
     if !first.is_empty() || !second.is_empty() {
-        // SupportCommon.cpp:2126 — union_ex(first, second)
-        result = clipper_utils::union(first, second);
+        // SupportCommon.cpp:2126 — union_ex(first, second). The two-arg ClipperUtils
+        // union_ex (ClipperUtils.cpp:825-831) concatenates poly1 ++ poly2 and runs a
+        // single-set union_ex over the whole input (NonZero), so do the same here:
+        // this also merges overlaps when only one side is non-empty.
+        let mut combined: ExPolygons = first.clone();
+        combined.extend(second.iter().cloned());
+        result = clipper_utils::union_ex(&combined);
         // SupportCommon.cpp:2127
         if result.is_empty() {
             // SupportCommon.cpp:2128 (debug log omitted)
@@ -280,10 +294,10 @@ pub fn safe_union_ex(first: &ExPolygons, second: &ExPolygons) -> ExPolygons {
             // SupportCommon.cpp:2130 — union_(offset(to_polylines(first), scaled<float>(0.002), jtMiter, 1.2), offset(to_polylines(second), ...))
             let mut merged: Polygons = Vec::new();
             for pl in expolygons_to_polylines(first) {
-                merged.extend(offset_polyline(&pl, scaled(0.002) as CoordF));
+                merged.extend(offset_polyline_miter(&pl, scaled(0.002) as CoordF, 1.2));
             }
             for pl in expolygons_to_polylines(second) {
-                merged.extend(offset_polyline(&pl, scaled(0.002) as CoordF));
+                merged.extend(offset_polyline_miter(&pl, scaled(0.002) as CoordF, 1.2));
             }
             let result_polys = union_polygons(&merged);
             // SupportCommon.cpp:2131 — for (auto &poly : result_polys) result.emplace_back(ExPolygon(poly));
@@ -330,8 +344,11 @@ pub fn safe_offset_inc(
         () => {{
             if !collision_trimmed_done {
                 if collision_trimmed_buffer.is_empty() && !collision.is_empty() {
+                    // C++: get_extents(ret).inflated(std::max(0, distance) + SCALED_EPSILON)
+                    // SCALED_EPSILON is already a scaled coord_t (= scale_(EPSILON) = 10),
+                    // so it must NOT be re-scaled. (libslic3r.h:84 #define SCALED_EPSILON scale_(EPSILON))
                     let bbox = get_extents_polygons(&ret)
-                        .expanded(std::cmp::max(0, distance) + scaled(SCALED_EPSILON));
+                        .expanded(std::cmp::max(0, distance) + SCALED_EPSILON as Coord);
                     // ClipperUtils::clip_clipper_polygons_with_subject_bbox(collision, bbox)
                     let mut trimmed: Polygons = Vec::new();
                     for ex in polygons_to_expolygons(collision) {
@@ -401,7 +418,7 @@ pub fn safe_offset_inc(
     // SupportCommon.cpp:2187-2192 — offset in steps
     for i in 0..steps {
         ret = diff_polygons(
-            &offset_polygons_pp(&ret, step_size as CoordF, OffsetJoinType::Round),
+            &offset_polygons_round_pp(&ret, step_size as CoordF),
             collision_trimmed!(),
         );
         // ensure that if many offsets are done the performance does not suffer extremely by the new vertices of jtRound.
@@ -411,11 +428,12 @@ pub fn safe_offset_inc(
     }
     // SupportCommon.cpp:2193-2195 — offset the remainder
     let last_offset = distance - (steps as Coord) * step_size;
-    if last_offset > scaled(SCALED_EPSILON) {
-        ret = offset_polygons_pp(
+    // C++: if (last_offset > SCALED_EPSILON). SCALED_EPSILON is already a scaled
+    // coord_t (= scale_(EPSILON) = 10); compare directly, do not re-scale.
+    if last_offset > SCALED_EPSILON as Coord {
+        ret = offset_polygons_round_pp(
             &ret,
             (distance - (steps as Coord) * step_size) as CoordF,
-            OffsetJoinType::Round,
         );
     }
     // SupportCommon.cpp:2196
@@ -457,8 +475,11 @@ pub fn safe_offset_inc_ex(
         () => {{
             if !collision_trimmed_done {
                 if collision_trimmed_buffer.is_empty() && !collision.is_empty() {
+                    // C++: get_extents(ret).inflated(std::max(0, distance) + SCALED_EPSILON)
+                    // SCALED_EPSILON is already a scaled coord_t (= scale_(EPSILON) = 10),
+                    // so it must NOT be re-scaled. (libslic3r.h:84 #define SCALED_EPSILON scale_(EPSILON))
                     let bbox = get_extents_expolygons(&ret)
-                        .expanded(std::cmp::max(0, distance) + scaled(SCALED_EPSILON));
+                        .expanded(std::cmp::max(0, distance) + SCALED_EPSILON as Coord);
                     let mut trimmed: Polygons = Vec::new();
                     for ex in polygons_to_expolygons(collision) {
                         trimmed.extend(clip_clipper_polygons_with_subject_bbox_expolygon(
@@ -522,7 +543,8 @@ pub fn safe_offset_inc_ex(
     // SupportCommon.hpp:210-215 — offset in steps
     for i in 0..steps {
         ret = clipper_utils::difference(
-            &offset_expolygons(&ret, step_size as CoordF, OffsetJoinType::Round),
+            // C++: offset_ex(ret, step_size, ClipperLib::jtRound, scaled<float>(0.01)).
+            &offset_expolygons_round(&ret, step_size as CoordF, 0.01),
             &polygons_to_expolygons(collision_trimmed!()),
         );
         // ensure that if many offsets are done the performance does not suffer extremely by the new vertices of jtRound.
@@ -534,11 +556,14 @@ pub fn safe_offset_inc_ex(
     }
     // SupportCommon.hpp:216-218 — offset the remainder
     let last_offset = distance - (steps as Coord) * step_size;
-    if last_offset > scaled(SCALED_EPSILON) {
-        ret = offset_expolygons(
+    // C++: if (last_offset > SCALED_EPSILON). SCALED_EPSILON is already a scaled
+    // coord_t (= scale_(EPSILON) = 10); compare directly, do not re-scale.
+    if last_offset > SCALED_EPSILON as Coord {
+        // C++: offset_ex(ret, distance - steps * step_size, ClipperLib::jtRound, scaled<float>(0.01)).
+        ret = offset_expolygons_round(
             &ret,
             (distance - (steps as Coord) * step_size) as CoordF,
-            OffsetJoinType::Round,
+            0.01,
         );
     }
     // SupportCommon.hpp:219
