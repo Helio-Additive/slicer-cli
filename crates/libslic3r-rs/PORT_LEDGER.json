@@ -2889,7 +2889,8 @@
     "rust_exists": true,
     "loc": 904,
     "status": "partial",
-    "priority": 6
+    "priority": 6,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Support/SupportCommon.cpp",

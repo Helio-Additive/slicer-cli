@@ -107,6 +107,14 @@ impl Default for AvoidanceType {
 // Clipper helpers mirroring the ClipperUtils `Polygons`-on-`Polygons` overloads
 // used throughout TreeModelVolumes.cpp. These keep the call sites byte-for-byte
 // aligned with the C++ (`union_`, `offset`, `diff`, `intersection`).
+//
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. All of the
+// union_/offset/diff/intersection helpers below route through `clipper_utils`,
+// which uses the `geo` crate (geo-clipper, fixed scale 1000) rather than
+// ClipperLib at `coord_t` integer precision. The geometry results are therefore
+// approximate (and the per-call miter limit `1.2` / arc tolerance from the C++
+// `offset(..., jtMiter, 1.2)` / `jtRound, m_min_resolution` calls are not
+// expressible), but the algebra/control flow around them mirrors the C++ exactly.
 // =============================================================================
 
 #[inline]
@@ -1299,7 +1307,7 @@ impl TreeModelVolumes {
             let task_to_model = ((iter_idx / 3) & 1) != 0;
             // Ensure start_layer is at least 1 (getMaxCalculatedLayer returns -1 if nothing calculated).
             let start_layer = (1 + self.avoidance_cache(type_, task_to_model).get_max_calculated_layer(radius)).max(1);
-            let mut task = AvoidanceTask {
+            let task = AvoidanceTask {
                 type_,
                 radius,
                 max_required_layer,
@@ -1310,14 +1318,12 @@ impl TreeModelVolumes {
                 // BOOST_LOG_TRIVIAL(debug) << "Calculation requested for value already calculated?";
                 continue;
             }
+            // TreeModelVolumes.cpp:663-665  emplace only when the task is wanted.
             if (if task.to_model { to_model } else { to_build_plate })
                 && (!task.holefree()
                     || task.radius < self.m_increase_until_radius + self.m_current_min_xy_dist_delta)
             {
                 avoidance_tasks.push(task);
-            } else {
-                // make `task` consumed so the move-emplace mirrors C++.
-                let _ = &mut task;
             }
         }
 
@@ -1339,9 +1345,19 @@ impl TreeModelVolumes {
             // Limiting the offset step so that unioning the shrunk latest_avoidance with the current layer
             // collisions will not create gaps in the resulting avoidance region.
             let mut move_step: CoordF = 1.9 * task.radius.max(self.m_current_min_xy_dist) as CoordF;
+            // TreeModelVolumes.cpp:686  `if (move_step < EPSILON) return;`
+            // In C++ this `return` exits the per-task tbb lambda (grainsize 1), i.e. it
+            // skips only the current task. In this serial loop the equivalent is `continue`,
+            // NOT `return` (which would wrongly abort all remaining tasks).
             if move_step < EPSILON {
-                return;
+                continue;
             }
+            // TreeModelVolumes.cpp:687  `int move_steps = round_up_divide<int>(max_move, move_step);`
+            // The explicit `<int>` makes the template's `DataType` = int, so both float
+            // operands are truncated toward zero to `int` BEFORE the `(a+b-1)/b` integer
+            // divide. `as i64` here truncates toward zero identically; the divide then
+            // matches Utils.hpp round_up_divide. FIDELITY-NOTE(F2): C++ uses int32 here;
+            // these scaled move distances stay within int32 so the i64 widening is inert.
             let mut move_steps: i32 = crate::utils::round_up_divide(max_move as i64, move_step as i64) as i32;
             debug_assert!(move_steps > 0);
             let mut last_move_step: CoordF = max_move - (move_steps - 1) as CoordF * move_step;
@@ -1502,6 +1518,10 @@ impl TreeModelVolumes {
                     (out as CoordF * SUPPORT_TREE_EXPONENTIAL_FACTOR)
                         > (out + SUPPORT_TREE_COLLISION_RESOLUTION) as CoordF
                 );
+                // FIDELITY-NOTE(F2): C++ `out` is `coord_t` (int32); `out * 1.5`
+                // truncates back to int32 each iteration and would wrap on overflow.
+                // Crate-wide `Coord = i64` widens this; for in-tree radii (< branch_radius)
+                // the values stay within int32 so the truncation result is identical.
                 out = (out as CoordF * SUPPORT_TREE_EXPONENTIAL_FACTOR) as Coord;
             }
         }
