@@ -502,33 +502,36 @@ impl CostItems {
     }
 }
 
-/// Quantized-vector hash, mirroring `AutoOrienter::VecHash`.
+/// Hash-map key mirroring the C++ `std::unordered_map<stl_normal, _, VecHash>`.
 /// Orient.cpp:106-110
 ///
-/// `size_t operator()(const Vec3f& n1) const {`
+/// `struct VecHash { size_t operator()(const Vec3f& n1) const {`
 /// `    return std::hash<coord_t>()(int(n1(0)*100+100)) + std::hash<coord_t>()(int(n1(1)*100+100)) * 101 + std::hash<coord_t>()(int(n1(2)*100+100)) * 10221;`
-/// `}`
+/// `}};`
 ///
-/// To reproduce the C++ behaviour of using a `Vec3f` as a hash-map key (where
-/// equality is bit-exact and the hash quantizes each component to `int`), we
-/// derive a hashable integer key. `std::hash<coord_t>` for the small integers
-/// here is the identity, so the combined hash is the integer expression below;
-/// since the keys inserted are already quantized to multiples of 0.001 the
-/// quantized triple uniquely identifies a bucket. We key the maps by this
-/// quantized integer triple to match the C++ bucketing semantics.
+/// CRITICAL FIDELITY POINT: the C++ map uses `VecHash` only to choose the bucket;
+/// key *equality* is `std::equal_to<stl_normal>`, i.e. Eigen `Matrix::operator==`,
+/// which is bit-exact float equality on the inserted vector. The quantization to
+/// `int(n*100+100)` in `VecHash` is hashing only and never merges distinct keys.
+/// Two entries are the same map entry ONLY when the inserted `Vec3f` is exactly
+/// equal componentwise. Therefore this key stores the bit pattern of each
+/// component (canonicalizing `-0.0` to `+0.0` so the IEEE `-0.0 == 0.0`
+/// behaviour of `operator==` is preserved) rather than the 1/100 bucket, which
+/// would wrongly merge normals that merely fall into the same hash bucket.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct VecKey(i32, i32, i32);
+struct VecKey(u32, u32, u32);
 
 impl VecKey {
-    /// Build the key exactly as `VecHash` quantizes: `int(n(i)*100+100)`.
-    /// Orient.cpp:108
+    /// Build a bit-exact key mirroring Eigen `stl_normal::operator==`.
+    /// Orient.cpp:107 (hash) / std::equal_to (equality)
     #[inline]
     fn from_vec3f(n1: &Vec3f) -> Self {
-        VecKey(
-            (n1[0] * 100.0 + 100.0) as i32,
-            (n1[1] * 100.0 + 100.0) as i32,
-            (n1[2] * 100.0 + 100.0) as i32,
-        )
+        #[inline]
+        fn bits(v: f32) -> u32 {
+            // Canonicalize -0.0 to +0.0 so that, like IEEE `==`, -0.0 keys equal +0.0.
+            (if v == 0.0 { 0.0f32 } else { v }).to_bits()
+        }
+        VecKey(bits(n1[0]), bits(n1[1]), bits(n1[2]))
     }
 }
 
@@ -629,9 +632,11 @@ impl AutoOrienter {
         // typedef std::pair<stl_normal, float> PAIR;
         // Orient.cpp:246-248
         let mut align_counts: Vec<(StlNormal, f32)> = alignments.into_values().collect();
-        // sort by area descending
+        // sort by area descending (std::sort is unstable)
         // Orient.cpp:248
-        align_counts.sort_by(|p1, p2| p2.1.partial_cmp(&p1.1).unwrap_or(std::cmp::Ordering::Equal));
+        align_counts.sort_unstable_by(|p1, p2| {
+            p2.1.partial_cmp(&p1.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Orient.cpp:250
         let num_directions = std::cmp::min(num_directions as usize, align_counts.len());
@@ -693,9 +698,9 @@ impl AutoOrienter {
         // typedef std::pair<stl_normal, std::pair<std::vector<float>, Vec3f>> PAIR;
         // Orient.cpp:278-280
         let mut align_counts: Vec<(Vec<f32>, Vec3f)> = alignments_.into_values().collect();
-        // sort by accumulated area (index [1]) descending
+        // sort by accumulated area (index [1]) descending (std::sort is unstable)
         // Orient.cpp:280
-        align_counts.sort_by(|p1, p2| {
+        align_counts.sort_unstable_by(|p1, p2| {
             p2.0[1].partial_cmp(&p1.0[1]).unwrap_or(std::cmp::Ordering::Equal)
         });
 
@@ -770,17 +775,17 @@ impl AutoOrienter {
         // Eigen::VectorXi ind = Eigen::VectorXi::LinSpaced(vec.size(), 0, vec.size() - 1);
         // Orient.cpp:358
         let mut ind: Vec<i32> = (0..vec.len() as i32).collect();
-        // Orient.cpp:360-369
+        // Orient.cpp:360-370 — std::sort is unstable, so use sort_unstable_by.
         if order == "ascend" {
-            // Orient.cpp:361-363
-            ind.sort_by(|&i, &j| {
+            // Orient.cpp:361-363 — rule = [vec](i,j){ return vec(i) < vec(j); };
+            ind.sort_unstable_by(|&i, &j| {
                 vec[i as usize]
                     .partial_cmp(&vec[j as usize])
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
         } else {
-            // Orient.cpp:366-368
-            ind.sort_by(|&i, &j| {
+            // Orient.cpp:366-368 — rule = [vec](i,j){ return vec(i) > vec(j); };
+            ind.sort_unstable_by(|&i, &j| {
                 vec[j as usize]
                     .partial_cmp(&vec[i as usize])
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -915,18 +920,41 @@ fn is_approx_vec3f(a: &Vec3f, b: &Vec3f, tol: f64) -> bool {
 // `#define SQ(x) ((x)*(x))`   Orient.cpp:22
 // These macros are only used inside the BLOCKED `project_vertices`/`get_features`
 // methods; they will be ported alongside those methods.
+/// `std::max(a, b)` == `(a < b) ? b : a`. Differs from `f32::max` on NaN/-0.0,
+/// so mirror libstdc++ exactly to stay faithful to the macros.
+#[allow(unused)]
+#[inline]
+fn std_max(a: f32, b: f32) -> f32 {
+    if a < b {
+        b
+    } else {
+        a
+    }
+}
+
+/// `std::min(a, b)` == `(b < a) ? b : a`.
+#[allow(unused)]
+#[inline]
+fn std_min(a: f32, b: f32) -> f32 {
+    if b < a {
+        b
+    } else {
+        a
+    }
+}
+
 #[allow(unused)]
 #[inline]
 fn max3(a: f32, b: f32, c: f32) -> f32 {
-    // Orient.cpp:17
-    a.max(b).max(c)
+    // Orient.cpp:17 — #define MAX3(a,b,c) std::max(std::max(a,b),c)
+    std_max(std_max(a, b), c)
 }
 
 #[allow(unused)]
 #[inline]
 fn median3(a: f32, b: f32, c: f32) -> f32 {
-    // Orient.cpp:20
-    (a.min(b)).max(a.max(b).min(c))
+    // Orient.cpp:20 — #define MEDIAN3(a,b,c) std::max(std::min(a,b), std::min(std::max(a,b),c))
+    std_max(std_min(a, b), std_min(std_max(a, b), c))
 }
 
 #[allow(unused)]
