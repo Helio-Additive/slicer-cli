@@ -762,7 +762,8 @@
     "rust_exists": true,
     "loc": 211,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SlicingAdaptive.cpp",

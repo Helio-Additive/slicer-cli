@@ -769,6 +769,10 @@ pub fn offset2_ex_2(expolygons: &ExPolygons, delta1: f64, delta2: f64) -> ExPoly
 const CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR: f64 = 0.005;
 
 // Cast a scaled integer Point to a double vector (Eigen `.cast<double>()`).
+// FIDELITY-NOTE(F2): C++ `contour[i].cast<double>()` casts an `int32_t` coord
+// (libslic3r `coord_t`) to double; the crate-wide `Coord` is i64. For the
+// in-range scaled slicer coordinates these agree exactly, so the i64->f64 cast
+// here is faithful — not narrowing per-file per the F2 directive.
 #[inline]
 fn pt_to_d_2(p: Point) -> PointF {
     PointF::new(p.x as f64, p.y as f64)
@@ -992,13 +996,19 @@ fn mittered_offset_path_scaled(contour: &[Point], deltas: &[f32], mut miter_limi
         let perp = |v: PointF| -> PointF { PointF::new(v.y, -v.x) };
 
         // ClipperUtils.cpp:1149-1152 — Add a new point to the output, round to cInt.
+        // FIDELITY-NOTE(F2): C++ defines CLIPPERLIB_INT32 (clipper.hpp:83), so
+        // `ClipperLib::cInt` is `int32_t` (clipper.hpp:88) — the offset coordinates
+        // are truncated to int32 here. Reproduce that truncation locally (`as i32`)
+        // even though the crate-wide `Coord` is i64, then widen back to the i64
+        // path-coordinate type. For in-range scaled coordinates these agree; this
+        // preserves the exact int32 wrap/truncation C++ produces.
         let add_offset_point = |out: &mut Path64, mut pt: PointF| {
             pt = pt
                 + PointF::new(
                     0.5 - ((pt.x < 0.0) as i32 as f64),
                     0.5 - ((pt.y < 0.0) as i32 as f64),
                 );
-            out.push((pt.x as i64, pt.y as i64));
+            out.push((pt.x as i32 as i64, pt.y as i32 as i64));
         };
 
         // ClipperUtils.cpp:1155-1156 — Minimum edge length, squared.
