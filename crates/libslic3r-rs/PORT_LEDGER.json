@@ -1804,7 +1804,7 @@
     "loc": 7703,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed: never_skip_tag erase quirk (GCode.cpp:316) now matches std::string::erase(it, it+len) count semantics; constants/check_add_eol/custom_gcode_changes_tool/transform_gcode/get_wipe_avoid_pos_x/to_bambu_bed_type audited 1:1 (slice of GCode.cpp; live emission lives in gcode/{exporter,generator,writer}.rs)"
+    "fidelity": "fixed"
   },
   {
     "cpp": "PrintConfig.cpp",
