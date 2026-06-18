@@ -42,6 +42,10 @@ const WT_EPSILON: f32 = 1e-4;
 /// Width to nozzle diameter ratio
 const WIDTH_TO_NOZZLE_RATIO: f32 = 1.25;
 
+/// Default wipe tower depth used for wrapping-detection / timelapse layers.
+// WipeTower.cpp:1559 — const double wrapping_wipe_tower_depth = 10;
+const WRAPPING_WIPE_TOWER_DEPTH: f32 = 10.0;
+
 /// Default flat iron area
 const FLAT_IRON_AREA: f32 = 4.0;
 
@@ -49,14 +53,9 @@ const FLAT_IRON_AREA: f32 = 4.0;
 const FLAT_IRON_SPEED: f32 = 10.0 * 60.0;
 
 /// Minimum depth per height mapping for tower stability
-const MIN_DEPTH_PER_HEIGHT: &[(f32, f32)] = &[
-    (50.0, 10.0),
-    (100.0, 15.0),
-    (150.0, 20.0),
-    (200.0, 25.0),
-    (250.0, 30.0),
-    (300.0, 35.0),
-];
+// WipeTower.cpp:1562-1564 — WipeTower::min_depth_per_height (std::map ordered by
+// key): {{5,5},{100,20},{250,40},{350,60}}.
+const MIN_DEPTH_PER_HEIGHT: &[(f32, f32)] = &[(5.0, 5.0), (100.0, 20.0), (250.0, 40.0), (350.0, 60.0)];
 
 // ============================================================================
 // Types and Enums
@@ -796,11 +795,15 @@ impl WipeTowerWriter {
     }
 
     /// Set initial position
+    // WipeTower.cpp:665-672 — set width/depth/internal_angle, then
+    // m_start_pos = rotate(pos); m_current_pos = pos (UNrotated). Here the
+    // reduced port passes (pos, internal_angle, y_shift); width/depth are set
+    // separately via set_wipe_tower_dimensions.
     pub fn set_initial_position(&mut self, pos: Vec2f, internal_angle: f32, y_shift: f32) {
-        self.start_pos = pos;
-        self.current_pos = pos;
         self.internal_angle = internal_angle;
         self.y_shift = y_shift;
+        self.start_pos = self.rotate(pos);
+        self.current_pos = pos;
     }
 
     /// Set current tool
@@ -819,9 +822,10 @@ impl WipeTowerWriter {
     }
 
     /// Set Y shift
+    // WipeTower.cpp:682-686 — m_current_pos.y() -= shift - m_y_shift; then
+    // m_y_shift = shift.
     pub fn set_y_shift(&mut self, y_shift: f32) {
-        let delta = y_shift - self.y_shift;
-        self.current_pos.y += delta;
+        self.current_pos.y -= y_shift - self.y_shift;
         self.y_shift = y_shift;
     }
 
@@ -837,15 +841,20 @@ impl WipeTowerWriter {
     }
 
     /// Disable linear advance
+    // WipeTower.cpp:688-697 — Klipper: SET_PRESSURE_ADVANCE ADVANCE=0;
+    // RepRapFirmware: "M572 D<tool> S0"; otherwise (Marlin/etc.): "M900 K0".
     pub fn disable_linear_advance(&mut self) {
         match self.gcode_flavor {
-            GCodeFlavor::Marlin => {
-                self.gcode.push_str("M900 K0\n");
-            }
             GCodeFlavor::Klipper => {
                 self.gcode.push_str("SET_PRESSURE_ADVANCE ADVANCE=0\n");
             }
-            _ => {}
+            GCodeFlavor::RepRap => {
+                self.gcode
+                    .push_str(&format!("M572 D{} S0\n", self.current_tool));
+            }
+            _ => {
+                self.gcode.push_str("M900 K0\n");
+            }
         }
     }
 
@@ -860,9 +869,12 @@ impl WipeTowerWriter {
     }
 
     /// Set feedrate
+    // WipeTower.cpp:710-717 — emit "G1 F<round(f)>" when the feedrate actually
+    // changes. set_format_F (WipeTower.cpp:1480-1485) prints int(floor(f+0.5)).
     pub fn feedrate(&mut self, f: f32) -> &mut Self {
-        if (self.current_feedrate - f).abs() > WT_EPSILON {
-            self.gcode.push_str(&format!("G1 F{:.0}\n", f));
+        if f != self.current_feedrate {
+            let fi = (f + 0.5).floor() as i64;
+            self.gcode.push_str(&format!("G1 F{}\n", fi));
             self.current_feedrate = f;
         }
         self
@@ -894,11 +906,13 @@ impl WipeTowerWriter {
     }
 
     /// Get start position (rotated)
+    // WipeTower.cpp:724 — m_start_pos is already stored rotated.
     pub fn start_pos_rotated(&self) -> Vec2f {
-        self.rotate(self.start_pos)
+        self.start_pos
     }
 
     /// Get current position (rotated)
+    // WipeTower.cpp:725 — rotate(m_current_pos).
     pub fn pos_rotated(&self) -> Vec2f {
         self.rotate(self.current_pos)
     }
@@ -927,12 +941,12 @@ impl WipeTowerWriter {
 
     /// Travel to position
     pub fn travel_to(&mut self, target: Vec2f) -> &mut Self {
+        // WipeTower.cpp:766-771 — gcode uses rot.x()/rot.y() directly; the
+        // y_shift is already folded into rotate() (WipeTower.cpp:1495), so it
+        // must NOT be added again here.
         let rotated = self.rotate(target);
-        self.gcode.push_str(&format!(
-            "G0 X{:.3} Y{:.3}\n",
-            rotated.x,
-            rotated.y + self.y_shift
-        ));
+        self.gcode
+            .push_str(&format!("G0 X{:.3} Y{:.3}\n", rotated.x, rotated.y));
 
         if !self.preview_suppressed {
             self.extrusions
@@ -979,12 +993,11 @@ impl WipeTowerWriter {
         let dy = y - self.current_pos.y;
         let len = (dx * dx + dy * dy).sqrt();
 
-        self.gcode.push_str(&format!(
-            "G1 X{:.3} Y{:.3} E{:.5}\n",
-            rotated.x,
-            rotated.y + self.y_shift,
-            e
-        ));
+        // WipeTower.cpp:766-771 — y_shift is already folded into rotate(), so do
+        // not add it again to the emitted Y coordinate. set_format_X/Y print 3
+        // decimals, set_format_E prints 4 (WipeTower.cpp:1461-1478).
+        self.gcode
+            .push_str(&format!("G1 X{:.3} Y{:.3} E{:.4}\n", rotated.x, rotated.y, e));
 
         if !self.preview_suppressed && width > 0.0 {
             self.extrusions
@@ -1001,27 +1014,47 @@ impl WipeTowerWriter {
     }
 
     /// Extrude a rectangle
+    // WipeTower.cpp:1000-1006 — rectangle(box) -> rectangle(box.ld, w, h, f)
+    // with w = ru.x - lu.x, h = ru.y - rd.y.
+    // WipeTower.cpp:902-925 — the rectangle(ld, width, height) implementation.
     pub fn rectangle(&mut self, box_coords: &BoxCoordinates) -> &mut Self {
-        // Find closest corner
-        let corners = [box_coords.ld, box_coords.lu, box_coords.ru, box_coords.rd];
-        let mut closest_idx = 0;
-        let mut min_dist = f32::MAX;
+        let ld = box_coords.ld;
+        let width = box_coords.ru.x - box_coords.lu.x;
+        let height = box_coords.ru.y - box_coords.rd.y;
 
-        for (i, corner) in corners.iter().enumerate() {
-            let d = (self.current_pos - *corner).norm();
-            if d < min_dist {
-                min_dist = d;
-                closest_idx = i;
-            }
+        // WipeTower.cpp:904-908 — corners are ld, ld+(w,0), ld+(w,h), ld+(0,h).
+        let corners = [
+            ld,
+            ld + Vec2f::new(width, 0.0),
+            ld + Vec2f::new(width, height),
+            ld + Vec2f::new(0.0, height),
+        ];
+
+        // WipeTower.cpp:909-913 — choose the closest corner via axis comparisons.
+        let mut index_of_closest = 0usize;
+        if self.x() - ld.x > ld.x + width - self.x() {
+            // closer to the right
+            index_of_closest = 1;
+        }
+        if self.y() - ld.y > ld.y + height - self.y() {
+            // closer to the top
+            index_of_closest = if index_of_closest == 0 { 3 } else { 2 };
         }
 
-        // Extrude around the rectangle starting from closest corner
-        for i in 0..=4 {
-            let idx = (closest_idx + i) % 4;
-            if i == 0 {
-                self.travel_to(corners[idx]);
-            } else {
-                self.extrude(corners[idx].x, corners[idx].y);
+        // WipeTower.cpp:915-916 — travel to the closest corner (axis-aligned).
+        self.travel(corners[index_of_closest].x, self.y());
+        self.travel(self.x(), corners[index_of_closest].y);
+
+        // WipeTower.cpp:918-923 — extrude around the rectangle.
+        let mut i = index_of_closest;
+        loop {
+            i += 1;
+            if i == 4 {
+                i = 0;
+            }
+            self.extrude(corners[i].x, corners[i].y);
+            if i == index_of_closest {
+                break;
             }
         }
 
@@ -1066,38 +1099,54 @@ impl WipeTowerWriter {
     }
 
     /// Load filament
+    // WipeTower.cpp:1060-1071 — emit "G1" plus E (when e != 0) plus F (when
+    // f != 0 and f != current feedrate). Early-out for a no-op.
     pub fn load(&mut self, e: f32, f: f32) -> &mut Self {
-        if e > 0.0 {
-            self.gcode.push_str(&format!("G1 E{:.5} F{:.0}\n", e, f));
-            self.used_filament_length += e;
-            self.elapsed_time += e.abs() / f * 60.0;
+        if e == 0.0 && (f == 0.0 || f == self.current_feedrate) {
+            return self;
         }
+        self.gcode.push_str("G1");
+        if e != 0.0 {
+            // WipeTower.cpp:1476-1478 — set_format_E prints 4 decimals.
+            self.gcode.push_str(&format!(" E{:.4}", e));
+        }
+        if f != 0.0 && f != self.current_feedrate {
+            self.gcode.push_str(&format!(" F{:.0}", f));
+        }
+        self.gcode.push('\n');
         self
     }
 
     /// Retract filament
+    // WipeTower.cpp:1073-1074 — retract(e) == load(-e).
     pub fn retract(&mut self, e: f32, f: f32) -> &mut Self {
         self.load(-e, f)
     }
 
     /// Z hop
+    // WipeTower.cpp:1094-1101 — "G1 Z<z+hop>" plus F (only when f != 0 and
+    // f != current feedrate). No elapsed-time bookkeeping in C++.
     pub fn z_hop(&mut self, hop: f32, f: f32) -> &mut Self {
         let z_str = super::writer::format_gcode_value((self.current_z + hop) as f64, 3);
-        self.gcode.push_str(&format!("G1 Z{} F{:.0}\n", z_str, f));
-        self.elapsed_time += hop.abs() / f * 60.0;
+        self.gcode.push_str(&format!("G1 Z{}", z_str));
+        if f != 0.0 && f != self.current_feedrate {
+            self.gcode.push_str(&format!(" F{:.0}", f));
+        }
+        self.gcode.push('\n');
         self
     }
 
     /// Reset Z hop
+    // WipeTower.cpp:1104-1105 — z_hop_reset(f) == z_hop(0, f).
     pub fn z_hop_reset(&mut self, f: f32) -> &mut Self {
-        let z_str = super::writer::format_gcode_value(self.current_z as f64, 3);
-        self.gcode.push_str(&format!("G1 Z{} F{:.0}\n", z_str, f));
-        self
+        self.z_hop(0.0, f)
     }
 
     /// Set tool
+    // WipeTower.cpp:1126-1130 — this only updates the writer's notion of the
+    // current tool and outputs nothing; the actual "Tn" command is inserted by
+    // the caller / post-processor.
     pub fn set_tool(&mut self, tool: usize) -> &mut Self {
-        self.gcode.push_str(&format!("T{}\n", tool));
         self.current_tool = tool;
         self
     }
@@ -1111,12 +1160,14 @@ impl WipeTowerWriter {
     }
 
     /// Wait for time
+    // WipeTower.cpp:1140-1146 — "G4 S<time>" with 3 decimal places; early-out
+    // when time == 0. (No elapsed-time bookkeeping in C++.)
     pub fn wait(&mut self, seconds: f32) -> &mut Self {
-        if seconds > 0.0 {
-            self.gcode
-                .push_str(&format!("G4 P{}\n", (seconds * 1000.0) as i32));
-            self.elapsed_time += seconds;
+        if seconds == 0.0 {
+            return self;
         }
+        let s = super::writer::format_gcode_value(seconds as f64, 3);
+        self.gcode.push_str(&format!("G4 S{}\n", s));
         self
     }
 
@@ -1127,12 +1178,15 @@ impl WipeTowerWriter {
     }
 
     /// Set fan speed
+    // WipeTower.cpp:1207-1217 — `speed` is a percentage; M106 takes a PWM value
+    // (255 * speed / 100). M107 turns the fan off.
     pub fn set_fan(&mut self, speed: u32) -> &mut Self {
         if speed != self.last_fan_speed {
             if speed == 0 {
                 self.gcode.push_str("M107\n");
             } else {
-                self.gcode.push_str(&format!("M106 S{}\n", speed));
+                let pwm = (255.0 * speed as f64 / 100.0) as u32;
+                self.gcode.push_str(&format!("M106 S{}\n", pwm));
             }
             self.last_fan_speed = speed;
         }
@@ -1164,55 +1218,92 @@ impl WipeTowerWriter {
     }
 
     /// Set normal acceleration
+    // WipeTower.cpp:1368-1374 — pick first-layer vs normal accel list; bail out
+    // if empty; index by the extruder for the current tool (here current_tool,
+    // since this reduced port has no multi-nozzle group result), then emit.
     pub fn set_normal_acceleration(&mut self) -> &mut Self {
         let accels = if self.is_first_layer {
             &self.first_layer_normal_accelerations
         } else {
             &self.normal_accelerations
         };
-
-        if !accels.is_empty() {
-            let idx = self.current_tool.min(accels.len() - 1);
-            let acc = accels[idx].min(self.max_acceleration);
-            if acc != self.last_acceleration {
-                self.gcode.push_str(&format!("M204 S{}\n", acc));
-                if self.accel_to_decel_enable {
-                    let decel = (acc as f32 * self.accel_to_decel_factor) as u32;
-                    self.gcode.push_str(&format!("M204 T{}\n", decel));
-                }
-                self.last_acceleration = acc;
-            }
+        if accels.is_empty() {
+            return self;
         }
+        let acc = accels[self.current_tool.min(accels.len() - 1)];
+        self.set_acceleration_impl(acc);
         self
     }
 
     /// Set travel acceleration
+    // WipeTower.cpp:1376-1384
     pub fn set_travel_acceleration(&mut self) -> &mut Self {
         let accels = if self.is_first_layer {
             &self.first_layer_travel_accelerations
         } else {
             &self.travel_accelerations
         };
-
-        if !accels.is_empty() {
-            let idx = self.current_tool.min(accels.len() - 1);
-            let acc = accels[idx].min(self.max_acceleration);
-            if acc != self.last_acceleration {
-                self.gcode.push_str(&format!("M204 S{}\n", acc));
-                self.last_acceleration = acc;
-            }
+        if accels.is_empty() {
+            return self;
         }
+        let acc = accels[self.current_tool.min(accels.len() - 1)];
+        self.set_acceleration_impl(acc);
         self
     }
 
-    /// Rotate a point by the internal angle
-    fn rotate(&self, pt: Vec2f) -> Vec2f {
-        if self.internal_angle.abs() < WT_EPSILON {
-            pt
-        } else {
-            let angle = self.internal_angle * PI / 180.0;
-            pt.rotate(angle)
+    /// Emit an acceleration command, flavor dependent.
+    // WipeTower.cpp:1385-1420
+    fn set_acceleration_impl(&mut self, acceleration: u32) {
+        // WipeTower.cpp:1387-1388 — clamp to max only when a max is set (>0).
+        let mut acceleration = acceleration;
+        if self.max_acceleration > 0 && acceleration > self.max_acceleration {
+            acceleration = self.max_acceleration;
         }
+
+        // WipeTower.cpp:1390-1391 — nothing to emit.
+        if acceleration == 0 || acceleration == self.last_acceleration {
+            return;
+        }
+
+        // WipeTower.cpp:1393
+        self.last_acceleration = acceleration;
+
+        // WipeTower.cpp:1396-1418 — flavor-dependent gcode. This reduced port's
+        // GCodeFlavor enum lacks Repetier/RepRapFirmware/MarlinFirmware
+        // distinctions; map RepRap -> "M204 P", Klipper -> SET_VELOCITY_LIMIT
+        // (when accel_to_decel), everything else -> "M204 S".
+        match self.gcode_flavor {
+            GCodeFlavor::RepRap => {
+                self.gcode.push_str(&format!("M204 P{}\n", acceleration));
+            }
+            GCodeFlavor::Klipper if self.accel_to_decel_enable => {
+                let a2d = (acceleration as f32 * self.accel_to_decel_factor / 100.0) as i64;
+                self.gcode
+                    .push_str(&format!("SET_VELOCITY_LIMIT ACCEL_TO_DECEL={}\n", a2d));
+                self.gcode.push_str(&format!("M204 S{}\n", acceleration));
+            }
+            _ => {
+                self.gcode.push_str(&format!("M204 S{}\n", acceleration));
+            }
+        }
+    }
+
+    /// Rotate a point by the internal angle
+    // WipeTower.cpp:1492-1500 — translate to tower center (applying m_y_shift),
+    // rotate by m_internal_angle, then translate back. The angle/cos/sin are
+    // computed unconditionally in C++ (no early-out for ~0 angle).
+    fn rotate(&self, pt: Vec2f) -> Vec2f {
+        let x = pt.x - self.wipe_tower_width / 2.0;
+        let y = pt.y + self.y_shift - self.wipe_tower_depth / 2.0;
+        let angle = self.internal_angle * (PI / 180.0);
+        let c = angle.cos() as f64;
+        let s = angle.sin() as f64;
+        let px = x as f64;
+        let py = y as f64;
+        Vec2f::new(
+            (px * c - py * s) as f32 + self.wipe_tower_width / 2.0,
+            (px * s + py * c) as f32 + self.wipe_tower_depth / 2.0,
+        )
     }
 }
 
@@ -1320,15 +1411,13 @@ pub struct WipeTower {
 impl WipeTower {
     // Create a new wipe tower
     pub fn new(config: WipeTowerConfig, initial_tool: usize, num_filaments: usize) -> Self {
-        let perimeter_width = config.width * WIDTH_TO_NOZZLE_RATIO / config.width.max(1.0);
-        let nozzle_change_perimeter_width = perimeter_width;
-
-        // Calculate extrusion flow
-        let extrusion_flow = {
-            let area = 0.2 * (perimeter_width - 0.2 * (1.0 - PI / 4.0));
-            let filament_area = PI * 0.875 * 0.875;
-            area / filament_area
-        };
+        // WipeTower.hpp:499-501 — these are member initializers (defaults), the C++
+        // constructor (WipeTower.cpp:1725) does NOT recompute them from the tower
+        // width. m_perimeter_width = 0.4f * Width_To_Nozzle_Ratio, same for the
+        // nozzle-change width, and m_extrusion_flow = 0.038f.
+        let perimeter_width = 0.4 * WIDTH_TO_NOZZLE_RATIO;
+        let nozzle_change_perimeter_width = 0.4 * WIDTH_TO_NOZZLE_RATIO;
+        let extrusion_flow = 0.038;
 
         Self {
             pos: Vec2f::new(config.pos_x, config.pos_y),
@@ -1405,44 +1494,48 @@ impl WipeTower {
     }
 
     /// Set layer parameters
+    // WipeTower.hpp:222 — set_layer(print_z, layer_height, max_tool_changes,
+    // is_first_layer, is_last_layer). NOTE: in C++ `max_tool_changes` and
+    // `is_last_layer` are accepted but NOT used in the body; we keep them in the
+    // signature for call-site compatibility.
     pub fn set_layer(
         &mut self,
-        z: f32,
+        print_z: f32,
         layer_height: f32,
-        max_tool_changes: usize,
+        _max_tool_changes: usize,
         is_first_layer: bool,
-        is_last_layer: bool,
+        _is_last_layer: bool,
     ) {
-        self.z_pos = z;
+        // WipeTower.hpp:234-237
+        self.z_pos = print_z;
         self.layer_height = layer_height;
-        self.max_color_changes = max_tool_changes;
+        self.depth_traversed = 0.0;
+        self.current_layer_finished = false;
+        // WipeTower.hpp:238-239 — m_current_shape = SHAPE_NORMAL (the reversed
+        // alternative is commented out in C++).
+        self.current_shape = WipeShape::Normal;
+        // WipeTower.hpp:240-244
+        if is_first_layer {
+            self.num_layer_changes = 0;
+            self.num_tool_changes = 0;
+        } else {
+            self.num_layer_changes += 1;
+        }
 
-        // Find the layer in the plan
+        // WipeTower.hpp:247 — m_extrusion_flow = extrusion_flow(layer_height);
+        // extrusion_flow(lh) = lh * (m_perimeter_width - lh*(1 - PI/4)) / filament_area
+        // (WipeTower.hpp:285). filament_area = PI * 0.875^2 (filament dia 1.75).
+        let filament_area = PI * 0.875 * 0.875;
+        self.extrusion_flow =
+            layer_height * (self.perimeter_width - layer_height * (1.0 - PI / 4.0)) / filament_area;
+
+        // WipeTower.hpp:249-250 — advance the layer-info iterator to the plan
+        // entry whose z is at (or just below) print_z. Equivalent index search.
         self.layer_idx = self
             .plan
             .iter()
-            .position(|l| (l.z - z).abs() < WT_EPSILON)
-            .unwrap_or(0);
-
-        self.depth_traversed = 0.0;
-        self.current_layer_finished = false;
-
-        // Update perimeter width based on layer
-        if is_first_layer {
-            // Slightly wider on first layer for adhesion
-            self.perimeter_width =
-                self.config.width * WIDTH_TO_NOZZLE_RATIO / self.config.width.max(1.0) * 1.05;
-        } else {
-            self.perimeter_width =
-                self.config.width * WIDTH_TO_NOZZLE_RATIO / self.config.width.max(1.0);
-        }
-
-        // Calculate extrusion flow for this layer
-        let area = layer_height * (self.perimeter_width - layer_height * (1.0 - PI / 4.0));
-        let filament_area = PI * 0.875 * 0.875;
-        self.extrusion_flow = area / filament_area;
-
-        self.num_layer_changes += 1;
+            .position(|l| (l.z - print_z).abs() < WT_EPSILON)
+            .unwrap_or(self.layer_idx);
     }
 
     /// Get tower width
@@ -1501,23 +1594,27 @@ impl WipeTower {
     }
 
     /// Convert volume to extrusion length
+    // WipeTower.hpp:534-536 — std::max(0.f, volume / area)
     fn volume_to_length(&self, volume: f32, line_width: f32, layer_height: f32) -> f32 {
-        let area = layer_height * (line_width - layer_height * (1.0 - PI / 4.0));
-        volume / area
+        0.0_f32.max(volume / (layer_height * (line_width - layer_height * (1.0 - PI / 4.0))))
     }
 
     /// Convert extrusion length to volume
+    // WipeTower.hpp:538-541 — std::max(0.f, length * area)
     fn length_to_volume(&self, length: f32, line_width: f32, layer_height: f32) -> f32 {
-        let area = layer_height * (line_width - layer_height * (1.0 - PI / 4.0));
-        length * area
+        0.0_f32.max(length * (layer_height * (line_width - layer_height * (1.0 - PI / 4.0))))
     }
 
     /// Extrusion flow for nozzle change
+    // WipeTower.hpp:287-292 — negative layer_height returns the current
+    // m_extrusion_flow, otherwise compute from the nozzle-change perimeter width.
     fn nozzle_change_extrusion_flow(&self, layer_height: f32) -> f32 {
-        let area =
-            layer_height * (self.nozzle_change_perimeter_width - layer_height * (1.0 - PI / 4.0));
+        if layer_height < 0.0 {
+            return self.extrusion_flow;
+        }
         let filament_area = PI * 0.875 * 0.875;
-        area / filament_area
+        layer_height * (self.nozzle_change_perimeter_width - layer_height * (1.0 - PI / 4.0))
+            / filament_area
     }
 
     /// Check if two filaments are in the same extruder
@@ -1552,22 +1649,50 @@ impl WipeTower {
     }
 
     /// Get minimum depth by height
+    // WipeTower.cpp:1566-1600
     pub fn get_limit_depth_by_height(max_height: f32) -> f32 {
-        for &(height, depth) in MIN_DEPTH_PER_HEIGHT {
-            if max_height <= height {
-                return depth;
+        // WipeTower.cpp:1568
+        let mut min_wipe_tower_depth = 0.0_f32;
+        let table = MIN_DEPTH_PER_HEIGHT;
+        // WipeTower.cpp:1569-1570 — iterate over the (ordered) map.
+        let mut i = 0usize;
+        while i < table.len() {
+            let curr = table[i];
+
+            // WipeTower.cpp:1574-1577 — height lower than first member.
+            if curr.0 >= max_height {
+                min_wipe_tower_depth = curr.1;
+                break;
+            }
+
+            // WipeTower.cpp:1579 — ++iter
+            i += 1;
+
+            // WipeTower.cpp:1582-1585 — curr was the last member.
+            if i == table.len() {
+                min_wipe_tower_depth = curr.1;
+                break;
+            }
+
+            // WipeTower.cpp:1588-1597 — between current and next: linear interp.
+            let next = table[i];
+            if next.0 > max_height {
+                let height_diff = next.0 - curr.0;
+                let depth_diff = next.1 - curr.1;
+                min_wipe_tower_depth = curr.1 + (max_height - curr.0) / height_diff * depth_diff;
+                break;
             }
         }
-        // Linear extrapolation for heights beyond the table
-        let last = MIN_DEPTH_PER_HEIGHT.last().unwrap();
-        let rate = last.1 / last.0;
-        max_height * rate
+        min_wipe_tower_depth
     }
 
     /// Get auto brim width by height
+    // WipeTower.cpp:1602-1605
     pub fn get_auto_brim_by_height(max_height: f32) -> f32 {
-        // Brim width scales with tower height for stability
-        (max_height / 50.0).clamp(1.0, 5.0)
+        if max_height < 100.0 {
+            return max_height / 100.0 * 8.0;
+        }
+        8.0
     }
 
     /// Plan a tool change
@@ -1581,9 +1706,37 @@ impl WipeTower {
         wipe_volume_nc: f32,
         purge_volume: f32,
     ) {
-        // Ensure z is not below the last planned layer
+        // WipeTower.cpp:2874 — refuses to add a layer below the last one.
         assert!(self.plan.is_empty() || self.plan.last().unwrap().z <= z + WT_EPSILON);
 
+        // WipeTower.cpp:2876-2877 — if we moved to a new layer, add it first.
+        if self.plan.is_empty() || self.plan.last().unwrap().z + WT_EPSILON < z {
+            self.plan.push(WipeTowerLayerInfo::new(z, layer_height));
+        }
+
+        // WipeTower.cpp:2879-2880 — record first layer with actual tool changes.
+        if self.first_layer_idx.is_none() && (!self.config.no_sparse_layers || old_tool != new_tool)
+        {
+            self.first_layer_idx = Some(self.plan.len() - 1);
+        }
+
+        // WipeTower.cpp:2882-2883 — new layer without toolchanges, done.
+        if old_tool == new_tool {
+            return;
+        }
+
+        // WipeTower.cpp:2886-2887
+        let mut depth = 0.0_f32;
+        let width = self.config.width - 2.0 * self.perimeter_width;
+
+        // WipeTower.cpp:2890-2891 — if the wipe tower width is too small, the
+        // depth would be infinity. (C++ compares against EPSILON == 1e-4.)
+        if width <= WT_EPSILON {
+            return;
+        }
+
+        // WipeTower.cpp:2892-2893 — layer_id is the last plan index. In this
+        // reduced port is_same_extruder/is_same_nozzle ignore layer_id.
         let wipe_volume = if self.is_same_extruder(old_tool, new_tool)
             && !self.is_same_nozzle(old_tool, new_tool)
         {
@@ -1592,31 +1745,10 @@ impl WipeTower {
             wipe_volume_ec
         };
 
-        // Add new layer if needed
-        if self.plan.is_empty() || self.plan.last().unwrap().z + WT_EPSILON < z {
-            self.plan.push(WipeTowerLayerInfo::new(z, layer_height));
-        }
-
-        // Record first layer with actual tool changes
-        if self.first_layer_idx.is_none() && (!self.config.no_sparse_layers || old_tool != new_tool)
-        {
-            self.first_layer_idx = Some(self.plan.len() - 1);
-        }
-
-        // No actual tool change
-        if old_tool == new_tool {
-            return;
-        }
-
-        // Calculate depth for this tool change
-        let width = self.config.width - 2.0 * self.perimeter_width;
-        if width <= WT_EPSILON {
-            return;
-        }
-
+        // WipeTower.cpp:2911-2913
         let length_to_extrude =
             self.volume_to_length(wipe_volume, self.perimeter_width, layer_height);
-        let mut depth = (length_to_extrude / width).ceil() * self.perimeter_width;
+        depth += (length_to_extrude / width).ceil() * self.perimeter_width;
 
         // Add nozzle change depth if needed
         let mut nozzle_change_depth = 0.0;
@@ -1656,25 +1788,30 @@ impl WipeTower {
         tool_change.nozzle_change_length = nozzle_change_length;
         tool_change.purge_volume = purge_volume;
 
+        // WipeTower.cpp:2926-2929 — assemble the ToolChange and append it.
+        // (C++ does NOT touch m_num_tool_changes here; that counter is reset in
+        // set_layer and incremented during the actual tool_change pass.)
         self.plan.last_mut().unwrap().tool_changes.push(tool_change);
-        self.num_tool_changes += 1;
     }
 
     /// Plan the entire tower
+    // WipeTower.cpp:2933-3032
     pub fn plan_tower(&mut self) {
-        // Calculate maximum depth needed
+        // WipeTower.cpp:2937-2939 — calculate extra spacing.
         let mut max_depth = 0.0f32;
         for info in &self.plan {
             max_depth = max_depth.max(info.toolchanges_depth());
         }
 
+        // WipeTower.cpp:2941
         let min_wipe_tower_depth = Self::get_limit_depth_by_height(self.config.height);
 
-        // Calculate extra spacing if tower is too thin
+        // WipeTower.cpp:2944-2945
         if self.config.enable_wrapping_detection && max_depth < WT_EPSILON {
-            max_depth = 15.0; // Default wrapping detection depth
+            max_depth = WRAPPING_WIPE_TOWER_DEPTH;
         }
 
+        // WipeTower.cpp:2947-2948
         if self.config.enable_timelapse_print && max_depth < WT_EPSILON {
             max_depth = min_wipe_tower_depth;
         }
@@ -1712,21 +1849,80 @@ impl WipeTower {
                     tc.wipe_length = x_to_wipe_new;
                 }
             } else {
+                // WipeTower.cpp:2980-2984
                 info.extra_spacing = extra_spacing;
                 for tc in &mut info.tool_changes {
                     tc.required_depth *= extra_spacing;
+                    let area =
+                        info.height * (perimeter_width - info.height * (1.0 - PI / 4.0));
+                    // volume_to_length: std::max(0, wipe_volume / area)
+                    tc.wipe_length = 0.0_f32.max(tc.wipe_volume / area);
                 }
             }
         }
 
-        // Calculate final tower depth
+        // WipeTower.cpp:2989-2992 — reset depths.
         self.depth = 0.0;
-        for info in &self.plan {
-            self.depth = self.depth.max(info.toolchanges_depth());
+        for layer in self.plan.iter_mut() {
+            layer.depth = 0.0;
         }
 
-        // Ensure minimum depth
-        self.depth = self.depth.max(min_wipe_tower_depth);
+        // WipeTower.cpp:2994-3017 — back-to-front depth propagation.
+        let mut max_depth_for_all = 0.0_f32;
+        let plan_len = self.plan.len();
+        for layer_index in (0..plan_len).rev() {
+            let mut this_layer_depth =
+                self.plan[layer_index].depth.max(self.plan[layer_index].toolchanges_depth());
+            // WipeTower.cpp:2998-2999
+            if self.config.enable_wrapping_detection
+                && (layer_index as i32) < self.config.wrapping_detection_layers
+                && this_layer_depth < WT_EPSILON
+            {
+                this_layer_depth = WRAPPING_WIPE_TOWER_DEPTH;
+            }
+            // WipeTower.cpp:3001-3002
+            if self.config.enable_timelapse_print && this_layer_depth < WT_EPSILON {
+                this_layer_depth = min_wipe_tower_depth;
+            }
+
+            self.plan[layer_index].depth = this_layer_depth;
+
+            // WipeTower.cpp:3006-3007
+            if this_layer_depth > self.depth - self.perimeter_width {
+                self.depth = this_layer_depth + self.perimeter_width;
+            }
+
+            // WipeTower.cpp:3009-3013 — propagate downwards.
+            for i in (0..layer_index).rev() {
+                if self.plan[i].depth - this_layer_depth < 2.0 * self.perimeter_width {
+                    self.plan[i].depth = this_layer_depth;
+                }
+            }
+
+            // WipeTower.cpp:3015-3016
+            if self.config.enable_timelapse_print && layer_index == 0 {
+                max_depth_for_all = self.plan[0].depth;
+            }
+        }
+
+        // WipeTower.cpp:3019-3025
+        if self.config.enable_wrapping_detection {
+            for i in (0..self.config.wrapping_detection_layers as usize).rev() {
+                if i < plan_len
+                    && plan_len <= self.config.wrapping_detection_layers as usize
+                    && self.plan[i].depth < WRAPPING_WIPE_TOWER_DEPTH
+                {
+                    self.plan[i].depth = WRAPPING_WIPE_TOWER_DEPTH;
+                }
+            }
+        }
+
+        // WipeTower.cpp:3027-3031
+        if self.config.enable_timelapse_print {
+            for i in (0..plan_len).rev() {
+                self.plan[i].depth = max_depth_for_all;
+            }
+        }
     }
 
     /// Generate the wipe tower
@@ -1847,7 +2043,12 @@ impl WipeTower {
             self.toolchange_unload(&mut writer, &cleaning_box);
         }
 
-        // Actual tool change
+        // Actual tool change. In C++ the "Tn" command is emitted by the
+        // post-processor via the [change_filament_gcode] placeholder
+        // (WipeTower.cpp:2466,2482); this reduced port has no such post pass, so
+        // emit it explicitly here, then update the writer's tool state via the
+        // (output-less) set_tool.
+        writer.append(&format!("T{}\n", new_tool));
         writer.set_tool(new_tool);
         self.current_tool = new_tool;
 
@@ -2020,26 +2221,37 @@ impl WipeTower {
             self.used_filament_length[old_tool] += writer.used_filament_length;
         }
 
+        // WipeTower.cpp:1521-1522 — start_pos = writer.start_pos_rotated();
+        // end_pos = priming ? writer.pos() : writer.pos_rotated().
+        // (This reduced port keeps its own convention of offsetting by self.pos
+        // to make the positions absolute.)
+        let start_pos = Vec2f::new(
+            self.pos.x + writer.start_pos_rotated().x,
+            self.pos.y + writer.start_pos_rotated().y,
+        );
+        let end_pos_raw = if priming {
+            writer.pos()
+        } else {
+            writer.pos_rotated()
+        };
+        let end_pos = Vec2f::new(self.pos.x + end_pos_raw.x, self.pos.y + end_pos_raw.y);
+
         ToolChangeResult {
             print_z: self.z_pos,
             layer_height: self.layer_height,
             gcode: writer.gcode().to_string(),
             extrusions: writer.extrusions().to_vec(),
-            start_pos: Vec2f::new(
-                self.pos.x + writer.start_pos_rotated().x,
-                self.pos.y + writer.start_pos_rotated().y,
-            ),
-            end_pos: Vec2f::new(
-                self.pos.x + writer.pos_rotated().x,
-                self.pos.y + writer.pos_rotated().y,
-            ),
+            start_pos,
+            end_pos,
             elapsed_time: writer.elapsed_time(),
             priming,
             is_tool_change,
-            tool_change_start_pos: Vec2f::new(
-                self.pos.x + writer.start_pos_rotated().x,
-                self.pos.y + writer.start_pos_rotated().y,
-            ),
+            // WipeTower.cpp:1529 — is_tool_change ? start_pos : Vec2f(0,0).
+            tool_change_start_pos: if is_tool_change {
+                start_pos
+            } else {
+                Vec2f::zero()
+            },
             wipe_path: writer
                 .wipe_path()
                 .iter()
@@ -2317,7 +2529,12 @@ mod tests {
         tower.plan_toolchange(0.6, 0.2, 2, 0, 50.0, 30.0, 0.0);
 
         assert_eq!(tower.plan.len(), 3);
-        assert_eq!(tower.num_tool_changes, 3);
+        // WipeTower.cpp:2871 — plan_toolchange does NOT bump m_num_tool_changes;
+        // it records the change on the layer's tool_changes list instead. The
+        // counter is managed in set_layer / the tool_change pass.
+        let total_tool_changes: usize =
+            tower.plan.iter().map(|l| l.tool_changes.len()).sum();
+        assert_eq!(total_tool_changes, 3);
     }
 
     #[test]
@@ -2547,13 +2764,16 @@ mod tests {
 
     #[test]
     fn test_wipe_tower_auto_brim() {
+        // WipeTower.cpp:1602-1605 — below 100mm the brim scales linearly to 8mm,
+        // at/above 100mm it is capped at 8mm.
         let brim_50 = WipeTower::get_auto_brim_by_height(50.0);
         let brim_100 = WipeTower::get_auto_brim_by_height(100.0);
         let brim_250 = WipeTower::get_auto_brim_by_height(250.0);
 
-        assert!(brim_50 >= 1.0);
+        assert!((brim_50 - 4.0).abs() < 1e-6);
+        assert!((brim_100 - 8.0).abs() < 1e-6);
+        assert!((brim_250 - 8.0).abs() < 1e-6);
         assert!(brim_100 >= brim_50);
-        assert!(brim_250 <= 5.0);
     }
 
     #[test]
