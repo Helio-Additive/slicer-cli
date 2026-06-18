@@ -217,14 +217,16 @@ impl BridgeDetector {
                 // BridgeDetector.cpp:115-118
                 let mut y = bbox.min.y;
                 while y <= bbox.max.y {
+                    // FIDELITY-NOTE(F2): C++ casts `round(...)` to `coord_t` (== int32_t,
+                    // libslic3r.h:40); reproduce the int32 truncation via `as i32 as Coord`.
                     lines.push(Line::new(
                         Point::new(
-                            (c * bbox.min.x as f64 - s * y as f64).round() as Coord,
-                            (c * y as f64 + s * bbox.min.x as f64).round() as Coord,
+                            (c * bbox.min.x as f64 - s * y as f64).round() as i32 as Coord,
+                            (c * y as f64 + s * bbox.min.x as f64).round() as i32 as Coord,
                         ),
                         Point::new(
-                            (c * bbox.max.x as f64 - s * y as f64).round() as Coord,
-                            (c * y as f64 + s * bbox.max.x as f64).round() as Coord,
+                            (c * bbox.max.x as f64 - s * y as f64).round() as i32 as Coord,
+                            (c * y as f64 + s * bbox.max.x as f64).round() as i32 as Coord,
                         ),
                     ));
                     y += self.spacing;
@@ -607,8 +609,10 @@ fn get_extents_rotated(expolygons: &ExPolygons, angle: CoordF) -> BoundingBox {
             // MultiPoint.cpp:446-459
             let cur_x = point.x as f64;
             let cur_y = point.y as f64;
-            let x = (c * cur_x - s * cur_y).round() as Coord;
-            let y = (c * cur_y + s * cur_x).round() as Coord;
+            // FIDELITY-NOTE(F2): C++ casts `round(...)` to `coord_t` (== int32_t,
+            // libslic3r.h:40); reproduce the int32 truncation via `as i32 as Coord`.
+            let x = (c * cur_x - s * cur_y).round() as i32 as Coord;
+            let y = (c * cur_y + s * cur_x).round() as i32 as Coord;
             bbox.merge_point(Point::new(x, y));
         }
     }
@@ -618,6 +622,10 @@ fn get_extents_rotated(expolygons: &ExPolygons, angle: CoordF) -> BoundingBox {
 // ============================================================================
 // Clipper helpers bridging the C++ Polygons-based overloads onto the ExPolygon-centric
 // crate clipper backend, all numerically equivalent to ClipperUtils.{hpp,cpp}.
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. These helpers
+// (offset/offset_ex/union_/intersection*/diff*/expand) delegate to clipper_utils,
+// which uses the `geo` crate (geo-clipper, fixed scale 1000) rather than ClipperLib
+// at coord_t integer precision. Cross-cutting; not re-routed per-file.
 // ============================================================================
 
 // offset(const ExPolygons&, float) -> Polygons (ClipperUtils.hpp:350). Default jtMiter, ml 3.
@@ -799,7 +807,7 @@ pub fn detect_bridging_direction(floating_edges: &Lines, overhang_area: &Polygon
     let mut directions: std::collections::HashMap<i64, PointF> = std::collections::HashMap::new();
     for l in floating_edges.iter() {
         // Vec2d normal = l.normal().cast<double>().normalized();
-        let normal = normalized(l.normal_f64());
+        let normal = normalized(line_normal(l));
         // double quantized_angle = std::ceil(std::atan2(normal.y(),normal.x()) * 1000.0);
         let quantized_angle = (normal.y.atan2(normal.x) * 1000.0).ceil() as i64;
         // directions.emplace(quantized_angle, normal); -- only inserts if key not present.
@@ -871,7 +879,7 @@ pub fn detect_bridging_direction_areas(
     // BridgeDetector.hpp:139-143
     let mut directions: std::collections::HashMap<i64, PointF> = std::collections::HashMap::new();
     for l in floating_edges.iter() {
-        let normal = normalized(l.normal_f64());
+        let normal = normalized(line_normal(l));
         let quantized_angle = (normal.y.atan2(normal.x) * 1000.0).ceil() as i64;
         directions.entry(quantized_angle).or_insert(normal);
     }
@@ -901,6 +909,18 @@ pub fn detect_bridging_direction_areas(
 
     // BridgeDetector.hpp:169
     (result_dir, min_cost)
+}
+
+// Faithful port of `Line::normal()` (Line.hpp:180):
+//   Vector normal() const { return Vector((b(1) - a(1)), -(b(0) - a(0))); }
+// i.e. normal = ( dy, -dx ). The crate's `Line::normal_f64()` uses the opposite
+// convention (-dy, dx), which is the negated vector and would yield an atan2 off
+// by +/- PI and a flipped result_dir; compute the C++ normal directly here.
+fn line_normal(l: &Line) -> PointF {
+    PointF::new(
+        (l.b.y - l.a.y) as CoordF,
+        -((l.b.x - l.a.x) as CoordF),
+    )
 }
 
 // Vec2d::normalized() with the degenerate (zero) case mapped to zero (Eigen would give NaN;
