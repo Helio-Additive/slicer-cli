@@ -570,12 +570,20 @@ impl Expr {
         Expr::throw_if_not_numeric_static(param2)?;
         if param1.type_() == Type::TypeDouble || param2.type_() == Type::TypeDouble {
             // PlaceholderParser.cpp:604  std::uniform_real_distribution<>(as_d(), as_d())(rng)
-            let v = rng.gen_range(param1.as_d()..param2.as_d());
+            // std::uniform_real_distribution requires a <= b; for a == b it
+            // yields a. Rust's gen_range panics on an empty range, so guard the
+            // degenerate case to mirror the C++ behaviour.
+            let lo = param1.as_d();
+            let hi = param2.as_d();
+            let v = if lo < hi { rng.gen_range(lo..hi) } else { lo };
             param1.data = Data::Double(v);
         } else {
             // PlaceholderParser.cpp:607  std::uniform_int_distribution<>(as_i(), as_i())(rng)
-            // C++ uniform_int_distribution is inclusive on both ends.
-            let v = rng.gen_range(param1.as_i()..=param2.as_i());
+            // C++ uniform_int_distribution is inclusive on both ends and
+            // requires a <= b. Guard a > b (UB in C++) to avoid a Rust panic.
+            let lo = param1.as_i();
+            let hi = param2.as_i();
+            let v = if lo <= hi { rng.gen_range(lo..=hi) } else { lo };
             param1.data = Data::Int(v);
         }
         Ok(())
@@ -756,16 +764,30 @@ fn format_printf_g(value: f64, precision: usize) -> String {
     if value == 0.0 {
         return "0".to_string();
     }
+    if value.is_nan() {
+        return "nan".to_string();
+    }
+    if value.is_infinite() {
+        return if value < 0.0 { "-inf".to_string() } else { "inf".to_string() };
+    }
+    // C99 / C++ defaultfloat: precision P==0 is treated as 1.
     let precision = if precision == 0 { 1 } else { precision };
-    let exp = value.abs().log10().floor() as i32;
+    // The %g exponent must be derived from the value AFTER rounding to
+    // `precision` significant digits, not from a raw log10() which can fall on
+    // the wrong side of a power-of-ten boundary (e.g. 999999.5 -> 1e+06).
+    // Format once in scientific notation with (precision-1) fractional digits,
+    // which rounds correctly, then read back the decimal exponent.
+    let sci = format!("{:.*e}", precision - 1, value);
+    let exp: i32 = match sci.find(['e', 'E']) {
+        Some(epos) => sci[epos + 1..].parse().unwrap_or(0),
+        None => 0,
+    };
     // %g uses %e if exp < -4 or exp >= precision, otherwise %f.
     if exp < -4 || exp >= precision as i32 {
         // Scientific notation with (precision-1) digits after the point,
         // trailing zeros removed.
-        let mantissa_prec = precision - 1;
-        let formatted = format!("{:.*e}", mantissa_prec, value);
         // Rust formats exponent as e.g. "1.5e2"; C++ uses "1.5e+02".
-        normalize_exponent(&trim_g_mantissa(&formatted))
+        normalize_exponent(&trim_g_mantissa(&sci))
     } else {
         let decimals = (precision as i32 - 1 - exp).max(0) as usize;
         let formatted = format!("{:.*}", decimals, value);
