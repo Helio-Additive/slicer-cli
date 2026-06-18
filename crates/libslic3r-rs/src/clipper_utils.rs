@@ -1285,6 +1285,23 @@ pub fn clip_clipper_polygons_with_subject_bbox_expolygon(
     out
 }
 
+// ClipperUtils.cpp:144-151 `Polygons clip_clipper_polygons_with_subject_bbox(const Polygons &src, const BoundingBox &bbox)`
+pub fn clip_clipper_polygons_with_subject_bbox_polygons(
+    src: &[Polygon],
+    bbox: &BoundingBox,
+) -> Vec<Polygon> {
+    // ClipperUtils.cpp:146-147
+    let mut out: Vec<Polygon> = Vec::with_capacity(src.len());
+    // ClipperUtils.cpp:148
+    for p in src {
+        out.push(clip_clipper_polygon_with_subject_bbox(p, bbox, false));
+    }
+    // ClipperUtils.cpp:149
+    out.retain(|polygon| !polygon.is_empty());
+    // ClipperUtils.cpp:150
+    out
+}
+
 /// ClipperUtils.cpp:911 `diff_pl(const Polylines&, const Polygons&)` —
 /// `_clipper_pl_open(ctDifference, subject, clip)`: open-path subject clipped
 /// against closed clip, returning the portions OUTSIDE the clip.

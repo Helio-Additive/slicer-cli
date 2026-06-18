@@ -41,7 +41,7 @@ use crate::geometry::{
 };
 use crate::libslic3r::SCALED_EPSILON;
 use crate::utils::prev_idx_modulo;
-use crate::{unscale, Coord, CoordF};
+use crate::{Coord, CoordF};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 
@@ -345,8 +345,15 @@ pub fn floating_thick_polyline_to_extrusion_paths(
     // `auto set_flow_for_path = [&flow](ExtrusionPath& path, double width) { ... };`
     let set_flow_for_path = |path: &mut ExtrusionPath, width: f64| {
         // Flow new_flow = flow.with_width(unscale<float>(width) + flow.height() * float(1. - 0.25 * PI));
+        // C++ `unscale<float>(width)` == `float(width) * float(SCALING_FACTOR)` with
+        // NO integer truncation of `width` (which here is a fractional averaged
+        // width). The whole sum is computed in `float` (f32) in C++, so mirror that.
+        let unscaled_w = (width as f32) / (crate::SCALING_FACTOR as f32);
+        // C++ `float(1. - 0.25 * PI)`: the inner expression is evaluated in double,
+        // then cast to float.
+        let arg = unscaled_w + (flow.height() as f32) * ((1.0 - 0.25 * PI) as f32);
         let new_flow: Flow = flow
-            .with_width(unscale(width as Coord) + flow.height() * (1.0 - 0.25 * PI))
+            .with_width(arg as f64)
             .expect("Flow::with_width");
         path.mm3_per_mm = new_flow.mm3_per_mm_unchecked();
         path.width = new_flow.width();
@@ -1364,18 +1371,16 @@ pub fn toplogic_sort_extruisons(all_extrusions: &[&ExtrusionLine]) -> Vec<usize>
 // primitives to express idioms used by the ported functions above).
 // =============================================================================
 
-/// `ClipperUtils::clip_clipper_polygons_with_subject_bbox(sparse_polys, poly_bbox)`.
+/// `ClipperUtils::clip_clipper_polygons_with_subject_bbox(sparse_polys, poly_bbox)`
+/// — ClipperUtils.cpp:144-151.
 ///
-/// The crate has no direct port of this helper yet; it keeps polygons whose
-/// bounding box overlaps `bbox` (the semantically-relevant subset). This affects
-/// only a pre-filtering optimization — points outside `bbox` are never queried by
-/// `point_in_floating_area` anyway, so the floating classification is unchanged.
+/// Faithful: clips each polygon's point sequence against `bbox` (the Sutherland-
+/// style per-vertex side test in `clip_clipper_polygon_with_subject_bbox`), then
+/// drops empties. NOT a whole-polygon bbox filter: the clipped contours feed
+/// `point_in_floating_area`'s `Polygon::contains(p)` test, whose result depends
+/// on the clipped geometry, so the point reduction must match C++.
 fn clip_clipper_polygons_with_subject_bbox(polys: &Polygons, bbox: &BoundingBox) -> Polygons {
-    polys
-        .iter()
-        .filter(|p| polygon_get_extents(p).intersects(bbox))
-        .cloned()
-        .collect()
+    crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_polygons(polys, bbox)
 }
 
 /// Polygon.cpp `BoundingBox get_extents(const Polygon &poly)`.
