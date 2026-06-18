@@ -22,8 +22,11 @@
 //! representation and the conversions to and from our `TriangleMesh`. These are exact
 //! 1:1 translations and feed the (native) mcut dispatch in the C++ build.
 //!
-//! `coord_t -> i64`, `coordf_t -> f64`. Vertices are stored single-precision
-//! (`Vec3f` / `Point3F`) exactly as in C++ `indexed_triangle_set`.
+//! `coord_t -> i64`, `coordf_t -> f64`. C++ `indexed_triangle_set` stores vertices
+//! single-precision (`Vec3f`); the crate's `Point3F` is `f64`, so the f32 truncation
+//! the C++ kernel performs is reproduced explicitly where it matters
+//! (`mcut_to_triangle_mesh` does `... as f32 as f64`, mirroring C++ `(float)` at
+//! MeshBoolean.cpp:544-546).
 
 use crate::geometry::Point3F;
 use crate::triangle_mesh::{Triangle, TriangleMesh};
