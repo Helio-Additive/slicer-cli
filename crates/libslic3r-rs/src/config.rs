@@ -40,7 +40,8 @@ pub mod config_helpers {
     // Config.hpp:90-99  inline bool looks_like_enum_value(std::string value)
     pub fn looks_like_enum_value(value: &str) -> bool {
         // Config.hpp:92  boost::trim(value);
-        let value = value.trim_matches(|c: char| c == ' ' || c == '\t' || c == '\r' || c == '\n');
+        // boost::trim defaults to std::isspace (C locale): ' ' \t \n \v \f \r
+        let value = value.trim_matches(is_space);
         // Config.hpp:93-94  if (value.empty() || value.size() > 64 || ! isalpha(value.front())) return false;
         let bytes = value.as_bytes();
         if value.is_empty() || value.len() > 64 || !is_alpha(bytes[0]) {
@@ -59,7 +60,7 @@ pub mod config_helpers {
     // Config.hpp:101-104  inline bool enum_looks_like_true_value(std::string value)
     pub fn enum_looks_like_true_value(value: &str) -> bool {
         // Config.hpp:102  boost::trim(value);
-        let value = value.trim_matches(|c: char| c == ' ' || c == '\t' || c == '\r' || c == '\n');
+        let value = value.trim_matches(is_space);
         // Config.hpp:103  return boost::iequals(value, "enabled") || boost::iequals(value, "on");
         value.eq_ignore_ascii_case("enabled") || value.eq_ignore_ascii_case("on")
     }
@@ -78,6 +79,11 @@ pub mod config_helpers {
         Loaded,
         Substituted,
         Failed,
+    }
+
+    // C-locale `std::isspace` used by `boost::trim`: ' ' \t \n \v \f \r.
+    fn is_space(c: char) -> bool {
+        c == ' ' || c == '\t' || c == '\n' || c == '\u{0B}' || c == '\u{0C}' || c == '\r'
     }
 
     // C `isalpha` for ASCII (matches the C locale used by libslic3r).
