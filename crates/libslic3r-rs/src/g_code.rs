@@ -152,7 +152,15 @@ pub fn transform_gcode(gcode: &str, mut pos: Vec2f, translation: &Vec2f, angle: 
             if let Some(it) = line.find(never_skip_tag()) {
                 // remove the tag and remember we saw it
                 never_skip = true;
-                line.replace_range(it..it + never_skip_tag().len(), "");
+                // GCode.cpp:316 — line.erase(it, it + WipeTower::never_skip_tag().size());
+                // std::string::erase(index, count) removes min(count, size()-index)
+                // chars starting at `index`. C++ passes `it + tag.size()` as the
+                // *count* (not an end index), so it erases up to `it + tag_len`
+                // characters from offset `it`, clamped to the string end. Replicate
+                // that quirk exactly rather than erasing only `tag_len` chars.
+                let count = it + never_skip_tag().len();
+                let end = (it + count).min(line.len());
+                line.replace_range(it..end, "");
             }
             // GCode.cpp:318-327 — parse X/Y values out of the line, building
             // line_out from every character that is not an X/Y coordinate.
