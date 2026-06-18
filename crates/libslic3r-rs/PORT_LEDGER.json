@@ -3308,7 +3308,8 @@
     "rust_exists": true,
     "loc": 668,
     "status": "done",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/SupportTreeBuildsteps.cpp",

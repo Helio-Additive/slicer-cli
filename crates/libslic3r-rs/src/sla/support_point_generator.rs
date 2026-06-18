@@ -241,6 +241,7 @@ impl<'slc> Structure<'slc> {
             // SupportPointGenerator.hpp:93 — Polygons polys = intersection(...)
             // (the geo-clipper wrapper returns ExPolygons; summing `ExPolygon::area()`
             // equals the C++ sum over the flattened Polygons, holes negative)
+            // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
             let polys = intersection(slice::from_ref(self.polygon), slice::from_ref(rhs.polygon));
             // SupportPointGenerator.hpp:94-95
             for poly in &polys {
@@ -1048,6 +1049,8 @@ fn make_layers<'slc>(
                 // see module porting notes).
                 let bottom_polygons_ex: ExPolygons = union_polygons_ex(&bottom_polygons);
                 // SupportPointGenerator.cpp:183 — top.overhangs = diff_ex(*top.polygon, bottom_polygons);
+                // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
+                // (applies to the diff/expand/intersection calls in this block)
                 top.overhangs = difference(slice::from_ref(top.polygon), &bottom_polygons_ex);
                 // SupportPointGenerator.cpp:184
                 if !top.overhangs.is_empty() {
@@ -1057,6 +1060,8 @@ fn make_layers<'slc>(
                     // These masks include the original island
                     // (expand(Polygons, delta, jtSquare); delta converted from
                     // scaled units to mm for the geo-clipper backend)
+                    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
+                    // (geo-clipper uses fixed scale 1000, not coord_t precision)
                     let mut dangl_mask: ExPolygons = offset_polygons(
                         &bottom_polygons,
                         between_layers_offset as f64 * SCALING_FACTOR,
