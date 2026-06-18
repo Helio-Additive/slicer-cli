@@ -50,16 +50,20 @@
 //!  * nearby pillar.
 //!  */
 
-use crate::geometry::Vec3d;
-use crate::normal_utils::indexed_triangle_set;
+use crate::geometry::{ExPolygons, Vec3d};
+use crate::libslic3r::EPSILON;
+use crate::mt_utils::grid_f32;
+use crate::normal_utils::{indexed_triangle_set, Vec3f};
 use crate::sla::ccr;
 use crate::sla::job_controller::JobController;
-use crate::sla::pad::PadConfig;
+use crate::sla::pad::{create_pad, pad_blueprint, PadConfig};
+use crate::sla::support_tree::MeshType;
 use crate::sla::support_tree_mesher::{
     get_mesh_bridge, get_mesh_diff_bridge, get_mesh_head, get_mesh_junction, get_mesh_pedestal,
     get_mesh_pillar,
 };
 use crate::triangle_mesh::{bounding_box, its_merge, its_merge_vertices};
+use crate::Result;
 
 // ---------------------------------------------------------------------------
 // SupportTreeBuilder.hpp
@@ -596,12 +600,68 @@ impl Pad {
     //     its_merge_vertices(tmesh);
     // }
     //
-    // BLOCKED: requires `pad_blueprint`, `create_pad`,
-    // `PadConfig::full_height()`, `PadConfig::required_elevation()` and
-    // `ThrowOnCancel` from SLA/Pad.cpp plus `grid()` from MTUtils.hpp —
-    // SLA/Pad.cpp is still an auto-generated placeholder stub in this crate
-    // (`sla/pad.rs`). No fake is provided; port SLA/Pad.cpp first, then add
-    // this constructor.
+    // (Previously BLOCKED on SLA/Pad.cpp; now ported — `pad_blueprint`,
+    //  `create_pad`, `PadConfig::full_height()`, `PadConfig::required_elevation()`
+    //  live in `sla/pad.rs`, `grid()` in `mt_utils.rs`. `create_pad` returns a
+    //  `crate::Result` because the wasm-safe tesselation backend is fallible
+    //  while the C++ ctor cannot fail, so this constructor propagates that as
+    //  `Result<Self>`. The C++ `ThrowOnCancel thr` parameter is `&dyn Fn()`
+    //  here.)
+    pub fn new(
+        support_mesh: &indexed_triangle_set,
+        model_contours: &ExPolygons,
+        ground_level: f64,
+        pcfg: &PadConfig,
+        thr: &dyn Fn(),
+    ) -> Result<Self> {
+        // SupportTreeBuilder.cpp:31 — cfg(pcfg)
+        let cfg = pcfg.clone();
+        // SupportTreeBuilder.cpp:32
+        // zlevel(ground_level + pcfg.full_height() - pcfg.required_elevation())
+        let zlevel = ground_level + pcfg.full_height() - pcfg.required_elevation();
+
+        // SupportTreeBuilder.cpp:34 — thr();
+        thr();
+
+        // SupportTreeBuilder.cpp:36 — ExPolygons sup_contours;
+        let mut sup_contours: ExPolygons = Vec::new();
+
+        // SupportTreeBuilder.cpp:38 — float zstart = float(zlevel);
+        let zstart = zlevel as f32;
+        // SupportTreeBuilder.cpp:39
+        // float zend = zstart + float(pcfg.full_height() + EPSILON);
+        let zend = zstart + (pcfg.full_height() + EPSILON) as f32;
+
+        // SupportTreeBuilder.cpp:41
+        // pad_blueprint(support_mesh, sup_contours, grid(zstart, zend, 0.1f), thr);
+        pad_blueprint(
+            support_mesh,
+            &mut sup_contours,
+            &grid_f32(zstart, zend, 0.1_f32),
+            thr,
+        );
+        // SupportTreeBuilder.cpp:42
+        // create_pad(sup_contours, model_contours, tmesh, pcfg);
+        let mut tmesh = indexed_triangle_set::default();
+        create_pad(&sup_contours, model_contours, &mut tmesh, &cfg, thr)?;
+
+        // SupportTreeBuilder.cpp:44 — Vec3f offs{.0f, .0f, float(zlevel)};
+        let offs = Vec3f::new(0.0_f32, 0.0_f32, zlevel as f32);
+        // SupportTreeBuilder.cpp:45 — for (auto &p : tmesh.vertices) p += offs;
+        for p in tmesh.vertices.iter_mut() {
+            *p += offs;
+        }
+
+        // SupportTreeBuilder.cpp:47 — its_merge_vertices(tmesh);
+        // (TriangleMesh.hpp:211 default argument `shrink_to_fit = true`)
+        its_merge_vertices(&mut tmesh, true);
+
+        Ok(Self {
+            tmesh,
+            cfg,
+            zlevel,
+        })
+    }
 
     // SupportTreeBuilder.hpp:203
     // bool empty() const { return tmesh.indices.size() == 0; }
@@ -1302,8 +1362,8 @@ impl SupportTreeBuilder {
         // The mesh will be passed by const-pointer to TriangleMeshSlicer,
         // which will need this.
         // SupportTreeBuilder.cpp:181 — its_merge_vertices(m_meshcache);
-        // (TriangleMesh.hpp default argument `shrink_to_fit = false`)
-        its_merge_vertices(&mut self.m_meshcache, false);
+        // (TriangleMesh.hpp:211 default argument `shrink_to_fit = true`)
+        its_merge_vertices(&mut self.m_meshcache, true);
 
         // SupportTreeBuilder.cpp:183-184
         // BoundingBoxf3 bb = bounding_box(m_meshcache);
@@ -1336,9 +1396,28 @@ impl SupportTreeBuilder {
     //     return h;
     // }
     //
-    // BLOCKED: depends on the blocked merged_mesh()/mesh_height() above and
-    // on `PadConfig::full_height()` / `PadConfig::required_elevation()` from
-    // the still-stubbed SLA/Pad.cpp port (`sla/pad.rs`).
+    // (Previously BLOCKED; now implemented — merged_mesh()/mesh_height() and
+    //  PadConfig::full_height()/required_elevation() are all ported. `&mut self`
+    //  expresses the C++ `mutable` cache, consistent with merged_mesh().
+    //  merged_mesh() uses the default steps = 45.)
+    pub fn full_height(&mut self) -> f64 {
+        // SupportTreeBuilder.cpp:192-193
+        // if (merged_mesh().indices.empty() && !pad().empty())
+        //     return pad().cfg.full_height();
+        if self.merged_mesh(45).indices.is_empty() && !self.m_pad.empty() {
+            return self.m_pad.cfg.full_height();
+        }
+
+        // SupportTreeBuilder.cpp:195 — double h = mesh_height();
+        let mut h = self.mesh_height();
+        // SupportTreeBuilder.cpp:196
+        // if (!pad().empty()) h += pad().cfg.required_elevation();
+        if !self.m_pad.empty() {
+            h += self.m_pad.cfg.required_elevation();
+        }
+        // SupportTreeBuilder.cpp:197 — return h;
+        h
+    }
 
     // WITHOUT THE PAD!!!
     // SupportTreeBuilder.hpp:427-432
@@ -1348,7 +1427,18 @@ impl SupportTreeBuilder {
     //     return m_model_height;
     // }
     //
-    // BLOCKED: depends on the blocked merged_mesh() above.
+    // (Previously BLOCKED; now implemented — merged_mesh() is ported. `&mut self`
+    //  expresses the C++ `mutable` cache, consistent with merged_mesh(). C++
+    //  merged_mesh() uses the default steps = 45.)
+    #[inline]
+    pub fn mesh_height(&mut self) -> f64 {
+        // SupportTreeBuilder.hpp:430 — if (!m_meshcache_valid) merged_mesh();
+        if !self.m_meshcache_valid {
+            self.merged_mesh(45);
+        }
+        // SupportTreeBuilder.hpp:431 — return m_model_height;
+        self.m_model_height
+    }
 
     // Intended to be called after the generation is fully complete
     // SupportTreeBuilder.hpp:434-435 (declaration) /
@@ -1368,7 +1458,28 @@ impl SupportTreeBuilder {
     //     return ret;
     // }
     //
-    // BLOCKED: depends on the blocked merged_mesh() above.
+    // (Previously BLOCKED; now implemented — merged_mesh() is ported. The C++
+    //  returns a reference to the (now cached) merged mesh; the Rust port
+    //  computes it for its side effect of populating m_meshcache, clears the
+    //  build-up vectors, then returns &m_meshcache. C++ merged_mesh() uses the
+    //  default steps = 45.)
+    pub fn merge_and_cleanup(&mut self) -> &indexed_triangle_set {
+        // SupportTreeBuilder.cpp:203 — auto &ret = merged_mesh();
+        // (The returned reference aliases m_meshcache, which the cleanup below
+        //  does NOT touch, so it stays valid — re-borrowed at the end.)
+        self.merged_mesh(45);
+
+        // SupportTreeBuilder.cpp:206-210 — Doing clear() does not guarantee to
+        // release the memory.
+        self.m_heads = Vec::new();
+        self.m_head_indices = Vec::new();
+        self.m_pillars = Vec::new();
+        self.m_junctions = Vec::new();
+        self.m_bridges = Vec::new();
+
+        // SupportTreeBuilder.cpp:212 — return ret;
+        &self.m_meshcache
+    }
 
     // Implement SupportTree interface:
 
@@ -1381,8 +1492,38 @@ impl SupportTreeBuilder {
     //     return m_pad.tmesh;
     // }
     //
-    // BLOCKED: depends on the blocked merged_mesh() above and on the blocked
-    // Pad constructor (which needs SLA/Pad.cpp).
+    // (Previously BLOCKED; now implemented — merged_mesh() and the Pad
+    //  constructor are both ported. C++ `merged_mesh()` uses the default
+    //  `steps = 45` (SupportTreeBuilder.hpp:422). The C++ ctor cannot fail; the
+    //  Rust `Pad::new` is fallible due to tesselation, so the error is
+    //  propagated as `Result`. The trait `add_pad(&mut self, ...)` returns the
+    //  mesh reference; here the inherent method mirrors that and the fallible
+    //  variant `add_pad_checked` exposes the error.)
+    pub fn add_pad(&mut self, modelbase: &ExPolygons, cfg: &PadConfig) -> &indexed_triangle_set {
+        self.add_pad_checked(modelbase, cfg)
+            .expect("create_pad tesselation failed");
+        &self.m_pad.tmesh
+    }
+
+    pub fn add_pad_checked(
+        &mut self,
+        modelbase: &ExPolygons,
+        cfg: &PadConfig,
+    ) -> Result<&indexed_triangle_set> {
+        // SupportTreeBuilder.cpp:53
+        // m_pad = Pad{merged_mesh(), modelbase, ground_level, cfg, ctl().cancelfn};
+        // (ground_level and ctl().cancelfn are read before merged_mesh() borrows
+        //  &mut self; the merged mesh is cloned out to release the borrow before
+        //  Pad::new runs, matching the C++ which passes a const ref into the
+        //  Pad ctor that only reads from it.)
+        let ground_level = self.ground_level;
+        let cancelfn = self.m_ctl.cancelfn.clone();
+        let merged = self.merged_mesh(45).clone();
+        let pad = Pad::new(&merged, modelbase, ground_level, cfg, &*cancelfn)?;
+        self.m_pad = pad;
+        // SupportTreeBuilder.cpp:54 — return m_pad.tmesh;
+        Ok(&self.m_pad.tmesh)
+    }
 
     // SupportTreeBuilder.hpp:442
     // void remove_pad() override { m_pad = Pad(); }
@@ -1402,13 +1543,34 @@ impl SupportTreeBuilder {
     //     return m_meshcache;
     // }
     //
-    // BLOCKED: depends on the blocked merged_mesh() above.
+    // (Previously BLOCKED; now implemented — merged_mesh() is ported. C++
+    //  merged_mesh() uses the default steps = 45. FIDELITY-NOTE: the C++ method
+    //  is `const` (relying on the `mutable` cache); the Rust port takes
+    //  `&mut self` to drive merged_mesh()'s cache, so it cannot satisfy the
+    //  `SupportTree::retrieve_mesh(&self, ...)` trait signature directly — the
+    //  trait impl is therefore still deferred (see the note at the end). The
+    //  fall-through `return m_meshcache;` for the unreachable enum case is
+    //  unrepresentable as the Rust `match` is exhaustive over MeshType.)
+    pub fn retrieve_mesh(&mut self, meshtype: MeshType) -> &indexed_triangle_set {
+        // SupportTreeBuilder.cpp:217-220
+        match meshtype {
+            // SupportTreeBuilder.cpp:218 — case MeshType::Support: return merged_mesh();
+            MeshType::Support => self.merged_mesh(45),
+            // SupportTreeBuilder.cpp:219 — case MeshType::Pad: return pad().tmesh;
+            MeshType::Pad => &self.m_pad.tmesh,
+        }
+    }
 
     // SupportTree.hpp:169 (base class)
     // const JobController &ctl() const { return m_ctl; }
-    // (Exposed as an inherent method; the `impl SupportTree for
-    //  SupportTreeBuilder` trait impl is BLOCKED because its required
-    //  `retrieve_mesh` / `add_pad` methods are blocked, see above.)
+    // (Exposed as an inherent method. The `add_pad` / `remove_pad` /
+    //  `retrieve_mesh` interface methods are now all implemented above as
+    //  inherent methods. The `impl SupportTree for SupportTreeBuilder` trait
+    //  impl is still DEFERRED: the trait's `retrieve_mesh(&self, ...)` /
+    //  `slice(&self, ...)` take `&self`, but the C++ `mutable` mesh cache is
+    //  expressed here with `&mut self` (consistent with merged_mesh()), so
+    //  wiring the trait would require an interior-mutability rework of the
+    //  cache fields — a cross-cutting change deferred from this file.)
     pub fn ctl(&self) -> &JobController {
         &self.m_ctl
     }
