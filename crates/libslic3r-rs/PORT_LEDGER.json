@@ -2794,7 +2794,8 @@
     "rust_exists": true,
     "loc": 1710,
     "status": "done",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/AvoidCrossingPerimeters.cpp",

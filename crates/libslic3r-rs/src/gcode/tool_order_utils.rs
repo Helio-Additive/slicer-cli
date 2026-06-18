@@ -1492,13 +1492,17 @@ fn solve_extruder_order_with_greedy(
             if !is_visited[k] {
                 let pf = prev_filament.unwrap();
                 // ToolOrderUtils.cpp:811-812  comparison of wipe_volumes against target_cost (int) and equality+self-loop check
+                // C++ compares `float < int` / `float == int`: the `int` target_cost is
+                // promoted to float, so the comparison happens in float space. Mirror that
+                // by promoting target_cost to f32, not by truncating wv first.
                 let wv = wipe_volumes[pf as usize][curr_layer_extruders[k] as usize];
-                if (wv as i32) < target_cost
-                    || ((wv as i32) == target_cost && pf == curr_layer_extruders[k])
+                if wv < target_cost as f32
+                    || (wv == target_cost as f32 && pf == curr_layer_extruders[k])
                 {
                     // ToolOrderUtils.cpp:813  target_idx = k;
                     target_idx = k as i32;
                     // ToolOrderUtils.cpp:814  target_cost = wipe_volumes[*prev_filament][curr_layer_extruders[k]];
+                    // (float->int assignment truncates, matching C++ `int target_cost`)
                     target_cost = wv as i32;
                 }
             }
