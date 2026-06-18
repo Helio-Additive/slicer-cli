@@ -5,12 +5,14 @@
 //! and the print is modified to stretch over a minimum layer time.
 //!
 //! Status: the header value-types (`AdjustableFeatureType`, `CoolingSlowdownLogicType`,
-//! `CoolingLine`, `PerExtruderAdjustments`) are ported line-by-line below. The `GCodeEditor`
+//! `CoolingLine`, `PerExtruderAdjustments`) plus the file-local helpers
+//! (`record_wall_lines`, `mark_node_pos`) are ported line-by-line below. The `GCodeEditor`
 //! class methods (`reset`, `process_layer`, `parse_layer_gcode`, `write_layer_gcode`) require the
 //! not-yet-ported BambuStudio `GCode` class and the per-extruder `FullPrintConfig`
-//! (`OPT.get_at(extruder_id)` accessors). The functional equivalent of those methods is already
-//! implemented in `crate::gcode::cooling::GCodeEditorState` against a decoupled config
-//! representation. See module notes / PORT_LEDGER for the blocked symbols.
+//! (`OPT.get_at(extruder_id)` accessors), which the crate's flat `PrintConfig` does not provide.
+//! See the FLAGGED note near the bottom of this file / PORT_LEDGER for the blocked symbols.
+//! NOTE: `crate::gcode::cooling` contains a *separate, decoupled* cooling implementation; it is
+//! NOT a byte-faithful 1:1 port of these string-processing methods.
 //!
 //! C++ Reference:
 //! - GCode/GCodeEditor.hpp
@@ -745,24 +747,104 @@ impl PerExtruderAdjustments {
 }
 
 // ---------------------------------------------------------------------------
+// File-local helpers (GCodeEditor.cpp:44-68)
+//
+// These two static free functions only operate on `PerExtruderAdjustments` /
+// `CoolingLine`, so they are portable now (they do NOT depend on the not-yet-ported
+// `GCode` / `FullPrintConfig` types). They are used by `parse_layer_gcode`.
+// ---------------------------------------------------------------------------
+
+// GCodeEditor.cpp:44  static void record_wall_lines(bool &flag, int &line_idx, PerExtruderAdjustments *adjustment, const std::pair<int, int> &node_pos)
+//
+// NOTE: C++ passes `flag`/`line_idx` by mutable reference; mirrored here with `&mut`.
+// `node_pos` is the `(object_id, cooling_node_id)` pair recorded by `mark_node_pos`.
+pub fn record_wall_lines(
+    flag: &mut bool,
+    line_idx: &mut i32,
+    adjustment: &mut PerExtruderAdjustments,
+    node_pos: (i32, i32),
+) {
+    // GCodeEditor.cpp:46  if (flag && line_idx < adjustment->lines.size())
+    // NOTE: C++ compares a signed `int line_idx` against an unsigned `size_t`;
+    // because `line_idx` starts at -1 it is only ever used here when non-negative
+    // (set to `adjustment->lines.size()` by mark_node_pos). Guard the sign explicitly.
+    if *flag && *line_idx >= 0 && (*line_idx as usize) < adjustment.lines.len() {
+        // GCodeEditor.cpp:47  CoolingLine &ptr = adjustment->lines[line_idx];
+        let ptr = &mut adjustment.lines[*line_idx as usize];
+        // GCodeEditor.cpp:48  ptr.outwall_smooth_mark = true;
+        ptr.outwall_smooth_mark = true;
+        // GCodeEditor.cpp:49  ptr.object_id = node_pos.first;
+        ptr.object_id = node_pos.0;
+        // GCodeEditor.cpp:50  ptr.cooling_node_id = node_pos.second;
+        ptr.cooling_node_id = node_pos.1;
+        // GCodeEditor.cpp:51  flag = false;
+        *flag = false;
+    }
+}
+
+// GCodeEditor.cpp:55  static void mark_node_pos(bool &flag, int &line_idx, std::pair<int, int> &node_pos,
+//   const std::vector<int> &object_label, int cooling_node_id, int object_id, PerExtruderAdjustments *adjustment)
+pub fn mark_node_pos(
+    flag: &mut bool,
+    line_idx: &mut i32,
+    node_pos: &mut (i32, i32),
+    object_label: &[i32],
+    cooling_node_id: i32,
+    object_id: i32,
+    adjustment: &PerExtruderAdjustments,
+) {
+    // GCodeEditor.cpp:58  for (size_t object_idx = 0; object_idx < object_label.size(); ++object_idx)
+    for (object_idx, &label) in object_label.iter().enumerate() {
+        // GCodeEditor.cpp:59  if (object_label[object_idx] == object_id)
+        if label == object_id {
+            // GCodeEditor.cpp:60  if (cooling_node_id == -1) break;
+            if cooling_node_id == -1 {
+                break;
+            }
+            // GCodeEditor.cpp:61  line_idx = adjustment->lines.size();
+            *line_idx = adjustment.lines.len() as i32;
+            // GCodeEditor.cpp:62  flag = true;
+            *flag = true;
+            // GCodeEditor.cpp:63  node_pos.first = object_idx;
+            node_pos.0 = object_idx as i32;
+            // GCodeEditor.cpp:64  node_pos.second = cooling_node_id;
+            node_pos.1 = cooling_node_id;
+            // GCodeEditor.cpp:65  break;
+            break;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GCodeEditor class (GCodeEditor.hpp:427-484, GCodeEditor.cpp:19-672)
 //
-// BLOCKED: The `GCodeEditor` class itself (ctor `GCodeEditor(GCode &gcodegen)` and methods
-// `reset`, `process_layer`, `parse_layer_gcode`, `write_layer_gcode`) cannot be faithfully
-// ported here because they depend on:
+// FLAGGED (blocked, not a logic divergence): The `GCodeEditor` class itself
+// (ctor `GCodeEditor(GCode &gcodegen)` and methods `reset` (cpp:31), `process_layer`
+// (cpp:71), `parse_layer_gcode` (cpp:100), `write_layer_gcode` (cpp:358)) cannot be
+// faithfully ported here because they depend on:
 //   * the BambuStudio `GCode` class (`gcodegen.config()`, `gcodegen.writer()`,
 //     `writer().toolchange_prefix()`, `writer().extruders()`, `writer().get_position()`),
-//     which is not yet ported (the crate's `gcode::GCode` is a different generator abstraction);
-//   * the per-extruder `FullPrintConfig` accessors (`m_config.OPT.get_at(extruder_id)`).
-//     The crate's `PrintConfig` is a flat single-value struct and is missing several options
-//     used by `write_layer_gcode` (`close_additional_fan_first_x_layers`,
-//     `additional_fan_full_speed_layer`, `first_x_layer_part_fan_speed`, `ironing_fan_speed`).
+//     whose Rust counterpart (`crate::gcode::generator::GCode`) has a different shape.
+//   * the per-extruder `FullPrintConfig` accessors (`m_config.OPT.get_at(extruder_id)`):
+//     the crate's `PrintConfig` is a FLAT single-value struct (e.g. `slow_down_min_speed: f32`
+//     rather than a `ConfigOptionFloats` with `.get_at(extruder_id)`), and is missing several
+//     options read by `write_layer_gcode`: `fan_min_speed`, `reduce_fan_stop_start_freq`,
+//     `additional_cooling_fan_speed`, `close_fan_the_first_x_layers`,
+//     `close_additional_fan_first_x_layers`, `additional_fan_full_speed_layer`,
+//     `first_x_layer_fan_speed`, `full_fan_speed_layer`, `fan_max_speed`,
+//     `fan_cooling_layer_time`, `overhang_fan_speed`, `first_x_layer_part_fan_speed`,
+//     `ironing_fan_speed`, `auxiliary_fan`, `pre_start_fan_time`.
+//   Reproducing them faithfully requires the F2/foundational config rework (vectorized
+//   per-extruder config), which is out of scope for this fidelity audit.
 //
-// The functional, byte-exact equivalent of these methods is implemented in
-// `crate::gcode::cooling::GCodeEditorState` (`reset` / `process_layer` / `parse_layer_gcode`
-// / `write_layer_gcode`) against a decoupled `PerExtruderCoolingConfig` representation that
-// does not require the not-yet-ported `GCode`/`FullPrintConfig` types. Once those are ported,
-// a 1:1 `GCodeEditor` wrapper can be reinstated here.
+// A DIFFERENT, decoupled cooling implementation exists in `crate::gcode::cooling`
+// (`CoolingConfig` / `CoolingMove` / `CoolingBuffer`). It is NOT a byte-faithful port of
+// these `GCodeEditor` string-processing methods (it works on parsed move structs in `f64`,
+// not on raw G-code text), so it should not be treated as the 1:1 equivalent. Once `GCode`
+// and the vectorized `FullPrintConfig` accessors are ported, the four methods above can be
+// translated 1:1 here, reusing `record_wall_lines` / `mark_node_pos` above,
+// `circle::ArcSegment::calc_arc_length` (cpp:244), and `GCodeWriter::set_fan` /
+// `set_additional_fan` (cpp:466/475).
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -806,6 +888,44 @@ mod tests {
             | AdjustableFeatureType::FIRST_INTERNAL_PERIMETERS;
         assert!(feat.contains(AdjustableFeatureType::EXTERNAL_PERIMETERS));
         assert!(!AdjustableFeatureType::NONE.contains(AdjustableFeatureType::EXTERNAL_PERIMETERS));
+    }
+
+    #[test]
+    fn test_mark_and_record_wall_lines() {
+        // GCodeEditor.cpp:44-68: mark_node_pos records (object_idx, cooling_node_id) into
+        // node_pos and points line_idx at the next line to be appended; record_wall_lines then
+        // stamps the line that lands at that index.
+        let mut adj = PerExtruderAdjustments::new();
+        adj.lines
+            .push(CoolingLine::new(CoolingLineType::G1 | CoolingLineType::ADJUSTABLE, 0, 10));
+
+        let object_label = [7i32, 42i32];
+        let mut flag = false;
+        let mut line_idx: i32 = -1;
+        let mut node_pos = (-1i32, -1i32);
+
+        // object_id 42 is at object_idx 1, cooling_node_id 3 -> records, line_idx = lines.len()
+        mark_node_pos(&mut flag, &mut line_idx, &mut node_pos, &object_label, 3, 42, &adj);
+        assert!(flag);
+        assert_eq!(line_idx, 1);
+        assert_eq!(node_pos, (1, 3));
+
+        // Append the line that mark_node_pos targeted, then record onto it.
+        adj.lines
+            .push(CoolingLine::new(CoolingLineType::G1 | CoolingLineType::EXTERNAL_PERIMETER, 11, 21));
+        record_wall_lines(&mut flag, &mut line_idx, &mut adj, node_pos);
+        assert!(!flag); // cleared after recording
+        assert!(adj.lines[1].outwall_smooth_mark);
+        assert_eq!(adj.lines[1].object_id, 1);
+        assert_eq!(adj.lines[1].cooling_node_id, 3);
+
+        // cooling_node_id == -1 must not arm the flag (cpp:60).
+        let mut flag2 = false;
+        let mut idx2: i32 = -1;
+        let mut np2 = (-1i32, -1i32);
+        mark_node_pos(&mut flag2, &mut idx2, &mut np2, &object_label, -1, 7, &adj);
+        assert!(!flag2);
+        assert_eq!(idx2, -1);
     }
 
     #[test]

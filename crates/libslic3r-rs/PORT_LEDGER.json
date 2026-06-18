@@ -2699,7 +2699,8 @@
     "rust_exists": false,
     "loc": 674,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/SeamPlacer.cpp",
