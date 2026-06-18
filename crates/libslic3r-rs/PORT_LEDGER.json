@@ -1278,7 +1278,8 @@
     "rust_exists": true,
     "loc": 691,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "CutUtils.cpp",

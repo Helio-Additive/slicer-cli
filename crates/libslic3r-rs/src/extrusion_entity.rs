@@ -376,6 +376,7 @@ impl ExtrusionPath {
         retval: &mut ExtrusionEntityCollection,
     ) {
         // ExtrusionEntity.cpp:21
+        // FIDELITY-NOTE(F1): intersection_pl is the geo-clipper open-path approximation.
         self._inflate_collection(
             &intersection_pl(std::slice::from_ref(&self.polyline), collection),
             retval,
@@ -389,6 +390,7 @@ impl ExtrusionPath {
         retval: &mut ExtrusionEntityCollection,
     ) {
         // ExtrusionEntity.cpp:26
+        // FIDELITY-NOTE(F1): diff_pl is the geo-clipper open-path approximation.
         self._inflate_collection(
             &diff_pl(std::slice::from_ref(&self.polyline), collection),
             retval,
@@ -436,6 +438,7 @@ impl ExtrusionPath {
     pub fn polygons_covered_by_width(&self, out: &mut Vec<Polygon>, scaled_epsilon: f32) {
         // ExtrusionEntity.cpp:57
         let delta = scale(self.width / 2.0) as f32 + scaled_epsilon;
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib `offset(polyline, delta)`.
         out.extend(offset_polyline(&self.polyline, delta as f64));
     }
 
@@ -455,6 +458,7 @@ impl ExtrusionPath {
         };
         // ExtrusionEntity.cpp:67
         let delta = 0.5_f32 * flow.scaled_spacing() as f32 + scaled_epsilon;
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib `offset(polyline, delta)`.
         out.extend(offset_polyline(&self.polyline, delta as f64));
     }
 
@@ -1617,8 +1621,11 @@ impl ExtrusionLoopSloped {
                 // ExtrusionEntity.cpp:575-577
                 let mut slope_path = Polyline::new();
                 let mut flat_path = Polyline::new();
+                // C++ `scale_(val)` is `((val) / SCALING_FACTOR)` (libslic3r.h:81) = a raw
+                // double (val * 100000), NOT the rounded integer `scale_()`/`scaled<>()`.
+                // Reproduce the unrounded multiply rather than `scale()` (which rounds to i64).
                 original_paths[path_iter].polyline.split_at_length(
-                    scale(remaining_length) as f64,
+                    remaining_length * SCALING_FACTOR,
                     &mut slope_path,
                     &mut flat_path,
                 );
@@ -1726,8 +1733,10 @@ impl ExtrusionLoopSloped {
         // ExtrusionEntity.cpp:354
         let mut clip_dist = distance;
         // ExtrusionEntity.cpp:355-356
+        // C++ `scale_(val)` (libslic3r.h:81) is the unrounded `val / SCALING_FACTOR`
+        // (= val * 100000), not the rounded integer `scale()`. Reproduce the raw multiply.
         if self.role() == ExtrusionRole::Perimeter {
-            clip_dist = scale(self.slope_path_length()) as f64 * SLOPE_INNER_OUTER_WALL_GAP;
+            clip_dist = self.slope_path_length() * SCALING_FACTOR * SLOPE_INNER_OUTER_WALL_GAP;
         }
 
         // ExtrusionEntity.cpp:358 — std::vector<ExtrusionPathSloped> &start_slope = this->starts;
