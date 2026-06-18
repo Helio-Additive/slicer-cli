@@ -1014,15 +1014,21 @@ impl Print {
     }
 
     /// Check if print has TPU filament (BambuStudio extension)
-    /// Print.cpp:69-78
+    // Print.cpp:72-81
     pub fn has_tpu_filament(&self) -> bool {
-        /// Iterate through all extruders used in print
-        /// Print.cpp:71-76
+        // Print.cpp:74-79: for each used extruder, look up its filament_type
+        // string and return true if any is "TPU". The C++ config holds a
+        // per-extruder `filament_type` vector indexed by filament_id; the Rust
+        // PrintConfig is single-extruder, so `get_at(filament_id)` collapses to
+        // the single configured `filament_type`.
+        // FIDELITY-NOTE: single-extruder PrintConfig (filament_type scalar)
         for _filament_id in self.all_extruders() {
-            // TODO: Check filament_type config field when it's added
-            // For now, return false
+            let filament_name = &self.config().filament_type;
+            if filament_name == "TPU" {
+                return true;
+            }
         }
-
+        // Print.cpp:80
         false
     }
 
@@ -1210,10 +1216,12 @@ impl Print {
             //     }
             // );
             // TODO: Port parallel support generation with rayon
+            // Print.cpp:1971-1984: C++ calls generate_support_material()
+            // unconditionally for every need-slicing object; the function
+            // itself decides (via has_support()/has_raft()) whether to do any
+            // work, so call it unconditionally here too (covers the raft case).
             for obj in &mut self.objects {
-                if obj.has_support() {
-                    obj.generate_support_material()?;
-                }
+                obj.generate_support_material()?;
             }
 
             // Print.cpp:1986-1989
@@ -1263,9 +1271,8 @@ impl Print {
                 obj.make_perimeters()?;
                 obj.infill()?;
                 obj.ironing()?;
-                if obj.has_support() {
-                    obj.generate_support_material()?;
-                }
+                // Print.cpp:2018: unconditional; the callee gates internally.
+                obj.generate_support_material()?;
             }
         }
 
@@ -1394,90 +1401,77 @@ impl Print {
             return Ok(());
         }
 
-        /// Compute convex hull of all first layer points
-        /// Print.cpp:2357
+        // Print.cpp:2442-2443: convex hull of all collected points.
+        // FIDELITY-NOTE: C++ collects points from every layer up to
+        // skirt_height_z across lslices + support fills + per-instance shifts +
+        // wipe tower corners + first-layer brim hull; the Rust path only has
+        // first-layer perimeter points available, so the convex hull is built
+        // from those.
+        self.throw_if_canceled()?;
         let convex_hull = convex_hull_points(first_layer_points);
 
-        /// Offset the convex hull by skirt distance
-        /// Print.cpp:2359-2362
-        /// NOTE: clipper_utils::offset_polygons expects the delta in mm (it
-        /// unscales coordinates internally), so pass skirt_distance in mm —
-        /// exactly like the sibling make_brim path below (brim_width / -inset).
-        let skirt_distance_mm = self.config.skirt_distance;
-        let skirt_shape_expolygons = clipper_utils::offset_polygons(
-            &[convex_hull],
-            skirt_distance_mm,
-            clipper_utils::OffsetJoinType::Round,
-        );
+        // Print.cpp:2448-2451: skirt flow / spacing / mm3_per_mm.
+        // TODO: use each extruder's own flow (Print.cpp:2447).
+        // FIDELITY-NOTE: skirt_flow()/skirt_first_layer_height() are not ported;
+        // approximate with a perimeter flow at the nozzle diameter.
+        let nozzle_diameter = self.config.nozzle_diameter;
+        let initial_layer_print_height = self.config.layer_height;
+        let flow = Flow::new_from_config_width(
+            FlowRole::Perimeter,
+            nozzle_diameter,
+            nozzle_diameter,
+            initial_layer_print_height,
+        )
+        .unwrap_or_else(|_| {
+            Flow::new(nozzle_diameter, initial_layer_print_height, nozzle_diameter).unwrap()
+        });
+        let spacing = flow.spacing();
+        let mm3_per_mm = flow.mm3_per_mm().unwrap_or(0.0);
 
-        /// Extract contours from ExPolygons as Polygons for next offset
-        /// Print.cpp:2363
-        let skirt_shape: Vec<GeomPolygon> = skirt_shape_expolygons
-            .iter()
-            .map(|ep| GeomPolygon::from_points(ep.contour.points().to_vec()))
-            .collect();
+        // Print.cpp:2466-2468: number of skirt loops per skirt layer.
+        // (has_infinite_skirt() is not ported; n_skirts == skirt_loops.)
+        let n_skirts = self.config.skirt_loops;
 
-        /// Generate multiple loops if configured
-        /// Print.cpp:2364-2410
-        for loop_idx in 0..self.config.skirt_loops {
-            /// Check for cancellation
-            /// Print.cpp:2365
+        // Print.cpp:2472: initial offset of the inner edge from the object.
+        // C++ scales to coord_t; the Rust offset primitive takes mm, so keep
+        // everything in mm. distance = skirt_distance - spacing/2.
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib offset.
+        let mut distance = self.config.skirt_distance - spacing / 2.0;
+
+        // Print.cpp:2476-2518: draw outlines from outside to inside.
+        // (min_skirt_length / per-extruder logic is not modeled: single loop
+        // family with extruder_idx fixed at 0.)
+        for _i in (1..=n_skirts).rev() {
             self.throw_if_canceled()?;
+            // Print.cpp:2479: offset the skirt outside.
+            distance += spacing;
 
-            /// Calculate offset for this loop
-            /// Print.cpp:2366-2368
-            /// Delta is in mm (see note above); per-loop spacing is one nozzle
-            /// diameter, matching C++ `distance += scale_(spacing)` but in mm.
-            let nozzle_diameter = self.config.nozzle_diameter;
-            let loop_offset_f64 = skirt_distance_mm + nozzle_diameter * (loop_idx as f64);
-
-            /// Offset skirt shape for this loop
-            /// Print.cpp:2369-2372
-            let loop_expolygons = clipper_utils::offset_polygons(
-                &skirt_shape,
-                loop_offset_f64,
+            // Print.cpp:2481-2489: generate the skirt centerline.
+            let loops = clipper_utils::offset_polygons(
+                std::slice::from_ref(&convex_hull),
+                distance,
                 clipper_utils::OffsetJoinType::Round,
             );
+            // Print.cpp:2486-2488: if (loops.empty()) break; loop = loops.front();
+            let loop_poly = match loops.first() {
+                Some(ep) => &ep.contour,
+                None => break,
+            };
 
-            /// Convert polygons to extrusion paths
-            /// Print.cpp:2374-2408
-            for expolygon in loop_expolygons {
-                let polygon = &expolygon.contour;
-                /// Create extrusion path from polygon
-                /// Print.cpp:2375-2407
-                let layer_height = self.config.layer_height;
-
-                let flow = Flow::new_from_config_width(
-                    FlowRole::Perimeter,
-                    nozzle_diameter,
-                    nozzle_diameter,
-                    layer_height,
-                )
-                .unwrap_or_else(|_| {
-                    Flow::new(nozzle_diameter, layer_height, nozzle_diameter).unwrap()
-                });
-
-                /// Create extrusion entity from polygon
-                /// Print.cpp:2376-2406
-                let mut path = ExtrusionPath::new(ExtrusionRole::Skirt);
-                path.polyline = crate::geometry::Polyline::from_points(polygon.points().to_vec());
-                path.mm3_per_mm = flow.mm3_per_mm().unwrap_or(0.0);
-                path.width = flow.width();
-                path.height = flow.height();
-
-                /// Add to skirt collection
-                /// Print.cpp:2407
-                if loop_idx == 0 {
-                    self.skirt_first_layer
-                        .entities
-                        .push(crate::extrusion_entity::ExtrusionEntityType::Path(path));
-                } else {
-                    self.skirt
-                        .entities
-                        .push(crate::extrusion_entity::ExtrusionEntityType::Path(path));
-                }
-            }
+            // Print.cpp:2491-2500: extrude the skirt loop.
+            let mut path = ExtrusionPath::new(ExtrusionRole::Skirt);
+            path.polyline = crate::geometry::Polyline::from_points(loop_poly.points().to_vec());
+            path.mm3_per_mm = mm3_per_mm;
+            path.width = flow.width();
+            path.height = initial_layer_print_height;
+            self.skirt
+                .entities
+                .push(crate::extrusion_entity::ExtrusionEntityType::Path(path));
         }
+
+        // Print.cpp:2520: skirt was generated inside out, reverse to print the
+        // outmost contour first.
+        self.skirt.reverse();
 
         Ok(())
     }
@@ -1614,23 +1608,45 @@ impl Print {
         Ok(())
     }
 
-    /// Get list of all extruder indices used in this print
-    /// Print.cpp:438-465
+    /// Get list of all 0-based extruder indices used in this print.
+    /// Mirrors `Print::object_extruders()` (Print.cpp:432-467) via the
+    /// `#if 0` region-collection path, which is the logically equivalent
+    /// branch tractable here: the active `#else` branch reads
+    /// `mv->get_extruders()` / `layer_config_ranges` off the ModelVolume,
+    /// which the Rust model does not expose.
+    // Print.cpp:432
     pub fn all_extruders(&self) -> Vec<usize> {
-        /// Collect extruders from all objects
-        /// Print.cpp:439-463
-        let mut extruders = Vec::new();
+        // Print.cpp:434-435
+        let mut extruders: Vec<u32> = Vec::new();
 
-        /// For now, just return extruder 0
-        /// TODO: Implement proper extruder collection from regions
-        extruders.push(0);
+        // The C++ config carries a per-extruder `filament_diameter` vector;
+        // the Rust PrintConfig is single-extruder (scalar), so the configured
+        // extruder count is 1.
+        // FIDELITY-NOTE: single-extruder PrintConfig (filament_diameter scalar)
+        let num_extruders: i32 = 1;
+        // Print::has_brim() (Print.cpp:561) checks per-object brim configs; the
+        // Rust Print only exposes the print-level brim_width, so treat a
+        // positive brim width as "has brim" (matches make_brim's own gate).
+        let has_brim = self.config().brim_width > 0.0;
 
-        /// Remove duplicates and sort
-        /// Print.cpp:463
+        // Print.cpp:438-440 (#if 0 branch): for each object, for each region,
+        // collect the region's printing extruders.
+        for object in &self.objects {
+            for region in object.all_regions() {
+                crate::print_region::PrintRegion::collect_object_printing_extruders_static(
+                    num_extruders,
+                    region.config(),
+                    has_brim,
+                    &mut extruders,
+                );
+            }
+        }
+
+        // Print.cpp:465 sort_remove_duplicates(extruders);
         extruders.sort_unstable();
         extruders.dedup();
 
-        extruders
+        extruders.into_iter().map(|e| e as usize).collect()
     }
 
     /// Check if print is canceled
