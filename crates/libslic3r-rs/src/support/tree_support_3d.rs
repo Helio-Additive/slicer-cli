@@ -700,7 +700,7 @@ fn move_inside(polygons: &[Polygon], from: &mut Point, distance: i64, max_dist2:
                             let p1p2 = ((p1 - p0).x as f64, (p1 - p0).y as f64);
                             let lab = (abd.0 * abd.0 + abd.1 * abd.1).sqrt();
                             let lp1p2 = (p1p2.0 * p1p2.0 + p1p2.1 * p1p2.1).sqrt();
-                            let s10 = scale(10.0) as f64;
+                            let s10 = 10.0 * SCALING_FACTOR; // scaled<double>(10.0) == 1_000_000.0
                             let sum = (abd.0 * (s10 / lab) + p1p2.0 * (s10 / lp1p2),
                                        abd.1 * (s10 / lab) + p1p2.1 * (s10 / lp1p2));
                             let inward_dir = (-sum.1, sum.0); // perp(v)
@@ -859,7 +859,8 @@ fn increase_single_area(
         // TreeSupport3D.cpp:1489
         if settings.no_error && settings.allow_move {
             // TreeSupport3D.cpp:1491
-            *increased = polygons_simplify(increased, scale(0.025) as CoordF);
+            // scaled<float>(0.025) == 2500.0f, exactly representable; promoted to double.
+            *increased = polygons_simplify(increased, 0.025 * SCALING_FACTOR);
         }
     } else {
         // TreeSupport3D.cpp:1494 — keep parent area as no move == offset(0)
@@ -1023,8 +1024,13 @@ fn increase_single_area(
         radius = current_elem.get_collision_radius(config);
 
         // TreeSupport3D.cpp:1556
+        // C++ declares `const coord_t foot_radius_increase = std::max(double, 0.0)`,
+        // truncating the double max() result toward zero into int32. The truncated
+        // integer is then used as the divisor below, so the truncation is observable.
+        // FIDELITY-NOTE(F2): coord_t==int32 truncation reproduced via `as i32`.
         let foot_radius_increase =
-            (config.bp_radius_increase_per_layer - config.branch_radius_increase_per_layer).max(0.0);
+            ((config.bp_radius_increase_per_layer - config.branch_radius_increase_per_layer).max(0.0)
+                as i32) as f64;
         // TreeSupport3D.cpp:1559
         let planned_foot_increase = if foot_radius_increase != 0.0 {
             1.0_f64.min(
@@ -1119,12 +1125,20 @@ fn increase_single_area(
     }
 }
 
-// TreeSupport3D.hpp recommendedMinRadius(layer_idx) — uses bp foot radius profile.
-// The Rust TreeSupportSettings::recommended_min_radius() is layer-independent; we
-// keep the C++ call shape but ignore `layer_idx` (see report divergences).
+// TreeSupportCommon.hpp:555 recommendedMinRadius(layer_idx) — bp foot radius profile.
+//   double num_layers_widened = layer_start_bp_radius - layer_idx;
+//   return num_layers_widened > 0 ? branch_radius + num_layers_widened * bp_radius_increase_per_layer : 0;
+// The result is `coord_t` (int32): the double expression truncates toward zero on
+// return. FIDELITY-NOTE(F2): coord_t==int32 truncation reproduced via `as i32`.
 #[inline]
-fn recommended_min_radius(config: &TreeSupportSettings, _layer_idx: LayerIndex) -> Coord {
-    config.recommended_min_radius()
+fn recommended_min_radius(config: &TreeSupportSettings, layer_idx: LayerIndex) -> Coord {
+    let num_layers_widened = config.layer_start_bp_radius as f64 - layer_idx as f64;
+    if num_layers_widened > 0.0 {
+        ((config.branch_radius as f64
+            + num_layers_widened * config.bp_radius_increase_per_layer) as i32) as Coord
+    } else {
+        0
+    }
 }
 
 // ============================================================================
