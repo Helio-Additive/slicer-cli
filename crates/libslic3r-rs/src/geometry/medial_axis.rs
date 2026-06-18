@@ -81,6 +81,11 @@ impl MedialAxisConfig {
 /// SCALED_EPSILON from libslic3r (used in validate_edge)
 const SCALED_EPSILON: f64 = SCALING_FACTOR * 1e-6; // 1 nm in scaled units = 1.0
 
+/// CLIPPER_MAX_COORD_UNSCALED from BambuStudio (clipper.hpp hiRange = 0x3FFFFFFFFFFFFFFF).
+/// Used by MedialAxis::validate_edge (MedialAxis.cpp:598-601) to reject almost-infinite
+/// Voronoi vertices that would overflow ClipperLib. C++: double(CLIPPER_MAX_COORD_UNSCALED).
+const CLIPPER_MAX_COORD_UNSCALED: f64 = 0x3FFFFFFFFFFFFFFFi64 as f64;
+
 /// Color used to mark exterior edges (matching BambuStudio's EXTERNAL_COLOR = 1)
 const EXTERNAL_COLOR: bv::ColorType = 1;
 
@@ -170,8 +175,15 @@ pub fn compute_medial_axis_thick(expoly: &ExPolygon, config: &MedialAxisConfig) 
     }
 
     // --- Step 3: Annotate inside/outside ---
-    // BambuStudio: Slic3r::Voronoi::annotate_inside_outside(m_vd, m_lines);
-    // boostvoronoi provides color_exterior_edges() which does exactly this.
+    // MedialAxis.cpp:452 — Slic3r::Voronoi::annotate_inside_outside(m_vd, m_lines);
+    // FIDELITY-NOTE(Voronoi): C++ uses Slic3r::Voronoi::annotate_inside_outside()
+    // (VoronoiOffset.cpp), which tags each vertex with a 4-state VertexCategory
+    // {OnContour, Inside, Outside, Unknown} and lets build() keep only edges whose
+    // vertex0/vertex1 is *strictly* Inside (excluding OnContour). The boostvoronoi
+    // crate does not expose that classifier; we substitute its color_exterior_edges()
+    // and treat any non-exterior vertex as "inside". This is a cross-cutting Voronoi
+    // primitive substitution (analogous to F1), not re-routed per-file: OnContour
+    // vertices are treated as inside here whereas C++ excludes them.
     let mut diagram = diagram;
     diagram.color_exterior_edges(EXTERNAL_COLOR);
 
@@ -273,14 +285,23 @@ pub fn compute_medial_axis_thick(expoly: &ExPolygon, config: &MedialAxisConfig) 
         };
 
         // Start a polyline
-        // BambuStudio stores widths as 2*(N-1) array, but our ThickPolyline uses
-        // per-vertex widths (N). We store the width at each vertex.
+        // MedialAxis.cpp:491-495 — seed polyline gets points {v0, v1} and widths
+        //   {width_start, width_end}.
+        // FIDELITY-NOTE(width-model): C++ ThickPolyline.width is a 2*(N-1) edge-pair
+        // array (asserted polyline.width.size()==points.size()*2-2 at build:498,506).
+        // The crate's ThickPolyline.widths is used inconsistently across the codebase
+        // (per-vertex N in width_at_distance/clip_front/split_by_width_variation;
+        // edge-pair 2*(N-1) in fill_concentric.rs/arachne). This port emits the
+        // per-vertex form. Reconciling the two representations is a crate-wide
+        // Polyline.hpp/ThickPolyline rework, not a per-function MedialAxis.cpp fix.
         let seed_w_start = edge_data[data_idx].width_start;
         let seed_w_end = edge_data[data_idx].width_end;
 
+        // MedialAxis.cpp:492-493 — emplace_back(vertex0->x(), vertex0->y()) converts
+        // the double VD coords to coord_t via narrowing (truncate toward zero).
         let mut points: Vec<Point> = vec![
-            Point::new(v0_pos.0.round() as Coord, v0_pos.1.round() as Coord),
-            Point::new(v1_pos.0.round() as Coord, v1_pos.1.round() as Coord),
+            Point::new(v0_pos.0 as Coord, v0_pos.1 as Coord),
+            Point::new(v1_pos.0 as Coord, v1_pos.1 as Coord),
         ];
         let mut widths: Vec<f64> = vec![seed_w_start, seed_w_end];
         let mut end_is_endpoint = false;
@@ -357,6 +378,12 @@ pub fn compute_medial_axis_thick(expoly: &ExPolygon, config: &MedialAxisConfig) 
     }
 
     // --- Step 6: Post-process (ExPolygon::medial_axis, lines 287–371) ---
+    // FIDELITY-NOTE(scope): MedialAxis::build() in MedialAxis.cpp ends at the loop
+    // above (line 516); endpoint extension / short-polyline removal / reconnection
+    // belong to ExPolygon::medial_axis() in ExPolygon.cpp, NOT MedialAxis.cpp. They
+    // are kept here because the crate's ExPolygon::medial_axis wrapper omits them and
+    // relies on this entry point performing the post-processing. Auditing/fixing that
+    // logic is an ExPolygon.cpp concern, outside this file's MedialAxis.cpp audit.
     postprocess_medial_axis(&mut polylines, expoly, max_width);
 
     polylines
@@ -405,19 +432,22 @@ fn validate_edge(
     let (v0x, v0y) = get_vertex_pos(diagram, edge_id, true)?;
     let (v1x, v1y) = get_vertex_pos(diagram, edge_id, false)?;
 
-    // Overflow/infinite check (BambuStudio lines 600–604)
-    let max_coord = 1e15; // conservative limit
-    if v0x.abs() > max_coord
-        || v0y.abs() > max_coord
-        || v1x.abs() > max_coord
-        || v1y.abs() > max_coord
+    // Overflow/infinite check (MedialAxis.cpp:597-603)
+    // C++: if (std::abs(edge->vertexN()->{x,y}()) > double(CLIPPER_MAX_COORD_UNSCALED)) return false;
+    if v0x.abs() > CLIPPER_MAX_COORD_UNSCALED
+        || v0y.abs() > CLIPPER_MAX_COORD_UNSCALED
+        || v1x.abs() > CLIPPER_MAX_COORD_UNSCALED
+        || v1y.abs() > CLIPPER_MAX_COORD_UNSCALED
     {
         return None;
     }
 
-    // Construct the Voronoi edge as a line
-    let edge_a = Point::new(v0x.round() as Coord, v0y.round() as Coord);
-    let edge_b = Point::new(v1x.round() as Coord, v1y.round() as Coord);
+    // Construct the Voronoi edge as a line.
+    // MedialAxis.cpp:606-607 — Line({vertex0->x(), vertex0->y()}, {vertex1->x(), vertex1->y()})
+    // converts the double VD vertex coords to coord_t via implicit narrowing, which
+    // truncates toward zero (`as Coord` in Rust), not round.
+    let edge_a = Point::new(v0x as Coord, v0y as Coord);
+    let edge_b = Point::new(v1x as Coord, v1y as Coord);
 
     // Retrieve the cells on each side
     // BambuStudio: cell_l = edge->cell(); cell_r = edge->twin()->cell();
@@ -543,9 +573,11 @@ fn process_edge_neighbors(
             if n_data_idx < edge_data.len() && edge_data[n_data_idx].active {
                 edge_data[n_data_idx].active = false;
 
-                // Get the far vertex of the neighbor edge
+                // Get the far vertex of the neighbor edge.
+                // MedialAxis.cpp:566 — emplace_back(first_neighbor->vertex1()->x(),
+                // ...->y()) narrows double VD coords to coord_t (truncate toward zero).
                 if let Some((vx, vy)) = get_vertex_pos(diagram, neighbor_id, false) {
-                    let pt = Point::new(vx.round() as Coord, vy.round() as Coord);
+                    let pt = Point::new(vx as Coord, vy as Coord);
                     points.push(pt);
 
                     // BambuStudio: push width_start then width_end (or swapped if reversed)
@@ -805,11 +837,14 @@ fn retrieve_endpoint(cell: &bv::Cell, lines: &[Line]) -> Option<Point> {
         return None;
     }
     let line = &lines[idx];
-    match src_cat {
-        bv::SourceCategory::SegmentStart => Some(line.a),
-        bv::SourceCategory::SegmentEnd => Some(line.b),
-        _ => None,
-    }
+    // MedialAxis.cpp:591-594 — retrieve_endpoint:
+    //   return cell->source_category() == SOURCE_CATEGORY_SEGMENT_START_POINT ? line.a : line.b;
+    // i.e. SegmentStart -> a, anything else -> b (binary).
+    Some(if src_cat == bv::SourceCategory::SegmentStart {
+        line.a
+    } else {
+        line.b
+    })
 }
 
 /// Distance from a point to a line segment (in scaled coordinates).
@@ -836,12 +871,21 @@ fn line_distance_to_point(line: &Line, point: Point) -> f64 {
     ((px - proj_x).powi(2) + (py - proj_y).powi(2)).sqrt()
 }
 
-/// Orientation of a line segment (angle in radians).
-/// Matches BambuStudio's `Line::orientation()`.
+/// Orientation of a line segment (angle in radians, normalized to [0, 2*PI)).
+/// Matches BambuStudio's `Line::orientation()` (Line.cpp:53-58):
+///   double angle = this->atan2_();   // atan2(b.y - a.y, b.x - a.x)
+///   if (angle < 0) angle = 2*PI + angle;
+///   return angle;
 fn line_orientation(line: &Line) -> f64 {
+    // Line.cpp:55 — this->atan2_() == atan2(b.y - a.y, b.x - a.x)
     let dx = (line.b.x - line.a.x) as f64;
     let dy = (line.b.y - line.a.y) as f64;
-    dy.atan2(dx)
+    let mut angle = dy.atan2(dx);
+    // Line.cpp:56 — if (angle < 0) angle = 2*PI + angle;
+    if angle < 0.0 {
+        angle += 2.0 * std::f64::consts::PI;
+    }
+    angle
 }
 
 /// Euclidean distance between two points (in scaled coordinates).

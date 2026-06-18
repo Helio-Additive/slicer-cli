@@ -1874,7 +1874,8 @@
     "rust_exists": true,
     "loc": 685,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Geometry/VoronoiOffset.cpp",
