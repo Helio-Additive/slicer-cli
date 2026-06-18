@@ -468,6 +468,14 @@ impl SkeletalTrapezoidationGraph {
             // SkeletalTrapezoidationGraph.cpp:215 for (auto edge_it = edges.begin(); edge_it != edges.end();)
             for edge_it in self.edges.iter() {
                 let quad_start_p = Self::edge_ptr(edge_it);
+                // In C++ an edge removed via safelyRemoveEdge is erased from the list and
+                // is therefore never visited again. With deferred removal the element is
+                // still physically present during this pass, so skip it explicitly to
+                // mirror the C++ iteration (a removed quad_start would otherwise be
+                // re-processed since its `prev` may be null).
+                if edges_to_remove.contains(&(&edge_it.base as *const _)) {
+                    continue;
+                }
                 // SkeletalTrapezoidationGraph.cpp:217 if (edge_it->prev)
                 if edge_it.base.prev.is_some() {
                     // SkeletalTrapezoidationGraph.cpp:219 edge_it++; continue;

@@ -2224,7 +2224,8 @@
     "rust_exists": true,
     "loc": 476,
     "status": "done",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/WallToolPaths.cpp",
