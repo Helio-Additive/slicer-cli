@@ -1201,89 +1201,234 @@ impl Layer {
         self.make_perimeters(None)
     }
 
+    // Here the perimeters are created cummulatively for all layer regions
+    // sharing the same parameters influencing the perimeters.
+    // Layer.cpp:201
     pub fn make_perimeters(
         &mut self,
         _perimeter_generator_options: Option<&()>,
     ) -> Result<()> {
-        // Layer.cpp:204-206
+        let print_z = self.print_z;
+        let height = self.height;
+        let id = self.id;
+
+        // Layer.cpp:205
         // C++: std::vector<unsigned char> done(m_regions.size(), false);
         let mut done = vec![false; self.regions.len()];
 
-        // Layer.cpp:208-209
+        // Layer.cpp:207-208
         // C++: for (LayerRegionPtrs::iterator layerm = m_regions.begin(); layerm != m_regions.end(); ++ layerm)
+        //      if ((*layerm)->slices.empty()) {
         for region_idx in 0..self.regions.len() {
-            if done[region_idx] {
-                continue;
-            }
-
-            // Layer.cpp:210-212
-            // C++: if ((*layerm)->slices.empty()) {
-            //          (*layerm)->perimeters.clear();
-            //          (*layerm)->fills.clear();
-            //          (*layerm)->thin_fills.clear();
             if self.regions[region_idx].slices.surfaces.is_empty() {
+                // Layer.cpp:209-211
+                // C++: (*layerm)->perimeters.clear();
+                //      (*layerm)->fills.clear();
+                //      (*layerm)->thin_fills.clear();
                 self.regions[region_idx].perimeters.entities.clear();
                 self.regions[region_idx].fills.entities.clear();
                 self.regions[region_idx].thin_fills.entities.clear();
+            } else {
+                // Layer.cpp:213-215
+                // C++: size_t region_id = layerm - m_regions.begin();
+                //      if (done[region_id]) continue;
+                if done[region_idx] {
+                    continue;
+                }
+                // Layer.cpp:217
+                // C++: done[region_id] = true;
                 done[region_idx] = true;
-                continue;
+                // Layer.cpp:218
+                // C++: const PrintRegionConfig &config = (*layerm)->region().config();
+                let config = self.regions[region_idx].region().config().clone();
+
+                // Layer.cpp:221-222
+                // find compatible regions
+                // C++: LayerRegionPtrs layerms;  layerms.push_back(*layerm);
+                let mut layerms: Vec<usize> = vec![region_idx];
+
+                // Layer.cpp:224
+                // C++: PerimeterRegions perimeter_regions;
+                // FIDELITY-NOTE: PerimeterRegion::has_compatible_perimeter_regions
+                // / merge_compatible_perimeter_regions (Layer.cpp:242-244, 270-272)
+                // and the LayerRegion::make_perimeters(slices, perimeter_regions,
+                // ...) overload that consumes them are not ported in this crate;
+                // perimeter_regions is therefore not accumulated and the reduced
+                // LayerRegion::make_perimeters is used.
+
+                // Layer.cpp:225-245
+                // C++: for (it = layerm + 1; it != m_regions.end(); ++it) { ... }
+                for it in (region_idx + 1)..self.regions.len() {
+                    // Layer.cpp:226-227
+                    if self.regions[it].slices.surfaces.is_empty() {
+                        continue;
+                    }
+                    // Layer.cpp:231-233
+                    let other_config = self.regions[it].region().config().clone();
+                    if !self.has_compatible_layer_regions(&config, &other_config) {
+                        continue;
+                    }
+                    // Layer.cpp:235-237
+                    self.regions[it].perimeters.entities.clear();
+                    self.regions[it].fills.entities.clear();
+                    self.regions[it].thin_fills.entities.clear();
+                    // Layer.cpp:239-240
+                    layerms.push(it);
+                    done[it] = true;
+                    // Layer.cpp:242-244: perimeter_regions.emplace_back — see note above.
+                }
+
+                if layerms.len() == 1 {
+                    // Layer.cpp:247-252  (optimization)
+                    // C++: (*layerm)->fill_surfaces.surfaces.clear();
+                    //      (*layerm)->fill_no_overlap_expolygons.clear();
+                    //      (*layerm)->make_perimeters((*layerm)->slices, perimeter_regions,
+                    //          &(*layerm)->fill_surfaces, &(*layerm)->fill_no_overlap_expolygons, this->loop_nodes);
+                    let surface_fill = self.regions[region_idx].slices.clone();
+                    self.regions[region_idx].fill_surfaces.surfaces.clear();
+                    self.regions[region_idx].fill_no_overlap_expolygons.clear();
+                    self.regions[region_idx].make_perimeters(&surface_fill, height, id, print_z)?;
+                    // Layer.cpp:254
+                    // C++: (*layerm)->fill_expolygons = to_expolygons((*layerm)->fill_surfaces.surfaces);
+                    // Already done inside LayerRegion::make_perimeters.
+                } else {
+                    // Layer.cpp:254-267
+                    // C++: SurfaceCollection new_slices;
+                    //      group slices according to number of extra perimeters,
+                    //      merge each group with offset_ex(.., ClipperSafetyOffset).
+                    let mut new_slices = SurfaceCollection::new();
+                    {
+                        // Layer.cpp:259-263
+                        // C++: std::map<unsigned short, Surfaces> slices;
+                        //      for (LayerRegion *layerm : layerms)
+                        //          for (const Surface &surface : layerm->slices.surfaces)
+                        //              slices[surface.extra_perimeters].emplace_back(surface);
+                        use std::collections::BTreeMap;
+                        let mut slices: BTreeMap<usize, Vec<Surface>> = BTreeMap::new();
+                        for &lid in &layerms {
+                            for surface in &self.regions[lid].slices.surfaces {
+                                slices
+                                    .entry(surface.extra_perimeters)
+                                    .or_default()
+                                    .push(surface.clone());
+                            }
+                        }
+                        // Layer.cpp:264-266
+                        // C++: for (.. surfaces_with_extra_perimeters : slices)
+                        //          new_slices.append(offset_ex(surfaces_with_extra_perimeters.second,
+                        //              ClipperSafetyOffset), surfaces_with_extra_perimeters.second.front());
+                        for (_extra, group) in slices {
+                            // offset_ex(surfaces, ClipperSafetyOffset) == union_safety_offset_ex.
+                            let group_polys = crate::surface::to_polygons(&group);
+                            let merged = crate::clipper_utils::union_safety_offset_ex(&group_polys);
+                            // append(expolygons, template surface = group.front())
+                            new_slices.append_expolygons_templ(merged, &group[0]);
+                        }
+                    }
+
+                    // Layer.cpp:269-272: PerimeterRegion merge — see FIDELITY-NOTE above.
+
+                    // Layer.cpp:275-278
+                    // C++: SurfaceCollection fill_surfaces;  ExPolygons fill_no_overlap;
+                    //      (*layerm)->make_perimeters(new_slices, perimeter_regions,
+                    //          &fill_surfaces, &fill_no_overlap, this->loop_nodes);
+                    // The reduced LayerRegion::make_perimeters writes into the
+                    // region's own fill_surfaces / fill_no_overlap_expolygons; we
+                    // snapshot those into the local fill_surfaces / fill_no_overlap
+                    // used by the split below.
+                    self.regions[region_idx].fill_surfaces.surfaces.clear();
+                    self.regions[region_idx].fill_no_overlap_expolygons.clear();
+                    self.regions[region_idx].make_perimeters(&new_slices, height, id, print_z)?;
+                    let fill_surfaces = self.regions[region_idx].fill_surfaces.clone();
+                    let fill_no_overlap = self.regions[region_idx].fill_no_overlap_expolygons.clone();
+
+                    // Layer.cpp:281-290
+                    // C++: if (!fill_surfaces.surfaces.empty()) {
+                    //          for (l : layerms) {
+                    //              ExPolygons expp = intersection_ex(fill_surfaces.surfaces, (*l)->slices.surfaces);
+                    //              (*l)->fill_expolygons = expp;
+                    //              (*l)->fill_surfaces.set(std::move(expp), fill_surfaces.surfaces.front());
+                    //              (*l)->fill_no_overlap_expolygons = intersection_ex((*l)->slices.surfaces, fill_no_overlap);
+                    //          }
+                    //      }
+                    if !fill_surfaces.surfaces.is_empty() {
+                        let fs_templ = fill_surfaces.surfaces[0].clone();
+                        for &lid in &layerms {
+                            let slice_expp =
+                                crate::surface::to_expolygons(&self.regions[lid].slices.surfaces);
+                            // intersection_ex(fill_surfaces.surfaces, (*l)->slices.surfaces)
+                            let expp = crate::clipper_utils::intersection_ex(
+                                &fill_surfaces.surfaces,
+                                &slice_expp,
+                            );
+                            // intersection_ex((*l)->slices.surfaces, fill_no_overlap)
+                            let no_overlap = crate::clipper_utils::intersection_ex(
+                                &self.regions[lid].slices.surfaces,
+                                &fill_no_overlap,
+                            );
+                            self.regions[lid].fill_expolygons = expp.clone();
+                            self.regions[lid].fill_surfaces.set_expolygons_templ(expp, &fs_templ);
+                            self.regions[lid].fill_no_overlap_expolygons = no_overlap;
+                        }
+                    }
+                }
             }
-
-            // Layer.cpp:217-218
-            done[region_idx] = true;
-
-            // Layer.cpp:218
-            // C++: const PrintRegionConfig &config = (*layerm)->region().config();
-            // C++ only uses it to find compatible regions to merge
-            // (Layer.cpp:221-245); the single-region Rust path skips merging,
-            // and LayerRegion::make_perimeters reads its own stored
-            // Arc<PrintRegion> directly, so no config is threaded from here.
-
-            // Layer.cpp:248-251
-            // For now, single region optimization (skip multi-region merging)
-            // C++: if (layerms.size() == 1) {
-            //          (*layerm)->fill_surfaces.surfaces.clear();
-            //          (*layerm)->fill_no_overlap_expolygons.clear();
-            let surface_fill = self.regions[region_idx].slices.clone();
-            self.regions[region_idx].fill_surfaces.surfaces.clear();
-            self.regions[region_idx].fill_no_overlap_expolygons.clear();
-
-            // Layer.cpp:252
-            // C++: (*layerm)->make_perimeters((*layerm)->slices, perimeter_regions, &(*layerm)->fill_surfaces, &(*layerm)->fill_no_overlap_expolygons, this->loop_nodes);
-            // print_z is threaded explicitly because the Rust LayerRegion has no
-            // Layer back-pointer (C++ reads this->layer()->print_z, LayerRegion.cpp:148).
-            // Reads of self's plain fields are hoisted to locals before the
-            // &mut borrow of self.regions[region_idx] below.
-            let print_z = self.print_z;
-            let height = self.height;
-            let id = self.id;
-            self.regions[region_idx].make_perimeters(&surface_fill, height, id, print_z)?;
-
-            // Layer.cpp:254
-            // C++: (*layerm)->fill_expolygons = to_expolygons((*layerm)->fill_surfaces.surfaces);
-            // Already done in make_perimeters
         }
 
         Ok(())
     }
 
-    /// Create slices from regions
-    /// Layer.cpp:492-540
+    // merge all regions' slices to get islands
+    // Layer.cpp:47
     pub fn make_slices(&mut self) {
-        // Layer.cpp:497-510
-        self.lslices.clear();
-
-        // Collect all region slices
-        // Layer.cpp:512-530
-        for region in &self.regions {
-            for surface in &region.slices.surfaces {
-                self.lslices.push(surface.expolygon.clone());
+        // Layer.cpp:49-58
+        let slices: ExPolygons = if self.regions.len() == 1 {
+            // Layer.cpp:50-52
+            // optimization: if we only have one region, take its slices
+            // C++: slices = to_expolygons(m_regions.front()->slices.surfaces);
+            crate::surface::to_expolygons(&self.regions[0].slices.surfaces)
+        } else {
+            // Layer.cpp:54-57
+            // C++: Polygons slices_p;
+            //      for (LayerRegion *layerm : m_regions)
+            //          polygons_append(slices_p, to_polygons(layerm->slices.surfaces));
+            //      slices = union_safety_offset_ex(slices_p);
+            let mut slices_p: Polygons = Polygons::new();
+            for layerm in &self.regions {
+                slices_p.extend(crate::surface::to_polygons(&layerm.slices.surfaces));
             }
+            crate::clipper_utils::union_safety_offset_ex(&slices_p)
+        };
+
+        // Layer.cpp:60-61
+        // C++: this->lslices.clear();
+        //      this->lslices.reserve(slices.size());
+        self.lslices.clear();
+        self.lslices.reserve(slices.len());
+
+        // Layer.cpp:63-67
+        // prepare ordering points
+        // C++: Points ordering_points;
+        //      ordering_points.reserve(slices.size());
+        //      for (const ExPolygon &ex : slices)
+        //          ordering_points.push_back(ex.contour.first_point());
+        let mut ordering_points: Vec<Point> = Vec::with_capacity(slices.len());
+        for ex in &slices {
+            ordering_points.push(ex.contour.first_point());
         }
 
-        // Union overlapping slices
-        // Layer.cpp:532-538
-        self.lslices = union_ex(&self.lslices);
+        // Layer.cpp:69-70
+        // sort slices
+        // C++: std::vector<Points::size_type> order = chain_points(ordering_points);
+        let order = chain_points(&ordering_points);
+
+        // Layer.cpp:72-74
+        // populate slices vector
+        // C++: for (size_t i : order)
+        //          this->lslices.emplace_back(std::move(slices[i]));
+        for i in order {
+            self.lslices.push(slices[i].clone());
+        }
     }
 
     // Layer.cpp:77
@@ -1304,50 +1449,247 @@ impl Layer {
         true
     }
 
-    /// Backup untyped slices
-    /// Layer.cpp:550-580
+    // Layer.cpp:84
     pub fn backup_untyped_slices(&mut self) {
-        // Layer.cpp:555-575
-        for region in &mut self.regions {
-            region.raw_slices = region.slices.clone();
+        // Layer.cpp:86 — layer_needs_raw_backup(this) is always true (Layer.cpp:81).
+        if self.layer_needs_raw_backup() {
+            // Layer.cpp:87-95
+            // C++: for (LayerRegion *layerm : m_regions) {
+            //          layerm->raw_slices = to_expolygons(layerm->slices.surfaces);
+            //          layerm->raw_counter_circle_compensation.clear();
+            //          layerm->raw_holes_circle_compensation.clear();
+            //          for (Surface &surface : layerm->slices.surfaces) {
+            //              layerm->raw_counter_circle_compensation.push_back(surface.counter_circle_compensation);
+            //              layerm->raw_holes_circle_compensation.push_back(surface.holes_circle_compensation);
+            //          }
+            //      }
+            // raw_slices stores the untyped expolygons of the current slices.
+            for region in &mut self.regions {
+                region.raw_slices = region.slices.clone();
+                region.raw_counter_circle_compensation.clear();
+                region.raw_holes_circle_compensation.clear();
+                // FIDELITY-NOTE: Surface in this crate does not model the
+                // per-surface counter_circle_compensation (bool) /
+                // holes_circle_compensation (Vec<int>) flags (Surface.hpp:41-42);
+                // the per-surface flag push_back loop is therefore a no-op here.
+            }
+        } else {
+            // Layer.cpp:96-101
+            // C++: assert(m_regions.size() == 1);
+            //      m_regions.front()->raw_slices.clear();
+            //      m_regions.front()->raw_counter_circle_compensation.clear();
+            //      m_regions.front()->raw_holes_circle_compensation.clear();
+            debug_assert_eq!(self.regions.len(), 1);
+            if let Some(front) = self.regions.first_mut() {
+                front.raw_slices.surfaces.clear();
+                front.raw_counter_circle_compensation.clear();
+                front.raw_holes_circle_compensation.clear();
+            }
         }
     }
 
-    /// Restore untyped slices
-    /// Layer.cpp:582-615
+    // Layer.cpp:104
     pub fn restore_untyped_slices(&mut self) {
-        // Layer.cpp:590-610
-        for region in &mut self.regions {
-            region.slices = region.raw_slices.clone();
+        // Layer.cpp:106 — layer_needs_raw_backup(this) is always true.
+        if self.layer_needs_raw_backup() {
+            // Layer.cpp:107-117
+            // C++: for (LayerRegion *layerm : m_regions) {
+            //          layerm->slices.set(layerm->raw_slices, stInternal);
+            //          ... (per-surface circle_compensation copy)
+            //      }
+            for region in &mut self.regions {
+                let raw = region.raw_slices.to_expolygons();
+                region.slices.set(&raw, SurfaceType::Internal);
+                // FIDELITY-NOTE: per-surface counter/holes circle_compensation
+                // copy (Layer.cpp:110-115) is omitted — Surface does not model
+                // those flags in this crate.
+            }
+        } else {
+            // Layer.cpp:118-127
+            // C++: assert(m_regions.size() == 1);
+            //      m_regions.front()->slices.set(this->lslices, stInternal);
+            debug_assert_eq!(self.regions.len(), 1);
+            let lslices = self.lslices.clone();
+            if let Some(front) = self.regions.first_mut() {
+                front.slices.set(&lslices, SurfaceType::Internal);
+            }
         }
     }
 
-    /// Restore untyped slices without extra perimeters
-    /// Layer.cpp:617-635
+    // Similar to Layer::restore_untyped_slices()
+    // Layer.cpp:134
     pub fn restore_untyped_slices_no_extra_perimeters(&mut self) {
-        // Layer.cpp:622-632
-        for region in &mut self.regions {
-            region.slices = region.raw_slices.clone();
+        // Layer.cpp:136 — layer_needs_raw_backup(this) is always true.
+        if self.layer_needs_raw_backup() {
+            // Layer.cpp:137-140
+            // C++: for (LayerRegion *layerm : m_regions)
+            //          //if (! layerm->region().config().extra_perimeters.value)  // always false
+            //              layerm->slices.set(layerm->raw_slices, stInternal);
+            for region in &mut self.regions {
+                let raw = region.raw_slices.to_expolygons();
+                region.slices.set(&raw, SurfaceType::Internal);
+            }
+        } else {
+            // Layer.cpp:141-146
+            // C++: assert(m_regions.size() == 1);
+            //      LayerRegion *layerm = m_regions.front();
+            //      //if (! layerm->region().config().extra_perimeters.value)
+            //          layerm->slices.set(this->lslices, stInternal);
+            debug_assert_eq!(self.regions.len(), 1);
+            let lslices = self.lslices.clone();
+            if let Some(front) = self.regions.first_mut() {
+                front.slices.set(&lslices, SurfaceType::Internal);
+            }
         }
     }
 
-    /// Get merged slices
-    /// Layer.cpp:637-645
-    pub fn merged(&self, _offset: f64) -> Polygons {
-        // TODO: Implement
-        Polygons::new()
+    // Layer.cpp:150
+    // C++: ExPolygons Layer::merged(float offset_scaled) const
+    pub fn merged(&self, offset_scaled: f64) -> ExPolygons {
+        // Layer.cpp:152
+        debug_assert!(offset_scaled >= 0.0);
+        // Layer.cpp:153-158
+        // If no offset is set, apply EPSILON offset before union, and revert it afterwards.
+        let mut offset_scaled = offset_scaled;
+        let mut offset_scaled2 = 0.0_f64;
+        if offset_scaled == 0.0 {
+            offset_scaled = crate::libslic3r::EPSILON;
+            offset_scaled2 = -crate::libslic3r::EPSILON;
+        }
+        // Layer.cpp:159-165
+        // C++: Polygons polygons;
+        //      for (LayerRegion *layerm : m_regions) {
+        //          const PrintRegionConfig &config = layerm->region().config();
+        //          if (config.bottom_shell_layers > 0 || config.top_shell_layers > 0 ||
+        //              config.sparse_infill_density > 0. || config.wall_loops > 0)
+        //              append(polygons, offset(layerm->slices.surfaces, offset_scaled));
+        //      }
+        let mut polygons: ExPolygons = Vec::new();
+        for layerm in &self.regions {
+            let config = layerm.region().config();
+            if config.bottom_solid_layers > 0
+                || config.top_solid_layers > 0
+                || config.fill_density > 0.0
+                || config.perimeters > 0
+            {
+                let surf_ex = crate::surface::to_expolygons(&layerm.slices.surfaces);
+                polygons.extend(crate::clipper_utils::offset_expolygons(
+                    &surf_ex,
+                    offset_scaled,
+                    OffsetJoinType::Miter,
+                ));
+            }
+        }
+        // Layer.cpp:166
+        // C++: ExPolygons out = union_ex(polygons);
+        let mut out = union_ex(&polygons);
+        // Layer.cpp:167-168
+        // C++: if (offset_scaled2 != 0.f)
+        //          out = offset_ex(out, offset_scaled2);
+        if offset_scaled2 != 0.0 {
+            out = crate::clipper_utils::offset_expolygons(&out, offset_scaled2, OffsetJoinType::Miter);
+        }
+        // Layer.cpp:169
+        out
     }
 
-    /// Apply auto circle compensation
-    /// Layer.cpp:647-655
+    // Layer.cpp:39
     pub fn apply_auto_circle_compensation(&mut self) {
-        // TODO: Implement
+        // Layer.cpp:41-43
+        // C++: for (LayerRegion *layerm : m_regions) {
+        //          layerm->auto_circle_compensation(layerm->slices,
+        //              this->object()->get_auto_circle_compenstaion_params(),
+        //              scale_(this->object()->config().circle_compensation_manual_offset));
+        //      }
+        // FIDELITY-NOTE: LayerRegion::auto_circle_compensation,
+        // PrintObject::get_auto_circle_compenstaion_params, and the
+        // circle_compensation_manual_offset object-config field are not yet
+        // ported (LayerRegion.cpp / PrintObject), so the per-region call body
+        // is a no-op. The region-iteration skeleton mirrors C++ Layer.cpp:41.
+        for _layerm in &mut self.regions {
+            // layerm.auto_circle_compensation(...);  // not ported
+        }
     }
 
-    /// Calculate perimeter continuity
-    /// Layer.cpp:657-665
-    pub fn calculate_perimeter_continuity(&mut self) {
-        // TODO: Implement
+    // Layer.cpp:354
+    // C++: void Layer::calculate_perimeter_continuity(std::vector<LoopNode> &prev_nodes)
+    //
+    // FIDELITY-NOTE: not faithfully portable in this crate yet. The C++ body
+    // (Layer.cpp:355-431) walks `loop_nodes[*].node_contour.{pts,widths,is_loop}`
+    // and queries a `ContinuitiousDistancer` (AABBTreeLines squared-distance,
+    // Layer.cpp:298-340) to thread continuity edges between this layer's nodes
+    // and `prev_nodes`. This crate's `layer::LoopNode` (used by print_object.rs)
+    // does NOT model `node_contour`, and there is no AABBTreeLines distancer nor
+    // `BoundingBox::overlap`. The outer node-iteration skeleton is reproduced;
+    // the distance-driven edge linking is omitted pending that infrastructure.
+    pub fn calculate_perimeter_continuity(&mut self, _prev_nodes: &mut [LoopNode]) {
+        // Layer.cpp:355
+        // C++: for (size_t node_pos = 0; node_pos < loop_nodes.size(); ++node_pos) {
+        for _node_pos in 0..self.loop_nodes.len() {
+            // Layer.cpp:356-430: node_contour distancer + prev_nodes bbox-overlap
+            // loop + continuity polyline accumulation — omitted (see note above).
+        }
+    }
+
+    // Layer.cpp:579
+    // C++: coordf_t Layer::get_sparse_infill_max_void_area()
+    pub fn get_sparse_infill_max_void_area(&self) -> Result<f64> {
+        use crate::print_config::InfillPattern as Ip;
+        // Layer.cpp:581
+        let mut max_void_area = 0.0_f64;
+        // Layer.cpp:582
+        // C++: for (auto layerm : m_regions) {
+        for layerm in &self.regions {
+            // Layer.cpp:583
+            // C++: Flow flow = layerm->flow(frInfill);  (uses m_layer->height)
+            let flow = layerm.flow(FlowRole::Infill, self.height)?;
+            // Layer.cpp:584
+            // C++: float density = layerm->region().config().sparse_infill_density;
+            let density = layerm.region().config().fill_density;
+            // Layer.cpp:585
+            // C++: InfillPattern pattern = layerm->region().config().sparse_infill_pattern;
+            let pattern = layerm.region().config().fill_pattern;
+            // Layer.cpp:586-587
+            // C++: if (density == 0.) return -1;
+            if density == 0.0 {
+                return Ok(-1.0);
+            }
+
+            // Layer.cpp:589-590
+            // BBS: rough estimation and need to be optimized
+            // C++: double spacing = flow.scaled_spacing() * (100 - density) / density;
+            let spacing = flow.scaled_spacing() as f64 * (100.0 - density) / density;
+            // Layer.cpp:591-619
+            match pattern {
+                // Layer.cpp:592-603
+                Ip::Concentric
+                | Ip::Rectilinear
+                | Ip::Line
+                | Ip::Gyroid
+                | Ip::AlignedRectilinear
+                | Ip::OctagramSpiral
+                | Ip::HilbertCurve
+                | Ip::Honeycomb3D
+                | Ip::ArchimedeanChords
+                | Ip::Lattice2D => {
+                    max_void_area = max_void_area.max(spacing * spacing);
+                }
+                // Layer.cpp:604-608
+                Ip::Grid | Ip::Honeycomb | Ip::Lightning => {
+                    max_void_area = max_void_area.max(4.0 * spacing * spacing);
+                }
+                // Layer.cpp:609-615
+                Ip::Cubic | Ip::AdaptiveCubic | Ip::Triangles | Ip::Stars | Ip::SupportCubic => {
+                    max_void_area = max_void_area.max(4.5 * spacing * spacing);
+                }
+                // Layer.cpp:616-618
+                _ => {
+                    max_void_area = max_void_area.max(spacing * spacing);
+                }
+            }
+        }
+        // Layer.cpp:621
+        Ok(max_void_area)
     }
 
     /// Generate fill patterns for all regions
