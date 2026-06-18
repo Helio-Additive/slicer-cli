@@ -13,10 +13,21 @@ pub struct Cli {
 pub enum Commands {
     /// Slice from a JSON/Jsonnet job config path or base64-encoded JSON config.
     Slice(SliceArgs),
+    /// Slice the same job with both engines and diff the resulting G-code.
+    Compare(CompareArgs),
     /// Resolve preset files into one slicer config without slicing.
     Presets(PresetsArgs),
     /// Inspect bundled or external BambuStudio profile catalogs.
     Profiles(ProfilesArgs),
+}
+
+/// Which slicing engine to drive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum Engine {
+    /// The C++ BambuStudio `slicer_cli` binary, run as a subprocess.
+    Native,
+    /// The in-process Rust libslic3r port (`slicer` crate).
+    Rust,
 }
 
 #[derive(Parser)]
@@ -29,6 +40,19 @@ pub struct SliceArgs {
     pub verbose: bool,
     #[arg(long)]
     pub dry_run: bool,
+    /// Slicing engine to use.
+    #[arg(long, value_enum, default_value = "native")]
+    pub engine: Engine,
+}
+
+#[derive(Parser)]
+pub struct CompareArgs {
+    #[arg(short, long)]
+    pub config: String,
+    #[arg(long, env = "BAMBUSTUDIO_SLICER")]
+    pub native_binary: Option<PathBuf>,
+    #[arg(short, long)]
+    pub verbose: bool,
 }
 
 #[derive(Parser)]

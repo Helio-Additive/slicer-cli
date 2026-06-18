@@ -1,27 +1,64 @@
 use reqwest::Method;
 use serde_json::{json, Value};
-use tempfile::NamedTempFile;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use tempfile::{NamedTempFile, TempDir};
 
 use crate::{
-    cli::{CompatibleProcessesArgs, PresetsArgs, ProfilesArgs, ProfilesCommand, SliceArgs},
+    cli::{
+        CompareArgs, CompatibleProcessesArgs, Engine, PresetsArgs, ProfilesArgs, ProfilesCommand,
+        SliceArgs,
+    },
     config::JobConfig,
     json_utils::{optional_string, string_field, write_json},
-    locations::{materialize_input, prepare_output, upload_output, write_json_to_location},
+    locations::{
+        materialize_input, prepare_output, upload_output, write_json_to_location, PreparedOutput,
+    },
     native::{default_native_binary, run_native_slice},
     profiles::{compatible_processes_for_printer, list_profiles, resolve_config_refs},
 };
 
-pub fn slice(args: SliceArgs) -> Result<u8, String> {
-    let job = JobConfig::load_arg(&args.config)?;
+/// A job whose input has been materialized and whose slicer config has been
+/// resolved to a temp file. Shared by both the `slice` and `compare` commands.
+struct ResolvedJob {
+    job: JobConfig,
+    input_location: String,
+    input_kind: String,
+    input_path: PathBuf,
+    output: PreparedOutput,
+    native_binary: PathBuf,
+    /// Resolved BambuStudio-format slicer config (STL inputs only); held alive so
+    /// its on-disk path stays valid for the duration of slicing.
+    temp_config: Option<NamedTempFile>,
+    resolved_config_location: Option<String>,
+    /// Temp dirs (downloads, etc.) kept alive for the duration of the job.
+    _temp_dirs: Vec<TempDir>,
+}
+
+impl ResolvedJob {
+    /// Path to the resolved slicer config, if one was produced (STL inputs).
+    fn config_path(&self) -> Option<&Path> {
+        self.temp_config.as_ref().map(NamedTempFile::path)
+    }
+}
+
+/// Load the job config, materialize the input model, prepare the output location,
+/// resolve the native binary, and (for STL inputs) resolve the slicer config into
+/// a temp file. This is the shared front half of `slice` and `compare`.
+fn resolve_job(
+    config: &str,
+    native_binary: Option<PathBuf>,
+    output_default_filename: &str,
+) -> Result<ResolvedJob, String> {
+    let job = JobConfig::load_arg(config)?;
     let mut temp_dirs = Vec::new();
     let input_location = job.input.location()?;
     let input_kind = job.input.kind(&input_location)?;
     let input_path = materialize_input(&input_location, "input", &mut temp_dirs)?;
     let output_location = job.output.location()?;
-    let output = prepare_output(&output_location, "output.gcode", &mut temp_dirs)?;
+    let output = prepare_output(&output_location, output_default_filename, &mut temp_dirs)?;
 
-    let native_binary = args
-        .native_binary
+    let native_binary = native_binary
         .or_else(|| job.native_binary.clone())
         .unwrap_or_else(default_native_binary);
 
@@ -48,36 +85,267 @@ pub fn slice(args: SliceArgs) -> Result<u8, String> {
         return Err(format!("unsupported input type: {input_kind}"));
     }
 
-    let code = run_native_slice(
-        &native_binary,
-        &input_path,
-        temp_config.as_ref().map(NamedTempFile::path),
-        &output.local_path,
-        args.verbose,
-        args.dry_run,
-    )?;
+    Ok(ResolvedJob {
+        job,
+        input_location,
+        input_kind,
+        input_path,
+        output,
+        native_binary,
+        temp_config,
+        resolved_config_location,
+        _temp_dirs: temp_dirs,
+    })
+}
 
-    if code == 0 && output.upload_uri.is_some() && !args.dry_run {
-        upload_output(&output)?;
+pub fn slice(args: SliceArgs) -> Result<u8, String> {
+    let resolved = resolve_job(&args.config, args.native_binary.clone(), "output.gcode")?;
+
+    let code = match args.engine {
+        Engine::Native => run_native_slice(
+            &resolved.native_binary,
+            &resolved.input_path,
+            resolved.config_path(),
+            &resolved.output.local_path,
+            args.verbose,
+            args.dry_run,
+        )?,
+        Engine::Rust => {
+            if resolved.input_kind != "stl" {
+                return Err(format!(
+                    "the rust engine only supports STL input (got {}); use --engine native",
+                    resolved.input_kind
+                ));
+            }
+            let config_path = resolved
+                .config_path()
+                .ok_or_else(|| "rust engine requires a resolved slicer config".to_owned())?;
+            if args.dry_run {
+                println!(
+                    "rust-engine slice {} --settings {} --output {}",
+                    resolved.input_path.display(),
+                    config_path.display(),
+                    resolved.output.local_path.display()
+                );
+                0
+            } else {
+                slicer::app_slice::slice_to_gcode(
+                    &resolved.input_path,
+                    config_path,
+                    &resolved.output.local_path,
+                )
+                .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
+                0
+            }
+        }
+    };
+
+    if code == 0 && resolved.output.upload_uri.is_some() && !args.dry_run {
+        upload_output(&resolved.output)?;
     }
 
-    if let Some(callback) = job.output.callback.as_ref().or(job.callback.as_ref()) {
+    if let Some(callback) = resolved
+        .job
+        .output
+        .callback
+        .as_ref()
+        .or(resolved.job.callback.as_ref())
+    {
         let payload = json!({
             "status": if code == 0 { "succeeded" } else { "failed" },
             "exit_code": code,
             "input": {
-                "type": input_kind,
-                "location": input_location,
+                "type": resolved.input_kind,
+                "location": resolved.input_location,
             },
             "output": {
-                "location": output.requested,
+                "location": resolved.output.requested,
             },
-            "resolved_config": resolved_config_location,
+            "resolved_config": resolved.resolved_config_location,
         });
         send_callback(callback, &payload, args.dry_run)?;
     }
 
     Ok(code)
+}
+
+/// Slice the same job with both engines (C++ native subprocess + in-process Rust)
+/// and print a diff of the two G-code outputs.
+pub fn compare(args: CompareArgs) -> Result<u8, String> {
+    let resolved = resolve_job(&args.config, args.native_binary.clone(), "compare.gcode")?;
+
+    if resolved.input_kind != "stl" {
+        return Err(format!(
+            "compare only supports STL input (got {}); the rust engine is STL-only",
+            resolved.input_kind
+        ));
+    }
+    let config_path = resolved
+        .config_path()
+        .ok_or_else(|| "compare requires a resolved slicer config".to_owned())?
+        .to_path_buf();
+
+    let tmp = TempDir::new().map_err(|e| format!("create temp dir for compare: {e}"))?;
+    let native_out = tmp.path().join("native.gcode");
+    let rust_out = tmp.path().join("rust.gcode");
+
+    // C++ engine (subprocess).
+    let native_code = run_native_slice(
+        &resolved.native_binary,
+        &resolved.input_path,
+        Some(config_path.as_path()),
+        &native_out,
+        args.verbose,
+        false,
+    )?;
+    if native_code != 0 {
+        return Err(format!("native (C++) engine exited with code {native_code}"));
+    }
+
+    // Rust engine (in-process).
+    slicer::app_slice::slice_to_gcode(&resolved.input_path, &config_path, &rust_out)
+        .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
+
+    let native_gcode = std::fs::read(&native_out)
+        .map_err(|e| format!("read native gcode {}: {e}", native_out.display()))?;
+    let rust_gcode = std::fs::read(&rust_out)
+        .map_err(|e| format!("read rust gcode {}: {e}", rust_out.display()))?;
+
+    let report = diff_gcode(&native_gcode, &rust_gcode);
+    print!("{report}");
+
+    if native_gcode == rust_gcode {
+        Ok(0)
+    } else {
+        Ok(1)
+    }
+}
+
+/// Build the comparison report string for two G-code byte buffers.
+fn diff_gcode(native: &[u8], rust: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    let native_text = String::from_utf8_lossy(native);
+    let rust_text = String::from_utf8_lossy(rust);
+    let native_lines: Vec<&str> = native_text.lines().collect();
+    let rust_lines: Vec<&str> = rust_text.lines().collect();
+
+    let native_sha = hex(&Sha256::digest(native));
+    let rust_sha = hex(&Sha256::digest(rust));
+    let identical = native == rust;
+
+    let mut out = String::new();
+    let _ = writeln!(out, "=== G-code comparison: native (C++) vs rust ===");
+    let _ = writeln!(
+        out,
+        "total lines     native={}  rust={}",
+        native_lines.len(),
+        rust_lines.len()
+    );
+    let _ = writeln!(out, "sha256 native   {native_sha}");
+    let _ = writeln!(out, "sha256 rust     {rust_sha}");
+    let _ = writeln!(
+        out,
+        "byte-identical  {}",
+        if identical { "YES" } else { "NO" }
+    );
+
+    // First differing line + count of differing lines.
+    let max_lines = native_lines.len().max(rust_lines.len());
+    let mut first_diff: Option<usize> = None;
+    let mut diff_count = 0usize;
+    for i in 0..max_lines {
+        let n = native_lines.get(i).copied();
+        let r = rust_lines.get(i).copied();
+        if n != r {
+            if first_diff.is_none() {
+                first_diff = Some(i);
+            }
+            diff_count += 1;
+        }
+    }
+    let _ = writeln!(out, "differing lines {diff_count}");
+    match first_diff {
+        Some(i) => {
+            let _ = writeln!(out, "first divergence at line {}", i + 1);
+            let _ = writeln!(
+                out,
+                "  native: {}",
+                native_lines.get(i).copied().unwrap_or("<EOF>")
+            );
+            let _ = writeln!(
+                out,
+                "  rust:   {}",
+                rust_lines.get(i).copied().unwrap_or("<EOF>")
+            );
+        }
+        None => {
+            let _ = writeln!(out, "first divergence none (line sequences match)");
+        }
+    }
+
+    // Parsed summary diff.
+    let _ = writeln!(out, "--- parsed summary ---");
+    summary_field(&mut out, "total filament length", &native_lines, &rust_lines);
+    summary_field(&mut out, "total layer number", &native_lines, &rust_lines);
+
+    let native_features = feature_counts(&native_lines);
+    let rust_features = feature_counts(&rust_lines);
+    let _ = writeln!(out, "FEATURE tag counts (native vs rust):");
+    let mut all_tags: Vec<&String> =
+        native_features.keys().chain(rust_features.keys()).collect();
+    all_tags.sort();
+    all_tags.dedup();
+    if all_tags.is_empty() {
+        let _ = writeln!(out, "  (no ; FEATURE: tags found)");
+    }
+    for tag in all_tags {
+        let n = native_features.get(tag).copied().unwrap_or(0);
+        let r = rust_features.get(tag).copied().unwrap_or(0);
+        let flag = if n == r { "" } else { "  <-- differs" };
+        let _ = writeln!(out, "  {tag:<24} native={n:<6} rust={r}{flag}");
+    }
+
+    out
+}
+
+/// Print the first matching `; <label>` value from each side.
+fn summary_field(out: &mut String, label: &str, native: &[&str], rust: &[&str]) {
+    use std::fmt::Write as _;
+    let needle = format!("; {label}");
+    let find = |lines: &[&str]| -> Option<String> {
+        lines
+            .iter()
+            .find(|l| l.trim_start().starts_with(&needle))
+            .map(|l| l.trim().to_string())
+    };
+    let n = find(native);
+    let r = find(rust);
+    let _ = writeln!(out, "{label}:");
+    let _ = writeln!(out, "  native: {}", n.as_deref().unwrap_or("<absent>"));
+    let _ = writeln!(out, "  rust:   {}", r.as_deref().unwrap_or("<absent>"));
+}
+
+/// Count `; FEATURE: <name>` tags by name.
+fn feature_counts(lines: &[&str]) -> BTreeMap<String, usize> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for l in lines {
+        let t = l.trim_start();
+        if let Some(rest) = t.strip_prefix("; FEATURE:") {
+            *counts.entry(rest.trim().to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+/// Lowercase hex encoding of a byte slice.
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }
 
 pub fn presets(args: PresetsArgs) -> Result<u8, String> {

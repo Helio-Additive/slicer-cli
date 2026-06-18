@@ -30,6 +30,10 @@ pub mod aabb_tree_lines;
 pub mod algorithm;
 pub mod any_ptr;
 pub mod app_config;
+/// Library entrypoint that slices a model to G-code from a BambuStudio settings
+/// JSON (in-process equivalent of `slicer-cli slice --settings`). No C++ libslic3r
+/// counterpart — wiring for the helio-slicer-cli host.
+pub mod app_slice;
 pub mod arachne;
 pub mod arc_fitter;
 pub mod arrange;

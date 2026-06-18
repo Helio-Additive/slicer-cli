@@ -622,6 +622,23 @@ fn slice_command(
     let is_3mf = input
         .extension()
         .map_or(false, |e| e.eq_ignore_ascii_case("3mf"));
+
+    // For the explicit `--settings <bambustudio json>` + STL path, delegate to the
+    // shared library entrypoint (slicer::app_slice::slice_to_gcode) so the bin and
+    // the in-process host (helio-slicer-cli) run identical code. 3MF + embedded
+    // settings are still handled inline below (the library entrypoint is STL-only).
+    if let Some(ref settings_path) = settings {
+        if !is_3mf {
+            slicer::app_slice::slice_to_gcode(&input, settings_path, &output_path)?;
+            let gcode_content = fs::read_to_string(&output_path)
+                .with_context(|| format!("Failed to read generated G-code: {:?}", output_path))?;
+            let line_count = gcode_content.lines().count();
+            info!("Output written to: {:?}", output_path);
+            info!("G-code lines: {}", line_count);
+            println!("G-code lines: {}", line_count);
+            return Ok(());
+        }
+    }
     let mut embedded_settings_str: Option<String> = None;
 
     let mut identify_ids: Vec<usize> = Vec::new();
