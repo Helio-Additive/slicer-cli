@@ -50,7 +50,11 @@ impl Point {
 
     /// Create a new point from floating-point coordinates (in mm), scaling them.
     ///
-    /// Point.hpp:185-186
+    /// Point.hpp:185-186 (`new_scale` -> `coord_t(scale_(x))`).
+    /// FIDELITY-NOTE(F2): C++ `scale_` is `scaled<coord_t>` (Point.hpp:537) which
+    /// *truncates* `v / SCALING_FACTOR` toward zero, whereas the crate-wide `scale()`
+    /// primitive rounds. This is the shared crate scaling posture (cross-cutting); it
+    /// is left delegating to `scale()` rather than diverging this one call site.
     #[inline]
     pub fn new_scale(x: CoordF, y: CoordF) -> Self {
         Self {
@@ -280,9 +284,17 @@ impl Point {
     pub fn ccw(&self, p1: &Point, p2: &Point) -> CoordF {
         // static_assert(sizeof(coord_t) == 4, "Point::ccw() requires a 32 bit coord_t");
         // Point.cpp:121: return cross2((p2 - p1).cast<int64_t>(), (*this - p1).cast<int64_t>());
+        // FIDELITY-NOTE(F2): the differences (p2 - p1) and (*this - p1) are evaluated
+        // at coord_t == int32_t precision in C++ before being cast<int64_t>(); the
+        // `as i32` reproduces that int32 truncation. cross2<int64_t> then computes the
+        // 2x2 determinant in int64 arithmetic (wrapping mirrors C++ int64 overflow).
         let a = *p2 - *p1;
         let b = *self - *p1;
-        (a.x as i64 as i128 * b.y as i64 as i128 - a.y as i64 as i128 * b.x as i64 as i128) as CoordF
+        let ax = a.x as i32 as i64;
+        let ay = a.y as i32 as i64;
+        let bx = b.x as i32 as i64;
+        let by = b.y as i32 as i64;
+        (ax.wrapping_mul(by).wrapping_sub(ay.wrapping_mul(bx))) as CoordF
     }
 
     /// Point.cpp:125-128
@@ -327,7 +339,9 @@ impl Point {
             /* If the X distance of the candidate is > than the total distance of the
                best previous candidate, we know we don't want it */
             // Point.cpp:77: double d = sqr<double>((*this)(0) - (*it)->x());
-            let dx = (self.x() - it.x()) as CoordF;
+            // FIDELITY-NOTE(F2): the coordinate difference is computed at coord_t ==
+            // int32_t precision before sqr<double> casts it to double.
+            let dx = (self.x() as i32).wrapping_sub(it.x() as i32) as CoordF;
             let mut d = dx * dx;
             // Point.cpp:78
             if distance != -1.0 && d > distance {
@@ -337,7 +351,7 @@ impl Point {
             /* If the Y distance of the candidate is > than the total distance of the
                best previous candidate, we know we don't want it */
             // Point.cpp:82: d += sqr<double>((*this)(1) - (*it)->y());
-            let dy = (self.y() - it.y()) as CoordF;
+            let dy = (self.y() as i32).wrapping_sub(it.y() as i32) as CoordF;
             d += dy * dy;
             // Point.cpp:83
             if distance != -1.0 && d > distance {
@@ -391,17 +405,22 @@ impl Point {
             must be closest to calling Point.
         */
         // Point.cpp:170-171
-        let lx = (b.x - a.x) as CoordF;
-        let ly = (b.y - a.y) as CoordF;
+        // FIDELITY-NOTE(F2): line endpoint differences are computed at coord_t ==
+        // int32_t precision in C++ before being cast to double (coordf_t).
+        let lx = (b.x as i32).wrapping_sub(a.x as i32) as CoordF;
+        let ly = (b.y as i32).wrapping_sub(a.y as i32) as CoordF;
         // Point.cpp:172-173
-        let theta = ((b.x - self.x) as CoordF * lx + (b.y - self.y) as CoordF * ly)
-            / (lx * lx + ly * ly);
+        let bx_minus = (b.x as i32).wrapping_sub(self.x as i32) as CoordF;
+        let by_minus = (b.y as i32).wrapping_sub(self.y as i32) as CoordF;
+        let theta = (bx_minus * lx + by_minus * ly) / (lx * lx + ly * ly);
 
         // Point.cpp:175-176
+        // (theta * line.a.cast<coordf_t>() + (1.0-theta) * line.b.cast<coordf_t>()).cast<coord_t>()
+        // FIDELITY-NOTE(F2): the affine combination is truncated to coord_t == int32_t.
         if (0.0..=1.0).contains(&theta) {
             return Point::new(
-                (theta * a.x as CoordF + (1.0 - theta) * b.x as CoordF) as Coord,
-                (theta * a.y as CoordF + (1.0 - theta) * b.y as CoordF) as Coord,
+                (theta * a.x as CoordF + (1.0 - theta) * b.x as CoordF) as i32 as Coord,
+                (theta * a.y as CoordF + (1.0 - theta) * b.y as CoordF) as i32 as Coord,
             );
         }
 
@@ -418,8 +437,11 @@ impl Point {
     pub fn projection_onto_multipoint(&self, poly: &[Point]) -> Point {
         // Point.cpp:143: Point running_projection = poly.first_point();
         let mut running_projection = poly[0];
-        // Point.cpp:144
-        let mut running_min = (running_projection - *self).to_f64().length();
+        // Point.cpp:144: (running_projection - *this).cast<double>().norm()
+        // NOTE: C++ takes the raw integer-coordinate Euclidean norm (cast<double>,
+        // no unscale). Point::length() computes sqrt(x^2 + y^2) over the raw coords,
+        // matching that exactly (and avoiding the SCALING_FACTOR division of to_f64()).
+        let mut running_min = (running_projection - *self).length();
 
         // Point.cpp:146: Lines lines = poly.lines();
         // MultiPoint::lines() yields consecutive segments (a, b) along the polyline.
@@ -429,10 +451,10 @@ impl Point {
             // Point.cpp:148
             let point_temp = self.project_onto_segment(line.a, line.b);
             // Point.cpp:149
-            if (point_temp - *self).to_f64().length() < running_min {
+            if (point_temp - *self).length() < running_min {
                 // Point.cpp:150-151
                 running_projection = point_temp;
-                running_min = (running_projection - *self).to_f64().length();
+                running_min = (running_projection - *self).length();
             }
         }
         // Point.cpp:154
@@ -642,15 +664,20 @@ impl Mul<Coord> for Point {
 
 /// Multiply point by floating-point scalar.
 ///
-/// Point.hpp:199-200
+/// Point.hpp:200 (member `Point operator*(const double &rhs)`), which builds the
+/// result through `Point(double, double)` (Point.hpp:179) using `coord_t(lrint(x))`.
+/// `lrint` rounds using the current FP rounding mode, which defaults to
+/// round-to-nearest-even; `round_ties_even` mirrors that. (The free-function
+/// `operator*` at Point.hpp:255-258 instead truncates via `coord_t(...)`, but the
+/// member operator takes precedence for `Point * double` expressions.)
 impl Mul<CoordF> for Point {
     type Output = Self;
 
     #[inline]
     fn mul(self, scalar: CoordF) -> Self {
         Self {
-            x: (self.x as CoordF * scalar).round() as Coord,
-            y: (self.y as CoordF * scalar).round() as Coord,
+            x: (self.x as CoordF * scalar).round_ties_even() as Coord,
+            y: (self.y as CoordF * scalar).round_ties_even() as Coord,
         }
     }
 }
@@ -1534,9 +1561,10 @@ pub fn lerp(a: &Point, b: &Point, t: CoordF) -> Point {
     // assert((t >= -EPSILON) && (t <= 1. + EPSILON));
     debug_assert!(t >= -crate::libslic3r::EPSILON && t <= 1.0 + crate::libslic3r::EPSILON);
     // Point.hpp:301: ((1. - t) * a.cast<double>() + t * b.cast<double>()).cast<coord_t>()
+    // FIDELITY-NOTE(F2): the interpolated double is truncated to coord_t == int32_t.
     Point::new(
-        ((1.0 - t) * a.x as CoordF + t * b.x as CoordF) as Coord,
-        ((1.0 - t) * a.y as CoordF + t * b.y as CoordF) as Coord,
+        ((1.0 - t) * a.x as CoordF + t * b.x as CoordF) as i32 as Coord,
+        ((1.0 - t) * a.y as CoordF + t * b.y as CoordF) as i32 as Coord,
     )
 }
 
@@ -1642,11 +1670,15 @@ pub fn apply_opt<T: PartialOrd + Copy>(val: &mut Option<T>, limit: &MinMax<T>) -
 /// widening back to `Coord`; `wrapping_*` mirrors the C++ integer overflow.
 #[inline]
 pub fn point_hash(pt: &Point) -> Coord {
+    // FIDELITY-NOTE(F2): pt.x()/pt.y() are coord_t == int32_t in C++; truncate to int32
+    // before the int64 hash arithmetic, then truncate the result back to coord_t (int32).
+    let px = pt.x as i32 as i64;
+    let py = pt.y as i32 as i64;
     ((89i64
         .wrapping_mul(31)
-        .wrapping_add(pt.x)
+        .wrapping_add(px)
         .wrapping_mul(31)
-        .wrapping_add(pt.y)) as i32) as Coord
+        .wrapping_add(py)) as i32) as Coord
 }
 
 /// A generic class to search for a closest Point in a given radius.
@@ -1866,16 +1898,30 @@ pub mod int128 {
         // Point.cpp:291-292
         let v1 = *p2 - *p1; // Slic3r::Vector v1(p2 - p1);
         let v2 = *p3 - *p1; // Slic3r::Vector v2(p3 - p1);
+        // FIDELITY-NOTE(F2): v1/v2 are coord_t == int32_t vectors in C++; truncate to
+        // int32 before feeding the exact int128 determinant predicate.
         // Point.cpp:293
-        Int128::sign_determinant_2x2_filtered(v1.x, v1.y, v2.x, v2.y)
+        Int128::sign_determinant_2x2_filtered(
+            v1.x as i32 as i64,
+            v1.y as i32 as i64,
+            v2.x as i32 as i64,
+            v2.y as i32 as i64,
+        )
     }
 
     /// Exact orientation predicate,
     /// returns +1: CCW, 0: collinear, -1: CW.
     /// Point.cpp:296-299 (`int cross(const Vec2crd&, const Vec2crd&)`)
     pub fn cross(v1: &Point, v2: &Point) -> i32 {
+        // FIDELITY-NOTE(F2): v1/v2 are coord_t == int32_t vectors in C++; truncate to
+        // int32 before feeding the exact int128 determinant predicate.
         // Point.cpp:298
-        Int128::sign_determinant_2x2_filtered(v1.x, v1.y, v2.x, v2.y)
+        Int128::sign_determinant_2x2_filtered(
+            v1.x as i32 as i64,
+            v1.y as i32 as i64,
+            v2.x as i32 as i64,
+            v2.y as i32 as i64,
+        )
     }
 }
 
