@@ -2446,7 +2446,8 @@
     "rust_exists": true,
     "loc": 1105,
     "status": "partial",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillAdaptive.cpp",

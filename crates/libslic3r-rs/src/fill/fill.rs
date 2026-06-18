@@ -12,6 +12,21 @@
 //!
 //! C++ source: src/libslic3r/Fill/Fill.cpp
 //! C++ header: src/libslic3r/Fill/Fill.hpp
+//!
+//! FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. Every
+//! boolean/offset primitive used below (`offset_expolygon`, `expand_polygons`,
+//! `opening_polygons_2`, `diff_polygons`, `diff_ex_polygons_polygons`,
+//! `union`, `union_ex`, `union_safety_offset_ex`,
+//! `union_safety_offset_ex_expolygons`, `intersection_ex_*`,
+//! `clip_clipper_polygons_with_subject_bbox_expolygons`) is routed through
+//! `clipper_utils`, which runs the `geo` crate (geo-clipper, fixed scale
+//! 1000) rather than ClipperLib at `coord_t` integer precision. The faithful
+//! Clipper2 FFI in `clipper2_utils.rs` is unused by these primitives. This is
+//! a CROSS-CUTTING approximation — not re-routed per call site here.
+//! FIDELITY-NOTE(F2): crate-wide `Coord = i64` vs C++ `coord_t = int32_t`
+//! (libslic3r.h:40). The integer coordinate math below (`scaled_spacing`,
+//! `distance_between_surfaces`, `scale(...)`) keeps i64 width; no per-file
+//! narrowing is attempted.
 
 use crate::clipper_utils::{
     clip_clipper_polygons_with_subject_bbox_expolygons, diff_ex_polygons_polygons, diff_polygons,
