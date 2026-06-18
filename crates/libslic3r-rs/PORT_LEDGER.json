@@ -2806,7 +2806,8 @@
     "rust_exists": true,
     "loc": 1829,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/ToolOrdering.cpp",

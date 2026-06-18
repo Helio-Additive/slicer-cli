@@ -264,22 +264,38 @@ impl<'a> MinDistanceVisitor<'a> {
 // `line_alg::distance_to_squared(line, point, &closest_point)` — distance squared
 // from `point` to the segment `line`, writing the closest point. Mirrors the
 // libslic3r `line_alg::distance_to_squared` semantics used by MinDistanceVisitor.
+// Line.hpp:43-69
 fn line_alg_distance_to_squared(line: &Line, point: &Point, closest_point: &mut Point) -> f64 {
+    // Line.hpp:45-47
     let v = cast_d(Point::new(line.b.x - line.a.x, line.b.y - line.a.y));
     let va = cast_d(Point::new(point.x - line.a.x, point.y - line.a.y));
     let l2 = v.x * v.x + v.y * v.y; // avoid a sqrt
-    let t = if l2 == 0.0 {
-        0.0
+    let va_sq = va.x * va.x + va.y * va.y;
+    // Line.hpp:48-52 — a == b case
+    if l2 == 0.0 {
+        *closest_point = line.a;
+        return va_sq;
+    }
+    // Line.hpp:53-56 — projection parameter t = (va . v) / |v|^2
+    let t = (va.x * v.x + va.y * v.y) / l2;
+    if t <= 0.0 {
+        // Line.hpp:57-60 — beyond the 'a' end of the segment
+        *closest_point = line.a;
+        va_sq
+    } else if t >= 1.0 {
+        // Line.hpp:61-64 — beyond the 'b' end of the segment
+        *closest_point = line.b;
+        let d = cast_d(Point::new(point.x - line.b.x, point.y - line.b.y));
+        d.x * d.x + d.y * d.y
     } else {
-        (va.x * v.x + va.y * v.y) / l2
-    };
-    let t = t.clamp(0.0, 1.0);
-    let foot_x = line.a.x as f64 + t * v.x;
-    let foot_y = line.a.y as f64 + t * v.y;
-    *closest_point = Point::new(foot_x as i64, foot_y as i64);
-    let dx = foot_x - point.x as f64;
-    let dy = foot_y - point.y as f64;
-    dx * dx + dy * dy
+        // Line.hpp:67-68 — projection falls within the segment
+        let foot_x = line.a.x as f64 + t * v.x;
+        let foot_y = line.a.y as f64 + t * v.y;
+        *closest_point = Point::new(foot_x as i64, foot_y as i64);
+        let rx = t * v.x - va.x;
+        let ry = t * v.y - va.y;
+        rx * rx + ry * ry
+    }
 }
 
 // AvoidCrossingPerimeters.cpp:159-170 — get_closest_lines_in_radius
@@ -325,12 +341,16 @@ fn extend_for_closest_lines(
     // AvoidCrossingPerimeters.cpp:184-187
     // Compute distance to the closest point in the ClosestLine from begin of contour.
     let compute_distance = |closest_line: &ClosestLine| -> f32 {
+        // C++ uses `.cast<float>().norm()` — cast the integer Point difference to
+        // f32 then compute sqrt in float precision.
         let dist_from_line_begin = {
-            let d = cast_d(Point::new(
-                closest_line.point.x - boundary.boundaries[closest_line.border_idx].points[closest_line.line_idx].x,
-                closest_line.point.y - boundary.boundaries[closest_line.border_idx].points[closest_line.line_idx].y,
-            ));
-            (d.x * d.x + d.y * d.y).sqrt() as f32
+            let dx = (closest_line.point.x
+                - boundary.boundaries[closest_line.border_idx].points[closest_line.line_idx].x)
+                as f32;
+            let dy = (closest_line.point.y
+                - boundary.boundaries[closest_line.border_idx].points[closest_line.line_idx].y)
+                as f32;
+            (dx * dx + dy * dy).sqrt()
         };
         boundary.boundaries_params[closest_line.border_idx][closest_line.line_idx] + dist_from_line_begin
     };
@@ -658,37 +678,30 @@ fn get_shortest_direction(
         std::mem::swap(&mut total_length_forward, &mut total_length_backward);
     }
 
+    // C++ uses `.cast<float>().norm()` for all four terms — f32 accumulation.
     let poly_size = poly.points.len();
     total_length_forward -= {
-        let d = cast_d(Point::new(
-            intersection_first.point.x - poly.points[intersection_first.line_idx].x,
-            intersection_first.point.y - poly.points[intersection_first.line_idx].y,
-        ));
-        (d.x * d.x + d.y * d.y).sqrt() as f32
+        let dx = (intersection_first.point.x - poly.points[intersection_first.line_idx].x) as f32;
+        let dy = (intersection_first.point.y - poly.points[intersection_first.line_idx].y) as f32;
+        (dx * dx + dy * dy).sqrt()
     };
     total_length_backward -= {
         let idx = (intersection_first.line_idx + 1) % poly_size;
-        let d = cast_d(Point::new(
-            poly.points[idx].x - intersection_first.point.x,
-            poly.points[idx].y - intersection_first.point.y,
-        ));
-        (d.x * d.x + d.y * d.y).sqrt() as f32
+        let dx = (poly.points[idx].x - intersection_first.point.x) as f32;
+        let dy = (poly.points[idx].y - intersection_first.point.y) as f32;
+        (dx * dx + dy * dy).sqrt()
     };
 
     total_length_forward -= {
         let idx = (intersection_second.line_idx + 1) % poly_size;
-        let d = cast_d(Point::new(
-            poly.points[idx].x - intersection_second.point.x,
-            poly.points[idx].y - intersection_second.point.y,
-        ));
-        (d.x * d.x + d.y * d.y).sqrt() as f32
+        let dx = (poly.points[idx].x - intersection_second.point.x) as f32;
+        let dy = (poly.points[idx].y - intersection_second.point.y) as f32;
+        (dx * dx + dy * dy).sqrt()
     };
     total_length_backward -= {
-        let d = cast_d(Point::new(
-            intersection_second.point.x - poly.points[intersection_second.line_idx].x,
-            intersection_second.point.y - poly.points[intersection_second.line_idx].y,
-        ));
-        (d.x * d.x + d.y * d.y).sqrt() as f32
+        let dx = (intersection_second.point.x - poly.points[intersection_second.line_idx].x) as f32;
+        let dy = (intersection_second.point.y - poly.points[intersection_second.line_idx].y) as f32;
+        (dx * dx + dy * dy).sqrt()
     };
 
     if total_length_forward < total_length_backward {
@@ -961,26 +974,30 @@ fn avoid_perimeters_inner(
         }
 
         for intersection in intersections.iter_mut() {
+            // C++ uses `.cast<float>().norm()` — f32 accumulation.
             let dist_from_line_begin = {
-                let d = cast_d(Point::new(
-                    intersection.point.x - boundary.boundaries[intersection.border_idx].points[intersection.line_idx].x,
-                    intersection.point.y - boundary.boundaries[intersection.border_idx].points[intersection.line_idx].y,
-                ));
-                (d.x * d.x + d.y * d.y).sqrt() as f32
+                let dx = (intersection.point.x
+                    - boundary.boundaries[intersection.border_idx].points[intersection.line_idx].x)
+                    as f32;
+                let dy = (intersection.point.y
+                    - boundary.boundaries[intersection.border_idx].points[intersection.line_idx].y)
+                    as f32;
+                (dx * dx + dy * dy).sqrt()
             };
             intersection.distance =
                 boundary.boundaries_params[intersection.border_idx][intersection.line_idx] + dist_from_line_begin;
         }
         intersections.sort_by(|l, r| {
-            // (r.point - l.point).cast<double>().dot(dir) > 0.
+            // C++ predicate: less(l,r) == (r.point - l.point).cast<double>().dot(dir) > 0.
+            // Derived total order: dot>0 => Less, dot<0 => Greater, dot==0 => Equal.
             let v = cast_d(Point::new(r.point.x - l.point.x, r.point.y - l.point.y));
             let dot = v.x * dir.x + v.y * dir.y;
-            // The C++ comparator returns whether `l` should come before `r`
-            // (a "less-than" predicate). `dot > 0` means l precedes r.
             if dot > 0.0 {
                 std::cmp::Ordering::Less
-            } else {
+            } else if dot < 0.0 {
                 std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
             }
         });
 
