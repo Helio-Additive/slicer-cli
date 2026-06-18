@@ -488,22 +488,32 @@ pub use aabb_tree_indirect_2d as tree2d;
 mod line_alg {
     use crate::geometry::{Line, Point, PointF};
 
-    /// `line_alg::distance_to_squared(line, point, nearest_point)` (Line.hpp:42-69).
-    /// `point` and `nearest_point` are `Floating` (f64) since the distancer casts the
-    /// query origin to `Floating`; the returned squared distance is `double`.
-    pub fn distance_to_squared(line: &Line, point: PointF, nearest_point: &mut PointF) -> f64 {
-        // Line.hpp:45-46
+    /// `line_alg::distance_to_squared(line, point, nearest_point)` (Line.hpp:42-68),
+    /// for the integer `Line` template instantiation: `Scalar = coord_t`, so `point`
+    /// and `*nearest_point` are `Vec<Dim, coord_t>` (integer) while all intermediates
+    /// (`v`, `va`, `l2`, `t`) and the returned squared distance are `double`.
+    ///
+    /// This mirrors `IndexedLinesDistancer::closest_point_to_origin`
+    /// (AABBTreeLines.hpp:29-35), which calls `distance_to_squared` with the origin
+    /// cast DOWN to `coord_t` and an integer `nearest_point`, then casts the result back
+    /// to `double`. The nearest point is therefore truncated to the integer grid by the
+    /// final `.cast<Scalar<L>>()` in Line.hpp:67.
+    pub fn distance_to_squared(line: &Line, point: Point, nearest_point: &mut Point) -> f64 {
+        // Line.hpp:45-46 — v / va are `double`.
         let v = PointF::new(
             (line.b.x - line.a.x) as f64,
             (line.b.y - line.a.y) as f64,
         );
-        let va = PointF::new(point.x - line.a.x as f64, point.y - line.a.y as f64);
+        let va = PointF::new(
+            (point.x - line.a.x) as f64,
+            (point.y - line.a.y) as f64,
+        );
         // Line.hpp:47
         let l2 = v.x * v.x + v.y * v.y; // avoid a sqrt
         if l2 == 0.0 {
             // a == b case
-            // Line.hpp:49-51
-            *nearest_point = PointF::new(line.a.x as f64, line.a.y as f64);
+            // Line.hpp:49-51 — *nearest_point = get_a(line) (integer, no cast)
+            *nearest_point = line.a;
             return va.x * va.x + va.y * va.y;
         }
         // It falls where t = [(this-a) . (b-a)] / |b-a|^2
@@ -511,18 +521,25 @@ mod line_alg {
         let t = (va.x * v.x + va.y * v.y) / l2;
         if t <= 0.0 {
             // beyond the 'a' end of the segment
-            // Line.hpp:57-60
-            *nearest_point = PointF::new(line.a.x as f64, line.a.y as f64);
+            // Line.hpp:57-60 — *nearest_point = get_a(line) (integer)
+            *nearest_point = line.a;
             va.x * va.x + va.y * va.y
         } else if t >= 1.0 {
             // beyond the 'b' end of the segment
-            // Line.hpp:61-64
-            *nearest_point = PointF::new(line.b.x as f64, line.b.y as f64);
-            let d = PointF::new(point.x - line.b.x as f64, point.y - line.b.y as f64);
+            // Line.hpp:61-64 — *nearest_point = get_b(line) (integer)
+            *nearest_point = line.b;
+            let d = PointF::new((point.x - line.b.x) as f64, (point.y - line.b.y) as f64);
             d.x * d.x + d.y * d.y
         } else {
-            // Line.hpp:67-68
-            *nearest_point = PointF::new(line.a.x as f64 + t * v.x, line.a.y as f64 + t * v.y);
+            // Line.hpp:67 — *nearest_point = (a.cast<double>() + t*v).cast<Scalar>()
+            //   The final cast truncates the projected point back to the integer grid.
+            // FIDELITY-NOTE(F2): C++ coord_t == int32_t so the cast truncates to int32;
+            //   Coord is i64 here, so we truncate to i64 (toward zero, like Eigen cast).
+            *nearest_point = Point::new(
+                (line.a.x as f64 + t * v.x) as i64,
+                (line.a.y as f64 + t * v.y) as i64,
+            );
+            // Line.hpp:68 — return (t*v - va).squaredNorm(); uses the un-truncated double t*v.
             let d = PointF::new(t * v.x - va.x, t * v.y - va.y);
             d.x * d.x + d.y * d.y
         }
@@ -589,16 +606,18 @@ mod detail {
             primitive_index: usize,
             squared_distance: &mut f64,
         ) -> PointF {
-            // AABBTreeLines.hpp:31-32
-            let mut nearest_point = PointF::zero();
+            // AABBTreeLines.hpp:31-32 — Vec<Dim, LineType::Scalar> nearest_point (coord_t, integer)
+            let mut nearest_point = Point::zero();
             let line = &self.lines[primitive_index];
-            // AABBTreeLines.hpp:33 — origin cast to LineType::Scalar (coord_t) for the C++
-            //   distance call. For the integer Line, the f64 distance helper takes the
-            //   origin directly (Floating); see line_alg::distance_to_squared.
+            // AABBTreeLines.hpp:33 — origin.template cast<LineType::Scalar>() truncates the
+            //   query origin to coord_t before calling distance_to_squared.
+            // FIDELITY-NOTE(F2): C++ coord_t == int32_t (truncate to int32). Coord is i64
+            //   here, so we truncate the double origin toward zero into i64.
+            let origin_i = Point::new(self.origin.x as i64, self.origin.y as i64);
             *squared_distance =
-                super::line_alg::distance_to_squared(line, self.origin, &mut nearest_point);
-            // AABBTreeLines.hpp:34 — nearest_point.cast<ScalarType>() (already double)
-            nearest_point
+                super::line_alg::distance_to_squared(line, origin_i, &mut nearest_point);
+            // AABBTreeLines.hpp:34 — nearest_point.template cast<ScalarType>() (coord_t -> double)
+            PointF::new(nearest_point.x as f64, nearest_point.y as f64)
         }
     }
 
@@ -1138,8 +1157,9 @@ pub fn get_intersections_with_line<const SORTED: bool>(
             let dy = (p.0.y - line.a.y) as f64;
             points_with_sq_distance.push((dx * dx + dy * dy, *p));
         }
-        // AABBTreeLines.hpp:284-286
-        points_with_sq_distance.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap());
+        // AABBTreeLines.hpp:284-286 — std::sort (not stable) with comparator left.first < right.first.
+        points_with_sq_distance
+            .sort_unstable_by(|left, right| left.0.partial_cmp(&right.0).unwrap());
         // AABBTreeLines.hpp:287-289
         for (idx, item) in points_with_sq_distance.iter().enumerate() {
             intersections[idx] = item.1;
