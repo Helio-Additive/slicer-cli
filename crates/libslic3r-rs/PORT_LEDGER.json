@@ -2412,7 +2412,8 @@
     "rust_exists": true,
     "loc": 440,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/Lightning/Layer.cpp",

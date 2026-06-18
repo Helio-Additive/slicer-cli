@@ -650,9 +650,15 @@ pub fn straighten(
             let junction_moving_dir_len = norm(&junction_moving_dir) as Coord;
             // TreeNode.cpp:302-305 — if (junction_moving_dir_len > junction_magnitude) junction_moving_dir = junction_moving_dir * junction_magnitude / junction_moving_dir_len;
             if junction_moving_dir_len > junction_magnitude {
+                // FIDELITY-NOTE(F2): C++ `coord_t` is int32; `junction_moving_dir`
+                // (Eigen vector of coord_t) * `junction_magnitude` (coord_t) then
+                // `/ junction_moving_dir_len` (coord_t) is performed in int32 and
+                // wraps on overflow. Reproduce int32 multiply/divide locally.
+                let jm = junction_magnitude as i32;
+                let jml = junction_moving_dir_len as i32;
                 junction_moving_dir = Point::new(
-                    junction_moving_dir.x * junction_magnitude / junction_moving_dir_len,
-                    junction_moving_dir.y * junction_magnitude / junction_moving_dir_len,
+                    ((junction_moving_dir.x as i32).wrapping_mul(jm) / jml) as Coord,
+                    ((junction_moving_dir.y as i32).wrapping_mul(jm) / jml) as Coord,
                 );
             }
             // TreeNode.cpp:306 — m_p += junction_moving_dir;
