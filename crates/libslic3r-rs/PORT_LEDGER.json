@@ -3032,7 +3032,8 @@
     "rust_exists": true,
     "loc": 1397,
     "status": "partial",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Format/3mf.cpp",

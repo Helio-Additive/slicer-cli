@@ -1566,9 +1566,20 @@ pub fn load_amf(
         };
 
         // AMF.cpp:1107-1109 — std::string zip_mask(2, '\0'); file.read(...);
-        // a short read leaves the remaining bytes NUL, exactly as in C++.
+        // std::istream::read extracts up to 2 bytes (stopping only at EOF), so
+        // a short read leaves the remaining bytes NUL. Rust's Read::read may
+        // return fewer bytes than requested without being at EOF, so fill the
+        // buffer in a loop to reproduce the C++ "read up to 2 bytes" semantics.
         let mut zip_mask = [0u8; 2];
-        let _ = file.read(&mut zip_mask);
+        let mut filled = 0;
+        while filled < zip_mask.len() {
+            match file.read(&mut zip_mask[filled..]) {
+                Ok(0) => break,
+                Ok(n) => filled += n,
+                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
         drop(file);
 
         // AMF.cpp:1111
