@@ -183,6 +183,9 @@ pub fn fix_slicing_errors<F: Fn() -> Result<()>>(
     let max_ext_peri_width = ext_peri_widths.iter().copied().max().unwrap_or(0);
     // PrintObjectSlice.cpp:663
     // C++: coord_t thresh = get_ext_peri_width(*it) * 0.5; (int * double, truncated back)
+    // FIDELITY-NOTE(F2): C++ truncates the (coord_t * 0.5) product back to int32 coord_t;
+    // crate Coord = i64 here. For scaled perimeter widths the value fits in i32, so the
+    // wider truncation target is observationally identical.
     let thresh: Coord = (max_ext_peri_width as f64 * 0.5) as Coord; // half of external perimeter width  // 0.5 * scale_(this->config().line_width);
     // PrintObjectSlice.cpp:664
     for idx_layer in 0..layers.len() {
@@ -199,6 +202,7 @@ pub fn fix_slicing_errors<F: Fn() -> Result<()>>(
             for surface in &layerm.slices.surfaces {
                 // PrintObjectSlice.cpp:671
                 // C++: auto expoly = offset_ex(surface.expolygon, -thresh);
+                // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
                 let expoly =
                     offset_expolygon(&surface.expolygon, -(thresh as CoordF), OffsetJoinType::Miter);
                 // PrintObjectSlice.cpp:672
@@ -408,6 +412,7 @@ impl PrintObject {
             // C++ `union_(Polygons)` returns Polygons; here we union at the ExPolygon level
             // (the crate's `union_polygons_ex`, which performs the same ClipperLib non-zero
             // union) and take the boolean difference of the two resulting ExPolygon sets.
+            // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
             let union_contours: ExPolygons = union_polygons_ex(&contours);
             let union_holes: ExPolygons = union_polygons_ex(&holes);
             let temp: ExPolygons = difference(&union_contours, &union_holes);
