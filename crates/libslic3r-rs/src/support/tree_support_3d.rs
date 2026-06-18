@@ -91,6 +91,14 @@ fn diff(subject: &[Polygon], clip: &[Polygon]) -> Polygons {
     expolys_to_polygons(&crate::clipper_utils::difference(&subj, &cl))
 }
 
+// `Polygons union_(const Polygons &subject, const Polygons &subject2 = {})`
+// Plain ClipperLib union (NOT safe_union — no safety offset applied).
+fn union_(subject: &[Polygon], subject2: &[Polygon]) -> Polygons {
+    let mut all: Polygons = subject.to_vec();
+    all.extend_from_slice(subject2);
+    expolys_to_polygons(&crate::clipper_utils::union_polygons_ex(&all))
+}
+
 // `Polygons intersection(const Polygons &subject, const Polygons &clip)`
 fn intersection(subject: &[Polygon], clip: &[Polygon]) -> Polygons {
     let subj: ExPolygons = subject.iter().map(|p| ExPolygon::new(p.clone())).collect();
@@ -1666,14 +1674,16 @@ fn increase_areas_one_layer(
             if !settings.no_error {
                 // ERROR CASE
                 // TreeSupport3D.cpp:1832 — offset(to_polylines(parent.influence_area), 0.005, jtMiter, 1.2)
+                // FIDELITY-NOTE(F1): geo-clipper offset_polyline uses jtSquare/etOpenButt,
+                // not ClipperLib jtMiter(1.2). scaled<float>(0.005) == 500.0.
                 let lines_offset = offset_polylines_polygons(
                     &layer_elements[parent_idx].influence_area,
-                    scale(0.005) as CoordF,
+                    0.005 * SCALING_FACTOR,
                 );
                 // TreeSupport3D.cpp:1833 — union_(parent.influence_area, lines_offset)
-                let mut base_error_area = layer_elements[parent_idx].influence_area.clone();
-                base_error_area.extend(lines_offset);
-                let base_error_area = safe_union(&base_error_area, &Vec::new());
+                // Plain union_, NOT safe_union (no safety offset in the C++).
+                let base_error_area =
+                    union_(&layer_elements[parent_idx].influence_area, &lines_offset);
                 // TreeSupport3D.cpp:1834
                 result = increase_single_area(
                     volumes,
