@@ -585,6 +585,8 @@ pub fn is_narrow_expolygon(
 
     // ExPolygon.cpp:468
     // ExPolygons offsets = offset_ex(expolygon, -min_width / 2);
+    // (offset_ex's DefaultJoinType is jtMiter — ClipperUtils.hpp:31.)
+    // FIDELITY-NOTE(F1): offset_expolygons uses geo-clipper approximation vs C++ ClipperLib.
     let offsets = offset_expolygons(
         std::slice::from_ref(expolygon),
         -min_width / 2.0,
@@ -816,13 +818,17 @@ pub use crate::geometry::keep_largest_contour_only as keep_largest_contour_only_
 // (Polygon.cpp). Tri-state PointInPolygon: returns true if `pt` is inside, or
 // returns `border_result` when `pt` lies exactly on the polygon boundary.
 fn polygon_contains(polygon: &Polygon, pt: &Point, border_result: bool) -> bool {
-    match point_in_polygon(pt, &polygon.points) {
-        // pt on boundary -> return border_result
-        -1 => border_result,
-        // inside
-        1 => true,
-        // outside
-        _ => false,
+    // Polygon.cpp:708-715
+    // if (const int poly_count_inside = ClipperLib::PointInPolygon(p, polygon.points);
+    //     poly_count_inside == -1)
+    //     return border_result;
+    // else
+    //     return (poly_count_inside % 2) == 1;
+    let poly_count_inside = point_in_polygon(pt, &polygon.points);
+    if poly_count_inside == -1 {
+        border_result
+    } else {
+        (poly_count_inside % 2) == 1
     }
 }
 
@@ -858,6 +864,10 @@ fn point_in_polygon(pt: &Point, path: &[Point]) -> i32 {
                     result = 1 - result;
                 } else {
                     // C++: double d = (double)(ip.x() - pt.x()) * (ipNext.y() - pt.y()) - (double)(ipNext.x() - pt.x()) * (ip.y() - pt.y());
+                    // FIDELITY-NOTE(F2): C++ subtracts in coord_t (int32) then casts
+                    // to double; with crate Coord=i64 the differences cannot wrap. The
+                    // products are double in both, so the sign test is identical for
+                    // realistic coordinate magnitudes.
                     let d = (ip.x as i64 - pt.x as i64) as f64 * (ip_next.y as i64 - pt.y as i64) as f64
                         - (ip_next.x as i64 - pt.x as i64) as f64 * (ip.y as i64 - pt.y as i64) as f64;
                     // C++: if (!d) return -1;
