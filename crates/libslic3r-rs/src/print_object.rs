@@ -548,8 +548,11 @@ impl PrintObject {
         // PrintObject.cpp:464-472
         if self.typed_slices {
             for layer in &mut self.layers {
-                // TODO: layer->restore_untyped_slices();
-                // Check for cancellation
+                // PrintObject.cpp:467
+                // C++: layer->restore_untyped_slices();
+                layer.restore_untyped_slices();
+                // PrintObject.cpp:468
+                // C++: m_print->throw_if_canceled();
                 if self.canceled.load(Ordering::Relaxed) {
                     return Err(Error::Cancelled);
                 }
@@ -602,7 +605,11 @@ impl PrintObject {
                 return Err(Error::Cancelled);
             }
 
-            // Apply elephant foot compensation on first layer
+            // FIDELITY-NOTE: elephant-foot compensation has no counterpart in C++
+            // PrintObject::make_perimeters — in BambuStudio it is applied during
+            // slicing (apply_first_layer_compensation in PrintObjectSlice.cpp). It is
+            // kept here as this crate's integration point; retained to avoid silently
+            // dropping the feature, not because the C++ runs it from make_perimeters.
             if idx == 0 && self.config.elephant_foot_compensation > 0.0 {
                 for region in layer.regions_mut().iter_mut() {
                     region.elephant_foot_compensation_step(self.config.elephant_foot_compensation);
@@ -664,13 +671,13 @@ impl PrintObject {
 
         /// PrintObject.cpp:626-640
         if self.typed_slices {
-            /// PrintObject.cpp:634
+            /// PrintObject.cpp:633
             for layer in &mut self.layers {
-                /// PrintObject.cpp:635
+                /// PrintObject.cpp:634
                 /// C++: layer->restore_untyped_slices_no_extra_perimeters();
-                // TODO: Port restore_untyped_slices_no_extra_perimeters
+                layer.restore_untyped_slices_no_extra_perimeters();
 
-                /// PrintObject.cpp:636
+                /// PrintObject.cpp:635
                 if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(crate::Error::Cancelled);
                 }
@@ -910,16 +917,15 @@ impl PrintObject {
 
                 /// PrintObject.cpp:1495-1496
                 /// C++: float offset = layerm->flow(frExternalPerimeter).scaled_width() / 10.f;
-                // C++: float offset = layerm->flow(frExternalPerimeter).scaled_width() / 10.f;
-                // scaled_width for 0.42mm line width = scale_(0.42) = 42000
-                // 42000 / 10 = 4200 scaled units = 0.042 mm
-                // Use the external perimeter line width / 10 in mm
-                let ext_wall_width = if region_config.outer_wall_line_width > 0.0 {
-                    region_config.outer_wall_line_width
-                } else {
-                    0.42 // default
-                };
-                let offset = ext_wall_width / 10.0; // in mm
+                // This crate's clipper primitives (opening_ex/shrink/grow) operate in
+                // UNSCALED (mm) space — they `unscale()` the polygon coords and pass the
+                // delta through verbatim — so the faithful equivalent of C++
+                // `scaled_width()/10` is `width()/10` (mm).
+                let layer_height = self.layers[idx_layer].height;
+                let offset = self.layers[idx_layer].regions()[region_id]
+                    .flow(crate::flow::FlowRole::ExternalPerimeter, layer_height)?
+                    .width()
+                    / 10.0;
 
                 /// PrintObject.cpp:1498-1499
                 /// C++: bool detect_top = spiral_mode || layerm->region().config().top_shell_layers;
@@ -1108,10 +1114,9 @@ impl PrintObject {
                 /// C++:     polygons_append(topbottom, to_polygons(bottom));
                 /// C++:     surfaces_append(surfaces_out, diff_ex(surfaces_prev, topbottom), stInternal);
                 /// C++: }
-                let mut topbottom = to_polygons(&top);
-                topbottom.append(&mut to_polygons(&bottom));
-                // C++: diff_ex(surfaces_prev, topbottom) = surfaces_prev MINUS topbottom
-                // Internal surfaces are those NOT classified as top or bottom
+                // C++ builds `topbottom = to_polygons(top) ++ to_polygons(bottom)` then
+                // `diff_ex(surfaces_prev, topbottom)`. We keep the top/bottom ExPolygon
+                // structure (contour+holes) for the clip, which yields the same diff set.
                 let surfaces_prev_expolygons: Vec<crate::ExPolygon> =
                     surfaces_prev.iter().map(|s| s.expolygon.clone()).collect();
                 let topbottom_expolygons: Vec<crate::ExPolygon> = top
@@ -1299,10 +1304,36 @@ impl PrintObject {
     pub fn generate_support_material(&mut self) -> Result<()> {
         use crate::support::{SupportConfig, SupportGenerator, SupportType as SupportGenType};
 
-        if !self.config.enable_support && self.config.enforce_support_layers == 0 {
+        // PrintObject.cpp:857
+        // C++: if (this->set_started(posSupportMaterial)) {
+        if self.is_step_done(PrintObjectStep::SupportMaterial) {
+            return Ok(());
+        }
+
+        // PrintObject.cpp:858
+        // C++: this->clear_support_layers();
+        self.clear_support_layers();
+
+        // PrintObject.cpp:860-889
+        // C++: if (!has_support() && !m_print->get_no_check_flag()) { ... is_support_necessary() warnings ... }
+        // FIDELITY-NOTE: the is_support_necessary() overhang-warning path is part of
+        // the (unported) support necessity subsystem; only the warning is emitted in
+        // C++, no slicing state changes, so its omission does not alter geometry.
+
+        // PrintObject.cpp:891
+        // C++: if ((this->has_support() && m_layers.size() > 1) || (this->has_raft() && !m_layers.empty()))
+        // (has_raft() <=> raft_layers > 0 here.)
+        let do_generate = (self.has_support() && self.layers.len() > 1)
+            || (self.config.raft_layers > 0 && !self.layers.is_empty());
+        if !do_generate {
             self.set_step_done(PrintObjectStep::SupportMaterial);
             return Ok(());
         }
+
+        // PrintObject.cpp:894
+        // C++: this->_generate_support_material();
+        // The remainder reproduces _generate_support_material via this crate's
+        // SupportGenerator (the C++ support subsystem is not 1:1 ported).
 
         // Build layer slice data: (z_height, layer_height, expolygons)
         let layer_slices: Vec<(f64, f64, Vec<crate::geometry::ExPolygon>)> = self
@@ -2278,8 +2309,14 @@ impl PrintObject {
                         // C++ sparse_infill_density.value==0 ⟺ fill_density==0 (Rust stores a 0-1 fraction)
                         let sparse_infill_density = region_config.fill_density;
                         if sparse_infill_density == 0.0 {
-                            let margin = 0.4 * 1000.0; // TODO: Get from neighbor_layerm->flow(frExternalPerimeter).scaled_width()
-                            let clipper_safety = 0.0001; // ClipperSafetyOffset = 10 scaled units = 0.0001mm
+                            // PrintObject.cpp:3496
+                            // C++: float margin = float(neighbor_layerm->flow(frExternalPerimeter).scaled_width());
+                            // (opening() works in mm here; scaled_width()/scale == width().)
+                            let neighbor_h = self.layers[n_usize].height;
+                            let margin = self.layers[n_usize].regions()[region_id]
+                                .flow(crate::flow::FlowRole::ExternalPerimeter, neighbor_h)?
+                                .width();
+                            let _clipper_safety = crate::libslic3r::SCALED_EPSILON; // ClipperSafetyOffset (unused: symmetric opening)
 
                             // Convert to ExPolygons for opening operation
                             let new_solid_expolys: Vec<ExPolygon> = new_internal_solid
@@ -2320,7 +2357,14 @@ impl PrintObject {
                         /// C++:     }
                         /// C++: }
                         {
-                            let margin = 3.0 * 0.4 * 1000.0; // TODO: Get from layerm->flow(frSolidInfill).scaled_width()
+                            // PrintObject.cpp:3509
+                            // C++: float margin = 3.f * layerm->flow(frSolidInfill).scaled_width();
+                            // (opening()/grow() work in mm here; scaled_width()/scale == width().)
+                            let layer_h = self.layers[i].height;
+                            let margin = 3.0
+                                * self.layers[i].regions()[region_id]
+                                    .flow(crate::flow::FlowRole::SolidInfill, layer_h)?
+                                    .width();
 
                             // Convert to ExPolygons for opening operation
                             let new_solid_expolys: Vec<ExPolygon> = new_internal_solid
@@ -2448,7 +2492,14 @@ impl PrintObject {
                             polygons_internal.extend(polys);
                         }
 
-                        // Restore top, bottom, and bottom bridge surfaces (trimmed by polygons_internal)
+                        // PrintObject.cpp:3553-3561 — trim top/bottom/bottom-bridge surfaces
+                        // by `polygons_internal`, which is the union of the new internal-solid
+                        // AND the new internal surfaces (both appended above), not just the
+                        // internal-solid. Build the ExPolygon clip set from polygons_internal.
+                        let polygons_internal_ex: ExPolygons = polygons_internal
+                            .iter()
+                            .map(|p| ExPolygon::new(p.clone()))
+                            .collect();
                         for surface in &backup.surfaces {
                             if surface.surface_type == SurfaceType::Top
                                 || surface.surface_type == SurfaceType::Bottom
@@ -2456,7 +2507,7 @@ impl PrintObject {
                             {
                                 let trimmed = difference(
                                     &[surface.expolygon.clone()],
-                                    &internal_solid_expolys,
+                                    &polygons_internal_ex,
                                 );
                                 for expolygon in trimmed {
                                     let mut new_surface = surface.clone();
@@ -2494,6 +2545,24 @@ impl PrintObject {
     /// wave-expansion port does not yet consume that mask, so the covered-surface
     /// precompute is omitted here (the per-region member runs without it).
     fn process_external_surfaces(&mut self) -> Result<()> {
+        // PrintObject.cpp:1661-1718 — pre-pass that builds `surfaces_covered`, the
+        // per-layer extrusion-covered regions over which the surfaces one layer up
+        // may expand. It is only ever non-empty when some printing region has
+        // `sparse_infill_density == 0` (C++ `has_voids`); otherwise C++ passes
+        // `nullptr` for the covered-surfaces argument on every layer.
+        //
+        // FIDELITY-NOTE: the `surfaces_covered`/`has_voids` machinery and the
+        // `lower_layer` argument to LayerRegion::process_external_surfaces are not
+        // threaded here because this crate's LayerRegion::process_external_surfaces
+        // (region_expansion port) does not yet accept those arguments. For any
+        // region with non-zero infill density this is exact (C++ would pass
+        // nullptr); zero-infill regions lose the void-supported expansion clamp.
+        let has_voids = (0..self.num_printing_regions())
+            .any(|region_id| self.printing_region(region_id)
+                .map(|r| r.config().fill_density == 0.0)
+                .unwrap_or(false));
+        let _ = has_voids; // see FIDELITY-NOTE above
+
         // PrintObject.cpp:1720 — for each printing region.
         for region_id in 0..self.num_printing_regions() {
             // PrintObject.cpp:1722-1731 — for each layer, drive the LayerRegion member.
