@@ -1242,7 +1242,8 @@
     "rust_exists": true,
     "loc": 647,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Layer.cpp",

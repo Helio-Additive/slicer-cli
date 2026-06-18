@@ -846,7 +846,13 @@ pub fn elephant_foot_compensation_expolygons_with_flow(
     compensation: f64,
 ) -> ExPolygons {
     let mut out: ExPolygons = Vec::new();
-    let simplified_exps = expolygons_simplify(input, SCALED_EPSILON);
+    // C++: expolygons_simplify(input, SCALED_EPSILON). C++ `simplify` feeds the
+    // tolerance straight into Douglas-Peucker in scaled integer units (no rescale),
+    // so the effective tolerance is SCALED_EPSILON (= 10 scaled units). The Rust
+    // `expolygons_simplify` instead rescales its argument via `scale()` (mm in), so
+    // pass the unscaled-mm equivalent EPSILON (scale(EPSILON) == SCALED_EPSILON == 10)
+    // to reproduce the identical Douglas-Peucker tolerance.
+    let simplified_exps = expolygons_simplify(input, EPSILON);
     out.reserve(simplified_exps.len());
     for expoly in &simplified_exps {
         out.push(elephant_foot_compensation_with_flow(
@@ -866,7 +872,10 @@ pub fn elephant_foot_compensation_expolygons_with_width(
     compensation: f64,
 ) -> ExPolygons {
     let mut out: ExPolygons = Vec::new();
-    let simplified_exps = expolygons_simplify(input, SCALED_EPSILON);
+    // C++: expolygons_simplify(input, SCALED_EPSILON). See note above: Rust's
+    // `expolygons_simplify` rescales its tolerance (mm in), so pass EPSILON so that
+    // scale(EPSILON) == SCALED_EPSILON == 10, matching the C++ Douglas-Peucker tolerance.
+    let simplified_exps = expolygons_simplify(input, EPSILON);
     out.reserve(simplified_exps.len());
     for expoly in &simplified_exps {
         out.push(elephant_foot_compensation_with_width(
