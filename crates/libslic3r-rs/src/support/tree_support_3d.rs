@@ -44,7 +44,7 @@ use crate::support::tree_support_settings::{
 };
 use crate::libslic3r::SCALED_EPSILON;
 use crate::utils::round_up_divide;
-use crate::{scale, unscale, Coord, CoordF};
+use crate::{scale, unscale, Coord, CoordF, SCALING_FACTOR};
 
 // TreeSupport3D.cpp:67
 pub type LineInformation = Vec<(Point, LineStatus)>;
@@ -74,7 +74,9 @@ fn vol_avoidance(t: AvoidanceType) -> VolAvoidanceType {
 // TreeSupport3D.cpp:127
 // static constexpr const auto tiny_area_threshold = sqr(scaled<double>(0.001));
 fn tiny_area_threshold() -> CoordF {
-    let s = scale(0.001) as CoordF; // scaled<double>(0.001)
+    // scaled<double>(0.001): FloatingOnly overload (Point.hpp:527) = v / SCALING_FACTOR
+    // with no rounding, kept as double.
+    let s = 0.001 * SCALING_FACTOR; // == 100.0
     s * s
 }
 
@@ -387,7 +389,7 @@ fn polyline_sample_next_point_at_distance(
     // TreeSupport3D.cpp:492-494
     let dist2 = dist * dist;
     let dist2i = dist2 as i64;
-    let eps = scale(0.01) as CoordF; // scaled<double>(0.01)
+    let eps = 0.01 * SCALING_FACTOR; // scaled<double>(0.01) == 1000.0 (no rounding)
 
     // TreeSupport3D.cpp:496
     for i in (start_idx + 1)..polyline.len() {
@@ -472,7 +474,7 @@ pub fn ensure_maximum_distance_polyline(
         // TreeSupport3D.cpp:552
         let mut line: Vec<Point> = Vec::new();
         // TreeSupport3D.cpp:553
-        let mut current_distance = distance.max(scale(0.1) as CoordF);
+        let mut current_distance = distance.max(0.1 * SCALING_FACTOR); // scaled<double>(0.1)
         // TreeSupport3D.cpp:554
         if len < 2.0 * distance && min_points <= 1 {
             // Insert the opposite point of the first one.
@@ -489,7 +491,11 @@ pub fn ensure_maximum_distance_polyline(
             if part.first() == part.last() {
                 // TreeSupport3D.cpp:567
                 let mut optimal_start_index = 0usize;
-                // TreeSupport3D.cpp:571
+                // TreeSupport3D.cpp:571 — C++ declares this `coord_t` (int32) but
+                // assigns a `double` squaredNorm to it (truncating + risking int32
+                // overflow for large separations). We keep it as `f64` to avoid
+                // the overflow; the comparison promotes to double either way.
+                // FIDELITY-NOTE(F2): coord_t==int32 store elided in favour of f64.
                 let mut max_dist2_between_vertecies: CoordF = 0.0;
                 // TreeSupport3D.cpp:572
                 for idx in 0..(part.len() - 1) {
@@ -516,7 +522,7 @@ pub fn ensure_maximum_distance_polyline(
             }
 
             // TreeSupport3D.cpp:586
-            while line.len() < min_points && current_distance >= scale(0.1) as CoordF {
+            while line.len() < min_points && current_distance >= 0.1 * SCALING_FACTOR {
                 // TreeSupport3D.cpp:588
                 line.clear();
                 // TreeSupport3D.cpp:589
@@ -570,8 +576,8 @@ pub fn ensure_maximum_distance_polyline(
                             continue;
                         }
                         // TreeSupport3D.cpp:624
-                        next_distance =
-                            (current_distance - min_distance_to_existing_point).max(scale(0.1) as CoordF);
+                        next_distance = (current_distance - min_distance_to_existing_point)
+                            .max(0.1 * SCALING_FACTOR); // scaled<double>(0.1)
                         // TreeSupport3D.cpp:625-626
                         current_point = next_point.0;
                         current_index = next_point.1;
