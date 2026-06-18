@@ -191,7 +191,7 @@ impl fmt::Display for SurfaceType {
 ///
 /// Each surface has a type (determining how it should be filled)
 /// and geometry (the ExPolygon defining its shape).
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Surface {
     /// The geometry of this surface.
     pub expolygon: ExPolygon,
@@ -213,13 +213,32 @@ pub struct Surface {
     pub extra_perimeters: usize,
 }
 
+impl Default for Surface {
+    // C++ default ctor: Surface(SurfaceType _surface_type = stInternal)
+    //   : surface_type(stInternal), thickness(-1), thickness_layers(1),
+    //     bridge_angle(-1), extra_perimeters(0)
+    // Surface.hpp:44-47
+    fn default() -> Self {
+        Self {
+            expolygon: ExPolygon::default(),
+            surface_type: SurfaceType::Internal,
+            thickness: -1.0,
+            thickness_layers: 1,
+            bridge_angle: None,
+            extra_perimeters: 0,
+        }
+    }
+}
+
 impl Surface {
     // Create a new surface with the given type and geometry.
+    // Surface.hpp:54-57 Surface(SurfaceType, const ExPolygon&)
+    //   : thickness(-1), thickness_layers(1), bridge_angle(-1), extra_perimeters(0)
     pub fn new(surface_type: SurfaceType, expolygon: ExPolygon) -> Self {
         Self {
             expolygon,
             surface_type,
-            thickness: 0.0,
+            thickness: -1.0,
             thickness_layers: 1,
             bridge_angle: None,
             extra_perimeters: 0,
@@ -247,11 +266,12 @@ impl Surface {
     }
 
     /// Create a new bridge surface.
+    /// (Rust convenience; mirrors Surface(stBottomBridge, expoly) with bridge_angle set.)
     pub fn bridge(expolygon: ExPolygon, angle: Option<CoordF>) -> Self {
         Self {
             expolygon,
             surface_type: SurfaceType::BottomBridge,
-            thickness: 0.0,
+            thickness: -1.0,
             thickness_layers: 1,
             bridge_angle: angle,
             extra_perimeters: 0,
