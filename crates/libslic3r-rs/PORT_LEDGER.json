@@ -3020,7 +3020,8 @@
     "rust_exists": true,
     "loc": 920,
     "status": "done",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "ok"
   },
   {
     "cpp": "Format/AMF.cpp",
