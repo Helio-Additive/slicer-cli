@@ -712,6 +712,11 @@ mod quadric_edge_collapse {
         its: &TriangleMesh,
     ) -> Option<u32> {
         // coord_t vi_coord = static_cast<coord_t>(vi);  QuadricEdgeCollapse.cpp:544
+        // FIDELITY-NOTE(F2): C++ `coord_t` is int32_t and triangle index elements
+        // are int32 (`stl_triangle_vertex_indices`). Here both `vi` and the crate
+        // `Triangle.indices` are u32; vertex indices are non-negative and in-bounds,
+        // so the C++ int32 cast cannot truncate. Widen to i64 to compare without
+        // reintroducing any sign/width effect (no behavioral divergence).
         let vi_coord: i64 = vi as i64;
         // uint32_t end = v_info.start + v_info.count;  QuadricEdgeCollapse.cpp:545
         let end = v_info.start + v_info.count;
