@@ -3325,10 +3325,8 @@ impl GCodeProcessor {
 
     /// GCodeProcessor.cpp:5663-5673  process_M702 — MMU unload at end of print.
     fn process_m702(&mut self, line: &crate::g_code_reader::GCodeLine) {
-        if line.has_p() {
-            // C++ checks line.has('C'); 'C' is not a recognized axis char in the
-            // Rust reader's has(Axis) API, but has_char covers it:
-        }
+        // C++ checks line.has('C'); 'C' is not a recognized axis char in the
+        // Rust reader's has(Axis) API, but has_char covers it.
         if line.has_char(b'C') {
             self.m_time_processor.extruder_unloaded = true;
             // get_filament_unload_time => extruder_unloaded ? 0 : filament_unload_times
@@ -3530,9 +3528,11 @@ impl GCodeProcessor {
 
         let r#type = move_type(&delta_pos);
         if r#type == EMoveType::Extrude {
-            let delta_xyz =
-                (sqr(dx as f32) + sqr(dy as f32) + sqr(dz as f32)).sqrt();
-            let volume_extruded_filament = area_filament_cross_section * de as f32;
+            // C++: float delta_xyz = std::sqrt(sqr(dpX)+sqr(dpY)+sqr(dpZ));
+            // delta_pos is std::array<double,4>, so sqr/sum/sqrt are double.
+            let delta_xyz = (dx * dx + dy * dy + dz * dz).sqrt() as f32;
+            // C++: float vol = area_filament_cross_section * dpE; (float*double->double)
+            let volume_extruded_filament = (area_filament_cross_section as f64 * de) as f32;
             let area_toolpath_cross_section = volume_extruded_filament / delta_xyz;
 
             if self.m_extrusion_role == ExtrusionRole::SupportMaterial
@@ -3570,18 +3570,28 @@ impl GCodeProcessor {
             if self.m_forced_width > 0.0 {
                 self.m_width = self.m_forced_width;
             } else if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
-                self.m_width = de as f32
-                    * (PI as f32 * sqr(1.05 * filament_radius))
-                    / (delta_xyz * self.m_height);
+                // C++: m_width = delta_pos[E] * static_cast<float>(M_PI*sqr(1.05f*fr))
+                //               / (delta_xyz * m_height);
+                // delta_pos[E] is double; the cast constant is float; division promotes
+                // to double; the result is cast to float on assignment.
+                let c1 = (PI * sqr(1.05 * filament_radius) as f64) as f32;
+                self.m_width =
+                    (de * c1 as f64 / (delta_xyz * self.m_height) as f64) as f32;
             } else if self.m_extrusion_role == ExtrusionRole::BridgeInfill
                 || self.m_extrusion_role == ExtrusionRole::None
             {
-                self.m_width = self.m_result.filament_diameters[filament_id as usize]
-                    * (de as f32 / delta_xyz).sqrt();
+                // C++: m_width = (float)filament_diameters[id] * std::sqrt(dpE/delta_xyz);
+                // dpE/delta_xyz is double; sqrt is double; float*double -> double -> float.
+                let fd = self.m_result.filament_diameters[filament_id as usize];
+                self.m_width = (fd as f64 * (de / delta_xyz as f64).sqrt()) as f32;
             } else {
-                self.m_width = de as f32 * (PI as f32 * sqr(filament_radius))
-                    / (delta_xyz * self.m_height)
-                    + (1.0 - 0.25 * PI as f32) * self.m_height;
+                // C++: m_width = delta_pos[E] * static_cast<float>(M_PI*sqr(fr))
+                //               / (delta_xyz * m_height)
+                //               + static_cast<float>(1.0 - 0.25*M_PI) * m_height;
+                let c2 = (PI * sqr(filament_radius) as f64) as f32;
+                let c3 = (1.0 - 0.25 * PI) as f32;
+                self.m_width = (de * c2 as f64 / (delta_xyz * self.m_height) as f64
+                    + (c3 * self.m_height) as f64) as f32;
             }
             if self.m_width == 0.0 {
                 self.m_width = DEFAULT_TOOLPATH_WIDTH;
@@ -3616,11 +3626,13 @@ impl GCodeProcessor {
         }
 
         // time estimate section -------------------------------------------------
-        let sq_xyz_length = sqr(dx as f32) + sqr(dy as f32) + sqr(dz as f32);
+        // C++ move_length: float sq_xyz_length = sqr(dpX)+sqr(dpY)+sqr(dpZ); (double->float)
+        //   return (sq_xyz_length > 0) ? std::sqrt(sq_xyz_length) : std::abs(dpE);
+        let sq_xyz_length = (dx * dx + dy * dy + dz * dz) as f32;
         let distance = if sq_xyz_length > 0.0 {
             sq_xyz_length.sqrt()
         } else {
-            (de as f32).abs()
+            de.abs() as f32
         };
         let inv_distance = 1.0 / distance;
         let is_extrusion_only_move = dx == 0.0 && dy == 0.0 && dz == 0.0 && de != 0.0;
@@ -3699,8 +3711,12 @@ impl GCodeProcessor {
                     let dot = v1[0] * v2[0] + v1[1] * v2[1];
                     let cross = v1[0] * v2[1] - v1[1] * v2[0];
                     let angle = (cross as f64).atan2(dot as f64) as f32;
-                    let sin_theta_2 = ((1.0 - angle.cos()) * 0.5).sqrt();
-                    let r = (sqr(dx as f32) + sqr(dy as f32)).sqrt() * 0.5 / sin_theta_2;
+                    // C++: float sin_theta_2 = sqrt((1.0f - cos(angle)) * 0.5f);
+                    // bare cos(float) promotes to double; result cast to float.
+                    let sin_theta_2 = ((1.0 - (angle as f64).cos()) * 0.5).sqrt() as f32;
+                    // C++: float r = sqrt(sqr(dpX)+sqr(dpY)) * 0.5 / sin_theta_2;
+                    // sqr(double); 0.5 is double; division in double -> float.
+                    let r = ((dx * dx + dy * dy).sqrt() * 0.5 / sin_theta_2 as f64) as f32;
                     feedrate = feedrate.min((acceleration * r).sqrt());
                 }
             }
@@ -3737,6 +3753,8 @@ impl GCodeProcessor {
             }
 
             // axis-limited acceleration (cpp:4189-4194)
+            // C++ has NO `axis_max_acceleration != 0.0` guard: when the limit is
+            // 0 and the candidate is > 0, acceleration is clamped to 0/(x) == 0.
             for a in 0..=(Axis::E as usize) {
                 let axis_max_acceleration = self.get_axis_max_acceleration(
                     mode,
@@ -3744,7 +3762,6 @@ impl GCodeProcessor {
                     self.get_machine_config_idx(self.get_filament_id(true)),
                 );
                 if acceleration * (delta_pos[a] as f32).abs() * inv_distance > axis_max_acceleration
-                    && axis_max_acceleration != 0.0
                 {
                     acceleration = axis_max_acceleration / ((delta_pos[a] as f32).abs() * inv_distance);
                 }
@@ -3752,10 +3769,12 @@ impl GCodeProcessor {
             block.acceleration = acceleration;
 
             // block exit feedrate (cpp:4198-4207)
+            // C++ has NO `axis_max_jerk != 0.0` guard: when the jerk limit is 0 and
+            // abs_axis_feedrate > 0, safe_feedrate is clamped to min(.,0) == 0.
             let mut safe_feedrate = block.feedrate_profile.cruise;
             for a in 0..=(Axis::E as usize) {
                 let axis_max_jerk = self.get_axis_max_jerk(mode, a);
-                if abs_axis_feedrate[a] > axis_max_jerk && axis_max_jerk != 0.0 {
+                if abs_axis_feedrate[a] > axis_max_jerk {
                     safe_feedrate = safe_feedrate.min(axis_max_jerk);
                 }
             }
@@ -4191,6 +4210,9 @@ fn extrusion_role_from_index(i: usize) -> ExtrusionRole {
 }
 
 /// 3D in-place normalize (Eigen `Vec3f::normalize()`); zero vector stays zero.
+// FIDELITY-NOTE(F1): Eigen `normalize()` divides unconditionally and yields NaN
+// for a zero-length vector; we guard `n != 0.0` and leave a zero vector unchanged.
+// This only differs on degenerate zero-direction inputs.
 fn normalize3(v: &mut [f32; 3]) {
     let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
     if n != 0.0 {
