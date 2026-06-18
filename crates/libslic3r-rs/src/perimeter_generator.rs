@@ -21,6 +21,15 @@ use crate::{
 };
 use std::f64::consts::PI;
 
+// FIDELITY-NOTE(F1): all offset/offset2/union/intersection/difference calls below route
+// through clipper_utils, which uses the `geo` crate (geo-clipper, fixed scale 1000) rather
+// than C++ ClipperLib at coord_t integer precision. This is a cross-cutting geometry-precision
+// approximation; per the audit policy it is NOT re-routed per file.
+// FIDELITY-NOTE(F2): C++ truncates several intermediate inset/spacing values to coord_t
+// (int32) via `coord_t(...)`. Here those values are kept as f64 mm because the offset
+// primitives take mm and snap at the geo-clipper scale (F1); local int32 truncation would
+// be meaningless against the F1 approximation.
+
 /// Overlap tolerance for perimeter insets
 /// libslic3r.h:72
 /// C++: static constexpr double INSET_OVERLAP_TOLERANCE = 0.4;
@@ -467,12 +476,15 @@ impl PerimeterGenerator {
                 if self.config.detect_thin_wall {
                     // PerimeterGenerator.cpp:963-965
                     // C++: offsets = offset2_ex(last, -float(ext_perimeter_width / 2. + ext_min_spacing / 2. - 1), +float(ext_min_spacing / 2. - 1));
-                    // ClipperSafetyOffset = 10 scaled units = 0.0001mm
+                    // NOTE: the `- 1` here is 1 *scaled* coord unit (= 1/SCALING_FACTOR mm),
+                    // NOT ClipperSafetyOffset (which is 10). 1 unit = 0.00001 mm.
+                    const ONE_SCALED_MM: f64 = 1.0 / SCALING_FACTOR;
+                    // ClipperSafetyOffset = 10 scaled units = 0.0001mm (used at line 975).
                     const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
                     offsets = offset2(
                         &last,
-                        ext_perimeter_width / 2.0 + ext_min_spacing / 2.0 - CLIPPER_SAFETY_OFFSET,
-                        ext_min_spacing / 2.0 - CLIPPER_SAFETY_OFFSET,
+                        ext_perimeter_width / 2.0 + ext_min_spacing / 2.0 - ONE_SCALED_MM,
+                        ext_min_spacing / 2.0 - ONE_SCALED_MM,
                         self.config.join_type,
                     );
 
@@ -556,11 +568,12 @@ impl PerimeterGenerator {
 
                 // PerimeterGenerator.cpp:1026-1028
                 // C++: offsets = offset2_ex(last, -float(distance + min_spacing / 2. - 1.), float(min_spacing / 2. - 1.));
-                // ClipperSafetyOffset = 10 scaled units = 0.0001mm
+                // The `- 1.` is 1 *scaled* coord unit (= 1/SCALING_FACTOR mm), not ClipperSafetyOffset.
+                const ONE_SCALED_MM: f64 = 1.0 / SCALING_FACTOR;
                 offsets = offset2(
                     &last,
-                    distance + min_spacing / 2.0 - 0.0001,
-                    min_spacing / 2.0 - 0.0001,
+                    distance + min_spacing / 2.0 - ONE_SCALED_MM,
+                    min_spacing / 2.0 - ONE_SCALED_MM,
                     self.config.join_type,
                 );
 
@@ -568,7 +581,7 @@ impl PerimeterGenerator {
                 /// C++: if (has_gap_fill) append(gaps, diff_ex(offset(last, - float(0.5 * distance)), offset(offsets, float(0.5 * distance + 10))));
                 if has_gap_fill {
                     let gap_outer = shrink(&last, 0.5 * distance, self.config.join_type);
-                    // ClipperSafetyOffset = 10 scaled units = 0.0001mm
+                    // The `+ 10` is ClipperSafetyOffset = 10 scaled units = 0.0001 mm.
                     let gap_inner = grow(&offsets, 0.5 * distance + 0.0001, self.config.join_type);
                     let detected_gaps = difference(&gap_outer, &gap_inner);
                     gaps.extend(detected_gaps);
@@ -1098,102 +1111,167 @@ fn thick_polyline_to_extrusion_paths(
     tolerance: i64,
 ) -> Vec<crate::extrusion_entity::ExtrusionPath> {
     use crate::extrusion_entity::ExtrusionPath;
+    use crate::geometry::ThickLine;
+    use crate::libslic3r::SCALED_EPSILON;
 
     let mut paths = Vec::new();
-    let lines = thick_polyline.thicklines();
+    // VariableWidth.cpp:105 — ThickLines lines = thick_polyline.thicklines();
+    // Mutable: the segment-splitting step below erases/inserts lines in place.
+    let mut lines = thick_polyline.thicklines();
 
-    if lines.is_empty() {
-        return paths;
-    }
+    // VariableWidth.cpp:107-108
+    // C++: size_t start_index = 0; double max_width, min_width;
+    let mut start_index: usize = 0;
+    let mut max_width: f64 = 0.0;
+    let mut min_width: f64 = 0.0;
 
-    let mut start_index = 0;
-    let mut max_width = lines[0].a_width;
-    let mut min_width = lines[0].a_width;
+    /// VariableWidth.cpp:110-189
+    /// C++: for (int i = 0; i < (int)lines.size(); ++i)
+    let mut i: i64 = 0;
+    while (i as usize) < lines.len() {
+        let line = lines[i as usize].clone();
 
-    /// VariableWidth.cpp:147-209
-    for i in 0..lines.len() {
-        let line = &lines[i];
+        // VariableWidth.cpp:113-116
+        // C++: if (i == 0) { max_width = line.a_width; min_width = line.a_width; }
+        if i == 0 {
+            max_width = line.a_width;
+            min_width = line.a_width;
+        }
+
+        // VariableWidth.cpp:118-119
+        // C++: const coordf_t line_len = line.length(); if (line_len < SCALED_EPSILON) continue;
         let line_len = line.length();
-
-        if line_len < (SCALING_FACTOR as f64 * 0.001) {
+        if line_len < SCALED_EPSILON {
+            i += 1;
             continue;
         }
 
-        let thickness_delta_a = (max_width - line.b_width)
-            .abs()
-            .max((min_width - line.b_width).abs());
+        // VariableWidth.cpp:121
+        // C++: double thickness_delta = std::max(fabs(max_width - line.b_width), fabs(min_width - line.b_width));
+        let mut thickness_delta =
+            (max_width - line.b_width).abs().max((min_width - line.b_width).abs());
 
-        /// VariableWidth.cpp:153
+        /// VariableWidth.cpp:123
         /// C++: if (thickness_delta > tolerance)
-        if thickness_delta_a > tolerance as f64 {
-            /// Generate path from start_index to i (not included)
-            if start_index != i {
+        if thickness_delta > tolerance as f64 {
+            // VariableWidth.cpp:124-142
+            // C++: 1 generate path from start_index to i (not included)
+            if start_index != i as usize {
                 let mut path = ExtrusionPath::new(role);
                 let mut length = 0.0;
                 let mut sum = 0.0;
 
-                for idx in start_index..i {
+                for idx in start_index..(i as usize) {
                     let l = lines[idx].length();
                     length += l;
                     sum += l * 0.5 * (lines[idx].a_width + lines[idx].b_width);
                     path.polyline.points.push(lines[idx].a);
                 }
-                path.polyline.points.push(lines[i].a);
+                path.polyline.points.push(lines[i as usize].a);
 
-                if length > (SCALING_FACTOR as f64 * 0.001) {
+                if length > SCALED_EPSILON {
                     let w = sum / length;
                     let w_mm = w / SCALING_FACTOR as f64;
                     let new_width = w_mm + flow.height() * (1.0 - 0.25 * PI);
-                    path.width = new_width;
-                    path.height = flow.height();
-
-                    let new_flow = flow.with_width(new_width).ok();
-                    if let Some(f) = new_flow {
-                        path.mm3_per_mm = f.mm3_per_mm().unwrap_or(0.0);
+                    if let Ok(new_flow) = flow.with_width(new_width) {
+                        path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
+                        path.width = new_flow.width();
+                        path.height = new_flow.height();
+                        paths.push(path);
                     }
-
-                    paths.push(path);
                 }
             }
 
-            start_index = i;
+            // VariableWidth.cpp:144-146
+            start_index = i as usize;
             max_width = line.a_width;
             min_width = line.a_width;
+
+            // VariableWidth.cpp:148-182
+            // C++: 2 handle the i-th segment — subdivide if internal width delta is large.
+            thickness_delta = (line.a_width - line.b_width).abs();
+            if thickness_delta > tolerance as f64 {
+                // C++: segments = (unsigned int)ceil(thickness_delta / tolerance);
+                let segments = (thickness_delta / tolerance as f64).ceil() as usize;
+                let seg_len = line_len / segments as f64;
+
+                let mut pp: Vec<Point> = Vec::new();
+                let mut width: Vec<f64> = Vec::new();
+
+                // C++: pp.push_back(line.a); width.push_back(line.a_width);
+                pp.push(line.a);
+                width.push(line.a_width);
+
+                let dx = (line.b.x - line.a.x) as f64;
+                let dy = (line.b.y - line.a.y) as f64;
+                let dlen = (dx * dx + dy * dy).sqrt();
+                let (nx, ny) = if dlen > 0.0 { (dx / dlen, dy / dlen) } else { (0.0, 0.0) };
+
+                for j in 1..segments {
+                    // C++: pp.push_back((line.a + (line.b - line.a).normalized() * (j*seg_len)).cast<coord_t>());
+                    let off = j as f64 * seg_len;
+                    let px = line.a.x as f64 + nx * off;
+                    let py = line.a.y as f64 + ny * off;
+                    pp.push(Point::new(px as Coord, py as Coord));
+
+                    // C++: w = line.a_width + (j*seg_len) * (line.b_width - line.a_width) / line_len;
+                    let w = line.a_width + off * (line.b_width - line.a_width) / line_len;
+                    width.push(w);
+                    width.push(w);
+                }
+
+                // C++: pp.push_back(line.b); width.push_back(line.b_width);
+                pp.push(line.b);
+                width.push(line.b_width);
+
+                // C++: lines.erase(lines.begin() + i);
+                lines.remove(i as usize);
+                // C++: for (j=0; j<segments; ++j) insert new_line at i+j
+                for j in 0..segments {
+                    // C++: ThickLine new_line(pp[j], pp[j+1]); new_line.a_width=...; new_line.b_width=...;
+                    let new_line = ThickLine::new(pp[j], pp[j + 1], width[2 * j], width[2 * j + 1]);
+                    lines.insert(i as usize + j, new_line);
+                }
+                // C++: --i; continue; — the for-loop's ++i then re-lands on the
+                // first newly-inserted segment. Equivalent here: decrement, then
+                // fall through to the `i += 1` at the bottom of the loop.
+                i -= 1;
+            }
         } else {
-            // Update max and min width
+            // VariableWidth.cpp:185-188
+            // C++: just update the max and min width and continue
             max_width = max_width.max(line.a_width.max(line.b_width));
             min_width = min_width.min(line.a_width.min(line.b_width));
         }
+
+        i += 1;
     }
 
-    /// Handle remaining segments
-    /// VariableWidth.cpp:195-211
-    if start_index < lines.len() {
+    /// VariableWidth.cpp:190-209 — handle the remaining segment
+    let final_size = lines.len();
+    if start_index < final_size {
         let mut path = ExtrusionPath::new(role);
         let mut length = 0.0;
         let mut sum = 0.0;
 
-        for idx in start_index..lines.len() {
+        for idx in start_index..final_size {
             let l = lines[idx].length();
             length += l;
-            sum += l * 0.5 * (lines[idx].a_width + lines[idx].b_width);
+            sum += l * (lines[idx].a_width + lines[idx].b_width) * 0.5;
             path.polyline.points.push(lines[idx].a);
         }
-        path.polyline.points.push(lines[lines.len() - 1].b);
+        path.polyline.points.push(lines[final_size - 1].b);
 
-        if length > (SCALING_FACTOR as f64 * 0.001) {
+        if length > SCALED_EPSILON {
             let w = sum / length;
             let w_mm = w / SCALING_FACTOR as f64;
             let new_width = w_mm + flow.height() * (1.0 - 0.25 * PI);
-            path.width = new_width;
-            path.height = flow.height();
-
-            let new_flow = flow.with_width(new_width).ok();
-            if let Some(f) = new_flow {
-                path.mm3_per_mm = f.mm3_per_mm().unwrap_or(0.0);
+            if let Ok(new_flow) = flow.with_width(new_width) {
+                path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
+                path.width = new_flow.width();
+                path.height = new_flow.height();
+                paths.push(path);
             }
-
-            paths.push(path);
         }
     }
 
@@ -1382,17 +1460,16 @@ fn traverse_loops(
                 role
             };
 
-        /// Create path with determined role, splitting at seam position
+        /// PerimeterGenerator.cpp:441-449
+        /// C++: ExtrusionPath path(role);
+        /// C++: path.polyline = polygon.split_at_first_point();
+        /// C++: path.overhang_degree = 0; path.curve_degree = 0;
+        /// Faithful: the perimeter generator does NOT place the seam here — it
+        /// splits the loop at its first point. Seam placement is a later
+        /// (gcode) stage in BambuStudio. (Previously this used a SeamPlacer,
+        /// which diverged from the C++ control flow.)
         let mut path = ExtrusionPath::new(effective_role);
-        // Seam placement using SeamPlacer (ported from BambuStudio).
-        // Uses angle-based scoring (prefers concave corners), rear bias,
-        // and inter-layer alignment when a previous seam position is known.
-        let seam_idx = crate::gcode::seam_placer::find_best_seam_index(
-            polygon,
-            None, // TODO: pass previous layer's seam position for alignment
-            &crate::gcode::seam_placer::SeamPlacerConfig::default(),
-        );
-        path.polyline = polygon.split_at_index(seam_idx as i32);
+        path.polyline = polygon.split_at_first_point();
         path.overhang_degree = 0;
         path.curve_degree = 0;
         path.mm3_per_mm = extrusion_mm3_per_mm;
@@ -1587,15 +1664,30 @@ impl PerimeterGenerator {
         let mut entities = ExtrusionEntityCollection::new();
         let mut infill_contour: ExPolygons = Vec::new();
 
+        // PerimeterGenerator.cpp:1499-1500
+        // C++: double surface_simplify_resolution = (enable_arc_fitting && fuzzy_skin == None)
+        //          ? 0.2 * m_scaled_resolution : m_scaled_resolution;
+        let surface_simplify_resolution = if self.config.arc_fitting_enabled
+            && self.config.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None
+        {
+            0.2 * self.config.surface_simplify_resolution
+        } else {
+            self.config.surface_simplify_resolution
+        };
+
         for surface in slices.iter() {
             // PerimeterGenerator.cpp:1507  loop_number = wall_loops + extra_perimeters - 1
             let loop_number: i32 = self.config.perimeter_count as i32 - 1;
 
             // PerimeterGenerator.cpp:1511-1512  offset for the outer wall.
+            // C++: ExPolygons last = offset_ex(surface.expolygon.simplify_p(surface_simplify_resolution),
+            //          apply_precise_outer_wall ? -(ext_perimeter_width - ext_perimeter_spacing)
+            //                                   : -(ext_perimeter_width/2. - ext_perimeter_spacing/2.));
             // (precise_outer_wall not modelled here -> use the simple inset.)
+            let simplified = union_polygons_ex(&surface.simplify_p(surface_simplify_resolution));
             let inset = -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0);
             let last = offset_expolygons(
-                &[surface.clone()],
+                &simplified,
                 inset / crate::SCALING_FACTOR,
                 self.config.join_type,
             );
@@ -1755,6 +1847,67 @@ impl PerimeterGenerator {
                 ordered_extrusions.push(best_path);
             }
 
+            // PerimeterGenerator.cpp:1748-1790 — BBS: adjust wall generate seq for
+            // InnerOuterInner. Re-order each (outer, first_internal, second_internal)
+            // triplet so the second internal wall is printed first, then outer, then
+            // first internal (a rotation of the three).
+            if self.config.wall_sequence == crate::print_config::WallSequence::InnerOuterInner {
+                // 3 walls minimum needed to do inner outer inner ordering
+                if ordered_extrusions.len() > 2 {
+                    let mut position: usize = 0;
+                    loop {
+                        if position >= ordered_extrusions.len() {
+                            break;
+                        }
+                        let mut outer: i64 = -1;
+                        let mut first_internal: i64 = -1;
+                        let mut second_internal: i64 = -1;
+                        let mut arr_i: usize = position;
+                        while arr_i < ordered_extrusions.len() {
+                            match ordered_extrusions[arr_i].inset_idx {
+                                0 => {
+                                    // external perimeter
+                                    if outer == -1 {
+                                        outer = arr_i as i64;
+                                    }
+                                }
+                                1 => {
+                                    // first internal wall
+                                    if first_internal == -1 && arr_i as i64 > outer && outer != -1 {
+                                        first_internal = arr_i as i64;
+                                    }
+                                }
+                                2 => {
+                                    // second internal wall
+                                    if second_internal == -1
+                                        && arr_i as i64 > first_internal
+                                        && outer != -1
+                                    {
+                                        second_internal = arr_i as i64;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            if outer > -1 && first_internal > -1 && second_internal > -1 {
+                                break; // found all three perimeters to re-order
+                            }
+                            arr_i += 1;
+                        }
+                        if outer > -1 && first_internal > -1 && second_internal > -1 {
+                            // C++: rotate the triplet (temp = second; second = first; first = outer; outer = temp)
+                            let (o, fi, si) =
+                                (outer as usize, first_internal as usize, second_internal as usize);
+                            ordered_extrusions.swap(si, fi);
+                            ordered_extrusions.swap(fi, o);
+                        } else {
+                            break; // no more candidates to re-order
+                        }
+                        // arr_i points at the last index inspected (the break point)
+                        position = arr_i + 1;
+                    }
+                }
+            }
+
             // PerimeterGenerator.cpp:1792  traverse_extrusions -> append to loops.
             for ext in ordered_extrusions.iter() {
                 let role = if ext.inset_idx == 0 {
@@ -1764,12 +1917,21 @@ impl PerimeterGenerator {
                 };
                 if let Some(path) = self.arachne_line_to_extrusion_path(ext, role) {
                     if ext.is_closed {
-                        let loop_role = if ext.inset_idx == 0 {
+                        // PerimeterGenerator.cpp:780 — elrDefault if contour, else elrPerimeterHole.
+                        let is_contour = ext.is_contour();
+                        let loop_role = if is_contour {
                             ExtrusionLoopRole::DEFAULT
                         } else {
-                            ExtrusionLoopRole::CONTOUR_INTERNAL_PERIMETER
+                            ExtrusionLoopRole::PERIMETER_HOLE
                         };
-                        let eloop = ExtrusionLoop::new(vec![path], loop_role);
+                        let mut eloop = ExtrusionLoop::new(vec![path], loop_role);
+                        // PerimeterGenerator.cpp:781-785 — restore loop orientation:
+                        // CCW for contours, CW for holes.
+                        if is_contour {
+                            eloop.make_counter_clockwise();
+                        } else {
+                            eloop.make_clockwise();
+                        }
                         entities.append(ExtrusionEntityType::Loop(eloop));
                     } else {
                         entities.append(ExtrusionEntityType::Path(path));
@@ -1777,19 +1939,92 @@ impl PerimeterGenerator {
                 }
             }
 
-            // PerimeterGenerator.cpp:1795  spacing select (kept for parity; unused below).
-            let _spacing = if total_perimeters.len() == 1 {
+            // PerimeterGenerator.cpp:1795  const coord_t spacing = (total_perimeters.size()==1)
+            //                                  ? ext_perimeter_spacing2 : perimeter_spacing;
+            let spacing = if total_perimeters.len() == 1 {
                 ext_perimeter_spacing2
             } else {
                 perimeter_spacing
             };
 
-            infill_contour.append(&mut surface_infill);
+            // PerimeterGenerator.cpp:1798  min_perimeter_infill_spacing = solid_infill_spacing * (1 - INSET_OVERLAP_TOLERANCE)
+            let min_perimeter_infill_spacing =
+                self.config.solid_infill_spacing * (1.0 - INSET_OVERLAP_TOLERANCE);
+
+            // PerimeterGenerator.cpp:1800  add_infill_contour_for_arachne(infill_contour=surface_infill,
+            //     loops=loop_number, ext_perimeter_spacing, perimeter_spacing, min_perimeter_infill_spacing,
+            //     spacing, is_inner_part=false). Faithful port of the body (1436-1466).
+            let infill_pieces = Self::add_infill_contour_for_arachne(
+                surface_infill,
+                loop_number,
+                ext_perimeter_spacing as f64 / crate::SCALING_FACTOR,
+                perimeter_spacing as f64 / crate::SCALING_FACTOR,
+                min_perimeter_infill_spacing,
+                spacing as f64 / crate::SCALING_FACTOR,
+                false,
+                self.config.infill_wall_overlap,
+                self.config.surface_simplify_resolution,
+                self.config.join_type,
+            );
+            infill_contour.extend(infill_pieces);
         }
 
         result.entities = entities;
         result.infill_area = infill_contour;
         result
+    }
+
+    /// PerimeterGenerator.cpp:1436-1466
+    /// C++: void PerimeterGenerator::add_infill_contour_for_arachne(ExPolygons infill_contour, int loops,
+    ///          coord_t ext_perimeter_spacing, coord_t perimeter_spacing, coord_t min_perimeter_infill_spacing,
+    ///          coord_t spacing, bool is_inner_part)
+    /// Returns the fill-surface ExPolygons (the C++ appends these to fill_surfaces with stInternal).
+    /// Spacing args are in mm here (the crate's offset/offset2 take mm).
+    #[allow(clippy::too_many_arguments)]
+    fn add_infill_contour_for_arachne(
+        mut infill_contour: ExPolygons,
+        loops: i32,
+        ext_perimeter_spacing: f64,
+        perimeter_spacing: f64,
+        min_perimeter_infill_spacing: f64,
+        spacing: f64,
+        is_inner_part: bool,
+        infill_wall_overlap: f64,
+        surface_simplify_resolution: f64,
+        join_type: OffsetJoinType,
+    ) -> ExPolygons {
+        // C++: if (offset_ex(infill_contour, -float(spacing / 2.)).empty()) infill_contour.clear();
+        if shrink(&infill_contour, spacing / 2.0, join_type).is_empty() {
+            infill_contour.clear();
+        }
+
+        // C++: coord_t insert = (loops < 0) ? 0 : ext_perimeter_spacing;
+        //      if (is_inner_part || loops > 0) insert = perimeter_spacing;
+        let mut insert = if loops < 0 { 0.0 } else { ext_perimeter_spacing };
+        if is_inner_part || loops > 0 {
+            insert = perimeter_spacing;
+        }
+
+        // C++: insert = scale_(infill_wall_overlap.get_abs_value(unscale<double>(insert)));
+        // get_abs_value with a fraction: insert_mm * infill_wall_overlap.
+        insert = infill_wall_overlap * insert;
+
+        // C++: Polygons inner_pp; for (ExPolygon &ex : infill_contour) ex.simplify_p(m_scaled_resolution, &inner_pp);
+        let mut inner_pp: Vec<Polygon> = Vec::new();
+        for ex in &infill_contour {
+            ex.simplify_p_into(surface_simplify_resolution, &mut inner_pp);
+        }
+        let inner_union = union_polygons_ex(&inner_pp);
+
+        // C++: this->fill_surfaces->append(offset2_ex(union_ex(inner_pp),
+        //          -min_perimeter_infill_spacing/2., insert + min_perimeter_infill_spacing/2.), stInternal);
+        // (fill_no_overlap uses offset2_ex(..., -.../2, +.../2) — not modelled in PerimeterResult.)
+        offset2(
+            &inner_union,
+            min_perimeter_infill_spacing / 2.0,
+            insert + min_perimeter_infill_spacing / 2.0,
+            join_type,
+        )
     }
 
     /// Convert a faithful Arachne `ExtrusionLine` to our `ExtrusionPath`.
