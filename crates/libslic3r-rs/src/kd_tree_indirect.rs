@@ -283,6 +283,37 @@ where
         }
     }
 
+    /// Calculate descent mask for tree traversal with an explicit `epsilon`.
+    /// KDTreeIndirect.hpp:61-70  template<typename CoordType> unsigned int descent_mask(...)
+    ///
+    /// Identical to [`Self::descent_mask`] except the `CoordType(EPSILON)` term is
+    /// supplied by the caller as `epsilon` rather than via `T::from(EPSILON)`. This
+    /// drops the `T: From<f64>` bound so that an `f32`-coordinate tree (the C++
+    /// `KDTreeIndirect<3, float, ...>` used by the seam placer) can be queried with
+    /// `epsilon = EPSILON as f32`, reproducing the `float(EPSILON)` cast exactly.
+    pub fn descent_mask_eps(
+        &self,
+        point_coord: T,
+        search_radius: T,
+        epsilon: T,
+        idx: usize,
+        dimension: usize,
+    ) -> u32
+    where
+        T: std::ops::Sub<Output = T> + std::ops::Add<Output = T>,
+    {
+        // KDTreeIndirect.hpp:64  CoordType dist = point_coord - this->coordinate(idx, dimension);
+        let dist = point_coord - (self.coordinate)(idx, dimension);
+        // KDTreeIndirect.hpp:65-69  (dist * dist < search_radius + CoordType(EPSILON)) ? ...
+        if dist * dist < search_radius + epsilon {
+            (VisitorReturnMask::ContinueLeft as u32) | (VisitorReturnMask::ContinueRight as u32)
+        } else if dist > T::default() {
+            VisitorReturnMask::ContinueRight as u32
+        } else {
+            VisitorReturnMask::ContinueLeft as u32
+        }
+    }
+
     /// Calculate descent mask for tree traversal
     /// KDTreeIndirect.hpp:61-70  template<typename CoordType> unsigned int descent_mask(...)
     ///
@@ -447,6 +478,153 @@ where
     }
     // KDTreeIndirect.hpp:251
     ret
+}
+
+/// `find_closest_points` variant with explicit `epsilon` / `max_sentinel`.
+///
+/// Mirrors [`find_closest_points`] exactly but takes the `CoordType(EPSILON)` term
+/// (`epsilon`) and the `numeric_limits<CoordType>::max()` seed (`max_sentinel`) as
+/// parameters, dropping the `T: From<f64>` bound. This lets an `f32` tree (the C++
+/// `KDTreeIndirect<3, float, ...>` of the seam placer) be queried by passing
+/// `epsilon = EPSILON as f32` and `max_sentinel = f32::MAX`.
+pub fn find_closest_points_eps<const K: usize, const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+    epsilon: T,
+    max_sentinel: T,
+    filter: Filter,
+) -> [usize; K]
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    // KDTreeIndirect.hpp:218-220
+    let mut results = [(NPOS, max_sentinel); K];
+
+    // KDTreeIndirect.hpp:221-244
+    let mut visitor = |idx: usize, dimension: usize| -> u32 {
+        if filter(idx) {
+            // KDTreeIndirect.hpp:224-228
+            let mut dist = T::default();
+            for i in 0..N {
+                let d = point[i] - (kdtree.coordinate)(idx, i);
+                dist += d * d;
+            }
+
+            // KDTreeIndirect.hpp:230
+            let res = (idx, dist);
+            // KDTreeIndirect.hpp:231-234  std::lower_bound
+            let mut it = K;
+            for i in 0..K {
+                if !(results[i].1 < dist) {
+                    it = i;
+                    break;
+                }
+            }
+
+            // KDTreeIndirect.hpp:236-239
+            if it != K {
+                for i in ((it + 1)..K).rev() {
+                    results[i] = results[i - 1];
+                }
+                results[it] = res;
+            }
+        }
+
+        // KDTreeIndirect.hpp:241-243
+        kdtree.descent_mask_eps(point[dimension], results[0].1, epsilon, idx, dimension)
+    };
+
+    // KDTreeIndirect.hpp:247
+    kdtree.visit(visitor);
+    // KDTreeIndirect.hpp:248-251
+    let mut ret = [NPOS; K];
+    for i in 0..K {
+        ret[i] = results[i].0;
+    }
+    ret
+}
+
+/// `find_closest_point` variant with explicit `epsilon` / `max_sentinel`.
+/// KDTreeIndirect.hpp:264-271  size_t find_closest_point(...)
+pub fn find_closest_point_eps<const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    point: &P,
+    epsilon: T,
+    max_sentinel: T,
+    filter: Filter,
+) -> usize
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    find_closest_points_eps::<1, N, T, F, P, Filter>(kdtree, point, epsilon, max_sentinel, filter)[0]
+}
+
+/// `find_nearby_points` variant with explicit `epsilon`.
+/// KDTreeIndirect.hpp:280-314  std::vector<size_t> find_nearby_points(...)
+///
+/// Mirrors [`find_nearby_points`] but takes the `CoordType(EPSILON)` term as a
+/// parameter, dropping the `T: From<f64>` bound so an `f32` tree can be queried
+/// (pass `epsilon = EPSILON as f32`).
+pub fn find_nearby_points_eps<const N: usize, T, F, P, Filter>(
+    kdtree: &KDTreeIndirect<N, T, F>,
+    center: &P,
+    max_distance: T,
+    epsilon: T,
+    filter: Filter,
+) -> Vec<usize>
+where
+    T: Copy
+        + PartialOrd
+        + Default
+        + std::ops::AddAssign
+        + std::ops::Sub<Output = T>
+        + std::ops::Add<Output = T>
+        + std::ops::Mul<Output = T>,
+    F: Fn(usize, usize) -> T,
+    P: std::ops::Index<usize, Output = T>,
+    Filter: Fn(usize) -> bool,
+{
+    // KDTreeIndirect.hpp:295  max_distance_squared(max_distance*max_distance)
+    let max_distance_squared = max_distance * max_distance;
+    let mut result = Vec::new();
+
+    let mut visitor = |idx: usize, dimension: usize| -> u32 {
+        // KDTreeIndirect.hpp:297-307
+        if filter(idx) {
+            let mut dist = T::default();
+            for i in 0..N {
+                let d = center[i] - (kdtree.coordinate)(idx, i);
+                dist += d * d;
+            }
+            // KDTreeIndirect.hpp:304-306
+            if dist < max_distance_squared {
+                result.push(idx);
+            }
+        }
+        // KDTreeIndirect.hpp:308
+        kdtree.descent_mask_eps(center[dimension], max_distance_squared, epsilon, idx, dimension)
+    };
+
+    kdtree.visit(visitor);
+    result
 }
 
 /// Find K closest points without filter

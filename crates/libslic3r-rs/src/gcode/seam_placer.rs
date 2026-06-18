@@ -20,33 +20,39 @@
 //! `LayerRegion::{region, flow}`) are ported faithfully as well:
 //! `gather_seam_candidates`, `calculate_candidates_visibility`,
 //! `calculate_overhangs_and_layer_embedding`, `gather_all_seams_of_object`,
-//! `filter_scarf_seam_switch_by_angle`.
+//! `filter_scarf_seam_switch_by_angle`. The seam-alignment pipeline
+//! (`find_next_seam_in_layer`, `find_seam_string`, `align_seam_points`) is now
+//! ported faithfully as well: the per-layer f32 `points_tree` is queried via the
+//! new `find_nearby_points_eps` (which takes the `float(EPSILON)` term as a
+//! parameter rather than `T: From<f64>`), and the cubic B-spline fit maps to the
+//! crate's `Geometry::fit_cubic_bspline` / `get_fitted_value`.
 //!
 //! BLOCKED (still-missing non-config dependencies):
 //! - `SeamPlacer::init` (SeamPlacer.cpp:1395) — orchestrates the still-blocked
-//!   `gather_enforcers_blockers`, `compute_global_occlusion` and
-//!   `align_seam_points` below.
-//! - `SeamPlacer::place_seam` (SeamPlacer.cpp:1463) — needs
-//!   `find_closest_point` over the per-layer f32 `points_tree`; the crate's
-//!   `KDTreeIndirect` query functions bound `T: From<f64>`, which `f32` does
-//!   not satisfy.
+//!   `gather_enforcers_blockers` and `compute_global_occlusion` below.
+//! - `SeamPlacer::place_seam` (SeamPlacer.cpp:1463) — derives `po` from
+//!   `layer->object()`, but the crate's `Layer::object()` returns an `ObjectRef`
+//!   exposing only `config()`/`print()`, not `slicing_parameters().raft_layers()`,
+//!   the per-object layer vector, nor the `m_seam_per_object` lookup keyed by the
+//!   `PrintObject*`. A faithful port would need those accessors threaded in.
+//!   `find_closest_point` over the f32 tree is otherwise available via the new
+//!   `find_closest_point_eps`.
 //! - `SeamPlacerImpl::compute_global_occlusion` (SeamPlacer.cpp:574) — needs
 //!   `PrintObject::{model_object, trafo_centered}` (not ported) and the f32
 //!   AABB ray casting blocked inside `raycast_visibility`.
 //! - `SeamPlacerImpl::gather_enforcers_blockers` (SeamPlacer.cpp:644) — needs
 //!   `ModelVolume` seam-painting facet accessors (`is_seam_painted`,
 //!   `seam_facets.get_facets_strict`, `EnforcerBlockerType`), not ported.
-//! - `SeamPlacer::{find_next_seam_in_layer, find_seam_string,
-//!   align_seam_points}` (SeamPlacer.cpp:1053/1108/1161) — need
-//!   `find_nearby_points` over the same f32 `points_tree` (the `T: From<f64>`
-//!   KD-tree query bound again).
 
 use crate::aabb_tree_indirect::Tree3F;
 use crate::aabb_tree_lines::{build_aabb_tree_over_indexed_lines, squared_distance_to_indexed_lines, tree2d};
 use crate::extrusion_entity::{is_perimeter, ExtrusionEntityType, ExtrusionRole};
 use crate::flow::FlowRole;
 use crate::geometry::{Line, LineF, Point, PointF, Polygon, Polygons};
-use crate::kd_tree_indirect::KDTreeIndirect;
+use crate::geometry::bicubic::CubicBSplineKernel;
+use crate::geometry::curves::fit_cubic_bspline;
+use crate::kd_tree_indirect::{find_nearby_points_eps, KDTreeIndirect};
+use crate::libslic3r::EPSILON;
 use crate::layer::{Layer, LayerRegion};
 use crate::print_object::PrintObject;
 use crate::triangle_set_sampling::{indexed_triangle_set, TriangleSetSamples};
@@ -1934,6 +1940,352 @@ impl SeamPlacer {
 
             // SeamPlacer.cpp:1042 — prev_layer_distancer.swap(current_layer_distancer);
             prev_layer_distancer = Some(current_layer_distancer);
+        }
+    }
+
+    /// Estimates, if there is good seam point in the layer_idx which is close to
+    /// last_point_pos. Used by `align_seam_points`.
+    /// SeamPlacer.cpp:1053-1105
+    ///
+    /// C++ queries `*layers[layer_idx].points_tree` (an f32 `KDTreeIndirect`); this
+    /// port builds that tree on demand via [`LayerSeams::build_points_tree`] and
+    /// queries it with [`find_nearby_points_eps`] (`epsilon = EPSILON as f32`,
+    /// reproducing C++ `float(EPSILON)`).
+    pub fn find_next_seam_in_layer(
+        layers: &[LayerSeams],
+        projected_position: &Vec3f,
+        layer_idx: usize,
+        max_distance: f32,
+        comparator: &SeamComparator,
+    ) -> Option<(usize, usize)> {
+        // SeamPlacer.cpp:1060
+        let points_tree = layers[layer_idx].build_points_tree();
+        let nearby_points_indices = find_nearby_points_eps(
+            &points_tree,
+            projected_position,
+            max_distance,
+            EPSILON as f32,
+            |_| true,
+        );
+
+        // SeamPlacer.cpp:1062
+        if nearby_points_indices.is_empty() {
+            return None;
+        }
+
+        // SeamPlacer.cpp:1064-1065
+        let mut best_nearby_point_index = nearby_points_indices[0];
+        let mut nearest_point_index = nearby_points_indices[0];
+
+        let layer = &layers[layer_idx];
+        let projected_xy = projected_position.xy();
+
+        // helper resolving a candidate's owning perimeter (the C++
+        // `point.perimeter` back-reference) into this layer's `perimeters`.
+        let perim_of = |pt_idx: usize| -> &Perimeter {
+            &layer.perimeters[layer.points[pt_idx].perimeter]
+        };
+
+        // SeamPlacer.cpp:1068-1081 — Now find best nearby point, nearest point.
+        for &nearby_point_index in &nearby_points_indices {
+            let point = &layer.points[nearby_point_index];
+            // SeamPlacer.cpp:1070-1072
+            if perim_of(nearby_point_index).finalized {
+                continue; // skip over finalized perimeters
+            }
+            // SeamPlacer.cpp:1073-1076
+            if comparator.is_first_better(point, &layer.points[best_nearby_point_index], &projected_xy)
+                || perim_of(best_nearby_point_index).finalized
+            {
+                best_nearby_point_index = nearby_point_index;
+            }
+            // SeamPlacer.cpp:1077-1080
+            if (point.position - projected_position).norm_squared()
+                < (layer.points[nearest_point_index].position - projected_position).norm_squared()
+                || perim_of(nearest_point_index).finalized
+            {
+                nearest_point_index = nearby_point_index;
+            }
+        }
+
+        // SeamPlacer.cpp:1083-1084
+        let best_nearby_point = &layer.points[best_nearby_point_index];
+        let nearest_point = &layer.points[nearest_point_index];
+
+        // SeamPlacer.cpp:1086-1089
+        if perim_of(nearest_point_index).finalized {
+            // all points are from already finalized perimeter, skip
+            return None;
+        }
+
+        // SeamPlacer.cpp:1091-1092 — from the nearest_point, deduce index of seam.
+        let nearest_perimeter = perim_of(nearest_point_index);
+        let next_layer_seam = &layer.points[nearest_perimeter.seam_index];
+
+        // SeamPlacer.cpp:1094-1097 — First try to pick central enforcer if present.
+        // sqr(3 * max_distance)
+        let three_md = 3.0 * max_distance;
+        if next_layer_seam.central_enforcer
+            && (next_layer_seam.position - projected_position).norm_squared() < three_md * three_md
+        {
+            return Some((layer_idx, nearest_perimeter.seam_index));
+        }
+
+        // SeamPlacer.cpp:1099-1100 — First try to align the nearest.
+        if comparator.is_first_not_much_worse(nearest_point, next_layer_seam) {
+            return Some((layer_idx, nearest_point_index));
+        }
+        // SeamPlacer.cpp:1101-1102 — then try the best nearby point.
+        if comparator.is_first_not_much_worse(best_nearby_point, next_layer_seam) {
+            return Some((layer_idx, best_nearby_point_index));
+        }
+
+        // SeamPlacer.cpp:1104
+        None
+    }
+
+    /// SeamPlacer.cpp:1107-1154 — cluster nearby seams across layers into a string.
+    pub fn find_seam_string(
+        &self,
+        po: &PrintObject,
+        start_seam: (usize, usize),
+        comparator: &SeamComparator,
+    ) -> Vec<(usize, usize)> {
+        // SeamPlacer.cpp:1111-1112
+        let layers = &self.seam_data.layers;
+        let layer_idx = start_seam.0 as i64;
+
+        // SeamPlacer.cpp:1114-1118 — initialize search.
+        let mut next_layer = layer_idx + 1;
+        let mut step: i64 = 1;
+        let mut prev_point_index = start_seam;
+        let mut seam_string: Vec<(usize, usize)> = vec![start_seam];
+
+        // SeamPlacer.cpp:1131 — max_distance is invariant across the search.
+        let start_flow_width = layers[start_seam.0].perimeters
+            [layers[start_seam.0].points[start_seam.1].perimeter]
+            .flow_width;
+        let max_distance = SEAM_ALIGN_TOLERABLE_DIST_FACTOR * start_flow_width;
+
+        // SeamPlacer.cpp:1126
+        while next_layer >= 0 {
+            // SeamPlacer.cpp:1127-1130 — if past the top, reverse downward.
+            if next_layer >= layers.len() as i64 {
+                // reverse_lookup_direction (SeamPlacer.cpp:1120-1124)
+                step = -1;
+                prev_point_index = start_seam;
+                next_layer = layer_idx - 1;
+                if next_layer < 0 {
+                    break;
+                }
+            }
+            // SeamPlacer.cpp:1132-1134
+            let prev_position = layers[prev_point_index.0].points[prev_point_index.1].position;
+            let mut projected_position = prev_position;
+            projected_position.z = po.layers()[next_layer as usize].slice_z as f32;
+
+            // SeamPlacer.cpp:1136
+            let maybe_next_seam = Self::find_next_seam_in_layer(
+                layers,
+                &projected_position,
+                next_layer as usize,
+                max_distance,
+                comparator,
+            );
+
+            // SeamPlacer.cpp:1138-1150
+            if let Some(next_seam) = maybe_next_seam {
+                seam_string.push(next_seam);
+                prev_point_index = *seam_string.last().unwrap();
+            } else if step == 1 {
+                // reverse_lookup_direction (SeamPlacer.cpp:1120-1124)
+                step = -1;
+                prev_point_index = start_seam;
+                next_layer = layer_idx - 1;
+                if next_layer < 0 {
+                    break;
+                }
+            } else {
+                break;
+            }
+            // SeamPlacer.cpp:1151
+            next_layer += step;
+        }
+        // SeamPlacer.cpp:1153
+        seam_string
+    }
+
+    /// Clusters already chosen seam points into strings across multiple layers,
+    /// and then aligns the strings via polynomial fit.
+    /// SeamPlacer.cpp:1161-1307
+    ///
+    /// C++ uses the per-object `m_seam_per_object[po].layers`; this port aligns
+    /// `self.seam_data.layers` (single object). `Geometry::fit_cubic_bspline`
+    /// maps to [`fit_cubic_bspline`] with `endpoints_level_of_freedom = 0`,
+    /// `dimension = 2`. `curve.get_fitted_value(z)` maps to
+    /// `get_fitted_value::<CubicBSplineKernel>(z)`.
+    pub fn align_seam_points(&mut self, po: &PrintObject, comparator: &SeamComparator) {
+        // SeamPlacer.cpp:1183-1184 — gather all seams.
+        let mut seams = Self::gather_all_seams_of_object(&self.seam_data.layers);
+
+        // SeamPlacer.cpp:1187-1189 — stable_sort by is_first_better.
+        // std::stable_sort with a strict-weak "is_first_better(left,right)" comparator:
+        // left should sort before right when it is the better seam.
+        {
+            let layers = &self.seam_data.layers;
+            seams.sort_by(|&l, &r| {
+                let a = &layers[l.0].points[l.1];
+                let b = &layers[r.0].points[r.1];
+                if comparator.is_first_better(a, b, &Vec2f::new(0.0, 0.0)) {
+                    std::cmp::Ordering::Less
+                } else if comparator.is_first_better(b, a, &Vec2f::new(0.0, 0.0)) {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            });
+        }
+
+        // SeamPlacer.cpp:1199-1200
+        let mut global_index: i64 = 0;
+        while global_index < seams.len() as i64 {
+            // SeamPlacer.cpp:1201-1204
+            let layer_idx = seams[global_index as usize].0;
+            let seam_index = seams[global_index as usize].1;
+            global_index += 1;
+            // SeamPlacer.cpp:1205-1207
+            let cand_perim =
+                self.seam_data.layers[layer_idx].points[seam_index].perimeter;
+            if self.seam_data.layers[layer_idx].perimeters[cand_perim].finalized {
+                // This perimeter is already aligned, skip seam
+                continue;
+            }
+
+            // SeamPlacer.cpp:1209
+            let mut seam_string = self.find_seam_string(po, (layer_idx, seam_index), comparator);
+            // SeamPlacer.cpp:1210
+            let step_size = 1 + seam_string.len() / 20;
+            // SeamPlacer.cpp:1211-1216 — try alternative starts, keep the longest.
+            let mut alternative_start = 0usize;
+            while alternative_start < seam_string.len() {
+                let start_layer_idx = seam_string[alternative_start].0;
+                let seam_idx = {
+                    let p = self.seam_data.layers[start_layer_idx].points
+                        [seam_string[alternative_start].1]
+                        .perimeter;
+                    self.seam_data.layers[start_layer_idx].perimeters[p].seam_index
+                };
+                let alternative_seam_string =
+                    self.find_seam_string(po, (start_layer_idx, seam_idx), comparator);
+                if alternative_seam_string.len() > seam_string.len() {
+                    seam_string = alternative_seam_string;
+                }
+                alternative_start += step_size;
+            }
+            // SeamPlacer.cpp:1217-1220
+            if seam_string.len() < SEAM_ALIGN_MINIMUM_STRING_SEAMS {
+                // string NOT long enough to be worth aligning, skip
+                continue;
+            }
+
+            // SeamPlacer.cpp:1224-1225 — sort by layer index.
+            seam_string.sort_by(|a, b| a.0.cmp(&b.0));
+
+            // SeamPlacer.cpp:1228 — repeat alignment for current seam.
+            global_index -= 1;
+
+            // SeamPlacer.cpp:1231-1233
+            let n = seam_string.len();
+            let mut observations: Vec<Vec<f32>> = vec![vec![0.0, 0.0]; n];
+            let mut observation_points: Vec<f32> = vec![0.0; n];
+            let mut weights: Vec<f32> = vec![0.0; n];
+
+            // SeamPlacer.cpp:1235 — angle_3d.
+            let angle_3d = |a: Vec3f, b: Vec3f| -> f32 {
+                a.normalize().dot(&b.normalize()).acos().abs()
+            };
+            // SeamPlacer.cpp:1237 — angle_weight.
+            let angle_weight = |angle: f32| -> f32 { 1.0 / (0.1 + compute_angle_penalty(angle)) };
+
+            // SeamPlacer.cpp:1240-1259 — gather points positions and weights.
+            let layers = &self.seam_data.layers;
+            let mut total_length = 0.0_f32;
+            let mut last_point_pos = layers[seam_string[0].0].points[seam_string[0].1].position;
+            for index in 0..n {
+                let current = &layers[seam_string[index].0].points[seam_string[index].1];
+                // SeamPlacer.cpp:1244-1248
+                let mut layer_angle = 0.0_f32;
+                if index > 0 && index < n - 1 {
+                    let prev_pos =
+                        layers[seam_string[index - 1].0].points[seam_string[index - 1].1].position;
+                    let next_pos =
+                        layers[seam_string[index + 1].0].points[seam_string[index + 1].1].position;
+                    layer_angle = angle_3d(current.position - prev_pos, next_pos - current.position);
+                }
+                // SeamPlacer.cpp:1249-1251
+                let cp = current.position.xy();
+                observations[index] = vec![cp.x, cp.y];
+                observation_points[index] = current.position.z;
+                weights[index] = angle_weight(current.local_ccw_angle);
+                // SeamPlacer.cpp:1252-1256
+                let mut sign = if layer_angle > 2.0 * current.local_ccw_angle.abs() {
+                    -0.8_f32
+                } else {
+                    1.0_f32
+                };
+                if current.r#type == EnforcedBlockedSeamPoint::Enforced {
+                    sign = 1.0;
+                    weights[index] += 3.0;
+                }
+                // SeamPlacer.cpp:1257-1258
+                total_length += sign * (last_point_pos - current.position).norm();
+                last_point_pos = current.position;
+            }
+
+            // SeamPlacer.cpp:1261-1263 — Curve fitting.
+            // size_t number_of_segments = max(1, max(0.0f, total_length) / seam_align_mm_per_segment)
+            let number_of_segments = std::cmp::max(
+                1usize,
+                (total_length.max(0.0) / SEAM_ALIGN_MM_PER_SEGMENT) as usize,
+            );
+            let curve = fit_cubic_bspline(
+                &observations,
+                &observation_points,
+                &weights,
+                number_of_segments,
+                0, // endpoints_level_of_freedom (C++ default)
+                2, // dimension
+            );
+
+            // SeamPlacer.cpp:1267-1283 — apply alignment, store into Perimeter.
+            for index in 0..n {
+                let pair = seam_string[index];
+                let pt = &self.seam_data.layers[pair.0].points[pair.1];
+                // SeamPlacer.cpp:1269
+                let mut t = (pt.local_ccw_angle.abs() / SHARP_ANGLE_SNAPPING_THRESHOLD)
+                    .powf(3.0)
+                    .min(1.0);
+                // SeamPlacer.cpp:1270
+                if pt.r#type == EnforcedBlockedSeamPoint::Enforced {
+                    t = t.max(0.4);
+                }
+
+                // SeamPlacer.cpp:1272-1273
+                let current_pos = pt.position;
+                let fitted = curve.get_fitted_value::<CubicBSplineKernel>(current_pos.z);
+                let fitted_pos = Vec2f::new(fitted[0], fitted[1]);
+
+                // SeamPlacer.cpp:1276 — interpolate between current and fitted.
+                let fitted_3d = Vec3f::new(fitted_pos.x, fitted_pos.y, current_pos.z);
+                let final_position = t * current_pos + (1.0 - t) * fitted_3d;
+
+                // SeamPlacer.cpp:1279-1282
+                let perim_idx = self.seam_data.layers[pair.0].points[pair.1].perimeter;
+                let perimeter = &mut self.seam_data.layers[pair.0].perimeters[perim_idx];
+                perimeter.seam_index = pair.1;
+                perimeter.final_seam_position = final_position;
+                perimeter.finalized = true;
+            }
         }
     }
 

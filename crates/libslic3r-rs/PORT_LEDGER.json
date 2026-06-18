@@ -2780,7 +2780,8 @@
     "rust_exists": true,
     "loc": 1530,
     "status": "partial",
-    "priority": 5
+    "priority": 5,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/ToolOrderUtils.cpp",
