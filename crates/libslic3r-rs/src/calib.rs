@@ -949,13 +949,15 @@ impl CalibPressureAdvance {
         filament_diameter: f32,
         print_flow_ratio: f32,
     ) -> Result<f64> {
-        // Calib.cpp:35
+        // Calib.cpp:35 — Flow(line_width, layer_height, nozzle_diameter); nozzle_diameter is float.
         let line_flow = Flow::new(line_width, layer_height, nozzle_diameter as f64)?;
-        // Calib.cpp:36
+        // Calib.cpp:36 — M_PI * std::pow(filament_diameter / 2, 2).
+        // filament_diameter is `float`, so `filament_diameter / 2` is evaluated in float
+        // precision (the int literal 2 promotes to float); std::pow then promotes to double.
         let filament_area =
-            std::f64::consts::PI * (filament_diameter as f64 / 2.0).powi(2);
+            std::f64::consts::PI * ((filament_diameter / 2.0f32) as f64).powi(2);
 
-        // Calib.cpp:38
+        // Calib.cpp:38 — line_flow.mm3_per_mm() / filament_area * print_flow_ratio.
         Ok(line_flow.mm3_per_mm()? / filament_area * print_flow_ratio as f64)
     }
 
@@ -992,9 +994,10 @@ impl CalibPressureAdvance {
     }
 
     /// Adjust speed for G-code output (convert mm/s to mm/min)
-    /// Calib.hpp:204 — `double speed_adjust(int speed) const { return speed * 60; }`
-    pub fn speed_adjust(&self, speed: i32) -> i32 {
-        speed * 60
+    /// Calib.hpp:212 — `double speed_adjust(int speed) const { return speed * 60; };`
+    /// C++ computes `speed * 60` in `int`, then returns it promoted to `double`.
+    pub fn speed_adjust(&self, speed: i32) -> f64 {
+        (speed * 60) as f64
     }
 
     /// Calculate number spacing for label positioning
@@ -1407,7 +1410,7 @@ mod tests {
     #[test]
     fn test_calib_pressure_advance_speed_adjust() {
         let calib = CalibPressureAdvance::new(DynamicPrintConfig::default());
-        assert_eq!(calib.speed_adjust(50), 3000); // 50 mm/s * 60 = 3000 mm/min
+        assert_eq!(calib.speed_adjust(50), 3000.0); // 50 mm/s * 60 = 3000 mm/min
     }
 
     #[test]
