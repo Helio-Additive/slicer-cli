@@ -3080,7 +3080,8 @@
     "rust_exists": true,
     "loc": 497,
     "status": "done",
-    "priority": 8
+    "priority": 8,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SLA/JobController.hpp",

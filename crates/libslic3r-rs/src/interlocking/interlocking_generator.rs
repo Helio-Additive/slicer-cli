@@ -38,6 +38,13 @@
 //! * `tbb::parallel_for` in `generate_embedding_wall` is executed as a
 //!   sequential loop (each layer's work is independent, so the result is
 //!   identical).
+//!
+//! FIDELITY-NOTE(F1): every boolean/offset call here (`union`, `union_ex`,
+//! `difference`, `intersection`, `xor`, `offset_expolygons`, `opening_ex`,
+//! `closing`) routes through `crate::clipper_utils`, which uses the `geo`
+//! crate (geo-clipper, fixed scale 1000) instead of C++ `ClipperLib` at
+//! `coord_t` integer precision. The control flow, constants, and operand
+//! order mirror the C++ exactly; only the underlying clipping engine differs.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
