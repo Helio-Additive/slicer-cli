@@ -1858,14 +1858,15 @@ fn merge_support_element_states(
     out
 }
 
-// std::min on the AvoidanceType enum (ordered Fast=0, Slow, FastSafe in C++).
-// The Rust AvoidanceTypeCompact order is Fast=0, FastSafe=1, Slow=2; we mirror
-// C++ ordering Fast < Slow < FastSafe by mapping to a rank.
+// std::min on AreaIncreaseSettings::type, which in C++ is
+// `TreeModelVolumes::AvoidanceType` (TreeModelVolumes.hpp:72) declared in the
+// order Slow=0, FastSafe=1, Fast=2. std::min compares the underlying int8_t, so
+// we must rank by that same C++ enum order, NOT by the compact-enum order.
 fn avoidance_rank(t: AvoidanceType) -> u8 {
     match t {
-        AvoidanceType::Fast => 0,
-        AvoidanceType::Slow => 1,
-        AvoidanceType::FastSafe => 2,
+        AvoidanceType::Slow => 0,
+        AvoidanceType::FastSafe => 1,
+        AvoidanceType::Fast => 2,
     }
 }
 fn min_avoidance(a: AvoidanceType, b: AvoidanceType) -> AvoidanceType {
@@ -2012,8 +2013,10 @@ fn merge_influence_areas_two_elements(
         return false;
     }
 
-    // TreeSupport3D.cpp:2049
-    if area(&offset_polygons_miter(&intersect, scale(-0.025) as CoordF)) <= tiny_area_threshold() {
+    // TreeSupport3D.cpp:2049 — area(offset(intersect, scaled<float>(-0.025), jtMiter, 1.2))
+    // FIDELITY-NOTE(F1): geo-clipper offset has no miter-limit parameter; C++ uses 1.2.
+    // scaled<float>(-0.025) == -2500.0.
+    if area(&offset_polygons_miter(&intersect, -0.025 * SCALING_FACTOR)) <= tiny_area_threshold() {
         return false;
     }
 
