@@ -84,7 +84,8 @@ pub use medial_axis::{
 };
 pub use point::{
     align_to_grid, align_to_grid_point, align_to_grid_point_base, collect_duplicates,
-    has_duplicate_points, shorter_then, turn90_ccw, Point, Point3, Point3F, PointF, Points, Points3,
+    has_duplicate_points, shorter_then, turn90_ccw, ClosestPointInRadiusLookup, Point, Point3,
+    Point3F, PointF, Points, Points3,
 };
 pub use polygon::{Polygon, Polygons};
 // Polygon.cpp free functions. Names that would collide with the ExPolygon-variant

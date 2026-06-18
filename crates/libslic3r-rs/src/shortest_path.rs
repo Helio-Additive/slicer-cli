@@ -20,7 +20,7 @@ use std::rc::Rc;
 
 use crate::ex_polygon::get_extents_expoly;
 use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionPath};
-use crate::geometry::{ExPolygons, Point, Polyline, Polylines};
+use crate::geometry::{ClosestPointInRadiusLookup, ExPolygons, Line, Point, Polyline, Polylines};
 use crate::kd_tree_indirect::{find_closest_point, KDTreeIndirect};
 use crate::mutable_priority_queue::make_mutable_priority_queue;
 
@@ -28,6 +28,8 @@ use crate::mutable_priority_queue::make_mutable_priority_queue;
 const NULLPTR: usize = usize::MAX;
 // std::numeric_limits<size_t>::max()
 const SIZE_MAX: usize = usize::MAX;
+// libslic3r.h SCALED_EPSILON
+const SCALED_EPSILON: f64 = crate::libslic3r::SCALED_EPSILON;
 
 // Convert a Point (scaled i64 coords) to a [f64; 2] (the C++ `.cast<double>()`).
 #[inline]
@@ -577,6 +579,831 @@ where
     // ShortestPath.cpp:984
     let could_reverse_func = |_idx: usize| -> bool { true };
     chain_segments_greedy_constrained_reversals_(
+        end_point_func,
+        could_reverse_func,
+        num_segments,
+        start_near,
+        false,
+    )
+}
+
+// ============================================================================
+// The "2" family of chaining functions (`chain_segments_greedy2` etc.).
+//
+// This is a second, more elaborate greedy multi-fragment TSP solver that, in
+// addition to choosing which segments to connect, also tracks whole *chains*
+// of segments and the cost of flipping a chain (reversing the orientation of
+// every segment in it). It is the variant `chain_polylines` uses to order
+// infill/brim lines. ShortestPath.cpp:396-998.
+// ============================================================================
+
+// End point of a segment for the "2" variant.
+// ShortestPath.cpp:483-505
+#[derive(Clone)]
+struct EndPoint2 {
+    pos: [f64; 2],
+    // Candidate for a new connection link. (nullptr == NULLPTR)
+    edge_candidate: usize,
+    // Distance to the next end point following the link.
+    distance_out: f64,
+    heap_idx: usize,
+    // Identifier of the chain, to which this end point belongs. Zero means unassigned.
+    chain_id: usize,
+    // Double linked chain of segment end points in current path. (nullptr == NULLPTR)
+    edge_out: usize,
+}
+
+impl EndPoint2 {
+    // ShortestPath.cpp:494
+    fn heap_idx_invalid(&self) -> bool {
+        self.heap_idx == SIZE_MAX
+    }
+}
+
+// Chained segments with their sum of connection lengths.
+// The chain supports flipping all the segments, connecting the segments at the opposite ends.
+// ShortestPath.cpp:521-569
+#[derive(Clone)]
+struct Chain {
+    num_segments: usize,
+    cost: f64,
+    cost_flipped: f64,
+    // (nullptr == NULLPTR) indices into end_points.
+    begin: usize,
+    end: usize,
+    equivalent_with: usize,
+}
+
+impl Chain {
+    fn default_() -> Self {
+        Chain {
+            num_segments: 0,
+            cost: 0.,
+            cost_flipped: 0.,
+            begin: NULLPTR,
+            end: NULLPTR,
+            equivalent_with: 0,
+        }
+    }
+
+    // ShortestPath.cpp:568
+    fn flip_penalty(&self) -> f64 {
+        self.cost_flipped - self.cost
+    }
+}
+
+// Flipping the chain has a time complexity of O(n).
+// ShortestPath.cpp:530-566
+//
+// Free function because it mutates both the chain (stored inside `Chains`) and
+// `end_points`; the C++ member function `Chain::flip(std::vector<EndPoint>&)`.
+fn chain_flip(chains: &mut Chains, chain_id: usize, end_points: &mut [EndPoint2]) {
+    // Start of the current segment processed.
+    // ShortestPath.cpp:538
+    let mut ept = chains.m_chains[chain_id].begin;
+    // Previous end point to connect the other side of ept to.
+    // ShortestPath.cpp:540
+    let mut ept_prev: usize = NULLPTR;
+    // ShortestPath.cpp:541-551
+    loop {
+        let ept_end = ept ^ 1; // &ept->opposite(endpoints)
+        let ept_next = end_points[ept_end].edge_out;
+        // Connect to the preceding segment.
+        end_points[ept_end].edge_out = ept_prev;
+        if ept_prev != NULLPTR {
+            end_points[ept_prev].edge_out = ept_end;
+        }
+        ept_prev = ept;
+        ept = ept_next;
+        if ept == NULLPTR {
+            break;
+        }
+    }
+    // ShortestPath.cpp:552
+    end_points[ept_prev].edge_out = NULLPTR;
+    // Swap the costs.
+    // ShortestPath.cpp:554
+    {
+        let c = &mut chains.m_chains[chain_id];
+        std::mem::swap(&mut c.cost, &mut c.cost_flipped);
+    }
+    // Swap the ends.
+    // ShortestPath.cpp:556-561
+    let old_begin = chains.m_chains[chain_id].begin;
+    let old_end = chains.m_chains[chain_id].end;
+    let new_begin = old_begin ^ 1; // &this->begin->opposite(endpoints)
+    let new_end = old_end ^ 1; // &this->end->opposite(endpoints)
+    {
+        let cb = end_points[old_begin].chain_id;
+        let nb = end_points[new_begin].chain_id;
+        end_points[old_begin].chain_id = nb;
+        end_points[new_begin].chain_id = cb;
+    }
+    {
+        let ce = end_points[old_end].chain_id;
+        let ne = end_points[new_end].chain_id;
+        end_points[old_end].chain_id = ne;
+        end_points[new_end].chain_id = ce;
+    }
+    chains.m_chains[chain_id].begin = new_begin;
+    chains.m_chains[chain_id].end = new_end;
+}
+
+// Helper to detect loops in already connected paths and to accomodate flipping of chains.
+// ShortestPath.cpp:578-658
+struct Chains {
+    m_chains: Vec<Chain>,
+    m_last_chain_id: usize,
+}
+
+impl Chains {
+    // Zero'th chain ID is invalid. Indexing starts with 1.
+    // ShortestPath.cpp:581-585
+    fn new(reserve: usize) -> Self {
+        let mut m_chains = Vec::with_capacity(reserve / 2);
+        m_chains.push(Chain::default_());
+        Chains {
+            m_chains,
+            m_last_chain_id: 0,
+        }
+    }
+
+    // Generate next equivalence class.
+    // ShortestPath.cpp:588-592
+    fn next_id(&mut self) -> usize {
+        self.m_last_chain_id += 1;
+        let mut c = Chain::default_();
+        c.equivalent_with = self.m_last_chain_id;
+        self.m_chains.push(c);
+        self.m_last_chain_id
+    }
+
+    // Get equivalence class for chain ID, update the "equivalent_with" along the equivalence path.
+    // ShortestPath.cpp:595-608
+    fn equivalent(&mut self, mut chain_id: usize) -> usize {
+        if chain_id != 0 {
+            let mut last = chain_id;
+            loop {
+                let lower = self.m_chains[last].equivalent_with;
+                if lower == last {
+                    self.m_chains[chain_id].equivalent_with = lower;
+                    chain_id = lower;
+                    break;
+                }
+                last = lower;
+            }
+        }
+        chain_id
+    }
+
+    // Return a lowest chain ID of the two input chains.
+    // Produce a new chain ID if both chain IDs are zero.
+    // ShortestPath.cpp:612-623
+    fn merge(&mut self, chain_id1: usize, chain_id2: usize) -> usize {
+        if chain_id1 == 0 {
+            return if chain_id2 == 0 {
+                self.next_id()
+            } else {
+                chain_id2
+            };
+        }
+        if chain_id2 == 0 {
+            return chain_id1;
+        }
+        let chain_id = std::cmp::min(chain_id1, chain_id2);
+        self.m_chains[chain_id1].equivalent_with = chain_id;
+        self.m_chains[chain_id2].equivalent_with = chain_id;
+        chain_id
+    }
+
+    // ShortestPath.cpp:628-631
+    fn chain_flip_penalty(&mut self, chain_id: usize) -> f64 {
+        let chain_id = self.equivalent(chain_id);
+        self.m_chains[chain_id].flip_penalty()
+    }
+}
+
+// ShortestPath.cpp:396-463
+// Updating an end point or a 2nd from an end point.
+#[allow(clippy::too_many_arguments)]
+fn update_end_point_in_queue<L, S>(
+    queue: &mut crate::mutable_priority_queue::MutablePriorityQueue<usize, S, L>,
+    kdtree: &KDTreeIndirect<2, f64, impl Fn(usize, usize) -> f64>,
+    chains: &RefCell<Chains>,
+    end_points: &Rc<RefCell<Vec<EndPoint2>>>,
+    end_point_idx: usize,
+    first_point_idx: usize,
+    first_point: usize,
+) where
+    L: Fn(&usize, &usize) -> bool,
+    S: FnMut(&usize, usize),
+{
+    // size_t this_idx = end_point.index(end_points);
+    // ShortestPath.cpp:400
+    let this_idx = end_point_idx;
+    // ShortestPath.cpp:403
+    end_points.borrow_mut()[this_idx].edge_candidate = NULLPTR;
+    // ShortestPath.cpp:404
+    let chain_id_this = end_points.borrow()[this_idx].chain_id;
+    if first_point_idx == this_idx || (chain_id_this > 0 && first_point_idx == (this_idx ^ 1)) {
+        // One may never flip the 1st edge, don't try it again.
+        // ShortestPath.cpp:406-408
+        if !end_points.borrow()[this_idx].heap_idx_invalid() {
+            let hi = end_points.borrow()[this_idx].heap_idx;
+            queue.remove(hi);
+        }
+    } else {
+        // Update edge_candidate and distance.
+        // ShortestPath.cpp:413-415
+        let chain1a = end_points.borrow()[this_idx].chain_id;
+        let chain1b = end_points.borrow()[this_idx ^ 1].chain_id;
+        let this_chain = chains.borrow_mut().equivalent(std::cmp::max(chain1a, chain1b));
+        // Find the closest point to this end_point, which lies on a different extrusion path (filtered by the filter lambda).
+        // ShortestPath.cpp:417-447
+        let this_pos = end_points.borrow()[this_idx].pos;
+        let next_idx = {
+            let ep_rc = Rc::clone(end_points);
+            find_closest_point(kdtree, &this_pos, |idx: usize| {
+                if (idx ^ this_idx) <= 1 || idx == first_point_idx {
+                    // Points of the same segment shall not be connected.
+                    // Don't connect to the first point, we must not flip the 1st edge.
+                    return false;
+                }
+                let chain2a = ep_rc.borrow()[idx].chain_id;
+                let chain2b = ep_rc.borrow()[idx ^ 1].chain_id;
+                if chain2a > 0 && chain2b > 0 {
+                    // Only unconnected end point or a point next to an unconnected end point may be connected to.
+                    return false;
+                }
+                let chain2 = chains.borrow_mut().equivalent(std::cmp::max(chain2a, chain2b));
+                if this_chain == chain2 {
+                    // Don't connect back to the same chain, don't create a loop.
+                    return this_chain == 0;
+                }
+                // Don't connect to a segment requiring flipping if the segment starts or ends with the first point.
+                if chain2a > 0 {
+                    // Chain requires flipping.
+                    let (cbegin, cend) = {
+                        let ch = &chains.borrow().m_chains[chain2];
+                        (ch.begin, ch.end)
+                    };
+                    if cbegin == first_point || cend == first_point {
+                        return false;
+                    }
+                }
+                // Everything is all right, try to connect.
+                true
+            })
+        };
+        assert!(next_idx < end_points.borrow().len());
+        // ShortestPath.cpp:450-451
+        let next_pos = end_points.borrow()[next_idx].pos;
+        let mut distance_out = norm(&next_pos, &this_pos);
+        // ShortestPath.cpp:452-456
+        let chain_id_this2 = end_points.borrow()[this_idx].chain_id;
+        if chain_id_this2 > 0 {
+            distance_out += chains.borrow_mut().chain_flip_penalty(this_chain);
+        }
+        let chain_id_next = end_points.borrow()[next_idx].chain_id;
+        if chain_id_next > 0 {
+            // The candidate chain is flipped.
+            distance_out += chains.borrow_mut().chain_flip_penalty(chain_id_next);
+        }
+        {
+            let mut ep = end_points.borrow_mut();
+            ep[this_idx].edge_candidate = next_idx;
+            ep[this_idx].distance_out = distance_out;
+        }
+        // Update position of this end point in the queue based on the distance calculated at the line above.
+        // ShortestPath.cpp:458-461
+        if end_points.borrow()[this_idx].heap_idx_invalid() {
+            queue.push(this_idx);
+        } else {
+            let hi = end_points.borrow()[this_idx].heap_idx;
+            queue.update(hi);
+        }
+    }
+}
+
+// ShortestPath.cpp:465-973
+fn chain_segments_greedy_constrained_reversals2_<SegmentEndPointFunc, CouldReverseFunc>(
+    end_point_func: SegmentEndPointFunc,
+    could_reverse_func: CouldReverseFunc,
+    num_segments: usize,
+    start_near: Option<&Point>,
+    reverse_could_fail: bool,
+) -> Vec<(usize, bool)>
+where
+    SegmentEndPointFunc: Fn(usize, bool) -> Point,
+    CouldReverseFunc: Fn(usize) -> bool,
+{
+    // ShortestPath.cpp:468
+    let mut out: Vec<(usize, bool)> = Vec::new();
+
+    if num_segments == 0 {
+        // Nothing to do. ShortestPath.cpp:470-472
+    } else if num_segments == 1 {
+        // Just sort the end points so that the first point visited is closest to start_near.
+        // ShortestPath.cpp:473-478
+        let reversed = start_near.is_some()
+            && squared_norm(&pt_to_vec2d(&end_point_func(0, true)), &pt_to_vec2d(start_near.unwrap()))
+                < squared_norm(
+                    &pt_to_vec2d(&end_point_func(0, false)),
+                    &pt_to_vec2d(start_near.unwrap()),
+                );
+        out.push((0, reversed));
+    } else {
+        // ShortestPath.cpp:507-512
+        let end_points: Rc<RefCell<Vec<EndPoint2>>> =
+            Rc::new(RefCell::new(Vec::with_capacity(num_segments * 2)));
+        {
+            let mut ep = end_points.borrow_mut();
+            for i in 0..num_segments {
+                ep.push(EndPoint2 {
+                    pos: pt_to_vec2d(&end_point_func(i, true)),
+                    edge_candidate: NULLPTR,
+                    distance_out: f64::MAX,
+                    heap_idx: SIZE_MAX,
+                    chain_id: 0,
+                    edge_out: NULLPTR,
+                });
+                ep.push(EndPoint2 {
+                    pos: pt_to_vec2d(&end_point_func(i, false)),
+                    edge_candidate: NULLPTR,
+                    distance_out: f64::MAX,
+                    heap_idx: SIZE_MAX,
+                    chain_id: 0,
+                    edge_out: NULLPTR,
+                });
+            }
+        }
+
+        // Construct the closest point KD tree over end points of segments.
+        // ShortestPath.cpp:515-516
+        let kd_points = Rc::clone(&end_points);
+        let coordinate_fn =
+            move |idx: usize, dimension: usize| -> f64 { kd_points.borrow()[idx].pos[dimension] };
+        let n = end_points.borrow().len();
+        let kdtree: KDTreeIndirect<2, f64, _> = KDTreeIndirect::with_indices(coordinate_fn, n);
+
+        // ShortestPath.cpp:578-658
+        let chains: RefCell<Chains> = RefCell::new(Chains::new(num_segments));
+
+        // Find the first end point closest to start_near.
+        // ShortestPath.cpp:661-673
+        let mut first_point: usize = NULLPTR;
+        let mut first_point_idx: usize = SIZE_MAX;
+        if let Some(sn) = start_near {
+            let sn_v = pt_to_vec2d(sn);
+            let idx = find_closest_point(&kdtree, &sn_v, |_| true);
+            assert!(idx < end_points.borrow().len());
+            end_points.borrow_mut()[idx].distance_out = 0.;
+            let cid = chains.borrow_mut().next_id();
+            end_points.borrow_mut()[idx].chain_id = cid;
+            {
+                let mut ch = chains.borrow_mut();
+                ch.m_chains[cid].begin = idx;
+                ch.m_chains[cid].end = idx ^ 1;
+            }
+            first_point = idx;
+            first_point_idx = idx;
+        }
+        // ShortestPath.cpp:674-675
+        let initial_point = first_point;
+        let mut last_point: usize = NULLPTR;
+
+        // Assign the closest point and distance to the end points.
+        // ShortestPath.cpp:678-691
+        let len = end_points.borrow().len();
+        for this_idx in 0..len {
+            assert!(end_points.borrow()[this_idx].edge_candidate == NULLPTR);
+            if this_idx != first_point {
+                let this_pos = end_points.borrow()[this_idx].pos;
+                let next_idx = find_closest_point(&kdtree, &this_pos, |idx: usize| {
+                    idx != first_point_idx && (idx ^ this_idx) > 1
+                });
+                assert!(next_idx < end_points.borrow().len());
+                let next_pos = end_points.borrow()[next_idx].pos;
+                let mut ep = end_points.borrow_mut();
+                ep[this_idx].edge_candidate = next_idx;
+                ep[this_idx].distance_out = norm(&next_pos, &this_pos);
+            }
+        }
+
+        // Initialize a heap of end points sorted by the lowest distance to the next valid point of a path.
+        // ShortestPath.cpp:694-700  make_mutable_priority_queue<EndPoint*, true>
+        let q_setter = Rc::clone(&end_points);
+        let q_less = Rc::clone(&end_points);
+        let mut queue = make_mutable_priority_queue::<usize, _, _>(
+            true,
+            move |ep: &usize, idx: usize| {
+                q_setter.borrow_mut()[*ep].heap_idx = idx;
+            },
+            move |l: &usize, r: &usize| -> bool {
+                let v = q_less.borrow();
+                v[*l].distance_out < v[*r].distance_out
+            },
+        );
+        queue.reserve(end_points.borrow().len() * 2);
+        for ep in 0..end_points.borrow().len() {
+            if first_point != ep {
+                queue.push(ep);
+            }
+        }
+
+        // Chain the end points: find (num_segments - 1) shortest links not forming bifurcations or loops.
+        // ShortestPath.cpp:741
+        assert!(num_segments >= 2);
+        // ShortestPath.cpp:750-751
+        let mut num_iter = num_segments * 16;
+        let mut num_connections_to_end = num_segments - 1;
+        while num_iter > 0 {
+            // Take the first end point, for which the link points to the currently closest valid neighbor.
+            // ShortestPath.cpp:754
+            let end_point1: usize = *queue.top().unwrap();
+            let end_point1_other = end_point1 ^ 1;
+            // true if end_point1 is not the end of its chain, but the 2nd point.
+            // ShortestPath.cpp:759
+            let chain1_flip = end_points.borrow()[end_point1].chain_id > 0;
+            assert!(end_points.borrow()[end_point1].edge_candidate != NULLPTR);
+            // Take the closest end point to the first end point,
+            // ShortestPath.cpp:775-777
+            let end_point2: usize = end_points.borrow()[end_point1].edge_candidate;
+            let end_point2_other = end_point2 ^ 1;
+            let chain2_flip = end_points.borrow()[end_point2].chain_id > 0;
+            // ShortestPath.cpp:779-781
+            let mut valid = true;
+            let mut end_point1_chain_id: usize = 0;
+            let mut end_point2_chain_id: usize = 0;
+            // ShortestPath.cpp:782-817
+            if end_points.borrow()[end_point2].chain_id > 0
+                && end_points.borrow()[end_point2_other].chain_id > 0
+            {
+                // The other side is part of the output path. Don't connect to end_point2, update end_point1 and try another one.
+                valid = false;
+            } else {
+                // End points of the opposite ends of the segments.
+                // ShortestPath.cpp:787-788
+                let c1 = end_points.borrow()[if chain1_flip { end_point1 } else { end_point1_other }]
+                    .chain_id;
+                let c2 = end_points.borrow()[if chain2_flip { end_point2 } else { end_point2_other }]
+                    .chain_id;
+                end_point1_chain_id = chains.borrow_mut().equivalent(c1);
+                end_point2_chain_id = chains.borrow_mut().equivalent(c2);
+                if end_point1_chain_id == end_point2_chain_id && end_point1_chain_id != 0 {
+                    // This edge forms a loop. Update end_point1 and try another one.
+                    valid = false;
+                } else {
+                    // Verify whether end_point1.distance_out still matches the current state.
+                    // ShortestPath.cpp:795-802
+                    let p2 = end_points.borrow()[end_point2].pos;
+                    let p1 = end_points.borrow()[end_point1].pos;
+                    let mut dist = norm(&p2, &p1);
+                    if chain1_flip {
+                        dist += chains.borrow_mut().chain_flip_penalty(end_point1_chain_id);
+                    }
+                    if chain2_flip {
+                        dist += chains.borrow_mut().chain_flip_penalty(end_point2_chain_id);
+                    }
+                    let dout = end_points.borrow()[end_point1].distance_out;
+                    if (dist - dout).abs() > SCALED_EPSILON {
+                        // The distance changed due to flipping of one of the chains. Refresh this end point in the queue.
+                        valid = false;
+                    }
+                }
+                // ShortestPath.cpp:804-816
+                if valid && first_point != NULLPTR {
+                    // Verify that a chain starting or ending with the first_point does not get flipped.
+                    if chain1_flip {
+                        let (cb, ce) = {
+                            let ch = &chains.borrow().m_chains[end_point1_chain_id];
+                            (ch.begin, ch.end)
+                        };
+                        if cb == first_point || ce == first_point {
+                            valid = false;
+                        }
+                    }
+                    if valid && chain2_flip {
+                        let (cb, ce) = {
+                            let ch = &chains.borrow().m_chains[end_point2_chain_id];
+                            (ch.begin, ch.end)
+                        };
+                        if cb == first_point || ce == first_point {
+                            valid = false;
+                        }
+                    }
+                }
+            }
+            if valid {
+                // Remove the first and second point from the queue.
+                // ShortestPath.cpp:820-823
+                queue.pop();
+                let ep2_heap = end_points.borrow()[end_point2].heap_idx;
+                queue.remove(ep2_heap);
+                end_points.borrow_mut()[end_point1].edge_candidate = NULLPTR;
+                // ShortestPath.cpp:824-825
+                let chain1_id = end_point1_chain_id;
+                let chain2_id = end_point2_chain_id;
+                let chain1_present = chain1_id != 0;
+                let chain2_present = chain2_id != 0;
+                // ShortestPath.cpp:828-831
+                if chain1_flip {
+                    let mut ep = end_points.borrow_mut();
+                    chain_flip(&mut chains.borrow_mut(), chain1_id, &mut ep);
+                }
+                if chain2_flip {
+                    let mut ep = end_points.borrow_mut();
+                    chain_flip(&mut chains.borrow_mut(), chain2_id, &mut ep);
+                }
+                // ShortestPath.cpp:834-835
+                let chain_id = chains.borrow_mut().merge(end_point1_chain_id, end_point2_chain_id);
+                // ShortestPath.cpp:836-845
+                {
+                    let p_ep1 = end_points.borrow()[end_point1].pos;
+                    let p_ep2 = end_points.borrow()[end_point2].pos;
+                    let p_ep1o = end_points.borrow()[end_point1_other].pos;
+                    let p_ep2o = end_points.borrow()[end_point2_other].pos;
+                    let mut ch = chains.borrow_mut();
+                    let chain_dst_begin = if !chain1_present {
+                        end_point1_other
+                    } else if ch.m_chains[chain1_id].begin == end_point1 {
+                        ch.m_chains[chain1_id].end
+                    } else {
+                        ch.m_chains[chain1_id].begin
+                    };
+                    let chain_dst_end = if !chain2_present {
+                        end_point2_other
+                    } else if ch.m_chains[chain2_id].begin == end_point2 {
+                        ch.m_chains[chain2_id].end
+                    } else {
+                        ch.m_chains[chain2_id].begin
+                    };
+                    let chain_dst_cost = (if !chain1_present {
+                        0.
+                    } else {
+                        ch.m_chains[chain1_id].cost
+                    }) + (if !chain2_present {
+                        0.
+                    } else {
+                        ch.m_chains[chain2_id].cost
+                    }) + norm(&p_ep2, &p_ep1);
+                    let chain_dst_cost_flipped = (if !chain1_present {
+                        0.
+                    } else {
+                        ch.m_chains[chain1_id].cost_flipped
+                    }) + (if !chain2_present {
+                        0.
+                    } else {
+                        ch.m_chains[chain2_id].cost_flipped
+                    }) + norm(&p_ep2o, &p_ep1o);
+                    let chain_dst_num_segments = (if !chain1_present {
+                        1
+                    } else {
+                        ch.m_chains[chain1_id].num_segments
+                    }) + (if !chain2_present {
+                        1
+                    } else {
+                        ch.m_chains[chain2_id].num_segments
+                    });
+                    let dst = &mut ch.m_chains[chain_id];
+                    dst.begin = chain_dst_begin;
+                    dst.end = chain_dst_end;
+                    dst.cost = chain_dst_cost;
+                    dst.cost_flipped = chain_dst_cost_flipped;
+                    dst.num_segments = chain_dst_num_segments;
+                    dst.equivalent_with = chain_id;
+                }
+                // ShortestPath.cpp:846-849
+                let (chain_begin, chain_end) = {
+                    let ch = &chains.borrow().m_chains[chain_id];
+                    (ch.begin, ch.end)
+                };
+                if chain_begin != end_point1_other
+                    && !end_points.borrow()[end_point1_other].heap_idx_invalid()
+                {
+                    let hi = end_points.borrow()[end_point1_other].heap_idx;
+                    queue.remove(hi);
+                }
+                if chain_end != end_point2_other
+                    && !end_points.borrow()[end_point2_other].heap_idx_invalid()
+                {
+                    let hi = end_points.borrow()[end_point2_other].heap_idx;
+                    queue.remove(hi);
+                }
+                // ShortestPath.cpp:850-859
+                {
+                    let mut ep = end_points.borrow_mut();
+                    ep[end_point1].edge_out = end_point2;
+                    ep[end_point2].edge_out = end_point1;
+                    ep[end_point1].chain_id = chain_id;
+                    ep[end_point2].chain_id = chain_id;
+                    ep[end_point1_other].chain_id = chain_id;
+                    ep[end_point2_other].chain_id = chain_id;
+                    if chain_begin != first_point {
+                        ep[chain_begin].chain_id = 0;
+                    }
+                    if chain_end != first_point {
+                        ep[chain_end].chain_id = 0;
+                    }
+                }
+                // ShortestPath.cpp:860-902
+                num_connections_to_end -= 1;
+                if num_connections_to_end == 0 {
+                    // Last iteration. There shall be exactly one or two end points waiting to be connected.
+                    if first_point == NULLPTR {
+                        // Find the first remaining end point.
+                        // ShortestPath.cpp:864-871
+                        loop {
+                            first_point = *queue.top().unwrap();
+                            queue.pop();
+                            if end_points.borrow()[first_point].edge_out == NULLPTR {
+                                break;
+                            }
+                        }
+                    }
+                    // Find the first remaining end point.
+                    // ShortestPath.cpp:872-877
+                    loop {
+                        last_point = *queue.top().unwrap();
+                        queue.pop();
+                        if end_points.borrow()[last_point].edge_out == NULLPTR {
+                            break;
+                        }
+                    }
+                    // ShortestPath.cpp:878-883 (NDEBUG drain omitted)
+                    break;
+                } else {
+                    // Update end points of the flipped segments.
+                    // ShortestPath.cpp:887-893
+                    update_end_point_in_queue(
+                        &mut queue,
+                        &kdtree,
+                        &chains,
+                        &end_points,
+                        chain_begin ^ 1,
+                        first_point_idx,
+                        first_point,
+                    );
+                    update_end_point_in_queue(
+                        &mut queue,
+                        &kdtree,
+                        &chains,
+                        &end_points,
+                        chain_end ^ 1,
+                        first_point_idx,
+                        first_point,
+                    );
+                    if chain1_flip {
+                        update_end_point_in_queue(
+                            &mut queue,
+                            &kdtree,
+                            &chains,
+                            &end_points,
+                            chain_begin,
+                            first_point_idx,
+                            first_point,
+                        );
+                    }
+                    if chain2_flip {
+                        update_end_point_in_queue(
+                            &mut queue,
+                            &kdtree,
+                            &chains,
+                            &end_points,
+                            chain_end,
+                            first_point_idx,
+                            first_point,
+                        );
+                    }
+                }
+            } else {
+                // This edge forms a loop. Update end_point1 and try another one.
+                // ShortestPath.cpp:905
+                update_end_point_in_queue(
+                    &mut queue,
+                    &kdtree,
+                    &chains,
+                    &end_points,
+                    end_point1,
+                    first_point_idx,
+                    first_point,
+                );
+            }
+            num_iter -= 1;
+        }
+        assert!(queue.is_empty());
+
+        // Now interconnect pairs of segments into a chain.
+        // ShortestPath.cpp:921-968
+        assert!(first_point != NULLPTR);
+        out.reserve(num_segments);
+        let mut failed = false;
+        {
+            let mut fp = first_point;
+            loop {
+                assert!(out.len() < num_segments);
+                let first_point_id = fp;
+                let segment_id = first_point_id >> 1;
+                let reverse = (first_point_id & 1) != 0;
+                let second_point = first_point_id ^ 1;
+                if reverse_could_fail {
+                    if reverse && !could_reverse_func(segment_id) {
+                        failed = true;
+                        break;
+                    }
+                } else {
+                    assert!(!reverse || could_reverse_func(segment_id));
+                }
+                out.push((segment_id, reverse));
+                fp = end_points.borrow()[second_point].edge_out;
+                if fp == NULLPTR {
+                    break;
+                }
+            }
+        }
+        if reverse_could_fail {
+            if failed && start_near.is_none() {
+                // We may try the reverse order.
+                // ShortestPath.cpp:943-961
+                out.clear();
+                let mut fp = last_point;
+                failed = false;
+                loop {
+                    assert!(out.len() < num_segments);
+                    let first_point_id = fp;
+                    let segment_id = first_point_id >> 1;
+                    let reverse = (first_point_id & 1) != 0;
+                    let second_point = first_point_id ^ 1;
+                    if reverse && !could_reverse_func(segment_id) {
+                        failed = true;
+                        break;
+                    }
+                    out.push((segment_id, reverse));
+                    fp = end_points.borrow()[second_point].edge_out;
+                    if fp == NULLPTR {
+                        break;
+                    }
+                }
+            }
+            if failed {
+                // As a last resort, try a dumb algorithm.
+                // ShortestPath.cpp:964-965
+                let mut closest: Vec<EndPointClosest> = end_points
+                    .borrow()
+                    .iter()
+                    .map(|ep| EndPointClosest {
+                        pos: ep.pos,
+                        chain_id: ep.chain_id,
+                    })
+                    .collect();
+                let start = if initial_point != NULLPTR { initial_point } else { 0 };
+                out = chain_segments_closest_point(&mut closest, &kdtree, &could_reverse_func, start);
+            }
+        } else {
+            assert!(!failed);
+        }
+    }
+
+    // ShortestPath.cpp:971-972
+    assert_eq!(out.len(), num_segments);
+    out
+}
+
+// ShortestPath.cpp:988-992
+// (Retained for parity; like the C++ source, only `chain_segments_greedy2` is
+// reached through `chain_polylines`.)
+#[allow(dead_code)]
+fn chain_segments_greedy_constrained_reversals2<SegmentEndPointFunc, CouldReverseFunc>(
+    end_point_func: SegmentEndPointFunc,
+    could_reverse_func: CouldReverseFunc,
+    num_segments: usize,
+    start_near: Option<&Point>,
+) -> Vec<(usize, bool)>
+where
+    SegmentEndPointFunc: Fn(usize, bool) -> Point,
+    CouldReverseFunc: Fn(usize) -> bool,
+{
+    chain_segments_greedy_constrained_reversals2_(
+        end_point_func,
+        could_reverse_func,
+        num_segments,
+        start_near,
+        true,
+    )
+}
+
+// ShortestPath.cpp:994-999
+fn chain_segments_greedy2<SegmentEndPointFunc>(
+    end_point_func: SegmentEndPointFunc,
+    num_segments: usize,
+    start_near: Option<&Point>,
+) -> Vec<(usize, bool)>
+where
+    SegmentEndPointFunc: Fn(usize, bool) -> Point,
+{
+    // ShortestPath.cpp:997
+    let could_reverse_func = |_idx: usize| -> bool { true };
+    chain_segments_greedy_constrained_reversals2_(
         end_point_func,
         could_reverse_func,
         num_segments,
@@ -1283,8 +2110,7 @@ pub fn chain_polylines(mut polylines: Polylines, start_near: Option<&Point>) -> 
             }
         };
         // ShortestPath.cpp:1945
-        // chain_segments_greedy2 (the "2" variant) is selected; see note below.
-        let ordered = chain_segments_greedy(&segment_end_point, polylines.len(), start_near);
+        let ordered = chain_segments_greedy2(&segment_end_point, polylines.len(), start_near);
         drop(segment_end_point);
         // ShortestPath.cpp:1946-1951
         out.reserve(polylines.len());
@@ -1354,6 +2180,126 @@ pub fn reorder_by_shortest_traverse<T: ReorderByShortestTraverse + Default>(
         result.push(std::mem::take(&mut temp[i]));
     }
     *polylines_out = result;
+}
+
+// chain_path_items / chain_clipper_polynodes (ShortestPath.cpp:1964-1978) are NOT
+// ported: they chain `ClipperLib::PolyNodes` (a ClipperLib PolyTree), a type that
+// does not exist in this crate (the `geo`/Clipper2 split, see FIDELITY-NOTE(F1)).
+// fill_concentric.rs documents the same gap. chain_print_object_instances
+// (ShortestPath.cpp:1981-2008) is also not ported here: it depends on the
+// higher-level `Print`/`PrintObject`/`PrintInstance` types.
+
+// Line end point for the `chain_lines` radius lookup.
+// ShortestPath.cpp:2013-2022 (struct LineEnd).
+//
+// The C++ `LineEnd` stores `const Line *line`; this port stores the line index
+// into the input slice (the C++ recovers the index via `line - lines.data()`),
+// plus the `start` flag. Equality matches the C++ `line == rhs.line && start == rhs.start`.
+#[derive(Clone, Copy, PartialEq)]
+struct LineEnd {
+    line_idx: usize,
+    // Is it the start or end point?
+    start: bool,
+}
+
+impl LineEnd {
+    // ShortestPath.cpp:2014
+    fn new(line_idx: usize, start: bool) -> Self {
+        LineEnd { line_idx, start }
+    }
+    // ShortestPath.cpp:2018  const Point& point() const { return start ? line->a : line->b; }
+    fn point(&self, lines: &[Line]) -> Point {
+        if self.start {
+            lines[self.line_idx].a
+        } else {
+            lines[self.line_idx].b
+        }
+    }
+    // ShortestPath.cpp:2019  other_point() const { return start ? line->b : line->a; }
+    fn other_point(&self, lines: &[Line]) -> Point {
+        if self.start {
+            lines[self.line_idx].b
+        } else {
+            lines[self.line_idx].a
+        }
+    }
+    // ShortestPath.cpp:2020  other_end() const { return LineEnd(line, ! start); }
+    fn other_end(&self) -> LineEnd {
+        LineEnd::new(self.line_idx, !self.start)
+    }
+}
+
+// Chain lines into polylines.
+// ShortestPath.cpp:2010-2063
+pub fn chain_lines(lines: &[Line], point_distance_epsilon: f64) -> Polylines {
+    // Create line end point lookup.
+    // ShortestPath.cpp:2026-2031
+    // LineEndAccessor: returns the representative point for the LineEnd.
+    let lines_for_accessor: Vec<Line> = lines.to_vec();
+    let mut closest_end_point_lookup: ClosestPointInRadiusLookup<LineEnd, _> =
+        ClosestPointInRadiusLookup::new(point_distance_epsilon as crate::Coord, move |pt: &LineEnd| {
+            Some(pt.point(&lines_for_accessor))
+        });
+    for (i, _line) in lines.iter().enumerate() {
+        closest_end_point_lookup.insert(LineEnd::new(i, true));
+        closest_end_point_lookup.insert(LineEnd::new(i, false));
+    }
+
+    // Chain the lines.
+    // ShortestPath.cpp:2034-2035
+    let mut line_consumed: Vec<bool> = vec![false; lines.len()];
+    let point_distance_epsilon2 = point_distance_epsilon * point_distance_epsilon;
+    let mut out: Polylines = Vec::new();
+    // ShortestPath.cpp:2037-2061
+    for seed_idx in 0..lines.len() {
+        if !line_consumed[seed_idx] {
+            line_consumed[seed_idx] = true;
+            closest_end_point_lookup.erase(&LineEnd::new(seed_idx, false));
+            closest_end_point_lookup.erase(&LineEnd::new(seed_idx, true));
+            // Polyline pl { seed.a, seed.b };
+            let mut pl = Polyline::default();
+            pl.points.push(lines[seed_idx].a);
+            pl.points.push(lines[seed_idx].b);
+            // ShortestPath.cpp:2043-2059
+            for _round in 0..2 {
+                loop {
+                    // auto [line_end, dist2] = closest_end_point_lookup.find(pl.last_point());
+                    let last_pt = pl.last_point();
+                    let found = closest_end_point_lookup.find(&last_pt);
+                    let (line_end, dist2) = match found {
+                        Some((le, d)) => (*le, d),
+                        None => break,
+                    };
+                    if dist2 >= point_distance_epsilon2 {
+                        // Cannot extent in this direction.
+                        break;
+                    }
+                    // Average the last point.
+                    // ShortestPath.cpp:2050
+                    // pl.points.back() = (0.5 * (pl.points.back().cast<double>() + line_end->point().cast<double>())).cast<coord_t>();
+                    let le_pt = line_end.point(lines);
+                    let back = *pl.points.last().unwrap();
+                    let avg_x = 0.5 * (back.x as f64 + le_pt.x as f64);
+                    let avg_y = 0.5 * (back.y as f64 + le_pt.y as f64);
+                    // FIDELITY-NOTE(F2): C++ casts the averaged double to coord_t == int32_t.
+                    *pl.points.last_mut().unwrap() =
+                        Point::new(avg_x as i32 as crate::Coord, avg_y as i32 as crate::Coord);
+                    // and extend with the new line segment.
+                    // ShortestPath.cpp:2052
+                    pl.points.push(line_end.other_point(lines));
+                    closest_end_point_lookup.erase(&line_end);
+                    closest_end_point_lookup.erase(&line_end.other_end());
+                    line_consumed[line_end.line_idx] = true;
+                }
+                // reverse and try the other direction.
+                // ShortestPath.cpp:2058
+                pl.reverse();
+            }
+            // ShortestPath.cpp:2060
+            out.push(pl);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
