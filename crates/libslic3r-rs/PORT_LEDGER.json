@@ -1361,7 +1361,8 @@
     "rust_exists": true,
     "loc": 827,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "LayerRegion.cpp",
