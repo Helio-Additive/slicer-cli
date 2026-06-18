@@ -1549,7 +1549,8 @@
     "rust_exists": true,
     "loc": 1500,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "utils.cpp",

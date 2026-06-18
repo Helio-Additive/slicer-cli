@@ -952,11 +952,14 @@ impl AppConfig {
         self.m_legacy_datadir = false;
         // AppConfig.cpp:765-769  if (ini_ver) { ... }
         if let Some(mut ini_ver) = ini_ver {
-            // AppConfig.cpp:767-768
+            // AppConfig.cpp:766  m_orig_version = *ini_ver;  (assigned BEFORE stripping
+            // metadata/prerelease, so m_orig_version keeps the full version)
+            self.m_orig_version = ini_ver.clone();
+            // AppConfig.cpp:767-768  ini_ver->set_metadata(boost::none); ini_ver->set_prerelease(boost::none);
+            // These strip the local copy only; the result is unused afterward, but we
+            // mirror the C++ control flow exactly.
             ini_ver.set_metadata(None);
             ini_ver.set_prerelease(None);
-            // AppConfig.cpp:766  m_orig_version = *ini_ver;  (note: C++ assigns the unmodified version)
-            self.m_orig_version = ini_ver;
         }
 
         // AppConfig.cpp:771-783  Legacy conversion
@@ -1292,14 +1295,14 @@ impl AppConfig {
     pub fn set(&mut self, section: &str, key: &str, value: &str) {
         // AppConfig.hpp:89-95  #ifndef NDEBUG trim assertions (debug-only)
         // AppConfig.hpp:97  std::string &old = m_storage[section][key];
+        // operator[] default-inserts the section AND the key (empty) when absent,
+        // so the key always exists after this line (matters for the dirty check below).
         let entry = self.m_storage.entry(section.to_string()).or_default();
+        let old = entry.entry(key.to_string()).or_default();
         // AppConfig.hpp:98-101  if (old != value) { old = value; m_dirty = true; }
-        match entry.get(key) {
-            Some(old) if old == value => {}
-            _ => {
-                entry.insert(key.to_string(), value.to_string());
-                self.m_dirty = true;
-            }
+        if old != value {
+            *old = value.to_string();
+            self.m_dirty = true;
         }
     }
 
@@ -1308,13 +1311,11 @@ impl AppConfig {
         // AppConfig.hpp:106-112  #ifndef NDEBUG trim assertions (debug-only)
         // AppConfig.hpp:114  std::string& old = m_storage[section][key];
         let entry = self.m_storage.entry(section.to_string()).or_default();
+        let old = entry.entry(key.to_string()).or_default();
         // AppConfig.hpp:115-118
-        match entry.get(key) {
-            Some(old) if old == value => {}
-            _ => {
-                entry.insert(key.to_string(), value.to_string());
-                self.m_dirty = true;
-            }
+        if old != value {
+            *old = value.to_string();
+            self.m_dirty = true;
         }
     }
 
@@ -1991,13 +1992,20 @@ fn json_f32(v: f32) -> serde_json::Value {
 
 // ---- calib enum <-> int mappings (PrintConfig.hpp enum order) --------------
 //
-// The Rust `calib` enums currently model only a subset of the C++ variants
-// (Standard=0, HighFlow=1; CoolPlate=0..). We map by discriminant order to keep
-// the JSON round-trip faithful for the values that exist; unknown integers fall
-// back to the C++ default (variant 0).
+// C++ `load()`/`save()` round-trip these enums via raw integer casts
+// (`int(bed_type)` / `BedType(int)`, AppConfig.cpp:711-714,847-848). The Rust
+// `calib` enums (calib.rs) model only a subset of the C++ variants, so the
+// raw integer cannot be reproduced 1:1 for the missing variants:
+//   * NozzleVolumeType: C++ has nvtStandard=0, nvtHighFlow=1, nvtHybrid=2,
+//     nvtTPUHighFlow=3 (PrintConfig.hpp:346-352); Rust has only Standard/HighFlow.
+//   * BedType: C++ has btDefault=0, btPC=1, btEP=2, btPEI=3, btPTE=4,
+//     btSuperTack=5 (PrintConfig.hpp:268-276); Rust has 4 variants.
+// FIDELITY-NOTE(calib): the unmapped C++ integers (>1 for NozzleVolumeType,
+// 4/5 for BedType) fall back to variant 0, because the faithful enums live in
+// the foundational calib.rs port and widening them here is cross-cutting.
 
 fn nozzle_volume_type_from_int(i: i32) -> NozzleVolumeType {
-    // PrintConfig.hpp:346-351  nvtStandard = 0, nvtHighFlow, ...
+    // PrintConfig.hpp:346-352  nvtStandard = 0, nvtHighFlow = 1, ...
     match i {
         1 => NozzleVolumeType::HighFlow,
         _ => NozzleVolumeType::Standard,
@@ -2012,7 +2020,10 @@ fn nozzle_volume_type_to_int(t: NozzleVolumeType) -> i32 {
 }
 
 fn bed_type_from_int(i: i32) -> BedType {
-    // calib::BedType variant order: CoolPlate, EngineeringPlate, HighTempPlate, TexturedPEI
+    // calib::BedType variant order: CoolPlate, EngineeringPlate, HighTempPlate, TexturedPEI.
+    // FIDELITY-NOTE(calib): C++ BedType is btDefault=0,btPC=1,btEP=2,btPEI=3,btPTE=4,
+    // btSuperTack=5; the Rust enum lacks btDefault/btPTE/btSuperTack so the by-index
+    // mapping cannot reproduce the raw int cast for those values.
     match i {
         1 => BedType::EngineeringPlate,
         2 => BedType::HighTempPlate,
