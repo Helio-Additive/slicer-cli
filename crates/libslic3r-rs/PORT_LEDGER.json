@@ -2268,7 +2268,8 @@
     "rust_exists": true,
     "loc": 2144,
     "status": "partial",
-    "priority": 3
+    "priority": 3,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillLightning.cpp",

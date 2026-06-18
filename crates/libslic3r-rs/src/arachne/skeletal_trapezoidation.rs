@@ -1348,9 +1348,10 @@ impl<'a> SkeletalTrapezoidation<'a> {
             // SkeletalTrapezoidation.cpp:1168 if (end_pos > ab_size)
             if end_pos > ab_size {
                 // SkeletalTrapezoidation.cpp:1170 float rest = end_rest - (start_rest - end_rest) * (end_pos - ab_size) / (start_pos - end_pos);
-                let rest = end_rest
+                // C++ `rest` is `float`: the RHS is evaluated in double then truncated to f32.
+                let rest: f64 = (end_rest
                     - (start_rest - end_rest) * (end_pos - ab_size) as f64
-                        / (start_pos - end_pos) as f64;
+                        / (start_pos - end_pos) as f64) as f32 as f64;
                 // SkeletalTrapezoidation.cpp:1171-1173 asserts
                 debug_assert!(rest >= 0.0);
                 debug_assert!(rest <= end_rest.max(start_rest));
@@ -2096,9 +2097,11 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     + length
                     + bottom_beading_arc.read().dist_to_bottom_source;
                 // SkeletalTrapezoidation.cpp:1687 double ratio_of_top = static_cast<float>(bottom_beading.dist_to_bottom_source) / std::min(total_dist, beading_propagation_transition_dist);
-                let mut ratio_of_top = (bottom_beading_arc.read().dist_to_bottom_source as f32)
-                    as f64
-                    / std::cmp::min(total_dist, self.beading_propagation_transition_dist) as f64;
+                // C++ evaluates `float / int` in f32 (the int operand is promoted to float),
+                // then widens the f32 result to the `double` target.
+                let mut ratio_of_top = ((bottom_beading_arc.read().dist_to_bottom_source as f32)
+                    / std::cmp::min(total_dist, self.beading_propagation_transition_dist) as f32)
+                    as f64;
                 // SkeletalTrapezoidation.cpp:1688 ratio_of_top = std::max(0.0, ratio_of_top);
                 ratio_of_top = ratio_of_top.max(0.0);
                 // SkeletalTrapezoidation.cpp:1689 if (ratio_of_top >= 1.0)
@@ -2189,9 +2192,10 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 / (left.toolpath_locations[next_inset_idx as usize]
                     - right.toolpath_locations[next_inset_idx as usize]) as f32;
             // SkeletalTrapezoidation.cpp:1745 new_ratio = std::min(1.0, new_ratio + 0.1);
-            let new_ratio = (new_ratio as f64 + 0.1_f64).min(1.0);
+            // C++ `new_ratio` is `float`: the std::min result (double) is truncated back to f32.
+            let new_ratio: f32 = (new_ratio as f64 + 0.1_f64).min(1.0) as f32;
             // SkeletalTrapezoidation.cpp:1746 return interpolate(left, new_ratio, right);
-            return self.interpolate2(left, new_ratio, right);
+            return self.interpolate2(left, new_ratio as f64, right);
         }
         // SkeletalTrapezoidation.cpp:1748 return ret;
         ret
@@ -2203,7 +2207,8 @@ impl<'a> SkeletalTrapezoidation<'a> {
         // SkeletalTrapezoidation.cpp:1754 assert(ratio_left_to_whole >= 0.0 && ratio_left_to_whole <= 1.0);
         debug_assert!((0.0..=1.0).contains(&ratio_left_to_whole));
         // SkeletalTrapezoidation.cpp:1755 float ratio_right_to_whole = 1.0 - ratio_left_to_whole;
-        let ratio_right_to_whole = 1.0 - ratio_left_to_whole;
+        // C++ `ratio_right_to_whole` is `float`: the double subtraction is truncated to f32.
+        let ratio_right_to_whole: f32 = (1.0 - ratio_left_to_whole) as f32;
 
         // SkeletalTrapezoidation.cpp:1757 Beading ret = (left.total_thickness > right.total_thickness)? left : right;
         let mut ret = if left.total_thickness > right.total_thickness {
@@ -2220,14 +2225,16 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 ret.bead_widths[inset_idx] = 0;
             } else {
                 // SkeletalTrapezoidation.cpp:1766 ret.bead_widths[inset_idx] = ratio_left_to_whole * left.bead_widths[inset_idx] + ratio_right_to_whole * right.bead_widths[inset_idx];
+                // Left term is `double * int -> double`; right term is `float * int -> float`,
+                // promoted to double for the sum, then truncated to coord_t.
                 ret.bead_widths[inset_idx] = (ratio_left_to_whole * left.bead_widths[inset_idx] as f64
-                    + ratio_right_to_whole * right.bead_widths[inset_idx] as f64)
+                    + (ratio_right_to_whole * right.bead_widths[inset_idx] as f32) as f64)
                     as Coord;
             }
             // SkeletalTrapezoidation.cpp:1768 ret.toolpath_locations[inset_idx] = ratio_left_to_whole * left.toolpath_locations[inset_idx] + ratio_right_to_whole * right.toolpath_locations[inset_idx];
             ret.toolpath_locations[inset_idx] = (ratio_left_to_whole
                 * left.toolpath_locations[inset_idx] as f64
-                + ratio_right_to_whole * right.toolpath_locations[inset_idx] as f64)
+                + (ratio_right_to_whole * right.toolpath_locations[inset_idx] as f32) as f64)
                 as Coord;
         }
         // SkeletalTrapezoidation.cpp:1770 return ret;
@@ -2881,13 +2888,16 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // SkeletalTrapezoidation.cpp:2130 for (coord_t segment = 0; segment < n_segments; segment++)
                     for segment in 0..n_segments {
                         // SkeletalTrapezoidation.cpp:2131 float a = 2.0 * M_PI / n_segments * segment;
-                        let a = 2.0 * std::f64::consts::PI / n_segments as f64 * segment as f64;
+                        // C++ `a` is `float`: the double expression is truncated to f32, then
+                        // `cos(a)`/`sin(a)` use the float overloads and `r * cos(a)` is f32.
+                        let a: f32 =
+                            (2.0_f64 * std::f64::consts::PI / n_segments as f64 * segment as f64) as f32;
                         // SkeletalTrapezoidation.cpp:2132 line.junctions.emplace_back(ExtrusionJunction(node.p + Point(r * cos(a), r * sin(a)), width, inset_index, false));
                         line.junctions.push(ExtrusionJunction::with_hole_compensation(
                             node.base.p
                                 + Point::new(
-                                    (r as f64 * a.cos()) as Coord,
-                                    (r as f64 * a.sin()) as Coord,
+                                    (r as f32 * a.cos()) as Coord,
+                                    (r as f32 * a.sin()) as Coord,
                                 ),
                             width,
                             inset_index,
