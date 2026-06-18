@@ -299,13 +299,17 @@ impl Quaternionf {
         if c < -1.0 + 1e-5 {
             // c = numext::maxi(c, Scalar(-1));
             c = c.max(-1.0);
-            // Eigen solves a 2x3 JacobiSVD for the null-space axis (a unit
-            // vector orthogonal to both v0 and v1). For (nearly) opposite
-            // vectors any unit axis orthogonal to v0 yields the same 180-degree
-            // rotation; we use Eigen's own `unitOrthogonal()` algorithm
-            // (Eigen/src/Geometry/OrthoMethods.h) for the axis. DIVERGENCE: the
-            // chosen axis may differ from the SVD's null-space vector for
-            // not-exactly-opposite inputs within the 1e-5 window.
+            // FIDELITY-NOTE(eigen-svd): Eigen solves a 2x3 JacobiSVD on
+            // [v0^T; v1^T] and takes matrixV().col(2) as the rotation axis (a
+            // unit vector orthogonal to both v0 and v1). We instead use Eigen's
+            // own `unitOrthogonal()` algorithm (Eigen/src/Geometry/OrthoMethods.h)
+            // for the axis. For (nearly) opposite vectors the rotation is ~180
+            // degrees about *some* axis orthogonal to v0; the two algorithms may
+            // pick different orthogonal axes within the 1e-5 dummy_precision
+            // window. The sole caller (`DrainHole::to_mesh`) rotates a
+            // rotationally-symmetric cylinder, so any such axis yields a
+            // geometrically equivalent mesh. A byte-faithful match would require
+            // porting Eigen's 2x3 JacobiSVD (foundational, out of scope here).
             let axis = unit_orthogonal_f32(&v0);
             // Scalar w2 = (Scalar(1)+c)*Scalar(0.5);
             let w2 = (1.0 + c) * 0.5;

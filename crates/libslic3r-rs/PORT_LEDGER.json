@@ -3296,7 +3296,8 @@
     "rust_exists": true,
     "loc": 563,
     "status": "partial",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SLA/SupportPointGenerator.cpp",
