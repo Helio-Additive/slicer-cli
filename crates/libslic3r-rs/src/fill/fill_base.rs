@@ -888,6 +888,8 @@ fn mark_boundary_segments_touching_infill(
                                 radius,
                                 &infill_bbox,
                             );
+                            // FillBase.cpp — Continue traversing the grid along the edge.
+                            true
                         },
                     );
                 };

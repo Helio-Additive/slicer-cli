@@ -272,7 +272,7 @@ fn contour_distance(
                 let v = dir * c + dir_perp * s;
                 visitor.init(idx_pt_this, pt_this, v, search_radius);
                 grid.visit_cells_intersecting_line(visitor.pt_start, visitor.pt_end, |row, col| {
-                    visitor.visit(row, col);
+                    visitor.visit(row, col)
                 });
                 distances.push(visitor.t_min);
                 i += 1;

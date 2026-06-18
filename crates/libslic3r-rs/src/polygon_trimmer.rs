@@ -118,7 +118,7 @@ pub fn trim_loop(loop_polygon: &Polygon, grid: &EdgeGrid) -> TrimmedLoop {
             // PolygonTrimmer.cpp:40
             // grid.visit_cells_intersecting_line(*visitor.pt_prev, pt_this, visitor);
             grid.visit_cells_intersecting_line(visitor.pt_prev.unwrap(), *pt_this, |iy, ix| {
-                visitor.visit(iy, ix);
+                visitor.visit(iy, ix)
             });
             // PolygonTrimmer.cpp:41
             // visitor.pt_prev = &pt_this;

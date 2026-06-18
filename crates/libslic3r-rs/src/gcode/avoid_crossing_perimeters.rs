@@ -169,9 +169,7 @@ impl<'a> AllIntersectionsVisitor<'a> {
         let b = self.travel_line.b;
         // The C++ AllIntersectionsVisitor is invoked with the same start/end as the travel line.
         let grid = self.grid;
-        grid.visit_cells_intersecting_line(a, b, |iy, ix| {
-            self.visit(iy, ix);
-        });
+        grid.visit_cells_intersecting_line(a, b, |iy, ix| self.visit(iy, ix));
         self.intersections
     }
 }
@@ -188,18 +186,18 @@ fn first_intersection_visitor_intersect(
     // AvoidCrossingPerimeters.cpp:96-113 — operator()
     let mut intersect = false;
     grid.visit_cells_intersecting_line(*pt_current, *pt_next, |iy, ix| {
-        // Note: the Rust line-cell visitor does not honor early termination
-        // (it always continues), but setting `intersect = true` repeatedly is
-        // harmless and produces the same boolean result as the C++ `return false`.
         let cell_data_range = grid.cell_data_range_at(iy, ix);
         for &it_contour_and_segment in cell_data_range {
             // End points of the line segment and their vector.
             let segment = grid.segment(it_contour_and_segment);
             if crate::geometry::segments_intersect(segment.a, segment.b, *pt_current, *pt_next) {
                 intersect = true;
-                return;
+                // AvoidCrossingPerimeters.cpp — return false to stop traversal.
+                return false;
             }
         }
+        // Continue traversing the grid along the edge.
+        true
     });
     intersect
 }

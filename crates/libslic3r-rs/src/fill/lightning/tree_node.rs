@@ -396,6 +396,7 @@ pub fn line_segment_polygons_intersection(
             }
         }
         // TreeNode.cpp:171-172 — Continue traversing the grid along the edge. (return true)
+        true
     });
 
     // TreeNode.cpp:183 — if (visitor.d2min < double(within_max_dist) * double(within_max_dist))
