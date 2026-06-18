@@ -1884,7 +1884,8 @@
     "rust_exists": true,
     "loc": 1638,
     "status": "done",
-    "priority": 1
+    "priority": 1,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arachne/utils/ExtrusionJunction.cpp",

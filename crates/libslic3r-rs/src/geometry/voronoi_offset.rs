@@ -9,11 +9,11 @@
 // crate (wasm-safe). `VD = Geometry::VoronoiDiagram` in C++ is `bv::Diagram` here.
 //
 // The header-declared category types (VertexCategory / EdgeCategory / CellCategory)
-// and their color accessors, as well as `annotate_inside_outside` /
-// `reset_inside_outside_annotations`, are implemented (against the bv::Diagram API)
-// in `voronoi_annotation.rs`; they are re-exported here so this module mirrors the
-// public surface of VoronoiOffset.hpp. The remainder of VoronoiOffset.cpp is ported
-// below.
+// and their color accessors, as well as `annotate_inside_outside`, are implemented
+// (against the bv::Diagram API) in `voronoi_annotation.rs`; they are re-exported here
+// so this module mirrors the public surface of VoronoiOffset.hpp.
+// `reset_inside_outside_annotations` (VoronoiOffset.cpp:640-648) is ported directly in
+// this file below. The remainder of VoronoiOffset.cpp is ported below.
 
 use boostvoronoi::prelude as bv;
 
@@ -667,6 +667,34 @@ mod detail {
         out
     }
 } // namespace detail
+
+// ---------------------------------------------------------------------------
+// reset_inside_outside_annotations  (VoronoiOffset.cpp:640-648)
+// ---------------------------------------------------------------------------
+pub fn reset_inside_outside_annotations(diagram: &mut bv::Diagram) {
+    // VoronoiOffset.cpp:642-643
+    // for (const VD::vertex_type &v : vd.vertices())
+    //     set_vertex_category(v, VertexCategory::Unknown);
+    let vertex_ids: Vec<bv::VertexIndex> =
+        diagram.vertices().iter().map(|v| v.get_id()).collect();
+    for vertex_id in vertex_ids {
+        set_vertex_category(diagram, vertex_id, VertexCategory::Unknown);
+    }
+    // VoronoiOffset.cpp:644-645
+    // for (const VD::edge_type &e : vd.edges())
+    //     set_edge_category(e, EdgeCategory::Unknown);
+    for edge_idx in 0..diagram.num_edges() {
+        let edge_id = diagram.edge_index_unchecked(edge_idx);
+        set_edge_category(diagram, edge_id, EdgeCategory::Unknown);
+    }
+    // VoronoiOffset.cpp:646-647
+    // for (const VD::cell_type &c : vd.cells())
+    //     set_cell_category(c, CellCategory::Unknown);
+    let cell_ids: Vec<bv::CellIndex> = diagram.cells().iter().map(|c| c.id()).collect();
+    for cell_id in cell_ids {
+        set_cell_category(diagram, cell_id, CellCategory::Unknown);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // signed_vertex_distances  (VoronoiOffset.cpp:969-1010)
