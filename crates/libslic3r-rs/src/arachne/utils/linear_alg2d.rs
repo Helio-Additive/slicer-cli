@@ -44,6 +44,9 @@ pub fn is_inside_corner(a: Point, b: Point, c: Point, query_point: Point) -> boo
         if _len < 1 {
             return Point::new(len, 0);
         }
+        // FIDELITY-NOTE(F2): C++ `(p0.cast<int64_t>()*len/_len).cast<coord_t>()`
+        // truncates each component to coord_t (int32) on the final cast; crate
+        // Coord=i64 keeps the full int64 result. Equal for in-range coordinates.
         Point::new(px * len / _len, py * len / _len)
     };
 
@@ -155,7 +158,11 @@ pub fn get_angle_left(a: Point, b: Point, c: Point) -> f32 {
         angle
     } else {
         // linearAlg2D.hpp:118  return M_PI * 2 + angle;
-        (PI * 2.0) as f32 + angle
+        // C++ `float(M_PI*2 + angle)`: the sum is evaluated in double (angle, a
+        // float, promotes) and narrowed to float on return. Compute in f64 then
+        // narrow — NOT `(2pi as f32) + (angle as f32)` which would differ in the
+        // last bit.
+        (PI * 2.0 + angle as f64) as f32
     }
 }
 
