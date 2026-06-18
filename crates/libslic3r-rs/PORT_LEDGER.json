@@ -2877,7 +2877,8 @@
     "rust_exists": true,
     "loc": 741,
     "status": "done",
-    "priority": 6
+    "priority": 6,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Support/TreeModelVolumes.cpp",

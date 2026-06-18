@@ -306,8 +306,12 @@ impl TreeSupportMeshGroupSettings {
         // Rust: config.arachne_min_feature_size == C++ config.min_feature_size
         let min_feature_size = scaled_coord(config.arachne_min_feature_size);
         // TreeSupportCommon.hpp:53  this->support_angle = 0.5 * M_PI - std::clamp<double>((config.support_threshold_angle + 1) * M_PI / 180., 0., 0.5 * M_PI);
+        // C++ `support_threshold_angle` is a ConfigOptionInt (PrintConfig.hpp:967), so
+        // `config.support_threshold_angle.value + 1` is integer arithmetic before the
+        // `* M_PI / 180.` promotion to double. The Rust crate stores this option as f64,
+        // so truncate toward zero to int (matching the stored `int` value) before `+ 1`.
         let support_angle = 0.5 * M_PI
-            - ((config.support_threshold_angle + 1.0) * M_PI / 180.)
+            - (((config.support_threshold_angle as i32 + 1) as f64) * M_PI / 180.)
                 .clamp(0., 0.5 * M_PI);
         // TreeSupportCommon.hpp:54  this->support_line_width = support_material_flow(&print_object, config.layer_height).scaled_width();
         let support_line_width = support_material_flow(print_object, config.layer_height)
@@ -838,23 +842,27 @@ impl TreeSupportSettings {
     #[must_use]
     pub fn get_radius(&self, distance_to_top: usize, elephant_foot_increases: f64) -> Coord {
         // TreeSupportCommon.hpp:543-547
-        let base = if distance_to_top <= self.tip_layers {
-            // tip
-            self.min_radius
+        // The ternary's tip branch is integer (coord_t) arithmetic; the base branch
+        // is `coord_t + size_t * double` = double. C++ takes the common type of the
+        // ternary (double), then adds the elephant-foot term (double), and only
+        // truncates to coord_t on return. Mirror that: compute the branch value as
+        // f64 with no early truncation, add the elephant-foot term, truncate once.
+        let base: f64 = if distance_to_top <= self.tip_layers {
+            // tip: integer arithmetic (coord_t), promoted to double for the ternary.
+            (self.min_radius
                 + (self.branch_radius - self.min_radius) * distance_to_top as Coord
-                    / self.tip_layers as Coord
+                    / self.tip_layers as Coord) as f64
         } else {
-            // base
-            self.branch_radius
-                // gradual increase
-                + ((distance_to_top - self.tip_layers) as f64 * self.branch_radius_increase_per_layer)
-                    as Coord
+            // base + gradual increase (double).
+            self.branch_radius as f64
+                + (distance_to_top - self.tip_layers) as f64 * self.branch_radius_increase_per_layer
         };
-        base + (elephant_foot_increases
-            * f64::max(
-                self.bp_radius_increase_per_layer - self.branch_radius_increase_per_layer,
-                0.0,
-            )) as Coord
+        (base
+            + elephant_foot_increases
+                * f64::max(
+                    self.bp_radius_increase_per_layer - self.branch_radius_increase_per_layer,
+                    0.0,
+                )) as Coord
     }
 
     // TreeSupportCommon.hpp:555-559
@@ -864,8 +872,11 @@ impl TreeSupportSettings {
         // TreeSupportCommon.hpp:557  double num_layers_widened = layer_start_bp_radius - layer_idx;
         let num_layers_widened = (self.layer_start_bp_radius - layer_idx) as f64;
         // TreeSupportCommon.hpp:558  return num_layers_widened > 0 ? branch_radius + num_layers_widened * bp_radius_increase_per_layer : 0;
+        // `branch_radius`(coord_t) + double = double, truncated to coord_t once on
+        // return. Compute the sum in f64 and truncate once (no early truncation).
         if num_layers_widened > 0. {
-            self.branch_radius + (num_layers_widened * self.bp_radius_increase_per_layer) as Coord
+            (self.branch_radius as f64 + num_layers_widened * self.bp_radius_increase_per_layer)
+                as Coord
         } else {
             0
         }
