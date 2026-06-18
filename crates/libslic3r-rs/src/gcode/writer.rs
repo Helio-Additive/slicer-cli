@@ -1184,7 +1184,9 @@ impl GCodeWriter {
                 ZHopType::Spiral | ZHopType::Auto => {
                     self.spiral_travel_to_z(target_z);
                 }
-                ZHopType::Normal => {
+                // zhtNormal and zhtSlope both perform a linear lift here (the
+                // slope-specific geometry is not modeled in this writer shim).
+                ZHopType::Normal | ZHopType::Slope => {
                     self.travel_to_z(target_z, None);
                 }
             }
@@ -1230,7 +1232,7 @@ impl GCodeWriter {
                     });
                     self.z = self.z_before_lift;
                 }
-                ZHopType::Normal => {
+                ZHopType::Normal | ZHopType::Slope => {
                     self.travel_to_z(self.z_before_lift, None);
                 }
             }

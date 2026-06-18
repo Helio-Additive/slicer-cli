@@ -800,72 +800,50 @@ impl PrintConfig {
     }
 
     /// Validate the configuration with min/max bounds from C++ PrintConfig.
+    // PrintConfig.cpp:8977  std::map<std::string,std::string> validate(const FullPrintConfig &cfg, bool under_cli)
+    // FIDELITY-NOTE: the C++ free `validate` operates on a FullPrintConfig / DynamicConfig
+    // (ConfigOptionDef registry, get_abs_value, serialize, per-extruder *vectors*, has_enum_value)
+    // none of which exist in this scalar struct model. The thresholds for the fields that DO
+    // map 1:1 are mirrored here exactly; the original signature (Result<(),String> returning the
+    // first error rather than a key->message map) is preserved because there is no
+    // DynamicConfig/error-map model in this crate. The vector-valued C++ checks collapse to a
+    // single scalar check (one nozzle / one filament).
     pub fn validate(&self) -> Result<(), String> {
+        // PrintConfig.cpp:8981  --layer-height: <= 0 invalid
         if self.layer_height <= 0.0 {
-            return Err("Layer height must be positive".into());
+            return Err(format!("invalid value {}", self.layer_height));
         }
-        if self.layer_height > 2.0 {
-            return Err("Layer height must be <= 2.0mm".into());
+        // PrintConfig.cpp:8984  else if (fabs(fmod(layer_height, SCALING_FACTOR)) > 1e-4) invalid
+        else if (self.layer_height % crate::libslic3r::SCALING_FACTOR).abs() > 1e-4 {
+            return Err(format!("invalid value {}", self.layer_height));
         }
+        // PrintConfig.cpp:8989  --first-layer-height: initial_layer_print_height <= 0 invalid
         if self.first_layer_height <= 0.0 {
-            return Err("First layer height must be positive".into());
+            return Err(format!("invalid value {}", self.first_layer_height));
         }
-        if self.first_layer_height > 2.0 {
-            return Err("First layer height must be <= 2.0mm".into());
+        // PrintConfig.cpp:8994  --filament-diameter: fd < 1 invalid
+        if self.filament_diameter < 1.0 {
+            return Err(format!("invalid value {}", self.filament_diameter));
         }
-        if self.nozzle_diameter <= 0.0 {
-            return Err("Nozzle diameter must be positive".into());
+        // PrintConfig.cpp:9001  --nozzle-diameter: nd < 0.005 invalid
+        if self.nozzle_diameter < 0.005 {
+            return Err(format!("invalid value {}", self.nozzle_diameter));
         }
-        if self.nozzle_diameter > 3.0 {
-            return Err("Nozzle diameter must be <= 3.0mm".into());
+        // PrintConfig.cpp:9080  extruder clearance: <= 0 invalid
+        if self.extruder_clearance_max_radius <= 0.0 {
+            return Err(format!("invalid value {}", self.extruder_clearance_max_radius));
         }
-        if self.filament_diameter <= 0.0 {
-            return Err("Filament diameter must be positive".into());
+        // PrintConfig.cpp:9083
+        if self.extruder_clearance_height_to_rod <= 0.0 {
+            return Err(format!("invalid value {}", self.extruder_clearance_height_to_rod));
         }
-        if self.extrusion_multiplier <= 0.0 {
-            return Err("Extrusion multiplier must be positive".into());
+        // PrintConfig.cpp:9086
+        if self.extruder_clearance_height_to_lid <= 0.0 {
+            return Err(format!("invalid value {}", self.extruder_clearance_height_to_lid));
         }
-        if self.retract_length < 0.0 {
-            return Err("Retraction length must be >= 0".into());
-        }
-        if self.retract_length > 10.0 {
-            return Err("Retraction length must be <= 10mm".into());
-        }
-        if self.retract_speed < 0.0 || self.retract_speed > 200.0 {
-            return Err("Retraction speed must be between 0 and 200 mm/s".into());
-        }
-        if self.retract_lift < 0.0 || self.retract_lift > 5.0 {
-            return Err("Retract lift must be between 0 and 5mm".into());
-        }
-        if self.travel_speed <= 0.0 {
-            return Err("Travel speed must be positive".into());
-        }
-        if self.print_speed <= 0.0 {
-            return Err("Print speed must be positive".into());
-        }
-        if self.bed_size_x <= 0.0 || self.bed_size_y <= 0.0 {
-            return Err("Bed size must be positive".into());
-        }
-        if self.default_acceleration < 0.0 {
-            return Err("Default acceleration must be >= 0".into());
-        }
-        if self.default_jerk < 0.0 {
-            return Err("Default jerk must be >= 0".into());
-        }
-        if self.filament_flow_ratio <= 0.0 || self.filament_flow_ratio > 2.0 {
-            return Err("Filament flow ratio must be between 0 and 2".into());
-        }
-        if self.filament_max_volumetric_speed < 0.0 {
-            return Err("Max volumetric speed must be >= 0".into());
-        }
-        if self.raft_expansion < 0.0 {
-            return Err("Raft expansion must be non-negative".into());
-        }
-        if self.raft_contact_distance < 0.0 {
-            return Err("Raft contact distance must be non-negative".into());
-        }
-        if !(0.0..=1.0).contains(&self.raft_density) {
-            return Err("Raft density must be between 0.0 and 1.0".into());
+        // PrintConfig.cpp:9093  --extrusion-multiplier: filament_flow_ratio em <= 0 invalid
+        if self.filament_flow_ratio <= 0.0 {
+            return Err(format!("invalid value {}", self.filament_flow_ratio));
         }
         Ok(())
     }
@@ -1203,7 +1181,7 @@ impl Default for PrintConfig {
             wrapping_detection_gcode: String::new(),
 
             // Bed temperature formula
-            bed_temperature_formula: BedTempFormula::ByFilamentDefault,
+            bed_temperature_formula: BedTempFormula::ByFirstFilament,
 
             // Extruder offset (0 = no offset)
             extruder_offset_x: 0.0,
@@ -3159,7 +3137,8 @@ impl Default for PrintObjectConfig {
 
             // Slicing
             slicing_mode: SlicingMode::Regular,
-            ensure_vertical_shell_thickness: EnsureVerticalShellThickness::None,
+            // C++ default for ensure_vertical_shell_thickness is evtEnabled (PrintConfig.cpp:1792).
+            ensure_vertical_shell_thickness: EnsureVerticalShellThickness::All,
             detect_overhang_wall: true,
 
             // Draft shield
@@ -3224,60 +3203,29 @@ impl Default for PrintObjectConfig {
 
 impl PrintObjectConfig {
     /// Validate the object configuration with min/max bounds from C++.
+    // PrintConfig.cpp:8977  std::map<std::string,std::string> validate(const FullPrintConfig &cfg, bool under_cli)
+    // FIDELITY-NOTE: the object-level portion of the C++ free `validate`. The C++ function
+    // operates on the merged FullPrintConfig; only the checks whose fields exist on this struct
+    // are mirrored. wall_loops/top_shell_layers/bottom_shell_layers map to perimeters /
+    // top_solid_layers / bottom_solid_layers which are `u32` here (so the C++ `< 0` checks are
+    // statically unreachable and are omitted). The error-map return is collapsed to the original
+    // Result<(),String> (first error wins) because there is no DynamicConfig/error-map model.
     pub fn validate(&self) -> Result<(), String> {
-        if self.layer_height <= 0.0 || self.layer_height > 2.0 {
-            return Err("Layer height must be between 0 and 2.0mm".into());
+        // PrintConfig.cpp:8981  --layer-height: <= 0 invalid
+        if self.layer_height <= 0.0 {
+            return Err(format!("invalid value {}", self.layer_height));
         }
-        if self.first_layer_height <= 0.0 || self.first_layer_height > 2.0 {
-            return Err("First layer height must be between 0 and 2.0mm".into());
+        // PrintConfig.cpp:8984  else if fabs(fmod(layer_height, SCALING_FACTOR)) > 1e-4 invalid
+        else if (self.layer_height % crate::libslic3r::SCALING_FACTOR).abs() > 1e-4 {
+            return Err(format!("invalid value {}", self.layer_height));
         }
-        if self.perimeters > 100 {
-            return Err("Perimeters must be <= 100".into());
+        // PrintConfig.cpp:8989  --first-layer-height: initial_layer_print_height <= 0 invalid
+        if self.first_layer_height <= 0.0 {
+            return Err(format!("invalid value {}", self.first_layer_height));
         }
-        if self.top_solid_layers > 100 {
-            return Err("Top solid layers must be <= 100".into());
-        }
-        if self.bottom_solid_layers > 100 {
-            return Err("Bottom solid layers must be <= 100".into());
-        }
-        if self.fill_density < 0.0 || self.fill_density > 1.0 {
-            return Err("Fill density must be between 0.0 and 1.0".into());
-        }
-        if self.line_width < 0.0 || self.line_width > 5.0 {
-            return Err("Line width must be between 0 and 5mm".into());
-        }
-        if self.infill_wall_overlap < 0.0 || self.infill_wall_overlap > 1.0 {
-            return Err("Infill wall overlap must be between 0 and 100%".into());
-        }
-        if self.bridge_flow < 0.0 || self.bridge_flow > 2.0 {
-            return Err("Bridge flow must be between 0 and 2".into());
-        }
-        if self.ironing_flow < 0.0 || self.ironing_flow > 1.0 {
-            return Err("Ironing flow must be between 0 and 1 (0-100%)".into());
-        }
-        if self.ironing_spacing < 0.0 || self.ironing_spacing > 5.0 {
-            return Err("Ironing spacing must be between 0 and 5mm".into());
-        }
-        if self.ironing_speed < 0.0 {
-            return Err("Ironing speed must be >= 0".into());
-        }
-        if self.fuzzy_skin_thickness < 0.0 || self.fuzzy_skin_thickness > 5.0 {
-            return Err("Fuzzy skin thickness must be between 0 and 5mm".into());
-        }
-        if self.fuzzy_skin_point_distance < 0.0 || self.fuzzy_skin_point_distance > 10.0 {
-            return Err("Fuzzy skin point distance must be between 0 and 10mm".into());
-        }
-        if self.brim_width < 0.0 || self.brim_width > 200.0 {
-            return Err("Brim width must be between 0 and 200mm".into());
-        }
-        if self.support_threshold_angle < 0.0 || self.support_threshold_angle > 90.0 {
-            return Err("Support threshold angle must be between 0 and 90 degrees".into());
-        }
-        if self.support_object_xy_distance < 0.0 {
-            return Err("Support object XY distance must be >= 0".into());
-        }
-        if self.tree_support_branch_angle < 0.0 || self.tree_support_branch_angle > 90.0 {
-            return Err("Tree support branch angle must be between 0 and 90 degrees".into());
+        // PrintConfig.cpp:9075  --bridge-flow-ratio: bridge_flow <= 0 invalid
+        if self.bridge_flow <= 0.0 {
+            return Err(format!("invalid value {}", self.bridge_flow));
         }
         Ok(())
     }
@@ -3297,57 +3245,80 @@ impl fmt::Display for PrintObjectConfig {
 
 /// Z-hop type for retraction lift moves.
 ///
-/// BambuStudio reference: `ZHopType` in PrintConfig.hpp
-/// - `zhtNormal`: Standard vertical G0 Z-hop
-/// - `zhtAuto`/`zhtSpiral`: Helical G3 arc for Z-hop (spiral lift)
+/// Faithful mirror of the C++ `enum ZHopType` (PrintConfig.hpp:331-336):
+/// `zhtAuto = 0, zhtNormal, zhtSlope, zhtSpiral`. Variant ORDER matches the C++ enum.
+/// Config keys: "Auto Lift"/"Normal Lift"/"Slope Lift"/"Spiral Lift"
+/// (PrintConfig.cpp:475-480). The C++ default for the `z_hop_types` option is `zhtSpiral`
+/// (PrintConfig.cpp:4442); Bambu printer presets override it to "Auto Lift".
 ///
-/// The spiral lift produces a helical CCW arc that simultaneously lifts Z
-/// while tracing a circle in XY, avoiding the vertical "zit" from a straight
-/// Z-hop. The reference G-code uses `G17` (XY plane select) followed by
-/// `G3 Z{hop_z} I{i} J{j} P1` for one full revolution.
+/// The spiral lift produces a helical CCW arc that simultaneously lifts Z while tracing a
+/// circle in XY, avoiding the vertical "zit" from a straight Z-hop. The reference G-code uses
+/// `G17` (XY plane select) followed by `G3 Z{hop_z} I{i} J{j} P1` for one full revolution.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZHopType {
-    /// Normal vertical Z-hop using G0 Z moves.
-    #[default]
-    Normal,
-    /// Automatic: use spiral lift when available, fall back to normal.
+    /// PrintConfig.hpp:332 — zhtAuto. Use spiral lift when available, else normal.
     /// BambuStudio uses this as the default for Bambu printers.
     Auto,
+    /// PrintConfig.hpp:333 — zhtNormal. Standard vertical Z-hop using G0 Z moves.
+    Normal,
+    /// PrintConfig.hpp:334 — zhtSlope. Sloped lift.
+    Slope,
+    /// PrintConfig.hpp:335 — zhtSpiral. C++ `z_hop_types` option default.
     /// Spiral (helical) Z-hop using G3 arcs with Z component.
     /// Emits: G17 → G3 Z{z} I{i} J{j} P1 F{f}
+    #[default]
     Spiral,
 }
 
 /// Support structure type.
+///
+/// FIDELITY-NOTE: the C++ `enum SupportType` (PrintConfig.hpp:161-163) has FOUR values
+/// `stNormalAuto, stTreeAuto, stNormal(=manual), stTree(=manual)` with `is_auto()`/`is_tree()`
+/// predicates and config keys `normal(auto)/tree(auto)/normal(manual)/tree(manual)`
+/// (PrintConfig.cpp:322-327). This crate models support type with the coarser
+/// `Normal/Tree/Hybrid` set that is shared across the `support/` subsystem
+/// (support_parameters.rs, print_object.rs, model_arrange.rs); collapsing those callers
+/// onto the C++ 4-value auto/manual enum is a cross-cutting structural rework and is left
+/// for that subsystem rather than re-routed from this config file. The C++ default for the
+/// `support_type` option is `stNormalAuto` (PrintConfig.cpp:4998); `Normal` is the closest
+/// match here.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SupportType {
-    /// Normal/classic support structures.
+    /// Normal/classic support structures (C++ stNormalAuto / stNormal).
     #[default]
     Normal,
-    /// Tree-style support structures.
+    /// Tree-style support structures (C++ stTreeAuto / stTree).
     Tree,
-    /// Hybrid support (tree + normal).
+    /// Hybrid support (tree + normal); BBS `hybrid(auto)` handled in handle_legacy
+    /// (PrintConfig.cpp:6869), not part of the C++ SupportType enum proper.
     Hybrid,
 }
 
 /// Brim type. BambuStudio: `brim_type`.
+///
+/// Faithful mirror of the C++ `enum BrimType` (PrintConfig.hpp:207-213):
+/// `btAutoBrim, btBrimEars, btOuterOnly, btInnerOnly, btOuterAndInner, btNoBrim`.
+/// Variant ORDER matches the C++ enum. Config keys per `s_keys_map_BrimType`
+/// (PrintConfig.cpp:366-372). C++ option default is `btAutoBrim` (PrintConfig.cpp:1480).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BrimType {
-    /// No brim.
+    /// PrintConfig.hpp:208 — btAutoBrim (BBS). C++ option default.
     #[default]
-    NoBrim,
-    /// Outer brim only.
-    OuterOnly,
-    /// Inner brim only.
-    InnerOnly,
-    /// Both inner and outer brim.
-    OuterAndInner,
-    /// Auto brim (BambuStudio decides).
     AutoBrim,
+    /// PrintConfig.hpp:209 — btBrimEars (BBS).
+    BrimEars,
+    /// PrintConfig.hpp:210 — btOuterOnly.
+    OuterOnly,
+    /// PrintConfig.hpp:211 — btInnerOnly.
+    InnerOnly,
+    /// PrintConfig.hpp:212 — btOuterAndInner.
+    OuterAndInner,
+    /// PrintConfig.hpp:213 — btNoBrim.
+    NoBrim,
 }
 
 impl BrimType {
-    /// Parse from BambuStudio config string.
+    /// Parse from BambuStudio config string (s_keys_map_BrimType, PrintConfig.cpp:366-372).
     pub fn from_str_bambu(s: &str) -> Self {
         match s.trim().to_lowercase().replace(' ', "_").as_str() {
             "no_brim" => BrimType::NoBrim,
@@ -3355,23 +3326,30 @@ impl BrimType {
             "inner_only" => BrimType::InnerOnly,
             "outer_and_inner" | "both" => BrimType::OuterAndInner,
             "auto_brim" | "auto" => BrimType::AutoBrim,
+            "brim_ears" => BrimType::BrimEars,
             _ => BrimType::NoBrim,
         }
     }
 }
 
 /// Print sequence mode. BambuStudio: `print_sequence`.
+/// Print sequence. Mirrors the C++ `enum class PrintSequence`
+/// (PrintConfig.hpp:121-126): `ByLayer, ByObject, ByDefault`. C++ option default is
+/// `PrintSequence::ByLayer` (PrintConfig.cpp:1557); `s_keys_map_PrintSequence`
+/// (PrintConfig.cpp:279-282) defines keys only for "by layer"/"by object".
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PrintSequence {
-    /// Print all objects layer by layer (default).
+    /// PrintConfig.hpp:122 — ByLayer. Print all objects layer by layer (C++ default).
     #[default]
     ByLayer,
-    /// Print each object completely before moving to the next.
+    /// PrintConfig.hpp:123 — ByObject. Print each object completely before the next.
     ByObject,
+    /// PrintConfig.hpp:124 — ByDefault (sentinel; no config key).
+    ByDefault,
 }
 
 impl PrintSequence {
-    /// Parse from BambuStudio config string.
+    /// Parse from BambuStudio config string (s_keys_map_PrintSequence, PrintConfig.cpp:279-282).
     pub fn from_str_bambu(s: &str) -> Self {
         match s.trim().to_lowercase().replace(' ', "_").as_str() {
             "by_object" | "by object" => PrintSequence::ByObject,
@@ -3418,6 +3396,13 @@ impl WallInfillOrder {
 }
 
 /// Support base pattern. BambuStudio: `support_base_pattern`.
+///
+/// FIDELITY-NOTE: the C++ `enum SupportMaterialPattern` (PrintConfig.hpp:138-143) has SIX values
+/// `smpDefault, smpRectilinear, smpRectilinearGrid, smpHoneycomb, smpLightning, smpNone`
+/// (keys: rectilinear, rectilinear-grid, honeycomb, lightning, default, hollow;
+/// PrintConfig.cpp:292-298). This crate models a reduced `Rectilinear/Honeycomb/Grid` set used by
+/// the `support/` subsystem; expanding it to the full C++ enum is a support-subsystem rework and
+/// is not re-routed from this config file. The parser maps the C++ keys it can represent.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SupportBasePattern {
     /// Rectilinear pattern.
@@ -3441,6 +3426,12 @@ impl SupportBasePattern {
 }
 
 /// Support interface pattern. BambuStudio: `support_interface_pattern`.
+///
+/// FIDELITY-NOTE: the C++ `enum SupportMaterialInterfacePattern` (PrintConfig.hpp:156-158) has
+/// FIVE values `smipAuto, smipRectilinear, smipConcentric, smipRectilinearInterlaced, smipGrid`
+/// (keys: auto, rectilinear, concentric, rectilinear_interlaced, grid; PrintConfig.cpp:313-319).
+/// This crate models a reduced `Rectilinear/Concentric/Grid` set used by the `support/` subsystem;
+/// expanding it to the full C++ enum is a support-subsystem rework, not re-routed from here.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SupportInterfacePattern {
     /// Rectilinear pattern.
@@ -3490,23 +3481,34 @@ impl IroningType {
 }
 
 /// Fuzzy skin type. BambuStudio: `fuzzy_skin`.
+///
+/// Faithful mirror of the C++ `enum class FuzzySkinType` (PrintConfig.hpp:46-52):
+/// `None, External, All, AllWalls, Disabled_fuzzy`. Variant ORDER matches the C++ enum.
+/// Config keys per `s_keys_map_FuzzySkinType` (PrintConfig.cpp:183-189) distinguish
+/// "all" (=All) from "allwalls" (=AllWalls).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FuzzySkinType {
-    /// Disabled.
+    /// PrintConfig.hpp:47 — None (disabled).
     #[default]
     None,
-    /// Apply to external/outer walls only.
+    /// PrintConfig.hpp:48 — External (outer walls only).
     External,
-    /// Apply to all walls.
+    /// PrintConfig.hpp:49 — All (outer walls + holes/contours).
+    All,
+    /// PrintConfig.hpp:50 — AllWalls.
     AllWalls,
+    /// PrintConfig.hpp:51 — Disabled_fuzzy.
+    DisabledFuzzy,
 }
 
 impl FuzzySkinType {
-    /// Parse from BambuStudio config string.
+    /// Parse from BambuStudio config string (s_keys_map_FuzzySkinType, PrintConfig.cpp:183-189).
     pub fn from_str_bambu(s: &str) -> Self {
         match s.trim().to_lowercase().as_str() {
             "external" => FuzzySkinType::External,
-            "allwalls" | "all" | "all_walls" => FuzzySkinType::AllWalls,
+            "all" => FuzzySkinType::All,
+            "allwalls" | "all_walls" => FuzzySkinType::AllWalls,
+            "disabled_fuzzy" => FuzzySkinType::DisabledFuzzy,
             _ => FuzzySkinType::None,
         }
     }
@@ -3608,20 +3610,33 @@ pub enum DraftShield {
 }
 
 /// Ensure vertical shell thickness mode. BambuStudio: `ensure_vertical_shell_thickness`.
+///
+/// Mirrors the C++ `enum EnsureVerticalThicknessLevel` (PrintConfig.hpp:83-87):
+/// `evtDisabled(=None), evtPartial(=Limited), evtEnabled(=All)`. Ordinals match the C++ enum.
+/// C++ option default is `evtEnabled` (PrintConfig.cpp:1792).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EnsureVerticalShellThickness {
-    #[default]
+    /// PrintConfig.hpp:84 — evtDisabled.
     None,
+    /// PrintConfig.hpp:85 — evtPartial.
     Limited,
+    /// PrintConfig.hpp:86 — evtEnabled. C++ option default.
+    #[default]
     All,
 }
 
 impl EnsureVerticalShellThickness {
     /// Parse from BambuStudio config string.
+    /// Keys per `s_keys_map_EnsureVerticalThicknessLevel` (PrintConfig.cpp:271-275):
+    /// "disabled" (evtDisabled=None), "partial" (evtPartial=Limited), "enabled" (evtEnabled=All).
     pub fn from_str_bambu(s: &str) -> Self {
         match s.trim().to_lowercase().as_str() {
+            // PrintConfig.cpp:272  "disabled" -> evtDisabled
+            "disabled" => EnsureVerticalShellThickness::None,
+            // PrintConfig.cpp:273  "partial" -> evtPartial
             "limited" | "partial" => EnsureVerticalShellThickness::Limited,
-            "all" | "ensure_all" | "1" => EnsureVerticalShellThickness::All,
+            // PrintConfig.cpp:274  "enabled" -> evtEnabled
+            "all" | "enabled" | "ensure_all" | "1" => EnsureVerticalShellThickness::All,
             _ => EnsureVerticalShellThickness::None,
         }
     }
@@ -3640,20 +3655,33 @@ pub enum WallSequence {
 }
 
 /// Bed temperature formula mode. BambuStudio: `bed_temperature_formula`.
+///
+/// Faithful mirror of the C++ `enum class BedTempFormula` (PrintConfig.hpp:106-110):
+/// `btfFirstFilament, btfHighestTemp` (exactly two values). C++ option default is
+/// `btfFirstFilament` (PrintConfig.cpp:2337); keys per `s_keys_map_BedTempFormula`
+/// (PrintConfig.cpp:177-180): "by_first_filament", "by_highest_temp".
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BedTempFormula {
+    /// PrintConfig.hpp:107 — btfFirstFilament. C++ option default.
     #[default]
-    ByFilamentDefault,
-    ByHighestTemp,
     ByFirstFilament,
+    /// PrintConfig.hpp:108 — btfHighestTemp.
+    ByHighestTemp,
 }
 
 /// Timelapse type. BambuStudio: `timelapse_type`.
+///
+/// Faithful mirror of the C++ `enum TimelapseType : int` (PrintConfig.hpp:216-219):
+/// `tlTraditional = 0, tlSmooth`. C++ option default is `tlTraditional` (PrintConfig.cpp:4907);
+/// keys per `s_keys_map_TimelapseType` (PrintConfig.cpp:377-380): "0" -> tlTraditional,
+/// "1" -> tlSmooth.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TimeLapseType {
+    /// PrintConfig.hpp:217 — tlTraditional (key "0"). C++ option default.
     #[default]
-    None,
     Traditional,
+    /// PrintConfig.hpp:218 — tlSmooth (key "1").
+    Smooth,
 }
 
 /// Slicing mode for mesh processing. BambuStudio: `slicing_mode`.
@@ -3690,34 +3718,42 @@ impl TreeSupportStyle {
 }
 
 /// G-code flavor/dialect.
+///
+/// Faithful mirror of the C++ `enum GCodeFlavor : unsigned char` (PrintConfig.hpp:35-38).
+/// The variant ORDER (and therefore each variant's ordinal) matches the C++ enum exactly:
+///   0 gcfMarlinLegacy, 1 gcfKlipper, 2 gcfRepRapSprinter, 3 gcfRepRapFirmware, 4 gcfRepetier,
+///   5 gcfTeacup, 6 gcfMakerWare, 7 gcfMarlinFirmware, 8 gcfSailfish, 9 gcfMach3,
+///   10 gcfMachinekit, 11 gcfSmoothie, 12 gcfNoExtrusion.
+/// `Marlin` is the modern Marlin 2.x flavor (= gcfMarlinFirmware).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum GCodeFlavor {
-    /// Marlin legacy firmware.
-    MarlinLegacy,
-    /// Marlin 2.x firmware (modern).
+    /// PrintConfig.hpp:36 — gcfMarlinLegacy. C++ default for `gcode_flavor`
+    /// (PrintConfig.cpp:3397 `ConfigOptionEnum<GCodeFlavor>(gcfMarlinLegacy)`).
     #[default]
-    Marlin,
-    /// RepRap Sprinter firmware.
-    RepRapSprinter,
-    /// RepRap firmware.
-    RepRapFirmware,
-    /// Repetier firmware.
-    Repetier,
-    /// Teacup firmware.
-    Teacup,
-    /// MakerWare firmware (MakerBot).
-    MakerWare,
-    /// Klipper firmware.
+    MarlinLegacy,
+    /// PrintConfig.hpp:36 — gcfKlipper.
     Klipper,
-    /// Smoothieware firmware.
-    Smoothie,
-    /// Sailfish firmware (MakerBot).
+    /// PrintConfig.hpp:36 — gcfRepRapSprinter.
+    RepRapSprinter,
+    /// PrintConfig.hpp:36 — gcfRepRapFirmware.
+    RepRapFirmware,
+    /// PrintConfig.hpp:36 — gcfRepetier.
+    Repetier,
+    /// PrintConfig.hpp:36 — gcfTeacup.
+    Teacup,
+    /// PrintConfig.hpp:36 — gcfMakerWare (MakerBot).
+    MakerWare,
+    /// PrintConfig.hpp:36 — gcfMarlinFirmware (Marlin 2.x, modern).
+    Marlin,
+    /// PrintConfig.hpp:36 — gcfSailfish (MakerBot).
     Sailfish,
-    /// Mach3/LinuxCNC.
+    /// PrintConfig.hpp:36 — gcfMach3 / LinuxCNC.
     Mach3,
-    /// Machinekit firmware.
+    /// PrintConfig.hpp:36 — gcfMachinekit.
     Machinekit,
-    /// No extrusion (for CNC/laser).
+    /// PrintConfig.hpp:37 — gcfSmoothie.
+    Smoothie,
+    /// PrintConfig.hpp:37 — gcfNoExtrusion (CNC/laser).
     NoExtrusion,
 }
 
@@ -3858,19 +3894,22 @@ impl InfillPattern {
 }
 
 /// Seam position preference.
+///
+/// Faithful mirror of the C++ `enum SeamPosition` (PrintConfig.hpp:177-179):
+/// `spNearest, spAligned, spRear, spRandom`. Variant ORDER matches the C++ enum
+/// (no extra variants; C++ has exactly these four). Default is `spAligned`
+/// (PrintConfig.cpp:4648 `ConfigOptionEnum<SeamPosition>(spAligned)`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SeamPosition {
-    /// Random seam position.
-    Random,
-    /// Nearest to previous layer's seam.
+    /// PrintConfig.hpp:178 — spNearest. Nearest to previous layer's seam / corner.
+    Nearest,
+    /// PrintConfig.hpp:178 — spAligned. C++ option default.
     #[default]
     Aligned,
-    /// Rear of the model.
+    /// PrintConfig.hpp:178 — spRear. Rear of the model.
     Rear,
-    /// Nearest corner.
-    Nearest,
-    /// Hidden in corners when possible.
-    Hidden,
+    /// PrintConfig.hpp:178 — spRandom. Random seam position.
+    Random,
 }
 
 /// Perimeter generation mode.
@@ -3883,16 +3922,20 @@ pub enum SeamPosition {
 ///   top-surface regions. The topmost layer (no upper slices) also uses 1 perimeter.
 ///
 /// Reference G-code header: `; top_one_wall_type = all top`
+/// Faithful mirror of the C++ `enum class TopOneWallType` (PrintConfig.hpp:234-239):
+/// `None, Alltop, Topmost`. Variant ORDER matches the C++ enum. Keys per
+/// `s_keys_map_TopOneWallType` (PrintConfig.cpp:245-249): "not apply"->None, "all top"->Alltop,
+/// "topmost"->Topmost. C++ option default is `Alltop` (PrintConfig.cpp:1286).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TopOneWallType {
-    /// Disabled — use configured wall_loops everywhere.
-    #[default]
+    /// PrintConfig.hpp:236 — None. Disabled; use configured wall_loops everywhere.
     None,
-    /// Only the topmost layer uses 1 perimeter.
-    TopMost,
-    /// All layers with top surfaces use 1 perimeter for top regions;
-    /// the topmost layer always uses 1 perimeter.
+    /// PrintConfig.hpp:237 — Alltop. All layers with top surfaces use 1 perimeter for top
+    /// regions; the topmost layer always uses 1 perimeter. C++ option default.
+    #[default]
     AllTop,
+    /// PrintConfig.hpp:238 — Topmost. Only the topmost layer uses 1 perimeter.
+    TopMost,
 }
 
 impl TopOneWallType {
@@ -4058,7 +4101,9 @@ impl PrintConfig {
             "print_sequence".into(),
             match self.print_sequence {
                 PrintSequence::ByObject => "by object".into(),
-                PrintSequence::ByLayer => "by layer".into(),
+                // ByDefault is a sentinel with no C++ config key; serialize as by layer
+                // (the C++ default), matching s_keys_map_PrintSequence behavior.
+                PrintSequence::ByLayer | PrintSequence::ByDefault => "by layer".into(),
             },
         );
         // Acceleration
@@ -5964,7 +6009,8 @@ mod tests {
 
     #[test]
     fn test_gcode_flavor_default() {
-        assert_eq!(GCodeFlavor::default(), GCodeFlavor::Marlin);
+        // C++ default for gcode_flavor is gcfMarlinLegacy (PrintConfig.cpp:3397).
+        assert_eq!(GCodeFlavor::default(), GCodeFlavor::MarlinLegacy);
     }
 
     #[test]
