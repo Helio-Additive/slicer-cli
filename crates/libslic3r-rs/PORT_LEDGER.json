@@ -1301,7 +1301,8 @@
     "rust_exists": true,
     "loc": 747,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "SVG.cpp",

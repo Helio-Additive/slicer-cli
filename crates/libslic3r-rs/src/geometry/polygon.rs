@@ -583,6 +583,7 @@ impl Polygon {
             return false;
         }
         // Polygon.cpp:249 — Polylines pl_out = intersection_pl(to_polylines(other), *this);
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib (intersection_pl).
         let pl_out = crate::clipper_utils::intersection_pl(
             &to_polylines(other),
             &[crate::geometry::ExPolygon::new(self.clone())],
@@ -1863,6 +1864,7 @@ pub fn simplify_polygons_clipper(subject: &[Polygon]) -> Polygons {
     if subject.is_empty() {
         return Vec::new();
     }
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib simplify_polygons.
     let unioned = crate::clipper_utils::union_polygons_ex(subject);
     let mut out: Polygons = Vec::new();
     for ex in unioned {
@@ -1886,6 +1888,7 @@ fn clipper_simplify_polygons_single_path(path: &[Point]) -> Vec<Vec<Point>> {
     let subject = vec![Polygon::from_points(path.to_vec())];
     // The crate clipper backend exposes union over polygons returning ExPolygons.
     // ClipperLib::SimplifyPolygons returns a flat Polygons (outer + holes); flatten.
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib SimplifyPolygons (pftNonZero).
     let unioned = crate::clipper_utils::union_polygons_ex(&subject);
     let mut out: Vec<Vec<Point>> = Vec::new();
     for ex in unioned {
