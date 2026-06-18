@@ -32,7 +32,8 @@
     "rust_exists": true,
     "loc": 7,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "MacUtils.hpp",
