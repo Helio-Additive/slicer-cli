@@ -3044,7 +3044,8 @@
     "rust_exists": true,
     "loc": 3278,
     "status": "partial",
-    "priority": 7
+    "priority": 7,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Format/bbs_3mf.cpp",

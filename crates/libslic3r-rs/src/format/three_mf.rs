@@ -3271,10 +3271,13 @@ impl<'a> _3MF_Importer<'a> {
 
             // apply the remaining volume's metadata
             // 3mf.cpp:2175-2201
+            // BLOCKED(model): no per-volume name; track the name string locally
+            // so the `volume->name.empty()` rename test below mirrors C++.
+            let mut volume_name = String::new();
             for metadata in &volume_data.metadata {
                 if metadata.key == NAME_KEY {
                     // 3mf.cpp:2177-2178 — volume->name = metadata.value;
-                    // BLOCKED(model): no per-volume name.
+                    volume_name = metadata.value.clone();
                 } else if metadata.key == MODIFIER_KEY && metadata.value == "1" {
                     // 3mf.cpp:2179-2180 — volume->set_type(PARAMETER_MODIFIER);
                     // BLOCKED(model): no per-volume type.
@@ -3301,9 +3304,12 @@ impl<'a> _3MF_Importer<'a> {
 
             // this may happen for 3mf saved by 3rd part softwares
             // 3mf.cpp:2203-2209 — if (volume->name.empty()) { volume->name = object.name; ... }
-            // BLOCKED(model): no per-volume name; the rename counter is kept to
-            // mirror the C++ control flow.
-            renamed_volumes_count += 1;
+            // BLOCKED(model): no per-volume name; the counter is incremented only
+            // when the volume name is empty, mirroring the C++ control flow.
+            if volume_name.is_empty() {
+                // volume->name = object.name; (+ "_N" when renamed_volumes_count > 0)
+                renamed_volumes_count += 1;
+            }
             let _ = renamed_volumes_count;
         }
 
