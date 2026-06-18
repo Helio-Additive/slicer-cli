@@ -1500,7 +1500,8 @@
     "rust_exists": true,
     "loc": 1434,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "PrintObjectSlice.cpp",
