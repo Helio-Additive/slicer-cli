@@ -27,6 +27,17 @@
 //!   `create_*_pad_geometry`, `create_pad`) return `crate::Result` because the
 //!   crate's wasm-safe tesselation backend (`tesselate.rs`, earcut instead of
 //!   the native GLU libtess) is fallible; the C++ counterparts cannot fail.
+//!
+//! FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. Every Clipper
+//!   primitive used here (`offset_polygon`, `offset_expolygons_miter_limit`,
+//!   `difference`, `union_ex`, `union_polygons_ex`, plus the `offset_waffle_*`
+//!   helpers in concave_hull.rs) routes through `clipper_utils.rs`, which is
+//!   built on the `geo` crate (geo-clipper, fixed scale 1000) rather than
+//!   ClipperLib at coord_t integer precision. This is a cross-cutting backend
+//!   gap; it is NOT re-routed per-file.
+//! FIDELITY-NOTE(F2): crate-wide `Coord = i64` vs C++ `coord_t = int32_t`
+//!   (libslic3r.h:40). Coord is not narrowed per-file; the `(delta as f32)`
+//!   narrowings below mirror the C++ `float(delta)` / `scaled<float>` casts.
 
 use crate::bounding_box::BoundingBox;
 use crate::clipper_utils::{
@@ -346,22 +357,104 @@ fn divide_blueprint(bp: &ExPolygons) -> PadSkeleton {
     ret.inner.reserve(bp.len());
     ret.outer.reserve(bp.len());
 
-    // Pad.cpp:180-190
-    for (i, poly) in bp.iter().enumerate() {
-        let mut contained = false;
-        if !poly.contour.points.is_empty() {
-            for (j, other) in bp.iter().enumerate() {
-                if i != j && other.contour.contains(&poly.contour.points[0]) {
-                    contained = true;
-                    break;
-                }
+    // `union_pt(bp)` (ClipperUtils.cpp:966) flattens every ExPolygon's contour
+    // and holes into one Clipper subject and, under pftEvenOdd, builds a
+    // containment PolyTree without performing any union (the inputs are the
+    // disjoint output of diff_ex). The tree levels alternate solid/hole by
+    // even-odd parity of the nesting depth:
+    //   depth 0  -> top-level solid node            (Pad.cpp:181 node)
+    //   depth 1  -> hole of the enclosing depth-0   (Pad.cpp:184 child)
+    //   depth 2  -> solid node inside that hole, fed to traverse_pt -> inner
+    //   depth 3  -> hole of the depth-2 solid, etc.
+    // Rebuild the same hierarchy from the flattened rings by ray-cast point
+    // containment, then assemble depth-0 nodes (with their depth-1 holes) into
+    // `outer` (Pad.cpp:180-189) and depth-2 nodes (with their depth-3 holes)
+    // and deeper even levels into `inner` (Pad.cpp:186 traverse_pt recursion).
+
+    // Flatten the rings: (ring, owning ExPolygon contour-or-hole). Hole rings
+    // are reversed by diff_ex (clockwise) but orientation is irrelevant to the
+    // even-odd containment test used below.
+    let mut rings: Vec<&Polygon> = Vec::new();
+    for poly in bp {
+        rings.push(&poly.contour);
+        for h in &poly.holes {
+            rings.push(h);
+        }
+    }
+    let n = rings.len();
+
+    // depth[i] = number of OTHER rings strictly containing ring i's first
+    // vertex == the node's nesting level in the even-odd PolyTree.
+    let mut depth = vec![0usize; n];
+    for i in 0..n {
+        if rings[i].points.is_empty() {
+            continue;
+        }
+        let p = &rings[i].points[0];
+        for (j, ring) in rings.iter().enumerate() {
+            if i != j && ring.contains(p) {
+                depth[i] += 1;
             }
         }
-        if contained {
-            ret.inner.push(poly.clone());
-        } else {
-            ret.outer.push(poly.clone());
+    }
+
+    // immediate_children(parent): rings whose depth == depth[parent] + 1 and
+    // that are contained by ring `parent` (their first vertex lies inside).
+    let immediate_children = |parent: usize| -> Vec<usize> {
+        let mut out = Vec::new();
+        if rings[parent].points.is_empty() {
+            return out;
         }
+        for (k, ring) in rings.iter().enumerate() {
+            if k != parent
+                && depth[k] == depth[parent] + 1
+                && !ring.points.is_empty()
+                && rings[parent].contains(&ring.points[0])
+            {
+                out.push(k);
+            }
+        }
+        out
+    };
+
+    // Assemble a solid node at `idx` into one ExPolygon: contour = node ring,
+    // holes = immediate (depth+1) children. Recurse into the holes' children
+    // (depth+2 solids) which become the next-level entries.
+    fn assemble<F: Fn(usize) -> Vec<usize>>(
+        idx: usize,
+        rings: &[&Polygon],
+        children_of: &F,
+    ) -> (ExPolygon, Vec<usize>) {
+        // Pad.cpp:181  poly.contour.points = std::move(node->Contour);
+        let mut poly = ExPolygon::new(rings[idx].clone());
+        let mut grandchildren = Vec::new();
+        for hole in children_of(idx) {
+            // Pad.cpp:184  poly.holes.emplace_back(std::move(child->Contour));
+            poly.holes.push(rings[hole].clone());
+            // Pad.cpp:186  traverse_pt(child->Childs, &ret.inner);
+            grandchildren.extend(children_of(hole));
+        }
+        (poly, grandchildren)
+    }
+
+    // Pad.cpp:180-189 — top-level (depth 0) nodes -> outer; their depth-2
+    // grandchildren begin the inner recursion.
+    let mut inner_queue: Vec<usize> = Vec::new();
+    for (idx, _) in rings.iter().enumerate() {
+        if depth[idx] == 0 {
+            let (poly, grandchildren) = assemble(idx, &rings, &immediate_children);
+            ret.outer.push(poly);
+            inner_queue.extend(grandchildren);
+        }
+    }
+
+    // Pad.cpp:625-650 traverse_pt(ExPolygons) — every even-depth solid below a
+    // hole becomes a flat `inner` entry (contour + immediate holes), recursing
+    // through the odd hole levels.
+    while let Some(idx) = inner_queue.pop() {
+        let (poly, grandchildren) = assemble(idx, &rings, &immediate_children);
+        ret.inner.push(poly);
+        inner_queue.extend(grandchildren);
     }
 
     // Pad.cpp:192
