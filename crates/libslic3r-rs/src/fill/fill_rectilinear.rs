@@ -36,8 +36,11 @@ use crate::{scale, unscale, Coord, CoordF};
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Scaled epsilon for position comparisons (~0.001mm = 1000 units at 1e6 scale)
-const SCALED_EPSILON: Coord = 1000;
+/// Scaled epsilon for position comparisons.
+/// libslic3r.h:84 `#define SCALED_EPSILON scale_(EPSILON)`, with EPSILON=1e-4
+/// (libslic3r.h:52) and SCALING_FACTOR=1e-5 (libslic3r.h:58), so
+/// SCALED_EPSILON = 1e-4 / 1e-5 = 10 units at the crate's 1e5 scale.
+const SCALED_EPSILON: Coord = 10;
 
 // ---------------------------------------------------------------------------
 // SegmentIntersectionType
@@ -168,6 +171,10 @@ impl Default for SegmentIntersection {
 
 impl SegmentIntersection {
     // Compute the integer Y position (with rounding).
+    // FillRectilinear.cpp:131-140
+    // C++ returns coord_t(p / int64_t(pos_q)); coord_t is int32 (libslic3r.h:40).
+    // FIDELITY-NOTE(F2): C++ truncates the quotient to int32; we keep Coord=i64.
+    // Scaled Y positions fit in int32 for typical print volumes, so behavior matches.
     pub fn pos(&self) -> Coord {
         let mut p = self.pos_p;
         if p < 0 {
@@ -494,6 +501,7 @@ impl ExPolygonWithOffset {
         }
 
         // Compute outer offset
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib (jtMiter, DefaultMiterLimit).
         let aoffset1_mm = unscale(aoffset1);
         let polygons_outer = if aoffset1 == 0 {
             expolygon_to_polygons(&src)
@@ -678,31 +686,64 @@ fn polygons_to_expolygons_simple(polygons: &[Polygon]) -> Vec<ExPolygon> {
         .collect()
 }
 
+/// True if `p2` is a "stick" tip between `p1` and `p3` (zero-area protrusion or
+/// collinear backtrack). Port of `is_stick` (Polygon.cpp:518-538).
+fn is_stick(p1: Point, p2: Point, p3: Point) -> bool {
+    let v1 = (p2.x - p1.x, p2.y - p1.y);
+    let v2 = (p3.x - p2.x, p3.y - p2.y);
+    let dir = (v1.0 as i64) * (v2.0 as i64) + (v1.1 as i64) * (v2.1 as i64);
+    if dir > 0 {
+        // p3 does not turn back to p1. Do not remove p2.
+        return false;
+    }
+    let l2_1 = (v1.0 as f64) * (v1.0 as f64) + (v1.1 as f64) * (v1.1 as f64);
+    let l2_2 = (v2.0 as f64) * (v2.0 as f64) + (v2.1 as f64) * (v2.1 as f64);
+    if dir == 0 {
+        // Perpendicular corner or a zero-length edge.
+        return l2_1 == 0.0 || l2_2 == 0.0;
+    }
+    // p3 turns back to p1 after p2. Collinear within EPSILON?
+    let cross = (v1.0 as f64) * (v2.1 as f64) - (v2.0 as f64) * (v1.1 as f64);
+    let dist2 = cross * cross / l2_1.max(l2_2);
+    // EPSILON == 1e-4 (libslic3r.h:52).
+    const EPSILON: f64 = 1e-4;
+    dist2 < EPSILON * EPSILON
+}
+
 /// Remove "sticks" (zero-area protrusions) from a polygon.
-/// This is a simplified version of libslic3r's `remove_sticks`.
+/// Port of `remove_sticks(Polygon&)` (Polygon.cpp:540-564).
 fn remove_sticks_polygon(poly: &mut Polygon) {
-    if poly.points().len() < 3 {
-        return;
-    }
-    let mut cleaned = Vec::with_capacity(poly.points().len());
-    let n = poly.points().len();
-    for i in 0..n {
-        let prev = if i == 0 { n - 1 } else { i - 1 };
-        let next = if i + 1 >= n { 0 } else { i + 1 };
-        // Remove point if it's the same as its neighbour or if prev==next (stick)
-        if poly.points()[i] == poly.points()[next] {
-            continue;
+    {
+        let pts = poly.points_mut();
+        // Polygon.cpp:543-551 — compact, keeping non-stick interior points.
+        let mut j = 1usize;
+        let mut i = 1usize;
+        while i + 1 < pts.len() {
+            if !is_stick(pts[j - 1], pts[i], pts[i + 1]) {
+                if j < i {
+                    pts[j] = pts[i];
+                }
+                j += 1;
+            }
+            i += 1;
         }
-        if poly.points()[prev] == poly.points()[next] && poly.points()[prev] != poly.points()[i] {
-            // This forms a stick — skip this point
-            continue;
+        // Polygon.cpp:552-556 — move the last point into place and truncate.
+        j += 1;
+        if j < pts.len() {
+            let last = pts[pts.len() - 1];
+            pts[j - 1] = last;
+            pts.truncate(j);
         }
-        cleaned.push(poly.points()[i]);
-    }
-    if cleaned.len() < 3 {
-        poly.points_mut().clear();
-    } else {
-        *poly.points_mut() = cleaned;
+        // Polygon.cpp:557-560 — trim trailing sticks at the wrap point.
+        while pts.len() >= 3
+            && is_stick(pts[pts.len() - 2], pts[pts.len() - 1], pts[0])
+        {
+            pts.pop();
+        }
+        // Polygon.cpp:561-562 — trim leading sticks at the wrap point.
+        while pts.len() >= 3 && is_stick(pts[pts.len() - 1], pts[0], pts[1]) {
+            pts.remove(0);
+        }
     }
 }
 
@@ -1058,9 +1099,13 @@ fn adjust_sort_for_segment_intersections(intersections: &mut Vec<SegmentIntersec
             }
         };
 
+    // FillRectilinear.cpp:390-426
+    let mut index_group: Vec<usize> = Vec::new();
     let mut i = 0;
     while i < intersections.len() {
         if is_valid_type(&stack, intersections[i].itype) {
+            index_group.clear();
+            // FillRectilinear.cpp:396-400
             match intersections[i].itype {
                 OuterLow | InnerLow => stack.push(intersections[i].itype),
                 OuterHigh | InnerHigh => {
@@ -1070,26 +1115,35 @@ fn adjust_sort_for_segment_intersections(intersections: &mut Vec<SegmentIntersec
             }
             i += 1;
         } else {
+            // FillRectilinear.cpp:403-424
             visited[i] = true;
-            // Find a candidate to swap with
-            let mut swap_index: Option<usize> = None;
+            // scale_(EPSILON) == EPSILON / SCALING_FACTOR == 1e-4 / 1e-5 == 10 units.
+            index_group.clear();
             let pos_i = intersections[i].pos();
             for j in (i + 1)..intersections.len() {
-                if !visited[j]
-                    && (intersections[j].pos() - pos_i).abs() < scale(0.001)
-                    && is_valid_type(&stack, intersections[j].itype)
-                {
-                    swap_index = Some(j);
-                    visited[j] = true;
-                    break;
+                if !visited[j] && (intersections[j].pos() - pos_i).abs() < scale(0.0001) {
+                    index_group.push(j);
                 }
             }
-            if let Some(si) = swap_index {
-                intersections.swap(i, si);
-                // Don't increment i — re-evaluate the swapped element
-            } else {
-                i += 1;
+
+            if !index_group.is_empty() {
+                let mut swap_index: i32 = -1;
+                for &index in &index_group {
+                    if !visited[index] {
+                        swap_index = index as i32;
+                        visited[index] = true;
+                        break;
+                    }
+                }
+
+                if swap_index != -1 {
+                    intersections.swap(i, swap_index as usize);
+                    // C++ `continue;` — re-evaluate the swapped element without incrementing.
+                    continue;
+                }
             }
+
+            i += 1;
         }
     }
 }
@@ -2029,8 +2083,11 @@ pub fn fill_surface_by_lines(
 
     const INFILL_OVERLAP_OVER_SPACING: f64 = 0.45;
 
-    // Line spacing in scaled units
-    let line_spacing = scale((spacing / params.density).max(spacing));
+    // Line spacing in scaled units.
+    // FillRectilinear.cpp:2841 — coord_t(scale_(this->spacing) / params.density).
+    // scale_ is the float macro (val / SCALING_FACTOR == val * 1e5, no rounding),
+    // then divided by density, then the coord_t() cast truncates toward zero.
+    let line_spacing = (spacing * crate::SCALING_FACTOR / params.density) as Coord;
 
     // Compute offsets
     let aoffset1 = scale(overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * spacing);
@@ -2105,16 +2162,28 @@ pub fn fill_surface_by_lines(
 }
 
 /// Adjust line spacing for solid infill to fill the bounding box exactly.
-fn adjust_solid_spacing(width: Coord, line_spacing: Coord) -> Coord {
-    if width <= 0 || line_spacing <= 0 {
-        return line_spacing;
+/// Port of `Fill::_adjust_solid_spacing` (FillBase.cpp:179-195).
+fn adjust_solid_spacing(width: Coord, distance: Coord) -> Coord {
+    debug_assert!(width >= 0);
+    debug_assert!(distance > 0);
+    // EPSILON is the unscaled constant 1e-4 (libslic3r.h:52). C division here
+    // truncates toward zero (coord_t cast), so we use f64 then truncate.
+    const EPSILON: f64 = 1e-4;
+    // floor(width / distance) — truncation toward zero. FillBase.cpp:184
+    let number_of_intervals = ((width as f64 - EPSILON) / distance as f64) as Coord;
+    let mut distance_new = if number_of_intervals == 0 {
+        distance
+    } else {
+        ((width as f64 - EPSILON) / number_of_intervals as f64) as Coord
+    };
+    let factor = distance_new as f64 / distance as f64;
+    debug_assert!(factor > 1.0 - 1e-5);
+    // How much could the extrusion width be increased? By 20%.
+    const FACTOR_MAX: f64 = 1.2;
+    if factor > FACTOR_MAX {
+        distance_new = (distance as f64 * FACTOR_MAX + 0.5).floor() as Coord;
     }
-    let n_lines = ((width as f64 / line_spacing as f64) + 0.5) as Coord;
-    if n_lines <= 0 {
-        return line_spacing;
-    }
-    // Distribute the width evenly
-    width / n_lines
+    distance_new
 }
 
 // ---------------------------------------------------------------------------
@@ -2455,10 +2524,17 @@ fn right_overlap(
 
 /// Create a phony outer intersection at the given position.
 fn phony_outer_intersection(itype: SegmentIntersectionType, pos: Coord) -> SegmentIntersection {
+    debug_assert!(matches!(
+        itype,
+        SegmentIntersectionType::OuterLow | SegmentIntersectionType::OuterHigh
+    ));
     let mut out = SegmentIntersection::default();
-    out.itype = itype;
+    // Invalid contour & segment. FillRectilinear.cpp:434-435
+    out.i_contour = usize::MAX;
+    out.i_segment = usize::MAX;
     out.pos_p = pos as i64;
-    out.pos_q = 1;
+    out.itype = itype;
+    // Invalid prev / next. FillRectilinear.cpp:439-444
     out.prev_on_contour = -1;
     out.next_on_contour = -1;
     out.prev_on_contour_type = LinkType::Phony;
@@ -2509,11 +2585,8 @@ fn pinch_contours_insert_phony_outer_intersections(segs: &mut Vec<SegmentedInter
                     // INNER_HIGH followed by INNER_LOW — possible pinch
                     let up = il.intersections[hi].vertical_up();
                     let dn = il.intersections[lo2].vertical_down();
-                    let pinched = if up >= 0 && dn >= 0 {
-                        dn + 1 != up
-                    } else {
-                        up == -1 || dn == -1
-                    };
+                    // FillRectilinear.cpp:1324 — bool pinched = dn + 1 != up;
+                    let pinched = dn + 1 != up;
                     if pinched {
                         insert_after.push(hi);
                     }
@@ -2715,42 +2788,66 @@ impl AntPathMatrix {
                         let from_flipped = from_flip != 0;
                         let to_flipped = to_flip != 0;
 
-                        // Compute distance from exit of region i to entry of region j
+                        // Compute distance from exit of region i to entry of region j.
+                        // FillRectilinear.cpp:1744-1759.
+                        let i_from = regions[i].right_intersection_point(from_flipped);
+                        let i_to = regions[j].left_intersection_point(to_flipped);
                         let exit_vline = regions[i].right.vline;
-                        let exit_inter = regions[i].right_intersection_point(from_flipped);
                         let entry_vline = regions[j].left.vline;
-                        let entry_inter = regions[j].left_intersection_point(to_flipped);
 
-                        let p1 = if exit_vline < segs.len()
-                            && exit_inter < segs[exit_vline].intersections.len()
+                        let mut length: f32 = -1.0;
+                        // FillRectilinear.cpp:1748 — measure along the contour only when the
+                        // right vline is exactly the left vline minus one and the horizontal
+                        // link points at i_to with valid quality. (Replicated as-is.)
+                        if exit_vline + 1 == regions[i].left.vline
+                            && exit_vline < segs.len()
+                            && i_from < segs[exit_vline].intersections.len()
                         {
-                            let vl = &segs[exit_vline];
-                            Point::new(vl.pos, vl.intersections[exit_inter].pos())
-                        } else {
-                            Point::new(0, 0)
-                        };
+                            let it = &segs[exit_vline].intersections[i_from];
+                            let i_right = it.right_horizontal();
+                            if i_right == i_to as i32
+                                && it.next_on_contour_quality == LinkQuality::Valid
+                            {
+                                length = measure_perimeter_horizontal_segment_length(
+                                    poly_with_offset,
+                                    segs,
+                                    exit_vline,
+                                    i_from,
+                                    i_to,
+                                ) as f32
+                                    / crate::SCALING_FACTOR as f32;
+                            }
+                        }
 
-                        let p2 = if entry_vline < segs.len()
-                            && entry_inter < segs[entry_vline].intersections.len()
-                        {
-                            let vl = &segs[entry_vline];
-                            Point::new(vl.pos, vl.intersections[entry_inter].pos())
-                        } else {
-                            Point::new(0, 0)
-                        };
-
-                        let dx = (p2.x - p1.x) as f64;
-                        let dy = (p2.y - p1.y) as f64;
-                        let dist = (dx * dx + dy * dy).sqrt() as f32;
-                        let dist_unscaled = dist / crate::SCALING_FACTOR as f32;
+                        if length == -1.0 {
+                            // Euclidean distance of the end points. FillRectilinear.cpp:1757
+                            let p1 = if exit_vline < segs.len()
+                                && i_from < segs[exit_vline].intersections.len()
+                            {
+                                let vl = &segs[exit_vline];
+                                Point::new(vl.pos, vl.intersections[i_from].pos())
+                            } else {
+                                Point::new(0, 0)
+                            };
+                            let p2 = if entry_vline < segs.len()
+                                && i_to < segs[entry_vline].intersections.len()
+                            {
+                                let vl = &segs[entry_vline];
+                                Point::new(vl.pos, vl.intersections[i_to].pos())
+                            } else {
+                                Point::new(0, 0)
+                            };
+                            let dx = (p2.x - p1.x) as f64;
+                            let dy = (p2.y - p1.y) as f64;
+                            let dist = (dx * dx + dy * dy).sqrt() as f32;
+                            length = dist / crate::SCALING_FACTOR as f32;
+                        }
 
                         let idx = (i * 2 + from_flip) * dim + (j * 2 + to_flip);
-                        paths[idx].length = dist_unscaled;
-                        paths[idx].visibility = if dist_unscaled > 0.0 {
-                            1.0 / dist_unscaled
-                        } else {
-                            1e6
-                        };
+                        paths[idx].length = length;
+                        // visibility = 1 / (length + EPSILON), EPSILON = 1e-4.
+                        // FillRectilinear.cpp:1759.
+                        paths[idx].visibility = 1.0 / (length + 1e-4_f32);
                         paths[idx].pheromone = pheromone_initial;
                     }
                 }
@@ -2892,7 +2989,7 @@ fn generate_monotonous_regions(segs: &mut Vec<SegmentedIntersectionLine>) -> Vec
 /// Port of libslic3r `connect_monotonic_regions`.
 fn connect_monotonic_regions(
     regions: &mut Vec<MonotonicRegion>,
-    _poly_with_offset: &ExPolygonWithOffset,
+    poly_with_offset: &ExPolygonWithOffset,
     segs: &[SegmentedIntersectionLine],
 ) {
     let n = regions.len();
@@ -2900,132 +2997,135 @@ fn connect_monotonic_regions(
         return;
     }
 
-    // Build maps from intersection index to region start/end
-    // (vline, low_intersection_idx) -> region_idx
-    let mut region_starts: Vec<(usize, usize, usize)> = Vec::with_capacity(n); // (vline, low, region_idx)
-    let mut region_ends: Vec<(usize, usize, usize)> = Vec::with_capacity(n);
+    // Map from low intersection (vline, idx) to the left / right side of a
+    // monotonic region. FillRectilinear.cpp:2152-2164. C++ keys the map on the
+    // SegmentIntersection* of region.left.low / region.right.low and binary
+    // searches it. We use (vline, idx) keys, which are unique per region side.
+    use std::collections::HashMap;
+    let mut map_start: HashMap<(usize, usize), usize> = HashMap::with_capacity(n);
+    let mut map_end: HashMap<(usize, usize), usize> = HashMap::with_capacity(n);
     for (i, region) in regions.iter().enumerate() {
-        region_starts.push((region.left.vline, region.left.low, i));
-        region_ends.push((region.right.vline, region.right.low, i));
+        map_start.insert((region.left.vline, region.left.low), i);
+        map_end.insert((region.right.vline, region.right.low), i);
     }
-    region_starts.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-    region_ends.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
-    // For each region, find overlapping regions on left and right
+    // Scatter links to neighboring regions. FillRectilinear.cpp:2167-2208.
     for i in 0..n {
-        // Left neighbors: regions whose right boundary is at (our left.vline - 1)
+        // Left side.
         let left_vline = regions[i].left.vline;
         if left_vline > 0 {
-            let target_vline = left_vline - 1;
-            let i_low = regions[i].left.low;
-            let i_high = regions[i].left.high;
-
-            // Find overlap on the left
-            if let Some((l_low, l_high)) = left_overlap(segs, left_vline, i_low, i_high) {
-                // Find which region ends at (target_vline, l_low)
-                for &(ev, el, ei) in &region_ends {
-                    if ev == target_vline {
-                        // Check if this region's right boundary overlaps
-                        let r_low = regions[ei].right.low;
-                        let r_high = regions[ei].right.high;
-                        // Overlap check: the vertical runs intersect
-                        let vline_other = &segs[target_vline];
-                        let this_bot = if r_low < vline_other.intersections.len() {
-                            vline_other.intersections[r_low].pos()
-                        } else {
-                            continue;
-                        };
-                        let this_top = if r_high < vline_other.intersections.len() {
-                            vline_other.intersections[r_high].pos()
-                        } else {
-                            continue;
-                        };
-                        let other_bot = if l_low < vline_other.intersections.len() {
-                            vline_other.intersections[l_low].pos()
-                        } else {
-                            continue;
-                        };
-                        let other_top = if l_high < vline_other.intersections.len() {
-                            vline_other.intersections[l_high].pos()
-                        } else {
-                            continue;
-                        };
-                        if this_bot <= other_top && other_bot <= this_top {
-                            if !regions[i].left_neighbors.contains(&ei) {
-                                regions[i].left_neighbors.push(ei);
-                            }
-                        }
+            let vline_left_idx = left_vline - 1;
+            // left_overlap(vline.intersections[left.low], vline.intersections[left.high], ...)
+            if let Some((lbegin0, lend)) =
+                left_overlap(segs, left_vline, regions[i].left.low, regions[i].left.high)
+            {
+                let mut lbegin = lbegin0;
+                loop {
+                    // Region whose right.low == lbegin on vline_left.
+                    if let Some(&ei) = map_end.get(&(vline_left_idx, lbegin)) {
+                        // FillRectilinear.cpp:2177 — it->second->right_neighbors.push_back(&region)
+                        regions[ei].right_neighbors.push(i);
                     }
+                    // lnext = vertical_run_top(vline_left, *lbegin)
+                    let lnext = vertical_run_top(&segs[vline_left_idx], lbegin);
+                    if lnext == lend {
+                        break;
+                    }
+                    // while (lnext->type != INNER_LOW) ++ lnext;
+                    let mut k = lnext;
+                    while k < segs[vline_left_idx].intersections.len()
+                        && segs[vline_left_idx].intersections[k].itype
+                            != SegmentIntersectionType::InnerLow
+                    {
+                        k += 1;
+                    }
+                    if k >= segs[vline_left_idx].intersections.len() {
+                        break;
+                    }
+                    lbegin = k;
                 }
             }
         }
 
-        // Right neighbors: regions whose left boundary is at (our right.vline + 1)
+        // Right side.
         let right_vline = regions[i].right.vline;
         if right_vline + 1 < segs.len() {
-            let target_vline = right_vline + 1;
-            let i_low = regions[i].right.low;
-            let i_high = regions[i].right.high;
-
-            if let Some((r_low, r_high)) = right_overlap(segs, right_vline, i_low, i_high) {
-                for &(sv, sl, si) in &region_starts {
-                    if sv == target_vline {
-                        let s_low = regions[si].left.low;
-                        let s_high = regions[si].left.high;
-                        let vline_other = &segs[target_vline];
-                        let this_bot = if s_low < vline_other.intersections.len() {
-                            vline_other.intersections[s_low].pos()
-                        } else {
-                            continue;
-                        };
-                        let this_top = if s_high < vline_other.intersections.len() {
-                            vline_other.intersections[s_high].pos()
-                        } else {
-                            continue;
-                        };
-                        let other_bot = if r_low < vline_other.intersections.len() {
-                            vline_other.intersections[r_low].pos()
-                        } else {
-                            continue;
-                        };
-                        let other_top = if r_high < vline_other.intersections.len() {
-                            vline_other.intersections[r_high].pos()
-                        } else {
-                            continue;
-                        };
-                        if this_bot <= other_top && other_bot <= this_top {
-                            if !regions[i].right_neighbors.contains(&si) {
-                                regions[i].right_neighbors.push(si);
-                            }
-                        }
+            let vline_right_idx = right_vline + 1;
+            if let Some((rbegin0, rend)) =
+                right_overlap(segs, right_vline, regions[i].right.low, regions[i].right.high)
+            {
+                let mut rbegin = rbegin0;
+                loop {
+                    // FillRectilinear.cpp:2194-2196 — if the region start is not found, break.
+                    let si = match map_start.get(&(vline_right_idx, rbegin)) {
+                        Some(&si) => si,
+                        None => break,
+                    };
+                    // it->second->left_neighbors.push_back(&region)
+                    regions[si].left_neighbors.push(i);
+                    let rnext = vertical_run_top(&segs[vline_right_idx], rbegin);
+                    if rnext == rend {
+                        break;
                     }
+                    let mut k = rnext;
+                    while k < segs[vline_right_idx].intersections.len()
+                        && segs[vline_right_idx].intersections[k].itype
+                            != SegmentIntersectionType::InnerLow
+                    {
+                        k += 1;
+                    }
+                    if k >= segs[vline_right_idx].intersections.len() {
+                        break;
+                    }
+                    rbegin = k;
                 }
             }
         }
     }
 
-    // Ensure symmetry: if A is left-neighbor of B, then B is right-neighbor of A
+    // Sort + dedup, then make the left/right neighbor relation symmetric.
+    // FillRectilinear.cpp:2213-2228.
+    for region in regions.iter_mut() {
+        region.left_neighbors.sort_unstable();
+        region.left_neighbors.dedup();
+        region.right_neighbors.sort_unstable();
+        region.right_neighbors.dedup();
+    }
     for i in 0..n {
         let left_n: Vec<usize> = regions[i].left_neighbors.clone();
-        for &ln in &left_n {
+        for ln in left_n {
             if !regions[ln].right_neighbors.contains(&i) {
                 regions[ln].right_neighbors.push(i);
             }
         }
         let right_n: Vec<usize> = regions[i].right_neighbors.clone();
-        for &rn in &right_n {
+        for rn in right_n {
             if !regions[rn].left_neighbors.contains(&i) {
                 regions[rn].left_neighbors.push(i);
             }
         }
     }
-
-    // Sort neighbors for deterministic behavior
     for region in regions.iter_mut() {
-        region.left_neighbors.sort();
-        region.left_neighbors.dedup();
-        region.right_neighbors.sort();
-        region.right_neighbors.dedup();
+        region.left_neighbors.sort_unstable();
+        region.right_neighbors.sort_unstable();
+    }
+
+    // Fill in sum length of connecting lines of a region, used by the optimizer.
+    // FillRectilinear.cpp:2244-2256.
+    for i in 0..n {
+        let mut len1 = monotonous_region_path_length(&regions[i], false, poly_with_offset, segs);
+        let mut len2 = monotonous_region_path_length(&regions[i], true, poly_with_offset, segs);
+        // Subtract the smaller length from the longer one, so we optimize just
+        // with the positive difference of the two.
+        if len1 > len2 {
+            len1 -= len2;
+            len2 = 0.0;
+        } else {
+            len2 -= len1;
+            len1 = 0.0;
+        }
+        regions[i].len1 = len1;
+        regions[i].len2 = len2;
     }
 }
 
@@ -3240,21 +3340,9 @@ fn chain_monotonic_regions(
         }];
     }
 
-    // Fill in path lengths
-    for i in 0..n {
-        let len1 = monotonous_region_path_length(&regions[i], false, poly_with_offset, segs);
-        let len2 = monotonous_region_path_length(&regions[i], true, poly_with_offset, segs);
-        regions[i].len1 = len1;
-        regions[i].len2 = len2;
-        // Subtract smaller from larger for optimization
-        if regions[i].len1 > regions[i].len2 {
-            regions[i].len1 -= regions[i].len2;
-            regions[i].len2 = 0.0;
-        } else {
-            regions[i].len2 -= regions[i].len1;
-            regions[i].len1 = 0.0;
-        }
-    }
+    // Region len1/len2 are computed in connect_monotonic_regions()
+    // (FillRectilinear.cpp:2244-2256), which runs before this function. C++ does
+    // NOT recompute them here, so we rely on the values already set.
 
     // left_neighbors_unprocessed[i] = 1 + number of left neighbors
     // (1 for self, decremented to 0 when processed)
@@ -3304,10 +3392,11 @@ fn chain_monotonic_regions(
         while !queue.is_empty() || !regions[path_end_region].right_neighbors.is_empty() {
             let mut best_candidate: Option<(usize, bool, f32)> = None;
 
-            // Try right neighbors first
+            // Try right neighbors first.
+            // FillRectilinear.cpp:2422 — only when left_neighbors_unprocessed == 2.
             let right_n: Vec<usize> = regions[path_end_region].right_neighbors.clone();
             for &next in &right_n {
-                if left_unprocessed[next] <= 2 {
+                if left_unprocessed[next] == 2 {
                     for flip in [false, true] {
                         let vis = path_matrix
                             .get(path_end_region, path_end_flipped, next, flip)
@@ -3553,9 +3642,10 @@ fn chain_monotonic_regions(
             }
         }
 
-        // Global pheromone update with best path
+        // Reinforce the path pheromones with the best path.
+        // FillRectilinear.cpp:2640-2645 — total_cost = best_path_length + EPSILON (1e-4).
         if !best_path.is_empty() {
-            let total_cost = best_path_length + 1e-6;
+            let total_cost = best_path_length + 1e-4;
             for i in 0..best_path.len().saturating_sub(1) {
                 let r_idx = best_path[i].region_idx;
                 let r_flip = best_path[i].flipped;
@@ -4006,7 +4096,9 @@ pub fn fill_surface_by_lines_monotonic(
 
     const INFILL_OVERLAP_OVER_SPACING: f64 = 0.45;
 
-    let line_spacing = scale((spacing / params.density).max(spacing));
+    // FillRectilinear.cpp:2841 — coord_t(scale_(this->spacing) / params.density),
+    // float division then truncation toward zero (no rounding, no max-clamp).
+    let line_spacing = (spacing * crate::SCALING_FACTOR / params.density) as Coord;
 
     let aoffset1 = scale(overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * spacing);
     let aoffset2 = scale(overlap - 0.5 * spacing);

@@ -2480,7 +2480,8 @@
     "rust_exists": true,
     "loc": 3588,
     "status": "partial",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCode/ThumbnailData.cpp",
