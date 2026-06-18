@@ -225,6 +225,10 @@ impl GCodeWriter {
         self.m_filament_extruders.reserve(extruder_ids.len());
         // GCodeWriter.cpp:37-38  for (unsigned int extruder_id : extruder_ids)
         //     m_filament_extruders.emplace_back(Extruder(extruder_id, &this->config, config.single_extruder_multi_material.value));
+        // FIDELITY-NOTE: C++ reads `config.single_extruder_multi_material.value`; the
+        // Rust simplified `GCodeConfig` does not expose that option, so we use
+        // `m_single_extruder_multi_material` which `apply_print_config` keeps equal to
+        // `config.single_extruder_multi_material.value` after `config.apply()`.
         for extruder_id in &extruder_ids {
             let e = Extruder::new(
                 *extruder_id,
@@ -1875,36 +1879,73 @@ impl GCodeWriter {
     }
 }
 
-// Helper to mirror std::ostringstream `<<` default formatting of a double in C++
-// (no fixed precision, "%g"-like shortest round-trippable). Rust's default {}
-// for f64 already prints the shortest round-trip representation, matching this
-// for the integral/short-decimal values used here (jerk, fan percentages).
-fn ostream_double(v: f64) -> String {
-    // C++ ostream prints integral doubles without a trailing ".0" (e.g. 255).
-    if v == v.trunc() && v.is_finite() {
-        format!("{}", v as i64)
-    } else {
-        format!("{}", v)
+// Helper to mirror C `printf("%.*g", precision, v)` / C++ default-float stream
+// formatting. C++ `std::ostringstream << double` uses `std::defaultfloat` with the
+// stream's precision (default 6), which is exactly `%g` semantics: at most
+// `precision` significant digits, switching to scientific notation when the decimal
+// exponent is < -4 or >= precision, and trailing zeros (and a bare decimal point)
+// trimmed.
+fn format_g(v: f64, precision: usize) -> String {
+    if !v.is_finite() {
+        // %g prints "inf"/"nan"; not expected here but keep it total.
+        return format!("{}", v);
     }
+    if v == 0.0 {
+        return "0".to_string();
+    }
+    // %g uses P = max(precision, 1) significant digits, and chooses between
+    // fixed and scientific based on the decimal exponent of the rounded value.
+    let p = precision.max(1);
+    // Decimal exponent X of v (after rounding to P significant digits). Use the
+    // scientific representation to obtain the post-rounding exponent.
+    let sci = format!("{:.*e}", p - 1, v); // e.g. "1.235e1"
+    let exp: i32 = sci
+        .split(['e', 'E'])
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let s = if exp < -4 || exp >= p as i32 {
+        // Scientific style "%e" with (P-1) digits after the point, then trim.
+        // Reformat to match C printf "%g" exponent form (at least 2 exponent digits).
+        let mantissa_digits = p - 1;
+        let raw = format!("{:.*e}", mantissa_digits, v);
+        let (mant, e) = raw.split_once('e').unwrap_or((raw.as_str(), "0"));
+        let mant_trimmed = if mant.contains('.') {
+            mant.trim_end_matches('0').trim_end_matches('.')
+        } else {
+            mant
+        };
+        let e_num: i32 = e.parse().unwrap_or(0);
+        let sign = if e_num < 0 { '-' } else { '+' };
+        format!("{}e{}{:02}", mant_trimmed, sign, e_num.abs())
+    } else {
+        // Fixed style "%f" with (P - 1 - exp) digits after the point, then trim.
+        let frac_digits = (p as i32 - 1 - exp).max(0) as usize;
+        let fixed = format!("{:.*}", frac_digits, v);
+        if fixed.contains('.') {
+            fixed
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string()
+        } else {
+            fixed
+        }
+    };
+    s
+}
+
+// Helper to mirror std::ostringstream `<<` default formatting of a double in C++
+// (`std::defaultfloat` with the default stream precision of 6, i.e. `%.6g`).
+// Used by set_jerk_xy (GCodeWriter.cpp:304/306) and set_fan (255.0*speed/100.0).
+fn ostream_double(v: f64) -> String {
+    format_g(v, 6)
 }
 
 // Helper to mirror `std::setprecision(4)` (without std::fixed) on a stream, which
-// sets the total significant-digit precision to 4 ("%.4g"-like). Used by
+// sets the significant-digit precision to 4 (i.e. `%.4g`). Used by
 // set_pressure_advance (GCodeWriter.cpp:279-288).
 fn format_setprecision_4(v: f64) -> String {
-    // std::setprecision sets significant digits (default float format).
-    let s = format!("{:.*e}", 3, v); // 4 significant digits in scientific form
-    // Convert back from scientific to plain "%g"-style by parsing; for the small
-    // positive PA values in use this matches "%.4g".
-    let parsed: f64 = s.parse().unwrap_or(v);
-    // Print with up to 4 significant digits, trimming as %g does.
-    let g = format!("{:.4}", parsed);
-    let trimmed = g.trim_end_matches('0').trim_end_matches('.');
-    if trimmed.is_empty() {
-        "0".to_string()
-    } else {
-        trimmed.to_string()
-    }
+    format_g(v, 4)
 }
 
 // Small helper to mirror `iter == container.end()` checks used by the asserts.

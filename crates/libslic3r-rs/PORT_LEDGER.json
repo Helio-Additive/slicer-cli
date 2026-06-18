@@ -1469,7 +1469,8 @@
     "rust_exists": false,
     "loc": 1033,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Arrange.cpp",
