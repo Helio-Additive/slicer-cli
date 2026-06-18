@@ -96,6 +96,17 @@ fn scale_(val: f64) -> Coord {
     scale(val)
 }
 
+// Point.hpp:200,255-258: `Point operator*(const double &rhs)` returns
+// `{ coord_t(x*r), coord_t(y*r) }` — `static_cast<coord_t>` TRUNCATES toward zero.
+// The crate-wide `impl Mul<CoordF> for Point` uses `round_ties_even()` instead, so we
+// reproduce the C++ truncation locally here for fidelity.
+// FIDELITY-NOTE(F2): coord_t is int32_t; the truncation is reproduced at i64 width since
+// the operand magnitudes here stay within scaled coord range.
+#[inline]
+fn point_mul_trunc(pt: Point, r: f64) -> Point {
+    Point::new((pt.x as f64 * r) as Coord, (pt.y as f64 * r) as Coord)
+}
+
 // ============================================================================
 // Header data structures (TreeSupport.hpp)
 // ============================================================================
@@ -422,10 +433,12 @@ impl LineHash {
     }
 
     pub fn hash(&self, line: &Line) -> u64 {
-        let a0 = line.a.x as u64;
-        let a1 = line.a.y as u64;
-        let b0 = line.b.x as u64;
-        let b1 = line.b.y as u64;
+        // std::hash<coord_t>() on int32_t coords (libslic3r.h:40) is the identity.
+        // FIDELITY-NOTE(F2): coord_t is int32_t — reproduce the int32 truncation locally.
+        let a0 = (line.a.x as i32) as u64;
+        let a1 = (line.a.y as i32) as u64;
+        let b0 = (line.b.x as i32) as u64;
+        let b1 = (line.b.y as i32) as u64;
         (a0 ^ b1).wrapping_mul(102).wrapping_add((a1 ^ b0).wrapping_mul(10222))
     }
 }
@@ -453,8 +466,10 @@ impl RadiusLayerPair {
     //     return std::hash<coord_t>()(elem.radius) ^ std::hash<coord_t>()(elem.layer_nr * 7919);
     // }
     pub fn hash(&self) -> u64 {
-        // C++ casts radius (coordf_t) through std::hash<coord_t>() (i.e. as coord_t/i64).
-        (self.radius as i64 as u64) ^ ((self.layer_nr.wrapping_mul(7919)) as u64)
+        // C++ casts radius (coordf_t/double) through std::hash<coord_t>(): radius is first
+        // converted to coord_t (int32_t per libslic3r.h:40) then hashed (identity for ints).
+        // FIDELITY-NOTE(F2): coord_t is int32_t — reproduce the int32 truncation locally.
+        ((self.radius as i32) as u64) ^ ((self.layer_nr.wrapping_mul(7919)) as u64)
     }
 }
 
@@ -483,7 +498,8 @@ pub fn vsize2_with_unscale(pt: Point) -> f64 {
 #[inline]
 pub fn normal(pt: Point, scale_factor: f64) -> Point {
     let length = scale_(vsize2_with_unscale(pt).sqrt()) as f64;
-    pt * (scale_factor / length)
+    // C++: return pt * (scale / length); — coord_t() truncation (see point_mul_trunc).
+    point_mul_trunc(pt, scale_factor / length)
 }
 
 // TreeSupport.cpp:157-183
@@ -622,7 +638,7 @@ pub fn move_inside_expoly(
             // x is projected to a point properly on the line segment. The case which looks like | .
             projected_p_beyond_prev_segment = false;
             // Point x = a + ab * (dot_prod / ab_length2);
-            let x = a + ab * (dot_prod / ab_length2);
+            let x = a + point_mul_trunc(ab, dot_prod / ab_length2);
 
             // double dist2 = vsize2_with_unscale(p - x);
             let dist2 = vsize2_with_unscale(p - x);
@@ -761,7 +777,7 @@ pub fn move_inside_expolys(
                 // x is projected to a point properly on the line segment. The case which looks like | .
                 projected_p_beyond_prev_segment = false;
                 // Point x = a + ab * (dot_prod / ab_length2);
-                let x = a + ab * (dot_prod / ab_length2);
+                let x = a + point_mul_trunc(ab, dot_prod / ab_length2);
 
                 // double dist2 = vsize2_with_unscale(p - x);
                 let dist2 = vsize2_with_unscale(p - x);
@@ -807,6 +823,28 @@ pub fn move_inside_expolys(
     }
 }
 
+// MultiPoint.hpp:53-68: `closest_point_index` / `closest_point` return the closest
+// *vertex* of the contour (by Euclidean norm), NOT the closest point projected onto an
+// edge. The crate's `Polygon::closest_point` does edge projection, so we reproduce the
+// vertex semantics locally for fidelity with C++ `MultiPoint::closest_point`.
+fn polygon_closest_vertex(poly: &Polygon, point: &Point) -> Option<Point> {
+    if poly.points.is_empty() {
+        return None;
+    }
+    let mut idx = 0usize;
+    // double dist_min = (point - points.front()).cast<double>().norm();
+    let mut dist_min = point.distance(&poly.points[0]);
+    for i in 1..poly.points.len() {
+        // double d = (points[i] - point).cast<double>().norm();
+        let d = point.distance(&poly.points[i]);
+        if d < dist_min {
+            dist_min = d;
+            idx = i;
+        }
+    }
+    Some(poly.points[idx])
+}
+
 // TreeSupport.cpp:529-546
 // static Point find_closest_ex(Point from, const ExPolygons& polygons)
 pub fn find_closest_ex(from: Point, polygons: &ExPolygons) -> Point {
@@ -820,7 +858,10 @@ pub fn find_closest_ex(from: Point, polygons: &ExPolygons) -> Point {
         // for (int i = 0; i < poly.num_contours(); i++) {
         for i in 0..poly.num_contours() {
             // const Point* candidate = poly.contour_or_hole(i).closest_point(from);
-            let candidate = contour_or_hole(poly, i).closest_point(&from);
+            let candidate = match polygon_closest_vertex(contour_or_hole(poly, i), &from) {
+                Some(c) => c,
+                None => continue,
+            };
             // double dist2 = vsize2_with_unscale(*candidate - from);
             let dist2 = vsize2_with_unscale(candidate - from);
             if dist2 < min_dist2 {
@@ -880,10 +921,12 @@ pub fn move_out_expolys(
     // Point from0 = from;
     let _from0 = *from;
     // ExPolygons polys_dilated = union_ex(offset_ex(polygons, scale_(distance)));
+    // offset_ex default join type is ClipperLib::jtMiter (ClipperUtils.hpp:31,355).
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
     let polys_dilated = crate::clipper_utils::union_ex(&crate::clipper_utils::offset_expolygons(
         polygons,
         scale_(distance) as CoordF,
-        crate::clipper_utils::OffsetJoinType::Square,
+        crate::clipper_utils::OffsetJoinType::Miter,
     ));
     // Point pt = projection_onto(polys_dilated, from);
     let mut pt = projection_onto(&polys_dilated, from);
@@ -928,8 +971,8 @@ pub fn bounding_box_middle(bbox: &BoundingBox) -> Point {
 // TreeSupport.cpp:650-658
 // bool is_stable(float height, const ExPolygon &overhang, float strength_z)
 pub fn is_stable(height: f32, overhang: &ExPolygon, _strength_z: f32) -> bool {
-    // float stability = 1. * height;
-    let stability = 1.0 * height as f64;
+    // float stability = 1. * height;  // computed in double, stored as float
+    let stability: f32 = (1.0_f64 * height as f64) as f32;
     // double Ixx = 0, Iyy = 0;
     let mut ixx = 0.0_f64;
     let mut iyy = 0.0_f64;
@@ -938,8 +981,8 @@ pub fn is_stable(height: f32, overhang: &ExPolygon, _strength_z: f32) -> bool {
         crate::brim::comp_second_moment_expolygons(&vec![overhang.clone()], &mut ixx, &mut iyy);
     // double moment = std::min(Ixx * pow(SCALING_FACTOR, 4), Iyy * pow(SCALING_FACTOR, 4));
     let moment = (ixx * crate::SCALING_FACTOR.powi(4)).min(iyy * crate::SCALING_FACTOR.powi(4));
-    // return moment / stability > 3.;
-    moment / stability > 3.0
+    // return moment / stability > 3.;  (stability promoted float->double for the division)
+    moment / stability as f64 > 3.0
 }
 
 // TreeSupport.cpp:2081-2099
@@ -1023,34 +1066,34 @@ pub fn avoid_object_remove_extra_small_parts(
         return expolys_out;
     }
     // auto clipped_avoid_region = ClipperUtils::clip_clipper_polygons_with_subject_bbox(avoid_region, get_extents(expoly));
-    // The collection-level bbox clip isn't ported; clip each ExPolygon of avoid_region
-    // against the subject bbox and reassemble. This produces the same diff result as the
-    // C++ helper (the clip only trims polygons outside the subject bbox).
+    // ClipperUtils.cpp:161-172: the ExPolygons overload flattens each ExPolygon's
+    // contour+holes into a single Polygons list (mixed CW/CCW windings), which the
+    // subsequent diff_ex interprets via Clipper's fill rule. We must reproduce that
+    // flat Polygons clip, not wrap each polygon as an independent positive contour.
     let subject_bbox = get_extents_expoly(expoly);
-    let mut clipped_avoid_region: ExPolygons = Vec::new();
-    for ap in avoid_region {
-        let clipped_polys = crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygon(
-            ap,
+    let clipped_avoid_region: Vec<Polygon> =
+        crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygons(
+            avoid_region,
             &subject_bbox,
             false,
         );
-        for poly in clipped_polys {
-            clipped_avoid_region.push(ExPolygon::new(poly));
-        }
-    }
     // auto expolys_avoid = diff_ex(expoly, clipped_avoid_region);
-    let expolys_avoid =
-        crate::clipper_utils::difference(&[expoly.clone()], &clipped_avoid_region);
+    // C++ diff_ex(const ExPolygon&, const Polygons&) (ClipperUtils.hpp:452): re-assemble
+    // the clip Polygons into ExPolygons (recovering holes from winding) before differencing.
+    let clip_ex = crate::clipper_utils::union_polygons_ex(&clipped_avoid_region);
+    let expolys_avoid = crate::clipper_utils::difference(&[expoly.clone()], &clip_ex);
     // int idx_max_area = -1;
     let mut idx_max_area: i32 = -1;
     // float max_area = 0;
     let mut max_area: f32 = 0.0;
     // for (int i = 0; i < expolys_avoid.size(); ++i)
     for (i, ea) in expolys_avoid.iter().enumerate() {
-        // auto a = expolys_avoid[i].area();
-        let a = ea.area() as f32;
-        if a > max_area {
-            max_area = a;
+        // auto a = expolys_avoid[i].area();  // ExPolygon::area() returns double
+        let a: f64 = ea.area();
+        // if (a > max_area)  -- max_area (float) promoted to double for the comparison
+        if a > max_area as f64 {
+            // max_area = a;  -- narrowed double->float on assignment
+            max_area = a as f32;
             idx_max_area = i as i32;
         }
     }
