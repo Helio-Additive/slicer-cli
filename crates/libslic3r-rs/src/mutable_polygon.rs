@@ -36,10 +36,16 @@ fn sqr_f64(x: f64) -> f64 {
 // Vec2i64 / Vec2d helpers
 //
 // The C++ uses Eigen `Vec2i64` (int64 vector) and `Vec2d` (double vector) with
-// `.cast<>()`, `.squaredNorm()` and `.dot()`. The crate's `Point` is already
-// i64-based (coord_t == i64) but its helpers return i128, which would change
-// the integer width. To stay byte-exact we replicate the Eigen ops on bare
-// (i64,i64) / (f64,f64) tuples.
+// `.cast<>()`, `.squaredNorm()` and `.dot()`. The C++ algorithm deliberately
+// widens point coordinates to int64 via `.cast<int64_t>()` before computing
+// squared norms / dots / cross products (because `coord_t` is `int32_t`, those
+// products would otherwise overflow). We mirror that with a local `Vec2i64`:
+// the crate's `Point::cross2`/etc. return i128, which would change the integer
+// width, so we replicate the Eigen ops on bare (i64,i64) / (f64,f64) tuples to
+// match the C++ int64 intermediate arithmetic exactly.
+// FIDELITY-NOTE(F2): the crate-wide `Coord = i64` (C++ `coord_t = int32_t`,
+// libslic3r.h:40) only differs at the point-storage layer; the int64 intermediate
+// math reproduced here is identical to C++.
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
@@ -89,7 +95,12 @@ impl Vec2d {
     fn dot(self, o: Vec2d) -> f64 {
         self.x * o.x + self.y * o.y
     }
-    // Eigen `.cast<coord_t>()` truncates toward zero (static_cast double->int64).
+    // Eigen `.cast<coord_t>()` truncates toward zero (static_cast double->int).
+    // FIDELITY-NOTE(F2): C++ `coord_t` is `int32_t` (libslic3r.h:40), so the cast
+    // is double->int32 and the subsequent `Point += delta` store wraps at int32.
+    // The crate-wide `Coord = i64` keeps both the delta and the stored coordinate
+    // at 64-bit; for in-range polygon coordinates (±2147mm) the result is identical.
+    // Narrowing the storage width is the cross-cutting F2 rework, not done per-file.
     #[inline]
     fn cast_coord(self) -> Point {
         Point::new(self.x as Coord, self.y as Coord)

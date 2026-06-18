@@ -1074,7 +1074,8 @@
     "rust_exists": true,
     "loc": 387,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "MeasureUtils.hpp",
