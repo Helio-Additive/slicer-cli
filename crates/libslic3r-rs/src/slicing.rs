@@ -245,16 +245,23 @@ pub fn equal_layering(sp1: &SlicingParams, sp2: &SlicingParams) -> bool {
 
 use crate::libslic3r::EPSILON;
 
+// FIDELITY-NOTE: three Slicing.cpp free functions are NOT ported here because they
+// depend on config/mesh-range infrastructure that the crate models differently from
+// C++ (per-extruder ConfigOption*Nullable with `.get_at(idx)`, t_layer_config_ranges):
+//   - inline min/max_layer_height_from_nozzle (Slicing.cpp:29-60)
+//   - SlicingParameters::create_from_config   (Slicing.cpp:62-160)
+//   - layer_height_profile_from_ranges        (Slicing.cpp:164-235)
+// layer_height_profile_adaptive (Slicing.cpp:237-330) IS ported below.
+
 // Slicing.cpp:24
 // Used by the not-yet-ported create_from_config; retained for parity.
 #[allow(dead_code)]
 const MIN_LAYER_HEIGHT: CoordF = 0.01;
 // Slicing.cpp:25
+// Used by the not-yet-ported create_from_config; retained for parity.
 #[allow(dead_code)]
 const MIN_LAYER_HEIGHT_DEFAULT: CoordF = 0.07;
 // Slicing.cpp:26
-// Used by the not-yet-ported layer_height_profile_adaptive; retained for parity.
-#[allow(dead_code)]
 const LAYER_HEIGHT_CHANGE_STEP: f64 = 0.04;
 
 /// Linear interpolation, matching C++ `lerp(a, b, t) = (1 - t) * a + t * b`.
@@ -271,6 +278,87 @@ fn lerp(a: CoordF, b: CoordF, t: CoordF) -> CoordF {
 fn is_approx(value: CoordF, test_value: CoordF) -> bool {
     // libslic3r.h:290
     (value - test_value).abs() < EPSILON
+}
+
+/// Based on the work of @platsch.
+/// Fill layer_height_profile by heights ensuring a prescribed maximum cusp height.
+/// Slicing.cpp:237-330
+pub fn layer_height_profile_adaptive(
+    slicing_params: &SlicingParams,
+    object: &crate::model::ModelObject,
+    quality_factor: f32,
+) -> Vec<f64> {
+    // 1) Initialize the SlicingAdaptive class with the object meshes.
+    // Slicing.cpp:242-244
+    let mut as_ = crate::slicing_adaptive::SlicingAdaptive::default();
+    as_.set_slicing_parameters(slicing_params.clone());
+    as_.prepare(object);
+
+    // 2) Generate layers using the algorithm of @platsch
+    // Slicing.cpp:247
+    let mut layer_height_profile: Vec<f64> = Vec::new();
+    // Slicing.cpp:248-249
+    layer_height_profile.push(0.0);
+    layer_height_profile.push(slicing_params.first_object_layer_height);
+    // Slicing.cpp:250
+    if slicing_params.first_object_layer_height_fixed() {
+        // Slicing.cpp:251-252
+        layer_height_profile.push(slicing_params.first_object_layer_height);
+        layer_height_profile.push(slicing_params.first_object_layer_height);
+    }
+    // Slicing.cpp:254
+    let mut print_z = slicing_params.first_object_layer_height;
+    // last facet visited by the as.next_layer_height() function, where the facets are sorted by their increasing Z span.
+    // Slicing.cpp:256
+    let mut current_facet: usize = 0;
+    // loop until we have at least one layer and the max slice_z reaches the object height
+    // Slicing.cpp:258
+    while print_z + EPSILON < slicing_params.object_print_z_height() {
+        // Slicing.cpp:259
+        let mut height = slicing_params.max_layer_height as f32;
+        // determine next layer height
+        // Slicing.cpp:262
+        let cusp_height = as_.next_layer_height(print_z as f32, quality_factor, &mut current_facet);
+
+        // Slicing.cpp:264-288: horizontal feature check is behind `#if 0` upstream; omitted.
+
+        // Slicing.cpp:289
+        height = cusp_height.min(height);
+
+        // Slicing.cpp:291-310: z-gradation and custom-range overrides are commented out upstream; omitted.
+
+        //BBS: avoid the layer height change to be too steep
+        // Slicing.cpp:312
+        let last_h = *layer_height_profile.last().unwrap();
+        if last_h < height as f64 && height as f64 - last_h > LAYER_HEIGHT_CHANGE_STEP {
+            // Slicing.cpp:313
+            height = (last_h + LAYER_HEIGHT_CHANGE_STEP) as f32;
+        } else if last_h > height as f64 && last_h - height as f64 > LAYER_HEIGHT_CHANGE_STEP {
+            // Slicing.cpp:315
+            height = (last_h - LAYER_HEIGHT_CHANGE_STEP) as f32;
+        }
+
+        // Slicing.cpp:317-318
+        layer_height_profile.push(print_z);
+        layer_height_profile.push(height as f64);
+        // Slicing.cpp:319
+        print_z += height as f64;
+    }
+
+    // Slicing.cpp:322
+    let z_gap =
+        slicing_params.object_print_z_height() - layer_height_profile[layer_height_profile.len() - 2];
+    // Slicing.cpp:323
+    if z_gap > 0.0 {
+        // Slicing.cpp:325
+        layer_height_profile.push(slicing_params.object_print_z_height());
+        // Slicing.cpp:326
+        layer_height_profile
+            .push(z_gap.clamp(slicing_params.min_layer_height, slicing_params.max_layer_height));
+    }
+
+    // Slicing.cpp:329
+    layer_height_profile
 }
 
 /// Type of a layer-height editing action.
@@ -584,14 +672,15 @@ pub fn adjust_layer_height_profile(
     while idx < layer_height_profile.len() && layer_height_profile[idx] < lo {
         idx += 2;
     }
-    // Slicing.cpp:512
-    idx -= 2;
+    // Slicing.cpp:512: size_t underflow when idx == 0 (lo <= profile[0]) wraps to
+    // SIZE_MAX in C++; reproduce the wraparound so idx + 2 lands back at 0/1.
+    idx = idx.wrapping_sub(2);
 
     // Slicing.cpp:514-515
     let mut profile_new: Vec<f64> = Vec::with_capacity(layer_height_profile.len());
-    debug_assert!(idx + 1 < layer_height_profile.len()); // Slicing.cpp:516
+    debug_assert!(idx.wrapping_add(1) < layer_height_profile.len()); // Slicing.cpp:516
     // Slicing.cpp:517
-    profile_new.extend_from_slice(&layer_height_profile[..idx + 2]);
+    profile_new.extend_from_slice(&layer_height_profile[..idx.wrapping_add(2)]);
     // Slicing.cpp:518
     let mut zz = lo;
     // Slicing.cpp:519
