@@ -103,9 +103,15 @@ pub fn get_print_object_bottom_layer_expolygons(print_object: &PrintObject) -> E
         // C++: Slic3r::append(ex_polygons, closing_ex(region->slices.surfaces, float(SCALED_EPSILON)));
         // `closing_ex(Surfaces, delta)` is `offset2_ex(surfaces, +delta, -delta)`
         // with DefaultJoinType = jtMiter (ClipperUtils.hpp:409-415), i.e. a
-        // morphological closing of the surfaces' expolygons. SCALED_EPSILON is
-        // scale_(EPSILON), so the mm-domain closing distance of this crate's
-        // clipper wrappers is EPSILON.
+        // morphological closing of the surfaces' expolygons. C++ offsets by
+        // SCALED_EPSILON = scale_(EPSILON) = 10 scaled units = EPSILON mm; this
+        // crate's `closing` wrapper takes its delta in the mm domain (it
+        // unscales points before offsetting), so EPSILON is the faithful delta.
+        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. C++
+        // `offset2_ex` is a single ClipperOffset polytree pass at coord_t integer
+        // precision; this crate's `closing` is grow-then-shrink via geo-clipper
+        // (geo crate, fixed scale 1000) — morphologically equivalent, not
+        // byte-identical.
         let surfaces_ex: ExPolygons = region
             .slices
             .surfaces
