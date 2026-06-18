@@ -1789,7 +1789,8 @@
     "rust_exists": true,
     "loc": 6031,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "GCode.cpp",
