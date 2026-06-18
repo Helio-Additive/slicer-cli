@@ -1218,7 +1218,8 @@
     "rust_exists": true,
     "loc": 625,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ExPolygon.cpp",

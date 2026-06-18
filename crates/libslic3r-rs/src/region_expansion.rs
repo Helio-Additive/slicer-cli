@@ -217,6 +217,9 @@ impl RegionExpansionParameters {
         // RegionExpansion.cpp:49 — `out.tiny_expansion = std::min(0.25f * full_expansion, scaled<float>(0.05f));`
         // NOTE: this module operates in mm (unscaled), so `scaled<float>(0.05f)` is kept as the
         // mm literal 0.05 to remain internally consistent with the rest of the module.
+        // FIDELITY-NOTE(F1): C++ clamps against the *scaled* constant `scaled<float>(0.05f)`
+        // (coord_t units); the mm-domain literal 0.05 here is the unscaled equivalent for this
+        // module's geo-clipper offset convention, not the integer-coord clamp C++ applies.
         let mut tiny_expansion = (0.25 * full_expansion).min(0.05);
 
         // RegionExpansion.cpp:50
@@ -331,6 +334,12 @@ struct RegionExpansion {
 /// - Seeds are very thin (0.05mm)
 /// - First wave step size compensates for the seed width
 /// - Subsequent clipping produces identical geometry
+///
+// FIDELITY-NOTE(F1): C++ `wave_seeds` (RegionExpansion.cpp:278-389) uses the
+// Clipper2 *Z*-callback engine to tag intersection provenance and offset *open*
+// polylines (`expolygons_to_zpaths64_expanded_opened`). The crate's geo-clipper
+// backend exposes neither SetZCallback nor a Z-preserving open-path offset, so
+// this polygon-based intersection is a documented approximation, not byte-faithful.
 fn wave_seeds_polygon_based(
     src: &[ExPolygon],
     boundary: &[ExPolygon],
@@ -373,6 +382,14 @@ fn wave_seeds_polygon_based(
 ///
 /// This iterative approach prevents expansion from "leaking" through narrow
 /// gaps in the boundary that a single large offset would cross.
+///
+// FIDELITY-NOTE(F1): C++ `propagate_wave_from_boundary` (RegionExpansion.cpp:442-465)
+// offsets *open* polylines via `wavefront_initial` (jtRound/etOpenRound) for the
+// first wave and closed polygons via `wavefront_step` afterwards, and trims the
+// boundary by a subject bbox (`clip_clipper_polygons_with_subject_bbox`) purely
+// for speed. Here the seed approximation yields closed ExPolygons, so both waves
+// use the closed-polygon `grow` (Round) and clip against the full boundary —
+// geometrically equivalent up to the open-vs-closed seed offset difference.
 fn propagate_wave_from_seeds(
     seeds: &[ExPolygon],
     boundary: &[ExPolygon],
