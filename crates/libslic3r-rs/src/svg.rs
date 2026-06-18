@@ -942,9 +942,20 @@ impl SVG {
         //                   coord_t step_x = scale_(20.);
         let step_x: Coord = scale(20.0);
         // SVG.cpp:495   Point legend_size(scale_(1.) + num_columns * step_x, scale_(0.4 + 1.3 * (num_legend + num_columns - 1) / num_columns));
+        // NOTE: C++ `scale_(val)` is the macro `((val) / SCALING_FACTOR)` (libslic3r.h:81),
+        // which performs a raw double divide (== `val * 100000.0`) followed by an implicit
+        // truncating conversion to `coord_t`; it does NOT round like the crate `scale()`.
+        // Also: the y expression `1.3 * (num_legend + num_columns - 1) / num_columns` is
+        // evaluated in floating point (operator `*`/`/` left-assoc, `1.3` promotes the whole
+        // chain to double), so this is a double division, NOT integer division.
+        // crate::SCALING_FACTOR == 100000.0 == 1.0 / 0.00001, so `v * crate::SCALING_FACTOR`
+        // reproduces the C++ `(v) / SCALING_FACTOR` macro exactly.
+        let scale_trunc = |v: CoordF| -> Coord { (v * crate::SCALING_FACTOR) as Coord };
         let legend_size = Point::new(
-            scale(1.0) + num_columns as Coord * step_x,
-            scale(0.4 + 1.3 * ((num_legend + num_columns - 1) / num_columns) as CoordF),
+            scale_trunc(1.0) + num_columns as Coord * step_x,
+            scale_trunc(
+                0.4 + 1.3 * (num_legend + num_columns - 1) as CoordF / num_columns as CoordF,
+            ),
         );
 
         // SVG.cpp:497   BoundingBox bbox = get_extents(expolygons_with_attributes.front().first);

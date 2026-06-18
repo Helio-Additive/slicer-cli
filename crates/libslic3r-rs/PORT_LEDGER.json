@@ -1313,7 +1313,8 @@
     "rust_exists": true,
     "loc": 772,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Orient.cpp",
