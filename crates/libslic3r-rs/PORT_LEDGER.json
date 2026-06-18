@@ -3260,7 +3260,8 @@
     "rust_exists": true,
     "loc": 456,
     "status": "partial",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   },
   {
     "cpp": "SLA/Rotfinder.cpp",
