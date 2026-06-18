@@ -315,6 +315,41 @@ pub struct GlobalSpeedMap {
     pub bed_poly: Polygon,
 }
 
+// BBS static members store extruder parameters and speed map of all models.
+// These mirror the C++ `Model` class statics; in this crate the simplified
+// `Model` is a plain struct, so they are reproduced as faithful module-level
+// initializers (consumer-safe: no infrastructure deps).
+// Model.cpp:54
+//   std::map<size_t, ExtruderParams> Model::extruderParamsMap = { {0,{"",0,0}}};
+// `std::map` is an ordered map, so use BTreeMap for the same iteration order.
+pub fn extruder_params_map_default() -> std::collections::BTreeMap<usize, ExtruderParams> {
+    // Model.cpp:54 — { {0,{"",0,0}}}
+    let mut m = std::collections::BTreeMap::new();
+    m.insert(
+        0usize,
+        ExtruderParams {
+            material_name: String::new(),
+            bed_temp: 0,
+            heat_end_temp: 0.0,
+        },
+    );
+    m
+}
+
+// Model.cpp:55
+//   GlobalSpeedMap Model::printSpeedMap{};
+pub fn print_speed_map_default() -> GlobalSpeedMap {
+    // Model.cpp:55 — value-initialized GlobalSpeedMap
+    GlobalSpeedMap::default()
+}
+
+// Model.hpp:1681
+//   static Polygon getBedPolygon() { return Model::printSpeedMap.bed_poly; }
+pub fn get_bed_polygon(print_speed_map: &GlobalSpeedMap) -> Polygon {
+    // Model.hpp:1681
+    print_speed_map.bed_poly.clone()
+}
+
 // Model.hpp:1839
 //   static const float SINKING_Z_THRESHOLD = -0.001f;
 pub const SINKING_Z_THRESHOLD: f32 = -0.001;
