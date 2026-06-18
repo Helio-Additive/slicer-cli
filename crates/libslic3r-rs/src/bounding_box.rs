@@ -874,8 +874,8 @@ impl BoundingBox3 {
     /// C++:     polygon.points[3](1) = this->max(1) * scale_factor;
     /// C++:     return polygon;
     /// C++: }
-    /// NOTE: scale_factor uses the C++ libslic3r SCALING_FACTOR (0.000001), so when
-    ///       is_scaled is true the factor is 1/0.000001 = 1e6 (matching C++ exactly).
+    /// NOTE: scale_factor uses the C++ libslic3r SCALING_FACTOR (0.00001, libslic3r.h:58),
+    ///       so when is_scaled is true the factor is 1/0.00001 = 1e5 (matching C++ exactly).
     ///       The coordinate products are assigned into Polygon's integer points, which
     ///       truncate toward zero (Eigen int assignment).
     pub fn polygon(&self, is_scaled: bool) -> Polygon {
