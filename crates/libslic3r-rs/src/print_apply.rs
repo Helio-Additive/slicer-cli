@@ -135,6 +135,10 @@
 //! ### Ported (faithful, builds):
 //! - `transform3d_lower`   — PrintApply.cpp:107
 //! - `transform3d_equal`   — PrintApply.cpp:121
+//! - `custom_per_printz_gcodes_tool_changes_differ` — PrintApply.cpp:189
+//!     (depends only on the already-ported `custom_g_code::Item`/`Type`)
+//! - `trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only` — PrintApply.cpp:558
+//!     (pure Transform3d math; depends only on already-ported primitives)
 //!
 //! ### BLOCKED SYMBOLS (genuinely unportable until prerequisites land)
 //!
@@ -153,9 +157,6 @@
 //! - `print_objects_from_model_object`, `PrintObjectTrafoAndInstances`
 //!     -> needs `ModelInstance::is_printable`/`get_matrix` and `PrintInstance`.
 //!        Rust `Instance` lacks matrices, printable/print_volume_state, and IDs.
-//! - `custom_per_printz_gcodes_tool_changes_differ`
-//!     -> needs `CustomGCode::Item`/`CustomGCode::ToolChange` comparison plumbed
-//!        through `Model::plates_custom_gcodes`. Not threaded here yet.
 //! - `print_config_diffs`, `full_print_config_diffs`
 //!     -> needs `PrintConfig::keys()`, `DynamicPrintConfig::option`,
 //!        `print_config_def.extruder_retract_keys()`,
@@ -166,11 +167,12 @@
 //! - `ModelObjectStatus(DB)`, `PrintObjectStatus(DB)`
 //!     -> needs `ObjectID`-keyed `PrintObject`/`ModelObject` plus
 //!        `PrintObjectRegions` ref-counting and `print_object->trafo()`.
-//! - `trafo_for_bbox`, `trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only`,
-//!   `transformed_its_bbox2d`, `transformed_its_bboxes_in_z_ranges`
+//! - `trafo_for_bbox`, `transformed_its_bbox2d`, `transformed_its_bboxes_in_z_ranges`
 //!     -> needs `PrintObjectRegions::BoundingBox` (an `Eigen::AlignedBox3f`
 //!        equivalent over `Vec3f`) and `indexed_triangle_set`. The Rust
 //!        `PrintObjectRegions` only stores `all_regions`; no bbox type exists.
+//!     (`trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only` is pure
+//!      Transform3d math and HAS been ported above.)
 //! - `model_volume_solid_or_modifier`
 //!     -> needs `ModelVolumeType`. Not present.
 //! - `print_objects_regions_invalidate_keep_some_volumes`, `find_volume_extents`,
@@ -195,7 +197,10 @@
 //! `t_layer_config_ranges`, and full `PrintObjectRegions` ports land, the
 //! blocked symbols can be translated against them.
 
-use crate::geometry::geometry::Transform3d;
+use crate::custom_g_code::{Item as CustomGCodeItem, Type as CustomGCodeType};
+use crate::geometry::geometry::{Transform3d, Vec3d};
+use crate::libslic3r::EPSILON;
+use nalgebra::Matrix3;
 
 // PrintApply.cpp:107
 // static inline bool transform3d_lower(const Transform3d &lhs, const Transform3d &rhs)
@@ -249,6 +254,119 @@ pub fn transform3d_equal(lhs: &Transform3d, rhs: &Transform3d) -> bool {
     true
 }
 
+// PrintApply.cpp:189
+// Returns true if va == vb when all CustomGCode items that are not ToolChangeCode are ignored.
+// static bool custom_per_printz_gcodes_tool_changes_differ(const std::vector<CustomGCode::Item> &va, const std::vector<CustomGCode::Item> &vb)
+//
+// The C++ walks two iterators, skipping non-ToolChange items in either list,
+// and compares the surviving ToolChange items pairwise. Modelled here with two
+// running slice indices.
+pub fn custom_per_printz_gcodes_tool_changes_differ(
+    va: &[CustomGCodeItem],
+    vb: &[CustomGCodeItem],
+) -> bool {
+    // auto it_a = va.begin();
+    // auto it_b = vb.begin();
+    let mut ia = 0usize;
+    let mut ib = 0usize;
+    // while (it_a != va.end() || it_b != vb.end()) {
+    while ia != va.len() || ib != vb.len() {
+        // if (it_a != va.end() && it_a->type != CustomGCode::ToolChange) {
+        if ia != va.len() && va[ia].gcode_type != CustomGCodeType::ToolChange {
+            // Skip any CustomGCode items, which are not tool changes.
+            // ++ it_a;
+            ia += 1;
+            // continue;
+            continue;
+        }
+        // if (it_b != vb.end() && it_b->type != CustomGCode::ToolChange) {
+        if ib != vb.len() && vb[ib].gcode_type != CustomGCodeType::ToolChange {
+            // Skip any CustomGCode items, which are not tool changes.
+            // ++ it_b;
+            ib += 1;
+            // continue;
+            continue;
+        }
+        // if (it_a == va.end() || it_b == vb.end())
+        if ia == va.len() || ib == vb.len() {
+            // va or vb contains more Tool Changes than the other.
+            // return true;
+            return true;
+        }
+        // assert(it_a->type == CustomGCode::ToolChange);
+        debug_assert!(va[ia].gcode_type == CustomGCodeType::ToolChange);
+        // assert(it_b->type == CustomGCode::ToolChange);
+        debug_assert!(vb[ib].gcode_type == CustomGCodeType::ToolChange);
+        // if (*it_a != *it_b)
+        if va[ia] != vb[ib] {
+            // The two Tool Changes differ.
+            // return true;
+            return true;
+        }
+        // ++ it_a;
+        ia += 1;
+        // ++ it_b;
+        ib += 1;
+    }
+    // There is no change in custom Tool Changes.
+    // return false;
+    false
+}
+
+// PrintApply.cpp:558
+// static inline bool trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(const Transform3d &t1, const Transform3d &t2)
+//
+// Eigen `Transform3d::translation()` is column 3 of the 4x4 (rows 0..2); in
+// nalgebra column-major `Matrix4<f64>` that is `m[(row, 3)]`. `t.matrix().block<3,3>(0,0)`
+// is the linear part -> `m.fixed_view::<3,3>(0,0)`. `m.block<3,1>(0,c)` is column `c`
+// of the 3x3 -> `m.column(c)`. `squaredNorm()` -> `norm_squared()`.
+pub fn trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(t1: &Transform3d, t2: &Transform3d) -> bool {
+    // if (std::abs(t1.translation().z() - t2.translation().z()) > EPSILON)
+    if (t1[(2, 3)] - t2[(2, 3)]).abs() > EPSILON {
+        // One of the object is higher than the other above the build plate (or below the build plate).
+        // return false;
+        return false;
+    }
+    // Matrix3d m1 = t1.matrix().block<3, 3>(0, 0);
+    let m1: Matrix3<f64> = t1.fixed_view::<3, 3>(0, 0).into();
+    // Matrix3d m2 = t2.matrix().block<3, 3>(0, 0);
+    let m2: Matrix3<f64> = t2.fixed_view::<3, 3>(0, 0).into();
+    // Matrix3d m = m2.inverse() * m1;
+    let m: Matrix3<f64> = m2.try_inverse().unwrap_or_else(Matrix3::identity) * m1;
+    // Vec3d    z = m.block<3, 1>(0, 2);
+    let z: Vec3d = m.column(2).into();
+    // if (std::abs(z.x()) > EPSILON || std::abs(z.y()) > EPSILON || std::abs(z.z() - 1.) > EPSILON)
+    if z.x.abs() > EPSILON || z.y.abs() > EPSILON || (z.z - 1.0).abs() > EPSILON {
+        // Z direction or length changed.
+        // return false;
+        return false;
+    }
+    // Z still points in the same direction and it has the same length.
+    // Vec3d    x = m.block<3, 1>(0, 0);
+    let x: Vec3d = m.column(0).into();
+    // Vec3d    y = m.block<3, 1>(0, 1);
+    let y: Vec3d = m.column(1).into();
+    // if (std::abs(x.z()) > EPSILON || std::abs(y.z()) > EPSILON)
+    if x.z.abs() > EPSILON || y.z.abs() > EPSILON {
+        // return false;
+        return false;
+    }
+    // double   lx2 = x.squaredNorm();
+    let lx2 = x.norm_squared();
+    // double   ly2 = y.squaredNorm();
+    let ly2 = y.norm_squared();
+    // if (lx2 - 1. > EPSILON * EPSILON || ly2 - 1. > EPSILON * EPSILON)
+    if lx2 - 1.0 > EPSILON * EPSILON || ly2 - 1.0 > EPSILON * EPSILON {
+        // return false;
+        return false;
+    }
+    // Verify whether the vectors x, y are still perpendicular.
+    // double   d   = x.dot(y);
+    let d = x.dot(&y);
+    // return std::abs(d * d) < EPSILON * lx2 * ly2;
+    (d * d).abs() < EPSILON * lx2 * ly2
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,5 +390,58 @@ mod tests {
         assert!(transform3d_lower(&a, &b));
         assert!(!transform3d_lower(&b, &a));
         assert!(!transform3d_equal(&a, &b));
+    }
+
+    #[test]
+    fn trafos_differ_z_rotation_mirror_only() {
+        // Identical trafos differ only trivially -> true.
+        let a = Transform3d::identity();
+        let b = Transform3d::identity();
+        assert!(trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(&a, &b));
+
+        // A pure rotation about Z keeps Z fixed and X,Y orthonormal -> true.
+        let theta = 0.7_f64;
+        let mut rz = Transform3d::identity();
+        rz[(0, 0)] = theta.cos();
+        rz[(0, 1)] = -theta.sin();
+        rz[(1, 0)] = theta.sin();
+        rz[(1, 1)] = theta.cos();
+        assert!(trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(&a, &rz));
+
+        // Different Z translation -> false.
+        let mut tz = Transform3d::identity();
+        tz[(2, 3)] = 5.0;
+        assert!(!trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(&a, &tz));
+
+        // Z scaling changes Z length -> false.
+        let mut sz = Transform3d::identity();
+        sz[(2, 2)] = 2.0;
+        assert!(!trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only(&a, &sz));
+    }
+
+    #[test]
+    fn custom_gcode_tool_changes_differ_ignores_non_toolchange() {
+        let tc = |z: f64, e: i32| CustomGCodeItem::new(z, CustomGCodeType::ToolChange, e, String::new());
+        let color = CustomGCodeItem::new(1.0, CustomGCodeType::ColorChange, 1, String::new());
+
+        // Identical tool-change sequences (with a non-toolchange interleaved) -> no diff.
+        let a = vec![tc(1.0, 2), color.clone(), tc(2.0, 3)];
+        let b = vec![color.clone(), tc(1.0, 2), tc(2.0, 3)];
+        assert!(!custom_per_printz_gcodes_tool_changes_differ(&a, &b));
+
+        // One side has an extra tool change -> differ.
+        let c = vec![tc(1.0, 2)];
+        let d = vec![tc(1.0, 2), tc(2.0, 3)];
+        assert!(custom_per_printz_gcodes_tool_changes_differ(&c, &d));
+
+        // Tool changes differ in extruder -> differ.
+        let e = vec![tc(1.0, 2)];
+        let f = vec![tc(1.0, 4)];
+        assert!(custom_per_printz_gcodes_tool_changes_differ(&e, &f));
+
+        // Only non-toolchange items, both sides empty of tool changes -> no diff.
+        let g = vec![color.clone()];
+        let h = vec![color.clone(), color.clone()];
+        assert!(!custom_per_printz_gcodes_tool_changes_differ(&g, &h));
     }
 }
