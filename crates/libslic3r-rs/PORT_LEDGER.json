@@ -1364,7 +1364,8 @@
     "rust_exists": true,
     "loc": 927,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "Slicing.cpp",
