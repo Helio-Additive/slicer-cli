@@ -212,6 +212,11 @@ fn expolygons_to_geo_multi(expolys: &[ExPolygon]) -> MultiPolygon<f64> {
 // ============================================================================
 
 /// Compute the union of two sets of polygons.
+//
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. C++ boolean
+// ops (`clipper_do`/`clipper_union`, ClipperUtils.cpp:310-350) run ClipperLib at
+// coord_t integer precision with the NonZero fill rule; this uses the geo crate
+// (geo-clipper) at GEO_CLIPPER_SCALE and is not byte-identical.
 pub fn union(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     if subject.is_empty() {
         return clip.to_vec();
@@ -235,6 +240,13 @@ pub fn union(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
 }
 
 /// Compute the union of a single set of potentially overlapping polygons.
+///
+/// ClipperUtils.cpp:815 `ExPolygons union_ex(const ExPolygons &subject)` —
+/// `PolyTreeToExPolygons(clipper_do_polytree(ctUnion, ExPolygonsProvider(subject),
+/// EmptyPathsProvider(), pftNonZero))`. This is a SINGLE Clipper union of the
+/// whole subject set against an empty clip (NonZero fill rule), not an iterative
+/// pairwise fold. Performed here as a self-union of the input MultiPolygon to
+/// merge all overlaps in one operation.
 pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
     if polygons.is_empty() {
         return vec![];
@@ -243,12 +255,18 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
         return polygons.to_vec();
     }
 
-    // Union all polygons together
-    let mut result = vec![polygons[0].clone()];
-    for poly in polygons.iter().skip(1) {
-        result = union(&result, &[poly.clone()]);
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
+    // Single union of the whole set (NonZero) instead of iterative pairwise union.
+    let geo_multi = expolygons_to_geo_multi(polygons);
+    let result = geo_multi.union(&geo_multi, GEO_CLIPPER_SCALE);
+    let mut expolygons = geo_multi_to_expolygons(&result);
+
+    // Ensure canonical winding order (CCW contours, CW holes).
+    for expoly in &mut expolygons {
+        expoly.make_canonical();
     }
-    result
+
+    expolygons
 }
 
 /// Compute the union of raw Polygons into ExPolygons.
@@ -401,6 +419,12 @@ fn unscale_delta(delta_scaled: CoordF) -> CoordF {
 ///
 /// # Returns
 /// A vector of ExPolygons representing the offset result.
+//
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
+// C++ `offset_ex`/`raw_offset` (ClipperUtils.cpp:273) reorient the contour, set
+// MiterLimit/ArcTolerance and ShortestEdgeLength = |delta * 0.005|, then offset
+// with the sign reversed for CW input. The geo-clipper backend applies the
+// offset directly at GEO_CLIPPER_SCALE precision and is not byte-identical.
 pub fn offset_polygon(polygon: &Polygon, delta: CoordF, join_type: OffsetJoinType) -> ExPolygons {
     let geo_poly = polygon_to_geo(polygon);
     let jt = join_type.into();
@@ -1069,7 +1093,7 @@ fn clip_segment_to_expolygons(p1: Point, p2: Point, clip: &[ExPolygon]) -> Vec<V
     }
 
     let len = len_sq.sqrt();
-    let step = 100_000i64; // 0.1mm sampling step
+    let step = 100_000i64; // 1.0mm sampling step (SCALING_FACTOR=100_000/mm). FIDELITY-NOTE(F1): geo backend has no exact open-path clip; per-segment sampling approximates ClipperLib.
     let num_samples = ((len / step as f64).ceil() as usize).max(2);
 
     let mut result = Vec::new();
@@ -1261,6 +1285,14 @@ pub fn clip_clipper_polygons_with_subject_bbox_expolygon(
     out
 }
 
+/// ClipperUtils.cpp:911 `diff_pl(const Polylines&, const Polygons&)` —
+/// `_clipper_pl_open(ctDifference, subject, clip)`: open-path subject clipped
+/// against closed clip, returning the portions OUTSIDE the clip.
+//
+// FIDELITY-NOTE(F1): geo-clipper provides no exact open-path boolean. This
+// reproduces `_clipper_pl_open(ctDifference, ...)` by per-segment sampling +
+// reconstruction instead of ClipperLib open-path clipping. The faithful
+// Clipper2-backed equivalent lives in `diff_pl_2` (Clipper2Utils.cpp parity).
 pub fn diff_pl(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
     if polylines.is_empty() {
         return vec![];
@@ -1281,17 +1313,16 @@ pub fn diff_pl(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
     result
 }
 
-/// Compute the intersection of polylines with ExPolygons using geo-clipper.
+/// Compute the intersection of polylines with ExPolygons.
 ///
-/// Returns polyline segments that are INSIDE any of the clip regions.
-/// This is the counterpart to `diff_pl` which returns segments OUTSIDE.
-///
-/// # Arguments
-/// * `polylines` - The subject polylines to clip
-/// * `clip` - The ExPolygon clip regions
-///
-/// # Returns
-/// A vector of polylines representing the portions inside the clip regions.
+/// ClipperUtils.cpp:935 `intersection_pl(const Polylines&, const ExPolygons&)` —
+/// `_clipper_pl_open(ctIntersection, subject, clip)`: open-path subject clipped
+/// against closed clip, returning the portions INSIDE the clip.
+//
+// FIDELITY-NOTE(F1): geo-clipper provides no exact open-path boolean. This
+// reproduces `_clipper_pl_open(ctIntersection, ...)` by per-segment sampling +
+// reconstruction instead of ClipperLib open-path clipping. The faithful
+// Clipper2-backed equivalent lives in `intersection_pl_2` (Clipper2Utils.cpp parity).
 pub fn intersection_pl(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
     if polylines.is_empty() || clip.is_empty() {
         return vec![];
@@ -1372,7 +1403,7 @@ fn intersection_segment_with_expolygons(
 
     // Use reasonable step size - too small creates micro-segments
     // BambuStudio uses ~0.1mm steps for overhang detection
-    let step_size = 100_000; // 0.1mm in scaled units
+    let step_size = 100_000; // 1.0mm in scaled units (SCALING_FACTOR=100_000/mm). FIDELITY-NOTE(F1): sampling approximation of ClipperLib open-path clip.
     let num_steps = ((len as i64 + step_size - 1) / step_size).max(2) as usize;
 
     let mut result = Vec::new();
@@ -1483,7 +1514,7 @@ fn diff_segment_from_expolygons(p1: Point, p2: Point, clip: &[ExPolygon]) -> Vec
     }
 
     let len = len_sq.sqrt();
-    let step = 100_000i64; // 0.1mm sampling step
+    let step = 100_000i64; // 1.0mm sampling step (SCALING_FACTOR=100_000/mm). FIDELITY-NOTE(F1): geo backend has no exact open-path clip; per-segment sampling approximates ClipperLib.
     let num_samples = ((len / step as f64).ceil() as usize).max(2);
 
     let mut result = Vec::new();

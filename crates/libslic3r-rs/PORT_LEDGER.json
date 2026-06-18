@@ -1523,7 +1523,8 @@
     "rust_exists": true,
     "loc": 1435,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "AppConfig.cpp",
