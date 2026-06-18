@@ -1009,6 +1009,10 @@ impl PressureEqualizer {
 
     // PressureEqualizer.cpp:569-576 — void push_axis_to_output(const char axis, const float value, bool add_eol)
     fn push_axis_to_output(&mut self, axis: char, value: f32, add_eol: bool) {
+        // FIDELITY-NOTE: C `sprintf("%.5f"/"%.3f", value)` promotes the f32 arg to
+        // double before formatting; Rust `{:.5}`/`{:.3}` formats the f32 directly.
+        // Both emit fixed decimal places and agree for the vast majority of values;
+        // last-digit rounding can differ for a few not-exactly-representable f32s.
         // sprintf(buf, (axis == 'E') ? " %c%.3f" : " %c%.5f", axis, value);
         let s = if axis == 'E' {
             format!(" {}{:.3}", axis, value)
