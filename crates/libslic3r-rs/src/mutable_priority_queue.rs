@@ -198,9 +198,10 @@ where
             // Bubble down to restore heap property
             // MutablePriorityQueue.hpp:108
             // C++: update_heap_down(0, m_heap.size() - 1);
-            if !self.heap.is_empty() {
-                self.update_heap_down(0, self.heap.len() - 1);
-            }
+            // (We entered the `len() > 1` branch and popped exactly one element,
+            // so `m_heap` is guaranteed non-empty here, matching C++'s
+            // unconditional call.)
+            self.update_heap_down(0, self.heap.len() - 1);
         } else {
             // Single element - just clear
             // MutablePriorityQueue.hpp:110
@@ -258,10 +259,11 @@ where
         // MutablePriorityQueue.hpp:131-132
         // C++: update_heap_down(idx, m_heap.size() - 1);
         // C++: update_heap_up(0, idx);
-        if !self.heap.is_empty() && idx < self.heap.len() {
-            self.update_heap_down(idx, self.heap.len() - 1);
-            self.update_heap_up(0, idx);
-        }
+        // (The early-return above handled `idx + 1 == len`, so after the pop
+        // `idx < m_heap.size()` and the heap is non-empty, matching C++'s
+        // unconditional calls in the same order: down first, then up.)
+        self.update_heap_down(idx, self.heap.len() - 1);
+        self.update_heap_up(0, idx);
     }
 
     /// Update element at index (re-sort after priority change)
