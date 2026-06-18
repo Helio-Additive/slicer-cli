@@ -2942,7 +2942,8 @@
     "rust_exists": false,
     "loc": 4742,
     "status": "partial",
-    "priority": 6
+    "priority": 6,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Format/ModelIO.hpp",
