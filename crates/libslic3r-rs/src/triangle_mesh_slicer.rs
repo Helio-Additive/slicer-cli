@@ -1286,25 +1286,54 @@ fn make_expolygons_simple(lines: &mut IntersectionLines) -> ExPolygons {
 // TriangleMeshSlicer.cpp:1738-1824
 // Build ExPolygons from raw loops.
 //
-// Divergence: the crate's geo-based Clipper layer does not expose
-// `ClipperLib::union_ex(loops, fill_type)` with selectable fill rule, nor
-// `offset2_ex/offset_ex`. We use `union_polygons_ex` (NonZero-like) and ignore
-// closing_radius / extra_offset. The `fill_type` argument is recorded but only
-// the default NonZero behavior is realized. See the module-level divergence note.
+// FIDELITY-NOTE(F1): the crate's geo-based Clipper layer does not expose
+// `ClipperLib::union_ex(loops, fill_type)` with a selectable fill rule (EvenOdd/
+// Positive/NonZero). We use `union_polygons_ex` (NonZero-like) regardless of
+// `fill_type`; the default Regular/NonZero path matches. The closing-offset
+// branch structure (offset_out / offset_in) below mirrors the C++ exactly,
+// using `offset_expolygons` (jtMiter == C++ DefaultJoinType) and the same
+// `offset2_ex(out, in)` order (grow then shrink) — geo-clipper offset is an
+// approximation of ClipperLib's at coord_t precision.
 fn make_expolygons(
     loops: &[Polygon],
     closing_radius: f32,
-    _extra_offset: f32,
+    extra_offset: f32,
     _fill_type: ClipperPolyFillType,
     slices: &mut ExPolygons,
 ) {
+    use crate::clipper_utils::{offset_expolygons, OffsetJoinType};
+
     // TriangleMeshSlicer.cpp:1793
     debug_assert!(closing_radius >= 0.0);
+    // Allowing negative extra_offset for shrinking a contour.
+    // TriangleMeshSlicer.cpp:1796-1804
+    let offset_out: f64;
+    let offset_in: f64;
+    if closing_radius >= extra_offset {
+        offset_out = scale(closing_radius as f64) as f64;
+        offset_in = -(scale((closing_radius - extra_offset) as f64) as f64);
+    } else {
+        offset_out = scale(extra_offset as f64) as f64;
+        offset_in = 0.0;
+    }
 
-    // append to the supplied collection (union of the loops).
-    // TriangleMeshSlicer.cpp:1819-1823
+    // union_ex(loops, fill_type)
     let unioned = crate::clipper_utils::union_polygons_ex(loops);
-    slices.extend(unioned);
+
+    // append to the supplied collection.
+    // TriangleMeshSlicer.cpp:1819-1823
+    let result = if offset_out > 0.0 && offset_in < 0.0 {
+        // offset2_ex(union, offset_out, offset_in): grow by out, then shrink by |in|.
+        let grown = offset_expolygons(&unioned, offset_out, OffsetJoinType::Miter);
+        offset_expolygons(&grown, offset_in, OffsetJoinType::Miter)
+    } else if offset_out > 0.0 {
+        offset_expolygons(&unioned, offset_out, OffsetJoinType::Miter)
+    } else if offset_in < 0.0 {
+        offset_expolygons(&unioned, offset_in, OffsetJoinType::Miter)
+    } else {
+        unioned
+    };
+    slices.extend(result);
 }
 
 // ClipperLib::PolyFillType (recorded for fidelity; behavior NonZero-only here).
