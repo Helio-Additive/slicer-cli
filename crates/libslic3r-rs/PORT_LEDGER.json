@@ -3314,6 +3314,7 @@
     "rust_exists": true,
     "loc": 1277,
     "status": "partial",
-    "priority": 9
+    "priority": 9,
+    "fidelity": "ok"
   }
 ]
