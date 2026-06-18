@@ -6,26 +6,26 @@
 //!
 //! Faithful 1:1 line-by-line translation. `coord_t` -> `i64`, `coordf_t` -> `f64`.
 //!
-//! Blocked symbols (NOT ported — call genuinely-unported dependencies):
-//! - `KMediods::cluster_small_data`: requires
-//!   `get_estimate_extruder_filament_change_count` (declared blocked in
-//!   `filament_group_utils.rs` — needs `MultiNozzleUtils` change-count helpers
-//!   that are not yet ported).
-//! - `FilamentGroup::calc_min_flush_group`,
-//!   `FilamentGroup::calc_min_flush_group_by_enum`,
-//!   `FilamentGroup::calc_min_flush_group_by_pam2`,
-//!   `FilamentGroup::calc_filament_group_for_flush`,
-//!   `FilamentGroup::calc_filament_group`: all require
-//!   `reorder_filaments_for_minimum_flush_volume` (ToolOrderUtils.cpp — not yet
-//!   ported to the Rust `gcode::tool_order_utils` module, which only contains the
-//!   flow solvers).
-//! - `plan_filament_nozzle_mapping_and_order`: requires `GroupMinCostFlowSolver`
-//!   (ToolOrderUtils.cpp — not yet ported).
+//! Symbols still NOT ported (the whole `KMediods` (non_zero_clusters) class and
+//! the multi-nozzle PAM / manual / match helpers built on it):
+//! - `KMediods` and all its methods (`cluster_small_data`, `init_cluster_center`,
+//!   `assign_cluster_label`, `do_clustering`, `calc_cost`, `have_enough_size`,
+//!   `set_cluster_group_size`).
+//! - `FilamentGroupMultiNozzle::calc_filament_group_by_pam` (drives `KMediods`).
+//! - `FilamentGroup::calc_min_flush_group_by_pam` (PAM retry path; the enum and
+//!   pam2 paths *are* ported, and `calc_min_flush_group` dispatches only to those
+//!   two, matching C++).
+//! - `calc_filament_group_for_match_multi_nozzle`,
+//!   `calc_filament_group_for_manual_multi_nozzle`,
+//!   `plan_filament_nozzle_mapping_and_order` (depend on the multi-nozzle layered
+//!   solvers / `GroupMinCostFlowSolver` plumbing).
 //!
-//! Everything else (the data structures, evaluators, `select_best_group_for_ams`,
+//! Everything else — the data structures, evaluators, `select_best_group_for_ams`,
 //! `update_memoryed_groups`, `collect_sorted_used_filaments`, the full `KMediods2`,
-//! the tractable `KMediods` methods, the `FilamentGroup` match/tpu/merge helpers,
-//! and the multi-nozzle MCMF/PAM solvers) is ported faithfully.
+//! the `FilamentGroup` flush path (`calc_filament_group`,
+//! `calc_filament_group_for_flush`, `calc_min_flush_group`,
+//! `calc_min_flush_group_by_enum`, `calc_min_flush_group_by_pam2`), the
+//! match/tpu/merge helpers, and the multi-nozzle MCMF solver — is ported faithfully.
 
 // Several file-scope static helpers (`change_memoryed_heaps_to_arrays`,
 // `get_merged_filament_map`, `fnv_hash_two_ints`, `evaluate_score`) and a few
@@ -39,11 +39,13 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 
 use crate::extruder::NozzleVolumeType;
 use crate::filament_group_utils::{
-    extract_unprintable_limit_indices_map, ErrorCode, FilamentGroupException, FilamentInfo,
-    FilamentUsageType, MachineFilamentInfo,
+    check_printable, extract_unprintable_limit_indices_map, ErrorCode, FilamentGroupException,
+    FilamentInfo, FilamentUsageType, MachineFilamentInfo,
 };
 use crate::flush_vol_predictor::flush_predict::{calc_color_distance, RGBColor};
-use crate::gcode::tool_order_utils::{FlushMatrix, MatchModeGroupSolver, INVALID_ID};
+use crate::gcode::tool_order_utils::{
+    reorder_filaments_for_minimum_flush_volume, FlushMatrix, MatchModeGroupSolver, INVALID_ID,
+};
 use crate::multi_nozzle_utils::NozzleInfo;
 
 // FilamentGroup.hpp:14
@@ -716,9 +718,14 @@ impl FlushDistanceEvaluator {
                                     [used_filaments[i] as usize],
                             );
                         // FilamentGroup.cpp:258
-                        m_distance_matrix[k][i][j] = (max_val * p as f32
-                            + min_val * (1.0 - p as f32))
-                            * (count_matrix[i][j].max(1)) as f32;
+                        // C++ evaluates `max_val * p + min_val * (1 - p)` with `p` a
+                        // double, so `float * double` promotes to double; the product
+                        // with the int count stays double, and the final assignment
+                        // narrows to float. Mirror that promotion here.
+                        m_distance_matrix[k][i][j] = ((max_val as f64 * p
+                            + min_val as f64 * (1.0 - p))
+                            * (count_matrix[i][j].max(1)) as f64)
+                            as f32;
                     }
                 }
             }
@@ -1999,6 +2006,435 @@ impl FilamentGroup {
         }
         // FilamentGroup.cpp:1247
         group
+    }
+
+    // FilamentGroup.cpp:844
+    /// `std::vector<int> FilamentGroup::calc_min_flush_group(int* cost)`
+    fn calc_min_flush_group(&mut self, cost: Option<&mut i32>) -> Vec<i32> {
+        // FilamentGroup.cpp:846
+        let used_filaments = collect_sorted_used_filaments(&self.ctx.model_info.layer_filaments);
+        // FilamentGroup.cpp:847
+        let used_filament_num = used_filaments.len();
+
+        // FilamentGroup.cpp:849
+        if used_filament_num < 10 {
+            // FilamentGroup.cpp:850
+            self.calc_min_flush_group_by_enum(&used_filaments, cost)
+        }
+        // FilamentGroup.cpp:851
+        else {
+            // FilamentGroup.cpp:852
+            self.calc_min_flush_group_by_pam2(&used_filaments, cost, 500)
+        }
+    }
+
+    // FilamentGroup.cpp:1251
+    /// `std::vector<int> FilamentGroup::calc_min_flush_group_by_enum(const std::vector<unsigned int>& used_filaments, int* cost)`
+    // sorted used_filaments
+    fn calc_min_flush_group_by_enum(
+        &mut self,
+        used_filaments: &[u32],
+        cost: Option<&mut i32>,
+    ) -> Vec<i32> {
+        // FilamentGroup.cpp:1253  reward value if the group result follows the unprintable limit
+        const UNPLACEABLE_LIMIT_REWARD: i32 = 10000;
+        // FilamentGroup.cpp:1254  reward value if the group result follows the max size per extruder
+        const MAX_SIZE_LIMIT_REWARD: i32 = 5000;
+        // FilamentGroup.cpp:1255  reward value if the group result follow the support limit
+        const SUPPORT_PREFER_REWARD: i32 = 100;
+        // FilamentGroup.cpp:1256  reward value if the group result try to fill the max size per extruder
+        const BEST_FIT_LIMIT_REWARD: i32 = 10;
+
+        // FilamentGroup.cpp:1258
+        let mut memoryed_groups: MemoryedGroupHeap = MemoryedGroupHeap::new();
+
+        // FilamentGroup.cpp:1260  auto bit_count_one = [](uint64_t n) { ... }
+        // (declared in C++ but unused; preserved as a comment for parity.)
+
+        // FilamentGroup.cpp:1271
+        let mut unplaceable_limit_indices: BTreeMap<i32, i32> = BTreeMap::new();
+        // FilamentGroup.cpp:1272
+        extract_unprintable_limit_indices_map(
+            &self.ctx.model_info.unprintable_filaments,
+            used_filaments,
+            &mut unplaceable_limit_indices,
+        );
+        // FilamentGroup.cpp:1273
+        unplaceable_limit_indices =
+            self.rebuild_unprintables(used_filaments, &unplaceable_limit_indices);
+
+        // FilamentGroup.cpp:1275
+        let used_filament_num = used_filaments.len() as i32;
+        // FilamentGroup.cpp:1276  uint64_t max_group_num = (static_cast<uint64_t>(1) << used_filament_num);
+        let max_group_num: u64 = 1u64 << used_filament_num;
+
+        // FilamentGroup.cpp:1278  struct CachedGroup
+        #[derive(Clone)]
+        struct CachedGroup {
+            // FilamentGroup.cpp:1279
+            filament_map: Vec<i32>,
+            // FilamentGroup.cpp:1280
+            flush: f64,
+            // FilamentGroup.cpp:1281
+            time: f64,
+            // FilamentGroup.cpp:1282
+            prefer_level: i32,
+            // FilamentGroup.cpp:1283
+            score: f64,
+        }
+        impl Default for CachedGroup {
+            fn default() -> Self {
+                CachedGroup {
+                    filament_map: Vec::new(),
+                    flush: 0.0,
+                    time: 0.0,
+                    prefer_level: 0,
+                    score: 1.0,
+                }
+            }
+        }
+
+        // FilamentGroup.cpp:1286
+        let mut best_group: CachedGroup = CachedGroup::default();
+        // FilamentGroup.cpp:1287
+        let mut cached_groups: Vec<CachedGroup> = Vec::new();
+
+        // FilamentGroup.cpp:1289
+        for i in 0..max_group_num {
+            // FilamentGroup.cpp:1290
+            let mut groups: Vec<BTreeSet<i32>> = vec![BTreeSet::new(); 2];
+            // FilamentGroup.cpp:1291
+            for j in 0..used_filament_num {
+                // FilamentGroup.cpp:1292
+                if i & (1u64 << j) != 0 {
+                    // FilamentGroup.cpp:1293
+                    groups[1].insert(j);
+                }
+                // FilamentGroup.cpp:1294
+                else {
+                    // FilamentGroup.cpp:1295
+                    groups[0].insert(j);
+                }
+            }
+
+            // FilamentGroup.cpp:1298
+            let mut prefer_level: i32 = 0;
+
+            // FilamentGroup.cpp:1300
+            if check_printable(&groups, &unplaceable_limit_indices) {
+                // FilamentGroup.cpp:1301
+                prefer_level += UNPLACEABLE_LIMIT_REWARD;
+            }
+            // FilamentGroup.cpp:1302
+            if groups[0].len() as i32 <= self.ctx.machine_info.max_group_size[0]
+                && groups[1].len() as i32 <= self.ctx.machine_info.max_group_size[1]
+            {
+                // FilamentGroup.cpp:1303
+                prefer_level += MAX_SIZE_LIMIT_REWARD;
+            }
+            // FilamentGroup.cpp:1304
+            if FGStrategy::BestFit == self.ctx.group_info.strategy
+                && groups[0].len() as i32 >= self.ctx.machine_info.max_group_size[0]
+                && groups[1].len() as i32 >= self.ctx.machine_info.max_group_size[1]
+            {
+                // FilamentGroup.cpp:1305
+                prefer_level += BEST_FIT_LIMIT_REWARD;
+            }
+
+            // FilamentGroup.cpp:1307
+            let mut prefer_filament_count: i32 = 0;
+            // FilamentGroup.cpp:1308
+            for gidx in 0..2usize {
+                // FilamentGroup.cpp:1309
+                if self.ctx.machine_info.prefer_non_model_filament[gidx] {
+                    // FilamentGroup.cpp:1310
+                    for &fidx in groups[gidx].iter() {
+                        // FilamentGroup.cpp:1311
+                        if self.ctx.model_info.filament_info[used_filaments[fidx as usize] as usize]
+                            .usage_type
+                            == FilamentUsageType::SupportOnly
+                        {
+                            // FilamentGroup.cpp:1312
+                            prefer_filament_count += 1;
+                        }
+                    }
+                }
+            }
+
+            // FilamentGroup.cpp:1317
+            prefer_level += prefer_filament_count * SUPPORT_PREFER_REWARD;
+
+            // FilamentGroup.cpp:1319
+            let mut filament_maps: Vec<i32> = vec![0; used_filament_num as usize];
+            // FilamentGroup.cpp:1320
+            for i in 0..used_filament_num {
+                // FilamentGroup.cpp:1321
+                if groups[0].contains(&i) {
+                    // FilamentGroup.cpp:1322
+                    filament_maps[i as usize] = 0;
+                }
+                // FilamentGroup.cpp:1323
+                if groups[1].contains(&i) {
+                    // FilamentGroup.cpp:1324
+                    filament_maps[i as usize] = 1;
+                }
+            }
+
+            // FilamentGroup.cpp:1327
+            let mut total_cost = reorder_filaments_for_minimum_flush_volume(
+                used_filaments,
+                &filament_maps,
+                &self.ctx.model_info.layer_filaments,
+                &self.ctx.model_info.flush_matrix,
+                self.get_custom_seq.as_deref(),
+                None,
+                &self.ctx.nozzle_info.nozzle_status,
+            );
+
+            // FilamentGroup.cpp:1337  if (groups[master_extruder_id].size() < (used_filaments.size() + 1) / 2)
+            if (groups[self.ctx.machine_info.master_extruder_id as usize].len() as u32)
+                < (used_filaments.len() as u32 + 1) / 2
+            {
+                // FilamentGroup.cpp:1338  slightly prefer master extruders with more flush
+                total_cost += ABSOLUTE_FLUSH_GAP_TOLERANCE;
+            }
+
+            // FilamentGroup.cpp:1340
+            let mut curr_group: CachedGroup = CachedGroup::default();
+            // FilamentGroup.cpp:1341
+            curr_group.flush = total_cost as f64;
+            // FilamentGroup.cpp:1342
+            curr_group.prefer_level = prefer_level;
+            // FilamentGroup.cpp:1343
+            curr_group.filament_map =
+                vec![0; self.ctx.group_info.total_filament_num as usize];
+            // FilamentGroup.cpp:1344
+            for i in 0..filament_maps.len() {
+                // FilamentGroup.cpp:1345
+                curr_group.filament_map[used_filaments[i] as usize] = filament_maps[i];
+            }
+
+            // FilamentGroup.cpp:1347
+            let time_evaluator = TimeEvaluator::new(self.ctx.speed_info.clone());
+            // FilamentGroup.cpp:1348
+            curr_group.time = time_evaluator.get_estimated_time(&curr_group.filament_map);
+            // FilamentGroup.cpp:1349
+            cached_groups.push(curr_group);
+        }
+
+        // FilamentGroup.cpp:1352  如果归一化，没法处理边界情况
+        // FilamentGroup.cpp:1353
+        {
+            // FilamentGroup.cpp:1359
+            let mut _count = 0;
+            // FilamentGroup.cpp:1360
+            for cached_group in cached_groups.iter_mut() {
+                // FilamentGroup.cpp:1363
+                cached_group.score = evaluate_score(
+                    cached_group.flush,
+                    cached_group.time,
+                    self.ctx.speed_info.group_with_time,
+                );
+
+                // FilamentGroup.cpp:1365
+                if cached_group.prefer_level > best_group.prefer_level
+                    || (cached_group.prefer_level == best_group.prefer_level
+                        && cached_group.score < best_group.score)
+                {
+                    // FilamentGroup.cpp:1366
+                    best_group = cached_group.clone();
+                }
+
+                // FilamentGroup.cpp:1369
+                {
+                    // FilamentGroup.cpp:1370  MemoryedGroup mg(cached_group.filament_map, cached_group.score, cached_group.prefer_level);
+                    // C++ `score` (double) narrows to the `int cost` field of MemoryedGroup.
+                    let mg = MemoryedGroup::new(
+                        cached_group.filament_map.clone(),
+                        cached_group.score as i32,
+                        cached_group.prefer_level,
+                    );
+                    // FilamentGroup.cpp:1371
+                    update_memoryed_groups(
+                        &mg,
+                        self.ctx.group_info.max_gap_threshold,
+                        &mut memoryed_groups,
+                    );
+                }
+                // FilamentGroup.cpp:1373  BOOST_LOG_TRIVIAL(info) << ...
+                _count += 1;
+            }
+        }
+
+        // FilamentGroup.cpp:1378
+        if let Some(c) = cost {
+            // FilamentGroup.cpp:1379  *cost = best_group.flush;  (double -> int)
+            *c = best_group.flush as i32;
+        }
+
+        // FilamentGroup.cpp:1381
+        self.m_memoryed_groups.clear();
+        // FilamentGroup.cpp:1382
+        while !memoryed_groups.is_empty() {
+            // FilamentGroup.cpp:1383
+            let top = memoryed_groups.peek().unwrap().0.clone();
+            // FilamentGroup.cpp:1384
+            memoryed_groups.pop();
+            // FilamentGroup.cpp:1385
+            self.m_memoryed_groups.push(top.group);
+        }
+
+        // FilamentGroup.cpp:1388
+        best_group.filament_map
+    }
+
+    // FilamentGroup.cpp:1392
+    /// `std::vector<int> FilamentGroup::calc_min_flush_group_by_pam2(const std::vector<unsigned int>& used_filaments, int* cost, int timeout_ms)`
+    // sorted used_filaments
+    fn calc_min_flush_group_by_pam2(
+        &mut self,
+        used_filaments: &[u32],
+        cost: Option<&mut i32>,
+        timeout_ms: i32,
+    ) -> Vec<i32> {
+        // FilamentGroup.cpp:1394
+        let mut filament_labels_ret: Vec<i32> = vec![
+            self.ctx.machine_info.master_extruder_id;
+            self.ctx.group_info.total_filament_num as usize
+        ];
+
+        // FilamentGroup.cpp:1396
+        let mut unplaceable_limits: BTreeMap<i32, i32> = BTreeMap::new();
+        // FilamentGroup.cpp:1397
+        extract_unprintable_limit_indices_map(
+            &self.ctx.model_info.unprintable_filaments,
+            used_filaments,
+            &mut unplaceable_limits,
+        );
+        // FilamentGroup.cpp:1398
+        unplaceable_limits = self.rebuild_unprintables(used_filaments, &unplaceable_limits);
+
+        // FilamentGroup.cpp:1400
+        let distance_evaluator = std::rc::Rc::new(FlushDistanceEvaluator::new(
+            &self.ctx.model_info.flush_matrix,
+            used_filaments,
+            &self.ctx.model_info.layer_filaments,
+            0.65,
+        ));
+        // FilamentGroup.cpp:1401
+        let mut pam = KMediods2::new(
+            used_filaments.len() as i32,
+            distance_evaluator,
+            self.ctx.machine_info.master_extruder_id,
+        );
+        // FilamentGroup.cpp:1402
+        pam.set_max_cluster_size(self.ctx.machine_info.max_group_size.clone());
+        // FilamentGroup.cpp:1403
+        pam.set_unplaceable_limits(unplaceable_limits);
+        // FilamentGroup.cpp:1404
+        pam.set_memory_threshold(self.ctx.group_info.max_gap_threshold);
+        // FilamentGroup.cpp:1405
+        pam.do_clustering(self.ctx.group_info.strategy, timeout_ms);
+
+        // FilamentGroup.cpp:1407
+        let filament_labels = pam.get_cluster_labels();
+
+        // FilamentGroup.cpp:1409
+        {
+            // FilamentGroup.cpp:1410
+            let mut memoryed_groups = pam.get_memoryed_groups();
+            // FilamentGroup.cpp:1411
+            change_memoryed_heaps_to_arrays(
+                &mut memoryed_groups,
+                self.ctx.group_info.total_filament_num,
+                used_filaments,
+                &mut self.m_memoryed_groups,
+            );
+        }
+
+        // FilamentGroup.cpp:1414
+        if let Some(c) = cost {
+            // FilamentGroup.cpp:1415  *cost = reorder_filaments_for_minimum_flush_volume(used_filaments, filament_labels, layer_filaments, flush_matrix, std::nullopt, nullptr);
+            // (C++ uses the `nozzle_status = {}` default here.)
+            *c = reorder_filaments_for_minimum_flush_volume(
+                used_filaments,
+                &filament_labels,
+                &self.ctx.model_info.layer_filaments,
+                &self.ctx.model_info.flush_matrix,
+                None,
+                None,
+                &HashMap::new(),
+            );
+        }
+
+        // FilamentGroup.cpp:1417
+        for i in 0..filament_labels.len() {
+            // FilamentGroup.cpp:1418
+            filament_labels_ret[used_filaments[i] as usize] = filament_labels[i];
+        }
+        // FilamentGroup.cpp:1419
+        filament_labels_ret
+    }
+
+    // FilamentGroup.cpp:966
+    /// `std::vector<int> FilamentGroup::calc_filament_group(int* cost)`
+    pub fn calc_filament_group(&mut self, cost: Option<&mut i32>) -> Vec<i32> {
+        // FilamentGroup.cpp:968-971  (commented-out TPU early-return in C++)
+
+        // FilamentGroup.cpp:973
+        // try { if (FGMode::MatchMode == ctx.group_info.mode) return calc_filament_group_for_match(cost); }
+        // catch (const FilamentGroupException& e) {}
+        if FGMode::MatchMode == self.ctx.group_info.mode {
+            // FilamentGroup.cpp:975
+            if let Ok(group) = self.calc_filament_group_for_match(None) {
+                return group;
+            }
+            // FilamentGroup.cpp:977  catch (...) { fall through }
+        }
+
+        // FilamentGroup.cpp:980
+        let merged_map = self.try_merge_filaments();
+        // FilamentGroup.cpp:981
+        self.rebuild_context(&merged_map);
+
+        // FilamentGroup.cpp:983
+        let filament_map = self.calc_filament_group_for_flush(cost);
+        // FilamentGroup.cpp:984
+        self.seperate_merged_filaments(&filament_map, &merged_map)
+    }
+
+    // FilamentGroup.cpp:1187
+    /// `std::vector<int> FilamentGroup::calc_filament_group_for_flush(int* cost)`
+    pub fn calc_filament_group_for_flush(&mut self, cost: Option<&mut i32>) -> Vec<i32> {
+        // FilamentGroup.cpp:1189
+        let used_filaments = collect_sorted_used_filaments(&self.ctx.model_info.layer_filaments);
+
+        // FilamentGroup.cpp:1191
+        let mut ret = self.calc_min_flush_group(cost);
+        // FilamentGroup.cpp:1192
+        let mut memoryed_maps: Vec<Vec<i32>> = self.m_memoryed_groups.clone();
+        // FilamentGroup.cpp:1193  memoryed_maps.insert(memoryed_maps.begin(), ret);
+        memoryed_maps.insert(0, ret);
+
+        // FilamentGroup.cpp:1195
+        let mut used_filament_info: Vec<FilamentInfo> = Vec::new();
+        // FilamentGroup.cpp:1196
+        for &f in used_filaments.iter() {
+            // FilamentGroup.cpp:1197
+            used_filament_info.push(self.ctx.model_info.filament_info[f as usize].clone());
+        }
+
+        // FilamentGroup.cpp:1200
+        ret = select_best_group_for_ams(
+            &memoryed_maps,
+            &self.ctx.nozzle_info.nozzle_list,
+            &used_filaments,
+            &used_filament_info,
+            &self.ctx.machine_info.machine_filament_info,
+            20.0,
+        );
+        // FilamentGroup.cpp:1201
+        ret
     }
 }
 

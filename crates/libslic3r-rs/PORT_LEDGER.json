@@ -1597,7 +1597,8 @@
     "rust_exists": true,
     "loc": 1716,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "PerimeterGenerator.cpp",
