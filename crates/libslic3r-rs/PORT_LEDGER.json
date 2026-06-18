@@ -1422,7 +1422,8 @@
     "rust_exists": true,
     "loc": 992,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ExtrusionSimulator.cpp",

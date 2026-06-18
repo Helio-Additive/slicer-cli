@@ -302,7 +302,9 @@ impl Tree {
 
             // AABBTreeIndirect.hpp:189
             loop {
-                // Skip left points that are already at correct positions
+                // Skip left points that are already at correct positions.
+                // Search will certainly stop at position (right - 1), which stores the pivot.
+                // C++: while (input[++ i].centroid()(dimension) < pivot) ;
                 // AABBTreeIndirect.hpp:191-192
                 loop {
                     i += 1;
@@ -311,25 +313,24 @@ impl Tree {
                     }
                 }
 
-                // Skip right points that are already at correct positions
-                // AABBTreeIndirect.hpp:194-195
+                // Skip right points that are already at correct positions.
+                // C++: while (input[-- j].centroid()(dimension) > pivot && i < j) ;
+                // The pre-decrement happens first, then the > pivot test, then i < j.
+                // AABBTreeIndirect.hpp:194
                 loop {
-                    if j == 0 || i >= j {
-                        break;
-                    }
-                    if !(self.get_centroid_coord(&input[j - 1], dimension) > pivot) {
-                        break;
-                    }
                     j -= 1;
+                    if !(self.get_centroid_coord(&input[j], dimension) > pivot && i < j) {
+                        break;
+                    }
                 }
 
-                // AABBTreeIndirect.hpp:196-197
+                // AABBTreeIndirect.hpp:195-196
                 if i >= j {
                     break;
                 }
 
-                // AABBTreeIndirect.hpp:198
-                input.swap(i, j - 1);
+                // AABBTreeIndirect.hpp:197
+                input.swap(i, j);
             }
 
             // Restore pivot to the center of the sequence
@@ -712,6 +713,10 @@ fn dot_product(a: &Point3F, b: &Point3F) -> f64 {
 /// C++:     const std::vector<VertexType> &vertices,
 /// C++:     const std::vector<IndexedFaceType> &faces,
 /// C++:     const typename VertexType::Scalar eps = 0)
+///
+/// The C++ trailing `eps` argument inflates every leaf bbox by `(eps,eps,eps)`
+/// (AABBTreeIndirect.hpp:697,709-710). Both crate callers use the default `eps = 0`,
+/// for which the inflation is a no-op, so this port reproduces the `eps = 0` behaviour.
 pub fn build_aabb_tree_over_indexed_triangle_set(
     vertices: &[Point3F],
     faces: &[[usize; 3]],
@@ -817,46 +822,123 @@ pub fn intersect_ray_first_hit_eps(
     dir: &Point3F,
     eps: f64,
 ) -> Option<(f64, usize, Point3F)> {
-    // Traverse tree looking for ray-triangle intersections
-    // AABBTreeIndirect.hpp:738-750
-    // C++: hit.t = std::numeric_limits<Scalar>::infinity();
-    // C++: traverse(tree, [&origin, &dir](const BoundingBox &bbox) {
-    // C++:     return intersect_ray_bbox(origin, dir, bbox);
-    // C++: }, [&vertices, &faces, &origin, &dir, &hit](size_t face_idx) {
-    // C++:     // Test ray-triangle intersection
-    // C++: });
-    let mut best_hit: Option<(f64, usize, Point3F)> = None;
-    let mut best_t = f64::INFINITY;
+    // AABBTreeIndirect.hpp:740-746
+    // C++: auto ray_intersector = detail::RayIntersector<...> {
+    // C++:     vertices, faces, tree, origin, dir, VectorType(dir.cwiseInverse()), eps };
+    // C++: return ! tree.empty() && detail::intersect_ray_recursive_first_hit(
+    // C++:     ray_intersector, size_t(0), std::numeric_limits<Scalar>::infinity(), hit);
+    if tree.empty() {
+        return None;
+    }
+    let invdir = Point3F::new(1.0 / dir.x, 1.0 / dir.y, 1.0 / dir.z);
+    let mut hit: Option<RayHit> = None;
+    intersect_ray_recursive_first_hit(
+        vertices, faces, tree, origin, dir, &invdir, eps, 0, f64::INFINITY, &mut hit,
+    );
+    hit.map(|h| {
+        let hit_point = Point3F {
+            x: origin.x + dir.x * h.t,
+            y: origin.y + dir.y * h.t,
+            z: origin.z + dir.z * h.t,
+        };
+        (h.t, h.face_idx, hit_point)
+    })
+}
 
-    for node in tree.nodes() {
-        if !node.is_leaf() {
-            continue;
-        }
+/// Hit record mirroring igl::Hit (id + barycentric u/v + ray parameter t).
+/// AABBTreeIndirect.hpp:417 `igl::Hit { int(node.idx), -1, float(u), float(v), float(t) }`
+#[derive(Debug, Clone, Copy)]
+struct RayHit {
+    face_idx: usize,
+    // Barycentric coordinates stored to mirror igl::Hit; the public wrappers
+    // currently expose only `t`/`face_idx`, so these are kept for fidelity.
+    #[allow(dead_code)]
+    u: f64,
+    #[allow(dead_code)]
+    v: f64,
+    t: f64,
+}
 
-        let face_idx = node.idx;
-        if face_idx >= faces.len() {
-            continue;
-        }
+/// Recursive first-hit ray traversal with AABB pruning.
+/// AABBTreeIndirect.hpp:396-440 `intersect_ray_recursive_first_hit`
+#[allow(clippy::too_many_arguments)]
+fn intersect_ray_recursive_first_hit(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    tree: &Tree,
+    origin: &Point3F,
+    dir: &Point3F,
+    invdir: &Point3F,
+    eps: f64,
+    node_idx: usize,
+    mut min_t: f64,
+    hit: &mut Option<RayHit>,
+) -> bool {
+    // AABBTreeIndirect.hpp:402-403
+    let node = tree.node(node_idx);
+    debug_assert!(node.is_valid());
 
-        let face = &faces[face_idx];
-        let v0 = &vertices[face[0]];
-        let v1 = &vertices[face[1]];
-        let v2 = &vertices[face[2]];
-
-        if let Some((t, u, v)) = intersect_triangle(origin, dir, v0, v1, v2, eps) {
-            if t > 0.0 && t < best_t {
-                let hit_point = Point3F {
-                    x: origin.x + dir.x * t,
-                    y: origin.y + dir.y * t,
-                    z: origin.z + dir.z * t,
-                };
-                best_t = t;
-                best_hit = Some((t, face_idx, hit_point));
-            }
-        }
+    // AABBTreeIndirect.hpp:405-406
+    if !ray_box_intersect_invdir(origin, invdir, node.bbox.clone(), 0.0, min_t) {
+        return false;
     }
 
-    best_hit
+    // AABBTreeIndirect.hpp:408-420
+    if node.is_leaf() {
+        // shoot ray, record hit
+        let face = &faces[node.idx];
+        if let Some((t, u, v)) = intersect_triangle(
+            origin,
+            dir,
+            &vertices[face[0]],
+            &vertices[face[1]],
+            &vertices[face[2]],
+            eps,
+        ) {
+            if t > 0.0 {
+                // AABBTreeIndirect.hpp:417
+                *hit = Some(RayHit {
+                    face_idx: node.idx,
+                    u,
+                    v,
+                    t,
+                });
+                return true;
+            }
+        }
+        false
+    } else {
+        // Left / right child node index.
+        // AABBTreeIndirect.hpp:423-424
+        let left = node_idx * 2 + 1;
+        let right = left + 1;
+
+        // AABBTreeIndirect.hpp:425-432
+        let mut left_hit: Option<RayHit> = None;
+        let mut left_ret = intersect_ray_recursive_first_hit(
+            vertices, faces, tree, origin, dir, invdir, eps, left, min_t, &mut left_hit,
+        );
+        if left_ret && left_hit.map(|h| h.t).unwrap_or(f64::INFINITY) < min_t {
+            min_t = left_hit.unwrap().t;
+            *hit = left_hit;
+        } else {
+            left_ret = false;
+        }
+
+        // AABBTreeIndirect.hpp:433-437
+        let mut right_hit: Option<RayHit> = None;
+        let mut right_ret = intersect_ray_recursive_first_hit(
+            vertices, faces, tree, origin, dir, invdir, eps, right, min_t, &mut right_hit,
+        );
+        if right_ret && right_hit.map(|h| h.t).unwrap_or(f64::INFINITY) < min_t {
+            *hit = right_hit;
+        } else {
+            right_ret = false;
+        }
+
+        // AABBTreeIndirect.hpp:438
+        left_ret || right_ret
+    }
 }
 
 /// Find all intersections of ray with indexed triangle set
@@ -891,44 +973,87 @@ pub fn intersect_ray_all_hits_eps(
     dir: &Point3F,
     eps: f64,
 ) -> Vec<(f64, usize, Point3F)> {
-    // Traverse tree collecting all ray-triangle intersections
-    // AABBTreeIndirect.hpp:769-791
-    // C++: hits.clear();
-    // C++: traverse(tree, [&origin, &dir](const BoundingBox &bbox) {
-    // C++:     return intersect_ray_bbox(origin, dir, bbox);
-    // C++: }, [&vertices, &faces, &origin, &dir, &hits](size_t face_idx) {
-    // C++:     // Test ray-triangle intersection and collect all hits
-    // C++: });
-    let mut hits = Vec::new();
+    // AABBTreeIndirect.hpp:771-787
+    // C++: ray_intersector.hits.clear(); detail::intersect_ray_recursive_all_hits(ray_intersector, 0);
+    // C++: std::sort(hits.begin(), hits.end(), [](const auto &l, const auto &r) { return l.t < r.t; });
+    let mut hits: Vec<RayHit> = Vec::new();
+    if !tree.empty() {
+        let invdir = Point3F::new(1.0 / dir.x, 1.0 / dir.y, 1.0 / dir.z);
+        intersect_ray_recursive_all_hits(
+            vertices, faces, tree, origin, dir, &invdir, eps, 0, &mut hits,
+        );
+    }
+    // AABBTreeIndirect.hpp:785 — sort the output hits by the ray parameter t.
+    hits.sort_by(|l, r| l.t.partial_cmp(&r.t).unwrap_or(std::cmp::Ordering::Equal));
 
-    for node in tree.nodes() {
-        if !node.is_leaf() {
-            continue;
-        }
+    hits.into_iter()
+        .map(|h| {
+            let hit_point = Point3F {
+                x: origin.x + dir.x * h.t,
+                y: origin.y + dir.y * h.t,
+                z: origin.z + dir.z * h.t,
+            };
+            (h.t, h.face_idx, hit_point)
+        })
+        .collect()
+}
 
-        let face_idx = node.idx;
-        if face_idx >= faces.len() {
-            continue;
-        }
+/// Recursive all-hits ray traversal with AABB pruning.
+/// AABBTreeIndirect.hpp:443-471 `intersect_ray_recursive_all_hits`
+#[allow(clippy::too_many_arguments)]
+fn intersect_ray_recursive_all_hits(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    tree: &Tree,
+    origin: &Point3F,
+    dir: &Point3F,
+    invdir: &Point3F,
+    eps: f64,
+    node_idx: usize,
+    hits: &mut Vec<RayHit>,
+) {
+    // AABBTreeIndirect.hpp:447-448
+    let node = tree.node(node_idx);
+    debug_assert!(node.is_valid());
 
-        let face = &faces[face_idx];
-        let v0 = &vertices[face[0]];
-        let v1 = &vertices[face[1]];
-        let v2 = &vertices[face[2]];
-
-        if let Some((t, u, v)) = intersect_triangle(origin, dir, v0, v1, v2, eps) {
-            if t > 0.0 {
-                let hit_point = Point3F {
-                    x: origin.x + dir.x * t,
-                    y: origin.y + dir.y * t,
-                    z: origin.z + dir.z * t,
-                };
-                hits.push((t, face_idx, hit_point));
-            }
-        }
+    // AABBTreeIndirect.hpp:450-452 — t0 = 0, t1 = +inf
+    if !ray_box_intersect_invdir(origin, invdir, node.bbox.clone(), 0.0, f64::INFINITY) {
+        return;
     }
 
-    hits
+    // AABBTreeIndirect.hpp:454-463
+    if node.is_leaf() {
+        let face = &faces[node.idx];
+        if let Some((t, u, v)) = intersect_triangle(
+            origin,
+            dir,
+            &vertices[face[0]],
+            &vertices[face[1]],
+            &vertices[face[2]],
+            eps,
+        ) {
+            if t > 0.0 {
+                // AABBTreeIndirect.hpp:462
+                hits.push(RayHit {
+                    face_idx: node.idx,
+                    u,
+                    v,
+                    t,
+                });
+            }
+        }
+    } else {
+        // Left / right child node index.
+        // AABBTreeIndirect.hpp:466-469
+        let left = node_idx * 2 + 1;
+        let right = left + 1;
+        intersect_ray_recursive_all_hits(
+            vertices, faces, tree, origin, dir, invdir, eps, left, hits,
+        );
+        intersect_ray_recursive_all_hits(
+            vertices, faces, tree, origin, dir, invdir, eps, right, hits,
+        );
+    }
 }
 
 /// Find squared distance from point to indexed triangle set
@@ -946,56 +1071,195 @@ pub fn squared_distance_to_indexed_triangle_set(
     tree: &Tree,
     point: Vec3,
 ) -> (f64, usize, Vec3) {
-    // Traverse tree finding closest point on any triangle
-    // AABBTreeIndirect.hpp:817-855
-    // C++: Scalar min_sqr_d = std::numeric_limits<Scalar>::infinity();
-    // C++: size_t min_face = 0;
-    // C++: VectorType min_point;
-    // C++: traverse(tree, [&point, &min_sqr_d](const BoundingBox &bbox) {
-    // C++:     return bbox.squaredExteriorDistance(point) < min_sqr_d;
-    // C++: }, [&vertices, &faces, &point, &min_sqr_d, &min_face, &min_point](size_t face_idx) {
-    // C++:     // Find closest point on triangle and update minimum
-    // C++: });
-    let mut min_dist_sq = f64::INFINITY;
-    let mut min_face = 0;
-    let mut min_point = point;
-
-    for node in tree.nodes() {
-        if !node.is_leaf() {
-            continue;
-        }
-
-        let face_idx = node.idx;
-        if face_idx >= faces.len() {
-            continue;
-        }
-
-        let face = &faces[face_idx];
-        let v0 = &vertices[face[0]];
-        let v1 = &vertices[face[1]];
-        let v2 = &vertices[face[2]];
-
-        let point_p3f = Point3F::new(point.x, point.y, point.z);
-        let closest = closest_point_to_triangle(&point_p3f, v0, v1, v2);
-        let dx = closest.x - point.x;
-        let dy = closest.y - point.y;
-        let dz = closest.z - point.z;
-        let dist_sq = dx * dx + dy * dy + dz * dz;
-
-        if dist_sq < min_dist_sq {
-            min_dist_sq = dist_sq;
-            min_face = face_idx;
-            min_point = Vec3::new(closest.x, closest.y, closest.z);
-        }
+    // AABBTreeIndirect.hpp:811-814
+    // C++: auto distancer = detail::IndexedTriangleSetDistancer<...> { vertices, faces, tree, point };
+    // C++: return tree.empty() ? Scalar(-1) :
+    // C++:     detail::squared_distance_to_indexed_primitives_recursive(distancer, 0, 0, +inf, hit_idx_out, hit_point_out);
+    let mut hit_idx: usize = 0;
+    let mut hit_point = point;
+    if tree.empty() {
+        // C++ returns -1 for an empty tree.
+        return (-1.0, hit_idx, hit_point);
     }
-
-    (min_dist_sq, min_face, min_point)
+    let origin = Point3F::new(point.x, point.y, point.z);
+    let dist = squared_distance_to_indexed_primitives_recursive(
+        vertices,
+        faces,
+        tree,
+        &origin,
+        0,
+        0.0,
+        f64::INFINITY,
+        &mut hit_idx,
+        &mut hit_point,
+    );
+    (dist, hit_idx, hit_point)
 }
 
-/// Returns true if some triangle of the indexed set lies within `sqrt(max_distance_squared)`
-/// of `point`. AABBTreeIndirect.hpp:822 `is_any_triangle_in_radius`.
-/// (C++ prunes the recursion at the radius and tests `hit_point.allFinite()`; computing the
-/// closest distance and comparing is result-equivalent.)
+/// Closest point on the indexed triangle `primitive_index` to `origin`, and its squared distance.
+/// AABBTreeIndirect.hpp:539-548 `IndexedTriangleSetDistancer::closest_point_to_origin`
+fn closest_point_to_origin(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    origin: &Point3F,
+    primitive_index: usize,
+) -> (Vec3, f64) {
+    // AABBTreeIndirect.hpp:541-547
+    let triangle = &faces[primitive_index];
+    let closest_point = closest_point_to_triangle(
+        origin,
+        &vertices[triangle[0]],
+        &vertices[triangle[1]],
+        &vertices[triangle[2]],
+    );
+    let dx = origin.x - closest_point.x;
+    let dy = origin.y - closest_point.y;
+    let dz = origin.z - closest_point.z;
+    let squared_distance = dx * dx + dy * dy + dz * dz;
+    (
+        Vec3::new(closest_point.x, closest_point.y, closest_point.z),
+        squared_distance,
+    )
+}
+
+/// Squared exterior distance from `p` to a 3D bounding box (0 when inside).
+/// Eigen `AlignedBox::squaredExteriorDistance`.
+fn bbox_squared_exterior_distance(bbox: &BoundingBox3F, p: &Point3F) -> f64 {
+    let dx = if p.x < bbox.min.x {
+        bbox.min.x - p.x
+    } else if p.x > bbox.max.x {
+        p.x - bbox.max.x
+    } else {
+        0.0
+    };
+    let dy = if p.y < bbox.min.y {
+        bbox.min.y - p.y
+    } else if p.y > bbox.max.y {
+        p.y - bbox.max.y
+    } else {
+        0.0
+    };
+    let dz = if p.z < bbox.min.z {
+        bbox.min.z - p.z
+    } else if p.z > bbox.max.z {
+        p.z - bbox.max.z
+    } else {
+        0.0
+    };
+    dx * dx + dy * dy + dz * dz
+}
+
+/// Recursive closest-primitive search with AABB pruning.
+/// AABBTreeIndirect.hpp:552-632 `squared_distance_to_indexed_primitives_recursive`
+#[allow(clippy::too_many_arguments)]
+fn squared_distance_to_indexed_primitives_recursive(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    tree: &Tree,
+    origin: &Point3F,
+    node_idx: usize,
+    low_sqr_d: f64,
+    mut up_sqr_d: f64,
+    i: &mut usize,
+    c: &mut Vec3,
+) -> f64 {
+    // AABBTreeIndirect.hpp:562-563
+    if low_sqr_d > up_sqr_d {
+        return low_sqr_d;
+    }
+
+    // AABBTreeIndirect.hpp:574-575
+    let node = tree.node(node_idx);
+    debug_assert!(node.is_valid());
+
+    // AABBTreeIndirect.hpp:576-580
+    if node.is_leaf() {
+        let (c_candidate, sqr_dist) = closest_point_to_origin(vertices, faces, origin, node.idx);
+        // set_min — AABBTreeIndirect.hpp:566-572
+        if sqr_dist < up_sqr_d {
+            *i = node.idx;
+            *c = c_candidate;
+            up_sqr_d = sqr_dist;
+        }
+    } else {
+        // AABBTreeIndirect.hpp:584-589
+        let left_node_idx = node_idx * 2 + 1;
+        let right_node_idx = left_node_idx + 1;
+        let bbox_left = tree.node(left_node_idx).bbox.clone();
+        let bbox_right = tree.node(right_node_idx).bbox.clone();
+
+        let mut looked_left = false;
+        let mut looked_right = false;
+
+        // look_left — AABBTreeIndirect.hpp:593-600
+        macro_rules! look_left {
+            () => {{
+                let mut i_left: usize = 0;
+                let mut c_left: Vec3 = *c;
+                let sqr_d_left = squared_distance_to_indexed_primitives_recursive(
+                    vertices, faces, tree, origin, left_node_idx, low_sqr_d, up_sqr_d,
+                    &mut i_left, &mut c_left,
+                );
+                if sqr_d_left < up_sqr_d {
+                    *i = i_left;
+                    *c = c_left;
+                    up_sqr_d = sqr_d_left;
+                }
+                looked_left = true;
+            }};
+        }
+        // look_right — AABBTreeIndirect.hpp:601-608
+        macro_rules! look_right {
+            () => {{
+                let mut i_right: usize = 0;
+                let mut c_right: Vec3 = *c;
+                let sqr_d_right = squared_distance_to_indexed_primitives_recursive(
+                    vertices, faces, tree, origin, right_node_idx, low_sqr_d, up_sqr_d,
+                    &mut i_right, &mut c_right,
+                );
+                if sqr_d_right < up_sqr_d {
+                    *i = i_right;
+                    *c = c_right;
+                    up_sqr_d = sqr_d_right;
+                }
+                looked_right = true;
+            }};
+        }
+
+        // must look left or right if in box — AABBTreeIndirect.hpp:610-615
+        let origin_p3f = Point3F::new(origin.x, origin.y, origin.z);
+        if bbox_left.contains_point(&origin_p3f) {
+            look_left!();
+        }
+        if bbox_right.contains_point(&origin_p3f) {
+            look_right!();
+        }
+        // if haven't looked left/right and could be less than current min, then look
+        // AABBTreeIndirect.hpp:617-629
+        let left_up_sqr_d = bbox_squared_exterior_distance(&bbox_left, &origin_p3f);
+        let right_up_sqr_d = bbox_squared_exterior_distance(&bbox_right, &origin_p3f);
+        if left_up_sqr_d < right_up_sqr_d {
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look_left!();
+            }
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look_right!();
+            }
+        } else {
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look_right!();
+            }
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look_left!();
+            }
+        }
+    }
+    // AABBTreeIndirect.hpp:631
+    up_sqr_d
+}
+
+/// Decides if there exists some triangle within radius `sqrt(max_distance_squared)` of `point`.
+/// AABBTreeIndirect.hpp:822-849 `is_any_triangle_in_radius`
 pub fn is_any_triangle_in_radius(
     vertices: &[Point3F],
     faces: &[[usize; 3]],
@@ -1003,11 +1267,114 @@ pub fn is_any_triangle_in_radius(
     point: Vec3,
     max_distance_squared: f64,
 ) -> bool {
+    // AABBTreeIndirect.hpp:838-839
+    let mut hit_idx: usize = 0;
+    // hit_point = NaN; allFinite() is false unless a hit overwrites it.
+    let mut hit_point = Vec3::new(f64::NAN, f64::NAN, f64::NAN);
+
+    // AABBTreeIndirect.hpp:841-844
     if tree.empty() {
         return false;
     }
-    let (d2, _idx, _pt) = squared_distance_to_indexed_triangle_set(vertices, faces, tree, point);
-    d2.is_finite() && d2 <= max_distance_squared
+
+    // AABBTreeIndirect.hpp:846 — up_sqr_d bound = max_distance_squared
+    let origin = Point3F::new(point.x, point.y, point.z);
+    squared_distance_to_indexed_primitives_recursive(
+        vertices,
+        faces,
+        tree,
+        &origin,
+        0,
+        0.0,
+        max_distance_squared,
+        &mut hit_idx,
+        &mut hit_point,
+    );
+
+    // AABBTreeIndirect.hpp:848 — return hit_point.allFinite();
+    hit_point.x.is_finite() && hit_point.y.is_finite() && hit_point.z.is_finite()
+}
+
+/// Returns all triangles within the given radius limit.
+/// AABBTreeIndirect.hpp:853-876 `all_triangles_in_radius`
+pub fn all_triangles_in_radius(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    tree: &Tree,
+    point: Vec3,
+    max_distance_squared: f64,
+) -> Vec<usize> {
+    // AABBTreeIndirect.hpp:868-871
+    if tree.empty() {
+        return Vec::new();
+    }
+    // AABBTreeIndirect.hpp:873-875
+    let mut found_triangles: Vec<usize> = Vec::new();
+    let origin = Point3F::new(point.x, point.y, point.z);
+    indexed_primitives_within_distance_squared_recurisve(
+        vertices,
+        faces,
+        tree,
+        &origin,
+        0,
+        max_distance_squared,
+        &mut found_triangles,
+    );
+    found_triangles
+}
+
+/// Recursively collects primitives whose closest point lies within the squared-distance limit.
+/// AABBTreeIndirect.hpp:635-663 `indexed_primitives_within_distance_squared_recurisve`
+fn indexed_primitives_within_distance_squared_recurisve(
+    vertices: &[Point3F],
+    faces: &[[usize; 3]],
+    tree: &Tree,
+    origin: &Point3F,
+    node_idx: usize,
+    squared_distance_limit: f64,
+    found_primitives_indices: &mut Vec<usize>,
+) {
+    // AABBTreeIndirect.hpp:640-641
+    let node = tree.node(node_idx);
+    debug_assert!(node.is_valid());
+
+    // AABBTreeIndirect.hpp:642-645
+    if node.is_leaf() {
+        let (_c, sqr_dist) = closest_point_to_origin(vertices, faces, origin, node.idx);
+        if sqr_dist < squared_distance_limit {
+            found_primitives_indices.push(node.idx);
+        }
+    } else {
+        // AABBTreeIndirect.hpp:647-661
+        let left_node_idx = node_idx * 2 + 1;
+        let right_node_idx = left_node_idx + 1;
+        let origin_p3f = Point3F::new(origin.x, origin.y, origin.z);
+        let bbox_left = &tree.node(left_node_idx).bbox;
+        let bbox_right = &tree.node(right_node_idx).bbox;
+
+        if bbox_squared_exterior_distance(bbox_left, &origin_p3f) < squared_distance_limit {
+            indexed_primitives_within_distance_squared_recurisve(
+                vertices,
+                faces,
+                tree,
+                origin,
+                left_node_idx,
+                squared_distance_limit,
+                found_primitives_indices,
+            );
+        }
+        if bbox_squared_exterior_distance(bbox_right, &origin_p3f) < squared_distance_limit {
+            indexed_primitives_within_distance_squared_recurisve(
+                vertices,
+                faces,
+                tree,
+                origin,
+                right_node_idx,
+                squared_distance_limit,
+                found_primitives_indices,
+            );
+        }
+    }
 }
 
 /// Collect the leaf primitive indices whose AABB contains `v`.
@@ -1070,12 +1437,18 @@ mod tests {
         let nodes = vec![
             TestNode {
                 idx: 0,
-                bbox: BoundingBox3F::new(Point3F::new(0.0, 0.0, 0.0), Point3F::new(1.0, 1.0, 1.0)),
+                bbox: BoundingBox3F::from_points_minmax(
+                    Point3F::new(0.0, 0.0, 0.0),
+                    Point3F::new(1.0, 1.0, 1.0),
+                ),
                 centroid: Point3F::new(0.5, 0.5, 0.5),
             },
             TestNode {
                 idx: 1,
-                bbox: BoundingBox3F::new(Point3F::new(2.0, 0.0, 0.0), Point3F::new(3.0, 1.0, 1.0)),
+                bbox: BoundingBox3F::from_points_minmax(
+                    Point3F::new(2.0, 0.0, 0.0),
+                    Point3F::new(3.0, 1.0, 1.0),
+                ),
                 centroid: Point3F::new(2.5, 0.5, 0.5),
             },
         ];
