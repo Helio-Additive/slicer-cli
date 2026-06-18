@@ -1225,6 +1225,184 @@ pub fn its_make_sphere(radius: f64, fa: f64) -> indexed_triangle_set {
     mesh
 }
 
+/// TriangleMesh.cpp:1269-1385
+/// C++: `indexed_triangle_set its_make_snap(double r, double h, float space_proportion, float bulge_proportion)`
+pub fn its_make_snap(
+    r: f64,
+    h: f64,
+    space_proportion: f32,
+    bulge_proportion: f32,
+) -> indexed_triangle_set {
+    // TriangleMesh.cpp:1271
+    let radius = r as f32;
+    // TriangleMesh.cpp:1272
+    let height = h as f32;
+    // TriangleMesh.cpp:1273 — (float)fa;
+    let sectors_cnt: usize = 10;
+    // TriangleMesh.cpp:1274 — 0.5f * (float) PI
+    let half_pi = 0.5f32 * std::f64::consts::PI as f32;
+
+    // TriangleMesh.cpp:1276
+    let space_len = space_proportion * radius;
+
+    // TriangleMesh.cpp:1278-1280
+    let b_len = radius;
+    let m_len = (1.0 + bulge_proportion) * radius;
+    let t_len = 0.5f32 * radius;
+
+    // TriangleMesh.cpp:1282-1284
+    let b_height = 0.0f32;
+    let m_height = 0.5f32 * height;
+    let t_height = height;
+
+    // TriangleMesh.cpp:1286-1287 — unqualified acos(double) on a promoted float arg,
+    // result narrowed back to float.
+    let b_angle = ((space_len / b_len) as f64).acos() as f32;
+    let t_angle = ((space_len / t_len) as f64).acos() as f32;
+
+    // TriangleMesh.cpp:1289-1290
+    let b_angle_step = b_angle / sectors_cnt as f32;
+    let t_angle_step = t_angle / sectors_cnt as f32;
+
+    // TriangleMesh.cpp:1292-1293
+    let b_vec = Vec2f::new(0.0, b_len);
+    let t_vec = Vec2f::new(0.0, t_len);
+
+    // TriangleMesh.cpp:1295-1303 — add_side_vertices lambda.
+    let add_side_vertices =
+        move |vertices: &mut Vec<StlVertex>, b_angle: f32, t_angle: f32, m_vec: &Vec2f| {
+            // TriangleMesh.cpp:1296-1298 — Eigen::Rotation2Df(angle) * vec
+            let b_pt = rotate2d(b_angle, b_vec);
+            let m_pt = rotate2d(b_angle, *m_vec);
+            let t_pt = rotate2d(t_angle, t_vec);
+
+            // TriangleMesh.cpp:1300-1302
+            vertices.push(Vec3f::new(b_pt[0], b_pt[1], b_height));
+            vertices.push(Vec3f::new(m_pt[0], m_pt[1], m_height));
+            vertices.push(Vec3f::new(t_pt[0], t_pt[1], t_height));
+        };
+
+    // TriangleMesh.cpp:1305-1316 — add_side_facets lambda.
+    let add_side_facets =
+        |facets: &mut Vec<StlTriangleVertexIndices>, vertices_cnt: i32, frst_id: i32, scnd_id: i32| {
+            // TriangleMesh.cpp:1306
+            let id = vertices_cnt - 1;
+
+            // TriangleMesh.cpp:1308
+            facets.push(Vec3i::new(frst_id, id - 2, id - 5));
+
+            // TriangleMesh.cpp:1310-1313
+            facets.push(Vec3i::new(id - 2, id - 1, id - 5));
+            facets.push(Vec3i::new(id - 1, id - 4, id - 5));
+            facets.push(Vec3i::new(id - 4, id - 1, id));
+            facets.push(Vec3i::new(id, id - 3, id - 4));
+
+            // TriangleMesh.cpp:1315
+            facets.push(Vec3i::new(id, scnd_id, id - 3));
+        };
+
+    // TriangleMesh.cpp:1318 — Flattening.
+    let f = (b_len - m_len) / m_len;
+
+    // TriangleMesh.cpp:1320-1325 — get_m_len lambda.
+    let get_m_len = move |angle: f32| -> f32 {
+        // TriangleMesh.cpp:1321
+        let rad_sqr: f32 = b_len * b_len;
+        // TriangleMesh.cpp:1322 — sin(float) -> double sin, product narrowed to float.
+        let sin_d = (angle as f64).sin();
+        let sin_sqr: f32 = (sin_d * sin_d) as f32;
+        // TriangleMesh.cpp:1323
+        let f_sqr: f32 = (1.0 - f) * (1.0 - f);
+        // TriangleMesh.cpp:1324 — sqrtf (float)
+        (rad_sqr / (1.0 + (1.0 / f_sqr - 1.0) * sin_sqr)).sqrt()
+    };
+
+    // TriangleMesh.cpp:1327-1374 — add_sub_mesh lambda.
+    let add_sub_mesh =
+        |mesh: &mut indexed_triangle_set, center_x: f32, angle_rotation: f32, frst_vertex_id: i32| {
+            // TriangleMesh.cpp:1333-1334 — 2 special vertices, top and bottom center.
+            mesh.vertices.push(Vec3f::new(center_x, 0.0, b_height));
+            mesh.vertices.push(Vec3f::new(center_x, 0.0, t_height));
+
+            // TriangleMesh.cpp:1336-1338
+            let mut b_angle_start = angle_rotation - b_angle;
+            let mut t_angle_start = angle_rotation - t_angle;
+            let b_angle_stop = angle_rotation + b_angle;
+
+            // TriangleMesh.cpp:1340-1341
+            let frst_id = frst_vertex_id;
+            let scnd_id = frst_id + 1;
+
+            // TriangleMesh.cpp:1343-1353 — add first side vertices and internal facets.
+            {
+                // TriangleMesh.cpp:1345
+                let m_vec = Vec2f::new(0.0, get_m_len(b_angle_start));
+                // TriangleMesh.cpp:1346
+                add_side_vertices(&mut mesh.vertices, b_angle_start, t_angle_start, &m_vec);
+
+                // TriangleMesh.cpp:1348
+                let id = mesh.vertices.len() as i32 - 1;
+
+                // TriangleMesh.cpp:1350-1352
+                mesh.indices.push(Vec3i::new(frst_id, id - 2, id - 1));
+                mesh.indices.push(Vec3i::new(frst_id, id - 1, id));
+                mesh.indices.push(Vec3i::new(frst_id, id, scnd_id));
+            }
+
+            // TriangleMesh.cpp:1356-1364 — add d side vertices and facets.
+            // C++: while (!is_approx(b_angle_start, b_angle_stop)) — is_approx<float>
+            // promotes both to double and compares with EPSILON (1e-4).
+            while (b_angle_start as f64 - b_angle_stop as f64).abs() >= crate::libslic3r::EPSILON {
+                // TriangleMesh.cpp:1357-1358
+                b_angle_start += b_angle_step;
+                t_angle_start += t_angle_step;
+
+                // TriangleMesh.cpp:1360
+                let m_vec = Vec2f::new(0.0, get_m_len(b_angle_start));
+                // TriangleMesh.cpp:1361
+                add_side_vertices(&mut mesh.vertices, b_angle_start, t_angle_start, &m_vec);
+
+                // TriangleMesh.cpp:1363
+                let vertices_cnt = mesh.vertices.len() as i32;
+                add_side_facets(&mut mesh.indices, vertices_cnt, frst_id, scnd_id);
+            }
+
+            // TriangleMesh.cpp:1366-1373 — add last internal facets to close the mesh.
+            {
+                // TriangleMesh.cpp:1368
+                let id = mesh.vertices.len() as i32 - 1;
+
+                // TriangleMesh.cpp:1370-1372
+                mesh.indices.push(Vec3i::new(frst_id, scnd_id, id));
+                mesh.indices.push(Vec3i::new(frst_id, id, id - 1));
+                mesh.indices.push(Vec3i::new(frst_id, id - 1, id - 2));
+            }
+        };
+
+    // TriangleMesh.cpp:1376
+    let mut mesh = indexed_triangle_set::default();
+
+    // TriangleMesh.cpp:1378-1379
+    mesh.vertices
+        .reserve(2 * (3 * (2 * sectors_cnt + 1) + 2));
+    mesh.indices.reserve(2 * (6 * 2 * sectors_cnt + 6));
+
+    // TriangleMesh.cpp:1381
+    add_sub_mesh(&mut mesh, -space_len, half_pi, 0);
+    // TriangleMesh.cpp:1382
+    let frst = mesh.vertices.len() as i32;
+    add_sub_mesh(&mut mesh, space_len, 3.0 * half_pi, frst);
+
+    // TriangleMesh.cpp:1384
+    mesh
+}
+
+// FIDELITY-NOTE: `its_make_groove_plane` (TriangleMesh.cpp:1387-1705) is NOT ported.
+// It reads concrete fields of the C++ `Groove` struct (`depth`, `width`, `flaps`,
+// `angle`, `side_width`, ...) via `cur_groove`, but the crate's `cut_utils::Groove`
+// is still a field-less placeholder (cut_utils.rs:33). A faithful port is blocked on
+// the upstream CutUtils/Groove port; the function is unused elsewhere in the crate.
+
 // ============================================================================
 // TriangleMesh.cpp:1790-1945 — ITS merge / volume / neighbors / normals
 // ============================================================================
