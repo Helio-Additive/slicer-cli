@@ -1434,7 +1434,8 @@
     "rust_exists": true,
     "loc": 1030,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "GCodeWriter.cpp",

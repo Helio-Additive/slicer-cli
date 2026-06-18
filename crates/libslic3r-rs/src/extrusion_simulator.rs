@@ -30,8 +30,18 @@ const M_PI: f64 = 3.1415926535897932384626433832795;
 // ExtrusionSimulator.hpp:5 (ExtrusionEntity.hpp dependency)
 use crate::extrusion_entity::ExtrusionPath;
 
-// libslic3r.h: inline coord_t scale_(coordf_t v)
-use crate::scale as scale_;
+// libslic3r.h:81  #define scale_(val) ((val) / SCALING_FACTOR)
+// NOTE: `scale_` is a MACRO doing pure floating-point division (NOT the
+// inline `coord_t scale_(coordf_t)` form, which is commented out in
+// libslic3r.h:80). It performs NO rounding and NO integer truncation: the
+// result type is whatever `(val) / SCALING_FACTOR` yields (double here, since
+// SCALING_FACTOR is a double). Using the crate's integer `scale()` here would
+// be WRONG (it rounds and truncates to i64). libslic3r.h:58 SCALING_FACTOR.
+const SCALING_FACTOR: f64 = 0.00001;
+#[inline]
+fn scale_(val: f64) -> f64 {
+    val / SCALING_FACTOR
+}
 
 // libslic3r.h: template<typename T> inline T sqr(T x) { return x * x; }
 #[inline]
@@ -1249,9 +1259,12 @@ impl ExtrusionSimulator {
         let mut polyline: Vec<V2f> = Vec::with_capacity(path.polyline.points.len());
         let scalex = self.viewport.size().x() as f32 / self.bbox.size().x() as f32;
         let scaley = self.viewport.size().y() as f32 / self.bbox.size().y() as f32;
-        let mut w = scale_(path.width) as f32 * scalex;
+        // C++: float w = scale_(path.width) * scalex;
+        // scale_(...) is a double; `double * float scalex` -> double; stored to float w.
+        let mut w = (scale_(path.width) * scalex as f64) as f32;
         //float h = scale_(path.height) * scalex;
-        w = scale_(path.mm3_per_mm / path.height) as f32 * scalex;
+        // C++: w = scale_(path.mm3_per_mm / path.height) * scalex;
+        w = (scale_(path.mm3_per_mm / path.height) * scalex as f64) as f32;
         // printf("scalex: %f, scaley: %f\n", scalex, scaley);
         // printf("bbox: %d,%d %d,%d\n", ...);
         for it in path.polyline.points.iter() {
