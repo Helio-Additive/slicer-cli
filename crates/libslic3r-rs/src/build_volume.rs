@@ -14,9 +14,9 @@
 //! - `clipper_utils::offset_polygons` (= `expand`)
 //! - `triangle_set_sampling::indexed_triangle_set`, `geometry::Transform3D` (= `Transform3f`)
 //!
-//! Blocked symbols (see notes at the bottom of the file):
-//! - `all_paths_inside` — depends on `GCodeProcessorResult::moves` / `MoveVertex`
-//!   (the crate's `GCodeProcessorResult` does not expose the per-move vertex list).
+//! `all_paths_inside` is ported faithfully against
+//! `gcode::g_code_processor::{GCodeProcessorResult, MoveVertex, EMoveType}` and
+//! `extrusion_entity::ExtrusionRole` (the per-move vertex list is now exposed).
 
 use crate::bounding_box::{BoundingBoxf, BoundingBoxf3};
 use crate::geometry::Transform3D;
@@ -27,6 +27,8 @@ use crate::geometry::{
 use crate::triangle_set_sampling::{indexed_triangle_set, Vec3f, Vec3i};
 use crate::triangle_mesh::its_make_cube;
 use crate::clipper_utils::{self, OffsetJoinType};
+use crate::extrusion_entity::ExtrusionRole;
+use crate::gcode::g_code_processor::{EMoveType, GCodeProcessorResult, MoveVertex};
 use crate::{scale, unscale, SCALING_FACTOR};
 
 /// `scaled<double>(v)`: scale a floating point value but keep the result as a
@@ -1287,22 +1289,126 @@ impl BuildVolume {
         }
     }
 
-    // ----------------------------------------------------------------------
-    // BLOCKED SYMBOLS (faithful port deferred — would require fakes today):
-    //
-    // BuildVolume.cpp:507-546
-    //   bool BuildVolume::all_paths_inside(const GCodeProcessorResult& paths,
-    //                                      const BoundingBoxf3& paths_bbox,
-    //                                      bool ignore_bottom) const
-    //   Blocked: depends on `GCodeProcessorResult::MoveVertex` (move.type,
-    //   move.extrusion_role, move.width, move.height, move.position) and the
-    //   `paths.moves` list. The crate's `gcode::g_code_processor::GCodeProcessorResult`
-    //   is not yet fully ported — it exposes only the nested POD types
-    //   (SliceWarning / FilamentUseInfo / SettingsIds / ...) and time/filament
-    //   aggregates, not the per-move vertex list. Porting `move_valid()` / the
-    //   per-move tests would require fabricating a `MoveVertex` type (a fake).
-    //   Port once GCodeProcessor's move list is ported.
-    // ----------------------------------------------------------------------
+    /// Called on final G-code paths.
+    /// FIXME The test does not take the thickness of the extrudates into account!
+    /// BuildVolume.cpp:507-546
+    /// C++: bool BuildVolume::all_paths_inside(const GCodeProcessorResult& paths, const BoundingBoxf3& paths_bbox, bool ignore_bottom) const
+    pub fn all_paths_inside(
+        &self,
+        paths: &GCodeProcessorResult,
+        paths_bbox: &BoundingBoxf3,
+        ignore_bottom: bool,
+    ) -> bool {
+        // BuildVolume.cpp:509-511
+        // C++: auto move_valid = [](const GCodeProcessorResult::MoveVertex &move) {
+        // C++:     return move.type == EMoveType::Extrude && move.extrusion_role != erCustom && move.width != 0.f && move.height != 0.f;
+        // C++: };
+        let move_valid = |move_: &MoveVertex| -> bool {
+            move_.move_type == EMoveType::Extrude
+                && move_.extrusion_role != ExtrusionRole::Custom
+                && move_.width != 0.0
+                && move_.height != 0.0
+        };
+        // BuildVolume.cpp:512
+        // C++: static constexpr const double epsilon = BedEpsilon;
+        const EPSILON_LOCAL: f64 = BED_EPSILON;
+
+        // BuildVolume.cpp:514
+        // C++: switch (m_type) {
+        match self.volume_type {
+            // BuildVolume.cpp:515
+            Type::Rectangle => {
+                // BuildVolume.cpp:517
+                // C++: BoundingBox3Base<Vec3d> build_volume = this->bounding_volume().inflated(epsilon);
+                let mut build_volume = self.bounding_volume().inflated(EPSILON_LOCAL);
+                // BuildVolume.cpp:518-519
+                // C++: if (m_max_print_height == 0.0) build_volume.max.z() = std::numeric_limits<double>::max();
+                if self.max_print_height == 0.0 {
+                    build_volume.max.z = f64::MAX;
+                }
+                // BuildVolume.cpp:520-521
+                // C++: if (ignore_bottom) build_volume.min.z() = -std::numeric_limits<double>::max();
+                if ignore_bottom {
+                    build_volume.min.z = -f64::MAX;
+                }
+                // BuildVolume.cpp:522
+                // C++: return build_volume.contains(paths_bbox);
+                build_volume.contains_bb(paths_bbox)
+            }
+            // BuildVolume.cpp:524
+            Type::Circle => {
+                // BuildVolume.cpp:526
+                // C++: const Vec2f c = unscaled<float>(m_circle.center);
+                let c = Vec2d::new(
+                    unscaled_f64(self.circle.center.x),
+                    unscaled_f64(self.circle.center.y),
+                );
+                // BuildVolume.cpp:527
+                // C++: const float r = unscaled<double>(m_circle.radius) + epsilon;
+                let r = unscaled_f64(self.circle.radius) + EPSILON_LOCAL;
+                // BuildVolume.cpp:528
+                // C++: const float r2 = sqr(r);
+                let r2 = sqr(r);
+                // BuildVolume.cpp:529-533
+                // C++: return m_max_print_height == 0.0 ?
+                // C++:     std::all_of(..., [move_valid, c, r2](const MoveVertex &move)
+                // C++:         { return ! move_valid(move) || (to_2d(move.position) - c).squaredNorm() <= r2; }) :
+                // C++:     std::all_of(..., [move_valid, c, r2, z = m_max_print_height + epsilon](const MoveVertex& move)
+                // C++:         { return ! move_valid(move) || ((to_2d(move.position) - c).squaredNorm() <= r2 && move.position.z() <= z); });
+                if self.max_print_height == 0.0 {
+                    paths.moves.iter().all(|move_| {
+                        if !move_valid(move_) {
+                            return true;
+                        }
+                        let dx = move_.position[0] as f64 - c.x;
+                        let dy = move_.position[1] as f64 - c.y;
+                        dx * dx + dy * dy <= r2
+                    })
+                } else {
+                    let z = self.max_print_height + EPSILON_LOCAL;
+                    paths.moves.iter().all(|move_| {
+                        if !move_valid(move_) {
+                            return true;
+                        }
+                        let dx = move_.position[0] as f64 - c.x;
+                        let dy = move_.position[1] as f64 - c.y;
+                        dx * dx + dy * dy <= r2 && (move_.position[2] as f64) <= z
+                    })
+                }
+            }
+            // BuildVolume.cpp:535-537
+            // C++: case Type::Convex: case Type::Custom:
+            Type::Convex | Type::Custom => {
+                // BuildVolume.cpp:538-542
+                // C++: return m_max_print_height == 0.0 ?
+                // C++:     std::all_of(..., [move_valid, this](const MoveVertex &move)
+                // C++:         { return ! move_valid(move) || Geometry::inside_convex_polygon(m_top_bottom_convex_hull_decomposition_bed, to_2d(move.position).cast<double>()); }) :
+                // C++:     std::all_of(..., [move_valid, this, z = m_max_print_height + epsilon](const MoveVertex &move)
+                // C++:         { return ! move_valid(move) || (Geometry::inside_convex_polygon(m_top_bottom_convex_hull_decomposition_bed, to_2d(move.position).cast<double>()) && move.position.z() <= z); });
+                if self.max_print_height == 0.0 {
+                    paths.moves.iter().all(|move_| {
+                        !move_valid(move_)
+                            || inside_convex_polygon(
+                                &self.top_bottom_convex_hull_decomposition_bed,
+                                &Vec2d::new(move_.position[0] as f64, move_.position[1] as f64),
+                            )
+                    })
+                } else {
+                    let z = self.max_print_height + EPSILON_LOCAL;
+                    paths.moves.iter().all(|move_| {
+                        !move_valid(move_)
+                            || (inside_convex_polygon(
+                                &self.top_bottom_convex_hull_decomposition_bed,
+                                &Vec2d::new(move_.position[0] as f64, move_.position[1] as f64),
+                            ) && (move_.position[2] as f64) <= z)
+                    })
+                }
+            }
+            // BuildVolume.cpp:543-544
+            // C++: default: return true;
+            Type::Invalid => true,
+        }
+    }
 }
 
 impl Default for BuildVolume {
@@ -1598,6 +1704,10 @@ fn convex_decomposition(in_: &Polygon, epsilon: f64) -> (Vec<Vec2d>, Vec<Vec2d>)
 fn expand(polygon: &Polygon, delta: f32) -> Vec<Polygon> {
     // Mirror ClipperUtils `expand`: offset by `delta` (unscaled-to-scaled handled
     // by offset_polygons which expects an unscaled delta).
+    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib. C++
+    // `expand`/`offset` (ClipperUtils.cpp:410-414) runs ClipperLib::ClipperOffset
+    // at coord_t integer precision; offset_polygons routes through the geo crate
+    // (geo-clipper) at GEO_CLIPPER_SCALE and is not byte-identical.
     let ex = clipper_utils::offset_polygons(
         std::slice::from_ref(polygon),
         delta as f64 / SCALING_FACTOR,
