@@ -2458,7 +2458,8 @@
     "rust_exists": true,
     "loc": 1556,
     "status": "partial",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillBase.cpp",

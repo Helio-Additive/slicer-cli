@@ -776,8 +776,10 @@ fn create_offset_line(
         (perp_dir.y * off) as Coord,
     ));
     // Extend the line by a small value to guarantee a collision with adjacent lines
-    // FillAdaptive.cpp:645
-    offset_line.extend(scaled_offset * 1.16); // / cos(PI/6)
+    // FillAdaptive.cpp:645: offset_line.extend(coord_t(scaled_offset * 1.16))
+    // C++ truncates scaled_offset*1.16 to coord_t (int32, FIDELITY-NOTE(F2)) before
+    // calling Line::extend(double), so the float fed to extend is the truncated value.
+    offset_line.extend((scaled_offset * 1.16) as i32 as f64); // / cos(PI/6)
     offset_line
 }
 
