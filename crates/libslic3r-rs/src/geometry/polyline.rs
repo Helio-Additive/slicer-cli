@@ -712,7 +712,15 @@ impl Polyline {
                 // Polyline.cpp:322-325
                 if acc_length + current_length >= length {
                     // Polyline.cpp:323 — lerp(l.a, l.b, (length - acc_length) / current_length)
-                    p = super::lerp(l.a, l.b, (length - acc_length) / current_length);
+                    // Point.hpp:298-302 lerp: ((1-t)*a + t*b).cast<coord_t>() — truncates
+                    // toward zero. NOTE: the crate-wide `super::lerp` ROUNDS instead of
+                    // truncating, so inline the faithful C++ formula here (matches
+                    // line_segmentation.rs which keeps a local truncating lerp too).
+                    let t = (length - acc_length) / current_length;
+                    p = Point::new(
+                        ((1.0 - t) * l.a.x as CoordF + t * l.b.x as CoordF) as Coord,
+                        ((1.0 - t) * l.a.y as CoordF + t * l.b.y as CoordF) as Coord,
+                    );
                     break;
                 }
                 // Polyline.cpp:326

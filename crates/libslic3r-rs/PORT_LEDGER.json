@@ -1266,7 +1266,8 @@
     "rust_exists": true,
     "loc": 687,
     "status": "done",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ExtrusionEntity.cpp",
