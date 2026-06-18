@@ -2913,7 +2913,8 @@
     "rust_exists": true,
     "loc": 3294,
     "status": "partial",
-    "priority": 6
+    "priority": 6,
+    "fidelity": "ok"
   },
   {
     "cpp": "Support/TreeSupport.cpp",
