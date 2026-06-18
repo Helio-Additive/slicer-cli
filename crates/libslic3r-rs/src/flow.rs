@@ -234,6 +234,11 @@ impl Flow {
     }
 
     /// Get the extrusion width as scaled coordinate.
+    // Flow.hpp:62  coord_t scaled_width() const { return coord_t(scale_(m_width)); }
+    // FIDELITY-NOTE(F2): C++ coord_t is int32 here truncated toward zero from the
+    // double `scale_(m_width)`; this crate's shared `scale()` primitive rounds and
+    // targets Coord=i64. Reusing the crate primitive (per task) rather than
+    // re-routing scaling per-file.
     #[inline]
     pub fn scaled_width(&self) -> Coord {
         scale(self.width)
@@ -252,6 +257,9 @@ impl Flow {
     }
 
     /// Get the spacing as scaled coordinate.
+    // Flow.hpp:68  coord_t scaled_spacing() const { return coord_t(scale_(m_spacing)); }
+    // FIDELITY-NOTE(F2): see scaled_width() — crate `scale()` (round, Coord=i64) vs
+    // C++ coord_t(scale_(...)) (truncate-toward-zero, int32).
     #[inline]
     pub fn scaled_spacing(&self) -> Coord {
         scale(self.spacing)
@@ -330,7 +338,12 @@ impl Flow {
     ///
     /// Allows some perimeter squish (see INSET_OVERLAP_TOLERANCE in libslic3r).
     /// An overlap of 0.2× external perimeter spacing is allowed.
-    // Flow.hpp:80
+    // Flow.hpp:80  coord_t scaled_elephant_foot_spacing() const
+    //   { return coord_t(0.5f * float(this->scaled_width() + 0.6f * this->scaled_spacing())); }
+    // FIDELITY-NOTE(F2): C++ does the intermediate arithmetic in `float` (f32) and the
+    // final `coord_t(...)` is an int32 truncate-toward-zero. We compute in f64 (crate
+    // convention: C++ `float` -> Rust f64) and `as Coord` truncates toward zero into
+    // i64; operator order, the 0.5/0.6 constants and the truncation direction match.
     #[inline]
     pub fn scaled_elephant_foot_spacing(&self) -> Coord {
         // coord_t(0.5f * float(this->scaled_width() + 0.6f * this->scaled_spacing()))
