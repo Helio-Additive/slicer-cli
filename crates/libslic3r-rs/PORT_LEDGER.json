@@ -930,7 +930,8 @@
     "rust_exists": true,
     "loc": 313,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "fixed"
   },
   {
     "cpp": "ObjColorUtils.cpp",

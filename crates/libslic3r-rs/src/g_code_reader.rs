@@ -47,6 +47,12 @@ pub const UNKNOWN_AXIS: usize = 8;
 
 impl Axis {
     /// Return the integer index of this axis, matching `int(axis)` in C++.
+    ///
+    /// libslic3r.h:124-127: `NUM_AXES`(=8), `UNKNOWN_AXIS = NUM_AXES`(=8),
+    /// `NUM_AXES_WITH_UNKNOWN`(=9). C++ aliases UNKNOWN_AXIS onto NUM_AXES so
+    /// `int(UNKNOWN_AXIS) == 8` and `int(NUM_AXES_WITH_UNKNOWN) == 9`. Rust enum
+    /// discriminants must be distinct, so the discriminant values differ from C++,
+    /// but `index()` reproduces the C++ integer values exactly.
     #[inline]
     pub fn index(self) -> usize {
         match self {
@@ -59,8 +65,10 @@ impl Axis {
             Axis::J => 6,
             Axis::P => 7,
             Axis::NumAxes => 8,
-            Axis::UnknownAxis => 9,
-            Axis::NumAxesWithUnknown => 10,
+            // UNKNOWN_AXIS = NUM_AXES => 8
+            Axis::UnknownAxis => 8,
+            // NUM_AXES_WITH_UNKNOWN => 9
+            Axis::NumAxesWithUnknown => 9,
         }
     }
 }
@@ -893,11 +901,26 @@ impl GCodeReader {
         // for (;;)
         loop {
             // size_t cnt_read = ::fread(buffer.data(), 1, buffer.size(), in.f);
-            let cnt_read = match file.read(&mut buffer) {
-                Ok(n) => n,
-                // if (::ferror(in.f)) return false;
-                Err(_) => return Ok(false),
-            };
+            // C `fread` keeps reading until the buffer is full or EOF/error is hit, so a
+            // single short OS read does not end the chunk. Loop `Read::read` to reproduce
+            // that fill-to-capacity behaviour, keeping the buffer chunking (and therefore
+            // `file_pos` / line-split accounting) byte-identical to the C++ original.
+            let mut cnt_read = 0usize;
+            loop {
+                match file.read(&mut buffer[cnt_read..]) {
+                    // EOF: stop filling.
+                    Ok(0) => break,
+                    Ok(n) => {
+                        cnt_read += n;
+                        if cnt_read == buffer.len() {
+                            break;
+                        }
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    // if (::ferror(in.f)) return false;
+                    Err(_) => return Ok(false),
+                }
+            }
             // bool eof = cnt_read == 0;
             let eof = cnt_read == 0;
             // auto it = buffer.begin();
@@ -1172,15 +1195,17 @@ fn axis_from_index(i: usize) -> Axis {
 ///
 /// Returns the parsed value and the index `pend` one past the last consumed character.
 /// On failure `pend == begin` and the value is 0.0 (the C++ caller only consults `pend`
-/// and `ec` indirectly via the `pend != c` test). Matches fast_float semantics: parses
-/// an optional sign, integer/fraction with '.' decimal point, and exponent.
+/// and `ec` indirectly via the `pend != c` test). Matches fast_float semantics
+/// (`chars_format::general`, the default): an optional leading MINUS sign only (a leading
+/// '+' is rejected, mirroring std::from_chars / fast_float), integer/fraction with '.'
+/// decimal point, and an exponent whose sign may be '+' or '-'.
 fn from_chars(buf: &[u8], begin: usize, end: usize) -> (f64, usize) {
     let mut i = begin;
     let lim = end.min(buf.len());
     let start = i;
 
-    // optional sign
-    if i < lim && (buf[i] == b'+' || buf[i] == b'-') {
+    // optional sign: fast_float / std::from_chars accept only '-', never a leading '+'.
+    if i < lim && buf[i] == b'-' {
         i += 1;
     }
 
