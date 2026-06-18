@@ -47,6 +47,7 @@ type Vec2d = PointF;
 
 // ClipperUtils  ExPolygons offset_ex(const ExPolygons &, float/double delta)
 // Slic3r's default offset uses miter joins (DefaultJoinType).
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib offset_ex.
 fn offset_ex(expolygons: &ExPolygons, delta: f64) -> ExPolygons {
     offset_expolygons(expolygons, delta, OffsetJoinType::Miter)
 }
@@ -620,10 +621,12 @@ pub fn heal_polygons(shape: &Polygons, is_non_zero: bool, max_iteration: u32) ->
     // When edit this code check that font 'ALIENATE.TTF' and glyph 'i' still work
     // fix of self intersections
     //
-    // ClipperLib::SimplifyPolygons + CleanPolygons are not exposed by the current
-    // crate clipper bindings. Reuse the available simplify path which performs the
-    // non-zero/even-odd self-intersection cleanup; degenerate (<3 pt) contours are
-    // dropped as in the C++ `remove_if`.
+    // FIDELITY-NOTE(F1): C++ runs ClipperLib::SimplifyPolygons (self-intersection fix)
+    // followed by ClipperLib::CleanPolygons(paths, clean_distance=1.415). Neither
+    // ClipperLib entry point is exposed by the geo-clipper backed primitives, so this
+    // reuses the available non-zero/even-odd self-intersection cleanup and OMITS the
+    // CleanPolygons(1.415) collinear/near-duplicate vertex removal. Degenerate (<3 pt)
+    // contours are dropped as in the C++ `remove_if`.
     let paths = simplify_polygons(shape, fill_type);
     let mut polygons = paths;
     // Emboss.cpp:419-420
@@ -1186,8 +1189,10 @@ fn get_align_y_offset(
         // Emboss.cpp:2168  top: return -ascent;
         VerticalAlign::Top => -ascent as f32,
         // Emboss.cpp:2169-2171  center (default): return -line_center + line_height * (count_lines - 1) / 2.;
+        // Mirror C++: `line_height * (count_lines - 1)` is integer multiplication, then `/ 2.`
+        // promotes to floating point division.
         VerticalAlign::Center => {
-            -line_center + (line_height as f64 * (count_lines as f64 - 1.0) / 2.0) as f32
+            -line_center + ((line_height * (count_lines as i32 - 1)) as f64 / 2.0) as f32
         }
     }
 }
@@ -1486,7 +1491,7 @@ pub fn suggest_up(normal: Vec3d, up_limit: f64) -> Vec3d {
 
 // Emboss.cpp:1884-1906
 // std::optional<float> Emboss::calc_up(const Transform3d &tr, double up_limit)
-pub fn calc_up(tr: &Transform3d, up_limit: f64) -> Option<f64> {
+pub fn calc_up(tr: &Transform3d, up_limit: f64) -> Option<f32> {
     // Emboss.cpp:1886
     let tr_linear = tr.fixed_view::<3, 3>(0, 0);
     // Emboss.cpp:1887-1888  z base of transformation ( tr * UnitZ )
@@ -1519,8 +1524,8 @@ pub fn calc_up(tr: &Transform3d, up_limit: f64) -> Option<f64> {
     if is_approx(res, 0.0) {
         return None;
     }
-    // Emboss.cpp:1905
-    Some(res)
+    // Emboss.cpp:1905  return res; // implicit narrowing double -> float (std::optional<float>)
+    Some(res as f32)
 }
 
 // Emboss.cpp:1908-1954
@@ -1849,9 +1854,10 @@ pub fn sample_slice(slice: &TextLine, bbs: &[BoundingBox], scale: f64) -> Polygo
 // ===========================================================================
 
 // `BoundingBox::defined` flag — Slic3r's BoundingBox starts "undefined"; a merged
-// box becomes defined. The crate models the empty/default box as undefined.
+// box becomes defined. Mirror C++ `bb.defined` exactly via the crate's accessor
+// rather than approximating with a min<=max comparison.
 fn bb_defined(bb: &BoundingBox) -> bool {
-    bb.min.x <= bb.max.x && bb.min.y <= bb.max.y
+    bb.is_defined()
 }
 
 // Point.hpp  to_points(const Polygon&) — flatten one polygon's points.
@@ -1878,6 +1884,8 @@ fn transform_point(tr: &Transform3d, p: &Vec3d) -> Vec3d {
 // The crate's `union_polygons_ex` performs the non-zero union. EvenOdd is not
 // separately exposed; both modes fall back to the available non-zero union which
 // is the path exercised by glyph healing (TrueType uses non-zero winding).
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib union_ex, and the
+// EvenOdd fill rule (is_non_zero == false) is not honoured — always non-zero union.
 fn union_ex_fill(polygons: &Polygons, _is_non_zero: bool) -> ExPolygons {
     union_polygons_ex(polygons)
 }
@@ -1885,6 +1893,7 @@ fn union_ex_fill(polygons: &Polygons, _is_non_zero: bool) -> ExPolygons {
 // ClipperUtils  ClipperLib::SimplifyPolygons(...) -> Polygons
 // Reuse the crate simplify path (drops self-intersections). The fill rule mirrors
 // the C++ non-zero / even-odd choice; only non-zero is materially exercised here.
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib SimplifyPolygons.
 fn simplify_polygons(shape: &Polygons, _is_non_zero: bool) -> Polygons {
     // union_polygons_ex resolves self-intersections; flatten back to polygons.
     let ex = union_polygons_ex(shape);
@@ -1892,6 +1901,7 @@ fn simplify_polygons(shape: &Polygons, _is_non_zero: bool) -> Polygons {
 }
 
 // ClipperUtils  union_ex(const ExPolygons &subject, const Polygons &fill)
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib union_ex.
 fn union_ex_shape_polygons(shape: &ExPolygons, fill: &Polygons) -> ExPolygons {
     let mut all = shape.clone();
     for p in fill {
@@ -1901,6 +1911,7 @@ fn union_ex_shape_polygons(shape: &ExPolygons, fill: &Polygons) -> ExPolygons {
 }
 
 // ClipperUtils  diff_ex(const ExPolygons &subject, const Polygons &holes, ApplySafetyOffset::No)
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib diff_ex.
 fn diff_ex_shape_holes(shape: &ExPolygons, holes: &Polygons) -> ExPolygons {
     let clip: Vec<ExPolygon> = holes.iter().map(|p| ExPolygon::new(p.clone())).collect();
     difference(shape, &clip)
