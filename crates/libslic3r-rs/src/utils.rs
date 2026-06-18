@@ -318,7 +318,11 @@ impl PathSanitizer {
         }
 
         // Utils.hpp:233-239
-        if raw_b[start_pos + name_size] == b'\\' || raw_b[start_pos + name_size] == b'/' {
+        // C++ std::string::operator[](size()) returns the null terminator '\0'
+        // (well-defined since C++11); reproduce that so an exact-length `raw`
+        // does not panic and falls through to the `else if` like the C++.
+        let raw_at_end: u8 = raw_b.get(start_pos + name_size).copied().unwrap_or(0);
+        if raw_at_end == b'\\' || raw_at_end == b'/' {
             Self::replace_stars(&mut sanitized, start_pos, name_size);
         } else if (raw_b[start_pos] as char).is_ascii_uppercase()
             && (raw_b[start_pos] as char).to_ascii_lowercase() == full_b[start_pos] as char
