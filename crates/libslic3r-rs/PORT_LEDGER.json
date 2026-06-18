@@ -2474,7 +2474,8 @@
     "rust_exists": false,
     "loc": 2677,
     "status": "partial",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillRectilinear.cpp",

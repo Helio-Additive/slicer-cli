@@ -23,13 +23,27 @@
 
 use crate::edge_grid::EdgeGrid;
 use crate::geometry::{
-    liang_barsky_line_clipping_interval, lerp, perp, ray_circle_intersections_r2_lv2_c,
+    liang_barsky_line_clipping_interval, perp, ray_circle_intersections_r2_lv2_c,
     BoundingBox, BoundingBoxF as BoundingBoxf, ExPolygon, Point, Polygon, Polyline, Vec2d,
 };
 use crate::utils::{next_idx_modulo, next_value_modulo, prev_idx_modulo, prev_value_modulo};
 use crate::{Coord, SCALING_FACTOR};
 
 use super::FillParams;
+
+// Point.hpp:298-302 — `lerp(Point a, Point b, double t)`:
+//   ((1 - t) * a.cast<double>() + t * b.cast<double>()).cast<coord_t>()
+// Eigen's `.cast<coord_t>()` on a Vec2d static_casts each component, i.e. it
+// TRUNCATES toward zero (it does NOT round like `Point(double,double)`/`crate::lerp`).
+// The arithmetic form is `(1-t)*a + t*b`, not `a + (b-a)*t`. This helper reproduces
+// the C++ truncation and formula exactly for the in-file call sites.
+#[inline]
+fn lerp(a: Point, b: Point, t: f64) -> Point {
+    Point::new(
+        ((1.0 - t) * a.x as f64 + t * b.x as f64) as Coord,
+        ((1.0 - t) * a.y as f64 + t * b.y as f64) as Coord,
+    )
+}
 
 // libslic3r.h:84 — SCALED_EPSILON = scale_(EPSILON) = 1e-4 * 1e5 = 10.0
 const SCALED_EPSILON: f64 = crate::libslic3r::SCALED_EPSILON;
@@ -807,7 +821,9 @@ fn mark_boundary_segments_touching_infill(
     // FillBase.cpp:948-952
     let mut grid = EdgeGrid::new();
     // Make sure that the the grid is big enough for queries against the thick segment.
-    grid.set_bbox(boundary_bbox.expanded((distance_colliding * 1.43) as Coord));
+    // BoundingBox::inflated(coordf_t) constructs Point(delta, delta) which rounds via
+    // lrint (Point.hpp:179), so round here rather than truncate.
+    grid.set_bbox(boundary_bbox.expanded((distance_colliding * 1.43).round_ties_even() as Coord));
     // Inflate the bounding box by a thick line width.
     {
         let polylines: Vec<Polyline> = boundary
@@ -1759,17 +1775,19 @@ pub fn adjust_solid_spacing(width: Coord, distance: Coord) -> Coord {
     debug_assert!(width >= 0);
     debug_assert!(distance > 0);
     // floor(width / distance)
-    let number_of_intervals = ((width as f64 - EPSILON) / distance as f64) as Coord;
+    // FIDELITY-NOTE(F2): C++ `coord_t(...)` truncates the double to int32. Mirror
+    // the int32 truncation via `as i32 as Coord` (spacing values always fit i32).
+    let number_of_intervals = ((width as f64 - EPSILON) / distance as f64) as i32 as Coord;
     let mut distance_new = if number_of_intervals == 0 {
         distance
     } else {
-        ((width as f64 - EPSILON) / number_of_intervals as f64) as Coord
+        ((width as f64 - EPSILON) / number_of_intervals as f64) as i32 as Coord
     };
     let factor = distance_new as f64 / distance as f64;
     // How much could the extrusion width be increased? By 20%.
     let factor_max = 1.2;
     if factor > factor_max {
-        distance_new = (distance as f64 * factor_max + 0.5).floor() as Coord;
+        distance_new = (distance as f64 * factor_max + 0.5).floor() as i32 as Coord;
     }
     distance_new
 }
@@ -2063,6 +2081,11 @@ impl<'a> EmitState<'a> {
         self.m_polyline.points.truncate(self.m_polyline_end);
         if !self.m_polyline.points.is_empty() {
             if !self.m_polylines_out.is_empty() && {
+                // FIDELITY-NOTE(F2): C++ subtracts two int32 Points (Point - Point) which
+                // may truncate to int32 before `.cast<int64_t>().squaredNorm()`. With
+                // Coord=i64 the subtraction stays in i64; i128 then avoids squaredNorm
+                // overflow. The `< SCALED_EPSILON` (double 10.0) comparison reduces to
+                // `n < 10` for integer norms, so the < 10 i128 test is equivalent.
                 let back = self.m_polylines_out.last().unwrap();
                 let d = Point::new(
                     back.points.last().unwrap().x() - self.m_polyline.points[0].x(),
@@ -2413,12 +2436,15 @@ pub fn connect_base_support(
             let left0 = self_point(&graph, cp_idx).x();
             let mut left = left0;
             let mut right = left0;
+            // FillBase.cpp:2206-2212 — `coord_t += double` converts left to double,
+            // adds, then truncates the SUM back to coord_t. Truncating line_half_width
+            // first would diverge for negative coordinates.
             if first {
-                left += line_half_width as Coord;
-                right += (line_spacing - line_half_width) as Coord;
+                left = (left as f64 + line_half_width) as Coord;
+                right = (right as f64 + (line_spacing - line_half_width)) as Coord;
             } else {
-                left -= (line_spacing - line_half_width) as Coord;
-                right -= line_half_width as Coord;
+                left = (left as f64 - (line_spacing - line_half_width)) as Coord;
+                right = (right as f64 - line_half_width) as Coord;
             }
             let contour_idx = graph.map_infill_end_point_to_boundary[cp_idx].contour_idx;
             let contour_length = *graph.boundary_params[contour_idx].last().unwrap();
@@ -2997,9 +3023,15 @@ pub fn multiline_fill(polylines: &mut Vec<Polyline>, params: &FillParams, spacin
                     tangent = (tangent.0 / len, tangent.1 / len);
                     let normal = (-tangent.1, tangent.0);
 
+                    // FillBase.cpp:2664-2666 — p.x() += scale_(normal.x() * offset).
+                    // `normal.x() * offset` is a float product (Vec2f); scale_ is the
+                    // macro `val / SCALING_FACTOR` (== *1e5) with NO rounding; the
+                    // `coord_t += double` compound assignment truncates the SUM toward
+                    // zero. crate::scale() would round, which diverges — so reproduce
+                    // the divide-then-truncate-the-sum semantics by hand.
                     let mut p = pl.points[i];
-                    p.x += crate::scale((normal.0 * offset) as f64);
-                    p.y += crate::scale((normal.1 * offset) as f64);
+                    p.x = (p.x as f64 + scale_f((normal.0 * offset) as f64)) as Coord;
+                    p.y = (p.y as f64 + scale_f((normal.1 * offset) as f64)) as Coord;
                     new_points.push(p);
                 }
 
