@@ -1897,7 +1897,7 @@ mod tests {
         // Top surface adjacent to Internal → Top should grow into Internal
         let mut surfaces = vec![vec![
             Surface::new(
-                super::crate::surface::SurfaceType::Top,
+                crate::surface::SurfaceType::Top,
                 make_rect_expolygon(0.0, 0.0, 5.0, 1.0),
             ),
             Surface::internal(make_rect_expolygon(0.0, 1.0, 5.0, 9.0)),
@@ -1916,7 +1916,7 @@ mod tests {
         // Should have at least Top and Internal surfaces
         let has_top = surfaces[0]
             .iter()
-            .any(|s| s.surface_type == super::crate::surface::SurfaceType::Top);
+            .any(|s| s.surface_type == crate::surface::SurfaceType::Top);
         assert!(has_top, "Should still have Top surfaces after expansion");
     }
 
@@ -1926,12 +1926,12 @@ mod tests {
         let bridge_ep = make_rect_expolygon(0.0, 20.0, 5.0, 5.0);
         let mut surfaces = vec![vec![
             Surface::new(
-                super::crate::surface::SurfaceType::Top,
+                crate::surface::SurfaceType::Top,
                 make_rect_expolygon(0.0, 0.0, 5.0, 1.0),
             ),
             Surface::internal(make_rect_expolygon(0.0, 1.0, 5.0, 9.0)),
             Surface::new(
-                super::crate::surface::SurfaceType::InternalBridge,
+                crate::surface::SurfaceType::InternalBridge,
                 bridge_ep.clone(),
             ),
         ]];
@@ -1941,7 +1941,7 @@ mod tests {
 
         let has_internal_bridge = surfaces[0]
             .iter()
-            .any(|s| s.surface_type == super::crate::surface::SurfaceType::InternalBridge);
+            .any(|s| s.surface_type == crate::surface::SurfaceType::InternalBridge);
         assert!(has_internal_bridge, "InternalBridge should be preserved");
     }
 
@@ -2189,7 +2189,7 @@ mod tests {
         assert!(!result.is_empty(), "Should produce at least one surface");
         assert_eq!(
             result[0].surface_type,
-            super::crate::surface::SurfaceType::BottomBridge
+            crate::surface::SurfaceType::BottomBridge
         );
         assert!(result[0].bridge_angle.is_some());
         // The angle should be the one we set
@@ -2248,7 +2248,7 @@ mod tests {
         let boundary_ep = make_rect_expolygon(-1.0, -1.0, 12.0, 12.0);
 
         let surfaces = vec![Surface::new(
-            super::crate::surface::SurfaceType::BottomBridge,
+            crate::surface::SurfaceType::BottomBridge,
             bridge_ep,
         )];
         let params = RegionExpansionParameters::build(1.0, 0.1, 5);
@@ -2267,7 +2267,7 @@ mod tests {
         for s in &result {
             assert_eq!(
                 s.surface_type,
-                super::crate::surface::SurfaceType::BottomBridge
+                crate::surface::SurfaceType::BottomBridge
             );
             assert!(
                 s.bridge_angle.is_some(),
@@ -2283,7 +2283,7 @@ mod tests {
         let boundary_ep = make_rect_expolygon(0.0, 0.0, 10.0, 10.0);
 
         let surfaces = vec![Surface::new(
-            super::crate::surface::SurfaceType::BottomBridge,
+            crate::surface::SurfaceType::BottomBridge,
             bridge_ep,
         )];
         let params = RegionExpansionParameters::build(1.0, 0.1, 5);
@@ -2316,7 +2316,7 @@ mod tests {
         let internal_ep = make_rect_expolygon(0.0, 0.0, 10.0, 10.0);
 
         let mut surfaces = vec![vec![
-            Surface::new(super::crate::surface::SurfaceType::BottomBridge, bridge_ep),
+            Surface::new(crate::surface::SurfaceType::BottomBridge, bridge_ep),
             Surface::internal(internal_ep),
         ]];
 
@@ -2331,7 +2331,7 @@ mod tests {
 
         // Check that any remaining BottomBridge surfaces have a bridge angle
         for s in &surfaces[0] {
-            if s.surface_type == super::crate::surface::SurfaceType::BottomBridge {
+            if s.surface_type == crate::surface::SurfaceType::BottomBridge {
                 assert!(
                     s.bridge_angle.is_some(),
                     "Auto-detected bridges should have an angle"
