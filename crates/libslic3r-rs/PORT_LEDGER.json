@@ -2420,11 +2420,12 @@
     "hpp": "Fill/Lightning/Layer.hpp",
     "kind": "cpp",
     "area": "Fill",
-    "rust": "crates/libslic3r-rs/src/layer.rs",
+    "rust": "crates/libslic3r-rs/src/fill/lightning/layer.rs",
     "rust_exists": true,
     "loc": 448,
     "status": "done",
-    "priority": 4
+    "priority": 4,
+    "fidelity": "fixed"
   },
   {
     "cpp": "Fill/FillFloatingConcentric.cpp",
