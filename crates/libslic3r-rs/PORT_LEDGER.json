@@ -798,7 +798,8 @@
     "rust_exists": true,
     "loc": 223,
     "status": "partial",
-    "priority": 2
+    "priority": 2,
+    "fidelity": "ok"
   },
   {
     "cpp": "VariableWidth.cpp",
