@@ -10,6 +10,9 @@
 
 use std::sync::Mutex;
 
+// chrono traits for get_bbl_finish_time_dhm (Utils.hpp:827) std::localtime / std::tm fields.
+use chrono::{Datelike, Timelike};
+
 // Reuse the data_dir global that already lives in log_sink (Utils.cpp:264-273),
 // so there is a single source of truth for `g_data_dir`.
 pub use crate::log_sink::{data_dir, set_data_dir};
@@ -175,6 +178,188 @@ pub fn convert_to_full_version(short_version: &str) -> String {
     result
 }
 
+// ----------------------------------------------------------------------------
+// PathSanitizer (Utils.hpp:134-292)
+//
+// Strips the OS user name (and a trailing numeric id) out of a path so it can be
+// logged without leaking PII, falling back to just the file name when the path
+// does not start under the user profile dir or the platform is unsupported.
+//
+// The C++ caches start_pos/id_start_pos/name_size/full as `inline static` members.
+// We mirror that with a process-wide lazily-initialized cache. The `_WIN32` branch
+// is unsupported on our wasm-safe targets (C++ returns false for unknown platforms
+// at Utils.hpp:185-187 -> falls back to file_name); we faithfully port the
+// __APPLE__/__linux__ branches.
+// ----------------------------------------------------------------------------
+
+struct SanitizerRange {
+    // Utils.hpp:154-157
+    start_pos: Option<usize>,
+    id_start_pos: usize,
+    name_size: usize,
+    full: String,
+}
+
+static SANITIZER_RANGE: Mutex<Option<SanitizerRange>> = Mutex::new(None);
+
+pub struct PathSanitizer;
+
+impl PathSanitizer {
+    // Utils.hpp:137  static std::string sanitize(const std::string &path)
+    pub fn sanitize(path: &str) -> String {
+        Self::sanitize_impl(path)
+    }
+
+    // Utils.hpp:210  static inline std::string file_name(const std::string &name)
+    fn file_name(name: &str) -> String {
+        // boost::filesystem::path(name).filename().string()
+        std::path::Path::new(name)
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+
+    // Utils.hpp:159  static bool init_usrname_range()
+    // Returns the cached range (computing it once), or None when uninitializable.
+    fn init_usrname_range() -> bool {
+        let mut guard = SANITIZER_RANGE.lock().unwrap();
+        // Utils.hpp:161-163  if (start_pos != npos) return true;
+        if let Some(r) = guard.as_ref() {
+            if r.start_pos.is_some() {
+                return true;
+            }
+        }
+
+        // Utils.hpp:164-188  platform-specific env var + trailing suffix length.
+        // We support __APPLE__ and __linux__; release-to-public build assumed.
+        #[cfg(target_os = "macos")]
+        let (env, len) = (
+            std::env::var("HOME").ok(),
+            "/Library/Application Support/BambuStudio/user".len(),
+        );
+        #[cfg(target_os = "linux")]
+        let (env, len) = (std::env::var("HOME").ok(), "/.config/BambuStudio/user".len());
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let (env, len): (Option<String>, usize) = (None, 0);
+
+        // Utils.hpp:189-191  if (!env) return false;
+        let env = match env {
+            Some(e) => e,
+            None => return false,
+        };
+        // Utils.hpp:192  full = std::string(env);
+        let full = env;
+        // Utils.hpp:193  size_t sep_pos = full.find_last_of("\\/");
+        let sep_pos = full.rfind(['\\', '/']);
+        // Utils.hpp:194-196  if (sep_pos == npos) return false;
+        let sep_pos = match sep_pos {
+            Some(p) => p,
+            None => return false,
+        };
+        // Utils.hpp:197-199
+        let start_pos = sep_pos + 1;
+        let name_size = full.len() - start_pos;
+        let id_start_pos = full.len() + len + 1;
+
+        // Utils.hpp:201-203  if (name_size == 0) return false;
+        if name_size == 0 {
+            return false;
+        }
+        // Utils.hpp:204-206  if (start_pos + name_size > full.length()) return false;
+        if start_pos + name_size > full.len() {
+            return false;
+        }
+        // Utils.hpp:207  return true;
+        *guard = Some(SanitizerRange {
+            start_pos: Some(start_pos),
+            id_start_pos,
+            name_size,
+            full,
+        });
+        true
+    }
+
+    // Utils.hpp:214  static std::string sanitize_impl(const std::string &raw)
+    fn sanitize_impl(raw: &str) -> String {
+        // Utils.hpp:216-218  if (!init_usrname_range()) return file_name(raw);
+        if !Self::init_usrname_range() {
+            return Self::file_name(raw);
+        }
+        let guard = SANITIZER_RANGE.lock().unwrap();
+        let r = guard.as_ref().unwrap();
+        let full = &r.full;
+        let start_pos = r.start_pos.unwrap();
+        let name_size = r.name_size;
+        let id_start_pos = r.id_start_pos;
+
+        // Operate on bytes to match std::string indexing exactly.
+        let raw_b = raw.as_bytes();
+        let full_b = full.as_bytes();
+
+        // Utils.hpp:220-222  if (raw.length() < full.length() || raw.empty()) return file_name(raw);
+        if raw_b.len() < full_b.len() || raw.is_empty() {
+            return Self::file_name(raw);
+        }
+
+        // Utils.hpp:224  std::string sanitized = raw;
+        let mut sanitized: Vec<u8> = raw_b.to_vec();
+
+        // Utils.hpp:225  if (raw[0] != full[0] || raw[full.length()-1] != full[full.length()-1])
+        if raw_b[0] != full_b[0] || raw_b[full_b.len() - 1] != full_b[full_b.len() - 1] {
+            // Utils.hpp:226-229
+            if (raw_b[start_pos] as char).is_ascii_uppercase()
+                && (raw_b[start_pos] as char).to_ascii_lowercase() == full_b[start_pos] as char
+            {
+                Self::replace_stars(&mut sanitized, start_pos, 12);
+                return Self::file_name(&String::from_utf8_lossy(&sanitized));
+            }
+            // Utils.hpp:230  return file_name(raw);
+            return Self::file_name(raw);
+        }
+
+        // Utils.hpp:233-239
+        if raw_b[start_pos + name_size] == b'\\' || raw_b[start_pos + name_size] == b'/' {
+            Self::replace_stars(&mut sanitized, start_pos, name_size);
+        } else if (raw_b[start_pos] as char).is_ascii_uppercase()
+            && (raw_b[start_pos] as char).to_ascii_lowercase() == full_b[start_pos] as char
+        {
+            Self::replace_stars(&mut sanitized, start_pos, 12);
+        } else {
+            return Self::file_name(raw);
+        }
+
+        // Utils.hpp:241-249  sanitize the trailing numeric id if present.
+        if id_start_pos < sanitized.len()
+            && (sanitized[id_start_pos - 1] == b'\\' || sanitized[id_start_pos - 1] == b'/')
+            && (sanitized[id_start_pos] as char).is_ascii_digit()
+        {
+            // Utils.hpp:244-247  find_first_of("\\/", id_start_pos)
+            let mut id_end_pos = sanitized[id_start_pos..]
+                .iter()
+                .position(|&c| c == b'\\' || c == b'/')
+                .map(|p| p + id_start_pos)
+                .unwrap_or(sanitized.len());
+            if id_end_pos > sanitized.len() {
+                id_end_pos = sanitized.len();
+            }
+            // Utils.hpp:248  replace(id_start_pos, id_end_pos - id_start_pos, '*'...)
+            Self::replace_stars(&mut sanitized, id_start_pos, id_end_pos - id_start_pos);
+        }
+
+        // Utils.hpp:251  return file_name(sanitized);
+        Self::file_name(&String::from_utf8_lossy(&sanitized))
+    }
+
+    // std::string::replace(pos, count, std::string(count, '*'))
+    fn replace_stars(buf: &mut Vec<u8>, pos: usize, count: usize) {
+        for i in 0..count {
+            if pos + i < buf.len() {
+                buf[pos + i] = b'*';
+            }
+        }
+    }
+}
+
 // Utils.hpp:295  Return dividend divided by divisor rounded to the nearest integer
 #[inline]
 pub fn round_divide(dividend: i64, divisor: i64) -> i64 {
@@ -203,6 +388,94 @@ pub fn get_max_element<T: Copy + PartialOrd + Default>(vec: &[T]) -> T {
         }
     }
     best
+}
+
+// Utils.hpp:316  template <typename From, typename To> std::vector<To> convert_vector(const std::vector<From>&)
+// Converts every element, throwing on out-of-range. Rust has no exceptions, so the
+// faithful equivalent returns a Result: the C++ overflow/underflow/invalid_argument
+// throws become Err(String) with the same messages and ordering of checks.
+//
+// `To: Bounded` carries the destination min/max plus the signedness flag, mirroring
+// the `if constexpr (std::is_signed_v<To>)` split in the C++ source.
+pub trait ConvertBound: Copy {
+    const SIGNED: bool;
+    fn min_f64() -> f64;
+    fn max_f64() -> f64;
+    fn from_f64(v: f64) -> Self;
+}
+
+// Source-side conversion to f64 for the range check. `i64 as f64` is lossy and so
+// is NOT covered by std's `Into<f64>`; we provide an explicit widening accessor
+// for every integer source type instead.
+pub trait ConvertSource: Copy {
+    fn as_f64(self) -> f64;
+}
+
+macro_rules! impl_convert_bound {
+    ($t:ty, $signed:expr) => {
+        impl ConvertBound for $t {
+            const SIGNED: bool = $signed;
+            fn min_f64() -> f64 {
+                <$t>::MIN as f64
+            }
+            fn max_f64() -> f64 {
+                <$t>::MAX as f64
+            }
+            fn from_f64(v: f64) -> Self {
+                v as $t
+            }
+        }
+        impl ConvertSource for $t {
+            fn as_f64(self) -> f64 {
+                self as f64
+            }
+        }
+    };
+}
+impl_convert_bound!(i8, true);
+impl_convert_bound!(i16, true);
+impl_convert_bound!(i32, true);
+impl_convert_bound!(i64, true);
+impl_convert_bound!(u8, false);
+impl_convert_bound!(u16, false);
+impl_convert_bound!(u32, false);
+impl_convert_bound!(u64, false);
+
+pub fn convert_vector<From, To>(src: &[From]) -> Result<Vec<To>, String>
+where
+    From: ConvertSource,
+    To: ConvertBound,
+{
+    // Utils.hpp:318-319  dst.reserve(src.size());
+    let mut dst: Vec<To> = Vec::with_capacity(src.len());
+    // Utils.hpp:320  for (const auto& elem : src)
+    // FIDELITY-NOTE: C++ casts numeric_limits<To>::{min,max} back to `From` before
+    // comparing; we compare via f64 (range check by value). Equivalent for the
+    // integer From/To pairs callers use; differs only for extreme out-of-range
+    // To-widths where the cast-to-From itself would overflow.
+    for &elem in src {
+        let ef: f64 = elem.as_f64();
+        // Utils.hpp:321  if constexpr (std::is_signed_v<To>)
+        if To::SIGNED {
+            // Utils.hpp:322-324  elem > static_cast<From>(numeric_limits<To>::max())
+            if ef > To::max_f64() {
+                return Err("Source value exceeds destination maximum".to_string());
+            }
+            // Utils.hpp:325-327  elem < static_cast<From>(numeric_limits<To>::min())
+            if ef < To::min_f64() {
+                return Err("Source value below destination minimum".to_string());
+            }
+        } else {
+            // Utils.hpp:329-332  if (elem < 0) throw invalid_argument(...)
+            if ef < 0.0 {
+                return Err("Negative value in source for unsigned destination".to_string());
+            }
+        }
+        // Utils.hpp:334  dst.push_back(static_cast<To>(elem));
+        dst.push(To::from_f64(ef));
+    }
+    // Utils.hpp:336  return dst;
+    Ok(dst)
 }
 
 // ----------------------------------------------------------------------------
@@ -512,6 +785,61 @@ pub fn format_time_hm(tm_hour: i32, tm_min: i32, use_12h_format: bool) -> String
         // 24-hour format
         format!("{:02}:{:02}", tm_hour, tm_min)
     }
+}
+
+// Utils.hpp:827
+pub fn get_bbl_finish_time_dhm(time_in_secs: f32, use_12h_format: bool) -> String {
+    // Utils.hpp:829  if (time_in_secs < 1) return "Finished";
+    if time_in_secs < 1.0 {
+        return "Finished".to_string();
+    }
+
+    // Utils.hpp:831-835  Get current time first (std::localtime).
+    let current = chrono::Local::now();
+    // tm_yday in C is 0-based day of year; chrono ordinal() is 1-based.
+    let current_day: i32 = current.ordinal() as i32 - 1;
+    let current_year: i32 = current.year();
+
+    // Utils.hpp:837-843  Calculate finish time and get its local time.
+    let finish = current + chrono::Duration::seconds(time_in_secs as i64);
+    let finish_hour: i32 = finish.hour() as i32;
+    let finish_minute: i32 = finish.minute() as i32;
+    let finish_day: i32 = finish.ordinal() as i32 - 1;
+    let finish_year: i32 = finish.year();
+
+    // Utils.hpp:845-860
+    let mut diff_day = 0;
+    if current_year != finish_year {
+        if (current_year % 4 == 0 && current_year % 100 != 0) || current_year % 400 == 0 {
+            diff_day = 366 - current_day;
+        } else {
+            diff_day = 365 - current_day;
+        }
+        // Utils.hpp:851-856  NOTE: faithful to the C++ bug — the loop body tests
+        // `current_year` (not `year`), so every iteration uses the same condition.
+        let mut year = current_year + 1;
+        while year < finish_year {
+            if (current_year % 4 == 0 && current_year % 100 != 0) || current_year % 400 == 0 {
+                diff_day += 366;
+            } else {
+                diff_day += 365;
+            }
+            year += 1;
+        }
+        diff_day += finish_day;
+    } else {
+        diff_day = finish_day - current_day;
+    }
+
+    // Utils.hpp:862-873  current_tm is never null in practice; format via format_time_hm.
+    let mut finish_time_str = format_time_hm(finish_hour, finish_minute, use_12h_format);
+    // Utils.hpp:874  if (diff_day != 0) finish_time_str += "+" + std::to_string(diff_day);
+    if diff_day != 0 {
+        finish_time_str += &format!("+{}", diff_day);
+    }
+
+    // Utils.hpp:876  return finish_time_str;
+    finish_time_str
 }
 
 // Utils.hpp:879
@@ -1591,6 +1919,26 @@ mod tests {
     fn test_filter_characters() {
         // Utils.hpp:903
         assert_eq!(filter_characters("a/b\\c:d", "/\\:"), "abcd");
+    }
+
+    #[test]
+    fn test_get_bbl_finish_time_dhm() {
+        // Utils.hpp:827  time_in_secs < 1 -> "Finished".
+        assert_eq!(get_bbl_finish_time_dhm(0.0, false), "Finished");
+        // Non-trivial values produce HH:MM (possibly with +N day suffix).
+        let s = get_bbl_finish_time_dhm(3600.0, false);
+        assert!(s.len() >= 5, "expected HH:MM-ish, got {s}");
+    }
+
+    #[test]
+    fn test_convert_vector() {
+        // Utils.hpp:316
+        let v: Vec<i32> = convert_vector::<i64, i32>(&[1i64, 2, 3]).unwrap();
+        assert_eq!(v, vec![1, 2, 3]);
+        // signed overflow -> Err
+        assert!(convert_vector::<i64, i8>(&[1000i64]).is_err());
+        // negative into unsigned -> Err
+        assert!(convert_vector::<i32, u8>(&[-1i32]).is_err());
     }
 
     #[test]
