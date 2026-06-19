@@ -949,7 +949,10 @@ pub fn process_external_surfaces_wave(
             && config.sparse_infill_density > 0.0
             && config.minimum_sparse_infill_area > 0.0
         {
-            let min_area = config.minimum_sparse_infill_area * 1e12; // mm² → scaled²
+            // C++ LayerRegion.cpp:602 — min_area = scale_(scale_(minimum_sparse_infill_area)).
+            // scale_(x) = x * 1e5 (SCALING_FACTOR = 1e-5), so mm² → scaled² is * 1e10, not 1e12.
+            let scale_factor = crate::SCALING_FACTOR; // 1e5 integer-per-mm
+            let min_area = config.minimum_sparse_infill_area * scale_factor * scale_factor;
             let mut areas_to_solid: ExPolygons = Vec::new();
 
             expansion_zones[1].expolygons.retain(|ep| {
