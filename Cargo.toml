@@ -27,3 +27,17 @@ walkdir = "2.5.0"
 schemars = "1.1.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.140"
+
+# The Rust slicing engine mirrors C++ libslic3r's `assert()`s as `debug_assert!`.
+# C++ release (NDEBUG) compiles those to no-ops, and the C++ golden G-code is a
+# release build — so for faithful parity the in-process engine must run with
+# debug-assertions OFF even in a dev `cargo build` (otherwise e.g. the degenerate
+# slice-line assert at triangle_mesh_slicer.rs:294 legitimately fires on Benchy).
+# This per-package override gives the engine C++-release assert semantics while
+# keeping the rest of the dev build normal, so `compare` works in one command.
+[profile.dev.package.slicer]
+debug-assertions = false
+# Also optimize just the engine in dev builds: an unoptimized Benchy slice takes
+# minutes, which makes `compare` impractical. opt-level=3 on this one package
+# keeps `cargo build` fast elsewhere while the slice runs in seconds.
+opt-level = 3
