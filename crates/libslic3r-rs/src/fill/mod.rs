@@ -551,25 +551,31 @@ pub fn group_fills(
             // C++: const PrintRegionConfig &region_config = layerm.region().config();
             let region_config = region.region().config();
 
-            let extrusion_role = if surface.is_top() {
-                /// Fill.cpp:245-246
-                /// C++: role = erTopSolidInfill
-                ExtrusionRole::TopSolidInfill
-            } else if surface.is_bottom() {
-                /// Fill.cpp:247-248
-                /// C++: role = erBottomSurface
-                ExtrusionRole::BottomSurface
+            // Fill.cpp:201 — C++: bool is_bridge = layer.id() > 0 && surface.is_bridge();
+            let is_bridge = layer.id() > 0 && surface.is_bridge();
+
+            // Fill.cpp:237-242 — faithful role precedence:
+            //   is_bridge ? erBridgeInfill
+            //     : (is_solid ? (is_top ? erTopSolidInfill
+            //                   : (is_bottom ? erBottomSurface
+            //                     : (is_floating_vertical_shell ? erFloatingVerticalShell
+            //                       : erSolidInfill)))
+            //       : erInternalInfill)
+            let extrusion_role = if is_bridge {
+                ExtrusionRole::BridgeInfill
             } else if surface.is_solid() {
-                /// Fill.cpp:249-250
-                /// C++: role = erSolidInfill
-                ExtrusionRole::SolidInfill
+                if surface.is_top() {
+                    ExtrusionRole::TopSolidInfill
+                } else if surface.is_bottom() {
+                    ExtrusionRole::BottomSurface
+                } else if surface.is_floating_vertical_shell() {
+                    ExtrusionRole::FloatingVerticalShell
+                } else {
+                    ExtrusionRole::SolidInfill
+                }
             } else {
-                /// Fill.cpp:251-252
-                /// C++: role = erInternalInfill
                 ExtrusionRole::InternalInfill
             };
-
-            let is_bridge = surface.is_bridge();
 
             let extruder = match extrusion_role {
                 ExtrusionRole::InternalInfill => region_config.sparse_infill_filament,
