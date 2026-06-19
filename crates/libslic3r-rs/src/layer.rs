@@ -1694,7 +1694,10 @@ impl Layer {
 
     /// Generate fill patterns for all regions
     /// Fill.cpp:586-768
-    pub fn make_fills(&mut self) -> Result<()> {
+    pub fn make_fills(
+        &mut self,
+        lower_internal_areas: &[crate::geometry::ExPolygon],
+    ) -> Result<()> {
         // Fill.cpp:600
         // C++: const auto resolution = this->object()->print()->config().resolution.value;
         // Read up front through the layer's own print-config Arc (stamped by
@@ -1716,7 +1719,7 @@ impl Layer {
         //      set_outlook_range(lock_param);
         //      std::vector<SurfaceFill> surface_fills = group_fills(*this, lock_param);
         let mut lock_param = crate::fill::LockRegionParam::default();
-        let surface_fills = crate::fill::group_fills(self, &mut lock_param)?;
+        let surface_fills = crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?;
 
         // Fill.cpp:597-598
         // C++: const Slic3r::BoundingBox bbox = this->object()->bounding_box();

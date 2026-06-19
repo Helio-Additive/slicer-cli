@@ -1285,10 +1285,33 @@ impl PrintObject {
             // Iterate through all layers and generate fills
             // PrintObject.cpp:763-770
             // C++ uses tbb::parallel_for for parallelism, we use sequential for now
-            for layer in &mut self.layers {
+            for layer_idx in 0..self.layers.len() {
+                // BBS Fill.cpp:455-464 — gather the lower layer's stInternal /
+                // stInternalVoid fill-surface expolygons (the floating-vertical-shell
+                // detection in group_fills needs them). `group_fills` runs per-Layer
+                // and cannot reach a sibling Layer, so collect here while we still
+                // hold the whole `layers` slice, then hand the snapshot to make_fills.
+                let lower_internal_areas: Vec<crate::geometry::ExPolygon> = self.layers
+                    [layer_idx]
+                    .lower_layer_id
+                    .and_then(|lid| self.layers.get(lid))
+                    .map(|lower| {
+                        let mut areas: Vec<crate::geometry::ExPolygon> = Vec::new();
+                        for layerm in lower.regions() {
+                            for surface in layerm.fill_surfaces.filter_by_types(&[
+                                crate::surface::SurfaceType::Internal,
+                                crate::surface::SurfaceType::InternalVoid,
+                            ]) {
+                                areas.push(surface.expolygon.clone());
+                            }
+                        }
+                        areas
+                    })
+                    .unwrap_or_default();
+
                 // Call Layer::make_fills() on each layer
                 // PrintObject.cpp:768
-                layer.make_fills()?;
+                self.layers[layer_idx].make_fills(&lower_internal_areas)?;
             }
 
             // Mark step as complete

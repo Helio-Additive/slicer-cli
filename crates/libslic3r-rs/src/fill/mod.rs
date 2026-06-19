@@ -83,9 +83,17 @@ pub use fill_floating_concentric::{
     FloatingThickline, FloatingThicklines,
 };
 
+use crate::clipper_utils::{
+    clip_clipper_polygons_with_subject_bbox_expolygons, intersection_ex_expolygons_polygons,
+    offset_expolygon, OffsetJoinType,
+};
 use crate::extrusion_entity::ExtrusionRole;
+use crate::fill::fill::is_narrow_infill_area;
 use crate::flow::Flow;
-use crate::geometry::{ExPolygon, Point, Polygon, Polyline};
+use crate::geometry::{
+    get_extents_expoly, get_extents_polygons, ExPolygon, Point, Polygon, Polyline,
+};
+use crate::libslic3r::{scale, SCALED_EPSILON};
 use crate::surface::{Surface, SurfaceType};
 use crate::{Coord, CoordF, Result};
 use std::collections::BTreeSet;
@@ -490,6 +498,7 @@ impl SurfaceFill {
 /// C++: std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_param)
 pub fn group_fills(
     layer: &crate::layer::Layer,
+    lower_internal_areas: &[ExPolygon],
     _lock_param: &mut LockRegionParam,
 ) -> Result<Vec<SurfaceFill>> {
     // TOPDBG (diagnostics only, env-gated): Top state at the entry of the
@@ -722,6 +731,133 @@ pub fn group_fills(
                         fill.region_id_group.push(region_id);
                         // TODO: union fill.no_overlap_expolygons with region.fill_no_overlap_expolygons
                     }
+                }
+            }
+        }
+    }
+
+    // BBS: detect narrow internal solid infill area and use ipConcentricInternal pattern instead
+    // Fill.cpp:453-546. `lower_internal_areas` is the union of the lower layer's
+    // stInternal/stInternalVoid fill-surface expolygons, gathered by the caller
+    // (Fill.cpp:455-464) because `group_fills` cannot reach a sibling Layer here.
+    if layer.object().config().detect_narrow_internal_solid_infill {
+        let surface_fills_size = surface_fills.len();
+        for i in 0..surface_fills_size {
+            // Fill.cpp:467-468
+            if surface_fills[i].surface.surface_type != SurfaceType::InternalSolid {
+                continue;
+            }
+
+            // Fill.cpp:470-473
+            let expolygons_size = surface_fills[i].expolygons.len();
+            let mut narrow_expoly_idx: Vec<usize> = Vec::new();
+            let mut narrow_floating_expoly_idx: Vec<usize> = Vec::new();
+            // BBS: get the index list of narrow expolygon
+            // Fill.cpp:475-487
+            for j in 0..expolygons_size {
+                // Fill.cpp:476
+                let bbox = get_extents_expoly(&surface_fills[i].expolygons[j]);
+                // Fill.cpp:477 — bbox.inflated(scale_(2)); expand a little.
+                let clipped_internals = clip_clipper_polygons_with_subject_bbox_expolygons(
+                    lower_internal_areas,
+                    &bbox.expanded(scale(2.0)),
+                    false,
+                );
+                // Fill.cpp:478
+                let clipped_internal_bbox = get_extents_polygons(&clipped_internals);
+                // Fill.cpp:479-486
+                if is_narrow_infill_area(&surface_fills[i].expolygons[j]) {
+                    // Fill.cpp:480 — offset_ex(expoly, SCALED_EPSILON); the crate's
+                    // offset helpers take millimeters.
+                    if !clipped_internals.is_empty()
+                        && bbox.intersects(&clipped_internal_bbox)
+                        && !intersection_ex_expolygons_polygons(
+                            &offset_expolygon(
+                                &surface_fills[i].expolygons[j],
+                                SCALED_EPSILON / crate::SCALING_FACTOR,
+                                OffsetJoinType::Miter,
+                            ),
+                            &clipped_internals,
+                        )
+                        .is_empty()
+                    {
+                        narrow_floating_expoly_idx.push(j);
+                    } else {
+                        narrow_expoly_idx.push(j);
+                    }
+                }
+            }
+
+            // Fill.cpp:489-492
+            if narrow_expoly_idx.is_empty() && narrow_floating_expoly_idx.is_empty() {
+                // BBS: has no narrow expolygon
+                continue;
+            // Fill.cpp:493-497
+            } else if narrow_floating_expoly_idx.len() == expolygons_size {
+                surface_fills[i].params.pattern = InfillPattern::FloatingConcentric;
+                surface_fills[i].params.extrusion_role = ExtrusionRole::FloatingVerticalShell;
+                surface_fills[i].surface.surface_type = SurfaceType::FloatingVerticalShell;
+            // Fill.cpp:498-500 — ipConcentricInternal maps onto this crate's
+            // fill::InfillPattern::Concentric (see the config→fill mapping at
+            // mod.rs:268).
+            } else if narrow_expoly_idx.len() == expolygons_size {
+                surface_fills[i].params.pattern = InfillPattern::Concentric;
+            } else {
+                // BBS: some expolygons are narrow, spilit surface_fills[i] and rearrange the expolygons
+                // Fill.cpp:505-518
+                if !narrow_expoly_idx.is_empty() {
+                    let mut params = surface_fills[i].params.clone();
+                    params.pattern = InfillPattern::Concentric;
+                    let region_id_i = surface_fills[i].region_id;
+                    let thickness_i = surface_fills[i].surface.thickness;
+                    let region_id_group_i = surface_fills[i].region_id_group.clone();
+                    let no_overlap_i = surface_fills[i].no_overlap_expolygons.clone();
+                    surface_fills.push(SurfaceFill::new(params));
+                    let back_idx = surface_fills.len() - 1;
+                    surface_fills[back_idx].region_id = region_id_i;
+                    surface_fills[back_idx].surface.surface_type = SurfaceType::InternalSolid;
+                    surface_fills[back_idx].surface.thickness = thickness_i;
+                    surface_fills[back_idx].region_id_group = region_id_group_i;
+                    surface_fills[back_idx].no_overlap_expolygons = no_overlap_i;
+                    // Fill.cpp:514-517
+                    for &idx in &narrow_expoly_idx {
+                        let exp = std::mem::take(&mut surface_fills[i].expolygons[idx]);
+                        surface_fills[back_idx].expolygons.push(exp);
+                    }
+                }
+
+                // Fill.cpp:520-534
+                if !narrow_floating_expoly_idx.is_empty() {
+                    let mut params = surface_fills[i].params.clone();
+                    params.pattern = InfillPattern::FloatingConcentric;
+                    params.extrusion_role = ExtrusionRole::FloatingVerticalShell;
+                    let region_id_i = surface_fills[i].region_id;
+                    let thickness_i = surface_fills[i].surface.thickness;
+                    let region_id_group_i = surface_fills[i].region_id_group.clone();
+                    let no_overlap_i = surface_fills[i].no_overlap_expolygons.clone();
+                    surface_fills.push(SurfaceFill::new(params));
+                    let back_idx = surface_fills.len() - 1;
+                    surface_fills[back_idx].region_id = region_id_i;
+                    surface_fills[back_idx].surface.surface_type =
+                        SurfaceType::FloatingVerticalShell;
+                    surface_fills[back_idx].surface.thickness = thickness_i;
+                    surface_fills[back_idx].region_id_group = region_id_group_i;
+                    surface_fills[back_idx].no_overlap_expolygons = no_overlap_i;
+                    // Fill.cpp:530-533
+                    for &idx in &narrow_floating_expoly_idx {
+                        let exp = std::mem::take(&mut surface_fills[i].expolygons[idx]);
+                        surface_fills[back_idx].expolygons.push(exp);
+                    }
+                }
+
+                // Fill.cpp:536-538
+                let mut to_be_delete = narrow_floating_expoly_idx.clone();
+                to_be_delete.extend(narrow_expoly_idx.iter().cloned());
+                to_be_delete.sort_unstable();
+
+                // Fill.cpp:540-543
+                for j in (0..to_be_delete.len()).rev() {
+                    surface_fills[i].expolygons.remove(to_be_delete[j]);
                 }
             }
         }
