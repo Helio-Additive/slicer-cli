@@ -524,7 +524,13 @@ pub fn group_fills(
 
     /// Fill.cpp:169
     /// C++: std::vector<std::vector<const SurfaceFillParams*>> region_to_surface_params
-    let mut region_to_surface_params: Vec<Vec<Option<usize>>> =
+    /// C++ stores a pointer to the params held in the sorted `set_surface_params`,
+    /// then resolves it to a surface_fills index via `params->idx` (set after the
+    /// set is materialised into the sorted surface_fills vector). We cannot store a
+    /// raw index at insertion time because `set_surface_params` is a sorted
+    /// `BTreeSet` — inserting shifts later elements — so we keep the params *value*
+    /// here and resolve it to the final sorted index below.
+    let mut region_to_surface_params: Vec<Vec<Option<SurfaceFillParams>>> =
         vec![Vec::new(); layer.region_count()];
 
     /// Fill.cpp:170
@@ -688,26 +694,29 @@ pub fn group_fills(
             };
 
             // Fill.cpp:318-325
-            // Find or insert params in set
-            let params_idx =
-                if let Some(existing_idx) = set_surface_params.iter().position(|p| p == &params) {
-                    existing_idx
-                } else {
-                    let idx = set_surface_params.len();
-                    set_surface_params.insert(params);
-                    idx
-                };
-
-            region_to_surface_params[region_id][surface_idx] = Some(params_idx);
+            // C++: auto it_params = set_surface_params.find(params);
+            //      if (it_params == set_surface_params.end())
+            //          it_params = set_surface_params.insert(it_params, params);
+            //      region_to_surface_params[region_id][...] = &(*it_params);
+            // The `idx` field is excluded from SurfaceFillParams ordering, so the set
+            // dedups on the geometric/extrusion params only — matching C++.
+            set_surface_params.insert(params.clone());
+            region_to_surface_params[region_id][surface_idx] = Some(params);
         }
     }
 
     // Fill.cpp:327-330
-    // Create surface_fills from params
+    // Create surface_fills from params, stamping each params.idx with its final
+    // (sorted) position. `params_to_idx` lets the populate loop below resolve a
+    // stored params value to that position — the moral equivalent of C++'s
+    // `params->idx` pointer deref.
     surface_fills.reserve(set_surface_params.len());
+    let mut params_to_idx: std::collections::BTreeMap<SurfaceFillParams, usize> = Default::default();
     for params in set_surface_params {
         let mut params = params;
-        params.idx = surface_fills.len();
+        let idx = surface_fills.len();
+        params.idx = idx;
+        params_to_idx.insert(params.clone(), idx);
         surface_fills.push(SurfaceFill::new(params));
     }
 
@@ -721,8 +730,12 @@ pub fn group_fills(
                 continue;
             }
 
-            if let Some(Some(params_idx)) = region_to_surface_params[region_id].get(surface_idx) {
-                let fill = &mut surface_fills[*params_idx];
+            if let Some(Some(params)) = region_to_surface_params[region_id].get(surface_idx) {
+                let params_idx = match params_to_idx.get(params) {
+                    Some(&i) => i,
+                    None => continue,
+                };
+                let fill = &mut surface_fills[params_idx];
 
                 // Fill.cpp:338-356
                 if fill.region_id == usize::MAX {
