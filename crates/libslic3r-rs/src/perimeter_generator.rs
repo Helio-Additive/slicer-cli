@@ -734,12 +734,25 @@ impl PerimeterGenerator {
                     * (ext_perimeter_spacing / 2.0).max(perimeter_width / 2.0);
 
                 // PerimeterGenerator.cpp:1131-1136
+                // C++: BoundingBox last_box = get_extents(last);
                 // C++: Polygons upper_polygons_series_clipped =
                 // C++:     ClipperUtils::clip_clipper_polygons_with_subject_bbox(*this->upper_slices, last_box);
                 // C++: upper_polygons_series_clipped = offset(upper_polygons_series_clipped, min_width_top_surface);
-                // (the bbox clip is a performance optimization; the offset is what matters)
+                //
+                // The bbox clip is NOT just a perf optimization: because the offset is applied
+                // AFTER the clip, clipping `upper` to this island's `last` bbox first means the
+                // offset of the (truncated) upper edge does NOT bleed across `last`'s rim — so a
+                // thin top band survives `diff(last, upper)`. Growing the FULL upper (the prior
+                // Rust shortcut) covers `last` entirely → top_fills empty → rim Top/Bridge
+                // surfaces clipped away. (Pinned via C++-vs-Rust runtime dumps on Benchy L80.)
+                let last_box = crate::geometry::get_extents(&last);
+                let upper_clipped_polys = crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygons(
+                    upper,
+                    &last_box,
+                    false,
+                );
                 let upper_polygons_series_clipped =
-                    grow(upper, min_width_top_surface, OffsetJoinType::Miter);
+                    crate::clipper_utils::offset_polygons(&upper_clipped_polys, min_width_top_surface, OffsetJoinType::Miter);
 
                 // PerimeterGenerator.cpp:1139
                 // C++: fill_clip = offset_ex(last, -double(ext_perimeter_spacing));
