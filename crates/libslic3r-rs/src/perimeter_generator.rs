@@ -53,7 +53,13 @@ const MAX_PERIMETER_ITERATIONS: usize = 1000;
 /// `TOP_FILLS=0` forces the legacy divergent path, any other value forces the
 /// faithful path; unset uses the compiled default.
 fn top_fills_gate() -> bool {
-    const DEFAULT_ON: bool = false;
+    // Faithful path is now the default: it matches C++ where
+    // top_one_wall_type == TopOneWallType::Alltop activates the only_one_wall_top
+    // top_fills handling (PerimeterGenerator.cpp:1116-1183), which the
+    // surface-classification pipeline relies on so rim Top surfaces land inside
+    // fill_expolygons and survive slices_to_fill_surfaces_clipped. `TOP_FILLS=0`
+    // still forces the legacy divergent path.
+    const DEFAULT_ON: bool = true;
     match std::env::var("TOP_FILLS") {
         Ok(v) => v != "0",
         Err(_) => DEFAULT_ON,
