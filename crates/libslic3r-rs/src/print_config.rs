@@ -2987,7 +2987,13 @@ impl Default for PrintObjectConfig {
             // Flow
             initial_layer_flow_ratio: 1.0,
             top_solid_infill_flow_ratio: 1.0,
-            print_flow_ratio: 0.98, // BambuStudio H2D+PLA Basic reference
+            // PrintConfig.cpp:2068 — print_flow_ratio default is 1.0 (ConfigOptionFloat(1)).
+            // The filament-level flow ratio (filament_flow_ratio, 0.98) is applied
+            // separately via Extruder::e_per_mm3; print_flow_ratio is an additional
+            // object-level multiplier that defaults to 1.0. Hard-coding 0.98 here
+            // double-applied the filament flow ratio (0.98^2), under-extruding all
+            // features by ~2% relative to C++.
+            print_flow_ratio: 1.0,
             // Seam
             seam_position: SeamPosition::Aligned,
             // PrintConfig.cpp:4655 — ConfigOptionBool(false)

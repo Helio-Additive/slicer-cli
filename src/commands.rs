@@ -211,6 +211,12 @@ pub fn compare(args: CompareArgs) -> Result<u8, String> {
     let rust_gcode = std::fs::read(&rust_out)
         .map_err(|e| format!("read rust gcode {}: {e}", rust_out.display()))?;
 
+    if let Ok(keep) = std::env::var("COMPARE_KEEP_DIR") {
+        let _ = std::fs::create_dir_all(&keep);
+        let _ = std::fs::write(std::path::Path::new(&keep).join("native.gcode"), &native_gcode);
+        let _ = std::fs::write(std::path::Path::new(&keep).join("rust.gcode"), &rust_gcode);
+    }
+
     let report = diff_gcode(&native_gcode, &rust_gcode);
     print!("{report}");
 
