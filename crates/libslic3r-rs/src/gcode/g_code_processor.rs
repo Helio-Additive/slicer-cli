@@ -2265,22 +2265,59 @@ impl GCodeProcessorResult {
 }
 
 // ===========================================================================
+// MachineEnvelopeConfig — PrintConfig.hpp machine_max_* / machine_min_*
+// ===========================================================================
+/// Faithful (scalar) model of `MachineEnvelopeConfig` (the machine motion
+/// limits read by `TimeProcessor`). In C++ each field is a per-mode array
+/// (`ConfigOptionFloatsNullable`) indexed `extruder_id*2 + mode`; `get_option_value`
+/// falls back to `.back()` when the index is out of range. For BambuStudio the
+/// arrays carry identical values per mode/extruder, so a single scalar per axis
+/// is an exact match for `get_option_value` on any index.
+///
+/// `*_present` flags model whether the C++ option array is non-empty: an empty
+/// array makes the getter fall back (0.0 / passthrough feedrate). When unset,
+/// the processor reproduces the legacy "no machine limits" behaviour.
+#[derive(Debug, Clone, Default)]
+pub struct MachineLimits {
+    pub present: bool,
+    pub max_acceleration_x: f32,
+    pub max_acceleration_y: f32,
+    pub max_acceleration_z: f32,
+    pub max_acceleration_e: f32,
+    pub max_acceleration_extruding: f32,
+    pub max_acceleration_retracting: f32,
+    pub max_acceleration_travel: f32,
+    pub max_speed_x: f32,
+    pub max_speed_y: f32,
+    pub max_speed_z: f32,
+    pub max_speed_e: f32,
+    pub max_jerk_x: f32,
+    pub max_jerk_y: f32,
+    pub max_jerk_z: f32,
+    pub max_jerk_e: f32,
+    pub min_extruding_rate: f32,
+    pub min_extruding_rate_present: bool,
+    pub min_travel_rate: f32,
+    pub min_travel_rate_present: bool,
+}
+
+// ===========================================================================
 // GCodeProcessor::TimeProcessor — hpp:810-871, cpp:522-537
 // ===========================================================================
 /// GCodeProcessor.hpp:810-871  struct TimeProcessor
 ///
-/// Only the time-relevant members are modeled. `MachineEnvelopeConfig`,
-/// `post_process`, `handle_offsets_*` and the pre-cooling machinery are blocked
-/// (unported deps). See BLOCKED notes.
+/// Only the time-relevant members are modeled. `post_process`,
+/// `handle_offsets_*` and the pre-cooling machinery are blocked (unported deps).
+/// See BLOCKED notes.
 #[derive(Debug, Clone)]
 pub struct TimeProcessor {
     pub extruder_unloaded: bool,
     pub machine_envelope_processing_enabled: bool,
-    // BLOCKED(config): MachineEnvelopeConfig machine_limits — unthreaded.
-    // The C++ machine_limits arrays default to empty (`MachineEnvelopeConfig()`),
-    // so all getters that read them fall back (minimum_*: return feedrate;
-    // get_axis_max_*: return 0.0 → no clamping). We model that empty default by
-    // simply not storing them and having the getters return the fallbacks.
+    /// MachineEnvelopeConfig machine_limits (GCodeProcessor.hpp:818). Populated by
+    /// `GCodeProcessor::apply_config` (cpp:1964-1995) when the gcode flavor is
+    /// Marlin/Klipper; otherwise stays at the empty default so the getters fall
+    /// back exactly like the C++ `get_option_value` on empty arrays.
+    pub machine_limits: MachineLimits,
     pub filament_load_times: f32,
     pub filament_unload_times: f32,
     pub extruder_change_times: f32,
@@ -2297,7 +2334,8 @@ impl TimeProcessor {
     pub fn reset(&mut self) {
         self.extruder_unloaded = true;
         self.machine_envelope_processing_enabled = false;
-        // machine_limits = MachineEnvelopeConfig(); // BLOCKED(config)
+        // GCodeProcessor.cpp:526  machine_limits = MachineEnvelopeConfig();
+        self.machine_limits = MachineLimits::default();
         self.filament_load_times = 0.0;
         self.filament_unload_times = 0.0;
         self.extruder_change_times = 0.0;
@@ -2315,6 +2353,7 @@ impl Default for TimeProcessor {
         let mut tp = TimeProcessor {
             extruder_unloaded: true,
             machine_envelope_processing_enabled: false,
+            machine_limits: MachineLimits::default(),
             filament_load_times: 0.0,
             filament_unload_times: 0.0,
             extruder_change_times: 0.0,
