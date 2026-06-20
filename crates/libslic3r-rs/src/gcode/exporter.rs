@@ -5,6 +5,7 @@
 //!
 //! C++ reference: GCode.cpp (helper methods throughout)
 
+use crate::arc_fitter::{ArcFitter, EMovePathType, PathFittingData};
 use crate::extrusion_entity::{
     ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionPath, ExtrusionRole,
 };
@@ -589,11 +590,14 @@ pub fn extrude_path_with_arc_fitting(
     let spiral_mode = writer.spiral_mode();
     let enable_arc_fitting = writer.arc_fitting_enabled();
 
-    // C++ feeds `scaled<double>(resolution)` to MultiPoint::_douglas_peucker,
-    // which compares against the *scaled* tolerance. This crate's
-    // `Polyline::douglas_peucker` (geometry::simplify::douglas_peucker, line
-    // 149) instead scales its argument internally, so it expects the tolerance
-    // in **mm** (unscaled). We therefore pass the unscaled resolution.
+    // Both the plain Douglas-Peucker (geometry::simplify::douglas_peucker) and
+    // the arc-fitter (arc_fitter::do_arc_fitting_and_simplify) need a tolerance,
+    // but in *different units*:
+    //   - geometry::simplify::douglas_peucker scales its argument internally, so
+    //     it expects the tolerance in **mm** (unscaled).
+    //   - arc_fitter::do_arc_fitting_and_simplify drives multi_point::douglas_peucker
+    //     which compares against the raw *scaled* tolerance, exactly as C++
+    //     feeds `scaled<double>(resolution)` (LayerRegion.cpp:791,798).
     let resolution_mm = writer.resolution();
 
     // SPARSE_INFILL_RESOLUTION = 0.04mm (libslic3r.h:65). Internal sparse infill
@@ -603,16 +607,6 @@ pub fn extrude_path_with_arc_fitting(
     // Per-role simplification tolerance, mirroring LayerRegion::simplify_path
     // (LayerRegion.cpp:793-801). Internal sparse infill uses the coarser
     // SCALED_SPARSE_INFILL_RESOLUTION; everything else uses scaled_resolution.
-    //
-    // NOTE: the C++ enable_arc_fitting branch calls simplify_by_fitting_arc()
-    // (arc fit + DP of straight runs) and the else branch calls simplify()
-    // (plain DP). The arc-fitter module in this crate currently assumes a
-    // 1e-6 SCALING_FACTOR whereas the live extrusion Points use the 1e-5
-    // crate scaling (10x mismatch), so emitting G2/G3 from it here would be
-    // geometrically wrong. We therefore faithfully apply the Douglas-Peucker
-    // simplification (the simplify() path) at the matching tolerance, which
-    // is the dominant point-count reduction in both branches, and emit linear
-    // moves as in GCode::_extrude's G1 path (GCode.cpp:6676-6686).
     let tolerance_mm = if path.role == ExtrusionRole::InternalInfill {
         SPARSE_INFILL_RESOLUTION_MM
     } else {
@@ -622,31 +616,96 @@ pub fn extrude_path_with_arc_fitting(
     // Working copy of the scaled points.
     let mut work_points: Vec<Point> = points.to_vec();
 
-    // Polyline::simplify -> MultiPoint::_douglas_peucker (Polyline.cpp:146-150).
-    let _ = (enable_arc_fitting, spiral_mode);
-    if work_points.len() > 2 {
-        let simplified =
-            Polyline::douglas_peucker(&Polyline::from_points(work_points.clone()), tolerance_mm);
-        work_points = simplified.points;
-    }
+    if enable_arc_fitting && !spiral_mode {
+        // -------------------------------------------------------------------
+        // Arc-fitting path: LayerRegion::simplify_path's
+        // `simplify_by_fitting_arc(scaled_resolution)` (LayerRegion.cpp:796-798)
+        // followed by GCode::_extrude's arc emission (GCode.cpp:6700-6745).
+        // -------------------------------------------------------------------
+        // arc_fitter operates on *scaled* points and wants a *scaled* tolerance,
+        // matching `scaled<double>(resolution)` in C++.
+        let scaled_tolerance = scale(tolerance_mm) as f64;
 
-    // GCode.cpp:6676-6686: iterate polyline.lines(), skip segments < EPSILON.
-    // C++: for (const Line &line : path.polyline.lines()) {
-    // C++:     const double line_length = line.length() * SCALING_FACTOR;
-    // C++:     if (line_length < EPSILON) continue;
-    // C++:     gcode += m_writer.extrude_to_xy(point_to_gcode(line.b), e_per_mm * line_length, ...);
-    // C++: }
-    for i in 1..work_points.len() {
-        let from = work_points[i - 1];
-        let to = work_points[i];
+        let mut fitting_result: Vec<PathFittingData> = Vec::new();
+        // do_arc_fitting_and_simplify mutates work_points in place (it runs the
+        // straight-run Douglas-Peucker) and populates fitting_result.
+        let _ = ArcFitter::do_arc_fitting_and_simplify(
+            &mut work_points,
+            &mut fitting_result,
+            scaled_tolerance,
+        );
 
-        // line.length() in mm (scaled -> mm via unscale).
-        let line_length = unscale(from.distance_to_f64(to) as i64);
-        if line_length < EPSILON {
-            continue;
+        // GCode.cpp:6703-6744: iterate fitting_result, emit G1/G2/G3.
+        for seg in &fitting_result {
+            match seg.path_type {
+                EMovePathType::LinearMove => {
+                    // GCode.cpp:6705-6720
+                    let start_index = seg.start_point_index;
+                    let end_index = seg.end_point_index;
+                    for point_index in (start_index + 1)..(end_index + 1) {
+                        let from = work_points[point_index - 1];
+                        let to = work_points[point_index];
+                        // line.length() in mm (scaled -> mm via unscale).
+                        let line_length = unscale(from.distance_to_f64(to) as i64);
+                        if line_length < EPSILON {
+                            continue;
+                        }
+                        let de = line_length * e_per_mm;
+                        writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+                    }
+                }
+                EMovePathType::ArcMoveCw | EMovePathType::ArcMoveCcw => {
+                    // GCode.cpp:6722-6737
+                    let arc = &seg.arc_data;
+                    // arc_length = arc.length * SCALING_FACTOR (scaled length -> mm).
+                    let arc_length = arc.length * crate::libslic3r::SCALING_FACTOR;
+                    if arc_length < EPSILON {
+                        continue;
+                    }
+                    // center_offset = point_to_gcode(center) - point_to_gcode(start).
+                    // Origin/extruder offset cancels in the difference, so plain
+                    // unscale matches the linear path's coordinate convention.
+                    // Unscale each endpoint then subtract, mirroring C++'s ordering.
+                    let i = unscale(arc.circle.center.x()) - unscale(arc.start_point.x());
+                    let j = unscale(arc.circle.center.y()) - unscale(arc.start_point.y());
+                    let de = arc_length * e_per_mm;
+                    writer.extrude_arc(
+                        unscale(arc.end_point.x()),
+                        unscale(arc.end_point.y()),
+                        i,
+                        j,
+                        de,
+                        arc.direction,
+                        None,
+                    );
+                }
+                EMovePathType::NoopMove => {}
+            }
         }
-        let de = line_length * e_per_mm;
-        writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+    } else {
+        // Plain Douglas-Peucker + linear emission (GCode.cpp:6670-6686 G1 path).
+        // Polyline::simplify -> MultiPoint::_douglas_peucker (Polyline.cpp:146-150).
+        if work_points.len() > 2 {
+            let simplified = Polyline::douglas_peucker(
+                &Polyline::from_points(work_points.clone()),
+                tolerance_mm,
+            );
+            work_points = simplified.points;
+        }
+
+        // GCode.cpp:6676-6686: iterate polyline.lines(), skip segments < EPSILON.
+        for i in 1..work_points.len() {
+            let from = work_points[i - 1];
+            let to = work_points[i];
+
+            // line.length() in mm (scaled -> mm via unscale).
+            let line_length = unscale(from.distance_to_f64(to) as i64);
+            if line_length < EPSILON {
+                continue;
+            }
+            let de = line_length * e_per_mm;
+            writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+        }
     }
 
     // Emit cooling end marker after extrusion

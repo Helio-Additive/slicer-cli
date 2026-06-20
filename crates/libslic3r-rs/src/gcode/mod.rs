@@ -220,9 +220,18 @@ impl GCodeCommand {
                 cmd
             }
             GCodeCommand::ArcCW { x, y, i, j, e, f } => {
-                let mut cmd = format!("G2 X{:.3} Y{:.3} I{:.3} J{:.3}", x, y, i, j);
+                // GCodeG2G3Formatter emits X Y I J E (F) via emit_axis, which strips
+                // trailing zeros and the leading zero. Use format_gcode_value to match
+                // byte-for-byte (e.g. I-10, J0, X.778) instead of fixed {:.3}.
+                let mut cmd = format!(
+                    "G2 X{} Y{} I{} J{}",
+                    writer::format_gcode_value(*x, 3),
+                    writer::format_gcode_value(*y, 3),
+                    writer::format_gcode_value(*i, 3),
+                    writer::format_gcode_value(*j, 3)
+                );
                 if let Some(v) = e {
-                    cmd.push_str(&format!(" E{:.5}", v));
+                    cmd.push_str(&format!(" E{}", writer::format_gcode_value(*v, 5)));
                 }
                 if let Some(v) = f {
                     cmd.push_str(&format!(" F{:.0}", v));
@@ -230,9 +239,15 @@ impl GCodeCommand {
                 cmd
             }
             GCodeCommand::ArcCCW { x, y, i, j, e, f } => {
-                let mut cmd = format!("G3 X{:.3} Y{:.3} I{:.3} J{:.3}", x, y, i, j);
+                let mut cmd = format!(
+                    "G3 X{} Y{} I{} J{}",
+                    writer::format_gcode_value(*x, 3),
+                    writer::format_gcode_value(*y, 3),
+                    writer::format_gcode_value(*i, 3),
+                    writer::format_gcode_value(*j, 3)
+                );
                 if let Some(v) = e {
-                    cmd.push_str(&format!(" E{:.5}", v));
+                    cmd.push_str(&format!(" E{}", writer::format_gcode_value(*v, 5)));
                 }
                 if let Some(v) = f {
                     cmd.push_str(&format!(" F{:.0}", v));

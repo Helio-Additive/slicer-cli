@@ -859,8 +859,10 @@ impl GCodeWriter {
             self.config.print_speed * 60.0
         });
 
-        // Track statistics
+        // Track statistics. Mirror extrude_to so arc moves contribute to the
+        // reported total filament length (generator.rs reads filament_length_mm).
         self.stats.extrusion_distance_mm += de.abs();
+        self.stats.filament_length_mm += de.abs();
 
         // Calculate arc length for travel distance tracking
         let radius = (i * i + j * j).sqrt();
@@ -1926,8 +1928,9 @@ mod tests {
 
         let gcode = writer.gcode();
         assert!(gcode.content().contains("G2"));
-        assert!(gcode.content().contains("I-10.000"));
-        assert!(gcode.content().contains("J0.000"));
+        // emit_axis strips trailing zeros / leading zero: I-10.000 -> I-10, J0.000 -> J0.
+        assert!(gcode.content().contains("I-10 "));
+        assert!(gcode.content().contains("J0 "));
     }
 
     #[test]
