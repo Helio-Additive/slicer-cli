@@ -258,88 +258,19 @@ impl Slicer {
         // TriangleMeshSlicer.cpp:128
         callback(1.0);
 
-        // Classify surface types by diffing each layer against neighbours.
-        Self::detect_surfaces_type(&mut layers);
+        // Faithful to C++ PrintObjectSlice: slicing leaves every region's slices as a
+        // single clean union'd SurfaceCollection marked stInternal
+        // (PrintObjectSlice.cpp:738/965/1072/1199 — slices.set(union_ex(...), stInternal)).
+        // Surface-type classification is a SEPARATE step run later from prepare_infill
+        // (C++ PrintObject::detect_surfaces_type, PrintObject.cpp:644/1454; the Rust
+        // equivalent lives in print_object.rs::detect_surfaces_type). Running a
+        // diff-based detector here fragmented each contiguous slice into a main piece
+        // plus dozens of micro-slivers, which the per-surface perimeter generator then
+        // eroded away — shrinking the innermost `last` region and killing Top/Bridge
+        // surface survival. So do NOT classify here.
 
         // TriangleMeshSlicer.cpp:129
         Ok(layers)
-    }
-
-    fn detect_surfaces_type(layers: &mut [Layer]) {
-        use crate::clipper_utils::{difference, opening_ex};
-        use crate::surface::{Surface, SurfaceType};
-
-        let num_layers = layers.len();
-        if num_layers == 0 {
-            return;
-        }
-
-        for layer in layers.iter_mut() {
-            layer.make_slices();
-        }
-
-        let all_lslices: Vec<ExPolygons> = layers.iter().map(|l| l.lslices.clone()).collect();
-
-        for idx_layer in 0..num_layers {
-            let num_regions = layers[idx_layer].regions().len();
-            for region_idx in 0..num_regions {
-                let current_slices: Vec<ExPolygon> = layers[idx_layer].regions()[region_idx]
-                    .slices
-                    .surfaces
-                    .iter()
-                    .map(|s| s.expolygon.clone())
-                    .collect();
-
-                if current_slices.is_empty() {
-                    continue;
-                }
-
-                let offset = 0.045_f64;
-
-                let top: ExPolygons = if idx_layer + 1 < num_layers {
-                    let raw_top = difference(&current_slices, &all_lslices[idx_layer + 1]);
-                    opening_ex(&raw_top, offset)
-                } else {
-                    current_slices.clone()
-                };
-
-                let bottom: ExPolygons = if idx_layer > 0 {
-                    let raw_bottom = difference(&current_slices, &all_lslices[idx_layer - 1]);
-                    opening_ex(&raw_bottom, offset)
-                } else {
-                    current_slices.clone()
-                };
-
-                let bottom_type = if idx_layer > 0 {
-                    SurfaceType::BottomBridge
-                } else {
-                    SurfaceType::Bottom
-                };
-
-                let top = if !top.is_empty() && !bottom.is_empty() {
-                    difference(&top, &bottom)
-                } else {
-                    top
-                };
-
-                let mut topbottom = top.clone();
-                topbottom.extend(bottom.clone());
-                let internal = difference(&current_slices, &topbottom);
-
-                let mut new_surfaces: Vec<Surface> = Vec::new();
-                for ep in &internal {
-                    new_surfaces.push(Surface::new(SurfaceType::Internal, ep.clone()));
-                }
-                for ep in &top {
-                    new_surfaces.push(Surface::new(SurfaceType::Top, ep.clone()));
-                }
-                for ep in &bottom {
-                    new_surfaces.push(Surface::new(bottom_type, ep.clone()));
-                }
-
-                layers[idx_layer].regions_mut()[region_idx].slices.surfaces = new_surfaces;
-            }
-        }
     }
 
     /// Slice the mesh at a single Z height, returning ExPolygons.
