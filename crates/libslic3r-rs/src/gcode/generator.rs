@@ -253,11 +253,11 @@ pub struct GCodeHeader {
     /// Software name and version.
     pub software_version: String,
 
-    /// Model printing time (formatted string, e.g., "33m 34s").
-    pub model_print_time: String,
-
-    /// Total estimated time (formatted string).
-    pub total_estimated_time: String,
+    /// Accel-aware estimated printing time for the "normal" time mode,
+    /// formatted via `utils::get_time_dhms` (e.g. "43m 0s"). Computed by running
+    /// the faithful `GCodeProcessor` over the assembled body; mirrors the C++
+    /// `; estimated printing time (normal mode) = ...` header line.
+    pub estimated_print_time: String,
 
     /// Statistics from the slicing process.
     pub stats: GCodeStats,
@@ -280,34 +280,32 @@ impl GCodeHeader {
         config: PrintConfig,
         raw_settings: Option<serde_json::Value>,
     ) -> Self {
-        let model_print_time = Self::format_time(stats.print_time_seconds);
-        let total_estimated_time = Self::format_time(stats.print_time_seconds * 1.16); // ~16% overhead
+        // Fall back to the crude (acceleration-free) stats time when no
+        // accel-aware estimate has been computed yet (e.g. early header builds).
+        let est = stats.print_time_seconds as f32;
+        Self::with_estimated_time(stats, config, raw_settings, est)
+    }
+
+    /// Build a header with an explicit accel-aware estimated print time (s),
+    /// computed by running the faithful `GCodeProcessor` over the body.
+    pub fn with_estimated_time(
+        stats: GCodeStats,
+        config: PrintConfig,
+        raw_settings: Option<serde_json::Value>,
+        estimated_print_time_seconds: f32,
+    ) -> Self {
+        // GCode.cpp / GCodeProcessor: `; estimated printing time (normal mode) = `
+        // is formatted with Utils get_time_dhms.
+        let estimated_print_time = crate::utils::get_time_dhms(estimated_print_time_seconds);
 
         Self {
             // Match the BambuStudio version whose output we replicate byte-for-byte
             // (golden 3DBenchy_H2D_PLA.gcode header: "; BambuStudio 02.06.00.51").
             software_version: "BambuStudio 02.06.00.51".to_string(),
-            model_print_time,
-            total_estimated_time,
+            estimated_print_time,
             stats,
             config,
             raw_settings,
-        }
-    }
-
-    /// Format seconds into "Xh Ym Zs" format.
-    fn format_time(seconds: f64) -> String {
-        let total_secs = seconds as u64;
-        let hours = total_secs / 3600;
-        let minutes = (total_secs % 3600) / 60;
-        let secs = total_secs % 60;
-
-        if hours > 0 {
-            format!("{}h {}m {}s", hours, minutes, secs)
-        } else if minutes > 0 {
-            format!("{}m {}s", minutes, secs)
-        } else {
-            format!("{}s", secs)
         }
     }
 
@@ -318,9 +316,11 @@ impl GCodeHeader {
 
         header.push_str("; HEADER_BLOCK_START\n");
         header.push_str(&format!("; {}\n", self.software_version));
+        // Native: `; estimated printing time (normal mode) = 43m 0s`
+        // (GCode.cpp emits the accel-aware normal-mode time via get_time_dhms).
         header.push_str(&format!(
-            "; model printing time: {}; total estimated time: {}\n",
-            self.model_print_time, self.total_estimated_time
+            "; estimated printing time (normal mode) = {}\n",
+            self.estimated_print_time
         ));
         header.push_str(&format!(
             "; total layer number: {}\n",

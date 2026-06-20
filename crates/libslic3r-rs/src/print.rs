@@ -786,55 +786,58 @@ impl Print {
             }
         }
 
-        // Build the complete header (HEADER_BLOCK + CONFIG_BLOCK + EXECUTABLE_BLOCK)
-        let header =
-            GCodeHeader::with_raw_settings(stats, self.config.clone(), raw_settings_with_bbox);
-        let header_str = header.generate_complete_header();
-
-        // Write to file: header first, then layer G-code, then end gcode
-        let mut file = std::fs::File::create(output_path)?;
-        file.write_all(header_str.as_bytes())?;
-        file.write_all(layer_gcode.content().as_bytes())?;
+        // Assemble the full G-code BODY (everything after the HEADER_BLOCK's time
+        // line) into a buffer. The acceleration-aware print time is computed by
+        // running the faithful GCodeProcessor over the whole file, so we must
+        // build the body before we can produce a final header. We first build a
+        // provisional header (crude time) to get the byte-identical body that the
+        // GCodeProcessor will see, run the processor, then rebuild the header with
+        // the accel-aware "; estimated printing time (normal mode) = ..." value.
+        let mut body = Vec::new();
+        body.extend_from_slice(layer_gcode.content().as_bytes());
 
         // Machine end G-code (before EXECUTABLE_BLOCK_END, matching reference order)
         if let Some(ref settings) = self.raw_settings {
-            file.write_all(b"; MACHINE_END_GCODE_START\n")?;
+            body.extend_from_slice(b"; MACHINE_END_GCODE_START\n");
             // Filament end gcode
             if let Some(filament_end) = settings.get("filament_end_gcode").and_then(|v| v.as_str())
             {
                 let processed =
                     crate::gcode::process_gcode_template(filament_end, settings, &self.config);
                 if !processed.trim().is_empty() {
-                    file.write_all(b"; filament end gcode \n")?;
-                    file.write_all(processed.as_bytes())?;
+                    body.extend_from_slice(b"; filament end gcode \n");
+                    body.extend_from_slice(processed.as_bytes());
                 }
             }
             // Machine end gcode
             if let Some(end_gcode) = settings.get("machine_end_gcode").and_then(|v| v.as_str()) {
                 let processed =
                     crate::gcode::process_gcode_template(end_gcode, settings, &self.config);
-                file.write_all(processed.as_bytes())?;
+                body.extend_from_slice(processed.as_bytes());
             }
         }
 
         // Final progress and block end marker (matching reference order)
-        file.write_all(b"M73 P100 R0\n")?;
-        file.write_all(b"; EXECUTABLE_BLOCK_END\n")?;
+        body.extend_from_slice(b"M73 P100 R0\n");
+        body.extend_from_slice(b"; EXECUTABLE_BLOCK_END\n");
 
-        // Flush and close file before post-processing
-        drop(file);
-
-        // Post-process: run GCodeProcessor to compute print time and filament usage
-        {
+        // Run the faithful GCodeProcessor over (provisional header + body) to obtain
+        // the acceleration-aware normal-mode print time and filament usage.
+        let estimated_print_time_seconds = {
             use crate::gcode::g_code_processor::GCodeProcessor;
 
-            let gcode_content = std::fs::read_to_string(output_path).map_err(|e| {
-                Error::IO(format!("Failed to read G-code for post-processing: {}", e))
-            })?;
-            let mut processor = GCodeProcessor::new();
-            processor.process_gcode(&gcode_content);
+            let provisional_header = GCodeHeader::with_raw_settings(
+                stats.clone(),
+                self.config.clone(),
+                raw_settings_with_bbox.clone(),
+            );
+            let mut full_gcode = provisional_header.generate_complete_header();
+            full_gcode.push_str(&String::from_utf8_lossy(&body));
 
-            // Log metadata (print time and filament usage are now available via processor.result)
+            let mut processor = GCodeProcessor::new();
+            processor.apply_config(&self.config);
+            processor.process_gcode(&full_gcode);
+
             let result = processor.result();
             if result.print_time > 0.0 {
                 self.set_status(
@@ -845,7 +848,23 @@ impl Print {
                     ),
                 );
             }
-        }
+            result.print_time
+        };
+
+        // Build the final header with the accel-aware estimated print time.
+        let header = GCodeHeader::with_estimated_time(
+            stats,
+            self.config.clone(),
+            raw_settings_with_bbox,
+            estimated_print_time_seconds,
+        );
+        let header_str = header.generate_complete_header();
+
+        // Write to file: final header first, then the assembled body.
+        let mut file = std::fs::File::create(output_path)?;
+        file.write_all(header_str.as_bytes())?;
+        file.write_all(&body)?;
+        drop(file);
 
         Ok(())
     }

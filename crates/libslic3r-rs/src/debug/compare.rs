@@ -1523,13 +1523,12 @@ impl ExactComparisonResult {
 fn skip_line_in_comparison(line: &str) -> bool {
     let line = line.trim();
 
+    // The accel-aware print-time header line
+    //   `; estimated printing time (normal mode) = 43m 0s`
+    // is now produced by the faithful GCodeProcessor and is expected to match
+    // the native value byte-for-byte, so it is NOT skipped.
+
     // Skip filament stats that will differ
-    if line.starts_with("; model printing time:") {
-        return true;
-    }
-    if line.starts_with("; total estimated time:") {
-        return true;
-    }
     if line.starts_with("; total filament length") {
         return true;
     }
