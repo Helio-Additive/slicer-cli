@@ -556,8 +556,10 @@ impl LayerRegion {
             // PerimeterGenerator.cpp:1329-1330 (INSET_OVERLAP_TOLERANCE = 0.45)
             let min = 0.2 * perimeter_width * (1.0 - 0.45);
             let max = 2.0 * perimeter_spacing;
-            // ClipperSafetyOffset = 10 scaled units = 1e-5 mm
-            const CLIPPER_SAFETY_OFFSET: f64 = 0.00001;
+            // ClipperUtils.hpp:29 — ClipperSafetyOffset = 10.f scaled units; with
+            // SCALING_FACTOR = 1e-5 that is 10 * 1e-5 = 1e-4 mm (clipper_utils operates
+            // in mm). The collection side (perimeter_generator.rs) already uses 0.0001.
+            const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
 
             // PerimeterGenerator.cpp:1331-1334 — keep only the band wider than `min`
             // (opening by min/2) and narrower than `max` (subtract the max-opening).

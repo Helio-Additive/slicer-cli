@@ -1109,7 +1109,11 @@ pub(crate) fn convert_thin_walls_to_extrusion_paths(
 
     /// VariableWidth.cpp:217
     /// C++: const float tolerance = float(scale_(0.05));
-    let tolerance = (0.05 * SCALING_FACTOR as f64) as i64;
+    /// C++ ThickPolyline.width is in SCALED units, so it uses scale_(0.05). The crate's
+    /// ThickPolyline.widths are stored in MM (see geometry/medial_axis.rs:367, which
+    /// unscales each width before `tp.push`). The width-delta threshold is therefore
+    /// expressed directly in mm here (0.05 mm), NOT scaled.
+    let tolerance: f64 = 0.05;
 
     /// VariableWidth.cpp:218-228
     /// C++: for (const ThickPolyline& p : polylines) {
@@ -1127,7 +1131,7 @@ fn thick_polyline_to_extrusion_paths(
     thick_polyline: &ThickPolyline,
     role: crate::extrusion_entity::ExtrusionRole,
     flow: &Flow,
-    tolerance: i64,
+    tolerance: f64,
 ) -> Vec<crate::extrusion_entity::ExtrusionPath> {
     use crate::extrusion_entity::ExtrusionPath;
     use crate::geometry::ThickLine;
@@ -1172,7 +1176,7 @@ fn thick_polyline_to_extrusion_paths(
 
         /// VariableWidth.cpp:123
         /// C++: if (thickness_delta > tolerance)
-        if thickness_delta > tolerance as f64 {
+        if thickness_delta > tolerance {
             // VariableWidth.cpp:124-142
             // C++: 1 generate path from start_index to i (not included)
             if start_index != i as usize {
@@ -1189,8 +1193,13 @@ fn thick_polyline_to_extrusion_paths(
                 path.polyline.points.push(lines[i as usize].a);
 
                 if length > SCALED_EPSILON {
-                    let w = sum / length;
-                    let w_mm = w / SCALING_FACTOR as f64;
+                    // VariableWidth.cpp:135-136 — w = sum/length; flow.with_width(unscale(w) + ...).
+                    // C++ widths are SCALED so it unscales `w`. Here the crate's ThickPolyline
+                    // widths are already in MM (geometry/medial_axis.rs:367), and `length` is the
+                    // scaled segment length which cancels in `sum/length`, so `w` is ALREADY mm.
+                    // Re-dividing by SCALING_FACTOR (the prior bug) collapsed widths to ~0,
+                    // making gap-fill extrude ~100x too little.
+                    let w_mm = sum / length;
                     let new_width = w_mm + flow.height() * (1.0 - 0.25 * PI);
                     if let Ok(new_flow) = flow.with_width(new_width) {
                         path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
@@ -1209,9 +1218,9 @@ fn thick_polyline_to_extrusion_paths(
             // VariableWidth.cpp:148-182
             // C++: 2 handle the i-th segment — subdivide if internal width delta is large.
             thickness_delta = (line.a_width - line.b_width).abs();
-            if thickness_delta > tolerance as f64 {
+            if thickness_delta > tolerance {
                 // C++: segments = (unsigned int)ceil(thickness_delta / tolerance);
-                let segments = (thickness_delta / tolerance as f64).ceil() as usize;
+                let segments = (thickness_delta / tolerance).ceil() as usize;
                 let seg_len = line_len / segments as f64;
 
                 let mut pp: Vec<Point> = Vec::new();
@@ -1282,8 +1291,9 @@ fn thick_polyline_to_extrusion_paths(
         path.polyline.points.push(lines[final_size - 1].b);
 
         if length > SCALED_EPSILON {
-            let w = sum / length;
-            let w_mm = w / SCALING_FACTOR as f64;
+            // VariableWidth.cpp:202-203 — w already in MM (crate ThickPolyline widths are
+            // mm; the scaled `length` cancels in sum/length). See the matching note above.
+            let w_mm = sum / length;
             let new_width = w_mm + flow.height() * (1.0 - 0.25 * PI);
             if let Ok(new_flow) = flow.with_width(new_width) {
                 path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
