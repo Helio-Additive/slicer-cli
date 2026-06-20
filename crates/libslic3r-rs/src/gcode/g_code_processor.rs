@@ -3185,9 +3185,422 @@ impl GCodeProcessor {
         self.process_g1(line);
     }
 
-    // BLOCKED(deps): process_G2_G3 needs ArcFitter arc interpolation; the C++
-    // converts the arc to a G1-like move. Not ported.
-    fn process_g2_g3(&mut self, _line: &crate::g_code_reader::GCodeLine) {}
+    /// GCodeProcessor.cpp:4723-5119  void GCodeProcessor::process_G2_G3(line)
+    ///
+    /// Faithful port of the time-estimate path. The arc is fed to the planner as a
+    /// single TimeBlock whose `distance` is the full 3D arc length (`delta_xyz`),
+    /// with a centripetal-acceleration cruise clamp and X-Y-plane resultant
+    /// feedrate/acceleration projection (cpp:4905-5066). The arc interpolation
+    /// points (`arc_interpolation`) only feed `store_move_vertex` for
+    /// visualization and do NOT affect the time block, so they are omitted.
+    fn process_g2_g3(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        use crate::g_code_reader::Axis;
+
+        let filament_id = self.get_filament_id(true);
+        let filament_diameter = if (filament_id as usize) < self.m_result.filament_diameters.len() {
+            self.m_result.filament_diameters[filament_id as usize]
+        } else {
+            *self.m_result.filament_diameters.last().unwrap()
+        };
+        let filament_radius = 0.5 * filament_diameter;
+        let area_filament_cross_section = (PI as f32) * sqr(filament_radius);
+
+        // absolute_position lambda (cpp:4731-4754) — handles I/J relative to start.
+        let global_relative = self.m_global_positioning_type == EPositioningType::Relative;
+        let e_relative = self.m_e_local_positioning_type == EPositioningType::Relative;
+        let units_inches = self.m_units == EUnits::Inches;
+        let start_position = self.m_start_position;
+        let origin = self.m_origin;
+        let absolute_position = |axis: Axis, lineg: &crate::g_code_reader::GCodeLine| -> f32 {
+            let mut is_relative = global_relative;
+            if axis == Axis::E {
+                is_relative |= e_relative;
+            }
+            if lineg.has(axis) {
+                let length_scale = if units_inches { INCHES_TO_MM } else { 1.0 };
+                let ret = lineg.value(axis) * length_scale;
+                match axis {
+                    Axis::I => start_position[Axis::X as usize] as f32 + ret,
+                    Axis::J => start_position[Axis::Y as usize] as f32 + ret,
+                    _ => {
+                        let base = if is_relative {
+                            start_position[axis as usize]
+                        } else {
+                            origin[axis as usize]
+                        };
+                        base as f32 + ret
+                    }
+                }
+            } else {
+                match axis {
+                    Axis::I => start_position[Axis::X as usize] as f32,
+                    Axis::J => start_position[Axis::Y as usize] as f32,
+                    _ => start_position[axis as usize] as f32,
+                }
+            }
+        };
+
+        self.m_g1_line_id += 1;
+        // enable processing of lines M201/M203/M204/M205 (cpp:4790)
+        self.m_time_processor.machine_envelope_processing_enabled = true;
+
+        // get axes positions from line (X..=E) (cpp:4793-4795)
+        for a in 0..=(Axis::E as usize) {
+            let ax = match a {
+                0 => Axis::X,
+                1 => Axis::Y,
+                2 => Axis::Z,
+                _ => Axis::E,
+            };
+            self.m_end_position[a] = absolute_position(ax, line) as f64;
+        }
+        // G2/G3 with no I and J — invalid (cpp:4797-4798)
+        if !line.has(Axis::I) && !line.has(Axis::J) {
+            return;
+        }
+        // P mode validity check (cpp:4800-4804)
+        if line.has(Axis::P)
+            && (self.m_start_position[Axis::X as usize] != self.m_end_position[Axis::X as usize]
+                || self.m_start_position[Axis::Y as usize] != self.m_end_position[Axis::Y as usize]
+                || (line.p() as i32) != 1)
+        {
+            return;
+        }
+
+        // arc center (cpp:4806)
+        self.m_arc_center = [
+            absolute_position(Axis::I, line),
+            absolute_position(Axis::J, line),
+            self.m_start_position[Axis::Z as usize] as f32,
+        ];
+        // G2 = CW, G3 = CCW (cpp:4807-4809)
+        let cmd = line.cmd();
+        let is_g2 = cmd.as_bytes().get(1) == Some(&b'2');
+        self.m_move_path_type = if is_g2 {
+            EMovePathType::ArcMoveCw
+        } else {
+            EMovePathType::ArcMoveCcw
+        };
+        let is_ccw = self.m_move_path_type == EMovePathType::ArcMoveCcw;
+
+        let start_point = nalgebra::Vector3::new(
+            self.m_start_position[Axis::X as usize] as f32,
+            self.m_start_position[Axis::Y as usize] as f32,
+            self.m_start_position[Axis::Z as usize] as f32,
+        );
+        let end_point = nalgebra::Vector3::new(
+            self.m_end_position[Axis::X as usize] as f32,
+            self.m_end_position[Axis::Y as usize] as f32,
+            self.m_end_position[Axis::Z as usize] as f32,
+        );
+        let center = nalgebra::Vector3::new(self.m_arc_center[0], self.m_arc_center[1], self.m_arc_center[2]);
+
+        use crate::circle::ArcSegment;
+        use crate::circle::Circle;
+
+        // arc length (cpp:4814-4817)
+        let arc_length = if !line.has(Axis::P) {
+            ArcSegment::calc_arc_length(start_point, end_point, center, is_ccw)
+        } else {
+            (line.p() as i32) as f32 * 2.0 * (PI as f32) * (start_point - center).norm()
+        };
+        // tangential directions (cpp:4821-4822)
+        let start_dir = Circle::calc_tangential_vector(start_point, center, is_ccw);
+        let end_dir = Circle::calc_tangential_vector(end_point, center, is_ccw);
+
+        // updates feedrate from line (cpp:4824-4826)
+        if line.has_f() {
+            self.m_feedrate = line.f() * MMMIN_TO_MMSEC;
+        }
+
+        // movement deltas (cpp:4828-4832)
+        let mut delta_pos = [0.0f64; 4];
+        for a in 0..=(Axis::E as usize) {
+            delta_pos[a] = self.m_end_position[a] - self.m_start_position[a];
+        }
+
+        // no displacement (cpp:4834-4836)
+        if arc_length == 0.0 && delta_pos[Axis::Z as usize] == 0.0 {
+            return;
+        }
+
+        let de = delta_pos[Axis::E as usize];
+        let r#type = if de == 0.0 {
+            EMoveType::Travel
+        } else {
+            EMoveType::Extrude
+        };
+
+        // delta_xyz = sqrt(arc_length^2 + dz^2) (cpp:4841)
+        let dz = delta_pos[Axis::Z as usize] as f32;
+        let delta_xyz = (sqr(arc_length) + sqr(dz)).sqrt();
+
+        // extrude width/height + filament caches (cpp:4842-4903)
+        if r#type == EMoveType::Extrude {
+            let volume_extruded_filament = area_filament_cross_section * de as f32;
+            let area_toolpath_cross_section = volume_extruded_filament / delta_xyz;
+
+            match self.m_extrusion_role {
+                ExtrusionRole::SupportMaterial
+                | ExtrusionRole::SupportMaterialInterface
+                | ExtrusionRole::SupportTransition => {
+                    self.m_used_filaments
+                        .increase_support_caches(volume_extruded_filament as f64);
+                }
+                ExtrusionRole::WipeTower => {
+                    self.m_used_filaments
+                        .increase_wipe_tower_caches(volume_extruded_filament as f64);
+                }
+                _ => {
+                    self.m_used_filaments
+                        .increase_model_caches(volume_extruded_filament as f64);
+                }
+            }
+            self.m_mm3_per_mm = area_toolpath_cross_section;
+
+            if self.m_forced_height > 0.0 {
+                self.m_height = self.m_forced_height;
+            } else if self.m_end_position[Axis::Z as usize] as f32 > self.m_extruded_last_z + EPSILON {
+                self.m_height = self.m_end_position[Axis::Z as usize] as f32 - self.m_extruded_last_z;
+            }
+            if self.m_height == 0.0 {
+                self.m_height = DEFAULT_TOOLPATH_HEIGHT;
+            }
+            if self.m_end_position[Axis::Z as usize] == 0.0 {
+                self.m_end_position[Axis::Z as usize] = self.m_height as f64;
+            }
+            self.m_extruded_last_z = self.m_end_position[Axis::Z as usize] as f32;
+
+            if self.m_forced_width > 0.0 {
+                self.m_width = self.m_forced_width;
+            } else if self.m_extrusion_role == ExtrusionRole::ExternalPerimeter {
+                self.m_width = de as f32 * (PI as f32 * sqr(1.05 * filament_radius))
+                    / (delta_xyz * self.m_height);
+            } else if self.m_extrusion_role == ExtrusionRole::BridgeInfill
+                || self.m_extrusion_role == ExtrusionRole::None
+            {
+                self.m_width = filament_diameter * (de as f32 / delta_xyz).sqrt();
+            } else {
+                self.m_width = de as f32 * (PI as f32 * sqr(filament_radius))
+                    / (delta_xyz * self.m_height)
+                    + (1.0 - 0.25 * PI as f32) * self.m_height;
+            }
+            if self.m_width == 0.0 {
+                self.m_width = DEFAULT_TOOLPATH_WIDTH;
+            }
+            self.m_width = self.m_width.min(2.0f32.max(4.0 * self.m_height));
+        }
+
+        // time estimate section (cpp:4905-5066) -------------------------------
+        let inv_distance = 1.0 / delta_xyz;
+        let radius = ArcSegment::calc_arc_radius(start_point, center);
+
+        for i in 0..ETimeMode::COUNT {
+            let mode = if i == 0 {
+                ETimeMode::Normal
+            } else {
+                ETimeMode::Stealth
+            };
+            if !self.m_time_processor.machines[i].enabled {
+                continue;
+            }
+
+            // curr.feedrate (cpp:4919-4921)
+            let mut feedrate = if r#type == EMoveType::Travel {
+                self.minimum_travel_feedrate(mode, self.m_feedrate)
+            } else {
+                self.minimum_feedrate(mode, self.m_feedrate)
+            };
+
+            let enter_direction = [start_dir[0], start_dir[1], start_dir[2]];
+            let exit_direction = [end_dir[0], end_dir[1], end_dir[2]];
+            let prev_exit_direction = self.m_time_processor.machines[i].prev.exit_direction;
+            let prev_feedrate = self.m_time_processor.machines[i].prev.feedrate;
+            let prev_safe_feedrate = self.m_time_processor.machines[i].prev.safe_feedrate;
+            let blocks_empty = self.m_time_processor.machines[i].blocks.is_empty();
+            let extrude_factor =
+                self.m_time_processor.machines[i].extrude_factor_override_percentage;
+
+            let mut block = TimeBlock::default();
+            block.move_type = r#type;
+            block.skippable_type = self.m_skippable_type;
+            block.role = if r#type != EMoveType::Travel
+                || self.m_extrusion_role == ExtrusionRole::Custom
+            {
+                self.m_extrusion_role
+            } else {
+                ExtrusionRole::None
+            };
+            block.distance = delta_xyz;
+            block.move_id = self.m_result.moves.len() as u32;
+            block.g1_line_id = self.m_g1_line_id;
+            block.layer_id = 1u32.max(self.m_layer_id);
+            block.flags.prepare_stage = self.m_processing_start_custom_gcode;
+
+            // centripetal-acceleration cruise clamp (cpp:4941-4943)
+            let centripetal_acceleration = self.get_acceleration(mode);
+            let max_feedrate_by_centri_acc =
+                (centripetal_acceleration * radius).sqrt() / (arc_length * inv_distance);
+            feedrate = feedrate.min(max_feedrate_by_centri_acc);
+
+            // block cruise feedrate — X-Y resultant projection (cpp:4945-4968)
+            let mut axis_feedrate = [0.0f32; 4];
+            let mut abs_axis_feedrate = [0.0f32; 4];
+            let mut min_feedrate_factor = 1.0f32;
+            for a in 0..=(Axis::E as usize) {
+                if a == Axis::X as usize || a == Axis::Y as usize {
+                    axis_feedrate[a] = feedrate * arc_length * inv_distance;
+                } else if a == Axis::Z as usize {
+                    axis_feedrate[a] = feedrate * delta_pos[a] as f32 * inv_distance;
+                } else {
+                    // E axis (cpp:4953): curr.axis_feedrate[E] *= extrude_factor.
+                    // curr.axis_feedrate[E] is left at its previous value (0 on a
+                    // fresh State); mirror C++ by scaling the existing value.
+                    axis_feedrate[a] *= extrude_factor;
+                }
+                abs_axis_feedrate[a] = axis_feedrate[a].abs();
+                if abs_axis_feedrate[a] != 0.0 {
+                    let axis_max_feedrate = self.get_axis_max_feedrate(
+                        mode,
+                        a,
+                        self.get_machine_config_idx(self.get_filament_id(true)),
+                    );
+                    if axis_max_feedrate != 0.0 {
+                        min_feedrate_factor =
+                            min_feedrate_factor.min(axis_max_feedrate / abs_axis_feedrate[a]);
+                    }
+                }
+            }
+            feedrate *= min_feedrate_factor;
+            block.feedrate_profile.cruise = feedrate;
+            if min_feedrate_factor < 1.0 {
+                for a in 0..=(Axis::E as usize) {
+                    axis_feedrate[a] *= min_feedrate_factor;
+                    abs_axis_feedrate[a] *= min_feedrate_factor;
+                }
+            }
+
+            // block acceleration — X-Y resultant projection (cpp:4970-4988)
+            let acceleration = if r#type == EMoveType::Travel {
+                self.get_travel_acceleration(mode)
+            } else {
+                self.get_acceleration(mode)
+            };
+            let mut min_acc_factor = 1.0f32;
+            for a in 0..=(Axis::Z as usize) {
+                let axis_acc = if a == Axis::X as usize || a == Axis::Y as usize {
+                    acceleration * arc_length * inv_distance
+                } else {
+                    acceleration * (delta_pos[a] as f32).abs() * inv_distance
+                };
+                if axis_acc != 0.0 {
+                    let axis_max_acceleration = self.get_axis_max_acceleration(
+                        mode,
+                        a,
+                        self.get_machine_config_idx(self.get_filament_id(true)),
+                    );
+                    if axis_max_acceleration != 0.0 && axis_acc > axis_max_acceleration {
+                        min_acc_factor = min_acc_factor.min(axis_max_acceleration / axis_acc);
+                    }
+                }
+            }
+            block.acceleration = acceleration * min_acc_factor;
+
+            // block exit feedrate (cpp:4990-4996)
+            let mut safe_feedrate = block.feedrate_profile.cruise;
+            for a in 0..=(Axis::E as usize) {
+                let axis_max_jerk = self.get_axis_max_jerk(mode, a);
+                if abs_axis_feedrate[a] > axis_max_jerk {
+                    safe_feedrate = safe_feedrate.min(axis_max_jerk);
+                }
+            }
+            block.feedrate_profile.exit = safe_feedrate;
+
+            const PREVIOUS_FEEDRATE_THRESHOLD: f32 = 0.0001;
+            // block entry feedrate (cpp:4998-5043)
+            let mut vmax_junction = safe_feedrate;
+            if !blocks_empty && prev_feedrate > PREVIOUS_FEEDRATE_THRESHOLD {
+                vmax_junction = prev_feedrate.min(block.feedrate_profile.cruise);
+
+                let mut limited = false;
+                let exit_direction_unit = normalized3(prev_exit_direction);
+                let enter_direction_unit = normalized3(enter_direction);
+                let mut k_min = 10000.0f32;
+
+                // a == X branch only (cpp:5013-5027)
+                let jerk_v = [
+                    (enter_direction_unit[0] - exit_direction_unit[0]).abs(),
+                    (enter_direction_unit[1] - exit_direction_unit[1]).abs(),
+                    (enter_direction_unit[2] - exit_direction_unit[2]).abs(),
+                ];
+                let max_xyz_jerk_v = self.get_xyz_max_jerk(mode);
+                for idx in 0..3 {
+                    if jerk_v[idx] > 0.0 {
+                        limited = true;
+                        let k = max_xyz_jerk_v[idx] / jerk_v[idx];
+                        if k < k_min {
+                            k_min = k;
+                        }
+                    }
+                }
+                if limited {
+                    vmax_junction = k_min;
+                }
+
+                let vmax_junction_threshold = vmax_junction * 0.99;
+                if prev_safe_feedrate > vmax_junction_threshold
+                    && safe_feedrate > vmax_junction_threshold
+                {
+                    vmax_junction = safe_feedrate;
+                }
+            }
+
+            let v_allowable =
+                max_allowable_speed(-block.acceleration, safe_feedrate, block.distance);
+            block.feedrate_profile.entry = vmax_junction.min(v_allowable);
+            block.max_entry_speed = vmax_junction;
+            block.flags.nominal_length = block.feedrate_profile.cruise <= v_allowable;
+            block.flags.recalculate = true;
+            block.safe_feedrate = safe_feedrate;
+
+            block.calculate_trapezoid();
+
+            // updates previous + push block (cpp:5057-5059)
+            {
+                let machine = &mut self.m_time_processor.machines[i];
+                machine.curr.feedrate = feedrate;
+                machine.curr.safe_feedrate = safe_feedrate;
+                machine.curr.axis_feedrate = [
+                    axis_feedrate[0] as f64,
+                    axis_feedrate[1] as f64,
+                    axis_feedrate[2] as f64,
+                    axis_feedrate[3] as f64,
+                ];
+                machine.curr.abs_axis_feedrate = [
+                    abs_axis_feedrate[0] as f64,
+                    abs_axis_feedrate[1] as f64,
+                    abs_axis_feedrate[2] as f64,
+                    abs_axis_feedrate[3] as f64,
+                ];
+                machine.curr.enter_direction = enter_direction;
+                machine.curr.exit_direction = exit_direction;
+                machine.prev = machine.curr.clone();
+                machine.blocks.push(block);
+            }
+
+            if self.m_time_processor.machines[i].blocks.len()
+                > TimeProcessor::PLANNER_REFRESH_THRESHOLD
+            {
+                self.run_calculate_time(i, TimeProcessor::PLANNER_QUEUE_SIZE, 0.0, ExtrusionRole::None);
+            }
+        }
+
+        // BLOCKED(deps): m_seams_detector + spiral_vase_layers side-effects.
+
+        // store move (cpp:5118)
+        let path_type = self.m_move_path_type;
+        self.store_move_vertex(r#type, path_type);
+    }
 
     // BLOCKED(deps): process_G4 (dwell) folds dwell time via st_synchronize +
     // measure_g29_time logic. Conservative faithful subset: no-op time add.
