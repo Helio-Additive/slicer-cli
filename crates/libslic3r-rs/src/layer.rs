@@ -570,11 +570,33 @@ impl LayerRegion {
                 max / 2.0 + CLIPPER_SAFETY_OFFSET,
                 OffsetJoinType::Square,
             );
-            let gaps_ex = difference(&opened_min, &wide_part);
+            let mut gaps_ex = difference(&opened_min, &wide_part);
+
+            // PerimeterGenerator.cpp:914 — surface_simplify_resolution =
+            //   (enable_arc_fitting && fuzzy_skin == None) ? 0.2 * m_scaled_resolution
+            //                                              : m_scaled_resolution,
+            // where m_scaled_resolution = scaled<double>(print_config.resolution)
+            // (PerimeterGenerator.cpp:911). ExPolygon::douglas_peucker takes the
+            // *scaled* tolerance directly (forwards to MultiPoint::_douglas_peucker
+            // without rescale), so scale print_config.resolution here.
+            let scaled_resolution = crate::scale(print_config.resolution) as f64;
+            let surface_simplify_resolution = if config.fuzzy_skin_mode
+                == crate::region_config::FuzzySkinMode::None
+            {
+                // arc_fitting is enabled in this profile (matches PerimeterConfig
+                // arc_fitting_enabled = true above).
+                0.2 * scaled_resolution
+            } else {
+                scaled_resolution
+            };
 
             // PerimeterGenerator.cpp:1335-1340 — medial axis of each thin gap region.
             let mut polylines: crate::geometry::ThickPolylines = Vec::new();
-            for ex in &gaps_ex {
+            for ex in &mut gaps_ex {
+                // PerimeterGenerator.cpp:1337-1338 — BBS: Use DP simplify to avoid
+                // duplicated points and accelerate medial-axis calculation.
+                ex.douglas_peucker(surface_simplify_resolution);
+                // PerimeterGenerator.cpp:1339
                 ex.medial_axis(min, max, &mut polylines);
             }
 
