@@ -2725,6 +2725,130 @@ impl GCodeProcessor {
         self.m_time_processor.machines[ETimeMode::Stealth as usize].enabled = enabled;
     }
 
+    /// Faithful port of the machine-limit / acceleration parts of
+    /// `GCodeProcessor::apply_config(const PrintConfig&)` (cpp:1908-1995).
+    ///
+    /// Only the time-relevant config is consumed here:
+    ///  * `m_flavor` (cpp:1908),
+    ///  * `m_time_processor.machine_limits` (cpp:1964-1970) — populated when the
+    ///    flavor is Marlin-legacy / Marlin-firmware / Klipper; for Marlin-legacy
+    ///    the travel acceleration mirrors the extruding value (cpp:1966-1969),
+    ///  * `machines[i].max_acceleration / acceleration / *_retract / *_travel`
+    ///    (cpp:1985-1995).
+    ///
+    /// The C++ `machine_limits` is a per-mode/extruder array; BambuStudio carries
+    /// identical values per mode, so the scalar `MachineLimits` model is exact for
+    /// `get_option_value` on any index.
+    pub fn apply_config(&mut self, config: &crate::print_config::PrintConfig) {
+        use crate::print_config::GCodeFlavor as CfgFlavor;
+
+        // GCodeProcessor.cpp:1908  m_flavor = config.gcode_flavor;
+        self.m_flavor = match config.gcode_flavor {
+            CfgFlavor::MarlinLegacy => GCodeFlavor::MarlinLegacy,
+            CfgFlavor::Marlin => GCodeFlavor::MarlinFirmware,
+            CfgFlavor::Klipper => GCodeFlavor::Klipper,
+            CfgFlavor::RepRapSprinter => GCodeFlavor::RepRapSprinter,
+            CfgFlavor::RepRapFirmware => GCodeFlavor::RepRapFirmware,
+            CfgFlavor::Repetier => GCodeFlavor::RepetierFirmware,
+            CfgFlavor::MakerWare => GCodeFlavor::MakerWare,
+            CfgFlavor::Sailfish => GCodeFlavor::Sailfish,
+            CfgFlavor::Smoothie => GCodeFlavor::Smoothie,
+            _ => GCodeFlavor::Other,
+        };
+
+        // GCodeProcessor.cpp:1964-1970 — machine_limits only for Marlin/Klipper.
+        if matches!(
+            self.m_flavor,
+            GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware | GCodeFlavor::Klipper
+        ) {
+            let ml = &mut self.m_time_processor.machine_limits;
+            ml.present = true;
+            ml.max_acceleration_x = config.machine_max_acceleration_x as f32;
+            ml.max_acceleration_y = config.machine_max_acceleration_y as f32;
+            ml.max_acceleration_z = config.machine_max_acceleration_z as f32;
+            ml.max_acceleration_e = config.machine_max_acceleration_e as f32;
+            ml.max_acceleration_extruding = config.machine_max_acceleration_extruding as f32;
+            ml.max_acceleration_retracting = config.machine_max_acceleration_retracting as f32;
+            ml.max_acceleration_travel = config.machine_max_acceleration_travel as f32;
+            ml.max_speed_x = config.machine_max_speed_x as f32;
+            ml.max_speed_y = config.machine_max_speed_y as f32;
+            ml.max_speed_z = config.machine_max_speed_z as f32;
+            ml.max_speed_e = config.machine_max_speed_e as f32;
+            ml.max_jerk_x = config.machine_max_jerk_x as f32;
+            ml.max_jerk_y = config.machine_max_jerk_y as f32;
+            ml.max_jerk_z = config.machine_max_jerk_z as f32;
+            ml.max_jerk_e = config.machine_max_jerk_e as f32;
+            // BambuStudio always carries these arrays (length == 2*extruders), so the
+            // C++ `.empty()` guard is false: model them as present.
+            ml.min_extruding_rate = config.machine_min_extruding_rate as f32;
+            ml.min_extruding_rate_present = true;
+            ml.min_travel_rate = config.machine_min_travel_rate as f32;
+            ml.min_travel_rate_present = true;
+
+            // GCodeProcessor.cpp:1966-1969 — legacy Marlin has no separate travel
+            // acceleration; it uses the 'extruding' value instead.
+            if self.m_flavor == GCodeFlavor::MarlinLegacy {
+                ml.max_acceleration_travel = ml.max_acceleration_extruding;
+            }
+        }
+
+        // GCodeProcessor.cpp:1985-1995 — per-mode machine acceleration setup.
+        for i in 0..ETimeMode::COUNT {
+            let max_acceleration = self.get_axis_max_acceleration_extruding(i);
+            let max_retract_acceleration = self.get_machine_limit_retract_acceleration(i);
+            let max_travel_acceleration = self.get_machine_limit_travel_acceleration(i);
+            let m = &mut self.m_time_processor.machines[i];
+            m.max_acceleration = max_acceleration;
+            m.acceleration = if max_acceleration > 0.0 {
+                max_acceleration
+            } else {
+                DEFAULT_ACCELERATION
+            };
+            m.max_retract_acceleration = max_retract_acceleration;
+            m.retract_acceleration = if max_retract_acceleration > 0.0 {
+                max_retract_acceleration
+            } else {
+                DEFAULT_RETRACT_ACCELERATION
+            };
+            m.max_travel_acceleration = max_travel_acceleration;
+            m.travel_acceleration = if max_travel_acceleration > 0.0 {
+                max_travel_acceleration
+            } else {
+                DEFAULT_TRAVEL_ACCELERATION
+            };
+        }
+    }
+
+    /// `get_option_value(machine_max_acceleration_extruding, mode)` (cpp:1986).
+    fn get_axis_max_acceleration_extruding(&self, _mode: usize) -> f32 {
+        let ml = &self.m_time_processor.machine_limits;
+        if ml.present {
+            ml.max_acceleration_extruding
+        } else {
+            0.0
+        }
+    }
+
+    /// `get_option_value(machine_max_acceleration_retracting, mode)` (cpp:1989).
+    fn get_machine_limit_retract_acceleration(&self, _mode: usize) -> f32 {
+        let ml = &self.m_time_processor.machine_limits;
+        if ml.present {
+            ml.max_acceleration_retracting
+        } else {
+            0.0
+        }
+    }
+
+    /// `get_option_value(machine_max_acceleration_travel, mode)` (cpp:1992).
+    fn get_machine_limit_travel_acceleration(&self, _mode: usize) -> f32 {
+        let ml = &self.m_time_processor.machine_limits;
+        if ml.present {
+            ml.max_acceleration_travel
+        } else {
+            0.0
+        }
+    }
+
     // ----- accessors -----
 
     /// GCodeProcessor.hpp `const Result& get_result() const`.
@@ -2777,37 +2901,86 @@ impl GCodeProcessor {
     }
 
     // ----- machine-limit getters (cpp:6022-6128) -----
-    // BLOCKED(config): MachineEnvelopeConfig unthreaded. The C++ machine_limits
-    // arrays default to empty, so these return the documented fallbacks.
+    // These read `m_time_processor.machine_limits`, populated by `apply_config`
+    // (cpp:1964-1995). When the limits are not present (no config applied, or a
+    // non-Marlin/Klipper flavor) they fall back exactly like the C++
+    // `get_option_value` on empty arrays (0.0 / passthrough feedrate).
 
-    /// GCodeProcessor.cpp:6022-6028 — machine_min_extruding_rate empty → feedrate.
+    /// GCodeProcessor.cpp:6022-6028 — machine_min_extruding_rate empty → feedrate,
+    /// else max(feedrate, min_extruding_rate).
     fn minimum_feedrate(&self, _mode: ETimeMode, feedrate: f32) -> f32 {
-        feedrate
+        let ml = &self.m_time_processor.machine_limits;
+        if !ml.min_extruding_rate_present {
+            feedrate
+        } else {
+            feedrate.max(ml.min_extruding_rate)
+        }
     }
 
-    /// GCodeProcessor.cpp:6030-6036 — machine_min_travel_rate empty → feedrate.
+    /// GCodeProcessor.cpp:6030-6036 — machine_min_travel_rate empty → feedrate,
+    /// else max(feedrate, min_travel_rate).
     fn minimum_travel_feedrate(&self, _mode: ETimeMode, feedrate: f32) -> f32 {
-        feedrate
+        let ml = &self.m_time_processor.machine_limits;
+        if !ml.min_travel_rate_present {
+            feedrate
+        } else {
+            feedrate.max(ml.min_travel_rate)
+        }
     }
 
-    /// GCodeProcessor.cpp:6038-6049 — empty limit arrays → 0.0 (no clamp).
-    fn get_axis_max_feedrate(&self, _mode: ETimeMode, _axis: usize, _extruder_id: i32) -> f32 {
-        0.0
+    /// GCodeProcessor.cpp:6038-6049 — per-axis max feedrate (mm/s).
+    /// `axis` is the `Axis` discriminant (X=0,Y=1,Z=2,E=3); other axes → 0.0.
+    fn get_axis_max_feedrate(&self, _mode: ETimeMode, axis: usize, _extruder_id: i32) -> f32 {
+        let ml = &self.m_time_processor.machine_limits;
+        if !ml.present {
+            return 0.0;
+        }
+        match axis {
+            0 => ml.max_speed_x,
+            1 => ml.max_speed_y,
+            2 => ml.max_speed_z,
+            3 => ml.max_speed_e,
+            _ => 0.0,
+        }
     }
 
-    /// GCodeProcessor.cpp:6051-6062 — empty limit arrays → 0.0 (no clamp).
-    fn get_axis_max_acceleration(&self, _mode: ETimeMode, _axis: usize, _extruder_id: i32) -> f32 {
-        0.0
+    /// GCodeProcessor.cpp:6051-6062 — per-axis max acceleration (mm/s^2).
+    fn get_axis_max_acceleration(&self, _mode: ETimeMode, axis: usize, _extruder_id: i32) -> f32 {
+        let ml = &self.m_time_processor.machine_limits;
+        if !ml.present {
+            return 0.0;
+        }
+        match axis {
+            0 => ml.max_acceleration_x,
+            1 => ml.max_acceleration_y,
+            2 => ml.max_acceleration_z,
+            3 => ml.max_acceleration_e,
+            _ => 0.0,
+        }
     }
 
-    /// GCodeProcessor.cpp:6064-6074 — empty limit arrays → 0.0.
-    fn get_axis_max_jerk(&self, _mode: ETimeMode, _axis: usize) -> f32 {
-        0.0
+    /// GCodeProcessor.cpp:6064-6074 — per-axis max jerk (mm/s).
+    fn get_axis_max_jerk(&self, _mode: ETimeMode, axis: usize) -> f32 {
+        let ml = &self.m_time_processor.machine_limits;
+        if !ml.present {
+            return 0.0;
+        }
+        match axis {
+            0 => ml.max_jerk_x,
+            1 => ml.max_jerk_y,
+            2 => ml.max_jerk_z,
+            3 => ml.max_jerk_e,
+            _ => 0.0,
+        }
     }
 
-    /// GCodeProcessor.cpp:6076-6081 — empty limit arrays → (0,0,0).
+    /// GCodeProcessor.cpp:6076-6081 — (x,y,z) max jerk.
     fn get_xyz_max_jerk(&self, _mode: ETimeMode) -> [f32; 3] {
-        [0.0, 0.0, 0.0]
+        let ml = &self.m_time_processor.machine_limits;
+        if !ml.present {
+            return [0.0, 0.0, 0.0];
+        }
+        [ml.max_jerk_x, ml.max_jerk_y, ml.max_jerk_z]
     }
 
     /// GCodeProcessor.cpp:6083-6087  get_retract_acceleration
