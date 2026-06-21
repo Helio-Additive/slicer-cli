@@ -1958,6 +1958,207 @@ impl Layer {
         Ok(())
     }
 
+    /// Generate the sparse-infill polylines used to anchor internal bridges.
+    ///
+    /// 1:1 (faithful) port of
+    /// `Layer::generate_sparse_infill_polylines_for_anchoring`
+    /// (Fill/Fill.cpp:772-875). Consumed by `PrintObject::bridge_over_infill`
+    /// (PrintObject.cpp:2391-2401 producer, :2845 consumer) where the returned
+    /// polylines become the anchor lines that bound internal-bridge expansion.
+    ///
+    /// This is a const operation (it does not mutate `fill_surfaces` or
+    /// `fills`): it re-derives the surface-fill groups via `group_fills`,
+    /// processes ONLY `stInternal` surfaces, runs the same per-pattern fill
+    /// dispatch as `make_fills`, and returns the raw polylines (no
+    /// extrusion-entity conversion, no thin fills).
+    ///
+    /// Adaptive-cubic / lightning patterns are not ported; for those patterns
+    /// no anchor lines are produced (the C++ filler would consult an octree /
+    /// lightning generator we do not have). For the common grid / rectilinear /
+    /// line / concentric / gyroid sparse-infill patterns this produces the same
+    /// anchor polylines as native.
+    pub fn generate_sparse_infill_polylines_for_anchoring(&self) -> Result<Vec<Polyline>> {
+        use crate::print_config::InfillPattern;
+        use crate::surface::SurfaceType;
+
+        // Fill.cpp:774-775
+        // C++: LockRegionParam skin_inner_param;
+        //      std::vector<SurfaceFill> surface_fills = group_fills(*this, skin_inner_param);
+        // group_fills only consults `lower_internal_areas` for stInternalSolid
+        // (narrow-solid -> ipConcentricInternal) surfaces; this function emits
+        // only stInternal surfaces, so an empty slice is faithful here.
+        let mut lock_param = crate::fill::LockRegionParam::default();
+        let surface_fills = crate::fill::group_fills(self, &[], &mut lock_param)?;
+
+        // Fill.cpp:779
+        // C++: Polylines sparse_infill_polylines{};
+        let mut sparse_infill_polylines: Vec<Polyline> = Vec::new();
+
+        // Fill.cpp:781
+        // C++: for (SurfaceFill &surface_fill : surface_fills)
+        for surface_fill in surface_fills {
+            // Fill.cpp:782-784
+            // C++: if (surface_fill.surface.surface_type != stInternal) continue;
+            if surface_fill.surface.surface_type != SurfaceType::Internal {
+                continue;
+            }
+
+            let fill_pattern = surface_fill.params.pattern;
+
+            // Fill.cpp:786-812
+            // C++: switch over pattern; ipCount / ipSupportBase -> continue.
+            // The remaining patterns all break (fall through to generation).
+            // Adaptive-cubic / support-cubic / lightning need an octree or
+            // lightning generator that is not ported here, so they cannot
+            // produce anchor lines -> skip them (no anchors, faithful to
+            // "no adaptive/lightning" Benchy case).
+            match fill_pattern {
+                InfillPattern::AdaptiveCubic
+                | InfillPattern::SupportCubic
+                | InfillPattern::Lightning => continue,
+                _ => {}
+            }
+
+            // Fill.cpp:826-836
+            // C++: link_max_length = 0; if (!bridge && density > 80%) link_max_length = 3*spacing
+            let link_max_length_mm = if !surface_fill.params.bridge {
+                if surface_fill.params.density > 80.0 {
+                    3.0 * surface_fill.params.spacing
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+            let link_max_length = crate::scale(link_max_length_mm);
+
+            // Fill.cpp:846-854 — FillParams. params.density = 0.01 * density.
+            let density = (0.01 * surface_fill.params.density) as f64;
+            let is_grid = fill_pattern == InfillPattern::Grid;
+            // Mirror make_fills' dont_connect derivation
+            // (anchor_length_max < 0.05 disables connection; FillBase.hpp).
+            let dont_connect = surface_fill.params.anchor_length_max < 0.05;
+            let infill_config = InfillConfig {
+                pattern: fill_pattern,
+                line_spacing: surface_fill.params.spacing,
+                angle: surface_fill.params.angle as f64,
+                angle_increment: 90.0,
+                density,
+                extrusion_width: surface_fill.params.spacing,
+                overlap: surface_fill.params.spacing * 0.15,
+                connect_infill: !dont_connect,
+                link_max_length,
+            };
+
+            // Fill.cpp:862-871
+            // C++: for (ExPolygon &expoly : surface_fill.expolygons)
+            //          polylines = f->fill_surface(&surface_fill.surface, params);
+            //          sparse_infill_polylines.insert(..., polylines);
+            // We mirror make_fills' polyline dispatch exactly, but accumulate
+            // the polylines instead of converting them to extrusion entities.
+            for expoly in surface_fill.expolygons {
+                if expoly.contour.points.is_empty() {
+                    continue;
+                }
+
+                let boundary_contour = expoly.contour.clone();
+
+                let generated = match fill_pattern {
+                    InfillPattern::Rectilinear | InfillPattern::Grid => generate_fill_rectilinear(
+                        &[expoly],
+                        &infill_config,
+                        self.id as usize,
+                        is_grid,
+                    ),
+                    InfillPattern::Gyroid => {
+                        use crate::fill::fill_gyroid::{generate_gyroid_infill, GyroidConfig};
+                        use crate::geometry::BoundingBox;
+                        let mut bb = BoundingBox::empty();
+                        for pt in &expoly.contour.points {
+                            bb.merge_point(*pt);
+                        }
+                        let raw_line_width = surface_fill.params.flow.width();
+                        let gyroid_config = GyroidConfig {
+                            z: self.print_z,
+                            spacing: raw_line_width,
+                            density,
+                            angle: surface_fill.params.angle as f64,
+                        };
+                        let raw_polylines = generate_gyroid_infill(&gyroid_config, bb.min, bb.max);
+                        let mut clipped = Vec::new();
+                        for pl in raw_polylines {
+                            let mut current_segment = Vec::new();
+                            for pt in &pl.points {
+                                if expoly.contour.contains_point(pt) {
+                                    current_segment.push(*pt);
+                                } else {
+                                    if current_segment.len() >= 2 {
+                                        clipped.push(InfillPath::Line(
+                                            crate::geometry::Polyline::from_points(current_segment),
+                                        ));
+                                    }
+                                    current_segment = Vec::new();
+                                }
+                            }
+                            if current_segment.len() >= 2 {
+                                clipped.push(InfillPath::Line(
+                                    crate::geometry::Polyline::from_points(current_segment),
+                                ));
+                            }
+                        }
+                        clipped
+                    }
+                    _ => {
+                        let polylines = generate_infill(
+                            fill_pattern,
+                            &[expoly.clone()],
+                            infill_config.line_spacing,
+                            infill_config.angle,
+                        )?;
+                        polylines.into_iter().map(InfillPath::Line).collect()
+                    }
+                };
+
+                if generated.is_empty() {
+                    continue;
+                }
+
+                let mut polylines = Vec::new();
+                for path in generated {
+                    match path {
+                        InfillPath::Line(pl) => polylines.push(pl),
+                        InfillPath::Loop(poly) => polylines.push(poly.split_at_first_point()),
+                    }
+                }
+
+                if polylines.is_empty() {
+                    continue;
+                }
+
+                // C++: Fill::connect_infill() inside fill_surface joins lines.
+                if infill_config.connect_infill {
+                    let boundary = vec![boundary_contour.clone()];
+                    let fill_params = crate::fill::FillParams::new();
+                    let mut connected = Vec::new();
+                    crate::fill::connect_infill(
+                        polylines,
+                        &boundary,
+                        infill_config.line_spacing,
+                        &fill_params,
+                        &mut connected,
+                    );
+                    polylines = connected;
+                }
+
+                sparse_infill_polylines.extend(polylines);
+            }
+        }
+
+        // Fill.cpp:874
+        // C++: return sparse_infill_polylines;
+        Ok(sparse_infill_polylines)
+    }
+
     /// Generate ironing paths
     /// Layer.cpp:667-1250
     pub fn make_ironing(&mut self) -> Result<()> {

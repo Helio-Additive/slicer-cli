@@ -824,15 +824,15 @@ impl PrintObject {
     /// (PrintObject.cpp:2167-3025).
     ///
     /// FIDELITY NOTES (no-adaptive / no-lightning simplifications):
-    /// - The adaptive-infill octree and lightning generator inputs used to
-    ///   produce anchoring infill polylines (PrintObject.cpp:2372-2407 via
-    ///   `Layer::generate_sparse_infill_polylines_for_anchoring`,
-    ///   `prepare_adaptive_infill_data`, `prepare_lightning_infill_data`) are
-    ///   not yet ported. `infill_lines` is therefore left empty, `anchors` are
-    ///   always empty, and the bridging-angle determination uses the boundary
-    ///   fallback (PrintObject.cpp:2894). This matches the behavior for the
-    ///   common case of grid/line sparse infill with no adaptive cubic and no
-    ///   lightning infill.
+    /// - The anchoring sparse-infill polylines (PrintObject.cpp:2372-2407 via
+    ///   `Layer::generate_sparse_infill_polylines_for_anchoring`) ARE ported and
+    ///   populate `infill_lines`, so `anchors` are real for grid / rectilinear /
+    ///   line / concentric / gyroid sparse infill — this bounds bridge expansion
+    ///   to match native. The adaptive-cubic octree and lightning generator
+    ///   (`prepare_adaptive_infill_data`, `prepare_lightning_infill_data`) are
+    ///   not ported, so those patterns emit no anchor lines and fall back to the
+    ///   boundary path (PrintObject.cpp:2894); this is faithful for the common
+    ///   case (Benchy uses grid infill).
     /// - The lightning-infill expansion section (PrintObject.cpp:2281-2370) is
     ///   skipped (no-op) when no region uses `ipLightning`, which is faithful.
     ///
@@ -1100,10 +1100,36 @@ impl PrintObject {
 
         // ====================================================================
         // SECTION to generate infill polylines — PrintObject.cpp:2372-2407.
-        // Not ported (adaptive/lightning octrees). infill_lines stays empty so
-        // anchors are empty; angle uses boundary fallback below.
-        // ====================================================================
-        let infill_lines: BTreeMap<usize, Vec<Polyline>> = BTreeMap::new();
+        // For each layer that hosts a bridge candidate (key `lidx` in
+        // `surfaces_by_layer`), populate `infill_lines[lidx - 1]` with the
+        // sparse-infill anchor polylines of the layer below, via
+        // `Layer::generate_sparse_infill_polylines_for_anchoring`
+        // (PrintObject.cpp:2384-2401). These anchors are intersected with the
+        // shrunk expansion area (PrintObject.cpp:2845) and inserted into the
+        // anchor/wall AABB tree (PrintObject.cpp:2621) that bounds bridge
+        // expansion; without them the bridge over-expands.
+        //
+        // Adaptive-cubic / lightning octrees are not ported: the anchoring
+        // function emits no lines for those patterns, which is faithful to the
+        // common grid/rectilinear sparse-infill case.
+        let mut infill_lines: BTreeMap<usize, Vec<Polyline>> = BTreeMap::new();
+        {
+            // PrintObject.cpp:2384-2389 — collect the lower layer indices that
+            // need anchoring infill (lidx-1 for each candidate layer lidx>0).
+            let mut layers_to_generate_infill: Vec<usize> = surfaces_by_layer
+                .keys()
+                .filter(|&&lidx| lidx > 0)
+                .map(|&lidx| lidx - 1)
+                .collect();
+            layers_to_generate_infill.sort_unstable();
+            layers_to_generate_infill.dedup();
+            // PrintObject.cpp:2391-2401 — per-layer anchoring polylines.
+            for lower_idx in layers_to_generate_infill {
+                let lines = self.layers[lower_idx]
+                    .generate_sparse_infill_polylines_for_anchoring()?;
+                infill_lines.insert(lower_idx, lines);
+            }
+        }
 
         // ====================================================================
         // Cluster layers by depth for thick bridges. PrintObject.cpp:2409-2463.
