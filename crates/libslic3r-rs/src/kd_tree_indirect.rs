@@ -428,7 +428,7 @@ where
     let mut results = [(NPOS, T::from(f64::MAX)); K];
 
     // KDTreeIndirect.hpp:221-244
-    let mut visitor = |idx: usize, dimension: usize| -> u32 {
+    let visitor = |idx: usize, dimension: usize| -> u32 {
         if filter(idx) {
             // KDTreeIndirect.hpp:224-228
             let mut dist = T::default();
@@ -510,7 +510,7 @@ where
     let mut results = [(NPOS, max_sentinel); K];
 
     // KDTreeIndirect.hpp:221-244
-    let mut visitor = |idx: usize, dimension: usize| -> u32 {
+    let visitor = |idx: usize, dimension: usize| -> u32 {
         if filter(idx) {
             // KDTreeIndirect.hpp:224-228
             let mut dist = T::default();
@@ -606,7 +606,7 @@ where
     let max_distance_squared = max_distance * max_distance;
     let mut result = Vec::new();
 
-    let mut visitor = |idx: usize, dimension: usize| -> u32 {
+    let visitor = |idx: usize, dimension: usize| -> u32 {
         // KDTreeIndirect.hpp:297-307
         if filter(idx) {
             let mut dist = T::default();
@@ -717,7 +717,7 @@ where
     let max_distance_squared = max_distance * max_distance;
     let mut result = Vec::new();
 
-    let mut visitor = |idx: usize, dimension: usize| -> u32 {
+    let visitor = |idx: usize, dimension: usize| -> u32 {
         // KDTreeIndirect.hpp:297-307  unsigned int operator()(size_t idx, size_t dimension)
         if filter(idx) {
             // KDTreeIndirect.hpp:299-303
@@ -778,7 +778,7 @@ where
 {
     let mut result = Vec::new();
 
-    let mut visitor = |idx: usize, dimension: usize| -> u32 {
+    let visitor = |idx: usize, dimension: usize| -> u32 {
         let mut ret =
             (VisitorReturnMask::ContinueLeft as u32) | (VisitorReturnMask::ContinueRight as u32);
 

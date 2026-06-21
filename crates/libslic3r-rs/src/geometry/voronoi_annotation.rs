@@ -365,7 +365,7 @@ pub fn annotate_inside_outside(diagram: &mut bv::Diagram, lines: &[Line]) {
                     let cell_id = diagram.edge_get_cell(edge_id).ok();
                     let twin_id = diagram.edge_get_twin(edge_id).ok();
 
-                    if let (Some(mut cid), Some(tid)) = (cell_id, twin_id) {
+                    if let (Some(cid), Some(_tid)) = (cell_id, twin_id) {
                         let on_contour = on_site(diagram, cid, lines, v0_pt);
                         if on_contour {
                             set_vertex_category(diagram, v0_id, VertexCategory::OnContour);
@@ -386,7 +386,7 @@ pub fn annotate_inside_outside(diagram: &mut bv::Diagram, lines: &[Line]) {
                 let cell_id = diagram.edge_get_cell(edge_id).ok();
                 let twin_id = diagram.edge_get_twin(edge_id).ok();
 
-                if let (Some(mut cid), Some(tid)) = (cell_id, twin_id) {
+                if let (Some(cid), Some(tid)) = (cell_id, twin_id) {
                     if let (Ok(cell), Ok(twin_cell_id)) =
                         (diagram.cell(cid), diagram.edge_get_cell(tid))
                     {
@@ -518,7 +518,7 @@ pub fn annotate_inside_outside(diagram: &mut bv::Diagram, lines: &[Line]) {
             let cell_id = diagram.edge_get_cell(edge_id).ok();
             let twin_id = diagram.edge_get_twin(edge_id).ok();
 
-            if let (Some(mut cid), Some(tid)) = (cell_id, twin_id) {
+            if let (Some(cid), Some(tid)) = (cell_id, twin_id) {
                 let twin_cell_id = diagram.edge_get_cell(tid).ok();
 
                 // Find which cell (if any) contains a segment
@@ -692,10 +692,10 @@ pub fn annotate_inside_outside(diagram: &mut bv::Diagram, lines: &[Line]) {
                 let cell_id = diagram.edge_get_cell(edge_id).ok();
                 let twin_id = diagram.edge_get_twin(edge_id).ok();
 
-                if let (Some(mut cid), Some(tid)) = (cell_id, twin_id) {
+                if let (Some(cid), Some(tid)) = (cell_id, twin_id) {
                     let twin_cell_id = diagram.edge_get_cell(tid).ok();
 
-                    if let (Ok(cell), Some(mut tcid)) = (diagram.cell(cid), twin_cell_id) {
+                    if let (Ok(cell), Some(tcid)) = (diagram.cell(cid), twin_cell_id) {
                         if let Ok(twin_cell) = diagram.cell(tcid) {
                             // Both cells must be Point-based
                             if cell.contains_point() && twin_cell.contains_point() {

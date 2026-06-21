@@ -32,7 +32,6 @@ use crate::geometry::{ExPolygon, ExPolygons, Point, Polygon, Polygons};
 use crate::normal_utils::{indexed_triangle_set, StlVertex};
 use crate::triangle_mesh::{its_face_edge_ids, Vec3i};
 use crate::triangle_mesh::TriangleMesh;
-use crate::utils::next_idx_modulo;
 use crate::{scale, unscale, CoordF};
 
 // TriangleMeshSlicer.cpp:44
@@ -238,7 +237,7 @@ fn slice_facet(
         let mut a = vertices[k];
         let mut b_id = indices[l];
         let mut b = vertices[l];
-        let c = vertices[(k + 2) % 3];
+        let _c = vertices[(k + 2) % 3];
 
         // Is edge or face aligned with the cutting plane?
         // TriangleMeshSlicer.cpp:190

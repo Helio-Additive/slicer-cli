@@ -1437,7 +1437,7 @@ impl TriangleSelector {
         let touching = self.triangle_subtriangles_i(itriangle, vertexi, vertexj);
 
         // process_subtriangle lambda (TriangleSelector.cpp:443-451) — inlined to avoid borrow conflicts.
-        let mut process_subtriangle = |this: &Self, subtriangle_idx: i32, partition: Partition, out: &mut Vec<i32>| {
+        let process_subtriangle = |this: &Self, subtriangle_idx: i32, partition: Partition, out: &mut Vec<i32>| {
             debug_assert!(subtriangle_idx != -1); // TriangleSelector.cpp:444
             if !this.m_triangles[subtriangle_idx as usize].is_split() {
                 out.push(subtriangle_idx); // TriangleSelector.cpp:446
@@ -1470,7 +1470,7 @@ impl TriangleSelector {
 
         let touching = self.triangle_subtriangles_i(itriangle, vertexi, vertexj); // TriangleSelector.cpp:489
 
-        let mut process_subtriangle = |this: &Self, subtriangle_idx: i32, partition: Partition, out: &mut Vec<Vec2i>| {
+        let process_subtriangle = |this: &Self, subtriangle_idx: i32, partition: Partition, out: &mut Vec<Vec2i>| {
             debug_assert!(subtriangle_idx != -1); // TriangleSelector.cpp:469
             if !this.m_triangles[subtriangle_idx as usize].is_split() {
                 // TriangleSelector.cpp:470
@@ -1937,7 +1937,7 @@ impl TriangleSelector {
 
         let mut out = *child_neighbors; // TriangleSelector.cpp:869
         // replace_if_not_exists lambda (TriangleSelector.cpp:870-873)
-        let mut replace_if_not_exists = |out: &mut Vec3i, index_to_replace: i32, neighbor_idx: i32| {
+        let replace_if_not_exists = |out: &mut Vec3i, index_to_replace: i32, neighbor_idx: i32| {
             if out[index_to_replace as usize] == -1 {
                 out[index_to_replace as usize] = neighbors_propagated[neighbor_idx as usize];
             }

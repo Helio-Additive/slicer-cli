@@ -3,7 +3,7 @@
 //! This module provides the ExPolygon type representing a polygon with holes
 //! (exterior contour + interior hole contours), mirroring BambuStudio's ExPolygon class.
 
-use super::medial_axis::{compute_medial_axis_thick, MedialAxisConfig};
+use super::medial_axis::compute_medial_axis_thick;
 use super::thick_polyline::ThickPolylines;
 use super::{BoundingBox, Line, Point, Polygon, Polyline};
 use crate::{Coord, CoordF};

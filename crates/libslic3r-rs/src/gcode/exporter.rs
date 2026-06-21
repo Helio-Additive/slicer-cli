@@ -9,7 +9,7 @@ use crate::arc_fitter::{ArcFitter, EMovePathType, PathFittingData};
 use crate::extrusion_entity::{
     ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionPath, ExtrusionRole,
 };
-use crate::gcode::cooling::{CoolingBuffer, CoolingConfig, CoolingMove};
+use crate::gcode::cooling::CoolingBuffer;
 use crate::gcode::writer::GCodeWriter;
 use crate::geometry::{Point, Polyline};
 use crate::libslic3r::EPSILON;
@@ -677,7 +677,7 @@ pub fn extrude_path_with_arc_fitting(
     writer: &mut GCodeWriter,
     config: &crate::print_config::PrintObjectConfig,
     is_first_layer: bool,
-    print_config: Option<&PrintConfig>,
+    _print_config: Option<&PrintConfig>,
 ) {
     // C++ reference: GCode.cpp:4200-4210
     // C++: std::string GCode::_extrude(const ExtrusionPath &path, std::string description, double speed, bool is_hole_or_comp_speed)
@@ -990,7 +990,7 @@ pub fn extrude_perimeters(
 
     if skip_inner_walls {
         // Spiral vase mode: only emit outer perimeter entities
-        use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
+        use crate::extrusion_entity::ExtrusionRole;
         for entity in &region.perimeters.entities {
             let role = get_entity_role(entity);
             if role == ExtrusionRole::ExternalPerimeter {
@@ -1120,7 +1120,7 @@ pub fn travel_to(point: Point, writer: &mut GCodeWriter, config: &TravelConfig) 
 
     /// Create travel polyline
     /// GCode.cpp:6418-6420
-    let mut travel = Polyline::from_points(vec![current_pos_scaled, point]);
+    let travel = Polyline::from_points(vec![current_pos_scaled, point]);
 
     /// Calculate travel distance and check if retraction is needed
     /// GCode.cpp:6422-6424
@@ -1309,7 +1309,7 @@ pub fn wipe(
     wipe_distance: f64,
     retraction_length: f64,
     wipe_speed: f64,
-    toolchange: bool,
+    _toolchange: bool,
     is_last: bool,
 ) -> Result<()> {
     /// Get retraction length to apply during wipe
@@ -1483,8 +1483,8 @@ pub fn wipe(
 pub fn set_extruder(
     new_extruder_id: usize,
     writer: &mut GCodeWriter,
-    print_z: f64,
-    config: &PrintConfig,
+    _print_z: f64,
+    _config: &PrintConfig,
 ) -> Result<()> {
     /// Check if tool change is needed
     /// GCode.cpp:6728-6729
@@ -1867,7 +1867,7 @@ pub fn change_layer(
     print_z: f64,
     writer: &mut GCodeWriter,
     state: &mut GCodeLayerState,
-    config: &crate::print_config::PrintConfig,
+    _config: &crate::print_config::PrintConfig,
 ) -> String {
     let mut gcode = String::new();
 

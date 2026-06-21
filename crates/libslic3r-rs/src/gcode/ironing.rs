@@ -27,7 +27,7 @@
 
 use crate::clipper_utils::{intersection, offset_expolygons, OffsetJoinType};
 use crate::fill::InfillPattern;
-use crate::geometry::{ExPolygon, Point, Polygon, Polyline};
+use crate::geometry::{ExPolygon, Point, Polyline};
 use crate::{scale, unscale};
 
 /// Type of ironing to apply.
@@ -202,7 +202,7 @@ impl IroningConfig {
     ///
     /// Uses the rounded rectangle formula from Flow.
     pub fn extrusion_width(&self) -> f64 {
-        let height = self.extrusion_height() * self.line_spacing / self.nozzle_diameter;
+        let _height = self.extrusion_height() * self.line_spacing / self.nozzle_diameter;
         // Rounded rectangle width from spacing
         // width = spacing + height * (1 - PI/4)
         self.nozzle_diameter
@@ -374,7 +374,7 @@ impl IroningGenerator {
 
         // Calculate the inset offset
         let inset = self.config.effective_inset();
-        let inset_scaled = scale(inset);
+        let _inset_scaled = scale(inset);
 
         // Offset the surfaces inward
         let mut ironing_areas: Vec<ExPolygon> = Vec::new();

@@ -2978,7 +2978,7 @@ pub fn process_layer_gcode(
     min_print_speed: f32,
     fan_min_speed: i32,
     fan_max_speed: i32,
-    slow_down_layer_time: f32,
+    _slow_down_layer_time: f32,
     fan_cooling_layer_time: f32,
     close_fan_first_layers: usize,
 ) -> String {

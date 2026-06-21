@@ -869,7 +869,7 @@ pub fn process_gcode_template(
                             .and_then(|s| s.parse::<f64>().ok())
                             .unwrap_or(0.42);
                         let height = config.layer_height;
-                        let flow_ratio = settings
+                        let _flow_ratio = settings
                             .get("filament_flow_ratio")
                             .and_then(|v| match v {
                                 serde_json::Value::Array(a) => a.first().and_then(|x| x.as_str()),
@@ -1070,7 +1070,7 @@ pub fn process_gcode_template(
             }
         }
         if trimmed.starts_with("{endif}") {
-            let was_satisfied = branch_satisfied.pop().unwrap_or(false);
+            let _was_satisfied = branch_satisfied.pop().unwrap_or(false);
             if skip_depth > 0 {
                 skip_depth -= 1;
             }

@@ -19,7 +19,7 @@
 //! 2. Intersection visitor for detecting edge crossings
 //! 3. Helper functions for batch conversions with Z-indexing
 
-use crate::geometry::{ExPolygon, Point, Polygon};
+use crate::geometry::{ExPolygon, Point};
 use std::cmp::Ordering;
 
 // ============================================================================

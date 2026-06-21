@@ -1442,7 +1442,7 @@ impl ExactComparisonResult {
     }
 
     /// Get a formatted summary with color coding.
-    pub fn format_colored_summary(&self, context_lines: usize) -> String {
+    pub fn format_colored_summary(&self, _context_lines: usize) -> String {
         let mut output = String::new();
 
         output.push_str("=== EXACT LINE-BY-LINE COMPARISON ===\n\n");

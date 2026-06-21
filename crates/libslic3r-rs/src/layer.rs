@@ -23,17 +23,13 @@ use crate::fill::fill_rectilinear::generate_fill_rectilinear;
 use crate::fill::{generate_infill, InfillConfig, InfillPath, InfillPattern};
 use crate::flow::{Flow, FlowRole};
 use crate::geometry::{
-    BoundingBox, ExPolygon, ExPolygons, Point, Polygon, Polygons, Polyline, Polylines,
+    BoundingBox, ExPolygons, Point, Polygon, Polygons, Polyline, Polylines,
 };
-use crate::perimeter_generator::{PerimeterConfig, PerimeterGenerator, WallGeneratorMode};
+use crate::perimeter_generator::WallGeneratorMode;
 use crate::region_config::PrintRegionConfig;
-use crate::region_expansion::{
-    expand_bridges_detect_orientations, expand_merge_surfaces, ExpansionZone,
-    RegionExpansionParameters,
-};
 use crate::surface::{Surface, SurfaceType};
 use crate::surface_collection::SurfaceCollection;
-use crate::{scale, unscale, Coord, CoordF, Result};
+use crate::{scale, Result};
 
 use std::sync::Arc;
 
@@ -2136,7 +2132,7 @@ impl Layer {
     /// Get all slices (combined)
     /// Layer.cpp:1315-1325
     pub fn all_slices(&self) -> ExPolygons {
-        let mut result = self.lslices.clone();
+        let result = self.lslices.clone();
         result
     }
 }

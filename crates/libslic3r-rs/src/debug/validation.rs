@@ -36,7 +36,7 @@
 //! println!("Quality Score: {:.1}/100", report.quality_score());
 //! ```
 
-use super::compare::{ComparisonConfig, ComparisonResult, GCodeComparator, ParsedGCode};
+use super::compare::ParsedGCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;

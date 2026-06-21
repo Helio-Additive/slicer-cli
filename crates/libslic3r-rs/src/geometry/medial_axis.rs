@@ -30,7 +30,7 @@
 //! - `Geometry/Voronoi.hpp` / `Voronoi.cpp`
 
 use crate::geometry::{
-    ExPolygon, ExPolygons, Line, Point, Polygon, Polyline, ThickPolyline, ThickPolylines,
+    ExPolygon, Line, Point, Polygon, Polyline, ThickPolyline, ThickPolylines,
 };
 use crate::{Coord, CoordF, SCALING_FACTOR};
 
@@ -216,7 +216,7 @@ pub fn compute_medial_axis_thick(expoly: &ExPolygon, config: &MedialAxisConfig) 
                 .map(|c| c & EXTERNAL_COLOR == 0)
                 .unwrap_or(false);
 
-            if (v0_inside || v1_inside) {
+            if v0_inside || v1_inside {
                 if let Some((w0, w1)) = validate_edge(
                     &diagram,
                     edge_id,

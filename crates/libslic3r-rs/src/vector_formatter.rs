@@ -104,12 +104,12 @@ impl<'a, K: fmt::Display, V: fmt::Display> fmt::Debug for MapFormatter<'a, K, V>
 }
 
 /// Convenience function to create a VectorFormatter
-pub fn format_vec<T>(vec: &[T]) -> VectorFormatter<T> {
+pub fn format_vec<T>(vec: &[T]) -> VectorFormatter<'_, T> {
     VectorFormatter::new(vec)
 }
 
 /// Convenience function to create a MapFormatter
-pub fn format_map<K, V>(map: &BTreeMap<K, V>) -> MapFormatter<K, V> {
+pub fn format_map<K, V>(map: &BTreeMap<K, V>) -> MapFormatter<'_, K, V> {
     MapFormatter::new(map)
 }
 

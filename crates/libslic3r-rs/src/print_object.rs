@@ -49,7 +49,6 @@ use crate::{
     layer::Layer,
     print_config::{PrintConfig, PrintObjectConfig},
     print_region::PrintRegion,
-    surface::Surface,
     surface_collection::SurfaceCollection,
     Error, Result,
 };
@@ -427,7 +426,7 @@ impl PrintObject {
 
         // Perform actual mesh slicing
         // PrintObjectSlice.cpp:801
-        let mut layers = slicer.slice(mesh)?;
+        let layers = slicer.slice(mesh)?;
 
         // Check for empty result
         // PrintObjectSlice.cpp:838-839
@@ -566,7 +565,7 @@ impl PrintObject {
         // PrintObject.cpp:481-540
         // Loop over each region to calculate extra perimeters
         for region_id in 0..num_regions {
-            let region = match self.printing_region(region_id) {
+            let _region = match self.printing_region(region_id) {
                 Some(r) => r,
                 None => continue,
             };
@@ -2101,10 +2100,9 @@ impl PrintObject {
     /// C++: void PrintObject::discover_horizontal_shells()
     fn discover_horizontal_shells(&mut self) -> Result<()> {
         use crate::clipper_utils::{
-            diff_ex, difference, grow, intersection, opening, opening_ex, shrink, union_ex,
-            union_polygons_ex, ApplySafetyOffset, OffsetJoinType,
+            difference, grow, opening, union_ex, OffsetJoinType,
         };
-        use crate::geometry::{to_polygons, ExPolygon, ExPolygons, Polygon, Polygons};
+        use crate::geometry::{to_polygons, ExPolygon, ExPolygons, Polygons};
         use crate::surface::{Surface, SurfaceType};
 
         /// PrintObject.cpp:3387
@@ -2248,7 +2246,7 @@ impl PrintObject {
                     };
 
                     let mut neighbor_count = 0;
-                    let initial_n = if surface_type == SurfaceType::Top {
+                    let _initial_n = if surface_type == SurfaceType::Top {
                         i as i32 - 1
                     } else {
                         i as i32 + 1

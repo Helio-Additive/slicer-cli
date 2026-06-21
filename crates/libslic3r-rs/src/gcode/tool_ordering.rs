@@ -842,7 +842,7 @@ impl ToolOrdering {
         &mut self,
         print_z: f64,
         extruder: u32,
-        is_interface: bool,
+        _is_interface: bool,
     ) {
         if let Some(layer) = self.layer_tools_for_layer_mut(print_z) {
             if !layer.extruders.contains(&extruder) {
@@ -887,7 +887,7 @@ impl ToolOrdering {
         }
 
         // Determine the initial extruder
-        let mut last_extruder = first_extruder.or_else(|| {
+        let last_extruder = first_extruder.or_else(|| {
             // Find the first non-zero extruder
             for layer in &self.layer_tools {
                 for &extruder in &layer.extruders {

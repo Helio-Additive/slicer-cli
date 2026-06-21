@@ -8,4 +8,3 @@
 //! This file was auto-generated to maintain structural parity with libslic3r.
 //! Each type and function needs to be ported from the C++ source.
 
-use crate::{Error, Result};

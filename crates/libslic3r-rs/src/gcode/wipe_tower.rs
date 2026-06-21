@@ -746,7 +746,7 @@ impl WipeTowerWriter {
         layer_height: f32,
         perimeter_width: f32,
         gcode_flavor: GCodeFlavor,
-        filament_parameters: &[FilamentParameters],
+        _filament_parameters: &[FilamentParameters],
     ) -> Self {
         let extrusion_flow = Self::calculate_extrusion_flow(layer_height, perimeter_width);
 
@@ -984,7 +984,7 @@ impl WipeTowerWriter {
         y: f32,
         e: f32,
         width: f32,
-        limit_flow: bool,
+        _limit_flow: bool,
     ) -> &mut Self {
         let target = Vec2f::new(x, y);
         let rotated = self.rotate(target);
@@ -1063,7 +1063,7 @@ impl WipeTowerWriter {
 
     /// Fill a box with back-and-forth extrusion
     pub fn rectangle_fill_box(&mut self, box_coords: &BoxCoordinates, spacing: f32) -> &mut Self {
-        let width = box_coords.width();
+        let _width = box_coords.width();
         let height = box_coords.height();
         let num_lines = (height / spacing).floor() as i32;
 
@@ -1987,7 +1987,7 @@ impl WipeTower {
         let wipe_depth = tc_info.required_depth;
         let wipe_length = tc_info.wipe_length;
         let purge_volume = tc_info.purge_volume;
-        let nozzle_change_depth = tc_info.nozzle_change_depth;
+        let _nozzle_change_depth = tc_info.nozzle_change_depth;
 
         // Create cleaning box
         let cleaning_box = BoxCoordinates::new(

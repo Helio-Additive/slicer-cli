@@ -8,7 +8,7 @@
 //!
 //! Mirrors BambuStudio's `ThickPolyline` class from `Polyline.hpp`.
 
-use super::{Line, Point, PointF, Polyline};
+use super::{Point, Polyline};
 use crate::{Coord, CoordF};
 use serde::{Deserialize, Serialize};
 use std::fmt;

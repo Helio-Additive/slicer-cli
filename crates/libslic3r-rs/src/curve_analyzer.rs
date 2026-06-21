@@ -8,7 +8,7 @@
 
 use crate::extrusion_entity::ExtrusionPath;
 use crate::geometry::{Point, Polygon};
-use crate::{scale, CoordF, Result};
+use crate::{scale, Result};
 use std::f64::consts::PI;
 
 /// Constants for curvature analysis

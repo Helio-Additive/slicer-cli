@@ -615,7 +615,7 @@ impl AABBTree {
             // Median-of-three pivot selection - get values first
             let left_val = input[left].centroid.component(dimension);
             let center_val = input[center].centroid.component(dimension);
-            let right_val = input[right].centroid.component(dimension);
+            let _right_val = input[right].centroid.component(dimension);
 
             // Sort left, center, right
             if left_val > center_val {

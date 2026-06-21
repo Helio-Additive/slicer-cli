@@ -250,7 +250,7 @@ impl Line {
     /// Static method: Calculate the squared distance from a point to a line segment.
     /// This matches libslic3r's `Line::distance_to_squared()` static method.
     pub fn distance_to_squared(p: Point, a: Point, b: Point) -> f64 {
-        let line = Line::new(a, b);
+        let _line = Line::new(a, b);
         let proj = p.project_onto_segment(a, b);
         p.distance_squared(&proj) as f64
     }

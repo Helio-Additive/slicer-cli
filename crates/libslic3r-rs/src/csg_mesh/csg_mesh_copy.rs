@@ -8,10 +8,9 @@
 //! compare two CSG ranges for equality.
 
 use super::csg_mesh::{
-    get_mesh, get_operation, get_stack_operation, get_transform, CSGPart, CSGStackOp, CSGType,
+    get_mesh, get_operation, get_stack_operation, get_transform, CSGPart,
     MeshPtr,
 };
-use crate::geometry::Transform3D;
 use crate::triangle_mesh::TriangleMesh;
 use std::rc::Rc;
 use std::sync::Arc;

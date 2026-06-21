@@ -25,7 +25,7 @@
 //! 3. Apply smoothed positions back using `apply_smoothed_positions_to_move_bounds()`
 //! 4. Generate branch mesh from updated `move_bounds`
 
-use crate::geometry::{ExPolygon, ExPolygons, Point, PointF, Polygon};
+use crate::geometry::{ExPolygons, Point, PointF, Polygon};
 use crate::support::tree_support_settings::{SupportElement, TreeSupportSettings};
 use crate::{scale, unscale, Coord, CoordF};
 use std::collections::HashMap;

@@ -33,7 +33,7 @@
 use boostvoronoi::prelude as bv;
 
 use crate::geometry::{Line, Point};
-use crate::{Coord, SCALING_FACTOR};
+use crate::Coord;
 
 // ---------------------------------------------------------------------------
 // Public Types

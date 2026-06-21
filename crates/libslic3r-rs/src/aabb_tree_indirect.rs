@@ -8,7 +8,6 @@
 
 use crate::geometry::aabb_tree::Vec3;
 use crate::geometry::{BoundingBox3F, Point3F};
-use crate::{Error, Result};
 
 /// Special index values for AABB tree nodes
 /// AABBTreeIndirect.hpp:47-52
@@ -261,7 +260,7 @@ impl Tree {
                 let right_value = self.get_centroid_coord(&input[right], dimension);
 
                 // AABBTreeIndirect.hpp:168-170
-                let (mut left_value, mut center_value, mut right_value) =
+                let (left_value, mut center_value, mut right_value) =
                     if left_value > center_value {
                         input.swap(left, center);
                         (center_value, left_value, right_value)

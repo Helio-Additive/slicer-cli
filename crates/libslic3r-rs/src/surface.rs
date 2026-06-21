@@ -20,9 +20,6 @@
 //! - `src/libslic3r/Surface.hpp/cpp`
 //! - `PrintObject::detect_surfaces_type()` in `PrintObject.cpp`
 
-use crate::clipper_utils::{
-    difference, grow, intersection, opening, shrink, union_ex, OffsetJoinType,
-};
 use crate::geometry::{ExPolygon, ExPolygons};
 use crate::CoordF;
 use serde::{Deserialize, Serialize};

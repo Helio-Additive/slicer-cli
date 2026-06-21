@@ -64,11 +64,9 @@ use crate::{
     extrusion_entity::{ExtrusionEntityCollection, ExtrusionPath, ExtrusionRole},
     flow::{Flow, FlowRole},
     geometry::{convex_hull_points, Point, Polygon as GeomPolygon},
-    layer::Layer,
     model::Model,
-    print_config::{PrintConfig, PrintObjectConfig},
-    print_region::PrintRegion,
-    scale, Error, Result,
+    print_config::PrintConfig,
+    print_region::PrintRegion, Error, Result,
 };
 
 use std::sync::{
@@ -1059,8 +1057,8 @@ impl Print {
         use_cache: bool,
     ) -> Result<()> {
         // Print.cpp:1786
-        let mut start_time: i64 = 0;
-        let mut end_time: i64 = 0;
+        let _start_time: i64 = 0;
+        let _end_time: i64 = 0;
 
         // Print.cpp:1787-1791
         // TODO: Port slice_time tracking
@@ -1096,7 +1094,7 @@ impl Print {
         }
 
         // Print.cpp:1802-1803
-        for obj in &mut self.objects {
+        for _obj in &mut self.objects {
             // obj->clear_shared_object();
             // TODO: Port clear_shared_object()
         }
@@ -1114,7 +1112,7 @@ impl Print {
         // - object config
 
         // Print.cpp:1856
-        let object_count = self.objects.len();
+        let _object_count = self.objects.len();
 
         // Print.cpp:1857
         // std::set<PrintObject*> need_slicing_objects;
@@ -1251,7 +1249,7 @@ impl Print {
             // TODO: Port timing
 
             // Print.cpp:1991-1999
-            for obj in &mut self.objects {
+            for _obj in &mut self.objects {
                 // if (need_slicing_objects.count(obj) != 0) {
                 //     obj->detect_overhangs_for_lift();
                 // } else {

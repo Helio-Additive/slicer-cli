@@ -1941,7 +1941,7 @@ pub fn get_measurement(a: &SurfaceFeature, b: &SurfaceFeature, deal_circle_resul
             let mut distances: Vec<DistAndPoints> = Vec::new();
 
             // Measure.cpp:911-920 — add_point_edge_distance lambda
-            let mut add_point_edge_distance = |v: Vec3d, e: &(Vec3d, Vec3d), distances: &mut Vec<DistAndPoints>| {
+            let add_point_edge_distance = |v: Vec3d, e: &(Vec3d, Vec3d), distances: &mut Vec<DistAndPoints>| {
                 let res = get_measurement(
                     &SurfaceFeature::from_point(v),
                     &SurfaceFeature::new(SurfaceFeatureType::Edge, e.0, e.1, None, 0.0),
@@ -2128,8 +2128,8 @@ pub fn get_measurement(a: &SurfaceFeature, b: &SurfaceFeature, deal_circle_resul
                 let p7 = &(&(&p0 * &tmp2) + &(&p1 * &tmp1)) - &(r0sqr * &tmp4);
 
                 let max_iterations: u32 = 128;
-                let mut degree: i32;
-                let mut num_roots: usize;
+                let degree: i32;
+                let num_roots: usize;
                 let mut roots: [f64; 8] = [0.0; 8];
                 let mut unique_roots: std::collections::BTreeSet<OrderedF64> = std::collections::BTreeSet::new();
                 let mut pairs: [(f64, f64); 16] = [(0.0, 0.0); 16];

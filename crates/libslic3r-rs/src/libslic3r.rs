@@ -5,7 +5,7 @@
 
 /// C++ Reference: libslic3r.h
 /// Main header file for the libslic3r library
-use crate::{Error, Result};
+use crate::Result;
 
 // ---------------------------------------------------------------------------
 // Core Constants

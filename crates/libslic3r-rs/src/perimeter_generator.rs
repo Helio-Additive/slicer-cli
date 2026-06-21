@@ -522,7 +522,7 @@ impl PerimeterGenerator {
                         /// PerimeterGenerator.cpp:980-982
                         /// C++: ExPolygons expolys;
                         /// C++: expolys.push_back(expolygon);
-                        let mut expolys = vec![expolygon.clone()];
+                        let expolys = vec![expolygon.clone()];
 
                         /// PerimeterGenerator.cpp:983-985
                         /// C++: ExPolygons offset_result = offset2_ex(expolys, -float(ext_perimeter_width / 2. + ext_min_spacing_smaller / 2.), +float(ext_min_spacing_smaller / 2.));
@@ -1103,7 +1103,7 @@ pub(crate) fn convert_thin_walls_to_extrusion_paths(
     role: crate::extrusion_entity::ExtrusionRole,
     flow: &Flow,
 ) -> Vec<crate::extrusion_entity::ExtrusionPath> {
-    use crate::extrusion_entity::ExtrusionPath;
+    
 
     let mut result = Vec::new();
 
@@ -1638,7 +1638,7 @@ fn traverse_loops(
     /// Append thin walls to the collection
     /// PerimeterGenerator.cpp:464-470
     /// C++: Point zero_point(0, 0);
-    let mut zero_point = Point::new(0, 0);
+    let zero_point = Point::new(0, 0);
 
     /// C++: if (! thin_walls.empty()) {
     if !thin_walls.is_empty() {
@@ -1840,7 +1840,7 @@ impl PerimeterGenerator {
             let last_p: crate::geometry::Polygons = expolygons_to_polygons(&last);
 
             let mut total_perimeters: Vec<VariableWidthLines> = Vec::new();
-            let mut surface_infill: ExPolygons;
+            let surface_infill: ExPolygons;
 
             if loop_number >= 0 {
                 // PerimeterGenerator.cpp:1532  is_one_wall

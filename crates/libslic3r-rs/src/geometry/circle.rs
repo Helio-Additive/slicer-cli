@@ -8,7 +8,7 @@
 //! `Circled` / `CircleSqd` instantiations that the rest of libslic3r actually
 //! uses, so the monomorphised `Vec2d` flavour is ported directly.
 
-use crate::geometry::{Point, PointF, Vec2d};
+use crate::geometry::{Point, Vec2d};
 use crate::libslic3r::{EPSILON, SCALED_EPSILON};
 use crate::CoordF;
 

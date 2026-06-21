@@ -22,6 +22,4 @@
 
 // Voronoi.hpp:21  class VoronoiDiagram
 // Voronoi.cpp:26  VoronoiDiagram::construct_voronoi(...)
-pub use crate::geometry::voronoi_diagram::{
-    IssueType, RepairState, VoronoiDiagram, VoronoiError,
-};
+pub use crate::geometry::voronoi_diagram::VoronoiDiagram;

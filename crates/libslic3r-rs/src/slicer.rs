@@ -4,7 +4,7 @@
 //! a 3D mesh into a series of 2D layers, mirroring BambuStudio's
 //! TriangleMeshSlicer.
 
-use crate::geometry::{ExPolygon, ExPolygons};
+use crate::geometry::ExPolygons;
 use crate::layer::{Layer, LayerRegion};
 use crate::slicing::SlicingParams;
 use crate::triangle_mesh::TriangleMesh;

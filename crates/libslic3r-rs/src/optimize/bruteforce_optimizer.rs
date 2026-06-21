@@ -7,7 +7,7 @@
 //! points for each dimension. Grid size determines the number of samples per
 //! dimension, so the total number of function calls is `grid_size ^ dimension`.
 
-use super::optimizer::{Bound, Bounds, Input, OptDir, OptResult, Optimizer, StopCriteria};
+use super::optimizer::{Bounds, Input, OptResult, Optimizer, StopCriteria};
 
 // Implementing a bruteforce optimizer
 

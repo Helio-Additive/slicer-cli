@@ -1385,7 +1385,7 @@ pub fn fill_surface_extrusion(
 /// 1. Tries to connect consecutive polylines whose endpoints are close
 /// 2. Falls through to just outputting disconnected polylines otherwise
 pub fn connect_infill(
-    mut infill_ordered: Vec<Polyline>,
+    infill_ordered: Vec<Polyline>,
     boundary: &[Polygon],
     spacing: f64,
     _params: &FillParams,
