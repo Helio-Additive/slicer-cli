@@ -124,6 +124,187 @@ pub fn clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZP
 }
 
 // ---------------------------------------------------------------------------
+// M1 (bridges / wave_seeds) safe wrappers over the ClipperLib_Z primitives.
+// ---------------------------------------------------------------------------
+
+use crate::geometry::ExPolygon;
+
+/// Faithful `expolygons_to_zpaths_expanded_opened` (RegionExpansion.cpp:83-106):
+/// offset each `src` contour (outer +`expansion`, holes -`expansion`,
+/// jtSquare/etClosedPolygon), "open" each offset polygon (first point repeated),
+/// and Z-tag every vertex with the running per-expolygon `base_idx`. Returns the
+/// opened, Z-tagged paths and writes the advanced `base_idx` back into the
+/// caller's `base_idx` (one increment per expolygon).
+///
+/// Coordinates are scaled `coord_t` (i64); `expansion` / `shortest_edge_length`
+/// are scaled distances. They are narrowed to i32 for the engine (see module docs).
+pub fn offset_open_zpaths(
+    src: &[ExPolygon],
+    expansion: f64,
+    shortest_edge_length: f64,
+    base_idx: &mut i64,
+) -> ZPaths {
+    if src.is_empty() {
+        return Vec::new();
+    }
+    // Flatten contours: x,y pairs, per-contour lengths, per-expolygon contour counts.
+    let mut contour_xy: Vec<i32> = Vec::new();
+    let mut contour_lens: Vec<i32> = Vec::new();
+    let mut contour_per_ex: Vec<i32> = Vec::with_capacity(src.len());
+    for ep in src {
+        contour_per_ex.push(ep.num_contours() as i32);
+        // contour 0 = outer, then holes (matches contour_or_hole ordering).
+        let push_contour = |poly: &Polygon, lens: &mut Vec<i32>, xy: &mut Vec<i32>| {
+            lens.push(poly.points.len() as i32);
+            xy.reserve(poly.points.len() * 2);
+            for p in &poly.points {
+                xy.push(narrow_i32(p.x()));
+                xy.push(narrow_i32(p.y()));
+            }
+        };
+        push_contour(&ep.contour, &mut contour_lens, &mut contour_xy);
+        for hole in &ep.holes {
+            push_contour(hole, &mut contour_lens, &mut contour_xy);
+        }
+    }
+
+    let base_start = narrow_i32(*base_idx);
+    let mut base_out: i32 = base_start;
+    // SAFETY: all pointers reference live Vecs for the call duration; the shim
+    // only reads them and returns malloc'd buffers we copy + free.
+    let raw = unsafe {
+        clipper_z_sys::cz_offset_open(
+            contour_xy.as_ptr(),
+            contour_lens.as_ptr(),
+            contour_per_ex.as_ptr(),
+            src.len() as i32,
+            expansion,
+            shortest_edge_length,
+            base_start,
+            &mut base_out as *mut i32,
+        )
+    };
+    *base_idx = base_out as i64;
+    let out = czzpaths_into_zpaths(&raw);
+    // SAFETY: `raw` was produced by cz_offset_open and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    out
+}
+
+/// The Z-tagged result of [`wave_seeds_clip`]: segments (first `num_closed` are
+/// closed, the rest open) plus the provenance `intersections` table (each a pair
+/// of the two distinct source Z indices). A negative segment Z value `-k` refers
+/// to `intersections[k-1]`.
+pub struct WaveSeedsClip {
+    pub segments: ZPaths,
+    pub num_closed: usize,
+    pub intersections: Vec<(i64, i64)>,
+}
+
+/// Faithful provenance Z-clip core (RegionExpansion.cpp:302-327, ClipperLib_Z
+/// engine): boundary as CLOSED clip, offset-opened src as OPEN subject,
+/// `Execute(ctIntersection, pftNonZero)` with the `ClipperZIntersectionVisitor`
+/// ZFillFunction. `subj` and `clip` are pre-Z-tagged ZPaths (clip tagged with the
+/// boundary index, subj tagged with the src base_idx). Returns the Z-tagged
+/// closed+open segments and the populated intersections table.
+pub fn wave_seeds_clip(subj: &ZPaths, clip: &ZPaths) -> WaveSeedsClip {
+    if subj.is_empty() || clip.is_empty() {
+        return WaveSeedsClip { segments: Vec::new(), num_closed: 0, intersections: Vec::new() };
+    }
+    let (subj_xyz, subj_lens) = flatten_zpaths(subj);
+    let (clip_xyz, clip_lens) = flatten_zpaths(clip);
+
+    // SAFETY: pointers reference live Vecs for the call; the shim copies into
+    // malloc'd buffers we read out and free.
+    let raw = unsafe {
+        clipper_z_sys::cz_wave_seeds_clip(
+            subj_xyz.as_ptr(),
+            subj_lens.as_ptr(),
+            subj_lens.len() as i32,
+            clip_xyz.as_ptr(),
+            clip_lens.as_ptr(),
+            clip_lens.len() as i32,
+        )
+    };
+
+    let mut segments: ZPaths = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        let lens = unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in lens {
+            let len = len.max(0) as usize;
+            let mut path: ZPath = Vec::with_capacity(len);
+            for _ in 0..len {
+                path.push((
+                    coords[cursor * 3] as i64,
+                    coords[cursor * 3 + 1] as i64,
+                    coords[cursor * 3 + 2] as i64,
+                ));
+                cursor += 1;
+            }
+            segments.push(path);
+        }
+    }
+    let num_closed = raw.num_closed.max(0) as usize;
+    let mut intersections: Vec<(i64, i64)> = Vec::with_capacity(raw.num_intersections.max(0) as usize);
+    if raw.num_intersections > 0 && !raw.intersections.is_null() {
+        let is = unsafe {
+            std::slice::from_raw_parts(raw.intersections, (raw.num_intersections * 2) as usize)
+        };
+        for i in 0..raw.num_intersections as usize {
+            intersections.push((is[2 * i] as i64, is[2 * i + 1] as i64));
+        }
+    }
+    // SAFETY: `raw` was produced by cz_wave_seeds_clip and not freed yet.
+    unsafe { clipper_z_sys::cz_free_wave_seeds(raw) };
+
+    WaveSeedsClip { segments, num_closed, intersections }
+}
+
+/// Flatten ZPaths into x,y,z i32 triples + per-path lengths for the FFI.
+fn flatten_zpaths(paths: &ZPaths) -> (Vec<i32>, Vec<i32>) {
+    let mut xyz: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::with_capacity(paths.len());
+    for p in paths {
+        lens.push(p.len() as i32);
+        xyz.reserve(p.len() * 3);
+        for &(x, y, z) in p {
+            xyz.push(narrow_i32(x));
+            xyz.push(narrow_i32(y));
+            xyz.push(narrow_i32(z));
+        }
+    }
+    (xyz, lens)
+}
+
+/// Read a [`clipper_z_sys::CzZPaths`] into owned `ZPaths` (does NOT free `raw`).
+fn czzpaths_into_zpaths(raw: &clipper_z_sys::CzZPaths) -> ZPaths {
+    let mut out: ZPaths = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        let lens = unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in lens {
+            let len = len.max(0) as usize;
+            let mut path: ZPath = Vec::with_capacity(len);
+            for _ in 0..len {
+                path.push((
+                    coords[cursor * 3] as i64,
+                    coords[cursor * 3 + 1] as i64,
+                    coords[cursor * 3 + 2] as i64,
+                ));
+                cursor += 1;
+            }
+            out.push(path);
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Open-path polyline clipping built on clip_extrusion.
 //
 // These mirror BambuStudio's `intersection_pl_2` / `diff_pl_2`
