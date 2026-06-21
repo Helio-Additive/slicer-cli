@@ -1978,7 +1978,10 @@ impl Layer {
     /// line / concentric / gyroid sparse-infill patterns this produces the same
     /// anchor polylines as native.
     pub fn generate_sparse_infill_polylines_for_anchoring(&self) -> Result<Vec<Polyline>> {
-        use crate::print_config::InfillPattern;
+        // NOTE: `surface_fill.params.pattern` is `crate::fill::InfillPattern`
+        // (group_fills' type), which is the `InfillPattern` already imported at
+        // the top of this module (layer.rs:23). Do NOT import
+        // `crate::print_config::InfillPattern` here — it is a distinct enum.
         use crate::surface::SurfaceType;
 
         // Fill.cpp:774-775
@@ -2011,11 +2014,10 @@ impl Layer {
             // Adaptive-cubic / support-cubic / lightning need an octree or
             // lightning generator that is not ported here, so they cannot
             // produce anchor lines -> skip them (no anchors, faithful to
-            // "no adaptive/lightning" Benchy case).
+            // "no adaptive/lightning" Benchy case). `fill::InfillPattern`
+            // collapses ipAdaptiveCubic/ipSupportCubic into `Adaptive`.
             match fill_pattern {
-                InfillPattern::AdaptiveCubic
-                | InfillPattern::SupportCubic
-                | InfillPattern::Lightning => continue,
+                InfillPattern::Adaptive | InfillPattern::Lightning => continue,
                 _ => {}
             }
 
