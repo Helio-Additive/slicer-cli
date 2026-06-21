@@ -1286,6 +1286,25 @@ impl TimeMachine {
             }
 
             self.time += block_time;
+            // TIMEDBG2: per-block effective-speed accounting for extrude moves.
+            if std::env::var("TIMEDBG2").is_ok() && self.blocks[i].move_type == EMoveType::Extrude {
+                let b = &self.blocks[i];
+                let eff = if block_time > 1e-9 { b.distance / block_time } else { 0.0 };
+                let cruise = b.feedrate_profile.cruise;
+                let name = std::env::var("ESTNAME").unwrap_or_else(|_| "X".into());
+                let line = format!(
+                    "TIMEDBG2 dist={:.3} cruise={:.1} entry={:.1} exit={:.1} accel={:.0} eff={:.1} t={:.5}\n",
+                    b.distance, cruise, b.feedrate_profile.entry, b.feedrate_profile.exit,
+                    b.acceleration, eff, block_time
+                );
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true).append(true)
+                    .open(format!("/tmp/timedbg2_{}.log", name))
+                {
+                    let _ = f.write_all(line.as_bytes());
+                }
+            }
             block_handler(&self.blocks[i], self.time);
             self.gcode_time.cache += block_time;
             // BBS: don't calculate travel of start gcode into travel time
@@ -4764,6 +4783,20 @@ impl GCodeProcessor {
         }
 
         let layers_times = machine.layers_time.clone();
+
+        // TIMEDBG: env-gated ground-truth dump of the estimator's per-role /
+        // per-move-type time breakdown, to localize the rust-vs-native gap.
+        if std::env::var("TIMEDBG").is_ok() && id == ETimeMode::Normal as usize {
+            eprintln!("TIMEDBG mode=Normal total={:.1}s ({:.1}min)", time, time / 60.0);
+            let mut rt: Vec<_> = roles_times.clone();
+            rt.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            for (role, t) in &rt {
+                eprintln!("TIMEDBG role {:?} = {:.1}s", role, t);
+            }
+            for (mv, t) in &moves_times {
+                eprintln!("TIMEDBG move {:?} = {:.1}s", mv, t);
+            }
+        }
 
         let data = &mut self.m_result.print_statistics.modes[id];
         data.time = time;

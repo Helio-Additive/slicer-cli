@@ -514,7 +514,49 @@ pub fn extrude_collection(
         /// GCode.cpp:2862-2863
         let entity_role = get_entity_role(entity);
 
-        /// Emit feature comment when role changes
+        // Feature feedrate (mm/s) for this entity's role. Computed every iteration
+        // (not just on role change) so it can be re-asserted after the
+        // travel-to-start below, even when consecutive entities share a role.
+        // C++ GCode.cpp:6175-6200: first layer uses initial_layer_speed from config.
+        let feature_speed = if is_first_layer {
+            // BambuStudio uses initial_layer_infill_speed for infill on first layer,
+            // and initial_layer_speed for walls/other features.
+            match entity_role {
+                ExtrusionRole::InternalInfill
+                | ExtrusionRole::SolidInfill
+                | ExtrusionRole::TopSolidInfill
+                | ExtrusionRole::BottomSurface => {
+                    if config.initial_layer_infill_speed > 0.0 {
+                        config.initial_layer_infill_speed
+                    } else {
+                        config.initial_layer_speed
+                    }
+                }
+                _ => config.initial_layer_speed,
+            }
+        } else {
+            match entity_role {
+                ExtrusionRole::ExternalPerimeter => config.external_perimeter_speed,
+                ExtrusionRole::Perimeter => config.perimeter_speed,
+                ExtrusionRole::InternalInfill => config.infill_speed,
+                ExtrusionRole::SolidInfill => config.solid_infill_speed,
+                ExtrusionRole::TopSolidInfill => config.top_solid_infill_speed,
+                ExtrusionRole::BridgeInfill => config.bridge_speed,
+                ExtrusionRole::GapFill => config.gap_fill_speed,
+                _ => config.perimeter_speed,
+            }
+        };
+        // Cooling markers for the CoolingBuffer post-processor (C++ GCode.cpp:6253-6272).
+        let cooling_comment = if entity_role == ExtrusionRole::BridgeInfill {
+            // Bridge moves are not adjustable
+            ""
+        } else if entity_role == ExtrusionRole::ExternalPerimeter {
+            ";_EXTRUDE_SET_SPEED;_EXTERNAL_PERIMETER"
+        } else {
+            ";_EXTRUDE_SET_SPEED"
+        };
+
+        /// Emit feature comment / LINE_WIDTH / M204 when role changes
         /// GCode.cpp:2864-2868
         /// C++: if (entity->role() != current_role) {
         /// C++: gcode += "; FEATURE: ";
@@ -544,45 +586,6 @@ pub fn extrude_collection(
                 writer.write_comment(&format!("LINE_WIDTH: {}", lw_trimmed));
             }
             // Set speed for this feature (before M204, matching reference order)
-            // C++ GCode.cpp:6175-6200: first layer uses initial_layer_speed from config
-            let feature_speed = if is_first_layer {
-                // BambuStudio uses initial_layer_infill_speed for infill on first layer,
-                // and initial_layer_speed for walls/other features.
-                match entity_role {
-                    ExtrusionRole::InternalInfill
-                    | ExtrusionRole::SolidInfill
-                    | ExtrusionRole::TopSolidInfill
-                    | ExtrusionRole::BottomSurface => {
-                        if config.initial_layer_infill_speed > 0.0 {
-                            config.initial_layer_infill_speed
-                        } else {
-                            config.initial_layer_speed
-                        }
-                    }
-                    _ => config.initial_layer_speed,
-                }
-            } else {
-                match entity_role {
-                    ExtrusionRole::ExternalPerimeter => config.external_perimeter_speed,
-                    ExtrusionRole::Perimeter => config.perimeter_speed,
-                    ExtrusionRole::InternalInfill => config.infill_speed,
-                    ExtrusionRole::SolidInfill => config.solid_infill_speed,
-                    ExtrusionRole::TopSolidInfill => config.top_solid_infill_speed,
-                    ExtrusionRole::BridgeInfill => config.bridge_speed,
-                    ExtrusionRole::GapFill => config.gap_fill_speed,
-                    _ => config.perimeter_speed,
-                }
-            };
-            // Emit cooling markers for CoolingBuffer post-processor
-            // C++ GCode.cpp:6253-6272
-            let cooling_comment = if entity_role == ExtrusionRole::BridgeInfill {
-                // Bridge moves are not adjustable
-                ""
-            } else if entity_role == ExtrusionRole::ExternalPerimeter {
-                ";_EXTRUDE_SET_SPEED;_EXTERNAL_PERIMETER"
-            } else {
-                ";_EXTRUDE_SET_SPEED"
-            };
             writer.set_speed(feature_speed * 60.0, cooling_comment);
             // Emit per-feature acceleration (M204) matching BambuStudio
             // First layer uses initial_layer_acceleration from settings
@@ -604,10 +607,10 @@ pub fn extrude_collection(
             current_role = Some(entity_role);
         }
 
-        // Travel to start of this entity if nozzle is not already there.
-        // C++ GCode::extrude_entity() calls travel_to() before extruding each entity.
-        // Without this, consecutive entities in the same collection are connected
-        // by a spurious extrusion line across open space.
+        // Travel to start of this entity if the nozzle is not already there.
+        // C++ GCode::extrude_entity() calls travel_to() before extruding each
+        // entity. Without this, consecutive entities in the same collection are
+        // connected by a spurious extrusion line across open space.
         if let Some(first_pt) = get_entity_first_point(entity) {
             let pos = writer.position();
             let tx = crate::unscale(first_pt.x());
@@ -621,6 +624,20 @@ pub fn extrude_collection(
                 writer.travel_to(tx, ty, None);
             }
         }
+
+        // Re-assert the feature feedrate before extruding.
+        //
+        // travel_to(..., None) above resets the sticky feedrate to travel_speed
+        // (F60000 = 1000 mm/s). BambuStudio always emits the feature `G1 F<speed>`
+        // as the LAST F-set before an extrusion run, so each extrude move inherits
+        // the feature speed — not the travel speed. set_speed() is a no-op when the
+        // feedrate is unchanged (writer.rs), so this only emits a line when a
+        // preceding travel (or speed change) clobbered the feedrate. Skipping this
+        // (the previous behaviour) let the F60000 travel feedrate leak onto 65% of
+        // extrusion moves, so the acceleration-aware GCodeProcessor estimator paid
+        // huge accel/decel ramp cost targeting an unreachable 1000 mm/s on short
+        // extrusion segments (rust 1h50m vs native 43m).
+        writer.set_speed(feature_speed * 60.0, cooling_comment);
 
         /// Recursively extrude the entity
         /// GCode.cpp:2870-2880
