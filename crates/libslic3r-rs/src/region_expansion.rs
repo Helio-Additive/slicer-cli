@@ -281,6 +281,103 @@ impl RegionExpansionParameters {
 }
 
 // ============================================================================
+// PERF profiling instrumentation (env-gated: BRIDGEPERF=1)
+// ============================================================================
+//
+// Lightweight accumulators to pin the bridges wave_seeds bottleneck. Zero cost
+// unless BRIDGEPERF=1. Numbers are printed via `bridgeperf_report()`.
+pub mod bridgeperf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Instant;
+
+    pub static ENABLED: AtomicU64 = AtomicU64::new(2); // 2 = uninit, 0 = off, 1 = on
+
+    #[inline]
+    pub fn enabled() -> bool {
+        match ENABLED.load(Ordering::Relaxed) {
+            0 => false,
+            1 => true,
+            _ => {
+                let on = std::env::var("BRIDGEPERF").map(|v| v == "1").unwrap_or(false);
+                ENABLED.store(if on { 1 } else { 0 }, Ordering::Relaxed);
+                on
+            }
+        }
+    }
+
+    // wave_seeds (FFI offset_open_zpaths + wave_seeds_clip)
+    pub static WS_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub static WS_NS: AtomicU64 = AtomicU64::new(0);
+    pub static WS_SRC_N: AtomicU64 = AtomicU64::new(0);
+    pub static WS_BND_N: AtomicU64 = AtomicU64::new(0);
+    pub static WS_SEEDS_OUT: AtomicU64 = AtomicU64::new(0);
+
+    // per-seed offset_polyline_round (wavefront_initial)
+    pub static OPR_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub static OPR_NS: AtomicU64 = AtomicU64::new(0);
+    pub static OPR_IN_PTS: AtomicU64 = AtomicU64::new(0);
+    pub static OPR_OUT_PTS: AtomicU64 = AtomicU64::new(0);
+
+    // per-wave-step grow + intersection (wavefront_step)
+    pub static STEP_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub static STEP_NS: AtomicU64 = AtomicU64::new(0);
+
+    // propagate_wave_from_boundary whole-fn
+    pub static PWB_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub static PWB_NS: AtomicU64 = AtomicU64::new(0);
+
+    #[inline]
+    pub fn add(c: &AtomicU64, v: u64) {
+        c.fetch_add(v, Ordering::Relaxed);
+    }
+
+    pub struct Timer(Instant, &'static AtomicU64, &'static AtomicU64);
+    impl Timer {
+        #[inline]
+        pub fn new(calls: &'static AtomicU64, ns: &'static AtomicU64) -> Option<Self> {
+            if enabled() {
+                Some(Timer(Instant::now(), calls, ns))
+            } else {
+                None
+            }
+        }
+    }
+    impl Drop for Timer {
+        #[inline]
+        fn drop(&mut self) {
+            self.1.fetch_add(1, Ordering::Relaxed);
+            self.2.fetch_add(self.0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+
+    pub fn reset() {
+        for c in [
+            &WS_CALLS, &WS_NS, &WS_SRC_N, &WS_BND_N, &WS_SEEDS_OUT, &OPR_CALLS, &OPR_NS,
+            &OPR_IN_PTS, &OPR_OUT_PTS, &STEP_CALLS, &STEP_NS, &PWB_CALLS, &PWB_NS,
+        ] {
+            c.store(0, Ordering::Relaxed);
+        }
+    }
+
+    pub fn report() -> String {
+        let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let ms = |ns: u64| ns as f64 / 1e6;
+        format!(
+            "=== BRIDGEPERF ===\n\
+             wave_seeds:       calls={} total={:.2}ms  src_ep={} bnd_ep={} seeds_out={}\n\
+             offset_poly_round:calls={} total={:.2}ms  in_pts={} out_pts={} (avg_out/call={:.1})\n\
+             wave_step(grow+x):calls={} total={:.2}ms\n\
+             propagate_wave:   calls={} total={:.2}ms\n",
+            g(&WS_CALLS), ms(g(&WS_NS)), g(&WS_SRC_N), g(&WS_BND_N), g(&WS_SEEDS_OUT),
+            g(&OPR_CALLS), ms(g(&OPR_NS)), g(&OPR_IN_PTS), g(&OPR_OUT_PTS),
+            if g(&OPR_CALLS) > 0 { g(&OPR_OUT_PTS) as f64 / g(&OPR_CALLS) as f64 } else { 0.0 },
+            g(&STEP_CALLS), ms(g(&STEP_NS)),
+            g(&PWB_CALLS), ms(g(&PWB_NS)),
+        )
+    }
+}
+
+// ============================================================================
 // ExpansionZone
 // ============================================================================
 
@@ -432,6 +529,11 @@ fn wave_seeds(
     if src.is_empty() || boundary.is_empty() {
         return Vec::new();
     }
+    let _ws_timer = bridgeperf::Timer::new(&bridgeperf::WS_CALLS, &bridgeperf::WS_NS);
+    if bridgeperf::enabled() {
+        bridgeperf::add(&bridgeperf::WS_SRC_N, src.len() as u64);
+        bridgeperf::add(&bridgeperf::WS_BND_N, boundary.len() as u64);
+    }
 
     // RegionExpansion.cpp:299-301 — boundary Z indices start at 1.
     let idx_boundary_begin: i64 = 1;
@@ -539,6 +641,9 @@ fn wave_seeds(
     // RegionExpansion.cpp:385-388 — sort by boundary then src.
     if sorted {
         out.sort_by(|a, b| a.boundary.cmp(&b.boundary).then(a.src.cmp(&b.src)));
+    }
+    if bridgeperf::enabled() {
+        bridgeperf::add(&bridgeperf::WS_SEEDS_OUT, out.len() as u64);
     }
     out
 }
@@ -667,6 +772,7 @@ fn propagate_wave_from_boundary(
     if seed_paths.is_empty() {
         return Vec::new();
     }
+    let _pwb_timer = bridgeperf::Timer::new(&bridgeperf::PWB_CALLS, &bridgeperf::PWB_NS);
     let arc_scaled = crate::scale(arc_tolerance) as CoordF;
 
     // RegionExpansion.cpp:459 — trim the boundary to the seed bbox inflated by
@@ -699,12 +805,22 @@ fn propagate_wave_from_boundary(
 
     // wavefront_initial: open-round offset of every seed polyline.
     let mut wave_polys: Vec<Polygon> = Vec::new();
+    let prof = bridgeperf::enabled();
     for pl in seed_paths {
-        wave_polys.extend(crate::clipper_utils::offset_polyline_round(
-            pl,
-            crate::scale(initial_step) as CoordF,
-            arc_scaled,
-        ));
+        let polys = {
+            let _t = bridgeperf::Timer::new(&bridgeperf::OPR_CALLS, &bridgeperf::OPR_NS);
+            crate::clipper_utils::offset_polyline_round(
+                pl,
+                crate::scale(initial_step) as CoordF,
+                arc_scaled,
+            )
+        };
+        if prof {
+            bridgeperf::add(&bridgeperf::OPR_IN_PTS, pl.points().len() as u64);
+            let out_pts: usize = polys.iter().map(|p| p.points().len()).sum();
+            bridgeperf::add(&bridgeperf::OPR_OUT_PTS, out_pts as u64);
+        }
+        wave_polys.extend(polys);
     }
     // wavefront_clip: intersect the inflated wave with the (trimmed) boundary.
     let mut wave = intersection(&polygons_to_expolygons(&wave_polys), bnd);
@@ -714,6 +830,7 @@ fn propagate_wave_from_boundary(
 
     // wavefront_step ×num_other_steps: closed-polygon round offset, clip.
     for _ in 0..num_other_steps {
+        let _t = bridgeperf::Timer::new(&bridgeperf::STEP_CALLS, &bridgeperf::STEP_NS);
         let expanded = grow(&wave, other_step, OffsetJoinType::Round);
         wave = intersection(&expanded, bnd);
         if wave.is_empty() {
@@ -2037,6 +2154,112 @@ pub fn expand_bridges_detect_orientations(
 }
 
 // ============================================================================
+// PERF micro-benchmark (callable from the `bridgeperf` example bin)
+// ============================================================================
+//
+// Run with:  BRIDGEPERF=1 cargo run --example bridgeperf
+//
+// Builds representative bridge layers (bridge expolygons abutting an internal-
+// solid boundary at realistic point density) and times the faithful wave_seeds
+// + propagate path via `propagate_waves_ex`, printing the bridgeperf counters.
+// This pins which of (a) per-seed offset_polyline_round, (b) per-region
+// propagate, or (c) wave-step count dominates — WITHOUT running a full slice.
+// Lives in the library (not the broken `#[cfg(test)]` module) so the example
+// bin can call private internals.
+pub fn run_bridgeperf_microbench() {
+    use crate::geometry::Point;
+
+    // Build a closed polygon (mm coords) from an x/y point list.
+    fn poly_mm(pts: &[(CoordF, CoordF)]) -> Polygon {
+        Polygon::from_points(
+            pts.iter()
+                .map(|(x, y)| Point::new(crate::scale(*x), crate::scale(*y)))
+                .collect(),
+        )
+    }
+
+    // A many-vertex "wavy" rectangle to mimic real Benchy contour density on the
+    // src/boundary interface (each edge subdivided into `seg` segments).
+    fn wavy_rect(x: CoordF, y: CoordF, w: CoordF, h: CoordF, seg: usize) -> ExPolygon {
+        let mut pts: Vec<(CoordF, CoordF)> = Vec::new();
+        let mut push_edge = |a: (CoordF, CoordF), b: (CoordF, CoordF)| {
+            for i in 0..seg {
+                let t = i as CoordF / seg as CoordF;
+                pts.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
+            }
+        };
+        push_edge((x, y), (x + w, y));
+        push_edge((x + w, y), (x + w, y + h));
+        push_edge((x + w, y + h), (x, y + h));
+        push_edge((x, y + h), (x, y));
+        ExPolygon::new(poly_mm(&pts))
+    }
+
+    let params = RegionExpansionParameters::build(1.41, 0.1, 5);
+    eprintln!(
+        "params: tiny={:.4} init={:.4} other={:.4} n_other={} max_infl={:.3} arc_tol={} shortest={:.4}",
+        params.tiny_expansion,
+        params.initial_step,
+        params.other_step,
+        params.num_other_steps,
+        params.max_inflation,
+        params.arc_tolerance,
+        params.shortest_edge_length,
+    );
+
+    let scenario = |label: &str, src: &[ExPolygon], boundary: &[ExPolygon]| {
+        bridgeperf::reset();
+        let t0 = std::time::Instant::now();
+        let (seeds, exps) = propagate_waves_ex(src, boundary, &params);
+        let el = t0.elapsed();
+        eprintln!(
+            "\n[{}] wall={:.2}ms seeds={} exps={}",
+            label,
+            el.as_secs_f64() * 1e3,
+            seeds.len(),
+            exps.len()
+        );
+        eprint!("{}", bridgeperf::report());
+    };
+
+    // A0: known-good plain-rect shapes (same as test_wave_seeds_faithful_nonzero)
+    // — sanity that the FFI path runs on simple input.
+    scenario(
+        "SCENARIO A0: plain 2x2 bridge + 2x2 boundary (seg=1)",
+        &[wavy_rect(0.0, 0.0, 2.0, 2.0, 1)],
+        &[wavy_rect(2.0, 0.0, 2.0, 2.0, 1)],
+    );
+
+    // A: a single moderately detailed bridge abutting a boundary.
+    scenario(
+        "SCENARIO A: 1 bridge 20x10, 1 boundary, 40 seg/edge",
+        &[wavy_rect(0.0, 0.0, 20.0, 10.0, 40)],
+        &[wavy_rect(20.0, 0.0, 8.0, 10.0, 40)],
+    );
+
+    // B: many small bridges across a single large boundary (closer to a real
+    // Benchy bridge layer — many src/boundary interfaces).
+    let mut src_b = Vec::new();
+    for i in 0..30 {
+        let bx = (i % 6) as CoordF * 6.0;
+        let by = (i / 6) as CoordF * 4.0;
+        src_b.push(wavy_rect(bx, by, 4.0, 2.0, 20));
+    }
+    scenario(
+        "SCENARIO B: 30 bridges, 1 big boundary",
+        &src_b,
+        &[wavy_rect(-2.0, -2.0, 44.0, 28.0, 80)],
+    );
+
+    // C: long thin bridge w/ dense contour — long multi-point seed polyline.
+    scenario(
+        "SCENARIO C: long thin bridge 50x3, dense contour 200 seg",
+        &[wavy_rect(0.0, 0.0, 50.0, 3.0, 200)],
+        &[wavy_rect(0.0, 3.0, 50.0, 20.0, 200)],
+    );
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -2728,4 +2951,5 @@ mod tests {
             }
         }
     }
+
 }

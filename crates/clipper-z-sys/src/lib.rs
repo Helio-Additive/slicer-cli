@@ -112,6 +112,33 @@ mod tests {
         assert_eq!(s, "6.2.6");
     }
 
+    /// PERF/BUG PROBE: cz_offset_open on a square at the REAL libslic3r coordinate
+    /// scale (mm * 1e5). A 2mm square = 200000 units, offset by 0.05mm = 5000 units.
+    /// This is exactly what the bridges wave_seeds path passes. If the vendored
+    /// 32-bit ClipperOffset corrupts the heap at this magnitude, this aborts.
+    #[test]
+    fn offset_open_scaled_coords_2mm_square() {
+        let m = 200_000i32; // 2.0 mm scaled
+        let src_xy: [i32; 8] = [0, 0, 2 * m, 0, 2 * m, 2 * m, 0, 2 * m];
+        let src_lens: [i32; 1] = [4];
+        let per_ex: [i32; 1] = [1];
+        let mut base_out: i32 = 0;
+        let offset = unsafe {
+            cz_offset_open(
+                src_xy.as_ptr(),
+                src_lens.as_ptr(),
+                per_ex.as_ptr(),
+                1,
+                5_000.0, // 0.05 mm tiny_expansion scaled
+                0.0,
+                2,
+                &mut base_out as *mut i32,
+            )
+        };
+        let paths = collect_and_free(offset);
+        assert!(!paths.is_empty(), "offset of a 2mm square must produce a path");
+    }
+
     #[test]
     fn union_smoke_nonz_tu() {
         // M1: a closed unit square union with itself. The non-Z ClipperLib TU
