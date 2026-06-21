@@ -77,7 +77,7 @@ pub use geometry::{
     to_range_pi_pi, transform3d_from_string, translation_transform, Axis as TransformAxis,
     Transformation, TransformationSVD,
 };
-pub use line::{Line, LineF, Lines};
+pub use line::{get_extents as get_extents_lines, Line, LineF, Lines};
 pub use medial_axis::{
     compute_medial_axis, compute_medial_axis_multi, compute_medial_axis_thick,
     distance_to_boundary, MedialAxisConfig,
@@ -103,7 +103,7 @@ pub use polygon::{
     remove_small as remove_small_polygons, remove_sticks, remove_sticks_polygons,
     simplify_polygons_clipper, total_length,
 };
-pub use polyline::{foot_pt, Polyline, Polylines};
+pub use polyline::{foot_pt, to_lines_polylines, Polyline, Polylines};
 pub use simplify::{
     douglas_peucker, douglas_peucker_polygon, douglas_peucker_polyline, remove_collinear_points,
     remove_duplicate_points, simplify_comprehensive, simplify_polygon,
