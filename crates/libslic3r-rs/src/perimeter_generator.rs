@@ -1484,8 +1484,16 @@ fn traverse_loops(
 
                     // PerimeterGenerator.cpp:229-239 — dist_boundary(width)
                     // first = 0; second = scale_(end_offset) - scale_(off_front)
-                    // (scale_ here is the double-valued macro, val/SCALING_FACTOR).
-                    let scale_d = |v: f64| v / SCALING_FACTOR;
+                    // C++ `scale_(val)` macro == `val / SCALING_FACTOR_CPP` where
+                    // SCALING_FACTOR_CPP = 0.00001, i.e. `val * 100000` (a *double*
+                    // upscale to scaled coords). The crate-root `SCALING_FACTOR`
+                    // constant is the RECIPROCAL (100_000.0), so the scaled value is
+                    // `val * SCALING_FACTOR`, NOT `val / SCALING_FACTOR`. The prior
+                    // `v / SCALING_FACTOR` collapsed upper_bound to ~3.7e-6, so
+                    // get_mapped_degree divided by ~0 and graded every middle-band
+                    // perimeter as MAX_OVERHANG_DEGREE (10 mm/s) — flooding the outer
+                    // wall with overhang speed and ~3x-ing the print-time estimate.
+                    let scale_d = |v: f64| v * SCALING_FACTOR;
                     let lower_bound = 0.0_f64;
                     let upper_bound = scale_d(end_offset) - scale_d(off_front);
 
