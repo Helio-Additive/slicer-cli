@@ -236,11 +236,66 @@ pub fn extrude_loop(
     // speed (GCode.cpp:5382-5404). Here we apply the overhang-degree-corrected
     // speed per path (only when it differs from the feature speed already set by
     // extrude_collection), so the F feedrate is modulated per segment.
+    let loop_role = loop_copy.paths.first().map(|p| p.role);
     let apply_overhang_speed = config.enable_overhang_speed
         && matches!(
-            loop_copy.paths.first().map(|p| p.role),
+            loop_role,
             Some(ExtrusionRole::ExternalPerimeter) | Some(ExtrusionRole::Perimeter)
         );
+
+    // Per-path normal wall speed (overhang-degree-corrected), mm/s.
+    // Mirrors GCode::get_path_speed for perimeter roles.
+    let path_speed_fn = |p: &ExtrusionPath| -> f64 {
+        let base = perimeter_base_speed(config, p.role, is_first_layer);
+        overhang_degree_corr_speed(config, base, p.overhang_degree)
+    };
+
+    // C++ GCode.cpp:5576-5582 — smooth speed of discontinuity areas.
+    // Gated on detect_overhang_wall && smooth_speed_discontinuity_area &&
+    // is_set_speed_discontinuity_area (perimeter / external / overhang roles).
+    // m_smooth_coefficient = filament_velocity_adaptation_factor (assumed 1.0) *
+    // smooth_coefficient.
+    let is_set_speed_discontinuity = matches!(
+        loop_role,
+        Some(ExtrusionRole::ExternalPerimeter)
+            | Some(ExtrusionRole::Perimeter)
+            | Some(ExtrusionRole::OverhangPerimeter)
+    );
+    let smooth_coeff = config.smooth_coefficient;
+    if config.detect_overhang_wall
+        && config.smooth_speed_discontinuity_area
+        && is_set_speed_discontinuity
+        && smooth_coeff != 0.0
+        && !is_first_layer
+        && paths.len() > 1
+    {
+        // Build a smoothed copy of the paths whose `smooth_speed` ramps across
+        // discontinuities, then emit each with its smoothed feedrate.
+        let mut smoothed: Vec<ExtrusionPath> = paths.clone();
+        super::smooth_speed::smooth_speed_discontinuity_area(
+            smooth_coeff,
+            &mut smoothed,
+            path_speed_fn,
+        );
+        for path in &smoothed {
+            if apply_overhang_speed
+                && matches!(
+                    path.role,
+                    ExtrusionRole::ExternalPerimeter | ExtrusionRole::Perimeter
+                )
+            {
+                let cooling_comment = if path.role == ExtrusionRole::ExternalPerimeter {
+                    ";_EXTRUDE_SET_SPEED;_EXTERNAL_PERIMETER"
+                } else {
+                    ";_EXTRUDE_SET_SPEED"
+                };
+                writer.set_speed(path.smooth_speed * 60.0, cooling_comment);
+            }
+            extrude_path(path, writer, config, is_first_layer);
+        }
+        return;
+    }
+
     for path in paths {
         if apply_overhang_speed
             && matches!(
@@ -249,8 +304,7 @@ pub fn extrude_loop(
             )
         {
             // GCode.cpp:5387-5400 — normal wall speed corrected by overhang_degree.
-            let base = perimeter_base_speed(config, path.role, is_first_layer);
-            let corr = overhang_degree_corr_speed(config, base, path.overhang_degree);
+            let corr = path_speed_fn(path);
             // Cooling markers: external perimeters keep their _EXTERNAL_PERIMETER tag.
             // (overhang paths are still cooling-adjustable for degrees < 5.)
             let cooling_comment = if path.role == ExtrusionRole::ExternalPerimeter {

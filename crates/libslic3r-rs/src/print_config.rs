@@ -1750,6 +1750,14 @@ pub struct PrintObjectConfig {
     /// BambuStudio: `overhang_totally_speed`. Maps to overhang degree 5
     /// (overhang_speed_key_map {5: "overhang_totally_speed"}, GCode.cpp:5354).
     pub overhang_totally_speed: CoordF,
+    /// Enable speed-transition smoothing across discontinuity areas.
+    /// BambuStudio: `smooth_speed_discontinuity_area` (coBool, default true).
+    pub smooth_speed_discontinuity_area: bool,
+    /// Smoothing coefficient for the speed ramp f(x) = coeff * x^2.
+    /// BambuStudio: `smooth_coefficient`. The effective coefficient is
+    /// `filament_velocity_adaptation_factor * smooth_coefficient`
+    /// (GCode::set_smooth_coff); the per-filament factor is assumed 1.0.
+    pub smooth_coefficient: CoordF,
 
     // === Infill (additional) ===
     /// Infill combination (every N layers).
@@ -2622,6 +2630,18 @@ impl PrintObjectConfig {
                 }
                 true
             }
+            "smooth_speed_discontinuity_area" => {
+                if let Some(v) = parse_bool(value) {
+                    self.smooth_speed_discontinuity_area = v;
+                }
+                true
+            }
+            "smooth_coefficient" => {
+                if let Some(v) = parse_f64(value) {
+                    self.smooth_coefficient = v;
+                }
+                true
+            }
 
             // === Perimeter Options ===
             "detect_thin_wall" => {
@@ -3180,6 +3200,11 @@ impl Default for PrintObjectConfig {
             overhang_3_4_speed: 0.0,
             overhang_4_4_speed: 0.0,
             overhang_totally_speed: 0.0,
+            // BambuStudio default smooth_speed_discontinuity_area = true (coBool).
+            smooth_speed_discontinuity_area: true,
+            // BambuStudio default smooth_coefficient (PrintConfig.cpp); resolved
+            // process value for the H2D PLA profile is 4.
+            smooth_coefficient: 80.0,
 
             // Infill (additional)
             infill_combination: false,

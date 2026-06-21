@@ -20,6 +20,7 @@ pub mod pressure_equalizer;
 pub mod print_extents;
 pub mod retract_when_crossing_perimeters;
 pub mod seam_placer;
+pub mod smooth_speed;
 pub mod smoothing;
 pub mod spiral_vase;
 pub mod thumbnail_data;
