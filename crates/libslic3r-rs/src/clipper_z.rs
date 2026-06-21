@@ -123,6 +123,56 @@ pub fn clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZP
     out
 }
 
+// ---------------------------------------------------------------------------
+// Open-path polyline clipping built on clip_extrusion.
+//
+// These mirror BambuStudio's `intersection_pl_2` / `diff_pl_2`
+// (Clipper2Utils.cpp): clip an OPEN polyline subject against CLOSED polygons,
+// returning the surviving open sub-polylines. Implemented here on top of the
+// ClipperLib_Z `clip_extrusion` engine so the clip carries a per-point Z tag —
+// which the overhang grader uses to recover the extrusion width along each
+// surviving segment (the midpoint-band approximation could not do this).
+//
+// The subject Z is set to a caller-provided constant (the scaled extrusion
+// width). With a constant Z, clip_extrusion's interpolation is a no-op, so every
+// surviving vertex carries exactly that width. The clip polygons get Z=0.
+// ---------------------------------------------------------------------------
+
+use crate::geometry::{Point, Polygon, Polyline};
+
+/// Build a closed clip ZPaths from polygons (Z = 0, matching C++ clip paths).
+fn polygons_to_clip_zpaths(clip: &[Polygon]) -> ZPaths {
+    clip.iter()
+        .map(|poly| poly.points.iter().map(|p| (p.x(), p.y(), 0i64)).collect::<ZPath>())
+        .collect()
+}
+
+/// Clip an open polyline `subject` against closed `clip` polygons and return the
+/// surviving open sub-polylines, with each output vertex tagged by the scaled
+/// extrusion width `z`. `clip_type` selects intersection (inside) vs difference
+/// (outside). Empty / degenerate subjects yield an empty result.
+pub fn clip_polyline(
+    subject: &Polyline,
+    clip: &[Polygon],
+    z: i64,
+    clip_type: ClipType,
+) -> Vec<(Polyline, ZPath)> {
+    if subject.points.len() < 2 {
+        return Vec::new();
+    }
+    let subject_zpath: ZPath = subject.points.iter().map(|p| (p.x(), p.y(), z)).collect();
+    let clip_zpaths = polygons_to_clip_zpaths(clip);
+    let clipped = clip_extrusion(&subject_zpath, &clip_zpaths, clip_type);
+    clipped
+        .into_iter()
+        .filter(|zp| zp.len() >= 2)
+        .map(|zp| {
+            let pl = Polyline::from_points(zp.iter().map(|&(x, y, _)| Point::new(x, y)).collect());
+            (pl, zp)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

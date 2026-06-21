@@ -137,6 +137,32 @@ mod tests {
     }
 
     #[test]
+    fn clip_extrusion_closed_loop_fully_inside() {
+        // A closed square loop (first==last) fully inside a larger clip square
+        // must survive intersection intact (de-risks the perimeter-loop case
+        // where the subject is a closed loop opened at its first point).
+        // Loop [10,90]^2, clip [0,100]^2.
+        let subject: [i32; 15] = [
+            10, 10, 40, 90, 10, 40, 90, 90, 40, 10, 90, 40, 10, 10, 40,
+        ];
+        let clip: [i32; 12] = [0, 0, 0, 100, 0, 0, 100, 100, 0, 0, 100, 0];
+        let clip_lens: [i32; 1] = [4];
+        let raw = unsafe {
+            cz_clip_extrusion(subject.as_ptr(), 5, clip.as_ptr(), clip_lens.as_ptr(), 1, 0)
+        };
+        let paths = collect_and_free(raw);
+        let total: usize = paths.iter().map(|p| p.len()).sum();
+        assert!(!paths.is_empty(), "closed loop inside clip must survive");
+        // Every vertex of the loop should be preserved (5 input points) and Z=40.
+        assert!(total >= 5, "expected the full loop (>=5 pts), got {total}");
+        for p in &paths {
+            for v in p {
+                assert_eq!(v.2, 40, "constant-width loop keeps Z=40: {v:?}");
+            }
+        }
+    }
+
+    #[test]
     fn clip_extrusion_interpolates_z() {
         // Subject from x=-100 (width 20) to x=100 (width 60); clip [0,200]^2.
         // The clip boundary at x=0 is the subject midpoint => width ~40.
