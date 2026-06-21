@@ -60,11 +60,17 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
    needs all parts changed together. Default keeps the midpoint-baseline overhang
    (least-wrong).
 2. **Bridges (−187 E material).** `wave_seeds` region-expansion is ported on the
-   `clipper-z-sys` `ClipperLib_Z` engine and produces correct non-zero seeds — but
-   it is **100-1000× too slow** (one FFI round-trip per (src,boundary) region per
-   layer → 45-60 min/slice). Preserved on branch **`bridges-wip-perf-blocked`**.
-   Needs an **FFI-batching perf pass** (one call per layer-region set) before it's
-   viable, then measure.
+   `clipper-z-sys` `ClipperLib_Z` engine. Perf + a latent heap-corruption crash
+   are now FIXED on branch **`bridges-perf`** (full slice 45-60 min → ~15 s; the
+   ODR/symbol-collision fix was cherry-picked to this branch as `d85539a`). BUT
+   the material gap is **unchanged** (bridge 15/50 E vs native 38/237 E) — the
+   faithful `wave_seeds` produces the *same* 15 bridges as the stub. So the gap is
+   a **correctness issue UPSTREAM of `wave_seeds`**, most likely the missing
+   **`detect_bridge_wall`** (native routes 100%-overhang regions to bridge walls;
+   rust does not, so the bridge surfaces are never classified for `wave_seeds` to
+   expand). NOTE: this is the **same `detect_bridge_wall`** that lever #1 needs —
+   it is a shared, convergent next step (a classification port, not a clipper-engine
+   build-out). Original slow version preserved on `bridges-wip-perf-blocked`.
 3. **Clipper coordinate byte-exactness (F1).** The live clipper backend is
    `geo-clipper` at scale 1000 (1 µm grid) fed via an mm float round-trip, vs C++
    ClipperLib at scale 100000. For byte-exact coordinates, feed the C++ clipper the
