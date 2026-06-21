@@ -5,6 +5,18 @@
 //! This is a LINE-BY-LINE translation of BambuStudio's perimeter generation.
 //! NO improvements, NO optimizations, EXACT algorithm only.
 
+// === OVERHANG INSTRUMENTATION (env-gated; remove before final commit) ===
+// Set OVERHANG_TRACE_RS to a file path to dump per-segment overhang grading.
+fn overhang_trace(line: &str) {
+    use std::io::Write;
+    if let Ok(path) = std::env::var("OVERHANG_TRACE_RS") {
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{line}");
+        }
+    }
+}
+// === END INSTRUMENTATION ===
+
 use crate::{
     arachne::utils::extrusion_line::{ExtrusionLine as ArachneExtrusionLine, VariableWidthLines},
     arachne::wall_tool_paths::{WallToolPaths, WallToolPathsParams},
@@ -1542,6 +1554,15 @@ fn traverse_loops(
                             runs.push((cur_class, cur));
                         }
 
+                        overhang_trace(&format!(
+                            "LOOP layer={} role={} is_ext={} runs={} polylen={:.1}",
+                            config.layer_id,
+                            role as i32,
+                            is_external as i32,
+                            runs.len(),
+                            loop_polyline.length()
+                        ));
+
                         // Emit paths per run, preserving original geometry.
                         for (cls, pl) in runs {
                             if !pl.is_valid() {
@@ -1586,6 +1607,17 @@ fn traverse_loops(
                                     paths.push(p);
                                 }
                             }
+                        }
+
+                        for p in &paths {
+                            overhang_trace(&format!(
+                                "RS_PATH layer={} role={} deg={} len={:.1} npts={}",
+                                config.layer_id,
+                                p.role as i32,
+                                p.overhang_degree,
+                                p.polyline.length(),
+                                p.polyline.points().len()
+                            ));
                         }
 
                         // PerimeterGenerator.cpp:434 — if (paths.empty()) continue;
