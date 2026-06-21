@@ -1432,79 +1432,119 @@ fn traverse_loops(
         // in PerimeterGenerator::generate() after traverse_loops returns.
         let polygon = &loop_item.polygon;
 
-        /// PerimeterGenerator.cpp:346-432 — Overhang detection.
-        /// DIVERGENCE (non-faithful substitute): C++ clips the loop polyline against the
-        /// grown lower-slice series (m_lower_polygons_series / m_external_lower_polygons_series)
-        /// via intersection_pl_2 / diff_pl_2, then calls detect_overhang_degree() and
-        /// detect_bridge_wall() to split the loop into graded overhang/bridge ExtrusionPaths.
-        /// Those inputs (the per-width lower_polygons_series and overhang_dist_boundary pairs
-        /// produced by generate_lower_polygons_series()/dist_boundary()) are NOT computed in
-        /// this flat-config adapter, so a coarse "single role" heuristic is used instead:
-        /// if less than 90% of the external loop overlaps the grown lower slices, the whole loop
-        /// is marked erOverhangPerimeter. This is a known parity gap, not the C++ algorithm.
-        let effective_role =
-            if is_external && config.detect_overhang_wall && config.layer_id > config.raft_layers {
-                if let Some(ref lower) = config.lower_slices {
-                    if !lower.is_empty() {
-                        let half_width = extrusion_width / 2.0;
-                        let supported = crate::clipper_utils::offset_expolygons(
-                            lower,
-                            half_width,
-                            crate::clipper_utils::OffsetJoinType::Miter,
-                        );
-                        let polyline = polygon.split_at_first_point();
-                        let supported_segments =
-                            crate::clipper_utils::intersection_pl(&[polyline.clone()], &supported);
-                        let total_len: f64 = polyline
-                            .points
-                            .iter()
-                            .zip(polyline.points.iter().skip(1))
-                            .map(|(a, b)| {
-                                let dx = (b.x - a.x) as f64;
-                                let dy = (b.y - a.y) as f64;
-                                (dx * dx + dy * dy).sqrt()
-                            })
-                            .sum();
-                        let supported_len: f64 = supported_segments
-                            .iter()
-                            .flat_map(|s| s.points.iter().zip(s.points.iter().skip(1)))
-                            .map(|(a, b)| {
-                                let dx = (b.x - a.x) as f64;
-                                let dy = (b.y - a.y) as f64;
-                                (dx * dx + dy * dy).sqrt()
-                            })
-                            .sum();
-                        if total_len > 0.0 && supported_len / total_len < 0.9 {
-                            ExtrusionRole::OverhangPerimeter
-                        } else {
-                            role
-                        }
+        /// PerimeterGenerator.cpp:346-450 — Overhang detection.
+        ///
+        /// Splits the loop into per-segment overhang-graded `ExtrusionPath`s and sets
+        /// `overhang_degree`, so the gcode exporter can modulate speed per segment.
+        ///
+        /// The `m_lower_polygons_series` / `m_external_lower_polygons_series` thresholds
+        /// and the `overhang_dist_boundary` pair are computed inline from the loop's flow
+        /// (generate_lower_polygons_series() / dist_boundary(), see
+        /// PerimeterGenerator.cpp:229-239,1841-1864). The nozzle diameter for the wall
+        /// filament is read off the loop flow (built with that nozzle).
+        ///
+        /// DIVERGENCE (geometry-preserving substitute for the clipper split):
+        /// C++ clips the loop against the grown lower-slice series via
+        /// `intersection_pl_2`/`diff_pl_2` to separate zero-degree / middle-overhang /
+        /// 100%-overhang regions, then calls `detect_overhang_degree` on the middle
+        /// region only. The crate's coarse sampling-based `intersection_pl`/`diff_pl`
+        /// (F1) distort the polyline length (≈0.3% filament loss measured), and the
+        /// Clipper2 open-path `*_pl_2` drop most of a closed loop. To keep the extruded
+        /// filament byte-stable, we instead run `overhang_detector::detect_overhang_degree`
+        /// over the WHOLE loop polyline: it subdivides the original polyline geometrically
+        /// (prepare_split_polylines, along the original vertices) and classifies each
+        /// sub-segment by its midpoint distance to the lower-front polygons. Points inside
+        /// `lower_front` map to degree 0 (get_mapped_degree returns 0 for dist<=lower_bound)
+        /// and points beyond `lower_back` clamp to the max degree, reproducing the same
+        /// per-segment grading without the lossy boolean clip. The original loop geometry
+        /// (hence E) is preserved exactly (only sub-unit point*double truncation).
+        ///
+        /// DIVERGENCE (bridge classification): C++ routes the 100%-overhang region through
+        /// `detect_bridge_wall` (re-flowed with the overhang flow, degree 5/6). Here the
+        /// fully-unsupported sub-segments stay at `role` with overhang_degree = max
+        /// (overhang_sampling_number-1 = 5) and the original flow, so filament is unchanged;
+        /// straight-vs-curved bridge discrimination (degree 6 → bridge_speed) is not modeled.
+        let did_overhang_split = if config.detect_overhang_wall
+            && config.layer_id > config.raft_layers
+        {
+            if let Some(ref lower) = config.lower_slices {
+                if !lower.is_empty() {
+                    // PerimeterGenerator.cpp:1841-1864 — generate_lower_polygons_series(width)
+                    // offsets = [start + 0.5*(end-start)/(N-1), end]; start=-0.5*width; end=0.5*nozzle.
+                    let nozzle_diameter = flow.nozzle_diameter();
+                    let start_offset = -0.5 * extrusion_width;
+                    let end_offset = 0.5 * nozzle_diameter;
+                    let n = crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f64;
+                    let off_front = start_offset + 0.5 * (end_offset - start_offset) / (n - 1.0);
+                    // lower_polygons_series.front() = less-grown (off_front).
+                    let lower_front_ex = offset_expolygons(lower, off_front, OffsetJoinType::Miter);
+
+                    // PerimeterGenerator.cpp:229-239 — dist_boundary(width)
+                    // first = 0; second = scale_(end_offset) - scale_(off_front)
+                    // (scale_ here is the double-valued macro, val/SCALING_FACTOR).
+                    let scale_d = |v: f64| v / SCALING_FACTOR;
+                    let lower_bound = 0.0_f64;
+                    let upper_bound = scale_d(end_offset) - scale_d(off_front);
+
+                    // lower_front polygons drive the per-segment overhang grading
+                    // (OverhangDistancer is built over these in detect_overhang_degree).
+                    let lower_front_polys: Vec<Polygon> = lower_front_ex
+                        .iter()
+                        .flat_map(|ex| {
+                            std::iter::once(ex.contour.clone()).chain(ex.holes.iter().cloned())
+                        })
+                        .collect();
+
+                    if lower_front_polys.is_empty() {
+                        // No lower geometry to grade against — fall back to flat path.
+                        false
                     } else {
-                        role
+                        // Whole loop polyline as the input to the per-segment grader.
+                        let loop_polyline = polygon.split_at_first_point();
+                        crate::overhang_detector::detect_overhang_degree(
+                            lower_front_polys,
+                            role,
+                            extrusion_mm3_per_mm,
+                            extrusion_width,
+                            layer_height,
+                            vec![loop_polyline],
+                            lower_bound,
+                            upper_bound,
+                            &mut paths,
+                        );
+
+                        // PerimeterGenerator.cpp:434 — if (paths.empty()) continue;
+                        if paths.is_empty() {
+                            continue;
+                        }
+                        true
                     }
                 } else {
-                    role
+                    false
                 }
             } else {
-                role
-            };
+                false
+            }
+        } else {
+            false
+        };
 
-        /// PerimeterGenerator.cpp:441-449
-        /// C++: ExtrusionPath path(role);
-        /// C++: path.polyline = polygon.split_at_first_point();
+        /// PerimeterGenerator.cpp:440-449 — non-overhang fallback (the `else` branch).
+        /// C++: ExtrusionPath path(role); path.polyline = polygon.split_at_first_point();
         /// C++: path.overhang_degree = 0; path.curve_degree = 0;
         /// Faithful: the perimeter generator does NOT place the seam here — it
-        /// splits the loop at its first point. Seam placement is a later
-        /// (gcode) stage in BambuStudio. (Previously this used a SeamPlacer,
-        /// which diverged from the C++ control flow.)
-        let mut path = ExtrusionPath::new(effective_role);
-        path.polyline = polygon.split_at_first_point();
-        path.overhang_degree = 0;
-        path.curve_degree = 0;
-        path.mm3_per_mm = extrusion_mm3_per_mm;
-        path.width = extrusion_width;
-        path.height = layer_height;
-        paths.push(path);
+        /// splits the loop at its first point. Seam placement is a later (gcode)
+        /// stage in BambuStudio.
+        if !did_overhang_split {
+            let mut path = ExtrusionPath::new(role);
+            path.polyline = polygon.split_at_first_point();
+            path.overhang_degree = 0;
+            path.curve_degree = 0;
+            path.mm3_per_mm = extrusion_mm3_per_mm;
+            path.width = extrusion_width;
+            path.height = layer_height;
+            paths.push(path);
+        }
 
         /// PerimeterGenerator.cpp:456-459
         /// C++: for (ExtrusionPath& path : paths) {

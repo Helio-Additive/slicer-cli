@@ -320,8 +320,14 @@ where
                 v[*l].distance_out < v[*r].distance_out
             },
         );
-        queue.reserve(end_points.borrow().len() * 2 - 1);
-        for ep in 0..end_points.borrow().len() {
+        // NOTE: bind the length to a local first. `for ep in 0..end_points.borrow().len()`
+        // keeps the `Ref` temporary alive for the whole loop (a `match` scrutinee
+        // temporary), so the `queue.push` index-setter's `borrow_mut` would panic
+        // ("RefCell already borrowed"). Computing the length up front drops the
+        // immutable borrow before the loop body runs.
+        let end_points_len = end_points.borrow().len();
+        queue.reserve(end_points_len * 2 - 1);
+        for ep in 0..end_points_len {
             if first_point != ep {
                 queue.push(ep);
             }
@@ -1004,8 +1010,12 @@ where
                 v[*l].distance_out < v[*r].distance_out
             },
         );
-        queue.reserve(end_points.borrow().len() * 2);
-        for ep in 0..end_points.borrow().len() {
+        // NOTE: bind the length first — see the `chain_segments_greedy_constrained_reversals_`
+        // note above. A `for ep in 0..end_points.borrow().len()` keeps the `Ref`
+        // alive for the whole loop and the push index-setter's `borrow_mut` panics.
+        let end_points_len = end_points.borrow().len();
+        queue.reserve(end_points_len * 2);
+        for ep in 0..end_points_len {
             if first_point != ep {
                 queue.push(ep);
             }
