@@ -64,7 +64,7 @@
 
 use crate::clipper_utils::{
     closing, diff_pl, difference, expolygons_to_polylines, grow, intersection, offset_expolygons,
-    union_ex, union_safety_offset_ex_expolygons, OffsetJoinType,
+    offset_expolygons_round, union_ex, union_safety_offset_ex_expolygons, OffsetJoinType,
 };
 use crate::geometry::{
     BoundingBox, ExPolygon, ExPolygons, Line, Point, PointF, Polygon, Polyline,
@@ -321,6 +321,10 @@ pub mod bridgeperf {
     // per-wave-step grow + intersection (wavefront_step)
     pub static STEP_CALLS: AtomicU64 = AtomicU64::new(0);
     pub static STEP_NS: AtomicU64 = AtomicU64::new(0);
+    // split: the closed-polygon Round grow vs the intersection clip
+    pub static GROW_NS: AtomicU64 = AtomicU64::new(0);
+    pub static XSECT_NS: AtomicU64 = AtomicU64::new(0);
+    pub static WAVE_MAX_PTS: AtomicU64 = AtomicU64::new(0);
 
     // propagate_wave_from_boundary whole-fn
     pub static PWB_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -353,10 +357,15 @@ pub mod bridgeperf {
     pub fn reset() {
         for c in [
             &WS_CALLS, &WS_NS, &WS_SRC_N, &WS_BND_N, &WS_SEEDS_OUT, &OPR_CALLS, &OPR_NS,
-            &OPR_IN_PTS, &OPR_OUT_PTS, &STEP_CALLS, &STEP_NS, &PWB_CALLS, &PWB_NS,
+            &OPR_IN_PTS, &OPR_OUT_PTS, &STEP_CALLS, &STEP_NS, &GROW_NS, &XSECT_NS,
+            &WAVE_MAX_PTS, &PWB_CALLS, &PWB_NS,
         ] {
             c.store(0, Ordering::Relaxed);
         }
+    }
+    #[inline]
+    pub fn max(c: &AtomicU64, v: u64) {
+        c.fetch_max(v, Ordering::Relaxed);
     }
 
     pub fn report() -> String {
@@ -373,6 +382,9 @@ pub mod bridgeperf {
             if g(&OPR_CALLS) > 0 { g(&OPR_OUT_PTS) as f64 / g(&OPR_CALLS) as f64 } else { 0.0 },
             g(&STEP_CALLS), ms(g(&STEP_NS)),
             g(&PWB_CALLS), ms(g(&PWB_NS)),
+        ) + &format!(
+            "  step split: grow={:.2}ms xsect={:.2}ms  wave_max_pts={}\n",
+            ms(g(&GROW_NS)), ms(g(&XSECT_NS)), g(&WAVE_MAX_PTS),
         )
     }
 }
@@ -831,8 +843,35 @@ fn propagate_wave_from_boundary(
     // wavefront_step ×num_other_steps: closed-polygon round offset, clip.
     for _ in 0..num_other_steps {
         let _t = bridgeperf::Timer::new(&bridgeperf::STEP_CALLS, &bridgeperf::STEP_NS);
-        let expanded = grow(&wave, other_step, OffsetJoinType::Round);
+        if prof {
+            let pts: usize = wave
+                .iter()
+                .map(|e| {
+                    e.contour.points().len()
+                        + e.holes.iter().map(|h| h.points().len()).sum::<usize>()
+                })
+                .sum();
+            bridgeperf::max(&bridgeperf::WAVE_MAX_PTS, pts as u64);
+        }
+        let expanded = {
+            let g0 = std::time::Instant::now();
+            // wavefront_step (RegionExpansion.cpp): closed-polygon Round offset
+            // using the params' arc_tolerance (0.1mm). Using the module-default
+            // `grow` Round join here applies a 30nm arc tolerance, which makes each
+            // step emit thousands of arc vertices that the next step re-offsets —
+            // a point-count explosion (~2200 pts) that dominated runtime. Matching
+            // C++'s coarse arc_tolerance keeps the wave at a few-dozen vertices.
+            let e = offset_expolygons_round(&wave, other_step, arc_tolerance);
+            if prof {
+                bridgeperf::add(&bridgeperf::GROW_NS, g0.elapsed().as_nanos() as u64);
+            }
+            e
+        };
+        let x0 = std::time::Instant::now();
         wave = intersection(&expanded, bnd);
+        if prof {
+            bridgeperf::add(&bridgeperf::XSECT_NS, x0.elapsed().as_nanos() as u64);
+        }
         if wave.is_empty() {
             return Vec::new();
         }
