@@ -802,8 +802,40 @@ pub fn extrude_path_with_arc_fitting(
     // Use extruder's e_per_mm3 to convert mm³/mm to filament mm/mm
     let e_per_mm = writer.extruder_e_per_mm(adjusted_mm3_per_mm);
 
-    // Speed is set per-feature in extrude_collection (before M204)
-    // No need to set again here.
+    // Travel to the path's first point if the nozzle is not already there.
+    //
+    // C++ GCode::_extrude (GCode.cpp:6366-6368) travels to path.first_point()
+    // whenever m_last_pos != path.first_point(), before emitting the path. The
+    // segment emission below assumes the nozzle is at points[0]; when it is not
+    // (extrude_loop reorders the loop to the seam via split_loop_at_*, and a
+    // multi-path loop's later paths start where the previous path ended), the
+    // first emitted segment is wrong. For an arc-fitted first segment this is
+    // catastrophic: the I/J center offset is computed relative to
+    // arc.start_point (= points[0]) but the printer/estimator applies it
+    // relative to the ACTUAL nozzle position, producing a degenerate off-circle
+    // arc whose computed arc length explodes (one arc -> "12 m" / ~100 s in the
+    // GCodeProcessor), inflating the estimated print time ~3x (1h50m vs 43m).
+    //
+    // The feature feedrate was already set by extrude_collection / extrude_loop
+    // before this call; travel_to() resets it to travel_speed (F60000), so we
+    // capture and restore it after the travel — matching C++, where _extrude
+    // emits the path F (speed*60) after the travel. set_speed is a no-op when
+    // the feedrate is unchanged, so no spurious F line is emitted when no travel
+    // was needed.
+    if let Some(first_pt) = path.polyline.points().first() {
+        let pos = writer.position();
+        let tx = unscale(first_pt.x());
+        let ty = unscale(first_pt.y());
+        let dist_sq = (pos.x - tx) * (pos.x - tx) + (pos.y - ty) * (pos.y - ty);
+        if dist_sq > 0.001 * 0.001 {
+            let resume_speed = writer.get_current_speed() * 60.0; // mm/s -> mm/min
+            writer.set_travel_acceleration(6000.0);
+            writer.travel_to(tx, ty, None);
+            if resume_speed > 0.0 {
+                writer.set_speed(resume_speed, "");
+            }
+        }
+    }
 
     // -------------------------------------------------------------------
     // Toolpath simplification + (optional) arc fitting.
@@ -897,6 +929,26 @@ pub fn extrude_path_with_arc_fitting(
                     let arc_length = arc.length * crate::libslic3r::SCALING_FACTOR;
                     if arc_length < EPSILON {
                         continue;
+                    }
+                    if std::env::var("ARCDBG").is_ok() {
+                        let wp_start = work_points[seg.start_point_index];
+                        let wp_end = work_points[seg.end_point_index];
+                        let ds = ((wp_start.x() - arc.start_point.x()) as f64)
+                            .hypot((wp_start.y() - arc.start_point.y()) as f64);
+                        let de_ = ((wp_end.x() - arc.end_point.x()) as f64)
+                            .hypot((wp_end.y() - arc.end_point.y()) as f64);
+                        // center equidistant check (scaled):
+                        let r_s = ((arc.circle.center.x() - arc.start_point.x()) as f64)
+                            .hypot((arc.circle.center.y() - arc.start_point.y()) as f64);
+                        let r_e = ((arc.circle.center.x() - arc.end_point.x()) as f64)
+                            .hypot((arc.circle.center.y() - arc.end_point.y()) as f64);
+                        if ds > 1000.0 || de_ > 1000.0 || (r_s - r_e).abs() > 0.02 * r_s.max(1.0) {
+                            eprintln!(
+                                "ARCDBG2 wp_start!=arcstart={:.0} wp_end!=arcend={:.0} r_s={:.0} r_e={:.0} ({})",
+                                ds, de_, r_s, r_e,
+                                crate::extrusion_entity::role_to_string(path.role)
+                            );
+                        }
                     }
                     // center_offset = point_to_gcode(center) - point_to_gcode(start).
                     // Origin/extruder offset cancels in the difference, so plain
