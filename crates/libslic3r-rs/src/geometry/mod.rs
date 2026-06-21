@@ -30,7 +30,7 @@ pub mod geometry;
 mod line;
 mod medial_axis;
 mod point;
-mod polygon;
+pub mod polygon;
 mod polyline;
 pub mod simplify;
 mod thick_polyline;

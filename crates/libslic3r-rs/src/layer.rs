@@ -497,7 +497,11 @@ impl LayerRegion {
             infill_wall_overlap: object_config.infill_wall_overlap,
             layer_id: layer_id,
             raft_layers: 0,
-            overhang_flow: None,
+            // LayerRegion.cpp:172 — g.overhang_flow = this->bridging_flow(frPerimeter, thick_bridges);
+            // Used by detect_bridge_wall for the 100%-overhang (erOverhangPerimeter) walls.
+            overhang_flow: self
+                .bridging_flow(FlowRole::Perimeter, object_config.thick_bridges, layer_height)
+                .ok(),
         };
 
         // Create PerimeterGenerator

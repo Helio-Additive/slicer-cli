@@ -234,8 +234,8 @@ pub fn thick_polyline_to_multi_path(
     }
     // VariableWidth.cpp:93
     if path.polyline.is_valid() {
-        // VariableWidth.cpp:94-95
-        path.overhang_degree = overhang as i32;
+        // VariableWidth.cpp:94 — path.overhang_degree = overhang; (double)
+        path.overhang_degree = overhang;
         multi_path.paths.push(path);
     }
     // VariableWidth.cpp:97

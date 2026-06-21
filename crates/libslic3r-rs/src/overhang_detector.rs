@@ -761,13 +761,43 @@ pub fn prepare_split_polylines(polyline: Polyline) -> DegreePolylines {
 // detect_overhang_degree (cpp:496-503), and it has no Arachne dependency, so it
 // is ported inline here.
 //
-// NOTE (divergence): C++ `ExtrusionPath::overhang_degree` is a `double`
-// (ExtrusionEntity.hpp:216) but the crate's `ExtrusionPath.overhang_degree`
-// field is `i32` (extrusion_entity.rs). Storing the continuous overhang degree
-// therefore truncates the fractional part. This is a pre-existing divergence in
-// extrusion_entity.rs (out of scope for this file); we store the value via
-// `as i32` to match the existing field type.
+// NOTE: C++ `ExtrusionPath::overhang_degree` is a `double` (ExtrusionEntity.hpp:216);
+// the crate field is now `f64` to match, so the continuous overhang degree
+// (multiples of 0.1 from merged_with_degree) is preserved without truncation.
+// GCode::get_overhang_degree_corr_speed reads this raw double and interpolates
+// between speed buckets (GCode.cpp:5942-5962).
 // ---------------------------------------------------------------------------
+
+// ExtrusionEntity.hpp:605-613 — extrusion_paths_append(ExtrusionPaths&, Polylines,
+// overhang_degree, curva_degree, role, mm3_per_mm, width, height).
+// Used by the classic traverse_loops zero-degree append.
+#[allow(clippy::too_many_arguments)]
+pub fn extrusion_paths_append(
+    dst: &mut ExtrusionPaths,
+    polylines: Polylines,
+    overhang_degree: f64,
+    curva_degree: i32,
+    role: ExtrusionRole,
+    mm3_per_mm: f64,
+    width: f32,
+    height: f32,
+) {
+    // ExtrusionEntity.hpp:607 — dst.reserve(dst.size() + polylines.size());
+    dst.reserve(dst.len() + polylines.len());
+    // ExtrusionEntity.hpp:608-612 — for (Polyline &polyline : polylines) if valid push.
+    for polyline in polylines {
+        if polyline.is_valid() {
+            let mut ep = ExtrusionPath::new(role);
+            ep.overhang_degree = overhang_degree;
+            ep.curve_degree = curva_degree;
+            ep.mm3_per_mm = mm3_per_mm;
+            ep.width = width as f64;
+            ep.height = height as f64;
+            ep.polyline = polyline;
+            dst.push(ep);
+        }
+    }
+}
 
 // ExtrusionEntity.hpp:637-647
 fn extrusion_paths_append_classic(
@@ -787,7 +817,7 @@ fn extrusion_paths_append_classic(
         // ExtrusionEntity.hpp:641 — dst.push_back(ExtrusionPath(overhang_degree, curva_degree, role, mm3_per_mm, width, height));
         // ExtrusionEntity.hpp:229 — ExtrusionPath(double overhang_degree, int curve_degree, role, double mm3_per_mm, float width, float height)
         let mut ep = ExtrusionPath::new(role);
-        ep.overhang_degree = overhang_degree as i32; // (divergence: field is i32, see NOTE)
+        ep.overhang_degree = overhang_degree; // ExtrusionEntity.hpp:216 double (now f64-faithful)
         ep.curve_degree = curva_degree;
         ep.mm3_per_mm = mm3_per_mm;
         ep.width = width as f64;

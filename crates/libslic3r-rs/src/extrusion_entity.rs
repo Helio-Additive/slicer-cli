@@ -259,7 +259,10 @@ pub struct ExtrusionPath {
     // ExtrusionEntity.hpp:215 `Polyline polyline;`
     pub polyline: Polyline,
     // ExtrusionEntity.hpp:216 `double overhang_degree = 0;`
-    pub overhang_degree: i32,
+    // Continuous overhang degree (classic detect_overhang_degree emits multiples of
+    // 0.1; bridge walls emit integral 5/6). Stored as f64 to match C++ `double` so
+    // GCode::get_overhang_degree_corr_speed can interpolate between speed buckets.
+    pub overhang_degree: f64,
     // ExtrusionEntity.hpp:217 `int curve_degree = 0;`
     pub curve_degree: i32,
     // ExtrusionEntity.hpp:219 `double mm3_per_mm;`
@@ -287,7 +290,7 @@ impl ExtrusionPath {
     pub fn new(role: ExtrusionRole) -> Self {
         Self {
             polyline: Polyline::new(),
-            overhang_degree: 0,
+            overhang_degree: 0.0,
             curve_degree: 0,
             mm3_per_mm: -1.0,
             width: -1.0,
@@ -311,7 +314,7 @@ impl ExtrusionPath {
     ) -> Self {
         Self {
             polyline: Polyline::new(),
-            overhang_degree: 0,
+            overhang_degree: 0.0,
             curve_degree: 0,
             mm3_per_mm,
             width,
@@ -327,7 +330,7 @@ impl ExtrusionPath {
 
     // ExtrusionEntity.hpp:229 `ExtrusionPath(double overhang_degree, int curve_degree, ExtrusionRole role, double mm3_per_mm, float width, float height)`
     pub fn with_overhang(
-        overhang_degree: i32,
+        overhang_degree: f64,
         curve_degree: i32,
         role: ExtrusionRole,
         mm3_per_mm: CoordF,
@@ -526,23 +529,26 @@ impl ExtrusionPath {
     }
 
     // ExtrusionEntity.hpp:350-353 `void set_overhang_degree(int overhang)`
+    // C++: overhang_degree = (overhang < 0)?0:(overhang > 10 ? 10 : overhang);
+    // (int arg stored into the double field).
     pub fn set_overhang_degree(&mut self, overhang: i32) {
         if is_perimeter(self.role) || is_support(self.role) {
             self.overhang_degree = if overhang < 0 {
-                0
+                0.0
             } else if overhang > 10 {
-                10
+                10.0
             } else {
-                overhang
+                overhang as f64
             };
         }
     }
 
     // ExtrusionEntity.hpp:354-359 `int get_overhang_degree() const`
+    // C++ returns `(int)overhang_degree` (truncates the fractional part).
     pub fn get_overhang_degree(&self) -> i32 {
         // only perimeter has overhang degree. Other return 0;
         if is_perimeter(self.role) || is_support(self.role) {
-            return self.overhang_degree;
+            return self.overhang_degree as i32;
         }
         0
     }
@@ -1264,8 +1270,8 @@ impl ExtrusionLoop {
             if is_bridge(path.role) {
                 return true;
             }
-            // ExtrusionEntity.cpp:426-427
-            if path.overhang_degree >= OVERHANG_THRESHOLD {
+            // ExtrusionEntity.cpp:426-427 — overhang_degree (double) >= overhang_threshold (int)
+            if path.overhang_degree >= OVERHANG_THRESHOLD as f64 {
                 return true;
             }
         }

@@ -1348,6 +1348,45 @@ fn greedy_chain_indices(points: &[Point], start_near: Point) -> Vec<usize> {
     chain
 }
 
+/// PerimeterGenerator.cpp:241-267 — detect_bridge_wall.
+/// Routes the 100%-overhang remain polylines into overhang/bridge walls:
+/// - if the straight line first->last is shorter than the polyline (i.e. the
+///   wall is curved), degree = overhang_sampling_number - 1 (5).
+/// - else (straight) it is a bridge wall, degree = overhang_sampling_number (6).
+fn detect_bridge_wall(
+    paths: &mut Vec<crate::extrusion_entity::ExtrusionPath>,
+    remain_polines: &[Polyline],
+    role: crate::extrusion_entity::ExtrusionRole,
+    mm3_per_mm: f64,
+    width: f32,
+    height: f32,
+) {
+    use crate::geometry::Line;
+    let n = crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f64;
+    for poly in remain_polines {
+        // PerimeterGenerator.cpp:245-246 — Line line(poly.first_point(), poly.last_point());
+        let line = Line::new(poly.first_point(), poly.last_point());
+        // PerimeterGenerator.cpp:246 — if (line.length() < poly.length())
+        let degree = if line.length() < poly.length() {
+            // curved overhang wall
+            n - 1.0
+        } else {
+            // bridge wall
+            n
+        };
+        crate::overhang_detector::extrusion_paths_append(
+            paths,
+            vec![poly.clone()],
+            degree,
+            0,
+            role,
+            mm3_per_mm,
+            width,
+            height,
+        );
+    }
+}
+
 /// Convert perimeter loops to extrusion entities with proper ordering
 /// PerimeterGenerator.cpp:280-503
 /// C++: static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perimeter_generator, const PerimeterGeneratorLoops &loops, ThickPolylines &thin_walls)
@@ -1509,103 +1548,119 @@ fn traverse_loops(
                     let lower_bound = 0.0_f64;
                     let upper_bound = scale_d(end_offset) - scale_d(off_front);
 
-                    let lower_front_polys: Vec<Polygon> = lower_front_ex
-                        .iter()
-                        .flat_map(|ex| {
-                            std::iter::once(ex.contour.clone()).chain(ex.holes.iter().cloned())
-                        })
-                        .collect();
+                    // lower_polygons_series.front()/back() as flat Polygons (holes included),
+                    // matching C++ `std::vector<Polygons>` entries.
+                    let lower_front_polys: Vec<Polygon> =
+                        crate::geometry::to_polygons(&lower_front_ex);
+                    let lower_back_polys: Vec<Polygon> = crate::geometry::to_polygons(&lower_back_ex);
 
                     if lower_front_polys.is_empty() {
                         false
                     } else {
-                        // Classify each original segment by midpoint band membership.
-                        // 0 = inside lower_front (supported, degree 0)
-                        // 1 = middle band (between front and back, graded)
-                        // 2 = outside lower_back (100% overhang, degree max)
-                        let loop_polyline = polygon.split_at_first_point();
-                        let pts = loop_polyline.points();
-                        let classify = |mid: Point| -> u8 {
-                            if lower_front_ex.iter().any(|ex| ex.contains(&mid, true)) {
-                                0
-                            } else if lower_back_ex.iter().any(|ex| ex.contains(&mid, true)) {
-                                1
-                            } else {
-                                2
-                            }
-                        };
-                        // Build (class, sub-polyline) runs over contiguous same-class segments.
-                        let mut runs: Vec<(u8, Polyline)> = Vec::new();
-                        if pts.len() >= 2 {
-                            let mut cur_class = classify((pts[0] + pts[1]) / 2);
-                            let mut cur = Polyline::from_points(vec![pts[0], pts[1]]);
-                            for i in 1..pts.len() - 1 {
-                                let c = classify((pts[i] + pts[i + 1]) / 2);
-                                if c == cur_class {
-                                    cur.points.push(pts[i + 1]);
-                                } else {
-                                    runs.push((cur_class, std::mem::replace(
-                                        &mut cur,
-                                        Polyline::from_points(vec![pts[i], pts[i + 1]]),
-                                    )));
-                                    cur_class = c;
-                                }
-                            }
-                            runs.push((cur_class, cur));
-                        }
+                        // Faithful classic overhang flow — PerimeterGenerator.cpp:374-432.
+                        // intersection_pl_2/diff_pl_2 = the Clipper2Utils.cpp open-path clips
+                        // (clipper2_utils.rs recovers solution_open, unlike clipper_utils' safe wrapper).
+                        use crate::clipper2_utils::{diff_pl_2, intersection_pl_2};
+                        use crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_polygons;
+
+                        // PerimeterGenerator.cpp:376-377 — BoundingBox bbox(polygon.points); bbox.offset(SCALED_EPSILON);
+                        // BoundingBoxBase::offset(delta): min -= delta, max += delta.
+                        let mut bbox = crate::geometry::BoundingBox::from_points(polygon.points());
+                        let se = crate::libslic3r::SCALED_EPSILON as i64;
+                        bbox.min = Point::new(bbox.min.x() - se, bbox.min.y() - se);
+                        bbox.max = Point::new(bbox.max.x() + se, bbox.max.y() + se);
+
+                        // PerimeterGenerator.cpp:382 — clip lower_series.back() to bbox.
+                        let lower_back_clipped = clip_clipper_polygons_with_subject_bbox_polygons(
+                            &lower_back_polys,
+                            &bbox,
+                        );
+
+                        // PerimeterGenerator.cpp:384 — inside = intersection_pl_2([to_polyline(polygon)], back_clipped)
+                        let poly_pl = crate::geometry::polygon::to_polyline(polygon);
+                        let inside_polines = intersection_pl_2(
+                            std::slice::from_ref(&poly_pl),
+                            &lower_back_clipped,
+                        );
+                        // PerimeterGenerator.cpp:387 — remain = diff_pl_2([to_polyline(polygon)], back_clipped)
+                        let remain_polines =
+                            diff_pl_2(std::slice::from_ref(&poly_pl), &lower_back_clipped);
 
                         overhang_trace(&format!(
-                            "LOOP layer={} role={} is_ext={} runs={} polylen={:.1}",
+                            "LOOP layer={} role={} is_ext={} inside={} remain={} polylen={:.1}",
                             config.layer_id,
                             role as i32,
                             is_external as i32,
-                            runs.len(),
-                            loop_polyline.length()
+                            inside_polines.len(),
+                            remain_polines.len(),
+                            poly_pl.length()
                         ));
 
-                        // Emit paths per run, preserving original geometry.
-                        for (cls, pl) in runs {
-                            if !pl.is_valid() {
-                                continue;
-                            }
-                            match cls {
-                                // Supported: single degree-0 path.
-                                0 => {
-                                    let mut p = ExtrusionPath::new(role);
-                                    p.polyline = pl;
-                                    p.overhang_degree = 0;
-                                    p.curve_degree = 0;
-                                    p.mm3_per_mm = extrusion_mm3_per_mm;
-                                    p.width = extrusion_width;
-                                    p.height = layer_height;
-                                    paths.push(p);
-                                }
-                                // Middle band: grade per-sub-segment via detect_overhang_degree.
-                                1 => {
-                                    crate::overhang_detector::detect_overhang_degree(
-                                        lower_front_polys.clone(),
-                                        role,
-                                        extrusion_mm3_per_mm,
-                                        extrusion_width,
-                                        layer_height,
-                                        vec![pl],
-                                        lower_bound,
-                                        upper_bound,
-                                        &mut paths,
-                                    );
-                                }
-                                // 100% overhang: single max-degree path (same flow/E).
-                                _ => {
-                                    let mut p = ExtrusionPath::new(role);
-                                    p.polyline = pl;
-                                    p.overhang_degree =
-                                        crate::overhang_detector::MAX_OVERHANG_DEGREE;
-                                    p.curve_degree = 0;
-                                    p.mm3_per_mm = extrusion_mm3_per_mm;
-                                    p.width = extrusion_width;
-                                    p.height = layer_height;
-                                    paths.push(p);
-                                }
+                        // detect_overhang_speed is always true here (classic Benchy path;
+                        // is_enable_overhang_speed && fuzzy_skin_allows_overhang_slowdown).
+                        // PerimeterGenerator.cpp:403 — clip lower_series.front() to bbox.
+                        let lower_front_clipped =
+                            clip_clipper_polygons_with_subject_bbox_polygons(
+                                &lower_front_polys,
+                                &bbox,
+                            );
+                        // PerimeterGenerator.cpp:405 — middle = diff_pl_2(inside, front_clipped)
+                        let middle_overhang_polines =
+                            diff_pl_2(&inside_polines, &lower_front_clipped);
+                        // PerimeterGenerator.cpp:407 — zero = intersection_pl_2(inside, front_clipped)
+                        let zero_degree_polines =
+                            intersection_pl_2(&inside_polines, &lower_front_clipped);
+                        // PerimeterGenerator.cpp:408-401 — append zero-degree paths.
+                        if !zero_degree_polines.is_empty() {
+                            crate::overhang_detector::extrusion_paths_append(
+                                &mut paths,
+                                zero_degree_polines,
+                                0.0,
+                                0,
+                                role,
+                                extrusion_mm3_per_mm,
+                                extrusion_width as f32,
+                                layer_height as f32,
+                            );
+                        }
+                        // PerimeterGenerator.cpp:394-404 — detect middle-line overhang.
+                        if !middle_overhang_polines.is_empty() {
+                            crate::overhang_detector::detect_overhang_degree(
+                                lower_front_polys.clone(),
+                                role,
+                                extrusion_mm3_per_mm,
+                                extrusion_width,
+                                layer_height,
+                                middle_overhang_polines,
+                                lower_bound,
+                                upper_bound,
+                                &mut paths,
+                            );
+                        }
+
+                        // PerimeterGenerator.cpp:411-432 — 100%-overhang -> detect_bridge_wall.
+                        // No-support branch (Benchy has no support): role=erOverhangPerimeter,
+                        // overhang_flow. (The zero-z-support branch keeps `role`/normal flow.)
+                        if !remain_polines.is_empty() {
+                            if let Some(ovh_flow) = config.overhang_flow.as_ref() {
+                                detect_bridge_wall(
+                                    &mut paths,
+                                    &remain_polines,
+                                    ExtrusionRole::OverhangPerimeter,
+                                    ovh_flow.mm3_per_mm().unwrap_or(extrusion_mm3_per_mm),
+                                    ovh_flow.width() as f32,
+                                    ovh_flow.height() as f32,
+                                );
+                            } else {
+                                // Fallback (overhang_flow not wired): keep original flow.
+                                detect_bridge_wall(
+                                    &mut paths,
+                                    &remain_polines,
+                                    role,
+                                    extrusion_mm3_per_mm,
+                                    extrusion_width as f32,
+                                    layer_height as f32,
+                                );
                             }
                         }
 
@@ -1624,6 +1679,13 @@ fn traverse_loops(
                         if paths.is_empty() {
                             continue;
                         }
+
+                        // PerimeterGenerator.cpp:439 — chain_and_reorder_extrusion_paths(paths, &paths.front().first_point());
+                        let start = paths[0].polyline.first_point();
+                        crate::shortest_path::chain_and_reorder_extrusion_paths(
+                            &mut paths,
+                            Some(&start),
+                        );
                         true
                     }
                 } else {
@@ -1645,7 +1707,7 @@ fn traverse_loops(
         if !did_overhang_split {
             let mut path = ExtrusionPath::new(role);
             path.polyline = polygon.split_at_first_point();
-            path.overhang_degree = 0;
+            path.overhang_degree = 0.0;
             path.curve_degree = 0;
             path.mm3_per_mm = extrusion_mm3_per_mm;
             path.width = extrusion_width;

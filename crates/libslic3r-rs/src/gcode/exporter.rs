@@ -62,18 +62,19 @@ impl Default for TravelConfig {
 fn overhang_degree_corr_speed(
     config: &crate::print_config::PrintObjectConfig,
     normal_speed: f64,
-    path_degree: i32,
+    path_degree: f64,
 ) -> f64 {
     // GCode.cpp:5933 — if (path_degree <= 0) return normal_speed;
-    if path_degree <= 0 {
+    if path_degree <= 0.0 {
         return normal_speed;
     }
 
-    // overhang_speed_key_map[degree] resolved value (0 => use normal_speed).
-    // degree 6 (bridge) maps to bridge_speed; the perimeter generator only emits
-    // 0..=5 today, but we include 6 for completeness.
+    // overhang_speed_key_map[degree] resolved RAW value (no fallback). The C++
+    // get_abs_value_at returns the configured speed; a 0 means "unset" and the
+    // caller (get_path_speed) keeps the base speed via `new_speed==0 ? speed`.
+    // degree 6 (bridge) maps to bridge_speed.
     let speed_at = |degree: i32| -> f64 {
-        let v = match degree {
+        match degree {
             1 => config.overhang_1_4_speed,
             2 => config.overhang_2_4_speed,
             3 => config.overhang_3_4_speed,
@@ -81,37 +82,39 @@ fn overhang_degree_corr_speed(
             5 => config.overhang_totally_speed,
             6 => config.bridge_speed,
             _ => 0.0,
-        };
-        if v == 0.0 {
-            normal_speed
-        } else {
-            v
         }
     };
 
     // GCode.cpp:5942 — int lower_degree_bound = int(path_degree);
-    let lower_degree_bound = path_degree;
-    // GCode.cpp:5944-5947 — degree>=4 or integral: use the lower-bound speed directly.
-    // (path_degree is integral here since the field is i32, so this branch always
-    // applies — the interpolation below is kept for parity with the C++ double path.)
-    if path_degree >= 4 || path_degree == lower_degree_bound {
+    let lower_degree_bound = path_degree as i32;
+    // GCode.cpp:5944-5947 — degree>=4 or integral: use the lower-bound speed directly
+    // (no 0->normal fallback here; caller handles a 0 result).
+    if path_degree >= 4.0 || path_degree == lower_degree_bound as f64 {
         return speed_at(lower_degree_bound);
     }
 
     // GCode.cpp:5948-5962 — interpolate between lower and upper degree speeds.
     let upper_degree_bound = lower_degree_bound + 1;
-    let lower_speed_bound = if lower_degree_bound == 0 {
+    let mut lower_speed_bound = if lower_degree_bound == 0 {
         normal_speed
     } else {
         speed_at(lower_degree_bound)
     };
-    let upper_speed_bound = if upper_degree_bound == 0 {
+    let mut upper_speed_bound = if upper_degree_bound == 0 {
         normal_speed
     } else {
         speed_at(upper_degree_bound)
     };
+    // GCode.cpp:5959-5960 — 0 -> normal_speed fallback (interpolation branch only).
+    if lower_speed_bound == 0.0 {
+        lower_speed_bound = normal_speed;
+    }
+    if upper_speed_bound == 0.0 {
+        upper_speed_bound = normal_speed;
+    }
+    // GCode.cpp:5961 — speed_out = lower + (upper-lower)*(path_degree - lower_degree_bound)
     lower_speed_bound
-        + (upper_speed_bound - lower_speed_bound) * (path_degree - lower_degree_bound) as f64
+        + (upper_speed_bound - lower_speed_bound) * (path_degree - lower_degree_bound as f64)
 }
 
 /// Base (normal) wall speed for a perimeter path role, mm/s.
@@ -244,10 +247,17 @@ pub fn extrude_loop(
         );
 
     // Per-path normal wall speed (overhang-degree-corrected), mm/s.
-    // Mirrors GCode::get_path_speed for perimeter roles.
+    // Mirrors GCode::get_path_speed for perimeter roles (GCode.cpp:5387-5400):
+    //   new_speed = get_overhang_degree_corr_speed(speed, overhang_degree);
+    //   speed = new_speed == 0.0 ? speed : new_speed;
     let path_speed_fn = |p: &ExtrusionPath| -> f64 {
         let base = perimeter_base_speed(config, p.role, is_first_layer);
-        overhang_degree_corr_speed(config, base, p.overhang_degree)
+        let new_speed = overhang_degree_corr_speed(config, base, p.overhang_degree);
+        if new_speed == 0.0 {
+            base
+        } else {
+            new_speed
+        }
     };
 
     // C++ GCode.cpp:5576-5582 — smooth speed of discontinuity areas.
@@ -277,7 +287,16 @@ pub fn extrude_loop(
             &mut smoothed,
             path_speed_fn,
         );
+        // GCode.cpp:6599-6601 — per-path ";FEATURE: <role>" on role change.
+        let mut last_path_role = smoothed.first().map(|p| p.role);
         for path in &smoothed {
+            if Some(path.role) != last_path_role {
+                writer.write_comment(&format!(
+                    "FEATURE: {}",
+                    crate::extrusion_entity::role_to_string(path.role)
+                ));
+                last_path_role = Some(path.role);
+            }
             if apply_overhang_speed
                 && matches!(
                     path.role,
@@ -290,13 +309,34 @@ pub fn extrude_loop(
                     ";_EXTRUDE_SET_SPEED"
                 };
                 writer.set_speed(path.smooth_speed * 60.0, cooling_comment);
+            } else if path.role == ExtrusionRole::OverhangPerimeter {
+                // GCode.cpp:5401-5408 — overhang/bridge wall speed.
+                let ovh_speed = if (path.overhang_degree - 5.0).abs() < f64::EPSILON
+                    && config.enable_overhang_speed
+                {
+                    config.overhang_totally_speed
+                } else {
+                    config.bridge_speed
+                };
+                writer.set_speed(ovh_speed * 60.0, "");
             }
             extrude_path(path, writer, config, is_first_layer);
         }
         return;
     }
 
+    // GCode.cpp:6599-6601 — emit ";FEATURE: <role>" per path when role changes.
+    // extrude_collection already emitted the loop's first-path role, so seed with it.
+    let mut last_path_role = paths.first().map(|p| p.role);
     for path in paths {
+        // Per-path role-change FEATURE comment (Overhang wall paths within a wall loop).
+        if Some(path.role) != last_path_role {
+            writer.write_comment(&format!(
+                "FEATURE: {}",
+                crate::extrusion_entity::role_to_string(path.role)
+            ));
+            last_path_role = Some(path.role);
+        }
         if apply_overhang_speed
             && matches!(
                 path.role,
@@ -313,6 +353,18 @@ pub fn extrude_loop(
                 ";_EXTRUDE_SET_SPEED"
             };
             writer.set_speed(corr * 60.0, cooling_comment);
+        } else if path.role == ExtrusionRole::OverhangPerimeter {
+            // GCode.cpp:5401-5408 — overhang/bridge wall speed.
+            //   degree==5 -> overhang_totally_speed; else (degree 6) -> bridge_speed.
+            let ovh_speed = if (path.overhang_degree - 5.0).abs() < f64::EPSILON
+                && config.enable_overhang_speed
+            {
+                config.overhang_totally_speed
+            } else {
+                config.bridge_speed
+            };
+            // Bridge moves are not cooling-adjustable.
+            writer.set_speed(ovh_speed * 60.0, "");
         }
         extrude_path(path, writer, config, is_first_layer);
     }

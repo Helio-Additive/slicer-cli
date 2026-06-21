@@ -399,7 +399,7 @@ mod tests {
             mm3_per_mm: 1.0,
             width: 0.4,
             height: 0.2,
-            overhang_degree: 0,
+            overhang_degree: 0.0,
             curve_degree: 0,
             customize_flag: crate::extrusion_entity::CustomizeFlag::None,
         };
