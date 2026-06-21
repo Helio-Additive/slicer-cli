@@ -643,36 +643,118 @@ fn propagate_wave_from_seeds(
     wave
 }
 
+/// Faithful `propagate_wave_from_boundary` (RegionExpansion.cpp:442-465).
+///
+/// Inflate the open seed polylines into the boundary in waves, clipping each
+/// wave to the boundary:
+/// 1. `wavefront_initial`: open-round offset of the seed polylines by
+///    `initial_step` (etOpenRound / etClosedLine), clip to the boundary.
+/// 2. `num_other_steps` × `wavefront_step`: closed-polygon round offset by
+///    `other_step`, clip to the boundary.
+///
+/// All distances are mm (the module convention); `arc_tolerance` (mm) feeds the
+/// round offsetter. Returns the expanded polygons.
+fn propagate_wave_from_boundary(
+    seed_paths: &[Polyline],
+    boundary: &ExPolygon,
+    initial_step: CoordF,
+    other_step: CoordF,
+    num_other_steps: usize,
+    arc_tolerance: CoordF,
+) -> ExPolygons {
+    if seed_paths.is_empty() {
+        return Vec::new();
+    }
+    let bnd = std::slice::from_ref(boundary);
+    let arc_scaled = crate::scale(arc_tolerance) as CoordF;
+
+    // wavefront_initial: open-round offset of every seed polyline.
+    let mut wave_polys: Vec<Polygon> = Vec::new();
+    for pl in seed_paths {
+        wave_polys.extend(crate::clipper_utils::offset_polyline_round(
+            pl,
+            crate::scale(initial_step) as CoordF,
+            arc_scaled,
+        ));
+    }
+    // wavefront_clip: intersect the inflated wave with the boundary.
+    let mut wave = intersection(&polygons_to_expolygons(&wave_polys), bnd);
+    if wave.is_empty() {
+        return Vec::new();
+    }
+
+    // wavefront_step ×num_other_steps: closed-polygon round offset, clip.
+    for _ in 0..num_other_steps {
+        let expanded = grow(&wave, other_step, OffsetJoinType::Round);
+        wave = intersection(&expanded, bnd);
+        if wave.is_empty() {
+            return Vec::new();
+        }
+    }
+    wave
+}
+
+/// Wrap loose polygons as ExPolygons (each polygon becomes a contour). A union is
+/// applied so overlapping inflated wave fronts collapse, matching the C++ which
+/// resolves overlap during the successive clip (RegionExpansion.cpp:406-408).
+fn polygons_to_expolygons(polys: &[Polygon]) -> ExPolygons {
+    if polys.is_empty() {
+        return Vec::new();
+    }
+    let raw: ExPolygons = polys.iter().cloned().map(ExPolygon::new).collect();
+    union_ex(&raw)
+}
+
 /// Propagate waves from all source expolygons into all boundary expolygons.
 ///
-/// Port of `propagate_waves()` from RegionExpansion.cpp:468-494.
-///
-/// For each (src, boundary) pair that has seeds, runs wave propagation
-/// and collects the resulting expanded regions.
+/// Port of `propagate_waves(WaveSeeds, boundary, params)` + the `wave_seeds`
+/// overload (RegionExpansion.cpp:468-494). Seeds are produced by the faithful
+/// `wave_seeds`, grouped by (boundary, src), and each group's seed polylines are
+/// propagated within its boundary expolygon.
 fn propagate_waves(
     src: &[ExPolygon],
     boundary: &[ExPolygon],
     params: &RegionExpansionParameters,
 ) -> Vec<RegionExpansion> {
-    let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
+    // RegionExpansion.cpp:493 — wave_seeds(src, boundary, tiny_expansion, true).
+    let seeds = wave_seeds(
+        src,
+        boundary,
+        params.tiny_expansion,
+        params.shortest_edge_length,
+        true,
+    );
 
     let mut results = Vec::new();
-    for (seed_polys, src_id, boundary_id) in &seeds {
-        // Propagate wave within just this boundary expolygon
-        let bnd = &[boundary[*boundary_id as usize].clone()];
-        let expanded = propagate_wave_from_seeds(
-            seed_polys,
+    // RegionExpansion.cpp:475-486 — group contiguous seeds by (boundary, src).
+    let mut i = 0;
+    while i < seeds.len() {
+        let boundary_id = seeds[i].boundary;
+        let src_id = seeds[i].src;
+        let mut paths: Vec<Polyline> = Vec::new();
+        while i < seeds.len() && seeds[i].boundary == boundary_id && seeds[i].src == src_id {
+            if seeds[i].path.points().len() >= 2 {
+                paths.push(seeds[i].path.clone());
+            }
+            i += 1;
+        }
+        if paths.is_empty() {
+            continue;
+        }
+        let bnd = &boundary[boundary_id as usize];
+        let expanded = propagate_wave_from_boundary(
+            &paths,
             bnd,
             params.initial_step,
             params.other_step,
             params.num_other_steps,
+            params.arc_tolerance,
         );
-
         for ep in expanded {
             results.push(RegionExpansion {
                 polygon: ep,
-                src_id: *src_id,
-                boundary_id: *boundary_id,
+                src_id,
+                boundary_id,
             });
         }
     }
@@ -1327,34 +1409,49 @@ fn propagate_waves_ex(
     boundary: &[ExPolygon],
     params: &RegionExpansionParameters,
 ) -> (Vec<WaveSeed>, Vec<RegionExpansionEx>) {
-    let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
+    // RegionExpansion.cpp:547 — wave_seeds(src, boundary, tiny_expansion, true).
+    let seeds = wave_seeds(
+        src,
+        boundary,
+        params.tiny_expansion,
+        params.shortest_edge_length,
+        true,
+    );
 
-    // Collect wave seeds (anchor info)
-    let mut wave_seeds_out: Vec<WaveSeed> = Vec::new();
-    for (_, src_id, boundary_id) in &seeds {
-        wave_seeds_out.push(WaveSeed {
-            src: *src_id,
-            boundary: *boundary_id,
-            path: Polyline::new(),
-        });
-    }
+    // The faithful WaveSeeds are themselves the anchors (carry src/boundary/path).
+    let wave_seeds_out: Vec<WaveSeed> = seeds.clone();
 
-    // Propagate waves (reuse existing infrastructure)
+    // Propagate waves: group contiguous seeds by (boundary, src), inflate each
+    // group's seed polylines within its boundary (RegionExpansion.cpp:475-486).
     let mut raw_expansions: Vec<RegionExpansion> = Vec::new();
-    for (seed_polys, src_id, boundary_id) in &seeds {
-        let bnd = &[boundary[*boundary_id as usize].clone()];
-        let expanded = propagate_wave_from_seeds(
-            seed_polys,
+    let mut i = 0;
+    while i < seeds.len() {
+        let boundary_id = seeds[i].boundary;
+        let src_id = seeds[i].src;
+        let mut paths: Vec<Polyline> = Vec::new();
+        while i < seeds.len() && seeds[i].boundary == boundary_id && seeds[i].src == src_id {
+            if seeds[i].path.points().len() >= 2 {
+                paths.push(seeds[i].path.clone());
+            }
+            i += 1;
+        }
+        if paths.is_empty() {
+            continue;
+        }
+        let bnd = &boundary[boundary_id as usize];
+        let expanded = propagate_wave_from_boundary(
+            &paths,
             bnd,
             params.initial_step,
             params.other_step,
             params.num_other_steps,
+            params.arc_tolerance,
         );
         for ep in expanded {
             raw_expansions.push(RegionExpansion {
                 polygon: ep,
-                src_id: *src_id,
-                boundary_id: *boundary_id,
+                src_id,
+                boundary_id,
             });
         }
     }

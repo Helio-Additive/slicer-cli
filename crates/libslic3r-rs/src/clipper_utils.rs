@@ -443,6 +443,44 @@ pub fn offset_polyline_miter(
     result.0.iter().map(geo_to_polygon).collect()
 }
 
+/// Offset an OPEN polyline with a round join and a round (or closed-line) end,
+/// returning closed polygons. Faithful to `wavefront_initial`
+/// (RegionExpansion.cpp:391-404): `co.AddPath(path, jtRound, path.front()==
+/// path.back() ? etClosedLine : etOpenRound)`. `delta_scaled` and
+/// `arc_tolerance_scaled` are in scaled (coord_t) units (geo-clipper round
+/// precision is the arc tolerance in mm).
+pub fn offset_polyline_round(
+    polyline: &Polyline,
+    delta_scaled: CoordF,
+    arc_tolerance_scaled: CoordF,
+) -> Vec<Polygon> {
+    if polyline.points().len() < 2 {
+        return Vec::new();
+    }
+    let coords: Vec<GeoCoord<f64>> = polyline
+        .points()
+        .iter()
+        .map(|p| GeoCoord {
+            x: unscale(p.x),
+            y: unscale(p.y),
+        })
+        .collect();
+    // RegionExpansion.cpp:399 — closed seed loop (first == last) uses etClosedLine.
+    let closed = polyline.points().len() >= 2
+        && polyline.first_point() == polyline.last_point();
+    let arc = unscale_delta(arc_tolerance_scaled);
+    let line: LineString<f64> = LineString::new(coords);
+    let mline: MultiLineString<f64> = MultiLineString::new(vec![line]);
+    let result: MultiPolygon<f64> = ClipperOpen::offset(
+        &mline,
+        unscale_delta(delta_scaled),
+        JoinType::Round(arc),
+        if closed { EndType::ClosedLine } else { EndType::OpenRound(arc) },
+        GEO_CLIPPER_SCALE,
+    );
+    result.0.iter().map(geo_to_polygon).collect()
+}
+
 /// Unscale a scaled (coord_t) delta to mm for the geo-clipper backend.
 #[inline]
 fn unscale_delta(delta_scaled: CoordF) -> CoordF {
