@@ -14,6 +14,17 @@
 #include <limits>
 #include <vector>
 
+// The vendored clipper is wrapped in the `ClipperZSys` outer namespace
+// (CLIPPERLIB_NAMESPACE_PREFIX, set in build.rs) so its int32 ClipperLib symbols
+// do not collide at link time with geo-clipper's int64 `clipper-sys` ClipperLib
+// (an ODR violation that segfaulted the bridges wave_seeds path). The rest of
+// this shim keeps using the unprefixed `ClipperLib` / `ClipperLib_Z` spellings
+// via these aliases.
+#ifdef CLIPPERLIB_NAMESPACE_PREFIX
+namespace ClipperLib = CLIPPERLIB_NAMESPACE_PREFIX::ClipperLib;
+namespace ClipperLib_Z = CLIPPERLIB_NAMESPACE_PREFIX::ClipperLib_Z;
+#endif
+
 // ---------------------------------------------------------------------------
 // M1 smoke functions
 // ---------------------------------------------------------------------------
