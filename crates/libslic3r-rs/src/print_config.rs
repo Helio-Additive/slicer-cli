@@ -1746,6 +1746,10 @@ pub struct PrintObjectConfig {
     /// Overhang 4/4 speed (mm/s or %).
     /// BambuStudio: `overhang_4_4_speed`.
     pub overhang_4_4_speed: CoordF,
+    /// Overhang 100% (totally) speed (mm/s or %).
+    /// BambuStudio: `overhang_totally_speed`. Maps to overhang degree 5
+    /// (overhang_speed_key_map {5: "overhang_totally_speed"}, GCode.cpp:5354).
+    pub overhang_totally_speed: CoordF,
 
     // === Infill (additional) ===
     /// Infill combination (every N layers).
@@ -2577,6 +2581,48 @@ impl PrintObjectConfig {
                 true
             }
 
+            // === Overhang Speed ===
+            // GCode.cpp:5348-5366 overhang_speed_key_map; values may be mm/s or
+            // a `%` of the normal wall speed (resolved in the exporter via
+            // get_abs_value). We keep the raw value (with `%` stripped) and the
+            // exporter applies the percent semantics.
+            "enable_overhang_speed" => {
+                if let Some(v) = parse_bool(value) {
+                    self.enable_overhang_speed = v;
+                }
+                true
+            }
+            "overhang_1_4_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.overhang_1_4_speed = v;
+                }
+                true
+            }
+            "overhang_2_4_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.overhang_2_4_speed = v;
+                }
+                true
+            }
+            "overhang_3_4_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.overhang_3_4_speed = v;
+                }
+                true
+            }
+            "overhang_4_4_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.overhang_4_4_speed = v;
+                }
+                true
+            }
+            "overhang_totally_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.overhang_totally_speed = v;
+                }
+                true
+            }
+
             // === Perimeter Options ===
             "detect_thin_wall" => {
                 if let Some(v) = parse_bool(value) {
@@ -3125,11 +3171,15 @@ impl Default for PrintObjectConfig {
             precise_outer_wall: false,
 
             // Overhang speed
-            enable_overhang_speed: false,
+            // BambuStudio default is enable_overhang_speed = true (PrintConfig.cpp);
+            // the prior `false` left the per-segment overhang-degree speed modulation
+            // dormant. Flipped to match the reference so overhang_*_speed take effect.
+            enable_overhang_speed: true,
             overhang_1_4_speed: 0.0,
             overhang_2_4_speed: 0.0,
             overhang_3_4_speed: 0.0,
             overhang_4_4_speed: 0.0,
+            overhang_totally_speed: 0.0,
 
             // Infill (additional)
             infill_combination: false,

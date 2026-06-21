@@ -1445,19 +1445,21 @@ fn traverse_loops(
         ///
         /// DIVERGENCE (geometry-preserving substitute for the clipper split):
         /// C++ clips the loop against the grown lower-slice series via
-        /// `intersection_pl_2`/`diff_pl_2` to separate zero-degree / middle-overhang /
-        /// 100%-overhang regions, then calls `detect_overhang_degree` on the middle
-        /// region only. The crate's coarse sampling-based `intersection_pl`/`diff_pl`
-        /// (F1) distort the polyline length (≈0.3% filament loss measured), and the
-        /// Clipper2 open-path `*_pl_2` drop most of a closed loop. To keep the extruded
-        /// filament byte-stable, we instead run `overhang_detector::detect_overhang_degree`
-        /// over the WHOLE loop polyline: it subdivides the original polyline geometrically
-        /// (prepare_split_polylines, along the original vertices) and classifies each
-        /// sub-segment by its midpoint distance to the lower-front polygons. Points inside
-        /// `lower_front` map to degree 0 (get_mapped_degree returns 0 for dist<=lower_bound)
-        /// and points beyond `lower_back` clamp to the max degree, reproducing the same
-        /// per-segment grading without the lossy boolean clip. The original loop geometry
-        /// (hence E) is preserved exactly (only sub-unit point*double truncation).
+        /// `intersection_pl_2`/`diff_pl_2` to separate zero-degree (inside lower_front),
+        /// middle-overhang (between lower_front and lower_back), and 100%-overhang
+        /// (outside lower_back) regions, then calls `detect_overhang_degree` on the
+        /// middle region only. The crate's coarse sampling `intersection_pl`/`diff_pl`
+        /// (F1) distort polyline length (≈0.3% filament loss) and the Clipper2 open-path
+        /// `*_pl_2` drop most of a closed loop, so neither is usable for byte-stable
+        /// filament. Instead we classify each ORIGINAL loop segment by its midpoint's
+        /// membership in `lower_front` / `lower_back` (point-in-polygon, no geometry
+        /// change), group contiguous segments of the same class, and split the loop at
+        /// those class boundaries — preserving every original vertex (hence E). The
+        /// middle-band sub-polylines are then graded by `detect_overhang_degree`
+        /// exactly as in C++; inside→degree 0, outside→max degree. (Crucially this does
+        /// NOT grade the whole loop: feeding fully-supported segments to the distancer
+        /// would mis-classify deep-interior points as high overhang, since the distancer
+        /// measures distance to the support BOUNDARY, not inside/outside.)
         ///
         /// DIVERGENCE (bridge classification): C++ routes the 100%-overhang region through
         /// `detect_bridge_wall` (re-flowed with the overhang flow, degree 5/6). Here the
@@ -1476,8 +1478,9 @@ fn traverse_loops(
                     let end_offset = 0.5 * nozzle_diameter;
                     let n = crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f64;
                     let off_front = start_offset + 0.5 * (end_offset - start_offset) / (n - 1.0);
-                    // lower_polygons_series.front() = less-grown (off_front).
+                    // lower_polygons_series.front() = less-grown (off_front), .back() = more-grown (end_offset).
                     let lower_front_ex = offset_expolygons(lower, off_front, OffsetJoinType::Miter);
+                    let lower_back_ex = offset_expolygons(lower, end_offset, OffsetJoinType::Miter);
 
                     // PerimeterGenerator.cpp:229-239 — dist_boundary(width)
                     // first = 0; second = scale_(end_offset) - scale_(off_front)
@@ -1486,8 +1489,6 @@ fn traverse_loops(
                     let lower_bound = 0.0_f64;
                     let upper_bound = scale_d(end_offset) - scale_d(off_front);
 
-                    // lower_front polygons drive the per-segment overhang grading
-                    // (OverhangDistancer is built over these in detect_overhang_degree).
                     let lower_front_polys: Vec<Polygon> = lower_front_ex
                         .iter()
                         .flat_map(|ex| {
@@ -1496,22 +1497,88 @@ fn traverse_loops(
                         .collect();
 
                     if lower_front_polys.is_empty() {
-                        // No lower geometry to grade against — fall back to flat path.
                         false
                     } else {
-                        // Whole loop polyline as the input to the per-segment grader.
+                        // Classify each original segment by midpoint band membership.
+                        // 0 = inside lower_front (supported, degree 0)
+                        // 1 = middle band (between front and back, graded)
+                        // 2 = outside lower_back (100% overhang, degree max)
                         let loop_polyline = polygon.split_at_first_point();
-                        crate::overhang_detector::detect_overhang_degree(
-                            lower_front_polys,
-                            role,
-                            extrusion_mm3_per_mm,
-                            extrusion_width,
-                            layer_height,
-                            vec![loop_polyline],
-                            lower_bound,
-                            upper_bound,
-                            &mut paths,
-                        );
+                        let pts = loop_polyline.points();
+                        let classify = |mid: Point| -> u8 {
+                            if lower_front_ex.iter().any(|ex| ex.contains(&mid, true)) {
+                                0
+                            } else if lower_back_ex.iter().any(|ex| ex.contains(&mid, true)) {
+                                1
+                            } else {
+                                2
+                            }
+                        };
+                        // Build (class, sub-polyline) runs over contiguous same-class segments.
+                        let mut runs: Vec<(u8, Polyline)> = Vec::new();
+                        if pts.len() >= 2 {
+                            let mut cur_class = classify((pts[0] + pts[1]) / 2);
+                            let mut cur = Polyline::from_points(vec![pts[0], pts[1]]);
+                            for i in 1..pts.len() - 1 {
+                                let c = classify((pts[i] + pts[i + 1]) / 2);
+                                if c == cur_class {
+                                    cur.points.push(pts[i + 1]);
+                                } else {
+                                    runs.push((cur_class, std::mem::replace(
+                                        &mut cur,
+                                        Polyline::from_points(vec![pts[i], pts[i + 1]]),
+                                    )));
+                                    cur_class = c;
+                                }
+                            }
+                            runs.push((cur_class, cur));
+                        }
+
+                        // Emit paths per run, preserving original geometry.
+                        for (cls, pl) in runs {
+                            if !pl.is_valid() {
+                                continue;
+                            }
+                            match cls {
+                                // Supported: single degree-0 path.
+                                0 => {
+                                    let mut p = ExtrusionPath::new(role);
+                                    p.polyline = pl;
+                                    p.overhang_degree = 0;
+                                    p.curve_degree = 0;
+                                    p.mm3_per_mm = extrusion_mm3_per_mm;
+                                    p.width = extrusion_width;
+                                    p.height = layer_height;
+                                    paths.push(p);
+                                }
+                                // Middle band: grade per-sub-segment via detect_overhang_degree.
+                                1 => {
+                                    crate::overhang_detector::detect_overhang_degree(
+                                        lower_front_polys.clone(),
+                                        role,
+                                        extrusion_mm3_per_mm,
+                                        extrusion_width,
+                                        layer_height,
+                                        vec![pl],
+                                        lower_bound,
+                                        upper_bound,
+                                        &mut paths,
+                                    );
+                                }
+                                // 100% overhang: single max-degree path (same flow/E).
+                                _ => {
+                                    let mut p = ExtrusionPath::new(role);
+                                    p.polyline = pl;
+                                    p.overhang_degree =
+                                        crate::overhang_detector::MAX_OVERHANG_DEGREE;
+                                    p.curve_degree = 0;
+                                    p.mm3_per_mm = extrusion_mm3_per_mm;
+                                    p.width = extrusion_width;
+                                    p.height = layer_height;
+                                    paths.push(p);
+                                }
+                            }
+                        }
 
                         // PerimeterGenerator.cpp:434 — if (paths.empty()) continue;
                         if paths.is_empty() {
