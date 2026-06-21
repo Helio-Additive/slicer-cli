@@ -734,57 +734,38 @@ fn polygons_to_expolygons(polys: &[Polygon]) -> ExPolygons {
     union_ex(&raw)
 }
 
-/// Propagate waves from all source expolygons into all boundary expolygons.
+/// Propagate waves from all source expolygons into all boundary expolygons
+/// (the top/bottom external-surface merge path — `expand_merge_surfaces`).
 ///
-/// Port of `propagate_waves(WaveSeeds, boundary, params)` + the `wave_seeds`
-/// overload (RegionExpansion.cpp:468-494). Seeds are produced by the faithful
-/// `wave_seeds`, grouped by (boundary, src), and each group's seed polylines are
-/// propagated within its boundary expolygon.
+/// SCOPE NOTE (performance): this overload is invoked for EVERY region of EVERY
+/// layer via `expand_merge_surfaces`. Routing it through the faithful, FFI-based
+/// `wave_seeds` (offset_open + Z-clip per region) + per-seed open-round offsets
+/// made a full Benchy slice take ~1 HOUR. Since this task targets BRIDGES, the
+/// top/bottom path stays on the fast polygon-intersection seed approximation
+/// (`wave_seeds_polygon_based`); only the bridge path (`propagate_waves_ex` via
+/// `expand_bridges_detect_orientations`) uses the faithful wave_seeds.
 fn propagate_waves(
     src: &[ExPolygon],
     boundary: &[ExPolygon],
     params: &RegionExpansionParameters,
 ) -> Vec<RegionExpansion> {
-    // RegionExpansion.cpp:493 — wave_seeds(src, boundary, tiny_expansion, true).
-    let seeds = wave_seeds(
-        src,
-        boundary,
-        params.tiny_expansion,
-        params.shortest_edge_length,
-        true,
-    );
+    let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
 
     let mut results = Vec::new();
-    // RegionExpansion.cpp:475-486 — group contiguous seeds by (boundary, src).
-    let mut i = 0;
-    while i < seeds.len() {
-        let boundary_id = seeds[i].boundary;
-        let src_id = seeds[i].src;
-        let mut paths: Vec<Polyline> = Vec::new();
-        while i < seeds.len() && seeds[i].boundary == boundary_id && seeds[i].src == src_id {
-            if seeds[i].path.points().len() >= 2 {
-                paths.push(seeds[i].path.clone());
-            }
-            i += 1;
-        }
-        if paths.is_empty() {
-            continue;
-        }
-        let bnd = &boundary[boundary_id as usize];
-        let expanded = propagate_wave_from_boundary(
-            &paths,
+    for (seed_polys, src_id, boundary_id) in &seeds {
+        let bnd = &[boundary[*boundary_id as usize].clone()];
+        let expanded = propagate_wave_from_seeds(
+            seed_polys,
             bnd,
             params.initial_step,
             params.other_step,
             params.num_other_steps,
-            params.arc_tolerance,
-            params.max_inflation,
         );
         for ep in expanded {
             results.push(RegionExpansion {
                 polygon: ep,
-                src_id,
-                boundary_id,
+                src_id: *src_id,
+                boundary_id: *boundary_id,
             });
         }
     }
