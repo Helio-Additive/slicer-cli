@@ -69,4 +69,91 @@ mod tests {
         let count = unsafe { cz_union_point_count(xy.as_ptr(), 4) };
         assert_eq!(count, 4, "union of a square with itself is a 4-point square");
     }
+
+    /// Read a CzZPaths back into owned Vec<(x,y,z)> paths, then free it.
+    fn collect_and_free(raw: CzZPaths) -> Vec<Vec<(i32, i32, i32)>> {
+        let mut out = Vec::new();
+        if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+            let lens = unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+            let coords =
+                unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+            let mut cur = 0usize;
+            for &len in lens {
+                let mut path = Vec::new();
+                for _ in 0..len {
+                    path.push((coords[cur * 3], coords[cur * 3 + 1], coords[cur * 3 + 2]));
+                    cur += 1;
+                }
+                out.push(path);
+            }
+        }
+        unsafe { cz_free_zpaths(raw) };
+        out
+    }
+
+    #[test]
+    fn clip_extrusion_partial_overlap() {
+        // M2: open horizontal subject crossing the right edge of a [0,100]^2
+        // clip square (ctIntersection=0), constant width Z=40. Only the x in
+        // [0,100] portion survives, and every output vertex keeps a positive Z.
+        //
+        // NOTE: the subject has 3 points. The faithful OverhangDetector.cpp
+        // post-pass that re-derives Z for clip-boundary vertices is guarded by
+        // `if (subject.size() <= 2) continue;`, so a degenerate 2-point subject
+        // would (correctly, per C++) leave the clip-boundary vertex at Z=0. Real
+        // callers always sample the extrusion path to >2 points; mirror that.
+        let subject: [i32; 9] = [-50, 50, 40, 50, 50, 40, 150, 50, 40];
+        let clip: [i32; 12] = [0, 0, 0, 100, 0, 0, 100, 100, 0, 0, 100, 0];
+        let clip_lens: [i32; 1] = [4];
+        let raw = unsafe {
+            cz_clip_extrusion(subject.as_ptr(), 3, clip.as_ptr(), clip_lens.as_ptr(), 1, 0)
+        };
+        let paths = collect_and_free(raw);
+        assert_eq!(paths.len(), 1, "expected one clipped open path");
+        let p = &paths[0];
+        assert!(p.len() >= 2);
+        let min_x = p.iter().map(|v| v.0).min().unwrap();
+        let max_x = p.iter().map(|v| v.0).max().unwrap();
+        assert_eq!(min_x, 0, "clip starts at left boundary x=0");
+        assert_eq!(max_x, 100, "clip ends at right boundary x=100");
+        for v in p {
+            assert_eq!(v.1, 50, "y stays on the subject line");
+            assert!(v.2 > 0, "every clipped vertex carries a positive Z width: {v:?}");
+            assert_eq!(v.2, 40, "constant-width subject => Z=40 at the boundary");
+        }
+    }
+
+    #[test]
+    fn clip_extrusion_no_overlap() {
+        // Subject fully outside the clip => nothing survives.
+        let subject: [i32; 6] = [500, 500, 40, 600, 500, 40];
+        let clip: [i32; 12] = [0, 0, 0, 100, 0, 0, 100, 100, 0, 0, 100, 0];
+        let clip_lens: [i32; 1] = [4];
+        let raw = unsafe {
+            cz_clip_extrusion(subject.as_ptr(), 2, clip.as_ptr(), clip_lens.as_ptr(), 1, 0)
+        };
+        let paths = collect_and_free(raw);
+        assert!(paths.is_empty(), "disjoint subject clips to nothing");
+    }
+
+    #[test]
+    fn clip_extrusion_interpolates_z() {
+        // Subject from x=-100 (width 20) to x=100 (width 60); clip [0,200]^2.
+        // The clip boundary at x=0 is the subject midpoint => width ~40.
+        let subject: [i32; 6] = [-100, 50, 20, 100, 50, 60];
+        let clip: [i32; 12] = [0, 0, 0, 200, 0, 0, 200, 100, 0, 0, 100, 0];
+        let clip_lens: [i32; 1] = [4];
+        let raw = unsafe {
+            cz_clip_extrusion(subject.as_ptr(), 2, clip.as_ptr(), clip_lens.as_ptr(), 1, 0)
+        };
+        let paths = collect_and_free(raw);
+        assert_eq!(paths.len(), 1);
+        let p = &paths[0];
+        let boundary = p.iter().find(|v| v.0 == 0).expect("boundary vertex at x=0");
+        assert!(
+            (boundary.2 - 40).abs() <= 1,
+            "width at clip boundary interpolates to ~40, got {}",
+            boundary.2
+        );
+    }
 }

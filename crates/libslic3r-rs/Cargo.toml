@@ -32,6 +32,10 @@ clipper2 = "0.5"
 # the safe `clipper2` wrapper hides, which Clipper2Utils.cpp depends on for
 # byte-exact PolyTreeToExPolygons and open-subject (solution_open) recovery.
 clipper2c-sys = "0.1.6"
+# Vendored BambuStudio ClipperLib_Z (Z-tagged open-path clipping) via a C shim.
+# Provides the faithful `clip_extrusion` primitive (OverhangDetector.cpp) that
+# Clipper2 cannot express (no Z-aware open-subject clip with a user fill callback).
+clipper-z-sys = { path = "../clipper-z-sys" }
 ordered-float = "4.2"
 boostvoronoi = "0.12"
 # Polygon tessellation (pure-Rust earcut; wasm-safe). Backend for Tesselate.cpp.
