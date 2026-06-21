@@ -71,7 +71,16 @@ fn main() {
             // Eigen + the vendored clipper trip a lot of warnings; keep the log quiet.
             .flag_if_supported("-w")
             // NDEBUG kills the original clip_extrusion asserts (matches release builds).
-            .define("NDEBUG", None);
+            .define("NDEBUG", None)
+            // Wrap the vendored ClipperLib / ClipperLib_Z in a unique outer
+            // namespace so its mangled symbols become `ClipperZSys::ClipperLib::…`.
+            // WITHOUT this, the int32 (CLIPPERLIB_INT32) ClipperLib here collides
+            // at link time with geo-clipper's `clipper-sys` int64 `ClipperLib`
+            // (same mangled names, incompatible IntPoint layout) — an ODR
+            // violation that corrupts the heap inside `ClipperOffset::DoOffset`
+            // and segfaults the bridges wave_seeds path. clipper.hpp/.cpp already
+            // support CLIPPERLIB_NAMESPACE_PREFIX (it wraps every namespace block).
+            .define("CLIPPERLIB_NAMESPACE_PREFIX", "ClipperZSys");
     };
 
     // TU 1: non-Z ClipperLib.
