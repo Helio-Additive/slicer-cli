@@ -55,6 +55,68 @@ CzZPaths cz_clip_extrusion(const int32_t *subject_xyz, int32_t subject_n,
 // Free a CzZPaths returned by cz_clip_extrusion.
 void cz_free_zpaths(CzZPaths paths);
 
+// ---------------------------------------------------------------------------
+// M1 (bridges / wave_seeds): Z-preserving OPEN-PATH offset.
+//
+// Faithful replica of RegionExpansion.cpp:83-106
+// `expolygons_to_zpaths_expanded_opened` (ClipperLib::ClipperOffset +
+// ClipperZUtils::to_zpaths<true>). For each input expolygon contour, the
+// contour is offset (outer contour by +expansion, holes by -expansion) with
+// jtSquare/etClosedPolygon, then each resulting closed offset polygon is
+// "opened" (first point repeated at the end) and every vertex is Z-tagged with
+// the expolygon's running `base_idx`. `base_idx` increments once per expolygon.
+//
+// Input layout (closed contours, Z is irrelevant on input — only x,y read):
+//   contour_xy:    int32 (x,y) pairs, flat across all contours of all expolygons
+//   contour_lens:  int32, one per contour; point count of that contour
+//   contour_per_ex:int32, one per expolygon; number of contours in that expolygon
+//                  (contour[0] of each expolygon is the outer contour => +expansion)
+//   num_ex:        number of expolygons
+//   expansion:     offset distance in scaled coords (same units as x,y)
+//   shortest_edge_length: ClipperOffset.ShortestEdgeLength (scaled)
+//   base_idx_start: starting base_idx (C++ idx_src_end seed); the *next* free
+//                   base_idx is returned via base_idx_out.
+// Output (in CzZPaths): the opened, Z-tagged offset paths (Z = base_idx).
+CzZPaths cz_offset_open(const int32_t *contour_xy, const int32_t *contour_lens,
+                        const int32_t *contour_per_ex, int32_t num_ex,
+                        double expansion, double shortest_edge_length,
+                        int32_t base_idx_start, int32_t *base_idx_out);
+
+// Result of cz_wave_seeds_clip: Z-tagged segments + provenance intersections.
+typedef struct {
+    // Z-tagged output segments (closed segments first, then open segments).
+    int32_t *coords;        // 3 * total_points int32s (x,y,z triples)
+    int32_t *path_lens;     // num_paths int32s; sum == total_points
+    int32_t  num_paths;
+    int32_t  total_points;
+    int32_t  num_closed;    // first `num_closed` paths are closed; the rest open
+    // Intersections table (ClipperZIntersectionVisitor): pair (first, second) of
+    // the two distinct source Z indices for each recorded intersection point. A
+    // negative output Z value -k refers to intersections[k-1].
+    int32_t *intersections; // 2 * num_intersections int32s (first, second pairs)
+    int32_t  num_intersections;
+} CzWaveSeeds;
+
+// M1 (bridges / wave_seeds): provenance Z-clip core.
+//
+// Faithful replica of RegionExpansion.cpp:302-327 (engine-equivalent, ClipperLib_Z
+// instead of Clipper2Lib_Z): build a ClipperLib_Z::Clipper with the
+// ClipperZIntersectionVisitor ZFillFunction (ClipperZUtils.hpp:125-160), add the
+// boundary as CLOSED clip, the offset-opened src as OPEN subject, run
+// Execute(ctIntersection, pftNonZero) and return the Z-tagged closed + open
+// output segments plus the populated intersections table.
+//
+//   subj_xyz / subj_lens / subj_num: OPEN subject Z-paths (offset-opened src).
+//   clip_xyz / clip_lens / clip_num: CLOSED clip Z-paths (boundary, pre-tagged
+//                                    with Z = boundary index in 1..idx_boundary_end).
+// Output: CzWaveSeeds (free via cz_free_wave_seeds).
+CzWaveSeeds cz_wave_seeds_clip(const int32_t *subj_xyz, const int32_t *subj_lens,
+                               int32_t subj_num, const int32_t *clip_xyz,
+                               const int32_t *clip_lens, int32_t clip_num);
+
+// Free a CzWaveSeeds returned by cz_wave_seeds_clip.
+void cz_free_wave_seeds(CzWaveSeeds seeds);
+
 #ifdef __cplusplus
 }
 #endif

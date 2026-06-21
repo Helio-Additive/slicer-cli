@@ -9,9 +9,11 @@
 
 #include "clipper_z_shim.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <utility>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -224,4 +226,202 @@ extern "C" CzZPaths cz_clip_extrusion(const int32_t *subject_xyz, int32_t subjec
 extern "C" void cz_free_zpaths(CzZPaths paths) {
     std::free(paths.coords);
     std::free(paths.path_lens);
+}
+
+// ---------------------------------------------------------------------------
+// M1 (bridges / wave_seeds): Z-preserving OPEN-PATH offset.
+// RegionExpansion.cpp:83-106 expolygons_to_zpaths_expanded_opened +
+// ClipperZUtils::to_zpaths<true> (Open: repeat first point at end, tag Z=base_idx).
+// ---------------------------------------------------------------------------
+extern "C" CzZPaths cz_offset_open(const int32_t *contour_xy, const int32_t *contour_lens,
+                                   const int32_t *contour_per_ex, int32_t num_ex,
+                                   double expansion, double shortest_edge_length,
+                                   int32_t base_idx_start, int32_t *base_idx_out) {
+    using ClipperLib_Z::Path;
+    using ClipperLib_Z::Paths;
+
+    Paths out;
+
+    // ClipperOffset here is the NON-Z ClipperLib (offsetting is a 2D operation);
+    // we tag the Z ourselves afterwards (to_zpaths<true>), matching the C++.
+    ClipperLib::ClipperOffset offsetter;
+    offsetter.ShortestEdgeLength = shortest_edge_length;
+
+    int32_t base_idx = base_idx_start;
+    const int32_t *xy_cursor = contour_xy;   // walks the flat (x,y) pairs
+    int32_t contour_global = 0;              // index into contour_lens
+
+    for (int32_t ex = 0; ex < num_ex; ++ex) {
+        int32_t ncontours = contour_per_ex[ex];
+        for (int32_t ic = 0; ic < ncontours; ++ic) {
+            int32_t len = contour_lens[contour_global];
+            // Build the input contour (2D path for the non-Z offsetter).
+            ClipperLib::Path in;
+            in.reserve(len);
+            for (int32_t i = 0; i < len; ++i)
+                in.emplace_back(xy_cursor[2 * i], xy_cursor[2 * i + 1]);
+            xy_cursor += 2 * len;
+            ++contour_global;
+
+            offsetter.Clear();
+            offsetter.AddPath(in, ClipperLib::jtSquare, ClipperLib::etClosedPolygon);
+            ClipperLib::Paths expansion_cache;
+            // contour 0 (outer) => +expansion; holes => -expansion (RegionExpansion.cpp:100).
+            offsetter.Execute(expansion_cache, ic == 0 ? expansion : -expansion);
+
+            // to_zpaths<true>: open each offset polygon (repeat first pt) + tag Z=base_idx.
+            for (const ClipperLib::Path &p : expansion_cache) {
+                if (p.empty())
+                    continue;
+                Path zp;
+                zp.reserve(p.size() + 1);
+                for (const ClipperLib::IntPoint &ip : p)
+                    zp.emplace_back((int32_t) ip.x(), (int32_t) ip.y(), base_idx);
+                zp.emplace_back(zp.front()); // Open: duplicate first point at end
+                out.emplace_back(std::move(zp));
+            }
+        }
+        ++base_idx;
+    }
+
+    if (base_idx_out)
+        *base_idx_out = base_idx;
+
+    // Marshal into the flat CzZPaths struct.
+    CzZPaths res;
+    res.num_paths = (int32_t) out.size();
+    int32_t total = 0;
+    for (const Path &p : out)
+        total += (int32_t) p.size();
+    res.total_points = total;
+    res.path_lens = res.num_paths > 0
+        ? (int32_t *) std::malloc(sizeof(int32_t) * res.num_paths)
+        : nullptr;
+    for (int32_t i = 0; i < res.num_paths; ++i)
+        res.path_lens[i] = (int32_t) out[i].size();
+    res.coords = total > 0 ? (int32_t *) std::malloc(sizeof(int32_t) * 3 * total) : nullptr;
+    {
+        int32_t k = 0;
+        for (const Path &p : out)
+            for (const IntPoint &ip : p) {
+                res.coords[3 * k + 0] = (int32_t) ip.x();
+                res.coords[3 * k + 1] = (int32_t) ip.y();
+                res.coords[3 * k + 2] = (int32_t) ip.z();
+                ++k;
+            }
+    }
+    return res;
+}
+
+// ---------------------------------------------------------------------------
+// M1 (bridges / wave_seeds): provenance Z-clip core.
+// RegionExpansion.cpp:302-327 (ClipperLib_Z engine equivalent) +
+// ClipperZUtils::ClipperZIntersectionVisitor (ClipperZUtils.hpp:125-160).
+// ---------------------------------------------------------------------------
+extern "C" CzWaveSeeds cz_wave_seeds_clip(const int32_t *subj_xyz, const int32_t *subj_lens,
+                                          int32_t subj_num, const int32_t *clip_xyz,
+                                          const int32_t *clip_lens, int32_t clip_num) {
+    auto read_zpaths = [](const int32_t *xyz, const int32_t *lens, int32_t num) {
+        Paths paths;
+        paths.reserve(num);
+        const int32_t *cur = xyz;
+        for (int32_t c = 0; c < num; ++c) {
+            int32_t len = lens[c];
+            Path p;
+            p.reserve(len);
+            for (int32_t i = 0; i < len; ++i)
+                p.emplace_back(cur[3 * i], cur[3 * i + 1], cur[3 * i + 2]);
+            cur += 3 * len;
+            paths.emplace_back(std::move(p));
+        }
+        return paths;
+    };
+
+    Paths subj = read_zpaths(subj_xyz, subj_lens, subj_num);
+    Paths clip = read_zpaths(clip_xyz, clip_lens, clip_num);
+
+    // Intersections table built by the ZFillFunction (ClipperZUtils.hpp:125-160).
+    std::vector<std::pair<int32_t, int32_t>> intersections;
+
+    ClipperLib_Z::Clipper zclipper;
+    zclipper.ZFillFunction([&intersections](const IntPoint &e1bot, const IntPoint &e1top,
+                                            const IntPoint &e2bot, const IntPoint &e2top,
+                                            IntPoint &pt) {
+        // ClipperZIntersectionVisitor::operator() — collect the distinct source Z
+        // values; on a 2-distinct-source intersection record a -1-based negative
+        // index into the intersections table.
+        int32_t srcs[4] = {(int32_t) e1bot.z(), (int32_t) e1top.z(), (int32_t) e2bot.z(),
+                           (int32_t) e2top.z()};
+        std::sort(srcs, srcs + 4);
+        int32_t *end = std::unique(srcs, srcs + 4);
+        if (srcs + 1 == end) {
+            // Self intersection on a source contour: just copy the Z value.
+            pt.z() = srcs[0];
+        } else {
+            // 2 (or more — take the first two) distinct sources => record intersection.
+            intersections.emplace_back(srcs[0], srcs[1]);
+            pt.z() = -(int32_t) intersections.size();
+        }
+    });
+
+    // Boundary as CLOSED clip, offset-opened src as OPEN subject (RegionExpansion.cpp:307/313).
+    zclipper.AddPaths(clip, ClipperLib_Z::ptClip, true);
+    zclipper.AddPaths(subj, ClipperLib_Z::ptSubject, false);
+
+    ClipperLib_Z::PolyTree polytree;
+    zclipper.Execute(ClipperLib_Z::ctIntersection, polytree, ClipperLib_Z::pftNonZero,
+                     ClipperLib_Z::pftNonZero);
+
+    // ClipperLib (clipper1) returns open/closed via the PolyTree helpers; the C++
+    // wave_seeds (Clipper2) splits them as closed_segs + open_segs and concatenates
+    // closed-then-open (RegionExpansion.cpp:324-325). Mirror that ordering here.
+    Paths closed_segs, open_segs;
+    ClipperLib_Z::ClosedPathsFromPolyTree(polytree, closed_segs);
+    ClipperLib_Z::OpenPathsFromPolyTree(polytree, open_segs);
+
+    Paths segments;
+    segments.reserve(closed_segs.size() + open_segs.size());
+    for (Path &p : closed_segs)
+        segments.emplace_back(std::move(p));
+    for (Path &p : open_segs)
+        segments.emplace_back(std::move(p));
+
+    CzWaveSeeds res;
+    res.num_paths = (int32_t) segments.size();
+    res.num_closed = (int32_t) closed_segs.size();
+    int32_t total = 0;
+    for (const Path &p : segments)
+        total += (int32_t) p.size();
+    res.total_points = total;
+    res.path_lens = res.num_paths > 0
+        ? (int32_t *) std::malloc(sizeof(int32_t) * res.num_paths)
+        : nullptr;
+    for (int32_t i = 0; i < res.num_paths; ++i)
+        res.path_lens[i] = (int32_t) segments[i].size();
+    res.coords = total > 0 ? (int32_t *) std::malloc(sizeof(int32_t) * 3 * total) : nullptr;
+    {
+        int32_t k = 0;
+        for (const Path &p : segments)
+            for (const IntPoint &ip : p) {
+                res.coords[3 * k + 0] = (int32_t) ip.x();
+                res.coords[3 * k + 1] = (int32_t) ip.y();
+                res.coords[3 * k + 2] = (int32_t) ip.z();
+                ++k;
+            }
+    }
+    res.num_intersections = (int32_t) intersections.size();
+    res.intersections = res.num_intersections > 0
+        ? (int32_t *) std::malloc(sizeof(int32_t) * 2 * res.num_intersections)
+        : nullptr;
+    for (int32_t i = 0; i < res.num_intersections; ++i) {
+        res.intersections[2 * i + 0] = intersections[i].first;
+        res.intersections[2 * i + 1] = intersections[i].second;
+    }
+    return res;
+}
+
+extern "C" void cz_free_wave_seeds(CzWaveSeeds seeds) {
+    std::free(seeds.coords);
+    std::free(seeds.path_lens);
+    std::free(seeds.intersections);
 }
