@@ -653,7 +653,8 @@ fn propagate_wave_from_seeds(
 ///    `other_step`, clip to the boundary.
 ///
 /// All distances are mm (the module convention); `arc_tolerance` (mm) feeds the
-/// round offsetter. Returns the expanded polygons.
+/// round offsetter. `max_inflation` (mm) trims the boundary to the seed bbox for
+/// speed (RegionExpansion.cpp:459). Returns the expanded polygons.
 fn propagate_wave_from_boundary(
     seed_paths: &[Polyline],
     boundary: &ExPolygon,
@@ -661,12 +662,40 @@ fn propagate_wave_from_boundary(
     other_step: CoordF,
     num_other_steps: usize,
     arc_tolerance: CoordF,
+    max_inflation: CoordF,
 ) -> ExPolygons {
     if seed_paths.is_empty() {
         return Vec::new();
     }
-    let bnd = std::slice::from_ref(boundary);
     let arc_scaled = crate::scale(arc_tolerance) as CoordF;
+
+    // RegionExpansion.cpp:459 — trim the boundary to the seed bbox inflated by
+    // max_inflation. Pure speed optimization (geometrically identical, the wave
+    // can never reach outside this box), matching `clip_clipper_polygons_with_
+    // subject_bbox(boundary, get_extents(seed).inflated(max_inflation))`.
+    let mut seed_bbox: Option<BoundingBox> = None;
+    for pl in seed_paths {
+        let bb = BoundingBox::from_points(pl.points());
+        match &mut seed_bbox {
+            Some(acc) => acc.merge(&bb),
+            None => seed_bbox = Some(bb),
+        }
+    }
+    let clip_owned: ExPolygons = if let Some(bb) = seed_bbox {
+        let infl = crate::scale(max_inflation);
+        let box_poly = BoundingBox::from_points_minmax(
+            Point::new(bb.min.x - infl, bb.min.y - infl),
+            Point::new(bb.max.x + infl, bb.max.y + infl),
+        )
+        .polygon();
+        intersection(std::slice::from_ref(boundary), &[ExPolygon::new(box_poly)])
+    } else {
+        vec![boundary.clone()]
+    };
+    if clip_owned.is_empty() {
+        return Vec::new();
+    }
+    let bnd: &[ExPolygon] = &clip_owned;
 
     // wavefront_initial: open-round offset of every seed polyline.
     let mut wave_polys: Vec<Polygon> = Vec::new();
@@ -677,7 +706,7 @@ fn propagate_wave_from_boundary(
             arc_scaled,
         ));
     }
-    // wavefront_clip: intersect the inflated wave with the boundary.
+    // wavefront_clip: intersect the inflated wave with the (trimmed) boundary.
     let mut wave = intersection(&polygons_to_expolygons(&wave_polys), bnd);
     if wave.is_empty() {
         return Vec::new();
@@ -749,6 +778,7 @@ fn propagate_waves(
             params.other_step,
             params.num_other_steps,
             params.arc_tolerance,
+            params.max_inflation,
         );
         for ep in expanded {
             results.push(RegionExpansion {
@@ -1446,6 +1476,7 @@ fn propagate_waves_ex(
             params.other_step,
             params.num_other_steps,
             params.arc_tolerance,
+            params.max_inflation,
         );
         for ep in expanded {
             raw_expansions.push(RegionExpansion {
