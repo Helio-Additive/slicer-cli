@@ -689,6 +689,10 @@ impl PrintObject {
         /// C++: m_print->throw_if_canceled();
         let mut slice_surfaces_cpy: Vec<Vec<SurfaceCollection>> = Vec::new();
         self.detect_surfaces_type(&mut slice_surfaces_cpy)?;
+        crate::debug::classify::dump(
+            "1_detect_surfaces_type",
+            self.layers.iter().map(|l| l.regions().iter().map(|r| &r.fill_surfaces)),
+        );
 
         /// PrintObject.cpp:649-655
         /// C++: for (auto *layer : m_layers)
@@ -704,6 +708,10 @@ impl PrintObject {
                 }
             }
         }
+        crate::debug::classify::dump(
+            "2_prepare_fill_surfaces",
+            self.layers.iter().map(|l| l.regions().iter().map(|r| &r.fill_surfaces)),
+        );
         // TOPDBG (diagnostics only, env-gated): Top state after prepare_fill_surfaces.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -721,6 +729,10 @@ impl PrintObject {
         /// C++: this->discover_vertical_shells();
         /// C++: m_print->throw_if_canceled();
         self.discover_vertical_shells()?;
+        crate::debug::classify::dump(
+            "3_discover_vertical_shells",
+            self.layers.iter().map(|l| l.regions().iter().map(|r| &r.fill_surfaces)),
+        );
         // TOPDBG (diagnostics only, env-gated): Top state after discover_vertical_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -743,6 +755,10 @@ impl PrintObject {
         /// C++: this->process_external_surfaces();
         /// C++: m_print->throw_if_canceled();
         self.process_external_surfaces()?;
+        crate::debug::classify::dump(
+            "4_process_external_surfaces",
+            self.layers.iter().map(|l| l.regions().iter().map(|r| &r.fill_surfaces)),
+        );
         // TOPDBG (diagnostics only, env-gated): Top state after process_external_surfaces.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -765,6 +781,10 @@ impl PrintObject {
         /// C++: this->discover_horizontal_shells();
         /// C++: m_print->throw_if_canceled();
         self.discover_horizontal_shells()?;
+        crate::debug::classify::dump(
+            "5_discover_horizontal_shells",
+            self.layers.iter().map(|l| l.regions().iter().map(|r| &r.fill_surfaces)),
+        );
         // TOPDBG (diagnostics only, env-gated): Top state after discover_horizontal_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -801,6 +821,10 @@ impl PrintObject {
         /// C++: this->bridge_over_infill();
         /// C++: m_print->throw_if_canceled();
         self.bridge_over_infill()?;
+        crate::debug::classify::dump(
+            "6_bridge_over_infill",
+            self.layers.iter().map(|l| l.regions().iter().map(|r| &r.fill_surfaces)),
+        );
         if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Cancelled);
         }
@@ -3189,16 +3213,25 @@ impl PrintObject {
                 };
 
                 // PrintObject.cpp:1993-1996 — trim shell to internal, plus internal-not-holes.
-                let mut new_shell = if shell.is_empty() || internal_all.is_empty() {
+                let shell_int = if shell.is_empty() || internal_all.is_empty() {
                     vec![]
                 } else {
                     intersection(&shell, &internal_all)
                 };
-                new_shell.extend(if holes.is_empty() {
+                let diff_int_holes = if holes.is_empty() {
                     internal_all.clone()
                 } else {
                     difference(&internal_all, &holes)
-                });
+                };
+                if std::env::var("VSHELL_LAYER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(idx) {
+                    let a = |e: &ExPolygons| e.iter().map(|p| p.area().abs()).sum::<f64>() / 1e10;
+                    eprintln!(
+                        "VSHELL_RUST L{} shell={:.2} internal={:.2} holes={:.2} shell_int={:.2} diff_int_holes={:.2}",
+                        idx, a(&shell), a(&internal_all), a(&holes), a(&shell_int), a(&diff_int_holes)
+                    );
+                }
+                let mut new_shell = shell_int;
+                new_shell.extend(diff_int_holes);
                 if new_shell.is_empty() {
                     continue;
                 }
@@ -3250,6 +3283,13 @@ impl PrintObject {
 
                 // PrintObject.cpp:2060,2075-2090 — reassign surfaces.
                 let new_solid = intersection(&internal_all, &regularized);
+                if std::env::var("VSHELL_LAYER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(idx) {
+                    let a = |e: &ExPolygons| e.iter().map(|p| p.area().abs()).sum::<f64>() / 1e10;
+                    eprintln!(
+                        "VSHELL_RUST L{} regularized={:.2} new_internal_solid={:.2}",
+                        idx, a(&regularized), a(&new_solid)
+                    );
+                }
                 let new_internal = difference(&internal_only, &regularized);
                 let new_void = difference(&void_only, &regularized);
 

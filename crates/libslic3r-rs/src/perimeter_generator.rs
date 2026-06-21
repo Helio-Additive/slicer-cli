@@ -1080,6 +1080,18 @@ impl PerimeterGenerator {
             // innermost-perimeter region without the C++ 1378-1406 inset.
             result.infill_area = last;
         }
+        if std::env::var("PERIDBG_LAYER").ok().and_then(|v| v.parse::<usize>().ok())
+            == Some(self.config.layer_id)
+        {
+            let a = |e: &[ExPolygon]| e.iter().map(|p| p.area().abs()).sum::<f64>() / 1e10;
+            eprintln!(
+                "PERIDBG_RUST L{} slice={:.2} infill_area={:.2} loop_number={}",
+                self.config.layer_id,
+                slice.area().abs() / 1e10,
+                a(&result.infill_area),
+                loop_number
+            );
+        }
 
         // PerimeterGenerator.cpp:952
         // C++: gaps collected during generation
