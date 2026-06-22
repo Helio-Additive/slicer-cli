@@ -447,6 +447,55 @@ impl GCodeWriter {
         }
     }
 
+    /// Per-feature printing acceleration (M204 S value), faithful port of the
+    /// "adjust acceleration" block in GCode::_extrude (GCode.cpp:6393-6420).
+    ///
+    /// The whole block is gated on `default_acceleration > 0`. Branch order:
+    ///   1. first layer (initial_layer_acceleration > 0)
+    ///   2. ExternalPerimeter / OverhangPerimeter (outer_wall_acceleration > 0)
+    ///   3. top surface == TopSolidInfill (top_surface_acceleration > 0)
+    ///   4. Perimeter (inner_wall_acceleration > 0)
+    ///   5. InternalInfill (sparse_infill_acceleration resolved > 0)
+    ///   6. else default_acceleration
+    /// A feature value of 0 means "use default" (its branch is skipped), e.g.
+    /// `inner_wall_acceleration = 0` falls through to default_acceleration. The
+    /// bridge branch is `#if 0` in C++ (disabled), so bridges fall to default too.
+    /// `sparse_infill_acceleration` is a percentage of default_acceleration
+    /// (get_abs_value): the config stores e.g. "100%" as 100.0, so resolve as
+    /// pct/100 * default. Returns None when default_acceleration <= 0 (no M204).
+    pub fn feature_acceleration(
+        &self,
+        role: crate::extrusion_entity::ExtrusionRole,
+        is_first_layer: bool,
+    ) -> Option<u32> {
+        use crate::extrusion_entity::{is_top_surface, ExtrusionRole};
+        let c = &self.config;
+        if c.default_acceleration <= 0.0 {
+            return None;
+        }
+        let acc: f64 = if is_first_layer && c.initial_layer_acceleration > 0.0 {
+            c.initial_layer_acceleration
+        } else if c.outer_wall_acceleration > 0.0
+            && matches!(
+                role,
+                ExtrusionRole::ExternalPerimeter | ExtrusionRole::OverhangPerimeter
+            )
+        {
+            c.outer_wall_acceleration
+        } else if c.top_surface_acceleration > 0.0 && is_top_surface(role) {
+            c.top_surface_acceleration
+        } else if c.inner_wall_acceleration > 0.0 && role == ExtrusionRole::Perimeter {
+            c.inner_wall_acceleration
+        } else if role == ExtrusionRole::InternalInfill
+            && (c.sparse_infill_acceleration / 100.0 * c.default_acceleration) > 0.0
+        {
+            c.sparse_infill_acceleration / 100.0 * c.default_acceleration
+        } else {
+            c.default_acceleration
+        };
+        Some((acc + 0.5).floor() as u32)
+    }
+
     /// Perform a linear G1 Z-hop and update the writer's Z-state.
     ///
     /// Unlike `write_raw("G1 Z...")`, this method updates `self.z` and

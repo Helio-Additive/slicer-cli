@@ -598,23 +598,26 @@ pub fn extrude_collection(
             // adjustable block), so the travel always precedes the ;_EXTRUDE_SET_SPEED.
             // We therefore rely solely on the post-travel set_speed at the end of this
             // loop body, matching native ordering: [M204] -> travel -> set_speed.
-            // Emit per-feature acceleration (M204) matching BambuStudio
-            // First layer uses initial_layer_acceleration from settings
-            let accel = if is_first_layer {
-                500u32 // initial_layer_acceleration default for X1C
-            } else {
-                match entity_role {
-                    ExtrusionRole::ExternalPerimeter => 5000,
-                    ExtrusionRole::Perimeter => 5000,
-                    ExtrusionRole::InternalInfill => 10000,
-                    ExtrusionRole::SolidInfill => 10000,
-                    ExtrusionRole::TopSolidInfill => 5000,
-                    ExtrusionRole::BridgeInfill => 2500,
-                    ExtrusionRole::GapFill => 5000,
-                    _ => 10000,
-                }
-            };
-            writer.write_raw(&format!("M204 S{}", accel));
+            // Emit per-feature acceleration (M204) matching BambuStudio.
+            //
+            // Faithful port of GCode::_extrude's "adjust acceleration" block
+            // (GCode.cpp:6393-6420). The whole block is gated on
+            // default_acceleration > 0; the branch order is:
+            //   1. first layer (initial_layer_acceleration > 0)
+            //   2. ExternalPerimeter / OverhangPerimeter (outer_wall_acceleration > 0)
+            //   3. top surface == TopSolidInfill (top_surface_acceleration > 0)
+            //   4. Perimeter (inner_wall_acceleration > 0)
+            //   5. InternalInfill (sparse_infill_acceleration resolved > 0)
+            //   6. else default_acceleration
+            // A feature value of 0 means "use default" (the branch is skipped),
+            // e.g. inner_wall_acceleration = 0 in the H2D profile falls through to
+            // default_acceleration. The bridge branch is `#if 0` in C++ (disabled),
+            // so bridges also fall to default_acceleration. sparse_infill_acceleration
+            // is a percentage of default_acceleration (config stores e.g. "100%" as
+            // 100.0), resolved via get_abs_value: pct/100 * default.
+            if let Some(acc) = writer.feature_acceleration(entity_role, is_first_layer) {
+                writer.write_raw(&format!("M204 S{}", acc));
+            }
             current_role = Some(entity_role);
         }
 

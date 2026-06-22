@@ -2410,6 +2410,44 @@ impl PrintConfig {
                 true
             }
 
+            // === Per-feature printing accelerations (used by GCode::_extrude's
+            // "adjust acceleration" block, GCode.cpp:6393-6420). Previously these
+            // keys were only handled in apply_key_value(), so the profile values
+            // never reached the live PrintConfig (app_slice dispatches via
+            // set_deserialize), leaving struct defaults that diverged from native.
+            // sparse_infill_acceleration is a percentage of default_acceleration;
+            // parse_f64 strips the trailing '%' and keeps the numeric percent. ===
+            "default_acceleration" => {
+                if let Some(v) = parse_f64(value) {
+                    self.default_acceleration = v;
+                }
+                true
+            }
+            "outer_wall_acceleration" => {
+                if let Some(v) = parse_f64(value) {
+                    self.outer_wall_acceleration = v;
+                }
+                true
+            }
+            "inner_wall_acceleration" => {
+                if let Some(v) = parse_f64(value) {
+                    self.inner_wall_acceleration = v;
+                }
+                true
+            }
+            "top_surface_acceleration" => {
+                if let Some(v) = parse_f64(value) {
+                    self.top_surface_acceleration = v;
+                }
+                true
+            }
+            "sparse_infill_acceleration" => {
+                if let Some(v) = parse_f64(value) {
+                    self.sparse_infill_acceleration = v;
+                }
+                true
+            }
+
             _ => false,
         }
     }
