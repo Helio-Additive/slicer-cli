@@ -56,26 +56,20 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
 
-    // Center model on bed (BambuStudio auto-centers imported models).
+    // Match the C++ `slicer_cli` (the parity reference): it slices a bare STL
+    // AS-IS in XY — it does NOT bed-center it (that's a GUI-only behavior). The
+    // earlier XY auto-centering shifted every body coordinate by ~bed_center,
+    // which is invisible to material/move-count metrics but breaks byte-parity
+    // of the G-code coordinates. So apply NO XY translate; only drop the model
+    // onto the bed surface (Z=0), which the CLI also does (no-op when the STL
+    // already sits at Z>=0).
     {
         let bbox = mesh.bounding_box();
-        let model_center_x = (bbox.min.x + bbox.max.x) / 2.0;
-        let model_center_y = (bbox.min.y + bbox.max.y) / 2.0;
-        let bed_center_x = print_config.bed_size_x / 2.0;
-        let bed_center_y = print_config.bed_size_y / 2.0;
-        let dx = bed_center_x - model_center_x;
-        let dy = bed_center_y - model_center_y;
-        // Also place model on the bed surface (Z=0).
         let dz = -bbox.min.z;
-        mesh.translate(Point3F {
-            x: dx,
-            y: dy,
-            z: dz,
-        });
-        info!(
-            "Centered model on bed: translated by ({:.1}, {:.1}, {:.1})",
-            dx, dy, dz
-        );
+        if dz != 0.0 {
+            mesh.translate(Point3F { x: 0.0, y: 0.0, z: dz });
+            info!("Placed model on bed surface: dz={:.3} (no XY centering, matching C++ slicer_cli)", dz);
+        }
     }
 
     // Create PrintObject — slicing happens internally during Print::process().
