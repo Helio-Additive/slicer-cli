@@ -691,17 +691,6 @@ impl PerimeterGenerator {
             // PerimeterGenerator.cpp:1096
             // C++: last = std::move(offsets);
             last = offsets;
-            if std::env::var("PERIDBG_LAYER").ok().and_then(|v| v.parse::<usize>().ok())
-                == Some(self.config.layer_id)
-            {
-                let a = |e: &[ExPolygon]| e.iter().map(|p| p.area().abs()).sum::<f64>() / 1e10;
-                eprintln!(
-                    "PERIDBG_RUST_LOOP L{} i={} last_after={:.2} ext_pw={:.4} ext_ps={:.4} pw={:.4} ps={:.4} eps2={:.4} min_spacing={:.4}",
-                    self.config.layer_id, i, a(&last),
-                    ext_perimeter_width, ext_perimeter_spacing, perimeter_width, perimeter_spacing,
-                    ext_perimeter_spacing2, min_spacing
-                );
-            }
 
             // PerimeterGenerator.cpp:1116-1183 — only_one_wall_top (TopOneWallType::Alltop)
             // top/not-top split + top_fills. BBS: refer to superslicer.
@@ -1085,48 +1074,15 @@ impl PerimeterGenerator {
                 ));
                 infill_exp = union_ex(&merged);
             }
-            if std::env::var("PERIDBG_LAYER").ok().and_then(|v| v.parse::<usize>().ok())
-                == Some(self.config.layer_id)
-            {
-                let a = |e: &[ExPolygon]| e.iter().map(|p| p.area().abs()).sum::<f64>() / 1e10;
-                eprintln!(
-                    "PERIDBG_RUST2 L{} last={:.2} not_filled={:.2} infill_exp={:.2} inset={:.4} ipo={:.4} min_pis={:.4} n_top_fills={}",
-                    self.config.layer_id, a(&last), a(&not_filled_exp), a(&infill_exp),
-                    inset, infill_peri_overlap, min_perimeter_infill_spacing, top_fills.len()
-                );
-            }
             result.infill_area = infill_exp;
         } else {
             // Legacy divergent path (default until the faithful gauges land): the raw
             // innermost-perimeter region without the C++ 1378-1406 inset.
             result.infill_area = last;
         }
-        if std::env::var("PERIDBG_LAYER").ok().and_then(|v| v.parse::<usize>().ok())
-            == Some(self.config.layer_id)
-        {
-            let a = |e: &[ExPolygon]| e.iter().map(|p| p.area().abs()).sum::<f64>() / 1e10;
-            eprintln!(
-                "PERIDBG_RUST L{} slice={:.2} infill_area={:.2} loop_number={}",
-                self.config.layer_id,
-                slice.area().abs() / 1e10,
-                a(&result.infill_area),
-                loop_number
-            );
-        }
 
         // PerimeterGenerator.cpp:952
         // C++: gaps collected during generation
-        if std::env::var("PERIDBG_LAYER").ok().and_then(|v| v.parse::<usize>().ok())
-            == Some(self.config.layer_id)
-        {
-            let a = |e: &[ExPolygon]| e.iter().map(|p| p.area().abs()).sum::<f64>() / 1e10;
-            eprintln!(
-                "PERIDBG_RUST_GAPS L{} raw_gaps_area={:.2} n_gaps={}",
-                self.config.layer_id,
-                a(&gaps),
-                gaps.len()
-            );
-        }
         result.gap_fills = gaps;
 
         result

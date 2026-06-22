@@ -9,7 +9,6 @@
 //! - `compare`        — DOM-style G-code parser + comparator (gcode-diff harness).
 //! - `validation`     — G-code validation built on `compare`.
 
-pub mod classify;
 pub mod compare;
 pub mod function_trace;
 pub mod topdbg;
