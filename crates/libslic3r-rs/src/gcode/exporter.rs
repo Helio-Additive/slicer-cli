@@ -585,8 +585,19 @@ pub fn extrude_collection(
                 let lw_trimmed = lw_str.trim_end_matches('0').trim_end_matches('.');
                 writer.write_comment(&format!("LINE_WIDTH: {}", lw_trimmed));
             }
-            // Set speed for this feature (before M204, matching reference order)
-            writer.set_speed(feature_speed * 60.0, cooling_comment);
+            // NOTE: The feature `set_speed` (with the ;_EXTRUDE_SET_SPEED cooling
+            // marker) is intentionally NOT emitted here, before the intra-collection
+            // travel below. Emitting it here opens a CoolingBuffer "adjustable" block
+            // (active_speed_modifier) that then SWALLOWS the following travel move
+            // (cooling.rs:2084-2108 merges any G1/G2/G3 inside the block, setting its
+            // line_type=0), so the travel's F60000 never updates the buffer's
+            // current_feedrate. The subsequent post-travel `set_speed` (below) is then
+            // stripped as "redundant" (new_feedrate == current_feedrate), letting the
+            // F60000 travel speed leak onto the extrusion. C++ emits the speed-set
+            // AFTER the travel (GCodeEditor.cpp:276 asserts no `G1 Fxx` inside an
+            // adjustable block), so the travel always precedes the ;_EXTRUDE_SET_SPEED.
+            // We therefore rely solely on the post-travel set_speed at the end of this
+            // loop body, matching native ordering: [M204] -> travel -> set_speed.
             // Emit per-feature acceleration (M204) matching BambuStudio
             // First layer uses initial_layer_acceleration from settings
             let accel = if is_first_layer {
