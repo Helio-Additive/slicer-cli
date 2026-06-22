@@ -232,8 +232,18 @@ pub struct GCodeWriter {
     /// C++: std::vector<Extruder> m_filament_extruders;
     extruder: Extruder,
 
-    /// Current feedrate (mm/min).
+    /// Current feedrate (mm/min). This mirrors C++ `m_current_speed` — the
+    /// active EXTRUSION speed set via `set_speed`. Travel moves do NOT change
+    /// this (C++ `GCodeWriter::travel_to_xy` never touches `m_current_speed`),
+    /// so the extrusion feedrate survives across travel moves and is not
+    /// polluted by the travel speed (F60000 = 1000 mm/s).
     feedrate: CoordF,
+
+    /// The last F value actually emitted on a G-line (mm/min). Used only to
+    /// decide whether a fresh `F` token needs to be written, so we don't emit
+    /// redundant `G1 F<n>` lines. Travel moves update this (so back-to-back
+    /// travels at the same speed omit F) WITHOUT touching `feedrate`.
+    last_emitted_f: CoordF,
 
     /// Whether we're in absolute positioning mode.
     absolute_positioning: bool,
@@ -319,6 +329,7 @@ impl GCodeWriter {
             z: 0.0,
             extruder,
             feedrate: 0.0,
+            last_emitted_f: 0.0,
             absolute_positioning: true,
             absolute_extrusion: !config.use_relative_e,
             extruder_index: 0,
@@ -450,7 +461,7 @@ impl GCodeWriter {
     pub fn z_hop_linear(&mut self, layer_z: CoordF, hop_z: CoordF, feedrate: CoordF) {
         self.z = layer_z; // set writer z to the layer position before hopping
         self.z_before_lift = layer_z; // unretract will descend back to here
-        let f_opt = if (feedrate - self.feedrate).abs() > 0.01 {
+        let f_opt = if (feedrate - self.last_emitted_f).abs() > 0.01 {
             Some(feedrate)
         } else {
             None
@@ -463,7 +474,9 @@ impl GCodeWriter {
             f: f_opt,
         });
         self.z = hop_z;
-        self.feedrate = feedrate;
+        // Z-hop is a travel-class move: track the emitted F but leave the
+        // extrusion speed (`feedrate`) intact.
+        self.last_emitted_f = feedrate;
     }
 
     /// Write a raw G-code line.
@@ -667,7 +680,7 @@ impl GCodeWriter {
                 y: Some(y),
                 z: Some(self.z),
                 e: None,
-                f: if (f - self.feedrate).abs() > 0.01 {
+                f: if (f - self.last_emitted_f).abs() > 0.01 {
                     Some(f)
                 } else {
                     None
@@ -681,7 +694,7 @@ impl GCodeWriter {
                 y: Some(y),
                 z: None,
                 e: None,
-                f: if (f - self.feedrate).abs() > 0.01 {
+                f: if (f - self.last_emitted_f).abs() > 0.01 {
                     Some(f)
                 } else {
                     None
@@ -700,7 +713,7 @@ impl GCodeWriter {
                 y: Some(y),
                 z: None,
                 e: None,
-                f: if (f - self.feedrate).abs() > 0.01 {
+                f: if (f - self.last_emitted_f).abs() > 0.01 {
                     Some(f)
                 } else {
                     None
@@ -710,7 +723,10 @@ impl GCodeWriter {
 
         self.x = x;
         self.y = y;
-        self.feedrate = f;
+        // C++ travel_to_xy does NOT update m_current_speed; it only emits F via
+        // the formatter. So we update the emitted-F tracker but leave `feedrate`
+        // (the extrusion speed) untouched, so it survives across travels.
+        self.last_emitted_f = f;
         self.position_known = true;
     }
 
@@ -740,7 +756,7 @@ impl GCodeWriter {
             y: None,
             z: Some(z),
             e: None,
-            f: if (f - self.feedrate).abs() > 0.01 {
+            f: if (f - self.last_emitted_f).abs() > 0.01 {
                 Some(f)
             } else {
                 None
@@ -748,7 +764,9 @@ impl GCodeWriter {
         });
 
         self.z = z;
-        self.feedrate = f;
+        // Z travel: same as travel_to — emitted-F tracker only, not the
+        // extrusion speed (C++ _travel_to_z does not touch m_current_speed).
+        self.last_emitted_f = f;
     }
 
     /// Extrusion move (1:1 port of GCodeWriter::extrude_to_xy)
@@ -807,7 +825,7 @@ impl GCodeWriter {
             y: Some(y),
             z: None,
             e: Some(e_out),
-            f: if (f - self.feedrate).abs() > 0.01 {
+            f: if (f - self.last_emitted_f).abs() > 0.01 {
                 Some(f)
             } else {
                 None
@@ -817,6 +835,7 @@ impl GCodeWriter {
         self.x = x;
         self.y = y;
         self.feedrate = f;
+        self.last_emitted_f = f;
         self.position_known = true;
 
         // Accumulate wipe path (C++ m_wipe.path)
@@ -904,7 +923,7 @@ impl GCodeWriter {
                 i,
                 j,
                 e: Some(e_out),
-                f: if (f - self.feedrate).abs() > 0.01 {
+                f: if (f - self.last_emitted_f).abs() > 0.01 {
                     Some(f)
                 } else {
                     None
@@ -916,7 +935,7 @@ impl GCodeWriter {
                 i,
                 j,
                 e: Some(e_out),
-                f: if (f - self.feedrate).abs() > 0.01 {
+                f: if (f - self.last_emitted_f).abs() > 0.01 {
                     Some(f)
                 } else {
                     None
@@ -929,6 +948,7 @@ impl GCodeWriter {
         self.x = x;
         self.y = y;
         self.feedrate = f;
+        self.last_emitted_f = f;
         self.position_known = true;
     }
 
@@ -1312,7 +1332,8 @@ impl GCodeWriter {
 
         // Update internal state — XY position returns to start after full revolution
         self.z = target_z;
-        self.feedrate = travel_speed;
+        // Spiral lift is a travel-class move: track the emitted F only.
+        self.last_emitted_f = travel_speed;
     }
 
     /// Set total layer count for per-layer notifications.
@@ -1614,8 +1635,16 @@ impl GCodeWriter {
         } else {
             speed
         };
-        if (self.feedrate - adjusted_speed).abs() > 0.01 {
-            self.feedrate = adjusted_speed;
+        // Update the logical extrusion speed (C++ m_current_speed) regardless of
+        // whether a new F line is needed.
+        self.feedrate = adjusted_speed;
+        // Emit a fresh `F` only when the value last written to the gcode differs.
+        // After a travel move (which emits F60000 but leaves `feedrate` alone),
+        // `last_emitted_f` holds the travel speed, so re-asserting the extrusion
+        // speed here correctly re-emits `G1 F<extrude_speed>` and prevents the
+        // travel feedrate from leaking onto the following extrusion moves.
+        if (self.last_emitted_f - adjusted_speed).abs() > 0.01 {
+            self.last_emitted_f = adjusted_speed;
             let mut line = format!("G1 F{:.0}", adjusted_speed);
             if !comment.is_empty() {
                 // C++ appends cooling markers (;_EXTRUDE_SET_SPEED etc.) directly
