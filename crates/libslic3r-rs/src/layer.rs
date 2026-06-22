@@ -613,10 +613,61 @@ impl LayerRegion {
                     ExtrusionRole::GapFill,
                     &gap_fill_flow,
                 );
+
+                // PerimeterGenerator.cpp:1373 — remove the gap-fill extrusion footprint
+                // from the infill area so the gap-filled band is NOT also classified as
+                // (and later solidified as) internal infill:
+                //   last = diff_ex(last, gap_fill.polygons_covered_by_width(10.f));
+                // C++ subtracts from `last` before the final infill-boundary inset; the
+                // Rust perimeter generator already produced the inset `infill_area` (now in
+                // fill_surfaces / fill_expolygons), so we apply the equivalent diff here on
+                // the populated infill region. `10.f` is ClipperSafetyOffset = 10 scaled
+                // units (ExtrusionEntity.cpp:55-58 polygons_covered_by_width scaled_epsilon).
+                let mut covered: Vec<crate::geometry::Polygon> = Vec::new();
+                for path in &paths {
+                    path.polygons_covered_by_width(&mut covered, 10.0);
+                }
+
                 for path in paths {
                     self.thin_fills
                         .entities
                         .push(ExtrusionEntityType::Path(path));
+                }
+
+                if !covered.is_empty() {
+                    use crate::clipper_utils::{difference, union_polygons_ex};
+                    let covered_ex = union_polygons_ex(&covered);
+                    // Subtract from the Internal fill_surfaces (the infill region produced
+                    // by the perimeter generator; top/bottom skins are unaffected).
+                    let internal: ExPolygons = self
+                        .fill_surfaces
+                        .surfaces
+                        .iter()
+                        .filter(|s| s.surface_type == SurfaceType::Internal)
+                        .map(|s| s.expolygon.clone())
+                        .collect();
+                    if !internal.is_empty() {
+                        let trimmed = difference(&internal, &covered_ex);
+                        self.fill_surfaces
+                            .surfaces
+                            .retain(|s| s.surface_type != SurfaceType::Internal);
+                        for ex in &trimmed {
+                            self.fill_surfaces.surfaces.push(Surface {
+                                expolygon: ex.clone(),
+                                surface_type: SurfaceType::Internal,
+                                thickness: layer_height,
+                                thickness_layers: 1,
+                                bridge_angle: None,
+                                extra_perimeters: 0,
+                            });
+                        }
+                    }
+                    // Keep fill_expolygons (the union infill boundary used as vshell holes)
+                    // consistent with the trimmed infill region.
+                    if !self.fill_expolygons.is_empty() {
+                        self.fill_expolygons =
+                            difference(&self.fill_expolygons, &covered_ex);
+                    }
                 }
             }
         }
