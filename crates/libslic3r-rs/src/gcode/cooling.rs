@@ -2600,6 +2600,34 @@ fn calculate_layer_slowdown_postproc(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    let dbg_cool = std::env::var("COOLDBG").is_ok();
+    if dbg_cool {
+        let nadj: usize = per_extruder_adjustments
+            .iter()
+            .map(|a| a.n_lines_adjustable)
+            .sum();
+        let nlines: usize = per_extruder_adjustments.iter().map(|a| a.lines.len()).sum();
+        eprintln!(
+            "COOLDBG tiers={} et0={:.3} nlines={} nadj_total={} enabled={:?} sdlt={:?} sdms={:?}",
+            by_slowdown_time.len(),
+            elapsed_time_total0,
+            nlines,
+            nadj,
+            per_extruder_adjustments
+                .iter()
+                .map(|a| a.cooling_slow_down_enabled)
+                .collect::<Vec<_>>(),
+            per_extruder_adjustments
+                .iter()
+                .map(|a| a.slow_down_layer_time)
+                .collect::<Vec<_>>(),
+            per_extruder_adjustments
+                .iter()
+                .map(|a| a.slow_down_min_speed)
+                .collect::<Vec<_>>(),
+        );
+    }
+
     for cur_begin in 0..by_slowdown_time.len() {
         let begin_idx = by_slowdown_time[cur_begin];
         let mut total = elapsed_time_total0;
@@ -2611,10 +2639,27 @@ fn calculate_layer_slowdown_postproc(
 
         if total > slow_down_layer_time {
             // No adjustment needed for this tier
+            if dbg_cool {
+                eprintln!(
+                    "COOLDBG  tier{} total={:.3} > sdlt={:.3} -> NO ADJUST",
+                    cur_begin, total, slow_down_layer_time
+                );
+            }
         } else {
             let mut max_time = elapsed_time_total0;
             for &idx in &by_slowdown_time[cur_begin..] {
                 max_time += per_extruder_adjustments[idx].time_maximum;
+            }
+            if dbg_cool {
+                eprintln!(
+                    "COOLDBG  tier{} total={:.3} <= sdlt={:.3} max_time={:.3} stretch={:.3} logic={}",
+                    cur_begin,
+                    total,
+                    slow_down_layer_time,
+                    max_time,
+                    slow_down_layer_time - total,
+                    per_extruder_adjustments[begin_idx].cooling_slowdown_logic
+                );
             }
 
             if max_time > slow_down_layer_time {
@@ -2661,6 +2706,27 @@ fn calculate_layer_slowdown_postproc(
                 for &idx in &by_slowdown_time[cur_begin..] {
                     per_extruder_adjustments[idx].slowdown_to_minimum_feedrate_bool(true);
                 }
+            }
+            if dbg_cool {
+                let mut nslowed = 0;
+                let mut minf = f32::MAX;
+                let mut maxf = 0.0f32;
+                for &idx in &by_slowdown_time[cur_begin..] {
+                    for l in &per_extruder_adjustments[idx].lines {
+                        if l.slowdown {
+                            nslowed += 1;
+                            minf = minf.min(l.feedrate);
+                            maxf = maxf.max(l.feedrate);
+                        }
+                    }
+                }
+                eprintln!(
+                    "COOLDBG   AFTER slowdown nslowed={} minf_mms={:.2} maxf_mms={:.2} new_et={:.3}",
+                    nslowed,
+                    if nslowed > 0 { minf } else { 0.0 },
+                    maxf,
+                    per_extruder_adjustments[begin_idx].elapsed_time_total()
+                );
             }
         }
 
@@ -2761,6 +2827,20 @@ fn non_proportional_slowdown(
         }
     }
 
+    if std::env::var("COOLDBG2").is_ok() {
+        for &idx in &by_min_speed {
+            let a = &adjustments[idx];
+            let firstfs: Vec<f32> = a.lines[..a.n_lines_adjustable.min(5)]
+                .iter()
+                .map(|l| l.feedrate)
+                .collect();
+            eprintln!(
+                "COOLDBG2 NP idx={} stretch={:.3} top_feedrate={:.2} sdms={} nadj={} first_fs={:?}",
+                idx, time_stretch, feedrate, a.slow_down_min_speed, a.n_lines_adjustable, firstfs
+            );
+        }
+    }
+
     let mut loop_guard = 0;
     loop {
         loop_guard += 1;
@@ -2812,6 +2892,17 @@ fn non_proportional_slowdown(
                 for i in tier_idx..by_min_speed.len() {
                     time_stretch_max += adjustments[by_min_speed[i]]
                         .time_stretch_when_slowing_down_to_feedrate(feedrate_limit);
+                }
+                if std::env::var("COOLDBG3").is_ok() && loop_guard <= 6 {
+                    let a = &adjustments[by_min_speed[tier_idx]];
+                    eprintln!(
+                        "COOLDBG3 loop={} tier={} feedrate={:.1} feedrate_next={:.1} min_speed={} feedrate_limit={:.1} tsm={:.4} stretch={:.4} ibeg={} iend={} nadj={} f[0]={:.1} f[1]={:.1} f[iend]={:.1}",
+                        loop_guard, tier_idx, feedrate, feedrate_next, min_speed, feedrate_limit, time_stretch_max, time_stretch,
+                        a.idx_line_begin, a.idx_line_end, a.n_lines_adjustable,
+                        a.lines.first().map(|l| l.feedrate).unwrap_or(-1.0),
+                        a.lines.get(1).map(|l| l.feedrate).unwrap_or(-1.0),
+                        a.lines.get(a.idx_line_end).map(|l| l.feedrate).unwrap_or(-1.0),
+                    );
                 }
 
                 if time_stretch_max >= time_stretch {
