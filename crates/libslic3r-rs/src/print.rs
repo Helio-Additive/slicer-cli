@@ -1336,16 +1336,14 @@ impl Print {
         //     if (((!use_cache)&&(need_slicing_objects.count(obj) != 0))
         //         || (use_cache &&(m_reslicing_objects.count(obj) != 0))){
         //         obj->simplify_extrusion_path();
-        //     } else {
-        //         if (obj->set_started(posSimplifyWall))
-        //             obj->set_done(posSimplifyWall);
-        //         if (obj->set_started(posSimplifyInfill))
-        //             obj->set_done(posSimplifyInfill);
-        //         if (obj->set_started(posSimplifySupportPath))
-        //             obj->set_done(posSimplifySupportPath);
-        //     }
+        //     } else { ... mark steps done ... }
         // }
-        // TODO: Port path simplification
+        // Optimize toolpaths: DP-simplify / arc-fit every extrusion path at
+        // scaled(resolution). Without this pass walls/infill/gap-fill stay at full
+        // medial-axis / fill vertex density (gap-fill G1 count ~3.5x native).
+        for obj in self.objects.iter_mut() {
+            obj.simplify_extrusion_path();
+        }
 
         // Print.cpp:2244-2269
         // bool has_adaptive_layer_height = false;

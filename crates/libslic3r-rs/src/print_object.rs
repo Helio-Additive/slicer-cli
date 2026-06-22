@@ -2489,6 +2489,46 @@ impl PrintObject {
         Ok(())
     }
 
+    /// Optimize (simplify) every extrusion toolpath of the object.
+    ///
+    /// PrintObject.cpp:902-938 — `PrintObject::simplify_extrusion_path()`.
+    /// C++ runs two phases (posSimplifyWall, posSimplifyInfill); each iterates
+    /// all layers and calls `Layer::simplify_wall_extrusion_path()` /
+    /// `simplify_infill_extrusion_path()`, which fan out per LayerRegion to
+    /// `simplify_entity_collection(&perimeters)` / `(&fills)`
+    /// (Layer.hpp:113-114, 221-222). With arc-fitting enabled this DP-simplifies
+    /// and arc-fits each path at `scaled(resolution)` (LayerRegion.cpp:785-801).
+    ///
+    /// This was previously a no-op TODO in the Rust pipeline (Print.cpp:2231),
+    /// which left every toolpath at full medial-axis / fill vertex density — most
+    /// visibly inflating gap-fill G1 move count ~3.5x vs native. We also simplify
+    /// `thin_fills` here: BambuStudio copies thin_fills into `fills` before the
+    /// infill simplify pass (Fill.cpp:752-761) so they get simplified there,
+    /// whereas this crate keeps and exports gap-fill from `thin_fills`.
+    ///
+    /// PrintObject.cpp:902-938
+    pub fn simplify_extrusion_path(&mut self) {
+        // posSimplifyWall + posSimplifyInfill (PrintObject.cpp:904-938).
+        if !self.is_step_done(PrintObjectStep::SimplifyWall) {
+            for layer in self.layers.iter_mut() {
+                for region in layer.regions_mut() {
+                    region.simplify_wall_extrusion_entity();
+                }
+            }
+            self.set_step_done(PrintObjectStep::SimplifyWall);
+        }
+
+        if !self.is_step_done(PrintObjectStep::SimplifyInfill) {
+            for layer in self.layers.iter_mut() {
+                for region in layer.regions_mut() {
+                    region.simplify_infill_extrusion_entity();
+                    region.simplify_thin_fill_extrusion_entity();
+                }
+            }
+            self.set_step_done(PrintObjectStep::SimplifyInfill);
+        }
+    }
+
     /// Generate support material using SupportGenerator from support/
     /// PrintObject.cpp:856-901
     pub fn generate_support_material(&mut self) -> Result<()> {

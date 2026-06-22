@@ -96,6 +96,24 @@ impl LayerRegion {
         self.perimeters = perimeters;
     }
 
+    /// Simplify the gap-fill (thin-fill) extrusion entities.
+    ///
+    /// In BambuStudio, gap-fill paths are produced into `thin_fills` and then
+    /// COPIED into `fills` by Fill::make_fills() (Fill.cpp:752-761), so the
+    /// generic infill simplify pass (`simplify_infill_extrusion_entity` ->
+    /// `simplify_entity_collection(&fills)`, called from
+    /// PrintObject::simplify_extrusion_path, Print.cpp:2231) reaches them. This
+    /// crate keeps gap-fill in `thin_fills` and exports it from there (it does
+    /// NOT mirror the thin_fills->fills copy), so we run the same
+    /// `simplify_entity_collection` pass directly on `thin_fills`. The
+    /// per-path tolerance/role dispatch (gap-fill role => arc-fit/DP at
+    /// scaled_resolution) is identical (LayerRegion.cpp:786-801).
+    pub fn simplify_thin_fill_extrusion_entity(&mut self) {
+        let mut thin_fills = std::mem::take(&mut self.thin_fills);
+        self.simplify_entity_collection(&mut thin_fills);
+        self.thin_fills = thin_fills;
+    }
+
     /// Recursively simplify every extrusion entity in a collection.
     ///
     /// LayerRegion.cpp:770-784
