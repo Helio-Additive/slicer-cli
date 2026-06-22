@@ -470,13 +470,29 @@ pub fn set_speed_transition(coeff: f64, paths: &mut Vec<ExtrusionPaths>) -> Extr
         path_idx += window.len() - 1;
         let mut prev_speed = paths[path_idx + 1][0].smooth_speed;
 
-        // GCode.cpp:6234-6236 — reverse window order and reverse each segment.
+        // GCode.cpp:5866-5868 — reverse window order and reverse the path-order
+        // within each window entry.
+        //
+        // C++:  std::reverse(paths_cpoy.begin(), paths_cpoy.end());
+        //       for (ExtrusionPaths *paths_temp : paths_cpoy)
+        //           std::reverse(paths_temp->begin(), paths_temp->end());
+        //
+        // `paths_temp` is an `ExtrusionPaths` (a `vector<ExtrusionPath>`), so the
+        // inner `std::reverse` reverses the ORDER OF THE PATH ELEMENTS — it does
+        // NOT reverse the points inside each ExtrusionPath's polyline. The
+        // direction reversal of the geometry is done internally by
+        // split_and_mapping_speed (split_from_left=false: it reverses the input
+        // polyline, cuts, then reverses the cut polyline back). A previous port
+        // additionally called `p.reverse()` on every ExtrusionPath here, which
+        // double-flipped each sub-path's polyline and left the smoothed output
+        // non-contiguous (last_point(path_i) != first_point(path_{i+1})). That
+        // made GCode::_extrude emit a travel before every smoothed sub-path,
+        // shattering each overhang-graded outer-wall loop into dozens of
+        // travel-separated runs (~5400 spurious outer-wall travels). Reversing
+        // only the element order (as C++ does) keeps the loop continuous.
         window.reverse();
         for &wi in &window {
             paths[wi].reverse();
-            for p in paths[wi].iter_mut() {
-                p.reverse();
-            }
         }
 
         // GCode.cpp:6238-6249 — smooth right path.
