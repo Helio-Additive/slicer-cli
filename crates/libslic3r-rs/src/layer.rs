@@ -19,7 +19,9 @@ use crate::extrusion_entity::{
     extrusion_entities_append_paths, ExtrusionEntityCollection, ExtrusionLoop, ExtrusionPath,
     ExtrusionRole,
 };
-use crate::fill::fill_rectilinear::generate_fill_rectilinear;
+use crate::fill::fill_rectilinear::{
+    generate_fill_rectilinear, generate_fill_rectilinear_monotonic,
+};
 use crate::fill::{generate_infill, InfillConfig, InfillPath, InfillPattern};
 use crate::flow::{Flow, FlowRole};
 use crate::geometry::{
@@ -1876,6 +1878,28 @@ impl Layer {
                         self.id as usize,
                         is_grid,
                     ),
+                    // Monotonic top/bottom/solid surfaces: FillMonotonic /
+                    // FillMonotonicLine (FillRectilinear.hpp:47-62; their
+                    // fill_surface, FillRectilinear.cpp:3090-3109). Both set
+                    // params.monotonic = true; FillMonotonicLine *also* sets
+                    // anchor_length_max = 0 => dont_connect()==true, so its lines
+                    // are emitted SEPARATELY (native travels between them), whereas
+                    // FillMonotonic keeps the perimeter links (anchor default).
+                    // no_sort()==true for both => we skip the post connect_infill.
+                    InfillPattern::Monotonic | InfillPattern::MonotonicLine => {
+                        // FillMonotonicLine forces dont_connect (anchor_length_max=0).
+                        let mut mono_config = infill_config.clone();
+                        if fill_pattern == InfillPattern::MonotonicLine {
+                            mono_config.connect_infill = false;
+                        }
+                        generate_fill_rectilinear_monotonic(
+                            &[expoly],
+                            &mono_config,
+                            self.id as usize,
+                            is_grid,
+                            true,
+                        )
+                    }
                     InfillPattern::Gyroid => {
                         // Use gyroid fill — generate paths for bounding box then clip to fill area
                         use crate::fill::fill_gyroid::{generate_gyroid_infill, GyroidConfig};
@@ -1948,8 +1972,18 @@ impl Layer {
                 }
 
                 // Connect separate infill lines into continuous paths
-                // C++: Fill::connect_infill() - called after fill generation
-                if infill_config.connect_infill {
+                // C++: Fill::connect_infill() - called after fill generation.
+                // Monotonic fillers (FillMonotonic / FillMonotonicLine) set
+                // no_sort()==true and emit their lines already in the final
+                // sweep order WITHOUT cross-line connection; running
+                // connect_infill on them would re-chain the lines into long
+                // polylines (the divergence from native, which travels between
+                // monotonic lines). Skip the connect step for those patterns.
+                let is_monotonic = matches!(
+                    fill_pattern,
+                    InfillPattern::Monotonic | InfillPattern::MonotonicLine
+                );
+                if infill_config.connect_infill && !is_monotonic {
                     let boundary = vec![boundary_contour.clone()];
                     let fill_params = crate::fill::FillParams::new();
                     let mut connected = Vec::new();

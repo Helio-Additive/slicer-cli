@@ -221,6 +221,16 @@ pub enum InfillPattern {
     /// Floating concentric
     /// Fill.hpp:43
     FloatingConcentric,
+
+    /// Monotonic rectilinear (top/bottom/solid surfaces). Same raster core as
+    /// Rectilinear but lines are emitted in monotonic sweep order and NOT
+    /// connected into long polylines (FillMonotonic, FillRectilinear.hpp:47-53,
+    /// no_sort()==true). Fill.hpp ipMonotonic.
+    Monotonic,
+
+    /// Monotonic line variant (FillMonotonicLine / FillMonotonicLineWGapFill,
+    /// FillRectilinear.hpp:56-62,129-140). Fill.hpp ipMonotonicLine.
+    MonotonicLine,
 }
 
 /// Convert print-config infill patterns to Fill.cpp pattern family.
@@ -245,11 +255,16 @@ impl From<crate::print_config::InfillPattern> for InfillPattern {
             crate::print_config::InfillPattern::Triangles
             | crate::print_config::InfillPattern::Cubic
             | crate::print_config::InfillPattern::Stars => InfillPattern::Grid,
-            // Monotonic and variants map to Rectilinear (monotonic fill order
-            // is handled at a higher level, the base pattern is rectilinear).
-            crate::print_config::InfillPattern::Monotonic
-            | crate::print_config::InfillPattern::MonotonicLine
-            | crate::print_config::InfillPattern::AlignedRectilinear => InfillPattern::Rectilinear,
+            // Monotonic / MonotonicLine keep their identity so the fill driver
+            // can engage the monotonic raster (FillMonotonic / FillMonotonicLine,
+            // FillRectilinear.hpp:47-62): same rectilinear lines, but emitted in a
+            // monotonic sweep WITHOUT connect_infill (no_sort()==true). Collapsing
+            // them to Rectilinear (the prior behaviour) chained the lines into long
+            // polylines, the opposite of native's traveled top/solid topology.
+            crate::print_config::InfillPattern::Monotonic => InfillPattern::Monotonic,
+            crate::print_config::InfillPattern::MonotonicLine => InfillPattern::MonotonicLine,
+            // Aligned rectilinear has no monotonic ordering; plain rectilinear core.
+            crate::print_config::InfillPattern::AlignedRectilinear => InfillPattern::Rectilinear,
             // Decorative / specialty patterns fall back to nearest equivalent
             crate::print_config::InfillPattern::HilbertCurve
             | crate::print_config::InfillPattern::ArchimedeanChords
@@ -1135,6 +1150,14 @@ pub fn generate_infill(
             // the fill_lightning::Filler (FillLightning.cpp) +
             // lightning::generator::Generator (Lightning/Generator.cpp) API.
             Ok(Vec::new())
+        }
+        InfillPattern::Monotonic | InfillPattern::MonotonicLine => {
+            // Monotonic surfaces are routed through
+            // generate_fill_rectilinear_monotonic by the toolpath driver
+            // (Layer::make_fills). This generic single-layer helper does not
+            // carry the monotonic sweep state, so fall back to the plain
+            // rectilinear raster (same lines, just not monotonically ordered).
+            generate_infill(InfillPattern::Rectilinear, fill_area, line_spacing, angle)
         }
     }
 }
