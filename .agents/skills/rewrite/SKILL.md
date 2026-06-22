@@ -1,0 +1,33 @@
+---
+name: rewrite
+description: How to drive a faithful C++→Rust byte-parity port (libslic3r → libslic3r-rs). Methods, metrics, pitfalls, and agent/branch process learned while closing the BambuStudio↔Rust G-code gap.
+---
+
+# Byte-parity C++→Rust rewrite — playbook
+
+Goal: Rust output byte-identical to C++ for the same job. These are process lessons; project facts live in memory (`project_benchy_parity_gap.md`) and `PARITY_STATUS.md`.
+
+## Measure right (this is everything)
+- **Two-engine compare is the foundation**: `slicer-cli compare --config <job>` runs C++ (subprocess) + Rust (in-process lib) on the same input and diffs the G-code. Parity is only drivable because it's *measured*. `COMPARE_KEEP_DIR=/tmp/cmp` dumps both gcodes for offline analysis (no re-slice needed).
+- **Material = E summed ONLY over moves with real XY motion** (`feat_e2.py`), never the raw per-feature E sum (`feat_e.py`). The raw sum counts deretraction-priming (`G1 E.4`, no XY) which is travel/segmentation, not material — it *inflates* the engine that retracts more and invents phantom gaps. I chased two phantoms (Gap −227, Outer-wall −121) before catching this.
+- **Track per-feature material dE (rust−native) + the header filament/time — NOT feature COUNTS.** Counts are a feature-run-segmentation artifact (same material split into more/fewer `;FEATURE:` blocks).
+- **`cargo build` is the only authoritative gate.** rust-analyzer ✘ (E0107/E0308/etc.) are usually *stale false-positives* here — verify with cargo, not the IDE panel. (`cargo test` for the lib is pre-existing-broken; build gates only.)
+
+## Method
+- **Verify-first with a cheap bounded experiment before any big rework.** Hypotheses are often wrong. "F1" (clipper precision) was blamed for surface-classification *and* toolpath-density — both *ruled out* in minutes by bumping a scale const and re-measuring. Run the decisive cheap test first.
+- **Data-driven + coordinated beats blind/partial — especially on "quagmire" subsystems.** Overhang grading regressed 3× via partial fixes chasing gross metrics. It was cracked by: instrument BOTH engines per-segment → pin the exact divergence with numbers → change ALL interacting parts together → re-verify per-segment convergence. Apply this to any tangled subsystem.
+- **Re-validate every "BLOCKED"/"TODO" comment — they lie.** Found 4+ cases where the faithful code *existed but was never wired/run* ("stale wiring"), or the blocker rationale was false (e.g. a "1e-6 vs 1e-5 scale" arc-fit blocker that was wrong). Check the claim against current code before believing it.
+- **Don't trust the obvious component.** The time estimate was provably faithful (ran native's estimator on rust's gcode → same number); the real bug was the *toolpath* (degenerate arcs from a missing per-path `travel_to`). Isolate, don't assume.
+- **Aggregates converge LAST.** The time estimate (often the *first* byte-divergence) is an aggregate of all toolpath motion — it only matches once every subsystem does. Fix subsystems one at a time; the aggregate falls in at the end. Don't chase it directly.
+- **Completeness > coincidental closeness.** A faithful subsystem port can temporarily worsen an aggregate (overhang made time worse; bridges made filament over) — that's fine. You need every feature native has; an undershoot that's "closer" is further from byte parity than a slight overshoot that's *complete*. Merge net-improvements, track the residual.
+
+## Background agents (the heavy forensic+fix loop)
+- Scope cheaply yourself first; delegate the instrument→fix→verify cycle. Give the agent the established facts so it doesn't re-derive.
+- **Mandate milestone commits.** A 2.7-hour agent lost everything by not committing. Commit a compiling skeleton EARLY (esp. for large ports — port in chunks, don't read 1000 lines before any commit; one agent *stalled* doing that).
+- **Profile/measure in ISOLATION (one layer / micro-benchmark), never repeated full slices.** A runaway re-ran 45-min slices; another left orphaned slices that saturated CPU and made everything *look* slow. `pkill -f slicer-cli` to clear orphans before measuring.
+- Add an **assess-first / bail-with-report** gate for tasks with an uncertain dependency, so the agent reports scope instead of grinding.
+
+## Build / deps / git
+- Always build via **devbox** (`devbox run -- cargo build` / `ninja`). Never bare cargo/cmake.
+- C++ deps (geo-clipper→clipper-sys, clipper2c-sys) are static-linked → portable binary (only libc++ residual; precludes pure wasm). Vendoring C++ as a `-sys` crate is byte-faithful by construction — but **watch ODR**: two crates exporting the same `ClipperLib::` symbols with different layouts silently corrupt; namespace-prefix the vendored copy (`CLIPPERLIB_NAMESPACE_PREFIX`).
+- **Branch per lever; push after each lands** (work sat 157 commits unpushed = total-loss risk). Flow: branch off main → agent (data-driven, milestone commits) → verify build+measure → `merge --ff-only` → `git push`. Preserve risky/incomplete work on its own named branch before resetting.
