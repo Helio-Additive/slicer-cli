@@ -68,3 +68,35 @@ loop=1..1000 tier=0 feedrate=300 feedrate_next=300 feedrate_limit=300 tsm=0.0000
 Set `EPSILON` to `1e-4` to match C++ (`libslic3r.h:52`). This affects the feedrate-tier comparisons in `non_proportional_slowdown` / `consistent_surface_slowdown` and the debug asserts. After fix, the span will advance, tiers will be processed, and `slow_down_to_feedrate` will slow lines toward `slow_down_min_speed` to meet `slow_down_layer_time`.
 
 Note: there is also a structural divergence — `slow_down_to_feedrate` / `time_stretch_when_slowing_down_to_feedrate` iterate `0..n_lines_adjustable` (matches C++ header), good. But the early "merge travel into previous modifier" in parse is a separate fidelity item; not the cause of zero-slowdown.
+
+## M2 — FIX APPLIED
+
+`crates/libslic3r-rs/src/gcode/cooling.rs:13`: `const EPSILON: f32 = 1e-6` -> `1e-4`
+(matches C++ `libslic3r.h:52`). Cite CoolingBuffer.cpp:178,210,244 — span-find and
+tier-skip comparisons `feedrate > feedrate - EPSILON` / `slow_down_min_speed > ... - EPSILON`.
+
+### Per-layer extrusion F (avg mm/min): before -> after vs native
+| layer | native_avg | rust_before | rust_after |
+|------:|-----------:|------------:|-----------:|
+| 195 | 8369 | 14521 | 10690 |
+| 197 | 8597 | 14419 | 9384 |
+| 198 | 6717 | 14241 | 7106 |
+| 200 | 4132 | 14045 | 4406 |
+| 201 | 2557 | 13696 | 2508 |
+
+Rust now applies min-layer-time slowdown; per-layer avg F tracks native closely.
+COOLDBG AFTER fix: L198 nslowed=46, slowed to ~118 mm/s, layer time 2.222 -> 4.047 s
+(target 4.0). Layers 195-201 all reach ~4.0-4.5 s.
+
+### Preserved invariants
+- Material: TOTAL 3858.97 native vs 3852.96 rust = **0.9984x** (still 0.998x parity).
+- Move count: cooling only rewrites/removes F tokens, never adds/removes G-moves.
+- Rust header estimated time 33m14s -> 35m11s (rust's own estimator; native 43m).
+
+### Residual cooling gap (separate parity item, NOT CoolingBuffer math)
+Native slows the OUTER WALL to ~1956-1640 mm/min on these layers — this is the
+small-perimeter/overhang speed limit applied PRE-cooling (native L188 with NO cooling
+slowdown already has outer wall at 1440-3385), not cooling. Rust's outer wall is full
+nominal speed pre-cooling, so cooling equalization lands at one common feedrate (7106)
+vs native's two tiers (8097 non-outer / 1956 outer). Closing this needs the
+small-perimeter outer-wall speed reduction (separate gap).

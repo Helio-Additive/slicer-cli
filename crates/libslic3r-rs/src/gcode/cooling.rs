@@ -8,9 +8,13 @@
 use crate::print_config::PerExtruderCoolingConfig;
 use crate::{CoordF, ExtrusionRole};
 
-/// Epsilon for floating point comparisons
-/// Reference: CoolingBuffer.cpp
-const EPSILON: f32 = 1e-6;
+/// Epsilon for floating point comparisons.
+/// Reference: libslic3r.h:52 `static constexpr double EPSILON = 1e-4;`
+/// IMPORTANT: must be 1e-4 (not 1e-6). The non-proportional slowdown span-find
+/// loop compares `line.feedrate > feedrate - EPSILON`. With feedrates ~300 mm/s
+/// in f32, `300.0 - 1e-6 == 300.0` (1e-6 is below the f32 ULP at 300), so the
+/// span never advances and zero lines get slowed. 1e-4 matches C++ CoolingBuffer.
+const EPSILON: f32 = 1e-4;
 
 /// Feature types that can be adjusted during cooling slowdown
 /// Reference: GCodeEditor.hpp:17-35
