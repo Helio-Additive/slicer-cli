@@ -884,10 +884,6 @@ pub fn extrude_path_with_arc_fitting(
     // Working copy of the scaled points.
     let mut work_points: Vec<Point> = points.to_vec();
 
-    // SEGDBG: instrumentation for gap-fill point-density investigation.
-    let segdbg = std::env::var("SEGDBG").is_ok();
-    let segdbg_in = work_points.len();
-
     if enable_arc_fitting && !spiral_mode {
         // -------------------------------------------------------------------
         // Arc-fitting path: LayerRegion::simplify_path's
@@ -998,15 +994,6 @@ pub fn extrude_path_with_arc_fitting(
             let de = line_length * e_per_mm;
             writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
         }
-    }
-
-    if segdbg {
-        eprintln!(
-            "SEGDBG role={} in={} out={}",
-            crate::extrusion_entity::role_to_string(path.role),
-            segdbg_in,
-            work_points.len(),
-        );
     }
 
     // Emit cooling end marker after extrusion
