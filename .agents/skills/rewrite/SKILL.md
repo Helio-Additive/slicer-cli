@@ -10,7 +10,7 @@ Goal: Rust output byte-identical to C++ for the same job. These are process less
 ## Measure right (this is everything)
 - **Two-engine compare is the foundation**: `slicer-cli compare --config <job>` runs C++ (subprocess) + Rust (in-process lib) on the same input and diffs the G-code. Parity is only drivable because it's *measured*. `COMPARE_KEEP_DIR=/tmp/cmp` dumps both gcodes for offline analysis (no re-slice needed).
 - **Material = E summed ONLY over moves with real XY motion** (`feat_e2.py`), never the raw per-feature E sum (`feat_e.py`). The raw sum counts deretraction-priming (`G1 E.4`, no XY) which is travel/segmentation, not material — it *inflates* the engine that retracts more and invents phantom gaps. I chased two phantoms (Gap −227, Outer-wall −121) before catching this.
-- **Track per-feature material dE (rust−native) + the header filament/time — NOT feature COUNTS.** Counts are a feature-run-segmentation artifact (same material split into more/fewer `;FEATURE:` blocks).
+- **Track per-feature material dE (rust−native) by AREA/E + the header filament/time — NEVER feature COUNTS.** Counts are a feature-run-segmentation artifact and can *invert the apparent gap*: internal-solid looked −188 *under* by count (201 vs 389) but was +1177 mm² *over* by area. Confirm a gap's existence AND direction by area/material before acting — a whole lever was nearly chased backwards on the count.
 - **`cargo build` is the only authoritative gate.** rust-analyzer ✘ (E0107/E0308/etc.) are usually *stale false-positives* here — verify with cargo, not the IDE panel. (`cargo test` for the lib is pre-existing-broken; build gates only.)
 
 ## Method
