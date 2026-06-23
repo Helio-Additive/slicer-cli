@@ -399,30 +399,6 @@ impl PerimeterGenerator {
         // Rust equivalent of C++ `union_ex(const Polygons&)`.
         let mut last = union_polygons_ex(&slice.simplify_p(surface_simplify_resolution));
 
-        // === M1 INSTRUMENTATION (strip before final commit) ===
-        if std::env::var("PERIM_OFFSET_DIAG").is_ok() {
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static DIAG_COUNT: AtomicUsize = AtomicUsize::new(0);
-            // Only dump for a handful of mid-size slices to avoid spam.
-            let input_v: usize = slice.contour.points().len()
-                + slice.holes.iter().map(|h| h.points().len()).sum::<usize>();
-            let last_v: usize = last
-                .iter()
-                .map(|e| {
-                    e.contour.points().len()
-                        + e.holes.iter().map(|h| h.points().len()).sum::<usize>()
-                })
-                .sum();
-            if input_v >= 40 && DIAG_COUNT.fetch_add(1, Ordering::Relaxed) < 6 {
-                eprintln!(
-                    "[M1] slice input_verts={input_v} post_simplify_verts={last_v} \
-                     (n_expoly={})",
-                    last.len()
-                );
-            }
-        }
-        // === END M1 INSTRUMENTATION ===
-
         /// PerimeterGenerator.cpp:920
         /// C++: int loop_number = this->config->wall_loops + surface.extra_perimeters - 1;
         /// perimeter_count == wall_loops (a count), so loop_number is 0-based max depth index
@@ -574,7 +550,13 @@ impl PerimeterGenerator {
                         if offset_result.is_empty() && expolygon.area().abs() < area_threshold {
                             /// PerimeterGenerator.cpp:989
                             /// C++: ExPolygons temp_result = offset_ex(expolygon, -float(ext_perimeter_smaller_width / 2.));
-                            let temp_result = shrink(
+                            // PARITY (perim-offset): outer-wall contour offset. Route through the
+                            // vertex-EXACT vendored ClipperLib (shrink_clib) instead of geo-clipper,
+                            // which emits ~1.1-1.2% extra sub-|delta| vertices on every large slice
+                            // (proven in M1: geo 1312/1330 vs clib 1296/1316). offset_ex == a single
+                            // ClipperOffset at jtMiter, miterLimit 3.0 — clib_offset_expolygon_paths
+                            // replicates ClipperUtils.cpp offset_expolygon_inner exactly. Area-invariant.
+                            let temp_result = shrink_clib(
                                 &[expolygon.clone()],
                                 ext_perimeter_smaller_width / 2.0,
                                 self.config.join_type,
@@ -583,60 +565,13 @@ impl PerimeterGenerator {
                         } else {
                             /// PerimeterGenerator.cpp:993
                             /// C++: ExPolygons temp_result = offset_ex(expolygon, -float(ext_perimeter_width / 2.));
-                            let temp_result = shrink(
+                            // PARITY (perim-offset): outer-wall contour offset — see note above; this
+                            // is the dominant outer-wall over-segmentation source (+2687 vs native).
+                            let temp_result = shrink_clib(
                                 &[expolygon.clone()],
                                 ext_perimeter_width / 2.0,
                                 self.config.join_type,
                             );
-
-                            // === M1 INSTRUMENTATION (strip before final commit) ===
-                            if std::env::var("PERIM_OFFSET_DIAG").is_ok() {
-                                use std::sync::atomic::{AtomicUsize, Ordering};
-                                static OFF_COUNT: AtomicUsize = AtomicUsize::new(0);
-                                let in_v = expolygon.contour.points().len()
-                                    + expolygon
-                                        .holes
-                                        .iter()
-                                        .map(|h| h.points().len())
-                                        .sum::<usize>();
-                                if in_v >= 40 && OFF_COUNT.fetch_add(1, Ordering::Relaxed) < 6 {
-                                    let geo_v: usize = temp_result
-                                        .iter()
-                                        .map(|e| {
-                                            e.contour.points().len()
-                                                + e.holes
-                                                    .iter()
-                                                    .map(|h| h.points().len())
-                                                    .sum::<usize>()
-                                        })
-                                        .sum();
-                                    let clib = shrink_clib(
-                                        &[expolygon.clone()],
-                                        ext_perimeter_width / 2.0,
-                                        self.config.join_type,
-                                    );
-                                    let clib_v: usize = clib
-                                        .iter()
-                                        .map(|e| {
-                                            e.contour.points().len()
-                                                + e.holes
-                                                    .iter()
-                                                    .map(|h| h.points().len())
-                                                    .sum::<usize>()
-                                        })
-                                        .sum();
-                                    eprintln!(
-                                        "[M1] OUTER i==0 shrink: in_v={in_v} \
-                                         geo_out_v={geo_v} (n={}) clib_out_v={clib_v} (n={}) \
-                                         delta_mm={:.5}",
-                                        temp_result.len(),
-                                        clib.len(),
-                                        -(ext_perimeter_width / 2.0)
-                                    );
-                                }
-                            }
-                            // === END M1 INSTRUMENTATION ===
-
                             offsets.extend(temp_result);
                         }
                     }
@@ -660,57 +595,14 @@ impl PerimeterGenerator {
                 // operation whose geo-clipper miter densification compounds over iterations
                 // (~1.20x inner-wall vertex density, 0.396 vs native 0.329). Route it through
                 // the vertex-EXACT vendored ClipperLib (offset2_clib) so inner-wall vertex
-                // density byte-matches native. Area-invariant (material stays at parity); the
-                // outer wall (i==0 below) stays on geo-clipper (already byte-exact). See
-                // /tmp/perimoffset_findings.md.
+                // density byte-matches native. Area-invariant (material stays at parity). The
+                // outer wall (i==0 above) is also routed through ClipperLib (shrink_clib).
                 offsets = offset2_clib(
                     &last,
                     distance + min_spacing / 2.0 - ONE_SCALED_MM,
                     min_spacing / 2.0 - ONE_SCALED_MM,
                     self.config.join_type,
                 );
-
-                // === M1 INSTRUMENTATION (strip before final commit) ===
-                if std::env::var("PERIM_OFFSET_DIAG").is_ok() {
-                    use std::sync::atomic::{AtomicUsize, Ordering};
-                    static INNER_COUNT: AtomicUsize = AtomicUsize::new(0);
-                    let in_v: usize = last
-                        .iter()
-                        .map(|e| {
-                            e.contour.points().len()
-                                + e.holes.iter().map(|h| h.points().len()).sum::<usize>()
-                        })
-                        .sum();
-                    if in_v >= 40 && INNER_COUNT.fetch_add(1, Ordering::Relaxed) < 6 {
-                        let clib_v: usize = offsets
-                            .iter()
-                            .map(|e| {
-                                e.contour.points().len()
-                                    + e.holes.iter().map(|h| h.points().len()).sum::<usize>()
-                            })
-                            .sum();
-                        let geo = offset2(
-                            &last,
-                            distance + min_spacing / 2.0 - ONE_SCALED_MM,
-                            min_spacing / 2.0 - ONE_SCALED_MM,
-                            self.config.join_type,
-                        );
-                        let geo_v: usize = geo
-                            .iter()
-                            .map(|e| {
-                                e.contour.points().len()
-                                    + e.holes.iter().map(|h| h.points().len()).sum::<usize>()
-                            })
-                            .sum();
-                        eprintln!(
-                            "[M1] INNER i={i} offset2: in_v={in_v} \
-                             geo_out_v={geo_v} (n={}) clib_out_v={clib_v} (n={})",
-                            geo.len(),
-                            offsets.len()
-                        );
-                    }
-                }
-                // === END M1 INSTRUMENTATION ===
 
                 /// PerimeterGenerator.cpp:1030-1035
                 /// C++: if (has_gap_fill) append(gaps, diff_ex(offset(last, - float(0.5 * distance)), offset(offsets, float(0.5 * distance + 10))));
