@@ -312,6 +312,11 @@ pub struct PerimeterResult {
     /// Remaining infill area
     pub infill_area: ExPolygons,
 
+    /// No-overlap infill area (fill_no_overlap). PerimeterGenerator.cpp:1415-1430
+    /// — the infill region computed WITHOUT the infill_peri_overlap grow, used by
+    /// FillMonotonicLineWGapFill (top surface) to avoid overflow / over-extrusion.
+    pub no_overlap_area: ExPolygons,
+
     /// Gap fill areas
     pub gap_fills: ExPolygons,
 }
@@ -321,6 +326,7 @@ impl PerimeterResult {
         Self {
             entities: crate::extrusion_entity::ExtrusionEntityCollection::new(),
             infill_area: Vec::new(),
+            no_overlap_area: Vec::new(),
             gap_fills: Vec::new(),
         }
     }
@@ -362,6 +368,7 @@ impl PerimeterGenerator {
                 .entities
                 .extend(surface_result.entities.entities);
             result.infill_area.extend(surface_result.infill_area);
+            result.no_overlap_area.extend(surface_result.no_overlap_area);
             result.gap_fills.extend(surface_result.gap_fills);
         }
 
@@ -1068,11 +1075,11 @@ impl PerimeterGenerator {
             // C++: if (!top_fills.empty()) {
             // C++:     infill_exp = union_ex(infill_exp, offset_ex(top_infill_exp, double(infill_peri_overlap)));
             // C++: }
+            let top_infill_exp = intersection(
+                &fill_clip,
+                &offset_expolygons(&top_fills, ext_perimeter_spacing / 2.0, OffsetJoinType::Miter),
+            );
             if !top_fills.is_empty() {
-                let top_infill_exp = intersection(
-                    &fill_clip,
-                    &offset_expolygons(&top_fills, ext_perimeter_spacing / 2.0, OffsetJoinType::Miter),
-                );
                 let mut merged = infill_exp;
                 merged.extend(offset_expolygons(
                     &top_infill_exp,
@@ -1082,6 +1089,39 @@ impl PerimeterGenerator {
                 infill_exp = union_ex(&merged);
             }
             result.infill_area = infill_exp;
+
+            // PerimeterGenerator.cpp:1415-1430 — BBS: get the no-overlap infill
+            // expolygons. Same not_filled_exp, but WITHOUT the infill_peri_overlap
+            // grow (so the band the top-surface monotonic lines occupy is exact).
+            //   if (min_perimeter_infill_spacing/2 > infill_peri_overlap)
+            //       polyWithoutOverlap = offset2_ex(not_filled_exp,
+            //           -inset - min_perimeter_infill_spacing/2,
+            //            min_perimeter_infill_spacing/2 - infill_peri_overlap);
+            //   else
+            //       polyWithoutOverlap = offset_ex(not_filled_exp, -inset - infill_peri_overlap);
+            //   if (!top_fills.empty()) polyWithoutOverlap = union_ex(polyWithoutOverlap, top_infill_exp);
+            let mut poly_without_overlap = if min_perimeter_infill_spacing / 2.0
+                > infill_peri_overlap
+            {
+                offset2(
+                    &not_filled_exp,
+                    inset + min_perimeter_infill_spacing / 2.0,
+                    min_perimeter_infill_spacing / 2.0 - infill_peri_overlap,
+                    self.config.join_type,
+                )
+            } else {
+                offset_expolygons(
+                    &not_filled_exp,
+                    -(inset + infill_peri_overlap),
+                    self.config.join_type,
+                )
+            };
+            if !top_fills.is_empty() {
+                let mut merged = poly_without_overlap;
+                merged.extend(top_infill_exp);
+                poly_without_overlap = union_ex(&merged);
+            }
+            result.no_overlap_area = poly_without_overlap;
         } else {
             // Legacy divergent path (default until the faithful gauges land): the raw
             // innermost-perimeter region without the C++ 1378-1406 inset.

@@ -549,6 +549,13 @@ impl LayerRegion {
             self.fill_expolygons.push(fill_surface.expolygon);
         }
 
+        // Store the no-overlap infill area. PerimeterGenerator.cpp:1429
+        // (this->fill_no_overlap->insert(... polyWithoutOverlap ...)). Consumed by
+        // group_fills -> SurfaceFill::no_overlap_expolygons and the
+        // FillMonotonicLineWGapFill top-surface gap-fill in make_fills.
+        self.fill_no_overlap_expolygons
+            .extend(result.no_overlap_area);
+
         // Gap fill — faithful port of PerimeterGenerator.cpp:1327-1374.
         // The previous version traced each gap polygon's CONTOUR at full perimeter
         // width, which over-extruded ~4.6x (contour ~2x length, full width vs thin).
@@ -1875,8 +1882,17 @@ impl Layer {
             // surface no_overlap area and accumulate the footprint of the laid
             // lines so the gap-fill can run once, after the expoly loop.
             let is_monotonic_line = fill_pattern == InfillPattern::MonotonicLine;
-            let mono_no_overlap: ExPolygons = if is_monotonic_line {
-                surface_fill.no_overlap_expolygons.clone()
+            // C++ (Fill.cpp:740) intersects no_overlap with EACH expoly before
+            // filling: f->no_overlap = intersection_ex(surface_fill.no_overlap, {expoly}).
+            // Aggregate that here by intersecting with the surface's expolygons.
+            let mono_no_overlap: ExPolygons = if is_monotonic_line
+                && !surface_fill.no_overlap_expolygons.is_empty()
+                && !surface_fill.expolygons.is_empty()
+            {
+                crate::clipper_utils::intersection(
+                    &surface_fill.no_overlap_expolygons,
+                    &surface_fill.expolygons,
+                )
             } else {
                 Vec::new()
             };
@@ -2096,11 +2112,15 @@ impl Layer {
                     // C++: new_flow = params.flow.with_spacing(this->spacing) for
                     // solid fill; the top surface uses the surface flow directly.
                     let new_flow = mono_flow.clone();
-                    let scaled_spacing = new_flow.scaled_spacing() as f64;
-                    // C++: min = 0.2 * new_flow.scaled_spacing() * (1 - INSET_OVERLAP_TOLERANCE)
-                    //      max = 2. * new_flow.scaled_spacing()   (INSET_OVERLAP_TOLERANCE = 0.45)
-                    let min = 0.2 * scaled_spacing * (1.0 - 0.45);
-                    let max = 2.0 * scaled_spacing;
+                    // C++ works in SCALED units (new_flow.scaled_spacing()); the Rust
+                    // clipper_utils offset/opening helpers operate in mm, so use the
+                    // UNSCALED spacing here (mirrors the perimeter gap-fill block above,
+                    // layer.rs:566-567 which uses flow.width()/spacing() in mm).
+                    let spacing_mm = new_flow.spacing();
+                    // C++: min = 0.2 * scaled_spacing * (1 - INSET_OVERLAP_TOLERANCE)
+                    //      max = 2. * scaled_spacing   (INSET_OVERLAP_TOLERANCE = 0.45)
+                    let min = 0.2 * spacing_mm * (1.0 - 0.45);
+                    let max = 2.0 * spacing_mm;
                     const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
 
                     // C++: gaps_ex = diff_ex(opening_ex(gapfill_areas, min/2),
