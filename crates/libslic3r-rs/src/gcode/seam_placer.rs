@@ -27,22 +27,28 @@
 //! parameter rather than `T: From<f64>`), and the cubic B-spline fit maps to the
 //! crate's `Geometry::fit_cubic_bspline` / `get_fitted_value`.
 //!
-//! BLOCKED (still-missing non-config dependencies):
-//! - `SeamPlacer::init` (SeamPlacer.cpp:1395) — orchestrates the still-blocked
-//!   `gather_enforcers_blockers` and `compute_global_occlusion` below.
-//! - `SeamPlacer::place_seam` (SeamPlacer.cpp:1463) — derives `po` from
-//!   `layer->object()`, but the crate's `Layer::object()` returns an `ObjectRef`
-//!   exposing only `config()`/`print()`, not `slicing_parameters().raft_layers()`,
-//!   the per-object layer vector, nor the `m_seam_per_object` lookup keyed by the
-//!   `PrintObject*`. A faithful port would need those accessors threaded in.
-//!   `find_closest_point` over the f32 tree is otherwise available via the new
-//!   `find_closest_point_eps`.
-//! - `SeamPlacerImpl::compute_global_occlusion` (SeamPlacer.cpp:574) — needs
-//!   `PrintObject::{model_object, trafo_centered}` (not ported) and the f32
-//!   AABB ray casting blocked inside `raycast_visibility`.
-//! - `SeamPlacerImpl::gather_enforcers_blockers` (SeamPlacer.cpp:644) — needs
-//!   `ModelVolume` seam-painting facet accessors (`is_seam_painted`,
-//!   `seam_facets.get_facets_strict`, `EnforcerBlockerType`), not ported.
+//! PORTED — the visibility/occlusion pipeline is now wired:
+//! - `SeamPlacer::init` (SeamPlacer.cpp:1395) — runs `compute_global_occlusion`
+//!   (below) before gathering candidates, so each candidate gets a real per-vertex
+//!   visibility from raycast occlusion.
+//! - `compute_global_occlusion` (SeamPlacer.cpp:574) — samples the (already
+//!   bed-centered) `PrintObject::mesh()`, decimates via `its_short_edge_collpase`,
+//!   builds the AABB + sample KD trees, and raycasts per-sample visibility. The
+//!   C++ `trafo_centered()` transform is already baked into `PrintObject::mesh()`
+//!   in this pipeline (the CLI centers the mesh before constructing the object),
+//!   so no extra transform is applied.
+//! - `raycast_visibility` (SeamPlacer.cpp:135) — full hemisphere raycast via the
+//!   crate `aabb_tree_indirect` (f32 vertices cast to f64, matching the C++
+//!   double-precision intersection math); both the first-hit and the
+//!   negative-volume all-hits branches are ported (the latter never triggers here,
+//!   as there are no negative volumes).
+//!
+//! STILL BLOCKED (no model dependency in this pipeline):
+//! - `gather_enforcers_blockers` (SeamPlacer.cpp:644) — needs `ModelVolume`
+//!   seam-painting facet accessors (`is_seam_painted`, `seam_facets.get_facets`,
+//!   `EnforcerBlockerType`), not present here (Benchy has no seam painting), so
+//!   `GlobalModelInfo::{enforcers,blockers}` stay empty and `is_enforced`/
+//!   `is_blocked` short-circuit to `false`.
 
 use crate::aabb_tree_indirect::Tree3F;
 use crate::aabb_tree_lines::{build_aabb_tree_over_indexed_lines, squared_distance_to_indexed_lines, tree2d};
@@ -490,22 +496,46 @@ pub fn sample_power_cosine_hemisphere(samples: &Vec2f, power: f32) -> Vec3f {
     Vec3f::new(term1.cos() * term3, term1.sin() * term3, term2)
 }
 
-/// SeamPlacer.cpp:135-214
+/// Face normal (normalized) of triangle `face_idx` in an f32
+/// `indexed_triangle_set`, mirroring C++ `its_face_normal`
+/// (TriangleMesh.hpp:333-336 → `face_normal_normalized`,
+/// `(v1-v0).cross(v2-v1).normalized()`).
+#[inline]
+fn its_face_normal_f32(its: &indexed_triangle_set, face_idx: usize) -> Vec3f {
+    let f = its.indices[face_idx];
+    let v0 = its.vertices[f.x as usize];
+    let v1 = its.vertices[f.y as usize];
+    let v2 = its.vertices[f.z as usize];
+    (v1 - v0).cross(&(v2 - v1)).normalize()
+}
+
+/// SeamPlacer.cpp:135-214 — `raycast_visibility`.
 ///
-/// Precomputes the hemisphere sample directions faithfully
-/// (SeamPlacer.cpp:143-152). The per-sample ray casting itself
-/// (SeamPlacer.cpp:154-208) is BLOCKED: the crate's `aabb_tree_indirect`
-/// builds trees over `Point3F` (f64) vertices and `[usize;3]` faces, whereas
-/// `indexed_triangle_set` stores `Vec3f` (f32) / `Vec3i`. The C++ source casts
-/// only the ray origin/dir to f64 while keeping vertices in f32; bridging the
-/// incompatible primitive types here would diverge from C++ rounding and is not
-/// byte-exact. Re-enable once an f32-vertex AABB ray query is available.
+/// Precomputes the hemisphere sample directions (SeamPlacer.cpp:143-152) and
+/// casts `sqr_rays_per_sample_point²` rays from each surface sample, decrementing
+/// the sample's visibility for every ray that hits a forward-facing triangle.
+///
+/// The C++ AABB query (`AABBTreeIndirect::intersect_ray_first_hit`) is called with
+/// **f32 mesh vertices** but an **f64 ray** (`ray_origin_d`/`final_ray_dir_d`):
+/// the RayIntersector's scalar type is `double`, so the intersection math runs in
+/// f64 with the f32 vertices cast up to f64 (AABBTreeIndirect.hpp:365-368, the
+/// `intersect_triangle(origin_d, dir_d, v0.cast<double>(), …)` overload). The crate
+/// `aabb_tree_indirect` works natively in f64 `Point3F`, so we feed it the f32
+/// vertices cast to f64 (lossless) and the same f64 ray, reproducing the C++ path
+/// exactly. The default ray-triangle epsilon (0.000001, AABBTreeIndirect.hpp:737)
+/// matches `intersect_ray_first_hit`.
+///
+/// `verts_f64`/`faces_usize` are the f64/`[usize;3]` views of `triangles` over which
+/// `raycasting_tree` was built (so face indices line up with `triangles.indices`).
 pub fn raycast_visibility(
-    _raycasting_tree: &Tree3F,
+    raycasting_tree: &Tree3F,
     triangles: &indexed_triangle_set,
+    verts_f64: &[crate::geometry::Point3F],
+    faces_usize: &[[usize; 3]],
     samples: &TriangleSetSamples,
-    _negative_volumes_start_index: usize,
+    negative_volumes_start_index: usize,
 ) -> Vec<f32> {
+    use crate::geometry::Point3F;
     // SeamPlacer.cpp:143 — prepare uniform samples of a hemisphere
     let step_size = 1.0 / SQR_RAYS_PER_SAMPLE_POINT as f32;
     // SeamPlacer.cpp:144
@@ -522,11 +552,114 @@ pub fn raycast_visibility(
                 sample_hemisphere_uniform(&Vec2f::new(sample_x, sample_y));
         }
     }
-    let _ = triangles;
-    // BLOCKED — see doc comment. C++ returns per-sample visibility; we return
-    // the C++ initial value (1.0 for every sample) until ray casting is wired.
-    // SeamPlacer.cpp:156 / 162 (`result[s_idx] = 1.0f;`).
-    vec![1.0_f32; samples.positions.len()]
+
+    // SeamPlacer.cpp:154
+    let model_contains_negative_parts = negative_volumes_start_index < triangles.indices.len();
+
+    // SeamPlacer.cpp:156-205 — C++ runs under tbb::parallel_for; ported with rayon
+    // (each sample writes its own independent result slot, so the parallelism is
+    // value-equivalent to the serial loop).
+    let mut result = vec![0.0_f32; samples.positions.len()];
+    {
+        use rayon::prelude::*;
+        result
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(s_idx, out)| {
+                // SeamPlacer.cpp:162
+                *out = 1.0_f32;
+                // SeamPlacer.cpp:163
+                let decrease_step = 1.0_f32
+                    / (SQR_RAYS_PER_SAMPLE_POINT * SQR_RAYS_PER_SAMPLE_POINT) as f32;
+
+                // SeamPlacer.cpp:165-166
+                let center = samples.positions[s_idx];
+                let normal = samples.normals[s_idx];
+                // SeamPlacer.cpp:168-169 — apply the local direction via Frame.
+                let mut f = Frame::new();
+                f.set_from_z(&normal);
+
+                for dir in &precomputed_sample_directions {
+                    // SeamPlacer.cpp:172
+                    let mut final_ray_dir = f.to_world(dir);
+                    if !model_contains_negative_parts {
+                        // SeamPlacer.cpp:174-181 — single first-hit branch.
+                        let final_ray_dir_d = Point3F::new(
+                            final_ray_dir.x as f64,
+                            final_ray_dir.y as f64,
+                            final_ray_dir.z as f64,
+                        );
+                        // ray_origin = (center + normal * 0.01) — start above surface.
+                        let origin = center + normal * 0.01_f32;
+                        let ray_origin_d =
+                            Point3F::new(origin.x as f64, origin.y as f64, origin.z as f64);
+                        let hit = crate::aabb_tree_indirect::intersect_ray_first_hit(
+                            verts_f64,
+                            faces_usize,
+                            raycasting_tree,
+                            &ray_origin_d,
+                            &final_ray_dir_d,
+                        );
+                        // SeamPlacer.cpp:180 — hit && face_normal·ray_dir <= 0
+                        if let Some((_t, face_id, _p)) = hit {
+                            if its_face_normal_f32(triangles, face_id).dot(&final_ray_dir) <= 0.0 {
+                                *out -= decrease_step;
+                            }
+                        }
+                    } else {
+                        // SeamPlacer.cpp:182-203 — negative-volume all-hits path.
+                        // SeamPlacer.cpp:183
+                        let casting_from_negative_volume =
+                            samples.triangle_indices[s_idx] >= negative_volumes_start_index;
+                        // SeamPlacer.cpp:185
+                        let origin = if casting_from_negative_volume {
+                            // SeamPlacer.cpp:186-188 — invert dir, start below surface.
+                            final_ray_dir = -1.0 * final_ray_dir;
+                            center - normal * 0.01_f32
+                        } else {
+                            center + normal * 0.01_f32
+                        };
+                        let ray_origin_d =
+                            Point3F::new(origin.x as f64, origin.y as f64, origin.z as f64);
+                        let final_ray_dir_d = Point3F::new(
+                            final_ray_dir.x as f64,
+                            final_ray_dir.y as f64,
+                            final_ray_dir.z as f64,
+                        );
+                        // SeamPlacer.cpp:191 — all hits, sorted by t ascending.
+                        let hits = crate::aabb_tree_indirect::intersect_ray_all_hits(
+                            verts_f64,
+                            faces_usize,
+                            raycasting_tree,
+                            &ray_origin_d,
+                            &final_ray_dir_d,
+                        );
+                        if !hits.is_empty() {
+                            // SeamPlacer.cpp:192-201 — iterate hits in reverse.
+                            let mut counter = 0i32;
+                            for hit_index in (0..hits.len()).rev() {
+                                let face_id = hits[hit_index].1;
+                                let face_normal = its_face_normal_f32(triangles, face_id);
+                                let s = sgn(face_normal.dot(&final_ray_dir));
+                                if face_id >= negative_volumes_start_index {
+                                    // SeamPlacer.cpp:196 — negative volume hit.
+                                    counter -= s;
+                                } else {
+                                    // SeamPlacer.cpp:199
+                                    counter += s;
+                                }
+                            }
+                            // SeamPlacer.cpp:202
+                            if counter == 0 {
+                                *out -= decrease_step;
+                            }
+                        }
+                    }
+                }
+            });
+    }
+
+    result
 }
 
 /// SeamPlacer.cpp:216-262
@@ -687,18 +820,46 @@ impl GlobalModelInfo {
         false
     }
 
-    // SeamPlacer.cpp:301-326
+    /// Build the f32 KD tree over `mesh_samples.positions`, mirroring
+    /// `mesh_samples_tree = KDTreeIndirect<3, float, CoordinateFunctor>(...)`
+    /// (SeamPlacer.cpp:611). The tree borrows the positions, so it is built on
+    /// demand (like `LayerSeams::build_points_tree`) and reused across all
+    /// candidate queries of one `calculate_candidates_visibility` pass.
+    pub fn build_mesh_samples_tree(
+        &self,
+    ) -> KDTreeIndirect<3, f32, impl Fn(usize, usize) -> f32 + '_> {
+        let positions = &self.mesh_samples.positions;
+        let functor = move |index: usize, dim: usize| -> f32 { positions[index][dim] };
+        KDTreeIndirect::with_indices(functor, positions.len())
+    }
+
+    // SeamPlacer.cpp:301-326 — `calculate_point_visibility`.
     //
-    // The radius-weighted visibility averaging math is faithful. The nearby
-    // sample lookup `find_nearby_points(mesh_samples_tree, position, radius)`
-    // (SeamPlacer.cpp:303) is BLOCKED: the crate's `KDTreeIndirect` query
-    // functions bound `T: From<f64>`, which `f32` does not satisfy, so an f32 KD
-    // tree (as the C++ `KDTreeIndirect<3, float, ...>`) cannot be queried.
-    // `find_nearby_candidate_indices` returns the empty set until an f32-capable
-    // KD query exists; per C++ (SeamPlacer.cpp:304) an empty set yields 1.0.
-    pub fn calculate_point_visibility(&self, position: &Vec3f) -> f32 {
-        // SeamPlacer.cpp:303
-        let points = self.find_nearby_candidate_indices(position, self.mesh_samples_radius);
+    // The radius-weighted visibility averaging is faithful. The nearby-sample
+    // lookup `find_nearby_points(mesh_samples_tree, position, mesh_samples_radius)`
+    // (SeamPlacer.cpp:303) requires the prebuilt f32 KD tree, which the caller
+    // passes in (the tree borrows `self.mesh_samples.positions`, so it cannot be
+    // stored in `self`). When the model info is empty (no occlusion computed),
+    // the tree is empty so `find_nearby_points` returns the empty set and this
+    // yields 1.0 (the C++ SeamPlacer.cpp:304 short-circuit).
+    pub fn calculate_point_visibility<F>(
+        &self,
+        mesh_samples_tree: &KDTreeIndirect<3, f32, F>,
+        position: &Vec3f,
+    ) -> f32
+    where
+        F: Fn(usize, usize) -> f32,
+    {
+        // SeamPlacer.cpp:303 — find_nearby_points(tree, position, mesh_samples_radius).
+        // C++ `find_nearby_points` uses `descent_mask(..., max_distance², CoordType(EPSILON))`
+        // with CoordType = float, so the epsilon term is `float(EPSILON)`.
+        let points = find_nearby_points_eps(
+            mesh_samples_tree,
+            position,
+            self.mesh_samples_radius,
+            EPSILON as f32,
+            |_| true,
+        );
         // SeamPlacer.cpp:304
         if points.is_empty() {
             return 1.0;
@@ -732,12 +893,125 @@ impl GlobalModelInfo {
         // SeamPlacer.cpp:325
         total_visibility / total_weight
     }
+}
 
-    /// BLOCKED helper for `calculate_point_visibility`: f32 KD tree query is not
-    /// supported by the crate (`T: From<f64>` bound). Returns the empty set.
-    fn find_nearby_candidate_indices(&self, _position: &Vec3f, _radius: f32) -> Vec<usize> {
-        Vec::new()
+/// SeamPlacer.cpp:573-642 — `compute_global_occlusion`.
+///
+/// Builds the [`GlobalModelInfo`] occlusion data for `po`: gathers the object
+/// mesh, decimates it, uniformly samples its surface, computes the sample search
+/// radius, builds the sample KD tree's backing data + an AABB tree, and raycasts
+/// per-sample visibility.
+///
+/// COORDINATE FRAME: C++ takes the untransformed `model_object()->volumes`,
+/// applies each volume matrix, then `po->trafo_centered()` — landing the mesh in
+/// the same centered slicing frame the layers/candidates live in. In this crate
+/// the `PrintObject::mesh()` is ALREADY in that frame (the CLI centers the mesh
+/// on the bed before constructing the `PrintObject`, slicer-cli.rs:701-721), so
+/// no further transform is applied here. There are no NEGATIVE_VOLUME parts in
+/// this pipeline, so `negative_volumes_start_index == indices.len()` (the
+/// model-contains-negative-parts branch never triggers, matching Benchy).
+pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
+    let mut result = GlobalModelInfo::default();
+
+    // SeamPlacer.cpp:577-591 — gather the object parts into `triangle_set`.
+    // The crate stores a single merged `TriangleMesh` (already centered); convert
+    // it to the f32 `indexed_triangle_set` the sampler/raycaster operate on.
+    let mesh = match po.mesh() {
+        Some(m) => m,
+        None => return result,
+    };
+    let mut triangle_set = indexed_triangle_set {
+        vertices: mesh
+            .vertices()
+            .iter()
+            .map(|v| Vec3f::new(v.x as f32, v.y as f32, v.z as f32))
+            .collect(),
+        indices: mesh
+            .indices()
+            .iter()
+            .map(|t| Vec3i::new(t.indices[0] as i32, t.indices[1] as i32, t.indices[2] as i32))
+            .collect(),
+    };
+
+    // SeamPlacer.cpp:598 — decimate. `its_short_edge_collpase` takes the
+    // `normal_utils` its (structurally identical f32 vertices / i32 indices);
+    // convert across the two nominal types around the call.
+    {
+        use crate::normal_utils::{indexed_triangle_set as NuIts, Vec3crd};
+        let mut nu = NuIts {
+            vertices: triangle_set.vertices.clone(),
+            indices: triangle_set
+                .indices
+                .iter()
+                .map(|i| Vec3crd::new(i.x, i.y, i.z))
+                .collect(),
+        };
+        // SeamPlacer.cpp:598 — its_short_edge_collpase(triangle_set, fast_decimation_...).
+        crate::short_edge_collapse::its_short_edge_collpase(
+            &mut nu,
+            FAST_DECIMATION_TRIANGLE_COUNT_TARGET,
+        );
+        // SeamPlacer.cpp:602 — negative_volumes_start_index = triangle_set.indices.size().
+        // (no negative volumes are merged in; index == size.)
+        triangle_set.vertices = nu.vertices;
+        triangle_set.indices = nu
+            .indices
+            .iter()
+            .map(|i| Vec3i::new(i.x, i.y, i.z))
+            .collect();
     }
+    // SeamPlacer.cpp:602 — there are no negative volumes, so the start index is the
+    // full triangle count (the negative-volume raycast branch never triggers).
+    let negative_volumes_start_index = triangle_set.indices.len();
+
+    // SeamPlacer.cpp:609 — sample the decimated mesh surface uniformly by area.
+    result.mesh_samples = crate::triangle_set_sampling::sample_its_uniform_parallel(
+        RAYCASTING_VISIBILITY_SAMPLES_COUNT,
+        &triangle_set,
+    );
+    // SeamPlacer.cpp:610-611 — coordinate functor + KD tree (the tree is built on
+    // demand from `mesh_samples.positions`; the functor copy here is unused but
+    // kept for structural parity).
+    result.mesh_samples_coordinate_functor =
+        CoordinateFunctor::new(result.mesh_samples.positions.clone());
+
+    // SeamPlacer.cpp:617-625 — search radius for the per-perimeter-point visibility
+    // averaging (Poisson/exponential area model). Copied EXACTLY.
+    let probability = 0.9_f32;
+    let samples = 4.0_f32;
+    let density =
+        RAYCASTING_VISIBILITY_SAMPLES_COUNT as f32 / result.mesh_samples.total_area;
+    let search_area = samples / (-probability.ln() * density);
+    let search_radius = (search_area / PI).sqrt();
+    result.mesh_samples_radius = search_radius;
+
+    // SeamPlacer.cpp:633 — build the AABB tree over the (f32) triangle set. The
+    // crate tree works in f64; feed it the f32 vertices cast to f64 (lossless),
+    // matching the C++ double-precision intersection math (see `raycast_visibility`).
+    let verts_f64: Vec<crate::geometry::Point3F> = triangle_set
+        .vertices
+        .iter()
+        .map(|v| crate::geometry::Point3F::new(v.x as f64, v.y as f64, v.z as f64))
+        .collect();
+    let faces_usize: Vec<[usize; 3]> = triangle_set
+        .indices
+        .iter()
+        .map(|i| [i.x as usize, i.y as usize, i.z as usize])
+        .collect();
+    let raycasting_tree =
+        crate::aabb_tree_indirect::build_aabb_tree_over_indexed_triangle_set(&verts_f64, &faces_usize);
+
+    // SeamPlacer.cpp:637 — raycast per-sample visibility.
+    result.mesh_samples_visibility = raycast_visibility(
+        &raycasting_tree,
+        &triangle_set,
+        &verts_f64,
+        &faces_usize,
+        &result.mesh_samples,
+        negative_volumes_start_index,
+    );
+
+    result
 }
 
 /// Virtual-dispatch helper mirroring the C++ `ExtrusionEntity::collect_points`
@@ -1784,13 +2058,18 @@ impl SeamPlacer {
         _po: &PrintObject,
         global_model_info: &GlobalModelInfo,
     ) {
+        // Build the sample KD tree once (the C++ `mesh_samples_tree` is persistent
+        // in GlobalModelInfo; here the tree borrows the sample positions so it is
+        // built here and reused across all candidate queries). When the model info
+        // is empty the tree is empty and every visibility is 1.0.
+        let mesh_samples_tree = global_model_info.build_mesh_samples_tree();
         // SeamPlacer.cpp:954
         let layers = &mut self.seam_data.layers;
         // SeamPlacer.cpp:955-959
         for layer in layers.iter_mut() {
             for perimeter_point in layer.points.iter_mut() {
-                perimeter_point.visibility =
-                    global_model_info.calculate_point_visibility(&perimeter_point.position);
+                perimeter_point.visibility = global_model_info
+                    .calculate_point_visibility(&mesh_samples_tree, &perimeter_point.position);
             }
         }
     }
@@ -2437,18 +2716,14 @@ impl SeamPlacer {
     ///
     /// Orchestrates per-object seam computation. C++ first builds the
     /// [`GlobalModelInfo`] via `gather_enforcers_blockers` +
-    /// `compute_global_occlusion` (SeamPlacer.cpp:1406-1452); those gathers are
-    /// still BLOCKED here (need `ModelVolume` seam-painting facets and
-    /// `PrintObject::{model_object,trafo_centered}` + f32 AABB raycast — see the
-    /// module header). We therefore pass an empty [`GlobalModelInfo`]: every
-    /// candidate gets `visibility = 1.0` (the C++ `calculate_point_visibility`
-    /// empty-neighbours short-circuit, SeamPlacer.cpp:304). Because the
-    /// [`SeamComparator`] penalty enters visibility as `+a.visibility` vs
-    /// `+b.visibility`, a constant `1.0` for both sides cancels in
-    /// `penalty_a < penalty_b`, so the *relative* candidate ranking — and hence
-    /// the seam selection and alignment — is identical to a run with real
-    /// occlusion whenever the model has no seam-painting and no self-occlusion
-    /// tie-breaks (the common case for `seam_position = aligned`).
+    /// `compute_global_occlusion` (SeamPlacer.cpp:1406-1452). This port runs
+    /// [`compute_global_occlusion`] (real per-vertex raycast visibility); the
+    /// enforcer/blocker gather stays empty (no seam painting in this pipeline).
+    /// Real visibility values DO matter: in the [`SeamComparator`] penalty,
+    /// `a.visibility` vs `b.visibility` differ between vertices of a loop, so they
+    /// break the angle/overhang/embedding ties that a constant `1.0` (the old
+    /// stub) would leave to the next term — e.g. the symmetric-loop mirror-vertex
+    /// case where two candidates tie on angle but differ in occlusion.
     ///
     /// Then, mirroring SeamPlacer.cpp:1456-1460, it runs:
     /// `gather_seam_candidates` → `calculate_candidates_visibility` →
@@ -2464,8 +2739,15 @@ impl SeamPlacer {
             SeamPosition::spRear => SeamPositionMode::Rear,
         };
 
-        // SeamPlacer.cpp:1406-1452 — BLOCKED gathers; empty model info.
-        let global_model_info = GlobalModelInfo::default();
+        // SeamPlacer.cpp:1406-1452 — gather global model info.
+        // C++ runs `compute_global_occlusion` (always) and, for spAligned/spNearest,
+        // `gather_enforcers_blockers`. The enforcer/blocker gather needs ModelVolume
+        // seam-painting facets (not present in this pipeline; Benchy has none), so it
+        // is left as the empty default. `compute_global_occlusion` IS run: it samples
+        // the object mesh and raycasts per-sample visibility so candidates get real
+        // per-vertex occlusion values (breaking the symmetric-loop angle/overhang ties
+        // the comparator would otherwise resolve arbitrarily).
+        let global_model_info = compute_global_occlusion(po);
 
         // SeamPlacer.cpp:1456 — gather_seam_candidates.
         self.gather_seam_candidates(po, &global_model_info, configured_seam_preference);
