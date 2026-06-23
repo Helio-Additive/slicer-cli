@@ -76,7 +76,15 @@ impl<'a> Drop for SeamContextGuard<'a> {
 /// the loop (caller falls back to the legacy `find_best_seam_index` heuristic).
 fn active_place_seam(polygon: &crate::geometry::Polygon, last_pos: Point) -> Option<Point> {
     SEAM_CTX.with(|c| {
-        let (placer_ptr, layer_idx) = c.get()?;
+        let ctx = c.get();
+        if std::env::var("SEAMDBG").is_ok() {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static CNT: AtomicUsize = AtomicUsize::new(0);
+            if CNT.fetch_add(1, Ordering::Relaxed) < 6 {
+                eprintln!("SEAMDBG active_place_seam: ctx_installed={}", ctx.is_some());
+            }
+        }
+        let (placer_ptr, layer_idx) = ctx?;
         // SAFETY: the pointer is valid for the lifetime of the installed
         // `SeamContextGuard`, which strictly encloses every `extrude_loop` call
         // that can observe this context (single-threaded sequential export).
@@ -275,7 +283,14 @@ pub fn extrude_loop(
             polygon.points()[seam_idx]
         }
     };
-    split_loop_at_closest_point(&mut loop_copy, seam_point);
+    // C++ GCode.cpp:5088 / ExtrusionLoop::split_at — split the loop at the seam
+    // point so it becomes the loop's new start vertex. This is the faithful
+    // within-path split (ExtrusionEntity.cpp:255-305): it splits the containing
+    // path at the seam point even for single-path loops, unlike the legacy
+    // path-only rotate. `prefer_non_overhang = false` matches the seam-placer
+    // path (the placer already steered the seam off overhangs). The epsilon is
+    // C++'s `scaled<double>(0.0015)` snapping tolerance.
+    loop_copy.split_at(&seam_point, false, scale(0.0015) as f64);
 
     // C++ reference: GCode.cpp:5107-5117
     // C++: const double seam_gap = scale_(EXTRUDER_CONFIG(nozzle_diameter)) * (m_config.seam_gap.value / 100);
