@@ -562,7 +562,7 @@ impl LayerRegion {
         // C++ instead: collapse the gaps to the truly-thin band, run medial_axis to get
         // variable-width centerlines, and emit those via variable_width().
         if !result.gap_fills.is_empty() {
-            use crate::clipper_utils::{difference, offset2_clib, OffsetJoinType};
+            use crate::clipper_utils::{difference_clib, offset2_clib, OffsetJoinType};
             use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
             use crate::perimeter_generator::convert_thin_walls_to_extrusion_paths;
 
@@ -587,7 +587,8 @@ impl LayerRegion {
             // join type at the call site). Both offsets route through clipper-z-sys
             // (vendored ClipperLib @ 1e5, jtMiter, MiterLimit=3.0) instead of geo-clipper
             // @ 1µm, which over-segments the gap-region contours feeding medial_axis.
-            // `difference` stays on geo-clipper (no clib boolean for closed paths).
+            // `diff_ex` also routes through the vertex-exact vendored ClipperLib
+            // (difference_clib) so the gap band contours are not re-segmented.
             let opened_min = offset2_clib(
                 &result.gap_fills,
                 min / 2.0,
@@ -600,7 +601,7 @@ impl LayerRegion {
                 max / 2.0 + CLIPPER_SAFETY_OFFSET,
                 OffsetJoinType::Miter,
             );
-            let mut gaps_ex = difference(&opened_min, &wide_part);
+            let mut gaps_ex = difference_clib(&opened_min, &wide_part);
 
             // PerimeterGenerator.cpp:914 — surface_simplify_resolution =
             //   (enable_arc_fitting && fuzzy_skin == None) ? 0.2 * m_scaled_resolution
@@ -2096,7 +2097,7 @@ impl Layer {
             // G2/G3 on the top surface (native: 113 arcs; without this Rust got 4).
             if is_monotonic_line && mono_density >= 1.0 && !mono_no_overlap.is_empty() {
                 use crate::clipper_utils::{
-                    difference, intersection_ex_expolygons_polygons, offset2, opening_ex,
+                    difference_clib, intersection_ex_expolygons_polygons, offset2_clib,
                     union_polygons_ex, OffsetJoinType,
                 };
                 use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
@@ -2104,11 +2105,12 @@ impl Layer {
 
                 // C++: ExPolygons unextruded_areas = diff_ex(no_overlap,
                 //          union_ex(coll_nosort->polygons_covered_by_spacing(10)));
+                // diff_ex via the vertex-exact vendored ClipperLib (difference_clib).
                 let unextruded_areas: ExPolygons = if mono_covered.is_empty() {
                     mono_no_overlap.clone()
                 } else {
                     let covered_ex = union_polygons_ex(&mono_covered);
-                    difference(&mono_no_overlap, &covered_ex)
+                    difference_clib(&mono_no_overlap, &covered_ex)
                 };
 
                 // C++: gapfill_areas = union_ex(unextruded_areas);
@@ -2140,14 +2142,21 @@ impl Layer {
 
                     // C++: gaps_ex = diff_ex(opening_ex(gapfill_areas, min/2),
                     //          offset2_ex(gapfill_areas, -max/2, max/2 + ClipperSafetyOffset));
-                    let opened_min = opening_ex(&gapfill_areas, min / 2.0);
-                    let wide_part = offset2(
+                    // opening_ex(g, d) == offset2_ex(g, -d, +d); both opening_ex and
+                    // offset2_ex here take no explicit join type, so DefaultJoinType =
+                    // jtMiter, DefaultMiterLimit = 3.0 (ClipperUtils.hpp:31,37). Route
+                    // the offsets + diff_ex through the vertex-exact vendored ClipperLib
+                    // (offset2_clib / difference_clib) so the gap-band contours feeding
+                    // medial_axis are not over-segmented (vs geo-clipper @ 1µm).
+                    let opened_min =
+                        offset2_clib(&gapfill_areas, min / 2.0, min / 2.0, OffsetJoinType::Miter);
+                    let wide_part = offset2_clib(
                         &gapfill_areas,
                         max / 2.0,
                         max / 2.0 + CLIPPER_SAFETY_OFFSET,
-                        OffsetJoinType::Square,
+                        OffsetJoinType::Miter,
                     );
-                    let mut gaps_ex = difference(&opened_min, &wide_part);
+                    let mut gaps_ex = difference_clib(&opened_min, &wide_part);
 
                     if !gaps_ex.is_empty() {
                         // C++: ex.douglas_peucker(SCALED_RESOLUTION * 0.1) then
