@@ -55,6 +55,15 @@ CzZPaths cz_clip_extrusion(const int32_t *subject_xyz, int32_t subject_n,
 // Free a CzZPaths returned by cz_clip_extrusion.
 void cz_free_zpaths(CzZPaths paths);
 
+// ASSESS-ONLY (offset-vtx-assess branch): faithful non-Z ClipperOffset mirroring
+// libslic3r raw_offset() (ClipperUtils.cpp:272). jtMiter, MiterLimit=3.0,
+// ShortestEdgeLength=|delta|*0.005, etClosedPolygon. Single closed input path
+// (`xy` = n int32 x,y pairs). Reorients like Execute (signum reversed for CW).
+// Returns the offset output paths flat (CzZPaths reused; z is always 0). Used by
+// the vertex-density comparison harness only; NOT a production primitive.
+//   join_type: 0=jtMiter, 1=jtRound, 2=jtSquare. delta is in input integer units.
+CzZPaths cz_offset_closed(const int32_t *xy, int32_t n, double delta, int32_t join_type);
+
 #ifdef __cplusplus
 }
 #endif

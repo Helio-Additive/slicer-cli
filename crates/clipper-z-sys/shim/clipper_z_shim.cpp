@@ -236,3 +236,69 @@ extern "C" void cz_free_zpaths(CzZPaths paths) {
     std::free(paths.coords);
     std::free(paths.path_lens);
 }
+
+// ---------------------------------------------------------------------------
+// ASSESS-ONLY: non-Z ClipperOffset, faithful to libslic3r raw_offset().
+// ---------------------------------------------------------------------------
+extern "C" CzZPaths cz_offset_closed(const int32_t *xy, int32_t n, double delta,
+                                     int32_t join_type) {
+    // Fully qualify ClipperLib:: throughout: the file-level
+    // `using ClipperLib_Z::{IntPoint,Path,Paths}` (anon namespace above) would
+    // otherwise make the unqualified names ambiguous.
+    ClipperLib::Path path;
+    path.reserve(n);
+    for (int32_t i = 0; i < n; ++i)
+        path.emplace_back(xy[2 * i], xy[2 * i + 1]);
+
+    ClipperLib::JoinType jt = ClipperLib::jtMiter;
+    if (join_type == 1) jt = ClipperLib::jtRound;
+    else if (join_type == 2) jt = ClipperLib::jtSquare;
+
+    // Mirror raw_offset(): MiterLimit=3.0 (jtRound would use ArcTolerance),
+    // ShortestEdgeLength = |delta| * ClipperOffsetShortestEdgeFactor (0.005).
+    ClipperLib::ClipperOffset co;
+    if (jt == ClipperLib::jtRound)
+        co.ArcTolerance = 3.0;
+    else
+        co.MiterLimit = 3.0;
+    co.ShortestEdgeLength = std::fabs(delta * 0.005);
+
+    co.AddPath(path, jt, ClipperLib::etClosedPolygon);
+    // Reorient like raw_offset: Execute reorients to CCW; offset signum reversed.
+    bool ccw = ClipperLib::Orientation(path);
+    ClipperLib::Paths out_this;
+    co.Execute(out_this, ccw ? delta : -delta);
+    if (!ccw)
+        for (ClipperLib::Path &p : out_this)
+            std::reverse(p.begin(), p.end());
+
+    CzZPaths out;
+    out.num_paths = (int32_t) out_this.size();
+    int32_t total = 0;
+    for (const ClipperLib::Path &p : out_this)
+        total += (int32_t) p.size();
+    out.total_points = total;
+
+    if (out.num_paths > 0) {
+        out.path_lens = (int32_t *) std::malloc(sizeof(int32_t) * out.num_paths);
+        for (int32_t i = 0; i < out.num_paths; ++i)
+            out.path_lens[i] = (int32_t) out_this[i].size();
+    } else {
+        out.path_lens = nullptr;
+    }
+
+    if (total > 0) {
+        out.coords = (int32_t *) std::malloc(sizeof(int32_t) * 3 * total);
+        int32_t k = 0;
+        for (const ClipperLib::Path &p : out_this)
+            for (const ClipperLib::IntPoint &ip : p) {
+                out.coords[3 * k + 0] = (int32_t) ip.x();
+                out.coords[3 * k + 1] = (int32_t) ip.y();
+                out.coords[3 * k + 2] = 0;
+                ++k;
+            }
+    } else {
+        out.coords = nullptr;
+    }
+    return out;
+}

@@ -45,6 +45,13 @@ extern "C" {
 
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
+
+    /// ASSESS-ONLY: non-Z ClipperOffset of a single closed path (`xy` = `n`
+    /// int32 x,y pairs), faithful to libslic3r `raw_offset` (jtMiter,
+    /// MiterLimit=3.0, ShortestEdgeLength=|delta|*0.005). `join_type`:
+    /// 0=jtMiter,1=jtRound,2=jtSquare. Output z is always 0. Free via
+    /// [`cz_free_zpaths`].
+    pub fn cz_offset_closed(xy: *const i32, n: i32, delta: f64, join_type: i32) -> CzZPaths;
 }
 
 #[cfg(test)]
