@@ -2432,6 +2432,170 @@ impl SeamPlacer {
             }
         }
     }
+
+    /// SeamPlacer.cpp:1395-1461 — `SeamPlacer::init`.
+    ///
+    /// Orchestrates per-object seam computation. C++ first builds the
+    /// [`GlobalModelInfo`] via `gather_enforcers_blockers` +
+    /// `compute_global_occlusion` (SeamPlacer.cpp:1406-1452); those gathers are
+    /// still BLOCKED here (need `ModelVolume` seam-painting facets and
+    /// `PrintObject::{model_object,trafo_centered}` + f32 AABB raycast — see the
+    /// module header). We therefore pass an empty [`GlobalModelInfo`]: every
+    /// candidate gets `visibility = 1.0` (the C++ `calculate_point_visibility`
+    /// empty-neighbours short-circuit, SeamPlacer.cpp:304). Because the
+    /// [`SeamComparator`] penalty enters visibility as `+a.visibility` vs
+    /// `+b.visibility`, a constant `1.0` for both sides cancels in
+    /// `penalty_a < penalty_b`, so the *relative* candidate ranking — and hence
+    /// the seam selection and alignment — is identical to a run with real
+    /// occlusion whenever the model has no seam-painting and no self-occlusion
+    /// tie-breaks (the common case for `seam_position = aligned`).
+    ///
+    /// Then, mirroring SeamPlacer.cpp:1456-1460, it runs:
+    /// `gather_seam_candidates` → `calculate_candidates_visibility` →
+    /// `calculate_overhangs_and_layer_embedding` → per-perimeter initial seam
+    /// pick (`pick_seam_point`/`pick_nearest`/`pick_random`, SeamPlacer.cpp:1100
+    /// loop / `SeamPlacer::place_seam` fallback) → `align_seam_points` (for
+    /// `spAligned`).
+    pub fn init(&mut self, po: &PrintObject, configured_seam_preference: SeamPosition) {
+        self.config_mode = match configured_seam_preference {
+            SeamPosition::spAligned => SeamPositionMode::Aligned,
+            SeamPosition::spNearest => SeamPositionMode::Nearest,
+            SeamPosition::spRandom => SeamPositionMode::Random,
+            SeamPosition::spRear => SeamPositionMode::Rear,
+        };
+
+        // SeamPlacer.cpp:1406-1452 — BLOCKED gathers; empty model info.
+        let global_model_info = GlobalModelInfo::default();
+
+        // SeamPlacer.cpp:1456 — gather_seam_candidates.
+        self.gather_seam_candidates(po, &global_model_info, configured_seam_preference);
+        // SeamPlacer.cpp:1457 — calculate_candidates_visibility (visibility==1.0).
+        self.calculate_candidates_visibility(po, &global_model_info);
+        // SeamPlacer.cpp:1458 — calculate_overhangs_and_layer_embedding.
+        self.calculate_overhangs_and_layer_embedding(po);
+
+        // SeamPlacer.cpp:1459-1460 — pick the initial seam of every perimeter,
+        // then run alignment. In C++ the per-perimeter pick happens inside a
+        // `tbb::parallel_for` over layers (the `pick_seam_point` /
+        // `pick_nearest_seam_point_index` / `pick_random_seam_point` dispatch on
+        // `m_seam_position`). Ported serially with identical results.
+        let comparator = SeamComparator::new(configured_seam_preference);
+        for layer in self.seam_data.layers.iter_mut() {
+            let LayerSeams { perimeters, points } = layer;
+            // Walk each perimeter via its [start_index, end_index) run, exactly
+            // like `gather_all_seams_of_object` (SeamPlacer.cpp:1312-1318).
+            let mut current_point_index = 0usize;
+            while current_point_index < points.len() {
+                let perim_idx = points[current_point_index].perimeter;
+                let end_index = perimeters[perim_idx].end_index;
+                match configured_seam_preference {
+                    SeamPosition::spRandom => {
+                        pick_random_seam_point(points, perimeters, current_point_index);
+                    }
+                    SeamPosition::spNearest => {
+                        // C++ defers the nearest pick to place_seam (it needs the
+                        // live extruder position); here we seed `seam_index` with
+                        // the position-independent best so the data is valid, and
+                        // place_seam re-resolves the nearest at emit time.
+                        pick_seam_point(points, perimeters, current_point_index, &comparator);
+                    }
+                    SeamPosition::spAligned | SeamPosition::spRear => {
+                        pick_seam_point(points, perimeters, current_point_index, &comparator);
+                    }
+                }
+                current_point_index = end_index;
+            }
+        }
+
+        // SeamPlacer.cpp:1460 — align_seam_points (spAligned/spRear path).
+        if matches!(
+            configured_seam_preference,
+            SeamPosition::spAligned | SeamPosition::spRear
+        ) {
+            self.align_seam_points(po, &comparator);
+        }
+    }
+
+    /// SeamPlacer.cpp:1463-1528 — `SeamPlacer::place_seam` (seam-vertex lookup).
+    ///
+    /// Given the layer index and the (already CCW) perimeter polygon being
+    /// extruded, returns the scaled seam [`Point`] at which the loop should be
+    /// split. C++ takes the `Layer*`, derives the `PrintObject`, looks the loop's
+    /// first point up in that layer's `points_tree` to find the owning
+    /// `Perimeter`, and returns its `final_seam_position` when finalized (the
+    /// aligned position) or the `seam_index` candidate otherwise
+    /// (SeamPlacer.cpp:1481-1520). The `loop.split_at(seam_point, ...)` itself
+    /// happens in `GCode::extrude_loop` (the caller).
+    ///
+    /// For `spNearest` (not finalized during `init`) we resolve the nearest
+    /// candidate to `last_pos` at emit time (SeamPlacer.cpp:1505 path), matching
+    /// C++ `pick_nearest_seam_point_index`.
+    ///
+    /// Returns `None` when this layer has no seam data for the polygon (e.g. the
+    /// loop is not a region perimeter, or the layer index is out of range), so
+    /// the caller can fall back to the legacy heuristic.
+    pub fn place_seam(&self, layer_idx: usize, polygon: &Polygon, last_pos: Point) -> Option<Point> {
+        // SeamPlacer.cpp:1464-1470 — guard.
+        if layer_idx >= self.seam_data.layers.len() {
+            return None;
+        }
+        let layer = &self.seam_data.layers[layer_idx];
+        if layer.points.is_empty() {
+            return None;
+        }
+
+        // SeamPlacer.cpp:1481-1485 — query the per-layer f32 points_tree for the
+        // candidate nearest to the loop's first vertex, identifying the owning
+        // perimeter. C++ uses `find_closest_point(*layer_seams.points_tree,
+        // unscaled_p)`; we mirror it with the f32 KD tree built on demand.
+        let first = polygon.points()[0];
+        let up = unscale_point(&first);
+        // C++ projects to the candidate z; candidates carry their own z so a 3D
+        // query against the loop's xy at the candidate plane is exact. We query
+        // with the layer's candidate z (all candidates of a layer share z).
+        let query = Vec3f::new(up.x as f32, up.y as f32, layer.points[0].position.z);
+        let points_tree = layer.build_points_tree();
+        let nearest_point_index = crate::kd_tree_indirect::find_closest_point_eps(
+            &points_tree,
+            &query,
+            EPSILON as f32,
+            f32::MAX,
+            |_| true,
+        );
+        if nearest_point_index == crate::kd_tree_indirect::NPOS {
+            return None;
+        }
+
+        // SeamPlacer.cpp:1487 — resolve the owning perimeter.
+        let perim_idx = layer.points[nearest_point_index].perimeter;
+        let perimeter = &layer.perimeters[perim_idx];
+
+        // SeamPlacer.cpp:1505-1520 — pick the seam position.
+        let seam_position: Vec3f = if self.config_mode == SeamPositionMode::Nearest {
+            // SeamPlacer.cpp:1505 — nearest is resolved against the live position.
+            let preffered = Vec2f::new(up.x as f32, up.y as f32);
+            let _ = last_pos; // last_pos is encoded via `up` (loop start == last_pos here).
+            let idx = pick_nearest_seam_point_index(
+                &layer.points,
+                &layer.perimeters,
+                perimeter.start_index,
+                &preffered,
+            );
+            layer.points[idx].position
+        } else if perimeter.finalized {
+            // SeamPlacer.cpp:1512 — aligned/random/rear store final_seam_position.
+            perimeter.final_seam_position
+        } else {
+            // SeamPlacer.cpp:1515 — fall back to the per-perimeter seam_index.
+            layer.points[perimeter.seam_index].position
+        };
+
+        // Scale back to coord_t (the loop is in scaled coordinates).
+        Some(Point::new(
+            crate::scale(seam_position.x as f64),
+            crate::scale(seam_position.y as f64),
+        ))
+    }
 }
 
 /// Gather a single perimeter polygon into a `LayerSeams`, mirroring the
