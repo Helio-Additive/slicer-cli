@@ -1111,6 +1111,114 @@ pub fn offset2_clib(
     grow_clib(&shrunk, grow_amount.abs(), join_type)
 }
 
+/// Flatten a set of ExPolygons into the flat (x,y i32 pairs + per-path lengths)
+/// layout the `cz_difference_closed` shim expects. Each ExPolygon contributes its
+/// contour and each hole as a separate closed path, in natural orientation —
+/// matching ClipperUtils::ExPolygonsProvider.
+fn clib_flatten_expolygons(expolygons: &[ExPolygon]) -> (Vec<i32>, Vec<i32>, i32) {
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    for ex in expolygons {
+        let mut push_ring = |ring: &Polygon| {
+            let pts = ring.points();
+            lens.push(pts.len() as i32);
+            for p in pts {
+                assert_i32_scaled(p.x);
+                assert_i32_scaled(p.y);
+                xy.push(p.x as i32);
+                xy.push(p.y as i32);
+            }
+        };
+        push_ring(&ex.contour);
+        for hole in &ex.holes {
+            push_ring(hole);
+        }
+    }
+    let num = lens.len() as i32;
+    (xy, lens, num)
+}
+
+/// ClipperLib-backed `diff_ex(subject, clip, ApplySafetyOffset::No)`
+/// (ClipperUtils.cpp:742-768): closed-path boolean DIFFERENCE (subject - clip)
+/// over the vertex-exact vendored ClipperLib (clipper-z-sys @ 1e5), instead of
+/// geo-clipper @ 1µm which over-segments the result contours.
+///
+/// Faithfulness: the shim runs `clipper_do<Paths>(ctDifference, subject, clip,
+/// pftNonZero)` and returns the raw difference paths; we then re-union them via
+/// `union_polygons_ex` (NonZero union + PolyTree nesting), which is exactly
+/// `diff_ex` = `PolyTreeToExPolygons(clipper_do_polytree(...))` (the polytree
+/// pass is itself a re-union of the difference Paths — ClipperUtils.cpp:640-653).
+/// No safety offset is applied (the gap-fill call sites use ApplySafetyOffset::No).
+pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    if subject.is_empty() {
+        return vec![];
+    }
+    if clip.is_empty() {
+        return subject.to_vec();
+    }
+
+    let (subject_xy, subject_lens, subject_num) = clib_flatten_expolygons(subject);
+    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    if subject_num == 0 {
+        return vec![];
+    }
+
+    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
+    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
+    // out then free via cz_free_zpaths.
+    let raw = unsafe {
+        clipper_z_sys::cz_difference_closed(
+            subject_xy.as_ptr(),
+            subject_lens.as_ptr(),
+            subject_num,
+            if clip_xy.is_empty() {
+                std::ptr::null()
+            } else {
+                clip_xy.as_ptr()
+            },
+            if clip_lens.is_empty() {
+                std::ptr::null()
+            } else {
+                clip_lens.as_ptr()
+            },
+            clip_num,
+        )
+    };
+
+    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            all_paths.push(Polygon::from_points(pts));
+        }
+    }
+
+    // SAFETY: `raw` was produced by cz_difference_closed and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+
+    if all_paths.is_empty() {
+        return vec![];
+    }
+
+    // union_polygons_ex == NonZero union + PolyTree->ExPolygons, matching the
+    // clipper_do_polytree re-union pass of diff_ex.
+    union_polygons_ex(&all_paths)
+}
+
 /// Detect gaps between two polygon sets.
 ///
 /// Gaps are the narrow regions that exist in the outer area but not in the
@@ -2138,6 +2246,33 @@ mod tests {
 
     fn make_square_mm(x: f64, y: f64, size: f64) -> ExPolygon {
         make_square(crate::scale(x), crate::scale(y), crate::scale(size))
+    }
+
+    #[test]
+    fn test_difference_clib_ring() {
+        // 20mm square minus a centered 10mm square => a ring: one ExPolygon with
+        // one hole, area ≈ 400 - 100 = 300 mm².
+        let outer = make_square_mm(0.0, 0.0, 20.0);
+        let inner = make_square_mm(5.0, 5.0, 10.0);
+        let result = difference_clib(&[outer], &[inner]);
+        assert_eq!(result.len(), 1, "ring should be a single ExPolygon, got {result:?}");
+        assert_eq!(result[0].holes.len(), 1, "ring should have exactly one hole");
+        let area_mm2: CoordF =
+            result.iter().map(|e| e.area()).sum::<CoordF>()
+                / (crate::SCALING_FACTOR * crate::SCALING_FACTOR);
+        assert!(
+            (area_mm2 - 300.0).abs() < 1.0,
+            "ring area should be ~300 mm², got {area_mm2}"
+        );
+    }
+
+    #[test]
+    fn test_difference_clib_empty_clip_passthrough() {
+        // Empty clip => subject returned unchanged (matches diff with no clip).
+        let outer = make_square_mm(0.0, 0.0, 10.0);
+        let result = difference_clib(&[outer.clone()], &[]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].holes.len(), 0);
     }
 
     #[test]

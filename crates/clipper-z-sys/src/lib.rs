@@ -61,6 +61,24 @@ extern "C" {
         miter_limit: f64,
     ) -> CzZPaths;
 
+    /// Faithful closed-path boolean DIFFERENCE (subject - clip), mirroring
+    /// `clipper_do<ClipperLib::Paths>(ctDifference, subject, clip, pftNonZero)`
+    /// (ClipperUtils.cpp:309-322), the engine behind `diff` / `diff_ex`
+    /// (ApplySafetyOffset::No). `subject_xy`/`clip_xy` are flat int32 (x,y) pairs;
+    /// `subject_lens`/`clip_lens` give per-path point counts; `subject_num`/
+    /// `clip_num` the path counts. Each ExPolygon contributes its contour + holes
+    /// as separate closed paths in natural orientation. Output is the raw
+    /// difference paths (z always 0); the caller re-unions into ExPolygons. Free
+    /// via [`cz_free_zpaths`].
+    pub fn cz_difference_closed(
+        subject_xy: *const i32,
+        subject_lens: *const i32,
+        subject_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+    ) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 }

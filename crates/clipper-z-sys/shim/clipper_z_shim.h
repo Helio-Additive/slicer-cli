@@ -77,6 +77,28 @@ CzZPaths cz_offset_expolygon(const int32_t *contour_xy, int32_t contour_n,
                              int32_t hole_num, double delta, int32_t join_type,
                              double miter_limit);
 
+// Faithful replica of libslic3r ClipperUtils.cpp `_clipper` /
+// `clipper_do<ClipperLib::Paths>(ctDifference, subject, clip, pftNonZero)`
+// (ClipperUtils.cpp:309-322, 669-692): a closed-path boolean DIFFERENCE
+// (subject - clip) over the non-Z ClipperLib. Both subject and clip are sets of
+// CLOSED paths (each ExPolygon contributes its contour + holes as separate paths,
+// in their natural orientation — exactly what ClipperUtils::ExPolygonsProvider
+// emits). The two pass `pftNonZero / pftNonZero` fill rules, matching
+// `_clipper` (ClipperUtils.cpp:672). NO safety offset is applied (the gap-fill
+// `diff_ex` call sites use ApplySafetyOffset::No).
+//
+// Layout (both subject and clip): flat (x,y) int32 pairs + per-path point counts.
+//   subject_xy / subject_lens / subject_num
+//   clip_xy    / clip_lens    / clip_num
+// Returns the raw difference output as flat CLOSED paths (z always 0); the caller
+// re-unions them into ExPolygons (NonZero union + PolyTree nesting), which makes
+// the whole thing byte-faithful to `diff_ex` =
+// PolyTreeToExPolygons(clipper_do_polytree(ctDifference, ..., pftNonZero)).
+// Free via cz_free_zpaths.
+CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_lens,
+                              int32_t subject_num, const int32_t *clip_xy,
+                              const int32_t *clip_lens, int32_t clip_num);
+
 #ifdef __cplusplus
 }
 #endif

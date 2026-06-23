@@ -361,6 +361,58 @@ extern "C" CzZPaths cz_offset_expolygon(const int32_t *contour_xy, int32_t conto
     return marshal_paths(result);
 }
 
+// ---------------------------------------------------------------------------
+// cz_difference_closed — faithful replica of ClipperUtils.cpp
+// `clipper_do<ClipperLib::Paths>(ctDifference, subject, clip, pftNonZero)`
+// (ClipperUtils.cpp:309-322), the closed-path boolean difference underpinning
+// `diff` / `diff_ex` (ApplySafetyOffset::No path). See the header for the
+// faithfulness argument (the Rust caller re-unions the output to a PolyTree,
+// matching clipper_do_polytree -> PolyTreeToExPolygons).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Read `num` closed paths from a flat (x,y) int32 buffer + per-path lengths into
+// a vector of ClipperLib (non-Z) Paths, in their natural orientation (matching
+// ClipperUtils::ExPolygonsProvider: contour + holes emitted verbatim).
+ClipperLib::Paths read_closed_paths(const int32_t *xy, const int32_t *lens, int32_t num) {
+    ClipperLib::Paths paths;
+    if (num <= 0 || xy == nullptr || lens == nullptr)
+        return paths;
+    paths.reserve(num);
+    const int32_t *cursor = xy;
+    for (int32_t p = 0; p < num; ++p) {
+        int32_t len = lens[p];
+        ClipperLib::Path path;
+        path.reserve(len);
+        for (int32_t i = 0; i < len; ++i)
+            path.emplace_back(cursor[2 * i], cursor[2 * i + 1]);
+        cursor += 2 * len;
+        paths.emplace_back(std::move(path));
+    }
+    return paths;
+}
+
+} // namespace
+
+extern "C" CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_lens,
+                                         int32_t subject_num, const int32_t *clip_xy,
+                                         const int32_t *clip_lens, int32_t clip_num) {
+    ClipperLib::Paths subject = read_closed_paths(subject_xy, subject_lens, subject_num);
+    ClipperLib::Paths clip = read_closed_paths(clip_xy, clip_lens, clip_num);
+
+    // clipper_do<ClipperLib::Paths>(ctDifference, subject, clip, pftNonZero)
+    // (ClipperUtils.cpp:309-322). Both subject and clip paths are closed (true).
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, true);
+    clipper.AddPaths(clip, ClipperLib::ptClip, true);
+    ClipperLib::Paths solution;
+    clipper.Execute(ClipperLib::ctDifference, solution, ClipperLib::pftNonZero,
+                    ClipperLib::pftNonZero);
+
+    return marshal_paths(solution);
+}
+
 extern "C" void cz_free_zpaths(CzZPaths paths) {
     std::free(paths.coords);
     std::free(paths.path_lens);
