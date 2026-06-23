@@ -2482,6 +2482,9 @@ impl SeamPlacer {
         let comparator = SeamComparator::new(configured_seam_preference);
         for layer in self.seam_data.layers.iter_mut() {
             let LayerSeams { perimeters, points } = layer;
+            // The pick functions take `&mut [Perimeter]`; `perimeters` is a
+            // `VecDeque`, so expose its contiguous backing slice.
+            let perimeters = perimeters.make_contiguous();
             // Walk each perimeter via its [start_index, end_index) run, exactly
             // like `gather_all_seams_of_object` (SeamPlacer.cpp:1312-1318).
             let mut current_point_index = 0usize;
@@ -2575,9 +2578,13 @@ impl SeamPlacer {
             // SeamPlacer.cpp:1505 — nearest is resolved against the live position.
             let preffered = Vec2f::new(up.x as f32, up.y as f32);
             let _ = last_pos; // last_pos is encoded via `up` (loop start == last_pos here).
+            // `perimeters` is contiguous after `init` (make_contiguous); the
+            // back-reference indices live in the single front segment.
+            let (perim_slice, tail) = layer.perimeters.as_slices();
+            debug_assert!(tail.is_empty(), "perimeters deque must be contiguous after init");
             let idx = pick_nearest_seam_point_index(
                 &layer.points,
-                &layer.perimeters,
+                perim_slice,
                 perimeter.start_index,
                 &preffered,
             );

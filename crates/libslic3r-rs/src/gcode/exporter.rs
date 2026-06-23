@@ -17,6 +17,74 @@ use crate::print_config::PrintConfig;
 use crate::Result;
 use crate::{scale, unscale};
 
+use super::seam_placer::SeamPlacer;
+use std::cell::Cell;
+
+// =============================================================================
+// Active seam-placer context (the free-function analogue of C++ `GCode`'s
+// instance state `m_seam_placer` + `m_layer`, GCode.hpp).
+//
+// The Rust gcode pipeline is a chain of free functions (`extrude_perimeters` ->
+// `extrude_collection` -> `extrude_entity` -> `extrude_loop`) rather than
+// methods on a stateful `GCode`. To make the per-object/per-layer SeamPlacer
+// available to `extrude_loop` (which performs the C++
+// `m_seam_placer.place_seam(m_layer, loop, ...)` call, GCode.cpp:5085) without
+// threading it through every signature and every recursive collection, the
+// driver (`print.rs`) installs the active placer + layer index here for the
+// duration of one layer's region extrusion via [`SeamContextGuard`].
+//
+// Export is strictly single-threaded and sequential, so a thread-local pointer
+// scoped by a guard is sound: the borrowed `SeamPlacer` outlives the guard.
+// =============================================================================
+thread_local! {
+    static SEAM_CTX: Cell<Option<(*const SeamPlacer, usize)>> = const { Cell::new(None) };
+}
+
+/// RAII guard installing `(placer, layer_idx)` as the active seam context.
+/// On drop it restores the previously-installed context.
+///
+/// Mirrors C++ setting `m_layer`/`m_seam_placer` before the per-region extrude
+/// in `GCode::process_layer` (GCode.cpp:4570+). The borrow of `placer` is tied
+/// to the guard's lifetime, so the pointer stored in the thread-local is valid
+/// for as long as the guard lives (and the guard strictly encloses every
+/// `extrude_loop` call that can observe the context).
+pub struct SeamContextGuard<'a> {
+    prev: Option<(*const SeamPlacer, usize)>,
+    _marker: std::marker::PhantomData<&'a SeamPlacer>,
+}
+
+impl<'a> SeamContextGuard<'a> {
+    pub fn install(placer: &'a SeamPlacer, layer_idx: usize) -> Self {
+        let prev =
+            SEAM_CTX.with(|c| c.replace(Some((placer as *const SeamPlacer, layer_idx))));
+        Self {
+            prev,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a> Drop for SeamContextGuard<'a> {
+    fn drop(&mut self) {
+        SEAM_CTX.with(|c| c.set(self.prev));
+    }
+}
+
+/// Look up the active seam point for `polygon` (a CCW perimeter loop) via the
+/// installed [`SeamPlacer`], mirroring C++ `m_seam_placer.place_seam(...)`.
+/// Returns `None` when no context is installed or the placer has no data for
+/// the loop (caller falls back to the legacy `find_best_seam_index` heuristic).
+fn active_place_seam(polygon: &crate::geometry::Polygon, last_pos: Point) -> Option<Point> {
+    SEAM_CTX.with(|c| {
+        let (placer_ptr, layer_idx) = c.get()?;
+        // SAFETY: the pointer is valid for the lifetime of the installed
+        // `SeamContextGuard`, which strictly encloses every `extrude_loop` call
+        // that can observe this context (single-threaded sequential export).
+        let placer: &SeamPlacer = unsafe { &*placer_ptr };
+        placer.place_seam(layer_idx, polygon, last_pos)
+    })
+}
+
 /// Configuration for travel moves.
 ///
 /// C++ reference: GCode class member variables
@@ -190,14 +258,23 @@ pub fn extrude_loop(
     // C++: } else
     // C++: loop.split_at(last_pos, false);
     // SeamPlacer integration (GCode.cpp:5081-5088)
-    // Use find_best_seam_index for angle-based scoring with rear bias + alignment
+    // C++: m_seam_placer.place_seam(m_layer, loop, is_outer_wall_first, last_pos, ...)
+    // When a per-object SeamPlacer has been installed by the driver
+    // (`print.rs` via `with_seam_context`), use its aligned-mode result
+    // (SeamPlacer.cpp:1463). Otherwise fall back to the legacy per-loop
+    // angle/nearest heuristic (`find_best_seam_index`).
     let polygon = loop_copy.as_polygon();
-    let seam_idx = super::seam_placer::find_best_seam_index(
-        &polygon,
-        Some(last_pos),
-        &super::seam_placer::SeamPlacerConfig::default(),
-    );
-    let seam_point = polygon.points()[seam_idx];
+    let seam_point = match active_place_seam(&polygon, last_pos) {
+        Some(p) => p,
+        None => {
+            let seam_idx = super::seam_placer::find_best_seam_index(
+                &polygon,
+                Some(last_pos),
+                &super::seam_placer::SeamPlacerConfig::default(),
+            );
+            polygon.points()[seam_idx]
+        }
+    };
     split_loop_at_closest_point(&mut loop_copy, seam_point);
 
     // C++ reference: GCode.cpp:5107-5117

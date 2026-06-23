@@ -358,6 +358,58 @@ impl Print {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        // -- SeamPlacer::init per object -- GCode.cpp / SeamPlacer.cpp:1395 --
+        // C++ runs `m_seam_placer.init(print)` once before layer export, building
+        // per-object seam data (candidates, visibility, overhang, alignment).
+        // Here we build one placer per object so the exporter's `extrude_loop`
+        // can resolve the aligned seam vertex via `SeamPlacer::place_seam`.
+        // Skipped under spiral (vase) mode — C++ guards seam placement with
+        // `!m_config.spiral_mode` (GCode.cpp:5081).
+        let seam_placers: Vec<crate::gcode::seam_placer::SeamPlacer> = if is_spiral_vase {
+            Vec::new()
+        } else {
+            self.objects
+                .iter()
+                .map(|obj| {
+                    let mode = match obj.config.seam_position {
+                        crate::print_config::SeamPosition::Nearest => {
+                            crate::gcode::seam_placer::SeamPosition::spNearest
+                        }
+                        crate::print_config::SeamPosition::Aligned => {
+                            crate::gcode::seam_placer::SeamPosition::spAligned
+                        }
+                        crate::print_config::SeamPosition::Rear => {
+                            crate::gcode::seam_placer::SeamPosition::spRear
+                        }
+                        crate::print_config::SeamPosition::Random => {
+                            crate::gcode::seam_placer::SeamPosition::spRandom
+                        }
+                    };
+                    let mut placer = crate::gcode::seam_placer::SeamPlacer::new(
+                        crate::gcode::seam_placer::SeamPlacerConfig {
+                            seam_position: match mode {
+                                crate::gcode::seam_placer::SeamPosition::spNearest => {
+                                    crate::gcode::seam_placer::SeamPositionMode::Nearest
+                                }
+                                crate::gcode::seam_placer::SeamPosition::spAligned => {
+                                    crate::gcode::seam_placer::SeamPositionMode::Aligned
+                                }
+                                crate::gcode::seam_placer::SeamPosition::spRear => {
+                                    crate::gcode::seam_placer::SeamPositionMode::Rear
+                                }
+                                crate::gcode::seam_placer::SeamPosition::spRandom => {
+                                    crate::gcode::seam_placer::SeamPositionMode::Random
+                                }
+                            },
+                            ..Default::default()
+                        },
+                    );
+                    placer.init(obj, mode);
+                    placer
+                })
+                .collect()
+        };
+
         // Group layers by print_z for by-layer printing
         let mut i = 0;
         while i < all_layers.len() {
@@ -529,6 +581,17 @@ impl Print {
 
                 // GCode.cpp:4668-4749 -- per-region iteration
                 let is_infill_first = false; // TODO: from config
+
+                // Install the active SeamPlacer for this (object, layer) so
+                // `extrude_loop` can resolve the aligned seam vertex via
+                // `SeamPlacer::place_seam` (the C++ `m_seam_placer`/`m_layer`
+                // instance state). The guard scopes the installation to the
+                // per-region extrude below; outside it, `extrude_loop` falls
+                // back to the legacy `find_best_seam_index` heuristic (e.g.
+                // skirt/brim, or spiral mode where no placer was built).
+                let _seam_guard = seam_placers
+                    .get(ltp.object_idx)
+                    .map(|p| exporter::SeamContextGuard::install(p, ltp.layer_idx));
 
                 for region in ltp.layer.regions() {
                     if is_infill_first && !is_first_layer {
