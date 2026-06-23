@@ -1040,10 +1040,17 @@ impl PrintObject {
                     let area_unsupported = crate::geometry::area_polygons(&unsupported);
                     let area_solid = crate::geometry::area_polygons(&s_polys);
                     let partially_supported = area_unsupported < area_solid - EPSILON;
-                    // PrintObject.cpp:2243
+                    // PrintObject.cpp:2243 — `area(unsupported) > 3*3*spacing*spacing`.
+                    // C++ `spacing` is scaled_spacing() (scaled coord units) and
+                    // `area(...)` is in scaled^2 units, so the threshold must be
+                    // built from SCALED spacing. `area_unsupported` here is
+                    // `area_polygons` over scaled polygons => scaled^2; using the
+                    // unscaled mm `spacing` made the threshold ~1.8 (effectively
+                    // zero) and never filtered partially-supported overhangs.
+                    let spacing_scaled = crate::scale(spacing) as f64;
                     if !unsupported.is_empty()
                         && (!partially_supported
-                            || area_unsupported > 3.0 * 3.0 * spacing * spacing)
+                            || area_unsupported > 3.0 * 3.0 * spacing_scaled * spacing_scaled)
                     {
                         // PrintObject.cpp:2244 — worth_bridging.
                         let mut worth_bridging =
