@@ -1271,7 +1271,9 @@ pub fn extrude_infill(
             continue;
         }
 
-        // GCode.cpp:5768: chain_and_reorder_extrusion_entities(extrusions, &m_last_pos)
+        // GCode.cpp:5768: chain_and_reorder_extrusion_entities(extrusions, &m_last_pos).
+        // NOTE: chain_and_reorder retains-out empty collections (ShortestPath.cpp:1033-1035),
+        // so `extrusions` may become empty here even though the role filter found entries.
         let m_last_pos = writer_last_pos(writer);
         crate::shortest_path::chain_and_reorder_extrusion_entities(
             &mut extrusions,
@@ -1279,11 +1281,12 @@ pub fn extrude_infill(
         );
 
         // Retract and travel to the (now reordered) first infill point.
+        let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) else {
+            continue;
+        };
         writer.retract();
         writer.set_travel_acceleration(6000.0);
-        if let Some(first_pt) = get_entity_first_point(&extrusions[0]) {
-            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
-        }
+        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
         writer.unretract();
 
         // GCode.cpp:5769-5776: for each fill, if it is an EEC, re-chain it via
