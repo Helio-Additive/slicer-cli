@@ -2517,33 +2517,6 @@ impl SeamPlacer {
         ) {
             self.align_seam_points(po, &comparator);
         }
-
-        if std::env::var("SEAMDBG").is_ok() {
-            let nlayers = self.seam_data.layers.len();
-            let nperim: usize = self.seam_data.layers.iter().map(|l| l.perimeters.len()).sum();
-            let npts: usize = self.seam_data.layers.iter().map(|l| l.points.len()).sum();
-            let nfinal: usize = self
-                .seam_data
-                .layers
-                .iter()
-                .flat_map(|l| l.perimeters.iter())
-                .filter(|p| p.finalized)
-                .count();
-            eprintln!(
-                "SEAMDBG init: mode={:?} layers={} perimeters={} candidates={} finalized={}",
-                configured_seam_preference, nlayers, nperim, npts, nfinal
-            );
-            if let Some(l0) = self.seam_data.layers.iter().find(|l| !l.perimeters.is_empty()) {
-                for (pi, p) in l0.perimeters.iter().enumerate().take(3) {
-                    let sp = l0.points.get(p.seam_index).map(|c| (c.position.x, c.position.y));
-                    eprintln!(
-                        "SEAMDBG   perim[{}] start={} end={} seam_index={} finalized={} final=({:.3},{:.3}) seampt={:?}",
-                        pi, p.start_index, p.end_index, p.seam_index, p.finalized,
-                        p.final_seam_position.x, p.final_seam_position.y, sp
-                    );
-                }
-            }
-        }
     }
 
     /// SeamPlacer.cpp:1463-1528 — `SeamPlacer::place_seam` (seam-vertex lookup).
@@ -2625,22 +2598,10 @@ impl SeamPlacer {
         };
 
         // Scale back to coord_t (the loop is in scaled coordinates).
-        let result = Point::new(
+        Some(Point::new(
             crate::scale(seam_position.x as f64),
             crate::scale(seam_position.y as f64),
-        );
-        if std::env::var("SEAMDBG").is_ok() {
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static CNT: AtomicUsize = AtomicUsize::new(0);
-            if CNT.fetch_add(1, Ordering::Relaxed) < 12 {
-                eprintln!(
-                    "SEAMDBG place_seam: layer={} loop_first=({:.3},{:.3}) -> nearest_pt={} perim={} finalized={} seam=({:.3},{:.3})",
-                    layer_idx, up.x, up.y, nearest_point_index, perim_idx, perimeter.finalized,
-                    seam_position.x, seam_position.y
-                );
-            }
-        }
-        Some(result)
+        ))
     }
 }
 

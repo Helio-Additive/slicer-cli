@@ -76,15 +76,7 @@ impl<'a> Drop for SeamContextGuard<'a> {
 /// the loop (caller falls back to the legacy `find_best_seam_index` heuristic).
 fn active_place_seam(polygon: &crate::geometry::Polygon, last_pos: Point) -> Option<Point> {
     SEAM_CTX.with(|c| {
-        let ctx = c.get();
-        if std::env::var("SEAMDBG").is_ok() {
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static CNT: AtomicUsize = AtomicUsize::new(0);
-            if CNT.fetch_add(1, Ordering::Relaxed) < 6 {
-                eprintln!("SEAMDBG active_place_seam: ctx_installed={}", ctx.is_some());
-            }
-        }
-        let (placer_ptr, layer_idx) = ctx?;
+        let (placer_ptr, layer_idx) = c.get()?;
         // SAFETY: the pointer is valid for the lifetime of the installed
         // `SeamContextGuard`, which strictly encloses every `extrude_loop` call
         // that can observe this context (single-threaded sequential export).
@@ -481,71 +473,6 @@ pub fn extrude_loop(
     // C++: }
     // C++: }
     // TODO: Implement wipe path saving (GCode.cpp:5230-5241)
-}
-
-/// Helper function to split loop at point closest to current position.
-///
-/// C++ reference: ExtrusionLoop::split_at()
-/// ExtrusionEntity.cpp:350-400
-///
-/// This reorders the paths in the loop so that the split point becomes
-/// the new starting point.
-fn split_loop_at_closest_point(loop_entity: &mut ExtrusionLoop, point: Point) {
-    // C++ reference: ExtrusionEntity.cpp:350-360
-    // C++: void ExtrusionLoop::split_at(const Point &point, bool prefer_non_overhang)
-    // C++: {
-    // C++: if (this->paths.empty()) return;
-    // Check if loop is empty
-    if loop_entity.paths.is_empty() {
-        return;
-    }
-
-    // C++ reference: ExtrusionEntity.cpp:361-380
-    // C++: // Find the path containing the point and the idx of the point in the path
-    // C++: size_t path_idx = 0;
-    // C++: Point p = this->paths.front().polyline.first_point();
-    // C++: for (size_t i = 0; i < this->paths.size(); ++ i) {
-    // C++: const Polyline &polyline = this->paths[i].polyline;
-    // C++: for (size_t j = 0; j < polyline.points.size(); ++ j) {
-    // C++: if (polyline.points[j].distance_to(point) < p.distance_to(point)) {
-    // C++: p = polyline.points[j];
-    // C++: path_idx = i;
-    // C++: }
-    // C++: }
-    // C++: }
-    // Find closest point in loop
-    let mut best_path_idx = 0;
-    let mut best_point_idx = 0;
-    let mut best_distance = loop_entity.paths[0].polyline.points()[0].distance_to(&point);
-
-    for (path_idx, path) in loop_entity.paths.iter().enumerate() {
-        for (point_idx, p) in path.polyline.points().iter().enumerate() {
-            let dist = p.distance_to(&point);
-            if dist < best_distance {
-                best_distance = dist;
-                best_path_idx = path_idx;
-                best_point_idx = point_idx;
-            }
-        }
-    }
-
-    // C++ reference: ExtrusionEntity.cpp:381-395
-    // C++: // Split the path at the closest point
-    // C++: if (path_idx == 0 && point_idx == 0) {
-    // C++: // Already at the start
-    // C++: return;
-    // C++: }
-    // C++: // Rotate the paths
-    // C++: std::rotate(this->paths.begin(), this->paths.begin() + path_idx, this->paths.end());
-    // If already at start, nothing to do
-    if best_path_idx == 0 && best_point_idx == 0 {
-        return;
-    }
-
-    // TODO: Implement proper path splitting at the exact point (GCode.cpp:381-395)
-    // For now, rotate paths to start at the closest path
-    // This is a simplification - proper implementation should split the path at the point
-    loop_entity.paths.rotate_left(best_path_idx);
 }
 
 /// Extrude an extrusion entity collection.
