@@ -454,9 +454,15 @@ impl LayerRegion {
             sparse_infill_density: config.fill_density,
             detect_thin_wall: config.thin_walls,
             // PerimeterGenerator.cpp:911 m_scaled_resolution = scaled<double>(print_config.resolution).
-            // This is fed to ExPolygon::simplify_p() which, in this crate, scales the
-            // tolerance internally (geometry::douglas_peucker), so it expects the value in
-            // **mm**. Read from the print config (C++: print_config->resolution).
+            // This is fed to ExPolygon::simplify_p(), which calls
+            // `geometry::simplify::douglas_peucker` — that variant RE-SCALES the
+            // tolerance internally (`tolerance_sq = scale(tolerance)^2`,
+            // geometry/simplify.rs), so it expects the UNSCALED value in **mm**.
+            // Read from the print config (C++: print_config->resolution).
+            // DO NOT pre-scale here: passing scaled units would be squared again and
+            // collapse every contour to a point (empty perimeters). NOTE the contrast
+            // with `multi_point::douglas_peucker`, which does NOT scale and is the one
+            // used by the arc fitter / Polyline::simplify — different unit convention.
             surface_simplify_resolution: print_config.resolution,
             // PerimeterGenerator.cpp:914 uses print_config->enable_arc_fitting to pick the
             // surface simplify resolution factor (0.2x when arc fitting + no fuzzy skin).

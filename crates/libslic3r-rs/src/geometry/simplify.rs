@@ -131,6 +131,13 @@ impl SimplifyConfig {
 /// Recursively simplifies a path by removing points that are within `tolerance`
 /// of the line segment connecting their neighbors.
 ///
+/// UNIT CONVENTION (important): this variant takes `tolerance` in **UNSCALED mm**
+/// and re-scales it internally (`tolerance_sq = scale(tolerance)^2`). This is what
+/// `ExPolygon::simplify_p` relies on. Contrast `multi_point::douglas_peucker`, which
+/// takes an ALREADY-SCALED tolerance and does NOT re-scale (used by the arc fitter
+/// and `Polyline::simplify`). Passing a scaled value here squares the scale factor
+/// (~1e5) and collapses contours — keep callers consistent with the mm convention.
+///
 /// This is the same algorithm used by libslic3r in `MultiPoint::_douglas_peucker()`.
 ///
 /// # Arguments
