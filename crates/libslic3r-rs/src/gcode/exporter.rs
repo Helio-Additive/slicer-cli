@@ -648,13 +648,32 @@ pub fn extrude_collection(
             let pos = writer.position();
             let tx = crate::unscale(first_pt.x());
             let ty = crate::unscale(first_pt.y());
-            let dist_sq = (pos.x - tx) * (pos.x - tx) + (pos.y - ty) * (pos.y - ty);
+            let dx = pos.x - tx;
+            let dy = pos.y - ty;
+            let dist_sq = dx * dx + dy * dy;
             if dist_sq > 0.001 * 0.001 {
-                // Intra-collection travel: direct G1 travel, no retract/unretract.
-                // C++ GCode.cpp emits M204 S6000 + G1 F30000 XY without retracting
-                // for adjacent loops within the same perimeter/infill collection.
+                // Per-entity travel + retraction/spiral-lift decision. This is the
+                // single faithful decision point, mirroring C++ GCode::_extrude ->
+                // GCode::travel_to -> GCode::needs_retraction (GCode.cpp:6366,6816,6964):
+                // a retract + Z-hop is emitted before the travel to each *top-level*
+                // extrusion entity (loop / multipath / path) whose length reaches
+                // retraction_minimum_travel. The internal paths of a multi-path loop
+                // are contiguous (m_last_pos == path.first_point() -> travel skipped in
+                // C++), so the path-level travel in extrude_path_with_arc_fitting is a
+                // BARE positioning move and does NOT retract — avoiding the per-internal-
+                // -path double counting. retract() does wipe + retract + Z-hop;
+                // unretract() after the travel descends and restores E (net E zero, so
+                // material is unchanged).
+                let travel_len = dist_sq.sqrt();
+                let did_retract = writer.needs_retraction_for_travel(travel_len);
+                if did_retract {
+                    writer.retract();
+                }
                 writer.set_travel_acceleration(6000.0);
                 writer.travel_to(tx, ty, None);
+                if did_retract {
+                    writer.unretract();
+                }
             }
         }
 
@@ -862,6 +881,16 @@ pub fn extrude_path_with_arc_fitting(
         let dist_sq = (pos.x - tx) * (pos.x - tx) + (pos.y - ty) * (pos.y - ty);
         if dist_sq > 0.001 * 0.001 {
             let resume_speed = writer.get_current_speed() * 60.0; // mm/s -> mm/min
+
+            // Bare positioning travel — no retraction/spiral-lift decision here.
+            // This site handles the travel between the contiguous internal paths of a
+            // multi-path loop / multipath. In C++ those moves are skipped entirely
+            // (m_last_pos == path.first_point(), GCode::_extrude:6366), so they must
+            // not retract. The retraction + spiral-lift decision for the travel to the
+            // start of each top-level extrusion entity is made once in
+            // extrude_collection (mirroring GCode::needs_retraction per _extrude),
+            // which has already moved the nozzle here, so for an entity's first path
+            // this branch is a no-op.
             writer.set_travel_acceleration(6000.0);
             writer.travel_to(tx, ty, None);
             if resume_speed > 0.0 {

@@ -393,6 +393,23 @@ impl GCodeWriter {
         self.retracted
     }
 
+    /// Decide whether a travel of the given XY length (mm) should retract.
+    ///
+    /// Faithful port of `GCode::needs_retraction` (GCode.cpp:6964-6970): the
+    /// move retracts only when its length reaches the configured
+    /// `retraction_minimum_travel` (BambuStudio `filament_retraction_minimum_travel`,
+    /// stored here as `retract_before_travel`). The overhang / lift-type branches
+    /// of the C++ function only *promote* the lift kind for an already-retracting
+    /// move, so the threshold check is the sole gate on whether to retract at all.
+    ///
+    /// Returns false if the writer is already retracted (the caller would no-op).
+    pub fn needs_retraction_for_travel(&self, travel_len_mm: CoordF) -> bool {
+        if self.retracted {
+            return false;
+        }
+        travel_len_mm >= self.config.retract_before_travel
+    }
+
     /// Get the current layer index.
     pub fn layer_index(&self) -> usize {
         self.layer_index
