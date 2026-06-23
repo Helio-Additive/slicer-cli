@@ -9,8 +9,8 @@ use crate::{
     arachne::utils::extrusion_line::{ExtrusionLine as ArachneExtrusionLine, VariableWidthLines},
     arachne::wall_tool_paths::{WallToolPaths, WallToolPathsParams},
     clipper_utils::{
-        difference, grow, intersection, offset2, offset_expolygons, opening, shrink, union_ex,
-        union_polygons_ex, OffsetJoinType,
+        difference, grow, intersection, offset2, offset2_clib, offset_expolygons, opening, shrink,
+        union_ex, union_polygons_ex, OffsetJoinType,
     },
     extrusion_entity::{
         ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole,
@@ -576,7 +576,14 @@ impl PerimeterGenerator {
                 // C++: offsets = offset2_ex(last, -float(distance + min_spacing / 2. - 1.), float(min_spacing / 2. - 1.));
                 // The `- 1.` is 1 *scaled* coord unit (= 1/SCALING_FACTOR mm), not ClipperSafetyOffset.
                 const ONE_SCALED_MM: f64 = 1.0 / SCALING_FACTOR;
-                offsets = offset2(
+                // PARITY (perim-offset): this is the SUCCESSIVE inner-wall offset2 — the
+                // operation whose geo-clipper miter densification compounds over iterations
+                // (~1.20x inner-wall vertex density, 0.396 vs native 0.329). Route it through
+                // the vertex-EXACT vendored ClipperLib (offset2_clib) so inner-wall vertex
+                // density byte-matches native. Area-invariant (material stays at parity); the
+                // outer wall (i==0 below) stays on geo-clipper (already byte-exact). See
+                // /tmp/perimoffset_findings.md.
+                offsets = offset2_clib(
                     &last,
                     distance + min_spacing / 2.0 - ONE_SCALED_MM,
                     min_spacing / 2.0 - ONE_SCALED_MM,
