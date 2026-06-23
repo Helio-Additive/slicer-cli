@@ -936,6 +936,27 @@ pub fn extrude_path_with_arc_fitting(
             scaled_tolerance,
         );
 
+        // ARCFITDBG: compare STORED (pass-1) fitting_result vs this re-fit (pass-2).
+        if std::env::var("ARCFITDBG").is_ok()
+            && path.role == crate::extrusion_entity::ExtrusionRole::ExternalPerimeter
+        {
+            let stored = &path.polyline.fitting_result;
+            let stored_arcs = stored.iter().filter(|s| s.is_arc_move()).count();
+            let refit_arcs = fitting_result.iter().filter(|s| s.is_arc_move()).count();
+            let in_pts = points.len();
+            let work_pts = work_points.len();
+            if (stored_arcs != refit_arcs) || (stored_arcs > 0 || in_pts > 8) {
+                eprintln!(
+                    "ARCFITDBG OW in_pts={} stored_arcs={} stored_segs={} refit_arcs={} work_pts={}",
+                    in_pts,
+                    stored_arcs,
+                    stored.len(),
+                    refit_arcs,
+                    work_pts
+                );
+            }
+        }
+
         // GCode.cpp:6703-6744: iterate fitting_result, emit G1/G2/G3.
         for seg in &fitting_result {
             match seg.path_type {
