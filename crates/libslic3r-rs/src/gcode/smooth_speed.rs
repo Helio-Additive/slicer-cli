@@ -270,10 +270,29 @@ pub fn split_and_mapping_speed(
         }
 
         // GCode.cpp:6092-6094 — split polyline at last_point.
+        //
+        // C++ `Polyline::split_at(Point &point, ...)` takes `point` by NON-CONST
+        // reference and SNAPS it in place to the actual split location on the
+        // polyline (Polyline.cpp:223). The "avoid travel" patch below then writes
+        // that SAME (snapped) `last_point` into the consumed sub-path's boundary
+        // vertex, so the consumed path and the remaining `polyline_left` (which
+        // starts/ends at the snapped split vertex) share an identical endpoint —
+        // no travel is emitted between them.
+        //
+        // PARITY-FIX (outer-wall fragmentation): the previous code passed a *copy*
+        // (`split_pt`) to split_at_point and then patched with the ORIGINAL,
+        // un-snapped `last_point`. When split_at_point snapped the point (the
+        // common case — `last_point` is an interpolated insert_p that rarely lands
+        // exactly on a stored vertex), the consumed path's patched endpoint
+        // (un-snapped) no longer matched `polyline_left`'s endpoint (snapped),
+        // leaving a ~1-150 scaled-unit (≈0.001-0.012 mm) gap. extrude_path then
+        // emitted a spurious sub-0.1 mm `G1 F60000` travel between the two same-
+        // speed paths, fragmenting the outer wall (rust 251 vs native 21 sub-0.1mm
+        // outer-wall travels). Mirroring C++, we let split_at_point mutate
+        // `last_point` directly and patch with the snapped value.
         let mut p1 = Polyline::new();
         let mut p2 = Polyline::new();
-        let mut split_pt = last_point;
-        this_path[idx].polyline.split_at_point(&mut split_pt, &mut p1, &mut p2);
+        this_path[idx].polyline.split_at_point(&mut last_point, &mut p1, &mut p2);
 
         // GCode.cpp:6096-6105
         if split_from_left {
