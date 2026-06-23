@@ -1788,7 +1788,7 @@ impl Layer {
         // mutation below. Still underscore-bound: the downstream consumer
         // (params.resolution, Fill.cpp:705, used for path simplification) is
         // not ported yet.
-        let _resolution = self.object().print().config().resolution;
+        let resolution = self.object().print().config().resolution;
 
         // Fill.cpp:588-590
         // C++: for (LayerRegion *layerm : m_regions)
@@ -1868,6 +1868,24 @@ impl Layer {
             // C++: LayerRegion* layerm = this->m_regions[surface_fill.region_id];
             //      for (ExPolygon& expoly : surface_fill.expolygons)
             let region_id = surface_fill.region_id;
+
+            // FillMonotonicLineWGapFill (ipMonotonicLine) lays the monotonic
+            // lines and then medial-axis gap-fills the band the lines left
+            // uncovered (FillRectilinear.cpp:3260-3320). Capture the per-
+            // surface no_overlap area and accumulate the footprint of the laid
+            // lines so the gap-fill can run once, after the expoly loop.
+            let is_monotonic_line = fill_pattern == InfillPattern::MonotonicLine;
+            let mono_no_overlap: ExPolygons = if is_monotonic_line {
+                surface_fill.no_overlap_expolygons.clone()
+            } else {
+                Vec::new()
+            };
+            let mono_flow = surface_fill.params.flow.clone();
+            let mono_density = surface_fill.params.density;
+            // Footprint (covered-by-spacing) of all monotonic lines emitted for
+            // this surface_fill — C++ coll_nosort->polygons_covered_by_spacing(10).
+            let mut mono_covered: Vec<crate::geometry::Polygon> = Vec::new();
+
             for expoly in surface_fill.expolygons {
                 // Skip empty polygons
                 if expoly.contour.points.is_empty() {
@@ -2019,12 +2037,114 @@ impl Layer {
                     surface_fill.params.flow.height() as f32,
                 );
 
+                // FillMonotonicLineWGapFill: record the footprint of the laid
+                // monotonic lines so the post-loop gap-fill can subtract it from
+                // the no_overlap area (FillRectilinear.cpp:3279
+                // coll_nosort->polygons_covered_by_spacing(10)).
+                if is_monotonic_line {
+                    for ent in &collection.entities {
+                        if let crate::extrusion_entity::ExtrusionEntityType::Path(path) = ent {
+                            path.polygons_covered_by_spacing(&mut mono_covered, 10.0);
+                        }
+                    }
+                }
+
                 if !collection.entities.is_empty() {
                     self.regions[region_id].fills.entities.push(
                         crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(
                             collection,
                         )),
                     );
+                }
+            }
+
+            // FillMonotonicLineWGapFill gap-fill tail (FillRectilinear.cpp:3260-3320).
+            // After the monotonic lines are laid, medial-axis gap-fill the band of
+            // the no_overlap area the lines left uncovered, emitting variable-width
+            // erGapFill runs. These curved runs are what the arc-fitter turns into
+            // G2/G3 on the top surface (native: 113 arcs; without this Rust got 4).
+            if is_monotonic_line && mono_density >= 1.0 && !mono_no_overlap.is_empty() {
+                use crate::clipper_utils::{
+                    difference, intersection_ex_expolygons_polygons, offset2, opening_ex,
+                    union_polygons_ex, OffsetJoinType,
+                };
+                use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
+                use crate::perimeter_generator::convert_thin_walls_to_extrusion_paths;
+
+                // C++: ExPolygons unextruded_areas = diff_ex(no_overlap,
+                //          union_ex(coll_nosort->polygons_covered_by_spacing(10)));
+                let unextruded_areas: ExPolygons = if mono_covered.is_empty() {
+                    mono_no_overlap.clone()
+                } else {
+                    let covered_ex = union_polygons_ex(&mono_covered);
+                    difference(&mono_no_overlap, &covered_ex)
+                };
+
+                // C++: gapfill_areas = union_ex(unextruded_areas);
+                //      gapfill_areas = intersection_ex(gapfill_areas, no_overlap);
+                let gapfill_areas = intersection_ex_expolygons_polygons(
+                    &unextruded_areas,
+                    &mono_no_overlap
+                        .iter()
+                        .flat_map(|ex| {
+                            std::iter::once(ex.contour.clone()).chain(ex.holes.iter().cloned())
+                        })
+                        .collect::<Vec<_>>(),
+                );
+
+                if !gapfill_areas.is_empty() {
+                    // C++: new_flow = params.flow.with_spacing(this->spacing) for
+                    // solid fill; the top surface uses the surface flow directly.
+                    let new_flow = mono_flow.clone();
+                    let scaled_spacing = new_flow.scaled_spacing() as f64;
+                    // C++: min = 0.2 * new_flow.scaled_spacing() * (1 - INSET_OVERLAP_TOLERANCE)
+                    //      max = 2. * new_flow.scaled_spacing()   (INSET_OVERLAP_TOLERANCE = 0.45)
+                    let min = 0.2 * scaled_spacing * (1.0 - 0.45);
+                    let max = 2.0 * scaled_spacing;
+                    const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
+
+                    // C++: gaps_ex = diff_ex(opening_ex(gapfill_areas, min/2),
+                    //          offset2_ex(gapfill_areas, -max/2, max/2 + ClipperSafetyOffset));
+                    let opened_min = opening_ex(&gapfill_areas, min / 2.0);
+                    let wide_part = offset2(
+                        &gapfill_areas,
+                        max / 2.0,
+                        max / 2.0 + CLIPPER_SAFETY_OFFSET,
+                        OffsetJoinType::Square,
+                    );
+                    let mut gaps_ex = difference(&opened_min, &wide_part);
+
+                    if !gaps_ex.is_empty() {
+                        // C++: ex.douglas_peucker(SCALED_RESOLUTION * 0.1) then
+                        //      ex.medial_axis(min, max, &polylines).
+                        let scaled_resolution = crate::scale(resolution) as f64;
+                        let simplify_resolution = scaled_resolution * 0.1;
+                        let mut polylines: crate::geometry::ThickPolylines = Vec::new();
+                        for ex in &mut gaps_ex {
+                            ex.douglas_peucker(simplify_resolution);
+                            ex.medial_axis(min, max, &mut polylines);
+                        }
+
+                        if !polylines.is_empty() {
+                            // C++: variable_width(polylines, erGapFill, params.flow, ...)
+                            let paths = convert_thin_walls_to_extrusion_paths(
+                                &polylines,
+                                ExtrusionRole::GapFill,
+                                &mono_flow,
+                            );
+                            if !paths.is_empty() {
+                                let mut coll = ExtrusionEntityCollection::new();
+                                coll.no_sort = true;
+                                for path in paths {
+                                    coll.entities.push(ExtrusionEntityType::Path(path));
+                                }
+                                self.regions[region_id]
+                                    .fills
+                                    .entities
+                                    .push(ExtrusionEntityType::Collection(Box::new(coll)));
+                            }
+                        }
+                    }
                 }
             }
         }
