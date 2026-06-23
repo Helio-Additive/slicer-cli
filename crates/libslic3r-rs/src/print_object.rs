@@ -1073,6 +1073,15 @@ impl PrintObject {
                                 std::slice::from_ref(s_ex),
                             ));
 
+                        // BRIDGECOUNT-INSTR (M1): per-candidate trace.
+                        if std::env::var("BRIDGECOUNT_TRACE").is_ok() {
+                            let wb_area = crate::geometry::area_polygons(&worth_bridging);
+                            eprintln!(
+                                "BRIDGECAND lidx={} region={} solid_idx={} area_solid={:.0} area_unsup={:.0} partsup={} worth_area={:.0}",
+                                lidx, region_idx, solid_idx, area_solid, area_unsupported,
+                                partially_supported, wb_area
+                            );
+                        }
                         // PrintObject.cpp:2254 — record candidate.
                         surfaces_by_layer.entry(lidx).or_default().push(CandidateSurface {
                             original_solid_idx: *solid_idx,
