@@ -700,6 +700,44 @@ pub fn extrude_collection(
     Ok(())
 }
 
+/// The writer's current XY position as a scaled `Point` — the Rust analogue of
+/// C++ `GCode::m_last_pos`, which the chaining routines accept as `start_near`.
+///
+/// `writer.position()` is unscaled mm (`PointF`); chaining operates in scaled
+/// i64 coordinates, so convert with `scale()`.
+fn writer_last_pos(writer: &GCodeWriter) -> Point {
+    let p = writer.position();
+    Point::new(scale(p.x), scale(p.y))
+}
+
+/// Rust analogue of `ExtrusionEntityCollection::chained_path_from(start_near, role)`
+/// (ExtrusionEntityCollection.hpp:102-103, .cpp:89-99) with the default
+/// `role == erMixed` (no role filtering — Benchy infill EECs are mixed-role).
+///
+/// hpp:103: `return this->no_sort ? *this : chained_path_from(entities, start_near, role);`
+/// cpp:89-99: clone the entities into a fresh collection, then
+/// `chain_and_reorder_extrusion_entities(out.entities, &start_near)`.
+///
+/// `start_near` is the writer's current position (== C++ `m_last_pos`).
+fn chained_path_from(
+    eec: &ExtrusionEntityCollection,
+    writer: &GCodeWriter,
+) -> ExtrusionEntityCollection {
+    // hpp:103: when no_sort is set, return the collection unchanged.
+    if eec.no_sort {
+        return eec.clone();
+    }
+    // cpp:92-96: filtered (here unfiltered, role == erMixed) clone of the entities.
+    let mut out = eec.clone();
+    // cpp:97: chain_and_reorder_extrusion_entities(out.entities, &start_near)
+    let start_near = writer_last_pos(writer);
+    crate::shortest_path::chain_and_reorder_extrusion_entities(
+        &mut out.entities,
+        Some(&start_near),
+    );
+    out
+}
+
 /// Get the first point of an extrusion entity for travel-to targeting.
 pub fn get_entity_first_point(entity: &ExtrusionEntityType) -> Option<Point> {
     match entity {
@@ -1193,38 +1231,73 @@ pub fn extrude_perimeters(
 /// Extrude infill for a single region.
 ///
 /// C++ reference: GCode::extrude_infill()
-/// GCode.cpp:5386-5412
+/// GCode.cpp:5753-5780
 ///
-/// Chains infill entities by a greedy nearest-neighbor algorithm, then
-/// extrudes each. Separates normal infill from ironing.
+/// Chains the region's infill entities by a greedy nearest-neighbor algorithm
+/// (starting near the writer's current position, == C++ `m_last_pos`), then
+/// extrudes each. Per C++, each fill that is itself an ExtrusionEntityCollection
+/// (EEC) is re-chained via `chained_path_from(m_last_pos)` before emission.
+///
+/// C++ calls this once per `ironing` flag (false then true) so that all
+/// non-ironing infill across all regions precedes all ironing infill. The Rust
+/// pipeline drives this per region, so we replicate the filter locally: chain &
+/// emit non-ironing fills first, then ironing fills.
 pub fn extrude_infill(
     region: &crate::layer::LayerRegion,
     writer: &mut GCodeWriter,
     config: &crate::print_config::PrintObjectConfig,
     is_first_layer: bool,
 ) {
+    use crate::extrusion_entity::ExtrusionRole;
+
     if region.fills.entities.is_empty() {
         return;
     }
 
-    // Retract and travel to first infill point
-    writer.retract();
-    writer.set_travel_acceleration(6000.0);
-    if let Some(first_pt) = get_entity_first_point(&region.fills.entities[0]) {
-        let target_x = crate::unscale(first_pt.x());
-        let target_y = crate::unscale(first_pt.y());
-        writer.travel_to(target_x, target_y, None);
-    }
-    writer.unretract();
+    // GCode.cpp:5759-5765: build the `extrusions` vector, filtering by ironing
+    // role. `(ee->role() == erIroning) == ironing` selects non-ironing fills on
+    // the first pass and ironing fills on the second. We clone the entities so
+    // chain_and_reorder (which reorders/reverses in place) does not mutate the
+    // stored region.fills.
+    for ironing_pass in [false, true] {
+        let mut extrusions: Vec<ExtrusionEntityType> = region
+            .fills
+            .entities
+            .iter()
+            .filter(|ee| (get_entity_role(ee) == ExtrusionRole::Ironing) == ironing_pass)
+            .cloned()
+            .collect();
+        if extrusions.is_empty() {
+            continue;
+        }
 
-    // GCode.cpp:5391-5408: chain and reorder, then extrude
-    for fill in &region.fills.entities {
-        match fill {
-            ExtrusionEntityType::Collection(eec) => {
-                let _ = extrude_collection(eec, writer, config, is_first_layer);
-            }
-            _ => {
-                let _ = extrude_entity(fill, writer, config, is_first_layer);
+        // GCode.cpp:5768: chain_and_reorder_extrusion_entities(extrusions, &m_last_pos)
+        let m_last_pos = writer_last_pos(writer);
+        crate::shortest_path::chain_and_reorder_extrusion_entities(
+            &mut extrusions,
+            Some(&m_last_pos),
+        );
+
+        // Retract and travel to the (now reordered) first infill point.
+        writer.retract();
+        writer.set_travel_acceleration(6000.0);
+        if let Some(first_pt) = get_entity_first_point(&extrusions[0]) {
+            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+        }
+        writer.unretract();
+
+        // GCode.cpp:5769-5776: for each fill, if it is an EEC, re-chain it via
+        // chained_path_from(m_last_pos) and emit its entities; otherwise emit
+        // the entity directly.
+        for fill in &extrusions {
+            match fill {
+                ExtrusionEntityType::Collection(eec) => {
+                    let chained = chained_path_from(eec, writer);
+                    let _ = extrude_collection(&chained, writer, config, is_first_layer);
+                }
+                _ => {
+                    let _ = extrude_entity(fill, writer, config, is_first_layer);
+                }
             }
         }
     }
@@ -1233,42 +1306,101 @@ pub fn extrude_infill(
 /// Extrude support material fills.
 ///
 /// C++ reference: GCode::extrude_support()
-/// GCode.cpp:5414-5470
+/// GCode.cpp:5782-5848
 ///
-/// Handles support material, support interface, support transition,
-/// and support ironing. Each role gets its own label and speed.
+/// Splits the fills into ironing / non-ironing groups, chains each group with a
+/// greedy nearest-neighbor algorithm (starting near the writer's current
+/// position == C++ `m_last_pos`), then emits non-ironing first, ironing second
+/// ("make sure the ironing was after the support extrusions", GCode.cpp:5844).
+/// Each role gets its own FEATURE label.
 pub fn extrude_support(
     support_fills: &ExtrusionEntityCollection,
     writer: &mut GCodeWriter,
     config: &crate::print_config::PrintObjectConfig,
     is_first_layer: bool,
 ) {
+    use crate::extrusion_entity::ExtrusionRole;
+
     if support_fills.entities.is_empty() {
         return;
     }
 
-    // Retract and travel to first support point
-    writer.retract();
-    writer.set_travel_acceleration(6000.0);
-    if let Some(first_pt) = get_entity_first_point(&support_fills.entities[0]) {
-        let target_x = crate::unscale(first_pt.x());
-        let target_y = crate::unscale(first_pt.y());
-        writer.travel_to(target_x, target_y, None);
-    }
-    writer.unretract();
-
-    // GCode.cpp:5423-5470: chain and extrude with role labels
+    // GCode.cpp:5794-5802: split ironing vs non-ironing. Clone so chaining does
+    // not mutate the stored support_fills.
+    let mut extrusions: Vec<ExtrusionEntityType> = Vec::new();
+    let mut ironing_extrusions: Vec<ExtrusionEntityType> = Vec::new();
+    let mut has_support_ironing = false;
     for ee in &support_fills.entities {
-        let role = get_entity_role(ee);
-        let label = match role {
-            crate::extrusion_entity::ExtrusionRole::SupportMaterial => "support material",
-            crate::extrusion_entity::ExtrusionRole::SupportMaterialInterface => {
-                "support material interface"
+        if get_entity_role(ee) == ExtrusionRole::SupportIroning {
+            ironing_extrusions.push(ee.clone());
+            has_support_ironing = true;
+        } else {
+            extrusions.push(ee.clone());
+        }
+    }
+    // GCode.cpp:5803
+    if extrusions.is_empty() && ironing_extrusions.is_empty() {
+        return;
+    }
+    // GCode.cpp:5804-5810: chain each group; clear ironing if disabled.
+    has_support_ironing = has_support_ironing && config.enable_support_ironing;
+    if has_support_ironing {
+        let m_last_pos = writer_last_pos(writer);
+        crate::shortest_path::chain_and_reorder_extrusion_entities(
+            &mut ironing_extrusions,
+            Some(&m_last_pos),
+        );
+    } else {
+        ironing_extrusions.clear();
+    }
+    {
+        let m_last_pos = writer_last_pos(writer);
+        crate::shortest_path::chain_and_reorder_extrusion_entities(
+            &mut extrusions,
+            Some(&m_last_pos),
+        );
+    }
+
+    // GCode.cpp:5815-5842: emit one entity, with role label. Nested collections
+    // recurse into extrude_support (matching the C++ dynamic_cast<EEC> branch).
+    fn process_entities(
+        entities: &[ExtrusionEntityType],
+        writer: &mut GCodeWriter,
+        config: &crate::print_config::PrintObjectConfig,
+        is_first_layer: bool,
+    ) {
+        for ee in entities {
+            if let ExtrusionEntityType::Collection(coll) = ee {
+                // GCode.cpp:5836-5837: collection -> recurse.
+                extrude_support(coll, writer, config, is_first_layer);
+                continue;
             }
-            _ => "support material",
-        };
-        writer.write_comment(&format!("FEATURE: {}", label));
-        let _ = extrude_entity(ee, writer, config, is_first_layer);
+            let role = get_entity_role(ee);
+            let label = match role {
+                ExtrusionRole::SupportMaterial => "support material",
+                ExtrusionRole::SupportMaterialInterface => "support material interface",
+                ExtrusionRole::SupportIroning => "support ironing",
+                ExtrusionRole::SupportTransition => "support transition",
+                _ => "support material",
+            };
+            writer.write_comment(&format!("FEATURE: {}", label));
+            let _ = extrude_entity(ee, writer, config, is_first_layer);
+        }
+    }
+
+    // First positioning travel before the chained non-ironing group, matching
+    // the prior behaviour (retract + travel to the reordered first point).
+    if let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) {
+        writer.retract();
+        writer.set_travel_acceleration(6000.0);
+        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+        writer.unretract();
+    }
+
+    // GCode.cpp:5843-5845: non-ironing first, then ironing.
+    process_entities(&extrusions, writer, config, is_first_layer);
+    if has_support_ironing {
+        process_entities(&ironing_extrusions, writer, config, is_first_layer);
     }
 }
 
