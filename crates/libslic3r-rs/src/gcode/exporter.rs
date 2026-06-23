@@ -5,7 +5,7 @@
 //!
 //! C++ reference: GCode.cpp (helper methods throughout)
 
-use crate::arc_fitter::{ArcFitter, EMovePathType, PathFittingData};
+use crate::arc_fitter::EMovePathType;
 use crate::extrusion_entity::{
     ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionPath, ExtrusionRole,
 };
@@ -917,48 +917,29 @@ pub fn extrude_path_with_arc_fitting(
     // Working copy of the scaled points.
     let mut work_points: Vec<Point> = points.to_vec();
 
-    if enable_arc_fitting && !spiral_mode {
+    if enable_arc_fitting && !spiral_mode && !path.polyline.fitting_result.is_empty() {
         // -------------------------------------------------------------------
-        // Arc-fitting path: LayerRegion::simplify_path's
-        // `simplify_by_fitting_arc(scaled_resolution)` (LayerRegion.cpp:796-798)
-        // followed by GCode::_extrude's arc emission (GCode.cpp:6700-6745).
+        // Arc-fitting path: emit the STORED fitting_result that
+        // LayerRegion::simplify_path's `simplify_by_fitting_arc(scaled_resolution)`
+        // (LayerRegion.cpp:796-798) already computed once on the RAW perimeter
+        // points (and which seam-splitting in extrude_loop keeps consistent with
+        // polyline.points via ExtrusionLoop::split_at). This is exactly what C++
+        // GCode::_extrude does (GCode.cpp:6700-6745): it iterates the stored
+        // path.polyline.fitting_result, it does NOT re-fit.
+        //
+        // PARITY-FIX (arc-fit): the previous code re-ran do_arc_fitting_and_simplify
+        // here on the already-arc-fit-AND-DP-simplified points, which destroyed
+        // ~36% of the arcs that pass-1 had found (5758 -> 3688 outer-wall arcs)
+        // because the per-segment Douglas-Peucker in pass-1 had already removed the
+        // interior points that try_create_arc / are_points_within_slice need to
+        // re-confirm curvature. Emitting the stored result restores native parity
+        // (~5758 ≈ native 5793). Material is unchanged (arc dE uses arc.length, same
+        // value; linear-run dE identical).
         // -------------------------------------------------------------------
-        // arc_fitter operates on *scaled* points and wants a *scaled* tolerance,
-        // matching `scaled<double>(resolution)` in C++.
-        let scaled_tolerance = scale(tolerance_mm) as f64;
-
-        let mut fitting_result: Vec<PathFittingData> = Vec::new();
-        // do_arc_fitting_and_simplify mutates work_points in place (it runs the
-        // straight-run Douglas-Peucker) and populates fitting_result.
-        let _ = ArcFitter::do_arc_fitting_and_simplify(
-            &mut work_points,
-            &mut fitting_result,
-            scaled_tolerance,
-        );
-
-        // ARCFITDBG: compare STORED (pass-1) fitting_result vs this re-fit (pass-2).
-        if std::env::var("ARCFITDBG").is_ok()
-            && path.role == crate::extrusion_entity::ExtrusionRole::ExternalPerimeter
-        {
-            let stored = &path.polyline.fitting_result;
-            let stored_arcs = stored.iter().filter(|s| s.is_arc_move()).count();
-            let refit_arcs = fitting_result.iter().filter(|s| s.is_arc_move()).count();
-            let in_pts = points.len();
-            let work_pts = work_points.len();
-            if (stored_arcs != refit_arcs) || (stored_arcs > 0 || in_pts > 8) {
-                eprintln!(
-                    "ARCFITDBG OW in_pts={} stored_arcs={} stored_segs={} refit_arcs={} work_pts={}",
-                    in_pts,
-                    stored_arcs,
-                    stored.len(),
-                    refit_arcs,
-                    work_pts
-                );
-            }
-        }
+        let fitting_result = &path.polyline.fitting_result;
 
         // GCode.cpp:6703-6744: iterate fitting_result, emit G1/G2/G3.
-        for seg in &fitting_result {
+        for seg in fitting_result {
             match seg.path_type {
                 EMovePathType::LinearMove => {
                     // GCode.cpp:6705-6720
