@@ -562,7 +562,7 @@ impl LayerRegion {
         // C++ instead: collapse the gaps to the truly-thin band, run medial_axis to get
         // variable-width centerlines, and emit those via variable_width().
         if !result.gap_fills.is_empty() {
-            use crate::clipper_utils::{difference, offset2, opening_ex, OffsetJoinType};
+            use crate::clipper_utils::{difference, offset2_clib, OffsetJoinType};
             use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
             use crate::perimeter_generator::convert_thin_walls_to_extrusion_paths;
 
@@ -578,12 +578,27 @@ impl LayerRegion {
 
             // PerimeterGenerator.cpp:1331-1334 — keep only the band wider than `min`
             // (opening by min/2) and narrower than `max` (subtract the max-opening).
-            let opened_min = opening_ex(&result.gap_fills, min / 2.0);
-            let wide_part = offset2(
+            // C++:
+            //   diff_ex(opening_ex(gaps, min/2),
+            //           offset2_ex(gaps, -max/2, +(max/2 + ClipperSafetyOffset)))
+            // where opening_ex(g, d) == offset2_ex(g, -d, +d, DefaultJoinType=jtMiter,
+            // DefaultMiterLimit=3.0) (ClipperUtils.hpp:428-429), and the offset2_ex call
+            // also uses DefaultJoinType=jtMiter (ClipperUtils.hpp:396-397, no explicit
+            // join type at the call site). Both offsets route through clipper-z-sys
+            // (vendored ClipperLib @ 1e5, jtMiter, MiterLimit=3.0) instead of geo-clipper
+            // @ 1µm, which over-segments the gap-region contours feeding medial_axis.
+            // `difference` stays on geo-clipper (no clib boolean for closed paths).
+            let opened_min = offset2_clib(
+                &result.gap_fills,
+                min / 2.0,
+                min / 2.0,
+                OffsetJoinType::Miter,
+            );
+            let wide_part = offset2_clib(
                 &result.gap_fills,
                 max / 2.0,
                 max / 2.0 + CLIPPER_SAFETY_OFFSET,
-                OffsetJoinType::Square,
+                OffsetJoinType::Miter,
             );
             let mut gaps_ex = difference(&opened_min, &wide_part);
 
