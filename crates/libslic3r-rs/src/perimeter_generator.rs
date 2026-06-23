@@ -1354,33 +1354,17 @@ fn thick_polyline_to_extrusion_paths(
     paths
 }
 
-/// Greedy nearest-neighbor chain ordering for extrusion entities.
-/// Port of chain_extrusion_entities() from ShortestPath.cpp:1001-1015.
-/// Returns indices into `points` ordered by proximity: start from start_near,
-/// then each successor is the closest unvisited entity to the previous.
-/// For ExtrusionLoops first_point() == last_point(), so reversal is a no-op.
-fn greedy_chain_indices(points: &[Point], start_near: Point) -> Vec<usize> {
-    let n = points.len();
-    if n == 0 {
-        return vec![];
+/// Reverse an `ExtrusionEntityType` in place — the analogue of C++
+/// `ExtrusionEntity::reverse()` dispatched on the runtime type. Used to honor
+/// the reversal flag returned by `chain_extrusion_entities` for thin walls
+/// (PerimeterGenerator.cpp:487-488). Loops intentionally do nothing
+/// (ExtrusionEntityCollection.cpp:67-75 semantics: reversing a loop is a no-op).
+fn entity_reverse_inplace(entity: &mut ExtrusionEntityType) {
+    match entity {
+        ExtrusionEntityType::Path(p) => p.reverse(),
+        ExtrusionEntityType::Loop(_) => {}
+        ExtrusionEntityType::Collection(c) => c.reverse(),
     }
-    let mut visited = vec![false; n];
-    let mut chain = Vec::with_capacity(n);
-    let mut current = start_near;
-    for _ in 0..n {
-        let best = (0..n)
-            .filter(|&i| !visited[i])
-            .min_by_key(|&i| {
-                let dx = (points[i].x - current.x) as i64;
-                let dy = (points[i].y - current.y) as i64;
-                dx * dx + dy * dy
-            })
-            .unwrap();
-        visited[best] = true;
-        chain.push(best);
-        current = points[best];
-    }
-    chain
 }
 
 /// PerimeterGenerator.cpp:241-267 — detect_bridge_wall.
@@ -1794,20 +1778,22 @@ fn traverse_loops(
     }
 
     /// Traverse children and build the final collection.
-    /// PerimeterGenerator.cpp:472-502
-    /// C++: std::vector<std::pair<size_t, bool>> chain = chain_extrusion_entities(coll.entities, &zero_point);
-    /// C++: ExtrusionEntityCollection out;
-    // Collect first_points for all entities to feed into greedy NN chain.
-    let first_points: Vec<Point> = coll
-        .entities
-        .iter()
-        .map(|e| match e {
-            ExtrusionEntityType::Loop(l) => l.first_point(),
-            ExtrusionEntityType::Path(p) => p.first_point(),
-            ExtrusionEntityType::Collection(c) => c.first_point().unwrap_or(Point::new(0, 0)),
-        })
-        .collect();
-    let chain = greedy_chain_indices(&first_points, zero_point);
+    /// PerimeterGenerator.cpp:478:
+    ///   std::vector<std::pair<size_t, bool>> chain = chain_extrusion_entities(coll.entities, &zero_point);
+    ///
+    /// FAITHFULNESS FIX: this previously used a bespoke `greedy_chain_indices`
+    /// that only inspected each entity's first_point and never reversed. C++
+    /// `chain_extrusion_entities` (ShortestPath.cpp:1003) runs
+    /// `chain_segments_greedy_constrained_reversals`, which considers BOTH the
+    /// first and last endpoint of every remaining segment and chains from the
+    /// previously-placed endpoint, allowing reversals for reversible entities.
+    /// For closed loops first==last so the reversal is a no-op (the chain code
+    /// already clears `segment.second` for loops), but the *order* in which the
+    /// loop groups are visited differs from the first-point-only heuristic —
+    /// which is the perimeter contour-group ordering that drives inter-loop
+    /// travel. Use the faithful port so the emission order matches native.
+    let chain: Vec<(usize, bool)> =
+        crate::shortest_path::chain_extrusion_entities(&coll.entities, Some(&zero_point));
 
     // Move entities out of coll for indexed access.
     let mut entities: Vec<Option<ExtrusionEntityType>> =
@@ -1815,21 +1801,24 @@ fn traverse_loops(
 
     let mut out = ExtrusionEntityCollection::new();
 
-    /// PerimeterGenerator.cpp:474-502
+    /// PerimeterGenerator.cpp:480-505
     /// C++: for (const std::pair<size_t, bool> &idx : chain) {
-    for orig_idx in chain {
-        /// PerimeterGenerator.cpp:475
+    for (orig_idx, reverse) in chain {
+        /// PerimeterGenerator.cpp:481
         /// C++: assert(coll.entities[idx.first] != nullptr);
-        let entity = entities[orig_idx].take().unwrap();
+        let mut entity = entities[orig_idx].take().unwrap();
 
-        /// PerimeterGenerator.cpp:476-483
+        /// PerimeterGenerator.cpp:482-489
         /// C++: if (idx.first >= loops.size()) {
         /// C++:     // This is a thin wall.
         /// C++:     out.entities.emplace_back(coll.entities[idx.first]);
-        /// C++:     // if (idx.second) out.entities.back()->reverse();
+        /// C++:     if (idx.second) out.entities.back()->reverse();
         /// C++: } else {
         if orig_idx >= loops.len() {
-            // This is a thin wall — append as-is (reversal not needed for loops/open paths here)
+            // PerimeterGenerator.cpp:487-488: thin wall — honor the chain's reversal flag.
+            if reverse {
+                entity_reverse_inplace(&mut entity);
+            }
             out.append(entity);
         } else {
             /// PerimeterGenerator.cpp:484-501
