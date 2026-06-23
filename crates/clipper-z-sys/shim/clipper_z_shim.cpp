@@ -232,6 +232,135 @@ extern "C" CzZPaths cz_clip_extrusion(const int32_t *subject_xyz, int32_t subjec
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// cz_offset_expolygon — faithful replica of ClipperUtils.cpp
+// `offset_expolygon_inner` (ClipperUtils.cpp:437-506), the vertex-exact
+// per-ExPolygon offset used for the perimeter inner-wall density fix.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Marshal a vector of ClipperLib (non-Z) Paths into a freshly-malloc'd CzZPaths
+// (z always 0). Shared by cz_offset_expolygon.
+CzZPaths marshal_paths(const ClipperLib::Paths &paths) {
+    CzZPaths out;
+    out.num_paths = (int32_t) paths.size();
+    int32_t total = 0;
+    for (const ClipperLib::Path &p : paths)
+        total += (int32_t) p.size();
+    out.total_points = total;
+
+    if (out.num_paths > 0) {
+        out.path_lens = (int32_t *) std::malloc(sizeof(int32_t) * out.num_paths);
+        for (int32_t i = 0; i < out.num_paths; ++i)
+            out.path_lens[i] = (int32_t) paths[i].size();
+    } else {
+        out.path_lens = nullptr;
+    }
+
+    if (total > 0) {
+        out.coords = (int32_t *) std::malloc(sizeof(int32_t) * 3 * total);
+        int32_t k = 0;
+        for (const ClipperLib::Path &p : paths)
+            for (const ClipperLib::IntPoint &ip : p) {
+                out.coords[3 * k + 0] = (int32_t) ip.x();
+                out.coords[3 * k + 1] = (int32_t) ip.y();
+                out.coords[3 * k + 2] = 0;
+                ++k;
+            }
+    } else {
+        out.coords = nullptr;
+    }
+    return out;
+}
+
+} // namespace
+
+extern "C" CzZPaths cz_offset_expolygon(const int32_t *contour_xy, int32_t contour_n,
+                                        const int32_t *holes_xy, const int32_t *hole_lens,
+                                        int32_t hole_num, double delta, int32_t join_type,
+                                        double miter_limit) {
+    ClipperLib::JoinType jt = ClipperLib::jtMiter;
+    if (join_type == 1) jt = ClipperLib::jtRound;
+    else if (join_type == 2) jt = ClipperLib::jtSquare;
+
+    // ClipperOffsetShortestEdgeFactor = 0.005 (ClipperUtils.cpp).
+    const double shortest_edge = std::fabs(delta * 0.005);
+
+    // 1) Offset the outer contour (offset_expolygon_inner step 1).
+    ClipperLib::Path contour_path;
+    contour_path.reserve(contour_n);
+    for (int32_t i = 0; i < contour_n; ++i)
+        contour_path.emplace_back(contour_xy[2 * i], contour_xy[2 * i + 1]);
+
+    ClipperLib::Paths contours;
+    {
+        ClipperLib::ClipperOffset co;
+        if (jt == ClipperLib::jtRound) co.ArcTolerance = miter_limit;
+        else                            co.MiterLimit = miter_limit;
+        co.ShortestEdgeLength = shortest_edge;
+        co.AddPath(contour_path, jt, ClipperLib::etClosedPolygon);
+        co.Execute(contours, delta);
+    }
+    if (contours.empty())
+        return marshal_paths(ClipperLib::Paths{});
+
+    if (hole_num <= 0) {
+        // No holes: done.
+        return marshal_paths(contours);
+    }
+
+    // 2) Offset the holes one by one (signum reversed: Execute on -delta).
+    ClipperLib::Paths holes;
+    {
+        const int32_t *cursor = holes_xy;
+        for (int32_t h = 0; h < hole_num; ++h) {
+            int32_t len = hole_lens[h];
+            ClipperLib::Path hole_path;
+            hole_path.reserve(len);
+            for (int32_t i = 0; i < len; ++i)
+                hole_path.emplace_back(cursor[2 * i], cursor[2 * i + 1]);
+            cursor += 2 * len;
+
+            ClipperLib::ClipperOffset co;
+            if (jt == ClipperLib::jtRound) co.ArcTolerance = miter_limit;
+            else                            co.MiterLimit = miter_limit;
+            co.ShortestEdgeLength = shortest_edge;
+            co.AddPath(hole_path, jt, ClipperLib::etClosedPolygon);
+            ClipperLib::Paths out2;
+            co.Execute(out2, -delta);
+            for (ClipperLib::Path &p : out2)
+                holes.push_back(std::move(p));
+        }
+    }
+
+    // 3) Combine contour + holes (offset_expolygon_inner step 3).
+    ClipperLib::Paths result;
+    if (holes.empty()) {
+        result = std::move(contours);
+    } else if (delta < 0) {
+        // Negative offset: subtract offsetted holes from offsetted contours.
+        ClipperLib::Clipper clipper;
+        clipper.AddPaths(contours, ClipperLib::ptSubject, true);
+        clipper.AddPaths(holes, ClipperLib::ptClip, true);
+        ClipperLib::Paths diff;
+        clipper.Execute(ClipperLib::ctDifference, diff, ClipperLib::pftNonZero,
+                        ClipperLib::pftNonZero);
+        result = std::move(diff); // may be empty -> caller treats as collapsed
+    } else {
+        // Positive offset: append reversed holes.
+        result.reserve(contours.size() + holes.size());
+        for (ClipperLib::Path &p : contours)
+            result.push_back(std::move(p));
+        for (ClipperLib::Path &p : holes) {
+            std::reverse(p.begin(), p.end());
+            result.push_back(std::move(p));
+        }
+    }
+
+    return marshal_paths(result);
+}
+
 extern "C" void cz_free_zpaths(CzZPaths paths) {
     std::free(paths.coords);
     std::free(paths.path_lens);

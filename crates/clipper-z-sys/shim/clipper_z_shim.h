@@ -55,6 +55,28 @@ CzZPaths cz_clip_extrusion(const int32_t *subject_xyz, int32_t subject_n,
 // Free a CzZPaths returned by cz_clip_extrusion.
 void cz_free_zpaths(CzZPaths paths);
 
+// Faithful replica of libslic3r ClipperUtils.cpp `offset_expolygon_inner`
+// (ClipperUtils.cpp:437-506): offset a SINGLE ExPolygon (contour + holes) by
+// `delta` (in scaled integer units) using the vertex-exact ClipperOffset
+// (jtMiter, MiterLimit=miter_limit; jtRound uses ArcTolerance=miter_limit;
+// ShortestEdgeLength=|delta|*ClipperOffsetShortestEdgeFactor=0.005). For a
+// negative offset the offsetted holes are subtracted from the offsetted contour
+// (ctDifference, pftNonZero); for a positive offset the reversed holes are just
+// appended. The result is the per-ExPolygon offset Paths (NOT unioned across
+// ExPolygons — the caller unions, matching expolygons_offset). z is always 0.
+//
+// Layout: `contour_xy` = `contour_n` int32 (x,y) pairs. `holes_xy`/`hole_lens`/
+// `hole_num` describe the holes (flat (x,y) pairs + per-hole point counts).
+//   join_type: 0=jtMiter, 1=jtRound, 2=jtSquare. delta is in input integer units.
+// Returns the offset paths flat (CzZPaths reused; z always 0). Free via
+// cz_free_zpaths. This is the ONLY vertex-generating primitive routed away from
+// geo-clipper (the perimeter inner-wall offset density fix); booleans and the
+// final path->ExPolygon union stay on geo-clipper.
+CzZPaths cz_offset_expolygon(const int32_t *contour_xy, int32_t contour_n,
+                             const int32_t *holes_xy, const int32_t *hole_lens,
+                             int32_t hole_num, double delta, int32_t join_type,
+                             double miter_limit);
+
 #ifdef __cplusplus
 }
 #endif

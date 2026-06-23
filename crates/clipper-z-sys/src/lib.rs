@@ -43,6 +43,24 @@ extern "C" {
         clip_type: c_int,
     ) -> CzZPaths;
 
+    /// Faithful `offset_expolygon_inner` (ClipperUtils.cpp:437-506): vertex-exact
+    /// offset of a SINGLE ExPolygon (`contour_xy` = `contour_n` int32 x,y pairs;
+    /// holes via `holes_xy` flat x,y pairs + `hole_lens` per-hole counts +
+    /// `hole_num`) by `delta` (scaled integer units). `join_type`:
+    /// 0=jtMiter,1=jtRound,2=jtSquare; `miter_limit` is MiterLimit (or
+    /// ArcTolerance for jtRound). Output z is always 0; NOT unioned across
+    /// ExPolygons (caller unions). Free via [`cz_free_zpaths`].
+    pub fn cz_offset_expolygon(
+        contour_xy: *const i32,
+        contour_n: i32,
+        holes_xy: *const i32,
+        hole_lens: *const i32,
+        hole_num: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 }

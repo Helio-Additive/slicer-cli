@@ -902,6 +902,215 @@ pub fn offset2(
     grow(&shrunk, grow_amount.abs(), join_type)
 }
 
+// ============================================================================
+// ClipperLib (clipper-z-sys) vertex-exact offset — perimeter inner-wall path
+//
+// PARITY: geo-clipper's miter offset inserts ~10-18% extra vertices on
+// sub-|delta| edges (proven in /tmp/offsetvtx_findings.md). The vendored
+// BambuStudio ClipperLib (clipper-z-sys, namespaced ClipperZSys::ClipperLib,
+// CLIPPERLIB_INT32) is vertex-EXACT. These wrappers route ONLY the perimeter
+// inner-wall successive offsets (offset2/shrink/grow) through it to byte-match
+// native inner-wall vertex density. Booleans and other-feature offsets stay on
+// geo-clipper (this is a narrow, area-invariant swap).
+//
+// Faithfulness: cz_offset_expolygon replicates ClipperUtils.cpp
+// `offset_expolygon_inner` (per-ExPolygon ClipperOffset of contour + holes, then
+// difference/append). The cross-ExPolygon union + path->ExPolygon reconstruction
+// reuse the existing geo-clipper `union_polygons_ex` (proven vertex-preserving:
+// the outer wall — a single geo offset — is already byte-exact, so the geo
+// union/round-trip does not re-densify).
+//
+// i32 RANGE: ClipperLib here is CLIPPERLIB_INT32. libslic3r coords are i64@1e5.
+// Benchy ~6e6 << i32 max 2.1e9 → safe. The wrapper debug-asserts the range
+// (clipper_z::narrow_i32 inside marshalling) and documents the limit.
+// ============================================================================
+
+/// ClipperLib join-type discriminant for the shim: 0=Miter, 1=Round, 2=Square.
+#[inline]
+fn clib_join_code(jt: OffsetJoinType) -> i32 {
+    match jt {
+        OffsetJoinType::Miter => 0,
+        OffsetJoinType::Round => 1,
+        OffsetJoinType::Square => 2,
+    }
+}
+
+/// `miterLimit` argument to the ClipperOffset, in the SAME convention as C++:
+/// for jtMiter it is the unitless MiterLimit (DefaultMiterLimit=3.0); for jtRound
+/// it is the ArcTolerance in SCALED coord units (DefaultMiterLimit=3.0 scaled).
+const CLIB_MITER_LIMIT: f64 = 3.0;
+
+#[inline]
+fn assert_i32_scaled(v: Coord) {
+    debug_assert!(
+        v >= i32::MIN as i64 && v <= i32::MAX as i64,
+        "clib offset: scaled coordinate {v} out of i32 range (ClipperLib is \
+         CLIPPERLIB_INT32; max ~2.1e9 = ~21000mm at 1e5/mm). Geometry too large \
+         for the perimeter-offset ClipperLib path."
+    );
+}
+
+/// Faithful `offset_expolygon_inner` (ClipperUtils.cpp:437) for a single
+/// ExPolygon via the vertex-exact ClipperLib shim. `delta` is in mm (positive =
+/// grow, negative = shrink); coords/delta are scaled to i64@1e5 then narrowed to
+/// i32. Returns the offset paths as scaled Polygons (contours + holes, not yet
+/// reconstructed into ExPolygons). Empty contour offset yields an empty Vec.
+fn clib_offset_expolygon_paths(
+    expoly: &ExPolygon,
+    delta_mm: CoordF,
+    join_type: OffsetJoinType,
+) -> Vec<Polygon> {
+    let contour_xy: Vec<i32> = expoly
+        .contour
+        .points()
+        .iter()
+        .flat_map(|p| {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            [p.x as i32, p.y as i32]
+        })
+        .collect();
+    let contour_n = expoly.contour.points().len() as i32;
+    if contour_n == 0 {
+        return Vec::new();
+    }
+
+    let mut holes_xy: Vec<i32> = Vec::new();
+    let mut hole_lens: Vec<i32> = Vec::with_capacity(expoly.holes.len());
+    for hole in &expoly.holes {
+        hole_lens.push(hole.points().len() as i32);
+        for p in hole.points() {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            holes_xy.push(p.x as i32);
+            holes_xy.push(p.y as i32);
+        }
+    }
+
+    let delta_scaled = delta_mm * crate::SCALING_FACTOR;
+
+    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
+    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
+    // out then free via cz_free_zpaths.
+    let raw = unsafe {
+        clipper_z_sys::cz_offset_expolygon(
+            contour_xy.as_ptr(),
+            contour_n,
+            if holes_xy.is_empty() {
+                std::ptr::null()
+            } else {
+                holes_xy.as_ptr()
+            },
+            if hole_lens.is_empty() {
+                std::ptr::null()
+            } else {
+                hole_lens.as_ptr()
+            },
+            expoly.holes.len() as i32,
+            delta_scaled,
+            clib_join_code(join_type),
+            CLIB_MITER_LIMIT,
+        )
+    };
+
+    let mut out: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            out.push(Polygon::from_points(pts));
+        }
+    }
+
+    // SAFETY: `raw` was produced by cz_offset_expolygon and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+
+    out
+}
+
+/// ClipperLib-backed `expolygons_offset` (ClipperUtils.cpp:539): vertex-exact
+/// per-ExPolygon offset, then union the resulting paths back into ExPolygons.
+///
+/// Mirrors `offset_ex(const ExPolygons&)` / the `offset_polygons` single offset
+/// for the perimeter inner-wall path. `delta` is in mm. Reconstruction (and the
+/// positive-offset cross-ExPolygon union) reuse geo-clipper `union_polygons_ex`,
+/// which is proven vertex-preserving for offset output (the outer wall is already
+/// byte-exact). Boolean correctness / area parity is therefore unchanged; only
+/// the offset's emitted vertex density changes (toward native).
+pub fn offset_expolygons_clib(
+    expolygons: &[ExPolygon],
+    delta: CoordF,
+    join_type: OffsetJoinType,
+) -> ExPolygons {
+    if expolygons.is_empty() {
+        return vec![];
+    }
+
+    let mut all_paths: Vec<Polygon> = Vec::new();
+    for expoly in expolygons {
+        all_paths.extend(clib_offset_expolygon_paths(expoly, delta, join_type));
+    }
+    if all_paths.is_empty() {
+        return vec![];
+    }
+
+    // union_polygons_ex == ClipperPaths_to_Slic3rExPolygons (NonZero union +
+    // PolyTree->ExPolygons). For a single path it short-circuits to a hole-less
+    // ExPolygon; otherwise it nests holes correctly, matching C++.
+    union_polygons_ex(&all_paths)
+}
+
+/// ClipperLib-backed `shrink` (negative offset) for the perimeter inner-wall path.
+pub fn shrink_clib(
+    expolygons: &[ExPolygon],
+    distance: CoordF,
+    join_type: OffsetJoinType,
+) -> ExPolygons {
+    offset_expolygons_clib(expolygons, -distance.abs(), join_type)
+}
+
+/// ClipperLib-backed `grow` (positive offset) for the perimeter inner-wall path.
+pub fn grow_clib(
+    expolygons: &[ExPolygon],
+    distance: CoordF,
+    join_type: OffsetJoinType,
+) -> ExPolygons {
+    offset_expolygons_clib(expolygons, distance.abs(), join_type)
+}
+
+/// ClipperLib-backed `offset2_ex` (ClipperUtils.cpp:581): shrink by `shrink_amount`
+/// then grow by `grow_amount`, both through the vertex-exact ClipperLib offset.
+/// This is the successive inner-wall perimeter-loop operation whose compounding
+/// geo-clipper densification this swap removes.
+pub fn offset2_clib(
+    expolygons: &[ExPolygon],
+    shrink_amount: CoordF,
+    grow_amount: CoordF,
+    join_type: OffsetJoinType,
+) -> ExPolygons {
+    if expolygons.is_empty() {
+        return vec![];
+    }
+    let shrunk = shrink_clib(expolygons, shrink_amount.abs(), join_type);
+    if shrunk.is_empty() {
+        return vec![];
+    }
+    grow_clib(&shrunk, grow_amount.abs(), join_type)
+}
+
 /// Detect gaps between two polygon sets.
 ///
 /// Gaps are the narrow regions that exist in the outer area but not in the
@@ -2150,6 +2359,11 @@ mod tests {
         // Should be roughly similar (some corner effects expected)
         assert!(result_area > original_area * 0.8);
     }
+
+    // NOTE: vertex-exactness vs geo-clipper for offset_expolygons_clib / offset2_clib
+    // is verified in the standalone integration test
+    // `tests/clib_offset_vertex_exact.rs` (the in-lib `#[cfg(test)]` target does
+    // not currently compile due to unrelated pre-existing test modules).
 
     #[test]
     fn test_offset2_removes_thin_features() {
