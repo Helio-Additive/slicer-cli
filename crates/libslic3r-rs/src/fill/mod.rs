@@ -774,6 +774,27 @@ pub fn group_fills(
     // Fill.cpp:453-546. `lower_internal_areas` is the union of the lower layer's
     // stInternal/stInternalVoid fill-surface expolygons, gathered by the caller
     // (Fill.cpp:455-464) because `group_fills` cannot reach a sibling Layer here.
+    // RECLASS_DBG (diagnostics only, env-gated): dump per-expolygon detect_narrow
+    // state for the two target layers (print_z ~0.6 and ~4.2). REVERT before merge.
+    let reclass_dbg = std::env::var("RECLASS_DBG").is_ok()
+        && ((layer.print_z - 0.6).abs() < 0.05 || (layer.print_z - 4.2).abs() < 0.05);
+    if reclass_dbg {
+        let sf = crate::SCALING_FACTOR;
+        let mut li_bbox = crate::geometry::BoundingBox::new();
+        for e in lower_internal_areas {
+            li_bbox.merge(&get_extents_expoly(e));
+        }
+        let li_area: f64 = lower_internal_areas.iter().map(|e| e.area()).sum::<f64>() / (sf * sf);
+        eprintln!(
+            "RUST_RECLASS pz={:.3} li_count={} li_area_mm2={:.3} li_bbox=[{:.2},{:.2}]-[{:.2},{:.2}]",
+            layer.print_z,
+            lower_internal_areas.len(),
+            li_area,
+            li_bbox.min.x as f64 / sf, li_bbox.min.y as f64 / sf,
+            li_bbox.max.x as f64 / sf, li_bbox.max.y as f64 / sf,
+        );
+    }
+
     if layer.object().config().detect_narrow_internal_solid_infill {
         let surface_fills_size = surface_fills.len();
         for i in 0..surface_fills_size {
@@ -800,7 +821,9 @@ pub fn group_fills(
                 // Fill.cpp:478
                 let clipped_internal_bbox = get_extents_polygons(&clipped_internals);
                 // Fill.cpp:479-486
-                if is_narrow_infill_area(&surface_fills[i].expolygons[j]) {
+                let is_narrow = is_narrow_infill_area(&surface_fills[i].expolygons[j]);
+                let mut branch = "KEPT";
+                if is_narrow {
                     // Fill.cpp:480 — offset_ex(expoly, SCALED_EPSILON); the crate's
                     // offset helpers take millimeters.
                     if !clipped_internals.is_empty()
@@ -816,9 +839,23 @@ pub fn group_fills(
                         .is_empty()
                     {
                         narrow_floating_expoly_idx.push(j);
+                        branch = "FLOAT";
                     } else {
                         narrow_expoly_idx.push(j);
+                        branch = "NARROW";
                     }
+                }
+                if reclass_dbg {
+                    let sf = crate::SCALING_FACTOR;
+                    let area = surface_fills[i].expolygons[j].area() / (sf * sf);
+                    eprintln!(
+                        "RUST_RECLASS pz={:.3} i={} j={} area_mm2={:.4} bbox=[{:.2},{:.2}]-[{:.2},{:.2}] holes={} narrow={} clip_empty={} branch={}",
+                        layer.print_z, i, j, area,
+                        bbox.min.x as f64 / sf, bbox.min.y as f64 / sf,
+                        bbox.max.x as f64 / sf, bbox.max.y as f64 / sf,
+                        surface_fills[i].expolygons[j].holes.len(),
+                        is_narrow, clipped_internals.is_empty(), branch,
+                    );
                 }
             }
 
