@@ -23,13 +23,19 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (at `1ee3ea4`)
+## Current parity (at `f67f3f4`, ROUND 48 — see memory `project_benchy_parity_gap.md` for the round-by-round log)
 
-- **Material: 0.986×** — header filament rust 3794.94 / native 3858.97 mm.
-- **Byte-identical: NO** — first divergence is **line 3** (header time-estimate value).
-- Material correctness is strong: walls, gap-fill, arcs, and toolpath density are
-  all at/near parity. Remaining material gap is concentrated in **bridges**
-  (rust 15 vs native 38; ~−187 E), which is *perf-blocked* (see below).
+- **Material: 0.99771×** — header filament rust 3850.13 / native 3858.97 mm (XY-gated `feat_e2.py`).
+- **Time estimate: CONVERGED** — native 43m0s / rust 43m21s (the old "1h29m vs 43m"
+  line-3 divergence is **RESOLVED**; the overhang/speed trio below is landed).
+- **Byte-identical: NO**, but the structural subsystems now match or are faithful:
+  outer-wall vertex density matches native (offset rerouted to clipper-z-sys),
+  gap-fill 81% closed, seam ~89% byte-exact at established layers, arc-fitter /
+  simplification / medial-axis (boostvoronoi) / chaining / retraction all proven faithful.
+- **Remaining residual is surface CLASSIFICATION** (not geometry/units): rust
+  over-fills **bridge-infill** (moves 1286→2346) and under-blocks **internal-solid**
+  (389→134 blocks), which also drives the systematic extrusion-arc over (+~1250,
+  a downstream symptom of fragmentation — the arc-fitter itself is byte-faithful).
 
 ## What's done (verified, on the branch)
 
@@ -51,26 +57,21 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Remaining levers (all foundational/large — tackle as separate scoped efforts)
 
-1. **Time / line-3 (byte first-divergence).** The estimator is *faithful* (proven:
-   the native C++ GCodeProcessor on rust's own gcode gives the same time). The
-   overshoot (1h29m vs 43m) is the toolpath over-fragmenting because overhang
-   grading over-classifies. Root is a **tangled trio** — `ExtrusionPath.overhang_degree`
-   is `i32` (C++ `double`, defeats speed interpolation) + missing `detect_bridge_wall`
-   + `merge_same_speed_paths` interaction. **Partial fixes regress** (tried 3×);
-   needs all parts changed together. Default keeps the midpoint-baseline overhang
-   (least-wrong).
-2. **Bridges (−187 E material).** `wave_seeds` region-expansion is ported on the
-   `clipper-z-sys` `ClipperLib_Z` engine. Perf + a latent heap-corruption crash
-   are now FIXED on branch **`bridges-perf`** (full slice 45-60 min → ~15 s; the
-   ODR/symbol-collision fix was cherry-picked to this branch as `d85539a`). BUT
-   the material gap is **unchanged** (bridge 15/50 E vs native 38/237 E) — the
-   faithful `wave_seeds` produces the *same* 15 bridges as the stub. So the gap is
-   a **correctness issue UPSTREAM of `wave_seeds`**, most likely the missing
-   **`detect_bridge_wall`** (native routes 100%-overhang regions to bridge walls;
-   rust does not, so the bridge surfaces are never classified for `wave_seeds` to
-   expand). NOTE: this is the **same `detect_bridge_wall`** that lever #1 needs —
-   it is a shared, convergent next step (a classification port, not a clipper-engine
-   build-out). Original slow version preserved on `bridges-wip-perf-blocked`.
+1. **Overhang trio + time-estimate — RESOLVED (ROUND 48).** `overhang_degree` is now
+   `f64`, `merge_same_speed_paths` and `detect_bridge_wall` are ported + called, the
+   speed interpolation is faithful, and the **time estimate converged (43m0s vs 43m21s)**.
+   Overhang-wall feature matches (90 vs 91). This whole lever is done — do not re-attempt.
+2. **Bridge-infill surface OVER-detection (PRIMARY remaining lever).** rust over-fills
+   bridge-infill (moves 1286→2346) and under-blocks internal-solid (389→134 blocks;
+   material 494→414). Surface that native fills as **internal-solid** is being routed to
+   **bridge-infill** in rust → over-bridged/fragmented regions also drive the systematic
+   extrusion-arc over (+~1250; the arc-fitter itself is byte-faithful, ROUND 43). Root is
+   in `LayerRegion::process_external_surfaces` / `BridgeDetector` over-marking
+   `stBottomBridge`/`stInternalBridge`. A **classification** fix (the recurring tractable
+   bug class), NOT `wave_seeds`/`detect_bridge_wall` (those are done). This SUPERSEDES the
+   old "−187 E bridge material" framing and is the likely primary cause of the
+   internal-solid under-volume (re-assess any Arachne narrow-fill residual — ROUND 47,
+   `/tmp/solid_findings.md` — only AFTER this lands).
 3. **Clipper coordinate byte-exactness (F1).** The live clipper backend is
    `geo-clipper` at scale 1000 (1 µm grid) fed via an mm float round-trip, vs C++
    ClipperLib at scale 100000. For byte-exact coordinates, feed the C++ clipper the
