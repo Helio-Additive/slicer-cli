@@ -795,7 +795,11 @@ impl PrintObject {
         /// PrintObject.cpp:709-711
         /// C++: this->clip_fill_surfaces();
         /// C++: m_print->throw_if_canceled();
-        // TODO: Port clip_fill_surfaces()
+        // clip_fill_surfaces() (PrintObject.cpp:3309) is intentionally NOT ported: it is
+        // DEAD CODE in BambuStudio. Its body is gated `if (! infill_only_where_needed) return;`
+        // and `PrintObject::infill_only_where_needed` is a static member hard-initialized to
+        // `false` (PrintObjectSlice.cpp:21) that is never assigned `true` anywhere in libslic3r.
+        // So it always returns immediately and porting it would be a behavioral no-op.
 
         /// PrintObject.cpp:721-723
         /// C++: this->bridge_over_infill();
@@ -3245,6 +3249,17 @@ impl PrintObject {
                 } else {
                     intersection(&shell, &internal_all)
                 };
+                // PrintObject.cpp:1994 — polygons_append(shell, diff(polygonsInternal, holes)).
+                // FORENSIC (vshells-holes, /tmp/holes_findings.md): at li=70/Z14.2 this produces a
+                // 54 mm^2 central/right blob (dih#0, x=[5.36,26.77]) that native does NOT have, which
+                // becomes a spurious InternalSolid and is reclassified to an over-wide Bridge
+                // downstream. The op itself is faithful (verified: routing through difference_clib at
+                // ClipperLib precision yields the identical 54 mm^2 — so this is NOT an F1-local diff
+                // bug). The blob is REAL given the inputs: it is internal_all minus the window-combined
+                // `holes`, and `holes` is over-carved because rust's WINDOW fill_expolygons (L71..L74)
+                // are shape-divergent/fragmented vs native (L74 own holes fragment to n=9 with sub-mm
+                // gaps). Root is UPSTREAM fill_expolygons shape (detect_surfaces_type / perimeter->infill
+                // partition / upstream union F1 fragmentation), not this op — see findings doc.
                 let diff_int_holes = if holes.is_empty() {
                     internal_all.clone()
                 } else {
