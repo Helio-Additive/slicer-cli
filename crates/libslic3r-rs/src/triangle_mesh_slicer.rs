@@ -1306,13 +1306,19 @@ fn make_expolygons(
     debug_assert!(closing_radius >= 0.0);
     // Allowing negative extra_offset for shrinking a contour.
     // TriangleMeshSlicer.cpp:1796-1804
+    // UNIT-NOTE: C++ uses ClipperLib in SCALED coords, so it offsets by
+    // `scale_(closing_radius)`. This crate's `offset_expolygons` (geo-clipper)
+    // operates in UNSCALED (mm) space — it `unscale()`s the polygon coords and
+    // passes the delta through verbatim (see clipper_utils.rs:85,108). The
+    // faithful equivalent therefore passes the radius in mm, NOT scaled (a
+    // `scale()` here would offset by ~radius*100000 mm and collapse the slice).
     let offset_out: f64;
     let offset_in: f64;
     if closing_radius >= extra_offset {
-        offset_out = scale(closing_radius as f64) as f64;
-        offset_in = -(scale((closing_radius - extra_offset) as f64) as f64);
+        offset_out = closing_radius as f64;
+        offset_in = -((closing_radius - extra_offset) as f64);
     } else {
-        offset_out = scale(extra_offset as f64) as f64;
+        offset_out = extra_offset as f64;
         offset_in = 0.0;
     }
 
