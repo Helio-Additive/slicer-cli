@@ -3250,16 +3250,32 @@ impl PrintObject {
                     intersection(&shell, &internal_all)
                 };
                 // PrintObject.cpp:1994 — polygons_append(shell, diff(polygonsInternal, holes)).
-                // FORENSIC (vshells-holes, /tmp/holes_findings.md): at li=70/Z14.2 this produces a
-                // 54 mm^2 central/right blob (dih#0, x=[5.36,26.77]) that native does NOT have, which
-                // becomes a spurious InternalSolid and is reclassified to an over-wide Bridge
-                // downstream. The op itself is faithful (verified: routing through difference_clib at
-                // ClipperLib precision yields the identical 54 mm^2 — so this is NOT an F1-local diff
-                // bug). The blob is REAL given the inputs: it is internal_all minus the window-combined
-                // `holes`, and `holes` is over-carved because rust's WINDOW fill_expolygons (L71..L74)
-                // are shape-divergent/fragmented vs native (L74 own holes fragment to n=9 with sub-mm
-                // gaps). Root is UPSTREAM fill_expolygons shape (detect_surfaces_type / perimeter->infill
-                // partition / upstream union F1 fragmentation), not this op — see findings doc.
+                // FORENSIC (F1, 2026-06-24, /tmp/f1_findings.md — supersedes the earlier
+                // "fragmentation" reading; that was a pre-R53 artifact and is FALSE on this base):
+                // This op and the regularize below are FAITHFUL to C++. The `diff_int_holes` it
+                // produces is a thin annular RING around the whole hull footprint (e.g. li=5/Z1.2:
+                // one region, nv=126, ~27 mm^2 ≈ a 0.28mm-wide ring), and it is GEOMETRICALLY REAL
+                // given the inputs — NOT a clipper/precision bug. Trace: `holes` = window-intersection
+                // of per-layer fill_expolygons over the top+bottom shell window. The TOP projection
+                // (layers above; cone widens upward) carves almost nothing (~1.4 mm^2). The BOTTOM
+                // projection (layers below; the Benchy hull TAPERS DOWNWARD: li3=488 < li4=498 <
+                // li5=509 mm^2) carves the ring (~25 mm^2): intersecting li=5's fill_expolygons with
+                // the SMALLER layers below shrinks it to the base footprint. C++ combine_holes does
+                // the identical intersection. So the ~22 mm^2 InternalSolid annulus this becomes is
+                // present in native too — IF native's lower-layer fill_expolygons have the same
+                // (488/498/509) taper as ours.
+                //
+                // RESIDUAL ROOT (still open): native gcode shows only ~1.6 mm^2 solid + ~1.6 FVS per
+                // layer in this band, not the ~22 mm^2 our annulus implies. The only way native's
+                // annulus is smaller is if native's lower-layer fill_expolygons are LARGER / less
+                // tapered than ours (so the bottom-projection intersection carves less). I.e. the
+                // divergence bottoms out in the per-layer `fill_expolygons` TAPER upstream
+                // (prepare_fill_surfaces perimeter->infill offset2, or the raw slice taper = F2),
+                // NOT in discover_vertical_shells. The FillConcentric port bug (fill_concentric.rs:438
+                // — no boundary-loop seed) HIDES this today by emitting ZERO for the thin ring; fixing
+                // FillConcentric alone fills our oversized ring SOLID and overshoots material +282
+                // (measured 2026-06-24). The two must land together: shrink the annulus to native size
+                // (fix the fill_expolygons taper) FIRST, THEN seed the FillConcentric boundary loop.
                 let diff_int_holes = if holes.is_empty() {
                     internal_all.clone()
                 } else {
