@@ -3820,10 +3820,11 @@ impl PrintObject {
                 .unwrap_or(false));
         let _ = has_voids; // see FIDELITY-NOTE above
 
+        let clampdbg = std::env::var("CLAMPDBG").is_ok();
         // PrintObject.cpp:1720 — for each printing region.
         for region_id in 0..self.num_printing_regions() {
             // PrintObject.cpp:1722-1731 — for each layer, drive the LayerRegion member.
-            for layer in &mut self.layers {
+            for (li, layer) in self.layers.iter_mut().enumerate() {
                 // PrintObject.cpp:1726
                 // C++: m_print->throw_if_canceled();
                 if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
@@ -3832,13 +3833,40 @@ impl PrintObject {
                 // PrintObject.cpp:1728 — m_layers[layer_idx]->get_region(region_id)->process_external_surfaces(...)
                 // layer.height mirrors C++ m_layer->height threaded into LayerRegion::flow.
                 let layer_height = layer.height;
+                if clampdbg && li == 2 && region_id == 0 {
+                    if let Some(region) = layer.regions().get(region_id) {
+                        clampdbg_dump("BEFORE", li, &region.fill_surfaces.surfaces);
+                    }
+                }
                 if let Some(region) = layer.regions_mut().get_mut(region_id) {
                     region.process_external_surfaces(layer_height)?;
+                }
+                if clampdbg && li == 2 && region_id == 0 {
+                    if let Some(region) = layer.regions().get(region_id) {
+                        clampdbg_dump("AFTER", li, &region.fill_surfaces.surfaces);
+                    }
                 }
             }
         }
         Ok(())
     }
+}
+
+// CLAMPDBG (diagnostics only, env-gated; stripped before merge).
+fn clampdbg_dump(stage: &str, li: usize, surfaces: &[crate::surface::Surface]) {
+    use std::collections::BTreeMap;
+    let mut agg: BTreeMap<String, (usize, f64)> = BTreeMap::new();
+    for s in surfaces {
+        let area_mm2 = s.expolygon.area() / (crate::SCALING_FACTOR * crate::SCALING_FACTOR);
+        let e = agg.entry(format!("{:?}", s.surface_type)).or_insert((0, 0.0));
+        e.0 += 1;
+        e.1 += area_mm2;
+    }
+    eprint!("[CLAMPDBG] {} li={}:", stage, li);
+    for (ty, (cnt, area)) in &agg {
+        eprint!(" {}={}surf/{:.2}mm²", ty, cnt, area);
+    }
+    eprintln!();
 }
 
 // Helper functions for polygon operations that work with Vec<Polygon>
