@@ -668,6 +668,43 @@ impl LayerRegion {
                 if !covered.is_empty() {
                     use crate::clipper_utils::{difference, union_polygons_ex};
                     let covered_ex = union_polygons_ex(&covered);
+                    // L74DBG (env-gated forensic, stripped before commit): trace the
+                    // gap-fill covered_ex subtraction on fill_expolygons per layer.
+                    if std::env::var("L74DBG").is_ok() {
+                        let area_mm = |exs: &ExPolygons| -> f64 {
+                            exs.iter().map(|e| e.area()).sum::<f64>()
+                                / (crate::SCALING_FACTOR * crate::SCALING_FACTOR)
+                        };
+                        let bbox = |exs: &ExPolygons| -> (f64, f64, f64, f64) {
+                            let (mut xn, mut xx, mut yn, mut yx) =
+                                (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+                            for e in exs {
+                                for p in &e.contour.points {
+                                    let x = crate::unscale(p.x);
+                                    let y = crate::unscale(p.y);
+                                    xn = xn.min(x);
+                                    xx = xx.max(x);
+                                    yn = yn.min(y);
+                                    yx = yx.max(y);
+                                }
+                            }
+                            (xn, xx, yn, yx)
+                        };
+                        let cov_ex: ExPolygons = covered_ex.clone();
+                        let (bxn, bxx, byn, byx) = bbox(&self.fill_expolygons);
+                        let (cxn, cxx, cyn, cyx) = bbox(&cov_ex);
+                        eprintln!(
+                            "L74DBG li={} reg={} GAPFILL-COVER fill_expoly before: n={} A={:.2}mm2 bbox=[{:.2},{:.2}]x[{:.2},{:.2}] | covered_ex: n={} A={:.2}mm2 bbox=[{:.2},{:.2}]x[{:.2},{:.2}]",
+                            layer_id,
+                            self.region_id,
+                            self.fill_expolygons.len(),
+                            area_mm(&self.fill_expolygons),
+                            bxn, bxx, byn, byx,
+                            cov_ex.len(),
+                            area_mm(&cov_ex),
+                            cxn, cxx, cyn, cyx,
+                        );
+                    }
                     // Subtract from the Internal fill_surfaces (the infill region produced
                     // by the perimeter generator; top/bottom skins are unaffected).
                     let internal: ExPolygons = self
@@ -698,6 +735,19 @@ impl LayerRegion {
                     if !self.fill_expolygons.is_empty() {
                         self.fill_expolygons =
                             difference(&self.fill_expolygons, &covered_ex);
+                    }
+                    if std::env::var("L74DBG").is_ok() {
+                        let area_mm = |exs: &ExPolygons| -> f64 {
+                            exs.iter().map(|e| e.area()).sum::<f64>()
+                                / (crate::SCALING_FACTOR * crate::SCALING_FACTOR)
+                        };
+                        eprintln!(
+                            "L74DBG li={} reg={} GAPFILL-COVER fill_expoly AFTER: n={} A={:.2}mm2",
+                            layer_id,
+                            self.region_id,
+                            self.fill_expolygons.len(),
+                            area_mm(&self.fill_expolygons),
+                        );
                     }
                 }
             }
