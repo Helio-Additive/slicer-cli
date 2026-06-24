@@ -3321,36 +3321,6 @@ impl PrintObject {
                 let new_internal = difference(&internal_only, &regularized);
                 let new_void = difference(&void_only, &regularized);
 
-                // VSHELLDBG2 (diagnostics only, env-gated, stripped before commit)
-                if std::env::var("VSHELLDBG2").is_ok() {
-                    let sf2 = sf * sf;
-                    let am = |e: &ExPolygons| e.iter().map(|p| p.area().abs()).sum::<f64>() / sf2;
-                    let shell_int_a = if shell.is_empty() || internal_all.is_empty() {
-                        0.0
-                    } else {
-                        am(&intersection(&shell, &internal_all))
-                    };
-                    let dih_a = if holes.is_empty() {
-                        am(&internal_all)
-                    } else {
-                        am(&difference(&internal_all, &holes))
-                    };
-                    eprintln!(
-                        "VSHELLDBG2 L{} z={:.3} shell_a={:.3} int_all_a={:.3} shell_int_a={:.3} dih_a={:.3} solid_only_a={:.3} | shell_u_a={:.3} reg_a={:.3} new_solid_a={:.3} comb_holes_a={:.3}",
-                        idx,
-                        self.layers[idx].print_z,
-                        am(&shell),
-                        am(&internal_all),
-                        shell_int_a,
-                        dih_a,
-                        am(&solid_only),
-                        am(&shell_u),
-                        am(&regularized),
-                        am(&new_solid),
-                        am(&holes),
-                    );
-                }
-
                 let fs = &mut self.layers[idx].regions_mut()[region_id].fill_surfaces;
                 fs.keep_types(&[SurfaceType::Top, SurfaceType::Bottom, SurfaceType::BottomBridge]);
                 fs.append(new_internal, SurfaceType::Internal);

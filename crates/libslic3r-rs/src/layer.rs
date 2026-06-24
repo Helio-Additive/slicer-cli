@@ -1798,18 +1798,6 @@ impl Layer {
                 // Save contour for connect_infill boundary before expoly may be moved
                 let boundary_contour = expoly.contour.clone();
 
-                // FILLDBG2 (diagnostics only, env-gated, stripped before commit)
-                let filldbg2_area = if std::env::var("FILLDBG2").is_ok()
-                    && self.print_z >= 1.1
-                    && self.print_z <= 7.65
-                    && surface_fill.surface.surface_type
-                        == crate::surface::SurfaceType::InternalSolid
-                {
-                    expoly.area().abs() / (crate::SCALING_FACTOR * crate::SCALING_FACTOR)
-                } else {
-                    -1.0
-                };
-
                 let generated = match fill_pattern {
                     InfillPattern::Rectilinear | InfillPattern::Grid => generate_fill_rectilinear(
                         &[expoly],
@@ -1893,14 +1881,6 @@ impl Layer {
                         polylines.into_iter().map(InfillPath::Line).collect()
                     }
                 };
-
-                // FILLDBG2 (diagnostics only, env-gated, stripped before commit)
-                if filldbg2_area >= 0.0 {
-                    eprintln!(
-                        "FILLDBG2 z={:.3} InternalSolid expoly_a={:.3} pattern={:?} density={:.1} generated={}",
-                        self.print_z, filldbg2_area, fill_pattern, surface_fill.params.density, generated.len()
-                    );
-                }
 
                 if generated.is_empty() {
                     continue;
