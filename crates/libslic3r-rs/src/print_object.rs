@@ -3814,17 +3814,32 @@ impl PrintObject {
         // (region_expansion port) does not yet accept those arguments. For any
         // region with non-zero infill density this is exact (C++ would pass
         // nullptr); zero-infill regions lose the void-supported expansion clamp.
+        //
+        // INVESTIGATED 2026-06-24 (void-clamp branch): porting the clamp is a NO-OP
+        // for THIS BambuStudio reference and does NOT need to be done.
+        //   1. C++ `LayerRegion::process_external_surfaces(const Layer *lower_layer,
+        //      const Polygons *lower_layer_covered)` (LayerRegion.cpp:518-640) NEVER
+        //      USES EITHER PARAMETER — the body has no reference to lower_layer/
+        //      lower_layer_covered (the only `lower_layer` token in 518-640 is the
+        //      signature). BambuStudio's wave-expansion rewrite dropped the upstream
+        //      PrusaSlicer clamp from the body; the params are vestigial dead code.
+        //   2. `surfaces_covered` is built ONLY when `has_voids` (some region with
+        //      sparse_infill_density==0). When false (e.g. Benchy @ 15% infill) the
+        //      vector is empty and C++ passes nullptr for lower_layer_covered on every
+        //      layer (PrintObject.cpp:1730). So C++ runs the same unclamped expansion.
+        //   3. The Benchy bottom-bridge residual (li=2 290mm² blob) is an UPSTREAM
+        //      bridge layer-placement bug (bridge at rust Z0.6/li=2 vs native Z0.4/li=1),
+        //      not an expansion-clamp issue; no clamp moves a bridge between layers.
         let has_voids = (0..self.num_printing_regions())
             .any(|region_id| self.printing_region(region_id)
                 .map(|r| r.config().fill_density == 0.0)
                 .unwrap_or(false));
         let _ = has_voids; // see FIDELITY-NOTE above
 
-        let clampdbg = std::env::var("CLAMPDBG").is_ok();
         // PrintObject.cpp:1720 — for each printing region.
         for region_id in 0..self.num_printing_regions() {
             // PrintObject.cpp:1722-1731 — for each layer, drive the LayerRegion member.
-            for (li, layer) in self.layers.iter_mut().enumerate() {
+            for layer in &mut self.layers {
                 // PrintObject.cpp:1726
                 // C++: m_print->throw_if_canceled();
                 if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
@@ -3833,40 +3848,13 @@ impl PrintObject {
                 // PrintObject.cpp:1728 — m_layers[layer_idx]->get_region(region_id)->process_external_surfaces(...)
                 // layer.height mirrors C++ m_layer->height threaded into LayerRegion::flow.
                 let layer_height = layer.height;
-                if clampdbg && li == 2 && region_id == 0 {
-                    if let Some(region) = layer.regions().get(region_id) {
-                        clampdbg_dump("BEFORE", li, &region.fill_surfaces.surfaces);
-                    }
-                }
                 if let Some(region) = layer.regions_mut().get_mut(region_id) {
                     region.process_external_surfaces(layer_height)?;
-                }
-                if clampdbg && li == 2 && region_id == 0 {
-                    if let Some(region) = layer.regions().get(region_id) {
-                        clampdbg_dump("AFTER", li, &region.fill_surfaces.surfaces);
-                    }
                 }
             }
         }
         Ok(())
     }
-}
-
-// CLAMPDBG (diagnostics only, env-gated; stripped before merge).
-fn clampdbg_dump(stage: &str, li: usize, surfaces: &[crate::surface::Surface]) {
-    use std::collections::BTreeMap;
-    let mut agg: BTreeMap<String, (usize, f64)> = BTreeMap::new();
-    for s in surfaces {
-        let area_mm2 = s.expolygon.area() / (crate::SCALING_FACTOR * crate::SCALING_FACTOR);
-        let e = agg.entry(format!("{:?}", s.surface_type)).or_insert((0, 0.0));
-        e.0 += 1;
-        e.1 += area_mm2;
-    }
-    eprint!("[CLAMPDBG] {} li={}:", stage, li);
-    for (ty, (cnt, area)) in &agg {
-        eprint!(" {}={}surf/{:.2}mm²", ty, cnt, area);
-    }
-    eprintln!();
 }
 
 // Helper functions for polygon operations that work with Vec<Polygon>
