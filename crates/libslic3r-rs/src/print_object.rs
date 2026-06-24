@@ -2110,13 +2110,6 @@ impl PrintObject {
                 /// C++: bool detect_bottom = spiral_mode || layerm->region().config().bottom_shell_layers;
                 let detect_top = spiral_mode || region_config.top_solid_layers > 0;
                 let detect_bottom = spiral_mode || region_config.bottom_solid_layers > 0;
-                if std::env::var("BTMDBG").is_ok() && idx_layer <= 2 {
-                    eprintln!(
-                        "BTMDBG-ENTER li={} reg={} detect_bottom={} has_lower={} bot_solid_layers={} print_z={:.3}",
-                        idx_layer, region_id, detect_bottom, has_lower_layer,
-                        region_config.bottom_solid_layers, self.layers[idx_layer].print_z
-                    );
-                }
 
                 /// PrintObject.cpp:1501-1520
                 /// C++: Surfaces top;
@@ -2189,39 +2182,6 @@ impl PrintObject {
                             lower_lslices,
                             ApplySafetyOffset::Yes,
                         );
-                        // BTMDBG: env-gated bottom-surface diff trace (li 0..2 only)
-                        if std::env::var("BTMDBG").is_ok() && idx_layer <= 2 {
-                            let cur_ex: Vec<crate::ExPolygon> =
-                                current_slices.iter().map(|s| s.expolygon.clone()).collect();
-                            let cur_area = crate::geometry::area_expolygons(&cur_ex);
-                            let low_area = crate::geometry::area_expolygons(lower_lslices);
-                            let bottom_area = crate::geometry::area_expolygons(&bottom_diff);
-                            let opened = opening_ex(&bottom_diff, offset);
-                            let opened_area = crate::geometry::area_expolygons(&opened);
-                            let sc = |a: f64| a / (1e6_f64); // scaled^2 -> mm^2 (SCALING_FACTOR=1e-6 per coord^2)
-                            let bb = |exs: &[crate::ExPolygon]| -> String {
-                                if exs.is_empty() { return "EMPTY".into(); }
-                                let bx0 = exs[0].bounding_box();
-                                let (mut minx, mut miny) = (bx0.min.x, bx0.min.y);
-                                let (mut maxx, mut maxy) = (bx0.max.x, bx0.max.y);
-                                for e in &exs[1..] {
-                                    let b = e.bounding_box();
-                                    minx = minx.min(b.min.x); miny = miny.min(b.min.y);
-                                    maxx = maxx.max(b.max.x); maxy = maxy.max(b.max.y);
-                                }
-                                format!("[{:.2},{:.2}]..[{:.2},{:.2}]",
-                                    crate::unscale(minx), crate::unscale(miny),
-                                    crate::unscale(maxx), crate::unscale(maxy))
-                            };
-                            eprintln!(
-                                "BTMDBG li={} reg={} offset={:.4} | cur_slices area={:.3}mm2 n={} bb={} | lower_lslices area={:.3}mm2 n={} bb={} | bottom_diff area={:.3}mm2 n={} bb={} | opened area={:.3}mm2 n={}",
-                                idx_layer, region_id, offset,
-                                sc(cur_area), cur_ex.len(), bb(&cur_ex),
-                                sc(low_area), lower_lslices.len(), bb(lower_lslices),
-                                sc(bottom_area), bottom_diff.len(), bb(&bottom_diff),
-                                sc(opened_area), opened.len()
-                            );
-                        }
                         surfaces_append(
                             &mut bottom,
                             opening_ex(&bottom_diff, offset),
