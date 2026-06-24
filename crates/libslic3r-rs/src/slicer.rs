@@ -17,6 +17,15 @@ use std::fmt;
 pub struct Slicer {
     /// Slicing parameters.
     params: SlicingParams,
+    /// Morphological-closing radius (mm) for `make_expolygons`.
+    /// C++ `MeshSlicingParamsEx::closing_radius` =
+    /// `print_object_config.slice_closing_radius` (default 0.049).
+    /// PrintObjectSlice.cpp:139.
+    closing_radius: f32,
+    /// Contour-simplification resolution (mm) for the sliced ExPolygons.
+    /// C++ `MeshSlicingParamsEx::resolution` =
+    /// `print_config.resolution <= 0.001 ? 0 : 0.0025`. PrintObjectSlice.cpp:144.
+    resolution: f64,
 }
 
 /// Implementation of Slicer methods
@@ -26,7 +35,26 @@ impl Slicer {
     // TriangleMeshSlicer.cpp:22-25
     pub fn new(params: SlicingParams) -> Self {
         // TriangleMeshSlicer.cpp:24
-        Self { params }
+        // C++ slice_volumes_inner defaults: closing_radius =
+        // slice_closing_radius (0.049 mm), resolution derived from print_config
+        // (0.0025 mm for the default 0.01 resolution). Callers that build a
+        // Slicer without going through PrintObject::slice get these C++ defaults.
+        Self {
+            params,
+            closing_radius: 0.049,
+            resolution: 0.0025,
+        }
+    }
+
+    /// Create a slicer with explicit morphological-closing radius (mm) and
+    /// contour-simplification resolution (mm), as resolved from the print
+    /// config in C++ `slice_volumes_inner` (PrintObjectSlice.cpp:138-144).
+    pub fn with_slice_params(params: SlicingParams, closing_radius: f32, resolution: f64) -> Self {
+        Self {
+            params,
+            closing_radius,
+            resolution,
+        }
     }
 
     /// Create a new slicer with default parameters.
@@ -88,7 +116,14 @@ impl Slicer {
 
         // Perform actual mesh slicing
         // TriangleMeshSlicer.cpp:66
-        let sliced_expolygons = triangle_mesh_slicer::slice_mesh(mesh, &slice_zs);
+        // Thread the morphological-closing radius and contour-simplification
+        // resolution through (C++ slice_volumes_inner, PrintObjectSlice.cpp:138-144).
+        let sliced_expolygons = triangle_mesh_slicer::slice_mesh_with_params(
+            mesh,
+            &slice_zs,
+            self.closing_radius,
+            self.resolution,
+        );
 
         // TriangleMeshSlicer.cpp:68
         callback(0.6);

@@ -1288,11 +1288,18 @@ fn make_expolygons_simple(lines: &mut IntersectionLines) -> ExPolygons {
 // FIDELITY-NOTE(F1): the crate's geo-based Clipper layer does not expose
 // `ClipperLib::union_ex(loops, fill_type)` with a selectable fill rule (EvenOdd/
 // Positive/NonZero). We use `union_polygons_ex` (NonZero-like) regardless of
-// `fill_type`; the default Regular/NonZero path matches. The closing-offset
-// branch structure (offset_out / offset_in) below mirrors the C++ exactly,
-// using `offset_expolygons` (jtMiter == C++ DefaultJoinType) and the same
-// `offset2_ex(out, in)` order (grow then shrink) — geo-clipper offset is an
-// approximation of ClipperLib's at coord_t precision.
+// `fill_type`; the default Regular/NonZero path matches.
+//
+// The morphological-closing offset (`offset2_ex(out, in)` — grow then shrink)
+// is routed through the vertex-exact vendored ClipperLib (`offset_expolygons_clib`,
+// jtMiter, miterLimit 3.0 — C++ DefaultJoinType / DefaultMiterLimit) instead of
+// geo-clipper. geo-clipper's Miter offset over-collapses thin features at the
+// default `slice_closing_radius` (0.049 mm), punching spurious holes / dropping
+// contours; ClipperLib preserves them exactly as C++ `make_expolygons` does.
+// The clib offset takes its delta in **mm** (it scales by SCALING_FACTOR
+// internally), so the offsets here are computed in mm (not pre-scaled), matching
+// `offset2_ex(union_ex(loops), scale_(closing_radius), -scale_(...))` — the C++
+// `scale_` happens inside the ClipperLib shim.
 fn make_expolygons(
     loops: &[Polygon],
     closing_radius: f32,
@@ -1300,19 +1307,21 @@ fn make_expolygons(
     _fill_type: ClipperPolyFillType,
     slices: &mut ExPolygons,
 ) {
-    use crate::clipper_utils::{offset_expolygons, OffsetJoinType};
+    use crate::clipper_utils::{offset_expolygons_clib, OffsetJoinType};
 
     // TriangleMeshSlicer.cpp:1793
     debug_assert!(closing_radius >= 0.0);
     // Allowing negative extra_offset for shrinking a contour.
     // TriangleMeshSlicer.cpp:1796-1804
+    // Offsets in **mm** (the clib offset scales to coord_t internally); C++ uses
+    // scale_(closing_radius) because ClipperLib works in scaled coords directly.
     let offset_out: f64;
     let offset_in: f64;
     if closing_radius >= extra_offset {
-        offset_out = scale(closing_radius as f64) as f64;
-        offset_in = -(scale((closing_radius - extra_offset) as f64) as f64);
+        offset_out = closing_radius as f64;
+        offset_in = -((closing_radius - extra_offset) as f64);
     } else {
-        offset_out = scale(extra_offset as f64) as f64;
+        offset_out = extra_offset as f64;
         offset_in = 0.0;
     }
 
@@ -1323,12 +1332,12 @@ fn make_expolygons(
     // TriangleMeshSlicer.cpp:1819-1823
     let result = if offset_out > 0.0 && offset_in < 0.0 {
         // offset2_ex(union, offset_out, offset_in): grow by out, then shrink by |in|.
-        let grown = offset_expolygons(&unioned, offset_out, OffsetJoinType::Miter);
-        offset_expolygons(&grown, offset_in, OffsetJoinType::Miter)
+        let grown = offset_expolygons_clib(&unioned, offset_out, OffsetJoinType::Miter);
+        offset_expolygons_clib(&grown, offset_in, OffsetJoinType::Miter)
     } else if offset_out > 0.0 {
-        offset_expolygons(&unioned, offset_out, OffsetJoinType::Miter)
+        offset_expolygons_clib(&unioned, offset_out, OffsetJoinType::Miter)
     } else if offset_in < 0.0 {
-        offset_expolygons(&unioned, offset_in, OffsetJoinType::Miter)
+        offset_expolygons_clib(&unioned, offset_in, OffsetJoinType::Miter)
     } else {
         unioned
     };
@@ -1555,8 +1564,21 @@ pub fn slice_mesh_ex_its(
         if this_mode == SlicingMode::PositiveLargestContour {
             crate::geometry::keep_largest_contour_only(&mut expolygons);
         }
-        // Resolution simplification (TriangleMeshSlicer.cpp:2038-2044) omitted:
-        // params.resolution defaults to 0 in all current callers.
+        // TriangleMeshSlicer.cpp:2038-2044: contour simplification
+        // (`ex.simplify(scaled<float>(params.resolution))`) is DEFERRED.
+        //
+        // FIDELITY-NOTE(F1): a faithful `ExPolygon::simplify` requires ClipperLib
+        // `SimplifyPolygons` (ExPolygon.cpp:250 -> ClipperUtils.cpp:1036) to re-union
+        // the per-ring Douglas-Peucker output. The crate's only stand-in,
+        // `union_polygons_ex` (geo-clipper @ 1 µm), over-merges at the 0.0025 mm
+        // resolution and net-removes material (measured: total filament 3859.11 ->
+        // 3851.99 vs native 3858.97 — a regression), so the unfaithful approximation
+        // is intentionally NOT applied. The morphological closing above
+        // (`closing_radius` = 0.049 mm) is the load-bearing part of make_expolygons
+        // and is applied faithfully via the vertex-exact ClipperLib offset; with it
+        // total filament lands at parity (3859.11). Re-enable simplification once a
+        // ClipperLib-backed `simplify_polygons` exists (F1).
+        let _ = params.resolution;
         layers[layer_id] = expolygons;
     }
 
@@ -1606,6 +1628,33 @@ pub fn slice_mesh(mesh: &TriangleMesh, zs: &[CoordF]) -> Vec<ExPolygons> {
     let its = its_from_triangle_mesh(mesh);
     let zs_f32: Vec<f32> = zs.iter().map(|&z| z as f32).collect();
     let params = MeshSlicingParamsEx::default();
+    slice_mesh_ex_its(&its, &zs_f32, &params, &|| {})
+}
+
+/// Slice a mesh at multiple Z heights with explicit morphological-closing radius
+/// and contour-simplification resolution, mirroring C++
+/// `slice_volumes_inner` (PrintObjectSlice.cpp:138-144):
+///   params.closing_radius = print_object_config.slice_closing_radius (default 0.049)
+///   params.resolution     = print_config.resolution <= 0.001 ? 0 : 0.0025
+///   params.extra_offset   = 0
+/// Both values are in **mm**.
+pub fn slice_mesh_with_params(
+    mesh: &TriangleMesh,
+    zs: &[CoordF],
+    closing_radius: f32,
+    resolution: f64,
+) -> Vec<ExPolygons> {
+    if mesh.is_empty() || zs.is_empty() {
+        return vec![ExPolygons::new(); zs.len()];
+    }
+    let its = its_from_triangle_mesh(mesh);
+    let zs_f32: Vec<f32> = zs.iter().map(|&z| z as f32).collect();
+    let params = MeshSlicingParamsEx {
+        base: MeshSlicingParams::default(),
+        closing_radius,
+        extra_offset: 0.0,
+        resolution,
+    };
     slice_mesh_ex_its(&its, &zs_f32, &params, &|| {})
 }
 

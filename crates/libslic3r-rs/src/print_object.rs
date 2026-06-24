@@ -420,9 +420,18 @@ impl PrintObject {
         slicing_params.max_layer_height = self.config.layer_height * 1.5;
         self.slicing_params = slicing_params.clone();
 
-        // Create slicer with parameters
-        // PrintObjectSlice.cpp:799
-        let slicer = crate::slicer::Slicer::new(slicing_params);
+        // Create slicer with parameters.
+        // PrintObjectSlice.cpp:799 / slice_volumes_inner (PrintObjectSlice.cpp:138-144):
+        //   closing_radius = print_object_config.slice_closing_radius (default 0.049)
+        //   resolution     = print_config.resolution <= 0.001 ? 0 : 0.0025
+        let closing_radius = self.config.slice_closing_radius as f32;
+        let resolution = if self.print_config.resolution <= 0.001 {
+            0.0
+        } else {
+            0.0025
+        };
+        let slicer =
+            crate::slicer::Slicer::with_slice_params(slicing_params, closing_radius, resolution);
 
         // Perform actual mesh slicing
         // PrintObjectSlice.cpp:801
