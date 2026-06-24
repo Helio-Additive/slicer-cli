@@ -529,6 +529,30 @@ pub fn group_fills(
         crate::debug::topdbg::dump_top_surfaces(layer.id(), "d5_group_fills_top", &all);
     }
 
+    // FILLDBG (diagnostics only, env-gated, stripped before commit)
+    if std::env::var("FILLDBG").is_ok() {
+        let sf2 = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
+        let (mut a_solid, mut a_int, mut a_void, mut a_fvs) = (0.0, 0.0, 0.0, 0.0);
+        for region_id in 0..layer.region_count() {
+            if let Some(region) = layer.get_region(region_id) {
+                for s in region.fill_surfaces.surfaces.iter() {
+                    let a = s.expolygon.area().abs() / sf2;
+                    match s.surface_type {
+                        SurfaceType::InternalSolid => a_solid += a,
+                        SurfaceType::Internal => a_int += a,
+                        SurfaceType::InternalVoid => a_void += a,
+                        SurfaceType::FloatingVerticalShell => a_fvs += a,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "FILLDBG z={:.3} fs_solid_a={:.3} fs_internal_a={:.3} fs_void_a={:.3} fs_fvs_a={:.3} lower_int_n={}",
+            layer.print_z, a_solid, a_int, a_void, a_fvs, lower_internal_areas.len()
+        );
+    }
+
     /// Fill.cpp:166
     /// C++: std::vector<SurfaceFill> surface_fills
     let mut surface_fills: Vec<SurfaceFill> = Vec::new();
