@@ -2182,35 +2182,9 @@ impl PrintObject {
                             lower_lslices,
                             ApplySafetyOffset::Yes,
                         );
-                        let bottom_opened = opening_ex(&bottom_diff, offset);
-                        // === BOTDIFF_DBG (env-gated forensic; strip before final commit) ===
-                        if let Ok(w) = std::env::var("BOTDIFF_DBG") {
-                            if w.split(',').any(|t| t.parse::<usize>().ok() == Some(idx_layer)) {
-                                let sf2 = 100_000.0_f64 * 100_000.0_f64;
-                                let area_raw: f64 = bottom_diff.iter()
-                                    .map(|e| e.area().abs()).sum::<f64>() / sf2;
-                                let area_op: f64 = bottom_opened.iter()
-                                    .map(|e| e.area().abs()).sum::<f64>() / sf2;
-                                let cur_area: f64 = current_slices.iter()
-                                    .map(|s| s.expolygon.area().abs()).sum::<f64>() / sf2;
-                                let low_area: f64 = lower_lslices.iter()
-                                    .map(|e| e.area().abs()).sum::<f64>() / sf2;
-                                let cur_holes: usize = current_slices.iter()
-                                    .map(|s| s.expolygon.holes.len()).sum();
-                                let low_holes: usize = lower_lslices.iter()
-                                    .map(|e| e.holes.len()).sum();
-                                eprintln!(
-                                    "BOTDIFF_DBG li={} reg={} offset={:.5} cur_area={:.3}(h{}) low_area={:.3}(h{}) diff_raw_area={:.4}(n{}) diff_opened_area={:.4}(n{})",
-                                    idx_layer, region_id, offset,
-                                    cur_area, cur_holes, low_area, low_holes,
-                                    area_raw, bottom_diff.len(), area_op, bottom_opened.len()
-                                );
-                            }
-                        }
-                        // === end BOTDIFF_DBG ===
                         surfaces_append(
                             &mut bottom,
-                            bottom_opened,
+                            opening_ex(&bottom_diff, offset),
                             SurfaceType::BottomBridge,
                         );
 

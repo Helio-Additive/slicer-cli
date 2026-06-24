@@ -1535,62 +1535,6 @@ impl Layer {
         for i in order {
             self.lslices.push(slices[i].clone());
         }
-
-        // === LSLICES_DBG (env-gated forensic; strip before final commit) ===
-        if let Ok(want) = std::env::var("LSLICES_DBG") {
-            if want == "probe" {
-                eprintln!("LSLICES_DBG probe make_slices id={} nreg={}", self.id, self.regions.len());
-            }
-            if let Ok(want_id) = want.parse::<usize>() {
-                if self.id == want_id {
-                    let sf2 = 100_000.0_f64 * 100_000.0_f64; // SCALING_FACTOR^2 -> mm^2
-                    eprintln!(
-                        "LSLICES_DBG li={} print_z={:.3} nregions={}",
-                        self.id, self.print_z, self.regions.len()
-                    );
-                    // Per-region slices hole inventory
-                    for (ri, layerm) in self.regions.iter().enumerate() {
-                        let exps = crate::surface::to_expolygons(&layerm.slices.surfaces);
-                        let mut nholes = 0usize;
-                        for (ei, ex) in exps.iter().enumerate() {
-                            for h in &ex.holes {
-                                nholes += 1;
-                                let a = (h.area().abs()) / sf2;
-                                let c = h.centroid();
-                                eprintln!(
-                                    "LSLICES_DBG  region[{}] slices ex[{}] HOLE area_mm2={:.4} centroid=({:.3},{:.3})",
-                                    ri, ei, a,
-                                    (c.x as f64) / 100_000.0, (c.y as f64) / 100_000.0
-                                );
-                            }
-                        }
-                        eprintln!(
-                            "LSLICES_DBG  region[{}] slices: nexp={} total_holes={}",
-                            ri, exps.len(), nholes
-                        );
-                    }
-                    // Layer-level lslices hole inventory
-                    let mut lnholes = 0usize;
-                    for (ei, ex) in self.lslices.iter().enumerate() {
-                        for h in &ex.holes {
-                            lnholes += 1;
-                            let a = (h.area().abs()) / sf2;
-                            let c = h.centroid();
-                            eprintln!(
-                                "LSLICES_DBG  lslices ex[{}] HOLE area_mm2={:.4} centroid=({:.3},{:.3})",
-                                ei, a,
-                                (c.x as f64) / 100_000.0, (c.y as f64) / 100_000.0
-                            );
-                        }
-                    }
-                    eprintln!(
-                        "LSLICES_DBG  lslices: nexp={} total_holes={}",
-                        self.lslices.len(), lnholes
-                    );
-                }
-            }
-        }
-        // === end LSLICES_DBG ===
     }
 
     // Layer.cpp:77
