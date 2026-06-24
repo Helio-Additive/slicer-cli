@@ -1646,6 +1646,90 @@ fn _unscale_marker(v: i64) -> f64 {
     unscale(v)
 }
 
+// ---------------------------------------------------------------------------
+// SLICEFACET_DBG — temporary diagnostic (M1). Env-gated; strip before final.
+// Slices a single plane and reports raw-loop / open-polyline / expolygon stats.
+// ---------------------------------------------------------------------------
+/// Returns (raw_loops_count, signed_loop_areas_mm2, remaining_open_polylines_after_chain,
+///          remaining_open_lengths_mm, expolygon_count, total_hole_count, hole_areas_mm2)
+pub fn slicefacet_dbg_single(mesh: &TriangleMesh, plane_z: f32) -> SliceFacetDbg {
+    let its = its_from_triangle_mesh(mesh);
+    // Replicate slice_mesh_its line-generation for one plane.
+    let face_edge_ids = its_face_edge_ids(&its);
+    let scaled_vertices: Vec<StlVertex> = its
+        .vertices
+        .iter()
+        .map(|p| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z))
+        .collect();
+    let zs = [plane_z];
+    let mut lines_layers = slice_make_lines(&scaled_vertices, &its.indices, &face_edge_ids, &zs, &|| {});
+    let lines = &mut lines_layers[0];
+    let raw_line_count = lines.len();
+
+    // make_loops_single broken out to capture intermediate open polylines.
+    let mut loops: Polygons = Polygons::new();
+    let mut open_polylines: Vec<OpenPolyline> = Vec::new();
+    chain_lines_by_triangle_connectivity(lines, &mut loops, &mut open_polylines);
+    let after_conn_loops = loops.len();
+    let after_conn_open = open_polylines.iter().filter(|o| !o.consumed && !o.points.is_empty()).count();
+    chain_open_polylines_exact(&mut open_polylines, &mut loops, false);
+    chain_open_polylines_exact(&mut open_polylines, &mut loops, true);
+    let after_exact_loops = loops.len();
+    let after_exact_open = open_polylines.iter().filter(|o| !o.consumed && !o.points.is_empty()).count();
+    let max_gap = 2.0;
+    chain_open_polylines_close_gaps(&mut open_polylines, &mut loops, max_gap, false);
+    chain_open_polylines_close_gaps(&mut open_polylines, &mut loops, max_gap, true);
+    let after_gap_loops = loops.len();
+    let remaining_open: Vec<f64> = open_polylines
+        .iter()
+        .filter(|o| !o.consumed && !o.points.is_empty())
+        .map(|o| unscale(crate::multi_point::length(&o.points) as i64))
+        .collect();
+
+    let loop_areas: Vec<f64> = loops.iter().map(|p| p.area() * (crate::libslic3r::SCALING_FACTOR * crate::libslic3r::SCALING_FACTOR)).collect();
+
+    // make_expolygons
+    let mut slices = ExPolygons::new();
+    make_expolygons(&loops, 0.0, 0.0, ClipperPolyFillType::NonZero, &mut slices);
+    let mut hole_areas: Vec<f64> = Vec::new();
+    for ex in &slices {
+        for h in &ex.holes {
+            hole_areas.push(h.area().abs() * (crate::libslic3r::SCALING_FACTOR * crate::libslic3r::SCALING_FACTOR));
+        }
+    }
+
+    SliceFacetDbg {
+        plane_z,
+        raw_line_count,
+        after_conn_loops,
+        after_conn_open,
+        after_exact_loops,
+        after_exact_open,
+        after_gap_loops,
+        remaining_open,
+        loop_areas,
+        expolygon_count: slices.len(),
+        hole_count: hole_areas.len(),
+        hole_areas,
+    }
+}
+
+#[derive(Debug)]
+pub struct SliceFacetDbg {
+    pub plane_z: f32,
+    pub raw_line_count: usize,
+    pub after_conn_loops: usize,
+    pub after_conn_open: usize,
+    pub after_exact_loops: usize,
+    pub after_exact_open: usize,
+    pub after_gap_loops: usize,
+    pub remaining_open: Vec<f64>,
+    pub loop_areas: Vec<f64>,
+    pub expolygon_count: usize,
+    pub hole_count: usize,
+    pub hole_areas: Vec<f64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
