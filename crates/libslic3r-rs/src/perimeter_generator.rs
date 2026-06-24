@@ -182,6 +182,11 @@ pub struct PerimeterConfig {
 
     /// Overhang flow (used for fully unsupported segments)
     pub overhang_flow: Option<Flow>,
+
+    /// Solid-infill flow (full Flow, used for gap-fill variable_width).
+    /// LayerRegion.cpp:173 — g.solid_infill_flow = this->flow(frSolidInfill);
+    /// PerimeterGenerator.cpp:1364 — variable_width(polylines, erGapFill, this->solid_infill_flow).
+    pub solid_infill_flow: Option<Flow>,
 }
 
 impl Default for PerimeterConfig {
@@ -222,6 +227,7 @@ impl Default for PerimeterConfig {
             layer_id: 0,
             raft_layers: 0,
             overhang_flow: None,
+            solid_infill_flow: None,
         }
     }
 }
@@ -319,6 +325,14 @@ pub struct PerimeterResult {
 
     /// Gap fill areas
     pub gap_fills: ExPolygons,
+
+    /// Gap-fill extrusion paths (variable-width thin-wall extrusions).
+    /// PerimeterGenerator.cpp:1364 — produced by variable_width(polylines, erGapFill, ...)
+    /// and appended to this->gap_fill. Built inside the generator so the
+    /// `last = diff_ex(last, gap_fill.polygons_covered_by_width(10))` subtraction
+    /// (PerimeterGenerator.cpp:1373) happens BEFORE the infill-boundary opening,
+    /// matching C++ order. layer.rs pushes these to thin_fills.
+    pub gap_fill_paths: Vec<crate::extrusion_entity::ExtrusionPath>,
 }
 
 impl PerimeterResult {
@@ -328,6 +342,7 @@ impl PerimeterResult {
             infill_area: Vec::new(),
             no_overlap_area: Vec::new(),
             gap_fills: Vec::new(),
+            gap_fill_paths: Vec::new(),
         }
     }
 }
@@ -370,6 +385,7 @@ impl PerimeterGenerator {
             result.infill_area.extend(surface_result.infill_area);
             result.no_overlap_area.extend(surface_result.no_overlap_area);
             result.gap_fills.extend(surface_result.gap_fills);
+            result.gap_fill_paths.extend(surface_result.gap_fill_paths);
         }
 
         result
@@ -1023,6 +1039,93 @@ impl PerimeterGenerator {
             };
             for entity in &mut result.entities.entities {
                 apply_fuzzy_skin_to_entity(entity, &fs_config, self.config.fuzzy_skin_mode);
+            }
+        }
+
+        // PerimeterGenerator.cpp:1326-1375 — fill gaps. Faithfully placed here
+        // (per surface, AFTER the perimeter loops, BEFORE the infill-boundary
+        // opening below) so the C++ ordering holds:
+        //   1373: last = diff_ex(last, gap_fill.polygons_covered_by_width(10))
+        //   1403: infill_exp = offset2_ex(not_filled_exp, -inset-mpis/2, +mpis/2)
+        // The opening at 1403 erodes the thin gap-fill notches; doing the
+        // subtraction BEFORE it (here) prevents the over-subtraction +
+        // fragmentation that arises if the subtraction is applied to the
+        // already-opened infill area. The variable_width gap-fill extrusion is
+        // returned in `result.gap_fill_paths` for the LayerRegion to append to
+        // thin_fills.
+        if !gaps.is_empty() {
+            use crate::clipper_utils::difference_clib;
+
+            // PerimeterGenerator.cpp:1329-1330 (INSET_OVERLAP_TOLERANCE = 0.45)
+            let min = 0.2 * perimeter_width * (1.0 - INSET_OVERLAP_TOLERANCE);
+            let max = 2.0 * perimeter_spacing;
+            const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
+
+            // PerimeterGenerator.cpp:1331-1334
+            //   diff_ex(opening_ex(gaps, min/2),
+            //           offset2_ex(gaps, -max/2, +(max/2 + ClipperSafetyOffset)))
+            let opened_min = offset2_clib(&gaps, min / 2.0, min / 2.0, self.config.join_type);
+            let wide_part = offset2_clib(
+                &gaps,
+                max / 2.0,
+                max / 2.0 + CLIPPER_SAFETY_OFFSET,
+                self.config.join_type,
+            );
+            let mut gaps_ex = difference_clib(&opened_min, &wide_part);
+
+            // PerimeterGenerator.cpp:914/1337-1339 — douglas_peucker takes the SCALED
+            // tolerance directly (compares against scaled point coords). C++
+            // m_scaled_resolution = scaled<double>(print_config.resolution); with arc
+            // fitting enabled and fuzzy_skin == None the surface_simplify_resolution is
+            // 0.2 * m_scaled_resolution. The config field holds the UNSCALED resolution
+            // (mm), so scale it here, then apply the same 0.2x reduction as the
+            // perimeter-loop simplify above.
+            let scaled_resolution =
+                crate::scale(self.config.surface_simplify_resolution) as f64;
+            let gap_simplify_resolution = if self.config.arc_fitting_enabled
+                && self.config.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None
+            {
+                0.2 * scaled_resolution
+            } else {
+                scaled_resolution
+            };
+
+            // PerimeterGenerator.cpp:1335-1340 — medial axis of each thin gap region.
+            let mut polylines: crate::geometry::ThickPolylines = Vec::new();
+            for ex in &mut gaps_ex {
+                ex.douglas_peucker(gap_simplify_resolution);
+                ex.medial_axis(min, max, &mut polylines);
+            }
+
+            // PerimeterGenerator.cpp:1357-1360 — filter tiny gap fills
+            // (config.filter_out_gap_fill default 0.0 -> no extra filter).
+
+            // PerimeterGenerator.cpp:1364 — variable_width(polylines, erGapFill, solid_infill_flow)
+            if !polylines.is_empty() {
+                let gap_fill_flow = self
+                    .config
+                    .solid_infill_flow
+                    .clone()
+                    .unwrap_or_else(|| self.config.perimeter_flow.clone());
+                let paths = convert_thin_walls_to_extrusion_paths(
+                    &polylines,
+                    ExtrusionRole::GapFill,
+                    &gap_fill_flow,
+                );
+
+                // PerimeterGenerator.cpp:1373 — last = diff_ex(last,
+                //   gap_fill.polygons_covered_by_width(10.f));
+                // `10.f` is ClipperSafetyOffset = 10 scaled units.
+                let mut covered: Vec<Polygon> = Vec::new();
+                for path in &paths {
+                    path.polygons_covered_by_width(&mut covered, 10.0);
+                }
+                if !covered.is_empty() {
+                    let covered_ex = union_polygons_ex(&covered);
+                    last = difference(&last, &covered_ex);
+                }
+
+                result.gap_fill_paths.extend(paths);
             }
         }
 

@@ -510,6 +510,10 @@ impl LayerRegion {
             overhang_flow: self
                 .bridging_flow(FlowRole::Perimeter, object_config.thick_bridges, layer_height)
                 .ok(),
+            // LayerRegion.cpp:173 — g.solid_infill_flow = this->flow(frSolidInfill).
+            // Used by the in-generator gap-fill variable_width (PerimeterGenerator.cpp:1364)
+            // so the gap-fill covered_ex subtraction happens BEFORE the infill opening.
+            solid_infill_flow: self.flow(FlowRole::SolidInfill, layer_height).ok(),
         };
 
         // Create PerimeterGenerator
@@ -556,201 +560,18 @@ impl LayerRegion {
         self.fill_no_overlap_expolygons
             .extend(result.no_overlap_area);
 
-        // Gap fill — faithful port of PerimeterGenerator.cpp:1327-1374.
-        // The previous version traced each gap polygon's CONTOUR at full perimeter
-        // width, which over-extruded ~4.6x (contour ~2x length, full width vs thin).
-        // C++ instead: collapse the gaps to the truly-thin band, run medial_axis to get
-        // variable-width centerlines, and emit those via variable_width().
-        if !result.gap_fills.is_empty() {
-            use crate::clipper_utils::{difference_clib, offset2_clib, OffsetJoinType};
-            use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
-            use crate::perimeter_generator::convert_thin_walls_to_extrusion_paths;
-
-            let perimeter_width = perimeter_flow.width();
-            let perimeter_spacing = perimeter_flow.spacing();
-            // PerimeterGenerator.cpp:1329-1330 (INSET_OVERLAP_TOLERANCE = 0.45)
-            let min = 0.2 * perimeter_width * (1.0 - 0.45);
-            let max = 2.0 * perimeter_spacing;
-            // ClipperUtils.hpp:29 — ClipperSafetyOffset = 10.f scaled units; with
-            // SCALING_FACTOR = 1e-5 that is 10 * 1e-5 = 1e-4 mm (clipper_utils operates
-            // in mm). The collection side (perimeter_generator.rs) already uses 0.0001.
-            const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
-
-            // PerimeterGenerator.cpp:1331-1334 — keep only the band wider than `min`
-            // (opening by min/2) and narrower than `max` (subtract the max-opening).
-            // C++:
-            //   diff_ex(opening_ex(gaps, min/2),
-            //           offset2_ex(gaps, -max/2, +(max/2 + ClipperSafetyOffset)))
-            // where opening_ex(g, d) == offset2_ex(g, -d, +d, DefaultJoinType=jtMiter,
-            // DefaultMiterLimit=3.0) (ClipperUtils.hpp:428-429), and the offset2_ex call
-            // also uses DefaultJoinType=jtMiter (ClipperUtils.hpp:396-397, no explicit
-            // join type at the call site). Both offsets route through clipper-z-sys
-            // (vendored ClipperLib @ 1e5, jtMiter, MiterLimit=3.0) instead of geo-clipper
-            // @ 1µm, which over-segments the gap-region contours feeding medial_axis.
-            // `diff_ex` also routes through the vertex-exact vendored ClipperLib
-            // (difference_clib) so the gap band contours are not re-segmented.
-            let opened_min = offset2_clib(
-                &result.gap_fills,
-                min / 2.0,
-                min / 2.0,
-                OffsetJoinType::Miter,
-            );
-            let wide_part = offset2_clib(
-                &result.gap_fills,
-                max / 2.0,
-                max / 2.0 + CLIPPER_SAFETY_OFFSET,
-                OffsetJoinType::Miter,
-            );
-            let mut gaps_ex = difference_clib(&opened_min, &wide_part);
-
-            // PerimeterGenerator.cpp:914 — surface_simplify_resolution =
-            //   (enable_arc_fitting && fuzzy_skin == None) ? 0.2 * m_scaled_resolution
-            //                                              : m_scaled_resolution,
-            // where m_scaled_resolution = scaled<double>(print_config.resolution)
-            // (PerimeterGenerator.cpp:911). ExPolygon::douglas_peucker takes the
-            // *scaled* tolerance directly (forwards to MultiPoint::_douglas_peucker
-            // without rescale), so scale print_config.resolution here.
-            let scaled_resolution = crate::scale(print_config.resolution) as f64;
-            let surface_simplify_resolution = if config.fuzzy_skin_mode
-                == crate::region_config::FuzzySkinMode::None
-            {
-                // arc_fitting is enabled in this profile (matches PerimeterConfig
-                // arc_fitting_enabled = true above).
-                0.2 * scaled_resolution
-            } else {
-                scaled_resolution
-            };
-
-            // PerimeterGenerator.cpp:1335-1340 — medial axis of each thin gap region.
-            let mut polylines: crate::geometry::ThickPolylines = Vec::new();
-            for ex in &mut gaps_ex {
-                // PerimeterGenerator.cpp:1337-1338 — BBS: Use DP simplify to avoid
-                // duplicated points and accelerate medial-axis calculation.
-                ex.douglas_peucker(surface_simplify_resolution);
-                // PerimeterGenerator.cpp:1339
-                ex.medial_axis(min, max, &mut polylines);
-            }
-
-            // PerimeterGenerator.cpp:1357-1360 — filter tiny gap fills
-            // (config.filter_out_gap_fill default 0.0 in this profile -> no extra filter).
-
-            // PerimeterGenerator.cpp:1364 — variable_width(polylines, erGapFill, solid_infill_flow)
-            if !polylines.is_empty() {
-                let gap_fill_flow = self
-                    .flow(FlowRole::SolidInfill, layer_height)
-                    .unwrap_or_else(|_| perimeter_flow.clone());
-                let paths = convert_thin_walls_to_extrusion_paths(
-                    &polylines,
-                    ExtrusionRole::GapFill,
-                    &gap_fill_flow,
-                );
-
-                // PerimeterGenerator.cpp:1373 — remove the gap-fill extrusion footprint
-                // from the infill area so the gap-filled band is NOT also classified as
-                // (and later solidified as) internal infill:
-                //   last = diff_ex(last, gap_fill.polygons_covered_by_width(10.f));
-                // C++ subtracts from `last` before the final infill-boundary inset; the
-                // Rust perimeter generator already produced the inset `infill_area` (now in
-                // fill_surfaces / fill_expolygons), so we apply the equivalent diff here on
-                // the populated infill region. `10.f` is ClipperSafetyOffset = 10 scaled
-                // units (ExtrusionEntity.cpp:55-58 polygons_covered_by_width scaled_epsilon).
-                let mut covered: Vec<crate::geometry::Polygon> = Vec::new();
-                for path in &paths {
-                    path.polygons_covered_by_width(&mut covered, 10.0);
-                }
-
-                for path in paths {
-                    self.thin_fills
-                        .entities
-                        .push(ExtrusionEntityType::Path(path));
-                }
-
-                if !covered.is_empty() {
-                    use crate::clipper_utils::{difference, union_polygons_ex};
-                    let covered_ex = union_polygons_ex(&covered);
-                    // L74DBG (env-gated forensic, stripped before commit): trace the
-                    // gap-fill covered_ex subtraction on fill_expolygons per layer.
-                    if std::env::var("L74DBG").is_ok() {
-                        let area_mm = |exs: &ExPolygons| -> f64 {
-                            exs.iter().map(|e| e.area()).sum::<f64>()
-                                / (crate::SCALING_FACTOR * crate::SCALING_FACTOR)
-                        };
-                        let bbox = |exs: &ExPolygons| -> (f64, f64, f64, f64) {
-                            let (mut xn, mut xx, mut yn, mut yx) =
-                                (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
-                            for e in exs {
-                                for p in &e.contour.points {
-                                    let x = crate::unscale(p.x);
-                                    let y = crate::unscale(p.y);
-                                    xn = xn.min(x);
-                                    xx = xx.max(x);
-                                    yn = yn.min(y);
-                                    yx = yx.max(y);
-                                }
-                            }
-                            (xn, xx, yn, yx)
-                        };
-                        let cov_ex: ExPolygons = covered_ex.clone();
-                        let (bxn, bxx, byn, byx) = bbox(&self.fill_expolygons);
-                        let (cxn, cxx, cyn, cyx) = bbox(&cov_ex);
-                        eprintln!(
-                            "L74DBG li={} reg={} GAPFILL-COVER fill_expoly before: n={} A={:.2}mm2 bbox=[{:.2},{:.2}]x[{:.2},{:.2}] | covered_ex: n={} A={:.2}mm2 bbox=[{:.2},{:.2}]x[{:.2},{:.2}]",
-                            layer_id,
-                            self.region_id,
-                            self.fill_expolygons.len(),
-                            area_mm(&self.fill_expolygons),
-                            bxn, bxx, byn, byx,
-                            cov_ex.len(),
-                            area_mm(&cov_ex),
-                            cxn, cxx, cyn, cyx,
-                        );
-                    }
-                    // Subtract from the Internal fill_surfaces (the infill region produced
-                    // by the perimeter generator; top/bottom skins are unaffected).
-                    let internal: ExPolygons = self
-                        .fill_surfaces
-                        .surfaces
-                        .iter()
-                        .filter(|s| s.surface_type == SurfaceType::Internal)
-                        .map(|s| s.expolygon.clone())
-                        .collect();
-                    if !internal.is_empty() {
-                        let trimmed = difference(&internal, &covered_ex);
-                        self.fill_surfaces
-                            .surfaces
-                            .retain(|s| s.surface_type != SurfaceType::Internal);
-                        for ex in &trimmed {
-                            self.fill_surfaces.surfaces.push(Surface {
-                                expolygon: ex.clone(),
-                                surface_type: SurfaceType::Internal,
-                                thickness: layer_height,
-                                thickness_layers: 1,
-                                bridge_angle: None,
-                                extra_perimeters: 0,
-                            });
-                        }
-                    }
-                    // Keep fill_expolygons (the union infill boundary used as vshell holes)
-                    // consistent with the trimmed infill region.
-                    if !self.fill_expolygons.is_empty() {
-                        self.fill_expolygons =
-                            difference(&self.fill_expolygons, &covered_ex);
-                    }
-                    if std::env::var("L74DBG").is_ok() {
-                        let area_mm = |exs: &ExPolygons| -> f64 {
-                            exs.iter().map(|e| e.area()).sum::<f64>()
-                                / (crate::SCALING_FACTOR * crate::SCALING_FACTOR)
-                        };
-                        eprintln!(
-                            "L74DBG li={} reg={} GAPFILL-COVER fill_expoly AFTER: n={} A={:.2}mm2",
-                            layer_id,
-                            self.region_id,
-                            self.fill_expolygons.len(),
-                            area_mm(&self.fill_expolygons),
-                        );
-                    }
-                }
-            }
+        // Gap fill — PerimeterGenerator.cpp:1326-1375 now runs INSIDE the
+        // perimeter generator (process_classic), so the
+        //   last = diff_ex(last, gap_fill.polygons_covered_by_width(10))
+        // subtraction (C++ line 1373) happens BEFORE the infill-boundary opening
+        // (C++ line 1403). result.infill_area / fill_expolygons therefore already
+        // exclude the gap-fill footprint with the C++ ordering. Here we only
+        // append the variable-width gap-fill extrusion paths to thin_fills, as
+        // C++ does via this->gap_fill->append (PerimeterGenerator.cpp:1374).
+        for path in result.gap_fill_paths {
+            self.thin_fills
+                .entities
+                .push(crate::extrusion_entity::ExtrusionEntityType::Path(path));
         }
 
         Ok(())
