@@ -23,19 +23,23 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (at `f67f3f4`, ROUND 48 — see memory `project_benchy_parity_gap.md` for the round-by-round log)
+## Current parity (at `dd93fc4`, ROUND 62 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
 - **Material: 0.99771×** — header filament rust 3850.13 / native 3858.97 mm (XY-gated `feat_e2.py`).
 - **Time estimate: CONVERGED** — native 43m0s / rust 43m21s (the old "1h29m vs 43m"
-  line-3 divergence is **RESOLVED**; the overhang/speed trio below is landed).
+  line-3 divergence is **RESOLVED**; the overhang/speed trio is landed).
 - **Byte-identical: NO**, but the structural subsystems now match or are faithful:
   outer-wall vertex density matches native (offset rerouted to clipper-z-sys),
   gap-fill 81% closed, seam ~89% byte-exact at established layers, arc-fitter /
-  simplification / medial-axis (boostvoronoi) / chaining / retraction all proven faithful.
-- **Remaining residual is surface CLASSIFICATION** (not geometry/units): rust
-  over-fills **bridge-infill** (moves 1286→2346) and under-blocks **internal-solid**
-  (389→134 blocks), which also drives the systematic extrusion-arc over (+~1250,
-  a downstream symptom of fragmentation — the arc-fitter itself is byte-faithful).
+  simplification / medial-axis (boostvoronoi) / chaining / retraction / overhang-trio
+  all proven faithful — AND (ROUND 58-62) the **mesh slicer, slice grid, `lslices`, and
+  `detect_surfaces_type` are all proven faithful too** (bit-identical / line-faithful).
+- **The remaining residual is ONE coupled lever: the FILL-SURFACE RECLASSIFICATION**
+  (not the slicer, not units, not classification-upstream — all ruled out). The
+  correct bottom-bridge/internal-solid surface is born right, then `detect_narrow_internal_solid_infill`
+  reclassifies it to narrow-floating and `FillConcentric` (no-boundary-loop bug) mis-fills it →
+  internal-solid −80mm, floating −64, bridge +15, and the downstream extrusion-arc over (+~1250).
+  See lever #2 + the WIP-branches handoff below.
 
 ## What's done (verified, on the branch)
 
@@ -61,39 +65,32 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
    `f64`, `merge_same_speed_paths` and `detect_bridge_wall` are ported + called, the
    speed interpolation is faithful, and the **time estimate converged (43m0s vs 43m21s)**.
    Overhang-wall feature matches (90 vs 91). This whole lever is done — do not re-attempt.
-2. **Internal-solid UNDER-fill via region-PARTITIONING divergence (PRIMARY lever).**
-   Material (feat_e2): internal-solid 494→414 (delta -79.95, UNDER), sparse 531→598
-   (+66.13, OVER), floating-vertical-shell 171→128 (-42.42). Solid that native fills is
-   routed to sparse in rust. **ROUND 49 pinned the chain decisively** (see
-   `/tmp/class_findings.md`):
-   - Layer→Z mapping was off-by-one in prior notes: gcode "layer num N" == internal
-     li N == Z=N*0.2. The pinned divergent layer is **gcode layer 71 == li 71 == Z14.4**.
-     Memory's fill mm² ("3.51/2.86/0.61") was also off 100× — actual 351/285.7/61.1 mm².
-   - `discover_horizontal_shells` is a **CORRECT no-op** (ensure_vertical_shell_thickness
-     = enabled → the per-region `continue` fires in BOTH C++ and rust; before==after on
-     every layer). NOT the bug. The old "horizontal-shells offset" lead is a **dead end**.
-   - Proximate cause: `detect_narrow_internal_solid_infill` (Fill.cpp:453-546,
-     fill/mod.rs:777) reclassifies ALL of rust's InternalSolid at Z14.4 (3 expolys) as
-     `narrow_floating` → stFloatingVerticalShell → 0 "Internal solid infill" emitted
-     (native emits 2). But this classifier is **FAITHFUL** to C++.
-   - **DECISIVE TEST — geo-vs-clib offset DISPROVEN here**: A/B rerouting the two
-     `offset_expolygon` calls (is_narrow_infill_area shrink, floating-test grow) to
-     `shrink_clib`/`grow_clib` gives BYTE-IDENTICAL narrow/floating counts. The
-     geo-clipper over-segmentation hypothesis does NOT apply to this gate.
-   - **ROOT**: the InternalSolid/Bridge **region geometry diverges upstream**, already at
-     Z14.2 (where gcode COUNTS coincidentally match but XY bboxes differ completely):
-     native internal-solid = small slivers near walls (perimeter shadow, x[4.25,5.69]);
-     rust = one large central region (x[4.99,16.81]); native vs rust bridge at entirely
-     different XY. The `surfaces_covered`/`has_voids` omission in
-     `process_external_surfaces` is **NOT** the cause for Benchy (fill_density=0.15 ⇒
-     `has_voids=false` ⇒ C++ also passes nullptr — exact). Root is in
-     `LayerRegion::process_external_surfaces` (region_expansion wave) region partitioning
-     and/or `bridge_over_infill` unsupported_area. DEEP multi-pass region-geometry rework,
-     NOT a clean single offset reroute — correctly bailed (no regression shipped).
-   - SCOPED PLAN (next): instrument `process_external_surfaces_wave` output by region at
-     Z14.2/14.4 vs native; verify discover_vertical_shells produces native's sliver
-     pattern; check bridge_over_infill unsupported_area XY placement. Re-assess Arachne
-     narrow-fill residual (ROUND 47 `/tmp/solid_findings.md`) only after this lands.
+2. **THE FILL-SURFACE RECLASSIFICATION (the one remaining cascade root — coupled, needs a holistic fix).**
+   Material (feat_e2): internal-solid 494→414 (−80, UNDER), sparse 531→598 (+66, OVER),
+   floating-vertical-shell 171→107 (−64). Cascades into the systematic extrusion-arc over (+~1250).
+   **ROUND 58-62 definitively RULED OUT everything upstream** (do NOT re-chase these):
+   the mesh slicer (`slice_facet`/`make_loops` bit-faithful; slice grid bit-identical;
+   cabin-floor facets at z≈0.3001 → cavity open at li=1 / closed at li=2 in BOTH engines —
+   rust closes it correctly), `lslices` (byte-identical to `slices`), `detect_surfaces_type`
+   (rust creates the CORRECT bottom-bridge at li=2, 91.7mm²), `discover_horizontal_shells`
+   (no-op), `has_voids`/`surfaces_covered` (Benchy fill_density=0.15 → C++ also nullptr),
+   the geo-clipper offsets in the narrow gate (A/B clib reroute byte-identical), and
+   `clip_fill_surfaces` (dead code: `infill_only_where_needed` static-false).
+   **ROOT (ROUND 62, definitive):** the correctly-born li=2 bottom-bridge/internal-solid is
+   **reclassified DOWNSTREAM in the fill stage** — `detect_narrow_internal_solid_infill`
+   (Fill.cpp:453-546, `fill/mod.rs`) narrow-detects it → routes to Concentric/floating →
+   the **`FillConcentric` no-boundary-loop bug** (`fill_concentric.rs`; C++ seeds
+   `loops=to_polygons(expolygon)` at FillConcentric.cpp:30) emits ~0 for sub-spacing strips.
+   Native keeps/fills it (bridge or rectilinear); rust narrow-floats + starves it.
+   **WHY IT'S NOT YET FIXED — it's COUPLED (3 pieces must land together or it regresses):**
+   (a) **R53 gap-fill subtraction reorder** (branch `L74-fill`) — faithful, but alone un-masks
+       the deficit (material 3850→3828); (b) **`FillConcentric` boundary-loop seed** (in
+       `/tmp/vshell_findings.md`) — alone OVERSHOOTS +106mm (fills mis-sized regions); (c) the
+       **reclassification correction** — why rust narrow-floats what native keeps as
+       bridge/rectilinear (the unresolved knot). HOLISTIC NEXT STEP: land (a)+(b)+(c) on one
+       branch off `L74-fill`, verifying **per-feature** convergence (internal-solid→494,
+       floating→170, bridge→237, total→3859) NOT the coincidental aggregate, and guarding the
+       byte-matched outer wall (G1 ~22087/native 22053 — the rejected `slicer-fix` regressed it to +371).
 3. **Clipper coordinate byte-exactness (F1).** The live clipper backend is
    `geo-clipper` at scale 1000 (1 µm grid) fed via an mm float round-trip, vs C++
    ClipperLib at scale 100000. For byte-exact coordinates, feed the C++ clipper the
@@ -112,3 +109,15 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
   branch. `clipper-z-sys` tests pass.
 - Many compiler warnings are intentional: `///` C++-reference doc comments and
   faithfully-ported-but-gated/unwired code.
+
+## WIP branches (preserved on GitHub — building blocks for the holistic fill-reclassification fix)
+
+All are pushed; none merged to `alex/libslic3r-parity-engine` (each is a real fix or diagnosis held back to avoid regressing parity). The holistic fix (lever #2) should branch off `L74-fill` and combine the faithful pieces, verifying per-feature.
+
+| branch | holds | status |
+|--------|-------|--------|
+| `L74-fill` | R53: gap-fill subtraction reorder (C++ order: subtract before infill opening) — **faithful** | use as the BASE; alone it un-masks the deficit (3850→3828) |
+| `vshell-fix` | diagnosis: the `FillConcentric` no-boundary-loop bug + analysis (`/tmp/vshell_findings.md`) | the FillConcentric fix; alone OVERSHOOTS +106mm |
+| `f1-fill` / `void-clamp` / `bottom-surface` / `slicer-fix` / `lslices-phase2` / `slice-facet` | diagnosis trail that RULED OUT slicer / lslices / clamp / region-partitioning (with the data) | reference only — do NOT re-chase these dead ends |
+
+Measurement (unchanged): `COMPARE_KEEP_DIR=/tmp/cmp devbox run -- target/debug/slicer-cli compare --config tests/configs/stl-inline-config.jsonnet`; per-feature material via `/tmp/feat_e2.py`. The merged units-fix (`make_expolygons` mm-not-scaled, `dd93fc4`) is a no-op today but required the moment any nonzero `closing_radius` is plumbed.
