@@ -57,6 +57,75 @@ use std::sync::{
     Arc,
 };
 
+// REGDBG (env-gated forensic; strip before commit). Dumps per-type fill-surface
+// bbox+area for the target layers (REGDBG=70,71) at each named pipeline stage.
+// Active only when REGDBG env var is set; zero effect otherwise.
+fn regdbg_targets() -> &'static [usize] {
+    use std::sync::OnceLock;
+    static T: OnceLock<Vec<usize>> = OnceLock::new();
+    T.get_or_init(|| {
+        std::env::var("REGDBG")
+            .ok()
+            .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+            .unwrap_or_default()
+    })
+}
+fn regdbg_dump(layers: &[Layer], stage: &str) {
+    let targets = regdbg_targets();
+    if targets.is_empty() {
+        return;
+    }
+    for layer in layers {
+        if !targets.contains(&layer.id()) {
+            continue;
+        }
+        for (ri, region) in layer.regions().iter().enumerate() {
+            use std::collections::BTreeMap;
+            let mut by_type: BTreeMap<String, (usize, f64, f64, f64, f64, f64)> = BTreeMap::new();
+            for s in &region.fill_surfaces.surfaces {
+                let bb = s.expolygon.bounding_box();
+                let (xmn, ymn, xmx, ymx) = (
+                    crate::unscale(bb.min.x),
+                    crate::unscale(bb.min.y),
+                    crate::unscale(bb.max.x),
+                    crate::unscale(bb.max.y),
+                );
+                let key = format!("{:?}", s.surface_type);
+                let e = by_type.entry(key).or_insert((
+                    0,
+                    0.0,
+                    f64::MAX,
+                    f64::MAX,
+                    f64::MIN,
+                    f64::MIN,
+                ));
+                e.0 += 1;
+                e.1 += s.area();
+                e.2 = e.2.min(xmn);
+                e.3 = e.3.min(ymn);
+                e.4 = e.4.max(xmx);
+                e.5 = e.5.max(ymx);
+            }
+            for (ty, (cnt, area, xmn, ymn, xmx, ymx)) in by_type {
+                println!(
+                    "REGDBG li={} z={:.2} r={} stage={} type={} n={} area_mm2={:.2} x=[{:.2},{:.2}] y=[{:.2},{:.2}]",
+                    layer.id(),
+                    layer.print_z,
+                    ri,
+                    stage,
+                    ty,
+                    cnt,
+                    area / (crate::SCALING_FACTOR * crate::SCALING_FACTOR),
+                    xmn,
+                    xmx,
+                    ymn,
+                    ymx,
+                );
+            }
+        }
+    }
+}
+
 // PrintObject step IDs
 // Print.hpp:101-106
 /// Print.hpp:101
@@ -704,6 +773,7 @@ impl PrintObject {
                 }
             }
         }
+        regdbg_dump(&self.layers, "prepare_fill_surfaces");
         // TOPDBG (diagnostics only, env-gated): Top state after prepare_fill_surfaces.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -721,6 +791,7 @@ impl PrintObject {
         /// C++: this->discover_vertical_shells();
         /// C++: m_print->throw_if_canceled();
         self.discover_vertical_shells()?;
+        regdbg_dump(&self.layers, "discover_vertical_shells");
         // TOPDBG (diagnostics only, env-gated): Top state after discover_vertical_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -743,6 +814,7 @@ impl PrintObject {
         /// C++: this->process_external_surfaces();
         /// C++: m_print->throw_if_canceled();
         self.process_external_surfaces()?;
+        regdbg_dump(&self.layers, "process_external_surfaces");
         // TOPDBG (diagnostics only, env-gated): Top state after process_external_surfaces.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -765,6 +837,7 @@ impl PrintObject {
         /// C++: this->discover_horizontal_shells();
         /// C++: m_print->throw_if_canceled();
         self.discover_horizontal_shells()?;
+        regdbg_dump(&self.layers, "discover_horizontal_shells");
         // TOPDBG (diagnostics only, env-gated): Top state after discover_horizontal_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -801,6 +874,7 @@ impl PrintObject {
         /// C++: this->bridge_over_infill();
         /// C++: m_print->throw_if_canceled();
         self.bridge_over_infill()?;
+        regdbg_dump(&self.layers, "bridge_over_infill");
         if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Cancelled);
         }
