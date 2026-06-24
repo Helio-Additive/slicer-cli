@@ -1538,6 +1538,9 @@ impl Layer {
 
         // === LSLICES_DBG (env-gated forensic; strip before final commit) ===
         if let Ok(want) = std::env::var("LSLICES_DBG") {
+            if want == "probe" {
+                eprintln!("LSLICES_DBG probe make_slices id={} nreg={}", self.id, self.regions.len());
+            }
             if let Ok(want_id) = want.parse::<usize>() {
                 if self.id == want_id {
                     let sf2 = 100_000.0_f64 * 100_000.0_f64; // SCALING_FACTOR^2 -> mm^2
