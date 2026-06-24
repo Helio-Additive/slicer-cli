@@ -61,17 +61,39 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
    `f64`, `merge_same_speed_paths` and `detect_bridge_wall` are ported + called, the
    speed interpolation is faithful, and the **time estimate converged (43m0s vs 43m21s)**.
    Overhang-wall feature matches (90 vs 91). This whole lever is done — do not re-attempt.
-2. **Bridge-infill surface OVER-detection (PRIMARY remaining lever).** rust over-fills
-   bridge-infill (moves 1286→2346) and under-blocks internal-solid (389→134 blocks;
-   material 494→414). Surface that native fills as **internal-solid** is being routed to
-   **bridge-infill** in rust → over-bridged/fragmented regions also drive the systematic
-   extrusion-arc over (+~1250; the arc-fitter itself is byte-faithful, ROUND 43). Root is
-   in `LayerRegion::process_external_surfaces` / `BridgeDetector` over-marking
-   `stBottomBridge`/`stInternalBridge`. A **classification** fix (the recurring tractable
-   bug class), NOT `wave_seeds`/`detect_bridge_wall` (those are done). This SUPERSEDES the
-   old "−187 E bridge material" framing and is the likely primary cause of the
-   internal-solid under-volume (re-assess any Arachne narrow-fill residual — ROUND 47,
-   `/tmp/solid_findings.md` — only AFTER this lands).
+2. **Internal-solid UNDER-fill via region-PARTITIONING divergence (PRIMARY lever).**
+   Material (feat_e2): internal-solid 494→414 (delta -79.95, UNDER), sparse 531→598
+   (+66.13, OVER), floating-vertical-shell 171→128 (-42.42). Solid that native fills is
+   routed to sparse in rust. **ROUND 49 pinned the chain decisively** (see
+   `/tmp/class_findings.md`):
+   - Layer→Z mapping was off-by-one in prior notes: gcode "layer num N" == internal
+     li N == Z=N*0.2. The pinned divergent layer is **gcode layer 71 == li 71 == Z14.4**.
+     Memory's fill mm² ("3.51/2.86/0.61") was also off 100× — actual 351/285.7/61.1 mm².
+   - `discover_horizontal_shells` is a **CORRECT no-op** (ensure_vertical_shell_thickness
+     = enabled → the per-region `continue` fires in BOTH C++ and rust; before==after on
+     every layer). NOT the bug. The old "horizontal-shells offset" lead is a **dead end**.
+   - Proximate cause: `detect_narrow_internal_solid_infill` (Fill.cpp:453-546,
+     fill/mod.rs:777) reclassifies ALL of rust's InternalSolid at Z14.4 (3 expolys) as
+     `narrow_floating` → stFloatingVerticalShell → 0 "Internal solid infill" emitted
+     (native emits 2). But this classifier is **FAITHFUL** to C++.
+   - **DECISIVE TEST — geo-vs-clib offset DISPROVEN here**: A/B rerouting the two
+     `offset_expolygon` calls (is_narrow_infill_area shrink, floating-test grow) to
+     `shrink_clib`/`grow_clib` gives BYTE-IDENTICAL narrow/floating counts. The
+     geo-clipper over-segmentation hypothesis does NOT apply to this gate.
+   - **ROOT**: the InternalSolid/Bridge **region geometry diverges upstream**, already at
+     Z14.2 (where gcode COUNTS coincidentally match but XY bboxes differ completely):
+     native internal-solid = small slivers near walls (perimeter shadow, x[4.25,5.69]);
+     rust = one large central region (x[4.99,16.81]); native vs rust bridge at entirely
+     different XY. The `surfaces_covered`/`has_voids` omission in
+     `process_external_surfaces` is **NOT** the cause for Benchy (fill_density=0.15 ⇒
+     `has_voids=false` ⇒ C++ also passes nullptr — exact). Root is in
+     `LayerRegion::process_external_surfaces` (region_expansion wave) region partitioning
+     and/or `bridge_over_infill` unsupported_area. DEEP multi-pass region-geometry rework,
+     NOT a clean single offset reroute — correctly bailed (no regression shipped).
+   - SCOPED PLAN (next): instrument `process_external_surfaces_wave` output by region at
+     Z14.2/14.4 vs native; verify discover_vertical_shells produces native's sliver
+     pattern; check bridge_over_infill unsupported_area XY placement. Re-assess Arachne
+     narrow-fill residual (ROUND 47 `/tmp/solid_findings.md`) only after this lands.
 3. **Clipper coordinate byte-exactness (F1).** The live clipper backend is
    `geo-clipper` at scale 1000 (1 µm grid) fed via an mm float round-trip, vs C++
    ClipperLib at scale 100000. For byte-exact coordinates, feed the C++ clipper the
