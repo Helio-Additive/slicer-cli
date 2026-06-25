@@ -23,18 +23,23 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (at `dd93fc4`, ROUND 62 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 65 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
-- **Material: 0.99771×** — header filament rust 3850.13 / native 3858.97 mm (XY-gated `feat_e2.py`).
+- **Material: per-feature is the metric, NOT the aggregate.** After the R65 slicer fix: rust 3846.64 /
+  native 3858.97 (the aggregate dropped from the pre-R65 3850.13 only because over-extruded walls correctly
+  came DOWN toward native — outer 1010.5→1005.2, inner 1003.1→998.0; per-feature ALL moved toward native).
+  Remaining per-feature deficit concentrated in **internal-solid −76 + floating −42** (the FillConcentric
+  starvation lever), partially masked by **sparse +68**.
 - **Time estimate: CONVERGED** — native 43m0s / rust 43m21s (the old "1h29m vs 43m"
   line-3 divergence is **RESOLVED**; the overhang/speed trio is landed).
 - **Byte-identical: NO**, but the structural subsystems now match or are faithful:
   outer-wall vertex density matches native (offset rerouted to clipper-z-sys),
   gap-fill 81% closed, seam ~89% byte-exact at established layers, arc-fitter /
   simplification / medial-axis (boostvoronoi) / chaining / retraction / overhang-trio
-  all proven faithful. `lslices` and `detect_surfaces_type` are faithful **given inputs**;
-  the **mesh slicer is NOT bit-faithful at the Benchy hull bottom** (see below — R62's
-  "slicer faithful" claim was overturned by R63's both-engine A/B).
+  all proven faithful. `lslices` and `detect_surfaces_type` are faithful **given inputs**; the mesh slicer
+  was NOT bit-faithful at the Benchy hull bottom (R62's "slicer faithful" claim was overturned by R63's
+  both-engine A/B) — **R65 ROOT-CAUSED + FIXED it** (the f32 center round-trip below; floor now slices
+  exactly as C++).
 - **The remaining residual is ONE lever — ROUND 63 (both-engine A/B) RELOCATED it from the fill
   stage back to the MESH SLICER (F2), overturning R62's "fill reclassification / slicer ruled out"
   framing.** R62 inferred slicer-faithfulness from code reading and never measured native's slice. R63
@@ -50,10 +55,22 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
   raw-loops-before-union measurement (both engines, branch `f2-rawloops`): at z=0.3/li=1 C++ `make_loops`
   emits 1 clean loop, rust emits 10 (outer 545.95mm² byte-identical + 8 phantom holes ~87mm²). The UNION is
   EXONERATED (the split is in the raw loops); the bug is F2 `slice_facet`/`make_loops` on-plane cap-facet
-  classification — rust's cavity closes one slice late.** Fix not yet attempted. The fix-round's first move:
-  dump IntersectionLines + cap-facet exact-f32 vertex z at z=0.3 in both engines to split slice_facet-classify
-  vs make_loops-chain; base it on this parity branch. See the R63/63.5/64 round-log +
-  `docs/parity/R64_rawloops_findings.md` (branch `f2-rawloops`) and `R63_reclass_findings.md` (`L74-reclass`).
+  classification — rust's cavity closes one slice late.** **R65 ROOT-CAUSED AND FIXED (LANDED, this branch).**
+  Both-engine F2TRAFO dump showed the divergence is a COORDINATE-FRAME / f32-precision gap, not the facet
+  logic: C++ stores the ModelVolume mesh **f32-centered** on its bbox and re-places it via the instance
+  trafo (`trafo_centered() * volume.get_matrix()`, PrintObjectSlice.cpp:60 — identity + Z translate of
+  exactly +24 for the Benchy). That f32 round trip QUANTIZES geometry sitting exactly on a layer-midpoint
+  slice plane OFF the plane (f32 is ~21 ULPs coarser near center_z=24): the cabin floor f32(0.3)=0.300000012
+  → `f32(f32(0.3−24)+24)` = 0.299999237 (7.75e-7 below slice plane zs[1]) → clean floor. Rust stores
+  vertices f64 and only casts to f32 at slice time, so it kept exact f32(0.3) == slice_z → bit-coincident →
+  degenerate. **FIX = `TriangleMesh::quantize_f32_center_roundtrip()`** (bakes the f32 round trip into the
+  f64 vertices before slicing; app_slice.rs). RESULT (clean A/B): li=1 raw loops **10→1** (matches C++);
+  layer-3 cabin-floor ISI **13.07→38.19** (native 38.08, parity); outer-wall G1 **+212→+158** and inner
+  **+578→+554** (toward native); wall+ISI material all toward native; time 42m49s; gap-fill parity; build
+  green; NO guardrail regression (outer-wall G1 IMPROVED — opposite of the rejected R59 slicer-fix at +371).
+  The cabin-floor cascade is resolved; the REMAINING ISI deficit (−76) is the SEPARATE distributed
+  **FillConcentric no-boundary-loop starvation** (body+top narrow vertical-shell strips) — that is the next
+  lever. See `docs/parity/R65_floor_z.md`, R63/R64 docs, and the R63-R65 round-log.
 
 ## What's done (verified, on the branch)
 
