@@ -32,14 +32,23 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
   outer-wall vertex density matches native (offset rerouted to clipper-z-sys),
   gap-fill 81% closed, seam ~89% byte-exact at established layers, arc-fitter /
   simplification / medial-axis (boostvoronoi) / chaining / retraction / overhang-trio
-  all proven faithful — AND (ROUND 58-62) the **mesh slicer, slice grid, `lslices`, and
-  `detect_surfaces_type` are all proven faithful too** (bit-identical / line-faithful).
-- **The remaining residual is ONE coupled lever: the FILL-SURFACE RECLASSIFICATION**
-  (not the slicer, not units, not classification-upstream — all ruled out). The
-  correct bottom-bridge/internal-solid surface is born right, then `detect_narrow_internal_solid_infill`
-  reclassifies it to narrow-floating and `FillConcentric` (no-boundary-loop bug) mis-fills it →
-  internal-solid −80mm, floating −64, bridge +15, and the downstream extrusion-arc over (+~1250).
-  See lever #2 + the WIP-branches handoff below.
+  all proven faithful. `lslices` and `detect_surfaces_type` are faithful **given inputs**;
+  the **mesh slicer is NOT bit-faithful at the Benchy hull bottom** (see below — R62's
+  "slicer faithful" claim was overturned by R63's both-engine A/B).
+- **The remaining residual is ONE lever — ROUND 63 (both-engine A/B) RELOCATED it from the fill
+  stage back to the MESH SLICER (F2), overturning R62's "fill reclassification / slicer ruled out"
+  framing.** R62 inferred slicer-faithfulness from code reading and never measured native's slice. R63
+  instrumented BOTH engines through the cascade: at **layer 1 (pz=0.4) rust's slice carries 8 spurious
+  ~10mm² holes (~86mm² total) that C++ does not** → li=2 over-classifies ~290mm² as BottomBridge → steals
+  from InternalSolid → the ISI leftover fragments into narrow slivers → `FillConcentric` starves them.
+  internal-solid −60..−80, floating −64, bridge +15 ALL fall out of this one slicer divergence;
+  `detect_narrow`/`FillConcentric`/`lslices` are faithful given inputs. **R63.5 correction:** the
+  `make_expolygons:1312-1313 scale()` suspect is a runtime NO-OP (closing_radius=0 → pure union) and the
+  `closing_radius=0.049` lever is refuted by magnitude (10mm² holes can't be sealed by a 0.049mm close).
+  Real root = **F2 mesh-slicer on-plane facet classification** at the near-horizontal cabin floor
+  (exact-f32 z==slice_z) — VINDICATES R61. NO faithful fill-stage fix converges it. Next step: dump raw
+  loops before union at z=0.3 in both engines. See the R63/63.5 round-log + `docs/parity/R63_reclass_findings.md`
+  (branch `L74-reclass`).
 
 ## What's done (verified, on the branch)
 
