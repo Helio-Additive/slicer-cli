@@ -1803,6 +1803,7 @@ impl Layer {
     pub fn make_fills(
         &mut self,
         lower_internal_areas: &[crate::geometry::ExPolygon],
+        lower_sparse_polys: &[crate::geometry::Polygon],
     ) -> Result<()> {
         // Fill.cpp:600
         // C++: const auto resolution = this->object()->print()->config().resolution.value;
@@ -1856,23 +1857,20 @@ impl Layer {
             // (Fill.cpp:706,738-751). The generic polyline path below cannot
             // represent those beads, so handle these patterns here and `continue`.
             //
-            // FloatingConcentric note: the faithful FillFloatingConcentric
-            // `fill_surface_extrusion` depends on `resplit_order_loops` ->
-            // `detect_floating_line`, which needs a Z-aware clipper with a user
-            // fill callback (ClipperLib_Z) that this crate's Clipper2 backend does
-            // not provide (fill_floating_concentric.rs:15-31). It is routed through
-            // FillConcentricInternal here as a documented interim — the bead
-            // GEOMETRY (and material) is the same WallToolPaths output; only the
-            // floating seam re-ordering differs. The FloatingVerticalShell feature
-            // tag is preserved because group_fills already sets
-            // params.extrusion_role = FloatingVerticalShell (fill/mod.rs:832).
+            // FloatingConcentric (ipFloatingConcentric) is filled by the faithful
+            // FillFloatingConcentric, whose resplit_order_loops -> detect_floating_line
+            // (Z-clipper) prunes/re-seeds the bead set vs the plain concentric path;
+            // it needs the lower layer's unsupport areas + sparse anchor polygons
+            // (Fill.cpp:638-675). Both are now ported.
             if matches!(
                 fill_pattern,
                 InfillPattern::Concentric | InfillPattern::FloatingConcentric
             ) {
                 use crate::fill::fill_concentric_internal::FillConcentricInternal;
+                use crate::fill::fill_floating_concentric::FillFloatingConcentric;
 
                 let region_id = surface_fill.region_id;
+                let is_floating = fill_pattern == InfillPattern::FloatingConcentric;
 
                 // Fill.cpp:695 — f->loop_clipping = coord_t(scale_(nozzle_diameter)
                 //   * LOOP_CLIPPING_LENGTH_OVER_NOZZLE_DIAMETER), const = 0.15
@@ -1899,8 +1897,29 @@ impl Layer {
                     .as_deref()
                     .expect("config hierarchy not wired — call wire_layer_hierarchy");
 
-                // Placeholder surface — FillConcentricInternal::fill_surface_extrusion
-                // does not read the surface (it iterates no_overlap_expolygons).
+                // Fill.cpp:642-675 — the floating filler's lower-layer data.
+                // lower_layer_unsupport_areas = shrink_ex(union of lower
+                // stInternal/stInternalVoid, SCALED_EPSILON). lower_internal_areas
+                // is already that un-shrunk union (gathered by the caller).
+                let lower_unsupport: ExPolygons = if is_floating && !lower_internal_areas.is_empty()
+                {
+                    let unioned = crate::clipper_utils::union_ex(lower_internal_areas);
+                    crate::clipper_utils::shrink(
+                        &unioned,
+                        crate::libslic3r::SCALED_EPSILON / crate::SCALING_FACTOR,
+                        crate::clipper_utils::OffsetJoinType::Miter,
+                    )
+                } else {
+                    Vec::new()
+                };
+                let lower_sparse: Vec<crate::geometry::Polygon> = if is_floating {
+                    lower_sparse_polys.to_vec()
+                } else {
+                    Vec::new()
+                };
+
+                // Placeholder surface — the fillers do not read the surface (they
+                // iterate no_overlap_expolygons).
                 let surface_for_fill = surface_fill.surface.clone();
 
                 // Fill.cpp:738-749 — PER expoly: intersect no_overlap with that
@@ -1914,9 +1933,6 @@ impl Layer {
                     // Fill.cpp:740 — f->no_overlap_expolygons =
                     //   intersection_ex(surface_fill.no_overlap_expolygons,
                     //                   {expoly}, ApplySafetyOffset::Yes).
-                    // The geo-clipper intersection does not apply the ClipperLib
-                    // safety offset (f64 backend); matches the mono_no_overlap
-                    // precedent at layer.rs:1908.
                     let no_overlap = if surface_fill.no_overlap_expolygons.is_empty() {
                         vec![expoly.clone()]
                     } else {
@@ -1929,15 +1945,28 @@ impl Layer {
                         continue;
                     }
 
-                    let mut filler = FillConcentricInternal {
-                        // Fill.cpp:747 — f->spacing = surface_fill.params.spacing (mm)
-                        spacing: surface_fill.params.spacing,
-                        loop_clipping,
-                        no_overlap_expolygons: no_overlap,
-                        print_config: Some(print_config),
-                        print_object_config: Some(print_object_config),
-                    };
-                    filler.fill_surface_extrusion(&surface_for_fill, &fp, &mut out_entities);
+                    if is_floating {
+                        let mut filler = FillFloatingConcentric {
+                            spacing: surface_fill.params.spacing,
+                            loop_clipping,
+                            no_overlap_expolygons: no_overlap,
+                            lower_layer_unsupport_areas: lower_unsupport.clone(),
+                            lower_sparse_polys: lower_sparse.clone(),
+                            print_config: Some(print_config),
+                            print_object_config: Some(print_object_config),
+                        };
+                        filler.fill_surface_extrusion(&surface_for_fill, &fp, &mut out_entities);
+                    } else {
+                        let mut filler = FillConcentricInternal {
+                            // Fill.cpp:747 — f->spacing = surface_fill.params.spacing (mm)
+                            spacing: surface_fill.params.spacing,
+                            loop_clipping,
+                            no_overlap_expolygons: no_overlap,
+                            print_config: Some(print_config),
+                            print_object_config: Some(print_object_config),
+                        };
+                        filler.fill_surface_extrusion(&surface_for_fill, &fp, &mut out_entities);
+                    }
                 }
 
                 for ent in out_entities {

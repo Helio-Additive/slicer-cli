@@ -2487,9 +2487,60 @@ impl PrintObject {
                     })
                     .unwrap_or_default();
 
+                // Fill.cpp:638-673 — for ipFloatingConcentric, the filler also needs
+                // the lower layer's SPARSE-infill anchor polygons. C++ computes
+                // lower_sparse_polys = union_(offset(lower_layer->
+                // generate_sparse_infill_polylines_for_anchoring(...),
+                // internal_infill_width/2)). Gather it here while the lower layer is
+                // reachable (group_fills/make_fills run per-Layer), mirroring the
+                // lower_internal_areas snapshot above. The detect_lower_sparse_lines
+                // guard (skip for adaptive/lightning/support-cubic lower infill) is
+                // satisfied for the non-adaptive Benchy case; the anchor generator
+                // already skips those patterns.
+                let lower_sparse_polys: Vec<crate::geometry::Polygon> = self.layers
+                    [layer_idx]
+                    .lower_layer_id
+                    .and_then(|lid| self.layers.get(lid))
+                    .map(|lower| {
+                        let lines = lower
+                            .generate_sparse_infill_polylines_for_anchoring()
+                            .unwrap_or_default();
+                        if lines.is_empty() {
+                            return Vec::new();
+                        }
+                        // internal_infill_width = mean of layerm.flow(frInfill).scaled_width().
+                        let mut sum_w = 0i64;
+                        let mut nregions = 0usize;
+                        for layerm in lower.regions() {
+                            if let Ok(f) = layerm.flow(crate::flow::FlowRole::Infill, lower.height) {
+                                sum_w += f.scaled_width();
+                            }
+                            nregions += 1;
+                        }
+                        let internal_infill_width = if nregions > 0 {
+                            sum_w as f64 / nregions as f64
+                        } else {
+                            0.0
+                        };
+                        // offset(lower_sparse_lines, internal_infill_width/2) then union_.
+                        let delta = internal_infill_width / 2.0;
+                        let mut grown: Vec<crate::geometry::Polygon> = Vec::new();
+                        for pl in &lines {
+                            grown.extend(crate::clipper_utils::offset_polyline(pl, delta));
+                        }
+                        // union_(grown): collapse to non-overlapping polygons.
+                        crate::clipper_utils::union_polygons_ex(&grown)
+                            .into_iter()
+                            .flat_map(|ex| {
+                                std::iter::once(ex.contour).chain(ex.holes.into_iter())
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
                 // Call Layer::make_fills() on each layer
                 // PrintObject.cpp:768
-                self.layers[layer_idx].make_fills(&lower_internal_areas)?;
+                self.layers[layer_idx].make_fills(&lower_internal_areas, &lower_sparse_polys)?;
             }
 
             // Mark step as complete
