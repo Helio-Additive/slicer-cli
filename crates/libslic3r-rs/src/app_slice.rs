@@ -66,10 +66,6 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     {
         let bbox = mesh.bounding_box();
         let dz = -bbox.min.z;
-        if std::env::var("F2FLOOR").is_ok() {
-            eprintln!("F2FLOOR RUST bed-drop dz={:.9} bbox.min.z={:.9} bbox.max.z={:.9}",
-                dz as f64, bbox.min.z as f64, bbox.max.z as f64);
-        }
         if dz != 0.0 {
             mesh.translate(Point3F { x: 0.0, y: 0.0, z: dz });
             info!("Placed model on bed surface: dz={:.3} (no XY centering, matching C++ slicer_cli)", dz);
