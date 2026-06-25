@@ -2501,6 +2501,28 @@ impl TriangleMesh {
         self.bounding_box = None;
     }
 
+    /// Replicate BambuStudio's f32 center-store / instance-place round trip on the
+    /// vertices. C++ stores the ModelVolume mesh as f32 CENTERED on its bbox and the
+    /// instance trafo translates it back at slice time (PrintObjectSlice.cpp:60). In
+    /// EXACT math this is identity, but f32 is coarser away from the origin, so a vertex
+    /// at f32(0.3) with a large center (Benchy center_z=24) round-trips to
+    /// f32(f32(0.3 - 24) + 24) = 0.299999237 — ~21 ULPs of loss. Our pipeline stores
+    /// vertices in f64 and only casts to f32 at slice time, so without this it keeps the
+    /// exact f32(0.3) and sits bit-coincident with the layer-midpoint slice plane (the
+    /// degenerate on-plane facet case that emits spurious interior holes — R63-R65).
+    /// Bake the f32 round trip into the f64 storage so the slice-time cast reproduces
+    /// C++'s coordinates. Net-zero for geometry not sitting exactly on a slice plane.
+    pub fn quantize_f32_center_roundtrip(&mut self) {
+        let c = self.center();
+        let (cx, cy, cz) = (c.x as f32, c.y as f32, c.z as f32);
+        for v in &mut self.vertices {
+            v.x = ((v.x as f32 - cx) + cx) as f64;
+            v.y = ((v.y as f32 - cy) + cy) as f64;
+            v.z = ((v.z as f32 - cz) + cz) as f64;
+        }
+        self.bounding_box = None;
+    }
+
     /// Scale the mesh uniformly about the origin.
     pub fn scale(&mut self, factor: CoordF) {
         for vertex in &mut self.vertices {

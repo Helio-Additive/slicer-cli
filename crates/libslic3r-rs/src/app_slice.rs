@@ -76,6 +76,21 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
         }
     }
 
+    // C++ BambuStudio slices the mesh AFTER a center-store-then-instance-place round trip:
+    // the ModelVolume mesh is stored centered on its bounding box (PrintObject volume), and the
+    // instance/object trafo translates it back at slice time (PrintObjectSlice.cpp:60,
+    // `params2.trafo = params2.trafo * volume.get_matrix()`, applied per-vertex). In exact math
+    // that round trip is identity, but in f32 it QUANTIZES: f32 is coarser away from the origin,
+    // so a vertex at f32(0.3) becomes f32(f32(0.3 - center_z) + center_z) = 0.299999237 once
+    // center_z is large (Benchy center_z = 24 -> ~21 ULPs lost). rust slices the mesh in its raw
+    // STL frame and SKIPS this round trip, so geometry that sits at exactly f32(layer-midpoint)
+    // stays bit-coincident with the slice plane. The Benchy cabin floor is a flat plate at exactly
+    // f32(0.3) == slice_z(li=1); coincident slicing hits the degenerate on-plane facet case and
+    // emits ~8 spurious interior hole-loops -> the bottom-bridge/internal-solid cascade (R63-R65).
+    // Replicate C++'s round trip so the floor lands 7.75e-7 below the plane exactly as C++
+    // slices it. Must be done in f32 (our mesh is f64; an f64 round trip is a no-op).
+    mesh.quantize_f32_center_roundtrip();
+
     // Create PrintObject — slicing happens internally during Print::process().
     info!("Creating PrintObject...");
     let print_object = PrintObject::with_config(mesh, object_config);
