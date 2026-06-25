@@ -101,6 +101,40 @@ Fix the SLICER hole over-generation at the Benchy hull bottom. Concretely:
 4. The pz=4.2 spurious-hole-on-2nd-ISI-expoly (FLOAT vs NARROW) is a separate, smaller follow-up of
    the same family (spurious holes in slices), likely fixed by the same slicer correction.
 
+## R63.5 CORRECTION (main-session review of the above — supersedes the SUSPECT + reframes the root)
+The STEP-1..6 both-engine measurement above is SOUND and stands. Three corrections to the analysis:
+
+1. **The named SUSPECT (make_expolygons:1312-1313 scale()) is a CONFIRMED NO-OP — do NOT chase it.**
+   At runtime closing_radius=0 (default, triangle_mesh_slicer.rs:1397 → passed at :1549). The
+   `if closing_radius >= extra_offset` branch then computes offset_out=scale(0)=0, offset_in=-scale(0)=0
+   → make_expolygons is a PURE UNION, no offset/close at all. The scale() can't generate holes. Commit
+   6529a52 already established this exact line as a runtime no-op on main.
+
+2. **The closing_radius=0.049 hypothesis (R58 finding A / R59 slicer-fix) is REFUTED BY MAGNITUDE.**
+   Rust's 8 holes total ~86mm² (~10mm² each: C++ outer 545.98 − rust net 459.22). A 0.049mm
+   morphological close seals holes ~0.01mm², not 10mm². So C++ does NOT slice these holes and then
+   close them — C++'s raw slice genuinely lacks the cabin-floor openings at z=0.3. (Consistent with
+   R59, which threaded 0.049 and the cascade did NOT trigger + outer-wall G1 regressed +371. Dead end.)
+
+3. **ROOT (corrected) = MESH SLICER on-plane facet classification (F2) — R63 VINDICATES R61, not R62.**
+   The holes are real ~10mm² geometry present in rust's slice and absent in C++'s, with make_expolygons
+   a no-op → the divergence is in the RAW LOOPS from slice_facet/make_loops (the near-horizontal
+   cabin-floor facets at z≈0.3, exact-f32 z==slice_z on-plane classification). This is EXACTLY R61's
+   "DEFINITIVE root = mesh slicer on-plane facet classification". R62 ("slicer ruled out → fill
+   reclassification") is the OUTLIER round: it inferred slicer-faithfulness from CODE READING and never
+   measured native's li=1 hole count; R63's both-engine A/B (native=0 holes) overturns it empirically.
+
+### BRANCH CAVEAT
+L74-reclass is OFF 83d024b and does NOT contain 6529a52 (the make_expolygons unscaled-mm fix that is on
+main). Slicer work should be based on MAIN (alex/libslic3r-parity-engine), not on L74-reclass.
+
+### THE DECISIVE UNTAKEN MEASUREMENT (true next step — localizes the exact divergent facet)
+Dump the RAW LOOPS (before union, before make_expolygons) at z=0.3 (layer 1) in BOTH engines:
+slice_facet output / make_loops loops — count, areas, orientations, and the FACETS crossing/touching
+z=0.3 at the cabin floor with their exact f32 vertex z. If C++'s raw loops already lack the 8 holes →
+the bug is the f32 on-plane facet classification (which side of z==0.3 a near-horizontal facet lands).
+That is deep F2 (Coord/precision-foundational), needs the C++-side facet dump to pin the ULP divergence.
+
 ## INSTRUMENTATION (all RECLASS_DBG-gated; REVERTED before handback)
 - rust: crates/libslic3r-rs/src/fill/mod.rs (detect_narrow + fill_surfaces-by-type),
         crates/libslic3r-rs/src/print_object.rs (detect entry, L1 slice detail, bottom-diff, L1 lslices).
