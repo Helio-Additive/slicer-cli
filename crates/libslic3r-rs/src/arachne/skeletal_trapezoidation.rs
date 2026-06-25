@@ -42,8 +42,14 @@ use crate::arachne::utils::extrusion_junction::{ExtrusionJunction, LineJunctions
 use crate::arachne::utils::extrusion_line::{ExtrusionLine, VariableWidthLines};
 use crate::arachne::utils::half_edge::HalfEdge;
 use crate::arachne::utils::half_edge_node::HalfEdgeNode;
-use crate::geometry::{shorter_then, Point};
+use crate::arachne::skeletal_trapezoidation_graph::STHalfEdgeNode;
+use crate::arachne::utils::linear_alg2d::is_inside_corner;
+use crate::arachne::utils::polygons_point_index::PolygonsPointIndex;
+use crate::arachne::utils::polygons_segment_index::{Direction1d, PolygonsSegmentIndex};
+use crate::geometry::voronoi_diagram::VoronoiDiagram;
+use crate::geometry::{perp, shorter_then, Line, Point, Polygons};
 use crate::{scaled, Coord};
+use boostvoronoi::prelude as bv;
 use parking_lot::RwLock;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
@@ -117,6 +123,15 @@ pub struct SkeletalTrapezoidation<'a> {
     // SkeletalTrapezoidation.hpp:181 std::vector<VariableWidthLines>* p_generated_toolpaths;
     // Stored as a raw pointer to mirror the C++ member that aliases the caller's output vector.
     p_generated_toolpaths: *mut Vec<VariableWidthLines>,
+
+    // SkeletalTrapezoidation.hpp:158 std::unordered_map<vd_t::vertex_type *, node_t *> vd_node_to_he_node;
+    // SkeletalTrapezoidation.hpp:159 std::unordered_map<vd_t::edge_type *, edge_t *> vd_edge_to_he_edge;
+    //
+    // The C++ keys are boost::polygon VD pointers; here the pointer-stable analogue
+    // is the `boostvoronoi` index (`VertexIndex`/`EdgeIndex`) into the diagram's
+    // vertex/edge lists. Populated by `construct_from_polygons` (the graph builder).
+    vd_node_to_he_node: std::collections::HashMap<bv::VertexIndex, NodePtr>,
+    vd_edge_to_he_edge: std::collections::HashMap<bv::EdgeIndex, EdgePtr>,
 }
 
 impl<'a> SkeletalTrapezoidation<'a> {
@@ -155,6 +170,670 @@ impl<'a> SkeletalTrapezoidation<'a> {
             hole_indices,
             graph: SkeletalTrapezoidationGraph::new(),
             p_generated_toolpaths: std::ptr::null_mut(),
+            vd_node_to_he_node: std::collections::HashMap::new(),
+            vd_edge_to_he_edge: std::collections::HashMap::new(),
+        }
+    }
+
+    // =====================================================================
+    //    GRAPH CONSTRUCTION (VD -> half-edge graph)
+    //
+    // Faithful 1:1 port of SkeletalTrapezoidation.cpp:92-504 (makeNode,
+    // transferEdge, discretize, computePointCellRange, constructFromPolygons),
+    // previously blocked. The C++ keys its `vd_*_to_he_*` maps on boost::polygon
+    // VD pointers; here the pointer-stable analogue is the `boostvoronoi` index
+    // (`bv::VertexIndex` / `bv::EdgeIndex`) into the diagram's vertex/edge lists.
+    // The VD navigation (`twin`/`next`/`prev`/`vertex0`/`vertex1`/`cell`) all maps
+    // to the index-based `bv::Diagram` API (see voronoi_utils_cgal.rs for the
+    // same navigation pattern). The half-edge graph mutators (`make_node`,
+    // `graph.make_rib`, `graph.nodes/edges` allocation) are unchanged from C++.
+    // =====================================================================
+
+    // SkeletalTrapezoidation.cpp:91-105
+    // SkeletalTrapezoidation::node_t &SkeletalTrapezoidation::makeNode(const VD::vertex_type &vd_node, Point p)
+    //
+    // `vd_node` is identified by its `bv::VertexIndex` (the map key).
+    fn make_node(&mut self, vd_node: bv::VertexIndex, p: Point) -> NodePtr {
+        // SkeletalTrapezoidation.cpp:93
+        if let Some(&node) = self.vd_node_to_he_node.get(&vd_node) {
+            // SkeletalTrapezoidation.cpp:103 return *he_node_it->second;
+            node
+        } else {
+            // SkeletalTrapezoidation.cpp:96 graph.nodes.emplace_front(SkeletalTrapezoidationJoint(), p);
+            self.graph
+                .nodes
+                .push_front(STHalfEdgeNode::new(crate::arachne::skeletal_trapezoidation_joint::SkeletalTrapezoidationJoint::new(), p));
+            // SkeletalTrapezoidation.cpp:97 node_t& node = graph.nodes.front();
+            let node = SkeletalTrapezoidationGraph::node_ptr(self.graph.nodes.front().unwrap());
+            // SkeletalTrapezoidation.cpp:98 vd_node_to_he_node.emplace(&vd_node, &node);
+            self.vd_node_to_he_node.insert(vd_node, node);
+            // SkeletalTrapezoidation.cpp:99 return node;
+            node
+        }
+    }
+
+    // SkeletalTrapezoidation.cpp:107-217
+    // void SkeletalTrapezoidation::transferEdge(Point from, Point to, const VD::edge_type &vd_edge, edge_t *&prev_edge, Point &start_source_point, Point &end_source_point, const std::vector<Segment> &segments, const bool hole_compensation_flag)
+    #[allow(clippy::too_many_arguments)]
+    fn transfer_edge(
+        &mut self,
+        diagram: &bv::Diagram,
+        from: Point,
+        to: Point,
+        vd_edge: bv::EdgeIndex,
+        prev_edge: &mut Option<EdgePtr>,
+        start_source_point: Point,
+        end_source_point: Point,
+        segments: &[PolygonsSegmentIndex],
+        hole_compensation_flag: bool,
+    ) {
+        // SkeletalTrapezoidation.cpp:108 auto he_edge_it = vd_edge_to_he_edge.find(vd_edge.twin());
+        let vd_twin = diagram.edges()[vd_edge.usize()].twin().unwrap();
+        let he_edge = self.vd_edge_to_he_edge.get(&vd_twin).copied();
+        if let Some(source_twin) = he_edge {
+            // SkeletalTrapezoidation.cpp:110-111 Twin segment(s) have already been made
+            unsafe {
+                // SkeletalTrapezoidation.cpp:114 auto end_node_it = vd_node_to_he_node.find(vd_edge.vertex1());
+                let vd_v1 = diagram.edge_get_vertex1(vd_edge).ok().flatten().unwrap();
+                // SkeletalTrapezoidation.cpp:116 node_t* end_node = end_node_it->second;
+                let end_node = *self.vd_node_to_he_node.get(&vd_v1).unwrap();
+                // SkeletalTrapezoidation.cpp:117 for (edge_t* twin = source_twin; ; twin = twin->prev->twin->prev)
+                let mut twin = Some(source_twin);
+                loop {
+                    // SkeletalTrapezoidation.cpp:119-124 if(!twin){ warning; continue; }
+                    // (a None twin can only arise if the chain is malformed; the C++
+                    //  `continue` re-loops on the same broken state — guard against an
+                    //  infinite loop by breaking.)
+                    let twin_p = match twin {
+                        Some(t) => t,
+                        None => {
+                            log::warn!("Encountered a voronoi edge without twin.");
+                            break;
+                        }
+                    };
+
+                    // SkeletalTrapezoidation.cpp:126 graph.edges.emplace_front(SkeletalTrapezoidationEdge());
+                    self.graph.edges.push_front(
+                        crate::arachne::skeletal_trapezoidation_graph::STHalfEdge::new(
+                            crate::arachne::skeletal_trapezoidation_edge::SkeletalTrapezoidationEdge::new(),
+                        ),
+                    );
+                    // SkeletalTrapezoidation.cpp:127 edge_t* edge = &graph.edges.front();
+                    let edge = SkeletalTrapezoidationGraph::edge_ptr(self.graph.edges.front().unwrap());
+                    {
+                        let edge_mut = edge.as_ptr().as_mut().unwrap();
+                        let twin_ref = twin_p.as_ref();
+                        // SkeletalTrapezoidation.cpp:128 edge->from = twin->to;
+                        edge_mut.from = twin_ref.to;
+                        // SkeletalTrapezoidation.cpp:129 edge->to = twin->from;
+                        edge_mut.to = twin_ref.from;
+                        // SkeletalTrapezoidation.cpp:130 edge->twin = twin;
+                        edge_mut.twin = Some(twin_p);
+                    }
+                    // SkeletalTrapezoidation.cpp:131 twin->twin = edge;
+                    twin_p.as_ptr().as_mut().unwrap().twin = Some(edge);
+                    // SkeletalTrapezoidation.cpp:132 edge->from->incident_edge = edge;
+                    edge.as_ref().from.unwrap().as_ptr().as_mut().unwrap().incident_edge = Some(edge);
+                    // SkeletalTrapezoidation.cpp:133 edge->data.setHoleCompensationFlag(hole_compensation_flag);
+                    edge.as_ptr().as_mut().unwrap().data.set_hole_compensation_flag(hole_compensation_flag);
+                    // SkeletalTrapezoidation.cpp:134-138 if (prev_edge) { edge->prev = prev_edge; prev_edge->next = edge; }
+                    if let Some(prev) = *prev_edge {
+                        edge.as_ptr().as_mut().unwrap().prev = Some(prev);
+                        prev.as_ptr().as_mut().unwrap().next = Some(edge);
+                    }
+                    // SkeletalTrapezoidation.cpp:140 prev_edge = edge;
+                    *prev_edge = Some(edge);
+
+                    // SkeletalTrapezoidation.cpp:142-145 if (prev_edge->to == end_node) return;
+                    if edge.as_ref().to == Some(end_node) {
+                        return;
+                    }
+
+                    // SkeletalTrapezoidation.cpp:147-151 if (!twin->prev || !twin->prev->twin || !twin->prev->twin->prev) { error; return; }
+                    let twin_prev = twin_p.as_ref().prev;
+                    let twin_prev_twin = twin_prev.and_then(|tp| tp.as_ref().twin);
+                    let twin_prev_twin_prev = twin_prev_twin.and_then(|tpt| tpt.as_ref().prev);
+                    if twin_prev.is_none() || twin_prev_twin.is_none() || twin_prev_twin_prev.is_none() {
+                        log::error!("Discretized segment behaves oddly!");
+                        return;
+                    }
+
+                    // SkeletalTrapezoidation.cpp:161 graph.makeRib(prev_edge, start_source_point, end_source_point, is_not_next_to_start_or_end);
+                    let mut pe = edge;
+                    self.graph.make_rib(&mut pe, start_source_point, end_source_point, false);
+                    *prev_edge = Some(pe);
+
+                    // SkeletalTrapezoidation.cpp:117 twin = twin->prev->twin->prev
+                    twin = twin_prev_twin_prev;
+                }
+            }
+        } else {
+            // SkeletalTrapezoidation.cpp:162 Points discretized = discretize(vd_edge, segments);
+            let discretized = self.discretize(diagram, vd_edge, segments);
+            // SkeletalTrapezoidation.cpp:163-167 assert/warn discretized.size() >= 2
+            debug_assert!(discretized.len() >= 2);
+            if discretized.len() < 2 {
+                log::warn!("Discretized Voronoi edge is degenerate.");
+            }
+
+            unsafe {
+                // SkeletalTrapezoidation.cpp:169-173 assert/warn prev_edge->to
+                // SkeletalTrapezoidation.cpp:174 node_t* v0 = (prev_edge)? prev_edge->to : &makeNode(*vd_edge.vertex0(), from);
+                let mut v0: NodePtr = if let Some(prev) = *prev_edge {
+                    prev.as_ref().to.unwrap()
+                } else {
+                    let vd_v0 = diagram.edges()[vd_edge.usize()].vertex0().unwrap();
+                    self.make_node(vd_v0, from)
+                };
+                // SkeletalTrapezoidation.cpp:175 Point p0 = discretized.front();
+                // (p0 is only used by C++ to advance; we index discretized directly.)
+                // SkeletalTrapezoidation.cpp:176 for (size_t p1_idx = 1; ...)
+                for p1_idx in 1..discretized.len() {
+                    // SkeletalTrapezoidation.cpp:178 Point p1 = discretized[p1_idx];
+                    let p1 = discretized[p1_idx];
+                    // SkeletalTrapezoidation.cpp:179-189 node_t* v1
+                    let v1: NodePtr = if p1_idx < discretized.len() - 1 {
+                        // SkeletalTrapezoidation.cpp:182-183 graph.nodes.emplace_front(..., p1); v1 = &graph.nodes.front();
+                        self.graph.nodes.push_front(STHalfEdgeNode::new(
+                            crate::arachne::skeletal_trapezoidation_joint::SkeletalTrapezoidationJoint::new(),
+                            p1,
+                        ));
+                        SkeletalTrapezoidationGraph::node_ptr(self.graph.nodes.front().unwrap())
+                    } else {
+                        // SkeletalTrapezoidation.cpp:187 v1 = &makeNode(*vd_edge.vertex1(), to);
+                        let vd_v1 = diagram.edge_get_vertex1(vd_edge).ok().flatten().unwrap();
+                        self.make_node(vd_v1, to)
+                    };
+
+                    // SkeletalTrapezoidation.cpp:191 graph.edges.emplace_front(SkeletalTrapezoidationEdge());
+                    self.graph.edges.push_front(
+                        crate::arachne::skeletal_trapezoidation_graph::STHalfEdge::new(
+                            crate::arachne::skeletal_trapezoidation_edge::SkeletalTrapezoidationEdge::new(),
+                        ),
+                    );
+                    // SkeletalTrapezoidation.cpp:192 edge_t* edge = &graph.edges.front();
+                    let edge = SkeletalTrapezoidationGraph::edge_ptr(self.graph.edges.front().unwrap());
+                    {
+                        let edge_mut = edge.as_ptr().as_mut().unwrap();
+                        // SkeletalTrapezoidation.cpp:193 edge->from = v0;
+                        edge_mut.from = Some(v0);
+                        // SkeletalTrapezoidation.cpp:194 edge->to = v1;
+                        edge_mut.to = Some(v1);
+                    }
+                    // SkeletalTrapezoidation.cpp:195 edge->from->incident_edge = edge;
+                    v0.as_ptr().as_mut().unwrap().incident_edge = Some(edge);
+                    // SkeletalTrapezoidation.cpp:196 edge->data.setHoleCompensationFlag(hole_compensation_flag);
+                    edge.as_ptr().as_mut().unwrap().data.set_hole_compensation_flag(hole_compensation_flag);
+
+                    // SkeletalTrapezoidation.cpp:198-202 if (prev_edge) { edge->prev = prev_edge; prev_edge->next = edge; }
+                    if let Some(prev) = *prev_edge {
+                        edge.as_ptr().as_mut().unwrap().prev = Some(prev);
+                        prev.as_ptr().as_mut().unwrap().next = Some(edge);
+                    }
+
+                    // SkeletalTrapezoidation.cpp:204 prev_edge = edge;
+                    *prev_edge = Some(edge);
+                    // SkeletalTrapezoidation.cpp:205-206 p0 = p1; v0 = v1;
+                    v0 = v1;
+
+                    // SkeletalTrapezoidation.cpp:208-212 if (p1_idx < discretized.size() - 1) { makeRib }
+                    if p1_idx < discretized.len() - 1 {
+                        let mut pe = edge;
+                        self.graph.make_rib(&mut pe, start_source_point, end_source_point, false);
+                        *prev_edge = Some(pe);
+                    }
+                }
+                // SkeletalTrapezoidation.cpp:214 assert(prev_edge);
+                // SkeletalTrapezoidation.cpp:215 vd_edge_to_he_edge.emplace(&vd_edge, prev_edge);
+                self.vd_edge_to_he_edge.insert(vd_edge, prev_edge.unwrap());
+            }
+        }
+    }
+
+    // SkeletalTrapezoidation.cpp:219-329
+    // Points SkeletalTrapezoidation::discretize(const VD::edge_type& vd_edge, const std::vector<Segment>& segments)
+    fn discretize(
+        &self,
+        diagram: &bv::Diagram,
+        vd_edge: bv::EdgeIndex,
+        segments: &[PolygonsSegmentIndex],
+    ) -> Vec<Point> {
+        // SkeletalTrapezoidation.cpp:223 const VD::cell_type *left_cell = vd_edge.cell();
+        let left_cell_id = diagram.edges()[vd_edge.usize()].cell().unwrap();
+        // SkeletalTrapezoidation.cpp:224 const VD::cell_type *right_cell = vd_edge.twin()->cell();
+        let twin_id = diagram.edges()[vd_edge.usize()].twin().unwrap();
+        let right_cell_id = diagram.edges()[twin_id.usize()].cell().unwrap();
+        let left_cell = diagram.cell(left_cell_id).unwrap();
+        let right_cell = diagram.cell(right_cell_id).unwrap();
+
+        // SkeletalTrapezoidation.cpp:226 Point start = ...vertex0()...; SkeletalTrapezoidation.cpp:227 Point end = ...vertex1()...;
+        let v0i = diagram.edges()[vd_edge.usize()].vertex0().unwrap();
+        let v1i = diagram.edge_get_vertex1(vd_edge).ok().flatten().unwrap();
+        let v0 = &diagram.vertices()[v0i.usize()];
+        let v1 = &diagram.vertices()[v1i.usize()];
+        let start = crate::geometry::voronoi_utils::to_point(v0.x(), v0.y());
+        let end = crate::geometry::voronoi_utils::to_point(v1.x(), v1.y());
+
+        // SkeletalTrapezoidation.cpp:229 bool point_left = left_cell->contains_point();
+        let point_left = left_cell.contains_point();
+        // SkeletalTrapezoidation.cpp:230 bool point_right = right_cell->contains_point();
+        let point_right = right_cell.contains_point();
+        let is_secondary = diagram.edges()[vd_edge.usize()].is_secondary();
+
+        // SkeletalTrapezoidation.cpp:231-234 if ((!point_left && !point_right) || vd_edge.is_secondary())
+        if (!point_left && !point_right) || is_secondary {
+            // SkeletalTrapezoidation.cpp:233 return Points({ start, end });
+            vec![start, end]
+        } else if point_left != point_right {
+            // SkeletalTrapezoidation.cpp:235-241 parabolic edge between a point and a line.
+            // SkeletalTrapezoidation.cpp:237 Point p = get_source_point(*(point_left ? left_cell : right_cell), ...);
+            let p = source_point(if point_left { left_cell } else { right_cell }, segments);
+            // SkeletalTrapezoidation.cpp:238 const Segment& s = get_source_segment(*(point_left ? right_cell : left_cell), ...);
+            let s = source_segment(if point_left { right_cell } else { left_cell }, segments);
+            // SkeletalTrapezoidation.cpp:239 return discretize_parabola(p, s, start, end, discretization_step_size, transitioning_angle);
+            crate::geometry::voronoi_utils::discretize_parabola(
+                p,
+                s.from(),
+                s.to(),
+                start,
+                end,
+                self.discretization_step_size,
+                // C++ `transitioning_angle` is `double`; the crate's
+                // discretize_parabola takes `f32` (the C++ callee likewise narrows).
+                self.transitioning_angle as f32,
+            )
+        } else {
+            // SkeletalTrapezoidation.cpp:242-328 straight edge between two points.
+            // SkeletalTrapezoidation.cpp:248 Point left_point = get_source_point(*left_cell, ...);
+            let left_point = source_point(left_cell, segments);
+            // SkeletalTrapezoidation.cpp:249 Point right_point = get_source_point(*right_cell, ...);
+            let right_point = source_point(right_cell, segments);
+            // SkeletalTrapezoidation.cpp:250 coord_t d = (right_point - left_point).cast<int64_t>().norm();
+            let d = ((right_point - left_point).length()) as i64;
+            // SkeletalTrapezoidation.cpp:251 Point middle = (left_point + right_point) / 2;
+            let middle = Point::new((left_point.x + right_point.x) / 2, (left_point.y + right_point.y) / 2);
+            // SkeletalTrapezoidation.cpp:252 Point x_axis_dir = perp(Point(right_point - left_point));
+            let x_axis_dir = perp(right_point - left_point);
+            // SkeletalTrapezoidation.cpp:253 coord_t x_axis_length = x_axis_dir.cast<int64_t>().norm();
+            let x_axis_length = (x_axis_dir.length()) as i64;
+
+            // SkeletalTrapezoidation.cpp:255-261 projected_x lambda
+            let projected_x = |fromp: Point| -> i64 {
+                let vec = fromp - middle;
+                // coord_t x = vec.dot(x_axis_dir) / x_axis_length;
+                (vec.x as i64 * x_axis_dir.x as i64 + vec.y as i64 * x_axis_dir.y as i64) / x_axis_length
+            };
+
+            // SkeletalTrapezoidation.cpp:263 coord_t start_x = projected_x(start);
+            let start_x = projected_x(start);
+            // SkeletalTrapezoidation.cpp:264 coord_t end_x = projected_x(end);
+            let end_x = projected_x(end);
+
+            // SkeletalTrapezoidation.cpp:267 float bound = 0.5 / tan((M_PI - transitioning_angle) * 0.5);
+            let bound = 0.5 / ((std::f64::consts::PI - self.transitioning_angle) * 0.5).tan();
+            // SkeletalTrapezoidation.cpp:268 int64_t marking_start_x = - int64_t(d) * bound;
+            let mut marking_start_x = (-(d as f64) * bound) as i64;
+            // SkeletalTrapezoidation.cpp:269 int64_t marking_end_x = int64_t(d) * bound;
+            let mut marking_end_x = ((d as f64) * bound) as i64;
+
+            // SkeletalTrapezoidation.cpp:275-276
+            // Point marking_start = middle + (x_axis_dir * marking_start_x / x_axis_length).cast<coord_t>();
+            let mut marking_start = Point::new(
+                middle.x + (x_axis_dir.x as i64 * marking_start_x / x_axis_length),
+                middle.y + (x_axis_dir.y as i64 * marking_start_x / x_axis_length),
+            );
+            // Point marking_end = middle + (x_axis_dir * marking_end_x / x_axis_length).cast<coord_t>();
+            let mut marking_end = Point::new(
+                middle.x + (x_axis_dir.x as i64 * marking_end_x / x_axis_length),
+                middle.y + (x_axis_dir.y as i64 * marking_end_x / x_axis_length),
+            );
+            // SkeletalTrapezoidation.cpp:277 int64_t direction = 1;
+            let mut direction: i64 = 1;
+
+            // SkeletalTrapezoidation.cpp:279-284 if (start_x > end_x) { direction = -1; swap... }
+            if start_x > end_x {
+                direction = -1;
+                std::mem::swap(&mut marking_start, &mut marking_end);
+                std::mem::swap(&mut marking_start_x, &mut marking_end_x);
+            }
+
+            // SkeletalTrapezoidation.cpp:287-289 Point a = start; Point b = end; Points ret; ret.emplace_back(a);
+            let a = start;
+            let b = end;
+            let mut ret: Vec<Point> = Vec::new();
+            ret.push(a);
+
+            // SkeletalTrapezoidation.cpp:292-293
+            let mut add_marking_start = marking_start_x * direction > start_x * direction;
+            let mut add_marking_end = marking_end_x * direction > start_x * direction;
+
+            // SkeletalTrapezoidation.cpp:296 Point ab = b - a;
+            let ab = b - a;
+            // SkeletalTrapezoidation.cpp:297 coord_t ab_size = ab.cast<int64_t>().norm();
+            let ab_size = (ab.length()) as i64;
+            // SkeletalTrapezoidation.cpp:298 coord_t step_count = (ab_size + discretization_step_size / 2) / discretization_step_size;
+            let mut step_count = (ab_size + self.discretization_step_size / 2) / self.discretization_step_size;
+            // SkeletalTrapezoidation.cpp:299-302 if (step_count % 2 == 1) step_count++;
+            if step_count % 2 == 1 {
+                step_count += 1;
+            }
+            // SkeletalTrapezoidation.cpp:303-318
+            for step in 1..step_count {
+                // SkeletalTrapezoidation.cpp:305 Point here = a + (ab * step / step_count).cast<coord_t>();
+                let here = Point::new(
+                    a.x + (ab.x as i64 * step / step_count),
+                    a.y + (ab.y as i64 * step / step_count),
+                );
+                // SkeletalTrapezoidation.cpp:306 coord_t x_here = projected_x(here);
+                let x_here = projected_x(here);
+                // SkeletalTrapezoidation.cpp:307-311
+                if add_marking_start && marking_start_x * direction < x_here * direction {
+                    ret.push(marking_start);
+                    add_marking_start = false;
+                }
+                // SkeletalTrapezoidation.cpp:312-316
+                if add_marking_end && marking_end_x * direction < x_here * direction {
+                    ret.push(marking_end);
+                    add_marking_end = false;
+                }
+                // SkeletalTrapezoidation.cpp:317 ret.emplace_back(here);
+                ret.push(here);
+            }
+            // SkeletalTrapezoidation.cpp:319-322 if (add_marking_end && marking_end_x*direction < end_x*direction) ret.emplace_back(marking_end);
+            if add_marking_end && marking_end_x * direction < end_x * direction {
+                ret.push(marking_end);
+            }
+            // SkeletalTrapezoidation.cpp:323 ret.emplace_back(b);
+            ret.push(b);
+            // SkeletalTrapezoidation.cpp:324 return ret;
+            ret
+        }
+    }
+
+    // SkeletalTrapezoidation.cpp:330-371
+    // bool SkeletalTrapezoidation::computePointCellRange(const VD::cell_type &cell, Point &start_source_point, Point &end_source_point, const VD::edge_type *&starting_vd_edge, const VD::edge_type *&ending_vd_edge, const std::vector<Segment> &segments)
+    //
+    // Returns `Some((start_source_point, end_source_point, starting_vd_edge, ending_vd_edge))`
+    // when the cell should be copied, `None` otherwise (the C++ `return false`).
+    fn compute_point_cell_range(
+        &self,
+        diagram: &bv::Diagram,
+        cell: &bv::Cell,
+        segments: &[PolygonsSegmentIndex],
+    ) -> Option<(Point, Point, bv::EdgeIndex, bv::EdgeIndex)> {
+        // SkeletalTrapezoidation.cpp:331-332 if (cell.incident_edge()->is_infinite()) return false;
+        let incident_edge = cell.get_incident_edge().unwrap();
+        if diagram.edge_is_infinite(incident_edge).unwrap_or(true) {
+            return None;
+        }
+
+        // SkeletalTrapezoidation.cpp:338-341 If incident_edge->vertex0() doesn't fit in Vec2i64, bail.
+        let inc_v0i = diagram.edges()[incident_edge.usize()].vertex0().unwrap();
+        let inc_v0 = &diagram.vertices()[inc_v0i.usize()];
+        if inc_v0.x() >= i64::MAX as f64
+            || inc_v0.x() <= i64::MIN as f64
+            || inc_v0.y() >= i64::MAX as f64
+            || inc_v0.y() <= i64::MIN as f64
+        {
+            return None;
+        }
+
+        // SkeletalTrapezoidation.cpp:343 const Point source_point = get_source_point(cell, ...);
+        let source_point = source_point(cell, segments);
+        // SkeletalTrapezoidation.cpp:344 const PolygonsPointIndex source_point_index = get_source_point_index(cell, ...);
+        let source_point_index = source_point_index(cell, segments);
+        // SkeletalTrapezoidation.cpp:345 Vec2i64 some_point = to_point(cell.incident_edge()->vertex0());
+        let mut some_point = (inc_v0.x().round() as i64, inc_v0.y().round() as i64);
+        // SkeletalTrapezoidation.cpp:346-347 if (some_point == source_point) some_point = to_point(cell.incident_edge()->vertex1());
+        if some_point == (source_point.x, source_point.y) {
+            let inc_v1i = diagram.edge_get_vertex1(incident_edge).ok().flatten().unwrap();
+            let inc_v1 = &diagram.vertices()[inc_v1i.usize()];
+            some_point = (inc_v1.x().round() as i64, inc_v1.y().round() as i64);
+        }
+
+        // SkeletalTrapezoidation.cpp:352-353
+        // if (!LinearAlg2D::isInsideCorner(source_point_index.prev().p(), source_point_index.p(), source_point_index.next().p(), some_point)) return false;
+        if !is_inside_corner(
+            source_point_index.prev().p(),
+            source_point_index.p(),
+            source_point_index.next().p(),
+            Point::new(some_point.0, some_point.1),
+        ) {
+            return None;
+        }
+
+        // SkeletalTrapezoidation.cpp:355 const VD::edge_type* vd_edge = cell.incident_edge();
+        let mut starting_vd_edge: Option<bv::EdgeIndex> = None;
+        let mut ending_vd_edge: Option<bv::EdgeIndex> = None;
+        let mut start_source_point = Point::new(0, 0);
+        let mut end_source_point = Point::new(0, 0);
+        let mut vd_edge = incident_edge;
+        // SkeletalTrapezoidation.cpp:356-368 do { ... } while (vd_edge = vd_edge->next(), vd_edge != cell.incident_edge());
+        loop {
+            // SkeletalTrapezoidation.cpp:359 if (Vec2i64 p1 = to_point(vd_edge->vertex1()); p1 == source_point)
+            let v1i = diagram.edge_get_vertex1(vd_edge).ok().flatten().unwrap();
+            let v1 = &diagram.vertices()[v1i.usize()];
+            let p1 = (v1.x().round() as i64, v1.y().round() as i64);
+            if p1 == (source_point.x, source_point.y) {
+                // SkeletalTrapezoidation.cpp:360-363
+                start_source_point = source_point;
+                end_source_point = source_point;
+                starting_vd_edge = Some(diagram.edges()[vd_edge.usize()].next().unwrap());
+                ending_vd_edge = Some(vd_edge);
+            }
+            // SkeletalTrapezoidation.cpp:368 while (vd_edge = vd_edge->next(), vd_edge != cell.incident_edge());
+            vd_edge = diagram.edges()[vd_edge.usize()].next().unwrap();
+            if vd_edge == incident_edge {
+                break;
+            }
+        }
+        // SkeletalTrapezoidation.cpp:369-370 assert(starting_vd_edge && ending_vd_edge); assert(starting_vd_edge != ending_vd_edge);
+        let s = starting_vd_edge?;
+        let e = ending_vd_edge?;
+        debug_assert!(s != e);
+        // SkeletalTrapezoidation.cpp:371 return true;
+        Some((start_source_point, end_source_point, s, e))
+    }
+
+    // SkeletalTrapezoidation.cpp:391-504
+    // void SkeletalTrapezoidation::constructFromPolygons(const Polygons& polys)
+    pub fn construct_from_polygons(&mut self, polys: &Polygons) {
+        use std::collections::HashSet;
+
+        // SkeletalTrapezoidation.cpp:397 std::set<int> hole_indices_(...);
+        let hole_indices_: HashSet<i32> = self.hole_indices.iter().copied().collect();
+
+        // SkeletalTrapezoidation.cpp:416-417 vd_edge_to_he_edge.clear(); vd_node_to_he_node.clear();
+        self.vd_edge_to_he_edge.clear();
+        self.vd_node_to_he_node.clear();
+
+        // SkeletalTrapezoidation.cpp:419-422 std::vector<Segment> segments; for poly,point: segments.emplace_back(&polys, poly_idx, point_idx);
+        // Build the parallel (`Line` for VD construction) + (`PolygonsSegmentIndex`
+        // for source lookup) arrays in identical order so cell.source_index() maps
+        // to the right segment (the crate's VD is built from `&[Line]`).
+        let mut segments: Vec<PolygonsSegmentIndex> = Vec::new();
+        let mut lines: Vec<Line> = Vec::new();
+        for poly_idx in 0..polys.len() {
+            for point_idx in 0..polys[poly_idx].points.len() {
+                let seg = PolygonsSegmentIndex::with_indices(polys, poly_idx, point_idx);
+                lines.push(Line::new(seg.from(), seg.to()));
+                segments.push(seg);
+            }
+        }
+
+        // SkeletalTrapezoidation.cpp:432-433 VD voronoi_diagram; voronoi_diagram.construct_voronoi(segments...);
+        let mut vd = VoronoiDiagram::new();
+        // C++ constructs directly from the segments without the repair wrapper.
+        if vd.construct_voronoi(&lines, false).is_err() {
+            return;
+        }
+        let diagram = vd.diagram();
+
+        // SkeletalTrapezoidation.cpp:443 for (const VD::cell_type &cell : voronoi_diagram.cells())
+        for cell_idx in 0..diagram.cells().len() {
+            let cell = &diagram.cells()[cell_idx];
+            // SkeletalTrapezoidation.cpp:444-445 if (!cell.incident_edge()) continue;
+            let incident_edge = match cell.get_incident_edge() {
+                Some(e) => e,
+                None => continue,
+            };
+            let _ = incident_edge;
+
+            // SkeletalTrapezoidation.cpp:447-450 local vars
+            let start_source_point;
+            let end_source_point;
+            let starting_voronoi_edge;
+            let ending_voronoi_edge;
+
+            // SkeletalTrapezoidation.cpp:452 bool apply_hole_compensation = this->enable_hole_compensation;
+            let mut apply_hole_compensation = self.enable_hole_compensation;
+
+            // SkeletalTrapezoidation.cpp:454-475 if (cell.contains_point()) { ... } else { ... }
+            if cell.contains_point() {
+                // SkeletalTrapezoidation.cpp:455-457 if (!computePointCellRange(...)) continue;
+                match self.compute_point_cell_range(diagram, cell, &segments) {
+                    Some((ssp, esp, s, e)) => {
+                        start_source_point = ssp;
+                        end_source_point = esp;
+                        starting_voronoi_edge = Some(s);
+                        ending_voronoi_edge = Some(e);
+                    }
+                    None => continue,
+                }
+                // SkeletalTrapezoidation.cpp:459-460
+                // const PolygonsPointIndex source_point_idx = get_source_point_index(cell, ...);
+                // apply_hole_compensation &= hole_indices_.find(source_point_idx.poly_idx) != end();
+                let source_point_idx = source_point_index(cell, &segments);
+                apply_hole_compensation &= hole_indices_.contains(&(source_point_idx.poly_idx as i32));
+            } else {
+                // SkeletalTrapezoidation.cpp:462 assert(cell.contains_segment());
+                debug_assert!(cell.contains_segment());
+                // SkeletalTrapezoidation.cpp:463 SegmentCellRange cell_range = compute_segment_cell_range(cell, ...);
+                let cell_range = compute_segment_cell_range(diagram, cell, &segments);
+                // SkeletalTrapezoidation.cpp:464 assert(cell_range.is_valid());
+                debug_assert!(cell_range.is_valid());
+                // SkeletalTrapezoidation.cpp:465-468
+                start_source_point = cell_range.segment_start_point;
+                end_source_point = cell_range.segment_end_point;
+                starting_voronoi_edge = cell_range.edge_begin;
+                ending_voronoi_edge = cell_range.edge_end;
+
+                // SkeletalTrapezoidation.cpp:470-471
+                // const Segment& source_segment = get_source_segment(cell, ...);
+                // apply_hole_compensation &= hole_indices_.find(source_segment.poly_idx) != end();
+                let source_segment = source_segment(cell, &segments);
+                apply_hole_compensation &= hole_indices_.contains(&(source_segment.poly_idx() as i32));
+            }
+
+            // SkeletalTrapezoidation.cpp:477-481 if (!starting_voronoi_edge || !ending_voronoi_edge) { assert(false); continue; }
+            let (starting_voronoi_edge, ending_voronoi_edge) =
+                match (starting_voronoi_edge, ending_voronoi_edge) {
+                    (Some(s), Some(e)) => (s, e),
+                    _ => continue,
+                };
+
+            // SkeletalTrapezoidation.cpp:484-487 Copy start to end edge to graph
+            let mut prev_edge: Option<EdgePtr> = None;
+            // SkeletalTrapezoidation.cpp:486 transferEdge(start_source_point, to_point(starting_voronoi_edge->vertex1()), *starting_voronoi_edge, prev_edge, ...);
+            let s_v1i = diagram.edge_get_vertex1(starting_voronoi_edge).ok().flatten().unwrap();
+            let s_v1 = &diagram.vertices()[s_v1i.usize()];
+            let s_v1_pt = crate::geometry::voronoi_utils::to_point(s_v1.x(), s_v1.y());
+            self.transfer_edge(
+                diagram,
+                start_source_point,
+                s_v1_pt,
+                starting_voronoi_edge,
+                &mut prev_edge,
+                start_source_point,
+                end_source_point,
+                &segments,
+                apply_hole_compensation,
+            );
+            unsafe {
+                // SkeletalTrapezoidation.cpp:487 node_t* starting_node = vd_node_to_he_node[starting_voronoi_edge->vertex0()];
+                let s_v0i = diagram.edges()[starting_voronoi_edge.usize()].vertex0().unwrap();
+                let starting_node = *self.vd_node_to_he_node.get(&s_v0i).unwrap();
+                // SkeletalTrapezoidation.cpp:488 starting_node->data.distance_to_boundary = 0;
+                starting_node.as_ptr().as_mut().unwrap().data.distance_to_boundary = 0;
+            }
+
+            // SkeletalTrapezoidation.cpp:490-491 makeRib(prev_edge, start_source_point, end_source_point, true);
+            {
+                let mut pe = prev_edge.unwrap();
+                self.graph.make_rib(&mut pe, start_source_point, end_source_point, true);
+                prev_edge = Some(pe);
+            }
+            // SkeletalTrapezoidation.cpp:492-498 for (vd_edge = starting->next(); vd_edge != ending; vd_edge = vd_edge->next())
+            let mut vd_edge = diagram.edges()[starting_voronoi_edge.usize()].next().unwrap();
+            while vd_edge != ending_voronoi_edge {
+                // SkeletalTrapezoidation.cpp:496-497
+                let ve_v0i = diagram.edges()[vd_edge.usize()].vertex0().unwrap();
+                let ve_v1i = diagram.edge_get_vertex1(vd_edge).ok().flatten().unwrap();
+                let ve_v0 = &diagram.vertices()[ve_v0i.usize()];
+                let ve_v1 = &diagram.vertices()[ve_v1i.usize()];
+                let v1pt = crate::geometry::voronoi_utils::to_point(ve_v0.x(), ve_v0.y());
+                let v2pt = crate::geometry::voronoi_utils::to_point(ve_v1.x(), ve_v1.y());
+                self.transfer_edge(
+                    diagram,
+                    v1pt,
+                    v2pt,
+                    vd_edge,
+                    &mut prev_edge,
+                    start_source_point,
+                    end_source_point,
+                    &segments,
+                    apply_hole_compensation,
+                );
+                // SkeletalTrapezoidation.cpp:498 makeRib(prev_edge, ..., vd_edge->next() == ending_voronoi_edge);
+                let next_is_ending = diagram.edges()[vd_edge.usize()].next().unwrap() == ending_voronoi_edge;
+                {
+                    let mut pe = prev_edge.unwrap();
+                    self.graph.make_rib(&mut pe, start_source_point, end_source_point, next_is_ending);
+                    prev_edge = Some(pe);
+                }
+                vd_edge = diagram.edges()[vd_edge.usize()].next().unwrap();
+            }
+
+            // SkeletalTrapezoidation.cpp:500-501 transferEdge(to_point(ending->vertex0()), end_source_point, *ending, ...);
+            let e_v0i = diagram.edges()[ending_voronoi_edge.usize()].vertex0().unwrap();
+            let e_v0 = &diagram.vertices()[e_v0i.usize()];
+            let e_v0_pt = crate::geometry::voronoi_utils::to_point(e_v0.x(), e_v0.y());
+            self.transfer_edge(
+                diagram,
+                e_v0_pt,
+                end_source_point,
+                ending_voronoi_edge,
+                &mut prev_edge,
+                start_source_point,
+                end_source_point,
+                &segments,
+                apply_hole_compensation,
+            );
+            // SkeletalTrapezoidation.cpp:501 prev_edge->to->data.distance_to_boundary = 0;
+            unsafe {
+                prev_edge.unwrap().as_ref().to.unwrap().as_ptr().as_mut().unwrap().data.distance_to_boundary = 0;
+            }
+        }
+
+        // SkeletalTrapezoidation.cpp:507 separatePointyQuadEndNodes();
+        self.separate_pointy_quad_end_nodes();
+
+        // SkeletalTrapezoidation.cpp:509 graph.collapseSmallEdges();
+        self.graph.collapse_small_edges(SNAP_DIST);
+
+        // SkeletalTrapezoidation.cpp:513-515 for (edge_t& edge : graph.edges) if (!edge.prev) edge.from->incident_edge = &edge;
+        unsafe {
+            let edges: Vec<EdgePtr> = self
+                .graph
+                .edges
+                .iter()
+                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .collect();
+            for edge in edges {
+                if edge.as_ref().prev.is_none() {
+                    edge.as_ref().from.unwrap().as_ptr().as_mut().unwrap().incident_edge = Some(edge);
+                }
+            }
         }
     }
 
@@ -3036,4 +3715,177 @@ fn normal(p0: Point, len: Coord) -> Point {
     }
     // SkeletalTrapezoidation.cpp:1315 return (p0.cast<int64_t>() * int64_t(len) / _len).cast<coord_t>();
     Point::new(p0.x * len / _len, p0.y * len / _len)
+}
+
+// ---------------------------------------------------------------------------
+// VoronoiUtils source-lookup helpers, specialised to the `PolygonsSegmentIndex`
+// segment type used by Arachne (== C++ `Segment`). These mirror the templated
+// `Geometry::VoronoiUtils` members; the `Line`-based instantiations already live
+// in `voronoi_utils_cgal.rs`. Faithful 1:1 of VoronoiUtils.cpp.
+// ---------------------------------------------------------------------------
+
+// VoronoiUtils.cpp:40-49  VoronoiUtils::get_source_segment
+fn source_segment<'a>(
+    cell: &bv::Cell,
+    segments: &'a [PolygonsSegmentIndex<'a>],
+) -> &'a PolygonsSegmentIndex<'a> {
+    // VoronoiUtils.cpp:42 if (!cell.contains_segment()) throw ...
+    assert!(cell.contains_segment(), "Voronoi cell doesn't contain a source segment!");
+    // VoronoiUtils.cpp:45-46 if (cell.source_index() >= ...) throw ...
+    let source_index = cell.source_index().usize();
+    assert!(source_index < segments.len(), "Voronoi cell source index is out of range!");
+    // VoronoiUtils.cpp:48 return *(segment_begin + cell.source_index());
+    &segments[source_index]
+}
+
+// VoronoiUtils.cpp:56-76  VoronoiUtils::get_source_point
+fn source_point(cell: &bv::Cell, segments: &[PolygonsSegmentIndex]) -> Point {
+    // VoronoiUtils.cpp:60 if (!cell.contains_point()) throw ...
+    assert!(cell.contains_point(), "Voronoi cell doesn't contain a source point!");
+    let source_index = cell.source_index().usize();
+    match cell.source_category() {
+        // VoronoiUtils.cpp:63-66 SEGMENT_START_POINT -> segment LOW (from)
+        bv::SourceCategory::SegmentStart => {
+            debug_assert!(source_index < segments.len());
+            segments[source_index].segment_get(Direction1d::Low)
+        }
+        // VoronoiUtils.cpp:67-70 SEGMENT_END_POINT -> segment HIGH (to)
+        bv::SourceCategory::SegmentEnd => {
+            debug_assert!(source_index < segments.len());
+            segments[source_index].segment_get(Direction1d::High)
+        }
+        // VoronoiUtils.cpp:71-72 SINGLE_POINT
+        bv::SourceCategory::SinglePoint => {
+            panic!("Voronoi diagram is always constructed using segments, so cell.source_category() shouldn't be SOURCE_CATEGORY_SINGLE_POINT!");
+        }
+        // VoronoiUtils.cpp:73-74 default
+        bv::SourceCategory::Segment => {
+            panic!("Function get_source_point() should only be called on point cells!");
+        }
+    }
+}
+
+// VoronoiUtils.cpp (get_source_point_index) — returns the `PolygonsPointIndex`
+// of the cell's source point.
+fn source_point_index<'a>(
+    cell: &bv::Cell,
+    segments: &'a [PolygonsSegmentIndex<'a>],
+) -> PolygonsPointIndex<'a> {
+    assert!(cell.contains_point(), "Voronoi cell doesn't contain a source point!");
+    let source_index = cell.source_index().usize();
+    match cell.source_category() {
+        // SEGMENT_START_POINT -> the segment's own point index
+        bv::SourceCategory::SegmentStart => {
+            debug_assert!(source_index < segments.len());
+            *segments[source_index].point_index()
+        }
+        // SEGMENT_END_POINT -> the next point index
+        bv::SourceCategory::SegmentEnd => {
+            debug_assert!(source_index < segments.len());
+            segments[source_index].point_index().next()
+        }
+        bv::SourceCategory::SinglePoint => {
+            panic!("Voronoi diagram is always constructed using segments, so cell.source_category() shouldn't be SOURCE_CATEGORY_SINGLE_POINT!");
+        }
+        bv::SourceCategory::Segment => {
+            panic!("Function get_source_point_index() should only be called on point cells!");
+        }
+    }
+}
+
+/// Result of `compute_segment_cell_range` — mirrors C++ `SegmentCellRange<Point>`
+/// but carries the boost-VD edge handles as live `bv::EdgeIndex` (the crate's
+/// `SegmentCellRange` stores `Option<usize>`, and `bv::EdgeIndex`'s inner u32 is
+/// not constructible from outside `boostvoronoi`, so the cell range is kept local).
+struct SegmentCellRangeBv {
+    segment_start_point: Point,
+    segment_end_point: Point,
+    edge_begin: Option<bv::EdgeIndex>,
+    edge_end: Option<bv::EdgeIndex>,
+}
+
+impl SegmentCellRangeBv {
+    fn is_valid(&self) -> bool {
+        match (self.edge_begin, self.edge_end) {
+            (Some(b), Some(e)) => b != e,
+            _ => false,
+        }
+    }
+}
+
+// VoronoiUtils.cpp:205-243  VoronoiUtils::compute_segment_cell_range
+fn compute_segment_cell_range(
+    diagram: &bv::Diagram,
+    cell: &bv::Cell,
+    segments: &[PolygonsSegmentIndex],
+) -> SegmentCellRangeBv {
+    // VoronoiUtils.cpp:211 const Segment &source_segment = get_source_segment(cell, ...);
+    let source_segment = source_segment(cell, segments);
+    // VoronoiUtils.cpp:212 const Point from = segment_traits::get(source_segment, LOW);
+    let from = source_segment.segment_get(Direction1d::Low);
+    // VoronoiUtils.cpp:213 const Point to = segment_traits::get(source_segment, HIGH);
+    let to = source_segment.segment_get(Direction1d::High);
+    // VoronoiUtils.cpp:214-215 const Vec2i64 from_i64 = from; to_i64 = to;
+    let from_i64 = (from.x, from.y);
+    let to_i64 = (to.x, to.y);
+
+    // VoronoiUtils.cpp:218 SegmentCellRange cell_range(to, from);
+    let mut cell_range = SegmentCellRangeBv {
+        segment_start_point: to,
+        segment_end_point: from,
+        edge_begin: None,
+        edge_end: None,
+    };
+
+    // VoronoiUtils.cpp:221-223
+    let mut seen_possible_start = false;
+    let mut after_start = false;
+    let mut ending_edge_is_set_before_start = false;
+    // VoronoiUtils.cpp:224 const VD::edge_type *edge = cell.incident_edge();
+    let incident_edge = cell.get_incident_edge().unwrap();
+    let mut edge = incident_edge;
+    // VoronoiUtils.cpp:225-241 do { ... } while (edge = edge->next(), edge != cell.incident_edge());
+    loop {
+        // VoronoiUtils.cpp:226-227 if (edge->is_infinite()) continue;
+        if diagram.edge_is_infinite(edge).unwrap_or(true) {
+            edge = diagram.edges()[edge.usize()].next().unwrap();
+            if edge == incident_edge {
+                break;
+            }
+            continue;
+        }
+
+        // VoronoiUtils.cpp:229-230 Vec2i64 v0 = to_point(edge->vertex0()); v1 = to_point(edge->vertex1());
+        let v0i = diagram.edges()[edge.usize()].vertex0().unwrap();
+        let v1i = diagram.edge_get_vertex1(edge).ok().flatten().unwrap();
+        let v0v = &diagram.vertices()[v0i.usize()];
+        let v1v = &diagram.vertices()[v1i.usize()];
+        let v0 = (v0v.x().round() as i64, v0v.y().round() as i64);
+        let v1 = (v1v.x().round() as i64, v1v.y().round() as i64);
+        // VoronoiUtils.cpp:231 assert(v0 != to_i64 || v1 != from_i64);
+        debug_assert!(v0 != to_i64 || v1 != from_i64);
+
+        // VoronoiUtils.cpp:233-237
+        if v0 == to_i64 && !after_start {
+            cell_range.edge_begin = Some(edge);
+            seen_possible_start = true;
+        } else if seen_possible_start {
+            after_start = true;
+        }
+
+        // VoronoiUtils.cpp:239-241
+        if v1 == from_i64 && (cell_range.edge_end.is_none() || ending_edge_is_set_before_start) {
+            ending_edge_is_set_before_start = !after_start;
+            cell_range.edge_end = Some(edge);
+        }
+
+        // VoronoiUtils.cpp:241 while (edge = edge->next(), edge != cell.incident_edge());
+        edge = diagram.edges()[edge.usize()].next().unwrap();
+        if edge == incident_edge {
+            break;
+        }
+    }
+
+    // VoronoiUtils.cpp:243 return cell_range;
+    cell_range
 }
