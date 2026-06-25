@@ -23,18 +23,28 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 68 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 69 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
-- **Material: per-feature is the metric, NOT the aggregate.** Two big subsystem fixes landed (R65 slicer
-  + R67/R68 Arachne). Current rust 3975.24 / native 3858.97 (aggregate +116, time 45m0s vs 43m). The
-  aggregate is temporarily OVER because the R67/R68 Arachne port CORRECTED the under-features (internal-solid
-  −76→**−23**, the Arachne pipeline now produces beads where it produced 0), which UN-MASKED the pre-existing
-  **sparse +68 / bridge +17** over-production — plus a **floating +34** interim overshoot. Per the playbook
-  "completeness > coincidental aggregate closeness": rust now emits the Arachne beads native emits (a
-  byte-parity prerequisite), so the residual is real over-features to fix, not a balanced coincidence.
-  REMAINING per-feature levers: **floating +34** (interim FloatingConcentric→FillConcentricInternal; the
-  faithful FillFloatingConcentric needs the blocked ClipperLib_Z user-fill-callback), **sparse +68** and
-  **bridge +17** (pre-existing, separate). Walls + gap-fill at parity (untouched by the infill change).
+- **Material: per-feature is the metric, NOT the aggregate.** Three big subsystem fixes landed (R65 slicer +
+  R67/R68 Arachne + R69 floating). Current rust 3973.85 / native 3858.97 (aggregate +115, time 45m0s vs 43m).
+  The aggregate is temporarily OVER because the Arachne port CORRECTED the under-features (the Arachne pipeline
+  now produces beads where it produced 0), which UN-MASKED the pre-existing **sparse +68 / bridge +17**
+  over-production. Per the playbook "completeness > coincidental aggregate closeness".
+- **THE ISI/FLOATING SPLIT IS ONE FRAGMENTATION ISSUE, NOT TWO DEFICITS (R69, both-engine proven).** ISI −23
+  (470.9/494.1) and floating +32 (202.7/170.8) look like independent under/over, but **COMBINED ISI+floating =
+  rust 673.6 / native 664.9 = +8.75, near parity**. R69 ported the faithful `FillFloatingConcentric` (Z-clipper
+  `detect_floating_line` — was thought blocked, actually fine via `clipper-z-sys`/`cz_clip_extrusion`) and
+  measured: native's floating filler does NOT prune bead material (both engines emit the SAME WallToolPaths
+  beads); `detect_floating_line`/`resplit_order_loops` only re-tag/re-seed. The split is a DOWNSTREAM
+  consequence of rust **over-fragmenting the narrow-solid fill regions ~3× (FLOATCLASS_DBG: rust 4237 fragments
+  vs native 1369)** — the same surface-classification/slicing fragmentation lineage — which `detect_narrow`
+  then classifies differently against `lower_internal_areas`. The faithful floating port is a real fidelity win
+  (genuine floating detection + seam, deretraction-prime 186→138) and material-neutral / no-regression, landed.
+  **The real lever for floating→170 AND ISI→494 is reducing narrow-solid fragmentation (group_fills surface
+  merge / the slicer fragment lineage), upstream of the fill stage.** See `docs/parity/R69_floating.md`.
+  REMAINING per-feature levers: **sparse +68** (biggest single material gap, pre-existing), **bridge +17**
+  (pre-existing), and the **narrow-solid fragmentation** root (re-splits ISI/floating but is only ~+8.75
+  combined material). Walls + gap-fill at parity (untouched by the infill changes).
 - **THE ARACHNE PIPELINE IS NOW LIVE (R67/R68).** The keystone `SkeletalTrapezoidation` VD→half-edge graph
   builder (`construct_from_polygons` + make_node/transfer_edge/discretize/compute_point_cell_range, ~415
   lines, SkeletalTrapezoidation.cpp:92-504) was ported against the `bv::Diagram` index API and wired into
