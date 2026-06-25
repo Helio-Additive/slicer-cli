@@ -172,6 +172,48 @@ impl FloatingThickPolyline {
         *self.points.last().unwrap()
     }
 
+    /// `Polyline::is_valid()` — Polyline.hpp: `this->points.size() >= 2`.
+    pub fn is_valid(&self) -> bool {
+        self.points.len() >= 2
+    }
+
+    /// `Polyline::clip_end(double distance)` — Polyline.cpp:52-72.
+    ///
+    /// Inherited from `Polyline`; operates only on `points` (the per-segment
+    /// `width` vector is intentionally left untouched, matching the base-class
+    /// behaviour — see geometry::ThickPolyline::clip_end). `is_floating` is
+    /// likewise left untouched (the C++ FloatingThickPolyline does not override
+    /// clip_end).
+    pub fn clip_end(&mut self, mut distance: f64) {
+        while distance > 0.0 {
+            // Polyline.cpp:57
+            let last_point = (
+                self.points.last().unwrap().x as f64,
+                self.points.last().unwrap().y as f64,
+            );
+            // Polyline.cpp:58
+            self.points.pop();
+            // Polyline.cpp:60-63
+            if self.points.is_empty() {
+                return;
+            }
+            // Polyline.cpp:64-65
+            let vx = self.points.last().unwrap().x as f64 - last_point.0;
+            let vy = self.points.last().unwrap().y as f64 - last_point.1;
+            let lsqr = vx * vx + vy * vy;
+            // Polyline.cpp:66-69
+            if lsqr > distance * distance {
+                let s = distance / lsqr.sqrt();
+                let nx = last_point.0 + vx * s;
+                let ny = last_point.1 + vy * s;
+                self.points.push(Point::new(nx as Coord, ny as Coord));
+                break;
+            }
+            // Polyline.cpp:71
+            distance -= lsqr.sqrt();
+        }
+    }
+
     /// `ThickPolyline::get_width_at(size_t point_idx)` — Polyline.cpp:666-671.
     pub fn get_width_at(&self, point_idx: usize) -> CoordF {
         // Polyline.cpp:668-669
@@ -1478,4 +1520,318 @@ fn max_element_index(v: &[f64]) -> usize {
         }
     }
     best
+}
+
+// =============================================================================
+// FillFloatingConcentric — the Arachne floating-concentric filler.
+//
+// FillFloatingConcentric.hpp:36-70 `class FillFloatingConcentric : public FillConcentric`.
+// The Rust fill module has no shared `Fill` base struct, so the base members
+// this filler reads (`no_overlap_expolygons`, `spacing`, `loop_clipping`, the
+// `print_config`/`print_object_config` pointers) are carried directly, mirroring
+// `FillConcentricInternal`.
+// =============================================================================
+
+use crate::arachne::utils::extrusion_line::{to_thick_polyline, VariableWidthLines};
+use crate::arachne::wall_tool_paths::WallToolPathsParams;
+use crate::extrusion_entity::{
+    ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole,
+};
+use crate::fill::FillParams;
+use crate::geometry::ExPolygon;
+use crate::print_config::{PrintConfig, PrintObjectConfig};
+use crate::surface::Surface;
+
+/// FillFloatingConcentric.hpp:36-70
+pub struct FillFloatingConcentric<'a> {
+    // Fill base (FillBase.hpp): `coordf_t spacing;` — unscaled mm.
+    pub spacing: f64,
+    // Fill base (FillBase.hpp): `coord_t loop_clipping;` — scaled.
+    pub loop_clipping: Coord,
+    // Fill base (FillBase.hpp): `ExPolygons no_overlap_expolygons;`
+    pub no_overlap_expolygons: ExPolygons,
+    // FillFloatingConcentric.hpp:40
+    pub lower_layer_unsupport_areas: ExPolygons,
+    // FillFloatingConcentric.hpp:41
+    pub lower_sparse_polys: Polygons,
+    // FillConcentricInternal.hpp:19 (inherited via FillConcentric chain)
+    pub print_config: Option<&'a PrintConfig>,
+    // FillConcentricInternal.hpp:20
+    pub print_object_config: Option<&'a PrintObjectConfig>,
+}
+
+impl<'a> FillFloatingConcentric<'a> {
+    /// `bool no_sort() const { return true; }`
+    pub fn no_sort(&self) -> bool {
+        true
+    }
+
+    /// FillFloatingConcentric.cpp:682-730
+    /// `FloatingThickPolylines FillFloatingConcentric::resplit_order_loops(Point curr_point, std::vector<const Arachne::ExtrusionLine*> all_extrusions, const ExPolygons& floating_areas, const Polygons& sparse_polys, const coord_t default_width)`
+    ///
+    /// `all_extrusions` is borrowed (the C++ takes a vector of pointers); the
+    /// visiting order is the C++ order (already produced by toplogic_sort).
+    fn resplit_order_loops(
+        &self,
+        mut curr_point: Point,
+        all_extrusions: &[&ExtrusionLine],
+        floating_areas: &ExPolygons,
+        sparse_polys: &Polygons,
+        default_width: Coord,
+    ) -> FloatingThickPolylines {
+        // FillFloatingConcentric.cpp:684
+        let mut result: FloatingThickPolylines = Vec::new();
+        let detect_floating_vs = self
+            .print_object_config
+            .map(|c| c.detect_floating_vertical_shell)
+            .unwrap_or(false);
+
+        // FillFloatingConcentric.cpp:686
+        for idx in 0..all_extrusions.len() {
+            // FillFloatingConcentric.cpp:687-688
+            if all_extrusions[idx].is_empty() {
+                continue;
+            }
+            // FillFloatingConcentric.cpp:689
+            let thick_polyline = to_thick_polyline(all_extrusions[idx]);
+            // FillFloatingConcentric.cpp:690
+            let mut is_self_intersect = false;
+            // FillFloatingConcentric.cpp:691-700
+            if detect_floating_vs {
+                // FillFloatingConcentric.cpp:693
+                let polyline =
+                    crate::geometry::Polyline::from_points(thick_polyline.points.clone());
+                let bbox_line = BoundingBox::from_points(&polyline.points);
+
+                // FillFloatingConcentric.cpp:696-698
+                // EdgeGrid::Grid grid; grid.set_bbox(bbox_line);
+                // grid.create({polyline.points}, scaled(10.), !all_extrusions[idx]->is_closed);
+                let mut grid = crate::edge_grid::EdgeGrid::new();
+                grid.set_bbox(bbox_line);
+                grid.create_from_polylines(
+                    std::slice::from_ref(&polyline),
+                    crate::scale(10.0),
+                );
+                // FillFloatingConcentric.cpp:699-700
+                if grid.has_intersecting_edges() {
+                    is_self_intersect = true;
+                }
+            }
+            // FillFloatingConcentric.cpp:702
+            // detect_floating_line(thick_polyline, floating_areas, default_width,
+            //   !detect_floating_vertical_shell || is_self_intersect)
+            let force_no_detect = !detect_floating_vs || is_self_intersect;
+            let thick_line_with_floating = detect_floating_line(
+                &thick_polyline,
+                floating_areas,
+                default_width as f64,
+                force_no_detect,
+            );
+            // FillFloatingConcentric.cpp:703
+            let mut thick_line_with_floating = thick_line_with_floating;
+            smooth_floating_line(
+                &mut thick_line_with_floating,
+                crate::scale(2.0),
+                crate::scale(2.0),
+            );
+            // FillFloatingConcentric.cpp:704
+            let mut split_idx: i32 = 0;
+            // FillFloatingConcentric.cpp:705-721
+            if !floating_areas.is_empty()
+                && all_extrusions[idx].is_closed
+                && thick_line_with_floating.points.first()
+                    == thick_line_with_floating.points.last()
+            {
+                // FillFloatingConcentric.cpp:706-718
+                if idx == 0 {
+                    split_idx = get_best_loop_start(
+                        &thick_line_with_floating.points,
+                        floating_areas,
+                        sparse_polys,
+                    );
+                } else {
+                    let candidates = get_loop_start_candidates(
+                        &thick_line_with_floating.points,
+                        floating_areas,
+                        sparse_polys,
+                    );
+                    let mut min_dist = f64::MAX;
+                    for candidate in candidates {
+                        let p = thick_line_with_floating.points[candidate as usize];
+                        let dx = (curr_point.x - p.x) as f64;
+                        let dy = (curr_point.y - p.y) as f64;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        if min_dist > dist {
+                            min_dist = dist;
+                            split_idx = candidate;
+                        }
+                    }
+                }
+                // FillFloatingConcentric.cpp:719-721
+                result.push(thick_line_with_floating.rebase_at(split_idx as usize));
+            } else {
+                // FillFloatingConcentric.cpp:723-726
+                result.push(thick_line_with_floating);
+            }
+            // FillFloatingConcentric.cpp:728
+            curr_point = result.last().unwrap().last_point();
+        }
+        // FillFloatingConcentric.cpp:730
+        result
+    }
+
+    /// FillFloatingConcentric.cpp:878-933
+    /// `void FillFloatingConcentric::_fill_surface_single(const FillParams& params, unsigned int thickness_layers, const std::pair<float, Point>& direction, ExPolygon expolygon, FloatingThickPolylines& thick_polylines_out)`
+    fn fill_surface_single(
+        &self,
+        params: &FillParams,
+        expolygon: &ExPolygon,
+        thick_polylines_out: &mut FloatingThickPolylines,
+    ) {
+        let print_config = self.print_config.unwrap();
+        // FillFloatingConcentric.cpp:884
+        let bbox_size: Point = expolygon.contour.bounding_box().size();
+        // FillFloatingConcentric.cpp:885
+        let min_spacing: Coord = params.flow.scaled_spacing();
+        // FillFloatingConcentric.cpp:887
+        let loops_count: Coord = std::cmp::max(bbox_size.x(), bbox_size.y()) / min_spacing + 1;
+        // FillFloatingConcentric.cpp:888
+        let polygons: Polygons = crate::geometry::to_polygons_expoly(expolygon);
+
+        // FillFloatingConcentric.cpp:890-898
+        let min_nozzle_diameter: f64 = print_config.nozzle_diameter;
+        let mut input_params = WallToolPathsParams::default();
+        input_params.min_bead_width = (0.85 * min_nozzle_diameter) as f32;
+        input_params.min_feature_size = (0.25 * min_nozzle_diameter) as f32;
+        input_params.wall_transition_length = 0.4;
+        input_params.wall_transition_angle = 10.0;
+        input_params.wall_transition_filter_deviation = (0.25 * min_nozzle_diameter) as f32;
+        input_params.wall_distribution_count = 1;
+
+        // FillFloatingConcentric.cpp:900
+        let mut wall_tool_paths = WallToolPaths::new(
+            polygons,
+            min_spacing,
+            min_spacing,
+            loops_count as usize,
+            0,
+            params.layer_height,
+            input_params,
+        );
+
+        // FillFloatingConcentric.cpp:902
+        let loops: Vec<VariableWidthLines> = wall_tool_paths.get_tool_paths().clone();
+        // FillFloatingConcentric.cpp:903-913
+        let mut all_extrusions: Vec<&ExtrusionLine> = Vec::new();
+        for loop_ in loops.iter() {
+            if loop_.is_empty() {
+                continue;
+            }
+            for wall in loop_.iter() {
+                all_extrusions.push(wall);
+            }
+        }
+        // FillFloatingConcentric.cpp:912 — ordered_extrusions = toplogic_sort_extruisons(all_extrusions);
+        let order = toplogic_sort_extruisons(&all_extrusions);
+        let ordered: Vec<&ExtrusionLine> = order.iter().map(|&i| all_extrusions[i]).collect();
+
+        // FillFloatingConcentric.cpp:916-918
+        let firts_poly_idx = thick_polylines_out.len();
+        let thick_polylines = self.resplit_order_loops(
+            Point::new(0, 0),
+            &ordered,
+            &self.lower_layer_unsupport_areas,
+            &self.lower_sparse_polys,
+            min_spacing,
+        );
+        // append(thick_polylines_out, thick_polylines);
+        thick_polylines_out.extend(thick_polylines);
+
+        // FillFloatingConcentric.cpp:922-931 — clip + keep valid only.
+        let mut j = firts_poly_idx;
+        for i in firts_poly_idx..thick_polylines_out.len() {
+            thick_polylines_out[i].clip_end(self.loop_clipping as f64);
+            if thick_polylines_out[i].is_valid() {
+                if j < i {
+                    thick_polylines_out[j] = std::mem::take(&mut thick_polylines_out[i]);
+                }
+                j += 1;
+            }
+        }
+        if j < thick_polylines_out.len() {
+            thick_polylines_out.truncate(j);
+        }
+    }
+
+    /// FillFloatingConcentric.cpp:936-944
+    /// `FloatingThickPolylines FillFloatingConcentric::fill_surface_arachne_floating(const Surface* surface, const FillParams& params)`
+    fn fill_surface_arachne_floating(&self, params: &FillParams) -> FloatingThickPolylines {
+        // FillFloatingConcentric.cpp:939
+        let mut out: FloatingThickPolylines = Vec::new();
+        // FillFloatingConcentric.cpp:941-942 — for each expoly in no_overlap_expolygons.
+        // (C++ moves each expoly into _fill_surface_single; `fill_surface_single`
+        // only reads the expoly, so iterate by reference.)
+        for expoly in &self.no_overlap_expolygons {
+            self.fill_surface_single(params, expoly, &mut out);
+        }
+        out
+    }
+
+    /// FillFloatingConcentric.cpp:946-1000
+    /// `void FillFloatingConcentric::fill_surface_extrusion(const Surface* surface, const FillParams& params, ExtrusionEntitiesPtr& out)`
+    pub fn fill_surface_extrusion(
+        &mut self,
+        _surface: &Surface,
+        params: &FillParams,
+        out: &mut Vec<ExtrusionEntityType>,
+    ) {
+        // FillFloatingConcentric.cpp:948
+        let floating_lines = self.fill_surface_arachne_floating(params);
+        // FillFloatingConcentric.cpp:950-951
+        if floating_lines.is_empty() {
+            return;
+        }
+        // FillFloatingConcentric.cpp:952
+        let new_flow: Flow = params
+            .flow
+            .with_spacing(self.spacing as f32 as f64)
+            .expect("with_spacing");
+
+        // FillFloatingConcentric.cpp:956-959
+        let mut ecc = ExtrusionEntityCollection::new();
+        ecc.no_sort = true;
+
+        // FillFloatingConcentric.cpp:962 — tolerance = float(scale_(0.05));
+        let tolerance = crate::scale(0.05) as f32;
+        // FillFloatingConcentric.cpp:963-980
+        for line in &floating_lines {
+            // FillFloatingConcentric.cpp:964
+            let paths = floating_thick_polyline_to_extrusion_paths(
+                line,
+                params.extrusion_role,
+                &new_flow,
+                tolerance,
+            );
+            // FillFloatingConcentric.cpp:966-979
+            if !paths.is_empty() {
+                // FillFloatingConcentric.cpp:968-969
+                if paths.first().unwrap().first_point() == paths.last().unwrap().last_point() {
+                    // FillFloatingConcentric.cpp:969 — new ExtrusionLoop(std::move(paths))
+                    // (default ExtrusionLoopRole == elrDefault).
+                    let loop_ = ExtrusionLoop::new(paths, ExtrusionLoopRole::default());
+                    ecc.entities.push(ExtrusionEntityType::Loop(loop_));
+                } else {
+                    // FillFloatingConcentric.cpp:971-977
+                    for path in paths {
+                        ecc.entities.push(ExtrusionEntityType::Path(path));
+                    }
+                }
+            }
+        }
+
+        // FillFloatingConcentric.cpp:954-957 — out.push_back(ecc) (always, even if
+        // ecc stays empty because every paths set was empty — matches C++ which
+        // push_backs the freshly-new'd ecc before the loop).
+        out.push(ExtrusionEntityType::Collection(Box::new(ecc)));
+    }
 }
