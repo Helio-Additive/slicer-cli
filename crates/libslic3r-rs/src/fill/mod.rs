@@ -780,6 +780,22 @@ pub fn group_fills(
         && ((layer.print_z - 0.6).abs() < 0.05 || (layer.print_z - 4.2).abs() < 0.05);
     if reclass_dbg {
         let sf = crate::SCALING_FACTOR;
+        // Dump fill_surfaces by surface_type across all regions: does the missing
+        // 467mm² ISI exist under a different type in rust?
+        use std::collections::BTreeMap;
+        let mut by_type: BTreeMap<String, (usize, f64)> = BTreeMap::new();
+        for region_id in 0..layer.region_count() {
+            if let Some(region) = layer.get_region(region_id) {
+                for s in &region.fill_surfaces.surfaces {
+                    let e = by_type.entry(format!("{:?}", s.surface_type)).or_insert((0, 0.0));
+                    e.0 += 1;
+                    e.1 += s.expolygon.area() / (sf * sf);
+                }
+            }
+        }
+        for (t, (n, a)) in &by_type {
+            eprintln!("RUST_FILLSURF pz={:.3} type={} count={} area_mm2={:.3}", layer.print_z, t, n, a);
+        }
         let mut li_bbox = crate::geometry::BoundingBox::new();
         for e in lower_internal_areas {
             li_bbox.merge(&get_extents_expoly(e));

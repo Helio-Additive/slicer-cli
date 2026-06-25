@@ -2093,6 +2093,32 @@ impl PrintObject {
                 let has_upper_layer = idx_layer + 1 < self.layers.len();
                 let has_lower_layer = idx_layer > 0;
 
+                // RECLASS_DBG: raw slices area at ENTRY of detect_surfaces_type. REVERT.
+                if std::env::var("RECLASS_DBG").is_ok()
+                    && self.layers[idx_layer].print_z < 0.65
+                {
+                    let sf = crate::SCALING_FACTOR;
+                    let a: f64 = self.layers[idx_layer].regions()[region_id]
+                        .slices.surfaces.iter().map(|s| s.expolygon.area()).sum::<f64>() / (sf * sf);
+                    eprintln!(
+                        "RUST_DETECT_ENTRY idx={} pz={:.3} region={} raw_slices_a={:.3}({} surf)",
+                        idx_layer, self.layers[idx_layer].print_z, region_id, a,
+                        self.layers[idx_layer].regions()[region_id].slices.surfaces.len(),
+                    );
+                    if (self.layers[idx_layer].print_z - 0.4).abs() < 0.05 {
+                        for (k, s) in self.layers[idx_layer].regions()[region_id].slices.surfaces.iter().enumerate() {
+                            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+                            for p in &s.expolygon.contour.points {
+                                x0 = x0.min(p.x as f64); y0 = y0.min(p.y as f64);
+                                x1 = x1.max(p.x as f64); y1 = y1.max(p.y as f64);
+                            }
+                            eprintln!("  RUST_L1SLICE k={} area={:.3} holes={} bbox=[{:.2},{:.2}]-[{:.2},{:.2}]",
+                                k, s.expolygon.area()/(sf*sf), s.expolygon.holes.len(),
+                                x0/sf, y0/sf, x1/sf, y1/sf);
+                        }
+                    }
+                }
+
                 /// PrintObject.cpp:1495-1496
                 /// C++: float offset = layerm->flow(frExternalPerimeter).scaled_width() / 10.f;
                 // This crate's clipper primitives (opening_ex/shrink/grow) operate in
@@ -2182,6 +2208,36 @@ impl PrintObject {
                             lower_lslices,
                             ApplySafetyOffset::Yes,
                         );
+                        // RECLASS_DBG: layer-1 slices-vs-lslices probe. REVERT.
+                        if std::env::var("RECLASS_DBG").is_ok()
+                            && (self.layers[idx_layer - 1].print_z - 0.4).abs() < 0.05
+                        {
+                            let sf = crate::SCALING_FACTOR;
+                            let low_slices_a: f64 = self.layers[idx_layer - 1].regions()[region_id]
+                                .slices.surfaces.iter().map(|s| s.expolygon.area()).sum::<f64>() / (sf * sf);
+                            let low_lslices_a: f64 = lower_lslices.iter().map(|e| e.area()).sum::<f64>() / (sf * sf);
+                            eprintln!(
+                                "RUST_L1 lower(pz=0.4) region={} slices_a={:.3}({} surf) lslices_a={:.3}({} ex)",
+                                region_id, low_slices_a,
+                                self.layers[idx_layer - 1].regions()[region_id].slices.surfaces.len(),
+                                low_lslices_a, lower_lslices.len(),
+                            );
+                        }
+                        // RECLASS_DBG: bottom-bridge support diff probe at pz~0.6. REVERT.
+                        if std::env::var("RECLASS_DBG").is_ok()
+                            && (self.layers[idx_layer].print_z - 0.6).abs() < 0.05
+                        {
+                            let sf = crate::SCALING_FACTOR;
+                            let cur_a: f64 = current_slices.iter().map(|s| s.expolygon.area()).sum::<f64>() / (sf * sf);
+                            let low_a: f64 = lower_lslices.iter().map(|e| e.area()).sum::<f64>() / (sf * sf);
+                            let diff_a: f64 = bottom_diff.iter().map(|e| e.area()).sum::<f64>() / (sf * sf);
+                            let opened = opening_ex(&bottom_diff, offset);
+                            let open_a: f64 = opened.iter().map(|e| e.area()).sum::<f64>() / (sf * sf);
+                            eprintln!(
+                                "RUST_BOTDIFF pz={:.3} region={} cur_slices_a={:.3} lower_lslices_a={:.3} bottom_diff_a={:.3}({} ex) opened_a={:.3}({} ex) offset_mm={:.5}",
+                                self.layers[idx_layer].print_z, region_id, cur_a, low_a, diff_a, bottom_diff.len(), open_a, opened.len(), offset,
+                            );
+                        }
                         surfaces_append(
                             &mut bottom,
                             opening_ex(&bottom_diff, offset),
