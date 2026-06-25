@@ -357,6 +357,51 @@ impl EdgeGrid {
         Line::new(*contour.segment_start(iseg), *contour.segment_end(iseg))
     }
 
+    /// Whether any two stored edges intersect (other than at a shared endpoint of
+    /// two consecutive segments on the same contour).
+    ///
+    /// EdgeGrid.cpp:1452-1480 `bool EdgeGrid::Grid::has_intersecting_edges() const`.
+    /// The C++ skips the adjacency case `&icontour == &jcontour && (&ip1 == &jp2
+    /// || &jp1 == &ip2)` via pointer identity of the shared vertex; here the grid
+    /// builder de-duplicates vertices within a contour, so comparing the same
+    /// contour index plus point-value equality of the shared endpoint is
+    /// equivalent (segment i's start == segment j's end, or vice versa).
+    pub fn has_intersecting_edges(&self) -> bool {
+        // EdgeGrid.cpp:1454-1455 — for each cell:
+        for r in 0..self.rows {
+            for c in 0..self.cols {
+                // EdgeGrid.cpp:1457
+                let cell = self.cells[r * self.cols + c];
+                // EdgeGrid.cpp:1459 — for each pair of segments in the cell:
+                for i in cell.begin..cell.end {
+                    // EdgeGrid.cpp:1460-1464
+                    let (ic, ipt) = self.cell_data[i];
+                    let icontour = &self.contours[ic];
+                    let ip1 = *icontour.segment_start(ipt);
+                    let ip2 = *icontour.segment_end(ipt);
+                    // EdgeGrid.cpp:1465
+                    for j in (i + 1)..cell.end {
+                        // EdgeGrid.cpp:1466-1470
+                        let (jc, jpt) = self.cell_data[j];
+                        let jcontour = &self.contours[jc];
+                        let jp1 = *jcontour.segment_start(jpt);
+                        let jp2 = *jcontour.segment_end(jpt);
+                        // EdgeGrid.cpp:1471-1473
+                        // skip the shared-endpoint adjacency case on the same contour.
+                        let adjacent = ic == jc && (ip1 == jp2 || jp1 == ip2);
+                        if !adjacent
+                            && crate::geometry::segments_intersect(ip1, ip2, jp1, jp2)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        // EdgeGrid.cpp:1479
+        false
+    }
+
     /// Visit all grid cells intersected by the line segment (p1, p2), calling
     /// `visitor(iy, ix)` for each. The visitor returns `false` to stop early.
     /// Equivalent to the C++ template method without the `need_consider_eps`
