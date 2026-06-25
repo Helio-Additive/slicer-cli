@@ -406,9 +406,19 @@ impl STHalfEdgeNode {
 #[derive(Debug)]
 pub struct SkeletalTrapezoidationGraph {
     // HalfEdgeGraph.hpp:24 std::list<edge_t> edges;  (derived type: STHalfEdge)
-    pub edges: std::collections::LinkedList<STHalfEdge>,
+    //
+    // The elements are `Box`ed so a survivor's payload address is STABLE across a
+    // list rebuild: the C++ `std::list<edge_t>` keeps every node at a fixed address
+    // and `std::list::erase` removes one node without touching the others, which the
+    // raw `edge_t*`/`node_t*` cross-references depend on. `std::collections::LinkedList`
+    // has no stable middle-removal (the `cursor_mut` API is unstable), so removal in
+    // `collapse_small_edges` rebuilds the list — which would MOVE plain `STHalfEdge`
+    // values to new addresses and dangle every pointer. Boxing the element means the
+    // rebuild only moves the `Box` (a pointer); the heap `STHalfEdge`/`STHalfEdgeNode`
+    // payload (and thus `&payload.base`, the `edge_t*`/`node_t*`) stays put.
+    pub edges: std::collections::LinkedList<Box<STHalfEdge>>,
     // HalfEdgeGraph.hpp:25 std::list<node_t> nodes;  (derived type: STHalfEdgeNode)
-    pub nodes: std::collections::LinkedList<STHalfEdgeNode>,
+    pub nodes: std::collections::LinkedList<Box<STHalfEdgeNode>>,
     /// Carries the (currently unused) generic base graph members for completeness.
     _base: HalfEdgeGraph<EdgeData, NodeData>,
 }
@@ -630,8 +640,15 @@ impl SkeletalTrapezoidationGraph {
             }
 
             // Apply the deferred erasures (std::list::erase preserves order of survivors).
+            //
+            // The elements are `Box`ed, so popping/re-pushing moves only the `Box`
+            // pointer — the heap `STHalfEdge`/`STHalfEdgeNode` payload (and thus
+            // `&payload.base`, the live `edge_t*`/`node_t*`) stays at its address.
+            // The removal set was filled with `quad_*.as_ptr()` (== `&payload.base`),
+            // and `&e.base` below (via `Box` deref) is that same stable address, so
+            // the identity comparison matches and survivors keep valid pointers.
             if !edges_to_remove.is_empty() {
-                let mut new_edges: std::collections::LinkedList<STHalfEdge> =
+                let mut new_edges: std::collections::LinkedList<Box<STHalfEdge>> =
                     std::collections::LinkedList::new();
                 while let Some(e) = self.edges.pop_front() {
                     let p = &e.base as *const _;
@@ -642,7 +659,7 @@ impl SkeletalTrapezoidationGraph {
                 self.edges = new_edges;
             }
             if !nodes_to_remove.is_empty() {
-                let mut new_nodes: std::collections::LinkedList<STHalfEdgeNode> =
+                let mut new_nodes: std::collections::LinkedList<Box<STHalfEdgeNode>> =
                     std::collections::LinkedList::new();
                 while let Some(n) = self.nodes.pop_front() {
                     let p = &n.base as *const _;
@@ -690,16 +707,16 @@ impl SkeletalTrapezoidationGraph {
 
             // SkeletalTrapezoidationGraph.cpp:324 nodes.emplace_front(SkeletalTrapezoidationJoint(), p);
             self.nodes
-                .push_front(STHalfEdgeNode::new(SkeletalTrapezoidationJoint::new(), p));
+                .push_front(Box::new(STHalfEdgeNode::new(SkeletalTrapezoidationJoint::new(), p)));
             // SkeletalTrapezoidationGraph.cpp:325 node_t* node = &nodes.front();
             let node = Self::node_ptr(self.nodes.front().unwrap());
             // SkeletalTrapezoidationGraph.cpp:326 node->data.distance_to_boundary = 0;
             node.as_ptr().as_mut().unwrap().data.distance_to_boundary = 0;
 
             // SkeletalTrapezoidationGraph.cpp:328 edges.emplace_front(SkeletalTrapezoidationEdge(SkeletalTrapezoidationEdge::EdgeType::EXTRA_VD));
-            self.edges.push_front(STHalfEdge::new(
+            self.edges.push_front(Box::new(STHalfEdge::new(
                 SkeletalTrapezoidationEdge::with_type(EdgeType::ExtraVd),
-            ));
+            )));
             // SkeletalTrapezoidationGraph.cpp:329 edge_t* forth_edge = &edges.front();
             let forth_edge = Self::edge_ptr(self.edges.front().unwrap());
             // SkeletalTrapezoidationGraph.cpp:330 forth_edge->data.setHoleCompensationFlag(prev_edge->data.getHoleCompensationFlag());
@@ -710,9 +727,9 @@ impl SkeletalTrapezoidationGraph {
                 .data
                 .set_hole_compensation_flag(prev_edge.as_ref().data.get_hole_compensation_flag());
             // SkeletalTrapezoidationGraph.cpp:331 edges.emplace_front(SkeletalTrapezoidationEdge(SkeletalTrapezoidationEdge::EdgeType::EXTRA_VD));
-            self.edges.push_front(STHalfEdge::new(
+            self.edges.push_front(Box::new(STHalfEdge::new(
                 SkeletalTrapezoidationEdge::with_type(EdgeType::ExtraVd),
-            ));
+            )));
             // SkeletalTrapezoidationGraph.cpp:332 edge_t* back_edge = &edges.front();
             let back_edge = Self::edge_ptr(self.edges.front().unwrap());
             // SkeletalTrapezoidationGraph.cpp:333 back_edge->data.setHoleCompensationFlag(prev_edge->data.getHoleCompensationFlag());
@@ -790,7 +807,7 @@ impl SkeletalTrapezoidationGraph {
 
             // SkeletalTrapezoidationGraph.cpp:367 nodes.emplace_back(SkeletalTrapezoidationJoint(), px);
             self.nodes
-                .push_back(STHalfEdgeNode::new(SkeletalTrapezoidationJoint::new(), px));
+                .push_back(Box::new(STHalfEdgeNode::new(SkeletalTrapezoidationJoint::new(), px)));
             // SkeletalTrapezoidationGraph.cpp:368 node_t* source_node = &nodes.back();
             let source_node = Self::node_ptr(self.nodes.back().unwrap());
             // SkeletalTrapezoidationGraph.cpp:369 source_node->data.distance_to_boundary = 0;
@@ -800,19 +817,19 @@ impl SkeletalTrapezoidationGraph {
             let first = edge;
             // SkeletalTrapezoidationGraph.cpp:372 edges.emplace_back(SkeletalTrapezoidationEdge());
             self.edges
-                .push_back(STHalfEdge::new(SkeletalTrapezoidationEdge::new()));
+                .push_back(Box::new(STHalfEdge::new(SkeletalTrapezoidationEdge::new())));
             // SkeletalTrapezoidationGraph.cpp:373 edge_t* second = &edges.back();
             let second = Self::edge_ptr(self.edges.back().unwrap());
             // SkeletalTrapezoidationGraph.cpp:374 edges.emplace_back(SkeletalTrapezoidationEdge(SkeletalTrapezoidationEdge::EdgeType::TRANSITION_END));
-            self.edges.push_back(STHalfEdge::new(
+            self.edges.push_back(Box::new(STHalfEdge::new(
                 SkeletalTrapezoidationEdge::with_type(EdgeType::TransitionEnd),
-            ));
+            )));
             // SkeletalTrapezoidationGraph.cpp:375 edge_t* outward_edge = &edges.back();
             let outward_edge = Self::edge_ptr(self.edges.back().unwrap());
             // SkeletalTrapezoidationGraph.cpp:376 edges.emplace_back(SkeletalTrapezoidationEdge(SkeletalTrapezoidationEdge::EdgeType::TRANSITION_END));
-            self.edges.push_back(STHalfEdge::new(
+            self.edges.push_back(Box::new(STHalfEdge::new(
                 SkeletalTrapezoidationEdge::with_type(EdgeType::TransitionEnd),
-            ));
+            )));
             // SkeletalTrapezoidationGraph.cpp:377 edge_t* inward_edge = &edges.back();
             let inward_edge = Self::edge_ptr(self.edges.back().unwrap());
 
@@ -931,7 +948,7 @@ impl SkeletalTrapezoidationGraph {
 
             // SkeletalTrapezoidationGraph.cpp:440 nodes.emplace_back(SkeletalTrapezoidationJoint(), mid);
             self.nodes
-                .push_back(STHalfEdgeNode::new(SkeletalTrapezoidationJoint::new(), mid));
+                .push_back(Box::new(STHalfEdgeNode::new(SkeletalTrapezoidationJoint::new(), mid)));
             // SkeletalTrapezoidationGraph.cpp:441 node_t* mid_node = &nodes.back();
             let mid_node = Self::node_ptr(self.nodes.back().unwrap());
 

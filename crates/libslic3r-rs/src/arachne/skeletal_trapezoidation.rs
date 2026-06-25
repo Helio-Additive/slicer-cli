@@ -202,7 +202,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
             // SkeletalTrapezoidation.cpp:96 graph.nodes.emplace_front(SkeletalTrapezoidationJoint(), p);
             self.graph
                 .nodes
-                .push_front(STHalfEdgeNode::new(crate::arachne::skeletal_trapezoidation_joint::SkeletalTrapezoidationJoint::new(), p));
+                .push_front(Box::new(STHalfEdgeNode::new(crate::arachne::skeletal_trapezoidation_joint::SkeletalTrapezoidationJoint::new(), p)));
             // SkeletalTrapezoidation.cpp:97 node_t& node = graph.nodes.front();
             let node = SkeletalTrapezoidationGraph::node_ptr(self.graph.nodes.front().unwrap());
             // SkeletalTrapezoidation.cpp:98 vd_node_to_he_node.emplace(&vd_node, &node);
@@ -253,11 +253,11 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     };
 
                     // SkeletalTrapezoidation.cpp:126 graph.edges.emplace_front(SkeletalTrapezoidationEdge());
-                    self.graph.edges.push_front(
+                    self.graph.edges.push_front(Box::new(
                         crate::arachne::skeletal_trapezoidation_graph::STHalfEdge::new(
                             crate::arachne::skeletal_trapezoidation_edge::SkeletalTrapezoidationEdge::new(),
                         ),
-                    );
+                    ));
                     // SkeletalTrapezoidation.cpp:127 edge_t* edge = &graph.edges.front();
                     let edge = SkeletalTrapezoidationGraph::edge_ptr(self.graph.edges.front().unwrap());
                     {
@@ -334,10 +334,10 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // SkeletalTrapezoidation.cpp:179-189 node_t* v1
                     let v1: NodePtr = if p1_idx < discretized.len() - 1 {
                         // SkeletalTrapezoidation.cpp:182-183 graph.nodes.emplace_front(..., p1); v1 = &graph.nodes.front();
-                        self.graph.nodes.push_front(STHalfEdgeNode::new(
+                        self.graph.nodes.push_front(Box::new(STHalfEdgeNode::new(
                             crate::arachne::skeletal_trapezoidation_joint::SkeletalTrapezoidationJoint::new(),
                             p1,
-                        ));
+                        )));
                         SkeletalTrapezoidationGraph::node_ptr(self.graph.nodes.front().unwrap())
                     } else {
                         // SkeletalTrapezoidation.cpp:187 v1 = &makeNode(*vd_edge.vertex1(), to);
@@ -346,11 +346,11 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     };
 
                     // SkeletalTrapezoidation.cpp:191 graph.edges.emplace_front(SkeletalTrapezoidationEdge());
-                    self.graph.edges.push_front(
+                    self.graph.edges.push_front(Box::new(
                         crate::arachne::skeletal_trapezoidation_graph::STHalfEdge::new(
                             crate::arachne::skeletal_trapezoidation_edge::SkeletalTrapezoidationEdge::new(),
                         ),
-                    );
+                    ));
                     // SkeletalTrapezoidation.cpp:192 edge_t* edge = &graph.edges.front();
                     let edge = SkeletalTrapezoidationGraph::edge_ptr(self.graph.edges.front().unwrap());
                     {
@@ -827,7 +827,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 if edge.as_ref().prev.is_none() {
@@ -854,7 +854,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 let edge_ref = edge.as_ref();
@@ -874,7 +874,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // SkeletalTrapezoidation.cpp:524-531 Needs to be duplicated
                     // SkeletalTrapezoidation.cpp:526 graph.nodes.emplace_back(*quad_start->from);
                     let dup = as_st_node(quad_start_from).clone_node();
-                    self.graph.nodes.push_back(dup);
+                    self.graph.nodes.push_back(Box::new(dup));
                     // SkeletalTrapezoidation.cpp:527 node_t* new_node = &graph.nodes.back();
                     let new_node = SkeletalTrapezoidationGraph::node_ptr(self.graph.nodes.back().unwrap());
                     // SkeletalTrapezoidation.cpp:528 new_node->incident_edge = quad_start;
@@ -1000,7 +1000,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 let edge_st = as_st_edge(edge);
@@ -1103,7 +1103,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .nodes
                 .iter()
-                .map(SkeletalTrapezoidationGraph::node_ptr)
+                .map(|n| SkeletalTrapezoidationGraph::node_ptr(n))
                 .collect();
             // SkeletalTrapezoidation.cpp:713 for (node_t& node : graph.nodes)
             for node in nodes {
@@ -1154,7 +1154,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 // SkeletalTrapezoidation.cpp:737 if (!isEndOfCentral(edge))
@@ -1461,7 +1461,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 let edge_ref = edge.as_ref();
@@ -1862,7 +1862,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 let edge_ref = edge.as_ref();
@@ -2284,7 +2284,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in &edges {
                 let edge = *edge;
@@ -2526,7 +2526,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     .graph
                     .nodes
                     .iter()
-                    .map(SkeletalTrapezoidationGraph::node_ptr)
+                    .map(|n| SkeletalTrapezoidationGraph::node_ptr(n))
                     .collect();
                 for node in nodes {
                     let node_data_bead_count = node.as_ref().data.bead_count;
@@ -2933,7 +2933,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 // SkeletalTrapezoidation.cpp:1777 edge_t* edge = &edge_;
@@ -3009,8 +3009,13 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 }
 
                 // SkeletalTrapezoidation.cpp:1826-1829 if (junction_idx + 1 < num_junctions && beading->toolpath_locations[junction_idx + 1] <= start_R + scaled<coord_t>(0.005) && beading->total_thickness < start_R + scaled<coord_t>(0.005))
+                // C++ `junction_idx` is size_t; the prior loop may leave it at
+                // SIZE_MAX (unsigned underflow), in which case `junction_idx + 1`
+                // wraps to 0 — matching the index used here. Use wrapping_add for
+                // both the bound check and the index to avoid a debug overflow.
                 if junction_idx.wrapping_add(1) < num_junctions
-                    && beading.toolpath_locations[junction_idx + 1] <= start_r + scaled(0.005)
+                    && beading.toolpath_locations[junction_idx.wrapping_add(1)]
+                        <= start_r + scaled(0.005)
                     && beading.total_thickness < start_r + scaled(0.005)
                 {
                     // SkeletalTrapezoidation.cpp:1831 junction_idx++;
@@ -3599,7 +3604,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 .graph
                 .edges
                 .iter()
-                .map(SkeletalTrapezoidationGraph::edge_ptr)
+                .map(|e| SkeletalTrapezoidationGraph::edge_ptr(e))
                 .collect();
             for edge in edges {
                 // SkeletalTrapezoidation.cpp:1409 edge_t& edge = *edge_it;
