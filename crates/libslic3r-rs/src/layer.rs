@@ -1842,6 +1842,110 @@ impl Layer {
 
             let fill_pattern = surface_fill.params.pattern;
 
+            // ---------------------------------------------------------------
+            // Concentric (Arachne) fillers — dedicated variable-width path.
+            //
+            // ipConcentricInternal (-> InfillPattern::Concentric here, via the
+            // config->fill mapping at fill/mod.rs:283) and ipFloatingConcentric
+            // (-> InfillPattern::FloatingConcentric) are routed by
+            // `detect_narrow_internal_solid_infill` (fill/mod.rs:777) onto the
+            // narrow vertical-shell InternalSolid strips. In C++ these are filled
+            // by FillConcentricInternal / FillFloatingConcentric, whose
+            // `fill_surface_extrusion` produces VARIABLE-WIDTH Arachne beads
+            // DIRECTLY (WallToolPaths), bypassing the single-width polyline path
+            // (Fill.cpp:706,738-751). The generic polyline path below cannot
+            // represent those beads, so handle these patterns here and `continue`.
+            //
+            // FloatingConcentric note: the faithful FillFloatingConcentric
+            // `fill_surface_extrusion` depends on `resplit_order_loops` ->
+            // `detect_floating_line`, which needs a Z-aware clipper with a user
+            // fill callback (ClipperLib_Z) that this crate's Clipper2 backend does
+            // not provide (fill_floating_concentric.rs:15-31). It is routed through
+            // FillConcentricInternal here as a documented interim — the bead
+            // GEOMETRY (and material) is the same WallToolPaths output; only the
+            // floating seam re-ordering differs. The FloatingVerticalShell feature
+            // tag is preserved because group_fills already sets
+            // params.extrusion_role = FloatingVerticalShell (fill/mod.rs:832).
+            if matches!(
+                fill_pattern,
+                InfillPattern::Concentric | InfillPattern::FloatingConcentric
+            ) {
+                use crate::fill::fill_concentric_internal::FillConcentricInternal;
+
+                let region_id = surface_fill.region_id;
+
+                // Fill.cpp:695 — f->loop_clipping = coord_t(scale_(nozzle_diameter)
+                //   * LOOP_CLIPPING_LENGTH_OVER_NOZZLE_DIAMETER), const = 0.15
+                //   (libslic3r.h:62).
+                let loop_clipping =
+                    crate::scale(surface_fill.params.flow.nozzle_diameter() * 0.15);
+
+                // Fill.cpp:700-712 — the FillParams the filler reads.
+                let mut fp = crate::fill::FillParams::new();
+                fp.density = (0.01 * surface_fill.params.density) as f64;
+                fp.flow = surface_fill.params.flow.clone();
+                fp.extrusion_role = surface_fill.params.extrusion_role;
+                fp.use_arachne = true; // Fill.cpp:706
+                fp.layer_height = self.height; // m_regions[..]->layer()->height
+                fp.using_internal_flow =
+                    !surface_fill.surface.is_solid() && !surface_fill.params.bridge;
+
+                let print_config = self
+                    .print_config
+                    .as_deref()
+                    .expect("config hierarchy not wired — call wire_layer_hierarchy");
+                let print_object_config = self
+                    .object_config
+                    .as_deref()
+                    .expect("config hierarchy not wired — call wire_layer_hierarchy");
+
+                // Placeholder surface — FillConcentricInternal::fill_surface_extrusion
+                // does not read the surface (it iterates no_overlap_expolygons).
+                let surface_for_fill = surface_fill.surface.clone();
+
+                // Fill.cpp:738-749 — PER expoly: intersect no_overlap with that
+                // single expoly, reset spacing, then fill_surface_extrusion.
+                let mut out_entities: Vec<crate::extrusion_entity::ExtrusionEntityType> =
+                    Vec::new();
+                for expoly in &surface_fill.expolygons {
+                    if expoly.contour.points.is_empty() {
+                        continue;
+                    }
+                    // Fill.cpp:740 — f->no_overlap_expolygons =
+                    //   intersection_ex(surface_fill.no_overlap_expolygons,
+                    //                   {expoly}, ApplySafetyOffset::Yes).
+                    // The geo-clipper intersection does not apply the ClipperLib
+                    // safety offset (f64 backend); matches the mono_no_overlap
+                    // precedent at layer.rs:1908.
+                    let no_overlap = if surface_fill.no_overlap_expolygons.is_empty() {
+                        vec![expoly.clone()]
+                    } else {
+                        crate::clipper_utils::intersection(
+                            &surface_fill.no_overlap_expolygons,
+                            std::slice::from_ref(expoly),
+                        )
+                    };
+                    if no_overlap.is_empty() {
+                        continue;
+                    }
+
+                    let mut filler = FillConcentricInternal {
+                        // Fill.cpp:747 — f->spacing = surface_fill.params.spacing (mm)
+                        spacing: surface_fill.params.spacing,
+                        loop_clipping,
+                        no_overlap_expolygons: no_overlap,
+                        print_config: Some(print_config),
+                        print_object_config: Some(print_object_config),
+                    };
+                    filler.fill_surface_extrusion(&surface_for_fill, &fp, &mut out_entities);
+                }
+
+                for ent in out_entities {
+                    self.regions[region_id].fills.entities.push(ent);
+                }
+                continue;
+            }
+
             // Fill.cpp:678-693
             // Calculate spacing and link_max_length
             // C++: bool using_internal_flow = ! surface_fill.surface.is_solid() && ! surface_fill.params.bridge;
