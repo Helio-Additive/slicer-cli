@@ -99,6 +99,33 @@ CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_
                               int32_t subject_num, const int32_t *clip_xy,
                               const int32_t *clip_lens, int32_t clip_num);
 
+// Faithful replica of libslic3r FillFloatingConcentric.cpp `detect_floating_line`
+// (FillFloatingConcentric.cpp:431-475): the Z-aware open-path clip used to mark
+// which segments of a thick polyline fall in the floating (unsupported) area.
+// Runs the ClipperLib_Z Clipper twice on the SAME inputs — ctIntersection and
+// ctDifference — under the detect_floating_line ZFillFunction (which tags each
+// intersection point with a NEGATIVE hash of the four edge endpoint z-indices,
+// or, for a subject-self-intersection, the common subject z). Both passes use
+// pftNonZero.
+//
+//   subject_xyz / subject_n : the OPEN subject path (n x,y,z triples; z is the
+//                             polyline vertex index 0..subject_idx_range-1).
+//   clip_xyz / clip_lens / clip_num : the CLOSED clip paths (floating-area
+//                             polygons; z is a per-vertex index >= subject_idx_range).
+//   subject_idx_range       : the z-index boundary (== subject point count) the
+//                             ZFillFunction uses to tell subject from clip.
+//   out_num_diff_paths      : [out] number of ctDifference paths at the FRONT of
+//                             the returned path list (the rest are ctIntersection,
+//                             i.e. the FLOATING paths). Mirrors C++ `to_merge =
+//                             diff_out ++ intersect_out` with floating_flags set
+//                             true for the intersect tail.
+// Returns [diff_paths..., intersect_paths...] as flat OPEN ZPaths (x,y,z), z
+// carrying the source/hash tags merge_lines() consumes. Free via cz_free_zpaths.
+CzZPaths cz_detect_floating(const int32_t *subject_xyz, int32_t subject_n,
+                            const int32_t *clip_xyz, const int32_t *clip_lens,
+                            int32_t clip_num, int32_t subject_idx_range,
+                            int32_t *out_num_diff_paths);
+
 #ifdef __cplusplus
 }
 #endif

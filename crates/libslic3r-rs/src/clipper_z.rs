@@ -123,6 +123,99 @@ pub fn clip_extrusion(subject: &ZPath, clip: &ZPaths, clip_type: ClipType) -> ZP
     out
 }
 
+/// Faithful `detect_floating_line` Z-clipper (FillFloatingConcentric.cpp:431-475).
+///
+/// Runs the ClipperLib_Z Clipper twice on the same inputs — `ctIntersection` and
+/// `ctDifference` — under the detect_floating_line `ZFillFunction` (negative-hash
+/// tagging of subject×clip intersections; common-subject-z for subject self-
+/// intersections). `subject` is the OPEN thick-polyline path whose Z is the
+/// vertex index `0..subject_idx_range`; `clip` are the CLOSED floating-area paths
+/// whose Z is a per-vertex index `>= subject_idx_range`.
+///
+/// Returns `(to_merge, num_diff_paths)` where `to_merge == [diff_paths...,
+/// intersect_paths...]` and the leading `num_diff_paths` are the non-floating
+/// (ctDifference) paths; the rest are the floating (ctIntersection) paths. This
+/// is exactly C++ `to_merge = diff_out ++ intersect_out` with `floating_flags`
+/// set true for the intersect tail.
+///
+/// Note: unlike `clip_extrusion`, the Z values here are vertex indices / hashes,
+/// NOT coordinates — they are passed through unscaled (and fit i32: the hash is
+/// masked to `0x7fffffff` then negated).
+pub fn detect_floating(subject: &ZPath, clip: &ZPaths, subject_idx_range: i32) -> (ZPaths, usize) {
+    if subject.is_empty() {
+        return (Vec::new(), 0);
+    }
+
+    let mut subject_flat: Vec<i32> = Vec::with_capacity(subject.len() * 3);
+    for &(x, y, z) in subject {
+        subject_flat.push(narrow_i32(x));
+        subject_flat.push(narrow_i32(y));
+        subject_flat.push(narrow_i32(z));
+    }
+
+    let mut clip_flat: Vec<i32> = Vec::new();
+    let mut clip_lens: Vec<i32> = Vec::with_capacity(clip.len());
+    for path in clip {
+        clip_lens.push(path.len() as i32);
+        clip_flat.reserve(path.len() * 3);
+        for &(x, y, z) in path {
+            clip_flat.push(narrow_i32(x));
+            clip_flat.push(narrow_i32(y));
+            clip_flat.push(narrow_i32(z));
+        }
+    }
+
+    let mut num_diff_paths: i32 = 0;
+    // SAFETY: pointers reference live, correctly-sized Vecs for the duration of
+    // the call; the shim only reads them. The returned CzZPaths owns malloc'd
+    // buffers copied out and freed below.
+    let raw = unsafe {
+        clipper_z_sys::cz_detect_floating(
+            subject_flat.as_ptr(),
+            subject.len() as i32,
+            if clip_flat.is_empty() {
+                std::ptr::null()
+            } else {
+                clip_flat.as_ptr()
+            },
+            if clip_lens.is_empty() {
+                std::ptr::null()
+            } else {
+                clip_lens.as_ptr()
+            },
+            clip.len() as i32,
+            subject_idx_range,
+            &mut num_diff_paths as *mut i32,
+        )
+    };
+
+    let mut out: ZPaths = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut path: ZPath = Vec::with_capacity(len);
+            for _ in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                let z = coords[cursor * 3 + 2] as i64;
+                path.push((x, y, z) as ZPoint);
+                cursor += 1;
+            }
+            out.push(path);
+        }
+    }
+
+    // SAFETY: `raw` was produced by cz_detect_floating and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+
+    (out, num_diff_paths.max(0) as usize)
+}
+
 // ---------------------------------------------------------------------------
 // Open-path polyline clipping built on clip_extrusion.
 //

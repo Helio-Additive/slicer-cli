@@ -79,6 +79,26 @@ extern "C" {
         clip_num: i32,
     ) -> CzZPaths;
 
+    /// Faithful `detect_floating_line` Z-clipper (FillFloatingConcentric.cpp:431-475):
+    /// runs the ClipperLib_Z Clipper twice on the same inputs (ctIntersection +
+    /// ctDifference) under the detect_floating_line ZFillFunction (tags intersection
+    /// points with a negative hash of the four edge z-indices, or the common subject
+    /// z for a subject-self-intersection). `subject_xyz` = `subject_n` open x,y,z
+    /// triples (z = polyline vertex index); `clip_xyz`/`clip_lens`/`clip_num` the
+    /// closed floating-area paths (z = per-vertex index >= `subject_idx_range`).
+    /// Returns `[diff_paths..., intersect_paths...]`; `*out_num_diff_paths` is the
+    /// count of leading ctDifference paths (the rest are the floating ctIntersection
+    /// paths). Free via [`cz_free_zpaths`].
+    pub fn cz_detect_floating(
+        subject_xyz: *const i32,
+        subject_n: i32,
+        clip_xyz: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+        subject_idx_range: i32,
+        out_num_diff_paths: *mut i32,
+    ) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 }
