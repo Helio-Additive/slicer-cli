@@ -4,6 +4,58 @@ Branch: `arachne-fill` (off `alex/libslic3r-parity-engine` @ e685ca7).
 Job: Benchy, `tests/configs/stl-inline-config.jsonnet`.
 Metric: `/tmp/feat_e2.py` (per-`;FEATURE` E summed only over moves with real XY motion).
 
+---
+
+## R67-FOLLOWUP (IMPLEMENTED) — the graph builder is ported, wired, and Arachne now produces beads
+
+The diagnosis below was acted on. Commits on `arachne-fill` (pushed):
+- `feab9f0` port the 5 VD→half-edge functions (make_node / transfer_edge /
+  discretize / compute_point_cell_range / construct_from_polygons) against the
+  boostvoronoi `bv::Diagram` index API.
+- `e025bbe` wire SkeletalTrapezoidation into `WallToolPaths::generate` (replace
+  the stub).
+- `2d223d1` fix two latent bugs in the now-reachable downstream code:
+  (1) **`collapse_small_edges` use-after-free** — it rebuilt the edge/node
+  `LinkedList` via pop_front+push_back, which MOVED every surviving element and
+  dangled the entire raw-pointer graph (and never actually removed anything,
+  because the removal-set pointer identity didn't match the moved-out element).
+  FIX: `LinkedList<Box<STHalfEdge>>` so a survivor's payload (and its
+  `edge_t*`/`node_t*`) keeps a stable heap address across the rebuild — restoring
+  the C++ `std::list::erase` semantics. (2) `generate_junctions` `size_t`
+  underflow → debug index-overflow, fixed with `wrapping_add`.
+- `f3c1c21` PART A: route Concentric/FloatingConcentric through
+  `FillConcentricInternal` in `make_fills`.
+
+**Result — Arachne WallToolPaths now produces variable-width beads** (447/549
+concentric fill calls emit beads, was 0/549). Per-feature (native / rust):
+
+| FEATURE | native | baseline | NOW | baseline dE | now dE |
+|---|---|---|---|---|---|
+| Internal solid infill | 494.08 | 418.12 | **471.05** | −75.96 | **−23.04** |
+| Floating vertical shell | 170.76 | 128.27 | **204.76** | −42.50 | **+34.00** |
+| Sparse infill | 531.63 | 599.85 | 599.85 | +68.22 | +68.22 |
+| Outer wall | 1003.08 | 1005.21 | 1005.21 | guardrail | +2.13 |
+| Inner wall | 995.23 | 997.98 | 997.98 | guardrail | +2.75 |
+| Gap infill | 230.58 | 230.79 | 230.79 | guardrail | +0.20 |
+| TOTAL | 3858.97 | 3846.65 | 3976.05 | −12.31 | +117.09 |
+
+ISI converged strongly toward native (|error| 76→23). Floating flipped from
+−42 under to +34 over — the **FloatingConcentric interim** (routed through
+`FillConcentricInternal` because the faithful `FillFloatingConcentric` needs the
+blocked Z-clipper) OVER-produces vs native's `resplit_order_loops`-pruned bead
+set. Walls and gap-fill are untouched (the change is infill-only; the wall move-
+count delta is the pre-existing arc-fitting gap, not from this change). The total
++117 is the floating interim (+34) plus the pre-existing sparse(+68)/bridge(+17)
+over-production that was previously MASKED by ISI/floating being under.
+
+**Remaining levers** (all SEPARATE from the now-fixed graph builder):
+1. FloatingConcentric faithful path — port `detect_floating_line` /
+   `resplit_order_loops` (needs a Z-aware clipper with a user fill callback);
+   would prune the floating interim's +34 over.
+2. Sparse +68 / Bridge +17 — pre-existing, documented, independent.
+
+---
+
 ## TL;DR / verdict
 
 **Clean bail with a sharp, evidence-backed diagnosis that overturns the brief's premise.**
