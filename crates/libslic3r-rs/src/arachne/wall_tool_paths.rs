@@ -986,7 +986,7 @@ impl WallToolPaths {
             Coord::MAX
         };
         // WallToolPaths.cpp:503-517
-        let _beading_strat = BeadingStrategyFactory::make_strategy(
+        let beading_strat = BeadingStrategyFactory::make_strategy(
             self.bead_width_0,
             self.bead_width_x,
             wall_transition_length,
@@ -1003,19 +1003,45 @@ impl WallToolPaths {
             0.5,
         );
         // WallToolPaths.cpp:518
-        let _transition_filter_dist: Coord = scaled(100.0);
+        let transition_filter_dist: Coord = scaled(100.0);
         // WallToolPaths.cpp:519
-        let _allowed_filter_deviation: Coord = self.wall_transition_filter_deviation;
+        let allowed_filter_deviation: Coord = self.wall_transition_filter_deviation;
 
-        // ===================================================================
-        // BLOCKED — WallToolPaths.cpp:520-532
+        // WallToolPaths.cpp:520-532
         //   SkeletalTrapezoidation wall_maker(prepared_outline, *beading_strat, ...);
         //   wall_maker.generateToolpaths(toolpaths);
-        // `SkeletalTrapezoidation` is not yet a working port (no generate_toolpaths). We cannot
-        // run the wall-maker, so `toolpaths` stays empty here. Everything downstream is still
-        // executed faithfully (and is a no-op on empty toolpaths), keeping the parity surface
-        // ready for when SkeletalTrapezoidation lands.
-        // ===================================================================
+        // The Rust SkeletalTrapezoidation::new does not call construct_from_polygons
+        // in its ctor (see skeletal_trapezoidation.rs), so the graph is built
+        // explicitly after construction, mirroring the C++ ctor body
+        // (constructFromPolygons(polys)).
+        {
+            use crate::arachne::skeletal_trapezoidation::SkeletalTrapezoidation;
+            let mut wall_maker = SkeletalTrapezoidation::new(
+                // WallToolPaths.cpp:524 *beading_strat
+                &*beading_strat,
+                // WallToolPaths.cpp:525 beading_strat->getTransitioningAngle()
+                beading_strat.get_transitioning_angle(),
+                // WallToolPaths.cpp:526 discretization_step_size
+                _DISCRETIZATION_STEP_SIZE,
+                // WallToolPaths.cpp:527 transition_filter_dist
+                transition_filter_dist,
+                // WallToolPaths.cpp:528 allowed_filter_deviation
+                allowed_filter_deviation,
+                // WallToolPaths.cpp:529 wall_transition_length (beading_propagation_transition_dist)
+                wall_transition_length,
+                // WallToolPaths.cpp:530 apply_hole_compensation
+                _apply_hole_compensation,
+                // WallToolPaths.cpp:531 hole_indices
+                self.hole_indices.clone(),
+            );
+            // C++ ctor body: constructFromPolygons(polys) — here `polys` is the
+            // prepared_outline argument the C++ ctor receives at WallToolPaths.cpp:522.
+            wall_maker.construct_from_polygons(&prepared_outline);
+            // WallToolPaths.cpp:533 wall_maker.generateToolpaths(toolpaths);
+            // generateToolpaths defaults filter_outermost_central_edges = true
+            // (SkeletalTrapezoidation.hpp).
+            wall_maker.generate_toolpaths(&mut self.toolpaths, true);
+        }
 
         // WallToolPaths.cpp:534
         Self::stitch_tool_paths(&mut self.toolpaths, self.bead_width_x);
