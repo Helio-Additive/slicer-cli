@@ -23,13 +23,26 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 65 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 68 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
-- **Material: per-feature is the metric, NOT the aggregate.** After the R65 slicer fix: rust 3846.64 /
-  native 3858.97 (the aggregate dropped from the pre-R65 3850.13 only because over-extruded walls correctly
-  came DOWN toward native — outer 1010.5→1005.2, inner 1003.1→998.0; per-feature ALL moved toward native).
-  Remaining per-feature deficit concentrated in **internal-solid −76 + floating −42** (the FillConcentric
-  starvation lever), partially masked by **sparse +68**.
+- **Material: per-feature is the metric, NOT the aggregate.** Two big subsystem fixes landed (R65 slicer
+  + R67/R68 Arachne). Current rust 3975.24 / native 3858.97 (aggregate +116, time 45m0s vs 43m). The
+  aggregate is temporarily OVER because the R67/R68 Arachne port CORRECTED the under-features (internal-solid
+  −76→**−23**, the Arachne pipeline now produces beads where it produced 0), which UN-MASKED the pre-existing
+  **sparse +68 / bridge +17** over-production — plus a **floating +34** interim overshoot. Per the playbook
+  "completeness > coincidental aggregate closeness": rust now emits the Arachne beads native emits (a
+  byte-parity prerequisite), so the residual is real over-features to fix, not a balanced coincidence.
+  REMAINING per-feature levers: **floating +34** (interim FloatingConcentric→FillConcentricInternal; the
+  faithful FillFloatingConcentric needs the blocked ClipperLib_Z user-fill-callback), **sparse +68** and
+  **bridge +17** (pre-existing, separate). Walls + gap-fill at parity (untouched by the infill change).
+- **THE ARACHNE PIPELINE IS NOW LIVE (R67/R68).** The keystone `SkeletalTrapezoidation` VD→half-edge graph
+  builder (`construct_from_polygons` + make_node/transfer_edge/discretize/compute_point_cell_range, ~415
+  lines, SkeletalTrapezoidation.cpp:92-504) was ported against the `bv::Diagram` index API and wired into
+  `WallToolPaths::generate` (replacing the stub). This unblocks the ENTIRE Arachne pipeline (concentric
+  infill here + the Arachne perimeter path elsewhere). Two latent bugs fixed (surfaced now the graph is
+  non-empty): `collapse_small_edges` use-after-free (LinkedList rebuild moved payloads → dangled the
+  raw-pointer graph; fix = `LinkedList<Box<STHalfEdge>>` for stable payload addresses) + `generate_junctions`
+  size_t underflow. See `docs/parity/R67_arachne.md`.
 - **Time estimate: CONVERGED** — native 43m0s / rust 43m21s (the old "1h29m vs 43m"
   line-3 divergence is **RESOLVED**; the overhang/speed trio is landed).
 - **Byte-identical: NO**, but the structural subsystems now match or are faithful:
