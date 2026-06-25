@@ -46,9 +46,14 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
   `make_expolygons:1312-1313 scale()` suspect is a runtime NO-OP (closing_radius=0 → pure union) and the
   `closing_radius=0.049` lever is refuted by magnitude (10mm² holes can't be sealed by a 0.049mm close).
   Real root = **F2 mesh-slicer on-plane facet classification** at the near-horizontal cabin floor
-  (exact-f32 z==slice_z) — VINDICATES R61. NO faithful fill-stage fix converges it. Next step: dump raw
-  loops before union at z=0.3 in both engines. See the R63/63.5 round-log + `docs/parity/R63_reclass_findings.md`
-  (branch `L74-reclass`).
+  (exact-f32 z==slice_z) — VINDICATES R61. NO faithful fill-stage fix converges it. **R64 took the decisive
+  raw-loops-before-union measurement (both engines, branch `f2-rawloops`): at z=0.3/li=1 C++ `make_loops`
+  emits 1 clean loop, rust emits 10 (outer 545.95mm² byte-identical + 8 phantom holes ~87mm²). The UNION is
+  EXONERATED (the split is in the raw loops); the bug is F2 `slice_facet`/`make_loops` on-plane cap-facet
+  classification — rust's cavity closes one slice late.** Fix not yet attempted. The fix-round's first move:
+  dump IntersectionLines + cap-facet exact-f32 vertex z at z=0.3 in both engines to split slice_facet-classify
+  vs make_loops-chain; base it on this parity branch. See the R63/63.5/64 round-log +
+  `docs/parity/R64_rawloops_findings.md` (branch `f2-rawloops`) and `R63_reclass_findings.md` (`L74-reclass`).
 
 ## What's done (verified, on the branch)
 
