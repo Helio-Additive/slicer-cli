@@ -1549,6 +1549,42 @@ pub fn slice_mesh_ex_its(
             SlicingMode::PositiveLargestContour => ClipperPolyFillType::Positive,
             _ => ClipperPolyFillType::NonZero,
         };
+        // F2RAW: dump RAW LOOPS (slice_facet/make_loops output) BEFORE union/make_expolygons,
+        // at the Benchy cabin-floor layers (z<=0.55 = li 0/1/2). Decides whether the 8 spurious
+        // li=1 holes are born here (F2 facet classification) or in the union (F1).
+        if std::env::var("F2RAW").is_ok() && zs.get(layer_id).copied().unwrap_or(99.0) < 0.55 {
+            let sf = crate::SCALING_FACTOR as f64;
+            let sf2 = 1.0 / (sf * sf);
+            let loops = &layers_p[layer_id];
+            eprintln!(
+                "F2RAW RUST li={} z={:.4} nloops={}",
+                layer_id,
+                zs.get(layer_id).copied().unwrap_or(-1.0),
+                loops.len()
+            );
+            for (k, lp) in loops.iter().enumerate() {
+                let a2 = crate::multi_point::area(&lp.points);
+                let amm2 = a2.abs() / 2.0 * sf2;
+                let (mut xmn, mut ymn, mut xmx, mut ymx) = (i64::MAX, i64::MAX, i64::MIN, i64::MIN);
+                for p in &lp.points {
+                    xmn = xmn.min(p.x);
+                    ymn = ymn.min(p.y);
+                    xmx = xmx.max(p.x);
+                    ymx = ymx.max(p.y);
+                }
+                eprintln!(
+                    "F2RAW RUST   loop{} npts={} {} area={:.3}mm2 bbox=[{:.2},{:.2}]-[{:.2},{:.2}]",
+                    k,
+                    lp.points.len(),
+                    if a2 > 0.0 { "CCW" } else { "CW " },
+                    amm2,
+                    xmn as f64 / sf,
+                    ymn as f64 / sf,
+                    xmx as f64 / sf,
+                    ymx as f64 / sf,
+                );
+            }
+        }
         let mut expolygons = ExPolygons::new();
         make_expolygons(
             &layers_p[layer_id],
