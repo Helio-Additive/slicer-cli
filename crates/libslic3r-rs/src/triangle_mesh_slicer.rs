@@ -396,6 +396,7 @@ fn slice_facet_at_zs(
     // Scaled or unscaled zs.
     zs: &[f32],
     lines: &mut [IntersectionLines],
+    face_idx: usize,
 ) {
     // TriangleMeshSlicer.cpp:487
     let vertices: [StlVertex; 3] = [
@@ -428,10 +429,31 @@ fn slice_facet_at_zs(
         let mut il = IntersectionLine::default();
         // Ignore horizontal triangles.
         // TriangleMeshSlicer.cpp:501
-        if min_z != max_z
-            && slice_facet(zs[slice_id], &vertices, indices, edge_ids, idx_vertex_lowest, false, &mut il)
-                == FacetSliceType::Slicing
+        let st = if min_z != max_z {
+            slice_facet(zs[slice_id], &vertices, indices, edge_ids, idx_vertex_lowest, false, &mut il)
+        } else {
+            FacetSliceType::NoSlice
+        };
+        // F2FACET: cap-facet classification at z=0.3 (near-horizontal facets straddling
+        // the plane), keyed by face_idx for cross-engine diff.
+        if std::env::var("F2FACET").is_ok()
+            && (zs[slice_id] - 0.3).abs() < 0.01
+            && (max_z - min_z) < 0.05
         {
+            eprintln!(
+                "F2FACET RUST f={} z0={:.9} z1={:.9} z2={:.9} sz={:.9} minz={:.9} maxz={:.9} st={} et={:?}",
+                face_idx,
+                vertices[0].z as f64,
+                vertices[1].z as f64,
+                vertices[2].z as f64,
+                zs[slice_id] as f64,
+                min_z as f64,
+                max_z as f64,
+                st as i32,
+                il.edge_type,
+            );
+        }
+        if st == FacetSliceType::Slicing {
             debug_assert!(il.edge_type != FacetEdgeType::Horizontal);
             // TriangleMeshSlicer.cpp:503-505 (mutex sequentialized)
             lines[slice_id].push(il);
@@ -467,7 +489,7 @@ fn slice_make_lines(
         if (face_idx & 0x0ffff) == 0 {
             throw_on_cancel_fn();
         }
-        slice_facet_at_zs(vertices, &indices[face_idx], &face_edge_ids[face_idx], zs, &mut lines);
+        slice_facet_at_zs(vertices, &indices[face_idx], &face_edge_ids[face_idx], zs, &mut lines, face_idx);
     }
     lines
 }
