@@ -900,15 +900,88 @@ pub fn merge_lines(
     res
 }
 
-// FillFloatingConcentric.cpp:389-493
-// `FloatingThickPolyline detect_floating_line(...)`
-//
-// BLOCKED: requires `ClipperLib_Z::Clipper` with a custom `ZFillFunction`,
-// `ctIntersection`/`ctDifference`, `PolyTree`, and `PolyTreeToPaths`. The crate's
-// clipper backend is Clipper2 (f64) and exposes no Z-aware clipper with a user
-// fill callback (see `overhang_detector.rs`, which is blocked on the same
-// dependency). Port once a Z-aware clipper lands; `merge_lines` (above) is the
-// already-ported back half of this function.
+/// FillFloatingConcentric.cpp:389-489
+/// `FloatingThickPolyline detect_floating_line(const ThickPolyline& line, const ExPolygons& floating_areas, const double default_width, bool force_no_detect)`
+///
+/// The Z-clipper half (the ClipperLib_Z::Clipper with the custom ZFillFunction +
+/// ctIntersection/ctDifference) is provided by `clipper_z::detect_floating`
+/// (crates/clipper-z-sys); `merge_lines` (above) is the back half.
+pub fn detect_floating_line(
+    line: &ThickPolyline,
+    floating_areas: &ExPolygons,
+    default_width: f64,
+    force_no_detect: bool,
+) -> FloatingThickPolyline {
+    // FillFloatingConcentric.cpp:391-402 — early out: no floating overlap.
+    {
+        // Polyline polyline = line; (the C++ slices the ThickPolyline to a Polyline)
+        let bbox_line = BoundingBox::from_points(&line.points);
+        let bbox_area = get_extents(floating_areas);
+        // FillFloatingConcentric.cpp:395
+        // if (force_no_detect || !bbox_area.overlap(bbox_line) || intersection_pl(polyline, floating_areas).empty())
+        let polyline = crate::geometry::Polyline::from_points(line.points.clone());
+        if force_no_detect
+            || !bbox_area.intersects(&bbox_line)
+            || crate::clipper_utils::intersection_pl(
+                std::slice::from_ref(&polyline),
+                floating_areas,
+            )
+            .is_empty()
+        {
+            // FillFloatingConcentric.cpp:396-401
+            let mut res = FloatingThickPolyline::default();
+            res.width = line.widths.clone();
+            res.points = line.points.clone();
+            res.is_floating.resize(res.points.len(), false);
+            return res;
+        }
+    }
+
+    // FillFloatingConcentric.cpp:406-411 — the hash is baked into the shim's
+    // ZFillFunction; nothing to do here.
+
+    // FillFloatingConcentric.cpp:413-417 — subject ZPath: (x, y, vertex_index).
+    let mut idx: i64 = 0;
+    let mut subject_path: ZPath = Vec::with_capacity(line.points.len());
+    for p in &line.points {
+        subject_path.push((p.x, p.y, idx));
+        idx += 1;
+    }
+    // FillFloatingConcentric.cpp:419 — subject_idx_range = idx;
+    let subject_idx_range = idx as i32;
+
+    // FillFloatingConcentric.cpp:420-427 — clip ZPaths: floating-area polygons,
+    // z = a per-vertex index continuing past subject_idx_range.
+    let floating_polygons = crate::geometry::to_polygons(floating_areas);
+    let mut clip_paths: Vec<ZPath> = Vec::with_capacity(floating_polygons.len());
+    for poly in &floating_polygons {
+        let mut zp: ZPath = Vec::with_capacity(poly.points.len());
+        for p in &poly.points {
+            zp.push((p.x, p.y, idx));
+            idx += 1;
+        }
+        clip_paths.push(zp);
+    }
+
+    // FillFloatingConcentric.cpp:457-475 — run both passes (ctIntersection +
+    // ctDifference) via the Z-clipper; to_merge = diff_out ++ intersect_out with
+    // floating_flags true for the intersect tail.
+    let (to_merge, num_diff_paths) =
+        crate::clipper_z::detect_floating(&subject_path, &clip_paths, subject_idx_range);
+    let mut floating_flags: Vec<bool> = vec![false; to_merge.len()];
+    for f in floating_flags.iter_mut().skip(num_diff_paths) {
+        *f = true;
+    }
+
+    // FillFloatingConcentric.cpp:489 — merge_lines(to_merge, floating_flags, line, subject_idx_range, default_width)
+    merge_lines(
+        to_merge,
+        &floating_flags,
+        line,
+        subject_idx_range,
+        default_width as i32,
+    )
+}
 
 /// FillFloatingConcentric.cpp:495-502
 /// `int start_none_floating_idx(int idx, const std::vector<int>& none_floating_count)`
