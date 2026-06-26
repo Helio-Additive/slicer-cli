@@ -1,5 +1,32 @@
 # R72 — Faithful wave_seeds (Clipper2-Z) ported: seed generation FIXES the solid over-fragmentation (1929→628≈605); wavefront propagation over-expands (gated, not default)
 
+> ## ⚠️ R73 CORRECTION (supersedes R72's headline) — the "1929→628 fix" was a UNITS-BUG ARTIFACT
+>
+> While debugging R72's "wavefront over-expansion" (ISI 533), the root turned out to be a
+> UNITS BUG, not an offset-engine gap (probed: ClipperLib full-scale vs geo-clipper round
+> offset differ by 0.01%, not 12%). The faithful path operates on SCALED geometry but
+> RegionExpansionParameters are kept in MM, so `wave_seeds_faithful`/`propagate_wave_from_boundary`
+> offset by ~0 → the faithful wave produced NOTHING (nexp=0). The "merged solid 628" was the
+> RAW un-carved shells left by the no-op wave.
+>
+> With the units FIXED (commit 105ed6f): faithful n_solid = **1924** (≈ legacy 1929), per-feature
+> ISI −23.2 / floating +31.9 / sparse +68 — **IDENTICAL to the legacy approximation**. So the
+> faithful Clipper2-Z wave_seeds does NOT fix the fragmentation; R72's headline is WRONG.
+>
+> **CORRECTED ROOT:** the solid over-fragmentation (1929 vs native 605) is the
+> `difference`-carving of the solid zone in `expand_merge_surfaces` via **geo-clipper at
+> GEO_CLIPPER_SCALE=1000** (1µm grid) over-segmenting thin slivers that native's ClipperLib
+> (1e5, 0.01µm) keeps whole — the F1 geo-clipper-precision class (rounds 1-65), produced
+> identically with faithful OR approximate seeds. The wave_seeds port is faithful + correct +
+> a reusable Clipper2-Z foundation, but does not close the infill gap. The real fix is routing
+> the process_external difference/union/closing through the full-scale vendored ClipperLib.
+>
+> LESSON: a structural metric (fragment count) can lie if an upstream step is silently a no-op
+> — verify the step actually does work (nexp>0, area>0) before attributing a downstream change.
+>
+> The R72 body below is preserved as written but its "fixes the fragmentation" claim is retracted.
+
+
 Branch: `wave-seeds` (off parity tip `alex/libslic3r-parity-engine` @ 82b9521).
 Job: Benchy, `tests/configs/stl-inline-config.jsonnet`.
 
