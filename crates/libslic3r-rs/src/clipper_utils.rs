@@ -443,6 +443,55 @@ pub fn offset_polyline_miter(
     result.0.iter().map(geo_to_polygon).collect()
 }
 
+/// Offset a set of polylines with a ROUND join, choosing the end type per path:
+/// a closed polyline (first point == last point) uses `etClosedLine`, an open one
+/// uses `etOpenRound`. Returns the offset closed polygons.
+///
+/// Faithful to RegionExpansion.cpp `wavefront_initial`
+/// (`co.AddPath(path, jtRound, path.front()==path.back() ? etClosedLine : etOpenRound)`).
+/// `arc_tolerance_scaled` is the ClipperOffset ArcTolerance in scaled units.
+//
+// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib (ShortestEdgeLength
+// vertex decimation is not exposed by geo-clipper; the round-offset geometry matches).
+pub fn offset_polylines_round(
+    polylines: &[Polyline],
+    delta_scaled: CoordF,
+    arc_tolerance_scaled: CoordF,
+) -> Vec<Polygon> {
+    let mut out: Vec<Polygon> = Vec::new();
+    let arc_tol_mm = unscale(arc_tolerance_scaled.round().max(1.0) as Coord);
+    for pl in polylines {
+        if pl.points().len() < 2 {
+            continue;
+        }
+        let pts = pl.points();
+        let closed = pts.first() == pts.last();
+        let coords: Vec<GeoCoord<f64>> = pts
+            .iter()
+            .map(|p| GeoCoord {
+                x: unscale(p.x),
+                y: unscale(p.y),
+            })
+            .collect();
+        let line = LineString::new(coords);
+        let mline = MultiLineString::new(vec![line]);
+        let end_type = if closed {
+            EndType::ClosedLine
+        } else {
+            EndType::OpenRound(arc_tol_mm)
+        };
+        let result: MultiPolygon<f64> = ClipperOpen::offset(
+            &mline,
+            unscale_delta(delta_scaled),
+            JoinType::Round(arc_tol_mm),
+            end_type,
+            GEO_CLIPPER_SCALE,
+        );
+        out.extend(result.0.iter().map(geo_to_polygon));
+    }
+    out
+}
+
 /// Unscale a scaled (coord_t) delta to mm for the geo-clipper backend.
 #[inline]
 fn unscale_delta(delta_scaled: CoordF) -> CoordF {

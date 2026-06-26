@@ -701,6 +701,118 @@ fn propagate_wave_from_seeds(
     wave
 }
 
+/// `wavefront_clip` (RegionExpansion.cpp:432-440): intersect the wavefront polygons
+/// with the boundary. The C++ uses `pftPositive` for both — union the offset waves
+/// (so overlaps merge) then intersect with the boundary expolygon.
+fn wavefront_clip(wavefront: &[Polygon], boundary: &ExPolygon) -> ExPolygons {
+    if wavefront.is_empty() {
+        return Vec::new();
+    }
+    let wave_ex: ExPolygons = wavefront.iter().map(|p| ExPolygon::new(p.clone())).collect();
+    let wave_u = union_ex(&wave_ex);
+    intersection(&wave_u, std::slice::from_ref(boundary))
+}
+
+/// `propagate_wave_from_boundary` (RegionExpansion.cpp:442-465), faithful: inflate
+/// the OPEN seed polylines (round caps) for the first wave, then closed-polygon
+/// round steps, clipping to the boundary at each step. Returns the clipped wave
+/// ExPolygons (the C++ returns Polygons; the rust RegionExpansion stores ExPolygon).
+fn propagate_wave_from_boundary(
+    // Seed of the wave: open polylines very close to the boundary.
+    seed: &[Vec<Point>],
+    boundary: &ExPolygon,
+    initial_step: CoordF,
+    other_step: CoordF,
+    num_other_steps: usize,
+    _max_inflation: CoordF,
+    arc_tolerance: CoordF,
+) -> ExPolygons {
+    if seed.is_empty() {
+        return Vec::new();
+    }
+    // arc_tolerance is scaled; the existing offset_polygons_round takes mm.
+    let arc_tol_mm = arc_tolerance / crate::SCALING_FACTOR;
+    // RegionExpansion.cpp:462 — wavefront_initial: offset the open seed polylines
+    // (etOpenRound) by initial_step. (Boundary trim by max_inflation is a pure
+    // performance optimisation — we clip against the whole boundary expolygon.)
+    let seed_polylines: Vec<Polyline> = seed
+        .iter()
+        .filter(|p| p.len() >= 2)
+        .map(|p| Polyline::from_points(p.clone()))
+        .collect();
+    let initial_wave =
+        crate::clipper_utils::offset_polylines_round(&seed_polylines, initial_step, arc_tolerance);
+    let mut wave = wavefront_clip(&initial_wave, boundary);
+
+    // RegionExpansion.cpp:464 — successive closed-polygon round steps.
+    for _ in 0..num_other_steps {
+        if wave.is_empty() {
+            break;
+        }
+        // wavefront_step: offset the closed wave polygons (contour + holes) by
+        // other_step, round join, etClosedPolygon.
+        let mut closed: Vec<Polygon> = Vec::new();
+        for ex in &wave {
+            closed.push(ex.contour.clone());
+            for h in &ex.holes {
+                closed.push(h.clone());
+            }
+        }
+        let stepped =
+            crate::clipper_utils::offset_polygons_round(&closed, other_step, arc_tol_mm);
+        // offset_polygons_round returns ExPolygons; flatten its contours for clip.
+        let stepped_polys: Vec<Polygon> = stepped
+            .iter()
+            .flat_map(|ex| std::iter::once(ex.contour.clone()).chain(ex.holes.iter().cloned()))
+            .collect();
+        wave = wavefront_clip(&stepped_polys, boundary);
+    }
+    wave
+}
+
+/// `propagate_waves(seeds, boundary, params)` (RegionExpansion.cpp:468-487):
+/// group consecutive seeds by (boundary, src), propagate each group's open seed
+/// paths via propagate_wave_from_boundary, emit one RegionExpansion per result
+/// polygon. The faithful counterpart of the polygon-based `propagate_waves` below.
+fn propagate_waves_from_seeds(
+    seeds: &[WaveSeed],
+    boundary: &[ExPolygon],
+    params: &RegionExpansionParameters,
+) -> Vec<RegionExpansion> {
+    let mut out: Vec<RegionExpansion> = Vec::new();
+    let mut i = 0usize;
+    while i < seeds.len() {
+        let b = seeds[i].boundary;
+        let s = seeds[i].src;
+        let mut paths: Vec<Vec<Point>> = Vec::new();
+        let mut j = i;
+        while j < seeds.len() && seeds[j].boundary == b && seeds[j].src == s {
+            paths.push(seeds[j].path.clone());
+            j += 1;
+        }
+        for polygon in propagate_wave_from_boundary(
+            &paths,
+            &boundary[b as usize],
+            params.initial_step,
+            params.other_step,
+            params.num_other_steps,
+            params.max_inflation,
+            params.arc_tolerance,
+        ) {
+            // RegionExpansion.cpp:483 emits one entry per result polygon; the rust
+            // RegionExpansion.polygon is an ExPolygon (propagate_wave_from_boundary
+            // returns the clipped wave ExPolygons directly).
+            out.push(RegionExpansion {
+                polygon,
+                src_id: s,
+                boundary_id: b,
+            });
+        }
+        i = j;
+    }
+    out
+}
+
 /// Propagate waves from all source expolygons into all boundary expolygons.
 ///
 /// Port of `propagate_waves()` from RegionExpansion.cpp:468-494.
