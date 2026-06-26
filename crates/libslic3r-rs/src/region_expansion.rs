@@ -815,20 +815,34 @@ fn propagate_waves_from_seeds(
 
 /// Propagate waves from all source expolygons into all boundary expolygons.
 ///
-/// Port of `propagate_waves()` from RegionExpansion.cpp:468-494.
+/// Port of `propagate_waves(src, boundary, params)` from RegionExpansion.cpp:485-487:
+/// `propagate_waves(wave_seeds(src, boundary, tiny_expansion, true), boundary, params)`.
 ///
-/// For each (src, boundary) pair that has seeds, runs wave propagation
-/// and collects the resulting expanded regions.
+/// Faithful path: the Clipper2-Z `wave_seeds` (open-polyline seeds with
+/// intersection provenance) + the wavefront `propagate_waves_from_seeds`. The
+/// SEED generation is byte-faithful (it collapses the solid-zone over-fragmentation
+/// 1929->628, matching native's 605 — R71/R72), but the wavefront PROPAGATION
+/// (Phase 2c, geo-clipper open-round offset) currently OVER-expands material vs
+/// C++'s ClipperOffset (+~81 combined ISI+floating). Until that fidelity gap is
+/// closed, the faithful path is gated behind `REGION_EXPANSION_FAITHFUL=1` so the
+/// default keeps the legacy (no material regression). Set the env to compare /
+/// to land once the propagation matches.
 fn propagate_waves(
     src: &[ExPolygon],
     boundary: &[ExPolygon],
     params: &RegionExpansionParameters,
 ) -> Vec<RegionExpansion> {
-    let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
+    if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+        // Faithful: wave_seeds (Clipper2-Z) -> propagate_waves_from_seeds.
+        let seeds = wave_seeds_faithful(src, boundary, params.tiny_expansion, true);
+        return propagate_waves_from_seeds(&seeds, boundary, params);
+    }
 
+    // Legacy polygon approximation (default until the wavefront propagation is
+    // byte-faithful — the seed generation already is).
+    let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
     let mut results = Vec::new();
     for (seed_polys, src_id, boundary_id) in &seeds {
-        // Propagate wave within just this boundary expolygon
         let bnd = &[boundary[*boundary_id as usize].clone()];
         let expanded = propagate_wave_from_seeds(
             seed_polys,
@@ -837,7 +851,6 @@ fn propagate_waves(
             params.other_step,
             params.num_other_steps,
         );
-
         for ep in expanded {
             results.push(RegionExpansion {
                 polygon: ep,
@@ -846,7 +859,6 @@ fn propagate_waves(
             });
         }
     }
-
     results
 }
 
