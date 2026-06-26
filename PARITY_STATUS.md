@@ -23,7 +23,7 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 69 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 73 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
 - **Material: per-feature is the metric, NOT the aggregate.** Three big subsystem fixes landed (R65 slicer +
   R67/R68 Arachne + R69 floating). Current rust 3973.85 / native 3858.97 (aggregate +115, time 45m0s vs 43m).
@@ -43,8 +43,25 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
   **The real lever for floating→170 AND ISI→494 is reducing narrow-solid fragmentation (group_fills surface
   merge / the slicer fragment lineage), upstream of the fill stage.** See `docs/parity/R69_floating.md`.
   REMAINING per-feature levers: **sparse +68** (biggest single material gap, pre-existing), **bridge +17**
-  (pre-existing), and the **narrow-solid fragmentation** root (re-splits ISI/floating but is only ~+8.75
-  combined material). Walls + gap-fill at parity (untouched by the infill changes).
+  (pre-existing). Walls + gap-fill at parity (untouched by the infill changes).
+- **R70–R73 — THE FRAGMENTATION THEORY WAS DISPROVEN FOR MATERIAL (a multi-round investigation, banked).**
+  R70/R71 traced the ISI/floating/sparse material gap to rust over-fragmenting `fill_surfaces` ~2–3× (R71:
+  the explosion is inside `process_external_surfaces` — shells enter clean at 404, exit at 1929 vs native 605).
+  We funded the faithful fix to de-fragment: built a reusable **Clipper2-Z engine shim** (`crates/clipper2-z-sys`,
+  vendored Clipper2 + USINGZ, ODR-namespaced + symbol/full-link verified), ported the faithful `wave_seeds`
+  (R72), and the faithful Miter/ClipperLib **closing** (R73, which collapses the fragmentation 1911→707).
+  **BUT both-engine A/B proved the surface FRAGMENT COUNT does NOT drive the material**: the closing fix moves
+  the gcode by ~0 (ISI/floating/sparse unchanged) because the fill is computed on the **unioned area** (already
+  identical between engines, 404 entering, area matches). So R69–R73's "fragmentation is the lever" framing is
+  a RED HERRING for material. (Three roots refuted by cheap assess-first measurement before any expensive fix
+  shipped: wave_seeds-approx→units-bug-artifact, F1-difference→clib made it worse, fragment-count→gcode~0.)
+  **CORRECTED next-session target:** the real ISI −23 / sparse +68 / floating +32 material gap is DOWNSTREAM in
+  **FILL-PATH GENERATION on the (already-correct, unioned) surfaces** — `group_fills` + the grid/concentric/
+  floating emitters — NOT in process_external surface classification. Fresh both-engine localization needed
+  (no current hypothesis). The Clipper2-Z shim + faithful wave_seeds + faithful closing are PRESERVED gated on
+  branch `wave-seeds` (pushed, no-regression, env-gated REGION_EXPANSION_FAITHFUL/CLOSE_CLIB) — correct fidelity
+  foundations to revive when the real material lever is found. Docs: `docs/parity/R70_sparse.md`,
+  `R71_defrag.md`, `R72_wave_seeds.md`, `R73`.
 - **THE ARACHNE PIPELINE IS NOW LIVE (R67/R68).** The keystone `SkeletalTrapezoidation` VD→half-edge graph
   builder (`construct_from_polygons` + make_node/transfer_edge/discretize/compute_point_cell_range, ~415
   lines, SkeletalTrapezoidation.cpp:92-504) was ported against the `bv::Diagram` index API and wired into
