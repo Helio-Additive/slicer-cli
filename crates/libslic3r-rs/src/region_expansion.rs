@@ -1043,7 +1043,17 @@ pub fn expand_merge_surfaces(
     // unassigned regions in the object (E.G. benchy) without the following
     // closing operation, those regions will stay unfilled."
     if closing_radius > 0.0 && !expanded.is_empty() {
-        expanded = closing(&expanded, closing_radius, OffsetJoinType::Round);
+        if std::env::var("CLOSE_CLIB").is_ok() {
+            // FAITHFUL A/B: C++ closing_ex = offset2_ex(+d, -d, jtMiter, ML=3) via
+            // full-scale ClipperLib (ClipperUtils.cpp). Rust legacy used geo-clipper
+            // Round @ scale-1000. Reproduce grow(+d) then shrink(-d), jtMiter.
+            let grown = crate::clipper_utils::grow_clib(
+                &expanded, closing_radius, OffsetJoinType::Miter);
+            expanded = crate::clipper_utils::shrink_clib(
+                &grown, closing_radius, OffsetJoinType::Miter);
+        } else {
+            expanded = closing(&expanded, closing_radius, OffsetJoinType::Round);
+        }
     }
 
     // Subtract expanded area from each zone that was expanded into.
