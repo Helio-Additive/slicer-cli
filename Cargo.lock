@@ -795,6 +795,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "clipper2-z-sys"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "clipper2c-sys"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2997,6 +3004,7 @@ dependencies = [
  "clap",
  "clipper-z-sys",
  "clipper2",
+ "clipper2-z-sys",
  "clipper2c-sys",
  "earcutr",
  "env_logger",
