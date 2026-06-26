@@ -521,8 +521,14 @@ fn wave_seeds_faithful(
     let zboundary = expolygons_to_zpaths64(boundary, &mut idx_boundary_end);
 
     // RegionExpansion.cpp:309-318 — src as opened, expanded subject; record splits.
+    // UNITS: the ExPolygon geometry is SCALED (coord_t), and cz2_offset_z (Clipper2)
+    // offsets the scaled i64 coords directly — so the offset delta must be SCALED.
+    // The RegionExpansionParameters in this crate are kept in MM, so scale here
+    // (C++ works entirely in scaled units; this is the mm→scaled bridge).
+    let tiny_expansion_scaled = tiny_expansion * crate::SCALING_FACTOR;
     let mut idx_src_end = idx_boundary_end;
-    let zsrc = expolygons_to_zpaths64_expanded_opened(src, tiny_expansion, &mut idx_src_end);
+    let zsrc =
+        expolygons_to_zpaths64_expanded_opened(src, tiny_expansion_scaled, &mut idx_src_end);
     let mut zsrc_splits: Vec<((i64, i64, i64), i32)> = Vec::with_capacity(zsrc.len());
     for path in &zsrc {
         debug_assert!(path.len() >= 2);
@@ -730,8 +736,12 @@ fn propagate_wave_from_boundary(
     if seed.is_empty() {
         return Vec::new();
     }
-    // arc_tolerance is scaled; the existing offset_polygons_round takes mm.
-    let arc_tol_mm = arc_tolerance / crate::SCALING_FACTOR;
+    // UNITS: the seed/wave geometry is SCALED (coord_t); the params are kept in MM
+    // here. `offset_polylines_round` takes a SCALED delta/arc-tol; `offset_polygons_round`
+    // takes MM (it unscales the geometry internally). Bridge both.
+    let initial_step_scaled = initial_step * crate::SCALING_FACTOR;
+    let arc_tol_scaled = arc_tolerance * crate::SCALING_FACTOR;
+    let arc_tol_mm = arc_tolerance; // params.arc_tolerance is already mm (== scaled(0.1) kept as 0.1)
     // RegionExpansion.cpp:462 — wavefront_initial: offset the open seed polylines
     // (etOpenRound) by initial_step. (Boundary trim by max_inflation is a pure
     // performance optimisation — we clip against the whole boundary expolygon.)
@@ -740,8 +750,11 @@ fn propagate_wave_from_boundary(
         .filter(|p| p.len() >= 2)
         .map(|p| Polyline::from_points(p.clone()))
         .collect();
-    let initial_wave =
-        crate::clipper_utils::offset_polylines_round(&seed_polylines, initial_step, arc_tolerance);
+    let initial_wave = crate::clipper_utils::offset_polylines_round(
+        &seed_polylines,
+        initial_step_scaled,
+        arc_tol_scaled,
+    );
     let mut wave = wavefront_clip(&initial_wave, boundary);
 
     // RegionExpansion.cpp:464 — successive closed-polygon round steps.
