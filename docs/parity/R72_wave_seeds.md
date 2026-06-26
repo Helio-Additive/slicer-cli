@@ -1,5 +1,52 @@
 # R72 — Faithful wave_seeds (Clipper2-Z) ported: seed generation FIXES the solid over-fragmentation (1929→628≈605); wavefront propagation over-expands (gated, not default)
 
+> ## ✅ R74 FINAL VERDICT (supersedes R72 AND the R73-correction's "real fix" line) — THE FRAGMENT COUNT IS NOT THE MATERIAL LEVER
+>
+> This is the single-place final truth for the whole process_external fragmentation thread (R71–R74).
+> The infill material lever was BANKED here after the root was definitively narrowed by cheap
+> assess-first A/B measurement. Three candidate roots were each tested and dispatched:
+>
+> 1. **wave_seeds approximation (R72)** — REFUTED. After the units fix (105ed6f) the faithful
+>    Clipper2-Z wave_seeds is byte-equivalent to the legacy polygon approximation (n_solid
+>    1924 ≈ 1929, per-feature identical). Not the cause.
+> 2. **F1 `difference`-carving (R73's proposed fix)** — REFUTED. Routing the `diff_ex` carve in
+>    `expand_merge_surfaces` through full-scale vendored ClipperLib (`difference_clib`, DIFF_CLIB
+>    A/B) made fragmentation WORSE (n_solid 1911→2164) and moved material by ~0. The carve is
+>    faithful to C++ `diff_ex` (LayerRegion.cpp:507); precision is not the lever (matches R6/R50).
+> 3. **The `closing` op (R74, the actual fragmentation source)** — CONFIRMED as the n_solid
+>    source, but **material-neutral**. C++ `closing_ex(expanded, r)` = `offset2_ex(+r, −r,
+>    jtMiter, MiterLimit=3)` via full-scale ClipperLib (ClipperUtils.hpp:412, DefaultJoinType=
+>    jtMiter); rust legacy used geo-clipper `closing(.., Round)` @ GEO_CLIPPER_SCALE=1000. The
+>    Round-arc approximation on the 1µm grid shredded the `expanded` boundary into a ragged
+>    multi-component shape that carved the shells into slivers. The faithful fix (CLOSE_CLIB A/B:
+>    `grow_clib(+r,Miter)`+`shrink_clib(r,Miter)`) collapses n_solid **1911→707** (native 605;
+>    L42 entering-shell A/B was 126→29 with identical 3-piece inputs both engines) — but
+>    PER-FEATURE MATERIAL IS UNCHANGED: ISI −23.1, floating +32, sparse +68 all hold, total
+>    +0.18 (slightly WORSE), +228 gcode lines.
+>
+> **WHY fixing the fragment count moves no gcode:** the downstream fill is generated on the
+> UNIONED surface area, which is already byte-correct (shells ENTER process_external unioned at
+> 404 pieces, area matches native to 1.7%, same bbox). Whether the solid surface is stored as 1
+> expolygon or 126 disjoint pieces, the fill emitter sees the same area → same paths. The
+> n_solid fragment count (R71's 1929-vs-605) was a **red herring** for the material gap, exactly
+> as the R73 units-bug artifact warned: a structural metric can be faithful (or fixable to
+> faithful) without moving gcode.
+>
+> **WHERE THE MATERIAL LEVER ACTUALLY IS (clean next-session target):** the ISI −23 / floating
+> +32 / sparse +68 material gap lives DOWNSTREAM in **fill-path generation on the already-correct
+> unioned surfaces** — `group_fills` and the grid + concentric + floating emitters — NOT in
+> process_external surface classification/fragmentation at all. process_external is exonerated
+> as a material driver.
+>
+> **BANKED FOUNDATIONS (gated, no-regression, on branch `wave-seeds` — NOT merged to parity):**
+> the Clipper2-Z engine shim (`crates/clipper2-z-sys`, reusable for future Z-aware work), the
+> faithful wave_seeds port (`REGION_EXPANSION_FAITHFUL=1`), and the faithful closing
+> (`CLOSE_CLIB=1`, commit b2a5408). All correct, all env-gated, default unchanged.
+>
+> The R73 correction and R72 body below are preserved as written; their "the real fix is routing
+> the difference/closing through ClipperLib" line is superseded by R74 — that fix is faithful but
+> material-neutral; the lever is downstream in fill-path generation.
+
 > ## ⚠️ R73 CORRECTION (supersedes R72's headline) — the "1929→628 fix" was a UNITS-BUG ARTIFACT
 >
 > While debugging R72's "wavefront over-expansion" (ISI 533), the root turned out to be a
