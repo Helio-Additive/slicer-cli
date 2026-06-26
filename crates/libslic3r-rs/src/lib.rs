@@ -51,6 +51,7 @@ pub mod clipper2_utils;
 pub mod clipper2_z_utils;
 pub mod clipper_utils;
 pub mod clipper_z;
+pub mod clipper2_z;
 pub mod clipper_z_utils;
 pub mod clonable_ptr;
 pub mod color;

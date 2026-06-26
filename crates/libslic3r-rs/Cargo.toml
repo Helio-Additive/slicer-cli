@@ -36,6 +36,11 @@ clipper2c-sys = "0.1.6"
 # Provides the faithful `clip_extrusion` primitive (OverhangDetector.cpp) that
 # Clipper2 cannot express (no Z-aware open-subject clip with a user fill callback).
 clipper-z-sys = { path = "../clipper-z-sys" }
+# Clipper2 built with USINGZ (namespace-isolated as Clipper2ZSys to avoid an ODR
+# collision with clipper2c-sys's non-Z Clipper2). Provides the Z-callback
+# open-subject clip + Z-preserving offset that RegionExpansion.cpp `wave_seeds`
+# needs (the faithful region-expansion wave).
+clipper2-z-sys = { path = "../clipper2-z-sys" }
 ordered-float = "4.2"
 boostvoronoi = "0.12"
 # Polygon tessellation (pure-Rust earcut; wasm-safe). Backend for Tesselate.cpp.
