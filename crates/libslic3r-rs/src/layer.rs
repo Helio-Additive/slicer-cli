@@ -2008,6 +2008,12 @@ impl Layer {
             // 12mm), so both connect here. Patterns like Line set
             // anchor_length_max == 0 to force dont_connect == true.
             let dont_connect = surface_fill.params.anchor_length_max < 0.05;
+            // C++ make_fills leaves the main filler's `f->overlap` at its default 0
+            // (Fill.cpp; only ironing sets it). The raster clip uses
+            // `scale_(this->overlap - (0.5 - 0.45)*spacing)` with overlap==0
+            // (FillRectilinear.cpp:2847). region_config.infill_overlap flows only
+            // into `no_extrusion_overlap` (Fill.cpp:713), NOT this geometric offset.
+            let infill_overlap = if std::env::var("OVERLAP0").is_ok() { 0.0 } else { surface_fill.params.spacing * 0.15 };
             let infill_config = InfillConfig {
                 pattern: fill_pattern,
                 line_spacing: surface_fill.params.spacing,
@@ -2015,7 +2021,7 @@ impl Layer {
                 angle_increment: 90.0,
                 density,
                 extrusion_width: surface_fill.params.spacing,
-                overlap: surface_fill.params.spacing * 0.15,
+                overlap: infill_overlap,
                 connect_infill: !dont_connect,
                 link_max_length,
             };
@@ -2428,6 +2434,7 @@ impl Layer {
             // Mirror make_fills' dont_connect derivation
             // (anchor_length_max < 0.05 disables connection; FillBase.hpp).
             let dont_connect = surface_fill.params.anchor_length_max < 0.05;
+            let infill_overlap = if std::env::var("OVERLAP0").is_ok() { 0.0 } else { surface_fill.params.spacing * 0.15 };
             let infill_config = InfillConfig {
                 pattern: fill_pattern,
                 line_spacing: surface_fill.params.spacing,
@@ -2435,7 +2442,7 @@ impl Layer {
                 angle_increment: 90.0,
                 density,
                 extrusion_width: surface_fill.params.spacing,
-                overlap: surface_fill.params.spacing * 0.15,
+                overlap: infill_overlap,
                 connect_infill: !dont_connect,
                 link_max_length,
             };
