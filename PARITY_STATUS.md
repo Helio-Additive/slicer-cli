@@ -23,7 +23,18 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 74 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 75 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+
+- **R75 — infill raster `overlap=0` LANDED (faithful, biggest single material move yet).** rust passed a
+  spurious `overlap = spacing*0.15` into the raster offset (layer.rs) over-extending EVERY infill line; C++
+  `Fill::overlap=0` for the main filler (FillBase.hpp:183, Fill.cpp:995/1007 — `infill_overlap` flows only
+  into `no_extrusion_overlap`, NOT the raster geometry). Fix = `overlap=0`. **Total +114.83→+67.33 (−47.5;
+  3926.30 / native 3858.97 = 1.017×, was 1.030×)**; sparse +68→**+55**, bridge +10→**+3**, top +15→**+2** (all
+  toward native); walls/gap unchanged; time 44m23s; build green. Honestly **unmasked the ISI deficit**
+  (−23→**−30**) — the spurious overlap was a compensating bug inflating solid lines (completeness-over-aggregate
+  per the playbook). REMAINING material levers (post-overlap): **sparse +55** (still the biggest over — overlap
+  was only −13 of it; ~+10.5% line excess remains, beyond the raster offset → re-localize the grid emitter),
+  **floating +31.56 / ISI −30.28** (near-cancel net; the concentric/floating emitter mis-split, R69 lever).
 
 - **R74 — group_fills post-loop + Ord fix LANDED (faithful, −6.87 material, no regression).** Ported the
   missing C++ Fill.cpp:361-373 post-loop (`union_safety_offset_ex` + `diff_ex` vs accumulated groups) + fixed
