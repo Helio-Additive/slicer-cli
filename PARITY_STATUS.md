@@ -23,8 +23,23 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 75 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 77 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **★ R77 — MATERIAL AGGREGATE AT NATIVE (1.0000×). The emitter-pair landed.** Ported faithful FillGrid
+  `fill_surface_by_multilines` (combined two-direction sweep over a SHARED copy-rotated offset base +
+  `make_fill_lines_raw` + grid-align) and wired the already-ported (never-called, proven-faithful)
+  `fill_base::connect_infill` once on the combined set. The blocker was NOT connect_infill (a both-engine
+  UNIT-CASE replay proved rust's connect byte-exact vs C++); it was the RAW-LINE input — rust's
+  rotate-then-offset put endpoints off the shared `polygons_outer` so the connect couldn't snap them. Fix =
+  copy-rotate the offset base (FillRectilinear.cpp:501) + faithful `make_fill_lines` + `align_to_grid`.
+  RESULT: **sparse +55→−12.48** (519.2/531.6, 78% closed); **TOTAL +67→−0.09 (3858.88 / native 3858.97 =
+  0.99998×)**; time 44m22s→43m53s. Blast radius PERFECTLY contained — ISI/bridge/top/bottom/gap/walls all
+  BYTE-UNCHANGED (single-direction rectilinear path untouched). Build green. The biggest single converging
+  fix of the run; the connect_infill stub is retired for grid. REMAINING (all per-feature, aggregate is
+  done): the **ISI −30 / floating +31.5 split** (near-cancel material; classification/attribution — rust
+  narrow-floats regions native keeps internal-solid; entangled w/ the gated fragmentation work), and small
+  bridge +3 / top +2 / gap +1. The remaining path to BYTE-identical is structural (seam/toolpath ordering,
+  G2/G3, coordinate byte-exactness), not material.
 - **R75 — infill raster `overlap=0` LANDED (faithful, biggest single material move yet).** rust passed a
   spurious `overlap = spacing*0.15` into the raster offset (layer.rs) over-extending EVERY infill line; C++
   `Fill::overlap=0` for the main filler (FillBase.hpp:183, Fill.cpp:995/1007 — `infill_overlap` flows only
