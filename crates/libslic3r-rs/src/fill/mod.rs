@@ -404,6 +404,18 @@ impl Ord for SurfaceFillParams {
             };
         }
 
+        // Fill.cpp:84-86 — sort FIRST by DECREASING bridge_angle, so bridges are
+        // processed with priority when trimming one layer's fills by another in the
+        // group_fills post-loop diff (Fill.cpp:368 "Bridges are processed first").
+        // C++: if (this->bridge_angle > rhs.bridge_angle) return true; (i.e. larger
+        // bridge_angle is "less" → sorts earlier). Mirror with a reversed compare.
+        if self.bridge_angle != rhs.bridge_angle {
+            return rhs
+                .bridge_angle
+                .partial_cmp(&self.bridge_angle)
+                .unwrap_or(Ordering::Equal);
+        }
+
         // Fill.cpp:83-110
         return_compare_non_equal!(extruder);
 
@@ -766,6 +778,38 @@ pub fn group_fills(
                         // TODO: union fill.no_overlap_expolygons with region.fill_no_overlap_expolygons
                     }
                 }
+            }
+        }
+    }
+
+    // Fill.cpp:361-373 — POST-LOOP: for each fill, make a union (safety offset) of
+    // its polygons and subtract the PRECEDING groups' polygons so fills don't
+    // overlap. Bridges are processed first (see SurfaceFillParams::operator<, which
+    // sorts by decreasing bridge_angle — mirrored in our Ord above). Rust previously
+    // skipped this whole block. The union merges near-touching fragments (drops
+    // bridge over-extrusion; sparse is unaffected because the grid emitter already
+    // unions internally) and the diff prevents inter-group double-extrusion.
+    {
+        let mut all_polygons: Vec<Polygon> = Vec::new();
+        let n = surface_fills.len();
+        for i in 0..n {
+            if surface_fills[i].expolygons.is_empty() {
+                continue;
+            }
+            if surface_fills[i].expolygons.len() > 1 || !all_polygons.is_empty() {
+                let polys = crate::geometry::to_polygons(&surface_fills[i].expolygons);
+                surface_fills[i].expolygons = if all_polygons.is_empty() {
+                    crate::clipper_utils::union_safety_offset_ex(&polys)
+                } else {
+                    crate::clipper_utils::diff_ex_polygons_polygons(
+                        &polys,
+                        &all_polygons,
+                        crate::clipper_utils::ApplySafetyOffset::Yes,
+                    )
+                };
+                all_polygons.extend(polys);
+            } else if i != n - 1 {
+                all_polygons.extend(crate::geometry::to_polygons(&surface_fills[i].expolygons));
             }
         }
     }
