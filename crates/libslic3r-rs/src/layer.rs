@@ -2013,7 +2013,7 @@ impl Layer {
             // `scale_(this->overlap - (0.5 - 0.45)*spacing)` with overlap==0
             // (FillRectilinear.cpp:2847). region_config.infill_overlap flows only
             // into `no_extrusion_overlap` (Fill.cpp:713), NOT this geometric offset.
-            let infill_overlap = if std::env::var("OVERLAP0").is_ok() { 0.0 } else { surface_fill.params.spacing * 0.15 };
+            let infill_overlap = 0.0; // C++ Fill::overlap=0 for the main filler (FillBase.hpp:183, Fill.cpp:995/1007); infill_overlap flows only into no_extrusion_overlap (Fill.cpp:713), NOT this raster offset. rust's prior spacing*0.15 over-extended every infill line.
             let infill_config = InfillConfig {
                 pattern: fill_pattern,
                 line_spacing: surface_fill.params.spacing,
@@ -2434,7 +2434,7 @@ impl Layer {
             // Mirror make_fills' dont_connect derivation
             // (anchor_length_max < 0.05 disables connection; FillBase.hpp).
             let dont_connect = surface_fill.params.anchor_length_max < 0.05;
-            let infill_overlap = if std::env::var("OVERLAP0").is_ok() { 0.0 } else { surface_fill.params.spacing * 0.15 };
+            let infill_overlap = 0.0; // C++ Fill::overlap=0 for the main filler (FillBase.hpp:183, Fill.cpp:995/1007); infill_overlap flows only into no_extrusion_overlap (Fill.cpp:713), NOT this raster offset. rust's prior spacing*0.15 over-extended every infill line.
             let infill_config = InfillConfig {
                 pattern: fill_pattern,
                 line_spacing: surface_fill.params.spacing,
