@@ -23,7 +23,17 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 73 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 74 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+
+- **R74 — group_fills post-loop + Ord fix LANDED (faithful, −6.87 material, no regression).** Ported the
+  missing C++ Fill.cpp:361-373 post-loop (`union_safety_offset_ex` + `diff_ex` vs accumulated groups) + fixed
+  a real `SurfaceFillParams::Ord` defect (rust omitted C++'s first sort key — decreasing bridge_angle,
+  "bridges first"). Effect: the union merges near-touching **bridge** fragments → bridge +16.82→**+10.07**;
+  total 3973.85→**3967.08**. DECISIVE NEGATIVE: union is **MOOT for sparse** (599.85 unchanged) — the grid
+  emitter already unions internally, so **sparse +68 is NOT a group_fills problem**; it's in the grid
+  emitter's line generation on the already-unioned area. Walls/gap/top/bottom/ISI/floating all unchanged.
+  NEXT material targets (now precisely localized to the EMITTERS): **sparse +68** = grid emitter line-gen
+  (spacing/boundary/connect on the unioned area); **ISI −23 / floating +32** = concentric/floating emitters.
 
 - **Material: per-feature is the metric, NOT the aggregate.** Three big subsystem fixes landed (R65 slicer +
   R67/R68 Arachne + R69 floating). Current rust 3973.85 / native 3858.97 (aggregate +115, time 45m0s vs 43m).
