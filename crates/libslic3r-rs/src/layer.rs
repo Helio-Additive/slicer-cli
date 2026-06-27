@@ -2066,7 +2066,25 @@ impl Layer {
                 // Save contour for connect_infill boundary before expoly may be moved
                 let boundary_contour = expoly.contour.clone();
 
+                // Faithful FillGrid = combined raw multilines (make_fill_lines,
+                // both sweeps over the shared offset base) + a single anchor-aware
+                // connect_infill (fill_base, FillBase.cpp:1501) — C++
+                // fill_surface_by_multilines. Only the GRID 2-direction path uses
+                // this; single-direction rectilinear keeps fill_surface_by_lines.
+                let emitter_pair_grid = is_grid;
+                let mut pair_boundary: Vec<crate::geometry::Polygon> = Vec::new();
+
                 let generated = match fill_pattern {
+                    _ if emitter_pair_grid => {
+                        let (raw, boundary) =
+                            crate::fill::fill_rectilinear::generate_grid_raw_lines(
+                                &expoly,
+                                &infill_config,
+                                self.id as usize,
+                            );
+                        pair_boundary = boundary;
+                        raw.into_iter().map(InfillPath::Line).collect()
+                    }
                     InfillPattern::Rectilinear | InfillPattern::Grid => generate_fill_rectilinear(
                         &[expoly],
                         &infill_config,
@@ -2178,7 +2196,28 @@ impl Layer {
                     fill_pattern,
                     InfillPattern::Monotonic | InfillPattern::MonotonicLine
                 );
-                if infill_config.connect_infill && !is_monotonic {
+                if emitter_pair_grid {
+                    // Faithful FillBase::connect_infill (FillBase.cpp:1501-1733):
+                    // anchor-aware BoundaryInfillGraph + take_limited, run ONCE on
+                    // the combined raw multilines, against polygons_outer (proven
+                    // byte-exact vs C++ in the connect-replay unit case).
+                    let mut fp = crate::fill::FillParams::new();
+                    fp.density = density;
+                    fp.anchor_length = surface_fill.params.anchor_length as f64;
+                    fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
+                    fp.dont_sort = false;
+                    let bbox = crate::geometry::BoundingBox::from_points(&boundary_contour.points);
+                    let mut connected = Vec::new();
+                    crate::fill::fill_base::connect_infill_polygons(
+                        polylines,
+                        &pair_boundary,
+                        &bbox,
+                        &mut connected,
+                        infill_config.line_spacing,
+                        &fp,
+                    );
+                    polylines = connected;
+                } else if infill_config.connect_infill && !is_monotonic {
                     let boundary = vec![boundary_contour.clone()];
                     let fill_params = crate::fill::FillParams::new();
                     let mut connected = Vec::new();

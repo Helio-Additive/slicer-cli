@@ -572,6 +572,35 @@ impl ExPolygonWithOffset {
         Self::new(expolygon, angle, aoffset1, 0)
     }
 
+    /// Faithful C++ copy-rotate ctor `ExPolygonWithOffset(base, -angle)`
+    /// (FillRectilinear.cpp:501): take an ALREADY-OFFSET base's outer polygons and
+    /// just ROTATE them by `angle` — no re-offset. This keeps the offset geometry
+    /// identical to the unrotated base (so make_fill_lines endpoints land exactly
+    /// on base.polygons_outer, which the connect graph snaps against). Outer-only.
+    pub fn from_base_outer_rotated(base_outer: &[Polygon], angle: f64) -> Self {
+        let mut polygons_outer: Vec<Polygon> = base_outer.to_vec();
+        if angle.abs() > 1e-10 {
+            for p in &mut polygons_outer {
+                p.rotate(angle);
+            }
+        }
+        let n_contours_outer = polygons_outer.len();
+        let mut polygons_ccw = Vec::with_capacity(n_contours_outer);
+        for p in &mut polygons_outer {
+            crate::multi_point::remove_duplicate_points(p.points_mut());
+            polygons_ccw.push(p.is_counter_clockwise());
+        }
+        Self {
+            polygons_src: ExPolygon::default(),
+            polygons_outer,
+            polygons_inner: Vec::new(),
+            n_contours_outer,
+            n_contours_inner: 0,
+            n_contours: n_contours_outer,
+            polygons_ccw,
+        }
+    }
+
     pub fn is_contour_outer(&self, idx: usize) -> bool {
         idx < self.n_contours_outer
     }
@@ -2263,6 +2292,122 @@ pub fn generate_fill_rectilinear(
     }
 
     paths
+}
+
+/// Faithful FillGrid raster for the emitter-pair path: emit BOTH sweep
+/// directions' RAW vertical-line segments (C++ `make_fill_lines`,
+/// FillRectilinear.cpp:2993-3030) into one set + return the shared offset
+/// boundary (polygons_outer of the unrotated base). The caller runs the single
+/// faithful `connect_infill` on the combined set — matching C++
+/// `fill_surface_by_multilines`. Returns (raw_lines, connect_boundary).
+pub fn generate_grid_raw_lines(
+    expoly: &ExPolygon,
+    config: &InfillConfig,
+    layer_index: usize,
+) -> (Vec<Polyline>, Vec<Polygon>) {
+    // FillBase.hpp:207 — _layer_angle alternates 0 / 90° on odd/even layers.
+    let layer_angle = if layer_index & 1 == 1 {
+        std::f64::consts::FRAC_PI_2
+    } else {
+        0.0
+    };
+    let angle_rad = config.angle.to_radians() + layer_angle;
+    let pass_density = config.density / 2.0; // density /= sweep_count(2)
+    let spacing = config.extrusion_width;
+    // C++ poly_with_offset_base = ExPolygonWithOffset(expoly, 0, scale_(overlap -
+    // 0.5*spacing)) — a SINGLE offset arg; aoffset2 DEFAULTS to 0, so NO inner
+    // contour is built and the slice yields only OUTER_LOW/OUTER_HIGH pairs (the
+    // strict pairing make_fill_lines relies on). Passing a negative aoffset2 (as
+    // fill_surface_by_lines does) would add INNER intersections that break it.
+    let base_offset = scale(config.overlap - 0.5 * spacing);
+    let line_spacing = (spacing * crate::SCALING_FACTOR / pass_density) as Coord;
+
+    // Build the offset base ONCE at angle 0 (C++ poly_with_offset_base), then for
+    // each sweep ROTATE that base (copy-rotate ctor) and slice. The raw line
+    // endpoints then lie EXACTLY on base.polygons_outer after rotate-back, so the
+    // single connect_infill can snap+chain them (proven byte-exact vs C++).
+    let base = ExPolygonWithOffset::new(expoly, 0.0, base_offset, 0);
+    let mut out: Vec<Polyline> = Vec::new();
+    for a in [angle_rad, angle_rad + std::f64::consts::FRAC_PI_2] {
+        let pwo = ExPolygonWithOffset::from_base_outer_rotated(&base.polygons_outer, -a);
+        if pwo.n_contours_outer == 0 {
+            continue;
+        }
+        make_fill_lines_raw(&pwo, a, line_spacing, &mut out);
+    }
+    (out, base.polygons_outer)
+}
+
+/// Faithful port of C++ `make_fill_lines` (FillRectilinear.cpp:2993-3030): emit
+/// raw vertical-line OUTER_LOW→OUTER_HIGH segments rotated back by `angle`. No
+/// graph connect — the caller runs the single faithful connect_infill.
+fn make_fill_lines_raw(
+    pwo: &ExPolygonWithOffset,
+    angle: f64,
+    line_spacing: Coord,
+    out: &mut Vec<Polyline>,
+) {
+    if line_spacing <= 0 {
+        return;
+    }
+    // bbox of the OFFSET geometry (this pwo is built from rotated outer polys, so
+    // polygons_src is empty — use the outer contours' extents like C++ which
+    // bbox's poly_with_offset's contours).
+    if pwo.polygons_outer.is_empty() {
+        return;
+    }
+    let mut bbox = crate::geometry::BoundingBox::default();
+    for poly in &pwo.polygons_outer {
+        for p in poly.points() {
+            bbox.merge_point(*p);
+        }
+    }
+    if bbox.max.x <= bbox.min.x {
+        return;
+    }
+    // C++ make_fill_lines (FillRectilinear.cpp:3001-3003): align the bbox min to the
+    // grid relative to the infill reference point so the pattern is consistent
+    // across layers. refpt = origin rotated into the vline frame; pattern_shift=0
+    // here, so align bbox.min.x down to the nearest line_spacing multiple of refpt.x.
+    // refpt = origin (rotate_vector.second ≈ origin), base.x = 0; align_to_grid_base
+    // = base + align_to_grid(coord - base, spacing) = align_to_grid(bbox.min.x).
+    let aligned_min_x = crate::geometry::align_to_grid(bbox.min.x, line_spacing);
+    let min_x = aligned_min_x.min(bbox.min.x);
+    let n_vlines = ((bbox.max.x - min_x + line_spacing - 1) / line_spacing).max(0) as usize;
+    if n_vlines == 0 {
+        return;
+    }
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+    let segs = slice_region_by_vertical_lines(pwo, n_vlines, min_x, line_spacing);
+    for vline in &segs {
+        let mut i = 0;
+        while i + 1 < vline.intersections.len() {
+            if vline.intersections[i].itype != SegmentIntersectionType::OuterLow {
+                i += 1;
+                continue;
+            }
+            if vline.intersections[i + 1].itype == SegmentIntersectionType::OuterHigh {
+                let p1 = rotate_back(vline.pos, vline.intersections[i].pos(), cos_a, sin_a);
+                let p2 = rotate_back(vline.pos, vline.intersections[i + 1].pos(), cos_a, sin_a);
+                out.push(Polyline::from_points(vec![p1, p2]));
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+#[inline]
+fn rotate_back(x: Coord, y: Coord, cos_a: f64, sin_a: f64) -> Point {
+    // C++ Point::rotated(cos, sin) = (x*cos - y*sin, x*sin + y*cos).
+    let xf = x as f64;
+    let yf = y as f64;
+    Point::new(
+        (xf * cos_a - yf * sin_a).round() as Coord,
+        (xf * sin_a + yf * cos_a).round() as Coord,
+    )
 }
 
 // ===========================================================================
