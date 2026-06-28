@@ -593,68 +593,20 @@ impl Print {
                     .get(ltp.object_idx)
                     .map(|p| exporter::SeamContextGuard::install(p, ltp.layer_idx));
 
-                // ISLAND_ORDER: faithful C++ GCode::process_layer island grouping
-                // (GCode.cpp:4340-4392) — assign each region's perimeter/infill EEC
-                // to the island (lslice) whose contour contains its first point
-                // (bbox-area-sorted test order), then emit PER-ISLAND
-                // perimeters→infill. Replaces the flat per-region loop below.
-                if std::env::var("ISLAND_ORDER").is_ok() {
-                    emit_layer_by_island(
-                        ltp.layer,
-                        &mut writer,
-                        &object.config,
-                        is_first_layer,
-                        is_infill_first,
-                        skip_infill,
-                        skip_inner_walls,
-                    );
-                } else {
-                for region in ltp.layer.regions() {
-                    if is_infill_first && !is_first_layer {
-                        if !skip_infill {
-                            exporter::extrude_infill(
-                                region,
-                                &mut writer,
-                                &object.config,
-                                is_first_layer,
-                            );
-                        }
-                        exporter::extrude_perimeters(
-                            region,
-                            &mut writer,
-                            &object.config,
-                            is_first_layer,
-                            skip_inner_walls,
-                        );
-                    } else {
-                        exporter::extrude_perimeters(
-                            region,
-                            &mut writer,
-                            &object.config,
-                            is_first_layer,
-                            skip_inner_walls,
-                        );
-                        if !skip_infill {
-                            exporter::extrude_infill(
-                                region,
-                                &mut writer,
-                                &object.config,
-                                is_first_layer,
-                            );
-                        }
-                    }
-
-                    // Thin fills
-                    if !skip_infill && !region.thin_fills.entities.is_empty() {
-                        let _ = exporter::extrude_collection(
-                            &region.thin_fills,
-                            &mut writer,
-                            &object.config,
-                            is_first_layer,
-                        );
-                    }
-                }
-                }
+                // Faithful C++ GCode::process_layer island grouping
+                // (GCode.cpp:4340-4392): assign each region's perimeter/infill/thin
+                // EEC to the island (lslice) whose contour contains its first point
+                // (bbox-area-sorted test order, catch-all fallback), then emit
+                // PER-ISLAND perimeters→infill. Material-neutral re-ordering.
+                emit_layer_by_island(
+                    ltp.layer,
+                    &mut writer,
+                    &object.config,
+                    is_first_layer,
+                    is_infill_first,
+                    skip_infill,
+                    skip_inner_walls,
+                );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
                 if self.objects.len() > 1 {
