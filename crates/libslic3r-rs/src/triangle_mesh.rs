@@ -2523,6 +2523,27 @@ impl TriangleMesh {
         self.bounding_box = None;
     }
 
+    /// Faithful slice-time XY centering (FRAME_PAIR): C++ slices the mesh through
+    /// `trafo_centered()` = `v - center_offset` in XY (Print.hpp:376), where
+    /// center_offset = the raw bbox XY center (PrintObject.cpp:88). This SHIFTS the
+    /// slice frame to C++'s (it does NOT re-add the XY center — that's what
+    /// `quantize_f32_center_roundtrip` does for the net-identity Z floor fix).
+    /// Z is left EXACTLY as the Z round-trip leaves it (R65 floor preserved).
+    /// Returns the applied center (so the exporter can subtract the matching origin).
+    /// Apply AFTER `quantize_f32_center_roundtrip` so the Z behavior is unchanged.
+    pub fn slice_center_xy(&mut self) -> (f64, f64) {
+        let c = self.center();
+        let (cx, cy) = (c.x as f32, c.y as f32);
+        for v in &mut self.vertices {
+            // f32-quantized subtract (matching C++ trafo_centered applied per-vertex
+            // in the slicer's f32 path), Z untouched.
+            v.x = (v.x as f32 - cx) as f64;
+            v.y = (v.y as f32 - cy) as f64;
+        }
+        self.bounding_box = None;
+        (cx as f64, cy as f64)
+    }
+
     /// Scale the mesh uniformly about the origin.
     pub fn scale(&mut self, factor: CoordF) {
         for vertex in &mut self.vertices {

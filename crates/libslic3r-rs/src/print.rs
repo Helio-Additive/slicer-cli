@@ -164,6 +164,12 @@ pub struct Print {
     /// Raw BambuStudio settings for CONFIG_BLOCK generation.
     /// Stored as sorted key-value pairs from project_settings.config.
     pub raw_settings: Option<serde_json::Value>,
+
+    /// G-code export origin (mm), subtracted from absolute XY at export
+    /// (C++ GCode::m_origin). FRAME_PAIR: = the slice center_offset applied by
+    /// `TriangleMesh::slice_center_xy`, so the centered-slice frame is re-placed
+    /// to C++'s gcode frame. Default (0,0) = no shift.
+    pub gcode_origin: (f64, f64),
 }
 
 impl Print {
@@ -182,6 +188,7 @@ impl Print {
             brim: ExtrusionEntityCollection::new(),
             min_skirt_length: 0.0,
             raw_settings: None,
+            gcode_origin: (0.0, 0.0),
         }
     }
 
@@ -311,6 +318,10 @@ impl Print {
 
         // Create G-code writer with config
         let mut writer = GCodeWriter::with_config(self.config.clone());
+        // FRAME_PAIR: re-place the centered-slice frame to C++'s gcode frame by
+        // subtracting the export origin (= slice center_offset) from absolute XY
+        // (C++ GCode::m_origin / point_to_gcode). (0,0) default = no shift.
+        writer.set_gcode_origin(self.gcode_origin.0, self.gcode_origin.1);
 
         // GCode.cpp member state
         let mut last_layer_z: f64 = 0.0;

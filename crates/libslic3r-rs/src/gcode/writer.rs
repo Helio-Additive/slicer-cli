@@ -302,6 +302,13 @@ pub struct GCodeWriter {
     /// 0 means "not set yet" — always emit on first call.
     last_travel_accel: f64,
 
+    /// G-code export origin (mm), subtracted from ABSOLUTE XY in write_command
+    /// (C++ GCode::m_origin / point_to_gcode). FRAME_PAIR sets this to the slice
+    /// center_offset so the centered-slice frame is re-placed to C++'s gcode frame.
+    /// Relative I/J are NOT offset by this.
+    gcode_origin_x: f64,
+    gcode_origin_y: f64,
+
     /// Last emitted extrusion role, for `; FEATURE:` comment deduplication.
     /// C++ `GCode::m_last_extrusion_role` (GCode.hpp:538) — a PERSISTENT member
     /// so consecutive same-role entities across separate extrude calls do not
@@ -354,9 +361,18 @@ impl GCodeWriter {
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
+            gcode_origin_x: 0.0,
+            gcode_origin_y: 0.0,
             last_extrusion_role: None,
             config,
         }
+    }
+
+    /// Set the G-code export origin (mm) subtracted from absolute XY emits
+    /// (C++ GCode::set_origin / m_origin). FRAME_PAIR: = slice center_offset.
+    pub fn set_gcode_origin(&mut self, x: f64, y: f64) {
+        self.gcode_origin_x = x;
+        self.gcode_origin_y = y;
     }
 
     /// Persistent last extrusion role for `; FEATURE:` dedup (C++
@@ -584,10 +600,13 @@ impl GCodeWriter {
 
     /// Write a G-code command.
     pub fn write_command(&mut self, cmd: &GCodeCommand) {
-        // C++ reference: GCode.cpp:7089 point_to_gcode() subtracts extruder_offset from XY.
-        // Apply extruder offset to all XY moves when non-zero.
-        let ox = self.config.extruder_offset_x;
-        let oy = self.config.extruder_offset_y;
+        // C++ reference: GCode.cpp:7089 point_to_gcode() subtracts (m_origin +
+        // extruder_offset) from ABSOLUTE XY. m_origin = the gcode-export origin
+        // (FRAME_PAIR: = center_offset, the second half of the centered-slice +
+        // export-origin pair). Relative I/J are translation-invariant and are NOT
+        // offset (handled below — i/j passed through unchanged).
+        let ox = self.config.extruder_offset_x + self.gcode_origin_x;
+        let oy = self.config.extruder_offset_y + self.gcode_origin_y;
         if (ox != 0.0 || oy != 0.0)
             && matches!(
                 cmd,
