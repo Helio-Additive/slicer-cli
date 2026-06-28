@@ -301,6 +301,12 @@ pub struct GCodeWriter {
     /// Last emitted travel acceleration (M204 S value), for deduplication.
     /// 0 means "not set yet" — always emit on first call.
     last_travel_accel: f64,
+
+    /// Last emitted extrusion role, for `; FEATURE:` comment deduplication.
+    /// C++ `GCode::m_last_extrusion_role` (GCode.hpp:538) — a PERSISTENT member
+    /// so consecutive same-role entities across separate extrude calls do not
+    /// re-emit the FEATURE marker. None == erNone (always emit on first).
+    last_extrusion_role: Option<crate::extrusion_entity::ExtrusionRole>,
 }
 
 impl GCodeWriter {
@@ -348,8 +354,24 @@ impl GCodeWriter {
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
+            last_extrusion_role: None,
             config,
         }
+    }
+
+    /// Persistent last extrusion role for `; FEATURE:` dedup (C++
+    /// `m_last_extrusion_role`). Returns the role last emitted in a FEATURE
+    /// comment, or None (erNone) if none yet.
+    pub fn last_extrusion_role(&self) -> Option<crate::extrusion_entity::ExtrusionRole> {
+        self.last_extrusion_role
+    }
+
+    /// Update the persistent last extrusion role.
+    pub fn set_last_extrusion_role(
+        &mut self,
+        role: Option<crate::extrusion_entity::ExtrusionRole>,
+    ) {
+        self.last_extrusion_role = role;
     }
 
     /// Get the built G-code.

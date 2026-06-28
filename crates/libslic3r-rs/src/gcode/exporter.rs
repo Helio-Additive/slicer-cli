@@ -513,10 +513,11 @@ pub fn extrude_collection(
         return Ok(());
     }
 
-    /// Track current role for feature comments
-    /// GCode.cpp:2850-2855
-    /// C++: ExtrusionRole current_role = erNone;
-    let mut current_role: Option<ExtrusionRole> = None;
+    /// Track current role for feature comments. C++ `m_last_extrusion_role` is a
+    /// PERSISTENT GCode member (GCode.hpp:538), so consecutive same-role entities
+    /// across separate extrude_collection calls do NOT re-emit the FEATURE marker.
+    /// Seed from / persist back to the writer's last role to match that.
+    let mut current_role: Option<ExtrusionRole> = writer.last_extrusion_role();
 
     /// Iterate through entities in collection
     /// GCode.cpp:2860-2900
@@ -638,6 +639,10 @@ pub fn extrude_collection(
                 writer.write_raw(&format!("M204 S{}", acc));
             }
             current_role = Some(entity_role);
+            // Persist to the writer so the next extrude_collection call (e.g. the
+            // next island's fills, or the next gap EEC) does not re-emit the same
+            // FEATURE marker — matches C++ persistent m_last_extrusion_role.
+            writer.set_last_extrusion_role(current_role);
         }
 
         // Travel to start of this entity if the nozzle is not already there.
