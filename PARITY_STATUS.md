@@ -23,8 +23,24 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 77 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 78 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **★ R78 — ISLAND-GROUPED LAYER EMISSION LANDED (byte-parity phase opens; material byte-unchanged).**
+  Material is at native (R77); the remaining gap to byte-identical is STRUCTURAL (entity emission order →
+  seam → arcs → coordinates). First divergence localized = entity emission ORDER. Ported C++
+  `GCode::process_layer` island grouping (GCode.cpp:4340-4392): layer extrusions grouped by island
+  (`lslices` by bbox area), per-island perimeters→infill, replacing the flat per-region loop (print.rs).
+  Added `extrude_{perimeters,infill}_entities` (subset emit) in exporter.rs; fixed a latent bug —
+  `layer.lslices_bboxes` was never populated by the rust port (the island grouping was a silent no-op
+  without it). RESULT: order converges at the ISLAND level — **outer-wall blocks 746→770 (native 772,
+  near-exact); gap-fill 279→584 (native 816, ~60%)**; **MATERIAL BYTE-UNCHANGED** (feat_e2 XY-gated: total
+  −0.37, sparse −12.48, ISI −30.50 — stable vs R77; the raw move-set differs ~15% but that's
+  deretraction-prime re-ordering + loop re-seeding from re-chaining the re-grouped entities, NOT material).
+  Time 43m28s, build green. Un-gated → default (landed @2113bbc). RESIDUAL = the INTRA-region per-perimeter
+  gap-fill interleave (native emits gap ~1:1 after each perimeter LOOP, 816≈772; rust still batches gap
+  per-island, 584) — a perimeter-generator/emission ordering inside each island, the NEXT sub-lever toward
+  full order convergence → then SEAM becomes cleanly measurable. Dependency chain: island-order [LANDED] →
+  per-loop gap interleave → seam → arcs (G2/G3) → F1 coordinate byte-exactness.
 - **★ R77 — MATERIAL AGGREGATE AT NATIVE (1.0000×). The emitter-pair landed.** Ported faithful FillGrid
   `fill_surface_by_multilines` (combined two-direction sweep over a SHARED copy-rotated offset base +
   `make_fill_lines_raw` + grid-align) and wired the already-ported (never-called, proven-faithful)
