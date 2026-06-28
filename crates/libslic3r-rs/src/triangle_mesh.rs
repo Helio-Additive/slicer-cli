@@ -2533,15 +2533,20 @@ impl TriangleMesh {
     /// Apply AFTER `quantize_f32_center_roundtrip` so the Z behavior is unchanged.
     pub fn slice_center_xy(&mut self) -> (f64, f64) {
         let c = self.center();
-        let (cx, cy) = (c.x as f32, c.y as f32);
+        // EXACT center_offset = unscale(Point::new_scale(center.xy)) — C++ quantizes
+        // the f64 center to the coord_t grid with TRUNCATION (coord_t(scale_(x)) =
+        // coord_t(x / SCALING_FACTOR), truncates toward zero), then unscales back.
+        // rust's scale() uses round(), so do the truncation explicitly here.
+        let cx = (c.x / crate::libslic3r::SCALING_FACTOR).trunc() * crate::libslic3r::SCALING_FACTOR;
+        let cy = (c.y / crate::libslic3r::SCALING_FACTOR).trunc() * crate::libslic3r::SCALING_FACTOR;
         for v in &mut self.vertices {
-            // f32-quantized subtract (matching C++ trafo_centered applied per-vertex
-            // in the slicer's f32 path), Z untouched.
-            v.x = (v.x as f32 - cx) as f64;
-            v.y = (v.y as f32 - cy) as f64;
+            // its_transform = (t * v.cast<double>()).cast<float>(): subtract in f64,
+            // then a SINGLE cast to f32 (NOT two f32 ops). Z untouched (R65).
+            v.x = (v.x - cx) as f32 as f64;
+            v.y = (v.y - cy) as f32 as f64;
         }
         self.bounding_box = None;
-        (cx as f64, cy as f64)
+        (cx, cy)
     }
 
     /// Scale the mesh uniformly about the origin.
