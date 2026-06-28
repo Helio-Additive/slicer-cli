@@ -2375,37 +2375,20 @@ impl Layer {
         // Add thin fill regions
         // C++: for (LayerRegion *layerm : m_regions)
         //          for (const ExtrusionEntity *thin_fill : layerm->thin_fills.entities)
-        // GAP_INTERLEAVE: faithful Fill.cpp:757-762 — wrap each thin_fill
-        // (gap-fill) in its own EEC and push it into `fills`, so gap-fill flows
-        // through the normal infill island-assignment + chaining + emission path
-        // (interleaved per-island with the other fills), instead of being emitted
-        // as a separate batched thin_fills block. The previous code pushed an
-        // EMPTY collection (the `collection.entities.push_back(thin_fill->clone())`
-        // was missing) — a no-op — so gap stayed batched (584 vs native 816).
-        let gap_interleave = std::env::var("GAP_INTERLEAVE").is_ok();
-        if gap_interleave {
-            for region in &mut self.regions {
-                let thins = std::mem::take(&mut region.thin_fills.entities);
-                for thin_fill in thins {
-                    let mut collection = ExtrusionEntityCollection::new();
-                    collection.entities.push(thin_fill);
-                    region.fills.entities.push(
-                        crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(
-                            collection,
-                        )),
-                    );
-                }
-            }
-        } else {
-            for region in &mut self.regions {
-                for _thin_fill in &region.thin_fills.entities {
-                    let collection = ExtrusionEntityCollection::new();
-                    region.fills.entities.push(
-                        crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(
-                            collection,
-                        )),
-                    );
-                }
+        // Faithful Fill.cpp:757-762 — wrap each thin_fill (gap-fill) in its own
+        // EEC and push it into `fills`, so gap-fill flows through the normal infill
+        // island-assignment + chaining + emission path (interleaved per-island with
+        // the other fills), instead of a separate batched thin_fills block.
+        // (The previous code pushed an EMPTY collection — the thin_fill clone was
+        // missing — a no-op that kept gap batched at 584 vs native 816.)
+        for region in &mut self.regions {
+            let thins = std::mem::take(&mut region.thin_fills.entities);
+            for thin_fill in thins {
+                let mut collection = ExtrusionEntityCollection::new();
+                collection.entities.push(thin_fill);
+                region.fills.entities.push(
+                    crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(collection)),
+                );
             }
         }
 
