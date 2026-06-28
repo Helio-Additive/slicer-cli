@@ -23,8 +23,24 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 78 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **★ R79 — GAP-FILL INTERLEAVE LANDED (order rung 2; material byte-unchanged).** Next divergence after
+  island grouping = gap-fill EMISSION position. Native interleaves gap-fill per-island (C++ Fill.cpp:757-762
+  wraps each thin_fill in its own EEC and PUSHES it into `layerm->fills`); rust's port had the loop but
+  pushed an EMPTY collection — `collection.entities.push(thin_fill)` was MISSING (latent no-op), so gap
+  stayed batched in thin_fills (584 blocks vs native 816). FIX (two faithful parts): (1) actually move each
+  thin_fill into `fills` so gap rides the normal infill island-assignment + chaining + per-island emission;
+  (2) persistent FEATURE-role dedup — the `;FEATURE` marker used a per-CALL local role; C++
+  `m_last_extrusion_role` (GCode.hpp:538) is a PERSISTENT member, so consecutive same-role entities across
+  separate extrude calls don't re-emit the marker — added `GCodeWriter::last_extrusion_role` (always-on,
+  independently material-neutral). RESULT: **gap blocks 584→830** (native 816, ~97%; inner-wall 667 EXACT,
+  outer 770/772); **MATERIAL BYTE-UNCHANGED** (feat_e2 XY-gated: total −0.43, gap +1.28, ISI −30.53,
+  sparse −12.48 — all stable vs R77/R78). Localization verdict: divergence was the GENERATOR entity-tree
+  placement (make_fills), NOT the emission iteration. Un-gated → default, landed parity @15bd4f7, build
+  green. RESIDUAL = the ISI-grouping rung (Internal-solid blocks ~237 vs native 389 under, Floating ~210 vs
+  122 over — the near-cancel ISI/floating split, now an emission/grouping difference distinct from gap).
+  Dependency chain: island-order [R78] → gap-interleave [R79] → ISI-grouping → seam → arcs (G2/G3) → F1.
 - **★ R78 — ISLAND-GROUPED LAYER EMISSION LANDED (byte-parity phase opens; material byte-unchanged).**
   Material is at native (R77); the remaining gap to byte-identical is STRUCTURAL (entity emission order →
   seam → arcs → coordinates). First divergence localized = entity emission ORDER. Ported C++
