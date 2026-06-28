@@ -25,6 +25,24 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **★ R79g — SLICE ARITHMETIC EXONERATED; true root = STL-LOAD MESH (+93 verts), a BOUNDED discrete root
+  (corrects R79f).** Funded the slice-intersection lever — it OVERTURNED R79f's "slice-intersection is the
+  wall". C++ slice_facet interpolation (TriangleMeshSlicer.cpp:261-280): `t=(double(slice_z)−double(b.z))/
+  (double(a.z)−double(b.z))`, `x=coord_t(floor(double(b.x)+(double(a.x)−double(b.x))·t+0.5))`, on-vertex →
+  `a.x` passthrough. rust slice_facet (triangle_mesh_slicer.rs:331-358) is ALREADY BIT-IDENTICAL (same f64
+  t, same floor(+0.5), same passthrough) → **slice-intersection arithmetic is FAITHFUL.** The loop-point
+  bit-check is MOOT because the INPUT mesh differs: a full-mesh FNV bit-hash over ALL transformed verts
+  shows **C++ n=112569 vs rust n=112662 — +93 VERTICES** (FRAME_PAIR-independent — same count with centering
+  off). So rust's STL-load / mesh-repair (vertex merge/dedup tolerance or degenerate-facet/edge collapse)
+  keeps 93 verts C++ merges → different triangulation → all downstream byte-divergence inherits from this.
+  **STRATEGIC: every downstream layer is now EXONERATED** — slice arithmetic, centering/frame (verts that
+  exist bit-match), seam placer, perimeter-gen, entity order, coords-format all proven faithful. The mesh is
+  the SOLE remaining upstream root. So the +93-vert STL-load fix is a BOUNDED discrete lever (NOT the f32
+  rabbit hole) and is potentially the LAST keystone — if the mesh is made identical, byte-parity could
+  cascade out. NEXT LEVER (if byte-parity pursued): scope why rust keeps 93 verts C++ merges — STL-load
+  vertex-merge tolerance / degenerate handling (TriangleMesh repair/its_merge_vertices). Material parity
+  (1.000×) remains the achieved + landed goal. frame-pair @9892a5d banks the faithful f64 centering (gated,
+  NOT merged); default unchanged (−0.44), R65 li=1 loops==1 intact, build green.
 - **★ R79f — FLOOR REFINED (corrects R79e): centering is FAITHFUL (verts bit-match C++); the wall is the
   slice-INTERSECTION f32, one layer deeper (F-class; BAILED CLEAN).** Funded the fused-matmul port — it
   OVERTURNED R79e's "matmul wall" framing. C++ instrumentation (`transform_mesh_vertices_for_slicing`,
