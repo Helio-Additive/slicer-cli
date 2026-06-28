@@ -25,6 +25,21 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **★ R79d — ROOT PINNED: constant ~0.8245mm X PLACEMENT offset (R65-XY family, BOUNDED; diagnosis-only).**
+  Scoped the perimeter-geometry rung — 3 probes. DECISIVE bisect: the RAW SLICES fed into PerimeterGenerator
+  ALREADY differ — at L100 every input-slice bbox is X-shifted by a dead-constant +0.8235..0.8254mm (both
+  min AND max corners), dy ±0.0009 ≈ 0; n_slices match (5=5). A pure RIGID X TRANSLATION → NOT F1 geo-clipper
+  (which would give variable per-loop deltas + Y noise), NOT a PerimeterGenerator bug. ROOT = `app_slice.rs`
+  mesh placement: it does `mesh.translate(0,0,dz)` with the comment *"no XY centering, matching C++
+  slicer_cli"* — but C++ slices land ~0.8245mm offset in X that rust never applies. This is the **R65
+  family**: R65's `quantize_f32_center_roundtrip` handles only center-**Z** (Benchy center_z=24); the C++
+  X/Y placement/centering round-trip (volume mesh stored bbox-centered + instance trafo re-place, in X+Y) is
+  NOT replicated. Same shape as the gap-interleave empty-collection bug: a comment-asserted no-op that isn't
+  faithful. (Probe-3 note: rust raw slice CONTOURS carry ~4× points [C++ 96 / rust 389] — a separate
+  densification; but matched output perimeter loops are 32=32 pts, so perimeter-gen normalizes it — the
+  densification is a candidate FOLLOW-ON if arcs don't converge after the placement fix.) VERDICT: BOUNDED —
+  fund a faithful XY placement fix in app_slice.rs (match C++'s 0.8245mm). Expected cascade: slices →
+  perimeters → seam (proven faithful) → likely shrinks the arc gap. NOT the F1 rabbit hole.
 - **R79c — SEAM EXONERATED; root descends to PERIMETER GEOMETRY (diagnosis-only).** Scoped + debugged the
   seam rung: it is NOT a missing subsystem — `gcode/seam_placer.rs` is a full 3165-line SeamPlacer (aligned
   mode, wired, running). Both-engine unit-case on one matched 32-pt external loop at L100 (both finalized):
