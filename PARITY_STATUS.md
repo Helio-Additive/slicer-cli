@@ -25,6 +25,18 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **R79b — STRUCTURAL MAP (diagnosis-only; SEAM is the gating rung, coords already exact).** With order
+  converged (R78/R79), mapped the remaining structural divergences. **FIRST body divergence = move 13**, the
+  first perimeter loop's START point (native `G1 X.936 Y2.228` vs rust `G1 X3.146 Y.502`) — a SEAM
+  divergence; prelude (first 12 moves) is byte-identical. **COORDINATE FORMAT IS ALREADY BYTE-EXACT** where
+  geometry aligns (same decimals/precision; 11964 moves exact-match any-order) → **no F1 coordinate rung
+  needed.** SEAM: loop counts match (outer 770/772, inner 667 EXACT) but only **9.2%** of native outer
+  seams have a rust loop starting within 50µm (6.6% within 0.6mm) — ~84% start at a different seam point,
+  median delta ~12-14mm → a real Seam.cpp PLACEMENT-algorithm divergence (nearest/aligned/rear), gating
+  because it cascades into loop direction + arc segmentation. ARCS: both engines arc-fit
+  (enable_arc_fitting=1); native 11906 G2/G3 / rust 14960 (+25.7%, ~3000 extra) — an arc-fit FIDELITY
+  divergence (rust over-segments), SECOND to seam (partly follows from seam's loop start/direction). Body
+  lines native 139498 / rust 148631 (+6.5%). **Recommended rung order: SEAM → ARCS → (coords done).**
 - **★ R79 — GAP-FILL INTERLEAVE LANDED (order rung 2; material byte-unchanged).** Next divergence after
   island grouping = gap-fill EMISSION position. Native interleaves gap-fill per-island (C++ Fill.cpp:757-762
   wraps each thin_fill in its own EEC and PUSHES it into `layerm->fills`); rust's port had the loop but
