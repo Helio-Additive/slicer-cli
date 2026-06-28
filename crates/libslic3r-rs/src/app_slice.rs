@@ -87,19 +87,14 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     // slices it. Must be done in f32 (our mesh is f64; an f64 round trip is a no-op).
     mesh.quantize_f32_center_roundtrip();
 
-    // FRAME_PAIR: faithful C++ coordinate frame. C++ slices through
-    // trafo_centered() (mesh − center_offset.xy, Print.hpp:376) and at export
-    // subtracts m_origin = center_offset (PrintObject.cpp:108 / point_to_gcode),
-    // netting gcode = raw − 2·center_offset for slicer_cli single-instance. rust
-    // sliced+exported in the raw frame. Apply the slice-time XY center here (AFTER
-    // the Z round-trip, so R65's floor is untouched) and stash the center as the
-    // export origin. Gated until verified.
-    let mut frame_origin = (0.0, 0.0);
+    // FRAME_PAIR: subtract the slice center_offset from the mesh so verts bit-match
+    // C++'s centered slice frame (verified exact in f32). The centered slice frame
+    // IS C++'s gcode frame (slicer_cli single-instance) — export origin stays 0.
     if std::env::var("FRAME_PAIR").is_ok() {
-        frame_origin = mesh.slice_center_xy();
-        info!("FRAME_PAIR slice-centered by ({:.4},{:.4}); export origin = same",
-            frame_origin.0, frame_origin.1);
+        let co = mesh.slice_center_xy();
+        info!("FRAME_PAIR slice-centered by ({:.4},{:.4})", co.0, co.1);
     }
+    let frame_origin = (0.0, 0.0);
 
     // Create PrintObject — slicing happens internally during Print::process().
     info!("Creating PrintObject...");

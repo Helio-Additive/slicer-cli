@@ -2540,10 +2540,11 @@ impl TriangleMesh {
         let cx = (c.x / crate::libslic3r::SCALING_FACTOR).trunc() * crate::libslic3r::SCALING_FACTOR;
         let cy = (c.y / crate::libslic3r::SCALING_FACTOR).trunc() * crate::libslic3r::SCALING_FACTOR;
         for v in &mut self.vertices {
-            // its_transform = (t * v.cast<double>()).cast<float>(): subtract in f64,
-            // then a SINGLE cast to f32 (NOT two f32 ops). Z untouched (R65).
-            v.x = (v.x - cx) as f32 as f64;
-            v.y = (v.y - cy) as f32 as f64;
+            // Clean f64 subtract: verts are exact f32 values, center_offset is a
+            // coord-grid multiple → the result stays exact f32 (bit-checked:
+            // rust_vert − center == C++ slice vert exactly). Z untouched (R65).
+            v.x -= cx;
+            v.y -= cy;
         }
         self.bounding_box = None;
         (cx, cy)
