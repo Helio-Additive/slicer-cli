@@ -1306,6 +1306,86 @@ pub fn extrude_infill(
     }
 }
 
+/// Island-subset perimeter emission (GCode::extrude_perimeters on one island's
+/// by_region perimeters). Same retract/travel/extrude as `extrude_perimeters`
+/// but over a given entity subset (this island+region's perimeter EECs).
+pub fn extrude_perimeters_entities(
+    entities: &[ExtrusionEntityType],
+    writer: &mut GCodeWriter,
+    config: &crate::print_config::PrintObjectConfig,
+    is_first_layer: bool,
+    skip_inner_walls: bool,
+) {
+    if entities.is_empty() {
+        return;
+    }
+    writer.retract();
+    writer.set_travel_acceleration(6000.0);
+    if let Some(first_pt) = get_entity_first_point(&entities[0]) {
+        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+    }
+    writer.unretract();
+    if skip_inner_walls {
+        use crate::extrusion_entity::ExtrusionRole;
+        for entity in entities {
+            if get_entity_role(entity) == ExtrusionRole::ExternalPerimeter {
+                let _ = extrude_entity(entity, writer, config, is_first_layer);
+            }
+        }
+    } else {
+        let coll = crate::extrusion_entity::ExtrusionEntityCollection {
+            entities: entities.to_vec(),
+            no_sort: true,
+            ..Default::default()
+        };
+        let _ = extrude_collection(&coll, writer, config, is_first_layer);
+    }
+}
+
+/// Island-subset infill emission (GCode::extrude_infill on one island's by_region
+/// fills). Same ironing-split / chain / extrude as `extrude_infill` over a subset.
+pub fn extrude_infill_entities(
+    entities: &[ExtrusionEntityType],
+    writer: &mut GCodeWriter,
+    config: &crate::print_config::PrintObjectConfig,
+    is_first_layer: bool,
+) {
+    use crate::extrusion_entity::ExtrusionRole;
+    if entities.is_empty() {
+        return;
+    }
+    for ironing_pass in [false, true] {
+        let mut extrusions: Vec<ExtrusionEntityType> = entities
+            .iter()
+            .filter(|ee| (get_entity_role(ee) == ExtrusionRole::Ironing) == ironing_pass)
+            .cloned()
+            .collect();
+        if extrusions.is_empty() {
+            continue;
+        }
+        let m_last_pos = writer_last_pos(writer);
+        crate::shortest_path::chain_and_reorder_extrusion_entities(&mut extrusions, Some(&m_last_pos));
+        let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) else {
+            continue;
+        };
+        writer.retract();
+        writer.set_travel_acceleration(6000.0);
+        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+        writer.unretract();
+        for fill in &extrusions {
+            match fill {
+                ExtrusionEntityType::Collection(eec) => {
+                    let chained = chained_path_from(eec, writer);
+                    let _ = extrude_collection(&chained, writer, config, is_first_layer);
+                }
+                _ => {
+                    let _ = extrude_entity(fill, writer, config, is_first_layer);
+                }
+            }
+        }
+    }
+}
+
 /// Extrude support material fills.
 ///
 /// C++ reference: GCode::extrude_support()

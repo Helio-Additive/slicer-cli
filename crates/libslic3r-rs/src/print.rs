@@ -593,6 +593,22 @@ impl Print {
                     .get(ltp.object_idx)
                     .map(|p| exporter::SeamContextGuard::install(p, ltp.layer_idx));
 
+                // ISLAND_ORDER: faithful C++ GCode::process_layer island grouping
+                // (GCode.cpp:4340-4392) — assign each region's perimeter/infill EEC
+                // to the island (lslice) whose contour contains its first point
+                // (bbox-area-sorted test order), then emit PER-ISLAND
+                // perimeters→infill. Replaces the flat per-region loop below.
+                if std::env::var("ISLAND_ORDER").is_ok() {
+                    emit_layer_by_island(
+                        ltp.layer,
+                        &mut writer,
+                        &object.config,
+                        is_first_layer,
+                        is_infill_first,
+                        skip_infill,
+                        skip_inner_walls,
+                    );
+                } else {
                 for region in ltp.layer.regions() {
                     if is_infill_first && !is_first_layer {
                         if !skip_infill {
@@ -637,6 +653,7 @@ impl Print {
                             is_first_layer,
                         );
                     }
+                }
                 }
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -1900,6 +1917,140 @@ impl Print {
             FilamentTempType::LowTemp as i32
         } else {
             FilamentTempType::HighLowCompatible as i32
+        }
+    }
+}
+
+/// Faithful port of C++ GCode::process_layer island grouping (GCode.cpp:4340-4392
+/// + the per-island emit at 4869-4947). For each region, assign each perimeter and
+/// infill ExtrusionEntityCollection to the ISLAND (lslice) whose contour contains
+/// its first point, testing slices in increasing bbox-area order (so nested islands
+/// are matched inside-first); fallback = a catch-all "last" island. Then emit
+/// per-island in natural slice order: perimeters → infill (or infill → perimeters
+/// if infill_first and not first layer), with thin_fills after each island's infill.
+fn emit_layer_by_island(
+    layer: &crate::layer::Layer,
+    writer: &mut crate::gcode::GCodeWriter,
+    config: &crate::print_config::PrintObjectConfig,
+    is_first_layer: bool,
+    is_infill_first: bool,
+    skip_infill: bool,
+    skip_inner_walls: bool,
+) {
+    use crate::extrusion_entity::ExtrusionEntityType;
+    let n_slices = layer.lslices.len();
+    let n_regions = layer.region_count();
+
+    // Per-island, per-region buckets. Island index 0..n_slices, plus a catch-all
+    // island at index n_slices for entities not contained by any slice.
+    #[derive(Default, Clone)]
+    struct Bucket {
+        perims: Vec<ExtrusionEntityType>,
+        fills: Vec<ExtrusionEntityType>,
+        thins: Vec<ExtrusionEntityType>,
+    }
+    // islands[island_idx][region_id]
+    let mut islands: Vec<Vec<Bucket>> =
+        vec![vec![Bucket::default(); n_regions]; n_slices + 1];
+
+    // lslices_bboxes is not populated by the rust port (C++ fills it in PrintObject);
+    // compute per-slice bboxes here from lslices contours (GCode.cpp uses
+    // layer.lslices_bboxes).
+    let slice_bboxes: Vec<crate::geometry::BoundingBox> = layer
+        .lslices
+        .iter()
+        .map(|ex| crate::geometry::BoundingBox::from_points(&ex.contour.points))
+        .collect();
+
+    // bbox-area-sorted test order (GCode.cpp:4356-4361).
+    let mut test_order: Vec<usize> = (0..n_slices).collect();
+    test_order.sort_by(|&i, &j| {
+        let a = slice_bboxes.get(i).map(|b| b.area()).unwrap_or(0);
+        let b = slice_bboxes.get(j).map(|b| b.area()).unwrap_or(0);
+        a.cmp(&b)
+    });
+
+    let point_inside = |island_idx: usize, p: &crate::geometry::Point| -> bool {
+        match (slice_bboxes.get(island_idx), layer.lslices.get(island_idx)) {
+            (Some(bb), Some(ex)) => {
+                p.x >= bb.min.x && p.x < bb.max.x && p.y >= bb.min.y && p.y < bb.max.y
+                    && ex.contour.contains_point(p)
+            }
+            _ => false,
+        }
+    };
+
+    let assign = |islands: &mut Vec<Vec<Bucket>>,
+                  region_id: usize,
+                  first_pt: crate::geometry::Point,
+                  ent: ExtrusionEntityType,
+                  kind: u8| {
+        // Find the island: first containing slice in bbox-area order, else catch-all.
+        let mut island_idx = n_slices;
+        for &i in &test_order {
+            if point_inside(i, &first_pt) {
+                island_idx = i;
+                break;
+            }
+        }
+        let b = &mut islands[island_idx][region_id];
+        match kind {
+            0 => b.perims.push(ent),
+            1 => b.fills.push(ent),
+            _ => b.thins.push(ent),
+        }
+    };
+
+    for (region_id, region) in layer.regions().iter().enumerate() {
+        for ent in &region.perimeters.entities {
+            if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+                assign(&mut islands, region_id, fp, ent.clone(), 0);
+            }
+        }
+        if !skip_infill {
+            for ent in &region.fills.entities {
+                if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+                    assign(&mut islands, region_id, fp, ent.clone(), 1);
+                }
+            }
+            for ent in &region.thin_fills.entities {
+                if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+                    assign(&mut islands, region_id, fp, ent.clone(), 2);
+                }
+            }
+        }
+    }
+
+    // Emit per-island (natural slice order, then catch-all), per region.
+    for island in &islands {
+        for bucket in island {
+            let do_perims = |w: &mut crate::gcode::GCodeWriter| {
+                crate::gcode::exporter::extrude_perimeters_entities(
+                    &bucket.perims, w, config, is_first_layer, skip_inner_walls,
+                );
+            };
+            let do_fills = |w: &mut crate::gcode::GCodeWriter| {
+                crate::gcode::exporter::extrude_infill_entities(
+                    &bucket.fills, w, config, is_first_layer,
+                );
+                if !bucket.thins.is_empty() {
+                    let coll = crate::extrusion_entity::ExtrusionEntityCollection {
+                        entities: bucket.thins.clone(),
+                        no_sort: true,
+                        ..Default::default()
+                    };
+                    let _ = crate::gcode::exporter::extrude_collection(
+                        &coll, w, config, is_first_layer,
+                    );
+                }
+            };
+            if is_infill_first && !is_first_layer {
+                do_fills(writer);
+                do_perims(writer);
+            } else {
+                do_perims(writer);
+                do_fills(writer);
+            }
         }
     }
 }
