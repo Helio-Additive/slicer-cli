@@ -25,6 +25,26 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **★ R79e — BYTE-PARITY FLOOR PINNED: the fused f32 slice-transform matrix (F-class; BAILED CLEAN).** Built
+  the faithful coordinate-frame PAIR (gated FRAME_PAIR, branch frame-pair @3c92eb1, NOT merged): (1)
+  `slice_center_xy` per-vertex XY −center (Z untouched, R65-safe), (2) `GCodeWriter.gcode_origin` +
+  `set_gcode_origin` subtracting m_origin from absolute coords at the writer chokepoint (I/J left relative,
+  correct), threaded app_slice→export. Net = raw − 2·center_offset (derived: slicer_cli `set_instances` does
+  shift += center_offset so m_origin = center_offset, doubling). RESULT: the FRAME IS CORRECT — slices now
+  match C++ to 0.001mm (Δx 0.8245→0), export shift lands (first-div 3.146→1.495 = −2·center) — BUT material
+  REGRESSES +9.76→+9.98, seam-match stays 0%. Applied BOTH exactness fixes (exact center_offset =
+  unscale(trunc(center/SCALING_FACTOR)·SCALING_FACTOR), C++ truncation not rust's round; single f64-subtract
+  → one f32 cast, not double-f32): bit-check UNCHANGED → the residual is NOT the center value or rounding
+  sequence. ROOT (definitive): C++ `make_trafo_for_slicing` (TriangleMeshSlicer.cpp:1827-1862) FUSES the
+  −center translation AND the ×1e5 scale into ONE f32 matrix-multiply per vertex (`tf=t.cast<float>(); v=tf*v`);
+  rust does TWO separate f32 ops (center-subtract in mm, then ×1e5 scale) → sub-ULP drift per vertex → facet
+  on-plane classification re-quantizes (the +9.98, R65-family) → loops/seam don't byte-align. The bbox
+  matches to 0.001mm; the gap is SUB-ULP. **BAILED CLEAN** per the pre-set criterion: matching it requires
+  reproducing C++'s fused `make_trafo_for_slicing` Eigen-f32 matmul (FMA rounding) bit-for-bit across the
+  slicer — the F-class precision port scoped as bail-worthy. **VERDICT: material parity (1.000×) is the
+  achieved + landed goal; BYTE-identical gcode is gated on the fused-f32 slice-matrix port (deferred).** The
+  frame+export-origin mechanism is correct/gated/reusable (banked on branch frame-pair, NOT merged — it
+  regresses default without the f32 port).
 - **★ R79d — ROOT PINNED: constant ~0.8245mm X PLACEMENT offset (R65-XY family, BOUNDED; diagnosis-only).**
   Scoped the perimeter-geometry rung — 3 probes. DECISIVE bisect: the RAW SLICES fed into PerimeterGenerator
   ALREADY differ — at L100 every input-slice bbox is X-shifted by a dead-constant +0.8235..0.8254mm (both
