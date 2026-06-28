@@ -25,8 +25,25 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
-- **★ R79e — BYTE-PARITY FLOOR PINNED: the fused f32 slice-transform matrix (F-class; BAILED CLEAN).** Built
-  the faithful coordinate-frame PAIR (gated FRAME_PAIR, branch frame-pair @3c92eb1, NOT merged): (1)
+- **★ R79f — FLOOR REFINED (corrects R79e): centering is FAITHFUL (verts bit-match C++); the wall is the
+  slice-INTERSECTION f32, one layer deeper (F-class; BAILED CLEAN).** Funded the fused-matmul port — it
+  OVERTURNED R79e's "matmul wall" framing. C++ instrumentation (`transform_mesh_vertices_for_slicing`,
+  TriangleMeshSlicer.cpp:1840): the slice tf is essentially PURE ×1e5 scale (tf[0][3]≈0.008 negligible) — the
+  centering is NOT in the slice matrix, it's baked into the MESH VERTICES (C++ vert.x 5.7975 vs rust raw
+  6.622, Δ=0.8245 exact; scale step byte-identical). Build = -O3 arm64 (ffp-contract=on). FIX = clean
+  f64-subtract of the exact truncated-grid center_offset (NO FMA matmul needed — R79e's regression was just
+  double-rounding + a spurious export-origin). RESULT: **rust verts now BIT-MATCH C++ EXACTLY** (in_bits
+  40b9851f == C++, scaled out 579750 == C++), R65 floor intact (li=1 loops==1) → the centering/frame
+  arithmetic is FULLY FAITHFUL. **But the SLICES STILL DIVERGE on bit-identical verts** — material +10.22
+  (broad: ISI −21/sparse −6/bridge +5/top +3), seam 0%, first-div native X.936 vs rust X2.32. Same input →
+  different loops ⇒ the wall is the slice-INTERSECTION f32 edge-interpolation (`slice_facet_at_zs` line-plane
+  crossing), non-faithful vs C++ and entangled with the R65 quantize hack. BAILED CLEAN: byte-identical
+  perimeter coords need bit-exact f32 edge-interpolation across the whole slicer — the open-ended precision
+  rabbit hole (each f32 layer reveals the next). **Material parity (1.000×) is the achieved + landed goal.**
+  frame-pair branch now holds the FAITHFUL gated centering (verts bit-match) + export-origin, banked for any
+  future slice-f32 work (NOT merged — regresses default w/o the deeper f32 match). (Caveat: 10 verts
+  bit-checked; the broad shift points to intersection arithmetic, not incomplete centering.)
+- **R79e — (SUPERSEDED by R79f) suspected the fused f32 slice-transform matrix as the wall.** Built
   `slice_center_xy` per-vertex XY −center (Z untouched, R65-safe), (2) `GCodeWriter.gcode_origin` +
   `set_gcode_origin` subtracting m_origin from absolute coords at the writer chokepoint (I/J left relative,
   correct), threaded app_slice→export. Net = raw − 2·center_offset (derived: slicer_cli `set_instances` does
