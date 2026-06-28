@@ -25,7 +25,26 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
-- **★ R79g — SLICE ARITHMETIC EXONERATED; true root = STL-LOAD MESH (+93 verts), a BOUNDED discrete root
+- **★ R79h — BYTE-PARITY FLOOR = the admesh REPAIR subsystem (2284 lines); scoped, BAIL/BANK.** Scoped the
+  +93-vert root. Per-stage bisect: benchy binary STL = 225706 facets → 677118 raw verts. rust dedups by
+  EXACT f32 bit-key (`[x.to_bits(),y.to_bits(),z.to_bits()]` HashMap, stl.rs:158-180) — NO tolerance, NO
+  repair → 112662. C++ `ReadSTLFile(repair=true)` → `trianglemesh_repair_on_import` (admesh) →
+  `stl_generate_shared_vertices` → 112569. The +93 enters at the REPAIR stage rust SKIPS ENTIRELY (stl.rs:82-85
+  comment admits repair + shared-vertex generation are not reproduced). C++ repair (TriangleMesh.cpp:79-160):
+  stl_check_facets_exact → **stl_check_facets_nearby(tolerance)** → stl_remove_degenerate →
+  stl_fix_normal_directions, then stl_generate_shared_vertices builds the index from the repaired TOPOLOGY
+  (neighbor graph, not a hash). The 93 = near verts merged by stl_check_facets_nearby (tolerance =
+  stl.stats.shortest_edge, ITERATED 2× with increment — DATA-DEPENDENT, not a fixed epsilon) + degenerate
+  facets removed, that rust's exact-bit dedup keeps. SIZED: NOT a bounded one-tolerance tweak — the faithful
+  fix needs the admesh subsystem bit-for-bit (~2284 lines: connect.cpp 743 facet-connectivity graph, shared.cpp
+  263 topology traversal, stlinit 389, util 399, normals 239, stl_io 251), and matching the EXACT 93 merges
+  needs admesh's exact edge-matching + union-find ORDER + iterative tolerance — hits 2 of 3 bail triggers
+  (whole subsystem + order/tolerance-sensitive). Does NOT touch R65 (repair is pre-quantize). **VERDICT:
+  BAIL/BANK. Material parity (1.000×) is the achieved + landed goal; byte-identical gcode is gated SOLELY on a
+  full faithful admesh-repair port — a large (multi-session), bit-sensitive lever with uncertain byte-payoff
+  (porting it may still not reproduce exactly 93). Every other layer end-to-end is faithful.** frame-pair
+  @9892a5d banks the faithful f64 centering (gated, NOT merged). branch stl-load (scope-only, no edits).
+- **R79g — SLICE ARITHMETIC EXONERATED; true root = STL-LOAD MESH (+93 verts), a discrete root
   (corrects R79f).** Funded the slice-intersection lever — it OVERTURNED R79f's "slice-intersection is the
   wall". C++ slice_facet interpolation (TriangleMeshSlicer.cpp:261-280): `t=(double(slice_z)−double(b.z))/
   (double(a.z)−double(b.z))`, `x=coord_t(floor(double(b.x)+(double(a.x)−double(b.x))·t+0.5))`, on-vertex →
