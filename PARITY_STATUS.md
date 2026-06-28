@@ -25,6 +25,21 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 
 ## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
 
+- **R79c — SEAM EXONERATED; root descends to PERIMETER GEOMETRY (diagnosis-only).** Scoped + debugged the
+  seam rung: it is NOT a missing subsystem — `gcode/seam_placer.rs` is a full 3165-line SeamPlacer (aligned
+  mode, wired, running). Both-engine unit-case on one matched 32-pt external loop at L100 (both finalized):
+  the seam placer is FAITHFUL — both pick the SAME candidate index (k=6), SAME local_ccw_angle (−1.51531 vs
+  −1.51518), SAME visibility rank (0.166/0.169), SAME comparator decision, SAME npts (32). The map's
+  "12-14mm" was index-misalignment; the true order-independent per-seam delta is ~0.825mm — and it's a
+  UNIFORM shift of the WHOLE candidate set (every point x ≈ rust_x − 0.825), so the seam lands on the
+  identical vertex of a SHIFTED loop. NEITHER engine has the other's exact X → not a comparator tie-break.
+  ROOT = the PERIMETER GEOMETRY fed into the placer: (1) a uniform ~0.825mm X offset of the loop, and (2)
+  loop-SPLITTING — rust feeds 10 external perimeters at L100 vs C++ 5 (rust splits some walls into 2: C++
+  npts=93 ↔ rust 65+92; C++ 32 ↔ rust 22+32). Both are PerimeterGenerator wall-placement divergences,
+  BEFORE the seam placer. NOTE: material is at-native (R77) and a pure ~0.8mm translation preserves loop
+  length → consistent. **The seam placer would byte-match if fed identical perimeters.** REVISED CHAIN:
+  PERIMETER-GEOMETRY (offset ~0.825mm + loop-split; possibly F1 geo-clipper precision) → seam [faithful,
+  waits on geometry] → arcs (partly follows wall geometry) → coords [done].
 - **R79b — STRUCTURAL MAP (diagnosis-only; SEAM is the gating rung, coords already exact).** With order
   converged (R78/R79), mapped the remaining structural divergences. **FIRST body divergence = move 13**, the
   first perimeter loop's START point (native `G1 X.936 Y2.228` vs rust `G1 X3.146 Y.502`) — a SEAM
