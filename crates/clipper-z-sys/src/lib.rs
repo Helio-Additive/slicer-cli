@@ -99,6 +99,16 @@ extern "C" {
         out_num_diff_paths: *mut i32,
     ) -> CzZPaths;
 
+    /// Faithful `union_ex(const Polygons&, PolyFillType)` (ClipperUtils.cpp:813-814)
+    /// = PolyTreeToExPolygons(clipper_do_polytree(ctUnion, subject, Empty, fill_type)).
+    /// The slice-stage F1 union behind make_expolygons. `xy` = flat (x,y) i32 pairs,
+    /// `lens` = per-path point counts, `num` = path count. `fill_type`:
+    /// 0=EvenOdd,1=NonZero,2=Positive,3=Negative. Output encodes ExPolygon grouping
+    /// in each point's z: contour points z=0 (new ExPolygon), hole points z=1
+    /// (attach to current contour); paths emitted in PolyTreeToExPolygons order.
+    /// Free via [`cz_free_zpaths`].
+    pub fn cz_union_ex(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 }

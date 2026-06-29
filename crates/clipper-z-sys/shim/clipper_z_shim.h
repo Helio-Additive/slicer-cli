@@ -55,6 +55,26 @@ CzZPaths cz_clip_extrusion(const int32_t *subject_xyz, int32_t subject_n,
 // Free a CzZPaths returned by cz_clip_extrusion.
 void cz_free_zpaths(CzZPaths paths);
 
+// Faithful replica of libslic3r ClipperUtils.cpp `union_ex(const Polygons&,
+// PolyFillType)` (ClipperUtils.cpp:813-814) = PolyTreeToExPolygons(
+// clipper_do_polytree(ctUnion, PolygonsProvider(subject), Empty, fill_type)).
+// This is the union behind make_expolygons (TriangleMeshSlicer.cpp:1819-1823,
+// the slice-stage F1 site). Runs the non-Z ClipperLib union over the CLOSED
+// input paths, builds the PolyTree, and flattens it via the EXACT
+// PolyTreeToExPolygons nesting (contour, its holes, then contours nested in
+// holes appended). Coordinates stay native i32 (no float / scale-1000
+// re-quantization), making the slice coords byte-exact vs C++.
+//
+// Layout: `xy` = flat (x,y) int32 pairs; `lens` = per-path point counts;
+//   `num` = path count. `fill_type`: 0=EvenOdd, 1=NonZero, 2=Positive, 3=Negative.
+// OUTPUT encodes the ExPolygon grouping in each point's Z: a CONTOUR path's
+// points carry z=0 (starts a new ExPolygon); a HOLE path's points carry z=1
+// (attaches to the most recent contour). Paths are emitted in
+// PolyTreeToExPolygons order (each contour immediately followed by its holes).
+// Free via cz_free_zpaths.
+CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
+                     int32_t fill_type);
+
 // Faithful replica of libslic3r ClipperUtils.cpp `offset_expolygon_inner`
 // (ClipperUtils.cpp:437-506): offset a SINGLE ExPolygon (contour + holes) by
 // `delta` (in scaled integer units) using the vertex-exact ClipperOffset

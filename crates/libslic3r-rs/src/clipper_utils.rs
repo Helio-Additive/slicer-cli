@@ -1219,6 +1219,87 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     union_polygons_ex(&all_paths)
 }
 
+/// ClipperLib-backed `union_ex(const Polygons&, PolyFillType)`
+/// (ClipperUtils.cpp:813-814): the slice-stage F1 union behind make_expolygons
+/// (TriangleMeshSlicer.cpp:1819-1823). Runs the vertex-exact vendored ClipperLib
+/// (clipper-z-sys @ native 1e5 scale) union over the input loops and rebuilds
+/// ExPolygons via the EXACT PolyTreeToExPolygons nesting, instead of geo-clipper
+/// @ scale-1000 which re-quantizes the slice coordinates to a coarse grid (R83:
+/// the residual that blocks slice byte-match). The shim encodes the ExPolygon
+/// grouping in each output point's z (contour z=0 starts a new ExPolygon, hole
+/// z=1 attaches to the current contour); paths arrive in PolyTreeToExPolygons
+/// order (contour immediately followed by its holes).
+///
+/// `fill_type`: 0=EvenOdd, 1=NonZero, 2=Positive, 3=Negative (matches C++
+/// make_expolygons' fill_type derived from the slicing mode).
+pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
+    if loops.is_empty() {
+        return vec![];
+    }
+    // Flatten loops into (x,y) i32 pairs + per-path lengths.
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    for ring in loops {
+        let pts = ring.points();
+        if pts.is_empty() {
+            continue;
+        }
+        lens.push(pts.len() as i32);
+        for p in pts {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+    }
+    let num = lens.len() as i32;
+    if num == 0 {
+        return vec![];
+    }
+
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
+    // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
+    let raw = unsafe { clipper_z_sys::cz_union_ex(xy.as_ptr(), lens.as_ptr(), num, fill_type) };
+
+    let mut result: ExPolygons = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            let mut is_hole = 0i32;
+            for i in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                if i == 0 {
+                    is_hole = coords[cursor * 3 + 2];
+                }
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            let ring = Polygon::from_points(pts);
+            if is_hole == 0 {
+                // contour -> new ExPolygon
+                result.push(ExPolygon::new(ring));
+            } else if let Some(last) = result.last_mut() {
+                // hole -> attach to current contour
+                last.holes.push(ring);
+            }
+        }
+    }
+
+    // SAFETY: `raw` was produced by cz_union_ex and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+
+    result
+}
+
 /// Detect gaps between two polygon sets.
 ///
 /// Gaps are the narrow regions that exist in the outer area but not in the

@@ -1297,7 +1297,7 @@ fn make_expolygons(
     loops: &[Polygon],
     closing_radius: f32,
     extra_offset: f32,
-    _fill_type: ClipperPolyFillType,
+    fill_type: ClipperPolyFillType,
     slices: &mut ExPolygons,
 ) {
     use crate::clipper_utils::{offset_expolygons, OffsetJoinType};
@@ -1322,8 +1322,21 @@ fn make_expolygons(
         offset_in = 0.0;
     }
 
-    // union_ex(loops, fill_type)
-    let unioned = crate::clipper_utils::union_polygons_ex(loops);
+    // union_ex(loops, fill_type) (TriangleMeshSlicer.cpp:1819-1823).
+    // F1_UNION (R84, gated): route the slice-stage union through the vertex-exact
+    // vendored ClipperLib (clipper-z-sys @ native 1e5) instead of geo-clipper @
+    // scale-1000 which re-quantizes the slice coords to a coarse grid (R83 residual
+    // blocking slice byte-match). fill_type maps the slicing mode (NonZero default).
+    let unioned = if std::env::var("F1_UNION").is_ok() {
+        let ft = match fill_type {
+            ClipperPolyFillType::EvenOdd => 0,
+            ClipperPolyFillType::NonZero => 1,
+            ClipperPolyFillType::Positive => 2,
+        };
+        crate::clipper_utils::union_ex_clib(loops, ft)
+    } else {
+        crate::clipper_utils::union_polygons_ex(loops)
+    };
 
     // append to the supplied collection.
     // TriangleMeshSlicer.cpp:1819-1823
@@ -1636,6 +1649,14 @@ fn expolygon_simplify(ex: &ExPolygon, tolerance: f64) -> ExPolygons {
         }
         let holes: Vec<Polygon> = pp.into_iter().filter(|h| h.points.len() >= 3).collect();
         return vec![ExPolygon::with_holes(contour, holes)];
+    }
+    // F1_UNION (R84): route simplify_p's `union_ex(simplify_polygons(pp))` through
+    // the vertex-exact vendored ClipperLib (ctUnion+PolyTree, NonZero) instead of
+    // geo-clipper @ scale-1000. ClipperLib SimplifyPolygons(pftNonZero) followed by
+    // union_ex is a NonZero union + PolyTree nesting of the DP'd rings — exactly
+    // what union_ex_clib does — and preserves the exact i32 slice coordinates.
+    if std::env::var("F1_UNION").is_ok() {
+        return crate::clipper_utils::union_ex_clib(&pp, 1);
     }
     let simplified = crate::geometry::polygon::simplify_polygons_clipper(&pp);
     // union_ex(simplified) re-nests contours/holes.

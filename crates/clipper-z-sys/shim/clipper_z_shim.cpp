@@ -414,6 +414,105 @@ extern "C" CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_
 }
 
 // ---------------------------------------------------------------------------
+// cz_union_ex — faithful replica of ClipperUtils.cpp `union_ex(const Polygons&,
+// PolyFillType)` (ClipperUtils.cpp:813-814) = PolyTreeToExPolygons(
+// clipper_do_polytree(ctUnion, ..., fill_type)). The slice-stage F1 union behind
+// make_expolygons (TriangleMeshSlicer.cpp:1819-1823). Output is grouped into
+// ExPolygons via the EXACT PolyTreeToExPolygons recursion; each output path's z
+// encodes contour(0)/hole(1).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Faithful replica of ClipperUtils.cpp PolyTreeToExPolygons recursion
+// (ClipperUtils.cpp:178-189). Appends, for each contour, the contour path (z=0)
+// immediately followed by its hole paths (z=1); contours nested inside holes are
+// appended AFTER (recursively), matching the C++ traversal order exactly.
+void polytree_to_grouped(ClipperLib::PolyNode &polynode, ClipperLib::Paths &out_paths,
+                         std::vector<int32_t> &out_is_hole) {
+    // contour
+    {
+        ClipperLib::Path contour = polynode.Contour;
+        out_paths.push_back(std::move(contour));
+        out_is_hole.push_back(0);
+    }
+    for (int i = 0; i < polynode.ChildCount(); ++i) {
+        ClipperLib::Path hole = polynode.Childs[i]->Contour;
+        out_paths.push_back(std::move(hole));
+        out_is_hole.push_back(1);
+        // outer polygons nested within this hole -> new ExPolygons (appended later)
+        for (int j = 0; j < polynode.Childs[i]->ChildCount(); ++j)
+            polytree_to_grouped(*polynode.Childs[i]->Childs[j], out_paths, out_is_hole);
+    }
+}
+
+// Marshal grouped (path, is_hole) into CzZPaths, encoding is_hole in each
+// point's z (contour z=0, hole z=1).
+CzZPaths marshal_grouped(const ClipperLib::Paths &paths, const std::vector<int32_t> &is_hole) {
+    CzZPaths out;
+    out.num_paths = (int32_t) paths.size();
+    int32_t total = 0;
+    for (const ClipperLib::Path &p : paths)
+        total += (int32_t) p.size();
+    out.total_points = total;
+
+    if (out.num_paths > 0) {
+        out.path_lens = (int32_t *) std::malloc(sizeof(int32_t) * out.num_paths);
+        for (int32_t i = 0; i < out.num_paths; ++i)
+            out.path_lens[i] = (int32_t) paths[i].size();
+    } else {
+        out.path_lens = nullptr;
+    }
+
+    if (total > 0) {
+        out.coords = (int32_t *) std::malloc(sizeof(int32_t) * 3 * total);
+        int32_t k = 0;
+        for (size_t pi = 0; pi < paths.size(); ++pi) {
+            int32_t z = is_hole[pi];
+            for (const ClipperLib::IntPoint &ip : paths[pi]) {
+                out.coords[3 * k + 0] = (int32_t) ip.x();
+                out.coords[3 * k + 1] = (int32_t) ip.y();
+                out.coords[3 * k + 2] = z;
+                ++k;
+            }
+        }
+    } else {
+        out.coords = nullptr;
+    }
+    return out;
+}
+
+} // namespace
+
+extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
+                                int32_t fill_type) {
+    ClipperLib::Paths subject = read_closed_paths(xy, lens, num);
+
+    ClipperLib::PolyFillType pft = ClipperLib::pftNonZero;
+    switch (fill_type) {
+        case 0: pft = ClipperLib::pftEvenOdd; break;
+        case 1: pft = ClipperLib::pftNonZero; break;
+        case 2: pft = ClipperLib::pftPositive; break;
+        case 3: pft = ClipperLib::pftNegative; break;
+        default: pft = ClipperLib::pftNonZero; break;
+    }
+
+    // clipper_do_polytree(ctUnion, subject, Empty, fill_type) — ApplySafetyOffset::No.
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, true);
+    ClipperLib::PolyTree polytree;
+    clipper.Execute(ClipperLib::ctUnion, polytree, pft, pft);
+
+    // PolyTreeToExPolygons grouping (ClipperUtils.cpp:203-210).
+    ClipperLib::Paths out_paths;
+    std::vector<int32_t> out_is_hole;
+    for (int i = 0; i < polytree.ChildCount(); ++i)
+        polytree_to_grouped(*polytree.Childs[i], out_paths, out_is_hole);
+
+    return marshal_grouped(out_paths, out_is_hole);
+}
+
+// ---------------------------------------------------------------------------
 // cz_detect_floating — faithful replica of FillFloatingConcentric.cpp
 // `detect_floating_line` (the Z-clipper half, FillFloatingConcentric.cpp:431-475).
 // ---------------------------------------------------------------------------
