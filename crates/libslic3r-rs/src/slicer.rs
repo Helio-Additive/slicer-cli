@@ -22,6 +22,9 @@ pub struct Slicer {
     /// `MeshSlicingParamsEx.resolution` (0 if <=0.001, else 0.0025). 0 = no
     /// simplification (matches the historic rust behavior).
     slice_resolution: CoordF,
+    /// Slice-frame XY center_offset (mm), the C++ `trafo_centered` offset applied
+    /// INSIDE the fused f32 slice transform (R85). (0,0) = raw frame (default).
+    slice_center_offset: (CoordF, CoordF),
 }
 
 /// Implementation of Slicer methods
@@ -31,13 +34,18 @@ impl Slicer {
     // TriangleMeshSlicer.cpp:22-25
     pub fn new(params: SlicingParams) -> Self {
         // TriangleMeshSlicer.cpp:24
-        Self { params, slice_resolution: 0.0 }
+        Self { params, slice_resolution: 0.0, slice_center_offset: (0.0, 0.0) }
     }
 
     /// Set the slice-contour simplification resolution (mm). See
     /// `slice_resolution`. PrintObjectSlice.cpp:144.
     pub fn set_slice_resolution(&mut self, resolution: CoordF) {
         self.slice_resolution = resolution;
+    }
+
+    /// Set the slice-frame XY center_offset (mm). See `slice_center_offset`.
+    pub fn set_slice_center_offset(&mut self, cx: CoordF, cy: CoordF) {
+        self.slice_center_offset = (cx, cy);
     }
 
     /// Create a new slicer with default parameters.
@@ -103,12 +111,22 @@ impl Slicer {
         // when enabled and resolution is set, slice through MeshSlicingParamsEx
         // carrying `resolution` so make_expolygons runs ex.simplify(scaled(res))
         // (TriangleMeshSlicer.cpp:2038-2044). Default path unchanged.
-        let sliced_expolygons = if std::env::var("SLICE_SIMPLIFY").is_ok()
-            && self.slice_resolution != 0.0
-        {
+        // R85 slice-frame centering (gated SLICE_CENTER): slice through the fused
+        // f32 trafo_centered so slice coords are in C++'s centered frame (the export
+        // origin then re-aligns the gcode — set in print.rs). Combined with the
+        // simplify (R83) + F1 union (R84) this is the SLICE BYTE-MATCH path.
+        let want_simplify = std::env::var("SLICE_SIMPLIFY").is_ok() && self.slice_resolution != 0.0;
+        let want_center = std::env::var("SLICE_CENTER").is_ok()
+            && (self.slice_center_offset.0 != 0.0 || self.slice_center_offset.1 != 0.0);
+        let sliced_expolygons = if want_simplify || want_center {
             let zs_f32: Vec<f32> = slice_zs.iter().map(|&z| z as f32).collect();
             let mut params = triangle_mesh_slicer::MeshSlicingParamsEx::default();
-            params.resolution = self.slice_resolution;
+            if want_simplify {
+                params.resolution = self.slice_resolution;
+            }
+            if want_center {
+                params.center_offset = self.slice_center_offset;
+            }
             triangle_mesh_slicer::slice_mesh_ex(mesh, &zs_f32, &params, &|| {})
         } else {
             triangle_mesh_slicer::slice_mesh(mesh, &slice_zs)

@@ -218,6 +218,12 @@ pub struct PrintObject {
     /// (no Arc::make_mut/get_mut), which would fork the share.
     print_config: Arc<PrintConfig>,
 
+    /// R85 slice-frame XY center_offset (mm) applied in the fused f32 slice
+    /// transform (= C++ m_center_offset unscaled). Consumed by Print to set the
+    /// gcode export origin so the centered slices re-align to C++'s gcode frame.
+    /// (0,0) until slice() computes it. Only effective under SLICE_CENTER.
+    pub slice_center_offset: (f64, f64),
+
     /// Reference to parent model object
     /// Print.hpp:615
     pub model_object_id: usize,
@@ -264,6 +270,7 @@ impl PrintObject {
             support_layers: Vec::new(),
             config: PrintObjectConfig::default(),
             print_config: Arc::new(PrintConfig::default()),
+            slice_center_offset: (0.0, 0.0),
             model_object_id: 0,
             label_id: 0,
             state: 0,
@@ -286,6 +293,7 @@ impl PrintObject {
             support_layers: Vec::new(),
             config,
             print_config: Arc::new(PrintConfig::default()),
+            slice_center_offset: (0.0, 0.0),
             model_object_id: 0,
             label_id: 0,
             state: 0,
@@ -428,6 +436,23 @@ impl PrintObject {
         // (BBS: 0.0025mm safe to speed slicing; separate from arc-fit resolution.)
         let cfg_resolution = self.print_config.resolution;
         slicer.set_slice_resolution(if cfg_resolution <= 0.001 { 0.0 } else { 0.0025 });
+
+        // R85 slice-frame centering: C++ m_center_offset = Point::new_scale(
+        // bbox_center.x, bbox_center.y) (PrintObject.cpp:88), bbox = raw_bounding_box
+        // (identity-trafo for slicer_cli STL). unscale(m_center_offset) = the mm
+        // center applied by trafo_centered. new_scale truncates toward zero
+        // (coord_t(x/SCALING_FACTOR)); replicate so the f64 mm value matches.
+        let bb = mesh.compute_bounding_box();
+        let sf = crate::libslic3r::SCALING_FACTOR;
+        let bbcx = (bb.min.x as f64 + bb.max.x as f64) * 0.5;
+        let bbcy = (bb.min.y as f64 + bb.max.y as f64) * 0.5;
+        let cx_mm = (bbcx / sf).trunc() * sf; // unscale(new_scale(bbcx))
+        let cy_mm = (bbcy / sf).trunc() * sf;
+        slicer.set_slice_center_offset(cx_mm, cy_mm);
+        // Record for the export origin (consumed by Print after process): gcode =
+        // unscale(centered) + center → C++'s raw frame (R81: m_origin = unscale(shift)
+        // = center, instance=0). Only meaningful when SLICE_CENTER is on.
+        self.slice_center_offset = (cx_mm, cy_mm);
 
         // Perform actual mesh slicing
         // PrintObjectSlice.cpp:801

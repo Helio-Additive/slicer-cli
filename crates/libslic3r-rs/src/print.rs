@@ -318,10 +318,24 @@ impl Print {
 
         // Create G-code writer with config
         let mut writer = GCodeWriter::with_config(self.config.clone());
+        // R85 slice-frame centering export origin (SLICE_CENTER): slices are in the
+        // CENTERED frame (raw − center). To re-align gcode to C++'s raw frame
+        // (gcode = unscale(centered) + center), and since the writer SUBTRACTS
+        // gcode_origin (gcode = absolute − origin), set gcode_origin = −center.
+        // Sourced from the first object's slice_center_offset (computed in slice()).
+        let mut gcode_origin = self.gcode_origin;
+        if std::env::var("SLICE_CENTER").is_ok() {
+            if let Some(obj) = self.objects.first() {
+                let (cx, cy) = obj.slice_center_offset;
+                if cx != 0.0 || cy != 0.0 {
+                    gcode_origin = (-cx, -cy);
+                }
+            }
+        }
         // FRAME_PAIR: re-place the centered-slice frame to C++'s gcode frame by
         // subtracting the export origin (= slice center_offset) from absolute XY
         // (C++ GCode::m_origin / point_to_gcode). (0,0) default = no shift.
-        writer.set_gcode_origin(self.gcode_origin.0, self.gcode_origin.1);
+        writer.set_gcode_origin(gcode_origin.0, gcode_origin.1);
 
         // GCode.cpp member state
         let mut last_layer_z: f64 = 0.0;

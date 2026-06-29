@@ -1384,6 +1384,14 @@ pub struct MeshSlicingParams {
     // Mode to apply below slicing_mode_normal_below_layer.
     pub mode_below: SlicingMode,
     // NOTE: Transform3d trafo is not threaded through here yet (identity only).
+    // R85 slice-frame centering (mm, unscaled): the C++ `trafo_centered` XY
+    // center_offset applied INSIDE the fused f32 slice-time transform
+    // (make_trafo_for_slicing). (0,0) = no centering (raw frame, historic default).
+    // When set, the per-vertex scale is the fused f32 matmul
+    //   v_xy = f32(s) * (v_xy - center_offset)   [s = 1/SCALING_FACTOR]
+    // matching transform_mesh_vertices_for_slicing's non-identity path
+    // (TriangleMeshSlicer.cpp:1853-1860). Z untouched (R65 preserved).
+    pub center_offset: (f64, f64),
 }
 
 impl Default for MeshSlicingParams {
@@ -1393,6 +1401,7 @@ impl Default for MeshSlicingParams {
             mode: SlicingMode::Regular,
             slicing_mode_normal_below_layer: 0,
             mode_below: SlicingMode::Regular,
+            center_offset: (0.0, 0.0),
         }
     }
 }
@@ -1407,6 +1416,9 @@ pub struct MeshSlicingParamsEx {
     pub extra_offset: f32,
     // Resolution for contour simplification, unscaled. 0 = don't simplify.
     pub resolution: f64,
+    // R85 slice-frame centering (mm): the trafo_centered XY center_offset applied
+    // in the fused f32 slice transform. (0,0) = raw frame (historic default).
+    pub center_offset: (f64, f64),
 }
 
 impl Default for MeshSlicingParamsEx {
@@ -1416,6 +1428,7 @@ impl Default for MeshSlicingParamsEx {
             closing_radius: 0.0,
             extra_offset: 0.0,
             resolution: 0.0,
+            center_offset: (0.0, 0.0),
         }
     }
 }
@@ -1433,13 +1446,40 @@ fn slice_mesh_its(
     {
         // TriangleMeshSlicer.cpp:1880
         let face_edge_ids = its_face_edge_ids(mesh);
-        // Identity trafo: scale up XY, leave Z unscaled (transform_vertex_fn).
-        // TriangleMeshSlicer.cpp:1885 / 1894-1896
-        let scaled_vertices: Vec<StlVertex> = mesh
-            .vertices
-            .iter()
-            .map(|p| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z))
-            .collect();
+        // TriangleMeshSlicer.cpp:1885 / 1894-1896.
+        // R85: when params.center_offset != 0, slice through the FUSED f32
+        // make_trafo_for_slicing (transform_mesh_vertices_for_slicing non-identity
+        // path): tf = (Scale(s)*Translate(-c)).cast<float>(), v = tf*v →
+        // linear=diag(s,s,1)/translation=(-s*cx,-s*cy,0), each element cast f64→f32
+        // once, v_out = lin_f32*v + trans_f32 in f32 (FMA-eligible, matches Eigen).
+        // Z linear=1/trans=0 → Z untouched (R65). (0,0) = historic identity path.
+        let (cx, cy) = params.center_offset;
+        let scaled_vertices: Vec<StlVertex> = if cx != 0.0 || cy != 0.0 {
+            let s = 1.0f64 / crate::libslic3r::SCALING_FACTOR;
+            let lin_x = s as f32;
+            let lin_y = s as f32;
+            let trans_x = (-(s * cx)) as f32;
+            let trans_y = (-(s * cy)) as f32;
+            // Match Eigen's f32 Affine `tf * v` = linear*v + translation EXACTLY:
+            // linear is diag(s,s,1) so row0·v = s*v.x + 0*v.y + 0*v.z (Eigen computes
+            // the full dense dot product INCLUDING the zero terms), THEN + translation
+            // as a separate add. Replicating the (linear dot) then (+ translation)
+            // two-step — with the zero products — matches C++'s 1-ULP rounding that a
+            // fused `s*v.x + tx` did not.
+            mesh.vertices
+                .iter()
+                .map(|p| {
+                    let lin_dot_x = lin_x * p.x + 0.0f32 * p.y + 0.0f32 * p.z;
+                    let lin_dot_y = 0.0f32 * p.x + lin_y * p.y + 0.0f32 * p.z;
+                    StlVertex::new(lin_dot_x + trans_x, lin_dot_y + trans_y, p.z)
+                })
+                .collect()
+        } else {
+            mesh.vertices
+                .iter()
+                .map(|p| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z))
+                .collect()
+        };
         // TriangleMeshSlicer.cpp:1884 / 1894
         lines = slice_make_lines(&scaled_vertices, &mesh.indices, &face_edge_ids, zs, throw_on_cancel);
     }
@@ -1503,12 +1543,39 @@ fn slice_mesh_plane_its(
         let face_edge_ids = crate::triangle_mesh::its_face_edge_ids_mask(mesh, &face_mask);
 
         // 4) Slice "face_mask" triangles, collect line segments.
-        // TriangleMeshSlicer.cpp:1986-1989 (identity trafo)
-        let scaled_vertices: Vec<StlVertex> = mesh
-            .vertices
-            .iter()
-            .map(|p| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z))
-            .collect();
+        // TriangleMeshSlicer.cpp:1986-1989.
+        // R85: when params.center_offset != 0, slice through the FUSED f32
+        // make_trafo_for_slicing (transform_mesh_vertices_for_slicing non-identity
+        // path, TriangleMeshSlicer.cpp:1853-1860): tf = (trafo_centered.prescale(s)).cast<float>(),
+        // v = tf*v. For benchy (no rotation) trafo_centered = Translate(-c_mm), and
+        // Eigen prescale PRE-multiplies the scale → t = Scale(s)*Translate(-c_mm) →
+        // matrix linear=diag(s,s,1), translation=(-s*cx, -s*cy, 0). Each matrix
+        // element is cast f64->f32 ONCE, then v_out = linear_f32*v + translation_f32
+        // in f32 (FMA-eligible, matching Eigen's f32 matmul). Z linear=1,trans=0 → Z
+        // untouched (R65). The historic identity path stays the (0,0) default.
+        let (cx, cy) = params.center_offset;
+        let scaled_vertices: Vec<StlVertex> = if cx != 0.0 || cy != 0.0 {
+            let s = 1.0f64 / crate::libslic3r::SCALING_FACTOR;
+            // tf matrix elements (f64 t = Scale(s)*Translate(-c)), cast to f32.
+            let lin_x = s as f32; // tf.linear()(0,0)
+            let lin_y = s as f32; // tf.linear()(1,1)
+            let trans_x = (-(s * cx)) as f32; // tf.translation()(0)
+            let trans_y = (-(s * cy)) as f32; // tf.translation()(1)
+            mesh.vertices
+                .iter()
+                .map(|p| {
+                    // Eigen f32 Transform*Vector: linear*v + translation (FMA-eligible).
+                    let x = lin_x * p.x + trans_x;
+                    let y = lin_y * p.y + trans_y;
+                    StlVertex::new(x, y, p.z)
+                })
+                .collect()
+        } else {
+            mesh.vertices
+                .iter()
+                .map(|p| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z))
+                .collect()
+        };
         let fm = &face_mask;
         lines.push(slice_make_lines_single(
             &scaled_vertices,
@@ -1675,6 +1742,8 @@ pub fn slice_mesh_ex_its(
     let layers_p;
     {
         let mut slicing_params = params.base.clone();
+        // R85: thread the slice-frame centering into the per-plane slicer.
+        slicing_params.center_offset = params.center_offset;
         if params.base.mode == SlicingMode::PositiveLargestContour {
             slicing_params.mode = SlicingMode::Positive;
         }
