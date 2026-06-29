@@ -23,8 +23,33 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 81 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
+## Current parity (ROUND 83 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
+- **★ R82/R83 — ROOT = rust SKIPS slice simplification; ported (faithful) but slice byte-match now blocked on
+  F1 geo-clipper.** R82 (re-localize, diagnosis): bisected the byte-gap to the FIRST stage (slices), 0/240
+  match — rust slice contours carried ~6× the vertices of C++ (area matched to 0.01% → same shape, undecimated).
+  ROOT: C++ make_expolygons runs `ExPolygon::simplify(scaled(resolution))` (Douglas-Peucker per ring +
+  union_ex) on every slice; rust SKIPPED it (triangle_mesh_slicer.rs:1600-1601, stale "resolution defaults to
+  0" comment — caller never wired config resolution). This OVERTURNS the R69/R71-74 fill-classification/F1
+  fragmentation hypothesis as the byte-driver: the Floating/ISI per-feature split + perimeter/fill divergence
+  are a CASCADE of the dense slices, not a classification bug. (Methodology catch: `slicer-cli slice` defaults
+  to `--engine native` → C++-vs-C++ fake passes; must use `--engine rust`.) R83 (fix, gated SLICE_SIMPLIFY,
+  branch alex/slice-simplify @6951ce9): wired the slice resolution (PrintObjectSlice.cpp:144 — a FIXED
+  **0.0025mm** when config.resolution>0.001, NOT config.resolution=0.012; 0.0025 is the slicing-simplify tol,
+  separate from the 0.0125 arc-fit tol) + ported faithful ExPolygon::simplify (bit-faithful dp_distance + exact
+  MultiPoint::_douglas_peucker + per-ring close→DP→reopen + simplify_polygons + union_ex). RESULT: npts
+  COLLAPSED ~6×→1.0× (59770 vs C++ 59901, 0.2%); ISI/Floating split improved ~5 each (Floating +31.6→+25.7,
+  ISI −30.4→−25.6); outer-wall feature count now 772=772 EXACT. **BUT slices still don't byte-match (hash 0/240,
+  npts-exact 25/240, ±1-2 npts/layer) — and the agent PROVED the residual is F1, NOT the DP:** a DP-only A/B
+  with exact coords still showed rust slice coords quantized to the geo-clipper **scale-1000 grid**
+  (make_expolygons → union_polygons_ex → `geo_multi.union(&.., 1000.0)`), present even on un-simplified slices;
+  C++ uses full-precision ClipperLib (1e5/1e6). The ±1-2 npts is a CONSEQUENCE (DP keep/drop differs at the tol
+  boundary on pre-quantized input). **NEXT byte-parity lever = F1** (one of the project's 3 foundational
+  blockers): full-precision ClipperLib union in make_expolygons (replace geo-clipper union_polygons_ex), and
+  pervasively downstream. R65 holds (li=1 nloops=1); default verified UNCHANGED (gate off, −0.25); build green.
+  slice-simplify stays GATED on its branch — to land WITH F1 when slices byte-match (gated-on is currently
+  total +1.55/bridge worse, an F1 artifact). Existing vendored ClipperLib shims (clipper-z-sys / clipper2-z-sys
+  from R72) may supply the full-precision union.
 - **★ R81 — FRAME SUB-LEVER CLOSED: there is NO frame offset (the X-frame was a MIRAGE).** Tested (b)
   export-origin-alone → measurement decided it: the frame is ALREADY aligned, nothing to fix. ALGEBRA (full
   C++ chain): shift = instance_translation_xy (PrintApply.cpp:149) `+= m_center_offset` (PrintObject.cpp:108);
