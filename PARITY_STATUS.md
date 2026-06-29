@@ -23,8 +23,30 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 83 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
+## Current parity (ROUND 84 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
+- **★ R84 — F1 UNION PORTED (full-precision, ClipperLib-faithful); final slice residual = the 0.8245mm
+  CENTERING (frame saga reconciled).** Replaced the geo-clipper scale-1000 union in make_expolygons +
+  expolygon_simplify with a faithful `cz_union_ex` shim (PolyTreeToExPolygons, z-encoded contour/hole
+  grouping) over the vendored clipper-z-sys. KEY: clipper-z-sys is built **CLIPPERLIB_INT32** — matching C++
+  libslic3r EXACTLY (clipper.hpp:83, cInt=int32_t; benchy scaled XY ≤3e6 fits i32) → byte-faithful, not an
+  approximation. Gated F1_UNION (branch alex/f1-union @9ef2881 off alex/slice-simplify). RESULT (SLICE_SIMPLIFY
+  + F1_UNION on): coords FULL-PRECISION (no scale-1000 trailing-zero grid; area 5459799016964 vs C++
+  5459798626609), **npts EXACT 156/240**, structurally-identical 153/240, area rel-diff median 3.6e-7 — but
+  hash still 0/240. FINAL RESIDUAL pinned (RAWLOOP_DBG, raw pre-make_expolygons loops): shifting rust X by
+  exactly −82450 scaled (−0.8245mm = center_offset_x; cy=0) aligns **960/991** points EXACTLY → it's the
+  slice-frame CENTERING. RECONCILES R79/R81: R81 was right it CANCELS in the gcode OUTPUT (net raw=raw via the
+  export-origin) — but it does NOT cancel at the SLICE level (C++ slices the centered frame; the export-origin
+  only re-aligns the final gcode). The last 31/991 = f32 re-quant of a scalar post-shift vs C++'s FUSED f32
+  trafo → the centering MUST live in the f32 slice-time transform (make_trafo_for_slicing fused center+scale
+  matmul), NOT a mesh pre-translate (the R80 FRAME_PAIR +9.92 regression). So **SLICE BYTE-MATCH = simplify
+  (R83) + F1-union (R84) + centered-frame f32-trafo slicing (NEXT, last slice lever) + export-origin (R81:
+  cancels in gcode).** DOWNSTREAM F1-WALK now MECHANICAL — all shim primitives exist (cz_union_ex,
+  cz_difference_closed, cz_offset_expolygon, all ClipperLib-exact); each downstream geo-clipper@1000 site
+  (perimeter/fill offsets, group_fills union/diff, Arachne) is a re-route, not new shim work. So full
+  byte-parity = centering + walk the (pervasive but mechanical) F1 sites. Gated, default verified unchanged
+  (−0.59); R65 holds; build green. slice-simplify + f1-union stay gated on branches (land together when
+  byte-clean).
 - **★ R82/R83 — ROOT = rust SKIPS slice simplification; ported (faithful) but slice byte-match now blocked on
   F1 geo-clipper.** R82 (re-localize, diagnosis): bisected the byte-gap to the FIRST stage (slices), 0/240
   match — rust slice contours carried ~6× the vertices of C++ (area matched to 0.01% → same shape, undecimated).
