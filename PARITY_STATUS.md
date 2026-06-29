@@ -23,9 +23,28 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 79 — see memory `project_benchy_parity_gap.md` for the full round-by-round log)
+## Current parity (ROUND 80 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
-- **★ R79h — BYTE-PARITY FLOOR = the admesh REPAIR subsystem (2284 lines); scoped, BAIL/BANK.** Scoped the
+- **★ R80 — ADMESH REPAIR LANDED (the +93-vert mesh root SOLVED; material-neutral, faithful).** R79h's
+  "2284-line bail" was OVER-scoped: PHASE-0 ground truth showed benchy is MANIFOLD after the exact check
+  (conn3 = number_of_facets) → C++ SKIPS the bit-sensitive nearby-merge entirely (the guard
+  `connected_facets_3_edge < number_of_facets` is false). So the +93 decomposed into just (1) 552 degenerate
+  facets removed + (2) topology-based shared-vertex generation — ~270 DETERMINISTIC lines, no
+  tolerance/order ambiguity. Ported `stl_repair.rs` (faithful admesh: degenerate-facet removal + exact-edge
+  neighbor graph [HashEdge byte-key, −0/+0 normalized] + `stl_generate_shared_vertices` fan traversal),
+  now the DEFAULT binary-STL path, replacing the exact-f32-bit HashMap dedup that wrongly kept 552
+  degenerate facets + skipped shared-vertex gen (correct-beyond-parity — rust was genuinely wrong vs C++
+  `from_stl(repair=true)`). RESULT (default, re-verified): **vert count 112569 EXACT** (was 112662 — the
+  +93 GONE), facets 225154, manifold — all EXACT vs C++; **material-neutral** (per-feature stable: ISI
+  −30.5, sparse −12.48, floating +31.55, outer +2.12; total −0.42 ≈ baseline noise); R65 floor intact
+  (li=1 loops==1, repair is pre-quantize); exact-identical moves 11964→11971; build green. Landed parity
+  @0aad342. The mesh is now FAITHFUL. REMAINING byte-parity blocker = the X-FRAME centering (separable last
+  sub-lever): REPAIR alone leaves the ~0.8245mm slice-frame X-offset (first-div native X.936 / rust X3.146);
+  REPAIR+FRAME_PAIR regresses material +9.92 because frame-pair's PRE-SLICE per-vertex mesh-translate
+  perturbs the f32 slice geometry (+ R65-quantize interaction). The faithful X-frame needs either (a)
+  centering INSIDE the slice-time transform (C++ make_trafo_for_slicing fused op), or (b) the export-origin
+  ALONE without shifting slice geometry. frame-pair foundation is on parity but GATED (FRAME_PAIR, default-off).
+- **★ R79h — (resolved by R80) suspected the admesh REPAIR subsystem (2284 lines) as a likely bail.** Scoped the
   +93-vert root. Per-stage bisect: benchy binary STL = 225706 facets → 677118 raw verts. rust dedups by
   EXACT f32 bit-key (`[x.to_bits(),y.to_bits(),z.to_bits()]` HashMap, stl.rs:158-180) — NO tolerance, NO
   repair → 112662. C++ `ReadSTLFile(repair=true)` → `trianglemesh_repair_on_import` (admesh) →
