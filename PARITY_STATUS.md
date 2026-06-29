@@ -23,8 +23,28 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 80 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
+## Current parity (ROUND 81 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
+- **★ R81 — FRAME SUB-LEVER CLOSED: there is NO frame offset (the X-frame was a MIRAGE).** Tested (b)
+  export-origin-alone → measurement decided it: the frame is ALREADY aligned, nothing to fix. ALGEBRA (full
+  C++ chain): shift = instance_translation_xy (PrintApply.cpp:149) `+= m_center_offset` (PrintObject.cpp:108);
+  m_origin = unscale(shift) (GCode.cpp:5244); point_to_gcode = unscale(p) + m_origin (GCode.cpp:7591); slice
+  frame = raw − center_offset. NET gcode = (raw − center_offset) + (instance + center_offset) = **raw +
+  instance**; the center_offset CANCELS. slicer_cli STL → add_instance at offset 0 (no arrange/center;
+  multi-plate-3MF branch skipped) → instance = 0 → **C++ gcode = raw**. rust slices raw + export-origin 0 →
+  also raw → frames MATCH with no rust change. (The R79e/f "net = raw − 2·center" was wrong; R79f's
+  "export-shift toward native" was confounded by the then-unfixed mesh.) EMPIRICAL: with mesh fixed (R80,
+  default), benchy object bbox native vs rust agree within micron rounding (Xc 0.8200 vs 0.8195, Δ~0.001-0.002
+  — NO 0.8245/2·center shift). The R79b "first-div X.936/X3.146" = DIFFERENT START POINTS on the same loop
+  (dx 2.21 ≠ dy −1.726, non-uniform → not a translate), i.e. seam/path, not frame. So R79c-g's "0.8245 offset"
+  was the slice-INTERNAL frame (cancels in gcode) — invisible in the output; the real mesh root (+93) was the
+  separable issue, now fixed (R80). **No source change (measurement-only); frame-pair stays gated+dormant
+  (export-origin=0 is already the default).** REMAINING byte-parity gap = PATH GENERATION on the already-correct
+  frame: rust emits ~18k more moves (114698 vs native 96495; only 11995 identical as multisets) — driven by
+  per-feature fill CLASSIFICATION (Floating 122→173, ISI 389→237, Sparse 193→180 — the long-standing R69/R71-74
+  near-cancel split, possibly F1-geo-clipper-tied), seam-start-on-different-loops, and arc-fitting (+25.7%).
+  NEXT lever (if byte-parity pursued): re-localize on the now-correct mesh+frame — do perimeter loops byte-match
+  C++ now? → splits "seam+arcs (bounded)" vs "fill-classification (deep R69/F1)".
 - **★ R80 — ADMESH REPAIR LANDED (the +93-vert mesh root SOLVED; material-neutral, faithful).** R79h's
   "2284-line bail" was OVER-scoped: PHASE-0 ground truth showed benchy is MANIFOLD after the exact check
   (conn3 = number_of_facets) → C++ SKIPS the bit-sensitive nearby-merge entirely (the guard
