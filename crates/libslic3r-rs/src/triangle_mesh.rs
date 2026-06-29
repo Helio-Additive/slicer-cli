@@ -2523,6 +2523,33 @@ impl TriangleMesh {
         self.bounding_box = None;
     }
 
+    /// Faithful slice-time XY centering (FRAME_PAIR): C++ slices the mesh through
+    /// `trafo_centered()` = `v - center_offset` in XY (Print.hpp:376), where
+    /// center_offset = the raw bbox XY center (PrintObject.cpp:88). This SHIFTS the
+    /// slice frame to C++'s (it does NOT re-add the XY center — that's what
+    /// `quantize_f32_center_roundtrip` does for the net-identity Z floor fix).
+    /// Z is left EXACTLY as the Z round-trip leaves it (R65 floor preserved).
+    /// Returns the applied center (so the exporter can subtract the matching origin).
+    /// Apply AFTER `quantize_f32_center_roundtrip` so the Z behavior is unchanged.
+    pub fn slice_center_xy(&mut self) -> (f64, f64) {
+        let c = self.center();
+        // EXACT center_offset = unscale(Point::new_scale(center.xy)) — C++ quantizes
+        // the f64 center to the coord_t grid with TRUNCATION (coord_t(scale_(x)) =
+        // coord_t(x / SCALING_FACTOR), truncates toward zero), then unscales back.
+        // rust's scale() uses round(), so do the truncation explicitly here.
+        let cx = (c.x / crate::libslic3r::SCALING_FACTOR).trunc() * crate::libslic3r::SCALING_FACTOR;
+        let cy = (c.y / crate::libslic3r::SCALING_FACTOR).trunc() * crate::libslic3r::SCALING_FACTOR;
+        for v in &mut self.vertices {
+            // Clean f64 subtract: verts are exact f32 values, center_offset is a
+            // coord-grid multiple → the result stays exact f32 (bit-checked:
+            // rust_vert − center == C++ slice vert exactly). Z untouched (R65).
+            v.x -= cx;
+            v.y -= cy;
+        }
+        self.bounding_box = None;
+        (cx, cy)
+    }
+
     /// Scale the mesh uniformly about the origin.
     pub fn scale(&mut self, factor: CoordF) {
         for vertex in &mut self.vertices {

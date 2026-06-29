@@ -155,7 +155,40 @@ fn read_stl_binary(data: &[u8], header_size: usize) -> Result<TriangleMesh> {
         return Err(Error::Mesh("Binary STL truncated".into()));
     }
 
-    // We store unique vertices via a simple hash-dedup approach.
+    // REPAIR: faithful admesh path — build facet-soup, then degenerate-removal +
+    // exact-edge graph + shared-vertex fan traversal (matches C++ from_stl(repair),
+    // vert count 112569 for benchy). Default path = exact-f32-bit dedup (+93 verts).
+    let read_v = |vo: usize| -> [f32; 3] {
+        [
+            f32::from_le_bytes([body[vo], body[vo + 1], body[vo + 2], body[vo + 3]]),
+            f32::from_le_bytes([body[vo + 4], body[vo + 5], body[vo + 6], body[vo + 7]]),
+            f32::from_le_bytes([body[vo + 8], body[vo + 9], body[vo + 10], body[vo + 11]]),
+        ]
+    };
+    if std::env::var("REPAIR").is_ok() {
+        let mut facet_soup = Vec::with_capacity(num_facets);
+        for i in 0..num_facets {
+            let o = i * SIZEOF_STL_FACET + 12;
+            facet_soup.push(crate::stl_repair::make_facet(
+                read_v(o),
+                read_v(o + 12),
+                read_v(o + 24),
+            ));
+        }
+        let (vertices, idx, stats) = crate::stl_repair::repair_and_index(facet_soup);
+        if std::env::var("REPAIR_DBG").is_ok() {
+            eprintln!(
+                "REPAIR_DBG_RUST facets={} verts={} degenerate={} conn3={} conn2={} conn1={}",
+                stats.number_of_facets, vertices.len(), stats.degenerate_facets,
+                stats.connected_facets_3_edge, stats.connected_facets_2_edge,
+                stats.connected_facets_1_edge
+            );
+        }
+        let indices: Vec<Triangle> = idx.iter().map(|t| Triangle::new(t[0], t[1], t[2])).collect();
+        return Ok(TriangleMesh::from_parts(vertices, indices));
+    }
+
+    // Default: exact-f32-bit hash dedup.
     let mut vertices: Vec<Point3F> = Vec::new();
     let mut indices: Vec<Triangle> = Vec::with_capacity(num_facets);
     let mut vertex_map: HashMap<[u32; 3], u32> = HashMap::new();
@@ -166,9 +199,7 @@ fn read_stl_binary(data: &[u8], header_size: usize) -> Result<TriangleMesh> {
         let mut tri_idx = [0u32; 3];
         for v in 0..3 {
             let vo = offset + 12 + v * 12;
-            let x = f32::from_le_bytes([body[vo], body[vo + 1], body[vo + 2], body[vo + 3]]);
-            let y = f32::from_le_bytes([body[vo + 4], body[vo + 5], body[vo + 6], body[vo + 7]]);
-            let z = f32::from_le_bytes([body[vo + 8], body[vo + 9], body[vo + 10], body[vo + 11]]);
+            let [x, y, z] = read_v(vo);
             let key = [x.to_bits(), y.to_bits(), z.to_bits()];
             let idx = match vertex_map.get(&key) {
                 Some(&idx) => idx,

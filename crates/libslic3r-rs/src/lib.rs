@@ -171,6 +171,7 @@ pub mod slices_to_triangle_mesh;
 pub mod slicing;
 pub mod slicing_adaptive;
 pub mod stl;
+pub mod stl_repair;
 pub mod support;
 pub mod surface;
 pub mod surface_collection;

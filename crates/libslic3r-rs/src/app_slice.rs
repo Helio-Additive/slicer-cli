@@ -87,6 +87,15 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     // slices it. Must be done in f32 (our mesh is f64; an f64 round trip is a no-op).
     mesh.quantize_f32_center_roundtrip();
 
+    // FRAME_PAIR: subtract the slice center_offset from the mesh so verts bit-match
+    // C++'s centered slice frame (verified exact in f32). The centered slice frame
+    // IS C++'s gcode frame (slicer_cli single-instance) — export origin stays 0.
+    if std::env::var("FRAME_PAIR").is_ok() {
+        let co = mesh.slice_center_xy();
+        info!("FRAME_PAIR slice-centered by ({:.4},{:.4})", co.0, co.1);
+    }
+    let frame_origin = (0.0, 0.0);
+
     // Create PrintObject — slicing happens internally during Print::process().
     info!("Creating PrintObject...");
     let print_object = PrintObject::with_config(mesh, object_config);
@@ -97,6 +106,8 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     *print.config_mut() = print_config;
     print.set_default_region_config(region_config);
     print.raw_settings = raw_settings_json;
+    // FRAME_PAIR export origin (= the slice center applied above).
+    print.gcode_origin = frame_origin;
     print.set_status_callback(|percent, message| {
         info!("Progress: {}% - {}", percent, message);
     });
