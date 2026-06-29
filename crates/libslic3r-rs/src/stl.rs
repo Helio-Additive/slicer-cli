@@ -155,9 +155,11 @@ fn read_stl_binary(data: &[u8], header_size: usize) -> Result<TriangleMesh> {
         return Err(Error::Mesh("Binary STL truncated".into()));
     }
 
-    // REPAIR: faithful admesh path — build facet-soup, then degenerate-removal +
-    // exact-edge graph + shared-vertex fan traversal (matches C++ from_stl(repair),
-    // vert count 112569 for benchy). Default path = exact-f32-bit dedup (+93 verts).
+    // Faithful admesh repair (C++ TriangleMesh::from_stl(repair=true)): build
+    // facet-soup, then degenerate-facet removal + exact-edge neighbor graph +
+    // stl_generate_shared_vertices fan traversal. Matches C++ vert count exactly
+    // (benchy 112569; was 112662 under the prior exact-f32-bit dedup which kept
+    // the 552 degenerate facets + skipped shared-vertex generation).
     let read_v = |vo: usize| -> [f32; 3] {
         [
             f32::from_le_bytes([body[vo], body[vo + 1], body[vo + 2], body[vo + 3]]),
@@ -165,56 +167,25 @@ fn read_stl_binary(data: &[u8], header_size: usize) -> Result<TriangleMesh> {
             f32::from_le_bytes([body[vo + 8], body[vo + 9], body[vo + 10], body[vo + 11]]),
         ]
     };
-    if std::env::var("REPAIR").is_ok() {
-        let mut facet_soup = Vec::with_capacity(num_facets);
-        for i in 0..num_facets {
-            let o = i * SIZEOF_STL_FACET + 12;
-            facet_soup.push(crate::stl_repair::make_facet(
-                read_v(o),
-                read_v(o + 12),
-                read_v(o + 24),
-            ));
-        }
-        let (vertices, idx, stats) = crate::stl_repair::repair_and_index(facet_soup);
-        if std::env::var("REPAIR_DBG").is_ok() {
-            eprintln!(
-                "REPAIR_DBG_RUST facets={} verts={} degenerate={} conn3={} conn2={} conn1={}",
-                stats.number_of_facets, vertices.len(), stats.degenerate_facets,
-                stats.connected_facets_3_edge, stats.connected_facets_2_edge,
-                stats.connected_facets_1_edge
-            );
-        }
-        let indices: Vec<Triangle> = idx.iter().map(|t| Triangle::new(t[0], t[1], t[2])).collect();
-        return Ok(TriangleMesh::from_parts(vertices, indices));
-    }
-
-    // Default: exact-f32-bit hash dedup.
-    let mut vertices: Vec<Point3F> = Vec::new();
-    let mut indices: Vec<Triangle> = Vec::with_capacity(num_facets);
-    let mut vertex_map: HashMap<[u32; 3], u32> = HashMap::new();
-
+    let mut facet_soup = Vec::with_capacity(num_facets);
     for i in 0..num_facets {
-        let offset = i * SIZEOF_STL_FACET;
-        // Skip normal (12 bytes), read 3 vertices (each 12 bytes)
-        let mut tri_idx = [0u32; 3];
-        for v in 0..3 {
-            let vo = offset + 12 + v * 12;
-            let [x, y, z] = read_v(vo);
-            let key = [x.to_bits(), y.to_bits(), z.to_bits()];
-            let idx = match vertex_map.get(&key) {
-                Some(&idx) => idx,
-                None => {
-                    let idx = vertices.len() as u32;
-                    vertices.push(Point3F::new(x as f64, y as f64, z as f64));
-                    vertex_map.insert(key, idx);
-                    idx
-                }
-            };
-            tri_idx[v] = idx;
-        }
-        indices.push(Triangle::new(tri_idx[0], tri_idx[1], tri_idx[2]));
+        let o = i * SIZEOF_STL_FACET + 12;
+        facet_soup.push(crate::stl_repair::make_facet(
+            read_v(o),
+            read_v(o + 12),
+            read_v(o + 24),
+        ));
     }
-
+    let (vertices, idx, stats) = crate::stl_repair::repair_and_index(facet_soup);
+    if std::env::var("REPAIR_DBG").is_ok() {
+        eprintln!(
+            "REPAIR_DBG_RUST facets={} verts={} degenerate={} conn3={} conn2={} conn1={}",
+            stats.number_of_facets, vertices.len(), stats.degenerate_facets,
+            stats.connected_facets_3_edge, stats.connected_facets_2_edge,
+            stats.connected_facets_1_edge
+        );
+    }
+    let indices: Vec<Triangle> = idx.iter().map(|t| Triangle::new(t[0], t[1], t[2])).collect();
     Ok(TriangleMesh::from_parts(vertices, indices))
 }
 
