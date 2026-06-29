@@ -17,6 +17,11 @@ use std::fmt;
 pub struct Slicer {
     /// Slicing parameters.
     params: SlicingParams,
+    /// Contour-simplification resolution (mm), threaded from print_config.
+    /// PrintObjectSlice.cpp:144 maps `print_config.resolution` to the slice
+    /// `MeshSlicingParamsEx.resolution` (0 if <=0.001, else 0.0025). 0 = no
+    /// simplification (matches the historic rust behavior).
+    slice_resolution: CoordF,
 }
 
 /// Implementation of Slicer methods
@@ -26,7 +31,13 @@ impl Slicer {
     // TriangleMeshSlicer.cpp:22-25
     pub fn new(params: SlicingParams) -> Self {
         // TriangleMeshSlicer.cpp:24
-        Self { params }
+        Self { params, slice_resolution: 0.0 }
+    }
+
+    /// Set the slice-contour simplification resolution (mm). See
+    /// `slice_resolution`. PrintObjectSlice.cpp:144.
+    pub fn set_slice_resolution(&mut self, resolution: CoordF) {
+        self.slice_resolution = resolution;
     }
 
     /// Create a new slicer with default parameters.
@@ -88,7 +99,20 @@ impl Slicer {
 
         // Perform actual mesh slicing
         // TriangleMeshSlicer.cpp:66
-        let sliced_expolygons = triangle_mesh_slicer::slice_mesh(mesh, &slice_zs);
+        // R82 slice-contour simplification (gated SLICE_SIMPLIFY, default off):
+        // when enabled and resolution is set, slice through MeshSlicingParamsEx
+        // carrying `resolution` so make_expolygons runs ex.simplify(scaled(res))
+        // (TriangleMeshSlicer.cpp:2038-2044). Default path unchanged.
+        let sliced_expolygons = if std::env::var("SLICE_SIMPLIFY").is_ok()
+            && self.slice_resolution != 0.0
+        {
+            let zs_f32: Vec<f32> = slice_zs.iter().map(|&z| z as f32).collect();
+            let mut params = triangle_mesh_slicer::MeshSlicingParamsEx::default();
+            params.resolution = self.slice_resolution;
+            triangle_mesh_slicer::slice_mesh_ex(mesh, &zs_f32, &params, &|| {})
+        } else {
+            triangle_mesh_slicer::slice_mesh(mesh, &slice_zs)
+        };
 
         // TriangleMeshSlicer.cpp:68
         callback(0.6);

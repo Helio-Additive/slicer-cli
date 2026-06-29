@@ -422,7 +422,12 @@ impl PrintObject {
 
         // Create slicer with parameters
         // PrintObjectSlice.cpp:799
-        let slicer = crate::slicer::Slicer::new(slicing_params);
+        let mut slicer = crate::slicer::Slicer::new(slicing_params);
+        // PrintObjectSlice.cpp:144 — slice-contour simplification resolution:
+        //   params_base.resolution = print_config.resolution <= 0.001 ? 0.0f : 0.0025;
+        // (BBS: 0.0025mm safe to speed slicing; separate from arc-fit resolution.)
+        let cfg_resolution = self.print_config.resolution;
+        slicer.set_slice_resolution(if cfg_resolution <= 0.001 { 0.0 } else { 0.0025 });
 
         // Perform actual mesh slicing
         // PrintObjectSlice.cpp:801

@@ -1513,6 +1513,135 @@ fn slice_mesh_plane_its(
     layers.remove(0)
 }
 
+// ---------------------------------------------------------------------------
+// Faithful slice-contour simplification (TriangleMeshSlicer.cpp:2038-2044 →
+// ExPolygon::simplify, ExPolygon.cpp:231-256). The C++ slicer simplifies every
+// output ExPolygon at `scaled(params.resolution)` (=scaled(0.0025) for benchy,
+// PrintObjectSlice.cpp:144). rust omitted it → ~6x more slice vertices → cascades
+// to perimeters/fills/gcode (R82). This is the faithful port, gated behind the
+// caller passing resolution != 0.
+// ---------------------------------------------------------------------------
+
+/// f64 squared distance from `p` to the SEGMENT (a,b). Bit-faithful to
+/// `Slic3r::line_alg::distance_to_squared` (Line.hpp:43-69): all arithmetic in
+/// f64, t clamped to [0,1], returns the f64 squared norm (NOT re-quantized).
+#[inline]
+fn dp_distance_to_squared(p: Point, a: Point, b: Point) -> f64 {
+    let vx = (b.x - a.x) as f64;
+    let vy = (b.y - a.y) as f64;
+    let vax = (p.x - a.x) as f64;
+    let vay = (p.y - a.y) as f64;
+    let l2 = vx * vx + vy * vy;
+    if l2 == 0.0 {
+        return vax * vax + vay * vay;
+    }
+    let t = (vax * vx + vay * vy) / l2;
+    if t <= 0.0 {
+        vax * vax + vay * vay
+    } else if t >= 1.0 {
+        let dx = (p.x - b.x) as f64;
+        let dy = (p.y - b.y) as f64;
+        dx * dx + dy * dy
+    } else {
+        // (t*v - va) squaredNorm
+        let ex = t * vx - vax;
+        let ey = t * vy - vay;
+        ex * ex + ey * ey
+    }
+}
+
+/// Faithful `MultiPoint::_douglas_peucker` (MultiPoint.cpp:179-225). `tolerance`
+/// is ALREADY SCALED (coord units). Preserves C++'s exact keep/drop decisions and
+/// emission order (anchor first, then floaters as the stack unwinds).
+fn dp_douglas_peucker(pts: &[Point], tolerance: f64) -> Vec<Point> {
+    let mut result_pts: Vec<Point> = Vec::new();
+    let tolerance_sq = tolerance * tolerance;
+    if pts.is_empty() {
+        return result_pts;
+    }
+    let mut anchor_idx: usize = 0;
+    let mut floater_idx: usize = pts.len() - 1;
+    result_pts.reserve(pts.len());
+    result_pts.push(pts[anchor_idx]);
+    if anchor_idx != floater_idx {
+        let mut dp_stack: Vec<usize> = Vec::with_capacity(pts.len());
+        dp_stack.push(floater_idx);
+        loop {
+            let mut max_dist_sq = 0.0_f64;
+            let mut furthest_idx = anchor_idx;
+            let mut i = anchor_idx + 1;
+            while i < floater_idx {
+                let dist_sq = dp_distance_to_squared(pts[i], pts[anchor_idx], pts[floater_idx]);
+                if dist_sq > max_dist_sq {
+                    max_dist_sq = dist_sq;
+                    furthest_idx = i;
+                }
+                i += 1;
+            }
+            if max_dist_sq <= tolerance_sq {
+                result_pts.push(pts[floater_idx]);
+                anchor_idx = floater_idx;
+                // dp_stack.back() == floater_idx
+                dp_stack.pop();
+                match dp_stack.last() {
+                    None => break,
+                    Some(&top) => floater_idx = top,
+                }
+            } else {
+                floater_idx = furthest_idx;
+                dp_stack.push(floater_idx);
+            }
+        }
+    }
+    result_pts
+}
+
+/// Douglas-Peucker one ring: close (push first to end) → DP(tolerance) → reopen
+/// (pop last). Mirrors ExPolygon.cpp:236-249 per-ring handling.
+fn dp_simplify_ring(ring: &Polygon, tolerance: f64) -> Polygon {
+    if ring.points.is_empty() {
+        return Polygon::new();
+    }
+    let mut closed = ring.points.clone();
+    closed.push(closed[0]);
+    let mut simplified = dp_douglas_peucker(&closed, tolerance);
+    simplified.pop(); // reopen
+    Polygon::from_points(simplified)
+}
+
+/// Faithful `ExPolygon::simplify(tolerance)` = union_ex(simplify_p(tolerance))
+/// (ExPolygon.cpp:231-256). `tolerance` is ALREADY SCALED. simplify_p DP-simplifies
+/// each ring then runs `simplify_polygons` (ClipperLib SimplifyPolygons, pftNonZero),
+/// then union_ex re-nests into ExPolygons.
+/// FIDELITY-NOTE(F1): the simplify_polygons + union_ex steps go through the crate's
+/// geo-clipper backend (approximation of ClipperLib at coord precision); the DP
+/// reduction is exact.
+fn expolygon_simplify(ex: &ExPolygon, tolerance: f64) -> ExPolygons {
+    // simplify_p: DP each ring (contour + holes) → Polygons.
+    let mut pp: Polygons = Vec::with_capacity(ex.holes.len() + 1);
+    pp.push(dp_simplify_ring(&ex.contour, tolerance));
+    for hole in &ex.holes {
+        pp.push(dp_simplify_ring(hole, tolerance));
+    }
+    // simplify_polygons(pp) == ClipperLib::SimplifyPolygons(pp, pftNonZero).
+    // SLICE_DP_ONLY: skip the geo-clipper simplify_polygons+union_ex (F1 quantizes
+    // coords to the 1000-scale grid) and reassemble the DP'd rings directly into
+    // one ExPolygon, preserving EXACT integer coords. For clean non-self-
+    // intersecting slices this is geometrically equivalent to C++'s
+    // SimplifyPolygons+union_ex but bit-faithful in coordinates.
+    if std::env::var("SLICE_DP_ONLY").is_ok() {
+        let contour = pp.remove(0);
+        if contour.points.len() < 3 {
+            return ExPolygons::new();
+        }
+        let holes: Vec<Polygon> = pp.into_iter().filter(|h| h.points.len() >= 3).collect();
+        return vec![ExPolygon::with_holes(contour, holes)];
+    }
+    let simplified = crate::geometry::polygon::simplify_polygons_clipper(&pp);
+    // union_ex(simplified) re-nests contours/holes.
+    crate::clipper_utils::union_polygons_ex(&simplified)
+}
+
 // TriangleMeshSlicer.cpp:2003-2050
 // `std::vector<ExPolygons> slice_mesh_ex(...)`.
 pub fn slice_mesh_ex_its(
@@ -1597,8 +1726,19 @@ pub fn slice_mesh_ex_its(
         if this_mode == SlicingMode::PositiveLargestContour {
             crate::geometry::keep_largest_contour_only(&mut expolygons);
         }
-        // Resolution simplification (TriangleMeshSlicer.cpp:2038-2044) omitted:
-        // params.resolution defaults to 0 in all current callers.
+        // Resolution simplification (TriangleMeshSlicer.cpp:2038-2044).
+        // C++: auto resolution = scaled<float>(params.resolution);
+        //      if (resolution != 0.) { for each ex: append(simplified, ex.simplify(resolution)); }
+        // The caller sets params.resolution = print_config.resolution<=0.001 ? 0 : 0.0025
+        // (PrintObjectSlice.cpp:144). R82: rust had omitted this → ~6x slice vertices.
+        let resolution_scaled = scale(params.resolution) as f64;
+        if resolution_scaled != 0.0 {
+            let mut simplified = ExPolygons::with_capacity(expolygons.len());
+            for ex in &expolygons {
+                simplified.extend(expolygon_simplify(ex, resolution_scaled));
+            }
+            expolygons = simplified;
+        }
         layers[layer_id] = expolygons;
     }
 
