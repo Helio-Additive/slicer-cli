@@ -23,8 +23,28 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 84 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
+## Current parity (ROUND 85 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
+- **★ R85 — CENTERING mechanism CORRECT but BAILED at the Eigen f32-matmul wall (F-class; slice-byte-match
+  floor).** Built the fused f32 trafo_centered slicing in slice_mesh_its (tf = (Scale(s)·Translate(−c)).cast
+  <float>(), v = tf·v → s·(v−c) = the 0.8245 shift; Z untouched → R65 safe) + Slicer center setter + export
+  gcode_origin = −center (gated SLICE_CENTER, branch alex/slice-centering). MECHANISM VERIFIED CORRECT: first
+  8 transformed verts BIT-IDENTICAL to C++; on-vertex slice points match; R65 li=1 loops==1; default unchanged
+  (−0.44). BAIL (decisive bit-check): the fused f32 transform does NOT bit-match Eigen's f32 `tf·v` —
+  **74180/112569 verts differ by exactly 1 ULP** (e.g. V12 x-bits cpp 490c3f1f vs rust 490c3f20). Tried 3
+  formulations (plain s·vx+tx, mul_add/FMA, explicit dot s·vx+0·vy+0·vz+tx) — ALL leave the ~1-ULP residual.
+  THE UNREPRODUCED OP: Eigen `Transform<float,3,Affine> * Vector3f` — its internal Matrix3f·Vector3f
+  reduction order / ffp-contract FMA / NEON vectorization under clang -O3 arm64; rust can't trivially match
+  Eigen's exact f32 reduction. The 1-ULP vert deltas AMPLIFY through slice_facet's f64 t-interpolation
+  (near-horizontal edges where t is ill-conditioned → up to 0.068mm, some classifications flip) → slices hash
+  0/240, material +16. Same F-class class as R79e. >>> **SLICE-BYTE-MATCH CAMPAIGN — fully decomposed: 2 of 3
+  sub-levers EXACT** (R83 simplify npts 156/240; R84 F1-union coords full-precision/ClipperLib-INT32-faithful),
+  **centering mechanism CORRECT**, and the SOLE remaining blocker is **Eigen Affine3f·Vector3f f32 exactness**
+  — a deep/uncertain F-class wall (pure-rust reproduction may be impossible without reimplementing Eigen's f32
+  path; the only forward path is an Eigen FFI shim, which still only reaches slice-byte-match — the pervasive
+  downstream F1-walk remains for full gcode byte-parity). R83/R84/R85 are banked gated foundations (all
+  correct, sized, default-off). **RECOMMEND BANK:** material parity 1.000× + mesh-faithful (R80) are the
+  achieved/landed goals; byte-parity is pinned to (Eigen-f32-matmul + multi-site F1-walk), both documented.
 - **★ R84 — F1 UNION PORTED (full-precision, ClipperLib-faithful); final slice residual = the 0.8245mm
   CENTERING (frame saga reconciled).** Replaced the geo-clipper scale-1000 union in make_expolygons +
   expolygon_simplify with a faithful `cz_union_ex` shim (PolyTreeToExPolygons, z-encoded contour/hole
