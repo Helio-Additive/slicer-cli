@@ -23,8 +23,30 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 88 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
+## Current parity (ROUND 92 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
+- **R89–R92 — SLICE-BYTE-MATCH ENDGAME (lslices still 0/240; residual = a per-layer union-nesting/DP
+  interaction; needs a layer-aligned harness).** Branch alex/frame-unify, gated, @b836d61. Progressive
+  narrowing (each corrects the prior): **R89** — its_face_edge_ids edge NUMBERING + facet order are ALREADY
+  IDENTICAL (overturns R88's "edge-id differs"); residual is the per-layer lines[] VECTOR ORDER (rust
+  monotonic-by-edge-id vs C++ scattered). **R90** — DECISIVE: C++ slice_make_lines is tbb::parallel_for with
+  per-layer mutexes → line push order is NON-DETERMINISTIC run-to-run (1756/4685 differ) YET C++ gcode is
+  BYTE-IDENTICAL across runs → **C++ slicing is ORDER-INVARIANT**; the loop/line-order path is a DEAD END
+  (impossible AND unnecessary — avoids a TBB-order wall). Redirect: the union diff is a deterministic
+  collinear/structure diff on the same geometry. **R91** — post-chain_lines loops MATCH CONTENT 240/240
+  (divergence is union CODE not chain_lines); with the two-pass union (@75240fe) the union POINT-SET
+  BYTE-MATCHES (R88's 4505-vs-4457 was a measurement artifact). Landed the faithful ExPolygon::simplify_p
+  chain (@b836d61). Residual pinned: cz_union_ex's PolyTree nests the 8 holes under DIFFERENT contours than
+  C++ on the SAME point set → expolygon_simplify runs per-ExPolygon → per-contour DP diverges → lslices.
+  **R92** — cz_union_ex's PolyTree MATCHES C++ exactly on ALIGNED layers (top=1, node0 npts=1066 nholes=8,
+  same bbox) → the nesting is deterministic + faithful where comparable. BUT the probes fired on the "first
+  layer meeting a condition," which DIFFERS cpp-vs-rust → never compared the SAME layer's union; L0's actual
+  divergence (post-simplify C++ {251/8h, 76} vs rust {146/7h, 74, 118}) was NOT isolated. METHODOLOGY BAIL:
+  need a slice_z-keyed (layer-aligned) harness to compare L0's PRE-simplify union nesting AND post-simplify
+  per-ex on the SAME layer → cleanly separate union-nesting vs DP. NEXT LEVER: build the layer-aligned harness,
+  isolate L0, fix the deterministic divergence → lslices 240/240 (SLICE BYTE-MATCH milestone) → then the
+  downstream F1-walk. WINS STANDING: frame-unify (verts 0 diffs, raw loops 240/240, R65), two-pass union
+  (point-set byte-match), faithful simplify_p. Gated (default unchanged); build green.
 - **★ R87/R88 — FRAME-UNIFICATION WORKS (the two hardest walls SOLVED); lslices residual root = make_loops
   LOOP-ORDER (upstream of union).** R87 (frame-unify, branch alex/frame-unify, gated FRAME_UNIFY): routed
   rust's placed verts through C++'s EXACT params2.trafo (= trafo_centered × volume.get_matrix, incl Z+24) via
