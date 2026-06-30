@@ -497,11 +497,28 @@ extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t 
         default: pft = ClipperLib::pftNonZero; break;
     }
 
-    // clipper_do_polytree(ctUnion, subject, Empty, fill_type) — ApplySafetyOffset::No.
-    ClipperLib::Clipper clipper;
-    clipper.AddPaths(subject, ClipperLib::ptSubject, true);
+    // clipper_do_polytree(ctUnion, subject, Empty, fill_type) — ClipperUtils.cpp:641-654.
+    // C++ does this in TWO PASSES (a single union-into-PolyTree is "very expensive
+    // with overlapping edges" + gives a DIFFERENT result): (1) clipper_do<Paths>
+    // (ctUnion → flat Paths), (2) clipper_union<PolyTree> (a 2nd union of that
+    // output to build the PolyTree ordering). A single-pass union-into-PolyTree
+    // dropped/added vertices (R88: npts 4457 vs C++ 4505). Replicate both passes.
+    ClipperLib::Paths pass1;
+    {
+        ClipperLib::Clipper c1;
+        c1.AddPaths(subject, ClipperLib::ptSubject, true);
+        // empty clip (EmptyPathsProvider) — no ptClip paths added.
+        c1.Execute(ClipperLib::ctUnion, pass1, pft, pft);
+    }
+    if (pass1.empty())
+        return marshal_grouped(ClipperLib::Paths{}, std::vector<int32_t>{});
+
     ClipperLib::PolyTree polytree;
-    clipper.Execute(ClipperLib::ctUnion, polytree, pft, pft);
+    {
+        ClipperLib::Clipper c2;
+        c2.AddPaths(pass1, ClipperLib::ptSubject, true);
+        c2.Execute(ClipperLib::ctUnion, polytree, pft, pft);
+    }
 
     // PolyTreeToExPolygons grouping (ClipperUtils.cpp:203-210).
     ClipperLib::Paths out_paths;
