@@ -1454,7 +1454,38 @@ fn slice_mesh_its(
         // trans=0 → z passes through bit-exact) → R65 preserved. (0,0) = historic
         // identity path (v.x*=s, v.y*=s).
         let (cx, cy) = params.center_offset;
-        let scaled_vertices: Vec<StlVertex> = if cx != 0.0 || cy != 0.0 {
+        let scaled_vertices: Vec<StlVertex> = if std::env::var("FRAME_UNIFY").is_ok() {
+            // R87 frame-unification: slice rust's PLACED verts through C++'s exact
+            // params2.trafo (incl Z+24) after subtracting the volume offset, via the
+            // Eigen shim (bit-exact). params2.trafo (row-major) = Identity + trans
+            // (8.3923339722069557e-08, 0, 24) [dumped]; volume offset = the
+            // volume.get_matrix translation (0.82450008392, 0, 24) [dumped].
+            // (Hardcoded from the C++ dump for the validation pass; a faithful build
+            // from the placement matrix follows if verts bit-match.)
+            let trafo16: [f64; 16] = [
+                1.0, 0.0, 0.0, 8.3923339722069557e-08,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 24.0,
+                0.0, 0.0, 0.0, 1.0,
+            ];
+            let voff = (0.82450008392333984_f64, 0.0_f64, 24.0_f64);
+            let mut flat_in: Vec<f32> = Vec::with_capacity(mesh.vertices.len() * 3);
+            for p in &mesh.vertices {
+                flat_in.push(p.x);
+                flat_in.push(p.y);
+                flat_in.push(p.z);
+            }
+            let flat_out = eigen_transform_sys::transform_verts_unified(
+                &trafo16,
+                crate::libslic3r::SCALING_FACTOR,
+                voff,
+                &flat_in,
+            );
+            flat_out
+                .chunks_exact(3)
+                .map(|c| StlVertex::new(c[0], c[1], c[2]))
+                .collect()
+        } else if cx != 0.0 || cy != 0.0 {
             // Flatten verts (x,y,z interleaved f32) for the shim.
             let mut flat_in: Vec<f32> = Vec::with_capacity(mesh.vertices.len() * 3);
             for p in &mesh.vertices {

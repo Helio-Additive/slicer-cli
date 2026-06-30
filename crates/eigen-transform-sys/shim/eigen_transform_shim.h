@@ -29,6 +29,13 @@ void eigen_transform_verts_for_slicing(double scaling_factor, double cx, double 
                                        const float *verts_in, float *verts_out,
                                        int32_t n);
 
+// R87 frame-unification: slice_vert = prescale·params2.trafo·(rust_raw − voff).
+// `trafo16` = f64 params2.trafo (row-major 4x4). `voff_*` = volume.get_matrix
+// translation (rust placed frame = C++ volume + voff). Bit-exact via real Eigen.
+void eigen_transform_verts_unified(const double *trafo16, double scaling_factor,
+                                   double voff_x, double voff_y, double voff_z,
+                                   const float *verts_in, float *verts_out, int32_t n);
+
 #ifdef __cplusplus
 }
 #endif

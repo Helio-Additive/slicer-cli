@@ -46,6 +46,7 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     let mut mesh = load_stl(input).with_context(|| format!("Failed to load STL: {:?}", input))?;
     info!("Loaded {} triangles", mesh.triangle_count());
 
+
     // Load BambuStudio project_settings.config JSON.
     info!("Loading BambuStudio settings from {:?}", settings_json);
     let settings_str = fs::read_to_string(settings_json)
@@ -85,7 +86,12 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     // emits ~8 spurious interior hole-loops -> the bottom-bridge/internal-solid cascade (R63-R65).
     // Replicate C++'s round trip so the floor lands 7.75e-7 below the plane exactly as C++
     // slices it. Must be done in f32 (our mesh is f64; an f64 round trip is a no-op).
-    mesh.quantize_f32_center_roundtrip();
+    // R87 FRAME_UNIFY: the Z+24 round-trip is reproduced by C++'s params2.trafo
+    // applied in the unified slice transform (the shim), so the separate mesh-bake
+    // must be SKIPPED to avoid double-counting. R65 floor survives via the trafo.
+    if std::env::var("FRAME_UNIFY").is_err() {
+        mesh.quantize_f32_center_roundtrip();
+    }
 
     // FRAME_PAIR: subtract the slice center_offset from the mesh so verts bit-match
     // C++'s centered slice frame (verified exact in f32). The centered slice frame

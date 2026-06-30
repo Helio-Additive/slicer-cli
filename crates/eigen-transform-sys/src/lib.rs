@@ -21,6 +21,43 @@ extern "C" {
         verts_out: *mut f32,
         n: i32,
     );
+
+    /// R87 frame-unification: `slice_vert = prescale·params2.trafo·(rust_raw − voff)`.
+    /// `trafo16` = f64 params2.trafo (row-major 4x4). Bit-exact via real Eigen.
+    pub fn eigen_transform_verts_unified(
+        trafo16: *const f64,
+        scaling_factor: f64,
+        voff_x: f64,
+        voff_y: f64,
+        voff_z: f64,
+        verts_in: *const f32,
+        verts_out: *mut f32,
+        n: i32,
+    );
+}
+
+/// Safe wrapper for [`eigen_transform_verts_unified`].
+pub fn transform_verts_unified(
+    trafo16: &[f64; 16],
+    scaling_factor: f64,
+    voff: (f64, f64, f64),
+    verts_in: &[f32],
+) -> Vec<f32> {
+    let n = (verts_in.len() / 3) as i32;
+    let mut out = vec![0.0f32; verts_in.len()];
+    unsafe {
+        eigen_transform_verts_unified(
+            trafo16.as_ptr(),
+            scaling_factor,
+            voff.0,
+            voff.1,
+            voff.2,
+            verts_in.as_ptr(),
+            out.as_mut_ptr(),
+            n,
+        );
+    }
+    out
 }
 
 /// Safe wrapper: transform `verts` (slice of [x,y,z] f32 triples flattened) into
