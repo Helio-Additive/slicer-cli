@@ -1447,32 +1447,30 @@ fn slice_mesh_its(
         // TriangleMeshSlicer.cpp:1880
         let face_edge_ids = its_face_edge_ids(mesh);
         // TriangleMeshSlicer.cpp:1885 / 1894-1896.
-        // R85: when params.center_offset != 0, slice through the FUSED f32
-        // make_trafo_for_slicing (transform_mesh_vertices_for_slicing non-identity
-        // path): tf = (Scale(s)*Translate(-c)).cast<float>(), v = tf*v →
-        // linear=diag(s,s,1)/translation=(-s*cx,-s*cy,0), each element cast f64→f32
-        // once, v_out = lin_f32*v + trans_f32 in f32 (FMA-eligible, matches Eigen).
-        // Z linear=1/trans=0 → Z untouched (R65). (0,0) = historic identity path.
+        // R86: when params.center_offset != 0, slice through C++'s exact
+        // make_trafo_for_slicing fused f32 transform via the EIGEN FFI SHIM (calls
+        // the real Eigen `Affine3f * Vector3f` → bit-exact, sidesteps the pure-rust
+        // 1-ULP wall of R85). Z untouched by the transform (linear row2=(0,0,1),
+        // trans=0 → z passes through bit-exact) → R65 preserved. (0,0) = historic
+        // identity path (v.x*=s, v.y*=s).
         let (cx, cy) = params.center_offset;
         let scaled_vertices: Vec<StlVertex> = if cx != 0.0 || cy != 0.0 {
-            let s = 1.0f64 / crate::libslic3r::SCALING_FACTOR;
-            let lin_x = s as f32;
-            let lin_y = s as f32;
-            let trans_x = (-(s * cx)) as f32;
-            let trans_y = (-(s * cy)) as f32;
-            // Match Eigen's f32 Affine `tf * v` = linear*v + translation EXACTLY:
-            // linear is diag(s,s,1) so row0·v = s*v.x + 0*v.y + 0*v.z (Eigen computes
-            // the full dense dot product INCLUDING the zero terms), THEN + translation
-            // as a separate add. Replicating the (linear dot) then (+ translation)
-            // two-step — with the zero products — matches C++'s 1-ULP rounding that a
-            // fused `s*v.x + tx` did not.
-            mesh.vertices
-                .iter()
-                .map(|p| {
-                    let lin_dot_x = lin_x * p.x + 0.0f32 * p.y + 0.0f32 * p.z;
-                    let lin_dot_y = 0.0f32 * p.x + lin_y * p.y + 0.0f32 * p.z;
-                    StlVertex::new(lin_dot_x + trans_x, lin_dot_y + trans_y, p.z)
-                })
+            // Flatten verts (x,y,z interleaved f32) for the shim.
+            let mut flat_in: Vec<f32> = Vec::with_capacity(mesh.vertices.len() * 3);
+            for p in &mesh.vertices {
+                flat_in.push(p.x);
+                flat_in.push(p.y);
+                flat_in.push(p.z);
+            }
+            let flat_out = eigen_transform_sys::transform_verts_for_slicing(
+                crate::libslic3r::SCALING_FACTOR,
+                cx,
+                cy,
+                &flat_in,
+            );
+            flat_out
+                .chunks_exact(3)
+                .map(|c| StlVertex::new(c[0], c[1], c[2]))
                 .collect()
         } else {
             mesh.vertices

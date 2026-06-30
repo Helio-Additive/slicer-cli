@@ -1,0 +1,12 @@
+[package]
+name = "eigen-transform-sys"
+version = "0.1.0"
+edition = "2021"
+description = "C ABI shim around Eigen for the libslic3r slice-time vertex transform (bit-exact f32 matmul)."
+
+[lib]
+name = "eigen_transform_sys"
+path = "src/lib.rs"
+
+[build-dependencies]
+cc = "1"

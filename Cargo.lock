@@ -1077,6 +1077,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "eigen-transform-sys"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2999,6 +3006,7 @@ dependencies = [
  "clipper2",
  "clipper2c-sys",
  "earcutr",
+ "eigen-transform-sys",
  "env_logger",
  "flate2",
  "geo",
