@@ -1195,6 +1195,7 @@ fn make_loops_layers(
         let polygons = make_loops_single(&mut lines[line_idx]);
         let mut polygons = polygons;
 
+
         // TriangleMeshSlicer.cpp:1502
         let this_mode = if line_idx < params.slicing_mode_normal_below_layer {
             params.mode_below
@@ -1746,13 +1747,16 @@ fn expolygon_simplify(ex: &ExPolygon, tolerance: f64) -> ExPolygons {
         let holes: Vec<Polygon> = pp.into_iter().filter(|h| h.points.len() >= 3).collect();
         return vec![ExPolygon::with_holes(contour, holes)];
     }
-    // F1_UNION (R84): route simplify_p's `union_ex(simplify_polygons(pp))` through
-    // the vertex-exact vendored ClipperLib (ctUnion+PolyTree, NonZero) instead of
-    // geo-clipper @ scale-1000. ClipperLib SimplifyPolygons(pftNonZero) followed by
-    // union_ex is a NonZero union + PolyTree nesting of the DP'd rings — exactly
-    // what union_ex_clib does — and preserves the exact i32 slice coordinates.
+    // F1_UNION (R84/R91): faithful C++ `ExPolygon::simplify` = union_ex(simplify_p(tol)),
+    // simplify_p = DP each ring (above) → `simplify_polygons(pp)` (ClipperLib
+    // SimplifyPolygons, StrictlySimple=true) → then `union_ex`. R91: the SimplifyPolygons
+    // step (StrictlySimple=true) is NOT the same as a plain ctUnion — it retains
+    // different vertices; routing through it (not a direct union_ex_clib) is what
+    // closes the lslices residual (rust simplify 1368 vs C++ 1528 → match). Both via
+    // the vertex-exact vendored ClipperLib (exact i32 coords).
     if std::env::var("F1_UNION").is_ok() {
-        return crate::clipper_utils::union_ex_clib(&pp, 1);
+        let simplified = crate::clipper_utils::simplify_polygons_clib(&pp, 1);
+        return crate::clipper_utils::union_ex_clib(&simplified, 1);
     }
     let simplified = crate::geometry::polygon::simplify_polygons_clipper(&pp);
     // union_ex(simplified) re-nests contours/holes.

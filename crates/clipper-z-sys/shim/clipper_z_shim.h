@@ -75,6 +75,13 @@ void cz_free_zpaths(CzZPaths paths);
 CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
                      int32_t fill_type);
 
+// Faithful ClipperLib::SimplifyPolygons (clipper.hpp:559): ctUnion with
+// StrictlySimple(true). Used by ExPolygon::simplify_p's post-DP step
+// (ClipperUtils simplify_polygons). Returns flat Paths (z=0); caller re-unions.
+// `fill_type`: 0=EvenOdd,1=NonZero,2=Positive,3=Negative.
+CzZPaths cz_simplify_polygons(const int32_t *xy, const int32_t *lens, int32_t num,
+                              int32_t fill_type);
+
 // Faithful replica of libslic3r ClipperUtils.cpp `offset_expolygon_inner`
 // (ClipperUtils.cpp:437-506): offset a SINGLE ExPolygon (contour + holes) by
 // `delta` (in scaled integer units) using the vertex-exact ClipperOffset

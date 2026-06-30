@@ -484,6 +484,30 @@ CzZPaths marshal_grouped(const ClipperLib::Paths &paths, const std::vector<int32
 
 } // namespace
 
+extern "C" CzZPaths cz_simplify_polygons(const int32_t *xy, const int32_t *lens, int32_t num,
+                                         int32_t fill_type) {
+    // Faithful ClipperLib::SimplifyPolygons (clipper.hpp:559-566): a ctUnion with
+    // StrictlySimple(true) — used by ClipperUtils simplify_polygons (the
+    // ExPolygon::simplify_p post-DP step, ClipperUtils.cpp:1026-1040). Returns flat
+    // Paths (z=0); the caller re-unions into ExPolygons. KEY: StrictlySimple(true)
+    // differs from cz_union_ex's default-false union → different vertex retention.
+    ClipperLib::Paths subject = read_closed_paths(xy, lens, num);
+    ClipperLib::PolyFillType pft = ClipperLib::pftNonZero;
+    switch (fill_type) {
+        case 0: pft = ClipperLib::pftEvenOdd; break;
+        case 1: pft = ClipperLib::pftNonZero; break;
+        case 2: pft = ClipperLib::pftPositive; break;
+        case 3: pft = ClipperLib::pftNegative; break;
+        default: pft = ClipperLib::pftNonZero; break;
+    }
+    ClipperLib::Clipper c;
+    c.StrictlySimple(true);
+    c.AddPaths(subject, ClipperLib::ptSubject, true);
+    ClipperLib::Paths out;
+    c.Execute(ClipperLib::ctUnion, out, pft, pft);
+    return marshal_paths(out);
+}
+
 extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
                                 int32_t fill_type) {
     ClipperLib::Paths subject = read_closed_paths(xy, lens, num);

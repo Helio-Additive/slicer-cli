@@ -1300,6 +1300,59 @@ pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
     result
 }
 
+/// ClipperLib-backed `simplify_polygons(subject, preserve_collinear=false)`
+/// (ClipperUtils.cpp:1026-1040) = `ClipperLib::SimplifyPolygons(subject, pftNonZero)`
+/// = ctUnion with StrictlySimple(true). The post-DP step of ExPolygon::simplify_p.
+/// Returns flat Polygons (caller re-unions via union_ex). StrictlySimple(true) is
+/// the KEY difference from a plain ctUnion — different vertex retention (R91).
+pub fn simplify_polygons_clib(loops: &[Polygon], fill_type: i32) -> Vec<Polygon> {
+    if loops.is_empty() {
+        return vec![];
+    }
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    for ring in loops {
+        let pts = ring.points();
+        if pts.is_empty() {
+            continue;
+        }
+        lens.push(pts.len() as i32);
+        for p in pts {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+    }
+    let num = lens.len() as i32;
+    if num == 0 {
+        return vec![];
+    }
+    // SAFETY: live, correctly-sized buffers; shim only reads them, returns malloc'd
+    // output we copy out then free.
+    let raw = unsafe { clipper_z_sys::cz_simplify_polygons(xy.as_ptr(), lens.as_ptr(), num, fill_type) };
+    let mut out: Vec<Polygon> = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
+                cursor += 1;
+            }
+            out.push(Polygon::from_points(pts));
+        }
+    }
+    // SAFETY: `raw` from cz_simplify_polygons, not yet freed.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    out
+}
+
 /// Detect gaps between two polygon sets.
 ///
 /// Gaps are the narrow regions that exist in the outer area but not in the

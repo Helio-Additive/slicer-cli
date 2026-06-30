@@ -109,6 +109,11 @@ extern "C" {
     /// Free via [`cz_free_zpaths`].
     pub fn cz_union_ex(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
 
+    /// Faithful `ClipperLib::SimplifyPolygons` (clipper.hpp:559): ctUnion with
+    /// StrictlySimple(true). The ExPolygon::simplify_p post-DP step. Returns flat
+    /// Paths (z=0); caller re-unions into ExPolygons. fill_type: 0..3 as above.
+    pub fn cz_simplify_polygons(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 }
