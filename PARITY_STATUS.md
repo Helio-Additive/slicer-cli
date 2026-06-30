@@ -23,8 +23,31 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 86 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
+## Current parity (ROUND 88 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
+- **★ R87/R88 — FRAME-UNIFICATION WORKS (the two hardest walls SOLVED); lslices residual root = make_loops
+  LOOP-ORDER (upstream of union).** R87 (frame-unify, branch alex/frame-unify, gated FRAME_UNIFY): routed
+  rust's placed verts through C++'s EXACT params2.trafo (= trafo_centered × volume.get_matrix, incl Z+24) via
+  the Eigen shim (minus the volume offset), dropped quantize_f32_center_roundtrip under the gate (the Z+24
+  trafo reproduces C++'s floor f32 round-trip). RESULT: **transformed verts bit-match C++ 0/112569 diffs**
+  (was 74180 1-ULP in R85 — the f32-matmul wall CLOSED), **RAW slice loops byte-match 240/240**, **R65 holds**
+  (li=1 nloops=1). Confirms R86 (Z+24 placement trafo, not an XY re-center). The two hardest blockers (R85 f32
+  matmul exactness + R86 frame reconstruction) are SOLVED + verified. R88 (pin the lslices residual): lslices
+  still 0/240 DESPITE raw loops byte-matching → pinned to the UNION OUTPUT, but the ROOT is UPSTREAM:
+  **make_loops emits loops in a different ORDER + start-rotation than C++** (R87's RAWLOOP hash was
+  order/rotation-invariant → MASKED it). ClipperLib union's collinear retention + PolyTree nesting DEPEND on
+  input path order → hence rust L0 npts 4457 vs C++ 4505 + one hole re-nested. Two sub-causes: (1)
+  `its_face_edge_ids` assigns edge NUMBERS in a different order than C++ its_face_edge_ids_impl
+  (TriangleMesh.cpp:620-665) → lines carry different edge_a_id/edge_b_id → chain_lines seeds differently; (2)
+  `chain_lines` tie-break — C++ std::sort is UNSTABLE on by_edge_a_id/by_a_id, rust uses stable sort_by_key →
+  coincident edges (the cabin floor has many) pick a different next-segment. The union/simplify code itself is
+  FINE (two-pass union A/B = no change). NEXT LEVER (the actual closer): make rust make_loops emit C++'s loop
+  order+rotation — (a) match its_face_edge_ids numbering (deterministic), re-measure; (b) only if needed, the
+  chain_lines std::sort-unstable tie-break (impl-defined risk — may need to match libstdc++/libc++ introsort,
+  OR numbering parity makes keys unique enough that tie-break is moot). Once loop order matches → union
+  byte-matches → lslices byte-match → SLICE BYTE-MATCH milestone → then downstream F1-walk. Gated (FRAME_UNIFY
+  default off → unchanged 3848.34); build green. CAVEAT: trafo hardcoded from the dump for validation — the
+  un-gate needs it built faithfully from rust's placement matrix.
 - **★ R86 — EIGEN FFI SHIM BUILT (bit-exact matmul); DECISIVE CORRECTION: the 0.8245mm "centering" was a
   MISREAD — real slice lever = FRAME UNIFICATION (Z=24 placement trafo, R65-entangled).** Built crate
   `eigen-transform-sys` — C ABI shim calling the REAL Eigen with C++'s exact make_trafo_for_slicing
