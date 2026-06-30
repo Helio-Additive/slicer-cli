@@ -23,8 +23,29 @@ COMPARE_KEEP_DIR=/tmp/cmp devbox run -- \
 - Track the **header filament length** and **per-feature material dE** (rust−native),
   not feature *counts* (counts are a feature-run-segmentation artifact).
 
-## Current parity (ROUND 85 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
+## Current parity (ROUND 86 — see memory `project_byteparity_admesh.md` + `project_benchy_parity_gap.md`)
 
+- **★ R86 — EIGEN FFI SHIM BUILT (bit-exact matmul); DECISIVE CORRECTION: the 0.8245mm "centering" was a
+  MISREAD — real slice lever = FRAME UNIFICATION (Z=24 placement trafo, R65-entangled).** Built crate
+  `eigen-transform-sys` — C ABI shim calling the REAL Eigen with C++'s exact make_trafo_for_slicing
+  (Transform<float,3,Affine>·Vector3f, -O3 vs the vendored BambuStudio Eigen) → bit-exact matmul by
+  construction (sidesteps the R85 f32 wall). Pushed alex/eigen-shim, gated. THE DECISIVE FINDING (TF_DBG dump
+  of C++'s actual slice tf, f64): tf = diag(s,s,1), translation = (**0.0083923 scaled ≈ 0nm**, 0, **+24**).
+  So C++'s slice frame has **NO 0.8245mm X-centering** — R84's "82450 X-shift aligns 960/991" was rust's OWN
+  mis-derived −s·cx output, NOT C++-vs-rust-raw. The real X-translation ≈ 0; the real translation is **Z=+24
+  = center_z** (model PLACEMENT / the f32 Z round-trip that R65 instead BAKES into the mesh). So the
+  R84/R85/R86-centering premise was a misread; the actual pre-slice frame difference is the PLACEMENT trafo
+  (Z=24) vs rust's R65 mesh-bake. PROBE: injecting C++'s exact matrix into the shim made ALL 112569 verts
+  differ → rust's INPUT verts are in a DIFFERENT pre-slice frame (rust bakes R65 Z-roundtrip + slices Z-raw;
+  C++ keeps raw verts + slices through tf Z+24 — incompatible frames). PLUS a concrete independent bug: rust
+  raw-scale does `v / f32(1e-5)` (DIVISION) vs C++ tf `v * f32(1e5)` (MULTIPLY) → different f32 rounding.
+  CORRECTED slice-byte-match model: simplify (R83) + F1-union (R84) + match SCALE op (div→mul, via shim) +
+  the Z=24 PLACEMENT trafo through the shim REPLACING rust's R65 bake + export-origin. The shim makes the
+  matmul/scale exact → the remaining work is FRAME UNIFICATION (drop quantize_f32_center_roundtrip, construct
+  C++'s exact m_trafo incl Z=24, route the whole pre-slice transform through the shim) — a frame-CONSTRUCTION
+  problem now (no f32 wall), but **R65-ENTANGLED** (it replaces the floor-hole fix's mechanism). NEXT LEVER
+  (funded — user committed to the finish): frame-unification, GATED, with R65 li=1 loops==1 as a HARD
+  guardrail. Eigen shim banked/reusable; gated SLICE_CENTER default off → unchanged; build green.
 - **★ R85 — CENTERING mechanism CORRECT but BAILED at the Eigen f32-matmul wall (F-class; slice-byte-match
   floor).** Built the fused f32 trafo_centered slicing in slice_mesh_its (tf = (Scale(s)·Translate(−c)).cast
   <float>(), v = tf·v → s·(v−c) = the 0.8245 shift; Z untouched → R65 safe) + Slicer center setter + export
