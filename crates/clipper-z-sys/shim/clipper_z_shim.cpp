@@ -436,14 +436,21 @@ void polytree_to_grouped(ClipperLib::PolyNode &polynode, ClipperLib::Paths &out_
         out_paths.push_back(std::move(contour));
         out_is_hole.push_back(0);
     }
+    // Emit ALL of this contour's holes FIRST, then recurse the nested outer
+    // contours. The caller's decode attaches each hole to the most-recent contour
+    // ExPolygon; interleaving a nested contour between sibling holes (the previous
+    // behavior) mis-attached the holes that followed it to the nested contour
+    // instead of this one (rust 7+1 vs C++ 8+0 at L0). Emitting every hole before
+    // any grandchild contour makes the attach-to-last decode match C++
+    // PolyTreeToExPolygonsRecursive's direct holes[i] assignment (ClipperUtils.cpp:178-189).
     for (int i = 0; i < polynode.ChildCount(); ++i) {
         ClipperLib::Path hole = polynode.Childs[i]->Contour;
         out_paths.push_back(std::move(hole));
         out_is_hole.push_back(1);
-        // outer polygons nested within this hole -> new ExPolygons (appended later)
+    }
+    for (int i = 0; i < polynode.ChildCount(); ++i)
         for (int j = 0; j < polynode.Childs[i]->ChildCount(); ++j)
             polytree_to_grouped(*polynode.Childs[i]->Childs[j], out_paths, out_is_hole);
-    }
 }
 
 // Marshal grouped (path, is_hole) into CzZPaths, encoding is_hole in each
