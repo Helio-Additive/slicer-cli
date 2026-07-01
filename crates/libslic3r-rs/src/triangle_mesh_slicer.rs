@@ -1343,8 +1343,20 @@ fn make_expolygons(
     // TriangleMeshSlicer.cpp:1819-1823
     let result = if offset_out > 0.0 && offset_in < 0.0 {
         // offset2_ex(union, offset_out, offset_in): grow by out, then shrink by |in|.
-        let grown = offset_expolygons(&unioned, offset_out, OffsetJoinType::Miter);
-        offset_expolygons(&grown, offset_in, OffsetJoinType::Miter)
+        // R96 (gated F1_UNION): route the close through the vertex-exact ClipperLib
+        // offset2_ex @1e5 (clipper-z-sys) so it byte-matches C++; the default path
+        // keeps geo-clipper (scale-1000).
+        if std::env::var("F1_UNION").is_ok() {
+            crate::clipper_utils::offset2_ex_clib(
+                &unioned,
+                offset_out,
+                offset_in,
+                OffsetJoinType::Miter,
+            )
+        } else {
+            let grown = offset_expolygons(&unioned, offset_out, OffsetJoinType::Miter);
+            offset_expolygons(&grown, offset_in, OffsetJoinType::Miter)
+        }
     } else if offset_out > 0.0 {
         offset_expolygons(&unioned, offset_out, OffsetJoinType::Miter)
     } else if offset_in < 0.0 {

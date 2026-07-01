@@ -75,6 +75,18 @@ void cz_free_zpaths(CzZPaths paths);
 CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
                      int32_t fill_type);
 
+// Faithful replica of libslic3r ClipperUtils.cpp `offset2_ex(ExPolygons, delta1,
+// delta2)` (ClipperUtils.cpp:581) = the post-union morphological close in
+// make_expolygons (TriangleMeshSlicer.cpp:1820). Input is the cz_union_ex output
+// layout: flat (x,y) int32 pairs, per-path point counts `lens`, per-path `is_hole`
+// (0=contour starts a new ExPolygon, 1=hole attaches to current), `num` paths.
+// `delta1`/`delta2` are SCALED (1e5) — make_expolygons passes delta1=+scale(r),
+// delta2=-scale(r). join_type: 0=jtMiter,1=jtRound,2=jtSquare; miter_limit=3.0.
+// OUTPUT uses the same grouped z-encoding as cz_union_ex. Free via cz_free_zpaths.
+CzZPaths cz_offset2_ex(const int32_t *xy, const int32_t *lens, const int32_t *is_hole,
+                       int32_t num, double delta1, double delta2,
+                       int32_t join_type, double miter_limit);
+
 // Faithful ClipperLib::SimplifyPolygons (clipper.hpp:559): ctUnion with
 // StrictlySimple(true). Used by ExPolygon::simplify_p's post-DP step
 // (ClipperUtils simplify_polygons). Returns flat Paths (z=0); caller re-unions.

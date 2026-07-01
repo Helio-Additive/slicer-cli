@@ -1300,6 +1300,109 @@ pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
     result
 }
 
+/// ClipperLib-backed `offset2_ex(ExPolygons, delta1, delta2)` (ClipperUtils.cpp:581)
+/// — the post-union morphological CLOSE applied by make_expolygons
+/// (TriangleMeshSlicer.cpp:1820, delta1=+scale(closing_radius),
+/// delta2=-scale(closing_radius)). `delta1_mm`/`delta2_mm` are in mm; scaled to 1e5
+/// inside. Unlike geo-clipper `offset_expolygons` (scale-1000, two independent
+/// passes), this keeps the whole grow→shrink (incl. the intermediate union) on the
+/// vertex-exact ClipperLib @1e5 via `cz_offset2_ex`, matching C++ byte-for-byte.
+/// Input `expolygons` is the union output (contour CCW + holes CW); output is the
+/// closed ExPolygons.
+pub fn offset2_ex_clib(
+    expolygons: &[ExPolygon],
+    delta1_mm: CoordF,
+    delta2_mm: CoordF,
+    join_type: OffsetJoinType,
+) -> ExPolygons {
+    if expolygons.is_empty() {
+        return vec![];
+    }
+    // Flatten into the grouped (xy pairs, per-path lens, per-path is_hole) layout.
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    let mut is_hole: Vec<i32> = Vec::new();
+    for ex in expolygons {
+        let cpts = ex.contour.points();
+        if cpts.is_empty() {
+            continue;
+        }
+        lens.push(cpts.len() as i32);
+        is_hole.push(0);
+        for p in cpts {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+        for hole in &ex.holes {
+            lens.push(hole.points().len() as i32);
+            is_hole.push(1);
+            for p in hole.points() {
+                assert_i32_scaled(p.x);
+                assert_i32_scaled(p.y);
+                xy.push(p.x as i32);
+                xy.push(p.y as i32);
+            }
+        }
+    }
+    let num = lens.len() as i32;
+    if num == 0 {
+        return vec![];
+    }
+    let delta1 = delta1_mm * crate::SCALING_FACTOR;
+    let delta2 = delta2_mm * crate::SCALING_FACTOR;
+
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
+    // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
+    let raw = unsafe {
+        clipper_z_sys::cz_offset2_ex(
+            xy.as_ptr(),
+            lens.as_ptr(),
+            is_hole.as_ptr(),
+            num,
+            delta1,
+            delta2,
+            clib_join_code(join_type),
+            CLIB_MITER_LIMIT,
+        )
+    };
+
+    let mut result: ExPolygons = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            let mut ph = 0i32;
+            for i in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                if i == 0 {
+                    ph = coords[cursor * 3 + 2];
+                }
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            let ring = Polygon::from_points(pts);
+            if ph == 0 {
+                result.push(ExPolygon::new(ring));
+            } else if let Some(last) = result.last_mut() {
+                last.holes.push(ring);
+            }
+        }
+    }
+
+    // SAFETY: `raw` was produced by cz_offset2_ex and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+
+    result
+}
+
 /// ClipperLib-backed `simplify_polygons(subject, preserve_collinear=false)`
 /// (ClipperUtils.cpp:1026-1040) = `ClipperLib::SimplifyPolygons(subject, pftNonZero)`
 /// = ctUnion with StrictlySimple(true). The post-DP step of ExPolygon::simplify_p.

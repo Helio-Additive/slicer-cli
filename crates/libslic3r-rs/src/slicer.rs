@@ -25,6 +25,11 @@ pub struct Slicer {
     /// Slice-frame XY center_offset (mm), the C++ `trafo_centered` offset applied
     /// INSIDE the fused f32 slice transform (R85). (0,0) = raw frame (default).
     slice_center_offset: (CoordF, CoordF),
+    /// Morphological closing radius (mm) threaded into `MeshSlicingParamsEx.closing_radius`.
+    /// PrintObjectSlice passes `print_config.slice_closing_radius` (default 0.049) so
+    /// `make_expolygons` runs `offset2_ex(union, +scale(r), -scale(r))` — the post-union
+    /// close that merges near-touching facets (R96). 0.0 = bare union (historic rust).
+    slice_closing_radius: CoordF,
 }
 
 /// Implementation of Slicer methods
@@ -34,13 +39,24 @@ impl Slicer {
     // TriangleMeshSlicer.cpp:22-25
     pub fn new(params: SlicingParams) -> Self {
         // TriangleMeshSlicer.cpp:24
-        Self { params, slice_resolution: 0.0, slice_center_offset: (0.0, 0.0) }
+        Self {
+            params,
+            slice_resolution: 0.0,
+            slice_center_offset: (0.0, 0.0),
+            slice_closing_radius: 0.0,
+        }
     }
 
     /// Set the slice-contour simplification resolution (mm). See
     /// `slice_resolution`. PrintObjectSlice.cpp:144.
     pub fn set_slice_resolution(&mut self, resolution: CoordF) {
         self.slice_resolution = resolution;
+    }
+
+    /// Set the morphological closing radius (mm). See `slice_closing_radius`.
+    /// PrintObjectSlice threads `print_config.slice_closing_radius` (0.049).
+    pub fn set_slice_closing_radius(&mut self, closing_radius: CoordF) {
+        self.slice_closing_radius = closing_radius;
     }
 
     /// Set the slice-frame XY center_offset (mm). See `slice_center_offset`.
@@ -127,6 +143,11 @@ impl Slicer {
             if want_center {
                 params.center_offset = self.slice_center_offset;
             }
+            // R96: thread the morphological closing radius so make_expolygons applies
+            // C++'s post-union offset2_ex(±scale(closing_radius)). Gated to the
+            // byte-match path (this block only runs under SLICE_SIMPLIFY/SLICE_CENTER);
+            // the default slice_mesh() path is left unchanged.
+            params.closing_radius = self.slice_closing_radius as f32;
             triangle_mesh_slicer::slice_mesh_ex(mesh, &zs_f32, &params, &|| {})
         } else {
             triangle_mesh_slicer::slice_mesh(mesh, &slice_zs)

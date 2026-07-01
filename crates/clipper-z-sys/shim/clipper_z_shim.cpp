@@ -554,6 +554,149 @@ extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t 
 }
 
 // ---------------------------------------------------------------------------
+// cz_offset2_ex — faithful replica of ClipperUtils.cpp `offset2_ex(ExPolygons,
+// delta1, delta2)` (ClipperUtils.cpp:581) =
+//   PolyTreeToExPolygons(offset_paths<PolyTree>(expolygons_offset(expolys, delta1), delta2))
+// The post-union morphological close in make_expolygons (TriangleMeshSlicer.cpp:1820,
+// called with delta1=+scale(closing_radius), delta2=-scale(closing_radius)). Input is
+// the cz_union_ex output layout: flat (x,y) i32 pairs, per-path point counts `lens`,
+// per-path `is_hole` (0=contour starts a new ExPolygon, 1=hole attaches to current),
+// `num` paths. deltas are SCALED (1e5). join_type 0=miter/1=round/2=square,
+// miter_limit=3.0 (DefaultMiterLimit). Output uses the same grouped z-encoding.
+// Free via cz_free_zpaths.
+extern "C" CzZPaths cz_offset2_ex(const int32_t *xy, const int32_t *lens, const int32_t *is_hole,
+                                  int32_t num, double delta1, double delta2,
+                                  int32_t join_type, double miter_limit) {
+    // Fully qualify to the 2D (non-Z) ClipperLib; `Path`/`Paths` are otherwise
+    // ambiguous with ClipperLib_Z at this file scope.
+    typedef ClipperLib::Path CzPath;
+    typedef ClipperLib::Paths CzPaths;
+    ClipperLib::JoinType jt = ClipperLib::jtMiter;
+    if (join_type == 1) jt = ClipperLib::jtRound;
+    else if (join_type == 2) jt = ClipperLib::jtSquare;
+    const double sef = 0.005; // ClipperUtils ClipperOffsetShortestEdgeFactor
+
+    // Reconstruct ExPolygons (contour + holes) from grouped input.
+    struct ExP { CzPath contour; CzPaths holes; };
+    std::vector<ExP> expolys;
+    {
+        const int32_t *cur = xy;
+        for (int32_t p = 0; p < num; ++p) {
+            int32_t len = lens[p];
+            CzPath path;
+            path.reserve(len);
+            for (int32_t i = 0; i < len; ++i)
+                path.emplace_back(cur[2 * i], cur[2 * i + 1]);
+            cur += 2 * len;
+            if (is_hole[p] == 0)
+                expolys.push_back(ExP{ std::move(path), {} });
+            else if (! expolys.empty())
+                expolys.back().holes.push_back(std::move(path));
+        }
+    }
+
+    // offset_expolygon_inner (ClipperUtils.cpp:437-506): append offset paths to `out`.
+    auto offset_expoly_inner = [&](const ExP &e, double delta, CzPaths &out) -> int {
+        CzPaths contours;
+        {
+            ClipperLib::ClipperOffset co;
+            if (jt == ClipperLib::jtRound) co.ArcTolerance = miter_limit; else co.MiterLimit = miter_limit;
+            co.ShortestEdgeLength = std::fabs(delta * sef);
+            co.AddPath(e.contour, jt, ClipperLib::etClosedPolygon);
+            co.Execute(contours, delta);
+        }
+        if (contours.empty())
+            return 0;
+        if (e.holes.empty()) {
+            for (CzPath &c : contours) out.push_back(std::move(c));
+            return 1;
+        }
+        CzPaths holes;
+        for (const CzPath &h : e.holes) {
+            ClipperLib::ClipperOffset co;
+            if (jt == ClipperLib::jtRound) co.ArcTolerance = miter_limit; else co.MiterLimit = miter_limit;
+            co.ShortestEdgeLength = std::fabs(delta * sef);
+            co.AddPath(h, jt, ClipperLib::etClosedPolygon);
+            CzPaths o2;
+            co.Execute(o2, -delta); // holes: signum reversed
+            for (CzPath &p : o2) holes.push_back(std::move(p));
+        }
+        if (holes.empty()) {
+            for (CzPath &c : contours) out.push_back(std::move(c));
+        } else if (delta < 0) {
+            ClipperLib::Clipper c;
+            c.AddPaths(contours, ClipperLib::ptSubject, true);
+            c.AddPaths(holes, ClipperLib::ptClip, true);
+            CzPaths diff;
+            c.Execute(ClipperLib::ctDifference, diff, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+            if (diff.empty()) return 0;
+            for (CzPath &p : diff) out.push_back(std::move(p));
+        } else {
+            for (CzPath &c : contours) out.push_back(std::move(c));
+            for (CzPath &h : holes) { std::reverse(h.begin(), h.end()); out.push_back(std::move(h)); }
+        }
+        return 1;
+    };
+
+    // Step A: expolygons_offset(expolys, delta1) — offset each expoly; unite if >1 && delta1>0.
+    CzPaths stepA;
+    size_t collected = 0;
+    for (const ExP &e : expolys)
+        collected += offset_expoly_inner(e, delta1, stepA);
+    if (collected > 1 && delta1 > 0) {
+        ClipperLib::Clipper c;
+        c.AddPaths(stepA, ClipperLib::ptSubject, true);
+        CzPaths u;
+        c.Execute(ClipperLib::ctUnion, u, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+        stepA = std::move(u);
+    }
+
+    // Step B: offset_paths<PolyTree>(stepA, delta2) with delta2<0 = shrink_paths<PolyTree>.
+    // raw_offset(stepA, delta2) is PER-PATH, orientation-aware (ClipperUtils.cpp:272-300),
+    // then the shrink frame-union to PolyTree (ClipperUtils.cpp:382-397).
+    ClipperLib::PolyTree polytree;
+    if (! stepA.empty()) {
+        CzPaths raw;
+        raw.reserve(stepA.size());
+        {
+            ClipperLib::ClipperOffset co;
+            if (jt == ClipperLib::jtRound) co.ArcTolerance = miter_limit; else co.MiterLimit = miter_limit;
+            co.ShortestEdgeLength = std::fabs(delta2 * sef);
+            for (const CzPath &path : stepA) {
+                co.Clear();
+                co.AddPath(path, jt, ClipperLib::etClosedPolygon);
+                bool ccw = ClipperLib::Orientation(path);
+                CzPaths out_this;
+                co.Execute(out_this, ccw ? delta2 : -delta2);
+                if (! ccw)
+                    for (CzPath &p : out_this) std::reverse(p.begin(), p.end());
+                for (CzPath &p : out_this) raw.push_back(std::move(p));
+            }
+        }
+        if (! raw.empty()) {
+            ClipperLib::Clipper clipper;
+            clipper.AddPaths(raw, ClipperLib::ptSubject, true);
+            ClipperLib::IntRect r = clipper.GetBounds();
+            CzPath frame;
+            frame.emplace_back(r.left - 10, r.bottom + 10);
+            frame.emplace_back(r.right + 10, r.bottom + 10);
+            frame.emplace_back(r.right + 10, r.top - 10);
+            frame.emplace_back(r.left - 10, r.top - 10);
+            clipper.AddPath(frame, ClipperLib::ptSubject, true);
+            clipper.ReverseSolution(true);
+            clipper.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNegative, ClipperLib::pftNegative);
+            polytree.RemoveOutermostPolygon();
+        }
+    }
+
+    ClipperLib::Paths o2_paths;
+    std::vector<int32_t> o2_is_hole;
+    for (int i = 0; i < polytree.ChildCount(); ++i)
+        polytree_to_grouped(*polytree.Childs[i], o2_paths, o2_is_hole);
+    return marshal_grouped(o2_paths, o2_is_hole);
+}
+
+// ---------------------------------------------------------------------------
 // cz_detect_floating — faithful replica of FillFloatingConcentric.cpp
 // `detect_floating_line` (the Z-clipper half, FillFloatingConcentric.cpp:431-475).
 // ---------------------------------------------------------------------------

@@ -109,6 +109,24 @@ extern "C" {
     /// Free via [`cz_free_zpaths`].
     pub fn cz_union_ex(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
 
+    /// Faithful `offset2_ex(ExPolygons, delta1, delta2)` (ClipperUtils.cpp:581) — the
+    /// post-union morphological close in make_expolygons (TriangleMeshSlicer.cpp:1820).
+    /// `xy`/`lens`/`is_hole`/`num` are the grouped cz_union_ex output layout (is_hole:
+    /// 0=contour starts a new ExPolygon, 1=hole attaches to current). `delta1`/`delta2`
+    /// are SCALED (1e5): make_expolygons passes delta1=+scale(r), delta2=-scale(r).
+    /// join_type: 0=miter,1=round,2=square; miter_limit=3.0. Output uses the same
+    /// grouped z-encoding as [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    pub fn cz_offset2_ex(
+        xy: *const i32,
+        lens: *const i32,
+        is_hole: *const i32,
+        num: i32,
+        delta1: f64,
+        delta2: f64,
+        join_type: i32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+
     /// Faithful `ClipperLib::SimplifyPolygons` (clipper.hpp:559): ctUnion with
     /// StrictlySimple(true). The ExPolygon::simplify_p post-DP step. Returns flat
     /// Paths (z=0); caller re-unions into ExPolygons. fill_type: 0..3 as above.

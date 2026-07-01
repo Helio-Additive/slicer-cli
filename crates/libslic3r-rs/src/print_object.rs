@@ -436,6 +436,10 @@ impl PrintObject {
         // (BBS: 0.0025mm safe to speed slicing; separate from arc-fit resolution.)
         let cfg_resolution = self.print_config.resolution;
         slicer.set_slice_resolution(if cfg_resolution <= 0.001 { 0.0 } else { 0.0025 });
+        // R96 — thread the morphological closing radius (default 0.049) so
+        // make_expolygons applies C++'s post-union offset2_ex(±scale(closing_radius)).
+        // PrintObjectSlice passes params.closing_radius = print_config.slice_closing_radius.
+        slicer.set_slice_closing_radius(self.config.slice_closing_radius);
 
         // R85 slice-frame centering: C++ m_center_offset = Point::new_scale(
         // bbox_center.x, bbox_center.y) (PrintObject.cpp:88), bbox = raw_bounding_box
