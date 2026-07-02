@@ -2421,8 +2421,6 @@ fn rotate_back(x: Coord, y: Coord, cos_a: f64, sin_a: f64) -> Point {
 // 3. Using ant-colony optimization to chain regions optimally
 // 4. Generating polylines that sweep in a consistent direction
 
-use rand::Rng;
-
 // ---------------------------------------------------------------------------
 // Vertical run navigation helpers (index-based, porting C++ pointer arithmetic)
 // ---------------------------------------------------------------------------
@@ -3606,7 +3604,10 @@ fn chain_monotonic_regions(
         path.pheromone.powf(pheromone_alpha) * path.visibility.powf(pheromone_beta)
     };
 
-    let mut rng = rand::thread_rng();
+    // R99: faithful `std::mt19937_64 rng;` (default seed 5489), matching C++
+    // chain_monotonic_regions (FillRectilinear.cpp:2942/3397). Was
+    // `rand::thread_rng()` (entropy) — the root of run-to-run gcode nondeterminism.
+    let mut rng = crate::mt19937_64::Mt19937_64::new(5489);
     let mut num_rounds_no_change = 0;
 
     for _round in 0..num_rounds {
@@ -3626,10 +3627,12 @@ fn chain_monotonic_regions(
                 }
             }
 
-            // Pick random first region
-            let first_idx_in_queue = rng.gen_range(0..queue.len());
+            // Pick random first region.
+            // C++: std::uniform_int_distribution<>(0, queue.size()-1)(rng), then
+            //      MonotonicRegionLink{ queue[first_idx], rng() > rng.max()/2 }.
+            let first_idx_in_queue = rng.uniform_int_below(queue.len() as u64) as usize;
             let first_region = queue[first_idx_in_queue];
-            let first_flipped: bool = rng.gen();
+            let first_flipped: bool = rng.next_u64() > (u64::MAX / 2);
             queue.swap_remove(first_idx_in_queue);
             left_unprocessed[first_region] -= 1;
             left_unprocessed[first_region] = 0;
@@ -3692,29 +3695,35 @@ fn chain_monotonic_regions(
                     break;
                 }
 
-                // Select path
-                let dice: f32 = rng.gen();
+                // Select path. C++ FillRectilinear.cpp:2548-2568.
+                // float dice = float(rng()) / float(rng.max());
+                let dice: f32 = (rng.next_u64() as f32) / (u64::MAX as f32);
                 let take_idx = if dice < probability_take_best {
-                    // Take best
-                    next_candidates
-                        .iter()
-                        .enumerate()
-                        .max_by(|a, b| {
-                            a.1.probability
-                                .partial_cmp(&b.1.probability)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .map(|(i, _)| i)
-                        .unwrap_or(0)
+                    // Take the highest-probability path. C++ std::max_element returns
+                    // the FIRST maximum on ties (Rust's max_by returns the LAST), so
+                    // replicate first-max with a strict `>` scan.
+                    let mut best = 0usize;
+                    let mut best_p = next_candidates[0].probability;
+                    for (i, c) in next_candidates.iter().enumerate().skip(1) {
+                        if c.probability > best_p {
+                            best = i;
+                            best_p = c.probability;
+                        }
+                    }
+                    best
                 } else {
-                    // Probabilistic selection
-                    let total_prob: f32 = next_candidates.iter().map(|c| c.probability).sum();
-                    let threshold: f32 = rng.gen::<f32>() * total_prob;
-                    let mut acc = 0.0f32;
+                    // Probabilistic selection. C++:
+                    //   total = accumulate(0.f, +probability)
+                    //   thr   = float(rng()) * total / float(rng.max())
+                    //   take_path = last; for it: if ((thr -= it->probability) <= 0) { take=it; break; }
+                    let total_probability: f32 =
+                        next_candidates.iter().map(|c| c.probability).sum();
+                    let mut probability_threshold =
+                        (rng.next_u64() as f32) * total_probability / (u64::MAX as f32);
                     let mut selected = next_candidates.len() - 1;
                     for (i, c) in next_candidates.iter().enumerate() {
-                        acc += c.probability;
-                        if acc >= threshold {
+                        probability_threshold -= c.probability;
+                        if probability_threshold <= 0.0 {
                             selected = i;
                             break;
                         }

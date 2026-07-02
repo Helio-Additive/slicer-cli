@@ -122,6 +122,7 @@ pub mod minimum_spanning_tree;
 pub mod miniz_extension;
 pub mod model;
 pub mod model_arrange;
+pub mod mt19937_64;
 pub mod mt_utils;
 pub mod multi_material_segmentation;
 pub mod multi_nozzle_utils;

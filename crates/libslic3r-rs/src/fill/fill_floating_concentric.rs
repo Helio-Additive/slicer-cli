@@ -825,7 +825,7 @@ pub fn merge_lines(
             // FillFloatingConcentric.cpp:300-318
             {
                 // FillFloatingConcentric.cpp:301-308
-                if let Some(j) = start_z_map.get(&curr_end).and_then(|s| s.iter().next().copied()) {
+                if let Some(j) = start_z_map.get(&curr_end).and_then(|s| s.iter().min().copied()) /* R99 determinism: min index (was .next() — HashSet<usize> RandomState order); C++ picks *unordered_set.begin() (arbitrary) */ {
                     remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
                     curr_path.extend(lines[j].iter().copied());
                     update_path_flag(&mut curr_mark, &lines[j], mark_flags[j]);
@@ -833,7 +833,7 @@ pub fn merge_lines(
                     merged = true;
                 }
                 // FillFloatingConcentric.cpp:309-317
-                else if let Some(j) = end_z_map.get(&curr_end).and_then(|s| s.iter().next().copied())
+                else if let Some(j) = end_z_map.get(&curr_end).and_then(|s| s.iter().min().copied()) /* R99 determinism: min index (was .next() — HashSet<usize> RandomState order); C++ picks *unordered_set.begin() (arbitrary) */
                 {
                     remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
                     lines[j].reverse();
@@ -853,7 +853,7 @@ pub fn merge_lines(
             // FillFloatingConcentric.cpp:324-354
             {
                 // FillFloatingConcentric.cpp:325-338
-                if let Some(j) = end_z_map.get(&curr_start).and_then(|s| s.iter().next().copied()) {
+                if let Some(j) = end_z_map.get(&curr_start).and_then(|s| s.iter().min().copied()) /* R99 determinism: min index (was .next() — HashSet<usize> RandomState order); C++ picks *unordered_set.begin() (arbitrary) */ {
                     remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
                     let mut new_path: ZPath = lines[j].clone();
                     let mut new_mark: Vec<bool> = Vec::new();
@@ -868,7 +868,7 @@ pub fn merge_lines(
                 }
                 // FillFloatingConcentric.cpp:339-353
                 else if let Some(j) =
-                    start_z_map.get(&curr_start).and_then(|s| s.iter().next().copied())
+                    start_z_map.get(&curr_start).and_then(|s| s.iter().min().copied()) /* R99 determinism: min index (was .next() — HashSet<usize> RandomState order); C++ picks *unordered_set.begin() (arbitrary) */
                 {
                     remove_from_map(&mut start_z_map, &mut end_z_map, &lines, j);
                     let mut new_path: ZPath = lines[j].clone();

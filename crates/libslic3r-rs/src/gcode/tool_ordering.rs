@@ -1144,8 +1144,10 @@ impl ToolOrdering {
                     .unwrap()
             }
         } else {
-            // No previous extruder, just take the first one
-            *remaining.iter().next().unwrap()
+            // No previous extruder, just take the first one.
+            // R99 determinism: min extruder id (HashSet<u32>.iter().next() is
+            // RandomState-ordered per run).
+            *remaining.iter().min().unwrap()
         };
 
         result.push(first);
@@ -1625,10 +1627,12 @@ pub fn optimize_extruder_sequence(
     let mut remaining: HashSet<u32> = extruders.iter().copied().collect();
     let mut result = Vec::with_capacity(extruders.len());
 
-    // Choose starting extruder
+    // Choose starting extruder.
+    // R99 determinism: min extruder id (HashSet<u32>.iter().next() is
+    // RandomState-ordered per run).
     let start = start_extruder
         .filter(|e| remaining.contains(e))
-        .or_else(|| remaining.iter().next().copied())
+        .or_else(|| remaining.iter().min().copied())
         .unwrap();
 
     result.push(start);

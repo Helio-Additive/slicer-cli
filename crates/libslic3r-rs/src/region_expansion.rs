@@ -1338,7 +1338,12 @@ fn detect_bridging_direction_from_lines(
 
     // Build direction candidates from edge normals.
     // C++ quantizes angles to ceil(atan2 * 1000) to deduplicate similar directions.
-    let mut directions: std::collections::HashMap<i64, PointF> = std::collections::HashMap::new();
+    // R99 determinism: BTreeMap (sorted by quantized angle) instead of HashMap —
+    // Rust HashMap's RandomState iteration is per-run-random; the min-cost pick
+    // below is order-dependent on ties, which leaked into the bridge direction.
+    // `or_insert` keeps first-seen (matches C++ `emplace`, not overwrite). With a
+    // unique min-cost the result is identical to C++ regardless of order.
+    let mut directions: std::collections::BTreeMap<i64, PointF> = std::collections::BTreeMap::new();
     for line in floating_edges {
         let dx = (line.b.x - line.a.x) as f64;
         let dy = (line.b.y - line.a.y) as f64;
@@ -1349,7 +1354,7 @@ fn detect_bridging_direction_from_lines(
         if len > 1e-10 {
             let normalized = PointF::new(nx / len, ny / len);
             let quantized_angle = (normalized.y.atan2(normalized.x) * 1000.0).ceil() as i64;
-            directions.insert(quantized_angle, normalized);
+            directions.entry(quantized_angle).or_insert(normalized);
         }
     }
 

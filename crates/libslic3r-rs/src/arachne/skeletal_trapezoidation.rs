@@ -3343,7 +3343,20 @@ impl<'a> SkeletalTrapezoidation<'a> {
             while !unprocessed_quad_starts.is_empty() {
                 // SkeletalTrapezoidation.cpp:1997 edge_t* poly_domain_start = *unprocessed_quad_starts.begin();
                 let poly_domain_start: EdgePtr = {
-                    let p = *unprocessed_quad_starts.iter().next().unwrap();
+                    // R99 determinism: the set is POINTER-keyed → its iteration order
+                    // leaks ASLR + RandomState per run (C++ `*unordered_set.begin()`,
+                    // SkeletalTrapezoidation.cpp:1997, is stable-per-run). Pick the
+                    // unprocessed start by a stable GEOMETRIC key (min endpoint coords);
+                    // min is order-invariant, so the ptr iteration order is irrelevant.
+                    let p = *unprocessed_quad_starts
+                        .iter()
+                        .min_by_key(|&&e| {
+                            let er = &*e;
+                            let f = er.from.unwrap().as_ref().p;
+                            let t = er.to.unwrap().as_ref().p;
+                            (f.x, f.y, t.x, t.y)
+                        })
+                        .unwrap();
                     EdgePtr::new(p as *mut _).unwrap()
                 };
                 // SkeletalTrapezoidation.cpp:1998 edge_t* quad_start = poly_domain_start;
