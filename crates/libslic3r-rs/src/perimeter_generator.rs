@@ -1595,8 +1595,26 @@ fn traverse_loops(
                     let n = crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f64;
                     let off_front = start_offset + 0.5 * (end_offset - start_offset) / (n - 1.0);
                     // lower_polygons_series.front() = less-grown (off_front), .back() = more-grown (end_offset).
-                    let lower_front_ex = offset_expolygons(lower, off_front, OffsetJoinType::Miter);
-                    let lower_back_ex = offset_expolygons(lower, end_offset, OffsetJoinType::Miter);
+                    // R102c: native generate_lower_polygons_series grows the lower slice via
+                    // ClipperLib offset at coord_t (10nm). Rust used geo-clipper (offset_expolygons
+                    // @ GEO_CLIPPER_SCALE=1000 = 1 micron), so these overhang BOUNDARIES are gridded
+                    // to 100 units. The outer perimeter is then split at those boundaries (vertices
+                    // inserted where the wall crosses the overhang region) — gridded boundaries →
+                    // gridded/shifted inserted vertices → outer CONTOUR diverges from native (holes
+                    // rarely overhang, so they match ~2x better). Same class as R100. Under F1_UNION
+                    // route the grows through the vertex-exact vendored ClipperLib (offset_expolygons_clib
+                    // @ i32/1e5). Default path byte-unchanged.
+                    let (lower_front_ex, lower_back_ex) = if std::env::var("F1_UNION").is_ok() {
+                        (
+                            crate::clipper_utils::offset_expolygons_clib(lower, off_front, OffsetJoinType::Miter),
+                            crate::clipper_utils::offset_expolygons_clib(lower, end_offset, OffsetJoinType::Miter),
+                        )
+                    } else {
+                        (
+                            offset_expolygons(lower, off_front, OffsetJoinType::Miter),
+                            offset_expolygons(lower, end_offset, OffsetJoinType::Miter),
+                        )
+                    };
 
                     // PerimeterGenerator.cpp:229-239 — dist_boundary(width)
                     // first = 0; second = scale_(end_offset) - scale_(off_front)
