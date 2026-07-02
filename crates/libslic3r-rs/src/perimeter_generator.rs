@@ -397,7 +397,24 @@ impl PerimeterGenerator {
         // Faithful port: Douglas-Peucker simplify the contour + holes (ExPolygon::simplify_p),
         // then union_ex the resulting Polygons back into ExPolygons. `union_polygons_ex` is the
         // Rust equivalent of C++ `union_ex(const Polygons&)`.
-        let mut last = union_polygons_ex(&slice.simplify_p(surface_simplify_resolution));
+        // R100: faithful C++ `last = union_ex(surface.expolygon.simplify_p(res))`.
+        // Default path routes the post-DP `simplify_polygons` + `union_ex` through
+        // geo-clipper (`simplify_p` -> `union_polygons_ex`), which runs at
+        // GEO_CLIPPER_SCALE=1000 (1 micron) and quantizes every wall-input vertex
+        // to a 100-unit grid (rust coords 99.4% on-grid vs native 3.6%), diverging
+        // all downstream wall geometry, seams and arc fitting from native's 10nm
+        // ClipperLib. Under F1_UNION (the gated byte-match path) mirror the R91
+        // slice-path chain instead: DP at full resolution, then
+        // `ClipperLib::SimplifyPolygons` (StrictlySimple) + `union_ex` via the
+        // vertex-exact vendored ClipperLib (clipper-z-sys @ i32/1e5). fill_type=1
+        // (pftNonZero) matches C++ simplify_polygons.
+        let mut last = if std::env::var("F1_UNION").is_ok() {
+            let pp = slice.simplify_p_dp_rings(surface_simplify_resolution);
+            let simplified = crate::clipper_utils::simplify_polygons_clib(&pp, 1);
+            crate::clipper_utils::union_ex_clib(&simplified, 1)
+        } else {
+            union_polygons_ex(&slice.simplify_p(surface_simplify_resolution))
+        };
 
         /// PerimeterGenerator.cpp:920
         /// C++: int loop_number = this->config->wall_loops + surface.extra_perimeters - 1;

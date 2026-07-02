@@ -1070,6 +1070,16 @@ pub fn offset_expolygons_clib(
     // union_polygons_ex == ClipperPaths_to_Slic3rExPolygons (NonZero union +
     // PolyTree->ExPolygons). For a single path it short-circuits to a hole-less
     // ExPolygon; otherwise it nests holes correctly, matching C++.
+    //
+    // R100: the default reconstruction runs through geo-clipper (union_polygons_ex)
+    // at GEO_CLIPPER_SCALE=1000, which snaps every offset vertex to a 1-micron
+    // (100-unit) grid — the dominant wall-loop divergence from native's 10nm
+    // ClipperLib. Under F1_UNION (the gated byte-match path) reconstruct the same
+    // NonZero union via the vertex-exact vendored ClipperLib (union_ex_clib @ i32/1e5)
+    // so the clib offset output stays full-resolution. Default path byte-unchanged.
+    if std::env::var("F1_UNION").is_ok() {
+        return union_ex_clib(&all_paths, 1);
+    }
     union_polygons_ex(&all_paths)
 }
 

@@ -291,6 +291,18 @@ impl ExPolygon {
     /// `douglas_peucker` re-scales it internally, mirroring C++ where
     /// `_douglas_peucker` squares the already-scaled tolerance.
     pub fn simplify_p(&self, tolerance: CoordF) -> Vec<Polygon> {
+        // ExPolygon.cpp:250 — return simplify_polygons(pp);
+        super::simplify_polygons_clipper(&self.simplify_p_dp_rings(tolerance))
+    }
+
+    /// The Douglas-Peucker stage of [`ExPolygon::simplify_p`] only: DP-simplify the
+    /// contour + each hole and return the rings, WITHOUT the final
+    /// `simplify_polygons(pp)` clean/union. Callers that need to route that final
+    /// step through the vertex-exact ClipperLib (avoiding geo-clipper's
+    /// GEO_CLIPPER_SCALE=1000 micron gridding) use this + `simplify_polygons_clib`
+    /// + `union_ex_clib` — the R91 slice-path chain. `simplify_p` itself keeps the
+    /// default geo-clipper path so its callers are byte-unchanged.
+    pub fn simplify_p_dp_rings(&self, tolerance: CoordF) -> Vec<Polygon> {
         use super::douglas_peucker;
 
         // ExPolygon.cpp:233-234 — Polygons pp; pp.reserve(this->holes.size() + 1);
@@ -321,8 +333,7 @@ impl ExPolygon {
             pp.push(Polygon::from_points(points));
         }
 
-        // ExPolygon.cpp:250 — return simplify_polygons(pp);
-        super::simplify_polygons_clipper(&pp)
+        pp
     }
 
     /// Faithful port of the overload
