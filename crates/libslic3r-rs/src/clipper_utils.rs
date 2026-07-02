@@ -1350,8 +1350,17 @@ pub fn offset2_ex_clib(
     if num == 0 {
         return vec![];
     }
-    let delta1 = delta1_mm * crate::SCALING_FACTOR;
-    let delta2 = delta2_mm * crate::SCALING_FACTOR;
+    // R98: native `offset2_ex(const ExPolygons&, const float delta1, const float
+    // delta2, ...)` (ClipperUtils.cpp:581, ClipperUtils.hpp:397) takes the deltas
+    // through *float* parameters. make_expolygons passes `scale_(closing_radius)`
+    // (a f64, = closing_radius / 0.00001), which is TRUNCATED to f32 at the call
+    // boundary and only then promoted back to f64 inside `co.Execute(double)`.
+    // For closing_radius = 0.049 that is f32(4899.99987) == 4900.0 exactly. cz
+    // previously passed the full-precision f64 4899.99987, shifting the negative
+    // ClipperOffset points by ~1 scaled unit on ~43 layers. Reproduce the f32
+    // truncation (scale_ divides by SCALING_FACTOR = 0.00001; libslic3r.h:81).
+    let delta1 = ((delta1_mm / 0.00001_f64) as f32) as f64;
+    let delta2 = ((delta2_mm / 0.00001_f64) as f32) as f64;
 
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
     // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
