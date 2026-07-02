@@ -443,6 +443,27 @@ impl PerimeterGenerator {
         let perimeter_spacing = self.config.perimeter_spacing;
         let ext_perimeter_spacing2 = self.config.external_to_internal_spacing;
 
+        // R101: native computes wall OFFSET deltas from Flow::scaled_width() =
+        // coord_t(scale_(m_width)) where the flow width is stored as FLOAT and scale_
+        // TRUNCATES toward zero: 0.42 -> f32(0.41999998) -> 41999.998 -> 41999 (NOT
+        // 42000). Rust carried the width at f64 and its scale() ROUNDS -> 42000, so
+        // every wall offset delta was ~0.5 unit off, amplified to tens of units at
+        // miter joins (the R100 residual; outer-wall canonical-hash 0%). `nsc`
+        // reproduces native's f32-truncated scaled magnitude (as mm) for the offset
+        // DELTA only — the extrusion width / flow-E keeps the raw value (native uses
+        // mm3_per_mm, not scaled_width, for E), so this is geometry-only. Gated
+        // F1_UNION; default path byte-unchanged. (The residual material shift is a
+        // pre-existing rust E-per-length gap this correct geometry exposes — a
+        // separate lever; see PARITY_STATUS.) Spacings/inner-wall offset2 deltas are
+        // NOT yet ported (inner-wall geometry stays at status quo) — follow-up round.
+        let nsc = |w_mm: f64| -> f64 {
+            if std::env::var("F1_UNION").is_ok() {
+                crate::unscale(((w_mm as f32) as f64 * crate::SCALING_FACTOR).trunc() as Coord)
+            } else {
+                w_mm
+            }
+        };
+
         /// PerimeterGenerator.cpp:882
         /// C++: coord_t min_spacing = coord_t(perimeter_spacing * (1 - INSET_OVERLAP_TOLERANCE));
         let min_spacing = perimeter_spacing * (1.0 - INSET_OVERLAP_TOLERANCE);
@@ -584,9 +605,10 @@ impl PerimeterGenerator {
                             /// C++: ExPolygons temp_result = offset_ex(expolygon, -float(ext_perimeter_width / 2.));
                             // PARITY (perim-offset): outer-wall contour offset — see note above; this
                             // is the dominant outer-wall over-segmentation source (+2687 vs native).
+                            // R101: delta = native float(scaled_width/2.); extrusion width kept raw.
                             let temp_result = shrink_clib(
                                 &[expolygon.clone()],
-                                ext_perimeter_width / 2.0,
+                                nsc(ext_perimeter_width) / 2.0,
                                 self.config.join_type,
                             );
                             offsets.extend(temp_result);
