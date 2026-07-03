@@ -1224,8 +1224,19 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
         return vec![];
     }
 
-    // union_polygons_ex == NonZero union + PolyTree->ExPolygons, matching the
-    // clipper_do_polytree re-union pass of diff_ex.
+    // R106: the difference-path RECONSTRUCTION. The default reconstruction is geo-clipper
+    // union_polygons_ex (@ GEO_CLIPPER_SCALE=1000), which snaps every difference-output
+    // vertex to the 1µm grid — this silently defeated the R104/R105 only_one_wall_top
+    // un-gridding (top_polygons / inner_polygons / temp_gap / the A−(A−B) intersection all
+    // route through difference_clib, so `last` stayed 56.4% on the 1µm grid despite the
+    // "clib" routing; fixing it drops the inner-offset input to 1.9% on-grid). Under
+    // F1_UNION reconstruct via the vertex-exact vendored ClipperLib (union_ex_clib @
+    // i32/1e5) — same NonZero union + PolyTree->ExPolygons nesting, full-resolution, the
+    // faithful match to C++ diff_ex's clipper_do_polytree re-union. Default byte-unchanged
+    // (mirrors offset_expolygons_clib's gated reconstruction).
+    if std::env::var("F1_UNION").is_ok() {
+        return union_ex_clib(&all_paths, 1);
+    }
     union_polygons_ex(&all_paths)
 }
 
