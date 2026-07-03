@@ -837,7 +837,12 @@ impl PerimeterGenerator {
 
                 // PerimeterGenerator.cpp:1139
                 // C++: fill_clip = offset_ex(last, -double(ext_perimeter_spacing));
-                fill_clip = offset_expolygons(&last, -ext_perimeter_spacing, OffsetJoinType::Miter);
+                // R105: feeds temp_gap → last; un-grid under f1_top.
+                fill_clip = if f1_top {
+                    crate::clipper_utils::offset_expolygons_clib(&last, -ext_perimeter_spacing, OffsetJoinType::Miter)
+                } else {
+                    offset_expolygons(&last, -ext_perimeter_spacing, OffsetJoinType::Miter)
+                };
 
                 // R104: this only_one_wall_top block recomputes `last` (line 942,
                 // last = intersection(inner_polygons, last)) via geo-clipper, gridding
@@ -858,7 +863,12 @@ impl PerimeterGenerator {
 
                 // PerimeterGenerator.cpp:1146
                 // C++: ExPolygons temp_gap = diff_ex(top_polygons, fill_clip);
-                let temp_gap = difference(&top_polygons, &fill_clip);
+                // R105: temp_gap is unioned into `last` (has_gap_fill) → un-grid under f1_top.
+                let temp_gap = if f1_top {
+                    crate::clipper_utils::difference_clib(&top_polygons, &fill_clip)
+                } else {
+                    difference(&top_polygons, &fill_clip)
+                };
 
                 // PerimeterGenerator.cpp:1147-1149
                 // C++: ExPolygons inner_polygons = diff_ex(last,
@@ -894,17 +904,34 @@ impl PerimeterGenerator {
                 // the non-top area, otherwise it stays top to get a better surface.
                 if let Some(lower) = self.config.lower_slices.as_ref() {
                     let bridge_offset = ext_perimeter_spacing.max(perimeter_width);
-                    let bridge_checker = offset_expolygons(
-                        &difference(&last, lower),
-                        1.5 * bridge_offset,
-                        OffsetJoinType::Miter,
-                    );
+                    // R105: on bridge/overhang layers this re-grids inner_polygons (which
+                    // feeds `last`); un-grid the bridge_checker + the merge union under
+                    // f1_top. The emptiness check stays geo (boolean, does not touch last).
+                    let bridge_checker = if f1_top {
+                        crate::clipper_utils::offset_expolygons_clib(
+                            &crate::clipper_utils::difference_clib(&last, lower),
+                            1.5 * bridge_offset,
+                            OffsetJoinType::Miter,
+                        )
+                    } else {
+                        offset_expolygons(
+                            &difference(&last, lower),
+                            1.5 * bridge_offset,
+                            OffsetJoinType::Miter,
+                        )
+                    };
                     if !bridge_checker.is_empty()
                         && !intersection(&bridge_checker, &inner_polygons).is_empty()
                     {
-                        let mut merged = inner_polygons;
-                        merged.extend(bridge_checker);
-                        inner_polygons = union_ex(&merged);
+                        if f1_top {
+                            let mut rings = crate::geometry::to_polygons(&inner_polygons);
+                            rings.extend(crate::geometry::to_polygons(&bridge_checker));
+                            inner_polygons = crate::clipper_utils::union_ex_clib(&rings, 1);
+                        } else {
+                            let mut merged = inner_polygons;
+                            merged.extend(bridge_checker);
+                            inner_polygons = union_ex(&merged);
+                        }
                     }
                 }
 
