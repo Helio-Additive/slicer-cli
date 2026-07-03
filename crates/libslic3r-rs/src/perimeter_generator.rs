@@ -636,12 +636,27 @@ impl PerimeterGenerator {
                 // the vertex-EXACT vendored ClipperLib (offset2_clib) so inner-wall vertex
                 // density byte-matches native. Area-invariant (material stays at parity). The
                 // outer wall (i==0 above) is also routed through ClipperLib (shrink_clib).
-                offsets = offset2_clib(
-                    &last,
-                    distance + min_spacing / 2.0 - ONE_SCALED_MM,
-                    min_spacing / 2.0 - ONE_SCALED_MM,
-                    self.config.join_type,
-                );
+                // R104 probe: route the inner offset through the faithful offset2_ex_clib
+                // (cz_offset2_ex) with the integer-coord_t delta (matches native exactly),
+                // so its stepA (between-passes) can be compared to native's. Gated F1_UNION.
+                offsets = if std::env::var("F1_UNION").is_ok() {
+                    let per_sp_c = (perimeter_spacing * SCALING_FACTOR).trunc() as i64;
+                    let ext_sp2_c = (ext_perimeter_spacing2 * SCALING_FACTOR).trunc() as i64;
+                    let distance_c = if i == 1 { ext_sp2_c } else { per_sp_c };
+                    let min_spacing_c =
+                        (per_sp_c as f64 * (1.0 - INSET_OVERLAP_TOLERANCE)).trunc() as i64;
+                    let half_min = min_spacing_c / 2;
+                    let d1_mm = -((distance_c + half_min - 1) as f64) / SCALING_FACTOR;
+                    let d2_mm = ((half_min - 1) as f64) / SCALING_FACTOR;
+                    crate::clipper_utils::offset2_ex_clib(&last, d1_mm, d2_mm, self.config.join_type)
+                } else {
+                    offset2_clib(
+                        &last,
+                        distance + min_spacing / 2.0 - ONE_SCALED_MM,
+                        min_spacing / 2.0 - ONE_SCALED_MM,
+                        self.config.join_type,
+                    )
+                };
 
                 /// PerimeterGenerator.cpp:1030-1035
                 /// C++: if (has_gap_fill) append(gaps, diff_ex(offset(last, - float(0.5 * distance)), offset(offsets, float(0.5 * distance + 10))));
@@ -763,6 +778,9 @@ impl PerimeterGenerator {
                 && self.config.upper_slices.is_some()
             {
                 let upper = self.config.upper_slices.as_ref().unwrap();
+                // R104: un-grid the last-chain in this only_one_wall_top block (see note
+                // below) via the vertex-exact ClipperLib. Gated F1_UNION; default byte-unchanged.
+                let f1_top = std::env::var("F1_UNION").is_ok();
 
                 // PerimeterGenerator.cpp:1121-1126
                 // C++: coord_t offset_top_surface = scale_(1.5 * (wall_loops == 0 ? 0. :
@@ -811,6 +829,9 @@ impl PerimeterGenerator {
                     &last_box,
                     false,
                 );
+                // NOTE: `upper` (upper_slices) is itself pre-gridded upstream, so routing
+                // this offset through clib is a no-op for the residual top-surface-layer
+                // gridding (measured). Left on geo-clipper; the residual is upstream.
                 let upper_polygons_series_clipped =
                     crate::clipper_utils::offset_polygons(&upper_clipped_polys, min_width_top_surface, OffsetJoinType::Miter);
 
@@ -818,9 +839,22 @@ impl PerimeterGenerator {
                 // C++: fill_clip = offset_ex(last, -double(ext_perimeter_spacing));
                 fill_clip = offset_expolygons(&last, -ext_perimeter_spacing, OffsetJoinType::Miter);
 
+                // R104: this only_one_wall_top block recomputes `last` (line 942,
+                // last = intersection(inner_polygons, last)) via geo-clipper, gridding
+                // it to 1µm BEFORE it feeds the inner-wall offset chain (i≥1) AND the
+                // infill-area computation. Native uses ClipperLib (10nm), so rust's inner
+                // input diverges (inner-offset input 99.8% on-100-grid vs native 5.2%) →
+                // inner walls 0%, and the classification jitter. The whole last-chain
+                // (upper offset / top_polygons / inner_polygons / the final intersection+
+                // union) is routed through the vertex-exact ClipperLib under f1_top.
+
                 // PerimeterGenerator.cpp:1144
                 // C++: ExPolygons top_polygons = diff_ex(last, upper_polygons_series_clipped, ApplySafetyOffset::Yes);
-                let mut top_polygons = difference(&last, &upper_polygons_series_clipped);
+                let mut top_polygons = if f1_top {
+                    crate::clipper_utils::difference_clib(&last, &upper_polygons_series_clipped)
+                } else {
+                    difference(&last, &upper_polygons_series_clipped)
+                };
 
                 // PerimeterGenerator.cpp:1146
                 // C++: ExPolygons temp_gap = diff_ex(top_polygons, fill_clip);
@@ -830,14 +864,23 @@ impl PerimeterGenerator {
                 // C++: ExPolygons inner_polygons = diff_ex(last,
                 // C++:     offset_ex(top_polygons, offset_top_surface + min_width_top_surface - double(ext_perimeter_spacing / 2)),
                 // C++:     ApplySafetyOffset::Yes);
-                let mut inner_polygons = difference(
-                    &last,
-                    &offset_expolygons(
-                        &top_polygons,
-                        offset_top_surface + min_width_top_surface - ext_perimeter_spacing / 2.0,
-                        OffsetJoinType::Miter,
-                    ),
-                );
+                let inner_off_delta =
+                    offset_top_surface + min_width_top_surface - ext_perimeter_spacing / 2.0;
+                let mut inner_polygons = if f1_top {
+                    crate::clipper_utils::difference_clib(
+                        &last,
+                        &crate::clipper_utils::offset_expolygons_clib(
+                            &top_polygons,
+                            inner_off_delta,
+                            OffsetJoinType::Miter,
+                        ),
+                    )
+                } else {
+                    difference(
+                        &last,
+                        &offset_expolygons(&top_polygons, inner_off_delta, OffsetJoinType::Miter),
+                    )
+                };
 
                 // PerimeterGenerator.cpp:1150-1161
                 // C++: if (this->lower_slices != NULL) {
@@ -886,14 +929,26 @@ impl PerimeterGenerator {
 
                 // PerimeterGenerator.cpp:1169
                 // C++: last = intersection_ex(inner_polygons, last);
-                last = intersection(&inner_polygons, &last);
+                // A ∩ B = A − (A − B); no cz intersection shim, so use difference_clib twice.
+                last = if f1_top {
+                    crate::clipper_utils::difference_clib(
+                        &inner_polygons,
+                        &crate::clipper_utils::difference_clib(&inner_polygons, &last),
+                    )
+                } else {
+                    intersection(&inner_polygons, &last)
+                };
 
                 // PerimeterGenerator.cpp:1170-1171
                 // C++: if (has_gap_fill) last = union_ex(last, temp_gap);
                 if has_gap_fill {
                     let mut merged = last;
                     merged.extend(temp_gap);
-                    last = union_ex(&merged);
+                    last = if f1_top {
+                        crate::clipper_utils::union_ex_clib(&crate::geometry::to_polygons(&merged), 1)
+                    } else {
+                        union_ex(&merged)
+                    };
                 }
 
                 // TOPDBG (diagnostics only, env-gated): dump the perimeter-derived
