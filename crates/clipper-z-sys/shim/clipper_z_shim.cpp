@@ -658,9 +658,18 @@ extern "C" CzZPaths cz_offset2_ex(const int32_t *xy, const int32_t *lens, const 
         stepA = std::move(u);
     }
 
-    // Step B: offset_paths<PolyTree>(stepA, delta2) with delta2<0 = shrink_paths<PolyTree>.
+    // Step B: offset_paths<PolyTree>(stepA, delta2) (ClipperUtils.cpp:399-408).
     // raw_offset(stepA, delta2) is PER-PATH, orientation-aware (ClipperUtils.cpp:272-300),
-    // then the shrink frame-union to PolyTree (ClipperUtils.cpp:382-397).
+    // then native DISPATCHES ON THE SIGN of delta2:
+    //   delta2 > 0 → expand_paths = clipper_union<PolyTree>(raw), pftNonZero, NO frame
+    //                (ClipperUtils.cpp:366-372).
+    //   delta2 < 0 → shrink_paths = bounding-frame union with pftNegative + ReverseSolution
+    //                + RemoveOutermostPolygon (ClipperUtils.cpp:381-397).
+    // R103b: the prior implementation hardcoded the shrink_paths branch — correct only for
+    // the slice-closing use (delta1=+r, delta2=-r). offset2_ex callers with delta2 > 0 (a
+    // SHRINK-then-GROW, e.g. the perimeter inner offset) must use expand_paths. Branch on
+    // the sign to match native. (Byte-identical on Benchy — both reconstructions agree on
+    // its non-self-intersecting offset paths — but faithful for the general delta2>0 case.)
     ClipperLib::PolyTree polytree;
     if (! stepA.empty()) {
         CzPaths raw;
@@ -681,18 +690,26 @@ extern "C" CzZPaths cz_offset2_ex(const int32_t *xy, const int32_t *lens, const 
             }
         }
         if (! raw.empty()) {
-            ClipperLib::Clipper clipper;
-            clipper.AddPaths(raw, ClipperLib::ptSubject, true);
-            ClipperLib::IntRect r = clipper.GetBounds();
-            CzPath frame;
-            frame.emplace_back(r.left - 10, r.bottom + 10);
-            frame.emplace_back(r.right + 10, r.bottom + 10);
-            frame.emplace_back(r.right + 10, r.top - 10);
-            frame.emplace_back(r.left - 10, r.top - 10);
-            clipper.AddPath(frame, ClipperLib::ptSubject, true);
-            clipper.ReverseSolution(true);
-            clipper.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNegative, ClipperLib::pftNegative);
-            polytree.RemoveOutermostPolygon();
+            if (delta2 > 0) {
+                // expand_paths: plain union of the raw offset paths into a PolyTree.
+                ClipperLib::Clipper clipper;
+                clipper.AddPaths(raw, ClipperLib::ptSubject, true);
+                clipper.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+            } else {
+                // shrink_paths: bounding-frame union with the negative fill rule.
+                ClipperLib::Clipper clipper;
+                clipper.AddPaths(raw, ClipperLib::ptSubject, true);
+                ClipperLib::IntRect r = clipper.GetBounds();
+                CzPath frame;
+                frame.emplace_back(r.left - 10, r.bottom + 10);
+                frame.emplace_back(r.right + 10, r.bottom + 10);
+                frame.emplace_back(r.right + 10, r.top - 10);
+                frame.emplace_back(r.left - 10, r.top - 10);
+                clipper.AddPath(frame, ClipperLib::ptSubject, true);
+                clipper.ReverseSolution(true);
+                clipper.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNegative, ClipperLib::pftNegative);
+                polytree.RemoveOutermostPolygon();
+            }
         }
     }
 
