@@ -915,10 +915,14 @@ pub fn offset2(
 //
 // Faithfulness: cz_offset_expolygon replicates ClipperUtils.cpp
 // `offset_expolygon_inner` (per-ExPolygon ClipperOffset of contour + holes, then
-// difference/append). The cross-ExPolygon union + path->ExPolygon reconstruction
-// reuse the existing geo-clipper `union_polygons_ex` (proven vertex-preserving:
-// the outer wall — a single geo offset — is already byte-exact, so the geo
-// union/round-trip does not re-densify).
+// difference/append). The cross-ExPolygon union + path->ExPolygon reconstruction is
+// GATED (R100/R106): under F1_UNION it runs the vertex-exact `union_ex_clib`
+// (ClipperLib @1e5, full-resolution); the DEFAULT reconstruction is geo-clipper
+// `union_polygons_ex` (@ GEO_CLIPPER_SCALE=1000), which DOES re-grid every vertex to
+// the 1µm grid. (The old "geo union is vertex-preserving / does not re-densify" claim
+// was DISPROVEN in R106 — the ungated geo reconstruction in `difference_clib` silently
+// re-gridded `last` and defeated two rounds of routing. Any *_clib helper that
+// reconstructs via geo MUST gate that reconstruction behind F1_UNION.)
 //
 // i32 RANGE: ClipperLib here is CLIPPERLIB_INT32. libslic3r coords are i64@1e5.
 // Benchy ~6e6 << i32 max 2.1e9 → safe. The wrapper debug-asserts the range
@@ -1045,11 +1049,11 @@ fn clib_offset_expolygon_paths(
 /// per-ExPolygon offset, then union the resulting paths back into ExPolygons.
 ///
 /// Mirrors `offset_ex(const ExPolygons&)` / the `offset_polygons` single offset
-/// for the perimeter inner-wall path. `delta` is in mm. Reconstruction (and the
-/// positive-offset cross-ExPolygon union) reuse geo-clipper `union_polygons_ex`,
-/// which is proven vertex-preserving for offset output (the outer wall is already
-/// byte-exact). Boolean correctness / area parity is therefore unchanged; only
-/// the offset's emitted vertex density changes (toward native).
+/// for the perimeter inner-wall path. `delta` is in mm. Reconstruction is GATED
+/// (R100): under F1_UNION the cross-ExPolygon union runs the vertex-exact
+/// `union_ex_clib` (ClipperLib @1e5, full-res); the DEFAULT reconstruction is geo
+/// `union_polygons_ex` (@1000), which re-grids vertices to 1µm. (The prior "geo
+/// union is vertex-preserving" claim was disproven in R106 — see difference_clib.)
 pub fn offset_expolygons_clib(
     expolygons: &[ExPolygon],
     delta: CoordF,
