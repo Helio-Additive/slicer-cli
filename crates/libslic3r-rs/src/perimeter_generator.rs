@@ -661,10 +661,40 @@ impl PerimeterGenerator {
                 /// PerimeterGenerator.cpp:1030-1035
                 /// C++: if (has_gap_fill) append(gaps, diff_ex(offset(last, - float(0.5 * distance)), offset(offsets, float(0.5 * distance + 10))));
                 if has_gap_fill {
-                    let gap_outer = shrink(&last, 0.5 * distance, self.config.join_type);
                     // The `+ 10` is ClipperSafetyOffset = 10 scaled units = 0.0001 mm.
-                    let gap_inner = grow(&offsets, 0.5 * distance + 0.0001, self.config.join_type);
-                    let detected_gaps = difference(&gap_outer, &gap_inner);
+                    // R108: these gap-detection offsets/difference ran through geo-clipper
+                    // (shrink/grow @ GEO_CLIPPER_SCALE=1000, difference @1µm) — the R100
+                    // gridding class. MEASURED (GAPDBG): the inputs `last`/`offsets` arrive
+                    // full-resolution (0% on the 1µm grid, R104/R105-faithful) but the geo
+                    // ops snapped every detected-gap vertex to the grid (100% on-grid),
+                    // fragmenting thin gap regions into ~13x too many on-grid slivers. That
+                    // drove gap-infill's 17% diff share (R107): gap toolpath vertices matched
+                    // native only 2.3% (XY multiset). Under F1_UNION route the same
+                    // shrink/grow/difference through the vertex-exact vendored ClipperLib
+                    // (shrink_clib/grow_clib/difference_clib @ i32/1e5, reconstructing via
+                    // union_ex_clib) — gap output on-grid 100%→0%, XY multiset match
+                    // 2.3%→46.9%, total gated diff 243105→188922 (−22%). Same mm deltas
+                    // (geo delta is unscaled mm; the clib shims take mm and scale @1e5).
+                    // Default path keeps geo (difference_clib reconstructs via geo union off
+                    // F1_UNION — R106), byte-unchanged.
+                    let detected_gaps = if std::env::var("F1_UNION").is_ok() {
+                        let gap_outer = crate::clipper_utils::shrink_clib(
+                            &last,
+                            0.5 * distance,
+                            self.config.join_type,
+                        );
+                        let gap_inner = crate::clipper_utils::grow_clib(
+                            &offsets,
+                            0.5 * distance + 0.0001,
+                            self.config.join_type,
+                        );
+                        crate::clipper_utils::difference_clib(&gap_outer, &gap_inner)
+                    } else {
+                        let gap_outer = shrink(&last, 0.5 * distance, self.config.join_type);
+                        let gap_inner =
+                            grow(&offsets, 0.5 * distance + 0.0001, self.config.join_type);
+                        difference(&gap_outer, &gap_inner)
+                    };
                     gaps.extend(detected_gaps);
                 }
             }
