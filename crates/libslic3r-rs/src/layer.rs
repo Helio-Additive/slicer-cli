@@ -1526,7 +1526,20 @@ impl Layer {
         // Layer.cpp:69-70
         // sort slices
         // C++: std::vector<Points::size_type> order = chain_points(ordering_points);
-        let order = chain_points(&ordering_points);
+        // R111: the local `chain_points` (layer.rs) is a simplified NN-from-index-0
+        // chain; native's `chain_points` (ShortestPath.cpp:1073) is
+        // `chain_segments_greedy` (KD-tree greedy with a specific start). On
+        // multi-island layers these produce DIFFERENT lslices orders, and since
+        // GCode::process_layer emits islands in lslices order, the island EMISSION
+        // order diverges (67/126 multi-island layers; island SETS identical). Route
+        // through the faithful port (shortest_path::chain_segments_greedy) under
+        // F1_UNION so the island order matches native. Default path keeps the local
+        // chain (byte-unchanged).
+        let order = if std::env::var("F1_UNION").is_ok() {
+            crate::shortest_path::chain_points(&ordering_points, None)
+        } else {
+            chain_points(&ordering_points)
+        };
 
         // Layer.cpp:72-74
         // populate slices vector
