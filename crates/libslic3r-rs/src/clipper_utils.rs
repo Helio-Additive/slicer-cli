@@ -663,6 +663,32 @@ pub fn grow(expolygons: &[ExPolygon], distance: CoordF, join_type: OffsetJoinTyp
 }
 
 // ============================================================================
+// R117 — scale_-faithful delta helpers (R109/R113/R115 class)
+// ============================================================================
+// Native BBS `scale_(v)` is the macro `((v) / SCALING_FACTOR)` (libslic3r.h:81)
+// with the f64 literal SCALING_FACTOR = 0.00001 (slightly ABOVE 1e-5), then
+// `coord_t()` truncates. The spacings/widths it scales are stored as `float`
+// (Flow::m_width/m_spacing), so the faithful chain is `trunc(f32(mm) / 0.00001)`:
+//   scale_(0.45)=44999, scale_(0.5)=49999, scale_(0.42)=41999 — NOT the crate's
+// `scale()` (multiply by exact 100000.0 + round). The only_one_wall_top block
+// (min_width_top_surface, bridge_offset) and the perimeter offsets need this for
+// byte-parity. Pure helpers — callers opt in under F1_UNION.
+
+/// Native `coord_t(scale_(mm))` = `trunc(f32(mm) / 0.00001)`.
+pub fn scale_faithful(mm: CoordF) -> Coord {
+    ((mm as f32) as f64 / 0.00001_f64).trunc() as Coord
+}
+
+/// The mm delta to hand `offset_expolygons_clib` (which multiplies by
+/// `SCALING_FACTOR` = 1e5 internally) so the resulting ClipperOffset delta equals
+/// native's `float(scaled_delta)` — the native scaled delta AFTER the f32 cast that
+/// `offset(paths, const float delta)` applies (ClipperUtils.hpp:341). Used for the
+/// block offsets (bridge_offset = 1.5·max(scale_(eps),scale_(pw)); min_width_top).
+pub fn offset_delta_mm_from_scaled_f32(scaled_delta: CoordF) -> CoordF {
+    ((scaled_delta as f32) as f64) / crate::SCALING_FACTOR
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 
@@ -2585,6 +2611,27 @@ mod tests {
     use super::*;
     use crate::geometry::Point;
     use crate::{scale, Coord};
+
+    // R117: scale_-faithful helper matches the known native scale_ constants.
+    #[test]
+    fn r117_scale_faithful_matches_native() {
+        assert_eq!(scale_faithful(0.45), 44999); // ext_perimeter_spacing
+        assert_eq!(scale_faithful(0.5), 49999); // L0 external width
+        assert_eq!(scale_faithful(0.42), 41999); // L1-239 external width
+        assert_eq!(scale_faithful(0.44), 43999);
+        assert_eq!(scale_faithful(0.56), 56000);
+    }
+
+    // R117: bridge_offset = 1.5·max(scale_(eps),scale_(pw)) = 67498.5 (benchy
+    // eps=0.45 dominates), and offset_delta_mm_from_scaled_f32 round-trips through
+    // offset_expolygons_clib's ×SCALING_FACTOR to that exact value.
+    #[test]
+    fn r117_bridge_offset_delta_faithful() {
+        let bo = 1.5 * scale_faithful(0.45) as f64;
+        assert_eq!(bo, 67498.5);
+        let dmm = offset_delta_mm_from_scaled_f32(bo);
+        assert_eq!(dmm * crate::SCALING_FACTOR, 67498.5);
+    }
 
     fn make_square(x: Coord, y: Coord, size: Coord) -> ExPolygon {
         let poly = Polygon::rectangle(Point::new(x, y), Point::new(x + size, y + size));
