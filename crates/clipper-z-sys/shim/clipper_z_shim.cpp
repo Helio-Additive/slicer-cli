@@ -414,6 +414,64 @@ extern "C" CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_
 }
 
 // ---------------------------------------------------------------------------
+// cz_difference_closed_safety — faithful replica of
+// `clipper_do<Paths>(ctDifference, subject, safety_offset(clip), pftNonZero)`
+// (ClipperUtils.cpp:334), i.e. `diff_ex(subject, clip, ApplySafetyOffset::Yes)`.
+// safety_offset(clip) = raw_offset(clip, ClipperSafetyOffset=10, jtMiter,
+// DefaultMiterLimit=3) applied path-by-path with orientation-aware signum
+// (ClipperUtils.cpp:273-307). The Rust caller re-unions the raw output to a
+// PolyTree (matching diff_ex's PolyTreeToExPolygons), exactly like
+// cz_difference_closed.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// raw_offset(paths, ClipperSafetyOffset=10, jtMiter, 3.0) — ClipperUtils.cpp:273-300.
+ClipperLib::Paths cz_safety_offset(const ClipperLib::Paths &paths) {
+    const float offset = 10.0f;      // ClipperSafetyOffset (ClipperUtils.hpp:29)
+    const double miter_limit = 3.0;  // DefaultMiterLimit
+    ClipperLib::ClipperOffset co;
+    co.MiterLimit = miter_limit;
+    co.ShortestEdgeLength = std::abs(offset * 0.005); // ClipperOffsetShortestEdgeFactor
+    ClipperLib::Paths out;
+    out.reserve(paths.size());
+    ClipperLib::Paths out_this;
+    for (const ClipperLib::Path &path : paths) {
+        co.Clear();
+        // Execute reorients so the outer contour is CCW; signum reversed for CW input.
+        co.AddPath(path, ClipperLib::jtMiter, ClipperLib::etClosedPolygon);
+        bool ccw = ClipperLib::Orientation(path);
+        co.Execute(out_this, ccw ? offset : -offset);
+        if (!ccw)
+            for (ClipperLib::Path &p : out_this)
+                std::reverse(p.begin(), p.end());
+        for (ClipperLib::Path &p : out_this)
+            out.push_back(std::move(p));
+        out_this.clear();
+    }
+    return out;
+}
+
+} // namespace
+
+extern "C" CzZPaths cz_difference_closed_safety(const int32_t *subject_xy, const int32_t *subject_lens,
+                                                int32_t subject_num, const int32_t *clip_xy,
+                                                const int32_t *clip_lens, int32_t clip_num) {
+    ClipperLib::Paths subject = read_closed_paths(subject_xy, subject_lens, subject_num);
+    ClipperLib::Paths clip = read_closed_paths(clip_xy, clip_lens, clip_num);
+    ClipperLib::Paths clip_safe = cz_safety_offset(clip);
+
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, true);
+    clipper.AddPaths(clip_safe, ClipperLib::ptClip, true);
+    ClipperLib::Paths solution;
+    clipper.Execute(ClipperLib::ctDifference, solution, ClipperLib::pftNonZero,
+                    ClipperLib::pftNonZero);
+
+    return marshal_paths(solution);
+}
+
+// ---------------------------------------------------------------------------
 // cz_union_ex — faithful replica of ClipperUtils.cpp `union_ex(const Polygons&,
 // PolyFillType)` (ClipperUtils.cpp:813-814) = PolyTreeToExPolygons(
 // clipper_do_polytree(ctUnion, ..., fill_type)). The slice-stage F1 union behind

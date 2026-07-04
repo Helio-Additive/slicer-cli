@@ -138,6 +138,13 @@ CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_
                               int32_t subject_num, const int32_t *clip_xy,
                               const int32_t *clip_lens, int32_t clip_num);
 
+// diff_ex(subject, clip, ApplySafetyOffset::Yes): applies safety_offset (raw
+// +10-unit ClipperOffset, jtMiter/ML3, orientation-aware) to the clip paths
+// before the ctDifference. Same marshalling as cz_difference_closed.
+CzZPaths cz_difference_closed_safety(const int32_t *subject_xy, const int32_t *subject_lens,
+                                     int32_t subject_num, const int32_t *clip_xy,
+                                     const int32_t *clip_lens, int32_t clip_num);
+
 // Faithful replica of libslic3r FillFloatingConcentric.cpp `detect_floating_line`
 // (FillFloatingConcentric.cpp:431-475): the Z-aware open-path clip used to mark
 // which segments of a thick polyline fall in the floating (unsupported) area.

@@ -1244,6 +1244,82 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     union_polygons_ex(&all_paths)
 }
 
+/// ClipperLib-backed `diff_ex(subject, clip, ApplySafetyOffset::Yes)`
+/// (ClipperUtils.cpp:334): identical to [`difference_clib`] but the clip paths are
+/// safety-offset (raw +10-unit ClipperOffset, jtMiter/ML3, orientation-aware — no
+/// union reconstruction) inside the shim before the ctDifference, matching native's
+/// `clipper_do(ctDifference, subject, safety_offset(clip), pftNonZero)`. The
+/// only_one_wall_top block's differences (top_polygons, inner_polygons, bridge
+/// lower-diff) all use ApplySafetyOffset::Yes; the No-safety `difference_clib` was a
+/// systemic gap (R113-R115). Reconstruction is the same F1_UNION-gated union_ex_clib.
+pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    if subject.is_empty() {
+        return vec![];
+    }
+    if clip.is_empty() {
+        return subject.to_vec();
+    }
+
+    let (subject_xy, subject_lens, subject_num) = clib_flatten_expolygons(subject);
+    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    if subject_num == 0 {
+        return vec![];
+    }
+
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
+    let raw = unsafe {
+        clipper_z_sys::cz_difference_closed_safety(
+            subject_xy.as_ptr(),
+            subject_lens.as_ptr(),
+            subject_num,
+            if clip_xy.is_empty() {
+                std::ptr::null()
+            } else {
+                clip_xy.as_ptr()
+            },
+            if clip_lens.is_empty() {
+                std::ptr::null()
+            } else {
+                clip_lens.as_ptr()
+            },
+            clip_num,
+        )
+    };
+
+    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            all_paths.push(Polygon::from_points(pts));
+        }
+    }
+
+    // SAFETY: `raw` was produced by cz_difference_closed_safety and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+
+    if all_paths.is_empty() {
+        return vec![];
+    }
+    if std::env::var("F1_UNION").is_ok() {
+        return union_ex_clib(&all_paths, 1);
+    }
+    union_polygons_ex(&all_paths)
+}
+
 /// ClipperLib-backed `union_ex(const Polygons&, PolyFillType)`
 /// (ClipperUtils.cpp:813-814): the slice-stage F1 union behind make_expolygons
 /// (TriangleMeshSlicer.cpp:1819-1823). Runs the vertex-exact vendored ClipperLib

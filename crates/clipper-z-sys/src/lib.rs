@@ -79,6 +79,18 @@ extern "C" {
         clip_num: i32,
     ) -> CzZPaths;
 
+    /// `diff_ex(subject, clip, ApplySafetyOffset::Yes)`: safety-offsets (raw +10u
+    /// ClipperOffset, jtMiter/ML3, orientation-aware) the clip paths before the
+    /// ctDifference. Same output/marshalling as [`cz_difference_closed`].
+    pub fn cz_difference_closed_safety(
+        subject_xy: *const i32,
+        subject_lens: *const i32,
+        subject_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+    ) -> CzZPaths;
+
     /// Faithful `detect_floating_line` Z-clipper (FillFloatingConcentric.cpp:431-475):
     /// runs the ClipperLib_Z Clipper twice on the same inputs (ctIntersection +
     /// ctDifference) under the detect_floating_line ZFillFunction (tags intersection
