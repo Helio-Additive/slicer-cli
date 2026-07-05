@@ -91,6 +91,20 @@ extern "C" {
         clip_num: i32,
     ) -> CzZPaths;
 
+    /// Faithful closed-path boolean INTERSECTION (subject ∩ clip), mirroring
+    /// `intersection_ex(subject, clip)` = `clipper_do<Paths>(ctIntersection, ...,
+    /// pftNonZero)` (ClipperUtils.cpp:802). Same marshalling/caller re-union as
+    /// [`cz_difference_closed`]. Replaces the `A - (A - B)` double-difference
+    /// intersection, which added a near-collinear vertex on some geometries.
+    pub fn cz_intersection_closed(
+        subject_xy: *const i32,
+        subject_lens: *const i32,
+        subject_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+    ) -> CzZPaths;
+
     /// Faithful `detect_floating_line` Z-clipper (FillFloatingConcentric.cpp:431-475):
     /// runs the ClipperLib_Z Clipper twice on the same inputs (ctIntersection +
     /// ctDifference) under the detect_floating_line ZFillFunction (tags intersection

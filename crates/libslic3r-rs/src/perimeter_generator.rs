@@ -1008,12 +1008,17 @@ impl PerimeterGenerator {
 
                 // PerimeterGenerator.cpp:1169
                 // C++: last = intersection_ex(inner_polygons, last);
-                // A ∩ B = A − (A − B); no cz intersection shim, so use difference_clib twice.
+                // R119: faithful single-op ctIntersection shim. The prior `A ∩ B =
+                // A − (A − B)` double-difference (R118) added a ~0.001µm-off near-
+                // collinear vertex on the L2/L3/L4/L6/L8/L16 band (the second
+                // ctDifference re-processed the intermediate region) — the +1-pt
+                // residual localized by the R119 stage-split oracle (inputs
+                // byte-identical, native intersection_ex 147pt vs A−(A−B) 148pt).
+                // `intersection_clib` = cz_intersection_closed + the same union_ex_clib
+                // reconstruction difference_clib uses, matching native's
+                // PolyTreeToExPolygons(clipper_do_polytree(ctIntersection,...)).
                 last = if f1_top {
-                    crate::clipper_utils::difference_clib(
-                        &inner_polygons,
-                        &crate::clipper_utils::difference_clib(&inner_polygons, &last),
-                    )
+                    crate::clipper_utils::intersection_clib(&inner_polygons, &last)
                 } else {
                     intersection(&inner_polygons, &last)
                 };

@@ -145,6 +145,19 @@ CzZPaths cz_difference_closed_safety(const int32_t *subject_xy, const int32_t *s
                                      int32_t subject_num, const int32_t *clip_xy,
                                      const int32_t *clip_lens, int32_t clip_num);
 
+// Faithful replica of libslic3r ClipperUtils.cpp
+// `intersection_ex(subject, clip)` = `_clipper_ex(ctIntersection, ...,
+// ApplySafetyOffset::No)` (ClipperUtils.cpp:802) — a closed-path boolean
+// INTERSECTION (subject ∩ clip) over the non-Z ClipperLib, pftNonZero/pftNonZero.
+// Same marshalling + caller re-union as cz_difference_closed. This is the FAITHFUL
+// replacement for the R118 `A - (A - B)` double-difference intersection, which
+// added a near-collinear vertex on some geometries (a second ctDifference pass
+// re-processed the intermediate region); a single ctIntersection matches native's
+// PolyTreeToExPolygons(clipper_do_polytree(ctIntersection,...)) byte-for-byte.
+CzZPaths cz_intersection_closed(const int32_t *subject_xy, const int32_t *subject_lens,
+                                int32_t subject_num, const int32_t *clip_xy,
+                                const int32_t *clip_lens, int32_t clip_num);
+
 // Faithful replica of libslic3r FillFloatingConcentric.cpp `detect_floating_line`
 // (FillFloatingConcentric.cpp:431-475): the Z-aware open-path clip used to mark
 // which segments of a thick polyline fall in the floating (unsupported) area.

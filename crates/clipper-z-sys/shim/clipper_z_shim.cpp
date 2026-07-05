@@ -413,6 +413,24 @@ extern "C" CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_
     return marshal_paths(solution);
 }
 
+extern "C" CzZPaths cz_intersection_closed(const int32_t *subject_xy, const int32_t *subject_lens,
+                                           int32_t subject_num, const int32_t *clip_xy,
+                                           const int32_t *clip_lens, int32_t clip_num) {
+    ClipperLib::Paths subject = read_closed_paths(subject_xy, subject_lens, subject_num);
+    ClipperLib::Paths clip = read_closed_paths(clip_xy, clip_lens, clip_num);
+
+    // clipper_do<ClipperLib::Paths>(ctIntersection, subject, clip, pftNonZero)
+    // (ClipperUtils.cpp:802 intersection_ex, ApplySafetyOffset::No). Both closed.
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, true);
+    clipper.AddPaths(clip, ClipperLib::ptClip, true);
+    ClipperLib::Paths solution;
+    clipper.Execute(ClipperLib::ctIntersection, solution, ClipperLib::pftNonZero,
+                    ClipperLib::pftNonZero);
+
+    return marshal_paths(solution);
+}
+
 // ---------------------------------------------------------------------------
 // cz_difference_closed_safety — faithful replica of
 // `clipper_do<Paths>(ctDifference, subject, safety_offset(clip), pftNonZero)`
