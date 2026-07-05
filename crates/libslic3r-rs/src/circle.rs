@@ -17,6 +17,16 @@ use nalgebra::Vector2;
 
 use std::f64::consts::PI;
 
+/// R124: true on the gated (F1_UNION) byte-match path — enables the faithful
+/// `lrint`-rounded arc center (native `Point(double,double)`). Cached: the circle
+/// fit runs many times per loop. Default path keeps the legacy truncation so the
+/// byte-locked 147987 default is unchanged.
+fn f1_union_center_round() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F1_UNION").is_ok())
+}
+
 /// Tolerance for floating-point comparisons
 /// Circle.hpp:9
 /// C++: constexpr double ZERO_TOLERANCE = 0.000005;
@@ -178,9 +188,18 @@ impl Circle {
 
         // Circle.cpp:51-52
         // C++: new_circle.center = Point(center_x, center_y);
-        // Point(double, double) truncates toward zero (C++ implicit conversion).
+        // R124: native `Point(double,double)` = `Vec2crd(coord_t(lrint(x)), coord_t(lrint(y)))`
+        // ROUNDS to nearest (Point.hpp:179, default FE_TONEAREST = ties-to-even), NOT truncate.
+        // The prior `as i64` truncated toward zero → the fitted arc center was off by ±1 unit on
+        // ~75% of arcs vs native (R123 oracle: G2/G3 I/J divergence on byte-identical loops).
+        // `round_ties_even` matches lrint's default mode exactly (NOT `.round()`, which is
+        // ties-away-from-zero). Gated F1_UNION so the byte-locked default path is unchanged.
         Some(Circle {
-            center: Point::new(center_x as i64, center_y as i64),
+            center: if f1_union_center_round() {
+                Point::new(center_x.round_ties_even() as i64, center_y.round_ties_even() as i64)
+            } else {
+                Point::new(center_x as i64, center_y as i64)
+            },
             radius,
         })
     }
