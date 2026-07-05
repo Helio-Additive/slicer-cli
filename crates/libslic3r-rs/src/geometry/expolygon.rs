@@ -336,6 +336,36 @@ impl ExPolygon {
         pp
     }
 
+    /// R122: identical to [`simplify_p_dp_rings`] but runs the faithful DP
+    /// (`douglas_peucker_faithful`, native pure-double point-to-segment distance)
+    /// instead of the crate's rounded-projection `Line::distance_to_squared`. Used
+    /// by the gated (F1_UNION) slice-simplify path so near-tolerance vertices match
+    /// native `ExPolygon::simplify_p` (which the rounded distance drops/keeps
+    /// differently). Default path keeps `simplify_p_dp_rings`.
+    pub fn simplify_p_dp_rings_faithful(&self, tolerance: CoordF) -> Vec<Polygon> {
+        use crate::multi_point::douglas_peucker_faithful;
+        let mut pp: Vec<Polygon> = Vec::with_capacity(self.holes.len() + 1);
+        {
+            let mut points = self.contour.points().to_vec();
+            if !points.is_empty() {
+                points.push(points[0]);
+                points = douglas_peucker_faithful(&points, tolerance);
+                points.pop();
+            }
+            pp.push(Polygon::from_points(points));
+        }
+        for hole in &self.holes {
+            let mut points = hole.points().to_vec();
+            if !points.is_empty() {
+                points.push(points[0]);
+                points = douglas_peucker_faithful(&points, tolerance);
+                points.pop();
+            }
+            pp.push(Polygon::from_points(points));
+        }
+        pp
+    }
+
     /// Faithful port of the overload
     /// `void ExPolygon::simplify_p(double tolerance, Polygons* polygons) const`
     /// (BambuStudio `ExPolygon.cpp:225-229`): appends the simplified contour and

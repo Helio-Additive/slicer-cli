@@ -408,8 +408,25 @@ impl PerimeterGenerator {
         // `ClipperLib::SimplifyPolygons` (StrictlySimple) + `union_ex` via the
         // vertex-exact vendored ClipperLib (clipper-z-sys @ i32/1e5). fill_type=1
         // (pftNonZero) matches C++ simplify_polygons.
+        // R122: native runs simplify_p at the SCALED resolution `0.2·m_scaled_resolution`
+        // (m_scaled_resolution = scaled<double>(resolution) = resolution/0.00001 ≈ 240 scaled
+        // units); rust's `surface_simplify_resolution` is the UNSCALED value (0.0024) — a 1e5×
+        // too-small DP tolerance. The default geo path's rounded-projection DP accidentally
+        // masks this (it rounds near-collinear projections to 0, removing points the tiny
+        // tolerance never would); the faithful double-distance DP does not, so it needs the
+        // correctly-scaled tolerance to match native. Gated: default path keeps the (buggy but
+        // byte-locked) unscaled value.
+        let simplify_tol_scaled = if self.config.arc_fitting_enabled
+            && self.config.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None
+        {
+            0.2 * (self.config.surface_simplify_resolution / 0.00001_f64)
+        } else {
+            self.config.surface_simplify_resolution / 0.00001_f64
+        };
         let mut last = if std::env::var("F1_UNION").is_ok() {
-            let pp = slice.simplify_p_dp_rings(surface_simplify_resolution);
+            // R122: faithful DP — native pure-double point-to-segment distance AND the
+            // native SCALED tolerance (simplify_tol_scaled). Fixes L33/L34/L54 (+sweep).
+            let pp = slice.simplify_p_dp_rings_faithful(simplify_tol_scaled);
             let simplified = crate::clipper_utils::simplify_polygons_clib(&pp, 1);
             crate::clipper_utils::union_ex_clib(&simplified, 1)
         } else {
