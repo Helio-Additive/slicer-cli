@@ -938,9 +938,31 @@ impl PerimeterGenerator {
                     // feeds `last`); un-grid the bridge_checker + the merge union under
                     // f1_top. The emptiness check stays geo (boolean, does not touch last).
                     let bridge_checker = if f1_top {
+                        // R118: native `offset_ex(diff_ex(last, clip(lower_slices, last_box),
+                        // ApplySafetyOffset::Yes), 1.5*bridge_offset)` (PerimeterGenerator.cpp:1172-1175).
+                        // Now FAITHFUL — three coupled fixes landed together (R113-R117):
+                        //   (a) bbox-clip lower to last_box (was unclipped);
+                        //   (b) ::Yes safety difference via difference_clib_safety (R116 shim,
+                        //       oracle byte-exact to native diff_last_lower);
+                        //   (c) scale_-faithful bridge_offset via scale_faithful (R117: f32-cast
+                        //       divide-truncate → 44999 not 45000 → 1.5·44999 = 67498.5).
+                        // R116 churned ONLY because (c) lacked the f32 cast; with it, the
+                        // bridge closes L1/L5/L7/L9/L10/L18/L19 byte-exact and the intersection
+                        // that consumes inner_polygons→last is faithful (R118 phase-1 proof).
+                        let lc = crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygons(
+                            lower, &last_box, false,
+                        );
+                        let lc_ex: Vec<crate::ExPolygon> =
+                            lc.iter().map(|p| crate::ExPolygon::new(p.clone())).collect();
+                        let bc_diff = crate::clipper_utils::difference_clib_safety(&last, &lc_ex);
+                        let bo_scaled = crate::clipper_utils::scale_faithful(ext_perimeter_spacing)
+                            .max(crate::clipper_utils::scale_faithful(perimeter_width))
+                            as f64;
+                        let bridge_delta_mm =
+                            crate::clipper_utils::offset_delta_mm_from_scaled_f32(1.5 * bo_scaled);
                         crate::clipper_utils::offset_expolygons_clib(
-                            &crate::clipper_utils::difference_clib(&last, lower),
-                            1.5 * bridge_offset,
+                            &bc_diff,
+                            bridge_delta_mm,
                             OffsetJoinType::Miter,
                         )
                     } else {
