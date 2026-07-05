@@ -840,6 +840,39 @@ impl PerimeterGenerator {
                 // C++:     std::max(ext_perimeter_spacing / 2.0, perimeter_width / 2.0);
                 let min_width_top_surface = (self.config.top_area_threshold / 100.0)
                     * (ext_perimeter_spacing / 2.0).max(perimeter_width / 2.0);
+                // R120: native computes the top-chain offset deltas in SCALED coord_t —
+                // the spacings are `scaled_width()/scaled_spacing()` = coord_t(scale_(f32))
+                // (= scale_faithful), min_width/offset_top/inner_off are built from those,
+                // and `offset(paths, float delta)` f32-casts. Reproduce the exact scaled
+                // values for the gated clib ops; `offset_delta_mm_from_scaled_f32` converts
+                // each to the mm delta `offset_expolygons_clib` (×1e5 internally) needs.
+                // NOTE eps/2 is INTEGER division in native (`double(ext_perimeter_spacing/2)`,
+                // coord_t/int → 18853 not 18853.5).
+                let eps_s = crate::clipper_utils::scale_faithful(ext_perimeter_spacing);
+                let pw_s = crate::clipper_utils::scale_faithful(perimeter_width);
+                let epw_s = crate::clipper_utils::scale_faithful(ext_perimeter_width);
+                let psp_s = crate::clipper_utils::scale_faithful(perimeter_spacing);
+                let wli = self.config.perimeter_count as i64;
+                let min_width_scaled = (self.config.top_area_threshold / 100.0)
+                    * (eps_s as f64 / 2.0).max(pw_s as f64 / 2.0);
+                let mut offset_top_scaled: f64 = if self.config.perimeter_count == 0 {
+                    0.0
+                } else {
+                    // scale_(1.5 * unscaled(epw + psp*(wl-1))): unscaled = *0.00001, scale_ = /0.00001
+                    let sum_s = epw_s + psp_s * (wli - 1);
+                    ((1.5 * (sum_s as f64 * 0.00001)) / 0.00001).trunc()
+                };
+                let reduction_s = if self.config.perimeter_count <= 1 {
+                    0.0
+                } else {
+                    0.9 * (psp_s * (wli - 1)) as f64
+                };
+                if offset_top_scaled > reduction_s {
+                    offset_top_scaled -= reduction_s.trunc(); // native coord_t(0.9*...) truncates
+                } else {
+                    offset_top_scaled = 0.0;
+                }
+                let inner_off_scaled = offset_top_scaled + min_width_scaled - (eps_s / 2) as f64;
 
                 // PerimeterGenerator.cpp:1131-1136
                 // C++: BoundingBox last_box = get_extents(last);
@@ -859,11 +892,19 @@ impl PerimeterGenerator {
                     &last_box,
                     false,
                 );
-                // NOTE: `upper` (upper_slices) is itself pre-gridded upstream, so routing
-                // this offset through clib is a no-op for the residual top-surface-layer
-                // gridding (measured). Left on geo-clipper; the residual is upstream.
-                let upper_polygons_series_clipped =
-                    crate::clipper_utils::offset_polygons(&upper_clipped_polys, min_width_top_surface, OffsetJoinType::Miter);
+                // R120: native `offset(clip(upper, last_box), float(min_width_top_surface))`
+                // (PerimeterGenerator.cpp:1131). The default geo `offset_polygons` grids the
+                // bbox-clipped upper to 1µm (R100/R115 class); under f1_top route through the
+                // vertex-exact ClipperLib (union_ex_clib the clipped Polygons → ExPolygons,
+                // then offset_expolygons_clib) with the scale_faithful min_width delta so the
+                // upper edge (and the top_polygons diff that consumes it) stays full-res.
+                let upper_polygons_series_clipped = if f1_top {
+                    let upper_ex = crate::clipper_utils::union_ex_clib(&upper_clipped_polys, 1);
+                    let mw_mm = crate::clipper_utils::offset_delta_mm_from_scaled_f32(min_width_scaled);
+                    crate::clipper_utils::offset_expolygons_clib(&upper_ex, mw_mm, OffsetJoinType::Miter)
+                } else {
+                    crate::clipper_utils::offset_polygons(&upper_clipped_polys, min_width_top_surface, OffsetJoinType::Miter)
+                };
 
                 // PerimeterGenerator.cpp:1139
                 // C++: fill_clip = offset_ex(last, -double(ext_perimeter_spacing));
@@ -885,8 +926,10 @@ impl PerimeterGenerator {
 
                 // PerimeterGenerator.cpp:1144
                 // C++: ExPolygons top_polygons = diff_ex(last, upper_polygons_series_clipped, ApplySafetyOffset::Yes);
+                // R120: this diff is ApplySafetyOffset::Yes — route through difference_clib_safety
+                // (R116 shim), not the No-safety difference_clib.
                 let mut top_polygons = if f1_top {
-                    crate::clipper_utils::difference_clib(&last, &upper_polygons_series_clipped)
+                    crate::clipper_utils::difference_clib_safety(&last, &upper_polygons_series_clipped)
                 } else {
                     difference(&last, &upper_polygons_series_clipped)
                 };
@@ -906,12 +949,17 @@ impl PerimeterGenerator {
                 // C++:     ApplySafetyOffset::Yes);
                 let inner_off_delta =
                     offset_top_surface + min_width_top_surface - ext_perimeter_spacing / 2.0;
+                // R120: this diff is ApplySafetyOffset::Yes; the inner offset delta is the
+                // scale_faithful `inner_off_scaled` (offset_top + min_width − eps/2, eps/2
+                // integer-divided), fed to offset_expolygons_clib via the f32-cast mm helper.
                 let mut inner_polygons = if f1_top {
-                    crate::clipper_utils::difference_clib(
+                    let ioff_mm =
+                        crate::clipper_utils::offset_delta_mm_from_scaled_f32(inner_off_scaled);
+                    crate::clipper_utils::difference_clib_safety(
                         &last,
                         &crate::clipper_utils::offset_expolygons_clib(
                             &top_polygons,
-                            inner_off_delta,
+                            ioff_mm,
                             OffsetJoinType::Miter,
                         ),
                     )
