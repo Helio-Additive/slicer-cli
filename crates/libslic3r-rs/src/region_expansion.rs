@@ -1641,10 +1641,18 @@ fn merge_bridges(
         // Get the angle from the group head
         let angle = bridges[bridge_id].angle.unwrap_or(0.0);
 
-        // Apply closing to fill small unassigned regions
+        // Apply closing to fill small unassigned regions.
+        // C++ LayerRegion::process_external_surfaces bridge path (LayerRegion.cpp:375):
+        // `closing_ex(acc, closing_radius)` = offset2_ex(+r, −r, jtMiter) via ClipperLib
+        // @1e5. Rust legacy used geo-clipper `closing(...Round)` @1µm (R128 class). Route
+        // through offset2_ex_clib Miter under F1_UNION; default keeps geo Round (byte-locked).
         let merged = if closing_radius > 0.0 && !acc.is_empty() {
             let unioned = union_ex(&acc);
-            closing(&unioned, closing_radius, OffsetJoinType::Round)
+            if std::env::var("F1_UNION").is_ok() {
+                offset2_ex_clib(&unioned, closing_radius, -closing_radius, OffsetJoinType::Miter)
+            } else {
+                closing(&unioned, closing_radius, OffsetJoinType::Round)
+            }
         } else {
             union_ex(&acc)
         };
