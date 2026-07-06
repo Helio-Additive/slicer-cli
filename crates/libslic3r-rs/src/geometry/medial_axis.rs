@@ -36,6 +36,34 @@ use crate::{Coord, CoordF, SCALING_FACTOR};
 
 use boostvoronoi::prelude as bv;
 
+/// R125: true on the gated (F1_UNION) byte-match path — enables the faithful
+/// `lrint`-rounded Voronoi-vertex → `Point` conversion. Native constructs these
+/// points via `Point(double,double)` / `Line{double,double}` (MedialAxis.cpp:463-464,
+/// 492-493, 566, 606-607), all of which route through `Vec2crd(coord_t(lrint(x)),
+/// coord_t(lrint(y)))` (Point.hpp:179) — round-to-nearest (default FE_TONEAREST,
+/// ties-to-even). The prior `as Coord` truncated toward zero (an F2-class ±1-unit
+/// divergence, same root as the R124 arc center). Default path keeps the legacy
+/// truncation so the byte-locked 147987 default is unchanged. Cached: medial-axis
+/// runs once per gap ExPolygon.
+fn f1_union_vd_round() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("F1_UNION").is_ok())
+}
+
+/// Convert a Voronoi-vertex `double` coordinate to `Coord`, matching native
+/// `Point(double,double)`'s `coord_t(lrint(x))`. `round_ties_even` mirrors `lrint`'s
+/// default rounding mode EXACTLY (NOT `.round()`, which is ties-away-from-zero). Gated
+/// F1_UNION; the default path keeps the legacy truncation toward zero.
+#[inline]
+fn vd_coord(x: f64) -> Coord {
+    if f1_union_vd_round() {
+        x.round_ties_even() as Coord
+    } else {
+        x as Coord
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public configuration (kept for backward compatibility with callers)
 // ---------------------------------------------------------------------------
@@ -297,11 +325,12 @@ pub fn compute_medial_axis_thick(expoly: &ExPolygon, config: &MedialAxisConfig) 
         let seed_w_start = edge_data[data_idx].width_start;
         let seed_w_end = edge_data[data_idx].width_end;
 
-        // MedialAxis.cpp:492-493 — emplace_back(vertex0->x(), vertex0->y()) converts
-        // the double VD coords to coord_t via narrowing (truncate toward zero).
+        // MedialAxis.cpp:492-493 — emplace_back(vertex0->x(), vertex0->y()) constructs
+        // Point(double,double) = coord_t(lrint(x)): round-to-nearest, NOT truncate
+        // (R125). `vd_coord` reproduces lrint on the gated path; default truncates.
         let mut points: Vec<Point> = vec![
-            Point::new(v0_pos.0 as Coord, v0_pos.1 as Coord),
-            Point::new(v1_pos.0 as Coord, v1_pos.1 as Coord),
+            Point::new(vd_coord(v0_pos.0), vd_coord(v0_pos.1)),
+            Point::new(vd_coord(v1_pos.0), vd_coord(v1_pos.1)),
         ];
         let mut widths: Vec<f64> = vec![seed_w_start, seed_w_end];
         let mut end_is_endpoint = false;
@@ -444,10 +473,12 @@ fn validate_edge(
 
     // Construct the Voronoi edge as a line.
     // MedialAxis.cpp:606-607 — Line({vertex0->x(), vertex0->y()}, {vertex1->x(), vertex1->y()})
-    // converts the double VD vertex coords to coord_t via implicit narrowing, which
-    // truncates toward zero (`as Coord` in Rust), not round.
-    let edge_a = Point::new(v0x as Coord, v0y as Coord);
-    let edge_b = Point::new(v1x as Coord, v1y as Coord);
+    // brace-inits Point(double,double) = coord_t(lrint(x)): round-to-nearest, NOT
+    // truncate (double→int narrowing is ill-formed in a braced-init-list, so this
+    // binds the double,double constructor). These points feed the w0/w1 width and
+    // edge-length checks, so the ±1 propagates to gap-fill widths + validation (R125).
+    let edge_a = Point::new(vd_coord(v0x), vd_coord(v0y));
+    let edge_b = Point::new(vd_coord(v1x), vd_coord(v1y));
 
     // Retrieve the cells on each side
     // BambuStudio: cell_l = edge->cell(); cell_r = edge->twin()->cell();
@@ -575,9 +606,10 @@ fn process_edge_neighbors(
 
                 // Get the far vertex of the neighbor edge.
                 // MedialAxis.cpp:566 — emplace_back(first_neighbor->vertex1()->x(),
-                // ...->y()) narrows double VD coords to coord_t (truncate toward zero).
+                // ...->y()) constructs Point(double,double) = coord_t(lrint(x)):
+                // round-to-nearest, NOT truncate (R125).
                 if let Some((vx, vy)) = get_vertex_pos(diagram, neighbor_id, false) {
-                    let pt = Point::new(vx as Coord, vy as Coord);
+                    let pt = Point::new(vd_coord(vx), vd_coord(vy));
                     points.push(pt);
 
                     // BambuStudio: push width_start then width_end (or swapped if reversed)
