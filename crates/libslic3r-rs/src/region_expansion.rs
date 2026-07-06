@@ -63,8 +63,8 @@
 //!   - `merge_expansions_into_expolygons`       (RegionExpansion.cpp:564-615)
 
 use crate::clipper_utils::{
-    closing, diff_pl, difference, expolygons_to_polylines, grow, intersection, offset_expolygons,
-    union_ex, union_safety_offset_ex_expolygons, OffsetJoinType,
+    closing, diff_pl, difference, expolygons_to_polylines, grow, intersection, offset2_ex_clib,
+    offset_expolygons, union_ex, union_safety_offset_ex_expolygons, OffsetJoinType,
 };
 use crate::geometry::{
     BoundingBox, ExPolygon, ExPolygons, Line, Point, PointF, Polygon, Polyline,
@@ -626,7 +626,19 @@ pub fn expand_merge_surfaces(
     // unassigned regions in the object (E.G. benchy) without the following
     // closing operation, those regions will stay unfilled."
     if closing_radius > 0.0 && !expanded.is_empty() {
-        expanded = closing(&expanded, closing_radius, OffsetJoinType::Round);
+        // C++ LayerRegion::process_external_surfaces (LayerRegion.cpp:503):
+        // `expanded = closing_ex(expanded, closing_radius)` = offset2_ex(+r, -r,
+        // jtMiter) via ClipperLib @1e5 (ClipperUtils.hpp:412; DefaultJoinType =
+        // jtMiter). Rust legacy used geo-clipper `closing` @1µm with ROUND joins,
+        // which over-fragments the solid region (R71-R74 A/B: Round+geo n_solid
+        // 1911 vs Miter+clib 707, native 605) → drives the ISI/Floating feature
+        // split. Route through the vertex-exact clib offset2 with Miter under
+        // F1_UNION; default keeps the geo Round closing (byte-locked).
+        expanded = if std::env::var("F1_UNION").is_ok() {
+            offset2_ex_clib(&expanded, closing_radius, -closing_radius, OffsetJoinType::Miter)
+        } else {
+            closing(&expanded, closing_radius, OffsetJoinType::Round)
+        };
     }
 
     // Subtract expanded area from each zone that was expanded into.
