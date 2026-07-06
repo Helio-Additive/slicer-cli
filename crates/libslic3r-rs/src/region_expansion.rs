@@ -646,7 +646,15 @@ pub fn expand_merge_surfaces(
     // don't expand into already-claimed regions.
     for zone in expansion_zones.iter_mut() {
         if zone.expanded_into {
-            zone.expolygons = difference(&zone.expolygons, &expanded);
+            // C++ RegionExpansion.cpp / LayerRegion.cpp:505 `diff_ex(zone, expanded)` via
+            // ClipperLib @1e5. EXPERIMENT (gated): route through difference_clib now that
+            // `expanded` is the full-res clib closing output (R128). R74 measured
+            // difference_clib WORSE with a geo closing; retest on the clib closing input.
+            zone.expolygons = if std::env::var("F1_UNION").is_ok() {
+                crate::clipper_utils::difference_clib(&zone.expolygons, &expanded)
+            } else {
+                difference(&zone.expolygons, &expanded)
+            };
         }
     }
 
