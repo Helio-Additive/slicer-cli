@@ -36,6 +36,11 @@ clipper2c-sys = "0.1.6"
 # Provides the faithful `clip_extrusion` primitive (OverhangDetector.cpp) that
 # Clipper2 cannot express (no Z-aware open-subject clip with a user fill callback).
 clipper-z-sys = { path = "../clipper-z-sys" }
+# Vendored Clipper2 (v1.5.4, USINGZ) via a C shim — the Z-callback intersection
+# engine for the faithful RegionExpansion `wave_seeds` (cz2_intersect_open_z) +
+# Z-preserving open-path offset (cz2_offset_z). ClipperLib_Z (clipper-z-sys) does
+# the propagation; Clipper2-Z does the seed intersection. (R131+ classification port.)
+clipper2-z-sys = { path = "../clipper2-z-sys" }
 # Eigen FFI shim for the bit-exact slice-time vertex transform (R86): calls the
 # real Eigen so the f32 matmul matches C++ exactly (sidesteps the pure-rust
 # Eigen-reproduction 1-ULP wall, R85).

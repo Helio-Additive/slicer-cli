@@ -335,11 +335,371 @@ struct RegionExpansion {
 /// - First wave step size compensates for the seed width
 /// - Subsequent clipping produces identical geometry
 ///
+// ============================================================================
+// FAITHFUL wave_seeds — Clipper2-Z backend (clipper2-z-sys), 1:1 port of
+// RegionExpansion.cpp:108-389 (Z-path builders, merge_splits, wave_seeds).
+// Gated via propagate_waves(REGION_EXPANSION_FAITHFUL) below; the seed generation
+// is byte-faithful, and the wavefront propagation is the byte-faithful ClipperLib
+// `cz_propagate_wave` shim (R131) rather than the geo approximation.
+// ============================================================================
+
+use crate::clipper2_z::{intersect_open_z, offset_z};
+use crate::clipper_z_utils::{ZPath, ZPaths};
+
+/// `Clipper2ZUtils::zpoint64_lower` (Clipper2ZUtils.hpp): lexicographic on (x,y,z).
+#[inline]
+fn zpoint64_lower(l: &(i64, i64, i64), r: &(i64, i64, i64)) -> bool {
+    l.0 < r.0 || (l.0 == r.0 && (l.1 < r.1 || (l.1 == r.1 && l.2 < r.2)))
+}
+
+/// `Clipper2ZUtils::expolygons_to_zpaths64<Open=false>`: each expolygon's contour
+/// + holes become a CLOSED zpath tagged with the expolygon's running `base_idx`.
+fn expolygons_to_zpaths64(src: &[ExPolygon], base_idx: &mut i64) -> ZPaths {
+    let mut out: ZPaths = Vec::new();
+    for expoly in src {
+        let mut contour: ZPath = Vec::with_capacity(expoly.contour.points.len());
+        for p in &expoly.contour.points {
+            contour.push((p.x, p.y, *base_idx));
+        }
+        out.push(contour);
+        for hole in &expoly.holes {
+            let mut h: ZPath = Vec::with_capacity(hole.points.len());
+            for p in &hole.points {
+                h.push((p.x, p.y, *base_idx));
+            }
+            out.push(h);
+        }
+        *base_idx += 1;
+    }
+    out
+}
+
+/// `expolygons_to_zpaths64_expanded_opened` (RegionExpansion.cpp:108-136): each
+/// contour is offset (outer +expansion, holes -expansion) via Clipper2's Z-
+/// preserving ClipperOffset (cz2_offset_z), tagged with the running `base_idx`,
+/// then appended OPEN (re-closed so it forms a loop the open-subject clip treats
+/// as an open contour).
+fn expolygons_to_zpaths64_expanded_opened(
+    src: &[ExPolygon],
+    expansion: f64,
+    base_idx: &mut i64,
+) -> ZPaths {
+    let mut out: ZPaths = Vec::new();
+    for expoly in src {
+        let mut contours: Vec<&crate::geometry::Polygon> =
+            Vec::with_capacity(1 + expoly.holes.len());
+        contours.push(&expoly.contour);
+        for h in &expoly.holes {
+            contours.push(h);
+        }
+        for (icontour, contour) in contours.iter().enumerate() {
+            let mut zin: ZPath = Vec::with_capacity(contour.points.len());
+            for p in &contour.points {
+                zin.push((p.x, p.y, *base_idx));
+            }
+            let delta = if icontour == 0 { expansion } else { -expansion };
+            let offset = offset_z(&zin, delta);
+            for path in &offset {
+                if path.is_empty() {
+                    continue;
+                }
+                let mut zp: ZPath = Vec::with_capacity(path.len() + 1);
+                for &(x, y, _) in path {
+                    zp.push((x, y, *base_idx));
+                }
+                zp.push(zp[0]);
+                out.push(zp);
+            }
+        }
+        *base_idx += 1;
+    }
+    out
+}
+
+/// `polylines_merge` (Polyline.hpp:236): join `src` onto `dst`, handling the four
+/// front/back orientation combinations.
+fn polylines_merge_z(dst: &mut ZPath, dst_first: bool, mut src: ZPath, src_first: bool) {
+    if dst_first {
+        dst.reverse();
+    }
+    if !src_first {
+        src.reverse();
+    }
+    dst.extend(src.into_iter().skip(1));
+}
+
+/// `merge_splits` (RegionExpansion.cpp:194-236, Clipper2 overload): reconnect open
+/// paths split at the ends of the source closed contours.
+fn merge_splits(paths: &mut ZPaths, splits: &mut Vec<((i64, i64, i64), i32)>) {
+    let mut i = 0usize;
+    while i < paths.len() {
+        let mut merged = false;
+        if paths[i].len() >= 2 {
+            let front = paths[i][0];
+            let back = *paths[i].last().unwrap();
+            if front.0 != back.0 || front.1 != back.1 {
+                let find_end =
+                    |splits: &[((i64, i64, i64), i32)], pt: &(i64, i64, i64)| -> Option<usize> {
+                        let idx = splits.partition_point(|e| zpoint64_lower(&e.0, pt));
+                        if idx < splits.len() && splits[idx].0 .0 == pt.0 && splits[idx].0 .1 == pt.1
+                        {
+                            Some(idx)
+                        } else {
+                            None
+                        }
+                    };
+                let mut end_idx = find_end(splits, &front);
+                let mut end_front = true;
+                if end_idx.is_none() {
+                    end_front = false;
+                    end_idx = find_end(splits, &back);
+                }
+                if let Some(eidx) = end_idx {
+                    if splits[eidx].1 == -1 {
+                        splits[eidx].1 = i as i32;
+                    } else {
+                        let other_idx = splits[eidx].1 as usize;
+                        let this_path = std::mem::take(&mut paths[i]);
+                        let other_front = paths[other_idx][0];
+                        let other_front_is_split = other_front == splits[eidx].0;
+                        polylines_merge_z(
+                            &mut paths[other_idx],
+                            other_front_is_split,
+                            this_path,
+                            end_front,
+                        );
+                        if i + 1 == paths.len() {
+                            paths.pop();
+                            break;
+                        }
+                        let last = paths.pop().unwrap();
+                        paths[i] = last;
+                        merged = true;
+                    }
+                }
+            }
+        }
+        if !merged {
+            i += 1;
+        }
+    }
+}
+
+/// `wave_seeds` (RegionExpansion.cpp:278-389), faithful via the Clipper2-Z shim.
+fn wave_seeds_faithful(
+    src: &[ExPolygon],
+    boundary: &[ExPolygon],
+    tiny_expansion: f64,
+    sorted: bool,
+) -> Vec<WaveSeed> {
+    debug_assert!(tiny_expansion > 0.0);
+    if src.is_empty() || boundary.is_empty() {
+        return Vec::new();
+    }
+
+    let idx_boundary_begin: i64 = 1;
+    let mut idx_boundary_end: i64 = idx_boundary_begin;
+    let zboundary = expolygons_to_zpaths64(boundary, &mut idx_boundary_end);
+
+    // UNITS: ExPolygon geometry is SCALED (coord_t); cz2_offset_z offsets scaled
+    // i64 coords directly, so the delta must be scaled. RegionExpansionParameters
+    // here are in MM (× SCALING_FACTOR = 100_000 bridges mm→scaled).
+    let tiny_expansion_scaled = tiny_expansion * crate::SCALING_FACTOR;
+    let mut idx_src_end = idx_boundary_end;
+    let zsrc =
+        expolygons_to_zpaths64_expanded_opened(src, tiny_expansion_scaled, &mut idx_src_end);
+    let mut zsrc_splits: Vec<((i64, i64, i64), i32)> = Vec::with_capacity(zsrc.len());
+    for path in &zsrc {
+        debug_assert!(path.len() >= 2);
+        zsrc_splits.push((path[0], -1));
+    }
+    zsrc_splits.sort_by(|l, r| {
+        if zpoint64_lower(&l.0, &r.0) {
+            std::cmp::Ordering::Less
+        } else if zpoint64_lower(&r.0, &l.0) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+
+    let wc = intersect_open_z(&zsrc, &zboundary);
+    let mut segments: ZPaths = wc.segments;
+    let intersections = wc.intersections;
+
+    merge_splits(&mut segments, &mut zsrc_splits);
+
+    let mut aabb: Option<tree2d::Tree> = None;
+    let mut out: Vec<WaveSeed> = Vec::with_capacity(segments.len());
+    for path in &segments {
+        if path.len() < 2 {
+            continue;
+        }
+        let front = path[0];
+        let back = *path.last().unwrap();
+        let intersection_valid = |is: &(i64, i64)| -> bool {
+            is.0 >= 1 && is.0 < idx_boundary_end && is.1 >= idx_boundary_end && is.1 < idx_src_end
+        };
+        let mut intersection: Option<&(i64, i64)> = None;
+        if front.2 < 0 {
+            let idx = (-front.2 - 1) as usize;
+            if idx < intersections.len() && intersection_valid(&intersections[idx]) {
+                intersection = Some(&intersections[idx]);
+            }
+        }
+        if intersection.is_none() && back.2 < 0 {
+            let idx = (-back.2 - 1) as usize;
+            if idx < intersections.len() && intersection_valid(&intersections[idx]) {
+                intersection = Some(&intersections[idx]);
+            }
+        }
+
+        let pts: Vec<Point> = path.iter().map(|&(x, y, _)| Point::new(x, y)).collect();
+
+        if let Some(is) = intersection {
+            out.push(WaveSeed {
+                src: (is.1 - idx_boundary_end) as u32,
+                boundary: (is.0 - 1) as u32,
+                path: pts,
+            });
+        } else {
+            if !(front == back && front.2 >= idx_boundary_end && front.2 < idx_src_end) {
+                continue;
+            }
+            if aabb.is_none() {
+                aabb = Some(build_aabb_tree_over_expolygons(boundary));
+            }
+            let boundary_id = sample_in_expolygons(
+                aabb.as_ref().unwrap(),
+                boundary,
+                &Point::new(front.0, front.1),
+            );
+            if boundary_id >= 0 {
+                out.push(WaveSeed {
+                    src: (front.2 - idx_boundary_end) as u32,
+                    boundary: boundary_id as u32,
+                    path: pts,
+                });
+            }
+        }
+    }
+
+    if sorted {
+        out.sort_by(|a, b| (a.boundary, a.src).cmp(&(b.boundary, b.src)));
+    }
+    out
+}
+
+/// Faithful wavefront propagation: group the byte-faithful seeds by (boundary,
+/// src) and drive the ClipperLib `cz_propagate_wave` shim (R131) once per group.
+/// This replaces the geo `propagate_wave_from_seeds` on the faithful path.
+fn propagate_waves_faithful(
+    src: &[ExPolygon],
+    boundary: &[ExPolygon],
+    params: &RegionExpansionParameters,
+) -> Vec<RegionExpansion> {
+    let seeds = wave_seeds_faithful(src, boundary, params.tiny_expansion, true);
+    let mut out: Vec<RegionExpansion> = Vec::new();
+    let mut i = 0usize;
+    while i < seeds.len() {
+        let b = seeds[i].boundary;
+        let s = seeds[i].src;
+        // Collect all seed polylines for this (boundary, src) island.
+        let mut j = i;
+        let mut seed_xy: Vec<i32> = Vec::new();
+        let mut seed_lens: Vec<i32> = Vec::new();
+        while j < seeds.len() && seeds[j].boundary == b && seeds[j].src == s {
+            let p = &seeds[j].path;
+            if p.len() >= 2 {
+                seed_lens.push(p.len() as i32);
+                for pt in p {
+                    seed_xy.push(pt.x as i32);
+                    seed_xy.push(pt.y as i32);
+                }
+            }
+            j += 1;
+        }
+        if !seed_lens.is_empty() {
+            // The boundary ExPolygon as closed paths (contour + holes).
+            let bnd = &boundary[b as usize];
+            let mut bnd_xy: Vec<i32> = Vec::new();
+            let mut bnd_lens: Vec<i32> = Vec::new();
+            bnd_lens.push(bnd.contour.points.len() as i32);
+            for pt in &bnd.contour.points {
+                bnd_xy.push(pt.x as i32);
+                bnd_xy.push(pt.y as i32);
+            }
+            for hole in &bnd.holes {
+                bnd_lens.push(hole.points.len() as i32);
+                for pt in &hole.points {
+                    bnd_xy.push(pt.x as i32);
+                    bnd_xy.push(pt.y as i32);
+                }
+            }
+            // ClipperOffset deltas are in scaled units (mm × SCALING_FACTOR).
+            let raw = unsafe {
+                clipper_z_sys::cz_propagate_wave(
+                    seed_xy.as_ptr(),
+                    seed_lens.as_ptr(),
+                    seed_lens.len() as i32,
+                    bnd_xy.as_ptr(),
+                    bnd_lens.as_ptr(),
+                    bnd_lens.len() as i32,
+                    params.initial_step * crate::SCALING_FACTOR,
+                    params.other_step * crate::SCALING_FACTOR,
+                    params.num_other_steps as i32,
+                    params.arc_tolerance * crate::SCALING_FACTOR,
+                    params.shortest_edge_length * crate::SCALING_FACTOR,
+                )
+            };
+            // Marshal the expanded closed polygons back; each becomes one
+            // RegionExpansion (polygon = ExPolygon of that single contour).
+            let polys = unsafe { read_cz_polygons(&raw) };
+            unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+            for poly in polys {
+                out.push(RegionExpansion {
+                    polygon: ExPolygon::new(poly),
+                    src_id: s,
+                    boundary_id: b,
+                });
+            }
+        }
+        i = j;
+    }
+    out
+}
+
+/// Read a `CzZPaths` (flat x,y,z triples + per-path lens) into `Polygon`s (dropping z).
+unsafe fn read_cz_polygons(raw: &clipper_z_sys::CzZPaths) -> Vec<Polygon> {
+    let num = raw.num_paths as usize;
+    if num == 0 || raw.coords.is_null() || raw.path_lens.is_null() {
+        return Vec::new();
+    }
+    let lens = std::slice::from_raw_parts(raw.path_lens, num);
+    let coords = std::slice::from_raw_parts(raw.coords, (raw.total_points as usize) * 3);
+    let mut out: Vec<Polygon> = Vec::with_capacity(num);
+    let mut cursor = 0usize;
+    for &len in lens {
+        let n = len as usize;
+        let mut pts: Vec<Point> = Vec::with_capacity(n);
+        for k in 0..n {
+            let base = (cursor + k) * 3;
+            pts.push(Point::new(coords[base] as i64, coords[base + 1] as i64));
+        }
+        cursor += n;
+        if !pts.is_empty() {
+            out.push(Polygon::from_points(pts));
+        }
+    }
+    out
+}
+
 // FIDELITY-NOTE(F1): C++ `wave_seeds` (RegionExpansion.cpp:278-389) uses the
 // Clipper2 *Z*-callback engine to tag intersection provenance and offset *open*
 // polylines (`expolygons_to_zpaths64_expanded_opened`). The crate's geo-clipper
 // backend exposes neither SetZCallback nor a Z-preserving open-path offset, so
 // this polygon-based intersection is a documented approximation, not byte-faithful.
+// SUPERSEDED by `wave_seeds_faithful` (above); kept as the default fallback.
 fn wave_seeds_polygon_based(
     src: &[ExPolygon],
     boundary: &[ExPolygon],
@@ -432,6 +792,13 @@ fn propagate_waves(
     boundary: &[ExPolygon],
     params: &RegionExpansionParameters,
 ) -> Vec<RegionExpansion> {
+    // Faithful path (gated): Clipper2-Z byte-faithful seeds + ClipperLib byte-
+    // faithful wavefront propagation (cz_propagate_wave, R131). The default keeps
+    // the geo polygon-approximation below (byte-locked).
+    if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+        return propagate_waves_faithful(src, boundary, params);
+    }
+
     let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
 
     let mut results = Vec::new();
@@ -1061,15 +1428,18 @@ pub fn process_external_surfaces_wave(
 
 /// Wave seed tracking which source region touches which boundary region.
 ///
-/// Port of `Slic3r::Algorithm::WaveSeed` from RegionExpansion.hpp.
-/// In C++ this carries polyline path data; in our polygon-based approach
-/// we just track the src/boundary relationship.
-#[derive(Debug, Clone)]
+/// Port of `Slic3r::Algorithm::WaveSeed` from RegionExpansion.hpp. The faithful
+/// `wave_seeds_faithful` path fills `path` with the open boundary-crossing seed
+/// polyline (RegionExpansion.hpp:46); the legacy polygon-approximation + bridge-
+/// anchor paths leave it empty (they carry seed geometry separately).
+#[derive(Debug, Clone, Default)]
 struct WaveSeed {
     /// Index of the source expolygon.
     src: u32,
     /// Index of the boundary expolygon (global across all zones).
     boundary: u32,
+    /// The open seed polyline (empty on the legacy/bridge paths).
+    path: Vec<Point>,
 }
 
 /// Extended expansion result with ExPolygon — used for bridge overlap detection.
@@ -1131,6 +1501,7 @@ fn propagate_waves_ex(
         wave_seeds_out.push(WaveSeed {
             src: *src_id,
             boundary: *boundary_id,
+            path: Vec::new(),
         });
     }
 
@@ -1990,6 +2361,7 @@ mod tests {
         let seed = super::WaveSeed {
             src: 0,
             boundary: 1,
+            path: Vec::new(),
         };
         assert_eq!(seed.src, 0);
         assert_eq!(seed.boundary, 1);
