@@ -61,6 +61,26 @@ extern "C" {
         miter_limit: f64,
     ) -> CzZPaths;
 
+    /// Faithful replica of `RegionExpansion.cpp` `propagate_wave_from_boundary`
+    /// (+ `wavefront_initial`/`wavefront_step`/`wavefront_clip`): the ClipperLib
+    /// wavefront propagation for one (boundary, src) seed group. `seed_*` are the
+    /// open seed polylines (flat i32 (x,y) pairs + per-path lens); `bnd_*` are the
+    /// boundary ExPolygon's closed paths (contour CCW + holes CW). Returns the
+    /// expanded closed polygons (z=0); free via [`cz_free_zpaths`].
+    pub fn cz_propagate_wave(
+        seed_xy: *const i32,
+        seed_lens: *const i32,
+        seed_num: i32,
+        bnd_xy: *const i32,
+        bnd_lens: *const i32,
+        bnd_num: i32,
+        initial_step: f64,
+        other_step: f64,
+        num_other_steps: i32,
+        arc_tolerance: f64,
+        shortest_edge_length: f64,
+    ) -> CzZPaths;
+
     /// Faithful closed-path boolean DIFFERENCE (subject - clip), mirroring
     /// `clipper_do<ClipperLib::Paths>(ctDifference, subject, clip, pftNonZero)`
     /// (ClipperUtils.cpp:309-322), the engine behind `diff` / `diff_ex`

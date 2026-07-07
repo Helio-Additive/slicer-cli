@@ -134,6 +134,16 @@ CzZPaths cz_offset_expolygon(const int32_t *contour_xy, int32_t contour_n,
 // the whole thing byte-faithful to `diff_ex` =
 // PolyTreeToExPolygons(clipper_do_polytree(ctDifference, ..., pftNonZero)).
 // Free via cz_free_zpaths.
+// Faithful replica of RegionExpansion.cpp propagate_wave_from_boundary
+// (+ wavefront_initial/step/clip): the ClipperLib wavefront propagation for one
+// (boundary, src) seed group. seed_* = open seed polylines; bnd_* = boundary
+// ExPolygon as closed paths (contour CCW + holes CW). Returns the expanded closed
+// polygons (z=0). Free via cz_free_zpaths.
+CzZPaths cz_propagate_wave(const int32_t *seed_xy, const int32_t *seed_lens, int32_t seed_num,
+                           const int32_t *bnd_xy, const int32_t *bnd_lens, int32_t bnd_num,
+                           double initial_step, double other_step, int32_t num_other_steps,
+                           double arc_tolerance, double shortest_edge_length);
+
 CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_lens,
                               int32_t subject_num, const int32_t *clip_xy,
                               const int32_t *clip_lens, int32_t clip_num);

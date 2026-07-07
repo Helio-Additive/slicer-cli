@@ -395,6 +395,94 @@ ClipperLib::Paths read_closed_paths(const int32_t *xy, const int32_t *lens, int3
 
 } // namespace
 
+// ---------------------------------------------------------------------------
+// cz_propagate_wave — faithful replica of RegionExpansion.cpp
+// propagate_wave_from_boundary (+ wavefront_initial/step/clip, :391-462): the
+// ClipperLib (non-Z) wavefront propagation for a single (boundary, src) seed
+// group. The boundary bbox trim (clip_clipper_polygons_with_subject_bbox) native
+// applies is a result-neutral speed optimization — the wavefront is bounded by
+// max_inflation inside the inflated seed bbox, so `wf ∩ (boundary ∩ bbox)` ≡
+// `wf ∩ boundary` — and is omitted; the full boundary is passed as the clip.
+// ---------------------------------------------------------------------------
+namespace {
+
+// RegionExpansion.cpp:391 wavefront_initial — inflate each open/closed seed
+// polyline by `offset` (jtRound; etOpenRound for open, etClosedLine for closed).
+ClipperLib::Paths cz_wavefront_initial(ClipperLib::ClipperOffset &co,
+                                       const ClipperLib::Paths &polylines, double offset) {
+    ClipperLib::Paths out, out_this;
+    out.reserve(polylines.size());
+    for (const ClipperLib::Path &path : polylines) {
+        co.Clear();
+        co.AddPath(path, ClipperLib::jtRound,
+                   path.front() == path.back() ? ClipperLib::etClosedLine : ClipperLib::etOpenRound);
+        co.Execute(out_this, offset);
+        out.insert(out.end(), std::make_move_iterator(out_this.begin()),
+                   std::make_move_iterator(out_this.end()));
+    }
+    return out;
+}
+
+// RegionExpansion.cpp:409 wavefront_step — inflate each closed polygon by
+// `offset` (jtRound/etClosedPolygon); Execute reorients to CCW so the offset
+// sign is reversed for CW input and the result reversed back.
+ClipperLib::Paths cz_wavefront_step(ClipperLib::ClipperOffset &co,
+                                    const ClipperLib::Paths &polygons, double offset) {
+    ClipperLib::Paths out, out_this;
+    out.reserve(polygons.size());
+    for (const ClipperLib::Path &polygon : polygons) {
+        co.Clear();
+        co.AddPath(polygon, ClipperLib::jtRound, ClipperLib::etClosedPolygon);
+        bool ccw = ClipperLib::Orientation(polygon);
+        co.Execute(out_this, ccw ? offset : -offset);
+        if (!ccw)
+            for (ClipperLib::Path &p : out_this) std::reverse(p.begin(), p.end());
+        out.insert(out.end(), std::make_move_iterator(out_this.begin()),
+                   std::make_move_iterator(out_this.end()));
+    }
+    return out;
+}
+
+// RegionExpansion.cpp:432 wavefront_clip — intersect the wavefront with the
+// boundary (ctIntersection, pftPositive/pftPositive).
+ClipperLib::Paths cz_wavefront_clip(const ClipperLib::Paths &wavefront,
+                                    const ClipperLib::Paths &clipping) {
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(wavefront, ClipperLib::ptSubject, true);
+    clipper.AddPaths(clipping, ClipperLib::ptClip, true);
+    ClipperLib::Paths out;
+    clipper.Execute(ClipperLib::ctIntersection, out, ClipperLib::pftPositive, ClipperLib::pftPositive);
+    return out;
+}
+
+} // namespace
+
+// seed_xy/seed_lens/seed_num: the open seed polylines for ONE (boundary,src)
+// group. bnd_xy/bnd_lens/bnd_num: the boundary ExPolygon as closed paths
+// (contour CCW + holes CW; pftPositive yields the interior). Returns the
+// expanded closed polygons (z=0). Free via cz_free_zpaths.
+extern "C" CzZPaths cz_propagate_wave(
+    const int32_t *seed_xy, const int32_t *seed_lens, int32_t seed_num,
+    const int32_t *bnd_xy, const int32_t *bnd_lens, int32_t bnd_num,
+    double initial_step, double other_step, int32_t num_other_steps,
+    double arc_tolerance, double shortest_edge_length) {
+    ClipperLib::Paths seed = read_closed_paths(seed_xy, seed_lens, seed_num);
+    ClipperLib::Paths clipping = read_closed_paths(bnd_xy, bnd_lens, bnd_num);
+    if (seed.empty())
+        return marshal_paths(ClipperLib::Paths{});
+
+    ClipperLib::ClipperOffset co;
+    co.ArcTolerance = arc_tolerance;
+    co.ShortestEdgeLength = shortest_edge_length;
+
+    ClipperLib::Paths polygons =
+        cz_wavefront_clip(cz_wavefront_initial(co, seed, initial_step), clipping);
+    for (int32_t i = 0; i < num_other_steps; ++i)
+        polygons = cz_wavefront_clip(cz_wavefront_step(co, polygons, other_step), clipping);
+
+    return marshal_paths(polygons);
+}
+
 extern "C" CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_lens,
                                          int32_t subject_num, const int32_t *clip_xy,
                                          const int32_t *clip_lens, int32_t clip_num) {
