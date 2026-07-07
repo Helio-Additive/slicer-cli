@@ -1493,37 +1493,45 @@ fn propagate_waves_ex(
     boundary: &[ExPolygon],
     params: &RegionExpansionParameters,
 ) -> (Vec<WaveSeed>, Vec<RegionExpansionEx>) {
-    let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
-
-    // Collect wave seeds (anchor info)
-    let mut wave_seeds_out: Vec<WaveSeed> = Vec::new();
-    for (_, src_id, boundary_id) in &seeds {
-        wave_seeds_out.push(WaveSeed {
-            src: *src_id,
-            boundary: *boundary_id,
-            path: Vec::new(),
-        });
-    }
-
-    // Propagate waves (reuse existing infrastructure)
-    let mut raw_expansions: Vec<RegionExpansion> = Vec::new();
-    for (seed_polys, src_id, boundary_id) in &seeds {
-        let bnd = &[boundary[*boundary_id as usize].clone()];
-        let expanded = propagate_wave_from_seeds(
-            seed_polys,
-            bnd,
-            params.initial_step,
-            params.other_step,
-            params.num_other_steps,
-        );
-        for ep in expanded {
-            raw_expansions.push(RegionExpansion {
-                polygon: ep,
-                src_id: *src_id,
-                boundary_id: *boundary_id,
-            });
-        }
-    }
+    // Anchors + raw expansions, produced either by the faithful path (gated) or the
+    // legacy geo approximation. Both feed the shared grouping/merge below.
+    let (wave_seeds_out, mut raw_expansions): (Vec<WaveSeed>, Vec<RegionExpansion>) =
+        if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+            // Faithful: byte-faithful Clipper2-Z seeds (carry the anchor src/boundary)
+            // + byte-faithful ClipperLib propagation (R131 cz_propagate_wave).
+            let anchors = wave_seeds_faithful(src, boundary, params.tiny_expansion, true);
+            let raw = propagate_waves_faithful(src, boundary, params);
+            (anchors, raw)
+        } else {
+            let seeds = wave_seeds_polygon_based(src, boundary, params.tiny_expansion);
+            let mut anchors: Vec<WaveSeed> = Vec::new();
+            for (_, src_id, boundary_id) in &seeds {
+                anchors.push(WaveSeed {
+                    src: *src_id,
+                    boundary: *boundary_id,
+                    path: Vec::new(),
+                });
+            }
+            let mut raw: Vec<RegionExpansion> = Vec::new();
+            for (seed_polys, src_id, boundary_id) in &seeds {
+                let bnd = &[boundary[*boundary_id as usize].clone()];
+                let expanded = propagate_wave_from_seeds(
+                    seed_polys,
+                    bnd,
+                    params.initial_step,
+                    params.other_step,
+                    params.num_other_steps,
+                );
+                for ep in expanded {
+                    raw.push(RegionExpansion {
+                        polygon: ep,
+                        src_id: *src_id,
+                        boundary_id: *boundary_id,
+                    });
+                }
+            }
+            (anchors, raw)
+        };
 
     // Group by (boundary_id, src_id) and merge into ExPolygons — matching C++
     // propagate_waves_ex behavior.
