@@ -1301,8 +1301,20 @@ impl PerimeterGenerator {
             // C++: for (ExPolygon &ex : last) ex.simplify_p(m_scaled_resolution, &pp);
             // C++: ExPolygons not_filled_exp = union_ex(pp);
             let mut pp: Vec<Polygon> = Vec::new();
+            // Native `ex.simplify_p(m_scaled_resolution, &pp)` — the tolerance is
+            // SCALED units and the DP distance is the pure-double perpendicular
+            // (R122 class: the legacy call passes the UNSCALED mm tolerance into a
+            // rounded-projection DP — near no-op simplify, keeps extra points; L23
+            // fill_expoly 29pts vs native 24). Gated faithful.
+            let tf_simplify = std::env::var("TOPFILL_FAITHFUL").is_ok();
             for ex in &last {
-                ex.simplify_p_into(self.config.surface_simplify_resolution, &mut pp);
+                if tf_simplify {
+                    pp.extend(ex.simplify_p_dp_rings_faithful(
+                        self.config.surface_simplify_resolution / 0.00001,
+                    ));
+                } else {
+                    ex.simplify_p_into(self.config.surface_simplify_resolution, &mut pp);
+                }
             }
             // Native union_ex(pp) runs ClipperLib @1e5; geo union grids to 1um and
             // everything downstream (infill_area, no_overlap_area, the top-surface
