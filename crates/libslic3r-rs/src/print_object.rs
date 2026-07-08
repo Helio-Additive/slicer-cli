@@ -2336,10 +2336,17 @@ impl PrintObject {
                     .chain(bottom.iter())
                     .map(|s| s.expolygon.clone())
                     .collect();
-                let internal_surfaces = crate::clipper_utils::difference(
-                    &surfaces_prev_expolygons,
-                    &topbottom_expolygons,
-                );
+                let internal_surfaces = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    crate::clipper_utils::difference_clib(
+                        &surfaces_prev_expolygons,
+                        &topbottom_expolygons,
+                    )
+                } else {
+                    crate::clipper_utils::difference(
+                        &surfaces_prev_expolygons,
+                        &topbottom_expolygons,
+                    )
+                };
 
                 if interface_shells {
                     surfaces_append(
@@ -3121,8 +3128,87 @@ impl PrintObject {
     /// single-region path (Benchy is single-region; the multi-material
     /// top_bottom_surfaces_all_regions branch is not applicable here).
     fn discover_vertical_shells(&mut self) -> Result<()> {
-        use crate::clipper_utils::{closing, difference, grow, intersection, offset2, shrink, union_ex, OffsetJoinType};
+        use crate::clipper_utils::OffsetJoinType;
         use crate::flow::FlowRole;
+        // Gated shadows of the geo primitives: under TOPFILL_FAITHFUL every
+        // classification op routes through the vertex-exact vendored ClipperLib
+        // @1e5 (native semantics); default keeps geo @1um (byte-locked). This is
+        // the R100 gridding class applied to the whole vertical-shell chain.
+        fn faithful() -> bool {
+            std::env::var("TOPFILL_FAITHFUL").is_ok()
+        }
+        fn grow(
+            e: &[crate::geometry::ExPolygon],
+            d: crate::CoordF,
+            j: OffsetJoinType,
+        ) -> crate::geometry::ExPolygons {
+            if faithful() {
+                crate::clipper_utils::offset_expolygons_clib(e, d, j)
+            } else {
+                crate::clipper_utils::grow(e, d, j)
+            }
+        }
+        fn shrink(
+            e: &[crate::geometry::ExPolygon],
+            d: crate::CoordF,
+            j: OffsetJoinType,
+        ) -> crate::geometry::ExPolygons {
+            if faithful() {
+                crate::clipper_utils::shrink_clib(e, d, j)
+            } else {
+                crate::clipper_utils::shrink(e, d, j)
+            }
+        }
+        fn closing(
+            e: &[crate::geometry::ExPolygon],
+            d: crate::CoordF,
+            j: OffsetJoinType,
+        ) -> crate::geometry::ExPolygons {
+            if faithful() {
+                crate::clipper_utils::offset2_ex_clib(e, d, -d, j)
+            } else {
+                crate::clipper_utils::closing(e, d, j)
+            }
+        }
+        fn offset2(
+            e: &[crate::geometry::ExPolygon],
+            shrink_amount: crate::CoordF,
+            grow_amount: crate::CoordF,
+            j: OffsetJoinType,
+        ) -> crate::geometry::ExPolygons {
+            if faithful() {
+                crate::clipper_utils::offset2_ex_clib(e, -shrink_amount, grow_amount, j)
+            } else {
+                crate::clipper_utils::offset2(e, shrink_amount, grow_amount, j)
+            }
+        }
+        fn union_ex(e: &[crate::geometry::ExPolygon]) -> crate::geometry::ExPolygons {
+            if faithful() {
+                crate::clipper_utils::union_ex_clib(&crate::geometry::to_polygons(e), 1)
+            } else {
+                crate::clipper_utils::union_ex(e)
+            }
+        }
+        fn intersection(
+            a: &[crate::geometry::ExPolygon],
+            b: &[crate::geometry::ExPolygon],
+        ) -> crate::geometry::ExPolygons {
+            if faithful() {
+                crate::clipper_utils::intersection_clib(a, b)
+            } else {
+                crate::clipper_utils::intersection(a, b)
+            }
+        }
+        fn difference(
+            a: &[crate::geometry::ExPolygon],
+            b: &[crate::geometry::ExPolygon],
+        ) -> crate::geometry::ExPolygons {
+            if faithful() {
+                crate::clipper_utils::difference_clib(a, b)
+            } else {
+                crate::clipper_utils::difference(a, b)
+            }
+        }
         use crate::geometry::ExPolygons;
         use crate::region_config::EnsureVerticalThicknessLevel;
         use crate::surface::SurfaceType;

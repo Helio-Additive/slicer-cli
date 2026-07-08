@@ -767,6 +767,12 @@ pub fn opening_ex(expolygons: &[ExPolygon], distance: CoordF) -> ExPolygons {
     if expolygons.is_empty() || distance <= 0.0 {
         return expolygons.to_vec();
     }
+    // Native opening_ex = offset2_ex(-d, +d, jtMiter) via ClipperLib @1e5
+    // (ClipperUtils.hpp:428); geo grids to 1um (R100 class). Gated full-res —
+    // TOPFILL_FAITHFUL flips the whole classification pipeline at once.
+    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        return offset2_ex_clib(expolygons, -distance, distance, OffsetJoinType::Miter);
+    }
     let shrunk = shrink(expolygons, distance, OffsetJoinType::Miter);
     grow(&shrunk, distance, OffsetJoinType::Miter)
 }
@@ -789,6 +795,17 @@ pub fn diff_ex(
     let subject_expolygons: Vec<ExPolygon> = subject.iter().map(|s| s.expolygon.clone()).collect();
     let clip_expolygons: Vec<ExPolygon> = clip.iter().map(|s| s.expolygon.clone()).collect();
 
+    // Gated faithful route: ClipperLib @1e5 honoring ApplySafetyOffset (the geo
+    // path IGNORES _safety_offset — native ::Yes raw-offsets the clip by +10u,
+    // R116 shim).
+    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        return match _safety_offset {
+            ApplySafetyOffset::Yes => {
+                difference_clib_safety(&subject_expolygons, &clip_expolygons)
+            }
+            ApplySafetyOffset::No => difference_clib(&subject_expolygons, &clip_expolygons),
+        };
+    }
     difference(&subject_expolygons, &clip_expolygons)
 }
 
@@ -808,6 +825,12 @@ pub fn diff_ex_surfaces_expolygons(
     }
 
     let subject_expolygons: Vec<ExPolygon> = subject.iter().map(|s| s.expolygon.clone()).collect();
+    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        return match _safety_offset {
+            ApplySafetyOffset::Yes => difference_clib_safety(&subject_expolygons, clip),
+            ApplySafetyOffset::No => difference_clib(&subject_expolygons, clip),
+        };
+    }
     difference(&subject_expolygons, clip)
 }
 
@@ -831,6 +854,14 @@ pub fn diff_ex_polygons_surfaces(
         subject.iter().map(|p| ExPolygon::new(p.clone())).collect();
     let clip_expolygons: Vec<ExPolygon> = clip.iter().map(|s| s.expolygon.clone()).collect();
 
+    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        return match _safety_offset {
+            ApplySafetyOffset::Yes => {
+                difference_clib_safety(&subject_expolygons, &clip_expolygons)
+            }
+            ApplySafetyOffset::No => difference_clib(&subject_expolygons, &clip_expolygons),
+        };
+    }
     difference(&subject_expolygons, &clip_expolygons)
 }
 
@@ -843,6 +874,9 @@ pub fn intersection_ex(subject: &[Surface], clip: &[ExPolygon]) -> ExPolygons {
     }
 
     let subject_expolygons: Vec<ExPolygon> = subject.iter().map(|s| s.expolygon.clone()).collect();
+    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        return intersection_clib(&subject_expolygons, clip);
+    }
     intersection_base(&subject_expolygons, clip)
 }
 
@@ -854,6 +888,9 @@ pub fn intersection_surfaces(subject: &[ExPolygon], clip: &[Surface]) -> ExPolyg
     }
 
     let clip_expolygons: Vec<ExPolygon> = clip.iter().map(|s| s.expolygon.clone()).collect();
+    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        return intersection_clib(subject, &clip_expolygons);
+    }
     intersection_base(subject, &clip_expolygons)
 }
 
@@ -865,6 +902,9 @@ pub fn intersection_surfaces_expolygons(subject: &[Surface], clip: &[ExPolygon])
     }
 
     let subject_expolygons: Vec<ExPolygon> = subject.iter().map(|s| s.expolygon.clone()).collect();
+    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        return intersection_clib(&subject_expolygons, clip);
+    }
     intersection_base(&subject_expolygons, clip)
 }
 
