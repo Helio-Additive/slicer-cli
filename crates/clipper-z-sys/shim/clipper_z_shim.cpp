@@ -735,6 +735,34 @@ extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t 
 // `num` paths. deltas are SCALED (1e5). join_type 0=miter/1=round/2=square,
 // miter_limit=3.0 (DefaultMiterLimit). Output uses the same grouped z-encoding.
 // Free via cz_free_zpaths.
+// Faithful `union_safety_offset_ex(Polygons)` (ClipperUtils.cpp): the SUBJECT is
+// safety-offset (raw +10u, no union) before the two-pass NonZero union.
+extern "C" CzZPaths cz_union_ex_safety(const int32_t *xy, const int32_t *lens, int32_t num) {
+    ClipperLib::Paths subject = cz_safety_offset(read_closed_paths(xy, lens, num));
+    if (subject.empty())
+        return marshal_grouped(ClipperLib::Paths{}, std::vector<int32_t>{});
+    ClipperLib::Paths pass1;
+    {
+        ClipperLib::Clipper c1;
+        c1.AddPaths(subject, ClipperLib::ptSubject, true);
+        c1.Execute(ClipperLib::ctUnion, pass1, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+    }
+    if (pass1.empty())
+        return marshal_grouped(ClipperLib::Paths{}, std::vector<int32_t>{});
+    ClipperLib::PolyTree polytree;
+    {
+        ClipperLib::Clipper c2;
+        c2.AddPaths(pass1, ClipperLib::ptSubject, true);
+        c2.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+    }
+    // PolyTreeToExPolygons grouping (same walk as cz_union_ex).
+    ClipperLib::Paths out_paths;
+    std::vector<int32_t> out_is_hole;
+    for (int i = 0; i < polytree.ChildCount(); ++i)
+        polytree_to_grouped(*polytree.Childs[i], out_paths, out_is_hole);
+    return marshal_grouped(out_paths, out_is_hole);
+}
+
 extern "C" CzZPaths cz_offset2_ex(const int32_t *xy, const int32_t *lens, const int32_t *is_hole,
                                   int32_t num, double delta1, double delta2,
                                   int32_t join_type, double miter_limit) {

@@ -1534,6 +1534,68 @@ pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
     result
 }
 
+/// ClipperLib-backed `union_safety_offset_ex(Polygons)`: the subject paths get the
+/// native raw +10u safety offset (no union) before the two-pass NonZero union
+/// (cz_union_ex_safety). Same grouped output decode as [`union_ex_clib`].
+pub fn union_safety_offset_ex_clib(loops: &[Polygon]) -> ExPolygons {
+    if loops.is_empty() {
+        return vec![];
+    }
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    for ring in loops {
+        let pts = ring.points();
+        if pts.is_empty() {
+            continue;
+        }
+        lens.push(pts.len() as i32);
+        for p in pts {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+    }
+    let num = lens.len() as i32;
+    if num == 0 {
+        return vec![];
+    }
+    // SAFETY: live correctly-sized buffers; shim only reads; output freed below.
+    let raw = unsafe { clipper_z_sys::cz_union_ex_safety(xy.as_ptr(), lens.as_ptr(), num) };
+    let mut result: ExPolygons = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees sizes (see union_ex_clib).
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            let mut is_hole = 0i32;
+            for i in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                if i == 0 {
+                    is_hole = coords[cursor * 3 + 2];
+                }
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            let ring = Polygon::from_points(pts);
+            if is_hole == 0 {
+                result.push(ExPolygon::new(ring));
+            } else if let Some(last) = result.last_mut() {
+                last.holes.push(ring);
+            }
+        }
+    }
+    // SAFETY: raw produced above, not yet freed.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    result
+}
+
 /// ClipperLib-backed `offset2_ex(ExPolygons, delta1, delta2)` (ClipperUtils.cpp:581)
 /// — the post-union morphological CLOSE applied by make_expolygons
 /// (TriangleMeshSlicer.cpp:1820, delta1=+scale(closing_radius),

@@ -144,6 +144,10 @@ CzZPaths cz_propagate_wave(const int32_t *seed_xy, const int32_t *seed_lens, int
                            double initial_step, double other_step, int32_t num_other_steps,
                            double arc_tolerance, double shortest_edge_length);
 
+// Faithful union_safety_offset_ex(Polygons): subject safety-offset (+10u raw)
+// then the two-pass NonZero union. Grouped ExPolygon output like cz_union_ex.
+CzZPaths cz_union_ex_safety(const int32_t *xy, const int32_t *lens, int32_t num);
+
 CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_lens,
                               int32_t subject_num, const int32_t *clip_xy,
                               const int32_t *clip_lens, int32_t clip_num);

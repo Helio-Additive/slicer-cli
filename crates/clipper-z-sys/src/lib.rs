@@ -90,6 +90,11 @@ extern "C" {
     /// as separate closed paths in natural orientation. Output is the raw
     /// difference paths (z always 0); the caller re-unions into ExPolygons. Free
     /// via [`cz_free_zpaths`].
+    /// Faithful `union_safety_offset_ex(Polygons)`: subject safety-offset (+10u
+    /// raw, no union) then the two-pass NonZero union; grouped output like
+    /// [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    pub fn cz_union_ex_safety(xy: *const i32, lens: *const i32, num: i32) -> CzZPaths;
+
     pub fn cz_difference_closed(
         subject_xy: *const i32,
         subject_lens: *const i32,

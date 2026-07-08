@@ -2173,6 +2173,23 @@ impl PrintObject {
 
                         /// PrintObject.cpp:1507
                         /// C++: surfaces_append(top, opening_ex(upper_slices, offset), stTop);
+                        if std::env::var("TSDBG").is_ok()
+                            && (self.layers[idx_layer].print_z - 4.80).abs() < 0.001
+                        {
+                            let sc = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
+                            for sf in &self.layers[idx_layer].regions()[region_id].slices.surfaces {
+                                eprintln!("TSDBG-R in_slice npts={} nholes={} a={:.4}", sf.expolygon.contour.points.len(), sf.expolygon.holes.len(), sf.expolygon.area().abs()/sc);
+                            }
+                            for e in &self.layers[idx_layer + 1].lslices {
+                                eprintln!("TSDBG-R in_upper npts={} nholes={} a={:.4}", e.contour.points.len(), e.holes.len(), e.area().abs()/sc);
+                            }
+                            for e in &upper_diff {
+                                eprintln!("TSDBG-R post_diff npts={} nholes={} a={:.4}", e.contour.points.len(), e.holes.len(), e.area().abs()/sc);
+                            }
+                            for e in &opening_ex(&upper_diff, offset) {
+                                eprintln!("TSDBG-R post_open npts={} nholes={} a={:.4} (offset={:.3})", e.contour.points.len(), e.holes.len(), e.area().abs()/sc, offset);
+                            }
+                        }
                         surfaces_append(
                             &mut top,
                             opening_ex(&upper_diff, offset),

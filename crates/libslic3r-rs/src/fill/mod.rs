@@ -803,8 +803,27 @@ pub fn group_fills(
             }
             if surface_fills[i].expolygons.len() > 1 || !all_polygons.is_empty() {
                 let polys = crate::geometry::to_polygons(&surface_fills[i].expolygons);
+                // Native Fill.cpp:361-373 runs these through ClipperLib @1e5 with
+                // the raw safety offset; the geo variants grid @1um and cut a
+                // spurious hole into stTop (R138: rust 46pts/1hole vs native
+                // 49/0). Gated full-res (TOPFILL_FAITHFUL).
+                let tf = std::env::var("TOPFILL_FAITHFUL").is_ok();
                 surface_fills[i].expolygons = if all_polygons.is_empty() {
-                    crate::clipper_utils::union_safety_offset_ex(&polys)
+                    if tf {
+                        crate::clipper_utils::union_safety_offset_ex_clib(&polys)
+                    } else {
+                        crate::clipper_utils::union_safety_offset_ex(&polys)
+                    }
+                } else if tf {
+                    let subj: Vec<crate::geometry::ExPolygon> = polys
+                        .iter()
+                        .map(|p| crate::geometry::ExPolygon::new(p.clone()))
+                        .collect();
+                    let clip: Vec<crate::geometry::ExPolygon> = all_polygons
+                        .iter()
+                        .map(|p| crate::geometry::ExPolygon::new(p.clone()))
+                        .collect();
+                    crate::clipper_utils::difference_clib_safety(&subj, &clip)
                 } else {
                     crate::clipper_utils::diff_ex_polygons_polygons(
                         &polys,
