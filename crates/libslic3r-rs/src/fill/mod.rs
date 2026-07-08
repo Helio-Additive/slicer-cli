@@ -122,6 +122,10 @@ pub struct InfillConfig {
     /// scaled units. 0 means unlimited. C++: Fill::link_max_length
     /// (Fill.cpp:683-695: 0 for density <= 80%, 3*spacing otherwise).
     pub link_max_length: Coord,
+    /// C++ FillParams::dont_adjust. FillMonotonicLineWGapFill forces it TRUE
+    /// (FillRectilinear.cpp:3247): top-surface MonotonicLine keeps the nominal
+    /// flow spacing and takes the align_to_grid branch.
+    pub dont_adjust: bool,
 }
 
 impl Default for InfillConfig {
@@ -136,6 +140,7 @@ impl Default for InfillConfig {
             overlap: 0.25,
             connect_infill: true,
             link_max_length: 0,
+            dont_adjust: false,
         }
     }
 }

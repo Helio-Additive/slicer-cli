@@ -501,10 +501,20 @@ impl ExPolygonWithOffset {
         }
 
         // Compute outer offset
-        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib (jtMiter, DefaultMiterLimit).
+        // Native FillRectilinear.cpp:478-482 offsets via ClipperLib @1e5; the geo
+        // variants grid the raster clip boundary to 1um — the last gridder in the
+        // top-fill chain (line endpoints clip against these contours). Gated.
+        let f1 = std::env::var("TOPFILL_FAITHFUL").is_ok();
         let aoffset1_mm = unscale(aoffset1);
         let polygons_outer = if aoffset1 == 0 {
             expolygon_to_polygons(&src)
+        } else if f1 {
+            let result = crate::clipper_utils::offset_expolygons_clib(
+                &[src.clone()],
+                aoffset1_mm,
+                OffsetJoinType::Miter,
+            );
+            expolygons_to_polygons(&result)
         } else {
             let result = offset_expolygon(&src, aoffset1_mm, OffsetJoinType::Miter);
             expolygons_to_polygons(&result)
@@ -516,9 +526,23 @@ impl ExPolygonWithOffset {
         // negative than aoffset1), so we offset polygons_outer inward by (aoffset1 - aoffset2).
         let mut polygons_inner = if aoffset2 < 0 {
             let shrink_amount = unscale(aoffset1 - aoffset2);
-            let result =
-                offset_polygons(&polygons_outer, -shrink_amount.abs(), OffsetJoinType::Miter);
-            expolygons_to_polygons(&result)
+            if f1 {
+                // polygons_outer is a FLAT orientation-tagged set (contours CCW +
+                // holes CW); rebuild proper nested ExPolygons full-res first so the
+                // clib shrink offsets holes the right way (native shrink() feeds the
+                // raw oriented paths into one ClipperOffset — same net semantics).
+                let outer_ex = crate::clipper_utils::union_ex_clib(&polygons_outer, 1);
+                let result = crate::clipper_utils::shrink_clib(
+                    &outer_ex,
+                    shrink_amount.abs(),
+                    OffsetJoinType::Miter,
+                );
+                expolygons_to_polygons(&result)
+            } else {
+                let result =
+                    offset_polygons(&polygons_outer, -shrink_amount.abs(), OffsetJoinType::Miter);
+                expolygons_to_polygons(&result)
+            }
         } else {
             Vec::new()
         };
@@ -2131,12 +2155,23 @@ pub fn fill_surface_by_lines(
 
     // Bounding box for vertical line placement
     let bbox_src = poly_with_offset.bounding_box_src();
-    let bbox = bbox_src;
+    let mut bbox = bbox_src;
 
     // Adjust spacing for solid fill
     let line_spacing = if params.full_infill && !params.dont_adjust {
         adjust_solid_spacing(bbox.width(), line_spacing)
     } else {
+        // Native align_to_grid branch (FillRectilinear.cpp:2865-2875): refpt =
+        // Fill::bounding_box.center() rotated, and PrintObject::bounding_box()
+        // is origin-centered (PrintObject.hpp:395) so refpt == (0,0) exactly:
+        // align bbox.min down to global line_spacing multiples. Gated.
+        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+            let aligned = crate::geometry::align_to_grid_point(
+                bbox.min,
+                Point::new(line_spacing, line_spacing),
+            );
+            bbox.min = Point::new(bbox.min.x.min(aligned.x), bbox.min.y.min(aligned.y));
+        }
         line_spacing
     };
 
@@ -2233,7 +2268,20 @@ pub fn generate_fill_rectilinear(
 ) -> Vec<InfillPath> {
     let mut paths = Vec::new();
 
-    let angle_deg = config.angle + config.angle_increment * layer_index as f64;
+    // Native Fill::_infill_direction (FillBase.cpp:239) adds an UNCONDITIONAL
+    // +M_PI/2 after base angle + per-layer alternation (native top L0 = 45deg
+    // emitted lines). Gated: default keeps the legacy angle (byte-locked).
+    let faithful_dir = std::env::var("TOPFILL_FAITHFUL").is_ok();
+    // Native _layer_angle = (idx & 1) ? 90 : 0 (FillBase.hpp:207) — a PARITY
+    // alternation, NOT 90*idx. 90*idx coincides only mod 180; the raster frame
+    // needs mod-360 equality (a 180-rotated frame point-reflects the bbox and
+    // shifts x0 for every adjust-branch solid fill). Plus _infill_direction's
+    // unconditional +90 (FillBase.cpp:239). Gated; default keeps legacy.
+    let angle_deg = if faithful_dir {
+        config.angle + if layer_index & 1 == 1 { 90.0 } else { 0.0 } + 90.0
+    } else {
+        config.angle + config.angle_increment * layer_index as f64
+    };
     let angle_rad = angle_deg.to_radians();
 
     // Grid draws two perpendicular passes; FillRectilinear.cpp:3036
@@ -2249,7 +2297,7 @@ pub fn generate_fill_rectilinear(
         density: pass_density,
         full_infill: config.density > 0.99,
         dont_connect: !config.connect_infill,
-        dont_adjust: false,
+        dont_adjust: config.dont_adjust,
         monotonic: false,
         link_max_length: config.link_max_length,
         consistent_pattern: false,
@@ -4263,11 +4311,20 @@ pub fn fill_surface_by_lines_monotonic(
         return polylines_out;
     }
 
-    let bbox_src = poly_with_offset.bounding_box_src();
+    let mut bbox_src = poly_with_offset.bounding_box_src();
 
     let line_spacing = if params.full_infill && !params.dont_adjust {
         adjust_solid_spacing(bbox_src.width(), line_spacing)
     } else {
+        // Native align_to_grid branch — refpt == (0,0) (see fill_surface_by_lines).
+        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+            let aligned = crate::geometry::align_to_grid_point(
+                bbox_src.min,
+                Point::new(line_spacing, line_spacing),
+            );
+            bbox_src.min =
+                Point::new(bbox_src.min.x.min(aligned.x), bbox_src.min.y.min(aligned.y));
+        }
         line_spacing
     };
 
@@ -4347,7 +4404,14 @@ pub fn generate_fill_rectilinear_monotonic(
 ) -> Vec<InfillPath> {
     let mut paths = Vec::new();
 
-    let angle_deg = config.angle + config.angle_increment * layer_index as f64;
+    // Same missing native _infill_direction +90 as generate_fill_rectilinear.
+    let faithful_dir = std::env::var("TOPFILL_FAITHFUL").is_ok();
+    // Native parity alternation + unconditional +90 (see generate_fill_rectilinear).
+    let angle_deg = if faithful_dir {
+        config.angle + if layer_index & 1 == 1 { 90.0 } else { 0.0 } + 90.0
+    } else {
+        config.angle + config.angle_increment * layer_index as f64
+    };
     let angle_rad = angle_deg.to_radians();
 
     // Grid draws two perpendicular passes; halve per-pass density so they combine to the
@@ -4361,7 +4425,7 @@ pub fn generate_fill_rectilinear_monotonic(
         density: pass_density,
         full_infill: config.density > 0.99,
         dont_connect: !config.connect_infill,
-        dont_adjust: false,
+        dont_adjust: config.dont_adjust,
         monotonic,
         link_max_length: config.link_max_length,
         consistent_pattern: false,

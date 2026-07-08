@@ -2037,6 +2037,7 @@ impl Layer {
                 overlap: infill_overlap,
                 connect_infill: !dont_connect,
                 link_max_length,
+                dont_adjust: false,
             };
 
             // Fill.cpp:735-747
@@ -2057,10 +2058,20 @@ impl Layer {
                 && !surface_fill.no_overlap_expolygons.is_empty()
                 && !surface_fill.expolygons.is_empty()
             {
-                crate::clipper_utils::intersection(
-                    &surface_fill.no_overlap_expolygons,
-                    &surface_fill.expolygons,
-                )
+                // Native intersection_ex runs ClipperLib @1e5; the geo variant
+                // grids the clip contour to 1um and the raster endpoints clip
+                // against it (R100 class). Gated full-res.
+                if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    crate::clipper_utils::intersection_clib(
+                        &surface_fill.no_overlap_expolygons,
+                        &surface_fill.expolygons,
+                    )
+                } else {
+                    crate::clipper_utils::intersection(
+                        &surface_fill.no_overlap_expolygons,
+                        &surface_fill.expolygons,
+                    )
+                }
             } else {
                 Vec::new()
             };
@@ -2117,9 +2128,30 @@ impl Layer {
                         let mut mono_config = infill_config.clone();
                         if fill_pattern == InfillPattern::MonotonicLine {
                             mono_config.connect_infill = false;
+                            // Native FillMonotonicLineWGapFill (FillRectilinear.cpp:
+                            // 3245-3247): params2.dont_adjust = true — nominal flow
+                            // spacing + align_to_grid raster. Gated.
+                            if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                                mono_config.dont_adjust = true;
+                            }
                         }
+                        // Native rasters over no_overlap_expolygons, NOT the surface
+                        // expolygon (FillRectilinear.cpp:3253-3256); the WGapFill tail
+                        // covers the unextruded band. Gated.
+                        let mono_areas: Vec<crate::geometry::ExPolygon> =
+                            if fill_pattern == InfillPattern::MonotonicLine
+                                && !mono_no_overlap.is_empty()
+                                && std::env::var("TOPFILL_FAITHFUL").is_ok()
+                            {
+                                crate::clipper_utils::intersection_clib(
+                                    &mono_no_overlap,
+                                    &[expoly.clone()],
+                                )
+                            } else {
+                                vec![expoly.clone()]
+                            };
                         generate_fill_rectilinear_monotonic(
-                            &[expoly],
+                            &mono_areas,
                             &mono_config,
                             self.id as usize,
                             is_grid,
@@ -2286,6 +2318,16 @@ impl Layer {
             // the no_overlap area the lines left uncovered, emitting variable-width
             // erGapFill runs. These curved runs are what the arc-fitter turns into
             // G2/G3 on the top surface (native: 113 arcs; without this Rust got 4).
+            if is_monotonic_line && std::env::var("NOOVDBG").is_ok() {
+                let a_no: f64 = mono_no_overlap.iter().map(|e| e.area().abs()).sum::<f64>()
+                    / (crate::SCALING_FACTOR * crate::SCALING_FACTOR);
+                eprintln!(
+                    "NOOVDBG-R z={:.2} n_no={} a_no={:.4}",
+                    self.print_z,
+                    mono_no_overlap.len(),
+                    a_no
+                );
+            }
             if is_monotonic_line && mono_density >= 1.0 && !mono_no_overlap.is_empty() {
                 use crate::clipper_utils::{
                     difference_clib, intersection_ex_expolygons_polygons, offset2_clib,
@@ -2501,6 +2543,7 @@ impl Layer {
                 overlap: infill_overlap,
                 connect_infill: !dont_connect,
                 link_max_length,
+                dont_adjust: false,
             };
 
             // Fill.cpp:862-871

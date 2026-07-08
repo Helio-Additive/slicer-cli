@@ -1304,7 +1304,15 @@ impl PerimeterGenerator {
             for ex in &last {
                 ex.simplify_p_into(self.config.surface_simplify_resolution, &mut pp);
             }
-            let not_filled_exp = union_polygons_ex(&pp);
+            // Native union_ex(pp) runs ClipperLib @1e5; geo union grids to 1um and
+            // everything downstream (infill_area, no_overlap_area, the top-surface
+            // raster clip) inherits it (R100 class). Gated full-res.
+            let f1_infill = std::env::var("TOPFILL_FAITHFUL").is_ok();
+            let not_filled_exp = if f1_infill {
+                crate::clipper_utils::union_ex_clib(&pp, 1)
+            } else {
+                union_polygons_ex(&pp)
+            };
 
             // PerimeterGenerator.cpp:1400-1406
             // C++: coord_t min_perimeter_infill_spacing = coord_t(solid_infill_spacing * (1. - INSET_OVERLAP_TOLERANCE));
@@ -1313,30 +1321,65 @@ impl PerimeterGenerator {
             // C++:     float(min_perimeter_infill_spacing / 2.));
             let min_perimeter_infill_spacing =
                 self.config.solid_infill_spacing * (1.0 - INSET_OVERLAP_TOLERANCE);
-            let mut infill_exp = offset2(
-                &not_filled_exp,
-                inset + min_perimeter_infill_spacing / 2.0,
-                min_perimeter_infill_spacing / 2.0,
-                self.config.join_type,
-            );
+            let mut infill_exp = if f1_infill {
+                crate::clipper_utils::offset2_ex_clib(
+                    &not_filled_exp,
+                    -(inset + min_perimeter_infill_spacing / 2.0),
+                    min_perimeter_infill_spacing / 2.0,
+                    self.config.join_type,
+                )
+            } else {
+                offset2(
+                    &not_filled_exp,
+                    inset + min_perimeter_infill_spacing / 2.0,
+                    min_perimeter_infill_spacing / 2.0,
+                    self.config.join_type,
+                )
+            };
 
             // PerimeterGenerator.cpp:1407-1413
             // C++: ExPolygons top_infill_exp = intersection_ex(fill_clip, offset_ex(top_fills, double(ext_perimeter_spacing / 2)));
             // C++: if (!top_fills.empty()) {
             // C++:     infill_exp = union_ex(infill_exp, offset_ex(top_infill_exp, double(infill_peri_overlap)));
             // C++: }
-            let top_infill_exp = intersection(
-                &fill_clip,
-                &offset_expolygons(&top_fills, ext_perimeter_spacing / 2.0, OffsetJoinType::Miter),
-            );
+            let top_infill_exp = if f1_infill {
+                crate::clipper_utils::intersection_clib(
+                    &fill_clip,
+                    &crate::clipper_utils::offset_expolygons_clib(
+                        &top_fills,
+                        ext_perimeter_spacing / 2.0,
+                        OffsetJoinType::Miter,
+                    ),
+                )
+            } else {
+                intersection(
+                    &fill_clip,
+                    &offset_expolygons(
+                        &top_fills,
+                        ext_perimeter_spacing / 2.0,
+                        OffsetJoinType::Miter,
+                    ),
+                )
+            };
             if !top_fills.is_empty() {
-                let mut merged = infill_exp;
-                merged.extend(offset_expolygons(
-                    &top_infill_exp,
-                    infill_peri_overlap,
-                    OffsetJoinType::Miter,
-                ));
-                infill_exp = union_ex(&merged);
+                if f1_infill {
+                    let grown = crate::clipper_utils::offset_expolygons_clib(
+                        &top_infill_exp,
+                        infill_peri_overlap,
+                        OffsetJoinType::Miter,
+                    );
+                    let mut merged: Vec<Polygon> = crate::geometry::to_polygons(&infill_exp);
+                    merged.extend(crate::geometry::to_polygons(&grown));
+                    infill_exp = crate::clipper_utils::union_ex_clib(&merged, 1);
+                } else {
+                    let mut merged = infill_exp;
+                    merged.extend(offset_expolygons(
+                        &top_infill_exp,
+                        infill_peri_overlap,
+                        OffsetJoinType::Miter,
+                    ));
+                    infill_exp = union_ex(&merged);
+                }
             }
             result.infill_area = infill_exp;
 
@@ -1350,13 +1393,32 @@ impl PerimeterGenerator {
             //   else
             //       polyWithoutOverlap = offset_ex(not_filled_exp, -inset - infill_peri_overlap);
             //   if (!top_fills.empty()) polyWithoutOverlap = union_ex(polyWithoutOverlap, top_infill_exp);
+            // Native offset2_ex/offset_ex run ClipperLib @1e5; the geo variants
+            // grid the no-overlap contour to 1um, which the top-surface
+            // MonotonicLine raster clips against (R100 class). Gated full-res.
+            let f1 = std::env::var("TOPFILL_FAITHFUL").is_ok();
             let mut poly_without_overlap = if min_perimeter_infill_spacing / 2.0
                 > infill_peri_overlap
             {
-                offset2(
+                if f1 {
+                    crate::clipper_utils::offset2_ex_clib(
+                        &not_filled_exp,
+                        -(inset + min_perimeter_infill_spacing / 2.0),
+                        min_perimeter_infill_spacing / 2.0 - infill_peri_overlap,
+                        self.config.join_type,
+                    )
+                } else {
+                    offset2(
+                        &not_filled_exp,
+                        inset + min_perimeter_infill_spacing / 2.0,
+                        min_perimeter_infill_spacing / 2.0 - infill_peri_overlap,
+                        self.config.join_type,
+                    )
+                }
+            } else if f1 {
+                crate::clipper_utils::offset_expolygons_clib(
                     &not_filled_exp,
-                    inset + min_perimeter_infill_spacing / 2.0,
-                    min_perimeter_infill_spacing / 2.0 - infill_peri_overlap,
+                    -(inset + infill_peri_overlap),
                     self.config.join_type,
                 )
             } else {
@@ -1367,9 +1429,16 @@ impl PerimeterGenerator {
                 )
             };
             if !top_fills.is_empty() {
-                let mut merged = poly_without_overlap;
-                merged.extend(top_infill_exp);
-                poly_without_overlap = union_ex(&merged);
+                poly_without_overlap = if f1 {
+                    let mut merged: Vec<crate::geometry::Polygon> =
+                        crate::geometry::to_polygons(&poly_without_overlap);
+                    merged.extend(crate::geometry::to_polygons(&top_infill_exp));
+                    crate::clipper_utils::union_ex_clib(&merged, 1)
+                } else {
+                    let mut merged = poly_without_overlap;
+                    merged.extend(top_infill_exp);
+                    union_ex(&merged)
+                };
             }
             result.no_overlap_area = poly_without_overlap;
         } else {
