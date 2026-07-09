@@ -536,6 +536,7 @@ impl LayerRegion {
         self.perimeters = result.entities;
 
         // Store infill area
+        let perimeter_top_band = result.top_band.clone();
         for infill_expoly in result.infill_area {
             let fill_surface = Surface {
                 expolygon: infill_expoly,
@@ -667,7 +668,15 @@ impl LayerRegion {
 
                 if !covered.is_empty() {
                     use crate::clipper_utils::{difference, union_polygons_ex};
-                    let covered_ex = union_polygons_ex(&covered);
+                    // Native diff_ex runs ClipperLib @1e5; the geo union+difference
+                    // grid the trimmed fill region @1um (the last un-gridded op on
+                    // fill_expolygons — L23 top band 29pts/-0.07mm2). Gated full-res.
+                    let tf = std::env::var("TOPFILL_FAITHFUL").is_ok();
+                    let covered_ex = if tf {
+                        crate::clipper_utils::union_ex_clib(&covered, 1)
+                    } else {
+                        union_polygons_ex(&covered)
+                    };
                     // Subtract from the Internal fill_surfaces (the infill region produced
                     // by the perimeter generator; top/bottom skins are unaffected).
                     let internal: ExPolygons = self
@@ -678,7 +687,21 @@ impl LayerRegion {
                         .map(|s| s.expolygon.clone())
                         .collect();
                     if !internal.is_empty() {
-                        let trimmed = difference(&internal, &covered_ex);
+                        let trimmed = if tf {
+                            // Restore the top band after the trim (native never
+                            // trims it — the gap diff runs on `last` upstream of
+                            // the band union, PG.cpp:1373 vs 1407-1413).
+                            let cut = crate::clipper_utils::difference_clib(&internal, &covered_ex);
+                            if perimeter_top_band.is_empty() {
+                                cut
+                            } else {
+                                let mut m = crate::geometry::to_polygons(&cut);
+                                m.extend(crate::geometry::to_polygons(&perimeter_top_band));
+                                crate::clipper_utils::union_ex_clib(&m, 1)
+                            }
+                        } else {
+                            difference(&internal, &covered_ex)
+                        };
                         self.fill_surfaces
                             .surfaces
                             .retain(|s| s.surface_type != SurfaceType::Internal);
@@ -696,8 +719,21 @@ impl LayerRegion {
                     // Keep fill_expolygons (the union infill boundary used as vshell holes)
                     // consistent with the trimmed infill region.
                     if !self.fill_expolygons.is_empty() {
-                        self.fill_expolygons =
-                            difference(&self.fill_expolygons, &covered_ex);
+                        self.fill_expolygons = if tf {
+                            let cut = crate::clipper_utils::difference_clib(
+                                &self.fill_expolygons,
+                                &covered_ex,
+                            );
+                            if perimeter_top_band.is_empty() {
+                                cut
+                            } else {
+                                let mut m = crate::geometry::to_polygons(&cut);
+                                m.extend(crate::geometry::to_polygons(&perimeter_top_band));
+                                crate::clipper_utils::union_ex_clib(&m, 1)
+                            }
+                        } else {
+                            difference(&self.fill_expolygons, &covered_ex)
+                        };
                     }
                 }
             }

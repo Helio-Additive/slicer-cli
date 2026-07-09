@@ -319,6 +319,13 @@ pub struct PerimeterResult {
 
     /// Gap fill areas
     pub gap_fills: ExPolygons,
+
+    /// The grown top-band (offset_ex(top_infill_exp, infill_peri_overlap),
+    /// PerimeterGenerator.cpp:1411) that was unioned into infill_area. Passed
+    /// separately so the layer-level gap-footprint trim can restore it: native
+    /// subtracts the gap footprint from `last` BEFORE the fill-boundary block
+    /// (PG.cpp:1373), so the top_fills-derived band is never trimmed.
+    pub top_band: ExPolygons,
 }
 
 impl PerimeterResult {
@@ -328,6 +335,7 @@ impl PerimeterResult {
             infill_area: Vec::new(),
             no_overlap_area: Vec::new(),
             gap_fills: Vec::new(),
+            top_band: Vec::new(),
         }
     }
 }
@@ -370,6 +378,7 @@ impl PerimeterGenerator {
             result.infill_area.extend(surface_result.infill_area);
             result.no_overlap_area.extend(surface_result.no_overlap_area);
             result.gap_fills.extend(surface_result.gap_fills);
+            result.top_band.extend(surface_result.top_band);
         }
 
         result
@@ -1060,16 +1069,35 @@ impl PerimeterGenerator {
                 // C++: top_fills = union_ex(top_fills, top_polygons);
                 let mut merged = std::mem::take(&mut top_fills);
                 merged.extend(top_polygons);
-                top_fills = union_ex(&merged);
+                // Native union_ex runs ClipperLib @1e5; geo grids top_fills @1um
+                // (feeds top_infill_exp -> the fill boundary). Gated full-res.
+                top_fills = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    crate::clipper_utils::union_ex_clib(
+                        &crate::geometry::to_polygons(&merged),
+                        1,
+                    )
+                } else {
+                    union_ex(&merged)
+                };
 
                 // PerimeterGenerator.cpp:1166-1168
                 // C++: double infill_spacing_unscaled = this->config->sparse_infill_line_width.value;
                 // C++: fill_clip = offset_ex(last, double(ext_perimeter_spacing / 2) - scale_(infill_spacing_unscaled / 2));
-                fill_clip = offset_expolygons(
-                    &last,
-                    ext_perimeter_spacing / 2.0 - self.config.sparse_infill_line_width / 2.0,
-                    OffsetJoinType::Miter,
-                );
+                // Native offset_ex @1e5; geo grids fill_clip (168-vs-177pts, the
+                // R140 residual driver). Gated full-res.
+                fill_clip = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    crate::clipper_utils::offset_expolygons_clib(
+                        &last,
+                        ext_perimeter_spacing / 2.0 - self.config.sparse_infill_line_width / 2.0,
+                        OffsetJoinType::Miter,
+                    )
+                } else {
+                    offset_expolygons(
+                        &last,
+                        ext_perimeter_spacing / 2.0 - self.config.sparse_infill_line_width / 2.0,
+                        OffsetJoinType::Miter,
+                    )
+                };
 
                 // PerimeterGenerator.cpp:1169
                 // C++: last = intersection_ex(inner_polygons, last);
@@ -1380,6 +1408,7 @@ impl PerimeterGenerator {
                         infill_peri_overlap,
                         OffsetJoinType::Miter,
                     );
+                    result.top_band = grown.clone();
                     let mut merged: Vec<Polygon> = crate::geometry::to_polygons(&infill_exp);
                     merged.extend(crate::geometry::to_polygons(&grown));
                     infill_exp = crate::clipper_utils::union_ex_clib(&merged, 1);
