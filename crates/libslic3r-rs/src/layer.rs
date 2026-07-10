@@ -2384,15 +2384,21 @@ impl Layer {
 
                 // C++: gapfill_areas = union_ex(unextruded_areas);
                 //      gapfill_areas = intersection_ex(gapfill_areas, no_overlap);
-                let gapfill_areas = intersection_ex_expolygons_polygons(
-                    &unextruded_areas,
-                    &mono_no_overlap
-                        .iter()
-                        .flat_map(|ex| {
-                            std::iter::once(ex.contour.clone()).chain(ex.holes.iter().cloned())
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                let gapfill_areas = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    // Native intersection_ex @1e5 (mixed-grid guard, see above).
+                    crate::clipper_utils::intersection_clib(&unextruded_areas, &mono_no_overlap)
+                } else {
+                    intersection_ex_expolygons_polygons(
+                        &unextruded_areas,
+                        &mono_no_overlap
+                            .iter()
+                            .flat_map(|ex| {
+                                std::iter::once(ex.contour.clone())
+                                    .chain(ex.holes.iter().cloned())
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                };
 
                 if !gapfill_areas.is_empty() {
                     // C++: new_flow = params.flow.with_spacing(this->spacing) for
