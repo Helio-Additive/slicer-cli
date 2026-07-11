@@ -2325,14 +2325,30 @@ impl Layer {
                 // Convert to extrusion paths
                 let mm3_per_mm = surface_fill.params.flow.mm3_per_mm()?;
                 let mut collection = ExtrusionEntityCollection::new();
-                extrusion_entities_append_paths(
-                    &mut collection.entities,
-                    polylines,
-                    surface_fill.params.extrusion_role,
-                    mm3_per_mm,
-                    surface_fill.params.flow.width() as f32,
-                    surface_fill.params.flow.height() as f32,
-                );
+                if is_monotonic_line && std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    // Native FillMonotonicLineWGapFill emits via
+                    // extrusion_entities_append_paths_with_wipe (FillRectilinear.cpp:
+                    // 3274): short hops become non-extruding wipe connectors that
+                    // (a) appear in the gcode as E-less G1s and (b) count in the
+                    // coverage that shapes the WGapFill band (R146).
+                    crate::extrusion_entity::extrusion_entities_append_paths_with_wipe(
+                        &mut collection.entities,
+                        polylines,
+                        surface_fill.params.extrusion_role,
+                        mm3_per_mm,
+                        surface_fill.params.flow.width() as f32,
+                        surface_fill.params.flow.height() as f32,
+                    );
+                } else {
+                    extrusion_entities_append_paths(
+                        &mut collection.entities,
+                        polylines,
+                        surface_fill.params.extrusion_role,
+                        mm3_per_mm,
+                        surface_fill.params.flow.width() as f32,
+                        surface_fill.params.flow.height() as f32,
+                    );
+                }
 
                 // FillMonotonicLineWGapFill: record the footprint of the laid
                 // monotonic lines so the post-loop gap-fill can subtract it from

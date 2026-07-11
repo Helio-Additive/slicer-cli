@@ -1026,7 +1026,13 @@ pub fn extrude_path_with_arc_fitting(
                             continue;
                         }
                         let de = line_length * e_per_mm;
-                        writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+                        if path.no_extrusion {
+                            // Native GCode.cpp:6686 extrude_to_xy(..., is_force_no_
+                            // extrusion()): E-less move, filament E not advanced.
+                            writer.wipe_to(unscale(to.x()), unscale(to.y()), None);
+                        } else {
+                            writer.extrude_to(unscale(to.x()), unscale(to.y()), de, None);
+                        }
                     }
                 }
                 EMovePathType::ArcMoveCw | EMovePathType::ArcMoveCcw => {

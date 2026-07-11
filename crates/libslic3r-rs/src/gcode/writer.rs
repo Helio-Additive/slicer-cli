@@ -894,6 +894,43 @@ impl GCodeWriter {
     /// C++:         w.emit_e(filament()->E());
     /// C++:     return set_extrude_acceleration() + w.string();
     /// C++: }
+    /// Native `extrude_to_xy(..., force_no_extrusion=true)` (GCodeWriter.cpp:705,
+    /// 710-711): the move is emitted WITHOUT an E word and the filament E is not
+    /// advanced — the "wipe" connector of extrusion_entities_append_paths_with_wipe.
+    pub fn wipe_to(&mut self, x: CoordF, y: CoordF, feedrate: Option<CoordF>) {
+        let f = feedrate.unwrap_or(if self.feedrate > 0.0 {
+            self.feedrate
+        } else {
+            self.config.print_speed * 60.0
+        });
+        let dx = x - self.x;
+        let dy = y - self.y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        self.stats.travel_distance_mm += dist;
+        if f > 0.0 {
+            let move_time = dist * 60.0 / f;
+            self.stats.print_time_seconds += move_time;
+            self.layer_extrusion_time += move_time;
+        }
+        self.write_command(&GCodeCommand::LinearMove {
+            x: Some(x),
+            y: Some(y),
+            z: None,
+            e: None,
+            f: if (f - self.last_emitted_f).abs() > 0.01 {
+                Some(f)
+            } else {
+                None
+            },
+        });
+        if (f - self.last_emitted_f).abs() > 0.01 {
+            self.last_emitted_f = f;
+        }
+        self.x = x;
+        self.y = y;
+        self.position_known = true;
+    }
+
     pub fn extrude_to(&mut self, x: CoordF, y: CoordF, de: CoordF, feedrate: Option<CoordF>) {
         let f = feedrate.unwrap_or(if self.feedrate > 0.0 {
             self.feedrate

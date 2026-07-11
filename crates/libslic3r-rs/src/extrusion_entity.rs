@@ -2373,6 +2373,60 @@ impl IntoIterator for ExtrusionEntityCollection {
 // ===========================================================================
 
 /// ExtrusionEntity.hpp:647-656 `inline void extrusion_entities_append_paths(ExtrusionEntitiesPtr &dst, Polylines &polylines, ExtrusionRole role, double mm3_per_mm, float width, float height)`
+/// Faithful `extrusion_entities_append_paths_with_wipe` (ExtrusionEntity.hpp:671-724,
+/// gap_compensation_ratio = 0 branch — `monotonic_travel_into_wall` defaults 0%):
+/// chains consecutive polylines whose hop is <= 3*scale(width) with a NON-EXTRUDING
+/// 2-point connector path (no_extrusion=true, native "wipe"), forming the
+/// ExtrusionMultiPath sequence natively emitted for top-surface MonotonicLine.
+/// The connectors also count in polygons_covered_by_spacing (they blanket the
+/// inter-line margins the WGapFill band diff would otherwise keep, R146).
+pub fn extrusion_entities_append_paths_with_wipe(
+    dst: &mut Vec<ExtrusionEntityType>,
+    polylines: Vec<Polyline>,
+    role: ExtrusionRole,
+    mm3_per_mm: CoordF,
+    width: f32,
+    height: f32,
+) {
+    dst.reserve(dst.len() + polylines.len());
+    let hop_max = 3.0 * scale(width as CoordF) as f64;
+    let mut last_end: Option<crate::geometry::Point> = None;
+    for polyline in polylines {
+        if !polyline.is_valid() {
+            continue;
+        }
+        let first = polyline.points()[0];
+        if let Some(le) = last_end {
+            let hop = (((first.x - le.x) as f64).hypot((first.y - le.y) as f64)) as f64;
+            if hop <= hop_max {
+                // ExtrusionEntity.hpp:685/703-706: connector wipe path (no_extrusion).
+                let mut conn = ExtrusionPath::with_params(
+                    role,
+                    mm3_per_mm,
+                    width as CoordF,
+                    height as CoordF,
+                    true,
+                );
+                conn.polyline = Polyline::from_points(vec![le, first]);
+                dst.push(ExtrusionEntityType::Path(conn));
+            }
+            // else: multipath boundary — native pushes the finished multipath and
+            // starts a new one; as flat consecutive paths the exporter travels.
+        }
+        let end = *polyline.points().last().unwrap();
+        let mut path = ExtrusionPath::with_params(
+            role,
+            mm3_per_mm,
+            width as CoordF,
+            height as CoordF,
+            false,
+        );
+        path.polyline = polyline;
+        dst.push(ExtrusionEntityType::Path(path));
+        last_end = Some(end);
+    }
+}
+
 pub fn extrusion_entities_append_paths(
     dst: &mut Vec<ExtrusionEntityType>,
     polylines: Vec<Polyline>,
