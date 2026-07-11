@@ -1078,3 +1078,18 @@ extern "C" void cz_free_zpaths(CzZPaths paths) {
     std::free(paths.coords);
     std::free(paths.path_lens);
 }
+
+// ---------------------------------------------------------------------------
+// R195: cz_union_flat — faithful ClipperUtils.cpp clipper_union<Paths>
+// (ClipperUtils.cpp:339-350): ONE Clipper Execute(ctUnion, Paths, pftNonZero).
+// Used by expolygons_offset (positive delta, >1 expolygons collected) — the
+// lower_polygons_series grow. NOT the two-pass union_ex; NOT StrictlySimple.
+// ---------------------------------------------------------------------------
+extern "C" CzZPaths cz_union_flat(const int32_t *xy, const int32_t *lens, int32_t num) {
+    ClipperLib::Paths subject = read_closed_paths(xy, lens, num);
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, true);
+    ClipperLib::Paths retval;
+    clipper.Execute(ClipperLib::ctUnion, retval, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+    return marshal_paths(retval);
+}

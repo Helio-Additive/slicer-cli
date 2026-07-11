@@ -1453,6 +1453,35 @@ impl PerimeterGenerator {
             result.entities.loop_node_range = (base, result.loop_nodes.len());
         }
 
+        if std::env::var("PERIDBG").is_ok() {
+            use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
+            for ee in &result.entities.entities {
+                if let ExtrusionEntityType::Loop(el) = ee {
+                    if el.role() != ExtrusionRole::ExternalPerimeter {
+                        continue;
+                    }
+                    let mut h: u64 = 1469598103934665603;
+                    let mut np = 0usize;
+                    for pa in &el.paths {
+                        for pt in pa.polyline.points() {
+                            h ^= pt.x as u64;
+                            h = h.wrapping_mul(1099511628211);
+                            h ^= pt.y as u64;
+                            h = h.wrapping_mul(1099511628211);
+                            np += 1;
+                        }
+                    }
+                    eprintln!(
+                        "PERIENT-R layer={} npaths={} npts={} h={:x}",
+                        self.config.layer_id,
+                        el.paths.len(),
+                        np,
+                        h
+                    );
+                }
+            }
+        }
+
         // Apply fuzzy skin as post-processing on perimeter entities
         if self.config.fuzzy_skin_mode != crate::region_config::FuzzySkinMode::None {
             let fs_config = crate::fuzzy_skin::FuzzySkinConfig {
@@ -2180,7 +2209,33 @@ fn traverse_loops(
                     // rarely overhang, so they match ~2x better). Same class as R100. Under F1_UNION
                     // route the grows through the vertex-exact vendored ClipperLib (offset_expolygons_clib
                     // @ i32/1e5). Default path byte-unchanged.
-                    let (lower_front_ex, lower_back_ex) = if std::env::var("F1_UNION").is_ok() {
+                    let faithful_raw: Option<(Vec<Polygon>, Vec<Polygon>)> = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                        let width_f32 = extrusion_width as f32;
+                        let nozzle_f32 = nozzle_diameter as f32;
+                        let start_f32 = -0.5f32 * width_f32;
+                        let end_f32 = 0.5f32 * nozzle_f32;
+                        let n_f32 = crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f32;
+                        let front_f32 = start_f32 + 0.5f32 * (end_f32 - start_f32) / (n_f32 - 1.0);
+                        let native_delta = |v: f32| ((v as f64 / 0.00001) as f32) as f64;
+                        // expolygons_offset (ClipperUtils.cpp:537-547): shrink →
+                        // raw concat; grow with >1 collected → ONE flat NonZero union.
+                        let front_raw = crate::clipper_utils::offset_expolygons_clib_raw_scaled(
+                            lower, native_delta(front_f32), OffsetJoinType::Miter);
+                        let (back_raw, back_collected) =
+                            crate::clipper_utils::offset_expolygons_clib_raw_scaled_counted(
+                                lower, native_delta(end_f32), OffsetJoinType::Miter);
+                        let back_polys = if back_collected > 1 && end_f32 > 0.0 {
+                            crate::clipper_utils::union_flat_clib(&back_raw)
+                        } else {
+                            back_raw
+                        };
+                        Some((front_raw, back_polys))
+                    } else {
+                        None
+                    };
+                    let (lower_front_ex, lower_back_ex) = if faithful_raw.is_some() {
+                        (Vec::new(), Vec::new())
+                    } else if std::env::var("F1_UNION").is_ok() {
                         (
                             crate::clipper_utils::offset_expolygons_clib(lower, off_front, OffsetJoinType::Miter),
                             crate::clipper_utils::offset_expolygons_clib(lower, end_offset, OffsetJoinType::Miter),
@@ -2192,6 +2247,47 @@ fn traverse_loops(
                         )
                     };
 
+                    if std::env::var("PERIDBG").is_ok() {
+                        let fnv = |ps: &[ExPolygon]| -> (u64, usize) {
+                            let mut h: u64 = 1469598103934665603;
+                            let mut n = 0usize;
+                            for ex in ps {
+                                for pt in ex.contour.points() {
+                                    h ^= pt.x as u64; h = h.wrapping_mul(1099511628211);
+                                    h ^= pt.y as u64; h = h.wrapping_mul(1099511628211);
+                                }
+                                n += 1;
+                                for hole in &ex.holes {
+                                    for pt in hole.points() {
+                                        h ^= pt.x as u64; h = h.wrapping_mul(1099511628211);
+                                        h ^= pt.y as u64; h = h.wrapping_mul(1099511628211);
+                                    }
+                                    n += 1;
+                                }
+                            }
+                            (h, n)
+                        };
+                        let fnv_p = |ps: &[Polygon]| -> (u64, usize) {
+                            let mut h: u64 = 1469598103934665603;
+                            let mut n = 0usize;
+                            for pg in ps {
+                                for pt in pg.points() {
+                                    h ^= pt.x as u64; h = h.wrapping_mul(1099511628211);
+                                    h ^= pt.y as u64; h = h.wrapping_mul(1099511628211);
+                                }
+                                n += 1;
+                            }
+                            (h, n)
+                        };
+                        let ((fh, fnn), (bh, bnn)) = match &faithful_raw {
+                            Some((f, b)) => (fnv_p(f), fnv_p(b)),
+                            None => (fnv(&lower_front_ex), fnv(&lower_back_ex)),
+                        };
+                        eprintln!(
+                            "PERILOW-R layer={} fh={:x} bh={:x} fn={} bn={}",
+                            config.layer_id, fh, bh, fnn, bnn
+                        );
+                    }
                     // PerimeterGenerator.cpp:229-239 — dist_boundary(width)
                     // first = 0; second = scale_(end_offset) - scale_(off_front)
                     // C++ `scale_(val)` macro == `val / SCALING_FACTOR_CPP` where
@@ -2209,9 +2305,14 @@ fn traverse_loops(
 
                     // lower_polygons_series.front()/back() as flat Polygons (holes included),
                     // matching C++ `std::vector<Polygons>` entries.
-                    let lower_front_polys: Vec<Polygon> =
-                        crate::geometry::to_polygons(&lower_front_ex);
-                    let lower_back_polys: Vec<Polygon> = crate::geometry::to_polygons(&lower_back_ex);
+                    let (lower_front_polys, lower_back_polys): (Vec<Polygon>, Vec<Polygon>) =
+                        match faithful_raw {
+                            Some((f, b)) => (f, b),
+                            None => (
+                                crate::geometry::to_polygons(&lower_front_ex),
+                                crate::geometry::to_polygons(&lower_back_ex),
+                            ),
+                        };
 
                     if lower_front_polys.is_empty() {
                         false
