@@ -10,7 +10,11 @@
 #include "clipper2/clipper.h"
 #include "clipper2/clipper.rectclip.h"
 
+#ifdef USINGZ
 namespace Clipper2ZSys {
+#else
+namespace Clipper2ZSys {
+#endif
 
   //------------------------------------------------------------------------------
   // Miscellaneous methods

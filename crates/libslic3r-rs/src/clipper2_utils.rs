@@ -529,6 +529,76 @@ pub enum ClipType {
 /// C++:     return out;
 /// C++: }
 fn clipper2_pl_open(clip_type: ClipType, subject: &[Polyline], clip: &[Polygon]) -> Vec<Polyline> {
+    // R196 (ZSMOOTH_FAITHFUL): route through the NATIVE Clipper2 1.5.2
+    // (clipper2-z-sys vendored from the reference tree) — clipper2c-sys ships
+    // 1.5.4 whose open-path clipping (split coords / rounding) differs.
+    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        let mut src_xyz: Vec<i64> = Vec::new();
+        let mut src_lens: Vec<i32> = Vec::new();
+        for pl in subject {
+            let pts = pl.points();
+            if pts.is_empty() {
+                continue;
+            }
+            src_lens.push(pts.len() as i32);
+            for pt in pts {
+                src_xyz.extend_from_slice(&[pt.x, pt.y, 0]);
+            }
+        }
+        let mut clip_xyz: Vec<i64> = Vec::new();
+        let mut clip_lens: Vec<i32> = Vec::new();
+        for pg in clip {
+            let pts = pg.points();
+            if pts.is_empty() {
+                continue;
+            }
+            clip_lens.push(pts.len() as i32);
+            for pt in pts {
+                clip_xyz.extend_from_slice(&[pt.x, pt.y, 0]);
+            }
+        }
+        let ct = match clip_type {
+            ClipType::Intersection => 0i32,
+            ClipType::Difference => 1i32,
+        };
+        // SAFETY: pointers reference live Vecs; the shim only reads them; the
+        // returned buffers are freed via cz2_free_zpaths below.
+        let raw = unsafe {
+            clipper2_z_sys::cz2_pl_open(
+                ct,
+                src_xyz.as_ptr(),
+                src_lens.as_ptr(),
+                src_lens.len() as i32,
+                clip_xyz.as_ptr(),
+                clip_lens.as_ptr(),
+                clip_lens.len() as i32,
+            )
+        };
+        let mut out: Vec<Polyline> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+        if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+            // SAFETY: shim guarantees path_lens has num_paths entries and coords
+            // has 3*total_points i64s.
+            let lens =
+                unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+            let coords =
+                unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+            let mut cur = 0usize;
+            for &len in lens {
+                let len = len.max(0) as usize;
+                let mut pts = Vec::with_capacity(len);
+                for _ in 0..len {
+                    pts.push(crate::geometry::Point::new(
+                        coords[cur * 3],
+                        coords[cur * 3 + 1],
+                    ));
+                    cur += 1;
+                }
+                out.push(Polyline::from_points(pts));
+            }
+        }
+        unsafe { clipper2_z_sys::cz2_free_zpaths(raw) };
+        return out;
+    }
     unsafe {
         // C++: Clipper2Lib::Clipper64 c;
         let c_mem = clipper_allocate(clipper_clipper64_size());

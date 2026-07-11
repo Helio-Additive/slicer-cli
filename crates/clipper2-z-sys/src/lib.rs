@@ -52,6 +52,16 @@ extern "C" {
         clip_lens: *const i32,
         clip_num: i32,
     ) -> Cz2WaveClip;
+    pub fn cz2_pl_open(
+        clip_type: i32,
+        src_xyz: *const i64,
+        src_lens: *const i32,
+        src_num: i32,
+        clip_xyz: *const i64,
+        clip_lens: *const i32,
+        clip_num: i32,
+    ) -> Cz2ZPaths;
+
 
     pub fn cz2_free_zpaths(paths: Cz2ZPaths);
     pub fn cz2_free_wave_clip(wc: Cz2WaveClip);

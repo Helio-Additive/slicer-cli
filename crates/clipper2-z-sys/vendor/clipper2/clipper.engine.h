@@ -15,7 +15,11 @@
 #include <functional>
 #include <memory>
 
+#ifdef USINGZ
 namespace Clipper2ZSys {
+#else
+namespace Clipper2ZSys {
+#endif
 
 	struct Scanline;
 	struct IntersectNode;
@@ -326,6 +330,15 @@ namespace Clipper2ZSys {
 			//Even levels except level 0
 			return lvl && !(lvl & 1);
 		}
+        template<typename T>
+        static double Clipper2ZSysArea(const Path<T> &poly)
+        {
+#ifdef USINGZ
+            return Clipper2ZSys::Area<T>(poly);
+#else
+            return Clipper2ZSys::Area<T>(poly);
+#endif
+        }
 	};
 
 	typedef typename std::vector<std::unique_ptr<PolyPath64>> PolyPath64List;
@@ -375,8 +388,7 @@ namespace Clipper2ZSys {
 
 		double Area() const
 		{
-			return std::accumulate(childs_.cbegin(), childs_.cend(),
-				Clipper2ZSys::Area<int64_t>(polygon_),
+			return std::accumulate(childs_.cbegin(), childs_.cend(), Clipper2ZSysArea<int64_t>(polygon_),
 				[](double a, const auto& child) {return a + child->Area(); });
 		}
 
@@ -450,8 +462,7 @@ namespace Clipper2ZSys {
 
 		double Area() const
 		{
-			return std::accumulate(childs_.begin(), childs_.end(),
-				Clipper2ZSys::Area<double>(polygon_),
+			return std::accumulate(childs_.begin(), childs_.end(), Clipper2ZSysArea<double>(polygon_),
 				[](double a, const auto& child) {return a + child->Area(); });
 		}
 	};

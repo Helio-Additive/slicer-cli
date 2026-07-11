@@ -12,8 +12,11 @@
 
 #include "clipper2/clipper.core.h"
 
-namespace Clipper2ZSys
-{
+#ifdef USINGZ
+namespace Clipper2ZSys {
+#else
+namespace Clipper2ZSys {
+#endif
 
   namespace detail
   {

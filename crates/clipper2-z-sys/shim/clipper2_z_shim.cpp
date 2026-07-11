@@ -147,6 +147,35 @@ extern "C" Cz2WaveClip cz2_intersect_open_z(const int64_t *src_xyz, const int32_
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// R196: cz2_pl_open — faithful Clipper2Utils.cpp _clipper2_pl_open
+// (Clipper2Utils.cpp:119-136) on the NATIVE Clipper2 1.5.2 (this crate's
+// vendored copy tracks the reference tree; clipper2c-sys ships 1.5.4 whose
+// open-path clipping differs). clip_type: 0 = Intersection, 1 = Difference.
+// Output = closed solution paths then open solution paths, verbatim order.
+// z values are ignored by this entry (callers pass z=0).
+// ---------------------------------------------------------------------------
+extern "C" Cz2ZPaths cz2_pl_open(int32_t clip_type,
+                                 const int64_t *src_xyz, const int32_t *src_lens, int32_t src_num,
+                                 const int64_t *clip_xyz, const int32_t *clip_lens, int32_t clip_num) {
+    Paths64 src = read_zpaths(src_xyz, src_lens, src_num);    // open subject
+    Paths64 clip = read_zpaths(clip_xyz, clip_lens, clip_num); // closed clip
+
+    Clipper64 clipper;
+    clipper.AddOpenSubject(src);
+    clipper.AddClip(clip);
+
+    Paths64 solution, solution_open;
+    clipper.Execute(clip_type == 0 ? ClipType::Intersection : ClipType::Difference,
+                    FillRule::NonZero, solution, solution_open);
+
+    Paths64 out;
+    out.reserve(solution.size() + solution_open.size());
+    for (auto &pth : solution) out.emplace_back(std::move(pth));
+    for (auto &pth : solution_open) out.emplace_back(std::move(pth));
+    return marshal_zpaths(out);
+}
+
 extern "C" void cz2_free_zpaths(Cz2ZPaths paths) {
     std::free(paths.coords);
     std::free(paths.path_lens);
