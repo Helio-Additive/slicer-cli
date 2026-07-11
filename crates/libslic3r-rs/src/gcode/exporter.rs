@@ -701,7 +701,12 @@ pub fn extrude_collection(
         // C++ GCode::extrude_entity() calls travel_to() before extruding each
         // entity. Without this, consecutive entities in the same collection are
         // connected by a spurious extrusion line across open space.
-        if let Some(first_pt) = get_entity_first_point(entity) {
+        let travel_target = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            travel_target_for_entity(entity, writer_last_pos(writer))
+        } else {
+            get_entity_first_point(entity)
+        };
+        if let Some(first_pt) = travel_target {
             let pos = writer.position();
             let tx = crate::unscale(first_pt.x());
             let ty = crate::unscale(first_pt.y());
@@ -814,6 +819,28 @@ pub fn extrude_collection(
 ///
 /// `writer.position()` is unscaled mm (`PointF`); chaining operates in scaled
 /// i64 coordinates, so convert with `scale()`.
+/// R211: the travel TARGET for an entity. Native _extrude seam-splits loops
+/// BEFORE the travel (GCode.cpp:5085-5090), so the travel goes to the SEAM,
+/// not the loop's natural first vertex. For aligned seams place_seam is
+/// position-independent (final_seam_position), so resolving it here and again
+/// inside extrude_loop yields the same point.
+fn travel_target_for_entity(
+    entity: &crate::extrusion_entity::ExtrusionEntityType,
+    last_pos: Point,
+) -> Option<Point> {
+    use crate::extrusion_entity::ExtrusionEntityType;
+    if let ExtrusionEntityType::Loop(l) = entity {
+        let polygon = l.as_polygon();
+        if let Some(seam) = active_place_seam(&polygon, last_pos) {
+            // split_at snaps to the nearest loop point within epsilon; the
+            // travel target is the seam point itself (native: loop.first_point()
+            // AFTER split == the seam split vertex).
+            return Some(seam);
+        }
+    }
+    get_entity_first_point(entity)
+}
+
 fn writer_last_pos(writer: &GCodeWriter) -> Point {
     let p = writer.position();
     Point::new(scale(p.x), scale(p.y))
@@ -1319,7 +1346,12 @@ pub fn extrude_perimeters(
     // Retract and travel to first perimeter point
     writer.retract();
     writer.set_travel_acceleration(6000.0);
-    if let Some(first_pt) = get_entity_first_point(&region.perimeters.entities[0]) {
+    let first_target = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        travel_target_for_entity(&region.perimeters.entities[0], writer_last_pos(writer))
+    } else {
+        get_entity_first_point(&region.perimeters.entities[0])
+    };
+    if let Some(first_pt) = first_target {
         let target_x = crate::unscale(first_pt.x());
         let target_y = crate::unscale(first_pt.y());
         if crate::gcode::writer::lift_faithful_gate() {
@@ -1401,7 +1433,13 @@ pub fn extrude_infill(
         );
 
         // Retract and travel to the (now reordered) first infill point.
-        let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) else {
+        let Some(first_pt) = extrusions.first().and_then(|e| {
+            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                travel_target_for_entity(e, writer_last_pos(writer))
+            } else {
+                get_entity_first_point(e)
+            }
+        }) else {
             continue;
         };
         // ZSMOOTH_FAITHFUL: bucket-start retract through faithful
@@ -1488,7 +1526,11 @@ pub fn extrude_perimeters_entities(
     // needs_retraction (GCode.cpp:6964) — the unconditional retract here was
     // the outer-wall->gap wipe excess (R167). Legacy path keeps the
     // unconditional behavior (byte-locked).
-    let first_pt_opt = get_entity_first_point(&entities[0]);
+    let first_pt_opt = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        travel_target_for_entity(&entities[0], writer_last_pos(writer))
+    } else {
+        get_entity_first_point(&entities[0])
+    };
     let do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
         match first_pt_opt {
             Some(fp) => {
@@ -1589,7 +1631,13 @@ pub fn extrude_infill_entities(
         }
         let m_last_pos = writer_last_pos(writer);
         crate::shortest_path::chain_and_reorder_extrusion_entities(&mut extrusions, Some(&m_last_pos));
-        let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) else {
+        let Some(first_pt) = extrusions.first().and_then(|e| {
+            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                travel_target_for_entity(e, writer_last_pos(writer))
+            } else {
+                get_entity_first_point(e)
+            }
+        }) else {
             continue;
         };
         // ZSMOOTH_FAITHFUL: bucket-start retract through faithful
@@ -1738,7 +1786,13 @@ pub fn extrude_support(
 
     // First positioning travel before the chained non-ironing group, matching
     // the prior behaviour (retract + travel to the reordered first point).
-    if let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) {
+    if let Some(first_pt) = extrusions.first().and_then(|e| {
+        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            travel_target_for_entity(e, writer_last_pos(writer))
+        } else {
+            get_entity_first_point(e)
+        }
+    }) {
         // ZSMOOTH_FAITHFUL: faithful needs_retraction (R167).
         {
             let __zs_do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
