@@ -390,7 +390,18 @@ impl PerimeterGenerator {
 
         // C++ process_classic() loops: for (const Surface &surface : this->slices->surfaces)
         // Each surface is processed independently with its own last/contours/holes state.
-        for slice in slices {
+        // R209: native REORDERS the surfaces first ("reorder the surface to
+        // reduce the travel time", PerimeterGenerator.cpp:915-921):
+        // chain_expolygons = KD-greedy chain over bbox centers. Without it the
+        // island emission order diverges and 332 extra Outer->Outer retractions
+        // appear (loop-to-loop hops exceed retraction_minimum_travel).
+        let order: Vec<usize> = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            crate::shortest_path::chain_expolygons(&slices.to_vec())
+        } else {
+            (0..slices.len()).collect()
+        };
+        for &slice_idx in &order {
+            let slice = &slices[slice_idx];
             let surface_result = self.generate_classic_one(slice);
             // z-continuity metadata: rebase per-surface node/entity indices onto
             // the merged result (LESSON R141: per-surface merges silently drop

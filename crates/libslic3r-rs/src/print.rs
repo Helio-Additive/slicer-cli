@@ -2187,6 +2187,19 @@ fn emit_layer_by_island(
         }
     };
 
+    // R209: native emits perimeter collections in entities ORDER (one
+    // collection per island, GCode.cpp:4388) — which is the chain_expolygons
+    // order from PerimeterGenerator (surface reorder). Record each island's
+    // FIRST APPEARANCE among the perimeter entities and emit in that order.
+    let mut island_emit_order: Vec<usize> = Vec::new();
+    let mut find_island = |p: &crate::geometry::Point| -> usize {
+        for &ti in test_order.iter() {
+            if point_inside(ti, p) {
+                return ti;
+            }
+        }
+        n_slices
+    };
     for (region_id, region) in layer.regions().iter().enumerate() {
         for (ent_idx, ent) in region.perimeters.entities.iter().enumerate() {
             if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
@@ -2195,6 +2208,10 @@ fn emit_layer_by_island(
                     .get(ent_idx)
                     .copied()
                     .unwrap_or(-1);
+                let isl = find_island(&fp);
+                if !island_emit_order.contains(&isl) {
+                    island_emit_order.push(isl);
+                }
                 assign(&mut islands, region_id, fp, ent.clone(), 0, node_id);
             }
         }
@@ -2212,8 +2229,21 @@ fn emit_layer_by_island(
         }
     }
 
-    // Emit per-island (natural slice order, then catch-all), per region.
-    for island in &islands {
+    // Emit per-island, per region. Under the gate, use the first-appearance
+    // (chain_expolygons) order; otherwise the natural slice order.
+    let emit_order: Vec<usize> = if zsmooth_gate {
+        let mut v = island_emit_order.clone();
+        for i in 0..islands.len() {
+            if !v.contains(&i) {
+                v.push(i);
+            }
+        }
+        v
+    } else {
+        (0..islands.len()).collect()
+    };
+    for &isl_idx in &emit_order {
+        let island = &islands[isl_idx];
         for bucket in island {
             let do_perims = |w: &mut crate::gcode::GCodeWriter| {
                 // Gated `; COOLING_NODE:` emission (GCode.cpp:5738-5747) —
