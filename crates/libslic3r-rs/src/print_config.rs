@@ -2492,7 +2492,27 @@ impl PrintConfig {
                 true
             }
 
-            _ => false,
+            _ => {
+                // ZSMOOTH_FAITHFUL: delegate a VETTED set of keys to
+                // apply_key_value (R170 audit: the two config-application fns
+                // have divergent coverage; a blanket fallback measured +119 —
+                // land keys selectively against the oracle).
+                if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                    && matches!(
+                        key,
+                        "initial_layer_infill_speed"
+                            | "filament_max_volumetric_speed"
+                            | "vertical_shell_speed"
+                            | "reduce_fan_stop_start_freq"
+                            | "retraction_minimum_travel"
+                            | "no_slow_down_for_cooling_on_outwalls"
+                    )
+                {
+                    self.apply_key_value(key, value)
+                } else {
+                    false
+                }
+            }
         }
     }
 }
@@ -3111,7 +3131,27 @@ impl PrintObjectConfig {
                 true
             }
 
-            _ => false,
+            _ => {
+                // ZSMOOTH_FAITHFUL: delegate a VETTED set of keys to
+                // apply_key_value (R170 audit: the two config-application fns
+                // have divergent coverage; a blanket fallback measured +119 —
+                // land keys selectively against the oracle).
+                if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                    && matches!(
+                        key,
+                        "initial_layer_infill_speed"
+                            | "filament_max_volumetric_speed"
+                            | "vertical_shell_speed"
+                            | "reduce_fan_stop_start_freq"
+                            | "retraction_minimum_travel"
+                            | "no_slow_down_for_cooling_on_outwalls"
+                    )
+                {
+                    self.apply_key_value(key, value)
+                } else {
+                    false
+                }
+            }
         }
     }
 }
