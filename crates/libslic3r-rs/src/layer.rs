@@ -615,19 +615,30 @@ impl LayerRegion {
             // @ 1µm, which over-segments the gap-region contours feeding medial_axis.
             // `diff_ex` also routes through the vertex-exact vendored ClipperLib
             // (difference_clib) so the gap band contours are not re-segmented.
-            let opened_min = offset2_clib(
-                &result.gap_fills,
-                min / 2.0,
-                min / 2.0,
-                OffsetJoinType::Miter,
-            );
-            let wide_part = offset2_clib(
-                &result.gap_fills,
-                max / 2.0,
-                max / 2.0 + CLIPPER_SAFETY_OFFSET,
-                OffsetJoinType::Miter,
-            );
-            let mut gaps_ex = difference_clib(&opened_min, &wide_part);
+            // R173: native runs the collapse PER SURFACE (PG.cpp:1327 sits
+            // inside the surface loop) — the merged-set collapse lets nearby
+            // islands' gaps interact through the ±max/2 offsets (L0 oracle:
+            // 23-vs-48 polylines from identical inputs). Gated F1_UNION;
+            // default keeps the merged collapse (byte-locked).
+            let gap_sets: Vec<ExPolygons> = if std::env::var("F1_UNION").is_ok()
+                && !result.gap_fills_per_surface.is_empty()
+            {
+                result.gap_fills_per_surface.clone()
+            } else {
+                vec![result.gap_fills.clone()]
+            };
+            let mut gaps_ex: ExPolygons = Vec::new();
+            for gap_set in &gap_sets {
+                let opened_min =
+                    offset2_clib(gap_set, min / 2.0, min / 2.0, OffsetJoinType::Miter);
+                let wide_part = offset2_clib(
+                    gap_set,
+                    max / 2.0,
+                    max / 2.0 + CLIPPER_SAFETY_OFFSET,
+                    OffsetJoinType::Miter,
+                );
+                gaps_ex.extend(difference_clib(&opened_min, &wide_part));
+            }
 
             // PerimeterGenerator.cpp:914 — surface_simplify_resolution =
             //   (enable_arc_fitting && fuzzy_skin == None) ? 0.2 * m_scaled_resolution

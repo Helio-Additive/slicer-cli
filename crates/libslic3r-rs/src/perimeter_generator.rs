@@ -326,6 +326,13 @@ pub struct PerimeterResult {
     /// Gap fill areas
     pub gap_fills: ExPolygons,
 
+    /// Per-surface gap-fill areas in surface order (R173): native runs the
+    /// gap collapse + medial axis PER SURFACE (PG.cpp:1327 inside the surface
+    /// loop) — collapsing the merged set lets nearby islands' gaps interact
+    /// through the ±max/2 offsets (L0: 23-vs-48 polylines from identical
+    /// inputs). Consumed by the gated layer-level gap block.
+    pub gap_fills_per_surface: Vec<ExPolygons>,
+
     /// The grown top-band (offset_ex(top_infill_exp, infill_peri_overlap),
     /// PerimeterGenerator.cpp:1411) that was unioned into infill_area. Passed
     /// separately so the layer-level gap-footprint trim can restore it: native
@@ -347,6 +354,7 @@ impl PerimeterResult {
             infill_area: Vec::new(),
             no_overlap_area: Vec::new(),
             gap_fills: Vec::new(),
+            gap_fills_per_surface: Vec::new(),
             top_band: Vec::new(),
             loop_nodes: Vec::new(),
         }
@@ -401,6 +409,11 @@ impl PerimeterGenerator {
                 .extend(surface_result.entities.entities);
             result.infill_area.extend(surface_result.infill_area);
             result.no_overlap_area.extend(surface_result.no_overlap_area);
+            if !surface_result.gap_fills.is_empty() {
+                result
+                    .gap_fills_per_surface
+                    .push(surface_result.gap_fills.clone());
+            }
             result.gap_fills.extend(surface_result.gap_fills);
             result.top_band.extend(surface_result.top_band);
         }
