@@ -683,6 +683,27 @@ impl PerimeterGenerator {
                     }
                 }
 
+                if std::env::var("PERIDBG").is_ok() {
+                    let mut h: u64 = 1469598103934665603;
+                    let mut np = 0usize;
+                    for ex in &offsets {
+                        for p in ex.contour.points() {
+                            h ^= p.x as u64;
+                            h = h.wrapping_mul(1099511628211);
+                            h ^= p.y as u64;
+                            h = h.wrapping_mul(1099511628211);
+                            np += 1;
+                        }
+                    }
+                    eprintln!(
+                        "PERIDBG-R layer={} nex={} npts={} h={:x} nsw={}",
+                        self.config.layer_id,
+                        offsets.len(),
+                        np,
+                        h,
+                        offsets_with_smaller_width.len()
+                    );
+                }
                 // TODO: Port spiral vase mode (lines 997-1008)
             } else {
                 /// PerimeterGenerator.cpp:1012
