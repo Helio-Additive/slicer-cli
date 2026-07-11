@@ -2153,16 +2153,12 @@ impl SeamPlacer {
     /// m_center_offset ints recovered exactly from slice_center_offset
     /// (cx_mm = int * SCALING_FACTOR, print_object.rs:453).
     fn seam_frame_offset(po: &PrintObject) -> Option<(i64, i64)> {
-        // R198: ALWAYS None. R191 added a rust->centered translation on the
-        // assumption that perimeter entities live in the uncentered frame; the
-        // R197 bit-identity proof (PERIENT 239/240 == native) shows entities,
-        // lslices and exporter loops ALL live in the CENTERED frame under
-        // SLICE_CENTER — the translation double-shifted every candidate by
-        // -0.8245mm (post-R197 census: 0% exact with shift, 68% without).
-        // The occlusion-mesh centering (R188, compute_global_occlusion) is the
-        // only frame fix that was real, and it stays.
-        let _ = po;
-        None
+        if std::env::var("ZSMOOTH_FAITHFUL").is_err() {
+            return None;
+        }
+        let (cx, cy) = po.slice_center_offset;
+        let sf = crate::libslic3r::SCALING_FACTOR;
+        Some(((cx / sf).round() as i64, (cy / sf).round() as i64))
     }
 
     pub fn gather_seam_candidates(
