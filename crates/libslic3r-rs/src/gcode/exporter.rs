@@ -307,6 +307,16 @@ pub fn extrude_loop(
     // path (the placer already steered the seam off overhangs). The epsilon is
     // C++'s `scaled<double>(0.0015)` snapping tolerance.
     loop_copy.split_at(&seam_point, false, scale(0.0015) as f64);
+    if std::env::var("SPLITDBG2").is_ok() {
+        let post = loop_copy
+            .paths
+            .first()
+            .and_then(|pa| pa.polyline.points().first().copied());
+        eprintln!(
+            "SPLITDBG2-R prefirst=({},{}) seam=({},{}) postfirst={:?}",
+            polygon.points()[0].x, polygon.points()[0].y, seam_point.x, seam_point.y, post
+        );
+    }
 
     // C++ reference: GCode.cpp:5107-5117
     // C++: const double seam_gap = scale_(EXTRUDER_CONFIG(nozzle_diameter)) * (m_config.seam_gap.value / 100);
