@@ -1204,22 +1204,74 @@ fn eval_condition(cond: &str, resolve: &dyn Fn(&str) -> Option<String>) -> bool 
         cond
     };
 
-    // Handle OR (||)
-    if let Some(pos) = cond.find(")||(") {
-        let left = &cond[..pos];
-        let right = &cond[pos + 4..];
-        return eval_condition(left, resolve) || eval_condition(right, resolve);
+    // R224 gate: the corrected {if} evaluator (paren-aware &&/|| splits +
+    // `!` negation) matches native PlaceholderParser but flips branches the
+    // old evaluator got wrong, so the default path keeps the legacy behavior
+    // to preserve the byte-lock.
+    static COND_FAITHFUL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let faithful = *COND_FAITHFUL.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
+
+    // R224: connective splits must ignore separators nested inside parens —
+    // `!(a && b) && c` splits at the SECOND &&, not the one inside the group
+    // (the naive find() split mis-parsed the timelapse template's
+    // `!(has_timelapse_safe_pos && timelapse_type == 0)` guard).
+    let find_top_level = |needle: &str| -> Option<usize> {
+        let bytes = cond.as_bytes();
+        let nb = needle.as_bytes();
+        let mut depth = 0i32;
+        let mut i = 0;
+        while i + nb.len() <= bytes.len() {
+            match bytes[i] {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                _ => {
+                    if depth == 0 && &bytes[i..i + nb.len()] == nb {
+                        return Some(i);
+                    }
+                }
+            }
+            i += 1;
+        }
+        None
+    };
+    if faithful {
+        // Handle OR (||) — lower precedence than &&
+        if let Some(pos) = find_top_level("||") {
+            let left = &cond[..pos];
+            let right = &cond[pos + 2..];
+            return eval_condition(left, resolve) || eval_condition(right, resolve);
+        }
+        // Handle AND (&&)
+        if let Some(pos) = find_top_level("&&") {
+            let left = &cond[..pos];
+            let right = &cond[pos + 2..];
+            return eval_condition(left, resolve) && eval_condition(right, resolve);
+        }
+    } else {
+        // Legacy (default-path) splits — byte-locked behavior.
+        if let Some(pos) = cond.find(")||(") {
+            let left = &cond[..pos];
+            let right = &cond[pos + 4..];
+            return eval_condition(left, resolve) || eval_condition(right, resolve);
+        }
+        if let Some(pos) = cond.find("||") {
+            let left = &cond[..pos];
+            let right = &cond[pos + 2..];
+            return eval_condition(left, resolve) || eval_condition(right, resolve);
+        }
+        if let Some(pos) = cond.find("&&") {
+            let left = &cond[..pos];
+            let right = &cond[pos + 2..];
+            return eval_condition(left, resolve) && eval_condition(right, resolve);
+        }
     }
-    if let Some(pos) = cond.find("||") {
-        let left = &cond[..pos];
-        let right = &cond[pos + 2..];
-        return eval_condition(left, resolve) || eval_condition(right, resolve);
-    }
-    // Handle AND (&&)
-    if let Some(pos) = cond.find("&&") {
-        let left = &cond[..pos];
-        let right = &cond[pos + 2..];
-        return eval_condition(left, resolve) && eval_condition(right, resolve);
+
+    // R224: logical negation — `!var` / `!(expr)`. Must be checked AFTER the
+    // &&/|| splits so `!` binds tighter than the connectives (`!a && b` is
+    // `(!a) && b`, not `!(a && b)` — the timelapse template's
+    // `!spiral_mode && !(has_timelapse_safe_pos && ...)` guards rely on this).
+    if faithful && cond.starts_with('!') && !cond.starts_with("!=") {
+        return !eval_condition(&cond[1..], resolve);
     }
 
     // String equality: var=="value"

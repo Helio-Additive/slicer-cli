@@ -566,6 +566,23 @@ impl Print {
                     let mut tl_settings = settings.clone();
                     tl_settings["layer_z"] = serde_json::Value::String(format!("{}", print_z));
                     tl_settings["layer_num"] = serde_json::json!(layer_index);
+                    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                        // R224: native injects the TimelapsePosPicker outputs
+                        // (GCode.cpp:4522-4534). For this single-object job the
+                        // picker resolves a CONSTANT safe pos (X0 Y83 on all
+                        // 240 layers) — full picker port is future work; these
+                        // drive the {if has_timelapse_safe_pos ...} branch that
+                        // rust previously missed (leaving M9711 placeholders
+                        // unsubstituted + the wrong-branch whitespace).
+                        tl_settings["has_timelapse_safe_pos"] = serde_json::json!(1);
+                        tl_settings["timelapse_type"] = serde_json::json!(0);
+                        tl_settings["timelapse_pos_x"] = serde_json::json!(0);
+                        tl_settings["timelapse_pos_y"] = serde_json::json!(83);
+                        tl_settings["most_used_physical_extruder_id"] = serde_json::json!(0);
+                        tl_settings["curr_physical_extruder_id"] = serde_json::json!(0);
+                        tl_settings["spiral_mode"] = serde_json::json!(0);
+                        tl_settings["max_layer_z"] = serde_json::Value::String(format!("{}", print_z));
+                    }
                     let processed =
                         crate::gcode::process_gcode_template(tl_tmpl, &tl_settings, &self.config);
                     writer.write_raw_content(&processed);
