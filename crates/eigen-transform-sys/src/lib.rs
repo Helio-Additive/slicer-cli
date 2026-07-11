@@ -107,6 +107,18 @@ unsafe extern "C" {
         out_n_tris: *mut i64,
     ) -> i64;
 
+    fn secol_raycast_visibility(
+        verts: *const f32,
+        n_verts: i64,
+        indices: *const i32,
+        n_tris: i64,
+        sample_positions: *const f32,
+        sample_normals: *const f32,
+        n_samples: i64,
+        sqr_rays_per_sample_point: i64,
+        out_visibility: *mut f32,
+    );
+
     fn secol_sample_uniform(
         verts: *const f32,
         n_verts: i64,
@@ -195,6 +207,36 @@ pub fn min_vertex_dots(verts: &[f32], indices: &[i32]) -> Vec<f32> {
             n_verts,
             indices.as_ptr(),
             n_tris,
+            out.as_mut_ptr(),
+        );
+    }
+    out
+}
+
+/// R190: native `raycast_visibility` (SeamPlacer.cpp:135-214, no-negative-volumes
+/// branch) — AABBTreeIndirect build + f64-ray first-hit + Frame/hemisphere all in
+/// native code. 112/750k edge-grazing ray decisions differed in the rust port.
+pub fn raycast_visibility_native(
+    verts: &[f32],
+    indices: &[i32],
+    sample_positions: &[f32],
+    sample_normals: &[f32],
+    sqr_rays_per_sample_point: usize,
+) -> Vec<f32> {
+    assert!(verts.len() % 3 == 0 && indices.len() % 3 == 0);
+    assert_eq!(sample_positions.len(), sample_normals.len());
+    let n_samples = sample_positions.len() / 3;
+    let mut out = vec![0.0f32; n_samples];
+    unsafe {
+        secol_raycast_visibility(
+            verts.as_ptr(),
+            (verts.len() / 3) as i64,
+            indices.as_ptr(),
+            (indices.len() / 3) as i64,
+            sample_positions.as_ptr(),
+            sample_normals.as_ptr(),
+            n_samples as i64,
+            sqr_rays_per_sample_point as i64,
             out.as_mut_ptr(),
         );
     }

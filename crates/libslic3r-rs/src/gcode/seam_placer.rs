@@ -536,6 +536,41 @@ pub fn raycast_visibility(
     negative_volumes_start_index: usize,
 ) -> Vec<f32> {
     use crate::geometry::Point3F;
+    // R190 (ZSMOOTH_FAITHFUL): run the whole raycast through the native-code
+    // shim (AABBTreeIndirect + Frame + hemisphere dirs) — 112/750k edge-grazing
+    // ray decisions differed between the rust port and native Eigen/igl codegen.
+    // Benchy has no negative volumes; fall through to the rust port otherwise.
+    if negative_volumes_start_index >= triangles.indices.len()
+        && std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+    {
+        let verts_flat: Vec<f32> = triangles
+            .vertices
+            .iter()
+            .flat_map(|v| [v.x, v.y, v.z])
+            .collect();
+        let idx_flat: Vec<i32> = triangles
+            .indices
+            .iter()
+            .flat_map(|t| [t.x, t.y, t.z])
+            .collect();
+        let pos_flat: Vec<f32> = samples
+            .positions
+            .iter()
+            .flat_map(|p| [p.x, p.y, p.z])
+            .collect();
+        let nrm_flat: Vec<f32> = samples
+            .normals
+            .iter()
+            .flat_map(|p| [p.x, p.y, p.z])
+            .collect();
+        return eigen_transform_sys::raycast_visibility_native(
+            &verts_flat,
+            &idx_flat,
+            &pos_flat,
+            &nrm_flat,
+            SQR_RAYS_PER_SAMPLE_POINT,
+        );
+    }
     // SeamPlacer.cpp:143 — prepare uniform samples of a hemisphere
     let step_size = 1.0 / SQR_RAYS_PER_SAMPLE_POINT as f32;
     // SeamPlacer.cpp:144
