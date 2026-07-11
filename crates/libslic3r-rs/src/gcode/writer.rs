@@ -751,6 +751,11 @@ impl GCodeWriter {
         self.last_emitted_f = feedrate;
     }
 
+    /// R220: config accessor for exporter-side seam-gap math.
+    pub fn config_ref(&self) -> &PrintConfig {
+        &self.config
+    }
+
     /// R219: native replaces m_wipe.path per _extrude (GCode.cpp:5600-5610);
     /// the accumulated path must span only the CURRENT loop/path entity.
     pub fn reset_wipe_path(&mut self) {

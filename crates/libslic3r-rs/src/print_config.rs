@@ -3282,7 +3282,8 @@ impl Default for PrintObjectConfig {
             scarf_seam_min_length: 0.0,
             scarf_seam_conditional: false,
             scarf_angle_threshold: 0.0,
-            seam_gap: 0.0,
+            // PrintConfig.cpp:4657-4665 — coPercent, default 15 (% of nozzle).
+            seam_gap: 15.0,
 
             // Brim
             brim_type: BrimType::NoBrim,

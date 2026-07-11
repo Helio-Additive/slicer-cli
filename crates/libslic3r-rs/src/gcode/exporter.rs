@@ -326,9 +326,24 @@ pub fn extrude_loop(
     // C++: ...
     // C++: loop.clip_end(clip_length, &paths);
     // C++: if (paths.empty()) return "";
-    // TODO: Implement seam gap clipping (GCode.cpp:5107-5117)
-    // For now, use the paths directly without clipping
-    let paths = &loop_copy.paths;
+    // R220: seam-gap clip (GCode.cpp:5107-5117): clip_length =
+    // scale_(nozzle_diameter) * seam_gap% — the loop ends ~0.06mm before the
+    // seam (native L24 inner ends at -6.323 vs rust's full -6.383).
+    let clipped_paths: Vec<crate::extrusion_entity::ExtrusionPath>;
+    let paths = if crate::gcode::writer::lift_faithful_gate() {
+        let nozzle = writer.config_ref().nozzle_diameter;
+        let seam_gap_pct = config.seam_gap;
+        let clip_length = crate::scale(nozzle) as f64 * (seam_gap_pct / 100.0);
+        let mut tmp = Vec::new();
+        loop_copy.clip_end(clip_length, &mut tmp);
+        if tmp.is_empty() {
+            return;
+        }
+        clipped_paths = tmp;
+        &clipped_paths
+    } else {
+        &loop_copy.paths
+    };
 
     // C++ reference: GCode.cpp:5119-5122
     // C++: double small_peri_speed=-1;
