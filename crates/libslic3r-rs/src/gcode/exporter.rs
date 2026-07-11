@@ -694,7 +694,28 @@ pub fn extrude_collection(
         // extrusion moves, so the acceleration-aware GCodeProcessor estimator paid
         // huge accel/decel ramp cost targeting an unreachable 1000 mm/s on short
         // extrusion segments (rust 1h50m vs native 43m).
-        writer.set_speed(feature_speed * 60.0, cooling_comment);
+        // ZSMOOTH_FAITHFUL: native never emits a collection-level feature-speed
+        // F before a perimeter loop — its first F is the FIRST PATH's
+        // overhang-corrected speed (GCode.cpp extrude_loop emits per-path F via
+        // _extrude; e.g. L2 outwall starts F9300 = deg-1.3 speed, not F12000).
+        // The rust per-path set_speed in extrude_loop always re-asserts F for
+        // perimeter roles under enable_overhang_speed, so the pre-set is safely
+        // skippable there. Default path keeps the pre-set (byte-locked).
+        let skip_pre_speed = std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+            && config.enable_overhang_speed
+            && matches!(
+                entity,
+                crate::extrusion_entity::ExtrusionEntityType::Loop(_)
+            )
+            && matches!(
+                entity_role,
+                ExtrusionRole::ExternalPerimeter
+                    | ExtrusionRole::Perimeter
+                    | ExtrusionRole::OverhangPerimeter
+            );
+        if !skip_pre_speed {
+            writer.set_speed(feature_speed * 60.0, cooling_comment);
+        }
 
         /// Recursively extrude the entity
         /// GCode.cpp:2870-2880

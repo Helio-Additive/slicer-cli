@@ -1789,7 +1789,19 @@ impl GCodeWriter {
         // travel feedrate from leaking onto the following extrusion moves.
         if (self.last_emitted_f - adjusted_speed).abs() > 0.01 {
             self.last_emitted_f = adjusted_speed;
-            let mut line = format!("G1 F{:.0}", adjusted_speed);
+            // Native GCodeWriter::set_speed formats F via GCodeG1Formatter::emit_f
+            // (XYZF_EXPORT_DIGITS = 3, trailing zeros/dot trimmed) — fractional
+            // smooth-ramp speeds print as e.g. "F8828.637" and pass through the
+            // cooling rewrite untouched (GCodeEditor only re-formats slowed
+            // lines, as integers). Gated: default keeps the integer format
+            // (byte-locked 147987).
+            let f_str = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                let t = format!("{:.3}", adjusted_speed);
+                t.trim_end_matches('0').trim_end_matches('.').to_string()
+            } else {
+                format!("{:.0}", adjusted_speed)
+            };
+            let mut line = format!("G1 F{}", f_str);
             if !comment.is_empty() {
                 // C++ appends cooling markers (;_EXTRUDE_SET_SPEED etc.) directly
                 // without a " ; " prefix. Only add " ; " for regular comments.
