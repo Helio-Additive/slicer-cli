@@ -3522,16 +3522,14 @@ fn chain_monotonic_regions(
     if n == 0 {
         return Vec::new();
     }
-    // FIDELITY-NOTE (R148): native has NO n==1 shortcut — its ACO runs even for a
-    // single region and picks `flipped` by path COST (native single-region chains
-    // split 70F/67 on benchy). This hardcoded flipped=false reverses the whole
-    // monotonic sweep on ~half the top/bottom solid fills (L196 chain runs
-    // back-to-front). Removing the shortcut exposes a SECOND bug: the rust ant
-    // loop never initializes the first region's link, so n==1 yields an EMPTY
-    // path (silent line loss). The faithful fix = port native's ant-path
-    // initialization (FillRectilinear.cpp:2410-2460 first-pick + flipped cost),
-    // then delete this shortcut.
-    if n == 1 {
+    // R149: native has NO n==1 shortcut — its ACO runs even for a single region
+    // and picks `flipped` by path COST via the deterministic mt19937_64 flip
+    // draws (native single-region chains split 70F/67 on benchy; L196 chain ran
+    // back-to-front under the legacy flipped=false shortcut). Under
+    // TOPFILL_FAITHFUL the full ant loop runs for n==1 too; the legacy shortcut
+    // is kept on the default path only for byte-lock.
+    let faithful = std::env::var("TOPFILL_FAITHFUL").is_ok();
+    if n == 1 && !faithful {
         return vec![MonotonicRegionLink {
             region_idx: 0,
             flipped: false,
@@ -3667,6 +3665,13 @@ fn chain_monotonic_regions(
     let mut rng = crate::mt19937_64::Mt19937_64::new(5489);
     let mut num_rounds_no_change = 0;
 
+    // Hoisted like C++ (`path` lives across ants/rounds): after the
+    // std::mem::swap on improvement, `path` holds the PREVIOUS best — and
+    // native's end-of-round pheromone reinforcement iterates over THAT `path`
+    // (FillRectilinear.cpp:2643 uses `path`, not `best_path`, despite the
+    // comment), so the post-swap content is observable.
+    let mut path: Vec<MonotonicRegionLink> = Vec::with_capacity(n);
+
     for _round in 0..num_rounds {
         if num_rounds_no_change >= num_rounds_no_change_exit {
             break;
@@ -3674,7 +3679,7 @@ fn chain_monotonic_regions(
 
         let mut improved = false;
         for _ant in 0..num_ants {
-            let mut path: Vec<MonotonicRegionLink> = Vec::with_capacity(n);
+            path.clear();
             let mut queue = queue_initial.clone();
             let mut left_unprocessed = left_neighbors_unprocessed_initial.clone();
 
@@ -3853,15 +3858,19 @@ fn chain_monotonic_regions(
             }
         }
 
-        // Reinforce the path pheromones with the best path.
-        // FillRectilinear.cpp:2640-2645 — total_cost = best_path_length + EPSILON (1e-4).
-        if !best_path.is_empty() {
+        // Reinforce the path pheromones. FillRectilinear.cpp:2640-2645 —
+        // total_cost = best_path_length + EPSILON (1e-4), but the loop iterates
+        // `path` (post-swap = last ant's path, or the PREVIOUS best if the last
+        // ant improved), NOT `best_path`. Faithful under TOPFILL_FAITHFUL;
+        // legacy default kept reinforcing best_path (byte-locked).
+        let reinforce_src: &[MonotonicRegionLink] = if faithful { &path } else { &best_path };
+        if !reinforce_src.is_empty() {
             let total_cost = best_path_length + 1e-4;
-            for i in 0..best_path.len().saturating_sub(1) {
-                let r_idx = best_path[i].region_idx;
-                let r_flip = best_path[i].flipped;
-                let n_idx = best_path[i + 1].region_idx;
-                let n_flip = best_path[i + 1].flipped;
+            for i in 0..reinforce_src.len().saturating_sub(1) {
+                let r_idx = reinforce_src[i].region_idx;
+                let r_flip = reinforce_src[i].flipped;
+                let n_idx = reinforce_src[i + 1].region_idx;
+                let n_flip = reinforce_src[i + 1].flipped;
                 let p = path_matrix.get(r_idx, r_flip, n_idx, n_flip).pheromone;
                 path_matrix.get_mut(r_idx, r_flip, n_idx, n_flip).pheromone =
                     (1.0 - pheromone_evaporation) * p + pheromone_evaporation / total_cost;
