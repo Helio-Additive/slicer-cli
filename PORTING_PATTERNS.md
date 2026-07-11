@@ -79,6 +79,21 @@ mod-360 (not `90·idx` mod-180); top-surface MonotonicLine sets
 `dont_adjust=true`; the align_to_grid refpt is exactly (0,0) (origin-centered
 object bbox); rasters run over `no_overlap_expolygons`.
 
+## Class 7 — output formatters are fidelity surfaces (R160)
+A correct VALUE behind a lossy output format is still a 100% byte mismatch.
+`writer.set_speed` formatted F as `{:.0}` while native `GCodeG1Formatter::emit_f`
+prints 3 decimals with trailing zeros/dot trimmed — every fractional-F line
+(smooth ramps, overhang interpolation, volumetric caps) was unmatchable even
+where the computed speed was already byte-correct; fixing the FORMAT alone
+closed 16.3k lines (the largest single win of the campaign).
+- ANTI-PATTERN: any `format!("{:.0}")`/rounded emission on a value native prints
+  with `XYZF_EXPORT_DIGITS`/`m_gcode_precision_xyz`-style precision.
+- MAPPING: replicate the native formatter constants exactly (3-decimal + trim
+  for F; check E/XYZ precisions against GCodeFormatter) BEFORE chasing value
+  divergence — cheap to audit, catastrophic to miss.
+- COROLLARY: post-processors may RE-format some lines (native cooling rewrites
+  slowed F as `int(floor(60·f+0.5))`) — match the format PER EMISSION SITE.
+
 ## Process rules (what actually worked for 40+ rounds)
 1. Byte-locked default: every output-changing fix behind an env gate; default
    output checksum-verified after EVERY change (147987 lines / sha 7adae05c).
