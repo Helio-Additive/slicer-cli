@@ -1326,6 +1326,10 @@ pub fn extrude_perimeters_entities(
     config: &crate::print_config::PrintObjectConfig,
     is_first_layer: bool,
     skip_inner_walls: bool,
+    // Per-entity cooling-node ids (ZSMOOTH_FAITHFUL): when Some, a
+    // `; COOLING_NODE: <id>` marker precedes every entity whose id != -1
+    // (GCode.cpp:5738-5747 — native's compare value never updates from -1).
+    cooling_node_ids: Option<&[i32]>,
 ) {
     if entities.is_empty() {
         return;
@@ -1342,6 +1346,21 @@ pub fn extrude_perimeters_entities(
             if get_entity_role(entity) == ExtrusionRole::ExternalPerimeter {
                 let _ = extrude_entity(entity, writer, config, is_first_layer);
             }
+        }
+    } else if let Some(ids) = cooling_node_ids {
+        // Marker-injecting path (gated): per-entity emission, same order and
+        // writer state as the batch path below.
+        for (k, entity) in entities.iter().enumerate() {
+            let id = ids.get(k).copied().unwrap_or(-1);
+            if id != -1 {
+                writer.write_raw(&format!("; COOLING_NODE: {}", id));
+            }
+            let coll = crate::extrusion_entity::ExtrusionEntityCollection {
+                entities: vec![entity.clone()],
+                no_sort: true,
+                ..Default::default()
+            };
+            let _ = extrude_collection(&coll, writer, config, is_first_layer);
         }
     } else {
         let coll = crate::extrusion_entity::ExtrusionEntityCollection {

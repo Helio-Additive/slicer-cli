@@ -1915,6 +1915,7 @@ fn emit_layer_by_island(
     skip_inner_walls: bool,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
+    let zsmooth_gate = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
     let n_slices = layer.lslices.len();
     let n_regions = layer.region_count();
 
@@ -1923,6 +1924,9 @@ fn emit_layer_by_island(
     #[derive(Default, Clone)]
     struct Bucket {
         perims: Vec<ExtrusionEntityType>,
+        // Per-perim cooling-node ids (aligned with `perims`; -1 = none) for the
+        // gated `; COOLING_NODE:` emission (GCode.cpp:5738-5747).
+        perim_nodes: Vec<i32>,
         fills: Vec<ExtrusionEntityType>,
         thins: Vec<ExtrusionEntityType>,
     }
@@ -1961,7 +1965,8 @@ fn emit_layer_by_island(
                   region_id: usize,
                   first_pt: crate::geometry::Point,
                   ent: ExtrusionEntityType,
-                  kind: u8| {
+                  kind: u8,
+                  node_id: i32| {
         // Find the island: first containing slice in bbox-area order, else catch-all.
         let mut island_idx = n_slices;
         for &i in &test_order {
@@ -1972,27 +1977,35 @@ fn emit_layer_by_island(
         }
         let b = &mut islands[island_idx][region_id];
         match kind {
-            0 => b.perims.push(ent),
+            0 => {
+                b.perims.push(ent);
+                b.perim_nodes.push(node_id);
+            }
             1 => b.fills.push(ent),
             _ => b.thins.push(ent),
         }
     };
 
     for (region_id, region) in layer.regions().iter().enumerate() {
-        for ent in &region.perimeters.entities {
+        for (ent_idx, ent) in region.perimeters.entities.iter().enumerate() {
             if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
-                assign(&mut islands, region_id, fp, ent.clone(), 0);
+                let node_id = region
+                    .entity_cooling_nodes
+                    .get(ent_idx)
+                    .copied()
+                    .unwrap_or(-1);
+                assign(&mut islands, region_id, fp, ent.clone(), 0, node_id);
             }
         }
         if !skip_infill {
             for ent in &region.fills.entities {
                 if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
-                    assign(&mut islands, region_id, fp, ent.clone(), 1);
+                    assign(&mut islands, region_id, fp, ent.clone(), 1, -1);
                 }
             }
             for ent in &region.thin_fills.entities {
                 if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
-                    assign(&mut islands, region_id, fp, ent.clone(), 2);
+                    assign(&mut islands, region_id, fp, ent.clone(), 2, -1);
                 }
             }
         }
@@ -2002,8 +2015,16 @@ fn emit_layer_by_island(
     for island in &islands {
         for bucket in island {
             let do_perims = |w: &mut crate::gcode::GCodeWriter| {
+                // Gated `; COOLING_NODE:` emission (GCode.cpp:5738-5747) —
+                // native's `cooling_node` compare value is stuck at -1, so the
+                // marker precedes EVERY entity whose node id != -1.
+                let node_ids = if zsmooth_gate {
+                    Some(bucket.perim_nodes.as_slice())
+                } else {
+                    None
+                };
                 crate::gcode::exporter::extrude_perimeters_entities(
-                    &bucket.perims, w, config, is_first_layer, skip_inner_walls,
+                    &bucket.perims, w, config, is_first_layer, skip_inner_walls, node_ids,
                 );
             };
             let do_fills = |w: &mut crate::gcode::GCodeWriter| {
