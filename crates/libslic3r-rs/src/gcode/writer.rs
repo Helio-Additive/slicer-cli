@@ -568,6 +568,45 @@ impl GCodeWriter {
         }
     }
 
+    /// GCode.cpp:6880-6887 — travel acceleration selection with the SHORT
+    /// variant: travels to/within outer walls shorter than
+    /// retraction_minimum_travel use travel_short_distance_acceleration (250
+    /// on H2D). ZSMOOTH_FAITHFUL path only; routes through the shared M204
+    /// register.
+    pub fn set_travel_acceleration_for(
+        &mut self,
+        dest_role: crate::extrusion_entity::ExtrusionRole,
+        travel_len_mm: CoordF,
+    ) {
+        use crate::extrusion_entity::ExtrusionRole;
+        let short = self.config.travel_short_distance_acceleration;
+        let accel = if short > 0.0
+            && matches!(
+                dest_role,
+                ExtrusionRole::ExternalPerimeter | ExtrusionRole::OverhangPerimeter
+            )
+            && travel_len_mm < self.config.retract_before_travel
+        {
+            short
+        } else {
+            self.config.travel_acceleration
+        };
+        if accel <= 0.0 {
+            return;
+        }
+        let max_accel = self.config.machine_max_acceleration_extruding;
+        let effective = if max_accel > 0.0 && accel > max_accel {
+            max_accel
+        } else {
+            accel
+        };
+        let effective_u = effective as u32;
+        if (self.last_travel_accel as u32) != effective_u {
+            self.write_raw(&format!("M204 S{}", effective_u));
+            self.last_travel_accel = effective;
+        }
+    }
+
     /// Native set_acceleration_impl for the per-feature accel THROUGH THE SAME
     /// register as travel accel (ZSMOOTH_FAITHFUL path) — M204 emitted on every
     /// travel/feature alternation, deduped only against the last M204 of either

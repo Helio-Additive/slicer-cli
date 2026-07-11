@@ -283,6 +283,10 @@ pub struct PrintConfig {
     /// Travel acceleration.
     /// BambuStudio: `travel_acceleration`.
     pub travel_acceleration: CoordF,
+    /// BambuStudio: `travel_short_distance_acceleration` — used for travels
+    /// shorter than retraction_minimum_travel to/within outer walls
+    /// (GCode.cpp:6880-6887).
+    pub travel_short_distance_acceleration: CoordF,
     /// Initial layer travel acceleration.
     /// BambuStudio: `initial_layer_travel_acceleration`.
     pub initial_layer_travel_acceleration: CoordF,
@@ -1018,6 +1022,7 @@ impl Default for PrintConfig {
             sparse_infill_acceleration: 10000.0,
             initial_layer_acceleration: 500.0,
             travel_acceleration: 12000.0,
+            travel_short_distance_acceleration: 0.0,
             initial_layer_travel_acceleration: 9000.0,
 
             // Jerk (mm/s) - BambuStudio X1C defaults
@@ -2322,6 +2327,12 @@ impl PrintConfig {
             }
             "before_layer_change_gcode" => {
                 self.before_layer_change_gcode = value.to_string();
+                true
+            }
+            "travel_short_distance_acceleration" => {
+                if let Some(v) = parse_f64(value.split(',').next().unwrap_or(value)) {
+                    self.travel_short_distance_acceleration = v;
+                }
                 true
             }
             "z_direction_outwall_speed_continuous" => {
