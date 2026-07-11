@@ -75,6 +75,8 @@ fn main() {
     println!("cargo:rerun-if-changed=shim/eigen_transform_shim.cpp");
     println!("cargo:rerun-if-changed=shim/eigen_transform_shim.h");
     println!("cargo:rerun-if-changed=shim/secol_shim.cpp");
+    println!("cargo:rerun-if-changed=shim/secol_raycast.cpp");
+    println!("cargo:rerun-if-changed=shim/aabb_tree_indirect_native.hpp");
 
     let mut shim = cc::Build::new();
     shim.cpp(true)
@@ -96,9 +98,22 @@ fn main() {
         .cpp(true)
         .std("c++17")
         .include(&native_eigen_include_dir())
+        .include("shim")
         .flag_if_supported("-w")
         .define("NDEBUG", None)
         .opt_level(3)
-        .file("shim/secol_shim.cpp");
+        // R200: match the native ninja rule's flag set exactly — cc-rs's
+        // defaults (-g -gdwarf-2 -fno-omit-frame-pointer -ffunction-sections
+        // -fdata-sections) perturb FP codegen (register pressure/vectorization)
+        // relative to the native build (plain -O3 -DNDEBUG -std=c++17 -arch
+        // arm64 -fPIC).
+        .debug(false)
+        .force_frame_pointer(false)
+        // R200: one kernel per TU — R190 grew secol_shim.cpp with the raycast
+        // kernel and the collapse kernel's FP codegen shifted with TU context
+        // (R199). secol_shim.cpp holds the R188 kernels; the raycast lives in
+        // its own file.
+        .file("shim/secol_shim.cpp")
+        .file("shim/secol_raycast.cpp");
     secol.compile("secol_shim");
 }

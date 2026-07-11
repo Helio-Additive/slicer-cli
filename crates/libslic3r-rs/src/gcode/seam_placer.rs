@@ -955,11 +955,23 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
         Some(m) => m,
         None => return result,
     };
+    // R200: normalize -0.0 -> +0.0 during the f64->f32 conversion. Native's
+    // volume mesh is the admesh f32 store (Benchy has no -0.0 bits); rust's f64
+    // pipeline can surface -0.0 on the bed plane (rustc/LLVM minnum sign-of-zero
+    // drift flipped 80 z=0 verts between sessions) — sign bits change the
+    // collapse FP stream and cascade through sampling/visibility (R199).
+    let n0 = |f: f32| if f == 0.0 { 0.0f32 } else { f };
     let mut triangle_set = indexed_triangle_set {
         vertices: mesh
             .vertices()
             .iter()
-            .map(|v| Vec3f::new(v.x as f32, v.y as f32, v.z as f32))
+            .map(|v| {
+                if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                    Vec3f::new(n0(v.x as f32), n0(v.y as f32), n0(v.z as f32))
+                } else {
+                    Vec3f::new(v.x as f32, v.y as f32, v.z as f32)
+                }
+            })
             .collect(),
         indices: mesh
             .indices()
