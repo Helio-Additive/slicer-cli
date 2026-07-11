@@ -2387,19 +2387,22 @@ pub fn extrusion_entities_append_paths_with_wipe(
     mm3_per_mm: CoordF,
     width: f32,
     height: f32,
+    gap_compensation_ratio: f32,
 ) {
+    const EPSILON: f32 = 1e-4;
     dst.reserve(dst.len() + polylines.len());
     let hop_max = 3.0 * scale(width as CoordF) as f64;
     let mut last_end: Option<crate::geometry::Point> = None;
+    let mut last_direction = (0.0_f64, 0.0_f64);
     for polyline in polylines {
         if !polyline.is_valid() {
             continue;
         }
         let first = polyline.points()[0];
         if let Some(le) = last_end {
-            let hop = (((first.x - le.x) as f64).hypot((first.y - le.y) as f64)) as f64;
+            let hop = ((first.x - le.x) as f64).hypot((first.y - le.y) as f64);
             if hop <= hop_max {
-                // ExtrusionEntity.hpp:685/703-706: connector wipe path (no_extrusion).
+                // ExtrusionEntity.hpp:685-706: connector wipe path (no_extrusion).
                 let mut conn = ExtrusionPath::with_params(
                     role,
                     mm3_per_mm,
@@ -2407,7 +2410,31 @@ pub fn extrusion_entities_append_paths_with_wipe(
                     height as CoordF,
                     true,
                 );
-                conn.polyline = Polyline::from_points(vec![le, first]);
+                if gap_compensation_ratio > EPSILON {
+                    // hpp:688-701 (overlap_rate = 1.0): extend past both line ends
+                    // into the wall by scaled(width * ratio) along each line's
+                    // OWN direction — 4-point connector. offset_vector
+                    // .cast<coord_t>() is an Eigen static_cast = TRUNCATE
+                    // (PORTING_PATTERNS class 3).
+                    let curr_last = *polyline.points().last().unwrap();
+                    let cd_x = (first.x - curr_last.x) as f64;
+                    let cd_y = (first.y - curr_last.y) as f64;
+                    let cn = cd_x.hypot(cd_y);
+                    let (cdx, cdy) = if cn > 0.0 { (cd_x / cn, cd_y / cn) } else { (0.0, 0.0) };
+                    let off = scale((width * gap_compensation_ratio) as CoordF) as f64;
+                    let overlap_last = crate::geometry::Point::new(
+                        le.x + (last_direction.0 * off) as i64,
+                        le.y + (last_direction.1 * off) as i64,
+                    );
+                    let overlap_curr = crate::geometry::Point::new(
+                        first.x + (cdx * off) as i64,
+                        first.y + (cdy * off) as i64,
+                    );
+                    conn.polyline =
+                        Polyline::from_points(vec![le, overlap_last, overlap_curr, first]);
+                } else {
+                    conn.polyline = Polyline::from_points(vec![le, first]);
+                }
                 dst.push(ExtrusionEntityType::Path(conn));
             }
             // else: multipath boundary — native pushes the finished multipath and
@@ -2421,6 +2448,11 @@ pub fn extrusion_entities_append_paths_with_wipe(
             height as CoordF,
             false,
         );
+        // hpp:717: last_direction = (last_end - first_point).normalized().
+        let ld_x = (end.x - polyline.points()[0].x) as f64;
+        let ld_y = (end.y - polyline.points()[0].y) as f64;
+        let ln = ld_x.hypot(ld_y);
+        last_direction = if ln > 0.0 { (ld_x / ln, ld_y / ln) } else { (0.0, 0.0) };
         path.polyline = polyline;
         dst.push(ExtrusionEntityType::Path(path));
         last_end = Some(end);

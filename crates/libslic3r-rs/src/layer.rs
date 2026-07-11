@@ -2331,6 +2331,12 @@ impl Layer {
                     // 3274): short hops become non-extruding wipe connectors that
                     // (a) appear in the gcode as E-less G1s and (b) count in the
                     // coverage that shapes the WGapFill band (R146).
+                    // Fill.cpp:233/636: gap_compensation_ratio =
+                    // monotonic_travel_into_wall * 0.01 (profile sets 45%).
+                    // Native ConfigOptionPercent stores the raw percent number
+                    // (profile "45.0"); Fill.cpp:636 multiplies by 0.01.
+                    let gap_comp =
+                        (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
                     crate::extrusion_entity::extrusion_entities_append_paths_with_wipe(
                         &mut collection.entities,
                         polylines,
@@ -2338,6 +2344,7 @@ impl Layer {
                         mm3_per_mm,
                         surface_fill.params.flow.width() as f32,
                         surface_fill.params.flow.height() as f32,
+                        gap_comp,
                     );
                 } else {
                     extrusion_entities_append_paths(

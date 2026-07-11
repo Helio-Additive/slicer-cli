@@ -1322,6 +1322,12 @@ pub struct PrintObjectConfig {
     /// BambuStudio: `infill_wall_overlap` (as percentage string like "15%").
     pub infill_wall_overlap: CoordF,
 
+    /// MonotonicLine top-surface wipe-connector overlap extension into the wall
+    /// (0.0 - 1.0). BambuStudio: `monotonic_travel_into_wall` (percent, default 0;
+    /// BBL process profiles set 45%). Consumed as gap_compensation_ratio by
+    /// extrusion_entities_append_paths_with_wipe (Fill.cpp:233/636).
+    pub monotonic_travel_into_wall: CoordF,
+
     /// Infill angle in degrees.
     /// BambuStudio: `infill_direction`.
     pub infill_angle: CoordF,
@@ -2514,6 +2520,12 @@ impl PrintObjectConfig {
                 };
                 true
             }
+            "monotonic_travel_into_wall" => {
+                if let Some(v) = parse_pct(value) {
+                    self.monotonic_travel_into_wall = v;
+                }
+                true
+            }
             "infill_wall_overlap" => {
                 if let Some(v) = parse_pct(value) {
                     self.infill_wall_overlap = v;
@@ -3086,7 +3098,8 @@ impl Default for PrintObjectConfig {
             xy_size_compensation: 0.0,
             elephant_foot_compensation: 0.0,
             // Infill
-            infill_wall_overlap: 0.15, // 15% default (BambuStudio default)
+            infill_wall_overlap: 0.15,
+            monotonic_travel_into_wall: 0.0, // 15% default (BambuStudio default)
             infill_angle: 45.0,
             // Flow
             initial_layer_flow_ratio: 1.0,
