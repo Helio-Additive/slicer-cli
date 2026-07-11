@@ -3022,6 +3022,16 @@ impl SeamPlacer {
                 current_point_index = end_index;
             }
         }
+        if std::env::var("CANDDBG").is_ok() {
+            let layer = &self.seam_data.layers[6];
+            for (i, c) in layer.points.iter().enumerate() {
+                println!(
+                    "CANDDBG-R i={} pos={:.5},{:.5} vis={:.9} ov={:.9} emb={:.9} ang={:.9}",
+                    i, c.position.x, c.position.y, c.visibility, c.overhang,
+                    c.embedded_distance, c.local_ccw_angle
+                );
+            }
+        }
         if std::env::var("SEAMDBG").is_ok() {
             for (layer_idx, layer) in self.seam_data.layers.iter().enumerate() {
                 let mut peri = 0usize;
