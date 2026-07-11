@@ -2341,16 +2341,6 @@ impl Layer {
                 if is_monotonic_line {
                     for ent in &collection.entities {
                         if let crate::extrusion_entity::ExtrusionEntityType::Path(path) = ent {
-                            if std::env::var("MADBG").is_ok() && (self.print_z - 39.4).abs() < 0.01 {
-                                eprintln!(
-                                    "MADBG-R path w={:.5} h={:.5} spacing_of={:.5}",
-                                    path.width,
-                                    path.height,
-                                    crate::flow::Flow::new(path.width as f64, path.height as f64, 0.0)
-                                        .map(|f| f.spacing())
-                                        .unwrap_or(-1.0)
-                                );
-                            }
                             path.polygons_covered_by_spacing(&mut mono_covered, 10.0);
                         }
                     }
@@ -2465,16 +2455,6 @@ impl Layer {
                         for ex in &mut gaps_ex {
                             ex.douglas_peucker(simplify_resolution);
                             ex.medial_axis(min, max, &mut polylines);
-                        }
-                        if std::env::var("MADBG").is_ok() && (self.print_z - 39.4).abs() < 0.01 {
-                            let sc = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
-                            for ex in &gaps_ex {
-                                eprintln!("MADBG-R gap npts={} a={:.6}", ex.contour.points.len(), ex.area().abs()/sc);
-                            }
-                            for tp in &polylines {
-                                eprintln!("MADBG-R poly len={:.4} npts={}", tp.length()/crate::SCALING_FACTOR, tp.points.len());
-                            }
-                            eprintln!("MADBG-R min={:.1} max={:.1}", min*crate::SCALING_FACTOR, max*crate::SCALING_FACTOR);
                         }
 
                         if !polylines.is_empty() {
