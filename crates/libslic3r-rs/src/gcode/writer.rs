@@ -278,6 +278,14 @@ pub struct GCodeWriter {
     /// Z before lift.
     z_before_lift: CoordF,
 
+    /// R205 faithful lift state (GCodeWriter.cpp m_lifted / m_to_lift /
+    /// m_to_lift_type). Only active under ZSMOOTH_FAITHFUL via lazy_lift/
+    /// travel_to_xyz/unlift; inert otherwise.
+    pub m_lifted: CoordF,
+    pub m_to_lift: CoordF,
+    /// 0 = NormalLift, 1 = SpiralLift, 2 = SlopeLift.
+    pub m_to_lift_type: u8,
+
     /// Statistics being collected.
     stats: GCodeStats,
 
@@ -359,6 +367,9 @@ impl GCodeWriter {
             retraction_length: config.retract_length,
             retract_lift: config.retract_lift,
             z_before_lift: 0.0,
+            m_lifted: 0.0,
+            m_to_lift: 0.0,
+            m_to_lift_type: 0,
             stats: GCodeStats::default(),
             layer_extrusion_time: 0.0,
             cooling_slowdown: 1.0,
@@ -975,6 +986,142 @@ impl GCodeWriter {
         // (the extrusion speed) untouched, so it survives across travels.
         self.last_emitted_f = f;
         self.position_known = true;
+    }
+
+    /// R205: GCodeWriter::lazy_lift (GCodeWriter.cpp:425-452), non-spiral-vase,
+    /// non-toolchange path. retract_lift_above/below default to always-active
+    /// for this pipeline (0..huge); target = z_hop (self.retract_lift).
+    pub fn lazy_lift_faithful(&mut self, lift_type: u8) {
+        let target_lift = self.retract_lift;
+        if self.m_lifted == 0.0 && self.m_to_lift == 0.0 && target_lift > 0.0 {
+            self.m_to_lift = target_lift;
+            self.m_to_lift_type = lift_type;
+        }
+    }
+
+    /// GCodeWriter::will_move_z (GCodeWriter.cpp:683-697).
+    pub fn will_move_z(&self, z: CoordF) -> bool {
+        const EPSILON: CoordF = 1e-4;
+        if self.m_lifted > 0.0 {
+            let nominal_z = self.z - self.m_lifted;
+            if z >= nominal_z - EPSILON && z <= self.z + EPSILON {
+                return false;
+            }
+        } else if (self.z - z).abs() < EPSILON {
+            return false;
+        }
+        true
+    }
+
+    /// GCodeWriter::unlift (GCodeWriter.cpp:851-860).
+    pub fn unlift_faithful(&mut self) {
+        if self.m_lifted > 0.0 {
+            let target = self.z - self.m_lifted;
+            self.travel_to_z(target, None);
+            self.m_lifted = 0.0;
+        }
+        self.m_to_lift = 0.0;
+    }
+
+    /// R205: GCodeWriter::travel_to_xyz (GCodeWriter.cpp:501-612) — the lift
+    /// merge: pending lazy lift becomes a slope/spiral/normal pre-move plus ONE
+    /// combined XYZ travel at the lifted Z. `z` = the destination nominal Z
+    /// (current layer z). Plate offsets are 0 in this pipeline.
+    pub fn travel_to_xyz(&mut self, x: CoordF, y: CoordF, z: CoordF) {
+        const EPSILON: CoordF = 1e-4;
+        let travel_f = self.config.travel_speed * 60.0;
+        if self.m_to_lift.abs() > EPSILON {
+            let mut dest_z = z;
+            let same_pos = self.position_known && (self.x - x).abs() < 1e-12 && (self.y - y).abs() < 1e-12 && (self.z - z).abs() < 1e-12;
+            if !same_pos && self.m_to_lift + self.z > z {
+                self.m_lifted = self.m_to_lift + self.z - z;
+                dest_z = self.m_to_lift + self.z;
+            }
+            self.m_to_lift = 0.0;
+
+            let source = (self.x, self.y, self.z);
+            let delta = (x - source.0, y - source.1, dest_z - source.2);
+            let delta_no_z_norm = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
+            let slope_threshold = 3.0 * std::f64::consts::PI / 180.0;
+
+            if delta.2 > 0.0 && delta_no_z_norm != 0.0 {
+                if self.m_to_lift_type == 1 && self.position_known {
+                    // SpiralLift (GCodeWriter.cpp:536-543): radius from climb,
+                    // ij = rotate90(radius * dir).
+                    let radius = delta.2 / (2.0 * std::f64::consts::PI * slope_threshold.atan());
+                    let dirx = delta.0 / delta_no_z_norm;
+                    let diry = delta.1 / delta_no_z_norm;
+                    let (ijx, ijy) = (-radius * diry, radius * dirx);
+                    self.write_command(&GCodeCommand::SelectXYPlane);
+                    self.write_command(&GCodeCommand::HelicalArcCCW {
+                        z: dest_z,
+                        i: ijx,
+                        j: ijy,
+                        p: 1,
+                        f: Some(travel_f),
+                    });
+                    self.z = dest_z;
+                } else if self.m_to_lift_type == 2
+                    && self.position_known
+                    && delta.2.atan2(delta_no_z_norm) < slope_threshold
+                {
+                    // SlopeLift (GCodeWriter.cpp:545-559): early climb to the
+                    // slope top point, single G1 XYZ.
+                    let t = delta.2 / slope_threshold.tan();
+                    let topx = source.0 + delta.0 / delta_no_z_norm * t;
+                    let topy = source.1 + delta.1 / delta_no_z_norm * t;
+                    self.write_command(&GCodeCommand::LinearMove {
+                        x: Some(topx),
+                        y: Some(topy),
+                        z: Some(dest_z),
+                        e: None,
+                        f: Some(travel_f),
+                    });
+                    self.x = topx;
+                    self.y = topy;
+                    self.z = dest_z;
+                } else if self.m_to_lift_type == 0 {
+                    self.travel_to_z(dest_z, None);
+                }
+            }
+
+            // xy_z_move (GCodeWriter.cpp:565-580) — combined XYZ.
+            self.write_command(&GCodeCommand::LinearMove {
+                x: Some(x),
+                y: Some(y),
+                z: Some(dest_z),
+                e: None,
+                f: Some(travel_f),
+            });
+            self.x = x;
+            self.y = y;
+            self.z = dest_z;
+            self.last_emitted_f = travel_f;
+            self.position_known = true;
+        } else if !self.will_move_z(z) {
+            // GCodeWriter.cpp:586-598.
+            let nominal_z = self.z - self.m_lifted;
+            self.m_lifted -= z - nominal_z;
+            if self.m_lifted.abs() < EPSILON {
+                self.m_lifted = 0.0;
+            }
+            self.travel_to(x, y, None);
+        } else {
+            // GCodeWriter.cpp:600-612 — plain combined XYZ, lift cancelled.
+            self.m_lifted = 0.0;
+            self.write_command(&GCodeCommand::LinearMove {
+                x: Some(x),
+                y: Some(y),
+                z: Some(z),
+                e: None,
+                f: Some(travel_f),
+            });
+            self.x = x;
+            self.y = y;
+            self.z = z;
+            self.last_emitted_f = travel_f;
+            self.position_known = true;
+        }
     }
 
     /// Travel move to a specific Z height.
