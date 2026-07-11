@@ -2229,6 +2229,26 @@ fn emit_layer_by_island(
         }
     }
 
+    if std::env::var("ISLDBG").is_ok() && (layer.print_z - 5.0).abs() < 1e-6 {
+        eprintln!("ISLDBG L24: n_slices={} island_emit_order={:?}", n_slices, island_emit_order);
+        for (region_id, region) in layer.regions().iter().enumerate() {
+            for (ent_idx, ent) in region.perimeters.entities.iter().enumerate() {
+                if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+                    let mut isl = n_slices;
+                    for &ti in test_order.iter() {
+                        if point_inside(ti, &fp) {
+                            isl = ti;
+                            break;
+                        }
+                    }
+                    eprintln!(
+                        "ISLDBG L24: region={} ent={} first=({},{}) island={}",
+                        region_id, ent_idx, fp.x, fp.y, isl
+                    );
+                }
+            }
+        }
+    }
     // Emit per-island, per region. Under the gate, use the first-appearance
     // (chain_expolygons) order; otherwise the natural slice order.
     let emit_order: Vec<usize> = if zsmooth_gate {
