@@ -94,6 +94,91 @@ unsafe extern "C" {
         n_tris: i64,
         out: *mut f32,
     );
+
+    fn secol_collapse(
+        verts: *const f32,
+        n_verts: i64,
+        indices: *const i32,
+        n_tris: i64,
+        target_triangle_count: i64,
+        out_verts: *mut f32,
+        out_n_verts: *mut i64,
+        out_indices: *mut i32,
+        out_n_tris: *mut i64,
+    ) -> i64;
+
+    fn secol_sample_uniform(
+        verts: *const f32,
+        n_verts: i64,
+        indices: *const i32,
+        n_tris: i64,
+        samples_count: i64,
+        out_positions: *mut f32,
+        out_normals: *mut f32,
+        out_tri_idx: *mut i64,
+        out_total_area: *mut f32,
+    );
+}
+
+/// R188b: native `sample_its_uniform_parallel` (TriangleSetSampling.cpp:9-68)
+/// — the f32 cross/norm triangle areas and sample interpolation run through
+/// the native Eigen codegen; RNG is the real libc++ mt19937_64 +
+/// uniform_real_distribution. Returns (positions, normals, tri_indices, total_area).
+pub fn sample_uniform(
+    verts: &[f32],
+    indices: &[i32],
+    samples_count: usize,
+) -> (Vec<f32>, Vec<f32>, Vec<i64>, f32) {
+    assert!(verts.len() % 3 == 0 && indices.len() % 3 == 0);
+    let mut positions = vec![0.0f32; 3 * samples_count];
+    let mut normals = vec![0.0f32; 3 * samples_count];
+    let mut tri_idx = vec![0i64; samples_count];
+    let mut total_area = 0.0f32;
+    unsafe {
+        secol_sample_uniform(
+            verts.as_ptr(),
+            (verts.len() / 3) as i64,
+            indices.as_ptr(),
+            (indices.len() / 3) as i64,
+            samples_count as i64,
+            positions.as_mut_ptr(),
+            normals.as_mut_ptr(),
+            tri_idx.as_mut_ptr(),
+            &mut total_area,
+        );
+    }
+    (positions, normals, tri_idx, total_area)
+}
+
+/// R188: FULL native its_short_edge_collpase (ShortEdgeCollapse.cpp:11-185)
+/// compiled with the native toolchain — every float decision (min dots, edge
+/// squaredNorm threshold, edge_len evolution) plus libc++ std::shuffle come
+/// from the same codegen as the reference binary. Returns (verts, indices).
+pub fn short_edge_collapse(verts: &[f32], indices: &[i32], target: usize) -> (Vec<f32>, Vec<i32>) {
+    assert!(verts.len() % 3 == 0 && indices.len() % 3 == 0);
+    let n_verts = (verts.len() / 3) as i64;
+    let n_tris = (indices.len() / 3) as i64;
+    let mut out_verts = vec![0.0f32; verts.len()];
+    let mut out_indices = vec![0i32; indices.len()];
+    let mut out_n_verts: i64 = 0;
+    let mut out_n_tris: i64 = 0;
+    let rc = unsafe {
+        secol_collapse(
+            verts.as_ptr(),
+            n_verts,
+            indices.as_ptr(),
+            n_tris,
+            target as i64,
+            out_verts.as_mut_ptr(),
+            &mut out_n_verts,
+            out_indices.as_mut_ptr(),
+            &mut out_n_tris,
+        )
+    };
+    assert_eq!(rc, 0, "secol_collapse output exceeded input-sized buffers");
+    out_verts.truncate((out_n_verts * 3) as usize);
+    out_indices.truncate((out_n_tris * 3) as usize);
+    (out_verts, out_indices)
 }
 
 /// R187: exact-native min_vertex_dot_product kernel for the short-edge

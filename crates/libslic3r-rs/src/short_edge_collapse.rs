@@ -481,6 +481,29 @@ fn cpp_min_f32(a: f32, b: f32) -> f32 {
 /// ShortEdgeCollapse.cpp:11-184
 #[allow(clippy::needless_range_loop)]
 pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_count: usize) {
+    // R188 (ZSMOOTH_FAITHFUL): run the ENTIRE collapse through the native-code
+    // shim. R187's dots-only shim still left round-1 at ±6 faces — the edge
+    // squaredNorm threshold check and the f32/f64 edge_len evolution are further
+    // Eigen-f32 codegen surfaces; the only robust cut is the whole kernel.
+    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        let verts_flat: Vec<f32> = mesh
+            .vertices
+            .iter()
+            .flat_map(|v| [v.x, v.y, v.z])
+            .collect();
+        let idx_flat: Vec<i32> = mesh.indices.iter().flat_map(|t| [t.x, t.y, t.z]).collect();
+        let (out_v, out_i) =
+            eigen_transform_sys::short_edge_collapse(&verts_flat, &idx_flat, target_triangle_count);
+        mesh.vertices = out_v
+            .chunks_exact(3)
+            .map(|c| Vec3f::new(c[0], c[1], c[2]))
+            .collect();
+        mesh.indices = out_i
+            .chunks_exact(3)
+            .map(|c| Vec3i::new(c[0], c[1], c[2]))
+            .collect();
+        return;
+    }
     // whenever vertex is removed, its mapping is update to the index of vertex with wich it merged
     // ShortEdgeCollapse.cpp:13
     let mut vertices_index_mapping: Vec<usize> = vec![0usize; mesh.vertices.len()];
@@ -532,22 +555,8 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
     // NOTE: This score is not updated, even though the decimation does change the mesh. It saves computation time, and there are no strong reasons to update.
     // ShortEdgeCollapse.cpp:43
     let mut min_vertex_dot_product: Vec<f32> = vec![1.0f32; mesh.vertices.len()];
-    // R187 (ZSMOOTH_FAITHFUL): compute the float kernel through the native
-    // Eigen pipeline (eigen-transform-sys secol_min_vertex_dots) — the rust
-    // scalar math differs by ulps from Eigen's codegen, flipping keep/remove
-    // swaps (first divergence at round-1 decision #324).
-    let use_shim = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
-    if use_shim {
-        let verts_flat: Vec<f32> = mesh
-            .vertices
-            .iter()
-            .flat_map(|v| [v.x, v.y, v.z])
-            .collect();
-        let idx_flat: Vec<i32> = mesh.indices.iter().flat_map(|t| [t.x, t.y, t.z]).collect();
-        min_vertex_dot_product = eigen_transform_sys::min_vertex_dots(&verts_flat, &idx_flat);
-    }
     // ShortEdgeCollapse.cpp:44-55
-    if !use_shim {
+    {
         // std::vector<Vec3f> face_normals = its_face_normals(mesh);
         let face_normals: Vec<Vec3f> = its_face_normals(mesh);
         // std::vector<Vec3f> vertex_normals = NormalUtils::create_normals(mesh);

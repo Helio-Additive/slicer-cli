@@ -63,6 +63,58 @@ pub fn sample_its_uniform_parallel(
     samples_count: usize,
     triangle_set: &indexed_triangle_set,
 ) -> TriangleSetSamples {
+    // R188b (ZSMOOTH_FAITHFUL): run the whole sampler through the native-code
+    // shim — the f32 cross/norm areas differ by ulps between nalgebra and the
+    // native Eigen codegen (total_area was 1 ulp off), shifting the area-prefix
+    // map and every downstream sample/visibility value.
+    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        let verts_flat: Vec<f32> = triangle_set
+            .vertices
+            .iter()
+            .flat_map(|v| [v.x, v.y, v.z])
+            .collect();
+        let idx_flat: Vec<i32> = triangle_set
+            .indices
+            .iter()
+            .flat_map(|t| [t.x, t.y, t.z])
+            .collect();
+        let (pos, nrm, tri, total_area) =
+            eigen_transform_sys::sample_uniform(&verts_flat, &idx_flat, samples_count);
+        let result = TriangleSetSamples {
+            total_area,
+            positions: pos
+                .chunks_exact(3)
+                .map(|c| Vec3f::new(c[0], c[1], c[2]))
+                .collect(),
+            normals: nrm
+                .chunks_exact(3)
+                .map(|c| Vec3f::new(c[0], c[1], c[2]))
+                .collect(),
+            triangle_indices: tri.iter().map(|&t| t as usize).collect(),
+        };
+        if std::env::var("OCCDBG").is_ok() {
+            let mut hp: u64 = 1469598103934665603;
+            for p in &result.positions {
+                for f in [p.x, p.y, p.z] {
+                    hp ^= f.to_bits() as u64;
+                    hp = hp.wrapping_mul(1099511628211);
+                }
+            }
+            let mut ht: u64 = 1469598103934665603;
+            for &t in &result.triangle_indices {
+                ht ^= t as u32 as u64;
+                ht = ht.wrapping_mul(1099511628211);
+            }
+            println!(
+                "OCCDBG-R samples n={} ph={:x} th={:x} area={:x}",
+                result.positions.len(),
+                hp,
+                ht,
+                result.total_area.to_bits()
+            );
+        }
+        return result;
+    }
     // TriangleSetSampling.cpp:10
     let mut triangles_area: Vec<f64> = vec![0.0; triangle_set.indices.len()];
 
@@ -185,6 +237,27 @@ pub fn sample_its_uniform_parallel(
     }
 
     // TriangleSetSampling.cpp:68
+    if std::env::var("OCCDBG").is_ok() {
+        let mut hp: u64 = 1469598103934665603;
+        for p in &result.positions {
+            for f in [p.x, p.y, p.z] {
+                hp ^= f.to_bits() as u64;
+                hp = hp.wrapping_mul(1099511628211);
+            }
+        }
+        let mut ht: u64 = 1469598103934665603;
+        for &t in &result.triangle_indices {
+            ht ^= t as u32 as u64;
+            ht = ht.wrapping_mul(1099511628211);
+        }
+        println!(
+            "OCCDBG-R samples n={} ph={:x} th={:x} area={:x}",
+            result.positions.len(),
+            hp,
+            ht,
+            result.total_area.to_bits()
+        );
+    }
     result
 }
 

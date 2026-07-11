@@ -986,10 +986,45 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
             .map(|i| Vec3i::new(i.x, i.y, i.z))
             .collect();
     }
+    // SeamPlacer.cpp:604 — its_transform(triangle_set, obj_transform) with
+    // obj_transform = po->trafo_centered() = Identity.pretranslate(-cx, -cy, 0)
+    // (m_trafo is Identity for slicer_cli STL, R87). Native does
+    // v = (t * v.cast<double>()).cast<float>() — a pure f64 translation then one
+    // f32 rounding per component, which `(f64 - cx) as f32` reproduces exactly.
+    // WITHOUT this the occlusion mesh stays in the volume frame while the seam
+    // candidates live in the centered slicing frame — every visibility raycast
+    // was skewed by the centering offset (~0.8245mm in x for Benchy).
+    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        let (cx, cy) = po.slice_center_offset;
+        for v in &mut triangle_set.vertices {
+            v.x = ((v.x as f64) - cx) as f32;
+            v.y = ((v.y as f64) - cy) as f32;
+        }
+    }
     // SeamPlacer.cpp:602 — there are no negative volumes, so the start index is the
     // full triangle count (the negative-volume raycast branch never triggers).
     let negative_volumes_start_index = triangle_set.indices.len();
 
+    if std::env::var("OCCDBG").is_ok() {
+        let mut h: u64 = 1469598103934665603;
+        for v in &triangle_set.vertices {
+            for f in [v.x, v.y, v.z] {
+                h ^= f.to_bits() as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
+        }
+        let (mut mn, mut mx) = ([1e9f32; 3], [-1e9f32; 3]);
+        for v in &triangle_set.vertices {
+            for (k, c) in [v.x, v.y, v.z].iter().enumerate() {
+                mn[k] = mn[k].min(*c);
+                mx[k] = mx[k].max(*c);
+            }
+        }
+        eprintln!(
+            "OCCDBG-R sampin vh={:x} bb={:.6},{:.6},{:.6}/{:.6},{:.6},{:.6}",
+            h, mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]
+        );
+    }
     // SeamPlacer.cpp:609 — sample the decimated mesh surface uniformly by area.
     result.mesh_samples = crate::triangle_set_sampling::sample_its_uniform_parallel(
         RAYCASTING_VISIBILITY_SAMPLES_COUNT,
