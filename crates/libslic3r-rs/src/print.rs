@@ -469,20 +469,46 @@ impl Print {
 
             // GCode.cpp:3971-3977 -- layer progress comments (1-based)
             let total_layers = self.objects.first().map(|o| o.layers().len()).unwrap_or(0);
-            writer.write_raw(&format!(
-                "; layer num/total_layer_count: {}/{}",
-                layer_index, total_layers
-            ));
-            writer.write_raw("; update layer progress");
-            // M991 — notify firmware of layer change (0-based index)
-            writer.write_raw(&format!(
-                "M991 S0 P{} ;notify layer change",
-                layer_index - 1
-            ));
+            if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                && !self.config.layer_change_gcode.is_empty()
+            {
+                // GCode.cpp:4105-4115 — process the layer_change_gcode TEMPLATE
+                // (placeholder_parser: {layer_num} 0-based, {layer_num+1},
+                // [total_layer_count]) followed by a blank line and the
+                // ;_SET_FAN_SPEED_CHANGING_LAYER marker (the cooling
+                // post-processor injects the per-layer M106s there — native
+                // emits NO hardcoded fan-off).
+                let tpl = self
+                    .config
+                    .layer_change_gcode
+                    .replace("\\n", "\n")
+                    .replace("{layer_num+1}", &format!("{}", layer_index))
+                    .replace("{layer_num}", &format!("{}", layer_index - 1))
+                    .replace("[total_layer_count]", &format!("{}", total_layers));
+                for line in tpl.split('\n') {
+                    if !line.is_empty() {
+                        writer.write_raw(line);
+                    }
+                }
+                // GCode.cpp:4111 — the template block ends with an extra newline.
+                writer.write_raw("");
+                writer.write_raw(";_SET_FAN_SPEED_CHANGING_LAYER");
+            } else {
+                writer.write_raw(&format!(
+                    "; layer num/total_layer_count: {}/{}",
+                    layer_index, total_layers
+                ));
+                writer.write_raw("; update layer progress");
+                // M991 — notify firmware of layer change (0-based index)
+                writer.write_raw(&format!(
+                    "M991 S0 P{} ;notify layer change",
+                    layer_index - 1
+                ));
 
-            // Fan off at layer change (GCode.cpp:3981)
-            writer.write_raw("M106 S0");
-            writer.write_raw("M106 P2 S0");
+                // Fan off at layer change (GCode.cpp:3981)
+                writer.write_raw("M106 S0");
+                writer.write_raw("M106 P2 S0");
+            }
 
             // GCode.cpp: set_travel_acceleration() before Z-hop
             // On first layer, uses initial_layer_travel_acceleration
