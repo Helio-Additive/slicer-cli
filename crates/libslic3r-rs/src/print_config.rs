@@ -2314,6 +2314,16 @@ impl PrintConfig {
             }
 
             // === Misc ===
+            "layer_change_gcode" => {
+                // machine-gcode template (parent-profile key; the CLI's
+                // set_deserialize path previously dropped it — R169)
+                self.layer_change_gcode = value.to_string();
+                true
+            }
+            "before_layer_change_gcode" => {
+                self.before_layer_change_gcode = value.to_string();
+                true
+            }
             "z_direction_outwall_speed_continuous" => {
                 if let Some(v) = parse_bool(value) {
                     self.z_direction_outwall_speed_continuous = v;
