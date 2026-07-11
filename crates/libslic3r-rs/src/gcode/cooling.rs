@@ -1364,7 +1364,7 @@ pub fn estimate_layer_time(
 /// Tracks byte offsets into the original G-code string.
 /// Reference: GCodeEditor.hpp:38-135
 #[derive(Debug, Clone)]
-struct CoolingLine {
+pub(crate) struct CoolingLine {
     line_type: u32,
     line_start: usize,
     line_end: usize,
@@ -1485,7 +1485,7 @@ fn calc_arc_length(start: (f32, f32), end: (f32, f32), center: (f32, f32), is_cc
 
 /// Per-extruder data for the G-code post-processor.
 /// Full version matching C++ PerExtruderAdjustments (GCodeEditor.hpp:137-414)
-struct PostProcAdjustments {
+pub struct PostProcAdjustments {
     extruder_id: u32,
     cooling_slow_down_enabled: bool,
     lines: Vec<CoolingLine>,
@@ -1882,6 +1882,65 @@ impl GCodeEditorState {
         )
     }
 
+    /// Two-phase variant, phase 1 (GCode.cpp:3396-3417 pipeline 1: parse →
+    /// calculate_layer_slowdown, NO write). Used by the z-direction outwall
+    /// smoothing path: all layers are parsed first, the SmoothCalculator runs
+    /// over the collected wall nodes, then `write_parsed_layer` rewrites each
+    /// layer with the (possibly smoothing-clamped) feedrates.
+    #[allow(clippy::too_many_arguments)]
+    pub fn process_layer_parse_only(
+        &mut self,
+        gcode: &str,
+        layer_id: usize,
+        extruder_configs: &[PerExtruderCoolingConfig],
+        cooling_logic_proportional: bool,
+        toolchange_prefix: &str,
+        use_relative_e: bool,
+        object_label: &[i32],
+        spiral_vase: bool,
+    ) -> ParsedLayer {
+        let full_gcode = gcode.to_string();
+        let (per_extruder_adjustments, not_set_additional_fan) = self.parse_layer_gcode(
+            &full_gcode,
+            extruder_configs,
+            toolchange_prefix,
+            use_relative_e,
+            object_label,
+            spiral_vase,
+            layer_id > 0,
+        );
+        let mut adjustments = per_extruder_adjustments;
+        let layer_time =
+            calculate_layer_slowdown_postproc(&mut adjustments, cooling_logic_proportional);
+        ParsedLayer {
+            gcode: full_gcode,
+            adjustments,
+            not_set_additional_fan,
+            layer_time,
+            layer_id,
+        }
+    }
+
+    /// Two-phase variant, phase 2 (GCode.cpp write_gocde filter).
+    pub fn write_parsed_layer(
+        &mut self,
+        parsed: &ParsedLayer,
+        extruder_configs: &[PerExtruderCoolingConfig],
+        auxiliary_fan: bool,
+        toolchange_prefix: &str,
+    ) -> String {
+        self.write_layer_gcode(
+            &parsed.gcode,
+            parsed.not_set_additional_fan,
+            parsed.layer_id,
+            parsed.layer_time,
+            &parsed.adjustments,
+            extruder_configs,
+            auxiliary_fan,
+            toolchange_prefix,
+        )
+    }
+
     /// Parse layer G-code into per-extruder CoolingLine vectors.
     /// Reference: GCodeEditor::parse_layer_gcode() (GCodeEditor.cpp:100-349)
     fn parse_layer_gcode(
@@ -1933,6 +1992,9 @@ impl GCodeEditorState {
         let mut adj_idx = current_extruder.min(num_extruders - 1);
         let mut active_speed_modifier: Option<usize> = None;
         let mut not_join_cooling = false;
+        // GCodeEditor.cpp:133-140 — outwall smooth-mark state
+        let mut object_id: i32 = -1;
+        let mut cooling_node_id: i32 = -1;
         let current_pos = &mut self.m_current_pos;
 
         let bytes = gcode.as_bytes();
@@ -1962,6 +2024,15 @@ impl GCodeEditorState {
                 cl.line_type = CoolingLine::TYPE_G2;
             } else if sline.starts_with("G3 ") {
                 cl.line_type = CoolingLine::TYPE_G3;
+            } else if sline.starts_with("; OBJECT_ID: ") {
+                // GCodeEditor.cpp:163-166
+                object_id = sline["; OBJECT_ID: ".len()..].trim().parse().unwrap_or(-1);
+            } else if sline.starts_with("; COOLING_NODE: ") {
+                // GCodeEditor.cpp:166-169
+                cooling_node_id = sline["; COOLING_NODE: ".len()..]
+                    .trim()
+                    .parse()
+                    .unwrap_or(-1);
             } else if sline.contains(";not reset fan") {
                 not_set_additional_fan = true;
             }
@@ -2016,6 +2087,22 @@ impl GCodeEditorState {
                     let ecfg = &extruder_configs[adj_idx.min(extruder_configs.len() - 1)];
                     if ecfg.no_slow_down_for_cooling_on_outwalls {
                         cl.line_type &= !CoolingLine::TYPE_ADJUSTABLE;
+                    }
+                    // GCodeEditor.cpp:222-227 mark_node_pos + :44-52
+                    // record_wall_lines — native records line_idx and stamps the
+                    // SAME line on the next iteration; collapsed to a direct set.
+                    if (cl.line_type & CoolingLine::TYPE_ADJUSTABLE) != 0
+                        && _join_z_smooth
+                        && !_spiral_vase
+                        && cooling_node_id != -1
+                    {
+                        if let Some(object_idx) =
+                            _object_label.iter().position(|&l| l == object_id)
+                        {
+                            cl.outwall_smooth_mark = true;
+                            cl.object_id = object_idx as i32;
+                            cl.cooling_node_id = cooling_node_id;
+                        }
                     }
                 }
 
@@ -2559,6 +2646,121 @@ impl GCodeEditorState {
 
 /// Calculate layer slowdown for the post-processor adjustments.
 /// Reference: CoolingBuffer::calculate_layer_slowdown() (CoolingBuffer.cpp:259-350)
+/// Parsed-but-unwritten layer for the two-phase cooling path.
+pub struct ParsedLayer {
+    pub gcode: String,
+    pub adjustments: Vec<PostProcAdjustments>,
+    pub not_set_additional_fan: bool,
+    pub layer_time: f32,
+    pub layer_id: usize,
+}
+
+/// Smoothing.cpp:5-43 `SmoothCalculator::build_node` over the live
+/// PostProcAdjustments types (smoothing.rs's own copy consumes the parallel
+/// g_code_editor port; the data structs are shared).
+pub fn build_node_postproc(
+    wall_collection: &mut Vec<crate::gcode::smoothing::OutwallCollection>,
+    object_label: &[i32],
+    per_extruder_adjustments: &[PostProcAdjustments],
+) {
+    use crate::gcode::smoothing::{CoolingNode, OutwallCollection};
+    if per_extruder_adjustments.is_empty() {
+        return;
+    }
+    for object_idx in 0..object_label.len() {
+        let mut object_level = OutwallCollection::new();
+        object_level.object_id = object_label[object_idx];
+        wall_collection.push(object_level);
+    }
+    for (extruder_idx, extruder_adjustments) in per_extruder_adjustments.iter().enumerate() {
+        for (line_idx, line) in extruder_adjustments.lines.iter().enumerate() {
+            if line.outwall_smooth_mark {
+                let nodes = &mut wall_collection[line.object_id as usize].cooling_nodes;
+                nodes
+                    .entry(line.cooling_node_id)
+                    .or_insert_with(CoolingNode::new);
+                let node = nodes.get_mut(&line.cooling_node_id).unwrap();
+                if (line.line_type & CoolingLine::TYPE_EXTERNAL_PERIMETER) != 0 {
+                    node.outwall_line.push((line_idx as i32, extruder_idx as i32));
+                    if node.max_feedrate < line.feedrate {
+                        node.max_feedrate = line.feedrate;
+                        node.filter_feedrate = node.max_feedrate;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Smoothing.cpp:45-62 `exclude_participate_in_speed_slowdown` over
+/// PostProcAdjustments: clamp outwall lines to the smoothed filter_feedrate,
+/// drop them from further cooling adjustment, recompute their times.
+fn exclude_participate_postproc(
+    lines_pos: &[(i32, i32)],
+    per_extruder_adjustments: &mut [PostProcAdjustments],
+    node: &crate::gcode::smoothing::CoolingNode,
+) -> f64 {
+    let apply_speed = node.max_feedrate > 0.0 && node.filter_feedrate > 0.0;
+    let mut rate = node.rate;
+    if apply_speed {
+        rate = node.filter_feedrate as f64 / node.max_feedrate as f64;
+    }
+    for &(line_pos, extruder_pos) in lines_pos {
+        let line = &mut per_extruder_adjustments[extruder_pos as usize].lines[line_pos as usize];
+        if apply_speed && line.feedrate > node.filter_feedrate {
+            line.feedrate = node.filter_feedrate;
+            line.slowdown = true;
+        }
+        line.line_type &= !CoolingLine::TYPE_ADJUSTABLE;
+        if line.feedrate == 0.0 || line.length == 0.0 {
+            line.time = 0.0;
+        } else {
+            line.time = line.length / line.feedrate;
+        }
+    }
+    rate
+}
+
+/// Smoothing.cpp:64-80 `SmoothCalculator::recaculate_layer_time` over
+/// PostProcAdjustments. Mirrors the C++ `std::map::operator[]` loop that
+/// self-densifies sparse node keys (bound re-read each iteration).
+pub fn recalculate_layer_time_postproc(
+    smoother: &mut crate::gcode::smoothing::SmoothCalculator,
+    layer_id: usize,
+    per_extruder_adjustments: &mut [PostProcAdjustments],
+) -> f32 {
+    use crate::gcode::smoothing::CoolingNode;
+    for obj_id in 0..smoother.layers_wall_collection[layer_id].len() {
+        let mut node_id: usize = 0;
+        while node_id < smoother.layers_wall_collection[layer_id][obj_id].cooling_nodes.len() {
+            let node = smoother.layers_wall_collection[layer_id][obj_id]
+                .cooling_nodes
+                .entry(node_id as i32)
+                .or_insert_with(CoolingNode::new)
+                .clone();
+            let rate = exclude_participate_postproc(
+                &node.outwall_line,
+                per_extruder_adjustments,
+                &node,
+            );
+            let stored = smoother.layers_wall_collection[layer_id][obj_id]
+                .cooling_nodes
+                .get_mut(&(node_id as i32))
+                .unwrap();
+            stored.rate = rate;
+            node_id += 1;
+        }
+    }
+
+    let mut layer_time = 0.0f32;
+    for extruder in per_extruder_adjustments.iter() {
+        for line in &extruder.lines {
+            layer_time += line.time;
+        }
+    }
+    layer_time
+}
+
 fn calculate_layer_slowdown_postproc(
     per_extruder_adjustments: &mut [PostProcAdjustments],
     cooling_logic_proportional: bool,

@@ -676,6 +676,21 @@ impl Print {
             let mut processed = String::with_capacity(raw.len() + 4096);
             let mut editor_state = crate::gcode::cooling::GCodeEditorState::new();
 
+            // GCode.cpp process_layers: object_label = per-instance labeled ids
+            // (same source as the `; OBJECT_ID:` emission above).
+            let object_label: Vec<i32> = self
+                .objects
+                .iter()
+                .enumerate()
+                .map(|(i, o)| {
+                    if o.label_id > 0 {
+                        o.label_id as i32
+                    } else {
+                        i as i32
+                    }
+                })
+                .collect();
+
             // Split by CHANGE_LAYER and process each layer with flush
             let mut last_end = 0;
             let mut layer_starts: Vec<usize> = Vec::new();
@@ -684,30 +699,93 @@ impl Print {
             }
             layer_starts.push(raw.len()); // sentinel
 
-            for layer_idx in 0..layer_starts.len().saturating_sub(1) {
-                let start = layer_starts[layer_idx];
-                let end = layer_starts[layer_idx + 1];
+            // z-direction outwall smoothing (GCode.cpp:3396-3417): two-phase —
+            // parse+slowdown all layers, build wall nodes, run the
+            // SmoothCalculator across layers, then rewrite. Gated.
+            let zsmooth = std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                && self.config.z_direction_outwall_speed_continuous
+                && !self.config.spiral_vase;
 
-                // Append any text before first CHANGE_LAYER
-                if start > last_end {
-                    processed.push_str(&raw[last_end..start]);
+            if zsmooth {
+                let mut smoother =
+                    crate::gcode::smoothing::SmoothCalculator::new(object_label.len() as i32);
+                let mut parsed_layers: Vec<crate::gcode::cooling::ParsedLayer> = Vec::new();
+                let mut preambles: Vec<String> = Vec::new();
+
+                for layer_idx in 0..layer_starts.len().saturating_sub(1) {
+                    let start = layer_starts[layer_idx];
+                    let end = layer_starts[layer_idx + 1];
+                    preambles.push(if start > last_end {
+                        raw[last_end..start].to_string()
+                    } else {
+                        String::new()
+                    });
+                    let parsed = editor_state.process_layer_parse_only(
+                        &raw[start..end],
+                        layer_idx,
+                        &extruder_configs,
+                        self.config.cooling_logic_proportional,
+                        &self.config.toolchange_prefix,
+                        self.config.use_relative_e_distances_cooling,
+                        &object_label,
+                        self.config.spiral_vase,
+                    );
+                    let mut wall: Vec<crate::gcode::smoothing::OutwallCollection> = Vec::new();
+                    crate::gcode::cooling::build_node_postproc(
+                        &mut wall,
+                        &object_label,
+                        &parsed.adjustments,
+                    );
+                    smoother.append_data_no_time(&wall);
+                    parsed_layers.push(parsed);
+                    last_end = end;
                 }
 
-                let layer_gcode_str = &raw[start..end];
-                let cooled = editor_state.process_layer(
-                    layer_gcode_str,
-                    layer_idx,
-                    &extruder_configs,
-                    self.config.cooling_logic_proportional,
-                    self.config.auxiliary_fan,
-                    &self.config.toolchange_prefix,
-                    self.config.use_relative_e_distances_cooling,
-                    &[],  // object_label
-                    true, // flush each layer
-                    self.config.spiral_vase,
-                );
-                processed.push_str(&cooled);
-                last_end = end;
+                smoother.smooth_layer_speed();
+
+                for (layer_idx, parsed) in parsed_layers.iter_mut().enumerate() {
+                    if layer_idx > 0 {
+                        parsed.layer_time = crate::gcode::cooling::recalculate_layer_time_postproc(
+                            &mut smoother,
+                            layer_idx,
+                            &mut parsed.adjustments,
+                        );
+                    }
+                    processed.push_str(&preambles[layer_idx]);
+                    let cooled = editor_state.write_parsed_layer(
+                        parsed,
+                        &extruder_configs,
+                        self.config.auxiliary_fan,
+                        &self.config.toolchange_prefix,
+                    );
+                    processed.push_str(&cooled);
+                }
+            } else {
+                for layer_idx in 0..layer_starts.len().saturating_sub(1) {
+                    let start = layer_starts[layer_idx];
+                    let end = layer_starts[layer_idx + 1];
+
+                    // Append any text before first CHANGE_LAYER
+                    if start > last_end {
+                        processed.push_str(&raw[last_end..start]);
+                    }
+
+                    let layer_gcode_str = &raw[start..end];
+                    let cooled = editor_state.process_layer(
+                        layer_gcode_str,
+                        layer_idx,
+                        &extruder_configs,
+                        self.config.cooling_logic_proportional,
+                        self.config.auxiliary_fan,
+                        &self.config.toolchange_prefix,
+                        self.config.use_relative_e_distances_cooling,
+                        &object_label,
+                        true, // flush each layer
+                        self.config.spiral_vase,
+                    );
+                    processed.push_str(&cooled);
+                    last_end = end;
+                }
             }
             // Append trailing content after last layer
             if last_end < raw.len() {
