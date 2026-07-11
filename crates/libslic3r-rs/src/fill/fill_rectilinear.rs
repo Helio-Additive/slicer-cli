@@ -3522,6 +3522,15 @@ fn chain_monotonic_regions(
     if n == 0 {
         return Vec::new();
     }
+    // FIDELITY-NOTE (R148): native has NO n==1 shortcut — its ACO runs even for a
+    // single region and picks `flipped` by path COST (native single-region chains
+    // split 70F/67 on benchy). This hardcoded flipped=false reverses the whole
+    // monotonic sweep on ~half the top/bottom solid fills (L196 chain runs
+    // back-to-front). Removing the shortcut exposes a SECOND bug: the rust ant
+    // loop never initializes the first region's link, so n==1 yields an EMPTY
+    // path (silent line loss). The faithful fix = port native's ant-path
+    // initialization (FillRectilinear.cpp:2410-2460 first-pick + flipped cost),
+    // then delete this shortcut.
     if n == 1 {
         return vec![MonotonicRegionLink {
             region_idx: 0,
