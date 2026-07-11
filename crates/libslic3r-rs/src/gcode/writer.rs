@@ -751,6 +751,13 @@ impl GCodeWriter {
         self.last_emitted_f = feedrate;
     }
 
+    /// R221: native m_wipe.path = the loop's SOURCE polyline points
+    /// (GCode.cpp:5600-5610), not the emitted (arc-fitted) moves. The exporter
+    /// installs it at loop end.
+    pub fn set_wipe_path_points(&mut self, pts: Vec<(CoordF, CoordF)>) {
+        self.wipe_path = pts;
+    }
+
     /// R220: config accessor for exporter-side seam-gap math.
     pub fn config_ref(&self) -> &PrintConfig {
         &self.config
@@ -1500,13 +1507,11 @@ impl GCodeWriter {
             let mut wipe_pts: Vec<(CoordF, CoordF)> = Vec::new();
             wipe_pts.push((self.x, self.y)); // current position
                                              // Reverse the stored path and append.
-            // R219 NOTE: native Wipe::wipe walks the loop FORWARD from its
-            // start ([cur] + path.points[1..], GCode.cpp:388-394; loops are
-            // collected unreversed at 5600-5610). Switching rust to forward
-            // walk REGRESSED (+508): the wipe then exposes that rust's INNER
-            // loop extrusion DIRECTION differs from native's (native 2nd point
-            // heads -Y, rust +X at L24) — the loop-direction divergence must
-            // converge first; the reversed walk accidentally compensates.
+            // R221 NOTE: native Wipe::wipe walks FORWARD ([cur]+points[1..],
+            // source polyline, multi-segment dE = len*(seg/wipe_dist)*0.95,
+            // role-based speed). Two re-land attempts regressed (+487/+1110):
+            // the whole wipe cluster (walk + source path + segment dE + speed)
+            // must land TOGETHER as a verbatim Wipe::wipe port — queued.
             for &(px, py) in self.wipe_path.iter().rev().skip(1) {
                 wipe_pts.push((px, py));
             }

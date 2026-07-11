@@ -307,6 +307,7 @@ pub fn extrude_loop(
     // path (the placer already steered the seam off overhangs). The epsilon is
     // C++'s `scaled<double>(0.0015)` snapping tolerance.
     loop_copy.split_at(&seam_point, false, scale(0.0015) as f64);
+
     if std::env::var("SPLITDBG2").is_ok() {
         let post = loop_copy
             .paths
@@ -536,7 +537,9 @@ pub fn extrude_loop(
     // C++: m_wipe.path.append(path.polyline);
     // C++: }
     // C++: }
-    // TODO: Implement wipe path saving (GCode.cpp:5230-5241)
+    // R221 (queued): native wipe path = the loop's SOURCE polyline points —
+    // land together with the forward walk + segment-dE + speed as a verbatim
+    // Wipe::wipe port.
 }
 
 /// Extrude an extrusion entity collection.
