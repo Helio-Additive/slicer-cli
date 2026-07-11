@@ -304,6 +304,8 @@ pub struct GCodeWriter {
     /// Per-layer context for the faithful needs_retraction (ZSMOOTH_FAITHFUL):
     /// internal-island polygons + wall boundary lines of the current layer.
     pub zsmooth_retract_ctx: Option<RetractCtx>,
+    /// GCode.cpp m_last_width — persistent LINE_WIDTH tag dedup state.
+    last_width_tag: f32,
 
     /// G-code export origin (mm), subtracted from ABSOLUTE XY in write_command
     /// (C++ GCode::m_origin / point_to_gcode). FRAME_PAIR sets this to the slice
@@ -365,6 +367,7 @@ impl GCodeWriter {
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
             zsmooth_retract_ctx: None,
+            last_width_tag: 0.0,
             gcode_origin_x: 0.0,
             gcode_origin_y: 0.0,
             last_extrusion_role: None,
@@ -604,6 +607,18 @@ impl GCodeWriter {
         if (self.last_travel_accel as u32) != effective_u {
             self.write_raw(&format!("M204 S{}", effective_u));
             self.last_travel_accel = effective;
+        }
+    }
+
+    /// m_last_width compare-and-set (GCode.cpp:6605): returns true when the
+    /// width DIFFERS from the last emitted tag (and records it).
+    pub fn width_tag_changed(&mut self, width: f64) -> bool {
+        let w = width as f32;
+        if self.last_width_tag != w {
+            self.last_width_tag = w;
+            true
+        } else {
+            false
         }
     }
 

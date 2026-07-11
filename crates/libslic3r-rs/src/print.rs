@@ -452,10 +452,24 @@ impl Print {
             writer.write_raw(&format!("; Z_HEIGHT: {}", print_z));
             let height = if first_layer {
                 print_z as f32
+            } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                // Native computes the height from FLOAT print_z values
+                // (20.4f32 - 20.2f32 = 0.200001) and prints %g — the
+                // f64-subtract-then-cast prints an exact 0.2 instead.
+                (print_z as f32) - (last_layer_z as f32)
             } else {
                 (print_z - last_layer_z) as f32
             };
-            writer.write_raw(&format!("; LAYER_HEIGHT: {}", height));
+            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                // %g (6 significant digits, trailing zeros trimmed)
+                let mut t = format!("{:.6}", height);
+                if t.contains('.') {
+                    t = t.trim_end_matches('0').trim_end_matches('.').to_string();
+                }
+                writer.write_raw(&format!("; LAYER_HEIGHT: {}", t));
+            } else {
+                writer.write_raw(&format!("; LAYER_HEIGHT: {}", height));
+            }
             last_layer_z = print_z;
             max_layer_z = max_layer_z.max(print_z);
 

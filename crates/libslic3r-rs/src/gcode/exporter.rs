@@ -639,10 +639,18 @@ pub fn extrude_collection(
                 }
             };
             if line_width > 0.0 {
-                // Format LINE_WIDTH to match BambuStudio: trim trailing zeros
-                let lw_str = format!("{:.5}", line_width);
-                let lw_trimmed = lw_str.trim_end_matches('0').trim_end_matches('.');
-                writer.write_comment(&format!("LINE_WIDTH: {}", lw_trimmed));
+                // ZSMOOTH_FAITHFUL: native's m_last_width is PERSISTENT — a
+                // feature change to the SAME width emits no new tag
+                // (GCode.cpp:6605). Rust re-emitted per feature (1177
+                // rust-only "; LINE_WIDTH: 0.42" lines).
+                let skip = std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                    && !writer.width_tag_changed(line_width);
+                if !skip {
+                    // Format LINE_WIDTH to match BambuStudio: trim trailing zeros
+                    let lw_str = format!("{:.5}", line_width);
+                    let lw_trimmed = lw_str.trim_end_matches('0').trim_end_matches('.');
+                    writer.write_comment(&format!("LINE_WIDTH: {}", lw_trimmed));
+                }
             }
             // NOTE: The feature `set_speed` (with the ;_EXTRUDE_SET_SPEED cooling
             // marker) is intentionally NOT emitted here, before the intra-collection
