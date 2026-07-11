@@ -1734,6 +1734,20 @@ fn parse_axis(line: &str, axis: char) -> Option<f32> {
 
 /// Fan speed format for G-code output.
 fn format_set_fan(fan_speed: i32) -> String {
+    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        // GCodeWriter::set_fan (GCodeWriter.cpp:862-894), default flavor:
+        // speed==0 -> "M106 S0"; else "M106 S" << 255.0*speed/100.0 (ostream
+        // %g -> fractional, e.g. 79% -> 201.45).
+        if fan_speed <= 0 {
+            return "M106 S0\n".to_string();
+        }
+        let s = 255.0f64 * fan_speed as f64 / 100.0;
+        let mut t = format!("{:.6}", s);
+        if t.contains('.') {
+            t = t.trim_end_matches('0').trim_end_matches('.').to_string();
+        }
+        return format!("M106 S{}\n", t);
+    }
     if fan_speed > 0 {
         let s_val = ((fan_speed as f32) * 255.0 / 100.0).round() as i32;
         format!("M106 S{}\n", s_val.min(255).max(0))
@@ -2360,6 +2374,14 @@ impl GCodeEditorState {
                     additional_fan_speed_new = cfg.first_x_layer_fan_speed;
                 }
 
+                if std::env::var("FANDBG").is_ok() && layer_id < 6 {
+                    eprintln!(
+                        "FANDBG l={} lt={:.2} min={} max={} cool_lt={} slow_lt={} close={} new={}",
+                        layer_id, layer_time, cfg.fan_min_speed, cfg.fan_max_speed,
+                        cfg.fan_cooling_layer_time, cfg.slow_down_layer_time,
+                        close_fan_first, fan_speed_new
+                    );
+                }
                 if fan_speed_new != state.m_fan_speed {
                     state.m_fan_speed = fan_speed_new;
                     state.m_current_fan_speed = fan_speed_new;

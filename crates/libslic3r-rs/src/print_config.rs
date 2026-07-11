@@ -1745,6 +1745,12 @@ pub struct PrintObjectConfig {
     /// Enable overhang speed adjustment.
     /// BambuStudio: `enable_overhang_speed`.
     pub enable_overhang_speed: bool,
+    /// Enable fan boost on overhangs/bridges (filament setting).
+    /// BambuStudio: `enable_overhang_bridge_fan` (per-filament bools).
+    pub enable_overhang_bridge_fan: bool,
+    /// Overhang fan threshold enum index (PrintConfig.cpp:1200-1205:
+    /// "0%"=0(none) "10%"=1 "25%"=2 "50%"=3 "75%"=4 "95%"=5).
+    pub overhang_fan_threshold: i32,
     /// Overhang 1/4 speed (mm/s or %).
     /// BambuStudio: `overhang_1_4_speed`.
     pub overhang_1_4_speed: CoordF,
@@ -2661,6 +2667,27 @@ impl PrintObjectConfig {
                 }
                 true
             }
+            "enable_overhang_bridge_fan" => {
+                // per-filament list "1,1,1,1,1" — first element
+                if let Some(v) = parse_bool(value.split(',').next().unwrap_or(value)) {
+                    self.enable_overhang_bridge_fan = v;
+                }
+                true
+            }
+            "overhang_fan_threshold" => {
+                // enum strings (PrintConfig.cpp:1200-1205); may be per-filament list
+                let first = value.split(',').next().unwrap_or(value).trim();
+                self.overhang_fan_threshold = match first {
+                    "0%" => 0,
+                    "10%" => 1,
+                    "25%" => 2,
+                    "50%" => 3,
+                    "75%" => 4,
+                    "95%" => 5,
+                    _ => self.overhang_fan_threshold,
+                };
+                true
+            }
             "overhang_1_4_speed" => {
                 if let Some(v) = parse_f64(value) {
                     self.overhang_1_4_speed = v;
@@ -3257,6 +3284,8 @@ impl Default for PrintObjectConfig {
             // the prior `false` left the per-segment overhang-degree speed modulation
             // dormant. Flipped to match the reference so overhang_*_speed take effect.
             enable_overhang_speed: true,
+            enable_overhang_bridge_fan: true,
+            overhang_fan_threshold: 3,
             overhang_1_4_speed: 0.0,
             overhang_2_4_speed: 0.0,
             overhang_3_4_speed: 0.0,

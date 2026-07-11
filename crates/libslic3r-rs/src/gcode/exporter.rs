@@ -127,6 +127,30 @@ impl Default for TravelConfig {
 ///    5: overhang_totally, 6: bridge}.
 /// A table value of 0 means "use the normal speed" (the BambuStudio nullable
 /// `overhang_*_speed` default), matching the `== 0 ? normal` guards in C++.
+// GCode.cpp:6633-6641/6757-6763 — overhang/bridge fan marker condition
+// (ZSMOOTH_FAITHFUL). threshold==none forces the marker for every external
+// perimeter; otherwise degree > threshold-1 or a bridge role qualifies.
+fn overhang_fan_marker_needed(
+    config: &crate::print_config::PrintObjectConfig,
+    path: &ExtrusionPath,
+) -> bool {
+    if !config.enable_overhang_bridge_fan {
+        return false;
+    }
+    let thr = config.overhang_fan_threshold;
+    let is_bridge_role = matches!(
+        path.role,
+        crate::extrusion_entity::ExtrusionRole::BridgeInfill
+            | crate::extrusion_entity::ExtrusionRole::OverhangPerimeter
+    );
+    // Native compares via `int get_overhang_degree()` — the double degree is
+    // TRUNCATED to int before the > threshold-1 test (ExtrusionEntity.hpp:354),
+    // so deg 2.9 with threshold 50% (enum 3 -> thr-1 = 2) does NOT qualify.
+    (thr == 0 && path.role == crate::extrusion_entity::ExtrusionRole::ExternalPerimeter)
+        || (path.overhang_degree as i32) > (thr - 1).max(0)
+        || is_bridge_role
+}
+
 fn overhang_degree_corr_speed(
     config: &crate::print_config::PrintObjectConfig,
     normal_speed: f64,
@@ -323,6 +347,7 @@ pub fn extrude_loop(
     // speed (GCode.cpp:5382-5404). Here we apply the overhang-degree-corrected
     // speed per path (only when it differs from the feature speed already set by
     // extrude_collection), so the F feedrate is modulated per segment.
+    let zsmooth_markers = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
     let loop_role = loop_copy.paths.first().map(|p| p.role);
     let apply_overhang_speed = config.enable_overhang_speed
         && matches!(
@@ -404,7 +429,14 @@ pub fn extrude_loop(
                 };
                 writer.set_speed(ovh_speed * 60.0, "");
             }
+            let fan_marker = zsmooth_markers && overhang_fan_marker_needed(config, path);
+            if fan_marker {
+                writer.write_raw(";_OVERHANG_FAN_START");
+            }
             extrude_path(path, writer, config, is_first_layer);
+            if fan_marker {
+                writer.write_raw(";_OVERHANG_FAN_END");
+            }
         }
         return;
     }
@@ -450,7 +482,14 @@ pub fn extrude_loop(
             // Bridge moves are not cooling-adjustable.
             writer.set_speed(ovh_speed * 60.0, "");
         }
+        let fan_marker = zsmooth_markers && overhang_fan_marker_needed(config, path);
+        if fan_marker {
+            writer.write_raw(";_OVERHANG_FAN_START");
+        }
         extrude_path(path, writer, config, is_first_layer);
+        if fan_marker {
+            writer.write_raw(";_OVERHANG_FAN_END");
+        }
     }
 
     // C++ reference: GCode.cpp:5220-5227
