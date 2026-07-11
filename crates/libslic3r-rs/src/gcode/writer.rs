@@ -291,6 +291,9 @@ pub struct GCodeWriter {
     pub m_to_lift: CoordF,
     /// 0 = NormalLift, 1 = SpiralLift, 2 = SlopeLift.
     pub m_to_lift_type: u8,
+    /// R208: native GCode::m_nominal_z — the current layer's print z; travel
+    /// destinations use this (GCode.cpp:6905 dest3d z).
+    pub nominal_z: CoordF,
 
     /// Statistics being collected.
     stats: GCodeStats,
@@ -376,6 +379,7 @@ impl GCodeWriter {
             m_lifted: 0.0,
             m_to_lift: 0.0,
             m_to_lift_type: 0,
+            nominal_z: 0.0,
             stats: GCodeStats::default(),
             layer_extrusion_time: 0.0,
             cooling_slowdown: 1.0,
@@ -1003,6 +1007,32 @@ impl GCodeWriter {
             self.m_to_lift = target_lift;
             self.m_to_lift_type = lift_type;
         }
+    }
+
+    /// R208: GCodeWriter::eager_lift SpiralLift branch (GCodeWriter.cpp:455-495)
+    /// — the layer-change lift (GCode.cpp:3039 retract(..., apply_instantly)):
+    /// STATIC spiral (ij = {radius, 0}), immediate emission, m_lifted set so the
+    /// next unretract's unlift restores Z.
+    pub fn eager_spiral_lift(&mut self) {
+        let to_lift = self.retract_lift - self.m_lifted;
+        if to_lift < 1e-4 {
+            return;
+        }
+        let slope_threshold = 3.0 * std::f64::consts::PI / 180.0;
+        let radius = to_lift / (2.0 * std::f64::consts::PI * slope_threshold.atan());
+        let target_z = self.z + to_lift;
+        let travel_f = self.config.travel_speed * 60.0;
+        self.write_command(&GCodeCommand::SelectXYPlane);
+        self.write_raw(&format!(
+            "G3 Z{} I{} J0 P1  F{:.0}",
+            format_gcode_value(target_z, 3),
+            format_gcode_value(radius, 3),
+            travel_f
+        ));
+        self.z = target_z;
+        self.last_emitted_f = travel_f;
+        self.m_lifted = self.retract_lift;
+        self.m_to_lift = 0.0;
     }
 
     /// GCodeWriter::will_move_z (GCodeWriter.cpp:683-697).

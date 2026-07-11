@@ -543,7 +543,16 @@ impl Print {
             // so that unretract() can correctly descend back to layer Z.
             let hop_z = print_z + height as f64;
             let travel_feedrate = self.config.travel_speed * 60.0;
-            writer.z_hop_linear(print_z, hop_z, travel_feedrate);
+            writer.nominal_z = print_z;
+            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                // R208: native change_layer retracts with apply_instantly=true
+                // (GCode.cpp:3039) -> eager_lift = STATIC spiral (G17 + G3
+                // Z I<radius> J0 P1  F), m_lifted set; the next unretract
+                // unlifts down to the new layer z.
+                writer.eager_spiral_lift();
+            } else {
+                writer.z_hop_linear(print_z, hop_z, travel_feedrate);
+            }
 
             // GCode.cpp:4412-4416 -- timelapse gcode (non-traditional mode, i.e. X1C)
             // insert_timelapse_gcode() processes time_lapse_gcode template with layer_z

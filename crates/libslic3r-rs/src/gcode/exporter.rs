@@ -743,7 +743,7 @@ pub fn extrude_collection(
                     // R206: single travel_to_xyz merges the pending lazy lift
                     // (GCode.cpp:6902-6912, travel.size()==2 branch; dest z =
                     // the current nominal z).
-                    let zdest = writer.z();
+                    let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
                     writer.travel_to_xyz(tx, ty, zdest);
                 } else {
                     writer.travel_to(tx, ty, None);
@@ -1323,7 +1323,7 @@ pub fn extrude_perimeters(
         let target_x = crate::unscale(first_pt.x());
         let target_y = crate::unscale(first_pt.y());
         if crate::gcode::writer::lift_faithful_gate() {
-            let zdest = writer.z();
+            let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
             writer.travel_to_xyz(target_x, target_y, zdest);
         } else {
             writer.travel_to(target_x, target_y, None);
@@ -1436,7 +1436,7 @@ pub fn extrude_infill(
                 writer.set_travel_acceleration(6000.0);
             }
             if crate::gcode::writer::lift_faithful_gate() {
-                let zdest = writer.z();
+                let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
                 writer.travel_to_xyz(
                     crate::unscale(first_pt.x()),
                     crate::unscale(first_pt.y()),
@@ -1522,7 +1522,7 @@ pub fn extrude_perimeters_entities(
     }
     if let Some(first_pt) = first_pt_opt {
         if crate::gcode::writer::lift_faithful_gate() {
-            let zdest = writer.z();
+            let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
             writer.travel_to_xyz(
                 crate::unscale(first_pt.x()),
                 crate::unscale(first_pt.y()),
@@ -1624,7 +1624,7 @@ pub fn extrude_infill_entities(
                 writer.set_travel_acceleration(6000.0);
             }
             if crate::gcode::writer::lift_faithful_gate() {
-                let zdest = writer.z();
+                let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
                 writer.travel_to_xyz(
                     crate::unscale(first_pt.x()),
                     crate::unscale(first_pt.y()),
@@ -1770,7 +1770,7 @@ pub fn extrude_support(
                 writer.set_travel_acceleration(6000.0);
             }
             if crate::gcode::writer::lift_faithful_gate() {
-                let zdest = writer.z();
+                let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
                 writer.travel_to_xyz(
                     crate::unscale(first_pt.x()),
                     crate::unscale(first_pt.y()),
