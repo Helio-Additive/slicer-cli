@@ -94,6 +94,20 @@ closed 16.3k lines (the largest single win of the campaign).
 - COROLLARY: post-processors may RE-format some lines (native cooling rewrites
   slowed F as `int(floor(60·f+0.5))`) — match the format PER EMISSION SITE.
 
+## Class 8 — C++ overload resolution flips rounding semantics (R197)
+BBS Point has BOTH a member `Point operator*(const double&)` (returns
+`Point(x*r, y*r)` → Point(double,double) ctor = lrint ROUND, Point.hpp:179/200)
+and a free `operator*(const Point&, const double&)` (`coord_t(x*r)` = TRUNCATE,
+Point.hpp:255-258). For a NON-CONST lvalue or rvalue Point the MEMBER wins;
+the free operator only binds to const lvalues.
+- ANTI-PATTERN: porting "Point * double" by reading ONE of the overloads
+  (OverhangDetector's rust port used the free/truncate form everywhere —
+  every inserted overhang split point was 1 unit short; 82 layers of
+  coords-only entity divergence).
+- MAPPING: resolve the overload AT EACH CALL SITE (constness of the receiver),
+  then match that overload's rounding (`round_ties_even` for member/lrint,
+  `as i64` for the free/truncate form).
+
 ## Process rules (what actually worked for 40+ rounds)
 1. Byte-locked default: every output-changing fix behind an env gate; default
    output checksum-verified after EVERY change (147987 lines / sha 7adae05c).
