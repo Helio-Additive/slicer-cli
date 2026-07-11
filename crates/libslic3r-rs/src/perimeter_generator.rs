@@ -2342,6 +2342,26 @@ fn traverse_loops(
                             std::slice::from_ref(&poly_pl),
                             &lower_back_clipped,
                         );
+                        if std::env::var("SPLITDBG").is_ok() && config.layer_id == 1 {
+                            let fnv_pl = |pls: &[crate::geometry::Polyline]| -> (u64, usize) {
+                                let mut h: u64 = 1469598103934665603; let mut np = 0usize;
+                                for pl in pls { for pt in pl.points() { h ^= pt.x as u64; h = h.wrapping_mul(1099511628211); h ^= pt.y as u64; h = h.wrapping_mul(1099511628211); np += 1; } }
+                                (h, np)
+                            };
+                            let fnv_pg = |pgs: &[Polygon]| -> (u64, usize) {
+                                let mut h: u64 = 1469598103934665603; let mut np = 0usize;
+                                for pg in pgs { for pt in pg.points() { h ^= pt.x as u64; h = h.wrapping_mul(1099511628211); h ^= pt.y as u64; h = h.wrapping_mul(1099511628211); np += 1; } }
+                                (h, np)
+                            };
+                            let mut hp: u64 = 1469598103934665603;
+                            for pt in polygon.points() { hp ^= pt.x as u64; hp = hp.wrapping_mul(1099511628211); hp ^= pt.y as u64; hp = hp.wrapping_mul(1099511628211); }
+                            let (hc, nc) = fnv_pg(&lower_back_clipped);
+                            let (hi, ni) = fnv_pl(&inside_polines);
+                            eprintln!(
+                                "SPLITDBG-R layer=1 poly={:x} bbox={},{}/{},{} clip={:x}({}) inside={:x}({})",
+                                hp, bbox.min.x(), bbox.min.y(), bbox.max.x(), bbox.max.y(), hc, nc, hi, ni
+                            );
+                        }
                         // PerimeterGenerator.cpp:387 — remain = diff_pl_2([to_polyline(polygon)], back_clipped)
                         let remain_polines =
                             diff_pl_2(std::slice::from_ref(&poly_pl), &lower_back_clipped);
@@ -2387,6 +2407,19 @@ fn traverse_loops(
                                 upper_bound,
                                 &mut paths,
                             );
+                        }
+
+                        if std::env::var("SPLITDBG").is_ok() && config.layer_id == 1 {
+                            let mut h: u64 = 1469598103934665603;
+                            let mut np = 0usize;
+                            for pa in paths.iter() {
+                                for pt in pa.polyline.points() {
+                                    h ^= pt.x as u64; h = h.wrapping_mul(1099511628211);
+                                    h ^= pt.y as u64; h = h.wrapping_mul(1099511628211);
+                                    np += 1;
+                                }
+                            }
+                            eprintln!("SPLITDBG2-R postdeg paths={} pts={} h={:x}", paths.len(), np, h);
                         }
 
                         // PerimeterGenerator.cpp:411-432 — 100%-overhang -> detect_bridge_wall.

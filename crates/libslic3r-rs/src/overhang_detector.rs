@@ -89,8 +89,27 @@ use crate::libslic3r::EPSILON;
 /// must truncate to match byte-exact G-code, so we use this helper instead of
 /// the crate operator. (Divergence corrected — see module NOTE.)
 #[inline]
+fn faithful_round() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok())
+}
+
+#[inline]
 fn point_mul_f64(l: Point, r: f64) -> Point {
-    // Point.hpp:257 — { coord_t(l.x() * r), coord_t(l.y() * r) }
+    // R197: overload-resolution correction. `dir * t` on a NON-CONST lvalue
+    // Point binds the MEMBER `Point operator*(const double&)` (Point.hpp:200),
+    // which returns `Point(x*rhs, y*rhs)` — the Point(double,double) ctor =
+    // lrint ROUND-ties-even (Point.hpp:179). The free truncating operator
+    // (Point.hpp:255-258) only binds for const lvalues, which never happens in
+    // OverhangDetector. The old truncation shifted every inserted overhang
+    // split point by up to 1 unit (the 82-layer coords-only entity divergence).
+    if faithful_round() {
+        return Point::new(
+            (l.x() as f64 * r).round_ties_even() as i64,
+            (l.y() as f64 * r).round_ties_even() as i64,
+        );
+    }
+    // Legacy default-path behavior (byte-locked): truncate.
     Point::new((l.x() as f64 * r) as i64, (l.y() as f64 * r) as i64)
 }
 
