@@ -1379,10 +1379,31 @@ pub fn extrude_infill(
         let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) else {
             continue;
         };
-        writer.retract();
-        writer.set_travel_acceleration(6000.0);
-        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
-        writer.unretract();
+        // ZSMOOTH_FAITHFUL: bucket-start retract through faithful
+        // needs_retraction (GCode.cpp:6964) — R167.
+        {
+            let __zs_do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                let from = writer_last_pos(writer);
+                let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
+                let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
+                let travel_len = (dx * dx + dy * dy).sqrt();
+                let role = extrusions
+                    .first()
+                    .map(get_entity_role)
+                    .unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
+                writer.needs_retraction_faithful(from, first_pt, role, travel_len)
+            } else {
+                true
+            };
+            if __zs_do_retract {
+                writer.retract();
+            }
+            writer.set_travel_acceleration(6000.0);
+            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            // Native _extrude unconditionally unretracts at extrusion start —
+            // also clears the initial/carried retracted state.
+            writer.unretract();
+        }
 
         // GCode.cpp:5769-5776: for each fill, if it is an EEC, re-chain it via
         // chained_path_from(m_last_pos) and emit its entities; otherwise emit
@@ -1418,11 +1439,34 @@ pub fn extrude_perimeters_entities(
     if entities.is_empty() {
         return;
     }
-    writer.retract();
+    // ZSMOOTH_FAITHFUL: the bucket-start retract must go through the faithful
+    // needs_retraction (GCode.cpp:6964) — the unconditional retract here was
+    // the outer-wall->gap wipe excess (R167). Legacy path keeps the
+    // unconditional behavior (byte-locked).
+    let first_pt_opt = get_entity_first_point(&entities[0]);
+    let do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        match first_pt_opt {
+            Some(fp) => {
+                let from = writer_last_pos(writer);
+                let dx = crate::unscale(fp.x()) - crate::unscale(from.x);
+                let dy = crate::unscale(fp.y()) - crate::unscale(from.y);
+                let travel_len = (dx * dx + dy * dy).sqrt();
+                let role = get_entity_role(&entities[0]);
+                writer.needs_retraction_faithful(from, fp, role, travel_len)
+            }
+            None => true,
+        }
+    } else {
+        true
+    };
+    if do_retract {
+        writer.retract();
+    }
     writer.set_travel_acceleration(6000.0);
-    if let Some(first_pt) = get_entity_first_point(&entities[0]) {
+    if let Some(first_pt) = first_pt_opt {
         writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
     }
+    // Native _extrude unconditionally unretracts at extrusion start.
     writer.unretract();
     if skip_inner_walls {
         use crate::extrusion_entity::ExtrusionRole;
@@ -1482,10 +1526,31 @@ pub fn extrude_infill_entities(
         let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) else {
             continue;
         };
-        writer.retract();
-        writer.set_travel_acceleration(6000.0);
-        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
-        writer.unretract();
+        // ZSMOOTH_FAITHFUL: bucket-start retract through faithful
+        // needs_retraction (GCode.cpp:6964) — R167.
+        {
+            let __zs_do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                let from = writer_last_pos(writer);
+                let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
+                let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
+                let travel_len = (dx * dx + dy * dy).sqrt();
+                let role = extrusions
+                    .first()
+                    .map(get_entity_role)
+                    .unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
+                writer.needs_retraction_faithful(from, first_pt, role, travel_len)
+            } else {
+                true
+            };
+            if __zs_do_retract {
+                writer.retract();
+            }
+            writer.set_travel_acceleration(6000.0);
+            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            // Native _extrude unconditionally unretracts at extrusion start —
+            // also clears the initial/carried retracted state.
+            writer.unretract();
+        }
         for fill in &extrusions {
             match fill {
                 ExtrusionEntityType::Collection(eec) => {
@@ -1588,10 +1653,30 @@ pub fn extrude_support(
     // First positioning travel before the chained non-ironing group, matching
     // the prior behaviour (retract + travel to the reordered first point).
     if let Some(first_pt) = extrusions.first().and_then(get_entity_first_point) {
-        writer.retract();
-        writer.set_travel_acceleration(6000.0);
-        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
-        writer.unretract();
+        // ZSMOOTH_FAITHFUL: faithful needs_retraction (R167).
+        {
+            let __zs_do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                let from = writer_last_pos(writer);
+                let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
+                let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
+                let travel_len = (dx * dx + dy * dy).sqrt();
+                let role = extrusions
+                    .first()
+                    .map(get_entity_role)
+                    .unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
+                writer.needs_retraction_faithful(from, first_pt, role, travel_len)
+            } else {
+                true
+            };
+            if __zs_do_retract {
+                writer.retract();
+            }
+            writer.set_travel_acceleration(6000.0);
+            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            // Native _extrude unconditionally unretracts at extrusion start —
+            // also clears the initial/carried retracted state.
+            writer.unretract();
+        }
     }
 
     // GCode.cpp:5843-5845: non-ironing first, then ironing.
