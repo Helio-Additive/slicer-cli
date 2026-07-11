@@ -148,6 +148,10 @@ CzZPaths cz_propagate_wave(const int32_t *seed_xy, const int32_t *seed_lens, int
 // then the two-pass NonZero union. Grouped ExPolygon output like cz_union_ex.
 CzZPaths cz_union_ex_safety(const int32_t *xy, const int32_t *lens, int32_t num);
 
+// Faithful Slic3r::offset(Polyline, delta): jtSquare/etOpenButt ClipperOffset +
+// NonZero union. xy = n open-path (x,y) pairs; delta scaled. Free via cz_free_zpaths.
+CzZPaths cz_offset_polyline(const int32_t *xy, int32_t n, double delta, double miter_limit);
+
 CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_lens,
                               int32_t subject_num, const int32_t *clip_xy,
                               const int32_t *clip_lens, int32_t clip_num);

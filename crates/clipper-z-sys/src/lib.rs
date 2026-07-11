@@ -95,6 +95,11 @@ extern "C" {
     /// [`cz_union_ex`]. Free via [`cz_free_zpaths`].
     pub fn cz_union_ex_safety(xy: *const i32, lens: *const i32, num: i32) -> CzZPaths;
 
+    /// Faithful `Slic3r::offset(Polyline, delta)`: per-path jtSquare/etOpenButt
+    /// ClipperOffset (ShortestEdgeLength=|delta|*0.005) + NonZero union. `xy` =
+    /// `n` open-path (x,y) i32 pairs; `delta` scaled. Free via [`cz_free_zpaths`].
+    pub fn cz_offset_polyline(xy: *const i32, n: i32, delta: f64, miter_limit: f64) -> CzZPaths;
+
     pub fn cz_difference_closed(
         subject_xy: *const i32,
         subject_lens: *const i32,

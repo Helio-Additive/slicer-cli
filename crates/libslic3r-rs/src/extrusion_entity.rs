@@ -285,6 +285,52 @@ pub struct ExtrusionPath {
     pub cooling_node: i32,
 }
 
+
+/// Faithful `Slic3r::offset(Polyline, delta)` via the vendored ClipperLib
+/// (cz_offset_polyline: jtSquare/etOpenButt, MiterLimit=DefaultLineMiterLimit=0,
+/// ShortestEdgeLength=|delta|*0.005, then NonZero union) — the geo variant grids
+/// coverage rects to 1µm, flipping the razor-thin (0.2µm) adjacent-line coverage
+/// overlaps into gaps and fragmenting the gap band (R145). `delta_scaled` in
+/// scaled units.
+fn offset_polyline_clib(polyline: &crate::geometry::Polyline, delta_scaled: f64) -> Vec<Polygon> {
+    let pts = polyline.points();
+    if pts.len() < 2 {
+        return Vec::new();
+    }
+    let mut xy: Vec<i32> = Vec::with_capacity(pts.len() * 2);
+    for p in pts {
+        xy.push(p.x as i32);
+        xy.push(p.y as i32);
+    }
+    // SAFETY: live correctly-sized buffer; shim only reads; output freed below.
+    let raw = unsafe {
+        clipper_z_sys::cz_offset_polyline(xy.as_ptr(), pts.len() as i32, delta_scaled, 0.0)
+    };
+    let mut out: Vec<Polygon> = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees sizes.
+        let lens = unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in lens {
+            let n = len.max(0) as usize;
+            let mut ring: Vec<crate::geometry::Point> = Vec::with_capacity(n);
+            for k in 0..n {
+                let b = (cursor + k) * 3;
+                ring.push(crate::geometry::Point::new(coords[b] as i64, coords[b + 1] as i64));
+            }
+            cursor += n;
+            if ring.len() >= 3 {
+                out.push(Polygon::from_points(ring));
+            }
+        }
+    }
+    // SAFETY: raw produced above, not yet freed.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    out
+}
+
 impl ExtrusionPath {
     // ExtrusionEntity.hpp:227 `ExtrusionPath(ExtrusionRole role) : mm3_per_mm(-1), width(-1), height(-1), m_role(role), m_no_extrusion(false) {}`
     pub fn new(role: ExtrusionRole) -> Self {
@@ -441,8 +487,12 @@ impl ExtrusionPath {
     pub fn polygons_covered_by_width(&self, out: &mut Vec<Polygon>, scaled_epsilon: f32) {
         // ExtrusionEntity.cpp:57
         let delta = scale(self.width / 2.0) as f32 + scaled_epsilon;
-        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib `offset(polyline, delta)`.
-        out.extend(offset_polyline(&self.polyline, delta as f64));
+        // Gated faithful ClipperLib offset (see offset_polyline_clib); geo default.
+        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+            out.extend(offset_polyline_clib(&self.polyline, delta as f64));
+        } else {
+            out.extend(offset_polyline(&self.polyline, delta as f64));
+        }
     }
 
     // ExtrusionEntity.cpp:60-68 `void ExtrusionPath::polygons_covered_by_spacing(...)`
@@ -461,8 +511,12 @@ impl ExtrusionPath {
         };
         // ExtrusionEntity.cpp:67
         let delta = 0.5_f32 * flow.scaled_spacing() as f32 + scaled_epsilon;
-        // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib `offset(polyline, delta)`.
-        out.extend(offset_polyline(&self.polyline, delta as f64));
+        // Gated faithful ClipperLib offset (see offset_polyline_clib); geo default.
+        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+            out.extend(offset_polyline_clib(&self.polyline, delta as f64));
+        } else {
+            out.extend(offset_polyline(&self.polyline, delta as f64));
+        }
     }
 
     // ExtrusionEntity.cpp:70-80 `bool ExtrusionPath::can_merge(const ExtrusionPath& other)`

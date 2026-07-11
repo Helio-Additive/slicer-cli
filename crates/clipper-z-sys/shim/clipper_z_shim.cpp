@@ -483,6 +483,37 @@ extern "C" CzZPaths cz_propagate_wave(
     return marshal_paths(polygons);
 }
 
+// Faithful `Slic3r::offset(const Polyline&, delta)` (ClipperUtils.cpp:418-419):
+// raw_offset_polyline (per-path ClipperOffset, default jtSquare/etOpenButt,
+// MiterLimit=DefaultLineMiterLimit, ShortestEdgeLength=|delta|*0.005) followed by
+// clipper_union<Paths> (NonZero). `xy`/`n` = one OPEN polyline (flat i32 pairs);
+// delta in scaled units. Returns the covered polygons (z=0). Free via cz_free_zpaths.
+extern "C" CzZPaths cz_offset_polyline(const int32_t *xy, int32_t n, double delta,
+                                       double miter_limit) {
+    ClipperLib::Path path;
+    path.reserve(n);
+    for (int32_t i = 0; i < n; ++i)
+        path.emplace_back(xy[2 * i], xy[2 * i + 1]);
+    if (path.size() < 2)
+        return marshal_paths(ClipperLib::Paths{});
+
+    ClipperLib::ClipperOffset co;
+    co.MiterLimit = miter_limit;
+    co.ShortestEdgeLength = std::abs(delta * 0.005);
+    co.AddPath(path, ClipperLib::jtSquare, ClipperLib::etOpenButt);
+    ClipperLib::Paths raw;
+    co.Execute(raw, delta);
+    if (raw.empty())
+        return marshal_paths(ClipperLib::Paths{});
+
+    // clipper_union<Paths>(NonZero) — ClipperUtils.cpp offset(Polyline) tail.
+    ClipperLib::Clipper c;
+    c.AddPaths(raw, ClipperLib::ptSubject, true);
+    ClipperLib::Paths out;
+    c.Execute(ClipperLib::ctUnion, out, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+    return marshal_paths(out);
+}
+
 extern "C" CzZPaths cz_difference_closed(const int32_t *subject_xy, const int32_t *subject_lens,
                                          int32_t subject_num, const int32_t *clip_xy,
                                          const int32_t *clip_lens, int32_t clip_num) {
