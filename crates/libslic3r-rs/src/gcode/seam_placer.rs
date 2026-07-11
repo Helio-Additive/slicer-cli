@@ -3107,13 +3107,22 @@ impl SeamPlacer {
     /// loop is not a region perimeter, or the layer index is out of range), so
     /// the caller can fall back to the legacy heuristic.
     pub fn place_seam(&self, layer_idx: usize, polygon: &Polygon, last_pos: Point) -> Option<Point> {
+        let dbg = std::env::var("SEAMDBG").is_ok();
+        macro_rules! ret_none {
+            ($why:expr) => {{
+                if dbg {
+                    eprintln!("PLACESEAM-R layer={} NONE {}", layer_idx, $why);
+                }
+                return None;
+            }};
+        }
         // SeamPlacer.cpp:1464-1470 — guard.
         if layer_idx >= self.seam_data.layers.len() {
-            return None;
+            ret_none!("layer_oob");
         }
         let layer = &self.seam_data.layers[layer_idx];
         if layer.points.is_empty() {
-            return None;
+            ret_none!("no_points");
         }
 
         // SeamPlacer.cpp:1481-1485 — query the per-layer f32 points_tree for the
@@ -3140,7 +3149,7 @@ impl SeamPlacer {
             |_| true,
         );
         if nearest_point_index == crate::kd_tree_indirect::NPOS {
-            return None;
+            ret_none!("npos");
         }
 
         // SeamPlacer.cpp:1487 — resolve the owning perimeter.

@@ -492,6 +492,13 @@ impl GCodeWriter {
         dest_role: crate::extrusion_entity::ExtrusionRole,
         travel_len_mm: CoordF,
     ) -> bool {
+        if std::env::var("RETDBG").is_ok() {
+            eprintln!(
+                "RETDBG-R z={:.3} role={:?} last={:?} len={:.4} from={},{} to={},{}",
+                self.nominal_z, dest_role, self.last_extrusion_role, travel_len_mm,
+                from.x, from.y, to.x, to.y
+            );
+        }
         use crate::extrusion_entity::ExtrusionRole;
         if self.retracted {
             return false;
