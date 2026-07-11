@@ -751,6 +751,12 @@ impl GCodeWriter {
         self.last_emitted_f = feedrate;
     }
 
+    /// R219: native replaces m_wipe.path per _extrude (GCode.cpp:5600-5610);
+    /// the accumulated path must span only the CURRENT loop/path entity.
+    pub fn reset_wipe_path(&mut self) {
+        self.wipe_path.clear();
+    }
+
     /// Write a raw G-code line.
     pub fn write_raw(&mut self, line: &str) {
         self.gcode.append_line(line);
@@ -1488,7 +1494,14 @@ impl GCodeWriter {
             // Build reversed wipe path from current position
             let mut wipe_pts: Vec<(CoordF, CoordF)> = Vec::new();
             wipe_pts.push((self.x, self.y)); // current position
-                                             // Reverse the stored path and append
+                                             // Reverse the stored path and append.
+            // R219 NOTE: native Wipe::wipe walks the loop FORWARD from its
+            // start ([cur] + path.points[1..], GCode.cpp:388-394; loops are
+            // collected unreversed at 5600-5610). Switching rust to forward
+            // walk REGRESSED (+508): the wipe then exposes that rust's INNER
+            // loop extrusion DIRECTION differs from native's (native 2nd point
+            // heads -Y, rust +X at L24) — the loop-direction divergence must
+            // converge first; the reversed walk accidentally compensates.
             for &(px, py) in self.wipe_path.iter().rev().skip(1) {
                 wipe_pts.push((px, py));
             }
