@@ -83,6 +83,13 @@ pub struct LayerRegion {
     /// Layer::loop_nodes with a rebase (z-direction speed continuity).
     pub loop_nodes_out: Vec<LoopNode>,
 
+    /// Per-entity cooling-node ids for `perimeters.entities` (aligned by
+    /// index; -1 = none). Native stores this on the ExtrusionEntity base
+    /// (set_cooling_node, ExtrusionEntity.hpp:144); the Rust port keeps a
+    /// parallel vec to avoid threading a field through every entity literal.
+    /// Consumed by the gated `; COOLING_NODE:` emission (GCode.cpp:5738-5747).
+    pub entity_cooling_nodes: Vec<i32>,
+
     pub lower_slices: Option<Vec<crate::geometry::ExPolygon>>,
 
     /// Upper layer slices for top-surface detection (set before make_perimeters)
@@ -119,6 +126,7 @@ impl LayerRegion {
             raw_holes_circle_compensation: Polygons::new(),
             thin_fills: ExtrusionEntityCollection::new(),
             loop_nodes_out: Vec::new(),
+            entity_cooling_nodes: Vec::new(),
             fill_expolygons: ExPolygons::new(),
             fill_surfaces: SurfaceCollection::new(),
             fill_no_overlap_expolygons: ExPolygons::new(),
@@ -1822,23 +1830,185 @@ impl Layer {
         }
     }
 
-    // Layer.cpp:354
     // C++: void Layer::calculate_perimeter_continuity(std::vector<LoopNode> &prev_nodes)
-    //
-    // FIDELITY-NOTE: not faithfully portable in this crate yet. The C++ body
-    // (Layer.cpp:355-431) walks `loop_nodes[*].node_contour.{pts,widths,is_loop}`
-    // and queries a `ContinuitiousDistancer` (AABBTreeLines squared-distance,
-    // Layer.cpp:298-340) to thread continuity edges between this layer's nodes
-    // and `prev_nodes`. This crate's `layer::LoopNode` (used by print_object.rs)
-    // does NOT model `node_contour`, and there is no AABBTreeLines distancer nor
-    // `BoundingBox::overlap`. The outer node-iteration skeleton is reproduced;
-    // the distance-driven edge linking is omitted pending that infrastructure.
-    pub fn calculate_perimeter_continuity(&mut self, _prev_nodes: &mut [LoopNode]) {
+    // Layer.cpp:353-431. Links this layer's LoopNodes to the previous layer's
+    // when a stretch of the previous contour of accumulated length >=
+    // Continuitious_length (scale_(0.01) = 1000) stays within the width limit
+    // of this node's contour. Distance = unsigned distance to the nearest
+    // segment (native ContinuitiousDistancer signs it by side, but the
+    // consumer only tests |dist| < width). NOTE native
+    // `static const int dist_scale_threshold = 1.2` truncates to int 1 — the
+    // width limit is exactly the previous width; ported faithfully.
+    pub fn calculate_perimeter_continuity(&mut self, prev_nodes: &mut [LoopNode]) {
+        const CONTINUITIOUS_LENGTH: f64 = 1000.0; // scale_(0.01)
+
+        // Layer.cpp:342-351 get_node_continuity_rang_limit (the ×1.2 truncates
+        // away through the int constant).
+        fn width_limit(widths: &[crate::Coord], idx: usize) -> f64 {
+            if idx != 0 && idx < widths.len() {
+                widths[idx] as f64
+            } else {
+                widths.first().copied().unwrap_or(0) as f64
+            }
+        }
+
+        // Unsigned distance from `p` to the nearest segment of `pts`
+        // (ContinuitiousDistancer, Layer.cpp:298-340; sign dropped — the only
+        // consumer tests the absolute band).
+        fn distance_from_perimeter(pts: &[crate::Point], p: &crate::Point) -> f64 {
+            let (px, py) = (p.x as f64, p.y as f64);
+            let mut best = f64::MAX;
+            for i in 1..pts.len() {
+                let (ax, ay) = (pts[i - 1].x as f64, pts[i - 1].y as f64);
+                let (bx, by) = (pts[i].x as f64, pts[i].y as f64);
+                let (dx, dy) = (bx - ax, by - ay);
+                let l2 = dx * dx + dy * dy;
+                let d2 = if l2 == 0.0 {
+                    (px - ax).powi(2) + (py - ay).powi(2)
+                } else {
+                    let t = (((px - ax) * dx + (py - ay) * dy) / l2).clamp(0.0, 1.0);
+                    (px - (ax + t * dx)).powi(2) + (py - (ay + t * dy)).powi(2)
+                };
+                if d2 < best {
+                    best = d2;
+                }
+            }
+            if best == f64::MAX {
+                f64::MAX
+            } else {
+                best.sqrt()
+            }
+        }
+
+        fn polyline_length(pts: &[crate::Point]) -> f64 {
+            let mut len = 0.0;
+            for i in 1..pts.len() {
+                let dx = (pts[i].x - pts[i - 1].x) as f64;
+                let dy = (pts[i].y - pts[i - 1].y) as f64;
+                len += (dx * dx + dy * dy).sqrt();
+            }
+            len
+        }
+
         // Layer.cpp:355
-        // C++: for (size_t node_pos = 0; node_pos < loop_nodes.size(); ++node_pos) {
-        for _node_pos in 0..self.loop_nodes.len() {
-            // Layer.cpp:356-430: node_contour distancer + prev_nodes bbox-overlap
-            // loop + continuity polyline accumulation — omitted (see note above).
+        for node_pos in 0..self.loop_nodes.len() {
+            let node_pts = self.loop_nodes[node_pos].node_contour.pts.clone();
+            let node_bbox = self.loop_nodes[node_pos].bbox.clone();
+            let node_id = self.loop_nodes[node_pos].node_id;
+            for prev_node in prev_nodes.iter_mut() {
+                // Layer.cpp:361-363 — no overlap
+                if !node_bbox.intersects(&prev_node.bbox) {
+                    continue;
+                }
+
+                // Layer.cpp:366-371
+                let mut continuitious_pl: Vec<crate::Point> = Vec::new();
+                let mut flag = false;
+                let mut end: i64 = prev_node.node_contour.pts.len() as i64 - 1;
+
+                // Layer.cpp:373-395 — loop contour: walk backwards from the end
+                if prev_node.node_contour.is_loop {
+                    while end >= 0 {
+                        if polyline_length(&continuitious_pl) >= CONTINUITIOUS_LENGTH {
+                            self.loop_nodes[node_pos].lower_node_ids.push(prev_node.node_id);
+                            prev_node.upper_node_ids.push(node_id);
+                            flag = true;
+                            break;
+                        }
+                        let pt = prev_node.node_contour.pts[end as usize];
+                        let dist = distance_from_perimeter(&node_pts, &pt);
+                        let width = width_limit(&prev_node.node_contour.widths, end as usize);
+                        if dist < width && dist > -width {
+                            continuitious_pl.insert(0, pt); // append_before
+                        } else {
+                            break;
+                        }
+                        end -= 1;
+                    }
+                    if flag || end < 0 {
+                        continue;
+                    }
+                }
+
+                // Layer.cpp:397-401
+                let mut last_pt_idx = end;
+                if !prev_node.node_contour.is_loop {
+                    last_pt_idx += 1;
+                }
+
+                // Layer.cpp:403-424 — forward walk (continuitious_pl carries
+                // over from the backward walk, per native).
+                let mut start: i64 = 0;
+                while start < last_pt_idx {
+                    let pt = prev_node.node_contour.pts[start as usize];
+                    let dist = distance_from_perimeter(&node_pts, &pt);
+                    let width = width_limit(&prev_node.node_contour.widths, start as usize);
+                    if dist < width && dist > -width {
+                        continuitious_pl.push(pt);
+                        start += 1;
+                        continue;
+                    }
+                    if continuitious_pl.is_empty()
+                        || polyline_length(&continuitious_pl) < CONTINUITIOUS_LENGTH
+                    {
+                        continuitious_pl.clear();
+                        start += 1;
+                        continue;
+                    }
+                    self.loop_nodes[node_pos].lower_node_ids.push(prev_node.node_id);
+                    prev_node.upper_node_ids.push(node_id);
+                    continuitious_pl.clear();
+                    break;
+                }
+
+                // Layer.cpp:426-429
+                if polyline_length(&continuitious_pl) >= CONTINUITIOUS_LENGTH {
+                    self.loop_nodes[node_pos].lower_node_ids.push(prev_node.node_id);
+                    prev_node.upper_node_ids.push(node_id);
+                }
+            }
+        }
+    }
+
+    // Layer.cpp:435-460
+    // C++: void Layer::recrod_cooling_node_for_each_extrusion()
+    // Maps each perimeter entity of every region onto the merged_id of its
+    // LoopNode (via the collection's loop_node_range and the nodes' loop_id =
+    // entity index), storing it as the entity's cooling_node. The Rust port
+    // keeps ONE flat perimeters collection per region (native nests one
+    // collection per island), so the range walk runs over that collection.
+    pub fn record_cooling_node_for_each_extrusion(&mut self) {
+        for region in &mut self.regions {
+            let (range_start, range_end) = region.perimeters.loop_node_range;
+            if range_start >= range_end {
+                continue;
+            }
+            let mut start = range_start;
+            let mut cooling_node: i32 = self.loop_nodes[start]
+                .merged_id
+                .map(|v| v as i32)
+                .unwrap_or(-1);
+            let mut next_pos: i64 = if start + 1 < range_end {
+                self.loop_nodes[start + 1].loop_id as i64
+            } else {
+                -1
+            };
+            region.entity_cooling_nodes = vec![-1; region.perimeters.entities.len()];
+            for idx in 0..region.perimeters.entities.len() {
+                if idx as i64 == next_pos && next_pos > 0 {
+                    start += 1;
+                    cooling_node = self.loop_nodes[start]
+                        .merged_id
+                        .map(|v| v as i32)
+                        .unwrap_or(-1);
+                    next_pos = if start + 1 < range_end {
+                        self.loop_nodes[start + 1].loop_id as i64
+                    } else {
+                        -1
+                    };
+                }
+                region.entity_cooling_nodes[idx] = cooling_node;
+            }
         }
     }
 

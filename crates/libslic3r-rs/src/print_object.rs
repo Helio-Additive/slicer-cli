@@ -673,14 +673,56 @@ impl PrintObject {
             layer.make_perimeters_with_neighbors(lower_slices, upper_slices)?;
         }
 
-        // TODO: Port C++ lines 583-615 - Perimeter continuity calculation
-        // if (this->m_print->m_config.z_direction_outwall_speed_continuous) {
-        //     tbb::parallel_for(...) {
-        //         m_layers[layer_idx]->calculate_perimeter_continuity(...);
-        //     }
-        //     merge_layer_node(...);
-        //     record_cooling_node_for_each_extrusion(...);
-        // }
+        // PrintObject.cpp:583-615 — perimeter continuity + cooling-node ids
+        // (z-direction outwall speed smoothing). Native runs the continuity
+        // and record passes as parallel_for with a `layer_idx > 1` guard;
+        // ported sequentially (layer order is irrelevant for continuity —
+        // each pass only touches layer_idx and layer_idx-1).
+        if std::env::var("NODEDBG").is_ok() {
+            eprintln!(
+                "NODEDBG flag={}",
+                self.print_config.z_direction_outwall_speed_continuous
+            );
+        }
+        if self.print_config.z_direction_outwall_speed_continuous {
+            // PrintObject.cpp:583-588 — calculate_perimeter_continuity
+            for layer_idx in 2..self.layers.len() {
+                let (before, after) = self.layers.split_at_mut(layer_idx);
+                let prev = &mut before[layer_idx - 1];
+                after[0].calculate_perimeter_continuity(&mut prev.loop_nodes);
+            }
+
+            // PrintObject.cpp:595-600 — merge_layer_node
+            let mut max_merged_id: i32 = -1;
+            let mut node_record: std::collections::BTreeMap<i32, Vec<(i32, i32)>> =
+                std::collections::BTreeMap::new();
+            for layer_idx in 1..self.layers.len() {
+                self.merge_layer_node(layer_idx, &mut max_merged_id, &mut node_record);
+            }
+
+            // PrintObject.cpp:606-615 — record cooling node for each extrusion
+            // (native guard: layer_idx > 1)
+            for layer_idx in 2..self.layers.len() {
+                self.layers[layer_idx].record_cooling_node_for_each_extrusion();
+            }
+
+            if std::env::var("NODEDBG").is_ok() {
+                let total_nodes: usize = self.layers.iter().map(|l| l.loop_nodes.len()).sum();
+                let linked: usize = self
+                    .layers
+                    .iter()
+                    .flat_map(|l| l.loop_nodes.iter())
+                    .filter(|n| !n.lower_node_ids.is_empty())
+                    .count();
+                eprintln!(
+                    "NODEDBG layers={} nodes={} linked={} max_merged_id={}",
+                    self.layers.len(),
+                    total_nodes,
+                    linked,
+                    max_merged_id
+                );
+            }
+        }
 
         // Mark step as complete
         // PrintObject.cpp:620

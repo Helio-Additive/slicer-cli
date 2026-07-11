@@ -384,6 +384,17 @@ impl PerimeterGenerator {
         // Each surface is processed independently with its own last/contours/holes state.
         for slice in slices {
             let surface_result = self.generate_classic_one(slice);
+            // z-continuity metadata: rebase per-surface node/entity indices onto
+            // the merged result (LESSON R141: per-surface merges silently drop
+            // new result fields — loop_id is an entity index LOCAL to the
+            // surface, node_id LOCAL to the surface's node vec).
+            let entity_base = result.entities.entities.len();
+            let node_base = result.loop_nodes.len();
+            for mut n in surface_result.loop_nodes {
+                n.node_id += node_base;
+                n.loop_id += entity_base;
+                result.loop_nodes.push(n);
+            }
             result
                 .entities
                 .entities
@@ -393,6 +404,7 @@ impl PerimeterGenerator {
             result.gap_fills.extend(surface_result.gap_fills);
             result.top_band.extend(surface_result.top_band);
         }
+        result.entities.loop_node_range = (0, result.loop_nodes.len());
 
         result
     }
