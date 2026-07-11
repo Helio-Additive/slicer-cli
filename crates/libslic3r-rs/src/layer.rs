@@ -569,8 +569,14 @@ impl LayerRegion {
 
             let perimeter_width = perimeter_flow.width();
             let perimeter_spacing = perimeter_flow.spacing();
-            // PerimeterGenerator.cpp:1329-1330 (INSET_OVERLAP_TOLERANCE = 0.45)
-            let min = 0.2 * perimeter_width * (1.0 - 0.45);
+            // PerimeterGenerator.cpp:1329-1330 — INSET_OVERLAP_TOLERANCE = 0.4
+            // (libslic3r.h:72; the 0.45 here was WRONG, R143). Gated: default keeps
+            // the legacy value (byte-locked 147987).
+            let min = if std::env::var("F1_UNION").is_ok() {
+                0.2 * perimeter_width * (1.0 - 0.4)
+            } else {
+                0.2 * perimeter_width * (1.0 - 0.45)
+            };
             let max = 2.0 * perimeter_spacing;
             // ClipperUtils.hpp:29 — ClipperSafetyOffset = 10.f scaled units; with
             // SCALING_FACTOR = 1e-5 that is 10 * 1e-5 = 1e-4 mm (clipper_utils operates
@@ -2335,6 +2341,16 @@ impl Layer {
                 if is_monotonic_line {
                     for ent in &collection.entities {
                         if let crate::extrusion_entity::ExtrusionEntityType::Path(path) = ent {
+                            if std::env::var("MADBG").is_ok() && (self.print_z - 39.4).abs() < 0.01 {
+                                eprintln!(
+                                    "MADBG-R path w={:.5} h={:.5} spacing_of={:.5}",
+                                    path.width,
+                                    path.height,
+                                    crate::flow::Flow::new(path.width as f64, path.height as f64, 0.0)
+                                        .map(|f| f.spacing())
+                                        .unwrap_or(-1.0)
+                                );
+                            }
                             path.polygons_covered_by_spacing(&mut mono_covered, 10.0);
                         }
                     }
@@ -2410,8 +2426,15 @@ impl Layer {
                     // layer.rs:566-567 which uses flow.width()/spacing() in mm).
                     let spacing_mm = new_flow.spacing();
                     // C++: min = 0.2 * scaled_spacing * (1 - INSET_OVERLAP_TOLERANCE)
-                    //      max = 2. * scaled_spacing   (INSET_OVERLAP_TOLERANCE = 0.45)
-                    let min = 0.2 * spacing_mm * (1.0 - 0.45);
+                    //      max = 2. * scaled_spacing   (INSET_OVERLAP_TOLERANCE = 0.4,
+                    //      libslic3r.h:72 — 0.45 was WRONG here; a smaller min kept
+                    //      thinner slivers alive and fragmented the gap band, R143).
+                    //      Gated: default keeps the legacy 0.45 (byte-locked).
+                    let min = if std::env::var("F1_UNION").is_ok() {
+                        0.2 * spacing_mm * (1.0 - 0.4)
+                    } else {
+                        0.2 * spacing_mm * (1.0 - 0.45)
+                    };
                     let max = 2.0 * spacing_mm;
                     const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
 
@@ -2442,6 +2465,16 @@ impl Layer {
                         for ex in &mut gaps_ex {
                             ex.douglas_peucker(simplify_resolution);
                             ex.medial_axis(min, max, &mut polylines);
+                        }
+                        if std::env::var("MADBG").is_ok() && (self.print_z - 39.4).abs() < 0.01 {
+                            let sc = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
+                            for ex in &gaps_ex {
+                                eprintln!("MADBG-R gap npts={} a={:.6}", ex.contour.points.len(), ex.area().abs()/sc);
+                            }
+                            for tp in &polylines {
+                                eprintln!("MADBG-R poly len={:.4} npts={}", tp.length()/crate::SCALING_FACTOR, tp.points.len());
+                            }
+                            eprintln!("MADBG-R min={:.1} max={:.1}", min*crate::SCALING_FACTOR, max*crate::SCALING_FACTOR);
                         }
 
                         if !polylines.is_empty() {
