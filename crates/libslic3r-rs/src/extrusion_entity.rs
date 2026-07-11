@@ -2160,6 +2160,10 @@ pub struct ExtrusionEntityCollection {
     // Controls `can_reverse()` (ExtrusionEntityCollection.hpp:63-69) and is cleared by
     // `set_reverse()` (ExtrusionEntityCollection.hpp:70). Defaults to true.
     pub is_reverse: bool,
+    // ExtrusionEntityCollection.hpp `std::pair<int,int> loop_node_range` — the
+    // half-open range of Layer::loop_nodes indices produced for this
+    // collection's outer walls (z-direction speed continuity, PG.cpp:1281/1317).
+    pub loop_node_range: (usize, usize),
 }
 
 /// Enum to hold different types of extrusion entities (replaces `ExtrusionEntity*`).
@@ -2178,6 +2182,7 @@ impl ExtrusionEntityCollection {
             orig_indices: Vec::new(),
             // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
             is_reverse: true,
+            loop_node_range: (0, 0),
         }
     }
 

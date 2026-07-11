@@ -78,6 +78,11 @@ pub struct LayerRegion {
     pub fills: ExtrusionEntityCollection,
 
     /// Lower layer slices for overhang detection (set before make_perimeters)
+    /// LoopNodes produced by the last make_perimeters() call (node_id LOCAL to
+    /// the call) — drained by Layer::make_perimeters_with_neighbors into
+    /// Layer::loop_nodes with a rebase (z-direction speed continuity).
+    pub loop_nodes_out: Vec<LoopNode>,
+
     pub lower_slices: Option<Vec<crate::geometry::ExPolygon>>,
 
     /// Upper layer slices for top-surface detection (set before make_perimeters)
@@ -113,6 +118,7 @@ impl LayerRegion {
             raw_counter_circle_compensation: Polygons::new(),
             raw_holes_circle_compensation: Polygons::new(),
             thin_fills: ExtrusionEntityCollection::new(),
+            loop_nodes_out: Vec::new(),
             fill_expolygons: ExPolygons::new(),
             fill_surfaces: SurfaceCollection::new(),
             fill_no_overlap_expolygons: ExPolygons::new(),
@@ -504,6 +510,9 @@ impl LayerRegion {
             // PerimeterGenerator.cpp:1392 — config->infill_wall_overlap (percent -> fraction).
             infill_wall_overlap: object_config.infill_wall_overlap,
             layer_id: layer_id,
+            // PrintConfig.cpp:942 — gates outer-wall LoopNode collection
+            // (PG.cpp:1074); BBL profiles set 1, native default false.
+            z_direction_outwall_speed_continuous: print_config.z_direction_outwall_speed_continuous,
             raft_layers: 0,
             // LayerRegion.cpp:172 — g.overhang_flow = this->bridging_flow(frPerimeter, thick_bridges);
             // Used by detect_bridge_wall for the 100%-overhang (erOverhangPerimeter) walls.
@@ -534,6 +543,8 @@ impl LayerRegion {
         // Store perimeter entities (ExtrusionLoops)
         // PerimeterGenerator.cpp:1242-1420 - traverse_loops creates these
         self.perimeters = result.entities;
+        // z-direction speed continuity: hand the LoopNodes to the Layer.
+        self.loop_nodes_out = result.loop_nodes;
 
         // Store infill area
         let perimeter_top_band = result.top_band.clone();
@@ -995,8 +1006,17 @@ fn extract_and_union_surfaces(surfaces: &[Surface], types: &[SurfaceType]) -> Ex
     union_ex(&result)
 }
 
+/// Outer-wall contour snapshot for z-direction speed continuity
+/// ExtrusionEntity.hpp:21-26 (NodeContour)
+#[derive(Debug, Clone, Default)]
+pub struct NodeContour {
+    pub pts: Vec<crate::Point>,
+    pub widths: Vec<crate::Coord>,
+    pub is_loop: bool,
+}
+
 /// Node for loop hierarchy
-/// Layer.cpp:287-310
+/// ExtrusionEntity.hpp:28-42 (LoopNode)
 #[derive(Debug, Clone)]
 pub struct LoopNode {
     pub node_id: usize,
@@ -1005,6 +1025,7 @@ pub struct LoopNode {
     pub merged_id: Option<usize>,
     pub upper_node_ids: Vec<usize>,
     pub lower_node_ids: Vec<usize>,
+    pub node_contour: NodeContour,
 }
 
 impl LoopNode {
@@ -1016,6 +1037,7 @@ impl LoopNode {
             merged_id: None,
             upper_node_ids: Vec::new(),
             lower_node_ids: Vec::new(),
+            node_contour: NodeContour::default(),
         }
     }
 }
@@ -1436,6 +1458,20 @@ impl Layer {
                     self.regions[region_idx].fill_surfaces.surfaces.clear();
                     self.regions[region_idx].fill_no_overlap_expolygons.clear();
                     self.regions[region_idx].make_perimeters(&surface_fill, height, id, print_z)?;
+                    {
+                        // Layer.cpp: make_perimeters pushes into this->loop_nodes;
+                        // rebase the region-local node ids onto the layer vec.
+                        let base = self.loop_nodes.len();
+                        let mut nodes =
+                            std::mem::take(&mut self.regions[region_idx].loop_nodes_out);
+                        for n in &mut nodes {
+                            n.node_id += base;
+                        }
+                        let (s0, e0) = self.regions[region_idx].perimeters.loop_node_range;
+                        self.regions[region_idx].perimeters.loop_node_range =
+                            (s0 + base, e0 + base);
+                        self.loop_nodes.extend(nodes);
+                    }
                     // Layer.cpp:254
                     // C++: (*layerm)->fill_expolygons = to_expolygons((*layerm)->fill_surfaces.surfaces);
                     // Already done inside LayerRegion::make_perimeters.
@@ -1487,6 +1523,20 @@ impl Layer {
                     self.regions[region_idx].fill_surfaces.surfaces.clear();
                     self.regions[region_idx].fill_no_overlap_expolygons.clear();
                     self.regions[region_idx].make_perimeters(&new_slices, height, id, print_z)?;
+                    {
+                        // Layer.cpp: make_perimeters pushes into this->loop_nodes;
+                        // rebase the region-local node ids onto the layer vec.
+                        let base = self.loop_nodes.len();
+                        let mut nodes =
+                            std::mem::take(&mut self.regions[region_idx].loop_nodes_out);
+                        for n in &mut nodes {
+                            n.node_id += base;
+                        }
+                        let (s0, e0) = self.regions[region_idx].perimeters.loop_node_range;
+                        self.regions[region_idx].perimeters.loop_node_range =
+                            (s0 + base, e0 + base);
+                        self.loop_nodes.extend(nodes);
+                    }
                     let fill_surfaces = self.regions[region_idx].fill_surfaces.clone();
                     let fill_no_overlap = self.regions[region_idx].fill_no_overlap_expolygons.clone();
 

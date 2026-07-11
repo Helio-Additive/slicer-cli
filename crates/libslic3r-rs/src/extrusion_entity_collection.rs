@@ -152,6 +152,7 @@ impl ExtrusionEntityCollection {
             orig_indices: Vec::new(),
             // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
         out.append_paths(paths);
         out
@@ -396,6 +397,7 @@ impl ExtrusionEntityCollection {
             orig_indices: Vec::new(),
             // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
         // ExtrusionEntityCollection.cpp:146
         // flatten.recursive_do(*this);
@@ -480,6 +482,7 @@ pub fn chained_path_from(
         orig_indices: Vec::new(),
         // ExtrusionEntityCollection.hpp:148 `bool is_reverse{true};`
         is_reverse: true,
+        loop_node_range: (0, 0),
     };
     // ExtrusionEntityCollection.cpp:97
     // chain_and_reorder_extrusion_entities(out.entities, &start_near);

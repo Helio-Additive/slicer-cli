@@ -2882,6 +2882,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
 
         let result = extrude_collection(&collection, &mut writer);
@@ -2907,6 +2908,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
 
         let e_before = writer.e();
@@ -2940,6 +2942,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
 
         let e_before = writer.e();
@@ -2967,6 +2970,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
 
         let e_before = writer.e();
@@ -2993,6 +2997,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
 
         let outer_collection = ExtrusionEntityCollection {
@@ -3000,6 +3005,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
 
         let e_before = writer.e();
@@ -3050,6 +3056,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
         let entity = ExtrusionEntityType::Collection(Box::new(collection));
 
@@ -3079,6 +3086,7 @@ mod tests {
             no_sort: false,
             orig_indices: Vec::new(),
             is_reverse: true,
+            loop_node_range: (0, 0),
         };
 
         extrude_collection(&collection, &mut writer).expect("Should extrude");

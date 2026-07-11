@@ -177,6 +177,11 @@ pub struct PerimeterConfig {
     /// Layer ID (0-based)
     pub layer_id: usize,
 
+    /// PrintConfig z_direction_outwall_speed_continuous — gates outer-wall
+    /// NodeContour/LoopNode collection for cross-layer speed smoothing
+    /// (PerimeterGenerator.cpp:1074-1100, 1281-1317).
+    pub z_direction_outwall_speed_continuous: bool,
+
     /// Number of raft layers
     pub raft_layers: usize,
 
@@ -220,6 +225,7 @@ impl Default for PerimeterConfig {
             sparse_infill_line_width: 0.4,
             infill_wall_overlap: 0.15,
             layer_id: 0,
+            z_direction_outwall_speed_continuous: false,
             raft_layers: 0,
             overhang_flow: None,
         }
@@ -326,6 +332,12 @@ pub struct PerimeterResult {
     /// subtracts the gap footprint from `last` BEFORE the fill-boundary block
     /// (PG.cpp:1373), so the top_fills-derived band is never trimmed.
     pub top_band: ExPolygons,
+
+    /// Outer-wall LoopNodes for z-direction speed continuity
+    /// (PerimeterGenerator.cpp:1281-1317, native pushes into Layer::loop_nodes;
+    /// here returned per-generate() call and merged by the Layer). node_id is
+    /// LOCAL to this result — the Layer rebases on append.
+    pub loop_nodes: Vec<crate::layer::LoopNode>,
 }
 
 impl PerimeterResult {
@@ -336,6 +348,7 @@ impl PerimeterResult {
             no_overlap_area: Vec::new(),
             gap_fills: Vec::new(),
             top_band: Vec::new(),
+            loop_nodes: Vec::new(),
         }
     }
 }
@@ -521,6 +534,9 @@ impl PerimeterGenerator {
         /// PerimeterGenerator.cpp:951
         /// C++: ThickPolylines thin_walls;
         let mut thin_walls: ThickPolylines = Vec::new();
+        // PerimeterGenerator.cpp:951 — outer-wall contours collected at depth
+        // i==0 for z-direction speed continuity (z_direction_outwall_speed_continuous).
+        let mut outwall_paths: Vec<crate::layer::NodeContour> = Vec::new();
 
         /// PerimeterGenerator.cpp:952
         /// C++: ExPolygons gaps;
@@ -794,6 +810,58 @@ impl PerimeterGenerator {
             /// C++:     }
             /// C++: }
             if i == 0 {
+                // PerimeterGenerator.cpp:1074-1100 — store the outer-wall
+                // contours for z-direction speed continuity. Order matters
+                // (native: thin_walls, offsets_with_smaller_width, offsets).
+                // to_polylines(ExPolygons) closes each contour/hole by
+                // re-appending its first point (ExPolygon.hpp:231-247).
+                if self.config.z_direction_outwall_speed_continuous {
+                    for polyline in thin_walls.iter() {
+                        outwall_paths.push(crate::layer::NodeContour {
+                            is_loop: false,
+                            pts: polyline.points.clone(),
+                            widths: polyline
+                                .widths
+                                .iter()
+                                .map(|w| crate::clipper_utils::scale_faithful(*w))
+                                .collect(),
+                        });
+                    }
+                    let smaller_w = crate::clipper_utils::scale_faithful(
+                        self.config.smaller_ext_perimeter_flow.width(),
+                    );
+                    for expolygon in &offsets_with_smaller_width {
+                        for poly in std::iter::once(&expolygon.contour).chain(expolygon.holes.iter())
+                        {
+                            let mut pts = poly.points.clone();
+                            if let Some(first) = pts.first().copied() {
+                                pts.push(first);
+                            }
+                            outwall_paths.push(crate::layer::NodeContour {
+                                is_loop: true,
+                                pts,
+                                widths: vec![smaller_w],
+                            });
+                        }
+                    }
+                    let ext_w = crate::clipper_utils::scale_faithful(
+                        self.config.ext_perimeter_flow.width(),
+                    );
+                    for expolygon in &offsets {
+                        for poly in std::iter::once(&expolygon.contour).chain(expolygon.holes.iter())
+                        {
+                            let mut pts = poly.points.clone();
+                            if let Some(first) = pts.first().copied() {
+                                pts.push(first);
+                            }
+                            outwall_paths.push(crate::layer::NodeContour {
+                                is_loop: true,
+                                pts,
+                                widths: vec![ext_w],
+                            });
+                        }
+                    }
+                }
                 for expolygon in &offsets_with_smaller_width {
                     let loop_item = PerimeterLoop::new(
                         expolygon.contour.clone(),
@@ -1285,6 +1353,60 @@ impl PerimeterGenerator {
             }
         }
 
+        // PerimeterGenerator.cpp:1280-1318 — add LoopNodes for the outer walls
+        // (z-direction speed continuity). One node per outwall path; for the
+        // multi-path case each non-inner entity's first point is matched onto
+        // an outwall contour (Point::is_in_lines) and the node records the
+        // entity index as loop_id.
+        if !outwall_paths.is_empty() && self.config.layer_id > 0 {
+            use crate::extrusion_entity::ExtrusionRole;
+            let scaled_eps = crate::libslic3r::SCALED_EPSILON as crate::Coord;
+            let base = result.loop_nodes.len();
+            if outwall_paths.len() == 1 {
+                let mut bb = crate::geometry::BoundingBox::from_points(&outwall_paths[0].pts);
+                bb.expand(scaled_eps);
+                let mut node = crate::layer::LoopNode::new(base, 0, bb);
+                node.node_contour = outwall_paths[0].clone();
+                result.loop_nodes.push(node);
+            } else {
+                let mut matched = vec![false; outwall_paths.len()];
+                for entity_idx in 0..result.entities.entities.len() {
+                    // skip inner wall (C++: role() == erPerimeter)
+                    if entity_role(&result.entities.entities[entity_idx])
+                        == Some(ExtrusionRole::Perimeter)
+                    {
+                        continue;
+                    }
+                    let first_point =
+                        match entity_first_point(&result.entities.entities[entity_idx]) {
+                            Some(p) => p,
+                            None => continue,
+                        };
+                    for lines_idx in 0..outwall_paths.len() {
+                        if matched[lines_idx] {
+                            continue;
+                        }
+                        if point_is_in_lines(&first_point, &outwall_paths[lines_idx].pts) {
+                            matched[lines_idx] = true;
+                            let mut bb = crate::geometry::BoundingBox::from_points(
+                                &outwall_paths[lines_idx].pts,
+                            );
+                            bb.expand(scaled_eps);
+                            let mut node = crate::layer::LoopNode::new(
+                                result.loop_nodes.len(),
+                                entity_idx,
+                                bb,
+                            );
+                            node.node_contour = outwall_paths[lines_idx].clone();
+                            result.loop_nodes.push(node);
+                            break;
+                        }
+                    }
+                }
+            }
+            result.entities.loop_node_range = (base, result.loop_nodes.len());
+        }
+
         // Apply fuzzy skin as post-processing on perimeter entities
         if self.config.fuzzy_skin_mode != crate::region_config::FuzzySkinMode::None {
             let fs_config = crate::fuzzy_skin::FuzzySkinConfig {
@@ -1505,6 +1627,100 @@ impl Default for PerimeterGenerator {
 /// Convert ThickPolylines to ExtrusionPaths with variable width
 /// VariableWidth.cpp:214-230
 /// C++: void variable_width(const ThickPolylines& polylines, ExtrusionRole role, const Flow& flow, std::vector<ExtrusionEntity*>& out)
+// Entity-level accessors for the LoopNode block (PG.cpp:1291-1303) — the C++
+// calls `ee->role()` / `ee->first_point()` through the ExtrusionEntity vtable.
+fn entity_role(
+    ee: &crate::extrusion_entity::ExtrusionEntityType,
+) -> Option<crate::extrusion_entity::ExtrusionRole> {
+    use crate::extrusion_entity::ExtrusionEntityType;
+    match ee {
+        ExtrusionEntityType::Path(p) => Some(p.role),
+        ExtrusionEntityType::Loop(l) => Some(l.role()),
+        // Collection role is "mixed" in C++ — never equal to erPerimeter.
+        ExtrusionEntityType::Collection(_) => None,
+    }
+}
+
+fn entity_first_point(ee: &crate::extrusion_entity::ExtrusionEntityType) -> Option<Point> {
+    use crate::extrusion_entity::ExtrusionEntityType;
+    match ee {
+        ExtrusionEntityType::Path(p) => {
+            if p.polyline.points().is_empty() {
+                None
+            } else {
+                Some(p.first_point())
+            }
+        }
+        ExtrusionEntityType::Loop(l) => {
+            if l.paths.is_empty() || l.paths[0].polyline.points().is_empty() {
+                None
+            } else {
+                Some(l.first_point())
+            }
+        }
+        ExtrusionEntityType::Collection(c) => c.first_point(),
+    }
+}
+
+// Point::is_in_lines (Point.cpp:183-223) — true when the point lies on any
+// segment of the polyline `pts` (endpoint hit, exact vertical/horizontal hit,
+// or within SCALED_EPSILON of the segment).
+fn point_is_in_lines(check: &Point, pts: &[Point]) -> bool {
+    const SCALED_EPS: f64 = 10.0; // libslic3r.h SCALED_EPSILON
+    for pt_idx in 1..pts.len() {
+        let pt = pts[pt_idx];
+        let prev_pt = pts[pt_idx - 1];
+
+        // on the endpoints
+        if (check.x == pt.x && check.y == pt.y) || (check.x == prev_pt.x && check.y == prev_pt.y) {
+            return true;
+        }
+
+        let in_x_range = !((check.x > pt.x) == (check.x > prev_pt.x));
+        let in_y_range = !((check.y > pt.y) == (check.y > prev_pt.y));
+
+        // on vert line
+        if pt.x == prev_pt.x {
+            if in_y_range && pt.x == check.x {
+                return true;
+            }
+            continue;
+        }
+
+        // on hori line
+        if pt.y == prev_pt.y {
+            if in_x_range && pt.y == check.y {
+                return true;
+            }
+            continue;
+        }
+
+        // not right range
+        if !in_x_range || !in_y_range {
+            continue;
+        }
+
+        // check if in line — C++ Line::distance_to (double, segment-clamped)
+        let (ax, ay) = (prev_pt.x as f64, prev_pt.y as f64);
+        let (bx, by) = (pt.x as f64, pt.y as f64);
+        let (px, py) = (check.x as f64, check.y as f64);
+        let (dx, dy) = (bx - ax, by - ay);
+        let l2 = dx * dx + dy * dy;
+        let dist = if l2 == 0.0 {
+            ((px - ax).powi(2) + (py - ay).powi(2)).sqrt()
+        } else {
+            let t = ((px - ax) * dx + (py - ay) * dy) / l2;
+            let t = t.clamp(0.0, 1.0);
+            let (cx, cy) = (ax + t * dx, ay + t * dy);
+            ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
+        };
+        if dist.abs() < SCALED_EPS {
+            return true;
+        }
+    }
+    false
+}
+
 pub(crate) fn convert_thin_walls_to_extrusion_paths(
     thick_polylines: &ThickPolylines,
     role: crate::extrusion_entity::ExtrusionRole,

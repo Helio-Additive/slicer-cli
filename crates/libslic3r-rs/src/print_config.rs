@@ -170,6 +170,10 @@ pub struct PrintConfig {
     /// PrintConfig.hpp:1442: spiral_mode_smooth — interpolate XY with the previous
     /// layer so there is no seam at layer changes. Consumed by SpiralVase.
     pub spiral_mode_smooth: bool,
+    /// PrintConfig.cpp:942: z_direction_outwall_speed_continuous — smooth the
+    /// outer-wall speed along Z (LoopNode continuity + SmoothCalculator).
+    /// Native default false; BBL profiles set 1.
+    pub z_direction_outwall_speed_continuous: bool,
     /// G-code flavor.
     pub gcode_flavor: GCodeFlavor,
     /// Resolution for G-code output (mm).
@@ -960,6 +964,7 @@ impl Default for PrintConfig {
 
             // Misc
             spiral_vase: false,
+            z_direction_outwall_speed_continuous: false,
             spiral_mode_smooth: false,
             gcode_flavor: GCodeFlavor::Marlin,
             resolution: 0.01, // Match C++ BambuStudio
@@ -2303,6 +2308,12 @@ impl PrintConfig {
             }
 
             // === Misc ===
+            "z_direction_outwall_speed_continuous" => {
+                if let Some(v) = parse_bool(value) {
+                    self.z_direction_outwall_speed_continuous = v;
+                }
+                true
+            }
             "spiral_mode" => {
                 if let Some(v) = parse_bool(value) {
                     self.spiral_vase = v;
