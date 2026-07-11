@@ -2184,12 +2184,14 @@ impl SeamPlacer {
     /// m_center_offset ints recovered exactly from slice_center_offset
     /// (cx_mm = int * SCALING_FACTOR, print_object.rs:453).
     fn seam_frame_offset(po: &PrintObject) -> Option<(i64, i64)> {
-        if std::env::var("ZSMOOTH_FAITHFUL").is_err() {
-            return None;
-        }
-        let (cx, cy) = po.slice_center_offset;
-        let sf = crate::libslic3r::SCALING_FACTOR;
-        Some(((cx / sf).round() as i64, (cy / sf).round() as i64))
+        // R198/R203: ALWAYS None. Entities, lslices and exporter loops all live
+        // in the SAME frame as native's seam data (R197 PERIENT bit-identity);
+        // the R191 translation double-shifted every candidate by -0.8245mm.
+        // (R198 first removed this; the R199 bisect's `git checkout -- crates/`
+        // silently restored the R191 version and it was re-committed unnoticed —
+        // R200-R202 all measured with the double-shift active.)
+        let _ = po;
+        None
     }
 
     pub fn gather_seam_candidates(
