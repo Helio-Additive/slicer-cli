@@ -947,10 +947,36 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
                 .collect(),
         };
         // SeamPlacer.cpp:598 — its_short_edge_collpase(triangle_set, fast_decimation_...).
+        if std::env::var("OCCDBG").is_ok() {
+            let (mut mn, mut mx) = ([1e9f32; 3], [-1e9f32; 3]);
+            for v in &nu.vertices {
+                for (k, c) in [v.x, v.y, v.z].iter().enumerate() {
+                    mn[k] = mn[k].min(*c);
+                    mx[k] = mx[k].max(*c);
+                }
+            }
+            eprintln!(
+                "OCCDBG-R pre tris={} verts={} bb={:.4},{:.4},{:.4}/{:.4},{:.4},{:.4}",
+                nu.indices.len(), nu.vertices.len(), mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]
+            );
+        }
         crate::short_edge_collapse::its_short_edge_collpase(
             &mut nu,
             FAST_DECIMATION_TRIANGLE_COUNT_TARGET,
         );
+        if std::env::var("OCCDBG").is_ok() {
+            let (mut mn, mut mx) = ([1e9f32; 3], [-1e9f32; 3]);
+            for v in &nu.vertices {
+                for (k, c) in [v.x, v.y, v.z].iter().enumerate() {
+                    mn[k] = mn[k].min(*c);
+                    mx[k] = mx[k].max(*c);
+                }
+            }
+            eprintln!(
+                "OCCDBG-R postdec tris={} verts={} bb={:.4},{:.4},{:.4}/{:.4},{:.4},{:.4}",
+                nu.indices.len(), nu.vertices.len(), mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]
+            );
+        }
         // SeamPlacer.cpp:602 — negative_volumes_start_index = triangle_set.indices.size().
         // (no negative volumes are merged in; index == size.)
         triangle_set.vertices = nu.vertices;

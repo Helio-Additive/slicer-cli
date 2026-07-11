@@ -359,6 +359,51 @@ fn uniform_int(g: &mut Mt19937_64, range_inclusive: u64) -> u64 {
     }
 }
 
+/// libc++'s `std::shuffle` (__libcpp) — plain Fisher-Yates: for each position,
+/// draw uniform_int_distribution<ptrdiff_t>(0, d) via MASKED REJECTION (the
+/// libc++ algorithm), swap when i != 0. The native binary on darwin links
+/// libc++, whose shuffle produces a completely different permutation from
+/// libstdc++'s paired-swap batching given the same mt19937_64 stream (R184).
+fn uniform_int_libcxx(g: &mut Mt19937_64, d: u64) -> u64 {
+    let rp = d.wrapping_add(1);
+    if rp == 1 {
+        return 0;
+    }
+    if rp == 0 {
+        return g.next_u64();
+    }
+    let dt = 64u32;
+    let mut w = dt - rp.leading_zeros() - 1;
+    if (rp & (u64::MAX >> (dt - w))) != 0 {
+        w += 1;
+    }
+    let mask = if w >= 64 { u64::MAX } else { (1u64 << w) - 1 };
+    loop {
+        let u = g.next_u64() & mask;
+        if u < rp {
+            return u;
+        }
+    }
+}
+
+fn shuffle_libcxx<T>(v: &mut [T], g: &mut Mt19937_64) {
+    let n = v.len();
+    if n <= 1 {
+        return;
+    }
+    let mut d = n - 1;
+    let mut first = 0usize;
+    let last = n - 1;
+    while first < last {
+        let i = uniform_int_libcxx(g, d as u64) as usize;
+        if i != 0 {
+            v.swap(first, first + i);
+        }
+        first += 1;
+        d -= 1;
+    }
+}
+
 /// Faithful port of libstdc++'s `std::shuffle` for random-access iterators
 /// (bits/stl_algo.h). Reproduces the batched two-int Fisher-Yates exactly so the
 /// resulting permutation is byte-identical to the C++ slicer.
@@ -609,7 +654,14 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
         //shuffle the faces and traverse in random order, this MASSIVELY improves the quality of the result
         // std::shuffle(face_indices.begin(), face_indices.end(), generator);
         // ShortEdgeCollapse.cpp:99
-        shuffle(&mut face_indices, &mut generator);
+        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            // Native links libc++ on darwin — its std::shuffle differs from
+            // libstdc++'s (R184). Gated: default keeps the legacy permutation
+            // (byte-locked 147987).
+            shuffle_libcxx(&mut face_indices, &mut generator);
+        } else {
+            shuffle(&mut face_indices, &mut generator);
+        }
 
         // int allowed_face_removals = int(face_indices.size()) - int(target_triangle_count);
         // ShortEdgeCollapse.cpp:101
