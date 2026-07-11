@@ -1214,6 +1214,29 @@ pub fn extract_perimeter_polygons<'a>(
                     polygons.push(Polygon::from_points(p));
                     corresponding_regions_out.push(Some(layer_region));
                 }
+            } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                // R191: this crate stores perimeters FLAT (individual loops), not
+                // native's per-island Collections — so every loop fell into the
+                // unconditional else-branch and INNER perimeters entered the seam
+                // data (rust 1429 perimeters vs native 749; align/pick pollution).
+                // Faithful EFFECT: apply the collection-child role filter
+                // (SeamPlacer.cpp:379-392) to the flat loop.
+                let mut role = entity_role(ex_entity);
+                if let ExtrusionEntityType::Loop(l) = ex_entity {
+                    for path in &l.paths {
+                        if path.role == ExtrusionRole::ExternalPerimeter {
+                            role = ExtrusionRole::ExternalPerimeter;
+                        }
+                    }
+                }
+                if role == ExtrusionRole::ExternalPerimeter
+                    || (is_perimeter(role) && configured_seam_preference == SeamPosition::spRandom)
+                {
+                    let mut p: Vec<Point> = Vec::new();
+                    collect_points(ex_entity, &mut p);
+                    polygons.push(Polygon::from_points(p));
+                    corresponding_regions_out.push(Some(layer_region));
+                }
             } else {
                 // SeamPlacer.cpp:400-405
                 let mut p: Vec<Point> = Vec::new();
@@ -2069,6 +2092,9 @@ pub struct SeamPlacerStats {
 pub struct SeamPlacer {
     config_mode: SeamPositionMode,
     seam_data: PrintObjectSeamData,
+    /// R191 (ZSMOOTH_FAITHFUL): scaled-int XY offset rust-frame -> centered
+    /// seam frame, captured at init; (0,0) when the gate is off.
+    frame_offset_xy: (i64, i64),
 }
 
 impl SeamPlacer {
@@ -2076,6 +2102,7 @@ impl SeamPlacer {
         Self {
             config_mode: config.seam_position,
             seam_data: PrintObjectSeamData::default(),
+            frame_offset_xy: (0, 0),
         }
     }
 
@@ -2121,6 +2148,19 @@ impl SeamPlacer {
     /// (`SeamPlacer::init`, still blocked) clears the map before refilling it.
     /// C++ runs the per-layer loop under `tbb::parallel_for`; ported serially
     /// with identical per-layer results.
+    /// R191 (ZSMOOTH_FAITHFUL): the scaled-int XY offset between the rust
+    /// (uncentered) frame and native's centered seam frame — native's
+    /// m_center_offset ints recovered exactly from slice_center_offset
+    /// (cx_mm = int * SCALING_FACTOR, print_object.rs:453).
+    fn seam_frame_offset(po: &PrintObject) -> Option<(i64, i64)> {
+        if std::env::var("ZSMOOTH_FAITHFUL").is_err() {
+            return None;
+        }
+        let (cx, cy) = po.slice_center_offset;
+        let sf = crate::libslic3r::SCALING_FACTOR;
+        Some(((cx / sf).round() as i64, (cy / sf).round() as i64))
+    }
+
     pub fn gather_seam_candidates(
         &mut self,
         po: &PrintObject,
@@ -2142,7 +2182,20 @@ impl SeamPlacer {
             let mut regions: Vec<Option<&LayerRegion>> = Vec::new();
             // NOTE corresponding region ptr may be null, if the layer has zero perimeters
             // SeamPlacer.cpp:940
-            let polygons = extract_perimeter_polygons(layer, configured_seam_preference, &mut regions);
+            let mut polygons = extract_perimeter_polygons(layer, configured_seam_preference, &mut regions);
+            // R191: native candidates live in the CENTERED slicing frame
+            // (native polygons are centered; SeamPlacer unscales them directly).
+            // Rust perimeters are uncentered — translate the scaled ints by
+            // -m_center_offset (integer-exact) so every unscaled candidate
+            // position is bit-identical to native's.
+            if let Some((sx, sy)) = Self::seam_frame_offset(po) {
+                for poly in polygons.iter_mut() {
+                    for pt in poly.points_mut() {
+                        pt.x -= sx;
+                        pt.y -= sy;
+                    }
+                }
+            }
             // SeamPlacer.cpp:941-943
             for poly_index in 0..polygons.len() {
                 process_perimeter_polygon(
@@ -2194,6 +2247,28 @@ impl SeamPlacer {
     /// C++ `PerimeterDistancer(po->layers()[i])` reads `layer->lslices`; the
     /// crate's [`PerimeterDistancer::new`] takes those ExPolygons directly.
     pub fn calculate_overhangs_and_layer_embedding(&mut self, po: &PrintObject) {
+        // R191: candidates are in the centered frame under the gate — the
+        // lslices feeding the distancers must be translated identically
+        // (integer-exact) or every overhang/embedding distance is 0.8245mm off.
+        let frame_offset = Self::seam_frame_offset(po);
+        let centered_lslices = |lslices: &Vec<crate::geometry::ExPolygon>| -> Vec<crate::geometry::ExPolygon> {
+            let mut out = lslices.clone();
+            if let Some((sx, sy)) = frame_offset {
+                for ex in out.iter_mut() {
+                    for pt in ex.contour.points_mut() {
+                        pt.x -= sx;
+                        pt.y -= sy;
+                    }
+                    for hole in ex.holes.iter_mut() {
+                        for pt in hole.points_mut() {
+                            pt.x -= sx;
+                            pt.y -= sy;
+                        }
+                    }
+                }
+            }
+            out
+        };
         // SeamPlacer.cpp:965
         let layers = &mut self.seam_data.layers;
         // SeamPlacer.cpp:967-970 — at r.begin() == 0 there is no previous layer.
@@ -2211,7 +2286,8 @@ impl SeamPlacer {
             // SeamPlacer.cpp:978
             let should_compute_layer_embedding = regions_with_perimeter > 1;
             // SeamPlacer.cpp:979
-            let current_layer_distancer = PerimeterDistancer::new(&po.layers()[layer_idx].lslices);
+            let current_layer_distancer =
+                PerimeterDistancer::new(&centered_lslices(&po.layers()[layer_idx].lslices));
 
             // SeamPlacer.cpp:981 (`int points_size = layers[layer_idx].points.size();`)
             let LayerSeams { perimeters, points } = &mut layers[layer_idx];
@@ -2859,6 +2935,7 @@ impl SeamPlacer {
         // the object mesh and raycasts per-sample visibility so candidates get real
         // per-vertex occlusion values (breaking the symmetric-loop angle/overhang ties
         // the comparator would otherwise resolve arbitrarily).
+        self.frame_offset_xy = Self::seam_frame_offset(po).unwrap_or((0, 0));
         let global_model_info = compute_global_occlusion(po);
 
         // SeamPlacer.cpp:1456 — gather_seam_candidates.
@@ -2903,6 +2980,30 @@ impl SeamPlacer {
                 current_point_index = end_index;
             }
         }
+        if std::env::var("SEAMDBG").is_ok() {
+            for (layer_idx, layer) in self.seam_data.layers.iter().enumerate() {
+                let mut peri = 0usize;
+                let mut cur = 0usize;
+                while cur < layer.points.len() {
+                    let per = &layer.perimeters[layer.points[cur].perimeter];
+                    let pick = &layer.points[per.seam_index];
+                    let mut line = format!(
+                        "SEAMPICK-R layer={} peri={} pick={:.4},{:.4} n={} cands=",
+                        layer_idx, peri, pick.position.x, pick.position.y,
+                        per.end_index - per.start_index
+                    );
+                    for i in per.start_index..per.end_index {
+                        line.push_str(&format!(
+                            "{:.4},{:.4};",
+                            layer.points[i].position.x, layer.points[i].position.y
+                        ));
+                    }
+                    println!("{}", line);
+                    cur = per.end_index;
+                    peri += 1;
+                }
+            }
+        }
 
         // SeamPlacer.cpp:1460 — align_seam_points (spAligned/spRear path).
         if matches!(
@@ -2945,7 +3046,12 @@ impl SeamPlacer {
         // candidate nearest to the loop's first vertex, identifying the owning
         // perimeter. C++ uses `find_closest_point(*layer_seams.points_tree,
         // unscaled_p)`; we mirror it with the f32 KD tree built on demand.
-        let first = polygon.points()[0];
+        let mut first = polygon.points()[0];
+        // R191: seam data lives in the centered frame under the gate; the
+        // exporter's loop is in the rust frame — translate the query in
+        // (integer-exact) and the returned seam point back out.
+        first.x -= self.frame_offset_xy.0;
+        first.y -= self.frame_offset_xy.1;
         let up = unscale_point(&first);
         // C++ projects to the candidate z; candidates carry their own z so a 3D
         // query against the loop's xy at the candidate plane is exact. We query
@@ -2993,8 +3099,8 @@ impl SeamPlacer {
 
         // Scale back to coord_t (the loop is in scaled coordinates).
         Some(Point::new(
-            crate::scale(seam_position.x as f64),
-            crate::scale(seam_position.y as f64),
+            crate::scale(seam_position.x as f64) + self.frame_offset_xy.0,
+            crate::scale(seam_position.y as f64) + self.frame_offset_xy.1,
         ))
     }
 }
