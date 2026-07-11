@@ -29,6 +29,7 @@ pub mod tool_order_utils;
 pub mod tool_ordering;
 pub mod wipe_tower;
 mod writer;
+pub use writer::RetractCtx;
 
 pub use avoid_crossing_perimeters::{
     init_boundary, init_boundary_with_merge_points, AvoidCrossingPerimeters, Boundary,

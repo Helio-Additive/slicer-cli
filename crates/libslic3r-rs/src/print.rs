@@ -1983,6 +1983,35 @@ impl Print {
 /// are matched inside-first); fallback = a catch-all "last" island. Then emit
 /// per-island in natural slice order: perimeters → infill (or infill → perimeters
 /// if infill_first and not first layer), with thin_fills after each island's infill.
+
+fn collect_entity_lines(
+    ent: &crate::extrusion_entity::ExtrusionEntityType,
+    out: &mut Vec<(crate::Point, crate::Point)>,
+) {
+    use crate::extrusion_entity::ExtrusionEntityType;
+    match ent {
+        ExtrusionEntityType::Path(p) => {
+            let pts = p.polyline.points();
+            for i in 1..pts.len() {
+                out.push((pts[i - 1], pts[i]));
+            }
+        }
+        ExtrusionEntityType::Loop(l) => {
+            for p in &l.paths {
+                let pts = p.polyline.points();
+                for i in 1..pts.len() {
+                    out.push((pts[i - 1], pts[i]));
+                }
+            }
+        }
+        ExtrusionEntityType::Collection(c) => {
+            for e in &c.entities {
+                collect_entity_lines(e, out);
+            }
+        }
+    }
+}
+
 fn emit_layer_by_island(
     layer: &crate::layer::Layer,
     writer: &mut crate::gcode::GCodeWriter,
@@ -1994,6 +2023,51 @@ fn emit_layer_by_island(
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+    // Faithful needs_retraction context (RetractWhenCrossingPerimeters):
+    // internal-island slices + wall lines of this layer.
+    if zsmooth_gate {
+        use crate::surface::SurfaceType;
+        let mut islands: Vec<crate::geometry::ExPolygon> = Vec::new();
+        let mut wall_lines: Vec<(crate::Point, crate::Point)> = Vec::new();
+        let mut density_ok = false;
+        for region in layer.regions() {
+            if region.region().config().fill_density > 0.0 {
+                density_ok = true;
+            }
+            let mut region_internal = false;
+            for surface in &region.slices.surfaces {
+                let internal = matches!(
+                    surface.surface_type,
+                    SurfaceType::Internal
+                        | SurfaceType::InternalSolid
+                        | SurfaceType::InternalBridge
+                        | SurfaceType::InternalVoid
+                );
+                if internal {
+                    region_internal = true;
+                    let ex = &surface.expolygon;
+                    for ring in std::iter::once(&ex.contour).chain(ex.holes.iter()) {
+                        let pts = &ring.points;
+                        for i in 0..pts.len() {
+                            wall_lines.push((pts[i], pts[(i + 1) % pts.len()]));
+                        }
+                    }
+                    islands.push(ex.clone());
+                }
+            }
+            if region_internal {
+                // perimeters.collect_polylines lines
+                for ent in &region.perimeters.entities {
+                    collect_entity_lines(ent, &mut wall_lines);
+                }
+            }
+        }
+        writer.zsmooth_retract_ctx = Some(crate::gcode::RetractCtx {
+            internal_islands: islands,
+            wall_lines,
+            density_ok,
+        });
+    }
     let n_slices = layer.lslices.len();
     let n_regions = layer.region_count();
 

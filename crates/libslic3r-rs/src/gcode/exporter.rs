@@ -714,7 +714,15 @@ pub fn extrude_collection(
                 // unretract() after the travel descends and restores E (net E zero, so
                 // material is unchanged).
                 let travel_len = dist_sq.sqrt();
-                let did_retract = writer.needs_retraction_for_travel(travel_len);
+                let did_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                    // GCode.cpp:6964 needs_retraction — faithful branch order
+                    // (min-travel, leaving-outer-wall force, reduce-infill skip).
+                    let from = writer_last_pos(writer);
+                    let to = crate::Point::new(crate::scale(tx), crate::scale(ty));
+                    writer.needs_retraction_faithful(from, to, entity_role, travel_len)
+                } else {
+                    writer.needs_retraction_for_travel(travel_len)
+                };
                 if did_retract {
                     writer.retract();
                 }

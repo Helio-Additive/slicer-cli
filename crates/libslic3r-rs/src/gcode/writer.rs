@@ -301,6 +301,9 @@ pub struct GCodeWriter {
     /// Last emitted travel acceleration (M204 S value), for deduplication.
     /// 0 means "not set yet" — always emit on first call.
     last_travel_accel: f64,
+    /// Per-layer context for the faithful needs_retraction (ZSMOOTH_FAITHFUL):
+    /// internal-island polygons + wall boundary lines of the current layer.
+    pub zsmooth_retract_ctx: Option<RetractCtx>,
 
     /// G-code export origin (mm), subtracted from ABSOLUTE XY in write_command
     /// (C++ GCode::m_origin / point_to_gcode). FRAME_PAIR sets this to the slice
@@ -361,6 +364,7 @@ impl GCodeWriter {
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
+            zsmooth_retract_ctx: None,
             gcode_origin_x: 0.0,
             gcode_origin_y: 0.0,
             last_extrusion_role: None,
@@ -446,6 +450,55 @@ impl GCodeWriter {
             return false;
         }
         travel_len_mm >= self.config.retract_before_travel
+    }
+
+    /// Faithful GCode::needs_retraction (GCode.cpp:6964-7095) for the
+    /// ZSMOOTH_FAITHFUL path. `from`/`to` are scaled points, `dest_role` the
+    /// role about to be extruded. Branch order matches native:
+    ///   1. travel < retraction_minimum_travel -> false
+    ///   2. leaving an OUTER wall (last role is ext/overhang perimeter) -> true
+    ///   3. reduce_infill_retraction (Auto+low-stickiness or Enabled): dest not
+    ///      a perimeter && sparse density > 0 && travel inside an internal
+    ///      island without crossing walls -> false
+    ///   4. else true
+    pub fn needs_retraction_faithful(
+        &self,
+        from: crate::Point,
+        to: crate::Point,
+        dest_role: crate::extrusion_entity::ExtrusionRole,
+        travel_len_mm: CoordF,
+    ) -> bool {
+        use crate::extrusion_entity::ExtrusionRole;
+        if self.retracted {
+            return false;
+        }
+        // GCode.cpp:6966 — retraction_minimum_travel
+        if travel_len_mm < self.config.retract_before_travel {
+            return false;
+        }
+        // GCode.cpp:7044 — force retract when leaving an outer/overhang wall
+        let last = self.last_extrusion_role;
+        if matches!(
+            last,
+            Some(ExtrusionRole::ExternalPerimeter) | Some(ExtrusionRole::OverhangPerimeter)
+        ) {
+            return true;
+        }
+        // GCode.cpp:7068-7086 — reduce_infill_retraction skip
+        let dest_is_perimeter = matches!(
+            dest_role,
+            ExtrusionRole::Perimeter
+                | ExtrusionRole::ExternalPerimeter
+                | ExtrusionRole::OverhangPerimeter
+        );
+        if !dest_is_perimeter {
+            if let Some(ctx) = &self.zsmooth_retract_ctx {
+                if ctx.density_ok && travel_inside_internal_no_crossing(ctx, from, to) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     /// Get the current layer index.
@@ -2195,4 +2248,70 @@ mod tests {
             expected_length
         );
     }
+}
+
+/// Per-layer retraction context (RetractWhenCrossingPerimeters, faithful port).
+/// internal_islands: expolygons of internal slices; wall_lines: their boundary
+/// segments + the perimeter polylines of internal regions.
+pub struct RetractCtx {
+    pub internal_islands: Vec<crate::geometry::ExPolygon>,
+    pub wall_lines: Vec<(crate::Point, crate::Point)>,
+    pub density_ok: bool,
+}
+
+fn segs_intersect(p1: crate::Point, p2: crate::Point, p3: crate::Point, p4: crate::Point) -> bool {
+    fn orient(a: crate::Point, b: crate::Point, c: crate::Point) -> i32 {
+        let v = (b.x - a.x) as i128 * (c.y - a.y) as i128 - (b.y - a.y) as i128 * (c.x - a.x) as i128;
+        v.signum() as i32
+    }
+    fn on_seg(a: crate::Point, b: crate::Point, p: crate::Point) -> bool {
+        p.x >= a.x.min(b.x) && p.x <= a.x.max(b.x) && p.y >= a.y.min(b.y) && p.y <= a.y.max(b.y)
+    }
+    let d1 = orient(p3, p4, p1);
+    let d2 = orient(p3, p4, p2);
+    let d3 = orient(p1, p2, p3);
+    let d4 = orient(p1, p2, p4);
+    if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)) {
+        return true;
+    }
+    (d1 == 0 && on_seg(p3, p4, p1))
+        || (d2 == 0 && on_seg(p3, p4, p2))
+        || (d3 == 0 && on_seg(p1, p2, p3))
+        || (d4 == 0 && on_seg(p1, p2, p4))
+}
+
+/// travel_inside_internal_regions_no_wall_crossing
+/// (RetractWhenCrossingPerimeters.cpp:114-118): travel fully inside an internal
+/// island AND not crossing any wall line.
+fn travel_inside_internal_no_crossing(ctx: &RetractCtx, from: crate::Point, to: crate::Point) -> bool {
+    // inside = both endpoints inside one island and the segment does not leave
+    // it (native: diff_pl(travel, island) empty).
+    let mut inside = false;
+    'outer: for island in &ctx.internal_islands {
+        if island.contains_point(&from) && island.contains_point(&to) {
+            // segment must not cross the island boundary
+            for ring in std::iter::once(&island.contour).chain(island.holes.iter()) {
+                let pts = &ring.points;
+                for i in 0..pts.len() {
+                    let a = pts[i];
+                    let b = pts[(i + 1) % pts.len()];
+                    if segs_intersect(from, to, a, b) {
+                        continue 'outer;
+                    }
+                }
+            }
+            inside = true;
+            break;
+        }
+    }
+    if !inside {
+        return false;
+    }
+    // travel_cross_perimeters: no intersection with any wall line
+    for &(a, b) in &ctx.wall_lines {
+        if segs_intersect(from, to, a, b) {
+            return false;
+        }
+    }
+    true
 }
