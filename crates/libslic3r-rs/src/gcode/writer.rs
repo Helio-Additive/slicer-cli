@@ -6,6 +6,12 @@
 /// Format a G-code axis value matching BambuStudio's GCodeFormatter::emit_axis.
 /// Strips trailing zeros after decimal, strips leading zero before decimal for
 /// values < 1.0, uses minimum digits. E.g.: -0.8 → "-.8", 0.4 → ".4", 120.3 → "120.3"
+/// R206: faithful lift gate (cached).
+pub fn lift_faithful_gate() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok())
+}
+
 pub fn format_gcode_value(v: f64, digits: usize) -> String {
     let pow10 = 10f64.powi(digits as i32);
     let v_int = (v * pow10).round() as i64;
@@ -1053,14 +1059,17 @@ impl GCodeWriter {
                     let diry = delta.1 / delta_no_z_norm;
                     let (ijx, ijy) = (-radius * diry, radius * dirx);
                     self.write_command(&GCodeCommand::SelectXYPlane);
-                    self.write_command(&GCodeCommand::HelicalArcCCW {
-                        z: dest_z,
-                        i: ijx,
-                        j: ijy,
-                        p: 1,
-                        f: Some(travel_f),
-                    });
+                    // native _spiral_travel_to_z: "G3 Z<z> I<i> J<j> P1  F<f>"
+                    // (TWO spaces before F: emit_string("P1 ") + emit_f " F").
+                    self.write_raw(&format!(
+                        "G3 Z{} I{} J{} P1  F{:.0}",
+                        format_gcode_value(dest_z, 3),
+                        format_gcode_value(ijx, 3),
+                        format_gcode_value(ijy, 3),
+                        travel_f
+                    ));
                     self.z = dest_z;
+                    self.last_emitted_f = travel_f;
                 } else if self.m_to_lift_type == 2
                     && self.position_known
                     && delta.2.atan2(delta_no_z_norm) < slope_threshold
@@ -1553,7 +1562,14 @@ impl GCodeWriter {
         }
 
         // Z lift — use spiral or normal depending on config
-        self.do_z_hop();
+        if lift_faithful_gate() {
+            // R206: native defers the lift (lazy_lift) and merges it into the
+            // next travel_to_xyz. Effective type on this profile = SpiralLift
+            // (native gcode: 1742 spirals, 0 slope moves).
+            self.lazy_lift_faithful(1);
+        } else {
+            self.do_z_hop();
+        }
 
         self.retracted = true;
         self.stats.retraction_count += 1;
@@ -1621,7 +1637,14 @@ impl GCodeWriter {
         }
 
         // Z lift — use spiral or normal depending on config
-        self.do_z_hop();
+        if lift_faithful_gate() {
+            // R206: native defers the lift (lazy_lift) and merges it into the
+            // next travel_to_xyz. Effective type on this profile = SpiralLift
+            // (native gcode: 1742 spirals, 0 slope moves).
+            self.lazy_lift_faithful(1);
+        } else {
+            self.do_z_hop();
+        }
 
         self.retracted = true;
         self.stats.retraction_count += 1;
@@ -1671,8 +1694,23 @@ impl GCodeWriter {
             return;
         }
 
-        // Z unlift — use G1 for spiral mode, G0 for normal
-        if self.retract_lift > 0.0 && self.z > self.z_before_lift {
+        // Z unlift. Faithful path (R206): GCode::unretract = writer.unlift() +
+        // writer.unretract() (GCode.hpp:232) — G1 Z restore from m_lifted.
+        if lift_faithful_gate() {
+            if self.m_lifted > 0.0 {
+                let target = self.z - self.m_lifted;
+                self.write_command(&GCodeCommand::LinearMove {
+                    x: None,
+                    y: None,
+                    z: Some(target),
+                    e: None,
+                    f: None,
+                });
+                self.z = target;
+                self.m_lifted = 0.0;
+            }
+            self.m_to_lift = 0.0;
+        } else if self.retract_lift > 0.0 && self.z > self.z_before_lift {
             match self.config.z_hop_type {
                 ZHopType::Spiral | ZHopType::Auto => {
                     // BambuStudio uses G1 Z (linear move) for the descent after spiral lift

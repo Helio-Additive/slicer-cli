@@ -739,7 +739,15 @@ pub fn extrude_collection(
                 } else {
                     writer.set_travel_acceleration(6000.0);
                 }
-                writer.travel_to(tx, ty, None);
+                if crate::gcode::writer::lift_faithful_gate() {
+                    // R206: single travel_to_xyz merges the pending lazy lift
+                    // (GCode.cpp:6902-6912, travel.size()==2 branch; dest z =
+                    // the current nominal z).
+                    let zdest = writer.z();
+                    writer.travel_to_xyz(tx, ty, zdest);
+                } else {
+                    writer.travel_to(tx, ty, None);
+                }
                 if did_retract {
                     writer.unretract();
                 }
@@ -1314,7 +1322,12 @@ pub fn extrude_perimeters(
     if let Some(first_pt) = get_entity_first_point(&region.perimeters.entities[0]) {
         let target_x = crate::unscale(first_pt.x());
         let target_y = crate::unscale(first_pt.y());
-        writer.travel_to(target_x, target_y, None);
+        if crate::gcode::writer::lift_faithful_gate() {
+            let zdest = writer.z();
+            writer.travel_to_xyz(target_x, target_y, zdest);
+        } else {
+            writer.travel_to(target_x, target_y, None);
+        }
     }
     writer.unretract();
 
@@ -1422,7 +1435,16 @@ pub fn extrude_infill(
             } else {
                 writer.set_travel_acceleration(6000.0);
             }
-            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            if crate::gcode::writer::lift_faithful_gate() {
+                let zdest = writer.z();
+                writer.travel_to_xyz(
+                    crate::unscale(first_pt.x()),
+                    crate::unscale(first_pt.y()),
+                    zdest,
+                );
+            } else {
+                writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            }
             // Native _extrude unconditionally unretracts at extrusion start —
             // also clears the initial/carried retracted state.
             writer.unretract();
@@ -1499,7 +1521,16 @@ pub fn extrude_perimeters_entities(
         writer.set_travel_acceleration(6000.0);
     }
     if let Some(first_pt) = first_pt_opt {
-        writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+        if crate::gcode::writer::lift_faithful_gate() {
+            let zdest = writer.z();
+            writer.travel_to_xyz(
+                crate::unscale(first_pt.x()),
+                crate::unscale(first_pt.y()),
+                zdest,
+            );
+        } else {
+            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+        }
     }
     // Native _extrude unconditionally unretracts at extrusion start.
     writer.unretract();
@@ -1592,7 +1623,16 @@ pub fn extrude_infill_entities(
             } else {
                 writer.set_travel_acceleration(6000.0);
             }
-            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            if crate::gcode::writer::lift_faithful_gate() {
+                let zdest = writer.z();
+                writer.travel_to_xyz(
+                    crate::unscale(first_pt.x()),
+                    crate::unscale(first_pt.y()),
+                    zdest,
+                );
+            } else {
+                writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            }
             // Native _extrude unconditionally unretracts at extrusion start —
             // also clears the initial/carried retracted state.
             writer.unretract();
@@ -1729,7 +1769,16 @@ pub fn extrude_support(
             } else {
                 writer.set_travel_acceleration(6000.0);
             }
-            writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            if crate::gcode::writer::lift_faithful_gate() {
+                let zdest = writer.z();
+                writer.travel_to_xyz(
+                    crate::unscale(first_pt.x()),
+                    crate::unscale(first_pt.y()),
+                    zdest,
+                );
+            } else {
+                writer.travel_to(crate::unscale(first_pt.x()), crate::unscale(first_pt.y()), None);
+            }
             // Native _extrude unconditionally unretracts at extrusion start —
             // also clears the initial/carried retracted state.
             writer.unretract();
