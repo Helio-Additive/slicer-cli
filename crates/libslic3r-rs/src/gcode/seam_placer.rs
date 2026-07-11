@@ -2709,6 +2709,17 @@ impl SeamPlacer {
                 last_point_pos = current.position;
             }
 
+            if std::env::var("SEAMDBG").is_ok() {
+                println!(
+                    "SEAMSTR-R size={} l0={} l1={} len={:.4} seed={},{}",
+                    seam_string.len(),
+                    seam_string.first().unwrap().0,
+                    seam_string.last().unwrap().0,
+                    total_length,
+                    layer_idx,
+                    seam_index
+                );
+            }
             // SeamPlacer.cpp:1261-1263 — Curve fitting.
             // size_t number_of_segments = max(1, max(0.0f, total_length) / seam_align_mm_per_segment)
             let number_of_segments = std::cmp::max(
@@ -3011,6 +3022,26 @@ impl SeamPlacer {
             SeamPosition::spAligned | SeamPosition::spRear
         ) {
             self.align_seam_points(po, &comparator);
+        }
+        if std::env::var("SEAMDBG").is_ok() {
+            for (layer_idx, layer) in self.seam_data.layers.iter().enumerate() {
+                let mut peri = 0usize;
+                let mut cur = 0usize;
+                while cur < layer.points.len() {
+                    let per = &layer.perimeters[layer.points[cur].perimeter];
+                    let fin = if per.finalized {
+                        per.final_seam_position
+                    } else {
+                        layer.points[per.seam_index].position
+                    };
+                    println!(
+                        "SEAMFIN-R layer={} peri={} fin={:.4},{:.4} finalized={}",
+                        layer_idx, peri, fin.x, fin.y, per.finalized as i32
+                    );
+                    cur = per.end_index;
+                    peri += 1;
+                }
+            }
         }
     }
 
