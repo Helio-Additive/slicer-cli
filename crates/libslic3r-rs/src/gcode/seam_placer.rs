@@ -960,14 +960,33 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
     // pipeline can surface -0.0 on the bed plane (rustc/LLVM minnum sign-of-zero
     // drift flipped 80 z=0 verts between sessions) — sign bits change the
     // collapse FP stream and cascade through sampling/visibility (R199).
+    // R201: native's occlusion verts are the admesh f32 VOLUME STORE translated
+    // back by the volume matrix — i.e. the f32 center-store round trip
+    // (quantize_f32_center_roundtrip). Under FRAME_UNIFY the CLI SKIPS that
+    // bake on the mesh (the slice shim reproduces it in the slice transform),
+    // so po.mesh() here is RAW and the occlusion verts were never quantized —
+    // every prior occlusion bit-parity check ran under ZSMOOTH-only gates where
+    // the bake was active (R200's "drift" was this gate-set difference, not a
+    // toolchain change). Reproduce the round trip per vertex (f32, mesh bbox
+    // center), normalizing -0.0 -> +0.0 (native f32 store has +0.0).
     let n0 = |f: f32| if f == 0.0 { 0.0f32 } else { f };
+    let occl_faithful = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+    let qc = {
+        let c = mesh.compute_bounding_box().center();
+        (c.x as f32, c.y as f32, c.z as f32)
+    };
     let mut triangle_set = indexed_triangle_set {
         vertices: mesh
             .vertices()
             .iter()
             .map(|v| {
-                if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
-                    Vec3f::new(n0(v.x as f32), n0(v.y as f32), n0(v.z as f32))
+                if occl_faithful {
+                    let q = |val: f64, c: f32| ((val as f32 - c) + c);
+                    Vec3f::new(
+                        n0(q(v.x, qc.0)),
+                        n0(q(v.y, qc.1)),
+                        n0(q(v.z, qc.2)),
+                    )
                 } else {
                     Vec3f::new(v.x as f32, v.y as f32, v.z as f32)
                 }
