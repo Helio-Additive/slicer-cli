@@ -41,3 +41,20 @@ void eigen_transform_verts_unified(const double *trafo16, double scaling_factor,
 #endif
 
 #endif // EIGEN_TRANSFORM_SHIM_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* R187: min_vertex_dot_product float kernel of its_short_edge_collpase
+   (ShortEdgeCollapse.cpp:43-55), computed with the exact native Eigen f32
+   pipeline (its_face_normals + NormalUtils nelson-weighted vertex normals +
+   dots). verts = n_verts*3 floats; indices = n_tris*3 ints; out = n_verts
+   floats (caller-allocated). */
+void secol_min_vertex_dots(const float *verts, int64_t n_verts,
+                           const int32_t *indices, int64_t n_tris,
+                           float *out);
+
+#ifdef __cplusplus
+}
+#endif

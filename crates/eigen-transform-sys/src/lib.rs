@@ -85,3 +85,33 @@ pub fn transform_verts_for_slicing(
     }
     out
 }
+
+unsafe extern "C" {
+    fn secol_min_vertex_dots(
+        verts: *const f32,
+        n_verts: i64,
+        indices: *const i32,
+        n_tris: i64,
+        out: *mut f32,
+    );
+}
+
+/// R187: exact-native min_vertex_dot_product kernel for the short-edge
+/// collapse (ShortEdgeCollapse.cpp:43-55) — Eigen f32 pipeline compiled with
+/// the same toolchain as the native binary.
+pub fn min_vertex_dots(verts: &[f32], indices: &[i32]) -> Vec<f32> {
+    assert!(verts.len() % 3 == 0 && indices.len() % 3 == 0);
+    let n_verts = (verts.len() / 3) as i64;
+    let n_tris = (indices.len() / 3) as i64;
+    let mut out = vec![0.0f32; n_verts as usize];
+    unsafe {
+        secol_min_vertex_dots(
+            verts.as_ptr(),
+            n_verts,
+            indices.as_ptr(),
+            n_tris,
+            out.as_mut_ptr(),
+        );
+    }
+    out
+}

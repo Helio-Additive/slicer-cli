@@ -532,8 +532,22 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
     // NOTE: This score is not updated, even though the decimation does change the mesh. It saves computation time, and there are no strong reasons to update.
     // ShortEdgeCollapse.cpp:43
     let mut min_vertex_dot_product: Vec<f32> = vec![1.0f32; mesh.vertices.len()];
+    // R187 (ZSMOOTH_FAITHFUL): compute the float kernel through the native
+    // Eigen pipeline (eigen-transform-sys secol_min_vertex_dots) — the rust
+    // scalar math differs by ulps from Eigen's codegen, flipping keep/remove
+    // swaps (first divergence at round-1 decision #324).
+    let use_shim = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+    if use_shim {
+        let verts_flat: Vec<f32> = mesh
+            .vertices
+            .iter()
+            .flat_map(|v| [v.x, v.y, v.z])
+            .collect();
+        let idx_flat: Vec<i32> = mesh.indices.iter().flat_map(|t| [t.x, t.y, t.z]).collect();
+        min_vertex_dot_product = eigen_transform_sys::min_vertex_dots(&verts_flat, &idx_flat);
+    }
     // ShortEdgeCollapse.cpp:44-55
-    {
+    if !use_shim {
         // std::vector<Vec3f> face_normals = its_face_normals(mesh);
         let face_normals: Vec<Vec3f> = its_face_normals(mesh);
         // std::vector<Vec3f> vertex_normals = NormalUtils::create_normals(mesh);
