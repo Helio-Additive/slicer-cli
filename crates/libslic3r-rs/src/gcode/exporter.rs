@@ -537,9 +537,21 @@ pub fn extrude_loop(
     // C++: m_wipe.path.append(path.polyline);
     // C++: }
     // C++: }
-    // R221 (queued): native wipe path = the loop's SOURCE polyline points —
-    // land together with the forward walk + segment-dE + speed as a verbatim
-    // Wipe::wipe port.
+    // R222: native wipe path = the loop's SOURCE polyline points (clipped
+    // paths concatenated, duplicate joints skipped) — GCode.cpp:5600-5610.
+    if crate::gcode::writer::lift_faithful_gate() {
+        let mut pts: Vec<(f64, f64)> = Vec::new();
+        for path in paths.iter() {
+            for (k, pt) in path.polyline.points().iter().enumerate() {
+                let p = (crate::unscale(pt.x()), crate::unscale(pt.y()));
+                if k == 0 && pts.last() == Some(&p) {
+                    continue;
+                }
+                pts.push(p);
+            }
+        }
+        writer.set_wipe_path_points(pts);
+    }
 }
 
 /// Extrude an extrusion entity collection.

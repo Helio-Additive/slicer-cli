@@ -1502,7 +1502,83 @@ impl GCodeWriter {
 
         // Wipe during retraction (C++ Wipe::wipe from GCode.cpp:357-433)
         // Retract filament while moving along the reversed last extrusion path
-        if self.wipe_enabled && self.wipe_path.len() >= 2 {
+        if lift_faithful_gate() && self.wipe_enabled && self.wipe_path.len() >= 2 {
+            // R222: verbatim Wipe::wipe (GCode.cpp:360-433), the whole cluster:
+            // forward source-polyline walk, wipe_dist clip, per-segment
+            // dE = length*(seg/wipe_dist)*0.95, current-speed wipe (set_speed
+            // dedup -> usually no F line), WIPE_START/END markers.
+            let length = self.retraction_length * (1.0 - self.config.retract_before_wipe / 100.0);
+            if length >= 0.0 {
+                // Native: wipe_distance.get_at(filament) — the per-filament
+                // value (1.0 on this profile), not the writer's 2.0 default.
+                let wipe_dist = self.config.filament_wipe_distance;
+                // wipe_path = [current] + stored[1..] (forward).
+                let mut pts: Vec<(CoordF, CoordF)> = vec![(self.x, self.y)];
+                pts.extend(self.wipe_path.iter().skip(1).copied());
+                // clip_end(total - wipe_dist): keep the first wipe_dist mm.
+                let mut kept: Vec<(CoordF, CoordF)> = vec![pts[0]];
+                let mut acc = 0.0;
+                for i in 1..pts.len() {
+                    let dx = pts[i].0 - pts[i - 1].0;
+                    let dy = pts[i].1 - pts[i - 1].1;
+                    let seg = (dx * dx + dy * dy).sqrt();
+                    if acc + seg >= wipe_dist {
+                        let ratio = (wipe_dist - acc) / seg;
+                        kept.push((pts[i - 1].0 + dx * ratio, pts[i - 1].1 + dy * ratio));
+                        acc = wipe_dist;
+                        break;
+                    }
+                    kept.push(pts[i]);
+                    acc += seg;
+                }
+                // Handle short path (GCode.cpp:401-405).
+                let eff_wipe_dist = if acc < wipe_dist { acc.max(1e-4) } else { wipe_dist };
+                if kept.len() >= 2 && acc > 1e-4 {
+                    self.write_raw("; WIPE_START");
+                    // role-based wipe speed = current speed; set_speed dedups.
+                    let wipe_f = self.feedrate;
+                    if wipe_f > 0.0 && (wipe_f - self.last_emitted_f).abs() > 0.01 {
+                        self.write_raw(&format!("G1 F{:.0};_WIPE", wipe_f));
+                        self.last_emitted_f = wipe_f;
+                    }
+                    for i in 1..kept.len() {
+                        let dx = kept[i].0 - kept[i - 1].0;
+                        let dy = kept[i].1 - kept[i - 1].1;
+                        let seg = (dx * dx + dy * dy).sqrt();
+                        let de = length * (seg / eff_wipe_dist) * 0.95;
+                        self.extruder.extrude(-de);
+                        let e_out = self.extruder.e();
+                        self.write_command(&GCodeCommand::LinearMove {
+                            x: Some(kept[i].0),
+                            y: Some(kept[i].1),
+                            z: None,
+                            e: Some(e_out),
+                            f: None,
+                        });
+                    }
+                    self.write_raw("; WIPE_END");
+                    let end = *kept.last().unwrap();
+                    self.x = end.0;
+                    self.y = end.1;
+                    // Remaining retraction (whatever the wipe didn't consume).
+                    let wiped: CoordF = length * 0.95 * (acc.min(eff_wipe_dist) / eff_wipe_dist);
+                    let remaining = self.retraction_length - wiped;
+                    if remaining > 1e-6 {
+                        self.extruder.extrude(-remaining);
+                        let e_out = self.extruder.e();
+                        self.write_command(&GCodeCommand::LinearMove {
+                            x: None,
+                            y: None,
+                            z: None,
+                            e: Some(e_out),
+                            f: Some(retract_speed),
+                        });
+                        self.last_emitted_f = retract_speed;
+                    }
+                }
+            }
+            self.wipe_path.clear();
+        } else if self.wipe_enabled && self.wipe_path.len() >= 2 {
             // Build reversed wipe path from current position
             let mut wipe_pts: Vec<(CoordF, CoordF)> = Vec::new();
             wipe_pts.push((self.x, self.y)); // current position
