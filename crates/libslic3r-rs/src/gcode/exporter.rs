@@ -632,7 +632,16 @@ pub fn extrude_collection(
         /// C++: gcode += ExtrusionEntity::role_to_string(entity->role());
         /// C++: gcode += "\n";
         /// C++: }
-        if Some(entity_role) != current_role {
+        let role_changed = Some(entity_role) != current_role;
+        // R218: native emits the FEATURE/LINE_WIDTH markers AFTER the travel +
+        // unretract, at extrusion start (GCode _extrude's description block);
+        // rust emitted them before the wipe/travel. Under the gate, defer.
+        let defer_markers = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+        let mut pending_markers = false;
+        if role_changed && defer_markers {
+            pending_markers = true;
+        }
+        if role_changed && !defer_markers {
             writer.write_comment(&format!("FEATURE: {}", entity_role.to_string()));
             // Emit LINE_WIDTH annotation for the feature
             // First layer uses initial_layer_line_width if set
@@ -706,6 +715,10 @@ pub fn extrude_collection(
             // FEATURE marker — matches C++ persistent m_last_extrusion_role.
             writer.set_last_extrusion_role(current_role);
         }
+        if role_changed && defer_markers {
+            current_role = Some(entity_role);
+            writer.set_last_extrusion_role(current_role);
+        }
 
         // Travel to start of this entity if the nozzle is not already there.
         // C++ GCode::extrude_entity() calls travel_to() before extruding each
@@ -766,6 +779,28 @@ pub fn extrude_collection(
                 if did_retract {
                     writer.unretract();
                 }
+            }
+        }
+        if pending_markers {
+            // R218: native marker position — after travel+unretract, before the
+            // feature F (GCode.cpp _extrude description/width block).
+            writer.write_comment(&format!("FEATURE: {}", entity_role.to_string()));
+            let line_width = if is_first_layer && config.initial_layer_line_width > 0.0 {
+                config.initial_layer_line_width
+            } else {
+                match entity_role {
+                    ExtrusionRole::ExternalPerimeter => config.outer_wall_line_width,
+                    ExtrusionRole::Perimeter => config.inner_wall_line_width,
+                    ExtrusionRole::InternalInfill => config.sparse_infill_line_width,
+                    ExtrusionRole::SolidInfill => config.solid_infill_line_width,
+                    ExtrusionRole::TopSolidInfill => config.top_surface_line_width,
+                    _ => config.outer_wall_line_width,
+                }
+            };
+            if line_width > 0.0 && writer.width_tag_changed(line_width) {
+                let lw_str = format!("{:.5}", line_width);
+                let lw_trimmed = lw_str.trim_end_matches('0').trim_end_matches('.');
+                writer.write_comment(&format!("LINE_WIDTH: {}", lw_trimmed));
             }
         }
 
