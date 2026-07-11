@@ -2262,6 +2262,17 @@ fn emit_layer_by_island(
     } else {
         (0..islands.len()).collect()
     };
+    if std::env::var("ISLDBG").is_ok() && (layer.print_z - 5.0).abs() < 1e-6 {
+        for (ii, isl) in islands.iter().enumerate() {
+            for (ri, b) in isl.iter().enumerate() {
+                for (pi, ent) in b.perims.iter().enumerate() {
+                    if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+                        eprintln!("ISLDBG L24 emit: island={} region={} perim={} first=({},{})", ii, ri, pi, fp.x, fp.y);
+                    }
+                }
+            }
+        }
+    }
     for &isl_idx in &emit_order {
         let island = &islands[isl_idx];
         for bucket in island {
