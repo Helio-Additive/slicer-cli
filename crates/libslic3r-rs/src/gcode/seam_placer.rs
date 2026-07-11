@@ -1072,6 +1072,22 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
         negative_volumes_start_index,
     );
 
+    if std::env::var("OCCDBG").is_ok() {
+        let mut h: u64 = 1469598103934665603;
+        for f in &result.mesh_samples_visibility {
+            h ^= f.to_bits() as u64;
+            h = h.wrapping_mul(1099511628211);
+        }
+        let s: f64 = result.mesh_samples_visibility.iter().map(|&v| v as f64).sum();
+        eprintln!(
+            "OCCDBG-R vis n={} vh={:x} sum={:.6} first5=[{:.6},{:.6},{:.6},{:.6},{:.6}]",
+            result.mesh_samples_visibility.len(), h, s,
+            result.mesh_samples_visibility[0], result.mesh_samples_visibility[1],
+            result.mesh_samples_visibility[2], result.mesh_samples_visibility[3],
+            result.mesh_samples_visibility[4]
+        );
+    }
+
     result
 }
 
