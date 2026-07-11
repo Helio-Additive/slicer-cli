@@ -485,6 +485,19 @@ impl GCodeWriter {
     /// Clamps to machine_max_acceleration_extruding (C++ GCodeWriter.cpp:230-235).
     /// Tracks state to avoid duplicate M204 lines.
     pub fn set_travel_acceleration(&mut self, accel: f64) {
+        // ZSMOOTH_FAITHFUL: native GCodeWriter::set_travel_acceleration reads
+        // the per-extruder `travel_acceleration` CONFIG (10000 on H2D) and
+        // routes through the SAME set_acceleration_impl register as the
+        // per-feature accel — travel/feature alternation re-emits M204 on
+        // every switch (native: 3148x M204 S10000 on benchy). The legacy path
+        // keeps the caller-passed value (hardcoded 6000) and its own register.
+        let accel = if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+            && self.config.travel_acceleration > 0.0
+        {
+            self.config.travel_acceleration
+        } else {
+            accel
+        };
         if accel <= 0.0 {
             return;
         }
@@ -499,6 +512,26 @@ impl GCodeWriter {
         if (self.last_travel_accel as u32) != effective_u {
             self.write_raw(&format!("M204 S{}", effective_u));
             self.last_travel_accel = effective;
+        }
+    }
+
+    /// Native set_acceleration_impl for the per-feature accel THROUGH THE SAME
+    /// register as travel accel (ZSMOOTH_FAITHFUL path) — M204 emitted on every
+    /// travel/feature alternation, deduped only against the last M204 of either
+    /// kind (GCodeWriter.cpp:229-240 m_last_acceleration).
+    pub fn set_feature_acceleration_shared(&mut self, accel: u32) {
+        if accel == 0 {
+            return;
+        }
+        let max_accel = self.config.machine_max_acceleration_extruding;
+        let effective = if max_accel > 0.0 && (accel as f64) > max_accel {
+            max_accel as u32
+        } else {
+            accel
+        };
+        if (self.last_travel_accel as u32) != effective {
+            self.write_raw(&format!("M204 S{}", effective));
+            self.last_travel_accel = effective as f64;
         }
     }
 

@@ -635,8 +635,13 @@ pub fn extrude_collection(
             // so bridges also fall to default_acceleration. sparse_infill_acceleration
             // is a percentage of default_acceleration (config stores e.g. "100%" as
             // 100.0), resolved via get_abs_value: pct/100 * default.
-            if let Some(acc) = writer.feature_acceleration(entity_role, is_first_layer) {
-                writer.write_raw(&format!("M204 S{}", acc));
+            // ZSMOOTH_FAITHFUL: the per-entity shared-register emission below
+            // replaces this role-change raw write (native has no role-change
+            // accel — every path goes through set_acceleration_impl).
+            if !std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                if let Some(acc) = writer.feature_acceleration(entity_role, is_first_layer) {
+                    writer.write_raw(&format!("M204 S{}", acc));
+                }
             }
             current_role = Some(entity_role);
             // Persist to the writer so the next extrude_collection call (e.g. the
@@ -694,6 +699,17 @@ pub fn extrude_collection(
         // extrusion moves, so the acceleration-aware GCodeProcessor estimator paid
         // huge accel/decel ramp cost targeting an unreachable 1000 mm/s on short
         // extrusion segments (rust 1h50m vs native 43m).
+        // ZSMOOTH_FAITHFUL: native's _extrude sets the feature acceleration for
+        // EVERY path through the shared M204 register (GCode.cpp:6393-6420 +
+        // GCodeWriter set_acceleration_impl) — after the travel (whose accel
+        // went through the same register), so travel/feature alternation
+        // re-emits M204 constantly. Legacy path emits only on role change.
+        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if let Some(acc) = writer.feature_acceleration(entity_role, is_first_layer) {
+                writer.set_feature_acceleration_shared(acc);
+            }
+        }
+
         // ZSMOOTH_FAITHFUL: native never emits a collection-level feature-speed
         // F before a perimeter loop — its first F is the FIRST PATH's
         // overhang-corrected speed (GCode.cpp extrude_loop emits per-path F via
