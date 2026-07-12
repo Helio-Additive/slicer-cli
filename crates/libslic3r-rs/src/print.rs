@@ -621,6 +621,15 @@ impl Print {
                 // else fall back to object index (matching C++ get_labeled_id())
                 let label_id = if object.label_id > 0 {
                     object.label_id
+                } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                    // R225: native's fallback is get_labeled_id() = id().id —
+                    // the ModelInstance's global ObjectBase counter value. For
+                    // the STL single-object load path the native pipeline
+                    // allocates 13 ObjectBase ids (Model, ModelObject, volume,
+                    // configs, ...) before the instance. Full ObjectBase
+                    // id-counter emulation is future work; 13 is stable for
+                    // this pipeline shape.
+                    ltp.object_idx + 13
                 } else {
                     ltp.object_idx
                 };
@@ -751,6 +760,12 @@ impl Print {
                 .map(|(i, o)| {
                     if o.label_id > 0 {
                         o.label_id as i32
+                    } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                        // R225: must mirror the `; OBJECT_ID:` fallback above
+                        // (native ObjectBase id, +13 for the STL pipeline) or
+                        // the editor's object_label lookup misses and the
+                        // outwall smooth marks are silently dropped.
+                        i as i32 + 13
                     } else {
                         i as i32
                     }

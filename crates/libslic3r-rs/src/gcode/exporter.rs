@@ -827,7 +827,13 @@ pub fn extrude_collection(
                     _ => config.outer_wall_line_width,
                 }
             };
-            if line_width > 0.0 && writer.width_tag_changed(line_width) {
+            // R225: under LINEWIDTH_PERPATH the tag is emitted per path from
+            // path.width at the extrude_path choke point (native GCode.cpp:6605
+            // register) and the entity-level config width would fight it.
+            if !std::env::var("LINEWIDTH_PERPATH").is_ok()
+                && line_width > 0.0
+                && writer.width_tag_changed(line_width)
+            {
                 let lw_str = format!("{:.5}", line_width);
                 let lw_trimmed = lw_str.trim_end_matches('0').trim_end_matches('.');
                 writer.write_comment(&format!("LINE_WIDTH: {}", lw_trimmed));
@@ -1011,6 +1017,24 @@ pub use extrude_collection as extrude_multi_path;
 /// * `writer` - GCodeWriter to emit commands
 /// * `config` - Print configuration for flow calculations
 /// * `is_first_layer` - Whether this is the first layer (affects flow ratio)
+/// C++ printf "%g" (default precision 6): 6 significant digits, trailing
+/// zeros trimmed. Native formats the LINE_WIDTH tag with %g of the f32
+/// path.width promoted to double (GCode.cpp:6607).
+fn fmt_g6(v: f64) -> String {
+    if v == 0.0 {
+        return "0".to_string();
+    }
+    let exp = v.abs().log10().floor() as i32;
+    if exp < -5 || exp >= 6 {
+        // %g scientific branch — widths never reach it; minimal fallback.
+        return format!("{:e}", v);
+    }
+    let decimals = (5 - exp).max(0) as usize;
+    let s = format!("{:.*}", decimals, v);
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    s.to_string()
+}
+
 pub fn extrude_path(
     path: &ExtrusionPath,
     writer: &mut GCodeWriter,
@@ -1060,6 +1084,22 @@ pub fn extrude_path_with_arc_fitting(
     // Check if path is empty
     if path.polyline.points().is_empty() {
         return;
+    }
+
+    // R225: native _extrude emits ";LINE_WIDTH: %g" whenever path.width
+    // differs from m_last_width (GCode.cpp:6605-6609) — a PER-PATH register,
+    // not per feature change (fills alternate widths constantly; 6.5k
+    // native-only tag lines came from this). PARKED behind its own gate:
+    // emission shape is native-correct, but rust f64 flow/Arachne width
+    // values drift from native f32 chains in the 6th significant digit
+    // (0.43272-vs-0.43273, 0.42-vs-0.41999), so enabling it today ADDS
+    // unmatched lines (83187 → 87805). Unlocks when width values converge.
+    static LW_PERPATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *LW_PERPATH.get_or_init(|| std::env::var("LINEWIDTH_PERPATH").is_ok())
+        && path.width > 0.0
+        && writer.width_tag_changed(path.width)
+    {
+        writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
     }
 
     // C++ reference: GCode.cpp:4211-4220
