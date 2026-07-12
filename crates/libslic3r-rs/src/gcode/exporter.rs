@@ -1493,6 +1493,23 @@ pub fn extrude_entity(
         /// C++: }
         ExtrusionEntityType::Path(path) => {
             extrude_path(path, writer, config, is_first_layer);
+            // R233: native extrude_path installs the wipe path = the path's
+            // SOURCE polyline REVERSED (GCode.cpp:5703-5717, non-tree branch)
+            // — fills wipe backwards along the just-printed line. Rust only
+            // installed wipe paths at loop ends, so 207 native wipes had no
+            // rust counterpart (bare retracts).
+            if crate::gcode::writer::lift_faithful_gate() {
+                let pts: Vec<(f64, f64)> = path
+                    .polyline
+                    .points()
+                    .iter()
+                    .rev()
+                    .map(|pt| (crate::unscale(pt.x()), crate::unscale(pt.y())))
+                    .collect();
+                if pts.len() >= 2 {
+                    writer.set_wipe_path_points(pts);
+                }
+            }
             // R227: native extrude_path wrapper resets accel after the path
             // (GCode.cpp:5719-5725).
             writer.reset_acceleration_default(is_first_layer);
