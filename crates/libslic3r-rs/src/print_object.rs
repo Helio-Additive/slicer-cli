@@ -643,7 +643,29 @@ impl PrintObject {
             // slicing (apply_first_layer_compensation in PrintObjectSlice.cpp). It is
             // kept here as this crate's integration point; retained to avoid silently
             // dropping the feature, not because the C++ runs it from make_perimeters.
-            if idx == 0 && self.config.elephant_foot_compensation > 0.0 {
+            if idx == 0 && std::env::var("L0_SLICES").is_ok() {
+                // R308: at native's PG input the L0 region slices EQUAL lslices
+                // (PrintObjectSlice.cpp:1243-46 slices.set(compensated) +
+                // make_slices; R307 probe: native rsl == lsl byte-exact while
+                // rust kept the raw pre-union contours, 1528-vs-1368 pts —
+                // the root of the vshell piece-1 chain). Mirror by rebuilding
+                // the region surfaces from lslices; supersedes the plain-shrink
+                // elephant step on this path.
+                let lsl = layer.lslices.clone();
+                for region in layer.regions_mut().iter_mut() {
+                    region.slices.surfaces = lsl
+                        .iter()
+                        .map(|ex| crate::surface::Surface {
+                            expolygon: ex.clone(),
+                            surface_type: crate::surface::SurfaceType::Internal,
+                            thickness: -1.0,
+                            thickness_layers: 1,
+                            bridge_angle: None,
+                            extra_perimeters: 0,
+                        })
+                        .collect();
+                }
+            } else if idx == 0 && self.config.elephant_foot_compensation > 0.0 {
                 for region in layer.regions_mut().iter_mut() {
                     region.elephant_foot_compensation_step(self.config.elephant_foot_compensation);
                 }
