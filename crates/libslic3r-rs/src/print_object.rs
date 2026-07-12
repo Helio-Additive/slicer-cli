@@ -3394,7 +3394,14 @@ impl PrintObject {
                 for r in layer.regions() {
                     holes.extend(r.fill_expolygons.iter().cloned());
                 }
-                let holes = if holes.is_empty() { holes } else { union_ex(&holes) };
+                // Native cache.holes are RAW appended polygons (no union at build,
+                // PO.cpp:1859-64); the union here merges/snaps razor vertices the
+                // native combine_holes intersection chain would see raw. Gated.
+                let holes = if holes.is_empty() || std::env::var("VSHELL_RAW").is_ok() {
+                    holes
+                } else {
+                    union_ex(&holes)
+                };
                 cache.push(Cache { top, bottom, holes });
             }
 
