@@ -2154,7 +2154,6 @@ impl Layer {
         //      std::vector<SurfaceFill> surface_fills = group_fills(*this, lock_param);
         let mut lock_param = crate::fill::LockRegionParam::default();
         let surface_fills = crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?;
-
         // Fill.cpp:597-598
         // C++: const Slic3r::BoundingBox bbox = this->object()->bounding_box();
         //      const auto resolution = this->object()->print()->config().resolution.value;
