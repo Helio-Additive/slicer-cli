@@ -202,6 +202,10 @@ extern "C" {
 
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
+
+    /// R269 medial-axis shim smoke test: boost voronoi over a unit square,
+    /// returns the count of finite primary edges (links the boost builder).
+    pub fn ma_selftest() -> i64;
 }
 
 #[cfg(test)]

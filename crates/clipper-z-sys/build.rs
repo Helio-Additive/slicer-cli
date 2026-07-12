@@ -55,6 +55,7 @@ fn eigen_include_dir() -> PathBuf {
 
 fn main() {
     let eigen = eigen_include_dir();
+    println!("cargo:rerun-if-changed=shim/medial_axis_shim.cpp");
     println!("cargo:rerun-if-changed=vendor/clipper.cpp");
     println!("cargo:rerun-if-changed=vendor/clipper.hpp");
     println!("cargo:rerun-if-changed=vendor/clipper_z.hpp");
@@ -101,5 +102,19 @@ fn main() {
     let mut shim = cc::Build::new();
     common(&mut shim);
     shim.file("shim/clipper_z_shim.cpp");
+    // R269: medial-axis shim — boost::polygon voronoi from the SAME nix boost
+    // (1.87.0, devbox profile) the native binary uses, for vertex-exactness.
+    shim.file("shim/medial_axis_shim.cpp");
+    if let Ok(out) = std::process::Command::new("pkg-config")
+        .args(["--cflags-only-I", "boost"])
+        .output()
+    {
+        let sout = String::from_utf8_lossy(&out.stdout);
+        for tok in sout.split_whitespace() {
+            if let Some(path) = tok.strip_prefix("-I") {
+                shim.include(path);
+            }
+        }
+    }
     shim.compile("clipper_z_shim");
 }
