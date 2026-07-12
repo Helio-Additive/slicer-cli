@@ -464,6 +464,7 @@ pub fn extrude_loop(
                 writer.write_raw(";_OVERHANG_FAN_END");
             }
         }
+        writer.reset_acceleration_default(is_first_layer);
         return;
     }
 
@@ -526,7 +527,8 @@ pub fn extrude_loop(
     // C++: if (!this->is_BBL_Printer())
     // C++: gcode += m_writer.set_jerk_xy(m_config.default_jerk.value);
     // C++: }
-    // TODO: Implement acceleration reset (GCode.cpp:5220-5227)
+    // R227: reset acceleration to default after the loop (GCode.cpp:5591-5597).
+    writer.reset_acceleration_default(is_first_layer);
 
     // C++ reference: GCode.cpp:5230-5241
     // C++: // BBS
@@ -1411,6 +1413,9 @@ pub fn extrude_entity(
         /// C++: }
         ExtrusionEntityType::Path(path) => {
             extrude_path(path, writer, config, is_first_layer);
+            // R227: native extrude_path wrapper resets accel after the path
+            // (GCode.cpp:5719-5725).
+            writer.reset_acceleration_default(is_first_layer);
         }
 
         /// Dispatch to collection handler (recursive)

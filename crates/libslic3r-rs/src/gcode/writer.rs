@@ -318,6 +318,14 @@ pub struct GCodeWriter {
     /// Last emitted travel acceleration (M204 S value), for deduplication.
     /// 0 means "not set yet" — always emit on first call.
     last_travel_accel: f64,
+    /// R227: native m_is_first_layer (GCodeWriter set_first_layer) — travel
+    /// accel selection reads m_first_layer_travel_accelerations on layer 0.
+    pub is_first_layer: bool,
+    /// R227: native m_acceleration — feature/reset accels are STORED here and
+    /// only emitted (deduped vs the shared last_travel_accel register) by the
+    /// next extrusion move (GCodeWriter.cpp:168-171 set_acceleration stores;
+    /// extrude_to_xy:717 prepends set_extrude_acceleration()). 0 = none.
+    pending_accel: u32,
     /// Per-layer context for the faithful needs_retraction (ZSMOOTH_FAITHFUL):
     /// internal-island polygons + wall boundary lines of the current layer.
     pub zsmooth_retract_ctx: Option<RetractCtx>,
@@ -387,6 +395,8 @@ impl GCodeWriter {
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
+            is_first_layer: false,
+            pending_accel: 0,
             zsmooth_retract_ctx: None,
             last_width_tag: 0.0,
             gcode_origin_x: 0.0,
@@ -578,7 +588,13 @@ impl GCodeWriter {
         let accel = if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
             && self.config.travel_acceleration > 0.0
         {
-            self.config.travel_acceleration
+            // GCodeWriter.cpp:210 — first-layer travels use the
+            // first-layer travel accelerations (6000 on this profile).
+            if self.is_first_layer && self.config.initial_layer_travel_acceleration > 0.0 {
+                self.config.initial_layer_travel_acceleration
+            } else {
+                self.config.travel_acceleration
+            }
         } else {
             accel
         };
@@ -619,6 +635,10 @@ impl GCodeWriter {
             && travel_len_mm < self.config.retract_before_travel
         {
             short
+        } else if self.is_first_layer && self.config.initial_layer_travel_acceleration > 0.0 {
+            // GCodeWriter.cpp:210 — m_is_first_layer selects the first-layer
+            // travel accelerations.
+            self.config.initial_layer_travel_acceleration
         } else {
             self.config.travel_acceleration
         };
@@ -658,11 +678,38 @@ impl GCodeWriter {
         if accel == 0 {
             return;
         }
+        if lift_faithful_gate() {
+            // R227: native set_acceleration only STORES m_acceleration; the
+            // M204 is prepended to the NEXT extrusion move (extrude_to_xy →
+            // set_extrude_acceleration). Emitting eagerly here put M204 before
+            // the feature F line and surfaced resets that native never prints.
+            self.pending_accel = accel;
+            return;
+        }
         let max_accel = self.config.machine_max_acceleration_extruding;
         let effective = if max_accel > 0.0 && (accel as f64) > max_accel {
             max_accel as u32
         } else {
             accel
+        };
+        if (self.last_travel_accel as u32) != effective {
+            self.write_raw(&format!("M204 S{}", effective));
+            self.last_travel_accel = effective as f64;
+        }
+    }
+
+    /// R227: GCodeWriter::set_extrude_acceleration (GCodeWriter.cpp:198-201) —
+    /// emit the pending accel through the shared register, deduped. Called by
+    /// every extrusion move (and the wipe segments) under the gate.
+    pub fn flush_pending_accel(&mut self) {
+        if !lift_faithful_gate() || self.pending_accel == 0 {
+            return;
+        }
+        let max_accel = self.config.machine_max_acceleration_extruding;
+        let effective = if max_accel > 0.0 && (self.pending_accel as f64) > max_accel {
+            max_accel as u32
+        } else {
+            self.pending_accel
         };
         if (self.last_travel_accel as u32) != effective {
             self.write_raw(&format!("M204 S{}", effective));
@@ -686,6 +733,22 @@ impl GCodeWriter {
     /// `sparse_infill_acceleration` is a percentage of default_acceleration
     /// (get_abs_value): the config stores e.g. "100%" as 100.0, so resolve as
     /// pct/100 * default. Returns None when default_acceleration <= 0 (no M204).
+    /// R227: native resets accel to default_acceleration at the end of
+    /// extrude_loop / extrude_multi_path / extrude_path when not on the first
+    /// layer (GCode.cpp:5591/5676/5720, `(unsigned)(default_acceleration+0.5)`)
+    /// through the shared M204 register — the next feature/travel M204 then
+    /// re-emits. Gated (ZSMOOTH_FAITHFUL via lift_faithful_gate).
+    pub fn reset_acceleration_default(&mut self, is_first_layer: bool) {
+        if !lift_faithful_gate() || is_first_layer {
+            return;
+        }
+        if self.config.default_acceleration <= 0.0 {
+            return;
+        }
+        let acc = (self.config.default_acceleration + 0.5).floor() as u32;
+        self.pending_accel = acc;
+    }
+
     pub fn feature_acceleration(
         &self,
         role: crate::extrusion_entity::ExtrusionRole,
@@ -1283,6 +1346,7 @@ impl GCodeWriter {
     }
 
     pub fn extrude_to(&mut self, x: CoordF, y: CoordF, de: CoordF, feedrate: Option<CoordF>) {
+        self.flush_pending_accel();
         let f = feedrate.unwrap_or(if self.feedrate > 0.0 {
             self.feedrate
         } else {
@@ -1367,6 +1431,7 @@ impl GCodeWriter {
         direction: ArcDirection,
         feedrate: Option<CoordF>,
     ) {
+        self.flush_pending_accel();
         let f = feedrate.unwrap_or(if self.feedrate > 0.0 {
             self.feedrate
         } else {
@@ -1534,6 +1599,10 @@ impl GCodeWriter {
                 // Handle short path (GCode.cpp:401-405).
                 let eff_wipe_dist = if acc < wipe_dist { acc.max(1e-4) } else { wipe_dist };
                 if kept.len() >= 2 && acc > 1e-4 {
+                    // R227: native wipe segments are extrude_to_xy calls, so
+                    // they surface the pending (reset) accel before WIPE_START's
+                    // first move.
+                    self.flush_pending_accel();
                     self.write_raw("; WIPE_START");
                     // role-based wipe speed = current speed; set_speed dedups.
                     let wipe_f = self.feedrate;

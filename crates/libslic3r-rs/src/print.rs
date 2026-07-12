@@ -524,6 +524,10 @@ impl Print {
                 writer.write_raw("M106 P2 S0");
             }
 
+            // R227: keep the writer's first-layer flag in sync (native
+            // GCodeWriter::set_first_layer) — travel accel selection reads it.
+            writer.is_first_layer = first_layer;
+
             // GCode.cpp: set_travel_acceleration() before Z-hop
             // On first layer, uses initial_layer_travel_acceleration
             // On other layers, uses travel_acceleration
