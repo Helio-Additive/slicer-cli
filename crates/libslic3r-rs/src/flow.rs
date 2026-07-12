@@ -125,7 +125,7 @@ pub struct Flow {
 /// invisible in E values (5 decimals) but flips LINE_WIDTH %g digits and
 /// volumetric-capped F digits. Gated separately (FLOW_F32) so its
 /// geometry impact can be measured in isolation.
-fn flow_f32() -> bool {
+pub fn flow_f32() -> bool {
     static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *G.get_or_init(|| std::env::var("FLOW_F32").is_ok())
 }

@@ -195,7 +195,7 @@ pub fn thick_polyline_to_multi_path(
         let new_flow: Flow = if role == ExtrusionRole::OverhangPerimeter && flow.is_bridge() {
             flow.clone()
         } else {
-            flow.with_width(unscale_f(w) + flow.height() * (1.0 - 0.25 * PI))
+            flow.with_width(spacing_to_width(unscale_f(w), flow.height()))
                 .unwrap_or_else(|_| flow.clone())
         };
         // VariableWidth.cpp:67
@@ -308,7 +308,7 @@ fn thick_polyline_to_extrusion_paths_2(
                     // VariableWidth.cpp:135-136
                     let w: f64 = sum / length;
                     let new_flow: Flow = flow
-                        .with_width(unscale_f(w) + flow.height() * (1.0 - 0.25 * PI))
+                        .with_width(spacing_to_width(unscale_f(w), flow.height()))
                         .unwrap_or_else(|_| flow.clone());
                     // VariableWidth.cpp:137-139
                     path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
@@ -420,7 +420,7 @@ fn thick_polyline_to_extrusion_paths_2(
             // VariableWidth.cpp:202-203
             let w: f64 = sum / length;
             let new_flow: Flow = flow
-                .with_width(unscale_f(w) + flow.height() * (1.0 - 0.25 * PI))
+                .with_width(spacing_to_width(unscale_f(w), flow.height()))
                 .unwrap_or_else(|_| flow.clone());
             // VariableWidth.cpp:204-206
             path.mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
@@ -491,6 +491,19 @@ pub fn variable_width(
 #[inline]
 fn unscale_f(scaled_val: f64) -> f64 {
     scaled_val / crate::SCALING_FACTOR
+}
+
+/// R231: native computes the spacing→width conversion in f32
+/// (VariableWidth.cpp:66 `unscale<float>(w) + flow.height() * float(1.-0.25*PI)`
+/// — float sum of float terms). The f64 chain drifts the 6th significant
+/// digit of path.width (0.43272-vs-0.43273 LINE_WIDTH flips). Gated FLOW_F32.
+pub fn spacing_to_width(w_unscaled: f64, height: f64) -> f64 {
+    const C: f64 = 1.0 - 0.25 * std::f64::consts::PI;
+    if crate::flow::flow_f32() {
+        ((w_unscaled as f32) + (height as f32) * (C as f32)) as f64
+    } else {
+        w_unscaled + height * C
+    }
 }
 
 /// Helper: scale an unscaled mm value to a scaled `coordf_t`.
