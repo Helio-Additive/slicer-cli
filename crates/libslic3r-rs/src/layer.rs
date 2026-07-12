@@ -2595,7 +2595,34 @@ impl Layer {
                 }
 
                 // Convert to extrusion paths
-                let mm3_per_mm = surface_fill.params.flow.mm3_per_mm()?;
+                // R257 (gated): native fill_surface_extrusion recomputes flow
+                // from the ADJUSTED solid spacing (`this->spacing`, written back
+                // by _adjust_solid_spacing — FillBase.cpp:138-149 with_spacing).
+                // Without it every adjusted solid fill extrudes a constant
+                // ~0.5% low (the ×1.005 E class on XY-matched ISI rasters).
+                let (fill_flow_eff, mm3_per_mm) = {
+                    let adj = crate::fill::fill_rectilinear::ADJUSTED_SPACING_MM
+                        .with(|c| c.get());
+                    match adj {
+                        Some(sp_mm)
+                            if std::env::var("GAPTRIM_PRETAIL").is_ok()
+                                && surface_fill.surface.is_solid()
+                                && !surface_fill.params.bridge =>
+                        {
+                            let nf = surface_fill
+                                .params
+                                .flow
+                                .with_spacing(sp_mm)
+                                .unwrap_or_else(|_| surface_fill.params.flow.clone());
+                            let m = nf.mm3_per_mm().unwrap_or(0.0);
+                            (nf, m)
+                        }
+                        _ => (
+                            surface_fill.params.flow.clone(),
+                            surface_fill.params.flow.mm3_per_mm()?,
+                        ),
+                    }
+                };
                 let mut collection = ExtrusionEntityCollection::new();
                 if is_monotonic_line && std::env::var("TOPFILL_FAITHFUL").is_ok() {
                     // Native FillMonotonicLineWGapFill emits via
@@ -2614,8 +2641,8 @@ impl Layer {
                         polylines,
                         surface_fill.params.extrusion_role,
                         mm3_per_mm,
-                        surface_fill.params.flow.width() as f32,
-                        surface_fill.params.flow.height() as f32,
+                        fill_flow_eff.width() as f32,
+                        fill_flow_eff.height() as f32,
                         gap_comp,
                     );
                 } else {
@@ -2624,8 +2651,8 @@ impl Layer {
                         polylines,
                         surface_fill.params.extrusion_role,
                         mm3_per_mm,
-                        surface_fill.params.flow.width() as f32,
-                        surface_fill.params.flow.height() as f32,
+                        fill_flow_eff.width() as f32,
+                        fill_flow_eff.height() as f32,
                     );
                 }
 

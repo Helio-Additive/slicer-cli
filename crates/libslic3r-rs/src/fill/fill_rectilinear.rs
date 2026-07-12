@@ -667,6 +667,16 @@ impl ExPolygonWithOffset {
 // ---------------------------------------------------------------------------
 
 /// Parameters controlling the fill algorithm (subset of libslic3r FillParams).
+thread_local! {
+    /// R257: the solid-spacing adjustment (native `this->spacing =
+    /// unscale(_adjust_solid_spacing(...))`, FillRectilinear.cpp:2862-2863) —
+    /// exported so the emission site can recompute flow/mm3 via with_spacing
+    /// like native fill_surface_extrusion (FillBase.cpp:138-149). Reset at
+    /// generate_fill_rectilinear entry; Some(mm) when the adjust branch ran.
+    pub static ADJUSTED_SPACING_MM: std::cell::Cell<Option<f64>> =
+        const { std::cell::Cell::new(None) };
+}
+
 #[derive(Debug, Clone)]
 pub struct FillRectilinearParams {
     /// Infill density (0.0 - 1.0).
@@ -2159,7 +2169,9 @@ pub fn fill_surface_by_lines(
 
     // Adjust spacing for solid fill
     let line_spacing = if params.full_infill && !params.dont_adjust {
-        adjust_solid_spacing(bbox.width(), line_spacing)
+        let ls = adjust_solid_spacing(bbox.width(), line_spacing);
+        ADJUSTED_SPACING_MM.with(|c| c.set(Some(ls as f64 / crate::SCALING_FACTOR)));
+        ls
     } else {
         // Native align_to_grid branch (FillRectilinear.cpp:2865-2875): refpt =
         // Fill::bounding_box.center() rotated, and PrintObject::bounding_box()
@@ -2266,6 +2278,7 @@ pub fn generate_fill_rectilinear(
     layer_index: usize,
     is_grid: bool,
 ) -> Vec<InfillPath> {
+    ADJUSTED_SPACING_MM.with(|c| c.set(None));
     let mut paths = Vec::new();
 
     // Native Fill::_infill_direction (FillBase.cpp:239) adds an UNCONDITIONAL
