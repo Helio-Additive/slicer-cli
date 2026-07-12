@@ -1673,6 +1673,29 @@ impl PerimeterGenerator {
                 inset -= infill_peri_overlap;
             }
 
+            // R285 (TOPFILL_FAITHFUL): native computes the whole tail on coord_t
+            // ints (PG.cpp:1383-1430): inset = spacing/2 INT div; overlap =
+            // trunc(ratio * ((inset + S_si/2_int) * 1e-5) / 1e-5); min_pis =
+            // trunc(S_si*0.6). Division domains are load-bearing: min_pis/2. is
+            // DOUBLE (keeps .5) in the offset2 deltas but min_pis/2 is INT in
+            // the no-overlap branch + condition; the top offsets are double()
+            // of ints with NO f32.
+            let ext_sp_c = (ext_perimeter_spacing / 0.00001).trunc();
+            let per_sp_c = (perimeter_spacing / 0.00001).trunc();
+            let s_si_c = (self.config.solid_infill_spacing / 0.00001).trunc();
+            let mut inset_c = if loop_number == 0 {
+                (ext_sp_c / 2.0).trunc()
+            } else {
+                (per_sp_c / 2.0).trunc()
+            };
+            let mut overlap_c = 0.0f64;
+            if inset_c > 0.0 {
+                let v_unscaled = (inset_c + (s_si_c / 2.0).trunc()) * 0.00001;
+                overlap_c = ((self.config.infill_wall_overlap * v_unscaled) / 0.00001).trunc();
+                inset_c -= overlap_c;
+            }
+            let min_pis_c = (s_si_c * (1.0 - INSET_OVERLAP_TOLERANCE)).trunc();
+
             // PerimeterGenerator.cpp:1395-1399
             // C++: Polygons pp;
             // C++: for (ExPolygon &ex : last) ex.simplify_p(m_scaled_resolution, &pp);
@@ -1711,12 +1734,21 @@ impl PerimeterGenerator {
             let min_perimeter_infill_spacing =
                 self.config.solid_infill_spacing * (1.0 - INSET_OVERLAP_TOLERANCE);
             let mut infill_exp = if f1_infill {
-                crate::clipper_utils::offset2_ex_clib(
-                    &not_filled_exp,
-                    -(inset + min_perimeter_infill_spacing / 2.0),
-                    min_perimeter_infill_spacing / 2.0,
-                    self.config.join_type,
-                )
+                if std::env::var("FILLBOUND_QUANT").is_ok() {
+                    crate::clipper_utils::offset2_ex_clib(
+                        &not_filled_exp,
+                        -(inset_c + min_pis_c / 2.0) / SCALING_FACTOR,
+                        (min_pis_c / 2.0) / SCALING_FACTOR,
+                        self.config.join_type,
+                    )
+                } else {
+                    crate::clipper_utils::offset2_ex_clib(
+                        &not_filled_exp,
+                        -(inset + min_perimeter_infill_spacing / 2.0),
+                        min_perimeter_infill_spacing / 2.0,
+                        self.config.join_type,
+                    )
+                }
             } else {
                 offset2(
                     &not_filled_exp,
@@ -1734,11 +1766,19 @@ impl PerimeterGenerator {
             let top_infill_exp = if f1_infill {
                 crate::clipper_utils::intersection_clib(
                     &fill_clip,
-                    &crate::clipper_utils::offset_expolygons_clib(
-                        &top_fills,
-                        ext_perimeter_spacing / 2.0,
-                        OffsetJoinType::Miter,
-                    ),
+                    &if std::env::var("FILLBOUND_QUANT").is_ok() {
+                        crate::clipper_utils::offset_expolygons_clib_scaled(
+                            &top_fills,
+                            (ext_sp_c / 2.0).trunc(),
+                            OffsetJoinType::Miter,
+                        )
+                    } else {
+                        crate::clipper_utils::offset_expolygons_clib(
+                            &top_fills,
+                            ext_perimeter_spacing / 2.0,
+                            OffsetJoinType::Miter,
+                        )
+                    },
                 )
             } else {
                 intersection(
@@ -1752,11 +1792,19 @@ impl PerimeterGenerator {
             };
             if !top_fills.is_empty() {
                 if f1_infill {
-                    let grown = crate::clipper_utils::offset_expolygons_clib(
-                        &top_infill_exp,
-                        infill_peri_overlap,
-                        OffsetJoinType::Miter,
-                    );
+                    let grown = if std::env::var("FILLBOUND_QUANT").is_ok() {
+                        crate::clipper_utils::offset_expolygons_clib_scaled(
+                            &top_infill_exp,
+                            overlap_c,
+                            OffsetJoinType::Miter,
+                        )
+                    } else {
+                        crate::clipper_utils::offset_expolygons_clib(
+                            &top_infill_exp,
+                            infill_peri_overlap,
+                            OffsetJoinType::Miter,
+                        )
+                    };
                     top_band_out = grown.clone();
                     let mut merged: Vec<Polygon> = crate::geometry::to_polygons(&infill_exp);
                     merged.extend(crate::geometry::to_polygons(&grown));
@@ -1787,16 +1835,29 @@ impl PerimeterGenerator {
             // grid the no-overlap contour to 1um, which the top-surface
             // MonotonicLine raster clips against (R100 class). Gated full-res.
             let f1 = std::env::var("TOPFILL_FAITHFUL").is_ok();
-            let mut poly_without_overlap = if min_perimeter_infill_spacing / 2.0
-                > infill_peri_overlap
-            {
+            // Native condition: min_pis/2 (INT div) > overlap (PG.cpp:1418).
+            let no_cond = if f1 && std::env::var("FILLBOUND_QUANT").is_ok() {
+                (min_pis_c / 2.0).trunc() > overlap_c
+            } else {
+                min_perimeter_infill_spacing / 2.0 > infill_peri_overlap
+            };
+            let mut poly_without_overlap = if no_cond {
                 if f1 {
-                    crate::clipper_utils::offset2_ex_clib(
-                        &not_filled_exp,
-                        -(inset + min_perimeter_infill_spacing / 2.0),
-                        min_perimeter_infill_spacing / 2.0 - infill_peri_overlap,
-                        self.config.join_type,
-                    )
+                    if std::env::var("FILLBOUND_QUANT").is_ok() {
+                        crate::clipper_utils::offset2_ex_clib(
+                            &not_filled_exp,
+                            -(inset_c + min_pis_c / 2.0) / SCALING_FACTOR,
+                            ((min_pis_c / 2.0).trunc() - overlap_c) / SCALING_FACTOR,
+                            self.config.join_type,
+                        )
+                    } else {
+                        crate::clipper_utils::offset2_ex_clib(
+                            &not_filled_exp,
+                            -(inset + min_perimeter_infill_spacing / 2.0),
+                            min_perimeter_infill_spacing / 2.0 - infill_peri_overlap,
+                            self.config.join_type,
+                        )
+                    }
                 } else {
                     offset2(
                         &not_filled_exp,
@@ -1806,11 +1867,19 @@ impl PerimeterGenerator {
                     )
                 }
             } else if f1 {
-                crate::clipper_utils::offset_expolygons_clib(
-                    &not_filled_exp,
-                    -(inset + infill_peri_overlap),
-                    self.config.join_type,
-                )
+                if std::env::var("FILLBOUND_QUANT").is_ok() {
+                    crate::clipper_utils::offset_expolygons_clib_scaled(
+                        &not_filled_exp,
+                        -(inset_c + overlap_c),
+                        self.config.join_type,
+                    )
+                } else {
+                    crate::clipper_utils::offset_expolygons_clib(
+                        &not_filled_exp,
+                        -(inset + infill_peri_overlap),
+                        self.config.join_type,
+                    )
+                }
             } else {
                 offset_expolygons(
                     &not_filled_exp,
