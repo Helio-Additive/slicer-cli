@@ -189,6 +189,17 @@ extern "C" {
     pub fn cz_simplify_polygons(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
     pub fn cz_union_flat(xy: *const i32, lens: *const i32, num: i32) -> CzZPaths;
 
+    /// `intersection(subject, clip, ApplySafetyOffset::Yes)` — ctIntersection
+    /// with safety_offset(clip) (ClipperUtils.cpp:334).
+    pub fn cz_intersection_closed_safety(
+        subject_xy: *const i32,
+        subject_lens: *const i32,
+        subject_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+    ) -> CzZPaths;
+
     /// Free a [`CzZPaths`] returned by [`cz_clip_extrusion`].
     pub fn cz_free_zpaths(paths: CzZPaths);
 }

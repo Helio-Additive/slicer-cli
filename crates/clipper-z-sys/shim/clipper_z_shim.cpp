@@ -608,6 +608,26 @@ extern "C" CzZPaths cz_difference_closed_safety(const int32_t *subject_xy, const
     return marshal_paths(solution);
 }
 
+// cz_intersection_closed_safety — `clipper_do<Paths>(ctIntersection, subject,
+// safety_offset(clip), pftNonZero)` (ClipperUtils.cpp:334 with Yes), i.e.
+// `intersection(subject, clip, ApplySafetyOffset::Yes)`.
+extern "C" CzZPaths cz_intersection_closed_safety(const int32_t *subject_xy, const int32_t *subject_lens,
+                                                  int32_t subject_num, const int32_t *clip_xy,
+                                                  const int32_t *clip_lens, int32_t clip_num) {
+    ClipperLib::Paths subject = read_closed_paths(subject_xy, subject_lens, subject_num);
+    ClipperLib::Paths clip = read_closed_paths(clip_xy, clip_lens, clip_num);
+    ClipperLib::Paths clip_safe = cz_safety_offset(clip);
+
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, true);
+    clipper.AddPaths(clip_safe, ClipperLib::ptClip, true);
+    ClipperLib::Paths solution;
+    clipper.Execute(ClipperLib::ctIntersection, solution, ClipperLib::pftNonZero,
+                    ClipperLib::pftNonZero);
+
+    return marshal_paths(solution);
+}
+
 // ---------------------------------------------------------------------------
 // cz_union_ex — faithful replica of ClipperUtils.cpp `union_ex(const Polygons&,
 // PolyFillType)` (ClipperUtils.cpp:813-814) = PolyTreeToExPolygons(

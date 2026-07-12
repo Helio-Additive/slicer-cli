@@ -3757,7 +3757,20 @@ impl PrintObject {
 
                         /// PrintObject.cpp:3462
                         /// C++: new_internal_solid = intersection(solid, internal, ApplySafetyOffset::Yes);
-                        let mut new_internal_solid = polygons_intersection(&solid, &internal);
+                        // R238 (gated): native applies ApplySafetyOffset::Yes —
+                        // ctIntersection vs safety_offset(clip) (+10u).
+                        let mut new_internal_solid = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                            let subj_ex: Vec<crate::geometry::ExPolygon> =
+                                solid.iter().map(|p| crate::geometry::ExPolygon::new(p.clone())).collect();
+                            let clip_ex: Vec<crate::geometry::ExPolygon> =
+                                internal.iter().map(|p| crate::geometry::ExPolygon::new(p.clone())).collect();
+                            crate::clipper_utils::intersection_clib_safety(&subj_ex, &clip_ex)
+                                .iter()
+                                .flat_map(|ep| crate::geometry::to_polygons(&[ep.clone()]))
+                                .collect()
+                        } else {
+                            polygons_intersection(&solid, &internal)
+                        };
 
                         /// PrintObject.cpp:3464-3478
                         /// C++: if (new_internal_solid.empty()) {
@@ -3810,7 +3823,19 @@ impl PrintObject {
                                 .iter()
                                 .map(|p| ExPolygon::new(p.clone()))
                                 .collect();
-                            let opened = opening(&new_solid_expolys, margin, OffsetJoinType::Miter);
+                            let opened = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                                // R238: native opening(x, margin, margin+ClipperSafetyOffset,
+                                // jtMiter, 5) — ASYMMETRIC grow-back, limit 5.
+                                crate::clipper_utils::offset2_ex_clib_miter(
+                                    &new_solid_expolys,
+                                    -margin,
+                                    margin + 10.0 * crate::SCALING_FACTOR.recip(),
+                                    OffsetJoinType::Miter,
+                                    5.0,
+                                )
+                            } else {
+                                opening(&new_solid_expolys, margin, OffsetJoinType::Miter)
+                            };
 
                             // Convert back to polygons for diff
                             let opened_polys: Polygons = opened
@@ -3858,7 +3883,19 @@ impl PrintObject {
                                 .iter()
                                 .map(|p| ExPolygon::new(p.clone()))
                                 .collect();
-                            let opened = opening(&new_solid_expolys, margin, OffsetJoinType::Miter);
+                            let opened = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                                // R238: asymmetric native opening, jtMiter limit 5
+                                // (PrintObject.cpp:3512-3514).
+                                crate::clipper_utils::offset2_ex_clib_miter(
+                                    &new_solid_expolys,
+                                    -margin,
+                                    margin + 10.0 * crate::SCALING_FACTOR.recip(),
+                                    OffsetJoinType::Miter,
+                                    5.0,
+                                )
+                            } else {
+                                opening(&new_solid_expolys, margin, OffsetJoinType::Miter)
+                            };
 
                             // Convert back to polygons for diff
                             let opened_polys: Polygons = opened

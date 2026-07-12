@@ -1491,6 +1491,58 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
 /// only_one_wall_top block's differences (top_polygons, inner_polygons, bridge
 /// lower-diff) all use ApplySafetyOffset::Yes; the No-safety `difference_clib` was a
 /// systemic gap (R113-R115). Reconstruction is the same F1_UNION-gated union_ex_clib.
+/// `intersection(subject, clip, ApplySafetyOffset::Yes)` via the vendored
+/// ClipperLib (cz_intersection_closed_safety): ctIntersection against
+/// safety_offset(clip) (+10u jtMiter/3 per-path), output re-unioned to
+/// ExPolygons like the difference variant.
+pub fn intersection_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    if subject.is_empty() || clip.is_empty() {
+        return vec![];
+    }
+    let (subject_xy, subject_lens, subject_num) = clib_flatten_expolygons(subject);
+    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    if subject_num == 0 || clip_num == 0 {
+        return vec![];
+    }
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
+    let raw = unsafe {
+        clipper_z_sys::cz_intersection_closed_safety(
+            subject_xy.as_ptr(),
+            subject_lens.as_ptr(),
+            subject_num,
+            clip_xy.as_ptr(),
+            clip_lens.as_ptr(),
+            clip_num,
+        )
+    };
+    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees sizes as documented on cz_free_zpaths.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            all_paths.push(Polygon::from_points(pts));
+        }
+    }
+    // SAFETY: raw produced by the shim and not yet freed.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    if all_paths.is_empty() {
+        return vec![];
+    }
+    union_ex_clib(&all_paths, 1)
+}
+
 pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     if subject.is_empty() {
         return vec![];
@@ -1768,6 +1820,19 @@ pub fn offset2_ex_clib(
     delta2_mm: CoordF,
     join_type: OffsetJoinType,
 ) -> ExPolygons {
+    offset2_ex_clib_miter(expolygons, delta1_mm, delta2_mm, join_type, CLIB_MITER_LIMIT)
+}
+
+/// offset2_ex with an explicit miter limit — discover_horizontal_shells'
+/// opening uses jtMiter with limit 5 (PrintObject.cpp:3502/3514), not the
+/// DefaultMiterLimit 3.
+pub fn offset2_ex_clib_miter(
+    expolygons: &[ExPolygon],
+    delta1_mm: CoordF,
+    delta2_mm: CoordF,
+    join_type: OffsetJoinType,
+    miter_limit: f64,
+) -> ExPolygons {
     if expolygons.is_empty() {
         return vec![];
     }
@@ -1826,7 +1891,7 @@ pub fn offset2_ex_clib(
             delta1,
             delta2,
             clib_join_code(join_type),
-            CLIB_MITER_LIMIT,
+            miter_limit,
         )
     };
 
