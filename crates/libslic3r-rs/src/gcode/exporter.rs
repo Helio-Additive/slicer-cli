@@ -915,9 +915,23 @@ fn travel_target_for_entity(
     if let ExtrusionEntityType::Loop(l) = entity {
         let polygon = l.as_polygon();
         if let Some(seam) = active_place_seam(&polygon, last_pos) {
-            // split_at snaps to the nearest loop point within epsilon; the
-            // travel target is the seam point itself (native: loop.first_point()
-            // AFTER split == the seam split vertex).
+            // R228: native travels to loop.first_point() AFTER split_at
+            // (GCode.cpp:5085-5090). For outer walls the placed seam IS a
+            // loop vertex, but for inner walls place_seam can return a point
+            // OFF this polygon (nearest stored perimeter data) — split_at
+            // then PROJECTS it onto the loop, so the raw seam and the split
+            // first-point differ (0.4mm corrective mini-travels + duplicate
+            // feature-F lines). Run the same split here and return its
+            // actual first vertex.
+            let mut probe = l.clone();
+            probe.split_at(&seam, false, crate::scale(0.0015) as f64);
+            if let Some(fp) = probe
+                .paths
+                .first()
+                .and_then(|pa| pa.polyline.points().first().copied())
+            {
+                return Some(fp);
+            }
             return Some(seam);
         }
     }
