@@ -628,12 +628,30 @@ impl PerimeterGenerator {
                     const ONE_SCALED_MM: f64 = 1.0 / SCALING_FACTOR;
                     // ClipperSafetyOffset = 10 scaled units = 0.0001mm (used at line 975).
                     const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
-                    offsets = offset2(
-                        &last,
-                        ext_perimeter_width / 2.0 + ext_min_spacing / 2.0 - ONE_SCALED_MM,
-                        ext_min_spacing / 2.0 - ONE_SCALED_MM,
-                        self.config.join_type,
-                    );
+                    // R278 (F1_UNION): native-exact scaled-int deltas through the
+                    // vendored ClipperLib — W_e/S_e are coord_t (trunc(v/1e-5),
+                    // scale_ DIVIDES), ext_min_spacing = coord_t(S_e*(1-0.4)), all
+                    // delta exprs in double then f32 at the offset boundary (the
+                    // clib shims reproduce the f32; PG.cpp:886-887, 963-975).
+                    let f1 = std::env::var("F1_UNION").is_ok();
+                    let w_e_c = (self.config.ext_perimeter_flow.width() / 0.00001).trunc();
+                    let s_e_c = (self.config.ext_perimeter_flow.spacing() / 0.00001).trunc();
+                    let ext_min_c = (s_e_c * (1.0 - INSET_OVERLAP_TOLERANCE)).trunc();
+                    offsets = if f1 {
+                        crate::clipper_utils::offset2_ex_clib(
+                            &last,
+                            -(w_e_c / 2.0 + ext_min_c / 2.0 - 1.0) / SCALING_FACTOR,
+                            (ext_min_c / 2.0 - 1.0) / SCALING_FACTOR,
+                            self.config.join_type,
+                        )
+                    } else {
+                        offset2(
+                            &last,
+                            ext_perimeter_width / 2.0 + ext_min_spacing / 2.0 - ONE_SCALED_MM,
+                            ext_min_spacing / 2.0 - ONE_SCALED_MM,
+                            self.config.join_type,
+                        )
+                    };
 
                     // PerimeterGenerator.cpp:966-975
                     // Thin wall detection using medial axis
@@ -641,13 +659,37 @@ impl PerimeterGenerator {
                     let min_width = self.config.ext_perimeter_flow.nozzle_diameter() / 3.0;
 
                     // C++: ExPolygons expp = opening_ex(diff_ex(last, offset(offsets, float(ext_perimeter_width / 2.) + ClipperSafetyOffset)), float(min_width / 2.));
-                    let offset_outward = grow(
-                        &offsets,
-                        ext_perimeter_width / 2.0 + CLIPPER_SAFETY_OFFSET,
-                        self.config.join_type,
-                    );
-                    let diff_region = difference(&last, &offset_outward);
-                    let expp = opening(&diff_region, min_width / 2.0, self.config.join_type);
+                    let (diff_region, expp);
+                    if f1 {
+                        // Native delta: float(W_e/2.) + ClipperSafetyOffset(10.f) — f32
+                        // arithmetic; min_width coord_t = trunc((nozzle_f32/3)f64/1e-5).
+                        let grow_d = (((w_e_c / 2.0) as f32 + 10.0f32) as f64) / SCALING_FACTOR;
+                        let offset_outward = crate::clipper_utils::grow_clib(
+                            &offsets,
+                            grow_d,
+                            self.config.join_type,
+                        );
+                        diff_region =
+                            crate::clipper_utils::difference_clib(&last, &offset_outward);
+                        let nozzle = self.config.ext_perimeter_flow.nozzle_diameter();
+                        let min_w_c = ((nozzle as f32 / 3.0) as f64 / 0.00001).trunc();
+                        let open_d = (min_w_c / 2.0) / SCALING_FACTOR;
+                        expp = crate::clipper_utils::offset2_ex_clib(
+                            &diff_region,
+                            -open_d,
+                            open_d,
+                            self.config.join_type,
+                        );
+                    } else {
+                        let offset_outward = grow(
+                            &offsets,
+                            ext_perimeter_width / 2.0 + CLIPPER_SAFETY_OFFSET,
+                            self.config.join_type,
+                        );
+                        diff_region = difference(&last, &offset_outward);
+                        expp = opening(&diff_region, min_width / 2.0, self.config.join_type);
+                    }
+                    let _ = &diff_region;
 
                     // C++: for (ExPolygon &ex : expp)
                     // C++:     ex.medial_axis(min_width, ext_perimeter_width + ext_perimeter_spacing2, &thin_walls);
@@ -686,12 +728,29 @@ impl PerimeterGenerator {
 
                         /// PerimeterGenerator.cpp:983-985
                         /// C++: ExPolygons offset_result = offset2_ex(expolys, -float(ext_perimeter_width / 2. + ext_min_spacing_smaller / 2.), +float(ext_min_spacing_smaller / 2.));
-                        let offset_result = offset2(
-                            &expolys,
-                            ext_perimeter_width / 2.0 + ext_min_spacing_smaller / 2.0,
-                            ext_min_spacing_smaller / 2.0,
-                            self.config.join_type,
-                        );
+                        let offset_result = if std::env::var("F1_UNION").is_ok() {
+                            // R278: native-exact — W_e coord_t, ext_min_spacing_smaller =
+                            // coord_t(S_e*(1-0.22)); deltas double->f32 (PG.cpp:891, 983-985).
+                            let w_e_c =
+                                (self.config.ext_perimeter_flow.width() / 0.00001).trunc();
+                            let s_e_c =
+                                (self.config.ext_perimeter_flow.spacing() / 0.00001).trunc();
+                            let ext_min_sm_c =
+                                (s_e_c * (1.0 - SMALLER_EXT_INSET_OVERLAP_TOLERANCE)).trunc();
+                            crate::clipper_utils::offset2_ex_clib(
+                                &expolys,
+                                -(w_e_c / 2.0 + ext_min_sm_c / 2.0) / SCALING_FACTOR,
+                                (ext_min_sm_c / 2.0) / SCALING_FACTOR,
+                                self.config.join_type,
+                            )
+                        } else {
+                            offset2(
+                                &expolys,
+                                ext_perimeter_width / 2.0 + ext_min_spacing_smaller / 2.0,
+                                ext_min_spacing_smaller / 2.0,
+                                self.config.join_type,
+                            )
+                        };
 
                         /// PerimeterGenerator.cpp:986-987
                         /// C++: if (offset_result.empty() && expolygon.area() < (double)(ext_perimeter_width + ext_min_spacing_smaller) * scale_(narrow_loop_length_threshold)) {

@@ -632,13 +632,27 @@ impl LayerRegion {
                 vec![result.gap_fills.clone()]
             };
             let mut gaps_ex: ExPolygons = Vec::new();
+            // R278 (F1_UNION): native band deltas are doubles from coord_t —
+            // min = 0.2*W*(1-0.4), max = 2.*S with W/S = trunc(v/1e-5)
+            // (PG.cpp:1329-1334); halving in DOUBLE, +ClipperSafetyOffset(10)
+            // in the scaled expr before the f32 boundary.
+            let (bmin, bmax) = if std::env::var("F1_UNION").is_ok() {
+                let w_sc = (perimeter_width / 0.00001).trunc();
+                let s_sc = (perimeter_spacing / 0.00001).trunc();
+                (
+                    0.2 * w_sc * (1.0 - 0.4) / crate::SCALING_FACTOR,
+                    2.0 * s_sc / crate::SCALING_FACTOR,
+                )
+            } else {
+                (min, max)
+            };
             for gap_set in &gap_sets {
                 let opened_min =
-                    offset2_clib(gap_set, min / 2.0, min / 2.0, OffsetJoinType::Miter);
+                    offset2_clib(gap_set, bmin / 2.0, bmin / 2.0, OffsetJoinType::Miter);
                 let wide_part = offset2_clib(
                     gap_set,
-                    max / 2.0,
-                    max / 2.0 + CLIPPER_SAFETY_OFFSET,
+                    bmax / 2.0,
+                    bmax / 2.0 + CLIPPER_SAFETY_OFFSET,
                     OffsetJoinType::Miter,
                 );
                 gaps_ex.extend(difference_clib(&opened_min, &wide_part));
@@ -2767,12 +2781,23 @@ impl Layer {
                     // the offsets + diff_ex through the vertex-exact vendored ClipperLib
                     // (offset2_clib / difference_clib) so the gap-band contours feeding
                     // medial_axis are not over-segmented (vs geo-clipper @ 1µm).
+                    // R278: same native band-delta quantization as the perimeter
+                    // gap block (doubles from trunc(spacing/1e-5)).
+                    let (bmin, bmax) = if std::env::var("F1_UNION").is_ok() {
+                        let s_sc = (new_flow.spacing() / 0.00001).trunc();
+                        (
+                            0.2 * s_sc * (1.0 - 0.4) / crate::SCALING_FACTOR,
+                            2.0 * s_sc / crate::SCALING_FACTOR,
+                        )
+                    } else {
+                        (min, max)
+                    };
                     let opened_min =
-                        offset2_clib(&gapfill_areas, min / 2.0, min / 2.0, OffsetJoinType::Miter);
+                        offset2_clib(&gapfill_areas, bmin / 2.0, bmin / 2.0, OffsetJoinType::Miter);
                     let wide_part = offset2_clib(
                         &gapfill_areas,
-                        max / 2.0,
-                        max / 2.0 + CLIPPER_SAFETY_OFFSET,
+                        bmax / 2.0,
+                        bmax / 2.0 + CLIPPER_SAFETY_OFFSET,
                         OffsetJoinType::Miter,
                     );
                     let mut gaps_ex = difference_clib(&opened_min, &wide_part);
