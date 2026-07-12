@@ -3508,13 +3508,31 @@ impl PrintObject {
                 let narrow_wall_r = 0.5 * 0.65 * min_pis;
                 let narrow_sparse_r = 0.5 * 1.2 * min_pis;
                 let tiny_overlap_r = 0.2 * min_pis;
-                let opened = offset2(
-                    &shell_u,
-                    narrow_wall_r,
-                    narrow_wall_r + narrow_sparse_r,
-                    OffsetJoinType::Square,
-                );
-                let regularized0 = shrink(&opened, narrow_sparse_r - tiny_overlap_r, OffsetJoinType::Square);
+                // R239 (gated): native regularized_shell = shrink_ex(offset2_ex(
+                // union_ex(shell), -r1, r1+r2, jtSquare), r2-tiny, jtSquare)
+                // (PrintObject.cpp:2018-2024) — run it at ClipperLib precision;
+                // the geo route re-grids and reshapes the ISI contour.
+                let regularized0 = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    let opened = crate::clipper_utils::offset2_ex_clib(
+                        &shell_u,
+                        -narrow_wall_r,
+                        narrow_wall_r + narrow_sparse_r,
+                        OffsetJoinType::Square,
+                    );
+                    crate::clipper_utils::offset_expolygons_clib_scaled(
+                        &opened,
+                        -(narrow_sparse_r - tiny_overlap_r) * crate::SCALING_FACTOR,
+                        OffsetJoinType::Square,
+                    )
+                } else {
+                    let opened = offset2(
+                        &shell_u,
+                        narrow_wall_r,
+                        narrow_wall_r + narrow_sparse_r,
+                        OffsetJoinType::Square,
+                    );
+                    shrink(&opened, narrow_sparse_r - tiny_overlap_r, OffsetJoinType::Square)
+                };
 
                 // object_volume = intersection(lslices[idx-1], lslices[idx+1]); internal_volume = closing(internal).
                 let object_volume = if idx > 0 && idx + 1 < lslices_all.len() {
