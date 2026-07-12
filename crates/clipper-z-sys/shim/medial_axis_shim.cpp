@@ -36,18 +36,23 @@ struct MaLine {
     MaLine(const MaPoint &a_, const MaPoint &b_) : a(a_), b(b_) {}
     // Slic3r Line::distance_to(Point): segment-clamped distance (Line.cpp).
     double distance_to(const MaPoint &p) const {
-        const double dx = double(b.x - a.x), dy = double(b.y - a.y);
-        const double l2 = dx * dx + dy * dy;
-        if (l2 == 0.0) {
-            const double ex = double(p.x - a.x), ey = double(p.y - a.y);
-            return std::sqrt(ex * ex + ey * ey);
+        // Verbatim Line.hpp distance_to_squared(line, point, &np):
+        // v/va/vb are integer diffs cast to double; interior case is
+        // (t*v - va).squaredNorm() — do NOT reconstruct the foot point,
+        // that rounds differently.
+        const double vx  = double(b.x - a.x), vy  = double(b.y - a.y);
+        const double vax = double(p.x - a.x), vay = double(p.y - a.y);
+        const double l2  = vx * vx + vy * vy;
+        if (l2 == 0.0)
+            return std::sqrt(vax * vax + vay * vay);
+        const double t = (vax * vx + vay * vy) / l2;
+        if (t <= 0.0)
+            return std::sqrt(vax * vax + vay * vay);
+        if (t >= 1.0) {
+            const double vbx = double(p.x - b.x), vby = double(p.y - b.y);
+            return std::sqrt(vbx * vbx + vby * vby);
         }
-        const double t = (double(p.x - a.x) * dx + double(p.y - a.y) * dy) / l2;
-        double px, py;
-        if (t <= 0.0)      { px = double(a.x); py = double(a.y); }
-        else if (t >= 1.0) { px = double(b.x); py = double(b.y); }
-        else               { px = double(a.x) + t * dx; py = double(a.y) + t * dy; }
-        const double ex = double(p.x) - px, ey = double(p.y) - py;
+        const double ex = t * vx - vax, ey = t * vy - vay;
         return std::sqrt(ex * ex + ey * ey);
     }
     // Slic3r Line::orientation() = atan2 in [0, 2PI).
@@ -295,6 +300,173 @@ static void annotate_inside_outside(VD &vd, const std::vector<MaLine> &lines)
         } while (edge != first_edge);
     }
 }
+
+// ---------------------------------------------------------------------------
+// MedialAxis — verbatim adaptation of Geometry/MedialAxis.cpp:445-690 +
+// MedialAxis.hpp edge_data. Widths are SCALED doubles (VD coordinate space).
+// ---------------------------------------------------------------------------
+struct MaThickPolyline {
+    std::vector<MaPoint> points;
+    std::vector<double>  width;
+    bool endpoint_first = false, endpoint_second = false;
+    void clear() { points.clear(); width.clear(); endpoint_first = endpoint_second = false; }
+};
+
+class MedialAxis {
+public:
+    MedialAxis(double min_width, double max_width, const std::vector<MaLine> &lines)
+        : m_lines(lines), m_min_width(min_width), m_max_width(max_width) {}
+
+    void build(std::vector<MaThickPolyline> *polylines)
+    {
+        boost::polygon::construct_voronoi(m_lines.begin(), m_lines.end(), &m_vd);
+        annotate_inside_outside(m_vd, m_lines);
+
+        m_edge_data.assign(m_vd.edges().size() / 2, EdgeData{});
+        for (auto edge = m_vd.edges().begin(); edge != m_vd.edges().end(); edge += 2)
+            if (edge->is_primary() && edge->is_finite() &&
+                (vertex_category(edge->vertex0()) == VertexCategory::Inside ||
+                 vertex_category(edge->vertex1()) == VertexCategory::Inside) &&
+                this->validate_edge(&*edge))
+                this->edge_data(*edge).first.active = true;
+
+        MaThickPolyline reverse_polyline;
+        for (auto seed_edge = m_vd.edges().begin(); seed_edge != m_vd.edges().end(); seed_edge += 2)
+            if (EdgeData &seed_edge_data = this->edge_data(*seed_edge).first; seed_edge_data.active) {
+                seed_edge_data.active = false;
+
+                MaThickPolyline polyline;
+                polyline.points.emplace_back(seed_edge->vertex0()->x(), seed_edge->vertex0()->y());
+                polyline.points.emplace_back(seed_edge->vertex1()->x(), seed_edge->vertex1()->y());
+                polyline.width.emplace_back(seed_edge_data.width_start);
+                polyline.width.emplace_back(seed_edge_data.width_end);
+                this->process_edge_neighbors(&*seed_edge, &polyline);
+
+                reverse_polyline.clear();
+                this->process_edge_neighbors(seed_edge->twin(), &reverse_polyline);
+                polyline.points.insert(polyline.points.begin(), reverse_polyline.points.rbegin(), reverse_polyline.points.rend());
+                polyline.width.insert(polyline.width.begin(), reverse_polyline.width.rbegin(), reverse_polyline.width.rend());
+                polyline.endpoint_first = reverse_polyline.endpoint_second;
+
+                if (!polyline.points.empty() &&
+                    polyline.points.front().x == polyline.points.back().x &&
+                    polyline.points.front().y == polyline.points.back().y) {
+                    polyline.endpoint_first = false;
+                    polyline.endpoint_second = false;
+                }
+                polylines->emplace_back(std::move(polyline));
+            }
+    }
+
+private:
+    struct EdgeData {
+        bool   active      = false;
+        double width_start = 0.;
+        double width_end   = 0.;
+    };
+
+    std::pair<EdgeData&, bool> edge_data(const VD::edge_type &edge) {
+        size_t edge_id = &edge - &m_vd.edges().front();
+        return { m_edge_data[edge_id / 2], (edge_id & 1) != 0 };
+    }
+
+    void process_edge_neighbors(const VD::edge_type *edge, MaThickPolyline *polyline)
+    {
+        for (;;) {
+            const VD::edge_type *twin = edge->twin();
+            size_t               num_neighbors  = 0;
+            const VD::edge_type *first_neighbor = nullptr;
+            for (const VD::edge_type *neighbor = twin->rot_next(); neighbor != twin; neighbor = neighbor->rot_next())
+                if (this->edge_data(*neighbor).first.active) {
+                    if (num_neighbors == 0)
+                        first_neighbor = neighbor;
+                    ++num_neighbors;
+                }
+            if (num_neighbors == 1) {
+                if (std::pair<EdgeData&, bool> neighbor_data = this->edge_data(*first_neighbor);
+                    neighbor_data.first.active) {
+                    neighbor_data.first.active = false;
+                    polyline->points.emplace_back(first_neighbor->vertex1()->x(), first_neighbor->vertex1()->y());
+                    if (neighbor_data.second) {
+                        polyline->width.push_back(neighbor_data.first.width_end);
+                        polyline->width.push_back(neighbor_data.first.width_start);
+                    } else {
+                        polyline->width.push_back(neighbor_data.first.width_start);
+                        polyline->width.push_back(neighbor_data.first.width_end);
+                    }
+                    edge = first_neighbor;
+                    continue;
+                }
+            } else if (num_neighbors == 0) {
+                polyline->endpoint_second = true;
+            }
+            break;
+        }
+    }
+
+    bool validate_edge(const VD::edge_type *edge)
+    {
+        auto retrieve_segment = [this](const VD::cell_type *cell) -> const MaLine& { return m_lines[cell->source_index()]; };
+        auto retrieve_endpoint = [retrieve_segment](const VD::cell_type *cell) -> const MaPoint& {
+            const MaLine &line = retrieve_segment(cell);
+            return cell->source_category() == boost::polygon::SOURCE_CATEGORY_SEGMENT_START_POINT ? line.a : line.b;
+        };
+
+        // Native overflow guard is inside #ifndef CLIPPERLIB_INT32, and
+        // BambuStudio clipper.hpp #defines CLIPPERLIB_INT32 unconditionally
+        // (clipper.hpp:83) — so the guard is compiled OUT in native. Omit it.
+
+        const MaLine line(MaPoint(edge->vertex0()->x(), edge->vertex0()->y()),
+                          MaPoint(edge->vertex1()->x(), edge->vertex1()->y()));
+
+        const VD::cell_type *cell_l = edge->cell();
+        const VD::cell_type *cell_r = edge->twin()->cell();
+        const MaLine &segment_l = retrieve_segment(cell_l);
+        const MaLine &segment_r = retrieve_segment(cell_r);
+
+        double w0 = cell_r->contains_segment()
+            ? segment_r.distance_to(line.a) * 2
+            : (retrieve_endpoint(cell_r) - line.a).norm() * 2;
+        double w1 = cell_l->contains_segment()
+            ? segment_l.distance_to(line.b) * 2
+            : (retrieve_endpoint(cell_l) - line.b).norm() * 2;
+
+        // SCALED_EPSILON = scale_(EPSILON) = 1e-4 / 1e-5 = 10 (libslic3r.h:52,58,84).
+        static constexpr double kScaledEps = 10.0;
+
+        if (cell_l->contains_segment() && cell_r->contains_segment()) {
+            double angle = std::fabs(segment_r.orientation() - segment_l.orientation());
+            if (angle > M_PI)
+                angle = 2. * M_PI - angle;
+            if (M_PI - angle > M_PI / 8.) {
+                const double dx = double(line.b.x - line.a.x), dy = double(line.b.y - line.a.y);
+                const double line_length = std::sqrt(dx * dx + dy * dy);
+                if (w0 < kScaledEps || w1 < kScaledEps || line_length >= m_min_width)
+                    return false;
+            }
+        } else {
+            if (w0 < kScaledEps || w1 < kScaledEps)
+                return false;
+        }
+
+        if ((w0 >= m_min_width || w1 >= m_min_width) &&
+            (w0 <= m_max_width || w1 <= m_max_width)) {
+            std::pair<EdgeData&, bool> ed = this->edge_data(*edge);
+            if (ed.second)
+                std::swap(w0, w1);
+            ed.first.width_start = w0;
+            ed.first.width_end   = w1;
+            return true;
+        }
+        return false;
+    }
+
+    VD                        m_vd;
+    const std::vector<MaLine> &m_lines;
+    double                    m_min_width;
+    double                    m_max_width;
+    std::vector<EdgeData>     m_edge_data;
+};
 
 // ---------------------------------------------------------------------------
 // Smoke self-test: voronoi over a unit square's 4 segment lines; returns the
