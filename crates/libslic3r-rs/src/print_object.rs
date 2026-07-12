@@ -3210,7 +3210,18 @@ impl PrintObject {
             d: crate::CoordF,
             j: OffsetJoinType,
         ) -> crate::geometry::ExPolygons {
-            if faithful() {
+            if faithful() && std::env::var("VSHELL_RAW").is_ok() {
+                // R297: native expand()/offset() here are RAW Polygons offsets —
+                // per-expolygon ClipperOffset paths, NO union reconstruction
+                // (Class-5). Keep each output path as its own ExPolygon; the
+                // downstream union_/intersection consume them like native's
+                // appended Polygons. Delta mirrors the float param.
+                let d_sc = ((d / 0.00001) as f32) as f64;
+                crate::clipper_utils::offset_expolygons_clib_raw_scaled(e, d_sc, j)
+                    .into_iter()
+                    .map(crate::geometry::ExPolygon::new)
+                    .collect()
+            } else if faithful() {
                 crate::clipper_utils::offset_expolygons_clib(e, d, j)
             } else {
                 crate::clipper_utils::grow(e, d, j)
