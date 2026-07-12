@@ -542,7 +542,11 @@ impl LayerRegion {
         // LayerRegion.cpp:174
         // C++: g.process_classic();
         // Generate perimeters
-        let result = generator.generate(&slices);
+        let mut result = generator.generate(&slices);
+        // R253 (GAPTRIM_PRETAIL): per-surface pre-tail inputs for the
+        // native-order gap trim (re-run the fill-boundary tail on trimmed last).
+        let tail_inputs = std::mem::take(&mut result.tail_inputs);
+        let result = result;
 
         // LayerRegion.cpp:171
         // C++: The PerimeterGenerator writes directly to this->perimeters via pointer
@@ -713,6 +717,42 @@ impl LayerRegion {
                     } else {
                         union_polygons_ex(&covered)
                     };
+                    // R253 (GAPTRIM_PRETAIL): NATIVE ORDER — trim the gap
+                    // footprint from the pre-tail `last` and re-run the
+                    // fill-boundary tail (PG.cpp:1373 runs the diff BEFORE the
+                    // tail; the post-hoc trim below cuts corridors through the
+                    // already-merged area, creating ragged hole-bearing blobs).
+                    if std::env::var("GAPTRIM_PRETAIL").is_ok() && !tail_inputs.is_empty() {
+                        let mut new_infill: ExPolygons = Vec::new();
+                        let mut new_no: ExPolygons = Vec::new();
+                        for ti in &tail_inputs {
+                            let trimmed_last =
+                                crate::clipper_utils::difference_clib(&ti.last, &covered_ex);
+                            let (i2, n2, _b2) = generator.classic_fill_boundary_tail(
+                                &trimmed_last,
+                                &ti.top_fills,
+                                &ti.fill_clip,
+                                ti.loop_number,
+                            );
+                            new_infill.extend(i2);
+                            new_no.extend(n2);
+                        }
+                        self.fill_surfaces
+                            .surfaces
+                            .retain(|s| s.surface_type != SurfaceType::Internal);
+                        for ex in &new_infill {
+                            self.fill_surfaces.surfaces.push(Surface {
+                                expolygon: ex.clone(),
+                                surface_type: SurfaceType::Internal,
+                                thickness: layer_height,
+                                thickness_layers: 1,
+                                bridge_angle: None,
+                                extra_perimeters: 0,
+                            });
+                        }
+                        self.fill_expolygons = new_infill;
+                        self.fill_no_overlap_expolygons = new_no;
+                    } else {
                     // Subtract from the Internal fill_surfaces (the infill region produced
                     // by the perimeter generator; top/bottom skins are unaffected).
                     let internal: ExPolygons = self
@@ -771,6 +811,7 @@ impl LayerRegion {
                             difference(&self.fill_expolygons, &covered_ex)
                         };
                     }
+                    } // end legacy post-hoc trim (GAPTRIM_PRETAIL replaces it)
                 }
             }
         }

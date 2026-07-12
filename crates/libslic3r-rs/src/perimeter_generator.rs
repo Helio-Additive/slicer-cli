@@ -308,6 +308,16 @@ impl PerimeterLoop {
     }
 }
 
+/// R253: captured per-surface inputs for re-running the classic fill-boundary
+/// tail after the gap-fill footprint trim (GAPTRIM_PRETAIL).
+#[derive(Debug, Clone, Default)]
+pub struct ClassicTailInput {
+    pub last: ExPolygons,
+    pub top_fills: ExPolygons,
+    pub fill_clip: ExPolygons,
+    pub loop_number: usize,
+}
+
 /// Result of perimeter generation
 #[derive(Debug, Clone)]
 pub struct PerimeterResult {
@@ -325,6 +335,12 @@ pub struct PerimeterResult {
 
     /// Gap fill areas
     pub gap_fills: ExPolygons,
+
+    /// R253 (GAPTRIM_PRETAIL): per-surface inputs to the classic fill-boundary
+    /// tail, captured BEFORE the tail ran. Native subtracts the gap-fill
+    /// footprint from `last` before the tail (PG.cpp:1373); the layer-level
+    /// gap block re-runs the tail on the trimmed `last` using these.
+    pub tail_inputs: Vec<ClassicTailInput>,
 
     /// Per-surface gap-fill areas in surface order (R173): native runs the
     /// gap collapse + medial axis PER SURFACE (PG.cpp:1327 inside the surface
@@ -355,6 +371,7 @@ impl PerimeterResult {
             no_overlap_area: Vec::new(),
             gap_fills: Vec::new(),
             gap_fills_per_surface: Vec::new(),
+            tail_inputs: Vec::new(),
             top_band: Vec::new(),
             loop_nodes: Vec::new(),
         }
@@ -427,6 +444,7 @@ impl PerimeterGenerator {
             }
             result.gap_fills.extend(surface_result.gap_fills);
             result.top_band.extend(surface_result.top_band);
+            result.tail_inputs.extend(surface_result.tail_inputs);
         }
         result.entities.loop_node_range = (0, result.loop_nodes.len());
 
@@ -1507,11 +1525,47 @@ impl PerimeterGenerator {
 
         // PerimeterGenerator.cpp:1378-1413 — infill boundary inset + top_fills merge.
         if top_fills_gate() {
-            // PerimeterGenerator.cpp:1378-1388
-            // C++: // create one more offset to be used as boundary for fill
-            // C++: coord_t inset = (loop_number < 0) ? 0 :
-            // C++:     (loop_number == 0) ? ext_perimeter_spacing / 2 : perimeter_spacing / 2;
-            // (the loop_number < 0 case clears `last` above, so the inset value is moot there)
+            if std::env::var("GAPTRIM_PRETAIL").is_ok() {
+                result.tail_inputs.push(ClassicTailInput {
+                    last: last.clone(),
+                    top_fills: top_fills.clone(),
+                    fill_clip: fill_clip.clone(),
+                    loop_number,
+                });
+            }
+            let (infill, no_overlap, top_band) =
+                self.classic_fill_boundary_tail(&last, &top_fills, &fill_clip, loop_number);
+            result.top_band = top_band;
+            result.infill_area = infill;
+            result.no_overlap_area = no_overlap;
+        } else {
+            // Legacy divergent path (default until the faithful gauges land): the raw
+            // innermost-perimeter region without the C++ 1378-1406 inset.
+            result.infill_area = last;
+        }
+
+        // PerimeterGenerator.cpp:952
+        // C++: gaps collected during generation
+        result.gap_fills = gaps;
+
+        result
+    }
+
+    /// R253: the classic fill-boundary tail (PerimeterGenerator.cpp:1378-1430)
+    /// as a reusable method — (infill_area, no_overlap_area, top_band). The
+    /// layer-level gap block re-runs it on the gap-trimmed `last` (native
+    /// order: PG.cpp:1373 trims BEFORE this tail).
+    pub fn classic_fill_boundary_tail(
+        &self,
+        last: &[ExPolygon],
+        top_fills: &[ExPolygon],
+        fill_clip: &[ExPolygon],
+        loop_number: usize,
+    ) -> (ExPolygons, ExPolygons, ExPolygons) {
+        let ext_perimeter_spacing = self.config.external_perimeter_spacing;
+        let perimeter_spacing = self.config.perimeter_spacing;
+        let mut top_band_out: ExPolygons = Vec::new();
+        {
             let mut inset = if loop_number == 0 {
                 ext_perimeter_spacing / 2.0
             } else {
@@ -1543,7 +1597,7 @@ impl PerimeterGenerator {
             // rounded-projection DP — near no-op simplify, keeps extra points; L23
             // fill_expoly 29pts vs native 24). Gated faithful.
             let tf_simplify = std::env::var("TOPFILL_FAITHFUL").is_ok();
-            for ex in &last {
+            for ex in last {
                 if tf_simplify {
                     pp.extend(ex.simplify_p_dp_rings_faithful(
                         self.config.surface_simplify_resolution / 0.00001,
@@ -1616,7 +1670,7 @@ impl PerimeterGenerator {
                         infill_peri_overlap,
                         OffsetJoinType::Miter,
                     );
-                    result.top_band = grown.clone();
+                    top_band_out = grown.clone();
                     let mut merged: Vec<Polygon> = crate::geometry::to_polygons(&infill_exp);
                     merged.extend(crate::geometry::to_polygons(&grown));
                     infill_exp = crate::clipper_utils::union_ex_clib(&merged, 1);
@@ -1630,7 +1684,7 @@ impl PerimeterGenerator {
                     infill_exp = union_ex(&merged);
                 }
             }
-            result.infill_area = infill_exp;
+            let infill_out = infill_exp;
 
             // PerimeterGenerator.cpp:1415-1430 — BBS: get the no-overlap infill
             // expolygons. Same not_filled_exp, but WITHOUT the infill_peri_overlap
@@ -1689,18 +1743,8 @@ impl PerimeterGenerator {
                     union_ex(&merged)
                 };
             }
-            result.no_overlap_area = poly_without_overlap;
-        } else {
-            // Legacy divergent path (default until the faithful gauges land): the raw
-            // innermost-perimeter region without the C++ 1378-1406 inset.
-            result.infill_area = last;
+            return (infill_out, poly_without_overlap, top_band_out);
         }
-
-        // PerimeterGenerator.cpp:952
-        // C++: gaps collected during generation
-        result.gap_fills = gaps;
-
-        result
     }
 }
 
