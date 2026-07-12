@@ -3506,6 +3506,13 @@ impl PrintObject {
                 // PrintObject.cpp:1993-1996 — trim shell to internal, plus internal-not-holes.
                 let shell_int = if shell.is_empty() || internal_all.is_empty() {
                     vec![]
+                } else if faithful() {
+                    // R296: native is intersection(shell, polygonsInternal,
+                    // ApplySafetyOffset::Yes) (PO.cpp:1993) — the CLIP gets the
+                    // +10-unit raw safety offset before clipping. Rust's plain
+                    // intersection was the exact +10-unit piece-1 signature
+                    // (SHDBG R295).
+                    crate::clipper_utils::intersection_clib_safety(&shell, &internal_all)
                 } else {
                     intersection(&shell, &internal_all)
                 };
@@ -3533,7 +3540,6 @@ impl PrintObject {
                 // PrintObject.cpp:1999 — append existing internal-solid so they merge.
                 new_shell.extend(solid_only.clone());
                 let shell_u = union_ex(&new_shell);
-
                 // PrintObject.cpp:2007-2055 — regularize (open then close), then drop scattered tiny bits.
                 // Native radii are f32 chains on min_pis_sc (PrintObject.cpp:2012-2017).
                 let (narrow_wall_r, narrow_sparse_r, tiny_overlap_r) = if faithful()
