@@ -1094,7 +1094,6 @@ impl PrintObject {
             // PrintObject.cpp:2233-2234 — shrink unsupported, subtract solids.
             unsupported_area = shrink_p(&unsupported_area, 3.0 * spacing);
             unsupported_area = diff_polygons(&unsupported_area, &lower_layer_solids);
-
             // PrintObject.cpp:2236-2268 — per-region candidate extraction.
             let n_regions = self.layers[lidx].regions().len();
             for region_idx in 0..n_regions {
