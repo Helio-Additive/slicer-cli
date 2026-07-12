@@ -3334,9 +3334,22 @@ impl PrintObject {
                 let ext_flow = lr.flow(FlowRole::ExternalPerimeter, lh)?;
                 let sp = solid_flow.spacing();
                 solid_spacing_mm.push(sp);
-                ext_spacing_mm.push(ext_flow.spacing());
+                // R280 (faithful): native deltas are f32 exprs on f32(coord_t
+                // scaled_spacing) — trunc(v/1e-5) int → f32 arithmetic
+                // (PrintObject.cpp:1793/1850 top_bottom_expansion = f32(S)*0.05f;
+                // :1945 expand-by-ext = f32(S_ext)).
+                if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                    let e_int = (ext_flow.spacing() / 0.00001).trunc();
+                    ext_spacing_mm.push((e_int as f32 as f64) / crate::SCALING_FACTOR);
+                } else {
+                    ext_spacing_mm.push(ext_flow.spacing());
+                }
                 // PrintObject.cpp:1850 — top_bottom_expansion = scaled_spacing * 0.05 (mm here).
-                let exp = sp * TOP_BOTTOM_EXPANSION_COEFF;
+                let exp = if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                    (((sp / 0.00001).trunc() as f32 * 0.05f32) as f64) / crate::SCALING_FACTOR
+                } else {
+                    sp * TOP_BOTTOM_EXPANSION_COEFF
+                };
                 let top_eps: ExPolygons = lr
                     .slices
                     .filter_by_type(SurfaceType::Top)
@@ -3369,7 +3382,15 @@ impl PrintObject {
                 if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(crate::Error::Cancelled);
                 }
-                let min_pis = solid_spacing_mm[idx] * 1.05; // min_perimeter_infill_spacing (mm)
+                // Native: min_perimeter_infill_spacing = float(infill_line_spacing) * 1.05f
+                // (PrintObject.cpp:1905) — f32 on the scaled int; keep the f32 for the
+                // radius/threshold exprs below.
+                let min_pis_sc: f32 = ((solid_spacing_mm[idx] / 0.00001).trunc() as f32) * 1.05f32;
+                let min_pis = if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                    (min_pis_sc as f64) / crate::SCALING_FACTOR
+                } else {
+                    solid_spacing_mm[idx] * 1.05 // min_perimeter_infill_spacing (mm)
+                };
 
                 let mut shell: ExPolygons = Vec::new();
                 let mut holes: ExPolygons = cache[idx].holes.clone();
@@ -3504,9 +3525,18 @@ impl PrintObject {
                 let shell_u = union_ex(&new_shell);
 
                 // PrintObject.cpp:2007-2055 — regularize (open then close), then drop scattered tiny bits.
-                let narrow_wall_r = 0.5 * 0.65 * min_pis;
-                let narrow_sparse_r = 0.5 * 1.2 * min_pis;
-                let tiny_overlap_r = 0.2 * min_pis;
+                // Native radii are f32 chains on min_pis_sc (PrintObject.cpp:2012-2017).
+                let (narrow_wall_r, narrow_sparse_r, tiny_overlap_r) = if faithful()
+                    && std::env::var("VSHELL_REG_QUANT").is_ok()
+                {
+                    (
+                        ((0.5f32 * 0.65f32 * min_pis_sc) as f64) / crate::SCALING_FACTOR,
+                        ((0.5f32 * 1.2f32 * min_pis_sc) as f64) / crate::SCALING_FACTOR,
+                        ((0.2f32 * min_pis_sc) as f64) / crate::SCALING_FACTOR,
+                    )
+                } else {
+                    (0.5 * 0.65 * min_pis, 0.5 * 1.2 * min_pis, 0.2 * min_pis)
+                };
                 // R239 (gated): native regularized_shell = shrink_ex(offset2_ex(
                 // union_ex(shell), -r1, r1+r2, jtSquare), r2-tiny, jtSquare)
                 // (PrintObject.cpp:2018-2024) — run it at ClipperLib precision;
@@ -3544,8 +3574,16 @@ impl PrintObject {
                 } else {
                     closing(&internal_all, eps_mm, OffsetJoinType::Miter)
                 };
-                let thr15 = 1.5 * min_pis * sf * sf;
-                let thr8 = 8.0 * min_pis * sf * sf;
+                // Native: p.area() < min_pis_f32 * scaled(1.5) — f32 * coord_t(150000)
+                // in FLOAT, promoted to double for the compare (PrintObject.cpp:2047-2048).
+                let (thr15, thr8) = if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
+                    (
+                        (min_pis_sc * 150_000f32) as f64,
+                        (min_pis_sc * 800_000f32) as f64,
+                    )
+                } else {
+                    (1.5 * min_pis * sf * sf, 8.0 * min_pis * sf * sf)
+                };
                 let regularized: ExPolygons = regularized0
                     .into_iter()
                     .filter(|p| {
