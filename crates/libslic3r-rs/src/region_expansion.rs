@@ -1110,10 +1110,29 @@ impl ExternalSurfaceConfig {
         num_perimeters: usize,
     ) -> Self {
         let (shell_width, expansion_min) = if num_perimeters > 0 {
-            let sw = 0.5 * external_perimeter_width
-                + external_perimeter_spacing
-                + perimeter_spacing * (num_perimeters as CoordF - 1.0);
-            (sw, perimeter_spacing)
+            if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+                // R284: native computes on f32(coord_t scaled) values
+                // (LayerRegion.cpp:529-535): shell_width = 0.5f*f32(W_e) +
+                // f32(S_e), += f32(S_p_int*(n-1)); expansion_min = f32(S_p).
+                let w_e = (external_perimeter_width / 0.00001).trunc();
+                let s_e = (external_perimeter_spacing / 0.00001).trunc();
+                let s_p = (perimeter_spacing / 0.00001).trunc();
+                let mut sw = 0.5f32 * (w_e as f32) + (s_e as f32);
+                sw += (s_p * (num_perimeters as f64 - 1.0)) as f32;
+                (
+                    (sw as f64) / crate::SCALING_FACTOR,
+                    ((s_p as f32) as f64) / crate::SCALING_FACTOR,
+                )
+            } else {
+                let sw = 0.5 * external_perimeter_width
+                    + external_perimeter_spacing
+                    + perimeter_spacing * (num_perimeters as CoordF - 1.0);
+                (sw, perimeter_spacing)
+            }
+        } else if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+            // Native fallback: float(SCALED_EPSILON) = 10 units = 1e-4 mm
+            // (LayerRegion.cpp:537-538) — NOT 1e-6.
+            (1e-4, 1e-4)
         } else {
             (1e-6, 1e-6) // SCALED_EPSILON equivalent
         };
@@ -1129,7 +1148,15 @@ impl ExternalSurfaceConfig {
 
     /// Compute expansion distance for top/bottom surfaces.
     pub fn expansion_top(&self) -> CoordF {
-        self.shell_width * std::f64::consts::SQRT_2
+        if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+            // Native: float expansion_top = shell_width * sqrt(2.) — f32 shell
+            // width times DOUBLE sqrt(2), rounded back to f32 at the store
+            // (LayerRegion.cpp:542).
+            let sw_sc = (self.shell_width * crate::SCALING_FACTOR) as f32;
+            ((((sw_sc as f64) * std::f64::consts::SQRT_2) as f32) as f64) / crate::SCALING_FACTOR
+        } else {
+            self.shell_width * std::f64::consts::SQRT_2
+        }
     }
 
     /// Compute expansion distance for bottom surfaces.
@@ -1147,7 +1174,15 @@ impl ExternalSurfaceConfig {
     /// Compute closing radius.
     /// Converted to mm.
     pub fn closing_radius(&self) -> CoordF {
-        0.55 * 0.65 * 1.05 * self.solid_infill_spacing
+        if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+            // Native f32 chain: 0.55f*0.65f*1.05f*f32(scaled_spacing)
+            // (LayerRegion.cpp:550), left-assoc const-folded in f32.
+            let s_si = (self.solid_infill_spacing / 0.00001).trunc();
+            let r = ((0.55f32 * 0.65f32) * 1.05f32) * (s_si as f32);
+            (r as f64) / crate::SCALING_FACTOR
+        } else {
+            0.55 * 0.65 * 1.05 * self.solid_infill_spacing
+        }
     }
 }
 
