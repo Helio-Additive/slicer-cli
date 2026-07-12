@@ -1604,10 +1604,17 @@ impl GCodeWriter {
                     // first move.
                     self.flush_pending_accel();
                     self.write_raw("; WIPE_START");
-                    // role-based wipe speed = current speed; set_speed dedups.
+                    // R229: native Wipe::wipe ALWAYS emits its speed line —
+                    // GCodeWriter::set_speed has NO dedup (GCodeWriter.cpp:387-399
+                    // unconditionally formats G1 F), so every wipe carries
+                    // `G1 F<cur>;_WIPE` (role_base_wipe_speed default true →
+                    // cur speed). The R222 dedup dropped ~1 native F line per
+                    // layer (the n-only G1 F12000 bucket).
                     let wipe_f = self.feedrate;
-                    if wipe_f > 0.0 && (wipe_f - self.last_emitted_f).abs() > 0.01 {
-                        self.write_raw(&format!("G1 F{:.0};_WIPE", wipe_f));
+                    if wipe_f > 0.0 {
+                        let fs = format!("{:.3}", wipe_f);
+                        let fs = fs.trim_end_matches('0').trim_end_matches('.');
+                        self.write_raw(&format!("G1 F{};_WIPE", fs));
                         self.last_emitted_f = wipe_f;
                     }
                     for i in 1..kept.len() {

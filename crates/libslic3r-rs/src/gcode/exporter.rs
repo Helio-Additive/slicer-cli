@@ -381,6 +381,7 @@ pub fn extrude_loop(
             Some(ExtrusionRole::ExternalPerimeter) | Some(ExtrusionRole::Perimeter)
         );
 
+    let fmvs_cap = writer.config_ref().filament_max_volumetric_speed;
     // Per-path normal wall speed (overhang-degree-corrected), mm/s.
     // Mirrors GCode::get_path_speed for perimeter roles (GCode.cpp:5387-5400):
     //   new_speed = get_overhang_degree_corr_speed(speed, overhang_degree);
@@ -388,10 +389,13 @@ pub fn extrude_loop(
     let path_speed_fn = |p: &ExtrusionPath| -> f64 {
         let base = perimeter_base_speed(config, p.role, is_first_layer);
         let new_speed = overhang_degree_corr_speed(config, base, p.overhang_degree);
-        if new_speed == 0.0 {
-            base
+        let v = if new_speed == 0.0 { base } else { new_speed };
+        // R229 (gated): native applies the filament volumetric cap to EVERY
+        // path in _extrude (GCode.cpp:6560-6567).
+        if zsmooth_markers && std::env::var("VOLCAP_FAITHFUL").is_ok() {
+            volumetric_capped_speed(v, p.mm3_per_mm, fmvs_cap, config.print_flow_ratio)
         } else {
-            new_speed
+            v
         }
     };
 
@@ -646,6 +650,25 @@ pub fn extrude_collection(
                 ExtrusionRole::GapFill => config.gap_fill_speed,
                 _ => config.perimeter_speed,
             }
+        };
+        // R229 (gated): filament volumetric cap — sparse infill's config 350
+        // caps to 25mm3s/(w*h) = 307.065 (native F18423.913; rust emitted the
+        // raw config speeds F21000/F18000).
+        // R229: PARKED behind VOLCAP_FAITHFUL — the capped speed
+        // 25/mm3_per_mm lands one F-digit off native (18423.914-vs-.913:
+        // rust f64 flow chain vs native float Flow → ~2e-8 mm3 drift,
+        // invisible in E's 5 decimals but visible in F's 3), and the changed
+        // generation-F cascades through cooling factors (net +887). Unlocks
+        // with mm3/width value parity (same blocker as LINEWIDTH_PERPATH).
+        let feature_speed = if std::env::var("VOLCAP_FAITHFUL").is_ok() {
+            volumetric_capped_speed(
+                feature_speed,
+                get_entity_mm3_per_mm(entity),
+                writer.config_ref().filament_max_volumetric_speed,
+                config.print_flow_ratio,
+            )
+        } else {
+            feature_speed
         };
         // Cooling markers for the CoolingBuffer post-processor (C++ GCode.cpp:6253-6272).
         let cooling_comment = if entity_role == ExtrusionRole::BridgeInfill {
@@ -972,6 +995,37 @@ fn chained_path_from(
 }
 
 /// Get the first point of an extrusion entity for travel-to targeting.
+/// R229: native _extrude's filament volumetric cap (GCode.cpp:6560-6567):
+/// `speed = min(speed, filament_max_volumetric_speed / (path.mm3_per_mm *
+/// print_flow_ratio))`. 0/unset caps disable it.
+fn volumetric_capped_speed(speed: f64, mm3_per_mm: f64, fmvs: f64, flow_ratio: f64) -> f64 {
+    if fmvs <= 0.0 {
+        return speed;
+    }
+    let ratio = if flow_ratio > 0.0 { flow_ratio } else { 1.0 };
+    let mm3 = mm3_per_mm * ratio;
+    if mm3 > 0.0 {
+        speed.min(fmvs / mm3)
+    } else {
+        speed
+    }
+}
+
+/// First path's mm3_per_mm of an entity (native caps per path; the collection
+/// pre-speed uses the first path as representative).
+fn get_entity_mm3_per_mm(entity: &ExtrusionEntityType) -> f64 {
+    use crate::extrusion_entity::ExtrusionEntityType;
+    match entity {
+        ExtrusionEntityType::Path(p) => p.mm3_per_mm,
+        ExtrusionEntityType::Loop(l) => l.paths.first().map(|p| p.mm3_per_mm).unwrap_or(0.0),
+        ExtrusionEntityType::Collection(c) => c
+            .entities
+            .first()
+            .map(get_entity_mm3_per_mm)
+            .unwrap_or(0.0),
+    }
+}
+
 pub fn get_entity_first_point(entity: &ExtrusionEntityType) -> Option<Point> {
     match entity {
         ExtrusionEntityType::Path(path) => path.polyline.points().first().copied(),
