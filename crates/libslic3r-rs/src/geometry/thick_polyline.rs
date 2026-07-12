@@ -61,6 +61,13 @@ pub struct ThickPolyline {
     /// When true, the endpoint was extended to touch the shape boundary
     /// during medial axis computation.
     pub endpoints: [bool; 2],
+    /// C++ edge-pair width array (2*(points-1) entries, mm) captured on the
+    /// MEDIALAXIS_NATIVE path. When non-empty, `thicklines()` consumes it
+    /// verbatim (a=edge_widths[2i], b=edge_widths[2i+1]) instead of the
+    /// per-vertex approximation — the C++ model keeps distinct start/end
+    /// widths at chain junctions which the per-vertex model collapses.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_widths: Vec<CoordF>,
 }
 
 impl ThickPolyline {
@@ -71,6 +78,7 @@ impl ThickPolyline {
             points: Vec::new(),
             widths: Vec::new(),
             endpoints: [false, false],
+        edge_widths: Vec::new(),
         }
     }
 
@@ -81,6 +89,7 @@ impl ThickPolyline {
             points: Vec::with_capacity(capacity),
             widths: Vec::with_capacity(capacity),
             endpoints: [false, false],
+        edge_widths: Vec::new(),
         }
     }
 
@@ -100,6 +109,7 @@ impl ThickPolyline {
             points,
             widths,
             endpoints: [false, false],
+            edge_widths: Vec::new(),
         }
     }
 
@@ -111,6 +121,7 @@ impl ThickPolyline {
             points,
             widths,
             endpoints: [false, false],
+            edge_widths: Vec::new(),
         }
     }
 
@@ -180,6 +191,21 @@ impl ThickPolyline {
     /// C++: ThickLines ThickPolyline::thicklines() const
     pub fn thicklines(&self) -> ThickLines {
         let mut lines = ThickLines::new();
+        if self.points.len() >= 2 && !self.edge_widths.is_empty() {
+            // C++ ThickPolyline::thicklines(): a_width=width[2i], b_width=width[2i+1].
+            lines.reserve(self.points.len() - 1);
+            for i in 0..(self.points.len() - 1) {
+                let a_width = self.edge_widths.get(2 * i).copied().unwrap_or(0.0);
+                let b_width = self.edge_widths.get(2 * i + 1).copied().unwrap_or(0.0);
+                lines.push(ThickLine::new(
+                    self.points[i],
+                    self.points[i + 1],
+                    a_width,
+                    b_width,
+                ));
+            }
+            return lines;
+        }
         if self.points.len() >= 2 {
             lines.reserve(self.points.len() - 1);
             for i in 0..(self.points.len() - 1) {
