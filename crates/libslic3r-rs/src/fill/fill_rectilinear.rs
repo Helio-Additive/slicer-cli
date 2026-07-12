@@ -486,6 +486,16 @@ impl ExPolygonWithOffset {
     // `aoffset1` is the outer offset (typically negative = shrink).
     // `aoffset2` is the inner offset (more negative than aoffset1).
     pub fn new(expolygon: &ExPolygon, angle: f64, aoffset1: Coord, aoffset2: Coord) -> Self {
+        // Legacy integer-offset entry: i64 as f64 is exact, and
+        // v_f64 / SCALING_FACTOR == unscale(v_i64), so this is byte-identical
+        // to the previous body for all existing callers.
+        Self::new_scaled_f(expolygon, angle, aoffset1 as CoordF, aoffset2 as CoordF)
+    }
+
+    // R301: native passes the offsets as FLOATS in scaled units (the f32
+    // fraction survives into ClipperOffset, FillRectilinear.cpp:2843-2848);
+    // this entry keeps the fractional scaled delta.
+    pub fn new_scaled_f(expolygon: &ExPolygon, angle: f64, aoffset1: CoordF, aoffset2: CoordF) -> Self {
         // Copy and rotate
         let mut src = expolygon.clone();
         if angle.abs() > 1e-10 {
@@ -505,8 +515,8 @@ impl ExPolygonWithOffset {
         // variants grid the raster clip boundary to 1um — the last gridder in the
         // top-fill chain (line endpoints clip against these contours). Gated.
         let f1 = std::env::var("TOPFILL_FAITHFUL").is_ok();
-        let aoffset1_mm = unscale(aoffset1);
-        let polygons_outer = if aoffset1 == 0 {
+        let aoffset1_mm = aoffset1 / crate::SCALING_FACTOR;
+        let polygons_outer = if aoffset1 == 0.0 {
             expolygon_to_polygons(&src)
         } else if f1 {
             let result = crate::clipper_utils::offset_expolygons_clib(
@@ -524,8 +534,8 @@ impl ExPolygonWithOffset {
         // FillRectilinear.cpp:482 — shrink(polygons_outer, float(aoffset1 - aoffset2), ...).
         // shrink() offsets by a negative amount; aoffset1 - aoffset2 > 0 here (aoffset2 more
         // negative than aoffset1), so we offset polygons_outer inward by (aoffset1 - aoffset2).
-        let mut polygons_inner = if aoffset2 < 0 {
-            let shrink_amount = unscale(aoffset1 - aoffset2);
+        let mut polygons_inner = if aoffset2 < 0.0 {
+            let shrink_amount = (aoffset1 - aoffset2) / crate::SCALING_FACTOR;
             if f1 {
                 // polygons_outer is a FLAT orientation-tagged set (contours CCW +
                 // holes CW); rebuild proper nested ExPolygons full-res first so the
@@ -2146,17 +2156,32 @@ pub fn fill_surface_by_lines(
 
     const INFILL_OVERLAP_OVER_SPACING: f64 = 0.45;
 
-    // Line spacing in scaled units.
-    // FillRectilinear.cpp:2841 — coord_t(scale_(this->spacing) / params.density).
-    // scale_ is the float macro (val / SCALING_FACTOR == val * 1e5, no rounding),
-    // then divided by density, then the coord_t() cast truncates toward zero.
-    let line_spacing = (spacing * crate::SCALING_FACTOR / params.density) as Coord;
+    // R301 (TOPFILL_FAITHFUL): native domains — line_spacing =
+    // coord_t((spacing / 1e-5) / density) [scale_ DIVIDES, then trunc];
+    // aoffsets = float(scale_(overlap - (0.5 - 0.45f)*spacing)) — f32 deltas
+    // with the fraction KEPT (FillRectilinear.cpp:2841-2848). The legacy
+    // mult/round domain drifts the raster clip boundary sub-unit (the Top
+    // endpoint last-digit class, R299/R300).
+    let tf = std::env::var("TOPFILL_FAITHFUL").is_ok() && std::env::var("RASTER_QUANT").is_ok();
+    let line_spacing = if tf {
+        ((spacing / 0.00001) / params.density) as Coord
+    } else {
+        (spacing * crate::SCALING_FACTOR / params.density) as Coord
+    };
+    let (aoffset1, aoffset2): (CoordF, CoordF) = if tf {
+        let c = 0.5 - (0.45f32 as f64);
+        (
+            (((overlap - c * spacing) / 0.00001) as f32) as f64,
+            (((overlap - 0.5 * spacing) / 0.00001) as f32) as f64,
+        )
+    } else {
+        (
+            scale(overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * spacing) as CoordF,
+            scale(overlap - 0.5 * spacing) as CoordF,
+        )
+    };
 
-    // Compute offsets
-    let aoffset1 = scale(overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * spacing);
-    let aoffset2 = scale(overlap - 0.5 * spacing);
-
-    let poly_with_offset = ExPolygonWithOffset::new(expolygon, -angle, aoffset1, aoffset2);
+    let poly_with_offset = ExPolygonWithOffset::new_scaled_f(expolygon, -angle, aoffset1, aoffset2);
 
     if poly_with_offset.n_contours_inner == 0 {
         // No inner contour — no infill lines fit
@@ -4329,14 +4354,27 @@ pub fn fill_surface_by_lines_monotonic(
 
     const INFILL_OVERLAP_OVER_SPACING: f64 = 0.45;
 
-    // FillRectilinear.cpp:2841 — coord_t(scale_(this->spacing) / params.density),
-    // float division then truncation toward zero (no rounding, no max-clamp).
-    let line_spacing = (spacing * crate::SCALING_FACTOR / params.density) as Coord;
+    // R301 (TOPFILL_FAITHFUL): native domains — see fill_surface_by_lines.
+    let tf = std::env::var("TOPFILL_FAITHFUL").is_ok() && std::env::var("RASTER_QUANT").is_ok();
+    let line_spacing = if tf {
+        ((spacing / 0.00001) / params.density) as Coord
+    } else {
+        (spacing * crate::SCALING_FACTOR / params.density) as Coord
+    };
+    let (aoffset1, aoffset2): (CoordF, CoordF) = if tf {
+        let c = 0.5 - (0.45f32 as f64);
+        (
+            (((overlap - c * spacing) / 0.00001) as f32) as f64,
+            (((overlap - 0.5 * spacing) / 0.00001) as f32) as f64,
+        )
+    } else {
+        (
+            scale(overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * spacing) as CoordF,
+            scale(overlap - 0.5 * spacing) as CoordF,
+        )
+    };
 
-    let aoffset1 = scale(overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * spacing);
-    let aoffset2 = scale(overlap - 0.5 * spacing);
-
-    let poly_with_offset = ExPolygonWithOffset::new(expolygon, -angle, aoffset1, aoffset2);
+    let poly_with_offset = ExPolygonWithOffset::new_scaled_f(expolygon, -angle, aoffset1, aoffset2);
 
     if poly_with_offset.n_contours_inner == 0 {
         return polylines_out;
