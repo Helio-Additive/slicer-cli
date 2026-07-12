@@ -509,6 +509,41 @@ impl ExPolygon {
     /// therefore requires reworking the `ThickPolyline` representation (a
     /// `Polyline.hpp` / `Geometry/MedialAxis.cpp` concern outside ExPolygon.cpp),
     /// so it is intentionally left BLOCKED here. See PORT_LEDGER notes.
+    /// MEDIALAXIS_NATIVE route with params already in SCALED units — native
+    /// callers compute min/max as doubles from scaled coord_t values
+    /// (PerimeterGenerator.cpp:972/979, 1329-1330); passing mm through a
+    /// ×SCALING_FACTOR roundtrip would reintroduce ulp drift.
+    pub fn medial_axis_scaled(
+        &self,
+        scaled_min: f64,
+        scaled_max: f64,
+        polylines: &mut ThickPolylines,
+    ) {
+        let contour: Vec<(i64, i64)> = self.contour.points.iter().map(|p| (p.x, p.y)).collect();
+        let holes: Vec<Vec<(i64, i64)>> = self
+            .holes
+            .iter()
+            .map(|h| h.points.iter().map(|p| (p.x, p.y)).collect())
+            .collect();
+        for pl in clipper_z_sys::medial_axis_native(&contour, &holes, scaled_min, scaled_max) {
+            if pl.points.len() < 2 || pl.width.is_empty() {
+                continue;
+            }
+            let mut tp = super::thick_polyline::ThickPolyline::with_capacity(pl.points.len());
+            for (i, &(x, y)) in pl.points.iter().enumerate() {
+                let w = if i == 0 { pl.width[0] } else { pl.width[2 * i - 1] };
+                tp.push(Point::new(x, y), w / crate::SCALING_FACTOR);
+            }
+            tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
+            tp.edge_widths = pl
+                .width
+                .iter()
+                .map(|w| w / crate::SCALING_FACTOR)
+                .collect();
+            polylines.push(tp);
+        }
+    }
+
     pub fn medial_axis(&self, min_width: f64, max_width: f64, polylines: &mut ThickPolylines) {
         // MEDIALAXIS_NATIVE (R274): route through the clipper-z-sys boost-voronoi
         // shim — bit-exact native Voronoi vertex doubles + verbatim MedialAxis
@@ -517,34 +552,11 @@ impl ExPolygon {
         // to the crate's per-vertex model with the walk's convention (seed start
         // width for vertex 0, then each segment's end width).
         if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
-            let contour: Vec<(i64, i64)> =
-                self.contour.points.iter().map(|p| (p.x, p.y)).collect();
-            let holes: Vec<Vec<(i64, i64)>> = self
-                .holes
-                .iter()
-                .map(|h| h.points.iter().map(|p| (p.x, p.y)).collect())
-                .collect();
-            let scaled_min = min_width * crate::SCALING_FACTOR;
-            let scaled_max = max_width * crate::SCALING_FACTOR;
-            for pl in
-                clipper_z_sys::medial_axis_native(&contour, &holes, scaled_min, scaled_max)
-            {
-                if pl.points.len() < 2 || pl.width.is_empty() {
-                    continue;
-                }
-                let mut tp = super::thick_polyline::ThickPolyline::with_capacity(pl.points.len());
-                for (i, &(x, y)) in pl.points.iter().enumerate() {
-                    let w = if i == 0 { pl.width[0] } else { pl.width[2 * i - 1] };
-                    tp.push(Point::new(x, y), w / crate::SCALING_FACTOR);
-                }
-                tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
-                tp.edge_widths = pl
-                    .width
-                    .iter()
-                    .map(|w| w / crate::SCALING_FACTOR)
-                    .collect();
-                polylines.push(tp);
-            }
+            self.medial_axis_scaled(
+                min_width * crate::SCALING_FACTOR,
+                max_width * crate::SCALING_FACTOR,
+                polylines,
+            );
             return;
         }
 

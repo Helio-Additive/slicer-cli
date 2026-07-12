@@ -669,7 +669,17 @@ impl LayerRegion {
                 // duplicated points and accelerate medial-axis calculation.
                 ex.douglas_peucker(surface_simplify_resolution);
                 // PerimeterGenerator.cpp:1339
-                ex.medial_axis(min, max, &mut polylines);
+                if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
+                    // Native params are doubles built FROM scaled coord_t values
+                    // (PG.cpp:864-865 scaled_width/scaled_spacing = trunc(v/1e-5),
+                    // :1329-1330 min = 0.2*W*(1-0.4), max = 2.*S) — recompute here
+                    // instead of the mm×1e5 roundtrip which drifts ulps.
+                    let w_sc = (perimeter_width / 0.00001).trunc();
+                    let s_sc = (perimeter_spacing / 0.00001).trunc();
+                    ex.medial_axis_scaled(0.2 * w_sc * (1.0 - 0.4), 2.0 * s_sc, &mut polylines);
+                } else {
+                    ex.medial_axis(min, max, &mut polylines);
+                }
             }
 
             // PerimeterGenerator.cpp:1357-1360 — filter tiny gap fills
@@ -2775,7 +2785,18 @@ impl Layer {
                         let mut polylines: crate::geometry::ThickPolylines = Vec::new();
                         for ex in &mut gaps_ex {
                             ex.douglas_peucker(simplify_resolution);
-                            ex.medial_axis(min, max, &mut polylines);
+                            if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
+                                // Same scaled-domain recipe as the perimeter gap
+                                // block: doubles from trunc(spacing/1e-5).
+                                let s_sc = (new_flow.spacing() / 0.00001).trunc();
+                                ex.medial_axis_scaled(
+                                    0.2 * s_sc * (1.0 - 0.4),
+                                    2.0 * s_sc,
+                                    &mut polylines,
+                                );
+                            } else {
+                                ex.medial_axis(min, max, &mut polylines);
+                            }
                         }
 
                         if !polylines.is_empty() {

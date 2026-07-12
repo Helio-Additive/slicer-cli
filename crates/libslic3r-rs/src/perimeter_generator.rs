@@ -653,7 +653,26 @@ impl PerimeterGenerator {
                     // C++:     ex.medial_axis(min_width, ext_perimeter_width + ext_perimeter_spacing2, &thin_walls);
                     for ex in expp {
                         let max_width = ext_perimeter_width + ext_perimeter_spacing2;
-                        ex.medial_axis(min_width, max_width, &mut thin_walls);
+                        if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
+                            // Native: min = coord_t(scale_(nozzle/3)) — nozzle/3 in
+                            // f32, double division by 1e-5, trunc (PG.cpp:972); max =
+                            // ext_perimeter_width + ext_perimeter_spacing2, both
+                            // coord_t: scaled_width() = trunc(width/1e-5) (double),
+                            // spacing2 = scaled<coord_t>(0.5f*(sp_e+sp_p)) — ALL-f32
+                            // arithmetic including the /1e-5f division (PG.cpp:868).
+                            let nozzle = self.config.ext_perimeter_flow.nozzle_diameter();
+                            let min_sc = ((nozzle as f32 / 3.0) as f64 / 0.00001).trunc();
+                            let ext_w_sc =
+                                (self.config.ext_perimeter_flow.width() / 0.00001).trunc();
+                            let sp2_sc = ((0.5f32
+                                * (self.config.ext_perimeter_flow.spacing() as f32
+                                    + self.config.perimeter_flow.spacing() as f32))
+                                / 1e-5f32)
+                                .trunc() as f64;
+                            ex.medial_axis_scaled(min_sc, ext_w_sc + sp2_sc, &mut thin_walls);
+                        } else {
+                            ex.medial_axis(min_width, max_width, &mut thin_walls);
+                        }
                     }
                 } else {
                     /// PerimeterGenerator.cpp:977-978
