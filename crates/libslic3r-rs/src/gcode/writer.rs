@@ -318,6 +318,9 @@ pub struct GCodeWriter {
     /// Last emitted travel acceleration (M204 S value), for deduplication.
     /// 0 means "not set yet" — always emit on first call.
     last_travel_accel: f64,
+    /// R234: native m_last_height (GCode.cpp:6619) — per-path LAYER_HEIGHT
+    /// tag register; layer changes also set it (GCode.cpp:4065).
+    pub last_height_tag: f64,
     /// R227: native m_is_first_layer (GCodeWriter set_first_layer) — travel
     /// accel selection reads m_first_layer_travel_accelerations on layer 0.
     pub is_first_layer: bool,
@@ -395,6 +398,7 @@ impl GCodeWriter {
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
+            last_height_tag: 0.0,
             is_first_layer: false,
             pending_accel: 0,
             zsmooth_retract_ctx: None,

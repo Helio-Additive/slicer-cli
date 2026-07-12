@@ -1184,6 +1184,18 @@ pub fn extrude_path_with_arc_fitting(
         writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
     }
 
+    // R234: native _extrude emits ";LAYER_HEIGHT: %g" when the path height
+    // leaves the m_last_height register by > EPSILON (GCode.cpp:6619-6623;
+    // bridges print at 0.4 over 0.2 layers). Register also fed by layer
+    // changes (print.rs, GCode.cpp:4065).
+    if crate::gcode::writer::lift_faithful_gate()
+        && path.height > 0.0
+        && (writer.last_height_tag - path.height).abs() > 1e-4
+    {
+        writer.last_height_tag = path.height;
+        writer.write_comment(&format!("LAYER_HEIGHT: {}", fmt_g6(path.height)));
+    }
+
     // C++ reference: GCode.cpp:4211-4220
     // C++: // get path properties
     // C++: const Polyline &polyline = path.polyline;

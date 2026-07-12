@@ -467,6 +467,9 @@ impl Print {
                     t = t.trim_end_matches('0').trim_end_matches('.').to_string();
                 }
                 writer.write_raw(&format!("; LAYER_HEIGHT: {}", t));
+                // R234: layer change updates the per-path height register
+                // (native m_last_height = height, GCode.cpp:4065).
+                writer.last_height_tag = height as f64;
             } else {
                 writer.write_raw(&format!("; LAYER_HEIGHT: {}", height));
             }
