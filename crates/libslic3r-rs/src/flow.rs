@@ -551,7 +551,16 @@ impl Flow {
     ///
     /// Returns `FlowError::NegativeSpacing` if the result would be non-positive.
     pub fn rounded_rectangle_extrusion_spacing(width: f64, height: f64) -> FlowResult<f64> {
-        let spacing = width - height * (1.0 - 0.25 * PI);
+        // Native (Flow.cpp:191-199) runs an ALL-f32 chain: the coefficient
+        // float(1. - 0.25*PI) is rounded to f32 FIRST, then height*coef and
+        // the subtraction round in f32 — one f64 pass + final rounding lands
+        // 1 f32-ULP off (measured: sp .377079636 vs native .377079606, R281).
+        let spacing = if flow_f32() {
+            let coef = (1.0 - 0.25 * PI) as f32;
+            ((width as f32) - (height as f32) * coef) as f64
+        } else {
+            width - height * (1.0 - 0.25 * PI)
+        };
         if spacing <= 0.0 {
             Err(FlowError::NegativeSpacing)
         } else {
@@ -570,7 +579,15 @@ impl Flow {
     /// ```
     #[inline]
     pub fn rounded_rectangle_extrusion_width_from_spacing(spacing: f64, height: f64) -> f64 {
-        spacing + height * (1.0 - 0.25 * PI)
+        // Native (Flow.cpp:201-204) is DIFFERENT from spacing(): the inner
+        // arithmetic promotes to DOUBLE (f32 spacing + f32 height * double
+        // coef) and float() rounds ONCE at the end.
+        if flow_f32() {
+            (((spacing as f32) as f64) + ((height as f32) as f64) * (1.0 - 0.25 * PI)) as f32
+                as f64
+        } else {
+            spacing + height * (1.0 - 0.25 * PI)
+        }
     }
 
     /// Calculate spacing for bridge extrusions.
