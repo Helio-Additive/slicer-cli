@@ -1504,6 +1504,64 @@ pub fn extrude_entity(
         /// C++: return this->_extrude(*static_cast<const ExtrusionPath*>(&entity), description, speed);
         /// C++: }
         ExtrusionEntityType::Path(path) => {
+            // R245 (gated): native _extrude emits set_speed(F) for EVERY path
+            // (GCode.cpp:6663, cooling buffer dedups); the per-path F embeds
+            // the volumetric cap, so variable-width gap/fill paths carry
+            // fractional Fs (F14761.269 = 25mm3s / mm3_per_mm). writer
+            // set_speed dedups, so without VOLCAP this is a no-op.
+            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                use crate::extrusion_entity::ExtrusionRole;
+                let role = path.role;
+                let base = if is_first_layer {
+                    match role {
+                        ExtrusionRole::InternalInfill
+                        | ExtrusionRole::SolidInfill
+                        | ExtrusionRole::TopSolidInfill
+                        | ExtrusionRole::BottomSurface => {
+                            if config.initial_layer_infill_speed > 0.0 {
+                                config.initial_layer_infill_speed
+                            } else {
+                                config.initial_layer_speed
+                            }
+                        }
+                        _ => config.initial_layer_speed,
+                    }
+                } else {
+                    match role {
+                        ExtrusionRole::ExternalPerimeter => config.external_perimeter_speed,
+                        ExtrusionRole::Perimeter => config.perimeter_speed,
+                        ExtrusionRole::InternalInfill => config.infill_speed,
+                        ExtrusionRole::SolidInfill => config.solid_infill_speed,
+                        ExtrusionRole::TopSolidInfill => config.top_solid_infill_speed,
+                        ExtrusionRole::BridgeInfill => config.bridge_speed,
+                        ExtrusionRole::GapFill => config.gap_fill_speed,
+                        ExtrusionRole::FloatingVerticalShell => {
+                            config.vertical_shell_speed / 100.0 * config.solid_infill_speed
+                        }
+                        _ => config.perimeter_speed,
+                    }
+                };
+                let speed = if std::env::var("VOLCAP_FAITHFUL").is_ok() {
+                    volumetric_capped_speed(
+                        base,
+                        path.mm3_per_mm,
+                        writer.config_ref().filament_max_volumetric_speed,
+                        config.print_flow_ratio,
+                    )
+                } else {
+                    base
+                };
+                if speed > 0.0 {
+                    let cooling_comment = if role == ExtrusionRole::BridgeInfill {
+                        ""
+                    } else if role == ExtrusionRole::ExternalPerimeter {
+                        ";_EXTRUDE_SET_SPEED;_EXTERNAL_PERIMETER"
+                    } else {
+                        ";_EXTRUDE_SET_SPEED"
+                    };
+                    writer.set_speed(speed * 60.0, cooling_comment);
+                }
+            }
             extrude_path(path, writer, config, is_first_layer);
             // R233: native extrude_path installs the wipe path = the path's
             // SOURCE polyline REVERSED (GCode.cpp:5703-5717, non-tree branch)
