@@ -3037,6 +3037,30 @@ impl PerimeterGenerator {
         insert = infill_wall_overlap * insert;
 
         // C++: Polygons inner_pp; for (ExPolygon &ex : infill_contour) ex.simplify_p(m_scaled_resolution, &inner_pp);
+        // R250 (gated): run the whole chain at ClipperLib precision — the geo
+        // route re-grids at scale-1000 and produced the RAGGED fill_expolygons
+        // (L71: rust 2 hole-y blobs n=272 vs native 4 clean pieces n<=69, the
+        // root of the entire fill-geometry divergence, R249). Faithful:
+        // simplify_p = DP rings + SimplifyPolygons, then union_ex, then
+        // offset2_ex(-min_pis/2, insert+min_pis/2) with default jtMiter.
+        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+            let tol_scaled = surface_simplify_resolution * crate::SCALING_FACTOR;
+            let mut inner_pp: Vec<Polygon> = Vec::new();
+            for ex in &infill_contour {
+                inner_pp.extend(ex.simplify_p_dp_rings_faithful(tol_scaled));
+            }
+            if inner_pp.is_empty() {
+                return vec![];
+            }
+            let simplified = crate::clipper_utils::simplify_polygons_clib(&inner_pp, 1);
+            let inner_union = crate::clipper_utils::union_ex_clib(&simplified, 1);
+            return crate::clipper_utils::offset2_ex_clib(
+                &inner_union,
+                -(min_perimeter_infill_spacing / 2.0),
+                insert + min_perimeter_infill_spacing / 2.0,
+                OffsetJoinType::Miter,
+            );
+        }
         let mut inner_pp: Vec<Polygon> = Vec::new();
         for ex in &infill_contour {
             ex.simplify_p_into(surface_simplify_resolution, &mut inner_pp);
