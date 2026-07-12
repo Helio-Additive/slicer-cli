@@ -1309,6 +1309,26 @@ fn eval_condition(cond: &str, resolve: &dyn Fn(&str) -> Option<String>) -> bool 
         if let Some(pos) = cond.find(op) {
             let lhs = cond[..pos].trim().trim_start_matches('(').trim();
             let rhs = cond[pos + op.len()..].trim().trim_end_matches(')').trim();
+            if faithful {
+                // R240: comparison operands can be ARITHMETIC EXPRESSIONS
+                // (the H2D end template's `{if (100.0 - max_layer_z/2) > 0}`)
+                // — resolve variables inside, then eval_math. Plain variables
+                // and literals still work through the same path.
+                let num = |txt: &str| -> f64 {
+                    // Comparison splitting leaves unbalanced parens on the
+                    // operands (`(100.0 - max_layer_z/2` / `... /2)`).
+                    let t = txt.trim().trim_start_matches('(').trim_end_matches(')').trim();
+                    if let Ok(v) = t.parse::<f64>() {
+                        return v;
+                    }
+                    if let Some(v) = resolve(t).and_then(|s| s.parse().ok()) {
+                        return v;
+                    }
+                    let resolved = resolve_all_vars_in_expr(t, resolve);
+                    eval_math(&resolved).unwrap_or(0.0)
+                };
+                return cmp_fn(num(lhs), num(rhs));
+            }
             let lhs_val: f64 = resolve(lhs).and_then(|s| s.parse().ok()).unwrap_or(0.0);
             let rhs_val: f64 = rhs.parse().unwrap_or(0.0);
             return cmp_fn(lhs_val, rhs_val);

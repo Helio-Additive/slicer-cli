@@ -1019,6 +1019,24 @@ impl Print {
 
         // Machine end G-code (before EXECUTABLE_BLOCK_END, matching reference order)
         if let Some(ref settings) = self.raw_settings {
+            // R240: native injects max_layer_z into the end-gcode placeholder
+            // config (GCode.cpp m_max_layer_z) — the H2D end template branches
+            // on it ({if (100.0 - max_layer_z/2) > 0} → the Z124/Z122 park
+            // moves). Without it rust took the wrong branch AND left
+            // `{max_layer_z + 4.0}` unsubstituted. Gated.
+            let mut settings = settings.clone();
+            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                let max_z = self
+                    .objects
+                    .iter()
+                    .flat_map(|o| o.layers.iter())
+                    .map(|l| l.print_z)
+                    .fold(0.0_f64, f64::max);
+                if max_z > 0.0 {
+                    settings["max_layer_z"] = serde_json::Value::String(format!("{}", max_z));
+                }
+            }
+            let settings = &settings;
             body.extend_from_slice(b"; MACHINE_END_GCODE_START\n");
             // Filament end gcode
             if let Some(filament_end) = settings.get("filament_end_gcode").and_then(|v| v.as_str())
