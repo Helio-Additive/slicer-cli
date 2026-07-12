@@ -4345,7 +4345,13 @@ pub fn fill_surface_by_lines_monotonic(
     let mut bbox_src = poly_with_offset.bounding_box_src();
 
     let line_spacing = if params.full_infill && !params.dont_adjust {
-        adjust_solid_spacing(bbox_src.width(), line_spacing)
+        {
+            // R258: same writeback as the non-monotonic path — the monotonic
+            // (top-surface) emission recomputes flow from the adjusted spacing.
+            let ls = adjust_solid_spacing(bbox_src.width(), line_spacing);
+            ADJUSTED_SPACING_MM.with(|c| c.set(Some(ls as f64 / crate::SCALING_FACTOR)));
+            ls
+        }
     } else {
         // Native align_to_grid branch — refpt == (0,0) (see fill_surface_by_lines).
         if std::env::var("TOPFILL_FAITHFUL").is_ok() {
@@ -4433,6 +4439,7 @@ pub fn generate_fill_rectilinear_monotonic(
     is_grid: bool,
     monotonic: bool,
 ) -> Vec<InfillPath> {
+    ADJUSTED_SPACING_MM.with(|c| c.set(None));
     let mut paths = Vec::new();
 
     // Same missing native _infill_direction +90 as generate_fill_rectilinear.
