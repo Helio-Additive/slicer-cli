@@ -1905,6 +1905,10 @@ pub struct PrintObjectConfig {
     /// Detect floating vertical shell regions.
     /// BambuStudio: `detect_floating_vertical_shell`.
     pub detect_floating_vertical_shell: bool,
+    /// Floating vertical shell speed as a PERCENT of internal_solid_infill_speed
+    /// (PrintConfig coPercent, default 80). BambuStudio: `vertical_shell_speed`;
+    /// consumed by GCode.cpp:6492-6500 via get_abs_value(internal_solid_infill_speed).
+    pub vertical_shell_speed: CoordF,
 
     // === Interlocking (InterlockingGenerator) ===
     /// Use beam interlocking between touching filaments.
@@ -3423,6 +3427,7 @@ impl Default for PrintObjectConfig {
 
             // Detect floating
             detect_floating_vertical_shell: false,
+            vertical_shell_speed: 80.0,
 
             // Interlocking (C++ defaults: PrintConfig.cpp:3665-3713)
             interlocking_beam: false,
@@ -5731,6 +5736,11 @@ impl PrintObjectConfig {
             }
             "support_interface_loop_pattern" => {
                 self.support_interface_loop_pattern = parse_bool(value);
+            }
+            "vertical_shell_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.vertical_shell_speed = v;
+                }
             }
             "detect_floating_vertical_shell" => {
                 self.detect_floating_vertical_shell = parse_bool(value);

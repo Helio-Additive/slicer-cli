@@ -654,6 +654,18 @@ pub fn extrude_collection(
         // R229 (gated): filament volumetric cap — sparse infill's config 350
         // caps to 25mm3s/(w*h) = 307.065 (native F18423.913; rust emitted the
         // raw config speeds F21000/F18000).
+        // R232 (gated): native FloatingVerticalShell speed =
+        // vertical_shell_speed% of internal_solid_infill_speed
+        // (GCode.cpp:6492-6500; 80% of 250 = 200 → F12000). Rust fell through
+        // to the default arm (300 → the r-only F18000 ×397 bucket).
+        let feature_speed = if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+            && !is_first_layer
+            && entity_role == ExtrusionRole::FloatingVerticalShell
+        {
+            config.vertical_shell_speed / 100.0 * config.solid_infill_speed
+        } else {
+            feature_speed
+        };
         // R229: PARKED behind VOLCAP_FAITHFUL — the capped speed
         // 25/mm3_per_mm lands one F-digit off native (18423.914-vs-.913:
         // rust f64 flow chain vs native float Flow → ~2e-8 mm3 drift,
