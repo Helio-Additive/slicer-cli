@@ -118,6 +118,27 @@ pub struct Flow {
     bridge: bool,
 }
 
+/// R230: gate for the f32 Flow-chain fidelity port. Native Flow stores
+/// float members (Flow.hpp:107-113) — every constructed width/height/spacing
+/// is quantized to f32, and mm3_per_mm casts its double arithmetic back to
+/// float (Flow.cpp:212-219). The rust f64 chain drifts ~2e-8, which is
+/// invisible in E values (5 decimals) but flips LINE_WIDTH %g digits and
+/// volumetric-capped F digits. Gated separately (FLOW_F32) so its
+/// geometry impact can be measured in isolation.
+fn flow_f32() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| std::env::var("FLOW_F32").is_ok())
+}
+
+/// Quantize to f32 under the FLOW_F32 gate (native float member store).
+fn q32(v: f64) -> f64 {
+    if flow_f32() {
+        v as f32 as f64
+    } else {
+        v
+    }
+}
+
 /// Flow implementation
 /// Flow.hpp:49-117
 impl Flow {
@@ -127,10 +148,10 @@ impl Flow {
         // Flow.cpp:198
         let spacing = Self::rounded_rectangle_extrusion_spacing(width, height)?;
         Ok(Self {
-            width,
-            height,
-            spacing,
-            nozzle_diameter,
+            width: q32(width),
+            height: q32(height),
+            spacing: q32(spacing),
+            nozzle_diameter: q32(nozzle_diameter),
             bridge: false,
         })
     }
@@ -148,10 +169,10 @@ impl Flow {
         // Note: C++ has an assertion that width >= height for non-bridge,
         // but comments note that gap fill can violate this, so we don't enforce.
         Self {
-            width,
-            height,
-            spacing,
-            nozzle_diameter,
+            width: q32(width),
+            height: q32(height),
+            spacing: q32(spacing),
+            nozzle_diameter: q32(nozzle_diameter),
             bridge,
         }
     }
@@ -305,12 +326,14 @@ impl Flow {
     pub fn mm3_per_mm(&self) -> FlowResult<f64> {
         let res = if self.bridge {
             // Area of a circle with diameter = width
-            (self.width * self.width) * 0.25 * PI
+            q32((self.width * self.width) * 0.25 * PI)
         } else {
             // Rectangle with semicircles at the ends
             // = height × (width - height × (1 - π/4))
             // ≈ height × (width - 0.2146 × height)
-            self.height * (self.width - self.height * (1.0 - 0.25 * PI))
+            // Native computes in double from float members, then casts the
+            // result to float (Flow.cpp:214-218 `float res = ...`).
+            q32(self.height * (self.width - self.height * (1.0 - 0.25 * PI)))
         };
 
         if res <= 0.0 {
@@ -421,6 +444,9 @@ impl Flow {
         }
         // Flow.cpp:153
         out.spacing = new_spacing;
+        out.width = q32(out.width);
+        out.height = q32(out.height);
+        out.spacing = q32(out.spacing);
         Ok(out)
     }
 
