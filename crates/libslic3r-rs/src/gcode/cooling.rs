@@ -1710,6 +1710,12 @@ impl PostProcAdjustments {
 }
 
 /// Parse a G-code axis value: given "X123.456 Y..." and axis 'X', returns 123.456
+/// R226 gate for the faithful fan-interpolation floor (see GCodeEditor.cpp:430).
+fn zsmooth_fan_floor() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok())
+}
+
 fn parse_axis(line: &str, axis: char) -> Option<f32> {
     let bytes = line.as_bytes();
     let axis_byte = axis as u8;
@@ -2347,10 +2353,26 @@ impl GCodeEditorState {
                     if layer_time < slow_down_lt {
                         fan_speed_new = fan_max_speed;
                     } else if layer_time < fan_cooling_lt {
-                        let t = (layer_time - slow_down_lt) / (fan_cooling_lt - slow_down_lt);
-                        fan_speed_new = (t * fan_min_speed as f32
-                            + (1.0 - t) * fan_max_speed as f32
-                            + 0.5) as i32;
+                        if zsmooth_fan_floor() {
+                            // R226: native is `int(floor(t*min + (1-t)*max) + 0.5)`
+                            // (GCodeEditor.cpp:430) — the +0.5 is DEAD after
+                            // floor(): floor yields an integer, +0.5 truncates
+                            // back. Effective op = floor, not round (79.9 → 79;
+                            // rust's round gave 80 → the 1272× S201.45-vs-S204
+                            // duty class). t is float math widened to double.
+                            let t = ((layer_time - slow_down_lt)
+                                / (fan_cooling_lt - slow_down_lt))
+                                as f64;
+                            fan_speed_new = (t * fan_min_speed as f64
+                                + (1.0 - t) * fan_max_speed as f64)
+                                .floor() as i32;
+                        } else {
+                            let t =
+                                (layer_time - slow_down_lt) / (fan_cooling_lt - slow_down_lt);
+                            fan_speed_new = (t * fan_min_speed as f32
+                                + (1.0 - t) * fan_max_speed as f32
+                                + 0.5) as i32;
+                        }
                     }
 
                     *overhang_fan_speed = cfg.overhang_fan_speed;
