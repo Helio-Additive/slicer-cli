@@ -27,6 +27,7 @@ struct MaPoint {
     // Point(double,double) in Slic3r = coord_t(lrint(v)) — round-to-nearest.
     MaPoint(double x_, double y_) : x(coord_t(std::lrint(x_))), y(coord_t(std::lrint(y_))) {}
     MaPoint operator-(const MaPoint &o) const { return MaPoint(x - o.x, y - o.y); }
+    bool operator==(const MaPoint &o) const { return x == o.x && y == o.y; }
     double norm() const { return std::sqrt(double(x) * double(x) + double(y) * double(y)); }
 };
 
@@ -472,6 +473,306 @@ private:
 // Smoke self-test: voronoi over a unit square's 4 segment lines; returns the
 // number of finite primary edges. Verifies the boost builder links & runs.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ExPolygon::medial_axis post-processing — verbatim ExPolygon.cpp:263-371 +
+// helpers (Polygon::intersection, point_projection, on_boundary; Line.hpp
+// line_alg::intersection). All double arithmetic mirrors the Eigen
+// expressions; double->coord_t casts TRUNCATE (Eigen cast<>), except
+// point_projection's foot which is floor(v + 0.5) like native.
+// ---------------------------------------------------------------------------
+
+static const double kMaScaledEpsilon = 10.0;   // SCALED_EPSILON (libslic3r.h)
+static const double kMaEpsilon       = 1e-4;   // EPSILON
+
+static inline double ma_seg_length(const MaPoint &a, const MaPoint &b) {
+    const double dx = double(b.x - a.x), dy = double(b.y - a.y);
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+static double ma_polyline_length(const MaThickPolyline &pl) {
+    double len = 0;
+    for (size_t i = 1; i < pl.points.size(); ++i)
+        len += ma_seg_length(pl.points[i - 1], pl.points[i]);
+    return len;
+}
+
+static void ma_polyline_reverse(MaThickPolyline &pl) {
+    std::reverse(pl.points.begin(), pl.points.end());
+    std::reverse(pl.width.begin(), pl.width.end());
+    std::swap(pl.endpoint_first, pl.endpoint_second);
+}
+
+// line_alg::intersection (Line.hpp:123-150): doubles, cross2 denom with
+// EPSILON guard, t1/t2 in [0,1], result = (l1.a + t1*v1).cast<coord_t>().
+static bool ma_line_intersection(const MaPoint &l1a, const MaPoint &l1b,
+                                 const MaPoint &l2a, const MaPoint &l2b,
+                                 MaPoint *out)
+{
+    const double v1x = double(l1b.x - l1a.x), v1y = double(l1b.y - l1a.y);
+    const double v2x = double(l2b.x - l2a.x), v2y = double(l2b.y - l2a.y);
+    const double denom = v1x * v2y - v1y * v2x;
+    if (std::fabs(denom) < kMaEpsilon)
+        return false;
+    const double v12x = double(l1a.x - l2a.x), v12y = double(l1a.y - l2a.y);
+    const double nume_a = v2x * v12y - v2y * v12x;
+    const double nume_b = v1x * v12y - v1y * v12x;
+    const double t1 = nume_a / denom;
+    const double t2 = nume_b / denom;
+    if (t1 >= 0 && t1 <= 1.0 && t2 >= 0 && t2 <= 1.0) {
+        out->x = coord_t(double(l1a.x) + t1 * v1x);
+        out->y = coord_t(double(l1a.y) + t1 * v1y);
+        return true;
+    }
+    return false;
+}
+
+// Polygon::intersection (Polygon.cpp:188-199): closing edge (front,back)
+// FIRST, then consecutive edges; first hit wins.
+static bool ma_polygon_intersection(const std::vector<MaPoint> &pts,
+                                    const MaPoint &la, const MaPoint &lb,
+                                    MaPoint *out)
+{
+    if (pts.size() < 2)
+        return false;
+    if (ma_line_intersection(pts.front(), pts.back(), la, lb, out))
+        return true;
+    for (size_t i = 1; i < pts.size(); ++i)
+        if (ma_line_intersection(pts[i - 1], pts[i], la, lb, out))
+            return true;
+    return false;
+}
+
+// Polygon::point_projection (Polygon.cpp:310-345).
+static MaPoint ma_point_projection(const std::vector<MaPoint> &pts, const MaPoint &point)
+{
+    MaPoint proj = point;
+    double dmin = std::numeric_limits<double>::max();
+    if (!pts.empty()) {
+        for (size_t i = 0; i < pts.size(); ++i) {
+            const MaPoint &pt0 = pts[i];
+            const MaPoint &pt1 = pts[(i + 1 == pts.size()) ? 0 : i + 1];
+            double d = ma_seg_length(pt0, point);
+            if (d < dmin) { dmin = d; proj = pt0; }
+            d = ma_seg_length(pt1, point);
+            if (d < dmin) { dmin = d; proj = pt1; }
+            const double v1x = double(pt1.x - pt0.x), v1y = double(pt1.y - pt0.y);
+            const double div = v1x * v1x + v1y * v1y;
+            if (div > 0.) {
+                const double v2x = double(point.x - pt0.x), v2y = double(point.y - pt0.y);
+                const double t = (v1x * v2x + v1y * v2y) / div;
+                if (t > 0. && t < 1.) {
+                    const MaPoint foot(coord_t(std::floor(double(pt0.x) + t * v1x + 0.5)),
+                                       coord_t(std::floor(double(pt0.y) + t * v1y + 0.5)));
+                    d = ma_seg_length(foot, point);
+                    if (d < dmin) { dmin = d; proj = foot; }
+                }
+            }
+        }
+    }
+    return proj;
+}
+
+// Polygon::on_boundary (Polygon.hpp:71-72).
+static bool ma_polygon_on_boundary(const std::vector<MaPoint> &pts, const MaPoint &point, double eps)
+{
+    const MaPoint proj = ma_point_projection(pts, point);
+    const double ex = double(proj.x - point.x), ey = double(proj.y - point.y);
+    return ex * ex + ey * ey < eps * eps;
+}
+
+struct MaExPolygon {
+    std::vector<MaPoint>              contour;
+    std::vector<std::vector<MaPoint>> holes;
+
+    // ExPolygon::on_boundary (ExPolygon.cpp:121-129).
+    bool on_boundary(const MaPoint &point, double eps) const {
+        if (ma_polygon_on_boundary(contour, point, eps))
+            return true;
+        for (const auto &hole : holes)
+            if (ma_polygon_on_boundary(hole, point, eps))
+                return true;
+        return false;
+    }
+
+    // ExPolygon::lines (ExPolygon.cpp:433-441) via to_lines (Polygon.hpp):
+    // per polygon: consecutive edges then closing (back,front); polygons with
+    // <=2 points contribute nothing; contour first, then holes in order.
+    std::vector<MaLine> lines() const {
+        std::vector<MaLine> out;
+        auto add = [&out](const std::vector<MaPoint> &pts) {
+            if (pts.size() > 2) {
+                for (size_t i = 1; i < pts.size(); ++i)
+                    out.emplace_back(pts[i - 1], pts[i]);
+                out.emplace_back(pts.back(), pts.front());
+            }
+        };
+        add(contour);
+        for (const auto &hole : holes)
+            add(hole);
+        return out;
+    }
+};
+
+// ExPolygon::medial_axis (ExPolygon.cpp:263-371).
+static void ma_expolygon_medial_axis(const MaExPolygon &expoly,
+                                     double min_width, double max_width,
+                                     std::vector<MaThickPolyline> *polylines)
+{
+    const std::vector<MaLine> lines = expoly.lines();
+    MedialAxis ma(min_width, max_width, lines);
+    std::vector<MaThickPolyline> pp;
+    ma.build(&pp);
+
+    double max_w = 0;
+    for (auto it = pp.begin(); it != pp.end(); ++it)
+        max_w = fmaxf(max_w, *std::max_element(it->width.begin(), it->width.end()));
+
+    bool removed = false;
+    for (size_t i = 0; i < pp.size(); ++i) {
+        MaThickPolyline &polyline = pp[i];
+
+        MaPoint new_front = polyline.points.front();
+        MaPoint new_back  = polyline.points.back();
+        if (polyline.endpoint_first && !expoly.on_boundary(new_front, kMaScaledEpsilon)) {
+            double p1x = double(polyline.points.front().x), p1y = double(polyline.points.front().y);
+            double p2x = double(polyline.points[1].x),      p2y = double(polyline.points[1].y);
+            if (polyline.points.size() == 2) {
+                p2x = (p1x + p2x) * 0.5;
+                p2y = (p1y + p2y) * 0.5;
+            }
+            // p1 -= (p2 - p1).normalized() * max_width; Eigen normalized() is
+            // v / sqrt(squaredNorm) (returns v unchanged when squaredNorm == 0).
+            const double vx = p2x - p1x, vy = p2y - p1y;
+            const double z = vx * vx + vy * vy;
+            double nx = vx, ny = vy;
+            if (z > 0.) { const double n = std::sqrt(z); nx = vx / n; ny = vy / n; }
+            p1x -= nx * max_width;
+            p1y -= ny * max_width;
+            ma_polygon_intersection(expoly.contour,
+                                    MaPoint(coord_t(p1x), coord_t(p1y)),
+                                    MaPoint(coord_t(p2x), coord_t(p2y)), &new_front);
+        }
+        if (polyline.endpoint_second && !expoly.on_boundary(new_back, kMaScaledEpsilon)) {
+            double p1x = double((polyline.points.end() - 2)->x), p1y = double((polyline.points.end() - 2)->y);
+            double p2x = double(polyline.points.back().x),       p2y = double(polyline.points.back().y);
+            if (polyline.points.size() == 2) {
+                p1x = (p1x + p2x) * 0.5;
+                p1y = (p1y + p2y) * 0.5;
+            }
+            const double vx = p2x - p1x, vy = p2y - p1y;
+            const double z = vx * vx + vy * vy;
+            double nx = vx, ny = vy;
+            if (z > 0.) { const double n = std::sqrt(z); nx = vx / n; ny = vy / n; }
+            p2x += nx * max_width;
+            p2y += ny * max_width;
+            ma_polygon_intersection(expoly.contour,
+                                    MaPoint(coord_t(p1x), coord_t(p1y)),
+                                    MaPoint(coord_t(p2x), coord_t(p2y)), &new_back);
+        }
+        polyline.points.front() = new_front;
+        polyline.points.back()  = new_back;
+
+        if ((polyline.endpoint_first || polyline.endpoint_second)
+            && ma_polyline_length(polyline) < max_w * 2) {
+            pp.erase(pp.begin() + i);
+            --i;
+            removed = true;
+            continue;
+        }
+    }
+
+    if (removed) {
+        for (size_t i = 0; i < pp.size(); ++i) {
+            MaThickPolyline &polyline = pp[i];
+            if (polyline.endpoint_first && polyline.endpoint_second)
+                continue;
+            for (size_t j = i + 1; j < pp.size(); ++j) {
+                MaThickPolyline &other = pp[j];
+                if (polyline.points.back() == other.points.back()) {
+                    ma_polyline_reverse(other);
+                } else if (polyline.points.front() == other.points.back()) {
+                    ma_polyline_reverse(polyline);
+                    ma_polyline_reverse(other);
+                } else if (polyline.points.front() == other.points.front()) {
+                    ma_polyline_reverse(polyline);
+                } else if (!(polyline.points.back() == other.points.front())) {
+                    continue;
+                }
+                polyline.points.insert(polyline.points.end(), other.points.begin() + 1, other.points.end());
+                polyline.width.insert(polyline.width.end(), other.width.begin(), other.width.end());
+                polyline.endpoint_second = other.endpoint_second;
+                pp.erase(pp.begin() + j);
+                j = i; // restart search from i+1
+            }
+        }
+    }
+
+    polylines->insert(polylines->end(), pp.begin(), pp.end());
+}
+
+// ---------------------------------------------------------------------------
+// FFI
+// ---------------------------------------------------------------------------
+struct MaBuildResult {
+    int64_t *coords;     // 2 * total_points (x,y per point)
+    double  *widths;     // total_widths (per polyline: 2*(points-1))
+    int32_t *pl_sizes;   // num_polylines point counts
+    uint8_t *endpoints;  // 2 * num_polylines (first, second flags)
+    int32_t  num_polylines;
+    int32_t  total_points;
+    int32_t  total_widths;
+};
+
+extern "C" MaBuildResult ma_build(const int64_t *contour_xy, int32_t contour_n,
+                                  const int64_t *holes_xy, const int32_t *hole_lens, int32_t hole_num,
+                                  double min_width, double max_width)
+{
+    MaExPolygon expoly;
+    expoly.contour.reserve(size_t(contour_n));
+    for (int32_t i = 0; i < contour_n; ++i)
+        expoly.contour.emplace_back(coord_t(contour_xy[2 * i]), coord_t(contour_xy[2 * i + 1]));
+    size_t off = 0;
+    expoly.holes.resize(size_t(hole_num));
+    for (int32_t h = 0; h < hole_num; ++h) {
+        auto &hole = expoly.holes[size_t(h)];
+        hole.reserve(size_t(hole_lens[h]));
+        for (int32_t i = 0; i < hole_lens[h]; ++i, ++off)
+            hole.emplace_back(coord_t(holes_xy[2 * off]), coord_t(holes_xy[2 * off + 1]));
+    }
+
+    std::vector<MaThickPolyline> pls;
+    ma_expolygon_medial_axis(expoly, min_width, max_width, &pls);
+
+    MaBuildResult res{};
+    res.num_polylines = int32_t(pls.size());
+    size_t tp = 0, tw = 0;
+    for (const auto &pl : pls) { tp += pl.points.size(); tw += pl.width.size(); }
+    res.total_points = int32_t(tp);
+    res.total_widths = int32_t(tw);
+    res.coords    = static_cast<int64_t*>(std::malloc(sizeof(int64_t) * 2 * (tp ? tp : 1)));
+    res.widths    = static_cast<double*>(std::malloc(sizeof(double) * (tw ? tw : 1)));
+    res.pl_sizes  = static_cast<int32_t*>(std::malloc(sizeof(int32_t) * (pls.empty() ? 1 : pls.size())));
+    res.endpoints = static_cast<uint8_t*>(std::malloc(sizeof(uint8_t) * 2 * (pls.empty() ? 1 : pls.size())));
+    size_t ci = 0, wi = 0;
+    for (size_t k = 0; k < pls.size(); ++k) {
+        const auto &pl = pls[k];
+        res.pl_sizes[k] = int32_t(pl.points.size());
+        res.endpoints[2 * k]     = pl.endpoint_first ? 1 : 0;
+        res.endpoints[2 * k + 1] = pl.endpoint_second ? 1 : 0;
+        for (const auto &pt : pl.points) { res.coords[ci++] = pt.x; res.coords[ci++] = pt.y; }
+        for (double w : pl.width) res.widths[wi++] = w;
+    }
+    return res;
+}
+
+extern "C" void ma_free(MaBuildResult res)
+{
+    std::free(res.coords);
+    std::free(res.widths);
+    std::free(res.pl_sizes);
+    std::free(res.endpoints);
+}
+
 extern "C" int64_t ma_selftest() {
     std::vector<MaLine> lines;
     const coord_t s = 1000000;

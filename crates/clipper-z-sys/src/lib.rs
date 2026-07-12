@@ -206,12 +206,127 @@ extern "C" {
     /// R269 medial-axis shim smoke test: boost voronoi over a unit square,
     /// returns the count of finite primary edges (links the boost builder).
     pub fn ma_selftest() -> i64;
+
+    /// R273: faithful `ExPolygon::medial_axis` (boost voronoi + verbatim
+    /// MedialAxis walk + ExPolygon.cpp post-processing). Inputs are SCALED
+    /// i64 (x,y) pairs; `min_width`/`max_width` scaled doubles. Free the
+    /// result via [`ma_free`].
+    pub fn ma_build(
+        contour_xy: *const i64,
+        contour_n: i32,
+        holes_xy: *const i64,
+        hole_lens: *const i32,
+        hole_num: i32,
+        min_width: f64,
+        max_width: f64,
+    ) -> MaBuildResult;
+
+    /// Free a [`MaBuildResult`] returned by [`ma_build`].
+    pub fn ma_free(res: MaBuildResult);
+}
+
+/// Mirror of `MaBuildResult` in medial_axis_shim.cpp. Flat layout:
+/// `coords` = 2*total_points i64 (x,y per point), `widths` = total_widths f64
+/// (2*(points-1) per polyline), `pl_sizes` = per-polyline point counts,
+/// `endpoints` = 2 flags per polyline (first, second).
+#[repr(C)]
+pub struct MaBuildResult {
+    pub coords: *mut i64,
+    pub widths: *mut f64,
+    pub pl_sizes: *mut i32,
+    pub endpoints: *mut u8,
+    pub num_polylines: i32,
+    pub total_points: i32,
+    pub total_widths: i32,
+}
+
+/// One thick polyline returned by [`medial_axis_native`].
+pub struct MaThickPolyline {
+    pub points: Vec<(i64, i64)>,
+    pub width: Vec<f64>,
+    pub endpoints: (bool, bool),
+}
+
+/// Safe wrapper over [`ma_build`]/[`ma_free`]: faithful ExPolygon::medial_axis
+/// on a scaled-i64 expolygon (contour + holes as (x,y) point lists).
+pub fn medial_axis_native(
+    contour: &[(i64, i64)],
+    holes: &[Vec<(i64, i64)>],
+    min_width: f64,
+    max_width: f64,
+) -> Vec<MaThickPolyline> {
+    let contour_flat: Vec<i64> = contour.iter().flat_map(|&(x, y)| [x, y]).collect();
+    let holes_flat: Vec<i64> = holes
+        .iter()
+        .flat_map(|h| h.iter().flat_map(|&(x, y)| [x, y]))
+        .collect();
+    let hole_lens: Vec<i32> = holes.iter().map(|h| h.len() as i32).collect();
+    let raw = unsafe {
+        ma_build(
+            contour_flat.as_ptr(),
+            contour.len() as i32,
+            holes_flat.as_ptr(),
+            hole_lens.as_ptr(),
+            holes.len() as i32,
+            min_width,
+            max_width,
+        )
+    };
+    let mut out = Vec::with_capacity(raw.num_polylines as usize);
+    unsafe {
+        let mut ci = 0isize;
+        let mut wi = 0isize;
+        for k in 0..raw.num_polylines as isize {
+            let n = *raw.pl_sizes.offset(k) as isize;
+            let mut points = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                points.push((*raw.coords.offset(2 * ci), *raw.coords.offset(2 * ci + 1)));
+                ci += 1;
+            }
+            let nw = if n > 1 { 2 * (n - 1) } else { 0 };
+            let mut width = Vec::with_capacity(nw as usize);
+            for _ in 0..nw {
+                width.push(*raw.widths.offset(wi));
+                wi += 1;
+            }
+            let endpoints = (
+                *raw.endpoints.offset(2 * k) != 0,
+                *raw.endpoints.offset(2 * k + 1) != 0,
+            );
+            out.push(MaThickPolyline { points, width, endpoints });
+        }
+        ma_free(raw);
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::ffi::CStr;
+
+    #[test]
+    fn ma_build_thin_rect() {
+        // 10mm x 0.4mm rectangle at scale 1e5 -> expect a single medial-axis
+        // spine along Y=20000 with widths ~40000, endpoints extended.
+        let contour = [
+            (0i64, 0i64),
+            (1_000_000, 0),
+            (1_000_000, 40_000),
+            (0, 40_000),
+        ];
+        let pls = medial_axis_native(&contour, &[], 20_000.0, 80_000.0);
+        assert!(!pls.is_empty(), "no polylines returned");
+        let pl = &pls[0];
+        assert!(pl.points.len() >= 2);
+        assert_eq!(pl.width.len(), 2 * (pl.points.len() - 1));
+        for &w in &pl.width {
+            assert!((w - 40_000.0).abs() < 2_000.0, "width {w} far from 40000");
+        }
+        for &(_, y) in &pl.points {
+            assert!((y - 20_000).abs() <= 1, "spine y {y} not centered");
+        }
+    }
 
     #[test]
     fn version_links() {
