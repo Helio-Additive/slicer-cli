@@ -2175,10 +2175,20 @@ impl PrintObject {
                 // delta through verbatim — so the faithful equivalent of C++
                 // `scaled_width()/10` is `width()/10` (mm).
                 let layer_height = self.layers[idx_layer].height;
-                let offset = self.layers[idx_layer].regions()[region_id]
-                    .flow(crate::flow::FlowRole::ExternalPerimeter, layer_height)?
-                    .width()
-                    / 10.0;
+                let offset = {
+                    let w = self.layers[idx_layer].regions()[region_id]
+                        .flow(crate::flow::FlowRole::ExternalPerimeter, layer_height)?
+                        .width();
+                    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                        // R283: native = float(scaled_width())/10.f — the coord_t
+                        // TRUNCATION comes first (41999 → 4199.8999f), then f32
+                        // division; width()/10 skips the trunc (4199.9999) — a
+                        // 0.1-unit delta error on every detect opening_ex.
+                        ((((w / 0.00001).trunc() as f32) / 10.0f32) as f64) / crate::SCALING_FACTOR
+                    } else {
+                        w / 10.0
+                    }
+                };
 
                 /// PrintObject.cpp:1498-1499
                 /// C++: bool detect_top = spiral_mode || layerm->region().config().top_shell_layers;
