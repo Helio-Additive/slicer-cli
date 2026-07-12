@@ -823,7 +823,9 @@ pub fn process_gcode_template(
                     // job: first (non-support) filament = 0. Default path keeps
                     // these unresolved (byte-locked).
                     "first_non_support_filaments[0]"
+                    | "first_non_support_filaments[1]"
                     | "first_filaments[0]"
+                    | "first_filaments[1]"
                     | "first_non_support_filaments"
                     | "first_filaments"
                         if std::env::var("ZSMOOTH_FAITHFUL").is_ok() =>
@@ -1062,6 +1064,48 @@ pub fn process_gcode_template(
 
     // Process template line by line, handling escape sequences
     let unescaped = template.replace("\\n", "\n");
+    // R242 (gated): native PlaceholderParser is a char-stream — {if} conditions
+    // may span MULTIPLE physical lines (the H2D start template's
+    // `{if (filament_type[..] == "PLA") ||\n (filament_type0 == "PLA-CF") ...}`)
+    // and `{if(` appears without a space. Preprocess: normalize `{if(`→`{if (`,
+    // and join any `{if`-opening line whose braces don't balance with the
+    // following lines until they do.
+    static TMPL_FAITHFUL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let tmpl_faithful = *TMPL_FAITHFUL.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
+    let unescaped = if tmpl_faithful {
+        let normalized = unescaped.replace("{if(", "{if (").replace("{elsif(", "{elsif (");
+        let mut out = String::with_capacity(normalized.len());
+        let mut lines = normalized.lines().peekable();
+        while let Some(line) = lines.next() {
+            let t = line.trim_start();
+            if t.starts_with("{if ") || t.starts_with("{elsif") {
+                let mut joined = line.to_string();
+                let balance = |s: &str| {
+                    s.bytes().fold(0i32, |a, b| match b {
+                        b'{' => a + 1,
+                        b'}' => a - 1,
+                        _ => a,
+                    })
+                };
+                while balance(&joined) > 0 {
+                    match lines.next() {
+                        Some(next) => {
+                            joined.push(' ');
+                            joined.push_str(next.trim_start());
+                        }
+                        None => break,
+                    }
+                }
+                out.push_str(&joined);
+            } else {
+                out.push_str(line);
+            }
+            out.push('\n');
+        }
+        out
+    } else {
+        unescaped
+    };
     let mut output = String::new();
     let mut skip_depth = 0u32; // for {if}/{endif} nesting
                                // Track whether current {if} group has had a true branch.
@@ -1228,9 +1272,40 @@ pub fn process_gcode_template(
 /// Evaluate a simple condition like 'filament_type[0]=="PLA"' or 'default_acceleration > 0'
 fn eval_condition(cond: &str, resolve: &dyn Fn(&str) -> Option<String>) -> bool {
     let cond = cond.trim();
+    // R242 gate (checked early so the paren strip can use it): faithful mode
+    // strips outer parens ONLY when they wrap the whole expression —
+    // `((A) || (B)) && (C)` must NOT lose its outer chars (the naive strip
+    // mangled it into `(A) || (B)) && (C`, mis-splitting at the inner ||).
+    static COND_FAITHFUL_EARLY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let faithful_early =
+        *COND_FAITHFUL_EARLY.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
     // Strip outer parens
     let cond = if cond.starts_with('(') && cond.ends_with(')') {
-        &cond[1..cond.len() - 1]
+        if faithful_early {
+            let inner = &cond[1..cond.len() - 1];
+            let mut depth = 0i32;
+            let mut wraps = true;
+            for b in inner.bytes() {
+                match b {
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth < 0 {
+                            wraps = false;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if wraps && depth == 0 {
+                inner
+            } else {
+                cond
+            }
+        } else {
+            &cond[1..cond.len() - 1]
+        }
     } else {
         cond
     };
