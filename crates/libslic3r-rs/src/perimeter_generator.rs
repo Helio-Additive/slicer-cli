@@ -1725,7 +1725,6 @@ impl PerimeterGenerator {
             } else {
                 union_polygons_ex(&pp)
             };
-
             // PerimeterGenerator.cpp:1400-1406
             // C++: coord_t min_perimeter_infill_spacing = coord_t(solid_infill_spacing * (1. - INSET_OVERLAP_TOLERANCE));
             // C++: ExPolygons infill_exp = offset2_ex(not_filled_exp,
