@@ -819,6 +819,37 @@ pub fn process_gcode_template(
                 // Computed variables
                 match name {
                     "initial_no_support_extruder" | "current_extruder" => Some("0".to_string()),
+                    // R241 (gated): computed lists — single object, extruder 0
+                    // job: first (non-support) filament = 0. Default path keeps
+                    // these unresolved (byte-locked).
+                    "first_non_support_filaments[0]"
+                    | "first_filaments[0]"
+                    | "first_non_support_filaments"
+                    | "first_filaments"
+                        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() =>
+                    {
+                        Some("0".to_string())
+                    }
+                    // R241 (gated): overall_chamber_temperature = max over
+                    // filaments' chamber temps (0 on this profile → M141 S0).
+                    "overall_chamber_temperature"
+                        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() =>
+                    {
+                        let v = settings
+                            .get("chamber_temperatures")
+                            .or_else(|| settings.get("chamber_temperature"))
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|x| {
+                                        x.as_str().and_then(|s| s.parse::<i64>().ok())
+                                    })
+                                    .max()
+                                    .unwrap_or(0)
+                            })
+                            .unwrap_or(0);
+                        Some(v.to_string())
+                    }
                     "bed_temperature_initial_layer_single" => {
                         // Resolve from curr_bed_type
                         let bed_type = settings
@@ -1274,6 +1305,16 @@ fn eval_condition(cond: &str, resolve: &dyn Fn(&str) -> Option<String>) -> bool 
         return !eval_condition(&cond[1..], resolve);
     }
 
+    // R241 (gated): templates write `var == "PLA"` with spaces — normalize
+    // `== "` / `!= "` to the adjacency forms the legacy parser expects.
+    let normalized;
+    let cond = if faithful && (cond.contains("== \"") || cond.contains("!= \"")) {
+        normalized = cond.replace("== \"", "==\"").replace("!= \"", "!=\"");
+        normalized.as_str()
+    } else {
+        cond
+    };
+
     // String equality: var=="value"
     if let Some(pos) = cond.find("==\"") {
         let lhs = cond[..pos].trim().trim_start_matches('(').trim();
@@ -1343,6 +1384,95 @@ fn eval_condition(cond: &str, resolve: &dyn Fn(&str) -> Option<String>) -> bool 
 /// Evaluate a simple expression like 'outer_wall_volumetric_speed/(0.3*0.5)*60'
 fn eval_expr(expr: &str, resolve: &dyn Fn(&str) -> Option<String>) -> String {
     let trimmed = expr.trim();
+
+    // R241 (gated): C++ PlaceholderParser supports ternaries and arbitrary
+    // index expressions — `var[(a[0] != -1 ? a[0] : b[0])]` (H2D start
+    // template M620.17). Handle a top-level `?:` by evaluating the condition
+    // and recursing into the chosen branch, and an outer `name[<expr>]` by
+    // evaluating the index expression first.
+    static EXPR_FAITHFUL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let faithful = *EXPR_FAITHFUL.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
+    if faithful {
+        // Strip outer parens that wrap the ENTIRE expression (`{(a ? b : c)}`)
+        // so the ternary below is at depth 0.
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            let inner = &trimmed[1..trimmed.len() - 1];
+            let mut depth = 0i32;
+            let mut wraps = true;
+            for b in inner.bytes() {
+                match b {
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth < 0 {
+                            wraps = false;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if wraps && depth == 0 {
+                return eval_expr(inner, resolve);
+            }
+        }
+        // Top-level ternary (depth-0 over () and []).
+        let bytes = trimmed.as_bytes();
+        let mut depth = 0i32;
+        let mut qpos: Option<usize> = None;
+        for (i, &b) in bytes.iter().enumerate() {
+            match b {
+                b'(' | b'[' => depth += 1,
+                b')' | b']' => depth -= 1,
+                b'?' => {
+                    if depth == 0 {
+                        qpos = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(q) = qpos {
+            // find matching ':' at depth 0 after q
+            let mut depth = 0i32;
+            for (j, &b) in bytes.iter().enumerate().skip(q + 1) {
+                match b {
+                    b'(' | b'[' => depth += 1,
+                    b')' | b']' => depth -= 1,
+                    b':' => {
+                        if depth == 0 {
+                            let cond = &trimmed[..q];
+                            let taken = if eval_condition(cond, resolve) {
+                                &trimmed[q + 1..j]
+                            } else {
+                                &trimmed[j + 1..]
+                            };
+                            return eval_expr(taken, resolve);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Outer `name[<expr>]` where the index itself is an expression.
+        if trimmed.ends_with(']') {
+            if let Some(br) = trimmed.find('[') {
+                let name = &trimmed[..br];
+                let inner = &trimmed[br + 1..trimmed.len() - 1];
+                if !name.is_empty()
+                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                    && (inner.contains('?') || inner.contains('(') || inner.contains('['))
+                {
+                    let idx = eval_expr(inner, resolve);
+                    let flat = format!("{}[{}]", name, idx.trim());
+                    if let Some(v) = resolve(&flat) {
+                        return v;
+                    }
+                }
+            }
+        }
+    }
 
     // Try as a simple variable first (only if no math operators present)
     let has_math = trimmed.contains('+')
