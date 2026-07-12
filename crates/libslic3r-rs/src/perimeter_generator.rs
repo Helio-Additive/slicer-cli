@@ -776,14 +776,18 @@ impl PerimeterGenerator {
                 // (cz_offset2_ex) with the integer-coord_t delta (matches native exactly),
                 // so its stepA (between-passes) can be compared to native's. Gated F1_UNION.
                 offsets = if std::env::var("F1_UNION").is_ok() {
-                    let per_sp_c = (perimeter_spacing * SCALING_FACTOR).trunc() as i64;
-                    let ext_sp2_c = (ext_perimeter_spacing2 * SCALING_FACTOR).trunc() as i64;
+                    // R277: native scale_() DIVIDES by SCALING_FACTOR=1e-5 (not *1e5 —
+                    // 1e-5 is inexact, trunc can differ by 1); and min_spacing/2. is a
+                    // DOUBLE division (keeps the .5) — the previous integer half was a
+                    // half-unit delta error on odd min_spacing (the ±1-unit boundary
+                    // drift class, GAPDBG R276).
+                    let per_sp_c = (perimeter_spacing / 0.00001).trunc();
+                    let ext_sp2_c = (ext_perimeter_spacing2 / 0.00001).trunc();
                     let distance_c = if i == 1 { ext_sp2_c } else { per_sp_c };
-                    let min_spacing_c =
-                        (per_sp_c as f64 * (1.0 - INSET_OVERLAP_TOLERANCE)).trunc() as i64;
-                    let half_min = min_spacing_c / 2;
-                    let d1_mm = -((distance_c + half_min - 1) as f64) / SCALING_FACTOR;
-                    let d2_mm = ((half_min - 1) as f64) / SCALING_FACTOR;
+                    let min_spacing_c = (per_sp_c * (1.0 - INSET_OVERLAP_TOLERANCE)).trunc();
+                    let half_min = min_spacing_c / 2.0;
+                    let d1_mm = -(distance_c + half_min - 1.0) / SCALING_FACTOR;
+                    let d2_mm = (half_min - 1.0) / SCALING_FACTOR;
                     crate::clipper_utils::offset2_ex_clib(&last, d1_mm, d2_mm, self.config.join_type)
                 } else {
                     offset2_clib(
@@ -814,14 +818,19 @@ impl PerimeterGenerator {
                     // Default path keeps geo (difference_clib reconstructs via geo union off
                     // F1_UNION — R106), byte-unchanged.
                     let detected_gaps = if std::env::var("F1_UNION").is_ok() {
+                        // R277: native halves the COORD_T distance — float(0.5*distance)
+                        // with distance an integer (PG.cpp:1030-1035). Halving the raw mm
+                        // value drifts the delta by up to 0.5 units when trunc(mm/1e-5)
+                        // loses a fraction (±1-unit boundary drift class, GAPDBG R276).
+                        let dist_c = (distance / 0.00001).trunc();
                         let gap_outer = crate::clipper_utils::shrink_clib(
                             &last,
-                            0.5 * distance,
+                            (0.5 * dist_c) / SCALING_FACTOR,
                             self.config.join_type,
                         );
                         let gap_inner = crate::clipper_utils::grow_clib(
                             &offsets,
-                            0.5 * distance + 0.0001,
+                            (0.5 * dist_c + 10.0) / SCALING_FACTOR,
                             self.config.join_type,
                         );
                         crate::clipper_utils::difference_clib(&gap_outer, &gap_inner)
