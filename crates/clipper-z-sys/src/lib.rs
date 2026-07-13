@@ -360,6 +360,44 @@ mod tests {
     }
 
     /// Read a CzZPaths back into owned Vec<(x,y,z)> paths, then free it.
+    #[test]
+    fn replay_varoff() {
+        let path = match std::env::var("VOREPLAY") {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        let txt = std::fs::read_to_string(&path).unwrap();
+        let mut lines = txt.lines();
+        let ncontours: usize = lines.next().unwrap().strip_prefix("ncontours ").unwrap().parse().unwrap();
+        let mut xy: Vec<i32> = Vec::new();
+        let mut lens: Vec<i32> = Vec::new();
+        let mut deltas: Vec<f32> = Vec::new();
+        let mut read_ring = |hdr_pt: &str, hdr_d: &str, lines: &mut std::str::Lines| {
+            let n: usize = lines.next().unwrap().strip_prefix(hdr_pt).unwrap().parse().unwrap();
+            lens.push(n as i32);
+            for _ in 0..n {
+                let l = lines.next().unwrap();
+                let mut it = l.split_whitespace();
+                xy.push(it.next().unwrap().parse::<i64>().unwrap() as i32);
+                xy.push(it.next().unwrap().parse::<i64>().unwrap() as i32);
+            }
+            let nd: usize = lines.next().unwrap().strip_prefix(hdr_d).unwrap().parse().unwrap();
+            for _ in 0..nd {
+                deltas.push(f32::from_bits(u32::from_str_radix(lines.next().unwrap().trim(), 16).unwrap()));
+            }
+        };
+        read_ring("contour ", "deltas ", &mut lines);
+        for _ in 1..ncontours {
+            read_ring("hole ", "hdeltas ", &mut lines);
+        }
+        let raw = unsafe {
+            cz_variable_offset_inner_ex(xy.as_ptr(), lens.as_ptr(), lens.len() as i32, deltas.as_ptr(), 2.0)
+        };
+        let paths = collect_and_free(raw);
+        let np: usize = paths.iter().map(|p| p.len()).sum();
+        eprintln!("VOREPLAY rust: vout_paths={} vout_np={}", paths.len(), np);
+    }
+
     fn collect_and_free(raw: CzZPaths) -> Vec<Vec<(i32, i32, i32)>> {
         let mut out = Vec::new();
         if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
