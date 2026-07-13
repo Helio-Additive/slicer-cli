@@ -730,6 +730,195 @@ extern "C" CzZPaths cz_simplify_polygons(const int32_t *xy, const int32_t *lens,
     return marshal_paths(out);
 }
 
+// ---------------------------------------------------------------------------
+// cz_variable_offset_inner_ex — VERBATIM adaptation of ClipperUtils.cpp:
+// mittered_offset_path_scaled (:1120-1258), fix_after_inner/outer_offset
+// (:1077-1118) and variable_offset_inner_ex (:1390-1440). Per-vertex mitered
+// offset in doubles with the native rounding (+0.5-with-sign trunc), Clipper1
+// NEGATIVE-fill cleanup with the enclosing-rect trick, ctDifference PolyTree
+// assembly. deltas are SCALED floats, one per input vertex per ring.
+// ---------------------------------------------------------------------------
+namespace vo {
+
+static constexpr const double kShortestEdgeFactor = 0.005; // ClipperOffsetShortestEdgeFactor
+
+static inline double vo_cross2(double ax, double ay, double bx, double by) { return ax * by - ay * bx; }
+
+static ClipperLib::Path mittered_offset_path_scaled(const std::vector<std::pair<double,double>> &contour,
+                                                    const float *deltas, size_t ndeltas, double miter_limit)
+{
+    ClipperLib::Path out;
+    if (ndeltas > 2) {
+        out.reserve(contour.size() * 2);
+        miter_limit = (miter_limit > 2.) ? 2. / (miter_limit * miter_limit) : 0.5;
+        auto add_offset_point = [&out](double x, double y) {
+            x += 0.5 - (x < 0);
+            y += 0.5 - (y < 0);
+            out.emplace_back(ClipperLib::cInt(x), ClipperLib::cInt(y));
+        };
+        double lmin = double(*std::max_element(deltas, deltas + ndeltas)) * kShortestEdgeFactor;
+        double l2min = lmin * lmin;
+        const double sin_min_parallel = 1.;
+
+        double ptx = contour.front().first, pty = contour.front().second;
+        size_t iprev = contour.size() - 1;
+        double ppx = 0, ppy = 0;
+        for (; iprev > 0; --iprev) {
+            ppx = contour[iprev].first; ppy = contour[iprev].second;
+            double dx = ppx - ptx, dy = ppy - pty;
+            if (dx * dx + dy * dy > l2min)
+                break;
+        }
+        if (iprev != 0) {
+            size_t ilast = iprev;
+            // perp(pt - ptprev).normalized()
+            double vx = ptx - ppx, vy = pty - ppy;
+            double npx = vy, npy = -vx;
+            { double n = std::sqrt(npx * npx + npy * npy); npx /= n; npy /= n; }
+            for (size_t i = 0; ;) {
+                size_t j = i + 1;
+                double nxx = 0, nxy = 0; // ptnext
+                for (; j <= ilast; ++j) {
+                    nxx = contour[j].first; nxy = contour[j].second;
+                    double dx = nxx - ptx, dy = nxy - pty;
+                    if (dx * dx + dy * dy > l2min)
+                        break;
+                }
+                if (j > ilast) {
+                    i = ilast;
+                    nxx = contour.front().first; nxy = contour.front().second;
+                }
+                double wx = nxx - ptx, wy = nxy - pty;
+                double nnx = wy, nny = -wx;
+                { double n = std::sqrt(nnx * nnx + nny * nny); nnx /= n; nny /= n; }
+
+                double delta = deltas[i];
+                double sin_a = vo_cross2(npx, npy, nnx, nny);
+                if (sin_a < -1.) sin_a = -1.; else if (sin_a > 1.) sin_a = 1.;
+                double convex = sin_a * delta;
+                if (convex <= -sin_min_parallel) {
+                    add_offset_point(ptx + npx * delta, pty + npy * delta);
+                    add_offset_point(ptx, pty);
+                    add_offset_point(ptx + nnx * delta, pty + nny * delta);
+                } else {
+                    double dot = npx * nnx + npy * nny;
+                    if (convex < sin_min_parallel && dot > 0.) {
+                        if (dot > 0.)
+                            add_offset_point(ptx + npx * delta, pty + npy * delta);
+                        else
+                            add_offset_point(ptx, pty);
+                    } else {
+                        double r = 1. + dot;
+                        if (r >= miter_limit) {
+                            add_offset_point(ptx + (npx + nnx) * (delta / r), pty + (npy + nny) * (delta / r));
+                        } else {
+                            double dx = std::tan(std::atan2(sin_a, dot) / 4.);
+                            // perp(nprev) = (npy, -npx); perp(nnext) = (nny, -nnx)
+                            add_offset_point(ptx + (npx - npy * dx) * delta, pty + (npy + npx * dx) * delta);
+                            add_offset_point(ptx + (nnx + nny * dx) * delta, pty + (nny - nnx * dx) * delta);
+                        }
+                    }
+                }
+                if (i == ilast)
+                    break;
+                ppx = ptx; ppy = pty;
+                npx = nnx; npy = nny;
+                ptx = nxx; pty = nxy;
+                i = j;
+            }
+        }
+    }
+    return out;
+}
+
+static ClipperLib::Paths fix_after_outer_offset(const ClipperLib::Path &input,
+                                                ClipperLib::PolyFillType filltype, bool reverse_result)
+{
+    ClipperLib::Paths solution;
+    if (!input.empty()) {
+        ClipperLib::Clipper clipper;
+        clipper.AddPath(input, ClipperLib::ptSubject, true);
+        clipper.ReverseSolution(reverse_result);
+        clipper.Execute(ClipperLib::ctUnion, solution, filltype, filltype);
+    }
+    return solution;
+}
+
+static ClipperLib::Paths fix_after_inner_offset(const ClipperLib::Path &input,
+                                                ClipperLib::PolyFillType filltype, bool reverse_result)
+{
+    ClipperLib::Paths solution;
+    if (!input.empty()) {
+        ClipperLib::Clipper clipper;
+        clipper.AddPath(input, ClipperLib::ptSubject, true);
+        ClipperLib::IntRect r = clipper.GetBounds();
+        r.left -= 10; r.top -= 10; r.right += 10; r.bottom += 10;
+        if (filltype == ClipperLib::pftPositive)
+            clipper.AddPath({ ClipperLib::IntPoint(r.left, r.bottom), ClipperLib::IntPoint(r.left, r.top),
+                              ClipperLib::IntPoint(r.right, r.top), ClipperLib::IntPoint(r.right, r.bottom) },
+                            ClipperLib::ptSubject, true);
+        else
+            clipper.AddPath({ ClipperLib::IntPoint(r.left, r.bottom), ClipperLib::IntPoint(r.right, r.bottom),
+                              ClipperLib::IntPoint(r.right, r.top), ClipperLib::IntPoint(r.left, r.top) },
+                            ClipperLib::ptSubject, true);
+        clipper.ReverseSolution(reverse_result);
+        clipper.Execute(ClipperLib::ctUnion, solution, filltype, filltype);
+        if (!solution.empty())
+            solution.erase(solution.begin());
+    }
+    return solution;
+}
+
+} // namespace vo
+
+// Input: one ExPolygon (contour + holes, i32 xy pairs, ring lens) + per-ring
+// per-vertex SCALED f32 deltas (flat, ring-major, same counts as ring points)
+// + miter_limit. Output: grouped ExPolygons (cz_union_ex layout).
+extern "C" CzZPaths cz_variable_offset_inner_ex(const int32_t *xy, const int32_t *lens, int32_t num,
+                                                const float *deltas, double miter_limit) {
+    // Unflatten rings.
+    std::vector<std::vector<std::pair<double,double>>> rings;
+    rings.reserve(num);
+    size_t off = 0;
+    for (int32_t p = 0; p < num; ++p) {
+        std::vector<std::pair<double,double>> ring;
+        ring.reserve(lens[p]);
+        for (int32_t i = 0; i < lens[p]; ++i, ++off)
+            ring.emplace_back(double(xy[2 * off]), double(xy[2 * off + 1]));
+        rings.emplace_back(std::move(ring));
+    }
+    const float *d = deltas;
+    // 1) contour
+    ClipperLib::Paths contours = vo::fix_after_inner_offset(
+        vo::mittered_offset_path_scaled(rings[0], d, rings[0].size(), miter_limit),
+        ClipperLib::pftNegative, true);
+    d += rings[0].size();
+    // 2) holes
+    ClipperLib::Paths holes;
+    for (int32_t h = 1; h < num; ++h) {
+        ClipperLib::Paths fixed = vo::fix_after_outer_offset(
+            vo::mittered_offset_path_scaled(rings[h], d, rings[h].size(), miter_limit),
+            ClipperLib::pftNegative, false);
+        holes.insert(holes.end(), fixed.begin(), fixed.end());
+        d += rings[h].size();
+    }
+    // 3) subtract, PolyTree assembly (variable_offset_inner_ex tail).
+    ClipperLib::Paths out_paths;
+    std::vector<int32_t> out_is_hole;
+    if (holes.empty()) {
+        for (ClipperLib::Path &path : contours) { out_paths.emplace_back(std::move(path)); out_is_hole.push_back(0); }
+    } else {
+        ClipperLib::Clipper clipper;
+        clipper.AddPaths(contours, ClipperLib::ptSubject, true);
+        clipper.AddPaths(holes, ClipperLib::ptClip, true);
+        ClipperLib::PolyTree polytree;
+        clipper.Execute(ClipperLib::ctDifference, polytree, ClipperLib::pftNonZero, ClipperLib::pftNonZero);
+        for (int i = 0; i < polytree.ChildCount(); ++i)
+            polytree_to_grouped(*polytree.Childs[i], out_paths, out_is_hole);
+    }
+    return marshal_grouped(out_paths, out_is_hole);
+}
+
 extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
                                 int32_t fill_type) {
     ClipperLib::Paths subject = read_closed_paths(xy, lens, num);

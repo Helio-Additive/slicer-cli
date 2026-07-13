@@ -165,6 +165,19 @@ extern "C" {
     /// Free via [`cz_free_zpaths`].
     pub fn cz_union_ex(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
 
+    /// R320: faithful `variable_offset_inner_ex` (ClipperUtils.cpp:1390) —
+    /// verbatim mitered per-vertex offset + Clipper1 NEGATIVE-fill cleanup.
+    /// One ExPolygon (rings flat i32 xy + lens; ring 0 = contour) + per-ring
+    /// per-vertex SCALED f32 deltas (flat, ring-major) + miter_limit. Output
+    /// grouped like [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    pub fn cz_variable_offset_inner_ex(
+        xy: *const i32,
+        lens: *const i32,
+        num: i32,
+        deltas: *const f32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+
     /// Faithful `offset2_ex(ExPolygons, delta1, delta2)` (ClipperUtils.cpp:581) — the
     /// post-union morphological close in make_expolygons (TriangleMeshSlicer.cpp:1820).
     /// `xy`/`lens`/`is_hole`/`num` are the grouped cz_union_ex output layout (is_hole:

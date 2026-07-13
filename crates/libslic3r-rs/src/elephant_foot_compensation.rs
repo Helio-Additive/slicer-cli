@@ -814,7 +814,10 @@ pub fn elephant_foot_compensation_with_width(
         }
 
         // ElephantFootCompensation.cpp:598
-        let mut out_vec = variable_offset_inner_ex(&resampled, &deltas, 2.0);
+        // R320: native runs this through ClipperLib(1) — the Clipper2 route
+        // produced different intersection vertices (1512-vs-1528, R318).
+        let mut out_vec =
+            crate::clipper_utils::variable_offset_inner_ex_clib(&resampled, &deltas, 2.0);
         // ElephantFootCompensation.cpp:599-613
         if out_vec.len() == 1 {
             out = std::mem::take(&mut out_vec[0]);

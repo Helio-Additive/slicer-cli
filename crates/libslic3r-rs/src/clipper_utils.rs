@@ -1675,6 +1675,80 @@ pub fn union_flat_clib(loops: &[Polygon]) -> Vec<Polygon> {
     out
 }
 
+/// Read a grouped CzZPaths (cz_union_ex layout: z of first point = is_hole)
+/// into ExPolygons, then free it.
+fn read_grouped_zpaths(raw: clipper_z_sys::CzZPaths) -> ExPolygons {
+    let mut result: ExPolygons = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            let mut is_hole = 0i32;
+            for i in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                if i == 0 {
+                    is_hole = coords[cursor * 3 + 2];
+                }
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            let ring = Polygon::from_points(pts);
+            if is_hole == 0 {
+                result.push(ExPolygon::new(ring));
+            } else if let Some(last) = result.last_mut() {
+                last.holes.push(ring);
+            }
+        }
+    }
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    result
+}
+
+/// R320: faithful variable_offset_inner_ex via the vendored ClipperLib shim
+/// (verbatim mitered offset + Clipper1 NEGATIVE-fill cleanup). `deltas` are
+/// SCALED f32, ring-major (contour first, then holes), one per vertex.
+pub fn variable_offset_inner_ex_clib(
+    expoly: &ExPolygon,
+    deltas: &[Vec<f32>],
+    miter_limit: f64,
+) -> ExPolygons {
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    let mut flat_deltas: Vec<f32> = Vec::new();
+    let mut push_ring = |pts: &[Point], ds: &[f32]| {
+        debug_assert_eq!(pts.len(), ds.len());
+        lens.push(pts.len() as i32);
+        for p in pts {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+        flat_deltas.extend_from_slice(ds);
+    };
+    push_ring(&expoly.contour.points, &deltas[0]);
+    for (h, hole) in expoly.holes.iter().enumerate() {
+        push_ring(hole.points(), &deltas[1 + h]);
+    }
+    let num = lens.len() as i32;
+    let raw = unsafe {
+        clipper_z_sys::cz_variable_offset_inner_ex(
+            xy.as_ptr(),
+            lens.as_ptr(),
+            num,
+            flat_deltas.as_ptr(),
+            miter_limit,
+        )
+    };
+    read_grouped_zpaths(raw)
+}
+
 pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
     if loops.is_empty() {
         return vec![];
