@@ -728,8 +728,11 @@ pub fn elephant_foot_compensation_with_width(
     debug_assert!(validate_expoly_orientation(input_expoly));
 
     // ElephantFootCompensation.cpp:548-552
-    let scaled_compensation = scale(compensation) as f64;
-    let min_contour_width = scale(min_contour_width) as f64;
+    // Native scale_() DIVIDES by SCALING_FACTOR=1e-5 with NO rounding — the
+    // scaled values stay fractional doubles (0.15 → 15000.000000000002); the
+    // crate scale() rounds to integer, shifting every threshold by ulps.
+    let scaled_compensation = compensation / 0.00001_f64;
+    let min_contour_width = min_contour_width / 0.00001_f64;
     let min_contour_width_compensated = min_contour_width + 2.0 * scaled_compensation;
     // Make the search radius a bit larger for the averaging in contour_distance over a fan of rays to work.
     let search_radius = min_contour_width_compensated + min_contour_width * 0.5;
@@ -761,7 +764,7 @@ pub fn elephant_foot_compensation_with_width(
         deltas.reserve(input_expoly.holes.len() + 1);
         // ElephantFootCompensation.cpp:574-575
         let mut resampled: ExPolygon = input_expoly.clone();
-        let resample_interval = scale(0.5) as f64;
+        let resample_interval = 0.5_f64 / 0.00001_f64;
         // ElephantFootCompensation.cpp:576-596
         for idx_contour in 0..=input_expoly.holes.len() {
             let poly: &mut Polygon = if idx_contour == 0 {
@@ -787,9 +790,12 @@ pub fn elephant_foot_compensation_with_width(
             // ElephantFootCompensation.cpp:582-592
             for d in dists.iter_mut() {
                 // Convert contour width to available compensation distance.
-                if *d < min_contour_width as f32 {
+                // Native compares float d against the DOUBLE thresholds
+                // (d promotes to double); only the else-branch arithmetic is f32
+                // (d - float(min_contour_width)) / 2.f.
+                if (*d as f64) < min_contour_width {
                     *d = 0.0;
-                } else if *d > min_contour_width_compensated as f32 {
+                } else if (*d as f64) > min_contour_width_compensated {
                     *d = -(scaled_compensation as f32);
                 } else {
                     *d = -(*d - min_contour_width as f32) / 2.0;
