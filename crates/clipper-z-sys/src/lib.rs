@@ -170,6 +170,19 @@ extern "C" {
     /// One ExPolygon (rings flat i32 xy + lens; ring 0 = contour) + per-ring
     /// per-vertex SCALED f32 deltas (flat, ring-major) + miter_limit. Output
     /// grouped like [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    /// R324: verbatim `smooth_compensation_banded` (ElephantFootCompensation.cpp:
+    /// 465-532) compiled with native's clang — bit-exact FMA. `xy` = `n` scaled
+    /// i32 (x,y) pairs; `comp` = `n` f32 compensation values, modified in place;
+    /// `band`/`strength` f32, `num_iterations` count.
+    pub fn cz_smooth_compensation_banded(
+        xy: *const i32,
+        n: i32,
+        comp: *mut f32,
+        band: f32,
+        strength: f32,
+        num_iterations: i32,
+    );
+
     pub fn cz_variable_offset_inner_ex(
         xy: *const i32,
         lens: *const i32,

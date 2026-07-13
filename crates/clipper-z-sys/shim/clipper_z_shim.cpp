@@ -10,6 +10,7 @@
 #include "clipper_z_shim.h"
 
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <limits>
 #include <vector>
@@ -870,6 +871,100 @@ static ClipperLib::Paths fix_after_inner_offset(const ClipperLib::Path &input,
 }
 
 } // namespace vo
+
+// ---------------------------------------------------------------------------
+// cz_smooth_compensation_banded — VERBATIM adaptation of
+// ElephantFootCompensation.cpp:465-532 (+ Utils.hpp prev/next_idx_modulo,
+// libslic3r.h lerp). Compiled with the SAME clang as native, so its FMA
+// contraction (sqrt/norm/lerp/laplacian) is bit-identical by construction —
+// which pure-Rust arithmetic cannot reproduce (R323). Modifies `comp` in place.
+// `xy` = n scaled i32 (x,y) pairs (float-cast internally like native Vec2f).
+// ---------------------------------------------------------------------------
+namespace efc {
+
+static inline int prev_idx_modulo(int idx, int count) { if (idx == 0) idx = count; return --idx; }
+static inline int next_idx_modulo(int idx, int count) { if (++idx == count) idx = 0; return idx; }
+static inline float efc_lerp(float a, float b, float t) { return (1.f - t) * a + t * b; }
+
+} // namespace efc
+
+extern "C" void cz_smooth_compensation_banded(const int32_t *xy, int32_t n,
+                                              float *comp, float band,
+                                              float strength, int32_t num_iterations) {
+    // contour points as float (Vec2f), matching native contour[i].cast<float>().
+    std::vector<float> cx(n), cy(n);
+    for (int32_t i = 0; i < n; ++i) { cx[i] = float(xy[2 * i]); cy[i] = float(xy[2 * i + 1]); }
+
+    std::vector<float> compensation(comp, comp + n);
+    std::vector<float> out(compensation);
+    float dist_min2 = band * band;
+    static constexpr bool use_min = false;
+
+    for (int32_t iter = 0; iter < num_iterations; ++iter) {
+        for (int i = 0; i < n; ++i) {
+            const float pthis_x = cx[i], pthis_y = cy[i];
+
+            // --- previous direction ---
+            int   j     = efc::prev_idx_modulo(i, n);
+            float pprev_x = cx[j], pprev_y = cy[j];
+            float prev  = compensation[j];
+            float dx = pthis_x - pprev_x, dy = pthis_y - pprev_y;
+            float l2 = dx * dx + dy * dy;
+            if (l2 < dist_min2) {
+                float l = std::sqrt(l2);
+                int jprev = j; j = efc::prev_idx_modulo(j, n);
+                while (j != i) {
+                    const float pp_x = cx[j], pp_y = cy[j];
+                    float ex = pp_x - pprev_x, ey = pp_y - pprev_y;
+                    const float lthis = std::sqrt(ex * ex + ey * ey);
+                    const float lnext = l + lthis;
+                    if (lnext > band) {
+                        float t = (band - l) / lthis;
+                        prev = use_min ? std::min(prev, efc::efc_lerp(compensation[jprev], compensation[j], t))
+                                       : efc::efc_lerp(compensation[jprev], compensation[j], t);
+                        break;
+                    }
+                    prev  = use_min ? std::min(prev, compensation[j]) : compensation[j];
+                    pprev_x = pp_x; pprev_y = pp_y;
+                    l = lnext;
+                    jprev = j; j = efc::prev_idx_modulo(j, n);
+                }
+            }
+
+            // --- next direction ---
+            j = efc::next_idx_modulo(i, n);
+            pprev_x = cx[j]; pprev_y = cy[j];
+            float next = compensation[j];
+            dx = pprev_x - pthis_x; dy = pprev_y - pthis_y;
+            l2 = dx * dx + dy * dy;
+            if (l2 < dist_min2) {
+                float l = std::sqrt(l2);
+                int jprev = j; j = efc::next_idx_modulo(j, n);
+                while (j != i) {
+                    const float pp_x = cx[j], pp_y = cy[j];
+                    float ex = pp_x - pprev_x, ey = pp_y - pprev_y;
+                    const float lthis = std::sqrt(ex * ex + ey * ey);
+                    const float lnext = l + lthis;
+                    if (lnext > band) {
+                        float t = (band - l) / lthis;
+                        next = use_min ? std::min(next, efc::efc_lerp(compensation[jprev], compensation[j], t))
+                                       : efc::efc_lerp(compensation[jprev], compensation[j], t);
+                        break;
+                    }
+                    next  = use_min ? std::min(next, compensation[j]) : compensation[j];
+                    pprev_x = pp_x; pprev_y = pp_y;
+                    l = lnext;
+                    jprev = j; j = efc::next_idx_modulo(j, n);
+                }
+            }
+
+            float laplacian = compensation[i] * (1.f - strength) + 0.5f * strength * (prev + next);
+            out[i] = std::max(laplacian, compensation[i]);
+        }
+        out.swap(compensation);
+    }
+    for (int32_t i = 0; i < n; ++i) comp[i] = compensation[i];
+}
 
 // Input: one ExPolygon (contour + holes, i32 xy pairs, ring lens) + per-ring
 // per-vertex SCALED f32 deltas (flat, ring-major, same counts as ring points)

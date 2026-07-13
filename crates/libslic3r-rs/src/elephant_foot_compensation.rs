@@ -603,6 +603,30 @@ fn smooth_compensation_banded(
 ) {
     debug_assert_eq!(contour.len(), compensation.len());
     debug_assert!(contour.len() > 2);
+    // R324: route through the clipper-z-sys shim — compiled with native's clang,
+    // so its FMA contraction (sqrt/norm/lerp/laplacian) is bit-identical, which
+    // pure-Rust f32 could not reproduce (R323). Only reached via the L0_EFC path;
+    // default lock unaffected. assert_i32_scaled bounds hold for slice coords.
+    {
+        let n = contour.len() as i32;
+        let mut xy: Vec<i32> = Vec::with_capacity(contour.len() * 2);
+        for p in contour {
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+        unsafe {
+            clipper_z_sys::cz_smooth_compensation_banded(
+                xy.as_ptr(),
+                n,
+                compensation.as_mut_ptr(),
+                band,
+                strength,
+                num_iterations as i32,
+            );
+        }
+        return;
+    }
+    #[allow(unreachable_code)]
     let mut out: Vec<f32> = compensation.clone();
     let dist_min2 = band * band;
     const USE_MIN: bool = false;

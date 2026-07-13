@@ -66,6 +66,10 @@ fn main() {
     let common = |b: &mut cc::Build| {
         b.cpp(true)
             .std("c++17")
+            // R324: match native libslic3r flags (-O3, clang default
+            // -ffp-contract=on) so the EFC smooth shim's FMA contraction is
+            // bit-identical to the reference binary.
+            .opt_level(3)
             .include("vendor")
             .include("shim")
             .include(&eigen)
