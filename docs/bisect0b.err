@@ -1,0 +1,24 @@
+Info: New devbox available: 0.17.1 -> v0.17.5. Please run `devbox version update`.
+Info: Running script "target/release/slicer-cli" on /Users/alex/Code/Helio-Additive/worktrees/slicer-cli/lofty-dawn/slicer-cli
+SDN key=0 stage=lslices n=10 np=1368 sx=-924160262 sy=49131258
+SDN key=0 stage=rslices n=10 np=1528 sx=-1062555612 sy=53346513
+SDN key=0 stage=tail_infill n=3 np=351 sx=-310196945 sy=12032620
+SDN key=0 stage=tail_nooverlap n=3 np=351 sx=-310359102 sy=12013658
+SDN key=0 stage=tail_infill n=0 np=0 sx=0 sy=0
+SDN key=0 stage=tail_nooverlap n=0 np=0 sx=0 sy=0
+SDN key=0 stage=detect_top n=0 np=0 sx=0 sy=0
+SDN key=0 stage=detect_bottom n=10 np=1528 sx=-1062555612 sy=53346513
+SD key=0 stage=lslices n=10 np=1368 sx=-924160262 sy=49131258
+SD key=0 stage=rslices n=10 np=1368 sx=-924160262 sy=49131258
+SD key=0 stage=tail_infill n=7 np=375 sx=-284875645 sy=15894504
+SD key=0 stage=tail_nooverlap n=7 np=375 sx=-284949106 sy=15902968
+SD key=0 stage=tail_infill n=0 np=0 sx=0 sy=0
+SD key=0 stage=tail_nooverlap n=0 np=0 sx=0 sy=0
+SD key=0 stage=tail_infill n=3 np=346 sx=-308740824 sy=11380550
+SD key=0 stage=tail_nooverlap n=3 np=346 sx=-308909882 sy=11373374
+SD key=0 stage=tail_infill n=0 np=0 sx=0 sy=0
+SD key=0 stage=tail_nooverlap n=0 np=0 sx=0 sy=0
+SD key=0 stage=detect_top n=0 np=0 sx=0 sy=0
+SD key=0 stage=detect_bottom n=10 np=1353 sx=-936846200 sy=46235800
+Error: error running script "target/release/slicer-cli" in Devbox: exit status 1
+

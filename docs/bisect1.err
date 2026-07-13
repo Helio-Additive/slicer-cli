@@ -1,0 +1,20 @@
+Info: New devbox available: 0.17.1 -> v0.17.5. Please run `devbox version update`.
+Info: Running script "target/release/slicer-cli" on /Users/alex/Code/Helio-Additive/worktrees/slicer-cli/lofty-dawn/slicer-cli
+SDN key=1 stage=lslices n=1 np=145 sx=-41332186 sy=-2119646
+SDN key=1 stage=rslices n=1 np=145 sx=-41332186 sy=-2119646
+SDN key=1 stage=tail_infill n=1 np=56 sx=-5062351 sy=1395293
+SDN key=1 stage=tail_nooverlap n=1 np=56 sx=-5132893 sy=1381912
+SDN key=1 stage=detect_top n=0 np=0 sx=0 sy=0
+SDN key=1 stage=detect_bottom n=11 np=1512 sx=-963347595 sy=46723130
+SDN key=1 stage=vshell_reg n=9 np=2513 sx=-1789791850 sy=97592907
+SDN key=1 stage=vshell_solid n=9 np=1273 sx=-883875030 sy=51736620
+SD key=1 stage=lslices n=1 np=145 sx=-41332186 sy=-2119646
+SD key=1 stage=rslices n=1 np=145 sx=-41332186 sy=-2119646
+SD key=1 stage=tail_infill n=1 np=56 sx=-5062364 sy=1395305
+SD key=1 stage=tail_nooverlap n=1 np=56 sx=-5132921 sy=1381924
+SD key=1 stage=detect_top n=0 np=0 sx=0 sy=0
+SD key=1 stage=detect_bottom n=11 np=1512 sx=-963347595 sy=46723130
+SD key=1 stage=vshell_reg n=9 np=2462 sx=-1796067911 sy=94917829
+SD key=1 stage=vshell_solid n=9 np=1273 sx=-883875035 sy=51736623
+Error: error running script "target/release/slicer-cli" in Devbox: exit status 1
+
