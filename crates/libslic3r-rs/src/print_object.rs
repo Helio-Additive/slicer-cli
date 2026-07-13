@@ -2392,6 +2392,14 @@ impl PrintObject {
                     );
                 }
 
+                if crate::stage_dump::stagedump_key() == Some(idx_layer) {
+                    let eps = |ss: &[crate::surface::Surface]| -> Vec<crate::geometry::ExPolygon> {
+                        ss.iter().map(|s| s.expolygon.clone()).collect()
+                    };
+                    crate::stage_dump::dump("detect_top", idx_layer, &eps(&top));
+                    crate::stage_dump::dump("detect_bottom", idx_layer, &eps(&bottom));
+                }
+
                 /// PrintObject.cpp:1584-1586
                 /// C++: Surfaces &surfaces_out = interface_shells ? surfaces_new[idx_layer] : layerm->slices.surfaces;
                 /// C++: Surfaces surfaces_backup;
@@ -3671,6 +3679,8 @@ impl PrintObject {
 
                 // PrintObject.cpp:2060,2075-2090 — reassign surfaces.
                 let new_solid = intersection(&internal_all, &regularized);
+                crate::stage_dump::dump("vshell_reg", idx, &regularized);
+                crate::stage_dump::dump("vshell_solid", idx, &new_solid);
                 let new_internal = difference(&internal_only, &regularized);
                 let new_void = difference(&void_only, &regularized);
 

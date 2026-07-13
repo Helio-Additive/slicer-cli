@@ -1818,6 +1818,7 @@ impl PerimeterGenerator {
                     infill_exp = union_ex(&merged);
                 }
             }
+            crate::stage_dump::dump("tail_infill", self.config.layer_id, &infill_exp);
             let infill_out = infill_exp;
 
             // PerimeterGenerator.cpp:1415-1430 — BBS: get the no-overlap infill
@@ -1898,6 +1899,7 @@ impl PerimeterGenerator {
                     union_ex(&merged)
                 };
             }
+            crate::stage_dump::dump("tail_nooverlap", self.config.layer_id, &poly_without_overlap);
             return (infill_out, poly_without_overlap, top_band_out);
         }
     }
