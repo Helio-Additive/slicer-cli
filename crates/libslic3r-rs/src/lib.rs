@@ -175,6 +175,7 @@ pub mod slicing_adaptive;
 pub mod stl;
 pub mod stl_repair;
 pub mod support;
+pub mod stage_dump;
 pub mod surface;
 pub mod surface_collection;
 pub mod surface_mesh;

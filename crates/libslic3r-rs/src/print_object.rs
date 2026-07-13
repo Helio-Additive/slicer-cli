@@ -562,6 +562,18 @@ impl PrintObject {
         // PrintObject.cpp:456
         self.slice()?;
 
+        if let Some(sd_key) = crate::stage_dump::stagedump_key() {
+            if sd_key < self.layers.len() {
+                let ly = &self.layers[sd_key];
+                crate::stage_dump::dump("lslices", sd_key, &ly.lslices);
+                if let Some(lrm) = ly.regions().first() {
+                    let eps: Vec<crate::geometry::ExPolygon> =
+                        lrm.slices.surfaces.iter().map(|s| s.expolygon.clone()).collect();
+                    crate::stage_dump::dump("rslices", sd_key, &eps);
+                }
+            }
+        }
+
         // Check if already done
         // PrintObject.cpp:457-458
         if self.is_step_done(PrintObjectStep::Perimeters) {

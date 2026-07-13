@@ -1,0 +1,39 @@
+# Native STAGEDUMP counterpart (R313) — apply to the reference BambuStudio
+# submodule per probe session, rebuild (devbox run native:build), and REVERT
+# after (git -C libslic3r/bambustudio/references/BambuStudio checkout -- <files>).
+#
+# Prints the same `SD key=<layer_idx> stage=<name> ...` checksum lines as the
+# rust stage_dump module. Keys are LAYER INDICES (probe-pairing protocol R289).
+#
+# Insert into src/libslic3r/PrintObject.cpp, PrintObject::make_perimeters(),
+# immediately after `this->slice();`:
+#
+#     if (const char *sd = getenv("STAGEDUMP")) {
+#         size_t key = (size_t)atoi(sd);
+#         if (key < m_layers.size()) {
+#             const Layer *ly = m_layers[key];
+#             auto sd_dump = [key](const char *stage, const ExPolygons &eps) {
+#                 long long sx = 0, sy = 0; size_t np = 0, n = 0;
+#                 for (const ExPolygon &ex : eps) {
+#                     n += 1 + ex.holes.size();
+#                     for (const Point &p : ex.contour.points) { np++; sx += p.x(); sy += p.y(); }
+#                     for (const Polygon &h : ex.holes)
+#                         for (const Point &p : h.points) { np++; sx += p.x(); sy += p.y(); }
+#                 }
+#                 fprintf(stderr, "SD key=%zu stage=%s n=%zu np=%zu sx=%lld sy=%lld\n",
+#                         key, stage, n, np, sx, sy);
+#             };
+#             sd_dump("lslices", ly->lslices);
+#             ExPolygons rsl;
+#             for (const Surface &sf : ly->regions().front()->slices.surfaces)
+#                 rsl.push_back(sf.expolygon);
+#             sd_dump("rslices", rsl);
+#         }
+#     }
+#
+# Further stages (extend as the rust side grows call sites):
+#   - detect_surfaces_type: dump top/bottom after surfaces_append
+#   - discover_vertical_shells: dump regularized_shell / new_internal_solid
+#   - fill boundary tail: dump infill_exp / polyWithoutOverlap
+# Match the rust stage names exactly ("detect_top", "detect_bottom",
+# "vshell_reg", "vshell_solid", "tail_infill", "tail_nooverlap").
