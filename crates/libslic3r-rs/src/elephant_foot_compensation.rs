@@ -699,7 +699,11 @@ fn smooth_compensation_banded(
             }
 
             // ElephantFootCompensation.cpp:526-528
-            let laplacian = compensation[i] * (1.0 - strength) + 0.5 * strength * (prev + next);
+            // Native (clang, -ffp-contract=fast on ARM) fuses the outer add into
+            // an FMA: laplacian = fma(comp[i], 1-s, (0.5*s)*(prev+next)). Rust does
+            // not auto-contract, so force it with mul_add to match bit-for-bit.
+            let laplacian =
+                compensation[i].mul_add(1.0 - strength, (0.5 * strength) * (prev + next));
             // Compensations are negative. Only apply the laplacian if it leads to lower compensation.
             out[i] = laplacian.max(compensation[i]);
         }
