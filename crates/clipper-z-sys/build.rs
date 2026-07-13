@@ -66,9 +66,13 @@ fn main() {
     let common = |b: &mut cc::Build| {
         b.cpp(true)
             .std("c++17")
-            // R324: match native libslic3r flags (-O3, clang default
-            // -ffp-contract=on) so the EFC smooth shim's FMA contraction is
-            // bit-identical to the reference binary.
+            // R324/R326: match native libslic3r -O3. NOTE (R326 proof): even
+            // -O3 + same clang + byte-identical input does NOT make the EFC
+            // smooth shim bit-match native — the cc-crate vs cmake compiler
+            // invocations differ in injected target flags (-mcpu), so the two
+            // TUs codegen the same source to different FP rounding. Kept -O3
+            // as the closest match; -ffp-contract/-ffast-math were verified
+            // to have zero effect on the shim output.
             .opt_level(3)
             .include("vendor")
             .include("shim")

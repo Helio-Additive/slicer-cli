@@ -374,6 +374,38 @@ mod tests {
 
     /// Read a CzZPaths back into owned Vec<(x,y,z)> paths, then free it.
     #[test]
+    fn replay_smooth() {
+        let path = match std::env::var("SMREPLAY") { Ok(p) => p, Err(_) => return };
+        let txt = std::fs::read_to_string(&path).unwrap();
+        let mut lines = txt.lines();
+        let hdr = lines.next().unwrap();
+        // "n <N> band <B> strength <S> iters <I>"
+        let toks: Vec<&str> = hdr.split_whitespace().collect();
+        let n: usize = toks[1].parse().unwrap();
+        let band: f32 = toks[3].parse().unwrap();
+        let strength: f32 = toks[5].parse().unwrap();
+        let iters: i32 = toks[7].parse().unwrap();
+        let mut xy: Vec<i32> = Vec::with_capacity(n * 2);
+        for _ in 0..n {
+            let l = lines.next().unwrap();
+            let mut it = l.split_whitespace();
+            xy.push(it.next().unwrap().parse::<i64>().unwrap() as i32);
+            xy.push(it.next().unwrap().parse::<i64>().unwrap() as i32);
+        }
+        assert_eq!(lines.next().unwrap(), "comp");
+        let mut comp: Vec<f32> = Vec::with_capacity(n);
+        for _ in 0..n {
+            comp.push(f32::from_bits(u32::from_str_radix(lines.next().unwrap().trim(), 16).unwrap()));
+        }
+        unsafe {
+            cz_smooth_compensation_banded(xy.as_ptr(), n as i32, comp.as_mut_ptr(), band, strength, iters);
+        }
+        let mut h: u64 = 1469598103934665603;
+        for &d in comp.iter() { h ^= d.to_bits() as u64; h = h.wrapping_mul(1099511628211); }
+        eprintln!("SMREPLAY rust shim outhash={:016x}", h);
+    }
+
+    #[test]
     fn replay_varoff() {
         let path = match std::env::var("VOREPLAY") {
             Ok(p) => p,
