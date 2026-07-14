@@ -834,10 +834,18 @@ fn format_config_value(key: &str, value: &serde_json::Value) -> String {
     // Under CONFIG_FAITHFUL, native coFloat drops a trailing ".0" (12.0->12,
     // 1.0->1) and coPercent appends '%'. Apply to scalar string values.
     let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
-    const PERCENT_KEYS: &[&str] = &["bottom_surface_density", "top_surface_density"];
+    // coPercent keys: native ConfigOptionPercent::serialize always appends '%'.
+    // rust stores the bare number for some profile-resolved values.
+    const PERCENT_KEYS: &[&str] =
+        &["bottom_surface_density", "top_surface_density", "monotonic_travel_into_wall"];
     let normalize_scalar = |raw: &str| -> String {
         let mut out = raw.replace('\n', "\\n");
         if cf {
+            // coPoint (best_object_pos): native ConfigOptionPoint::serialize emits
+            // "X,Y"; BBL's profile JSON stores the point as "XxY".
+            if key == "best_object_pos" {
+                out = out.replace('x', ",");
+            }
             if out.ends_with(".0") && out[..out.len() - 2].chars().all(|c| c.is_ascii_digit() || c == '-') && !out[..out.len()-2].is_empty() {
                 out.truncate(out.len() - 2);
             }
@@ -906,11 +914,17 @@ fn format_config_value(key: &str, value: &serde_json::Value) -> String {
                 "filament_dev_ams_drying_ams_limitations",
             ];
             if SEMICOLON_KEYS.contains(&key) {
+                // Native coStrings serialize via escape_string_cstyle: simple
+                // tokens (no space/quote/newline) are emitted UNQUOTED. rust
+                // historically quoted every element (byte-locked default). Under
+                // CONFIG_FAITHFUL, drop quotes for the numeric-token key that
+                // native leaves bare (1;0), matching escape_string_cstyle.
+                let unquoted = cf && key == "filament_dev_ams_drying_ams_limitations";
                 return arr
                     .iter()
                     .map(|v| {
-                        let s = v.as_str().unwrap_or("");
-                        format!("\"{}\"", s.replace('\n', "\\n"))
+                        let s = v.as_str().unwrap_or("").replace('\n', "\\n");
+                        if unquoted { s } else { format!("\"{}\"", s) }
                     })
                     .collect::<Vec<_>>()
                     .join(";");
@@ -951,10 +965,10 @@ fn format_config_value(key: &str, value: &serde_json::Value) -> String {
                     .collect::<Vec<_>>()
                     .join(sep);
             }
-            arr.first()
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .replace('\n', "\\n")
+            // Single-element (or first-only) fallback. Route through
+            // normalize_scalar so the coFloat ".0"-strip applies to single-value
+            // arrays too (filament_dev_chamber_drying_time: 12.0 -> 12).
+            normalize_scalar(arr.first().and_then(|v| v.as_str()).unwrap_or(""))
         }
         _ => value.to_string(),
     }
