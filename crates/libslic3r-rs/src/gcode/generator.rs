@@ -678,8 +678,24 @@ fn is_config_key_skipped(key: &str) -> bool {
 /// - Quoted string arrays (settings_id, vendor, etc.): quoted first element
 /// - Scalar strings: literal with \n escaping
 fn format_config_value(key: &str, value: &serde_json::Value) -> String {
+    // Under CONFIG_FAITHFUL, native coFloat drops a trailing ".0" (12.0->12,
+    // 1.0->1) and coPercent appends '%'. Apply to scalar string values.
+    let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
+    const PERCENT_KEYS: &[&str] = &["bottom_surface_density", "top_surface_density"];
+    let normalize_scalar = |raw: &str| -> String {
+        let mut out = raw.replace('\n', "\\n");
+        if cf {
+            if out.ends_with(".0") && out[..out.len() - 2].chars().all(|c| c.is_ascii_digit() || c == '-') && !out[..out.len()-2].is_empty() {
+                out.truncate(out.len() - 2);
+            }
+            if PERCENT_KEYS.contains(&key) && !out.ends_with('%') {
+                out.push('%');
+            }
+        }
+        out
+    };
     match value {
-        serde_json::Value::String(s) => s.replace('\n', "\\n"),
+        serde_json::Value::String(s) => normalize_scalar(s),
         serde_json::Value::Array(arr) if arr.is_empty() => String::new(),
         serde_json::Value::Array(arr) => {
             // coPointsGroups (PrintConfig.cpp: extruder_printable_area):
@@ -715,11 +731,13 @@ fn format_config_value(key: &str, value: &serde_json::Value) -> String {
                     .join(",");
             }
 
-            // machine_max_* arrays: C++ uses 2-value Marlin format from 4-element arrays
+            // machine_max_* arrays: legacy emits 2-value Marlin format; native
+            // (H2D) emits the FULL resolved array. Under CONFIG_FAITHFUL emit full.
             if key.starts_with("machine_max_") && arr.len() >= 2 {
+                let take_n = if std::env::var("CONFIG_FAITHFUL").is_ok() { arr.len() } else { 2 };
                 return arr
                     .iter()
-                    .take(2)
+                    .take(take_n)
                     .map(|v| v.as_str().unwrap_or("").to_string())
                     .collect::<Vec<_>>()
                     .join(",");
@@ -762,7 +780,24 @@ fn format_config_value(key: &str, value: &serde_json::Value) -> String {
                 return format!("\"{}\"", s.replace('\n', "\\n"));
             }
 
-            // Default: first element only (per-extruder numeric arrays)
+            // Default: native ConfigOptionFloats/Ints/Strings::serialize emit
+            // the FULL vector comma-joined; the resolved config already carries
+            // the full per-extruder/filament array. Rust historically emitted
+            // first element only (byte-locked default). Under CONFIG_FAITHFUL
+            // emit the full comma-joined array to match native's CONFIG_BLOCK.
+            if std::env::var("CONFIG_FAITHFUL").is_ok()
+                && arr.len() > 1
+                && !key.starts_with("filament_")
+            {
+                // extruder_colour (coStrings) serializes with ';' (unquoted),
+                // unlike the ',' used by coFloats/coInts.
+                let sep = if key == "extruder_colour" { ";" } else { "," };
+                return arr
+                    .iter()
+                    .map(|v| v.as_str().unwrap_or("").replace('\n', "\\n"))
+                    .collect::<Vec<_>>()
+                    .join(sep);
+            }
             arr.first()
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
