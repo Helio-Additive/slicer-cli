@@ -365,15 +365,33 @@ impl GCodeHeader {
                 // BambuStudio iterates DynamicPrintConfig::keys(), which returns
                 // keys in sorted (alphabetical) order, so we sort here too.
                 // (GCode.cpp: append_full_config / GCode::process_layers)
-                let mut keys: Vec<&String> = obj.keys().collect();
+                // Under CONFIG_FAITHFUL, add schema-default keys absent from
+                // raw_settings so the block matches native's full_print_config
+                // (every registered option). Merge + sort to keep ordering.
+                let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
+                let mut keys: Vec<String> = obj.keys().cloned().collect();
+                if cf {
+                    for (k, _) in CONFIG_SCHEMA_DEFAULTS {
+                        if !obj.contains_key(*k) {
+                            keys.push((*k).to_string());
+                        }
+                    }
+                }
                 keys.sort();
-                for key in keys {
+                for key in &keys {
                     if is_config_key_skipped(key) {
                         continue;
                     }
-                    let value = &obj[key];
-                    let formatted = format_config_value(key, value);
-                    config.push_str(&format!("; {} = {}\n", key, formatted));
+                    if let Some(value) = obj.get(key) {
+                        let formatted = format_config_value(key, value);
+                        config.push_str(&format!("; {} = {}\n", key, formatted));
+                    } else if cf {
+                        if let Some((_, dv)) =
+                            CONFIG_SCHEMA_DEFAULTS.iter().find(|(k, _)| k == key)
+                        {
+                            config.push_str(&format!("; {} = {}\n", key, dv));
+                        }
+                    }
                 }
                 config.push_str("; CONFIG_BLOCK_END\n\n");
                 return config;
@@ -617,6 +635,103 @@ impl GCodeHeader {
 /// (they are not added via `this->add(...)` in PrintConfig.cpp, or are
 /// `comDevelop`-only, so they never appear in `full_print_config()`). We mirror
 /// that filtering here so the emitted key set matches the native output.
+/// R329: BambuStudio config-schema keys absent from rust's config but present
+/// in native's CONFIG_BLOCK, with their PrintConfig.cpp STATIC defaults
+/// (extracted from source, cross-verified == native output). Emitted under
+/// CONFIG_FAITHFUL when the key is missing from raw_settings. Profile-derived
+/// keys (where the profile overrides the default) are intentionally excluded.
+const CONFIG_SCHEMA_DEFAULTS: &[(&str, &str)] = &[
+    ("accel_to_decel_enable", "0"),
+    ("accel_to_decel_factor", "50%"),
+    ("apply_scarf_seam_on_circles", "1"),
+    ("bed_custom_model", ""),
+    ("bed_custom_texture", ""),
+    ("before_layer_change_gcode", ""),
+    ("bridge_angle", "0"),
+    ("default_jerk", "0"),
+    ("detect_narrow_internal_solid_infill", "1"),
+    ("embedding_wall_into_infill", "0"),
+    ("enable_mixed_color_sublayer", "0"),
+    ("enforce_support_layers", "0"),
+    ("filament_notes", ""),
+    ("filter_out_gap_fill", "0"),
+    ("first_x_layer_fan_speed", "0"),
+    ("first_x_layer_part_fan_speed", "0"),
+    ("flush_into_infill", "0"),
+    ("flush_into_objects", "0"),
+    ("flush_into_support", "1"),
+    ("gcode_add_line_number", "0"),
+    ("has_scarf_joint_seam", "0"),
+    ("independent_support_layer_height", "1"),
+    ("infill_jerk", "9"),
+    ("initial_layer_flow_ratio", "1"),
+    ("initial_layer_jerk", "9"),
+    ("inner_wall_jerk", "9"),
+    ("interlocking_beam", "0"),
+    ("interlocking_beam_layer_count", "2"),
+    ("interlocking_beam_width", "0.8"),
+    ("interlocking_boundary_avoidance", "2"),
+    ("interlocking_depth", "2"),
+    ("interlocking_orientation", "22.5"),
+    ("ironing_direction", "45"),
+    ("min_bead_width", "85%"),
+    ("min_feature_size", "25%"),
+    ("mmu_segmented_region_interlocking_depth", "0"),
+    ("mmu_segmented_region_max_width", "0"),
+    ("only_one_wall_first_layer", "0"),
+    ("ooze_prevention", "0"),
+    ("outer_wall_jerk", "9"),
+    ("precise_outer_wall", "0"),
+    ("precise_z_height", "0"),
+    ("prime_tower_extra_rib_length", "0"),
+    ("prime_tower_fillet_wall", "1"),
+    ("prime_tower_infill_gap", "150%"),
+    ("prime_tower_rib_wall", "1"),
+    ("prime_tower_rib_width", "8"),
+    ("prime_tower_skip_points", "1"),
+    ("print_flow_ratio", "1"),
+    ("printer_model", ""),
+    ("printer_notes", ""),
+    ("printing_by_object_gcode", ""),
+    ("process_notes", ""),
+    ("raft_contact_distance", "0.1"),
+    ("raft_expansion", "1.5"),
+    ("raft_first_layer_density", "90%"),
+    ("raft_first_layer_expansion", "-1"),
+    ("role_base_wipe_speed", "1"),
+    ("seam_gap", "15%"),
+    ("seam_slope_conditional", "1"),
+    ("seam_slope_entire_loop", "0"),
+    ("seam_slope_inner_walls", "1"),
+    ("seam_slope_steps", "10"),
+    ("slice_closing_radius", "0.049"),
+    ("smooth_speed_discontinuity_area", "1"),
+    ("spiral_mode_smooth", "0"),
+    ("support_angle", "0"),
+    ("support_bottom_interface_spacing", "0.5"),
+    ("support_critical_regions_only", "0"),
+    ("support_interface_not_for_body", "1"),
+    ("support_object_first_layer_gap", "0.2"),
+    ("support_remove_small_overhang", "1"),
+    ("template_custom_gcode", ""),
+    ("thick_bridges", "0"),
+    ("top_area_threshold", "200%"),
+    ("top_surface_jerk", "9"),
+    ("top_z_overrides_xy_distance", "0"),
+    ("travel_jerk", "9"),
+    ("tree_support_branch_diameter_angle", "5"),
+    ("tree_support_branch_distance", "5"),
+    ("use_firmware_retraction", "0"),
+    ("use_relative_e_distances", "1"),
+    ("wall_distribution_count", "1"),
+    ("wall_transition_angle", "10"),
+    ("wall_transition_filter_deviation", "25%"),
+    ("wall_transition_length", "100%"),
+    ("wipe_speed", "80%"),
+    ("wipe_tower_rotation_angle", "0"),
+    ("wrapping_detection_layers", "20"),
+];
+
 fn is_config_key_skipped(key: &str) -> bool {
     // GCode.cpp append_full_config banned_keys (host / credential settings).
     const BANNED_KEYS: &[&str] = &[
