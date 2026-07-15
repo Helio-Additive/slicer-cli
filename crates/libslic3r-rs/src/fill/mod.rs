@@ -681,6 +681,15 @@ pub fn group_fills(
                 let thick = !surface.is_external()
                     || layer.object().config().thick_bridges;
                 region.bridging_flow(crate::flow::FlowRole::SolidInfill, thick, layer_height)?
+            } else if layer.id() == 0 && std::env::var("BOTTOM_FLOW").is_ok() {
+                // R343: first-layer fills must use initial_layer_line_width. Native
+                // routes the fill flow through layerm.flow() (Fill.cpp:256), whose
+                // first_layer (=id==0) branch selects initial_layer_line_width; this
+                // active path used new_from_config_width with the regular width,
+                // under-filling the first layer (bottom surface: h~0.16 vs native
+                // ~0.19; E/mm 0.031 vs 0.038). region.flow() applies the first-layer
+                // width override. Gated BOTTOM_FLOW (byte-locked default preserved).
+                region.flow(flow_role, layer_height)?
             } else {
                 Flow::new_from_config_width(flow_role, config_width, 0.4, layer_height)?
             };
