@@ -668,7 +668,22 @@ pub fn group_fills(
                 .map(|s| if s.thickness > 0.0 { s.thickness } else { 0.2 })
                 .unwrap_or(0.2);
 
-            let flow = Flow::new_from_config_width(flow_role, config_width, 0.4, layer_height)?;
+            // R337: bridges must use the ROUND bridging_flow (m_bridge: wider
+            // spacing = dmr + BRIDGE_EXTRA_SPACING, ~1.5x mm3/mm from the round
+            // cross-section) — native LayerRegion::bridging_flow (Fill.cpp:253-255)
+            // and rust's own unused fill/fill.rs both do this. This active path
+            // historically used a rectangular solid-infill flow for bridges,
+            // laying ~2x the lines (R336). Gated under BRIDGE_FLOW so the
+            // byte-locked default output is preserved while validating.
+            let flow = if is_bridge && std::env::var("BRIDGE_FLOW").is_ok() {
+                // thick_bridge = (surface.is_bridge() && !surface.is_external())
+                //                || object_config.thick_bridges   (is_bridge here)
+                let thick = !surface.is_external()
+                    || layer.object().config().thick_bridges;
+                region.bridging_flow(crate::flow::FlowRole::SolidInfill, thick, layer_height)?
+            } else {
+                Flow::new_from_config_width(flow_role, config_width, 0.4, layer_height)?
+            };
 
             let spacing = if surface.is_solid() || is_bridge {
                 flow.spacing()
