@@ -18,6 +18,13 @@ import numpy as np
 TOL_FILAMENT   = 0.01   # |rust/native - 1| for total filament length
 TOL_LAYER_MAT  = 0.05   # mean per-layer material deviation
 TOL_SILHOUETTE = 0.99   # area-weighted object-silhouette IoU floor
+# Per-feature material: loose on purpose. The known FP-cascade classes drift a
+# few-to-~20% (e.g. floating vertical shell over-detection ~1.19, ISI ~0.94 on
+# the default Benchy) — those are real-but-benign, not breaks. A genuinely-broken
+# feature (missing/doubled/halved) exceeds 35%, which this catches. Tiny features
+# (< FEATURE_MIN_E mm total) are excluded as statistically noisy.
+TOL_FEATURE_MAT = 0.35
+FEATURE_MIN_E   = 50.0
 
 AX = re.compile(r'([XYEIJZF])(-?[0-9.]+)')
 
@@ -206,10 +213,14 @@ def main(rust_path, native_path):
     sarr = np.array([i for _,i,_ in sil]); swts = np.array([a for _,_,a in sil], float)
     sil_aw = (sarr*swts).sum()/swts.sum()
     fil = rh.get('filament_mm',0)/nh.get('filament_mm',1)
+    # worst per-feature material deviation among non-tiny features
+    fdev = [(f, RE[f]/NE[f]) for f in set(RE)|set(NE) if NE.get(f,0) >= FEATURE_MIN_E]
+    wf, wr = max(fdev, key=lambda t: abs(t[1]-1)) if fdev else ("-", 1.0)
     checks = [
         (f"filament within {TOL_FILAMENT*100:.0f}%",   abs(fil-1) <= TOL_FILAMENT,      f"{fil:.4f}"),
         ("layer count equal",                          len(R)==len(N),                  f"{len(R)}={len(N)}"),
         (f"per-layer material mean<{TOL_LAYER_MAT*100:.0f}%", np.mean(devs) <= TOL_LAYER_MAT, f"{100*np.mean(devs):.2f}%"),
+        (f"per-feature material <{TOL_FEATURE_MAT*100:.0f}%", abs(wr-1) <= TOL_FEATURE_MAT, f"{wf} {wr:.3f}"),
         (f"silhouette area-wtd >={TOL_SILHOUETTE*100:.0f}%",  sil_aw >= TOL_SILHOUETTE,  f"{100*sil_aw:.2f}%"),
     ]
     allpass = all(ok for _,ok,_ in checks)
