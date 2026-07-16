@@ -29,13 +29,21 @@ FEATURE_MIN_E   = 50.0
 AX = re.compile(r'([XYEIJZF])(-?[0-9.]+)')
 
 def parse(path):
-    """Return list of layers; each = dict(z, segs=[(x0,y0,x1,y1,w,feat,e)])."""
+    """Return list of layers; each = dict(z, segs=[(x0,y0,x1,y1,w,feat,e)]).
+    `e` is the REAL deposited material (retraction-aware): the raw relative E
+    minus deretraction-priming. Assumes relative E (use_relative_e_distances=1).
+    Retraction (E<0) deposits nothing; the first matching positive E after it is
+    re-priming (also deposits nothing) — only E beyond the re-prime is real
+    extrusion. Without this, priming inflates per-feature/per-layer material
+    (e.g. the first extrude after each retract), which broke the cylinder
+    attribution in R355."""
     layers = []
     cur = dict(z=None, segs=[])
     px = py = None
     feat = ''
     width = 0.42
     header = {}
+    retract = 0.0  # outstanding retracted length awaiting re-prime
     for line in open(path):
         if line.startswith('; total filament length'):
             header['filament_mm'] = float(line.split(':')[1])
@@ -55,9 +63,16 @@ def parse(path):
         x = float(d['X']) if 'X' in d else px
         y = float(d['Y']) if 'Y' in d else py
         e = float(d['E']) if 'E' in d else 0.0
-        if e > 0 and px is not None and x is not None and ('X' in d or 'Y' in d):
+        real = 0.0
+        if e < 0:
+            retract += -e
+        elif e > 0:
+            deprime = min(e, retract)
+            retract -= deprime
+            real = e - deprime
+        if real > 0 and px is not None and x is not None and ('X' in d or 'Y' in d):
             # arc -> approximate by chord midpoints (coverage is width-dominated)
-            cur['segs'].append((px, py, x, y, width, feat, e))
+            cur['segs'].append((px, py, x, y, width, feat, real))
         px, py = x, y
     if cur['segs']:
         layers.append(cur)
@@ -223,12 +238,19 @@ def main(rust_path, native_path):
     print("="*64); print("VERDICT (semantic equivalence tolerances)"); print("="*64)
     sarr = np.array([i for _,i,_ in sil]); swts = np.array([a for _,_,a in sil], float)
     sil_aw = (sarr*swts).sum()/swts.sum()
+    # Object-material ratio = retraction-aware deposited-E total (excludes
+    # skirt/prime auxiliary that dominates small models and the priming noise
+    # in the raw header). Tighter + more meaningful than the header filament
+    # (Benchy 0.9998 vs header 0.9972). R356.
+    rb = sum(s[6] for L in R for s in L['segs']); nb = sum(s[6] for L in N for s in L['segs'])
+    obj = rb/nb if nb else 0.0
     fil = rh.get('filament_mm',0)/nh.get('filament_mm',1)
+    print(f"  object material   : rust {rb:.1f} / native {nb:.1f} = {obj:.4f}  (header filament {fil:.4f})")
     # worst per-feature material deviation among non-tiny features
     fdev = [(f, RE[f]/NE[f]) for f in set(RE)|set(NE) if NE.get(f,0) >= FEATURE_MIN_E]
     wf, wr = max(fdev, key=lambda t: abs(t[1]-1)) if fdev else ("-", 1.0)
     checks = [
-        (f"filament within {TOL_FILAMENT*100:.0f}%",   abs(fil-1) <= TOL_FILAMENT,      f"{fil:.4f}"),
+        (f"object material within {TOL_FILAMENT*100:.0f}%", abs(obj-1) <= TOL_FILAMENT,  f"{obj:.4f}"),
         ("layer count equal",                          len(R)==len(N),                  f"{len(R)}={len(N)}"),
         (f"per-layer material mean<{TOL_LAYER_MAT*100:.0f}%", np.mean(devs) <= TOL_LAYER_MAT, f"{100*np.mean(devs):.2f}%"),
         (f"per-feature material <{TOL_FEATURE_MAT*100:.0f}%", abs(wr-1) <= TOL_FEATURE_MAT, f"{wf} {wr:.3f}"),
