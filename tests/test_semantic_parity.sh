@@ -20,8 +20,18 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${SLICER_CLI:-$ROOT/target/release/slicer-cli}"
-CONFIG="${1:-$ROOT/tests/configs/stl-inline-config.jsonnet}"
 PY="${PYTHON:-python3}"
+
+# Config set: a single config if given, else the default multi-model suite
+# (Benchy = complex real model, cube = clean solid, proving generalization).
+if [ "$#" -ge 1 ]; then
+    CONFIGS=("$@")
+else
+    CONFIGS=(
+        "$ROOT/tests/configs/stl-inline-config.jsonnet"
+        "$ROOT/tests/configs/stl-cube-config.jsonnet"
+    )
+fi
 
 if ! "$PY" -c 'import numpy' 2>/dev/null; then
     echo "SKIP: numpy not available for '$PY' (try: devbox run -- $0)"; exit 0
@@ -31,10 +41,18 @@ if [ ! -x "$BIN" ]; then
 fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-COMPARE_KEEP_DIR="$TMP" "$BIN" compare --config "$CONFIG" >/dev/null 2>&1 || true
-if [ ! -s "$TMP/rust.gcode" ] || [ ! -s "$TMP/native.gcode" ]; then
-    echo "SKIP: compare did not produce both gcodes (native binary missing?)"; exit 0
-fi
-
-"$PY" "$ROOT/scripts/semantic_compare.py" "$TMP/rust.gcode" "$TMP/native.gcode"
-# semantic_compare.py exits 0 iff SEMANTICALLY EQUIVALENT
+FAIL=0
+for CONFIG in "${CONFIGS[@]}"; do
+    NAME="$(basename "$CONFIG" .jsonnet)"
+    echo "### semantic-parity: $NAME"
+    rm -f "$TMP/rust.gcode" "$TMP/native.gcode"
+    COMPARE_KEEP_DIR="$TMP" "$BIN" compare --config "$CONFIG" >/dev/null 2>&1 || true
+    if [ ! -s "$TMP/rust.gcode" ] || [ ! -s "$TMP/native.gcode" ]; then
+        echo "SKIP [$NAME]: compare did not produce both gcodes (native binary missing?)"
+        continue
+    fi
+    if ! "$PY" "$ROOT/scripts/semantic_compare.py" "$TMP/rust.gcode" "$TMP/native.gcode"; then
+        FAIL=1
+    fi
+done
+[ "$FAIL" -eq 0 ]   # exit 0 iff every model is SEMANTICALLY EQUIVALENT
