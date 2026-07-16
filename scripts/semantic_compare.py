@@ -135,7 +135,13 @@ from collections import deque
 def silhouette(wall_grid):
     """Region enclosed by walls = object cross-section silhouette.
     Flood-fill the exterior from the border through non-wall cells; silhouette =
-    everything the exterior can't reach. Robust to sub-width wall offsets."""
+    everything the exterior can't reach. Robust to sub-width wall offsets.
+
+    NOTE (R352): reliable only for shapes whose wall loop rasterizes CLOSED
+    (Benchy 99.3%, cube 100%). On gap-prone convex curved walls (cylinder) the
+    exterior leaks into the interior and the silhouette collapses — that is a
+    metric limitation, NOT a slicer divergence (verify such models via the
+    Level-1 material/layer invariants instead)."""
     ny, nx = wall_grid.shape
     ext = np.zeros_like(wall_grid)
     dq = deque()
