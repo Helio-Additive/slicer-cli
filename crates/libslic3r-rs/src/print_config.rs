@@ -2061,6 +2061,14 @@ impl PrintObjectConfig {
 // === Parse helpers for BambuStudio JSON values (all stored as strings) ===
 
 pub fn parse_f64(s: &str) -> Option<f64> {
+    // NOTE (R345): per-extruder configs arrive as comma-arrays
+    // ("105,105,105,105,105"); this plain parse fails on the comma, so the typed
+    // field silently keeps its struct default. This is a real config-load bug
+    // (e.g. initial_layer_infill_speed stays 50 instead of the profile's 105),
+    // but a gated first-element fix was measured BYTE-NEUTRAL: the affected
+    // first-layer-infill lines diverge geometrically (cascade), so correcting
+    // the speed value does not align them. Left as-is; revisit if the underlying
+    // geometry is ever brought to parity.
     s.trim_end_matches('%').parse::<f64>().ok()
 }
 
