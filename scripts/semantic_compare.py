@@ -161,19 +161,24 @@ def silhouette(wall_grid):
                 ext[nj,ni]=True; dq.append((nj,ni))
     return ~ext  # walls + enclosed interior = the silhouette
 
-def silhouette_iou(R, N, zs, res=0.2):
+# Silhouette metric: region-closed ALL-coverage IoU (R354). We rasterize every
+# extrusion (walls + infill), then morphologically CLOSE by SIL_CLOSE_K cells at
+# SIL_RES — bridging both the sparse-infill line gaps and any wall seam/travel
+# gaps to recover the filled cross-section. The dilate/erode cancel at the true
+# boundary, so a sub-width offset barely moves it. This is UNIVERSAL: it works on
+# non-convex (Benchy 99.8%), convex-solid (cube 100%), and curved-convex
+# (cylinder 99.2%) shapes — unlike the wall flood-fill `silhouette()` above,
+# which leaks through gaps in circular walls (kept for reference). SIL_CLOSE_K*
+# SIL_RES (=4mm) must exceed the sparse-infill line spacing to fully bridge it.
+SIL_RES = 0.2
+SIL_CLOSE_K = 20
+def silhouette_iou(R, N, zs, res=SIL_RES, close_k=SIL_CLOSE_K):
     ious=[]
     for z in zs:
         rL=[L for L in R if L['z']==z][0]; nL=[L for L in N if L['z']==z][0]
-        rs=[s for s in rL['segs'] if s[5] in WALLS]; ns=[s for s in nL['segs'] if s[5] in WALLS]
-        if not rs or not ns: continue
-        segs=rs+ns
-        xs=[s[0] for s in segs]+[s[2] for s in segs]; ys=[s[1] for s in segs]+[s[3] for s in segs]
-        x0,y0=min(xs)-1,min(ys)-1; nx=int((max(xs)+1-x0)/res)+2; ny=int((max(ys)+1-y0)/res)+2
-        sr=silhouette(raster_layer(rs,res,x0,y0,nx,ny))
-        sn=silhouette(raster_layer(ns,res,x0,y0,nx,ny))
-        inter=np.logical_and(sr,sn).sum(); union=np.logical_or(sr,sn).sum()
-        if union: ious.append((z,inter/union,int(union)))
+        iou,area=coverage_iou(rL,nL,res=res,feats=None,close_k=close_k)
+        if iou is not None and area>0: ious.append((z,iou,area))
+    if not ious: return ious
     arr=np.array([i for _,i,_ in ious]); wts=np.array([a for _,_,a in ious],dtype=float)
     print(f"  SILHOUETTE (object outline) : mean {100*arr.mean():5.2f}%  area-wtd {100*(arr*wts).sum()/wts.sum():5.2f}%  "
           f"min {100*arr.min():5.1f}% (z{ious[int(arr.argmin())][0]})  layers<98%={int((arr<0.98).sum())}/{len(ious)}")
