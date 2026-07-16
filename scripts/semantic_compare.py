@@ -9,6 +9,16 @@ Level 2: per-layer geometric COVERAGE (rasterize extrusion swept-area, compare
 import re, math, sys, collections
 import numpy as np
 
+# ---- pass/fail tolerances (exit 0 iff all pass) ----
+# Chosen against the known FP-cascade floor: byte-diff is ~99% floating-point
+# noise, so we assert PHYSICAL equivalence, not text identity. Baseline (default
+# Benchy): filament 0.9972, per-layer material mean-dev 2.19%, silhouette
+# area-weighted IoU 99.29% — all pass. These catch a genuinely-broken toolpath
+# (silhouette/material collapse) while treating FP re-routing as equivalent.
+TOL_FILAMENT   = 0.01   # |rust/native - 1| for total filament length
+TOL_LAYER_MAT  = 0.05   # mean per-layer material deviation
+TOL_SILHOUETTE = 0.99   # area-weighted object-silhouette IoU floor
+
 AX = re.compile(r'([XYEIJZF])(-?[0-9.]+)')
 
 def parse(path):
@@ -197,15 +207,17 @@ def main(rust_path, native_path):
     sil_aw = (sarr*swts).sum()/swts.sum()
     fil = rh.get('filament_mm',0)/nh.get('filament_mm',1)
     checks = [
-        ("filament within 1%",        abs(fil-1) <= 0.01,          f"{fil:.4f}"),
-        ("layer count equal",         len(R)==len(N),              f"{len(R)}={len(N)}"),
-        ("per-layer material mean<5%", np.mean(devs) <= 0.05,       f"{100*np.mean(devs):.2f}%"),
-        ("silhouette area-wtd >=99%", sil_aw >= 0.99,              f"{100*sil_aw:.2f}%"),
+        (f"filament within {TOL_FILAMENT*100:.0f}%",   abs(fil-1) <= TOL_FILAMENT,      f"{fil:.4f}"),
+        ("layer count equal",                          len(R)==len(N),                  f"{len(R)}={len(N)}"),
+        (f"per-layer material mean<{TOL_LAYER_MAT*100:.0f}%", np.mean(devs) <= TOL_LAYER_MAT, f"{100*np.mean(devs):.2f}%"),
+        (f"silhouette area-wtd >={TOL_SILHOUETTE*100:.0f}%",  sil_aw >= TOL_SILHOUETTE,  f"{100*sil_aw:.2f}%"),
     ]
     allpass = all(ok for _,ok,_ in checks)
     for name,ok,val in checks:
-        print(f"  [{'PASS' if ok else 'FAIL'}] {name:30} {val}")
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name:34} {val}")
     print(f"\n  ==> {'SEMANTICALLY EQUIVALENT' if allpass else 'DIVERGENCE — see failing checks'}")
+    return allpass
 
 if __name__=='__main__':
-    main(sys.argv[1], sys.argv[2])
+    ok = main(sys.argv[1], sys.argv[2])
+    sys.exit(0 if ok else 1)

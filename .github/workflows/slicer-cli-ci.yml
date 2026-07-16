@@ -221,6 +221,15 @@ jobs:
         if: runner.os != 'Windows'
         run: bash tests/test_excluded_features.sh build/slicer_cli
 
+      - name: Run semantic-equivalence regression test
+        if: runner.os != 'Windows'
+        # Asserts the Rust engine prints the same object as native (filament,
+        # layer structure, per-layer material, object-silhouette IoU) within
+        # tolerance — the meaningful metric given the FP-cascade wall (byte-diff
+        # is ~99% floating-point noise; see PARITY_STATUS.md R346-R347). Skips
+        # gracefully if numpy or a binary is unavailable.
+        run: BAMBUSTUDIO_SLICER=build/slicer_cli SLICER_CLI=target/release/slicer-cli bash tests/test_semantic_parity.sh
+
       - name: Run feature-exclusion regression tests (Windows)
         if: runner.os == 'Windows'
         run: |
