@@ -369,6 +369,33 @@ impl GCodeHeader {
                 // raw_settings so the block matches native's full_print_config
                 // (every registered option). Merge + sort to keep ordering.
                 let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
+                // Number of USED extruders. Native serializes per-extruder config
+                // arrays (nozzle_temperature, retraction_distances_when_ec, …) at
+                // this length — a single-material print uses 1 even on a 2-nozzle
+                // H2D, so native emits "220" where rust emits "220,220". Derived
+                // from the distinct extruder assignments in filament_map.
+                let used_extruders: usize = obj
+                    .get("filament_map")
+                    .map(|v| {
+                        let s = match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Array(a) => a
+                                .iter()
+                                .map(|x| {
+                                    x.as_str().map(str::to_string).unwrap_or_else(|| x.to_string())
+                                })
+                                .collect::<Vec<_>>()
+                                .join(","),
+                            other => other.to_string(),
+                        };
+                        s.split(',')
+                            .map(str::trim)
+                            .filter(|x| !x.is_empty())
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            .max(1)
+                    })
+                    .unwrap_or(1);
                 let mut keys: Vec<String> = obj.keys().cloned().collect();
                 if cf {
                     for (k, _) in CONFIG_SCHEMA_DEFAULTS {
@@ -383,7 +410,7 @@ impl GCodeHeader {
                         continue;
                     }
                     if let Some(value) = obj.get(key) {
-                        let formatted = format_config_value(key, value);
+                        let formatted = format_config_value(key, value, used_extruders);
                         config.push_str(&format!("; {} = {}\n", key, formatted));
                     } else if cf {
                         if let Some((_, dv)) =
@@ -830,7 +857,7 @@ fn is_config_key_skipped(key: &str) -> bool {
 /// - String list arrays (gcode, compatible_printers, etc.): semicolon-joined with quotes
 /// - Quoted string arrays (settings_id, vendor, etc.): quoted first element
 /// - Scalar strings: literal with \n escaping
-fn format_config_value(key: &str, value: &serde_json::Value) -> String {
+fn format_config_value(key: &str, value: &serde_json::Value, used_extruders: usize) -> String {
     // Under CONFIG_FAITHFUL, native coFloat drops a trailing ".0" (12.0->12,
     // 1.0->1) and coPercent appends '%'. Apply to scalar string values.
     let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
@@ -945,6 +972,28 @@ fn format_config_value(key: &str, value: &serde_json::Value) -> String {
             if QUOTED_KEYS.contains(&key) {
                 let s = arr.first().and_then(|v| v.as_str()).unwrap_or("");
                 return format!("\"{}\"", s.replace('\n', "\\n"));
+            }
+
+            // Per-USED-extruder configs: native trims these to the used-extruder
+            // count (1 for a single-material print) rather than emitting every
+            // physical extruder. rust's resolved config carries all physical
+            // extruders (e.g. "220,220" on a 2-nozzle H2D); take only the first
+            // `used_extruders` to match native's "220". Gated CONFIG_FAITHFUL.
+            const PER_USED_EXTRUDER_KEYS: &[&str] = &[
+                "long_retractions_when_ec",
+                "nozzle_temperature",
+                "nozzle_temperature_initial_layer",
+                "override_process_overhang_speed",
+                "retraction_distances_when_ec",
+                "slow_down_min_speed",
+            ];
+            if cf && arr.len() > used_extruders && PER_USED_EXTRUDER_KEYS.contains(&key) {
+                return arr
+                    .iter()
+                    .take(used_extruders)
+                    .map(|v| v.as_str().unwrap_or("").replace('\n', "\\n"))
+                    .collect::<Vec<_>>()
+                    .join(",");
             }
 
             // Default: native ConfigOptionFloats/Ints/Strings::serialize emit
