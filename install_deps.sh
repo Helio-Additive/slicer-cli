@@ -40,6 +40,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         expat
         openssl@3
         opencv
+        assimp        # BambuStudio reference bump: libslic3r imports textured-model formats
         nlopt
         qhull
         cereal
@@ -74,11 +75,11 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # Detect cold-cache by checking if a sentinel cache marker exists; if not,
     # force-reinstall every package to guarantee clean state. The Homebrew
     # cache action will save the result, so warm-cache runs skip this entirely.
-    if ! [ -f /opt/homebrew/.slicer_cli_v3_warm ]; then
+    if ! [ -f /opt/homebrew/.slicer_cli_v4_warm ]; then
         echo ""
         echo "  Cold cache detected — force-reinstalling all packages for clean state..."
         brew reinstall "${PACKAGES[@]}"
-        touch /opt/homebrew/.slicer_cli_v3_warm
+        touch /opt/homebrew/.slicer_cli_v4_warm
         echo "  ✓ All packages reinstalled, marker set"
     else
         echo "  ✓ Cache marker present; skipping reinstall"
@@ -113,6 +114,7 @@ elif [[ -f /etc/debian_version ]]; then
         libexpat1-dev
         libssl-dev
         libopencv-dev
+        libassimp-dev
         libnlopt-dev
         libqhull-dev
         libfreetype6-dev
@@ -153,7 +155,7 @@ else
     echo ""
     echo "Required libraries:"
     echo "  cmake, boost, tbb, eigen3, cgal, libpng, zlib, expat,"
-    echo "  openssl, opencv, nlopt, qhull, cereal, opencascade (occt),"
+    echo "  openssl, opencv, assimp, nlopt, qhull, cereal, opencascade (occt),"
     echo "  freetype"
     exit 1
 fi

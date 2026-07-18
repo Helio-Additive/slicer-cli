@@ -78,8 +78,9 @@ jobs:
             /opt/homebrew/bin
             /usr/local/lib/libnoise*
             /usr/local/include/libnoise
-          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v3
-          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-
+          # v4 adds Assimp for the bumped BambuStudio libslic3r source.
+          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v4
+          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-v4
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
@@ -97,7 +98,7 @@ jobs:
             cmake ninja-build pkg-config \
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
             libexpat1-dev libssl-dev libboost-all-dev \
-            libcgal-dev libopencv-dev \
+            libcgal-dev libopencv-dev libassimp-dev \
             libocct-modeling-algorithms-dev libocct-data-exchange-dev \
             libocct-foundation-dev libocct-draw-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
@@ -118,8 +119,9 @@ jobs:
           # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
           # so the previous cache (OCCT 8.0.0, which fails to compile against the
           # pinned BambuStudio source) is NOT restored — it would shadow the pin.
-          key: vcpkg-x64-windows-occt793-v1
-          restore-keys: vcpkg-x64-windows-occt793-
+          # v2 adds Assimp for the bumped BambuStudio libslic3r source.
+          key: vcpkg-x64-windows-occt793-v2
+          restore-keys: vcpkg-x64-windows-occt793-v2
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -149,7 +151,7 @@ jobs:
           vcpkg install \
             tbb:x64-windows eigen3:x64-windows \
             boost:x64-windows \
-            cgal:x64-windows "opencv[core]:x64-windows" opencascade:x64-windows \
+            cgal:x64-windows "opencv[core]:x64-windows" assimp:x64-windows opencascade:x64-windows \
             qhull:x64-windows cereal:x64-windows nlopt:x64-windows \
             openssl:x64-windows libpng:x64-windows zlib:x64-windows \
             expat:x64-windows freetype:x64-windows libjpeg-turbo:x64-windows

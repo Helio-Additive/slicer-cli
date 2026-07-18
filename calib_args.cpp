@@ -164,7 +164,7 @@ void apply_pa_pattern(const Calib_Params& params,
         }
 
     const SuggestedConfigCalibPAPattern suggested;
-    for (const auto& opt : suggested.float_pairs)
+    for (const auto& opt : suggested.float_pairs(nozzle_diameter))
         config.set_key_value(opt.first, new ConfigOptionFloat(opt.second));
     for (const auto& opt : suggested.floats_pairs)
         config.set_key_value(opt.first, new ConfigOptionFloats(opt.second));

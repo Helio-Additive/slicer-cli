@@ -186,6 +186,7 @@ set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
 find_package(CGAL REQUIRED)
 
 find_package(OpenCV REQUIRED core)
+find_package(assimp REQUIRED)
 
 find_package(NLopt QUIET)
 if(NLopt_FOUND)
@@ -653,6 +654,7 @@ target_link_libraries(libslic3r_core PUBLIC
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,--end-group>
     mcut
     ${OpenCV_LIBS}
+    assimp::assimp
     ${ENGINE_EXTRA_LIBS}
     Threads::Threads
     OpenSSL::SSL
