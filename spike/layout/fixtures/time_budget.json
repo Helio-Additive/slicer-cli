@@ -1,0 +1,19 @@
+{
+  "comment": "Twelve mixed rectangles; run with --time-budget-ms 1 to force termination=time_budget. All 12 ids must still be accounted for.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 210], [0, 210]] },
+  "spacing": 2.0,
+  "items": [
+    { "id": "t01", "footprint": [[0, 0], [60, 0], [60, 40], [0, 40]] },
+    { "id": "t02", "footprint": [[0, 0], [50, 0], [50, 50], [0, 50]] },
+    { "id": "t03", "footprint": [[0, 0], [40, 0], [40, 30], [0, 30]] },
+    { "id": "t04", "footprint": [[0, 0], [70, 0], [70, 20], [0, 20]] },
+    { "id": "t05", "footprint": [[0, 0], [30, 0], [30, 30], [0, 30]] },
+    { "id": "t06", "footprint": [[0, 0], [45, 0], [45, 35], [0, 35]] },
+    { "id": "t07", "footprint": [[0, 0], [25, 0], [25, 60], [0, 60]] },
+    { "id": "t08", "footprint": [[0, 0], [55, 0], [55, 25], [0, 25]] },
+    { "id": "t09", "footprint": [[0, 0], [35, 0], [35, 45], [0, 45]] },
+    { "id": "t10", "footprint": [[0, 0], [20, 0], [20, 20], [0, 20]] },
+    { "id": "t11", "footprint": [[0, 0], [65, 0], [65, 30], [0, 30]] },
+    { "id": "t12", "footprint": [[0, 0], [28, 0], [28, 52], [0, 52]] }
+  ]
+}

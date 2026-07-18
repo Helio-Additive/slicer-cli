@@ -784,3 +784,9 @@ set(CPACK_COMPONENTS_ALL           Runtime)
 set(CPACK_STRIP_FILES              TRUE)
 
 include(CPack)
+
+# ─── Disposable layout-kernel spike (issue #7) ─────────────────────────────
+option(SPIKE_LAYOUT "Build disposable layout spike harness" OFF)
+if(SPIKE_LAYOUT)
+  add_subdirectory(spike/layout)
+endif()

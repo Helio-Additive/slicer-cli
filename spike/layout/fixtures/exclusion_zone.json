@@ -1,0 +1,12 @@
+{
+  "comment": "Bed with a 60x60 exclusion zone in the far corner; two items must avoid it.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 210], [0, 210]] },
+  "spacing": 2.0,
+  "items": [
+    { "id": "e1", "footprint": [[0, 0], [50, 0], [50, 50], [0, 50]] },
+    { "id": "e2", "footprint": [[0, 0], [50, 0], [50, 50], [0, 50]] }
+  ],
+  "exclusions": [
+    { "id": "corner_excl", "polygon": [[0, 0], [60, 0], [60, 60], [0, 60]], "translation": [190, 150] }
+  ]
+}

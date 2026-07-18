@@ -1,0 +1,9 @@
+{
+  "comment": "Sanity: two 40x40 squares on a 250x210 bed. Both must place on bed 0.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 210], [0, 210]] },
+  "spacing": 2.0,
+  "items": [
+    { "id": "sq_a", "footprint": [[0, 0], [40, 0], [40, 40], [0, 40]] },
+    { "id": "sq_b", "footprint": [[0, 0], [40, 0], [40, 40], [0, 40]] }
+  ]
+}

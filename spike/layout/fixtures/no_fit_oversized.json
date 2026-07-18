@@ -1,0 +1,8 @@
+{
+  "comment": "One 300x300 item on a 250x210 bed: cannot fit. Expect unplaced[0].reason == no_fit.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 210], [0, 210]] },
+  "spacing": 2.0,
+  "items": [
+    { "id": "too_big", "footprint": [[0, 0], [300, 0], [300, 300], [0, 300]] }
+  ]
+}

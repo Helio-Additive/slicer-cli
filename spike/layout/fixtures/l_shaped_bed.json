@@ -1,0 +1,10 @@
+{
+  "comment": "L-shaped (non-rectangular) bed, three rectangles. Probes the Polygon bed dispatch path.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 100], [120, 100], [120, 210], [0, 210]] },
+  "spacing": 2.0,
+  "items": [
+    { "id": "la", "footprint": [[0, 0], [60, 0], [60, 60], [0, 60]] },
+    { "id": "lb", "footprint": [[0, 0], [50, 0], [50, 50], [0, 50]] },
+    { "id": "lc", "footprint": [[0, 0], [40, 0], [40, 40], [0, 40]] }
+  ]
+}

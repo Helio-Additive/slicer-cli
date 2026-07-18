@@ -1,0 +1,11 @@
+{
+  "comment": "One locked 60x60 square at bed center + three free squares. Locked transform must be preserved; free items must not overlap it.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 210], [0, 210]] },
+  "spacing": 2.0,
+  "items": [
+    { "id": "anchor", "footprint": [[0, 0], [60, 0], [60, 60], [0, 60]], "translation": [95, 75], "rotation_deg": 0, "locked": true },
+    { "id": "f1", "footprint": [[0, 0], [40, 0], [40, 40], [0, 40]] },
+    { "id": "f2", "footprint": [[0, 0], [40, 0], [40, 40], [0, 40]] },
+    { "id": "f3", "footprint": [[0, 0], [40, 0], [40, 40], [0, 40]] }
+  ]
+}

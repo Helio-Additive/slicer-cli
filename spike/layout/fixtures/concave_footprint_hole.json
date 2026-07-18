@@ -1,0 +1,10 @@
+{
+  "comment": "Annulus-like footprint (80x80 outer, 40x40 hole) + one 30x30 square. Probe: kernel uses contour only; hole expected to be silently ignored.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 210], [0, 210]] },
+  "spacing": 2.0,
+  "items": [
+    { "id": "ring", "footprint": [[0, 0], [80, 0], [80, 80], [0, 80]],
+      "holes": [[[20, 20], [60, 20], [60, 60], [20, 60]]] },
+    { "id": "small", "footprint": [[0, 0], [30, 0], [30, 30], [0, 30]] }
+  ]
+}

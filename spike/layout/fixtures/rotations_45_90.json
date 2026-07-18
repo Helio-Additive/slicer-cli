@@ -1,0 +1,9 @@
+{
+  "comment": "Two 80x20 rectangles on a 60x100 bed with allowed rotations [0,45,90]. At yaw 0 (needs 80 width) and 45 (bbox ~70.7 wide) neither fits; expect yaw == 90.",
+  "bed": { "polygon": [[0, 0], [60, 0], [60, 100], [0, 100]] },
+  "spacing": 0.0,
+  "items": [
+    { "id": "stick_a", "footprint": [[0, 0], [80, 0], [80, 20], [0, 20]], "allowed_rotations_deg": [0, 45, 90] },
+    { "id": "stick_b", "footprint": [[0, 0], [80, 0], [80, 20], [0, 20]], "allowed_rotations_deg": [0, 45, 90] }
+  ]
+}

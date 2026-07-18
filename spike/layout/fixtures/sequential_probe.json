@@ -1,0 +1,15 @@
+{
+  "comment": "Sequential-print clearance probe: two tall items with clearance radius/heights set.",
+  "bed": { "polygon": [[0, 0], [250, 0], [250, 210], [0, 210]] },
+  "spacing": 2.0,
+  "sequential": {
+    "clearance_radius": 25.0,
+    "clearance_height_to_rod": 30.0,
+    "clearance_height_to_lid": 120.0,
+    "printable_height": 256.0
+  },
+  "items": [
+    { "id": "tall_a", "footprint": [[0, 0], [30, 0], [30, 30], [0, 30]], "height": 100.0 },
+    { "id": "tall_b", "footprint": [[0, 0], [30, 0], [30, 30], [0, 30]], "height": 100.0 }
+  ]
+}
