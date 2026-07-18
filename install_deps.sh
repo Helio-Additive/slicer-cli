@@ -9,6 +9,60 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# BambuStudio v02.08.01.55 builds CGAL v5.4 from source. CGAL 6 moved
+# extract_boundary_cycles out of Polygon_mesh_processing, so the current Bambu
+# source cannot compile against it. Homebrew no longer ships cgal@5; use the
+# hash-pinned, Bambu-patched CGAL 5.4 source release. The CMake compatibility
+# header supplies the legacy Boost MPL include that this exact CGAL release
+# formerly received transitively.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CGAL5_VERSION='5.4'
+CGAL5_SHA256='d7605e0a5a5ca17da7547592f6f6e4a59430a0bc861948974254d0de43eab4c0'
+CGAL5_URL="https://github.com/CGAL/cgal/archive/refs/tags/v${CGAL5_VERSION}.zip"
+CGAL5_PATCH="$SCRIPT_DIR/references/BambuStudio/deps/CGAL/0001-clang19.patch"
+
+install_cgal5() {
+    local prefix="$1"
+    local use_sudo="$2"
+    local config="$prefix/lib/cmake/CGAL/CGALConfig.cmake"
+
+    if [ -f "$config" ] && grep -q "${CGAL5_VERSION}" "$config"; then
+        echo "  ✓ CGAL ${CGAL5_VERSION} ($prefix)"
+        return
+    fi
+
+    echo "  Installing CGAL ${CGAL5_VERSION} from the hash-pinned upstream release..."
+    local workdir
+    workdir=$(mktemp -d)
+    local archive="$workdir/cgal-${CGAL5_VERSION}.zip"
+    curl --fail --location --silent --show-error "$CGAL5_URL" -o "$archive"
+    local actual_sha256
+    if command -v shasum >/dev/null 2>&1; then
+        actual_sha256=$(shasum -a 256 "$archive" | awk '{print $1}')
+    else
+        actual_sha256=$(sha256sum "$archive" | awk '{print $1}')
+    fi
+    if [ "$actual_sha256" != "$CGAL5_SHA256" ]; then
+        echo -e "${RED}CGAL ${CGAL5_VERSION} SHA-256 mismatch${NC}"
+        exit 1
+    fi
+    unzip -q "$archive" -d "$workdir"
+    patch -d "$workdir/cgal-${CGAL5_VERSION}" -p1 < "$CGAL5_PATCH"
+    cmake -S "$workdir/cgal-${CGAL5_VERSION}" -B "$workdir/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$prefix" \
+        -DCGAL_HEADER_ONLY=ON \
+        -DCGAL_INSTALL_CMAKE_DIR=lib/cmake/CGAL \
+        -DBUILD_TESTING=OFF \
+        -DBUILD_DOC=OFF \
+        -DCGAL_BUILD_THREE_DOC=OFF
+    if [ "$use_sudo" = 'yes' ]; then
+        sudo cmake --install "$workdir/build"
+    else
+        cmake --install "$workdir/build"
+    fi
+}
+
 echo -e "${BLUE}Installing system dependencies for slicer_cli${NC}"
 echo ""
 
@@ -34,7 +88,8 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         boost
         tbb
         eigen
-        cgal
+        gmp
+        mpfr
         libpng
         zlib
         expat
@@ -75,15 +130,20 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # Detect cold-cache by checking if a sentinel cache marker exists; if not,
     # force-reinstall every package to guarantee clean state. The Homebrew
     # cache action will save the result, so warm-cache runs skip this entirely.
-    if ! [ -f /opt/homebrew/.slicer_cli_v4_warm ]; then
+    if ! [ -f /opt/homebrew/.slicer_cli_v6_warm ]; then
         echo ""
         echo "  Cold cache detected — force-reinstalling all packages for clean state..."
         brew reinstall "${PACKAGES[@]}"
-        touch /opt/homebrew/.slicer_cli_v4_warm
+        touch /opt/homebrew/.slicer_cli_v6_warm
         echo "  ✓ All packages reinstalled, marker set"
     else
         echo "  ✓ Cache marker present; skipping reinstall"
     fi
+
+    # This is deliberately a project-managed Cellar keg, not a Homebrew
+    # formula: Homebrew removed cgal@5 while this Bambu source remains on its
+    # Polygon_mesh_processing namespace API.
+    install_cgal5 "$CELLAR/cgal@5/$CGAL5_VERSION" no
 
     # libnoise (Bambu fork) — not in Homebrew, must build from source
     if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
@@ -106,9 +166,11 @@ elif [[ -f /etc/debian_version ]]; then
         cmake
         build-essential
         libboost-all-dev
+        unzip
         libtbb-dev
         libeigen3-dev
-        libcgal-dev
+        libgmp-dev
+        libmpfr-dev
         libpng-dev
         zlib1g-dev
         libexpat1-dev
@@ -137,6 +199,8 @@ elif [[ -f /etc/debian_version ]]; then
         fi
     done
 
+    install_cgal5 "/opt/slicer-cli/cgal-$CGAL5_VERSION" yes
+
     # cereal is header-only — check manually
     if [ ! -f /usr/include/cereal/cereal.hpp ]; then
         echo "  Installing cereal (header-only)..."
@@ -154,7 +218,7 @@ else
     echo -e "${RED}Unsupported platform: $OSTYPE${NC}"
     echo ""
     echo "Required libraries:"
-    echo "  cmake, boost, tbb, eigen3, cgal, libpng, zlib, expat,"
+    echo "  cmake, boost, tbb, eigen3, Bambu-patched CGAL 5.4, libpng, zlib, expat,"
     echo "  openssl, opencv, assimp, nlopt, qhull, cereal, opencascade (occt),"
     echo "  freetype"
     exit 1

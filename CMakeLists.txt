@@ -184,6 +184,12 @@ endif()
 
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
 find_package(CGAL REQUIRED)
+if(CGAL_VERSION VERSION_LESS "5.4" OR CGAL_VERSION VERSION_GREATER "5.4.99")
+  message(FATAL_ERROR
+    "BambuStudio v02.08.01.55 requires Bambu-patched CGAL 5.4: "
+    "extract_boundary_cycles moved out of Polygon_mesh_processing in CGAL 6. "
+    "Set CGAL_DIR to the exact project-managed CGAL 5.4 package.")
+endif()
 
 find_package(OpenCV REQUIRED core)
 find_package(assimp REQUIRED)
@@ -559,6 +565,11 @@ target_include_directories(libslic3r_core PRIVATE
     "${EXPAT_INCLUDE_DIRS}"
     "${SUBLIB_DIR}/miniz")
 
+# The core target also includes CGAL headers directly. Keep it on the same
+# Bambu-pinned 5.4 tree as the dedicated CGAL target.
+target_include_directories(libslic3r_core SYSTEM BEFORE PRIVATE
+    "${CGAL_INCLUDE_DIRS}")
+
 # ─── libslic3r_cgal ────────────────────────────────────────────────────────
 add_library(libslic3r_cgal STATIC ${LIBSLIC3R_CGAL_SOURCES})
 
@@ -567,8 +578,26 @@ target_include_directories(libslic3r_cgal PRIVATE
     "${REF_SRC}"
     "${LIBSLIC3R_DIR}"
     "${LIBSLIC3R_REF_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}"
-    "${OPENSSL_INCLUDE_DIR}")
+    "${CMAKE_CURRENT_BINARY_DIR}")
+
+# BambuStudio v02.08.01.55 is built against the patched CGAL 5.4 API.
+# Keep that header tree ahead of Homebrew's global CGAL 6 include directory;
+# the latter otherwise wins despite find_package() resolving the pinned target.
+target_include_directories(libslic3r_cgal SYSTEM BEFORE PRIVATE
+    "${CGAL_INCLUDE_DIRS}")
+
+# CGAL 5.4's ConicCPA2 header uses CGAL_NTS is_zero without including the
+# declaration itself. Bambu's dependency build exposes it transitively; make
+# that requirement explicit so the pinned 5.4 tree also builds with current
+# Homebrew/Windows toolchains.
+set(CGAL_54_COMPAT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio/cgal_54_compat.hpp")
+foreach(CGAL_54_CONSUMER IN ITEMS libslic3r_core libslic3r_cgal)
+    if(MSVC)
+        target_compile_options(${CGAL_54_CONSUMER} PRIVATE "/FI${CGAL_54_COMPAT_HEADER}")
+    else()
+        target_compile_options(${CGAL_54_CONSUMER} PRIVATE -include "${CGAL_54_COMPAT_HEADER}")
+    endif()
+endforeach()
 
 target_compile_definitions(libslic3r_cgal PRIVATE
     USE_TBB
@@ -589,7 +618,11 @@ if(_opts)
   target_compile_options(libslic3r_cgal PRIVATE "${_bad}")
 endif()
 
-target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} libigl mcut)
+target_link_libraries(libslic3r_cgal PRIVATE
+    ${_cgal_tgt}
+    OpenSSL::Crypto
+    libigl
+    mcut)
 
 # ─── OpenCASCADE libraries ─────────────────────────────────────────────────
 if(APPLE)
