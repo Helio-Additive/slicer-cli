@@ -1622,6 +1622,7 @@ int main(int argc, char** argv) {
         // we fall through to apply_explicit_nozzle_mapping() which re-derives the map
         // from filament_nozzle_map using the physical_extruder_map inverse.
         int plate_data_idx = (plate_id > 0 && (int)plate_data.size() >= plate_id) ? plate_id - 1 : 0;
+        bool explicit_plate_mapping_applied = false;
         if (!plate_data.empty() && plate_data[plate_data_idx] != nullptr) {
             const auto& pm = plate_data[plate_data_idx]->filament_maps;
             bool has_diverse_values = pm.size() >= 2 &&
@@ -1643,12 +1644,32 @@ int main(int argc, char** argv) {
                 for (size_t i = 0; i < pm.size(); ++i)
                     fm2->values[i] = pm[i] - 1;
 
+                // `Nozzle Manual` drives the multi-nozzle grouping branch.  H2D is
+                // instead a multi-extruder machine (one nozzle per extruder), where
+                // `Manual` is the branch that preserves this already-resolved plate
+                // map through ToolOrdering.  Derive the mode from the configured
+                // topology rather than a printer identity.
+                bool has_multiple_nozzles_per_extruder = false;
+                if (auto* counts = config.option<Slic3r::ConfigOptionInts>("extruder_max_nozzle_count", false)) {
+                    has_multiple_nozzles_per_extruder = std::any_of(
+                        counts->values.begin(), counts->values.end(),
+                        [](int count) { return count > 1; });
+                }
                 Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-                config.set_deserialize("filament_map_mode", "Nozzle Manual", subst);
+                config.set_deserialize(
+                    "filament_map_mode",
+                    has_multiple_nozzles_per_extruder ? "Nozzle Manual" : "Manual",
+                    subst);
+                explicit_plate_mapping_applied = true;
             }
         }
 
-        bool nozzle_mapping_derived = apply_explicit_nozzle_mapping(config);
+        // The selected plate already expresses physical routing when it carries
+        // a diverse map. Do not re-derive that routing from the general
+        // filament_nozzle_map fallback: the latter's object reassignment is
+        // exclusively for an otherwise-auto mapping.
+        bool nozzle_mapping_derived =
+            explicit_plate_mapping_applied ? false : apply_explicit_nozzle_mapping(config);
 
         // When apply_explicit_nozzle_mapping derived a cross-nozzle split from
         // "Auto For Flush" mode (filament_maps="1 1"), reassign all objects to
