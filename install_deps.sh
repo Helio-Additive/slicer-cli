@@ -21,6 +21,13 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     echo -e "${GREEN}macOS detected — using Homebrew${NC}"
     echo ""
 
+    # A restored Homebrew cache from an older runner image can leave formulae
+    # listed as installed while their Cellar kegs are missing or truncated.
+    # Brew's installed-dependents walk then aborts on the broken keg (e.g.
+    # "/opt/homebrew/Cellar/cgal/6.2 is not a directory"). Skip that walk —
+    # every package we need is (re)installed explicitly below anyway.
+    export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
+
     PACKAGES=(
         cmake
         bash          # macOS /bin/bash is 3.2; scripts/bundle-macos.sh uses declare -A
@@ -40,6 +47,17 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         freetype
         jpeg-turbo     # ENGINE=orca: OrcaSlicer's GCode/Thumbnails.cpp needs libjpeg (find_package(JPEG))
     )
+
+    # Purge kegs that brew lists as installed but whose Cellar directory is
+    # gone (stale restored cache vs. newer runner image); a plain reinstall
+    # of the healthy set cannot repair those.
+    CELLAR="$(brew --cellar)"
+    for pkg in "${PACKAGES[@]}"; do
+        if brew list --formula "$pkg" &>/dev/null && [ ! -d "$CELLAR/$pkg" ]; then
+            echo "  ✗ $pkg broken (listed but no Cellar keg) — removing stale record..."
+            brew uninstall --force --ignore-dependencies "$pkg" || true
+        fi
+    done
 
     for pkg in "${PACKAGES[@]}"; do
         if brew list --formula "$pkg" &>/dev/null; then
