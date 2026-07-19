@@ -130,7 +130,7 @@ if [ -f "$TOKEN_3MF" ]; then
     GC=$(mktmp_gcode)
     run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
     if [ "$LAST_EXIT" -eq 0 ] \
-       && ! echo "$LAST_OUTPUT" | grep -q "LegacyGcodeTokenAliased" \
+       && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
        && ! awk -v token="$TOKEN" '
             $0 !~ /^[[:space:]]*;/ && index($0, token) { found = 1; exit }
             END { exit !found }
@@ -151,7 +151,7 @@ if [ -f "$BASE_3MF" ]; then
     #     is never rewritten).
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF"
-    if [ "$LAST_EXIT" -eq 0 ] && ! echo "$LAST_OUTPUT" | grep -q "LegacyGcodeTokenAliased"; then
+    if [ "$LAST_EXIT" -eq 0 ] && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]]; then
         record "legacy-token-absent-untouched" 1
     else
         record "legacy-token-absent-untouched" 0 "exit=$LAST_EXIT (want 0); unexpected rewrite notice"
