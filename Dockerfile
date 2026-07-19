@@ -61,6 +61,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
         # NLopt C++ headers
         libnlopt-dev \
         libnlopt-cxx-dev \
+        libassimp-dev \
         # Qhull
         libqhull-dev \
         # GMP + MPFR (C libraries, needed by CGAL)

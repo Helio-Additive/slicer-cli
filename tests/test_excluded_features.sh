@@ -100,12 +100,11 @@ check "no-input"              1 ""   # no args → non-zero exit, message doesn'
 check "no-post-process-flag"  1 ""   --post-process /tmp/fake_script.sh /dev/null
 check "no-send-to-printer"    1 ""   --send-to-printer 192.168.1.1 /dev/null
 
-# ── #4: unbound `initial_no_support_filament_id` placeholder normalization ───
-# Neither BambuStudio nor OrcaSlicer bind this token (only initial_no_support_
-# {tool,extruder,hotend}). A 3MF whose custom machine_start_gcode references it
-# makes the PlaceholderParser throw at export. The driver aliases it to the
-# bound `initial_no_support_extruder` (always on; --no-normalize-legacy-gcode
-# opts out).
+# ── #4: `initial_no_support_filament_id` compatibility ──────────────────────
+# Old BambuStudio releases did not bind this token, so the driver normalizes it
+# to `initial_no_support_extruder` by default. The bumped reference now binds
+# the token natively (BambuStudio 862dd5e16), and the opt-out must therefore
+# emit a resolved G-code body without the driver's normalization notice.
 TOKEN="initial_no_support_filament_id"
 TOKEN_3MF="$FIXTURES/legacy_token.3mf"
 BASE_3MF="$FIXTURES/calib_base.3mf"
@@ -124,14 +123,21 @@ if [ -f "$TOKEN_3MF" ]; then
     fi
     rm -f "$GC"
 
-    # (2) Opt-out reproduces the original failure: PlaceholderParser rejects the
-    #     unbound token and export aborts.
+    # (2) The bumped engine binds the historical token itself. Opting out keeps
+    #     the source spelling, produces no aliasing notice, and must not leave
+    #     that token unresolved in executable G-code (metadata comments may
+    #     faithfully retain the archived source text).
     GC=$(mktmp_gcode)
     run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
-    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "Not a variable name"; then
-        record "legacy-token-reproduces-without-flag" 1
+    if [ "$LAST_EXIT" -eq 0 ] \
+       && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
+       && ! awk -v token="$TOKEN" '
+            $0 !~ /^[[:space:]]*;/ && index($0, token) { found = 1; exit }
+            END { exit !found }
+          ' "$GC"; then
+        record "legacy-token-native-without-normalization" 1
     else
-        record "legacy-token-reproduces-without-flag" 0 "exit=$LAST_EXIT (want non-zero); parser error not seen"
+        record "legacy-token-native-without-normalization" 0 "exit=$LAST_EXIT (want 0); native binding/aliasing check failed"
     fi
     rm -f "$GC"
 else
@@ -145,7 +151,7 @@ if [ -f "$BASE_3MF" ]; then
     #     is never rewritten).
     GC=$(mktmp_gcode)
     run_slice "$GC" "$BASE_3MF"
-    if [ "$LAST_EXIT" -eq 0 ] && ! echo "$LAST_OUTPUT" | grep -q "LegacyGcodeTokenAliased"; then
+    if [ "$LAST_EXIT" -eq 0 ] && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]]; then
         record "legacy-token-absent-untouched" 1
     else
         record "legacy-token-absent-untouched" 0 "exit=$LAST_EXIT (want 0); unexpected rewrite notice"

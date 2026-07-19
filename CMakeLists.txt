@@ -183,9 +183,31 @@ if(NOT Boost_FOUND)
 endif()
 
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
-find_package(CGAL REQUIRED)
+if(ENGINE STREQUAL "bambu")
+  # install_deps.sh installs Bambu-patched CGAL 5.4 in one of these
+  # project-managed prefixes. Prefer them over the system CGAL 6 package so
+  # the documented `./install_deps.sh && cmake ..` flow needs no extra flag.
+  if(DEFINED CGAL_DIR)
+    find_package(CGAL 5.4 CONFIG REQUIRED)
+  else()
+    find_package(CGAL 5.4 CONFIG QUIET
+      PATHS
+        /opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
+        /opt/homebrew/Cellar/cgal@5/5.4/lib/cmake/CGAL
+        /usr/local/Cellar/cgal@5/5.4/lib/cmake/CGAL
+      NO_DEFAULT_PATH)
+    if(NOT CGAL_FOUND)
+      message(FATAL_ERROR
+        "BambuStudio v02.08.01.55 requires Bambu-patched CGAL 5.4. "
+        "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
+    endif()
+  endif()
+else()
+  find_package(CGAL REQUIRED)
+endif()
 
 find_package(OpenCV REQUIRED core)
+find_package(assimp REQUIRED)
 
 find_package(NLopt QUIET)
 if(NLopt_FOUND)
@@ -558,6 +580,11 @@ target_include_directories(libslic3r_core PRIVATE
     "${EXPAT_INCLUDE_DIRS}"
     "${SUBLIB_DIR}/miniz")
 
+# The core target also includes CGAL headers directly. Keep the resolved
+# engine-specific CGAL tree ahead of global Homebrew include directories.
+target_include_directories(libslic3r_core SYSTEM BEFORE PRIVATE
+    "${CGAL_INCLUDE_DIRS}")
+
 # ─── libslic3r_cgal ────────────────────────────────────────────────────────
 add_library(libslic3r_cgal STATIC ${LIBSLIC3R_CGAL_SOURCES})
 
@@ -566,8 +593,26 @@ target_include_directories(libslic3r_cgal PRIVATE
     "${REF_SRC}"
     "${LIBSLIC3R_DIR}"
     "${LIBSLIC3R_REF_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}"
-    "${OPENSSL_INCLUDE_DIR}")
+    "${CMAKE_CURRENT_BINARY_DIR}")
+
+# Keep the resolved engine-specific CGAL tree ahead of Homebrew's global include
+# directory. Bambu uses its pinned CGAL 5.4 tree; Orca uses the CGAL 6 API.
+target_include_directories(libslic3r_cgal SYSTEM BEFORE PRIVATE
+    "${CGAL_INCLUDE_DIRS}")
+
+# CGAL 5.4's ConicCPA2 header uses CGAL_NTS is_zero without including the
+# declaration itself. Bambu's dependency build exposes it transitively; make
+# that requirement explicit only for Bambu's pinned 5.4 build.
+set(CGAL_54_COMPAT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio/cgal_54_compat.hpp")
+if(ENGINE STREQUAL "bambu")
+    foreach(CGAL_54_CONSUMER IN ITEMS libslic3r_core libslic3r_cgal)
+        if(MSVC)
+            target_compile_options(${CGAL_54_CONSUMER} PRIVATE "/FI${CGAL_54_COMPAT_HEADER}")
+        else()
+            target_compile_options(${CGAL_54_CONSUMER} PRIVATE -include "${CGAL_54_COMPAT_HEADER}")
+        endif()
+    endforeach()
+endif()
 
 target_compile_definitions(libslic3r_cgal PRIVATE
     USE_TBB
@@ -588,7 +633,11 @@ if(_opts)
   target_compile_options(libslic3r_cgal PRIVATE "${_bad}")
 endif()
 
-target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} libigl mcut)
+target_link_libraries(libslic3r_cgal PRIVATE
+    ${_cgal_tgt}
+    OpenSSL::Crypto
+    libigl
+    mcut)
 
 # ─── OpenCASCADE libraries ─────────────────────────────────────────────────
 if(APPLE)
@@ -653,6 +702,7 @@ target_link_libraries(libslic3r_core PUBLIC
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wl,--end-group>
     mcut
     ${OpenCV_LIBS}
+    assimp::assimp
     ${ENGINE_EXTRA_LIBS}
     Threads::Threads
     OpenSSL::SSL
