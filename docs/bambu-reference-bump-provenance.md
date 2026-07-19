@@ -33,7 +33,7 @@ CI cache hardening, not an engine build dependency.
 BambuStudio's own `deps/CGAL/CGAL.cmake` pins CGAL v5.4 plus its
 `0001-clang19.patch`. Its current `MeshBoolean.cpp` still calls
 `CGAL::Polygon_mesh_processing::extract_boundary_cycles`, which CGAL 6 moved
-to the top-level `CGAL` namespace. The CLI therefore installs the exact
+to the top-level `CGAL` namespace. The CLI therefore pins Bambu to the exact
 hash-pinned, Bambu-patched CGAL 5.4 source instead of Homebrew/vcpkg's current
 6.x package. The pinned 5.4 headers also rely on `boost::mpl::if_c` arriving
 transitively; `cgal_54_compat.hpp` makes that Boost 1.90 dependency explicit
@@ -51,8 +51,10 @@ Debian/Ubuntu; macOS already provides archive extraction and installs Homebrew
 `gmp` and `mpfr`. Windows receives the same `gmp`/`mpfr` dependency graph from
 the versioned vcpkg overlay.
 
-CGAL 5.4 source SHA-256 (the exact BambuStudio dependency value):
-`d7605e0a5a5ca17da7547592f6f6e4a59430a0bc861948974254d0de43eab4c0`.
+The Bambu manifest's archive SHA-256 is no longer reproducible from GitHub's
+regenerated tag archive. The CLI instead locks the public peeled `v5.4` tag
+commit and verifies it after fetch on every platform:
+`c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4`.
 
 ## Local validation scope
 

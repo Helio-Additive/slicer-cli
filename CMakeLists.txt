@@ -184,7 +184,7 @@ endif()
 
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
 find_package(CGAL REQUIRED)
-if(CGAL_VERSION VERSION_LESS "5.4" OR CGAL_VERSION VERSION_GREATER "5.4.99")
+if(ENGINE STREQUAL "bambu" AND (CGAL_VERSION VERSION_LESS "5.4" OR CGAL_VERSION VERSION_GREATER "5.4.99"))
   message(FATAL_ERROR
     "BambuStudio v02.08.01.55 requires Bambu-patched CGAL 5.4: "
     "extract_boundary_cycles moved out of Polygon_mesh_processing in CGAL 6. "
@@ -565,8 +565,8 @@ target_include_directories(libslic3r_core PRIVATE
     "${EXPAT_INCLUDE_DIRS}"
     "${SUBLIB_DIR}/miniz")
 
-# The core target also includes CGAL headers directly. Keep it on the same
-# Bambu-pinned 5.4 tree as the dedicated CGAL target.
+# The core target also includes CGAL headers directly. Keep the resolved
+# engine-specific CGAL tree ahead of global Homebrew include directories.
 target_include_directories(libslic3r_core SYSTEM BEFORE PRIVATE
     "${CGAL_INCLUDE_DIRS}")
 
@@ -580,24 +580,24 @@ target_include_directories(libslic3r_cgal PRIVATE
     "${LIBSLIC3R_REF_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}")
 
-# BambuStudio v02.08.01.55 is built against the patched CGAL 5.4 API.
-# Keep that header tree ahead of Homebrew's global CGAL 6 include directory;
-# the latter otherwise wins despite find_package() resolving the pinned target.
+# Keep the resolved engine-specific CGAL tree ahead of Homebrew's global include
+# directory. Bambu uses its pinned CGAL 5.4 tree; Orca uses the CGAL 6 API.
 target_include_directories(libslic3r_cgal SYSTEM BEFORE PRIVATE
     "${CGAL_INCLUDE_DIRS}")
 
 # CGAL 5.4's ConicCPA2 header uses CGAL_NTS is_zero without including the
 # declaration itself. Bambu's dependency build exposes it transitively; make
-# that requirement explicit so the pinned 5.4 tree also builds with current
-# Homebrew/Windows toolchains.
+# that requirement explicit only for Bambu's pinned 5.4 build.
 set(CGAL_54_COMPAT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/bambustudio/cgal_54_compat.hpp")
-foreach(CGAL_54_CONSUMER IN ITEMS libslic3r_core libslic3r_cgal)
-    if(MSVC)
-        target_compile_options(${CGAL_54_CONSUMER} PRIVATE "/FI${CGAL_54_COMPAT_HEADER}")
-    else()
-        target_compile_options(${CGAL_54_CONSUMER} PRIVATE -include "${CGAL_54_COMPAT_HEADER}")
-    endif()
-endforeach()
+if(ENGINE STREQUAL "bambu")
+    foreach(CGAL_54_CONSUMER IN ITEMS libslic3r_core libslic3r_cgal)
+        if(MSVC)
+            target_compile_options(${CGAL_54_CONSUMER} PRIVATE "/FI${CGAL_54_COMPAT_HEADER}")
+        else()
+            target_compile_options(${CGAL_54_CONSUMER} PRIVATE -include "${CGAL_54_COMPAT_HEADER}")
+        endif()
+    endforeach()
+endif()
 
 target_compile_definitions(libslic3r_cgal PRIVATE
     USE_TBB

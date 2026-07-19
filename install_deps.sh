@@ -9,16 +9,16 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# BambuStudio v02.08.01.55 builds CGAL v5.4 from source. CGAL 6 moved
-# extract_boundary_cycles out of Polygon_mesh_processing, so the current Bambu
-# source cannot compile against it. Homebrew no longer ships cgal@5; use the
-# hash-pinned, Bambu-patched CGAL 5.4 source release. The CMake compatibility
+# BambuStudio v02.08.01.55 uses CGAL v5.4's Polygon_mesh_processing API.
+# CGAL 6 moved extract_boundary_cycles out of that namespace, so Bambu cannot
+# compile against it. Homebrew no longer ships cgal@5; use the
+# commit-pinned, Bambu-patched CGAL 5.4 source. The CMake compatibility
 # header supplies the legacy Boost MPL include that this exact CGAL release
 # formerly received transitively.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CGAL5_VERSION='5.4'
-CGAL5_SHA256='d7605e0a5a5ca17da7547592f6f6e4a59430a0bc861948974254d0de43eab4c0'
-CGAL5_URL="https://github.com/CGAL/cgal/archive/refs/tags/v${CGAL5_VERSION}.zip"
+CGAL5_COMMIT='c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4'
+CGAL5_REPOSITORY='https://github.com/CGAL/cgal.git'
 CGAL5_PATCH="$SCRIPT_DIR/references/BambuStudio/deps/CGAL/0001-clang19.patch"
 
 install_cgal5() {
@@ -31,24 +31,19 @@ install_cgal5() {
         return
     fi
 
-    echo "  Installing CGAL ${CGAL5_VERSION} from the hash-pinned upstream release..."
+    echo "  Installing CGAL ${CGAL5_VERSION} from pinned upstream commit ${CGAL5_COMMIT}..."
     local workdir
     workdir=$(mktemp -d)
-    local archive="$workdir/cgal-${CGAL5_VERSION}.zip"
-    curl --fail --location --silent --show-error "$CGAL5_URL" -o "$archive"
-    local actual_sha256
-    if command -v shasum >/dev/null 2>&1; then
-        actual_sha256=$(shasum -a 256 "$archive" | awk '{print $1}')
-    else
-        actual_sha256=$(sha256sum "$archive" | awk '{print $1}')
-    fi
-    if [ "$actual_sha256" != "$CGAL5_SHA256" ]; then
-        echo -e "${RED}CGAL ${CGAL5_VERSION} SHA-256 mismatch${NC}"
+    local source_dir="$workdir/cgal"
+    git clone --depth=1 --branch "v${CGAL5_VERSION}" "$CGAL5_REPOSITORY" "$source_dir"
+    local actual_commit
+    actual_commit=$(git -C "$source_dir" rev-parse HEAD)
+    if [ "$actual_commit" != "$CGAL5_COMMIT" ]; then
+        echo -e "${RED}CGAL ${CGAL5_VERSION} commit mismatch${NC}"
         exit 1
     fi
-    unzip -q "$archive" -d "$workdir"
-    patch -d "$workdir/cgal-${CGAL5_VERSION}" -p1 < "$CGAL5_PATCH"
-    cmake -S "$workdir/cgal-${CGAL5_VERSION}" -B "$workdir/build" \
+    patch -d "$source_dir" -p1 < "$CGAL5_PATCH"
+    cmake -S "$source_dir" -B "$workdir/build" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$prefix" \
         -DCGAL_HEADER_ONLY=ON \
@@ -85,6 +80,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     PACKAGES=(
         cmake
         bash          # macOS /bin/bash is 3.2; scripts/bundle-macos.sh uses declare -A
+        cgal          # ENGINE=orca uses the current CGAL 6 API; Bambu gets a separate pinned 5.4 keg below
         boost
         tbb
         eigen
@@ -141,9 +137,11 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     fi
 
     # This is deliberately a project-managed Cellar keg, not a Homebrew
-    # formula: Homebrew removed cgal@5 while this Bambu source remains on its
+    # formula: Homebrew removed cgal@5 while the Bambu source remains on its
     # Polygon_mesh_processing namespace API.
-    install_cgal5 "$CELLAR/cgal@5/$CGAL5_VERSION" no
+    if [ "${ENGINE:-bambu}" = 'bambu' ]; then
+        install_cgal5 "$CELLAR/cgal@5/$CGAL5_VERSION" no
+    fi
 
     # libnoise (Bambu fork) — not in Homebrew, must build from source
     if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
@@ -166,6 +164,7 @@ elif [[ -f /etc/debian_version ]]; then
         cmake
         build-essential
         libboost-all-dev
+        libcgal-dev   # ENGINE=orca uses the distro CGAL 6 API; Bambu gets its separate pinned 5.4 tree below
         unzip
         libtbb-dev
         libeigen3-dev
@@ -199,7 +198,9 @@ elif [[ -f /etc/debian_version ]]; then
         fi
     done
 
-    install_cgal5 "/opt/slicer-cli/cgal-$CGAL5_VERSION" yes
+    if [ "${ENGINE:-bambu}" = 'bambu' ]; then
+        install_cgal5 "/opt/slicer-cli/cgal-$CGAL5_VERSION" yes
+    fi
 
     # cereal is header-only — check manually
     if [ ! -f /usr/include/cereal/cereal.hpp ]; then

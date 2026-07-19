@@ -78,9 +78,10 @@ jobs:
             /opt/homebrew/bin
             /usr/local/lib/libnoise*
             /usr/local/include/libnoise
-          # v6 adds the project-managed, Bambu-patched CGAL 5.4 keg.
-          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v6
-          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-v6
+          # v7 has both the system CGAL 6 package for Orca and the project-managed
+          # Bambu CGAL 5.4 keg.
+          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
+          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
@@ -88,7 +89,7 @@ jobs:
         # picking up Homebrew's bash 5, which depends on ncurses — a dep that
         # is absent on a cold cache. install_deps.sh is bash 3.2 compatible.
         shell: /bin/bash -e {0}
-        run: /bin/bash install_deps.sh
+        run: ENGINE=${{ matrix.engine }} /bin/bash install_deps.sh
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -97,7 +98,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config \
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
-            libexpat1-dev libssl-dev libboost-all-dev unzip \
+            libexpat1-dev libssl-dev libboost-all-dev libcgal-dev unzip \
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
             libocct-modeling-algorithms-dev libocct-data-exchange-dev \
             libocct-foundation-dev libocct-draw-dev \
@@ -110,25 +111,23 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=/usr/local \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           sudo cmake --build /tmp/libnoise/build --target install --parallel
-          CGAL_VERSION=5.4
-          CGAL_SHA256=d7605e0a5a5ca17da7547592f6f6e4a59430a0bc861948974254d0de43eab4c0
-          CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
-          CGAL_ARCHIVE=/tmp/cgal-${CGAL_VERSION}.zip
-          curl --fail --location --silent --show-error "https://github.com/CGAL/cgal/archive/refs/tags/v${CGAL_VERSION}.zip" -o "$CGAL_ARCHIVE"
-          CGAL_ACTUAL_SHA256=$(sha256sum "$CGAL_ARCHIVE" | awk '{print $1}')
-          [ "$CGAL_ACTUAL_SHA256" = "$CGAL_SHA256" ] || { echo "CGAL SHA-256 mismatch"; exit 1; }
-          mkdir -p /tmp/cgal-src
-          unzip -q "$CGAL_ARCHIVE" -d /tmp/cgal-src
-          patch -d "/tmp/cgal-src/cgal-${CGAL_VERSION}" -p1 < references/BambuStudio/deps/CGAL/0001-clang19.patch
-          cmake -S "/tmp/cgal-src/cgal-${CGAL_VERSION}" -B /tmp/cgal-build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
-            -DCGAL_HEADER_ONLY=ON \
-            -DCGAL_INSTALL_CMAKE_DIR=lib/cmake/CGAL \
-            -DBUILD_TESTING=OFF \
-            -DBUILD_DOC=OFF \
-            -DCGAL_BUILD_THREE_DOC=OFF
-          sudo cmake --install /tmp/cgal-build
+          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            CGAL_VERSION=5.4
+            CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
+            CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
+            git clone --depth=1 --branch "v${CGAL_VERSION}" https://github.com/CGAL/cgal.git /tmp/cgal-src
+            [ "$(git -C /tmp/cgal-src rev-parse HEAD)" = "$CGAL_COMMIT" ] || { echo "CGAL commit mismatch"; exit 1; }
+            patch -d /tmp/cgal-src -p1 < references/BambuStudio/deps/CGAL/0001-clang19.patch
+            cmake -S /tmp/cgal-src -B /tmp/cgal-build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
+              -DCGAL_HEADER_ONLY=ON \
+              -DCGAL_INSTALL_CMAKE_DIR=lib/cmake/CGAL \
+              -DBUILD_TESTING=OFF \
+              -DBUILD_DOC=OFF \
+              -DCGAL_BUILD_THREE_DOC=OFF
+            sudo cmake --install /tmp/cgal-build
+          fi
 
       - name: Cache vcpkg packages (Windows)
         if: runner.os == 'Windows'
@@ -138,10 +137,10 @@ jobs:
           # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
           # so the previous cache (OCCT 8.0.0, which fails to compile against the
           # pinned BambuStudio source) is NOT restored — it would shadow the pin.
-          # v4 keeps OCCT 7.9.3 and adds the Bambu-patched CGAL 5.4 overlay required by
-          # BambuStudio v02.08.01.55.
-          key: vcpkg-x64-windows-occt793-cgal54-v4
-          restore-keys: vcpkg-x64-windows-occt793-cgal54-v4
+          # Bambu requires the project CGAL 5.4 overlay; Orca builds against the
+          # baseline CGAL 6 port. Keep their caches disjoint.
+          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v6
+          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v6
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -159,9 +158,8 @@ jobs:
           # (Format/STEP.cpp + Shape/TextShape.cpp: TDF_LabelSequence /
           # TColStd_SequenceOfHAsciiString "undeclared identifier"). Pin the
           # runner's vcpkg to a 2026-05-06 baseline (OCCT 7.9.3) so the build is
-          # reproducible and matches the proven-good toolchain. The cgal overlay
-          # below deliberately holds Bambu-patched CGAL at 5.4 while preserving this OCCT
-          # baseline. (macOS uses Homebrew and is unaffected.)
+          # reproducible and matches the proven-good toolchain. Bambu uses the
+          # project CGAL 5.4 overlay; Orca uses the baseline CGAL 6 port.
           VCPKG_PIN=de03680510e75aa77d07750159adac4e570a6a81
           git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin "$VCPKG_PIN"
           git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach "$VCPKG_PIN"
@@ -169,7 +167,11 @@ jobs:
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
-          vcpkg install --overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays" \
+          VCPKG_ARGS=()
+          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
+          fi
+          vcpkg install "${VCPKG_ARGS[@]}" \
             tbb:x64-windows eigen3:x64-windows \
             boost:x64-windows \
             cgal:x64-windows "opencv[core]:x64-windows" assimp:x64-windows opencascade:x64-windows \
@@ -221,13 +223,17 @@ jobs:
             # the directory directly so find_package(Eigen3) short-circuits search.
             EIGEN3_CMAKE_DIR="$(dirname "$(find /opt/homebrew -name "Eigen3Config.cmake" 2>/dev/null | head -1)" 2>/dev/null)"
             [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
-            CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
-            [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
-            EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+              CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
+              [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            fi
           else
-            CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
-            [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
-            EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+              CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
+              [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            fi
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DENGINE=${{ matrix.engine }} \

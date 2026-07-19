@@ -1,12 +1,11 @@
 # Exact Bambu-patched CGAL 5.4, required by BambuStudio v02.08.01.55.
 vcpkg_buildpath_length_warning(37)
 
-vcpkg_from_github(
+vcpkg_from_git(
     OUT_SOURCE_PATH SOURCE_PATH
-    REPO CGAL/cgal
-    REF v5.4
-    SHA512 c9cdacc74844a6eca94980d0350ae6defb99462ef70ddc3e15e825f06b171a21571efd9246a4abac16a6efc350aa9fa79330d2e89dcec24fc6ecff51905efdeb
-    HEAD_REF master
+    URL https://github.com/CGAL/cgal.git
+    REF c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
+    FETCH_REF v5.4
     PATCHES
         "${CMAKE_CURRENT_LIST_DIR}/../../../references/BambuStudio/deps/CGAL/0001-clang19.patch"
 )
