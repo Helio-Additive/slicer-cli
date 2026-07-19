@@ -56,11 +56,11 @@ jobs:
         with:
           submodules: recursive
 
-      # CGAL 6.2 moved extract_boundary_cycles out of the
-      # Polygon_mesh_processing namespace. Orca requires CGAL 6 APIs elsewhere,
-      # so carry this narrow compatibility patch in the fetchable parent repo.
-      - name: Apply Orca CGAL 6.2 compatibility patch
-        if: matrix.engine == 'orca'
+      # Homebrew CGAL 6.2 moved extract_boundary_cycles out of the
+      # Polygon_mesh_processing namespace. Windows vcpkg CGAL retains the PMP
+      # namespace, so only macOS Orca builds need this parent-owned patch.
+      - name: Apply macOS Orca CGAL 6.2 compatibility patch
+        if: matrix.engine == 'orca' && runner.os == 'macOS'
         shell: bash
         run: patch -d references/OrcaSlicer -p1 < ci/patches/orca-cgal6-extract-boundary-cycles.patch
 
