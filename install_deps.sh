@@ -20,6 +20,7 @@ CGAL5_VERSION='5.4'
 CGAL5_COMMIT='c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4'
 CGAL5_REPOSITORY='https://github.com/CGAL/cgal.git'
 CGAL5_PATCH="$SCRIPT_DIR/references/BambuStudio/deps/CGAL/0001-clang19.patch"
+CGAL5_PREFIX=''
 
 install_cgal5() {
     local prefix="$1"
@@ -140,7 +141,8 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # formula: Homebrew removed cgal@5 while the Bambu source remains on its
     # Polygon_mesh_processing namespace API.
     if [ "${ENGINE:-bambu}" = 'bambu' ]; then
-        install_cgal5 "$CELLAR/cgal@5/$CGAL5_VERSION" no
+        CGAL5_PREFIX="$CELLAR/cgal@5/$CGAL5_VERSION"
+        install_cgal5 "$CGAL5_PREFIX" no
     fi
 
     # libnoise (Bambu fork) — not in Homebrew, must build from source
@@ -199,7 +201,8 @@ elif [[ -f /etc/debian_version ]]; then
     done
 
     if [ "${ENGINE:-bambu}" = 'bambu' ]; then
-        install_cgal5 "/opt/slicer-cli/cgal-$CGAL5_VERSION" yes
+        CGAL5_PREFIX="/opt/slicer-cli/cgal-$CGAL5_VERSION"
+        install_cgal5 "$CGAL5_PREFIX" yes
     fi
 
     # cereal is header-only — check manually
@@ -227,6 +230,9 @@ fi
 
 echo ""
 echo -e "${GREEN}✓ All dependencies installed.${NC}"
+if [ -n "$CGAL5_PREFIX" ]; then
+    echo "Bambu CGAL 5.4: $CGAL5_PREFIX/lib/cmake/CGAL (auto-discovered by CMake)"
+fi
 echo ""
 echo "Next steps:"
 echo ""

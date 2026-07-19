@@ -183,12 +183,27 @@ if(NOT Boost_FOUND)
 endif()
 
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
-find_package(CGAL REQUIRED)
-if(ENGINE STREQUAL "bambu" AND (CGAL_VERSION VERSION_LESS "5.4" OR CGAL_VERSION VERSION_GREATER "5.4.99"))
-  message(FATAL_ERROR
-    "BambuStudio v02.08.01.55 requires Bambu-patched CGAL 5.4: "
-    "extract_boundary_cycles moved out of Polygon_mesh_processing in CGAL 6. "
-    "Set CGAL_DIR to the exact project-managed CGAL 5.4 package.")
+if(ENGINE STREQUAL "bambu")
+  # install_deps.sh installs Bambu-patched CGAL 5.4 in one of these
+  # project-managed prefixes. Prefer them over the system CGAL 6 package so
+  # the documented `./install_deps.sh && cmake ..` flow needs no extra flag.
+  if(DEFINED CGAL_DIR)
+    find_package(CGAL 5.4 CONFIG REQUIRED)
+  else()
+    find_package(CGAL 5.4 CONFIG QUIET
+      PATHS
+        /opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
+        /opt/homebrew/Cellar/cgal@5/5.4/lib/cmake/CGAL
+        /usr/local/Cellar/cgal@5/5.4/lib/cmake/CGAL
+      NO_DEFAULT_PATH)
+    if(NOT CGAL_FOUND)
+      message(FATAL_ERROR
+        "BambuStudio v02.08.01.55 requires Bambu-patched CGAL 5.4. "
+        "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
+    endif()
+  endif()
+else()
+  find_package(CGAL REQUIRED)
 endif()
 
 find_package(OpenCV REQUIRED core)
