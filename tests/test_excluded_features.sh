@@ -131,7 +131,10 @@ if [ -f "$TOKEN_3MF" ]; then
     run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
     if [ "$LAST_EXIT" -eq 0 ] \
        && ! echo "$LAST_OUTPUT" | grep -q "LegacyGcodeTokenAliased" \
-       && ! grep -v '^[[:space:]]*;' "$GC" | grep -q "$TOKEN"; then
+       && ! awk -v token="$TOKEN" '
+            $0 !~ /^[[:space:]]*;/ && index($0, token) { found = 1; exit }
+            END { exit !found }
+          ' "$GC"; then
         record "legacy-token-native-without-normalization" 1
     else
         record "legacy-token-native-without-normalization" 0 "exit=$LAST_EXIT (want 0); native binding/aliasing check failed"
