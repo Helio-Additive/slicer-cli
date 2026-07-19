@@ -56,6 +56,14 @@ jobs:
         with:
           submodules: recursive
 
+      # CGAL 6.2 moved extract_boundary_cycles out of the
+      # Polygon_mesh_processing namespace. Orca requires CGAL 6 APIs elsewhere,
+      # so carry this narrow compatibility patch in the fetchable parent repo.
+      - name: Apply Orca CGAL 6.2 compatibility patch
+        if: matrix.engine == 'orca'
+        shell: bash
+        run: patch -d references/OrcaSlicer -p1 < ci/patches/orca-cgal6-extract-boundary-cycles.patch
+
       - name: Remove Mono framework (shadows libpng headers)
         if: runner.os == 'macOS'
         # macos-14 pre-installs Mono. Even with explicit -DPNG_PNG_INCLUDE_DIR

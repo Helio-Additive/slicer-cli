@@ -1,0 +1,20 @@
+--- a/src/libslic3r/MeshBoolean.cpp
++++ b/src/libslic3r/MeshBoolean.cpp
+@@ -332,7 +332,7 @@
+         typedef boost::graph_traits<_EpicMesh>::halfedge_descriptor      halfedge_descriptor;
+         typedef boost::graph_traits<_EpicMesh>::vertex_descriptor        vertex_descriptor;
+         std::vector<halfedge_descriptor> border_cycles;
+-        CGAL::Polygon_mesh_processing::extract_boundary_cycles(out, std::back_inserter(border_cycles));
++        CGAL::extract_boundary_cycles(out, std::back_inserter(border_cycles));
+         for (halfedge_descriptor h : border_cycles)
+         {
+             std::vector<face_descriptor>  patch_facets;
+@@ -523,7 +523,7 @@ bool repair(TriangleMesh& mesh, RepairedMeshErrors* repaired_errors, std::strin
+             using halfedge_descriptor = boost::graph_traits<_EpicMesh>::halfedge_descriptor;
+
+             std::vector<halfedge_descriptor> borders;
+-            PMP::extract_boundary_cycles(cgal_mesh, std::back_inserter(borders));
++            CGAL::extract_boundary_cycles(cgal_mesh, std::back_inserter(borders));
+
+             for (halfedge_descriptor h : borders) {
+                 PMP::triangulate_and_refine_hole(cgal_mesh, h);
