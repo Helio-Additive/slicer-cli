@@ -6,7 +6,7 @@ Working file for the /loop campaign started 2026-07-21. Full diagnosis in
 Evidence base: `tests/.tmp/2026-07-21_08-31-23/nu3mf/{rust,bambu}.gcode`
 (Majora's Mask 3MF, `tests/28_MAJORASMASK_FULLCOLOUR_Makerworld_1plate_multicol.3mf`).
 
-## A — Arachne infill bug  [STATUS: in progress]
+## A — Arachne infill bug  [STATUS: DONE — R362]
 
 Symptom: rust slice with `wall_generator=arachne` emits walls only — zero sparse /
 solid / top / bottom / bridge fill (all `; FEATURE:` fill counts 0 vs bambu 2940/3835/534/…).
@@ -33,7 +33,7 @@ Plan:
    with arachne asserts `; FEATURE: Sparse infill` present. Keep classic tests green.
 4. Verify: `just slice-configs nu3mf` → rust sparse/solid counts non-zero, roughly track bambu.
 
-## C — negative parts merged as positive  [STATUS: todo]
+## C — negative parts merged as positive  [STATUS: DONE — R361 (skip, not subtract)]
 
 `parse_3mf_model_xml` (app_slice.rs) ignores object `type="other"` /
 model_settings `subtype="negative_part"` — Majora's 7 connector volumes union as positive.
@@ -41,7 +41,7 @@ Fix: parse types; exclude negative volumes from the merged mesh (true boolean su
 Tier-2 ModelVolume; excluding negatives is the Tier-1-honest step — note in doc comment).
 Verify: slice nu3mf; connector regions no longer produce stray solids.
 
-## B — multi-color  [STATUS: todo, phased]
+## B — multi-color  [STATUS: in progress, phased]
 
 Tier-1 merges everything to one mesh/material; `; filament: 1` hardcoded (generator.rs:350);
 `num_extruders=1` hardcoded (print.rs:1874-1906). Ported-but-unwired: MMU segmentation core
@@ -79,3 +79,11 @@ comparable to bambu.
   `tests/arachne_infill.rs` + fixture `tests/data/cube_arachne_settings.json`
   (both green). three_mf_parse 3/3 green. Pending: Majora nu3mf verify (bg),
   bun suite classic/sha guard (bg). A status → verify.
+- R2 (2026-07-21): A VERIFIED on Majora (rust: sparse 1337 / solid 547 / top 627 /
+  bridge 276, 657 layers, 26MB — was 0/0/0/0 hollow 10MB). Bambu's higher counts
+  = per-colour region splits (Tier-1 single-material expected delta). Bun suite
+  9/9 (classic + sha locks safe). C implemented same round: type="other" objects
+  skipped in parse_3mf_model_xml + regression (three_mf_parse 4/4). Committed
+  R359-R363, pushed. CAUTION noted: a stale bambu gcode at tests/.tmp/nu3mf/
+  nearly read as the rust result — always verify header engine identity.
+  Next: B layer 1 (ModelVolume + FacetsAnnotation storage).
