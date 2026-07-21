@@ -2767,9 +2767,24 @@ pub fn multi_material_segmentation_by_painting_tier1(
         let mut ex = union_ex(&grown);
         // cpp:2126
         crate::ex_polygon::remove_small_and_small_holes(&mut ex, min_area);
-        // cpp:2134 offset_ex(-10*SCALED_EPSILON). FIDELITY-NOTE: the surrounding
-        // remove_duplicates(expolygons_simplify(...)) is intentionally omitted (see doc-comment).
-        input_expolygons.push(offset_expolygons(&ex, -grow_mm, OffsetJoinType::Miter));
+        // cpp:2134 — remove_duplicates(expolygons_simplify(offset_ex(ex, -10*SCALED_EPSILON),
+        // 5*SCALED_EPSILON), scaled(0.01), PI/6). The C++ comment warns that skipping these
+        // leaves self-intersections / near-duplicate points that break the Voronoi diagram
+        // and downstream segment extraction — and in practice the un-simplified input also
+        // explodes the segmentation output into fragment soup (first Majora run spent
+        // >30min of release-mode clipper time in Layer::make_slices on it).
+        let shrunk = offset_expolygons(&ex, -grow_mm, OffsetJoinType::Miter);
+        // expolygons_simplify(…, 5*SCALED_EPSILON) — tolerance is scaled units;
+        // clipper_utils::simplify takes mm and re-scales internally.
+        let simplified =
+            crate::clipper_utils::simplify(&shrunk, (5.0 * SCALED_EPSILON) / SCALING_FACTOR);
+        // remove_duplicates(…, scaled(0.01), PI/6)
+        let deduped = crate::mutable_polygon::remove_duplicates_expolygons(
+            simplified,
+            scale_(0.01),
+            std::f64::consts::PI / 6.0,
+        );
+        input_expolygons.push(deduped);
     }
 
     // Negative-volume handling (cpp:2143-2197) is OMITTED: the Tier-1 loader drops negative
@@ -2917,6 +2932,11 @@ pub fn multi_material_segmentation_by_painting_tier1(
 
     // Per-layer segmentation. MultiMaterialSegmentation.cpp:2326-2366.
     for layer_idx in 0..num_layers {
+        // Progress marker (not in C++, which runs this under TBB): the layer
+        // loop dominates wall time on large painted models.
+        if layer_idx % 100 == 0 {
+            log::info!("MM segmentation: layer {layer_idx}/{num_layers}");
+        }
         // cpp:2330
         if painted_lines[layer_idx].is_empty() {
             continue;

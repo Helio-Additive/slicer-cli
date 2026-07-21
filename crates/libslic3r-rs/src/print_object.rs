@@ -514,22 +514,30 @@ impl PrintObject {
             }
         }
 
-        // Painted multi-material segmentation (campaign layer 4): compute the
-        // per-layer per-extruder painted areas from the painted sub-meshes and
-        // move the corresponding surfaces out of region 0 into the painted
-        // regions. C++: slice_volumes → apply_mm_segmentation
-        // (PrintObjectSlice.cpp:1161 / :845-925), segmentation itself in
-        // MultiMaterialSegmentation.cpp:2095.
-        if num_regions > 1 && !self.painted_submeshes.is_empty() {
-            self.apply_mm_segmentation_tier1()?;
-        }
-
         // Build lslices for each layer (union of all region slices)
         // C++: PrintObjectSlice.cpp calls layer->make_slices() which populates
         // lslices from region slices. This is needed for detect_surfaces_type()
         // to correctly diff between adjacent layers.
         for layer in &mut self.layers {
             layer.make_slices();
+        }
+
+        // Painted multi-material segmentation (campaign layer 4): compute the
+        // per-layer per-extruder painted areas from the painted sub-meshes and
+        // move the corresponding surfaces out of region 0 into the painted
+        // regions. C++: slice_volumes → apply_mm_segmentation
+        // (PrintObjectSlice.cpp:1161 / :845-925), segmentation itself in
+        // MultiMaterialSegmentation.cpp:2095.
+        //
+        // Deliberately AFTER make_slices: the painted pieces + the region-0
+        // remainder tile the pre-split region-0 area exactly, so lslices (the
+        // per-layer union across regions) is geometrically identical either
+        // way — but unioning the post-split regions re-walks every jagged
+        // segmentation border through the slow offset path (observed >30min
+        // release wall on Majora). Building lslices from the single pre-split
+        // region first is byte-equivalent and cheap.
+        if num_regions > 1 && !self.painted_submeshes.is_empty() {
+            self.apply_mm_segmentation_tier1()?;
         }
 
         // Check for cancellation after slicing
