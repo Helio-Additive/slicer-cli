@@ -7,7 +7,10 @@ use std::path::PathBuf;
 pub struct JobConfig {
     pub input: JobInput,
     pub output: JobOutput,
-    pub native_binary: Option<PathBuf>,
+    /// Path to the C++ BambuStudio slicer binary. (`native_binary` is accepted
+    /// as a deprecated alias.)
+    #[serde(alias = "native_binary")]
+    pub bambu_binary: Option<PathBuf>,
     pub config: Option<ConfigSource>,
     pub callback: Option<Value>,
 }

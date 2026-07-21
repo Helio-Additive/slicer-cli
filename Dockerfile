@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/home/devbox/.cargo/registry,uid=1000,gid=1000 \
     --mount=type=cache,target=/home/devbox/.cargo/git,uid=1000,gid=1000 \
     --mount=type=cache,target=/workspace/target,uid=1000,gid=1000 \
     --mount=type=cache,target=/workspace/libslic3r/bambustudio/build,uid=1000,gid=1000 \
-    devbox run native:build \
+    devbox run bambu:build \
     && devbox run cargo build --release \
     && mkdir -p /workspace/artifacts/bin /workspace/artifacts/rootfs \
     && cp target/release/slicer-cli /workspace/artifacts/bin/slicer-cli \

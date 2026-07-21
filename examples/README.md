@@ -4,7 +4,7 @@ Run the single Jsonnet job config and slice the included Benchy STL:
 
 ```sh
 devbox run setup
-devbox run native:build
+devbox run bambu:build
 devbox run example
 ```
 
@@ -16,7 +16,7 @@ profiles used by `example_benchy_h2d.sh`:
 - `0.20mm Standard @BBL H2D.json`
 
 The wrapper writes the flattened config to `examples/out/resolved-config.json`
-and asks the native slicer to write `examples/out/3DBenchy_H2D_PLA.gcode`.
+and asks the bambu slicer to write `examples/out/3DBenchy_H2D_PLA.gcode`.
 
 The job config accepts local paths or `s3://...` locations for model/config
 inputs and G-code/resolved-config outputs. S3 transfer and optional callback

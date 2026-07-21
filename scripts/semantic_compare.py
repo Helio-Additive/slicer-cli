@@ -15,7 +15,7 @@ import numpy as np
 # Benchy): filament 0.9972, per-layer material mean-dev 2.19%, silhouette
 # area-weighted IoU 99.29% — all pass. These catch a genuinely-broken toolpath
 # (silhouette/material collapse) while treating FP re-routing as equivalent.
-TOL_FILAMENT   = 0.01   # |rust/native - 1| for total filament length
+TOL_FILAMENT   = 0.01   # |rust/bambu - 1| for total filament length
 TOL_LAYER_MAT  = 0.05   # mean per-layer material deviation
 TOL_SILHOUETTE = 0.99   # area-weighted object-silhouette IoU floor
 # Per-feature material: loose on purpose. The known FP-cascade classes drift a
@@ -212,14 +212,14 @@ def group_iou(R, N, zs, label, feats, close_k=0):
     print(f"  {label:28}: mean {100*arr.mean():5.2f}%  area-wtd {100*(arr*wts).sum()/wts.sum():5.2f}%  "
           f"min {100*arr.min():5.1f}% (z{ious[int(arr.argmin())][0]})  layers<95%={int((arr<0.95).sum())}/{len(ious)}")
 
-def main(rust_path, native_path):
-    R, rh = parse(rust_path); N, nh = parse(native_path)
+def main(rust_path, bambu_path):
+    R, rh = parse(rust_path); N, nh = parse(bambu_path)
     print("="*64)
     print("LEVEL 1 — PHYSICAL INVARIANTS")
     print("="*64)
-    print(f"  filament total mm : rust {rh.get('filament_mm')} / native {nh.get('filament_mm')}"
+    print(f"  filament total mm : rust {rh.get('filament_mm')} / bambu {nh.get('filament_mm')}"
           f"  ratio {rh.get('filament_mm',0)/nh.get('filament_mm',1):.4f}")
-    print(f"  layer count       : rust {len(R)} / native {len(N)}")
+    print(f"  layer count       : rust {len(R)} / bambu {len(N)}")
     rm = per_layer_material(R); nm = per_layer_material(N)
     zs = sorted(set(rm)&set(nm))
     devs = [abs(rm[z]-nm[z])/max(nm[z],1e-9) for z in zs]
@@ -245,7 +245,7 @@ def main(rust_path, native_path):
     rb = sum(s[6] for L in R for s in L['segs']); nb = sum(s[6] for L in N for s in L['segs'])
     obj = rb/nb if nb else 0.0
     fil = rh.get('filament_mm',0)/nh.get('filament_mm',1)
-    print(f"  object material   : rust {rb:.1f} / native {nb:.1f} = {obj:.4f}  (header filament {fil:.4f})")
+    print(f"  object material   : rust {rb:.1f} / bambu {nb:.1f} = {obj:.4f}  (header filament {fil:.4f})")
     # worst per-feature material deviation among non-tiny features
     fdev = [(f, RE[f]/NE[f]) for f in set(RE)|set(NE) if NE.get(f,0) >= FEATURE_MIN_E]
     wf, wr = max(fdev, key=lambda t: abs(t[1]-1)) if fdev else ("-", 1.0)

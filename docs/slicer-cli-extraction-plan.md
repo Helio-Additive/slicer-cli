@@ -13,14 +13,14 @@ this doc and are listed in OVERNIGHT_HANDOFF.md.
 
 | Path | Role | Public repo? |
 |-|-|-|
-| `Cargo.toml`, `src/main.rs` | Rust wrapper CLI. Resolves profile inheritance, emits a flat config, and subprocesses the native slicer binary. | **Yes** |
+| `Cargo.toml`, `src/main.rs` | Rust wrapper CLI. Resolves profile inheritance, emits a flat config, and subprocesses the bambu slicer binary. | **Yes** |
 | `libslic3r/bambustudio/` | Native CMake project: `CMakeLists.txt`, `main.cpp`, `standalone_stubs.cpp`, an optional `libslic3r/` override layer, reference submodules, and patch overlays. | **Yes** |
 | `libslic3r/bambustudio/build/` | Out-of-source native build directory | **No** — gitignored |
 | `examples/out/` | Test-output gcode/config artefacts | **No** — gitignored |
 | `libslic3r/bambustudio/libslic3r/` | Override layer — files here shadow the BambuStudio reference 1-for-1. Currently empty, but the directory + include-search position are load-bearing in `libslic3r/bambustudio/CMakeLists.txt` | **Yes** — directory is preserved (empty is fine; the override mechanism is the contract) |
 | `libslic3r/bambustudio/patches/libigl/` | Small libigl patch overlay. Only files that differ from `libslic3r/bambustudio/references/BambuStudio/src/libigl` live here; CMake builds a generated overlay tree. | **Yes** — patched files plus README |
 | `libslic3r/bambustudio/references/BambuStudio` | Git submodule pinned at `b506005bc4ee62124e24bf00e0f58656db3646a6` (BambuStudio v02.06.00.51). All bundled sub-libraries (admesh, clipper, clipper2, miniz, glu-libtess, semver, libnest2d, mcut, boost-nowide, libigl-reference) live under this submodule's `src/` directory — no separate copies needed. | **Yes** — submodule kept as-is |
-| `libslic3r/bambustudio/references/libnoise` | Git submodule for Bambu's libnoise fork, built locally before configuring the native slicer. | **Yes** — submodule |
+| `libslic3r/bambustudio/references/libnoise` | Git submodule for Bambu's libnoise fork, built locally before configuring the bambu slicer. | **Yes** — submodule |
 | `references/OrcaSlicer` | Git submodule, also AGPLv3 (Orca-derived). Not used by the CLI build today. | **No** — Orca support is post-v1; not part of this repo |
 | `data/` | STL + reference gcode test fixtures | **Partial** — see "Test fixtures" below |
 | `schemas/` | Slice config JSON schemas | **Yes** — referenced from CLI |

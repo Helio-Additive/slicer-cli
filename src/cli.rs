@@ -25,7 +25,9 @@ pub enum Commands {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum Engine {
     /// The C++ BambuStudio `slicer_cli` binary, run as a subprocess.
-    Native,
+    /// (`native` is accepted as a deprecated alias.)
+    #[value(alias = "native")]
+    Bambu,
     /// The in-process Rust libslic3r port (`slicer` crate).
     Rust,
 }
@@ -34,14 +36,16 @@ pub enum Engine {
 pub struct SliceArgs {
     #[arg(short, long)]
     pub config: String,
-    #[arg(long, env = "BAMBUSTUDIO_SLICER")]
-    pub native_binary: Option<PathBuf>,
+    /// Path to the C++ BambuStudio slicer binary. (`--native-binary` is a
+    /// deprecated alias.)
+    #[arg(long, alias = "native-binary", env = "BAMBUSTUDIO_SLICER")]
+    pub bambu_binary: Option<PathBuf>,
     #[arg(short, long)]
     pub verbose: bool,
     #[arg(long)]
     pub dry_run: bool,
     /// Slicing engine to use.
-    #[arg(long, value_enum, default_value = "native")]
+    #[arg(long, value_enum, default_value = "bambu")]
     pub engine: Engine,
 }
 
@@ -49,8 +53,10 @@ pub struct SliceArgs {
 pub struct CompareArgs {
     #[arg(short, long)]
     pub config: String,
-    #[arg(long, env = "BAMBUSTUDIO_SLICER")]
-    pub native_binary: Option<PathBuf>,
+    /// Path to the C++ BambuStudio slicer binary. (`--native-binary` is a
+    /// deprecated alias.)
+    #[arg(long, alias = "native-binary", env = "BAMBUSTUDIO_SLICER")]
+    pub bambu_binary: Option<PathBuf>,
     #[arg(short, long)]
     pub verbose: bool,
 }

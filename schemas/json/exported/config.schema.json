@@ -401,6 +401,13 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "bambu_binary": {
+      "description": "Path to the C++ BambuStudio slicer binary. (`native_binary` is accepted\nas a deprecated alias.)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "callback": true,
     "config": {
       "anyOf": [
@@ -414,12 +421,6 @@
     },
     "input": {
       "$ref": "#/$defs/JobInput"
-    },
-    "native_binary": {
-      "type": [
-        "string",
-        "null"
-      ]
     },
     "output": {
       "$ref": "#/$defs/JobOutput"

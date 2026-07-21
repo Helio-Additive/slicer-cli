@@ -14,7 +14,7 @@ use crate::{
     locations::{
         materialize_input, prepare_output, upload_output, write_json_to_location, PreparedOutput,
     },
-    native::{default_native_binary, run_native_slice},
+    bambu::{default_bambu_binary, run_bambu_slice},
     profiles::{compatible_processes_for_printer, list_profiles, resolve_config_refs},
 };
 
@@ -26,7 +26,7 @@ struct ResolvedJob {
     input_kind: String,
     input_path: PathBuf,
     output: PreparedOutput,
-    native_binary: PathBuf,
+    bambu_binary: PathBuf,
     /// Resolved BambuStudio-format slicer config (STL inputs only); held alive so
     /// its on-disk path stays valid for the duration of slicing.
     temp_config: Option<NamedTempFile>,
@@ -43,11 +43,11 @@ impl ResolvedJob {
 }
 
 /// Load the job config, materialize the input model, prepare the output location,
-/// resolve the native binary, and (for STL inputs) resolve the slicer config into
+/// resolve the bambu binary, and (for STL inputs) resolve the slicer config into
 /// a temp file. This is the shared front half of `slice` and `compare`.
 fn resolve_job(
     config: &str,
-    native_binary: Option<PathBuf>,
+    bambu_binary: Option<PathBuf>,
     output_default_filename: &str,
 ) -> Result<ResolvedJob, String> {
     let job = JobConfig::load_arg(config)?;
@@ -58,9 +58,9 @@ fn resolve_job(
     let output_location = job.output.location()?;
     let output = prepare_output(&output_location, output_default_filename, &mut temp_dirs)?;
 
-    let native_binary = native_binary
-        .or_else(|| job.native_binary.clone())
-        .unwrap_or_else(default_native_binary);
+    let bambu_binary = bambu_binary
+        .or_else(|| job.bambu_binary.clone())
+        .unwrap_or_else(default_bambu_binary);
 
     let mut temp_config = None;
     let resolved_config_location = job.output.resolved_config_location()?;
@@ -91,7 +91,7 @@ fn resolve_job(
         input_kind,
         input_path,
         output,
-        native_binary,
+        bambu_binary,
         temp_config,
         resolved_config_location,
         _temp_dirs: temp_dirs,
@@ -99,45 +99,69 @@ fn resolve_job(
 }
 
 pub fn slice(args: SliceArgs) -> Result<u8, String> {
-    let resolved = resolve_job(&args.config, args.native_binary.clone(), "output.gcode")?;
+    let resolved = resolve_job(&args.config, args.bambu_binary.clone(), "output.gcode")?;
 
     let code = match args.engine {
-        Engine::Native => run_native_slice(
-            &resolved.native_binary,
+        Engine::Bambu => run_bambu_slice(
+            &resolved.bambu_binary,
             &resolved.input_path,
             resolved.config_path(),
             &resolved.output.local_path,
             args.verbose,
             args.dry_run,
         )?,
-        Engine::Rust => {
-            if resolved.input_kind != "stl" {
+        Engine::Rust => match resolved.input_kind.as_str() {
+            "stl" => {
+                let config_path = resolved
+                    .config_path()
+                    .ok_or_else(|| "rust engine requires a resolved slicer config".to_owned())?;
+                if args.dry_run {
+                    println!(
+                        "rust-engine slice {} --settings {} --output {}",
+                        resolved.input_path.display(),
+                        config_path.display(),
+                        resolved.output.local_path.display()
+                    );
+                    0
+                } else {
+                    slicer::app_slice::slice_to_gcode(
+                        &resolved.input_path,
+                        config_path,
+                        &resolved.output.local_path,
+                    )
+                    .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
+                    0
+                }
+            }
+            "3mf" => {
+                // A BambuStudio 3MF carries its own embedded
+                // Metadata/project_settings.config, so no resolved profile triple
+                // is required. If the job did supply a resolved config, it
+                // overrides the embedded settings.
+                let settings_override = resolved.config_path();
+                if args.dry_run {
+                    println!(
+                        "rust-engine slice {} (3mf, embedded settings) --output {}",
+                        resolved.input_path.display(),
+                        resolved.output.local_path.display()
+                    );
+                    0
+                } else {
+                    slicer::app_slice::slice_3mf_to_gcode(
+                        &resolved.input_path,
+                        settings_override,
+                        &resolved.output.local_path,
+                    )
+                    .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
+                    0
+                }
+            }
+            other => {
                 return Err(format!(
-                    "the rust engine only supports STL input (got {}); use --engine native",
-                    resolved.input_kind
+                    "the rust engine supports STL and 3MF input (got {other}); use --engine bambu"
                 ));
             }
-            let config_path = resolved
-                .config_path()
-                .ok_or_else(|| "rust engine requires a resolved slicer config".to_owned())?;
-            if args.dry_run {
-                println!(
-                    "rust-engine slice {} --settings {} --output {}",
-                    resolved.input_path.display(),
-                    config_path.display(),
-                    resolved.output.local_path.display()
-                );
-                0
-            } else {
-                slicer::app_slice::slice_to_gcode(
-                    &resolved.input_path,
-                    config_path,
-                    &resolved.output.local_path,
-                )
-                .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
-                0
-            }
-        }
+        },
     };
 
     if code == 0 && resolved.output.upload_uri.is_some() && !args.dry_run {
@@ -169,10 +193,10 @@ pub fn slice(args: SliceArgs) -> Result<u8, String> {
     Ok(code)
 }
 
-/// Slice the same job with both engines (C++ native subprocess + in-process Rust)
+/// Slice the same job with both engines (bambu (C++) subprocess + in-process Rust)
 /// and print a diff of the two G-code outputs.
 pub fn compare(args: CompareArgs) -> Result<u8, String> {
-    let resolved = resolve_job(&args.config, args.native_binary.clone(), "compare.gcode")?;
+    let resolved = resolve_job(&args.config, args.bambu_binary.clone(), "compare.gcode")?;
 
     if resolved.input_kind != "stl" {
         return Err(format!(
@@ -186,41 +210,41 @@ pub fn compare(args: CompareArgs) -> Result<u8, String> {
         .to_path_buf();
 
     let tmp = TempDir::new().map_err(|e| format!("create temp dir for compare: {e}"))?;
-    let native_out = tmp.path().join("native.gcode");
+    let bambu_out = tmp.path().join("bambu.gcode");
     let rust_out = tmp.path().join("rust.gcode");
 
     // C++ engine (subprocess).
-    let native_code = run_native_slice(
-        &resolved.native_binary,
+    let bambu_code = run_bambu_slice(
+        &resolved.bambu_binary,
         &resolved.input_path,
         Some(config_path.as_path()),
-        &native_out,
+        &bambu_out,
         args.verbose,
         false,
     )?;
-    if native_code != 0 {
-        return Err(format!("native (C++) engine exited with code {native_code}"));
+    if bambu_code != 0 {
+        return Err(format!("bambu (C++) engine exited with code {bambu_code}"));
     }
 
     // Rust engine (in-process).
     slicer::app_slice::slice_to_gcode(&resolved.input_path, &config_path, &rust_out)
         .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
 
-    let native_gcode = std::fs::read(&native_out)
-        .map_err(|e| format!("read native gcode {}: {e}", native_out.display()))?;
+    let bambu_gcode = std::fs::read(&bambu_out)
+        .map_err(|e| format!("read bambu gcode {}: {e}", bambu_out.display()))?;
     let rust_gcode = std::fs::read(&rust_out)
         .map_err(|e| format!("read rust gcode {}: {e}", rust_out.display()))?;
 
     if let Ok(keep) = std::env::var("COMPARE_KEEP_DIR") {
         let _ = std::fs::create_dir_all(&keep);
-        let _ = std::fs::write(std::path::Path::new(&keep).join("native.gcode"), &native_gcode);
+        let _ = std::fs::write(std::path::Path::new(&keep).join("bambu.gcode"), &bambu_gcode);
         let _ = std::fs::write(std::path::Path::new(&keep).join("rust.gcode"), &rust_gcode);
     }
 
-    let report = diff_gcode(&native_gcode, &rust_gcode);
+    let report = diff_gcode(&bambu_gcode, &rust_gcode);
     print!("{report}");
 
-    if native_gcode == rust_gcode {
+    if bambu_gcode == rust_gcode {
         Ok(0)
     } else {
         Ok(1)
@@ -228,28 +252,28 @@ pub fn compare(args: CompareArgs) -> Result<u8, String> {
 }
 
 /// Build the comparison report string for two G-code byte buffers.
-fn diff_gcode(native: &[u8], rust: &[u8]) -> String {
+fn diff_gcode(bambu: &[u8], rust: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
 
-    let native_text = String::from_utf8_lossy(native);
+    let bambu_text = String::from_utf8_lossy(bambu);
     let rust_text = String::from_utf8_lossy(rust);
-    let native_lines: Vec<&str> = native_text.lines().collect();
+    let bambu_lines: Vec<&str> = bambu_text.lines().collect();
     let rust_lines: Vec<&str> = rust_text.lines().collect();
 
-    let native_sha = hex(&Sha256::digest(native));
+    let bambu_sha = hex(&Sha256::digest(bambu));
     let rust_sha = hex(&Sha256::digest(rust));
-    let identical = native == rust;
+    let identical = bambu == rust;
 
     let mut out = String::new();
-    let _ = writeln!(out, "=== G-code comparison: native (C++) vs rust ===");
+    let _ = writeln!(out, "=== G-code comparison: bambu (C++) vs rust ===");
     let _ = writeln!(
         out,
-        "total lines     native={}  rust={}",
-        native_lines.len(),
+        "total lines     bambu={}  rust={}",
+        bambu_lines.len(),
         rust_lines.len()
     );
-    let _ = writeln!(out, "sha256 native   {native_sha}");
+    let _ = writeln!(out, "sha256 bambu   {bambu_sha}");
     let _ = writeln!(out, "sha256 rust     {rust_sha}");
     let _ = writeln!(
         out,
@@ -258,11 +282,11 @@ fn diff_gcode(native: &[u8], rust: &[u8]) -> String {
     );
 
     // First differing line + count of differing lines.
-    let max_lines = native_lines.len().max(rust_lines.len());
+    let max_lines = bambu_lines.len().max(rust_lines.len());
     let mut first_diff: Option<usize> = None;
     let mut diff_count = 0usize;
     for i in 0..max_lines {
-        let n = native_lines.get(i).copied();
+        let n = bambu_lines.get(i).copied();
         let r = rust_lines.get(i).copied();
         if n != r {
             if first_diff.is_none() {
@@ -277,8 +301,8 @@ fn diff_gcode(native: &[u8], rust: &[u8]) -> String {
             let _ = writeln!(out, "first divergence at line {}", i + 1);
             let _ = writeln!(
                 out,
-                "  native: {}",
-                native_lines.get(i).copied().unwrap_or("<EOF>")
+                "  bambu: {}",
+                bambu_lines.get(i).copied().unwrap_or("<EOF>")
             );
             let _ = writeln!(
                 out,
@@ -293,31 +317,31 @@ fn diff_gcode(native: &[u8], rust: &[u8]) -> String {
 
     // Parsed summary diff.
     let _ = writeln!(out, "--- parsed summary ---");
-    summary_field(&mut out, "total filament length", &native_lines, &rust_lines);
-    summary_field(&mut out, "total layer number", &native_lines, &rust_lines);
+    summary_field(&mut out, "total filament length", &bambu_lines, &rust_lines);
+    summary_field(&mut out, "total layer number", &bambu_lines, &rust_lines);
 
-    let native_features = feature_counts(&native_lines);
+    let bambu_features = feature_counts(&bambu_lines);
     let rust_features = feature_counts(&rust_lines);
-    let _ = writeln!(out, "FEATURE tag counts (native vs rust):");
+    let _ = writeln!(out, "FEATURE tag counts (bambu vs rust):");
     let mut all_tags: Vec<&String> =
-        native_features.keys().chain(rust_features.keys()).collect();
+        bambu_features.keys().chain(rust_features.keys()).collect();
     all_tags.sort();
     all_tags.dedup();
     if all_tags.is_empty() {
         let _ = writeln!(out, "  (no ; FEATURE: tags found)");
     }
     for tag in all_tags {
-        let n = native_features.get(tag).copied().unwrap_or(0);
+        let n = bambu_features.get(tag).copied().unwrap_or(0);
         let r = rust_features.get(tag).copied().unwrap_or(0);
         let flag = if n == r { "" } else { "  <-- differs" };
-        let _ = writeln!(out, "  {tag:<24} native={n:<6} rust={r}{flag}");
+        let _ = writeln!(out, "  {tag:<24} bambu={n:<6} rust={r}{flag}");
     }
 
     out
 }
 
 /// Print the first matching `; <label>` value from each side.
-fn summary_field(out: &mut String, label: &str, native: &[&str], rust: &[&str]) {
+fn summary_field(out: &mut String, label: &str, bambu: &[&str], rust: &[&str]) {
     use std::fmt::Write as _;
     let needle = format!("; {label}");
     let find = |lines: &[&str]| -> Option<String> {
@@ -326,10 +350,10 @@ fn summary_field(out: &mut String, label: &str, native: &[&str], rust: &[&str]) 
             .find(|l| l.trim_start().starts_with(&needle))
             .map(|l| l.trim().to_string())
     };
-    let n = find(native);
+    let n = find(bambu);
     let r = find(rust);
     let _ = writeln!(out, "{label}:");
-    let _ = writeln!(out, "  native: {}", n.as_deref().unwrap_or("<absent>"));
+    let _ = writeln!(out, "  bambu: {}", n.as_deref().unwrap_or("<absent>"));
     let _ = writeln!(out, "  rust:   {}", r.as_deref().unwrap_or("<absent>"));
 }
 

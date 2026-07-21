@@ -1,7 +1,7 @@
 local bbl = 'libslic3r/bambustudio/references/BambuStudio/resources/profiles/BBL';
 
 {
-  native_binary: 'libslic3r/bambustudio/build/slicer_cli',
+  bambu_binary: 'libslic3r/bambustudio/build/slicer_cli',
 
   input: {
     type: 'stl',

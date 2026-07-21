@@ -124,15 +124,15 @@
         "cmake -S libslic3r/bambustudio/references/libnoise -B libslic3r/bambustudio/build/libnoise-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/libslic3r/bambustudio/build/libnoise-prefix -DCMAKE_POLICY_VERSION_MINIMUM=3.5",
         "cmake --build libslic3r/bambustudio/build/libnoise-build --target install --parallel"
       ],
-      "native:configure": [
+      "bambu:configure": [
         "cmake -S libslic3r/bambustudio -B libslic3r/bambustudio/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_PREFIX_PATH=$PWD/libslic3r/bambustudio/build/libnoise-prefix:$DEVBOX_PACKAGES_DIR"
       ],
-      "native:build": [
+      "bambu:build": [
         "devbox run setup",
         "cmake --build libslic3r/bambustudio/build --parallel"
       ],
       "package": [
-        "devbox run native:build",
+        "devbox run bambu:build",
         "cargo build --release",
         "cpack --config libslic3r/bambustudio/build/CPackConfig.cmake"
       ],

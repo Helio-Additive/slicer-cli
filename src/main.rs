@@ -7,7 +7,7 @@ mod config;
 mod job_config;
 mod json_utils;
 mod locations;
-mod native;
+mod bambu;
 mod profiles;
 
 use cli::{Cli, Commands};

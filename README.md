@@ -94,7 +94,7 @@ devbox run package
 ```
 
 The package contains `bin/slicer-cli` (the Rust wrapper), `bin/slicer_cli`
-(the native BambuStudio engine), bundled macOS dylibs under `Frameworks/`,
+(the bambu C++ engine), bundled macOS dylibs under `Frameworks/`,
 and Bambu profiles under `resources/profiles/BBL`.
 
 Package metadata identifies the artefact as `slicer_cli` (not `BambuStudio`).

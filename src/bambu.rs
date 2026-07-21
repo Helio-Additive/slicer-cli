@@ -5,17 +5,17 @@ use std::{
     process::{Command, Stdio},
 };
 
-pub fn run_native_slice(
-    native_binary: &Path,
+pub fn run_bambu_slice(
+    bambu_binary: &Path,
     input: &Path,
     config: Option<&Path>,
     output: &Path,
     verbose: bool,
     dry_run: bool,
 ) -> Result<u8, String> {
-    let native_binary = native_binary.canonicalize().map_err(|e| {
+    let bambu_binary = bambu_binary.canonicalize().map_err(|e| {
         format!(
-            "native slicer binary not found: {e}\n\
+            "bambu slicer binary not found: {e}\n\
              Build it with: cmake -S libslic3r/bambustudio -B libslic3r/bambustudio/build && \
              cmake --build libslic3r/bambustudio/build"
         )
@@ -25,7 +25,7 @@ pub fn run_native_slice(
         fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
     }
 
-    let mut cmd = Command::new(&native_binary);
+    let mut cmd = Command::new(&bambu_binary);
     if let Some(config) = config {
         cmd.arg("--config").arg(config);
     }
@@ -43,12 +43,12 @@ pub fn run_native_slice(
     let status = cmd
         .stdin(Stdio::null())
         .status()
-        .map_err(|e| format!("run native slicer: {e}"))?;
+        .map_err(|e| format!("run bambu slicer: {e}"))?;
 
     Ok(status.code().unwrap_or(1) as u8)
 }
 
-pub fn default_native_binary() -> PathBuf {
+pub fn default_bambu_binary() -> PathBuf {
     let exe = if cfg!(windows) {
         "slicer_cli.exe"
     } else {
