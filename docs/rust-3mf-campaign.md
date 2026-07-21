@@ -128,3 +128,13 @@ comparable to bambu.
   the deliberate-exclusion wall; plan = port slab machinery faithfully across
   rounds, then unblock multi_material_segmentation_by_painting (cpp:2095) and
   port apply_mm_segmentation (PrintObjectSlice.cpp:845).
+- R5 cont (R366 committed+pushed): first Majora run PANICKED
+  (print_object.rs:2233 — region loops index layer.regions()[region_id]);
+  fixed by padding layers to num_printing_regions() with empty LayerRegions
+  in PrintObject::slice. Re-smoke GREEN: '; filament: 8', 9 regions, 656
+  layers (== bambu now), fill intact (sparse 1341/solid 557). PERF NOTE:
+  Majora debug wall ~7→~28min with 9 regions (bridge_over_infill clipper
+  hot; sampled JoinCommonEdges/FixupFirstLefts2) — revisit after layer 4.
+  Next: layer 4 — port slab support machinery (TriangleMeshSlicer.cpp:908+:
+  slice_facet_at_zs variant, make_slab_loops, slice_mesh_slabs body), then
+  multi_material_segmentation_by_painting + apply_mm_segmentation.
