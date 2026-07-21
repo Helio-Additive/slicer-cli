@@ -71,8 +71,29 @@ WipeTower):
    shares ALL print_regions into PrintObjectRegions. slice_3mf_to_gcode decodes
    mmu_facets → painting_extruders → installs regions. Layers still carry only
    LayerRegion 0 until layer 4 splits surfaces.
-4. slice_mesh_slabs port; unblock multi_material_segmentation_by_painting; port
-   apply_mm_segmentation (print_object_slice.rs:40) to split LayerRegions per extruder.
+4. Unblock multi_material_segmentation_by_painting + port apply_mm_segmentation.
+   ★ RESCOPED R6 (read the C++ body, MMS.cpp:2095-2400): the main path does NOT
+   use slice_mesh_slabs! It projects each painted facet to a slice-plane LINE
+   inline (~40 lines, MMS.cpp:2244-2311) and feeds PaintedLineVisitor → the
+   PORTED chain (post_process_painted_lines → colorize_contours →
+   has_layer_only_one_color → build_graph → remove_multiple_edges_in_vertices →
+   extract_colored_segments(graph) → cut/merge_segmented_layers).
+   MISSING pieces only:
+   (a) fn build_graph (MMS.cpp:1670, ~215 lines) — its voronoi
+       helpers/classification are ALREADY ported below the comment at
+       multi_material_segmentation.rs:1441 (boostvoronoi 0.12 `bv` API);
+       both C++ extract_colored_segments overloads need VD, so no bypass.
+   (b) the by_painting orchestrator (input_expolygons prep per layer:
+       offset_ex ±10*SCALED_EPSILON, union, remove_small_and_small_holes,
+       expolygons_simplify, remove_duplicates — verify which prep helpers
+       exist in rust), EdgeGrid per layer, facet→line projection loop.
+   (c) apply_mm_segmentation (PrintObjectSlice.cpp:845-925) — intersect
+       per-extruder ExPolygons with region-0 slices, steal into painted
+       LayerRegions.
+   (d) top/bottom propagation (mmu_segmentation_top_and_bottom_layers) is the
+       ONLY slice_mesh_slabs consumer → STUB empty for Tier-1 (horizontal
+       painted-surface propagation missing; contour painting — the dominant
+       Majora signal — unaffected). Port slabs later for fidelity.
 5. Drive region_extruder (print_region.rs:246) from multiple regions.
 6. Wire ToolOrdering + set_extruder + WipeTower into export_gcode.
 
