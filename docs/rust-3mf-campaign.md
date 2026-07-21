@@ -79,10 +79,10 @@ WipeTower):
    has_layer_only_one_color → build_graph → remove_multiple_edges_in_vertices →
    extract_colored_segments(graph) → cut/merge_segmented_layers).
    MISSING pieces only:
-   (a) fn build_graph (MMS.cpp:1670, ~215 lines) — its voronoi
-       helpers/classification are ALREADY ported below the comment at
-       multi_material_segmentation.rs:1441 (boostvoronoi 0.12 `bv` API);
-       both C++ extract_colored_segments overloads need VD, so no bypass.
+   (a) [DONE R369=commit R368] fn build_graph + append_voronoi_vertices +
+       is_edge_attach/connecting helpers + clip_(in)finite_edge +
+       mark_processed — ported (agent-assisted), full chain callable;
+       tests/mms_build_graph.rs green.
    (b) the by_painting orchestrator (input_expolygons prep per layer:
        offset_ex ±10*SCALED_EPSILON, union, remove_small_and_small_holes,
        expolygons_simplify, remove_duplicates — verify which prep helpers
