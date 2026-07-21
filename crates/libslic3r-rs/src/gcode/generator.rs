@@ -704,6 +704,7 @@ const CONFIG_SCHEMA_DEFAULTS: &[(&str, &str)] = &[
     ("flush_into_infill", "0"),
     ("flush_into_objects", "0"),
     ("flush_into_support", "1"),
+    ("flush_multiplier", "1"),
     ("gcode_add_line_number", "0"),
     ("has_filament_switcher", "0"),
     ("has_scarf_joint_seam", "0"),
