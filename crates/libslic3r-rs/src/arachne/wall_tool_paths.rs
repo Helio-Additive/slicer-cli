@@ -1079,20 +1079,17 @@ impl WallToolPaths {
             let mut stitched_polylines: VariableWidthLines = Vec::new();
             let mut closed_polygons: VariableWidthLines = Vec::new();
             // WallToolPaths.cpp:561
-            // BLOCKED: PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>::stitch
-            // is not yet ported (the var-width instantiation indexes through PathsPointIndex<VariableWidthLines>
-            // which is not generic in the Rust port). The two ported helpers `can_connect_extrusion`
-            // and `is_odd_extrusion` exist but the full `stitch` does not. To preserve the rest of the
-            // control flow we keep the existing lines as the stitched output, matching the empty-input
-            // case (toolpaths are empty until SkeletalTrapezoidation lands) so this is a no-op there.
-            let _ = &PolylineStitcher::is_odd_extrusion; // reference the available helper
-            for line in std::mem::take(&mut toolpaths[wall_idx]).into_iter() {
-                if line.is_closed {
-                    closed_polygons.push(line);
-                } else {
-                    stitched_polylines.push(line);
-                }
-            }
+            // PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>::stitch(
+            //     wall_lines, stitched_polylines, closed_polygons, stitch_distance)
+            // (snap_distance takes the C++ default scaled(0.01), PolylineStitcher.hpp:53.)
+            let wall_lines = std::mem::take(&mut toolpaths[wall_idx]);
+            PolylineStitcher::stitch_extrusion(
+                &wall_lines,
+                &mut stitched_polylines,
+                &mut closed_polygons,
+                stitch_distance,
+                scaled(0.01),
+            );
 
             // WallToolPaths.cpp:622  wall_lines = stitched_polylines;
             toolpaths[wall_idx] = stitched_polylines;

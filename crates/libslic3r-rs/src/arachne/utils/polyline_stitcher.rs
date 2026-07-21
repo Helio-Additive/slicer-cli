@@ -21,10 +21,10 @@
 // fields, so they ARE ported below (taking `&ExtrusionLine` directly).
 
 use super::polygons_point_index::{PathsPointIndex, PathsPointIndexLocator};
-use super::sparse_point_grid::SparsePointGrid;
+use super::sparse_point_grid::{LocatorTrait, SparsePointGrid};
 
-use crate::arachne::utils::extrusion_line::ExtrusionLine;
-use crate::geometry::{Polygon, Polygons};
+use crate::arachne::utils::extrusion_line::{ExtrusionLine, VariableWidthLines};
+use crate::geometry::{Point, Polygon, Polygons};
 use crate::scaled;
 
 /// Class for stitching polylines into longer polylines or into polygons
@@ -422,15 +422,229 @@ impl PolylineStitcher {
     // PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>
     // specializations.
     //
-    // BLOCKED: `stitch` for this instantiation indexes through
-    // `PathsPointIndex<VariableWidthLines>`, which is not yet generic in the
-    // Rust port (PathsPointIndex is hard-wired to `&Polygons`). See the module
-    // header note. The three helpers below depend only on `ExtrusionLine` and
-    // so are ported faithfully. `canReverse` for this instantiation reads
-    // `(*ppi.polygons)[ppi.poly_idx].is_odd`; since the only field it touches is
-    // the resolved `ExtrusionLine::is_odd`, it is ported here as a helper taking
-    // the line directly (same shape as `can_connect_extrusion`/`is_odd_extrusion`).
+    // `stitch_extrusion` below is the template body (PolylineStitcher.hpp:53-217)
+    // instantiated for VariableWidthLines. Instead of making `PathsPointIndex`
+    // generic over the container, the grid element (`ExtrusionPointIndex`)
+    // carries a copy of the endpoint position — equivalent, since `lines` is
+    // immutable for the duration of the stitch and `p()` in C++ only ever
+    // resolves that same endpoint.
     // ====================================================================
+
+    /// Stitch together the separate extrusion `lines` into `result_lines` and,
+    /// when they can be closed, into `result_polygons`.
+    ///
+    /// PolylineStitcher.hpp:53-217, instantiated as
+    /// `PolylineStitcher<VariableWidthLines, ExtrusionLine, ExtrusionJunction>::stitch`
+    /// (the WallToolPaths.cpp:561 call).
+    pub fn stitch_extrusion(
+        lines: &VariableWidthLines,
+        result_lines: &mut VariableWidthLines,
+        result_polygons: &mut VariableWidthLines,
+        max_stitch_distance: i64,
+        snap_distance: i64,
+    ) {
+        // PolylineStitcher.hpp:55-56
+        if lines.is_empty() {
+            return;
+        }
+
+        // PolylineStitcher.hpp:58
+        let mut grid = SparsePointGrid::<ExtrusionPointIndex, ExtrusionPointIndexLocator>::new(
+            max_stitch_distance,
+            lines.len() * 2,
+            1.0,
+        );
+
+        // populate grid — PolylineStitcher.hpp:61-66
+        for (line_idx, line) in lines.iter().enumerate() {
+            if line.junctions.is_empty() {
+                continue;
+            }
+            grid.insert(ExtrusionPointIndex {
+                p: line.junctions[0].p,
+                poly_idx: line_idx,
+                point_idx: 0,
+            });
+            grid.insert(ExtrusionPointIndex {
+                p: line.junctions[line.junctions.len() - 1].p,
+                poly_idx: line_idx,
+                point_idx: line.junctions.len() - 1,
+            });
+        }
+
+        // PolylineStitcher.hpp:68
+        let mut processed = vec![false; lines.len()];
+
+        // PolylineStitcher.hpp:70
+        for line_idx in 0..lines.len() {
+            // PolylineStitcher.hpp:72-75
+            if processed[line_idx] {
+                continue;
+            }
+            // PolylineStitcher.hpp:76
+            processed[line_idx] = true;
+            let line = &lines[line_idx];
+            // PolylineStitcher.hpp:78  bool should_close = isOdd(line);
+            let mut should_close = Self::is_odd_extrusion(line);
+
+            // PolylineStitcher.hpp:80
+            let mut chain: ExtrusionLine = line.clone();
+            // PolylineStitcher.hpp:81
+            let mut closest_is_closing_polygon = false;
+            // PolylineStitcher.hpp:82-83 — first the unreversed direction
+            for go_in_reverse_direction in [false, true] {
+                // PolylineStitcher.hpp:84-87
+                if go_in_reverse_direction {
+                    chain.reverse();
+                }
+                // PolylineStitcher.hpp:88
+                let mut chain_length: i64 = chain.polyline_length();
+
+                // PolylineStitcher.hpp:90
+                loop {
+                    // PolylineStitcher.hpp:92  Point from = make_point(chain.back());
+                    let from = chain.junctions.last().unwrap().p;
+
+                    // PolylineStitcher.hpp:94-95
+                    let mut closest: Option<ExtrusionPointIndex> = None;
+                    let mut closest_distance = i64::MAX;
+
+                    // PolylineStitcher.hpp:96-153
+                    grid.process_nearby(from, max_stitch_distance, |nearby| {
+                        // PolylineStitcher.hpp:101
+                        let mut is_closing_segment = false;
+                        // PolylineStitcher.hpp:102
+                        let dx = nearby.p.x() - from.x();
+                        let dy = nearby.p.y() - from.y();
+                        let mut dist = (((dx * dx + dy * dy) as f64).sqrt()) as i64;
+                        // PolylineStitcher.hpp:103-106
+                        if dist > max_stitch_distance {
+                            return true; // keep looking
+                        }
+                        // PolylineStitcher.hpp:107
+                        let front_p = chain.junctions[0].p;
+                        let dx2 = nearby.p.x() - front_p.x();
+                        let dy2 = nearby.p.y() - front_p.y();
+                        if dx2 * dx2 + dy2 * dy2 < snap_distance * snap_distance {
+                            // PolylineStitcher.hpp:109-113
+                            if chain_length + dist < 3 * max_stitch_distance
+                                || chain.junctions.len() <= 2
+                            {
+                                return true; // look for a better next line
+                            }
+                            // PolylineStitcher.hpp:114
+                            is_closing_segment = true;
+                            // PolylineStitcher.hpp:115-125
+                            if !should_close {
+                                dist += scaled(0.01); // prefer continuing polyline over closing a polygon
+                            } else {
+                                dist -= scaled(0.01); // prefer closing the polygon if it's 100% even lines
+                            }
+                        } else if processed[nearby.poly_idx] {
+                            // PolylineStitcher.hpp:127-130 — already moved to output
+                            return true; // keep looking for a connection
+                        }
+                        // PolylineStitcher.hpp:131-132
+                        let mut nearby_would_be_reversed = nearby.point_idx != 0;
+                        nearby_would_be_reversed = nearby_would_be_reversed != go_in_reverse_direction;
+                        // PolylineStitcher.hpp:133-136
+                        // canReverse(ppi) for this instantiation reads
+                        // (*ppi.polygons)[ppi.poly_idx].is_odd (PolylineStitcher.cpp:9-15).
+                        if !Self::can_reverse_extrusion(&lines[nearby.poly_idx])
+                            && nearby_would_be_reversed
+                        {
+                            return true; // keep looking for a connection
+                        }
+                        // PolylineStitcher.hpp:137-140
+                        if !Self::can_connect_extrusion(&chain, &lines[nearby.poly_idx]) {
+                            return true; // keep looking for a connection
+                        }
+                        // PolylineStitcher.hpp:141-146
+                        if dist < closest_distance {
+                            closest_distance = dist;
+                            closest = Some(*nearby);
+                            closest_is_closing_polygon = is_closing_segment;
+                        }
+                        // PolylineStitcher.hpp:147-150
+                        if dist < snap_distance {
+                            return false; // stop looking for alternatives
+                        }
+                        true // keep processing elements
+                    });
+
+                    // PolylineStitcher.hpp:155-160
+                    if closest.is_none() || closest_is_closing_polygon {
+                        break;
+                    }
+                    let closest = closest.unwrap();
+
+                    // PolylineStitcher.hpp:162-163
+                    let back_p = chain.junctions.last().unwrap().p;
+                    let sdx = back_p.x() - closest.p.x();
+                    let sdy = back_p.y() - closest.p.y();
+                    let segment_dist = (((sdx * sdx + sdy * sdy) as f64).sqrt()) as i64;
+                    debug_assert!(segment_dist <= max_stitch_distance + scaled(0.01));
+                    // PolylineStitcher.hpp:164
+                    let old_size = chain.junctions.len();
+                    let nearby_line = &lines[closest.poly_idx];
+                    // PolylineStitcher.hpp:165-182 — append the nearby line's
+                    // junctions, forward when we connect at its head, reversed
+                    // when we connect at its tail; skip the coincident endpoint
+                    // when the joint is within snap_distance.
+                    if closest.point_idx == 0 {
+                        let start_pos = if segment_dist < snap_distance { 1 } else { 0 };
+                        for j in nearby_line.junctions[start_pos..].iter() {
+                            chain.junctions.push(*j);
+                        }
+                    } else {
+                        let mut start_idx = nearby_line.junctions.len();
+                        if segment_dist < snap_distance {
+                            start_idx -= 1;
+                        }
+                        for i in (0..start_idx).rev() {
+                            chain.junctions.push(nearby_line.junctions[i]);
+                        }
+                    }
+                    // PolylineStitcher.hpp:183-186 — update chain length
+                    for i in old_size..chain.junctions.len() {
+                        let p1 = chain.junctions[i].p;
+                        let p0 = chain.junctions[i - 1].p;
+                        let ldx = p1.x() - p0.x();
+                        let ldy = p1.y() - p0.y();
+                        chain_length += (((ldx * ldx + ldy * ldy) as f64).sqrt()) as i64;
+                    }
+                    // PolylineStitcher.hpp:187 — connecting an even to an odd
+                    // line means we should no longer try to close it.
+                    should_close = should_close & !Self::is_odd_extrusion(nearby_line);
+                    // PolylineStitcher.hpp:188-189
+                    debug_assert!(!processed[closest.poly_idx]);
+                    processed[closest.poly_idx] = true;
+                }
+                // PolylineStitcher.hpp:191-200
+                if closest_is_closing_polygon {
+                    if go_in_reverse_direction {
+                        // re-reverse chain to retain original direction
+                        chain.reverse();
+                    }
+                    break; // don't consider reverse direction
+                }
+            }
+            // PolylineStitcher.hpp:202-215
+            if closest_is_closing_polygon {
+                result_polygons.push(chain);
+            } else {
+                // canReverse(ppi_here) — PolylineStitcher.cpp:9-15 resolves to
+                // lines[line_idx].is_odd.
+                if !Self::can_reverse_extrusion(&lines[line_idx]) {
+                    // Since closest_is_closing_polygon is false we went through
+                    // the reverse iteration; a non-reversible polyline must be
+                    // re-reversed to its original direction.
+                    chain.reverse();
+                }
+                result_lines.push(chain);
+            }
+        }
+    }
 
     /// Whether an extrusion-line polyline is allowed to be reversed.
     /// (Not true for wall polylines which are not odd.)
@@ -472,6 +686,30 @@ impl PolylineStitcher {
     /// }
     pub fn is_odd_extrusion(line: &ExtrusionLine) -> bool {
         line.is_odd
+    }
+}
+
+/// Grid element for `stitch_extrusion`: one endpoint of extrusion line
+/// `poly_idx` (junction index 0 or len-1), with its position copied out.
+///
+/// Stands in for C++ `PathsPointIndex<VariableWidthLines>` (PolylineStitcher.hpp:58):
+/// C++ resolves `p()` through the container; since `lines` is immutable during
+/// the stitch, carrying the endpoint copy is equivalent and avoids making
+/// `PathsPointIndex` generic over the container type.
+#[derive(Debug, Clone, Copy)]
+pub struct ExtrusionPointIndex {
+    pub p: Point,
+    pub poly_idx: usize,
+    pub point_idx: usize,
+}
+
+/// Locator for [`ExtrusionPointIndex`] — mirrors `PathsPointIndexLocator`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExtrusionPointIndexLocator;
+
+impl LocatorTrait<ExtrusionPointIndex> for ExtrusionPointIndexLocator {
+    fn locate(&self, elem: &ExtrusionPointIndex) -> Point {
+        elem.p
     }
 }
 
