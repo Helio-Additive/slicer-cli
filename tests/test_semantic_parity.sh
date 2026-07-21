@@ -45,13 +45,13 @@ FAIL=0
 for CONFIG in "${CONFIGS[@]}"; do
     NAME="$(basename "$CONFIG" .jsonnet)"
     echo "### semantic-parity: $NAME"
-    rm -f "$TMP/rust.gcode" "$TMP/native.gcode"
+    rm -f "$TMP/rust.gcode" "$TMP/bambu.gcode"
     COMPARE_KEEP_DIR="$TMP" "$BIN" compare --config "$CONFIG" >/dev/null 2>&1 || true
-    if [ ! -s "$TMP/rust.gcode" ] || [ ! -s "$TMP/native.gcode" ]; then
-        echo "SKIP [$NAME]: compare did not produce both gcodes (native binary missing?)"
+    if [ ! -s "$TMP/rust.gcode" ] || [ ! -s "$TMP/bambu.gcode" ]; then
+        echo "SKIP [$NAME]: compare did not produce both gcodes (bambu binary missing?)"
         continue
     fi
-    if ! "$PY" "$ROOT/scripts/semantic_compare.py" "$TMP/rust.gcode" "$TMP/native.gcode"; then
+    if ! "$PY" "$ROOT/scripts/semantic_compare.py" "$TMP/rust.gcode" "$TMP/bambu.gcode"; then
         FAIL=1
     fi
 done

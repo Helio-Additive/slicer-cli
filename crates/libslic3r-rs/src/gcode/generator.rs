@@ -347,7 +347,13 @@ impl GCodeHeader {
             self.config.filament_diameter
         ));
         header.push_str(&format!("; max_z_height: {:.2}\n", self.stats.max_z_height));
-        header.push_str("; filament: 1\n");
+        // Configured filament count (single-material configs ⇒ 1, preserving
+        // the locked default-path bytes). C++ writes the used-filament list;
+        // matching that per-use accounting is part of the multicolour chain.
+        header.push_str(&format!(
+            "; filament: {}\n",
+            self.config.num_filaments()
+        ));
         header.push_str("; HEADER_BLOCK_END\n");
         header.push_str("\n");
 

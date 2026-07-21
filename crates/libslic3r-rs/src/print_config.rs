@@ -119,6 +119,18 @@ pub struct PrintConfig {
     pub nozzle_diameter: CoordF,
     /// Filament diameter (mm).
     pub filament_diameter: CoordF,
+    /// Per-filament colours (`filament_colour` array, e.g. `#00AE42`), one per
+    /// configured filament. C++ derives the extruder count from the length of
+    /// its per-filament vectors (PrintConfig.hpp filament_colour /
+    /// filament_diameter); the Rust config keeps SCALAR fields for filament 0
+    /// (the locked single-material paths) and carries the full arrays in these
+    /// additive vectors for multi-material work. Empty = single filament.
+    pub filament_colours: Vec<String>,
+    /// Per-filament diameters (mm) — full `filament_diameter` array.
+    /// `filament_diameter` (scalar) stays = element 0.
+    pub filament_diameters: Vec<CoordF>,
+    /// Per-filament densities (g/cm³) — full `filament_density` array.
+    pub filament_densities: Vec<CoordF>,
     /// Extrusion multiplier (flow rate adjustment).
     pub extrusion_multiplier: CoordF,
     /// Line width of initial layer (mm). 0 = use the per-role widths.
@@ -726,6 +738,19 @@ impl PrintConfig {
         Self::default()
     }
 
+    /// Number of configured filaments/extruder slots.
+    ///
+    /// C++ derives this from the per-filament vector lengths
+    /// (`filament_diameter.size()`, PrintConfig.hpp). The Rust config's
+    /// per-filament vectors are empty for single-material configs (scalar
+    /// fields = filament 0), so empty ⇒ 1.
+    pub fn num_filaments(&self) -> usize {
+        self.filament_diameters
+            .len()
+            .max(self.filament_colours.len())
+            .max(1)
+    }
+
     /// Apply all settings from another config, overwriting this one.
     /// Port of C++ DynamicPrintConfig::apply().
     pub fn apply_from(&mut self, other: &PrintConfig) {
@@ -941,6 +966,10 @@ impl Default for PrintConfig {
             // Extrusion
             nozzle_diameter: 0.4,
             filament_diameter: 1.75,
+            // Empty = single filament (scalar fields are filament 0).
+            filament_colours: Vec::new(),
+            filament_diameters: Vec::new(),
+            filament_densities: Vec::new(),
             extrusion_multiplier: 1.0,
             // PrintConfig.cpp:3004-3011 default ConfigOptionFloat(0.4)
             initial_layer_line_width: 0.4,

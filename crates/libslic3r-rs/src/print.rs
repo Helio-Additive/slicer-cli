@@ -1875,11 +1875,11 @@ impl Print {
         // Print.cpp:434-435
         let mut extruders: Vec<u32> = Vec::new();
 
-        // The C++ config carries a per-extruder `filament_diameter` vector;
-        // the Rust PrintConfig is single-extruder (scalar), so the configured
-        // extruder count is 1.
-        // FIDELITY-NOTE: single-extruder PrintConfig (filament_diameter scalar)
-        let num_extruders: i32 = 1;
+        // C++ derives the extruder count from the per-extruder
+        // `filament_diameter` vector; the Rust config carries the full arrays
+        // in additive vector fields (scalars stay = filament 0), so use the
+        // configured filament count (1 for single-material configs).
+        let num_extruders: i32 = self.config().num_filaments() as i32;
         // Print::has_brim() (Print.cpp:561) checks per-object brim configs; the
         // Rust Print only exposes the print-level brim_width, so treat a
         // positive brim width as "has brim" (matches make_brim's own gate).

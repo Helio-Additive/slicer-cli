@@ -59,7 +59,12 @@ WipeTower):
    (merged-mesh triangle order). slice_3mf_to_gcode logs painted-facet count.
    NOTE: skipped full ModelVolume — merged-mesh + parallel annotation is the
    Tier-1-consistent shape; revisit if layer 4 needs per-volume separation.
-2. Per-extruder PrintConfig (filament vectors, filament_colour, real num_extruders).
+2. [DONE R365] Per-extruder PrintConfig — ADDITIVE vectors (filament_colours/
+   filament_diameters/filament_densities; scalars stay = filament 0), populated
+   by apply_filament_arrays from the raw settings JSON; num_filaments();
+   `; filament: N` header + all_extruders() driven by it (N=1 single-material,
+   byte-neutral there). Bin's own load_bambustudio_settings copy NOT updated
+   (single-material; multicolour targets the library path).
 3. Painted-region generation (painted_regions; >1 region/object in print.rs:207-233).
 4. slice_mesh_slabs port; unblock multi_material_segmentation_by_painting; port
    apply_mm_segmentation (print_object_slice.rs:40) to split LayerRegions per extruder.
@@ -98,3 +103,15 @@ comparable to bambu.
   green; helio CLI compiles. Next: B layer 2 — per-extruder PrintConfig
   (filament vectors, filament_colour, num_extruders from filament_diameter.len()),
   then `; filament: N` header + all_extruders().
+- R4 (2026-07-21): B layer 2 DONE (R365, additive vectors — byte-neutral for
+  single-material, verified stl-inline bytes identical with/without WIP).
+  ★ BYTE-LOCK SUPERSEDED: discovered R362 moved the historical default lock
+  147987/7adae05c → 147761 lines. Route: concentric/floating fills construct
+  WallToolPaths even under classic walls → the now-real stitcher changes their
+  output. VERDICT: accepted — the lock had frozen the stub's behavior; the
+  official gate since R348 is semantic parity, and it PASSES post-R362:
+  benchy EQUIVALENT (filament 0.9974, silhouette 99.77% — better than the
+  99.29% at lock time), cube EQUIVALENT (1.0035, 100.00%). Also fixed R360
+  fallout: test_semantic_parity.sh expected native.gcode, compare now writes
+  bambu.gcode (gate silently SKIPped). Next: B layer 3 — painted-region
+  generation (PrintApply.cpp:1060 → painted_regions, >1 region/object).

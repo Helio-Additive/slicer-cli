@@ -921,6 +921,12 @@ fn load_bambustudio_settings(
         recognized, unrecognized
     );
 
+    // === Per-filament arrays (multi-material) ===
+    // `set_deserialize` consumes only element 0 of array-valued keys (the
+    // scalar config is filament 0); capture the FULL arrays here so the
+    // multi-material chain knows the real filament count/colours.
+    apply_filament_arrays(&mut print_config, json);
+
     // === Special handling: bed temperature from curr_bed_type ===
     apply_bed_temperature(&mut print_config, json);
 
@@ -969,6 +975,37 @@ fn get_json_str(json: &serde_json::Value, key: &str) -> Option<String> {
 /// Helper: parse a float from JSON string (strip trailing %).
 fn get_json_f64(json: &serde_json::Value, key: &str) -> Option<f64> {
     get_json_str(json, key).and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
+}
+
+/// Capture the full per-filament arrays (`filament_colour`,
+/// `filament_diameter`, `filament_density`) from the raw settings JSON.
+///
+/// The scalar `filament_*` fields keep element 0 (set by `set_deserialize`);
+/// these vectors carry all filaments so `PrintConfig::num_filaments()` and the
+/// multi-material chain (painted regions → tool ordering) see the real count.
+fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
+    let get_str_array = |key: &str| -> Vec<String> {
+        match json.get(key) {
+            Some(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
+    let get_f64_array = |key: &str| -> Vec<f64> {
+        match json.get(key) {
+            Some(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
+
+    config.filament_colours = get_str_array("filament_colour");
+    config.filament_diameters = get_f64_array("filament_diameter");
+    config.filament_densities = get_f64_array("filament_density");
 }
 
 /// Parse extruder_offset from JSON and set on config.
