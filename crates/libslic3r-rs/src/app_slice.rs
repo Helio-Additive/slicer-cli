@@ -182,14 +182,29 @@ pub fn slice_3mf_to_gcode(
         mmu_facets,
     } = load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     info!("Loaded {} triangles", mesh.triangle_count());
+    // Painted multi-material: decode the annotation over the merged mesh to
+    // learn which extruder slots are painted (campaign B layer 3). The painted
+    // regions are declared on the Print below; splitting the layer surfaces
+    // into them (apply_mm_segmentation, layer 4) is not wired yet, so the
+    // toolpaths are still single-material.
+    let mut painting_extruders: Vec<u8> = Vec::new();
     if !mmu_facets.is_empty() {
-        // Parsed and stored (campaign B layer 1); the segmentation → region →
-        // toolchange chain (layers 3-6) is not wired yet, so the slice is
-        // still single-material.
+        let mut selector =
+            crate::triangle_selector::TriangleSelector::new(mesh.clone(), 0.0);
+        selector.deserialize(
+            &mmu_facets.data,
+            false,
+            crate::triangle_selector::EnforcerBlockerType::EXTRUDER_MAX,
+            crate::triangle_selector::EnforcerBlockerType::NONE,
+            crate::triangle_selector::EnforcerBlockerType::NONE,
+        );
+        painting_extruders = selector.used_states().iter().map(|s| s.0 as u8).collect();
         info!(
-            "3MF carries painted multi-material state on {} facets — multicolour \
-             slicing is not yet applied (single-material Tier-1 output)",
-            mmu_facets.facet_count()
+            "3MF painted multi-material: {} painted facets, extruders {:?} — regions \
+             declared; per-region surface segmentation not yet applied \
+             (single-material Tier-1 toolpaths)",
+            mmu_facets.facet_count(),
+            painting_extruders
         );
     }
 
@@ -245,6 +260,11 @@ pub fn slice_3mf_to_gcode(
     let mut print = Print::new();
     *print.config_mut() = print_config;
     print.set_default_region_config(region_config);
+    // Declare one region per painted extruder (PrintApply.cpp:1062-1078 shape)
+    // BEFORE add_object so they share into PrintObjectRegions::all_regions.
+    if !painting_extruders.is_empty() {
+        print.install_painted_regions(&painting_extruders);
+    }
     print.raw_settings = raw_settings_json;
     print.set_status_callback(|percent, message| {
         info!("Progress: {}% - {}", percent, message);

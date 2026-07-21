@@ -65,7 +65,12 @@ WipeTower):
    `; filament: N` header + all_extruders() driven by it (N=1 single-material,
    byte-neutral there). Bin's own load_bambustudio_settings copy NOT updated
    (single-material; multicolour targets the library path).
-3. Painted-region generation (painted_regions; >1 region/object in print.rs:207-233).
+3. [DONE R366] Painted-region generation: TriangleSelector::used_states()
+   (painted extruder slots from the annotation), Print::install_painted_regions
+   (PrintApply.cpp:1062-1078 shape, single-parent collapse), add_object now
+   shares ALL print_regions into PrintObjectRegions. slice_3mf_to_gcode decodes
+   mmu_facets → painting_extruders → installs regions. Layers still carry only
+   LayerRegion 0 until layer 4 splits surfaces.
 4. slice_mesh_slabs port; unblock multi_material_segmentation_by_painting; port
    apply_mm_segmentation (print_object_slice.rs:40) to split LayerRegions per extruder.
 5. Drive region_extruder (print_region.rs:246) from multiple regions.
@@ -115,3 +120,11 @@ comparable to bambu.
   fallout: test_semantic_parity.sh expected native.gcode, compare now writes
   bambu.gcode (gate silently SKIPped). Next: B layer 3 — painted-region
   generation (PrintApply.cpp:1060 → painted_regions, >1 region/object).
+- R5 (2026-07-21): B layer 3 implemented (used_states + install_painted_regions
+  + share-all-regions + 3MF wiring; three_mf_parse 7/7). Majora smoke running
+  (decode 377k facets + regions installed, single-material toolpaths expected
+  unchanged). Commit as R366 after smoke green. Layer 4 scoped: slice_mesh_slabs
+  = 100-line body + ~1150 lines support (TriangleMeshSlicer.cpp:908-2158) —
+  the deliberate-exclusion wall; plan = port slab machinery faithfully across
+  rounds, then unblock multi_material_segmentation_by_painting (cpp:2095) and
+  port apply_mm_segmentation (PrintObjectSlice.cpp:845).

@@ -212,6 +212,34 @@ fn captures_paint_color_into_facets_annotation() {
 }
 
 #[test]
+fn painted_states_decode_to_extruder_slots() {
+    // Deserialize the painted tetra's annotation over its own mesh and check
+    // the painted extruder slots come back. BambuStudio hex states: "4"
+    // (0100 → leaf, state 01) = extruder 1; "2C" = a split/extended state
+    // whose leaves resolve to extruder ≥1 — the decode must not panic and
+    // must produce nonempty used_states.
+    let parsed = parse_3mf_model_xml(PAINTED_TETRA_MODEL).expect("painted mesh should parse");
+    let mut selector = slicer::triangle_selector::TriangleSelector::new(parsed.mesh, 0.0);
+    selector.deserialize(
+        &parsed.mmu_facets.data,
+        false,
+        slicer::triangle_selector::EnforcerBlockerType::EXTRUDER_MAX,
+        slicer::triangle_selector::EnforcerBlockerType::NONE,
+        slicer::triangle_selector::EnforcerBlockerType::NONE,
+    );
+    let states = selector.used_states();
+    assert!(
+        !states.is_empty(),
+        "painted annotation must yield at least one painted extruder state"
+    );
+    // paint_color="4" is extruder slot 1 (state 0b01).
+    assert!(
+        states.iter().any(|s| s.0 == 1),
+        "expected extruder 1 among painted states, got {states:?}"
+    );
+}
+
+#[test]
 fn facets_annotation_string_round_trip() {
     // Longer real-world strings (split-triangle states from the Majora 3MF).
     let samples = ["4", "8", "0C", "5C", "41C1C1C31C1C1C3", "2C2C42C2C32C2C3"];

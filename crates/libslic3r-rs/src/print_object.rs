@@ -479,6 +479,26 @@ impl PrintObject {
         // PrintObjectSlice.cpp:802
         self.layers = layers;
 
+        // C++ gives every Layer one LayerRegion per print-object region
+        // (Layer::add_region for each region id during slicing — empty
+        // LayerRegions are legal and expected; PrintObjectSlice.cpp:60-115
+        // slices per region). The Rust slicer creates only region 0, so when
+        // painted regions are declared (install_painted_regions) pad each
+        // layer up to num_printing_regions() with empty LayerRegions — the
+        // region loops (`for region_id in 0..num_printing_regions()`) index
+        // `layer.regions()[region_id]` directly and would OOB otherwise.
+        // apply_mm_segmentation (campaign layer 4) later moves painted
+        // surfaces into these.
+        let num_regions = self.num_printing_regions();
+        if num_regions > 1 {
+            for (layer_id, layer) in self.layers.iter_mut().enumerate() {
+                while layer.regions().len() < num_regions {
+                    let region_id = layer.regions().len();
+                    layer.add_region(crate::layer::LayerRegion::new(layer_id, region_id));
+                }
+            }
+        }
+
         // Build lslices for each layer (union of all region slices)
         // C++: PrintObjectSlice.cpp calls layer->make_slices() which populates
         // lslices from region slices. This is needed for detect_surfaces_type()

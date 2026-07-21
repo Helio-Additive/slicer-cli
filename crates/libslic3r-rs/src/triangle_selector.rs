@@ -2840,6 +2840,31 @@ impl TriangleSelector {
 pub type SerializedData = (Vec<(i32, i32)>, Vec<bool>);
 
 impl TriangleSelector {
+    /// Distinct non-NONE painted states over all valid triangles (leaves and
+    /// split parents alike), ascending.
+    ///
+    /// For painted-MMU annotations the state value IS the filament/extruder
+    /// slot (EXTRUDER1=1, EXTRUDER2=2, … — Model.hpp:713 `EnforcerBlockerType`,
+    /// "BBS: painting" comment), so this yields the set of painted extruders —
+    /// the input `generate_print_object_regions` (PrintApply.cpp:1062) walks
+    /// as `painting_extruders`.
+    pub fn used_states(&self) -> Vec<EnforcerBlockerType> {
+        let mut seen = [false; 33]; // EXTRUDER_MAX = 32
+        for tr in self.m_triangles.iter() {
+            if !tr.valid() {
+                continue;
+            }
+            let s = tr.get_state();
+            if s.0 > 0 && (s.0 as usize) < seen.len() {
+                seen[s.0 as usize] = true;
+            }
+        }
+        (1..seen.len())
+            .filter(|&i| seen[i])
+            .map(|i| EnforcerBlockerType(i as i8))
+            .collect()
+    }
+
     // ============================================================================
     // TriangleSelector.cpp:1722-1799 — serialize
     // ============================================================================

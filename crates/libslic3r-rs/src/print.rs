@@ -210,8 +210,12 @@ impl Print {
         // matching C++ where m_print_regions holds pointers into all_regions.
         if object.num_printing_regions() == 0 {
             self.ensure_default_region();
-            if let Some(default_region) = self.print_regions.first().cloned() {
-                let regions = vec![default_region];
+            // Share ALL print regions (region 0 = default; any following =
+            // painted regions from install_painted_regions), preserving order —
+            // C++ PrintObjectRegions::all_regions holds every region the apply
+            // step created, painted ones included (PrintApply.cpp:1062-1078).
+            let regions: Vec<Arc<PrintRegion>> = self.print_regions.clone();
+            if !regions.is_empty() {
                 let shared_regions = Arc::new(
                     crate::print_object::PrintObjectRegions::with_regions(regions),
                 );
@@ -242,6 +246,43 @@ impl Print {
     pub fn set_default_region_config(&mut self, config: crate::region_config::PrintRegionConfig) {
         self.print_regions.clear();
         self.print_regions.push(Arc::new(PrintRegion::new(config)));
+    }
+
+    /// Install one additional print region per painted extruder, cloned from
+    /// the default region config with its filament fields retargeted.
+    ///
+    /// Mirrors the painted-region section of `generate_print_object_regions`
+    /// (PrintApply.cpp:1062-1078): for each `painted_extruder_id`, clone the
+    /// parent region's `PrintRegionConfig`, set `wall_filament` /
+    /// `solid_infill_filament` / `sparse_infill_filament` to it, and register
+    /// the region. Tier-1 has exactly one parent region (the merged-mesh
+    /// default, region 0), so the C++ parent/sort machinery collapses to an
+    /// extruder-ascending append after region 0 — the same final order the C++
+    /// sort produces for a single parent.
+    ///
+    /// Call AFTER `set_default_region_config` and BEFORE `add_object` (regions
+    /// are shared into `PrintObjectRegions::all_regions` at add time).
+    /// `painting_extruders` are 1-based filament slots
+    /// ([`crate::triangle_selector::TriangleSelector::used_states`]).
+    ///
+    /// The painted `LayerRegion`s only receive surfaces once the MMU
+    /// segmentation chain (apply_mm_segmentation) lands; until then the extra
+    /// regions are declared but stay empty — harmless to single-region layers.
+    pub fn install_painted_regions(&mut self, painting_extruders: &[u8]) {
+        self.ensure_default_region();
+        let parent_config = self
+            .print_regions
+            .first()
+            .map(|r| r.config().clone())
+            .unwrap_or_default();
+        for &extruder_id in painting_extruders {
+            // PrintApply.cpp:1067-1071
+            let mut cfg = parent_config.clone();
+            cfg.wall_filament = extruder_id as usize;
+            cfg.solid_infill_filament = extruder_id as usize;
+            cfg.sparse_infill_filament = extruder_id as usize;
+            self.print_regions.push(Arc::new(PrintRegion::new(cfg)));
+        }
     }
 
     /// Get reference to objects
