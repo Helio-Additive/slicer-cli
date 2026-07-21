@@ -39,5 +39,9 @@ tests/.tmp/
 tests/**/out.gcode
 tests/*.out.gcode
 
+# Large files
+*.gcode
+*.3mf
+
 # Misc
 _downloads

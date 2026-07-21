@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { Jsonnet } from "@hanazuki/node-jsonnet";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 type TestMode = "devbox" | "docker";
@@ -15,7 +15,7 @@ interface CommandResult {
 
 interface SliceOptions {
   dryRun?: boolean;
-  nativeBinary?: string;
+  bambuBinary?: string;
 }
 
 interface Triangle {
@@ -149,6 +149,35 @@ describe("Slicing tests", () => {
       });
     }
   }, 30_000);
+
+  // A job config whose input is *only* a 3MF reference — no machine/filament/
+  // process triple. The embedded Metadata/project_settings.config drives the
+  // slice (bambu engine reads it). Uses tests/configs/nu3mf.jsonnet, which
+  // points at a real multicolour MakerWorld 3MF. That file is gitignored
+  // (*.3mf, 13MB), so skip gracefully when it is absent (e.g. clean CI).
+  test("slices a config that references only a local 3MF (no profile triple)", async () => {
+    const source3mf = "tests/28_MAJORASMASK_FULLCOLOUR_Makerworld_1plate_multicol.3mf";
+    try {
+      await access(source3mf);
+    } catch {
+      console.warn(`skipping local-3MF-only test: ${source3mf} not present`);
+      return;
+    }
+
+    const nu3mfOutput = "tests/.tmp/nu3mf/majorasmask.gcode";
+    await rm(nu3mfOutput, { force: true });
+
+    const result = await slice("tests/configs/nu3mf.jsonnet", { dryRun: false });
+    expect(result.exitCode).toBe(0);
+
+    const gcode = await readFile(nu3mfOutput, "utf8");
+    expect(gcode).toContain("; HEADER_BLOCK_START");
+    expect(gcode).toContain("; BambuStudio");
+    // Multicolour model: the embedded config resolves to multiple filaments,
+    // so the summary carries a comma-separated per-filament length list.
+    expect(gcode).toMatch(/total filament length \[mm\] : [\d.]+,[\d.]+/);
+    expect(gcode.length).toBeGreaterThan(1_000_000);
+  }, 180_000);
 });
 
 describe("Preset tests", () => {
@@ -271,10 +300,10 @@ async function slice(config: string, options: SliceOptions = {}): Promise<Comman
     return run("docker", args);
   }
 
-  const nativeBinary =
-    options.nativeBinary ??
+  const bambuBinary =
+    options.bambuBinary ??
     (dryRun ? "/bin/echo" : (process.env.BAMBUSTUDIO_SLICER ?? "libslic3r/bambustudio/build/slicer_cli"));
-  const args = ["slice", "--config", config, "--native-binary", nativeBinary];
+  const args = ["slice", "--config", config, "--bambu-binary", bambuBinary];
   if (dryRun) {
     args.push("--dry-run");
   }

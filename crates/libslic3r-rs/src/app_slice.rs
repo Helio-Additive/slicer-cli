@@ -12,6 +12,7 @@
 use anyhow::{Context, Result};
 use log::info;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use crate::geometry::Point3F;
@@ -19,6 +20,7 @@ use crate::print::{Print, PrintObject};
 use crate::print_config::{PrintConfig, PrintObjectConfig};
 use crate::region_config::PrintRegionConfig;
 use crate::stl::read_stl_file as load_stl;
+use crate::triangle_mesh::{Triangle, TriangleMesh};
 
 /// Slice a model file to G-code using a BambuStudio `project_settings.config` JSON.
 ///
@@ -127,6 +129,10 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
 
     // Export G-code using Print::export_gcode().
     info!("Exporting G-code...");
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create output directory {:?}", parent))?;
+    }
     print
         .export_gcode(output)
         .with_context(|| format!("Failed to export G-code to {:?}", output))?;
@@ -138,6 +144,641 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     );
 
     Ok(())
+}
+
+/// Slice a 3MF model file to G-code using the Rust engine.
+///
+/// Unlike [`slice_to_gcode`] (STL, which needs an explicit BambuStudio settings
+/// JSON), a BambuStudio 3MF carries its own `Metadata/project_settings.config`.
+/// This entrypoint reads that embedded config (or an explicit `settings_override`
+/// when one is supplied) and slices the merged mesh.
+///
+/// This mirrors the internal `slicer-cli` binary's proven 3MF slice path so the
+/// in-process host (`helio-slicer-cli --engine rust`) and the standalone binary
+/// produce identical G-code.
+///
+/// Tier-1 scope: all objects are merged into a single mesh and sliced with one
+/// material. Painted MMU segmentation / per-object filaments are NOT yet applied
+/// (multicolour parity is a separate milestone).
+///
+/// * `input` — path to a `.3mf` file.
+/// * `settings_override` — optional BambuStudio settings JSON that takes
+///   precedence over the 3MF's embedded config.
+/// * `output` — path to write the generated G-code to.
+pub fn slice_3mf_to_gcode(
+    input: &Path,
+    settings_override: Option<&Path>,
+    output: &Path,
+) -> Result<()> {
+    info!("Slicing 3MF (in-process): {:?}", input);
+
+    // Load the merged mesh + embedded settings + per-instance identify_ids.
+    info!("Loading 3MF...");
+    let (mut mesh, embedded_settings, identify_ids) =
+        load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
+    info!("Loaded {} triangles", mesh.triangle_count());
+
+    // Settings source: an explicit override wins, else the 3MF's embedded config.
+    let settings_str = if let Some(path) = settings_override {
+        info!("Loading BambuStudio settings from {:?}", path);
+        fs::read_to_string(path).with_context(|| format!("Failed to read settings: {:?}", path))?
+    } else if let Some(embedded) = embedded_settings {
+        info!("Using settings embedded in the 3MF");
+        embedded
+    } else {
+        anyhow::bail!(
+            "3MF {:?} has no embedded Metadata/project_settings.config and no \
+             settings override was provided",
+            input
+        );
+    };
+
+    let mut settings_value: serde_json::Value =
+        serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
+    patch_filament_overrides_in_json(&mut settings_value);
+    let raw_settings_json = Some(settings_value.clone());
+    let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
+
+    // Center the model on the bed and drop it onto the bed surface (Z=0).
+    // BambuStudio auto-centers imported models; unlike the bare-STL parity path
+    // (which slices AS-IS in XY), the 3MF path DOES XY-center — matching the
+    // internal slicer-cli binary's existing 3MF behavior.
+    {
+        let bbox = mesh.bounding_box();
+        let model_center_x = (bbox.min.x + bbox.max.x) / 2.0;
+        let model_center_y = (bbox.min.y + bbox.max.y) / 2.0;
+        let bed_center_x = print_config.bed_size_x / 2.0;
+        let bed_center_y = print_config.bed_size_y / 2.0;
+        let dx = bed_center_x - model_center_x;
+        let dy = bed_center_y - model_center_y;
+        let dz = -bbox.min.z;
+        mesh.translate(Point3F { x: dx, y: dy, z: dz });
+        info!(
+            "Centered model on bed: translated by ({:.1}, {:.1}, {:.1})",
+            dx, dy, dz
+        );
+    }
+
+    info!("Creating PrintObject...");
+    let mut print_object = PrintObject::with_config(mesh, object_config);
+    // The first instance's identify_id drives the `; OBJECT_ID:` comments.
+    if let Some(&id) = identify_ids.first() {
+        print_object.label_id = id;
+    }
+
+    info!("Creating Print...");
+    let mut print = Print::new();
+    *print.config_mut() = print_config;
+    print.set_default_region_config(region_config);
+    print.raw_settings = raw_settings_json;
+    print.set_status_callback(|percent, message| {
+        info!("Progress: {}% - {}", percent, message);
+    });
+    print.add_object(print_object);
+
+    info!("Running Print::process() pipeline...");
+    print
+        .process(None, false)
+        .with_context(|| "Failed to process print")?;
+
+    info!("Exporting G-code...");
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create output directory {:?}", parent))?;
+    }
+    print
+        .export_gcode(output)
+        .with_context(|| format!("Failed to export G-code to {:?}", output))?;
+
+    info!("Output written to: {:?}", output);
+    info!(
+        "Layers: {}",
+        print.objects().first().map(|o| o.layers().len()).unwrap_or(0)
+    );
+
+    Ok(())
+}
+
+/// Load a [`TriangleMesh`] from a `.3mf` ZIP by parsing `3D/3dmodel.model`.
+///
+/// Also extracts `Metadata/project_settings.config` (returned as a JSON string
+/// when present) and the per-instance `identify_id`s from
+/// `Metadata/model_settings.config` (used for `; OBJECT_ID:` G-code comments).
+///
+/// All printable (`type="model"`) objects/instances are merged into one mesh
+/// (build-item and component transforms are applied). Non-model objects
+/// (`type="other"` — BambuStudio negative/modifier volumes) are skipped:
+/// merging them as positive solids is wrong, and true boolean subtraction
+/// is Tier-2 (needs ModelVolume).
+pub fn load_3mf(path: &Path) -> Result<(TriangleMesh, Option<String>, Vec<usize>)> {
+    use zip::ZipArchive;
+
+    let file =
+        fs::File::open(path).with_context(|| format!("Failed to open 3MF file: {:?}", path))?;
+    let mut archive =
+        ZipArchive::new(file).with_context(|| format!("Failed to read 3MF ZIP: {:?}", path))?;
+
+    // Try to extract settings
+    let settings_json = if let Ok(mut entry) = archive.by_name("Metadata/project_settings.config") {
+        let mut buf = String::new();
+        entry.read_to_string(&mut buf).ok();
+        Some(buf)
+    } else {
+        None
+    };
+
+    // Parse identify_ids from Metadata/model_settings.config
+    // C++ equivalent: ModelInstance::loaded_id from _BBS_3MF_Importer::_handle_end_model_instance()
+    // The identify_id is what get_labeled_id() returns → used for ; OBJECT_ID: comments
+    let identify_ids = if let Ok(mut entry) = archive.by_name("Metadata/model_settings.config") {
+        let mut buf = String::new();
+        entry.read_to_string(&mut buf).ok();
+        parse_identify_ids_from_model_settings(&buf)
+    } else {
+        Vec::new()
+    };
+
+    // Read the 3D model XML
+    let model_xml = {
+        let mut entry = archive
+            .by_name("3D/3dmodel.model")
+            .with_context(|| "3MF file missing 3D/3dmodel.model")?;
+        let mut buf = String::new();
+        entry
+            .read_to_string(&mut buf)
+            .with_context(|| "Failed to read 3D/3dmodel.model")?;
+        buf
+    };
+
+    // Parse vertices and triangles from the XML
+    let mesh = parse_3mf_model_xml(&model_xml)?;
+    Ok((mesh, settings_json, identify_ids))
+}
+
+/// Parse identify_ids from Metadata/model_settings.config XML.
+/// Returns a list of identify_ids in the order they appear in the plate's
+/// model_instance elements.
+///
+/// C++ reference: _BBS_3MF_Importer::_handle_end_model_instance() line 4666
+/// sets obj_inst_map[object_id] = (instance_id, identify_id)
+fn parse_identify_ids_from_model_settings(xml: &str) -> Vec<usize> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut ids: Vec<usize> = Vec::new();
+    let mut reader = Reader::from_str(xml);
+    reader.trim_text(true);
+
+    // Track current model_instance state
+    let mut in_model_instance = false;
+    let mut current_identify_id: Option<usize> = None;
+
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let name_bytes = e.name().as_ref().to_vec();
+                let name = std::str::from_utf8(&name_bytes).unwrap_or("").to_string();
+                if name == "model_instance" {
+                    in_model_instance = true;
+                    current_identify_id = None;
+                }
+                if in_model_instance && name == "metadata" {
+                    let mut key = String::new();
+                    let mut value = String::new();
+                    for attr in e.attributes().flatten() {
+                        let k = std::str::from_utf8(attr.key.as_ref())
+                            .unwrap_or("")
+                            .to_string();
+                        let v = std::str::from_utf8(&attr.value).unwrap_or("").to_string();
+                        match k.as_str() {
+                            "key" => key = v,
+                            "value" => value = v,
+                            _ => {}
+                        }
+                    }
+                    if key == "identify_id" {
+                        if let Ok(id) = value.parse::<usize>() {
+                            current_identify_id = Some(id);
+                        }
+                    }
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                let name_bytes = e.name().as_ref().to_vec();
+                let name = std::str::from_utf8(&name_bytes).unwrap_or("").to_string();
+                if in_model_instance && name == "metadata" {
+                    let mut key = String::new();
+                    let mut value = String::new();
+                    for attr in e.attributes().flatten() {
+                        let k = std::str::from_utf8(attr.key.as_ref())
+                            .unwrap_or("")
+                            .to_string();
+                        let v = std::str::from_utf8(&attr.value).unwrap_or("").to_string();
+                        match k.as_str() {
+                            "key" => key = v,
+                            "value" => value = v,
+                            _ => {}
+                        }
+                    }
+                    if key == "identify_id" {
+                        if let Ok(id) = value.parse::<usize>() {
+                            current_identify_id = Some(id);
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let name_bytes = e.name().as_ref().to_vec();
+                let name = std::str::from_utf8(&name_bytes).unwrap_or("").to_string();
+                if name == "model_instance" {
+                    if let Some(id) = current_identify_id.take() {
+                        ids.push(id);
+                    }
+                    in_model_instance = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    ids
+}
+
+/// Parse a 3MF 3dmodel.model XML string to extract vertices and triangles.
+///
+/// The XML format is:
+///   <mesh>
+///     <vertices>
+///       <vertex x="..." y="..." z="..." />
+///     </vertices>
+///     <triangles>
+///       <triangle v1="..." v2="..." v3="..." />
+///     </triangles>
+///   </mesh>
+///
+/// Tier-1 scope: only meshes stored inline in `3D/3dmodel.model` are read.
+/// A 3MF that stores its mesh in external `/3D/Objects/*.model` parts (the 3MF
+/// production extension, referenced via `<component p:path=...>`) yields no
+/// inline mesh and returns a descriptive error.
+pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    // 3MF structure: <resources> has <object> elements with meshes,
+    // <build> has <item> elements with transforms referencing objects.
+    // Objects can also have <components> that reference other objects.
+
+    // Collect all objects (meshes) by ID
+    struct MeshData {
+        vertices: Vec<Point3F>,
+        triangles: Vec<[u32; 3]>,
+        components: Vec<(u32, [f64; 12])>, // (objectid, transform)
+        /// `<object type="...">` — defaults to "model" per the 3MF core spec.
+        /// BambuStudio stores negative/modifier volumes as `type="other"`
+        /// objects referenced via `<component>` (their real role lives in
+        /// Metadata/model_settings.config `subtype`, e.g. `negative_part`).
+        /// Tier-1 merges only printable `model` geometry and SKIPS the rest —
+        /// unioning a negative part as positive solid is worse than omitting
+        /// it, and true boolean subtraction needs the Tier-2 ModelVolume work.
+        is_model: bool,
+    }
+
+    let mut objects: std::collections::HashMap<u32, MeshData> = std::collections::HashMap::new();
+    // `has_external_components` is set when a <component> carries a `p:path`
+    // attribute, i.e. the mesh lives in an external `/3D/Objects/*.model` part
+    // (the 3MF production extension). The Tier-1 reader only parses the single
+    // `3D/3dmodel.model`, so such a 3MF yields no inline mesh — we detect it to
+    // emit a clear error instead of a cryptic "0 vertices".
+    let mut has_external_components = false;
+    let mut build_items: Vec<(u32, [f64; 12])> = Vec::new(); // (objectid, transform)
+
+    let identity: [f64; 12] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
+
+    fn parse_transform(s: &str) -> [f64; 12] {
+        let vals: Vec<f64> = s
+            .split_whitespace()
+            .filter_map(|v| v.parse::<f64>().ok())
+            .collect();
+        if vals.len() >= 12 {
+            // 3MF stores the affine transform COLUMN-major: the 12 values are
+            // 4 columns of 3 rows (3 basis-vector columns + a translation
+            // column). See BambuStudio's get_transform_from_3mf_specs_string
+            // (Format/3mf.cpp:224-231), which fills a 4x3 and transposes.
+            // `apply_transform`/`compose_transforms` below use a row-major 3x3
+            // plus translation, so transpose the rotation block here. (A pure
+            // translation or identity is unchanged by this, which is why
+            // STL-sourced / benchy 3MFs sliced correctly before this fix; a
+            // real rotation like Majora's Mask did not.)
+            [
+                vals[0], vals[3], vals[6], // row 0
+                vals[1], vals[4], vals[7], // row 1
+                vals[2], vals[5], vals[8], // row 2
+                vals[9], vals[10], vals[11], // translation
+            ]
+        } else {
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        }
+    }
+
+    fn apply_transform(p: &Point3F, t: &[f64; 12]) -> Point3F {
+        Point3F {
+            x: t[0] * p.x + t[1] * p.y + t[2] * p.z + t[9],
+            y: t[3] * p.x + t[4] * p.y + t[5] * p.z + t[10],
+            z: t[6] * p.x + t[7] * p.y + t[8] * p.z + t[11],
+        }
+    }
+
+    fn compose_transforms(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
+        // a applied first, then b: result = b * a
+        [
+            b[0] * a[0] + b[1] * a[3] + b[2] * a[6],
+            b[0] * a[1] + b[1] * a[4] + b[2] * a[7],
+            b[0] * a[2] + b[1] * a[5] + b[2] * a[8],
+            b[3] * a[0] + b[4] * a[3] + b[5] * a[6],
+            b[3] * a[1] + b[4] * a[4] + b[5] * a[7],
+            b[3] * a[2] + b[4] * a[5] + b[5] * a[8],
+            b[6] * a[0] + b[7] * a[3] + b[8] * a[6],
+            b[6] * a[1] + b[7] * a[4] + b[8] * a[7],
+            b[6] * a[2] + b[7] * a[5] + b[8] * a[8],
+            b[0] * a[9] + b[1] * a[10] + b[2] * a[11] + b[9],
+            b[3] * a[9] + b[4] * a[10] + b[5] * a[11] + b[10],
+            b[6] * a[9] + b[7] * a[10] + b[8] * a[11] + b[11],
+        ]
+    }
+
+    let mut reader = Reader::from_str(xml);
+    reader.trim_text(true);
+    let mut buf = Vec::new();
+    let mut current_object_id: Option<u32> = None;
+    let mut in_mesh = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                let local_name = e.local_name();
+                match local_name.as_ref() {
+                    b"object" => {
+                        let mut id = 0u32;
+                        // 3MF core spec: the `type` attribute defaults to "model".
+                        let mut is_model = true;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.local_name().as_ref() {
+                                b"id" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        id = s.parse().unwrap_or(0);
+                                    }
+                                }
+                                b"type" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        is_model = s == "model";
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        current_object_id = Some(id);
+                        let entry = objects.entry(id).or_insert_with(|| MeshData {
+                            vertices: Vec::new(),
+                            triangles: Vec::new(),
+                            components: Vec::new(),
+                            is_model,
+                        });
+                        entry.is_model = is_model;
+                    }
+                    b"mesh" => {
+                        in_mesh = true;
+                    }
+                    b"vertex" if in_mesh => {
+                        let mut x = 0.0f64;
+                        let mut y = 0.0f64;
+                        let mut z = 0.0f64;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.local_name().as_ref() {
+                                b"x" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        x = s.parse().unwrap_or(0.0);
+                                    }
+                                }
+                                b"y" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        y = s.parse().unwrap_or(0.0);
+                                    }
+                                }
+                                b"z" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        z = s.parse().unwrap_or(0.0);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if let Some(id) = current_object_id {
+                            objects
+                                .entry(id)
+                                .and_modify(|m| m.vertices.push(Point3F { x, y, z }));
+                        }
+                    }
+                    b"triangle" if in_mesh => {
+                        let mut v1 = 0u32;
+                        let mut v2 = 0u32;
+                        let mut v3 = 0u32;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.local_name().as_ref() {
+                                b"v1" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        v1 = s.parse().unwrap_or(0);
+                                    }
+                                }
+                                b"v2" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        v2 = s.parse().unwrap_or(0);
+                                    }
+                                }
+                                b"v3" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        v3 = s.parse().unwrap_or(0);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if let Some(id) = current_object_id {
+                            objects
+                                .entry(id)
+                                .and_modify(|m| m.triangles.push([v1, v2, v3]));
+                        }
+                    }
+                    b"component" => {
+                        let mut obj_id = 0u32;
+                        let mut transform = identity;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.local_name().as_ref() {
+                                b"objectid" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        obj_id = s.parse().unwrap_or(0);
+                                    }
+                                }
+                                b"transform" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        transform = parse_transform(s);
+                                    }
+                                }
+                                // `p:path` → the referenced object is in an external
+                                // model part (production extension), not this XML.
+                                b"path" => {
+                                    has_external_components = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                        if let Some(parent_id) = current_object_id {
+                            objects
+                                .entry(parent_id)
+                                .and_modify(|m| m.components.push((obj_id, transform)));
+                        }
+                    }
+                    b"item" => {
+                        let mut obj_id = 0u32;
+                        let mut transform = identity;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.local_name().as_ref() {
+                                b"objectid" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        obj_id = s.parse().unwrap_or(0);
+                                    }
+                                }
+                                b"transform" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        transform = parse_transform(s);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        build_items.push((obj_id, transform));
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e)) => match e.local_name().as_ref() {
+                b"mesh" => {
+                    in_mesh = false;
+                }
+                b"object" => {
+                    current_object_id = None;
+                }
+                _ => {}
+            },
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(anyhow::anyhow!("Error parsing 3MF XML: {}", e)),
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    // Resolve build items → instantiate objects with transforms
+    let mut all_vertices: Vec<Point3F> = Vec::new();
+    let mut all_triangles: Vec<Triangle> = Vec::new();
+
+    fn instantiate_object(
+        obj_id: u32,
+        transform: &[f64; 12],
+        objects: &std::collections::HashMap<u32, MeshData>,
+        all_vertices: &mut Vec<Point3F>,
+        all_triangles: &mut Vec<Triangle>,
+        identity: &[f64; 12],
+    ) {
+        if let Some(mesh_data) = objects.get(&obj_id) {
+            // Skip non-printable objects (`type != "model"`, e.g. `type="other"`
+            // negative/modifier volumes). Their subtree is that role too, so no
+            // component recursion either. See MeshData::is_model.
+            if !mesh_data.is_model {
+                return;
+            }
+            // If object has a mesh, instantiate it
+            if !mesh_data.vertices.is_empty() {
+                let v_offset = all_vertices.len() as u32;
+                for v in &mesh_data.vertices {
+                    all_vertices.push(apply_transform(v, transform));
+                }
+                for tri in &mesh_data.triangles {
+                    all_triangles.push(Triangle::new(
+                        tri[0] + v_offset,
+                        tri[1] + v_offset,
+                        tri[2] + v_offset,
+                    ));
+                }
+            }
+            // If object has components, recurse with composed transforms
+            for &(comp_id, ref comp_transform) in &mesh_data.components {
+                let composed = compose_transforms(comp_transform, transform);
+                instantiate_object(
+                    comp_id,
+                    &composed,
+                    objects,
+                    all_vertices,
+                    all_triangles,
+                    identity,
+                );
+            }
+        }
+    }
+
+    if build_items.is_empty() {
+        // Fallback: no <build> section, just collect all printable meshes
+        for (_, mesh_data) in &objects {
+            if mesh_data.is_model && !mesh_data.vertices.is_empty() {
+                let v_offset = all_vertices.len() as u32;
+                all_vertices.extend_from_slice(&mesh_data.vertices);
+                for tri in &mesh_data.triangles {
+                    all_triangles.push(Triangle::new(
+                        tri[0] + v_offset,
+                        tri[1] + v_offset,
+                        tri[2] + v_offset,
+                    ));
+                }
+            }
+        }
+    } else {
+        for &(obj_id, ref transform) in &build_items {
+            instantiate_object(
+                obj_id,
+                transform,
+                &objects,
+                &mut all_vertices,
+                &mut all_triangles,
+                &identity,
+            );
+        }
+    }
+
+    if all_vertices.is_empty() || all_triangles.is_empty() {
+        if has_external_components {
+            return Err(anyhow::anyhow!(
+                "3MF uses the production extension (mesh stored in external \
+                 /3D/Objects/*.model parts). The Tier-1 Rust 3MF reader only \
+                 supports single-file 3MFs (mesh inline in 3D/3dmodel.model); \
+                 slice this one with --engine native."
+            ));
+        }
+        return Err(anyhow::anyhow!(
+            "No mesh data found in 3MF XML ({} vertices, {} triangles)",
+            all_vertices.len(),
+            all_triangles.len()
+        ));
+    }
+
+    info!(
+        "Parsed 3MF: {} vertices, {} triangles (from {} objects, {} build items)",
+        all_vertices.len(),
+        all_triangles.len(),
+        objects.len(),
+        build_items.len()
+    );
+    Ok(TriangleMesh::from_parts(all_vertices, all_triangles))
 }
 
 /// Load BambuStudio project_settings.config JSON and create config structs.
