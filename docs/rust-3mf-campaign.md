@@ -83,13 +83,13 @@ WipeTower):
        is_edge_attach/connecting helpers + clip_(in)finite_edge +
        mark_processed — ported (agent-assisted), full chain callable;
        tests/mms_build_graph.rs green.
-   (b) the by_painting orchestrator (input_expolygons prep per layer:
-       offset_ex ±10*SCALED_EPSILON, union, remove_small_and_small_holes,
-       expolygons_simplify, remove_duplicates — verify which prep helpers
-       exist in rust), EdgeGrid per layer, facet→line projection loop.
-   (c) apply_mm_segmentation (PrintObjectSlice.cpp:845-925) — intersect
-       per-extruder ExPolygons with region-0 slices, steal into painted
-       LayerRegions.
+   (b) [DONE R369] by_painting_tier1 orchestrator ported (agent-assisted;
+       sequential; FIDELITY-NOTEs: simplify steps omitted, EdgeGrid bbox from
+       contours, no consider-eps band). Output = faithful merge shape
+       [layer][num_extruders] 0-based (default color dropped by merge).
+   (c) [DONE R369] apply_mm_segmentation_tier1 in print_object.rs (single-
+       parent collapse); painted_submeshes extracted post-centering in
+       app_slice. Painted LayerRegions now carry real surfaces.
    (d) top/bottom propagation (mmu_segmentation_top_and_bottom_layers) is the
        ONLY slice_mesh_slabs consumer → STUB empty for Tier-1 (horizontal
        painted-surface propagation missing; contour painting — the dominant
