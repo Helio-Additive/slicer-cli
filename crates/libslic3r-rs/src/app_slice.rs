@@ -187,26 +187,8 @@ pub fn slice_3mf_to_gcode(
     // regions are declared on the Print below; splitting the layer surfaces
     // into them (apply_mm_segmentation, layer 4) is not wired yet, so the
     // toolpaths are still single-material.
-    let mut painting_extruders: Vec<u8> = Vec::new();
-    if !mmu_facets.is_empty() {
-        let mut selector =
-            crate::triangle_selector::TriangleSelector::new(mesh.clone(), 0.0);
-        selector.deserialize(
-            &mmu_facets.data,
-            false,
-            crate::triangle_selector::EnforcerBlockerType::EXTRUDER_MAX,
-            crate::triangle_selector::EnforcerBlockerType::NONE,
-            crate::triangle_selector::EnforcerBlockerType::NONE,
-        );
-        painting_extruders = selector.used_states().iter().map(|s| s.0 as u8).collect();
-        info!(
-            "3MF painted multi-material: {} painted facets, extruders {:?} — regions \
-             declared; per-region surface segmentation not yet applied \
-             (single-material Tier-1 toolpaths)",
-            mmu_facets.facet_count(),
-            painting_extruders
-        );
-    }
+    // Painted-MMU decode happens AFTER bed-centering below so the extracted
+    // sub-meshes share the sliced mesh's frame (layer zs / XY).
 
     // Settings source: an explicit override wins, else the 3MF's embedded config.
     let settings_str = if let Some(path) = settings_override {
@@ -249,12 +231,45 @@ pub fn slice_3mf_to_gcode(
         );
     }
 
+    // Decode the painted-MMU annotation over the (now bed-centered) mesh:
+    // which extruder slots are painted + one sub-mesh per painted slot
+    // (C++: ModelVolume::mmu_segmentation_facets → get_facets, MMS.cpp:2226).
+    let mut painting_extruders: Vec<u8> = Vec::new();
+    let mut painted_submeshes: Vec<(u8, crate::normal_utils::indexed_triangle_set)> = Vec::new();
+    if !mmu_facets.is_empty() {
+        let mut selector =
+            crate::triangle_selector::TriangleSelector::new(mesh.clone(), 0.0);
+        selector.deserialize(
+            &mmu_facets.data,
+            false,
+            crate::triangle_selector::EnforcerBlockerType::EXTRUDER_MAX,
+            crate::triangle_selector::EnforcerBlockerType::NONE,
+            crate::triangle_selector::EnforcerBlockerType::NONE,
+        );
+        for state in selector.used_states() {
+            let its = selector.get_facets(state);
+            if !its.indices.is_empty() {
+                painted_submeshes.push((state.0 as u8, its));
+            }
+        }
+        // Ascending-extruder pairing drives the painted region order.
+        painting_extruders = painted_submeshes.iter().map(|(e, _)| *e).collect();
+        info!(
+            "3MF painted multi-material: {} painted facets, extruders {:?} — \
+             segmenting per-layer painted regions (Tier-1)",
+            mmu_facets.facet_count(),
+            painting_extruders
+        );
+    }
+
     info!("Creating PrintObject...");
     let mut print_object = PrintObject::with_config(mesh, object_config);
     // The first instance's identify_id drives the `; OBJECT_ID:` comments.
     if let Some(&id) = identify_ids.first() {
         print_object.label_id = id;
     }
+    print_object.painted_submeshes = painted_submeshes;
+    print_object.num_total_filaments = print_config.num_filaments();
 
     info!("Creating Print...");
     let mut print = Print::new();

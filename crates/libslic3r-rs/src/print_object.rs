@@ -255,6 +255,17 @@ pub struct PrintObject {
     /// Whether slices have been typed (top/bottom/internal)
     /// PrintObject.hpp:613
     typed_slices: bool,
+
+    /// Painted multi-material sub-meshes: (extruder slot 1-based, painted
+    /// facets), mesh coords in mm — extracted by the loader from the 3MF
+    /// `paint_color` annotation (C++: ModelVolume::mmu_segmentation_facets →
+    /// TriangleSelector::get_facets, MMS.cpp:2226). Ascending extruder order;
+    /// index i maps to painted print region `1 + i` (install_painted_regions).
+    pub painted_submeshes: Vec<(u8, crate::normal_utils::indexed_triangle_set)>,
+
+    /// Total configured filament slots (PrintConfig::num_filaments at setup) —
+    /// the `num_extruders` the MMU segmentation indexes by (MMS.cpp:2097).
+    pub num_total_filaments: usize,
 }
 
 impl PrintObject {
@@ -279,6 +290,8 @@ impl PrintObject {
             slicing_params: crate::slicing::SlicingParams::default(),
             shared_regions: None,
             typed_slices: false,
+            painted_submeshes: Vec::new(),
+            num_total_filaments: 1,
         }
     }
 
@@ -302,6 +315,8 @@ impl PrintObject {
             slicing_params: crate::slicing::SlicingParams::default(),
             shared_regions: None,
             typed_slices: false,
+            painted_submeshes: Vec::new(),
+            num_total_filaments: 1,
         }
     }
 
@@ -499,6 +514,16 @@ impl PrintObject {
             }
         }
 
+        // Painted multi-material segmentation (campaign layer 4): compute the
+        // per-layer per-extruder painted areas from the painted sub-meshes and
+        // move the corresponding surfaces out of region 0 into the painted
+        // regions. C++: slice_volumes → apply_mm_segmentation
+        // (PrintObjectSlice.cpp:1161 / :845-925), segmentation itself in
+        // MultiMaterialSegmentation.cpp:2095.
+        if num_regions > 1 && !self.painted_submeshes.is_empty() {
+            self.apply_mm_segmentation_tier1()?;
+        }
+
         // Build lslices for each layer (union of all region slices)
         // C++: PrintObjectSlice.cpp calls layer->make_slices() which populates
         // lslices from region slices. This is needed for detect_surfaces_type()
@@ -544,6 +569,110 @@ impl PrintObject {
     ///
     /// INVARIANT: Arcs are replaced wholesale (Arc::new + clone), NEVER
     /// mutated in place via Arc::make_mut/get_mut — that would fork the share.
+    /// Split each layer's region-0 slices into the painted print regions using
+    /// the MMU segmentation of the painted sub-meshes.
+    ///
+    /// Tier-1 shape of C++ `apply_mm_segmentation` (PrintObjectSlice.cpp:845-925)
+    /// over the single merged volume: the segmentation
+    /// (`multi_material_segmentation_by_painting`, MMS.cpp:2095) yields per-layer
+    /// per-color ExPolygons (color 0 = unpainted); for each painted extruder we
+    /// intersect its area with the layer's region-0 slices, hand that to the
+    /// painted region (`1 + index` in ascending painted-extruder order —
+    /// mirrors Print::install_painted_regions), and keep the remainder in
+    /// region 0. C++ walks sorted painted_regions and steals via
+    /// `intersection_ex` per parent region the same way; with one parent the
+    /// two are equivalent.
+    fn apply_mm_segmentation_tier1(&mut self) -> Result<()> {
+        use crate::surface::{Surface, SurfaceType};
+        use crate::surface_collection::SurfaceCollection;
+
+        let num_layers = self.layers.len();
+        // Per-layer merged slices + zs for the segmentation input.
+        let mut layer_slices: Vec<crate::geometry::ExPolygons> = Vec::with_capacity(num_layers);
+        let mut layer_zs: Vec<f64> = Vec::with_capacity(num_layers);
+        for layer in &self.layers {
+            let ex: crate::geometry::ExPolygons = layer.regions()[0]
+                .slices
+                .surfaces
+                .iter()
+                .map(|s| s.expolygon.clone())
+                .collect();
+            layer_slices.push(ex);
+            layer_zs.push(layer.slice_z);
+        }
+
+        // MMS.cpp:2097 — num_extruders from the filament vector length.
+        let num_extruders = self.num_total_filaments.max(
+            self.painted_submeshes
+                .iter()
+                .map(|(e, _)| *e as usize)
+                .max()
+                .unwrap_or(1),
+        );
+
+        // mmu_segmented_region_max_width / interlocking depth: not carried in
+        // the Tier-1 object config → 0.0 (cut step skipped), matching the C++
+        // gate `max_width > 0 || interlocking_depth > 0` (MMS.cpp:2377-2381).
+        let segmented = crate::multi_material_segmentation::multi_material_segmentation_by_painting_tier1(
+            &layer_slices,
+            &layer_zs,
+            &self.painted_submeshes,
+            num_extruders,
+            0.0,
+            0.0,
+        );
+
+        // Move painted areas out of region 0 into the painted regions.
+        // PrintObjectSlice.cpp:855-925 (single-parent collapse).
+        let painted_order: Vec<u8> = self.painted_submeshes.iter().map(|(e, _)| *e).collect();
+        for (layer_idx, layer) in self.layers.iter_mut().enumerate() {
+            if layer_idx >= segmented.len() {
+                break;
+            }
+            let region0_ex = &layer_slices[layer_idx];
+            if region0_ex.is_empty() {
+                continue;
+            }
+            let mut stolen_total: crate::geometry::ExPolygons = Vec::new();
+            for (i, &extruder) in painted_order.iter().enumerate() {
+                // Faithful merge output shape: [layer][num_extruders], 0-based
+                // extruder slots (slot j == filament j+1); the default color is
+                // dropped by merge_segmented_layers — matches the C++ consumer
+                // indexing (PrintObjectSlice.cpp:848,877-879).
+                let slot = extruder as usize - 1;
+                let seg = match segmented[layer_idx].get(slot) {
+                    Some(s) if !s.is_empty() => s,
+                    _ => continue,
+                };
+                // Painted area limited to what region 0 actually owns.
+                let stolen = crate::clipper_utils::intersection(seg, region0_ex);
+                if stolen.is_empty() {
+                    continue;
+                }
+                let region_id = 1 + i;
+                if region_id >= layer.regions().len() {
+                    continue;
+                }
+                let mut coll = SurfaceCollection::new();
+                for ex in &stolen {
+                    coll.push(Surface::new(SurfaceType::Internal, ex.clone()));
+                }
+                layer.regions_mut()[region_id].set_slices(coll);
+                stolen_total.extend(stolen);
+            }
+            if !stolen_total.is_empty() {
+                // Remainder stays in region 0.
+                let remaining = crate::clipper_utils::difference(region0_ex, &stolen_total);
+                let mut coll = SurfaceCollection::new();
+                for ex in &remaining {
+                    coll.push(Surface::new(SurfaceType::Internal, ex.clone()));
+                }
+                layer.regions_mut()[0].set_slices(coll);
+            }
+        }
+        Ok(())
+    }
+
     pub fn wire_layer_hierarchy(&mut self) {
         let object_config = Arc::new(self.config.clone());
         let print_config = self.print_config.clone();

@@ -19,11 +19,16 @@
 use boostvoronoi::diagram as bv_diagram;
 use boostvoronoi::prelude as bv;
 
-use crate::clipper_utils::{closing, difference, offset_expolygons, union_ex, OffsetJoinType};
+use crate::clipper_utils::{
+    closing, difference, offset_expolygons, union_ex, union_polygons_ex, OffsetJoinType,
+};
 use crate::edge_grid::{Contour, EdgeGrid};
 use crate::geometry::voronoi_diagram::VoronoiDiagram;
-use crate::geometry::{BoundingBox, BoundingBoxF, ExPolygons, Line, LineF, Point, PointF, Polygon};
+use crate::geometry::{
+    BoundingBox, BoundingBoxF, ExPolygon, ExPolygons, Line, LineF, Point, PointF, Polygon,
+};
 use crate::libslic3r::{EPSILON, SCALED_EPSILON};
+use crate::normal_utils::{indexed_triangle_set, Vec3f};
 use crate::{scale, Coord, SCALING_FACTOR};
 
 use std::collections::HashMap;
@@ -2645,8 +2650,342 @@ fn merge_segmented_layers(
 }
 
 // ---------------------------------------------------------------------------
+// Tier-1 orchestrator: multi_material_segmentation_by_painting
+// (MultiMaterialSegmentation.cpp:2095-2409)
+// ---------------------------------------------------------------------------
+
+/// upper_bound over an ascending `f64` slice: first index `i` with `zs[i] > value`.
+/// Mirrors `std::upper_bound(begin, end, value, [](float z, const Layer *l){ return z < l->slice_z; })`
+/// (MultiMaterialSegmentation.cpp:2257-2260) — returns the first position where the
+/// comparator `value < zs[i]` holds.
+fn upper_bound_f64(zs: &[f64], value: f64) -> usize {
+    let mut lo = 0usize;
+    let mut hi = zs.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if value < zs[mid] {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo
+}
+
+/// Flatten an `ExPolygons` into the closed contours an `EdgeGrid` rasterizes, in the exact
+/// order of `EdgeGrid::Grid::create(const ExPolygons&, ...)` (EdgeGrid.cpp:117-139): per
+/// expolygon, the outer contour first, then each (non-empty) hole. All are closed polygons.
+fn expolygons_to_edge_grid_contours(exs: &[ExPolygon]) -> Vec<Polygon> {
+    let mut polys: Vec<Polygon> = Vec::new();
+    for ex in exs {
+        // EdgeGrid.cpp:131-132
+        if !ex.contour.points().is_empty() {
+            polys.push(ex.contour.clone());
+        }
+        // EdgeGrid.cpp:133-135
+        for hole in &ex.holes {
+            if !hole.points().is_empty() {
+                polys.push(hole.clone());
+            }
+        }
+    }
+    polys
+}
+
+/// Tier-1 port of `multi_material_segmentation_by_painting` (MultiMaterialSegmentation.cpp:2095).
+///
+/// The C++ takes a `PrintObject` and pulls everything off it (layers, regions, model
+/// volumes, painted facet annotations, print config). The Tier-1 caller instead passes the
+/// already-prepared inputs directly:
+///   * `layer_slices[l]`   — the merged region slices for layer `l` (scaled coords), i.e. the
+///                           C++ `layers[l]->regions()...surface.expolygon` union.
+///   * `layer_slice_zs[l]` — that layer's `slice_z` in mm (ascending).
+///   * `painted_submeshes` — one `(extruder_slot, sub-mesh)` per painted extruder, where the
+///                           sub-mesh is the C++ `mv.mmu_segmentation_facets.get_facets(slot)`
+///                           result (mm coords, `f32` verts). `extruder_slot` is 1-based and
+///                           becomes the painted `color`.
+///   * `num_extruders`     — total filament slots.
+///   * `segmented_max_width` / `segmented_interlocking_depth` — the two `cut_segmented_layers`
+///                           knobs, already *scaled* (`scale_(mmu_segmented_region_*)`); `0.0`
+///                           skips the cut (matching the C++ gate `max_width > 0 || depth > 0`).
+///
+/// Returns `merge_segmented_layers`' output: `[layer][extruder]`, `num_extruders` slots per
+/// layer, indexed by 0-based extruder (slot `j` == painted filament slot `j + 1`). The
+/// unpainted/default color (0) is NOT a slot — it is dropped by the merge exactly as C++ does,
+/// matching the consumer `PrintObjectSlice.cpp:877-879` which indexes `segmentation[l][0..num_extruders]`.
+///
+/// TIER-1 DEVIATIONS FROM THE C++ (each also noted inline):
+///   * No `PrintObject`/`ModelVolume`; inputs are passed in. `trafo` is identity (mesh
+///     pre-placed) and `center_offset` is `(0,0)`, so `line_to_test.translate(-center_offset)`
+///     is a no-op (kept as a comment).
+///   * Negative volumes are dropped by the Tier-1 loader, so the `input_expolygons_filled`
+///     branch (cpp:2143-2197), the clip-back (cpp:2369-2383) and the `input_for_edge_grid`
+///     alias are all omitted — `input_expolygons` is used everywhere.
+///   * No TBB — plain sequential loops.
+///   * FIDELITY-NOTE: `expolygons_simplify` + `remove_duplicates` in the input prep (cpp:2134)
+///     are not ported (they guard Voronoi robustness against self-intersections / near-duplicate
+///     points; acceptable Tier-1 risk).
+///   * FIDELITY-NOTE: `mmu_segmentation_top_and_bottom_layers` (cpp:2393) is stubbed to the
+///     empty "no top/bottom overrides" structure; horizontal painted-surface propagation
+///     (the only `slice_mesh_slabs` consumer) is not yet ported.
+///   * FIDELITY-NOTE: the crate's `EdgeGrid::create` recomputes its bbox from contour extents
+///     (+16) and ignores the pre-set bbox, so the clip at cpp:2293-2303 uses the contour-derived
+///     bbox rather than the C++ merged-adjacent-layer bbox. `set_bbox` is still called first to
+///     mirror the C++ order; the effective clip is a subset of the C++ one (harmless — the
+///     visitor only registers lines near actual contour segments).
+///   * FIDELITY-NOTE: the crate's `visit_cells_intersecting_line` lacks the C++
+///     `need_consider_eps=true` extension (cpp:2311); it visits only cells the segment directly
+///     crosses, not the surrounding epsilon band.
+pub fn multi_material_segmentation_by_painting_tier1(
+    layer_slices: &[ExPolygons],
+    layer_slice_zs: &[f64],
+    painted_submeshes: &[(u8, indexed_triangle_set)],
+    num_extruders: usize,
+    segmented_max_width: f32,
+    segmented_interlocking_depth: f32,
+) -> Vec<Vec<ExPolygons>> {
+    // MultiMaterialSegmentation.cpp:2098-2105
+    let num_layers = layer_slices.len();
+    debug_assert!(layer_slice_zs.len() == num_layers);
+    let mut segmented_regions: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_extruders + 1]; num_layers];
+    let mut painted_lines: Vec<Vec<PaintedLine>> = vec![Vec::new(); num_layers];
+    let mut edge_grids: Vec<EdgeGrid> = Vec::with_capacity(num_layers);
+
+    // Merge all regions and remove small holes. MultiMaterialSegmentation.cpp:2113-2141.
+    // Tier-1: `layer_slices[l]` is already the merged region slices, so it stands in for the
+    // C++ `for region: for surface: append(offset_ex(surface.expolygon, 10*SCALED_EPSILON))`.
+    // `offset_ex` deltas are in mm here (the crate's `offset_expolygons` takes mm), so the
+    // scaled `10 * SCALED_EPSILON` is converted via `/ SCALING_FACTOR`.
+    let grow_mm = (10.0 * SCALED_EPSILON) / SCALING_FACTOR;
+    // remove_small_and_small_holes(..., Slic3r::sqr(scale_(0.1f))). MultiMaterialSegmentation.cpp:2126.
+    let min_area = sqr_f64(scale_(0.1) as f64);
+    let mut input_expolygons: Vec<ExPolygons> = Vec::with_capacity(num_layers);
+    for layer_idx in 0..num_layers {
+        // cpp:2121 offset_ex(+10*SCALED_EPSILON) then cpp:2124 union_ex.
+        let grown = offset_expolygons(&layer_slices[layer_idx], grow_mm, OffsetJoinType::Miter);
+        let mut ex = union_ex(&grown);
+        // cpp:2126
+        crate::ex_polygon::remove_small_and_small_holes(&mut ex, min_area);
+        // cpp:2134 offset_ex(-10*SCALED_EPSILON). FIDELITY-NOTE: the surrounding
+        // remove_duplicates(expolygons_simplify(...)) is intentionally omitted (see doc-comment).
+        input_expolygons.push(offset_expolygons(&ex, -grow_mm, OffsetJoinType::Miter));
+    }
+
+    // Negative-volume handling (cpp:2143-2197) is OMITTED: the Tier-1 loader drops negative
+    // volumes, so `input_for_edge_grid == input_expolygons` everywhere below.
+
+    // Per-layer bounding boxes. MultiMaterialSegmentation.cpp:2199-2204.
+    // Tier-1: the layer's regions ARE `input_expolygons`, so the extents come from it alone
+    // (the C++ `get_extents(layers[l]->regions())` merged with `get_extents(input...)`).
+    let mut layer_bboxes: Vec<BoundingBox> = Vec::with_capacity(num_layers);
+    for layer_idx in 0..num_layers {
+        layer_bboxes.push(crate::ex_polygon::get_extents(&input_expolygons[layer_idx]));
+    }
+
+    // Build one EdgeGrid per layer. MultiMaterialSegmentation.cpp:2206-2218.
+    for layer_idx in 0..num_layers {
+        let mut bbox = layer_bboxes[layer_idx];
+        // cpp:2212-2213 — merge with the previous/next layer (note the C++ `> 1`, not `> 0`).
+        if layer_idx > 1 {
+            bbox.merge(&layer_bboxes[layer_idx - 1]);
+        }
+        if layer_idx < num_layers - 1 {
+            bbox.merge(&layer_bboxes[layer_idx + 1]);
+        }
+        // cpp:2215 — bbox.offset(30 * SCALED_EPSILON).
+        bbox.expand((30.0 * SCALED_EPSILON) as Coord);
+        // cpp:2216-2217 — set_bbox then create at resolution scale_(10.).
+        // FIDELITY-NOTE (see doc-comment): the crate's create recomputes the bbox from contour
+        // extents, so this set_bbox only mirrors the C++ order; the clip below reads back the
+        // grid's own (contour-derived) bbox.
+        let mut grid = EdgeGrid::new();
+        grid.set_bbox(bbox);
+        let contours = expolygons_to_edge_grid_contours(&input_expolygons[layer_idx]);
+        grid.create_from_polygons(&contours, scale_(10.));
+        edge_grids.push(grid);
+    }
+
+    // Projection of painted triangles onto the layers. MultiMaterialSegmentation.cpp:2220-2322.
+    // Tier-1: the C++ loops `for mv: for extruder_idx in 1..=num_extruders:
+    // mv.mmu_segmentation_facets.get_facets(extruder_idx)`. Here each submesh is already the
+    // per-slot painted facet set, so we iterate the submeshes directly; `color` = its slot.
+    for (extruder_slot, custom_facets) in painted_submeshes {
+        // cpp:2229-2231 — skip volumes with no painted facets for this slot.
+        if custom_facets.indices.is_empty() {
+            continue;
+        }
+        // cpp:2310 — the painted color is the (1-based) extruder slot.
+        let color = *extruder_slot as i32;
+        // cpp:2233 — Tier-1 trafo is identity (mesh pre-placed), so `facet[p] = vertices[idx]`.
+        for facet_idx in 0..custom_facets.indices.len() {
+            // cpp:2240-2248
+            let mut min_z = f32::MAX;
+            let mut max_z = f32::MIN; // std::numeric_limits<float>::lowest()
+            let mut facet: [Vec3f; 3] = [Vec3f::zeros(); 3];
+            for p_idx in 0..3usize {
+                let vidx = custom_facets.indices[facet_idx][p_idx] as usize;
+                facet[p_idx] = custom_facets.vertices[vidx]; // identity trafo
+                max_z = max_z.max(facet[p_idx].z);
+                min_z = min_z.min(facet[p_idx].z);
+            }
+
+            // cpp:2250-2251
+            if is_equal(min_z, max_z) {
+                continue;
+            }
+
+            // cpp:2254 — sort the vertices by z.
+            facet.sort_by(|a, b| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
+
+            // cpp:2256-2261 — first/last layer via upper_bound over slice_z, then `--last_layer`.
+            let first_layer = upper_bound_f64(layer_slice_zs, min_z as f64 - EPSILON);
+            let last_ub = upper_bound_f64(layer_slice_zs, max_z as f64 + EPSILON);
+            if last_ub == 0 {
+                continue;
+            }
+            let last_layer = last_ub - 1;
+
+            // cpp:2263-2312 — `for (layer_it = first_layer; layer_it != last_layer + 1; ++layer_it)`.
+            for layer_idx in first_layer..=last_layer {
+                let slice_z = layer_slice_zs[layer_idx]; // coordf_t (double)
+                let slice_z_f = slice_z as f32; // C++ `float(layer->slice_z)`
+
+                // cpp:2266
+                if input_expolygons[layer_idx].is_empty()
+                    || is_less(slice_z_f, facet[0].z)
+                    || is_less(facet[2].z, slice_z_f)
+                {
+                    continue;
+                }
+
+                // cpp:2270-2271
+                let t = (slice_z_f - facet[0].z) / (facet[2].z - facet[0].z);
+                let line_start_f = facet[0] + (facet[2] - facet[0]) * t;
+
+                // cpp:2274-2287
+                let line_end_f: Vec3f = if (is_equal(facet[0].z, facet[1].z)
+                    && is_equal(facet[1].z, slice_z_f))
+                    || (is_equal(facet[1].z, facet[2].z) && is_equal(facet[1].z, slice_z_f))
+                {
+                    // BBS: one side of the triangle coincides with slice_z.
+                    facet[1]
+                } else if (facet[1].z as f64) > slice_z {
+                    // [P0, P2] and [P0, P1]
+                    let t1 = (slice_z_f - facet[0].z) / (facet[1].z - facet[0].z);
+                    facet[0] + (facet[1] - facet[0]) * t1
+                } else {
+                    // [P0, P2] and [P1, P2]
+                    let t2 = (slice_z_f - facet[1].z) / (facet[2].z - facet[1].z);
+                    facet[1] + (facet[2] - facet[1]) * t2
+                };
+
+                // cpp:2289-2291
+                let mut line_to_test = Line::new(
+                    Point::new(scale_(line_start_f.x as f64), scale_(line_start_f.y as f64)),
+                    Point::new(scale_(line_end_f.x as f64), scale_(line_end_f.y as f64)),
+                );
+                // cpp:2291 — line_to_test.translate(-center_offset): center_offset is (0,0) in
+                // Tier-1 (mesh pre-placed), so this is a no-op.
+
+                // Clip the painted line against the EdgeGrid's bbox. MultiMaterialSegmentation.cpp:2293-2303.
+                let edge_grid_bbox = *edge_grids[layer_idx].bbox();
+                if !edge_grid_bbox.contains_point(&line_to_test.a)
+                    || !edge_grid_bbox.contains_point(&line_to_test.b)
+                {
+                    // BoundingBox(Points{a, b}).overlap(edge_grid_bbox) — cpp:2300.
+                    let line_bbox = BoundingBox::from_points(&[line_to_test.a, line_to_test.b]);
+                    if !edge_grid_bbox.intersects(&line_bbox)
+                        || !line_to_test.clip_with_bbox(&edge_grid_bbox)
+                    {
+                        continue;
+                    }
+                }
+
+                // Run the painted-line visitor over the grid. MultiMaterialSegmentation.cpp:2305-2311.
+                // (No mutex / `mutex_idx` — the Tier-1 port is sequential.)
+                let grid = &edge_grids[layer_idx];
+                let mut visitor = PaintedLineVisitor::new(grid, &mut painted_lines[layer_idx], 16);
+                visitor.line_to_test = line_to_test;
+                visitor.color = color;
+                let a = line_to_test.a;
+                let b = line_to_test.b;
+                grid.visit_cells_intersecting_line(a, b, |iy, ix| visitor.visit(iy, ix));
+            }
+        }
+    }
+
+    // Per-layer segmentation. MultiMaterialSegmentation.cpp:2326-2366.
+    for layer_idx in 0..num_layers {
+        // cpp:2330
+        if painted_lines[layer_idx].is_empty() {
+            continue;
+        }
+        // cpp:2335 — post_process_painted_lines(std::move(painted_lines[layer_idx])).
+        let taken = std::mem::take(&mut painted_lines[layer_idx]);
+        let contours = edge_grids[layer_idx].contours();
+        let post_processed = post_process_painted_lines(contours, taken);
+        // cpp:2341
+        let color_poly = colorize_contours(contours, &post_processed);
+        // cpp:2347-2348
+        debug_assert!(!color_poly.is_empty());
+        debug_assert!(!color_poly.first().unwrap().is_empty());
+        if color_poly.is_empty() || color_poly.first().map_or(true, |c| c.is_empty()) {
+            continue;
+        }
+
+        if has_layer_only_one_color(&color_poly) {
+            // cpp:2349-2351 — whole layer one color: assign the input directly to that slot.
+            let one_color = color_poly.first().unwrap().first().unwrap().color as usize;
+            segmented_regions[layer_idx][one_color] = input_expolygons[layer_idx].clone();
+        } else {
+            // cpp:2352-2357
+            let mut graph = build_graph(layer_idx, &color_poly);
+            remove_multiple_edges_in_vertices(&mut graph, &color_poly);
+            graph.remove_nodes_with_one_arc();
+            // extract_colored_segments returns polygon buckets (num_extruders + 1); union each
+            // into an ExPolygons (the C++ extract does the union_ex internally).
+            let poly_buckets = extract_colored_segments(&graph, num_extruders);
+            segmented_regions[layer_idx] = poly_buckets
+                .iter()
+                .map(|polys| union_polygons_ex(polys))
+                .collect();
+        }
+    }
+
+    // Clip-back to actual geometry (cpp:2369-2383) is OMITTED — no negative volumes in Tier-1.
+
+    // Interlocking / cut. MultiMaterialSegmentation.cpp:2385-2390.
+    // Tier-1: `interlocking_beam` is always false; the gate reduces to `max_width > 0 ||
+    // interlocking_depth > 0`. Both knobs arrive already-scaled, matching the C++
+    // `float(scale_(...))` arguments.
+    if segmented_max_width > 0.0 || segmented_interlocking_depth > 0.0 {
+        cut_segmented_layers(
+            &input_expolygons,
+            &mut segmented_regions,
+            segmented_max_width,
+            segmented_interlocking_depth,
+        );
+    }
+
+    // Top/bottom painted-surface propagation. MultiMaterialSegmentation.cpp:2393.
+    // FIDELITY-NOTE (see doc-comment): stubbed to the empty "no top/bottom overrides" structure.
+    // Shape expected by merge_segmented_layers is [extruder 0..=num_extruders][layer].
+    let top_and_bottom_layers: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_layers]; num_extruders + 1];
+
+    // cpp:2396 — returns [layer][num_extruders] (0-based extruder; default color dropped).
+    merge_segmented_layers(&segmented_regions, top_and_bottom_layers, num_extruders)
+}
+
+// ---------------------------------------------------------------------------
 // Public API (MultiMaterialSegmentation.hpp:24-27)
 // ---------------------------------------------------------------------------
+//
+// The Tier-1 orchestrator `multi_material_segmentation_by_painting_tier1` (above) ports the
+// full pipeline of the PrintObject-driven `multi_material_segmentation_by_painting` against
+// caller-prepared inputs (see its doc-comment). The original PrintObject-driven entry points
+// remain BLOCKED for the reasons below.
 //
 // BLOCKED: `multi_material_segmentation_by_painting` (cpp:2012) and
 // `fuzzy_skin_segmentation_by_painting`, plus their helpers
