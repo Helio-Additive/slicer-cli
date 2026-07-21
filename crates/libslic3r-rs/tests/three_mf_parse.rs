@@ -6,6 +6,7 @@
 //! crate's lib-internal test modules.
 
 use slicer::app_slice::parse_3mf_model_xml;
+use slicer::model::FacetsAnnotation;
 
 /// A minimal single-file 3MF `3dmodel.model` with an inline tetrahedron mesh
 /// (4 vertices, 4 triangles) referenced by one build item — the shape the
@@ -55,7 +56,9 @@ const EXTERNAL_COMPONENT_MODEL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 #[test]
 fn parses_inline_single_file_mesh() {
-    let mesh = parse_3mf_model_xml(INLINE_TETRA_MODEL).expect("inline mesh should parse");
+    let mesh = parse_3mf_model_xml(INLINE_TETRA_MODEL)
+        .expect("inline mesh should parse")
+        .mesh;
     assert_eq!(mesh.vertex_count(), 4);
     assert_eq!(mesh.triangle_count(), 4);
 }
@@ -90,7 +93,9 @@ const ROTATED_Z90_MODEL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 #[test]
 fn applies_build_item_rotation_column_major() {
-    let mesh = parse_3mf_model_xml(ROTATED_Z90_MODEL).expect("rotated mesh should parse");
+    let mesh = parse_3mf_model_xml(ROTATED_Z90_MODEL)
+        .expect("rotated mesh should parse")
+        .mesh;
     let v = mesh.vertices();
     assert_eq!(v.len(), 3);
     let approx = |a: f64, b: f64| (a - b).abs() < 1e-9;
@@ -152,7 +157,9 @@ const NEGATIVE_PART_MODEL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 #[test]
 fn skips_negative_and_other_typed_objects() {
-    let mesh = parse_3mf_model_xml(NEGATIVE_PART_MODEL).expect("model should parse");
+    let mesh = parse_3mf_model_xml(NEGATIVE_PART_MODEL)
+        .expect("model should parse")
+        .mesh;
     // Only the printable tetra (4 verts / 4 tris) — the type="other" triangle
     // at (100,100,100) must NOT be merged.
     assert_eq!(mesh.vertex_count(), 4, "negative volume leaked into merge");
@@ -161,6 +168,61 @@ fn skips_negative_and_other_typed_objects() {
         mesh.vertices().iter().all(|v| v.x < 50.0),
         "found vertex from the type=\"other\" volume"
     );
+}
+
+/// The inline tetra with BambuStudio `paint_color` painting on two of the
+/// four triangles (values from a real MakerWorld multicolour export).
+const PAINTED_TETRA_MODEL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+ <resources>
+  <object id="1" type="model">
+   <mesh>
+    <vertices>
+     <vertex x="0" y="0" z="0"/>
+     <vertex x="10" y="0" z="0"/>
+     <vertex x="0" y="10" z="0"/>
+     <vertex x="0" y="0" z="10"/>
+    </vertices>
+    <triangles>
+     <triangle v1="0" v2="1" v3="2" paint_color="4"/>
+     <triangle v1="0" v2="1" v3="3"/>
+     <triangle v1="0" v2="2" v3="3" paint_color="2C"/>
+     <triangle v1="1" v2="2" v3="3"/>
+    </triangles>
+   </mesh>
+  </object>
+ </resources>
+ <build>
+  <item objectid="1"/>
+ </build>
+</model>"#;
+
+#[test]
+fn captures_paint_color_into_facets_annotation() {
+    let parsed = parse_3mf_model_xml(PAINTED_TETRA_MODEL).expect("painted mesh should parse");
+    assert_eq!(parsed.mesh.triangle_count(), 4);
+    let facets = &parsed.mmu_facets;
+    assert_eq!(facets.facet_count(), 2, "two painted triangles expected");
+    // Round-trip through the FacetsAnnotation hex codec (Model.cpp:4267/4292):
+    // what was stored for each triangle must decode back to the source string.
+    assert_eq!(facets.get_triangle_as_string(0), "4");
+    assert_eq!(facets.get_triangle_as_string(1), "", "unpainted triangle");
+    assert_eq!(facets.get_triangle_as_string(2), "2C");
+    assert_eq!(facets.get_triangle_as_string(3), "", "unpainted triangle");
+}
+
+#[test]
+fn facets_annotation_string_round_trip() {
+    // Longer real-world strings (split-triangle states from the Majora 3MF).
+    let samples = ["4", "8", "0C", "5C", "41C1C1C31C1C1C3", "2C2C42C2C32C2C3"];
+    let mut fa = FacetsAnnotation::default();
+    for (i, s) in samples.iter().enumerate() {
+        fa.set_triangle_from_string(i as i32, s);
+    }
+    for (i, s) in samples.iter().enumerate() {
+        assert_eq!(fa.get_triangle_as_string(i as i32), *s, "sample {i}");
+    }
+    assert_eq!(fa.get_triangle_as_string(99), "", "absent triangle decodes empty");
 }
 
 #[test]

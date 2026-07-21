@@ -188,11 +188,11 @@ fn slice_command(
     let mut identify_ids: Vec<usize> = Vec::new();
     let mut mesh = if is_3mf {
         info!("Loading 3MF...");
-        let (m, settings_opt, ids) =
+        let loaded =
             load_3mf(&input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
-        embedded_settings_str = settings_opt;
-        identify_ids = ids;
-        m
+        embedded_settings_str = loaded.settings_json;
+        identify_ids = loaded.identify_ids;
+        loaded.mesh
     } else {
         info!("Loading STL...");
         load_stl(&input).with_context(|| format!("Failed to load STL: {:?}", input))?

@@ -16,6 +16,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::geometry::Point3F;
+use crate::model::FacetsAnnotation;
 use crate::print::{Print, PrintObject};
 use crate::print_config::{PrintConfig, PrintObjectConfig};
 use crate::region_config::PrintRegionConfig;
@@ -174,9 +175,23 @@ pub fn slice_3mf_to_gcode(
 
     // Load the merged mesh + embedded settings + per-instance identify_ids.
     info!("Loading 3MF...");
-    let (mut mesh, embedded_settings, identify_ids) =
-        load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
+    let Loaded3mf {
+        mut mesh,
+        settings_json: embedded_settings,
+        identify_ids,
+        mmu_facets,
+    } = load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     info!("Loaded {} triangles", mesh.triangle_count());
+    if !mmu_facets.is_empty() {
+        // Parsed and stored (campaign B layer 1); the segmentation → region →
+        // toolchange chain (layers 3-6) is not wired yet, so the slice is
+        // still single-material.
+        info!(
+            "3MF carries painted multi-material state on {} facets — multicolour \
+             slicing is not yet applied (single-material Tier-1 output)",
+            mmu_facets.facet_count()
+        );
+    }
 
     // Settings source: an explicit override wins, else the 3MF's embedded config.
     let settings_str = if let Some(path) = settings_override {
@@ -259,6 +274,29 @@ pub fn slice_3mf_to_gcode(
     Ok(())
 }
 
+/// Result of parsing a `3D/3dmodel.model` XML: the merged printable mesh plus
+/// the painted-MMU per-triangle annotation (empty when the model is unpainted).
+#[derive(Debug)]
+pub struct Parsed3mfModel {
+    pub mesh: TriangleMesh,
+    /// Painted multi-material state per merged-mesh triangle — the pragmatic
+    /// equivalent of C++ `ModelVolume::mmu_segmentation_facets` (Model.hpp:961).
+    pub mmu_facets: FacetsAnnotation,
+}
+
+/// Everything the Tier-1 loader extracts from a `.3mf` archive.
+#[derive(Debug)]
+pub struct Loaded3mf {
+    /// Merged printable mesh (see [`parse_3mf_model_xml`]).
+    pub mesh: TriangleMesh,
+    /// `Metadata/project_settings.config` contents, when present.
+    pub settings_json: Option<String>,
+    /// Per-instance `identify_id`s (drive `; OBJECT_ID:` comments).
+    pub identify_ids: Vec<usize>,
+    /// Painted-MMU annotation, merged-mesh triangle order.
+    pub mmu_facets: FacetsAnnotation,
+}
+
 /// Load a [`TriangleMesh`] from a `.3mf` ZIP by parsing `3D/3dmodel.model`.
 ///
 /// Also extracts `Metadata/project_settings.config` (returned as a JSON string
@@ -270,7 +308,7 @@ pub fn slice_3mf_to_gcode(
 /// (`type="other"` — BambuStudio negative/modifier volumes) are skipped:
 /// merging them as positive solids is wrong, and true boolean subtraction
 /// is Tier-2 (needs ModelVolume).
-pub fn load_3mf(path: &Path) -> Result<(TriangleMesh, Option<String>, Vec<usize>)> {
+pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
     use zip::ZipArchive;
 
     let file =
@@ -310,9 +348,14 @@ pub fn load_3mf(path: &Path) -> Result<(TriangleMesh, Option<String>, Vec<usize>
         buf
     };
 
-    // Parse vertices and triangles from the XML
-    let mesh = parse_3mf_model_xml(&model_xml)?;
-    Ok((mesh, settings_json, identify_ids))
+    // Parse vertices, triangles, and painted-MMU state from the XML
+    let parsed = parse_3mf_model_xml(&model_xml)?;
+    Ok(Loaded3mf {
+        mesh: parsed.mesh,
+        settings_json,
+        identify_ids,
+        mmu_facets: parsed.mmu_facets,
+    })
 }
 
 /// Parse identify_ids from Metadata/model_settings.config XML.
@@ -423,7 +466,11 @@ fn parse_identify_ids_from_model_settings(xml: &str) -> Vec<usize> {
 /// A 3MF that stores its mesh in external `/3D/Objects/*.model` parts (the 3MF
 /// production extension, referenced via `<component p:path=...>`) yields no
 /// inline mesh and returns a descriptive error.
-pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
+///
+/// Painted-MMU per-triangle attributes (`paint_color` /
+/// `slic3rpe:mmu_segmentation`) are captured into
+/// [`Parsed3mfModel::mmu_facets`], indexed by merged-mesh triangle order.
+pub fn parse_3mf_model_xml(xml: &str) -> Result<Parsed3mfModel> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -435,6 +482,10 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
     struct MeshData {
         vertices: Vec<Point3F>,
         triangles: Vec<[u32; 3]>,
+        /// Per-triangle painted-MMU string (`paint_color` in BambuStudio 3MFs,
+        /// `slic3rpe:mmu_segmentation` in PrusaSlicer ones), parallel to
+        /// `triangles`. `None` = unpainted (base filament).
+        paints: Vec<Option<String>>,
         components: Vec<(u32, [f64; 12])>, // (objectid, transform)
         /// `<object type="...">` — defaults to "model" per the 3MF core spec.
         /// BambuStudio stores negative/modifier volumes as `type="other"`
@@ -543,6 +594,7 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
                         let entry = objects.entry(id).or_insert_with(|| MeshData {
                             vertices: Vec::new(),
                             triangles: Vec::new(),
+                            paints: Vec::new(),
                             components: Vec::new(),
                             is_model,
                         });
@@ -585,6 +637,7 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
                         let mut v1 = 0u32;
                         let mut v2 = 0u32;
                         let mut v3 = 0u32;
+                        let mut paint: Option<String> = None;
                         for attr in e.attributes().flatten() {
                             match attr.key.local_name().as_ref() {
                                 b"v1" => {
@@ -602,13 +655,26 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
                                         v3 = s.parse().unwrap_or(0);
                                     }
                                 }
+                                // Painted-MMU per-triangle state: BambuStudio
+                                // writes `paint_color` (bbs_3mf.cpp:297),
+                                // PrusaSlicer `slic3rpe:mmu_segmentation`
+                                // (local name `mmu_segmentation`). Same hex
+                                // FacetsAnnotation encoding either way.
+                                b"paint_color" | b"mmu_segmentation" => {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        if !s.is_empty() {
+                                            paint = Some(s.to_owned());
+                                        }
+                                    }
+                                }
                                 _ => {}
                             }
                         }
                         if let Some(id) = current_object_id {
-                            objects
-                                .entry(id)
-                                .and_modify(|m| m.triangles.push([v1, v2, v3]));
+                            objects.entry(id).and_modify(|m| {
+                                m.triangles.push([v1, v2, v3]);
+                                m.paints.push(paint);
+                            });
                         }
                     }
                     b"component" => {
@@ -682,6 +748,8 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
     // Resolve build items → instantiate objects with transforms
     let mut all_vertices: Vec<Point3F> = Vec::new();
     let mut all_triangles: Vec<Triangle> = Vec::new();
+    // Painted-MMU strings parallel to `all_triangles` (merged-mesh order).
+    let mut all_paints: Vec<Option<String>> = Vec::new();
 
     fn instantiate_object(
         obj_id: u32,
@@ -689,6 +757,7 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
         objects: &std::collections::HashMap<u32, MeshData>,
         all_vertices: &mut Vec<Point3F>,
         all_triangles: &mut Vec<Triangle>,
+        all_paints: &mut Vec<Option<String>>,
         identity: &[f64; 12],
     ) {
         if let Some(mesh_data) = objects.get(&obj_id) {
@@ -704,12 +773,13 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
                 for v in &mesh_data.vertices {
                     all_vertices.push(apply_transform(v, transform));
                 }
-                for tri in &mesh_data.triangles {
+                for (i, tri) in mesh_data.triangles.iter().enumerate() {
                     all_triangles.push(Triangle::new(
                         tri[0] + v_offset,
                         tri[1] + v_offset,
                         tri[2] + v_offset,
                     ));
+                    all_paints.push(mesh_data.paints.get(i).cloned().flatten());
                 }
             }
             // If object has components, recurse with composed transforms
@@ -721,6 +791,7 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
                     objects,
                     all_vertices,
                     all_triangles,
+                    all_paints,
                     identity,
                 );
             }
@@ -733,12 +804,13 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
             if mesh_data.is_model && !mesh_data.vertices.is_empty() {
                 let v_offset = all_vertices.len() as u32;
                 all_vertices.extend_from_slice(&mesh_data.vertices);
-                for tri in &mesh_data.triangles {
+                for (i, tri) in mesh_data.triangles.iter().enumerate() {
                     all_triangles.push(Triangle::new(
                         tri[0] + v_offset,
                         tri[1] + v_offset,
                         tri[2] + v_offset,
                     ));
+                    all_paints.push(mesh_data.paints.get(i).cloned().flatten());
                 }
             }
         }
@@ -750,6 +822,7 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
                 &objects,
                 &mut all_vertices,
                 &mut all_triangles,
+                &mut all_paints,
                 &identity,
             );
         }
@@ -771,14 +844,29 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<TriangleMesh> {
         ));
     }
 
+    // Fold the per-triangle paint strings (merged-mesh triangle order) into a
+    // FacetsAnnotation — the same storage `ModelVolume::mmu_segmentation_facets`
+    // uses in C++ (Model.hpp:961). Consumed by the Tier-2 multi-material
+    // segmentation; carried here so the painting survives the pragmatic load.
+    let mut mmu_facets = FacetsAnnotation::default();
+    for (idx, paint) in all_paints.iter().enumerate() {
+        if let Some(s) = paint {
+            mmu_facets.set_triangle_from_string(idx as i32, s);
+        }
+    }
+
     info!(
-        "Parsed 3MF: {} vertices, {} triangles (from {} objects, {} build items)",
+        "Parsed 3MF: {} vertices, {} triangles ({} painted; from {} objects, {} build items)",
         all_vertices.len(),
         all_triangles.len(),
+        mmu_facets.facet_count(),
         objects.len(),
         build_items.len()
     );
-    Ok(TriangleMesh::from_parts(all_vertices, all_triangles))
+    Ok(Parsed3mfModel {
+        mesh: TriangleMesh::from_parts(all_vertices, all_triangles),
+        mmu_facets,
+    })
 }
 
 /// Load BambuStudio project_settings.config JSON and create config structs.

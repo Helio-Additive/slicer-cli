@@ -53,7 +53,12 @@ Faithful importer parses `slic3rpe:mmu_segmentation` (three_mf.rs:2627-2643) but
 Dependency chain (C++ refs: PrintApply.cpp:1060 generate_print_object_regions,
 MultiMaterialSegmentation.cpp, PrintObjectSlice.cpp:845 apply_mm_segmentation, ToolOrdering,
 WipeTower):
-1. ModelVolume + FacetsAnnotation storage; importer keeps segmentation strings.
+1. [DONE R364] FacetsAnnotation ported (model.rs, Model.cpp:4267/4292 hex codec,
+   wraps TriangleSelector SerializedData). Pragmatic reader captures per-triangle
+   `paint_color`/`mmu_segmentation` attrs → Parsed3mfModel/Loaded3mf.mmu_facets
+   (merged-mesh triangle order). slice_3mf_to_gcode logs painted-facet count.
+   NOTE: skipped full ModelVolume — merged-mesh + parallel annotation is the
+   Tier-1-consistent shape; revisit if layer 4 needs per-volume separation.
 2. Per-extruder PrintConfig (filament vectors, filament_colour, real num_extruders).
 3. Painted-region generation (painted_regions; >1 region/object in print.rs:207-233).
 4. slice_mesh_slabs port; unblock multi_material_segmentation_by_painting; port
@@ -87,3 +92,9 @@ comparable to bambu.
   R359-R363, pushed. CAUTION noted: a stale bambu gcode at tests/.tmp/nu3mf/
   nearly read as the rust result — always verify header engine identity.
   Next: B layer 1 (ModelVolume + FacetsAnnotation storage).
+- R3 (2026-07-21): B layer 1 DONE (R364). FacetsAnnotation in model.rs;
+  paint_color captured through parse_3mf_model_xml → Loaded3mf.mmu_facets;
+  codec round-trip + capture tests (three_mf_parse 6/6); arachne_infill still
+  green; helio CLI compiles. Next: B layer 2 — per-extruder PrintConfig
+  (filament vectors, filament_colour, num_extruders from filament_diameter.len()),
+  then `; filament: N` header + all_extruders().
