@@ -1490,6 +1490,7 @@ dependencies = [
  "aws-sdk-s3",
  "base64",
  "clap",
+ "env_logger",
  "reqwest",
  "schemars",
  "serde",
