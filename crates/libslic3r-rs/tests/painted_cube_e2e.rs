@@ -36,4 +36,17 @@ fn painted_cube_slices_end_to_end() {
         "fill missing after painted split"
     );
     assert!(gcode.len() > 100_000, "suspiciously small gcode");
+
+    // Toolchange emission (campaign layers 5-6, Tier-1 bare T-commands): the
+    // two painted faces force per-layer tool alternation. The start-gcode
+    // template carries a couple of its own T lines, so require clearly more
+    // than that — one change per painted layer band at minimum.
+    let toolchanges = gcode
+        .lines()
+        .filter(|l| l.starts_with("T1") && l.contains("tool change"))
+        .count();
+    assert!(
+        toolchanges >= 10,
+        "expected per-layer T1 toolchanges from the painted split, got {toolchanges}"
+    );
 }

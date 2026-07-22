@@ -750,6 +750,7 @@ impl Print {
                     ltp.layer,
                     &mut writer,
                     &object.config,
+                    &self.config,
                     is_first_layer,
                     is_infill_first,
                     skip_infill,
@@ -2163,6 +2164,7 @@ fn emit_layer_by_island(
     layer: &crate::layer::Layer,
     writer: &mut crate::gcode::GCodeWriter,
     config: &crate::print_config::PrintObjectConfig,
+    print_config: &crate::print_config::PrintConfig,
     is_first_layer: bool,
     is_infill_first: bool,
     skip_infill: bool,
@@ -2371,44 +2373,97 @@ fn emit_layer_by_island(
             }
         }
     }
-    for &isl_idx in &emit_order {
-        let island = &islands[isl_idx];
-        for bucket in island {
-            let do_perims = |w: &mut crate::gcode::GCodeWriter| {
-                // Gated `; COOLING_NODE:` emission (GCode.cpp:5738-5747) —
-                // native's `cooling_node` compare value is stuck at -1, so the
-                // marker precedes EVERY entity whose node id != -1.
-                let node_ids = if zsmooth_gate {
-                    Some(bucket.perim_nodes.as_slice())
-                } else {
-                    None
-                };
-                crate::gcode::exporter::extrude_perimeters_entities(
-                    &bucket.perims, w, config, is_first_layer, skip_inner_walls, node_ids,
-                );
-            };
-            let do_fills = |w: &mut crate::gcode::GCodeWriter| {
-                crate::gcode::exporter::extrude_infill_entities(
-                    &bucket.fills, w, config, is_first_layer,
-                );
-                if !bucket.thins.is_empty() {
-                    let coll = crate::extrusion_entity::ExtrusionEntityCollection {
-                        entities: bucket.thins.clone(),
-                        no_sort: true,
-                        ..Default::default()
-                    };
-                    let _ = crate::gcode::exporter::extrude_collection(
-                        &coll, w, config, is_first_layer,
-                    );
-                }
-            };
-            if is_infill_first && !is_first_layer {
-                do_fills(writer);
-                do_perims(writer);
-            } else {
-                do_perims(writer);
-                do_fills(writer);
+    // Multi-material layers (painted regions) emit EXTRUDER-MAJOR: all islands
+    // for one filament, then a toolchange, then the next — the order C++
+    // ToolOrdering produces per layer (GCode.cpp custom_gcode/toolchange loop;
+    // wipe-tower purging not yet ported, so the toolchange is the bare
+    // `set_extruder` T-command). Region → filament comes from the region
+    // config (`wall_filament`, 1-based slot; painted regions carry their slot,
+    // region 0 the default). Tool index = slot - 1 (T0-based).
+    //
+    // Single-region layers keep the original island-major order and NEVER
+    // enter the toolchange path (byte-identical to the pre-multicolour emit).
+    let region_tools: Vec<usize> = layer
+        .regions()
+        .iter()
+        .map(|r| {
+            r.region
+                .as_ref()
+                .map(|pr| pr.config().wall_filament)
+                .unwrap_or(1)
+                .max(1)
+                - 1
+        })
+        .collect();
+    let multi_tool = region_tools.iter().any(|&t| t != region_tools[0]);
+    // Unique tools in first-appearance (region-id ascending) order.
+    let mut tool_order: Vec<usize> = Vec::new();
+    for &t in &region_tools {
+        if !tool_order.contains(&t) {
+            tool_order.push(t);
+        }
+    }
+
+    for &tool in &tool_order {
+        if multi_tool {
+            // Skip the toolchange when this tool has no work on this layer.
+            let has_work = emit_order.iter().any(|&isl_idx| {
+                islands[isl_idx].iter().enumerate().any(|(ri, b)| {
+                    region_tools.get(ri) == Some(&tool)
+                        && (!b.perims.is_empty() || !b.fills.is_empty() || !b.thins.is_empty())
+                })
+            });
+            if !has_work {
+                continue;
             }
+            let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
+        }
+        for &isl_idx in &emit_order {
+            let island = &islands[isl_idx];
+            for (region_id, bucket) in island.iter().enumerate() {
+                if multi_tool && region_tools.get(region_id) != Some(&tool) {
+                    continue;
+                }
+                let do_perims = |w: &mut crate::gcode::GCodeWriter| {
+                    // Gated `; COOLING_NODE:` emission (GCode.cpp:5738-5747) —
+                    // native's `cooling_node` compare value is stuck at -1, so the
+                    // marker precedes EVERY entity whose node id != -1.
+                    let node_ids = if zsmooth_gate {
+                        Some(bucket.perim_nodes.as_slice())
+                    } else {
+                        None
+                    };
+                    crate::gcode::exporter::extrude_perimeters_entities(
+                        &bucket.perims, w, config, is_first_layer, skip_inner_walls, node_ids,
+                    );
+                };
+                let do_fills = |w: &mut crate::gcode::GCodeWriter| {
+                    crate::gcode::exporter::extrude_infill_entities(
+                        &bucket.fills, w, config, is_first_layer,
+                    );
+                    if !bucket.thins.is_empty() {
+                        let coll = crate::extrusion_entity::ExtrusionEntityCollection {
+                            entities: bucket.thins.clone(),
+                            no_sort: true,
+                            ..Default::default()
+                        };
+                        let _ = crate::gcode::exporter::extrude_collection(
+                            &coll, w, config, is_first_layer,
+                        );
+                    }
+                };
+                if is_infill_first && !is_first_layer {
+                    do_fills(writer);
+                    do_perims(writer);
+                } else {
+                    do_perims(writer);
+                    do_fills(writer);
+                }
+            }
+        }
+        if !multi_tool {
+            // Single-tool layer: the tool loop has exactly one pass.
+            break;
         }
     }
 }
