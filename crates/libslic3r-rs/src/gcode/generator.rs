@@ -416,7 +416,12 @@ impl GCodeHeader {
                         continue;
                     }
                     if let Some(value) = obj.get(key) {
-                        let formatted = format_config_value(key, value, used_extruders);
+                        let formatted = format_config_value(
+                    key,
+                    value,
+                    used_extruders,
+                    self.config.num_filaments(),
+                );
                         config.push_str(&format!("; {} = {}\n", key, formatted));
                     } else if cf {
                         if let Some((_, dv)) =
@@ -864,7 +869,12 @@ fn is_config_key_skipped(key: &str) -> bool {
 /// - String list arrays (gcode, compatible_printers, etc.): semicolon-joined with quotes
 /// - Quoted string arrays (settings_id, vendor, etc.): quoted first element
 /// - Scalar strings: literal with \n escaping
-fn format_config_value(key: &str, value: &serde_json::Value, used_extruders: usize) -> String {
+fn format_config_value(
+    key: &str,
+    value: &serde_json::Value,
+    used_extruders: usize,
+    num_filaments: usize,
+) -> String {
     // Under CONFIG_FAITHFUL, native coFloat drops a trailing ".0" (12.0->12,
     // 1.0->1) and coPercent appends '%'. Apply to scalar string values.
     let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
@@ -994,13 +1004,41 @@ fn format_config_value(key: &str, value: &serde_json::Value, used_extruders: usi
                 "retraction_distances_when_ec",
                 "slow_down_min_speed",
             ];
-            if cf && arr.len() > used_extruders && PER_USED_EXTRUDER_KEYS.contains(&key) {
+            // The trim is a SINGLE-material parity rule — multi-filament prints
+            // must keep the full arrays (see the multi-material block below).
+            if cf
+                && num_filaments == 1
+                && arr.len() > used_extruders
+                && PER_USED_EXTRUDER_KEYS.contains(&key)
+            {
                 return arr
                     .iter()
                     .take(used_extruders)
                     .map(|v| v.as_str().unwrap_or("").replace('\n', "\\n"))
                     .collect::<Vec<_>>()
                     .join(",");
+            }
+
+            // Multi-material prints MUST echo the FULL per-filament arrays:
+            // BambuStudio's gcode preview (GCodeProcessor) indexes
+            // filament_colour / filament_type / nozzle_temperature / … by tool
+            // id, so a 1-element echo alongside T0..T7 in the body reads out
+            // of bounds and CRASHES the application on load. Serialization
+            // separators mirror native: coStrings use ';'
+            // (filament_colour = #A;#B), numeric vectors use ','
+            // (nozzle_temperature = 200,200).
+            if num_filaments > 1 && arr.len() > 1 {
+                let all_numeric = arr.iter().all(|v| {
+                    v.as_str()
+                        .map(|s| s.trim_end_matches('%').parse::<f64>().is_ok())
+                        .unwrap_or(false)
+                });
+                let sep = if all_numeric { "," } else { ";" };
+                return arr
+                    .iter()
+                    .map(|v| v.as_str().unwrap_or("").replace('\n', "\\n"))
+                    .collect::<Vec<_>>()
+                    .join(sep);
             }
 
             // Default: native ConfigOptionFloats/Ints/Strings::serialize emit

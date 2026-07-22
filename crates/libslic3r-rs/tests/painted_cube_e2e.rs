@@ -49,4 +49,18 @@ fn painted_cube_slices_end_to_end() {
         toolchanges >= 10,
         "expected per-layer T1 toolchanges from the painted split, got {toolchanges}"
     );
+
+    // CONFIG_BLOCK must echo FULL per-filament arrays on multi-material
+    // prints — BambuStudio's gcode preview indexes filament_colour /
+    // nozzle_temperature by tool id and CRASHES on a 1-element echo next to
+    // T1 in the body (observed: loading the Majora rust gcode killed
+    // BambuStudio). coStrings join with ';', numeric vectors with ','.
+    assert!(
+        gcode.contains("; filament_colour = #00AE42;#E28C00"),
+        "filament_colour must echo both filaments ;-joined"
+    );
+    assert!(
+        gcode.contains("; filament_diameter = 1.75,1.75"),
+        "filament_diameter must echo both filaments ,-joined"
+    );
 }
