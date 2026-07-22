@@ -42,6 +42,8 @@ tests/*.out.gcode
 # Large files
 *.gcode
 *.3mf
+# committed test fixtures are exempt from the blanket 3mf ignore
+!crates/libslic3r-rs/tests/data/*.3mf
 
 # Misc
 _downloads
