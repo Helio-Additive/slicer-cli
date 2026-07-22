@@ -97,6 +97,15 @@ WipeTower):
 5. Drive region_extruder (print_region.rs:246) from multiple regions.
 6. Wire ToolOrdering + set_extruder + WipeTower into export_gcode.
 
+STATUS after R372: layers 1-4 VALIDATED end-to-end on the committed
+painted_cube.3mf fixture (<1s, `; filament: 2`, e2e test green). Majora
+(8-colour mosaic, 377k painted facets): segmentation 13s/656 layers but
+bridge_over_infill >50min on thousands of genuine painted islands →
+reclassified as PERF milestone (sequential geo-clipper vs C++ TBB+integer
+clipper), not a correctness gate. Runs were timeout-killed with exit code
+laundered to 0 via caffeinate/timeout — always check for the gcode file, not
+the exit code. Next: layers 5-6 against the painted-cube fixture.
+
 Verify: nu3mf rust header `; filament: N>1`, toolchanges present, per-filament length list
 comparable to bambu.
 
