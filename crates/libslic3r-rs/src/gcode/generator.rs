@@ -417,11 +417,22 @@ impl GCodeHeader {
                     }
                     if let Some(value) = obj.get(key) {
                         let formatted = format_config_value(
-                    key,
-                    value,
-                    used_extruders,
-                    self.config.num_filaments(),
-                );
+                            key,
+                            value,
+                            used_extruders,
+                            self.config.num_filaments(),
+                        );
+                        // Empty = omit (all-"nil" nullable vectors on
+                        // multi-material prints; native omits them too).
+                        // Scoped to num_filaments > 1: single-material echoes
+                        // legitimately emit empty values (filament_notes = )
+                        // and are byte-locked.
+                        if formatted.is_empty()
+                            && value.is_array()
+                            && self.config.num_filaments() > 1
+                        {
+                            continue;
+                        }
                         config.push_str(&format!("; {} = {}\n", key, formatted));
                     } else if cf {
                         if let Some((_, dv)) =
@@ -1026,17 +1037,27 @@ fn format_config_value(
             // of bounds and CRASHES the application on load. Serialization
             // separators mirror native: coStrings use ';'
             // (filament_colour = #A;#B), numeric vectors use ','
-            // (nozzle_temperature = 200,200).
+            // (nozzle_temperature = 200,200). Nullable options whose entries
+            // are ALL "nil" (filament_wipe, filament_retraction_length, …) are
+            // OMITTED from the block entirely — native does the same (zero
+            // "nil" in its CONFIG_BLOCK), and BBS's loader rejects
+            // "nil;nil;…" with an "Invalid value provided" error dialog.
             if num_filaments > 1 && arr.len() > 1 {
-                let all_numeric = arr.iter().all(|v| {
-                    v.as_str()
-                        .map(|s| s.trim_end_matches('%').parse::<f64>().is_ok())
-                        .unwrap_or(false)
-                });
-                let sep = if all_numeric { "," } else { ";" };
-                return arr
+                let strs: Vec<&str> = arr.iter().map(|v| v.as_str().unwrap_or("")).collect();
+                if strs.iter().all(|s| *s == "nil") {
+                    return String::new(); // caller omits the key
+                }
+                // Separator: numeric if every NON-nil element parses as a
+                // number ("nil" is legal inside comma-joined nullable numeric
+                // vectors and must not force the string form).
+                let all_numeric = strs
                     .iter()
-                    .map(|v| v.as_str().unwrap_or("").replace('\n', "\\n"))
+                    .filter(|s| **s != "nil")
+                    .all(|s| s.trim_end_matches('%').parse::<f64>().is_ok());
+                let sep = if all_numeric { "," } else { ";" };
+                return strs
+                    .iter()
+                    .map(|s| s.replace('\n', "\\n"))
                     .collect::<Vec<_>>()
                     .join(sep);
             }
