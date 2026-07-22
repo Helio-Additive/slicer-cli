@@ -23,7 +23,14 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 const cwd = process.cwd();
-const cli = join(cwd, "target", "debug", "slicer-cli");
+// Prefer the release CLI when built — the bambu engine is a release cmake
+// binary, so timing comparisons (info.json) are only fair against release
+// rust. Falls back to debug; override with SLICER_CLI.
+const releaseCli = join(cwd, "target", "release", "slicer-cli");
+const cli =
+  process.env.SLICER_CLI ??
+  ((await Bun.file(releaseCli).exists()) ? releaseCli : join(cwd, "target", "debug", "slicer-cli"));
+console.log(`engine CLI: ${cli}`);
 const bambuBinary = process.env.BAMBUSTUDIO_SLICER ?? "libslic3r/bambustudio/build/slicer_cli";
 
 const ENGINES = [
@@ -80,6 +87,11 @@ for (const file of jsonnetFiles) {
   const outDir = join(runDir, name);
   await mkdir(outDir, { recursive: true });
 
+  // Per-config slice report: wall-clock seconds + outcome per engine, plus
+  // the speed ratio. Written as info.json next to the gcodes.
+  const info: Record<string, unknown> = { config: name };
+  const engineInfo: Record<string, { seconds: number; ok: boolean; gcode_bytes?: number }> = {};
+
   for (const { label, flag } of ENGINES) {
     // Redirect this engine's outputs into the config's run subdirectory.
     const cfg = {
@@ -92,6 +104,7 @@ for (const file of jsonnetFiles) {
     const cfgPath = join(outDir, `${label}.config.json`);
     await writeFile(cfgPath, `${JSON.stringify(cfg, null, 2)}\n`);
 
+    const started = performance.now();
     const res = await run(cli, [
       "slice",
       "--config",
@@ -101,19 +114,32 @@ for (const file of jsonnetFiles) {
       "--bambu-binary",
       bambuBinary,
     ]);
+    const seconds = Math.round((performance.now() - started) / 10) / 100;
 
     if (res.exitCode === 0) {
-      console.log(`  ✓ ${name}/${label}.gcode`);
-      summary.push(`${name}/${label}: ok`);
+      let gcodeBytes: number | undefined;
+      try {
+        gcodeBytes = (await Bun.file(join(outDir, `${label}.gcode`)).arrayBuffer()).byteLength;
+      } catch {}
+      engineInfo[label] = { seconds, ok: true, gcode_bytes: gcodeBytes };
+      console.log(`  ✓ ${name}/${label}.gcode (${seconds}s)`);
+      summary.push(`${name}/${label}: ok (${seconds}s)`);
     } else {
+      engineInfo[label] = { seconds, ok: false };
       await writeFile(
         join(outDir, `${label}.error.txt`),
         `exit code: ${res.exitCode}\n\n=== stdout ===\n${res.stdout}\n=== stderr ===\n${res.stderr}\n`,
       );
-      console.log(`  ✗ ${name}/${label} — exit ${res.exitCode} (see ${label}.error.txt)`);
-      summary.push(`${name}/${label}: FAILED (exit ${res.exitCode})`);
+      console.log(`  ✗ ${name}/${label} — exit ${res.exitCode} after ${seconds}s (see ${label}.error.txt)`);
+      summary.push(`${name}/${label}: FAILED (exit ${res.exitCode}, ${seconds}s)`);
     }
   }
+
+  info.engines = engineInfo;
+  if (engineInfo.bambu?.ok && engineInfo.rust?.ok && engineInfo.bambu.seconds > 0) {
+    info.rust_vs_bambu = `${(engineInfo.rust.seconds / engineInfo.bambu.seconds).toFixed(2)}x`;
+  }
+  await writeFile(join(outDir, "info.json"), `${JSON.stringify(info, null, 2)}\n`);
 }
 
 await writeFile(join(runDir, "summary.txt"), `${summary.join("\n")}\n`);
