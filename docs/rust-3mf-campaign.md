@@ -94,8 +94,11 @@ WipeTower):
        ONLY slice_mesh_slabs consumer → STUB empty for Tier-1 (horizontal
        painted-surface propagation missing; contour painting — the dominant
        Majora signal — unaffected). Port slabs later for fidelity.
-5. Drive region_extruder (print_region.rs:246) from multiple regions.
-6. Wire ToolOrdering + set_extruder + WipeTower into export_gcode.
+5. [DONE R373] Region→tool via region config wall_filament in the layer emit.
+6. [DONE R373 Tier-1] emit_layer_by_island extruder-major + exporter::set_extruder
+   bare T-commands (~2 changes/layer on the painted cube; single-tool layers
+   byte-identical — stl-inline 3097916 exact). NOT yet ported: WipeTower purging,
+   full ToolOrdering (cross-layer optimization), filament start/end gcode.
 
 STATUS after R372: layers 1-4 VALIDATED end-to-end on the committed
 painted_cube.3mf fixture (<1s, `; filament: 2`, e2e test green). Majora
