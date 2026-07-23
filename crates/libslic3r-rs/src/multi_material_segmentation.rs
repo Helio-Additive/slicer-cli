@@ -2931,46 +2931,56 @@ pub fn multi_material_segmentation_by_painting_tier1(
     }
 
     // Per-layer segmentation. MultiMaterialSegmentation.cpp:2326-2366.
-    for layer_idx in 0..num_layers {
-        // Progress marker (not in C++, which runs this under TBB): the layer
-        // loop dominates wall time on large painted models.
-        if layer_idx % 100 == 0 {
-            log::info!("MM segmentation: layer {layer_idx}/{num_layers}");
-        }
-        // cpp:2330
-        if painted_lines[layer_idx].is_empty() {
-            continue;
-        }
-        // cpp:2335 — post_process_painted_lines(std::move(painted_lines[layer_idx])).
-        let taken = std::mem::take(&mut painted_lines[layer_idx]);
-        let contours = edge_grids[layer_idx].contours();
-        let post_processed = post_process_painted_lines(contours, taken);
-        // cpp:2341
-        let color_poly = colorize_contours(contours, &post_processed);
-        // cpp:2347-2348
-        debug_assert!(!color_poly.is_empty());
-        debug_assert!(!color_poly.first().unwrap().is_empty());
-        if color_poly.is_empty() || color_poly.first().map_or(true, |c| c.is_empty()) {
-            continue;
-        }
+    // C++: tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers),
+    // C++:     [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions, ...]
+    // C++:     (const tbb::blocked_range<size_t> &range) {
+    // C++:         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
+    // rayon stands in for tbb: zip the per-layer inputs (painted_lines moved in,
+    // exactly the C++ std::move at cpp:2335) with mutable slots of
+    // segmented_regions — same per-index writes the C++ lambda performs.
+    {
+        use rayon::prelude::*;
+        let input_expolygons = &input_expolygons;
+        painted_lines
+            .par_drain(..)
+            .zip(segmented_regions.par_iter_mut())
+            .zip(edge_grids.par_iter())
+            .enumerate()
+            .for_each(|(layer_idx, ((taken, segmented_slot), edge_grid))| {
+                // cpp:2330
+                if taken.is_empty() {
+                    return;
+                }
+                // cpp:2335 — post_process_painted_lines(std::move(painted_lines[layer_idx])).
+                let contours = edge_grid.contours();
+                let post_processed = post_process_painted_lines(contours, taken);
+                // cpp:2341
+                let color_poly = colorize_contours(contours, &post_processed);
+                // cpp:2347-2348
+                debug_assert!(!color_poly.is_empty());
+                debug_assert!(!color_poly.first().unwrap().is_empty());
+                if color_poly.is_empty() || color_poly.first().map_or(true, |c| c.is_empty()) {
+                    return;
+                }
 
-        if has_layer_only_one_color(&color_poly) {
-            // cpp:2349-2351 — whole layer one color: assign the input directly to that slot.
-            let one_color = color_poly.first().unwrap().first().unwrap().color as usize;
-            segmented_regions[layer_idx][one_color] = input_expolygons[layer_idx].clone();
-        } else {
-            // cpp:2352-2357
-            let mut graph = build_graph(layer_idx, &color_poly);
-            remove_multiple_edges_in_vertices(&mut graph, &color_poly);
-            graph.remove_nodes_with_one_arc();
-            // extract_colored_segments returns polygon buckets (num_extruders + 1); union each
-            // into an ExPolygons (the C++ extract does the union_ex internally).
-            let poly_buckets = extract_colored_segments(&graph, num_extruders);
-            segmented_regions[layer_idx] = poly_buckets
-                .iter()
-                .map(|polys| union_polygons_ex(polys))
-                .collect();
-        }
+                if has_layer_only_one_color(&color_poly) {
+                    // cpp:2349-2351 — whole layer one color: assign the input directly to that slot.
+                    let one_color = color_poly.first().unwrap().first().unwrap().color as usize;
+                    segmented_slot[one_color] = input_expolygons[layer_idx].clone();
+                } else {
+                    // cpp:2352-2357
+                    let mut graph = build_graph(layer_idx, &color_poly);
+                    remove_multiple_edges_in_vertices(&mut graph, &color_poly);
+                    graph.remove_nodes_with_one_arc();
+                    // extract_colored_segments returns polygon buckets (num_extruders + 1); union each
+                    // into an ExPolygons (the C++ extract does the union_ex internally).
+                    let poly_buckets = extract_colored_segments(&graph, num_extruders);
+                    *segmented_slot = poly_buckets
+                        .iter()
+                        .map(|polys| union_polygons_ex(polys))
+                        .collect();
+                }
+            });
     }
 
     // Clip-back to actual geometry (cpp:2369-2383) is OMITTED — no negative volumes in Tier-1.

@@ -2804,8 +2804,22 @@ impl PrintObject {
 
             // Iterate through all layers and generate fills
             // PrintObject.cpp:763-770
-            // C++ uses tbb::parallel_for for parallelism, we use sequential for now
-            for layer_idx in 0..self.layers.len() {
+            // C++: tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()),
+            // C++:     [this, ...](const tbb::blocked_range<size_t> &range) {
+            // C++:         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx)
+            // C++:             m_layers[layer_idx]->make_fills(...);
+            // rayon stands in for tbb. C++ reads the sibling lower layer through
+            // pointers inside the parallel body; the borrow checker wants that
+            // split into (1) a parallel READ pass over &self.layers building the
+            // per-layer lower-layer snapshots, then (2) the parallel MUTATE pass
+            // handing each layer its snapshot — same work, same order.
+            use rayon::prelude::*;
+            let lower_snapshots: Vec<(
+                Vec<crate::geometry::ExPolygon>,
+                Vec<crate::geometry::Polygon>,
+            )> = (0..self.layers.len())
+                .into_par_iter()
+                .map(|layer_idx| {
                 // BBS Fill.cpp:455-464 — gather the lower layer's stInternal /
                 // stInternalVoid fill-surface expolygons (the floating-vertical-shell
                 // detection in group_fills needs them). `group_fills` runs per-Layer
@@ -2880,10 +2894,24 @@ impl PrintObject {
                     })
                     .unwrap_or_default();
 
-                // Call Layer::make_fills() on each layer
-                // PrintObject.cpp:768
-                self.layers[layer_idx].make_fills(&lower_internal_areas, &lower_sparse_polys)?;
-            }
+                (lower_internal_areas, lower_sparse_polys)
+                })
+                .collect();
+
+            // Call Layer::make_fills() on each layer
+            // PrintObject.cpp:768
+            let canceled = self.canceled.clone();
+            self.layers
+                .par_iter_mut()
+                .enumerate()
+                .try_for_each(|(layer_idx, layer)| -> Result<()> {
+                    if canceled.load(Ordering::Relaxed) {
+                        return Err(Error::Cancelled);
+                    }
+                    let (lower_internal_areas, lower_sparse_polys) =
+                        &lower_snapshots[layer_idx];
+                    layer.make_fills(lower_internal_areas, lower_sparse_polys)
+                })?;
 
             // Mark step as complete
             // PrintObject.cpp:776
