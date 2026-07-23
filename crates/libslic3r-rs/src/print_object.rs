@@ -1870,18 +1870,54 @@ impl PrintObject {
 
         // ====================================================================
         // Main expand loop — PrintObject.cpp:2754-2942.
-        // Processed per-cluster sequentially (mirrors the per-thread exclusive
-        // access guarantee in C++; we run single-threaded).
+        // C++: tbb::parallel_for(tbb::blocked_range<size_t>(0, clustered_layers_for_threads.size()),
+        // C++:     [po = static_cast<const PrintObject *>(this), target_flow_height_factor,
+        // C++:      &surfaces_by_layer, &clustered_layers_for_threads, gather_areas_w_depth,
+        // C++:      &infill_lines, determine_bridging_angle, construct_anchored_polygon](
+        // C++:         tbb::blocked_range<size_t> r) {
+        // C++:             for (size_t cluster_idx = r.begin(); ...) for (size_t job_idx = 0; ...)
+        // C++ (2765-2766): "this thread has exclusive access to all surfaces in layers
+        // enumerated in clustered_layers_for_threads[cluster_idx]" — clusters were built
+        // (PrintObject.cpp:2437-2451) so no candidate layer is in two clusters and every
+        // within-cluster lower-layer lookup stays inside the cluster; that is why C++ shares
+        // `surfaces_by_layer` across threads without locking. Rust makes the disjointness
+        // explicit: move each cluster's candidate entries OUT of the shared map into a
+        // per-cluster owned job list, run the clusters in parallel over their private jobs,
+        // then reinsert into the map for the untouched Apply loop below. rayon stands in for
+        // tbb; `try_for_each` propagates cancellation like throw_if_canceled.
         // ====================================================================
-        for cluster_idx in 0..clustered_layers_for_threads.len() {
-            for job_idx in 0..clustered_layers_for_threads[cluster_idx].len() {
-                let lidx = clustered_layers_for_threads[cluster_idx][job_idx];
-                let layer_height = self.layers[lidx].height;
-                let print_z = self.layers[lidx].print_z;
+        use rayon::prelude::*;
+        let mut cluster_jobs: Vec<Vec<(usize, Vec<CandidateSurface>)>> =
+            Vec::with_capacity(clustered_layers_for_threads.len());
+        for cluster in &clustered_layers_for_threads {
+            let mut jobs: Vec<(usize, Vec<CandidateSurface>)> = Vec::with_capacity(cluster.len());
+            for &lidx in cluster {
+                let cands = surfaces_by_layer
+                    .remove(&lidx)
+                    .expect("clustered candidate layer must be present in surfaces_by_layer");
+                jobs.push((lidx, cands));
+            }
+            cluster_jobs.push(jobs);
+        }
+        // Immutable captures mirroring the C++ lambda captures at PrintObject.cpp:2754-2759
+        // (m_layers read through `po`; helper lambdas + infill_lines shared by reference).
+        let layers = &self.layers;
+        let canceled = self.canceled.clone();
+        cluster_jobs
+            .par_iter_mut()
+            .try_for_each(|jobs| -> Result<()> {
+            // Cancellation guard once per cluster (C++ throw_if_canceled).
+            if canceled.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            for job_idx in 0..jobs.len() {
+                let lidx = jobs[job_idx].0;
+                let layer_height = layers[lidx].height;
+                let print_z = layers[lidx].print_z;
 
                 // PrintObject.cpp:2770-2790 — presort candidates.
                 {
-                    let cands = surfaces_by_layer.get_mut(&lidx).unwrap();
+                    let cands = &mut jobs[job_idx].1;
                     cands.sort_by(|left, right| {
                         let a = get_extents_polygons(&left.new_polys);
                         let b = get_extents_polygons(&right.new_polys);
@@ -1907,8 +1943,8 @@ impl PrintObject {
 
                 // PrintObject.cpp:2793-2795 — bridging flow / target height.
                 let (front_region_idx, bridging_flow) = {
-                    let cand0 = &surfaces_by_layer[&lidx][0];
-                    let r = &self.layers[lidx].regions()[cand0.region_idx];
+                    let cand0 = &jobs[job_idx].1[0];
+                    let r = &layers[lidx].regions()[cand0.region_idx];
                     (
                         cand0.region_idx,
                         r.bridging_flow(FlowRole::SolidInfill, true, layer_height)?,
@@ -1928,10 +1964,10 @@ impl PrintObject {
                     let mut i = lidx as isize - 1;
                     while i >= 0 {
                         let li = i as usize;
-                        if self.layers[li].print_z < bottom_z && li < lidx - 1 {
+                        if layers[li].print_z < bottom_z && li < lidx - 1 {
                             break;
                         }
-                        for region in self.layers[li].regions() {
+                        for region in layers[li].regions() {
                             let has_low_density = region.region().config().fill_density < 1.0;
                             for surface in &region.fill_surfaces.surfaces {
                                 if (surface.surface_type == SurfaceType::Internal && has_low_density)
@@ -1967,10 +2003,13 @@ impl PrintObject {
                     if job_idx > 0 {
                         let mut lower_job_idx = job_idx as isize - 1;
                         while lower_job_idx >= 0 {
-                            let lower_layer_idx =
-                                clustered_layers_for_threads[cluster_idx][lower_job_idx as usize];
-                            if self.layers[lower_layer_idx].print_z >= bottom_z {
-                                for c in &surfaces_by_layer[&lower_layer_idx] {
+                            // jobs is built in cluster order, so jobs[lower_job_idx].0 ==
+                            // clustered_layers_for_threads[cluster_idx][lower_job_idx] and
+                            // jobs[lower_job_idx].1 holds that layer's (already-expanded)
+                            // surfaces, exactly as surfaces_by_layer[&lower_layer_idx] did.
+                            let lower_layer_idx = jobs[lower_job_idx as usize].0;
+                            if layers[lower_layer_idx].print_z >= bottom_z {
+                                for c in &jobs[lower_job_idx as usize].1 {
                                     filled_on_lower.extend(c.new_polys.iter().cloned());
                                 }
                             } else {
@@ -1989,7 +2028,7 @@ impl PrintObject {
                 let mut total_fill_area: Vec<Polygon> = Vec::new();
                 let mut top_area: Vec<Polygon> = Vec::new();
                 let mut lightning_area: Vec<Polygon> = Vec::new();
-                for region in self.layers[lidx].regions() {
+                for region in layers[lidx].regions() {
                     let internal_polys = surfaces_ptr_to_polygons(&region.fill_surfaces.filter_by_types(&[SurfaceType::Internal, SurfaceType::InternalSolid]));
                     expansion_area.extend(internal_polys);
                     total_fill_area.extend(ex_to_polygons(&region.fill_expolygons));
@@ -2017,12 +2056,12 @@ impl PrintObject {
                 let internal_unsupported_area = shrink_p(&deep_infill_area, spacing_mm * 4.5);
 
                 // PrintObject.cpp:2853-2937 — per-candidate expansion.
-                let cands_snapshot = surfaces_by_layer[&lidx].clone();
+                let cands_snapshot = jobs[job_idx].1.clone();
                 let mut expanded_surfaces: Vec<CandidateSurface> =
                     Vec::with_capacity(cands_snapshot.len());
                 for candidate in &cands_snapshot {
                     let flow = {
-                        let r = &self.layers[lidx].regions()[candidate.region_idx];
+                        let r = &layers[lidx].regions()[candidate.region_idx];
                         r.bridging_flow(FlowRole::SolidInfill, true, layer_height)?
                     };
                     let flow_spacing_mm = flow.spacing();
@@ -2070,7 +2109,7 @@ impl PrintObject {
                     let region_cfg_pattern;
                     let region_cfg_dir;
                     {
-                        let r = &self.layers[lidx].regions()[candidate.region_idx];
+                        let r = &layers[lidx].regions()[candidate.region_idx];
                         region_cfg_pattern = r.region().config().fill_pattern;
                         region_cfg_dir = r.region().config().fill_angle;
                     }
@@ -2151,8 +2190,19 @@ impl PrintObject {
                         bridge_angle: bridging_angle,
                     });
                 }
-                // PrintObject.cpp:2938
-                surfaces_by_layer.insert(lidx, expanded_surfaces);
+                // PrintObject.cpp:2938 — store expanded polys back into this
+                // cluster's private job (reinserted into surfaces_by_layer below).
+                jobs[job_idx].1 = expanded_surfaces;
+            }
+            Ok(())
+            })?;
+
+        // Reinsert every cluster's (now expanded) candidate entries back into the
+        // shared map so the Apply loop (PrintObject.cpp:2946+) is untouched; the
+        // per-index writes above make the parallel result order-independent.
+        for jobs in cluster_jobs {
+            for (lidx, cands) in jobs {
+                surfaces_by_layer.insert(lidx, cands);
             }
         }
 
@@ -2359,38 +2409,50 @@ impl PrintObject {
 
             /// PrintObject.cpp:1473-1597
             /// C++: tbb::parallel_for(tbb::blocked_range<size_t>(0, ...), [&](const tbb::blocked_range<size_t> &range) {
-            // Sequential implementation (C++ uses TBB parallel_for)
+            // rayon two-phase (R379 shape): C++ runs the surface-typing body under
+            // tbb::parallel_for, reading the neighbour upper/lower layers through
+            // pointers while it rebuilds the current layer's region slices. The
+            // borrow checker wants the split into (1) a parallel READ pass over
+            // &self.layers computing each layer's top/bottom/internal surface sets
+            // (all the heavy diff_ex/opening_ex geometry), then (2) the apply pass
+            // writing each layer's own region (or its surfaces_new slot). The
+            // neighbour reads — lslices, and in interface_shells mode the sibling
+            // region slices — are never mutated by this pass, so the layers are
+            // independent exactly as the C++ parallel_for assumes.
             let range_end = if spiral_mode && num_layers > 1 {
                 num_layers - 1
             } else {
                 self.layers.len()
             };
 
+            /// PrintObject.cpp:1483-1485 — slice_surfaces_cpy[idx_layer] is resized to
+            /// the layer's region count (order-independent, reads no neighbours);
+            /// hoisted out of the parallel body so phase 1 can borrow &self.layers.
+            /// PrintObject.cpp:1486-1490 — TODO: Port infill_instead_top_bottom_surfaces
+            /// (ipLockedZag) copy into slice_surfaces_cpy[idx_layer][region_id].
             for idx_layer in 0..range_end {
-                /// PrintObject.cpp:1481
-                if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
-                    return Err(crate::Error::Cancelled);
-                }
-
-                /// PrintObject.cpp:1483-1485
-                /// C++: Layer *layer = m_layers[idx_layer];
-                /// C++: LayerRegion *layerm = layer->m_regions[region_id];
-                /// C++: slice_surfaces_cpy[idx_layer].resize(layer->m_regions.size());
                 slice_surfaces_cpy[idx_layer].resize(
                     self.layers[idx_layer].regions().len(),
                     SurfaceCollection::new(),
                 );
+            }
 
-                /// PrintObject.cpp:1486-1490
-                /// C++: if (layerm->region().config().infill_instead_top_bottom_surfaces && layerm->region().config().sparse_infill_pattern == ipLockedZag) {
-                /// C++:     slice_surfaces_cpy[idx_layer][region_id] = layerm->slices;
-                /// C++: }
-                // TODO: Port infill_instead_top_bottom_surfaces check
+            // Phase 1 — parallel READ pass computing (top, bottom, internal) per layer.
+            use rayon::prelude::*;
+            let canceled = self.canceled.clone();
+            let layers = &self.layers;
+            let layer_typings: Vec<(Surfaces, Surfaces, Vec<crate::ExPolygon>)> = (0..range_end)
+                .into_par_iter()
+                .map(|idx_layer| -> Result<(Surfaces, Surfaces, Vec<crate::ExPolygon>)> {
+                /// PrintObject.cpp:1481
+                if canceled.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(crate::Error::Cancelled);
+                }
 
                 /// PrintObject.cpp:1491-1494
                 /// C++: Layer *upper_layer = (idx_layer + 1 < this->layer_count()) ? m_layers[idx_layer + 1] : nullptr;
                 /// C++: Layer *lower_layer = (idx_layer > 0) ? m_layers[idx_layer - 1] : nullptr;
-                let has_upper_layer = idx_layer + 1 < self.layers.len();
+                let has_upper_layer = idx_layer + 1 < layers.len();
                 let has_lower_layer = idx_layer > 0;
 
                 /// PrintObject.cpp:1495-1496
@@ -2399,9 +2461,9 @@ impl PrintObject {
                 // UNSCALED (mm) space — they `unscale()` the polygon coords and pass the
                 // delta through verbatim — so the faithful equivalent of C++
                 // `scaled_width()/10` is `width()/10` (mm).
-                let layer_height = self.layers[idx_layer].height;
+                let layer_height = layers[idx_layer].height;
                 let offset = {
-                    let w = self.layers[idx_layer].regions()[region_id]
+                    let w = layers[idx_layer].regions()[region_id]
                         .flow(crate::flow::FlowRole::ExternalPerimeter, layer_height)?
                         .width();
                     if std::env::var("TOPFILL_FAITHFUL").is_ok() {
@@ -2432,14 +2494,14 @@ impl PrintObject {
                         /// C++:     diff_ex(layerm->slices.surfaces, upper_layer->m_regions[region_id]->slices.surfaces, ApplySafetyOffset::Yes) :
                         /// C++:     diff_ex(layerm->slices.surfaces, upper_layer->lslices, ApplySafetyOffset::Yes);
                         let current_slices =
-                            &self.layers[idx_layer].regions()[region_id].slices.surfaces;
+                            &layers[idx_layer].regions()[region_id].slices.surfaces;
                         let upper_diff = if interface_shells {
-                            let upper_slices = &self.layers[idx_layer + 1].regions()[region_id]
+                            let upper_slices = &layers[idx_layer + 1].regions()[region_id]
                                 .slices
                                 .surfaces;
                             diff_ex(current_slices, upper_slices, ApplySafetyOffset::Yes)
                         } else {
-                            let upper_lslices = &self.layers[idx_layer + 1].lslices;
+                            let upper_lslices = &layers[idx_layer + 1].lslices;
                             diff_ex_surfaces_expolygons(
                                 current_slices,
                                 upper_lslices,
@@ -2450,13 +2512,13 @@ impl PrintObject {
                         /// PrintObject.cpp:1507
                         /// C++: surfaces_append(top, opening_ex(upper_slices, offset), stTop);
                         if std::env::var("TSDBG").is_ok()
-                            && (self.layers[idx_layer].print_z - 4.80).abs() < 0.001
+                            && (layers[idx_layer].print_z - 4.80).abs() < 0.001
                         {
                             let sc = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
-                            for sf in &self.layers[idx_layer].regions()[region_id].slices.surfaces {
+                            for sf in &layers[idx_layer].regions()[region_id].slices.surfaces {
                                 eprintln!("TSDBG-R in_slice npts={} nholes={} a={:.4}", sf.expolygon.contour.points.len(), sf.expolygon.holes.len(), sf.expolygon.area().abs()/sc);
                             }
-                            for e in &self.layers[idx_layer + 1].lslices {
+                            for e in &layers[idx_layer + 1].lslices {
                                 eprintln!("TSDBG-R in_upper npts={} nholes={} a={:.4}", e.contour.points.len(), e.holes.len(), e.area().abs()/sc);
                             }
                             for e in &upper_diff {
@@ -2478,7 +2540,7 @@ impl PrintObject {
                         // C++:     for (Surface& surface : top)
                         // C++:         surface.surface_type = stTop;
                         // C++: }
-                        top = self.layers[idx_layer].regions()[region_id]
+                        top = layers[idx_layer].regions()[region_id]
                             .slices
                             .surfaces
                             .clone();
@@ -2502,8 +2564,8 @@ impl PrintObject {
                         /// C++:         offset),
                         /// C++:     surface_type_bottom_other);
                         let current_slices =
-                            &self.layers[idx_layer].regions()[region_id].slices.surfaces;
-                        let lower_lslices = &self.layers[idx_layer - 1].lslices;
+                            &layers[idx_layer].regions()[region_id].slices.surfaces;
+                        let lower_lslices = &layers[idx_layer - 1].lslices;
                         let bottom_diff = diff_ex_surfaces_expolygons(
                             current_slices,
                             lower_lslices,
@@ -2534,7 +2596,7 @@ impl PrintObject {
                                 .into_iter()
                                 .map(|ex| Surface::new(SurfaceType::Bottom, ex))
                                 .collect();
-                            let lower_region_slices = &self.layers[idx_layer - 1].regions()
+                            let lower_region_slices = &layers[idx_layer - 1].regions()
                                 [region_id]
                                 .slices
                                 .surfaces;
@@ -2557,7 +2619,7 @@ impl PrintObject {
                         // C++:     for (Surface& surface : bottom)
                         // C++:         surface.surface_type = stBottom;
                         // C++: }
-                        bottom = self.layers[idx_layer].regions()[region_id]
+                        bottom = layers[idx_layer].regions()[region_id]
                             .slices
                             .surfaces
                             .clone();
@@ -2591,35 +2653,15 @@ impl PrintObject {
                     crate::stage_dump::dump("detect_bottom", idx_layer, &eps(&bottom));
                 }
 
-                /// PrintObject.cpp:1584-1586
-                /// C++: Surfaces &surfaces_out = interface_shells ? surfaces_new[idx_layer] : layerm->slices.surfaces;
-                /// C++: Surfaces surfaces_backup;
-                let surfaces_backup = if !interface_shells {
-                    self.layers[idx_layer].regions_mut()[region_id]
-                        .slices
-                        .surfaces
-                        .clone()
-                } else {
-                    Surfaces::new()
-                };
-
-                if !interface_shells {
-                    self.layers[idx_layer].regions_mut()[region_id]
-                        .slices
-                        .surfaces
-                        .clear();
-                }
-
-                /// PrintObject.cpp:1591
-                /// C++: const Surfaces &surfaces_prev = interface_shells ? layerm->slices.surfaces : surfaces_backup;
-                let surfaces_prev = if interface_shells {
-                    self.layers[idx_layer].regions()[region_id]
-                        .slices
-                        .surfaces
-                        .clone()
-                } else {
-                    surfaces_backup
-                };
+                /// PrintObject.cpp:1584-1591 — surfaces_prev is the layer's ORIGINAL
+                /// region slices. C++ selects it via `interface_shells ? layerm->slices
+                /// : surfaces_backup`, where surfaces_backup is the pre-clear copy in the
+                /// non-interface branch; phase 1 only reads, so clone it here and let the
+                /// apply pass below perform the clear + rebuild.
+                let surfaces_prev = layers[idx_layer].regions()[region_id]
+                    .slices
+                    .surfaces
+                    .clone();
 
                 /// PrintObject.cpp:1593-1597
                 /// C++: {
@@ -2649,7 +2691,19 @@ impl PrintObject {
                     )
                 };
 
-                if interface_shells {
+                Ok((top, bottom, internal_surfaces))
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            // Phase 2 — apply pass writing each layer's typed surfaces back.
+            // PrintObject.cpp:1584-1597: surfaces_out = interface_shells ?
+            // surfaces_new[idx_layer] : layerm->slices.surfaces.
+            if interface_shells {
+                // surfaces_out == surfaces_new[idx_layer] (a local, per-index vec);
+                // the appends are trivial, so this write-back stays sequential.
+                for (idx_layer, (mut top, mut bottom, internal_surfaces)) in
+                    layer_typings.into_iter().enumerate()
+                {
                     surfaces_append(
                         &mut surfaces_new[idx_layer],
                         internal_surfaces,
@@ -2657,18 +2711,27 @@ impl PrintObject {
                     );
                     surfaces_new[idx_layer].append(&mut top);
                     surfaces_new[idx_layer].append(&mut bottom);
-                } else {
-                    let region = &mut self.layers[idx_layer].regions_mut()[region_id];
-                    // Convert internal_surfaces (ExPolygons) to Surfaces
-                    for expoly in internal_surfaces {
-                        region
-                            .slices
-                            .surfaces
-                            .push(Surface::new(SurfaceType::Internal, expoly));
-                    }
-                    region.slices.surfaces.append(&mut top);
-                    region.slices.surfaces.append(&mut bottom);
                 }
+            } else {
+                // surfaces_out == layerm->slices.surfaces — each layer clears &
+                // rebuilds its OWN region, so par_iter_mut applies disjointly (rayon
+                // for tbb, mirroring the C++ parallel_for's per-layer writes).
+                self.layers[..range_end]
+                    .par_iter_mut()
+                    .zip(layer_typings)
+                    .for_each(|(layer, (mut top, mut bottom, internal_surfaces))| {
+                        let region = &mut layer.regions_mut()[region_id];
+                        region.slices.surfaces.clear();
+                        // Convert internal_surfaces (ExPolygons) to Surfaces
+                        for expoly in internal_surfaces {
+                            region
+                                .slices
+                                .surfaces
+                                .push(Surface::new(SurfaceType::Internal, expoly));
+                        }
+                        region.slices.surfaces.append(&mut top);
+                        region.slices.surfaces.append(&mut bottom);
+                    });
             }
 
             /// PrintObject.cpp:1600
@@ -2744,26 +2807,35 @@ impl PrintObject {
                     );
                 }
             }
-            for idx_layer in 0..self.layers.len() {
-                if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
-                    return Err(crate::Error::Cancelled);
-                }
-                self.layers[idx_layer].regions_mut()[region_id].slices_to_fill_surfaces_clipped();
-                // TOPDBG: Top state after the clip by fill_expolygons.
-                if crate::debug::topdbg::enabled() {
-                    let region = &self.layers[idx_layer].regions()[region_id];
-                    crate::debug::topdbg::log_top_surfaces(
-                        idx_layer,
-                        "slices_to_fill_surfaces_clipped",
-                        &region.fill_surfaces.surfaces,
-                    );
-                    crate::debug::topdbg::dump_top_surfaces(
-                        idx_layer,
-                        "d1_clip_top",
-                        &region.fill_surfaces.surfaces,
-                    );
-                }
-            }
+            // C++ parallel_for (PrintObject.cpp:1618-1643): each layer clips its OWN
+            // region's fill surfaces (slices_to_fill_surfaces_clipped reads no
+            // neighbour), so this is a directly-independent per-layer pass. rayon
+            // stands in for tbb; try_for_each carries the per-layer cancellation
+            // (throw_if_canceled). `canceled` is the clone made for phase 1 above.
+            self.layers
+                .par_iter_mut()
+                .enumerate()
+                .try_for_each(|(idx_layer, layer)| -> Result<()> {
+                    if canceled.load(std::sync::atomic::Ordering::Relaxed) {
+                        return Err(crate::Error::Cancelled);
+                    }
+                    layer.regions_mut()[region_id].slices_to_fill_surfaces_clipped();
+                    // TOPDBG: Top state after the clip by fill_expolygons.
+                    if crate::debug::topdbg::enabled() {
+                        let region = &layer.regions()[region_id];
+                        crate::debug::topdbg::log_top_surfaces(
+                            idx_layer,
+                            "slices_to_fill_surfaces_clipped",
+                            &region.fill_surfaces.surfaces,
+                        );
+                        crate::debug::topdbg::dump_top_surfaces(
+                            idx_layer,
+                            "d1_clip_top",
+                            &region.fill_surfaces.surfaces,
+                        );
+                    }
+                    Ok(())
+                })?;
 
             /// PrintObject.cpp:1644
             if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
