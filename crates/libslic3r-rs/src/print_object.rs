@@ -800,10 +800,24 @@ impl PrintObject {
         let all_lslices: Vec<Vec<crate::geometry::ExPolygon>> =
             self.layers.iter().map(|l| l.lslices.clone()).collect();
 
-        for (idx, layer) in self.layers.iter_mut().enumerate() {
+        // C++: tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()),
+        // C++:     [this](const tbb::blocked_range<size_t> &range) {
+        // C++:         for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++layer_idx) {
+        // C++:             m_print->throw_if_canceled();
+        // C++:             m_layers[layer_idx]->make_perimeters();
+        // rayon stands in for tbb: `par_iter_mut().enumerate()` is the
+        // blocked_range over layer indices, `try_for_each` propagates the
+        // cancellation Err exactly like throw_if_canceled unwinds tbb.
+        use rayon::prelude::*;
+        let canceled = self.canceled.clone();
+        let object_config = &self.config;
+        self.layers
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each(|(idx, layer)| -> Result<()> {
             // Check for cancellation
             // PrintObject.cpp:559
-            if self.canceled.load(Ordering::Relaxed) {
+            if canceled.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
 
@@ -814,7 +828,7 @@ impl PrintObject {
             // dropping the feature, not because the C++ runs it from make_perimeters.
             if idx == 0
                 && std::env::var("L0_EFC").is_ok()
-                && self.config.elephant_foot_compensation > 0.0
+                && object_config.elephant_foot_compensation > 0.0
             {
                 // R316: native L0 (PrintObjectSlice.cpp:1228-46): slices.set(
                 // union_ex(Slic3r::elephant_foot_compensation(raw, ext_perimeter
@@ -836,7 +850,7 @@ impl PrintObject {
                                 crate::elephant_foot_compensation::elephant_foot_compensation_with_flow(
                                     ex,
                                     &ext_flow,
-                                    self.config.elephant_foot_compensation,
+                                    object_config.elephant_foot_compensation,
                                 )
                             })
                             .collect();
@@ -854,7 +868,7 @@ impl PrintObject {
                             .collect();
                     }
                 }
-            } else if idx == 0 && self.config.elephant_foot_compensation > 0.0 {
+            } else if idx == 0 && object_config.elephant_foot_compensation > 0.0 {
                 for region in layer.regions_mut().iter_mut() {
                     region.elephant_foot_compensation_step(self.config.elephant_foot_compensation);
                 }
@@ -881,8 +895,8 @@ impl PrintObject {
             // Call Layer::make_perimeters() which orchestrates perimeter generation
             // This will call LayerRegion::make_perimeters() for each region
             // PrintObject.cpp:560
-            layer.make_perimeters_with_neighbors(lower_slices, upper_slices)?;
-        }
+            layer.make_perimeters_with_neighbors(lower_slices, upper_slices)
+            })?;
 
         // PrintObject.cpp:583-615 — perimeter continuity + cooling-node ids
         // (z-direction outwall speed smoothing). Native runs the continuity

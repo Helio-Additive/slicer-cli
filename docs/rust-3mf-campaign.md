@@ -1,5 +1,23 @@
 # Rust 3MF campaign — Arachne infill, negative parts, multi-color
 
+## D — Rayon parallelization  [STATUS: in progress, started 2026-07-23]
+
+Goal: close the 349x nu3mf gap (info.json 2026-07-22_22-46-20: bambu 15.76s vs
+rust 5506.9s). C++ runs per-layer stages under tbb::parallel_for; the port made
+them sequential. CONSTRAINT (user): parallel code must stay visually close to
+the C++ — map `tbb::parallel_for(blocked_range(0,n), λ)` to rayon
+`(0..n).into_par_iter()` / `par_iter_mut()` at the same loop sites, keeping the
+C++ line-ref comments. Determinism: order-indexed collects only (no reduction
+reordering); gates = stl-inline rust byte-identical 3097916 + semantic parity +
+all crate integration tests + painted-cube toolchanges.
+Hot spots (measured): bridge_over_infill (dominant on Majora), prepare_infill
+stages, make_perimeters, make_fills, detect_surfaces_type, MMS per-layer loop
+(13s sequential — minor), slicer layer conversion. rayon already a dep
+(triangle_set_sampling uses par_iter).
+Round plan: D1 survey C++ parallel_for sites ↔ rust loops, convert
+make_perimeters/make_fills/detect_surfaces + MMS layer loop; D2
+bridge_over_infill; D3 measure nu3mf, iterate.
+
 Working file for the /loop campaign started 2026-07-21. Full diagnosis in
 `~/.claude/plans/golden-seeking-newt.md`; condensed here so any session can resume.
 
