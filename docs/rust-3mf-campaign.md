@@ -18,6 +18,25 @@ Round plan: D1 survey C++ parallel_for sites ↔ rust loops, convert
 make_perimeters/make_fills/detect_surfaces + MMS layer loop; D2
 bridge_over_infill; D3 measure nu3mf, iterate.
 
+OUTCOME (2026-07-23, R378-R380): ALL major C++ tbb::parallel_for sites
+converted to rayon in C++-mirroring form (make_perimeters, infill fills
+two-phase, MMS layer loop, bridge_over_infill clusters via explicit
+ownership partition, detect_surfaces_type two-phase + clipping pass).
+Byte-identical maintained throughout (stl-inline 3097916 exact on every
+conversion). Gains: stl-inline 14.57→12.58s (~14%); benchy-class models
+parallelize across layers.
+★ D3 FINDING — Majora wall ~89min vs 92min baseline (≈flat): its cost is
+CONCENTRATED, not spread — bridge candidates stack vertically into few huge
+clusters (cluster parallelism ≈ nil for this geometry) and the giant
+fragmented-layer clipper ops run 1-core (observed 1.4-2.4 core average).
+The 349x gap vs bambu (15.76s) is therefore dominated by the geo-clipper
+float path (fixed scale 1000, re-gridding per op) vs C++ integer ClipperLib
++ nested TBB. NEXT CAMPAIGN (E): route hot clipper ops (union_safety_offset,
+offset_expolygons, diff/intersect in bridge/infill paths) through the
+integer `_clib` ClipperLib bindings that already exist in clipper_utils —
+expected the true 10-50x lever. Optional E2: nested parallelism inside
+per-cluster candidate processing.
+
 Working file for the /loop campaign started 2026-07-21. Full diagnosis in
 `~/.claude/plans/golden-seeking-newt.md`; condensed here so any session can resume.
 
