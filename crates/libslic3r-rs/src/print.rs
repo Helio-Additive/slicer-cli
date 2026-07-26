@@ -493,7 +493,7 @@ impl Print {
             writer.write_raw(&format!("; Z_HEIGHT: {}", print_z));
             let height = if first_layer {
                 print_z as f32
-            } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            } else if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 // Native computes the height from FLOAT print_z values
                 // (20.4f32 - 20.2f32 = 0.200001) and prints %g — the
                 // f64-subtract-then-cast prints an exact 0.2 instead.
@@ -501,7 +501,7 @@ impl Print {
             } else {
                 (print_z - last_layer_z) as f32
             };
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 // %g (6 significant digits, trailing zeros trimmed)
                 let mut t = format!("{:.6}", height);
                 if t.contains('.') {
@@ -527,7 +527,7 @@ impl Print {
 
             // GCode.cpp:3971-3977 -- layer progress comments (1-based)
             let total_layers = self.objects.first().map(|o| o.layers().len()).unwrap_or(0);
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL")
                 && !self.config.layer_change_gcode.is_empty()
             {
                 // GCode.cpp:4105-4115 — process the layer_change_gcode TEMPLATE
@@ -592,7 +592,7 @@ impl Print {
             let hop_z = print_z + height as f64;
             let travel_feedrate = self.config.travel_speed * 60.0;
             writer.nominal_z = print_z;
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 // R208: native change_layer retracts with apply_instantly=true
                 // (GCode.cpp:3039) -> eager_lift = STATIC spiral (G17 + G3
                 // Z I<radius> J0 P1  F), m_lifted set; the next unretract
@@ -614,7 +614,7 @@ impl Print {
                     let mut tl_settings = settings.clone();
                     tl_settings["layer_z"] = serde_json::Value::String(format!("{}", print_z));
                     tl_settings["layer_num"] = serde_json::json!(layer_index);
-                    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                         // R224: native injects the TimelapsePosPicker outputs
                         // (GCode.cpp:4522-4534). For this single-object job the
                         // picker resolves a CONSTANT safe pos (X0 Y83 on all
@@ -669,7 +669,7 @@ impl Print {
                 // else fall back to object index (matching C++ get_labeled_id())
                 let label_id = if object.label_id > 0 {
                     object.label_id
-                } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                } else if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                     // R225: native's fallback is get_labeled_id() = id().id —
                     // the ModelInstance's global ObjectBase counter value. For
                     // the STL single-object load path the native pipeline
@@ -809,7 +809,7 @@ impl Print {
                 .map(|(i, o)| {
                     if o.label_id > 0 {
                         o.label_id as i32
-                    } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                    } else if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                         // R225: must mirror the `; OBJECT_ID:` fallback above
                         // (native ObjectBase id, +13 for the STL pipeline) or
                         // the editor's object_label lookup misses and the
@@ -832,7 +832,7 @@ impl Print {
             // z-direction outwall smoothing (GCode.cpp:3396-3417): two-phase —
             // parse+slowdown all layers, build wall nodes, run the
             // SmoothCalculator across layers, then rewrite. Gated.
-            let zsmooth = std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+            let zsmooth = crate::faithful_gate("ZSMOOTH_FAITHFUL")
                 && self.config.z_direction_outwall_speed_continuous
                 && !self.config.spiral_vase;
 
@@ -1067,7 +1067,7 @@ impl Print {
             // moves). Without it rust took the wrong branch AND left
             // `{max_layer_z + 4.0}` unsubstituted. Gated.
             let mut settings = settings.clone();
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let max_z = self
                     .objects
                     .iter()
@@ -2171,7 +2171,7 @@ fn emit_layer_by_island(
     skip_inner_walls: bool,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
-    let zsmooth_gate = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+    let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
     // Faithful needs_retraction context (RetractWhenCrossingPerimeters):
     // internal-island slices + wall lines of this layer.
     if zsmooth_gate {

@@ -551,7 +551,7 @@ impl ExPolygon {
         // Widths come back as the C++ 2*(n-1) edge-pair array (scaled); collapse
         // to the crate's per-vertex model with the walk's convention (seed start
         // width for vertex 0, then each segment's end width).
-        if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
+        if crate::faithful_gate("MEDIALAXIS_NATIVE") {
             self.medial_axis_scaled(
                 min_width * crate::SCALING_FACTOR,
                 max_width * crate::SCALING_FACTOR,

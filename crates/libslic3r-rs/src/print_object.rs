@@ -2466,7 +2466,7 @@ impl PrintObject {
                     let w = layers[idx_layer].regions()[region_id]
                         .flow(crate::flow::FlowRole::ExternalPerimeter, layer_height)?
                         .width();
-                    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                    if crate::faithful_gate("TOPFILL_FAITHFUL") {
                         // R283: native = float(scaled_width())/10.f — the coord_t
                         // TRUNCATION comes first (41999 → 4199.8999f), then f32
                         // division; width()/10 skips the trunc (4199.9999) — a
@@ -2679,7 +2679,7 @@ impl PrintObject {
                     .chain(bottom.iter())
                     .map(|s| s.expolygon.clone())
                     .collect();
-                let internal_surfaces = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                let internal_surfaces = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     crate::clipper_utils::difference_clib(
                         &surfaces_prev_expolygons,
                         &topbottom_expolygons,
@@ -3536,7 +3536,7 @@ impl PrintObject {
         // @1e5 (native semantics); default keeps geo @1um (byte-locked). This is
         // the R100 gridding class applied to the whole vertical-shell chain.
         fn faithful() -> bool {
-            std::env::var("TOPFILL_FAITHFUL").is_ok()
+            crate::faithful_gate("TOPFILL_FAITHFUL")
         }
         fn grow(
             e: &[crate::geometry::ExPolygon],
@@ -3908,7 +3908,7 @@ impl PrintObject {
                 // union_ex(shell), -r1, r1+r2, jtSquare), r2-tiny, jtSquare)
                 // (PrintObject.cpp:2018-2024) — run it at ClipperLib precision;
                 // the geo route re-grids and reshapes the ISI contour.
-                let regularized0 = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                let regularized0 = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     let opened = crate::clipper_utils::offset2_ex_clib(
                         &shell_u,
                         -narrow_wall_r,
@@ -4183,7 +4183,7 @@ impl PrintObject {
                         /// C++: new_internal_solid = intersection(solid, internal, ApplySafetyOffset::Yes);
                         // R238 (gated): native applies ApplySafetyOffset::Yes —
                         // ctIntersection vs safety_offset(clip) (+10u).
-                        let mut new_internal_solid = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                        let mut new_internal_solid = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                             let subj_ex: Vec<crate::geometry::ExPolygon> =
                                 solid.iter().map(|p| crate::geometry::ExPolygon::new(p.clone())).collect();
                             let clip_ex: Vec<crate::geometry::ExPolygon> =
@@ -4247,7 +4247,7 @@ impl PrintObject {
                                 .iter()
                                 .map(|p| ExPolygon::new(p.clone()))
                                 .collect();
-                            let opened = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                            let opened = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                                 // R238: native opening(x, margin, margin+ClipperSafetyOffset,
                                 // jtMiter, 5) — ASYMMETRIC grow-back, limit 5.
                                 crate::clipper_utils::offset2_ex_clib_miter(
@@ -4307,7 +4307,7 @@ impl PrintObject {
                                 .iter()
                                 .map(|p| ExPolygon::new(p.clone()))
                                 .collect();
-                            let opened = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                            let opened = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                                 // R238: asymmetric native opening, jtMiter limit 5
                                 // (PrintObject.cpp:3512-3514).
                                 crate::clipper_utils::offset2_ex_clib_miter(

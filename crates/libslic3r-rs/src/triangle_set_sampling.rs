@@ -67,7 +67,7 @@ pub fn sample_its_uniform_parallel(
     // shim — the f32 cross/norm areas differ by ulps between nalgebra and the
     // native Eigen codegen (total_area was 1 ulp off), shifting the area-prefix
     // map and every downstream sample/visibility value.
-    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         let verts_flat: Vec<f32> = triangle_set
             .vertices
             .iter()

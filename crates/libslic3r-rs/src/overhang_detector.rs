@@ -91,7 +91,7 @@ use crate::libslic3r::EPSILON;
 #[inline]
 fn faithful_round() -> bool {
     static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *GATE.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok())
+    *GATE.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"))
 }
 
 #[inline]

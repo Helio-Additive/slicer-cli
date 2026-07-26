@@ -1713,7 +1713,7 @@ impl PostProcAdjustments {
 /// R226 gate for the faithful fan-interpolation floor (see GCodeEditor.cpp:430).
 fn zsmooth_fan_floor() -> bool {
     static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *G.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok())
+    *G.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"))
 }
 
 fn parse_axis(line: &str, axis: char) -> Option<f32> {
@@ -1740,7 +1740,7 @@ fn parse_axis(line: &str, axis: char) -> Option<f32> {
 
 /// Fan speed format for G-code output.
 fn format_set_fan(fan_speed: i32) -> String {
-    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         // GCodeWriter::set_fan (GCodeWriter.cpp:862-894), default flavor:
         // speed==0 -> "M106 S0"; else "M106 S" << 255.0*speed/100.0 (ostream
         // %g -> fractional, e.g. 79% -> 201.45).

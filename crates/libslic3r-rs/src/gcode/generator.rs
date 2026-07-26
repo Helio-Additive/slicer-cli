@@ -374,7 +374,7 @@ impl GCodeHeader {
                 // Under CONFIG_FAITHFUL, add schema-default keys absent from
                 // raw_settings so the block matches native's full_print_config
                 // (every registered option). Merge + sort to keep ordering.
-                let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
+                let cf = crate::faithful_gate("CONFIG_FAITHFUL");
                 // Number of USED extruders. Native serializes per-extruder config
                 // arrays (nozzle_temperature, retraction_distances_when_ec, …) at
                 // this length — a single-material print uses 1 even on a 2-nozzle
@@ -888,7 +888,7 @@ fn format_config_value(
 ) -> String {
     // Under CONFIG_FAITHFUL, native coFloat drops a trailing ".0" (12.0->12,
     // 1.0->1) and coPercent appends '%'. Apply to scalar string values.
-    let cf = std::env::var("CONFIG_FAITHFUL").is_ok();
+    let cf = crate::faithful_gate("CONFIG_FAITHFUL");
     // coPercent keys: native ConfigOptionPercent::serialize always appends '%'.
     // rust stores the bare number for some profile-resolved values.
     const PERCENT_KEYS: &[&str] =
@@ -950,7 +950,7 @@ fn format_config_value(
             // machine_max_* arrays: legacy emits 2-value Marlin format; native
             // (H2D) emits the FULL resolved array. Under CONFIG_FAITHFUL emit full.
             if key.starts_with("machine_max_") && arr.len() >= 2 {
-                let take_n = if std::env::var("CONFIG_FAITHFUL").is_ok() { arr.len() } else { 2 };
+                let take_n = if crate::faithful_gate("CONFIG_FAITHFUL") { arr.len() } else { 2 };
                 return arr
                     .iter()
                     .take(take_n)
@@ -1067,7 +1067,7 @@ fn format_config_value(
             // the full per-extruder/filament array. Rust historically emitted
             // first element only (byte-locked default). Under CONFIG_FAITHFUL
             // emit the full comma-joined array to match native's CONFIG_BLOCK.
-            if std::env::var("CONFIG_FAITHFUL").is_ok()
+            if crate::faithful_gate("CONFIG_FAITHFUL")
                 && arr.len() > 1
                 && !key.starts_with("filament_")
             {
@@ -1145,14 +1145,14 @@ pub fn process_gcode_template(
                     | "first_filaments[1]"
                     | "first_non_support_filaments"
                     | "first_filaments"
-                        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() =>
+                        if crate::faithful_gate("ZSMOOTH_FAITHFUL") =>
                     {
                         Some("0".to_string())
                     }
                     // R241 (gated): overall_chamber_temperature = max over
                     // filaments' chamber temps (0 on this profile → M141 S0).
                     "overall_chamber_temperature"
-                        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() =>
+                        if crate::faithful_gate("ZSMOOTH_FAITHFUL") =>
                     {
                         let v = settings
                             .get("chamber_temperatures")
@@ -1388,7 +1388,7 @@ pub fn process_gcode_template(
     // and join any `{if`-opening line whose braces don't balance with the
     // following lines until they do.
     static TMPL_FAITHFUL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let tmpl_faithful = *TMPL_FAITHFUL.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
+    let tmpl_faithful = *TMPL_FAITHFUL.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"));
     let unescaped = if tmpl_faithful {
         let normalized = unescaped.replace("{if(", "{if (").replace("{elsif(", "{elsif (");
         let mut out = String::with_capacity(normalized.len());
@@ -1595,7 +1595,7 @@ fn eval_condition(cond: &str, resolve: &dyn Fn(&str) -> Option<String>) -> bool 
     // mangled it into `(A) || (B)) && (C`, mis-splitting at the inner ||).
     static COND_FAITHFUL_EARLY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let faithful_early =
-        *COND_FAITHFUL_EARLY.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
+        *COND_FAITHFUL_EARLY.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"));
     // Strip outer parens
     let cond = if cond.starts_with('(') && cond.ends_with(')') {
         if faithful_early {
@@ -1632,7 +1632,7 @@ fn eval_condition(cond: &str, resolve: &dyn Fn(&str) -> Option<String>) -> bool 
     // old evaluator got wrong, so the default path keeps the legacy behavior
     // to preserve the byte-lock.
     static COND_FAITHFUL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let faithful = *COND_FAITHFUL.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
+    let faithful = *COND_FAITHFUL.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"));
 
     // R224: connective splits must ignore separators nested inside parens —
     // `!(a && b) && c` splits at the SECOND &&, not the one inside the group
@@ -1783,7 +1783,7 @@ fn eval_expr(expr: &str, resolve: &dyn Fn(&str) -> Option<String>) -> String {
     // and recursing into the chosen branch, and an outer `name[<expr>]` by
     // evaluating the index expression first.
     static EXPR_FAITHFUL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let faithful = *EXPR_FAITHFUL.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok());
+    let faithful = *EXPR_FAITHFUL.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"));
     if faithful {
         // Strip outer parens that wrap the ENTIRE expression (`{(a ? b : c)}`)
         // so the ternary below is at depth 0.

@@ -532,7 +532,7 @@ fn clipper2_pl_open(clip_type: ClipType, subject: &[Polyline], clip: &[Polygon])
     // R196 (ZSMOOTH_FAITHFUL): route through the NATIVE Clipper2 1.5.2
     // (clipper2-z-sys vendored from the reference tree) — clipper2c-sys ships
     // 1.5.4 whose open-path clipping (split coords / rounding) differs.
-    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         let mut src_xyz: Vec<i64> = Vec::new();
         let mut src_lens: Vec<i32> = Vec::new();
         for pl in subject {

@@ -514,7 +514,7 @@ impl ExPolygonWithOffset {
         // Native FillRectilinear.cpp:478-482 offsets via ClipperLib @1e5; the geo
         // variants grid the raster clip boundary to 1um — the last gridder in the
         // top-fill chain (line endpoints clip against these contours). Gated.
-        let f1 = std::env::var("TOPFILL_FAITHFUL").is_ok();
+        let f1 = crate::faithful_gate("TOPFILL_FAITHFUL");
         let aoffset1_mm = aoffset1 / crate::SCALING_FACTOR;
         let polygons_outer = if aoffset1 == 0.0 {
             expolygon_to_polygons(&src)
@@ -2162,7 +2162,7 @@ pub fn fill_surface_by_lines(
     // with the fraction KEPT (FillRectilinear.cpp:2841-2848). The legacy
     // mult/round domain drifts the raster clip boundary sub-unit (the Top
     // endpoint last-digit class, R299/R300).
-    let tf = std::env::var("TOPFILL_FAITHFUL").is_ok() && std::env::var("RASTER_QUANT").is_ok();
+    let tf = crate::faithful_gate("TOPFILL_FAITHFUL") && std::env::var("RASTER_QUANT").is_ok();
     let line_spacing = if tf {
         ((spacing / 0.00001) / params.density) as Coord
     } else {
@@ -2202,7 +2202,7 @@ pub fn fill_surface_by_lines(
         // Fill::bounding_box.center() rotated, and PrintObject::bounding_box()
         // is origin-centered (PrintObject.hpp:395) so refpt == (0,0) exactly:
         // align bbox.min down to global line_spacing multiples. Gated.
-        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        if crate::faithful_gate("TOPFILL_FAITHFUL") {
             let aligned = crate::geometry::align_to_grid_point(
                 bbox.min,
                 Point::new(line_spacing, line_spacing),
@@ -2309,7 +2309,7 @@ pub fn generate_fill_rectilinear(
     // Native Fill::_infill_direction (FillBase.cpp:239) adds an UNCONDITIONAL
     // +M_PI/2 after base angle + per-layer alternation (native top L0 = 45deg
     // emitted lines). Gated: default keeps the legacy angle (byte-locked).
-    let faithful_dir = std::env::var("TOPFILL_FAITHFUL").is_ok();
+    let faithful_dir = crate::faithful_gate("TOPFILL_FAITHFUL");
     // Native _layer_angle = (idx & 1) ? 90 : 0 (FillBase.hpp:207) — a PARITY
     // alternation, NOT 90*idx. 90*idx coincides only mod 180; the raster frame
     // needs mod-360 equality (a 180-rotated frame point-reflects the bbox and
@@ -3566,7 +3566,7 @@ fn chain_monotonic_regions(
     // back-to-front under the legacy flipped=false shortcut). Under
     // TOPFILL_FAITHFUL the full ant loop runs for n==1 too; the legacy shortcut
     // is kept on the default path only for byte-lock.
-    let faithful = std::env::var("TOPFILL_FAITHFUL").is_ok();
+    let faithful = crate::faithful_gate("TOPFILL_FAITHFUL");
     if n == 1 && !faithful {
         return vec![MonotonicRegionLink {
             region_idx: 0,
@@ -4355,7 +4355,7 @@ pub fn fill_surface_by_lines_monotonic(
     const INFILL_OVERLAP_OVER_SPACING: f64 = 0.45;
 
     // R301 (TOPFILL_FAITHFUL): native domains — see fill_surface_by_lines.
-    let tf = std::env::var("TOPFILL_FAITHFUL").is_ok() && std::env::var("RASTER_QUANT").is_ok();
+    let tf = crate::faithful_gate("TOPFILL_FAITHFUL") && std::env::var("RASTER_QUANT").is_ok();
     let line_spacing = if tf {
         ((spacing / 0.00001) / params.density) as Coord
     } else {
@@ -4392,7 +4392,7 @@ pub fn fill_surface_by_lines_monotonic(
         }
     } else {
         // Native align_to_grid branch — refpt == (0,0) (see fill_surface_by_lines).
-        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        if crate::faithful_gate("TOPFILL_FAITHFUL") {
             let aligned = crate::geometry::align_to_grid_point(
                 bbox_src.min,
                 Point::new(line_spacing, line_spacing),
@@ -4481,7 +4481,7 @@ pub fn generate_fill_rectilinear_monotonic(
     let mut paths = Vec::new();
 
     // Same missing native _infill_direction +90 as generate_fill_rectilinear.
-    let faithful_dir = std::env::var("TOPFILL_FAITHFUL").is_ok();
+    let faithful_dir = crate::faithful_gate("TOPFILL_FAITHFUL");
     // Native parity alternation + unconditional +90 (see generate_fill_rectilinear).
     let angle_deg = if faithful_dir {
         config.angle + if layer_index & 1 == 1 { 90.0 } else { 0.0 } + 90.0

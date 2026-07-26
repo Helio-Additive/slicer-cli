@@ -795,7 +795,7 @@ fn propagate_waves(
     // Faithful path (gated): Clipper2-Z byte-faithful seeds + ClipperLib byte-
     // faithful wavefront propagation (cz_propagate_wave, R131). The default keeps
     // the geo polygon-approximation below (byte-locked).
-    if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+    if crate::faithful_gate("REGION_EXPANSION_FAITHFUL") {
         return propagate_waves_faithful(src, boundary, params);
     }
 
@@ -1001,7 +1001,7 @@ pub fn expand_merge_surfaces(
         // 1911 vs Miter+clib 707, native 605) → drives the ISI/Floating feature
         // split. Route through the vertex-exact clib offset2 with Miter under
         // F1_UNION; default keeps the geo Round closing (byte-locked).
-        expanded = if std::env::var("F1_UNION").is_ok() {
+        expanded = if crate::faithful_gate("F1_UNION") {
             offset2_ex_clib(&expanded, closing_radius, -closing_radius, OffsetJoinType::Miter)
         } else {
             closing(&expanded, closing_radius, OffsetJoinType::Round)
@@ -1017,7 +1017,7 @@ pub fn expand_merge_surfaces(
             // ClipperLib @1e5. EXPERIMENT (gated): route through difference_clib now that
             // `expanded` is the full-res clib closing output (R128). R74 measured
             // difference_clib WORSE with a geo closing; retest on the clib closing input.
-            zone.expolygons = if std::env::var("F1_UNION").is_ok() {
+            zone.expolygons = if crate::faithful_gate("F1_UNION") {
                 crate::clipper_utils::difference_clib(&zone.expolygons, &expanded)
             } else {
                 difference(&zone.expolygons, &expanded)
@@ -1110,7 +1110,7 @@ impl ExternalSurfaceConfig {
         num_perimeters: usize,
     ) -> Self {
         let (shell_width, expansion_min) = if num_perimeters > 0 {
-            if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+            if crate::faithful_gate("REGION_EXPANSION_FAITHFUL") {
                 // R284: native computes on f32(coord_t scaled) values
                 // (LayerRegion.cpp:529-535): shell_width = 0.5f*f32(W_e) +
                 // f32(S_e), += f32(S_p_int*(n-1)); expansion_min = f32(S_p).
@@ -1129,7 +1129,7 @@ impl ExternalSurfaceConfig {
                     + perimeter_spacing * (num_perimeters as CoordF - 1.0);
                 (sw, perimeter_spacing)
             }
-        } else if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+        } else if crate::faithful_gate("REGION_EXPANSION_FAITHFUL") {
             // Native fallback: float(SCALED_EPSILON) = 10 units = 1e-4 mm
             // (LayerRegion.cpp:537-538) — NOT 1e-6.
             (1e-4, 1e-4)
@@ -1148,7 +1148,7 @@ impl ExternalSurfaceConfig {
 
     /// Compute expansion distance for top/bottom surfaces.
     pub fn expansion_top(&self) -> CoordF {
-        if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+        if crate::faithful_gate("REGION_EXPANSION_FAITHFUL") {
             // Native: float expansion_top = shell_width * sqrt(2.) — f32 shell
             // width times DOUBLE sqrt(2), rounded back to f32 at the store
             // (LayerRegion.cpp:542).
@@ -1174,7 +1174,7 @@ impl ExternalSurfaceConfig {
     /// Compute closing radius.
     /// Converted to mm.
     pub fn closing_radius(&self) -> CoordF {
-        if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+        if crate::faithful_gate("REGION_EXPANSION_FAITHFUL") {
             // Native f32 chain: 0.55f*0.65f*1.05f*f32(scaled_spacing)
             // (LayerRegion.cpp:550), left-assoc const-folded in f32.
             let s_si = (self.solid_infill_spacing / 0.00001).trunc();
@@ -1531,7 +1531,7 @@ fn propagate_waves_ex(
     // Anchors + raw expansions, produced either by the faithful path (gated) or the
     // legacy geo approximation. Both feed the shared grouping/merge below.
     let (wave_seeds_out, mut raw_expansions): (Vec<WaveSeed>, Vec<RegionExpansion>) =
-        if std::env::var("REGION_EXPANSION_FAITHFUL").is_ok() {
+        if crate::faithful_gate("REGION_EXPANSION_FAITHFUL") {
             // Faithful: byte-faithful Clipper2-Z seeds (carry the anchor src/boundary)
             // + byte-faithful ClipperLib propagation (R131 cz_propagate_wave).
             let anchors = wave_seeds_faithful(src, boundary, params.tiny_expansion, true);
@@ -2070,7 +2070,7 @@ fn merge_bridges(
         // through offset2_ex_clib Miter under F1_UNION; default keeps geo Round (byte-locked).
         let merged = if closing_radius > 0.0 && !acc.is_empty() {
             let unioned = union_ex(&acc);
-            if std::env::var("F1_UNION").is_ok() {
+            if crate::faithful_gate("F1_UNION") {
                 offset2_ex_clib(&unioned, closing_radius, -closing_radius, OffsetJoinType::Miter)
             } else {
                 closing(&unioned, closing_radius, OffsetJoinType::Round)

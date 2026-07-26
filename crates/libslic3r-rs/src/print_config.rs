@@ -2538,7 +2538,7 @@ impl PrintConfig {
                 // apply_key_value (R170 audit: the two config-application fns
                 // have divergent coverage; a blanket fallback measured +119 —
                 // land keys selectively against the oracle).
-                if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                if crate::faithful_gate("ZSMOOTH_FAITHFUL")
                     && matches!(
                         key,
                         "initial_layer_infill_speed"
@@ -3177,7 +3177,7 @@ impl PrintObjectConfig {
                 // apply_key_value (R170 audit: the two config-application fns
                 // have divergent coverage; a blanket fallback measured +119 —
                 // land keys selectively against the oracle).
-                if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                if crate::faithful_gate("ZSMOOTH_FAITHFUL")
                     && matches!(
                         key,
                         "initial_layer_infill_speed"

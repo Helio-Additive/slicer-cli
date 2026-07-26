@@ -373,7 +373,7 @@ pub fn extrude_loop(
     // speed (GCode.cpp:5382-5404). Here we apply the overhang-degree-corrected
     // speed per path (only when it differs from the feature speed already set by
     // extrude_collection), so the F feedrate is modulated per segment.
-    let zsmooth_markers = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+    let zsmooth_markers = crate::faithful_gate("ZSMOOTH_FAITHFUL");
     let loop_role = loop_copy.paths.first().map(|p| p.role);
     let apply_overhang_speed = config.enable_overhang_speed
         && matches!(
@@ -392,7 +392,7 @@ pub fn extrude_loop(
         let v = if new_speed == 0.0 { base } else { new_speed };
         // R229 (gated): native applies the filament volumetric cap to EVERY
         // path in _extrude (GCode.cpp:6560-6567).
-        if zsmooth_markers && std::env::var("VOLCAP_FAITHFUL").is_ok() {
+        if zsmooth_markers && crate::faithful_gate("VOLCAP_FAITHFUL") {
             volumetric_capped_speed(v, p.mm3_per_mm, fmvs_cap, config.print_flow_ratio)
         } else {
             v
@@ -658,7 +658,7 @@ pub fn extrude_collection(
         // vertical_shell_speed% of internal_solid_infill_speed
         // (GCode.cpp:6492-6500; 80% of 250 = 200 → F12000). Rust fell through
         // to the default arm (300 → the r-only F18000 ×397 bucket).
-        let feature_speed = if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+        let feature_speed = if crate::faithful_gate("ZSMOOTH_FAITHFUL")
             && !is_first_layer
             && entity_role == ExtrusionRole::FloatingVerticalShell
         {
@@ -672,7 +672,7 @@ pub fn extrude_collection(
         // invisible in E's 5 decimals but visible in F's 3), and the changed
         // generation-F cascades through cooling factors (net +887). Unlocks
         // with mm3/width value parity (same blocker as LINEWIDTH_PERPATH).
-        let feature_speed = if std::env::var("VOLCAP_FAITHFUL").is_ok() {
+        let feature_speed = if crate::faithful_gate("VOLCAP_FAITHFUL") {
             volumetric_capped_speed(
                 feature_speed,
                 get_entity_mm3_per_mm(entity),
@@ -703,7 +703,7 @@ pub fn extrude_collection(
         // R218: native emits the FEATURE/LINE_WIDTH markers AFTER the travel +
         // unretract, at extrusion start (GCode _extrude's description block);
         // rust emitted them before the wipe/travel. Under the gate, defer.
-        let defer_markers = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+        let defer_markers = crate::faithful_gate("ZSMOOTH_FAITHFUL");
         let mut pending_markers = false;
         if role_changed && defer_markers {
             pending_markers = true;
@@ -729,7 +729,7 @@ pub fn extrude_collection(
                 // feature change to the SAME width emits no new tag
                 // (GCode.cpp:6605). Rust re-emitted per feature (1177
                 // rust-only "; LINE_WIDTH: 0.42" lines).
-                let skip = std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+                let skip = crate::faithful_gate("ZSMOOTH_FAITHFUL")
                     && !writer.width_tag_changed(line_width);
                 if !skip {
                     // Format LINE_WIDTH to match BambuStudio: trim trailing zeros
@@ -771,7 +771,7 @@ pub fn extrude_collection(
             // ZSMOOTH_FAITHFUL: the per-entity shared-register emission below
             // replaces this role-change raw write (native has no role-change
             // accel — every path goes through set_acceleration_impl).
-            if !std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if !crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 if let Some(acc) = writer.feature_acceleration(entity_role, is_first_layer) {
                     writer.write_raw(&format!("M204 S{}", acc));
                 }
@@ -791,7 +791,7 @@ pub fn extrude_collection(
         // C++ GCode::extrude_entity() calls travel_to() before extruding each
         // entity. Without this, consecutive entities in the same collection are
         // connected by a spurious extrusion line across open space.
-        let travel_target = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        let travel_target = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
             travel_target_for_entity(entity, writer_last_pos(writer))
         } else {
             get_entity_first_point(entity)
@@ -817,7 +817,7 @@ pub fn extrude_collection(
                 // unretract() after the travel descends and restores E (net E zero, so
                 // material is unchanged).
                 let travel_len = dist_sq.sqrt();
-                let did_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                let did_retract = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                     // GCode.cpp:6964 needs_retraction — faithful branch order
                     // (min-travel, leaving-outer-wall force, reduce-infill skip).
                     let from = writer_last_pos(writer);
@@ -829,7 +829,7 @@ pub fn extrude_collection(
                 if did_retract {
                     writer.retract();
                 }
-                if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                     writer.set_travel_acceleration_for(entity_role, travel_len);
                 } else {
                     writer.set_travel_acceleration(6000.0);
@@ -867,7 +867,7 @@ pub fn extrude_collection(
             // R225: under LINEWIDTH_PERPATH the tag is emitted per path from
             // path.width at the extrude_path choke point (native GCode.cpp:6605
             // register) and the entity-level config width would fight it.
-            if !std::env::var("LINEWIDTH_PERPATH").is_ok()
+            if !crate::faithful_gate("LINEWIDTH_PERPATH")
                 && line_width > 0.0
                 && writer.width_tag_changed(line_width)
             {
@@ -894,7 +894,7 @@ pub fn extrude_collection(
         // GCodeWriter set_acceleration_impl) — after the travel (whose accel
         // went through the same register), so travel/feature alternation
         // re-emits M204 constantly. Legacy path emits only on role change.
-        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
             if let Some(acc) = writer.feature_acceleration(entity_role, is_first_layer) {
                 writer.set_feature_acceleration_shared(acc);
             }
@@ -907,7 +907,7 @@ pub fn extrude_collection(
         // The rust per-path set_speed in extrude_loop always re-asserts F for
         // perimeter roles under enable_overhang_speed, so the pre-set is safely
         // skippable there. Default path keeps the pre-set (byte-locked).
-        let skip_pre_speed = std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+        let skip_pre_speed = crate::faithful_gate("ZSMOOTH_FAITHFUL")
             && config.enable_overhang_speed
             && matches!(
                 entity,
@@ -1177,7 +1177,7 @@ pub fn extrude_path_with_arc_fitting(
     // (0.43272-vs-0.43273, 0.42-vs-0.41999), so enabling it today ADDS
     // unmatched lines (83187 → 87805). Unlocks when width values converge.
     static LW_PERPATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *LW_PERPATH.get_or_init(|| std::env::var("LINEWIDTH_PERPATH").is_ok())
+    if *LW_PERPATH.get_or_init(|| crate::faithful_gate("LINEWIDTH_PERPATH"))
         && path.width > 0.0
         && writer.width_tag_changed(path.width)
     {
@@ -1509,7 +1509,7 @@ pub fn extrude_entity(
             // the volumetric cap, so variable-width gap/fill paths carry
             // fractional Fs (F14761.269 = 25mm3s / mm3_per_mm). writer
             // set_speed dedups, so without VOLCAP this is a no-op.
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 use crate::extrusion_entity::ExtrusionRole;
                 let role = path.role;
                 let base = if is_first_layer {
@@ -1541,7 +1541,7 @@ pub fn extrude_entity(
                         _ => config.perimeter_speed,
                     }
                 };
-                let speed = if std::env::var("VOLCAP_FAITHFUL").is_ok() {
+                let speed = if crate::faithful_gate("VOLCAP_FAITHFUL") {
                     volumetric_capped_speed(
                         base,
                         path.mm3_per_mm,
@@ -1633,7 +1633,7 @@ pub fn extrude_perimeters(
     // Retract and travel to first perimeter point
     writer.retract();
     writer.set_travel_acceleration(6000.0);
-    let first_target = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    let first_target = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         travel_target_for_entity(&region.perimeters.entities[0], writer_last_pos(writer))
     } else {
         get_entity_first_point(&region.perimeters.entities[0])
@@ -1721,7 +1721,7 @@ pub fn extrude_infill(
 
         // Retract and travel to the (now reordered) first infill point.
         let Some(first_pt) = extrusions.first().and_then(|e| {
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 travel_target_for_entity(e, writer_last_pos(writer))
             } else {
                 get_entity_first_point(e)
@@ -1732,7 +1732,7 @@ pub fn extrude_infill(
         // ZSMOOTH_FAITHFUL: bucket-start retract through faithful
         // needs_retraction (GCode.cpp:6964) — R167.
         {
-            let __zs_do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            let __zs_do_retract = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
@@ -1748,7 +1748,7 @@ pub fn extrude_infill(
             if __zs_do_retract {
                 writer.retract();
             }
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
@@ -1813,12 +1813,12 @@ pub fn extrude_perimeters_entities(
     // needs_retraction (GCode.cpp:6964) — the unconditional retract here was
     // the outer-wall->gap wipe excess (R167). Legacy path keeps the
     // unconditional behavior (byte-locked).
-    let first_pt_opt = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    let first_pt_opt = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         travel_target_for_entity(&entities[0], writer_last_pos(writer))
     } else {
         get_entity_first_point(&entities[0])
     };
-    let do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    let do_retract = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         match first_pt_opt {
             Some(fp) => {
                 let from = writer_last_pos(writer);
@@ -1836,7 +1836,7 @@ pub fn extrude_perimeters_entities(
     if do_retract {
         writer.retract();
     }
-    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         if let Some(fp) = first_pt_opt {
             let from = writer_last_pos(writer);
             let dx = crate::unscale(fp.x()) - crate::unscale(from.x);
@@ -1919,7 +1919,7 @@ pub fn extrude_infill_entities(
         let m_last_pos = writer_last_pos(writer);
         crate::shortest_path::chain_and_reorder_extrusion_entities(&mut extrusions, Some(&m_last_pos));
         let Some(first_pt) = extrusions.first().and_then(|e| {
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 travel_target_for_entity(e, writer_last_pos(writer))
             } else {
                 get_entity_first_point(e)
@@ -1930,7 +1930,7 @@ pub fn extrude_infill_entities(
         // ZSMOOTH_FAITHFUL: bucket-start retract through faithful
         // needs_retraction (GCode.cpp:6964) — R167.
         {
-            let __zs_do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            let __zs_do_retract = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
@@ -1946,7 +1946,7 @@ pub fn extrude_infill_entities(
             if __zs_do_retract {
                 writer.retract();
             }
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
@@ -2074,7 +2074,7 @@ pub fn extrude_support(
     // First positioning travel before the chained non-ironing group, matching
     // the prior behaviour (retract + travel to the reordered first point).
     if let Some(first_pt) = extrusions.first().and_then(|e| {
-        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
             travel_target_for_entity(e, writer_last_pos(writer))
         } else {
             get_entity_first_point(e)
@@ -2082,7 +2082,7 @@ pub fn extrude_support(
     }) {
         // ZSMOOTH_FAITHFUL: faithful needs_retraction (R167).
         {
-            let __zs_do_retract = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            let __zs_do_retract = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
@@ -2098,7 +2098,7 @@ pub fn extrude_support(
             if __zs_do_retract {
                 writer.retract();
             }
-            if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);

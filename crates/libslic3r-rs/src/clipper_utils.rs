@@ -770,7 +770,7 @@ pub fn opening_ex(expolygons: &[ExPolygon], distance: CoordF) -> ExPolygons {
     // Native opening_ex = offset2_ex(-d, +d, jtMiter) via ClipperLib @1e5
     // (ClipperUtils.hpp:428); geo grids to 1um (R100 class). Gated full-res —
     // TOPFILL_FAITHFUL flips the whole classification pipeline at once.
-    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+    if crate::faithful_gate("TOPFILL_FAITHFUL") {
         return offset2_ex_clib(expolygons, -distance, distance, OffsetJoinType::Miter);
     }
     let shrunk = shrink(expolygons, distance, OffsetJoinType::Miter);
@@ -798,7 +798,7 @@ pub fn diff_ex(
     // Gated faithful route: ClipperLib @1e5 honoring ApplySafetyOffset (the geo
     // path IGNORES _safety_offset — native ::Yes raw-offsets the clip by +10u,
     // R116 shim).
-    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+    if crate::faithful_gate("TOPFILL_FAITHFUL") {
         return match _safety_offset {
             ApplySafetyOffset::Yes => {
                 difference_clib_safety(&subject_expolygons, &clip_expolygons)
@@ -825,7 +825,7 @@ pub fn diff_ex_surfaces_expolygons(
     }
 
     let subject_expolygons: Vec<ExPolygon> = subject.iter().map(|s| s.expolygon.clone()).collect();
-    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+    if crate::faithful_gate("TOPFILL_FAITHFUL") {
         return match _safety_offset {
             ApplySafetyOffset::Yes => difference_clib_safety(&subject_expolygons, clip),
             ApplySafetyOffset::No => difference_clib(&subject_expolygons, clip),
@@ -854,7 +854,7 @@ pub fn diff_ex_polygons_surfaces(
         subject.iter().map(|p| ExPolygon::new(p.clone())).collect();
     let clip_expolygons: Vec<ExPolygon> = clip.iter().map(|s| s.expolygon.clone()).collect();
 
-    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+    if crate::faithful_gate("TOPFILL_FAITHFUL") {
         return match _safety_offset {
             ApplySafetyOffset::Yes => {
                 difference_clib_safety(&subject_expolygons, &clip_expolygons)
@@ -874,7 +874,7 @@ pub fn intersection_ex(subject: &[Surface], clip: &[ExPolygon]) -> ExPolygons {
     }
 
     let subject_expolygons: Vec<ExPolygon> = subject.iter().map(|s| s.expolygon.clone()).collect();
-    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+    if crate::faithful_gate("TOPFILL_FAITHFUL") {
         return intersection_clib(&subject_expolygons, clip);
     }
     intersection_base(&subject_expolygons, clip)
@@ -888,7 +888,7 @@ pub fn intersection_surfaces(subject: &[ExPolygon], clip: &[Surface]) -> ExPolyg
     }
 
     let clip_expolygons: Vec<ExPolygon> = clip.iter().map(|s| s.expolygon.clone()).collect();
-    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+    if crate::faithful_gate("TOPFILL_FAITHFUL") {
         return intersection_clib(subject, &clip_expolygons);
     }
     intersection_base(subject, &clip_expolygons)
@@ -902,7 +902,7 @@ pub fn intersection_surfaces_expolygons(subject: &[Surface], clip: &[ExPolygon])
     }
 
     let subject_expolygons: Vec<ExPolygon> = subject.iter().map(|s| s.expolygon.clone()).collect();
-    if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+    if crate::faithful_gate("TOPFILL_FAITHFUL") {
         return intersection_clib(&subject_expolygons, clip);
     }
     intersection_base(&subject_expolygons, clip)
@@ -1253,7 +1253,7 @@ fn offset_expolygons_clib_impl(
     // ClipperLib. Under F1_UNION (the gated byte-match path) reconstruct the same
     // NonZero union via the vertex-exact vendored ClipperLib (union_ex_clib @ i32/1e5)
     // so the clib offset output stays full-resolution. Default path byte-unchanged.
-    if std::env::var("F1_UNION").is_ok() {
+    if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
     union_polygons_ex(&all_paths)
@@ -1410,7 +1410,7 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     // i32/1e5) — same NonZero union + PolyTree->ExPolygons nesting, full-resolution, the
     // faithful match to C++ diff_ex's clipper_do_polytree re-union. Default byte-unchanged
     // (mirrors offset_expolygons_clib's gated reconstruction).
-    if std::env::var("F1_UNION").is_ok() {
+    if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
     union_polygons_ex(&all_paths)
@@ -1477,7 +1477,7 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
         return vec![];
     }
 
-    if std::env::var("F1_UNION").is_ok() {
+    if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
     union_polygons_ex(&all_paths)
@@ -1605,7 +1605,7 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
     if all_paths.is_empty() {
         return vec![];
     }
-    if std::env::var("F1_UNION").is_ok() {
+    if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
     union_polygons_ex(&all_paths)

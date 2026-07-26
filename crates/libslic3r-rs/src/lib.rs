@@ -23,6 +23,33 @@
 //! ```
 
 // Core modules (alphabetically organized for maintainability)
+
+/// Faithful-behavior gate, DEFAULT ON.
+///
+/// These flags guard the byte-parity campaign's faithful-toward-native fixes
+/// (R83-R358). They were opt-IN while the frozen default byte-lock
+/// (147987/7adae05c) had to stay untouched; that lock was superseded at R362
+/// and the user directed maximum native parity (2026-07-26), so the faithful
+/// behaviors are now the default. Set the env var to "0" to opt OUT
+/// (e.g. `ZSMOOTH_FAITHFUL=0` restores the legacy behavior for bisection).
+///
+/// NOT routed through here (still opt-IN via plain env checks):
+/// - FRAME_UNIFY — carries a HARDCODED Benchy-specific trafo (Z+24 / benchy
+///   volume offset, triangle_mesh_slicer.rs ~1478); enabling it by default
+///   would apply Benchy's frame to every model. Generalize from the real
+///   placement matrix before promoting.
+/// - SLICE_CENTER — shifts the slice frame by the mesh bbox center without
+///   threading that offset into the painted-MMU projection
+///   (MMS.cpp:2293 line_to_test.translate(-center_offset) is stubbed (0,0)
+///   in the Tier-1 orchestrator), which silently kills multicolour
+///   toolchanges. Thread center_offset through by_painting_tier1 first.
+pub fn faithful_gate(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => v != "0",
+        Err(_) => true,
+    }
+}
+
 pub mod a_star;
 pub mod aabb_mesh;
 pub mod aabb_tree_indirect;

@@ -485,7 +485,7 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
     // shim. R187's dots-only shim still left round-1 at ±6 faces — the edge
     // squaredNorm threshold check and the f32/f64 edge_len evolution are further
     // Eigen-f32 codegen surfaces; the only robust cut is the whole kernel.
-    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         let verts_flat: Vec<f32> = mesh
             .vertices
             .iter()
@@ -677,7 +677,7 @@ pub fn its_short_edge_collpase(mesh: &mut indexed_triangle_set, target_triangle_
         //shuffle the faces and traverse in random order, this MASSIVELY improves the quality of the result
         // std::shuffle(face_indices.begin(), face_indices.end(), generator);
         // ShortEdgeCollapse.cpp:99
-        if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
             // Native links libc++ on darwin — its std::shuffle differs from
             // libstdc++'s (R184). Gated: default keeps the legacy permutation
             // (byte-locked 147987).

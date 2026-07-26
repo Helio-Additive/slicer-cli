@@ -595,7 +595,7 @@ impl LayerRegion {
             // PerimeterGenerator.cpp:1329-1330 — INSET_OVERLAP_TOLERANCE = 0.4
             // (libslic3r.h:72; the 0.45 here was WRONG, R143). Gated: default keeps
             // the legacy value (byte-locked 147987).
-            let min = if std::env::var("F1_UNION").is_ok() {
+            let min = if crate::faithful_gate("F1_UNION") {
                 0.2 * perimeter_width * (1.0 - 0.4)
             } else {
                 0.2 * perimeter_width * (1.0 - 0.45)
@@ -624,7 +624,7 @@ impl LayerRegion {
             // islands' gaps interact through the ±max/2 offsets (L0 oracle:
             // 23-vs-48 polylines from identical inputs). Gated F1_UNION;
             // default keeps the merged collapse (byte-locked).
-            let gap_sets: Vec<ExPolygons> = if std::env::var("F1_UNION").is_ok()
+            let gap_sets: Vec<ExPolygons> = if crate::faithful_gate("F1_UNION")
                 && !result.gap_fills_per_surface.is_empty()
             {
                 result.gap_fills_per_surface.clone()
@@ -636,7 +636,7 @@ impl LayerRegion {
             // min = 0.2*W*(1-0.4), max = 2.*S with W/S = trunc(v/1e-5)
             // (PG.cpp:1329-1334); halving in DOUBLE, +ClipperSafetyOffset(10)
             // in the scaled expr before the f32 boundary.
-            let (bmin, bmax) = if std::env::var("F1_UNION").is_ok() {
+            let (bmin, bmax) = if crate::faithful_gate("F1_UNION") {
                 let w_sc = (perimeter_width / 0.00001).trunc();
                 let s_sc = (perimeter_spacing / 0.00001).trunc();
                 (
@@ -683,7 +683,7 @@ impl LayerRegion {
                 // duplicated points and accelerate medial-axis calculation.
                 ex.douglas_peucker(surface_simplify_resolution);
                 // PerimeterGenerator.cpp:1339
-                if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
+                if crate::faithful_gate("MEDIALAXIS_NATIVE") {
                     // Native params are doubles built FROM scaled coord_t values
                     // (PG.cpp:864-865 scaled_width/scaled_spacing = trunc(v/1e-5),
                     // :1329-1330 min = 0.2*W*(1-0.4), max = 2.*S) — recompute here
@@ -735,7 +735,7 @@ impl LayerRegion {
                     // Native diff_ex runs ClipperLib @1e5; the geo union+difference
                     // grid the trimmed fill region @1um (the last un-gridded op on
                     // fill_expolygons — L23 top band 29pts/-0.07mm2). Gated full-res.
-                    let tf = std::env::var("TOPFILL_FAITHFUL").is_ok();
+                    let tf = crate::faithful_gate("TOPFILL_FAITHFUL");
                     let covered_ex = if tf {
                         crate::clipper_utils::union_ex_clib(&covered, 1)
                     } else {
@@ -746,7 +746,7 @@ impl LayerRegion {
                     // fill-boundary tail (PG.cpp:1373 runs the diff BEFORE the
                     // tail; the post-hoc trim below cuts corridors through the
                     // already-merged area, creating ragged hole-bearing blobs).
-                    if std::env::var("GAPTRIM_PRETAIL").is_ok() && !tail_inputs.is_empty() {
+                    if crate::faithful_gate("GAPTRIM_PRETAIL") && !tail_inputs.is_empty() {
                         let mut new_infill: ExPolygons = Vec::new();
                         let mut new_no: ExPolygons = Vec::new();
                         for ti in &tail_inputs {
@@ -1711,7 +1711,7 @@ impl Layer {
         // through the faithful port (shortest_path::chain_segments_greedy) under
         // F1_UNION so the island order matches native. Default path keeps the local
         // chain (byte-unchanged).
-        let order = if std::env::var("F1_UNION").is_ok() {
+        let order = if crate::faithful_gate("F1_UNION") {
             crate::shortest_path::chain_points(&ordering_points, None)
         } else {
             chain_points(&ordering_points)
@@ -2398,7 +2398,7 @@ impl Layer {
                 // Native intersection_ex runs ClipperLib @1e5; the geo variant
                 // grids the clip contour to 1um and the raster endpoints clip
                 // against it (R100 class). Gated full-res.
-                if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     crate::clipper_utils::intersection_clib(
                         &surface_fill.no_overlap_expolygons,
                         &surface_fill.expolygons,
@@ -2468,7 +2468,7 @@ impl Layer {
                             // Native FillMonotonicLineWGapFill (FillRectilinear.cpp:
                             // 3245-3247): params2.dont_adjust = true — nominal flow
                             // spacing + align_to_grid raster. Gated.
-                            if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                            if crate::faithful_gate("TOPFILL_FAITHFUL") {
                                 mono_config.dont_adjust = true;
                             }
                         }
@@ -2478,7 +2478,7 @@ impl Layer {
                         let mono_areas: Vec<crate::geometry::ExPolygon> =
                             if fill_pattern == InfillPattern::MonotonicLine
                                 && !mono_no_overlap.is_empty()
-                                && std::env::var("TOPFILL_FAITHFUL").is_ok()
+                                && crate::faithful_gate("TOPFILL_FAITHFUL")
                             {
                                 crate::clipper_utils::intersection_clib(
                                     &mono_no_overlap,
@@ -2628,7 +2628,7 @@ impl Layer {
                         .with(|c| c.get());
                     match adj {
                         Some(sp_mm)
-                            if std::env::var("GAPTRIM_PRETAIL").is_ok()
+                            if crate::faithful_gate("GAPTRIM_PRETAIL")
                                 && surface_fill.surface.is_solid()
                                 && !surface_fill.params.bridge =>
                         {
@@ -2647,7 +2647,7 @@ impl Layer {
                     }
                 };
                 let mut collection = ExtrusionEntityCollection::new();
-                if is_monotonic_line && std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                if is_monotonic_line && crate::faithful_gate("TOPFILL_FAITHFUL") {
                     // Native FillMonotonicLineWGapFill emits via
                     // extrusion_entities_append_paths_with_wipe (FillRectilinear.cpp:
                     // 3274): short hops become non-extruding wipe connectors that
@@ -2735,7 +2735,7 @@ impl Layer {
 
                 // C++: gapfill_areas = union_ex(unextruded_areas);
                 //      gapfill_areas = intersection_ex(gapfill_areas, no_overlap);
-                let gapfill_areas = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                let gapfill_areas = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     // Native intersection_ex @1e5 (mixed-grid guard, see above).
                     crate::clipper_utils::intersection_clib(&unextruded_areas, &mono_no_overlap)
                 } else {
@@ -2765,7 +2765,7 @@ impl Layer {
                     //      libslic3r.h:72 — 0.45 was WRONG here; a smaller min kept
                     //      thinner slivers alive and fragmented the gap band, R143).
                     //      Gated: default keeps the legacy 0.45 (byte-locked).
-                    let min = if std::env::var("F1_UNION").is_ok() {
+                    let min = if crate::faithful_gate("F1_UNION") {
                         0.2 * spacing_mm * (1.0 - 0.4)
                     } else {
                         0.2 * spacing_mm * (1.0 - 0.45)
@@ -2783,7 +2783,7 @@ impl Layer {
                     // medial_axis are not over-segmented (vs geo-clipper @ 1µm).
                     // R278: same native band-delta quantization as the perimeter
                     // gap block (doubles from trunc(spacing/1e-5)).
-                    let (bmin, bmax) = if std::env::var("F1_UNION").is_ok() {
+                    let (bmin, bmax) = if crate::faithful_gate("F1_UNION") {
                         let s_sc = (new_flow.spacing() / 0.00001).trunc();
                         (
                             0.2 * s_sc * (1.0 - 0.4) / crate::SCALING_FACTOR,
@@ -2810,7 +2810,7 @@ impl Layer {
                         let mut polylines: crate::geometry::ThickPolylines = Vec::new();
                         for ex in &mut gaps_ex {
                             ex.douglas_peucker(simplify_resolution);
-                            if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
+                            if crate::faithful_gate("MEDIALAXIS_NATIVE") {
                                 // Same scaled-domain recipe as the perimeter gap
                                 // block: doubles from trunc(spacing/1e-5).
                                 let s_sc = (new_flow.spacing() / 0.00001).trunc();

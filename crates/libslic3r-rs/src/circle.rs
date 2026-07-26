@@ -24,7 +24,7 @@ use std::f64::consts::PI;
 fn f1_union_center_round() -> bool {
     use std::sync::OnceLock;
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F1_UNION").is_ok())
+    *ON.get_or_init(|| crate::faithful_gate("F1_UNION"))
 }
 
 /// Tolerance for floating-point comparisons

@@ -131,7 +131,7 @@ impl Slicer {
         // f32 trafo_centered so slice coords are in C++'s centered frame (the export
         // origin then re-aligns the gcode — set in print.rs). Combined with the
         // simplify (R83) + F1 union (R84) this is the SLICE BYTE-MATCH path.
-        let want_simplify = std::env::var("SLICE_SIMPLIFY").is_ok() && self.slice_resolution != 0.0;
+        let want_simplify = crate::faithful_gate("SLICE_SIMPLIFY") && self.slice_resolution != 0.0;
         let want_center = std::env::var("SLICE_CENTER").is_ok()
             && (self.slice_center_offset.0 != 0.0 || self.slice_center_offset.1 != 0.0);
         let sliced_expolygons = if want_simplify || want_center {

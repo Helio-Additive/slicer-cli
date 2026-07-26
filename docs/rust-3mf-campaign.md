@@ -1,5 +1,35 @@
 # Rust 3MF campaign — Arachne infill, negative parts, multi-color
 
+## G — Mirror main.cpp's drive pipeline in src/*.rs  [STATUS: in progress, 2026-07-26]
+
+User direction: the rust slice initiated via src/main.rs must include the
+custom pipeline logic of libslic3r/bambustudio/main.cpp (the engineer's
+harness) so rust behaves like the actual C++ slice. Gaps (main.cpp refs):
+- G1: set_default_config (337-604, full BBS defaults FIRST) +
+      ensure_vector_config_sizes (605-817).
+- G2: config layering order — defaults → 3MF/bundle → machine → process →
+      filament → CLI overrides (1208-1231, 1414-1430).
+- G3: PresetBundle-style rebuild for 3MF (1017-1178): resolve presets named by
+      printer/print/filament_settings_id via src/profiles.rs inheritance,
+      full-config analog, overlay flat 3MF on top; fall back to flat.
+- G4: vector padding to extruder_count + master_extruder_id clamp (1233-1314),
+      plate filament_maps → filament_map/_2 (1320-1358), prime-tower
+      auto-disable (1381-1412).
+- G5: validate() port + plate selection/translation/seq-print (939-1015),
+      set_BBL_Printer / set_plate_origin.
+- G6: wire into src/commands.rs rust path (STL + 3MF), app_slice consumes the
+      pipeline-built config instead of raw flat JSON.
+Related in-tree change (uncommitted at campaign start): faithful_gate()
+default-ON rewrite of the 14 byte-parity gates (150 call sites) — measured
+gates-on diff vs bambu 105,396 lines vs 241,115 gates-off (metric:
+diff -a | grep -c '^[<>]' on stl-inline benchy); semantic: silhouette 100.00%,
+material 1.0188 (bridge over-detection — separate finding below).
+★ Bridge finding (2026-07-26): rust lays a SECOND solid/bridge layer 2 layers
+above real bridges (z=14.6 X[7.7,25.1]: rust 17.6mm Bridge where bambu keeps
+sparse-only; both bridge at z=14.2). Bottom-shell accounting divergence
+(discover_horizontal_shells count-above-bridge) — explains Bridge 1.326 +
+vshell 1.119 vs ISI 0.959 signature. Fix candidate after G.
+
 ## D — Rayon parallelization  [STATUS: in progress, started 2026-07-23]
 
 Goal: close the 349x nu3mf gap (info.json 2026-07-22_22-46-20: bambu 15.76s vs

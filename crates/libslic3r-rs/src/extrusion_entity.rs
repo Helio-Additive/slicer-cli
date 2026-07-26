@@ -488,7 +488,7 @@ impl ExtrusionPath {
         // ExtrusionEntity.cpp:57
         let delta = scale(self.width / 2.0) as f32 + scaled_epsilon;
         // Gated faithful ClipperLib offset (see offset_polyline_clib); geo default.
-        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        if crate::faithful_gate("TOPFILL_FAITHFUL") {
             out.extend(offset_polyline_clib(&self.polyline, delta as f64));
         } else {
             out.extend(offset_polyline(&self.polyline, delta as f64));
@@ -512,7 +512,7 @@ impl ExtrusionPath {
         // ExtrusionEntity.cpp:67
         let delta = 0.5_f32 * flow.scaled_spacing() as f32 + scaled_epsilon;
         // Gated faithful ClipperLib offset (see offset_polyline_clib); geo default.
-        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        if crate::faithful_gate("TOPFILL_FAITHFUL") {
             out.extend(offset_polyline_clib(&self.polyline, delta as f64));
         } else {
             out.extend(offset_polyline(&self.polyline, delta as f64));

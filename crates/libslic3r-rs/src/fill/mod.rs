@@ -675,13 +675,13 @@ pub fn group_fills(
             // historically used a rectangular solid-infill flow for bridges,
             // laying ~2x the lines (R336). Gated under BRIDGE_FLOW so the
             // byte-locked default output is preserved while validating.
-            let flow = if is_bridge && std::env::var("BRIDGE_FLOW").is_ok() {
+            let flow = if is_bridge && crate::faithful_gate("BRIDGE_FLOW") {
                 // thick_bridge = (surface.is_bridge() && !surface.is_external())
                 //                || object_config.thick_bridges   (is_bridge here)
                 let thick = !surface.is_external()
                     || layer.object().config().thick_bridges;
                 region.bridging_flow(crate::flow::FlowRole::SolidInfill, thick, layer_height)?
-            } else if layer.id() == 0 && std::env::var("BOTTOM_FLOW").is_ok() {
+            } else if layer.id() == 0 && crate::faithful_gate("BOTTOM_FLOW") {
                 // R343: first-layer fills must use initial_layer_line_width. Native
                 // routes the fill flow through layerm.flow() (Fill.cpp:256), whose
                 // first_layer (=id==0) branch selects initial_layer_line_width; this
@@ -831,7 +831,7 @@ pub fn group_fills(
                 // the raw safety offset; the geo variants grid @1um and cut a
                 // spurious hole into stTop (R138: rust 46pts/1hole vs native
                 // 49/0). Gated full-res (TOPFILL_FAITHFUL).
-                let tf = std::env::var("TOPFILL_FAITHFUL").is_ok();
+                let tf = crate::faithful_gate("TOPFILL_FAITHFUL");
                 surface_fills[i].expolygons = if all_polygons.is_empty() {
                     if tf {
                         crate::clipper_utils::union_safety_offset_ex_clib(&polys)

@@ -9,7 +9,7 @@
 /// R206: faithful lift gate (cached).
 pub fn lift_faithful_gate() -> bool {
     static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *GATE.get_or_init(|| std::env::var("ZSMOOTH_FAITHFUL").is_ok())
+    *GATE.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"))
 }
 
 pub fn format_gcode_value(v: f64, digits: usize) -> String {
@@ -589,7 +589,7 @@ impl GCodeWriter {
         // per-feature accel — travel/feature alternation re-emits M204 on
         // every switch (native: 3148x M204 S10000 on benchy). The legacy path
         // keeps the caller-passed value (hardcoded 6000) and its own register.
-        let accel = if std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+        let accel = if crate::faithful_gate("ZSMOOTH_FAITHFUL")
             && self.config.travel_acceleration > 0.0
         {
             // GCodeWriter.cpp:210 — first-layer travels use the
@@ -2336,7 +2336,7 @@ impl GCodeWriter {
             // cooling rewrite untouched (GCodeEditor only re-formats slowed
             // lines, as integers). Gated: default keeps the integer format
             // (byte-locked 147987).
-            let f_str = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            let f_str = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let t = format!("{:.3}", adjusted_speed);
                 t.trim_end_matches('0').trim_end_matches('.').to_string()
             } else {

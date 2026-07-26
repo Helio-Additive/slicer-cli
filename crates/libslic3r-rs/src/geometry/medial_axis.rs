@@ -48,7 +48,7 @@ use boostvoronoi::prelude as bv;
 fn f1_union_vd_round() -> bool {
     use std::sync::OnceLock;
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("F1_UNION").is_ok())
+    *ON.get_or_init(|| crate::faithful_gate("F1_UNION"))
 }
 
 /// Convert a Voronoi-vertex `double` coordinate to `Coord`, matching native

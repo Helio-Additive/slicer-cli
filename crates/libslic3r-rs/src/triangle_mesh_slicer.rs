@@ -1328,7 +1328,7 @@ fn make_expolygons(
     // vendored ClipperLib (clipper-z-sys @ native 1e5) instead of geo-clipper @
     // scale-1000 which re-quantizes the slice coords to a coarse grid (R83 residual
     // blocking slice byte-match). fill_type maps the slicing mode (NonZero default).
-    let unioned = if std::env::var("F1_UNION").is_ok() {
+    let unioned = if crate::faithful_gate("F1_UNION") {
         let ft = match fill_type {
             ClipperPolyFillType::EvenOdd => 0,
             ClipperPolyFillType::NonZero => 1,
@@ -1346,7 +1346,7 @@ fn make_expolygons(
         // R96 (gated F1_UNION): route the close through the vertex-exact ClipperLib
         // offset2_ex @1e5 (clipper-z-sys) so it byte-matches C++; the default path
         // keeps geo-clipper (scale-1000).
-        if std::env::var("F1_UNION").is_ok() {
+        if crate::faithful_gate("F1_UNION") {
             crate::clipper_utils::offset2_ex_clib(
                 &unioned,
                 offset_out,
@@ -1766,7 +1766,7 @@ fn expolygon_simplify(ex: &ExPolygon, tolerance: f64) -> ExPolygons {
     // different vertices; routing through it (not a direct union_ex_clib) is what
     // closes the lslices residual (rust simplify 1368 vs C++ 1528 → match). Both via
     // the vertex-exact vendored ClipperLib (exact i32 coords).
-    if std::env::var("F1_UNION").is_ok() {
+    if crate::faithful_gate("F1_UNION") {
         let simplified = crate::clipper_utils::simplify_polygons_clib(&pp, 1);
         return crate::clipper_utils::union_ex_clib(&simplified, 1);
     }

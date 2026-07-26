@@ -412,7 +412,7 @@ impl PerimeterGenerator {
         // chain_expolygons = KD-greedy chain over bbox centers. Without it the
         // island emission order diverges and 332 extra Outer->Outer retractions
         // appear (loop-to-loop hops exceed retraction_minimum_travel).
-        let order: Vec<usize> = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+        let order: Vec<usize> = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
             crate::shortest_path::chain_expolygons(&slices.to_vec())
         } else {
             (0..slices.len()).collect()
@@ -499,7 +499,7 @@ impl PerimeterGenerator {
         } else {
             self.config.surface_simplify_resolution / 0.00001_f64
         };
-        let mut last = if std::env::var("F1_UNION").is_ok() {
+        let mut last = if crate::faithful_gate("F1_UNION") {
             // R122: faithful DP — native pure-double point-to-segment distance AND the
             // native SCALED tolerance (simplify_tol_scaled). Fixes L33/L34/L54 (+sweep).
             let pp = slice.simplify_p_dp_rings_faithful(simplify_tol_scaled);
@@ -550,7 +550,7 @@ impl PerimeterGenerator {
         // separate lever; see PARITY_STATUS.) Spacings/inner-wall offset2 deltas are
         // NOT yet ported (inner-wall geometry stays at status quo) — follow-up round.
         let nsc = |w_mm: f64| -> f64 {
-            if std::env::var("F1_UNION").is_ok() {
+            if crate::faithful_gate("F1_UNION") {
                 crate::unscale(((w_mm as f32) as f64 * crate::SCALING_FACTOR).trunc() as Coord)
             } else {
                 w_mm
@@ -633,7 +633,7 @@ impl PerimeterGenerator {
                     // scale_ DIVIDES), ext_min_spacing = coord_t(S_e*(1-0.4)), all
                     // delta exprs in double then f32 at the offset boundary (the
                     // clib shims reproduce the f32; PG.cpp:886-887, 963-975).
-                    let f1 = std::env::var("F1_UNION").is_ok();
+                    let f1 = crate::faithful_gate("F1_UNION");
                     let w_e_c = (self.config.ext_perimeter_flow.width() / 0.00001).trunc();
                     let s_e_c = (self.config.ext_perimeter_flow.spacing() / 0.00001).trunc();
                     let ext_min_c = (s_e_c * (1.0 - INSET_OVERLAP_TOLERANCE)).trunc();
@@ -695,7 +695,7 @@ impl PerimeterGenerator {
                     // C++:     ex.medial_axis(min_width, ext_perimeter_width + ext_perimeter_spacing2, &thin_walls);
                     for ex in expp {
                         let max_width = ext_perimeter_width + ext_perimeter_spacing2;
-                        if std::env::var("MEDIALAXIS_NATIVE").is_ok() {
+                        if crate::faithful_gate("MEDIALAXIS_NATIVE") {
                             // Native: min = coord_t(scale_(nozzle/3)) — nozzle/3 in
                             // f32, double division by 1e-5, trunc (PG.cpp:972); max =
                             // ext_perimeter_width + ext_perimeter_spacing2, both
@@ -728,7 +728,7 @@ impl PerimeterGenerator {
 
                         /// PerimeterGenerator.cpp:983-985
                         /// C++: ExPolygons offset_result = offset2_ex(expolys, -float(ext_perimeter_width / 2. + ext_min_spacing_smaller / 2.), +float(ext_min_spacing_smaller / 2.));
-                        let offset_result = if std::env::var("F1_UNION").is_ok() {
+                        let offset_result = if crate::faithful_gate("F1_UNION") {
                             // R278: native-exact — W_e coord_t, ext_min_spacing_smaller =
                             // coord_t(S_e*(1-0.22)); deltas double->f32 (PG.cpp:891, 983-985).
                             let w_e_c =
@@ -834,7 +834,7 @@ impl PerimeterGenerator {
                 // R104 probe: route the inner offset through the faithful offset2_ex_clib
                 // (cz_offset2_ex) with the integer-coord_t delta (matches native exactly),
                 // so its stepA (between-passes) can be compared to native's. Gated F1_UNION.
-                offsets = if std::env::var("F1_UNION").is_ok() {
+                offsets = if crate::faithful_gate("F1_UNION") {
                     // R277: native scale_() DIVIDES by SCALING_FACTOR=1e-5 (not *1e5 —
                     // 1e-5 is inexact, trunc can differ by 1); and min_spacing/2. is a
                     // DOUBLE division (keeps the .5) — the previous integer half was a
@@ -876,7 +876,7 @@ impl PerimeterGenerator {
                     // (geo delta is unscaled mm; the clib shims take mm and scale @1e5).
                     // Default path keeps geo (difference_clib reconstructs via geo union off
                     // F1_UNION — R106), byte-unchanged.
-                    let detected_gaps = if std::env::var("F1_UNION").is_ok() {
+                    let detected_gaps = if crate::faithful_gate("F1_UNION") {
                         // R277: native halves the COORD_T distance — float(0.5*distance)
                         // with distance an integer (PG.cpp:1030-1035). Halving the raw mm
                         // value drifts the delta by up to 0.5 units when trunc(mm/1e-5)
@@ -1066,7 +1066,7 @@ impl PerimeterGenerator {
                 let upper = self.config.upper_slices.as_ref().unwrap();
                 // R104: un-grid the last-chain in this only_one_wall_top block (see note
                 // below) via the vertex-exact ClipperLib. Gated F1_UNION; default byte-unchanged.
-                let f1_top = std::env::var("F1_UNION").is_ok();
+                let f1_top = crate::faithful_gate("F1_UNION");
 
                 // PerimeterGenerator.cpp:1121-1126
                 // C++: coord_t offset_top_surface = scale_(1.5 * (wall_loops == 0 ? 0. :
@@ -1301,7 +1301,7 @@ impl PerimeterGenerator {
                 merged.extend(top_polygons);
                 // Native union_ex runs ClipperLib @1e5; geo grids top_fills @1um
                 // (feeds top_infill_exp -> the fill boundary). Gated full-res.
-                top_fills = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                top_fills = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     crate::clipper_utils::union_ex_clib(
                         &crate::geometry::to_polygons(&merged),
                         1,
@@ -1315,7 +1315,7 @@ impl PerimeterGenerator {
                 // C++: fill_clip = offset_ex(last, double(ext_perimeter_spacing / 2) - scale_(infill_spacing_unscaled / 2));
                 // Native offset_ex @1e5; geo grids fill_clip (168-vs-177pts, the
                 // R140 residual driver). Gated full-res.
-                fill_clip = if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+                fill_clip = if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     crate::clipper_utils::offset_expolygons_clib(
                         &last,
                         ext_perimeter_spacing / 2.0 - self.config.sparse_infill_line_width / 2.0,
@@ -1612,7 +1612,7 @@ impl PerimeterGenerator {
 
         // PerimeterGenerator.cpp:1378-1413 — infill boundary inset + top_fills merge.
         if top_fills_gate() {
-            if std::env::var("GAPTRIM_PRETAIL").is_ok() {
+            if crate::faithful_gate("GAPTRIM_PRETAIL") {
                 result.tail_inputs.push(ClassicTailInput {
                     last: last.clone(),
                     top_fills: top_fills.clone(),
@@ -1706,7 +1706,7 @@ impl PerimeterGenerator {
             // (R122 class: the legacy call passes the UNSCALED mm tolerance into a
             // rounded-projection DP — near no-op simplify, keeps extra points; L23
             // fill_expoly 29pts vs native 24). Gated faithful.
-            let tf_simplify = std::env::var("TOPFILL_FAITHFUL").is_ok();
+            let tf_simplify = crate::faithful_gate("TOPFILL_FAITHFUL");
             for ex in last {
                 if tf_simplify {
                     pp.extend(ex.simplify_p_dp_rings_faithful(
@@ -1719,7 +1719,7 @@ impl PerimeterGenerator {
             // Native union_ex(pp) runs ClipperLib @1e5; geo union grids to 1um and
             // everything downstream (infill_area, no_overlap_area, the top-surface
             // raster clip) inherits it (R100 class). Gated full-res.
-            let f1_infill = std::env::var("TOPFILL_FAITHFUL").is_ok();
+            let f1_infill = crate::faithful_gate("TOPFILL_FAITHFUL");
             let not_filled_exp = if f1_infill {
                 crate::clipper_utils::union_ex_clib(&pp, 1)
             } else {
@@ -1834,7 +1834,7 @@ impl PerimeterGenerator {
             // Native offset2_ex/offset_ex run ClipperLib @1e5; the geo variants
             // grid the no-overlap contour to 1um, which the top-surface
             // MonotonicLine raster clips against (R100 class). Gated full-res.
-            let f1 = std::env::var("TOPFILL_FAITHFUL").is_ok();
+            let f1 = crate::faithful_gate("TOPFILL_FAITHFUL");
             // Native condition: min_pis/2 (INT div) > overlap (PG.cpp:1418).
             let no_cond = if f1 && std::env::var("FILLBOUND_QUANT").is_ok() {
                 (min_pis_c / 2.0).trunc() > overlap_c
@@ -2421,7 +2421,7 @@ fn traverse_loops(
                     // rarely overhang, so they match ~2x better). Same class as R100. Under F1_UNION
                     // route the grows through the vertex-exact vendored ClipperLib (offset_expolygons_clib
                     // @ i32/1e5). Default path byte-unchanged.
-                    let faithful_raw: Option<(Vec<Polygon>, Vec<Polygon>)> = if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+                    let faithful_raw: Option<(Vec<Polygon>, Vec<Polygon>)> = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                         let width_f32 = extrusion_width as f32;
                         let nozzle_f32 = nozzle_diameter as f32;
                         let start_f32 = -0.5f32 * width_f32;
@@ -2447,7 +2447,7 @@ fn traverse_loops(
                     };
                     let (lower_front_ex, lower_back_ex) = if faithful_raw.is_some() {
                         (Vec::new(), Vec::new())
-                    } else if std::env::var("F1_UNION").is_ok() {
+                    } else if crate::faithful_gate("F1_UNION") {
                         (
                             crate::clipper_utils::offset_expolygons_clib(lower, off_front, OffsetJoinType::Miter),
                             crate::clipper_utils::offset_expolygons_clib(lower, end_offset, OffsetJoinType::Miter),
@@ -3244,7 +3244,7 @@ impl PerimeterGenerator {
         // root of the entire fill-geometry divergence, R249). Faithful:
         // simplify_p = DP rings + SimplifyPolygons, then union_ex, then
         // offset2_ex(-min_pis/2, insert+min_pis/2) with default jtMiter.
-        if std::env::var("TOPFILL_FAITHFUL").is_ok() {
+        if crate::faithful_gate("TOPFILL_FAITHFUL") {
             let tol_scaled = surface_simplify_resolution * crate::SCALING_FACTOR;
             let mut inner_pp: Vec<Polygon> = Vec::new();
             for ex in &infill_contour {

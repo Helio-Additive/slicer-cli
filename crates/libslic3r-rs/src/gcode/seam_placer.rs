@@ -541,7 +541,7 @@ pub fn raycast_visibility(
     // ray decisions differed between the rust port and native Eigen/igl codegen.
     // Benchy has no negative volumes; fall through to the rust port otherwise.
     if negative_volumes_start_index >= triangles.indices.len()
-        && std::env::var("ZSMOOTH_FAITHFUL").is_ok()
+        && crate::faithful_gate("ZSMOOTH_FAITHFUL")
     {
         let verts_flat: Vec<f32> = triangles
             .vertices
@@ -970,7 +970,7 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
     // toolchain change). Reproduce the round trip per vertex (f32, mesh bbox
     // center), normalizing -0.0 -> +0.0 (native f32 store has +0.0).
     let n0 = |f: f32| if f == 0.0 { 0.0f32 } else { f };
-    let occl_faithful = std::env::var("ZSMOOTH_FAITHFUL").is_ok();
+    let occl_faithful = crate::faithful_gate("ZSMOOTH_FAITHFUL");
     let qc = {
         let c = mesh.compute_bounding_box().center();
         (c.x as f32, c.y as f32, c.z as f32)
@@ -1060,7 +1060,7 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
     // WITHOUT this the occlusion mesh stays in the volume frame while the seam
     // candidates live in the centered slicing frame — every visibility raycast
     // was skewed by the centering offset (~0.8245mm in x for Benchy).
-    if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         let (cx, cy) = po.slice_center_offset;
         for v in &mut triangle_set.vertices {
             v.x = ((v.x as f64) - cx) as f32;
@@ -1245,7 +1245,7 @@ pub fn extract_perimeter_polygons<'a>(
                     polygons.push(Polygon::from_points(p));
                     corresponding_regions_out.push(Some(layer_region));
                 }
-            } else if std::env::var("ZSMOOTH_FAITHFUL").is_ok() {
+            } else if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 // R191: this crate stores perimeters FLAT (individual loops), not
                 // native's per-island Collections — so every loop fell into the
                 // unconditional else-branch and INNER perimeters entered the seam
