@@ -1,5 +1,53 @@
 # Rust 3MF campaign — Arachne infill, negative parts, multi-color
 
+## H — CONVERGENCE LOOP  [STATUS: active /loop, started 2026-07-27]
+
+Charter (user): iterate until rust produces pretty much exactly the same
+G-Code as C++ AND similar execution time. Fixtures: Benchy (stl-inline) +
+Majora (nu3mf) ONLY. Scoreboard lives here — update every round.
+
+| metric                     | current           | target        |
+|----------------------------|-------------------|---------------|
+| benchy diff-lines          | 140,297 (R383)    | ~0 structural |
+| benchy semantic material   | 1.0147 FAIL (R383)| within 1%     |
+| benchy silhouette          | 99.83%            | >=99.9%       |
+| benchy rust time           | ~12.6s            | ~2s (bambu 1.8)|
+| majora rust time           | ~90min            | ~1min (bambu 16s)|
+| majora semantic            | untested post-R382| EQUIVALENT    |
+
+Known ceiling: perfect byte-parity is blocked by the compiler-FP wall
+(R324-326 proof); "pretty much exactly" = eliminate all STRUCTURAL diff
+classes, leave only sub-ULP FP scatter.
+
+Work queue (leverage order):
+H1 = task #17 double-bridge bottom-shell fix (material FAIL + diff class). DONE R383.
+H1b = task #19 real-bridge over-widening ~1.8x (z=5.8 rust 840 vs bambu 459;
+      z=14.2 383 vs 210; Bridge E 301 vs 243) — bridge_over_infill expansion/
+      anchoring or bridge-area accounting. Main residual material contributor.
+H2 = task #18 frame-gate generalization (benchy −36k, multicolour-safe).
+H3 = campaign E integer-clipper routing (majora 10-50x, benchy ~2-5x).
+H4 = G1-G6 main.cpp pipeline mirror (config parity; tasks #12-16).
+H5 = re-census remaining diff classes post H1-H4; iterate.
+
+Round log:
+- R383 (H1): phantom-bridge root cause was NOT discover_vertical_shells /
+  bridge_over_infill (both at parity). region_expansion.rs
+  process_external_surfaces_wave had an early `continue` on layers with no
+  top/bottom/bridge surfaces, skipping the minimum_sparse_infill_area
+  sparse→solid promotion (LayerRegion.cpp:597-614; C++ 518-640 has no such
+  early-out). idx71 kept an 8.2mm² sparse island (rust ISI 83.15mm² vs bambu
+  91.36mm²) → idx72 read as unsupported → phantom internal bridge at z=14.6.
+  Fix: remove the early-return (one file, +9/-14). Gates: phantom gone
+  (z=14.6 Bridge 17.6mm→0; z=14.2 real bridge stays), per-feature Bridge
+  1.353→1.259 (check FLIPPED to PASS), ISI 0.975→1.002, vshell 1.068→1.044,
+  material 1.0186→1.0147 (still FAIL), diff-lines 140,621→140,297 (fresh
+  baseline), suites green (arachne 1, mms 1, painted_cube 1, 3mf 7).
+  Caveat: z=37.8 locally worse (147→539mm, redistribution vs unfixed H1b
+  over-widening); per-layer MEAN 1.65% still PASS.
+  Ops note: BambuStudio/libnoise submodule gitdirs went dangling (modules/
+  missing under .git/worktrees/slicer-cli3) — repaired by re-init + pinned
+  fetch in-place; both submodules verified clean at pinned SHAs.
+
 ## G — Mirror main.cpp's drive pipeline in src/*.rs  [STATUS: in progress, 2026-07-26]
 
 User direction: the rust slice initiated via src/main.rs must include the

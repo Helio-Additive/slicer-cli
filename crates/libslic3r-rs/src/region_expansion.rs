@@ -1268,22 +1268,7 @@ pub fn process_external_surfaces_wave(
             continue;
         }
 
-        // Check if we have any external surfaces to expand
-        let has_top = layer_surfaces
-            .iter()
-            .any(|s| s.surface_type == crate::surface::SurfaceType::Top);
-        let has_bottom = layer_surfaces
-            .iter()
-            .any(|s| s.surface_type == crate::surface::SurfaceType::Bottom);
-        let has_bridge = layer_surfaces
-            .iter()
-            .any(|s| s.surface_type == crate::surface::SurfaceType::BottomBridge);
-
-        if !has_top && !has_bottom && !has_bridge {
-            continue;
-        }
-
-        // Build the 3-zone structure matching C++
+        // Build the 3-zone structure matching C++ (LayerRegion.cpp:560-564)
         let mut expansion_zones = vec![
             ExpansionZone {
                 expolygons: shells,
