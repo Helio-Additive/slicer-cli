@@ -30,9 +30,28 @@ Phases (A→(B∥C)→D→E):
 A [S] typed config: prime_volume, wipe_tower_rotation_angle, filament_map,
   flush_multiplier, flush_volumes_vector. Gate: resolved dump vs bambu hdr.
 B [M] toolchange macro engine w/ full var context (flush_length_1..N,
-  next/previous_extruder, temps, travel_point_*). DECISION NEEDED: extend
-  generator.rs engine vs finish placeholder_parser (faithful). Gate:
-  byte-match bambu's M620/FLUSH block for fixed (prev,next,flush) tuple.
+  next/previous_extruder, temps, travel_point_*). Gate: byte-match bambu's
+  M620/FLUSH block for fixed (prev,next,purge_volume) tuple.
+  ROUTE DECIDED (2026-07-27): HYBRID — extend generator.rs behind one
+  stable entry `expand_change_filament_gcode(prev,next,purge_volume,ctx)`.
+  Grammar is ALREADY sufficient (change_filament_gcode's construct set is
+  a strict subset of the byte-locked machine_start expansion; {if}x12,
+  vector-index-by-context-var, arith). Deltas are DATA not grammar:
+  D1 per-toolchange context vars (GCode.cpp:789-863 formulas);
+  D2 flush_length_1..4 (GCode.cpp:918-934; flush_count=min(4,
+     round(purge/135)), unit=purge_length/count);
+  D3 flush_volumetric_speeds/temps INDEX-BY-N (generator.rs:1253-1290
+     currently returns [0]!) w/ fallbacks per GCode.cpp:866-876;
+  D4 purge_volume: tower-off = flush_volumes_matrix[prev*n+next]*
+     flush_multiplier (GCode.cpp:7351); wipe path = baked tcr.purge_volume
+     (couples to I-E);
+  D5 filament_map remap/auto-index/_N-split/OOB-clamp (general gap, not
+     needed for this template); D6 float %g formatting = #1 byte risk
+     (spot-check /2.4053*60 lines). Do NOT touch machine_start/
+     filament_start expansion (byte-locked). placeholder_parser.rs stays
+     north-star: faithful route needs runtime config dict (M1, L+) + parser
+     (M2) + MyContext (M3) ≈ weeks and risks the shipped byte-lock; swap
+     later behind the same entry point.
 C [L] ToolOrdering PrintObject-driven build (collect_extruders →
   reorder_min_flush → fill_wipe_tower_partitions → statistics) wired into
   process() replacing 1588-1602 TODO. Gate: per-layer extruder seq matches
