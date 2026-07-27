@@ -132,7 +132,7 @@ impl Slicer {
         // origin then re-aligns the gcode — set in print.rs). Combined with the
         // simplify (R83) + F1 union (R84) this is the SLICE BYTE-MATCH path.
         let want_simplify = crate::faithful_gate("SLICE_SIMPLIFY") && self.slice_resolution != 0.0;
-        let want_center = std::env::var("SLICE_CENTER").is_ok()
+        let want_center = crate::faithful_gate("SLICE_CENTER")
             && (self.slice_center_offset.0 != 0.0 || self.slice_center_offset.1 != 0.0);
         let sliced_expolygons = if want_simplify || want_center {
             let zs_f32: Vec<f32> = slice_zs.iter().map(|&z| z as f32).collect();

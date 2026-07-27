@@ -621,6 +621,21 @@ impl PrintObject {
         // mmu_segmented_region_max_width / interlocking depth: not carried in
         // the Tier-1 object config → 0.0 (cut step skipped), matching the C++
         // gate `max_width > 0 || interlocking_depth > 0` (MMS.cpp:2377-2381).
+        // MMS.cpp:2291 center_offset must match the XY shift the slicer applied to the
+        // slices (slicer.rs `want_center`): scaled bbox-XY center when centering, else
+        // (0,0). slice_center_offset is the unscaled (mm) center (self set at slice());
+        // new_scale() re-scales it to the painted-line coordinate space. Keeping this in
+        // lock-step with the slicer's decision is what preserves painted-region overlap.
+        let mms_center_offset = if crate::faithful_gate("SLICE_CENTER")
+            && (self.slice_center_offset.0 != 0.0 || self.slice_center_offset.1 != 0.0)
+        {
+            crate::geometry::Point::new_scale(
+                self.slice_center_offset.0,
+                self.slice_center_offset.1,
+            )
+        } else {
+            crate::geometry::Point::new(0, 0)
+        };
         let segmented = crate::multi_material_segmentation::multi_material_segmentation_by_painting_tier1(
             &layer_slices,
             &layer_zs,
@@ -628,6 +643,7 @@ impl PrintObject {
             num_extruders,
             0.0,
             0.0,
+            mms_center_offset,
         );
 
         // Move painted areas out of region 0 into the painted regions.

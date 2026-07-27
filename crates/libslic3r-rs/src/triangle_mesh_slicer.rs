@@ -1467,21 +1467,60 @@ fn slice_mesh_its(
         // trans=0 → z passes through bit-exact) → R65 preserved. (0,0) = historic
         // identity path (v.x*=s, v.y*=s).
         let (cx, cy) = params.center_offset;
-        let scaled_vertices: Vec<StlVertex> = if std::env::var("FRAME_UNIFY").is_ok() {
-            // R87 frame-unification: slice rust's PLACED verts through C++'s exact
-            // params2.trafo (incl Z+24) after subtracting the volume offset, via the
-            // Eigen shim (bit-exact). params2.trafo (row-major) = Identity + trans
-            // (8.3923339722069557e-08, 0, 24) [dumped]; volume offset = the
-            // volume.get_matrix translation (0.82450008392, 0, 24) [dumped].
-            // (Hardcoded from the C++ dump for the validation pass; a faithful build
-            // from the placement matrix follows if verts bit-match.)
+        let scaled_vertices: Vec<StlVertex> = if crate::faithful_gate("FRAME_UNIFY") {
+            // R87 frame-unification (GENERALIZED, R386): slice rust's PLACED verts
+            // through C++'s exact `params2.trafo` after subtracting the volume offset,
+            // via the Eigen shim (bit-exact, R85 1-ULP wall). Derived from the mesh bbox
+            // for the single-volume CLI object instead of the benchy dump:
+            //   C++ stores the ModelVolume mesh centered on its bbox; volume.get_matrix()
+            //   translates it back (= +bbox_center), and trafo_centered() (Print.hpp:376)
+            //   subtracts the XY center. So
+            //     voff (volume.get_matrix translation) = mesh bbox center (x,y,z), and
+            //     params2.trafo = trafo_centered() * get_matrix()
+            //                   = translate(-cx,-cy,0) * translate(cx,cy,cz)
+            //                   = translate(0, 0, center_z)   [XY cancels exactly in f64].
+            //   The Z term forces the f32 (v.z - cz)+cz round trip that reproduces C++'s
+            //   on-plane slice quantization (the benchy cabin floor, R63-R65); XY nets to
+            //   the same -center shift SLICE_CENTER applies (so the painted lines, which
+            //   are centered by the MMS center_offset thread, stay aligned).
+            // "XY cancels" holds only in exact arithmetic — see the residue derivation
+            // below; for benchy it reproduces the dumped trafo16 X≈8.39e-08 exactly
+            // (0.82450008392 - 0.82450), and the whole chain matches the old hardcode
+            // byte-for-byte on the emitted gcode.
+            let (mut xlo, mut ylo, mut zlo) = (f32::MAX, f32::MAX, f32::MAX);
+            let (mut xhi, mut yhi, mut zhi) = (f32::MIN, f32::MIN, f32::MIN);
+            for p in &mesh.vertices {
+                xlo = xlo.min(p.x);
+                xhi = xhi.max(p.x);
+                ylo = ylo.min(p.y);
+                yhi = yhi.max(p.y);
+                zlo = zlo.min(p.z);
+                zhi = zhi.max(p.z);
+            }
+            // Bbox center computed in f32 (matches C++'s f32 volume-centering), widened
+            // to f64 for the trafo/voff the shim consumes.
+            let center_x = ((xlo + xhi) * 0.5) as f64;
+            let center_y = ((ylo + yhi) * 0.5) as f64;
+            let center_z = ((zlo + zhi) * 0.5) as f64;
+            // params2.trafo.translation.xy is NOT exactly zero: trafo_centered()
+            // pretranslates by -unscale(new_scale(center)) (Print.hpp:376) while
+            // get_matrix() carries the raw center, so the XY term is the scaled-grid
+            // quantization residue `center - unscale(new_scale(center))`. C++ new_scale
+            // is coord_t(mm / SCALING_FACTOR) — a truncating cast, SCALING_FACTOR = 1e-5
+            // (libslic3r convention, so `mm / sf`, NOT `mm * sf`). (This ~8e-8 mm residue
+            // is sub-grid but flips slice-plane rounding on boundary verts; dropping it
+            // diverged benchy by 1273 lines.)
+            let sf = crate::libslic3r::SCALING_FACTOR; // 1e-5
+            let quantize = |v: f64| -> f64 { ((v / sf) as i64) as f64 * sf };
+            let res_x = center_x - quantize(center_x);
+            let res_y = center_y - quantize(center_y);
             let trafo16: [f64; 16] = [
-                1.0, 0.0, 0.0, 8.3923339722069557e-08,
-                0.0, 1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0, 24.0,
+                1.0, 0.0, 0.0, res_x,
+                0.0, 1.0, 0.0, res_y,
+                0.0, 0.0, 1.0, center_z,
                 0.0, 0.0, 0.0, 1.0,
             ];
-            let voff = (0.82450008392333984_f64, 0.0_f64, 24.0_f64);
+            let voff = (center_x, center_y, center_z);
             let mut flat_in: Vec<f32> = Vec::with_capacity(mesh.vertices.len() * 3);
             for p in &mesh.vertices {
                 flat_in.push(p.x);

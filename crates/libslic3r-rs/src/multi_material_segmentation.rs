@@ -2743,6 +2743,13 @@ pub fn multi_material_segmentation_by_painting_tier1(
     num_extruders: usize,
     segmented_max_width: f32,
     segmented_interlocking_depth: f32,
+    // MMS.cpp:2291 — `line_to_test.translate(-print_object.center_offset())`. SCALED
+    // XY shift that maps the painted lines (built in the placed mesh frame) into the
+    // slice frame. When the slices are centered (SLICE_CENTER: trafo_centered subtracts
+    // the bbox XY center), the painted lines must be shifted by the SAME center or they
+    // no longer overlap the slices and every painted region — hence every toolchange —
+    // vanishes. `(0,0)` reproduces the historic placed-frame behavior byte-for-byte.
+    center_offset: Point,
 ) -> Vec<Vec<ExPolygons>> {
     // MultiMaterialSegmentation.cpp:2098-2105
     let num_layers = layer_slices.len();
@@ -2900,8 +2907,10 @@ pub fn multi_material_segmentation_by_painting_tier1(
                     Point::new(scale_(line_start_f.x as f64), scale_(line_start_f.y as f64)),
                     Point::new(scale_(line_end_f.x as f64), scale_(line_end_f.y as f64)),
                 );
-                // cpp:2291 — line_to_test.translate(-center_offset): center_offset is (0,0) in
-                // Tier-1 (mesh pre-placed), so this is a no-op.
+                // cpp:2291 — line_to_test.translate(-center_offset). When the slices are
+                // centered, `center_offset` is the scaled bbox-XY center that centers the
+                // painted lines onto them; `(0,0)` (mesh pre-placed) leaves them unmoved.
+                line_to_test = line_to_test.translate(-center_offset);
 
                 // Clip the painted line against the EdgeGrid's bbox. MultiMaterialSegmentation.cpp:2293-2303.
                 let edge_grid_bbox = *edge_grids[layer_idx].bbox();

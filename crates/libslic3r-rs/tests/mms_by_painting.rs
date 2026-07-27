@@ -54,6 +54,7 @@ fn by_painting_one_side_segments_a_subregion() {
         num_extruders,
         0.0, // segmented_max_width — no cut
         0.0, // segmented_interlocking_depth — no cut
+        Point::new(0, 0), // center_offset — mesh pre-placed, no shift
     );
 
     // 3 layers, num_extruders (0-based extruder) slots each.

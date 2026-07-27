@@ -33,16 +33,16 @@
 /// behaviors are now the default. Set the env var to "0" to opt OUT
 /// (e.g. `ZSMOOTH_FAITHFUL=0` restores the legacy behavior for bisection).
 ///
-/// NOT routed through here (still opt-IN via plain env checks):
-/// - FRAME_UNIFY — carries a HARDCODED Benchy-specific trafo (Z+24 / benchy
-///   volume offset, triangle_mesh_slicer.rs ~1478); enabling it by default
-///   would apply Benchy's frame to every model. Generalize from the real
-///   placement matrix before promoting.
-/// - SLICE_CENTER — shifts the slice frame by the mesh bbox center without
-///   threading that offset into the painted-MMU projection
-///   (MMS.cpp:2293 line_to_test.translate(-center_offset) is stubbed (0,0)
-///   in the Tier-1 orchestrator), which silently kills multicolour
-///   toolchanges. Thread center_offset through by_painting_tier1 first.
+/// FRAME_UNIFY + SLICE_CENTER were promoted to default-ON at R386 (H2): the
+/// slice-frame transform is now derived generically from the mesh bbox
+/// (triangle_mesh_slicer.rs: voff = bbox center, params2.trafo = translate(0,0,
+/// center_z) plus the scaled-grid quantization residue — reproduces the former
+/// Benchy hardcode byte-for-byte and generalizes to any model), and the
+/// center_offset is threaded into the painted-MMU projection
+/// (multi_material_segmentation_by_painting_tier1 applies
+/// `line_to_test.translate(-center_offset)`, MMS.cpp:2291) so painted lines stay
+/// aligned with the centered slices — multicolour toolchanges are preserved
+/// (painted_cube_e2e guards it). Set FRAME_UNIFY=0 / SLICE_CENTER=0 to opt out.
 pub fn faithful_gate(name: &str) -> bool {
     match std::env::var(name) {
         Ok(v) => v != "0",

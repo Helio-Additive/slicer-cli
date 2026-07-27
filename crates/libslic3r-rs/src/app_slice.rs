@@ -92,7 +92,7 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     // R87 FRAME_UNIFY: the Z+24 round-trip is reproduced by C++'s params2.trafo
     // applied in the unified slice transform (the shim), so the separate mesh-bake
     // must be SKIPPED to avoid double-counting. R65 floor survives via the trafo.
-    if std::env::var("FRAME_UNIFY").is_err() {
+    if !crate::faithful_gate("FRAME_UNIFY") {
         mesh.quantize_f32_center_roundtrip();
     }
 

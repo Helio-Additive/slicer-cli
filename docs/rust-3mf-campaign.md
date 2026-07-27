@@ -78,10 +78,10 @@ Majora (nu3mf) ONLY. Scoreboard lives here — update every round.
 
 | metric                     | current           | target        |
 |----------------------------|-------------------|---------------|
-| benchy diff-lines          | 139,717 (R385)    | ~0 structural |
-| benchy semantic            | EQUIVALENT (R385) | keep          |
-| benchy semantic material   | 0.9972 PASS (R385)| within 1%     |
-| benchy silhouette          | 99.83%            | >=99.9%       |
+| benchy diff-lines          | 104,571 (R386)    | ~0 structural |
+| benchy semantic            | EQUIVALENT (R386) | keep          |
+| benchy semantic material   | 0.9987 PASS (R386)| within 1%     |
+| benchy silhouette          | 100.00% (R386)    | >=99.9% MET   |
 | benchy rust time           | 2.63s (R385)      | bambu 2.32s — AT PARITY (1.13x) |
 | majora rust time           | 44.2s (R385)      | bambu 15.5s (2.8x; Tier-1 vs full MC, not comparable) |
 | majora semantic            | blocked on Tier-2 (wipe tower/ToolOrdering) | EQUIVALENT |
@@ -134,6 +134,22 @@ H4 = G1-G6 main.cpp pipeline mirror (config parity; tasks #12-16).
 H5 = re-census remaining diff classes post H1-H4; iterate.
 
 Round log:
+- R386 (H2): FRAME_UNIFY + SLICE_CENTER generalized + default-ON (exclusion
+  list now empty — all 14 gates default-on). voff/trafo derived from mesh
+  bbox: voff = f32 bbox center; params2.trafo = translate(res_x, res_y,
+  center_z) where res = center - unscale(new_scale(center)) — the ~8e-8mm
+  scaled-grid quantization residue is LOAD-BEARING (exact-0 XY diverged
+  benchy 1273 lines; with residue the generalized chain reproduces the old
+  benchy hardcode BYTE-FOR-BYTE). Watch dual-SCALING_FACTOR trap:
+  libslic3r::SCALING_FACTOR=1e-5 (mm/sf), crate::SCALING_FACTOR=1e5.
+  center_offset threaded into by_painting_tier1 (MMS.cpp:2291); painted
+  lines get exact XY centering (bit-equal to slice shift) but not the f32
+  Z shim round-trip — minor follow-up H2b. Gates: benchy diff
+  139,717→104,571 (−35,146); SEMANTICALLY EQUIVALENT, material 0.9987,
+  silhouette 100.00% (was 99.83); per-layer mean 0.44%; painted_cube_e2e
+  ≥10 toolchanges holds with gates ON; suites green. Limits: bbox chain
+  assumes single-volume identity-instance (CLI STL); real per-volume
+  get_matrix arrives with G-pipeline (#16).
 - R385 (H3/campaign E): CLIPPER_INT umbrella gate (default-on) routes
   union_safety_offset_ex(+_expolygons) and intersection(ExPolygons) through
   vendored integer ClipperLib (cz_union_ex_safety / cz_intersection_closed),

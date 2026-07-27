@@ -365,7 +365,7 @@ impl Print {
         // gcode_origin (gcode = absolute − origin), set gcode_origin = −center.
         // Sourced from the first object's slice_center_offset (computed in slice()).
         let mut gcode_origin = self.gcode_origin;
-        if std::env::var("SLICE_CENTER").is_ok() {
+        if crate::faithful_gate("SLICE_CENTER") {
             if let Some(obj) = self.objects.first() {
                 let (cx, cy) = obj.slice_center_offset;
                 if cx != 0.0 || cy != 0.0 {
