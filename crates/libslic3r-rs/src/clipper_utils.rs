@@ -294,9 +294,22 @@ pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
 }
 
 /// Compute the intersection of two sets of polygons.
+///
+/// C++ `intersection_ex(ExPolygons, ExPolygons)` = `_clipper_ex(ctIntersection, …, pftNonZero)`
+/// (ClipperUtils.cpp:803) — closed-path ClipperLib intersection at coord_t (1e5) precision.
+///
+/// PERF/PARITY (CLIPPER_INT, default on): route through the vertex-exact vendored ClipperLib
+/// (`intersection_clib`: `cz_intersection_closed` + F1_UNION PolyTree re-union), matching the
+/// C++ op exactly at full 10nm resolution. The legacy geo path below runs geo-clipper at
+/// GEO_CLIPPER_SCALE=1000, which re-grids every vertex to a 1µm grid. Set `CLIPPER_INT=0` to
+/// restore the geo path.
 pub fn intersection(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     if subject.is_empty() || clip.is_empty() {
         return vec![];
+    }
+
+    if crate::faithful_gate("CLIPPER_INT") {
+        return intersection_clib(subject, clip);
     }
 
     let subject_geo = expolygons_to_geo_multi(subject);
@@ -2875,10 +2888,26 @@ fn clipper2_paths_to_polylines(paths: &clipper2::Paths<clipper2::Centi>) -> Vec<
 ///
 /// Returns the portions of `subject` polylines that lie **inside** the `clip` regions.
 
-/// Union with a safety offset to prevent gaps (port of ClipperUtils::union_safety_offset_ex)
+/// Union with a safety offset to prevent gaps (port of ClipperUtils::union_safety_offset_ex).
+///
+/// ClipperUtils.hpp:372 `union_safety_offset_ex(const Polygons&) { return offset_ex(polygons,
+/// ClipperSafetyOffset); }` — a SINGLE outward `offset_ex` by +ClipperSafetyOffset (+10u),
+/// i.e. `clipper_union(raw_offset(paths, +10u, jtMiter, ML3))` (ClipperUtils.cpp:539-548 with
+/// delta>0). It does NOT shrink back.
+///
+/// PERF/PARITY (CLIPPER_INT, default on): route through the vertex-exact vendored ClipperLib
+/// (`cz_union_ex_safety`) which does exactly `safety_offset(+10u)` + NonZero union at native
+/// 1e5 scale — one integer op. The legacy geo path below did grow(+10u)+union+shrink(-10u),
+/// which is both ~3x the ClipperOffset work (the Majora `bridge_over_infill` hot spot: ~36%
+/// of slice time, geo `execute_offset_operation`) AND less faithful (the extra shrink-back
+/// deviates from native's single dilated union). Set `CLIPPER_INT=0` to restore the geo path.
 pub fn union_safety_offset_ex(polygons: &[Polygon]) -> ExPolygons {
     if polygons.is_empty() {
         return ExPolygons::new();
+    }
+
+    if crate::faithful_gate("CLIPPER_INT") {
+        return union_safety_offset_ex_clib(polygons);
     }
 
     // Apply small offset to ensure overlap

@@ -8,13 +8,17 @@ Majora (nu3mf) ONLY. Scoreboard lives here — update every round.
 
 | metric                     | current           | target        |
 |----------------------------|-------------------|---------------|
-| benchy diff-lines          | 139,137 (R384)    | ~0 structural |
-| benchy semantic            | EQUIVALENT (R384) | keep          |
-| benchy semantic material   | 0.9969 PASS (R384)| within 1%     |
+| benchy diff-lines          | 139,717 (R385)    | ~0 structural |
+| benchy semantic            | EQUIVALENT (R385) | keep          |
+| benchy semantic material   | 0.9972 PASS (R385)| within 1%     |
 | benchy silhouette          | 99.83%            | >=99.9%       |
-| benchy rust time           | ~12.6s            | ~2s (bambu 1.8)|
-| majora rust time           | ~90min            | ~1min (bambu 16s)|
-| majora semantic            | untested post-R384| EQUIVALENT    |
+| benchy rust time           | 2.63s (R385)      | bambu 2.32s — AT PARITY (1.13x) |
+| majora rust time           | 44.2s (R385)      | bambu 15.5s (2.8x; Tier-1 vs full MC, not comparable) |
+| majora semantic            | blocked on Tier-2 (wipe tower/ToolOrdering) | EQUIVALENT |
+
+NOTE (R385 correction): the 12.6s/90min figures were STALE — R382's
+faithful-gate default-on had already routed most clipper to integer.
+Benchy is seam-placer bound now (~60% raycast_visibility), not clipper.
 
 Known ceiling: perfect byte-parity is blocked by the compiler-FP wall
 (R324-326 proof); "pretty much exactly" = eliminate all STRUCTURAL diff
@@ -60,6 +64,19 @@ H4 = G1-G6 main.cpp pipeline mirror (config parity; tasks #12-16).
 H5 = re-census remaining diff classes post H1-H4; iterate.
 
 Round log:
+- R385 (H3/campaign E): CLIPPER_INT umbrella gate (default-on) routes
+  union_safety_offset_ex(+_expolygons) and intersection(ExPolygons) through
+  vendored integer ClipperLib (cz_union_ex_safety / cz_intersection_closed),
+  matching ClipperUtils.hpp:372/ClipperUtils.cpp:803 exactly at 10nm; old
+  geo path (1µm re-grid + unfaithful shrink-back) behind CLIPPER_INT=0.
+  Profile-driven: Majora was 36% in geo execute_offset_operation via
+  union_safety_offset_ex (bridge_over_infill); benchy has ZERO clipper in
+  profile (seam-placer bound). Gates: semantic EQUIVALENT (material 0.9972,
+  slightly better), diff-lines 139,137→139,717 (+580 precision churn),
+  benchy 2.63s ≈ geo 2.67s, majora 53.85s→44.22s wall (1.29x CPU), suites
+  green. Deferred (documented in clipper_utils.rs): offset_expolygons
+  family (~40 byte-tuned call sites, little perf left), union_polygons_ex
+  (entangled with F1_UNION=0 fallback), xor (no shim), open-path ops.
 - R384 (H1b): BENCHY SEMANTICALLY EQUIVALENT — first time all checks pass.
   Root cause of ~1.8x bridge over-widening: construct_anchored_polygon
   (print_object.rs, port of PrintObject.cpp:2584-2752) had BOTH upper_bound
