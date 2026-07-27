@@ -29,6 +29,32 @@ H1c = anchor-polyline over-segmentation (rust anchors_pts 134 vs bambu 16 at
       bridge_over_infill (generate_sparse_infill_polylines_for_anchoring or
       intersection_pl fragmentation). MINOR — semantic already passes.
 H2 = task #18 frame-gate generalization (benchy −36k, multicolour-safe).
+     DESIGN DONE (R384-era, vshell-hunter analysis; implement after H3):
+     * General transform = C++ `trafo_centered() * volume.get_matrix()`
+       (PrintObjectSlice.cpp:1395,:60; Print.hpp:375-376 trafo_centered =
+       trafo() pretranslated by -unscale(m_center_offset).xy, Z=0;
+       PrintObject.cpp:88 center = instance-transformed bbox XY center;
+       applied f32 per-vertex, TriangleMeshSlicer.cpp:1827-1861). The benchy
+       hardcode (Z+24/voff 0.8245) is just this chain evaluated for benchy —
+       Z terms cancel; the load-bearing part is the f32 store-centered/
+       place-back quantization (must stay on the Eigen FFI shim, R85 1-ULP).
+       STL interim: derive voff = mesh bbox center from compute_bounding_box
+       (no hardcode); real chain arrives with G-pipeline (#16).
+     * center_offset→MMS thread: add scaled `center_offset: Point` param to
+       multi_material_segmentation_by_painting_tier1 (mms.rs:2739), apply
+       `line_to_test.translate(-center_offset)` at :2899-2903 (C++ MMS.cpp:
+       2291; painted facets transformed by trafo()*get_matrix() at :2233,
+       :2245), caller print_object.rs:624 passes Point::new_scale of
+       slice_center_offset (set :464-474); update tests/mms_by_painting.rs:50.
+     * COUPLING: slice mesh + painted mesh MUST get the identical frame or
+       MMU silently dies (painted lines miss slices → 0 toolchanges).
+       painted_cube_e2e (>=10 T1) is the guard. Sequence: (i) thread
+       center_offset (gate-off = byte-identical), (ii) generalize transform
+       for BOTH meshes, (iii) default-ON both gates, (iv) 3MF/multi-volume
+       after G-pipeline. Risks: f32 fidelity (pure-f64 loses the floor-hole
+       fix), units (m_center_offset is SCALED, new_scale truncs), per-volume
+       matrices for multi-volume painted objects, instance shift
+       (PrintObject.cpp:108) + gcode origin (print.rs:362-368) consistency.
 H3 = campaign E integer-clipper routing (majora 10-50x, benchy ~2-5x).
 H4 = G1-G6 main.cpp pipeline mirror (config parity; tasks #12-16).
 H5 = re-census remaining diff classes post H1-H4; iterate.
