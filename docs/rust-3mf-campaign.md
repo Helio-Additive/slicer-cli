@@ -1,5 +1,56 @@
 # Rust 3MF campaign — Arachne infill, negative parts, multi-color
 
+## I — TIER-2 MULTICOLOUR EMISSION (Majora parity)  [STATUS: planned 2026-07-27]
+
+Inventory (bambu majora vs rust R385, grep -a): T-changes 2727 vs 3313
+(rust has MORE, bare `T<n>`; ordering not min-flush); M620 13625 vs 7 /
+M621 2728 vs 5 (change_filament_gcode AMS-flush template = dominant gap);
+M104 2735 vs 11, M109 5457 vs 11; filament start/end 2725/2725 vs 2/1;
+`; CP TOOLCHANGE` 5446 vs 0 (tower marker; rust has zero tower).
+
+C++ chain: Print.cpp process() 2167-2178 → _make_wipe_tower 3193-3377
+(ToolOrdering sort_and_build_data 3202, WipeTower ctor 3250, plan_toolchange
+3289-3343, generate_new 4624-bakes TCRs, final_purge 3376); ToolOrdering.cpp
+389-418/482-536/890-993; GCode.cpp extruder loop 4643-4716 (wipe path
+m_wipe_tower->tool_change 4693 ELSE set_extruder 7213), append_tcr 647-1043
+(change_filament_gcode expand at 936 — for tower-ON printers the M620 macro
+lives INSIDE the baked TCR, not set_extruder).
+
+Rust state: live path print.rs:2163 emit_layer_by_island → bare
+set_extruder; exporter.rs:2529 full multi-extruder branch 2560-2658 is DEAD
+(writer.rs:2255-2259 has_multiple_extruders hardcoded false); print.rs
+1588-1602 psWipeTower TODO. Ported-unwired: gcode/wipe_tower.rs (complete),
+gcode/tool_ordering.rs (config-driven ctor only — PrintObject build path
+NOT ported, see by_object_print_data.rs:73-136), gcode/multi_material.rs
+MultiMaterialCoordinator. Template: placeholder_parser.rs has NO driver/
+dict; generator.rs:process_gcode_template (1094) is the only working
+{if}/array/arith engine, wired to machine_start+filament_start only.
+
+Phases (A→(B∥C)→D→E):
+A [S] typed config: prime_volume, wipe_tower_rotation_angle, filament_map,
+  flush_multiplier, flush_volumes_vector. Gate: resolved dump vs bambu hdr.
+B [M] toolchange macro engine w/ full var context (flush_length_1..N,
+  next/previous_extruder, temps, travel_point_*). DECISION NEEDED: extend
+  generator.rs engine vs finish placeholder_parser (faithful). Gate:
+  byte-match bambu's M620/FLUSH block for fixed (prev,next,flush) tuple.
+C [L] ToolOrdering PrintObject-driven build (collect_extruders →
+  reorder_min_flush → fill_wipe_tower_partitions → statistics) wired into
+  process() replacing 1588-1602 TODO. Gate: per-layer extruder seq matches
+  bambu; T-count 3313→~2727.
+D [M] LayerTools-driven emission + un-stub set_extruder + un-hardcode
+  has_multiple_extruders. Gate: M620/M621/M104/M109/start-end counts match.
+  (= tower-OFF multicolour complete; Majora structure still needs E.)
+E [L] WipeTower via MultiMaterialCoordinator in process(); inject baked
+  TCRs at toolchanges (append_tcr equiv). Gate: CP TOOLCHANGE ~5446,
+  tower at wipe_tower_x/y 185.2/199.3, purge volumes.
+Validation: painted_cube_e2e = per-phase regression gate (extend it after
+D/E); majora gated by MARKER DIFFS not semantic_compare (rust 3MF geometry
+is Tier-1 merged-mesh — semantic only meaningful after multi-object lands);
+benchy semantic stays green as single-material no-regression guard.
+Risks: template engine = tallest pole (decide B route first); ToolOrdering
+Phase C is real porting; T-count gap partly segmentation granularity —
+exact count parity not expected from emission alone.
+
 ## H — CONVERGENCE LOOP  [STATUS: active /loop, started 2026-07-27]
 
 Charter (user): iterate until rust produces pretty much exactly the same
