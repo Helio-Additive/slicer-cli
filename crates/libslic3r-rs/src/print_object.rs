@@ -1684,10 +1684,17 @@ impl PrintObject {
 
                 for section in polygon_sections[i].iter_mut() {
                     // PrintObject.cpp:2637-2644 — extend low end to anchor below.
-                    // upper_bound over reversed anchors with predicate a.y > b.y.
+                    // C++: maybe_below_anchor = std::upper_bound(rbegin, rend, section.a,
+                    //          [](Point a, pair b){ return a.y() > b.first.y(); });
+                    // upper_bound returns the first element (scanning the reversed —
+                    // i.e. descending-y — range) for which the predicate is TRUE, i.e.
+                    // the nearest anchor strictly below section.a. Replicated as the first
+                    // `section.a.y > ai.y` in the reversed scan (NOT its negation — the
+                    // negation picked the nearest anchor *above*, extending the section the
+                    // wrong way and over-widening the bridge).
                     let mut chosen_below: Option<Point> = None;
                     for ai in anchors_intersections.iter().rev() {
-                        if !(section.a.y > ai.0.y) {
+                        if section.a.y > ai.0.y {
                             chosen_below = Some(ai.0);
                             break;
                         }
@@ -1697,9 +1704,13 @@ impl PrintObject {
                         section.a.y -= scaled_width; // (0.5 + 0.5) * scaled_width
                     }
                     // PrintObject.cpp:2646-2653 — extend high end to anchor above.
+                    // C++: maybe_upper_anchor = std::upper_bound(begin, end, section.b,
+                    //          [](Point a, pair b){ return a.y() < b.first.y(); });
+                    // First element (ascending-y scan) for which the predicate is TRUE =
+                    // nearest anchor strictly above section.b.
                     let mut chosen_above: Option<Point> = None;
                     for ai in anchors_intersections.iter() {
-                        if !(section.b.y < ai.0.y) {
+                        if section.b.y < ai.0.y {
                             chosen_above = Some(ai.0);
                             break;
                         }

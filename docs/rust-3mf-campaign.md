@@ -8,12 +8,13 @@ Majora (nu3mf) ONLY. Scoreboard lives here — update every round.
 
 | metric                     | current           | target        |
 |----------------------------|-------------------|---------------|
-| benchy diff-lines          | 140,297 (R383)    | ~0 structural |
-| benchy semantic material   | 1.0147 FAIL (R383)| within 1%     |
+| benchy diff-lines          | 139,137 (R384)    | ~0 structural |
+| benchy semantic            | EQUIVALENT (R384) | keep          |
+| benchy semantic material   | 0.9969 PASS (R384)| within 1%     |
 | benchy silhouette          | 99.83%            | >=99.9%       |
 | benchy rust time           | ~12.6s            | ~2s (bambu 1.8)|
 | majora rust time           | ~90min            | ~1min (bambu 16s)|
-| majora semantic            | untested post-R382| EQUIVALENT    |
+| majora semantic            | untested post-R384| EQUIVALENT    |
 
 Known ceiling: perfect byte-parity is blocked by the compiler-FP wall
 (R324-326 proof); "pretty much exactly" = eliminate all STRUCTURAL diff
@@ -21,15 +22,31 @@ classes, leave only sub-ULP FP scatter.
 
 Work queue (leverage order):
 H1 = task #17 double-bridge bottom-shell fix (material FAIL + diff class). DONE R383.
-H1b = task #19 real-bridge over-widening ~1.8x (z=5.8 rust 840 vs bambu 459;
-      z=14.2 383 vs 210; Bridge E 301 vs 243) — bridge_over_infill expansion/
-      anchoring or bridge-area accounting. Main residual material contributor.
+H1b = task #19 real-bridge over-widening. DONE R384 (benchy now EQUIVALENT).
+H1c = anchor-polyline over-segmentation (rust anchors_pts 134 vs bambu 16 at
+      z=37.8; skews determine_bridging_angle histogram → rust π vs bambu 3π/4
+      → z=37.8 bridge 226.67 vs 115.30, ~1.97x). Root upstream of
+      bridge_over_infill (generate_sparse_infill_polylines_for_anchoring or
+      intersection_pl fragmentation). MINOR — semantic already passes.
 H2 = task #18 frame-gate generalization (benchy −36k, multicolour-safe).
 H3 = campaign E integer-clipper routing (majora 10-50x, benchy ~2-5x).
 H4 = G1-G6 main.cpp pipeline mirror (config parity; tasks #12-16).
 H5 = re-census remaining diff classes post H1-H4; iterate.
 
 Round log:
+- R384 (H1b): BENCHY SEMANTICALLY EQUIVALENT — first time all checks pass.
+  Root cause of ~1.8x bridge over-widening: construct_anchored_polygon
+  (print_object.rs, port of PrintObject.cpp:2584-2752) had BOTH upper_bound
+  predicates negated in the section-anchor extension (PrintObject.cpp:
+  2637-2653) — `if !(section.a.y > ai.y)` picked the nearest anchor on the
+  WRONG side (above instead of below and vice versa), extending bridge
+  sections the wrong way. worth_bridging candidates verified byte-identical
+  between engines (z=14.2: 18.84 = 18.84); divergence was purely anchoring
+  (260.66 vs 103.65 post-anchor at z=14.2). Fix: drop both `!` (+14/-3).
+  Gates: z=5.8 bridge 840→459.03 (bambu 459.35), z=14.2 383→218.28 (210.32),
+  z=37.8 539→226.67 (115.30, residual = H1c); material 1.0147→0.9969 PASS;
+  Bridge E-ratio 1.259→0.971; per-layer mean 0.78%, max dev 80.99→18.79%;
+  diff-lines 140,297→139,137; suites green. Verdict: SEMANTICALLY EQUIVALENT.
 - R383 (H1): phantom-bridge root cause was NOT discover_vertical_shells /
   bridge_over_infill (both at parity). region_expansion.rs
   process_external_surfaces_wave had an early `continue` on layers with no
