@@ -1438,6 +1438,23 @@ impl Print {
         // const AutoContourHolesCompensationParams &auto_contour_holes_compensation_params = ...
         // TODO: Port auto_contour_holes_compensation_params
 
+        // Phase timing (SLICE_PHASE_TIMING=1). Faithful counterpart to the C++
+        // slice_time map (Print.cpp:1787-1989: TIME_MAKE_PERIMETERS/INFILL/
+        // GENERATE_SUPPORT); adds skirt/brim + simplify. Emitted before return.
+        // This is the profiling hook that located the Majora serial fraction.
+        let phase_timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let mut phase_times: Vec<(&'static str, f64)> = Vec::new();
+        macro_rules! phase {
+            ($name:expr, $body:block) => {{
+                let __t = std::time::Instant::now();
+                let __r = $body;
+                if phase_timing {
+                    phase_times.push(($name, __t.elapsed().as_secs_f64()));
+                }
+                __r
+            }};
+        }
+
         // Print.cpp:1911
         if !use_cache {
             // Print.cpp:1913-1917
@@ -1458,7 +1475,9 @@ impl Print {
                 //         obj->set_done(posPerimeters);
                 // }
                 // TODO: Port make_perimeters with caching logic
-                obj.make_perimeters()?;
+                phase!("perimeters(+slice)", {
+                    obj.make_perimeters()?;
+                });
             }
 
             // Print.cpp:1933-1937
@@ -1480,7 +1499,9 @@ impl Print {
                 //         obj->set_done(posInfill);
                 // }
                 // TODO: Port infill with caching logic
-                obj.infill()?;
+                phase!("infill", {
+                    obj.infill()?;
+                });
             }
 
             // Print.cpp:1951-1954
@@ -1491,9 +1512,11 @@ impl Print {
             // TODO: Port timing
 
             // Print.cpp:1956-1964
-            for obj in &mut self.objects {
-                obj.ironing()?;
-            }
+            phase!("ironing", {
+                for obj in &mut self.objects {
+                    obj.ironing()?;
+                }
+            });
 
             // Print.cpp:1966-1969
             // if (slice_time) {
@@ -1520,9 +1543,11 @@ impl Print {
             // unconditionally for every need-slicing object; the function
             // itself decides (via has_support()/has_raft()) whether to do any
             // work, so call it unconditionally here too (covers the raft case).
-            for obj in &mut self.objects {
-                obj.generate_support_material()?;
-            }
+            phase!("support", {
+                for obj in &mut self.objects {
+                    obj.generate_support_material()?;
+                }
+            });
 
             // Print.cpp:1986-1989
             // if (slice_time) {
@@ -1607,12 +1632,14 @@ impl Print {
         //     this->set_done(psSkirtBrim);
         // }
         // TODO: Port entire skirt/brim phase
-        if self.config.skirt_loops > 0 {
-            self._make_skirt()?;
-        }
-        if self.config.brim_width > 0.0 {
-            self.make_brim()?;
-        }
+        phase!("skirt+brim", {
+            if self.config.skirt_loops > 0 {
+                self._make_skirt()?;
+            }
+            if self.config.brim_width > 0.0 {
+                self.make_brim()?;
+            }
+        });
 
         // Print.cpp:2229-2241
         // for (PrintObject *obj : m_objects) {
@@ -1624,9 +1651,11 @@ impl Print {
         // Optimize toolpaths: DP-simplify / arc-fit every extrusion path at
         // scaled(resolution). Without this pass walls/infill/gap-fill stay at full
         // medial-axis / fill vertex density (gap-fill G1 count ~3.5x native).
-        for obj in self.objects.iter_mut() {
-            obj.simplify_extrusion_path();
-        }
+        phase!("simplify", {
+            for obj in self.objects.iter_mut() {
+                obj.simplify_extrusion_path();
+            }
+        });
 
         // Print.cpp:2244-2269
         // bool has_adaptive_layer_height = false;
@@ -1636,6 +1665,15 @@ impl Print {
         // Print.cpp:2271
         // BOOST_LOG_TRIVIAL(info) << "Slicing process finished." << log_memory_info();
         // TODO: Port final logging
+
+        if phase_timing {
+            let total: f64 = phase_times.iter().map(|(_, s)| s).sum();
+            eprintln!("--- Print::process phase timing (s) ---");
+            for (name, secs) in &phase_times {
+                eprintln!("  {name:<18} {secs:7.3}  ({:4.1}%)", 100.0 * secs / total);
+            }
+            eprintln!("  {:<18} {total:7.3}  (process total; export_gcode is separate)", "TOTAL");
+        }
 
         Ok(())
     }

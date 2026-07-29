@@ -94,6 +94,24 @@ wired into CI (`.github/workflows/slicer-cli-ci.yml`). It **skips gracefully**
 Takeaway: Rust **is** meaningfully slower, and the gap **grows** with model size —
 ~1.5x on Benchy but ~3x on Majora. So this is not just fixed per-slice overhead;
 the compute-heavy path itself is slower at scale. Majora is the perf target.
+
+**Phase profiling** (`SLICE_PHASE_TIMING=1`, R391) breaks the Rust slice into its
+phases (`Print::process` sub-phases + process/export split + an infill split).
+On Majora it isolates the bottleneck precisely:
+
+| phase | time | share |
+|-------|------|-------|
+| perimeters(+slice) | 7.1s | 16% |
+| **infill → prepare_infill (MMS segmentation)** | **35.6s** | **~63% of wall** |
+| infill → fill loop (parallel) | 2.2s | 4% |
+| export_gcode | 8.8s | 16% |
+
+So the ~3x Majora gap is almost entirely **MultiMaterialSegmentation** in
+`prepare_infill` (`multi_material_segmentation.rs`), which still has several serial
+`for layer_idx in 0..num_layers` passes (only the core projection is rayon-parallel)
+— matching the ~2.4-core average utilization. Parallelizing those per-layer MMS
+passes is the concrete lever. Single-material models don't run MMS, so Benchy is
+unaffected. Usage: `SLICE_PHASE_TIMING=1 slicer-cli slice --engine rust --config <cfg>`.
 (Rust user/CPU time on Majora ~116s vs C++ ~128s, i.e. Rust does *less* total CPU
 but takes 3x the wall time — a parallelism/scheduling problem, not raw throughput:
 Rust is not keeping the cores busy. Rust Majora gcode is 60.5 MB vs C++ 69.7 MB,

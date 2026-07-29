@@ -124,9 +124,12 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
 
     // Run Print::process() pipeline.
     info!("Running Print::process() pipeline...");
+    let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+    let __t_proc = std::time::Instant::now();
     print
         .process(None, false)
         .with_context(|| "Failed to process print")?;
+    let __proc_s = __t_proc.elapsed().as_secs_f64();
 
     // Export G-code using Print::export_gcode().
     info!("Exporting G-code...");
@@ -134,9 +137,19 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create output directory {:?}", parent))?;
     }
+    let __t_exp = std::time::Instant::now();
     print
         .export_gcode(output)
         .with_context(|| format!("Failed to export G-code to {:?}", output))?;
+    if __timing {
+        let __exp_s = __t_exp.elapsed().as_secs_f64();
+        eprintln!(
+            "--- top-level (s): process {:.3} + export_gcode {:.3} = {:.3} ---",
+            __proc_s,
+            __exp_s,
+            __proc_s + __exp_s
+        );
+    }
 
     info!("Output written to: {:?}", output);
     info!(
@@ -287,18 +300,31 @@ pub fn slice_3mf_to_gcode(
     print.add_object(print_object);
 
     info!("Running Print::process() pipeline...");
+    let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+    let __t_proc = std::time::Instant::now();
     print
         .process(None, false)
         .with_context(|| "Failed to process print")?;
+    let __proc_s = __t_proc.elapsed().as_secs_f64();
 
     info!("Exporting G-code...");
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create output directory {:?}", parent))?;
     }
+    let __t_exp = std::time::Instant::now();
     print
         .export_gcode(output)
         .with_context(|| format!("Failed to export G-code to {:?}", output))?;
+    if __timing {
+        let __exp_s = __t_exp.elapsed().as_secs_f64();
+        eprintln!(
+            "--- top-level (s): process {:.3} + export_gcode {:.3} = {:.3} ---",
+            __proc_s,
+            __exp_s,
+            __proc_s + __exp_s
+        );
+    }
 
     info!("Output written to: {:?}", output);
     info!(

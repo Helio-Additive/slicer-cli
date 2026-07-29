@@ -2886,7 +2886,14 @@ impl PrintObject {
     pub fn infill(&mut self) -> Result<()> {
         // Prerequisites - prepare infill first
         // PrintObject.cpp:754
+        // SLICE_PHASE_TIMING splits prepare_infill (incl. MMS segmentation) from
+        // the parallel fill loop below — the two have very different perf
+        // profiles on multicolour models.
+        let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let __t_prep = std::time::Instant::now();
         self.prepare_infill()?;
+        let __prep_s = __t_prep.elapsed().as_secs_f64();
+        let __t_fill = std::time::Instant::now();
 
         // Check if step needs to be done
         // PrintObject.cpp:756
@@ -3015,6 +3022,13 @@ impl PrintObject {
             // Mark step as complete
             // PrintObject.cpp:776
             self.set_step_done(PrintObjectStep::Infill);
+        }
+        if __timing {
+            eprintln!(
+                "    infill split: prepare_infill(+MMS) {:.3}s  fill_loop {:.3}s",
+                __prep_s,
+                __t_fill.elapsed().as_secs_f64()
+            );
         }
 
         Ok(())
