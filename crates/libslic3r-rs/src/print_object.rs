@@ -518,8 +518,12 @@ impl PrintObject {
         // C++: PrintObjectSlice.cpp calls layer->make_slices() which populates
         // lslices from region slices. This is needed for detect_surfaces_type()
         // to correctly diff between adjacent layers.
+        let __t_ms = std::time::Instant::now();
         for layer in &mut self.layers {
             layer.make_slices();
+        }
+        if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+            eprintln!("      slice(): make_slices {:.2}s", __t_ms.elapsed().as_secs_f64());
         }
 
         // Painted multi-material segmentation (campaign layer 4): compute the
@@ -733,7 +737,11 @@ impl PrintObject {
     pub fn make_perimeters(&mut self) -> Result<()> {
         // Prerequisites: slice must run first
         // PrintObject.cpp:456
+        let __mp_t = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let __t_slice = std::time::Instant::now();
         self.slice()?;
+        let __slice_s = __t_slice.elapsed().as_secs_f64();
+        let __t_peri = std::time::Instant::now();
 
         if let Some(sd_key) = crate::stage_dump::stagedump_key() {
             if sd_key < self.layers.len() {
@@ -963,6 +971,14 @@ impl PrintObject {
                     max_merged_id
                 );
             }
+        }
+
+        if __mp_t {
+            eprintln!(
+                "      make_perimeters split: slice() {:.2}s  perimeter_gen {:.2}s",
+                __slice_s,
+                __t_peri.elapsed().as_secs_f64()
+            );
         }
 
         // Mark step as complete

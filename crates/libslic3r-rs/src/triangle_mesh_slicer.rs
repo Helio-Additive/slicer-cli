@@ -1837,10 +1837,16 @@ pub fn slice_mesh_ex_its(
         layers_p = slice_mesh_its(mesh, zs, &slicing_params, throw_on_cancel);
     }
 
-    // TriangleMeshSlicer.cpp:2020-2046 (tbb::parallel_for -> sequential)
-    let mut layers: Vec<ExPolygons> = vec![ExPolygons::new(); layers_p.len()];
-    for layer_id in 0..layers_p.len() {
-        throw_on_cancel();
+    // TriangleMeshSlicer.cpp:2020-2046 — tbb::parallel_for, restored via rayon
+    // (R396). Each layer's make_expolygons is independent (reads layers_p[id],
+    // writes its own output), so the parallel map is byte-identical to the serial
+    // loop. throw_on_cancel is a &dyn Fn() (not Sync) and all callers pass a no-op,
+    // so it is checked once here rather than per-layer inside the parallel body.
+    throw_on_cancel();
+    use rayon::prelude::*;
+    let layers: Vec<ExPolygons> = (0..layers_p.len())
+        .into_par_iter()
+        .map(|layer_id| {
         let this_mode = if layer_id < params.base.slicing_mode_normal_below_layer {
             params.base.mode_below
         } else {
@@ -1913,8 +1919,9 @@ pub fn slice_mesh_ex_its(
             }
             expolygons = simplified;
         }
-        layers[layer_id] = expolygons;
-    }
+        expolygons
+        })
+        .collect();
 
     layers
 }
