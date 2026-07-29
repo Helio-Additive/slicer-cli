@@ -3803,8 +3803,22 @@ impl PrintObject {
             }
 
             // --- Per layer: project, trim, regularize, convert. PrintObject.cpp:1880-2091
-            for idx in 0..num_layers {
-                if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
+            // R393: the per-layer shell projection is independent across layers
+            // (it reads only the pre-built `cache`/`lslices_all` snapshots and the
+            // neighbour print_z/bottom_z, and writes only its own layer's region).
+            // Snapshot the neighbour z's, compute all layers in parallel (rayon),
+            // then apply the cheap surface reassignment serially. Same math, same
+            // per-layer order → byte-identical output; ~8-core instead of 1.
+            let print_zs: Vec<f64> = self.layers.iter().map(|l| l.print_z).collect();
+            let bottom_zs: Vec<f64> = self.layers.iter().map(|l| l.bottom_z()).collect();
+            let canceled = self.canceled.clone();
+            let layers_ref = &self.layers;
+            let vshell_outputs: Result<Vec<Option<(ExPolygons, ExPolygons, ExPolygons)>>> = {
+                use rayon::prelude::*;
+                (0..num_layers)
+                    .into_par_iter()
+                    .map(|idx| -> Result<Option<(ExPolygons, ExPolygons, ExPolygons)>> {
+                if canceled.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(crate::Error::Cancelled);
                 }
                 // Native: min_perimeter_infill_spacing = float(infill_line_spacing) * 1.05f
@@ -3845,12 +3859,12 @@ impl PrintObject {
 
                 // TOP projection (PrintObject.cpp:1924-1954)
                 if n_top > 0 {
-                    let print_z = self.layers[idx].print_z;
+                    let print_z = print_zs[idx];
                     let itop = idx + n_top;
                     let mut i = idx + 1;
                     let mut any = false;
                     while i < cache.len()
-                        && (i < itop || self.layers[i].print_z - print_z < top_thick - eps_mm)
+                        && (i < itop || print_zs[i] - print_z < top_thick - eps_mm)
                     {
                         any = true;
                         if !is_partial {
@@ -3867,13 +3881,13 @@ impl PrintObject {
                 }
                 // BOTTOM projection (PrintObject.cpp:1955-1983)
                 if n_bottom > 0 {
-                    let bottom_z = self.layers[idx].bottom_z();
+                    let bottom_z = bottom_zs[idx];
                     let ibottom = idx as i64 - n_bottom as i64;
                     let mut i = idx as i64 - 1;
                     let mut any = false;
                     while i >= 0
                         && (i > ibottom
-                            || bottom_z - self.layers[i as usize].bottom_z() < bot_thick - eps_mm)
+                            || bottom_z - bottom_zs[i as usize] < bot_thick - eps_mm)
                     {
                         any = true;
                         if !is_partial {
@@ -3906,7 +3920,7 @@ impl PrintObject {
                 // polygonsInternal = fill_surfaces filtered to {Internal, InternalVoid, InternalSolid}
                 // (PrintObject.cpp:1992). Read the current region's fill_surfaces (immutable).
                 let (internal_all, internal_only, void_only, solid_only) = {
-                    let fs = &self.layers[idx].regions()[region_id].fill_surfaces;
+                    let fs = &layers_ref[idx].regions()[region_id].fill_surfaces;
                     let pick = |types: &[SurfaceType]| -> ExPolygons {
                         fs.filter_by_types(types).iter().map(|s| s.expolygon.clone()).collect()
                     };
@@ -3950,7 +3964,7 @@ impl PrintObject {
                 let mut new_shell = shell_int;
                 new_shell.extend(diff_int_holes);
                 if new_shell.is_empty() {
-                    continue;
+                    return Ok(None);
                 }
                 // PrintObject.cpp:1999 — append existing internal-solid so they merge.
                 new_shell.extend(solid_only.clone());
@@ -4029,7 +4043,7 @@ impl PrintObject {
                     })
                     .collect();
                 if regularized.is_empty() {
-                    continue;
+                    return Ok(None);
                 }
 
                 // PrintObject.cpp:2060,2075-2090 — reassign surfaces.
@@ -4039,11 +4053,20 @@ impl PrintObject {
                 let new_internal = difference(&internal_only, &regularized);
                 let new_void = difference(&void_only, &regularized);
 
-                let fs = &mut self.layers[idx].regions_mut()[region_id].fill_surfaces;
-                fs.keep_types(&[SurfaceType::Top, SurfaceType::Bottom, SurfaceType::BottomBridge]);
-                fs.append(new_internal, SurfaceType::Internal);
-                fs.append(new_void, SurfaceType::InternalVoid);
-                fs.append(new_solid, SurfaceType::InternalSolid);
+                Ok(Some((new_internal, new_void, new_solid)))
+                    })
+                    .collect()
+            };
+
+            // Serial apply of the per-layer results (cheap; preserves order).
+            for (idx, out) in vshell_outputs?.into_iter().enumerate() {
+                if let Some((new_internal, new_void, new_solid)) = out {
+                    let fs = &mut self.layers[idx].regions_mut()[region_id].fill_surfaces;
+                    fs.keep_types(&[SurfaceType::Top, SurfaceType::Bottom, SurfaceType::BottomBridge]);
+                    fs.append(new_internal, SurfaceType::Internal);
+                    fs.append(new_void, SurfaceType::InternalVoid);
+                    fs.append(new_solid, SurfaceType::InternalSolid);
+                }
             }
         }
         Ok(())
