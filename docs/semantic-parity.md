@@ -73,8 +73,22 @@ wired into CI (`.github/workflows/slicer-cli-ci.yml`). It **skips gracefully**
 
 ## Current status
 
-- **Benchy** (`stl-inline-config.jsonnet`): SEMANTICALLY EQUIVALENT — shape 99.8%, object material 0.9998.
+- **Benchy** (`stl-inline-config.jsonnet`): SEMANTICALLY EQUIVALENT — silhouette
+  100.00% area-wtd, object material 0.9987, layers 240=240, all per-feature
+  within tolerance (R389 re-measured).
 - **Cube** (`stl-cube-config.jsonnet`): SEMANTICALLY EQUIVALENT — shape 100%.
+
+### Measured slice time (R389, arm64, native binary `libslic3r/bambustudio/build/slicer_cli`)
+
+| model | Rust wall | C++ wall | ratio | note |
+|-------|-----------|----------|-------|------|
+| Benchy (small) | 2.43s | 1.68s | 1.45x | Rust's fixed per-slice overhead dominates small models |
+| Majora (large, 3MF) | 16.8s | 15.0s | 1.11x | near-parity; user (CPU) time ~identical (127s vs 128s) |
+
+Takeaway: Rust is **not** dramatically slower — it converges to ~1.1x on the
+compute-heavy large model. The remaining gap is fixed per-slice overhead (startup,
+config apply), most visible on small models. (Benchy's C++ number here is a
+`compare` subprocess time incl. spawn; the standalone-binary gap is a touch wider.)
 
 Both are locked into CI, so a genuinely-broken toolpath (silhouette or material
 collapse) is caught, while FP-cascade re-routing correctly passes.
