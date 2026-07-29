@@ -2759,6 +2759,11 @@ pub fn multi_material_segmentation_by_painting_tier1(
     let mut painted_lines: Vec<Vec<PaintedLine>> = vec![Vec::new(); num_layers];
     let mut edge_grids: Vec<EdgeGrid> = Vec::with_capacity(num_layers);
 
+    // SLICE_PHASE_TIMING sub-section timing (R392): input_prep / bbox+edgegrid /
+    // projection / segmentation. Isolates which serial MMS pass dominates.
+    let __mms_t = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+    let __m0 = std::time::Instant::now();
+
     // Merge all regions and remove small holes. MultiMaterialSegmentation.cpp:2113-2141.
     // Tier-1: `layer_slices[l]` is already the merged region slices, so it stands in for the
     // C++ `for region: for surface: append(offset_ex(surface.expolygon, 10*SCALED_EPSILON))`.
@@ -2794,6 +2799,8 @@ pub fn multi_material_segmentation_by_painting_tier1(
         input_expolygons.push(deduped);
     }
 
+    let __m1 = std::time::Instant::now();
+
     // Negative-volume handling (cpp:2143-2197) is OMITTED: the Tier-1 loader drops negative
     // volumes, so `input_for_edge_grid == input_expolygons` everywhere below.
 
@@ -2827,6 +2834,8 @@ pub fn multi_material_segmentation_by_painting_tier1(
         grid.create_from_polygons(&contours, scale_(10.));
         edge_grids.push(grid);
     }
+
+    let __m2 = std::time::Instant::now();
 
     // Projection of painted triangles onto the layers. MultiMaterialSegmentation.cpp:2220-2322.
     // Tier-1: the C++ loops `for mv: for extruder_idx in 1..=num_extruders:
@@ -2939,6 +2948,8 @@ pub fn multi_material_segmentation_by_painting_tier1(
         }
     }
 
+    let __m3 = std::time::Instant::now();
+
     // Per-layer segmentation. MultiMaterialSegmentation.cpp:2326-2366.
     // C++: tbb::parallel_for(tbb::blocked_range<size_t>(0, num_layers),
     // C++:     [&edge_grids, &input_expolygons, &painted_lines, &segmented_regions, ...]
@@ -3012,6 +3023,18 @@ pub fn multi_material_segmentation_by_painting_tier1(
     // Shape expected by merge_segmented_layers is [extruder 0..=num_extruders][layer].
     let top_and_bottom_layers: Vec<Vec<ExPolygons>> =
         vec![vec![ExPolygons::new(); num_layers]; num_extruders + 1];
+
+    if __mms_t {
+        let __m4 = std::time::Instant::now();
+        eprintln!(
+            "      MMS sub-phases (s): input_prep {:.2}  bbox+edgegrid {:.2}  projection {:.2}  segmentation+merge {:.2}  [{} layers]",
+            (__m1 - __m0).as_secs_f64(),
+            (__m2 - __m1).as_secs_f64(),
+            (__m3 - __m2).as_secs_f64(),
+            (__m4 - __m3).as_secs_f64(),
+            num_layers,
+        );
+    }
 
     // cpp:2396 — returns [layer][num_extruders] (0-based extruder; default color dropped).
     merge_segmented_layers(&segmented_regions, top_and_bottom_layers, num_extruders)

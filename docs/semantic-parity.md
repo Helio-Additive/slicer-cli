@@ -106,12 +106,23 @@ On Majora it isolates the bottleneck precisely:
 | infill → fill loop (parallel) | 2.2s | 4% |
 | export_gcode | 8.8s | 16% |
 
-So the ~3x Majora gap is almost entirely **MultiMaterialSegmentation** in
-`prepare_infill` (`multi_material_segmentation.rs`), which still has several serial
-`for layer_idx in 0..num_layers` passes (only the core projection is rayon-parallel)
-— matching the ~2.4-core average utilization. Parallelizing those per-layer MMS
-passes is the concrete lever. Single-material models don't run MMS, so Benchy is
-unaffected. Usage: `SLICE_PHASE_TIMING=1 slicer-cli slice --engine rust --config <cfg>`.
+Drilling in (R392, finer `SLICE_PHASE_TIMING` sub-timers), the 35.6s of
+`prepare_infill` breaks down as:
+
+| prepare_infill sub-step | time | share |
+|-------------------------|------|-------|
+| **discover_vertical_shells** | **18.9s** | 53% |
+| **bridge_over_infill** | **15.1s** | 43% |
+| process_external_surfaces | 1.0s | 3% |
+| detect_surfaces_type | 0.4s | 1% |
+
+The MMS *segmentation* function itself is only ~1.6s — the real cost is
+`discover_vertical_shells` + `bridge_over_infill`, and both still use **serial**
+`for layer in self.layers.iter()` / `for lidx in 0..n_layers` loops (no rayon),
+matching the ~2.4-core average utilization. Parallelizing those two per-layer loops
+(read-snapshot-then-parallel-mutate, since each reads neighbour layers) is the
+concrete lever. Single-material Benchy spends far less here, so it is barely
+affected. Usage: `SLICE_PHASE_TIMING=1 slicer-cli slice --engine rust --config <cfg>`.
 (Rust user/CPU time on Majora ~116s vs C++ ~128s, i.e. Rust does *less* total CPU
 but takes 3x the wall time — a parallelism/scheduling problem, not raw throughput:
 Rust is not keeping the cores busy. Rust Majora gcode is 60.5 MB vs C++ 69.7 MB,

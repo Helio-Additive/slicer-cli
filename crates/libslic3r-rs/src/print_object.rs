@@ -1000,12 +1000,27 @@ impl PrintObject {
             }
         }
 
+        // SLICE_PHASE_TIMING (R392): time prepare_infill's sub-steps to locate the
+        // Majora bottleneck (the ~35s is here, not in MMS segmentation).
+        let __pi_t = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let mut __pi: Vec<(&'static str, f64)> = Vec::new();
+        macro_rules! pi_phase {
+            ($name:expr, $body:expr) => {{
+                let __t = std::time::Instant::now();
+                let __r = $body;
+                if __pi_t {
+                    __pi.push(($name, __t.elapsed().as_secs_f64()));
+                }
+                __r
+            }};
+        }
+
         /// PrintObject.cpp:642-647
         /// C++: std::vector<std::vector<SurfaceCollection>> slice_surfaces_cpy;
         /// C++: this->detect_surfaces_type(slice_surfaces_cpy);
         /// C++: m_print->throw_if_canceled();
         let mut slice_surfaces_cpy: Vec<Vec<SurfaceCollection>> = Vec::new();
-        self.detect_surfaces_type(&mut slice_surfaces_cpy)?;
+        pi_phase!("detect_surfaces_type", self.detect_surfaces_type(&mut slice_surfaces_cpy)?);
 
         /// PrintObject.cpp:649-655
         /// C++: for (auto *layer : m_layers)
@@ -1037,7 +1052,7 @@ impl PrintObject {
         /// PrintObject.cpp:657-658
         /// C++: this->discover_vertical_shells();
         /// C++: m_print->throw_if_canceled();
-        self.discover_vertical_shells()?;
+        pi_phase!("discover_vertical_shells", self.discover_vertical_shells()?);
         // TOPDBG (diagnostics only, env-gated): Top state after discover_vertical_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -1059,7 +1074,7 @@ impl PrintObject {
         /// PrintObject.cpp:669-670
         /// C++: this->process_external_surfaces();
         /// C++: m_print->throw_if_canceled();
-        self.process_external_surfaces()?;
+        pi_phase!("process_external_surfaces", self.process_external_surfaces()?);
         // TOPDBG (diagnostics only, env-gated): Top state after process_external_surfaces.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -1081,7 +1096,7 @@ impl PrintObject {
         /// PrintObject.cpp:689-691
         /// C++: this->discover_horizontal_shells();
         /// C++: m_print->throw_if_canceled();
-        self.discover_horizontal_shells()?;
+        pi_phase!("discover_horizontal_shells", self.discover_horizontal_shells()?);
         // TOPDBG (diagnostics only, env-gated): Top state after discover_horizontal_shells.
         if crate::debug::topdbg::enabled() {
             for (idx_layer, layer) in self.layers.iter().enumerate() {
@@ -1121,7 +1136,7 @@ impl PrintObject {
         /// PrintObject.cpp:721-723
         /// C++: this->bridge_over_infill();
         /// C++: m_print->throw_if_canceled();
-        self.bridge_over_infill()?;
+        pi_phase!("bridge_over_infill", self.bridge_over_infill()?);
         if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(crate::Error::Cancelled);
         }
@@ -1130,6 +1145,14 @@ impl PrintObject {
         /// C++: this->combine_infill();
         /// C++: m_print->throw_if_canceled();
         // TODO: Port combine_infill()
+
+        if __pi_t {
+            let __tot: f64 = __pi.iter().map(|(_, s)| s).sum();
+            eprintln!("    prepare_infill sub-steps (s), total {__tot:.2}:");
+            for (name, secs) in &__pi {
+                eprintln!("      {name:<28} {secs:7.3}  ({:4.1}%)", 100.0 * secs / __tot);
+            }
+        }
 
         /// PrintObject.cpp:748
         /// C++: this->set_done(posPrepareInfill);
