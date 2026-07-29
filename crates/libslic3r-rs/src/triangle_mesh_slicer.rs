@@ -1184,15 +1184,19 @@ fn make_loops_layers(
     throw_on_cancel: &dyn Fn(),
 ) -> Vec<Polygons> {
     // TriangleMeshSlicer.cpp:1490-1491
-    let mut layers: Vec<Polygons> = vec![Polygons::new(); lines.len()];
-    // TriangleMeshSlicer.cpp:1492 (tbb::parallel_for -> sequential)
-    for line_idx in 0..lines.len() {
-        // TriangleMeshSlicer.cpp:1496
-        if (line_idx & 0x0ffff) == 0 {
-            throw_on_cancel();
-        }
+    // TriangleMeshSlicer.cpp:1492 — tbb::parallel_for, restored via rayon (R398).
+    // Each layer's loops are assembled independently: make_loops_single mutates
+    // only lines[line_idx] and the result is written only to layers[line_idx], so
+    // the parallel map is byte-identical to the serial loop. throw_on_cancel is a
+    // &dyn Fn() (not Sync) and all callers pass a no-op → checked once here.
+    throw_on_cancel();
+    use rayon::prelude::*;
+    let layers: Vec<Polygons> = lines
+        .par_iter_mut()
+        .enumerate()
+        .map(|(line_idx, layer_lines)| {
         // TriangleMeshSlicer.cpp:1499-1500
-        let polygons = make_loops_single(&mut lines[line_idx]);
+        let polygons = make_loops_single(layer_lines);
         let mut polygons = polygons;
 
 
@@ -1232,8 +1236,9 @@ fn make_loops_layers(
                 }
             }
         }
-        layers[line_idx] = polygons;
-    }
+        polygons
+        })
+        .collect();
     layers
 }
 

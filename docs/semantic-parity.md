@@ -128,11 +128,13 @@ Two fixes so far, same parallel-compute-then-serial-apply pattern, both
 - **R396 mesh-slice make_expolygons loop** (restored a C++ `tbb::parallel_for`
   that had been serialized): slice() 6.29s → 3.86s
 - **R397 `bridge_over_infill` apply loop**: 2.04s → 0.19s (10.7x)
+- **R398 `make_loops_layers`** (restored another C++ `tbb::parallel_for`): helps
+  the mesh-slice path, most visible on small models — Benchy ~2.67s → ~2.26s
 
-Cumulative: Majora **46.4s → 21.6s**, Rust/C++ ratio **3.0x → ~1.39x** (slice time
-more than halved; `bridge_over_infill` alone went 12.7s → 2.2s). Remaining levers:
-`export_gcode` (7.4s, sequential gcode writer — unsafe to parallelize for byte-parity),
-MMS segmentation (~2.6s), `discover_vertical_shells` cache loop.
+Cumulative: Majora **46.4s → 21.6s** (~1.39x C++), Benchy **~2.67s → ~2.26s**
+(~1.27x). `bridge_over_infill` alone went 12.7s → 2.2s. Remaining big lever is
+`export_gcode` (7.4s), which is a sequential gcode writer — unsafe to parallelize
+for byte-parity (state carries across layers), so left as-is.
 Usage: `SLICE_PHASE_TIMING=1 slicer-cli slice --engine rust --config <cfg>`.
 (Rust user/CPU time on Majora ~116s vs C++ ~128s, i.e. Rust does *less* total CPU
 but takes 3x the wall time — a parallelism/scheduling problem, not raw throughput:
