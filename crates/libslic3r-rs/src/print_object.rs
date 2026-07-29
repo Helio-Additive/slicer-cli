@@ -2312,19 +2312,42 @@ impl PrintObject {
         let __b3 = std::time::Instant::now();
         // Apply loop — PrintObject.cpp:2946-3021.
         // ====================================================================
-        for lidx in 0..n_layers {
-            // PrintObject.cpp:2949
-            let has_this = surfaces_by_layer.contains_key(&lidx);
-            let has_next = surfaces_by_layer.contains_key(&(lidx + 1));
-            if !has_this && !has_next {
-                continue;
+        // R397: the apply step is independent per layer (reads its own layer +
+        // the lidx+1 solid-infill spacing + surfaces_by_layer, writes only its
+        // own layer). Snapshot per-(layer,region) solid-infill spacing (the only
+        // fallible/neighbour read), compute the new surfaces in parallel, then
+        // apply the remove_types+append serially in order — byte-identical.
+        let solid_spacings: Vec<Vec<f64>> = {
+            let mut v: Vec<Vec<f64>> = Vec::with_capacity(n_layers);
+            for l in 0..n_layers {
+                let h = self.layers[l].height;
+                let mut row = Vec::with_capacity(self.layers[l].regions().len());
+                for r in 0..self.layers[l].regions().len() {
+                    row.push(self.layers[l].regions()[r].flow(FlowRole::SolidInfill, h)?.spacing());
+                }
+                v.push(row);
             }
-            let layer_height = self.layers[lidx].height;
+            v
+        };
+        let layers_ref = &self.layers;
+        let sbl = &surfaces_by_layer;
+        let apply_results: Vec<Option<Vec<(usize, Surfaces)>>> = {
+            use rayon::prelude::*;
+            (0..n_layers)
+                .into_par_iter()
+                .map(|lidx| -> Option<Vec<(usize, Surfaces)>> {
+            // PrintObject.cpp:2949
+            let has_this = sbl.contains_key(&lidx);
+            let has_next = sbl.contains_key(&(lidx + 1));
+            if !has_this && !has_next {
+                return None;
+            }
+            let mut region_results: Vec<(usize, Surfaces)> = Vec::new();
 
             // PrintObject.cpp:2953-2958 — cut_from_infill.
             let mut cut_from_infill: Vec<Polygon> = Vec::new();
             if has_this {
-                for surface in &surfaces_by_layer[&lidx] {
+                for surface in &sbl[&lidx] {
                     cut_from_infill.extend(surface.new_polys.iter().cloned());
                 }
             }
@@ -2332,13 +2355,9 @@ impl PrintObject {
             // PrintObject.cpp:2960-2967 — additional_ensuring_areas.
             let mut additional_ensuring_areas: Vec<Polygon> = Vec::new();
             if has_next {
-                let next_cands = surfaces_by_layer[&(lidx + 1)].clone();
+                let next_cands = sbl[&(lidx + 1)].clone();
                 for surface in &next_cands {
-                    let next_region_spacing_mm = {
-                        let r = &self.layers[lidx + 1].regions()[surface.region_idx];
-                        r.flow(FlowRole::SolidInfill, self.layers[lidx + 1].height)?
-                            .spacing()
-                    };
+                    let next_region_spacing_mm = solid_spacings[lidx + 1][surface.region_idx];
                     let additional_area = diff_polygons(
                         &surface.new_polys,
                         &shrink_p(&surface.new_polys, next_region_spacing_mm),
@@ -2348,15 +2367,12 @@ impl PrintObject {
             }
 
             // PrintObject.cpp:2969-3019 — per region rebuild surfaces.
-            let n_regions = self.layers[lidx].regions().len();
+            let n_regions = layers_ref[lidx].regions().len();
             for region_idx in 0..n_regions {
-                let region_spacing_mm = {
-                    let r = &self.layers[lidx].regions()[region_idx];
-                    r.flow(FlowRole::SolidInfill, layer_height)?.spacing()
-                };
+                let region_spacing_mm = solid_spacings[lidx][region_idx];
                 // PrintObject.cpp:2972-2974 — near_perimeters / additional_ensuring.
                 let (all_surface_polys, fill_expolys, internal_exs, internal_solid_exs, solid_indices) = {
-                    let r = &self.layers[lidx].regions()[region_idx];
+                    let r = &layers_ref[lidx].regions()[region_idx];
                     let all_polys = surfaces_ptr_to_polygons(&r.fill_surfaces.surfaces.iter().collect::<Vec<_>>());
                     let fe = r.fill_expolygons.clone();
                     let int_exs: Vec<ExPolygon> = r
@@ -2405,7 +2421,7 @@ impl PrintObject {
 
                 // PrintObject.cpp:2983-2998 — mark bridges from matching solids.
                 if has_this {
-                    for cs in &surfaces_by_layer[&lidx] {
+                    for cs in &sbl[&lidx] {
                         if cs.region_idx != region_idx {
                             continue;
                         }
@@ -2433,12 +2449,24 @@ impl PrintObject {
                     new_surfaces.push(Surface::new(SurfaceType::InternalSolid, ep));
                 }
 
-                // PrintObject.cpp:3017-3018
-                let region = self.layers[lidx].get_region_mut(region_idx).unwrap();
-                region
-                    .fill_surfaces
-                    .remove_types(&[SurfaceType::InternalSolid, SurfaceType::Internal]);
-                region.fill_surfaces.append_surfaces(new_surfaces);
+                // PrintObject.cpp:3017-3018 — deferred to the serial apply below.
+                region_results.push((region_idx, new_surfaces));
+            }
+            Some(region_results)
+                })
+                .collect()
+        };
+
+        // Serial apply (preserves lidx→region_idx order; cheap mutation only).
+        for (lidx, out) in apply_results.into_iter().enumerate() {
+            if let Some(region_results) = out {
+                for (region_idx, new_surfaces) in region_results {
+                    let region = self.layers[lidx].get_region_mut(region_idx).unwrap();
+                    region
+                        .fill_surfaces
+                        .remove_types(&[SurfaceType::InternalSolid, SurfaceType::Internal]);
+                    region.fill_surfaces.append_surfaces(new_surfaces);
+                }
             }
         }
 
