@@ -36,6 +36,27 @@ morphologically close by 4mm to bridge infill/seam gaps, recovering the filled
 cross-section. Robust across convex, non-convex, and curved geometry (a
 sub-width wall offset barely moves it). Tunable via `SIL_RES`/`SIL_CLOSE_K`.
 
+## Slice-time parity
+
+Physical equivalence says the two engines print the *same object*; it says
+nothing about how long each took. Slice time is tracked separately, because a
+toolpath can be shape-correct yet much slower to compute. The `compare`
+subcommand now wall-clock-times both engines and prints a `--- slice time ---`
+section: the C++ subprocess time (includes process spawn/teardown), the Rust
+in-process time, and the `rust/bambu` ratio with a verdict
+(`at parity ≤1.10x` / `slower` / `much slower ≥2x`).
+
+```sh
+# best-of-N Rust runs suppresses first-run cold-cache noise
+COMPARE_TIMING_RUNS=5 devbox run -- \
+  target/release/slicer-cli compare --config tests/configs/stl-inline-config.jsonnet
+```
+
+Because the C++ number carries subprocess overhead the in-process Rust path does
+not, treat the ratio as an order-of-magnitude guide (Benchy is small enough that
+spawn cost is a large fraction), not a microbenchmark. The signal to watch is
+large models (Majora) where compute dominates spawn.
+
 ## How to run
 
 ```sh

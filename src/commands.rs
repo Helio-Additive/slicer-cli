@@ -213,7 +213,11 @@ pub fn compare(args: CompareArgs) -> Result<u8, String> {
     let bambu_out = tmp.path().join("bambu.gcode");
     let rust_out = tmp.path().join("rust.gcode");
 
-    // C++ engine (subprocess).
+    // C++ engine (subprocess). Wall-clock timed for slice-time parity (R387).
+    // The subprocess time includes process spawn/teardown, which the in-process
+    // Rust path does not pay; treat the ratio as an order-of-magnitude guide, not
+    // a microbenchmark. Set COMPARE_TIMING_RUNS=N to take the min over N Rust runs.
+    let bambu_start = std::time::Instant::now();
     let bambu_code = run_bambu_slice(
         &resolved.bambu_binary,
         &resolved.input_path,
@@ -222,13 +226,25 @@ pub fn compare(args: CompareArgs) -> Result<u8, String> {
         args.verbose,
         false,
     )?;
+    let bambu_secs = bambu_start.elapsed().as_secs_f64();
     if bambu_code != 0 {
         return Err(format!("bambu (C++) engine exited with code {bambu_code}"));
     }
 
-    // Rust engine (in-process).
-    slicer::app_slice::slice_to_gcode(&resolved.input_path, &config_path, &rust_out)
-        .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
+    // Rust engine (in-process). Optionally re-run to report the best-of-N time,
+    // which suppresses first-run cold-cache noise when comparing against C++.
+    let timing_runs: u32 = std::env::var("COMPARE_TIMING_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(1);
+    let mut rust_secs = f64::INFINITY;
+    for _ in 0..timing_runs {
+        let rust_start = std::time::Instant::now();
+        slicer::app_slice::slice_to_gcode(&resolved.input_path, &config_path, &rust_out)
+            .map_err(|e| format!("rust engine slice failed: {e:#}"))?;
+        rust_secs = rust_secs.min(rust_start.elapsed().as_secs_f64());
+    }
 
     let bambu_gcode = std::fs::read(&bambu_out)
         .map_err(|e| format!("read bambu gcode {}: {e}", bambu_out.display()))?;
@@ -243,12 +259,41 @@ pub fn compare(args: CompareArgs) -> Result<u8, String> {
 
     let report = diff_gcode(&bambu_gcode, &rust_gcode);
     print!("{report}");
+    print!("{}", timing_report(bambu_secs, rust_secs, timing_runs));
 
     if bambu_gcode == rust_gcode {
         Ok(0)
     } else {
         Ok(1)
     }
+}
+
+/// Format the slice-time parity section: per-engine wall-clock and the
+/// rust/bambu ratio. Complements the physical-equivalence diff — a toolpath can
+/// be shape-correct yet far slower, which the user tracks separately (R387).
+fn timing_report(bambu_secs: f64, rust_secs: f64, rust_runs: u32) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let _ = writeln!(out, "--- slice time (wall-clock) ---");
+    let _ = writeln!(out, "bambu (C++)     {bambu_secs:.3}s  (subprocess, incl. spawn)");
+    let runs_note = if rust_runs > 1 {
+        format!("  (best of {rust_runs})")
+    } else {
+        String::new()
+    };
+    let _ = writeln!(out, "rust            {rust_secs:.3}s{runs_note}");
+    if bambu_secs > 0.0 && rust_secs.is_finite() {
+        let ratio = rust_secs / bambu_secs;
+        let verdict = if ratio <= 1.10 {
+            "at parity (<=1.10x)"
+        } else if ratio <= 2.0 {
+            "slower"
+        } else {
+            "much slower"
+        };
+        let _ = writeln!(out, "ratio rust/bambu {ratio:.2}x  ({verdict})");
+    }
+    out
 }
 
 /// Build the comparison report string for two G-code byte buffers.
