@@ -25,6 +25,38 @@ Line numbers are the C++ definition sites; re-grep if `main.cpp` is re-synced.
 | `ensure_vector_config_sizes` | 605 | — (partly subsumed by `normalize_single_filament_stl_config`) | **GAP** |
 | `main` | 818 | `src/main.rs` → `src/commands.rs::slice` / `compare` → `crates/libslic3r-rs/src/app_slice.rs::slice_to_gcode` (STL) / `slice_3mf_to_gcode` / `load_3mf` (3MF) | reshaped |
 
+## `main()` pipeline stages → Rust (the slicing pipeline itself)
+
+`main()` (main.cpp:818-1590) is the slicing pipeline. The Rust side runs a
+**streamlined, structurally divergent** version: `src/commands.rs::slice` →
+`crates/libslic3r-rs/src/app_slice.rs::slice_to_gcode` / `slice_3mf_to_gcode`.
+It produces correct G-code for valid single-material input (Benchy is byte- and
+semantically-equivalent to C++), but it skips several of main()'s front-end
+stages rather than mirroring them. Stage-by-stage (in main() order):
+
+| # | main() stage (C++) | Rust status |
+|---|--------------------|-------------|
+| 1 | `set_default_config` — `FullPrintConfig::defaults()` | **implicit** — typed-struct `Default` impls in `print_config.rs`; not a distinct pipeline call |
+| 2 | `load_stl` / `load_bbs_3mf` (populates config from 3MF) | ported — STL via `materialize_input`; 3MF via `app_slice::load_3mf` (Tier-1, divergent) |
+| 3 | plate translation / bbox positioning | ported — `app_slice` XY-centering |
+| 4 | `PresetBundle::full_config()` resolution | **divergent** — `src/profiles.rs::resolve_config_refs` (STL) / embedded config (3MF) |
+| 5 | `ensure_vector_config_sizes` | **GAP** — not ported (typed Vec fields mitigate for valid configs; defensive) |
+| 6 | `apply_explicit_nozzle_mapping` | **divergent/GAP** — `profiles.rs` collapses multi→single for STL; general mapping absent |
+| 7 | `reassign_objects_to_master_nozzle` | **GAP** — needs per-object `Model` (Tier-2) |
+| 8 | prime-tower disable (multi-material detect) | **partial** — `profiles.rs` sets `enable_prime_tower=0` for single-material STL |
+| 9 | `Print::apply(model, config)` | **divergent** — `app_slice` builds `Print` directly; no `apply()` |
+| 10 | `Print::validate()` | **GAP** — no `validate()` on Rust `Print` |
+| 11 | `Print::process()` | ported (faithful; this is where R390-R398 perf work landed) |
+| 12 | `Print::export_gcode()` | ported (`print.export_gcode`) |
+
+**Faithful today:** the *slicing core* (stages 11-12, process + export) and the
+single-material front-end result. **Port targets (ask #1), rough order:** (10)
+`Print::validate()` — additive, well-bounded, no gcode change for valid input;
+(5) `ensure_vector_config_sizes` — config-level, defensive; (9) a faithful
+`Print::apply` seam so config sizing/validation happens the C++ way; (6/7) the
+multi-nozzle trio (Tier-2, needs per-object Model). These are being ported
+incrementally under the parity loop.
+
 ## The multi-nozzle config-prep gap (H2D dual physical nozzle)
 
 `main.cpp` prepares a multi-nozzle job in three steps before slicing:
