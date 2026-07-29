@@ -3263,7 +3263,13 @@ impl Default for PrintObjectConfig {
             wipe_enabled: true, // Enable wipe by default (matching BambuStudio)
             wipe_distance: 1.0, // 1mm wipe distance (matching BambuStudio filament_wipe_distance)
             retract_before_wipe: 0.0, // 0% - do all retraction during wipe
-            // Arachne
+            // Arachne. NOTE (R402): C++ `wall_generator` defaults to Arachne
+            // (PrintConfig.cpp:5926) whereas this defaults to Classic — a latent
+            // faithfulness discrepancy, but it does NOT affect any tested config
+            // (Benchy/Cube set wall_generator=classic and Majora sets =arachne
+            // explicitly, all via their configs). Left as Classic to avoid an
+            // unverified behavioral change; revisit if a config that omits the key
+            // is found to diverge from C++.
             perimeter_mode: PerimeterMode::Classic,
             arachne_min_bead_width: 0.1,
             arachne_min_feature_size: 0.1,
