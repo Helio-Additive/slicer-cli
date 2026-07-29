@@ -1,3 +1,10 @@
+//! Subcommand implementations (`slice`, `compare`, `presets`, `profiles`).
+//!
+//! This is the body of `libslic3r/bambustudio/main.cpp::main()` — job load,
+//! config resolution, slice, output — reshaped into per-subcommand functions.
+//! `compare` additionally runs both engines and reports G-code + slice-time
+//! parity. See `docs/main-cpp-correspondence.md` for the `main.cpp` → Rust map.
+
 use reqwest::Method;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;

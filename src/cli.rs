@@ -1,3 +1,9 @@
+//! CLI argument surface for `slicer-cli`.
+//!
+//! Corresponds to `libslic3r/bambustudio/main.cpp::print_usage` and the
+//! `argc`/`argv` handling at the top of `main()`. See
+//! `docs/main-cpp-correspondence.md` for the full `main.cpp` → Rust map.
+
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
