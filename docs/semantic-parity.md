@@ -119,12 +119,16 @@ Drilling in (R392, finer `SLICE_PHASE_TIMING` sub-timers), the 35.6s of
 The MMS *segmentation* function itself is only ~1.6s — the real cost was
 `discover_vertical_shells` + `bridge_over_infill`, both serial per-layer loops.
 
-**R393 parallelized `discover_vertical_shells`** (parallel-compute-then-serial-
-apply: heavy clipper work across layers via rayon, cheap surface reassignment
-serial): **18.9s → 2.75s (6.9x)**, dropping Majora from ~46s to ~33s (ratio
-3.0x → ~2.1x), **byte-identical** on both Majora and Benchy. The remaining lever
-is `bridge_over_infill` (now 12.7s, ~77% of prepare_infill), same serial-loop
-shape and same fix. Usage: `SLICE_PHASE_TIMING=1 slicer-cli slice --engine rust --config <cfg>`.
+Two fixes so far, same parallel-compute-then-serial-apply pattern, both
+**byte-identical** on Majora and Benchy:
+
+- **R393 `discover_vertical_shells`**: 18.9s → 2.75s (6.9x)
+- **R394 `bridge_over_infill` candidate extraction**: 5.39s → 0.49s (11x)
+
+Cumulative: Majora **46.4s → 28.7s**, Rust/C++ ratio **3.0x → ~1.85x**. Remaining
+levers: `bridge_over_infill` anchor+cluster (3.96s) and apply (2.04s), and
+`export_gcode` (8.8s, now a larger relative share).
+Usage: `SLICE_PHASE_TIMING=1 slicer-cli slice --engine rust --config <cfg>`.
 (Rust user/CPU time on Majora ~116s vs C++ ~128s, i.e. Rust does *less* total CPU
 but takes 3x the wall time — a parallelism/scheduling problem, not raw throughput:
 Rust is not keeping the cores busy. Rust Majora gcode is 60.5 MB vs C++ 69.7 MB,

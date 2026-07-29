@@ -1318,27 +1318,38 @@ impl PrintObject {
         let mut surfaces_by_layer: BTreeMap<usize, Vec<CandidateSurface>> = BTreeMap::new();
 
         // ====================================================================
+        let __bt = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let __b0 = std::time::Instant::now();
         // SECTION: gather and filter surfaces for expanding, cluster by layer.
         // PrintObject.cpp:2196-2279
         // ====================================================================
-        for lidx in 0..n_layers {
+        // R394: candidate extraction is independent per layer (reads own +
+        // lower layer immutably, emits candidates for its own map key). Compute
+        // in parallel, then insert into the ordered map serially — byte-identical.
+        let layers_ref = &self.layers;
+        let per_layer_cands: Result<Vec<Vec<CandidateSurface>>> = {
+            use rayon::prelude::*;
+            (0..n_layers)
+                .into_par_iter()
+                .map(|lidx| -> Result<Vec<CandidateSurface>> {
+            let mut cands: Vec<CandidateSurface> = Vec::new();
             // PrintObject.cpp:2208 — skip first layer (no lower layer).
-            if self.layers[lidx].lower_layer_id.is_none() {
-                continue;
+            if layers_ref[lidx].lower_layer_id.is_none() {
+                return Ok(cands);
             }
-            let lower_idx = self.layers[lidx].lower_layer_id.unwrap();
-            let layer_height = self.layers[lidx].height;
+            let lower_idx = layers_ref[lidx].lower_layer_id.unwrap();
+            let layer_height = layers_ref[lidx].height;
 
             // PrintObject.cpp:2211 — spacing from solid-infill flow of first region.
             let spacing = {
-                let region0 = &self.layers[lidx].regions()[0];
+                let region0 = &layers_ref[lidx].regions()[0];
                 region0.flow(FlowRole::SolidInfill, layer_height)?.spacing()
             };
 
             // PrintObject.cpp:2213-2226 — gather lower-layer fill & solids.
             let mut unsupported_area: Vec<Polygon> = Vec::new();
             let mut lower_layer_solids: Vec<Polygon> = Vec::new();
-            for region in self.layers[lower_idx].regions() {
+            for region in layers_ref[lower_idx].regions() {
                 // PrintObject.cpp:2217-2219 — whole lower fill considered unsupported.
                 let fill_polys = ex_to_polygons(&region.fill_expolygons);
                 unsupported_area.extend(fill_polys);
@@ -1359,12 +1370,12 @@ impl PrintObject {
             unsupported_area = shrink_p(&unsupported_area, 3.0 * spacing);
             unsupported_area = diff_polygons(&unsupported_area, &lower_layer_solids);
             // PrintObject.cpp:2236-2268 — per-region candidate extraction.
-            let n_regions = self.layers[lidx].regions().len();
+            let n_regions = layers_ref[lidx].regions().len();
             for region_idx in 0..n_regions {
                 // Snapshot the stInternalSolid surfaces of this region. We track
                 // their index so the apply phase can match them.
                 let solid_exs_indexed: Vec<(usize, ExPolygon)> = {
-                    let region = &self.layers[lidx].regions()[region_idx];
+                    let region = &layers_ref[lidx].regions()[region_idx];
                     region
                         .fill_surfaces
                         .surfaces
@@ -1424,7 +1435,7 @@ impl PrintObject {
                             ));
 
                         // PrintObject.cpp:2254 — record candidate.
-                        surfaces_by_layer.entry(lidx).or_default().push(CandidateSurface {
+                        cands.push(CandidateSurface {
                             original_solid_idx: *solid_idx,
                             region_idx,
                             layer_index: lidx,
@@ -1434,9 +1445,19 @@ impl PrintObject {
                     }
                 }
             }
+            Ok(cands)
+                })
+                .collect()
+        };
+        // Serial insert into the ordered map (per-layer order preserved).
+        for (lidx, cands) in per_layer_cands?.into_iter().enumerate() {
+            if !cands.is_empty() {
+                surfaces_by_layer.insert(lidx, cands);
+            }
         }
 
         // ====================================================================
+        let __b1 = std::time::Instant::now();
         // LIGHTNING INFILL SECTION — PrintObject.cpp:2281-2370.
         // Skipped: no region uses ipLightning in the common path. Faithful
         // no-op when has_lightning_infill == false.
@@ -1919,6 +1940,7 @@ impl PrintObject {
         // ====================================================================
 
         // ====================================================================
+        let __b2 = std::time::Instant::now();
         // Main expand loop — PrintObject.cpp:2754-2942.
         // C++: tbb::parallel_for(tbb::blocked_range<size_t>(0, clustered_layers_for_threads.size()),
         // C++:     [po = static_cast<const PrintObject *>(this), target_flow_height_factor,
@@ -2257,6 +2279,7 @@ impl PrintObject {
         }
 
         // ====================================================================
+        let __b3 = std::time::Instant::now();
         // Apply loop — PrintObject.cpp:2946-3021.
         // ====================================================================
         for lidx in 0..n_layers {
@@ -2387,6 +2410,17 @@ impl PrintObject {
                     .remove_types(&[SurfaceType::InternalSolid, SurfaceType::Internal]);
                 region.fill_surfaces.append_surfaces(new_surfaces);
             }
+        }
+
+        if __bt {
+            let __b4 = std::time::Instant::now();
+            eprintln!(
+                "      bridge_over_infill sub (s): candidate_extract {:.2}  anchor+cluster {:.2}  main_expand {:.2}  apply {:.2}",
+                (__b1 - __b0).as_secs_f64(),
+                (__b2 - __b1).as_secs_f64(),
+                (__b3 - __b2).as_secs_f64(),
+                (__b4 - __b3).as_secs_f64(),
+            );
         }
 
         Ok(())
