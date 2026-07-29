@@ -1495,9 +1495,23 @@ impl PrintObject {
             layers_to_generate_infill.sort_unstable();
             layers_to_generate_infill.dedup();
             // PrintObject.cpp:2391-2401 — per-layer anchoring polylines.
-            for lower_idx in layers_to_generate_infill {
-                let lines = self.layers[lower_idx]
-                    .generate_sparse_infill_polylines_for_anchoring()?;
+            // R395: generate_sparse_infill_polylines_for_anchoring(&self) is a pure
+            // per-layer read → compute in parallel, insert into the ordered map
+            // serially. Byte-identical (each lower_idx independent).
+            let layers_ref = &self.layers;
+            let anchor_results: Result<Vec<(usize, Vec<Polyline>)>> = {
+                use rayon::prelude::*;
+                layers_to_generate_infill
+                    .into_par_iter()
+                    .map(|lower_idx| {
+                        Ok((
+                            lower_idx,
+                            layers_ref[lower_idx].generate_sparse_infill_polylines_for_anchoring()?,
+                        ))
+                    })
+                    .collect()
+            };
+            for (lower_idx, lines) in anchor_results? {
                 infill_lines.insert(lower_idx, lines);
             }
         }
