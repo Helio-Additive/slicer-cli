@@ -481,20 +481,20 @@ pub fn add_sampling_points_paths(paths: &ZPaths, min_sampling_interval: f64) -> 
 // ---------------------------------------------------------------------------
 // OverhangDetector.cpp:168-317 — detect_overhang_degree (Arachne/Flow overload)
 //
-// NOTE (BLOCKED): the body's FIRST statement is
+// UNBLOCKED (R411): the stated blocker is RESOLVED. The body's first statement,
 // `ZPaths paths_in_range = clip_extrusion(extrusion_path, clip_paths,
-// ClipperLib_Z::ctIntersection);` and the entire function operates on that
-// clipped, Z-width-carrying result. `clip_extrusion` is BLOCKED (above) on the
-// missing Z-aware Clipper engine, so this overload cannot be implemented without
-// fabricating that result — which the porting rules forbid.
+// ClipperLib_Z::ctIntersection)`, is now portable — `clip_extrusion` IS ported
+// (`crate::clipper_z::clip_extrusion`, ClipType::Intersection/Difference). All
+// downstream pieces are also present: `to_thick_polyline_z`,
+// `extrusion_paths_append_zpaths`/`_list`, `SignedOverhangDistancer`.
 //
-// Everything *downstream* of the clip IS now portable: the per-Flow
-// `extrusion_paths_append(std::list<ExtrusionPath>&, ZPaths, role, Flow,
-// overhang)` is ported as
-// `arachne::utils::extrusion_line::extrusion_paths_append_list`, and
-// `SignedOverhangDistancer` is implemented above (with the documented
-// integer-query divergence). The sole remaining blocker is `clip_extrusion`.
-// NOT PORTED — see module header.
+// This overload (and `detect_brigde_wall_arachne`, PerimeterGenerator.cpp:604-626)
+// are the arachne-path overhang classification, still UNWIRED in
+// `perimeter_generator.rs::arachne_line_to_extrusion_path` (it returns one plain
+// path with no overhang split). Model the ZPath bridge/overhang classifier on the
+// working classic `detect_bridge_wall` (perimeter_generator.rs:2238). Wiring it in
+// is the port that gives Majora its ~1276 overhang walls (arachne models only;
+// classic Benchy/Cube are unaffected). Implementation planned — see PARITY_STATUS R411.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
