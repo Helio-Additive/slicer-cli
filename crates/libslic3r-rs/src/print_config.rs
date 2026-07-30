@@ -627,6 +627,14 @@ pub struct PrintConfig {
     /// Flush volumes matrix (multi-material transition volumes).
     /// BambuStudio: `flush_volumes_matrix`.
     pub flush_volumes_matrix: Vec<f64>,
+    /// Per-filament prime volume (mm³) — drives the wipe-tower reserved DEPTH
+    /// (`WipeTower::plan_toolchange` wipe_volume_ec, Print.cpp:3320). NOT the
+    /// flush volume (which goes into the object / stored purge). BambuStudio:
+    /// `filament_prime_volume`.
+    pub filament_prime_volumes: Vec<f64>,
+    /// Per-filament prime volume for nozzle changes. BambuStudio:
+    /// `filament_prime_volume_nc`.
+    pub filament_prime_volumes_nc: Vec<f64>,
 
     // === Filament (additional) ===
     /// Whether filament is support material.
@@ -1205,6 +1213,8 @@ impl Default for PrintConfig {
             support_filament: 0,
             support_interface_filament: 0,
             flush_volumes_matrix: Vec::new(),
+            filament_prime_volumes: Vec::new(),
+            filament_prime_volumes_nc: Vec::new(),
 
             // Filament (additional)
             filament_is_support: false,

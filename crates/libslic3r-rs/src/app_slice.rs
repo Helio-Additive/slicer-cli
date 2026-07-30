@@ -1086,6 +1086,9 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
     // Flattened NxN inter-filament flush volumes (row-major, matrix[old*N+new]),
     // consumed by the psWipeTower phase for per-tool-change purge volumes.
     config.flush_volumes_matrix = get_f64_array("flush_volumes_matrix");
+    // Per-filament prime volumes — drive the wipe-tower reserved depth.
+    config.filament_prime_volumes = get_f64_array("filament_prime_volume");
+    config.filament_prime_volumes_nc = get_f64_array("filament_prime_volume_nc");
 }
 
 /// Parse extruder_offset from JSON and set on config.

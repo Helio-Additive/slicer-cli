@@ -1833,25 +1833,56 @@ impl Print {
                 cfg.pos_x = self.config.wipe_tower_x as f32;
                 cfg.pos_y = self.config.wipe_tower_y as f32;
                 cfg.width = self.config.prime_tower_width as f32;
+                // Single-extruder multi-material (Majora: one physical nozzle,
+                // nozzle_diameter has 1 entry). Without this, is_same_nozzle and
+                // is_same_extruder are false, so plan_toolchange adds a spurious
+                // nozzle-change (ramming) depth on every change — doubling the
+                // reserved tower depth (77mm vs C++ ~38mm).
+                cfg.semm = true;
                 let initial = layer_seqs
                     .first()
                     .and_then(|(_, _, t)| t.first().copied())
                     .unwrap_or(0);
                 let mut wt = WipeTower::new(cfg, initial, num_filaments);
+                // All filaments share physical extruder 0 (Tier-1 single nozzle).
+                // WipeTower::new defaults filament_map to [0,1,2,…] (each filament
+                // its own extruder), which makes is_same_extruder always false.
+                wt.set_filament_map(vec![0; num_filaments]);
                 let flush = &self.config.flush_volumes_matrix;
                 let purge_of = |old: usize, new: usize| -> f32 {
                     flush.get(old * num_filaments + new).copied().unwrap_or(0.0) as f32
                 };
+                // The wipe-tower reserved DEPTH is driven by filament_prime_volume
+                // (Print.cpp:3320 wipe_volume_ec / _nc), NOT the flush volume — the
+                // flush mostly goes into the object; only the prime is on the
+                // tower. Passing 0 here made every tool change reserve 0 depth, so
+                // the tower fell back to the height-based min-depth floor (~63mm vs
+                // C++ ~38mm). Default to BambuStudio's fallbacks (45 / 60 mm³).
+                let prime = &self.config.filament_prime_volumes;
+                let prime_nc = &self.config.filament_prime_volumes_nc;
+                let prime_ec_of =
+                    |t: usize| -> f32 { prime.get(t).copied().unwrap_or(45.0) as f32 };
+                let prime_nc_of =
+                    |t: usize| -> f32 { prime_nc.get(t).copied().unwrap_or(60.0) as f32 };
                 let mut old_tool = initial;
                 // Print.cpp:3290-3330 — plan a (no-change) entry per layer to
-                // reserve it, then one per real tool change with its purge volume.
+                // reserve it, then one per real tool change: prime volume (ec/nc)
+                // reserves the tower depth, the flush is stored as purge_volume.
                 for (z, h, tools) in &layer_seqs {
                     wt.plan_toolchange(*z, *h, old_tool, old_tool, 0.0, 0.0, 0.0);
                     for &tool in tools {
                         if tool == old_tool {
                             continue;
                         }
-                        wt.plan_toolchange(*z, *h, old_tool, tool, 0.0, 0.0, purge_of(old_tool, tool));
+                        wt.plan_toolchange(
+                            *z,
+                            *h,
+                            old_tool,
+                            tool,
+                            prime_ec_of(tool),
+                            prime_nc_of(tool),
+                            purge_of(old_tool, tool),
+                        );
                         old_tool = tool;
                     }
                 }
@@ -2822,14 +2853,21 @@ fn emit_layer_by_island(
             break;
         }
     }
-    // NOTE: the per-layer finish_layer result (the single is_tool_change==false
-    // entry, which fills the tower rectangle for the last tool — mirrors
-    // WipeTowerIntegration::tool_change(.., finish_layer=true), GCode.cpp:1216)
-    // is intentionally NOT emitted yet. Our generated tower is ~63mm deep
-    // (finish reaches Y262 with wipe_tower_y=199.3) vs C++'s ~38mm (tower stays
-    // Y<=237.8, within the 256 bed): emitting the finish overfills past both the
-    // bed AND C++'s footprint. Reconcile the plan_tower depth to C++ first, then
-    // add finish emission so it lands within the correct footprint.
+    // Complete the wipe tower for this layer: after all tool changes + object
+    // printing, emit the layer's finish_layer result (the single is_tool_change
+    // == false entry) so the tower rectangle is filled for the last tool. Mirrors
+    // WipeTowerIntegration::tool_change(.., finish_layer=true) (GCode.cpp:1216).
+    // Now that the reserved depth matches C++ (~38mm, R423), the finish fill
+    // lands within the bed (Y≤~237.8) instead of overflowing.
+    if multi_tool {
+        if let Some(fin) = wipe_tower_layer.and_then(|wt| wt.iter().find(|r| !r.is_tool_change)) {
+            let off = crate::gcode::wipe_tower::Vec2f::new(
+                print_config.wipe_tower_x as f32,
+                print_config.wipe_tower_y as f32,
+            );
+            emit_tower_tcr(writer, fin, off);
+        }
+    }
     // Carry this layer's last printed tool to the next for boundary continuity
     // (unchanged if nothing printed).
     if let Some(t) = last_emitted_tool {
