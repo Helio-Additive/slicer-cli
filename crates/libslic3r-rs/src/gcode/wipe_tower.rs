@@ -945,8 +945,11 @@ impl WipeTowerWriter {
         // y_shift is already folded into rotate() (WipeTower.cpp:1495), so it
         // must NOT be added again here.
         let rotated = self.rotate(target);
+        // WipeTower.cpp:766 emits travels as `G1` (e==0), NOT `G0` — the export
+        // integration's `transform_gcode` only rewrites `G1 ` moves into bed
+        // coordinates, so a `G0` travel would leak the tower-local position.
         self.gcode
-            .push_str(&format!("G0 X{:.3} Y{:.3}\n", rotated.x, rotated.y));
+            .push_str(&format!("G1 X{:.3} Y{:.3}\n", rotated.x, rotated.y));
 
         if !self.preview_suppressed {
             self.extrusions
@@ -2560,7 +2563,8 @@ mod tests {
         writer.extrude(20.0, 10.0);
 
         let gcode = writer.gcode();
-        assert!(gcode.contains("G0"));
+        // Travels are emitted as G1 (WipeTower.cpp:766), so both the travel and
+        // the extrude are G1 moves.
         assert!(gcode.contains("G1"));
         assert!(gcode.contains("F1500"));
     }

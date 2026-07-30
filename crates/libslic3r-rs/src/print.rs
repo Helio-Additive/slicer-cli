@@ -757,6 +757,21 @@ impl Print {
                 // EEC to the island (lslice) whose contour contains its first point
                 // (bbox-area-sorted test order, catch-all fallback), then emit
                 // PER-ISLAND perimeters→infill. Material-neutral re-ordering.
+                // Wipe/prime-tower export (default-off, env WIPE_TOWER_EMIT):
+                // find this layer's stored tower tool-change results by print_z.
+                let wipe_tower_layer: Option<&[crate::gcode::wipe_tower::ToolChangeResult]> =
+                    if std::env::var_os("WIPE_TOWER_EMIT").is_some() {
+                        self.wipe_tower_results
+                            .iter()
+                            .find(|grp| {
+                                grp.first().is_some_and(|r| {
+                                    (r.print_z as f64 - ltp.layer.print_z).abs() < 1e-4
+                                })
+                            })
+                            .map(|grp| grp.as_slice())
+                    } else {
+                        None
+                    };
                 emit_layer_by_island(
                     ltp.layer,
                     &mut writer,
@@ -767,6 +782,7 @@ impl Print {
                     skip_infill,
                     skip_inner_walls,
                     &mut prev_last_tool,
+                    wipe_tower_layer,
                 );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -2440,6 +2456,9 @@ fn emit_layer_by_island(
     skip_infill: bool,
     skip_inner_walls: bool,
     prev_last_tool: &mut Option<usize>,
+    // Wipe/prime-tower per-layer tool-change results for THIS layer (matched by
+    // print_z), when the WIPE_TOWER_EMIT export path is enabled; None otherwise.
+    wipe_tower_layer: Option<&[crate::gcode::wipe_tower::ToolChangeResult]>,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
@@ -2698,7 +2717,47 @@ fn emit_layer_by_island(
             if !has_work {
                 continue;
             }
-            let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
+            // Wipe/prime-tower interleave (WipeTowerIntegration::append_tcr,
+            // GCode.cpp:647). When enabled, replace the bare `set_extruder` T with
+            // the tower's transformed tool-change gcode for this (layer, new-tool):
+            // it carries its own retract → travel-to-tower → purge → Tn →
+            // unretract, so we emit it and update the writer's tool state only.
+            // Default-off (env WIPE_TOWER_EMIT) so single-material and the
+            // unvalidated multicolour path stay byte-identical.
+            let tower_tcr = wipe_tower_layer.and_then(|wt| {
+                wt.iter()
+                    .find(|r| r.is_tool_change && r.new_tool == tool as i32)
+            });
+            if let Some(tcr) = tower_tcr {
+                // Majora: single physical nozzle, wipe_tower_rotation_angle=0, so
+                // the transform is a pure translation by the tower position.
+                // TODO: read rotation from config once the field is plumbed; and
+                // wrap in the faithful change_filament_gcode template + filament
+                // start/end gcode + position-state sync (append_tcr remainder).
+                let off = crate::gcode::wipe_tower::Vec2f::new(
+                    print_config.wipe_tower_x as f32,
+                    print_config.wipe_tower_y as f32,
+                );
+                // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same
+                // frame as the gcode body); the Rust ToolChangeResult stores
+                // start_pos already made absolute, so subtract the offset to
+                // recover the local seed (otherwise axis-less G1 lines like
+                // "G1 F1800" double-count the tower position).
+                let local_seed = crate::gcode::wipe_tower::Vec2f::new(
+                    tcr.start_pos.x - off.x,
+                    tcr.start_pos.y - off.y,
+                );
+                let g = crate::gcode::wipe_tower_integration::transform_gcode(
+                    &tcr.gcode,
+                    local_seed,
+                    off,
+                    0.0,
+                );
+                writer.write_raw_content(&g);
+                writer.set_extruder(tool);
+            } else {
+                let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
+            }
         }
         // This tool prints on this layer (multi-tool reaches here only after the
         // has_work gate); remember it for the next layer's boundary continuity.
