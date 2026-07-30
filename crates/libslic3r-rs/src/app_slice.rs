@@ -112,8 +112,9 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     // Create Print and add object.
     info!("Creating Print...");
     let mut print = Print::new();
-    *print.config_mut() = print_config;
-    print.set_default_region_config(region_config);
+    // main.cpp:1456 — print.apply(model, config). Applies the resolved config +
+    // default region config; objects are added separately below.
+    print.apply(print_config, region_config);
     print.raw_settings = raw_settings_json;
     // FRAME_PAIR export origin (= the slice center applied above).
     print.gcode_origin = frame_origin;
@@ -293,8 +294,9 @@ pub fn slice_3mf_to_gcode(
 
     info!("Creating Print...");
     let mut print = Print::new();
-    *print.config_mut() = print_config;
-    print.set_default_region_config(region_config);
+    // main.cpp:1456 — print.apply(model, config). Applies the resolved config +
+    // default region config; objects are added separately below.
+    print.apply(print_config, region_config);
     // Declare one region per painted extruder (PrintApply.cpp:1062-1078 shape)
     // BEFORE add_object so they share into PrintObjectRegions::all_regions.
     if !painting_extruders.is_empty() {

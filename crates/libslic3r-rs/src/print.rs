@@ -1332,6 +1332,26 @@ impl Print {
         false
     }
 
+    /// Apply the resolved print configuration to this `Print`, mirroring the
+    /// `print.apply(model, config)` call at `main.cpp:1456` (before `validate()`
+    /// and `process()`).
+    ///
+    /// C++: `Print::ApplyStatus Print::apply(const Model &model, const
+    /// DynamicPrintConfig &config)` (Print.cpp / PrintApply.cpp). The C++ apply()
+    /// diffs the incoming model+config against prior state to invalidate changed
+    /// pipeline steps, (re)builds `PrintObject`s from the `Model`, and sizes the
+    /// per-extruder config vectors. The single-slice CLI applies ONCE to a fresh
+    /// `Print`, so the invalidation/rebuild machinery is N/A, and the per-extruder
+    /// vector sizing is subsumed by the typed *scalar* config (see
+    /// `ensure_vector_config_sizes` in docs/main-cpp-correspondence.md). Objects
+    /// are added separately via `add_object` — in Rust the mesh→`PrintObject`
+    /// build happens in the caller, whereas C++ apply() builds them from the Model.
+    /// This is kept as a seam so the pipeline reads `apply() → validate() → process()`.
+    pub fn apply(&mut self, config: PrintConfig, region_config: crate::region_config::PrintRegionConfig) {
+        *self.config_mut() = config;
+        self.set_default_region_config(region_config);
+    }
+
     /// Validate that the print is sliceable; returns a `StringObjectException`
     /// whose `.string` is empty iff valid (mirrors the C++ contract where an
     /// empty return means OK). Called by the pipeline before `process()`, exactly

@@ -44,7 +44,7 @@ stages rather than mirroring them. Stage-by-stage (in main() order):
 | 6 | `apply_explicit_nozzle_mapping` | **divergent/GAP** — `profiles.rs` collapses multi→single for STL; general mapping absent |
 | 7 | `reassign_objects_to_master_nozzle` | **GAP** — needs per-object `Model` (Tier-2) |
 | 8 | prime-tower disable (multi-material detect) | **partial** — `profiles.rs` sets `enable_prime_tower=0` for single-material STL |
-| 9 | `Print::apply(model, config)` | **divergent** — `app_slice` builds `Print` directly; no `apply()` |
+| 9 | `Print::apply(model, config)` | **seam ported (R406)** — `print.rs::Print::apply(config, region_config)` applies the config; called from `app_slice` so the pipeline reads `apply()→validate()→process()`. The C++ invalidation/rebuild machinery is N/A (single-slice, fresh Print) and vector sizing is subsumed (scalar config); objects are added separately (mesh→PrintObject builds in the caller) |
 | 10 | `Print::validate()` | **ported (R404+R405)** — `print.rs::Print::validate()`, wired into `app_slice` before `process()`; checks: empty objects, no extrusions, spiral-vase, layer-height≤nozzle, and extrusion/line-width (`validate_extrusion_width`); remaining feature-gated checks (wipe-tower diameters/flavor, by-object sequence, organic/adaptive support sync) pending |
 | 11 | `Print::process()` | ported (faithful; this is where R390-R398 perf work landed) |
 | 12 | `Print::export_gcode()` | ported (`print.export_gcode`) |
