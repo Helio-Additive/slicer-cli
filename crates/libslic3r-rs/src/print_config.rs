@@ -2533,6 +2533,35 @@ impl PrintConfig {
                 true
             }
 
+            // === Wipe / prime tower (main.cpp _make_wipe_tower inputs) ===
+            // These are consumed only by the psWipeTower phase, which is
+            // gated on `enable_prime_tower && multicolour`; single-material
+            // and tower-disabled jobs read but do not act on them.
+            "enable_prime_tower" => {
+                if let Some(v) = parse_bool(value) {
+                    self.enable_prime_tower = v;
+                }
+                true
+            }
+            "prime_tower_width" => {
+                if let Some(v) = parse_f64(value) {
+                    self.prime_tower_width = v;
+                }
+                true
+            }
+            "wipe_tower_x" => {
+                if let Some(v) = parse_f64(value) {
+                    self.wipe_tower_x = v;
+                }
+                true
+            }
+            "wipe_tower_y" => {
+                if let Some(v) = parse_f64(value) {
+                    self.wipe_tower_y = v;
+                }
+                true
+            }
+
             _ => {
                 // ZSMOOTH_FAITHFUL: delegate a VETTED set of keys to
                 // apply_key_value (R170 audit: the two config-application fns

@@ -170,6 +170,11 @@ pub struct Print {
     /// `TriangleMesh::slice_center_xy`, so the centered-slice frame is re-placed
     /// to C++'s gcode frame. Default (0,0) = no shift.
     pub gcode_origin: (f64, f64),
+
+    /// Wipe/prime tower per-layer tool-change results (Tier-1 multicolour).
+    /// Computed in the psWipeTower phase (Print.cpp:_make_wipe_tower); emitted by
+    /// the export step. Empty for single-material prints (no wipe tower).
+    pub wipe_tower_results: Vec<Vec<crate::gcode::wipe_tower::ToolChangeResult>>,
 }
 
 impl Print {
@@ -189,6 +194,7 @@ impl Print {
             min_skirt_length: 0.0,
             raw_settings: None,
             gcode_origin: (0.0, 0.0),
+            wipe_tower_results: Vec::new(),
         }
     }
 
@@ -1745,15 +1751,106 @@ impl Print {
         // }
         // TODO: Port layer copying from shared objects
 
-        // Print.cpp:2037-2098
-        // if (this->set_started(psWipeTower)) {
-        //     ... wipe tower logic ...
-        //     this->set_done(psWipeTower);
-        // }
-        // TODO: Port entire wipe tower phase including:
-        // - detect_extruder_geometric_unprintables()
-        // - calc_estimated_filament_print_time()
-        // - _make_wipe_tower() or tool_ordering setup
+        // Print.cpp:2037-2098 — psWipeTower. Tier-1 (R419, wiring step 1): generate
+        // the wipe/prime tower per-layer tool-change results from the per-layer
+        // tool sequences; the export step interleaves them. Faithful to
+        // `Print::_make_wipe_tower` (Print.cpp:3193-3330) but sourced from the
+        // inline per-layer tool order (Rust has no central ToolOrdering.layer_tools).
+        // Gated to multicolour with a prime tower enabled; single-material skips it.
+        self.wipe_tower_results = Vec::new();
+        let num_filaments = self.config.num_filaments();
+        let is_multicolour = self
+            .objects
+            .first()
+            .map(|o| o.num_printing_regions() > 1)
+            .unwrap_or(false);
+        if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+            eprintln!(
+                "      wipe tower gate: enable_prime_tower={} num_filaments={} is_multicolour={}",
+                self.config.enable_prime_tower, num_filaments, is_multicolour
+            );
+        }
+        if self.config.enable_prime_tower && num_filaments > 1 && is_multicolour {
+            use crate::gcode::wipe_tower::{WipeTower, WipeTowerConfig};
+            let object = &self.objects[0];
+            // Per-layer (print_z, height, tool-sequence), rotated for cross-layer
+            // continuity (matches the R416 export order so tower changes align).
+            let mut prev_last: Option<usize> = None;
+            let mut layer_seqs: Vec<(f32, f32, Vec<usize>)> = Vec::new();
+            for layer in object.layers() {
+                let region_tools: Vec<usize> = layer
+                    .regions()
+                    .iter()
+                    .map(|r| {
+                        r.region
+                            .as_ref()
+                            .map(|pr| pr.config().wall_filament)
+                            .unwrap_or(1)
+                            .max(1)
+                            - 1
+                    })
+                    .collect();
+                if region_tools.is_empty() {
+                    continue;
+                }
+                let mut tool_order: Vec<usize> = Vec::new();
+                for &t in &region_tools {
+                    if !tool_order.contains(&t) {
+                        tool_order.push(t);
+                    }
+                }
+                if let Some(last) = prev_last {
+                    if let Some(pos) = tool_order.iter().position(|&t| t == last) {
+                        tool_order.rotate_left(pos);
+                    }
+                }
+                prev_last = tool_order.last().copied();
+                layer_seqs.push((layer.print_z as f32, layer.height as f32, tool_order));
+            }
+            // Only worth a tower if there is at least one tool change.
+            let has_changes = layer_seqs.iter().any(|(_, _, t)| t.len() > 1)
+                || layer_seqs
+                    .windows(2)
+                    .any(|w| w[0].2.last() != w[1].2.first());
+            if has_changes {
+                let mut cfg = WipeTowerConfig::default();
+                cfg.pos_x = self.config.wipe_tower_x as f32;
+                cfg.pos_y = self.config.wipe_tower_y as f32;
+                cfg.width = self.config.prime_tower_width as f32;
+                let initial = layer_seqs
+                    .first()
+                    .and_then(|(_, _, t)| t.first().copied())
+                    .unwrap_or(0);
+                let mut wt = WipeTower::new(cfg, initial, num_filaments);
+                let flush = &self.config.flush_volumes_matrix;
+                let purge_of = |old: usize, new: usize| -> f32 {
+                    flush.get(old * num_filaments + new).copied().unwrap_or(0.0) as f32
+                };
+                let mut old_tool = initial;
+                // Print.cpp:3290-3330 — plan a (no-change) entry per layer to
+                // reserve it, then one per real tool change with its purge volume.
+                for (z, h, tools) in &layer_seqs {
+                    wt.plan_toolchange(*z, *h, old_tool, old_tool, 0.0, 0.0, 0.0);
+                    for &tool in tools {
+                        if tool == old_tool {
+                            continue;
+                        }
+                        wt.plan_toolchange(*z, *h, old_tool, tool, 0.0, 0.0, purge_of(old_tool, tool));
+                        old_tool = tool;
+                    }
+                }
+                self.wipe_tower_results = wt.generate();
+                if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+                    let blocks: usize =
+                        self.wipe_tower_results.iter().map(|l| l.len()).sum();
+                    eprintln!(
+                        "      wipe tower: generated {} layers, {} tool-change blocks (stored, export pending)",
+                        self.wipe_tower_results.len(),
+                        blocks
+                    );
+                }
+            }
+        }
 
         // Print.cpp:2100-2102
         // if (this->has_wipe_tower()) {
