@@ -2446,6 +2446,39 @@ fn collect_entity_lines(
     }
 }
 
+/// Emit one wipe/prime-tower `ToolChangeResult` into the main gcode stream,
+/// transformed from tower-local to bed coordinates (partial port of
+/// `WipeTowerIntegration::append_tcr`, GCode.cpp:647). The tcr gcode is
+/// self-contained (retract → travel → purge → optional Tn → unretract) and all
+/// its moves are absolute once transformed, so the head physically lands in the
+/// right place regardless of the writer's tracked position.
+///
+/// NOTE: the writer's tracked XY position is deliberately NOT updated here. C++
+/// calls `set_last_pos(tcr.end_pos)` but `tcr.end_pos` is captured mid-sequence
+/// (before the tcr's own wipe/z-hop), so syncing to it desynced the subsequent
+/// object wipe projection and threw thousands of wipe moves off-bed. Leaving the
+/// tracked position stale is byte-clean for the object stream (all moves are
+/// absolute); a faithful final-position + wipe-path sync is future work.
+///
+/// `off` = tower position (wipe_tower_x/y); rotation is 0 for now (Majora's
+/// `wipe_tower_rotation_angle` is 0). Does NOT yet wrap the bare `Tn` in the
+/// faithful `change_filament_gcode` + filament start/end templates.
+fn emit_tower_tcr(
+    writer: &mut crate::gcode::GCodeWriter,
+    tcr: &crate::gcode::wipe_tower::ToolChangeResult,
+    off: crate::gcode::wipe_tower::Vec2f,
+) {
+    // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same frame as the
+    // gcode body); start_pos is stored already-absolute, so recover the local
+    // seed by subtracting the offset (else axis-less G1 lines double-count it).
+    let local_seed = crate::gcode::wipe_tower::Vec2f::new(
+        tcr.start_pos.x - off.x,
+        tcr.start_pos.y - off.y,
+    );
+    let g = crate::gcode::wipe_tower_integration::transform_gcode(&tcr.gcode, local_seed, off, 0.0);
+    writer.write_raw_content(&g);
+}
+
 fn emit_layer_by_island(
     layer: &crate::layer::Layer,
     writer: &mut crate::gcode::GCodeWriter,
@@ -2721,39 +2754,18 @@ fn emit_layer_by_island(
             // GCode.cpp:647). When enabled, replace the bare `set_extruder` T with
             // the tower's transformed tool-change gcode for this (layer, new-tool):
             // it carries its own retract → travel-to-tower → purge → Tn →
-            // unretract, so we emit it and update the writer's tool state only.
-            // Default-off (env WIPE_TOWER_EMIT) so single-material and the
-            // unvalidated multicolour path stay byte-identical.
+            // unretract. Default-off (env WIPE_TOWER_EMIT) so single-material and
+            // the unvalidated multicolour path stay byte-identical.
             let tower_tcr = wipe_tower_layer.and_then(|wt| {
                 wt.iter()
                     .find(|r| r.is_tool_change && r.new_tool == tool as i32)
             });
             if let Some(tcr) = tower_tcr {
-                // Majora: single physical nozzle, wipe_tower_rotation_angle=0, so
-                // the transform is a pure translation by the tower position.
-                // TODO: read rotation from config once the field is plumbed; and
-                // wrap in the faithful change_filament_gcode template + filament
-                // start/end gcode + position-state sync (append_tcr remainder).
                 let off = crate::gcode::wipe_tower::Vec2f::new(
                     print_config.wipe_tower_x as f32,
                     print_config.wipe_tower_y as f32,
                 );
-                // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same
-                // frame as the gcode body); the Rust ToolChangeResult stores
-                // start_pos already made absolute, so subtract the offset to
-                // recover the local seed (otherwise axis-less G1 lines like
-                // "G1 F1800" double-count the tower position).
-                let local_seed = crate::gcode::wipe_tower::Vec2f::new(
-                    tcr.start_pos.x - off.x,
-                    tcr.start_pos.y - off.y,
-                );
-                let g = crate::gcode::wipe_tower_integration::transform_gcode(
-                    &tcr.gcode,
-                    local_seed,
-                    off,
-                    0.0,
-                );
-                writer.write_raw_content(&g);
+                emit_tower_tcr(writer, tcr, off);
                 writer.set_extruder(tool);
             } else {
                 let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
@@ -2810,6 +2822,14 @@ fn emit_layer_by_island(
             break;
         }
     }
+    // NOTE: the per-layer finish_layer result (the single is_tool_change==false
+    // entry, which fills the tower rectangle for the last tool — mirrors
+    // WipeTowerIntegration::tool_change(.., finish_layer=true), GCode.cpp:1216)
+    // is intentionally NOT emitted yet. Our generated tower is ~63mm deep
+    // (finish reaches Y262 with wipe_tower_y=199.3) vs C++'s ~38mm (tower stays
+    // Y<=237.8, within the 256 bed): emitting the finish overfills past both the
+    // bed AND C++'s footprint. Reconcile the plan_tower depth to C++ first, then
+    // add finish emission so it lands within the correct footprint.
     // Carry this layer's last printed tool to the next for boundary continuity
     // (unchanged if nothing printed).
     if let Some(t) = last_emitted_tool {
