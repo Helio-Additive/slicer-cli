@@ -1083,6 +1083,9 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
     config.filament_colours = get_str_array("filament_colour");
     config.filament_diameters = get_f64_array("filament_diameter");
     config.filament_densities = get_f64_array("filament_density");
+    // Flattened NxN inter-filament flush volumes (row-major, matrix[old*N+new]),
+    // consumed by the psWipeTower phase for per-tool-change purge volumes.
+    config.flush_volumes_matrix = get_f64_array("flush_volumes_matrix");
 }
 
 /// Parse extruder_offset from JSON and set on config.

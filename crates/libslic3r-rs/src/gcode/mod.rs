@@ -28,6 +28,7 @@ pub mod timelapse_pos_picker;
 pub mod tool_order_utils;
 pub mod tool_ordering;
 pub mod wipe_tower;
+pub mod wipe_tower_integration;
 mod writer;
 pub use writer::RetractCtx;
 
