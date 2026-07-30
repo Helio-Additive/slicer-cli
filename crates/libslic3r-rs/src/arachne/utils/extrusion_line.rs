@@ -665,6 +665,43 @@ pub fn extrusion_paths_append_zpaths(
     }
 }
 
+/// PerimeterGenerator.cpp:604-626 — `detect_brigde_wall_arachne`. For each overhang
+/// Z-path (produced by `clip_extrusion(..., Difference)`), decide bridge vs curved
+/// overhang: if the straight end-to-end distance is shorter than the polyline
+/// length the wall is CURVED (degree = OVERHANG_SAMPLING_NUMBER - 1); otherwise it
+/// is a straight BRIDGE wall (degree = OVERHANG_SAMPLING_NUMBER). Appends each via
+/// `extrusion_paths_append_zpaths` with the matching degree. Mirrors the classic
+/// `detect_bridge_wall` (perimeter_generator.rs) for the arachne Z-path world.
+/// (Wired into `arachne_line_to_extrusion_path` — R412 ports the fn; R413 wires it.)
+#[allow(dead_code)]
+pub fn detect_bridge_wall_arachne(
+    dst: &mut ExtrusionPaths,
+    path_overhang: &crate::clipper_z_utils::ZPaths,
+    role: ExtrusionRole,
+    flow: &Flow,
+) {
+    let n = crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f64;
+    for zpath in path_overhang {
+        // Arachne sometimes emits zero-length paths (two identical endpoints).
+        if zpath.len() < 2 {
+            continue;
+        }
+        // PerimeterGenerator.cpp:610-611 — Line(front, back).length() vs polyline length.
+        let (fx, fy, _) = zpath[0];
+        let (lx, ly, _) = *zpath.last().unwrap();
+        let line_len = (((lx - fx) as f64).powi(2) + ((ly - fy) as f64).powi(2)).sqrt();
+        let mut poly_len = 0.0_f64;
+        for w in zpath.windows(2) {
+            let (ax, ay, _) = w[0];
+            let (bx, by, _) = w[1];
+            poly_len += (((bx - ax) as f64).powi(2) + ((by - ay) as f64).powi(2)).sqrt();
+        }
+        // curved ⇒ overhang (n-1); straight ⇒ bridge (n). cpp:611-624.
+        let degree = if line_len < poly_len { n - 1.0 } else { n };
+        extrusion_paths_append_zpaths(dst, &vec![zpath.clone()], role, flow, degree);
+    }
+}
+
 // ExtrusionLine.cpp:301-305 — void extrusion_paths_append(ExtrusionPaths &dst, const Arachne::ExtrusionLine &extrusion, const ExtrusionRole role, const Flow &flow, double overhang)
 pub fn extrusion_paths_append_line(
     dst: &mut ExtrusionPaths,
