@@ -67,6 +67,11 @@ incrementally under the parity loop.
 `reassign_objects_to_master_nozzle` (when a cross-nozzle split was *derived* from
 `AutoForFlush`, pin every object to the master-nozzle filament slot).
 
+(Arachne overhang-wall classification — `detect_brigde_wall_arachne` — was ported
+and wired in R415: Majora went from 0 to 1170 overhang wall blocks vs C++'s 1276,
+material preserved; see PARITY_STATUS R411-R415. The single-material STL path is
+classic-walls and unaffected.)
+
 The Rust STL path does **not** replicate this. Instead
 `src/profiles.rs::normalize_single_filament_stl_config` **collapses** a
 multi-nozzle profile down to a single nozzle / single filament for STL input

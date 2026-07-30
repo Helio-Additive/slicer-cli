@@ -3143,7 +3143,8 @@ impl PerimeterGenerator {
                 } else {
                     ExtrusionRole::Perimeter
                 };
-                if let Some(path) = self.arachne_line_to_extrusion_path(ext, role) {
+                let ext_paths = self.arachne_line_to_extrusion_paths(ext, role);
+                if !ext_paths.is_empty() {
                     if ext.is_closed {
                         // PerimeterGenerator.cpp:780 — elrDefault if contour, else elrPerimeterHole.
                         let is_contour = ext.is_contour();
@@ -3152,7 +3153,9 @@ impl PerimeterGenerator {
                         } else {
                             ExtrusionLoopRole::PERIMETER_HOLE
                         };
-                        let mut eloop = ExtrusionLoop::new(vec![path], loop_role);
+                        // May be several paths after overhang splitting; the loop is
+                        // the ordered chain of non-overhang + overhang segments.
+                        let mut eloop = ExtrusionLoop::new(ext_paths, loop_role);
                         // PerimeterGenerator.cpp:781-785 — restore loop orientation:
                         // CCW for contours, CW for holes.
                         if is_contour {
@@ -3162,7 +3165,9 @@ impl PerimeterGenerator {
                         }
                         entities.append(ExtrusionEntityType::Loop(eloop));
                     } else {
-                        entities.append(ExtrusionEntityType::Path(path));
+                        for path in ext_paths {
+                            entities.append(ExtrusionEntityType::Path(path));
+                        }
                     }
                 }
             }
@@ -3280,13 +3285,13 @@ impl PerimeterGenerator {
     }
 
     /// Convert a faithful Arachne `ExtrusionLine` to our `ExtrusionPath`.
-    fn arachne_line_to_extrusion_path(
+    fn arachne_line_to_extrusion_paths(
         &self,
         line: &ArachneExtrusionLine,
         role: ExtrusionRole,
-    ) -> Option<ExtrusionPath> {
+    ) -> Vec<ExtrusionPath> {
         if line.junctions.is_empty() {
-            return None;
+            return Vec::new();
         }
 
         let avg_width: f64 = line
@@ -3297,29 +3302,120 @@ impl PerimeterGenerator {
             / line.junctions.len() as f64;
 
         // Get flow for this width
-        let flow = Flow::new(
+        let flow = match Flow::new(
             avg_width,
             self.config.layer_height,
             self.config.perimeter_extrusion_width,
-        )
-        .ok()?;
+        ) {
+            Ok(f) => f,
+            Err(_) => return Vec::new(),
+        };
         let mm3_per_mm = flow.mm3_per_mm().unwrap_or(0.0);
 
-        // Convert junctions to points
-        let mut points: Vec<Point> = line.junctions.iter().map(|j| j.p).collect();
+        // Overhang classification (PerimeterGenerator.cpp:690-727). Split each
+        // CLOSED wall loop into non-overhang (role) + overhang (erOverhangPerimeter)
+        // segments via a Z-clipper intersection/difference against the grown lower
+        // slices, then re-chain. The segments keep the loop's avg-width flow, so the
+        // total deposited material is unchanged (v1) — only the feature role and the
+        // overhang degree (speed) differ; a faithful per-segment variable-width pass
+        // is deferred (R414: the variable-width builder double-applies the
+        // spacing→width conversion). v1 covers Majora's closed outer/inner walls;
+        // open extrusions keep the single-path form. Benchy/Cube are CLASSIC and
+        // never reach here.
+        if self.config.detect_overhang_wall && line.is_closed {
+            if let Some(lower) = self.config.lower_slices.as_ref() {
+                if !lower.is_empty() {
+                    use crate::clipper_utils::OffsetJoinType;
+                    use crate::clipper_z::{clip_extrusion, ClipType};
+                    use crate::clipper_z_utils::{ZPath, ZPaths};
 
-        // If open path, reverse to maintain correct orientation
+                    // Subject Z-path from the junction centreline (cpp:692-694).
+                    let subject: ZPath =
+                        line.junctions.iter().map(|j| (j.p.x(), j.p.y(), j.w)).collect();
+
+                    // Grow the lower slices by half a nozzle: anything within that of
+                    // the lower slice is "supported" (cpp process_arachne:26).
+                    let nozzle = self.config.perimeter_flow.nozzle_diameter();
+                    let grown = crate::clipper_utils::grow(lower, 0.5 * nozzle, OffsetJoinType::Miter);
+                    let mut clip: ZPaths = Vec::new();
+                    for ex in &grown {
+                        clip.push(ex.contour.points.iter().map(|p| (p.x(), p.y(), 0i64)).collect());
+                        for h in &ex.holes {
+                            clip.push(h.points.iter().map(|p| (p.x(), p.y(), 0i64)).collect());
+                        }
+                    }
+
+                    // Build an avg-width ExtrusionPath from a split Z-path.
+                    let mk = |zpath: &ZPath, r: ExtrusionRole, degree: f64| -> Option<ExtrusionPath> {
+                        if zpath.len() < 2 {
+                            return None;
+                        }
+                        let pts: Vec<Point> = zpath.iter().map(|&(x, y, _)| Point::new(x, y)).collect();
+                        let mut p = ExtrusionPath::new(r);
+                        p.polyline = Polyline::from_points(pts);
+                        p.mm3_per_mm = mm3_per_mm;
+                        p.width = avg_width;
+                        p.height = self.config.layer_height;
+                        p.overhang_degree = degree;
+                        Some(p)
+                    };
+
+                    let mut paths: Vec<ExtrusionPath> = Vec::new();
+                    // Non-overhang = intersection with the grown lower slices.
+                    for zp in clip_extrusion(&subject, &clip, ClipType::Intersection).iter() {
+                        if let Some(p) = mk(zp, role, 0.0) {
+                            paths.push(p);
+                        }
+                    }
+                    // Overhang = difference (cpp:721); classify bridge (straight) vs
+                    // curved-overhang like detect_brigde_wall_arachne (cpp:604-626).
+                    let n = crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f64;
+                    for zp in clip_extrusion(&subject, &clip, ClipType::Difference).iter() {
+                        if zp.len() < 2 {
+                            continue;
+                        }
+                        let (fx, fy, _) = zp[0];
+                        let (lx, ly, _) = *zp.last().unwrap();
+                        let line_len =
+                            (((lx - fx) as f64).powi(2) + ((ly - fy) as f64).powi(2)).sqrt();
+                        let mut poly_len = 0.0_f64;
+                        for w in zp.windows(2) {
+                            let (ax, ay, _) = w[0];
+                            let (bx, by, _) = w[1];
+                            poly_len +=
+                                (((bx - ax) as f64).powi(2) + ((by - ay) as f64).powi(2)).sqrt();
+                        }
+                        let degree = if line_len < poly_len { n - 1.0 } else { n };
+                        if let Some(p) = mk(zp, ExtrusionRole::OverhangPerimeter, degree) {
+                            paths.push(p);
+                        }
+                    }
+
+                    if !paths.is_empty() {
+                        // Re-chain the split segments into one continuous loop (cpp:763).
+                        let start = paths[0].polyline.first_point();
+                        crate::shortest_path::chain_and_reorder_extrusion_paths(
+                            &mut paths,
+                            Some(&start),
+                        );
+                        return paths;
+                    }
+                    // else fall through to the single-path form.
+                }
+            }
+        }
+
+        // Single-path form (no overhang split): the original behaviour.
+        let mut points: Vec<Point> = line.junctions.iter().map(|j| j.p).collect();
         if !line.is_closed && points.len() > 1 {
             points.reverse();
         }
-
         let mut path = ExtrusionPath::new(role);
         path.polyline = Polyline::from_points(points);
         path.mm3_per_mm = mm3_per_mm;
         path.width = avg_width;
         path.height = self.config.layer_height;
-
-        Some(path)
+        vec![path]
     }
 }
 
