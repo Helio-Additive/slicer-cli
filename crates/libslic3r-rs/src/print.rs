@@ -478,6 +478,11 @@ impl Print {
 
         // Group layers by print_z for by-layer printing
         let mut i = 0;
+        // Cross-layer tool-change continuity (Tier-1 multicolour): the last tool
+        // printed on the previous layer, so the next layer can start with it and
+        // avoid a boundary tool change (mirrors ToolOrdering's cross-layer
+        // minimization). Single-material layers never touch it.
+        let mut prev_last_tool: Option<usize> = None;
         while i < all_layers.len() {
             let print_z = all_layers[i].layer.print_z;
             let mut j = i + 1;
@@ -755,6 +760,7 @@ impl Print {
                     is_infill_first,
                     skip_infill,
                     skip_inner_walls,
+                    &mut prev_last_tool,
                 );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -2336,6 +2342,7 @@ fn emit_layer_by_island(
     is_infill_first: bool,
     skip_infill: bool,
     skip_inner_walls: bool,
+    prev_last_tool: &mut Option<usize>,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
@@ -2570,6 +2577,17 @@ fn emit_layer_by_island(
             tool_order.push(t);
         }
     }
+    // Cross-layer continuity: rotate so this layer begins with the previous
+    // layer's last tool (when it also prints here), sharing the boundary and
+    // skipping one tool change per layer. Only for multi-tool layers.
+    if multi_tool {
+        if let Some(last) = *prev_last_tool {
+            if let Some(pos) = tool_order.iter().position(|&t| t == last) {
+                tool_order.rotate_left(pos);
+            }
+        }
+    }
+    let mut last_emitted_tool: Option<usize> = None;
 
     for &tool in &tool_order {
         if multi_tool {
@@ -2585,6 +2603,9 @@ fn emit_layer_by_island(
             }
             let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
         }
+        // This tool prints on this layer (multi-tool reaches here only after the
+        // has_work gate); remember it for the next layer's boundary continuity.
+        last_emitted_tool = Some(tool);
         for &isl_idx in &emit_order {
             let island = &islands[isl_idx];
             for (region_id, bucket) in island.iter().enumerate() {
@@ -2632,6 +2653,11 @@ fn emit_layer_by_island(
             // Single-tool layer: the tool loop has exactly one pass.
             break;
         }
+    }
+    // Carry this layer's last printed tool to the next for boundary continuity
+    // (unchanged if nothing printed).
+    if let Some(t) = last_emitted_tool {
+        *prev_last_tool = Some(t);
     }
 }
 
