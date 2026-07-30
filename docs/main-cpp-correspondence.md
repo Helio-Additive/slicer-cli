@@ -40,12 +40,12 @@ stages rather than mirroring them. Stage-by-stage (in main() order):
 | 2 | `load_stl` / `load_bbs_3mf` (populates config from 3MF) | ported — STL via `materialize_input`; 3MF via `app_slice::load_3mf` (Tier-1, divergent) |
 | 3 | plate translation / bbox positioning | ported — `app_slice` XY-centering |
 | 4 | `PresetBundle::full_config()` resolution | **divergent** — `src/profiles.rs::resolve_config_refs` (STL) / embedded config (3MF) |
-| 5 | `ensure_vector_config_sizes` | **GAP** — not ported (typed Vec fields mitigate for valid configs; defensive) |
+| 5 | `ensure_vector_config_sizes` | **N/A (R405)** — subsumed: Rust `PrintConfig` uses typed *scalar* fields (`nozzle_diameter: CoordF`, `filament_type: String`, …), not the dynamic per-extruder vectors this defends; there are no empty-vector `.get_at(0)` panics to prevent |
 | 6 | `apply_explicit_nozzle_mapping` | **divergent/GAP** — `profiles.rs` collapses multi→single for STL; general mapping absent |
 | 7 | `reassign_objects_to_master_nozzle` | **GAP** — needs per-object `Model` (Tier-2) |
 | 8 | prime-tower disable (multi-material detect) | **partial** — `profiles.rs` sets `enable_prime_tower=0` for single-material STL |
 | 9 | `Print::apply(model, config)` | **divergent** — `app_slice` builds `Print` directly; no `apply()` |
-| 10 | `Print::validate()` | **ported (subset, R404)** — `print.rs::Print::validate()`, wired into `app_slice` before `process()`; core checks (empty objects, no extrusions, spiral-vase, layer-height≤nozzle) done, feature-gated checks pending |
+| 10 | `Print::validate()` | **ported (R404+R405)** — `print.rs::Print::validate()`, wired into `app_slice` before `process()`; checks: empty objects, no extrusions, spiral-vase, layer-height≤nozzle, and extrusion/line-width (`validate_extrusion_width`); remaining feature-gated checks (wipe-tower diameters/flavor, by-object sequence, organic/adaptive support sync) pending |
 | 11 | `Print::process()` | ported (faithful; this is where R390-R398 perf work landed) |
 | 12 | `Print::export_gcode()` | ported (`print.export_gcode`) |
 

@@ -1405,6 +1405,36 @@ impl Print {
                     ..Default::default()
                 };
             }
+
+            // Print.cpp:1525-1614 — extrusion (line) width validation. A width of
+            // 0 is "auto-generated" and always valid; otherwise it must be larger
+            // than the layer height and at most 2.5x the (max) nozzle diameter.
+            // Rust stores line widths as resolved mm; single-nozzle so max == min.
+            let too_wide = min_nozzle_diameter * 2.5;
+            for (w, key) in [
+                (oc.line_width, "line_width"),
+                (oc.outer_wall_line_width, "outer_wall_line_width"),
+                (oc.inner_wall_line_width, "inner_wall_line_width"),
+                (oc.sparse_infill_line_width, "sparse_infill_line_width"),
+                (oc.top_surface_line_width, "top_surface_line_width"),
+                (oc.support_line_width, "support_line_width"),
+            ] {
+                if w == 0.0 {
+                    continue; // Print.cpp:1532 — auto width, always valid.
+                } else if w <= oc.layer_height {
+                    return StringObjectException {
+                        string: "Too small line width".to_string(),
+                        opt_key: key.to_string(),
+                        ..Default::default()
+                    };
+                } else if w > too_wide {
+                    return StringObjectException {
+                        string: "Too large line width".to_string(),
+                        opt_key: key.to_string(),
+                        ..Default::default()
+                    };
+                }
+            }
         }
 
         // Print.cpp:1657 — all checks passed.
