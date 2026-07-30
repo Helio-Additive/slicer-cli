@@ -27,6 +27,7 @@ pub mod thumbnail_data;
 pub mod timelapse_pos_picker;
 pub mod tool_order_utils;
 pub mod tool_ordering;
+pub mod gcode_template;
 pub mod wipe_tower;
 pub mod wipe_tower_integration;
 mod writer;
