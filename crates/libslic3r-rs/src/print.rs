@@ -1332,6 +1332,85 @@ impl Print {
         false
     }
 
+    /// Validate that the print is sliceable; returns a `StringObjectException`
+    /// whose `.string` is empty iff valid (mirrors the C++ contract where an
+    /// empty return means OK). Called by the pipeline before `process()`, exactly
+    /// as `main.cpp:1486` calls `print.validate()` before `print.process()`.
+    ///
+    /// C++: `StringObjectException Print::validate(StringObjectException *warning,
+    /// Polygons*, std::vector<std::pair<Polygon,float>>*) const` (Print.cpp:1286-1657).
+    /// PORTED SUBSET (R404): the always-reachable checks — empty objects, no
+    /// extrusions, spiral-vase constraints, and layer-height ≤ nozzle diameter.
+    /// The feature-gated checks (wipe tower diameters/flavor, by-object sequence,
+    /// organic/adaptive support sync, per-region line-width) gate on features not
+    /// yet active in this pipeline and are ported incrementally.
+    pub fn validate(&self) -> crate::print_base::StringObjectException {
+        use crate::print_base::StringObjectException;
+
+        // Print.cpp:1290-1291 — no objects: valid (empty exception).
+        if self.objects.is_empty() {
+            return StringObjectException::default();
+        }
+
+        // Print.cpp:1293-1294 — no extrusions under current settings.
+        if self.all_extruders().is_empty() {
+            return StringObjectException {
+                string: "No extrusions under current settings.".to_string(),
+                ..Default::default()
+            };
+        }
+
+        // Print.cpp:1344-1362 — spiral (vase) mode constraints.
+        if self.config.spiral_vase {
+            // Multiple objects require the "By object" print sequence.
+            // (Rust Tier-1 model is one object per PrintObject; use the object
+            // count as the copy count until per-object instances are ported.)
+            if self.objects.len() > 1 {
+                return StringObjectException {
+                    string: "Please select \"By object\" print sequence to print \
+                             multiple objects in spiral vase mode."
+                        .to_string(),
+                    opt_key: "spiral_mode".to_string(),
+                    ..Default::default()
+                };
+            }
+            // Spiral vase does not work with more than one material.
+            if self.objects.iter().any(|o| o.num_printing_regions() > 1) {
+                return StringObjectException {
+                    string: "The spiral vase mode does not work when an object \
+                             contains more than one materials."
+                        .to_string(),
+                    opt_key: "spiral_mode".to_string(),
+                    ..Default::default()
+                };
+            }
+        }
+
+        // Print.cpp:1580-1601 — layer height must not exceed the nozzle diameter.
+        // Rust collapses to a single nozzle diameter (min == the value).
+        let min_nozzle_diameter = self.config.nozzle_diameter;
+        for object in &self.objects {
+            let oc = object.config();
+            if oc.first_layer_height > min_nozzle_diameter {
+                return StringObjectException {
+                    string: "Layer height cannot exceed nozzle diameter".to_string(),
+                    opt_key: "initial_layer_print_height".to_string(),
+                    ..Default::default()
+                };
+            }
+            if oc.layer_height > min_nozzle_diameter {
+                return StringObjectException {
+                    string: "Layer height cannot exceed nozzle diameter".to_string(),
+                    opt_key: "layer_height".to_string(),
+                    ..Default::default()
+                };
+            }
+        }
+
+        // Print.cpp:1657 — all checks passed.
+        StringObjectException::default()
+    }
+
     /// Main slicing orchestration - 5 phases matching C++ exactly
     /// Print.cpp:1784-2100 (317 lines)
     pub fn process(

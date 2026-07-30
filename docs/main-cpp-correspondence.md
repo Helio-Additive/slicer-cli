@@ -45,7 +45,7 @@ stages rather than mirroring them. Stage-by-stage (in main() order):
 | 7 | `reassign_objects_to_master_nozzle` | **GAP** — needs per-object `Model` (Tier-2) |
 | 8 | prime-tower disable (multi-material detect) | **partial** — `profiles.rs` sets `enable_prime_tower=0` for single-material STL |
 | 9 | `Print::apply(model, config)` | **divergent** — `app_slice` builds `Print` directly; no `apply()` |
-| 10 | `Print::validate()` | **GAP** — no `validate()` on Rust `Print` |
+| 10 | `Print::validate()` | **ported (subset, R404)** — `print.rs::Print::validate()`, wired into `app_slice` before `process()`; core checks (empty objects, no extrusions, spiral-vase, layer-height≤nozzle) done, feature-gated checks pending |
 | 11 | `Print::process()` | ported (faithful; this is where R390-R398 perf work landed) |
 | 12 | `Print::export_gcode()` | ported (`print.export_gcode`) |
 

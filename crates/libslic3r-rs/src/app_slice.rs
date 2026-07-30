@@ -123,6 +123,13 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     print.add_object(print_object);
 
     // Run Print::process() pipeline.
+    // main.cpp:1486 — Print::validate() before slicing; abort on a hard error
+    // (empty `.string` means valid). Warnings (is_warning) are non-fatal.
+    let validation = print.validate();
+    if !validation.string.is_empty() && !validation.is_warning {
+        anyhow::bail!("validation error: {}", validation.string);
+    }
+
     info!("Running Print::process() pipeline...");
     let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
     let __t_proc = std::time::Instant::now();
@@ -298,6 +305,13 @@ pub fn slice_3mf_to_gcode(
         info!("Progress: {}% - {}", percent, message);
     });
     print.add_object(print_object);
+
+    // main.cpp:1486 — Print::validate() before slicing; abort on a hard error
+    // (empty `.string` means valid). Warnings (is_warning) are non-fatal.
+    let validation = print.validate();
+    if !validation.string.is_empty() && !validation.is_warning {
+        anyhow::bail!("validation error: {}", validation.string);
+    }
 
     info!("Running Print::process() pipeline...");
     let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
