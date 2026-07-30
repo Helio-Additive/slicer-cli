@@ -1791,11 +1791,17 @@ impl Print {
             let object = &self.objects[0];
             // Per-layer (print_z, height, tool-sequence), rotated for cross-layer
             // continuity (matches the R416 export order so tower changes align).
+            // This pre-pass MUST reproduce the exact per-layer tool sequence that
+            // `emit_layer_by_island` walks — same dedup, same multi_tool rule,
+            // same R416 boundary rotation, same has_work skip, and prev_last taken
+            // from the last EMITTED tool — otherwise the tower plan's tool changes
+            // drift out of step with the export and the interleave both
+            // double-emits and leaves object toolchanges un-replaced.
             let mut prev_last: Option<usize> = None;
             let mut layer_seqs: Vec<(f32, f32, Vec<usize>)> = Vec::new();
             for layer in object.layers() {
-                let region_tools: Vec<usize> = layer
-                    .regions()
+                let regions = layer.regions();
+                let region_tools: Vec<usize> = regions
                     .iter()
                     .map(|r| {
                         r.region
@@ -1809,19 +1815,50 @@ impl Print {
                 if region_tools.is_empty() {
                     continue;
                 }
+                // has_work per region — mirrors emit's island-bucket check (a
+                // region contributes iff it has any perimeter/fill/thin entity).
+                let region_work: Vec<bool> = regions
+                    .iter()
+                    .map(|r| {
+                        !r.perimeters.entities.is_empty()
+                            || !r.fills.entities.is_empty()
+                            || !r.thin_fills.entities.is_empty()
+                    })
+                    .collect();
+                let multi_tool = region_tools.iter().any(|&t| t != region_tools[0]);
                 let mut tool_order: Vec<usize> = Vec::new();
                 for &t in &region_tools {
                     if !tool_order.contains(&t) {
                         tool_order.push(t);
                     }
                 }
-                if let Some(last) = prev_last {
-                    if let Some(pos) = tool_order.iter().position(|&t| t == last) {
-                        tool_order.rotate_left(pos);
+                // Rotation only for multi-tool layers (matches emit).
+                if multi_tool {
+                    if let Some(last) = prev_last {
+                        if let Some(pos) = tool_order.iter().position(|&t| t == last) {
+                            tool_order.rotate_left(pos);
+                        }
                     }
                 }
-                prev_last = tool_order.last().copied();
-                layer_seqs.push((layer.print_z as f32, layer.height as f32, tool_order));
+                let tool_has_work = |tool: usize| -> bool {
+                    region_tools
+                        .iter()
+                        .zip(&region_work)
+                        .any(|(&t, &w)| t == tool && w)
+                };
+                // Emitted sequence: multi-tool layers skip no-work tools (emit's
+                // has_work `continue`); single-tool layers always print their tool.
+                let emitted: Vec<usize> = if multi_tool {
+                    tool_order.into_iter().filter(|&t| tool_has_work(t)).collect()
+                } else {
+                    tool_order
+                };
+                // prev_last carries the last EMITTED tool; unchanged if the layer
+                // printed nothing (emit only updates last_emitted_tool when set).
+                if let Some(&last) = emitted.last() {
+                    prev_last = Some(last);
+                }
+                layer_seqs.push((layer.print_z as f32, layer.height as f32, emitted));
             }
             // Only worth a tower if there is at least one tool change.
             let has_changes = layer_seqs.iter().any(|(_, _, t)| t.len() > 1)
