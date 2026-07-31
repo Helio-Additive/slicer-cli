@@ -776,7 +776,7 @@ set_target_properties(libslic3r_core PROPERTIES
 add_library(libslic3r ALIAS libslic3r_core)
 
 # ─── CLI executable ────────────────────────────────────────────────────────
-add_executable(slicer_cli main.cpp calib_args.cpp)
+add_executable(slicer_cli main.cpp calib_args.cpp layout_plan.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 target_include_directories(slicer_cli PRIVATE
     "${VENDOR}"

@@ -31,6 +31,7 @@
 #include <boost/filesystem.hpp>
 
 #include "calib_args.hpp"
+#include "layout_plan.hpp"
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>   // _NSGetExecutablePath
@@ -250,7 +251,6 @@ int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config) {
 }
 
 }  // namespace
-
 void print_usage(const char* prog_name) {
     std::cout << "Usage: " << prog_name << " [options] <input.stl|input.3mf>\n"
               << "\n=== Configuration Options ===\n"
@@ -271,10 +271,10 @@ void print_usage(const char* prog_name) {
               << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
               << "                         tokens (e.g. initial_no_support_filament_id) in\n"
               << "                         custom G-code. Default: normalization is on.\n"
-              << "\n=== Layout & Arrange (issue #7) ===\n"
-              << "  --layout <file>        Headless arrange spike: legacy JSON with profiles\n"
-              << "                         and object paths; emits JSON placements.\n"
-              << "  --input <file>         Input file for layout/calib modes or stdin.\n"
+              << "\n=== Layout Plan (issue #7) ===\n"
+              << "  --layout-plan          Run headless arrange with versioned JSON contract.\n"
+              << "  --input <file>         LayoutProblemV1 JSON (default: stdin)\n"
+              << "                         See layout_plan.hpp for schema.\n"
               << "\n=== Calibration (slicer-cli #5) ===\n"
               << "  --calib-mode <mode>    Emit a calibration test. One of:\n"
               << "                           temp_tower, retraction_tower,\n"
@@ -297,6 +297,9 @@ void print_usage(const char* prog_name) {
               << "    --filament profiles/BBL/filament/\"Bambu PLA Basic @BBL X1C.json\" \\\n"
               << "    --process profiles/BBL/process/\"0.20mm Standard @BBL X1C.json\" \\\n"
               << "    -o output.gcode\n"
+              << "\nLayout plan (JSON on stdin):\n"
+              << "  cat problem.json | " << prog_name << " --layout-plan\n"
+              << "  " << prog_name << " --layout-plan --input problem.json\n"
               << "\nQuick slicing with defaults:\n"
               << "  " << prog_name << " model.stl --layer-height 0.2 --infill 20 -o output.gcode\n"
               << "\nNote: Config files are located in BambuStudio's resources/profiles/ directory\n";
@@ -1019,6 +1022,7 @@ int main(int argc, char** argv) {
     int plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
     bool normalize_legacy_gcode = true;
     std::string layout_json_file;
+    bool        layout_plan_mode = false;
     slicer_cli::CalibOptions calib_opts;
     // Override settings
 
@@ -1075,6 +1079,8 @@ int main(int argc, char** argv) {
             calib_opts.print_numbers = false;
         } else if (arg == "--layout" && i + 1 < argc) {
             layout_json_file = argv[++i];
+        } else if (arg == "--layout-plan") {
+            layout_plan_mode = true;
         } else if (arg[0] != '-') {
             input_file = arg;
         } else {
@@ -1108,59 +1114,63 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    // --layout-plan: versioned headless arrange contract (issue #7)
+    if (layout_plan_mode) {
+        json raw;
+        if (!input_file.empty()) {
+            std::ifstream in(input_file);
+            if (!in.is_open()) {
+                std::cerr << "{\"schemaVersion\":1,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"cannot open --input file\"}}" << std::endl;
+                return 3;
+            }
+            try { raw = json::parse(in); } catch (const std::exception& e) {
+                std::cerr << "{\"schemaVersion\":1,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"JSON parse error: " << e.what() << "\"}}" << std::endl;
+                return 3;
+            }
+        } else {
+            try { raw = json::parse(std::cin); } catch (const std::exception& e) {
+                std::cerr << "{\"schemaVersion\":1,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"JSON parse error on stdin: " << e.what() << "\"}}" << std::endl;
+                return 3;
+            }
+        }
+        layout_plan::LayoutProblemV1 problem;
+        layout_plan::LayoutErrorV1   parse_err;
+        if (!layout_plan::parse_input(raw, problem, parse_err)) {
+            std::cerr << nlohmann::json({
+                {"schemaVersion", parse_err.SCHEMA_VERSION},
+                {"error", {{"code", parse_err.error.code}, {"message", parse_err.error.message}}}
+            }).dump() << std::endl;
+            return 3;
+        }
+        return layout_plan::run_layout_plan(problem);
+    }
+
     // --layout: headless arrange spike (issue #7 milestone 1)
     if (!layout_json_file.empty()) {
         std::ifstream lf(layout_json_file);
-        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON: " << layout_json_file << "\n"; return 1; }
-        json lj;
-        try { lj = json::parse(lf); } catch (const std::exception& e) {
-            std::cerr << "Failed to parse layout JSON: " << e.what() << "\n"; return 1;
-        }
+        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON\n"; return 1; }
+        json lj = json::parse(lf);
         std::string profiles_dir = lj.value("profilesDir", "");
         while (!profiles_dir.empty() && profiles_dir.back() == '/') profiles_dir.pop_back();
 
         Slic3r::DynamicPrintConfig cfg;
         if (lj.contains("profiles")) {
-            if (profiles_dir.empty()) {
-                std::cerr << "profilesDir is required when profiles is specified\n";
-                return 1;
-            }
-            for (auto& [_, path] : lj["profiles"].items()) {
-                if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
-                    std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
-                    return 1;
-                }
-            }
+            for (auto& [kind, path] : lj["profiles"].items())
+                load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg);
         }
         using namespace Slic3r;
         using namespace Slic3r::arrangement;
 
-        ArrangeParams params;
-#ifdef ENGINE_ORCA
-        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#else
-        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#endif
-
         // Load all STLs into a single Model (one ModelObject per STL)
         Model model;
-        if (!lj.contains("objects") || !lj["objects"].is_array()) {
-            std::cerr << "objects must be a JSON array\n";
-            return 1;
-        }
         for (auto& obj : lj["objects"]) {
-            if (!obj.is_object()) {
-                std::cerr << "each object entry must be a JSON object\n";
-                return 1;
-            }
             std::string stl_path = obj.value("stl", "");
             if (stl_path.empty()) continue;
             try {
                 Model m = Model::read_from_file(stl_path);
                 for (ModelObject* mo : m.objects) {
                     ModelObject* new_obj = model.add_object(*mo);
+                    // Ensure at least one instance exists
                     if (new_obj->instances.empty())
                         new_obj->add_instance();
                 }
@@ -1169,6 +1179,14 @@ int main(int argc, char** argv) {
                 return 1;
             }
         }
+        ArrangeParams params;
+#ifdef ENGINE_ORCA
+        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#else
+        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#endif
         params.min_obj_distance = scaled<coord_t>(lj.value("spacingMm", 10.0));
         params.allow_rotations = lj.value("allowRotations", true);
         params.do_final_align = lj.value("doFinalAlign", true);
