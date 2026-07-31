@@ -31,7 +31,7 @@ static ExPolygon make_rect(double w,double h){coord_t W=scaled<coord_t>(w),H=sca
 int run_arrange_spike(const char* dir){
     std::string base=dir;while(!base.empty()&&base.back()=='/')base.pop_back();
     DynamicPrintConfig cfg;
-    load_json_config(base+"/BBL/machine/fdm_bbl_3dp_001_common.json",cfg); // best-effort: not all profiles inherit from this
+    load_json_config(base+"/BBL/machine/fdm_bbl_3dp_001_common.json",cfg);
     if(!load_json_config(base+"/BBL/machine/Bambu Lab A1 0.4 nozzle.json",cfg))return 2;
     if(!load_json_config(base+"/BBL/process/0.20mm Standard @BBL A1.json",cfg))return 2;
     if(!load_json_config(base+"/BBL/filament/Bambu PLA Basic @BBL A1.json",cfg))return 2;
@@ -67,7 +67,7 @@ int run_arrange_spike(const char* dir){
     std::printf("{\"placed\":[");
     for(size_t i=0;i<items.size();i++){auto&ap=items[i];
         std::printf("{\"n\":\"%s\",\"bed\":%d,\"x\":%.2f,\"y\":%.2f}%s",
-            ap.name.c_str(),ap.bed_idx,unscaled<double>(ap.translation.x()),unscaled<double>(ap.translation.y()),i<items.size()-1?",":"");}
+            ap.name.c_str(),ap.bed_idx,unscaled<double>(ap.translation.x()),unscaled<double>(ap.translation.y()),i<2?",":"");}
     std::printf("]}\n");
     int p=0;for(auto&ap:items)if(ap.bed_idx==0)p++;
     return p==3?0:1;
