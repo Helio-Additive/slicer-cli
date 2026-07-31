@@ -1,4 +1,7 @@
 # CMake build outputs
+build-bambu/
+build-orca/
+build-deps/
 build/
 output/
 CMakeFiles/
@@ -23,3 +26,4 @@ nanosvg_impl.cpp
 
 # macOS
 .DS_Store
+/bin/
