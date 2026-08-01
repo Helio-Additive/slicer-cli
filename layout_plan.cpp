@@ -551,6 +551,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                     std::cerr << to_json(err).dump() << std::endl; return 5;
                 }
                 Slic3r::Polygons ia = intersection(inflated[a], inflated[b]);
+                if (g_cancelled.load()) {  // intersection may straddle SIGINT
+                    LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+                    std::cerr << to_json(err).dump() << std::endl; return 5;
+                }
                 if (!ia.empty()) {
                     if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].id) == unfittable.end())
                         unfittable.push_back(locked_placed[a].id);
