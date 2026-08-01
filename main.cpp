@@ -271,10 +271,12 @@ void print_usage(const char* prog_name) {
               << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
               << "                         tokens (e.g. initial_no_support_filament_id) in\n"
               << "                         custom G-code. Default: normalization is on.\n"
-              << "\n=== Layout Plan (issue #7) ===\n"
+              << "\n=== Layout & Arrange (issue #7) ===\n"
+              << "  --layout <file>        Headless arrange spike: legacy JSON with profiles\n"
+              << "                         and object paths; emits JSON placements.\n"
               << "  --layout-plan          Run headless arrange with versioned JSON contract.\n"
-              << "  --input <file>         LayoutProblemV1 JSON (default: stdin)\n"
-              << "                         See layout_plan.hpp for schema.\n"
+              << "                         See layout_plan.hpp for schema details.\n"
+              << "  --input <file>         Input file for layout modes / stdin default.\n"
               << "\n=== Calibration (slicer-cli #5) ===\n"
               << "  --calib-mode <mode>    Emit a calibration test. One of:\n"
               << "                           temp_tower, retraction_tower,\n"
@@ -1154,7 +1156,7 @@ int main(int argc, char** argv) {
     // --layout: headless arrange spike (issue #7 milestone 1)
     if (!layout_json_file.empty()) {
         std::ifstream lf(layout_json_file);
-        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON\n"; return 1; }
+        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON: " << layout_json_file << "\n"; return 1; }
         json lj;
         try { lj = json::parse(lf); } catch (const std::exception& e) {
             std::cerr << "Failed to parse layout JSON: " << e.what() << "\n"; return 1;
@@ -1164,7 +1166,11 @@ int main(int argc, char** argv) {
 
         Slic3r::DynamicPrintConfig cfg;
         if (lj.contains("profiles")) {
-            for (auto& [kind, path] : lj["profiles"].items()) {
+            if (profiles_dir.empty()) {
+                std::cerr << "profilesDir is required when profiles is specified\n";
+                return 1;
+            }
+            for (auto& [_, path] : lj["profiles"].items()) {
                 if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
                     std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
                     return 1;
@@ -1185,7 +1191,15 @@ int main(int argc, char** argv) {
 
         // Load all STLs into a single Model (one ModelObject per STL)
         Model model;
+        if (!lj.contains("objects") || !lj["objects"].is_array()) {
+            std::cerr << "objects must be a JSON array\n";
+            return 1;
+        }
         for (auto& obj : lj["objects"]) {
+            if (!obj.is_object()) {
+                std::cerr << "each object entry must be a JSON object\n";
+                return 1;
+            }
             std::string stl_path = obj.value("stl", "");
             if (stl_path.empty()) continue;
             try {
