@@ -358,6 +358,7 @@ impl Print {
     ///    f. Wipe tower integration (stub)
     ///    g. End-of-layer retraction and progress
     pub fn export_gcode(&self, output_path: &std::path::Path) -> Result<()> {
+        let export_t0 = std::time::Instant::now();
         use crate::gcode::exporter;
         use crate::gcode::GCodeWriter;
         use crate::gcode::{GCodeHeader, GCodeStats};
@@ -808,6 +809,7 @@ impl Print {
 
         // Finish G-code generation and collect stats
         let mut layer_gcode = writer.finish();
+        let export_t_gen = export_t0.elapsed();
 
         // CoolingBuffer post-processing: parse cooling markers, apply slowdown, rewrite speeds
         // Port of BambuStudio GCodeEditor::process_layer() + write_layer_gcode()
@@ -1088,6 +1090,7 @@ impl Print {
         // provisional header (crude time) to get the byte-identical body that the
         // GCodeProcessor will see, run the processor, then rebuild the header with
         // the accel-aware "; estimated printing time (normal mode) = ..." value.
+        let export_t_post = export_t0.elapsed();
         let mut body = Vec::new();
         body.extend_from_slice(layer_gcode.content().as_bytes());
 
@@ -1178,6 +1181,17 @@ impl Print {
         file.write_all(header_str.as_bytes())?;
         file.write_all(&body)?;
         drop(file);
+
+        if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+            let total = export_t0.elapsed();
+            eprintln!(
+                "--- export_gcode sub-phases (s): generate {:.3}  post-process(cooling/zsmooth) {:.3}  assemble+write {:.3}  total {:.3} ---",
+                export_t_gen.as_secs_f64(),
+                (export_t_post - export_t_gen).as_secs_f64(),
+                (total - export_t_post).as_secs_f64(),
+                total.as_secs_f64(),
+            );
+        }
 
         Ok(())
     }
