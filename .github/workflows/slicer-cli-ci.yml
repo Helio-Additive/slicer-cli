@@ -273,6 +273,16 @@ jobs:
       - name: Install Ninja (Windows)
         if: runner.os == 'Windows'
         run: choco install ninja -y --no-progress
+
+      # Ninja needs the MSVC compiler on PATH; the Visual Studio
+      # generator self-discovers cl.exe via vcvars but Ninja does
+      # not.  ilammy/msvc-dev-cmd persists the VS dev environment
+      # for all subsequent steps in the job.
+      - name: Setup MSVC environment (Ninja)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
