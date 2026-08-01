@@ -1,1 +1,0 @@
-{"schemaVersion": 99, "engine": "orca", "profilesDir": "/Users/priyesh/Code/slicer-cli/references/OrcaSlicer/resources/profiles", "profiles": {"machine": "BBL/machine/Bambu Lab A1 0.4 nozzle.json"}, "models": [{"id": "a", "path": "/Users/priyesh/Code/slicer-cli/references/OrcaSlicer/tests/data/20mm_cube.obj"}]}
