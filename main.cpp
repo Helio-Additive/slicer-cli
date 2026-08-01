@@ -31,6 +31,7 @@
 #include <boost/filesystem.hpp>
 
 #include "calib_args.hpp"
+#include "layout_plan.hpp"
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>   // _NSGetExecutablePath
@@ -250,7 +251,6 @@ int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config) {
 }
 
 }  // namespace
-
 void print_usage(const char* prog_name) {
     std::cout << "Usage: " << prog_name << " [options] <input.stl|input.3mf>\n"
               << "\n=== Configuration Options ===\n"
@@ -274,7 +274,9 @@ void print_usage(const char* prog_name) {
               << "\n=== Layout & Arrange (issue #7) ===\n"
               << "  --layout <file>        Headless arrange spike: legacy JSON with profiles\n"
               << "                         and object paths; emits JSON placements.\n"
-              << "  --input <file>         Input file for layout/calib modes or stdin.\n"
+              << "  --layout-plan          Run headless arrange with versioned JSON contract.\n"
+              << "                         See layout_plan.hpp for schema details.\n"
+              << "  --input <file>         Input file for layout modes / stdin default.\n"
               << "\n=== Calibration (slicer-cli #5) ===\n"
               << "  --calib-mode <mode>    Emit a calibration test. One of:\n"
               << "                           temp_tower, retraction_tower,\n"
@@ -297,6 +299,9 @@ void print_usage(const char* prog_name) {
               << "    --filament profiles/BBL/filament/\"Bambu PLA Basic @BBL X1C.json\" \\\n"
               << "    --process profiles/BBL/process/\"0.20mm Standard @BBL X1C.json\" \\\n"
               << "    -o output.gcode\n"
+              << "\nLayout plan (JSON on stdin):\n"
+              << "  cat problem.json | " << prog_name << " --layout-plan\n"
+              << "  " << prog_name << " --layout-plan --input problem.json\n"
               << "\nQuick slicing with defaults:\n"
               << "  " << prog_name << " model.stl --layer-height 0.2 --infill 20 -o output.gcode\n"
               << "\nNote: Config files are located in BambuStudio's resources/profiles/ directory\n";
@@ -1019,10 +1024,12 @@ int main(int argc, char** argv) {
     int plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
     bool normalize_legacy_gcode = true;
     std::string layout_json_file;
+    bool        layout_plan_mode = false;
     slicer_cli::CalibOptions calib_opts;
     // Override settings
 
     std::map<std::string, std::string> overrides;
+
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -1075,6 +1082,8 @@ int main(int argc, char** argv) {
             calib_opts.print_numbers = false;
         } else if (arg == "--layout" && i + 1 < argc) {
             layout_json_file = argv[++i];
+        } else if (arg == "--layout-plan") {
+            layout_plan_mode = true;
         } else if (arg[0] != '-') {
             input_file = arg;
         } else {
@@ -1107,6 +1116,49 @@ int main(int argc, char** argv) {
         return 1;
     }
 #endif
+
+    // Detect conflicting layout flags
+    if (layout_plan_mode && !layout_json_file.empty()) {
+        std::cerr << "Error: --layout-plan and --layout are mutually exclusive\n";
+        return 1;
+    }
+
+    // --layout-plan: versioned headless arrange contract (issue #7)
+    if (layout_plan_mode) {
+        json raw;
+        if (!input_file.empty()) {
+            std::ifstream in(input_file);
+            if (!in.is_open()) {
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","cannot open --input file"}}}}.dump() << std::endl;
+                return 3;
+            }
+            try { raw = json::parse(in); } catch (const std::exception& e) {
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
+                return 3;
+            }
+        } else {
+            try { raw = json::parse(std::cin); } catch (const std::exception& e) {
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error on stdin: ")+e.what()}}}}.dump() << std::endl;
+                return 3;
+            }
+        }
+        layout_plan::LayoutProblemV1 problem;
+        layout_plan::LayoutErrorV1   parse_err;
+        if (!layout_plan::parse_input(raw, problem, parse_err)) {
+            json err_json = {
+                {"schemaVersion", parse_err.SCHEMA_VERSION},
+                {"error", {
+                    {"code",    parse_err.error.code},
+                    {"message", parse_err.error.message}
+                }}
+            };
+            if (!parse_err.error.object_ids.empty())
+                err_json["error"]["object_ids"] = parse_err.error.object_ids;
+            std::cerr << err_json.dump() << std::endl;
+            return 3;
+        }
+        return layout_plan::run_layout_plan(problem);
+    }
 
     // --layout: headless arrange spike (issue #7 milestone 1)
     if (!layout_json_file.empty()) {

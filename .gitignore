@@ -27,3 +27,4 @@ nanosvg_impl.cpp
 # macOS
 .DS_Store
 /bin/
+.worktrees/
