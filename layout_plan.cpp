@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 
 namespace layout_plan {
 
@@ -121,8 +122,14 @@ static json to_json(const LayoutErrorV1& e) {
 }
 
 // ─── Parser ──────────────────────────────────────────────────────────────────
-
 bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
+    // Guard against non-object root
+    if (!raw.is_object()) {
+        err.error.code    = "INVALID_INPUT";
+        err.error.message = "root must be a JSON object";
+        return false;
+    }
+
     // schema version check
     int sv = raw.value("schemaVersion", 0);
     if (sv != LayoutProblemV1::SCHEMA_VERSION) {
@@ -147,6 +154,11 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         err.error.message = "profilesDir is required";
         return false;
     }
+    if (!raw.contains("profiles") || !raw["profiles"].is_object()) {
+        err.error.code    = "INVALID_INPUT";
+        err.error.message = "profiles must be a JSON object";
+        return false;
+    }
     const json& prof_j = raw["profiles"];
     out.profiles.machine  = prof_j.value("machine", "");
     out.profiles.process  = prof_j.value("process", "");
@@ -164,13 +176,23 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
     out.spacing.allow_rotations        = sp_j.value("allowRotations", true);
 
     // models
+    if (!raw.contains("models") || !raw["models"].is_array()) {
+        err.error.code    = "INVALID_INPUT";
+        err.error.message = "models must be a JSON array";
+        return false;
+    }
     const json& mods_j = raw["models"];
-    if (!mods_j.is_array() || mods_j.empty()) {
+    if (mods_j.empty()) {
         err.error.code    = "INVALID_INPUT";
         err.error.message = "at least one model is required";
         return false;
     }
     for (const auto& m : mods_j) {
+        if (!m.is_object()) {
+            err.error.code    = "INVALID_INPUT";
+            err.error.message = "each model entry must be a JSON object";
+            return false;
+        }
         ModelRef ref;
         ref.id        = m.value("id", "");
         ref.path      = m.value("path", "");
@@ -306,55 +328,71 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     PlacementCandidateV1 result;
     result.engine = build_engine;
 
-    // Validate: every placed item must have its bounding box entirely inside
-    // the bed.  Anything outside is reported as UNFITTABLE.
-    BoundingBox bed_bounds = Polygon(bed_pts).bounding_box();
-    std::vector<std::string> unfittable;
-    size_t idx = 0;
-    for (auto& ref : problem.models) {
-        if (idx >= input.size()) break;
-        auto& ap = input[idx++];
+    // Contract: every input model must produce exactly one arrange output.
+    // If get_arrange_polys returns fewer items than problem.models, models
+    // were silently dropped (multi-object 3MF expansion, zero-area skip).
+    if (input.size() != problem.models.size()) {
+        LayoutErrorV1 err;
+        err.error.code    = "INVALID_INPUT";
+        err.error.message = "arrange input count mismatch: " +
+                            std::to_string(problem.models.size()) + " models but " +
+                            std::to_string(input.size()) + " arrange polygons produced";
+        std::cerr << to_json(err).dump() << std::endl;
+        return 3;
+    }
 
-        // The Item translation in libnest2d is the offset applied to the
-        // polygon vertices.  For models whose geometry is not origin-centred
-        // (e.g. A.obj with vertices at x~500), the translation and the
-        // actual world-space position of the object differ.
+    // Validate: every placed item must have its bounding box entirely inside
+    // the bed polygon (not just its AABB, for non-rectangular beds).
+    Polygon bed_poly(bed_pts);
+    BoundingBox bed_bounds = bed_poly.bounding_box();
+    std::vector<std::string> unfittable;
+    for (size_t i = 0; i < input.size(); ++i) {
+        auto& ap  = input[i];
+        auto& ref = problem.models[i];
+
         // Report the BOUNDING-BOX CENTRE as the canonical placement position.
         BoundingBox bb = ap.transformed_poly().contour.bounding_box();
         double cx = unscaled<double>(bb.min.x() + bb.max.x()) / 2.0;
         double cy = unscaled<double>(bb.min.y() + bb.max.y()) / 2.0;
 
-        PlacedModel pm;
-        pm.id           = ref.id;
-        pm.bed_idx      = ap.bed_idx;
-        pm.x_mm         = cx;
-        pm.y_mm         = cy;
-        pm.rotation_rad = ap.rotation;
-        pm.bb_cx_mm     = cx;
-        pm.bb_cy_mm     = cy;
+        bool is_unfittable = false;
 
         // v1 non-goal: multi-bed.  Any placement on a virtual bed is unfittable.
         if (ap.bed_idx > 0) {
+            is_unfittable = true;
+        }
+
+        // Point-in-polygon check: all four corners of the object's bounding box
+        // must lie inside the bed polygon.
+        if (!is_unfittable) {
+            Point corners[] = {
+                Point(bb.min.x(), bb.min.y()),
+                Point(bb.max.x(), bb.min.y()),
+                Point(bb.max.x(), bb.max.y()),
+                Point(bb.min.x(), bb.max.y())
+            };
+            for (auto& c : corners) {
+                if (!bed_poly.contains(c)) {
+                    is_unfittable = true;
+                    break;
+                }
+            }
+        }
+
+        PlacedModel pm;
+        pm.id           = ref.id;
+        if (is_unfittable) {
             pm.bed_idx = -1;
             unfittable.push_back(ref.id);
+            // Unfittable items: emit bed_idx=-1 with no coordinates (contract)
+        } else {
+            pm.bed_idx      = ap.bed_idx;
+            pm.x_mm         = cx;
+            pm.y_mm         = cy;
+            pm.rotation_rad = ap.rotation;
+            pm.bb_cx_mm     = cx;
+            pm.bb_cy_mm     = cy;
         }
-
-        // Bounds check: the object's bounding box must fit inside the bed.
-        double bbx_min = unscaled<double>(bb.min.x());
-        double bbx_max = unscaled<double>(bb.max.x());
-        double bby_min = unscaled<double>(bb.min.y());
-        double bby_max = unscaled<double>(bb.max.y());
-        double bed_x_min = unscaled<double>(bed_bounds.min.x());
-        double bed_x_max = unscaled<double>(bed_bounds.max.x());
-        double bed_y_min = unscaled<double>(bed_bounds.min.y());
-        double bed_y_max = unscaled<double>(bed_bounds.max.y());
-        if (bbx_min < bed_x_min || bbx_max > bed_x_max ||
-            bby_min < bed_y_min || bby_max > bed_y_max) {
-            pm.bed_idx = -1;
-            if (std::find(unfittable.begin(), unfittable.end(), ref.id) == unfittable.end())
-                unfittable.push_back(ref.id);
-        }
-
         result.placements.push_back(pm);
     }
 
@@ -364,7 +402,6 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         err.error.message    = "some objects could not be placed on any bed";
         err.error.object_ids = unfittable;
         std::cerr << to_json(err).dump() << std::endl;
-        // Also emit partial placements on stdout
         std::cout << to_json(result).dump() << std::endl;
         return 4;
     }

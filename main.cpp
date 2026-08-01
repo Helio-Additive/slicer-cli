@@ -1120,26 +1120,32 @@ int main(int argc, char** argv) {
         if (!input_file.empty()) {
             std::ifstream in(input_file);
             if (!in.is_open()) {
-                std::cerr << "{\"schemaVersion\":1,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"cannot open --input file\"}}" << std::endl;
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","cannot open --input file"}}}}.dump() << std::endl;
                 return 3;
             }
             try { raw = json::parse(in); } catch (const std::exception& e) {
-                std::cerr << "{\"schemaVersion\":1,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"JSON parse error: " << e.what() << "\"}}" << std::endl;
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
                 return 3;
             }
         } else {
             try { raw = json::parse(std::cin); } catch (const std::exception& e) {
-                std::cerr << "{\"schemaVersion\":1,\"error\":{\"code\":\"INVALID_INPUT\",\"message\":\"JSON parse error on stdin: " << e.what() << "\"}}" << std::endl;
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error on stdin: ")+e.what()}}}}.dump() << std::endl;
                 return 3;
             }
         }
         layout_plan::LayoutProblemV1 problem;
         layout_plan::LayoutErrorV1   parse_err;
         if (!layout_plan::parse_input(raw, problem, parse_err)) {
-            std::cerr << nlohmann::json({
+            json err_json = {
                 {"schemaVersion", parse_err.SCHEMA_VERSION},
-                {"error", {{"code", parse_err.error.code}, {"message", parse_err.error.message}}}
-            }).dump() << std::endl;
+                {"error", {
+                    {"code",    parse_err.error.code},
+                    {"message", parse_err.error.message}
+                }}
+            };
+            if (!parse_err.error.object_ids.empty())
+                err_json["error"]["object_ids"] = parse_err.error.object_ids;
+            std::cerr << err_json.dump() << std::endl;
             return 3;
         }
         return layout_plan::run_layout_plan(problem);
