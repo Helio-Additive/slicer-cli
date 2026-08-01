@@ -2728,11 +2728,15 @@ fn expolygons_to_edge_grid_contours(exs: &[ExPolygon]) -> Vec<Polygon> {
 ///   * FIDELITY-NOTE: `mmu_segmentation_top_and_bottom_layers` (cpp:2393) is stubbed to the
 ///     empty "no top/bottom overrides" structure; horizontal painted-surface propagation
 ///     (the only `slice_mesh_slabs` consumer) is not yet ported.
-///   * FIDELITY-NOTE: the crate's `EdgeGrid::create` recomputes its bbox from contour extents
-///     (+16) and ignores the pre-set bbox, so the clip at cpp:2293-2303 uses the contour-derived
-///     bbox rather than the C++ merged-adjacent-layer bbox. `set_bbox` is still called first to
-///     mirror the C++ order; the effective clip is a subset of the C++ one (harmless — the
-///     visitor only registers lines near actual contour segments).
+///   * FIDELITY-NOTE (R446 — NOT harmless, contrary to the original note): the crate's
+///     `EdgeGrid::create` recomputes its bbox from contour extents (+16 eps) and IGNORES the
+///     pre-set bbox, so the clip at cpp:2293-2303 uses the contour-derived bbox rather than the
+///     C++ merged-adjacent-layer bbox. When a painted facet lies on the object's own silhouette
+///     edge, its projected line can land a few scaled units OUTSIDE that tighter bbox and be
+///     dropped entirely: measured on painted_cube with `THREEMF_NO_CENTER=1`, every extruder-2
+///     line is discarded here (painted_lines per_color loses colour 2 completely), the split
+///     degenerates to one region and 50 tool changes become 0. Grid bbox min was -999916
+///     (= contour min -999900 - 16) while the projected line sat at -999999.
 ///   * FIDELITY-NOTE: the crate's `visit_cells_intersecting_line` lacks the C++
 ///     `need_consider_eps=true` extension (cpp:2311); it visits only cells the segment directly
 ///     crosses, not the surrounding epsilon band.
@@ -2946,6 +2950,30 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 grid.visit_cells_intersecting_line(a, b, |iy, ix| visitor.visit(iy, ix));
             }
         }
+    }
+
+    if std::env::var_os("MMS_DEBUG").is_some() {
+        // How many painted lines survived projection+clip, per color? This
+        // separates "the line was never projected / got clipped away" from
+        // "colorize/merge dropped it later".
+        let mut per_color: std::collections::BTreeMap<i32, usize> =
+            std::collections::BTreeMap::new();
+        let mut layers_with: std::collections::BTreeMap<i32, usize> =
+            std::collections::BTreeMap::new();
+        for layer in painted_lines.iter() {
+            let mut seen: std::collections::BTreeSet<i32> = Default::default();
+            for pl in layer.iter() {
+                *per_color.entry(pl.color).or_insert(0) += 1;
+                seen.insert(pl.color);
+            }
+            for c in seen {
+                *layers_with.entry(c).or_insert(0) += 1;
+            }
+        }
+        eprintln!(
+            "MMS_DEBUG painted_lines after projection+clip: per_color={:?} layers_with_color={:?}",
+            per_color, layers_with
+        );
     }
 
     let __m3 = std::time::Instant::now();
