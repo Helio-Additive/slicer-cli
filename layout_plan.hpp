@@ -42,9 +42,9 @@ struct ProfileRef {
 };
 
 struct LayoutProblemV1 {
-    static constexpr int  SCHEMA_VERSION = 1;
+    static constexpr int  SCHEMA_VERSION = 1;   // struct version; wire schemaVersion lives in VERSION_MIN..VERSION_MAX
     static constexpr int  VERSION_MIN    = 1;
-    static constexpr int  VERSION_MAX    = 1;
+    static constexpr int  VERSION_MAX    = 2;   // v2: locked semantics + seed acceptance + allowed_rotations refusal
     std::string            engine;
     std::string            profiles_dir;
     ProfileRef             profiles;

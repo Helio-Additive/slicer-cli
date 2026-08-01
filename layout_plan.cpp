@@ -59,14 +59,19 @@ bool is_cancelled() {
 
 static constexpr int kMaxInheritsDepth = 16;
 
-// return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), cycle = clean stop
 static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
-                             std::unordered_set<std::string>& visited, int depth) {
+                             std::unordered_set<std::string>& visited, int depth);
+
+// return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), cycle = clean stop
+// impl variant: parses from an already-open stream (the root file is opened ONCE
+// by the caller — a separate existence probe would consume one-shot streams
+// such as FIFO machine profiles)
+static int load_profile_json_impl(std::istream& f, const std::string& fp, DynamicPrintConfig& cfg,
+                                  std::unordered_set<std::string>& visited, int depth) {
     if (g_cancelled.load()) return 3;              // honour SIGINT during slow chains
     if (visited.count(fp)) return 0;               // cycle → already loaded ancestors, clean stop
     if (depth > kMaxInheritsDepth) return 1;       // non-cyclic deep chain → truncated, error
     visited.insert(fp);
-    std::ifstream f(fp); if (!f.is_open()) { if (g_cancelled.load()) return 3; return 2; }   // bad file (missing/malformed)
     json j; try { j = json::parse(f); } catch (...) { if (g_cancelled.load()) return 3; return 2; }
     // resolve inherits chain first (parent overrides child's keys below)
     if (j.contains("inherits")) {
@@ -104,9 +109,13 @@ static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
     return 0;
 }
 
-static int load_with_inherits(DynamicPrintConfig& cfg, const std::string& fp) {
-    std::unordered_set<std::string> visited;
-    return load_profile_json(fp, cfg, visited, 0);
+// path variant: opens the file once and delegates; open-failure IS the
+// existence signal (no separate probe open that could consume a stream)
+static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
+                             std::unordered_set<std::string>& visited, int depth) {
+    std::ifstream f(fp);
+    if (!f.is_open()) { if (g_cancelled.load()) return 3; return 2; }   // bad file (missing/malformed)
+    return load_profile_json_impl(f, fp, cfg, visited, depth);
 }
 
 static std::string strip_dir(const std::string& s) {
@@ -208,6 +217,7 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         }
         out.spacing.allow_rotations = sp_j.value("allowRotations", true);
         if (raw.contains("seed")) {
+            if (sv < 2) { err.error.code="INVALID_INPUT"; err.error.message="field 'seed' requires schemaVersion 2"; return false; }
             if (!raw["seed"].is_number_unsigned()) { err.error.code="INVALID_INPUT"; err.error.message="seed must be a non-negative integer"; return false; }
             out.seed = raw["seed"].get<uint64_t>(); // accepted-and-recorded; engine is inherently deterministic
         }
@@ -227,6 +237,7 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
             ref.id     = m.value("id", "");
             ref.path   = m.value("path", "");
             if (m.contains("locked")) {
+                if (sv < 2) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' locked requires schemaVersion 2"; err.error.object_ids={ref.id}; return false; }
                 if (!m["locked"].is_boolean()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' locked must be boolean"; err.error.object_ids={ref.id}; return false; }
                 ref.locked = m["locked"].get<bool>();
             }
@@ -306,10 +317,11 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // Load profiles
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
-    { std::string cp = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json"; std::ifstream cf(cp); if (cf.good()) { cf.close(); load_with_inherits(cfg, cp); } }
+    { std::string cp = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json";
+      std::ifstream cf(cp); if (cf.is_open()) { std::unordered_set<std::string> vis; load_profile_json_impl(cf, cp, cfg, vis, 0); } }
     { std::string fp = dir + "/" + problem.profiles.machine;
-      std::ifstream mf(fp);
-      if (!mf.good()) {
+      std::ifstream mf(fp);  // open ONCE; open-failure is the existence signal
+      if (!mf.is_open()) {
           if (g_cancelled.load()) {  // SIGINT-interrupted probe → cancel, not bad-file
               LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
               std::cerr << to_json(err).dump() << std::endl; return 5;
@@ -317,8 +329,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
           LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open machine profile: "+problem.profiles.machine;
           std::cerr << to_json(err).dump() << std::endl; return 3;
       }
-      mf.close();
-      int rc = load_with_inherits(cfg, fp);
+      std::unordered_set<std::string> vis;
+      int rc = load_profile_json_impl(mf, fp, cfg, vis, 0);
       if (rc == 3) {
           LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
           std::cerr << to_json(err).dump() << std::endl; return 5;
@@ -335,8 +347,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     auto load_opt = [&](const std::string& rel) -> int {
         if (rel.empty()) return 0;  // empty field = explicitly skipped
         std::string fp = dir + "/" + rel;
-        std::ifstream t(fp);
-        if (!t.good()) {
+        std::ifstream t(fp);  // open ONCE; open-failure is the existence signal
+        if (!t.is_open()) {
             if (g_cancelled.load()) {  // SIGINT-interrupted probe → cancel, not bad-file
                 LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
                 std::cerr << to_json(err).dump() << std::endl; return 2;
@@ -345,8 +357,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open profile: "+rel;
             std::cerr << to_json(err).dump() << std::endl; return 1;
         }
-        t.close();
-        int rc = load_with_inherits(cfg, fp);
+        std::unordered_set<std::string> vis;
+        int rc = load_profile_json_impl(t, fp, cfg, vis, 0);
         if (rc == 3) {
             LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
             std::cerr << to_json(err).dump() << std::endl; return 2;
@@ -646,11 +658,20 @@ int run_layout_plan(const LayoutProblemV1& problem) {
 
     if (!unfittable.empty()) {
         LayoutErrorV1 err; err.error.code="UNFITTABLE";
-        err.error.message="some objects could not be placed"; err.error.object_ids=unfittable;
         std::cerr << to_json(err).dump() << std::endl;
-        std::cout << to_json(result).dump() << std::endl; return 4;
+        std::string out = to_json(result).dump();
+        if (g_cancelled.load()) {  // cancel wins over emitting a large result
+            LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+            std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+        }
+        std::cout << out << std::endl; return 4;
     }
-    std::cout << to_json(result).dump() << std::endl;
+    std::string out = to_json(result).dump();
+    if (g_cancelled.load()) {  // cancel wins over emitting a large result
+        LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+        std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+    }
+    std::cout << out << std::endl;
     return 0;
 }
 
