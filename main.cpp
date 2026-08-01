@@ -8,8 +8,12 @@
 #include <map>
 #include <vector>
 #include <cstdlib>
+#ifdef _WIN32
+#include <io.h>
+#else
 #include <cerrno>
 #include <unistd.h>
+#endif
 
 // Core libslic3r headers
 #include "libslic3r/libslic3r.h"
@@ -1158,12 +1162,25 @@ int main(int argc, char** argv) {
                 bool cancelled = false;
                 while (!cancelled) {
                     if (layout_plan::is_cancelled()) { cancelled = true; break; }
+#ifdef _WIN32
+                    int n = ::_read(0, buf, (unsigned)sizeof buf);
+#else
                     ssize_t n = ::read(0, buf, sizeof buf);
-                    if (n < 0 && errno == EINTR) {
+#endif
+                    if (n < 0) {
+#ifdef _WIN32
+                        // Windows: no SA_RESTART semantics to undo; poll the flag
                         if (layout_plan::is_cancelled()) cancelled = true;
-                        continue;
+#else
+                        if (errno == EINTR) {
+                            if (layout_plan::is_cancelled()) cancelled = true;
+                            continue;
+                        }
+#endif
+                        if (cancelled) continue;
+                        break;  // hard error
                     }
-                    if (n <= 0) break;  // EOF or hard error
+                    if (n == 0) break;  // EOF
                     input_data.append(buf, size_t(n));
                 }
                 if (cancelled || layout_plan::is_cancelled()) {

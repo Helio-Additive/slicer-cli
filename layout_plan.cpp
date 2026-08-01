@@ -36,6 +36,11 @@ static std::atomic<bool> g_cancelled{false};
 static void cancellation_handler(int) { g_cancelled.store(true); }
 
 void install_cancellation_handler() {
+#ifdef _WIN32
+    // Windows delivers console Ctrl+C on a separate thread; blocking reads are
+    // not restarted the same way, so the plain handler suffices.
+    std::signal(SIGINT, cancellation_handler);
+#else
     // no SA_RESTART: an interrupted read returns EINTR so the stdin poll loop
     // can observe the cancellation flag promptly instead of staying blocked
     struct sigaction sa{};
@@ -43,6 +48,7 @@ void install_cancellation_handler() {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr);
+#endif
 }
 
 bool is_cancelled() {
