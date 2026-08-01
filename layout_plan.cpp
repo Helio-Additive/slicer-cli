@@ -12,6 +12,7 @@
 #include "libslic3r/Point.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/libslic3r.h"
+#include "libslic3r/ClipperUtils.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -233,6 +234,19 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
 
 // ─── Runner ──────────────────────────────────────────────────────────────────
 
+// Edge-aware bed containment: clip the object's contour against the bed polygon
+// and compare area. Vertex-in-polygon alone misses edges crossing a recess of a
+// concave (e.g. U-shaped) bed; clipping detects every crossing edge.
+static bool fully_inside_bed(const ExPolygon& obj, const Polygon& bed_poly) {
+    Slic3r::Polygons obj_polys = to_polygons(obj);
+    if (obj_polys.empty()) return false;
+    double obj_area = std::abs(Polygon(obj_polys.front().points).area());
+    Slic3r::Polygons clipped = intersection(obj_polys.front(), bed_poly);
+    double clip_area = 0.0;
+    for (auto& p : clipped) clip_area += std::abs(p.area());
+    return (obj_area - clip_area) <= scaled<double>(0.01) * scaled<double>(0.01);
+}
+
 int run_layout_plan(const LayoutProblemV1& problem) {
     const char* be =
 #ifdef ENGINE_ORCA
@@ -413,6 +427,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     PlacementCandidateV1 result;
     result.engine = be;
     std::vector<std::string> unfittable;
+    std::vector<std::pair<std::string, ExPolygon>> locked_placed;
     size_t ui2 = 0, li2 = 0;
 
     for (auto& ref : problem.models) {
@@ -425,11 +440,11 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             BoundingBox bb = ap.transformed_poly().contour.bounding_box();
             double cx = unscaled<double>((double)bb.min.x()+(double)bb.max.x())/2.0;
             double cy = unscaled<double>((double)bb.min.y()+(double)bb.max.y())/2.0;
-            // validate locked placement: ALL transformed contour vertices inside bed polygon
-            bool bad = false;
-            for (auto& pt : ap.transformed_poly().contour.points)
-                if (!bed_poly.contains(pt)) { bad = true; break; }
-            if (bad) { pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue; }
+            // edge-aware containment: clip contour against bed
+            if (!fully_inside_bed(ap.transformed_poly(), bed_poly)) {
+                pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
+            }
+            locked_placed.emplace_back(ref.id, ap.transformed_poly());
             pm.bed_idx = 0;
             pm.x_mm = cx; pm.y_mm = cy; // candidate convention: bb centre
             pm.rotation_rad = lrot;
@@ -442,15 +457,25 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             double cx = unscaled<double>((double)bb.min.x()+(double)bb.max.x())/2.0;
             double cy = unscaled<double>((double)bb.min.y()+(double)bb.max.y())/2.0;
             bool bad = (ap.bed_idx != 0);
-            if (!bad) {
-                for (auto& pt : ap.transformed_poly().contour.points)
-                    if (!bed_poly.contains(pt)) { bad = true; break; }
-            }
+            if (!bad) bad = !fully_inside_bed(ap.transformed_poly(), bed_poly);
             if (bad) { pm.bed_idx=-1; unfittable.push_back(ref.id); }
             else { pm.bed_idx=ap.bed_idx; pm.x_mm=cx; pm.y_mm=cy; pm.rotation_rad=ap.rotation; pm.bb_cx_mm=cx; pm.bb_cy_mm=cy; }
             result.placements.push_back(pm);
         }
     }
+    // Fix 1: locked-vs-locked overlap — both locked at overlapping positions
+    // cannot be honoured simultaneously → UNFITTABLE naming both.
+    for (size_t a = 0; a < locked_placed.size(); ++a)
+        for (size_t b = a+1; b < locked_placed.size(); ++b) {
+            Slic3r::Polygons ia = intersection(to_polygons(locked_placed[a].second).front(),
+                                               Polygon(locked_placed[b].second.contour.points));
+            if (!ia.empty()) {
+                if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].first) == unfittable.end())
+                    unfittable.push_back(locked_placed[a].first);
+                if (std::find(unfittable.begin(), unfittable.end(), locked_placed[b].first) == unfittable.end())
+                    unfittable.push_back(locked_placed[b].first);
+            }
+        }
     if (!unfittable.empty()) {
         LayoutErrorV1 err; err.error.code="UNFITTABLE";
         err.error.message="some objects could not be placed"; err.error.object_ids=unfittable;
