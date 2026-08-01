@@ -535,6 +535,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         double spacing_infl = scaled<double>(problem.spacing.min_object_distance_mm) / 2.0;
         std::vector<Polygon> inflated;
         for (auto& rec : locked_placed) {
+            if (g_cancelled.load()) {
+                LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+                std::cerr << to_json(err).dump() << std::endl; return 5;
+            }
             // actual inflation = max of spacing-derived and profile-derived (brim/clearance)
             double eff = std::max(spacing_infl, double(rec.inflation));
             Slic3r::Polygons off = offset(to_polygons(rec.poly).front(), float(eff));
