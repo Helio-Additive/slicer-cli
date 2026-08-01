@@ -298,10 +298,14 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     }
 
     auto load_opt = [&](const std::string& rel) -> bool {
-        if (rel.empty()) return true;
+        if (rel.empty()) return true;  // empty field = explicitly skipped
         std::string fp = dir + "/" + rel;
         std::ifstream t(fp);
-        if (!t.good()) return true; // silently skip absent
+        if (!t.good()) {
+            // supplied-but-absent is a typed error, same as supplied-but-invalid
+            LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open profile: "+rel;
+            std::cerr << to_json(err).dump() << std::endl; return false;
+        }
         t.close();
         int rc = load_with_inherits(cfg, fp);
         if (rc != 0) {
