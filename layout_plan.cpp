@@ -656,6 +656,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     update_selected_items_inflation(locked_input, cfg, params);
     Points bed_pts = get_shrink_bedpts(cfg, params);
 #endif
+    if (g_cancelled.load()) {  // params/inflation/shrink block may be long — recheck before bed validation
+        LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+        std::cerr << to_json(err).dump() << std::endl; return 5;
+    }
     if (bed_pts.size() < 3) {
         LayoutErrorV1 err; err.error.code="INVALID_INPUT";
         err.error.message="bed degenerate"; std::cerr << to_json(err).dump() << std::endl; return 3;
