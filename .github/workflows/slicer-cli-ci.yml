@@ -222,7 +222,7 @@ jobs:
       # macOS and Windows share the sccache binary but use separate
       # namespace-qualified caches per engine + platform + compiler.
       - name: Setup sccache (compile cache)
-        uses: mozilla/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.9
         with:
           version: "v0.10.0"
       - name: Configure (macOS / Linux)
@@ -258,6 +258,8 @@ jobs:
             fi
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DENGINE=${{ matrix.engine }} \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
             -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
@@ -287,6 +289,8 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cmake -S . -B build `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DENGINE=${{ matrix.engine }} `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
             -DCMAKE_PREFIX_PATH="$env:LIBNOISE_ROOT" `
