@@ -1250,7 +1250,7 @@ int main(int argc, char** argv) {
             if (!parse_err.error.object_ids.empty())
                 err_json["error"]["object_ids"] = parse_err.error.object_ids;
             std::cerr << err_json.dump() << std::endl;
-            return 3;
+            return parse_err.error.code == "CANCELLED" ? 5 : 3;
         }
         return layout_plan::run_layout_plan(problem);
     }

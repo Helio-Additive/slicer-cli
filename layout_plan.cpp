@@ -97,7 +97,18 @@ static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
         out.append(buf, static_cast<size_t>(n));
     }
 #else
-    int fd = ::open(fp.c_str(), O_RDONLY);
+    // opening a FIFO blocks until a writer connects; loop on EINTR and treat
+    // it as a cancellation check point (same pattern as the --input open)
+    int fd = -1;
+    for (;;) {
+        if (g_cancelled.load()) return 1;
+        fd = ::open(fp.c_str(), O_RDONLY);
+        if (fd < 0 && errno == EINTR) {
+            if (g_cancelled.load()) return 1;
+            continue;
+        }
+        break;
+    }
     if (fd < 0) return 2;
     char buf[4096];
     for (;;) {
@@ -751,12 +762,13 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
             std::cerr << to_json(cerr2).dump() << std::endl; return 5;
         }
+        int w = emit_cancellable(out);  // emit first — UNFITTABLE goes out only after the candidate emits fully
+        if (w == 5) return 5;           // cancel during emission: CANCELLED already printed, suppress UNFITTABLE
         LayoutErrorV1 err; err.error.code="UNFITTABLE";
         err.error.message="some objects could not be placed on any bed";
         err.error.object_ids=unfittable;
         std::cerr << to_json(err).dump() << std::endl;
-        int w = emit_cancellable(out);
-        return w == 5 ? 5 : 4;
+        return 4;
     }
     std::string out = to_json(result).dump();
     if (g_cancelled.load()) {  // cancel wins over emitting a large result
