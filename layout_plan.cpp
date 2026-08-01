@@ -357,8 +357,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
 
         bool is_unfittable = false;
 
-        // v1 non-goal: multi-bed.  Any placement on a virtual bed is unfittable.
-        if (ap.bed_idx > 0) {
+        // v1 single-bed: anything not on bed 0 (virtual, unarranged, unfittable)
+        // is UNFITTABLE — checked BEFORE containment so an unplaced item that
+        // happens to have its default bbox inside the bed is still caught.
+        if (ap.bed_idx != 0) {
             is_unfittable = true;
         }
 
