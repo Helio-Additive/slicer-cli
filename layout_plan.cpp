@@ -657,13 +657,15 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     }
 
     if (!unfittable.empty()) {
-        LayoutErrorV1 err; err.error.code="UNFITTABLE";
-        std::cerr << to_json(err).dump() << std::endl;
         std::string out = to_json(result).dump();
         if (g_cancelled.load()) {  // cancel wins over emitting a large result
             LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
             std::cerr << to_json(cerr2).dump() << std::endl; return 5;
         }
+        LayoutErrorV1 err; err.error.code="UNFITTABLE";
+        err.error.message="some objects could not be placed on any bed";
+        err.error.object_ids=unfittable;
+        std::cerr << to_json(err).dump() << std::endl;
         std::cout << out << std::endl; return 4;
     }
     std::string out = to_json(result).dump();
