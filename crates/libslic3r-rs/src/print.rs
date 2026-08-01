@@ -489,6 +489,9 @@ impl Print {
         // avoid a boundary tool change (mirrors ToolOrdering's cross-layer
         // minimization). Single-material layers never touch it.
         let mut prev_last_tool: Option<usize> = None;
+        // C++ `GCode::m_toolchange_count` — print-wide, consumed by the
+        // change_filament_gcode template (`toolchange_count`).
+        let mut toolchange_count: i64 = 0;
         while i < all_layers.len() {
             let print_z = all_layers[i].layer.print_z;
             let mut j = i + 1;
@@ -783,6 +786,7 @@ impl Print {
                     skip_inner_walls,
                     &mut prev_last_tool,
                     wipe_tower_layer,
+                    &mut toolchange_count,
                 );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -2535,6 +2539,10 @@ fn emit_tower_tcr(
     writer: &mut crate::gcode::GCodeWriter,
     tcr: &crate::gcode::wipe_tower::ToolChangeResult,
     off: crate::gcode::wipe_tower::Vec2f,
+    print_config: &crate::print_config::PrintConfig,
+    max_layer_z: f64,
+    toolchange_count: i64,
+    first_layer: bool,
 ) {
     // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same frame as the
     // gcode body); start_pos is stored already-absolute, so recover the local
@@ -2544,6 +2552,34 @@ fn emit_tower_tcr(
         tcr.start_pos.y - off.y,
     );
     let g = crate::gcode::wipe_tower_integration::transform_gcode(&tcr.gcode, local_seed, off, 0.0);
+    // Substitute the tower's `[change_filament_gcode]` placeholder with the
+    // evaluated custom tool-change template (append_tcr, GCode.cpp:936-1058).
+    // Only real tool changes carry one; the finish_layer tcr has no placeholder,
+    // so the replace is a no-op there.
+    let block = if tcr.is_tool_change && !print_config.change_filament_gcode.is_empty() {
+        let ctx = crate::gcode::change_filament::build_context(
+            print_config,
+            tcr.initial_tool.max(0) as usize,
+            tcr.new_tool.max(0) as usize,
+            tcr.print_z as f64,
+            max_layer_z,
+            toolchange_count,
+            tcr.purge_volume as f64,
+            first_layer,
+        );
+        Some(crate::gcode::gcode_template::process(
+            &print_config.change_filament_gcode,
+            &ctx,
+        ))
+    } else {
+        None
+    };
+    let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
+        &g,
+        block.as_deref(),
+        tcr.new_tool.max(0) as usize,
+        &print_config.toolchange_prefix,
+    );
     writer.write_raw_content(&g);
 }
 
@@ -2560,6 +2596,9 @@ fn emit_layer_by_island(
     // Wipe/prime-tower per-layer tool-change results for THIS layer (matched by
     // print_z), when the WIPE_TOWER_EMIT export path is enabled; None otherwise.
     wipe_tower_layer: Option<&[crate::gcode::wipe_tower::ToolChangeResult]>,
+    // Running print-wide tool-change counter (C++ `GCode::m_toolchange_count`),
+    // used by the `change_filament_gcode` template.
+    toolchange_count: &mut i64,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
@@ -2833,7 +2872,18 @@ fn emit_layer_by_island(
                     print_config.wipe_tower_x as f32,
                     print_config.wipe_tower_y as f32,
                 );
-                emit_tower_tcr(writer, tcr, off);
+                // GCode.cpp:837 — the template sees the 1-based index of THIS
+                // change (m_toolchange_count + 1).
+                *toolchange_count += 1;
+                emit_tower_tcr(
+                    writer,
+                    tcr,
+                    off,
+                    print_config,
+                    layer.print_z,
+                    *toolchange_count,
+                    is_first_layer,
+                );
                 writer.set_extruder(tool);
             } else {
                 let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
@@ -2902,7 +2952,17 @@ fn emit_layer_by_island(
                 print_config.wipe_tower_x as f32,
                 print_config.wipe_tower_y as f32,
             );
-            emit_tower_tcr(writer, fin, off);
+            // finish_layer tcr: not a tool change, so no change_filament block
+            // (and no placeholder in its gcode) — the count is passed unchanged.
+            emit_tower_tcr(
+                writer,
+                fin,
+                off,
+                print_config,
+                layer.print_z,
+                *toolchange_count,
+                is_first_layer,
+            );
         }
     }
     // Carry this layer's last printed tool to the next for boundary continuity

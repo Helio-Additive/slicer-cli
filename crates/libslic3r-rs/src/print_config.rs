@@ -2213,6 +2213,13 @@ impl PrintConfig {
                 }
                 true
             }
+            // Custom tool-change template (GCode.cpp:754). Consumed by the
+            // wipe-tower export, which substitutes the evaluated block for the
+            // tower's `[change_filament_gcode]` placeholder.
+            "change_filament_gcode" => {
+                self.change_filament_gcode = value.to_string();
+                true
+            }
 
             // === Retraction ===
             "retraction_length" => {

@@ -2046,12 +2046,13 @@ impl WipeTower {
             self.toolchange_unload(&mut writer, &cleaning_box);
         }
 
-        // Actual tool change. In C++ the "Tn" command is emitted by the
-        // post-processor via the [change_filament_gcode] placeholder
-        // (WipeTower.cpp:2466,2482); this reduced port has no such post pass, so
-        // emit it explicitly here, then update the writer's tool state via the
-        // (output-less) set_tool.
-        writer.append(&format!("T{}\n", new_tool));
+        // Actual tool change. Faithful to WipeTower.cpp:2466: emit the
+        // `[change_filament_gcode]` PLACEHOLDER, which the export step
+        // (`wipe_tower_integration`/`emit_tower_tcr`) substitutes with the
+        // evaluated `change_filament_gcode` template — or with a bare `Tn` when
+        // that template is empty (GCode.cpp:754). Then update the writer's tool
+        // state via the (output-less) set_tool.
+        writer.append("[change_filament_gcode]\n");
         writer.set_tool(new_tool);
         self.current_tool = new_tool;
 

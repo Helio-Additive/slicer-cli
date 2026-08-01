@@ -18,6 +18,52 @@
 
 use crate::gcode::wipe_tower::Vec2f;
 
+/// The placeholder the wipe-tower generator emits where the tool change belongs
+/// (WipeTower.cpp:2466). The export substitutes the evaluated
+/// `change_filament_gcode` for it.
+pub const CHANGE_FILAMENT_PLACEHOLDER: &str = "[change_filament_gcode]";
+
+/// Substitute the tool-change block into transformed tower gcode.
+///
+/// Port of the `change_filament_gcode` half of `append_tcr` (GCode.cpp:936-1058):
+/// C++ evaluates the `change_filament_gcode` template, appends the `Tn` command
+/// if the custom block didn't already change tools, and injects the result into
+/// the tower gcode via its `[change_filament_gcode]` placeholder. When the
+/// template is empty, a bare `Tn` is used instead (GCode.cpp:754).
+pub fn substitute_change_filament(
+    tower_gcode: &str,
+    change_filament_block: Option<&str>,
+    new_tool: usize,
+    toolchange_prefix: &str,
+) -> String {
+    let tool_cmd = format!("{}{}", toolchange_prefix, new_tool);
+    let replacement = match change_filament_block {
+        Some(block) if !block.trim().is_empty() => {
+            let mut s = block.trim_end().to_string();
+            // GCode.cpp:960 — only append the tool command if the custom gcode
+            // does not already perform the tool change itself.
+            if !custom_gcode_changes_tool(&s, toolchange_prefix, new_tool) {
+                s.push('\n');
+                s.push_str(&tool_cmd);
+            }
+            s
+        }
+        _ => tool_cmd,
+    };
+    tower_gcode.replace(CHANGE_FILAMENT_PLACEHOLDER, &replacement)
+}
+
+/// Port of `custom_gcode_changes_tool` (GCode.cpp): does the custom block already
+/// contain a line that switches to `new_tool`?
+fn custom_gcode_changes_tool(gcode: &str, toolchange_prefix: &str, new_tool: usize) -> bool {
+    let want = format!("{}{}", toolchange_prefix, new_tool);
+    gcode.lines().any(|l| {
+        let l = l.trim();
+        // A tool command is the whole line (possibly with a trailing comment).
+        l == want || l.starts_with(&format!("{} ", want)) || l.starts_with(&format!("{};", want))
+    })
+}
+
 /// Port of `transform_gcode` (GCode.cpp:298-346).
 ///
 /// A wipe-tower `ToolChangeResult.gcode` assumes the tower corner sits at the
