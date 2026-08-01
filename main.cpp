@@ -1149,17 +1149,33 @@ int main(int argc, char** argv) {
     if (!layout_json_file.empty()) {
         std::ifstream lf(layout_json_file);
         if (!lf.is_open()) { std::cerr << "Cannot open layout JSON\n"; return 1; }
-        json lj = json::parse(lf);
+        json lj;
+        try { lj = json::parse(lf); } catch (const std::exception& e) {
+            std::cerr << "Failed to parse layout JSON: " << e.what() << "\n"; return 1;
+        }
         std::string profiles_dir = lj.value("profilesDir", "");
         while (!profiles_dir.empty() && profiles_dir.back() == '/') profiles_dir.pop_back();
 
         Slic3r::DynamicPrintConfig cfg;
         if (lj.contains("profiles")) {
-            for (auto& [kind, path] : lj["profiles"].items())
-                load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg);
+            for (auto& [kind, path] : lj["profiles"].items()) {
+                if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
+                    std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
+                    return 1;
+                }
+            }
         }
         using namespace Slic3r;
         using namespace Slic3r::arrangement;
+
+        ArrangeParams params;
+#ifdef ENGINE_ORCA
+        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#else
+        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#endif
 
         // Load all STLs into a single Model (one ModelObject per STL)
         Model model;
@@ -1170,7 +1186,6 @@ int main(int argc, char** argv) {
                 Model m = Model::read_from_file(stl_path);
                 for (ModelObject* mo : m.objects) {
                     ModelObject* new_obj = model.add_object(*mo);
-                    // Ensure at least one instance exists
                     if (new_obj->instances.empty())
                         new_obj->add_instance();
                 }
@@ -1179,14 +1194,6 @@ int main(int argc, char** argv) {
                 return 1;
             }
         }
-        ArrangeParams params;
-#ifdef ENGINE_ORCA
-        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#else
-        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#endif
         params.min_obj_distance = scaled<coord_t>(lj.value("spacingMm", 10.0));
         params.allow_rotations = lj.value("allowRotations", true);
         params.do_final_align = lj.value("doFinalAlign", true);
