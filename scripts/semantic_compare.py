@@ -264,6 +264,17 @@ def main(rust_path, bambu_path):
     # (Benchy 0.9998 vs header 0.9972). R356.
     rb = sum(s[6] for L in R for s in L['segs']); nb = sum(s[6] for L in N for s in L['segs'])
     obj = rb/nb if nb else 0.0
+    # The wipe/prime tower is PURGE, not object material — reporting it inside
+    # "object material" hides which of the two is actually diverging (R442). Split
+    # it out; the verdict check below still uses the total for backwards
+    # comparability, but the object-only figure is what tells you about the part.
+    TOWER = 'Prime tower'
+    rb_t = sum(s[6] for L in R for s in L['segs'] if s[5] == TOWER)
+    nb_t = sum(s[6] for L in N for s in L['segs'] if s[5] == TOWER)
+    if rb_t > 0 or nb_t > 0:
+        ro, no = rb - rb_t, nb - nb_t
+        print(f"  object-only (no tower): rust {ro:.1f} / bambu {no:.1f} = {(ro/no if no else 0):.4f}")
+        print(f"  wipe tower (purge)    : rust {rb_t:.1f} / bambu {nb_t:.1f} = {(rb_t/nb_t if nb_t else 0):.4f}")
     fil = rh.get('filament_mm',0)/nh.get('filament_mm',1)
     print(f"  object material   : rust {rb:.1f} / bambu {nb:.1f} = {obj:.4f}  (header filament {fil:.4f})")
     # worst per-feature material deviation among non-tiny features
