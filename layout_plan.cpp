@@ -54,7 +54,8 @@ static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
         if (iv.is_string()) v = iv.get<std::string>();
         else if (iv.is_array() && !iv.empty() && iv[0].is_string()) v = iv[0].get<std::string>();
         if (!v.empty()) {
-            std::string pp = fp.substr(0, fp.find_last_of('/')) + "/" + v;
+            size_t pos = fp.find_last_of("/\\");  // native separators on Windows
+            std::string pp = fp.substr(0, pos) + "/" + v;
             if (pp.size() <= 5 || pp.compare(pp.size()-5, 5, ".json") != 0) pp += ".json";
             int rc = load_profile_json(pp, cfg, visited, depth + 1);
             if (rc != 0) return rc;               // propagate depth error
@@ -319,6 +320,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     struct RefCount { std::string id; size_t count; double rot = 0.0; };
     std::vector<RefCount> unlocked_counts, locked_counts;
     for (auto& ref : problem.models) {
+        if (g_cancelled.load()) {
+            LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during model load";
+            std::cerr << to_json(err).dump() << std::endl; return 5;
+        }
         try {
             Model m = Model::read_from_file(ref.path);
             size_t n = 0;
