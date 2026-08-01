@@ -40,7 +40,7 @@ jobs:
             runner: macos-14          # Apple Silicon — primary dev target
             cmake_preset: ""
           - os: Windows-x86_64
-            runner: windows-2022
+            runner: blacksmith-16vcpu-windows-2022
             cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release"
           # Linux re-enable when ready
           # - os: macOS-x86_64
@@ -304,7 +304,11 @@ jobs:
         # ubuntu-22.04 has 4, windows-2022 has 4. Use 4 across the matrix
         # (extra jobs queue, not contend) to keep the BBS source compile
         # (~1500 .cpp files) under an hour.
+        if: runner.os != 'Windows'
         run: cmake --build build --config Release --parallel 4
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config Release --parallel 16
 
       - name: Show sccache stats
         shell: bash
@@ -417,7 +421,7 @@ jobs:
             runner: macos-14
             platform: macos-arm64
           - os: Windows-x86_64
-            runner: windows-2022
+            runner: blacksmith-16vcpu-windows-2022
             platform: windows-x86_64
     steps:
       - name: Checkout (with submodules)
