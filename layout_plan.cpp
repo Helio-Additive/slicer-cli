@@ -66,8 +66,8 @@ static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
     if (visited.count(fp)) return 0;               // cycle → already loaded ancestors, clean stop
     if (depth > kMaxInheritsDepth) return 1;       // non-cyclic deep chain → truncated, error
     visited.insert(fp);
-    std::ifstream f(fp); if (!f.is_open()) return 2;   // bad file (missing/malformed)
-    json j; try { j = json::parse(f); } catch (...) { return 2; }
+    std::ifstream f(fp); if (!f.is_open()) { if (g_cancelled.load()) return 3; return 2; }   // bad file (missing/malformed)
+    json j; try { j = json::parse(f); } catch (...) { if (g_cancelled.load()) return 3; return 2; }
     // resolve inherits chain first (parent overrides child's keys below)
     if (j.contains("inherits")) {
         std::string v;
@@ -238,16 +238,18 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
             if (m.contains("transform")) {
                 if (!m["transform"].is_object()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' transform must be object"; err.error.object_ids={ref.id}; return false; }
                 const json& tx = m["transform"];
-                ref.has_x = tx.contains("x");   ref.x_mm = tx.value("x", 0.0);
-                ref.has_y = tx.contains("y");   ref.y_mm = tx.value("y", 0.0);
-                ref.has_z = tx.contains("z");   ref.z_mm = tx.value("z", 0.0);
+                // both spellings accepted in both branches (nested and flat):
+                // x_mm/y_mm/z_mm primary (flat convention), x/y/z legacy fallback
+                ref.has_x = tx.contains("x_mm") || tx.contains("x");   ref.x_mm = tx.value("x_mm", tx.value("x", 0.0));
+                ref.has_y = tx.contains("y_mm") || tx.contains("y");   ref.y_mm = tx.value("y_mm", tx.value("y", 0.0));
+                ref.has_z = tx.contains("z_mm") || tx.contains("z");   ref.z_mm = tx.value("z_mm", tx.value("z", 0.0));
                 ref.has_rot = tx.contains("rotationZ") || tx.contains("rotation_rad") || tx.contains("rot_z_rad");
                 ref.rot_z_rad = tx.value("rotationZ", tx.value("rotation_rad", tx.value("rot_z_rad", 0.0)));
                 has_override = ref.has_x || ref.has_y || ref.has_z || ref.has_rot;
             } else {
-                ref.has_x = m.contains("x_mm");  ref.x_mm = m.value("x_mm", 0.0);
-                ref.has_y = m.contains("y_mm");  ref.y_mm = m.value("y_mm", 0.0);
-                ref.has_z = m.contains("z_mm");  ref.z_mm = m.value("z_mm", 0.0);
+                ref.has_x = m.contains("x_mm") || m.contains("x");  ref.x_mm = m.value("x_mm", m.value("x", 0.0));
+                ref.has_y = m.contains("y_mm") || m.contains("y");  ref.y_mm = m.value("y_mm", m.value("y", 0.0));
+                ref.has_z = m.contains("z_mm") || m.contains("z");  ref.z_mm = m.value("z_mm", m.value("z", 0.0));
                 ref.has_rot = m.contains("rotationZ") || m.contains("rotation_rad") || m.contains("rot_z_rad");
                 ref.rot_z_rad = m.value("rotationZ", m.value("rotation_rad", m.value("rot_z_rad", 0.0)));
                 has_override = ref.has_x || ref.has_y || ref.has_z || ref.has_rot;
