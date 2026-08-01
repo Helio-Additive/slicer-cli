@@ -325,31 +325,32 @@ int run_layout_plan(const LayoutProblemV1& problem) {
       }
     }
 
-    auto load_opt = [&](const std::string& rel) -> bool {
-        if (rel.empty()) return true;  // empty field = explicitly skipped
+    // returns 0 ok, 1 bad (typed INVALID_INPUT), 2 cancelled (exit 5)
+    auto load_opt = [&](const std::string& rel) -> int {
+        if (rel.empty()) return 0;  // empty field = explicitly skipped
         std::string fp = dir + "/" + rel;
         std::ifstream t(fp);
         if (!t.good()) {
             // supplied-but-absent is a typed error, same as supplied-but-invalid
             LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open profile: "+rel;
-            std::cerr << to_json(err).dump() << std::endl; return false;
+            std::cerr << to_json(err).dump() << std::endl; return 1;
         }
         t.close();
         int rc = load_with_inherits(cfg, fp);
         if (rc == 3) {
             LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
-            std::cerr << to_json(err).dump() << std::endl; return false;
+            std::cerr << to_json(err).dump() << std::endl; return 2;
         }
         if (rc != 0) {
             LayoutErrorV1 err; err.error.code="INVALID_INPUT";
             err.error.message = (rc == 1) ? "inheritance chain for profile exceeds depth limit: "+rel
                                           : "failed to load profile: "+rel;
-            std::cerr << to_json(err).dump() << std::endl; return false;
+            std::cerr << to_json(err).dump() << std::endl; return 1;
         }
-        return true;
+        return 0;
     };
-    if (!load_opt(problem.profiles.process)) return 3;
-    if (!load_opt(problem.profiles.filament)) return 3;
+    { int r = load_opt(problem.profiles.process); if (r == 2) return 5; if (r == 1) return 3; }
+    { int r = load_opt(problem.profiles.filament); if (r == 2) return 5; if (r == 1) return 3; }
 
     // Load models; count polygons per ref for identity mapping
     Model unlocked_model, locked_model;
@@ -539,9 +540,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             // a locked object whose inflation extends past the bed edge is UNFITTABLE
             {
                 ExPolygon inflated = ap.transformed_poly();
-                Slic3r::Polygons off = offset(to_polygons(inflated).front(), float(ap.inflation));
+                Slic3r::ExPolygons off = offset_ex(inflated, float(ap.inflation));  // holes survive inflation
                 if (!off.empty())
-                    inflated = ExPolygon(off.front());
+                    inflated = off.front();
                 if (!fully_inside_bed(inflated, bed_poly)) {
                     pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
                 }
