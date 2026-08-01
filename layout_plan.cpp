@@ -20,6 +20,15 @@
 #include <csignal>
 #include <cstdio>
 #include <fstream>
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#else
+#include <cerrno>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
 #include <functional>
 #include <iostream>
 #include <string>
@@ -62,17 +71,55 @@ static constexpr int kMaxInheritsDepth = 16;
 static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
                              std::unordered_set<std::string>& visited, int depth);
 
+// Slurp a profile through a cancellable reader. 0=ok, 1=cancelled, 2=hard error.
+// Windows: PeekNamedPipe polling (same pattern as the stdin reader) so a
+// stalled named-pipe profile observes Ctrl+C instead of blocking in _read.
+// POSIX: EINTR loop (sigaction has no SA_RESTART). Single open — the slurp
+// IS the existence check; no separate probe open that could consume a stream.
+static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
+#ifdef _WIN32
+    int fd = ::_open(fp.c_str(), _O_RDONLY | _O_BINARY);
+    if (fd < 0) return 2;
+    char buf[4096];
+    for (;;) {
+        if (g_cancelled.load()) { ::_close(fd); return 1; }
+        HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+        if (h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_PIPE) {
+            DWORD avail = 0;
+            if (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) && avail == 0) {
+                Sleep(50);
+                continue;
+            }
+        }
+        int n = ::_read(fd, buf, static_cast<unsigned>(sizeof buf));
+        if (n < 0) { ::_close(fd); return 2; }
+        if (n == 0) { ::_close(fd); return 0; }
+        out.append(buf, static_cast<size_t>(n));
+    }
+#else
+    int fd = ::open(fp.c_str(), O_RDONLY);
+    if (fd < 0) return 2;
+    char buf[4096];
+    for (;;) {
+        if (g_cancelled.load()) { ::close(fd); return 1; }
+        ssize_t n = ::read(fd, buf, sizeof buf);
+        if (n < 0 && errno == EINTR) continue;   // SIGINT → recheck flag next
+        if (n < 0) { ::close(fd); return 2; }
+        if (n == 0) { ::close(fd); return 0; }
+        out.append(buf, static_cast<size_t>(n));
+    }
+#endif
+}
+
 // return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), cycle = clean stop
-// impl variant: parses from an already-open stream (the root file is opened ONCE
-// by the caller — a separate existence probe would consume one-shot streams
-// such as FIFO machine profiles)
-static int load_profile_json_impl(std::istream& f, const std::string& fp, DynamicPrintConfig& cfg,
+// parses the slurped content; the root file was opened ONCE by slurp_profile_cancellable
+static int load_profile_json_impl(const std::string& content, const std::string& fp, DynamicPrintConfig& cfg,
                                   std::unordered_set<std::string>& visited, int depth) {
     if (g_cancelled.load()) return 3;              // honour SIGINT during slow chains
     if (visited.count(fp)) return 0;               // cycle → already loaded ancestors, clean stop
     if (depth > kMaxInheritsDepth) return 1;       // non-cyclic deep chain → truncated, error
     visited.insert(fp);
-    json j; try { j = json::parse(f); } catch (...) { if (g_cancelled.load()) return 3; return 2; }
+    json j; try { j = json::parse(content); } catch (...) { if (g_cancelled.load()) return 3; return 2; }
     // resolve inherits chain first (parent overrides child's keys below)
     if (j.contains("inherits")) {
         std::string v;
@@ -109,13 +156,15 @@ static int load_profile_json_impl(std::istream& f, const std::string& fp, Dynami
     return 0;
 }
 
-// path variant: opens the file once and delegates; open-failure IS the
-// existence signal (no separate probe open that could consume a stream)
+// path variant: slurps the file once (open-failure IS the existence signal)
+// then delegates; the slurp reader is cancellable on both platforms
 static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
                              std::unordered_set<std::string>& visited, int depth) {
-    std::ifstream f(fp);
-    if (!f.is_open()) { if (g_cancelled.load()) return 3; return 2; }   // bad file (missing/malformed)
-    return load_profile_json_impl(f, fp, cfg, visited, depth);
+    std::string content;
+    int rr = slurp_profile_cancellable(fp, content);
+    if (rr == 1) return 3;                       // cancelled
+    if (rr == 2) return 2;                       // bad file (missing/malformed)
+    return load_profile_json_impl(content, fp, cfg, visited, depth);
 }
 
 static std::string strip_dir(const std::string& s) {
@@ -242,7 +291,13 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                 ref.locked = m["locked"].get<bool>();
             }
             if (ref.id.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model entry missing id"; return false; }
-            for (auto& ex : out.models) { if (ex.id == ref.id) { err.error.code="INVALID_INPUT"; err.error.message="duplicate id '"+ref.id+"'"; err.error.object_ids={ref.id}; return false; } }
+            for (auto& ex : out.models) {  // O(n^2) duplicate scan — poll cancel inside
+                if (g_cancelled.load()) {
+                    err.error.code="CANCELLED"; err.error.message="cancelled during input validation";
+                    return false;
+                }
+                if (ex.id == ref.id) { err.error.code="INVALID_INPUT"; err.error.message="duplicate id '"+ref.id+"'"; err.error.object_ids={ref.id}; return false; }
+            }
             if (ref.path.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' missing path"; err.error.object_ids={ref.id}; return false; }
             // transform: nested object or flat top-level fields; track presence to preserve embedded transforms
             bool has_override = false;
@@ -318,19 +373,24 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
     { std::string cp = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json";
-      std::ifstream cf(cp); if (cf.is_open()) { std::unordered_set<std::string> vis; load_profile_json_impl(cf, cp, cfg, vis, 0); } }
+      std::string content; if (slurp_profile_cancellable(cp, content) == 0) { std::unordered_set<std::string> vis; load_profile_json_impl(content, cp, cfg, vis, 0); } }
     { std::string fp = dir + "/" + problem.profiles.machine;
-      std::ifstream mf(fp);  // open ONCE; open-failure is the existence signal
-      if (!mf.is_open()) {
-          if (g_cancelled.load()) {  // SIGINT-interrupted probe → cancel, not bad-file
+      std::string content;
+      int rr = slurp_profile_cancellable(fp, content);  // single open; slurp failure IS the existence signal
+      if (rr == 2) {
+          if (g_cancelled.load()) {  // SIGINT-interrupted open → cancel, not bad-file
               LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
               std::cerr << to_json(err).dump() << std::endl; return 5;
           }
           LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open machine profile: "+problem.profiles.machine;
           std::cerr << to_json(err).dump() << std::endl; return 3;
       }
+      if (rr == 1) {
+          LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
+          std::cerr << to_json(err).dump() << std::endl; return 5;
+      }
       std::unordered_set<std::string> vis;
-      int rc = load_profile_json_impl(mf, fp, cfg, vis, 0);
+      int rc = load_profile_json_impl(content, fp, cfg, vis, 0);
       if (rc == 3) {
           LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
           std::cerr << to_json(err).dump() << std::endl; return 5;
@@ -347,9 +407,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     auto load_opt = [&](const std::string& rel) -> int {
         if (rel.empty()) return 0;  // empty field = explicitly skipped
         std::string fp = dir + "/" + rel;
-        std::ifstream t(fp);  // open ONCE; open-failure is the existence signal
-        if (!t.is_open()) {
-            if (g_cancelled.load()) {  // SIGINT-interrupted probe → cancel, not bad-file
+        std::string content;
+        int rr = slurp_profile_cancellable(fp, content);  // single open; slurp failure IS the existence signal
+        if (rr == 2) {
+            if (g_cancelled.load()) {  // SIGINT-interrupted open → cancel, not bad-file
                 LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
                 std::cerr << to_json(err).dump() << std::endl; return 2;
             }
@@ -357,8 +418,12 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open profile: "+rel;
             std::cerr << to_json(err).dump() << std::endl; return 1;
         }
+        if (rr == 1) {
+            LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
+            std::cerr << to_json(err).dump() << std::endl; return 2;
+        }
         std::unordered_set<std::string> vis;
-        int rc = load_profile_json_impl(t, fp, cfg, vis, 0);
+        int rc = load_profile_json_impl(content, fp, cfg, vis, 0);
         if (rc == 3) {
             LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
             std::cerr << to_json(err).dump() << std::endl; return 2;
@@ -656,6 +721,30 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         }
     }
 
+    // write the serialized candidate to stdout in chunks, checking
+    // cancellation between chunks. On a backpressured stdout pipe the write
+    // blocks in the kernel; SIGINT interrupts it (EINTR, no SA_RESTART) and
+    // the next chunk-boundary check exits 5 CANCELLED promptly. A partially
+    // written candidate on a killed pipe is unavoidable (the consumer already
+    // saw bytes), but our side stops promptly and emits no further data.
+    auto emit_cancellable = [&](const std::string& out) -> int {
+        const size_t kChunk = 1 << 16;  // 64 KiB per write
+        size_t i = 0;
+        while (i < out.size()) {
+            if (g_cancelled.load()) {
+                LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+            }
+            size_t n = std::min(kChunk, out.size() - i);
+            std::cout.write(out.data() + static_cast<std::streamsize>(i), static_cast<std::streamsize>(n));
+            std::cout.flush();  // bound each blocking write to one chunk
+            i += n;
+        }
+        std::cout << '\n';
+        std::cout.flush();
+        return 0;
+    };
+
     if (!unfittable.empty()) {
         std::string out = to_json(result).dump();
         if (g_cancelled.load()) {  // cancel wins over emitting a large result
@@ -666,15 +755,16 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         err.error.message="some objects could not be placed on any bed";
         err.error.object_ids=unfittable;
         std::cerr << to_json(err).dump() << std::endl;
-        std::cout << out << std::endl; return 4;
+        int w = emit_cancellable(out);
+        return w == 5 ? 5 : 4;
     }
     std::string out = to_json(result).dump();
     if (g_cancelled.load()) {  // cancel wins over emitting a large result
         LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
         std::cerr << to_json(cerr2).dump() << std::endl; return 5;
     }
-    std::cout << out << std::endl;
-    return 0;
+    int w = emit_cancellable(out);
+    return w == 5 ? 5 : 0;
 }
 
 }  // namespace layout_plan
