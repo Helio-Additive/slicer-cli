@@ -1195,7 +1195,13 @@ int main(int argc, char** argv) {
         // route --input through the same cancellable fd read loop as stdin so
         // FIFOs/slow streams observe SIGINT/Ctrl+C with a bounded exit
         int rrc = read_all_cancellable(fd, input_data);
-        if (fd > 0) ::close(fd);
+        if (fd > 0) {
+#ifdef _WIN32
+            ::_close(fd);
+#else
+            ::close(fd);
+#endif
+        }
         if (rrc == 1) {
             std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
             return 5;
