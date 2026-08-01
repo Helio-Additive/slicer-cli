@@ -1078,6 +1078,7 @@ int main(int argc, char** argv) {
             std::cerr << "Usage: " << argv[0] << " layout capabilities --json\n";
             return 1;
         }
+        layout_plan::install_cancellation_handler();  // ignore SIGPIPE so write failures surface as errors
         return layout_plan::run_capabilities();
     }
 

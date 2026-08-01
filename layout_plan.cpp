@@ -235,6 +235,10 @@ int run_capabilities() {
 #endif
     caps.engine_version = SLIC3R_VERSION;
     std::cout << to_json(caps).dump() << std::endl;
+    if (!std::cout.good()) {  // hard write failure (e.g. /dev/full)
+        LayoutErrorV1 err; err.error.code="WRITE_FAILED"; err.error.message="failed to write capabilities to stdout";
+        std::cerr << to_json(err).dump() << std::endl; return 6;
+    }
     return 0;
 }
 
@@ -712,6 +716,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 std::cerr << to_json(err).dump() << std::endl; return 5;
             }
         }
+        // O(1) dedup of failure ids — the pair loop is O(n^2) in pairs already;
+        // keep a set so repeated violations of one id don't add linear scans
+        std::unordered_set<std::string> fail_ids;
         for (size_t a = 0; a < inflated.size(); ++a)
             for (size_t b = a+1; b < inflated.size(); ++b) {
                 if (g_cancelled.load()) {
@@ -724,9 +731,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                     std::cerr << to_json(err).dump() << std::endl; return 5;
                 }
                 if (!ia.empty()) {
-                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].id) == unfittable.end())
+                    if (fail_ids.insert(locked_placed[a].id).second)
                         unfittable.push_back(locked_placed[a].id);
-                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[b].id) == unfittable.end())
+                    if (fail_ids.insert(locked_placed[b].id).second)
                         unfittable.push_back(locked_placed[b].id);
                 }
             }
@@ -761,6 +768,32 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
                 std::cerr << to_json(cerr2).dump() << std::endl; return 5;
             }
+#ifdef _WIN32
+            // Windows: a full redirected pipe can block in _write even after
+            // the CRT handler runs. Before each chunk, poll the pipe with
+            // PeekNamedPipe; when the buffer is full, wait a bounded interval
+            // and re-check the cancellation flag (same pattern as the stdin
+            // reader). This bounds the stall to ~50 ms per poll.
+            {
+                HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stdout)));
+                if (h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_PIPE) {
+                    for (;;) {
+                        if (g_cancelled.load()) {
+                            LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                            std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+                        }
+                        DWORD avail = 0, buf_size = 0;
+                        if (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) &&
+                            GetNamedPipeInfo(h, nullptr, &buf_size, nullptr, nullptr) &&
+                            buf_size != 0 && avail >= buf_size) {
+                            Sleep(50);  // bounded wait; re-check the flag next
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+#endif
             size_t n = std::min(kChunk, out.size() - i);
             std::cout.write(out.data() + static_cast<std::streamsize>(i), static_cast<std::streamsize>(n));
             std::cout.flush();  // bound each blocking write to one chunk
