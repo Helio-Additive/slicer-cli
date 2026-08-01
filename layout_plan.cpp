@@ -376,6 +376,44 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     auto unlocked_input = get_arrange_polys(unlocked_model, ui);
     auto locked_input   = get_arrange_polys(locked_model, li);
 
+    // F3: total per-class polygon count must match ref sums (zero-area/dropped
+    // polygons are typed errors, not silent drops)
+    {
+        size_t exp_u = 0; for (auto& rc : unlocked_counts) exp_u += rc.count;
+        size_t exp_l = 0; for (auto& rc : locked_counts)   exp_l += rc.count;
+        if (unlocked_input.size() != exp_u) {
+            LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+            err.error.message="unlocked polygon count mismatch: expected "+std::to_string(exp_u)+", got "+std::to_string(unlocked_input.size())+" (zero-area model?)";
+            std::cerr << to_json(err).dump() << std::endl; return 3;
+        }
+        if (locked_input.size() != exp_l) {
+            LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+            err.error.message="locked polygon count mismatch: expected "+std::to_string(exp_l)+", got "+std::to_string(locked_input.size())+" (zero-area model?)";
+            std::cerr << to_json(err).dump() << std::endl; return 3;
+        }
+        // zero-footprint polygons (degenerate/flat meshes) are typed errors
+        size_t li3 = 0;
+        for (auto& rc : locked_counts) {
+            if (li3 < locked_input.size() &&
+                std::abs(locked_input[li3].transformed_poly().contour.area()) < scaled<double>(0.01) * scaled<double>(0.01)) {
+                LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+                err.error.message="locked model '"+rc.id+"' has zero footprint";
+                err.error.object_ids={rc.id}; std::cerr << to_json(err).dump() << std::endl; return 3;
+            }
+            li3++;
+        }
+        size_t ui3 = 0;
+        for (auto& rc : unlocked_counts) {
+            if (ui3 < unlocked_input.size() &&
+                std::abs(unlocked_input[ui3].transformed_poly().contour.area()) < scaled<double>(0.01) * scaled<double>(0.01)) {
+                LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+                err.error.message="model '"+rc.id+"' has zero footprint";
+                err.error.object_ids={rc.id}; std::cerr << to_json(err).dump() << std::endl; return 3;
+            }
+            ui3++;
+        }
+    }
+
     // Identity mapping: each ref must produce exactly one polygon (multi-polygon files refused)
     for (auto& rc : unlocked_counts)
         if (rc.count != 1) {
@@ -463,19 +501,40 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             result.placements.push_back(pm);
         }
     }
-    // Fix 1: locked-vs-locked overlap — both locked at overlapping positions
-    // cannot be honoured simultaneously → UNFITTABLE naming both.
-    for (size_t a = 0; a < locked_placed.size(); ++a)
-        for (size_t b = a+1; b < locked_placed.size(); ++b) {
-            Slic3r::Polygons ia = intersection(to_polygons(locked_placed[a].second).front(),
-                                               Polygon(locked_placed[b].second.contour.points));
-            if (!ia.empty()) {
-                if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].first) == unfittable.end())
-                    unfittable.push_back(locked_placed[a].first);
-                if (std::find(unfittable.begin(), unfittable.end(), locked_placed[b].first) == unfittable.end())
-                    unfittable.push_back(locked_placed[b].first);
-            }
+    // F4: honour late SIGINT during validation — no partial stdout
+    if (g_cancelled.load()) {
+        LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+        std::cerr << to_json(err).dump() << std::endl; return 5;
+    }
+
+    // F1: locked-vs-locked clearance — inflate each locked contour by half the
+    // minimum spacing; overlapping INFLATED contours mean the pair violates
+    // minObjectDistanceMm (or overlaps outright) → UNFITTABLE naming both.
+    {
+        double inflate = scaled<double>(problem.spacing.min_object_distance_mm) / 2.0;
+        std::vector<Polygon> inflated;
+        for (auto& [id, poly] : locked_placed) {
+            Slic3r::Polygons off = offset(to_polygons(poly).front(), float(inflate));
+            inflated.emplace_back(off.empty() ? Polygon(poly.contour.points) : off.front());
         }
+        for (size_t a = 0; a < inflated.size(); ++a)
+            for (size_t b = a+1; b < inflated.size(); ++b) {
+                Slic3r::Polygons ia = intersection(inflated[a], inflated[b]);
+                if (!ia.empty()) {
+                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].first) == unfittable.end())
+                        unfittable.push_back(locked_placed[a].first);
+                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[b].first) == unfittable.end())
+                        unfittable.push_back(locked_placed[b].first);
+                }
+            }
+    }
+
+    // F2: entries for overlapping/too-close locked models must be unplaced
+    // (bed_idx=-1, no coordinates) in the emitted candidate
+    for (auto& pm : result.placements)
+        if (std::find(unfittable.begin(), unfittable.end(), pm.id) != unfittable.end())
+            pm.bed_idx = -1;
+
     if (!unfittable.empty()) {
         LayoutErrorV1 err; err.error.code="UNFITTABLE";
         err.error.message="some objects could not be placed"; err.error.object_ids=unfittable;
