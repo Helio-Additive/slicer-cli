@@ -39,12 +39,14 @@ static void cancellation_handler(int) { g_cancelled.store(true); }
 
 static constexpr int kMaxInheritsDepth = 16;
 
-static bool load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
-                              std::unordered_set<std::string>& visited, int depth) {
-    if (depth > kMaxInheritsDepth || visited.count(fp)) return true;
+// return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), cycle = clean stop
+static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
+                             std::unordered_set<std::string>& visited, int depth) {
+    if (visited.count(fp)) return 0;               // cycle → already loaded ancestors, clean stop
+    if (depth > kMaxInheritsDepth) return 1;       // non-cyclic deep chain → truncated, error
     visited.insert(fp);
-    std::ifstream f(fp); if (!f.is_open()) return false;
-    json j; try { j = json::parse(f); } catch (...) { return false; }
+    std::ifstream f(fp); if (!f.is_open()) return 1;
+    json j; try { j = json::parse(f); } catch (...) { return 1; }
     // resolve inherits chain first (parent overrides child's keys below)
     if (j.contains("inherits")) {
         std::string v;
@@ -54,7 +56,8 @@ static bool load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
         if (!v.empty()) {
             std::string pp = fp.substr(0, fp.find_last_of('/')) + "/" + v;
             if (pp.size() <= 5 || pp.compare(pp.size()-5, 5, ".json") != 0) pp += ".json";
-            load_profile_json(pp, cfg, visited, depth + 1);
+            int rc = load_profile_json(pp, cfg, visited, depth + 1);
+            if (rc != 0) return rc;               // propagate depth error
         }
     }
     ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
@@ -76,10 +79,10 @@ static bool load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
             if (!vs.empty() && vs != "nil") cfg.set_deserialize(k, vs, ctx);
         } catch (...) {}
     }
-    return true;
+    return 0;
 }
 
-static bool load_with_inherits(DynamicPrintConfig& cfg, const std::string& fp) {
+static int load_with_inherits(DynamicPrintConfig& cfg, const std::string& fp) {
     std::unordered_set<std::string> visited;
     return load_profile_json(fp, cfg, visited, 0);
 }
@@ -284,8 +287,11 @@ int run_layout_plan(const LayoutProblemV1& problem) {
           std::cerr << to_json(err).dump() << std::endl; return 3;
       }
       mf.close();
-      if (!load_with_inherits(cfg, fp)) {
-          LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to load machine profile: "+problem.profiles.machine;
+      int rc = load_with_inherits(cfg, fp);
+      if (rc != 0) {
+          LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+          err.error.message = (rc == 1) ? "inheritance chain for machine profile exceeds depth limit: "+problem.profiles.machine
+                                        : "failed to load machine profile: "+problem.profiles.machine;
           std::cerr << to_json(err).dump() << std::endl; return 3;
       }
     }
@@ -296,8 +302,11 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         std::ifstream t(fp);
         if (!t.good()) return true; // silently skip absent
         t.close();
-        if (!load_with_inherits(cfg, fp)) {
-            LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to load profile: "+rel;
+        int rc = load_with_inherits(cfg, fp);
+        if (rc != 0) {
+            LayoutErrorV1 err; err.error.code="INVALID_INPUT";
+            err.error.message = (rc == 1) ? "inheritance chain for profile exceeds depth limit: "+rel
+                                          : "failed to load profile: "+rel;
             std::cerr << to_json(err).dump() << std::endl; return false;
         }
         return true;
@@ -471,7 +480,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     PlacementCandidateV1 result;
     result.engine = be;
     std::vector<std::string> unfittable;
-    std::vector<std::pair<std::string, ExPolygon>> locked_placed;
+    struct LockedRec { std::string id; ExPolygon poly; coord_t inflation; };
+    std::vector<LockedRec> locked_placed;
     size_t ui2 = 0, li2 = 0;
 
     for (auto& ref : problem.models) {
@@ -488,7 +498,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             if (!fully_inside_bed(ap.transformed_poly(), bed_poly)) {
                 pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
             }
-            locked_placed.emplace_back(ref.id, ap.transformed_poly());
+            locked_placed.push_back({ref.id, ap.transformed_poly(), ap.inflation});
             pm.bed_idx = 0;
             pm.x_mm = cx; pm.y_mm = cy; // candidate convention: bb centre
             pm.rotation_rad = lrot;
@@ -517,11 +527,13 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // minimum spacing; overlapping INFLATED contours mean the pair violates
     // minObjectDistanceMm (or overlaps outright) → UNFITTABLE naming both.
     {
-        double inflate = scaled<double>(problem.spacing.min_object_distance_mm) / 2.0;
+        double spacing_infl = scaled<double>(problem.spacing.min_object_distance_mm) / 2.0;
         std::vector<Polygon> inflated;
-        for (auto& [id, poly] : locked_placed) {
-            Slic3r::Polygons off = offset(to_polygons(poly).front(), float(inflate));
-            inflated.emplace_back(off.empty() ? Polygon(poly.contour.points) : off.front());
+        for (auto& rec : locked_placed) {
+            // actual inflation = max of spacing-derived and profile-derived (brim/clearance)
+            double eff = std::max(spacing_infl, double(rec.inflation));
+            Slic3r::Polygons off = offset(to_polygons(rec.poly).front(), float(eff));
+            inflated.emplace_back(off.empty() ? Polygon(rec.poly.contour.points) : off.front());
         }
         for (size_t a = 0; a < inflated.size(); ++a)
             for (size_t b = a+1; b < inflated.size(); ++b) {
@@ -531,10 +543,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 }
                 Slic3r::Polygons ia = intersection(inflated[a], inflated[b]);
                 if (!ia.empty()) {
-                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].first) == unfittable.end())
-                        unfittable.push_back(locked_placed[a].first);
-                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[b].first) == unfittable.end())
-                        unfittable.push_back(locked_placed[b].first);
+                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].id) == unfittable.end())
+                        unfittable.push_back(locked_placed[a].id);
+                    if (std::find(unfittable.begin(), unfittable.end(), locked_placed[b].id) == unfittable.end())
+                        unfittable.push_back(locked_placed[b].id);
                 }
             }
     }
