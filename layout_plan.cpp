@@ -264,6 +264,42 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     std::ifstream cf(common_path);
     if (cf.good()) { cf.close(); load_profile(common_path, cfg); }
 
+    // resolve 'inherits' chains: walk parent files in the same directory
+    auto resolve_inherits = [&](DynamicPrintConfig& c, const std::string& base_dir) {
+        for (bool changed = true; changed; ) {
+            changed = false;
+            auto* inherit_opt = c.option<ConfigOptionString>("inherits");
+            if (!inherit_opt || inherit_opt->value.empty()) break;
+            std::string parent_path = base_dir + "/" + inherit_opt->value;
+            if (parent_path.size() <= 5 || parent_path.compare(parent_path.size()-5, 5, ".json") != 0) parent_path += ".json";
+            std::ifstream pf(parent_path);
+            if (!pf.good()) break;
+            json pj = json::parse(pf);
+            for (auto& [k, v] : pj.items()) {
+                if (k == "type" || k == "name" || k == "inherits" || k == "from" ||
+                    k == "setting_id" || k == "instantiation" || k == "description" ||
+                    k == "compatible_printers" || k == "compatible_prints" ||
+                    k == "include" || k == "upward_compatible_machine" ||
+                    k == "printer_model" || k == "printer_variant" ||
+                    k == "default_filament_profile" || k == "default_print_profile")
+                    continue;
+                try {
+                    std::string vs;
+                    if (v.is_array()) { std::vector<std::string> ps; for (auto& e : v) { if (e.is_string()) ps.push_back(e.get<std::string>()); else if (e.is_number()) ps.push_back(std::to_string(e.get<double>())); } for (size_t i = 0; i < ps.size(); i++) { if (i > 0) vs += ","; vs += ps[i]; } }
+                    else if (v.is_string()) vs = v.get<std::string>();
+                    else if (v.is_number_float()) vs = std::to_string(v.get<double>());
+                    else if (v.is_number_integer()) vs = std::to_string(v.get<int>());
+                    else if (v.is_boolean()) vs = v.get<bool>() ? "1" : "0";
+                    if (!vs.empty() && vs != "nil") {
+                        ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
+                        c.set_deserialize(k, vs, ctx);
+                        changed = true;
+                    }
+                } catch (...) {}
+            }
+        }
+    };
+
     auto load_req = [&](const std::string& relative) -> bool {
         if (relative.empty()) return true;  // optional
         std::string fp = dir + "/" + relative;
@@ -279,6 +315,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     if (!load_req(problem.profiles.machine))  return 3;
     if (!load_req(problem.profiles.process))  return 3;
     if (!load_req(problem.profiles.filament)) return 3;
+
+    // Resolve inherits chain for the machine profile to populate printable_area
+    resolve_inherits(cfg, dir);
 
     // --- Load models ---
     Model model;
@@ -346,6 +385,25 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     Points bed_pts = get_shrink_bedpts(cfg, params);
 #endif
     arrangement::arrange(input, {}, bed_pts, params);
+
+    // Validate bed: refuse empty/degenerate beds (missing inherits resolution)
+    if (bed_pts.size() < 3) {
+        LayoutErrorV1 err;
+        err.error.code    = "INVALID_INPUT";
+        err.error.message = "bed polygon is degenerate (fewer than 3 points); profile may be missing printable_area";
+        std::cerr << to_json(err).dump() << std::endl;
+        return 3;
+    }
+    {
+        BoundingBox bb(bed_pts);
+        if (bb.size().x() <= 0 || bb.size().y() <= 0) {
+            LayoutErrorV1 err;
+            err.error.code    = "INVALID_INPUT";
+            err.error.message = "bed has zero or negative dimensions; profile may be missing printable_area";
+            std::cerr << to_json(err).dump() << std::endl;
+            return 3;
+        }
+    }
 
     // --- Build result ---
     PlacementCandidateV1 result;
