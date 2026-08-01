@@ -236,8 +236,16 @@ int run_capabilities() {
     caps.engine_version = SLIC3R_VERSION;
     std::cout << to_json(caps).dump() << std::endl;
     if (!std::cout.good()) {  // hard write failure (e.g. /dev/full)
+        if (g_cancelled.load()) {  // cancel takes precedence over the write failure
+            LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled";
+            std::cerr << to_json(err).dump() << std::endl; return 5;
+        }
         LayoutErrorV1 err; err.error.code="WRITE_FAILED"; err.error.message="failed to write capabilities to stdout";
         std::cerr << to_json(err).dump() << std::endl; return 6;
+    }
+    if (g_cancelled.load()) {  // final recheck per convention
+        LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled";
+        std::cerr << to_json(err).dump() << std::endl; return 5;
     }
     return 0;
 }
@@ -574,7 +582,15 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // Extract polygons
     ModelInstancePtrs ui, li;
     auto unlocked_input = get_arrange_polys(unlocked_model, ui);
+    if (g_cancelled.load()) {  // extraction may be long for many-object models
+        LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+        std::cerr << to_json(err).dump() << std::endl; return 5;
+    }
     auto locked_input   = get_arrange_polys(locked_model, li);
+    if (g_cancelled.load()) {  // recheck after the second extraction too
+        LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+        std::cerr << to_json(err).dump() << std::endl; return 5;
+    }
 
     // F3: total per-class polygon count must match ref sums (zero-area/dropped
     // polygons are typed errors, not silent drops)
