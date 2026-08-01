@@ -1030,6 +1030,16 @@ int main(int argc, char** argv) {
 
     std::map<std::string, std::string> overrides;
 
+    // subcommand: slicer_cli layout capabilities --json
+    if (argc >= 3 && std::string(argv[1]) == "layout" && std::string(argv[2]) == "capabilities") {
+        bool json_flag = (argc >= 4 && std::string(argv[3]) == "--json");
+        if (!json_flag) {
+            std::cerr << "Usage: " << argv[0] << " layout capabilities --json\n";
+            return 1;
+        }
+        return layout_plan::run_capabilities();
+    }
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -1115,6 +1125,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 #endif
+
+    // Detect conflicting layout flags
+    if (layout_plan_mode && !layout_json_file.empty()) {
+        std::cerr << "Error: --layout-plan and --layout are mutually exclusive\n";
+        return 1;
+    }
 
     // --layout-plan: versioned headless arrange contract (issue #7)
     if (layout_plan_mode) {
