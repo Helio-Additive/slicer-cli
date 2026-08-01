@@ -9,10 +9,13 @@
 #include <vector>
 #include <cstdlib>
 #ifdef _WIN32
+#include <windows.h>
 #include <io.h>
+#include <fcntl.h>
 #else
 #include <cerrno>
 #include <unistd.h>
+#include <fcntl.h>
 #endif
 
 // Core libslic3r headers
@@ -257,6 +260,37 @@ int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config) {
 }
 
 }  // namespace
+
+// Read all of an fd into a string, polling the cancellation flag between reads
+// so SIGINT/Ctrl+C during a slow stream (stdin, FIFO, or pipe) is honoured
+// with a bounded exit. Returns false if cancelled.
+static bool read_all_cancellable(int fd, std::string& out) {
+    char buf[4096];
+    while (true) {
+        if (layout_plan::is_cancelled()) return false;
+#ifdef _WIN32
+        // Windows: a redirected pipe can block in _read even after the CRT
+        // handler runs. PeekNamedPipe before each read; when the pipe is empty,
+        // wait a bounded interval and re-check the flag.
+        HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+        if (h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_PIPE) {
+            DWORD avail = 0;
+            if (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) && avail == 0) {
+                Sleep(50);
+                continue;
+            }
+        }
+        int n = ::_read(fd, buf, static_cast<unsigned>(sizeof buf));
+#else
+        ssize_t n = ::read(fd, buf, sizeof buf);
+        if (n < 0 && errno == EINTR) continue;  // sigaction has no SA_RESTART
+#endif
+        if (n < 0) return false;   // hard error
+        if (n == 0) return true;   // EOF
+        out.append(buf, static_cast<size_t>(n));
+    }
+}
+
 void print_usage(const char* prog_name) {
     std::cout << "Usage: " << prog_name << " [options] <input.stl|input.3mf>\n"
               << "\n=== Configuration Options ===\n"
@@ -1142,56 +1176,32 @@ int main(int argc, char** argv) {
     if (layout_plan_mode) {
         layout_plan::install_cancellation_handler();  // before input read: honor SIGINT during parse
         json raw;
+        std::string input_data;
+        int fd = -1;
         if (!input_file.empty()) {
-            std::ifstream in(input_file);
-            if (!in.is_open()) {
+#ifdef _WIN32
+            fd = ::_open(input_file.c_str(), _O_RDONLY);
+#else
+            fd = ::open(input_file.c_str(), O_RDONLY);
+#endif
+            if (fd < 0) {
                 std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","cannot open --input file"}}}}.dump() << std::endl;
                 return 3;
             }
-            try { raw = json::parse(in); } catch (const std::exception& e) {
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
-                return 3;
-            }
         } else {
-            // poll stdin in chunks so SIGINT during a slow stream is honoured:
-            // ::read() on fd 0 returns EINTR when the (no-SA_RESTART) handler runs,
-            // letting the loop observe the flag instead of staying blocked.
-            std::string input_data;
-            {
-                char buf[4096];
-                bool cancelled = false;
-                while (!cancelled) {
-                    if (layout_plan::is_cancelled()) { cancelled = true; break; }
-#ifdef _WIN32
-                    int n = ::_read(0, buf, (unsigned)sizeof buf);
-#else
-                    ssize_t n = ::read(0, buf, sizeof buf);
-#endif
-                    if (n < 0) {
-#ifdef _WIN32
-                        // Windows: no SA_RESTART semantics to undo; poll the flag
-                        if (layout_plan::is_cancelled()) cancelled = true;
-#else
-                        if (errno == EINTR) {
-                            if (layout_plan::is_cancelled()) cancelled = true;
-                            continue;
-                        }
-#endif
-                        if (cancelled) continue;
-                        break;  // hard error
-                    }
-                    if (n == 0) break;  // EOF
-                    input_data.append(buf, size_t(n));
-                }
-                if (cancelled || layout_plan::is_cancelled()) {
-                    std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
-                    return 5;
-                }
-            }
-            try { raw = json::parse(input_data); } catch (const std::exception& e) {
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error on stdin: ")+e.what()}}}}.dump() << std::endl;
-                return 3;
-            }
+            fd = 0;  // stdin
+        }
+        // route --input through the same cancellable fd read loop as stdin so
+        // FIFOs/slow streams observe SIGINT/Ctrl+C with a bounded exit
+        if (!read_all_cancellable(fd, input_data)) {
+            if (fd > 0) ::close(fd);
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
+            return 5;
+        }
+        if (fd > 0) ::close(fd);
+        try { raw = json::parse(input_data); } catch (const std::exception& e) {
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
+            return 3;
         }
         layout_plan::LayoutProblemV1 problem;
         layout_plan::LayoutErrorV1   parse_err;
