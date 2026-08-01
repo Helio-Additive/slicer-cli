@@ -2589,6 +2589,27 @@ impl PrintConfig {
                 }
                 true
             }
+            // Flush-into-object routing (C++ WipingExtrusions::is_overriddable):
+            // when set, part of a tool change's purge is absorbed by the object's
+            // own extrusions instead of the wipe tower.
+            "flush_into_infill" => {
+                if let Some(v) = parse_bool(value) {
+                    self.flush_into_infill = v;
+                }
+                true
+            }
+            "flush_into_objects" => {
+                if let Some(v) = parse_bool(value) {
+                    self.flush_into_objects = v;
+                }
+                true
+            }
+            "flush_into_support" => {
+                if let Some(v) = parse_bool(value) {
+                    self.flush_into_support = v;
+                }
+                true
+            }
 
             _ => {
                 // ZSMOOTH_FAITHFUL: delegate a VETTED set of keys to

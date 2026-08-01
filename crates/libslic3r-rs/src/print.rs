@@ -1941,6 +1941,50 @@ impl Print {
                         old_tool = tool;
                     }
                 }
+                // R436 sizing probe: how much purge is demanded vs how much
+                // eligible (InternalInfill) object volume could absorb it under
+                // C++'s flush_into_infill routing.
+                if std::env::var_os("FLUSH_PROBE").is_some() {
+                    let mut purge_total = 0.0f64;
+                    let mut ot = initial;
+                    for (_, _, tools) in &layer_seqs {
+                        for &t in tools {
+                            if t != ot {
+                                purge_total += purge_of(ot, t) as f64;
+                                ot = t;
+                            }
+                        }
+                    }
+                    let soluble = self.config.filament_soluble;
+                    let mut eligible = 0.0f64;
+                    let mut all_fill = 0.0f64;
+                    for layer in object.layers() {
+                        for region in layer.regions() {
+                            for ent in &region.fills.entities {
+                                use crate::extrusion_entity::ExtrusionEntityType as T;
+                                let (role, v) = match ent {
+                                    T::Path(p) => (p.role, p.total_volume()),
+                                    T::Loop(l) => (l.role(), l.total_volume()),
+                                    T::Collection(c) => (c.role(), c.total_volume()),
+                                };
+                                all_fill += v;
+                                if crate::gcode::tool_ordering::is_overriddable(
+                                    role,
+                                    soluble,
+                                    self.config.flush_into_objects,
+                                    self.config.flush_into_infill,
+                                ) {
+                                    eligible += v;
+                                }
+                            }
+                        }
+                    }
+                    eprintln!(
+                        "FLUSH_PROBE: purge_demanded={:.0}mm3 eligible_infill={:.0}mm3 all_fill={:.0}mm3 flush_into_infill={} flush_into_objects={} (InternalInfill role only)",
+                        purge_total, eligible, all_fill,
+                        self.config.flush_into_infill, self.config.flush_into_objects,
+                    );
+                }
                 self.wipe_tower_results = wt.generate();
                 if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
                     let blocks: usize =

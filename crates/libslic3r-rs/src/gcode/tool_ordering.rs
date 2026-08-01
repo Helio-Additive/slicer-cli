@@ -485,6 +485,80 @@ impl WipingExtrusions {
 }
 
 // ============================================================================
+// Flush-into-object eligibility (WipingExtrusions::is_*_overriddable)
+//
+// C++ ToolOrdering.cpp:2645-2690. These decide whether an object extrusion may
+// absorb part of a tool change's purge instead of the wipe tower. Kept as free
+// functions taking the config values directly so they can be used both from a
+// full `WipingExtrusions` walk and from the Tier-1 wipe-tower pre-pass (which
+// has no central `LayerTools`).
+// ============================================================================
+
+/// Port of `WipingExtrusions::is_overriddable` (ToolOrdering.cpp:2645).
+///
+/// `filament_soluble` is the soluble flag of the filament that would print this
+/// collection; soluble filament is never used for wiping.
+pub fn is_overriddable(
+    role: crate::extrusion_entity::ExtrusionRole,
+    filament_soluble: bool,
+    flush_into_objects: bool,
+    flush_into_infill: bool,
+) -> bool {
+    // cpp:2647-2648
+    if filament_soluble {
+        return false;
+    }
+    // cpp:2650-2651
+    if flush_into_objects {
+        return true;
+    }
+    // cpp:2653-2654 — otherwise only *internal* infill qualifies.
+    if !flush_into_infill || role != crate::extrusion_entity::ExtrusionRole::InternalInfill {
+        return false;
+    }
+    true
+}
+
+/// Port of `WipingExtrusions::is_obj_overriddable` (ToolOrdering.cpp:2658).
+pub fn is_obj_overriddable(
+    role: crate::extrusion_entity::ExtrusionRole,
+    flush_into_objects: bool,
+    flush_into_infill: bool,
+) -> bool {
+    if flush_into_objects {
+        return true;
+    }
+    if flush_into_infill && role == crate::extrusion_entity::ExtrusionRole::InternalInfill {
+        return true;
+    }
+    false
+}
+
+/// Port of `WipingExtrusions::is_support_overriddable` (ToolOrdering.cpp:2670).
+///
+/// `support_filament` / `support_interface_filament` are the object's config
+/// values; 0 means "use whatever filament is current", which is what makes the
+/// support overriddable.
+pub fn is_support_overriddable(
+    role: crate::extrusion_entity::ExtrusionRole,
+    flush_into_support: bool,
+    support_filament: u32,
+    support_interface_filament: u32,
+) -> bool {
+    use crate::extrusion_entity::ExtrusionRole;
+    if !flush_into_support {
+        return false;
+    }
+    match role {
+        ExtrusionRole::Mixed => support_filament == 0 || support_interface_filament == 0,
+        // cpp:2679 groups erSupportMaterial with erSupportTransition.
+        ExtrusionRole::SupportMaterial | ExtrusionRole::SupportTransition => support_filament == 0,
+        ExtrusionRole::SupportMaterialInterface => support_interface_filament == 0,
+        _ => false,
+    }
+}
+
+// ============================================================================
 // Layer Tools
 // ============================================================================
 
