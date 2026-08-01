@@ -174,8 +174,13 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         if (out.profiles.machine.empty()) { err.error.code="INVALID_INPUT"; err.error.message="profiles.machine required"; return false; }
         const json& sp_j = raw.value("spacing", json::object());
         out.spacing.min_object_distance_mm = sp_j.value("minObjectDistanceMm", sp_j.value("min_mm", 10.0));
+        if (out.spacing.min_object_distance_mm < 0) {
+            err.error.code="INVALID_INPUT"; err.error.message="minObjectDistanceMm must be >= 0"; return false;
+        }
         out.spacing.clearance_radius_mm    = sp_j.value("clearanceRadiusMm", 0.0);
-        out.spacing.allow_rotations        = sp_j.value("allowRotations", true);
+        if (out.spacing.clearance_radius_mm < 0) {
+            err.error.code="INVALID_INPUT"; err.error.message="clearanceRadiusMm must be >= 0"; return false;
+        }
         if (raw.contains("seed")) {
             if (!raw["seed"].is_number_unsigned()) { err.error.code="INVALID_INPUT"; err.error.message="seed must be a non-negative integer"; return false; }
             out.seed = raw["seed"].get<uint64_t>(); // accepted-and-recorded; engine is inherently deterministic
