@@ -3301,6 +3301,18 @@ impl PerimeterGenerator {
             .sum::<f64>()
             / line.junctions.len() as f64;
 
+        // R443/R444: an Arachne junction width `w` is a SPACING, not an extrusion
+        // width — `WallToolPaths` is seeded with ext_perimeter_spacing /
+        // perimeter_spacing (PerimeterGenerator.cpp:1566), so the beads come back in
+        // that same convention. C++ converts back before building the flow
+        // (VariableWidth.cpp:66,136,203):
+        //     flow.with_width(unscale(w) + flow.height() * (1 - 0.25*PI))
+        // Using `w` directly as a width under-extrudes by exactly that term: for
+        // Majora (w 0.33562, h 0.3) it yielded 0.336 instead of 0.400, i.e. wall
+        // E/mm 0.805x C++ and object-only material 0.878x. This is the same
+        // spacing-vs-width convention that caused R413's +14% overshoot, in reverse.
+        let avg_width = avg_width + self.config.layer_height * (1.0 - 0.25 * std::f64::consts::PI);
+
         // Get flow for this width
         let flow = match Flow::new(
             avg_width,
