@@ -194,12 +194,12 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
             err.error.message = "each model entry must be a JSON object";
             return false;
         }
-        if (!m["id"].is_string()) {
+        if (!m.contains("id") || !m["id"].is_string()) {
             err.error.code    = "INVALID_INPUT";
-            err.error.message = "model entry 'id' must be a string";
+            err.error.message = "model entry missing or non-string 'id'";
             return false;
         }
-        if (!m["path"].is_string()) {
+        if (!m.contains("path") || !m["path"].is_string()) {
             err.error.code    = "INVALID_INPUT";
             err.error.message = "model entry 'path' must be a string";
             return false;
@@ -262,11 +262,12 @@ int run_layout_plan(const LayoutProblemV1& problem) {
 
     // Recursively load a profile file PLUS its inherits chain.
     // The inherits key is read from the raw JSON BEFORE keys are filtered.
-    std::function<void(const std::string&)> load_with_inherits;
-    load_with_inherits = [&](const std::string& fp) -> void {
+    std::function<bool(const std::string&)> load_with_inherits;
+    load_with_inherits = [&](const std::string& fp) -> bool {
         std::ifstream f(fp);
-        if (!f.is_open()) return;
-        json j = json::parse(f);
+        if (!f.is_open()) return false;
+        json j;
+        try { j = json::parse(f); } catch (const std::exception&) { return false; }
         // Walk inherits chain first: load parent then child to let child override
         if (j.contains("inherits")) {
             std::string inherit_val;
@@ -302,19 +303,26 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 if (!vs.empty() && vs != "nil") cfg.set_deserialize(k, vs, ctx);
             } catch (...) {}
         }
+        return true;
     };
 
     // Load common machine base if present
     { std::string common_path = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json";
       std::ifstream cf(common_path);
-      if (cf.good()) { cf.close(); load_with_inherits(common_path); } }
+      if (cf.good()) { cf.close(); load_with_inherits(common_path); } } // best-effort
 
     auto load_req = [&](const std::string& relative, bool resolve_inherits = false) -> bool {
         if (relative.empty()) return true;
         std::string fp = dir + "/" + relative;
         if (resolve_inherits) {
-            // load with inherits resolution
-            load_with_inherits(fp);
+            // load with inherits resolution; fail on missing/invalid file
+            if (!load_with_inherits(fp)) {
+                LayoutErrorV1 err;
+                err.error.code    = "INVALID_INPUT";
+                err.error.message = "failed to load profile: " + relative;
+                std::cerr << to_json(err).dump() << std::endl;
+                return false;
+            }
             return true;
         }
         if (!load_profile(fp, cfg)) {
