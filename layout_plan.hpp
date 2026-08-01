@@ -50,6 +50,7 @@ struct LayoutProblemV1 {
     ProfileRef             profiles;
     SpacingPolicy          spacing;
     std::vector<ModelRef>  models;
+    uint64_t               seed = 0;   // accepted-and-recorded; engine is inherently deterministic
 };
 
 struct PlacedModel {
@@ -89,8 +90,8 @@ struct CapabilitiesV1 {
     bool cross_plate           = false;
     bool non_rectangular_beds  = true;
     bool locks                 = true;
-    bool rotation_constraints  = false;
-    bool seeded_determinism    = false;
+    bool rotation_constraints  = false; // v2: engine computes rotations internally, caller sets unsupported
+    bool seeded_determinism    = true;  // inherent: arrange pipeline uses no RNG
     bool cancellation          = true;
     bool progress              = false;
 };

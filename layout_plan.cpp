@@ -177,7 +177,7 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         out.spacing.allow_rotations        = sp_j.value("allowRotations", true);
         if (raw.contains("seed")) {
             if (!raw["seed"].is_number_unsigned()) { err.error.code="INVALID_INPUT"; err.error.message="seed must be a non-negative integer"; return false; }
-            if (raw["seed"].get<uint64_t>() != 0) { err.error.code="INVALID_INPUT"; err.error.message="seed not supported (capabilities.seeded_determinism=false)"; return false; }
+            out.seed = raw["seed"].get<uint64_t>(); // accepted-and-recorded; engine is inherently deterministic
         }
         if (!raw.contains("models") || !raw["models"].is_array()) { err.error.code="INVALID_INPUT"; err.error.message="models must be array"; return false; }
         const json& mods_j = raw["models"];
@@ -247,6 +247,11 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     }
     g_cancelled.store(false);
     std::signal(SIGINT, cancellation_handler);
+
+    // seed is accepted-and-recorded: the arrange pipeline (subplex + firstfit,
+    // per-index parallel writes) consumes no randomness, so output is
+    // inherently deterministic — same input+seed → byte-identical output.
+    (void)problem.seed;
 
     // Load profiles
     std::string dir = problem.profiles_dir;
