@@ -786,6 +786,16 @@ target_include_directories(slicer_cli PRIVATE
     "${SUBLIB_DIR}/miniz"
     "${OpenCASCADE_INCLUDE_DIR}")
 
+# ─── Layout spike (proof harness) ─────────────────────────────────────────
+add_executable(layout_spike layout_spike.cpp arrange_harness.cpp)
+target_link_libraries(layout_spike PRIVATE libslic3r_core)
+target_include_directories(layout_spike PRIVATE
+    "${VENDOR}"
+    "${REF_SRC}"
+    "${LIBSLIC3R_DIR}"
+    "${LIBSLIC3R_REF_DIR}"
+    "${SUBLIB_DIR}/miniz"
+    "${OpenCASCADE_INCLUDE_DIR}")
 # On macOS, ICU is keg-only — add the lib dir directly to the executable's
 # link command so the linker can resolve icudata (a transitive dep of icuuc).
 if(APPLE AND ICU_UC_LIB)

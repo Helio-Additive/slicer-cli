@@ -21,6 +21,9 @@
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/miniz_extension.hpp"
+#include "libslic3r/ModelArrange.hpp"
+#include "libslic3r/Arrange.hpp"
+#include "libslic3r/BoundingBox.hpp"
 
 // For JSON parsing (using libslic3r's built-in nlohmann/json)
 #include <nlohmann/json.hpp>
@@ -268,6 +271,10 @@ void print_usage(const char* prog_name) {
               << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
               << "                         tokens (e.g. initial_no_support_filament_id) in\n"
               << "                         custom G-code. Default: normalization is on.\n"
+              << "\n=== Layout & Arrange (issue #7) ===\n"
+              << "  --layout <file>        Headless arrange spike: legacy JSON with profiles\n"
+              << "                         and object paths; emits JSON placements.\n"
+              << "  --input <file>         Input file for layout/calib modes or stdin.\n"
               << "\n=== Calibration (slicer-cli #5) ===\n"
               << "  --calib-mode <mode>    Emit a calibration test. One of:\n"
               << "                           temp_tower, retraction_tower,\n"
@@ -1010,10 +1017,11 @@ int main(int argc, char** argv) {
     std::string bundle_config;
     bool verbose = false;
     int plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
-    bool normalize_legacy_gcode = true;  // cli #4: alias unbound legacy placeholder tokens
-    slicer_cli::CalibOptions calib_opts;  // cli #5: --calib-* flags
-
+    bool normalize_legacy_gcode = true;
+    std::string layout_json_file;
+    slicer_cli::CalibOptions calib_opts;
     // Override settings
+
     std::map<std::string, std::string> overrides;
 
     for (int i = 1; i < argc; ++i) {
@@ -1065,6 +1073,8 @@ int main(int argc, char** argv) {
             calib_opts.extruder_id = parse_cli_int("--calib-extruder-id", argv[++i], argv[0]);
         } else if (arg == "--calib-no-numbers") {
             calib_opts.print_numbers = false;
+        } else if (arg == "--layout" && i + 1 < argc) {
+            layout_json_file = argv[++i];
         } else if (arg[0] != '-') {
             input_file = arg;
         } else {
@@ -1098,6 +1108,113 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    // --layout: headless arrange spike (issue #7 milestone 1)
+    if (!layout_json_file.empty()) {
+        std::ifstream lf(layout_json_file);
+        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON: " << layout_json_file << "\n"; return 1; }
+        json lj;
+        try { lj = json::parse(lf); } catch (const std::exception& e) {
+            std::cerr << "Failed to parse layout JSON: " << e.what() << "\n"; return 1;
+        }
+        std::string profiles_dir = lj.value("profilesDir", "");
+        while (!profiles_dir.empty() && profiles_dir.back() == '/') profiles_dir.pop_back();
+
+        Slic3r::DynamicPrintConfig cfg;
+        if (lj.contains("profiles")) {
+            if (profiles_dir.empty()) {
+                std::cerr << "profilesDir is required when profiles is specified\n";
+                return 1;
+            }
+            for (auto& [_, path] : lj["profiles"].items()) {
+                if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
+                    std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
+                    return 1;
+                }
+            }
+        }
+        using namespace Slic3r;
+        using namespace Slic3r::arrangement;
+
+        ArrangeParams params;
+#ifdef ENGINE_ORCA
+        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#else
+        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#endif
+
+        // Load all STLs into a single Model (one ModelObject per STL)
+        Model model;
+        if (!lj.contains("objects") || !lj["objects"].is_array()) {
+            std::cerr << "objects must be a JSON array\n";
+            return 1;
+        }
+        for (auto& obj : lj["objects"]) {
+            if (!obj.is_object()) {
+                std::cerr << "each object entry must be a JSON object\n";
+                return 1;
+            }
+            std::string stl_path = obj.value("stl", "");
+            if (stl_path.empty()) continue;
+            try {
+                Model m = Model::read_from_file(stl_path);
+                for (ModelObject* mo : m.objects) {
+                    ModelObject* new_obj = model.add_object(*mo);
+                    if (new_obj->instances.empty())
+                        new_obj->add_instance();
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Failed to load " << stl_path << ": " << e.what() << "\n";
+                return 1;
+            }
+        }
+        params.min_obj_distance = scaled<coord_t>(lj.value("spacingMm", 10.0));
+        params.allow_rotations = lj.value("allowRotations", true);
+        params.do_final_align = lj.value("doFinalAlign", true);
+
+        // Use get_arrange_polys -> arrange pipeline (same as GUI ArrangeJob)
+        ModelInstancePtrs instances;
+        auto input = get_arrange_polys(model, instances);
+
+#ifdef ENGINE_ORCA
+        update_arrange_params(params, &cfg, input);
+        update_selected_items_inflation(input, &cfg, params);
+        Points bed_pts = get_shrink_bedpts(&cfg, params);
+#else
+        update_arrange_params(params, cfg, input);
+        update_selected_items_inflation(input, cfg, params);
+        Points bed_pts = get_shrink_bedpts(cfg, params);
+#endif
+        arrangement::arrange(input, {}, bed_pts, params);
+
+        // Apply results back to model instances
+        apply_arrange_polys(input, instances, [](ArrangePolygon&) {});
+
+        json out;
+        out["engine"] =
+        #ifdef ENGINE_ORCA
+            "orca";
+        #else
+            "bambu";
+        #endif
+        out["placements"] = json::array();
+        for (auto& ap : input) {
+            json p;
+            p["name"] = ap.name;
+            p["bed_idx"] = ap.bed_idx;
+            p["x_mm"] = unscaled<double>(ap.translation.x());
+            p["y_mm"] = unscaled<double>(ap.translation.y());
+            p["rotation_deg"] = ap.rotation * 180.0 / M_PI;
+            BoundingBox bb = ap.transformed_poly().contour.bounding_box();
+            p["cx_mm"] = unscaled<double>(bb.min.x() + bb.max.x()) / 2.0;
+            p["cy_mm"] = unscaled<double>(bb.min.y() + bb.max.y()) / 2.0;
+            out["placements"].push_back(p);
+        }
+        std::cout << out.dump() << std::endl;
+        return 0;
+
+    }
     if (input_file.empty() && !calib_self_geometry) {
         std::cerr << "Error: No input file specified\n\n";
         print_usage(argv[0]);
