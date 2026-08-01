@@ -1074,7 +1074,7 @@ int main(int argc, char** argv) {
 
     // subcommand: slicer_cli layout capabilities --json
     if (argc >= 3 && std::string(argv[1]) == "layout" && std::string(argv[2]) == "capabilities") {
-        if (argc < 4 || std::string(argv[3]) != "--json") {
+        if (argc != 4 || std::string(argv[3]) != "--json") {
             std::cerr << "Usage: " << argv[0] << " layout capabilities --json\n";
             return 1;
         }

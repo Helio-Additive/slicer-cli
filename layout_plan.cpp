@@ -310,6 +310,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     { std::string fp = dir + "/" + problem.profiles.machine;
       std::ifstream mf(fp);
       if (!mf.good()) {
+          if (g_cancelled.load()) {  // SIGINT-interrupted probe → cancel, not bad-file
+              LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
+              std::cerr << to_json(err).dump() << std::endl; return 5;
+          }
           LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open machine profile: "+problem.profiles.machine;
           std::cerr << to_json(err).dump() << std::endl; return 3;
       }
@@ -333,6 +337,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         std::string fp = dir + "/" + rel;
         std::ifstream t(fp);
         if (!t.good()) {
+            if (g_cancelled.load()) {  // SIGINT-interrupted probe → cancel, not bad-file
+                LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
+                std::cerr << to_json(err).dump() << std::endl; return 2;
+            }
             // supplied-but-absent is a typed error, same as supplied-but-invalid
             LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open profile: "+rel;
             std::cerr << to_json(err).dump() << std::endl; return 1;
