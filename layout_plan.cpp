@@ -253,6 +253,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         return 2;
     }
 
+    // --- Load profiles ---
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
 
@@ -302,8 +303,6 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             std::cerr << to_json(err).dump() << std::endl;
             return 3;
         }
-    }
-
     // --- Build arrange params ---
     ArrangeParams params;
     double prof_clearance = 1.0; // safe default: objects must not touch
