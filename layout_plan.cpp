@@ -181,6 +181,7 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         if (out.spacing.clearance_radius_mm < 0) {
             err.error.code="INVALID_INPUT"; err.error.message="clearanceRadiusMm must be >= 0"; return false;
         }
+        out.spacing.allow_rotations = sp_j.value("allowRotations", true);
         if (raw.contains("seed")) {
             if (!raw["seed"].is_number_unsigned()) { err.error.code="INVALID_INPUT"; err.error.message="seed must be a non-negative integer"; return false; }
             out.seed = raw["seed"].get<uint64_t>(); // accepted-and-recorded; engine is inherently deterministic
@@ -524,6 +525,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         }
         for (size_t a = 0; a < inflated.size(); ++a)
             for (size_t b = a+1; b < inflated.size(); ++b) {
+                if (g_cancelled.load()) {
+                    LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+                    std::cerr << to_json(err).dump() << std::endl; return 5;
+                }
                 Slic3r::Polygons ia = intersection(inflated[a], inflated[b]);
                 if (!ia.empty()) {
                     if (std::find(unfittable.begin(), unfittable.end(), locked_placed[a].first) == unfittable.end())
