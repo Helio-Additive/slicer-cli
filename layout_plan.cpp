@@ -256,12 +256,13 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
 // and compare area. Vertex-in-polygon alone misses edges crossing a recess of a
 // concave (e.g. U-shaped) bed; clipping detects every crossing edge.
 static bool fully_inside_bed(const ExPolygon& obj, const Polygon& bed_poly) {
-    Slic3r::Polygons obj_polys = to_polygons(obj);
-    if (obj_polys.empty()) return false;
-    double obj_area = std::abs(Polygon(obj_polys.front().points).area());
-    Slic3r::Polygons clipped = intersection(obj_polys.front(), bed_poly);
+    // hole-aware: clip the full ExPolygon (outer + holes) against the bed and
+    // compare solid areas — holes are preserved, not dropped via to_polygons().front()
+    ExPolygon bed_exp(bed_poly);
+    double obj_area = std::abs(obj.area());
+    Slic3r::ExPolygons clipped = intersection_ex(obj, bed_exp);
     double clip_area = 0.0;
-    for (auto& p : clipped) clip_area += std::abs(p.area());
+    for (auto& e : clipped) clip_area += std::abs(e.area());
     return (obj_area - clip_area) <= scaled<double>(0.01) * scaled<double>(0.01);
 }
 
@@ -556,7 +557,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // minObjectDistanceMm (or overlaps outright) → UNFITTABLE naming both.
     {
         double spacing_infl = scaled<double>(problem.spacing.min_object_distance_mm) / 2.0;
-        std::vector<Polygon> inflated;
+        std::vector<ExPolygon> inflated;
         for (auto& rec : locked_placed) {
             if (g_cancelled.load()) {
                 LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
@@ -564,8 +565,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             }
             // actual inflation = max of spacing-derived and profile-derived (brim/clearance)
             double eff = std::max(spacing_infl, double(rec.inflation));
-            Slic3r::Polygons off = offset(to_polygons(rec.poly).front(), float(eff));
-            inflated.emplace_back(off.empty() ? Polygon(rec.poly.contour.points) : off.front());
+            Slic3r::ExPolygons off = offset_ex(rec.poly, float(eff));  // hole-aware inflate
+            inflated.emplace_back(off.empty() ? rec.poly : off.front());
             if (g_cancelled.load()) {  // after the last offset call (single-locked-model path)
                 LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
                 std::cerr << to_json(err).dump() << std::endl; return 5;
@@ -577,7 +578,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                     LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
                     std::cerr << to_json(err).dump() << std::endl; return 5;
                 }
-                Slic3r::Polygons ia = intersection(inflated[a], inflated[b]);
+                Slic3r::ExPolygons ia = intersection_ex(inflated[a], inflated[b]);  // holes preserved
                 if (g_cancelled.load()) {  // intersection may straddle SIGINT
                     LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
                     std::cerr << to_json(err).dump() << std::endl; return 5;

@@ -1153,7 +1153,7 @@ int main(int argc, char** argv) {
                 char buf[4096];
                 bool cancelled = false;
                 while (std::cin.good() && !cancelled) {
-                    if (!layout_plan::is_cancelled()) cancelled = true;
+                    if (layout_plan::is_cancelled()) cancelled = true;
                     std::cin.read(buf, sizeof buf);
                     input_data.append(buf, std::cin.gcount());
                 }
