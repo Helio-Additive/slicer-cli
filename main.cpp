@@ -8,6 +8,8 @@
 #include <map>
 #include <vector>
 #include <cstdlib>
+#include <cerrno>
+#include <unistd.h>
 
 // Core libslic3r headers
 #include "libslic3r/libslic3r.h"
@@ -1147,15 +1149,22 @@ int main(int argc, char** argv) {
                 return 3;
             }
         } else {
-            // poll stdin in chunks so SIGINT during a slow stream is honoured
+            // poll stdin in chunks so SIGINT during a slow stream is honoured:
+            // ::read() on fd 0 returns EINTR when the (no-SA_RESTART) handler runs,
+            // letting the loop observe the flag instead of staying blocked.
             std::string input_data;
             {
                 char buf[4096];
                 bool cancelled = false;
-                while (std::cin.good() && !cancelled) {
-                    if (layout_plan::is_cancelled()) cancelled = true;
-                    std::cin.read(buf, sizeof buf);
-                    input_data.append(buf, std::cin.gcount());
+                while (!cancelled) {
+                    if (layout_plan::is_cancelled()) { cancelled = true; break; }
+                    ssize_t n = ::read(0, buf, sizeof buf);
+                    if (n < 0 && errno == EINTR) {
+                        if (layout_plan::is_cancelled()) cancelled = true;
+                        continue;
+                    }
+                    if (n <= 0) break;  // EOF or hard error
+                    input_data.append(buf, size_t(n));
                 }
                 if (cancelled || layout_plan::is_cancelled()) {
                     std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;

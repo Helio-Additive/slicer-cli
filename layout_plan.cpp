@@ -36,7 +36,13 @@ static std::atomic<bool> g_cancelled{false};
 static void cancellation_handler(int) { g_cancelled.store(true); }
 
 void install_cancellation_handler() {
-    std::signal(SIGINT, cancellation_handler);
+    // no SA_RESTART: an interrupted read returns EINTR so the stdin poll loop
+    // can observe the cancellation flag promptly instead of staying blocked
+    struct sigaction sa{};
+    sa.sa_handler = cancellation_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, nullptr);
 }
 
 bool is_cancelled() {
