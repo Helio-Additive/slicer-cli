@@ -232,6 +232,8 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         ref.rot_z_rad = tx_j.value("rotationZ", 0.0);
         out.models.push_back(ref);
     }
+
+    return true;
 }
 
 // ─── Runner ──────────────────────────────────────────────────────────────────
@@ -253,7 +255,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         return 2;
     }
 
-    // --- Load profiles ---
+    // --- Load profiles: order matters (machine first, for inheritance) ---
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
 
@@ -303,6 +305,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             std::cerr << to_json(err).dump() << std::endl;
             return 3;
         }
+    }
+
     // --- Build arrange params ---
     ArrangeParams params;
     double prof_clearance = 1.0; // safe default: objects must not touch
@@ -376,10 +380,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
 
         bool is_unfittable = false;
 
-        // v1 single-bed: anything not on bed 0 (virtual, unarranged, unfittable)
-        // is UNFITTABLE — checked BEFORE containment so an unplaced item that
-        // happens to have its default bbox inside the bed is still caught.
-        if (ap.bed_idx != 0) {
+        // v1 non-goal: multi-bed.  Any placement on a virtual bed is unfittable.
+        if (ap.bed_idx > 0) {
             is_unfittable = true;
         }
 
