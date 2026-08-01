@@ -25,7 +25,8 @@ struct ModelRef {
     double     z_mm   = 0.0;
     double     rot_z_rad = 0.0;
     bool       locked   = false;
-    bool       has_override = false; // transform coords supplied in input
+    bool       has_x = false, has_y = false, has_z = false, has_rot = false;
+    bool       has_override = false; // any transform component supplied
 };
 
 struct SpacingPolicy {

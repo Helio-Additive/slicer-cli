@@ -156,7 +156,10 @@ static bool check_schema(int sv, LayoutErrorV1& err) {
 bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
     try {
         if (!raw.is_object()) { err.error.code="INVALID_INPUT"; err.error.message="root must be JSON object"; return false; }
-        int sv = raw.value("schemaVersion", 0);
+        if (!raw.contains("schemaVersion") || !raw["schemaVersion"].is_number_integer()) {
+            err.error.code="INVALID_INPUT"; err.error.message="schemaVersion must be an integer"; return false;
+        }
+        int sv = raw["schemaVersion"].get<int>();
         if (!check_schema(sv, err)) return false;
         out.engine = raw.value("engine", "");
         if (out.engine != "orca" && out.engine != "bambu") { err.error.code="INVALID_INPUT"; err.error.message="unknown engine"; return false; }
@@ -203,19 +206,19 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
             if (m.contains("transform")) {
                 if (!m["transform"].is_object()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' transform must be object"; err.error.object_ids={ref.id}; return false; }
                 const json& tx = m["transform"];
-                has_override = tx.contains("x") || tx.contains("y") || tx.contains("z") ||
-                               tx.contains("rotationZ") || tx.contains("rotation_rad") || tx.contains("rot_z_rad");
-                ref.x_mm = tx.value("x", 0.0);
-                ref.y_mm = tx.value("y", 0.0);
-                ref.z_mm = tx.value("z", 0.0);
+                ref.has_x = tx.contains("x");   ref.x_mm = tx.value("x", 0.0);
+                ref.has_y = tx.contains("y");   ref.y_mm = tx.value("y", 0.0);
+                ref.has_z = tx.contains("z");   ref.z_mm = tx.value("z", 0.0);
+                ref.has_rot = tx.contains("rotationZ") || tx.contains("rotation_rad") || tx.contains("rot_z_rad");
                 ref.rot_z_rad = tx.value("rotationZ", tx.value("rotation_rad", tx.value("rot_z_rad", 0.0)));
+                has_override = ref.has_x || ref.has_y || ref.has_z || ref.has_rot;
             } else {
-                has_override = m.contains("x_mm") || m.contains("y_mm") || m.contains("z_mm") ||
-                               m.contains("rotationZ") || m.contains("rotation_rad") || m.contains("rot_z_rad");
-                ref.x_mm = m.value("x_mm", 0.0);
-                ref.y_mm = m.value("y_mm", 0.0);
-                ref.z_mm = m.value("z_mm", 0.0);
+                ref.has_x = m.contains("x_mm");  ref.x_mm = m.value("x_mm", 0.0);
+                ref.has_y = m.contains("y_mm");  ref.y_mm = m.value("y_mm", 0.0);
+                ref.has_z = m.contains("z_mm");  ref.z_mm = m.value("z_mm", 0.0);
+                ref.has_rot = m.contains("rotationZ") || m.contains("rotation_rad") || m.contains("rot_z_rad");
                 ref.rot_z_rad = m.value("rotationZ", m.value("rotation_rad", m.value("rot_z_rad", 0.0)));
+                has_override = ref.has_x || ref.has_y || ref.has_z || ref.has_rot;
             }
             ref.has_override = has_override;
             out.models.push_back(ref);
@@ -249,7 +252,18 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
     { std::string cp = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json"; std::ifstream cf(cp); if (cf.good()) { cf.close(); load_with_inherits(cfg, cp); } }
-    { std::string fp = dir + "/" + problem.profiles.machine; load_with_inherits(cfg, fp); }
+    { std::string fp = dir + "/" + problem.profiles.machine;
+      std::ifstream mf(fp);
+      if (!mf.good()) {
+          LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to open machine profile: "+problem.profiles.machine;
+          std::cerr << to_json(err).dump() << std::endl; return 3;
+      }
+      mf.close();
+      if (!load_with_inherits(cfg, fp)) {
+          LayoutErrorV1 err; err.error.code="INVALID_INPUT"; err.error.message="failed to load machine profile: "+problem.profiles.machine;
+          std::cerr << to_json(err).dump() << std::endl; return 3;
+      }
+    }
 
     auto load_opt = [&](const std::string& rel) -> bool {
         if (rel.empty()) return true;
@@ -268,7 +282,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
 
     // Load models; count polygons per ref for identity mapping
     Model unlocked_model, locked_model;
-    std::vector<size_t> unlocked_counts, locked_counts;
+    struct RefCount { std::string id; size_t count; double rot = 0.0; };
+    std::vector<RefCount> unlocked_counts, locked_counts;
     for (auto& ref : problem.models) {
         try {
             Model m = Model::read_from_file(ref.path);
@@ -279,13 +294,35 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 if (no->instances.empty()) no->add_instance();
                 for (auto* inst : no->instances) {
                     if (ref.has_override) {
-                        inst->set_offset(Vec3d(ref.x_mm, ref.y_mm, ref.z_mm));
-                        inst->set_rotation(Vec3d(0, 0, ref.rot_z_rad)); // radians
+                        Vec3d off = inst->get_offset();
+                        if (ref.has_x) off.x() = ref.x_mm;
+                        if (ref.has_y) off.y() = ref.y_mm;
+                        if (ref.has_z) off.z() = ref.z_mm;
+                        inst->set_offset(off);
+                        if (ref.has_rot) {
+                            Vec3d rot = inst->get_rotation();
+                            rot.z() = ref.rot_z_rad; // radians
+                            inst->set_rotation(rot);
+                        }
                     } // else: preserve embedded instance transform
                     n++;
                 }
             }
-            (ref.locked ? locked_counts : unlocked_counts).push_back(n);
+            if (ref.locked) {
+                RefCount rc{ref.id, n, ref.rot_z_rad};
+                // if no override, read the preserved embedded rotation
+                if (!ref.has_rot) {
+                    for (auto& mo2 : locked_model.objects) {
+                        for (auto* inst : mo2->instances) {
+                            Vec3d r = inst->get_rotation();
+                            rc.rot = r.z();
+                        }
+                    }
+                }
+                locked_counts.push_back(rc);
+            } else {
+                unlocked_counts.push_back({ref.id, n});
+            }
         } catch (const std::exception& e) {
             LayoutErrorV1 err; err.error.code="INVALID_INPUT";
             err.error.message = std::string("failed to load '")+ref.id+"': "+e.what();
@@ -321,17 +358,17 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     auto locked_input   = get_arrange_polys(locked_model, li);
 
     // Identity mapping: each ref must produce exactly one polygon (multi-polygon files refused)
-    for (size_t i = 0; i < unlocked_counts.size(); ++i)
-        if (unlocked_counts[i] != 1) {
+    for (auto& rc : unlocked_counts)
+        if (rc.count != 1) {
             LayoutErrorV1 err; err.error.code="INVALID_INPUT";
-            err.error.message="model '"+problem.models[i].id+"' expands to "+std::to_string(unlocked_counts[i])+" polygons (expected 1); multi-object files unsupported";
-            err.error.object_ids={problem.models[i].id}; std::cerr << to_json(err).dump() << std::endl; return 3;
+            err.error.message="model '"+rc.id+"' expands to "+std::to_string(rc.count)+" polygons (expected 1); multi-object files unsupported";
+            err.error.object_ids={rc.id}; std::cerr << to_json(err).dump() << std::endl; return 3;
         }
-    for (size_t i = 0; i < locked_counts.size(); ++i)
-        if (locked_counts[i] != 1) {
+    for (auto& rc : locked_counts)
+        if (rc.count != 1) {
             LayoutErrorV1 err; err.error.code="INVALID_INPUT";
-            err.error.message="locked model '"+problem.models[i].id+"' expands to "+std::to_string(locked_counts[i])+" polygons (expected 1)";
-            err.error.object_ids={problem.models[i].id}; std::cerr << to_json(err).dump() << std::endl; return 3;
+            err.error.message="locked model '"+rc.id+"' expands to "+std::to_string(rc.count)+" polygons (expected 1)";
+            err.error.object_ids={rc.id}; std::cerr << to_json(err).dump() << std::endl; return 3;
         }
 
     // Arrange
@@ -378,19 +415,19 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         if (ref.locked) {
             // locked: identity-mapped to its own polygon
             if (li2 >= locked_input.size()) { pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue; }
+            double lrot = (li2 < locked_counts.size()) ? locked_counts[li2].rot : 0.0;
             auto& ap = locked_input[li2++];
             BoundingBox bb = ap.transformed_poly().contour.bounding_box();
             double cx = unscaled<double>((double)bb.min.x()+(double)bb.max.x())/2.0;
             double cy = unscaled<double>((double)bb.min.y()+(double)bb.max.y())/2.0;
-            // validate locked placement: bb corners inside bed polygon
+            // validate locked placement: ALL transformed contour vertices inside bed polygon
             bool bad = false;
-            Point corners[] = {Point(bb.min.x(),bb.min.y()),Point(bb.max.x(),bb.min.y()),
-                              Point(bb.max.x(),bb.max.y()),Point(bb.min.x(),bb.max.y())};
-            for (auto& c : corners) { if (!bed_poly.contains(c)) { bad=true; break; } }
+            for (auto& pt : ap.transformed_poly().contour.points)
+                if (!bed_poly.contains(pt)) { bad = true; break; }
             if (bad) { pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue; }
             pm.bed_idx = 0;
             pm.x_mm = cx; pm.y_mm = cy; // candidate convention: bb centre
-            pm.rotation_rad = ref.rot_z_rad;
+            pm.rotation_rad = lrot;
             pm.bb_cx_mm = cx; pm.bb_cy_mm = cy;
             result.placements.push_back(pm);
         } else {
@@ -401,9 +438,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             double cy = unscaled<double>((double)bb.min.y()+(double)bb.max.y())/2.0;
             bool bad = (ap.bed_idx != 0);
             if (!bad) {
-                Point corners[] = {Point(bb.min.x(),bb.min.y()),Point(bb.max.x(),bb.min.y()),
-                                  Point(bb.max.x(),bb.max.y()),Point(bb.min.x(),bb.max.y())};
-                for (auto& c : corners) { if (!bed_poly.contains(c)) { bad=true; break; } }
+                for (auto& pt : ap.transformed_poly().contour.points)
+                    if (!bed_poly.contains(pt)) { bad = true; break; }
             }
             if (bad) { pm.bed_idx=-1; unfittable.push_back(ref.id); }
             else { pm.bed_idx=ap.bed_idx; pm.x_mm=cx; pm.y_mm=cy; pm.rotation_rad=ap.rotation; pm.bb_cx_mm=cx; pm.bb_cy_mm=cy; }
