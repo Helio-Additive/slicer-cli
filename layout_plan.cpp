@@ -344,6 +344,19 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                 ref.rot_z_rad = m.value("rotationZ", m.value("rotation_rad", m.value("rot_z_rad", 0.0)));
                 has_override = ref.has_x || ref.has_y || ref.has_z || ref.has_rot;
             }
+            // numeric range guard (mirrors spacing): positions must be finite
+            // and |v| <= 10000 mm (huge values overflow scaled<coord_t>);
+            // rotation must be finite (NaN/inf corrupt the geometry)
+            constexpr double kMaxCoordMm = 10000.0;
+            auto bad_val = [](double v, bool is_pos) {
+                if (!std::isfinite(v)) return true;
+                return is_pos && (v < -kMaxCoordMm || v > kMaxCoordMm);
+            };
+            if ((ref.has_x && bad_val(ref.x_mm, true)) || (ref.has_y && bad_val(ref.y_mm, true)) ||
+                (ref.has_z && bad_val(ref.z_mm, true)) || (ref.has_rot && bad_val(ref.rot_z_rad, false))) {
+                err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' transform coordinates must be finite (|x_mm/y_mm/z_mm| <= 10000, rotation finite)";
+                err.error.object_ids={ref.id}; return false;
+            }
             ref.has_override = has_override;
             out.models.push_back(ref);
         }
@@ -480,6 +493,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         }
         try {
             Model m = Model::read_from_file(ref.path);
+            if (g_cancelled.load()) {  // SIGINT may land during the load; recheck right after it returns
+                LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during model load";
+                std::cerr << to_json(err).dump() << std::endl; return 5;
+            }
             size_t n = 0;
             for (ModelObject* mo : m.objects) {
                 Model* tgt = ref.locked ? &locked_model : &unlocked_model;
