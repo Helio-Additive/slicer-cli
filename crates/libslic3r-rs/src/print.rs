@@ -2580,6 +2580,10 @@ fn emit_tower_tcr(
         tcr.new_tool.max(0) as usize,
         &print_config.toolchange_prefix,
     );
+    // Label tower extrusions like C++ does (`; FEATURE: Prime tower`). Without
+    // this the tower's E is attributed to whichever feature preceded it, which
+    // silently inflates that feature in per-feature parity comparisons.
+    writer.write_raw("; FEATURE: Prime tower");
     writer.write_raw_content(&g);
 }
 
