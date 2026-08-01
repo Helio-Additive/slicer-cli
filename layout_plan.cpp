@@ -400,6 +400,11 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 unlocked_counts.push_back({ref.id, n});
             }
         } catch (const std::exception& e) {
+            // the read may have failed because SIGINT interrupted it
+            if (g_cancelled.load()) {
+                LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during model load";
+                std::cerr << to_json(err).dump() << std::endl; return 5;
+            }
             LayoutErrorV1 err; err.error.code="INVALID_INPUT";
             err.error.message = std::string("failed to load '")+ref.id+"': "+e.what();
             err.error.object_ids={ref.id}; std::cerr << to_json(err).dump() << std::endl; return 3;
