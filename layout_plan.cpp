@@ -355,7 +355,7 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
             // numeric range guard (mirrors spacing): positions must be finite
             // and |v| <= 10000 mm (huge values overflow scaled<coord_t>);
             // rotation must be finite (NaN/inf corrupt the geometry)
-            constexpr double kMaxCoordMm = 10000.0;
+            static constexpr double kMaxCoordMm = 10000.0;
             auto bad_val = [](double v, bool is_pos) {
                 if (!std::isfinite(v)) return true;
                 return is_pos && (v < -kMaxCoordMm || v > kMaxCoordMm);
