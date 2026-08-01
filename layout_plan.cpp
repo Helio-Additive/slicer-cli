@@ -259,50 +259,63 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     std::string dir = problem.profiles_dir;
     DynamicPrintConfig cfg;
 
-    // Load common machine base if present
-    std::string common_path = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json";
-    std::ifstream cf(common_path);
-    if (cf.good()) { cf.close(); load_profile(common_path, cfg); }
-
-    // resolve 'inherits' chains: walk parent files in the same directory
-    auto resolve_inherits = [&](DynamicPrintConfig& c, const std::string& base_dir) {
-        for (bool changed = true; changed; ) {
-            changed = false;
-            auto* inherit_opt = c.option<ConfigOptionString>("inherits");
-            if (!inherit_opt || inherit_opt->value.empty()) break;
-            std::string parent_path = base_dir + "/" + inherit_opt->value;
-            if (parent_path.size() <= 5 || parent_path.compare(parent_path.size()-5, 5, ".json") != 0) parent_path += ".json";
-            std::ifstream pf(parent_path);
-            if (!pf.good()) break;
-            json pj = json::parse(pf);
-            for (auto& [k, v] : pj.items()) {
-                if (k == "type" || k == "name" || k == "inherits" || k == "from" ||
-                    k == "setting_id" || k == "instantiation" || k == "description" ||
-                    k == "compatible_printers" || k == "compatible_prints" ||
-                    k == "include" || k == "upward_compatible_machine" ||
-                    k == "printer_model" || k == "printer_variant" ||
-                    k == "default_filament_profile" || k == "default_print_profile")
-                    continue;
-                try {
-                    std::string vs;
-                    if (v.is_array()) { std::vector<std::string> ps; for (auto& e : v) { if (e.is_string()) ps.push_back(e.get<std::string>()); else if (e.is_number()) ps.push_back(std::to_string(e.get<double>())); } for (size_t i = 0; i < ps.size(); i++) { if (i > 0) vs += ","; vs += ps[i]; } }
-                    else if (v.is_string()) vs = v.get<std::string>();
-                    else if (v.is_number_float()) vs = std::to_string(v.get<double>());
-                    else if (v.is_number_integer()) vs = std::to_string(v.get<int>());
-                    else if (v.is_boolean()) vs = v.get<bool>() ? "1" : "0";
-                    if (!vs.empty() && vs != "nil") {
-                        ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
-                        c.set_deserialize(k, vs, ctx);
-                        changed = true;
-                    }
-                } catch (...) {}
+    // Recursively load a profile file PLUS its inherits chain.
+    // The inherits key is read from the raw JSON BEFORE keys are filtered.
+    std::function<void(const std::string&)> load_with_inherits;
+    load_with_inherits = [&](const std::string& fp) -> void {
+        std::ifstream f(fp);
+        if (!f.is_open()) return;
+        json j = json::parse(f);
+        // Walk inherits chain first: load parent then child to let child override
+        if (j.contains("inherits")) {
+            std::string inherit_val;
+            auto& iv = j["inherits"];
+            if (iv.is_string()) inherit_val = iv.get<std::string>();
+            else if (iv.is_array() && !iv.empty() && iv[0].is_string()) inherit_val = iv[0].get<std::string>();
+            if (!inherit_val.empty()) {
+                // resolve relative to the file's directory
+                std::string parent_dir = fp.substr(0, fp.find_last_of('/'));
+                std::string parent_path = parent_dir + "/" + inherit_val;
+                if (parent_path.size() <= 5 || parent_path.compare(parent_path.size()-5, 5, ".json") != 0)
+                    parent_path += ".json";
+                load_with_inherits(parent_path);
             }
+        }
+        // Now apply this file's keys (child overrides parent)
+        ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
+        for (auto& [k, v] : j.items()) {
+            if (k == "type" || k == "name" || k == "inherits" || k == "from" ||
+                k == "setting_id" || k == "instantiation" || k == "description" ||
+                k == "compatible_printers" || k == "compatible_prints" ||
+                k == "include" || k == "upward_compatible_machine" ||
+                k == "printer_model" || k == "printer_variant" ||
+                k == "default_filament_profile" || k == "default_print_profile")
+                continue;
+            try {
+                std::string vs;
+                if (v.is_array()) { std::vector<std::string> ps; for (auto& e : v) { if (e.is_string()) ps.push_back(e.get<std::string>()); else if (e.is_number()) ps.push_back(std::to_string(e.get<double>())); } for (size_t i = 0; i < ps.size(); i++) { if (i > 0) vs += ","; vs += ps[i]; } }
+                else if (v.is_string()) vs = v.get<std::string>();
+                else if (v.is_number_float()) vs = std::to_string(v.get<double>());
+                else if (v.is_number_integer()) vs = std::to_string(v.get<int>());
+                else if (v.is_boolean()) vs = v.get<bool>() ? "1" : "0";
+                if (!vs.empty() && vs != "nil") cfg.set_deserialize(k, vs, ctx);
+            } catch (...) {}
         }
     };
 
-    auto load_req = [&](const std::string& relative) -> bool {
-        if (relative.empty()) return true;  // optional
+    // Load common machine base if present
+    { std::string common_path = dir + "/BBL/machine/fdm_bbl_3dp_001_common.json";
+      std::ifstream cf(common_path);
+      if (cf.good()) { cf.close(); load_with_inherits(common_path); } }
+
+    auto load_req = [&](const std::string& relative, bool resolve_inherits = false) -> bool {
+        if (relative.empty()) return true;
         std::string fp = dir + "/" + relative;
+        if (resolve_inherits) {
+            // load with inherits resolution
+            load_with_inherits(fp);
+            return true;
+        }
         if (!load_profile(fp, cfg)) {
             LayoutErrorV1 err;
             err.error.code    = "INVALID_INPUT";
@@ -312,12 +325,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         }
         return true;
     };
-    if (!load_req(problem.profiles.machine))  return 3;
+    if (!load_req(problem.profiles.machine, true)) return 3;
     if (!load_req(problem.profiles.process))  return 3;
     if (!load_req(problem.profiles.filament)) return 3;
-
-    // Resolve inherits chain for the machine profile to populate printable_area
-    resolve_inherits(cfg, dir);
 
     // --- Load models ---
     Model model;
@@ -384,9 +394,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     update_selected_items_inflation(input, cfg, params);
     Points bed_pts = get_shrink_bedpts(cfg, params);
 #endif
-    arrangement::arrange(input, {}, bed_pts, params);
-
-    // Validate bed: refuse empty/degenerate beds (missing inherits resolution)
+    // Validate bed BEFORE arrange: refuse empty/degenerate beds
     if (bed_pts.size() < 3) {
         LayoutErrorV1 err;
         err.error.code    = "INVALID_INPUT";
@@ -404,6 +412,8 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             return 3;
         }
     }
+
+    arrangement::arrange(input, {}, bed_pts, params);
 
     // --- Build result ---
     PlacementCandidateV1 result;
