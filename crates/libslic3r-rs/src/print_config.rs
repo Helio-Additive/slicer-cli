@@ -495,6 +495,10 @@ pub struct PrintConfig {
     /// Nozzle temperature for initial layer (per-filament, °C).
     /// BambuStudio: `nozzle_temperature_initial_layer`.
     pub nozzle_temperature_initial_layer: u32,
+    /// High end of the nozzle temperature range (per-filament, °C). Used as the
+    /// change_filament flush temperature when `filament_flush_temp` is 0.
+    /// BambuStudio: `nozzle_temperature_range_high`.
+    pub nozzle_temperature_range_high: u32,
     /// Chamber temperature (°C). 0 = no heated chamber.
     /// BambuStudio: `chamber_temperatures`.
     pub chamber_temperature: u32,
@@ -1143,6 +1147,7 @@ impl Default for PrintConfig {
 
             // Nozzle temperature
             nozzle_temperature: 220,
+            nozzle_temperature_range_high: 240,
             nozzle_temperature_initial_layer: 220,
             chamber_temperature: 0,
 
@@ -2199,6 +2204,12 @@ impl PrintConfig {
             "nozzle_temperature_initial_layer" => {
                 if let Some(v) = parse_f64(value) {
                     self.first_layer_extruder_temperature = v as u32;
+                }
+                true
+            }
+            "nozzle_temperature_range_high" => {
+                if let Some(v) = parse_f64(value) {
+                    self.nozzle_temperature_range_high = v as u32;
                 }
                 true
             }
