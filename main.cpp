@@ -1180,11 +1180,26 @@ int main(int argc, char** argv) {
         std::string input_data;
         int fd = -1;
         if (!input_file.empty()) {
+            // opening a FIFO blocks until a writer connects; loop on EINTR and
+            // treat it as a cancellation check point
+            bool cancelled = false;
+            for (;;) {
+                if (layout_plan::is_cancelled()) { cancelled = true; break; }
 #ifdef _WIN32
-            fd = ::_open(input_file.c_str(), _O_RDONLY);
+                fd = ::_open(input_file.c_str(), _O_RDONLY);
 #else
-            fd = ::open(input_file.c_str(), O_RDONLY);
+                fd = ::open(input_file.c_str(), O_RDONLY);
+                if (fd < 0 && errno == EINTR) {
+                    if (layout_plan::is_cancelled()) { cancelled = true; break; }
+                    continue;
+                }
 #endif
+                break;
+            }
+            if (cancelled) {
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input open"}}}}.dump() << std::endl;
+                return 5;
+            }
             if (fd < 0) {
                 std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","cannot open --input file"}}}}.dump() << std::endl;
                 return 3;

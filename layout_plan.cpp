@@ -623,6 +623,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         }
         if (std::find(unfittable.begin(), unfittable.end(), pm.id) != unfittable.end())
             pm.bed_idx = -1;
+        if (g_cancelled.load()) {  // checkpoint after the lookup
+            LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+            std::cerr << to_json(err).dump() << std::endl; return 5;
+        }
     }
 
     if (!unfittable.empty()) {
