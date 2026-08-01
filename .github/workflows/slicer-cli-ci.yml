@@ -41,7 +41,7 @@ jobs:
             cmake_preset: ""
           - os: Windows-x86_64
             runner: windows-2022
-            cmake_preset: "-G \"Visual Studio 17 2022\" -A x64"
+            cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release"
           # Linux re-enable when ready
           # - os: macOS-x86_64
           #   runner: macos-13
@@ -264,6 +264,15 @@ jobs:
             "${EXTRA[@]}" \
             ${{ matrix.cmake_preset }}
 
+
+      # Ninja is required for sccache cache hits on Windows — the
+      # Visual Studio generator does not reliably invoke compiler
+      # launchers (sccache#957, sccache#1097).  Ninja ships with VS
+      # 2022 C++ CMake tools on the runner, but choco provides a
+      # fresh, standalone binary that is immune to VS installer drift.
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y --no-progress
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         run: |
