@@ -653,6 +653,51 @@ impl PrintObject {
         // Move painted areas out of region 0 into the painted regions.
         // PrintObjectSlice.cpp:855-925 (single-parent collapse).
         let painted_order: Vec<u8> = self.painted_submeshes.iter().map(|(e, _)| *e).collect();
+        if std::env::var_os("MMS_DEBUG").is_some() {
+            let seg_nonempty = segmented
+                .iter()
+                .filter(|l| l.iter().any(|s| !s.is_empty()))
+                .count();
+            let slices_nonempty = layer_slices.iter().filter(|s| !s.is_empty()).count();
+            eprintln!(
+                "MMS_DEBUG: center_offset={:?} mms_center_offset=({},{}) layers={} segmented={} seg_layers_nonempty={} slice_layers_nonempty={} painted_order={:?}",
+                self.slice_center_offset,
+                mms_center_offset.x, mms_center_offset.y,
+                self.layers.len(), segmented.len(), seg_nonempty, slices_nonempty, painted_order,
+            );
+            // Frame check on a mid layer: bbox of the painted segmentation vs the
+            // region-0 slice it must intersect.
+            let li = self.layers.len() / 2;
+            if li < segmented.len() && li < layer_slices.len() {
+                let bb = |v: &crate::geometry::ExPolygons| -> String {
+                    let (mut x0, mut x1, mut y0, mut y1) = (i64::MAX, i64::MIN, i64::MAX, i64::MIN);
+                    for ex in v {
+                        for p in &ex.contour.points {
+                            x0 = x0.min(p.x); x1 = x1.max(p.x);
+                            y0 = y0.min(p.y); y1 = y1.max(p.y);
+                        }
+                    }
+                    if x0 == i64::MAX { "<empty>".into() } else { format!("X[{x0},{x1}] Y[{y0},{y1}]") }
+                };
+                for (slot, its) in self.painted_submeshes.iter() {
+                    let (mut x0, mut x1, mut y0, mut y1, mut z0, mut z1) =
+                        (f32::MAX, f32::MIN, f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+                    for v in &its.vertices {
+                        x0 = x0.min(v.x); x1 = x1.max(v.x);
+                        y0 = y0.min(v.y); y1 = y1.max(v.y);
+                        z0 = z0.min(v.z); z1 = z1.max(v.z);
+                    }
+                    eprintln!(
+                        "MMS_DEBUG submesh extruder{slot}: tris={} X[{x0:.2},{x1:.2}] Y[{y0:.2},{y1:.2}] Z[{z0:.2},{z1:.2}]",
+                        its.indices.len()
+                    );
+                }
+                eprintln!("MMS_DEBUG layer{li}: region0 {}", bb(&layer_slices[li]));
+                for (slot, seg) in segmented[li].iter().enumerate() {
+                    eprintln!("MMS_DEBUG layer{li}: seg slot{slot} {}", bb(seg));
+                }
+            }
+        }
         for (layer_idx, layer) in self.layers.iter_mut().enumerate() {
             if layer_idx >= segmented.len() {
                 break;
