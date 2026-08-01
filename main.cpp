@@ -1226,8 +1226,16 @@ int main(int argc, char** argv) {
             return 3;
         }
         try { raw = json::parse(input_data); } catch (const std::exception& e) {
+            if (layout_plan::is_cancelled()) {  // SIGINT during the parse → cancel, not parse-error
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
+                return 5;
+            }
             std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
             return 3;
+        }
+        if (layout_plan::is_cancelled()) {  // SIGINT during a large parse → CANCELLED, no continued work
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
+            return 5;
         }
         layout_plan::LayoutProblemV1 problem;
         layout_plan::LayoutErrorV1   parse_err;
