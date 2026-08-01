@@ -97,6 +97,7 @@ struct CapabilitiesV1 {
 };
 
 bool parse_input(const nlohmann::json& raw, LayoutProblemV1& out, LayoutErrorV1& err);
+void install_cancellation_handler();
 int  run_layout_plan(const LayoutProblemV1& problem);
 int  run_capabilities();
 

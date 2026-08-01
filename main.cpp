@@ -1134,6 +1134,7 @@ int main(int argc, char** argv) {
 
     // --layout-plan: versioned headless arrange contract (issue #7)
     if (layout_plan_mode) {
+        layout_plan::install_cancellation_handler();  // before input read: honor SIGINT during parse
         json raw;
         if (!input_file.empty()) {
             std::ifstream in(input_file);

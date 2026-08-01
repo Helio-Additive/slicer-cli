@@ -35,6 +35,10 @@ using namespace Slic3r::arrangement;
 static std::atomic<bool> g_cancelled{false};
 static void cancellation_handler(int) { g_cancelled.store(true); }
 
+void install_cancellation_handler() {
+    std::signal(SIGINT, cancellation_handler);
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 static constexpr int kMaxInheritsDepth = 16;
@@ -269,8 +273,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         err.error.message = std::string("requested '")+problem.engine+"' but built for '"+be+"'";
         std::cerr << to_json(err).dump() << std::endl; return 2;
     }
-    g_cancelled.store(false);
-    std::signal(SIGINT, cancellation_handler);
+    if (g_cancelled.load()) {
+        LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled";
+        std::cerr << to_json(err).dump() << std::endl; return 5;
+    }
 
     // seed is accepted-and-recorded: the arrange pipeline (subplex + firstfit,
     // per-index parallel writes) consumes no randomness, so output is
@@ -503,14 +509,19 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             BoundingBox bb = ap.transformed_poly().contour.bounding_box();
             double cx = unscaled<double>((double)bb.min.x()+(double)bb.max.x())/2.0;
             double cy = unscaled<double>((double)bb.min.y()+(double)bb.max.y())/2.0;
-            // edge-aware containment: clip contour against bed
-            if (!fully_inside_bed(ap.transformed_poly(), bed_poly)) {
-                pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
+            // edge-aware containment on the INFLATED footprint (brim/profile clearance):
+            // a locked object whose inflation extends past the bed edge is UNFITTABLE
+            {
+                ExPolygon inflated = ap.transformed_poly();
+                Slic3r::Polygons off = offset(to_polygons(inflated).front(), float(ap.inflation));
+                if (!off.empty())
+                    inflated = ExPolygon(off.front());
+                if (!fully_inside_bed(inflated, bed_poly)) {
+                    pm.bed_idx=-1; unfittable.push_back(ref.id); result.placements.push_back(pm); continue;
+                }
             }
             locked_placed.push_back({ref.id, ap.transformed_poly(), ap.inflation});
             pm.bed_idx = 0;
-            pm.x_mm = cx; pm.y_mm = cy; // candidate convention: bb centre
-            pm.rotation_rad = lrot;
             pm.bb_cx_mm = cx; pm.bb_cy_mm = cy;
             result.placements.push_back(pm);
         } else {
@@ -547,6 +558,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             double eff = std::max(spacing_infl, double(rec.inflation));
             Slic3r::Polygons off = offset(to_polygons(rec.poly).front(), float(eff));
             inflated.emplace_back(off.empty() ? Polygon(rec.poly.contour.points) : off.front());
+            if (g_cancelled.load()) {  // after the last offset call (single-locked-model path)
+                LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+                std::cerr << to_json(err).dump() << std::endl; return 5;
+            }
         }
         for (size_t a = 0; a < inflated.size(); ++a)
             for (size_t b = a+1; b < inflated.size(); ++b) {
