@@ -234,8 +234,7 @@ pub fn slice_3mf_to_gcode(
 
     // Drop the model onto the bed surface (Z=0), and XY-center it on the bed.
     //
-    // R430 — the XY centering is WRONG for parity and is opt-out via
-    // `THREEMF_NO_CENTER=1`. C++ `slicer_cli` honours the placement baked into
+    // R430/R447 — the XY centering was WRONG for parity and is now GONE. C++ `slicer_cli` honours the placement baked into
     // the 3MF's build-item / component transforms and the plate origin; it does
     // not re-center (auto-centering is GUI behavior — the same trap the bare-STL
     // path above documents). Measured on Majora: with centering the rust
@@ -244,32 +243,20 @@ pub fn slice_3mf_to_gcode(
     // with `THREEMF_NO_CENTER=1` the extrusion bbox matches C++ EXACTLY
     // (center delta 0.000/0.001) and wall-line IoU jumps 6.97% -> 95.42%.
     //
-    // It is not yet the default because dropping the centering exposes a latent
-    // bug elsewhere: the painted-MMU segmentation ties painted-line coordinates
-    // to the slicer's internal centering via `mms_center_offset`
-    // (print_object.rs, from `slice_center_offset`), so a non-centered object
-    // loses painted-region overlap — `painted_cube.3mf` drops from 50 tool
-    // changes to 0. Fix that coupling, then make no-centering unconditional.
+    // This was gated until R447: dropping the centering used to break painted
+    // segmentation (painted_cube fell from 50 tool changes to 0). That turned out
+    // to be an unrelated EdgeGrid bug — our `create_from_contours` reset the bbox
+    // instead of merging into the pre-set one (C++ EdgeGrid.cpp:145-151), so a
+    // painted line on the object's own silhouette fell outside the grid and was
+    // clipped away. With that fixed, no-centering is unconditional.
     {
         let bbox = mesh.bounding_box();
         let dz = -bbox.min.z;
-        if std::env::var_os("THREEMF_NO_CENTER").is_some() {
-            mesh.translate(Point3F { x: 0.0, y: 0.0, z: dz });
-            info!(
-                "Placed model on bed surface: dz={:.3} (no XY centering, matching C++ slicer_cli)",
-                dz
-            );
-        } else {
-            let model_center_x = (bbox.min.x + bbox.max.x) / 2.0;
-            let model_center_y = (bbox.min.y + bbox.max.y) / 2.0;
-            let dx = print_config.bed_size_x / 2.0 - model_center_x;
-            let dy = print_config.bed_size_y / 2.0 - model_center_y;
-            mesh.translate(Point3F { x: dx, y: dy, z: dz });
-            info!(
-                "Centered model on bed: translated by ({:.1}, {:.1}, {:.1})",
-                dx, dy, dz
-            );
-        }
+        mesh.translate(Point3F { x: 0.0, y: 0.0, z: dz });
+        info!(
+            "Placed model on bed surface: dz={:.3} (no XY centering, matching C++ slicer_cli)",
+            dz
+        );
     }
 
     // Decode the painted-MMU annotation over the (now bed-centered) mesh:

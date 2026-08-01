@@ -543,8 +543,19 @@ impl EdgeGrid {
         // EdgeGrid.cpp:145 — m_resolution = resolution
         self.resolution = resolution.max(1);
 
-        // EdgeGrid.cpp:147-153 — compute bounding box from all contour points
-        self.bbox = BoundingBox::new();
+        // EdgeGrid.cpp:145-151 — measure the bounding box by MERGING the contour
+        // points into whatever `m_bbox` already holds. C++ deliberately does NOT
+        // reset it here: callers such as MultiMaterialSegmentation.cpp:2216/2476
+        // call `set_bbox(bbox)` first with the merged ADJACENT-LAYER bbox, so the
+        // grid ends up covering the union of that and the contours.
+        //
+        // R447: this port used to do `self.bbox = BoundingBox::new()` first, which
+        // silently discarded the pre-set bbox and produced a grid tightly clipped
+        // to the contours (+16 eps). A painted facet lying on the object's own
+        // silhouette can then project to a line a few scaled units OUTSIDE that
+        // tighter box and be dropped by the clip at MMS ~2925 — measured on
+        // painted_cube with THREEMF_NO_CENTER=1: every extruder-2 line discarded,
+        // 50 tool changes became 0 (R446).
         for contour in &self.contours {
             for point in contour.points() {
                 self.bbox.merge_point(*point);
