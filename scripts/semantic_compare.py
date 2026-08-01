@@ -46,7 +46,13 @@ def parse(path):
     retract = 0.0  # outstanding retracted length awaiting re-prime
     for line in open(path):
         if line.startswith('; total filament length'):
-            header['filament_mm'] = float(line.split(':')[1])
+            # Multi-material gcode reports one value PER FILAMENT
+            # ("; total filament length [mm] : 65094.09,80322.67,..."); the
+            # single-material case is just a 1-element list. Sum them so the
+            # header total is comparable across both.
+            vals = [v.strip() for v in line.split(':', 1)[1].split(',')]
+            header['filament_mm'] = sum(float(v) for v in vals if v)
+            header['filament_mm_per_tool'] = [float(v) for v in vals if v]
         if line.startswith('; Z_HEIGHT:'):
             if cur['segs']:
                 layers.append(cur)
@@ -219,9 +225,23 @@ def main(rust_path, bambu_path):
     print("="*64)
     print(f"  filament total mm : rust {rh.get('filament_mm')} / bambu {nh.get('filament_mm')}"
           f"  ratio {rh.get('filament_mm',0)/nh.get('filament_mm',1):.4f}")
+    # Multi-material: show the per-filament split. A single rust value against a
+    # multi-value bambu header is NOT comparable as a total — bambu's per-tool
+    # figures include wipe-tower/flush waste, so read the per-tool list, not the
+    # ratio above.
+    rpt = rh.get('filament_mm_per_tool', []); npt = nh.get('filament_mm_per_tool', [])
+    if len(rpt) > 1 or len(npt) > 1:
+        print(f"  per-filament mm   : rust {[round(v,1) for v in rpt]}")
+        print(f"                      bambu {[round(v,1) for v in npt]}")
+        if len(rpt) != len(npt):
+            print(f"  NOTE: filament-count mismatch ({len(rpt)} vs {len(npt)}) — the "
+                  f"total-ratio above is meaningless; compare per-tool instead.")
     print(f"  layer count       : rust {len(R)} / bambu {len(N)}")
     rm = per_layer_material(R); nm = per_layer_material(N)
-    zs = sorted(set(rm)&set(nm))
+    # Drop the synthetic pre-first-layer bucket (z is None until the first
+    # `; Z_HEIGHT:` marker) — it has no counterpart to compare against and makes
+    # the common-Z sort raise on None < float.
+    zs = sorted(z for z in (set(rm) & set(nm)) if z is not None)
     devs = [abs(rm[z]-nm[z])/max(nm[z],1e-9) for z in zs]
     print(f"  per-layer material: {len(zs)} common Z; mean dev {100*np.mean(devs):.2f}%  max dev {100*max(devs):.2f}%")
     RE,RD = per_feature(R); NE,ND = per_feature(N)
