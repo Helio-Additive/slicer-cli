@@ -18,6 +18,7 @@
 #include <iostream>
 #include <algorithm>
 
+#include <functional>
 namespace layout_plan {
 
 using json = nlohmann::json;
