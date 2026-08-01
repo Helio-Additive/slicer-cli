@@ -1984,6 +1984,73 @@ impl Print {
                         purge_total, eligible, all_fill,
                         self.config.flush_into_infill, self.config.flush_into_objects,
                     );
+
+                    // R438: does C++'s flush-minimising ORDER optimizer actually
+                    // beat our fixed first-appearance order on this data? Compare
+                    // the total flush cost of our current per-layer sequences
+                    // against the one the (already-ported) optimizer returns.
+                    // Cost model matches the optimizer's own: sum flush[prev][next]
+                    // walking each layer's sequence, carrying the last tool across
+                    // layers (ToolOrderUtils.cpp:1081).
+                    {
+                        use crate::gcode::tool_order_utils as tou;
+                        let n = num_filaments;
+                        let mut matrix: tou::FlushMatrix = vec![vec![0.0f32; n]; n];
+                        for i in 0..n {
+                            for j in 0..n {
+                                matrix[i][j] = purge_of(i, j);
+                            }
+                        }
+                        let flush_matrices = vec![matrix.clone()];
+                        let layer_filaments: Vec<Vec<u32>> = layer_seqs
+                            .iter()
+                            .map(|(_, _, t)| t.iter().map(|&x| x as u32).collect())
+                            .collect();
+                        let mut used: Vec<u32> =
+                            layer_filaments.iter().flatten().copied().collect();
+                        used.sort_unstable();
+                        used.dedup();
+                        let filament_maps: Vec<i32> = vec![0; n];
+                        let mut nozzle_status: std::collections::HashMap<i32, i32> =
+                            std::collections::HashMap::new();
+                        nozzle_status.insert(0, initial as i32);
+
+                        let cost_of = |seqs: &[Vec<u32>]| -> f64 {
+                            let mut c = 0.0f64;
+                            let mut prev: Option<u32> = Some(initial as u32);
+                            for seq in seqs {
+                                for &f in seq {
+                                    if let Some(p) = prev {
+                                        if p != f {
+                                            c += matrix[p as usize][f as usize] as f64;
+                                        }
+                                    }
+                                    prev = Some(f);
+                                }
+                            }
+                            c
+                        };
+                        let cur_cost = cost_of(&layer_filaments);
+                        let mut opt_seqs: Vec<Vec<u32>> = Vec::new();
+                        let t0 = std::time::Instant::now();
+                        let _ = tou::reorder_filaments_for_minimum_flush_volume(
+                            &used,
+                            &filament_maps,
+                            &layer_filaments,
+                            &flush_matrices,
+                            None,
+                            Some(&mut opt_seqs),
+                            &nozzle_status,
+                        );
+                        let opt_cost = cost_of(&opt_seqs);
+                        eprintln!(
+                            "FLUSH_PROBE: order cost current={:.0}mm3 optimized={:.0}mm3 ratio={:.3} (layers={} opt_layers={} solve={:.2}s)",
+                            cur_cost, opt_cost,
+                            if cur_cost > 0.0 { opt_cost / cur_cost } else { 0.0 },
+                            layer_filaments.len(), opt_seqs.len(),
+                            t0.elapsed().as_secs_f64(),
+                        );
+                    }
                 }
                 self.wipe_tower_results = wt.generate();
                 if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
