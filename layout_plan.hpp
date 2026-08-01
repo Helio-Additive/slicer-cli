@@ -56,6 +56,10 @@ struct LayoutProblemV1 {
 struct PlacedModel {
     std::string id;
     int         bed_idx      = -1;
+    // x_mm/y_mm are the BOUNDING-BOX CENTRE of the placed (or locked) object's
+    // transformed footprint — the single candidate convention for locked and
+    // movable placements alike. rotation_rad is the effective Z-rotation
+    // (request override, or preserved embedded transform for locked items).
     double      x_mm         = 0.0;
     double      y_mm         = 0.0;
     double      rotation_rad = 0.0;
@@ -98,6 +102,7 @@ struct CapabilitiesV1 {
 
 bool parse_input(const nlohmann::json& raw, LayoutProblemV1& out, LayoutErrorV1& err);
 void install_cancellation_handler();
+bool is_cancelled();
 int  run_layout_plan(const LayoutProblemV1& problem);
 int  run_capabilities();
 

@@ -1147,7 +1147,22 @@ int main(int argc, char** argv) {
                 return 3;
             }
         } else {
-            try { raw = json::parse(std::cin); } catch (const std::exception& e) {
+            // poll stdin in chunks so SIGINT during a slow stream is honoured
+            std::string input_data;
+            {
+                char buf[4096];
+                bool cancelled = false;
+                while (std::cin.good() && !cancelled) {
+                    if (!layout_plan::is_cancelled()) cancelled = true;
+                    std::cin.read(buf, sizeof buf);
+                    input_data.append(buf, std::cin.gcount());
+                }
+                if (cancelled || layout_plan::is_cancelled()) {
+                    std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
+                    return 5;
+                }
+            }
+            try { raw = json::parse(input_data); } catch (const std::exception& e) {
                 std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error on stdin: ")+e.what()}}}}.dump() << std::endl;
                 return 3;
             }

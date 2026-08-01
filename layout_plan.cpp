@@ -39,6 +39,10 @@ void install_cancellation_handler() {
     std::signal(SIGINT, cancellation_handler);
 }
 
+bool is_cancelled() {
+    return g_cancelled.load();
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 static constexpr int kMaxInheritsDepth = 16;
@@ -522,9 +526,9 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             }
             locked_placed.push_back({ref.id, ap.transformed_poly(), ap.inflation});
             pm.bed_idx = 0;
-            // effective transform: request override or preserved embedded
-            pm.x_mm = unscaled<double>(ap.translation.x());
-            pm.y_mm = unscaled<double>(ap.translation.y());
+            // x_mm/y_mm = bounding-box centre (candidate convention, same as unlocked);
+            // rotation_rad = effective rotation (request override or preserved embedded)
+            pm.x_mm = cx; pm.y_mm = cy;
             pm.rotation_rad = lrot;
             pm.bb_cx_mm = cx; pm.bb_cy_mm = cy;
             result.placements.push_back(pm);
