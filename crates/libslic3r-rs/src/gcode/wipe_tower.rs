@@ -2163,12 +2163,31 @@ impl WipeTower {
 
         writer.feedrate(feedrate);
 
-        // Fill remaining depth
+        // Fill the remaining depth OF THIS LAYER. WipeTower.cpp:2697-2699:
+        //   fill_box_y = m_layer_info->toolchanges_depth() + m_perimeter_width;
+        //   fill_box(.., m_wipe_tower_width - 2*m_perimeter_width,
+        //            m_layer_info->depth - fill_box_y)
+        // R440: this used `self.depth` — the GLOBAL max tower depth over all
+        // layers — so every layer filled the full rectangle instead of only the
+        // depth reserved for it. That is why our per-layer sweep E was constant
+        // (144.7) while C++'s varies (144→89→130), and why our tower swept 1.52×
+        // C++'s path length at matching flow.
+        let layer_depth = self
+            .plan
+            .get(self.layer_idx)
+            .map(|l| l.depth)
+            .unwrap_or(self.depth);
+        let fill_box_y = self
+            .plan
+            .get(self.layer_idx)
+            .map(|l| l.toolchanges_depth())
+            .unwrap_or(self.depth_traversed)
+            + self.perimeter_width;
         let fill_box = BoxCoordinates::new(
             self.perimeter_width,
-            self.depth_traversed,
+            fill_box_y,
             self.config.width - 2.0 * self.perimeter_width,
-            self.depth - self.depth_traversed - self.perimeter_width,
+            layer_depth - fill_box_y,
         );
 
         // Sparse infill if there's remaining space
