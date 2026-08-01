@@ -62,11 +62,12 @@ static constexpr int kMaxInheritsDepth = 16;
 // return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), cycle = clean stop
 static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
                              std::unordered_set<std::string>& visited, int depth) {
+    if (g_cancelled.load()) return 3;              // honour SIGINT during slow chains
     if (visited.count(fp)) return 0;               // cycle → already loaded ancestors, clean stop
     if (depth > kMaxInheritsDepth) return 1;       // non-cyclic deep chain → truncated, error
     visited.insert(fp);
-    std::ifstream f(fp); if (!f.is_open()) return 1;
-    json j; try { j = json::parse(f); } catch (...) { return 1; }
+    std::ifstream f(fp); if (!f.is_open()) return 2;   // bad file (missing/malformed)
+    json j; try { j = json::parse(f); } catch (...) { return 2; }
     // resolve inherits chain first (parent overrides child's keys below)
     if (j.contains("inherits")) {
         std::string v;
@@ -78,7 +79,7 @@ static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
             std::string pp = fp.substr(0, pos) + "/" + v;
             if (pp.size() <= 5 || pp.compare(pp.size()-5, 5, ".json") != 0) pp += ".json";
             int rc = load_profile_json(pp, cfg, visited, depth + 1);
-            if (rc != 0) return rc;               // propagate depth error
+            if (rc != 0) return rc;               // propagate depth/bad-file/cancel
         }
     }
     ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
@@ -312,6 +313,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
       }
       mf.close();
       int rc = load_with_inherits(cfg, fp);
+      if (rc == 3) {
+          LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
+          std::cerr << to_json(err).dump() << std::endl; return 5;
+      }
       if (rc != 0) {
           LayoutErrorV1 err; err.error.code="INVALID_INPUT";
           err.error.message = (rc == 1) ? "inheritance chain for machine profile exceeds depth limit: "+problem.profiles.machine
@@ -331,6 +336,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         }
         t.close();
         int rc = load_with_inherits(cfg, fp);
+        if (rc == 3) {
+            LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during profile load";
+            std::cerr << to_json(err).dump() << std::endl; return false;
+        }
         if (rc != 0) {
             LayoutErrorV1 err; err.error.code="INVALID_INPUT";
             err.error.message = (rc == 1) ? "inheritance chain for profile exceeds depth limit: "+rel
@@ -606,9 +615,14 @@ int run_layout_plan(const LayoutProblemV1& problem) {
 
     // F2: entries for overlapping/too-close locked models must be unplaced
     // (bed_idx=-1, no coordinates) in the emitted candidate
-    for (auto& pm : result.placements)
+    for (auto& pm : result.placements) {
+        if (g_cancelled.load()) {
+            LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+            std::cerr << to_json(err).dump() << std::endl; return 5;
+        }
         if (std::find(unfittable.begin(), unfittable.end(), pm.id) != unfittable.end())
             pm.bed_idx = -1;
+    }
 
     if (!unfittable.empty()) {
         LayoutErrorV1 err; err.error.code="UNFITTABLE";

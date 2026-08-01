@@ -264,10 +264,11 @@ int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config) {
 // Read all of an fd into a string, polling the cancellation flag between reads
 // so SIGINT/Ctrl+C during a slow stream (stdin, FIFO, or pipe) is honoured
 // with a bounded exit. Returns false if cancelled.
-static bool read_all_cancellable(int fd, std::string& out) {
+// 0 = ok, 1 = cancelled, 2 = hard read error (not a cancel)
+static int read_all_cancellable(int fd, std::string& out) {
     char buf[4096];
     while (true) {
-        if (layout_plan::is_cancelled()) return false;
+        if (layout_plan::is_cancelled()) return 1;
 #ifdef _WIN32
         // Windows: a redirected pipe can block in _read even after the CRT
         // handler runs. PeekNamedPipe before each read; when the pipe is empty,
@@ -285,8 +286,8 @@ static bool read_all_cancellable(int fd, std::string& out) {
         ssize_t n = ::read(fd, buf, sizeof buf);
         if (n < 0 && errno == EINTR) continue;  // sigaction has no SA_RESTART
 #endif
-        if (n < 0) return false;   // hard error
-        if (n == 0) return true;   // EOF
+        if (n < 0) return 2;       // hard error (not a cancel)
+        if (n == 0) return 0;      // EOF, ok
         out.append(buf, static_cast<size_t>(n));
     }
 }
@@ -1193,12 +1194,16 @@ int main(int argc, char** argv) {
         }
         // route --input through the same cancellable fd read loop as stdin so
         // FIFOs/slow streams observe SIGINT/Ctrl+C with a bounded exit
-        if (!read_all_cancellable(fd, input_data)) {
-            if (fd > 0) ::close(fd);
+        int rrc = read_all_cancellable(fd, input_data);
+        if (fd > 0) ::close(fd);
+        if (rrc == 1) {
             std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
             return 5;
         }
-        if (fd > 0) ::close(fd);
+        if (rrc == 2) {
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","failed to read input stream"}}}}.dump() << std::endl;
+            return 3;
+        }
         try { raw = json::parse(input_data); } catch (const std::exception& e) {
             std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
             return 3;
