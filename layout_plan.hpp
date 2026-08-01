@@ -25,6 +25,7 @@ struct ModelRef {
     double     z_mm   = 0.0;
     double     rot_z_rad = 0.0;
     bool       locked   = false;
+    bool       has_override = false; // transform coords supplied in input
 };
 
 struct SpacingPolicy {

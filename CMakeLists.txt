@@ -786,6 +786,20 @@ target_include_directories(slicer_cli PRIVATE
     "${SUBLIB_DIR}/miniz"
     "${OpenCASCADE_INCLUDE_DIR}")
 
+# Bake the engine submodule git SHA into the binary for capabilities.engine_commit
+find_package(Git QUIET)
+if(GIT_FOUND)
+  execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+                  WORKING_DIRECTORY "${ENGINE_ROOT}"
+                  OUTPUT_VARIABLE ENGINE_COMMIT
+                  OUTPUT_STRIP_TRAILING_WHITESPACE
+                  ERROR_QUIET)
+endif()
+if(ENGINE_COMMIT)
+  target_compile_definitions(slicer_cli PRIVATE
+      ENGINE_COMMIT="${ENGINE_COMMIT}")
+endif()
+
 # ─── Layout spike (proof harness) ─────────────────────────────────────────
 add_executable(layout_spike layout_spike.cpp arrange_harness.cpp)
 target_link_libraries(layout_spike PRIVATE libslic3r_core)
