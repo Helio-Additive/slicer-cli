@@ -245,9 +245,16 @@ def main(rust_path, bambu_path):
     devs = [abs(rm[z]-nm[z])/max(nm[z],1e-9) for z in zs]
     print(f"  per-layer material: {len(zs)} common Z; mean dev {100*np.mean(devs):.2f}%  max dev {100*max(devs):.2f}%")
     RE,RD = per_feature(R); NE,ND = per_feature(N)
-    print(f"  {'feature':22}{'r-E':>9}{'n-E':>9}{'E-ratio':>8}")
+    # Report LENGTH and E-per-mm alongside E: an E-ratio alone cannot distinguish
+    # "we print fewer/shorter paths" (length low) from "our lines are thinner"
+    # (E/mm low). RD/ND are the per-feature path lengths already accumulated above.
+    print(f"  {'feature':22}{'r-E':>9}{'n-E':>9}{'E-rat':>7}{'len-rat':>8}{'r-E/mm':>8}{'n-E/mm':>8}{'w-rat':>7}")
     for f in sorted(set(RE)|set(NE), key=lambda k:-(RE[k]+NE[k])):
-        rr=RE[f]; nn=NE[f]; print(f"  {f:22}{rr:>9.1f}{nn:>9.1f}{(rr/nn if nn else 0):>8.3f}")
+        rr=RE[f]; nn=NE[f]; rd=RD[f]; nd=ND[f]
+        rw = rr/rd if rd else 0.0
+        nw = nn/nd if nd else 0.0
+        print(f"  {f:22}{rr:>9.1f}{nn:>9.1f}{(rr/nn if nn else 0):>7.3f}"
+              f"{(rd/nd if nd else 0):>8.3f}{rw:>8.5f}{nw:>8.5f}{(rw/nw if nw else 0):>7.3f}")
     print("="*64)
     print("LEVEL 2 — GEOMETRIC COVERAGE (per-layer swept-area IoU)")
     print("="*64)
