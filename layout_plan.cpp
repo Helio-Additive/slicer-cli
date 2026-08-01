@@ -270,13 +270,19 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         out.profiles.filament = prof_j.value("filament", "");
         if (out.profiles.machine.empty()) { err.error.code="INVALID_INPUT"; err.error.message="profiles.machine required"; return false; }
         const json& sp_j = raw.value("spacing", json::object());
+        // numeric range guard: finite and sane-bounded — huge/NaN/inf spacing
+        // would overflow scaled<coord_t> downstream (1e100 is finite but
+        // already overflows; NaN/inf corrupt the arrange geometry)
+        constexpr double kMaxSpacingMm = 10000.0;
         out.spacing.min_object_distance_mm = sp_j.value("minObjectDistanceMm", sp_j.value("min_mm", 10.0));
-        if (out.spacing.min_object_distance_mm < 0) {
-            err.error.code="INVALID_INPUT"; err.error.message="minObjectDistanceMm must be >= 0"; return false;
+        if (!std::isfinite(out.spacing.min_object_distance_mm) || out.spacing.min_object_distance_mm < 0 ||
+            out.spacing.min_object_distance_mm > kMaxSpacingMm) {
+            err.error.code="INVALID_INPUT"; err.error.message="minObjectDistanceMm must be finite and in [0, 10000] mm"; return false;
         }
         out.spacing.clearance_radius_mm    = sp_j.value("clearanceRadiusMm", 0.0);
-        if (out.spacing.clearance_radius_mm < 0) {
-            err.error.code="INVALID_INPUT"; err.error.message="clearanceRadiusMm must be >= 0"; return false;
+        if (!std::isfinite(out.spacing.clearance_radius_mm) || out.spacing.clearance_radius_mm < 0 ||
+            out.spacing.clearance_radius_mm > kMaxSpacingMm) {
+            err.error.code="INVALID_INPUT"; err.error.message="clearanceRadiusMm must be finite and in [0, 10000] mm"; return false;
         }
         out.spacing.allow_rotations = sp_j.value("allowRotations", true);
         if (raw.contains("seed")) {
@@ -759,6 +765,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             std::cout.write(out.data() + static_cast<std::streamsize>(i), static_cast<std::streamsize>(n));
             std::cout.flush();  // bound each blocking write to one chunk
             if (!std::cout.good()) {  // hard write failure (e.g. closed stdout pipe)
+                if (g_cancelled.load()) {  // cancel takes precedence over the write failure
+                    LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                    std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+                }
                 LayoutErrorV1 cerr2; cerr2.error.code="WRITE_FAILED"; cerr2.error.message="failed to write candidate to stdout";
                 std::cerr << to_json(cerr2).dump() << std::endl; return 6;
             }
@@ -767,6 +777,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         std::cout << '\n';
         std::cout.flush();
         if (!std::cout.good()) {  // final flush failed (e.g. consumer closed the pipe)
+            if (g_cancelled.load()) {  // cancel takes precedence over the write failure
+                LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+            }
             LayoutErrorV1 cerr2; cerr2.error.code="WRITE_FAILED"; cerr2.error.message="failed to write candidate to stdout";
             std::cerr << to_json(cerr2).dump() << std::endl; return 6;
         }
