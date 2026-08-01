@@ -4,7 +4,7 @@
 
 use slicer::gcode::gcode_template::{process, Context, Value};
 
-const TEMPLATE: &str = include_str!("data/majora_change_filament.gcode");
+const TEMPLATE: &str = include_str!("data/majora_change_filament.txt");
 
 fn n_of(v: f64, n: usize) -> Vec<Value> {
     vec![Value::Float(v); n]
