@@ -773,7 +773,14 @@ impl Print {
                 // Wipe/prime-tower export (default-off, env WIPE_TOWER_EMIT):
                 // find this layer's stored tower tool-change results by print_z.
                 let wipe_tower_layer: Option<&[crate::gcode::wipe_tower::ToolChangeResult]> =
-                    if std::env::var_os("WIPE_TOWER_EMIT").is_some() {
+                    // R445: the wipe-tower export is now DEFAULT-ON (opt out with
+                    // WIPE_TOWER_EMIT=0). Validated over R419-R444 against C++:
+                    // tool changes 2723 = C++ exactly, wipe-tower material 1.0117,
+                    // footprint max Y 237.797 vs C++ 237.8, 0 off-bed moves.
+                    // Single-material and tower-disabled configs never reach the
+                    // emit (the psWipeTower gate needs enable_prime_tower &&
+                    // num_filaments > 1 && multicolour), so they are unaffected.
+                    if crate::faithful_gate("WIPE_TOWER_EMIT") {
                         self.wipe_tower_results
                             .iter()
                             .find(|grp| {
@@ -1906,7 +1913,10 @@ impl Print {
             // Gated (FLUSH_OPT=1) because it changes the emitted tool order, and
             // BOTH the tower plan below and `emit_layer_by_island` must consume the
             // same sequence — R424 showed a mismatch double-emits tool changes.
-            if std::env::var_os("FLUSH_OPT").is_some() && num_filaments > 1 {
+            // R445: minimum-flush ordering is now DEFAULT-ON (opt out with
+            // FLUSH_OPT=0). Validated in R439: tool changes 2726 -> 2723 (C++
+            // 2723), per-change flush 166.67 -> 124.37 E (C++ 120.14).
+            if crate::faithful_gate("FLUSH_OPT") && num_filaments > 1 {
                 use crate::gcode::tool_order_utils as tou;
                 let n = num_filaments;
                 let flush = &self.config.flush_volumes_matrix;
