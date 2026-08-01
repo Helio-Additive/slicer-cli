@@ -499,6 +499,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             }
             size_t n = 0;
             for (ModelObject* mo : m.objects) {
+                if (g_cancelled.load()) {  // clone loop may be long for many-object models
+                    LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during model load";
+                    std::cerr << to_json(err).dump() << std::endl; return 5;
+                }
                 Model* tgt = ref.locked ? &locked_model : &unlocked_model;
                 ModelObject* no = tgt->add_object(*mo);
                 if (no->instances.empty()) no->add_instance();
@@ -780,37 +784,110 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     auto emit_cancellable = [&](const std::string& out) -> int {
         const size_t kChunk = 1 << 16;  // 64 KiB per write
         size_t i = 0;
+#ifdef _WIN32
+        // Windows write-side readiness: PeekNamedPipe is read-side only and
+        // cannot signal write space. Use an OVERLAPPED WriteFile on the raw
+        // handle with a timeout-bounded WaitForSingleObject loop — each wait
+        // checks g_cancelled, so a stalled pipe is interrupted within one
+        // bounded interval instead of blocking in the CRT _write forever.
+        HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stdout)));
+        const bool is_pipe = (h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_PIPE);
         while (i < out.size()) {
             if (g_cancelled.load()) {
                 LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
                 std::cerr << to_json(cerr2).dump() << std::endl; return 5;
             }
-#ifdef _WIN32
-            // Windows: a full redirected pipe can block in _write even after
-            // the CRT handler runs. Before each chunk, poll the pipe with
-            // PeekNamedPipe; when the buffer is full, wait a bounded interval
-            // and re-check the cancellation flag (same pattern as the stdin
-            // reader). This bounds the stall to ~50 ms per poll.
-            {
-                HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stdout)));
-                if (h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_PIPE) {
+            size_t n = std::min(kChunk, out.size() - i);
+            if (is_pipe) {
+                OVERLAPPED ov{};
+                ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+                DWORD written = 0;
+                BOOL ok = WriteFile(h, out.data() + i, static_cast<DWORD>(n), &written, &ov);
+                if (!ok && GetLastError() == ERROR_IO_PENDING) {
                     for (;;) {
                         if (g_cancelled.load()) {
+                            CancelIo(h);
+                            CloseHandle(ov.hEvent);
                             LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
                             std::cerr << to_json(cerr2).dump() << std::endl; return 5;
                         }
-                        DWORD avail = 0, buf_size = 0;
-                        if (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) &&
-                            GetNamedPipeInfo(h, nullptr, &buf_size, nullptr, nullptr) &&
-                            buf_size != 0 && avail >= buf_size) {
-                            Sleep(50);  // bounded wait; re-check the flag next
-                            continue;
-                        }
-                        break;
+                        DWORD w = WaitForSingleObject(ov.hEvent, 100);
+                        if (w == WAIT_OBJECT_0) { ok = TRUE; break; }
+                        if (w == WAIT_FAILED) break;  // hard error → fall through to the failure path
                     }
                 }
+                CloseHandle(ov.hEvent);
+                if (!ok || written != n) {
+                    if (g_cancelled.load()) {  // cancel takes precedence over the write failure
+                        LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                        std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+                    }
+                    LayoutErrorV1 cerr2; cerr2.error.code="WRITE_FAILED"; cerr2.error.message="failed to write candidate to stdout";
+                    std::cerr << to_json(cerr2).dump() << std::endl; return 6;
+                }
+            } else {
+                std::cout.write(out.data() + static_cast<std::streamsize>(i), static_cast<std::streamsize>(n));
+                std::cout.flush();  // bound each blocking write to one chunk
+                if (!std::cout.good()) {
+                    if (g_cancelled.load()) {  // cancel takes precedence over the write failure
+                        LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                        std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+                    }
+                    LayoutErrorV1 cerr2; cerr2.error.code="WRITE_FAILED"; cerr2.error.message="failed to write candidate to stdout";
+                    std::cerr << to_json(cerr2).dump() << std::endl; return 6;
+                }
             }
-#endif
+            i += n;
+        }
+        // trailing newline + final flush
+        if (is_pipe) {
+            OVERLAPPED ov{};
+            ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            DWORD written = 0;
+            BOOL ok = WriteFile(h, "\n", 1, &written, &ov);
+            if (!ok && GetLastError() == ERROR_IO_PENDING) {
+                for (;;) {
+                    if (g_cancelled.load()) {
+                        CancelIo(h);
+                        CloseHandle(ov.hEvent);
+                        LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                        std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+                    }
+                    DWORD w = WaitForSingleObject(ov.hEvent, 100);
+                    if (w == WAIT_OBJECT_0) { ok = TRUE; break; }
+                    if (w == WAIT_FAILED) break;
+                }
+            }
+            CloseHandle(ov.hEvent);
+            if (!ok || written != 1) {
+                if (g_cancelled.load()) {
+                    LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                    std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+                }
+                LayoutErrorV1 cerr2; cerr2.error.code="WRITE_FAILED"; cerr2.error.message="failed to write candidate to stdout";
+                std::cerr << to_json(cerr2).dump() << std::endl; return 6;
+            }
+        } else {
+            std::cout << '\n';
+            std::cout.flush();
+            if (!std::cout.good()) {
+                if (g_cancelled.load()) {  // cancel takes precedence over the write failure
+                    LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                    std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+                }
+                LayoutErrorV1 cerr2; cerr2.error.code="WRITE_FAILED"; cerr2.error.message="failed to write candidate to stdout";
+                std::cerr << to_json(cerr2).dump() << std::endl; return 6;
+            }
+        }
+#else
+        // POSIX: chunked std::cout writes; EINTR (no SA_RESTART) + the
+        // chunk-boundary check bound the stall; a full pipe blocks only until
+        // the next SIGINT surfaces.
+        while (i < out.size()) {
+            if (g_cancelled.load()) {
+                LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+                std::cerr << to_json(cerr2).dump() << std::endl; return 5;
+            }
             size_t n = std::min(kChunk, out.size() - i);
             std::cout.write(out.data() + static_cast<std::streamsize>(i), static_cast<std::streamsize>(n));
             std::cout.flush();  // bound each blocking write to one chunk
@@ -833,6 +910,11 @@ int run_layout_plan(const LayoutProblemV1& problem) {
             }
             LayoutErrorV1 cerr2; cerr2.error.code="WRITE_FAILED"; cerr2.error.message="failed to write candidate to stdout";
             std::cerr << to_json(cerr2).dump() << std::endl; return 6;
+        }
+#endif
+        if (g_cancelled.load()) {  // final recheck after the last flush (per convention)
+            LayoutErrorV1 cerr2; cerr2.error.code="CANCELLED"; cerr2.error.message="cancelled during validation";
+            std::cerr << to_json(cerr2).dump() << std::endl; return 5;
         }
         return 0;
     };
