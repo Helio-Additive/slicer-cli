@@ -175,6 +175,14 @@ pub struct Print {
     /// Computed in the psWipeTower phase (Print.cpp:_make_wipe_tower); emitted by
     /// the export step. Empty for single-material prints (no wipe tower).
     pub wipe_tower_results: Vec<Vec<crate::gcode::wipe_tower::ToolChangeResult>>,
+
+    /// Per-layer filament order (keyed by print_z) chosen by the minimum-flush
+    /// optimizer in the psWipeTower phase — the port of C++
+    /// `ToolOrdering::reorder_extruders_for_minimum_flush_volume`. Emission must
+    /// follow exactly this order so the tower's planned tool changes and the
+    /// emitted ones stay in lock-step (R424). Empty = use the default
+    /// first-appearance order.
+    pub optimized_layer_tools: Vec<(f64, Vec<usize>)>,
 }
 
 impl Print {
@@ -195,6 +203,7 @@ impl Print {
             raw_settings: None,
             gcode_origin: (0.0, 0.0),
             wipe_tower_results: Vec::new(),
+            optimized_layer_tools: Vec::new(),
         }
     }
 
@@ -776,6 +785,11 @@ impl Print {
                     } else {
                         None
                     };
+                let optimized_tools: Option<&[usize]> = self
+                    .optimized_layer_tools
+                    .iter()
+                    .find(|(z, _)| (z - ltp.layer.print_z).abs() < 1e-4)
+                    .map(|(_, t)| t.as_slice());
                 emit_layer_by_island(
                     ltp.layer,
                     &mut writer,
@@ -788,6 +802,7 @@ impl Print {
                     &mut prev_last_tool,
                     wipe_tower_layer,
                     &mut toolchange_count,
+                    optimized_tools,
                 );
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
@@ -1878,6 +1893,83 @@ impl Print {
                 }
                 layer_seqs.push((layer.print_z as f32, layer.height as f32, emitted));
             }
+
+            // R439: reorder each layer's filament sequence for MINIMUM FLUSH —
+            // the port of C++ `ToolOrdering::reorder_extruders_for_minimum_flush_volume`
+            // (ToolOrdering.cpp:2334). Our fixed first-appearance order repeats the
+            // same expensive (old,new) transitions every layer; C++ picks cheaper
+            // ones, which is the whole of the tower's 1.42x over-extrusion (R437).
+            // The solver itself was already ported (tool_order_utils.rs); this just
+            // feeds it. Measured on Majora: order cost 1,079,692 -> 801,471 mm3
+            // (0.742x), solve time ~0s.
+            //
+            // Gated (FLUSH_OPT=1) because it changes the emitted tool order, and
+            // BOTH the tower plan below and `emit_layer_by_island` must consume the
+            // same sequence — R424 showed a mismatch double-emits tool changes.
+            if std::env::var_os("FLUSH_OPT").is_some() && num_filaments > 1 {
+                use crate::gcode::tool_order_utils as tou;
+                let n = num_filaments;
+                let flush = &self.config.flush_volumes_matrix;
+                let mut matrix: tou::FlushMatrix = vec![vec![0.0f32; n]; n];
+                for i in 0..n {
+                    for j in 0..n {
+                        matrix[i][j] =
+                            flush.get(i * n + j).copied().unwrap_or(0.0) as f32;
+                    }
+                }
+                let layer_filaments: Vec<Vec<u32>> = layer_seqs
+                    .iter()
+                    .map(|(_, _, t)| t.iter().map(|&x| x as u32).collect())
+                    .collect();
+                let mut used: Vec<u32> = layer_filaments.iter().flatten().copied().collect();
+                used.sort_unstable();
+                used.dedup();
+                let first_tool = layer_seqs
+                    .first()
+                    .and_then(|(_, _, t)| t.first().copied())
+                    .unwrap_or(0);
+                let mut nozzle_status: std::collections::HashMap<i32, i32> =
+                    std::collections::HashMap::new();
+                nozzle_status.insert(0, first_tool as i32);
+                let mut opt_seqs: Vec<Vec<u32>> = Vec::new();
+                let _ = tou::reorder_filaments_for_minimum_flush_volume(
+                    &used,
+                    &vec![0i32; n],
+                    &layer_filaments,
+                    &[matrix],
+                    None,
+                    Some(&mut opt_seqs),
+                    &nozzle_status,
+                );
+                // Only adopt if the solver returned a well-formed answer: one
+                // sequence per layer, each a permutation of that layer's own tool
+                // set (never invent or drop work).
+                let ok = opt_seqs.len() == layer_seqs.len()
+                    && opt_seqs.iter().zip(&layer_filaments).all(|(o, c)| {
+                        let (mut a, mut b): (Vec<u32>, Vec<u32>) = (o.clone(), c.clone());
+                        a.sort_unstable();
+                        b.sort_unstable();
+                        a == b
+                    });
+                if ok {
+                    for (slot, seq) in layer_seqs.iter_mut().zip(&opt_seqs) {
+                        slot.2 = seq.iter().map(|&x| x as usize).collect();
+                    }
+                } else {
+                    eprintln!(
+                        "FLUSH_OPT: solver returned {} sequences for {} layers (or a non-permutation) — keeping the original order",
+                        opt_seqs.len(),
+                        layer_seqs.len()
+                    );
+                }
+            }
+            // Per-layer tool order that EMISSION must follow (matched by print_z),
+            // so the tower plan and the emitted tool changes stay in lock-step.
+            let optimized_layer_tools: Vec<(f64, Vec<usize>)> = layer_seqs
+                .iter()
+                .map(|(z, _, t)| (*z as f64, t.clone()))
+                .collect();
+
             // Only worth a tower if there is at least one tool change.
             let has_changes = layer_seqs.iter().any(|(_, _, t)| t.len() > 1)
                 || layer_seqs
@@ -2053,6 +2145,7 @@ impl Print {
                     }
                 }
                 self.wipe_tower_results = wt.generate();
+                self.optimized_layer_tools = optimized_layer_tools;
                 if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
                     let blocks: usize =
                         self.wipe_tower_results.iter().map(|l| l.len()).sum();
@@ -2728,6 +2821,9 @@ fn emit_layer_by_island(
     // Running print-wide tool-change counter (C++ `GCode::m_toolchange_count`),
     // used by the `change_filament_gcode` template.
     toolchange_count: &mut i64,
+    // Minimum-flush tool order for THIS layer, when the optimizer ran; emission
+    // must follow it so the tower's planned changes line up (R439).
+    optimized_tools: Option<&[usize]>,
 ) {
     use crate::extrusion_entity::ExtrusionEntityType;
     let zsmooth_gate = crate::faithful_gate("ZSMOOTH_FAITHFUL");
@@ -2970,6 +3066,19 @@ fn emit_layer_by_island(
             if let Some(pos) = tool_order.iter().position(|&t| t == last) {
                 tool_order.rotate_left(pos);
             }
+        }
+    }
+    // R439: when the minimum-flush optimizer ran (psWipeTower), IT owns the order
+    // — the wipe tower planned its tool changes against exactly this sequence, so
+    // emission must not re-derive its own (R424). Only adopt a sequence that is a
+    // permutation of the tools this layer actually prints.
+    if let Some(opt) = optimized_tools {
+        let mut a: Vec<usize> = opt.to_vec();
+        let mut b: Vec<usize> = tool_order.clone();
+        a.sort_unstable();
+        b.sort_unstable();
+        if a == b {
+            tool_order = opt.to_vec();
         }
     }
     let mut last_emitted_tool: Option<usize> = None;
