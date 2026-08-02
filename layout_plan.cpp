@@ -406,6 +406,16 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                 ref.rot_z_rad = m.value("rotationZ", m.value("rotation_rad", m.value("rot_z_rad", 0.0)));
                 has_override = ref.has_x || ref.has_y || ref.has_z || ref.has_rot;
             }
+            // v1 legacy semantics: the ORIGINAL v1 applied the transform
+            // unconditionally — a partial {"transform":{"x":10}} means
+            // y/z/rotation default to 0.0, with NO embedded-component
+            // preservation. v2 keeps the new preserve-unspecified behavior.
+            if (sv < 2 && has_override) {
+                if (!ref.has_x) { ref.has_x = true; ref.x_mm = 0.0; }
+                if (!ref.has_y) { ref.has_y = true; ref.y_mm = 0.0; }
+                if (!ref.has_z) { ref.has_z = true; ref.z_mm = 0.0; }
+                if (!ref.has_rot) { ref.has_rot = true; ref.rot_z_rad = 0.0; }
+            }
             // numeric range guard (mirrors spacing): positions must be finite
             // and |v| <= 10000 mm (huge values overflow scaled<coord_t>);
             // rotation must be finite (NaN/inf corrupt the geometry)
