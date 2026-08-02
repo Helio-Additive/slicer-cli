@@ -2585,11 +2585,37 @@ impl Layer {
                                 }
                                 best
                             };
+                            // Was this endpoint an ORIGINAL wave vertex (so legitimately
+                            // interior at the very start/end of a wave), or a crossing the
+                            // clip produced (which MUST lie on the boundary)?
+                            let raw_pts: std::collections::HashSet<(i64, i64)> = raw_polylines
+                                .iter()
+                                .flat_map(|pl| pl.points.iter())
+                                .map(|p| (p.x, p.y))
+                                .collect();
                             for pl in clipped_pls.iter() {
                                 if pl.points.len() < 2 {
                                     continue;
                                 }
+                                // A correctly merged run spans many wave vertices; a
+                                // 2-point output means the per-segment runs were never
+                                // rejoined.
+                                let b = match pl.points.len() {
+                                    2 => 0,
+                                    3..=4 => 1,
+                                    5..=8 => 2,
+                                    9..=16 => 3,
+                                    _ => 4,
+                                };
+                                crate::fill::GEP_PTS_HIST[b]
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                                 for p in [pl.points[0], *pl.points.last().unwrap()] {
+                                    if raw_pts.contains(&(p.x, p.y)) {
+                                        crate::fill::GEP_RAWVERT.fetch_add(
+                                            1,
+                                            std::sync::atomic::Ordering::Relaxed,
+                                        );
+                                    }
                                     let d_um = dist_to_edges(&p) / crate::SCALING_FACTOR * 1000.0;
                                     crate::fill::GEP_N.fetch_add(1, Relaxed);
                                     crate::fill::GEP_SUM_UM.fetch_add(d_um as usize, Relaxed);

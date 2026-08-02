@@ -3334,7 +3334,7 @@ impl PrintObject {
                 })?;
 
             if std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some() {
-                use crate::fill::{GEP_HIST, GEP_N, GEP_SUM_UM};
+                use crate::fill::{GEP_HIST, GEP_N, GEP_PTS_HIST, GEP_RAWVERT, GEP_SUM_UM};
                 use std::sync::atomic::Ordering::Relaxed as R3;
                 let n = GEP_N.load(R3).max(1);
                 eprintln!(
@@ -3343,6 +3343,16 @@ impl PrintObject {
                     GEP_HIST[0].load(R3), 100.0 * GEP_HIST[0].load(R3) as f64 / n as f64,
                     GEP_HIST[1].load(R3), GEP_HIST[2].load(R3),
                     GEP_HIST[3].load(R3), GEP_HIST[4].load(R3),
+                );
+                eprintln!(
+                    "GYROID_ENDPOINTS: of those, {} ({:.1}%) coincide with an ORIGINAL raw-wave vertex (legitimately interior); {} are clip CROSSINGS (must be on the boundary)",
+                    GEP_RAWVERT.load(R3), 100.0 * GEP_RAWVERT.load(R3) as f64 / n as f64,
+                    GEP_N.load(R3).saturating_sub(GEP_RAWVERT.load(R3)),
+                );
+                eprintln!(
+                    "GYROID_ENDPOINTS: points-per-output-polyline  2pt={}  3-4={}  5-8={}  9-16={}  17+={}",
+                    GEP_PTS_HIST[0].load(R3), GEP_PTS_HIST[1].load(R3), GEP_PTS_HIST[2].load(R3),
+                    GEP_PTS_HIST[3].load(R3), GEP_PTS_HIST[4].load(R3),
                 );
             }
             if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
