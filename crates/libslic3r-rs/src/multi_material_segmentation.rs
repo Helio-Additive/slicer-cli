@@ -678,6 +678,20 @@ fn to_polygon(id_to_lines: &[(usize, LineF)]) -> Polygon {
 /// salvaged by the C++ backtracking recovery (cpp:466-477), or lost entirely. A large
 /// DISCARDED count means the area shortfall originates in graph quality upstream
 /// (Voronoi construction / edge cleanup), not in this extraction.
+/// R454: contour length per colour after colorization, in micrometres (index = colour,
+/// 0 = unpainted/default). Populated only under MMS_DEBUG.
+pub const COLOR_LEN_BUCKETS: usize = 17;
+#[allow(clippy::declare_interior_mutable_const)]
+pub static COLORIZED_LEN: [std::sync::atomic::AtomicUsize; COLOR_LEN_BUCKETS] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; COLOR_LEN_BUCKETS];
+
+/// R454: painted-line length (micrometres) at each stage, plus the total contour
+/// length available, so coverage loss can be attributed to projection vs
+/// post_process_painted_lines vs colorize. Populated only under MMS_DEBUG.
+pub static PAINTED_LEN_RAW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static PAINTED_LEN_POST: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static CONTOUR_LEN_TOTAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub static FACES_OK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FACES_RECOVERED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FACES_DISCARDED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -1539,6 +1553,22 @@ fn colorize_contours(
     for contour_idx in 0..painted_contours.len() {
         colorized_contours[contour_idx] =
             colorize_contour(&contours[contour_idx], &painted_contours[contour_idx]);
+    }
+
+    // R454 accounting: contour LENGTH that ends up colour-0 (unpainted) vs each painted
+    // colour, AFTER colorize_line + filter_colorized_polygon. The MMU partition is a
+    // nearest-boundary Voronoi over these colours, so the colour-0 share here is the
+    // upstream cause of the partition's colour-0 AREA share (MMS_PARTITION leftover).
+    if std::env::var_os("MMS_DEBUG").is_some() {
+        use std::sync::atomic::Ordering::Relaxed;
+        for color_lines in &colorized_contours {
+            for cl in color_lines {
+                let d = cl.line.a - cl.line.b;
+                let len = ((d.x as f64).hypot(d.y as f64)) / crate::SCALING_FACTOR;
+                let c = (cl.color.max(0) as usize).min(COLOR_LEN_BUCKETS - 1);
+                COLORIZED_LEN[c].fetch_add((len * 1000.0) as usize, Relaxed);
+            }
+        }
     }
 
     // MultiMaterialSegmentation.cpp:946-955
@@ -2741,9 +2771,17 @@ fn expolygons_to_edge_grid_contours(exs: &[ExPolygon]) -> Vec<Polygon> {
 ///   * FIDELITY-NOTE: `expolygons_simplify` + `remove_duplicates` in the input prep (cpp:2134)
 ///     are not ported (they guard Voronoi robustness against self-intersections / near-duplicate
 ///     points; acceptable Tier-1 risk).
-///   * FIDELITY-NOTE: `mmu_segmentation_top_and_bottom_layers` (cpp:2393) is stubbed to the
-///     empty "no top/bottom overrides" structure; horizontal painted-surface propagation
-///     (the only `slice_mesh_slabs` consumer) is not yet ported.
+///   * FIDELITY-NOTE (R454 — now the PRIME SUSPECT for the multicolour gap, not a minor gap):
+///     `mmu_segmentation_top_and_bottom_layers` (cpp:2393) is stubbed to the empty "no
+///     top/bottom overrides" structure; horizontal painted-surface propagation (the only
+///     `slice_mesh_slabs` consumer) is not ported. It is ACTIVE for Majora
+///     (`top_color_penetration_layers = 5`, `bottom_color_penetration_layers = 3`), and
+///     `merge_segmented_layers` (cpp:1986-1999) both TRIMS the side segmentation by it
+///     (`diff_ex`) and APPENDS it, so it takes precedence over contour projection. Painted
+///     triangles that face up/down project onto the slice CONTOUR only marginally — this is
+///     the path that turns them into real AREA — which is consistent with our projected
+///     painted coverage being only 61.6% of contour length while every downstream stage
+///     (post_process, colorize, partition) was measured to lose nothing.
 ///   * FIDELITY-NOTE (R446 — NOT harmless, contrary to the original note): the crate's
 ///     `EdgeGrid::create` recomputes its bbox from contour extents (+16 eps) and IGNORES the
 ///     pre-set bbox, so the clip at cpp:2293-2303 uses the contour-derived bbox rather than the
@@ -2753,9 +2791,13 @@ fn expolygons_to_edge_grid_contours(exs: &[ExPolygon]) -> Vec<Polygon> {
 ///     line is discarded here (painted_lines per_color loses colour 2 completely), the split
 ///     degenerates to one region and 50 tool changes become 0. Grid bbox min was -999916
 ///     (= contour min -999900 - 16) while the projected line sat at -999999.
-///   * FIDELITY-NOTE: the crate's `visit_cells_intersecting_line` lacks the C++
-///     `need_consider_eps=true` extension (cpp:2311); it visits only cells the segment directly
-///     crosses, not the surrounding epsilon band.
+///   * RESOLVED (R454): the `need_consider_eps=true` extension that cpp:2254 passes is now
+///     ported as `EdgeGrid::visit_cells_intersecting_line_eps` and used here. MEASURED
+///     NEGATIVE on Majora: projected painted-line length is unchanged to the millimetre
+///     (164591mm, 61.6% of contour) and all three baselines stay byte-identical, because
+///     eps = scale_(10*EPSILON) = 100 scaled units is far smaller than the grid resolution,
+///     so an endpoint almost never falls near enough to a cell boundary to matter. Kept
+///     because it is what C++ does; it is NOT the cause of the colour-0 share.
 pub fn multi_material_segmentation_by_painting_tier1(
     layer_slices: &[ExPolygons],
     layer_slice_zs: &[f64],
@@ -2963,7 +3005,15 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 visitor.color = color;
                 let a = line_to_test.a;
                 let b = line_to_test.b;
-                grid.visit_cells_intersecting_line(a, b, |iy, ix| visitor.visit(iy, ix));
+                // cpp:2254 passes need_consider_eps = TRUE here (R454). Without the eps
+                // band, a projected painted line whose endpoint grazes a cell boundary
+                // never visits the neighbouring cell holding the contour segment it
+                // belongs to, and the painted line is silently dropped.
+                if crate::faithful_gate("MMS_EPS_CELLS") {
+                    grid.visit_cells_intersecting_line_eps(a, b, |iy, ix| visitor.visit(iy, ix));
+                } else {
+                    grid.visit_cells_intersecting_line(a, b, |iy, ix| visitor.visit(iy, ix));
+                }
             }
         }
     }
@@ -3017,7 +3067,43 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 }
                 // cpp:2335 — post_process_painted_lines(std::move(painted_lines[layer_idx])).
                 let contours = edge_grid.contours();
+                // R454: length accounting across the three stages that can lose painted
+                // coverage — raw projected lines, post_process_painted_lines, then
+                // colorize_contours (counted inside colorize_contours itself).
+                if std::env::var_os("MMS_DEBUG").is_some() {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let sum = |v: &[PaintedLine]| -> f64 {
+                        v.iter()
+                            .map(|p| {
+                                let d = p.projected_line.a - p.projected_line.b;
+                                (d.x as f64).hypot(d.y as f64) / crate::SCALING_FACTOR
+                            })
+                            .sum()
+                    };
+                    PAINTED_LEN_RAW.fetch_add((sum(&taken) * 1000.0) as usize, Relaxed);
+                    // Total contour length available on this layer, for the denominator.
+                    let mut cl = 0.0f64;
+                    for c in contours.iter() {
+                        for s in c.segments() {
+                            let d = s.a - s.b;
+                            cl += (d.x as f64).hypot(d.y as f64) / crate::SCALING_FACTOR;
+                        }
+                    }
+                    CONTOUR_LEN_TOTAL.fetch_add((cl * 1000.0) as usize, Relaxed);
+                }
                 let post_processed = post_process_painted_lines(contours, taken);
+                if std::env::var_os("MMS_DEBUG").is_some() {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let s: f64 = post_processed
+                        .iter()
+                        .flat_map(|v| v.iter())
+                        .map(|p| {
+                            let d = p.projected_line.a - p.projected_line.b;
+                            (d.x as f64).hypot(d.y as f64) / crate::SCALING_FACTOR
+                        })
+                        .sum();
+                    PAINTED_LEN_POST.fetch_add((s * 1000.0) as usize, Relaxed);
+                }
                 // cpp:2341
                 let color_poly = colorize_contours(contours, &post_processed);
                 // cpp:2347-2348

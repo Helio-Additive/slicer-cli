@@ -704,6 +704,32 @@ impl PrintObject {
                     FACES_DISCARDED.load(Relaxed),
                 );
                 let tot = (ok + rec + disc).max(1);
+                use crate::multi_material_segmentation::{
+                    CONTOUR_LEN_TOTAL, PAINTED_LEN_POST, PAINTED_LEN_RAW, COLORIZED_LEN, COLOR_LEN_BUCKETS,
+                };
+                let (praw, ppost, ctot) = (
+                    PAINTED_LEN_RAW.load(Relaxed) as f64 / 1000.0,
+                    PAINTED_LEN_POST.load(Relaxed) as f64 / 1000.0,
+                    CONTOUR_LEN_TOTAL.load(Relaxed) as f64 / 1000.0,
+                );
+                eprintln!(
+                    "MMS_COLORIZE: painted length raw={:.0} ({:.1}% of contour) -> post_process={:.0} ({:.1}%)  [contour total {:.0}]",
+                    praw, 100.0 * praw / ctot.max(1e-9),
+                    ppost, 100.0 * ppost / ctot.max(1e-9), ctot,
+                );
+                let lens: Vec<f64> = (0..COLOR_LEN_BUCKETS)
+                    .map(|i| COLORIZED_LEN[i].load(Relaxed) as f64 / 1000.0)
+                    .collect();
+                let ltot: f64 = lens.iter().sum::<f64>().max(1e-9);
+                eprintln!(
+                    "MMS_COLORIZE: contour length by colour (mm) — total {:.0}, colour0(unpainted) {:.0} ({:.1}%)",
+                    ltot, lens[0], 100.0 * lens[0] / ltot
+                );
+                for (c, l) in lens.iter().enumerate().skip(1) {
+                    if *l > 0.0 {
+                        eprintln!("MMS_COLORIZE:   colour {} len={:.0} ({:.1}%)", c, l, 100.0 * l / ltot);
+                    }
+                }
                 eprintln!(
                     "MMS_PARTITION: traced faces ok={} ({:.1}%) recovered={} ({:.1}%) DISCARDED={} ({:.1}%)",
                     ok, 100.0 * ok as f64 / tot as f64,

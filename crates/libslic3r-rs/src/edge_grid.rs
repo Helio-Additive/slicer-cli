@@ -404,15 +404,79 @@ impl EdgeGrid {
 
     /// Visit all grid cells intersected by the line segment (p1, p2), calling
     /// `visitor(iy, ix)` for each. The visitor returns `false` to stop early.
-    /// Equivalent to the C++ template method without the `need_consider_eps`
-    /// extension (the PolygonTrimmer call site never sets it).
-    /// EdgeGrid.hpp:291-366
+    /// EdgeGrid.hpp:291-366 with `need_consider_eps = false` (the PolygonTrimmer
+    /// call site never sets it).
     pub fn visit_cells_intersecting_line<F>(&self, p1: Point, p2: Point, visitor: F)
     where
         F: FnMut(usize, usize) -> bool,
     {
         // EdgeGrid.hpp:360-365 — single start/end pair when need_consider_eps is false.
         self.visit_cells_for_segment(&p1, &p2, visitor);
+    }
+
+    /// `visit_cells_intersecting_line` with C++'s `need_consider_eps = true`
+    /// (EdgeGrid.hpp:317-359). When an endpoint sits within `eps` of a cell
+    /// boundary, the traversal is ALSO run from the neighbouring cell(s), so a
+    /// segment grazing a cell border still finds the contour segments stored
+    /// there. MultiMaterialSegmentation.cpp:2254 and :2492 are the only callers
+    /// that pass true, and both are painted-triangle projection: without this,
+    /// painted lines whose endpoints land on a cell boundary are silently
+    /// dropped, which costs contour colour coverage (R454).
+    ///
+    /// C++ builds up to 5 start and 5 end positions and runs the traversal for
+    /// every (start, end) pair, so a cell may be visited more than once — the
+    /// visitors here are idempotent per cell, matching native.
+    pub fn visit_cells_intersecting_line_eps<F>(&self, p1: Point, p2: Point, mut visitor: F)
+    where
+        F: FnMut(usize, usize) -> bool,
+    {
+        // EdgeGrid.hpp:295-296 — coordinates are relative to the grid bbox.
+        if self.cols == 0 || self.rows == 0 || self.resolution <= 0 {
+            return;
+        }
+        let q1 = Point::new(p1.x - self.bbox.min.x, p1.y - self.bbox.min.y);
+        let q2 = Point::new(p2.x - self.bbox.min.x, p2.y - self.bbox.min.y);
+        let res = self.resolution;
+        let ix = q1.x / res;
+        let iy = q1.y / res;
+        let ixb = q2.x / res;
+        let iyb = q2.y / res;
+
+        // EdgeGrid.hpp:326 — const double eps = scale_(10 * EPSILON).
+        let eps = (10.0 * crate::libslic3r::EPSILON * crate::SCALING_FACTOR) as i64;
+
+        // (cell_x, cell_y, point) triples. C++ pushes the unmodified endpoint first.
+        let mut start_pos: Vec<(i64, i64, Point)> = vec![(ix, iy, q1)];
+        let mut end_pos: Vec<(i64, i64, Point)> = vec![(ixb, iyb, q2)];
+        // EdgeGrid.hpp:318-323 — note C++ perturbs ONE axis at a time and keeps the
+        // other axis' ORIGINAL cell index.
+        let mut push_variants = |v: &mut Vec<(i64, i64, Point)>, p: Point, cx: i64, cy: i64| {
+            let xu = (p.x + eps) / res;
+            if xu != cx {
+                v.push((xu, cy, Point::new(p.x + eps, p.y)));
+            }
+            let xl = (p.x - eps) / res;
+            if xl != cx {
+                v.push((xl, cy, Point::new(p.x - eps, p.y)));
+            }
+            let yu = (p.y + eps) / res;
+            if yu != cy {
+                v.push((cx, yu, Point::new(p.x, p.y + eps)));
+            }
+            let yl = (p.y - eps) / res;
+            if yl != cy {
+                v.push((cx, yl, Point::new(p.x, p.y - eps)));
+            }
+        };
+        push_variants(&mut start_pos, q1, ix, iy);
+        push_variants(&mut end_pos, q2, ixb, iyb);
+
+        // EdgeGrid.hpp:360-365 — every (start, end) combination.
+        for &(sx, sy, sp) in &start_pos {
+            for &(ex, ey, ep) in &end_pos {
+                Self::rasterize_segment(res, sx, sy, &sp, ex, ey, &ep, &mut visitor);
+            }
+        }
     }
 
     /// Create the grid from polygons (all closed). Skips empty polygons.
