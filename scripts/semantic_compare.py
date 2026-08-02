@@ -29,7 +29,14 @@ FEATURE_MIN_E   = 50.0
 AX = re.compile(r'([XYEIJZF])(-?[0-9.]+)')
 
 def parse(path):
-    """Return list of layers; each = dict(z, segs=[(x0,y0,x1,y1,w,feat,e)]).
+    """Return list of layers; each = dict(z, segs=[(x0,y0,x1,y1,w,feat,e,len)]).
+
+    `len` is the TRUE deposited path length: the chord for G0/G1, and r*sweep
+    for G2/G3 arcs (centre from the relative I/J offsets). Measuring an arc by
+    its chord under-reports its length, which silently INFLATES the E-per-mm of
+    whichever engine emits fatter arcs — both engines here are arc-heavy
+    (BambuStudio ~435k G2/G3 on Majora, the Rust port ~383k), so a chord-based
+    E/mm is not comparable between them. R450 hit exactly this.
     `e` is the REAL deposited material (retraction-aware): the raw relative E
     minus deretraction-priming. Assumes relative E (use_relative_e_distances=1).
     Retraction (E<0) deposits nothing; the first matching positive E after it is
@@ -77,8 +84,22 @@ def parse(path):
             retract -= deprime
             real = e - deprime
         if real > 0 and px is not None and x is not None and ('X' in d or 'Y' in d):
-            # arc -> approximate by chord midpoints (coverage is width-dominated)
-            cur['segs'].append((px, py, x, y, width, feat, real))
+            seglen = math.hypot(x - px, y - py)
+            if g in '23' and ('I' in d or 'J' in d):
+                # G2 (CW) / G3 (CCW): centre is start + (I, J), both relative.
+                i = float(d.get('I', 0.0)); j = float(d.get('J', 0.0))
+                cx, cy = px + i, py + j
+                r = math.hypot(i, j)
+                if r > 0:
+                    a0 = math.atan2(py - cy, px - cx)
+                    a1 = math.atan2(y - cy, x - cx)
+                    sweep = (a0 - a1) if g == '2' else (a1 - a0)
+                    sweep %= 2 * math.pi
+                    if sweep < 1e-12:
+                        sweep = 2 * math.pi   # start == end -> full circle
+                    seglen = r * sweep
+            # Swept-area raster still uses the chord (coverage is width-dominated).
+            cur['segs'].append((px, py, x, y, width, feat, real, seglen))
         px, py = x, y
     if cur['segs']:
         layers.append(cur)
@@ -93,14 +114,14 @@ def per_layer_material(layers):
 def per_feature(layers):
     E = collections.Counter(); D = collections.Counter()
     for L in layers:
-        for (x0,y0,x1,y1,w,f,e) in L['segs']:
-            E[f]+=e; D[f]+=math.hypot(x1-x0,y1-y0)
+        for (x0,y0,x1,y1,w,f,e,ln) in L['segs']:
+            E[f]+=e; D[f]+=ln
     return E, D
 
 def raster_layer(segs, res, x0, y0, nx, ny):
     """Boolean coverage grid: mark cells within w/2 of each segment centerline."""
     grid = np.zeros((ny, nx), dtype=bool)
-    for (ax, ay, bx, by, w, f, e) in segs:
+    for (ax, ay, bx, by, w, f, e, ln) in segs:
         r = max(w/2.0, res)
         length = math.hypot(bx-ax, by-ay)
         n = max(1, int(length/(res*0.5))+1)

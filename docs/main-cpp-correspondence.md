@@ -114,6 +114,25 @@ in the Rust port:
 | `MultiMaterialSegmentation.cpp` | `crates/libslic3r-rs/src/multi_material_segmentation.rs` | Painted-region segmentation. `MMS_DEBUG=1` prints frames, per-slot segment bboxes and per-colour painted-line counts. |
 | `EdgeGrid.cpp` | `crates/libslic3r-rs/src/edge_grid.rs` | NOTE (R447): `create_from_contours` MERGES contour points into the pre-set bbox (EdgeGrid.cpp:145-151) — it must NOT reset it, because MMS calls `set_bbox()` first with the merged adjacent-layer bbox. |
 | `VariableWidth.cpp` | `crates/libslic3r-rs/src/perimeter_generator.rs` | NOTE (R444): an Arachne junction width is a SPACING; convert with `unscale(w) + height*(1-PI/4)` before building the flow (VariableWidth.cpp:66). |
+| `PrintObject.cpp::discover_vertical_shells` (1739-2110) | `crates/libslic3r-rs/src/print_object.rs` | NOTE (R450): there are TWO cache paths and both are ported. When `num_printing_regions() > 1 && !interface_shells` (cpp:1759) the per-layer cache is built ONCE over ALL regions — top/bottom unioned across regions, plus the merged perimeter shadow `offset2(lslices, +0.3*min_spacing, -(perimeter_offset + 0.3*min_spacing))` — and shared by every `region_id`. Otherwise it is rebuilt per region (holes collected only once). C++ `offset2(a, +d1, -d2)` is GROW-then-SHRINK, the OPPOSITE of `clipper_utils::offset2`. |
+| `Fill/Fill.cpp::_fill_surfaces` (235-295) | `crates/libslic3r-rs/src/fill/mod.rs` | NOTE (R451): infill flow height is `(surface.thickness == -1) ? layer.height : surface.thickness` (cpp:255) — `-1` is a SENTINEL and every `Surface` is constructed with it, so the fallback is taken almost always and MUST be the layer's own height. Sparse-infill *spacing* is separately computed at the OBJECT's configured layer height with `first_layer = false` (cpp:281), deliberately independent of the current layer, so sparse infill stays aligned across a region. |
+
+### Fixtures, and why a 0.2mm-only fixture set hides flow bugs
+
+Every long-standing single-material fixture here slices at 0.2mm. `fill/mod.rs`
+used to hardcode `0.2` as the infill flow height, which is *exactly right* at
+0.2mm and wrong everywhere else — it survived undetected until Majora (0.3mm)
+was measured. A hardcoded height leaves walls perfect and scales every infill
+feature's E-per-mm by the layer-height ratio, so it does not look like a flow
+bug in aggregate.
+
+`tests/configs/benchy-016.jsonnet` exists to close that hole: single-material
+Benchy at **0.16mm**, built from the real BBL profile JSONs so the SAME config
+loads in both engines (`--engine bambu` for the C++ reference, `--engine rust`
+for the port). Prefer it over `stl-file-config.jsonnet` for any C++ cross-check
+— that one's hand-written jsonnet has a numeric `layer_height`, which the C++
+loader rejects outright ("invalid json type for layer_height"), so it can only
+ever be self-compared.
 
 ### Debug/measurement entry points
 

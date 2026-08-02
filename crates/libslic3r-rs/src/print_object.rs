@@ -3727,8 +3727,9 @@ impl PrintObject {
     /// by projecting each layer's top/bottom surfaces across the shell-layer window and
     /// converting the matching internal regions to internal-solid.
     /// Faithful port of C++ PrintObject::discover_vertical_shells (PrintObject.cpp:1739-2110),
-    /// single-region path (Benchy is single-region; the multi-material
-    /// top_bottom_surfaces_all_regions branch is not applicable here).
+    /// including both the single-region per-region cache path and the multi-material
+    /// `top_bottom_surfaces_all_regions` path (PrintObject.cpp:1756-1820), which builds
+    /// the cache ONCE over every region and shares it across all region_id iterations.
     fn discover_vertical_shells(&mut self) -> Result<()> {
         use crate::clipper_utils::OffsetJoinType;
         use crate::flow::FlowRole;
@@ -3836,6 +3837,124 @@ impl PrintObject {
             return Ok(());
         }
 
+        // Collected polygons, offsetted. PrintObject.cpp:1740-1745
+        struct Cache {
+            top: ExPolygons,
+            bottom: ExPolygons,
+            holes: ExPolygons,
+        }
+
+        // PrintObject.cpp:1759 — for a multi-material print with interface_shells disabled
+        // the vertical shell thickness is calculated over ALL materials merged, so the
+        // per-layer cache is built ONCE (top/bottom unioned across every region, plus the
+        // merged perimeter shadow) and reused unchanged by every region_id below.
+        // Single-region prints (and interface_shells) keep the per-region cache path.
+        let top_bottom_surfaces_all_regions =
+            self.num_printing_regions() > 1 && !self.config.interface_shells;
+        let shared_cache: Option<Vec<Cache>> = if top_bottom_surfaces_all_regions {
+            // PrintObject.cpp:1763-1772 — "ensure vertical wall thickness" applies to no
+            // region at all: quit.
+            let has_extra_layers = (0..self.num_printing_regions()).any(|rid| {
+                self.shared_regions
+                    .as_ref()
+                    .and_then(|r| r.all_regions.get(rid))
+                    .map(|r| {
+                        r.config().ensure_vertical_shell_thickness
+                            != EnsureVerticalThicknessLevel::Disabled
+                    })
+                    .unwrap_or(false)
+            });
+            if !has_extra_layers {
+                return Ok(());
+            }
+            // PrintObject.cpp:1777-1820 — per layer, over all regions.
+            let mut out: Vec<Cache> = Vec::with_capacity(num_layers);
+            for layer in self.layers.iter() {
+                if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(crate::Error::Cancelled);
+                }
+                let lh = layer.height;
+                let mut top: ExPolygons = Vec::new();
+                let mut bottom: ExPolygons = Vec::new();
+                let mut holes: ExPolygons = Vec::new();
+                // Simulate a single set of perimeters over all merged regions.
+                // PrintObject.cpp:1782-1783
+                let mut perimeter_offset: f64 = 0.0;
+                let mut perimeter_min_spacing: f64 = f64::MAX;
+                for (rid, lr) in layer.regions().iter().enumerate() {
+                    // PrintObject.cpp:1786
+                    let exp = lr.flow(FlowRole::SolidInfill, lh)?.spacing()
+                        * TOP_BOTTOM_EXPANSION_COEFF;
+                    // PrintObject.cpp:1788-1790 — top / bottom surfaces, APPENDED (not
+                    // overwritten as in the per-region path).
+                    let top_eps: ExPolygons = lr
+                        .slices
+                        .filter_by_type(SurfaceType::Top)
+                        .iter()
+                        .map(|s| s.expolygon.clone())
+                        .collect();
+                    let bot_eps: ExPolygons = lr
+                        .slices
+                        .filter_by_types(&[SurfaceType::Bottom, SurfaceType::BottomBridge])
+                        .iter()
+                        .map(|s| s.expolygon.clone())
+                        .collect();
+                    if !top_eps.is_empty() {
+                        top.extend(grow(&top_eps, exp, OffsetJoinType::Miter));
+                    }
+                    if !bot_eps.is_empty() {
+                        bottom.extend(grow(&bot_eps, exp, OffsetJoinType::Miter));
+                    }
+                    // PrintObject.cpp:1791-1794 — perimeters = max(extra_perimeters over
+                    // this region's slices) + wall_loops.
+                    let mut perimeters: u32 = 0;
+                    for s in lr.slices.surfaces.iter() {
+                        perimeters = perimeters.max(s.extra_perimeters as u32);
+                    }
+                    perimeters += self
+                        .shared_regions
+                        .as_ref()
+                        .and_then(|r| r.all_regions.get(rid))
+                        .map(|r| r.config().perimeters)
+                        .unwrap_or(0);
+                    // PrintObject.cpp:1795-1802 — widest simulated perimeter band.
+                    if perimeters > 0 {
+                        let extflow = lr.flow(FlowRole::ExternalPerimeter, lh)?;
+                        let pflow = lr.flow(FlowRole::Perimeter, lh)?;
+                        perimeter_offset = perimeter_offset.max(
+                            0.5 * (extflow.width() + extflow.spacing())
+                                + (perimeters as f64 - 1.0) * pflow.spacing(),
+                        );
+                        perimeter_min_spacing =
+                            perimeter_min_spacing.min(extflow.spacing().min(pflow.spacing()));
+                    }
+                    // PrintObject.cpp:1803
+                    holes.extend(lr.fill_expolygons.iter().cloned());
+                }
+                // PrintObject.cpp:1805-1816 — simulate the perimeter / infill split as if
+                // only a single extruder had printed the whole layer: grow lslices to force
+                // the per-region islands to merge, then shrink by the widest perimeter band.
+                // NOTE: C++ `offset2(a, +d1, -d2)` is GROW-then-SHRINK, the opposite order
+                // to `clipper_utils::offset2`, hence the explicit grow()/shrink() pair.
+                if perimeter_offset > 0.0 {
+                    let pad = 0.3 * perimeter_min_spacing;
+                    let grown = grow(&layer.lslices, pad, OffsetJoinType::Miter);
+                    if !grown.is_empty() {
+                        holes.extend(shrink(&grown, perimeter_offset + pad, OffsetJoinType::Miter));
+                    }
+                }
+                // PrintObject.cpp:1818-1820 — reduce the polygon count.
+                out.push(Cache {
+                    top: if top.is_empty() { top } else { union_ex(&top) },
+                    bottom: if bottom.is_empty() { bottom } else { union_ex(&bottom) },
+                    holes: if holes.is_empty() { holes } else { union_ex(&holes) },
+                });
+            }
+            Some(out)
+        } else {
+            None
+        };
+
         // PrintObject.cpp:1827 — per region.
         for region_id in 0..self.num_printing_regions() {
             // PrintObject.cpp:1830
@@ -3860,13 +3979,11 @@ impl PrintObject {
             let is_partial = rc.ensure_vertical_shell_thickness == EnsureVerticalThicknessLevel::Partial;
 
             // --- Build per-layer cache (top_surfaces, bottom_surfaces, holes) from SLICES + fill_expolygons.
-            // PrintObject.cpp:1846-1864
-            struct Cache {
-                top: ExPolygons,
-                bottom: ExPolygons,
-                holes: ExPolygons,
-            }
-            let mut cache: Vec<Cache> = Vec::with_capacity(num_layers);
+            // PrintObject.cpp:1831-1859 — skipped entirely when the shared all-regions
+            // cache was already built above (C++ `if (! top_bottom_surfaces_all_regions)`).
+            let build_owned = shared_cache.is_none();
+            let mut cache_owned: Vec<Cache> =
+                Vec::with_capacity(if build_owned { num_layers } else { 0 });
             let mut lslices_all: Vec<ExPolygons> = Vec::with_capacity(num_layers);
             let mut solid_spacing_mm: Vec<f64> = Vec::with_capacity(num_layers);
             let mut ext_spacing_mm: Vec<f64> = Vec::with_capacity(num_layers);
@@ -3876,7 +3993,9 @@ impl PrintObject {
                 let lr = match layer.regions().get(region_id) {
                     Some(r) => r,
                     None => {
-                        cache.push(Cache { top: vec![], bottom: vec![], holes: vec![] });
+                        if build_owned {
+                            cache_owned.push(Cache { top: vec![], bottom: vec![], holes: vec![] });
+                        }
                         solid_spacing_mm.push(0.45);
                         ext_spacing_mm.push(0.45);
                         continue;
@@ -3899,6 +4018,11 @@ impl PrintObject {
                 } else {
                     ext_spacing_mm.push(ext_flow.spacing());
                 }
+                if !build_owned {
+                    // The all-regions cache built before this loop already covers every
+                    // region; C++ likewise skips this whole per-region cache pass.
+                    continue;
+                }
                 // PrintObject.cpp:1850 — top_bottom_expansion = scaled_spacing * 0.05 (mm here).
                 let exp = if faithful() && std::env::var("VSHELL_REG_QUANT").is_ok() {
                     (((sp / 0.00001).trunc() as f32 * 0.05f32) as f64) / crate::SCALING_FACTOR
@@ -3919,11 +4043,11 @@ impl PrintObject {
                     .collect();
                 let top = if top_eps.is_empty() { vec![] } else { grow(&top_eps, exp, OffsetJoinType::Miter) };
                 let bottom = if bot_eps.is_empty() { vec![] } else { grow(&bot_eps, exp, OffsetJoinType::Miter) };
-                // holes = union of all regions' fill_expolygons on this layer (PrintObject.cpp:1859-1862).
-                // NOTE: the perimeter-shadow offset2(lslices,...) holes term (PrintObject.cpp:1815) lives
-                // ONLY in the multi-material `top_bottom_surfaces_all_regions` first cache loop, which is
-                // gated `if (num_printing_regions() > 1 && !interface_shells)` (PrintObject.cpp:1759).
-                // Benchy is single-region, so that branch is dead and holes = fill_expolygons only.
+                // holes = union of all regions' fill_expolygons on this layer (PrintObject.cpp:1852-1856).
+                // The perimeter-shadow offset2(lslices,...) holes term (PrintObject.cpp:1815) lives ONLY
+                // in the multi-material `top_bottom_surfaces_all_regions` cache loop above, which is
+                // gated `if (num_printing_regions() > 1 && !interface_shells)` (PrintObject.cpp:1759) —
+                // so on this path holes = fill_expolygons only, exactly as C++ does.
                 let mut holes: ExPolygons = Vec::new();
                 for r in layer.regions() {
                     holes.extend(r.fill_expolygons.iter().cloned());
@@ -3936,8 +4060,11 @@ impl PrintObject {
                 } else {
                     union_ex(&holes)
                 };
-                cache.push(Cache { top, bottom, holes });
+                cache_owned.push(Cache { top, bottom, holes });
             }
+            // C++ keeps one `cache_top_botom_regions` vector, filled either by the
+            // all-regions pre-pass or by the per-region pass above.
+            let cache: &[Cache] = shared_cache.as_deref().unwrap_or(&cache_owned);
 
             // --- Per layer: project, trim, regularize, convert. PrintObject.cpp:1880-2091
             // R393: the per-layer shell projection is independent across layers

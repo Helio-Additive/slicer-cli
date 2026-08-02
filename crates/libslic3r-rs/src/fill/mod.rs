@@ -661,12 +661,21 @@ pub fn group_fills(
                 _ => region_config.sparse_infill_line_width,
             };
 
+            // Fill.cpp:255
+            // C++: layerm.flow(extrusion_role, (surface.thickness == -1) ? layer.height : surface.thickness)
+            // `Surface::thickness` is a SENTINEL of -1 ("unset", Surface.hpp:215) — NOT
+            // "<= 0" — and the fallback is the LAYER's own height, never a constant. The
+            // previous `if s.thickness > 0.0 { .. } else { 0.2 }` therefore took the
+            // fallback for every surface (every Surface is constructed with thickness=-1)
+            // and pinned all infill flow to a 0.2mm layer. That is invisible on Benchy,
+            // whose layer height IS 0.2, but on Majora (0.3) it under-extruded every
+            // infill feature by the h=0.2/h=0.3 flow ratio ~0.70 (R451).
             let layer_height = region
                 .fill_surfaces
                 .surfaces
                 .get(surface_idx)
-                .map(|s| if s.thickness > 0.0 { s.thickness } else { 0.2 })
-                .unwrap_or(0.2);
+                .map(|s| if s.thickness == -1.0 { layer.height } else { s.thickness })
+                .unwrap_or(layer.height);
 
             // R337: bridges must use the ROUND bridging_flow (m_bridge: wider
             // spacing = dmr + BRIDGE_EXTRA_SPACING, ~1.5x mm3/mm from the round
@@ -697,12 +706,26 @@ pub fn group_fills(
             let spacing = if surface.is_solid() || is_bridge {
                 flow.spacing()
             } else {
-                Flow::new_from_config_width(
+                // Fill.cpp:281
+                // C++: params.spacing = layerm.region().flow(*layer.object(), frInfill,
+                //                          layer.object()->config().layer_height, false).spacing();
+                // "Calculating infill line spacing independent of the current layer height
+                // and 1st layer status, so that internal infill will be aligned over all
+                // layers of the current region" — hence the OBJECT's configured layer
+                // height and an explicit first_layer=false, not the constants that were
+                // here (nozzle 0.4 / height 0.2).
+                // PrintRegion::flow() inlined against the ObjectRef's config snapshots
+                // (PrintRegion.cpp:21-50) so first_layer can be forced false.
+                crate::print_region::flow_from_configs(
                     crate::flow::FlowRole::Infill,
-                    region_config.sparse_infill_line_width,
-                    0.4,
-                    0.2,
-                )?
+                    layer.object().config().layer_height,
+                    false,
+                    layer.object().print().config().initial_layer_line_width,
+                    layer.object().config().line_width,
+                    layer.object().print().config().nozzle_diameter,
+                    region_config,
+                )
+                .map_err(crate::Error::Slicing)?
                 .spacing()
             };
 
