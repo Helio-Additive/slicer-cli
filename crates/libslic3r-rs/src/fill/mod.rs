@@ -1571,6 +1571,14 @@ pub fn fill_surface_extrusion(
 /// This simplified version:
 /// 1. Tries to connect consecutive polylines whose endpoints are close
 /// 2. Falls through to just outputting disconnected polylines otherwise
+/// R461: distance (micrometres) from each clipped gyroid endpoint to the nearest edge
+/// of the expolygon it was clipped against. Buckets: <1um, <10um, <100um, <1mm, >=1mm.
+pub static GEP_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static GEP_SUM_UM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[allow(clippy::declare_interior_mutable_const)]
+pub static GEP_HIST: [std::sync::atomic::AtomicUsize; 5] =
+    [const { std::sync::atomic::AtomicUsize::new(0) }; 5];
+
 /// R459 diagnostic (FILL_CONNECT_DEBUG=1): does the non-monotonic connect step
 /// actually JOIN anything? Counts polylines in vs runs out and the length added by
 /// the implicit connector segments.

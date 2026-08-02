@@ -2545,6 +2545,69 @@ impl Layer {
                         // that discarded a large share of each wave's length.
                         let clipped_pls =
                             crate::clipper_utils::intersection_pl(&raw_polylines, &[expoly.clone()]);
+                        // R461 (GYROID_ENDPOINT_DEBUG=1): how far are the clipped
+                        // endpoints from the expolygon they were clipped against?
+                        // Computed directly against every edge, independent of EdgeGrid,
+                        // to discriminate "the clip polygon differs from the one we hand
+                        // the connector" from "EdgeGrid::closest_point cannot find them".
+                        if std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some() {
+                            use std::sync::atomic::Ordering::Relaxed;
+                            let mut edges: Vec<(crate::geometry::Point, crate::geometry::Point)> =
+                                Vec::new();
+                            let mut push_ring = |ring: &crate::geometry::Polygon| {
+                                let pts = &ring.points;
+                                for i in 0..pts.len() {
+                                    edges.push((pts[i], pts[(i + 1) % pts.len()]));
+                                }
+                            };
+                            push_ring(&expoly.contour);
+                            for h in &expoly.holes {
+                                push_ring(h);
+                            }
+                            let dist_to_edges = |p: &crate::geometry::Point| -> f64 {
+                                let mut best = f64::MAX;
+                                for (a, b) in &edges {
+                                    let (ax, ay) = (a.x as f64, a.y as f64);
+                                    let (bx, by) = (b.x as f64, b.y as f64);
+                                    let (px, py) = (p.x as f64, p.y as f64);
+                                    let (dx, dy) = (bx - ax, by - ay);
+                                    let l2 = dx * dx + dy * dy;
+                                    let t = if l2 <= 0.0 {
+                                        0.0
+                                    } else {
+                                        (((px - ax) * dx + (py - ay) * dy) / l2).clamp(0.0, 1.0)
+                                    };
+                                    let (qx, qy) = (ax + t * dx, ay + t * dy);
+                                    let d = ((px - qx).powi(2) + (py - qy).powi(2)).sqrt();
+                                    if d < best {
+                                        best = d;
+                                    }
+                                }
+                                best
+                            };
+                            for pl in clipped_pls.iter() {
+                                if pl.points.len() < 2 {
+                                    continue;
+                                }
+                                for p in [pl.points[0], *pl.points.last().unwrap()] {
+                                    let d_um = dist_to_edges(&p) / crate::SCALING_FACTOR * 1000.0;
+                                    crate::fill::GEP_N.fetch_add(1, Relaxed);
+                                    crate::fill::GEP_SUM_UM.fetch_add(d_um as usize, Relaxed);
+                                    let b = if d_um < 1.0 {
+                                        0
+                                    } else if d_um < 10.0 {
+                                        1
+                                    } else if d_um < 100.0 {
+                                        2
+                                    } else if d_um < 1000.0 {
+                                        3
+                                    } else {
+                                        4
+                                    };
+                                    crate::fill::GEP_HIST[b].fetch_add(1, Relaxed);
+                                }
+                            }
+                        }
                         // FillGyroid.cpp:188-195 — drop very small bits, but keep lines that
                         // connect thin walls: minlength = scale_(0.8 * this->spacing).
                         let minlength = crate::scale(0.8 * raw_line_spacing);

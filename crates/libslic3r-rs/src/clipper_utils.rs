@@ -2621,54 +2621,87 @@ fn intersection_segment_with_expolygons(
     p2: Point,
     clip: &[ExPolygon],
 ) -> Vec<Vec<Point>> {
-    // Sample the segment to find inside/outside transitions
-    let dx = p2.x - p1.x;
-    let dy = p2.y - p1.y;
-    let len_sq = dx * dx + dy * dy;
-    let len = (len_sq as f64).sqrt();
-
-    // Use reasonable step size - too small creates micro-segments
-    // BambuStudio uses ~0.1mm steps for overhang detection
-    let step_size = 100_000; // 1.0mm in scaled units (SCALING_FACTOR=100_000/mm). FIDELITY-NOTE(F1): sampling approximation of ClipperLib open-path clip.
-    let num_steps = ((len as i64 + step_size - 1) / step_size).max(2) as usize;
-
-    let mut result = Vec::new();
-    let mut current_segment = Vec::new();
-    let mut last_inside = false;
-
-    for i in 0..=num_steps {
-        let t = i as f64 / num_steps as f64;
-        let x = p1.x + (dx as f64 * t) as i64;
-        let y = p1.y + (dy as f64 * t) as i64;
-        let pt = Point { x, y };
-
-        // Check if point is INSIDE any clip region
-        let inside = point_in_expolygons(pt, clip);
-
-        if inside {
-            if !last_inside && !current_segment.is_empty() {
-                // Was outside, now inside - start new segment
-                if current_segment.len() >= 2 {
-                    result.push(current_segment);
-                }
-                current_segment = Vec::new();
-            }
-            current_segment.push(pt);
-        } else {
-            if last_inside && !current_segment.is_empty() {
-                // Was inside, now outside - save segment
-                if current_segment.len() >= 2 {
-                    result.push(current_segment);
-                }
-                current_segment = Vec::new();
-            }
-        }
-        last_inside = inside;
+    // R461: EXACT segment-vs-expolygon clip.
+    //
+    // This used to SAMPLE the segment at 1.0mm steps and keep whichever samples were
+    // inside ("FIDELITY-NOTE(F1): sampling approximation of ClipperLib open-path
+    // clip"). That put every clipped endpoint up to a full step from the true
+    // boundary crossing — measured at 150um mean on Majora's gyroid, with only 0.5%
+    // of endpoints within 1um of the polygon they were clipped against. Two
+    // consequences, both real: the clipped path LOST up to a step of length at every
+    // crossing, and, because the endpoints did not lie on the boundary,
+    // `Fill::connect_infill`'s `EdgeGrid::closest_point(pt, SCALED_EPSILON)` lookup
+    // (FillBase.cpp:1361-1382) could not map ANY of them onto a contour, so infill
+    // lines were never chained (100% BOUNDARY_IDX_UNCONNECTED).
+    //
+    // ClipperLib clips an open path by computing the real crossings, so do that:
+    // gather the parameters at which the segment crosses every edge, then keep the
+    // sub-intervals whose midpoint is inside.
+    let dx = (p2.x - p1.x) as f64;
+    let dy = (p2.y - p1.y) as f64;
+    if dx == 0.0 && dy == 0.0 {
+        return Vec::new();
     }
 
-    // Save final segment
-    if current_segment.len() >= 2 {
-        result.push(current_segment);
+    let mut ts: Vec<f64> = vec![0.0, 1.0];
+    for ex in clip {
+        let mut cross_ring = |ring: &Polygon| {
+            let pts = &ring.points;
+            let n = pts.len();
+            for i in 0..n {
+                let a = pts[i];
+                let b = pts[(i + 1) % n];
+                let ex_ = (b.x - a.x) as f64;
+                let ey_ = (b.y - a.y) as f64;
+                // p1 + t*(d) == a + u*(e)
+                let denom = dx * ey_ - dy * ex_;
+                if denom.abs() < 1e-12 {
+                    continue; // parallel
+                }
+                let rx = (a.x - p1.x) as f64;
+                let ry = (a.y - p1.y) as f64;
+                let t = (rx * ey_ - ry * ex_) / denom;
+                let u = (rx * dy - ry * dx) / -denom;
+                if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
+                    ts.push(t);
+                }
+            }
+        };
+        cross_ring(&ex.contour);
+        for h in &ex.holes {
+            cross_ring(h);
+        }
+    }
+
+    ts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    ts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+
+    let at = |t: f64| Point {
+        x: p1.x + (dx * t).round() as i64,
+        y: p1.y + (dy * t).round() as i64,
+    };
+
+    let mut result: Vec<Vec<Point>> = Vec::new();
+    let mut run: Vec<Point> = Vec::new();
+    for w in ts.windows(2) {
+        let (t0, t1) = (w[0], w[1]);
+        let mid = at(0.5 * (t0 + t1));
+        if point_in_expolygons(mid, clip) {
+            let (a, b) = (at(t0), at(t1));
+            if run.is_empty() {
+                run.push(a);
+            }
+            if *run.last().unwrap() != b {
+                run.push(b);
+            }
+        } else if run.len() >= 2 {
+            result.push(std::mem::take(&mut run));
+        } else {
+            run.clear();
+        }
+    }
+    if run.len() >= 2 {
+        result.push(run);
     }
 
     result

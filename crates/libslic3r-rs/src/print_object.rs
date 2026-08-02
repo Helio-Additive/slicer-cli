@@ -3333,6 +3333,18 @@ impl PrintObject {
                     layer.make_fills(lower_internal_areas, lower_sparse_polys)
                 })?;
 
+            if std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some() {
+                use crate::fill::{GEP_HIST, GEP_N, GEP_SUM_UM};
+                use std::sync::atomic::Ordering::Relaxed as R3;
+                let n = GEP_N.load(R3).max(1);
+                eprintln!(
+                    "GYROID_ENDPOINTS: n={} mean dist {:.1} um | <1um {} ({:.1}%)  <10um {}  <100um {}  <1mm {}  >=1mm {}",
+                    GEP_N.load(R3), GEP_SUM_UM.load(R3) as f64 / n as f64,
+                    GEP_HIST[0].load(R3), 100.0 * GEP_HIST[0].load(R3) as f64 / n as f64,
+                    GEP_HIST[1].load(R3), GEP_HIST[2].load(R3),
+                    GEP_HIST[3].load(R3), GEP_HIST[4].load(R3),
+                );
+            }
             if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
                 use crate::fill::fill_base::{
                     FB_ARCHES, FB_ENDS, FB_ENDS_UNCONNECTED, FB_IN, FB_LEN_IN, FB_LEN_OUT, FB_OUT,
