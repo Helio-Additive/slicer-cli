@@ -2418,9 +2418,29 @@ impl Layer {
             // this surface_fill — C++ coll_nosort->polygons_covered_by_spacing(10).
             let mut mono_covered: Vec<crate::geometry::Polygon> = Vec::new();
 
+            // R456: per-expolygon accounting for sparse (InternalInfill) fills — how much
+            // Internal AREA is handed to the filler, and how much of it yields no
+            // polylines at all. `FILL_SURFACE_DEBUG=1`.
+            let fsdbg = std::env::var_os("FILL_SURFACE_DEBUG").is_some()
+                && surface_fill.params.extrusion_role
+                    == crate::extrusion_entity::ExtrusionRole::InternalInfill;
             for expoly in surface_fill.expolygons {
+                let dbg_area = if fsdbg {
+                    expoly.area() / (crate::SCALING_FACTOR * crate::SCALING_FACTOR)
+                } else {
+                    0.0
+                };
+                if fsdbg {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    crate::fill::SPARSE_IN_N.fetch_add(1, Relaxed);
+                    crate::fill::SPARSE_IN_AREA.fetch_add((dbg_area * 1000.0) as usize, Relaxed);
+                }
                 // Skip empty polygons
                 if expoly.contour.points.is_empty() {
+                    if fsdbg {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        crate::fill::SPARSE_EMPTY_N.fetch_add(1, Relaxed);
+                    }
                     continue;
                 }
 
@@ -2503,39 +2523,35 @@ impl Layer {
                         for pt in &expoly.contour.points {
                             bb.merge_point(*pt);
                         }
-                        // C++ FillGyroid uses raw line spacing (not density-adjusted)
-                        // and applies density via DENSITY_ADJUST internally.
-                        let raw_line_width = surface_fill.params.flow.width();
+                        // FillGyroid.cpp:166,177 — `this->spacing` is the flow SPACING,
+                        // not its width (Fill::spacing is set from params.spacing, which
+                        // Fill.cpp:281 derives via flow.spacing()). Passing the width made
+                        // `distance = scale_(spacing)/density_adjusted` ~17% too large, so
+                        // the gyroid waves were spaced too far apart (R456).
+                        let raw_line_spacing = surface_fill.params.flow.spacing();
                         let gyroid_config = GyroidConfig {
                             z: self.print_z,
-                            spacing: raw_line_width,
+                            spacing: raw_line_spacing,
                             density: density,
                             angle: surface_fill.params.angle as f64,
                         };
                         let raw_polylines = generate_gyroid_infill(&gyroid_config, bb.min, bb.max);
-                        // Clip polylines to the fill expolygon
-                        let mut clipped = Vec::new();
-                        for pl in raw_polylines {
-                            let mut current_segment = Vec::new();
-                            for pt in &pl.points {
-                                if expoly.contour.contains_point(pt) {
-                                    current_segment.push(*pt);
-                                } else {
-                                    if current_segment.len() >= 2 {
-                                        clipped.push(InfillPath::Line(
-                                            crate::geometry::Polyline::from_points(current_segment),
-                                        ));
-                                    }
-                                    current_segment = Vec::new();
-                                }
-                            }
-                            if current_segment.len() >= 2 {
-                                clipped.push(InfillPath::Line(
-                                    crate::geometry::Polyline::from_points(current_segment),
-                                ));
-                            }
-                        }
-                        clipped
+                        // FillGyroid.cpp:186 — polylines = intersection_pl(polylines, expolygon).
+                        // The previous hand-rolled clip tested `contains_point` on each
+                        // polyline VERTEX: it ignored the expolygon's HOLES entirely and
+                        // truncated every crossing at the last inside vertex instead of at
+                        // the true boundary crossing. Gyroid waves are coarsely sampled, so
+                        // that discarded a large share of each wave's length.
+                        let clipped_pls =
+                            crate::clipper_utils::intersection_pl(&raw_polylines, &[expoly.clone()]);
+                        // FillGyroid.cpp:188-195 — drop very small bits, but keep lines that
+                        // connect thin walls: minlength = scale_(0.8 * this->spacing).
+                        let minlength = crate::scale(0.8 * raw_line_spacing);
+                        clipped_pls
+                            .into_iter()
+                            .filter(|pl| pl.length() >= minlength as f64)
+                            .map(InfillPath::Line)
+                            .collect()
                     }
                     // All other patterns: dispatch through generate_infill which
                     // routes to the correct fill implementation
@@ -2551,6 +2567,12 @@ impl Layer {
                 };
 
                 if generated.is_empty() {
+                    if fsdbg {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        crate::fill::SPARSE_NOGEN_N.fetch_add(1, Relaxed);
+                        crate::fill::SPARSE_NOGEN_AREA
+                            .fetch_add((dbg_area * 1000.0) as usize, Relaxed);
+                    }
                     continue;
                 }
 
@@ -2563,7 +2585,21 @@ impl Layer {
                 }
 
                 if polylines.is_empty() {
+                    if fsdbg {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        crate::fill::SPARSE_NOGEN_N.fetch_add(1, Relaxed);
+                        crate::fill::SPARSE_NOGEN_AREA
+                            .fetch_add((dbg_area * 1000.0) as usize, Relaxed);
+                    }
                     continue;
+                }
+                if fsdbg {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let l: f64 =
+                        polylines.iter().map(|p| p.length()).sum::<f64>() / crate::SCALING_FACTOR;
+                    crate::fill::SPARSE_OK_N.fetch_add(1, Relaxed);
+                    crate::fill::SPARSE_OK_AREA.fetch_add((dbg_area * 1000.0) as usize, Relaxed);
+                    crate::fill::SPARSE_OK_LEN.fetch_add((l * 1000.0) as usize, Relaxed);
                 }
 
                 // Connect separate infill lines into continuous paths

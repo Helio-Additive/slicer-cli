@@ -65,6 +65,19 @@ pub use fill_adaptive::{
     Octree,
 };
 
+/// R456: sparse-infill (InternalInfill) fill accounting, under FILL_SURFACE_DEBUG=1.
+/// Areas are in milli-mm2, lengths in micrometres. `NOGEN` counts expolygons handed
+/// to the filler that produced NO polylines — the "Internal area that is never filled"
+/// the R455 arithmetic predicted.
+pub static SPARSE_IN_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPARSE_IN_AREA: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPARSE_EMPTY_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPARSE_NOGEN_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPARSE_NOGEN_AREA: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPARSE_OK_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPARSE_OK_AREA: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPARSE_OK_LEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 // Re-export from fill3_d_honeycomb
 pub use fill3_d_honeycomb::Fill3DHoneycomb;
 

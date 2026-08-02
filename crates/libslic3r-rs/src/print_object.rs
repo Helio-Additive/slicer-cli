@@ -3333,6 +3333,23 @@ impl PrintObject {
                     layer.make_fills(lower_internal_areas, lower_sparse_polys)
                 })?;
 
+            // R456: sparse-infill fill accounting — how much Internal AREA reached the
+            // filler and how much of it produced no polylines at all.
+            if std::env::var_os("FILL_SURFACE_DEBUG").is_some() {
+                use crate::fill::*;
+                use std::sync::atomic::Ordering::Relaxed;
+                let a = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed) as f64 / 1000.0;
+                let n = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed);
+                let (ia, oa, na) = (a(&SPARSE_IN_AREA), a(&SPARSE_OK_AREA), a(&SPARSE_NOGEN_AREA));
+                eprintln!(
+                    "FILL_SPARSE: expolygons handed to filler n={} area={:.0} mm2 | filled n={} area={:.0} ({:.1}%) len={:.0} mm | NO-FILL n={} area={:.0} ({:.1}%) | empty n={}",
+                    n(&SPARSE_IN_N), ia,
+                    n(&SPARSE_OK_N), oa, 100.0 * oa / ia.max(1e-9), a(&SPARSE_OK_LEN),
+                    n(&SPARSE_NOGEN_N), na, 100.0 * na / ia.max(1e-9),
+                    n(&SPARSE_EMPTY_N),
+                );
+            }
+
             // Mark step as complete
             // PrintObject.cpp:776
             self.set_step_done(PrintObjectStep::Infill);
