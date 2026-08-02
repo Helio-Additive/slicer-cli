@@ -308,6 +308,10 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
         // would overflow scaled<coord_t> downstream (1e100 is finite but
         // already overflows; NaN/inf corrupt the arrange geometry)
         constexpr double kMaxSpacingMm = 10000.0;
+        // min_mm is the v2 alias — v1 keeps only minObjectDistanceMm
+        if (sv < 2 && sp_j.contains("min_mm")) {
+            err.error.code="INVALID_INPUT"; err.error.message="spacing.min_mm requires schemaVersion 2 (v1 keeps minObjectDistanceMm)"; return false;
+        }
         out.spacing.min_object_distance_mm = sp_j.value("minObjectDistanceMm", sp_j.value("min_mm", 10.0));
         if (!std::isfinite(out.spacing.min_object_distance_mm) || out.spacing.min_object_distance_mm < 0 ||
             out.spacing.min_object_distance_mm > kMaxSpacingMm) {
@@ -353,18 +357,26 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                 if (ex.id == ref.id) { err.error.code="INVALID_INPUT"; err.error.message="duplicate id '"+ref.id+"'"; err.error.object_ids={ref.id}; return false; }
             }
             if (ref.path.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' missing path"; err.error.object_ids={ref.id}; return false; }
-            // v2-only transform spellings (x_mm/y_mm/z_mm/rotation_rad/rot_z_rad,
-            // nested or flat) must not appear in a v1 request — v1 keeps only
-            // the original x/y/z/rotationZ
-            auto has_v2_spelling = [&](const json& obj) {
-                return obj.contains("x_mm") || obj.contains("y_mm") || obj.contains("z_mm") ||
+            // v1 keeps ONLY the original NESTED transform object {x,y,z,rotationZ}.
+            // All flat top-level spellings (x/y/z/rotationZ as well as the
+            // x_mm/y_mm/z_mm/rotation_rad/rot_z_rad variants) were added in this
+            // PR, so a v1 request using any flat spelling is refused; nested
+            // x_mm/y_mm/z_mm/rotation_rad/rot_z_rad are likewise v2-only.
+            auto has_any_spelling = [&](const json& obj) {
+                return obj.contains("x") || obj.contains("y") || obj.contains("z") || obj.contains("rotationZ") ||
+                       obj.contains("x_mm") || obj.contains("y_mm") || obj.contains("z_mm") ||
                        obj.contains("rotation_rad") || obj.contains("rot_z_rad");
             };
-            if (sv < 2 &&
-                ((m.contains("transform") && m["transform"].is_object() && has_v2_spelling(m["transform"])) ||
-                 has_v2_spelling(m))) {
-                err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' transform x_mm/y_mm/z_mm/rotation_rad requires schemaVersion 2";
-                err.error.object_ids={ref.id}; return false;
+            if (sv < 2) {
+                bool flat_violation = has_any_spelling(m);  // any flat spelling
+                bool nested_violation = m.contains("transform") && m["transform"].is_object() &&
+                    (m["transform"].contains("x_mm") || m["transform"].contains("y_mm") ||
+                     m["transform"].contains("z_mm") || m["transform"].contains("rotation_rad") ||
+                     m["transform"].contains("rot_z_rad"));
+                if (flat_violation || nested_violation) {
+                    err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' transform requires schemaVersion 2 (flat spellings and x_mm/y_mm/z_mm/rotation_rad are v2; v1 keeps only the nested {x,y,z,rotationZ})";
+                    err.error.object_ids={ref.id}; return false;
+                }
             }
             // transform: nested object or flat top-level fields; track presence to preserve embedded transforms
             bool has_override = false;
