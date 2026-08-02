@@ -14,6 +14,8 @@
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/ClipperUtils.hpp"
 
+#include <climits>
+#include <cstdint>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -266,10 +268,30 @@ static bool check_schema(int sv, LayoutErrorV1& err) {
 bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
     try {
         if (!raw.is_object()) { err.error.code="INVALID_INPUT"; err.error.message="root must be JSON object"; return false; }
-        if (!raw.contains("schemaVersion") || !raw["schemaVersion"].is_number_integer()) {
+        if (!raw.contains("schemaVersion") || !raw["schemaVersion"].is_number()) {
             err.error.code="INVALID_INPUT"; err.error.message="schemaVersion must be an integer"; return false;
         }
-        int sv = raw["schemaVersion"].get<int>();
+        // range-check BEFORE narrowing: a huge (1e100) or non-integral value
+        // must be a typed refusal, not a narrowing surprise (get<int> throws
+        // on out-of-range, which the catch would mislabel as malformed input)
+        const json& svj = raw["schemaVersion"];
+        if (svj.is_number_float()) {
+            double d = svj.get<double>();
+            if (!std::isfinite(d) || std::floor(d) != d || d < static_cast<double>(INT_MIN) || d > static_cast<double>(INT_MAX)) {
+                err.error.code="INVALID_INPUT"; err.error.message="schemaVersion out of range (must be integral and fit in a 32-bit int)"; return false;
+            }
+        } else if (svj.is_number_unsigned()) {
+            uint64_t u = svj.get<uint64_t>();
+            if (u > static_cast<uint64_t>(INT_MAX)) {
+                err.error.code="INVALID_INPUT"; err.error.message="schemaVersion out of range (must fit in a 32-bit int)"; return false;
+            }
+        } else {
+            int64_t i = svj.get<int64_t>();
+            if (i < INT_MIN || i > INT_MAX) {
+                err.error.code="INVALID_INPUT"; err.error.message="schemaVersion out of range (must fit in a 32-bit int)"; return false;
+            }
+        }
+        int sv = svj.get<int>();
         if (!check_schema(sv, err)) return false;
         out.engine = raw.value("engine", "");
         if (out.engine != "orca" && out.engine != "bambu") { err.error.code="INVALID_INPUT"; err.error.message="unknown engine"; return false; }
@@ -331,6 +353,19 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                 if (ex.id == ref.id) { err.error.code="INVALID_INPUT"; err.error.message="duplicate id '"+ref.id+"'"; err.error.object_ids={ref.id}; return false; }
             }
             if (ref.path.empty()) { err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' missing path"; err.error.object_ids={ref.id}; return false; }
+            // v2-only transform spellings (x_mm/y_mm/z_mm/rotation_rad/rot_z_rad,
+            // nested or flat) must not appear in a v1 request — v1 keeps only
+            // the original x/y/z/rotationZ
+            auto has_v2_spelling = [&](const json& obj) {
+                return obj.contains("x_mm") || obj.contains("y_mm") || obj.contains("z_mm") ||
+                       obj.contains("rotation_rad") || obj.contains("rot_z_rad");
+            };
+            if (sv < 2 &&
+                ((m.contains("transform") && m["transform"].is_object() && has_v2_spelling(m["transform"])) ||
+                 has_v2_spelling(m))) {
+                err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' transform x_mm/y_mm/z_mm/rotation_rad requires schemaVersion 2";
+                err.error.object_ids={ref.id}; return false;
+            }
             // transform: nested object or flat top-level fields; track presence to preserve embedded transforms
             bool has_override = false;
             if (m.contains("transform")) {
@@ -610,6 +645,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         // zero-footprint polygons (degenerate/flat meshes) are typed errors
         size_t li3 = 0;
         for (auto& rc : locked_counts) {
+            if (g_cancelled.load()) {
+                LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+                std::cerr << to_json(err).dump() << std::endl; return 5;
+            }
             if (li3 < locked_input.size() &&
                 std::abs(locked_input[li3].transformed_poly().contour.area()) < scaled<double>(0.01) * scaled<double>(0.01)) {
                 LayoutErrorV1 err; err.error.code="INVALID_INPUT";
@@ -620,6 +659,10 @@ int run_layout_plan(const LayoutProblemV1& problem) {
         }
         size_t ui3 = 0;
         for (auto& rc : unlocked_counts) {
+            if (g_cancelled.load()) {
+                LayoutErrorV1 err; err.error.code="CANCELLED"; err.error.message="cancelled during validation";
+                std::cerr << to_json(err).dump() << std::endl; return 5;
+            }
             if (ui3 < unlocked_input.size() &&
                 std::abs(unlocked_input[ui3].transformed_poly().contour.area()) < scaled<double>(0.01) * scaled<double>(0.01)) {
                 LayoutErrorV1 err; err.error.code="INVALID_INPUT";
