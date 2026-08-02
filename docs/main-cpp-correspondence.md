@@ -96,3 +96,35 @@ stdout (`emit_event` and the `*_tag` helpers). The Rust CLI does not emit this
 protocol; it prints a human summary and writes the G-code. This does **not**
 affect G-code parity — it only matters to a caller that consumes the machine
 event stream. Port only if such a consumer is in scope.
+
+## Multicolour / wipe-tower subsystem (added R419-R447)
+
+`main.cpp` itself does not implement these, but a maintainer coming from the C++
+tree will look for them by their BambuStudio file names. This is where they live
+in the Rust port:
+
+| C++ source | Rust home | Notes |
+|---|---|---|
+| `GCode/WipeTower.cpp` (generator) | `crates/libslic3r-rs/src/gcode/wipe_tower.rs` | `WipeTower::new` / `plan_toolchange` / `plan_tower` / `generate` -> `Vec<Vec<ToolChangeResult>>`. Tower gcode is emitted in tower-LOCAL coordinates. |
+| `GCode.cpp::WipeTowerIntegration` (export side) | `crates/libslic3r-rs/src/gcode/wipe_tower_integration.rs` | `transform_gcode` (GCode.cpp:298) rewrites tower-local `G1` moves into bed coordinates; `substitute_change_filament` injects the evaluated tool-change block into the tower's `[change_filament_gcode]` placeholder (WipeTower.cpp:2466). |
+| `PlaceholderParser.cpp` (expression engine) | `crates/libslic3r-rs/src/gcode/gcode_template.rs` | Expression-capable template evaluator: `[var]`/`{expr}`, nestable `{if}/{elsif}/{else}/{endif}`, arithmetic, comparisons, `&&`/`\|\|`, string equality, array indexing. (`gcode/placeholder_parser.rs` is the older fixed-string stub.) |
+| `Print.cpp::_make_wipe_tower` variable prep (3313-3330) | `crates/libslic3r-rs/src/gcode/change_filament.rs` | `build_context()` fills the ~29 `change_filament_gcode` variables (temps, retract lengths, `flush_length_1..4` split, per-filament arrays). |
+| `GCode/ToolOrderUtils.cpp` (flush optimizer) | `crates/libslic3r-rs/src/gcode/tool_order_utils.rs` | `reorder_filaments_for_minimum_flush_volume` — wired into the psWipeTower pre-pass in `print.rs`, which stores the result on `Print::optimized_layer_tools` so BOTH the tower plan and `emit_layer_by_island` follow one order. |
+| `GCode/ToolOrdering.cpp::WipingExtrusions` | `crates/libslic3r-rs/src/gcode/tool_ordering.rs` | Override bookkeeping plus the `is_overriddable` / `is_obj_overriddable` / `is_support_overriddable` predicates. `mark_wiping_extrusions` itself is NOT ported (measured to divert only ~0.7% of Majora's purge, so it was not the tower gap). |
+| `MultiMaterialSegmentation.cpp` | `crates/libslic3r-rs/src/multi_material_segmentation.rs` | Painted-region segmentation. `MMS_DEBUG=1` prints frames, per-slot segment bboxes and per-colour painted-line counts. |
+| `EdgeGrid.cpp` | `crates/libslic3r-rs/src/edge_grid.rs` | NOTE (R447): `create_from_contours` MERGES contour points into the pre-set bbox (EdgeGrid.cpp:145-151) — it must NOT reset it, because MMS calls `set_bbox()` first with the merged adjacent-layer bbox. |
+| `VariableWidth.cpp` | `crates/libslic3r-rs/src/perimeter_generator.rs` | NOTE (R444): an Arachne junction width is a SPACING; convert with `unscale(w) + height*(1-PI/4)` before building the flow (VariableWidth.cpp:66). |
+
+### Debug/measurement entry points
+
+Environment gates (all off by default unless stated):
+`SLICE_PHASE_TIMING=1` (phase + `export_gcode` sub-phase timings), `MMS_DEBUG=1`
+(painted segmentation), `FLUSH_PROBE=1` (purge demand vs divertible infill, and
+the flush-order cost the optimizer achieves), `WIPE_TOWER_EMIT=0` / `FLUSH_OPT=0`
+(opt OUT of the now-default tower emission and flush ordering).
+
+G-code parity is measured with `scripts/semantic_compare.py` (see PARITY_STATUS.md).
+It handles `G2`/`G3` arcs, sub-1 `E.01024` values and deretraction-priming, reports
+per-feature E + path length + E-per-mm, and separates object-only material from
+wipe-tower purge. Do NOT hand-roll G-code E extraction — two rounds of this port
+were misled by bespoke parsers that silently dropped arcs or sub-1 extrusions.
