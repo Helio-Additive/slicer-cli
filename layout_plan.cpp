@@ -378,6 +378,12 @@ bool parse_input(const json& raw, LayoutProblemV1& out, LayoutErrorV1& err) {
                     err.error.object_ids={ref.id}; return false;
                 }
             }
+            // reject the MIXED form: transform object AND flat top-level fields
+            // together — the flat ones would otherwise be silently ignored
+            if (m.contains("transform") && m["transform"].is_object() && has_any_spelling(m)) {
+                err.error.code="INVALID_INPUT"; err.error.message="model '"+ref.id+"' provide transform object OR flat fields, not both";
+                err.error.object_ids={ref.id}; return false;
+            }
             // transform: nested object or flat top-level fields; track presence to preserve embedded transforms
             bool has_override = false;
             if (m.contains("transform")) {
