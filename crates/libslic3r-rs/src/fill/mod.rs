@@ -1571,6 +1571,14 @@ pub fn fill_surface_extrusion(
 /// This simplified version:
 /// 1. Tries to connect consecutive polylines whose endpoints are close
 /// 2. Falls through to just outputting disconnected polylines otherwise
+/// R459 diagnostic (FILL_CONNECT_DEBUG=1): does the non-monotonic connect step
+/// actually JOIN anything? Counts polylines in vs runs out and the length added by
+/// the implicit connector segments.
+pub static CONN_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static CONN_OUT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static CONN_LEN_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static CONN_LEN_OUT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub fn connect_infill(
     infill_ordered: Vec<Polyline>,
     boundary: &[Polygon],
@@ -1581,10 +1589,26 @@ pub fn connect_infill(
     if infill_ordered.is_empty() {
         return;
     }
+    let dbg = std::env::var_os("FILL_CONNECT_DEBUG").is_some();
+    let out_start = polylines_out.len();
+    if dbg {
+        use std::sync::atomic::Ordering::Relaxed;
+        CONN_IN.fetch_add(infill_ordered.len(), Relaxed);
+        let l: f64 = infill_ordered.iter().map(|p| p.length()).sum();
+        CONN_LEN_IN.fetch_add((l / crate::SCALING_FACTOR * 1000.0) as usize, Relaxed);
+    }
 
     // Simplified connection: try to merge consecutive polylines whose
     // endpoints are within 2x spacing distance
-    let max_connection_dist = crate::scale(spacing * 2.5);
+    // R459 diagnostic knob: the 2.5x factor cannot span a gyroid wave pitch
+    // (spacing/(density*2.44)*PI), so this stub never chains gyroid at all.
+    // FILL_CONNECT_MULT lets a round measure the mechanism without changing default
+    // behaviour.
+    let mult: f64 = std::env::var("FILL_CONNECT_MULT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.5);
+    let max_connection_dist = crate::scale(spacing * mult);
     let max_connection_dist_sq = (max_connection_dist as f64) * (max_connection_dist as f64);
 
     let mut i = 0;
@@ -1628,6 +1652,12 @@ pub fn connect_infill(
         if !current.points.is_empty() {
             polylines_out.push(current);
         }
+    }
+    if dbg {
+        use std::sync::atomic::Ordering::Relaxed;
+        CONN_OUT.fetch_add(polylines_out.len() - out_start, Relaxed);
+        let l: f64 = polylines_out[out_start..].iter().map(|p| p.length()).sum();
+        CONN_LEN_OUT.fetch_add((l / crate::SCALING_FACTOR * 1000.0) as usize, Relaxed);
     }
 }
 

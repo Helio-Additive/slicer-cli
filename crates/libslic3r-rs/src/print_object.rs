@@ -3333,6 +3333,18 @@ impl PrintObject {
                     layer.make_fills(lower_internal_areas, lower_sparse_polys)
                 })?;
 
+            if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
+                use crate::fill::{CONN_IN, CONN_LEN_IN, CONN_LEN_OUT, CONN_OUT};
+                use std::sync::atomic::Ordering::Relaxed;
+                let f = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed) as f64 / 1000.0;
+                eprintln!(
+                    "FILL_CONNECT: polylines in={} out={} (joins={})  length in={:.0} out={:.0} mm (added {:.0})",
+                    CONN_IN.load(Relaxed), CONN_OUT.load(Relaxed),
+                    CONN_IN.load(Relaxed).saturating_sub(CONN_OUT.load(Relaxed)),
+                    f(&CONN_LEN_IN), f(&CONN_LEN_OUT), f(&CONN_LEN_OUT) - f(&CONN_LEN_IN),
+                );
+            }
+
             // R456: sparse-infill fill accounting — how much Internal AREA reached the
             // filler and how much of it produced no polylines at all.
             if std::env::var_os("FILL_SURFACE_DEBUG").is_some() {
