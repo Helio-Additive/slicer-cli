@@ -1306,7 +1306,15 @@ pub fn create_boundary_infill_graph(
                 for (which, pt) in
                     [pl.points[0], *pl.points.last().unwrap()].into_iter().enumerate()
                 {
-                    let cp = grid.closest_point(&pt, SCALED_EPSILON as Coord);
+                    // R460 experiment: FILL_CONNECT_EPS multiplies the search radius.
+                    // C++ works in 1e6 units/mm, this crate in 1e5, so an endpoint that
+                    // Clipper placed on a boundary edge may land further than
+                    // SCALED_EPSILON from it here.
+                    let eps_mult: f64 = std::env::var("FILL_CONNECT_EPS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1.0);
+                    let cp = grid.closest_point(&pt, (SCALED_EPSILON as f64 * eps_mult) as Coord);
                     if cp.is_valid() {
                         // The infill end point shall lie on the contour.
                         intersection_points.push((cp, pl_idx * 2 + which));
@@ -1482,6 +1490,16 @@ pub fn connect_infill_polygons(
 }
 
 // FillBase.cpp:1501-1733 — Fill::connect_infill (the std::vector<const Polygon*> overload).
+/// R460 diagnostic counters for the FAITHFUL connector (FILL_CONNECT_DEBUG=1).
+pub static FB_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_OUT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_LEN_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_LEN_OUT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_ENDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_ENDS_UNCONNECTED: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub static FB_ARCHES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub fn connect_infill(
     mut infill_ordered: Vec<Polyline>,
     boundary_src: &[&Polygon],
@@ -1496,6 +1514,26 @@ pub fn connect_infill(
 
     // FillBase.cpp:1515
     let mut graph = create_boundary_infill_graph(&infill_ordered, boundary_src, bbox, spacing);
+
+    // R460 diagnostic (FILL_CONNECT_DEBUG=1): does this faithful connector actually
+    // see infill end points ON the boundary? An end point that fails to map
+    // (BOUNDARY_IDX_UNCONNECTED) can never be chained, so a high unconnected count
+    // means the caller handed us lines whose ends are not on `boundary_src`.
+    let fb_dbg = std::env::var_os("FILL_CONNECT_DEBUG").is_some();
+    let fb_out_start = polylines_out.len();
+    if fb_dbg {
+        use std::sync::atomic::Ordering::Relaxed;
+        FB_IN.fetch_add(infill_ordered.len(), Relaxed);
+        let l: f64 = infill_ordered.iter().map(|p| p.length()).sum();
+        FB_LEN_IN.fetch_add((l / crate::SCALING_FACTOR * 1000.0) as usize, Relaxed);
+        let unconn = graph
+            .map_infill_end_point_to_boundary
+            .iter()
+            .filter(|c| c.contour_idx == BOUNDARY_IDX_UNCONNECTED)
+            .count();
+        FB_ENDS.fetch_add(graph.map_infill_end_point_to_boundary.len(), Relaxed);
+        FB_ENDS_UNCONNECTED.fetch_add(unconn, Relaxed);
+    }
 
     // FillBase.cpp:1517-1518
     let mut merged_with: Vec<usize> = (0..infill_ordered.len()).collect();
@@ -1532,6 +1570,9 @@ pub fn connect_infill(
             }
         }
         arches.sort_by(|l, r| l.arc_length.partial_cmp(&r.arc_length).unwrap_or(std::cmp::Ordering::Equal));
+        if fb_dbg {
+            FB_ARCHES.fetch_add(arches.len(), std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     // FillBase.cpp:1625-1661
@@ -1741,6 +1782,12 @@ pub fn connect_infill(
         if !pl.points.is_empty() {
             polylines_out.push(pl);
         }
+    }
+    if fb_dbg {
+        use std::sync::atomic::Ordering::Relaxed;
+        FB_OUT.fetch_add(polylines_out.len() - fb_out_start, Relaxed);
+        let l: f64 = polylines_out[fb_out_start..].iter().map(|p| p.length()).sum();
+        FB_LEN_OUT.fetch_add((l / crate::SCALING_FACTOR * 1000.0) as usize, Relaxed);
     }
 }
 

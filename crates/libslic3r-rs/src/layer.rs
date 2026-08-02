@@ -2446,6 +2446,7 @@ impl Layer {
 
                 // Save contour for connect_infill boundary before expoly may be moved
                 let boundary_contour = expoly.contour.clone();
+                let expoly_for_connect = expoly.clone();
 
                 // Faithful FillGrid = combined raw multilines (make_fill_lines,
                 // both sweeps over the shared offset base) + a single anchor-aware
@@ -2636,16 +2637,43 @@ impl Layer {
                     );
                     polylines = connected;
                 } else if infill_config.connect_infill && !is_monotonic {
-                    let boundary = vec![boundary_contour.clone()];
-                    let fill_params = crate::fill::FillParams::new();
                     let mut connected = Vec::new();
-                    crate::fill::connect_infill(
-                        polylines,
-                        &boundary,
-                        infill_config.line_spacing,
-                        &fill_params,
-                        &mut connected,
-                    );
+                    if std::env::var_os("FILL_CONNECT_FAITHFUL").is_some() {
+                        // R460 EXPERIMENT (off by default): route the non-monotonic
+                        // fillers through the faithful FillBase.cpp:1501-1733 port with
+                        // the CONFIGURED anchors and the full expolygon, so its
+                        // FILL_CONNECT_DEBUG counters reveal whether it can map gyroid
+                        // end points onto the boundary at all.
+                        let mut fp = crate::fill::FillParams::new();
+                        fp.density = density;
+                        fp.anchor_length = surface_fill.params.anchor_length as f64;
+                        fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
+                        fp.dont_sort = false;
+                        let mut boundary_all = vec![expoly_for_connect.contour.clone()];
+                        boundary_all.extend(expoly_for_connect.holes.iter().cloned());
+                        let mut bb = crate::geometry::BoundingBox::empty();
+                        for p in boundary_all.iter().flat_map(|g| g.points.iter()) {
+                            bb.merge_point(*p);
+                        }
+                        crate::fill::fill_base::connect_infill_polygons(
+                            polylines,
+                            &boundary_all,
+                            &bb,
+                            &mut connected,
+                            infill_config.line_spacing,
+                            &fp,
+                        );
+                    } else {
+                        let boundary = vec![boundary_contour.clone()];
+                        let fill_params = crate::fill::FillParams::new();
+                        crate::fill::connect_infill(
+                            polylines,
+                            &boundary,
+                            infill_config.line_spacing,
+                            &fill_params,
+                            &mut connected,
+                        );
+                    }
                     polylines = connected;
                 }
 

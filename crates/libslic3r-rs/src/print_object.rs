@@ -3334,6 +3334,22 @@ impl PrintObject {
                 })?;
 
             if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
+                use crate::fill::fill_base::{
+                    FB_ARCHES, FB_ENDS, FB_ENDS_UNCONNECTED, FB_IN, FB_LEN_IN, FB_LEN_OUT, FB_OUT,
+                };
+                use std::sync::atomic::Ordering::Relaxed as R2;
+                let f2 = |x: &std::sync::atomic::AtomicUsize| x.load(R2) as f64 / 1000.0;
+                eprintln!(
+                    "FILL_CONNECT_FAITHFUL: polylines in={} out={} (joins={})  ends={} UNCONNECTED={} ({:.1}%)  arches={}  length in={:.0} out={:.0} mm (added {:.0})",
+                    FB_IN.load(R2), FB_OUT.load(R2),
+                    FB_IN.load(R2).saturating_sub(FB_OUT.load(R2)),
+                    FB_ENDS.load(R2), FB_ENDS_UNCONNECTED.load(R2),
+                    100.0 * FB_ENDS_UNCONNECTED.load(R2) as f64 / FB_ENDS.load(R2).max(1) as f64,
+                    FB_ARCHES.load(R2),
+                    f2(&FB_LEN_IN), f2(&FB_LEN_OUT), f2(&FB_LEN_OUT) - f2(&FB_LEN_IN),
+                );
+            }
+            if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
                 use crate::fill::{CONN_IN, CONN_LEN_IN, CONN_LEN_OUT, CONN_OUT};
                 use std::sync::atomic::Ordering::Relaxed;
                 let f = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed) as f64 / 1000.0;
