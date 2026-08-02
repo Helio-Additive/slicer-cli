@@ -659,6 +659,60 @@ impl PrintObject {
                 .filter(|l| l.iter().any(|s| !s.is_empty()))
                 .count();
             let slices_nonempty = layer_slices.iter().filter(|s| !s.is_empty()).count();
+            // R455: how much painted triangle AREA faces up/down vs sideways. Contour
+            // projection (all our port does) only sees side-facing paint; C++'s
+            // `mmu_segmentation_top_and_bottom_layers` is what turns up/down-facing paint
+            // into real area. This quantifies how much that stub is costing BEFORE
+            // committing to the ~1000-line slice_mesh_slabs port it needs.
+            {
+                let mut side = vec![0.0f64; 16];
+                let mut updown = vec![0.0f64; 16];
+                for (ext, its) in self.painted_submeshes.iter() {
+                    let e = (*ext as usize).min(15);
+                    for tri in its.indices.iter() {
+                        let (a, b, c) = (
+                            its.vertices[tri[0] as usize],
+                            its.vertices[tri[1] as usize],
+                            its.vertices[tri[2] as usize],
+                        );
+                        let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                        let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                        let n = [
+                            (u[1] * v[2] - u[2] * v[1]) as f64,
+                            (u[2] * v[0] - u[0] * v[2]) as f64,
+                            (u[0] * v[1] - u[1] * v[0]) as f64,
+                        ];
+                        let mag = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                        if mag <= 0.0 {
+                            continue;
+                        }
+                        let area = 0.5 * mag;
+                        // |nz|/|n| > cos(45deg): the facet is closer to horizontal than vertical.
+                        if (n[2].abs() / mag) > std::f64::consts::FRAC_1_SQRT_2 {
+                            updown[e] += area;
+                        } else {
+                            side[e] += area;
+                        }
+                    }
+                }
+                let ts: f64 = side.iter().sum();
+                let tu: f64 = updown.iter().sum();
+                eprintln!(
+                    "MMS_FACING: painted triangle area mm2 — side-facing {:.0} ({:.1}%), up/down-facing {:.0} ({:.1}%)",
+                    ts, 100.0 * ts / (ts + tu).max(1e-9),
+                    tu, 100.0 * tu / (ts + tu).max(1e-9)
+                );
+                for e in 1..16 {
+                    if side[e] + updown[e] > 0.0 {
+                        eprintln!(
+                            "MMS_FACING:   extruder {} side={:.0} up/down={:.0} ({:.1}% up/down)",
+                            e, side[e], updown[e],
+                            100.0 * updown[e] / (side[e] + updown[e])
+                        );
+                    }
+                }
+            }
+
             // R453: the actual PARTITION, which is what the per-tool sparse-infill
             // parity metric reduces to. Total area claimed by each extruder slot over
             // all layers, against the total input slice area — the leftover is what
