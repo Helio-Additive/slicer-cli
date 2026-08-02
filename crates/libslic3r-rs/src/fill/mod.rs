@@ -575,6 +575,42 @@ pub fn group_fills(
         let region = layer.get_region(region_id).unwrap();
         region_to_surface_params[region_id] = vec![None; region.fill_surfaces.surfaces.len()];
 
+        // FILL_REGION_DEBUG=1 — per-region accounting of the INTERNAL (sparse-infill
+        // candidate) area vs the INTERNAL_VOID area that is skipped outright, plus the
+        // density/filament that decide whether it gets filled at all. Aggregate the
+        // stderr lines to find a region whose sparse infill silently disappears.
+        if std::env::var_os("FILL_REGION_DEBUG").is_some() {
+            let rc = region.region().config();
+            let mut a_int = 0.0f64;
+            let mut a_void = 0.0f64;
+            let mut a_solid = 0.0f64;
+            for s in region.fill_surfaces.surfaces.iter() {
+                let a = s.expolygon.area() / (crate::SCALING_FACTOR * crate::SCALING_FACTOR);
+                match s.surface_type {
+                    SurfaceType::Internal => a_int += a,
+                    SurfaceType::InternalVoid => a_void += a,
+                    _ => {
+                        if s.is_solid() {
+                            a_solid += a
+                        }
+                    }
+                }
+            }
+            eprintln!(
+                "FILLDBG L{} r{} filament(sparse={} solid={} wall={}) density={:.4} \
+                 area(int={:.2} void={:.2} solid={:.2})",
+                layer.id(),
+                region_id,
+                rc.sparse_infill_filament,
+                rc.solid_infill_filament,
+                rc.wall_filament,
+                rc.fill_density,
+                a_int,
+                a_void,
+                a_solid
+            );
+        }
+
         // Fill.cpp:196-318
         for (surface_idx, surface) in region.fill_surfaces.surfaces.iter().enumerate() {
             // Fill.cpp:198

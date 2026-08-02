@@ -31,6 +31,9 @@ AX = re.compile(r'([XYEIJZF])(-?[0-9.]+)')
 def parse(path):
     """Return list of layers; each = dict(z, segs=[(x0,y0,x1,y1,w,feat,e,len)]).
 
+    Each seg also carries `tool`, the active extruder at that move, so a
+    multi-material divergence can be attributed to a specific filament/region.
+
     `len` is the TRUE deposited path length: the chord for G0/G1, and r*sweep
     for G2/G3 arcs (centre from the relative I/J offsets). Measuring an arc by
     its chord under-reports its length, which silently INFLATES the E-per-mm of
@@ -49,6 +52,7 @@ def parse(path):
     px = py = None
     feat = ''
     width = 0.42
+    tool = 0   # active extruder, from bare `Tn` lines (multi-material attribution)
     header = {}
     retract = 0.0  # outstanding retracted length awaiting re-prime
     for line in open(path):
@@ -69,6 +73,14 @@ def parse(path):
             width = float(line.split(':')[1]); continue
         if line.startswith('; FEATURE:'):
             feat = line.strip()[10:].strip(); continue
+        mt = re.match(r'^T(\d+)\s*$', line.strip())
+        if mt:
+            # Tool-change targets above the real extruder count (e.g. T255/T1000)
+            # are BambuStudio sentinels, not a filament — ignore them.
+            t = int(mt.group(1))
+            if t < 64:
+                tool = t
+            continue
         m = re.match(r'^G([0123]) ', line)
         if not m:
             continue
@@ -99,7 +111,7 @@ def parse(path):
                         sweep = 2 * math.pi   # start == end -> full circle
                     seglen = r * sweep
             # Swept-area raster still uses the chord (coverage is width-dominated).
-            cur['segs'].append((px, py, x, y, width, feat, real, seglen))
+            cur['segs'].append((px, py, x, y, width, feat, real, seglen, tool))
         px, py = x, y
     if cur['segs']:
         layers.append(cur)
@@ -114,14 +126,14 @@ def per_layer_material(layers):
 def per_feature(layers):
     E = collections.Counter(); D = collections.Counter()
     for L in layers:
-        for (x0,y0,x1,y1,w,f,e,ln) in L['segs']:
+        for (x0,y0,x1,y1,w,f,e,ln,t) in L['segs']:
             E[f]+=e; D[f]+=ln
     return E, D
 
 def raster_layer(segs, res, x0, y0, nx, ny):
     """Boolean coverage grid: mark cells within w/2 of each segment centerline."""
     grid = np.zeros((ny, nx), dtype=bool)
-    for (ax, ay, bx, by, w, f, e, ln) in segs:
+    for (ax, ay, bx, by, w, f, e, ln, t) in segs:
         r = max(w/2.0, res)
         length = math.hypot(bx-ax, by-ay)
         n = max(1, int(length/(res*0.5))+1)
