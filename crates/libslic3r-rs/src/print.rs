@@ -2802,16 +2802,31 @@ fn emit_tower_tcr(
     } else {
         None
     };
+    // Label tower extrusions like C++ does (`; FEATURE: Prime tower`). Without
+    // this the tower's E is attributed to whichever feature preceded it, which
+    // silently inflates that feature in per-feature parity comparisons.
+    //
+    // R464: the marker must sit AFTER the change-filament block, immediately
+    // before the tower's own moves — that is where C++ emits it (after the
+    // block's closing `G1 E.8`, then `; WIPE_TOWER_START`, then the strokes).
+    // Emitting it before the whole block put the tool change's retract and
+    // ramming INSIDE the tower feature, leaving an outstanding retraction at the
+    // first purge stroke; that is what made ~one stroke per toolchange read at
+    // ~0.011 E/mm instead of 0.0543 (R463).
+    const TOWER_FEATURE: &str = "; FEATURE: Prime tower";
+    let had_placeholder = g.contains(crate::gcode::wipe_tower_integration::CHANGE_FILAMENT_PLACEHOLDER);
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
         &g,
         block.as_deref(),
         tcr.new_tool.max(0) as usize,
         &print_config.toolchange_prefix,
+        Some(TOWER_FEATURE),
     );
-    // Label tower extrusions like C++ does (`; FEATURE: Prime tower`). Without
-    // this the tower's E is attributed to whichever feature preceded it, which
-    // silently inflates that feature in per-feature parity comparisons.
-    writer.write_raw("; FEATURE: Prime tower");
+    if !had_placeholder {
+        // No tool change in this block (e.g. a plain tower layer): the marker
+        // still has to precede the moves.
+        writer.write_raw(TOWER_FEATURE);
+    }
     writer.write_raw_content(&g);
 }
 

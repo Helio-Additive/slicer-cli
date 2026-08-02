@@ -35,6 +35,12 @@ pub fn substitute_change_filament(
     change_filament_block: Option<&str>,
     new_tool: usize,
     toolchange_prefix: &str,
+    // Emitted immediately AFTER the substituted change-filament block, i.e. right
+    // before the tower's own moves — which is where C++ puts `; FEATURE: Prime
+    // tower` (it appears after the block's closing `G1 E.8`, followed by
+    // `; WIPE_TOWER_START`). Placing it before the whole block instead attributes
+    // the tool change's own retract/ramming to the tower feature.
+    feature_marker: Option<&str>,
 ) -> String {
     let tool_cmd = format!("{}{}", toolchange_prefix, new_tool);
     let replacement = match change_filament_block {
@@ -49,6 +55,10 @@ pub fn substitute_change_filament(
             s
         }
         _ => tool_cmd,
+    };
+    let replacement = match feature_marker {
+        Some(m) => format!("{replacement}\n{m}"),
+        None => replacement,
     };
     tower_gcode.replace(CHANGE_FILAMENT_PLACEHOLDER, &replacement)
 }
