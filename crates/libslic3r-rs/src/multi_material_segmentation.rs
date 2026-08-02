@@ -674,7 +674,16 @@ fn to_polygon(id_to_lines: &[(usize, LineF)]) -> Polygon {
 // MultiMaterialSegmentation.cpp:413
 // Returns list of ExPolygons for each extruder + 1 for default unpainted regions.
 // (Polygon-level output here; ExPolygon union happens at the caller layer.)
+/// MMS_DEBUG face accounting (R453): how many traced faces are accepted outright,
+/// salvaged by the C++ backtracking recovery (cpp:466-477), or lost entirely. A large
+/// DISCARDED count means the area shortfall originates in graph quality upstream
+/// (Voronoi construction / edge cleanup), not in this extraction.
+pub static FACES_OK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FACES_RECOVERED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FACES_DISCARDED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub fn extract_colored_segments(graph: &MmuGraph, num_extruders: usize) -> Vec<Vec<Polygon>> {
+    use std::sync::atomic::Ordering::Relaxed;
     let mut used_arcs: Vec<bool> = vec![false; graph.arcs.len()];
 
     // MultiMaterialSegmentation.cpp:417-419
@@ -748,8 +757,10 @@ pub fn extract_colored_segments(graph: &MmuGraph, num_extruders: usize) -> Vec<V
             // MultiMaterialSegmentation.cpp:462-478
             let poly = to_polygon(&arc_id_to_face_lines);
             if poly.is_counter_clockwise() && poly.is_valid() {
+                FACES_OK.fetch_add(1, Relaxed);
                 expolygons_segments[arc.color as usize].push(poly);
             } else {
+                let mut recovered = false;
                 while arc_id_to_face_lines.len() > 1 {
                     let id_to_line = *arc_id_to_face_lines.last().unwrap();
                     used_arcs[id_to_line.0] = false;
@@ -765,10 +776,15 @@ pub fn extract_colored_segments(graph: &MmuGraph, num_extruders: usize) -> Vec<V
                         && poly.is_counter_clockwise()
                         && poly.is_valid()
                     {
+                        FACES_RECOVERED.fetch_add(1, Relaxed);
+                        recovered = true;
                         expolygons_segments[arc.color as usize].push(poly);
                         break;
                     }
                     arc_id_to_face_lines.pop();
+                }
+                if !recovered {
+                    FACES_DISCARDED.fetch_add(1, Relaxed);
                 }
             }
         }

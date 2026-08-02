@@ -659,6 +659,80 @@ impl PrintObject {
                 .filter(|l| l.iter().any(|s| !s.is_empty()))
                 .count();
             let slices_nonempty = layer_slices.iter().filter(|s| !s.is_empty()).count();
+            // R453: the actual PARTITION, which is what the per-tool sparse-infill
+            // parity metric reduces to. Total area claimed by each extruder slot over
+            // all layers, against the total input slice area — the leftover is what
+            // stays with the object's default filament.
+            let sf2 = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
+            let mut per_ext = vec![0.0f64; num_extruders + 1];
+            for l in segmented.iter() {
+                for (e, eps) in l.iter().enumerate() {
+                    if e < per_ext.len() {
+                        per_ext[e] += eps.iter().map(|x| x.area()).sum::<f64>() / sf2;
+                    }
+                }
+            }
+            let total_slice: f64 = layer_slices
+                .iter()
+                .map(|s| s.iter().map(|x| x.area()).sum::<f64>() / sf2)
+                .sum();
+            let claimed: f64 = per_ext.iter().sum();
+            // Per-layer claimed fraction: distinguishes "a few layers fail outright"
+            // from "every layer systematically under-claims the interior".
+            let mut hist = [0usize; 11];
+            let mut worst: Vec<(usize, f64)> = Vec::new();
+            for (li, l) in segmented.iter().enumerate() {
+                let sl: f64 = layer_slices
+                    .get(li)
+                    .map(|s| s.iter().map(|x| x.area()).sum::<f64>() / sf2)
+                    .unwrap_or(0.0);
+                if sl <= 0.0 {
+                    continue;
+                }
+                let cl: f64 = l.iter().map(|e| e.iter().map(|x| x.area()).sum::<f64>() / sf2).sum();
+                let frac = (cl / sl).clamp(0.0, 1.0);
+                hist[(frac * 10.0).round() as usize] += 1;
+                worst.push((li, frac));
+            }
+            worst.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            {
+                use std::sync::atomic::Ordering::Relaxed;
+                use crate::multi_material_segmentation::{FACES_DISCARDED, FACES_OK, FACES_RECOVERED};
+                let (ok, rec, disc) = (
+                    FACES_OK.load(Relaxed),
+                    FACES_RECOVERED.load(Relaxed),
+                    FACES_DISCARDED.load(Relaxed),
+                );
+                let tot = (ok + rec + disc).max(1);
+                eprintln!(
+                    "MMS_PARTITION: traced faces ok={} ({:.1}%) recovered={} ({:.1}%) DISCARDED={} ({:.1}%)",
+                    ok, 100.0 * ok as f64 / tot as f64,
+                    rec, 100.0 * rec as f64 / tot as f64,
+                    disc, 100.0 * disc as f64 / tot as f64,
+                );
+            }
+            eprintln!("MMS_PARTITION: per-layer claimed-fraction histogram (0.0..1.0 in tenths) = {:?}", hist);
+            eprintln!(
+                "MMS_PARTITION: worst layers = {:?}",
+                worst.iter().take(6).map(|(i, f)| (*i, (f * 100.0).round() as i32)).collect::<Vec<_>>()
+            );
+            eprintln!(
+                "MMS_PARTITION: total_slice_area={:.0} claimed_by_painting={:.0} ({:.1}%) leftover_to_default={:.0}",
+                total_slice,
+                claimed,
+                100.0 * claimed / total_slice.max(1e-9),
+                total_slice - claimed
+            );
+            for (e, a) in per_ext.iter().enumerate() {
+                if *a > 0.0 {
+                    eprintln!(
+                        "MMS_PARTITION:   slot {} area={:.0} ({:.1}% of slice)",
+                        e,
+                        a,
+                        100.0 * a / total_slice.max(1e-9)
+                    );
+                }
+            }
             eprintln!(
                 "MMS_DEBUG: center_offset={:?} mms_center_offset=({},{}) layers={} segmented={} seg_layers_nonempty={} slice_layers_nonempty={} painted_order={:?}",
                 self.slice_center_offset,
