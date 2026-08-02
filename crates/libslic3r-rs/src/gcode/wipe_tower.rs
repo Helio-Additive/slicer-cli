@@ -1531,6 +1531,17 @@ impl WipeTower {
         let filament_area = PI * 0.875 * 0.875;
         self.extrusion_flow =
             layer_height * (self.perimeter_width - layer_height * (1.0 - PI / 4.0)) / filament_area;
+        // R463 (WT_WIDTH_DEBUG=1): C++ emits a CONSTANT `; LINE_WIDTH: 0.500000` for the
+        // tower and an E-per-mm of 0.05433, which this formula reproduces exactly at
+        // h=0.3 / perimeter_width=0.5. Our measured tower E-per-mm is 0.04850. Print what
+        // the fields actually hold at the moment the flow is computed.
+        if std::env::var_os("WT_WIDTH_DEBUG").is_some() {
+            eprintln!(
+                "WT_WIDTH: set_layer z={:.3} layer_height={:.4} perimeter_width={:.6}                  nozzle_change_perimeter_width={:.6} => extrusion_flow={:.6}",
+                print_z, layer_height, self.perimeter_width,
+                self.nozzle_change_perimeter_width, self.extrusion_flow
+            );
+        }
 
         // WipeTower.hpp:249-250 — advance the layer-info iterator to the plan
         // entry whose z is at (or just below) print_z. Equivalent index search.
