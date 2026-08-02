@@ -786,6 +786,46 @@ target_include_directories(slicer_cli PRIVATE
     "${SUBLIB_DIR}/miniz"
     "${OpenCASCADE_INCLUDE_DIR}")
 
+# Bake the engine submodule git SHA into the binary for capabilities.engine_commit
+# Provenance: run git with -C <engine dir> and verify the resolved toplevel IS
+# the engine checkout — a vendored engine dir without its own .git must NOT
+# pick up the PARENT repo's SHA (git walks up to find a repo); report the
+# literal "unknown" from layout_plan.cpp instead.
+find_package(Git QUIET)
+if(GIT_FOUND)
+  get_filename_component(ENGINE_ROOT_ABS "${ENGINE_ROOT}" ABSOLUTE)
+  execute_process(COMMAND ${GIT_EXECUTABLE} -C "${ENGINE_ROOT_ABS}" rev-parse --show-toplevel
+                  OUTPUT_VARIABLE ENGINE_TOPLEVEL
+                  OUTPUT_STRIP_TRAILING_WHITESPACE
+                  ERROR_QUIET)
+  # rev-parse --show-toplevel normalizes case/path; compare case-insensitively on
+  # Windows, exact elsewhere (ENGINE_ROOT_ABS is the reference for both)
+  set(_ENGINE_MATCH FALSE)
+  if(ENGINE_TOPLEVEL)
+    if(WIN32)
+      string(TOLOWER "${ENGINE_TOPLEVEL}" _toplevel_lc)
+      string(TOLOWER "${ENGINE_ROOT_ABS}" _root_lc)
+      if(_toplevel_lc STREQUAL _root_lc)
+        set(_ENGINE_MATCH TRUE)
+      endif()
+    else()
+      if(ENGINE_TOPLEVEL STREQUAL ENGINE_ROOT_ABS)
+        set(_ENGINE_MATCH TRUE)
+      endif()
+    endif()
+  endif()
+  if(_ENGINE_MATCH)
+    execute_process(COMMAND ${GIT_EXECUTABLE} -C "${ENGINE_ROOT_ABS}" rev-parse --short HEAD
+                    OUTPUT_VARIABLE ENGINE_COMMIT
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+  endif()
+endif()
+if(ENGINE_COMMIT)
+  target_compile_definitions(slicer_cli PRIVATE
+      ENGINE_COMMIT="${ENGINE_COMMIT}")
+endif()
+
 # ─── Layout spike (proof harness) ─────────────────────────────────────────
 add_executable(layout_spike layout_spike.cpp arrange_harness.cpp)
 target_link_libraries(layout_spike PRIVATE libslic3r_core)
