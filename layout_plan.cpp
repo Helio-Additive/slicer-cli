@@ -127,7 +127,8 @@ static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
 #endif
 }
 
-// return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), cycle = clean stop
+// return: 0 = ok, 1 = inheritance depth limit exceeded (incomplete chain), 2 = parse error (bad file), 3 = cancelled
+// (cycle → already loaded ancestors, clean stop via the visited set)
 // parses the slurped content; the root file was opened ONCE by slurp_profile_cancellable
 static int load_profile_json_impl(const std::string& content, const std::string& fp, DynamicPrintConfig& cfg,
                                   std::unordered_set<std::string>& visited, int depth) {

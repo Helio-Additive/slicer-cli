@@ -1187,7 +1187,7 @@ int main(int argc, char** argv) {
             for (;;) {
                 if (layout_plan::is_cancelled()) { cancelled = true; break; }
 #ifdef _WIN32
-                fd = ::_open(input_file.c_str(), _O_RDONLY);
+                fd = ::_open(input_file.c_str(), _O_RDONLY | _O_BINARY);  // binary: no Ctrl+Z EOF, no newline translation
 #else
                 fd = ::open(input_file.c_str(), O_RDONLY);
                 if (fd < 0 && errno == EINTR) {
