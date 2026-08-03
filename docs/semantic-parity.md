@@ -237,3 +237,69 @@ possible:
 `references/` is git-tracked, so any probe must be reverted afterwards. Note C++
 `SCALING_FACTOR = 0.00001` — 1e5 units/mm, the SAME as the Rust crate (an earlier
 note claiming C++ used 1e6 was wrong); scaled areas convert with `/1e10`.
+
+### The prime tower's Y placement (R494 — measured, mechanism still open)
+
+Our tower body and C++'s occupy the same-sized rectangle in a different place.
+Working in tower-local coordinates (subtract the emit-time translation, which both
+engines share at `(185.229, 199.297)` for Majora — `wipe_tower_x/y`), per layer:
+
+| z     | C++ local Y        | ours local Y      |
+|-------|--------------------|-------------------|
+| 0.3   | [-5.049, 40.049]   | [-2.250, 41.250]  |
+| 0.6   | [-4.178,  39.178]  | [ 0.000, 39.000]  |
+| 1.2   | [-3.307,  38.307]  | [ 0.000, 39.000]  |
+| 3.3+  | [-2.000,  37.000]  | [ 0.000, 39.000]  |
+
+X is identical in both (`[185.229, 220.229]`, i.e. local `[0, 35]`), and both
+bodies are exactly 39.000 deep. Two separate differences:
+
+1. **Body offset.** C++'s body rectangle sits at local Y `[-2.000, 37.000]`; ours
+   at `[0.000, 39.000]`. A constant -2.000 shift, stable across all layers.
+2. **Brim chamfer.** C++'s first-layer brim extends 3.049 mm and then decays
+   2.178 -> 1.307 -> 0 over the next layers (the `loops_num` computation in
+   `finish_layer_new`: `min(loops_num, max_chamfer_width/spacing) - dist_to_1st`,
+   with `spacing = m_perimeter_width - m_layer_height*(1 - pi/4)`). We emit a brim
+   on layer 0 only (2.250 mm) and nothing above it.
+
+Eliminated as the cause of the -2.000, each by direct instrumentation of the C++:
+
+- `m_rib_offset` is `(0,0)` (probed at Print.cpp:3358) — never nonzero here.
+- `m_plate_origin` is `(0,0)`.
+- `SHAPE_REVERSED` is dead code: `m_current_shape` is hard-assigned `SHAPE_NORMAL`
+  at WipeTower.cpp:239, and `SHAPE_NORMAL == 1`. So every
+  `set_y_shift(m_y_shift -/+ (SHAPE_REVERSED ? ... : 0))` reduces to `m_y_shift`.
+- `WipeTower::m_y_shift` is `0.0000` on all 656 layers (probed in the
+  `generate_new` loop). The assignment at :4656 is guarded by
+  `m_layer_info->depth < m_wipe_tower_depth - m_perimeter_width`, which never fires
+  for Majora since `layer_depth == tower_depth == 39.0` on every layer.
+- `WipeTowerWriter::rotate` is the identity here: probed in situ it always sees
+  `y_shift=0, angle=0`, and at angle 0 the `m_wipe_tower_depth/2` terms cancel
+  algebraically, so emitted local y == box-local y.
+- `finish_layer_new`'s own perimeter box is `[0.000, 39.000]` after
+  `align_perimeter` on every call (probed; single WipeTower instance, `this`
+  constant — it is NOT the `m_fake_wipe_tower` of Print.cpp:3384). That is our
+  box exactly, and it maps to global `[199.297, 238.297]` — a value the C++ output
+  contains only 5 times, against 2,281 occurrences of `236.297`.
+
+So the `[-2, 37]` rectangle that dominates C++'s output is NOT drawn by
+`finish_layer_new`'s perimeter — consistent with `generate_support_wall_new`
+returning early (`if (!extrude_perimeter) return wall_polygon;`) on most layers.
+The next probe should identify which emitter draws the dominant body rectangle
+(most likely `tool_change_new`'s cleaning box or `finish_block*`) and read its box
+coordinates directly.
+
+Note also `blocks == 1` for Majora on every layer, so the multi-block fill path in
+`finish_layer_new` (`multi_block_fill`) never activates for this fixture — the
+R493 block port is not required to close the tower's length gap here.
+
+Two measurement cautions from this round:
+
+- Percentile-trimmed bounding boxes (used by `towergeo.py`) mis-report a shift when
+  the two distributions differ in shape; they suggested a clean 2 mm translation of
+  the whole footprint, whereas the exact boxes show a -2.0 body shift PLUS a
+  different brim profile. Use exact extrema.
+- Attributing tower geometry by `; FEATURE: Prime tower` was checked against C++'s
+  unambiguous `; WIPE_TOWER_START/END` markers and agrees exactly (same bbox, same
+  1,171,244 mm), so feature-tag attribution is sound here despite C++ not
+  restoring the previous FEATURE tag after a tower block.
