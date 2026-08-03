@@ -703,3 +703,39 @@ fill the entire unused area of the tower on every single layer, which is the who
 Closing it needs `block.layer_depths` — i.e. the per-layer depth allocation from
 `update_all_layer_depth` (:4237) / `generate_wipe_tower_blocks` (:4268) — not the
 plan's global depth. That is the next port, and it is the last piece of the fill.
+
+
+### CORRECTION (R504): our fill box formula was already right
+
+R503 concluded that our fill box runs to the full tower depth while C++ uses a
+per-layer allocation, and called that "the whole 4.50x fill excess". **That is
+wrong.** Probing `finish_block`'s actual box:
+
+    [FB] cur_depth=17.000 start=0.500 layer_depth=38.500 plan_depth=39.000 box_h=21.500
+    [FB] cur_depth=28.000 start=0.500 layer_depth=38.500 plan_depth=39.000 box_h=10.500
+    [FB] cur_depth=33.500 start=0.500 layer_depth=38.500 plan_depth=39.000 box_h= 5.000
+
+C++'s height is `block.start_depth + block.layer_depths[cur] - block.cur_depth -
+m_perimeter_width` = `0.5 + 38.5 - cur_depth - 0.5` = **38.5 - cur_depth**. Ours is
+`layer_depth - (toolchanges_depth + perimeter_width)` = `39 - tc_depth - 0.5` =
+**38.5 - tc_depth**, and `cur_depth = start_depth + tc_depth` (the probe's first
+row is cur_depth 17.0 for a layer whose `toolchanges_depth` is 16.5). The two
+formulas are identical; `block.layer_depths[cur]` is 38.5 against the plan's 39.0,
+a 0.5 mm offset that is already absorbed by our `+ perimeter_width`.
+
+Note also that with one block, step 4 of `generate_wipe_tower_blocks` (:4316-4324)
+makes `m_plan[layer].depth` the SUM over blocks of `layer_depths[layer]`, so for
+Majora they only ever differ by the `start_offset`. There is no per-layer
+allocation to port.
+
+The fill excess is therefore two things, neither of them the box:
+
+1. **Density.** C++'s grid is sparse (vertical strokes at `m_bridging` = 10 mm);
+   ours is a dense zig-zag at 0.5 mm pitch. `TOWER_FILL_GRID=1` fixes this and
+   takes our fill from 301,534 mm to 133,720 mm.
+2. **Call count.** C++ runs `finish_block` 206 times; we fill on ~654 layers. The
+   remaining 2.9x is entirely this. The skip at :4751 fires when
+   `cur_depth >= 38.5`, i.e. `toolchanges_depth >= 38.0`, which the R494 histogram
+   says happens on ~94 layers — not enough on its own, so the other guards in the
+   dispatch (`is_valid_last_layer`, `finish_layer_filament == -1`, and the outer
+   `wall_idx != -1`) account for the rest. That is what remains to port.
