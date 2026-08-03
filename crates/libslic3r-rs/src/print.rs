@@ -2230,10 +2230,14 @@ impl Print {
                     // substituted, so change-filament material is excluded.
                     let (mut tot_e, mut tot_len) = (0.0_f64, 0.0_f64);
                     let (mut n_tcr, mut n_seg) = (0usize, 0usize);
+                    // R501: split purge (tool-change tcrs) from fill (finish-layer
+                    // tcrs) so each can be compared against C++'s own totals.
+                    let (mut purge_len, mut fill_len) = (0.0_f64, 0.0_f64);
                     for layer in &self.wipe_tower_results {
                         for tcr in layer {
                             n_tcr += 1;
                             let (mut x, mut y) = (tcr.start_pos.x as f64, tcr.start_pos.y as f64);
+                            let tcr_start_len = tot_len;
                             for line in tcr.gcode.lines() {
                                 if !(line.starts_with("G1") || line.starts_with("G0")) {
                                     continue;
@@ -2272,15 +2276,23 @@ impl Print {
                                 x = nx;
                                 y = ny;
                             }
+                            let d = tot_len - tcr_start_len;
+                            if tcr.is_tool_change {
+                                purge_len += d;
+                            } else {
+                                fill_len += d;
+                            }
                         }
                     }
                     eprintln!(
-                        "[WTSUM] tcrs={} segs={} writer_E={:.1} writer_len={:.1} E_per_mm={:.5}",
+                        "[WTSUM] tcrs={} segs={} writer_E={:.1} writer_len={:.1} E_per_mm={:.5} purge={:.1} fill={:.1}",
                         n_tcr,
                         n_seg,
                         tot_e,
                         tot_len,
-                        if tot_len > 0.0 { tot_e / tot_len } else { 0.0 }
+                        if tot_len > 0.0 { tot_e / tot_len } else { 0.0 },
+                        purge_len,
+                        fill_len
                     );
                 }
                 self.optimized_layer_tools = optimized_layer_tools;

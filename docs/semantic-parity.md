@@ -579,3 +579,41 @@ suspect for the ~99 kmm residual is `finish_block_solid` (WipeTower.cpp:3842),
 still unported, which serves every block whose `layers_type[m_cur_layer_id]` is
 not `Normal` — those layers get a SOLID fill in C++ where we give them the sparse
 grid. That is the next thing to port.
+
+
+### The tower is a purge/fill cancelling pair (R501)
+
+Instrumenting BOTH generators to split the tower into purge (tool-change tcrs) and
+fill (finish-layer tcrs) finally shows what the 1.045 total was hiding:
+
+|        | C++         | ours        | ratio  |
+|--------|-------------|-------------|--------|
+| purge  | 1,122,369.5 |   937,384.5 | 0.835  |
+| fill   |    48,946.1 |   301,534.0 | 6.16   |
+| total  | 1,171,315.6 | 1,238,918.5 | 1.058  |
+
+**Our purge is 185,000 mm SHORT and our fill is 252,588 mm OVER.** The same
+cancelling-pair pattern as R492/R493, at ten times the scale, and it invalidates
+R499's conclusion that "the purge matches C++": that was based on `dy` and the
+per-wipe line count of a sampled toolchange, not on the total.
+
+C++'s fill decomposes exactly:
+
+| emitter             | calls | length     |
+|---------------------|-------|------------|
+| `finish_block_solid`|     0 |        0.0 |
+| `finish_block`      |   206 |   35,684.5 |
+| `finish_layer_new`  |   656 |   13,261.6 |
+| total               |       |   48,946.1 |
+
+**`finish_block_solid` is never called for Majora** — it is eliminated as the
+residual, and porting it would have changed nothing. `finish_layer_new` runs on all
+656 layers but contributes only 13.3 kmm, i.e. ~20 mm per layer: a genuinely
+sparse grid. `finish_block` runs on just 206 of the tool-change layers.
+
+Against that, our fill is 301.5 kmm at baseline and still 134.6 kmm with the
+faithful sparse grid and inner rectangle enabled — 2.75x C++'s. So the fill has a
+second defect beyond the sparse/dense branch, and the purge has a large deficit of
+its own. Both must be fixed before either gate can go default-ON; neither is
+visible in the total, which is why every attempt to tune the fill alone (R493,
+R496-R500) moved the aggregate the wrong way.
