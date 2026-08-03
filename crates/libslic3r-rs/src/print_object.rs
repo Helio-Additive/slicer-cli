@@ -2901,6 +2901,24 @@ impl PrintObject {
                         if std::env::var("TSDBG").is_ok()
                             && (layers[idx_layer].print_z - 4.80).abs() < 0.001
                         {
+                            let sc2 = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
+                            let mut tiny = 0usize;
+                            let mut atot = 0.0f64;
+                            for sf in &layers[idx_layer].regions()[region_id].slices.surfaces {
+                                let a = sf.expolygon.area().abs() / sc2;
+                                atot += a;
+                                if a < 0.05 { tiny += 1; }
+                            }
+                            eprintln!(
+                                "TSDBG-R reg={} nsurf={} tiny={} area={:.4} nregions={}",
+                                region_id,
+                                layers[idx_layer].regions()[region_id].slices.surfaces.len(),
+                                tiny, atot, layers[idx_layer].regions().len()
+                            );
+                        }
+                        if std::env::var("TSDBG_FULL").is_ok()
+                            && (layers[idx_layer].print_z - 4.80).abs() < 0.001
+                        {
                             let sc = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
                             for sf in &layers[idx_layer].regions()[region_id].slices.surfaces {
                                 eprintln!("TSDBG-R in_slice npts={} nholes={} a={:.4}", sf.expolygon.contour.points.len(), sf.expolygon.holes.len(), sf.expolygon.area().abs()/sc);

@@ -1086,3 +1086,40 @@ union/diff chain that builds `LayerRegion::slices` — and whether C++ applies a
 simplification or area cull we skip. Note the areas MATCHING means this is a
 cosmetic-looking difference with real downstream cost, so the fix must preserve the
 total area exactly.
+
+
+### The slivers are all in region 0 — and they are INERT for Top surface (R514)
+
+Adding `region_id` to both engines' slice probes localises R513's fragmentation
+exactly. At print_z 4.80 (8 regions on both sides):
+
+| region | ours nsurf / tiny / area | C++ nsurf / tiny / area |
+|--------|--------------------------|--------------------------|
+| **0** | **39 / 30 / 993.64** | **12 / 0 / 998.31** |
+| 2 | 2 / 0 / 67.76 | 2 / 0 / 67.77 |
+| 3 | 5 / 0 / 350.61 | 6 / 1 / 346.01 |
+| 4 | 9 / 0 / 325.90 | 10 / 1 / 325.84 |
+
+**Every one of the 30 slivers is in region 0** — the multi-material remainder.
+Regions 2/3/4 match C++ in count and area. The source is
+`print_object.rs`: `let remaining = difference(region0_ex, &stolen_total)`, a raw
+boolean difference that leaves fragments wherever a stolen region's edge nearly
+coincides with the parent's.
+
+**But culling them changes nothing.** An opt-in experiment dropping remainder
+pieces below C++'s observed 0.05 mm2 floor took region 0 from 39 surfaces (30 tiny)
+to 9 (0 tiny) with its area unchanged at 993.62 — and **Top surface stayed at
+exactly 452.4 mm, ratio 1.173**, object-only unchanged at 0.9969. The experiment
+was reverted rather than kept as inert complexity.
+
+So the region-0 sliver population is REAL but INERT for the top-surface metric, and
+the R512/R513 chain's last link does not hold: the scattered ~1 mm top segments
+seen in the gcode are not produced by these slice fragments. Two facts do survive
+and are worth carrying forward:
+
+- our remainder region is genuinely over-fragmented (39 vs 12 pieces), which is a
+  latent difference even if this metric does not see it;
+- **there is a ~4.6 mm2 patch assigned differently**: our region 0 is 4.67 mm2
+  SMALLER than C++'s while our region 3 is 4.60 mm2 LARGER. That swap, not the
+  slivers, is the real region-assignment discrepancy at this layer, and it is where
+  the next look should go.
