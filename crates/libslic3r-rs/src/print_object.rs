@@ -3262,6 +3262,15 @@ impl PrintObject {
                         areas
                     })
                     .unwrap_or_default();
+                if std::env::var_os("FVS_DEBUG").is_some() {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    crate::layer::FVS_LAYERS.fetch_add(1, Relaxed);
+                    if self.layers[layer_idx].lower_layer_id.is_none() {
+                        crate::layer::FVS_NO_LOWER.fetch_add(1, Relaxed);
+                    } else if lower_internal_areas.is_empty() {
+                        crate::layer::FVS_LOWER_NOSURF.fetch_add(1, Relaxed);
+                    }
+                }
 
                 // Fill.cpp:638-673 — for ipFloatingConcentric, the filler also needs
                 // the lower layer's SPARSE-infill anchor polygons. C++ computes
@@ -3413,6 +3422,16 @@ impl PrintObject {
                     crate::layer::FVS_EMPTY_NOOVERLAP.load(R4),
                     100.0 * crate::layer::FVS_EMPTY_NOOVERLAP.load(R4) as f64
                         / crate::layer::FVS_EXPOLYS.load(R4).max(1) as f64,
+                );
+                eprintln!(
+                    "FVS_LOWER: layers={} with NO lower_layer_id={} | lower present but NO Internal/InternalVoid fill_surfaces={}",
+                    crate::layer::FVS_LAYERS.load(R4), crate::layer::FVS_NO_LOWER.load(R4),
+                    crate::layer::FVS_LOWER_NOSURF.load(R4),
+                );
+                eprintln!(
+                    "FVS_CLASSIFY (real make_fills pass only): InternalSolid expolygons tested={} narrow={} | clipped_internals EMPTY for {} (-> not floating)",
+                    crate::layer::FVS_CAND.load(R4), crate::layer::FVS_NARROW.load(R4),
+                    crate::layer::FVS_CLIP_EMPTY.load(R4),
                 );
                 eprintln!(
                     "FVS_SPLIT: beads={} flag_off={} self_intersect={} no_floating_areas={}",

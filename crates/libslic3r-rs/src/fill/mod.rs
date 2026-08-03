@@ -971,7 +971,20 @@ pub fn group_fills(
                 // Fill.cpp:478
                 let clipped_internal_bbox = get_extents_polygons(&clipped_internals);
                 // Fill.cpp:479-486
+                // R481: `Layer::generate_sparse_infill_polylines_for_anchoring`
+                // (layer.rs:3183) also calls group_fills, deliberately passing an
+                // EMPTY lower_internal_areas. Counting those would trip a reader into
+                // thinking 60% of real candidates have no lower layer; only count the
+                // real make_fills pass.
+                let __dbg = std::env::var_os("FVS_DEBUG").is_some()
+                    && !lower_internal_areas.is_empty();
+                if __dbg {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    crate::layer::FVS_CAND.fetch_add(1, Relaxed);
+                    if clipped_internals.is_empty() { crate::layer::FVS_CLIP_EMPTY.fetch_add(1, Relaxed); }
+                }
                 if is_narrow_infill_area(&surface_fills[i].expolygons[j]) {
+                    if __dbg { crate::layer::FVS_NARROW.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }
                     // Fill.cpp:480 — offset_ex(expoly, SCALED_EPSILON); the crate's
                     // offset helpers take millimeters.
                     if !clipped_internals.is_empty()
