@@ -483,8 +483,17 @@ pub struct WipeTowerLayerInfo {
     pub z: f32,
     /// Layer height
     pub height: f32,
-    /// Depth of this layer
+    /// Depth of this layer.
+    ///
+    /// Plays the role of C++'s `m_layer_info->depth`, which
+    /// `update_all_layer_depth` forces to the FULL tower depth on every layer
+    /// when timelapse is on. `finish_layer_new`'s fallback fill box uses this.
     pub depth: f32,
+    /// The depth ALLOCATED to this layer by its tool changes — C++'s
+    /// `block.layer_depths[m_cur_layer_id]`. `finish_block`'s fill box and its
+    /// block-full skip use this, NOT `depth`. R510: these were one field, so any
+    /// value fixed one caller and broke the other.
+    pub alloc_depth: f32,
     /// Extra spacing factor
     pub extra_spacing: f32,
     /// Whether this layer has extruder fill
@@ -499,6 +508,7 @@ impl WipeTowerLayerInfo {
             z,
             height,
             depth: 0.0,
+            alloc_depth: 0.0,
             extra_spacing: 1.0,
             extruder_fill: false,
             tool_changes: vec![],
@@ -1995,6 +2005,14 @@ impl WipeTower {
             }
         }
 
+        // R510: freeze the per-layer ALLOCATION before the timelapse override
+        // below rewrites `depth`. C++ keeps these as two separate values —
+        // `block.layer_depths[cur]` (the allocation) and `m_layer_info->depth`
+        // (which timelapse forces to the full tower depth).
+        for i in 0..plan_len {
+            self.plan[i].alloc_depth = self.plan[i].depth;
+        }
+
         // WipeTower.cpp:3027-3031
         if self.config.enable_timelapse_print {
             for i in (0..plan_len).rev() {
@@ -2398,10 +2416,18 @@ impl WipeTower {
         // depth reserved for it. That is why our per-layer sweep E was constant
         // (144.7) while C++'s varies (144→89→130), and why our tower swept 1.52×
         // C++'s path length at matching flow.
+        // R510: two depths, matching C++'s two values.
+        //   `depth`       == m_layer_info->depth        -> finish_layer_new's box
+        //   `alloc_depth` == block.layer_depths[cur]    -> finish_block's box+skip
         let layer_depth = self
             .plan
             .get(self.layer_idx)
             .map(|l| l.depth)
+            .unwrap_or(self.depth);
+        let alloc_depth = self
+            .plan
+            .get(self.layer_idx)
+            .map(|l| l.alloc_depth)
             .unwrap_or(self.depth);
         let fill_box_y = self
             .plan
@@ -2474,11 +2500,13 @@ impl WipeTower {
                 layer_depth - 2.0 * self.perimeter_width,
             )
         } else {
+            // finish_block's box (:3751) is measured against the block's
+            // ALLOCATION for this layer, not the plan depth.
             BoxCoordinates::new(
                 self.perimeter_width,
                 fill_box_y,
                 self.config.width - 2.0 * self.perimeter_width,
-                layer_depth - fill_box_y,
+                alloc_depth - fill_box_y,
             )
         };
 

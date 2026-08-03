@@ -945,3 +945,40 @@ Setting our single `plan[i].depth` to 38.5 fixes the second and breaks the first
 So the wiring is behind `TOWER_TIMELAPSE_DEPTH=1` (opt-in) until the two depths are
 separated — that separation is the next step, and per R506 the candidate must be
 judged in the fully-corrected configuration, not against today's default.
+
+
+### Separating the two per-layer tower depths (R510)
+
+R509 showed our single `plan[i].depth` was playing two C++ roles at once. They are
+now separate fields on `WipeTowerLayerInfo`:
+
+| our field | C++ counterpart | consumer |
+|-----------|-----------------|----------|
+| `depth` | `m_layer_info->depth` (timelapse forces it to the full tower depth) | `finish_layer_new`'s fallback fill box |
+| `alloc_depth` | `block.layer_depths[m_cur_layer_id]` | `finish_block`'s fill box AND its block-full skip |
+
+`alloc_depth` is frozen from `depth` at the end of planning, just before the
+timelapse override rewrites `depth`, so the allocation survives.
+
+This is structurally right and is a **no-op by default** (all three fixtures stay
+byte-identical). But it does NOT make the timelapse path a win:
+
+| configuration | writer length | tower | layers IoU<50% |
+|---------------|---------------|-------|----------------|
+| default (timelapse off) | 1,164,978.6 | **0.9947** | **64** |
+| `TOWER_TIMELAPSE_DEPTH=1`, depths separated | 1,199,301.4 | 1.0239 | — |
+| the same, plus `TOWER_FILL_ONLY_TC=0` | 1,224,572.5 | 1.0342 | 181 |
+| C++ | 1,171,315.6 | 1.0 | — |
+
+Separating the depths does recover ground (1,217,371 -> 1,199,301 with timelapse
+on), but the default still wins on BOTH the total and the bad-layer count, so
+`TOWER_TIMELAPSE_DEPTH` stays opt-in.
+
+The residual is now identified: **our `alloc_depth` is inflated relative to C++'s
+`layer_depths`.** With timelapse on our fill runs on 410 layers against C++'s 206
+even though the skip formula is, if anything, stricter than C++'s (we skip at
+`tc_depth >= alloc_depth - 1.5`, C++ at `tc_depth >= layer_depths - 0.5`). Ours is
+derived from `plan[i].depth.max(toolchanges_depth())` plus the dead path's
+downward propagation; C++'s is built per filament CATEGORY in
+`generate_wipe_tower_blocks` from `m_all_layers_depth` (:4290-4315). Comparing those
+two series layer by layer is the next step.
