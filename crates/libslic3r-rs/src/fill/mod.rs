@@ -742,15 +742,26 @@ pub fn group_fills(
             // predicate as `thick` below. Majora has thick_bridges = 0 and
             // bridge_flow = 1, so both engines take the rectangular `else` branch for
             // external bridges.
-            // Yet the emitted widths differ: C++ writes LINE_WIDTH 0.491111 on the
-            // large majority of its Bridge segments (then 0.49, and only 4 at 0.4),
-            // while we write 0.4 (337) and 0.42 (201). 0.42 is
-            // internal_solid_infill_line_width and 0.4 is the round bridging_flow
-            // diameter, so our two widths are both explainable; C++'s 0.491111 is not
-            // — it is not the config width, not sqrt(bridge_flow)*nozzle = 0.4, and
-            // not auto_extrusion_width(frSolidInfill) = 1.125*0.4 = 0.45
-            // (Flow.cpp:22-37). Find where that width comes from before changing
-            // anything here. Measured effect: Bridge w-rat 0.906, len-rat 1.069.
+            // R491 CORRECTS R490: do NOT chase C++'s `LINE_WIDTH: 0.491111` tag. It
+            // is not the flow width. The path carrying it extrudes 0.04515 E over
+            // 0.865mm = 0.0522 E/mm, which is exactly a ROUND bridge of diameter 0.4
+            // (pi/4*0.4^2 / 2.4053) — the same diameter we use. It is not the flow
+            // spacing either (bridge_extrusion_spacing(0.4) = 0.4 + BRIDGE_EXTRA_SPACING
+            // 0.05 = 0.45, Flow.hpp:14/105). Comparing LINE_WIDTH tags across engines
+            // compares different quantities.
+            //
+            // The real difference, measured as length-weighted E/mm over the whole
+            // Bridge feature:
+            //   rust : 0.0512 -> 72.1% of length, 0.0435 -> 20.4%, 0.0434 -> 4.6%
+            //   bambu: no class above 3.5% (0.0512 3.5%, 0.0554 3.5%, 0.0522 3.0%,
+            //          0.0516 2.3%, 0.0445 2.0%, 0.0446 1.8%, ... a continuum)
+            // Ours is BIMODAL — the round bridging flow and the rectangular
+            // solid-infill flow, exactly the two branches below. C++'s is a broad
+            // continuum, i.e. its bridge extrusions carry PER-PATH VARIABLE widths.
+            // So the question is not "which constant" but "why are C++'s bridge paths
+            // variable-width" — look for a variable-width/Arachne emission path for
+            // erBridgeInfill, not for a different flow constant.
+            // Measured effect: Bridge w-rat 0.906, len-rat 1.069 (independent errors).
             let flow = if is_bridge && crate::faithful_gate("BRIDGE_FLOW") {
                 // thick_bridge = (surface.is_bridge() && !surface.is_external())
                 //                || object_config.thick_bridges   (is_bridge here)
