@@ -1503,3 +1503,62 @@ must preserve emission order exactly or the gcode changes.
 **New discipline (R520): profile in the same units as the goal.** The goal is
 wall clock; a per-thread CPU profile answers a different question and will point
 at whichever phase has the most threads.
+
+## R521 — seam-placer visibility parallelised: export generate 5.02 -> 4.13 s
+
+R520 put the whole remaining time gap in `export_gcode`. This round found why,
+using a **per-thread** slice of the R520 profile (`$D/profmain.py`) — the fix for
+R520's own caveat, since a serial phase is invisible in whole-process CPU
+percentages.
+
+**Main thread (the serial timeline), 6446 samples:**
+
+| symbol | % of main thread |
+|---|---|
+| `Print::export_gcode` | **57.57** |
+| `SeamPlacer::init` | **22.09** |
+| `extrude_collection` | 18.57 |
+| `extrude_perimeters_entities` | 14.80 |
+| `extrude_entity` | 11.25 |
+| `compute_global_occlusion` | 10.75 |
+| `raycast_visibility` | 9.37 |
+
+`SeamPlacer::init` is ~38% of export. Cause: **C++ SeamPlacer.cpp has SIX
+`tbb::parallel_for` sites (:157, :933, :955, :966, :1430); our port had ONE.**
+Our source even says so in comments — "C++ runs under `tbb::parallel_for`;
+ported serially with identical results".
+
+**Landed:** `calculate_candidates_visibility` (SeamPlacer.cpp:955) now runs
+under rayon. Each point's visibility is a pure function of
+`(mesh_samples_tree, position)` written to its own slot, so the result is
+order-independent and byte-identical by construction.
+
+| | before | after |
+|---|---|---|
+| export_gcode generate | 5.02 s | **4.13 s** |
+| export_gcode total | 6.39 s | **5.50 s** |
+
+**Reverted as INERT:** parallelising `gather_seam_candidates`
+(SeamPlacer.cpp:933) moved export generate by **exactly 0.000 s** (4.131 ->
+4.130) — that loop is not on the export critical path. Reverted rather than
+kept; the serial form now carries a comment recording the measurement so it is
+not retried.
+
+**Honest accounting of the total.** The instrumented export sub-phase improved
+repeatably by 0.89 s. Majora WALL clock moved only ~18.3 -> ~18.1 s (medians of
+3), and the phase timer showed `process` drifting 11.47 -> 12.05 s across the
+session — a phase this change does not touch, so that drift is session noise
+(thermal/load), not a regression. Do not bank the full 0.89 s as end-to-end
+until it is re-measured on a quiet machine. Benchy is unchanged (2.32 s) as
+expected: single-material and small, so seam visibility is cheap there.
+
+**Verified:** majora 065302cb, benchy 5a34af50, cube ab415621 all
+byte-identical; eight guard tests green.
+
+**Remaining in export:** the other four C++ `parallel_for` sites in SeamPlacer
+(:157, :966, :1430 and the `po->layers()` loop at :933 — the last measured
+inert here), and the stage-overlap pipeline (bounded at ~1.4 s, R520).
+
+**New discipline (R521): to profile a SERIAL phase, slice the profile by
+thread.** Whole-process CPU percentages hid a 22%-of-main-thread hotspot at
+0.3% of total samples.

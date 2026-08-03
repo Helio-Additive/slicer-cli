@@ -2207,7 +2207,9 @@ impl SeamPlacer {
             .layers
             .resize(po.layers().len(), LayerSeams::default());
 
-        // SeamPlacer.cpp:933-934
+        // SeamPlacer.cpp:933-934 — C++ runs this under `tbb::parallel_for`.
+        // R521 MEASURED: rayon here is INERT (export_gcode 4.131 -> 4.130s, i.e.
+        // zero) — this loop is not on the export critical path. Kept serial.
         for layer_idx in 0..po.layers().len() {
             // SeamPlacer.cpp:935-937
             let layer = &po.layers()[layer_idx];
@@ -2263,12 +2265,19 @@ impl SeamPlacer {
         let mesh_samples_tree = global_model_info.build_mesh_samples_tree();
         // SeamPlacer.cpp:954
         let layers = &mut self.seam_data.layers;
-        // SeamPlacer.cpp:955-959
-        for layer in layers.iter_mut() {
-            for perimeter_point in layer.points.iter_mut() {
-                perimeter_point.visibility = global_model_info
-                    .calculate_point_visibility(&mesh_samples_tree, &perimeter_point.position);
-            }
+        // SeamPlacer.cpp:955-959 — C++ runs this under `tbb::parallel_for` over
+        // the layer range. R521: ported to rayon to match. Every point's
+        // visibility is an independent pure function of (mesh_samples_tree,
+        // position) written to its own slot, so the result is order-independent
+        // and byte-identical to the serial form.
+        {
+            use rayon::prelude::*;
+            layers.par_iter_mut().for_each(|layer| {
+                for perimeter_point in layer.points.iter_mut() {
+                    perimeter_point.visibility = global_model_info
+                        .calculate_point_visibility(&mesh_samples_tree, &perimeter_point.position);
+                }
+            });
         }
     }
 
