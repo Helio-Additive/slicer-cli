@@ -1055,3 +1055,34 @@ assignment, upstream of `detect_surfaces_type`, and an opening at 0.040 mm only
 removes what is thinner than 0.08 mm — a long thin sliver survives it. So the next
 step is upstream: find where these micro-surfaces enter our region slices and
 whether C++ carries them at all.
+
+
+### Our region slices are over-fragmented: same area, 25 extra slivers (R513)
+
+Instrumenting BOTH engines' `layerm->slices` at the same layer (print_z 4.80) and
+comparing the surface-area populations:
+
+| | surfaces | total area | surfaces < 0.05 mm2 | smallest |
+|---|----------|------------|---------------------|----------|
+| ours | **55** | 1737.91 mm2 | **30** (sum 0.0187) | 0.0001 |
+| C++ | **30** | 1737.93 mm2 | 2 (both 0.0000) | 0.0521 |
+
+**The total areas agree to 0.02 mm2 out of 1738** — the sliced geometry itself is
+right. We simply decompose it into 55 pieces where C++ produces 30, and the extra
+25 are degenerate fragments of 1e-4 to 1e-2 mm2. C++'s smallest non-zero surface
+here is 0.0521 mm2; ours are three orders of magnitude below that.
+
+The same probe re-confirms the narrow-part collapse is not at fault: C++ reports
+`offset=4000.0000 (scaled) = 0.0400 mm`, exactly our value.
+
+So the top-surface excess (R511/R512) traces to a POLYGON DECOMPOSITION difference
+in region assignment, not to surface typing, not to the fill, and not to the
+slicing geometry. Each stray fragment can be typed `stTop` and then filled, which
+is why our top regions read as scattered ~1 mm slivers spread across the whole
+object while C++'s are compact.
+
+Next: find which boolean in our region assignment leaves the extra pieces — the
+union/diff chain that builds `LayerRegion::slices` — and whether C++ applies a
+simplification or area cull we skip. Note the areas MATCHING means this is a
+cosmetic-looking difference with real downstream cost, so the fix must preserve the
+total area exactly.
