@@ -55,6 +55,18 @@ pub static VS_SHELL_IN_AREA: std::sync::atomic::AtomicUsize =
 pub static VS_REG_OUT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static VS_REG_OUT_AREA: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+/// R486: the three terms that form `shell` in the vertical-shell promotion step
+/// (PrintObject.cpp:1993-1999), in milli-mm2.
+pub static VS_T_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_T_INTERNAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_T_SHELLINT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_T_DIFF: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_T_SOLID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_T_HOLES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_T_HOLES_EMPTY: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub static VS_T_SHELLINT_EMPTY: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 use crate::extrusion_entity::{
     extrusion_entities_append_paths, ExtrusionEntityCollection, ExtrusionLoop, ExtrusionPath,

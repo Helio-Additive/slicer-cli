@@ -3423,6 +3423,18 @@ impl PrintObject {
                     n, d, 100.0 * d as f64 / n.max(1) as f64,
                     crate::layer::VS_REG_DROP_AREA.load(R5) as f64 / 1000.0,
                 );
+                {
+                    let f = |x: &std::sync::atomic::AtomicUsize| x.load(R5) as f64 / 1000.0;
+                    eprintln!(
+                        "VSHELL_TERMS (per region-layer, n={}): internal_all={:.0} mm2 | shell&internal={:.0} | internal-holes={:.0} | existing solid={:.0} | holes={:.0} (empty on {} of {}), shell&internal empty on {}",
+                        crate::layer::VS_T_N.load(R5),
+                        f(&crate::layer::VS_T_INTERNAL), f(&crate::layer::VS_T_SHELLINT),
+                        f(&crate::layer::VS_T_DIFF), f(&crate::layer::VS_T_SOLID),
+                        f(&crate::layer::VS_T_HOLES),
+                        crate::layer::VS_T_HOLES_EMPTY.load(R5), crate::layer::VS_T_N.load(R5),
+                        crate::layer::VS_T_SHELLINT_EMPTY.load(R5),
+                    );
+                }
                 eprintln!(
                     "VSHELL_SHELL: shell pieces IN={} area={:.0} mm2  ->  regularized OUT={} area={:.0} mm2",
                     crate::layer::VS_SHELL_IN.load(R5),
@@ -4558,6 +4570,20 @@ impl PrintObject {
                 } else {
                     difference(&internal_all, &holes)
                 };
+                if std::env::var_os("VSHELL_DEBUG").is_some() {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let a = |v: &ExPolygons| -> usize {
+                        (v.iter().map(|e| e.area().abs()).sum::<f64>() / (sf * sf) * 1000.0) as usize
+                    };
+                    crate::layer::VS_T_SHELLINT.fetch_add(a(&shell_int), Relaxed);
+                    crate::layer::VS_T_DIFF.fetch_add(a(&diff_int_holes), Relaxed);
+                    crate::layer::VS_T_SOLID.fetch_add(a(&solid_only), Relaxed);
+                    crate::layer::VS_T_INTERNAL.fetch_add(a(&internal_all), Relaxed);
+                    crate::layer::VS_T_N.fetch_add(1, Relaxed);
+                    if holes.is_empty() { crate::layer::VS_T_HOLES_EMPTY.fetch_add(1, Relaxed); }
+                    else { crate::layer::VS_T_HOLES.fetch_add(a(&holes), Relaxed); }
+                    if shell_int.is_empty() { crate::layer::VS_T_SHELLINT_EMPTY.fetch_add(1, Relaxed); }
+                }
                 let mut new_shell = shell_int;
                 new_shell.extend(diff_int_holes);
                 if new_shell.is_empty() {
