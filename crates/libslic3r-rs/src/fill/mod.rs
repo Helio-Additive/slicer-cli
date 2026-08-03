@@ -733,6 +733,24 @@ pub fn group_fills(
             // historically used a rectangular solid-infill flow for bridges,
             // laying ~2x the lines (R336). Gated under BRIDGE_FLOW so the
             // byte-locked default output is preserved while validating.
+            // R490 (open): our Bridge feature still diverges from C++ in FLOW, and
+            // the cause is NOT this branch selection. Verified against the live C++
+            // tree: Fill.cpp:200 computes `FlowRole extrusion_role = is_top ?
+            // frTopSolidInfill : (is_solid ? frSolidInfill : frInfill)`, so a bridge
+            // surface passes frSolidInfill exactly as we do; and Fill.cpp:255 passes
+            // `(is_bridge && !is_external) || thick_bridges`, which is the same
+            // predicate as `thick` below. Majora has thick_bridges = 0 and
+            // bridge_flow = 1, so both engines take the rectangular `else` branch for
+            // external bridges.
+            // Yet the emitted widths differ: C++ writes LINE_WIDTH 0.491111 on the
+            // large majority of its Bridge segments (then 0.49, and only 4 at 0.4),
+            // while we write 0.4 (337) and 0.42 (201). 0.42 is
+            // internal_solid_infill_line_width and 0.4 is the round bridging_flow
+            // diameter, so our two widths are both explainable; C++'s 0.491111 is not
+            // — it is not the config width, not sqrt(bridge_flow)*nozzle = 0.4, and
+            // not auto_extrusion_width(frSolidInfill) = 1.125*0.4 = 0.45
+            // (Flow.cpp:22-37). Find where that width comes from before changing
+            // anything here. Measured effect: Bridge w-rat 0.906, len-rat 1.069.
             let flow = if is_bridge && crate::faithful_gate("BRIDGE_FLOW") {
                 // thick_bridge = (surface.is_bridge() && !surface.is_external())
                 //                || object_config.thick_bridges   (is_bridge here)
