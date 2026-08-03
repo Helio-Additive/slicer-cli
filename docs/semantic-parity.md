@@ -412,3 +412,48 @@ The last is the faithful half of the structure and undershoots exactly because
 the other half — `finish_block`/`finish_block_solid` supplying the fill on
 tool-change layers — is not ported. So `TOWER_SPARSE_GRID` stays opt-in and the
 default is unchanged; the remaining work is that pair of functions.
+
+
+### The tower's length error decomposed (R497)
+
+Histogramming tower segment lengths (feature-scoped, which R496 proved equals the
+writer-only set) splits the 1.045 into two independent defects:
+
+| segment length | C++    | ours   |
+|----------------|--------|--------|
+| 34.0 mm        | 27,770 | 33,116 |
+| 0.5 mm         | 27,273 |      0 |
+| 3.0 mm         |  4,854 |      0 |
+| 31.0 mm        |  2,723 |      0 |
+| 35.0 / 39.0 mm |   ~720 |  2,624 |
+| **total**      | 67,794 segs / 1,171,244 mm | 35,760 / 1,223,826 mm |
+| **mean**       | 17.28 mm | 34.22 mm |
+
+1. **We lay 5,346 too many full-width (34 mm) strokes** — about 181,800 mm of
+   excess fill lines. This is the dense-vs-sparse defect R493 found.
+2. **We never extrude the connector between fill lines.** C++'s solid branch is
+   `writer.extrude(writer.x(), y, feedrate).extrude(i % 2 ? left : right, y)` —
+   the first call extrudes the 0.5 mm step in Y, the second the stroke in X. Our
+   `WipeTowerWriter::rectangle_fill_box` does `travel(start_x, y); extrude(end_x, y)`,
+   so the step is a travel. That is 27,273 missing segments worth 13,636 mm.
+
+The two errors have opposite sign, which is why the net is only +52,582 mm.
+Fixing (2) alone would push the default from 1.045 to ~1.057; it has to land with
+(1).
+
+`finish_block` (WipeTower.cpp:3733) is now ported behind `TOWER_SPARSE_GRID=1`:
+its fill box runs from the depth the toolchanges already consumed up to the
+block's allocation for the layer, and it ALWAYS lays the inner perimeter of the
+sparse section first (`rectangle_fill_box`, which is a rectangle OUTLINE walked
+from the nearest corner, not a fill — `finish_layer_new` gates the same call on
+`extrude_fill_wall`). Progress on the writer-only total against C++'s 1,171,316 mm:
+
+| variant                                                    | length    | ratio |
+|------------------------------------------------------------|-----------|-------|
+| default (gate off)                                          | 1,223,826 | 1.045 |
+| sparse grid, whole-layer box, no fill on toolchange layers  | 1,023,933 | 0.874 |
+| + finish_block box and inner rectangle on those layers      | 1,059,771 | 0.905 |
+
+Still 9.5% short, and the segment count (31,812 vs 67,794) says the connectors and
+the 3.0 mm / 31.0 mm structures are the bulk of what remains. The gate stays
+opt-in until the total lands near 1.0.

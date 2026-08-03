@@ -2295,7 +2295,23 @@ impl WipeTower {
         // `finish_layer` used and what we inherited. R493 applied the sparse
         // branch to the leftover box and undershot by 63,147 mm as a result.
         let sparse_grid = std::env::var_os("TOWER_SPARSE_GRID").is_some();
-        let fill_box = if sparse_grid {
+        // WipeTower.cpp:4703 — generate_new calls finish_layer_new ONLY when the
+        // layer has no tool change (`wall_idx == -1`); layers WITH tool changes
+        // are finished by finish_block (:3733), whose fill box runs from the
+        // depth already consumed by the toolchanges up to the block's allocation
+        // for this layer:
+        //     box_coordinates(Vec2f(m_perimeter_width, block.cur_depth),
+        //                     m_wipe_tower_width - 2*m_perimeter_width,
+        //                     block.start_depth + block.layer_depths[id]
+        //                         - block.cur_depth - m_perimeter_width)
+        // With one block that is our existing leftover box. R496 measured that
+        // serving both layer classes from one emitter is what splits the tower
+        // error in two opposed halves.
+        let layer_has_toolchange = self
+            .plan
+            .get(self.layer_idx)
+            .map_or(false, |l| !l.tool_changes.is_empty());
+        let fill_box = if sparse_grid && !layer_has_toolchange {
             BoxCoordinates::new(
                 self.perimeter_width,
                 self.perimeter_width,
@@ -2360,17 +2376,14 @@ impl WipeTower {
         let mut left = fill_box.lu.x + 2.0 * self.perimeter_width;
         let mut right = fill_box.ru.x - 2.0 * self.perimeter_width;
 
-        // WipeTower.cpp:4703 — generate_new calls finish_layer_new ONLY when the
-        // layer has no tool change at all (`wall_idx == -1`); layers WITH tool
-        // changes get their fill from the finish_block* family instead. Ours ran
-        // the fill on every layer, which is the other half of R493's mis-split.
-        let layer_has_toolchange = self
-            .plan
-            .get(self.layer_idx)
-            .map_or(false, |l| !l.tool_changes.is_empty());
-        if sparse_grid && layer_has_toolchange {
-            // no finish-layer fill on tool-change layers
-        } else if !sparse_grid {
+        // finish_block:3759 always lays the inner perimeter of the sparse
+        // section first — `writer.rectangle_fill_box(this, fill_box, ...)`, which
+        // is a rectangle OUTLINE walked from the nearest corner, not a fill.
+        // finish_layer_new gates the same call on `extrude_fill_wall`.
+        if sparse_grid && layer_has_toolchange && fill_box.height() > self.perimeter_width {
+            writer.rectangle(&fill_box);
+        }
+        if !sparse_grid {
             // Pre-R493 behaviour: always a solid zig-zag over the whole
             // remaining layer box. Kept as the default while the block port is
             // incomplete — see the FIDELITY-NOTE above.
