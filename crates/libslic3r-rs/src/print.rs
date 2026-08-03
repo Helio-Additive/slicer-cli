@@ -2815,12 +2815,33 @@ fn emit_tower_tcr(
     // ~0.011 E/mm instead of 0.0543 (R463).
     const TOWER_FEATURE: &str = "; FEATURE: Prime tower";
     let had_placeholder = g.contains(crate::gcode::wipe_tower_integration::CHANGE_FILAMENT_PLACEHOLDER);
+    // R466 — the unretract C++ emits in `GCode::append_tcr` (WipeTower.cpp:2436
+    // "BBS: do travel in GCode::append_tcr() for lazy_lift"): a bare
+    // `G1 E{retract_length_toolchange} F{speed}` AFTER the change-filament block and
+    // before the tower's moves, repaying the `G1 E-[new_retract_length_toolchange]`
+    // that block ends on. The template never unretracts (it ends at
+    // `M621 S[next_extruder]A`), so without this the filament stays retracted and the
+    // first purge stroke of every tower block is starved (R465). C++ orders it
+    // unretract-then-marker, so build the whole trailer here.
+    let trailer = if had_placeholder && print_config.retract_length_toolchange > 0.0 {
+        let speed = if print_config.retract_speed > 0.0 {
+            print_config.retract_speed * 60.0
+        } else {
+            1800.0
+        };
+        format!(
+            "G1 E{:.4} F{:.0}\n{TOWER_FEATURE}",
+            print_config.retract_length_toolchange, speed
+        )
+    } else {
+        TOWER_FEATURE.to_string()
+    };
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
         &g,
         block.as_deref(),
         tcr.new_tool.max(0) as usize,
         &print_config.toolchange_prefix,
-        Some(TOWER_FEATURE),
+        Some(&trailer),
     );
     if !had_placeholder {
         // No tool change in this block (e.g. a plain tower layer): the marker

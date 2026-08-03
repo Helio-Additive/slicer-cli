@@ -2043,12 +2043,21 @@ impl WipeTower {
         // Comment for tool change
         writer.comment(&format!("Tool change from T{} to T{}", old_tool, new_tool));
 
-        // Retract before tool change
-        if old_tool < self.filament_params.len() {
-            let retract = self.filament_params[old_tool].retract_length;
-            let retract_speed = self.filament_params[old_tool].retract_speed * 60.0;
-            if retract > 0.0 {
-                writer.retract(retract, retract_speed);
+        // R466 — WipeTower.cpp:2288 `toolchange_Unload`: "BBS: toolchange unload is
+        // done in change_filament_gcode", and its whole body is `#if 0`. C++ emits NO
+        // retract here; the template's own `G1 E-[old_retract_length_toolchange]`
+        // does it. Emitting one anyway added a 0.8mm retract C++ never has and, paired
+        // with the load below, left the template's 2.0mm toolchange retraction only
+        // 40% repaid entering the tower (R465).
+        if crate::faithful_gate("WT_TOOLCHANGE_RETRACT_LEGACY")
+            && std::env::var_os("WT_TOOLCHANGE_RETRACT_LEGACY").is_some()
+        {
+            if old_tool < self.filament_params.len() {
+                let retract = self.filament_params[old_tool].retract_length;
+                let retract_speed = self.filament_params[old_tool].retract_speed * 60.0;
+                if retract > 0.0 {
+                    writer.retract(retract, retract_speed);
+                }
             }
         }
 
@@ -2067,12 +2076,20 @@ impl WipeTower {
         writer.set_tool(new_tool);
         self.current_tool = new_tool;
 
-        // Load new filament
-        if new_tool < self.filament_params.len() {
-            let load = self.filament_params[new_tool].retract_length;
-            let load_speed = self.filament_params[new_tool].retract_speed * 60.0;
-            if load > 0.0 {
-                writer.load(load, load_speed);
+        // R466 — WipeTower.cpp:2460 `toolchange_Load`: "BBS: tool load is done in
+        // change_filament_gcode", body `#if 0`. C++ emits NO load here either; the
+        // unretract that repays the template's toolchange retraction is emitted by
+        // GCode::append_tcr (see `emit_tower_tcr`), and it is
+        // `retract_length_toolchange` (2.0), not `retract_length` (0.8).
+        if crate::faithful_gate("WT_TOOLCHANGE_LOAD_LEGACY")
+            && std::env::var_os("WT_TOOLCHANGE_LOAD_LEGACY").is_some()
+        {
+            if new_tool < self.filament_params.len() {
+                let load = self.filament_params[new_tool].retract_length;
+                let load_speed = self.filament_params[new_tool].retract_speed * 60.0;
+                if load > 0.0 {
+                    writer.load(load, load_speed);
+                }
             }
         }
 
