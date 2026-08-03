@@ -982,3 +982,36 @@ derived from `plan[i].depth.max(toolchanges_depth())` plus the dead path's
 downward propagation; C++'s is built per filament CATEGORY in
 `generate_wipe_tower_blocks` from `m_all_layers_depth` (:4290-4315). Comparing those
 two series layer by layer is the next step.
+
+
+### Top surface 1.173 is a REGION problem, not a fill problem (R511)
+
+The tower now passes its material check at 0.9947, so this round moved to the
+largest remaining per-feature error. Top surface: 9,914.4 mm against C++'s
+8,440.3 (ratio 1.1746) over 331 layers, with widths already matching (w-rat 0.998)
+and both engines configured `top_surface_pattern = zig-zag`.
+
+Splitting by whether both engines emit top surface on a layer:
+
+| | layers | our mm | C++ mm |
+|---|--------|--------|--------|
+| only we emit | 26 | 245.9 | — |
+| only C++ emits | 14 | — | 111.6 |
+| **both emit** | **291** | **9,668.5** | **8,328.7** (1.161) |
+
+So the exclusive layers are a minor effect; the excess is on shared layers. Then
+measuring the per-layer IoU of the top-surface REGION itself:
+
+    shared layers 291   IoU mean 79.03%   area-wtd 77.06%   min 0.0%
+    IoU >= 95%: 122     90-95%: 24        < 90%: 145
+
+**On the 122 layers where the regions agree, our length is 0.9927 of C++'s** —
+2,958.2 vs 2,980.0. The fill pattern, its spacing and its flow are already right.
+The whole 1.173 lives on the 145 layers where the regions DISAGREE: 6,710.3 vs
+5,348.7 = **1.255**.
+
+Top surface is therefore a surface-CLASSIFICATION problem: we mark different
+regions as top than C++ does, and then fill them correctly. The next step is the
+`stTop` classification itself, not the fill — which also means it shares a root
+with the object silhouette failure (96.67%), since misplaced top regions move the
+swept outline too.
