@@ -1426,3 +1426,80 @@ New probes: `featsplit.py` (per-layer split of one feature, with
 only-rust/only-cpp layer sets), `wallband.py` (per-feature length ratios over a
 z band), `featregion.py` (closed-region area + implied spacing for one feature
 at one layer — read with the caveat above).
+
+## R520 — ask #3 profiled: the remaining time gap is SERIAL gcode export
+
+First real profile of the Rust engine (macOS `xctrace` Time Profiler, Majora,
+93,961 samples). No code change this round.
+
+**Wall clock (median of repeated runs, warm):**
+
+| fixture | rust | bambu | ratio |
+|---|---|---|---|
+| Benchy | 2.32 s | 1.93 s | 1.20x |
+| Majora | 18.3 s | 15.9 s | 1.15x |
+
+**Where our time goes (Majora, `SLICE_PHASE_TIMING=1`, total 17.86 s):**
+
+```
+process 11.47   perimeters(+slice) 5.48 (47.9%)   infill 5.66 (49.4%)   simplify 0.30
+  prepare_infill 3.35: discover_vertical_shells 1.77 (52.8%), bridge_over_infill 0.83,
+                       process_external_surfaces 0.49, detect_surfaces_type 0.26
+export_gcode 6.39   generate 5.02   post-process(cooling/zsmooth) 0.78   assemble+write 0.59
+```
+
+**Where C++'s time goes** (derived from gaps between its own timestamped log
+lines, total 15.77 s): load/config ~1.5, slicing volumes 0.64, walls ~5.0
+(2.75 + 2.29), solid/shells/external/bridge ~1.4, fill ~2.57, **export ~3.66**
+(3.33 + 0.33 post_process).
+
+**The gap is export.** Ours 6.39 s vs C++'s ~3.66 s — a **+2.7 s delta against a
++2.1 s total delta**, i.e. the export phase accounts for the entire remaining
+gap and we are marginally ahead elsewhere.
+
+**Root cause identified.** C++ `GCode::process_layers` runs a TBB parallel
+pipeline over layers — `tbb::parallel_pipeline(12, generator & spiral_mode &
+parsing & cooling & write_gocde & output)` (GCode.cpp:3396-3400, also :3416 for
+the calculate_layer_time variant). Our export generates layers **serially**.
+That is the specific algorithmic difference, and it is a faithful-port target
+rather than a micro-optimisation.
+
+**Profile caveat that matters (and nearly misled me).** A CPU-sample profile
+counts samples per thread, so it OVER-weights rayon-parallel phases and
+UNDER-weights a serial phase. 93.14% of samples sit under rayon worker threads;
+export barely appears. Read against wall-clock stage timings, not on its own —
+the profile says "Arachne is hot", the clock says "export is the gap".
+
+**What the profile does say** (inclusive %, of total CPU samples):
+
+| symbol | incl. |
+|---|---|
+| `boostvoronoi::builder::Builder::build` | 24.97% |
+| `PerimeterGenerator::generate_arachne` | 31.77% |
+| `WallToolPaths::generate` | 20.93% |
+| `SkeletalTrapezoidation::construct_from_polygons` | 15.23% |
+| `Layer::make_fills` | 15.57% |
+
+Top SELF symbol is `boostvoronoi::extended_scalar::extended_int::ExtendedInt::mul_other`
+at **10.16%** — extended-precision integer arithmetic inside the Voronoi
+predicates. Tempting, but C++ spends a comparable ~5.0 s on walls against our
+5.48 s, so Arachne is expensive in BOTH engines and is NOT the parity gap.
+
+**Two incidental observations, unverified:**
+- The binary contains and hotly uses TWO separate ClipperLib copies —
+  `ClipperZSys::ClipperLib::*` (18.75% incl.) and a plain `ClipperLib::*`
+  (14.95% incl.). Whether one is redundant is worth a look.
+- ~9% of self time is allocator/`memmove`/`memset` (`_xzm_free` 3.90%,
+  `_xzm_xzone_malloc*` 2.29%, `_platform_memmove` 1.61%, `_platform_memset`
+  1.45%) — allocation churn. Note R484 already measured pre-sizing vectors as a
+  NEGATIVE, so do not retry that blindly.
+- `__findenv_locked` (getenv, i.e. `faithful_gate`) is 0.77% self. R484 measured
+  caching it as a NEGATIVE; the profile confirms the prize is small.
+
+**Next:** port the layer-parallel export pipeline. Ordering is the constraint —
+the C++ pipeline is serial-in / parallel-middle / serial-out, so a rayon port
+must preserve emission order exactly or the gcode changes.
+
+**New discipline (R520): profile in the same units as the goal.** The goal is
+wall clock; a per-thread CPU profile answers a different question and will point
+at whichever phase has the most threads.
