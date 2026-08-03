@@ -2001,6 +2001,7 @@ impl WipeTower {
                 self.plan[i].depth = max_depth_for_all;
             }
         }
+
     }
 
     /// Generate the wipe tower — port of `WipeTower::generate` (WipeTower.cpp:4774).
@@ -2546,6 +2547,20 @@ impl WipeTower {
             static SKIP_NO_TC: AtomicUsize = AtomicUsize::new(0);
             static SKIP_FULL: AtomicUsize = AtomicUsize::new(0);
             SEEN.fetch_add(1, Ordering::Relaxed);
+            if !layer_has_toolchange {
+                use std::sync::atomic::AtomicUsize as A2;
+                static SHOWN: A2 = A2::new(0);
+                if SHOWN.fetch_add(1, Ordering::Relaxed) < 5 {
+                    eprintln!(
+                        "[WTNOTC] z={:.2} layer_depth={:.3} fill_box_h={:.3} dy={:.3} tc_depth={:.3}",
+                        self.z_pos,
+                        layer_depth,
+                        fill_box.height(),
+                        dy,
+                        self.plan.get(self.layer_idx).map_or(-1.0, |l| l.toolchanges_depth())
+                    );
+                }
+            }
             if fill_only_on_toolchange_layers && !layer_has_toolchange {
                 SKIP_NO_TC.fetch_add(1, Ordering::Relaxed);
             } else if !(dy > self.perimeter_width) {

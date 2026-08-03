@@ -864,3 +864,44 @@ The tower's own outline is the striking number: 96.24% area-weighted but a mean 
 layers, even though the tower's total material is now 0.9947. That means the tower
 is being placed or shaped very differently on a subset of layers while the totals
 agree, and it is the next thing to look at.
+
+
+### The tower's worst layers: a 64-layer band with wall only (R508)
+
+Ranking layers by prime-tower IoU finds 64 layers below 50%, in one contiguous
+band (z177.6 upward), all with the same signature:
+
+| z      | tower IoU | our len | C++ len |
+|--------|-----------|---------|---------|
+| 177.60 |  0.19%    |  148.0  |  482.0  |
+| 178.80 |  0.63%    |  148.0  |  292.0  |
+| ...    |  0.63%    |  148.0  |  292.0  |
+
+**148.0 mm is exactly the bare tower wall** (2 x (35 + 39)). On these layers we
+emit the wall and nothing else; across the band we lay 9,472 mm against C++'s
+19,258 mm. The 64 layers are precisely the `wall_idx == -1` set counted in R505.
+
+Probing our side on those layers:
+
+    [WTNOTC] z=177.60 layer_depth=11.000 fill_box_h=10.000 dy= 9.500 tc_depth=0
+    [WTNOTC] z=178.80 layer_depth= 0.000 fill_box_h=-1.000 dy=-1.500 tc_depth=0
+
+With a plan depth of 0 the fill box height is negative, so the fill is skipped
+regardless of any knob. Two candidate fixes were tested and BOTH ELIMINATED:
+
+- **`TOWER_FILL_ONLY_TC=0`** (letting no-toolchange layers fill) adds only 912 mm
+  across the band — 14 mm per layer, not the ~300 C++ emits — because the box is
+  still degenerate.
+- **Monotonic depth propagation.** The live path's step 4
+  (`generate_wipe_tower_blocks`, :4316-4324) sets
+  `layer_depths[i] = max(layer_depths[i], layer_depths[i+1])` unconditionally,
+  whereas ours is the DEAD `plan_tower`'s conditional version (:3009-3013) that
+  only pulls a layer up when it is already within `2 * m_perimeter_width`. Adding
+  the unconditional pass is a **no-op** on this fixture — our plan is already
+  monotonic in that direction — so it was reverted rather than kept as inert
+  complexity.
+
+So the open question is narrower than it looked: **why does C++ have a non-trivial
+`m_layer_info->depth` on these layers at all?** R494 probed `depth = 39.0` but only
+on layers 0-7. The next step is to probe C++'s per-layer depth AT z177.6-182 and
+find what keeps it non-zero where ours collapses to 0.
