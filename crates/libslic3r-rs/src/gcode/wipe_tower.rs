@@ -42,6 +42,26 @@ const WT_EPSILON: f32 = 1e-4;
 /// Width to nozzle diameter ratio
 const WIDTH_TO_NOZZLE_RATIO: f32 = 1.25;
 
+/// WipeTower.cpp:26
+/// `static const std::map<float, float> nozzle_diameter_to_nozzle_change_width
+///      {{0.2f, 0.5f}, {0.4f, 1.0f}, {0.6f, 1.2f}, {0.8f, 1.4f}};`
+/// Note this is NOT `nozzle_diameter * Width_To_Nozzle_Ratio`: for the common 0.4
+/// nozzle the nozzle-change lines are 1.0mm wide, twice the 0.5mm tower perimeter.
+const NOZZLE_DIAMETER_TO_NOZZLE_CHANGE_WIDTH: [(f32, f32); 4] =
+    [(0.2, 0.5), (0.4, 1.0), (0.6, 1.2), (0.8, 1.4)];
+
+/// WipeTower.cpp:1901 — `nozzle_diameter_to_nozzle_change_width.at(nozzle_diameter)`.
+/// C++ uses `std::map::at`, i.e. an EXACT float key; an unlisted diameter throws.
+/// We keep slicing instead and fall back to the width-to-nozzle ratio.
+fn nozzle_change_width_for_nozzle(nozzle_diameter: f32) -> f32 {
+    for (d, w) in NOZZLE_DIAMETER_TO_NOZZLE_CHANGE_WIDTH {
+        if (nozzle_diameter - d).abs() < 1e-6 {
+            return w;
+        }
+    }
+    nozzle_diameter * WIDTH_TO_NOZZLE_RATIO
+}
+
 /// Default wipe tower depth used for wrapping-detection / timelapse layers.
 // WipeTower.cpp:1559 — const double wrapping_wipe_tower_depth = 10;
 const WRAPPING_WIPE_TOWER_DEPTH: f32 = 10.0;
@@ -1473,12 +1493,30 @@ impl WipeTower {
     }
 
     /// Set extruder parameters
+    /// WipeTower.cpp:1807 — WipeTower::set_extruder(idx, config).
     pub fn set_extruder(&mut self, idx: usize, params: FilamentParameters) {
         if idx >= self.filament_params.len() {
             self.filament_params
                 .resize(idx + 1, FilamentParameters::default());
         }
         self.filament_params[idx] = params;
+
+        // WipeTower.cpp:1900-1901 — both widths are recomputed here from the
+        // extruder's nozzle diameter; the values set in the constructor are only
+        // the member-initialiser defaults (WipeTower.hpp:499-501).
+        //   m_perimeter_width               = nozzle_diameter * Width_To_Nozzle_Ratio;
+        //   m_nozzle_change_perimeter_width = nozzle_diameter_to_nozzle_change_width.at(nozzle_diameter);
+        // R475: we never did this, so the nozzle-change block used the PERIMETER
+        // width (0.5 for a 0.4 nozzle) where C++ uses 1.0 — half the line width, so
+        // twice as many lines to cover the same depth, each at roughly half the flow.
+        if crate::faithful_gate("WT_NOZZLE_CHANGE_WIDTH") {
+            let nd = self.filament_params[idx].nozzle_diameter;
+            if std::env::var_os("WT_WIDTH_DEBUG").is_some() {
+                eprintln!("WT_WIDTH: set_extruder idx={idx} nd={nd} -> ncw={}", nozzle_change_width_for_nozzle(nd));
+            }
+            self.perimeter_width = nd * WIDTH_TO_NOZZLE_RATIO;
+            self.nozzle_change_perimeter_width = nozzle_change_width_for_nozzle(nd);
+        }
     }
 
     /// Set filament map

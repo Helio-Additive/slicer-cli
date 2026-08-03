@@ -2001,6 +2001,24 @@ impl Print {
                     .and_then(|(_, _, t)| t.first().copied())
                     .unwrap_or(0);
                 let mut wt = WipeTower::new(cfg, initial, num_filaments);
+                // WipeTower.cpp:1807 — C++ Print calls set_extruder() once per
+                // filament, and that is what recomputes BOTH widths from the nozzle
+                // diameter (:1900-1901). We never called it, so the tower kept the
+                // member-initialiser defaults and the nozzle-change block ran at the
+                // 0.5mm perimeter width instead of its own 1.0mm (R475).
+                // Only nozzle_diameter is set here: the remaining FilamentParameters
+                // fields (material, is_soluble, is_support) are per-filament in C++
+                // but scalar in this config, and material drives the TPU paths, so
+                // feeding one value to every filament would change tower behaviour
+                // beyond what this fixture can validate. C++ comment at :1900 notes
+                // all extruders are assumed to share a diameter.
+                for idx in 0..num_filaments {
+                    let params = crate::gcode::wipe_tower::FilamentParameters {
+                        nozzle_diameter: self.config.nozzle_diameter as f32,
+                        ..Default::default()
+                    };
+                    wt.set_extruder(idx, params);
+                }
                 // All filaments share physical extruder 0 (Tier-1 single nozzle).
                 // WipeTower::new defaults filament_map to [0,1,2,…] (each filament
                 // its own extruder), which makes is_same_extruder always false.
@@ -2849,6 +2867,15 @@ fn emit_tower_tcr(
         writer.write_raw(TOWER_FEATURE);
     }
     writer.write_raw_content(&g);
+    // R475: we just wrote `; FEATURE: Prime tower` as raw text, so the writer's
+    // persistent last-role (C++ m_last_extrusion_role, GCode.hpp:538) has to move
+    // with it. Without this the next object entity compares its role against the
+    // role from BEFORE the tower, finds it unchanged, skips its own `; FEATURE:`
+    // line, and its moves stay under the tower's marker -- 13.6% of Majora's
+    // "Prime tower" length was actually object extrusion labelled that way.
+    if crate::faithful_gate("TOWER_ROLE_RESET") {
+        writer.set_last_extrusion_role(Some(crate::extrusion_entity::ExtrusionRole::WipeTower));
+    }
 }
 
 fn emit_layer_by_island(
