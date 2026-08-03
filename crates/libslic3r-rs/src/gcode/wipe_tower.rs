@@ -1097,6 +1097,12 @@ impl WipeTowerWriter {
         let actual_spacing = height / num_lines as f32;
         let mut y = box_coords.ld.y + actual_spacing / 2.0;
         let mut left_to_right = true;
+        // FillBase-style zig-zag. C++'s equivalent solid branch
+        // (WipeTower.cpp:3619-3623) writes
+        //     writer.extrude(writer.x(), y, feedrate).extrude(i % 2 ? left : right, y);
+        // so the step in Y is EXTRUDED. Gated with the purge connectors (R498).
+        let connector = std::env::var_os("TOWER_WIPE_CONNECTOR").is_some();
+        let mut first = true;
 
         for _ in 0..num_lines {
             let (start_x, end_x) = if left_to_right {
@@ -1105,7 +1111,17 @@ impl WipeTowerWriter {
                 (box_coords.rd.x, box_coords.ld.x)
             };
 
-            self.travel(start_x, y);
+            if connector {
+                if first {
+                    self.travel(start_x, y);
+                    first = false;
+                } else {
+                    let x = self.x();
+                    self.extrude(x, y);
+                }
+            } else {
+                self.travel(start_x, y);
+            }
             self.extrude(end_x, y);
 
             y += actual_spacing;
@@ -2216,15 +2232,44 @@ impl WipeTower {
 
         writer.feedrate(wipe_speed);
 
-        for i in 0..num_lines {
-            let (x_start, x_end) = if i % 2 == 0 { (xl, xr) } else { (xr, xl) };
+        // WipeTower.cpp:4145-4149 (toolchange_wipe_new) — the step to the next
+        // purge line is EXTRUDED, not travelled:
+        //     if (is_from_up) writer.extrude(writer.x(), writer.y() - dy);
+        //     else            writer.extrude(writer.x(), writer.y() + dy);
+        //     m_left_to_right = !m_left_to_right;
+        // i.e. the purge is one continuous serpentine. We travelled the step, so
+        // every one of those connectors was missing from our tower: R497's
+        // histogram found C++ writes 27,273 segments of 0.5 mm (13,636 mm) where
+        // we write ZERO segments at or below 1 mm.
+        if std::env::var_os("TOWER_WIPE_CONNECTOR").is_some() {
+            let mut left_to_right = true;
+            let mut first = true;
+            for _ in 0..num_lines {
+                let (x_start, x_end) = if left_to_right { (xl, xr) } else { (xr, xl) };
+                if first {
+                    writer.travel(x_start, y);
+                    first = false;
+                }
+                writer.extrude(x_end, y);
+                y += dy;
+                if y > cleaning_box.lu.y - dy / 2.0 {
+                    break;
+                }
+                let x = writer.x();
+                writer.extrude(x, y);
+                left_to_right = !left_to_right;
+            }
+        } else {
+            for i in 0..num_lines {
+                let (x_start, x_end) = if i % 2 == 0 { (xl, xr) } else { (xr, xl) };
 
-            writer.travel(x_start, y);
-            writer.extrude(x_end, y);
+                writer.travel(x_start, y);
+                writer.extrude(x_end, y);
 
-            y += dy;
-            if y > cleaning_box.lu.y - dy / 2.0 {
-                break;
+                y += dy;
+                if y > cleaning_box.lu.y - dy / 2.0 {
+                    break;
+                }
             }
         }
 

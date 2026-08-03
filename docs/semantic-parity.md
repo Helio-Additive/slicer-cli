@@ -457,3 +457,46 @@ from the nearest corner, not a fill — `finish_layer_new` gates the same call o
 Still 9.5% short, and the segment count (31,812 vs 67,794) says the connectors and
 the 3.0 mm / 31.0 mm structures are the bulk of what remains. The gate stays
 opt-in until the total lands near 1.0.
+
+
+### Closing the tower arithmetic (R498)
+
+Porting the extruded connector (`TOWER_WIPE_CONNECTOR=1`, opt-in) recovers almost
+exactly the segments R497 said were missing. Writer-only totals against C++'s
+1,171,316 mm / 67,794 segments:
+
+| variant                     | length    | ratio | segments | seg ratio |
+|-----------------------------|-----------|-------|----------|-----------|
+| default                     | 1,223,826 | 1.045 | 35,760   | 0.528     |
+| connector only              | 1,238,919 | 1.058 | 65,945   | **0.973** |
+| connector + sparse grid     | 1,072,015 | 0.915 | 56,301   | 0.830     |
+
+C++ extrudes the step to the next purge line rather than travelling it
+(`toolchange_wipe_new`, WipeTower.cpp:4145-4149: `writer.extrude(writer.x(),
+writer.y() ± dy)` followed by `m_left_to_right = !m_left_to_right`), so the purge
+is a single continuous serpentine. The same is true of the solid fill branch
+(:3619-3623). With that ported the segment count lands within 2.7% of C++'s — but
+the total goes UP, exactly as R497 predicted, because the excess-stroke defect is
+still there. Hence opt-in.
+
+The remaining arithmetic now closes:
+
+    connector-only total                             1,238,919
+    - 5,346 excess 34.0 mm strokes                    -181,764
+    + 4,854 segments of 3.0 mm                         +14,562
+    + 2,723 segments of 31.0 mm                        +84,413
+    ------------------------------------------------------------
+                                                      1,156,130   = 0.987 of C++
+
+Both missing segment classes come from ONE place: the ironing block that opens
+each toolchange wipe, `if (i == 0 && m_use_gap_wall)` (WipeTower.cpp:4079-4116).
+It extrudes a short ironing run (the 3.0 mm class), does a retract / travel /
+un-retract dance, then extrudes the rest of the way to the far edge (the 31.0 mm
+class — and 2,723 is exactly one per toolchange).
+
+`m_use_gap_wall` is `config.prime_tower_skip_points` (:1747). That key appears in
+our preset key list and in `generator.rs`'s defaults, and the C++ gcode header
+carries it, but **there is no `PrintConfig` field and no deserialize arm for it**,
+so our `use_gap_wall` is permanently `false` and none of that geometry is emitted.
+This is a second instance of the R495 config-key pattern — a key that is "known"
+in one table and silently absent from the one that matters.
