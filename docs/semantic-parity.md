@@ -1701,3 +1701,45 @@ measurement taken here is worthless for a cross-engine ratio.
 **New discipline (R524): size a faithful-port target in the profile BEFORE
 porting it — "C++ parallelises it" is a reason to look, not a reason to do it.**
 :1430 is a legitimate parity gap that is worth exactly nothing in time.
+
+## R525 — export pipeline: architecture mapped, and TWO of my own claims corrected
+
+Analysis round, no code change. The goal was to port C++'s stage-overlap
+pipeline; the round instead established what the port actually requires and
+corrected two errors I had been carrying.
+
+**Correction 1 — our export is BATCH, not streaming.** The generate loop writes
+every layer into a single `writer`; `writer.finish()` returns ONE string for the
+whole print; cooling then splits that string on `; CHANGE_LAYER` and processes
+layers; then assemble+write runs a full `GCodeProcessor` pass over the 66 MB
+body to compute the accel-aware header time. So the three "stages" are three
+sequential whole-print passes. C++'s are per-layer filters. **The port is not
+"wrap the loop in a pipeline" — it requires `generate` to emit per-layer chunks
+as it goes.** That is the real cost of this work and it was not stated before.
+
+**Correction 2 — the ZSMOOTH barrier does NOT apply to Majora, so the ~1.5 s
+estimate stands.** I had started to conclude that C++ also has a global barrier
+(`smooth_calculator.smooth_layer_speed()` between two pipelines, GCode.cpp:3400
+and :3416) and was about to revise the prize down to ~0.9 s. Then I probed the
+actual config value (R503): Majora's 3MF has
+`"z_direction_outwall_speed_continuous": "0"`, so **neither engine takes the
+two-pass path**. C++ runs the single
+`parallel_pipeline(12, generator & parsing & cooling & write_gocde & output)`
+at GCode.cpp:3398, and full stage overlap is available. Our own `zsmooth` flag
+is correspondingly false. **Prize confirmed at `max(3.02, 0.78, 0.59) = 3.02`
+vs export total 4.53 => ~1.5 s**, which would put Majora near 16 s against
+C++'s 15.9 s.
+
+**Scope judgement.** That refactor touches writer buffer ownership, the cooling
+state machine's input contract, and final assembly, with byte-identity at risk
+throughout — plausibly several rounds. Against that: ask #3 has come from 3.0x
+at campaign start to **1.10x**, while asks #1 (main.cpp -> src/*.rs
+correspondence) and #4 (file-layout mirroring for C++ maintainers) are explicit
+user asks that have gone untouched for many rounds. Next round pivots to those;
+the pipeline is documented here as the known remaining lever with its true cost
+and its true payoff, ready to pick up.
+
+**New discipline (R525): when a config flag selects between two code paths,
+read the fixture's actual value before reasoning about either.** I nearly
+recorded a wrong prize (0.9 s instead of 1.5 s) by assuming Majora took the
+zsmooth path it does not take — the same class of error as R503.
