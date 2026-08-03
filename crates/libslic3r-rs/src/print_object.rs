@@ -653,6 +653,26 @@ impl PrintObject {
         // Move painted areas out of region 0 into the painted regions.
         // PrintObjectSlice.cpp:855-925 (single-parent collapse).
         let painted_order: Vec<u8> = self.painted_submeshes.iter().map(|(e, _)| *e).collect();
+        // R489: filament -> print-region index. C++ keeps the PrintRegion pointer
+        // that `get_create_region` handed back (PrintApply.cpp:1071); because that
+        // call deduplicates, the index cannot be derived from the painted-extruder
+        // ordinal. The region a painted extruder owns is the one whose config prints
+        // with that filament — first match, so a deduped extruder resolves to the
+        // parent region it was merged into.
+        let extruder_to_region: std::collections::HashMap<u8, usize> = {
+            let mut m = std::collections::HashMap::new();
+            if let Some(sr) = self.shared_regions.as_ref() {
+                for (idx, r) in sr.all_regions.iter().enumerate() {
+                    let c = r.config();
+                    if c.wall_filament == c.solid_infill_filament
+                        && c.wall_filament == c.sparse_infill_filament
+                    {
+                        m.entry(c.wall_filament as u8).or_insert(idx);
+                    }
+                }
+            }
+            m
+        };
         if std::env::var_os("MMS_DEBUG").is_some() {
             let seg_nonempty = segmented
                 .iter()
@@ -862,6 +882,7 @@ impl PrintObject {
             }
             let mut stolen_total: crate::geometry::ExPolygons = Vec::new();
             for (i, &extruder) in painted_order.iter().enumerate() {
+                let _ = i;
                 // Faithful merge output shape: [layer][num_extruders], 0-based
                 // extruder slots (slot j == filament j+1); the default color is
                 // dropped by merge_segmented_layers — matches the C++ consumer
@@ -876,7 +897,32 @@ impl PrintObject {
                 if stolen.is_empty() {
                     continue;
                 }
-                let region_id = 1 + i;
+                // R489: `1 + i` hard-codes "painted extruder at index i lives in
+                // print region 1+i", which only holds while
+                // Print::install_painted_regions appends one region per painted
+                // extruder unconditionally. C++ resolves the region through the
+                // pointer `get_create_region` returned (PrintApply.cpp:1071), which
+                // may be an EXISTING region — so the index is not derivable from the
+                // painted-extruder ordinal. Look it up by filament instead, which is
+                // what actually identifies the region, and is correct whether or not
+                // the dedup is active. Tied to the same gate so the default path is
+                // byte-unchanged.
+                let region_id = if crate::faithful_gate("PAINTED_REGION_DEDUP") {
+                    match extruder_to_region.get(&extruder) {
+                        // The painted extruder resolved to the PARENT region, i.e.
+                        // `get_create_region` reused it because the parent already
+                        // prints this filament. Then there is nothing to steal: the
+                        // area is already in the region that will print it. Stealing
+                        // it would also be destructive here, because the remainder
+                        // write below re-sets region 0 and would clobber it (measured:
+                        // object-only 0.9798 -> 0.8200 when this case steals).
+                        Some(&0) => continue,
+                        Some(&r) => r,
+                        None => continue,
+                    }
+                } else {
+                    1 + i
+                };
                 if region_id >= layer.regions().len() {
                     continue;
                 }
