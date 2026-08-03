@@ -4536,6 +4536,23 @@ impl PrintObject {
                 // are shape-divergent/fragmented vs native (L74 own holes fragment to n=9 with sub-mm
                 // gaps). Root is UPSTREAM fill_expolygons shape (detect_surfaces_type / perimeter->infill
                 // partition / upstream union F1 fragmentation), not this op — see findings doc.
+                //
+                // R485 NARROWS THAT: the "upstream fill_expolygons fragmentation" root does
+                // NOT hold globally on Majora. Counting per-layer islands in the emitted
+                // gcode (3mm centroid clustering) against the C++ reference:
+                //     Sparse infill            rust 10,180 vs bambu 10,313 = 0.987
+                //     Internal solid infill    rust  5,401 vs bambu  5,825 = 0.927
+                //     Floating vertical shell  rust  5,117 vs bambu  6,363 = 0.804
+                // Sparse is filled from the SAME fill region these `holes` derive from, and
+                // it matches to 1.3%. If fill_expolygons were broadly shape-divergent or
+                // over-fragmented, sparse would diverge too. It does not. What diverges is
+                // only the SOLID/SPARSE SPLIT — how much Internal gets promoted to
+                // InternalSolid — and it diverges WORST on the narrow (FVS) subset, i.e. we
+                // create ~1,534 fewer, not smaller, solid pieces (mean island size matches:
+                // 18.21 vs 17.80mm, R482). The scattered-drop filter below is not
+                // responsible either (R483: disabling it entirely leaves FVS at 0.863).
+                // So the remaining suspect is the size of `shell` / `holes` themselves in
+                // this promotion step, not the fill region that feeds them.
                 let diff_int_holes = if holes.is_empty() {
                     internal_all.clone()
                 } else {
