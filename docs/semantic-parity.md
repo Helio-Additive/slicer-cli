@@ -785,3 +785,53 @@ So with the faithful knobs on, the tower decomposes as:
 **The fill is within ~8.8 kmm and the wall within 3.3 kmm. The purge, 94,632 mm
 short, is now the entire remaining tower gap** — and it is the only component that
 has never been worked on.
+
+
+### The tower closes: the cleaning box was 0.5 mm short (R506)
+
+Probing C++ first, per the discipline: **`solid_tool_toolchange` is 0 for Majora**,
+so `x_to_wipe = FLT_MAX` never applies — that hypothesis is eliminated. All 2,723
+tool changes are ordinary, totalling 1,032,017 mm over 59,906 lines = **379.0 mm
+and 22.0 lines per tool change**, i.e. 11 strokes + 11 connectors
+(11 x 34 + 11 x 0.5 = 379.5). Ours was 344.0 mm — about 10 strokes.
+
+Our `wipe_length` (344.337) and `num_lines` (11) both matched C++ exactly, so the
+budget was never wrong. What differed was the box:
+
+| | C++ | ours |
+|---|---|---|
+| cleaning box height | 5.500 | **5.000** |
+| depth allocated per tool change | 5.5 | 5.5 |
+
+We built it as `wipe_depth - m_perimeter_width`; `tool_change_new` (:3271) builds it
+as **`wipe_depth - nozzle_change_depth`** — and `nozzle_change_depth` is zero here
+(R502 showed `nozzle_change` emits nothing). At `dy = 0.5` that missing 0.5 mm is
+exactly one purge stroke per tool change: 34.5 mm x 2,723 = 94,000 mm, against a
+measured deficit of 94,632 mm.
+
+With `TOWER_CLEANING_BOX` fixed and the rest of the tower set enabled:
+
+| component | C++ | ours | ratio |
+|-----------|-------------|-------------|-------|
+| purge | 1,032,017.0 | 1,031,259.0 | 0.9993 |
+| wall + fill | 139,226.5 | 133,719.6 | 0.960 |
+| total | 1,171,243.5 | 1,164,978.6 | **0.9946** |
+
+The box fix ALONE is a regression (tower 1.045 -> 1.1239) because it adds purge to
+an already-long tower; it only works with the fill knobs. So the whole tower set —
+`TOWER_SPARSE_GRID` and its `TOWER_FILL_*` knobs, `TOWER_WIPE_CONNECTOR`,
+`TOWER_CLEANING_BOX` — is now **default-ON**, and the tower goes 1.045 -> **0.9947**.
+
+Effect on the verdict, which moves from two passing checks to four:
+
+| check | before | after |
+|-------|--------|-------|
+| object material within 1% | FAIL 1.0193 | **PASS 0.9959** |
+| per-layer material mean <5% | FAIL 12.42% | **PASS 4.47%** |
+| layer count | PASS | PASS |
+| per-feature <35% | PASS | PASS |
+| silhouette area-wtd >=99% | FAIL 94.31% | FAIL 94.08% |
+
+Silhouette slips 0.23 pp — the tower's footprint changed slightly — and is now the
+only failing check. Every object feature is untouched (object-only 0.9969), benchy
+and the painted cube stay byte-identical, and the eight guard tests pass.

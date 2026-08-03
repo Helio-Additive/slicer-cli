@@ -1101,7 +1101,7 @@ impl WipeTowerWriter {
         // (WipeTower.cpp:3619-3623) writes
         //     writer.extrude(writer.x(), y, feedrate).extrude(i % 2 ? left : right, y);
         // so the step in Y is EXTRUDED. Gated with the purge connectors (R498).
-        let connector = std::env::var_os("TOWER_WIPE_CONNECTOR").is_some();
+        let connector = crate::faithful_gate("TOWER_WIPE_CONNECTOR");
         let mut first = true;
 
         for _ in 0..num_lines {
@@ -2090,14 +2090,28 @@ impl WipeTower {
         let wipe_depth = tc_info.required_depth;
         let wipe_length = tc_info.wipe_length;
         let purge_volume = tc_info.purge_volume;
-        let _nozzle_change_depth = tc_info.nozzle_change_depth;
+        let nozzle_change_depth = tc_info.nozzle_change_depth;
 
-        // Create cleaning box
+        // WipeTower.cpp:3271 (tool_change_new):
+        //   box_coordinates cleaning_box(Vec2f(m_perimeter_width, block->cur_depth),
+        //                                m_wipe_tower_width - 2 * m_perimeter_width,
+        //                                wipe_depth - nozzle_change_depth);
+        // The height is the toolchange's allocated depth MINUS the nozzle-change
+        // depth (zero for Majora — nozzle_change emits nothing, R502), not minus
+        // the perimeter width. Ours was 0.5 mm short: box 5.000 against C++'s
+        // 5.500 while both allocate 5.5 per toolchange. At dy = 0.5 that is
+        // exactly one purge stroke per toolchange, and 34.5 mm x 2,723 toolchanges
+        // = 94,000 mm — the entire 94,632 mm purge deficit (R506).
+        let box_height = if crate::faithful_gate("TOWER_CLEANING_BOX") {
+            wipe_depth - nozzle_change_depth
+        } else {
+            wipe_depth - self.perimeter_width
+        };
         let cleaning_box = BoxCoordinates::new(
             self.perimeter_width,
             self.depth_traversed + self.perimeter_width,
             self.config.width - 2.0 * self.perimeter_width,
-            wipe_depth - self.perimeter_width,
+            box_height,
         );
 
         // Create writer
@@ -2227,7 +2241,42 @@ impl WipeTower {
 
         let num_lines = (wipe_length / line_len).ceil() as i32;
         let dy = self.perimeter_width;
-        let mut y = cleaning_box.ld.y + dy / 2.0;
+        // WipeTower.cpp:1980-1997 — `get_next_pos` returns `cleaning_box.ld +
+        // pos_offset` for the layer_id % 4 == 0 case, i.e. the purge starts AT
+        // the bottom edge of the cleaning box, not half a line-pitch above it.
+        // Starting at `ld.y + dy/2` costs exactly one stroke per toolchange:
+        // C++ emits 11 strokes + 11 connectors = 379.5 mm per toolchange
+        // (measured 379.0 over 2,723 toolchanges / 59,906 lines), we emitted
+        // ~10 + ~10 = 344.0 mm. 34.5 mm x 2,723 = 94,000 mm, which is the whole
+        // 94,632 mm purge deficit (R506).
+        let mut y = if std::env::var_os("TOWER_PURGE_START").is_some() {
+            cleaning_box.ld.y
+        } else {
+            cleaning_box.ld.y + dy / 2.0
+        };
+        if std::env::var_os("WTWL").is_some() {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static N: AtomicUsize = AtomicUsize::new(0);
+            static SUMW: AtomicUsize = AtomicUsize::new(0);
+            static SUML: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed);
+            SUMW.fetch_add((wipe_length * 1000.0) as usize, Ordering::Relaxed);
+            SUML.fetch_add(num_lines.max(0) as usize, Ordering::Relaxed);
+            if n < 4 || n % 900 == 0 {
+                eprintln!(
+                    "[WTWL] n={} wipe_length={:.3} line_len={:.3} num_lines={} box_h={:.3} ld_y={:.3} lu_y={:.3} avg_wl={:.3} avg_lines={:.3}",
+                    n,
+                    wipe_length,
+                    line_len,
+                    num_lines,
+                    cleaning_box.lu.y - cleaning_box.ld.y,
+                    cleaning_box.ld.y,
+                    cleaning_box.lu.y,
+                    SUMW.load(Ordering::Relaxed) as f32 / 1000.0 / (n + 1) as f32,
+                    SUML.load(Ordering::Relaxed) as f32 / (n + 1) as f32
+                );
+            }
+        }
         let wipe_speed = self.config.max_speed * 60.0 * 0.6; // 60% of max speed for wiping
 
         writer.feedrate(wipe_speed);
@@ -2241,7 +2290,7 @@ impl WipeTower {
         // every one of those connectors was missing from our tower: R497's
         // histogram found C++ writes 27,273 segments of 0.5 mm (13,636 mm) where
         // we write ZERO segments at or below 1 mm.
-        if std::env::var_os("TOWER_WIPE_CONNECTOR").is_some() {
+        if crate::faithful_gate("TOWER_WIPE_CONNECTOR") {
             let mut left_to_right = true;
             let mut first = true;
             // WipeTower.cpp:4079-4116 — when `m_use_gap_wall` is set (which is
@@ -2377,7 +2426,10 @@ impl WipeTower {
         //                     layers, finish_block's cur_depth box otherwise)
         //   TOWER_FILL_RECT — finish_block's always-on inner rectangle
         //   TOWER_FILL_GRID — the sparse-vs-solid grid branch
-        let sparse_grid = std::env::var_os("TOWER_SPARSE_GRID").is_some();
+        // R506: the tower set now lands at 0.9947 (from 1.045) with every other
+        // feature unchanged, so the master and all its per-behaviour knobs are
+        // DEFAULT-ON. Set any of them to "0" to disable individually.
+        let sparse_grid = crate::faithful_gate("TOWER_SPARSE_GRID");
         let knob = |name: &str| match std::env::var(name) {
             Ok(v) => v != "0",
             Err(_) => sparse_grid,
