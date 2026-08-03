@@ -186,3 +186,54 @@ collapse) is caught, while FP-cascade re-routing correctly passes.
   material signal.
 - The per-feature/per-layer material metrics are retraction-aware (R356), so
   they no longer carry deretraction-priming noise.
+
+## The C++ reference is NOT byte-reproducible (R487)
+
+Measured directly: three runs of the C++ `slicer_cli` on the identical Majora input
+produced three different files.
+
+    48ea73f8...   e70b15be...   c28231ca...   06a1d80b...   e6a06729...
+
+This is not a rebuild artifact — the binary was untouched between runs. It settles
+the premise of the whole campaign: **byte parity against C++ is impossible in
+principle**, because C++ is not byte-identical to *itself*. (The user's instinct in
+the standing brief — "byte parity I think is just impossible" — is correct, and this
+is the evidence.)
+
+Crucially, the divergence is confined to floating-point noise and does NOT reach the
+semantic metrics. Running `semantic_compare.py` on two consecutive C++ runs:
+
+| metric | C++ vs C++ |
+|--------|-----------|
+| silhouette (mean / area-wtd) | 100.00% / 100.00% |
+| wall-line IoU (mean / area-wtd) | 100.00% / 100.00% |
+| per-layer material mean deviation | 0.00% |
+| object material | 1.0000 |
+| every per-feature E-ratio | 1.000 |
+| object-only | 0.9999 (4 E in 72,673) |
+
+**So the noise floor of every metric we track is ~0.01% or better.** Header totals
+drift in the 5th significant digit (e.g. filament length 65094.33 vs 65094.09) and
+the print-time estimate by ~1s, but nothing that shifts a feature ratio. Any gap we
+are chasing — FVS 0.856, internal solid 0.922, tower 1.045 — is real signal, orders
+of magnitude above this floor.
+
+Practical consequences:
+- Never diff C++ gcode against a stored C++ reference and expect a match; compare
+  semantically, or regenerate both sides in the same session.
+- Rust-side byte-identity between our own runs is still a valid regression guard
+  (our engine IS deterministic — that was fixed at R99), and remains the cheapest
+  signal that a refactor changed nothing.
+
+### Instrumenting the C++ reference (R487)
+
+The reference is locally buildable, which makes side-by-side internals comparison
+possible:
+
+    source: libslic3r/bambustudio/references/BambuStudio/src/libslic3r/
+    build:  cd libslic3r/bambustudio/build && ninja slicer_cli   (incremental, ~1 min)
+    binary: libslic3r/bambustudio/build/slicer_cli   (what `--engine bambu` runs)
+
+`references/` is git-tracked, so any probe must be reverted afterwards. Note C++
+`SCALING_FACTOR = 0.00001` — 1e5 units/mm, the SAME as the Rust crate (an earlier
+note claiming C++ used 1e6 was wrong); scaled areas convert with `/1e10`.
