@@ -38,6 +38,13 @@ pub static FVS_CLIP_EMPTY: std::sync::atomic::AtomicUsize = std::sync::atomic::A
 pub static FVS_LAYERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FVS_NO_LOWER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FVS_LOWER_NOSURF: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// R482 (VSHELL_DEBUG=1): how many regularized vertical-shell pieces the
+/// PrintObject.cpp:2040-2054 scattered-drop filter removes, and their area (in
+/// milli-mm2). Islands lost here never become InternalSolid surfaces.
+pub static VS_REG_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_REG_DROP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_REG_DROP_AREA: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 use crate::extrusion_entity::{
     extrusion_entities_append_paths, ExtrusionEntityCollection, ExtrusionLoop, ExtrusionPath,

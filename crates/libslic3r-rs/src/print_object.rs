@@ -3414,6 +3414,16 @@ impl PrintObject {
                     FB_TAIL_STUB_N.load(R2), f2(&FB_TAIL_STUB_LEN),
                 );
             }
+            if std::env::var_os("VSHELL_DEBUG").is_some() {
+                use std::sync::atomic::Ordering::Relaxed as R5;
+                let n = crate::layer::VS_REG_IN.load(R5);
+                let d = crate::layer::VS_REG_DROP.load(R5);
+                eprintln!(
+                    "VSHELL_REG: regularized pieces={} DROPPED by the scattered-drop filter={} ({:.1}%)  dropped area={:.1} mm2",
+                    n, d, 100.0 * d as f64 / n.max(1) as f64,
+                    crate::layer::VS_REG_DROP_AREA.load(R5) as f64 / 1000.0,
+                );
+            }
             if std::env::var_os("FVS_DEBUG").is_some() {
                 use std::sync::atomic::Ordering::Relaxed as R4;
                 eprintln!(
@@ -4597,6 +4607,15 @@ impl PrintObject {
                         let grown_p = grow(&p1, min_pis, OffsetJoinType::Miter);
                         let cond2 =
                             difference(&internal_volume, &grown_p).len() >= internal_volume.len();
+                        if std::env::var_os("VSHELL_DEBUG").is_some() {
+                            use std::sync::atomic::Ordering::Relaxed;
+                            crate::layer::VS_REG_IN.fetch_add(1, Relaxed);
+                            if cond1 && cond2 {
+                                crate::layer::VS_REG_DROP.fetch_add(1, Relaxed);
+                                crate::layer::VS_REG_DROP_AREA
+                                    .fetch_add((a / (sf * sf) * 1000.0) as usize, Relaxed);
+                            }
+                        }
                         !(cond1 && cond2) // keep if NOT removed
                     })
                     .collect();
