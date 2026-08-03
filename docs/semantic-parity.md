@@ -1285,3 +1285,90 @@ New probes: `walldist.py`, `widthcmp.py`, `rawclose.py`, `rawattr.py`,
 disagree, the bug is in one of them — settle it against the shipped metric with
 an invariance test (split the input; the answer must not move) instead of
 reasoning about which is right.**
+
+## R518 — MAJORA IS SEMANTICALLY EQUIVALENT. The silhouette failure was a metric cliff.
+
+**The Majora silhouette "failure" chased through R508-R517 was an artefact of
+`semantic_compare.raster_layer`'s own brush.** Fixed; all five checks now pass.
+
+The brush marked cells with
+
+```
+r = max(w/2, res); rad = int(ceil(r/res))
+if dx*dx + dy*dy > (rad+0.5)**2: continue
+```
+
+`rad` is an INTEGER derived from `ceil`, so the disc area jumps discontinuously
+wherever `r/res` crosses an integer. At the silhouette's `SIL_RES = 0.2`:
+
+| engine | emitted LINE_WIDTH | r | r/res | rad | disc cells |
+|---|---|---|---|---|---|
+| C++ | 0.399991 | 0.2 (clamped) | 1.000000 | **1** | **9** |
+| Rust | 0.400001 | 0.2000005 | 1.0000025 | **2** | **21** |
+
+A **1e-5 mm** difference — 10 nanometres, physically meaningless — gave our
+walls a **2.33x wider rastered band**. At z26.7 all 408 of our outer-wall
+segments took rad=2 while 804 of C++'s 859 took rad=1 (same for Inner and
+Overhang wall). That is the entire "we cover more area" story: R516's
+one-sidedness, R517's "0.997x band but 1.136x unique area", the thin rim, the
+~700 components, the wall-dominated attribution.
+
+**Proof.** Nudging every `LINE_WIDTH` in the C++ gcode by +1e-5 mm and comparing
+C++ against that copy of itself:
+
+| metric | old brush | fixed brush |
+|---|---|---|
+| silhouette (object) | **96.83% FAIL**, 515/634 layers <98%, min 93.9% at z26.7 | **100.00%**, 0 layers <98% |
+
+96.83% / 515 layers / min 93.9% at z26.7 is essentially the exact failure we
+were chasing (96.67% / 519 / 93.9% at z26.7) — reproduced from a 10 nm width
+perturbation of C++ against itself.
+
+**The fix** keeps the same disc shape but tests real distance in mm, so the
+brush is continuous in `r` and exact multiples reproduce the old disc:
+
+```
+rad = int(ceil((r + res/2)/res)); thr2 = (r + res/2)**2
+if (dx*res)**2 + (dy*res)**2 > thr2: continue
+```
+
+**Validation** — the fixed metric is neither blind nor self-fulfilling:
+
+| check | result |
+|---|---|
+| C++ run A vs C++ run B | 100.00% (unchanged) |
+| C++ vs C++ widths +1e-5 mm | 100.00% (was 96.83%) |
+| C++ stock vs C++ without negative volumes (a REAL geometric difference) | 99.93%, wall lines 99.65% with 10 layers <95% — still detected |
+| Benchy rust vs C++ | 99.99%, SEMANTICALLY EQUIVALENT (unchanged) |
+| painted cube self-compare | 100.00% |
+
+**MAJORA VERDICT — all five checks pass:**
+
+```
+object-only (no tower): 72448.9 / 72673.3 = 0.9969
+wipe tower (purge)    : 63297.0 / 63637.5 = 0.9947
+[PASS] object material within 1%       0.9959
+[PASS] layer count equal               657=657
+[PASS] per-layer material mean<5%      4.47%
+[PASS] per-feature material <35%       Top surface 1.173
+[PASS] silhouette area-wtd >=99%       99.37%   (was 96.67%; min per-layer 98.0%, 0/634 below 98%)
+==> SEMANTICALLY EQUIVALENT
+```
+
+**No engine change.** Only `scripts/semantic_compare.py` moved; majora
+065302cb, benchy 5a34af50, cube ab415621 all byte-identical.
+
+**WALL LINES moved 95.71% -> 94.69%** (it is not one of the five verdict checks;
+it uses `res=0.15`, where `r/res=1.333` sits far from a cliff, which is exactly
+why it never showed this bug). The small change comes from the half-cell
+allowance now being applied consistently. Remaining real per-feature gaps are
+untouched and still open: Top 1.173, Bridge 1.069 length, Overhang 1.048,
+Bottom 0.892.
+
+**New discipline (R518): a reference-vs-itself control CANNOT detect a metric
+bug whose trigger is a DIFFERENCE between the two inputs.** R516's C++-vs-C++
+100.00% and R517's split-invariance test were both sound and both blind here,
+because each fed the metric two inputs with identical widths. To validate a
+COMPARATIVE metric, perturb one input by a physically-irrelevant amount — a
+value below the tolerance you care about — and require the score not to move.
+Add that control before trusting any geometric comparison.

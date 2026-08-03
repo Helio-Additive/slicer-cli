@@ -141,10 +141,21 @@ def raster_layer(segs, res, x0, y0, nx, ny):
         ts = np.linspace(0, 1, n)
         xs = ax + (bx-ax)*ts; ys = ay + (by-ay)*ts
         ci = ((xs - x0)/res).astype(int); cj = ((ys - y0)/res).astype(int)
-        rad = int(math.ceil(r/res))
+        # R518: the acceptance test must be CONTINUOUS in r. The old form
+        # `dx*dx+dy*dy > (rad+0.5)**2` with `rad = ceil(r/res)` has a
+        # discretisation CLIFF wherever r/res crosses an integer: at res=0.2 a
+        # reported width of 0.399991 (C++) clamps to r=res -> rad=1 -> a 9-cell
+        # disc, while 0.400001 (Rust) gives r=0.2000005 -> rad=2 -> a 21-cell
+        # disc. A 1e-5 mm difference in an emitted LINE_WIDTH comment — 10 nm,
+        # physically meaningless — inflated one engine's rastered band by 2.33x
+        # and produced a spurious 3.3% "coverage excess" on Majora (R516/R517).
+        # Test the real distance in mm instead, keeping the half-cell allowance
+        # so exact multiples reproduce the old disc.
+        rad = int(math.ceil((r + res/2)/res))
+        thr2 = (r + res/2)**2
         for dx in range(-rad, rad+1):
             for dy in range(-rad, rad+1):
-                if dx*dx+dy*dy > (rad+0.5)**2: continue
+                if (dx*res)**2 + (dy*res)**2 > thr2: continue
                 ii = ci+dx; jj = cj+dy
                 ok = (ii>=0)&(ii<nx)&(jj>=0)&(jj<ny)
                 grid[jj[ok], ii[ok]] = True
