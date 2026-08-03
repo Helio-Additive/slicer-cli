@@ -617,3 +617,46 @@ second defect beyond the sparse/dense branch, and the purge has a large deficit 
 its own. Both must be fixed before either gate can go default-ON; neither is
 visible in the total, which is why every attempt to tune the fill alone (R493,
 R496-R500) moved the aggregate the wrong way.
+
+
+### The tower's three components (R502)
+
+Tagging every C++ emitter and accumulating extruded XY length inside
+`WipeTowerWriter` gives the tower's true composition — including a component the
+purge/fill split of R501 had folded away invisibly, the outer wall:
+
+| emitter                     | length      | segments |
+|-----------------------------|-------------|----------|
+| `toolchange_wipe_new`       | 1,032,017.0 |   59,906 |
+| `generate_support_wall_new` |    93,756.0 |    5,683 |
+| `finish_block`              |    35,684.5 |    1,934 |
+| `finish_layer_new`          |     9,786.0 |      271 |
+| `ramming` / `nozzle_change` |         0.0 |        0 |
+
+`ramming` and `nozzle_change` contribute NOTHING for this fixture — eliminated.
+The sum is 1,171,243.5 against the writer-only total of 1,171,315.6, so the
+decomposition is complete to within rounding.
+
+Ours splits the same way (our wall is one `writer.rectangle(&wt_box)` per layer:
+656 x 2*(35+39) = 97,088 mm, which matches R493's independent perimeter-vs-interior
+measurement exactly):
+
+| component | C++         | ours        | ratio |
+|-----------|-------------|-------------|-------|
+| purge     | 1,032,017.0 |   937,384.5 | 0.908 |
+| wall      |    93,756.0 |    97,088.0 | 1.036 |
+| fill      |    45,470.5 |   204,446.0 | **4.50** |
+| total     | 1,171,243.5 | 1,238,918.5 | 1.058 |
+
+Both columns sum to their measured totals exactly, so this is the real target list:
+
+- **The wall is already right** (1.036) — leave it alone.
+- **The purge is 94,632 mm short** (0.908). R501 reported 0.835 because its purge
+  bucket was tcr-scoped and swept in wall and timelapse geometry; the emitter-level
+  figure is the one to chase.
+- **The fill is 4.50x** — 158,976 mm too much, and that is the single largest
+  defect. C++'s entire fill is 45.5 kmm over 2,205 segments; ours is 204.4 kmm.
+
+Note `finish_layer_new` runs on all 656 layers but emits only 271 fill segments
+totalling 9.8 kmm — on most layers it lays no fill at all. Our finish_layer lays a
+fill on every layer.
