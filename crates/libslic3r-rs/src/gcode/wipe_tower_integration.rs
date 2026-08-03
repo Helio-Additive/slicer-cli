@@ -157,9 +157,25 @@ pub fn transform_gcode(gcode: &str, mut pos: Vec2f, translation: Vec2f, angle: f
                 // Replace the leading "G1 " of line_out with the rebuilt prefix.
                 line_out.replacen("G1 ", &oss, 1)
             } else {
-                // Transformed position unchanged from the previous move: emit the
-                // original line untouched (C++ leaves `line` as-is here).
-                line.to_string()
+                // Transformed position unchanged from the previous move. C++ leaves
+                // `line` as-is here (GCode.cpp:1120-1132 only rewrites inside the
+                // `transformed_pos != old_pos` branch), which is safe for it because
+                // its writer never emits a redundant travel to a point it is already
+                // at. Ours does: `finish_layer` draws the outer perimeter from the
+                // tower-local origin, and the writer had already moved there, so the
+                // duplicate `G1 X0.000 Y0.000` was echoed VERBATIM -- in tower-local
+                // coordinates. The printer read it as bed (0,0) and then extruded the
+                // next purge strokes 220mm across the plate from the origin: 61
+                // layers, 27,970mm at ~0.009 E/mm (R477).
+                // Emitting `line_out` (the same line with X/Y stripped) keeps C++'s
+                // "don't repeat unchanged coordinates" intent and cannot leak an
+                // untransformed coordinate: by construction the position is the one
+                // already reached, so dropping the axes is a no-op move.
+                if crate::faithful_gate("TOWER_XFORM_NO_RAW_ECHO") {
+                    line_out
+                } else {
+                    line.to_string()
+                }
             }
         })
         .collect();
