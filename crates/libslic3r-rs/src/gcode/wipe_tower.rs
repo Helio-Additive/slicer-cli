@@ -2485,6 +2485,32 @@ impl WipeTower {
         if inner_rect && layer_has_toolchange && fill_box.height() > self.perimeter_width {
             writer.rectangle(&fill_box);
         }
+        if std::env::var_os("WTFILLCNT").is_some() {
+            // R505: count how often our finish-layer fill actually runs, and how
+            // often each guard rejects it, to compare against C++'s dispatch
+            // (656 layers, 592 block iterations, 386 full-skips, 206 passed).
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static SEEN: AtomicUsize = AtomicUsize::new(0);
+            static SKIP_NO_TC: AtomicUsize = AtomicUsize::new(0);
+            static SKIP_FULL: AtomicUsize = AtomicUsize::new(0);
+            SEEN.fetch_add(1, Ordering::Relaxed);
+            if fill_only_on_toolchange_layers && !layer_has_toolchange {
+                SKIP_NO_TC.fetch_add(1, Ordering::Relaxed);
+            } else if !(dy > self.perimeter_width) {
+                SKIP_FULL.fetch_add(1, Ordering::Relaxed);
+            }
+            if self.layer_idx + 1 >= self.plan.len() {
+                eprintln!(
+                    "[WTFILLCNT] seen={} skip_no_tc={} skip_full={} passed={}",
+                    SEEN.load(Ordering::Relaxed),
+                    SKIP_NO_TC.load(Ordering::Relaxed),
+                    SKIP_FULL.load(Ordering::Relaxed),
+                    SEEN.load(Ordering::Relaxed)
+                        - SKIP_NO_TC.load(Ordering::Relaxed)
+                        - SKIP_FULL.load(Ordering::Relaxed)
+                );
+            }
+        }
         if fill_only_on_toolchange_layers && !layer_has_toolchange {
             // C++ draws only the wall here.
         } else if !grid_faithful {

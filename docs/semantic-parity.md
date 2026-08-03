@@ -739,3 +739,49 @@ The fill excess is therefore two things, neither of them the box:
    says happens on ~94 layers — not enough on its own, so the other guards in the
    dispatch (`is_valid_last_layer`, `finish_layer_filament == -1`, and the outer
    `wall_idx != -1`) account for the rest. That is what remains to port.
+
+
+### The fill is essentially solved; the purge is the whole remaining gap (R505)
+
+Two measurements settle the fill.
+
+**1. The call count already matches.** Counting each dispatch guard in C++ and the
+equivalent guards in our `finish_layer`:
+
+|                | C++ | ours |
+|----------------|-----|------|
+| layers         | 656 | 656  |
+| no-toolchange  |  64 |  64  |
+| block-full skip| 386 | 385  |
+| **fill runs**  | **206** | **207** |
+
+`is_valid_last_layer` and the `finish_layer_filament == -1` resolution reject
+NOTHING (0 of 592) — eliminated. Our existing `dy > m_perimeter_width` guard is
+already equivalent to C++'s block-full skip. **The call count was never the
+defect**, which retires this round's entire plan.
+
+**2. The 4.50x fill figure was measured with the fill knobs OFF, and our "fill"
+bucket includes the wall.** Subtracting the 97,088 mm wall:
+
+| combo                          | fill bucket | actual fill |
+|--------------------------------|-------------|-------------|
+| GRID only                      | 165,830.1   | 68,742.1    |
+| GRID + ONLY_TC                 | 164,913.8   | 67,825.8    |
+| **GRID + RECT + ONLY_TC**      | 133,719.6   | **36,631.6**|
+| C++                            |             | 45,470.5    |
+
+(RECT *reduces* the total because `writer.rectangle` repositions the writer and
+changes where the following grid starts — the non-additivity R500 flagged.)
+
+So with the faithful knobs on, the tower decomposes as:
+
+| component | C++         | ours        | ratio |
+|-----------|-------------|-------------|-------|
+| purge     | 1,032,017.0 |   937,384.5 | 0.908 |
+| wall      |    93,756.0 |    97,088.0 | 1.036 |
+| fill      |    45,470.5 |    36,631.6 | 0.806 |
+| total     | 1,171,243.5 | 1,071,104.1 | 0.914 |
+
+**The fill is within ~8.8 kmm and the wall within 3.3 kmm. The purge, 94,632 mm
+short, is now the entire remaining tower gap** — and it is the only component that
+has never been worked on.
