@@ -1987,7 +1987,32 @@ impl WipeTower {
         }
     }
 
-    /// Generate the wipe tower
+    /// Generate the wipe tower — port of `WipeTower::generate` (WipeTower.cpp:4774).
+    ///
+    /// FIDELITY-NOTE(R479): **BambuStudio does not call this function.**
+    /// `Print::_make_wipe_tower` (Print.cpp:3157) calls `wipe_tower.generate_new(...)`,
+    /// the newer block-based tower. `generate()` survives in the C++ tree but is dead
+    /// for this pipeline, and we ported the dead one. The block-based path is:
+    ///   WipeTower.cpp:4208  generate_wipe_tower_blocks()
+    ///   WipeTower.cpp:4417  plan_tower_new()
+    ///   WipeTower.cpp:4564  generate_new()
+    ///   WipeTower.cpp:3487  finish_layer_new(extrude_perimeter, extrude_fill, extrude_fill_wall)
+    ///   WipeTower.cpp:3597  generate_support_wall_new(.., m_use_rib_wall, extrude_perimeter, m_use_gap_wall)
+    /// driven by `prime_tower_rib_wall` / `prime_tower_skip_points` /
+    /// `prime_tower_enable_framework` / `prime_tower_infill_gap` (0 / 1 / 0 / 100% on
+    /// the Majora plate).
+    ///
+    /// Measured consequences on Majora, all consistent with running the wrong
+    /// generator (see the R479 commit for the full numbers):
+    ///  - C++ emits TWO separate `; FEATURE: Prime tower` blocks per layer in the
+    ///    sparse top band -- an outer rectangle and one inset by a perimeter width,
+    ///    each with its own travel/wipe/Z-hop. We emit one, so z178-197 comes out at
+    ///    E-rat 0.558 (rust 582.3 vs bambu 1042.9 over the same 63 layers).
+    ///  - The bulk band z0-178 goes the other way at 1.053, netting the +4.5% overall.
+    ///  - C++ writes 3,655 `; WIPE_TOWER_START` / `WIPE_TOWER_END` markers (consumed
+    ///    by GCodeProcessor); this path emits none.
+    /// The tower's flow, footprint, extra_spacing and tool-change count are already
+    /// exact (R475-R478), so porting the block-based generator is what remains.
     pub fn generate(&mut self) -> Vec<Vec<ToolChangeResult>> {
         let mut results: Vec<Vec<ToolChangeResult>> = Vec::new();
 
