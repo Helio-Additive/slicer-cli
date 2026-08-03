@@ -2023,6 +2023,30 @@ impl Print {
                 // permanently false and the tower emitted none of the ironing
                 // geometry that opens each toolchange wipe (:4079-4116).
                 cfg.use_gap_wall = self.config.prime_tower_skip_points;
+                // WipeTower.cpp:1742 —
+                //   m_enable_timelapse_print(config.timelapse_type.value == TimelapseType::tlSmooth)
+                // with `tlSmooth = 1` (PrintConfig.hpp:216-219). Majora's config sets
+                // `timelapse_type = 1`, so C++ has this ON; we never assigned it, so
+                // ours was permanently false. It is NOT cosmetic (as (A6) assumed):
+                // `update_all_layer_depth` forces EVERY plan layer's depth to
+                // `m_wipe_tower_depth` when it is set, which is why C++'s
+                // `m_layer_info->depth` is 39.0 on every layer of the z177.6-182 band
+                // while ours collapsed to 11.0 or 0.0 and skipped the fill entirely
+                // (R509).
+                // OPT-IN (`TOWER_TIMELAPSE_DEPTH=1`) until the two depths are
+                // separated. Enabling it alone REGRESSES the tower 0.9947 -> 1.0394
+                // and takes layers with tower IoU below 50% from 64 to 184, because
+                // C++ keeps TWO per-layer depths and we keep one:
+                //   * `block.layer_depths[cur]` (11.0 / 0.0 in the z177.6-182 band)
+                //     drives finish_block's box AND its block-full skip;
+                //   * `m_layer_info->depth` (39.0 everywhere, forced by
+                //     `update_all_layer_depth` under timelapse) drives
+                //     finish_layer_new's box.
+                // Setting our single `plan[i].depth` to 38.5 fixes the second and
+                // breaks the first: our fill count goes 207 -> 498 against C++'s 206.
+                // Separating them is the next step (R509).
+                cfg.enable_timelapse_print = self.config.timelapse_type == 1
+                    && std::env::var_os("TOWER_TIMELAPSE_DEPTH").is_some();
                 // WipeTower.cpp:2907 — `min_wipe_tower_depth =
                 // get_limit_depth_by_height(m_wipe_tower_height)`, which feeds the
                 // `extra_spacing = min_wipe_tower_depth / max_depth` decision in

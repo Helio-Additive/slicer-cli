@@ -905,3 +905,43 @@ So the open question is narrower than it looked: **why does C++ have a non-trivi
 `m_layer_info->depth` on these layers at all?** R494 probed `depth = 39.0` but only
 on layers 0-7. The next step is to probe C++'s per-layer depth AT z177.6-182 and
 find what keeps it non-zero where ours collapses to 0.
+
+
+### The 64 wall-only layers are a timelapse config gap (R509)
+
+Probing C++ across the failing band, printing z with every row:
+
+    [BAND] z=177.60 plan_depth=39.000 layer_depths0=11.000 cur_depth=0.500 tc=0 wall_idx=-1
+    [BAND] z=178.80 plan_depth=39.000 layer_depths0= 0.000 cur_depth=0.500 tc=0 wall_idx=-1
+
+C++'s `m_layer_info->depth` is **39.000 on every layer**, while its
+`block.layer_depths[0]` is 11.0 / 0.0 — which is exactly what OUR single
+`plan[i].depth` holds. `finish_layer_new`'s fallback box uses
+`m_layer_info->depth - 2 * m_perimeter_width` (38 mm), so C++ fills the whole
+tower on those layers; ours used 0.0 and produced a negative box.
+
+What keeps C++'s value at 39: `update_all_layer_depth` forces every
+`plan_info.depth` to `m_wipe_tower_depth` when `m_enable_timelapse_print` is set,
+and that flag is `config.timelapse_type == tlSmooth` (WipeTower.cpp:1742, with
+`tlSmooth = 1`). Majora's config carries `timelapse_type = 1`.
+
+**`timelapse_type` was a fourth instance of the config-key pattern** — present in
+`apply_key_value` but absent from `set_deserialize`, so it never reached
+`PrintConfig`, and `cfg.enable_timelapse_print` was additionally never assigned in
+`print.rs`. The (A6) note that this key was "cosmetic" was wrong; it is
+load-bearing for the tower's per-layer depth. The deserialize arm is now added.
+
+Wiring it up does fix the band — `layer_depth` becomes 38.5 everywhere and the fill
+runs — but **it regresses the tower on its own**: 0.9947 -> 1.0394, with layers below
+50% tower IoU going 64 -> 184 and our fill count 207 -> 498 against C++'s 206. The
+reason is that C++ keeps TWO per-layer depths where we keep one:
+
+| C++ value | drives |
+|-----------|--------|
+| `block.layer_depths[cur]` (11.0 / 0.0 here) | `finish_block`'s box AND its block-full skip |
+| `m_layer_info->depth` (39.0 under timelapse) | `finish_layer_new`'s fallback box |
+
+Setting our single `plan[i].depth` to 38.5 fixes the second and breaks the first.
+So the wiring is behind `TOWER_TIMELAPSE_DEPTH=1` (opt-in) until the two depths are
+separated — that separation is the next step, and per R506 the candidate must be
+judged in the fully-corrected configuration, not against today's default.

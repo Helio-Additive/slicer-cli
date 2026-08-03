@@ -2608,6 +2608,18 @@ impl PrintConfig {
                 }
                 true
             }
+            // R509: fourth instance of the config-key pattern — present in
+            // `apply_key_value` but not here, so it never reached PrintConfig.
+            // C++ derives `WipeTower::m_enable_timelapse_print` from it
+            // (WipeTower.cpp:1742, `timelapse_type == tlSmooth` with tlSmooth = 1),
+            // and that flag forces every plan layer's tower depth to the full
+            // tower depth.
+            "timelapse_type" => {
+                if let Some(v) = parse_f64(value) {
+                    self.timelapse_type = v as u32;
+                }
+                true
+            }
             "wipe_tower_x" => {
                 if let Some(v) = parse_f64(value) {
                     self.wipe_tower_x = v;
