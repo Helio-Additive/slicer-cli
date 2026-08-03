@@ -2779,12 +2779,15 @@ impl Layer {
                     polylines = connected;
                 } else if infill_config.connect_infill && !is_monotonic {
                     let mut connected = Vec::new();
-                    if std::env::var_os("FILL_CONNECT_FAITHFUL").is_some() {
-                        // R460 EXPERIMENT (off by default): route the non-monotonic
-                        // fillers through the faithful FillBase.cpp:1501-1733 port with
-                        // the CONFIGURED anchors and the full expolygon, so its
-                        // FILL_CONNECT_DEBUG counters reveal whether it can map gyroid
-                        // end points onto the boundary at all.
+                    if crate::faithful_gate("FILL_CONNECT_FAITHFUL") {
+                        // C++ Fill::fill_surface_single ends by calling
+                        // Fill::connect_infill (FillBase.cpp:1501-1733), which builds a
+                        // BoundaryInfillGraph over the FULL ExPolygon (contour + holes),
+                        // snaps every infill end point onto the boundary and chains
+                        // consecutive lines along it, honouring the configured anchors.
+                        // R472: this faithful port is now the default for the
+                        // non-monotonic fillers; set FILL_CONNECT_FAITHFUL=0 to fall
+                        // back to the endpoint-merge stub.
                         let mut fp = crate::fill::FillParams::new();
                         fp.density = density;
                         fp.anchor_length = surface_fill.params.anchor_length as f64;
