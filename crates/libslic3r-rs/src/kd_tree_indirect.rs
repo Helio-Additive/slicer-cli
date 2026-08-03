@@ -90,6 +90,27 @@ where
         }
     }
 
+    /// Rebuild a tree from an ALREADY-BUILT node array (R523).
+    ///
+    /// The expensive part of `with_indices` is `build()` (recursive
+    /// nth-element partitioning); `nodes` is the whole result. Callers that
+    /// query the same point set repeatedly can build once, keep `nodes`, and
+    /// reconstruct cheaply here with a fresh coordinate closure. Mirrors C++,
+    /// which builds `points_tree` once per layer (SeamPlacer.cpp:944-945) and
+    /// stores it in the layer.
+    pub fn from_nodes(coordinate: F, nodes: Vec<usize>) -> Self {
+        Self {
+            nodes,
+            coordinate,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Borrow the built node array (see [`Self::from_nodes`]).
+    pub fn nodes(&self) -> &[usize] {
+        &self.nodes
+    }
+
     /// Create a new KD-tree and build it with the given number of indices
     /// KDTreeIndirect.hpp:35  KDTreeIndirect(CoordinateFn coordinate, size_t num_indices)
     pub fn with_indices(coordinate: F, num_indices: usize) -> Self {

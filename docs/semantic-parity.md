@@ -1597,3 +1597,56 @@ argument here — chunk-boundary seeding either reproduces the serial
 `build_mesh_samples_tree` — 6.58% self on the main thread), and the
 stage-overlap pipeline (bounded ~1.4 s, R520). Still measured INERT and not to
 be retried: `gather_seam_candidates` (:933).
+
+## R523 — seam KD-tree was rebuilt 59,677 times; cached: export generate 3.73 -> 3.02 s
+
+Re-recorded the profile (the R520 one predated two landed changes). It confirms
+the campaign is working — `SeamPlacer::init` fell from **22.09% to 12.19%** of
+main-thread time — and moved the top SELF cost to
+`KDTreeIndirect::build_recursive` at **7.18%**.
+
+**Counted before building anything (R501).** New `KDCOUNT=1` probe:
+
+```
+[KD points_tree builds=59677 pts=88577213]
+```
+
+**59,677 tree builds over 88.6 M points, for a 657-layer print.** C++ builds
+`points_tree` ONCE per layer (SeamPlacer.cpp:944-945) and stores it in the
+layer — 657 builds. We were doing **91x** the work, because our port builds the
+tree on demand at each query (a documented compromise: `KDTreeIndirect` borrows
+its coordinate closure from `points`, so the tree cannot simply be a field).
+
+**Fix.** The tree is just `nodes: Vec<usize>` plus a cheap closure, and all the
+cost is in `build()`. Added `KDTreeIndirect::from_nodes` / `nodes()`, and cached
+the built node array per layer in `LayerSeams::points_tree_nodes`
+(`std::sync::OnceLock`), reconstructing the tree cheaply around it. Candidate
+positions are frozen after `gather_seam_candidates`, so the cache cannot go
+stale — and byte-identity proves it.
+
+| | R520 | R521 | R522 | **R523** |
+|---|---|---|---|---|
+| export generate | 5.02 s | 4.13 s | 3.73 s | **3.02 s** |
+| export total | 6.39 s | 5.50 s | 5.11 s | **4.53 s** |
+
+Cumulative: **export generate -40%, export total -29%.**
+
+**WALL CLOCK NOT MEASURABLE THIS ROUND — and I nearly misread it.** Mid-round,
+runs jumped to 64-73 s. That was not the change: `uptime` showed **load average
+51.9**, with OrbStack at 309% CPU and Chrome at ~200%. Sub-phase timings taken
+once the stray job finished are stable and consistent (generate 3.022-3.090
+across 4 runs, reported as the minimum). Majora wall must be re-measured on a
+quiet machine before the R522 figure of 17.47 s is updated.
+
+**Verified:** majora 065302cb, benchy 5a34af50, cube ab415621 byte-identical;
+eight guard tests green.
+
+**Correction to the R523 plan:** SeamPlacer.cpp:157 was already ported (it is
+the one pre-existing rayon site, `raycast_visibility`). Of C++'s six
+`parallel_for` sites the only untried one left is **:1430**.
+
+**New discipline (R523): before optimising a hot function, COUNT how many times
+it runs and compare that count to C++.** The profile said "KD-tree build is
+7.18% self"; the counter said "you are doing it 91x more often than C++". The
+second framing is the one that leads to a fix. And: when timings explode, check
+`uptime` before blaming the diff.

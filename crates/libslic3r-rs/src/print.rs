@@ -1235,11 +1235,22 @@ impl Print {
         if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
             let total = export_t0.elapsed();
             eprintln!(
-                "--- export_gcode sub-phases (s): generate {:.3}  post-process(cooling/zsmooth) {:.3}  assemble+write {:.3}  total {:.3} ---",
+                "--- export_gcode sub-phases (s): generate {:.3}  post-process(cooling/zsmooth) {:.3}  assemble+write {:.3}  total {:.3} ---{}",
                 export_t_gen.as_secs_f64(),
                 (export_t_post - export_t_gen).as_secs_f64(),
                 (total - export_t_post).as_secs_f64(),
                 total.as_secs_f64(),
+                if std::env::var_os("KDCOUNT").is_some() {
+                    format!(
+                        " [KD points_tree builds={} pts={}]",
+                        crate::gcode::seam_placer::KD_BUILDS
+                            .load(std::sync::atomic::Ordering::Relaxed),
+                        crate::gcode::seam_placer::KD_POINTS
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                    )
+                } else {
+                    String::new()
+                },
             );
         }
 

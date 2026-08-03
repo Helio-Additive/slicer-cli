@@ -304,6 +304,12 @@ pub struct LayerSeams {
     pub perimeters: VecDeque<Perimeter>,
     // SeamPlacer.hpp:117
     pub points: Vec<SeamCandidate>,
+    /// SeamPlacer.hpp:118 — C++ stores the built `points_tree` in the layer
+    /// (`std::unique_ptr<SeamCandidatesTree>`). Our `KDTreeIndirect` borrows its
+    /// coordinate closure from `points`, so the tree itself cannot be a field;
+    /// the built NODE ARRAY (all of the build cost) is cached instead and
+    /// [`LayerSeams::build_points_tree`] reconstructs around it. R523.
+    pub points_tree_nodes: std::sync::OnceLock<Vec<usize>>,
 }
 
 impl LayerSeams {
@@ -311,11 +317,31 @@ impl LayerSeams {
     /// `points_tree = std::make_unique<SeamCandidatesTree>(functor, points.size())`.
     /// SeamPlacer.cpp:944-945
     pub fn build_points_tree(&self) -> KDTreeIndirect<3, f32, impl Fn(usize, usize) -> f32 + '_> {
+        if std::env::var_os("KDCOUNT").is_some() {
+            KD_BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            KD_POINTS.fetch_add(self.points.len(), std::sync::atomic::Ordering::Relaxed);
+        }
         // SeamPlacer.hpp:102-107 — SeamCandidateCoordinateFunctor.
         let functor = move |index: usize, dim: usize| -> f32 { self.points[index].position[dim] };
-        KDTreeIndirect::with_indices(functor, self.points.len())
+        // R523: C++ builds this tree ONCE per layer (SeamPlacer.cpp:944-945) and
+        // stores it in the layer; this port built it on demand at every query,
+        // which measured 59,677 builds over 88.6M points for a 657-layer print
+        // (91x C++'s one-per-layer). The candidate positions are frozen after
+        // gather_seam_candidates, so the node array is cached here on first use
+        // and the tree is reconstructed cheaply around it.
+        let nodes = self.points_tree_nodes.get_or_init(|| {
+            let build_functor =
+                |index: usize, dim: usize| -> f32 { self.points[index].position[dim] };
+            KDTreeIndirect::<3, f32, _>::with_indices(build_functor, self.points.len())
+                .nodes()
+                .to_vec()
+        });
+        KDTreeIndirect::from_nodes(functor, nodes.clone())
     }
 }
+
+pub static KD_BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static KD_POINTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// SeamPlacer.hpp:110-126 — struct PrintObjectSeamData.
 #[derive(Clone, Debug, Default)]
@@ -2353,7 +2379,9 @@ impl SeamPlacer {
                 PerimeterDistancer::new(&centered_lslices(&po.layers()[layer_idx].lslices));
 
             // SeamPlacer.cpp:981 (`int points_size = layers[layer_idx].points.size();`)
-            let LayerSeams { perimeters, points } = layer_seams;
+            let LayerSeams {
+                perimeters, points, ..
+            } = layer_seams;
             let points_size = points.len();
             // SeamPlacer.cpp:982
             for i in 0..points_size {
@@ -3027,7 +3055,9 @@ impl SeamPlacer {
         // `m_seam_position`). Ported serially with identical results.
         let comparator = SeamComparator::new(configured_seam_preference);
         for layer in self.seam_data.layers.iter_mut() {
-            let LayerSeams { perimeters, points } = layer;
+            let LayerSeams {
+                perimeters, points, ..
+            } = layer;
             // The pick functions take `&mut [Perimeter]`; `perimeters` is a
             // `VecDeque`, so expose its contiguous backing slice.
             let perimeters = perimeters.make_contiguous();
