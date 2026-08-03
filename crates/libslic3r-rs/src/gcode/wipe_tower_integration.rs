@@ -41,6 +41,11 @@ pub fn substitute_change_filament(
     // `; WIPE_TOWER_START`). Placing it before the whole block instead attributes
     // the tool change's own retract/ramming to the tower feature.
     feature_marker: Option<&str>,
+    // The evaluated `filament_end_gcode`, emitted BEFORE the change-filament
+    // block — C++ substitutes it into the tower's own `[filament_end_gcode]`
+    // placeholder, which sits one line above `[change_filament_gcode]`
+    // (WipeTower.cpp:2465-2466).
+    filament_end_block: Option<&str>,
 ) -> String {
     let tool_cmd = format!("{}{}", toolchange_prefix, new_tool);
     let replacement = match change_filament_block {
@@ -59,6 +64,10 @@ pub fn substitute_change_filament(
     let replacement = match feature_marker {
         Some(m) => format!("{replacement}\n{m}"),
         None => replacement,
+    };
+    let replacement = match filament_end_block {
+        Some(b) if !b.trim().is_empty() => format!("{}\n{replacement}", b.trim_end()),
+        _ => replacement,
     };
     tower_gcode.replace(CHANGE_FILAMENT_PLACEHOLDER, &replacement)
 }

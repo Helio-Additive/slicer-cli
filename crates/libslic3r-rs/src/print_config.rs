@@ -2220,6 +2220,20 @@ impl PrintConfig {
                 self.change_filament_gcode = value.to_string();
                 true
             }
+            // Per-filament start/end templates. append_tcr (GCode.cpp:1035-1053)
+            // substitutes these into the tower's `[filament_start_gcode]` /
+            // `[filament_end_gcode]` placeholders (WipeTower.cpp:2465/2483)
+            // alongside the change-filament block. Both keys existed only in
+            // `apply_key_value`, never in `set_deserialize`, so the load path
+            // left them empty and Majora was missing 2,723 of each block (R495).
+            "filament_start_gcode" => {
+                self.filament_start_gcode = value.to_string();
+                true
+            }
+            "filament_end_gcode" => {
+                self.filament_end_gcode = value.to_string();
+                true
+            }
 
             // === Retraction ===
             "retraction_length" => {

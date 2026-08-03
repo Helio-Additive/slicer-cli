@@ -238,7 +238,32 @@ possible:
 `SCALING_FACTOR = 0.00001` — 1e5 units/mm, the SAME as the Rust crate (an earlier
 note claiming C++ used 1e6 was wrong); scaled areas convert with `/1e10`.
 
-### The prime tower's Y placement (R494 — measured, mechanism still open)
+### RETRACTED (R495): the prime tower's -2.0 mm "body shift" (R494)
+
+**The section below is wrong and is kept only as a record of the measurement
+trap.** There is no -2.0 mm offset between the two tower bodies. Tagging every
+candidate emitter in the C++ and probing `WipeTowerWriter::rotate`'s OUTPUT
+(`pt.y() + m_y_shift`) shows the writer never emits a local y of -2.000 or
+-1.500 anywhere in the run: the only negative outputs are
+`generate_support_wall_new`'s brim loops, at multiples of the brim spacing
+0.4356. The C++ tower body box is `[0, 39]` in writer coordinates — exactly ours.
+
+The sub-zero values I reconstructed from the gcode belong to the CHANGE-FILAMENT
+sequence, not the tower writer: `G1 X185.729 Y197.797 Z.7` sits inside the
+`; filament start gcode` block, and the strokes after it are tagged
+`; CP_TOOLCHANGE_WIPE`. C++ does not restore the previous `; FEATURE:` tag after
+a tower block, so those lines are attributed to `Prime tower` and sit inside the
+`WIPE_TOWER_START/END` markers — which is why the marker-scoped and
+feature-scoped bounding boxes agreed with each other and I read that agreement as
+confirmation. **Two scopes agreeing does not validate either one when both
+contain the same contamination.** Compare against the generator's own internal
+values instead, which is what finally settled it.
+
+The brim-chamfer observation in the table below (C++ 3.049 -> 2.178 -> 1.307 -> 0
+over the first layers, ours layer 0 only) was measured the same way and has NOT
+been re-verified against the generator; treat it as unconfirmed.
+
+### The prime tower's Y placement (R494 — SUPERSEDED, see above)
 
 Our tower body and C++'s occupy the same-sized rectangle in a different place.
 Working in tower-local coordinates (subtract the emit-time translation, which both
@@ -303,3 +328,38 @@ Two measurement cautions from this round:
   unambiguous `; WIPE_TOWER_START/END` markers and agrees exactly (same bbox, same
   1,171,244 mm), so feature-tag attribution is sound here despite C++ not
   restoring the previous FEATURE tag after a tower block.
+
+
+### Per-toolchange filament start/end gcode (R495)
+
+`append_tcr` (GCode.cpp:1035-1053) substitutes THREE placeholders into the tower
+gcode — `[filament_end_gcode]`, `[change_filament_gcode]`, `[filament_start_gcode]`
+— and the tower writer emits all three (WipeTower.cpp:2465/2466/2483). We emitted
+and substituted only the middle one, so Majora was missing 2,723 `; filament end
+gcode` and 2,723 `; filament start gcode` blocks.
+
+Closing it needed three independent fixes, each of which alone produced nothing:
+
+1. `filament_start_gcode` / `filament_end_gcode` existed in `apply_key_value` but
+   NOT in `set_deserialize`, so the load path left both empty — an instance of the
+   known config-key audit gap. Added the two keys selectively (the blanket
+   fallback remains a measured negative).
+2. The tower writer emitted only `[change_filament_gcode]`, and the export
+   substituted only that one. Both other placeholders are now built and injected,
+   with the filament-start block leading the trailer exactly as C++ orders it
+   (`start_filament_gcode_str + wipe_next_start_point_str + toolchange_unretract_str`).
+3. `gcode_template::process` required a directive to occupy its whole line, but
+   the stock template is `{if  (bed_temperature[current_extruder] >55)}M106 P3 S200`
+   — directive and guarded text on ONE line. Unmatched lines fell through to raw
+   substitution, so the first two fixes emitted literal `{if ...}` text into the
+   gcode. Same-line directives are now supported.
+
+A fourth gap surfaced after that: the condition needs `current_extruder` and the
+`bed_temperature` / `bed_temperature_initial_layer` ARRAYS, none of which the
+change-filament context provided, so every branch evaluated false and the block
+collapsed to its comment. With those added we now select the same branch C++ does.
+
+Result: 2,722 / 2,721 blocks against C++'s 2,724 (the difference is our two fewer
+toolchanges), and `M106 P3 S150` 2,722 vs 2,724. **Material-inert** — these
+templates carry no extrusion for this profile, so every per-feature ratio is
+unchanged and benchy/cube stay byte-identical. It closes a gcode-CONTENT gap.

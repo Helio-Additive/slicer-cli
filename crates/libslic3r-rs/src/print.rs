@@ -2864,6 +2864,43 @@ fn emit_tower_tcr(
     } else {
         None
     };
+    // append_tcr (GCode.cpp:1035-1053) substitutes THREE placeholders into the
+    // tower gcode, not one: `[filament_end_gcode]`, `[change_filament_gcode]`
+    // and `[filament_start_gcode]` (the tower writes all three —
+    // WipeTower.cpp:2465/2466/2483). We emitted only the middle one, so Majora
+    // was missing 2,723 `; filament end gcode` and 2,723 `; filament start
+    // gcode` blocks that C++ writes (R495). Both templates are evaluated with
+    // the same placeholder machinery as the change-filament block; C++ picks
+    // them per filament (`get_at(new_filament_id)` for start, the old filament
+    // for end), while our config carries a single value for each.
+    // These templates are MATERIAL-INERT for this profile — `filament_end_gcode`
+    // is just its comment, `filament_start_gcode` expands to the comment plus
+    // `M106 P3 S150` — so this closes a gcode-CONTENT gap, not a material one.
+    // FILAMENT_START_END_GCODE=0 restores the old two-placeholder behaviour.
+    let fil_gcode_faithful = crate::faithful_gate("FILAMENT_START_END_GCODE");
+    let eval_fil = |tmpl: &str| -> Option<String> {
+        if !fil_gcode_faithful || tmpl.is_empty() || !tcr.is_tool_change {
+            return None;
+        }
+        let ctx = crate::gcode::change_filament::build_context(
+            print_config,
+            tcr.initial_tool.max(0) as usize,
+            tcr.new_tool.max(0) as usize,
+            tcr.print_z as f64,
+            max_layer_z,
+            toolchange_count,
+            tcr.purge_volume as f64,
+            first_layer,
+        );
+        let out = crate::gcode::gcode_template::process(tmpl, &ctx);
+        if out.trim().is_empty() {
+            None
+        } else {
+            Some(out)
+        }
+    };
+    let filament_end_block = eval_fil(&print_config.filament_end_gcode);
+    let filament_start_block = eval_fil(&print_config.filament_start_gcode);
     // Label tower extrusions like C++ does (`; FEATURE: Prime tower`). Without
     // this the tower's E is attributed to whichever feature preceded it, which
     // silently inflates that feature in per-feature parity comparisons.
@@ -2910,6 +2947,17 @@ fn emit_tower_tcr(
     } else {
         String::new()
     };
+    // GCode.cpp:1051 — `start_filament_gcode_str = start_filament_gcode_str +
+    // wipe_next_start_point_str + toolchange_unretract_str`: the filament start
+    // template comes FIRST, then the travel to the tower, then the unretract.
+    let fil_start = match &filament_start_block {
+        Some(b) if had_placeholder => {
+            let mut t = b.trim_end().to_string();
+            t.push('\n');
+            t
+        }
+        _ => String::new(),
+    };
     let trailer = if had_placeholder && print_config.retract_length_toolchange > 0.0 {
         let speed = if print_config.retract_speed > 0.0 {
             print_config.retract_speed * 60.0
@@ -2917,11 +2965,11 @@ fn emit_tower_tcr(
             1800.0
         };
         format!(
-            "{travel_to_start}G1 E{:.4} F{:.0}\n{TOWER_FEATURE}",
+            "{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{TOWER_FEATURE}",
             print_config.retract_length_toolchange, speed
         )
     } else {
-        format!("{travel_to_start}{TOWER_FEATURE}")
+        format!("{fil_start}{travel_to_start}{TOWER_FEATURE}")
     };
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
         &g,
@@ -2929,6 +2977,7 @@ fn emit_tower_tcr(
         tcr.new_tool.max(0) as usize,
         &print_config.toolchange_prefix,
         Some(&trailer),
+        filament_end_block.as_deref().filter(|_| had_placeholder),
     );
     if !had_placeholder {
         // No tool change in this block (e.g. a plain tower layer): nothing

@@ -455,9 +455,19 @@ pub fn process(template: &str, ctx: &Context) -> String {
     let mut stack: Vec<Frame> = Vec::new();
     let currently_active = |stack: &[Frame]| stack.last().map(|f| f.active).unwrap_or(true);
 
+    // Emit the text that trails a directive on the same line, if the branch it
+    // belongs to is active. Trailing text that is empty (the directive occupied
+    // the whole line) emits nothing, preserving the original behaviour.
+    let mut emit = |out: &mut String, rest: &str, active: bool| {
+        if active && !rest.trim().is_empty() {
+            out.push_str(&substitute_line(rest, ctx));
+            out.push('\n');
+        }
+    };
+
     for raw_line in template.split('\n') {
         let trimmed = raw_line.trim();
-        if let Some(cond) = directive(trimmed, "if") {
+        if let Some((cond, rest)) = directive(trimmed, "if") {
             let parent = currently_active(&stack);
             let val = parent && eval_expr(cond, ctx).map(|v| v.as_bool()).unwrap_or(false);
             stack.push(Frame {
@@ -465,27 +475,36 @@ pub fn process(template: &str, ctx: &Context) -> String {
                 matched: val,
                 parent_active: parent,
             });
+            emit(&mut out, rest, val);
             continue;
         }
-        if let Some(cond) = directive(trimmed, "elsif") {
+        if let Some((cond, rest)) = directive(trimmed, "elsif") {
+            let mut take = false;
             if let Some(f) = stack.last_mut() {
-                let take = f.parent_active
+                take = f.parent_active
                     && !f.matched
                     && eval_expr(cond, ctx).map(|v| v.as_bool()).unwrap_or(false);
                 f.active = take;
                 f.matched |= take;
             }
+            emit(&mut out, rest, take);
             continue;
         }
-        if trimmed == "{else}" {
+        if trimmed.starts_with("{else}") {
+            let mut take = false;
             if let Some(f) = stack.last_mut() {
                 f.active = f.parent_active && !f.matched;
                 f.matched = true;
+                take = f.active;
             }
+            emit(&mut out, &trimmed["{else}".len()..], take);
             continue;
         }
-        if trimmed == "{endif}" {
+        if trimmed.starts_with("{endif}") {
             stack.pop();
+            let rest = &trimmed["{endif}".len()..];
+            let active = currently_active(&stack);
+            emit(&mut out, rest, active);
             continue;
         }
         if !currently_active(&stack) {
@@ -497,18 +516,33 @@ pub fn process(template: &str, ctx: &Context) -> String {
     out
 }
 
-/// If `line` is exactly `{kw <cond>}`, return the condition text.
-fn directive<'a>(line: &'a str, kw: &str) -> Option<&'a str> {
+/// If `line` STARTS with `{kw <cond>}`, return the condition text and whatever
+/// follows the closing brace on the same line.
+///
+/// BambuStudio's templates put the guarded text on the directive's own line —
+/// the stock `filament_start_gcode` is
+///
+///     {if  (bed_temperature[current_extruder] >55)}M106 P3 S200
+///     {elsif(bed_temperature[current_extruder] >50)}M106 P3 S150
+///
+/// so requiring the directive to be the WHOLE line (which is what this used to
+/// do) left every such line unmatched, and `process` fell through and copied the
+/// raw `{if ...}` text into the gcode. R495.
+fn directive<'a>(line: &'a str, kw: &str) -> Option<(&'a str, &'a str)> {
     let prefix = format!("{{{}", kw); // "{if" / "{elsif"
-    if line.starts_with(&prefix) && line.ends_with('}') {
-        let inner = &line[1..line.len() - 1]; // strip { }
-        let rest = inner.strip_prefix(kw)?;
-        // require a separator so `{iffy}` doesn't match `{if`
-        if rest.starts_with(char::is_whitespace) {
-            return Some(rest.trim());
-        }
+    if !line.starts_with(&prefix) {
+        return None;
     }
-    None
+    // The condition ends at the first '}' — conditions use ()/[] but never {}.
+    let close = line.find('}')?;
+    let inner = &line[1..close];
+    let rest = inner.strip_prefix(kw)?;
+    // Require a separator so `{iffy}` doesn't match `{if`. `{elsif(a>1)}` has no
+    // whitespace, so a leading '(' counts too.
+    if !(rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('(')) {
+        return None;
+    }
+    Some((rest.trim(), &line[close + 1..]))
 }
 
 /// Replace `{expr}` then top-level `[expr]` in one line.

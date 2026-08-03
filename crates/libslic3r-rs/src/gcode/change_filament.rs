@@ -122,5 +122,23 @@ pub fn build_context(
         c.set_float(k, 0.0);
     }
 
+    // GCode.cpp:1025 — `placeholder_parser().set("current_extruder", new_filament_id)`.
+    // The stock `filament_start_gcode` selects a chamber-fan speed with
+    // `bed_temperature[current_extruder]` / `bed_temperature_initial_layer[...]`,
+    // so both the index and the two arrays must resolve or every branch of the
+    // chain evaluates false and the block collapses to its comment (R495).
+    // Our config carries one bed temperature rather than a per-filament vector,
+    // so broadcast it across enough slots to index any filament.
+    c.set_int("current_extruder", next_tool as i64);
+    let slots = (prev_tool.max(next_tool) + 1).max(16);
+    c.set_array(
+        "bed_temperature",
+        vec![Value::Int(config.bed_temperature as i64); slots],
+    );
+    c.set_array(
+        "bed_temperature_initial_layer",
+        vec![Value::Int(config.first_layer_bed_temperature as i64); slots],
+    );
+
     c
 }
