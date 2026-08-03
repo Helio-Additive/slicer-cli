@@ -226,16 +226,41 @@ def silhouette(wall_grid):
 # SIL_RES (=4mm) must exceed the sparse-infill line spacing to fully bridge it.
 SIL_RES = 0.2
 SIL_CLOSE_K = 20
-def silhouette_iou(R, N, zs, res=SIL_RES, close_k=SIL_CLOSE_K):
+TOWER_FEATS = {'Prime tower'}
+
+def _sil_pass(R, N, zs, feats, label, res, close_k):
     ious=[]
     for z in zs:
         rL=[L for L in R if L['z']==z][0]; nL=[L for L in N if L['z']==z][0]
-        iou,area=coverage_iou(rL,nL,res=res,feats=None,close_k=close_k)
+        iou,area=coverage_iou(rL,nL,res=res,feats=feats,close_k=close_k)
         if iou is not None and area>0: ious.append((z,iou,area))
-    if not ious: return ious
+    if not ious:
+        print(f"  {label:28s}: no data")
+        return ious
     arr=np.array([i for _,i,_ in ious]); wts=np.array([a for _,_,a in ious],dtype=float)
-    print(f"  SILHOUETTE (object outline) : mean {100*arr.mean():5.2f}%  area-wtd {100*(arr*wts).sum()/wts.sum():5.2f}%  "
+    print(f"  {label:28s}: mean {100*arr.mean():5.2f}%  area-wtd {100*(arr*wts).sum()/wts.sum():5.2f}%  "
           f"min {100*arr.min():5.1f}% (z{ious[int(arr.argmin())][0]})  layers<98%={int((arr<0.98).sum())}/{len(ious)}")
+    return ious
+
+def silhouette_iou(R, N, zs, res=SIL_RES, close_k=SIL_CLOSE_K):
+    """Object silhouette, with the prime tower measured SEPARATELY.
+
+    R507: this used `feats=None` — every feature, prime tower included — while
+    labelling itself "object outline". On a multi-material print the tower
+    dominates it: measured on Majora, all-features gave 94.08% area-wtd where the
+    object alone is 96.67% and the tower alone 96.24%, and the tower dragged the
+    unweighted mean from 97.08% to 87.49%. The tower already has its own material
+    ratio in the verdict, so the silhouette check now scores the OBJECT, and the
+    tower's outline is reported alongside for information.
+    """
+    feats = set()
+    for L in R + N:
+        for seg in L['segs']:
+            feats.add(seg[5])
+    obj = feats - TOWER_FEATS
+    ious = _sil_pass(R, N, zs, obj, "SILHOUETTE (object)", res, close_k)
+    if feats & TOWER_FEATS:
+        _sil_pass(R, N, zs, feats & TOWER_FEATS, "SILHOUETTE (prime tower)", res, close_k)
     return ious
 
 WALLS = {'Outer wall','Inner wall','Overhang wall'}

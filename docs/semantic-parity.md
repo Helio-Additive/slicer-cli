@@ -835,3 +835,32 @@ Effect on the verdict, which moves from two passing checks to four:
 Silhouette slips 0.23 pp — the tower's footprint changed slightly — and is now the
 only failing check. Every object feature is untouched (object-only 0.9969), benchy
 and the painted cube stay byte-identical, and the eight guard tests pass.
+
+
+### The silhouette check was scoring the tower too (R507)
+
+`silhouette_iou` called `coverage_iou(..., feats=None)` — every feature, prime
+tower included — while labelling itself "object outline". On a multi-material print
+the tower dominates it. Measured on Majora:
+
+| scope                | mean   | area-wtd | min           | layers <98% |
+|----------------------|--------|----------|---------------|-------------|
+| all features (old)   | 87.49% | 94.08%   | 12.8% (z178.2)| 656/656     |
+| **object only**      | 97.08% | **96.67%** | 93.9% (z26.7) | 519/634   |
+| prime tower only     | 85.78% | 96.24%   | **0.2% (z177.6)** | 294/656 |
+
+The tower dragged the unweighted mean from 97.08% to 87.49% and made every single
+layer score below 98%. The tower already has its own material ratio in the verdict,
+so the silhouette check now scores the OBJECT and the tower's outline is reported
+alongside for information. The verdict figure moves 94.08% -> 96.67% — a
+measurement correction, not an engine change; the gcode is untouched.
+
+Benchy (single-material, no tower) is unaffected and remains **SEMANTICALLY
+EQUIVALENT** on all five checks with a 99.99% silhouette, which is the control
+that the rescoping is sound.
+
+The tower's own outline is the striking number: 96.24% area-weighted but a mean of
+85.78% and a **minimum of 0.2%** at z177.6 — near-total disagreement on some
+layers, even though the tower's total material is now 0.9947. That means the tower
+is being placed or shaped very differently on a subset of layers while the totals
+agree, and it is the next thing to look at.
