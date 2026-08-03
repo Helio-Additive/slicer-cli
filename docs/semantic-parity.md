@@ -1650,3 +1650,54 @@ it runs and compare that count to C++.** The profile said "KD-tree build is
 7.18% self"; the counter said "you are doing it 91x more often than C++". The
 second framing is the one that leads to a fix. And: when timings explode, check
 `uptime` before blaming the diff.
+
+## R524 — SeamPlacer is exhausted; two targets sized and DROPPED
+
+Measurement round, no code change. Two of the three remaining SeamPlacer
+targets were killed by sizing them before writing code (R519), and the
+post-R523 profile confirms the subsystem is done.
+
+**(1) `build_mesh_samples_tree` — NOT a repeat of the R523 bug.** It has exactly
+ONE call site (`calculate_candidates_visibility`), so it is built once, matching
+C++'s persistent `mesh_samples_tree` in `GlobalModelInfo`. No action.
+
+**(2) SeamPlacer.cpp:1430 (`pick_seam_point` over layers) — DROPPED, too
+small.** It is a clean per-layer-independent loop and would parallelise easily,
+but it does not appear in the profile at all: the largest related symbol is
+`SeamComparator::is_first_better` at **0.043% of total samples** (~0.6% of main
+thread, order 0.05 s). Porting it would be faithful-to-C++ but perf-inert.
+**All six C++ `parallel_for` sites are now accounted for**: :157 already ported,
+:933 measured inert (R521), :955 done (R521), :966 done (R522), :1430 dropped
+here as negligible.
+
+**(3) Re-profile confirms R523 worked.** `KDTreeIndirect::build_recursive` has
+**vanished from the main-thread top-SELF list** (was 7.18%). What remains of
+`SeamPlacer::init` (13.70%) is almost entirely `compute_global_occlusion`
+(13.06%) → `raycast_visibility` (11.49%) → AABB-tree ray hits (**10.04% self**,
+the new top cost) — and `raycast_visibility` is ALREADY parallel (the
+pre-existing rayon site). That cost is inherent and C++ pays it too.
+
+New main-thread SELF leaders: AABB ray-hit 10.04%, `_xzm_free` 4.39%,
+`_platform_memmove` 3.72%, Clipper internals ~13% combined, `__findenv_locked`
+(getenv via `faithful_gate`) 2.15%, `StrSearcher::new` 1.69%. Allocator +
+memmove/memset together are ~11.5%.
+
+**The remaining export lever is the stage-overlap pipeline, and its arithmetic
+has IMPROVED.** R520 bounded it at ~1.4 s when generate was 5.02 s. Now:
+`max(generate 3.02, post 0.78, write 0.59) = 3.02` against an export total of
+4.53 — so perfect overlap would save **~1.5 s**, taking Majora to roughly
+**16 s vs C++'s 15.9 s**. That is the finish line for ask #3. The obstacle is
+real: our export post-processing is stateful across layers
+(`GCodeEditorState`, `SmoothCalculator`), so this is a genuine restructuring,
+not a wrapper.
+
+**WALL CLOCK STILL NOT TRUSTWORTHY.** Load fluctuated 6.7 -> 27.6 during the
+round; a C++ control run measured 22.76-25.40 s against its usual 15.9 s, i.e.
+the reference itself was inflated ~50%. Rust min was 17.79 s (consistent with
+R522's 17.47 s). **When the machine is loaded, interleave A/B runs rather than
+running all of one engine then all of the other** — the block-sequential
+measurement taken here is worthless for a cross-engine ratio.
+
+**New discipline (R524): size a faithful-port target in the profile BEFORE
+porting it — "C++ parallelises it" is a reason to look, not a reason to do it.**
+:1430 is a legitimate parity gap that is worth exactly nothing in time.
