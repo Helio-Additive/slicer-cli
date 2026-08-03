@@ -135,6 +135,38 @@ Cumulative: Majora **46.4s → 21.6s** (~1.39x C++), Benchy **~2.67s → ~2.26s*
 (~1.27x). `bridge_over_infill` alone went 12.7s → 2.2s. Remaining big lever is
 `export_gcode` (7.4s), which is a sequential gcode writer — unsafe to parallelize
 for byte-parity (state carries across layers), so left as-is.
+
+### Re-measured R484 (arm64, release, warm cache, both engines standalone)
+
+The numbers above are superseded. Nothing was optimised between R398 and R484 —
+the parity work since simply did not cost time, and several rounds removed work
+(e.g. R476/R477 stopped emitting cross-plate tower strokes).
+
+| model | Rust (`--engine rust`) | C++ (`--engine bambu`) | ratio |
+|-------|------------------------|------------------------|-------|
+| Benchy (`benchy-016.jsonnet`) | 2.38s | 1.96s | **1.21x** |
+| Majora (`nu3mf.jsonnet`) | 19.14s | 15.73s | **1.22x** |
+
+So the "gap grows with model size" conclusion no longer holds: both fixtures now
+sit at ~1.2x, and Majora is 46.4s → 19.1s since R390. Current Majora breakdown:
+
+| phase | time | share |
+|-------|------|-------|
+| perimeters(+slice) | 5.90s | 31% — of which slice() 3.73s, perimeter_gen 2.17s |
+| infill | 6.72s | 35% — prepare_infill 4.88s, fill_loop 1.84s |
+| simplify | 0.30s | 2% |
+| **export_gcode** | **6.21s** | **32%** — generate 4.91, post-process 0.73, write 0.57 |
+
+`prepare_infill` is now dominated by `discover_vertical_shells` 1.85s (41.7%) and
+`bridge_over_infill` 1.80s (40.6%), both already parallel — i.e. the easy
+parallelism wins are spent. The remaining 3.4s gap has no single owner; further
+progress needs a profiler (flamegraph/Instruments) rather than inspection.
+
+**NEGATIVE (R484), do not retry:** caching `faithful_gate` (187 call sites, 39 in
+the gcode exporter) behind a `OnceLock<RwLock<HashMap>>` to avoid `std::env::var`'s
+process-wide lock + String allocation on every call measured **no change** —
+Majora 19.62-20.31s, Benchy 2.35-2.37s, both within run-to-run noise. Reverted
+rather than keep inert complexity that would also make a mid-run `set_var` stale.
 Usage: `SLICE_PHASE_TIMING=1 slicer-cli slice --engine rust --config <cfg>`.
 (Rust user/CPU time on Majora ~116s vs C++ ~128s, i.e. Rust does *less* total CPU
 but takes 3x the wall time — a parallelism/scheduling problem, not raw throughput:
