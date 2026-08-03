@@ -4283,6 +4283,10 @@ impl PrintObject {
             None
         };
 
+        if std::env::var_os("VSHELL_DEBUG").is_some() {
+            eprintln!("VSHELL_REGIONS: num_printing_regions={} layers={}",
+                      self.num_printing_regions(), self.layers.len());
+        }
         // PrintObject.cpp:1827 — per region.
         for region_id in 0..self.num_printing_regions() {
             // PrintObject.cpp:1830

@@ -296,6 +296,41 @@ impl Print {
             cfg.wall_filament = extruder_id as usize;
             cfg.solid_infill_filament = extruder_id as usize;
             cfg.sparse_infill_filament = extruder_id as usize;
+            // PrintApply.cpp:1071 registers the region through `get_create_region`
+            // (:1004-1016), which DEDUPLICATES: it looks the config up by hash and
+            // equality in `region_set` and returns the existing PrintRegion instead
+            // of appending a new one. We appended unconditionally, so when the
+            // parent region already prints with this filament (the common case for
+            // extruder 1) we created a duplicate — 9 printing regions on Majora
+            // where C++ has 8 (R488, both counts measured directly).
+            //
+            // Every cfg here is `parent_config` with exactly the three filament
+            // fields overwritten, so config equality reduces to comparing that
+            // triple.
+            //
+            // DEFAULT OFF pending a follow-up. Enabling it makes the region COUNT
+            // correct (8 = C++, verified) and moves two features a long way toward
+            // parity — FVS 0.856 -> 1.024, Bridge 1.140 -> 0.984 — but it regresses
+            // the rest, because region indices shift and something then
+            // double-counts: Outer wall 0.988 -> 1.102, Inner wall 0.997 -> 1.104,
+            // Internal solid 0.922 -> 1.222, tower 1.045 -> 1.107, object-only
+            // 0.9798 -> 1.0825. So the dedup is correct but exposes a second bug in
+            // the region<->filament mapping (MMU segmentation assigns painted area
+            // by region index; with the parent now serving filament 1 the indices no
+            // longer line up). Fix that, then flip this to faithful_gate.
+            // Set PAINTED_REGION_DEDUP=1 to opt in and reproduce the numbers above.
+            if std::env::var_os("PAINTED_REGION_DEDUP").is_some() {
+                let e = extruder_id as usize;
+                let dup = self.print_regions.iter().any(|r| {
+                    let c = r.config();
+                    c.wall_filament == e
+                        && c.solid_infill_filament == e
+                        && c.sparse_infill_filament == e
+                });
+                if dup {
+                    continue;
+                }
+            }
             self.print_regions.push(Arc::new(PrintRegion::new(cfg)));
         }
     }
