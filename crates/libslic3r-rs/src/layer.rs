@@ -2610,7 +2610,8 @@ impl Layer {
                                 crate::fill::GEP_PTS_HIST[b]
                                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                                 for p in [pl.points[0], *pl.points.last().unwrap()] {
-                                    if raw_pts.contains(&(p.x, p.y)) {
+                                    let is_raw = raw_pts.contains(&(p.x, p.y));
+                                    if is_raw {
                                         crate::fill::GEP_RAWVERT.fetch_add(
                                             1,
                                             std::sync::atomic::Ordering::Relaxed,
@@ -2619,6 +2620,21 @@ impl Layer {
                                     let d_um = dist_to_edges(&p) / crate::SCALING_FACTOR * 1000.0;
                                     crate::fill::GEP_N.fetch_add(1, Relaxed);
                                     crate::fill::GEP_SUM_UM.fetch_add(d_um as usize, Relaxed);
+                                    // R470: split the distance by CLASS. A clip CROSSING
+                                    // must lie on the boundary; an original raw-wave vertex
+                                    // legitimately need not. If crossings measure ~0 the clip
+                                    // is exact and only the raw-vertex endpoints are far.
+                                    if is_raw {
+                                        crate::fill::GEP_RAW_SUM_UM
+                                            .fetch_add(d_um as usize, Relaxed);
+                                    } else {
+                                        crate::fill::GEP_CROSS_N.fetch_add(1, Relaxed);
+                                        crate::fill::GEP_CROSS_SUM_UM
+                                            .fetch_add(d_um as usize, Relaxed);
+                                        let cb = if d_um < 1.0 { 0 } else if d_um < 10.0 { 1 }
+                                            else if d_um < 100.0 { 2 } else { 3 };
+                                        crate::fill::GEP_CROSS_HIST[cb].fetch_add(1, Relaxed);
+                                    }
                                     let b = if d_um < 1.0 {
                                         0
                                     } else if d_um < 10.0 {

@@ -3334,7 +3334,10 @@ impl PrintObject {
                 })?;
 
             if std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some() {
-                use crate::fill::{GEP_HIST, GEP_N, GEP_PTS_HIST, GEP_RAWVERT, GEP_SUM_UM};
+                use crate::fill::{
+                    GEP_CROSS_HIST, GEP_CROSS_N, GEP_CROSS_SUM_UM, GEP_HIST, GEP_N, GEP_PTS_HIST,
+                    GEP_RAWVERT, GEP_RAW_SUM_UM, GEP_SUM_UM,
+                };
                 use std::sync::atomic::Ordering::Relaxed as R3;
                 let n = GEP_N.load(R3).max(1);
                 eprintln!(
@@ -3353,6 +3356,15 @@ impl PrintObject {
                     "GYROID_ENDPOINTS: points-per-output-polyline  2pt={}  3-4={}  5-8={}  9-16={}  17+={}",
                     GEP_PTS_HIST[0].load(R3), GEP_PTS_HIST[1].load(R3), GEP_PTS_HIST[2].load(R3),
                     GEP_PTS_HIST[3].load(R3), GEP_PTS_HIST[4].load(R3),
+                );
+                let cn = GEP_CROSS_N.load(R3).max(1);
+                let rn = GEP_RAWVERT.load(R3).max(1);
+                eprintln!(
+                    "GYROID_ENDPOINTS: BY CLASS — crossings n={} mean {:.1} um (<1um {} <10um {} <100um {} >=100um {}) | raw-wave vertices n={} mean {:.1} um",
+                    GEP_CROSS_N.load(R3), GEP_CROSS_SUM_UM.load(R3) as f64 / cn as f64,
+                    GEP_CROSS_HIST[0].load(R3), GEP_CROSS_HIST[1].load(R3),
+                    GEP_CROSS_HIST[2].load(R3), GEP_CROSS_HIST[3].load(R3),
+                    GEP_RAWVERT.load(R3), GEP_RAW_SUM_UM.load(R3) as f64 / rn as f64,
                 );
             }
             if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
