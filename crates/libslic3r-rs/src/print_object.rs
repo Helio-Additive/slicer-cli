@@ -3415,6 +3415,11 @@ impl PrintObject {
                         / crate::layer::FVS_EXPOLYS.load(R4).max(1) as f64,
                 );
                 eprintln!(
+                    "FVS_SPLIT: beads={} flag_off={} self_intersect={} no_floating_areas={}",
+                    crate::layer::FVS_LINES.load(R4), crate::layer::FVS_FLAG_OFF.load(R4),
+                    crate::layer::FVS_SELF_INT.load(R4), crate::layer::FVS_NO_AREAS.load(R4),
+                );
+                eprintln!(
                     "FVS_NO_OVERLAP: group_fills saw {} first-surface regions, {} with an EMPTY LayerRegion::fill_no_overlap_expolygons",
                     crate::layer::FVS_REGION_SEEN.load(R4),
                     crate::layer::FVS_REGION_EMPTY.load(R4),

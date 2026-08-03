@@ -2727,6 +2727,20 @@ impl PrintObjectConfig {
                 }
                 true
             }
+            // R480: this key was handled only by `apply_key_value`, never by
+            // `set_deserialize`, which is the entry point the settings/3MF loader
+            // uses -- so it stayed at its `false` default no matter what the profile
+            // said. `FillFloatingConcentric::resplit_order_loops`
+            // (FillFloatingConcentric.cpp:691-702) reads it as
+            // `force_no_detect = !detect_floating_vertical_shell || is_self_intersect`,
+            // so detect_floating_line was forced OFF for all 8,626 of Majora's beads
+            // and no bead was ever split into floating / supported spans.
+            "detect_floating_vertical_shell" => {
+                if let Some(v) = parse_bool(value) {
+                    self.detect_floating_vertical_shell = v;
+                }
+                true
+            }
 
             // === Line Widths ===
             "line_width" => {

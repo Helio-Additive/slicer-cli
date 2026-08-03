@@ -25,6 +25,11 @@ pub static FVS_EMPTY_NOOVERLAP: std::sync::atomic::AtomicUsize =
 pub static FVS_REGION_SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FVS_REGION_EMPTY: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+/// R480: why `detect_floating_line` is forced off for a bead.
+pub static FVS_LINES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_FLAG_OFF: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_SELF_INT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_NO_AREAS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 use crate::extrusion_entity::{
     extrusion_entities_append_paths, ExtrusionEntityCollection, ExtrusionLoop, ExtrusionPath,
