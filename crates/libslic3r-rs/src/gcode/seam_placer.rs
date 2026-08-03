@@ -2313,11 +2313,32 @@ impl SeamPlacer {
         };
         // SeamPlacer.cpp:965
         let layers = &mut self.seam_data.layers;
+        // SeamPlacer.cpp:966 — C++ runs this under `tbb::parallel_for` over layer
+        // RANGES, and each range seeds its own `prev_layer_distancer` from
+        // `r.begin() - 1` (SeamPlacer.cpp:967-970). R522 mirrors that with
+        // `par_chunks_mut`: chunk `c` covering `[base, base+len)` rebuilds the
+        // distancer for layer `base - 1` before iterating, so every layer sees
+        // exactly the same `prev_layer_distancer` it saw serially. The only cost
+        // is one extra distancer per chunk, which is what C++ pays too.
+        const SEAM_OVERHANG_CHUNK: usize = 8;
+        use rayon::prelude::*;
+        layers
+            .par_chunks_mut(SEAM_OVERHANG_CHUNK)
+            .enumerate()
+            .for_each(|(chunk_idx, chunk)| {
+        let base = chunk_idx * SEAM_OVERHANG_CHUNK;
         // SeamPlacer.cpp:967-970 — at r.begin() == 0 there is no previous layer.
-        let mut prev_layer_distancer: Option<PerimeterDistancer> = None;
+        let mut prev_layer_distancer: Option<PerimeterDistancer> = if base == 0 {
+            None
+        } else {
+            Some(PerimeterDistancer::new(&centered_lslices(
+                &po.layers()[base - 1].lslices,
+            )))
+        };
 
         // SeamPlacer.cpp:972
-        for layer_idx in 0..layers.len() {
+        for (chunk_k, layer_seams) in chunk.iter_mut().enumerate() {
+            let layer_idx = base + chunk_k;
             // SeamPlacer.cpp:973-977
             let mut regions_with_perimeter = 0usize;
             for region in po.layers()[layer_idx].regions() {
@@ -2332,7 +2353,7 @@ impl SeamPlacer {
                 PerimeterDistancer::new(&centered_lslices(&po.layers()[layer_idx].lslices));
 
             // SeamPlacer.cpp:981 (`int points_size = layers[layer_idx].points.size();`)
-            let LayerSeams { perimeters, points } = &mut layers[layer_idx];
+            let LayerSeams { perimeters, points } = layer_seams;
             let points_size = points.len();
             // SeamPlacer.cpp:982
             for i in 0..points_size {
@@ -2450,6 +2471,7 @@ impl SeamPlacer {
             // SeamPlacer.cpp:1042 — prev_layer_distancer.swap(current_layer_distancer);
             prev_layer_distancer = Some(current_layer_distancer);
         }
+            });
     }
 
     /// Estimates, if there is good seam point in the layer_idx which is close to

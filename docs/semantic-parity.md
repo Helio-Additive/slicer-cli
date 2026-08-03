@@ -1562,3 +1562,38 @@ inert here), and the stage-overlap pipeline (bounded at ~1.4 s, R520).
 **New discipline (R521): to profile a SERIAL phase, slice the profile by
 thread.** Whole-process CPU percentages hid a 22%-of-main-thread hotspot at
 0.3% of total samples.
+
+## R522 — seam-placer overhangs parallelised: export generate 4.13 -> 3.73 s
+
+Second SeamPlacer `tbb::parallel_for` site ported (SeamPlacer.cpp:966,
+`calculate_overhangs_and_layer_embedding`).
+
+**The subtlety.** This loop is NOT embarrassingly parallel: each layer needs
+`prev_layer_distancer`, the `PerimeterDistancer` of the layer below. C++ handles
+it by parallelising over layer RANGES and seeding each range from
+`r.begin() - 1` (SeamPlacer.cpp:967-970). Ported with `par_chunks_mut`: chunk
+covering `[base, base+len)` rebuilds the distancer for layer `base - 1` before
+iterating, so every layer observes exactly the `prev_layer_distancer` it saw
+serially. The only extra cost is one distancer per chunk — which is what C++
+pays too.
+
+| | R520 | R521 | **R522** |
+|---|---|---|---|
+| export generate | 5.02 s | 4.13 s | **3.73 s** |
+| export total | 6.39 s | 5.50 s | **5.11 s** |
+| Majora wall (median of 3) | ~18.3 s | ~18.1 s | **17.47 s** |
+| vs C++ 15.9 s | 1.15x | — | **1.10x** |
+
+Cumulative over R521+R522: **export generate -26%**, and the gain is now
+visible end-to-end in wall clock, not only in the instrumented sub-phase.
+
+**Verified:** majora 065302cb, benchy 5a34af50, cube ab415621 all
+byte-identical; eight guard tests green. Byte-identity is the correctness
+argument here — chunk-boundary seeding either reproduces the serial
+`prev_layer_distancer` exactly or the gcode changes, and it does not.
+
+**Remaining in export:** SeamPlacer.cpp:157 and :1430 (the two untried
+`parallel_for` sites), the KD-tree builds (`build_points_tree`,
+`build_mesh_samples_tree` — 6.58% self on the main thread), and the
+stage-overlap pipeline (bounded ~1.4 s, R520). Still measured INERT and not to
+be retried: `gather_seam_candidates` (:933).
