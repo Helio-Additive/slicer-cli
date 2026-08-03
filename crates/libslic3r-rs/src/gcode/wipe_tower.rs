@@ -2291,15 +2291,102 @@ impl WipeTower {
             layer_depth - fill_box_y,
         );
 
-        // Sparse infill if there's remaining space
-        if fill_box.height() > self.perimeter_width {
-            let sparse_factor = if is_first_layer {
-                1.0
+        // WipeTower.cpp:3585-3644 (finish_layer_new). The fill inside the tower
+        // box is SOLID only when the NEXT layer contains a toolchange involving
+        // a soluble filament, or on the first layer with adhesion:
+        //   solid_infill = any_of((m_layer_info+1)->tool_changes, [](tch){
+        //       return m_filpar[tch.new_tool].is_soluble || m_filpar[tch.old_tool].is_soluble; });
+        //   solid_infill |= first_layer && m_adhesion;
+        // Otherwise C++ writes the sparse "CP EMPTY GRID": an inverse-U up the
+        // left edge plus vertical strokes spaced `m_bridging` (10 mm) apart —
+        // a small fraction of a solid fill's material.
+        //
+        // We had no sparse branch at all, so every layer without a toolchange
+        // got a full solid fill. Measured on Majora: +121,162 mm of excess
+        // tower path across the 209 layers where C++ emits an empty grid, e.g.
+        // at z23.10 we laid 76 full-width strokes at 0.5 pitch (3,004 mm) where
+        // C++ laid 1,158 mm total (R493).
+        //
+        // FIDELITY-NOTE (R493): this branch alone is NOT sufficient and is
+        // therefore OPT-IN (`TOWER_SPARSE_GRID=1`). The tower's per-layer path
+        // length carries two opposed errors that partly cancel: +121,162 mm on
+        // C++'s empty-grid layers and -68,580 mm on all the others (net +52,582,
+        // the tower's 1.045). Enabling only the sparse branch takes the tower
+        // from 1.045 to 0.887, because C++ in multi-block mode emits ONE grid
+        // PER BLOCK (`fill_boxes` built from `block.layer_depths[m_cur_layer_id]`,
+        // WipeTower.cpp:3562-3577) plus a `rectangle_fill_box` wall per box,
+        // while we emit a single grid over the whole layer box: measured -63,147
+        // mm on those same layers. Landing this needs the block structure
+        // (generate_wipe_tower_blocks:4268, plan_tower_new:4477,
+        // update_all_layer_depth:4237, finish_block:3733, finish_block_solid:3842),
+        // which is also the source of the -68,580 mm shortfall elsewhere.
+        let sparse_grid = std::env::var_os("TOWER_SPARSE_GRID").is_some();
+        let solid_infill = {
+            let soluble_next = self
+                .plan
+                .get(self.layer_idx + 1)
+                .map_or(false, |l| {
+                    l.tool_changes.iter().any(|tch| {
+                        let sol = |t: usize| {
+                            self.filament_params.get(t).map_or(false, |p| p.is_soluble)
+                        };
+                        sol(tch.new_tool) || sol(tch.old_tool)
+                    })
+                });
+            soluble_next || (is_first_layer && self.adhesion)
+        };
+
+        // C++: dy = fill_box.lu.y() - fill_box.ld.y() - m_perimeter_width
+        let dy = fill_box.height() - self.perimeter_width;
+        let mut left = fill_box.lu.x + 2.0 * self.perimeter_width;
+        let mut right = fill_box.ru.x - 2.0 * self.perimeter_width;
+
+        if !sparse_grid {
+            // Pre-R493 behaviour: always a solid zig-zag over the whole
+            // remaining layer box. Kept as the default while the block port is
+            // incomplete — see the FIDELITY-NOTE above.
+            if fill_box.height() > self.perimeter_width {
+                let sparse_factor = if is_first_layer { 1.0 } else { self.extra_spacing };
+                let spacing = self.perimeter_width * sparse_factor;
+                writer.rectangle_fill_box(&fill_box, spacing);
+            }
+        } else if dy > self.perimeter_width {
+            if solid_infill {
+                let mut sparse_factor = 1.5_f32;
+                if is_first_layer {
+                    // the infill should touch perimeters
+                    left -= self.perimeter_width;
+                    right += self.perimeter_width;
+                    sparse_factor = 1.0;
+                }
+                let mut y = fill_box.ld.y + self.perimeter_width;
+                let n = (dy / (self.perimeter_width * sparse_factor)) as i32;
+                if n > 1 {
+                    let spacing = (dy - self.perimeter_width) / (n - 1) as f32;
+                    for i in 0..n {
+                        let x = writer.x();
+                        writer.extrude(x, y);
+                        writer.extrude(if i % 2 != 0 { left } else { right }, y);
+                        y += spacing;
+                    }
+                    let x = writer.x();
+                    writer.extrude(x, fill_box.lu.y);
+                }
             } else {
-                self.extra_spacing
-            };
-            let spacing = self.perimeter_width * sparse_factor;
-            writer.rectangle_fill_box(&fill_box, spacing);
+                // Extrude an inverse U at the left of the region and the sparse infill.
+                writer.extrude(
+                    fill_box.lu.x + self.perimeter_width * 2.0,
+                    fill_box.lu.y,
+                );
+                let n = 1 + ((right - left) / self.config.bridging) as i32;
+                let dx = (right - left) / n as f32;
+                for i in 1..=n {
+                    let x = left + dx * i as f32;
+                    let cy = writer.y();
+                    writer.travel(x, cy);
+                    writer.extrude(x, if i % 2 != 0 { fill_box.rd.y } else { fill_box.ru.y });
+                }
+            }
         }
 
         // Draw outer perimeter
