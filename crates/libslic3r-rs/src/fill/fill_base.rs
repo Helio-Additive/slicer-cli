@@ -1499,6 +1499,19 @@ pub static FB_ENDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUs
 pub static FB_ENDS_UNCONNECTED: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 pub static FB_ARCHES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// R473: where the boundary-following length actually comes from. The arch loop
+/// (FillBase.cpp:1625-1661) either takes a whole arc (a real join) or, when the arc
+/// exceeds anchor_length_max, leaves two anchor stubs; the tail loop
+/// (FillBase.cpp:1664-1727) does the same for every end point still unconsumed.
+/// Lengths are accumulated in um.
+pub static FB_ARC_JOIN_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_ARC_JOIN_LEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_ARC_STUB_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_ARC_STUB_LEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_TAIL_JOIN_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_TAIL_JOIN_LEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_TAIL_STUB_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FB_TAIL_STUB_LEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub fn connect_infill(
     mut infill_ordered: Vec<Polyline>,
@@ -1604,6 +1617,8 @@ pub fn connect_infill(
                     {
                         let polyline2_clone = infill_ordered[polyline_idx2].clone();
                         let contour = graph.boundary[contour_idx].clone();
+                        let l_before = infill_ordered[polyline_idx1].length()
+                            + polyline2_clone.length();
                         take_cp(
                             &mut graph.map_infill_end_point_to_boundary,
                             &mut infill_ordered[polyline_idx1],
@@ -1613,6 +1628,13 @@ pub fn connect_infill(
                             cp2,
                             false,
                         );
+                        if fb_dbg {
+                            use std::sync::atomic::Ordering::Relaxed;
+                            let d = infill_ordered[polyline_idx1].length() - l_before;
+                            FB_ARC_JOIN_N.fetch_add(1, Relaxed);
+                            FB_ARC_JOIN_LEN
+                                .fetch_add((d / crate::SCALING_FACTOR * 1000.0).max(0.0) as usize, Relaxed);
+                        }
                     }
                     // Mark the second polygon as merged with the first one.
                     if polyline_idx2 < polyline_idx1 {
@@ -1628,6 +1650,8 @@ pub fn connect_infill(
                     // Move along the perimeter, but don't take the whole arc.
                     let contour = graph.boundary[contour_idx].clone();
                     let contour_params = graph.boundary_params[contour_idx].clone();
+                    let l_before = infill_ordered[polyline_idx1].length()
+                        + infill_ordered[polyline_idx2].length();
                     take_limited(
                         &mut graph.map_infill_end_point_to_boundary,
                         &mut infill_ordered[polyline_idx1],
@@ -1650,6 +1674,15 @@ pub fn connect_infill(
                         anchor_length,
                         line_half_width,
                     );
+                    if fb_dbg {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        let d = infill_ordered[polyline_idx1].length()
+                            + infill_ordered[polyline_idx2].length()
+                            - l_before;
+                        FB_ARC_STUB_N.fetch_add(1, Relaxed);
+                        FB_ARC_STUB_LEN
+                            .fetch_add((d / crate::SCALING_FACTOR * 1000.0).max(0.0) as usize, Relaxed);
+                    }
                 }
             }
         }
@@ -1723,6 +1756,8 @@ pub fn connect_infill(
                 {
                     let polyline2_clone = infill_ordered[polyline_idx2].clone();
                     let contour = graph.boundary[contour_idx].clone();
+                    let l_before =
+                        infill_ordered[polyline_idx].length() + polyline2_clone.length();
                     take_cp(
                         &mut graph.map_infill_end_point_to_boundary,
                         &mut infill_ordered[polyline_idx],
@@ -1732,6 +1767,13 @@ pub fn connect_infill(
                         cp2,
                         reversed,
                     );
+                    if fb_dbg {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        let d = infill_ordered[polyline_idx].length() - l_before;
+                        FB_TAIL_JOIN_N.fetch_add(1, Relaxed);
+                        FB_TAIL_JOIN_LEN
+                            .fetch_add((d / crate::SCALING_FACTOR * 1000.0).max(0.0) as usize, Relaxed);
+                    }
                 }
                 if polyline_idx < polyline_idx2 {
                     // Mark the second polyline as merged with the first one.
@@ -1760,6 +1802,7 @@ pub fn connect_infill(
                     };
                     let contour = graph.boundary[contour_idx].clone();
                     let contour_params = graph.boundary_params[contour_idx].clone();
+                    let l_before = infill_ordered[polyline_idx].length();
                     take_limited(
                         &mut graph.map_infill_end_point_to_boundary,
                         &mut infill_ordered[polyline_idx],
@@ -1771,6 +1814,13 @@ pub fn connect_infill(
                         anchor_length,
                         line_half_width,
                     );
+                    if fb_dbg {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        let d = infill_ordered[polyline_idx].length() - l_before;
+                        FB_TAIL_STUB_N.fetch_add(1, Relaxed);
+                        FB_TAIL_STUB_LEN
+                            .fetch_add((d / crate::SCALING_FACTOR * 1000.0).max(0.0) as usize, Relaxed);
+                    }
                 }
             }
         }

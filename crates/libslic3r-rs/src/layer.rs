@@ -2424,7 +2424,29 @@ impl Layer {
             let fsdbg = std::env::var_os("FILL_SURFACE_DEBUG").is_some()
                 && surface_fill.params.extrusion_role
                     == crate::extrusion_entity::ExtrusionRole::InternalInfill;
-            for expoly in surface_fill.expolygons {
+            // FillBase.cpp:97 — Fill::fill_surface() shrinks the surface before handing
+            // it to _fill_surface_single:
+            //     expp = offset_ex(surface->expolygon, scale_(this->overlap - 0.5 * this->spacing))
+            // and then fills EACH resulting island separately. FillRectilinear bypasses
+            // this (it re-offsets `surface->expolygon` itself in
+            // ExPolygonWithOffset, FillRectilinear.cpp:2847), which is why our
+            // rectilinear path already matches without it -- but FillGyroid does NOT,
+            // so its fill region was a full half-spacing too wide and every boundary
+            // arc Fill::connect_infill walks was correspondingly too long.
+            // R473. Set GYROID_FILL_SHRINK=0 to restore the unshrunk region.
+            let surface_expolygons = if fill_pattern == InfillPattern::Gyroid
+                && crate::faithful_gate("GYROID_FILL_SHRINK")
+            {
+                let delta = -0.5 * surface_fill.params.flow.spacing() * crate::SCALING_FACTOR;
+                crate::clipper_utils::offset_expolygons_clib_scaled(
+                    &surface_fill.expolygons,
+                    delta,
+                    crate::clipper_utils::OffsetJoinType::Miter,
+                )
+            } else {
+                surface_fill.expolygons
+            };
+            for expoly in surface_expolygons {
                 let dbg_area = if fsdbg {
                     expoly.area() / (crate::SCALING_FACTOR * crate::SCALING_FACTOR)
                 } else {

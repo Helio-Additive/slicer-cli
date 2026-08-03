@@ -3393,6 +3393,17 @@ impl PrintObject {
                     FB_ARCHES.load(R2),
                     f2(&FB_LEN_IN), f2(&FB_LEN_OUT), f2(&FB_LEN_OUT) - f2(&FB_LEN_IN),
                 );
+                use crate::fill::fill_base::{
+                    FB_ARC_JOIN_LEN, FB_ARC_JOIN_N, FB_ARC_STUB_LEN, FB_ARC_STUB_N,
+                    FB_TAIL_JOIN_LEN, FB_TAIL_JOIN_N, FB_TAIL_STUB_LEN, FB_TAIL_STUB_N,
+                };
+                eprintln!(
+                    "FILL_CONNECT_WHERE: arch-loop join n={} len={:.0} mm | arch-loop stub n={} len={:.0} | tail join n={} len={:.0} | tail stub n={} len={:.0}",
+                    FB_ARC_JOIN_N.load(R2), f2(&FB_ARC_JOIN_LEN),
+                    FB_ARC_STUB_N.load(R2), f2(&FB_ARC_STUB_LEN),
+                    FB_TAIL_JOIN_N.load(R2), f2(&FB_TAIL_JOIN_LEN),
+                    FB_TAIL_STUB_N.load(R2), f2(&FB_TAIL_STUB_LEN),
+                );
             }
             if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
                 use crate::fill::{CONN_IN, CONN_LEN_IN, CONN_LEN_OUT, CONN_OUT};
