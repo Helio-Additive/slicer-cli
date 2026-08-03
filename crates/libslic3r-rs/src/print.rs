@@ -3170,6 +3170,30 @@ fn emit_layer_by_island(
                 );
                 writer.set_extruder(tool);
             } else {
+                // R468 (TOOLCHANGE_DEBUG=1): this fallback emits a filament change with
+                // NO tower purge — C++ routes every change through append_tcr. Report
+                // what the tower DID plan for this layer so we can tell "the plan is
+                // missing an entry" from "we failed to match an entry that exists".
+                if std::env::var_os("TOOLCHANGE_DEBUG").is_some() {
+                    let planned: Vec<i32> = wipe_tower_layer
+                        .map(|wt| {
+                            wt.iter()
+                                .filter(|r| r.is_tool_change)
+                                .map(|r| r.new_tool)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    eprintln!(
+                        "TC_FALLBACK z={:.3} want_tool={} prev={:?} tower_records_for_layer={:?} \
+                         tower_layer_present={} order={:?}",
+                        layer.print_z,
+                        tool,
+                        last_emitted_tool.or(*prev_last_tool),
+                        planned,
+                        wipe_tower_layer.is_some(),
+                        tool_order,
+                    );
+                }
                 let _ = crate::gcode::exporter::set_extruder(tool, writer, 0.0, print_config);
             }
         }
