@@ -872,6 +872,13 @@ pub fn group_fills(
                     fill.expolygons.push(surface.expolygon.clone());
                     fill.region_id_group.push(region_id);
                     fill.no_overlap_expolygons = region.fill_no_overlap_expolygons.clone();
+                    if std::env::var_os("FVS_DEBUG").is_some() {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        crate::layer::FVS_REGION_SEEN.fetch_add(1, Relaxed);
+                        if region.fill_no_overlap_expolygons.is_empty() {
+                            crate::layer::FVS_REGION_EMPTY.fetch_add(1, Relaxed);
+                        }
+                    }
                 } else {
                     fill.expolygons.push(surface.expolygon.clone());
                     if !fill.region_id_group.contains(&region_id) {

@@ -15,6 +15,17 @@
 //! - References to upper/lower layers
 
 use crate::clipper_utils::{union_ex, OffsetJoinType};
+
+/// R474 diagnostic (`FVS_DEBUG=1`): how many Concentric / FloatingConcentric
+/// expolygons reach the filler, and how many of them had NO `no_overlap_expolygons`
+/// to fill (Fill.cpp:740 — C++ emits nothing for those).
+pub static FVS_EXPOLYS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_EMPTY_NOOVERLAP: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_REGION_SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_REGION_EMPTY: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 use crate::extrusion_entity::{
     extrusion_entities_append_paths, ExtrusionEntityCollection, ExtrusionLoop, ExtrusionPath,
     ExtrusionRole,
@@ -2276,6 +2287,13 @@ impl Layer {
                 // single expoly, reset spacing, then fill_surface_extrusion.
                 let mut out_entities: Vec<crate::extrusion_entity::ExtrusionEntityType> =
                     Vec::new();
+                let fvs_dbg = std::env::var_os("FVS_DEBUG").is_some();
+                if fvs_dbg {
+                    FVS_EXPOLYS.fetch_add(
+                        surface_fill.expolygons.len(),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                }
                 for expoly in &surface_fill.expolygons {
                     if expoly.contour.points.is_empty() {
                         continue;
@@ -2283,7 +2301,21 @@ impl Layer {
                     // Fill.cpp:740 — f->no_overlap_expolygons =
                     //   intersection_ex(surface_fill.no_overlap_expolygons,
                     //                   {expoly}, ApplySafetyOffset::Yes).
+                    // Both FillConcentricInternal (FillConcentricInternal.cpp:18) and
+                    // FillFloatingConcentric (FillFloatingConcentric.cpp:941) iterate
+                    // `no_overlap_expolygons` and nothing else, so an empty intersection
+                    // means C++ emits NOTHING for this expolygon. R474: we used to
+                    // substitute the whole (overlap-expanded) expoly instead, which
+                    // manufactured floating-vertical-shell material C++ never lays.
+                    // FVS_NO_OVERLAP_FAITHFUL=0 restores the old fallback.
                     let no_overlap = if surface_fill.no_overlap_expolygons.is_empty() {
+                        if crate::faithful_gate("FVS_NO_OVERLAP_FAITHFUL") {
+                            if fvs_dbg {
+                                FVS_EMPTY_NOOVERLAP
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            continue;
+                        }
                         vec![expoly.clone()]
                     } else {
                         crate::clipper_utils::intersection(

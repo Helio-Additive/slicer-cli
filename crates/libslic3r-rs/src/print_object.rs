@@ -3405,6 +3405,21 @@ impl PrintObject {
                     FB_TAIL_STUB_N.load(R2), f2(&FB_TAIL_STUB_LEN),
                 );
             }
+            if std::env::var_os("FVS_DEBUG").is_some() {
+                use std::sync::atomic::Ordering::Relaxed as R4;
+                eprintln!(
+                    "FVS_NO_OVERLAP: concentric/floating expolygons={}  with EMPTY no_overlap={} ({:.1}%)",
+                    crate::layer::FVS_EXPOLYS.load(R4),
+                    crate::layer::FVS_EMPTY_NOOVERLAP.load(R4),
+                    100.0 * crate::layer::FVS_EMPTY_NOOVERLAP.load(R4) as f64
+                        / crate::layer::FVS_EXPOLYS.load(R4).max(1) as f64,
+                );
+                eprintln!(
+                    "FVS_NO_OVERLAP: group_fills saw {} first-surface regions, {} with an EMPTY LayerRegion::fill_no_overlap_expolygons",
+                    crate::layer::FVS_REGION_SEEN.load(R4),
+                    crate::layer::FVS_REGION_EMPTY.load(R4),
+                );
+            }
             if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
                 use crate::fill::{CONN_IN, CONN_LEN_IN, CONN_LEN_OUT, CONN_OUT};
                 use std::sync::atomic::Ordering::Relaxed;

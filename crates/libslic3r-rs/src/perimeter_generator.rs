@@ -2891,6 +2891,8 @@ impl PerimeterGenerator {
         // PerimeterGenerator.cpp:1505  for (const Surface& surface : this->slices->surfaces)
         let mut entities = ExtrusionEntityCollection::new();
         let mut infill_contour: ExPolygons = Vec::new();
+        // PerimeterGenerator.cpp:1460 — the parallel `fill_no_overlap` accumulation.
+        let mut no_overlap_contour: ExPolygons = Vec::new();
 
         // PerimeterGenerator.cpp:1499-1500
         // C++: double surface_simplify_resolution = (enable_arc_fitting && fuzzy_skin == None)
@@ -3187,7 +3189,7 @@ impl PerimeterGenerator {
             // PerimeterGenerator.cpp:1800  add_infill_contour_for_arachne(infill_contour=surface_infill,
             //     loops=loop_number, ext_perimeter_spacing, perimeter_spacing, min_perimeter_infill_spacing,
             //     spacing, is_inner_part=false). Faithful port of the body (1436-1466).
-            let infill_pieces = Self::add_infill_contour_for_arachne(
+            let (infill_pieces, no_overlap_pieces) = Self::add_infill_contour_for_arachne(
                 surface_infill,
                 loop_number,
                 ext_perimeter_spacing as f64 / crate::SCALING_FACTOR,
@@ -3200,10 +3202,12 @@ impl PerimeterGenerator {
                 self.config.join_type,
             );
             infill_contour.extend(infill_pieces);
+            no_overlap_contour.extend(no_overlap_pieces);
         }
 
         result.entities = entities;
         result.infill_area = infill_contour;
+        result.no_overlap_area = no_overlap_contour;
         result
     }
 
@@ -3211,7 +3215,16 @@ impl PerimeterGenerator {
     /// C++: void PerimeterGenerator::add_infill_contour_for_arachne(ExPolygons infill_contour, int loops,
     ///          coord_t ext_perimeter_spacing, coord_t perimeter_spacing, coord_t min_perimeter_infill_spacing,
     ///          coord_t spacing, bool is_inner_part)
-    /// Returns the fill-surface ExPolygons (the C++ appends these to fill_surfaces with stInternal).
+    /// Returns `(fill_surfaces, fill_no_overlap)` — C++ appends the first to
+    /// `fill_surfaces` with stInternal (PerimeterGenerator.cpp:1458) and the second to
+    /// `fill_no_overlap` (:1460). They are the same offset2_ex of the same
+    /// `union_ex(inner_pp)`; only the outward step differs — `insert + min_pis/2` for
+    /// the fill surface (grown by the infill_wall_overlap band so infill runs into the
+    /// wall) versus a bare `min_pis/2` for the no-overlap copy. R474: the second was
+    /// never modelled, so `LayerRegion::fill_no_overlap_expolygons` came out empty on
+    /// every Arachne region, and the Concentric / FloatingConcentric fillers -- which
+    /// fill `no_overlap_expolygons` and nothing else -- fell back to the overlap-grown
+    /// expolygon.
     /// Spacing args are in mm here (the crate's offset/offset2 take mm).
     #[allow(clippy::too_many_arguments)]
     fn add_infill_contour_for_arachne(
@@ -3225,7 +3238,7 @@ impl PerimeterGenerator {
         infill_wall_overlap: f64,
         surface_simplify_resolution: f64,
         join_type: OffsetJoinType,
-    ) -> ExPolygons {
+    ) -> (ExPolygons, ExPolygons) {
         // C++: if (offset_ex(infill_contour, -float(spacing / 2.)).empty()) infill_contour.clear();
         if shrink(&infill_contour, spacing / 2.0, join_type).is_empty() {
             infill_contour.clear();
@@ -3256,16 +3269,29 @@ impl PerimeterGenerator {
                 inner_pp.extend(ex.simplify_p_dp_rings_faithful(tol_scaled));
             }
             if inner_pp.is_empty() {
-                return vec![];
+                return (vec![], vec![]);
             }
             let simplified = crate::clipper_utils::simplify_polygons_clib(&inner_pp, 1);
             let inner_union = crate::clipper_utils::union_ex_clib(&simplified, 1);
-            return crate::clipper_utils::offset2_ex_clib(
+            let fill = crate::clipper_utils::offset2_ex_clib(
                 &inner_union,
                 -(min_perimeter_infill_spacing / 2.0),
                 insert + min_perimeter_infill_spacing / 2.0,
                 OffsetJoinType::Miter,
             );
+            // PerimeterGenerator.cpp:1460 — same offset2_ex, outward step WITHOUT
+            // `insert`.
+            let no_overlap = if crate::faithful_gate("ARACHNE_FILL_NO_OVERLAP") {
+                crate::clipper_utils::offset2_ex_clib(
+                    &inner_union,
+                    -(min_perimeter_infill_spacing / 2.0),
+                    min_perimeter_infill_spacing / 2.0,
+                    OffsetJoinType::Miter,
+                )
+            } else {
+                Vec::new()
+            };
+            return (fill, no_overlap);
         }
         let mut inner_pp: Vec<Polygon> = Vec::new();
         for ex in &infill_contour {
@@ -3275,13 +3301,25 @@ impl PerimeterGenerator {
 
         // C++: this->fill_surfaces->append(offset2_ex(union_ex(inner_pp),
         //          -min_perimeter_infill_spacing/2., insert + min_perimeter_infill_spacing/2.), stInternal);
-        // (fill_no_overlap uses offset2_ex(..., -.../2, +.../2) — not modelled in PerimeterResult.)
-        offset2(
+        let fill = offset2(
             &inner_union,
             min_perimeter_infill_spacing / 2.0,
             insert + min_perimeter_infill_spacing / 2.0,
             join_type,
-        )
+        );
+        // C++: append(*this->fill_no_overlap, offset2_ex(union_ex(inner_pp),
+        //          -min_perimeter_infill_spacing/2., +min_perimeter_infill_spacing/2.));
+        let no_overlap = if crate::faithful_gate("ARACHNE_FILL_NO_OVERLAP") {
+            offset2(
+                &inner_union,
+                min_perimeter_infill_spacing / 2.0,
+                min_perimeter_infill_spacing / 2.0,
+                join_type,
+            )
+        } else {
+            Vec::new()
+        };
+        (fill, no_overlap)
     }
 
     /// Convert a faithful Arachne `ExtrusionLine` to our `ExtrusionPath`.
