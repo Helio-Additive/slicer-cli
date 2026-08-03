@@ -3118,16 +3118,78 @@ fn emit_layer_by_island(
     // — the wipe tower planned its tool changes against exactly this sequence, so
     // emission must not re-derive its own (R424). Only adopt a sequence that is a
     // permutation of the tools this layer actually prints.
+    // R469: the permutation guard must compare against the tools this layer actually
+    // PRINTS, not the raw filament list. `tool_order` here is still every configured
+    // filament (0..n), while `optimized_layer_tools` holds only the tools with work,
+    // so `sorted(opt) == sorted(tool_order)` could only ever hold on layers that
+    // happen to use every filament — measured: adopted on 94 of 656 layers, rejected
+    // on 562. On those 562 the wipe tower had planned its purges against the
+    // optimizer's sequence while emission walked a different one, so transitions the
+    // tower never planned fell through to the unpurged object-path `set_extruder`
+    // (R468: 411 such changes). Filter first, then compare.
+    let __tool_has_work = |t: usize| -> bool {
+        emit_order.iter().any(|&isl_idx| {
+            islands[isl_idx].iter().enumerate().any(|(ri, b)| {
+                region_tools.get(ri) == Some(&t)
+                    && (!b.perims.is_empty() || !b.fills.is_empty() || !b.thins.is_empty())
+            })
+        })
+    };
+    let mut __opt_adopted = false;
     if let Some(opt) = optimized_tools {
         let mut a: Vec<usize> = opt.to_vec();
-        let mut b: Vec<usize> = tool_order.clone();
+        let mut b: Vec<usize> = if multi_tool {
+            tool_order.iter().copied().filter(|&t| __tool_has_work(t)).collect()
+        } else {
+            tool_order.clone()
+        };
         a.sort_unstable();
         b.sort_unstable();
         if a == b {
             tool_order = opt.to_vec();
+            __opt_adopted = true;
         }
     }
+    // R469: the tower planned its purges against `optimized_layer_tools`. If emission
+    // does NOT adopt that same order, the two disagree about which transitions exist
+    // and every unmatched one falls through to the unpurged object path (R468).
+    if std::env::var_os("TOOLCHANGE_DEBUG").is_some() {
+        eprintln!(
+            "TC_OPT z={:.3} optimized={:?} adopted={} tool_order={:?}",
+            layer.print_z,
+            optimized_tools,
+            __opt_adopted,
+            tool_order
+        );
+    }
     let mut last_emitted_tool: Option<usize> = None;
+
+    // R469 (TOOLCHANGE_DEBUG=1): the set of tools emission will actually print on
+    // this layer, next to the changes the psWipeTower pre-pass planned. R468 showed
+    // the pre-pass is systematically one change short; R469 disproved the
+    // layer-boundary explanation (only 4 of 411 fallbacks are at order[0], 407 are
+    // mid-layer), so compare the two SETS directly.
+    if std::env::var_os("TOOLCHANGE_DEBUG").is_some() && multi_tool {
+        let with_work: Vec<usize> = tool_order
+            .iter()
+            .copied()
+            .filter(|&t| {
+                emit_order.iter().any(|&isl_idx| {
+                    islands[isl_idx].iter().enumerate().any(|(ri, b)| {
+                        region_tools.get(ri) == Some(&t)
+                            && (!b.perims.is_empty() || !b.fills.is_empty() || !b.thins.is_empty())
+                    })
+                })
+            })
+            .collect();
+        let planned: Vec<i32> = wipe_tower_layer
+            .map(|wt| wt.iter().filter(|r| r.is_tool_change).map(|r| r.new_tool).collect())
+            .unwrap_or_default();
+        eprintln!(
+            "TC_LAYER z={:.3} prev={:?} tools_with_work={:?} tower_planned={:?}",
+            layer.print_z, *prev_last_tool, with_work, planned
+        );
+    }
 
     for &tool in &tool_order {
         if multi_tool {
