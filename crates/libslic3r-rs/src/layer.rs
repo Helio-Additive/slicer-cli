@@ -2930,11 +2930,26 @@ impl Layer {
                 let (fill_flow_eff, mm3_per_mm) = {
                     let adj = crate::fill::fill_rectilinear::ADJUSTED_SPACING_MM
                         .with(|c| c.get());
+                    // FillBase.cpp:140-149 — the recompute is skipped ONLY when
+                    // `params.using_internal_flow`, i.e. for sparse infill:
+                    //   if (params.using_internal_flow) { /* ignore f->spacing */ }
+                    //   else { Flow new_flow = params.flow.with_spacing(this->spacing); }
+                    // using_internal_flow is `!surface.is_solid() && !params.bridge`, so
+                    // C++ DOES recompute for bridges. We excluded them with
+                    // `&& !params.bridge`, which is why our Bridge flow is bimodal (the
+                    // two unadjusted branch constants) where C++'s is a continuum —
+                    // `this->spacing` is adjusted per patch to fit a whole number of
+                    // lines, so the recomputed width varies patch to patch (R492).
+                    // BRIDGE_WITH_SPACING=0 restores the old exclusion.
+                    let using_internal_flow =
+                        !surface_fill.surface.is_solid() && !surface_fill.params.bridge;
+                    let bridge_ok = !surface_fill.params.bridge
+                        || crate::faithful_gate("BRIDGE_WITH_SPACING");
                     match adj {
                         Some(sp_mm)
                             if crate::faithful_gate("GAPTRIM_PRETAIL")
-                                && surface_fill.surface.is_solid()
-                                && !surface_fill.params.bridge =>
+                                && !using_internal_flow
+                                && bridge_ok =>
                         {
                             let nf = surface_fill
                                 .params
