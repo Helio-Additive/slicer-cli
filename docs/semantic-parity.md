@@ -660,3 +660,46 @@ Both columns sum to their measured totals exactly, so this is the real target li
 Note `finish_layer_new` runs on all 656 layers but emits only 271 fill segments
 totalling 9.8 kmm — on most layers it lays no fill at all. Our finish_layer lays a
 fill on every layer.
+
+
+### Why C++'s finish-layer fill is almost nothing (R503)
+
+Probing `finish_layer_new` directly: **`extrude_fill` is FALSE on 653 of its 656
+calls** — the grid ran 3 times in the whole print. The dominant call site is
+WipeTower.cpp:4746, which passes a literal `false`:
+
+    if (wall_idx != -1) {
+        if (layer.tool_changes.empty())
+            finish_layer_new(only_generate_wall ? false : true, false, false);
+
+So on nearly every layer `finish_layer_new` draws ONLY the outer wall. That
+accounts for its 9,786 mm over 271 segments: three dense grids, not 656 sparse
+ones. C++'s finish-layer fill therefore comes almost entirely from `finish_block`
+(206 calls, 35,684.5 mm).
+
+`layer.extruder_fill` itself is NOT the guard — it defaults to `true` and is only
+cleared for the last layer (`set_last_layer_extruder_fill`, Print.cpp:3337).
+
+R497's layer condition was exactly backwards: it suppressed the fill on
+tool-change layers, whereas C++ fills on ~206 tool-change layers and essentially
+never on the others. Corrected behind `TOWER_FILL_ONLY_TC`, but that knob is nearly
+inert here (-2,172 mm): with 2,723 tool changes across 656 layers, almost every
+layer has one.
+
+**The real guard is the block-fullness test at :4751:**
+
+    if (block.cur_depth + EPSILON >=
+        block.start_depth + block.layer_depths[m_cur_layer_id] - m_perimeter_width)
+        continue;   // this block is already full — no fill at all
+
+`block.layer_depths[m_cur_layer_id]` is the depth ALLOCATED to that block on that
+layer, which is roughly what its tool changes consumed. So on most layers the block
+is already full and gets no fill. Our fill box instead runs from
+`toolchanges_depth` up to `layer_depth`, where `layer_depth` is
+`self.plan[idx].depth` — the FULL tower depth, 39 mm on every layer. We therefore
+fill the entire unused area of the tower on every single layer, which is the whole
+4.50x fill excess.
+
+Closing it needs `block.layer_depths` — i.e. the per-layer depth allocation from
+`update_all_layer_depth` (:4237) / `generate_wipe_tower_blocks` (:4268) — not the
+plan's global depth. That is the next port, and it is the last piece of the fill.

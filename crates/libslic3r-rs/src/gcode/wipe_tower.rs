@@ -2382,6 +2382,18 @@ impl WipeTower {
             Ok(v) => v != "0",
             Err(_) => sparse_grid,
         };
+        // R503: probing C++ shows `finish_layer_new` receives extrude_fill=FALSE on
+        // 653 of its 656 calls — the dominant call site (WipeTower.cpp:4746) passes
+        // a literal `false`:
+        //     if (wall_idx != -1) {
+        //         if (layer.tool_changes.empty())
+        //             finish_layer_new(only_generate_wall ? false : true, false, false);
+        // so on nearly every layer it draws ONLY the outer wall, no fill. C++'s
+        // finish-layer fill therefore comes almost entirely from `finish_block`,
+        // which runs on ~206 TOOL-CHANGE layers. We laid a fill on every layer,
+        // which is the 4.50x fill excess (R502). R497 had the layer condition
+        // exactly backwards — it suppressed the fill on tool-change layers.
+        let fill_only_on_toolchange_layers = knob("TOWER_FILL_ONLY_TC");
         let fill_box_faithful = knob("TOWER_FILL_BOX");
         let inner_rect = knob("TOWER_FILL_RECT");
         let grid_faithful = knob("TOWER_FILL_GRID");
@@ -2473,7 +2485,9 @@ impl WipeTower {
         if inner_rect && layer_has_toolchange && fill_box.height() > self.perimeter_width {
             writer.rectangle(&fill_box);
         }
-        if !grid_faithful {
+        if fill_only_on_toolchange_layers && !layer_has_toolchange {
+            // C++ draws only the wall here.
+        } else if !grid_faithful {
             // Pre-R493 behaviour: always a solid zig-zag over the whole
             // remaining layer box. Kept as the default while the block port is
             // incomplete — see the FIDELITY-NOTE above.
