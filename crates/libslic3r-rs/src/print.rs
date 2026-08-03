@@ -1990,6 +1990,22 @@ impl Print {
                 cfg.pos_x = self.config.wipe_tower_x as f32;
                 cfg.pos_y = self.config.wipe_tower_y as f32;
                 cfg.width = self.config.prime_tower_width as f32;
+                // WipeTower.cpp:2907 — `min_wipe_tower_depth =
+                // get_limit_depth_by_height(m_wipe_tower_height)`, which feeds the
+                // `extra_spacing = min_wipe_tower_depth / max_depth` decision in
+                // plan_tower. We left `height` at its 0 default, so the lookup took
+                // the "shorter than the first table entry" branch and returned 5.0
+                // instead of interpolating the real height (R478).
+                // INERT on Majora and stated as such: at 196.8mm the table
+                // {5:5, 100:20, 250:40, 350:60} interpolates to 32.91, which is still
+                // below this plate's max toolchange depth of 38.50, so both the wrong
+                // 5.0 and the right 32.91 leave extra_spacing at 1.0. It matters for a
+                // short tower, where the real limit would exceed max_depth and make
+                // the fill correctly sparser.
+                cfg.height = layer_seqs
+                    .iter()
+                    .map(|(z, _, _)| *z)
+                    .fold(0.0_f32, f32::max);
                 // Single-extruder multi-material (Majora: one physical nozzle,
                 // nozzle_diameter has 1 entry). Without this, is_same_nozzle and
                 // is_same_extruder are false, so plan_toolchange adds a spurious

@@ -1873,6 +1873,16 @@ impl WipeTower {
         } else {
             self.extra_spacing = 1.0;
         }
+        if std::env::var_os("WT_WIDTH_DEBUG").is_some() {
+            eprintln!(
+                "WT_PLAN: max_depth(toolchanges)={:.3} min_wipe_tower_depth={:.3} height={:.3} has_tpu={} -> extra_spacing={:.4}",
+                max_depth, min_wipe_tower_depth, self.config.height, self.has_tpu_filament, self.extra_spacing
+            );
+            let ncd: f32 = self.plan.iter().flat_map(|l| l.tool_changes.iter()).map(|t| t.nozzle_change_depth).sum();
+            let rd: f32 = self.plan.iter().flat_map(|l| l.tool_changes.iter()).map(|t| t.required_depth).sum();
+            let n = self.plan.iter().map(|l| l.tool_changes.len()).sum::<usize>();
+            eprintln!("WT_PLAN: tool_changes={n} sum(nozzle_change_depth)={ncd:.2} sum(required_depth)={rd:.2} ncw={:.3}", self.nozzle_change_perimeter_width);
+        }
 
         // Apply spacing to layers
         let perimeter_width = self.perimeter_width;
