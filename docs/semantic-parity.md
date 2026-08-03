@@ -1175,3 +1175,50 @@ eight guard tests green; C++ submodule restored clean.
 **New discipline (R515): a probe that returns NOTHING is a failed run, not a
 negative result.** Confirm the process exited 0 and rewrote its artefact before
 reading any comparison built on it.
+
+## R516 — the silhouette gap is REAL, one-sided, and a sub-0.2 mm boundary rim
+
+Measurement round, no code change. Four things established.
+
+**1. The metric is exact on Majora (control never run before).** Two independent
+stock C++ runs score **silhouette 100.00%, wall lines 99.99%, object material
+1.0000**. So Majora's 96.67% is a genuine divergence, not closing/rasterisation
+noise on a geometrically hard model.
+
+**2. The gap is one-sided by ~100x.** Per-layer directional areas over all 634
+comparable layers: union 1,198,397 mm²; **rust-only 39,556 mm² (3.30%)**;
+cpp-only 405 mm² (0.03%). We cover area C++ does not, essentially everywhere —
+C++ covers almost nothing we miss.
+
+**3. It is a thin boundary rim, not blobs.** At the worst layers (z26.7 93.87%,
+z70.2 94.72%) the rust-only mask is ~700 connected components; eroding it by a
+single 0.2 mm cell removes 70–78% of the area. The rust extrusions falling
+inside it are overwhelmingly **Outer wall** (77/123 mm² at z26.7, 126/158 at
+z70.2). Not a global offset: per-layer outer-wall bbox extents agree, median
+ΔW 0.0050 mm / ΔH −0.0010 mm over all 656 layers.
+
+**4. It is NOT a chord-rendering artefact.** `semantic_compare`'s raster draws
+G2/G3 as chords ("coverage is width-dominated"), and at z26.7 our walls use 408
+moves where C++ uses 859 for the same length (1011.5 vs 1013.5 mm) — so longer
+chords cutting across concave detail was the obvious suspect. Re-rasterising
+with arcs subdivided into 0.2 mm chordlets moves the ten worst layers only
+**94.74% → 95.01% (+0.27pp)**. Real geometry, not measurement.
+
+At z26.7 every feature matches within a few percent except **Bridge (rust
+337.7 mm / 146 seg vs C++ 179.7 / 62 = 1.88x)** — but bridge segments do not
+land in the rust-only cells, so it is a separate thread (global Bridge length
+ratio 1.069).
+
+Net: the silhouette failure is "we deposit material a fraction of a line-width
+outside C++'s footprint, all round the object", not a missing/extra feature.
+Next: measure the signed distance from our outer-wall centreline to C++'s
+rather than comparing rasters.
+
+New probes (in the job tmp dir): `silrank.py` (per-layer IoU + directional
+areas + bboxes), `silwhere.py` (erosion profile, components, feature
+attribution), `silblob.py`, `silmap.py` (ASCII raster diff), `owbbox.py`,
+`boxdump.py`, `silcmp2.py` (chord vs arc-subdivided A/B).
+
+**New discipline (R516): run the reference-vs-itself control on the HARD model
+before believing a failing geometric metric** — and before dismissing one. The
+100.00% C++-vs-C++ result is what makes the 96.67% actionable.
