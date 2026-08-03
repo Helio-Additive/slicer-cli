@@ -518,6 +518,12 @@ pub struct PrintConfig {
     /// Prime tower width (mm).
     /// BambuStudio: `prime_tower_width`.
     pub prime_tower_width: CoordF,
+    /// Leave gaps in the prime-tower wall where the object passes close, and
+    /// iron the start of each purge line.
+    /// BambuStudio: `prime_tower_skip_points`. Drives `WipeTower::m_use_gap_wall`
+    /// (WipeTower.cpp:1747), which gates the ironing block that opens every
+    /// toolchange wipe (:4079-4116) and `m_flat_ironing` (:1768).
+    pub prime_tower_skip_points: bool,
 
     // === Multi-material ===
     /// Flush into infill to reduce waste.
@@ -1158,6 +1164,7 @@ impl Default for PrintConfig {
             // Wipe tower / prime tower
             enable_prime_tower: false,
             prime_tower_width: 60.0,
+            prime_tower_skip_points: false,
 
             // Multi-material
             flush_into_infill: false,
@@ -2588,6 +2595,16 @@ impl PrintConfig {
             "prime_tower_width" => {
                 if let Some(v) = parse_f64(value) {
                     self.prime_tower_width = v;
+                }
+                true
+            }
+            // R499: this key had NO field and NO arm at all, though it is in
+            // preset.rs's key list and generator.rs's defaults, so our
+            // `use_gap_wall` was permanently false and the tower emitted none of
+            // the per-toolchange ironing geometry.
+            "prime_tower_skip_points" => {
+                if let Some(v) = parse_bool(value) {
+                    self.prime_tower_skip_points = v;
                 }
                 true
             }

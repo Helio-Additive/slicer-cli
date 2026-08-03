@@ -2244,11 +2244,41 @@ impl WipeTower {
         if std::env::var_os("TOWER_WIPE_CONNECTOR").is_some() {
             let mut left_to_right = true;
             let mut first = true;
-            for _ in 0..num_lines {
+            // WipeTower.cpp:4079-4116 — when `m_use_gap_wall` is set (which is
+            // `prime_tower_skip_points`, plumbed in R499), the FIRST purge line of
+            // every toolchange opens with an ironing pass: extrude a short run
+            // (`ironing_length = 3.`, :4073), retract, travel back 1.5x and
+            // forward again, un-retract, then extrude the REST of the way to the
+            // far edge. That is R497's unexplained pair of segment classes —
+            // 4,854 of 3.0 mm and 2,723 of 31.0 mm (34.0 - 3.0, one per
+            // toolchange). The retract/un-retract pair is E-neutral.
+            // NOT ported: `spiral_flat_ironing` (`m_flat_ironing`, :1768), which
+            // needs `filament_tower_ironing_area`; the non-flat branch is taken
+            // for this profile.
+            let ironing_length = 3.0_f32;
+            let iron = self.config.use_gap_wall;
+            // C++: m_filpar[m_current_tool].retract_length / .retract_speed * 60
+            let (retract_len, retract_spd) = self
+                .filament_params
+                .get(self.current_tool)
+                .map_or((0.0, 0.0), |p| (p.retract_length, p.retract_speed * 60.0));
+            for i in 0..num_lines {
                 let (x_start, x_end) = if left_to_right { (xl, xr) } else { (xr, xl) };
                 if first {
                     writer.travel(x_start, y);
                     first = false;
+                }
+                if i == 0 && iron {
+                    let x0 = writer.x();
+                    let dx = x_end - x0;
+                    let il = if dx.abs() < ironing_length { dx.abs() } else { ironing_length };
+                    let dir = if dx >= 0.0 { 1.0 } else { -1.0 };
+                    writer.extrude(x0 + dir * il, y);
+                    let x1 = writer.x();
+                    writer.retract(retract_len, retract_spd);
+                    writer.travel(x1 - dir * 1.5 * il, y);
+                    writer.travel(x1, y);
+                    writer.retract(-retract_len, retract_spd);
                 }
                 writer.extrude(x_end, y);
                 y += dy;

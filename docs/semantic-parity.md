@@ -500,3 +500,43 @@ carries it, but **there is no `PrintConfig` field and no deserialize arm for it*
 so our `use_gap_wall` is permanently `false` and none of that geometry is emitted.
 This is a second instance of the R495 config-key pattern — a key that is "known"
 in one table and silently absent from the one that matters.
+
+
+### The ironing block, and a correction to R498's arithmetic (R499)
+
+`prime_tower_skip_points` had no `PrintConfig` field and no deserialize arm at all,
+though it sits in preset.rs's key list, in generator.rs's defaults, and in C++'s
+own gcode header (value 1 for Majora). So `WipeTower::m_use_gap_wall`
+(WipeTower.cpp:1747) was permanently false on our side. Added the field, a
+selective `set_deserialize` arm, and the wiring to `cfg.use_gap_wall`.
+
+With that, the ironing block that opens each toolchange wipe (:4079-4116) is
+ported: extrude a short run (`ironing_length = 3.`, :4073), retract, travel back
+1.5x and forward again, un-retract, then extrude the rest of the way to the far
+edge. (`spiral_flat_ironing` is not ported — it needs
+`filament_tower_ironing_area`, and the non-flat branch is taken for this profile.)
+
+**R498's arithmetic was wrong and is retracted.** It assumed C++'s 4,854 segments
+of 3.0 mm and 2,723 of 31.0 mm were length we were MISSING, and predicted
++98,975 mm. They are not: the ironing SPLITS the first purge line of each
+toolchange into 3.0 + 31.0 = 34.0 mm. Landing it left the writer-only total
+completely unchanged at 1,238,918.5 mm and moved only the segment count:
+
+| variant                          | length    | ratio | segments | seg ratio |
+|----------------------------------|-----------|-------|----------|-----------|
+| default                          | 1,223,826 | 1.045 | 35,760   | 0.528     |
+| connector                        | 1,238,919 | 1.058 | 65,945   | 0.973     |
+| connector + ironing              | 1,238,919 | 1.058 | **68,666** | **1.013** |
+| connector + ironing + sparse grid| 1,072,015 | 0.915 | 59,022   | 0.871     |
+
+The segment count is now within 1.3% of C++'s. Corrected accounting: C++'s
+full-stroke equivalents are 27,770 + 2,723 = 30,493 against our 33,116, so the
+excess is ~2,623 strokes, ~89,182 mm, putting a correct fix at ~1,149,700 = 0.982.
+
+Where that excess is NOT: probing C++'s purge geometry directly gives
+`dy = 0.5 = m_perimeter_width` (the `m_layer_info->extra_spacing *
+get_block_gap_width(...)` product collapses to the perimeter width here, with
+extra_spacing 1.0), `wipe_length / line_len = 374.0 / 34.0` and a 5.5 mm cleaning
+box — 11 lines, exactly what we emit. **The purge line count matches; the excess
+is in the finish-layer fill.** `TOWER_SPARSE_GRID=1` currently removes 166,903 mm
+where only ~89,000 should go, which is why it undershoots to 0.915.

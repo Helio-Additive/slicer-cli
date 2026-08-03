@@ -2018,6 +2018,11 @@ impl Print {
                 cfg.pos_x = self.config.wipe_tower_x as f32;
                 cfg.pos_y = self.config.wipe_tower_y as f32;
                 cfg.width = self.config.prime_tower_width as f32;
+                // WipeTower.cpp:1747 — `m_use_gap_wall(config.prime_tower_skip_points)`.
+                // The key had no PrintConfig field at all until R499, so this was
+                // permanently false and the tower emitted none of the ironing
+                // geometry that opens each toolchange wipe (:4079-4116).
+                cfg.use_gap_wall = self.config.prime_tower_skip_points;
                 // WipeTower.cpp:2907 — `min_wipe_tower_depth =
                 // get_limit_depth_by_height(m_wipe_tower_height)`, which feeds the
                 // `extra_spacing = min_wipe_tower_depth / max_depth` decision in
