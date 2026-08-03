@@ -1015,3 +1015,43 @@ regions as top than C++ does, and then fill them correctly. The next step is the
 `stTop` classification itself, not the fill — which also means it shares a root
 with the object silhouette failure (96.67%), since misplaced top regions move the
 swept outline too.
+
+
+### The top-surface excess is fed by sliver surfaces upstream (R512)
+
+Following R511's finding that Top surface is a region problem, comparing the actual
+top-surface geometry on the worst layers:
+
+| z | ours | C++ |
+|---|------|-----|
+| 3.30 | 157 segs / 160.9 mm, bbox X[44.03,157.71] Y[54.52,192.78] | 105 segs / 79.1 mm, bbox X[44.03,54.37] Y[160.79,192.76] |
+| 123.60 | 134 segs / 108.8 mm | 59 segs / 43.6 mm (same bbox) |
+| 131.70 | 67 segs / 54.3 mm | **none at all** |
+
+At z3.30 our top region spans the whole object where C++'s is one corner, and our
+segments average ~1.0 mm. These are scattered SLIVERS, not a zig-zag fill of a
+compact region — which is why the fill itself measures correct (R511: 0.9927 on
+layers whose regions agree) while the total runs 1.16x.
+
+The `opening_ex` collapse that C++ uses to kill narrow parts IS ported and its
+offset is right: probed at runtime it is **0.040 mm**, matching
+`layerm->flow(frExternalPerimeter).scaled_width() / 10.f` with the coord_t
+truncation R283 already handled. So the filter is not the defect.
+
+What the same probe shows is that the INPUT is already wrong. Dumping the layer's
+region slices before top detection:
+
+    TSDBG-R in_slice npts=105 a=44.6519
+    TSDBG-R in_slice npts= 93 a=47.6177
+    TSDBG-R in_slice npts=380 a=162.3884
+    TSDBG-R in_slice npts=  4 a=0.0002
+    TSDBG-R in_slice npts=  3 a=0.0001
+    TSDBG-R in_slice npts=  8 a=0.0008
+    TSDBG-R in_slice npts= 38 a=0.0108
+
+alongside the real 44.7 / 47.6 / 162.4 mm2 contours there is a population of
+degenerate surfaces at 1e-4 to 1e-2 mm2. Those arrive from slicing / region
+assignment, upstream of `detect_surfaces_type`, and an opening at 0.040 mm only
+removes what is thinner than 0.08 mm — a long thin sliver survives it. So the next
+step is upstream: find where these micro-surfaces enter our region slices and
+whether C++ carries them at all.
