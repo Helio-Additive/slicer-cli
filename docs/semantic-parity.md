@@ -1372,3 +1372,57 @@ because each fed the metric two inputs with identical widths. To validate a
 COMPARATIVE metric, perturb one input by a physically-irrelevant amount — a
 value below the tolerance you care about — and require the score not to move.
 Add that control before trusting any geometric comparison.
+
+## R519 — Bottom surface 0.892 characterised: ONE layer, 13 E, 0.01% of the print
+
+Measurement round, no code change.
+
+**Bottom surface exists on exactly one layer of Majora — z=0.30, the first
+layer.** Both engines: 1 layer with material, 0 layers unique to either.
+
+| quantity | rust | C++ | ratio |
+|---|---|---|---|
+| E | 106.11 | 118.90 | 0.892 |
+| path length | 1984.2 | 2231.3 | 0.889 |
+| E per mm | 0.05348 | 0.05329 | 1.004 |
+| segments | 1742 | 1191 | 1.46 |
+
+E/mm matches to 0.4%, so the FLOW is right; we simply lay 11% less bottom path.
+In absolute terms the whole feature is **13 E out of 135,746 (0.01% of the
+print), on 1 of 657 layers** — it passes the per-feature check comfortably and
+is not worth further rounds ahead of the remaining asks.
+
+`BOTTOM_FLOW` is NOT a missing port (R486): it is default-ON and already routes
+the first-layer fill through `region.flow()` so it picks up
+`initial_layer_line_width` (fill/mod.rs:771).
+
+**A caveat on my own number.** I measured "implied spacing" as
+closed-region-area / length and got 0.659 mm (rust) vs 0.477 (C++). That figure
+is contaminated — a k=10 (2 mm) closing inflates whichever engine's lines are
+more fragmented, and ours are (1742 segments vs 1191 for less total length). It
+is NOT trustworthy evidence of a spacing defect. What is solid: matching E/mm
+with 11% less length, so the difference is bottom AREA and/or line spacing, and
+separating those needs a generator-internal probe (R495 — print the layer-0
+bottom surface area and fill spacing from both engines), not gcode
+reconstruction.
+
+**Neighbouring observation (unexplained, first two layers only).** Per-feature
+length ratios rust/C++ over the opening layers:
+
+| z | Outer wall | Inner wall | Bottom |
+|---|---|---|---|
+| 0.30 | 0.888 | **1.453** | 0.889 |
+| 0.60 | 0.784 | **1.258** | — |
+| 0.90 | 0.851 | 0.908 | — |
+| 1.20 | 0.964 | 0.974 | — |
+| 1.50+ | ~0.95 | ~0.97 | — |
+
+Our first two layers carry noticeably more inner wall and less outer wall, then
+the ratios settle. Total layer-1 path is 4010.9 vs 4085.0 (0.982), so material
+is conserved — it is a classification/redistribution difference confined to the
+first two layers. Recorded, not chased.
+
+New probes: `featsplit.py` (per-layer split of one feature, with
+only-rust/only-cpp layer sets), `wallband.py` (per-feature length ratios over a
+z band), `featregion.py` (closed-region area + implied spacing for one feature
+at one layer — read with the caveat above).
