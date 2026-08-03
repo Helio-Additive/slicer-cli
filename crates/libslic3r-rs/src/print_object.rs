@@ -3419,9 +3419,21 @@ impl PrintObject {
                 let n = crate::layer::VS_REG_IN.load(R5);
                 let d = crate::layer::VS_REG_DROP.load(R5);
                 eprintln!(
-                    "VSHELL_REG: regularized pieces={} DROPPED by the scattered-drop filter={} ({:.1}%)  dropped area={:.1} mm2",
+                    "VSHELL_REG: regularized pieces={} DROPPED={} ({:.1}%)  dropped area={:.1} mm2",
                     n, d, 100.0 * d as f64 / n.max(1) as f64,
                     crate::layer::VS_REG_DROP_AREA.load(R5) as f64 / 1000.0,
+                );
+                eprintln!(
+                    "VSHELL_SHELL: shell pieces IN={} area={:.0} mm2  ->  regularized OUT={} area={:.0} mm2",
+                    crate::layer::VS_SHELL_IN.load(R5),
+                    crate::layer::VS_SHELL_IN_AREA.load(R5) as f64 / 1000.0,
+                    crate::layer::VS_REG_OUT.load(R5),
+                    crate::layer::VS_REG_OUT_AREA.load(R5) as f64 / 1000.0,
+                );
+                eprintln!(
+                    "VSHELL_REG: cond1(small)={} of which area<thr15={} | cond2(does-not-cover-an-internal)={} | cond2 SAVED {} pieces cond1 wanted dropped",
+                    crate::layer::VS_C1.load(R5), crate::layer::VS_C1_TINY.load(R5),
+                    crate::layer::VS_C2.load(R5), crate::layer::VS_SAVED.load(R5),
                 );
             }
             if std::env::var_os("FVS_DEBUG").is_some() {
@@ -4576,6 +4588,16 @@ impl PrintObject {
                     shrink(&opened, narrow_sparse_r - tiny_overlap_r, OffsetJoinType::Square)
                 };
 
+                if std::env::var_os("VSHELL_DEBUG").is_some() {
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let ain: f64 = shell_u.iter().map(|e| e.area().abs()).sum::<f64>() / (sf * sf);
+                    let aout: f64 = regularized0.iter().map(|e| e.area().abs()).sum::<f64>() / (sf * sf);
+                    crate::layer::VS_SHELL_IN.fetch_add(shell_u.len(), Relaxed);
+                    crate::layer::VS_SHELL_IN_AREA.fetch_add((ain * 1000.0) as usize, Relaxed);
+                    crate::layer::VS_REG_OUT.fetch_add(regularized0.len(), Relaxed);
+                    crate::layer::VS_REG_OUT_AREA.fetch_add((aout * 1000.0) as usize, Relaxed);
+                }
+
                 // object_volume = intersection(lslices[idx-1], lslices[idx+1]); internal_volume = closing(internal).
                 let object_volume = if idx > 0 && idx + 1 < lslices_all.len() {
                     intersection(&lslices_all[idx - 1], &lslices_all[idx + 1])
@@ -4610,11 +4632,21 @@ impl PrintObject {
                         if std::env::var_os("VSHELL_DEBUG").is_some() {
                             use std::sync::atomic::Ordering::Relaxed;
                             crate::layer::VS_REG_IN.fetch_add(1, Relaxed);
+                            if cond1 { crate::layer::VS_C1.fetch_add(1, Relaxed); }
+                            if a < thr15 { crate::layer::VS_C1_TINY.fetch_add(1, Relaxed); }
+                            if cond2 { crate::layer::VS_C2.fetch_add(1, Relaxed); }
+                            // cond2 SAVED the piece: cond1 wanted it gone, cond2 vetoed.
+                            if cond1 && !cond2 { crate::layer::VS_SAVED.fetch_add(1, Relaxed); }
                             if cond1 && cond2 {
                                 crate::layer::VS_REG_DROP.fetch_add(1, Relaxed);
                                 crate::layer::VS_REG_DROP_AREA
                                     .fetch_add((a / (sf * sf) * 1000.0) as usize, Relaxed);
                             }
+                        }
+                        // R483 EXPERIMENT: VSHELL_DROP_FILTER=0 keeps every piece, to
+                        // measure how much of the solid deficit this filter accounts for.
+                        if !crate::faithful_gate("VSHELL_DROP_FILTER") {
+                            return true;
                         }
                         !(cond1 && cond2) // keep if NOT removed
                     })

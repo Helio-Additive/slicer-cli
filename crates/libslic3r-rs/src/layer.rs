@@ -45,6 +45,16 @@ pub static VS_REG_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomic
 pub static VS_REG_DROP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static VS_REG_DROP_AREA: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+pub static VS_C1: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_C1_TINY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_C2: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_SAVED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_SHELL_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_SHELL_IN_AREA: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub static VS_REG_OUT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static VS_REG_OUT_AREA: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 use crate::extrusion_entity::{
     extrusion_entities_append_paths, ExtrusionEntityCollection, ExtrusionLoop, ExtrusionPath,
