@@ -540,3 +540,42 @@ extra_spacing 1.0), `wipe_length / line_len = 374.0 / 34.0` and a 5.5 mm cleanin
 box — 11 lines, exactly what we emit. **The purge line count matches; the excess
 is in the finish-layer fill.** `TOWER_SPARSE_GRID=1` currently removes 166,903 mm
 where only ~89,000 should go, which is why it undershoots to 0.915.
+
+
+### Decomposing the finish-layer fill (R500)
+
+`TOWER_SPARSE_GRID` bundled four independent changes, so toggling it moved the
+tower by their sum and hid which one was mis-sized. It is now a master switch with
+three per-behaviour overrides that default to it (`TOWER_FILL_BOX`,
+`TOWER_FILL_RECT`, `TOWER_FILL_GRID`), each forceable to 0 or 1.
+
+Measured individually from the connector+ironing baseline of 1,238,918.5 mm, where
+the target is C++'s 1,171,315.6 mm — i.e. we need **-67,603 mm**:
+
+| knob            | writer length | delta     | segments |
+|-----------------|---------------|-----------|----------|
+| none            | 1,238,918.5   |    —      | 68,666   |
+| `TOWER_FILL_GRID` | 1,103,214.6 | **-135,704** | 58,194 |
+| `TOWER_FILL_RECT` | 1,258,837.5 | +19,919   | 69,494   |
+| `TOWER_FILL_BOX`  | 1,238,815.0 | -104      | 68,660   |
+| GRID+RECT         | 1,072,020.4 | -166,898  | 59,022   |
+| all three         | 1,072,015.5 | -166,903  | 59,022   |
+
+Three findings:
+
+- **`TOWER_FILL_BOX` is inert** (-104 mm). C++'s whole-layer fill box only applies
+  on layers with no tool change, and on exactly those layers `toolchanges_depth`
+  is zero, so our leftover box already equals it. The box was never the defect.
+- **The effects are not additive.** GRID alone is -135,704 but GRID+RECT is
+  -166,898, not -115,785: with the faithful grid running, the inner rectangle
+  lands in a different code path and its sign flips.
+- **The faithful grid overshoots by 2x.** It removes 135,704 mm where only 67,603
+  should go, leaving us 99,296 mm SHORT of C++ once enabled — against 67,603 mm
+  OVER with it disabled. No combination of the three lands on target.
+
+So the sparse grid is not simply mis-scoped: C++ deposits materially more
+finish-layer fill than our faithful-looking sparse branch does. The prime
+suspect for the ~99 kmm residual is `finish_block_solid` (WipeTower.cpp:3842),
+still unported, which serves every block whose `layers_type[m_cur_layer_id]` is
+not `Normal` — those layers get a SOLID fill in C++ where we give them the sparse
+grid. That is the next thing to port.

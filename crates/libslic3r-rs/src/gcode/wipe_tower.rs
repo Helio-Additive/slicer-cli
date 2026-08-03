@@ -2369,7 +2369,22 @@ impl WipeTower {
         // NOT the leftover above the toolchanges, which is what the dead
         // `finish_layer` used and what we inherited. R493 applied the sparse
         // branch to the leftover box and undershot by 63,147 mm as a result.
+        // R500: `TOWER_SPARSE_GRID` bundled four independent changes, so toggling
+        // it moved the tower by their SUM and hid which one was mis-sized. It is
+        // now the master switch, with three per-behaviour overrides that default
+        // to it and can be forced on/off individually:
+        //   TOWER_FILL_BOX  — C++'s fill box (whole layer box on no-toolchange
+        //                     layers, finish_block's cur_depth box otherwise)
+        //   TOWER_FILL_RECT — finish_block's always-on inner rectangle
+        //   TOWER_FILL_GRID — the sparse-vs-solid grid branch
         let sparse_grid = std::env::var_os("TOWER_SPARSE_GRID").is_some();
+        let knob = |name: &str| match std::env::var(name) {
+            Ok(v) => v != "0",
+            Err(_) => sparse_grid,
+        };
+        let fill_box_faithful = knob("TOWER_FILL_BOX");
+        let inner_rect = knob("TOWER_FILL_RECT");
+        let grid_faithful = knob("TOWER_FILL_GRID");
         // WipeTower.cpp:4703 — generate_new calls finish_layer_new ONLY when the
         // layer has no tool change (`wall_idx == -1`); layers WITH tool changes
         // are finished by finish_block (:3733), whose fill box runs from the
@@ -2386,7 +2401,7 @@ impl WipeTower {
             .plan
             .get(self.layer_idx)
             .map_or(false, |l| !l.tool_changes.is_empty());
-        let fill_box = if sparse_grid && !layer_has_toolchange {
+        let fill_box = if fill_box_faithful && !layer_has_toolchange {
             BoxCoordinates::new(
                 self.perimeter_width,
                 self.perimeter_width,
@@ -2455,10 +2470,10 @@ impl WipeTower {
         // section first — `writer.rectangle_fill_box(this, fill_box, ...)`, which
         // is a rectangle OUTLINE walked from the nearest corner, not a fill.
         // finish_layer_new gates the same call on `extrude_fill_wall`.
-        if sparse_grid && layer_has_toolchange && fill_box.height() > self.perimeter_width {
+        if inner_rect && layer_has_toolchange && fill_box.height() > self.perimeter_width {
             writer.rectangle(&fill_box);
         }
-        if !sparse_grid {
+        if !grid_faithful {
             // Pre-R493 behaviour: always a solid zig-zag over the whole
             // remaining layer box. Kept as the default while the block port is
             // incomplete — see the FIDELITY-NOTE above.
