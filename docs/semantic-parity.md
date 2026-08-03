@@ -1222,3 +1222,66 @@ attribution), `silblob.py`, `silmap.py` (ASCII raster diff), `owbbox.py`,
 **New discipline (R516): run the reference-vs-itself control on the HARD model
 before believing a failing geometric metric** — and before dismissing one. The
 100.00% C++-vs-C++ result is what makes the 96.67% actionable.
+
+## R517 — wall position and width exonerated; the excess is RAW, not closing
+
+Measurement round, no code change. The R516 rim is now pinned down to a single
+quantitative contradiction.
+
+**Wall POSITION is exonerated.** New probe `walldist.py` samples our outer-wall
+centreline every 0.1 mm (arcs subdivided) and finds the nearest point on C++'s:
+
+| layer | median | p90 | p99 | within 0.10 mm |
+|---|---|---|---|---|
+| z26.7 | 0.0210 mm | 0.0761 | 0.0966 | **99.87%** (max 0.294) |
+| z70.2 | 0.0129 mm | 0.0621 | 0.9727 | 98.54% (max 2.985) |
+
+The two engines' outer walls are effectively coincident.
+
+**Wall WIDTH is exonerated.** Length-weighted mean width per feature, and the
+implied swept band (Σ len×width), object only:
+
+| feature | rustW | cppW | W-rat | band-rat |
+|---|---|---|---|---|
+| Outer wall | 0.40079 | 0.40227 | 0.996 | 0.987 |
+| Inner wall | 0.40104 | 0.40238 | 0.997 | 0.996 |
+| Sparse infill | 0.45000 | 0.45000 | 1.000 | 1.003 |
+| **OBJECT TOTAL** | | | | **0.997** |
+
+**The excess is in the RAW raster, not the closing.** Sweeping the closing
+kernel K at z26.7 (K=20 is the shipped value):
+
+| K | rustCov | cppCov | R-only | C-only | IoU |
+|---|---|---|---|---|---|
+| **0** | **1733.9** | **1526.2** | **216.0** | **8.3** | **87.13%** |
+| 5 | 1997.1 | 1815.7 | 184.5 | 3.1 | 90.62% |
+| 20 | 2037.9 | 1916.7 | 123.2 | 1.9 | 93.87% |
+
+The morphological closing HELPS (87% → 94%); it does not create the gap.
+
+**RETRACTED mid-round:** I suspected `raster_layer` of a segment-length bias,
+because our chords are 5x longer on median than C++'s (1.937 vs 0.375 mm at
+z26.7) and a length-dependent rasteriser would be invisible to R516's
+C++-vs-C++ control. Tested directly by pre-splitting every segment into 0.1 mm
+pieces and re-rastering: **the area changes by exactly 0.00% for both engines.**
+The rasteriser is split-invariant and R516's control stands. (Two of my own
+ad-hoc rasterisers disagreed for rust while agreeing for C++; per R475 the
+authoritative `semantic_compare` path is the one to trust — the ad-hoc ones
+used a different brush.) Arc bulge is also negligible: summed arc-length minus
+chord over the whole z26.7 outer wall is 0.75 mm (rust) vs 0.59 mm (C++).
+
+**What remains, stated precisely:** our object deposits **0.997x** C++'s swept
+band but covers **1.136x** the unique raw area (z26.7). Equal material over
+more distinct cells means **C++'s extrusion paths overlap each other more than
+ours do.** That, not outline or width, is the whole silhouette failure.
+
+Next: per-feature pass-count multiplicity per cell on both engines, using the
+authoritative rasteriser, to find where C++ double-covers and we do not.
+
+New probes: `walldist.py`, `widthcmp.py`, `rawclose.py`, `rawattr.py`,
+`mult.py`, `chordlen.py`, `rastbias.py`.
+
+**New discipline (R517): when two hand-rolled measurements of the same quantity
+disagree, the bug is in one of them — settle it against the shipped metric with
+an invariance test (split the input; the answer must not move) instead of
+reasoning about which is right.**
