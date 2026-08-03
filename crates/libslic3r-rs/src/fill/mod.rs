@@ -1577,6 +1577,10 @@ pub fn fill_surface_extrusion(
 #[allow(clippy::declare_interior_mutable_const)]
 pub static GEP_PTS_HIST: [std::sync::atomic::AtomicUsize; 5] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 5];
+pub static SRC_CROSS_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SRC_CROSS_SUM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SRC_CROSS_BAD: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static GEP_DUMPED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static GEP_RAW_SUM_UM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static GEP_CROSS_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static GEP_CROSS_SUM_UM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

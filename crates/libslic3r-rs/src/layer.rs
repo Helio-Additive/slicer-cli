@@ -2564,6 +2564,29 @@ impl Layer {
                             for h in &expoly.holes {
                                 push_ring(h);
                             }
+                            // R471: also report WHICH edge is nearest and whether the
+                            // point coincides with a ring vertex, so a far "crossing"
+                            // can be identified as mis-classified rather than displaced.
+                            let ring_pts: std::collections::HashSet<(i64, i64)> = edges
+                                .iter()
+                                .map(|(a, _)| (a.x, a.y))
+                                .collect();
+                            let nearest_edge = |p: &crate::geometry::Point| -> (f64, (i64,i64), (i64,i64)) {
+                                let mut best = f64::MAX;
+                                let mut be = ((0i64,0i64),(0i64,0i64));
+                                for (a, b) in &edges {
+                                    let (ax, ay) = (a.x as f64, a.y as f64);
+                                    let (bx, by) = (b.x as f64, b.y as f64);
+                                    let (px, py) = (p.x as f64, p.y as f64);
+                                    let (dx, dy) = (bx - ax, by - ay);
+                                    let l2 = dx * dx + dy * dy;
+                                    let t = if l2 <= 0.0 { 0.0 } else { (((px-ax)*dx + (py-ay)*dy)/l2).clamp(0.0,1.0) };
+                                    let (qx, qy) = (ax + t*dx, ay + t*dy);
+                                    let d = ((px-qx).powi(2) + (py-qy).powi(2)).sqrt();
+                                    if d < best { best = d; be = ((a.x,a.y),(b.x,b.y)); }
+                                }
+                                (best, be.0, be.1)
+                            };
                             let dist_to_edges = |p: &crate::geometry::Point| -> f64 {
                                 let mut best = f64::MAX;
                                 for (a, b) in &edges {
@@ -2634,6 +2657,19 @@ impl Layer {
                                         let cb = if d_um < 1.0 { 0 } else if d_um < 10.0 { 1 }
                                             else if d_um < 100.0 { 2 } else { 3 };
                                         crate::fill::GEP_CROSS_HIST[cb].fetch_add(1, Relaxed);
+                                        if d_um > 10.0
+                                            && crate::fill::GEP_DUMPED.fetch_add(1, Relaxed) < 16
+                                        {
+                                            let (d, ea, eb) = nearest_edge(&p);
+                                            eprintln!(
+                                                "GEP_BAD pt=({},{}) dist={:.2}um nearest_edge=({},{})->({},{}) on_ring_vertex={} edge_len={:.1}um",
+                                                p.x, p.y, d / crate::SCALING_FACTOR * 1000.0,
+                                                ea.0, ea.1, eb.0, eb.1,
+                                                ring_pts.contains(&(p.x, p.y)),
+                                                (((eb.0-ea.0) as f64).hypot((eb.1-ea.1) as f64))
+                                                    / crate::SCALING_FACTOR * 1000.0,
+                                            );
+                                        }
                                     }
                                     let b = if d_um < 1.0 {
                                         0

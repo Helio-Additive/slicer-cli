@@ -3357,6 +3357,17 @@ impl PrintObject {
                     GEP_PTS_HIST[0].load(R3), GEP_PTS_HIST[1].load(R3), GEP_PTS_HIST[2].load(R3),
                     GEP_PTS_HIST[3].load(R3), GEP_PTS_HIST[4].load(R3),
                 );
+                {
+                    use crate::fill::{SRC_CROSS_BAD, SRC_CROSS_N, SRC_CROSS_SUM};
+                    let n = SRC_CROSS_N.load(R3).max(1);
+                    eprintln!(
+                        "GYROID_ENDPOINTS: AT SOURCE — crossing points emitted n={} mean dist {:.3} um, >1um: {} ({:.2}%)",
+                        SRC_CROSS_N.load(R3),
+                        SRC_CROSS_SUM.load(R3) as f64 / 1000.0 / n as f64,
+                        SRC_CROSS_BAD.load(R3),
+                        100.0 * SRC_CROSS_BAD.load(R3) as f64 / n as f64,
+                    );
+                }
                 let cn = GEP_CROSS_N.load(R3).max(1);
                 let rn = GEP_RAWVERT.load(R3).max(1);
                 eprintln!(

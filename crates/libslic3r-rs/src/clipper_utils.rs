@@ -2660,8 +2660,17 @@ fn intersection_segment_with_expolygons(
                 }
                 let rx = (a.x - p1.x) as f64;
                 let ry = (a.y - p1.y) as f64;
+                // p1 + t*d == a + u*e  =>  t*d - u*e = r  (r = a - p1)
+                //   cross with e:  t*(d x e) =  r x e  =>  t = (r x e) / denom
+                //   cross with d: -u*(e x d) =  r x d  =>  u = (r x d) / denom
+                // (since e x d == -(d x e) == -denom). R471: this second line had
+                // `/ -denom`, flipping u's sign, so the `u in [0,1]` test admitted
+                // intersections with each edge's INFINITE extension on the far side and
+                // rejected genuine ones — emitting "crossing" points that lie on the
+                // segment but nowhere near the edge (measured at the source: 96.8% more
+                // than 1um off, mean 133.9um).
                 let t = (rx * ey_ - ry * ex_) / denom;
-                let u = (rx * dy - ry * dx) / -denom;
+                let u = (rx * dy - ry * dx) / denom;
                 if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
                     ts.push(t);
                 }
@@ -2681,6 +2690,34 @@ fn intersection_segment_with_expolygons(
         y: p1.y + (dy * t).round() as i64,
     };
 
+    // R471 (GYROID_ENDPOINT_DEBUG=1): verify AT THE SOURCE that a point emitted for a
+    // crossing parameter really lies on a clip edge. If these all read ~0 here but the
+    // caller measures ~26um, the displacement happens after this function.
+    let dbg_here = std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some();
+    let dist_here = |p: &Point| -> f64 {
+        let mut best = f64::MAX;
+        for ex in clip {
+            let mut ring = |r: &Polygon| {
+                let pts = &r.points;
+                for i in 0..pts.len() {
+                    let a = pts[i];
+                    let b = pts[(i + 1) % pts.len()];
+                    let (ax, ay) = (a.x as f64, a.y as f64);
+                    let (bx, by) = (b.x as f64, b.y as f64);
+                    let (px, py) = (p.x as f64, p.y as f64);
+                    let (ddx, ddy) = (bx - ax, by - ay);
+                    let l2 = ddx * ddx + ddy * ddy;
+                    let tt = if l2 <= 0.0 { 0.0 } else { (((px-ax)*ddx + (py-ay)*ddy)/l2).clamp(0.0,1.0) };
+                    let d = ((px - (ax+tt*ddx)).powi(2) + (py - (ay+tt*ddy)).powi(2)).sqrt();
+                    if d < best { best = d; }
+                }
+            };
+            ring(&ex.contour);
+            for h in &ex.holes { ring(h); }
+        }
+        best
+    };
+
     let mut result: Vec<Vec<Point>> = Vec::new();
     let mut run: Vec<Point> = Vec::new();
     for w in ts.windows(2) {
@@ -2688,6 +2725,18 @@ fn intersection_segment_with_expolygons(
         let mid = at(0.5 * (t0 + t1));
         if point_in_expolygons(mid, clip) {
             let (a, b) = (at(t0), at(t1));
+            if dbg_here {
+                use std::sync::atomic::Ordering::Relaxed;
+                for (tv, pv) in [(t0, a), (t1, b)] {
+                    if tv > 1e-12 && tv < 1.0 - 1e-12 {
+                        // a genuine crossing parameter
+                        crate::fill::SRC_CROSS_N.fetch_add(1, Relaxed);
+                        let d_um = dist_here(&pv) / crate::SCALING_FACTOR * 1000.0;
+                        crate::fill::SRC_CROSS_SUM.fetch_add((d_um * 1000.0) as usize, Relaxed);
+                        if d_um > 1.0 { crate::fill::SRC_CROSS_BAD.fetch_add(1, Relaxed); }
+                    }
+                }
+            }
             if run.is_empty() {
                 run.push(a);
             }
