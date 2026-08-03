@@ -2841,6 +2841,31 @@ fn emit_tower_tcr(
     // `M621 S[next_extruder]A`), so without this the filament stays retracted and the
     // first purge stroke of every tower block is starved (R465). C++ orders it
     // unretract-then-marker, so build the whole trailer here.
+    // R476 — GCode.cpp:687-695 `travel_to(start_pos, erMixed, "Travel to a Wipe
+    // Tower")`. C++ guards that travel with `tcr.is_finish_first` because, as its
+    // comment at :685 says, "toolchange gcode will move to start_pos" — its
+    // change_filament template leaves the head at the tower. THIS profile's template
+    // does not: it ends with `G1 X165 F15000` / `G1 Y256 ; move Y to aside, prevent
+    // collision`. The tower's own first move is Y-only (the WipeTowerWriter believes
+    // X is already at the block's left edge), so `G1 X219.729 E1.8473` was extruding
+    // a 54.7mm line from x=165 straight across the plate instead of a 34mm purge
+    // stroke -- at 0.034 E/mm instead of 0.0543. That is 2,786 segments / 162,518mm,
+    // i.e. the ENTIRE prime-tower length excess, and a real print defect.
+    // So emit the travel unconditionally, which is what C++'s guard assumes has
+    // already happened.
+    let travel_to_start = if crate::faithful_gate("TOWER_TRAVEL_TO_START") {
+        let f = if print_config.travel_speed > 0.0 {
+            print_config.travel_speed * 60.0
+        } else {
+            30000.0
+        };
+        format!(
+            "G1 X{:.3} Y{:.3} F{:.0} ; Travel to a Wipe Tower\n",
+            tcr.start_pos.x, tcr.start_pos.y, f
+        )
+    } else {
+        String::new()
+    };
     let trailer = if had_placeholder && print_config.retract_length_toolchange > 0.0 {
         let speed = if print_config.retract_speed > 0.0 {
             print_config.retract_speed * 60.0
@@ -2848,11 +2873,11 @@ fn emit_tower_tcr(
             1800.0
         };
         format!(
-            "G1 E{:.4} F{:.0}\n{TOWER_FEATURE}",
+            "{travel_to_start}G1 E{:.4} F{:.0}\n{TOWER_FEATURE}",
             print_config.retract_length_toolchange, speed
         )
     } else {
-        TOWER_FEATURE.to_string()
+        format!("{travel_to_start}{TOWER_FEATURE}")
     };
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
         &g,
@@ -2862,8 +2887,13 @@ fn emit_tower_tcr(
         Some(&trailer),
     );
     if !had_placeholder {
-        // No tool change in this block (e.g. a plain tower layer): the marker
-        // still has to precede the moves.
+        // No tool change in this block (e.g. a plain tower layer): nothing
+        // substituted the trailer in, so the travel and the marker are written
+        // here. This is exactly C++'s `tcr.is_finish_first` case (GCode.cpp:687),
+        // where it also emits the travel explicitly.
+        if !travel_to_start.is_empty() {
+            writer.write_raw(travel_to_start.trim_end());
+        }
         writer.write_raw(TOWER_FEATURE);
     }
     writer.write_raw_content(&g);
