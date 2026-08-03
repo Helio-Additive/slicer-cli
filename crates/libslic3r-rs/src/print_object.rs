@@ -2870,6 +2870,44 @@ impl PrintObject {
                 let detect_top = spiral_mode || region_config.top_solid_layers > 0;
                 let detect_bottom = spiral_mode || region_config.bottom_solid_layers > 0;
 
+                if std::env::var_os("LSDBG").is_some()
+                    && region_id == 0
+                                    {
+                    let ls = &layers[idx_layer].lslices;
+                    let mut a = 0.0f64;
+                    let mut ha = 0.0f64;
+                    let mut nh = 0usize;
+                    for e in ls {
+                        a += e.contour.area().abs() / 1e10;
+                        nh += e.holes.len();
+                        for h in &e.holes {
+                            ha += h.area().abs() / 1e10;
+                        }
+                    }
+                    let mut rnh = 0usize;
+                    let mut rha = 0.0f64;
+                    for reg in layers[idx_layer].regions() {
+                        for sf in &reg.slices.surfaces {
+                            rnh += sf.expolygon.holes.len();
+                            for h in &sf.expolygon.holes {
+                                rha += h.area().abs() / 1e10;
+                            }
+                        }
+                    }
+                    eprintln!(
+                        "LSDBG-RGN z={:.2} rnholes={} rholes={:.4}",
+                        layers[idx_layer].print_z, rnh, rha
+                    );
+                    eprintln!(
+                        "LSDBG-R z={:.2} n={} outer={:.4} nholes={} holes={:.4}",
+                        layers[idx_layer].print_z,
+                        ls.len(),
+                        a,
+                        nh,
+                        ha
+                    );
+                }
+
                 /// PrintObject.cpp:1501-1520
                 /// C++: Surfaces top;
                 /// C++: if (detect_top) { ... }

@@ -1123,3 +1123,55 @@ and are worth carrying forward:
   SMALLER than C++'s while our region 3 is 4.60 mm2 LARGER. That swap, not the
   slivers, is the real region-assignment discrepancy at this layer, and it is where
   the next look should go.
+
+## R515 — negative-volume parts are silently dropped (real gap, measured near-inert)
+
+Probed `Layer::lslices` on both engines for all 656 Majora layers (`LSDBG=1`,
+per-layer outer-contour area / hole count / hole area).
+
+Structure agrees everywhere — same expolygon count on every layer — but the
+**hole population does not**: ours carries holes on 24 layers, C++'s on 186.
+At z 0.30–3.00 C++ has five identical circular holes (Ø3.10 mm, 7.535 mm²
+each, 37.67 mm² total) that we do not; net area disagreement over the 177
+differing layers is 1593 mm².
+
+`Layer::make_slices` and `union_safety_offset_ex` are EXONERATED: the holes are
+already absent one level up, in the per-region `slices.surfaces` (`LSDBG` also
+reports `rnholes=0` at those layers). The source is the 3MF itself — Majora
+declares seven `negative_part` volumes (`Connector-1_A` … `Connector-7_B` in
+`Metadata/model_settings.config`) and `app_slice.rs:577` documents that Tier-1
+merges only printable `model` geometry and skips the rest. C++ slices negative
+volumes alongside model parts (`model_volume_needs_slicing`,
+PrintObjectSlice.cpp:110) and subtracts them in `slices_to_regions`
+(PrintObjectSlice.cpp:403).
+
+**Causality tested before building anything (R514 discipline).** A gated C++
+experiment skipping only the *subtraction* (leaving the slicing structure
+intact) makes C++ hole-free at low z, matching us. Comparing our unchanged
+gcode against that reference:
+
+| metric | vs stock C++ | vs C++ without negatives |
+|---|---|---|
+| silhouette (object) | 96.67% | **96.73%** |
+| Top surface | 1.173 | 1.176 |
+| Bottom surface | 0.892 | 0.822 |
+| object material | 0.9958 | 0.9961 |
+
+So the missing negative volumes account for **0.06pp of the 2.3pp silhouette
+gap** and move Top and Bottom the wrong way. This is a genuine fidelity defect
+worth fixing on its own merits — the five connector holes are functional
+assembly features and we fill them solid — but it is NOT the cause of any
+failing parity metric.
+
+FIRST ATTEMPT RETRACTED: gating `model_volume_needs_slicing` to return false
+for negative volumes makes the C++ slicer exit 1 with no gcode; the comparison
+run that appeared to show "no change" had silently read the previous run's
+stale output file. Same class of trap as R494 — always check the exit code and
+that the artefact was actually rewritten.
+
+**Verified:** Majora 065302cb, benchy 5a34af50, cube ab415621 byte-identical;
+eight guard tests green; C++ submodule restored clean.
+
+**New discipline (R515): a probe that returns NOTHING is a failed run, not a
+negative result.** Confirm the process exited 0 and rewrote its artefact before
+reading any comparison built on it.
