@@ -363,3 +363,52 @@ Result: 2,722 / 2,721 blocks against C++'s 2,724 (the difference is our two fewe
 toolchanges), and `M106 P3 S150` 2,722 vs 2,724. **Material-inert** — these
 templates carry no extrusion for this profile, so every per-feature ratio is
 unchanged and benchy/cube stay byte-identical. It closes a gcode-CONTENT gap.
+
+
+### Writer-only tower measurement (R496)
+
+R495's contamination warning raised the question of whether the tower's 1.045
+length ratio was an artifact. It is not. Summing E and XY path length over each
+`ToolChangeResult.gcode` — the tower writer's own output, BEFORE `append_tcr`
+substitutes the filament-end / change-filament / filament-start blocks — gives:
+
+|            | C++         | ours        | ratio |
+|------------|-------------|-------------|-------|
+| tcrs       | 3,443       | 3,377       | 0.981 |
+| segments   | 67,794      | 35,760      | 0.528 |
+| length mm  | 1,171,315.6 | 1,223,826.0 | 1.045 |
+
+C++'s writer-only length (1,171,315.6) matches the gcode-side feature-scoped
+figure (1,171,244) to 0.006% with an identical segment count, so **the tower
+LENGTH measurement was never contaminated** — `toolchange_wipe_new` is writer
+output, and the filament-park moves that polluted the bounding box live in the
+substituted block, which is not part of `tcr.gcode`. R495's warning therefore
+retires only the bbox/Y-geometry claims; R493's per-layer split stands.
+
+(C++'s writer E/mm is 0.05802 against a final-gcode 0.05433 — E is rescaled after
+the writer, so writer-side E is not comparable across engines. Length is.)
+
+The segment counts expose the structure: C++ averages 17.3 mm per tower segment,
+we average 34.2 mm. C++ splits the work across two emitters that we collapse into
+one:
+
+- `finish_layer_new` runs ONLY on layers with no tool change (`wall_idx == -1`,
+  WipeTower.cpp:4703), and its fill box — with a single block, which is every
+  Majora layer — is the WHOLE layer box, `(m_perimeter_width, m_perimeter_width)`
+  by `m_layer_info->depth - 2*m_perimeter_width` (:3570-3577).
+- layers WITH tool changes get their fill from `finish_block` / `finish_block_solid`.
+
+Ours runs one `finish_layer` on every layer over the leftover box above the
+toolchanges. Three variants were measured against C++'s 1,171,316 mm:
+
+| variant                                          | length      | ratio |
+|--------------------------------------------------|-------------|-------|
+| current (gate off)                                | 1,223,826   | 1.045 |
+| sparse grid on our leftover box (R493)            |   (0.887 E) |       |
+| sparse grid on C++'s whole-layer box              | 1,254,598   | 1.071 |
+| + fill only on no-toolchange layers               | 1,023,933   | 0.874 |
+
+The last is the faithful half of the structure and undershoots exactly because
+the other half — `finish_block`/`finish_block_solid` supplying the fill on
+tool-change layers — is not ported. So `TOWER_SPARSE_GRID` stays opt-in and the
+default is unchanged; the remaining work is that pair of functions.

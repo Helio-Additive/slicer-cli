@@ -2217,6 +2217,67 @@ impl Print {
                     }
                 }
                 self.wipe_tower_results = wt.generate();
+                if std::env::var_os("WTSUM").is_some() {
+                    // Writer-only totals, matching the C++ probe at Print.cpp
+                    // (after `generate_new`): `tcr.gcode` is the tower writer's
+                    // own output in tower-local coordinates, BEFORE the
+                    // filament-end / change-filament / filament-start blocks are
+                    // substituted, so change-filament material is excluded.
+                    let (mut tot_e, mut tot_len) = (0.0_f64, 0.0_f64);
+                    let (mut n_tcr, mut n_seg) = (0usize, 0usize);
+                    for layer in &self.wipe_tower_results {
+                        for tcr in layer {
+                            n_tcr += 1;
+                            let (mut x, mut y) = (tcr.start_pos.x as f64, tcr.start_pos.y as f64);
+                            for line in tcr.gcode.lines() {
+                                if !(line.starts_with("G1") || line.starts_with("G0")) {
+                                    continue;
+                                }
+                                let (mut nx, mut ny, mut e) = (x, y, 0.0_f64);
+                                let mut has_e = false;
+                                for tok in line[2..].split_whitespace() {
+                                    let (c, rest) = tok.split_at(1);
+                                    let v: f64 = match rest
+                                        .trim_end_matches(|ch: char| {
+                                            !(ch.is_ascii_digit() || ch == '.' || ch == '-')
+                                        })
+                                        .parse()
+                                    {
+                                        Ok(v) => v,
+                                        Err(_) => continue,
+                                    };
+                                    match c {
+                                        "X" => nx = v,
+                                        "Y" => ny = v,
+                                        "E" => {
+                                            e = v;
+                                            has_e = true;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                if has_e && e > 0.0 {
+                                    let d = ((nx - x).powi(2) + (ny - y).powi(2)).sqrt();
+                                    if d > 1e-9 {
+                                        tot_len += d;
+                                        n_seg += 1;
+                                    }
+                                    tot_e += e;
+                                }
+                                x = nx;
+                                y = ny;
+                            }
+                        }
+                    }
+                    eprintln!(
+                        "[WTSUM] tcrs={} segs={} writer_E={:.1} writer_len={:.1} E_per_mm={:.5}",
+                        n_tcr,
+                        n_seg,
+                        tot_e,
+                        tot_len,
+                        if tot_len > 0.0 { tot_e / tot_len } else { 0.0 }
+                    );
+                }
                 self.optimized_layer_tools = optimized_layer_tools;
                 if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
                     let blocks: usize =

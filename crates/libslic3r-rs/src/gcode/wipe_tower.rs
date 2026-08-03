@@ -2284,12 +2284,32 @@ impl WipeTower {
             .map(|l| l.toolchanges_depth())
             .unwrap_or(self.depth_traversed)
             + self.perimeter_width;
-        let fill_box = BoxCoordinates::new(
-            self.perimeter_width,
-            fill_box_y,
-            self.config.width - 2.0 * self.perimeter_width,
-            layer_depth - fill_box_y,
-        );
+        // WipeTower.cpp:3570-3577 — with a single block (which is every layer of
+        // Majora, probed R494) `multi_block_fill` is false and the fill box is
+        // the WHOLE layer box:
+        //     fill_box_depth = m_layer_info->depth - 2 * m_perimeter_width;
+        //     fill_boxes.emplace_back(Vec2f(m_perimeter_width, m_perimeter_width),
+        //                             m_wipe_tower_width - 2 * m_perimeter_width,
+        //                             fill_box_depth);
+        // NOT the leftover above the toolchanges, which is what the dead
+        // `finish_layer` used and what we inherited. R493 applied the sparse
+        // branch to the leftover box and undershot by 63,147 mm as a result.
+        let sparse_grid = std::env::var_os("TOWER_SPARSE_GRID").is_some();
+        let fill_box = if sparse_grid {
+            BoxCoordinates::new(
+                self.perimeter_width,
+                self.perimeter_width,
+                self.config.width - 2.0 * self.perimeter_width,
+                layer_depth - 2.0 * self.perimeter_width,
+            )
+        } else {
+            BoxCoordinates::new(
+                self.perimeter_width,
+                fill_box_y,
+                self.config.width - 2.0 * self.perimeter_width,
+                layer_depth - fill_box_y,
+            )
+        };
 
         // WipeTower.cpp:3585-3644 (finish_layer_new). The fill inside the tower
         // box is SOLID only when the NEXT layer contains a toolchange involving
@@ -2320,7 +2340,6 @@ impl WipeTower {
         // (generate_wipe_tower_blocks:4268, plan_tower_new:4477,
         // update_all_layer_depth:4237, finish_block:3733, finish_block_solid:3842),
         // which is also the source of the -68,580 mm shortfall elsewhere.
-        let sparse_grid = std::env::var_os("TOWER_SPARSE_GRID").is_some();
         let solid_infill = {
             let soluble_next = self
                 .plan
@@ -2341,7 +2360,17 @@ impl WipeTower {
         let mut left = fill_box.lu.x + 2.0 * self.perimeter_width;
         let mut right = fill_box.ru.x - 2.0 * self.perimeter_width;
 
-        if !sparse_grid {
+        // WipeTower.cpp:4703 — generate_new calls finish_layer_new ONLY when the
+        // layer has no tool change at all (`wall_idx == -1`); layers WITH tool
+        // changes get their fill from the finish_block* family instead. Ours ran
+        // the fill on every layer, which is the other half of R493's mis-split.
+        let layer_has_toolchange = self
+            .plan
+            .get(self.layer_idx)
+            .map_or(false, |l| !l.tool_changes.is_empty());
+        if sparse_grid && layer_has_toolchange {
+            // no finish-layer fill on tool-change layers
+        } else if !sparse_grid {
             // Pre-R493 behaviour: always a solid zig-zag over the whole
             // remaining layer box. Kept as the default while the block port is
             // incomplete — see the FIDELITY-NOTE above.
