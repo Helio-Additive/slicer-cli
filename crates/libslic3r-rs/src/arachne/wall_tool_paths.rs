@@ -1076,10 +1076,35 @@ impl WallToolPaths {
             // C++ ctor body: constructFromPolygons(polys) — here `polys` is the
             // prepared_outline argument the C++ ctor receives at WallToolPaths.cpp:522.
             wall_maker.construct_from_polygons(&prepared_outline);
-            // WallToolPaths.cpp:533 wall_maker.generateToolpaths(toolpaths);
-            // generateToolpaths defaults filter_outermost_central_edges = true
-            // (SkeletalTrapezoidation.hpp).
-            wall_maker.generate_toolpaths(&mut self.toolpaths, true);
+            // WallToolPaths.cpp:634 wall_maker.generateToolpaths(toolpaths);
+            //
+            // R559 — the comment that used to sit here said "generateToolpaths
+            // defaults filter_outermost_central_edges = true", and we passed
+            // `true` on its authority. The header says otherwise:
+            //
+            //   SkeletalTrapezoidation.hpp:135
+            //   void generateToolpaths(std::vector<VariableWidthLines> &generated_toolpaths,
+            //                          bool filter_outermost_central_edges = false);
+            //
+            // and C++'s only call site passes one argument, so `filterOuterCentral()`
+            // NEVER RUNS in BambuStudio. We ran it on every wall.
+            //
+            // `filterOuterCentral` (SkeletalTrapezoidation.cpp:692-698) clears
+            // `isCentral` on every edge with no `prev` — the whole outer boundary —
+            // and on its twin. `updateBeadCount` then assigns beads only to central
+            // edges, and `filterNoncentralRegions` prunes what is left, so the graph
+            // reaching `generateSegments` was much smaller than C++'s: 272.9 edges
+            // per call against 382.5 (GRAPHPROBE, R559).
+            //
+            // That matters because ExtrusionLines scale EXACTLY with graph edges —
+            // total edge ratio 2.228 against the stage-0 line ratio 2.230 (R559).
+            // The `; LINE_WIDTH:` frequency gap chased since R538 is downstream of
+            // this: fewer lines carry fewer width values.
+            //
+            // Gate OFF restores the old (unfaithful) `true`.
+            let filter_outermost_central_edges =
+                !crate::faithful_gate("ARACHNE_NO_FILTER_OUTER_CENTRAL");
+            wall_maker.generate_toolpaths(&mut self.toolpaths, filter_outermost_central_edges);
         }
 
         // R544 probe (STAGEPROBE=1): bracket EVERY post-processing stage (R543's

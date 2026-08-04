@@ -4374,3 +4374,108 @@ measure the POPULATION the fix applies to before concluding anything.** Wiring
 branch it fixed carries ~10% of the loops. One probe on the branch would have
 sized that in advance and framed the round correctly from the start. **Size the
 population, not just the prize (R519 extended).**
+
+## R559 — R558's 2x is largely a counting artifact; one wrong-comment fix; one unported feature
+
+Instrumented inside `generate_toolpaths` as planned. The round produced a real
+faithfulness fix, a **correction to R558's own headline**, and a concrete
+unported feature. Majora re-baselines `319de38e` -> `d219a37e`.
+
+### ExtrusionLines scale exactly with graph edges
+
+`GRAPHPROBE` at the head of `generateSegments`, both engines:
+
+| | Rust (25,800 calls) | C++ (41,000 calls) | ratio |
+|---|---|---|---|
+| `generateSegments` **calls** | 25,800 | 41,000 | **1.59x** |
+| nodes | 3,546,183 | 7,881,298 | 2.22x |
+| **edges** | **7,040,686** | **15,683,004** | **2.228x** |
+| edges per call | 272.9 | 382.5 | 1.40x |
+
+Total edge ratio **2.228** against R558's stage-0 line ratio **2.230** — equal to
+three digits. Emission per edge is faithful; the line count is the graph. The
+`addToolpathSegment` arithmetic agrees independently: it appends one junction or
+starts a line with two, so calls = juncs - lines, giving 5,905,015 (rust) vs
+11,772,437 (C++) with near-identical new-line rates (0.99% vs 1.11%).
+
+### CORRECTION to R558: the 2x is mostly a probe-scoping artifact
+
+`stageprobe` accumulates over **every** `WallToolPaths::generate()` call. C++ runs
+that up to **twice per surface** (`PerimeterGenerator.cpp:1653-1719`): `:1654`
+builds a complete `WallToolPaths` with `inset_count = 1` **purely to decide**
+`should_enable_top_one_wall`, and then either `:1688`, `:1705` or `:1713` does the
+real work. **C++'s 130,536 stage-0 lines therefore include a pass whose toolpaths
+can be discarded outright.** Ours runs once per surface (~26k calls == our 26,452
+surfaces).
+
+So "C++ produces 2x the ExtrusionLines" is **not** a statement about wall
+geometry. The geometry that reaches G-code was already near parity and still is:
+outer-wall feature blocks 14,538 vs 14,864 (0.98x), extrude moves per block 36.2
+vs 42.0. R558's stage-0 numbers are correct as measured; the *inference* drawn
+from them — that C++ generates twice the walls — is withdrawn. The honest
+per-call ratio is 1.40x, and part of even that is the differing `inset_count`
+between the detection pass and the real pass. **R507 again: check what a metric
+scopes — and a cumulative counter scopes whatever the caller loops over.**
+
+### The fix: we ran a filter C++ never runs
+
+`WallToolPaths.cpp:634` is `wall_maker.generateToolpaths(toolpaths);` — one
+argument. The header:
+
+    SkeletalTrapezoidation.hpp:135
+    void generateToolpaths(std::vector<VariableWidthLines> &generated_toolpaths,
+                           bool filter_outermost_central_edges = false);
+
+so `filterOuterCentral()` **never runs in BambuStudio**. We passed `true` — on the
+authority of a comment sitting at our call site that read *"generateToolpaths
+defaults filter_outermost_central_edges = true (SkeletalTrapezoidation.hpp)"*.
+The comment was simply wrong, and the code followed it (R490 — read the constant,
+do not inherit a claim about it). `filterOuterCentral` clears `isCentral` on every
+edge with no `prev`, and its twin.
+
+Fixed behind `ARACHNE_NO_FILTER_OUTER_CENTRAL` (default-ON; gate OFF reproduces
+`319de38e` byte-for-byte). **Parity-neutral to four digits** — object material
+0.9974, object-only 0.9998, wall-lines IoU 95.29%, silhouette 99.53%, Top surface
+1.172, all unchanged. Kept default-ON because it is correct by construction
+(R550), not because it moved a metric.
+
+**I predicted it would lift edges/call from 272.9 toward C++'s 382.5 and stage-0
+lines from 58,529 to ~82,000. It did neither: 7,040,686 -> 7,044,606 edges
+(+0.06%) and 58,529 -> 58,525 lines.** Edges with no `prev` are a tiny population
+in a closed Voronoi skeleton. Second round running that a prediction about
+magnitude was wrong while the direction of the fix was right.
+
+### The unported feature this exposed
+
+C++'s `seperate_wall_generation` block (`PerimeterGenerator.cpp:1620-1719`, plus
+`should_enable_top_one_wall` at `:1894-1916`, ~100 lines total) implements *"only
+generate one wall around top areas"*: keep the one-wall toolpaths for detected top
+regions, then run a second `WallToolPaths` at `perimeter_spacing` for the
+remaining walls with `inset_idx += 1`. Gated by
+`is_one_wall`/`generate_one_wall_by_top` and the `top_area_threshold` config.
+
+**Our `generate_arachne` does not implement any of it.** Every
+`seperate_wall_generation` / `top_one_wall` match in `perimeter_generator.rs` is
+at line 51-1092 — all inside the CLASSIC path; `generate_arachne` starts at
+:2937. So the feature is ported for classic and absent for Arachne, which is the
+path Majora actually uses.
+
+That makes it a genuine functional gap, and it lands next to our worst
+per-feature number: **Top surface material 1.172** — we deposit 17% more there
+than C++, and this feature is precisely what thins C++'s walls on top areas.
+Sized, not yet ported (R524/R529).
+
+### R560
+
+Port `seperate_wall_generation` + `should_enable_top_one_wall` into
+`generate_arachne`, behind its own gate. **Predict first and check the premise
+(R540):** measure what fraction of Majora's surfaces would take the top-one-wall
+branch before writing the port — if `should_enable_top_one_wall` returns false
+almost everywhere, the prize is small regardless of how real the gap is. The Top
+surface 1.172 connection is a hypothesis, not a measurement.
+
+**New discipline (R559): a cumulative probe measures the caller's loop, not the
+callee's behaviour.** R558 compared two sums without asking how many times each
+side was summed, and concluded C++ generates twice the walls. It calls the
+generator twice as often, once speculatively. **Before comparing two totals,
+count the calls that produced them.**
