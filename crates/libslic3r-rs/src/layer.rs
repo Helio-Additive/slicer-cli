@@ -493,8 +493,37 @@ impl LayerRegion {
         let perimeter_flow = self.flow(FlowRole::Perimeter, layer_height)?;
         let external_perimeter_flow = self.flow(FlowRole::ExternalPerimeter, layer_height)?;
 
+        if std::env::var_os("WTPCFG").is_some() {
+            use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+            static ONCE: AtomicBool = AtomicBool::new(false);
+            if !ONCE.swap(true, Relaxed) {
+                eprintln!(
+                    "[WTPCFG] arachne_min_bead_width={} arachne_min_feature_size={} \
+                     arachne_wall_transition_length={} wall_transition_angle={} \
+                     wall_transition_filter_deviation={} wall_distribution_count={} \
+                     nozzle_diameter={}",
+                    object_config.arachne_min_bead_width,
+                    object_config.arachne_min_feature_size,
+                    object_config.arachne_wall_transition_length,
+                    object_config.wall_transition_angle,
+                    object_config.wall_transition_filter_deviation,
+                    object_config.wall_distribution_count,
+                    print_config.nozzle_diameter,
+                );
+            }
+        }
+
         // Build PerimeterConfig from PrintRegionConfig
         let perimeter_config = PerimeterConfig {
+            // PerimeterGenerator.cpp:1536-1553 -- raw option values; the
+            // arithmetic lives in perimeter_generator at the C++ line.
+            min_nozzle_diameter: print_config.nozzle_diameter,
+            arachne_min_feature_size: object_config.arachne_min_feature_size,
+            arachne_min_bead_width: object_config.arachne_min_bead_width,
+            arachne_wall_transition_length: object_config.arachne_wall_transition_length,
+            wall_transition_angle: object_config.wall_transition_angle,
+            wall_transition_filter_deviation: object_config.wall_transition_filter_deviation,
+            wall_distribution_count: object_config.wall_distribution_count,
             perimeter_count: config.perimeters as usize,
             perimeter_extrusion_width: perimeter_flow.width(),
             external_perimeter_extrusion_width: external_perimeter_flow.width(),

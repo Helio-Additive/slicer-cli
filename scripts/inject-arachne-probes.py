@@ -16,6 +16,7 @@ All are env-gated and off by default:
     GRAPHPROBE    skeleton size + share of nodes carrying a bead count           (R547)
     CENTRALPROBE  central-edge and bead_count census after each marking stage    (R548)
     ISCPROBE      which branch of updateIsCentral decides each edge, + constants  (R548)
+    WTPPARAMS     the six resolved WallToolPathsParams, deduped                   (R550)
 
 Written because `git diff > file` in this environment does not produce an
 applicable patch (R548) — string injection is verifiable and survives the tool.
@@ -293,6 +294,7 @@ WTP_INCLUDES_NEW = """#include <algorithm> //For std::partition_copy and std::mi
 #include <cstdlib>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>"""
 
 WTP_PROBE_OLD = """namespace Slic3r::Arachne
@@ -442,6 +444,27 @@ ST_ISC_GEOM_NEW = """            edge.data.setIsCentral(dR < dD * cap);
         }"""
 
 
+WTP_PARAMS_OLD = """    const double  transitioning_angle = Geometry::deg2rad(m_params.wall_transition_angle);"""
+
+WTP_PARAMS_NEW = r"""    const double  transitioning_angle = Geometry::deg2rad(m_params.wall_transition_angle);
+    if (::getenv("WTPPARAMS") != nullptr) { // R550
+        static std::mutex pmtx;
+        static std::set<std::string> seen;
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+                 "min_bead_width=%.6f min_feature_size=%.6f wall_transition_length=%.6f "
+                 "wall_transition_angle=%.6f(deg) -> %.9f(rad) wall_transition_filter_deviation=%.6f "
+                 "wall_distribution_count=%d",
+                 double(m_params.min_bead_width), double(m_params.min_feature_size),
+                 double(m_params.wall_transition_length), double(m_params.wall_transition_angle),
+                 transitioning_angle, double(m_params.wall_transition_filter_deviation),
+                 int(m_params.wall_distribution_count));
+        std::lock_guard<std::mutex> lock(pmtx);
+        if (seen.insert(std::string(buf)).second)
+            fprintf(stderr, "[CPP-WTPPARAMS] %s\n", buf);
+    }"""
+
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -460,6 +483,7 @@ EDITS = [
     ("WallToolPaths.cpp", WTP_INCLUDES_OLD, WTP_INCLUDES_NEW),
     ("WallToolPaths.cpp", WTP_PROBE_OLD, WTP_PROBE_NEW),
     ("WallToolPaths.cpp", WTP_CHAIN_OLD, WTP_CHAIN_NEW),
+    ("WallToolPaths.cpp", WTP_PARAMS_OLD, WTP_PARAMS_NEW),
 ]
 
 

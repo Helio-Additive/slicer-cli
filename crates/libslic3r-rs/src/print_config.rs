@@ -3519,7 +3519,12 @@ impl Default for PrintObjectConfig {
             // Wall settings (additional)
             wall_loops: 2,
             wall_transition_angle: 10.0,
-            wall_transition_filter_deviation: 0.25,
+            // R550: this option is a PERCENT of the smallest nozzle diameter
+            // (C++ default "25%"), consumed at PerimeterGenerator.cpp:1546 as
+            // `value * 0.01 * min_nozzle_diameter`. It was stored as the
+            // fraction 0.25, which yielded 0.001 mm instead of 0.1 mm -- the
+            // same wrong-unit-in-a-default class as R549's wall_transition_angle.
+            wall_transition_filter_deviation: 25.0,
             wall_distribution_count: 1,
             precise_outer_wall: false,
 

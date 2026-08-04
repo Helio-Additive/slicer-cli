@@ -908,6 +908,29 @@ impl WallToolPaths {
         let epsilon_offset: Coord = (allowed_distance / 2) - 1;
         // WallToolPaths.cpp:456
         let transitioning_angle: f64 = deg2rad(self.m_params.wall_transition_angle as f64);
+        // R550: the six resolved params, deduped, mirroring [CPP-WTPPARAMS].
+        if std::env::var_os("WTPPARAMS").is_some() {
+            use std::collections::BTreeSet;
+            use std::sync::Mutex;
+            static SEEN: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
+            let line = format!(
+                "min_bead_width={:.6} min_feature_size={:.6} wall_transition_length={:.6} \
+                 wall_transition_angle={:.6}(deg) -> {:.9}(rad) \
+                 wall_transition_filter_deviation={:.6} wall_distribution_count={}",
+                self.m_params.min_bead_width,
+                self.m_params.min_feature_size,
+                self.m_params.wall_transition_length,
+                self.m_params.wall_transition_angle,
+                transitioning_angle,
+                self.m_params.wall_transition_filter_deviation,
+                self.m_params.wall_distribution_count,
+            );
+            if let Ok(mut g) = SEEN.lock() {
+                if g.get_or_insert_with(BTreeSet::new).insert(line.clone()) {
+                    eprintln!("[WTPPARAMS] {line}");
+                }
+            }
+        }
         // WallToolPaths.cpp:457  (consumed by the blocked SkeletalTrapezoidation wall_maker)
         const _DISCRETIZATION_STEP_SIZE: Coord = scaled_c(0.8);
 

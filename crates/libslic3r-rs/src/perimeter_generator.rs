@@ -122,6 +122,26 @@ pub struct PerimeterConfig {
     /// Detect thin walls
     pub detect_thin_wall: bool,
 
+    // --- Arachne wall parameters (PerimeterGenerator.cpp:1536-1553) -----------
+    // C++ reads these off `object_config` / `print_config` at the point of use;
+    // our PerimeterGenerator has no config back-pointer, so `LayerRegion` copies
+    // the raw option values across and the arithmetic below stays where C++ has
+    // it. The four size options are PERCENTAGES of the smallest nozzle.
+    /// PerimeterGenerator.cpp:1536 `min_nozzle_diameter`
+    pub min_nozzle_diameter: f64,
+    /// `object_config->min_feature_size` (percent)
+    pub arachne_min_feature_size: f64,
+    /// `object_config->min_bead_width` (percent)
+    pub arachne_min_bead_width: f64,
+    /// `object_config->wall_transition_length` (percent)
+    pub arachne_wall_transition_length: f64,
+    /// `object_config->wall_transition_angle` (DEGREES, no scaling)
+    pub wall_transition_angle: f64,
+    /// `object_config->wall_transition_filter_deviation` (percent)
+    pub wall_transition_filter_deviation: f64,
+    /// `object_config->wall_distribution_count`
+    pub wall_distribution_count: u32,
+
     /// Surface simplification resolution
     pub surface_simplify_resolution: f64,
 
@@ -209,6 +229,16 @@ impl Default for PerimeterConfig {
             // PrintConfig.cpp: sparse_infill_density default 20% (fraction 0.2).
             sparse_infill_density: 0.2,
             detect_thin_wall: false,
+            // C++ option defaults: min_feature_size 25%, min_bead_width 85%,
+            // wall_transition_length 100%, wall_transition_angle 10 deg,
+            // wall_transition_filter_deviation 25%, wall_distribution_count 1.
+            min_nozzle_diameter: 0.4,
+            arachne_min_feature_size: 25.0,
+            arachne_min_bead_width: 85.0,
+            arachne_wall_transition_length: 100.0,
+            wall_transition_angle: 10.0,
+            wall_transition_filter_deviation: 25.0,
+            wall_distribution_count: 1,
             surface_simplify_resolution: 0.01,
             arc_fitting_enabled: false,
             wall_generator_mode: WallGeneratorMode::Classic,
@@ -2965,7 +2995,30 @@ impl PerimeterGenerator {
                 let is_one_wall = loop_number == 0;
 
                 // PerimeterGenerator.cpp:1537-1553  WallToolPathsParams input_params.
-                let input_params = WallToolPathsParams::default();
+                let mut input_params = WallToolPathsParams::default();
+                if crate::faithful_gate("ARACHNE_WTP_PARAMS") {
+                    // PerimeterGenerator.cpp:1536 double min_nozzle_diameter = *std::min_element(...);
+                    let min_nozzle_diameter = self.config.min_nozzle_diameter;
+                    // PerimeterGenerator.cpp:1540 input_params.min_feature_size = v * 0.01 * min_nozzle_diameter;
+                    input_params.min_feature_size =
+                        (self.config.arachne_min_feature_size * 0.01 * min_nozzle_diameter) as f32;
+                    // PerimeterGenerator.cpp:1543 input_params.min_bead_width = v * 0.01 * min_nozzle_diameter;
+                    input_params.min_bead_width =
+                        (self.config.arachne_min_bead_width * 0.01 * min_nozzle_diameter) as f32;
+                    // PerimeterGenerator.cpp:1546 input_params.wall_transition_filter_deviation = v * 0.01 * min_nozzle_diameter;
+                    input_params.wall_transition_filter_deviation =
+                        (self.config.wall_transition_filter_deviation * 0.01 * min_nozzle_diameter)
+                            as f32;
+                    // PerimeterGenerator.cpp:1549 input_params.wall_transition_length = v * 0.01 * min_nozzle_diameter;
+                    input_params.wall_transition_length =
+                        (self.config.arachne_wall_transition_length * 0.01 * min_nozzle_diameter)
+                            as f32;
+                    // PerimeterGenerator.cpp:1551 input_params.wall_transition_angle = object_config->wall_transition_angle.value;
+                    input_params.wall_transition_angle = self.config.wall_transition_angle as f32;
+                    // PerimeterGenerator.cpp:1552 input_params.wall_distribution_count = object_config->wall_distribution_count.value;
+                    input_params.wall_distribution_count =
+                        self.config.wall_distribution_count as i32;
+                }
 
                 // PerimeterGenerator.cpp:1560  coord_t wall_0_inset = 0;
                 let wall_0_inset: Coord = 0;

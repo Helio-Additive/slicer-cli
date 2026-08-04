@@ -3646,3 +3646,94 @@ impossible thing true" found in one run what re-reading the code could not — a
 the answer was that an input I had recorded as a constant was not constant. A
 value printed on a sparse modulo is a *sample*, not a constant; R548 published it
 as a constant and was wrong.
+
+## R550 — the Arachne params are now sourced from config; near-inert on the width metric
+
+R549 fixed one wrong-unit default. This round ports the code that should have
+been supplying those values all along, and finds a second wrong-unit default in
+the process — but the expected width improvement did **not** materialise.
+
+### Step 1: the six resolved params, measured on both engines
+
+A new `WTPPARAMS` probe prints the resolved `WallToolPathsParams` (deduped) at
+`WallToolPaths::generate` on both engines. C++ printed **one** parameter set;
+we printed **two**, and exactly one field differed:
+
+| field | ours (perimeter path) | ours (fill path) | C++ |
+|---|---|---|---|
+| `min_bead_width` | 0.340 | 0.340 | 0.340 |
+| `min_feature_size` | 0.100 | 0.100 | 0.100 |
+| `wall_transition_length` | 0.400 | 0.400 | 0.400 |
+| `wall_transition_angle` | 10 deg | 10 deg | 10 deg |
+| **`wall_transition_filter_deviation`** | **0.025** | 0.100 | **0.100** |
+| `wall_distribution_count` | 1 | 1 | 1 |
+
+Our fill path was already a faithful port of `FillConcentric.cpp:86-91`; only the
+perimeter path, which used `WallToolPathsParams::default()` wholesale, was wrong
+— and only in one field, 4x too small.
+
+### The second wrong-unit default
+
+Printing the *resolved object-config* values (they are not reachable from
+`PerimeterGenerator`, which is why the default was used in the first place):
+
+```
+arachne_min_bead_width=85  arachne_min_feature_size=25  arachne_wall_transition_length=100
+wall_transition_angle=10   wall_transition_filter_deviation=0.25   nozzle_diameter=0.4
+```
+
+Four are percentages exactly as C++ expects; `wall_transition_filter_deviation`
+had been stored as the fraction `0.25` where C++'s option default is `"25%"`, so
+`v * 0.01 * min_nozzle_diameter` gave 0.001 mm instead of 0.1 mm. **The same
+wrong-unit-in-a-default class as R549.** Corrected to `25.0`.
+
+### Step 2: the port
+
+`PerimeterConfig` gained the six raw option values plus `min_nozzle_diameter`
+(copied across in `LayerRegion`, since our `PerimeterGenerator` has no config
+back-pointer), and the arithmetic now sits at the C++ line it mirrors, behind
+`ARACHNE_WTP_PARAMS` (default ON; gate OFF reproduces `d7767da4` byte for byte).
+After it, we print **one** parameter set, identical to C++'s.
+
+### The honest negative
+
+R550's stated expectation was that `; LINE_WIDTH:` per outer-wall block would
+move from 1.20 toward C++'s 4.21. **It did not:**
+
+| metric | R549 | R550 | C++ |
+|---|---|---|---|
+| `; LINE_WIDTH:` per outer-wall block | 1.20 | **1.19** | 4.21 |
+| blocks with >1 distinct width | 12.9% | 12.8% | 28.0% |
+| within-block width spread | 0.0738 mm | 0.0737 mm | 0.0707 mm |
+| object material | 0.9973 | 0.9973 | 1.0 |
+| wall-lines IoU | 95.28% | 95.28% | — |
+| silhouette (area-wtd) | 99.53% | 99.53% | — |
+
+Quadrupling `wall_transition_filter_deviation` moved the width metric by 0.01 and
+every parity verdict by nothing. The change is **parity-neutral**. It is kept
+anyway because it is correct by construction: our resolved parameters now match
+the reference exactly, and the old code would have diverged on any fixture that
+overrides these options — this fixture simply happened to make three of the six
+defaults coincide. Verdict remains SEMANTICALLY EQUIVALENT; Majora re-baselines
+**`d7767da4` -> `4f9de6fe`**; benchy, cube and the STL fixtures are unchanged.
+
+### What this rules out, and what is left
+
+`wall_transition_filter_deviation` is now **eliminated** as the cause of the
+remaining width-change-frequency gap, and so is the whole parameter-plumbing
+hypothesis: every input to Arachne now matches C++ bit for bit, yet we still
+change width along a wall a third as often. The remaining quantity is *how often*
+width changes, not by how much (the spread has matched since R549).
+
+**R551 candidates, none yet probed:** the transition machinery itself
+(`generateTransitionEnds`, `filterTransitionMids`, `dissolveNearbyTransitions` --
+never audited in this campaign), and `get_or_create_beading`'s
+`get_nearest_beading(node, scaled(0.1))` hit rate, still the one function in the
+beading chain never individually measured. Measure the transition COUNT per graph
+on both engines first -- it is the direct analogue of the failing metric.
+
+**New discipline (R550): when a fix is parity-neutral, say so and keep it only
+if it is correct by construction.** Three of six defaults coincided with the
+resolved config values for this fixture, which is exactly why a twelve-round hunt
+found only one of them. A coincidence that holds on your only fixture is not a
+match — the probe that prints all N values side by side costs one build.
