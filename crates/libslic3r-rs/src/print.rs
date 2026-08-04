@@ -3025,7 +3025,27 @@ fn emit_tower_tcr(
     // ramming INSIDE the tower feature, leaving an outstanding retraction at the
     // first purge stroke; that is what made ~one stroke per toolchange read at
     // ~0.011 E/mm instead of 0.0543 (R463).
-    const TOWER_FEATURE: &str = "; FEATURE: Prime tower";
+    // R534 — C++ writes THREE analyzer lines here, not one: the `WipeTowerWriter`
+    // constructor (WipeTower.cpp:637-642) emits
+    //     ";" + reserved_tag(Height) + to_string(m_layer_height)
+    //     ";" + reserved_tag(Role)   + role_to_string(erWipeTower)
+    //     ";" + reserved_tag(Width)  + to_string(line_width)      [= m_perimeter_width]
+    // and the tag strings are `" LAYER_HEIGHT: "` / `" FEATURE: "` / `" LINE_WIDTH: "`
+    // (GCodeProcessor.cpp:50-54) — so `ETags::Width` IS the same reserved tag the
+    // object paths already emit. We were writing only the middle line, which left the
+    // tower's 3,377 blocks with no height/width for the analyzer and made the tower
+    // inherit whatever width the preceding object feature had set.
+    //
+    // PLACEMENT DIVERGENCE (deliberate, see R464 above): C++ emits the trio at the
+    // HEAD of `tcr.gcode`, i.e. BEFORE the change-filament block, so its flush moves
+    // fall inside the Prime tower feature. We emit after the block. Keeping the three
+    // lines contiguous matches C++'s output shape; moving the whole trio upstream is a
+    // separate change with per-feature-attribution consequences.
+    let tower_feature = format!(
+        "; LAYER_HEIGHT: {:.6}\n; FEATURE: Prime tower\n; LINE_WIDTH: {:.6}",
+        tcr.layer_height, tcr.perimeter_width
+    );
+    let tower_feature: &str = &tower_feature;
     let had_placeholder = g.contains(crate::gcode::wipe_tower_integration::CHANGE_FILAMENT_PLACEHOLDER);
     // R466 — the unretract C++ emits in `GCode::append_tcr` (WipeTower.cpp:2436
     // "BBS: do travel in GCode::append_tcr() for lazy_lift"): a bare
@@ -3078,11 +3098,11 @@ fn emit_tower_tcr(
             1800.0
         };
         format!(
-            "{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{TOWER_FEATURE}",
+            "{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tower_feature}",
             print_config.retract_length_toolchange, speed
         )
     } else {
-        format!("{fil_start}{travel_to_start}{TOWER_FEATURE}")
+        format!("{fil_start}{travel_to_start}{tower_feature}")
     };
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
         &g,
@@ -3100,7 +3120,7 @@ fn emit_tower_tcr(
         if !travel_to_start.is_empty() {
             writer.write_raw(travel_to_start.trim_end());
         }
-        writer.write_raw(TOWER_FEATURE);
+        writer.write_raw(tower_feature);
     }
     writer.write_raw_content(&g);
     // R475: we just wrote `; FEATURE: Prime tower` as raw text, so the writer's

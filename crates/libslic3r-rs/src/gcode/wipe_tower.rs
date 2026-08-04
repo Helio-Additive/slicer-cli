@@ -314,6 +314,12 @@ pub struct ToolChangeResult {
     pub print_z: f32,
     /// Layer height
     pub layer_height: f32,
+    /// Tower extrusion width (`WipeTower::m_perimeter_width`).
+    ///
+    /// R534: carried on the result so the export side can emit C++'s
+    /// `; LINE_WIDTH:` analyzer tag (`WipeTowerWriter` ctor, WipeTower.cpp:642)
+    /// without reaching back into the tower.
+    pub perimeter_width: f32,
     /// G-code section
     pub gcode: String,
     /// Extrusion records for path preview
@@ -2284,6 +2290,24 @@ impl WipeTower {
             "; CP_TOOLCHANGE_WIPE CT0 FL{}\n",
             if self.layer_idx == 0 { 1 } else { 0 }
         ));
+        // WipeTower.cpp:3962-3963 — `if (!m_nozzle_change_result.gcode.empty())
+        // writer.change_analyzer_line_width(m_perimeter_width);`. R502 measured our
+        // nozzle-change tower gcode as always empty and the C++ reference emits this
+        // line ZERO times on Majora, so the guard is expected to stay closed; it is
+        // ported anyway because a future nozzle-change path must carry the tag.
+        if !self.nozzle_change_result.gcode.is_empty() {
+            writer.append(&format!("; LINE_WIDTH: {:.6}\n", self.perimeter_width));
+        }
+        // WipeTower.cpp:3965-3968 — "BBS: add the note for gcode-check, when the flow
+        // changed, the width should follow the change". `reserved_tag(ETags::Width)`
+        // is `" LINE_WIDTH: "` (GCodeProcessor.cpp:54), i.e. the same analyzer tag the
+        // object paths already use, and the value is the FIRST-LAYER flow width.
+        if self.layer_idx == 0 {
+            writer.append(&format!(
+                "; LINE_WIDTH: {:.6}\n",
+                self.config.first_layer_flow_ratio * self.perimeter_width
+            ));
+        }
 
         let xl = cleaning_box.ld.x;
         let xr = cleaning_box.rd.x;
@@ -2409,6 +2433,15 @@ impl WipeTower {
         // Add wipe path for post-processing
         writer.add_wipe_point(Vec2f::new(xl, y));
         writer.add_wipe_point(Vec2f::new(xr, y));
+
+        // WipeTower.cpp:4156-4158 — the closing half of the pair above: the extrusion
+        // flow is reset to `m_extrusion_flow`, so the analyzer width has to be put
+        // back to the plain perimeter width. First layer only, matching C++'s guard.
+        // (Our early `line_len <= 0.0` return above skips this, as it skips the whole
+        // wipe; C++ has no such guard but also never reaches a degenerate box here.)
+        if self.layer_idx == 0 {
+            writer.append(&format!("; LINE_WIDTH: {:.6}\n", self.perimeter_width));
+        }
     }
 
     /// Finish the current layer
@@ -2778,6 +2811,7 @@ impl WipeTower {
         ToolChangeResult {
             print_z: self.z_pos,
             layer_height: self.layer_height,
+            perimeter_width: self.perimeter_width,
             gcode: writer.gcode().to_string(),
             extrusions: writer.extrusions().to_vec(),
             start_pos,

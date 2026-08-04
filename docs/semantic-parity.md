@@ -2149,3 +2149,108 @@ guard tests green.
 prior round's note on it.** The `extrude_fill = false on 653/656` fact and a
 purpose-built counter (`WTFILLCNT`) were both already there from R503/R505; the
 round reduced to running an existing probe.
+
+---
+
+## R534 — the tower's analyzer trio: `; LAYER_HEIGHT:` + `; LINE_WIDTH:`
+
+The queued follow-up from R532: *is our `; LINE_WIDTH:` the same reserved tag as
+`ETags::Width` at WipeTower.cpp:3966, and do we emit the first-layer variant?*
+
+**Yes, it is the same tag, and we emitted none of them.**
+`reserved_tag(ETags::Width)` is the literal `" LINE_WIDTH: "`
+(GCodeProcessor.cpp:54), the tag the object paths already use; `ETags::Height`
+is `" LAYER_HEIGHT: "` (:53).
+
+### Where C++ emits it
+
+Seven textual sites in `WipeTower.cpp`; only **three** are live:
+
+| site | guard | Majora count |
+|---|---|---|
+| `WipeTowerWriter` ctor :637-642 | none — once per writer | **3655** |
+| `toolchange_wipe_new` :3967 | `is_first_layer()` | **3** |
+| `toolchange_wipe_new` :4158 | `is_first_layer()` | **3** |
+| `toolchange_wipe_new` :3963 | `!m_nozzle_change_result.gcode.empty()` | 0 |
+| `toolchange_Wipe` :2532, :2633 | legacy non-`_new` function | 0 |
+| `suppress_preview` / `resume_preview` :703-704 | `ENABLE_GCODE_VIEWER_DATA_CHECKING` | 0 |
+| ramming :2330, :2393 | **inside `#if 0` (2322-2450)** | 0 |
+
+The two ramming sites were the trap: they look live and they are the ones whose
+comments explain the intent ("so the next lines are not affected by
+ramming_line_width_multiplier"). Walking the preprocessor nesting from line 2322
+showed the block closes at 2450, so both are dead.
+
+The ctor site emits a **contiguous trio** — `; LAYER_HEIGHT:` / `; FEATURE:
+Prime tower` / `; LINE_WIDTH:` — at the head of every tower block. We were
+emitting only the middle line, so the tower carried no height and inherited
+whatever width the preceding object feature had set.
+
+### Classifying by predecessor, before writing code
+
+Counting `; LINE_WIDTH: 0.500000` in the reference and bucketing each by the
+line above it gave the whole structure in one command:
+
+```
+3655  <FEATURE tag>
+   3  ; CP_TOOLCHANGE_WIPE CT0 FL1
+   3  OTHER: G1  X219.729  E1.8473
+```
+
+3655 = the block count, and the two 3s are the first-layer tool changes — the
+same 3 that R532 matched exactly. So the prediction was **+3377 LAYER_HEIGHT**
+(our block count), **+3377 + 3 + 3 = +3383 LINE_WIDTH**, **6760 lines**.
+
+### Measured
+
+Line delta **6760**, exactly. Counts:
+
+| | ours | C++ | note |
+|---|---|---|---|
+| `; LAYER_HEIGHT:` (tower) | 3377 | 3655 | value `0.300000` on every block in both |
+| `; LINE_WIDTH: 0.500000` | **3383** | 3661 | residual 278 |
+| — predecessor `<FEATURE tag>` | 3377 | 3655 | |
+| — predecessor `CP_TOOLCHANGE_WIPE CT0 FL1` | 3 | 3 | exact |
+| — predecessor a wipe stroke (:4158) | 3 | 3 | exact |
+| `; LINE_WIDTH:` total | 119625 | 215199 | see below |
+
+**3661 − 3383 = 278 = 3655 − 3377**, the same tower block-count difference the
+`WIPE_TOWER_START` tag has tracked since R531. The two first-layer sites match
+exactly, as they must — they are gated on a population we already match.
+
+The :3963 nozzle-change site was ported anyway (behind its guard) and fires
+**zero** times, confirming R502's finding that our nozzle-change tower gcode is
+always empty.
+
+**Placement divergence, kept deliberately.** C++ emits the trio at the *head* of
+`tcr.gcode`, i.e. **before** the change-filament block, so the flush moves fall
+inside the Prime tower feature. We emit it after the block (R464). Keeping the
+three lines contiguous reproduces C++'s output shape; moving the whole trio
+upstream changes per-feature attribution and is a separate change.
+
+**Verified additive** (`; Tool change from` 2721, `; WIPE_TOWER_START` 3377,
+`; CP_TOOLCHANGE_WIPE CT0 FL0` 2718, `; CP EMPTY GRID START` 207,
+`G1  X219.729   E1.8473` 13812 — all unchanged). Semantic verdicts identical to
+baseline: object material 0.9959, layers 657=657, per-layer 4.47%, Top 1.173,
+silhouette 99.37% — **SEMANTICALLY EQUIVALENT**. Eight guard tests green.
+
+**DELIBERATE RE-BASELINE — majora `0fa9f9ff` -> `7a3d41af`.**
+**benchy `5a34af50` and cube `ab415621` UNCHANGED.**
+
+### New finding, queued
+
+Total `; LINE_WIDTH:` is **119,625 ours vs 215,199 C++**, and `G1` moves with an
+`E` are **807,828 vs 1,193,658**. Material matches to 0.9959 and the silhouette
+to 99.37%, so this is not a geometry gap — it is *segmentation*: C++ splits a
+variable-width Arachne perimeter into more, shorter moves and re-tags the width
+at each. Worth sizing on its own; it is the largest remaining structural
+difference in the object paths.
+
+**New discipline (R534): a `#if 0` can span hundreds of lines — walk the
+preprocessor nesting before believing a call site is live.** Two of the seven
+`ETags::Width` sites sat 128 lines inside one, and they were the two whose
+comments best explained the tag's purpose.
+
+**Also (R534): `scripts/semantic_compare.py` takes `(rust, bambu)` and its
+metrics are NOT symmetric** — a swapped invocation reported "per-layer mean dev
+7.62%, FAIL" for an output that scores 4.47% PASS in the correct order.
