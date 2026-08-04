@@ -4840,3 +4840,112 @@ re-prices it.** R549 and R558 were both correct, both kept, and together they
 moved slicing time from 1.12x to 1.45x without a single round noticing, because
 every round after them measured geometry. **When a fix adds work, measure the
 work it adds in the same round you land it.**
+
+## R564 — run-length refuted; the width gap is a heavy tail, decomposed exactly
+
+The last untested mechanism is dead, and the metric turns out to be a tail
+statistic that means something different from what its name suggests. Also: a
+fresh profile for ask #3, and the profiling recipe was broken. No source changed
+this round — baselines `d219a37e` / `5a34af50` / `ab415621` hold trivially.
+
+### The run-length hypothesis is refuted
+
+Distribution of extrusion moves between consecutive `; LINE_WIDTH:` tags inside
+outer-wall blocks:
+
+| | Rust | C++ |
+|---|---|---|
+| run length mean | **2.66** | **3.17** |
+| p50 / p90 / p99 / max | 1 / 4 / 25 / 460 | 1 / 3 / 46 / 527 |
+
+**Our runs are SHORTER, not longer.** Direction predicted wrong. Once a width
+change has happened, we change again slightly *sooner* than C++ does. (This is a
+conditional comparison — both sides conditioned on "a tag just fired" — so the
+differing sample sizes, 15,931 vs 56,805, are the finding, not a flaw.)
+
+### What the metric actually measures
+
+| tags per outer-wall block | Rust | C++ |
+|---|---|---|
+| mean | 1.333 | 4.210 |
+| **p50** | **0** | **0** |
+| p90 / p99 / max | 4 / 19 / 71 | 15 / 44 / 723 |
+| blocks with ZERO tags | 11,093 (76.3%) | 9,087 (61.1%) |
+
+**The median block has no width change at all, in BOTH engines.** The mean is
+driven entirely by a minority tail — C++ has blocks with hundreds of changes
+(max 723) where ours top out at 71. "1.33 vs 4.21 tags per block" was never a
+statement about typical walls, and twenty-odd rounds of treating it as one were
+chasing an average over a bimodal population (R513, arriving late).
+
+Decomposing it, and verifying arithmetically (R530):
+
+| factor | Rust | C++ | ratio |
+|---|---|---|---|
+| blocks with any width variation | 23.7% | 38.9% | **1.64x** |
+| tags per VARYING block | 5.62 | 10.83 | **1.93x** |
+| **product** | | | **3.16x** |
+| observed | 1.332 | 4.210 | **3.16x** |
+
+Exact. And factor 1 cross-checks against internal data: `ARACHWIDTH` gives
+loops-with-variation 15.6% vs 27.9% = **1.79x**, close to the 1.64x measured at
+the output. **So half the gap is the beading — fewer of our loops carry any width
+variation at all — and that half is corroborated internally.** Factor 2, tags per
+varying block, is NOT explained by anything measured so far: `distinct_w/line` is
+only 1.24x.
+
+### CORRECTION to R563
+
+R563 reported "width values available 3.39 vs 5.07 = 1.49x, which cannot produce
+a 3.16x output gap". That compared supply **per surviving Arachne call** against
+output **per outer-wall feature block** — two different denominators. Surviving
+calls per block are 1.70 (rust) vs 2.76 (C++), so the denominators themselves
+differ by 1.6x. **The comparison was invalid and its conclusion — "supply cannot
+explain the gap" — is withdrawn.** The R562 lesson bit the very next round, in my
+own arithmetic. Same-named quantity, different denominator, again.
+
+### Ask #3: the profiling recipe was broken, and here is the profile
+
+`xctrace` is **not reachable from inside devbox** — `/usr/bin/xctrace` is an
+`xcrun` shim and the Xcode toolchain does not resolve there; both the bare and
+absolute-path forms fail with `error: tool 'xctrace' not found`. **It must be run
+OUTSIDE devbox** (`/Applications/Xcode.app/Contents/Developer/usr/bin/xctrace`).
+The recipe carried in the handoff has been wrong for however long it went unused.
+
+117,851 samples, 12 worker threads (main is only 4.9%; R521's thread caveat
+matters). Global self time:
+
+| symbol group | self |
+|---|---|
+| `__ulock_wait2` + `__ulock_wake` (lock contention) | **12.5%** |
+| Clipper family (8 symbols) | **~20%** |
+| `boostvoronoi ExtendedInt::mul_other` + `dif_slice` | **9.3%** |
+| `__findenv_locked` (getenv) | **2.67%** |
+
+Three concrete leads, none yet acted on:
+1. **12.5% in thread synchronisation** is the single largest item. Twelve workers
+   contending is a structural question, not a hot-loop one.
+2. **9.3% in Voronoi exact arithmetic.** R520 eliminated "Arachne/Voronoi as the
+   slicing-time gap" — but that predates R549, which tripled central edges. **That
+   elimination should be treated as expired, not as settled** (R539: unported and
+   eliminated claims both decay).
+3. **2.67% in `getenv`** — `faithful_gate` called inside hot loops. "Caching
+   `faithful_gate`" is on the eliminated list as a perf negative, but at 2.67%
+   globally that measurement deserves re-deriving before it is trusted (R540).
+
+### R565
+
+Take the largest item first: **attribute the 12.5% lock contention**. Which locks?
+`rayon` scheduling, an allocator arena, or a probe mutex left live? Slice the
+profile by thread and find what the workers block on. Only then consider the
+Voronoi and getenv items, in that order.
+
+On the width metric: factor 1 is understood and corroborated; **factor 2 — why
+C++ puts ~1.9x more width changes into the blocks that vary — is the remaining
+open question.** Note both engines' medians are zero, so any future work here must
+be stated over the varying sub-population, never as a global mean.
+
+**New discipline (R564): when a mean is a tail statistic, say so before comparing
+it.** `p50 = 0` on both sides means the average was never describing a typical
+block. Report the median and the zero-fraction alongside any mean that drives a
+campaign — this one drove roughly twenty-five rounds.
