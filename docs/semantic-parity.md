@@ -3561,3 +3561,88 @@ independently-written counter is not a measurement.** R547's corollary said two
 counters that close on each other are worth more than one measured twice; the
 converse bites here. And: **never record a tool as reusable without exercising
 it** — the patch R547 saved had never been applied even once.
+
+## R549 — the bug: `wall_transition_angle` was stored in radians in a degrees field
+
+Twelve rounds of localisation (R538-R548) end here, and R548's blocker turned out
+to be the thing pointing at the answer.
+
+### The contradiction was two different `cap` values, not bad arithmetic
+
+R548's `GEOMPROBE` reported a histogram and a direct comparison that could not
+both be true. I re-added it self-checking: it now counts the invariant violation
+itself (`ratio < cap/2` implies `dR < dD*cap`) and dumps offending inputs.
+
+**Violations: zero.** The arithmetic was always sound. What the probe exposed
+instead was printed right next to it:
+
+```
+[GEOMPROBE2] n=500000  ... cap=0.001523087
+[GEOMPROBE2] n=1000000 ... cap=0.087155743
+```
+
+**`cap` had two runtime values differing by 57.3 = 180/pi.** R548's histogram and
+its direct test had simply been evaluated on calls with different `cap`. This
+also **retracts R548's "constants are identical"**: `ISCPROBE` printed only on a
+sparse modulo and happened to sample the correct-`cap` population every time.
+
+### Root cause
+
+`sin(deg2rad(deg2rad(10)) / 2) = 0.0015231`, against the correct
+`sin(deg2rad(10)/2) = 0.0871557`. The double conversion is in our
+`WallToolPathsParams` default (`wall_tool_paths.rs:94`):
+
+```rust
+wall_transition_angle: 0.174533, // ~10 degrees
+```
+
+The field holds **degrees** — `deg2rad` is applied to it at
+`WallToolPaths.cpp:456` and in our mirror at `wall_tool_paths.rs:898`. Storing
+10 degrees *already in radians* made the conversion run twice, so `cap` in
+`updateIsCentral` came out 57.3x too small and `dR < dD*cap` almost never held.
+
+C++ has no such default: every C++ construction site assigns degrees
+(`PerimeterGenerator.cpp:1551` passes `object_config->wall_transition_angle.value`,
+`FillConcentric.cpp:89` assigns literal `10`).
+
+### Effect, behind `ARACHNE_WTP_ANGLE_DEG` (default ON; gate OFF reproduces `2838b07f` byte for byte)
+
+| measurement | before | after | C++ |
+|---|---|---|---|
+| central/edge after `updateIsCentral` | 3.212% | **11.774%** | 11.199% |
+| bead>0/node after `updateBeadCount` | 5.301% | **13.486%** | 12.864% |
+| central/edge after `generateTransitioningRibs` | 5.398% | **15.964%** | 15.505% |
+| outer-wall within-block width spread | 0.0176 mm | **0.0738 mm** | 0.0707 mm |
+| `; LINE_WIDTH:` per outer-wall block | 0.25 | **1.20** | 4.21 |
+| object material ratio | 0.9959 | **0.9973** | 1.0 |
+| wall-lines IoU (area-wtd) | 95.19% | **95.28%** | 100% |
+
+Every stage of the marking chain now lands within ~4% of C++ instead of 3.5x
+short, and **the within-wall width spread now matches C++** (0.0738 vs 0.0707 mm)
+where it was 4x too flat. Verdict remains SEMANTICALLY EQUIVALENT with object
+material and wall-lines IoU both improved. Benchy (`5a34af50`) and cube
+(`ab415621`) are unchanged — Benchy uses the classic wall generator. Majora
+re-baselines **`2838b07f` -> `d7767da4`**.
+
+### What is still open
+
+`; LINE_WIDTH:` changes per outer-wall block are 1.20 against C++'s 4.21 — a 5x
+improvement on 0.25, but not closed. The remaining gap is no longer the *amount*
+of width variation (the spread matches) but how often it changes along a wall,
+which is consistent with the untouched half of this defect: **our
+`perimeter_generator` builds `WallToolPathsParams::default()` and never reads
+`object_config` at all** (`perimeter_generator.rs:2968`), where
+`PerimeterGenerator.cpp:1537-1553` populates six fields, four of them scaled by
+`0.01 * min_nozzle_diameter`. Three of those defaults coincide with the resolved
+config values for this fixture, which is why only the angle bit us — but
+`wall_transition_filter_deviation` (ours 0.025 against a config default of 0.25%
+of nozzle) and `wall_distribution_count` have not been checked against resolved
+values. **R550: port `PerimeterGenerator.cpp:1537-1553` faithfully and print the
+six resolved params on both engines.**
+
+**New discipline (R549): when two counters disagree, make the probe test the
+invariant rather than re-reporting the numbers.** Counting "how often is the
+impossible thing true" found in one run what re-reading the code could not — and
+the answer was that an input I had recorded as a constant was not constant. A
+value printed on a sparse modulo is a *sample*, not a constant; R548 published it
+as a constant and was wrong.

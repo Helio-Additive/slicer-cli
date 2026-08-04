@@ -91,7 +91,19 @@ impl Default for WallToolPathsParams {
             min_bead_width: 0.34,
             min_feature_size: 0.1,
             wall_transition_length: 0.4,
-            wall_transition_angle: 0.174533, // ~10 degrees
+            // R549: this field holds DEGREES -- `deg2rad` is applied to it at
+            // WallToolPaths.cpp:456 (mirrored below). The old default stored
+            // 0.174533 (10 degrees already in radians), so the conversion ran
+            // twice and yielded 0.0030462 rad, making `cap = sin(angle/2)` 57.3x
+            // too small in `updateIsCentral`. C++ has no default: every C++ site
+            // assigns degrees (PerimeterGenerator.cpp:1551 passes
+            // `object_config->wall_transition_angle.value`, FillConcentric.cpp:89
+            // assigns literal 10).
+            wall_transition_angle: if crate::faithful_gate("ARACHNE_WTP_ANGLE_DEG") {
+                10.0
+            } else {
+                0.174533
+            },
             wall_transition_filter_deviation: 0.025,
             wall_distribution_count: 1,
         }

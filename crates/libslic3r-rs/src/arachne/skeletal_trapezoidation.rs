@@ -999,6 +999,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                             outer_edge_filter_length,
                             cap,
                         );
+                        geomprobe(d_r, d_d, cap);
                     }
                 }
             }
@@ -4273,5 +4274,59 @@ fn iscprobe(branch: usize, central: bool, oefl: Coord, cap: f64) {
             oefl as f64 / 1e5,
             cap,
         );
+    }
+}
+
+/// R549: self-checking version of R548's removed GEOMPROBE. R548's histogram and
+/// its direct comparison disagreed on inputs where that is arithmetically
+/// impossible (`dR/dD < cap/2` implies `dR < dD*cap`), so this counts the
+/// violation itself and dumps the offending values rather than reporting either
+/// number on trust.
+fn geomprobe(d_r: Coord, d_d: Coord, cap: f64) {
+    use std::sync::Mutex;
+    if std::env::var_os("ISCPROBE").is_none() {
+        return;
+    }
+    struct G {
+        n: usize,
+        half: usize,     // ratio < cap/2
+        direct: usize,   // d_r < d_d * cap
+        violations: usize,
+        samples: Vec<(i64, i64, f64, bool)>,
+    }
+    static ACC: Mutex<Option<G>> = Mutex::new(None);
+    let Ok(mut guard) = ACC.lock() else { return };
+    let g = guard.get_or_insert(G {
+        n: 0,
+        half: 0,
+        direct: 0,
+        violations: 0,
+        samples: Vec::new(),
+    });
+    g.n += 1;
+    let ratio = if d_d > 0 { d_r as f64 / d_d as f64 } else { f64::INFINITY };
+    let in_half = ratio < cap / 2.0;
+    let direct = (d_r as f64) < (d_d as f64) * cap;
+    if in_half {
+        g.half += 1;
+    }
+    if direct {
+        g.direct += 1;
+    }
+    // The invariant: in_half implies direct. Any violation is a probe or type bug.
+    if in_half && !direct {
+        g.violations += 1;
+        if g.samples.len() < 5 {
+            g.samples.push((d_r as i64, d_d as i64, ratio, direct));
+        }
+    }
+    if g.n == 1 || g.n % 500_000 == 0 {
+        eprintln!(
+            "[GEOMPROBE2] n={} ratio<cap/2={} direct(dR<dD*cap)={} VIOLATIONS={} cap={:.9}",
+            g.n, g.half, g.direct, g.violations, cap
+        );
+        for (r, d, ratio, direct) in g.samples.iter() {
+            eprintln!("   violation sample: d_r={r} d_d={d} ratio={ratio:.6} direct={direct}");
+        }
     }
 }
