@@ -2909,3 +2909,85 @@ that queued it — re-derive the premise before executing, not after.** R539
 correctly identified that C++ passes a different flow; it did not check that on
 this fixture the flow is numerically the same one, nor that the per-mm figure
 already matched. Both took one command each.
+
+---
+
+## R541 — R414's blocker was stale; the variable-width builder was DEAD CODE
+
+The handoff's instruction was to re-derive R414's blocker before touching
+anything (R504/R540). Doing so changed the whole round.
+
+### R414's blocker does not hold
+
+R414 recorded: "the variable-width builder double-applies the Arachne
+spacing->width conversion", and R537/R539 kept the hand-rolled avg-width `mk()`
+because of it. On the real code:
+
+- `variable_width.rs::thick_polyline_to_multi_path` applies `spacing_to_width`
+  **exactly once** (:198, :311, :423), a faithful port of VariableWidth.cpp:66 /
+  136 / 203 — `unscale(w) + height * (1 - 0.25*PI)` — and even carries an f32
+  fidelity gate (`FLOW_F32`, R231) for the 6th-significant-digit drift.
+
+The double-apply is a **caller** hazard: it happens only if the caller hands the
+builder an already-converted width. Passing the raw ZPath `z` (still in Arachne's
+spacing convention) makes it correct by construction.
+
+### The machinery was already ported — and dead
+
+`arachne/utils/extrusion_line.rs` already contained `to_thick_polyline_z`
+(:551), `extrusion_paths_append_zpaths` (:643) and `detect_bridge_wall_arachne`
+(:677) — the latter carrying the comment *"(Wired into
+`arachne_line_to_extrusion_path` — R412 ports the fn; R413 wires it.)"*.
+
+**R413 never wired it.** All three have been `#[allow(dead_code)]` ever since,
+while `arachne_line_to_extrusion_paths` hand-rolled `mk()` alongside them. Third
+time this pattern has appeared (R523, R539, now R541).
+
+### Wired
+
+All three call sites in the arachne overhang block now route through
+`extrusion_paths_append_zpaths`, behind default-ON **`ARACHNE_VARIABLE_WIDTH`**;
+`mk()` remains as the gate-off path. **A/B verified: gate off reproduces
+`e871ade4` byte-for-byte.**
+
+Verdicts are unchanged — object material **0.9959**, layers 657=657, per-layer
+**4.47%**, silhouette **99.53%**, wall-lines IoU 95.20% -> 95.19%. The change is
+E-neutral and metric-neutral; it is worth keeping because it replaces a
+hand-rolled substitute with the ported C++ function, and it will start producing
+correct variation for free once the input widths vary.
+
+### But it barely moves — and the probe says why
+
+| `; LINE_WIDTH:` changes | before | after | C++ |
+|---|---|---|---|
+| Outer wall | 2,873 | 3,524 | **62,582** |
+| Inner wall | 6,941 | 7,646 | **40,567** |
+| whole file | 119,622 | 120,983 | 215,199 |
+
+A faithful builder fed near-constant widths emits near-constant widths. New probe
+`ARACHWIDTH` (inside `ARACHPROBE=1`), over 25,000 Majora loops:
+
+```
+flat (min == max) = 24,503  (98.0%)
+mean spread       = 1.5 um
+junctions / loop  = 42.7
+distinct w / loop = 1.03
+```
+
+**98% of our Arachne loops are exactly constant-width.** C++ produces 21,181
+distinct outer-wall widths against our 1,715. So the divergence is **upstream in
+Arachne's bead generation (`WallToolPaths`), not in the path builder** — the
+builder had nothing to vary.
+
+That relocates the target: Arachne is supposed to produce variable-width beads;
+ours effectively produces one width per loop. R520 already established Arachne is
+not a *timing* gap; this says it may be a *fidelity* one.
+
+**RE-BASELINE — majora `e871ade4` -> `2838b07f`. benchy `5a34af50` and cube
+`ab415621` UNCHANGED** (both are `wall_generator=classic`). Eight guard tests
+green.
+
+**New discipline (R541): when a faithful transform produces almost no variation,
+measure the variation of its INPUT before suspecting the transform.** The builder
+was correct all along; feeding it 98%-flat widths was the whole story, and the
+probe that showed it took one build.

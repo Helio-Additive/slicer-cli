@@ -3477,6 +3477,83 @@ impl PerimeterGenerator {
                         Some(p)
                     };
 
+                    // R541 — the VARIABLE-WIDTH builder.
+                    //
+                    // C++ builds every arachne wall path through
+                    // `thick_polyline_to_multi_path` (Arachne/utils/ExtrusionLine.cpp:301-310),
+                    // taking the width of each segment from the ThickPolyline's per-junction
+                    // `z` value; the `flow` argument supplies only role/height. `mk()` above
+                    // instead stamps ONE avg width per loop, so we emitted 2,873 `; LINE_WIDTH:`
+                    // changes on Majora's outer wall against C++'s 62,582 (R540).
+                    //
+                    // R414 recorded this as blocked because "the variable-width builder
+                    // double-applies the Arachne spacing->width conversion". Re-derived on the
+                    // real code (R504/R540): `variable_width.rs::thick_polyline_to_multi_path`
+                    // applies `spacing_to_width` EXACTLY ONCE (:198/:311/:423) and is a faithful
+                    // port of VariableWidth.cpp:66/136/203, f32 fidelity gate included. The
+                    // double-apply is a CALLER hazard — it happens only if the caller hands it
+                    // an already-converted width. So we pass the RAW junction widths (the
+                    // ZPath `z`, still in Arachne's spacing convention) and let the builder do
+                    // the single conversion.
+                    //
+                    // `extrusion_paths_append_zpaths` and `detect_bridge_wall_arachne` were
+                    // both already ported (R412) and carry a note saying "R413 wires it" —
+                    // R413 never did, and they have been dead code since.
+                    // R541 probe (ARACHPROBE=1): the builder is faithful, so if the emitted
+                    // widths barely vary the INPUT junction widths must be near-constant.
+                    // Measure the per-loop spread of the Arachne junction `w` directly.
+                    if std::env::var_os("ARACHPROBE").is_some() {
+                        use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+                        static LOOPS: AtomicUsize = AtomicUsize::new(0);
+                        static FLAT: AtomicUsize = AtomicUsize::new(0);
+                        static SPREAD_UM: AtomicUsize = AtomicUsize::new(0);
+                        static JUNCS: AtomicUsize = AtomicUsize::new(0);
+                        static DISTINCT: AtomicUsize = AtomicUsize::new(0);
+                        let ws: Vec<i64> = line.junctions.iter().map(|j| j.w).collect();
+                        if !ws.is_empty() {
+                            let mn = *ws.iter().min().unwrap();
+                            let mx = *ws.iter().max().unwrap();
+                            let mut u: Vec<i64> = ws.clone();
+                            u.sort_unstable();
+                            u.dedup();
+                            let n = LOOPS.fetch_add(1, Relaxed) + 1;
+                            JUNCS.fetch_add(ws.len(), Relaxed);
+                            DISTINCT.fetch_add(u.len(), Relaxed);
+                            // spread in microns (crate scale is 1e5 units/mm)
+                            SPREAD_UM.fetch_add(((mx - mn) as f64 / 100.0) as usize, Relaxed);
+                            if mx == mn {
+                                FLAT.fetch_add(1, Relaxed);
+                            }
+                            if n % 5_000 == 0 {
+                                eprintln!(
+                                    "[ARACHWIDTH] loops={n} flat(min==max)={} ({:.1}%) mean_spread={:.1}um \
+                                     juncs/loop={:.1} distinct_w/loop={:.2}",
+                                    FLAT.load(Relaxed),
+                                    100.0 * FLAT.load(Relaxed) as f64 / n as f64,
+                                    SPREAD_UM.load(Relaxed) as f64 / n as f64,
+                                    JUNCS.load(Relaxed) as f64 / n as f64,
+                                    DISTINCT.load(Relaxed) as f64 / n as f64,
+                                );
+                            }
+                        }
+                    }
+                    let variable_width = crate::faithful_gate("ARACHNE_VARIABLE_WIDTH");
+                    let vw_flow = flow.clone();
+                    let mut push_zpath =
+                        |paths: &mut Vec<ExtrusionPath>, zp: &ZPath, r: ExtrusionRole, degree: f64| {
+                            if variable_width {
+                                crate::arachne::utils::extrusion_line::extrusion_paths_append_zpaths(
+                                    paths,
+                                    &vec![zp.clone()],
+                                    r,
+                                    &vw_flow,
+                                    degree,
+                                );
+                            } else if let Some(p) = mk(zp, r, degree) {
+                                paths.push(p);
+                            }
+                        };
+
                     let mut paths: Vec<ExtrusionPath> = Vec::new();
                     // Non-overhang = intersection with the grown lower slices.
                     //
@@ -3516,15 +3593,11 @@ impl PerimeterGenerator {
                             &subject,
                             nozzle,
                         ) {
-                            if let Some(p) = mk(&zp, role, degree) {
-                                paths.push(p);
-                            }
+                            push_zpath(&mut paths, &zp, role, degree);
                         }
                     } else {
                         for zp in clip_extrusion(&subject, &clip, ClipType::Intersection).iter() {
-                            if let Some(p) = mk(zp, role, 0.0) {
-                                paths.push(p);
-                            }
+                            push_zpath(&mut paths, zp, role, 0.0);
                         }
                     }
                     // Overhang = difference (cpp:721); classify bridge (straight) vs
@@ -3579,9 +3652,7 @@ impl PerimeterGenerator {
                                 );
                             }
                         }
-                        if let Some(p) = mk(zp, ExtrusionRole::OverhangPerimeter, degree) {
-                            paths.push(p);
-                        }
+                        push_zpath(&mut paths, zp, ExtrusionRole::OverhangPerimeter, degree);
                     }
 
                     if !paths.is_empty() {
