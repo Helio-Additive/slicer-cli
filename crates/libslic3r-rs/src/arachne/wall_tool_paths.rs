@@ -936,6 +936,7 @@ impl WallToolPaths {
 
         // Simplify outline for boost::voronoi consumption. Absolutely no self intersections or near-self intersections allowed:
         // WallToolPaths.cpp:461
+        polyprobe("0 outline", &self.outline);
         let mut prepared_outline = offset_polygons(
             &offset_polygons(
                 &offset_polygons(&self.outline, -epsilon_offset),
@@ -943,11 +944,13 @@ impl WallToolPaths {
             ),
             -epsilon_offset,
         );
+        polyprobe("1 after triple offset", &prepared_outline);
         // WallToolPaths.cpp:462  update_outline_size_change(prepared_outline);
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         // WallToolPaths.cpp:470-477  process_with_size_check(...) — operation then size check.
         simplify_polygons(&mut prepared_outline, smallest_segment, allowed_distance);
+        polyprobe("2 after simplify", &prepared_outline);
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
@@ -977,6 +980,7 @@ impl WallToolPaths {
         // Applying Clipper union should be enough to get rid of this issue.
         // WallToolPaths.cpp:483
         prepared_outline = union_polygons(&prepared_outline);
+        polyprobe("3 final prepared_outline", &prepared_outline);
         // WallToolPaths.cpp:484
         outline_size_change |= original_outline_size != prepared_outline.len();
 
@@ -1580,6 +1584,43 @@ pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
                     d as f64 / l.max(1) as f64,
                 );
             }
+        }
+    }
+}
+
+/// R552: polygon and point counts through the `prepared_outline` preparation
+/// chain, mirroring `[CPP-POLYPROBE]`. Brackets the 2.33x graph-edge gap at its
+/// source: if the point counts already differ here, the cause is the offset /
+/// simplify chain rather than Voronoi or discretisation.
+fn polyprobe(stage: &str, polys: &crate::geometry::Polygons) {
+    use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use std::sync::Mutex;
+    if std::env::var_os("POLYPROBE").is_none() {
+        return;
+    }
+    #[derive(Default, Clone, Copy)]
+    struct Acc {
+        calls: usize,
+        polys: usize,
+        points: usize,
+    }
+    static ACC: Mutex<Option<BTreeMap<String, Acc>>> = Mutex::new(None);
+    static ROUNDS: AtomicUsize = AtomicUsize::new(0);
+    let pts: usize = polys.iter().map(|p| p.points.len()).sum();
+    let Ok(mut g) = ACC.lock() else { return };
+    let m = g.get_or_insert_with(BTreeMap::new);
+    let a = m.entry(stage.to_string()).or_default();
+    a.calls += 1;
+    a.polys += polys.len();
+    a.points += pts;
+    if stage.starts_with('3') && ROUNDS.fetch_add(1, Relaxed) % 4_000 == 3_999 {
+        eprintln!("[POLYPROBE] ---- cumulative ----");
+        for (k, v) in m.iter() {
+            eprintln!(
+                "  {k:<30} calls={:7} polys={:9} points={:10}",
+                v.calls, v.polys, v.points
+            );
         }
     }
 }

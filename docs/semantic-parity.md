@@ -3820,3 +3820,72 @@ wrong size by two orders of magnitude; one arithmetic sanity check up front
 would have redirected the round. Related: when an internal metric differs by
 1.21x and the output metric it supposedly drives differs by 3.5x, the mismatch
 itself is the finding — something other than the per-unit quantity is scaling.
+
+## R552 — the 2x is in Arachne's INPUT, not in Arachne
+
+The bracket closed on the first try. No behavioural change; Majora stays at
+`4f9de6fe`.
+
+### Constants first
+
+`meshfix_maximum_resolution` = `scaled(0.5)` and `meshfix_maximum_deviation` =
+`scaled(0.025)` on **both** sides (`WallToolPaths.hpp:19-20` against
+`wall_tool_paths.rs:45,48`). After R549 and R550 these were the prime unit-bug
+suspects; they are clean.
+
+### The measurement
+
+A new `POLYPROBE` counts polygons and points at four points of the
+`prepared_outline` preparation chain, on both engines:
+
+| stage | polys R | polys C++ | points R | points C++ | ratio (pts) |
+|---|---|---|---|---|---|
+| **0 `outline` (the INPUT)** | **23,438** | **44,201** | **1,135,330** | **2,184,992** | **1.92x** |
+| 1 after triple offset | 23,049 | 42,558 | 1,129,541 | 2,189,542 | 1.94x |
+| 2 after simplify | 23,043 | 42,351 | 692,442 | 1,376,361 | 1.99x |
+| 3 final `prepared_outline` | 22,974 | 41,208 | 687,381 | 1,362,492 | 1.98x |
+
+Three things follow immediately:
+
+1. **`WallToolPaths::generate` is called the same number of times** — 48,000
+   against 48,001. The 2x is not extra invocations.
+2. **The whole preparation chain is faithful.** The ratio enters at 1.92x and
+   leaves at 1.98x; `simplify` removes 39% of our points against 37% of C++'s.
+   Nothing in the offset / simplify / fix-self-intersections / union sequence
+   creates or destroys the gap — it passes straight through.
+3. **Points per polygon are nearly identical** — 48.4 ours against 49.4 C++. So
+   this is not "C++ polygons are more detailed". It is **~1.9x more polygon
+   contours**, each of comparable complexity.
+
+**The divergence is upstream of Arachne entirely.** Everything this campaign has
+examined since R538 — beading strategies, propagation, transitions, central
+marking, the parameter plumbing — sits *downstream* of an input that already
+differs by 2x. R549's unit fix was still a real defect and still improved parity;
+but the remaining `; LINE_WIDTH:` gap is inherited, not generated, by Arachne.
+
+### What this means and what it does not
+
+The silhouette (99.53%) and object material (0.9973) both match, so the **area**
+being handed in is right. What differs is how that area is **partitioned into
+contours**: C++ passes roughly twice as many separate polygons covering the same
+region. That is a topology/fragmentation difference in `last_p` — the region
+area remaining after previous insets, `to_polygons(last)` in the caller — not a
+geometry error.
+
+Note this does **not** contradict R513's elimination of "the sliced geometry
+itself": R513 compared sliced *area* and found it sound, and it still is. Contour
+*count* is a different quantity, never measured until now (R507: check what a
+metric scopes).
+
+**R553: measure the polygon count of `last` / `last_p` at the point
+`PerimeterGenerator` hands it to `WallToolPaths`, and walk back** through the
+inset loop to whichever operation first halves it — the `offset_ex` chain that
+produces `last`, or a union/simplify we apply that C++ does not. Both engines
+have the call site instrumented already; extend `POLYPROBE` upward rather than
+starting a new probe.
+
+**New discipline (R552): when a ratio is constant across every stage of a
+pipeline, stop probing the pipeline and probe its input.** Four stages all
+reported ~1.9x; that flatness was the signal, and one more probe *before* stage 0
+would have found it in R547 rather than R552. A pipeline that preserves a ratio
+is exonerated by that very fact.

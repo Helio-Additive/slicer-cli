@@ -18,6 +18,7 @@ All are env-gated and off by default:
     ISCPROBE      which branch of updateIsCentral decides each edge, + constants  (R548)
     WTPPARAMS     the six resolved WallToolPathsParams, deduped                   (R550)
     TRANSPROBE    transition mids/ends surviving each stage of the ribs pipeline   (R551)
+    POLYPROBE     polygon/point counts through the prepared_outline chain          (R552)
 
 Written because `git diff > file` in this environment does not produce an
 applicable patch (R548) — string injection is verifiable and survives the tool.
@@ -539,6 +540,57 @@ ST_TRANS_HPP_NEW = """    void updateIsCentral();
     void transitionCensus(const char *stage);"""
 
 
+WTP_POLY_FN = r"""
+// R552: polygon and point counts through the prepared_outline preparation chain.
+// Brackets the 2.33x graph-edge gap at its source.
+static void polyprobe(const char *stage, const Polygons &polys)
+{
+    if (::getenv("POLYPROBE") == nullptr)
+        return;
+    struct Acc { size_t calls, polys, points; };
+    static std::mutex                 mtx;
+    static std::map<std::string, Acc> acc;
+    static size_t                     rounds = 0;
+    size_t pts = 0;
+    for (const Polygon &p : polys)
+        pts += p.points.size();
+    std::lock_guard<std::mutex> lock(mtx);
+    Acc &a = acc[stage];
+    ++a.calls;
+    a.polys += polys.size();
+    a.points += pts;
+    if (stage[0] == '3' && ++rounds % 4000 == 0) {
+        fprintf(stderr, "[CPP-POLYPROBE] ---- cumulative ----\n");
+        for (const auto &kv : acc)
+            fprintf(stderr, "  %-30s calls=%7zu polys=%9zu points=%10zu\n",
+                    kv.first.c_str(), kv.second.calls, kv.second.polys, kv.second.points);
+    }
+}
+"""
+
+WTP_POLY_ANCHOR = """static void stageprobe(const char *stage, const std::vector<VariableWidthLines> &toolpaths)"""
+
+WTP_POLY_CALLS_OLD = """    Polygons prepared_outline = offset(offset(offset(outline, -epsilon_offset), epsilon_offset * 2), -epsilon_offset);
+    update_outline_size_change(prepared_outline);"""
+
+WTP_POLY_CALLS_NEW = """    polyprobe("0 outline", outline);
+    Polygons prepared_outline = offset(offset(offset(outline, -epsilon_offset), epsilon_offset * 2), -epsilon_offset);
+    polyprobe("1 after triple offset", prepared_outline);
+    update_outline_size_change(prepared_outline);"""
+
+WTP_POLY_CALLS2_OLD = """    process_with_size_check([&] { simplify(prepared_outline, smallest_segment, allowed_distance);});"""
+
+WTP_POLY_CALLS2_NEW = """    process_with_size_check([&] { simplify(prepared_outline, smallest_segment, allowed_distance);});
+    polyprobe("2 after simplify", prepared_outline);"""
+
+WTP_POLY_CALLS3_OLD = """    prepared_outline = union_(prepared_outline);
+    update_outline_size_change(prepared_outline);"""
+
+WTP_POLY_CALLS3_NEW = """    prepared_outline = union_(prepared_outline);
+    polyprobe("3 final prepared_outline", prepared_outline);
+    update_outline_size_change(prepared_outline);"""
+
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -562,6 +614,9 @@ EDITS = [
     ("WallToolPaths.cpp", WTP_INCLUDES_OLD, WTP_INCLUDES_NEW),
     ("WallToolPaths.cpp", WTP_PROBE_OLD, WTP_PROBE_NEW),
     ("WallToolPaths.cpp", WTP_CHAIN_OLD, WTP_CHAIN_NEW),
+    ("WallToolPaths.cpp", WTP_POLY_CALLS_OLD, WTP_POLY_CALLS_NEW),
+    ("WallToolPaths.cpp", WTP_POLY_CALLS2_OLD, WTP_POLY_CALLS2_NEW),
+    ("WallToolPaths.cpp", WTP_POLY_CALLS3_OLD, WTP_POLY_CALLS3_NEW),
     ("WallToolPaths.cpp", WTP_PARAMS_OLD, WTP_PARAMS_NEW),
 ]
 
@@ -593,6 +648,13 @@ def main():
             failures.append("SkeletalTrapezoidation.cpp: generateSegments anchor not unique")
         else:
             texts["SkeletalTrapezoidation.cpp"] = st.replace(anchor, ST_CENTRAL_FN + "\n" + anchor)
+
+    wt = texts["WallToolPaths.cpp"]
+    if "static void polyprobe" not in wt:
+        if wt.count(WTP_POLY_ANCHOR) != 1:
+            failures.append("WallToolPaths.cpp: stageprobe anchor not unique")
+        else:
+            texts["WallToolPaths.cpp"] = wt.replace(WTP_POLY_ANCHOR, WTP_POLY_FN + "\n" + WTP_POLY_ANCHOR, 1)
 
     st3 = texts["SkeletalTrapezoidation.cpp"]
     if "SkeletalTrapezoidation::transitionCensus" not in st3:
