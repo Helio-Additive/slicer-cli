@@ -565,7 +565,12 @@ static void polyprobe(const char *stage, const Polygons &polys)
     ++a.calls;
     a.polys += polys.size();
     a.points += pts;
-    if (stage[0] == '3' && ++rounds % 4000 == 0) {
+    // R561: was `% 4000`, which capped the last print at 48,000 calls on BOTH
+    // engines and so never showed a TOTAL. R560 therefore compared them at a
+    // matched call INDEX, which is not a matched surface set, because C++ calls
+    // generate() ~twice per surface. 200 puts the last print within 200 calls of
+    // the true total, making totals/calls a sound per-surface mean.
+    if (stage[0] == '3' && ++rounds % 200 == 0) {
         fprintf(stderr, "[CPP-POLYPROBE] ---- cumulative ----\n");
         for (const auto &kv : acc)
             fprintf(stderr, "  %-30s calls=%7zu polys=%9zu points=%10zu\n",

@@ -4565,3 +4565,93 @@ round for it.** The queued R560 port had a plausible mechanism, a named C++
 block, a line count, and a matching symptom (Top surface 1.172). One probe showed
 the branch fires on 0.024% of surfaces. **A hypothesis that survives reading can
 still die on its first count; count before you port.**
+
+## R561 — the 1.85x outline is real, and half our Arachne calls collapse to nothing
+
+R560 refused to conclude the outline census because it was taken at a matched
+call *index*. Normalised, **the gap survives** — my prediction that it would
+shrink was wrong — and normalising exposed a second, larger divergence nobody had
+counted. No behavioural change: baseline `d219a37e`, benchy `5a34af50`, cube
+`ab415621`, 8 guards green.
+
+### Making the census sound
+
+Both probes printed on a 4,000 modulo, so both capped at 48,000 and neither ever
+showed a total. Lowered to 200 on both engines, putting the last print within 200
+calls of the true total.
+
+The normalisation turned out simpler than R560 assumed: C++'s two `generate()`
+calls per surface see the **same** outline, so points-per-call already equals the
+mean per-surface outline size. R560's only real error was comparing at a call
+index where the two engines had covered different surface *sets*. Whole-run
+totals fix it outright — both engines process the entire model, so the totals are
+comparable regardless of how the calls are indexed.
+
+| | Rust | C++ | ratio |
+|---|---|---|---|
+| `generate()` calls | **51,200** | **50,200** | 1.02x |
+| stage-0 outline points | 1,219,020 | 2,253,307 | **1.85x** |
+| stage-0 outline polys | 26,649 | 46,384 | **1.74x** |
+| reach `generateSegments` | 25,800 | 41,000 | 1.59x |
+| **early returns** | **25,400 (49.6%)** | **9,200 (18.3%)** | **2.7x** |
+
+**Prediction wrong.** I predicted the 1.96x would shrink toward R557's 1.20x
+points-per-layer-region figure. It did not: 1.85x on whole-run totals. Fourth
+magnitude prediction in five rounds to miss — the reading is fine, the sizing is
+not, and I should stop attaching numbers to predictions I cannot derive.
+
+### The thing I was not looking for
+
+**Call counts are nearly EQUAL, not 2:1.** R560's model — C++ calls `generate()`
+twice per surface, we call it once — is incomplete. Both engines re-enter
+`generate()` for surfaces that fail, because the early return at
+`WallToolPaths.cpp:486` / `wall_tool_paths.rs:990` fires **before**
+`toolpaths_generated = true`, so the next accessor regenerates from scratch. Same
+shape in both engines — a shared quirk, not a defect — but it means the probe
+counts every failure twice on both sides.
+
+That makes `POLYPROBE_calls - GRAPHPROBE_calls` exactly the early-return count,
+since `polyprobe("3 final prepared_outline")` sits immediately before the
+`area(prepared_outline) <= 0` check on both engines (verified, not assumed).
+**We early-return on 49.6% of calls; C++ on 18.3%.**
+
+Solving `calls = S + 2F` for successes S and failures F — derived, and stated as
+derived:
+
+| derived | Rust | C++ |
+|---|---|---|
+| surfaces reaching Arachne | 25,800 | 41,000 |
+| surfaces collapsing to zero area | **12,700** | **4,600** |
+| total surfaces | 38,500 | 45,600 |
+| **failure rate** | **33.0%** | **10.1%** |
+| points per surface | 31.7 | 49.4 |
+
+**A third of the surfaces we hand Arachne collapse to zero area before the
+skeleton is built. C++ loses a tenth.** This dovetails with R557, which found we
+produce more and smaller surfaces per layer-region (7.78 vs 4.97): the extra
+fragments are small enough that the `offset(-e) offset(+2e) offset(-e)` cleanup
+plus `removeSmallAreas` annihilates them.
+
+Note this makes R557's opening filter look different in hindsight. It moved
+surfaces/region 7.78 -> 4.40 and was shipped opt-in because it cost 0.06pp of
+IoU. It was aimed at the wrong metric, but it was pushing on the right quantity.
+**Not reopening it on that basis** — that is a hypothesis, and R560 is a fresh
+reminder of what those are worth. It needs the R562 measurement first.
+
+### R562
+
+The cleanest, largest, best-quantified divergence in the pipeline is now:
+**33.0% vs 10.1% of Arachne inputs collapse to zero area.** Bucket the failures
+before blaming anything: instrument the prepared-outline chain to record, for the
+surfaces that fail, the area at stage 0 and which step zeroes it (the triple
+offset, `simplify`, `removeDegenerateVerts`, `removeSmallAreas`, or the final
+`union_`) — the stage counters exist, they just are not conditioned on outcome.
+Then check whether `MMSEG_OPENING=1` (R557, opt-in) moves the failure rate: it
+is a ready-made gate on exactly the surface fragmentation suspected of causing
+this, and R557/R558 already established the habit of reusing it as an instrument.
+
+**New discipline (R561): when a measurement is unsound, fixing the normalisation
+often reveals a second quantity you were not measuring at all.** The call-count
+equality was visible only once totals replaced sampled indices, and it is what
+turned "C++'s outline is bigger" into "half our inputs are being thrown away".
+**Repair the instrument before abandoning the question.**

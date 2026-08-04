@@ -1639,7 +1639,13 @@ fn polyprobe(stage: &str, polys: &crate::geometry::Polygons) {
     a.calls += 1;
     a.polys += polys.len();
     a.points += pts;
-    if stage.starts_with('3') && ROUNDS.fetch_add(1, Relaxed) % 4_000 == 3_999 {
+    // R561: was `% 4_000`, which capped the last print at 48,000 calls on BOTH
+    // engines and so never showed a TOTAL. R560 therefore compared them at a
+    // matched call INDEX, which is not a matched surface set, because C++ calls
+    // generate() ~twice per surface (one speculative). 200 puts the last print
+    // within 200 calls of the true total, making totals/calls a sound
+    // per-surface mean on both sides.
+    if stage.starts_with('3') && ROUNDS.fetch_add(1, Relaxed) % 200 == 199 {
         eprintln!("[POLYPROBE] ---- cumulative ----");
         for (k, v) in m.iter() {
             eprintln!(
