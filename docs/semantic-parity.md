@@ -2991,3 +2991,89 @@ green.
 measure the variation of its INPUT before suspecting the transform.** The builder
 was correct all along; feeding it 98%-flat widths was the whole story, and the
 probe that showed it took one build.
+
+---
+
+## R542 — Arachne is fully ported; the gap is WITHIN-loop bead variation
+
+**No code change.** Majora `2838b07f`, benchy `5a34af50`, cube `ab415621`
+unchanged. This round inventoried the subsystem and corrected R541's framing.
+
+### Nothing is missing
+
+Our `arachne/` tree mirrors C++'s file-for-file, including **all seven** beading
+strategies:
+
+| C++ | ours |
+|---|---|
+| `BeadingStrategy.cpp/.hpp` (79+119) | `beading_strategy.rs` (306) |
+| `BeadingStrategyFactory` (62+35) | `beading_strategy_factory.rs` (253) |
+| `DistributedBeadingStrategy` (95+40) | `distributed_beading_strategy.rs` (443) |
+| `LimitedBeadingStrategy` (126+49) | `limited_beading_strategy.rs` (469) |
+| `OuterWallContourStrategy` (82+28) | `outer_wall_contour_strategy.rs` (408) |
+| `OuterWallInsetBeadingStrategy` (59+35) | `outer_wall_inset_beading_strategy.rs` (303) |
+| `RedistributeBeadingStrategy` (97+56) | `redistribute_beading_strategy.rs` (428) |
+| `WideningBeadingStrategy` (82+46) | `widening_beading_strategy.rs` (360) |
+| `SkeletalTrapezoidation` (2144+585) | `skeletal_trapezoidation.rs` (3909) |
+| `WallToolPaths` (903+152) | `wall_tool_paths.rs` (1480) |
+
+`BeadingStrategyFactory::make_strategy` is a faithful 1:1 port — same chain
+(Distributed -> Redistribute -> [Widening] -> [OuterWallInset] -> Limited),
+including C++'s `#if 0` around `OuterWallContourStrategy`. `generate_junctions`
+assigns `beading.bead_widths[junction_idx]` (SkeletalTrapezoidation.cpp:1847) and
+the left/right beading interpolation mirrors :1760-1766.
+
+### Correcting R541
+
+R541 said "our Arachne emits effectively ONE width per loop", which invited
+"our widths are constant". **They are not.** The distributions are close:
+
+| `; FEATURE: Outer wall` widths | ours | C++ |
+|---|---|---|
+| min | 0.3501 | 0.2445 |
+| p25 | **0.4000** | **0.4016** |
+| median | 0.4000 | 0.4284 |
+| p99 | **0.6209** | **0.6321** |
+| max | 0.6555 | 0.8891 |
+
+Both are dominated by the 0.40 bin (49% vs 40%) with a comparable tail out past
+0.6 mm. Our widths vary across the model much as C++'s do.
+
+### The actual gap, quantified
+
+Bucketing `; LINE_WIDTH:` by feature-block (one block = one wall):
+
+| | ours | C++ |
+|---|---|---|
+| Outer-wall feature blocks | 14,352 | 14,864 |
+| `; LINE_WIDTH:` per block | **0.25** | **4.21** |
+| blocks with >1 distinct width | **3.4%** | **28.0%** |
+| mean within-block spread | **0.0176 mm** | **0.0707 mm** |
+
+**Block counts match (0.97) — the wall structure is right.** What differs is that
+C++ changes width *along* a wall 8x more often, with 4x the spread. Combined with
+R541's `ARACHWIDTH` (98% of loops have `min == max` junction width), the target
+is now exact:
+
+> our per-loop beading is CONSTANT ALONG THE LOOP; C++'s varies with the local
+> wall thickness.
+
+That excludes the strategies, the factory, `generate_junctions`, and the path
+builder (R541) — all verified faithful. It points at **beading propagation and
+transitions across the skeleton** (`propagate_beadings_*`, the transition
+machinery in `skeletal_trapezoidation.rs`), which is where a node's beading is
+either recomputed for the local thickness or inherited unchanged.
+
+### Sizing
+
+This is E-neutral in aggregate (R541 measured material 0.9959 unchanged with the
+faithful builder wired) and affects print fidelity along walls, not the parity
+verdicts. It is the last known structural divergence in the wall path, and it is
+a genuinely deep subsystem — `skeletal_trapezoidation.rs` is 3,909 lines. Sizing
+the specific propagation gap is the next round's job, before any change.
+
+**New discipline (R542): "constant" and "no variation" are different claims —
+measure the distribution, not just the count of distinct values.** R541's
+per-loop probe was right, but its wording invited the wrong conclusion; the
+widths were varying across the model all along, and only the within-loop
+variation is missing. A percentile table settled it in one command.
