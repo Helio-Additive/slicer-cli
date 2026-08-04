@@ -3444,9 +3444,52 @@ impl PerimeterGenerator {
 
                     let mut paths: Vec<ExtrusionPath> = Vec::new();
                     // Non-overhang = intersection with the grown lower slices.
-                    for zp in clip_extrusion(&subject, &clip, ClipType::Intersection).iter() {
-                        if let Some(p) = mk(zp, role, 0.0) {
-                            paths.push(p);
+                    //
+                    // R537 — PerimeterGenerator.cpp:703-716. C++ picks between two
+                    // treatments of this supported part:
+                    //   if (is_enable_overhang_speed(pg) && fuzzy_skin_allows_overhang_slowdown(pg))
+                    //       paths = detect_overhang_degree(flow, role, lower_layer_polys,
+                    //                                      clip_paths, subject_path, nozzle_diameter);
+                    //   else
+                    //       plain ctIntersection -> one path, degree 0
+                    // We had only the `else`, which left `overhang_degree = 0` on every
+                    // supported segment. With no degree differences there are no speed
+                    // discontinuities, so the smoothing pass in the exporter (gated on
+                    // `paths.len() > 1`) never fired: 80% of Majora's outer wall carried
+                    // a single feedrate against C++'s 49,568 distinct ones (R535/R536).
+                    // C++'s guard resolves TRUE for our fixtures, so it is treated as
+                    // constant here exactly as the classic path does at :2614:
+                    // `is_enable_overhang_speed` (PerimeterGenerator.cpp:269-277) reads
+                    // `override_process_overhang_speed[filament]` — all '0' on Majora —
+                    // and therefore falls back to `enable_overhang_speed`, which is
+                    // ['1','1']. `fuzzy_skin_allows_overhang_slowdown` (:279-283) holds
+                    // because neither fixture enables fuzzy skin.
+                    if crate::faithful_gate("ARACHNE_OVERHANG_DEGREE") {
+                        // C++ passes `lower_slices_polygons()` — which is
+                        // `offset(*lower_slices, scale_(+nozzle_diameter/2))`
+                        // (PerimeterGenerator.cpp:1495) — as BOTH the clip paths and the
+                        // distancer reference. So the distancer measures to the GROWN
+                        // outline, and `detect_overhang_degree`'s `offset_width` term
+                        // (+nozzle/2) converts that back to a distance from the raw lower
+                        // slice. Handing it the ungrown polys double-counts the nozzle
+                        // offset: it inflated every degree and over-split the outer wall
+                        // 2.3x against C++ before this was corrected.
+                        let lower_polys = expolygons_to_polygons(&grown);
+                        for (zp, degree) in crate::overhang_detector::detect_overhang_degree_arachne(
+                            &lower_polys,
+                            &clip,
+                            &subject,
+                            nozzle,
+                        ) {
+                            if let Some(p) = mk(&zp, role, degree) {
+                                paths.push(p);
+                            }
+                        }
+                    } else {
+                        for zp in clip_extrusion(&subject, &clip, ClipType::Intersection).iter() {
+                            if let Some(p) = mk(zp, role, 0.0) {
+                                paths.push(p);
+                            }
                         }
                     }
                     // Overhang = difference (cpp:721); classify bridge (straight) vs

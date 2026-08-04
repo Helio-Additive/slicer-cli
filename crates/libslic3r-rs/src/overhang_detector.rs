@@ -488,14 +488,203 @@ pub fn add_sampling_points_paths(paths: &ZPaths, min_sampling_interval: f64) -> 
 // downstream pieces are also present: `to_thick_polyline_z`,
 // `extrusion_paths_append_zpaths`/`_list`, `SignedOverhangDistancer`.
 //
-// This overload (and `detect_brigde_wall_arachne`, PerimeterGenerator.cpp:604-626)
-// are the arachne-path overhang classification, still UNWIRED in
-// `perimeter_generator.rs::arachne_line_to_extrusion_path` (it returns one plain
-// path with no overhang split). Model the ZPath bridge/overhang classifier on the
-// working classic `detect_bridge_wall` (perimeter_generator.rs:2238). Wiring it in
-// is the port that gives Majora its ~1276 overhang walls (arachne models only;
-// classic Benchy/Cube are unaffected). Implementation planned — see PARITY_STATUS R411.
+// PORTED R537. Returns `(ZPath, overhang_degree)` pairs rather than
+// `ExtrusionPaths`, because C++'s `extrusion_paths_append(list, ZPaths, role,
+// flow, degree)` rebuilds each segment as a VARIABLE-WIDTH path from the `z`
+// (junction width) coordinate. Doing that here would change deposited material:
+// R414 established that this crate's variable-width builder double-applies the
+// Arachne spacing->width conversion. The caller therefore keeps the loop's
+// avg-width flow (exactly as the pre-existing binary split did), so this port
+// changes overhang DEGREE and path SPLITS only, never E. Documented divergence,
+// same class as the note in `arachne_line_to_extrusion_paths`.
 // ---------------------------------------------------------------------------
+
+/// OverhangDetector.cpp:168-317 — `detect_overhang_degree`, the **Arachne**
+/// overload (the classic one is further down, ported from :467-506).
+///
+/// C++: `ExtrusionPaths detect_overhang_degree(const Flow&, const ExtrusionRole,
+/// const Polygons& lower_polys, const ClipperLib_Z::Paths& clip_paths,
+/// const ClipperLib_Z::Path& extrusion_path, const double nozzle_diameter)`
+/// (declared OverhangDetector.hpp:109).
+///
+/// Grades the SUPPORTED part of an Arachne wall (the intersection with the grown
+/// lower slices) into per-segment overhang degrees, splitting the path wherever
+/// the degree crosses a `MIN_DEGREE_GAP_ARACHNE` boundary. The unsupported part
+/// (the ctDifference) is classified separately by the caller, exactly as in C++
+/// where `detect_brigde_wall_arachne` runs outside this branch
+/// (PerimeterGenerator.cpp:721-727).
+pub fn detect_overhang_degree_arachne(
+    lower_polys: &[Polygon],
+    clip_paths: &ZPaths,
+    extrusion_path: &ZPath,
+    nozzle_diameter: f64,
+) -> Vec<(ZPath, f64)> {
+    use crate::clipper_z::{clip_extrusion, ClipType};
+
+    let mut out: Vec<(ZPath, f64)> = Vec::new();
+
+    // OverhangDetector.cpp:177 — intersection first, "would be faster".
+    let paths_in_range = clip_extrusion(extrusion_path, clip_paths, ClipType::Intersection);
+    // OverhangDetector.cpp:179 — add_sampling_points(paths_in_range, scale_(2)).
+    let paths_in_range = add_sampling_points_paths(&paths_in_range, scale_(2.0));
+
+    // OverhangDetector.cpp:188-190 — LOCAL lambda, distinct from the file-scope
+    // `get_base_degree(d, degree_trace)` below: this one uses `floor` and does
+    // NOT clamp to max_overhang_degree.
+    let base_degree = |d: f64| -> f64 { (d / MIN_DEGREE_GAP_ARACHNE).floor() * MIN_DEGREE_GAP_ARACHNE };
+    // OverhangDetector.cpp:192-196
+    let in_same_degree_range =
+        |a: f64, b: f64| -> bool { (base_degree(a) - base_degree(b)).abs() < EPSILON };
+
+    // OverhangDetector.cpp:198-203 — struct SplitPoint { Point p; coord_t w; double degree; }
+    struct SplitPoint {
+        p: Point,
+        w: i64,
+        degree: f64,
+    }
+
+    // OverhangDetector.cpp:205-232
+    let get_split_points = |pa: Point,
+                            pb: Point,
+                            wa: i64,
+                            wb: i64,
+                            da: f64,
+                            db: f64|
+     -> Vec<SplitPoint> {
+        let mut ret: Vec<SplitPoint> = Vec::new();
+        // OverhangDetector.cpp:207-208
+        let start_d = base_degree(da.min(db)) + MIN_DEGREE_GAP_ARACHNE;
+        let end_d = base_degree(da.max(db));
+        // OverhangDetector.cpp:210
+        if start_d > end_d {
+            return ret;
+        }
+        // OverhangDetector.cpp:212-213
+        let delta_d = db - da;
+        if delta_d.abs() < 1e-6 {
+            return ret;
+        }
+        // OverhangDetector.cpp:215-230 — walk the crossings in the direction of travel.
+        let mut push = |k: f64, ret: &mut Vec<SplitPoint>| {
+            let t = (k - da) / delta_d;
+            // C++ `pa + (pb - pa) * t` truncates via coord_t(double).
+            let pt = pa + point_mul_f64(pb - pa, t);
+            let w = wa + (((wb - wa) as f64) * t) as i64;
+            ret.push(SplitPoint { p: pt, w, degree: k });
+        };
+        if da < db {
+            let mut k = start_d;
+            while k <= end_d {
+                push(k, &mut ret);
+                k += MIN_DEGREE_GAP_ARACHNE;
+            }
+        } else {
+            let mut k = end_d;
+            while k >= start_d {
+                push(k, &mut ret);
+                k -= MIN_DEGREE_GAP_ARACHNE;
+            }
+        }
+        ret
+    };
+
+    // OverhangDetector.cpp:234 — the SIGNED distancer (negative inside the lower slice).
+    let prev_layer_distancer = SignedOverhangDistancer::new(lower_polys);
+    // OverhangDetector.cpp:236
+    let offset_width = scale_(nozzle_diameter) / 2.0;
+
+    // OverhangDetector.cpp:238
+    for path in paths_in_range.iter() {
+        // OverhangDetector.cpp:240
+        if path.is_empty() {
+            continue;
+        }
+        // OverhangDetector.cpp:239,241-271 — per-point mapped degree.
+        let mut overhang_degree_arr: Vec<f64> = Vec::with_capacity(path.len());
+        for &(px, py, pz) in path.iter() {
+            let overhang_dist =
+                prev_layer_distancer.distance_from_perimeter(PointF::new(px as f64, py as f64));
+            let width = pz as f64;
+            // OverhangDetector.cpp:245
+            let real_dist = offset_width + overhang_dist;
+
+            // OverhangDetector.cpp:249-254
+            let degree = if real_dist.abs() > (width / 2.0) {
+                if real_dist < 0.0 {
+                    0.0
+                } else {
+                    100.0
+                }
+            } else {
+                (width / 2.0 + real_dist) / width * 100.0
+            };
+
+            // OverhangDetector.cpp:256-269 — map onto the non-uniform ladder.
+            // NOTE this is NOT `get_mapped_degree`: there is no lower/upper bound
+            // pair here and the >= 100 case falls out of `it == end()`.
+            let mapped_degree = {
+                let hi = upper_bound_index(&NON_UNIFORM_DEGREE_MAP, degree);
+                if hi >= NON_UNIFORM_DEGREE_MAP.len() {
+                    (NON_UNIFORM_DEGREE_MAP.len() - 1) as f64
+                } else {
+                    let lo = hi - 1;
+                    let t = (degree - NON_UNIFORM_DEGREE_MAP[lo])
+                        / (NON_UNIFORM_DEGREE_MAP[hi] - NON_UNIFORM_DEGREE_MAP[lo]);
+                    lo as f64 * (1.0 - t) + t * hi as f64
+                }
+            };
+            overhang_degree_arr.push(mapped_degree);
+        }
+
+        // OverhangDetector.cpp:274-277 — split into extrusion paths.
+        let mut prev_p = Point::new(path[0].0, path[0].1);
+        let mut prev_w = path[0].2;
+        let mut prev_d = overhang_degree_arr[0];
+        let mut prev_line: ZPath = vec![path[0]];
+
+        // OverhangDetector.cpp:279-309
+        for idx in 1..path.len() {
+            let curr_p = Point::new(path[idx].0, path[idx].1);
+            let curr_w = path[idx].2;
+            let curr_d = overhang_degree_arr[idx];
+
+            if in_same_degree_range(prev_d, curr_d) {
+                // OverhangDetector.cpp:285-289
+                prev_w = curr_w;
+                prev_d = curr_d;
+                prev_p = curr_p;
+                prev_line.push(path[idx]);
+                continue;
+            }
+            // OverhangDetector.cpp:292-303
+            let split_points = get_split_points(prev_p, curr_p, prev_w, curr_w, prev_d, curr_d);
+            for sp in split_points.iter() {
+                prev_line.push((sp.p.x(), sp.p.y(), sp.w));
+                // OverhangDetector.cpp:295-299
+                let target_degree = if prev_d < curr_d {
+                    sp.degree - MIN_DEGREE_GAP_ARACHNE
+                } else {
+                    sp.degree
+                };
+                // OverhangDetector.cpp:300-302
+                out.push((std::mem::take(&mut prev_line), target_degree));
+                prev_line.push((sp.p.x(), sp.p.y(), sp.w));
+            }
+            // OverhangDetector.cpp:304-307
+            prev_w = curr_w;
+            prev_d = curr_d;
+            prev_p = curr_p;
+            prev_line.push(path[idx]);
+        }
+        // OverhangDetector.cpp:310
+        if prev_line.len() > 1 {
+            out.push((prev_line, base_degree(prev_d)));
+        }
+        let _ = prev_w;
+    }
+
+    out
+}
 
 // ---------------------------------------------------------------------------
 // OverhangDetector.cpp:338-342 — get_base_degree (free fn, degree_trace arg)

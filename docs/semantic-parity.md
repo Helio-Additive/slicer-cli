@@ -2524,3 +2524,114 @@ separately — a gate that fails names its own cause.** And the strongest signal
 here was a probe that printed *nothing*: `OHSPLITPROBE` staying silent on Majora
 proved the whole classic path was unreachable, which no amount of reading the
 gate's condition would have shown.
+
+---
+
+## R537 — port the ARACHNE overload of `detect_overhang_degree`
+
+The fix for R536's root cause. Majora's outer wall now modulates speed; **object
+material is bit-for-bit unchanged and two geometric metrics improved.**
+
+### What was ported
+
+`OverhangDetector.cpp:168-317` — ~150 lines, not the 298 estimated in R536
+(:319-465 are the shared helpers, already ported). It lands in
+`overhang_detector.rs` exactly where an R411 note had reserved the space.
+
+Every helper it needs was already present and had been written for it —
+`z_path_to_polylines`, `add_sampling_points(_paths)`, `upper_bound_index`,
+`SignedOverhangDistancer` (ported but until now unreachable), and
+`MIN_DEGREE_GAP_ARACHNE`, a constant that exists for no other caller.
+
+**One deliberate divergence.** C++ finishes with
+`extrusion_paths_append(list, ZPaths, role, flow, degree)`, which rebuilds each
+segment as a VARIABLE-WIDTH path from the `z` (junction width) coordinate. R414
+established that this crate's variable-width builder double-applies the Arachne
+spacing->width conversion, so doing that would change deposited material. Our
+port therefore returns `(ZPath, degree)` pairs and the caller keeps the loop's
+avg-width flow — exactly as the pre-existing binary split did. **This port
+changes overhang DEGREE and path SPLITS only, never E.** The measurement below
+confirms it.
+
+### The bug found while porting
+
+First run over-split badly: outer-wall `G1 F` went to 347,977 against C++'s
+148,936 (2.34x), and the file grew past C++'s line count.
+
+Cause: I passed the **ungrown** lower slices as the distancer reference. C++
+passes `lower_slices_polygons()`, which is
+`offset(*lower_slices, scale_(+nozzle_diameter/2))` (PerimeterGenerator.cpp:1495)
+— the **grown** polygons — as BOTH the clip paths and the distancer reference.
+The `offset_width = scale_(nozzle)/2` term inside `detect_overhang_degree` then
+converts that measurement back to a distance from the raw slice. Handing it the
+ungrown polys double-counts the nozzle offset, inflating every degree.
+
+### Measured
+
+`SMOOTHPROBE=1`, Majora, 27,000 loops:
+
+| | before | after | Benchy (working control) |
+|---|---|---|---|
+| paths per loop | 1.12 | **9.38** | 10.56 |
+| `overhang_degree != 0` | 4.5% | **84%** | 77% |
+| `paths.len() > 1` | 2.5% | **21.4%** | 32% |
+
+G-code, ours vs C++:
+
+| | before | after | C++ |
+|---|---|---|---|
+| outer-wall `G1 F`-only | 17,525 (0.118) | **118,766 (0.797)** | 148,936 |
+| inner-wall `G1 F`-only | 14,768 (0.276) | **25,209 (0.471)** | 53,474 |
+| total `G1 F`-only | 155,859 (0.469) | **266,598 (0.802)** | 332,222 |
+| distinct outer-wall feedrates | 2,436 | **18,565** | 49,568 |
+| total lines | 2,107,641 | 2,495,728 | 2,939,713 |
+
+The C++ ladder (`F3000 / F6000 / F2700 / F4500`) now appears in our top values,
+where before 80% of the outer wall carried the single value `F7150.945`.
+
+### Parity effect — better than predicted
+
+R535 predicted the verdicts would not move. Material indeed did not, but two
+geometric metrics did, in the right direction:
+
+| | before | after |
+|---|---|---|
+| object material | 0.9959 | **0.9959** (identical) |
+| per-layer material | 4.47% | **4.47%** (identical) |
+| SILHOUETTE (object), area-wtd | 99.37% | **99.53%** |
+| SILHOUETTE mean / min | 99.46% / 98.0% | **99.59% / 98.3%** |
+| WALL LINES IoU, area-wtd | 94.64% | **95.20%** |
+| WALL LINES layers < 95% | 288 | **245** |
+
+Still **SEMANTICALLY EQUIVALENT**, all five checks pass. The extra split
+vertices at degree boundaries make our wall polylines as dense as C++'s, which
+is what the wall-line raster was measuring.
+
+Slicing time: `export_gcode` 4.34s -> **4.70s** (+0.36s) for ~388k added lines —
+the expected, and acceptable, cost.
+
+### Gate and residuals
+
+Behind a new default-ON `ARACHNE_OVERHANG_DEGREE`. **A/B verified**: with the
+gate off, Majora reproduces `7a3d41af` byte-for-byte; on, `e871ade4`. Benchy
+`5a34af50` and cube `ab415621` are untouched — they are `wall_generator=classic`
+and never reach this code.
+
+Honest residuals, queued rather than hidden:
+
+- **inner wall 0.471** — improved from 0.276 but still half of C++'s count.
+- **overhang wall `G1 F` 305 vs 1,136 (0.268)** — the *unsupported* part still
+  goes through our binary classifier; C++'s `detect_brigde_wall_arachne`
+  (PerimeterGenerator.cpp:604-626) is not ported.
+- **distinct feedrates 18,565 vs 49,568** — the smoothing ramp fires now but
+  produces fewer distinct steps than C++.
+
+**RE-BASELINE — majora `7a3d41af` -> `e871ade4`. benchy `5a34af50` and cube
+`ab415621` UNCHANGED.** Eight guard tests green.
+
+**New discipline (R537): when a ported function takes a geometry argument that
+the caller also derives, check whether C++ passes the RAW or the DERIVED form —
+and whether the function internally compensates for the derivation.** Here the
+same grown polygons served as clip and as distance reference, with a
+`+nozzle/2` term inside the callee undoing the growth; passing the raw slices
+looked more "correct" and silently doubled every overhang degree.
