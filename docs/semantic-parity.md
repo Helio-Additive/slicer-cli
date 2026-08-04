@@ -2819,3 +2819,93 @@ needs its own gated, verified increment.
 it against what you already have — "unported" claims decay across handoffs.**
 Two rounds' worth of handoff text called this the largest concrete gap; it was
 23 lines that had been faithfully ported all along.
+
+---
+
+## R540 — the overhang "flow substitution" is INERT here; the real gap is variable width
+
+**No code change.** R539 queued this round as "port the overhang FLOW". Reading
+the fixture and the C++ callee shows that target does not hold up. Majora
+`e871ade4`, benchy `5a34af50`, cube `ab415621` unchanged.
+
+### Why the stated target is inert
+
+C++ passes `overhang_flow` to the unsupported segments, and
+
+```cpp
+// LayerRegion.cpp:172
+g.overhang_flow = this->bridging_flow(frPerimeter, object_config.thick_bridges);
+// LayerRegion.cpp:45 (the !thick_bridge branch)
+return this->flow(role).with_flow_ratio(region_config.bridge_flow);
+```
+
+Majora's actual values (R525): **`thick_bridges = '0'`** and
+**`bridge_flow = '1'`**. So `overhang_flow` reduces to
+`flow(frPerimeter) x 1.0` — **the ordinary perimeter flow**. There is no bridge
+flow to substitute on this fixture.
+
+### And the overhang E gap was never a flow gap
+
+From the R537 semantic compare, `Overhang wall`:
+
+| | ours | C++ | ratio |
+|---|---|---|---|
+| E | 266.0 | 254.4 | 1.045 |
+| length | — | — | **1.050** |
+| **E per mm** | 0.04104 | 0.04121 | **0.996** |
+
+Per-mm extrusion is already within 0.4%. A flow substitution can only move E/mm;
+it cannot move a 5% **length** difference. The excess is that we classify ~5%
+more length as overhang (`Overhang wall` ARC length 5,042 vs 4,724 = 1.067) —
+a `ctDifference` classification difference, not a flow one.
+
+**R525 again, and R519: read the fixture's value and size the prize before
+planning the port.** Both checks were in the handoff; neither had been run.
+
+### What C++ actually does differently
+
+`extrusion_path_append` (Arachne/utils/ExtrusionLine.cpp:307) forwards to
+`thick_polyline_to_multi_path(thick_polyline, role, flow, ...)` — a
+**variable-width** builder. The widths come from the `ThickPolyline`'s
+per-junction values; `flow` only supplies role/height. Measured inside
+`; FEATURE: Overhang wall`:
+
+| `; LINE_WIDTH:` changes | ours | C++ |
+|---|---|---|
+| Overhang wall | **2** | 879 (644 distinct) |
+
+We stamp one avg width per loop; C++ varies it continuously.
+
+### Sizing the real successor
+
+That same builder governs every Arachne wall, and the gap is broad:
+
+| `; LINE_WIDTH:` changes | ours | C++ |
+|---|---|---|
+| Outer wall | 2,873 (1,350 distinct) | **62,582** (21,181) |
+| Inner wall | 6,941 (1,981) | **40,567** (17,731) |
+| whole file | 119,622 | 215,199 |
+
+This is exactly the divergence R414 deferred: our variable-width builder
+double-applies the Arachne spacing->width conversion, so R537 deliberately kept
+the avg-width flow to preserve E. Fixing it would touch **E on every wall in
+every Arachne model** — a major gated undertaking, not a 0.2% item. It is now
+the single largest known structural divergence in the wall path.
+
+(Do not over-read the mean widths in that table: our sample is ~20x smaller and
+the values are attributed by preceding `; FEATURE:` tag, so the means are not
+comparable — R491. The counts are the sound part.)
+
+### Overhang closed as a parity lever
+
+Total overhang length is 6,477 mm ours vs 6,169 mm C++, against a ~2,850,000 mm
+print — **0.2%**. With the flow substitution shown inert and the remainder being
+either classification (5% of 0.2%) or the R414 variable-width deferral, this
+sub-area is closed the same way R515 closed negative volumes: characterised,
+sized, and not worth further grinding.
+
+**New discipline (R540): a queued target inherits its premise from the round
+that queued it — re-derive the premise before executing, not after.** R539
+correctly identified that C++ passes a different flow; it did not check that on
+this fixture the flow is numerically the same one, nor that the per-mm figure
+already matched. Both took one command each.
