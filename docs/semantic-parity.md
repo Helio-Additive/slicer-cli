@@ -2034,3 +2034,63 @@ both sides before theorising.** "Our tool_change runs 2721 but we emit 2723 T"
 looked like a missing call site; counting T / M620 / CP together showed a
 constant −2 across all three, i.e. an upstream count difference and no missing
 site at all.
+
+## R532 — reserved tags part 3: `CP_TOOLCHANGE_WIPE`
+
+**Reading the emission site paid off — the tag carries TWO suffixes, not one.**
+WipeTower.cpp:3960-3961 (`toolchange_wipe_new`):
+
+```cpp
+";" + reserved_tag(ETags::CP_TOOLCHANGE_WIPE)
+    + " CT" + std::to_string(solid_tool_toolchange)
+    + " FL" + std::to_string(is_first_layer()) + "\n"
+```
+
+`std::to_string(bool)` renders "0"/"1", so the real lines are
+`; CP_TOOLCHANGE_WIPE CT0 FL0` and `... CT0 FL1`. Confirmed against the actual
+C++ output before writing any code (R504/R528): **2720 CT0 FL0 + 3 CT0 FL1**.
+A bare `; CP_TOOLCHANGE_WIPE` would have been wrong on every line.
+
+`CT` is hard-zero in our port because there is no solid-toolchange path at all —
+R506 measured `solid_tool_toolchange` as ZERO for Majora and our `tool_change`
+takes no such parameter. The code says so, so it starts reporting correctly if
+that branch is ever ported.
+
+**Prediction (R519), stated before running: 2721.** Measured **2721**
+(2718 FL0 + 3 FL1), line delta **2721** exactly.
+
+| | ours | C++ |
+|---|---|---|
+| `; CP_TOOLCHANGE_WIPE CT0 FL0` | 2718 | 2720 |
+| `; CP_TOOLCHANGE_WIPE CT0 FL1` | **3** | **3** |
+
+**The FL1 split independently confirms R531.** First-layer tool changes match
+C++ *exactly* (3 = 3); the entire −2 lives in FL0, i.e. somewhere later in the
+print. That is a second, independent line of evidence that the −2 is an upstream
+tool-change count difference and not a missing emitter.
+
+**Verified additive** (`; Tool change from` 2721/2721, `; WIPE_TOWER_START`
+3377/3377, `G1  X219.729   E1.8473` 13812/13812). Semantic verdicts unchanged,
+still SEMANTICALLY EQUIVALENT. Eight guard tests green.
+
+**DELIBERATE RE-BASELINE — majora `89377938` -> `0538403b`.**
+**benchy `5a34af50` and cube `ab415621` UNCHANGED.**
+
+**Tag state now:**
+
+| tag | ours | C++ |
+|---|---|---|
+| `; WIPE_TOWER_START` / `_END` | 3377 | 3655 |
+| `; CP TOOLCHANGE START` / `END` | 2721 | 2723 |
+| `; CP_TOOLCHANGE_WIPE` | **2721** | 2723 |
+| `; CP EMPTY GRID START` / `END` | **0** | 209 |
+
+**Remaining: `CP EMPTY GRID` only.** Three C++ sites inside `finish_layer_new`
+(:3606/:3643, :3770/:3814, :3910), emitting just 209 against 656 layers — so
+they sit on a conditional sparse/empty-grid branch. Left unported again this
+round rather than blind-inserted: predicting the count needs the branch
+condition mapped to our `finish_layer` first (R519).
+
+**New discipline (R532): read the emission EXPRESSION, not just the tag name —
+`reserved_tag(X)` was concatenated with two runtime-valued suffixes, and the
+tag name alone would have produced a wrong line 2,721 times.**

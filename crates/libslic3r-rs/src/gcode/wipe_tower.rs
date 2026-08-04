@@ -2267,6 +2267,24 @@ impl WipeTower {
         cleaning_box: &BoxCoordinates,
         wipe_length: f32,
     ) {
+        // WipeTower.cpp:3960-3961 (toolchange_wipe_new) — the reserved tag carries
+        // TWO suffixes, not one:
+        //   ";" + reserved_tag(CP_TOOLCHANGE_WIPE)
+        //       + " CT" + to_string(solid_tool_toolchange)
+        //       + " FL" + to_string(is_first_layer())
+        // `std::to_string(bool)` renders "0"/"1", so the real emitted lines are
+        // `; CP_TOOLCHANGE_WIPE CT0 FL0` (2,720 in the C++ Majora output) and
+        // `... CT0 FL1` (3, the first layer's tool changes).
+        //
+        // CT is hard-zero here because this port has no solid-toolchange path at
+        // all: R506 measured `solid_tool_toolchange` as ZERO for Majora and our
+        // `tool_change` takes no such parameter. If that branch is ever ported,
+        // this tag must start reporting it.
+        writer.append(&format!(
+            "; CP_TOOLCHANGE_WIPE CT0 FL{}\n",
+            if self.layer_idx == 0 { 1 } else { 0 }
+        ));
+
         let xl = cleaning_box.ld.x;
         let xr = cleaning_box.rd.x;
         let line_len = xr - xl;
