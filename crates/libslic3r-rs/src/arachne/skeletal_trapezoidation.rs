@@ -2785,6 +2785,15 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     as f64;
                 // SkeletalTrapezoidation.cpp:1688 ratio_of_top = std::max(0.0, ratio_of_top);
                 ratio_of_top = ratio_of_top.max(0.0);
+                // R546 probe (PROPPROBE=1): which branch runs? `ratio_of_top >= 1.0`
+                // is a PURE COPY of the top beading onto the bottom node (:1691),
+                // which is exactly the sharing R545 identified by exact equality.
+                // The `else` interpolates. Measure the split and the ratio, plus the
+                // runtime value of `beading_propagation_transition_dist` (R490/R525:
+                // read the constant, do not assume it).
+                if std::env::var_os("PROPPROBE").is_some() {
+                    propprobe(ratio_of_top, self.beading_propagation_transition_dist, total_dist);
+                }
                 // SkeletalTrapezoidation.cpp:1689 if (ratio_of_top >= 1.0)
                 if ratio_of_top >= 1.0 {
                     // SkeletalTrapezoidation.cpp:1691 bottom_beading = top_beading;
@@ -4036,6 +4045,39 @@ pub(crate) fn cjprobe(from_w: i64, to_w: i64) {
             D1.load(Relaxed),
             D10.load(Relaxed),
             DBIG.load(Relaxed),
+        );
+    }
+}
+
+/// R546 probe (PROPPROBE=1): the copy-vs-interpolate split in
+/// `propagate_beadings_downward_edge` (SkeletalTrapezoidation.cpp:1687-1704).
+#[allow(dead_code)]
+pub(crate) fn propprobe(ratio_of_top: f64, transition_dist: i64, total_dist: i64) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    static COPY: AtomicUsize = AtomicUsize::new(0);
+    static CLAMPED: AtomicUsize = AtomicUsize::new(0);
+    static TDLT: AtomicUsize = AtomicUsize::new(0);
+    let n = N.fetch_add(1, Relaxed) + 1;
+    if ratio_of_top >= 1.0 {
+        COPY.fetch_add(1, Relaxed);
+    }
+    // how often is total_dist the binding term vs the transition dist?
+    if total_dist < transition_dist {
+        TDLT.fetch_add(1, Relaxed);
+    }
+    if ratio_of_top == 0.0 {
+        CLAMPED.fetch_add(1, Relaxed);
+    }
+    if n == 1 || n % 5_000 == 0 {
+        eprintln!(
+            "[PROPPROBE] calls={n} | ratio>=1.0 (pure COPY)={} ({:.1}%) | ratio==0={} | \
+             total_dist<transition_dist={} | transition_dist={:.3}mm",
+            COPY.load(Relaxed),
+            100.0 * COPY.load(Relaxed) as f64 / n as f64,
+            CLAMPED.load(Relaxed),
+            TDLT.load(Relaxed),
+            transition_dist as f64 / 1e5,
         );
     }
 }

@@ -3300,3 +3300,76 @@ causes — exact means shared state, near means independent computation.** The 9
 figure alone looked like "the widths agree"; that they agree *to the last digit*
 is what identified sharing rather than smoothness, and it is what re-opened a
 suspect I had wrongly closed two rounds earlier.
+
+---
+
+## R546 — the whole propagation chain is faithful; the sharing is STRUCTURAL
+
+**No behavioural change.** One env-gated probe added (`PROPPROBE` -> `propprobe`);
+majora `2838b07f`, benchy `5a34af50`, cube `ab415621` reproduce byte-identically,
+eight guard tests green.
+
+### Every function in the chain checked line-for-line
+
+| C++ | ours | verdict |
+|---|---|---|
+| `propagateBeadingsUpward` :1608-1635 | `:2650` | faithful, incl. `dist_to_bottom_source += length` (:1629) |
+| `propagateBeadingsDownward` :1637-1658 | `:2699` | faithful |
+| `propagateBeadingsDownward(edge)` :1660-1706 | `:2730` | faithful, incl. the `ratio_of_top >= 1.0` copy branch |
+| `interpolate` :1709-1749 / :1752-1771 | `interpolate4` / `interpolate2` | faithful |
+
+The constant was read rather than assumed (R490/R525):
+`beading_propagation_transition_dist` is **0.400 mm** at runtime, from
+`wall_transition_length = '100%'`, wired from `WallToolPaths.cpp:529` on both
+sides.
+
+### The copy/blend split, measured
+
+`propprobe` on the merge path (40,000 calls):
+
+```
+ratio_of_top >= 1.0  (pure COPY of top onto bottom, :1691)  =  7,851  (19.6%)
+ratio_of_top == 0    (interpolate returns bottom UNCHANGED) = 27,980  (70.0%)
+genuine blend                                                ~ 10%
+total_dist < transition_dist                                = 11,869
+```
+
+`ratio_of_top == 0` means `dist_to_bottom_source == 0` — the node's beading did
+not arrive by upward propagation, so there is nothing to blend from. Only ~10% of
+merges actually mix two beadings.
+
+And the dominant path is not even this one: most nodes take
+`if (!from->hasBeading()) { propagated_beading = top_beading; }`
+(C++:1673) — **a full copy of the top node's beading**, which is where the shared
+objects R545 detected come from.
+
+**All of that is faithful to C++.** The heavy sharing is structural, not a
+porting defect I can point at.
+
+### Honest limit of this round
+
+I have now verified every function between `BeadingStrategy::compute` and the
+emitted G-code — strategies, factory, skeleton thickness, propagation up and
+down, both interpolations, `generate_junctions`, `connect_junctions`, all five
+WallToolPaths stages, the variable-width builder, and the path builder. **Each is
+faithful, and the sharing that flattens our walls is produced by faithful code.**
+
+So either an *input* to this chain differs (node `distance_to_boundary`
+distribution, transition generation, the skeleton graph itself), or C++ exhibits
+the same sharing and the width variation C++ emits arises somewhere I have not
+yet identified.
+
+**Rust-side probing has reached its limit.** The decisive next step is to
+**instrument the C++ binary with the same three counters** — `compute` calls,
+the `propprobe` copy/blend split, and per-line distinct widths at stage 0 — and
+compare like for like. The C++ tree builds with
+`ninja slicer_cli`, so this is mechanical rather than speculative, and it is the
+only measurement that can distinguish "our sharing is wrong" from "C++ shares
+equally and differs elsewhere".
+
+**New discipline (R546): when every function in a chain reads faithful and the
+behaviour still differs, stop auditing the port and instrument the REFERENCE.**
+Nine rounds (R538-R546) have each eliminated a suspect by measuring our side; the
+one measurement never taken is what C++ actually does at the same points. R516's
+"run the reference-vs-itself control" generalises: when the port looks right,
+make the reference report its own numbers.
