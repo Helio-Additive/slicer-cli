@@ -2254,3 +2254,156 @@ comments best explained the tag's purpose.
 **Also (R534): `scripts/semantic_compare.py` takes `(rust, bambu)` and its
 metrics are NOT symmetric** — a swapped invocation reported "per-layer mean dev
 7.62%, FAIL" for an output that scores 4.47% PASS in the correct order.
+
+---
+
+## R535 — sizing the "segmentation gap": it is a SPEED gap, and only on Majora
+
+R534 closed noting that we emit far fewer extrusion moves than C++. This round
+sized it. **No code changed** — the round's product is the diagnosis and the
+control that localises it.
+
+### It is not geometry
+
+Bucketing every extruding move by the active `; FEATURE:` tag and summing XY
+path length:
+
+| | ours | C++ | ratio |
+|---|---|---|---|
+| total extruding moves | 1,106,344 | 1,445,296 | 0.766 |
+| total XY path length | 2,847,296 mm | 2,855,275 mm | **0.997** |
+
+Same path, fewer moves. (R534's "-32%" was measured with a crude `G1 ` prefix
+filter that missed our double-space tower moves; the correct figure is -23%.)
+
+### Where the moves are
+
+Splitting straight (`G1`) from arc (`G2`/`G3`):
+
+| feature | kind | ours | C++ | n-rat | mm-rat |
+|---|---|---|---|---|---|
+| Outer wall | G1 | 177,228 | 415,330 | **0.43** | 0.872 |
+| Outer wall | ARC | 117,357 | 141,482 | 0.83 | 1.074 |
+| Inner wall | G1 | 156,800 | 220,766 | 0.71 | 0.924 |
+| Sparse infill | ARC | 111,861 | 111,506 | **1.00** | 1.004 |
+
+Two opposite biases, so it is not one tolerance being wrong: on walls we emit
+fewer, longer arcs; on infill we emit slightly more moves than C++.
+
+### The arc fitter is exonerated — twice
+
+**Control 1 — a feature whose tolerance is a fixed constant.** Walls use
+`scaled_resolution` from config; `erInternalInfill` uses the hard-coded
+`SCALED_SPARSE_INFILL_RESOLUTION`. Comparing arc RADIUS distributions (from the
+`I`/`J` offsets, no reconstruction needed):
+
+| radius | Sparse infill ours/C++ | Outer wall ours/C++ |
+|---|---|---|
+| <1 mm | 0.98 | **0.17** |
+| 1-2 mm | 1.00 | **0.16** |
+| 2-5 mm | 1.00 | 0.51 |
+| 10-25 mm | 1.01 | 0.90 |
+| 100-500 mm | 1.00 | 1.11 |
+| >=500 mm | 1.10 | 1.16 |
+
+Sparse infill matches bucket-for-bucket across three orders of magnitude —
+with a **looser** tolerance (0.04 mm vs 0.012 mm). A broken fitter cannot be
+right at 0.04 and wrong at 0.012.
+
+**Control 2 — the other fixture.** On Benchy every feature matches:
+Outer wall G1 27,066/27,043 (1.00), ARC 6,424/6,455 (1.00), lengths 1.000/1.002.
+
+`do_arc_fitting` is a line-by-line port, `DEFAULT_SCALED_MAX_RADIUS` is correctly
+re-scaled for this crate's 1e5 factor, and the slice-stage simplification uses
+C++'s fixed `0.0025` (PrintObjectSlice.cpp:144), not the config resolution. All
+three were checked and all three are right.
+
+### The actual mechanism: feedrate modulation
+
+Counting maximal runs of consecutive extruding moves, then classifying what
+breaks each run:
+
+```
+RUST outer-wall run breaks (32,177)     CPP outer-wall run breaks (165,849)
+  14,299  G1 E<0 (retract)               133,997  G1 F-only
+  13,842  <FEATURE change>                16,601  G1 E<0 (retract)
+   3,136  G1 F-only                       14,146  <FEATURE change>
+```
+
+`G1 F`-only lines, per feature:
+
+| feature | ours | C++ | ratio |
+|---|---|---|---|
+| Outer wall (Majora) | 17,525 | 148,936 | **0.118** |
+| Inner wall (Majora) | 14,768 | 53,474 | 0.276 |
+| Sparse infill (Majora) | 10,487 | 10,623 | 0.987 |
+| Outer wall (**Benchy**) | 15,764 | 16,293 | **0.968** |
+
+C++ changes the outer-wall feedrate 8.5x more often than we do **on Majora
+only**. Every extra speed change forces a path split, which is where the extra
+moves come from and why our arc fitter sees longer smooth runs to swallow.
+
+### What the speeds are
+
+C++'s Majora outer wall carries **49,568 distinct** feedrates (ours 2,436, and
+80% of ours are the single value `F7150.945`). Two populations:
+
+- a continuum — the `smooth_speed_discontinuity_area` ramp;
+- a discrete ladder `F6000 / F4500 / F3000 / F2700 / F2400 / F2100`
+  (= 100 / 75 / 50 / 45 / 40 / 35 mm/s).
+
+The ladder appears **inside** layers — 496 of 656 layers contain both ladder and
+continuum values — so it is per-overhang-degree wall speed, **not** per-layer
+cooling scaling.
+
+And the ordering matters: with no speed discontinuities there is nothing for the
+smoothing pass to ramp, so the missing continuum is *downstream* of the missing
+ladder. One root cause, not two.
+
+### Not a broken port — a Majora-only wiring gap
+
+`smooth_speed_discontinuity_area` IS implemented (`gcode/smooth_speed.rs`, gated
+at `exporter.rs:414` on `detect_overhang_wall && smooth_speed_discontinuity_area
+&& role in {ExternalPerimeter, Perimeter, OverhangPerimeter} && coeff != 0 &&
+!first_layer && paths.len() > 1`), and on Benchy our outer-wall feedrates match
+C++ **value for value**:
+
+```
+        ours        C++
+F12000   615        582
+F3420    449        451
+F3480    412        413
+F3540    390        391
+F3300    380        381
+```
+
+So the speed machinery works. What is specific to Majora is that it is the
+**8-filament 3MF**: `filament_overhang_1_4_speed` .. `4_4_speed`,
+`filament_enable_overhang_speed` and friends are all 8-element arrays. The next
+round should check whether the per-filament overhang-speed arrays are resolved
+for the active filament on the 3MF/MMU path (and whether the overhang-degree
+classification runs there at all) — Majora's overhang DETECTION is fine
+(Overhang wall 4,450 vs 5,180 moves), it is the 1/4..4/4 speed CLASSES that are
+absent.
+
+### Prize
+
+Honest sizing, because it decides priority:
+
+- **Semantic verdicts: no change.** Speed is not material or geometry; all five
+  checks pass now and would still pass.
+- **Print behaviour: real.** Our Majora outer walls run at a near-constant
+  ~119 mm/s where C++ drops to 35-100 mm/s over overhangs. On an organic model
+  that is a genuine quality difference, and it is squarely inside ask #2's "the
+  G-code should be essentially the same".
+- **Slicing time: negative.** Emitting ~130k more lines makes export slower.
+
+So: worth fixing for correctness, not for any metric currently being tracked.
+
+**No re-baseline — nothing was changed.** majora `7a3d41af`, benchy `5a34af50`,
+cube `ab415621`.
+
+**New discipline (R535): when one fixture diverges and another does not, the
+second fixture IS the control — run it before theorising about the code.** Two
+rounds of arc-fitter archaeology were made redundant by one Benchy comparison
+that returned 1.00 on every feature.
