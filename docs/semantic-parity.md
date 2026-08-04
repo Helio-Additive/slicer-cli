@@ -4479,3 +4479,89 @@ callee's behaviour.** R558 compared two sums without asking how many times each
 side was summed, and concluded C++ generates twice the walls. It calls the
 generator twice as often, once speculatively. **Before comparing two totals,
 count the calls that produced them.**
+
+## R560 — the top-one-wall feature is near-inert: 4 surfaces in 16,500
+
+Step 1 was to measure the premise before porting ~100 lines. It killed the port,
+confirmed R559's artifact explanation by direct measurement, and corrected an
+overstatement of mine from R559. **No Rust source changed; all three baselines
+hold by construction** (majora `d219a37e`, benchy `5a34af50`, cube `ab415621`),
+8 guards green.
+
+### The measurement
+
+New `TOWPROBE` in the injector counts every sub-condition of
+`seperate_wall_generation` separately (R536), and counts the post-detection value
+too, since `should_enable_top_one_wall` can flip it back to false **after** the
+speculative generate has already run:
+
+    [CPP-TOWPROBE] surfaces=16505 | loop_number==0=0 by_first_layer=0
+    by_top_most=1 | is_one_wall=1 | by_top=16504 | seperate_PRE=16504
+    detect_runs=16500 seperate_POST=4 (0.0% of detects survive)
+
+Two things fall out.
+
+**1. R559's artifact explanation is confirmed, not merely inferred.** The
+speculative one-wall `WallToolPaths::generate()` runs on essentially every
+surface — 16,500 detection passes alongside 16,505 real ones. That IS the ~2x
+`generateSegments` call count R559 attributed to it, now measured directly rather
+than deduced from reading the control flow.
+
+**2. The feature itself is near-inert on Majora: 4 surfaces out of 16,500 keep
+`seperate_wall_generation` after detection — 0.024%.** `by_top_most` and
+`by_first_layer` fire on 1 surface and 0 surfaces respectively. So the whole
+top-one-wall family touches ~5 of 16,505 surfaces.
+
+**The Top-surface-1.172 hypothesis is REFUTED.** A feature that changes the walls
+on five surfaces cannot produce a 17% material difference across the model. The
+~100-line port is **not justified** and is closed, not deferred. This is exactly
+what R540/R519/R524 exist to catch, and it cost one probe instead of a port.
+
+### Correction to R559
+
+R559 said our `generate_arachne` "implements NONE of it". **Too strong.** The grep
+behind that claim searched only for `seperate_wall_generation` /
+`should_enable_top_one_wall` / `top_one_wall`, which indeed appear nowhere in
+`generate_arachne` — but `is_one_wall` and both of C++'s real branches DO exist
+there (`perimeter_generator.rs:3036`, `:3070` one-wall, `:3083` normal), and
+`normal_paths` is constructed with `(loop_number + 1)` at `:3087`, matching
+`PerimeterGenerator.cpp:1713` exactly. What is missing is only the **detection
+block**. Since detection survives on 0.024% of surfaces, **we are behaviourally
+equivalent to C++ here on ~99.97% of surfaces.** Absence of a search term is not
+absence of the behaviour (R539 in reverse).
+
+### One measurement started and deliberately NOT concluded
+
+`POLYPROBE` on both engines, at the same printed call index (48,000):
+
+| stage | Rust polys / points | C++ polys / points |
+|---|---|---|
+| 0 outline | 23,439 / 1,123,721 | 44,168 / 2,196,736 |
+| 3 final prepared_outline | 22,869 / 683,220 | 41,147 / 1,365,864 |
+
+That reads as 1.88x polygons and 1.96x points — which would explain the per-call
+graph size, and hence the line count, and possibly the width-value count. **I am
+not concluding it.** Both logs cap at 48,000 (12 prints at a 4,000 modulo), so
+these are not totals; and C++ makes ~2 `generate()` calls per surface, so its
+first 48,000 calls cover ~24,000 surfaces against our 48,000. **Matched call index
+is not matched population** — the identical trap R559 just caught. The number may
+well be real; it is not yet measured soundly.
+
+Incidental, and also hidden by cumulative probes: rust makes >=48,000 `generate()`
+calls but only ~26,000 reach `generateSegments`, while C++ reaches it ~41,000
+times. **Early returns inside `generate()` differ between the engines** and
+nothing so far has counted them.
+
+### R561
+
+Re-run the outline census **normalised per surface, not per call**: give
+`POLYPROBE` an end-of-run dump (or key it by surface id) and count `generate()`
+early-returns on both sides as their own bucket (R536). Only then decide whether
+the ~2x outline size is real. If it is, it supersedes every remaining
+line-count/width-frequency lead, because the graph is a function of the outline.
+
+**New discipline (R560): measuring the premise is not a formality — budget a
+round for it.** The queued R560 port had a plausible mechanism, a named C++
+block, a line count, and a matching symptom (Top surface 1.172). One probe showed
+the branch fires on 0.024% of surfaces. **A hypothesis that survives reading can
+still die on its first count; count before you port.**

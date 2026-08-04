@@ -709,6 +709,62 @@ PG_JW_CALLS_NEW = """            ZPath subject_path;
                 }
             }"""
 
+PG_TOW_FN = r"""
+// R560: does the top-one-wall path actually fire? `seperate_wall_generation`
+// (PerimeterGenerator.cpp:1534) is the reason C++ builds a SECOND WallToolPaths
+// per surface -- :1560 runs a full one-wall generate PURELY to decide it, which
+// is what inflated R558's cumulative stage-0 line count. Every sub-condition is
+// counted separately (R536) so a false result can be attributed, and the
+// post-detection value is counted too: `should_enable_top_one_wall` can flip it
+// back to false AFTER the speculative generate has already run.
+static void towprobe(int stage, bool by_first_layer, bool by_top_most, bool by_top,
+                     bool is_one_wall, bool seperate, int loop_number)
+{
+    if (::getenv("TOWPROBE") == nullptr)
+        return;
+    static std::mutex mtx;
+    static size_t surfaces = 0, n_first = 0, n_topmost = 0, n_bytop = 0,
+                  n_onewall = 0, n_sep_pre = 0, n_sep_post = 0, n_detect = 0,
+                  n_loop0 = 0;
+    std::lock_guard<std::mutex> lock(mtx);
+    if (stage == 0) {
+        ++surfaces;
+        if (by_first_layer) ++n_first;
+        if (by_top_most)    ++n_topmost;
+        if (by_top)         ++n_bytop;
+        if (is_one_wall)    ++n_onewall;
+        if (loop_number == 0) ++n_loop0;
+        if (seperate)       ++n_sep_pre;
+    } else {
+        ++n_detect;                       // speculative generate actually ran
+        if (seperate)   ++n_sep_post;     // survived should_enable_top_one_wall
+        if (n_detect % 500 == 0 || n_detect == 1)
+            fprintf(stderr,
+                    "[CPP-TOWPROBE] surfaces=%zu | loop_number==0=%zu by_first_layer=%zu "
+                    "by_top_most=%zu | is_one_wall=%zu | by_top=%zu | seperate_PRE=%zu "
+                    "detect_runs=%zu seperate_POST=%zu (%.1f%% of detects survive)\n",
+                    surfaces, n_loop0, n_first, n_topmost, n_onewall, n_bytop,
+                    n_sep_pre, n_detect, n_sep_post,
+                    100. * double(n_sep_post) / double(n_detect ? n_detect : 1));
+    }
+}
+"""
+
+PG_TOW_ANCHOR = """void PerimeterGenerator::process_arachne()"""
+
+PG_TOW_CALLS_OLD = """            bool seperate_wall_generation = !is_one_wall && generate_one_wall_by_top;
+"""
+
+PG_TOW_CALLS_NEW = """            bool seperate_wall_generation = !is_one_wall && generate_one_wall_by_top;
+            towprobe(0, generate_one_wall_by_first_layer, generate_one_wall_by_top_most, // R560
+                     generate_one_wall_by_top, is_one_wall, seperate_wall_generation, int(loop_number));
+"""
+
+PG_TOW_CALLS2_OLD = """                seperate_wall_generation = should_enable_top_one_wall(last, top_expolys_by_one_wall);"""
+
+PG_TOW_CALLS2_NEW = """                seperate_wall_generation = should_enable_top_one_wall(last, top_expolys_by_one_wall);
+                towprobe(1, false, false, false, false, seperate_wall_generation, 0); // R560"""
+
 PG_INCLUDES_OLD = """#include "PerimeterGenerator.hpp\""""
 PG_INCLUDES_NEW = """#include "PerimeterGenerator.hpp"
 #include <cstdio>
@@ -789,6 +845,8 @@ EDITS = [
     ("PerimeterGenerator.cpp", PG_LAST_CALLS_OLD, PG_LAST_CALLS_NEW),
     ("PerimeterGenerator.cpp", PG_LAST_CALLS2_OLD, PG_LAST_CALLS2_NEW),
     ("PerimeterGenerator.cpp", PG_JW_CALLS_OLD, PG_JW_CALLS_NEW),
+    ("PerimeterGenerator.cpp", PG_TOW_CALLS_OLD, PG_TOW_CALLS_NEW),
+    ("PerimeterGenerator.cpp", PG_TOW_CALLS2_OLD, PG_TOW_CALLS2_NEW),
     ("WallToolPaths.cpp", WTP_INCLUDES_OLD, WTP_INCLUDES_NEW),
     ("WallToolPaths.cpp", WTP_PROBE_OLD, WTP_PROBE_NEW),
     ("WallToolPaths.cpp", WTP_CHAIN_OLD, WTP_CHAIN_NEW),
@@ -849,6 +907,13 @@ def main():
             failures.append("PerimeterGenerator.cpp: jwprobe process_arachne anchor not unique")
         else:
             texts["PerimeterGenerator.cpp"] = pg2.replace(PG_JW_ANCHOR, PG_JW_FN + "\n" + PG_JW_ANCHOR, 1)
+
+    pg3 = texts["PerimeterGenerator.cpp"]
+    if "static void towprobe" not in pg3:
+        if pg3.count(PG_TOW_ANCHOR) != 1:
+            failures.append("PerimeterGenerator.cpp: towprobe process_arachne anchor not unique")
+        else:
+            texts["PerimeterGenerator.cpp"] = pg3.replace(PG_TOW_ANCHOR, PG_TOW_FN + "\n" + PG_TOW_ANCHOR, 1)
 
     wt = texts["WallToolPaths.cpp"]
     if "static void polyprobe" not in wt:
