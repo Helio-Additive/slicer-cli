@@ -2424,6 +2424,12 @@ impl WipeTower {
 
         writer.feedrate(feedrate);
 
+        // WipeTower.cpp:3550 (finish_layer_new) — unconditional, right after the
+        // writer setup / set_for_wipe_tower_writer. R531: the second half of the
+        // reserved-tag port (R530 did tool_change). `finish_layer` runs exactly
+        // once per layer, so this adds 656 pairs on Majora.
+        writer.append("; WIPE_TOWER_START\n");
+
         // Fill the remaining depth OF THIS LAYER. WipeTower.cpp:2697-2699:
         //   fill_box_y = m_layer_info->toolchanges_depth() + m_perimeter_width;
         //   fill_box(.., m_wipe_tower_width - 2*m_perimeter_width,
@@ -2697,6 +2703,10 @@ impl WipeTower {
         }
 
         self.current_layer_finished = true;
+
+        // WipeTower.cpp:3721 — closes the block opened above, just before the
+        // material accounting.
+        writer.append("; WIPE_TOWER_END\n");
 
         self.construct_tcr(&writer, false, self.current_tool, true, false, 0.0)
     }

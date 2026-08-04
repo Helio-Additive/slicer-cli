@@ -1976,3 +1976,61 @@ tower tool-change path). Eight guard tests green.
 ARITHMETICALLY (lines added = N x per-site count) and re-check any `diff`
 oddity by counting the specific lines — `diff` on a 2M-line file reports
 re-alignment noise that looks like deletion.**
+
+## R531 — reserved tags part 2, and the "2 toolchange" gap resolved
+
+**The 2721-vs-2723 gap is NOT a tag bug — we simply perform 2 fewer tool changes
+than C++, uniformly.** Counting every toolchange-adjacent marker shows both
+engines keep the SAME internal relationship, offset by a constant 2:
+
+| counter | ours | C++ | delta |
+|---|---|---|---|
+| `^T[0-9]` | 2725 | 2727 | −2 |
+| `^M620 S` | 2723 | 2725 | −2 |
+| `; CP TOOLCHANGE START` | 2721 | 2723 | −2 |
+
+T = CP + 4 and M620 = CP + 2 on **both** sides, so nothing is emitted "outside
+`tool_change()`" as R530 hypothesised — that framing is retracted. It is a
+0.07% tool-change count difference living in ToolOrdering/tower planning, not in
+the tag layer. Not chased: the tower is closed (R506, 0.9947) and this is well
+inside the "do not grind without a new mechanism" line.
+
+**Ported:** the `finish_layer_new` WIPE_TOWER pair (WipeTower.cpp:3550 and
+:3721 — both unconditional, one at the top after writer setup, one just before
+the material accounting) into our `finish_layer`, which runs exactly once per
+layer.
+
+**Prediction stated BEFORE running (R519): 2721 + 656 = 3377.** Measured
+**3377**, and the line delta was **1312 = 656 x 2** exactly.
+
+| tag | ours | C++ |
+|---|---|---|
+| `; WIPE_TOWER_START` / `_END` | **3377** (was 2721) | 3655 |
+| `; CP TOOLCHANGE START` / `END` | 2721 | 2723 |
+| `; CP EMPTY GRID START` / `END` | 0 | 209 |
+| `; CP_TOOLCHANGE_WIPE` | 0 | 2723 |
+
+The residual 3655 − 3377 = **278 is exactly our known tower block-count
+difference** (C++ 3,655 blocks vs our 3,377) — i.e. the tag count now tracks our
+block count precisely, which is the correct outcome. Closing it would mean
+changing the tower's block structure, not adding tags.
+
+**Still open:** `CP EMPTY GRID` (three separate C++ branches at :3606/:3643,
+:3770/:3814, :3910) and `CP_TOOLCHANGE_WIPE` (:3961, which carries a
+` CT<n>` suffix — read it before porting). Both need branch analysis to predict
+a count, so they were deliberately left rather than blind-inserted.
+
+**Verified additive:** sample patterns unchanged across the diff
+(`; Tool change from` 2721/2721, `; CP TOOLCHANGE END` 2721/2721,
+`G1  X219.729   E1.8473` 13812/13812). Semantic verdicts identical — object
+material 0.9959, layers 657=657, per-layer 4.47%, Top 1.173, silhouette 99.37%,
+still SEMANTICALLY EQUIVALENT. Eight guard tests green.
+
+**DELIBERATE RE-BASELINE — majora `b7348303` -> `89377938`.**
+**benchy `5a34af50` and cube `ab415621` UNCHANGED** (neither reaches the tower).
+
+**New discipline (R531): when two counters disagree, count the WHOLE FAMILY on
+both sides before theorising.** "Our tool_change runs 2721 but we emit 2723 T"
+looked like a missing call site; counting T / M620 / CP together showed a
+constant −2 across all three, i.e. an upstream count difference and no missing
+site at all.
