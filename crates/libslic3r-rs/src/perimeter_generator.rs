@@ -2399,6 +2399,38 @@ fn traverse_loops(
         /// fully-unsupported sub-segments stay at `role` with overhang_degree = max
         /// (overhang_sampling_number-1 = 5) and the original flow, so filament is unchanged;
         /// straight-vs-curved bridge discrimination (degree 6 → bridge_speed) is not modeled.
+        // R536 probe (OHSPLITPROBE=1): count each sub-condition of the overhang-split
+        // gate, so a loop that stays single-path names its own cause.
+        if std::env::var_os("OHSPLITPROBE").is_some() {
+            use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+            static SEEN: AtomicUsize = AtomicUsize::new(0);
+            static OK_DETECT: AtomicUsize = AtomicUsize::new(0);
+            static OK_LAYER: AtomicUsize = AtomicUsize::new(0);
+            static HAS_LOWER: AtomicUsize = AtomicUsize::new(0);
+            static LOWER_NONEMPTY: AtomicUsize = AtomicUsize::new(0);
+            let n = SEEN.fetch_add(1, Relaxed) + 1;
+            if config.detect_overhang_wall {
+                OK_DETECT.fetch_add(1, Relaxed);
+            }
+            if config.layer_id > config.raft_layers {
+                OK_LAYER.fetch_add(1, Relaxed);
+            }
+            if let Some(ref lo) = config.lower_slices {
+                HAS_LOWER.fetch_add(1, Relaxed);
+                if !lo.is_empty() {
+                    LOWER_NONEMPTY.fetch_add(1, Relaxed);
+                }
+            }
+            if n % 1_000 == 0 || n == 1 {
+                eprintln!(
+                    "[OHSPLITPROBE] loops={n} detect={} layer_id>raft={} lower_some={} lower_nonempty={}",
+                    OK_DETECT.load(Relaxed),
+                    OK_LAYER.load(Relaxed),
+                    HAS_LOWER.load(Relaxed),
+                    LOWER_NONEMPTY.load(Relaxed),
+                );
+            }
+        }
         let did_overhang_split = if config.detect_overhang_wall
             && config.layer_id > config.raft_layers
         {

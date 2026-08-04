@@ -2407,3 +2407,120 @@ cube `ab415621`.
 second fixture IS the control — run it before theorising about the code.** Two
 rounds of arc-fitter archaeology were made redundant by one Benchy comparison
 that returned 1.00 on every feature.
+
+---
+
+## R536 — root cause: the ARACHNE wall path never grades overhang degree
+
+R535 localised the Majora outer-wall speed gap. This round found the cause and
+sized the fix. **Two env-gated probes added; no behavioural change** — majora
+`7a3d41af`, benchy `5a34af50`, cube `ab415621` all reproduce byte-identically.
+
+### First, a correction to R535
+
+R535 read the discrete feedrate ladder `F6000/F4500/F3000/F2700/F2400/F2100` as
+per-overhang-degree speed classes. **That was wrong.** Reading real context
+(R490) shows one continuous ramp through a slow floor:
+
+```
+16463 G1 F2794.457      <- decel
+16465 G1 F2503.634
+16467 G1 F2228.665
+16469 G1 F1969.801
+16471 G1 F1726.912
+16473 G1 F1500
+16475 G1 F1200          <- floor
+...
+16478 G1 F1500          <- accel
+16480 G1 F1800
+16482 G1 F2100
+16484 G1 F2400
+16491 G1 F2700
+16493 G1 F3000
+16495 G1 F4500
+16497 G1 F6000
+16499 G1 F7151.157      <- nominal
+```
+
+The "ladder" is just the accel half landing on round values. One mechanism, not
+two — which R535 already suspected for the right reason (no discontinuity means
+nothing to smooth) but attributed to the wrong upstream.
+
+### The probes
+
+`SMOOTHPROBE=1` counts each sub-condition of the smoothing gate at
+`gcode/exporter.rs`; `OHSPLITPROBE=1` does the same for the overhang-split gate
+in `perimeter_generator.rs::traverse_loops`.
+
+| | Majora | Benchy |
+|---|---|---|
+| loops reaching the smoothing gate | 25,000 | 1,000 |
+| `detect` / `flag` / `role` / `coeff` | all pass | all pass |
+| **`paths.len() > 1`** | **632 (2.5%)** | 324 (32%) |
+| **paths per loop** | **1.12** | **10.56** |
+| **paths with `overhang_degree != 0`** | **1,260 / 27,959 (4.5%)** | **8,164 / 10,561 (77%)** |
+
+Every config input to the gate is correct on both fixtures (`detect_overhang_wall`,
+`smooth_speed_discontinuity_area`, `smooth_coefficient` = 150 on Majora, 4 on
+Benchy — all parsed from the 3MF). The gate fails on `paths.len() > 1`: our
+Majora wall loops are **single-path**.
+
+And `OHSPLITPROBE` printed **nothing at all** on Majora — the classic
+`traverse_loops` never runs there.
+
+### Why
+
+Majora is `wall_generator = 'arachne'`; Benchy is classic. C++ has **two**
+overhang-grading sites:
+
+| C++ | path | our port |
+|---|---|---|
+| `traverse_loops` -> `detect_overhang_degree` (PerimeterGenerator.cpp:395) | classic | **ported** |
+| `traverse_extrusions` -> `detect_overhang_degree` (PerimeterGenerator.cpp:707) | **arachne** | **NOT ported** |
+
+At PerimeterGenerator.cpp:703 the Arachne path branches:
+
+```cpp
+if (is_enable_overhang_speed(pg) && fuzzy_skin_allows_overhang_slowdown(pg))
+    paths = detect_overhang_degree(flow, role, lower_layer_polys, clip_paths, subject_path, nozzle_diameter);
+else { /* plain ctIntersection / ctDifference split */ }
+```
+
+Our `arachne_line_to_extrusion_paths` implements **only the `else` branch** — a
+binary supported/unsupported split producing `erOverhangPerimeter` for the
+unsupported part and leaving `overhang_degree = 0` everywhere else. That is
+exactly the measured 4.5%.
+
+So: no graded degrees -> no per-segment speed differences -> no discontinuities
+-> the (correctly implemented) smoothing pass has nothing to ramp -> 80% of our
+Majora outer wall carries one feedrate.
+
+### Size of the fix
+
+The missing piece is C++'s **Arachne overload** of `detect_overhang_degree`,
+`OverhangDetector.cpp:168-465` — **~298 lines**. Not from scratch: our
+`overhang_detector.rs` is already 919 lines and carries the shared helpers the
+overload needs — `z_path_to_polylines`, `add_sampling_points`,
+`add_sampling_points_paths`, `get_base_degree`, `get_mapped_degree`,
+`merged_with_degree`, `smoothing_degrees`, `check_degree`,
+`prepare_split_polylines`, `extrusion_paths_append` — plus
+`MIN_DEGREE_GAP_ARACHNE = 0.25`, a constant that exists *only* for this overload.
+The `ClipperLib_Z` open-path dependency is also already satisfied: our Arachne
+path calls `clipper_z::clip_extrusion` today.
+
+So it is a bounded ~300-line faithful port onto machinery that is already
+present, not a new subsystem.
+
+**Deferred to R537 rather than rushed at the end of a long diagnostic round** —
+it is geometry-sensitive code on the primary fixture and deserves its own
+verified increment.
+
+**No re-baseline.** Both probes are `std::env::var_os(...).is_some()` (default
+OFF); all three fixtures reproduce byte-identically and the eight guard tests
+are green.
+
+**New discipline (R536): when a gate looks open, instrument every sub-condition
+separately — a gate that fails names its own cause.** And the strongest signal
+here was a probe that printed *nothing*: `OHSPLITPROBE` staying silent on Majora
+proved the whole classic path was unreachable, which no amount of reading the
+gate's condition would have shown.

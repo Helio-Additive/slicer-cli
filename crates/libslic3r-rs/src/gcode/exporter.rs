@@ -411,6 +411,59 @@ pub fn extrude_loop(
             | Some(ExtrusionRole::OverhangPerimeter)
     );
     let smooth_coeff = config.smooth_coefficient;
+    // R536 probe (SMOOTHPROBE=1): count each sub-condition of the smoothing gate
+    // separately, so a closed gate names its own cause instead of being guessed at.
+    if std::env::var_os("SMOOTHPROBE").is_some() {
+        use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+        static SEEN: AtomicUsize = AtomicUsize::new(0);
+        static OK_DETECT: AtomicUsize = AtomicUsize::new(0);
+        static OK_FLAG: AtomicUsize = AtomicUsize::new(0);
+        static OK_ROLE: AtomicUsize = AtomicUsize::new(0);
+        static OK_COEFF: AtomicUsize = AtomicUsize::new(0);
+        static OK_NOT_FIRST: AtomicUsize = AtomicUsize::new(0);
+        static OK_MULTI: AtomicUsize = AtomicUsize::new(0);
+        static DEG_NONZERO: AtomicUsize = AtomicUsize::new(0);
+        static PATHS_TOTAL: AtomicUsize = AtomicUsize::new(0);
+        let n = SEEN.fetch_add(1, Relaxed) + 1;
+        if config.detect_overhang_wall {
+            OK_DETECT.fetch_add(1, Relaxed);
+        }
+        if config.smooth_speed_discontinuity_area {
+            OK_FLAG.fetch_add(1, Relaxed);
+        }
+        if is_set_speed_discontinuity {
+            OK_ROLE.fetch_add(1, Relaxed);
+        }
+        if smooth_coeff != 0.0 {
+            OK_COEFF.fetch_add(1, Relaxed);
+        }
+        if !is_first_layer {
+            OK_NOT_FIRST.fetch_add(1, Relaxed);
+        }
+        if paths.len() > 1 {
+            OK_MULTI.fetch_add(1, Relaxed);
+        }
+        PATHS_TOTAL.fetch_add(paths.len(), Relaxed);
+        DEG_NONZERO.fetch_add(
+            paths.iter().filter(|p| p.overhang_degree != 0.0).count(),
+            Relaxed,
+        );
+        if n % 1_000 == 0 || n == 1 {
+            eprintln!(
+                "[SMOOTHPROBE] loops={n} detect={} flag={} role={} coeff={}({}) not_first={} paths>1={} \
+                 paths_total={} overhang_deg!=0={}",
+                OK_DETECT.load(Relaxed),
+                OK_FLAG.load(Relaxed),
+                OK_ROLE.load(Relaxed),
+                OK_COEFF.load(Relaxed),
+                smooth_coeff,
+                OK_NOT_FIRST.load(Relaxed),
+                OK_MULTI.load(Relaxed),
+                PATHS_TOTAL.load(Relaxed),
+                DEG_NONZERO.load(Relaxed),
+            );
+        }
+    }
     if config.detect_overhang_wall
         && config.smooth_speed_discontinuity_area
         && is_set_speed_discontinuity
