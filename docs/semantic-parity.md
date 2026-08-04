@@ -3223,3 +3223,80 @@ stage showed the span's own entry point was already flat, moving the target back
 upstream into the function R543 had just measured the *start* of. Two rounds in a
 row the correct observation came with a wrong guess attached — the guess is the
 part worth deleting.
+
+---
+
+## R545 — `connect_junctions` is not the flattener; the beadings are SHARED, not near-equal
+
+**No behavioural change.** One env-gated probe added (`CJPROBE` -> `cjprobe`);
+majora `2838b07f`, benchy `5a34af50`, cube `ab415621` reproduce byte-identically,
+eight guard tests green.
+
+### `connect_junctions` exonerated
+
+R544 narrowed the flattening to two functions inside `generate_toolpaths`.
+`connect_junctions` pairs a `from` junction with a `to` junction for each segment
+it builds (SkeletalTrapezoidation.cpp:2067-2068). Probing that pairing:
+
+```
+segments = 6,000,000
+from.w == to.w : 5,877,959  (98.0%)
+diff < 1um     :    11,582
+diff 1-10um    :    47,601
+diff > 10um    :    62,858
+```
+
+**98% of segments arrive with both ends already carrying the identical width.**
+`connect_junctions` is faithfully chaining junctions that already agree — it is
+not the flattener.
+
+### The tell is EXACT equality
+
+Two beadings computed independently from slightly different local thicknesses
+would differ in the last digit or two. **Exact** equality at 98% means the same
+beading is being *shared*, not recomputed.
+
+That fits the structure: `generate_junctions` stamps
+`beading.bead_widths[junction_idx]` from **one beading per edge**
+(SkeletalTrapezoidation.cpp:1847) — so every junction on a given edge necessarily
+shares a width, in C++ too. Variation along a wall can therefore only come from
+**adjacent edges holding different beadings**. Ours mostly hold the same one.
+
+### This re-opens beading propagation — on my own bad elimination
+
+R542 and R543 struck beading propagation off the list. That elimination rested on
+`beadprobe` (25,295 distinct widths out of `compute`) and `junctionprobe` (28,419
+distinct at creation) — both **global** counts. R542's own lesson says a global
+distinct-count and within-wall variation are different claims, and I then used
+the former to dismiss the latter. **The elimination was invalid; propagation is
+back in scope.**
+
+The specific sharing mechanisms to measure next, both inside the span R544
+already bracketed:
+
+- **`get_or_create_beading`** (SkeletalTrapezoidation.cpp:1852-1892, ours
+  `:3064`) calls `get_nearest_beading(node, nearby_dist)` with
+  `nearby_dist = scaled(0.1)` — it **reuses a neighbouring node's beading within
+  0.1 mm** rather than computing a fresh one.
+- **`propagate_beadings_upward` / `_downward`** (:1608 / :1637 / :1660, ours
+  `:2648` / `:2697` / `:2730`) copy beadings along edges.
+
+240,000 `compute` calls against 6.4M junctions is ~1 beading per 27 junctions, so
+heavy sharing is expected in both engines — **the open question is whether C++
+shares *less*, or interpolates where we copy.** Measure the distinct-beading
+count per connected wall region on our side, then read C++'s propagation against
+ours (R539: read before assuming).
+
+### Running tally
+
+Exonerated this round: **`connect_junctions`**. Still eliminated: the seven
+beading strategies, the factory chain, `BeadingStrategy::compute`,
+`generate_junctions` itself, all five WallToolPaths post-processing stages,
+`thick_polyline_to_multi_path`, the downstream path builder. **Un-eliminated
+(R545): beading propagation and `get_or_create_beading`'s nearest-beading reuse.**
+
+**New discipline (R545): EXACT equality and NEAR equality point at different
+causes — exact means shared state, near means independent computation.** The 98%
+figure alone looked like "the widths agree"; that they agree *to the last digit*
+is what identified sharing rather than smoothness, and it is what re-opened a
+suspect I had wrongly closed two rounds earlier.

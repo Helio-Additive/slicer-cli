@@ -3486,6 +3486,15 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         let from_j = from_junctions[from_junctions.len() - 1 - junction_rev_idx].clone();
                         // SkeletalTrapezoidation.cpp:2068 ExtrusionJunction& to = to_junctions[to_junctions.size() - 1 - junction_rev_idx];
                         let to_j = to_junctions[to_junctions.len() - 1 - junction_rev_idx].clone();
+                        // R545 probe (CJPROBE=1): does connect_junctions RECEIVE width
+                        // variation? Each segment pairs a `from` junction (this quad's
+                        // peak side) with a `to` junction (the other side). If the two
+                        // ends of a segment already carry the same width, the flatness
+                        // is upstream of this function; if they differ, something here
+                        // drops it. Probe the input, not the transform (R541).
+                        if std::env::var_os("CJPROBE").is_some() {
+                            cjprobe(from_j.w, to_j.w);
+                        }
                         // SkeletalTrapezoidation.cpp:2069 assert(from.perimeter_index == to.perimeter_index);
                         // SkeletalTrapezoidation.cpp:2070 if(from.perimeter_index != to.perimeter_index)
                         if from_j.perimeter_index != to_j.perimeter_index {
@@ -3994,5 +4003,39 @@ pub(crate) fn junctionprobe(w: i64) {
                 d.len(), mn as f64 / 1e5, mx as f64 / 1e5,
             );
         }
+    }
+}
+
+/// R545 probe (CJPROBE=1): width agreement across each segment `connect_junctions`
+/// builds. Reports how often the two ends of a segment carry equal widths and the
+/// distribution of their difference.
+#[allow(dead_code)]
+pub(crate) fn cjprobe(from_w: i64, to_w: i64) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    static EQ: AtomicUsize = AtomicUsize::new(0);
+    static D1: AtomicUsize = AtomicUsize::new(0);
+    static D10: AtomicUsize = AtomicUsize::new(0);
+    static DBIG: AtomicUsize = AtomicUsize::new(0);
+    let n = N.fetch_add(1, Relaxed) + 1;
+    let d = (from_w - to_w).abs();
+    if d == 0 {
+        EQ.fetch_add(1, Relaxed);
+    } else if d < 100 {
+        D1.fetch_add(1, Relaxed);
+    } else if d < 1000 {
+        D10.fetch_add(1, Relaxed);
+    } else {
+        DBIG.fetch_add(1, Relaxed);
+    }
+    if n == 1 || n % 500_000 == 0 {
+        eprintln!(
+            "[CJPROBE] segments={n} | from.w==to.w: {} ({:.1}%) | diff<1um: {} | 1-10um: {} | >10um: {}",
+            EQ.load(Relaxed),
+            100.0 * EQ.load(Relaxed) as f64 / n as f64,
+            D1.load(Relaxed),
+            D10.load(Relaxed),
+            DBIG.load(Relaxed),
+        );
     }
 }
