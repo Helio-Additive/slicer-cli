@@ -3077,3 +3077,80 @@ measure the distribution, not just the count of distinct values.** R541's
 per-loop probe was right, but its wording invited the wrong conclusion; the
 widths were varying across the model all along, and only the within-loop
 variation is missing. A percentile table settled it in one command.
+
+---
+
+## R543 — the beadings are NOT flat; the flattening happens in WallToolPaths post-processing
+
+**No behavioural change.** Two env-gated probes added (`BEADPROBE` -> `beadprobe`
++ `junctionprobe`); majora `2838b07f`, benchy `5a34af50`, cube `ab415621`
+reproduce byte-identically, eight guard tests green.
+
+### R542's localisation was wrong
+
+R542 concluded "our per-loop Arachne beading is CONSTANT ALONG THE LOOP" and
+pointed at beading propagation/transitions in `skeletal_trapezoidation.rs`.
+Applying R541's own lesson one level further up — measure the INPUT before
+suspecting the transform — shows that is **not** where the variation is lost.
+
+**`beadprobe`** instruments both `BeadingStrategy::compute` call sites
+(SkeletalTrapezoidation.cpp:1526 and :1887):
+
+```
+compute calls = 240,000
+thickness       distinct = 140,776   range 0.024 .. 19.651 mm
+bead_widths[0]  distinct =  25,295   range 0.190 ..  0.743 mm
+multi-bead beadings with all-equal widths = 35,842 (15%)
+```
+
+The skeleton feeds `compute` a hugely varied local thickness, and the strategy
+chain returns **25,295 distinct bead widths** spanning 0.19-0.74 mm — comparable
+to C++'s 21,181 distinct outer-wall widths in the G-code. **The beading
+generation is working.**
+
+**`junctionprobe`** instruments the emission point (`generate_junctions`,
+SkeletalTrapezoidation.cpp:1847), i.e. after propagation and interpolation:
+
+```
+junctions created = 6,400,000
+distinct widths   =    28,419
+range             = 0.000 .. 0.743 mm
+```
+
+**The variation is fully intact at ExtrusionJunction creation.**
+
+### Where it is actually lost
+
+| stage | width variation |
+|---|---|
+| `BeadingStrategy::compute` output | 25,295 distinct, 0.190-0.743 mm |
+| `ExtrusionJunction` at creation | **28,419 distinct**, 0.000-0.743 mm |
+| what `perimeter_generator` receives (R541 `ARACHWIDTH`) | **1.03 distinct per loop; 98% of loops flat** |
+
+So the flattening happens **between `generate_junctions` and the `ExtrusionLine`s
+that `WallToolPaths` returns** — i.e. in **WallToolPaths post-processing**, not in
+the beading strategies, not in the factory, not in propagation/transitions, and
+not in the skeleton's thickness computation. (6.4M junctions are created and only
+~1.07M survive — 25,000 loops x 42.7 junctions — so a large merge/discard step is
+demonstrably running there.)
+
+Prime suspects for the next round, all inside `wall_tool_paths.rs` /
+`arachne/utils/`: `ExtrusionLine::simplify` (merges junctions and can average
+widths), `removeSmallLines`, `separateOutEndpoints`, and `PolylineStitcher`.
+**Measure before porting — four rounds running (R539/R540/R541/R542) the named
+suspect turned out to be already-present, inert, or mis-attributed.**
+
+### Cumulative eliminations for this gap
+
+Beading strategies (all seven), `BeadingStrategyFactory` chain,
+`SkeletalTrapezoidation` thickness computation, `BeadingStrategy::compute`,
+beading propagation/transitions, `generate_junctions`, the beading interpolation,
+`thick_polyline_to_multi_path`, and the whole downstream path builder — **all
+verified faithful and all shown to still carry the variation.**
+
+**New discipline (R543): instrument the pipeline at BOTH ends of the suspect
+span before blaming anything inside it.** One probe at `compute` and one at
+junction creation bracketed the loss in a single round and moved the target from
+a 3,909-line file to a different file entirely. R542's "constant along the loop"
+was a correct observation of the OUTPUT paired with a wrong guess about where it
+originated.

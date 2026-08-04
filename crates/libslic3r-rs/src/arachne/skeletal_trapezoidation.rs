@@ -2539,9 +2539,11 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // SkeletalTrapezoidation.cpp:1524 if (node.data.transition_ratio == 0)
                     if node.as_ref().data.transition_ratio == 0.0 {
                         // SkeletalTrapezoidation.cpp:1526 node_beadings.emplace_back(new BeadingPropagation(beading_strategy.compute(node.data.distance_to_boundary * 2, node.data.bead_count)));
-                        let bp = Arc::new(RwLock::new(BeadingPropagation::new(
-                            self.beading_strategy.compute(dtb * 2, node_data_bead_count),
-                        )));
+                        let _c = self.beading_strategy.compute(dtb * 2, node_data_bead_count);
+                        if std::env::var_os("BEADPROBE").is_some() {
+                            beadprobe(dtb * 2, node_data_bead_count, &_c.bead_widths);
+                        }
+                        let bp = Arc::new(RwLock::new(BeadingPropagation::new(_c)));
                         node_beadings.push(bp.clone());
                         // SkeletalTrapezoidation.cpp:1527 node.data.setBeading(node_beadings.back());
                         node.as_ptr().as_mut().unwrap().data.set_beading(bp.clone());
@@ -3045,6 +3047,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         junction = a;
                     }
                     // SkeletalTrapezoidation.cpp:1847 ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
+                    if std::env::var_os("BEADPROBE").is_some() {
+                        junctionprobe(beading.bead_widths[junction_idx]);
+                    }
                     ret.push(ExtrusionJunction::with_hole_compensation(
                         junction,
                         beading.bead_widths[junction_idx],
@@ -3122,10 +3127,18 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 // SkeletalTrapezoidation.cpp:1886 assert(node->data.bead_count != -1);
                 debug_assert!(node.as_ref().data.bead_count != -1);
                 // SkeletalTrapezoidation.cpp:1887 node_beadings.emplace_back(new BeadingPropagation(beading_strategy.compute(node->data.distance_to_boundary * 2, node->data.bead_count)));
-                let bp = Arc::new(RwLock::new(BeadingPropagation::new(self.beading_strategy.compute(
+                let _computed = self.beading_strategy.compute(
                     node.as_ref().data.distance_to_boundary * 2,
                     node.as_ref().data.bead_count,
-                ))));
+                );
+                if std::env::var_os("BEADPROBE").is_some() {
+                    beadprobe(
+                        node.as_ref().data.distance_to_boundary * 2,
+                        node.as_ref().data.bead_count,
+                        &_computed.bead_widths,
+                    );
+                }
+                let bp = Arc::new(RwLock::new(BeadingPropagation::new(_computed)));
                 node_beadings.push(bp.clone());
                 // SkeletalTrapezoidation.cpp:1888 node->data.setBeading(node_beadings.back());
                 node.as_ptr().as_mut().unwrap().data.set_beading(bp);
@@ -3906,4 +3919,80 @@ fn compute_segment_cell_range(
 
     // VoronoiUtils.cpp:243 return cell_range;
     cell_range
+}
+
+/// R543 probe (BEADPROBE=1): the input side of `BeadingStrategy::compute`.
+///
+/// R541/R542 established that the path builder is faithful and that our
+/// per-loop bead widths are 98% flat while C++ varies them along the wall.
+/// Applying R541's own lesson one level further up: measure what `compute` is
+/// being ASKED for before suspecting what it returns.
+#[allow(dead_code)]
+pub(crate) fn beadprobe(thickness: i64, bead_count: i64, widths: &[i64]) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use std::sync::Mutex;
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    static THICK: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+    static W0: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+    static FLATW: AtomicUsize = AtomicUsize::new(0);
+    let n = CALLS.fetch_add(1, Relaxed) + 1;
+    if widths.len() > 1 {
+        let mn = widths.iter().min().copied().unwrap_or(0);
+        let mx = widths.iter().max().copied().unwrap_or(0);
+        if mn == mx {
+            FLATW.fetch_add(1, Relaxed);
+        }
+    }
+    if let (Ok(mut t), Ok(mut w)) = (THICK.lock(), W0.lock()) {
+        t.push(thickness);
+        if let Some(&w0) = widths.first() {
+            w.push(w0);
+        }
+        if n % 20_000 == 0 || n == 2_000 {
+            let mut td: Vec<i64> = t.clone();
+            td.sort_unstable();
+            td.dedup();
+            let mut wd: Vec<i64> = w.clone();
+            wd.sort_unstable();
+            wd.dedup();
+            let tmin = t.iter().min().copied().unwrap_or(0);
+            let tmax = t.iter().max().copied().unwrap_or(0);
+            let wmin = w.iter().min().copied().unwrap_or(0);
+            let wmax = w.iter().max().copied().unwrap_or(0);
+            eprintln!(
+                "[BEADPROBE] compute calls={n} | thickness distinct={} range={:.3}..{:.3}mm | \
+                 bead_widths[0] distinct={} range={:.3}..{:.3}mm | multi-bead beadings with all-equal widths={}",
+                td.len(), tmin as f64 / 1e5, tmax as f64 / 1e5,
+                wd.len(), wmin as f64 / 1e5, wmax as f64 / 1e5,
+                FLATW.load(Relaxed),
+            );
+        }
+    }
+}
+
+/// R543 probe (BEADPROBE=1): the width actually stamped on each ExtrusionJunction
+/// at creation, i.e. AFTER propagation/interpolation but BEFORE WallToolPaths
+/// post-processing. Compare against `beadprobe` (what `compute` produced) and
+/// `ARACHWIDTH` (what the perimeter generator finally sees).
+#[allow(dead_code)]
+pub(crate) fn junctionprobe(w: i64) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use std::sync::Mutex;
+    static N: AtomicUsize = AtomicUsize::new(0);
+    static W: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+    let n = N.fetch_add(1, Relaxed) + 1;
+    if let Ok(mut v) = W.lock() {
+        v.push(w);
+        if n % 200_000 == 0 {
+            let mut d = v.clone();
+            d.sort_unstable();
+            d.dedup();
+            let mn = v.iter().min().copied().unwrap_or(0);
+            let mx = v.iter().max().copied().unwrap_or(0);
+            eprintln!(
+                "[JUNCPROBE] junctions created={n} | distinct widths={} | range={:.3}..{:.3}mm",
+                d.len(), mn as f64 / 1e5, mx as f64 / 1e5,
+            );
+        }
+    }
 }
