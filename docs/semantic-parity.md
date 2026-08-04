@@ -4108,3 +4108,74 @@ elegant single explanation for all three symptoms; multiplying it out showed it
 covers 15% of the surface excess. One subtraction, done before the next round is
 planned, prevents a round spent fixing 15% of a problem and reporting it as the
 cause.
+
+## R556 — found it: our MM segmentation omits both of C++'s cleanup filters
+
+Pure investigation; no code changed, Majora stays at `79cb7bd6`.
+
+### Walking back from `make_perimeters`
+
+`raw_slices` turned out to be a *backup* of `slices` (`layer.rs:1862`
+`region.raw_slices = region.slices.clone()`), not its source — so the R555
+handoff's plan to instrument it was aimed one hop wrong. Following the writes
+instead: `region.slices` is populated during slicing, and for this fixture the
+last thing to touch it is `apply_mm_segmentation_tier1`
+(`print_object.rs:597-947`), which its own doc-comment identifies as the Tier-1
+shape of C++ `apply_mm_segmentation` (`PrintObjectSlice.cpp:845-925`).
+
+### The C++ block we are missing
+
+`PrintObjectSlice.cpp:946-965`, inside that exact range:
+
+```cpp
+// Filter out unprintable polygons produced by subtraction ... Therefore, subtraction from
+// layerm.region() could produce a huge number of small unprintable regions for the model's
+// base extruder. This could, on some models, produce bulges with the model's base color.
+if (! mine.empty())
+    mine = opening(union_ex(mine), float(scale_(5 * EPSILON)), float(scale_(5 * EPSILON)));
+...
+        dst.expolygons = union_ex(mine);            // or append + needs_merge = true
+...
+// Re-create Surfaces of LayerRegions.
+if (src.needs_merge)
+    src.expolygons = closing_ex(src.expolygons, float(scale_(10 * EPSILON)));
+layer->get_region(region_id)->slices.set(std::move(src.expolygons), stInternal);
+```
+
+Two cleanups: an **opening** on the remainder after the painted areas are
+subtracted, and a **closing** when several regions merged into one.
+
+A structural scan of our 351-line `apply_mm_segmentation_tier1` finds **zero**
+occurrences of `opening`, `closing`, `needs_merge` or `union_ex`. It performs the
+raw `intersection` (`:896`, the steal) and the raw `difference` (`:938`, the
+remainder) — precisely the two operations C++ wraps.
+
+**The C++ comment describes our symptom in its own words.** R555 measured 10,528
+excess surfaces, each smaller than C++'s and nearly hole-free, at unchanged total
+area; the C++ source says this subtraction "could produce a huge number of small
+unprintable regions" and adds an opening specifically to remove them. The
+`opening(5*EPSILON)` targets defect (A) — the ~85% of the excess that hole-loss
+could not explain (R555).
+
+This is the best-evidenced lead of the campaign: a named C++ operation, absent
+from our port, whose stated purpose is the exact defect measured.
+
+### R557 — implement and A/B
+
+Port both filters into `apply_mm_segmentation_tier1` behind **separate**
+default-ON gates (R500 — never bundle): `MMSEG_OPENING` for the
+`opening(union_ex(mine), 5*EPSILON, 5*EPSILON)` on the remainder, and
+`MMSEG_CLOSING` for the `closing_ex(..., 10*EPSILON)` merge path. Gate OFF must
+reproduce `79cb7bd6` byte for byte. Then re-run `MPPROBE` and check whether
+surfaces/call falls from 7.78 toward C++'s 4.97 — **and predict first**: if the
+opening alone accounts for defect (A) it should remove most of the 10,528 excess
+while leaving the hole deficit untouched. `opening`/`closing` helpers already
+exist in `print_object.rs:1502-1519` (`closing_p`/`opening_p`) and in
+`clipper_utils`.
+
+**New discipline (R556): when a handoff names the next probe point, confirm the
+data actually flows through it before building the probe.** R555 queued
+`raw_slices` as the upstream target; two greps showed it is a downstream *copy*,
+and following the writes instead landed on the real site in the same round. R554
+said a handoff claim is not evidence — this extends it: a handoff's *plan* is not
+evidence either.
