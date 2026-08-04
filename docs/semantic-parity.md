@@ -1916,3 +1916,63 @@ re-baseline. That is the R530 target.
 **New discipline (R529): when a port is declined, record the SIZE and the
 blocking dependency, not just "GAP".** "653 lines behind a TBB arena, for one
 stdout line" is a decision anyone can re-evaluate; "unported" is not.
+
+## R530 — GCodeProcessor reserved tags, part 1: the tool-change block
+
+First real G-code CONTENT addition since R444. C++ emits ~9,300 reserved-tag
+lines that we emitted **zero** of; `GCodeProcessor` consumes them to segment the
+preview.
+
+**Ground truth first (R504).** Counted in the real C++ Majora output rather than
+trusting the source list — three of the C++ tag sites are dead for this config:
+
+| tag | C++ count |
+|---|---|
+| `; WIPE_TOWER_START` / `_END` | 3655 / 3655 |
+| `; CP TOOLCHANGE START` / `END` | 2723 / 2723 |
+| `; CP_TOOLCHANGE_WIPE` | 2723 |
+| `; CP EMPTY GRID START` / `END` | 209 / 209 |
+| `; CP TOOLCHANGE UNLOAD` / `LOAD` / `WIPE` | **0** — not ported (R501) |
+
+**Ported this round:** the four tags of `tool_change_new` (WipeTower.cpp:3270,
+3288, 3328, 3341), into our `tool_change` — which already cites
+`WipeTower.cpp:3271 (tool_change_new)` as its source, so the mapping is exact.
+
+| tag | ours | C++ |
+|---|---|---|
+| `; CP TOOLCHANGE START` / `END` | **2721** | 2723 |
+| `; WIPE_TOWER_START` / `_END` | **2721** | 3655 |
+
+**Two honest gaps, both understood:**
+
+1. **2721 vs 2723.** Our `tool_change()` runs 2,721 times while the emitted `T`
+   count is 2,723 (R439 matched that to C++ exactly). Two tool changes are
+   therefore emitted outside `tool_change()`. Pre-existing accounting, not
+   introduced here — flagged for the next round.
+2. **WIPE_TOWER 2721 vs 3655.** The remaining 934 come from `finish_layer_new`
+   (WipeTower.cpp:3550/3721), along with all 209 `CP EMPTY GRID` pairs
+   (:3606/:3643, :3770/:3814, :3910) and the 2,723 `CP_TOOLCHANGE_WIPE`
+   (:3961). Deliberately left for R531 — our tower block count (3,377) differs
+   from C++'s (3,655), so those sites need their own count reconciliation rather
+   than a blind insert.
+
+**The diff was verified before re-baselining, not after.** Added lines are
+exactly 8 per tool change (2 for the `CP TOOLCHANGE START` pair, 1 + 1 for the
+WIPE_TOWER pair, 4 for the `CP TOOLCHANGE END` + separator + two blanks, all as
+C++ emits them): 2721 x 8 = **21,768 = the exact line-count delta**. `diff`
+reported 8 spurious `<` lines, which are re-alignment artefacts — the two
+patterns it flagged are present **2721/2721** and **13812/13812** in both files,
+so nothing was removed.
+
+**Semantic verdicts are byte-for-byte unchanged** (object material 0.9959,
+layers 657=657, per-layer 4.47%, Top 1.173, silhouette 99.37%, still
+SEMANTICALLY EQUIVALENT) — comments cannot alter extrusion, and this proves it.
+
+**DELIBERATE RE-BASELINE — majora `065302cb` -> `b7348303`.**
+**benchy `5a34af50` and cube `ab415621` are UNCHANGED** (neither reaches the
+tower tool-change path). Eight guard tests green.
+
+**New discipline (R530): when a change adds output, verify the delta
+ARITHMETICALLY (lines added = N x per-site count) and re-check any `diff`
+oddity by counting the specific lines — `diff` on a 2M-line file reports
+re-alignment noise that looks like deletion.**

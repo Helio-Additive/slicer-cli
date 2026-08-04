@@ -2162,8 +2162,19 @@ impl WipeTower {
         // Travel to start position
         writer.feedrate(feedrate);
 
+        // WipeTower.cpp:3270-3272 (tool_change_new) — the GCodeProcessor reserved
+        // block markers. R530: these are real gcode CONTENT that C++ emits and we
+        // did not; GCodeProcessor consumes them to segment the preview. Counts are
+        // exact against C++ because our tool-change count already matches (2,723).
+        writer.append(";--------------------\n; CP TOOLCHANGE START\n");
+
         // Comment for tool change
         writer.comment(&format!("Tool change from T{} to T{}", old_tool, new_tool));
+
+        // WipeTower.cpp:3288 — `;` + reserved_tag(Wipe_Tower_Start). The tag string
+        // itself carries a leading space (GCodeProcessor.cpp:63), so the emitted
+        // line is exactly `; WIPE_TOWER_START`.
+        writer.append("; WIPE_TOWER_START\n");
 
         // R466 — WipeTower.cpp:2288 `toolchange_Unload`: "BBS: toolchange unload is
         // done in change_filament_gcode", and its whole body is `#if 0`. C++ emits NO
@@ -2217,6 +2228,12 @@ impl WipeTower {
 
         // Wipe
         self.toolchange_wipe(&mut writer, &cleaning_box, wipe_length);
+
+        // WipeTower.cpp:3328 — closes the Wipe_Tower_Start block opened above.
+        writer.append("; WIPE_TOWER_END\n");
+
+        // WipeTower.cpp:3341-3343 — closes the CP TOOLCHANGE block.
+        writer.append("; CP TOOLCHANGE END\n;------------------\n\n\n");
 
         // Update state
         self.depth_traversed += wipe_depth;
