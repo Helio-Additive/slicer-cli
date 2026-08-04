@@ -3889,3 +3889,84 @@ pipeline, stop probing the pipeline and probe its input.** Four stages all
 reported ~1.9x; that flatness was the signal, and one more probe *before* stage 0
 would have found it in R547 rather than R552. A pipeline that preserves a ratio
 is exonerated by that very fact.
+
+## R553 — the region surfaces themselves differ: 1.5x more, half the size, no holes
+
+R552 put the 2x in Arachne's input. This round walks one level further up and
+finds it is already present in the surfaces `PerimeterGenerator` iterates. No
+behavioural change; Majora stays at `4f9de6fe`.
+
+### A divergence found by reading, before measuring
+
+Our `generate_arachne` builds `last` as
+
+```rust
+let simplified = union_polygons_ex(&surface.simplify_p(surface_simplify_resolution));
+let last = offset_expolygons(&simplified, inset, join_type);
+```
+
+against C++ `PerimeterGenerator.cpp:1511`:
+
+```cpp
+ExPolygons last = offset_ex(surface.expolygon.simplify_p(surface_simplify_resolution), -...);
+```
+
+**C++ has no `union_ex` here.** Our own comment two functions away
+(`generate_classic_one`, `:502`) still claims C++ reads
+`union_ex(surface.expolygon.simplify_p(...))` — a decayed claim (R539). The
+classic path gates that union behind `F1_UNION`; the arachne path applies it
+unconditionally. A union over a contour-plus-holes polygon list is exactly the
+operation that merges contours while preserving outer area — the signature R552
+measured. Worth fixing regardless, but the measurement below shows it is not the
+origin.
+
+### `LASTPROBE`: contours and holes counted separately
+
+The C++ probe needed a second translation unit, so the injector now covers
+`PerimeterGenerator.cpp` as well and the revert is still one command.
+
+| per surface | Rust | C++ | ratio |
+|---|---|---|---|
+| calls (surfaces iterated) | 24,000 | 16,000 | **1.50x more** |
+| contours | 1.000 | 1.000 | 1.00x |
+| **holes** | **0.0045** | **0.1066** | **23.7x fewer** |
+| points | 51.1 | 96.2 | **1.88x smaller** |
+| `last` ExPolygons surviving the inset | 0.53 | 0.94 | — |
+
+Reading these together:
+
+1. **The surfaces entering `process_arachne` already differ.** Ours are 1.5x more
+   numerous and each carries half the points. The 1.9x contour count R552 saw at
+   Arachne's door is the product of that, not something the perimeter generator
+   does.
+2. **We have essentially no holes** — 108 against 1,706 over comparable
+   populations. Since total area matches (0.9973), the holes are not being
+   *filled*; the regions are being *partitioned differently*, with C++ keeping a
+   contour-with-holes where we hold several separate contours.
+3. **47% of our surfaces collapse entirely** under the negative inset
+   (0.53 ExPolygons out per surface in), against 6% for C++. That is the direct
+   consequence of feeding surfaces half the size: small ones vanish when inset by
+   half the external perimeter width.
+
+**So the divergence is upstream of `PerimeterGenerator` too** — in the region
+surfaces handed to it. `generate_arachne` takes `&[ExPolygon]`, not a
+`SurfaceCollection`, so surface identity and type are already flattened by the
+caller before the perimeter generator ever runs.
+
+### R554
+
+Measure the surface count, hole count and points-per-surface of the region's
+`slices` where `LayerRegion` assembles them, and walk back to whichever step
+splits one C++ surface into ~1.5 of ours. Prime suspects, in order: the
+`ExPolygon` flattening at the `generate_arachne(&[ExPolygon])` boundary; region
+slice assembly in `layer.rs`; and `union_ex`/`union_safety_offset_ex` in surface
+construction. Separately, remove the unconditional `union_polygons_ex` above so
+the arachne path matches `PerimeterGenerator.cpp:1511` — behind its own gate,
+A/B'd, and expected to be small on its own.
+
+**New discipline (R553): count a compound structure's parts separately before
+comparing totals.** "1.9x more polygons" was true and nearly useless; splitting
+it into surfaces / contours / holes / points-per-surface turned one number into
+four, three of which disagreed in different directions and together named the
+stage. Totals hide compensating differences — R507's "check what a metric scopes"
+applied to the *shape* of the datum, not just its extent.

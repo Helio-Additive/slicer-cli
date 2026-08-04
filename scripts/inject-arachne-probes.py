@@ -19,6 +19,7 @@ All are env-gated and off by default:
     WTPPARAMS     the six resolved WallToolPathsParams, deduped                   (R550)
     TRANSPROBE    transition mids/ends surviving each stage of the ribs pipeline   (R551)
     POLYPROBE     polygon/point counts through the prepared_outline chain          (R552)
+    LASTPROBE     contour/hole counts of `last` / `last_p` in PerimeterGenerator     (R553)
 
 Written because `git diff > file` in this environment does not produce an
 applicable patch (R548) — string injection is verifiable and survives the tool.
@@ -31,6 +32,9 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARACHNE = os.path.join(
     ROOT, "libslic3r/bambustudio/references/BambuStudio/src/libslic3r/Arachne"
+)
+LIBSLIC3R = os.path.join(
+    ROOT, "libslic3r/bambustudio/references/BambuStudio/src/libslic3r"
 )
 
 ST_INCLUDES_OLD = """#include <stack>
@@ -591,6 +595,73 @@ WTP_POLY_CALLS3_NEW = """    prepared_outline = union_(prepared_outline);
     update_outline_size_change(prepared_outline);"""
 
 
+PG_LAST_FN = r"""
+// R553: contour/hole census of `last` and `last_p` where PerimeterGenerator hands
+// the region to Arachne. Splits contours from holes because a union that merges
+// contours preserves area while halving the count -- the observed signature.
+static void lastprobe(const char *stage, size_t contours, size_t holes, size_t points)
+{
+    if (::getenv("LASTPROBE") == nullptr)
+        return;
+    struct Acc { size_t calls, contours, holes, points; };
+    static std::mutex                 mtx;
+    static std::map<std::string, Acc> acc;
+    static size_t                     rounds = 0;
+    std::lock_guard<std::mutex> lock(mtx);
+    Acc &a = acc[stage];
+    ++a.calls;
+    a.contours += contours;
+    a.holes += holes;
+    a.points += points;
+    if (stage[0] == 'D' && ++rounds % 4000 == 0) {
+        fprintf(stderr, "[CPP-LASTPROBE] ---- cumulative ----\n");
+        for (const auto &kv : acc)
+            fprintf(stderr, "  %-26s calls=%7zu contours=%9zu holes=%9zu points=%10zu\n",
+                    kv.first.c_str(), kv.second.calls, kv.second.contours,
+                    kv.second.holes, kv.second.points);
+    }
+}
+"""
+
+PG_LAST_ANCHOR = """void PerimeterGenerator::process_arachne()"""
+
+PG_LAST_CALLS_OLD = """        std::vector<int> circle_poly_indices;
+        Polygons   last_p;"""
+
+PG_LAST_CALLS_NEW = """        if (::getenv("LASTPROBE") != nullptr) { // R553
+            size_t sp = surface.expolygon.contour.points.size();
+            for (const Polygon &h : surface.expolygon.holes) sp += h.points.size();
+            lastprobe("A surface.expolygon", 1, surface.expolygon.holes.size(), sp);
+            size_t lc = 0, lh = 0, lp = 0;
+            for (const ExPolygon &e : last) {
+                ++lc; lh += e.holes.size(); lp += e.contour.points.size();
+                for (const Polygon &h : e.holes) lp += h.points.size();
+            }
+            lastprobe("C last (ExPolygons)", lc, lh, lp);
+        }
+        std::vector<int> circle_poly_indices;
+        Polygons   last_p;"""
+
+PG_LAST_CALLS2_OLD = """        std::vector<Arachne::VariableWidthLines> total_perimeters;
+        ExPolygons infill_contour;"""
+
+PG_LAST_CALLS2_NEW = """        if (::getenv("LASTPROBE") != nullptr) { // R553
+            size_t pp = 0;
+            for (const Polygon &p : last_p) pp += p.points.size();
+            lastprobe("D last_p (Polygons)", last_p.size(), 0, pp);
+        }
+        std::vector<Arachne::VariableWidthLines> total_perimeters;
+        ExPolygons infill_contour;"""
+
+PG_INCLUDES_OLD = """#include "PerimeterGenerator.hpp\""""
+PG_INCLUDES_NEW = """#include "PerimeterGenerator.hpp"
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+#include <mutex>
+#include <string>"""
+
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -611,6 +682,9 @@ EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_CENTRAL_CALLS4_OLD, ST_CENTRAL_CALLS4_NEW),
     ("SkeletalTrapezoidation.cpp", ST_CENTRAL_CALLS5_OLD, ST_CENTRAL_CALLS5_NEW),
     ("SkeletalTrapezoidation.hpp", ST_HPP_OLD, ST_HPP_NEW),
+    ("PerimeterGenerator.cpp", PG_INCLUDES_OLD, PG_INCLUDES_NEW),
+    ("PerimeterGenerator.cpp", PG_LAST_CALLS_OLD, PG_LAST_CALLS_NEW),
+    ("PerimeterGenerator.cpp", PG_LAST_CALLS2_OLD, PG_LAST_CALLS2_NEW),
     ("WallToolPaths.cpp", WTP_INCLUDES_OLD, WTP_INCLUDES_NEW),
     ("WallToolPaths.cpp", WTP_PROBE_OLD, WTP_PROBE_NEW),
     ("WallToolPaths.cpp", WTP_CHAIN_OLD, WTP_CHAIN_NEW),
@@ -628,6 +702,7 @@ def main():
     texts = {}
     for fname in ("SkeletalTrapezoidation.cpp", "SkeletalTrapezoidation.hpp", "WallToolPaths.cpp"):
         texts[fname] = open(os.path.join(ARACHNE, fname)).read()
+    texts["PerimeterGenerator.cpp"] = open(os.path.join(LIBSLIC3R, "PerimeterGenerator.cpp")).read()
 
     failures = []
     for fname, old, new in EDITS:
@@ -648,6 +723,13 @@ def main():
             failures.append("SkeletalTrapezoidation.cpp: generateSegments anchor not unique")
         else:
             texts["SkeletalTrapezoidation.cpp"] = st.replace(anchor, ST_CENTRAL_FN + "\n" + anchor)
+
+    pg = texts["PerimeterGenerator.cpp"]
+    if "static void lastprobe" not in pg:
+        if pg.count(PG_LAST_ANCHOR) != 1:
+            failures.append("PerimeterGenerator.cpp: process_arachne anchor not unique")
+        else:
+            texts["PerimeterGenerator.cpp"] = pg.replace(PG_LAST_ANCHOR, PG_LAST_FN + "\n" + PG_LAST_ANCHOR, 1)
 
     wt = texts["WallToolPaths.cpp"]
     if "static void polyprobe" not in wt:
@@ -681,10 +763,11 @@ def main():
         return 0
 
     for fname, text in texts.items():
-        open(os.path.join(ARACHNE, fname), "w").write(text)
+        base = LIBSLIC3R if fname == "PerimeterGenerator.cpp" else ARACHNE
+        open(os.path.join(base, fname), "w").write(text)
     print("Injected probes into: " + ", ".join(sorted(texts)))
     print("Revert with: cd libslic3r/bambustudio/references/BambuStudio && "
-          "git checkout -- src/libslic3r/Arachne")
+          "git checkout -- src/libslic3r/Arachne src/libslic3r/PerimeterGenerator.cpp")
     return 0
 
 

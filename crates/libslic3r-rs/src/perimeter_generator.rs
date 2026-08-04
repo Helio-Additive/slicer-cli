@@ -2984,8 +2984,27 @@ impl PerimeterGenerator {
                 self.config.join_type,
             );
 
+            if std::env::var_os("LASTPROBE").is_some() {
+                let sp: usize = surface.contour.points.len()
+                    + surface.holes.iter().map(|h| h.points.len()).sum::<usize>();
+                lastprobe("A surface.expolygon", 1, surface.holes.len(), sp);
+                let lc = last.len();
+                let lh: usize = last.iter().map(|e| e.holes.len()).sum();
+                let lp: usize = last
+                    .iter()
+                    .map(|e| {
+                        e.contour.points.len()
+                            + e.holes.iter().map(|h| h.points.len()).sum::<usize>()
+                    })
+                    .sum();
+                lastprobe("C last (ExPolygons)", lc, lh, lp);
+            }
             // PerimeterGenerator.cpp:1518-1522  Polygons last_p = to_polygons(last);
             let last_p: crate::geometry::Polygons = expolygons_to_polygons(&last);
+            if std::env::var_os("LASTPROBE").is_some() {
+                let pp: usize = last_p.iter().map(|p| p.points.len()).sum();
+                lastprobe("D last_p (Polygons)", last_p.len(), 0, pp);
+            }
 
             let mut total_perimeters: Vec<VariableWidthLines> = Vec::new();
             let surface_infill: ExPolygons;
@@ -3800,6 +3819,41 @@ fn apply_fuzzy_skin_to_entity(
             for sub_entity in &mut coll.entities {
                 apply_fuzzy_skin_to_entity(sub_entity, config, mode);
             }
+        }
+    }
+}
+
+/// R553: contour/hole census of `last` / `last_p` where `PerimeterGenerator`
+/// hands the region to Arachne, mirroring `[CPP-LASTPROBE]`. Contours and holes
+/// are counted separately because a union that merges contours preserves area
+/// while reducing the count -- the signature R552 observed.
+fn lastprobe(stage: &str, contours: usize, holes: usize, points: usize) {
+    use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use std::sync::Mutex;
+    #[derive(Default, Clone, Copy)]
+    struct Acc {
+        calls: usize,
+        contours: usize,
+        holes: usize,
+        points: usize,
+    }
+    static ACC: Mutex<Option<BTreeMap<String, Acc>>> = Mutex::new(None);
+    static ROUNDS: AtomicUsize = AtomicUsize::new(0);
+    let Ok(mut g) = ACC.lock() else { return };
+    let m = g.get_or_insert_with(BTreeMap::new);
+    let a = m.entry(stage.to_string()).or_default();
+    a.calls += 1;
+    a.contours += contours;
+    a.holes += holes;
+    a.points += points;
+    if stage.starts_with('D') && ROUNDS.fetch_add(1, Relaxed) % 4_000 == 3_999 {
+        eprintln!("[LASTPROBE] ---- cumulative ----");
+        for (k, v) in m.iter() {
+            eprintln!(
+                "  {k:<26} calls={:7} contours={:9} holes={:9} points={:10}",
+                v.calls, v.contours, v.holes, v.points
+            );
         }
     }
 }
