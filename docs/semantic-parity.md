@@ -1743,3 +1743,51 @@ and its true payoff, ready to pick up.
 read the fixture's actual value before reasoning about either.** I nearly
 recorded a wrong prize (0.9 s instead of 1.5 s) by assuming Majora took the
 zsmooth path it does not take — the same class of error as R503.
+
+## R526 — asks #1 and #4: correspondence re-verified, file-layout map written
+
+Pivot round (see R525's scope note). No engine change; both remaining user asks
+that had gone untouched are now addressed with measured, checkable numbers.
+
+**Ask #1 — `main.cpp` -> `src/*.rs`.** Re-verified `main-cpp-correspondence.md`
+mechanically rather than by eye:
+
+- `main.cpp` is unchanged (still 84409 bytes).
+- It has **13 top-level definitions, and all 13 appear in the table (100%)**.
+- **Every Rust symbol cited in the table still exists** at the path given
+  (`JobConfig`, `resolve_config_refs`, `normalize_single_filament_stl_config`,
+  `full_fff_config`, `slice_to_gcode`, `slice_3mf_to_gcode`, `load_3mf`,
+  `Print::apply`/`validate`/`export_gcode`, `SlicingStatus`, …).
+
+So the doc's GAP rows are current, not stale — the multi-nozzle trio
+(`apply_explicit_nozzle_mapping`, `reassign_objects_to_master_nozzle`) and the
+stdout event protocol (`emit_event` family) remain the real ask-#1 gaps. Doc
+re-stamped R387 -> R526.
+
+**Ask #4 — file layout for C++ maintainers.** New
+`docs/file-layout-correspondence.md`. Measured, not asserted:
+
+| | |
+|---|---|
+| C++ translation units (distinct `.cpp`/`.hpp` stems) | 276 |
+| Mirrored by a same-named Rust file | **~273 (99%)** |
+| Subdirectories mapping 1:1 | **13 of 13** |
+| Deliberate omissions | 3 |
+
+The rule is `<Dir>/<CamelCase>.{cpp,hpp}` -> `<dir>/<snake_case>.rs`. The three
+omissions are `GCodeSender` (printer serial I/O, out of scope for an offline
+CLI), `clipper` (we LINK the same vendored ClipperLib via `clipper_z_sys`
+instead of porting it — porting would risk the exact geometric divergence the
+binding avoids), and `Format/format.hpp` (header aggregator; `format/mod.rs`).
+
+Two files that a naive transform reports as missing are actually present under a
+different name, and the doc calls them out so nobody re-ports them:
+`Format/3mf.cpp` -> `format/three_mf.rs` (Rust identifiers cannot start with a
+digit) and `Support/TreeSupport3D.cpp` -> `support/tree_support_3d.rs` (digit
+grouping). **Both of these fooled my own first-pass matcher** — it reported them
+as unported before the alternates were checked.
+
+**New discipline (R526): audit a naming convention with a script, then verify
+the script's misses by hand — a mechanical CamelCase->snake_case transform
+produces false "missing" hits on digits (`3mf`, `TreeSupport3D`), and reporting
+those as gaps would have sent someone to re-port existing files.**

@@ -10,8 +10,20 @@ library (`crates/libslic3r-rs/src/*.rs`, the actual slice). `main.cpp` keeps all
 of that in one 84 KB translation unit; the split is the main structural
 divergence, so this table is the bridge.
 
-Verified against `main.cpp` @ Jun 21 2026 (84409 bytes) and the crate at R387.
-Line numbers are the C++ definition sites; re-grep if `main.cpp` is re-synced.
+Verified against `main.cpp` @ Jun 21 2026 (84409 bytes) and the crate at
+**R526 (2026-08-04)**. Line numbers are the C++ definition sites; re-grep if
+`main.cpp` is re-synced.
+
+**R526 re-verification.** `main.cpp` is unchanged (still 84409 bytes). Its
+**13 top-level definitions are ALL covered by the table below (100%)** — checked
+mechanically, not by eye. Every Rust symbol cited in the table was confirmed to
+still exist at the path given. The GAP/divergent rows below are therefore
+current, not stale.
+
+For the *library* (not the CLI driver), see
+[`file-layout-correspondence.md`](./file-layout-correspondence.md): ~99% of C++
+translation units have a same-named Rust file, all 13 subdirectories map 1:1,
+and the three deliberate omissions are listed there.
 
 | `main.cpp` symbol | C++ line | Rust home | Fidelity |
 |---|---|---|---|
