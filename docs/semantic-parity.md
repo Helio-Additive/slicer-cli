@@ -4041,3 +4041,70 @@ R553 told R554 that a source comment was wrong; checking the C++ took one grep a
 showed the comment was right and the handoff was wrong. Queued assertions inherit
 no more authority than the round that wrote them (R540), **including assertions
 about your own code**.
+
+## R555 — the fill rule is faithful; the split is inside each region's SurfaceCollection
+
+No behavioural change; Majora stays at `79cb7bd6`.
+
+### Suspect (ii) eliminated by reading the constant
+
+R554's handoff nominated the Clipper fill rule as the prime suspect — even-odd
+versus non-zero is exactly the switch that turns one contour-with-hole into two
+hole-free contours. Ours (`triangle_mesh_slicer.rs:1861-1864`):
+
+```rust
+SlicingMode::EvenOdd => ClipperPolyFillType::EvenOdd,
+SlicingMode::PositiveLargestContour => ClipperPolyFillType::Positive,
+_ => ClipperPolyFillType::NonZero,
+```
+
+against C++ `TriangleMeshSlicer.cpp:2032-2033` — the same three-way mapping, and
+both engines default to non-zero for this fixture. `clipper_utils.rs` uses
+non-zero throughout. **Eliminated.**
+
+### `MPPROBE`: what `make_perimeters` actually receives
+
+A new probe at `LayerRegion::make_perimeters` entry on both engines (the C++ side
+takes `const SurfaceCollection &slices` directly, so this is the first genuinely
+like-for-like comparison of the collection itself):
+
+| per call | Rust | C++ | ratio |
+|---|---|---|---|
+| **calls (layer-regions)** | **3,400** | **3,200** | **1.06x — essentially equal** |
+| surfaces | 7.78 | 4.97 | **1.56x more** |
+| holes | 0.036 | 0.534 | **14.8x fewer** |
+| points | 398 | 479 | 0.83x — we have *fewer* |
+
+Two things this settles:
+
+1. **It is not extra regions or extra layers.** The call count matches to 6%.
+   Every earlier framing left open whether we were splitting regions (Majora is
+   multicolour, so mm-segmentation was a live suspect); we are not. The
+   difference is entirely *within* each region's `SurfaceCollection`.
+2. **Hole-loss is not the main effect.** Converting all 1,709 of C++'s holes into
+   separate contours would add ~1,586 surfaces; our excess is **10,528**. Hole
+   loss accounts for about **15%** of it. These are two distinct defects, and a
+   single fix is unlikely to close both — worth knowing before chasing one.
+
+Total points being *lower* while surfaces are 1.66x higher rules out "our
+polygons are finer": the same area is being carved into more, smaller, simpler
+pieces.
+
+### R556
+
+The collection is wrong before `make_perimeters` sees it, and `restore_untyped_slices`
+merely copies `raw_slices` into `slices` (R554: 1:1). So instrument
+`LayerRegion::raw_slices` at the moment slicing fills it — C++
+`PrintObject::slice()` -> `slice_volumes()` -> the per-region assignment loop —
+and compare surfaces/holes/points there. If `raw_slices` already shows 1.56x, the
+defect is in slicing proper; if it does not, it is in whatever writes `slices`
+between slicing and perimeter generation. Add the relevant C++ file to the
+injector (now covering `LayerRegion.cpp`, `PerimeterGenerator.cpp` and the three
+Arachne files) so the revert stays one command.
+
+**New discipline (R555): when a ratio has two candidate mechanisms, do the
+arithmetic on each before picking one.** Hole-to-contour conversion was the
+elegant single explanation for all three symptoms; multiplying it out showed it
+covers 15% of the surface excess. One subtraction, done before the next round is
+planned, prevents a round spent fixing 15% of a problem and reporting it as the
+cause.

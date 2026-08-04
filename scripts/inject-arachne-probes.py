@@ -20,6 +20,7 @@ All are env-gated and off by default:
     TRANSPROBE    transition mids/ends surviving each stage of the ribs pipeline   (R551)
     POLYPROBE     polygon/point counts through the prepared_outline chain          (R552)
     LASTPROBE     contour/hole counts of `last` / `last_p` in PerimeterGenerator     (R553)
+    MPPROBE       surfaces/holes/points entering LayerRegion::make_perimeters        (R555)
 
 Written because `git diff > file` in this environment does not produce an
 applicable patch (R548) — string injection is verifiable and survives the tool.
@@ -36,6 +37,7 @@ ARACHNE = os.path.join(
 LIBSLIC3R = os.path.join(
     ROOT, "libslic3r/bambustudio/references/BambuStudio/src/libslic3r"
 )
+LIBSLIC3R_FILES = ("PerimeterGenerator.cpp", "LayerRegion.cpp")
 
 ST_INCLUDES_OLD = """#include <stack>
 #include <functional>
@@ -662,6 +664,51 @@ PG_INCLUDES_NEW = """#include "PerimeterGenerator.hpp"
 #include <string>"""
 
 
+LR_MP_FN = r"""
+// R555: what LayerRegion::make_perimeters actually receives. Counts surfaces,
+// holes and points per (layer, region) so the 1.5x surface gap can be localised
+// to a layer band or a region rather than only seen in aggregate.
+static void mpprobe(int layer_id, int region_id, size_t surfaces, size_t holes, size_t points)
+{
+    if (::getenv("MPPROBE") == nullptr)
+        return;
+    static std::mutex mtx;
+    static size_t calls = 0, tot_s = 0, tot_h = 0, tot_p = 0;
+    std::lock_guard<std::mutex> lock(mtx);
+    ++calls; tot_s += surfaces; tot_h += holes; tot_p += points;
+    if (calls == 1 || calls % 200 == 0)
+        fprintf(stderr,
+                "[CPP-MPPROBE] calls=%zu | surfaces=%zu holes=%zu points=%zu | "
+                "last(layer=%d region=%d s=%zu h=%zu)\n",
+                calls, tot_s, tot_h, tot_p, layer_id, region_id, surfaces, holes);
+}
+"""
+
+LR_MP_ANCHOR = """void LayerRegion::make_perimeters(const SurfaceCollection &slices, const PerimeterRegions &perimeter_regions, SurfaceCollection *fill_surfaces, ExPolygons *fill_no_overlap, std::vector<LoopNode> &loop_nodes)
+{"""
+
+LR_MP_CALL_OLD = """    this->perimeters.clear();
+    this->thin_fills.clear();"""
+
+LR_MP_CALL_NEW = """    if (::getenv("MPPROBE") != nullptr) { // R555
+        size_t h = 0, p = 0;
+        for (const Surface &s : slices.surfaces) {
+            h += s.expolygon.holes.size();
+            p += s.expolygon.contour.points.size();
+            for (const Polygon &hp : s.expolygon.holes) p += hp.points.size();
+        }
+        mpprobe(int(this->layer()->id()), -1, slices.surfaces.size(), h, p);
+    }
+    this->perimeters.clear();
+    this->thin_fills.clear();"""
+
+LR_INCLUDES_OLD = """#include "RegionExpansion.hpp\""""
+LR_INCLUDES_NEW = """#include "RegionExpansion.hpp"
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>"""
+
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -682,6 +729,8 @@ EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_CENTRAL_CALLS4_OLD, ST_CENTRAL_CALLS4_NEW),
     ("SkeletalTrapezoidation.cpp", ST_CENTRAL_CALLS5_OLD, ST_CENTRAL_CALLS5_NEW),
     ("SkeletalTrapezoidation.hpp", ST_HPP_OLD, ST_HPP_NEW),
+    ("LayerRegion.cpp", LR_INCLUDES_OLD, LR_INCLUDES_NEW),
+    ("LayerRegion.cpp", LR_MP_CALL_OLD, LR_MP_CALL_NEW),
     ("PerimeterGenerator.cpp", PG_INCLUDES_OLD, PG_INCLUDES_NEW),
     ("PerimeterGenerator.cpp", PG_LAST_CALLS_OLD, PG_LAST_CALLS_NEW),
     ("PerimeterGenerator.cpp", PG_LAST_CALLS2_OLD, PG_LAST_CALLS2_NEW),
@@ -702,7 +751,8 @@ def main():
     texts = {}
     for fname in ("SkeletalTrapezoidation.cpp", "SkeletalTrapezoidation.hpp", "WallToolPaths.cpp"):
         texts[fname] = open(os.path.join(ARACHNE, fname)).read()
-    texts["PerimeterGenerator.cpp"] = open(os.path.join(LIBSLIC3R, "PerimeterGenerator.cpp")).read()
+    for fname in LIBSLIC3R_FILES:
+        texts[fname] = open(os.path.join(LIBSLIC3R, fname)).read()
 
     failures = []
     for fname, old, new in EDITS:
@@ -723,6 +773,13 @@ def main():
             failures.append("SkeletalTrapezoidation.cpp: generateSegments anchor not unique")
         else:
             texts["SkeletalTrapezoidation.cpp"] = st.replace(anchor, ST_CENTRAL_FN + "\n" + anchor)
+
+    lr = texts["LayerRegion.cpp"]
+    if "static void mpprobe" not in lr:
+        if lr.count(LR_MP_ANCHOR) != 1:
+            failures.append("LayerRegion.cpp: make_perimeters anchor not unique")
+        else:
+            texts["LayerRegion.cpp"] = lr.replace(LR_MP_ANCHOR, LR_MP_FN + "\n" + LR_MP_ANCHOR, 1)
 
     pg = texts["PerimeterGenerator.cpp"]
     if "static void lastprobe" not in pg:
@@ -763,11 +820,12 @@ def main():
         return 0
 
     for fname, text in texts.items():
-        base = LIBSLIC3R if fname == "PerimeterGenerator.cpp" else ARACHNE
+        base = LIBSLIC3R if fname in LIBSLIC3R_FILES else ARACHNE
         open(os.path.join(base, fname), "w").write(text)
     print("Injected probes into: " + ", ".join(sorted(texts)))
     print("Revert with: cd libslic3r/bambustudio/references/BambuStudio && "
-          "git checkout -- src/libslic3r/Arachne src/libslic3r/PerimeterGenerator.cpp")
+          "git checkout -- src/libslic3r/Arachne src/libslic3r/PerimeterGenerator.cpp "
+          "src/libslic3r/LayerRegion.cpp")
     return 0
 
 

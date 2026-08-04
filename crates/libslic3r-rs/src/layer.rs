@@ -493,6 +493,23 @@ impl LayerRegion {
         let perimeter_flow = self.flow(FlowRole::Perimeter, layer_height)?;
         let external_perimeter_flow = self.flow(FlowRole::ExternalPerimeter, layer_height)?;
 
+        if std::env::var_os("MPPROBE").is_some() {
+            // R555: mirror of [CPP-MPPROBE] -- what make_perimeters receives.
+            let h: usize = surface_fill
+                .surfaces
+                .iter()
+                .map(|s| s.expolygon.holes.len())
+                .sum();
+            let p: usize = surface_fill
+                .surfaces
+                .iter()
+                .map(|s| {
+                    s.expolygon.contour.points.len()
+                        + s.expolygon.holes.iter().map(|x| x.points.len()).sum::<usize>()
+                })
+                .sum();
+            mpprobe(layer_id as i32, -1, surface_fill.surfaces.len(), h, p);
+        }
         if std::env::var_os("WTPCFG").is_some() {
             use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
             static ONCE: AtomicBool = AtomicBool::new(false);
@@ -3704,4 +3721,24 @@ pub fn get_extents_layer_regions(layer_regions: &[LayerRegion]) -> BoundingBox {
     }
     // Layer.cpp:655
     bbox
+}
+
+/// R555: what `LayerRegion::make_perimeters` receives, mirroring `[CPP-MPPROBE]`.
+/// Counts surfaces, holes and points per (layer, region) so the 1.5x surface gap
+/// can be localised rather than only seen in aggregate.
+fn mpprobe(layer_id: i32, region_id: i32, surfaces: usize, holes: usize, points: usize) {
+    use std::sync::Mutex;
+    static ACC: Mutex<(usize, usize, usize, usize)> = Mutex::new((0, 0, 0, 0));
+    let Ok(mut g) = ACC.lock() else { return };
+    g.0 += 1;
+    g.1 += surfaces;
+    g.2 += holes;
+    g.3 += points;
+    if g.0 == 1 || g.0 % 200 == 0 {
+        eprintln!(
+            "[MPPROBE] calls={} | surfaces={} holes={} points={} | \
+             last(layer={layer_id} region={region_id} s={surfaces} h={holes})",
+            g.0, g.1, g.2, g.3
+        );
+    }
 }
