@@ -944,6 +944,10 @@ impl WallToolPaths {
         // killed it" (R511). Off by default; the area calls are not free.
         let ap = std::env::var_os("AREAPROBE").is_some();
         let mut areas: Vec<f64> = Vec::new();
+        // R563: time the chain, split by whether the input was empty, so the
+        // ~25,400 calls R562 found arriving empty can be PRICED rather than
+        // assumed cheap (R560). Only ticks when the probe is on.
+        let ap_t0 = if ap { Some(std::time::Instant::now()) } else { None };
         if ap {
             areas.push(area_polygons(&self.outline));
         }
@@ -1017,7 +1021,8 @@ impl WallToolPaths {
         polyprobe("3 final prepared_outline", &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
-            areaprobe(&areas, self.outline.len());
+            let ns = ap_t0.map_or(0, |t| t.elapsed().as_nanos() as u64);
+            areaprobe(&areas, self.outline.len(), ns);
         }
         // WallToolPaths.cpp:484
         outline_size_change |= original_outline_size != prepared_outline.len();
@@ -1665,8 +1670,16 @@ pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
 /// stops being positive, which separates "the surface arrived empty" (input
 /// fragmentation, R557 territory) from "a step in this chain killed it" (a port
 /// defect in that step) — different bugs (R511).
-fn areaprobe(areas: &[f64], n_input_polys: usize) {
-    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+fn areaprobe(areas: &[f64], n_input_polys: usize, elapsed_ns: u64) {
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+    // R563: nanoseconds spent in the preparation chain, split by input emptiness.
+    static NS_EMPTY: AtomicU64 = AtomicU64::new(0);
+    static NS_NONEMPTY: AtomicU64 = AtomicU64::new(0);
+    if n_input_polys == 0 {
+        NS_EMPTY.fetch_add(elapsed_ns, Relaxed);
+    } else {
+        NS_NONEMPTY.fetch_add(elapsed_ns, Relaxed);
+    }
     const STEPS: [&str; 10] = [
         "0 input outline",
         "1 triple offset",
@@ -1710,10 +1723,13 @@ fn areaprobe(areas: &[f64], n_input_polys: usize) {
         let failed = n - surv;
         eprintln!(
             "[AREAPROBE] calls={n} survived={surv} failed={failed} ({:.1}%) | \
-             input_empty={} input_nonempty_but_area<=0={}",
+             input_empty={} input_nonempty_but_area<=0={} | \
+             chain_ms empty={:.1} nonempty={:.1}",
             100.0 * failed as f64 / n as f64,
             EMPTY_IN.load(Relaxed),
-            NEG_AREA_IN.load(Relaxed)
+            NEG_AREA_IN.load(Relaxed),
+            NS_EMPTY.load(Relaxed) as f64 / 1e6,
+            NS_NONEMPTY.load(Relaxed) as f64 / 1e6
         );
         for (k, s) in STEPS.iter().enumerate() {
             let c = FIRST_ZERO[k].load(Relaxed);

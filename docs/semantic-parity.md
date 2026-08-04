@@ -4750,3 +4750,93 @@ shown to be an artifact.
 is made of.** Same count is not same population. When one engine's calls include
 a large inert class the other lacks, condition it out first — R559, R560 and R561
 each lost a round to a version of this.
+
+## R563 — the wasted calls cost 354 ms; ask #3 is 1.45x, not 1.12x
+
+Two measurements, one closure, and a regression I had not been tracking. No
+behavioural change: `d219a37e`, `5a34af50`, `ab415621`, 8 guards green.
+
+### The empty-input calls: priced and closed
+
+R562 found ~25,400 `generate()` calls arriving with an empty outline. Rather than
+assume they were cheap, the chain is now timed and split by input emptiness
+(inside the `AREAPROBE` gate, so it costs nothing by default):
+
+    chain_ms  empty=354.2   nonempty=3322.9
+
+**354 ms**, against a `Print::process` of 19.5 s — **1.8% of process, 1.4% of
+total**. Direction predicted correctly (small). **Closed as a perf micro-lead with
+the number attached**; no port, no fast-path. The preparation chain over an empty
+`Polygons` really is nearly free, as expected, and the 3.3 s spent on non-empty
+inputs is ordinary work, not waste.
+
+### Ask #3 re-measured — and it has regressed
+
+The recorded ~1.12x was stale (pre-R549). Interleaved, min of 3, load ~5.6:
+
+| | Rust | C++ | ratio |
+|---|---|---|---|
+| wall clock (min of 3) | **25.50 s** | **17.60 s** | **1.448x** |
+| instrumented `process` | 19.53 s | — | — |
+| instrumented `export_gcode` | 5.16 s | — | — |
+
+Rust's wall clock (25.50 s) against its instrumented total (19.53 + 5.16 =
+24.72 s) leaves ~0.8 s of startup, so the two agree and the ratio is sound.
+C++ emits no `SLICE_PHASE_TIMING` output at all — that env var is Rust-only, and
+`cpptime.py` works by parsing timestamped log lines — so wall clock is the only
+directly comparable measure on that side.
+
+**We are 1.45x slower, not 1.12x.** Process alone has gone 11.4 s -> 19.5 s since
+that figure was recorded. The most likely cause is the parity work itself: R549's
+`cap` fix raised central edges 3.2% -> 11.8% (far more beads to process), and
+R558 wired the variable-width builder (more paths per loop). **Both were correct
+and both are keeping their parity gains — but they were never priced.** Caveat
+worth stating: run-to-run spread was 28-30% at this load, so the absolute numbers
+are soft; the ratio of minimums is the robust part.
+
+This reopens ask #3 as genuinely unfinished rather than nearly-done, and it is
+now the largest outstanding gap of the four asks.
+
+### The open metric, conditioned properly at last
+
+Using R562's surviving-call denominators, computed from existing logs — no new
+runs:
+
+| per SURVIVING call | Rust | C++ | ratio |
+|---|---|---|---|
+| ExtrusionLines | 1.623 | 1.949 | 1.20x |
+| distinct widths per line | 2.09 | 2.60 | 1.24x |
+| **width VALUES available** | **3.39** | **5.07** | **1.49x** |
+| **`; LINE_WIDTH:` tags per outer-wall block** | **1.332** | **4.210** | **3.16x** |
+
+**1.49x of supply cannot produce a 3.16x output gap.** R551's scale test fires
+again, and this time on properly conditioned figures. So the width gap is **not**
+a shortage of distinct width values — we have two-thirds of C++'s supply and emit
+under a third of the tags.
+
+What that leaves is the one property nobody has measured: the tag fires on
+*change* against a persistent register (R558), so **consecutive repeats suppress
+it**. Two engines with similar width supplies emit very different tag counts if
+one orders its widths in longer runs. **This is a hypothesis, not a finding** —
+but unlike every previous candidate it is directly testable from the G-code
+without instrumenting either engine.
+
+### R564
+
+Measure the **run-length distribution of consecutive equal widths** within
+outer-wall feature blocks, both engines, straight from the G-code. If our runs are
+systematically longer, that is the mechanism and it points at path *ordering*
+(`chain_and_reorder_extrusion_paths`, seam placement) rather than width
+*generation* — a part of the pipeline this campaign has never examined. If the
+run-lengths match, the metric is measuring something other than what its name
+suggests and should be re-derived from scratch.
+
+Separately: ask #3 now needs a profile, not a guess. Re-run the xctrace recipe
+against the current binary and attribute the 19.5 s of `process` — the last
+profile predates R549.
+
+**New discipline (R563): a parity fix changes the performance budget, and nobody
+re-prices it.** R549 and R558 were both correct, both kept, and together they
+moved slicing time from 1.12x to 1.45x without a single round noticing, because
+every round after them measured geometry. **When a fix adds work, measure the
+work it adds in the same round you land it.**
