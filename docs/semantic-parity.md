@@ -3373,3 +3373,107 @@ Nine rounds (R538-R546) have each eliminated a suspect by measuring our side; th
 one measurement never taken is what C++ actually does at the same points. R516's
 "run the reference-vs-itself control" generalises: when the port looks right,
 make the reference report its own numbers.
+
+## R547 — the C++ reference instrumented: the gap is `bead_count` assignment
+
+R546 predicted this round would be mechanical. It was, and it answered the
+question in one shot. I ported the three Rust probes into the C++ tree
+(`beadprobe`, `propprobe`, `stageprobe`; env-gated, additive, ~169 lines) and ran
+both engines on Majora. The patch is preserved at
+`scripts/arachne-parity-probes.patch`; the submodule was reverted and rebuilt at
+the end of the round, and both status checks are clean.
+
+### Two corrections found on the way in
+
+**C++ `SCALING_FACTOR` is 1e-5, not 1e-6.** `libslic3r.h:58` reads
+`static constexpr double SCALING_FACTOR = 0.00001;` — the same scale the Rust
+crate uses. My first probe printed everything 10x small; the bead-width range
+gave it away (0.022..0.071 mm is not a plausible extrusion width). Divisors
+corrected before any number below was recorded. This confirms R487's retraction
+of the "C++ is 1e6" claim, which had crept back into the round-to-round notes.
+
+**The C++ engine is not byte-reproducible.** Four runs of the same binary on the
+same input give four md5s (`78a87a55`, `2ea52d0f`, `84d713ac`, `db3dc2fb`), with
+total filament differing in the 5th significant figure (65094.36 vs 65095.27 mm).
+So the reference-vs-itself control is mandatory before trusting any C++-derived
+metric. Running `lwblock.py` on two independent C++ runs:
+
+| metric | C++ run A | C++ run B |
+|---|---|---|
+| outer-wall feature blocks | 14,865 | 14,864 |
+| `; LINE_WIDTH:` per block | 4.21 | 4.21 |
+| blocks with >1 distinct width | 28.0% | 28.0% |
+| within-block spread | 0.0707 mm | 0.0708 mm |
+
+**The width metric is stable to three decimals across the nondeterminism.** The
+0.25-vs-4.21 gap this campaign has been chasing is real, not run-to-run noise.
+
+### The deciding comparison: stage-0 flat%
+
+| stage | lines R | lines C++ | flat% R | flat% C++ | distinct w/line R | distinct w/line C++ |
+|---|---|---|---|---|---|---|
+| 0 after generate_toolpaths | 57,304 | 130,578 | **86.9** | **67.8** | 2.07 | 3.36 |
+| 1 after stitch_tool_paths | 53,976 | 111,649 | 88.1 | 72.9 | 1.93 | 3.16 |
+| 2 after remove_small_lines | 53,772 | 108,307 | 88.3 | 73.0 | 1.93 | 3.21 |
+| 3 after separate_out_inner_contour | 40,002 | 80,001 | 84.2 | 63.4 | 2.25 | 3.99 |
+| 4 after simplify_tool_paths | 40,002 | 80,001 | 84.4 | 63.8 | 1.79 | 2.60 |
+| 5 after remove_empty_tool_paths | 40,002 | 80,001 | 84.4 | 63.8 | 1.79 | 2.60 |
+
+**C++ is 67.8% flat at stage 0 where we are 86.9%.** The divergence is already
+present the moment Arachne finishes, before any post-processing. R538-R546 were
+aimed at the right subsystem. Note also that C++'s post-processing chain *also*
+leaves flat% roughly where it found it — neither engine loses variation
+downstream, exactly as R544 measured on our side.
+
+### The mechanism: 5x fewer of our nodes carry a bead count
+
+`propprobe` came back inverted, which pointed upstream:
+
+| | Rust | C++ |
+|---|---|---|
+| `ratio_of_top >= 1.0` (pure COPY) | 20.1% | **61.6%** |
+| `ratio_of_top == 0` (bottom unchanged) | **69.8%** | 16.8% |
+| `beading_propagation_transition_dist` | 0.400 mm | 0.400 mm |
+
+`ratio_of_top == 0` means `dist_to_bottom_source == 0` — the bottom node's
+beading never arrived by upward propagation. Ours is at zero 4x as often. And
+`beadprobe` showed C++ calling `BeadingStrategy::compute` ~1,260,000 times to our
+~240,000. So a new `graphprobe` on both engines, at the head of
+`generateSegments`, measured the skeleton itself:
+
+| per `generate_segments` call | Rust | C++ | ratio |
+|---|---|---|---|
+| graph nodes | 135.6 | 192.4 | 1.42x |
+| graph edges | 269.1 | 382.8 | 1.42x |
+| `upward_quad_mids` | 35.6 | 49.9 | 1.40x |
+| **nodes with `bead_count > 0`** | **9.90** | **31.07** | **3.14x** |
+
+As a share of the graph: **7.3% of our nodes carry a bead count, against 16.1%
+of C++'s.** In absolute terms 255,502 vs 1,273,750 — a ratio of **4.99x**, which
+is exactly the 5x we independently measured in `compute` call counts. The two
+counters close on each other.
+
+The causal chain is now fully quantified and consistent end to end:
+
+> **~2.2x smaller share of nodes marked with a bead count -> 5x fewer
+> `BeadingStrategy::compute` calls -> far fewer distinct beadings along a wall ->
+> 86.9% flat vs 67.8% at stage 0 -> 0.25 vs 4.21 `; LINE_WIDTH:` per outer-wall
+> block.**
+
+Every function *downstream* of `bead_count` has been verified faithful across
+R542-R546. The defect is at or above the point where `bead_count` is assigned —
+i.e. central-region marking and bead-count assignment
+(`setMarking`/`filterMarking`/`setBeadCount` and the transition machinery), none
+of which this campaign has yet audited.
+
+**R548 target:** instrument and then audit bead-count assignment. Counting nodes
+by `bead_count` value and by central/non-central marking on both engines will say
+whether we mark fewer nodes central, or mark the same nodes and assign
+`bead_count <= 0` more often.
+
+**New discipline (R547): a ratio that is stable under the reference's own
+nondeterminism is a real signal; one that is not is noise.** The C++ engine is
+not byte-reproducible, so every C++-derived metric needs a two-run control before
+it can carry a conclusion — the byte-level instability here was ~1e-5 in
+material while the metric under investigation differed by 17x, and only the
+control could establish that separation.

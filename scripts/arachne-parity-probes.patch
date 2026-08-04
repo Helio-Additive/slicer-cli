@@ -1,0 +1,226 @@
+src/libslic3r/Arachne/SkeletalTrapezoidation.cpp | 106 +++++++++++++++++++++++
+ src/libslic3r/Arachne/WallToolPaths.cpp          |  63 ++++++++++++++
+ 2 files changed, 169 insertions(+)
+
+--- Changes ---
+
+src/libslic3r/Arachne/SkeletalTrapezoidation.cpp
+  @@ -8,6 +8,11 @@
+  +#include <algorithm>
+  +#include <cstdio>
+  +#include <cstdlib>
+  +#include <mutex>
+  +#include <vector>
+   #include <boost/log/trivial.hpp>
+   
+   #include "utils/linearAlg2D.hpp"
+  @@ -24,6 +29,78 @@
+  +// ---------------------------------------------------------------------------
+  +// R547 parity instrumentation (temporary; env-gated, off by default).
+  +// Mirrors the Rust probes of the same name in
+  +// crates/libslic3r-rs/src/arachne/skeletal_trapezoidation.rs so the two engines
+  +// report comparable numbers. Coordinates are printed in mm using
+  +// SCALING_FACTOR = 1e-5 (libslic3r.h:58), the same scale the Rust crate uses.
+  +// ---------------------------------------------------------------------------
+  +static bool probe_enabled(const char *name)
+  +{
+  +    return ::getenv(name) != nullptr;
+  +}
+  +
+  +static void beadprobe(coord_t thickness, coord_t bead_count, const std::vector<coord_t> &widths)
+  +{
+  +    static std::mutex        mtx;
+  +    static std::vector<coord_t> thicknesses;
+  +    static std::vector<coord_t> w0s;
+  +    static size_t            calls = 0;
+  +    static size_t            flat_w = 0;
+  +
+  +    std::lock_guard<std::mutex> lock(mtx);
+  +    const size_t n = ++calls;
+  +    if (widths.size() > 1) {
+  +        const auto mn = *std::min_element(widths.begin(), widths.end());
+  +        const auto mx = *std::max_element(widths.begin(), widths.end());
+  +        if (mn == mx)
+  +            ++flat_w;
+  +    }
+  +    thicknesses.emplace_back(thickness);
+  +    if (!widths.empty())
+  +        w0s.emplace_back(widths.front());
+  +
+  +    if (n == 1 || n == 2000 || n % 20000 == 0) {
+  +        std::vector<coord_t> td = thicknesses;
+  +        std::sort(td.begin(), td.end());
+  +        td.erase(std::unique(td.begin(), td.end()), td.end());
+  +        std::vector<coord_t> wd = w0s;
+  +        std::sort(wd.begin(), wd.end());
+  +        wd.erase(std::unique(wd.begin(), wd.end()), wd.end());
+  +        const double tmin = thicknesses.empty() ? 0. : double(*std::min_element(thicknesses.begin(), thicknesses.end())) / 1e5;
+  +        const double tmax = thicknesses.empty() ? 0. : double(*std::max_element(thicknesses.begin(), thicknesses.end())) / 1e5;
+  +        const double wmin = w0s.empty() ? 0. : double(*std::min_element(w0s.begin(), w0s.end())) / 1e5;
+  +        const double wmax = w0s.empty() ? 0. : double(*std::max_element(w0s.begin(), w0s.end())) / 1e5;
+  +        fprintf(stderr,
+  +                "[CPP-BEADPROBE] compute calls=%zu | thickness distinct=%zu range=%.3f..%.3fmm | "
+  +                "bead_widths[0] distinct=%zu range=%.3f..%.3fmm | multi-bead beadings with all-equal widths=%zu\n",
+  +                n, td.size(), tmin, tmax, wd.size(), wmin, wmax, flat_w);
+  +    }
+  +    (void) bead_count;
+  +}
+  +
+  +static void propprobe(double ratio_of_top, coord_t transition_dist, coord_t total_dist)
+  +{
+  +    static std::mutex mtx;
+  +    static size_t     calls = 0, copies = 0, clamped = 0, td_lt = 0;
+  +
+  +    std::lock_guard<std::mutex> lock(mtx);
+  +    const size_t n = ++calls;
+  +    if (ratio_of_top >= 1.0)
+  +        ++copies;
+  +    if (total_dist < transition_dist)
+  +        ++td_lt;
+  +    if (ratio_of_top == 0.0)
+  +        ++clamped;
+  +
+  +    if (n == 1 || n % 5000 == 0)
+  +        fprintf(stderr,
+  +                "[CPP-PROPPROBE] calls=%zu | ratio>=1.0 (pure COPY)=%zu (%.1f%%) | ratio==0=%zu | "
+  +                "total_dist<transition_dist=%zu | transition_dist=%.3fmm\n",
+  +                n, copies, 100. * double(copies) / double(n), clamped, td_lt, double(transition_dist) / 1e5);
+  +}
+  +
+   #ifdef ARACHNE_DEBUG
+   static void export_graph_to_svg(const std::string                                 &path,
+                                   SkeletalTrapezoidationGraph                       &graph,
+  @@ -1476,6 +1553,29 @@
+  +    if (probe_enabled("GRAPHPROBE")) { // R547
+  +        static std::mutex mtx;
+  +        static size_t calls = 0, nodes = 0, edges = 0, upward = 0, beaded = 0;
+  +        size_t n_up = 0, n_bead = 0;
+  +        for (const edge_t &e : graph.edges)
+  +            if (e.prev && e.next && const_cast<edge_t &>(e).isUpward())
+  +                ++n_up;
+  +        for (const node_t &nd : graph.nodes)
+  +            if (nd.data.bead_count > 0)
+  +                ++n_bead;
+  +        std::lock_guard<std::mutex> lock(mtx);
+  +        const size_t c = ++calls;
+  +        nodes += graph.nodes.size();
+  +        edges += graph.edges.size();
+  +        upward += n_up;
+  +        beaded += n_bead;
+  +        if (c == 1 || c % 200 == 0)
+  +            fprintf(stderr,
+  +                    "[CPP-GRAPHPROBE] generateSegments calls=%zu | nodes=%zu | edges=%zu | "
+  +                    "upward_quad_mids=%zu | nodes with bead_count>0=%zu\n",
+  +                    c, nodes, edges, upward, beaded);
+  +    }
+  +
+       std::vector<edge_t*> upward_quad_mids;
+       for (edge_t& edge : graph.edges)
+       {
+  @@ -1524,6 +1624,8 @@
+  +                if (probe_enabled("BEADPROBE")) // R547
+  +                    beadprobe(node.data.distance_to_boundary * 2, node.data.bead_count, node_beadings.back()->beading.bead_widths);
+                   node.data.setBeading(node_beadings.back());
+                   assert(node_beadings.back()->beading.total_thickness == node.data.distance_to_boundary * 2);
+                   if(node_beadings.back()->beading.total_thickness != node.data.distance_to_boundary * 2)
+  @@ -1686,6 +1788,8 @@
+  +        if (probe_enabled("PROPPROBE")) // R547
+  +            propprobe(ratio_of_top, beading_propagation_transition_dist, total_dist);
+           if (ratio_of_top >= 1.0)
+           {
+               bottom_beading = top_beading;
+  @@ -1885,6 +1989,8 @@
+  +        if (probe_enabled("BEADPROBE")) // R547
+  +            beadprobe(node->data.distance_to_boundary * 2, node->data.bead_count, node_beadings.back()->beading.bead_widths);
+           node->data.setBeading(node_beadings.back());
+       }
+       assert(node->data.hasBeading());
+  +106 -0
+
+src/libslic3r/Arachne/WallToolPaths.cpp
+  @@ -3,6 +3,11 @@
+  +#include <cstdio>
+  +#include <cstdlib>
+  +#include <map>
+  +#include <mutex>
+  +#include <string>
+   
+   #include "WallToolPaths.hpp"
+   
+  @@ -23,6 +28,58 @@
+  +// ---------------------------------------------------------------------------
+  +// R547 parity instrumentation (temporary; env-gated via STAGEPROBE, off by
+  +// default). Mirrors `stageprobe` in
+  +// crates/libslic3r-rs/src/arachne/wall_tool_paths.rs: per-ExtrusionLine flat%
+  +// and distinct widths per line, accumulated per post-processing stage.
+  +// ---------------------------------------------------------------------------
+  +static void stageprobe(const char *stage, const std::vector<VariableWidthLines> &toolpaths)
+  +{
+  +    if (::getenv("STAGEPROBE") == nullptr)
+  +        return;
+  +
+  +    struct Acc { size_t lines = 0, juncs = 0, flat = 0, distinct_total = 0; };
+  +    static std::mutex                    mtx;
+  +    static std::map<std::string, Acc>    acc;
+  +
+  +    size_t lines = 0, juncs = 0, flat = 0, distinct_total = 0;
+  +    for (const VariableWidthLines &vwl : toolpaths)
+  +        for (const ExtrusionLine &line : vwl) {
+  +            if (line.junctions.empty())
+  +                continue;
+  +            ++lines;
+  +            juncs += line.junctions.size();
+  +            std::vector<coord_t> ws;
+  +            ws.reserve(line.junctions.size());
+  +            for (const ExtrusionJunction &j : line.junctions)
+  +                ws.emplace_back(j.w);
+  +            std::sort(ws.begin(), ws.end());
+  +            ws.erase(std::unique(ws.begin(), ws.end()), ws.end());
+  +            distinct_total += ws.size();
+  +            if (ws.size() <= 1)
+  +                ++flat;
+  +        }
+  +
+  +    std::lock_guard<std::mutex> lock(mtx);
+  +    Acc &e = acc[stage];
+  +    e.lines += lines;
+  +    e.juncs += juncs;
+  +    e.flat += flat;
+  +    e.distinct_total += distinct_total;
+  +
+  +    // Print the whole table whenever stage 5 crosses a round number of lines, so
+  +    // every stage is always compared on the same population.
+  +    if (stage[0] == '5' && e.lines > 0 && e.lines % 20000 < std::max<size_t>(lines, 1)) {
+  +        fprintf(stderr, "[CPP-STAGEPROBE] ---- cumulative ----\n");
+  +        for (const auto &kv : acc)
+  +            fprintf(stderr, "  %-38s lines=%8zu juncs=%9zu flat=%5.1f%% distinct_w/line=%.2f\n",
+  +                    kv.first.c_str(), kv.second.lines, kv.second.juncs,
+  +                    100. * double(kv.second.flat) / double(std::max<size_t>(kv.second.lines, 1)),
+  +                    double(kv.second.distinct_total) / double(std::max<size_t>(kv.second.lines, 1)));
+  +    }
+  +}
+  +
+   WallToolPaths::WallToolPaths(const Polygons& outline, const coord_t bead_width_0, const coord_t bead_width_x,
+                                const size_t inset_count, const coord_t wall_0_inset, const coordf_t layer_height, const WallToolPathsParams &params)
+       : outline(outline)
+  @@ -530,16 +587,22 @@
+  +    stageprobe("0 after generate_toolpaths", toolpaths); // R547
+   
+       stitchToolPaths(toolpaths, this->bead_width_x);
+  +    stageprobe("1 after stitch_tool_paths", toolpaths); // R547
+   
+       removeSmallLines(toolpaths);
+  +    stageprobe("2 after remove_small_lines", toolpaths); // R547
+   
+       separateOutInnerContour();
+  +    stageprobe("3 after separate_out_inner_contour", toolpaths); // R547
+   
+       simplifyToolPaths(toolpaths);
+  +    stageprobe("4 after simplify_tool_paths", toolpaths); // R547
+   
+       removeEmptyToolPaths(toolpaths);
+  +    stageprobe("5 after remove_empty_tool_paths", toolpaths); // R547
+       assert(std::is_sorted(toolpaths.cbegin(), toolpaths.cend(),
+                             [](const VariableWidthLines& l, const VariableWidthLines& r)
+                             {
+  +63 -0

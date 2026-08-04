@@ -2448,6 +2448,24 @@ impl<'a> SkeletalTrapezoidation<'a> {
     // void SkeletalTrapezoidation::generateSegments()
     pub fn generate_segments(&mut self) {
         unsafe {
+            // R547: graph size at the same point as the C++ GRAPHPROBE, to test
+            // whether our ~5x deficit in `compute` calls is a smaller skeleton or
+            // a different share of nodes carrying a bead count.
+            if std::env::var_os("GRAPHPROBE").is_some() {
+                let n_up = self
+                    .graph
+                    .edges
+                    .iter()
+                    .filter(|e| e.base.prev.is_some() && e.base.next.is_some() && e.is_upward())
+                    .count();
+                let n_bead = self
+                    .graph
+                    .nodes
+                    .iter()
+                    .filter(|n| n.base.data.bead_count > 0)
+                    .count();
+                graphprobe(self.graph.nodes.len(), self.graph.edges.len(), n_up, n_bead);
+            }
             // SkeletalTrapezoidation.cpp:1479 std::vector<edge_t*> upward_quad_mids;
             let mut upward_quad_mids: Vec<EdgePtr> = Vec::new();
             // SkeletalTrapezoidation.cpp:1480 for (edge_t& edge : graph.edges)
@@ -4078,6 +4096,30 @@ pub(crate) fn propprobe(ratio_of_top: f64, transition_dist: i64, total_dist: i64
             CLAMPED.load(Relaxed),
             TDLT.load(Relaxed),
             transition_dist as f64 / 1e5,
+        );
+    }
+}
+
+/// R547: skeleton size at the head of `generate_segments`, mirroring the C++
+/// `[CPP-GRAPHPROBE]` counter. Tests whether our ~5x deficit in
+/// `BeadingStrategy::compute` calls comes from a smaller graph or from a
+/// different share of nodes carrying a bead count.
+pub(crate) fn graphprobe(nodes: usize, edges: usize, upward: usize, beaded: usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    static N: AtomicUsize = AtomicUsize::new(0);
+    static E: AtomicUsize = AtomicUsize::new(0);
+    static U: AtomicUsize = AtomicUsize::new(0);
+    static B: AtomicUsize = AtomicUsize::new(0);
+    let c = CALLS.fetch_add(1, Relaxed) + 1;
+    let n = N.fetch_add(nodes, Relaxed) + nodes;
+    let e = E.fetch_add(edges, Relaxed) + edges;
+    let u = U.fetch_add(upward, Relaxed) + upward;
+    let b = B.fetch_add(beaded, Relaxed) + beaded;
+    if c == 1 || c % 200 == 0 {
+        eprintln!(
+            "[GRAPHPROBE] generate_segments calls={c} | nodes={n} | edges={e} | \
+             upward_quad_mids={u} | nodes with bead_count>0={b}"
         );
     }
 }
