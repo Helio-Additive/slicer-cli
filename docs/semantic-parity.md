@@ -3970,3 +3970,74 @@ it into surfaces / contours / holes / points-per-surface turned one number into
 four, three of which disagreed in different directions and together named the
 stage. Totals hide compensating differences — R507's "check what a metric scopes"
 applied to the *shape* of the datum, not just its extent.
+
+## R554 — the flattening is faithful; a retraction; one small correct-by-construction fix
+
+### The cheapest hypothesis, killed
+
+R553 proposed that flattening `SurfaceCollection` to `&[ExPolygon]` might split an
+ExPolygon-with-holes into several hole-free ones, explaining both the 1.5x
+surface count and the 23.7x hole deficit at once. **It does not.** Every link is a
+1:1 map:
+
+| step | code | behaviour |
+|---|---|---|
+| `layer.rs:618` | `surface_fill.surfaces.iter().map(\|s\| s.expolygon.clone())` | 1:1 |
+| `layer.rs:1623` | `surface_fill = regions[i].slices.clone()` | it *is* the region's slices (the local name misleads) |
+| `SurfaceCollection::to_expolygons` | `surfaces.iter().map(\|s\| s.expolygon.clone())` | 1:1 |
+| `SurfaceCollection::set` | `clear()` + `surfaces_append(...)` | 1:1 |
+
+Nothing between `LayerRegion::slices` and Arachne changes the partitioning.
+`Layer::make_slices` reads region slices that already exist, so **the origin is
+the slicing / region-assignment stage** — earlier than anything this campaign has
+instrumented.
+
+### A retraction of my own handoff
+
+R553's handoff asserted that our comment in `generate_classic_one` (`:502`),
+quoting C++ as `union_ex(surface.expolygon.simplify_p(...))`, was "DECAYED/WRONG".
+**That is incorrect and is retracted.** C++ has *two* constructions and the
+difference is deliberate:
+
+```cpp
+PerimeterGenerator.cpp:945  (process_classic)  ExPolygons last = union_ex(surface.expolygon.simplify_p(res));
+PerimeterGenerator.cpp:1511 (process_arachne)  ExPolygons last = offset_ex(surface.expolygon.simplify_p(res), -...);
+```
+
+The comment is right for the function it sits in. Only the *arachne* path lacked
+the union in C++ while ours applied one — we had inherited the classic form.
+
+### The fix (kept, parity-neutral)
+
+`generate_arachne` now offsets the raw `simplify_p` polygons directly, matching
+`:1511`, behind `ARACHNE_NO_PRE_UNION` (default ON; gate OFF reproduces
+`4f9de6fe` byte for byte).
+
+| | before | after | C++ |
+|---|---|---|---|
+| `last` contours | 12,637 | 12,791 | 15,003 |
+| `last` holes | 38 | 40 | 782 |
+| object material | 0.9973 | 0.9973 | 1.0 |
+| wall-lines IoU | 95.28% | 95.28% | — |
+| silhouette | 99.53% | 99.53% | — |
+
+**Parity-neutral, exactly as predicted.** Kept under R550's rule: it is correct by
+construction and removes a latent divergence on any fixture where the union would
+actually merge contours. Verdict remains SEMANTICALLY EQUIVALENT; Majora
+re-baselines **`4f9de6fe` -> `79cb7bd6`**; benchy, cube and the STL fixtures are
+unchanged.
+
+### R555
+
+The surface partitioning is decided before `LayerRegion::slices` is ever read.
+Instrument `LayerRegion::make_perimeters` entry on **both** engines (C++ receives
+`const SurfaceCollection &slices` directly) for surfaces-per-region-per-layer, and
+walk back into `PrintObject::slice()` / region assignment / mm-segmentation.
+Layer count is equal at 657, so the 1.5x is surfaces *within* a layer-region.
+Adding `LayerRegion.cpp` to the injector keeps the revert one command.
+
+**New discipline (R554): a claim you wrote in your own handoff is not evidence.**
+R553 told R554 that a source comment was wrong; checking the C++ took one grep and
+showed the comment was right and the handoff was wrong. Queued assertions inherit
+no more authority than the round that wrote them (R540), **including assertions
+about your own code**.

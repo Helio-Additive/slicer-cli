@@ -2976,13 +2976,35 @@ impl PerimeterGenerator {
             //          apply_precise_outer_wall ? -(ext_perimeter_width - ext_perimeter_spacing)
             //                                   : -(ext_perimeter_width/2. - ext_perimeter_spacing/2.));
             // (precise_outer_wall not modelled here -> use the simple inset.)
-            let simplified = union_polygons_ex(&surface.simplify_p(surface_simplify_resolution));
+            // R554: the two C++ perimeter paths differ here and the difference is
+            // deliberate. `process_classic` (PerimeterGenerator.cpp:945) reads
+            // `union_ex(surface.expolygon.simplify_p(res))`, which our
+            // `generate_classic_one` mirrors; `process_arachne` (:1511) reads
+            // `offset_ex(surface.expolygon.simplify_p(res), -...)` with NO union
+            // -- `offset_ex` reconstructs the ExPolygons itself, so a prior union
+            // only risks merging contours. We had inherited the classic form here.
+            let simplified: crate::geometry::ExPolygons =
+                if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
+                    // PerimeterGenerator.cpp:1511 offset_ex(surface.expolygon.simplify_p(res), ...)
+                    vec![]
+                } else {
+                    union_polygons_ex(&surface.simplify_p(surface_simplify_resolution))
+                };
             let inset = -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0);
-            let last = offset_expolygons(
-                &simplified,
-                inset / crate::SCALING_FACTOR,
-                self.config.join_type,
-            );
+            let last = if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
+                // PerimeterGenerator.cpp:1511 — offset the raw simplify_p polygons.
+                crate::clipper_utils::offset_polygons(
+                    &surface.simplify_p(surface_simplify_resolution),
+                    inset / crate::SCALING_FACTOR,
+                    self.config.join_type,
+                )
+            } else {
+                offset_expolygons(
+                    &simplified,
+                    inset / crate::SCALING_FACTOR,
+                    self.config.join_type,
+                )
+            };
 
             if std::env::var_os("LASTPROBE").is_some() {
                 let sp: usize = surface.contour.points.len()
