@@ -2659,6 +2659,18 @@ impl WipeTower {
                 writer.rectangle_fill_box(&fill_box, spacing);
             }
         } else if dy > self.perimeter_width {
+            // WipeTower.cpp:3604-3607 — this branch is C++'s
+            // `extrude_fill && dy > m_perimeter_width`, and it is where the
+            // `CP EMPTY GRID` block opens. R533: measured with the R505
+            // `WTFILLCNT` probe, our guard passes on 207 layers against C++'s 209
+            // emissions — the same constant −2 seen across every tool-change
+            // counter (R531/R532), not a branch mismatch.
+            //
+            // C++ also emits `.comment_with_value(" layer #", m_num_layer_changes + 1)`
+            // here. That counter has no exact counterpart on our side, so it is
+            // deliberately NOT emitted rather than guessed (R528) — the reserved
+            // tag itself is what GCodeProcessor consumes.
+            writer.append(";--------------------\n; CP EMPTY GRID START\n");
             if solid_infill {
                 let mut sparse_factor = 1.5_f32;
                 if is_first_layer {
@@ -2695,6 +2707,10 @@ impl WipeTower {
                     writer.extrude(x, if i % 2 != 0 { fill_box.rd.y } else { fill_box.ru.y });
                 }
             }
+
+            // WipeTower.cpp:3643-3644 — closes the block, with C++'s separator
+            // and its seven trailing blank lines.
+            writer.append("; CP EMPTY GRID END\n;------------------\n\n\n\n\n\n\n\n");
         }
 
         // Draw outer perimeter

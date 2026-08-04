@@ -2094,3 +2094,58 @@ condition mapped to our `finish_layer` first (R519).
 **New discipline (R532): read the emission EXPRESSION, not just the tag name —
 `reserved_tag(X)` was concatenated with two runtime-valued suffixes, and the
 tag name alone would have produced a wrong line 2,721 times.**
+
+## R533 — reserved tags COMPLETE: `CP EMPTY GRID`
+
+The last of the four tag kinds. **The branch condition was already documented in
+our own source** — R503's note in `finish_layer` records that C++'s
+`finish_layer_new` receives `extrude_fill = false` on **653 of 656** calls, and
+that the fill comes from `finish_block` on ~206 tool-change layers. 206 + 3 =
+**209**, exactly C++'s count. No new analysis was needed; the answer was in the
+comment left three rounds earlier.
+
+**Predicted before running with the existing R505 `WTFILLCNT` probe** (which
+already counted this exact guard): `passed = 207`. Measured **207 START + 207
+END**, line delta **2277 = 207 x 11** exactly (11 lines per emission: separator
++ START, then END + separator + C++'s seven trailing blanks).
+
+| | ours | C++ |
+|---|---|---|
+| `; CP EMPTY GRID START` / `END` | **207** | 209 |
+
+**−2 again**, matching every other tool-change-derived counter (R531, R532).
+Three independent counters now show the same constant offset, which is the
+cleanest possible evidence that it is one upstream planning difference and not
+three separate emitter bugs.
+
+**Deliberately NOT emitted:** C++'s
+`.comment_with_value(" layer #", m_num_layer_changes + 1)` that accompanies the
+START tag. That counter has no exact counterpart on our side and guessing it
+would put a wrong value on 207 lines (R528). The reserved tag itself — what
+`GCodeProcessor` actually consumes — is emitted correctly.
+
+**RESERVED TAGS ARE NOW COMPLETE:**
+
+| tag | ours | C++ | note |
+|---|---|---|---|
+| `; WIPE_TOWER_START` / `_END` | 3377 | 3655 | residual = our tower block-count difference (R531) |
+| `; CP TOOLCHANGE START` / `END` | 2721 | 2723 | −2 upstream |
+| `; CP_TOOLCHANGE_WIPE CT0 FL*` | 2721 | 2723 | −2 upstream; FL1 split matches exactly 3=3 |
+| `; CP EMPTY GRID START` / `END` | **207** | 209 | −2 upstream |
+| `CP TOOLCHANGE UNLOAD` / `LOAD` / `WIPE` | 0 | **0** | C++ emits none for this config — correctly not ported |
+
+We went from emitting **zero** of ~9,300 reserved-tag lines to emitting all four
+live kinds, every count explained.
+
+**Verified additive** (`; Tool change from` 2721/2721, `; WIPE_TOWER_START`
+3377/3377, `; CP_TOOLCHANGE_WIPE CT0 FL0` 2718/2718, `G1  X219.729   E1.8473`
+13812/13812). Semantic verdicts unchanged, still SEMANTICALLY EQUIVALENT. Eight
+guard tests green.
+
+**DELIBERATE RE-BASELINE — majora `0538403b` -> `0fa9f9ff`.**
+**benchy `5a34af50` and cube `ab415621` UNCHANGED.**
+
+**New discipline (R533): before analysing a branch, grep your own source for a
+prior round's note on it.** The `extrude_fill = false on 653/656` fact and a
+purpose-built counter (`WTFILLCNT`) were both already there from R503/R505; the
+round reduced to running an existing probe.
