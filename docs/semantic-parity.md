@@ -3477,3 +3477,87 @@ not byte-reproducible, so every C++-derived metric needs a two-run control befor
 it can carry a conclusion — the byte-level instability here was ~1e-5 in
 material while the metric under investigation differed by 17x, and only the
 control could establish that separation.
+
+## R548 — the divergence is `updateIsCentral`, and one of my probes is wrong
+
+### First: R547's saved patch was not usable
+
+`scripts/arachne-parity-probes.patch` does not apply — it contains no
+`diff --git` line at all. `git diff > file` in this environment yields a
+rendered summary, not a patch, and R547 recorded it as reusable without ever
+testing that claim. Replaced with `scripts/inject-arachne-probes.py`, which does
+idempotent string injection, fails loudly if any anchor is missing or ambiguous,
+and has a `--check` mode. **This round it was applied, built, run, reverted, and
+re-applied end to end before being committed** — the test R547 skipped.
+
+### The census: the gap is present at the first marking stage
+
+`CENTRALPROBE` counts central edges and bucketed `bead_count` after each of the
+four marking stages, on both engines:
+
+| stage | central/edge R | central/edge C++ | bead>0/node R | bead>0/node C++ |
+|---|---|---|---|---|
+| 0 after `updateIsCentral` | **3.212%** | **11.199%** | 0% | 0% |
+| 1 after `filterCentral` | 3.212% | 11.199% | 0% | 0% |
+| 2 after `updateBeadCount` | 3.212% | 11.199% | 5.301% | 12.864% |
+| 3 after `filterNoncentralRegions` | 5.276% | 15.413% | 6.773% | 16.048% |
+| 4 after `generateTransitioningRibs` | 5.398% | 15.505% | 6.887% | 16.126% |
+
+**The 3.5x deficit is fully present at stage 0.** `filterCentral` moves nothing
+on either engine, so it is exonerated. `updateBeadCount` then converts central
+edges into bead counts at the same rate on both sides — it is faithful, and it
+merely inherits a marking that is already wrong. Every later stage preserves the
+ratio. This confirms R547's chain and pushes its head one step further back:
+
+> `updateIsCentral` marks 3.5x too few edges -> 2.2x smaller share of nodes with
+> a bead count -> 5x fewer `compute` calls -> 86.9% vs 67.8% flat at stage 0.
+
+### Inside `updateIsCentral`: constants identical, branch mix identical
+
+`ISCPROBE` counts which of the four branches decides each edge:
+
+| | Rust | C++ |
+|---|---|---|
+| `outer_edge_filter_length` | 0.0500 mm | 0.0500 mm |
+| `cap = sin(transitioning_angle/2)` | 0.087156 | 0.087156 |
+| branch: twin already set (copy) | 50.0% | 50.0% |
+| branch: `EXTRA_VD` -> false | 31.8% | 31.6% |
+| branch: below filter length -> false | 0.03% | 0.23% |
+| branch: geometric `dR < dD*cap` | 18.1% | 18.2% |
+
+Both constants are bit-identical at runtime and the branch mix matches. We are
+not misrouting edges into the wrong branch — **the divergence is the outcome of
+the geometric test `dR < dD * cap` alone**, where `dR = |to.dtb - from.dtb|` and
+`dD = |ab|`. Since `cap` is identical, `distance_to_boundary` and/or the edge
+geometry must differ.
+
+### An honest negative: my Rust-side counters contradict each other
+
+I added a `GEOMPROBE` to bucket `dR/dD` and it disagreed with the branch probe.
+Within a single function call, on all-positive inputs, it reported 232,912 edges
+with `dR/dD < 0.0436` but only 20,526 satisfying `dR < dD * 0.087156` — which is
+arithmetically impossible, since the first condition implies the second. A third
+count (the branch probe's own) gave a fourth answer, 5.09%.
+
+**On the C++ side the same two counters agree** (29.17% of geom edges below cap
+vs a 29.43% central rate). The inconsistency is Rust-side only.
+
+I could not isolate it this round, so I removed `GEOMPROBE` rather than leave a
+tool that reports numbers I cannot reproduce two ways. **No Rust geometric-branch
+percentage from this round should be quoted.** The three claims above survive
+because they rest on `CENTRALPROBE` and `ISCPROBE`, which cross-check each other
+on the C++ side and use identical methodology on both engines.
+
+That asymmetry is itself the strongest lead into R549: a Rust counter that
+disagrees with itself about state read microseconds apart suggests the graph is
+being mutated or re-entered between the probe and the census — for instance
+`update_is_central` running on a graph that is later extended, or edges whose
+`central_is_set` is stale by the time the census walks them. Note the supporting
+hint: our `ISCPROBE` total central (1.85% of edges) and our `CENTRALPROBE`
+central (3.21%) differ by 1.7x, where the same two C++ numbers agree to 1.05x.
+
+**New discipline (R548): a probe that cannot be reproduced by a second,
+independently-written counter is not a measurement.** R547's corollary said two
+counters that close on each other are worth more than one measured twice; the
+converse bites here. And: **never record a tool as reusable without exercising
+it** — the patch R547 saved had never been applied even once.

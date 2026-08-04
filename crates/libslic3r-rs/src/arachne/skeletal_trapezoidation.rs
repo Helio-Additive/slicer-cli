@@ -910,9 +910,11 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
         // SkeletalTrapezoidation.cpp:553 updateIsCentral();
         self.update_is_central();
+        self.central_census("0 after updateIsCentral");
 
         // SkeletalTrapezoidation.cpp:559 filterCentral(central_filter_dist);
         self.filter_central(CENTRAL_FILTER_DIST);
+        self.central_census("1 after filterCentral");
 
         // SkeletalTrapezoidation.cpp:565 if (filter_outermost_central_edges)
         if filter_outermost_central_edges {
@@ -922,12 +924,15 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
         // SkeletalTrapezoidation.cpp:568 updateBeadCount();
         self.update_bead_count();
+        self.central_census("2 after updateBeadCount");
 
         // SkeletalTrapezoidation.cpp:574 filterNoncentralRegions();
         self.filter_noncentral_regions();
+        self.central_census("3 after filterNoncentralRegions");
 
         // SkeletalTrapezoidation.cpp:580 generateTransitioningRibs();
         self.generate_transitioning_ribs();
+        self.central_census("4 after generateTransitioningRibs");
 
         // SkeletalTrapezoidation.cpp:586 generateExtraRibs();
         self.generate_extra_ribs();
@@ -959,11 +964,13 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // SkeletalTrapezoidation.cpp:631 edge.data.setIsCentral(edge.twin->data.isCentral());
                     let twin_central = twin.as_ref().data.is_central();
                     edge.base.data.set_is_central(twin_central);
+                    iscprobe(0, twin_central, outer_edge_filter_length, cap);
                 }
                 // SkeletalTrapezoidation.cpp:633 else if(edge.data.type == EdgeType::EXTRA_VD)
                 else if edge.base.data.edge_type == EdgeType::ExtraVd {
                     // SkeletalTrapezoidation.cpp:635 edge.data.setIsCentral(false);
                     edge.base.data.set_is_central(false);
+                    iscprobe(1, false, outer_edge_filter_length, cap);
                 }
                 // SkeletalTrapezoidation.cpp:637 else if(std::max(edge.from->...dtb, edge.to->...dtb) < outer_edge_filter_length)
                 else {
@@ -972,6 +979,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     if std::cmp::max(from_dtb, to_dtb) < outer_edge_filter_length {
                         // SkeletalTrapezoidation.cpp:639 edge.data.setIsCentral(false);
                         edge.base.data.set_is_central(false);
+                        iscprobe(2, false, outer_edge_filter_length, cap);
                     } else {
                         // SkeletalTrapezoidation.cpp:643 Point a = edge.from->p;
                         let a = edge.base.from.unwrap().as_ref().p;
@@ -985,6 +993,12 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         let d_d = ab.length() as Coord;
                         // SkeletalTrapezoidation.cpp:648 edge.data.setIsCentral(dR < dD * cap);
                         edge.base.data.set_is_central((d_r as f64) < (d_d as f64) * cap);
+                        iscprobe(
+                            3,
+                            (d_r as f64) < (d_d as f64) * cap,
+                            outer_edge_filter_length,
+                            cap,
+                        );
                     }
                 }
             }
@@ -4120,6 +4134,144 @@ pub(crate) fn graphprobe(nodes: usize, edges: usize, upward: usize, beaded: usiz
         eprintln!(
             "[GRAPHPROBE] generate_segments calls={c} | nodes={n} | edges={e} | \
              upward_quad_mids={u} | nodes with bead_count>0={b}"
+        );
+    }
+}
+
+impl SkeletalTrapezoidation<'_> {
+    /// R548: census of central marking and `bead_count` after each marking stage,
+    /// mirroring the C++ `[CPP-CENTRALPROBE]` counter. `bead_count` is assigned to
+    /// `edge.to` of every central edge (`update_bead_count`), so this separates
+    /// "we mark fewer edges central" from "we mark the same edges and assign
+    /// `bead_count <= 0` more often".
+    pub(crate) fn central_census(&self, stage: &str) {
+        if std::env::var_os("CENTRALPROBE").is_none() {
+            return;
+        }
+        let mut central_set = 0usize;
+        let mut central = 0usize;
+        for e in self.graph.edges.iter() {
+            if e.base.data.central_is_set() {
+                central_set += 1;
+                if e.base.data.is_central() {
+                    central += 1;
+                }
+            }
+        }
+        let mut bc = [0usize; 6];
+        for n in self.graph.nodes.iter() {
+            let c = n.base.data.bead_count;
+            let slot = if c < 0 {
+                0
+            } else if c > 3 {
+                5
+            } else {
+                (c + 1) as usize
+            };
+            bc[slot] += 1;
+        }
+        centralprobe(
+            stage,
+            self.graph.edges.len(),
+            central_set,
+            central,
+            self.graph.nodes.len(),
+            &bc,
+        );
+    }
+}
+
+fn centralprobe(
+    stage: &str,
+    edges: usize,
+    central_set: usize,
+    central: usize,
+    nodes: usize,
+    bc: &[usize; 6],
+) {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    #[derive(Default, Clone, Copy)]
+    struct Acc {
+        edges: usize,
+        central_set: usize,
+        central: usize,
+        nodes: usize,
+        bc: [usize; 6],
+    }
+    static ACC: Mutex<Option<BTreeMap<String, Acc>>> = Mutex::new(None);
+    static ROUNDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let Ok(mut g) = ACC.lock() else { return };
+    let m = g.get_or_insert_with(BTreeMap::new);
+    let e = m.entry(stage.to_string()).or_default();
+    e.edges += edges;
+    e.central_set += central_set;
+    e.central += central;
+    e.nodes += nodes;
+    for i in 0..6 {
+        e.bc[i] += bc[i];
+    }
+    if stage.starts_with('4')
+        && ROUNDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 4_000 == 3_999
+    {
+        eprintln!("[CENTRALPROBE] ---- cumulative ----");
+        for (k, a) in m.iter() {
+            eprintln!(
+                "  {k:<28} edges={:9} central={:9} ({:5.1}%) set={:9} | nodes={:9} \
+                 bc[-1]={:8} bc[0]={:8} bc[1]={:8} bc[2]={:8} bc[3]={:8} bc[4+]={:8}",
+                a.edges,
+                a.central,
+                100.0 * a.central as f64 / a.edges.max(1) as f64,
+                a.central_set,
+                a.nodes,
+                a.bc[0],
+                a.bc[1],
+                a.bc[2],
+                a.bc[3],
+                a.bc[4],
+                a.bc[5],
+            );
+        }
+    }
+}
+
+/// R548: which branch of `update_is_central` decides each edge, and the two
+/// constants the last two branches turn on. Mirrors `[CPP-ISCPROBE]`.
+fn iscprobe(branch: usize, central: bool, oefl: Coord, cap: f64) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    if std::env::var_os("ISCPROBE").is_none() {
+        return;
+    }
+    static N: AtomicUsize = AtomicUsize::new(0);
+    static TAKEN: [AtomicUsize; 4] = [
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+    ];
+    static YES: [AtomicUsize; 4] = [
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+    ];
+    let n = N.fetch_add(1, Relaxed) + 1;
+    TAKEN[branch].fetch_add(1, Relaxed);
+    if central {
+        YES[branch].fetch_add(1, Relaxed);
+    }
+    if n == 1 || n % 2_000_000 == 0 {
+        eprintln!(
+            "[ISCPROBE] edges={n} | twin-copy={}(central {}) extra_vd={} short={} \
+             geom={}(central {}) | outer_edge_filter_length={:.4}mm cap={:.6}",
+            TAKEN[0].load(Relaxed),
+            YES[0].load(Relaxed),
+            TAKEN[1].load(Relaxed),
+            TAKEN[2].load(Relaxed),
+            TAKEN[3].load(Relaxed),
+            YES[3].load(Relaxed),
+            oefl as f64 / 1e5,
+            cap,
         );
     }
 }
