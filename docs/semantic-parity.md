@@ -4263,3 +4263,114 @@ confirmed a real difference and inferred causation from adjacency. The gate that
 finally isolated the variable showed the link was never there. **When a chain is
 built by walking upstream, every link is correlation until one of them is
 switched off independently** — build the gate earlier.
+
+## R558 — the width gap is 2x too few ExtrusionLines, from `generate_toolpaths`
+
+Re-bracketed from the emission end, as R557 required. One real defect fixed, one
+prediction wrong, two more links of the R551-R556 chain dead, and the origin of
+the width gap finally pinned to a single function. Majora re-baselines
+`79cb7bd6` -> `319de38e`.
+
+### The emitter is faithful; the metric is honest
+
+C++ emits the tag at `GCode.cpp:6605`:
+
+    if (last_was_wipe_tower || m_last_width != path.width) {
+        m_last_width = path.width;
+        sprintf(buf, ";%s%g\n", ...ETags::Width..., m_last_width);
+    }
+
+It is **deduplicated against the previous path's width**, and `m_last_width`
+persists across feature blocks. So tags-per-block counts *width changes*, never
+paths — my stated prediction that the two would coincide was wrong by
+construction. We have three emitters; the C++-shaped one (`exporter.rs:1278`,
+per-path from `path.width`) is behind `LINEWIDTH_PERPATH`, which is a
+`faithful_gate` and therefore **default-ON**. Its "PARKED behind its own gate"
+comment has been stale since R225. We emit 78,333 distinct widths — genuinely
+per-path. **The metric has been measuring geometry all along, not emission.**
+
+### The real defect: `arachne_line_to_extrusion_paths` averaged the widths away
+
+C++'s no-overhang-split branch (`PerimeterGenerator.cpp:772`) is one call:
+
+    extrusion_paths_append(paths, *extrusion, role, flow);
+
+the `ExtrusionLine` overload (`ExtrusionLine.cpp:301-305`) —
+`to_thick_polyline` -> `thick_polyline_to_multi_path`, one path per width change.
+Ours built **one** path carrying `avg_width`. `extrusion_paths_append_line` is a
+faithful port of that overload written in R412 with a note saying "R413 wires it";
+R413 never did, and its definition was **the only occurrence in the crate** —
+dead code, exactly as `extrusion_paths_append_zpaths` was until R541. Now wired
+behind `ARACHNE_LINE_VARIABLE_WIDTH` (default-ON; gate OFF reproduces `79cb7bd6`
+byte-for-byte). The gate covers the width split only: the adjacent
+`points.reverse()` has no C++ counterpart but fires only for open lines, so it is
+preserved rather than bundled (R500).
+
+Parity, confirmed against two independent C++ references (R557's control):
+object material 0.9973 -> **0.9974**, object-only 0.9996 -> **0.9998**,
+wall-lines IoU 95.28% -> 95.29%, silhouette 99.53% unchanged. Small, real,
+positive; correct by construction (R550). **Kept default-ON.**
+
+### But it barely moved the metric — and that is the finding
+
+Outer-wall `; LINE_WIDTH:` per block **1.188 -> 1.332** against C++'s 4.210. I
+predicted ~4. **Wrong.** The reason is visible one probe away: the fall-through
+population is only ~2-4k loops. Most loops take the *overhang-split* branch that
+R541 already fixed. No builder can emit width changes its input does not contain.
+
+`LINEPROBE` (new, fall-through only) and `ARACHWIDTH` (split branch, the real
+population) versus the new C++ `JWPROBE` at the identical point
+(`PerimeterGenerator.cpp:692`, where `subject_path` is built):
+
+| per Arachne loop | Rust | C++ |
+|---|---|---|
+| flat (min==max) | **84.4%** | **72.1%** |
+| distinct widths / loop | 1.45 | 1.84 |
+| mean spread | 20.0 um | 31.6 um |
+| junctions / loop | 43.1 | 36.5 |
+
+C++ is less flat, but only **1.27x** — against a **3.2x** output gap. R551's scale
+test again. The loop *census* does not explain it either.
+
+### Where it does come from: `STAGEPROBE`, stage 0
+
+| stage | Rust | C++ | ratio |
+|---|---|---|---|
+| **0 after generate_toolpaths** | **58,529** | **130,536** | **2.23x** |
+| 1 after stitch_tool_paths | 54,040 | 111,639 | 2.07x |
+| 3 after separate_out_inner_contour | 40,000 | 80,002 | 2.00x |
+| 5 after remove_empty_tool_paths | 40,000 | 80,002 | 2.00x |
+
+**The 2x is present in the very first output of `generate_toolpaths`**, before any
+post-processing stage runs — consistent with R544/R547 having eliminated all five
+post-processing stages. Doing the arithmetic (R555): 2.00x fewer lines x 1.20x
+fewer distinct widths each = **2.41x fewer width values**, the same order as the
+3.23x outer-wall tag gap. Neither factor alone was; the product is.
+
+### R557's gate, used as an instrument
+
+Step 1 of this round was to re-run `STAGEPROBE` with `MMSEG_OPENING=1`. Stage-5
+lines: **40,000 — identical to baseline** (stage 0 58,479 vs 58,529, 0.09%). So
+**closing the surface-count gap does not move the ExtrusionLine count either**,
+and `distinct_w/line` actually falls 2.16 -> 2.01. Two further links of the
+R551-R556 chain — surfaces -> lines, and lines -> widths via surfaces — are dead
+on direct experiment, not inference. R557's opt-in gate earned its keep as a
+*measuring instrument* even though it ships off.
+
+### R559
+
+The target is now a single function: **`generate_toolpaths` emits 58,529
+ExtrusionLines where C++ emits 130,536.** Everything downstream is exonerated by
+stage-0 parity of the ratio. Do not re-audit the five post-processing stages
+(R544/R547), the beading strategies (R542-R546), transitions (R551), or
+`updateIsCentral` (R549, fixed). Instrument *inside* `generate_toolpaths` —
+per-cell/per-edge line emission — and find where C++ produces two lines to our
+one. Note the junction totals scale the same way (5.96M vs 11.90M), so this is
+whole lines, not finer sampling of the same lines.
+
+**New discipline (R558): when a faithful fix lands and the metric does not move,
+measure the POPULATION the fix applies to before concluding anything.** Wiring
+`extrusion_paths_append_line` was correct and moved the metric 5%, because the
+branch it fixed carries ~10% of the loops. One probe on the branch would have
+sized that in advance and framed the round correctly from the start. **Size the
+population, not just the prize (R519 extended).**

@@ -655,6 +655,60 @@ PG_LAST_CALLS2_NEW = """        if (::getenv("LASTPROBE") != nullptr) { // R553
         std::vector<Arachne::VariableWidthLines> total_perimeters;
         ExPolygons infill_contour;"""
 
+PG_JW_FN = r"""
+// R558: per-ExtrusionLine junction-WIDTH census, taken where PerimeterGenerator
+// builds the Z subject path from `extrusion->junctions` -- the exact point the
+// Rust LINEPROBE/ARACHWIDTH probes measure. The Rust side reports 84.4% of loops
+// with min==max (43 junctions, 1.45 distinct widths); this is the reference to
+// compare that against. If C++ is far less flat, the width gap is in the BEADING,
+// upstream of every path-construction and emission mechanism already eliminated.
+static void jwprobe(size_t njunc, size_t distinct, coord_t spread, bool flat)
+{
+    if (::getenv("JWPROBE") == nullptr)
+        return;
+    static std::mutex mtx;
+    static size_t loops = 0, tot_j = 0, tot_d = 0, tot_flat = 0;
+    static double tot_spread_um = 0;
+    std::lock_guard<std::mutex> lock(mtx);
+    ++loops; tot_j += njunc; tot_d += distinct; tot_spread_um += double(spread) / 100.0;
+    if (flat) ++tot_flat;
+    if (loops == 1 || loops % 5000 == 0)
+        fprintf(stderr,
+                "[CPP-JWPROBE] loops=%zu flat(min==max)=%zu (%.1f%%) mean_spread=%.1fum "
+                "juncs/loop=%.2f distinct_w/loop=%.3f\n",
+                loops, tot_flat, 100.0 * double(tot_flat) / double(loops),
+                tot_spread_um / double(loops),
+                double(tot_j) / double(loops), double(tot_d) / double(loops));
+}
+"""
+
+# The call site lives in `traverse_extrusions`, which is defined BEFORE
+# `process_arachne`, so the definition must be anchored here -- anchoring it on
+# process_arachne compiles to "use of undeclared identifier 'jwprobe'".
+PG_JW_ANCHOR = """static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& perimeter_generator, std::vector<PerimeterGeneratorArachneExtrusion>& pg_extrusions)"""
+
+PG_JW_CALLS_OLD = """            ZPath subject_path;
+            for (auto& ej : extrusion->junctions)
+                subject_path.emplace_back(ej.p.x(), ej.p.y(), ej.w);"""
+
+PG_JW_CALLS_NEW = """            ZPath subject_path;
+            for (auto& ej : extrusion->junctions)
+                subject_path.emplace_back(ej.p.x(), ej.p.y(), ej.w);
+            if (::getenv("JWPROBE") != nullptr) { // R558
+                std::vector<coord_t> ws;
+                ws.reserve(extrusion->junctions.size());
+                for (const Arachne::ExtrusionJunction &ej : extrusion->junctions)
+                    ws.emplace_back(ej.w);
+                if (!ws.empty()) {
+                    coord_t mn = *std::min_element(ws.begin(), ws.end());
+                    coord_t mx = *std::max_element(ws.begin(), ws.end());
+                    std::vector<coord_t> u = ws;
+                    std::sort(u.begin(), u.end());
+                    u.erase(std::unique(u.begin(), u.end()), u.end());
+                    jwprobe(ws.size(), u.size(), mx - mn, mn == mx);
+                }
+            }"""
+
 PG_INCLUDES_OLD = """#include "PerimeterGenerator.hpp\""""
 PG_INCLUDES_NEW = """#include "PerimeterGenerator.hpp"
 #include <cstdio>
@@ -734,6 +788,7 @@ EDITS = [
     ("PerimeterGenerator.cpp", PG_INCLUDES_OLD, PG_INCLUDES_NEW),
     ("PerimeterGenerator.cpp", PG_LAST_CALLS_OLD, PG_LAST_CALLS_NEW),
     ("PerimeterGenerator.cpp", PG_LAST_CALLS2_OLD, PG_LAST_CALLS2_NEW),
+    ("PerimeterGenerator.cpp", PG_JW_CALLS_OLD, PG_JW_CALLS_NEW),
     ("WallToolPaths.cpp", WTP_INCLUDES_OLD, WTP_INCLUDES_NEW),
     ("WallToolPaths.cpp", WTP_PROBE_OLD, WTP_PROBE_NEW),
     ("WallToolPaths.cpp", WTP_CHAIN_OLD, WTP_CHAIN_NEW),
@@ -787,6 +842,13 @@ def main():
             failures.append("PerimeterGenerator.cpp: process_arachne anchor not unique")
         else:
             texts["PerimeterGenerator.cpp"] = pg.replace(PG_LAST_ANCHOR, PG_LAST_FN + "\n" + PG_LAST_ANCHOR, 1)
+
+    pg2 = texts["PerimeterGenerator.cpp"]
+    if "static void jwprobe" not in pg2:
+        if pg2.count(PG_JW_ANCHOR) != 1:
+            failures.append("PerimeterGenerator.cpp: jwprobe process_arachne anchor not unique")
+        else:
+            texts["PerimeterGenerator.cpp"] = pg2.replace(PG_JW_ANCHOR, PG_JW_FN + "\n" + PG_JW_ANCHOR, 1)
 
     wt = texts["WallToolPaths.cpp"]
     if "static void polyprobe" not in wt:

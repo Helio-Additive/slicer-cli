@@ -3763,7 +3763,116 @@ impl PerimeterGenerator {
             }
         }
 
-        // Single-path form (no overhang split): the original behaviour.
+        // Single-path form (no overhang split).
+        //
+        // R558 — this was the LAST place an Arachne loop's per-junction widths
+        // were averaged away. C++'s matching branch (PerimeterGenerator.cpp:772)
+        // is a single call:
+        //     extrusion_paths_append(paths, *extrusion, role, flow);
+        // i.e. the `ExtrusionLine` overload (ExtrusionLine.cpp:301-305), which is
+        // `to_thick_polyline(extrusion)` -> `thick_polyline_to_multi_path(...)` and
+        // therefore emits ONE ExtrusionPath PER WIDTH CHANGE along the loop. We
+        // instead built ONE path carrying `avg_width`, so every non-overhang loop
+        // left the generator with a single constant width.
+        //
+        // R541 fixed exactly this for the OVERHANG-SPLIT branch above (via
+        // `extrusion_paths_append_zpaths`) and lifted Majora's outer-wall
+        // `; LINE_WIDTH:` count 2,873 -> 17,270. But loops that never reach the
+        // split — the common case — still fell through to here, which is why the
+        // count stalled at 17,270 against C++'s 62,582 (1.19 vs 4.21 tags per
+        // outer-wall feature-block) while the polyline structure itself already
+        // matched C++ to within 10% (36.1 vs 42.0 extrude moves per block, 3.55
+        // vs 3.76 moves per run). The gap was never geometry; it was this average.
+        //
+        // `extrusion_paths_append_line` is the faithful port of that C++ overload.
+        // It was written in R412 with a note saying "R413 wires it" — R413 never
+        // did, and it has been dead code (its definition the only occurrence in
+        // the crate) ever since, exactly as `extrusion_paths_append_zpaths` was
+        // until R541.
+        //
+        // The gate covers the WIDTH SPLIT ONLY. The `points.reverse()` below is a
+        // Rust-only artifact with no C++ counterpart, but it fires only for OPEN
+        // lines, so it is preserved verbatim here rather than bundled into this
+        // experiment (R500).
+        // R558 LINEPROBE — census of the FALL-THROUGH population specifically
+        // (ARACHPROBE only samples loops that reach the overhang split, which is
+        // the other branch entirely). Reports how much width variation the input
+        // junctions actually carry and how many paths the builder makes of them.
+        if std::env::var_os("LINEPROBE").is_some() {
+            use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+            static LOOPS: AtomicUsize = AtomicUsize::new(0);
+            static FLAT: AtomicUsize = AtomicUsize::new(0);
+            static JUNCS: AtomicUsize = AtomicUsize::new(0);
+            static DISTINCT: AtomicUsize = AtomicUsize::new(0);
+            static SPREAD_UM: AtomicUsize = AtomicUsize::new(0);
+            static PATHS: AtomicUsize = AtomicUsize::new(0);
+            let ws: Vec<i64> = line.junctions.iter().map(|j| j.w).collect();
+            let (mn, mx) = (
+                *ws.iter().min().unwrap_or(&0),
+                *ws.iter().max().unwrap_or(&0),
+            );
+            let mut u = ws.clone();
+            u.sort_unstable();
+            u.dedup();
+            let n = LOOPS.fetch_add(1, Relaxed) + 1;
+            JUNCS.fetch_add(ws.len(), Relaxed);
+            DISTINCT.fetch_add(u.len(), Relaxed);
+            SPREAD_UM.fetch_add(((mx - mn) as f64 / 100.0) as usize, Relaxed);
+            if mx == mn {
+                FLAT.fetch_add(1, Relaxed);
+            }
+            let mut probe_paths: Vec<ExtrusionPath> = Vec::new();
+            crate::arachne::utils::extrusion_line::extrusion_paths_append_line(
+                &mut probe_paths,
+                line,
+                role,
+                &flow,
+                0.0,
+            );
+            PATHS.fetch_add(probe_paths.len(), Relaxed);
+            let mut wu: Vec<i64> = probe_paths
+                .iter()
+                .map(|p| (p.width * 1e6) as i64)
+                .collect();
+            wu.dedup();
+            if n == 1 || n % 2_000 == 0 {
+                eprintln!(
+                    "[LINEPROBE] fallthrough_loops={n} flat(min==max)={} ({:.1}%) \
+                     juncs/loop={:.2} distinct_w/loop={:.3} mean_spread={:.1}um \
+                     paths/loop={:.3}",
+                    FLAT.load(Relaxed),
+                    100.0 * FLAT.load(Relaxed) as f64 / n as f64,
+                    JUNCS.load(Relaxed) as f64 / n as f64,
+                    DISTINCT.load(Relaxed) as f64 / n as f64,
+                    SPREAD_UM.load(Relaxed) as f64 / n as f64,
+                    PATHS.load(Relaxed) as f64 / n as f64,
+                );
+            }
+        }
+        if crate::faithful_gate("ARACHNE_LINE_VARIABLE_WIDTH") {
+            let mut paths: Vec<ExtrusionPath> = Vec::new();
+            // Preserve the open-line reversal by reversing the junctions, so the
+            // resulting polyline is point-for-point what the averaged form built.
+            let reversed;
+            let src = if !line.is_closed && line.junctions.len() > 1 {
+                let mut l = line.clone();
+                l.junctions.reverse();
+                reversed = l;
+                &reversed
+            } else {
+                line
+            };
+            // PerimeterGenerator.cpp:772 / ExtrusionLine.cpp:301-305, overhang = 0.
+            crate::arachne::utils::extrusion_line::extrusion_paths_append_line(
+                &mut paths, src, role, &flow, 0.0,
+            );
+            if !paths.is_empty() {
+                return paths;
+            }
+            // thick_polyline_to_multi_path can return nothing for a degenerate
+            // (zero-length) loop; fall through to the averaged form rather than
+            // dropping the extrusion entirely.
+        }
         let mut points: Vec<Point> = line.junctions.iter().map(|j| j.p).collect();
         if !line.is_closed && points.len() > 1 {
             points.reverse();
