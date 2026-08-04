@@ -579,6 +579,97 @@ static void polyprobe(const char *stage, const Polygons &polys)
 }
 """
 
+WTP_AREA_FN = r"""
+// R562: mirrors `areaprobe` in crates/libslic3r-rs/src/arachne/wall_tool_paths.rs.
+// R561 found 49.6% of Rust's generate() calls end at the `area <= 0` return
+// against C++'s 18.3%. This attributes each failure to the step that zeroes the
+// area, separating "the surface arrived empty" from "a step killed it" (R511),
+// and splits an empty input from a non-empty input with signed area <= 0.
+static void areaprobe(const std::vector<double> &areas, size_t n_input_polys)
+{
+    if (::getenv("AREAPROBE") == nullptr)
+        return;
+    static const char *STEPS[10] = {
+        "0 input outline", "1 triple offset", "2 simplify", "3 fixSelfIntersections",
+        "4 removeDegenerateVerts", "5 removeColinearEdges", "6 fixSelfIntersections",
+        "7 removeDegenerateVerts", "8 removeSmallAreas", "9 union_"};
+    static std::mutex mtx;
+    static size_t calls = 0, survived = 0, first_zero[10] = {0}, empty_in = 0, neg_area_in = 0;
+    std::lock_guard<std::mutex> lock(mtx);
+    ++calls;
+    const double final_area = areas.empty() ? 0. : areas.back();
+    if (final_area > 0.) {
+        ++survived;
+    } else {
+        for (size_t k = 0; k < areas.size(); ++k)
+            if (areas[k] <= 0.) {
+                ++first_zero[k < 10 ? k : 9];
+                if (k == 0) { if (n_input_polys == 0) ++empty_in; else ++neg_area_in; }
+                break;
+            }
+    }
+    if (calls == 1 || calls % 5000 == 0) {
+        const size_t failed = calls - survived;
+        fprintf(stderr,
+                "[CPP-AREAPROBE] calls=%zu survived=%zu failed=%zu (%.1f%%) | "
+                "input_empty=%zu input_nonempty_but_area<=0=%zu\n",
+                calls, survived, failed, 100. * double(failed) / double(calls),
+                empty_in, neg_area_in);
+        for (size_t k = 0; k < 10; ++k)
+            if (first_zero[k] > 0)
+                fprintf(stderr, "    first_zero_at %-26s %8zu  (%.1f%% of failures)\n",
+                        STEPS[k], first_zero[k],
+                        100. * double(first_zero[k]) / double(failed ? failed : 1));
+    }
+}
+"""
+
+WTP_AREA_CALLS_OLD = """    Polygons prepared_outline = offset(offset(offset(outline, -epsilon_offset), epsilon_offset * 2), -epsilon_offset);
+    polyprobe("1 after triple offset", prepared_outline);"""
+
+WTP_AREA_CALLS_NEW = """    std::vector<double> ap_areas; // R562
+    const bool ap = ::getenv("AREAPROBE") != nullptr;
+    if (ap) ap_areas.emplace_back(area(outline));
+    Polygons prepared_outline = offset(offset(offset(outline, -epsilon_offset), epsilon_offset * 2), -epsilon_offset);
+    polyprobe("1 after triple offset", prepared_outline);
+    if (ap) ap_areas.emplace_back(area(prepared_outline));"""
+
+WTP_AREA_CALLS2_OLD = """    process_with_size_check([&] { simplify(prepared_outline, smallest_segment, allowed_distance);});
+    polyprobe("2 after simplify", prepared_outline);"""
+
+WTP_AREA_CALLS2_NEW = """    process_with_size_check([&] { simplify(prepared_outline, smallest_segment, allowed_distance);});
+    polyprobe("2 after simplify", prepared_outline);
+    if (ap) ap_areas.emplace_back(area(prepared_outline));"""
+
+WTP_AREA_CALLS3_OLD = """    process_with_size_check([&] { fixSelfIntersections(epsilon_offset, prepared_outline); });
+    process_with_size_check([&] { removeDegenerateVerts(prepared_outline); });
+    process_with_size_check([&] { removeColinearEdges(prepared_outline, 0.005); });
+    // Removing collinear edges may introduce self intersections, so we need to fix them again
+    process_with_size_check([&] { fixSelfIntersections(epsilon_offset, prepared_outline); });
+    process_with_size_check([&] { removeDegenerateVerts(prepared_outline); });
+    process_with_size_check([&] { removeSmallAreas(prepared_outline, small_area_length * small_area_length, false); });"""
+
+WTP_AREA_CALLS3_NEW = """    process_with_size_check([&] { fixSelfIntersections(epsilon_offset, prepared_outline); });
+    if (ap) ap_areas.emplace_back(area(prepared_outline));
+    process_with_size_check([&] { removeDegenerateVerts(prepared_outline); });
+    if (ap) ap_areas.emplace_back(area(prepared_outline));
+    process_with_size_check([&] { removeColinearEdges(prepared_outline, 0.005); });
+    if (ap) ap_areas.emplace_back(area(prepared_outline));
+    // Removing collinear edges may introduce self intersections, so we need to fix them again
+    process_with_size_check([&] { fixSelfIntersections(epsilon_offset, prepared_outline); });
+    if (ap) ap_areas.emplace_back(area(prepared_outline));
+    process_with_size_check([&] { removeDegenerateVerts(prepared_outline); });
+    if (ap) ap_areas.emplace_back(area(prepared_outline));
+    process_with_size_check([&] { removeSmallAreas(prepared_outline, small_area_length * small_area_length, false); });
+    if (ap) ap_areas.emplace_back(area(prepared_outline));"""
+
+WTP_AREA_CALLS4_OLD = """    polyprobe("3 final prepared_outline", prepared_outline);
+    update_outline_size_change(prepared_outline);"""
+
+WTP_AREA_CALLS4_NEW = """    polyprobe("3 final prepared_outline", prepared_outline);
+    if (ap) { ap_areas.emplace_back(area(prepared_outline)); areaprobe(ap_areas, outline.size()); }
+    update_outline_size_change(prepared_outline);"""
+
 WTP_POLY_ANCHOR = """static void stageprobe(const char *stage, const std::vector<VariableWidthLines> &toolpaths)"""
 
 WTP_POLY_CALLS_OLD = """    Polygons prepared_outline = offset(offset(offset(outline, -epsilon_offset), epsilon_offset * 2), -epsilon_offset);
@@ -858,6 +949,12 @@ EDITS = [
     ("WallToolPaths.cpp", WTP_POLY_CALLS_OLD, WTP_POLY_CALLS_NEW),
     ("WallToolPaths.cpp", WTP_POLY_CALLS2_OLD, WTP_POLY_CALLS2_NEW),
     ("WallToolPaths.cpp", WTP_POLY_CALLS3_OLD, WTP_POLY_CALLS3_NEW),
+    # R562 AREAPROBE — MUST come after the POLY edits above: these anchors match
+    # the text as it exists once the polyprobe calls have been inserted.
+    ("WallToolPaths.cpp", WTP_AREA_CALLS_OLD, WTP_AREA_CALLS_NEW),
+    ("WallToolPaths.cpp", WTP_AREA_CALLS2_OLD, WTP_AREA_CALLS2_NEW),
+    ("WallToolPaths.cpp", WTP_AREA_CALLS3_OLD, WTP_AREA_CALLS3_NEW),
+    ("WallToolPaths.cpp", WTP_AREA_CALLS4_OLD, WTP_AREA_CALLS4_NEW),
     ("WallToolPaths.cpp", WTP_PARAMS_OLD, WTP_PARAMS_NEW),
 ]
 
@@ -926,6 +1023,13 @@ def main():
             failures.append("WallToolPaths.cpp: stageprobe anchor not unique")
         else:
             texts["WallToolPaths.cpp"] = wt.replace(WTP_POLY_ANCHOR, WTP_POLY_FN + "\n" + WTP_POLY_ANCHOR, 1)
+
+    wt2 = texts["WallToolPaths.cpp"]
+    if "static void areaprobe" not in wt2:
+        if wt2.count(WTP_POLY_ANCHOR) != 1:
+            failures.append("WallToolPaths.cpp: areaprobe stageprobe anchor not unique")
+        else:
+            texts["WallToolPaths.cpp"] = wt2.replace(WTP_POLY_ANCHOR, WTP_AREA_FN + "\n" + WTP_POLY_ANCHOR, 1)
 
     st3 = texts["SkeletalTrapezoidation.cpp"]
     if "SkeletalTrapezoidation::transitionCensus" not in st3:

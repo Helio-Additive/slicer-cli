@@ -4655,3 +4655,98 @@ often reveals a second quantity you were not measuring at all.** The call-count
 equality was visible only once totals replaced sampled indices, and it is what
 turned "C++'s outline is bigger" into "half our inputs are being thrown away".
 **Repair the instrument before abandoning the question.**
+
+## R562 — the failures are empty inputs, and R561's 1.85x was a denominator artifact
+
+`AREAPROBE` (new, both engines) records the outline area after every step of the
+preparation chain and attributes each failure to the step that zeroes it. It
+answered the round's question, exonerated the chain, and **corrected R561's
+headline number**. No behavioural change: `d219a37e`, `5a34af50`, `ab415621`,
+8 guards green.
+
+### The chain is not killing anything
+
+Both engines at 50,000 calls:
+
+| | Rust | C++ |
+|---|---|---|
+| survived | 24,641 | 41,043 |
+| failed | 25,359 (50.7%) | 8,957 (17.9%) |
+| **input_empty** | **24,704** | **7,064** |
+| input non-empty, area <= 0 | 5 | 0 |
+| first zero at `1 triple offset` | 562 (2.2%) | 1,259 (14.1%) |
+| first zero at `2 simplify` | 6 (0.0%) | 41 (0.5%) |
+| first zero at `8 removeSmallAreas` | 82 (0.3%) | 593 (6.6%) |
+
+**97.4% of our failures arrive with zero area at the input** (C++ 78.9%). The
+preparation chain does not kill them; they are dead on arrival. Direction
+predicted correctly — input, not chain (R511 split answered).
+
+The `input_nonempty_but_area<=0` bucket is 5 vs 0, so there is **no orientation
+or holes-without-contour defect**. That was worth ruling out explicitly: a
+negative signed area would have been a completely different bug.
+
+Note the two steps where C++ loses *more* than we do — `1 triple offset` (14.1%
+vs 2.2%) and `8 removeSmallAreas` (6.6% vs 0.3%). Those are proportions of each
+engine's own failures, and C++'s denominator is 2.8x smaller; in absolute counts
+C++ loses 1,259 and 593 surfaces there against our 562 and 82. We are not
+under-filtering — we simply have far fewer live surfaces reaching those steps.
+
+### CORRECTION to R561: the 1.85x does not survive conditioning
+
+Condition both engines on a **non-empty** input — the only population where
+outline size is meaningful:
+
+| conditioned on non-empty input | Rust | C++ | ratio |
+|---|---|---|---|
+| calls | 25,296 | 42,936 | — |
+| success rate | **97.4%** | **95.6%** | near parity |
+| outline points per call | **48.2** | **52.5** | **1.09x** |
+
+R561 reported 1.85x by dividing whole-run points by whole-run calls. **Half our
+calls contribute zero points to that numerator**, so the mean was dragged down by
+a population that has no outline at all. Conditioned properly the outline handed
+to Arachne is **1.09x** — near parity — and the per-call success rate is near
+parity too.
+
+**This is the same error shape three rounds running.** R559 compared two sums
+without counting the calls; R560 compared at a matched call index rather than a
+matched surface set; R561 divided by a denominator whose composition differs
+between the engines. Each time the fix revealed the previous number was an
+artifact. **The invariant I keep breaking: an average is only comparable when
+both sides average over the same KIND of thing, not merely the same COUNT of
+things.**
+
+### What actually survives
+
+One divergence, cleanly isolated: **we invoke `WallToolPaths::generate()` on an
+empty outline 24,704 times in 50,000 (49.4%); C++ does it 7,064 times (14.1%)** —
+3.5x. Since failures re-enter `generate()` twice (R561), that is ~12,350 empty
+surfaces against C++'s ~3,530.
+
+**This is very likely a PERF lead, not a parity lead.** An empty outline yields no
+walls in either engine, and the walls that reach G-code are already at parity
+(outer-wall blocks 14,538 vs 14,864, 0.98x). The preparation chain over an empty
+`Polygons` is also nearly free, so even the perf prize is probably small — it
+should be measured, not assumed.
+
+It does tie back to R557 arithmetically: our 7.78 surfaces per layer-region
+against C++'s 4.97 shrinks to roughly 3.9 vs 4.3 effective once the empty
+fragments are discounted. That is consistent with R557's opening filter having
+been near-inert on output — it was removing things that were already producing
+nothing.
+
+### R563
+
+Do **not** chase the empty-outline count as a parity lever until it is sized:
+measure what fraction of `export_gcode`/`process` time the 25,400 wasted calls
+actually consume (`SLICE_PHASE_TIMING=1`, and the profiler recipe). If it is
+small, record it as a closed perf micro-lead and go back to the `; LINE_WIDTH:`
+frequency gap (1.332 vs 4.210), which remains **the** open metric with no
+surviving mechanism — every candidate from R538 onward has now been eliminated or
+shown to be an artifact.
+
+**New discipline (R562): before comparing two averages, ask what the denominator
+is made of.** Same count is not same population. When one engine's calls include
+a large inert class the other lacks, condition it out first — R559, R560 and R561
+each lost a round to a version of this.

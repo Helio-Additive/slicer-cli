@@ -937,6 +937,16 @@ impl WallToolPaths {
         // Simplify outline for boost::voronoi consumption. Absolutely no self intersections or near-self intersections allowed:
         // WallToolPaths.cpp:461
         polyprobe("0 outline", &self.outline);
+        // R562 AREAPROBE: R561 found that 49.6% of our `generate()` calls end at
+        // the `area <= 0` return below against C++'s 18.3%. Record the area after
+        // EVERY step of this chain so a failure can be attributed to the step that
+        // zeroes it (R536), and so "arrived empty" can be separated from "a step
+        // killed it" (R511). Off by default; the area calls are not free.
+        let ap = std::env::var_os("AREAPROBE").is_some();
+        let mut areas: Vec<f64> = Vec::new();
+        if ap {
+            areas.push(area_polygons(&self.outline));
+        }
         let mut prepared_outline = offset_polygons(
             &offset_polygons(
                 &offset_polygons(&self.outline, -epsilon_offset),
@@ -945,28 +955,49 @@ impl WallToolPaths {
             -epsilon_offset,
         );
         polyprobe("1 after triple offset", &prepared_outline);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         // WallToolPaths.cpp:462  update_outline_size_change(prepared_outline);
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         // WallToolPaths.cpp:470-477  process_with_size_check(...) — operation then size check.
         simplify_polygons(&mut prepared_outline, smallest_segment, allowed_distance);
         polyprobe("2 after simplify", &prepared_outline);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         remove_degenerate_verts(&mut prepared_outline);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         remove_colinear_edges(&mut prepared_outline, 0.005);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         // Removing collinear edges may introduce self intersections, so we need to fix them again
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         remove_degenerate_verts(&mut prepared_outline);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         remove_small_areas(
@@ -974,6 +1005,9 @@ impl WallToolPaths {
             self.small_area_length * self.small_area_length,
             false,
         );
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+        }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         // The functions above could produce intersecting polygons that could cause a crash inside Arachne.
@@ -981,6 +1015,10 @@ impl WallToolPaths {
         // WallToolPaths.cpp:483
         prepared_outline = union_polygons(&prepared_outline);
         polyprobe("3 final prepared_outline", &prepared_outline);
+        if ap {
+            areas.push(area_polygons(&prepared_outline));
+            areaprobe(&areas, self.outline.len());
+        }
         // WallToolPaths.cpp:484
         outline_size_change |= original_outline_size != prepared_outline.len();
 
@@ -1617,6 +1655,78 @@ pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
 /// chain, mirroring `[CPP-POLYPROBE]`. Brackets the 2.33x graph-edge gap at its
 /// source: if the point counts already differ here, the cause is the offset /
 /// simplify chain rather than Voronoi or discretisation.
+/// R562: classify one `generate()` call by what happened to its outline area
+/// through the preparation chain. `areas[k]` is the area after step k:
+///   0 input, 1 triple offset, 2 simplify, 3 fixSelfIntersections,
+///   4 removeDegenerateVerts, 5 removeColinearEdges, 6 fixSelfIntersections,
+///   7 removeDegenerateVerts, 8 removeSmallAreas, 9 union_
+/// Mirrored by `areaprobe` in scripts/inject-arachne-probes.py so the two
+/// histograms are directly comparable. Reports the FIRST step at which the area
+/// stops being positive, which separates "the surface arrived empty" (input
+/// fragmentation, R557 territory) from "a step in this chain killed it" (a port
+/// defect in that step) — different bugs (R511).
+fn areaprobe(areas: &[f64], n_input_polys: usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    const STEPS: [&str; 10] = [
+        "0 input outline",
+        "1 triple offset",
+        "2 simplify",
+        "3 fixSelfIntersections",
+        "4 removeDegenerateVerts",
+        "5 removeColinearEdges",
+        "6 fixSelfIntersections",
+        "7 removeDegenerateVerts",
+        "8 removeSmallAreas",
+        "9 union_",
+    ];
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    static SURVIVED: AtomicUsize = AtomicUsize::new(0);
+    static FIRST_ZERO: [AtomicUsize; 10] = [
+        AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0),
+        AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0),
+        AtomicUsize::new(0), AtomicUsize::new(0),
+    ];
+    // Splits "we passed no polygons at all" from "we passed polygons whose signed
+    // area is <= 0" — the latter would mean holes without their contour, or a
+    // reversed orientation, which is a different defect entirely.
+    static EMPTY_IN: AtomicUsize = AtomicUsize::new(0);
+    static NEG_AREA_IN: AtomicUsize = AtomicUsize::new(0);
+    let n = CALLS.fetch_add(1, Relaxed) + 1;
+    let final_area = *areas.last().unwrap_or(&0.0);
+    if final_area > 0.0 {
+        SURVIVED.fetch_add(1, Relaxed);
+    } else if let Some(k) = areas.iter().position(|a| *a <= 0.0) {
+        FIRST_ZERO[k.min(9)].fetch_add(1, Relaxed);
+        if k == 0 {
+            if n_input_polys == 0 {
+                EMPTY_IN.fetch_add(1, Relaxed);
+            } else {
+                NEG_AREA_IN.fetch_add(1, Relaxed);
+            }
+        }
+    }
+    if n == 1 || n % 5_000 == 0 {
+        let surv = SURVIVED.load(Relaxed);
+        let failed = n - surv;
+        eprintln!(
+            "[AREAPROBE] calls={n} survived={surv} failed={failed} ({:.1}%) | \
+             input_empty={} input_nonempty_but_area<=0={}",
+            100.0 * failed as f64 / n as f64,
+            EMPTY_IN.load(Relaxed),
+            NEG_AREA_IN.load(Relaxed)
+        );
+        for (k, s) in STEPS.iter().enumerate() {
+            let c = FIRST_ZERO[k].load(Relaxed);
+            if c > 0 {
+                eprintln!(
+                    "    first_zero_at {s:<26} {c:>8}  ({:.1}% of failures)",
+                    100.0 * c as f64 / failed.max(1) as f64
+                );
+            }
+        }
+    }
+}
+
 fn polyprobe(stage: &str, polys: &crate::geometry::Polygons) {
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
