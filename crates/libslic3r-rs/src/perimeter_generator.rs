@@ -3546,6 +3546,39 @@ impl PerimeterGenerator {
                                 (((bx - ax) as f64).powi(2) + ((by - ay) as f64).powi(2)).sqrt();
                         }
                         let degree = if line_len < poly_len { n - 1.0 } else { n };
+                        // R539 probe (ARACHPROBE=1): C++ emits 718 curved (degree 5) to
+                        // 418 straight (degree 6) on Majora; ours is inverted. A ZPath
+                        // with only two points tests as straight by construction, so
+                        // count the point-count distribution of what we classify.
+                        if std::env::var_os("ARACHPROBE").is_some() {
+                            use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+                            static N2: AtomicUsize = AtomicUsize::new(0);
+                            static N3_5: AtomicUsize = AtomicUsize::new(0);
+                            static N6P: AtomicUsize = AtomicUsize::new(0);
+                            static CURVED: AtomicUsize = AtomicUsize::new(0);
+                            static STRAIGHT: AtomicUsize = AtomicUsize::new(0);
+                            match zp.len() {
+                                2 => N2.fetch_add(1, Relaxed),
+                                3..=5 => N3_5.fetch_add(1, Relaxed),
+                                _ => N6P.fetch_add(1, Relaxed),
+                            };
+                            if line_len < poly_len {
+                                CURVED.fetch_add(1, Relaxed);
+                            } else {
+                                STRAIGHT.fetch_add(1, Relaxed);
+                            }
+                            let tot = CURVED.load(Relaxed) + STRAIGHT.load(Relaxed);
+                            if tot % 100 == 0 {
+                                eprintln!(
+                                    "[ARACHBRIDGE] overhang zpaths={tot} pts=2:{} pts=3-5:{} pts>=6:{} | curved(deg5)={} straight(deg6)={}",
+                                    N2.load(Relaxed),
+                                    N3_5.load(Relaxed),
+                                    N6P.load(Relaxed),
+                                    CURVED.load(Relaxed),
+                                    STRAIGHT.load(Relaxed),
+                                );
+                            }
+                        }
                         if let Some(p) = mk(zp, ExtrusionRole::OverhangPerimeter, degree) {
                             paths.push(p);
                         }

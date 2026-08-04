@@ -2725,3 +2725,97 @@ sub-populations it was supposed to affect.** R537's aggregate "paths/loop 9.38 v
 Benchy 10.56" hid two very different stories — external 15.72 (matched) and
 internal 2.60 (not) — and the aggregate would have made the next round chase the
 wrong wall.
+
+---
+
+## R539 — `detect_brigde_wall_arachne` is ALREADY PORTED; the real gap is the overhang FLOW
+
+**No behavioural change.** One probe added (`ARACHBRIDGE`, inside `ARACHPROBE`);
+majora `e871ade4`, benchy `5a34af50`, cube `ab415621` reproduce byte-identically,
+eight guard tests green.
+
+### Retraction
+
+R538's handoff listed `detect_brigde_wall_arachne` (PerimeterGenerator.cpp:604-626)
+as "UNPORTED, and now the largest concrete gap". **That is wrong** — my own error,
+carried forward across two handoffs. The C++ function is 23 lines:
+
+```cpp
+Line line(thick_polyline.front(), thick_polyline.back());
+if (line.length() < thick_polyline.length()) {
+    extrusion_path_append(paths, ..., overhang_sampling_number - 1);  // curved
+    continue;
+}
+extrusion_path_append(paths, ..., overhang_sampling_number);          // straight
+```
+
+and `arachne_line_to_extrusion_paths` already does exactly that —
+`let degree = if line_len < poly_len { n - 1.0 } else { n };` with the same
+`OVERHANG_SAMPLING_NUMBER`, the same chord-vs-polyline test and the same
+`OverhangPerimeter` role. Same class of error as R523's "port SeamPlacer.cpp:157"
+(already ported). **PROVE A FUNCTION IS UNPORTED BEFORE PLANNING TO PORT IT** —
+the corollary to R501.
+
+The `zero_z_support` branch (:722-727) is also settled: Majora has
+`enable_support = '0'` and `enforce_support_layers = '0'`, so C++ takes the
+`erOverhangPerimeter` / `overhang_flow` arm — the same role we already assign.
+
+### Also confirmed correct
+
+`set_speed_transition` skips overhang paths (GCode.cpp:6171-6174) and our port
+does too (`smooth_speed.rs:403`). So the smoothing pass is NOT leaking ramp
+speeds into overhang walls.
+
+### Measured
+
+`ARACHBRIDGE=1` over Majora's overhang population:
+
+```
+overhang zpaths=1200  pts=2:231  pts=3-5:501  pts>=6:468
+                      curved(deg5)=969  straight(deg6)=231
+```
+
+**`straight` ≡ `pts=2` exactly (231 = 231)** — a two-point ZPath has chord ==
+polyline length by construction, so it can never test as curved. That is true of
+C++ too; it is a property of the test, not a bug in either engine.
+
+**Retracted mid-round:** I first read our 1,200 overhang paths against C++'s
+1,136 overhang-wall `G1 F` lines and called the ratio "inverted". Those are
+different quantities — an F line is emitted only when the speed *changes*, so it
+is not a path count (R491). The comparison is void; the classifier ratio is not
+known to be wrong.
+
+Likewise the "19 distinct overhang feedrates vs C++'s 2" is mostly an artefact of
+`fvals2.py` attributing each `G1 F` to the preceding `; FEATURE:` tag: the tail
+values appear 2 lines each, ~17 lines out of 305, at feature boundaries.
+
+### The real divergence, now located and sized
+
+C++ passes `perimeter_generator.overhang_flow` to the unsupported segments
+(PerimeterGenerator.cpp:727), and that flow is
+
+```cpp
+// LayerRegion.cpp:172
+g.overhang_flow = this->bridging_flow(frPerimeter, object_config.thick_bridges);
+```
+
+— **bridge flow**, not the wall's own flow. We build those segments with the
+loop's avg-width flow (`mk()`), which is why we over-extrude them:
+
+| | ours | C++ | ratio |
+|---|---|---|---|
+| `Overhang wall` E | 266.0 | 254.4 | **1.045** |
+| `Overhang wall` length | — | — | 1.050 |
+| `Overhang wall` G1 | 2,437 | 3,252 | 0.75 |
+| `Overhang wall` ARC | 2,033 | 1,928 | 1.05 |
+
+**Size: 266 of 135,746 mm object material = 0.20%.** Small, but it moves the one
+per-feature ratio that is visibly off in the right direction, and unlike the
+R414 variable-width divergence this one is a straightforward flow substitution
+that C++ makes explicitly. Queued for R540 — it changes E deliberately, so it
+needs its own gated, verified increment.
+
+**New discipline (R539): before planning a port, read the C++ function and diff
+it against what you already have — "unported" claims decay across handoffs.**
+Two rounds' worth of handoff text called this the largest concrete gap; it was
+23 lines that had been faithfully ported all along.
