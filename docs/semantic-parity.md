@@ -4179,3 +4179,87 @@ data actually flows through it before building the probe.** R555 queued
 and following the writes instead landed on the real site in the same round. R554
 said a handoff claim is not evidence — this extends it: a handoff's *plan* is not
 evidence either.
+
+## R557 — the filters work, the theory does not: a major retraction
+
+Both C++ filters are now ported. They do what C++ says they do. **They do not fix
+the metric this campaign has been chasing, and the causal chain built across
+R551-R556 is refuted.** Majora stays at `79cb7bd6` — the gates ship opt-in.
+
+### Units, read not assumed
+
+C++ `EPSILON = 1e-4`, `SCALED_EPSILON = scale_(EPSILON) = 10`; ours identical
+(`libslic3r.rs:24,29`). But the crate has **two** `SCALING_FACTOR` constants —
+`lib.rs:451` = `100_000.0` and `libslic3r.rs:19` = `0.00001` — and `crate::`
+resolves to the former. `offset_expolygons`/`opening_ex` take **mm**, so C++'s
+`scale_(5 * EPSILON)` is simply `5 * EPSILON` here. Two reciprocal constants of
+the same name is a live trap for any future port (R487/R549).
+
+### What the filters did
+
+| per layer-region | baseline | `MMSEG_OPENING` | C++ |
+|---|---|---|---|
+| **calls** | 3,400 | **3,200** | **3,200 (exact)** |
+| **surfaces** | 7.78 | **4.40** | 4.97 |
+| holes | 0.036 | 0.0138 | 0.534 |
+| points | 398 | 397 | 479 |
+
+The opening closes the surface-count gap outright — from 1.56x too many to
+slightly *fewer* than C++ — and the `make_perimeters` call count lands exactly on
+C++'s 3,200. The port is doing its job.
+
+`MMSEG_CLOSING` is **byte-identical to gate-off**: our Tier-1 writes each region
+once, so C++'s `needs_merge` is never true. Predicted from the structure before
+running it, and confirmed. It is kept for correctness under `PAINTED_REGION_DEDUP`,
+where two painted extruders *can* resolve to one region.
+
+### The retraction
+
+**`; LINE_WIDTH:` per outer-wall block: 1.19 -> 1.19.** Unchanged. Blocks with >1
+distinct width 12.8% -> 12.9%. Within-block spread 0.0737 -> 0.0741 mm.
+
+R551 identified the 2x ExtrusionLine count as the quantity driving the 3.5x width
+gap; R552-R556 traced that count back to the region surfaces and found this
+missing filter. **Closing the surface gap moved the width metric by zero.** The
+surface-count excess was therefore **not** the cause of the width gap — a chain I
+asserted with increasing confidence over five rounds is wrong, and every "-> "
+in it that implied causation should be read as correlation.
+
+Two further corrections to my own predictions this round: I said the opening
+would leave holes roughly untouched — it *halved* them (0.036 -> 0.0138), moving
+the hole metric further from C++, not nearer. And parity is marginally **worse**:
+wall-lines IoU 95.28% -> 95.22%, silhouette 99.53% -> 99.52%, object material
+0.9973 -> 0.9972. Measured against three independent C++ references
+(`cpp_majora_new`, `cpp_r547_a`, `cpp_r547_post`) the post-fix numbers are
+identical to four digits, so **the regression is real, not reference noise**
+(R547's control, applied to the decision rather than the finding).
+
+### Why they ship opt-in
+
+The port is faithful and demonstrably improves the internal geometry. But the
+standing rule is to revert what is not cleanly toward parity, the hypothesised
+benefit is zero, and the cost is a real 0.06pp. So the code, its C++ line
+references and its measurements are kept behind `MMSEG_OPENING` / `MMSEG_CLOSING`
+(both opt-in, default OFF; default reproduces `79cb7bd6`), rather than deleted or
+shipped. **That a faithful port of a C++ operation makes our G-code metrics
+slightly worse is itself an unexplained result and the most interesting thing
+this round produced** — it means something downstream is compensating for the
+surface excess, and removing the excess without removing the compensation costs
+accuracy.
+
+### R558
+
+Do **not** continue up the slicing chain — R557 removed the reason to. The width
+gap needs a fresh bracket: with surfaces/call now matchable to C++ on demand
+(`MMSEG_OPENING=1`), re-run `STAGEPROBE` and the ExtrusionLine count **with the
+gate on** and see whether the 2.00x line-count gap moves at all. If it does not,
+then line count and width-change frequency are independent, and the width
+investigation must restart from the emission side (`; LINE_WIDTH:` is written per
+`ExtrusionPath` in the exporter — count paths per feature-block on both engines).
+
+**New discipline (R557): a fix that closes the internal gap but not the output
+gap refutes the chain that connected them.** Five rounds of localisation each
+confirmed a real difference and inferred causation from adjacency. The gate that
+finally isolated the variable showed the link was never there. **When a chain is
+built by walking upstream, every link is correlation until one of them is
+switched off independently** — build the gate earlier.

@@ -926,8 +926,37 @@ impl PrintObject {
                 if region_id >= layer.regions().len() {
                     continue;
                 }
+                // R557 / PrintObjectSlice.cpp:962-964 — C++ accumulates into
+                // `by_region[region_id]` and, if a region received MORE THAN ONE
+                // contribution (`needs_merge`), applies
+                //   src.expolygons = closing_ex(src.expolygons, float(scale_(10 * EPSILON)));
+                // before `slices.set(...)`. Accumulate the same way so a region fed by
+                // two painted extruders (possible under PAINTED_REGION_DEDUP) is merged
+                // rather than overwritten.
+                let merged = if std::env::var_os("MMSEG_CLOSING").is_some() {
+                    let prev = layer.regions()[region_id]
+                        .slices
+                        .surfaces
+                        .iter()
+                        .map(|s| s.expolygon.clone())
+                        .collect::<crate::geometry::ExPolygons>();
+                    if prev.is_empty() {
+                        stolen.clone()
+                    } else {
+                        let mut acc = prev;
+                        acc.extend(stolen.iter().cloned());
+                        // needs_merge == true
+                        crate::clipper_utils::closing(
+                            &acc,
+                            10.0 * crate::libslic3r::EPSILON,
+                            crate::clipper_utils::OffsetJoinType::Miter,
+                        )
+                    }
+                } else {
+                    stolen.clone()
+                };
                 let mut coll = SurfaceCollection::new();
-                for ex in &stolen {
+                for ex in &merged {
                     coll.push(Surface::new(SurfaceType::Internal, ex.clone()));
                 }
                 layer.regions_mut()[region_id].set_slices(coll);
@@ -935,7 +964,30 @@ impl PrintObject {
             }
             if !stolen_total.is_empty() {
                 // Remainder stays in region 0.
-                let remaining = crate::clipper_utils::difference(region0_ex, &stolen_total);
+                let mut remaining = crate::clipper_utils::difference(region0_ex, &stolen_total);
+                // R557: SHIPS OPT-IN (not default-ON). The port is faithful and moves
+                // our internal geometry decisively toward C++ (surfaces per
+                // layer-region 7.78 -> 4.40 against C++'s 4.97; make_perimeters call
+                // count 3,400 -> 3,200, exactly C++'s), but it does NOT move the
+                // `; LINE_WIDTH:` metric it was aimed at (1.19, unchanged) and costs
+                // 0.06pp of wall-lines IoU — a real regression, stable across three
+                // independent C++ references. Enable with MMSEG_OPENING=1.
+                // R557 / PrintObjectSlice.cpp:946-947 — C++ filters the remainder:
+                //   if (! mine.empty())
+                //       mine = opening(union_ex(mine), float(scale_(5 * EPSILON)),
+                //                                      float(scale_(5 * EPSILON)));
+                // with the comment: "subtraction from layerm.region() could produce a
+                // huge number of small unprintable regions for the model's base
+                // extruder". `difference` already returns unioned ExPolygons, so only
+                // the opening is needed. NOTE the distance unit: `opening_ex` takes mm
+                // (the scale is applied inside `offset_expolygons`), so C++'s
+                // `scale_(5 * EPSILON)` is simply `5 * EPSILON` here.
+                if std::env::var_os("MMSEG_OPENING").is_some() && !remaining.is_empty() {
+                    remaining = crate::clipper_utils::opening_ex(
+                        &remaining,
+                        5.0 * crate::libslic3r::EPSILON,
+                    );
+                }
                 let mut coll = SurfaceCollection::new();
                 for ex in &remaining {
                     coll.push(Surface::new(SurfaceType::Internal, ex.clone()));
