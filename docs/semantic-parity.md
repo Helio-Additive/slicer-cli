@@ -3154,3 +3154,72 @@ junction creation bracketed the loss in a single round and moved the target from
 a 3,909-line file to a different file entirely. R542's "constant along the loop"
 was a correct observation of the OUTPUT paired with a wrong guess about where it
 originated.
+
+---
+
+## R544 — none of the five post-processing stages flattens; the loss is inside `generate_toolpaths`
+
+**No behavioural change.** One env-gated probe added (`STAGEPROBE` ->
+`stageprobe`); majora `2838b07f`, benchy `5a34af50`, cube `ab415621` reproduce
+byte-identically, eight guard tests green.
+
+### R543's localisation was wrong — retracting my own
+
+R543 concluded "the loss is downstream in WallToolPaths post-processing" and
+named `ExtrusionLine::simplify` the strongest candidate. Bracketing **every**
+stage (R543's own method, applied properly this time) disproves it.
+
+C++ `WallToolPaths::generate` runs five stages after `generateToolpaths`
+(WallToolPaths.cpp:534-542); ours runs the same five in the same order.
+Measuring width variation after each:
+
+| stage | lines | junctions | flat lines | distinct widths / line |
+|---|---|---|---|---|
+| 0 after `generate_toolpaths` | 57,248 | 5,892,955 | **87.4%** | **1.90** |
+| 1 after `stitch_tool_paths` | 53,938 | 5,889,759 | 88.5% | 1.79 |
+| 2 after `remove_small_lines` | 53,771 | 5,889,410 | 88.7% | 1.79 |
+| 3 after `separate_out_inner_contour` | 40,001 | 4,099,688 | 84.7% | 2.06 |
+| 4 after `simplify_tool_paths` | 40,001 | **1,287,683** | 85.0% | 1.68 |
+| 5 after `remove_empty_tool_paths` | 40,001 | 1,287,683 | 85.0% | 1.68 |
+
+**The lines are already 87.4% flat at stage 0**, before any post-processing runs.
+Across all five stages the flat share moves 87.4% -> 85.0% — it goes *down*.
+
+`simplify_tool_paths` is exonerated specifically: it discards **3.2x** the
+junctions (4,099,688 -> 1,287,683) while barely touching the width variation
+(distinct/line 2.06 -> 1.68). It removes redundant *points*, not *widths* — which
+is exactly what C++'s `ExtrusionLine::simplify` is supposed to do.
+
+(Sanity check that the probe measures the right population: stage 5 gives
+859,995 junctions over 20,001 lines = 43.0 junctions/line, matching R541's
+`ARACHWIDTH` figure of 42.7 junctions/loop at the perimeter generator.)
+
+### Where it actually is
+
+Both R543 measurements still stand: `generate_junctions` emits **28,419 distinct
+widths** over 6.4M junctions. So the flattening happens **inside
+`SkeletalTrapezoidation::generate_toolpaths`**, between `generate_junctions` and
+the `ExtrusionLine`s it assembles — i.e. in **`connect_junctions`**
+(SkeletalTrapezoidation.cpp:1574, ours at `skeletal_trapezoidation.rs:3336`),
+with `generate_local_maxima_single_beads` (:1576 / :3559) as the only other
+candidate in that span.
+
+That is now a **two-function** target inside a known span, down from "somewhere
+in a 1,480-line file".
+
+### Running tally for this gap
+
+Eliminated and *shown to still carry the variation*: all seven beading
+strategies, the factory chain, the skeleton's thickness computation,
+`BeadingStrategy::compute`, beading propagation/transitions,
+`generate_junctions`, the beading interpolation, **all five WallToolPaths
+post-processing stages (R544)**, `thick_polyline_to_multi_path`, and the whole
+downstream path builder.
+
+**New discipline (R544): when a bracket says "the loss is in span X", probe
+INSIDE X at every stage before naming a function within it.** R543 bracketed
+correctly but then guessed which stage of the span was responsible; one probe per
+stage showed the span's own entry point was already flat, moving the target back
+upstream into the function R543 had just measured the *start* of. Two rounds in a
+row the correct observation came with a wrong guess attached — the guess is the
+part worth deleting.

@@ -1043,20 +1043,31 @@ impl WallToolPaths {
             wall_maker.generate_toolpaths(&mut self.toolpaths, true);
         }
 
+        // R544 probe (STAGEPROBE=1): bracket EVERY post-processing stage (R543's
+        // method). The width variation is intact at junction creation (28,419
+        // distinct) and 98% flat per loop by the time the perimeter generator sees
+        // it, so exactly one of these five stages flattens it.
+        stageprobe("0 after generate_toolpaths", &self.toolpaths);
+
         // WallToolPaths.cpp:534
         Self::stitch_tool_paths(&mut self.toolpaths, self.bead_width_x);
+        stageprobe("1 after stitch_tool_paths", &self.toolpaths);
 
         // WallToolPaths.cpp:536
         Self::remove_small_lines(&mut self.toolpaths);
+        stageprobe("2 after remove_small_lines", &self.toolpaths);
 
         // WallToolPaths.cpp:538
         self.separate_out_inner_contour();
+        stageprobe("3 after separate_out_inner_contour", &self.toolpaths);
 
         // WallToolPaths.cpp:540
         Self::simplify_tool_paths(&mut self.toolpaths);
+        stageprobe("4 after simplify_tool_paths", &self.toolpaths);
 
         // WallToolPaths.cpp:542
         Self::remove_empty_tool_paths(&mut self.toolpaths);
+        stageprobe("5 after remove_empty_tool_paths", &self.toolpaths);
         // WallToolPaths.cpp:543-547  assert sorted by inset_idx (debug-only)
         debug_assert!(self
             .toolpaths
@@ -1476,5 +1487,64 @@ mod tests {
         let all_empty = WallToolPaths::remove_empty_tool_paths(&mut toolpaths);
         assert!(all_empty);
         assert_eq!(toolpaths.len(), 0);
+    }
+}
+
+/// R544 probe (STAGEPROBE=1): per-stage width-variation accounting inside
+/// `WallToolPaths::generate`'s post-processing chain.
+///
+/// Reports, per stage: number of ExtrusionLines, total junctions, and the share
+/// of lines whose junction widths are all equal ("flat"). The stage where the
+/// flat share jumps is the one that discards the variation.
+#[allow(dead_code)]
+pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
+    if std::env::var_os("STAGEPROBE").is_none() {
+        return;
+    }
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static ACC: Mutex<Option<HashMap<String, (usize, usize, usize, usize)>>> = Mutex::new(None);
+    let mut lines = 0usize;
+    let mut juncs = 0usize;
+    let mut flat = 0usize;
+    let mut distinct_total = 0usize;
+    for vwl in toolpaths {
+        for line in vwl.iter() {
+            if line.junctions.is_empty() {
+                continue;
+            }
+            lines += 1;
+            juncs += line.junctions.len();
+            let mut ws: Vec<i64> = line.junctions.iter().map(|j| j.w).collect();
+            ws.sort_unstable();
+            ws.dedup();
+            distinct_total += ws.len();
+            if ws.len() <= 1 {
+                flat += 1;
+            }
+        }
+    }
+    if let Ok(mut g) = ACC.lock() {
+        let m = g.get_or_insert_with(HashMap::new);
+        let e = m.entry(stage.to_string()).or_insert((0, 0, 0, 0));
+        e.0 += lines;
+        e.1 += juncs;
+        e.2 += flat;
+        e.3 += distinct_total;
+        // Print a full table every time stage 5 has accumulated a round number of
+        // lines, so the stages are always compared on the same population.
+        if stage.starts_with('5') && e.0 > 0 && e.0 % 20_000 < lines.max(1) {
+            let mut keys: Vec<&String> = m.keys().collect();
+            keys.sort();
+            eprintln!("[STAGEPROBE] ---- cumulative ----");
+            for k in keys {
+                let (l, j, f, d) = m[k];
+                eprintln!(
+                    "  {k:38} lines={l:8} juncs={j:9} flat={:5.1}% distinct_w/line={:.2}",
+                    100.0 * f as f64 / l.max(1) as f64,
+                    d as f64 / l.max(1) as f64,
+                );
+            }
+        }
     }
 }
