@@ -1834,3 +1834,49 @@ This is a **coverage** gap, not a correctness one.
 **New discipline (R527): a config key being PRESENT does not mean the code path
 is LIVE — read the values and the guard.** All four multi-nozzle keys are in
 Majora's 3MF; both consumers still return immediately on the first `if`.
+
+## R528 — stdout event protocol ported (ask #1)
+
+`src/events.rs`: faithful port of `main.cpp:55-137` — the `[[SLICER_EVENT]] `
+prefix with one flushed JSON object per line, the three tag mappers
+(`slicing_notification_tag`, `warning_level_tag`, `string_exception_tag`),
+`emit_event` / `emit_status_warning` / `emit_validation_event`, and
+`emit_slicing_error` for the `slicing_error` events at :1519-1551. Wire format
+**captured from a real `--engine bambu` run**, not inferred. Tag mappers
+unit-tested (9 tests pass).
+
+**Measured: what C++ emits for our fixtures.**
+
+| fixture | events |
+|---|---|
+| Benchy | **1** — a `SlicingNeedSupportOn` warning ("floating regions"), scope `object`, step 5, `non_critical` |
+| Majora | **0** |
+
+**Honest status: the protocol is ported, the one live event is not reproducible
+yet**, for two separate reasons:
+
+1. `emit_status_warning` needs our `set_status_callback` widened from
+   `(percent, message)` to the full `SlicingStatus` (flags / message_type /
+   warning_level / warning_step).
+2. The warning SOURCE is unported: `PrintObject::is_support_necessary()`
+   (PrintObject.cpp:3847) is 14 lines but delegates to
+   `TreeSupport::detect_overhangs(true)` and reads `has_sharp_tails` /
+   `has_cantilever` / `max_cantilever_dist`. Our `support/mod.rs` has a
+   simplified `detect_overhangs` computing none of them.
+   `print_object.rs:3683` already records this as a deliberate omission
+   (warning-only, no geometry change).
+
+**Deliberately NOT wired:** `emit_validation_event` and `emit_slicing_error`.
+All three fixtures slice cleanly and C++ emits neither, so hooking them would
+be untestable — and C++ splits `slicing_error` by `phase` (`process` vs
+`export_gcode`) while our `slice_to_gcode` spans both, so any phase mapping
+would be invented. Emitting a *wrong* phase is worse than emitting nothing.
+
+**Verified:** majora 065302cb, benchy 5a34af50, cube ab415621 byte-identical
+(the module is CLI-layer and currently emits nothing on the slice path); 9 unit
+tests pass.
+
+**New discipline (R528): port the protocol from a CAPTURED sample, and refuse to
+invent the fields you cannot observe.** The wire format came from a real C++
+run; the `phase` value for our combined slice+export path could not be
+observed, so that call site was left unwired rather than guessed.

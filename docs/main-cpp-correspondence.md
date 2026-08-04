@@ -27,8 +27,8 @@ and the three deliberate omissions are listed there.
 
 | `main.cpp` symbol | C++ line | Rust home | Fidelity |
 |---|---|---|---|
-| `slicing_notification_tag` / `warning_level_tag` / `string_exception_tag` | 59 / 76 / 80 | — | **GAP** (CLI event protocol; see below) |
-| `emit_event` / `emit_status_warning` / `emit_validation_event` | 100 / 108 / 123 | — (type `SlicingStatus` exists in `print_base.rs`; the stdout JSON emission does not) | **GAP** (non-gcode; progress/status) |
+| `slicing_notification_tag` / `warning_level_tag` / `string_exception_tag` | 59 / 76 / 80 | `src/events.rs` (same names) | **PORTED (R528)**, unit-tested |
+| `emit_event` / `emit_status_warning` / `emit_validation_event` | 100 / 108 / 123 | `src/events.rs` (same names) + `emit_slicing_error` for :1519-1551 | **PORTED (R528)**; emission SITES not all wired — see below |
 | `print_usage` | 139 | `src/cli.rs` (clap derive), dispatched from `src/main.rs` | reshaped (clap vs hand-rolled `--help`) |
 | `load_json_config` | 171 | `src/config.rs` (`JobConfig::load` / `load_arg` / `input_config`), `src/profiles.rs` (`resolve_config_refs`) | reshaped |
 | `apply_explicit_nozzle_mapping` | 211 | `src/profiles.rs::normalize_single_filament_stl_config` (see note) | **divergent — but PROVABLY INERT for every fixture (R527)** |
@@ -68,6 +68,43 @@ single-material front-end result. **Port targets (ask #1), rough order:** (10)
 `Print::apply` seam so config sizing/validation happens the C++ way; (6/7) the
 multi-nozzle trio (Tier-2, needs per-object Model). These are being ported
 incrementally under the parity loop.
+
+## R528: the stdout event protocol
+
+`src/events.rs` is a faithful port of `main.cpp:55-137` — the
+`[[SLICER_EVENT]] ` prefix, one JSON object per line, flushed; the three tag
+mappers; `emit_event` / `emit_status_warning` / `emit_validation_event`; plus
+`emit_slicing_error` for the `slicing_error` events at :1519-1551. The wire
+format was **captured from a real `--engine bambu` run**, not inferred, and the
+tag mappers are unit-tested.
+
+**What C++ actually emits for our fixtures (measured R528):**
+
+| fixture | events |
+|---|---|
+| Benchy | **1** — `{"event":"warning","level":"non_critical","message":"It seems object 3DBenchy.stl has floating regions. Please re-orient the object or enable support generation.","scope":"object","step":5,"tag":"SlicingNeedSupportOn"}` |
+| Majora | **0** |
+
+So the protocol is live but sparse. Two things block emitting that one event:
+
+1. **`emit_status_warning` is not wired.** Our `Print::set_status_callback`
+   carries `(percent, message)`; C++'s carries the full `SlicingStatus`
+   (`flags`, `message_type`, `warning_level`, `warning_step`). Wiring needs the
+   library-side callback signature widened.
+2. **The warning source is unported.** The Benchy event comes from
+   `PrintObject::is_support_necessary()` (PrintObject.cpp:3847), which is 14
+   lines but delegates to `TreeSupport::detect_overhangs(true)` and reads
+   `has_sharp_tails` / `has_cantilever` / `max_cantilever_dist`. Our
+   `support/mod.rs::detect_overhangs` is a simplified variant and computes none
+   of those flags. `print_object.rs:3683` already documents this omission as
+   deliberate — it is warning-only and changes no geometry.
+
+`emit_validation_event` and `emit_slicing_error` are ported but currently
+unreachable for our fixtures: all three slice cleanly, and C++ emits neither.
+They were deliberately **not** hooked to invented call sites — C++ splits
+`slicing_error` by `phase` (`process` vs `export_gcode`) and our
+`slice_to_gcode` spans both, so any mapping would be a guess. Wiring waits for
+a real failing fixture.
 
 ## R527: the multi-nozzle trio is DEAD CODE for every fixture we can verify
 
