@@ -1791,3 +1791,46 @@ as unported before the alternates were checked.
 the script's misses by hand — a mechanical CamelCase->snake_case transform
 produces false "missing" hits on digits (`3mf`, `TreeSupport3D`), and reporting
 those as gaps would have sent someone to re-port existing files.**
+
+## R527 — the multi-nozzle trio is DEAD CODE for every fixture (ask #1)
+
+Investigation round, no code change. Ask #1's largest remaining item turns out
+to be unportable-because-unverifiable, and the guards prove it rather than
+suggest it.
+
+**Majora carries every multi-nozzle key**, which is why the trio looked live:
+`filament_map`, `filament_map_mode = "Auto For Flush"`, `filament_nozzle_map`,
+`physical_extruder_map`. But the values say otherwise:
+
+```
+physical_extruder_map = ['0']      <-- ONE physical extruder
+nozzle_diameter       = ['0.4']    <-- ONE nozzle
+filament_map          = ['1' x 8]  <-- uniform, no cross-nozzle split
+printer_model         = Bambu Lab X1 Carbon
+```
+
+It is a single-nozzle 8-filament AMS job, not an H2D dual-nozzle job.
+
+**Both C++ functions bail on their own guard:**
+
+| function | guard | Majora |
+|---|---|---|
+| `apply_explicit_nozzle_mapping` (:229) | `filament_count < 2 \|\| extruder_count < 2` where `extruder_count = nozzle_diameter.size()` | **1 -> returns false** |
+| `reassign_objects_to_master_nozzle` (:291) | `extruder_count < 2` where `extruder_count = physical_extruder_map.size()` | **1 -> returns** |
+
+and the second is only *called* when the first returned true (main.cpp:1360-1366).
+Benchy (STL, single filament) and the painted cube are single-nozzle too.
+
+**Conclusion:** porting the trio would produce zero G-code change on all three
+fixtures and could not be validated against anything. Recorded in
+`main-cpp-correspondence.md` as a deliberate, evidenced gap, with the concrete
+prerequisite for any future port: build an H2D-class fixture with two
+`nozzle_diameter` entries, `physical_extruder_map` of size 2, and a
+`filament_nozzle_map` that genuinely splits filaments across both nozzles — and
+confirm the C++ engine slices it, so a reference exists.
+
+This is a **coverage** gap, not a correctness one.
+
+**New discipline (R527): a config key being PRESENT does not mean the code path
+is LIVE — read the values and the guard.** All four multi-nozzle keys are in
+Majora's 3MF; both consumers still return immediately on the first `if`.

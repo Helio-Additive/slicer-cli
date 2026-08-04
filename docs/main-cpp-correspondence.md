@@ -31,8 +31,8 @@ and the three deliberate omissions are listed there.
 | `emit_event` / `emit_status_warning` / `emit_validation_event` | 100 / 108 / 123 | — (type `SlicingStatus` exists in `print_base.rs`; the stdout JSON emission does not) | **GAP** (non-gcode; progress/status) |
 | `print_usage` | 139 | `src/cli.rs` (clap derive), dispatched from `src/main.rs` | reshaped (clap vs hand-rolled `--help`) |
 | `load_json_config` | 171 | `src/config.rs` (`JobConfig::load` / `load_arg` / `input_config`), `src/profiles.rs` (`resolve_config_refs`) | reshaped |
-| `apply_explicit_nozzle_mapping` | 211 | `src/profiles.rs::normalize_single_filament_stl_config` (see note) | **divergent** |
-| `reassign_objects_to_master_nozzle` | 285 | — | **GAP** |
+| `apply_explicit_nozzle_mapping` | 211 | `src/profiles.rs::normalize_single_filament_stl_config` (see note) | **divergent — but PROVABLY INERT for every fixture (R527)** |
+| `reassign_objects_to_master_nozzle` | 285 | — | **GAP — but PROVABLY INERT for every fixture (R527)** |
 | `set_default_config` | 337 | `crates/libslic3r-rs/src/preset_bundle.rs` (`FullPrintConfig::defaults` / `full_fff_config`), `print_config.rs` | mirrored (library) |
 | `ensure_vector_config_sizes` | 605 | — (partly subsumed by `normalize_single_filament_stl_config`) | **GAP** |
 | `main` | 818 | `src/main.rs` → `src/commands.rs::slice` / `compare` → `crates/libslic3r-rs/src/app_slice.rs::slice_to_gcode` (STL) / `slice_3mf_to_gcode` / `load_3mf` (3MF) | reshaped |
@@ -68,6 +68,47 @@ single-material front-end result. **Port targets (ask #1), rough order:** (10)
 `Print::apply` seam so config sizing/validation happens the C++ way; (6/7) the
 multi-nozzle trio (Tier-2, needs per-object Model). These are being ported
 incrementally under the parity loop.
+
+## R527: the multi-nozzle trio is DEAD CODE for every fixture we can verify
+
+Before porting the trio, R527 checked whether anything exercises it (R501).
+**Nothing does, and the guards prove it** — so a port would be unverifiable and
+would change no G-code on any input we can compare against C++.
+
+Majora's 3MF *does* carry all the multi-nozzle keys, which is why this looked
+live:
+
+```
+filament_map          = ['1','1','1','1','1','1','1','1']   (uniform — no split)
+filament_map_mode     = "Auto For Flush"
+filament_nozzle_map   = ['1','0','0','0','0','0','0','0']
+physical_extruder_map = ['0']          <-- ONE physical extruder
+nozzle_diameter       = ['0.4']        <-- ONE nozzle
+printer_model         = Bambu Lab X1 Carbon
+```
+
+It is a **single-nozzle, 8-filament AMS job**, not an H2D dual-nozzle job. Both
+functions bail on their own guard:
+
+- `apply_explicit_nozzle_mapping` (main.cpp:229):
+  `if (filament_count < 2 || extruder_count < 2) return false;` where
+  `extruder_count = nozzle_diameter->values.size()` = **1**. Returns false
+  immediately.
+- `reassign_objects_to_master_nozzle` (main.cpp:291):
+  `if (extruder_count < 2) return;` where
+  `extruder_count = physical_extruder_map->values.size()` = **1**. Returns
+  immediately — and it is only *called at all* when the first returned true
+  (main.cpp:1360-1366).
+
+Benchy (STL, single filament) and the painted cube are likewise single-nozzle.
+
+**To make a port verifiable** someone must first build a genuine dual-nozzle
+fixture: an H2D-class printer profile with two `nozzle_diameter` entries, a
+`physical_extruder_map` of size 2, and a `filament_nozzle_map` that actually
+splits filaments across both physical nozzles — and confirm the C++ engine
+slices it, so there is a reference to compare against. Until that exists, the
+trio stays deliberately unported. This is a *coverage* gap, not a correctness
+one: on every input we can check, the C++ functions do nothing.
 
 ## The multi-nozzle config-prep gap (H2D dual physical nozzle)
 
