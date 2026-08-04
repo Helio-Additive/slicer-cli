@@ -1880,3 +1880,39 @@ tests pass.
 invent the fields you cannot observe.** The wire format came from a real C++
 run; the `phase` value for our combined slice+export path could not be
 observed, so that call site was left unwired rather than guessed.
+
+## R529 — `is_support_necessary()` sized and DECLINED; next target sized instead
+
+Investigation round, no code change.
+
+**The port was sized before being attempted (R519/R524), and it does not pay.**
+`PrintObject::is_support_necessary()` is 14 lines, but the work is in
+`TreeSupport::detect_overhangs(bool)`:
+
+| | |
+|---|---|
+| `detect_overhangs` size | **653 lines** (TreeSupport.cpp:661-1313) |
+| blocked on | `TreeSupportData` + TBB concurrent arena |
+| our own note | `support/tree_support.rs:1128-1150` lists **9** `TreeSupport` methods transitively blocked on that arena, `detect_overhangs` among them |
+| cheaper route? | **none** — `Layer::sharp_tails` exists as a field (`layer.rs:1215`) but is only ever CLEARED (`print_object.rs:4070`); the populate site is inside `detect_overhangs` (TreeSupport.cpp:988, :1254) |
+| total payoff | **one stdout warning line on Benchy, zero G-code change** |
+
+Declined and recorded in `main-cpp-correspondence.md`. The R528 transport stays
+in place, ready if tree support is ever ported for its own sake.
+
+**Next target sized in the same round: the GCodeProcessor reserved tags.** These
+are a *real G-code content* difference, not a status channel — C++ emits 3,655
+`; WIPE_TOWER_START`/`END`, 2,723 `; CP TOOLCHANGE START`/`END`, 209
+`; CP EMPTY GRID START`/`END` and 2,723 `; CP_TOOLCHANGE_WIPE`; we emit **zero**.
+Crucially they are emitted from `WipeTower.cpp` at :2067, :2724, :3271, :3606,
+:3770 — the tool-change / finish-layer / empty-grid paths **we have already
+ported** (R419-R445). So this is bounded and localised in
+`gcode/wipe_tower.rs`, and exactly countable against C++.
+
+**It will change our G-code** (added comment lines), so it needs a deliberate
+re-baseline of all three hashes — the same procedure as R444's arachne-width
+re-baseline. That is the R530 target.
+
+**New discipline (R529): when a port is declined, record the SIZE and the
+blocking dependency, not just "GAP".** "653 lines behind a TBB arena, for one
+stdout line" is a decision anyone can re-evaluate; "unported" is not.

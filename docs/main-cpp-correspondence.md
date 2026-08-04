@@ -91,13 +91,20 @@ So the protocol is live but sparse. Two things block emitting that one event:
    carries `(percent, message)`; C++'s carries the full `SlicingStatus`
    (`flags`, `message_type`, `warning_level`, `warning_step`). Wiring needs the
    library-side callback signature widened.
-2. **The warning source is unported.** The Benchy event comes from
-   `PrintObject::is_support_necessary()` (PrintObject.cpp:3847), which is 14
-   lines but delegates to `TreeSupport::detect_overhangs(true)` and reads
-   `has_sharp_tails` / `has_cantilever` / `max_cantilever_dist`. Our
-   `support/mod.rs::detect_overhangs` is a simplified variant and computes none
-   of those flags. `print_object.rs:3683` already documents this omission as
-   deliberate — it is warning-only and changes no geometry.
+2. **The warning source is unported — SIZED AND DECLINED (R529).** The Benchy
+   event comes from `PrintObject::is_support_necessary()` (PrintObject.cpp:3847),
+   which is 14 lines but delegates to `TreeSupport::detect_overhangs(true)` and
+   reads `has_sharp_tails` / `has_cantilever` / `max_cantilever_dist`.
+   **`detect_overhangs` is 653 lines** (TreeSupport.cpp:661-1313) and is blocked
+   on the whole `TreeSupportData` + TBB concurrent-arena layer — our
+   `support/tree_support.rs:1128-1150` already lists NINE `TreeSupport` methods
+   as transitively blocked on it, `detect_overhangs` among them. There is no
+   cheaper route: `Layer::sharp_tails` exists as a field
+   (`layer.rs:1215`) but is only ever *cleared* (`print_object.rs:4070`) — the
+   populate site is inside `detect_overhangs` (TreeSupport.cpp:988, :1254).
+   The entire payoff is **one stdout line on Benchy and zero G-code change**, so
+   a multi-round tree-support subsystem port is not justified. Revisit if tree
+   support is ported for its own sake.
 
 `emit_validation_event` and `emit_slicing_error` are ported but currently
 unreachable for our fixtures: all three slice cleanly, and C++ emits neither.
