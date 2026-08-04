@@ -444,6 +444,47 @@ pub fn extrude_loop(
             OK_MULTI.fetch_add(1, Relaxed);
         }
         PATHS_TOTAL.fetch_add(paths.len(), Relaxed);
+        // R538: bucket by role — outer walls reached C++'s structure after R537 but
+        // inner walls did not, so the two populations have to be counted apart.
+        {
+            use std::sync::atomic::{AtomicUsize as A, Ordering::Relaxed as R};
+            static EXT_LOOPS: A = A::new(0);
+            static EXT_PATHS: A = A::new(0);
+            static EXT_GRADED: A = A::new(0);
+            static INT_LOOPS: A = A::new(0);
+            static INT_PATHS: A = A::new(0);
+            static INT_GRADED: A = A::new(0);
+            let graded = paths.iter().filter(|p| p.overhang_degree != 0.0).count();
+            if loop_role == Some(ExtrusionRole::ExternalPerimeter) {
+                EXT_LOOPS.fetch_add(1, R);
+                EXT_PATHS.fetch_add(paths.len(), R);
+                EXT_GRADED.fetch_add(graded, R);
+            } else if loop_role == Some(ExtrusionRole::Perimeter) {
+                INT_LOOPS.fetch_add(1, R);
+                INT_PATHS.fetch_add(paths.len(), R);
+                INT_GRADED.fetch_add(graded, R);
+            }
+            if n % 1_000 == 0 {
+                let (el, ep, eg) = (
+                    EXT_LOOPS.load(R).max(1),
+                    EXT_PATHS.load(R),
+                    EXT_GRADED.load(R),
+                );
+                let (il, ip, ig) = (
+                    INT_LOOPS.load(R).max(1),
+                    INT_PATHS.load(R),
+                    INT_GRADED.load(R),
+                );
+                eprintln!(
+                    "[SMOOTHROLE] external: loops={el} paths/loop={:.2} graded={:.1}%  |  \
+                     internal: loops={il} paths/loop={:.2} graded={:.1}%",
+                    ep as f64 / el as f64,
+                    100.0 * eg as f64 / ep.max(1) as f64,
+                    ip as f64 / il as f64,
+                    100.0 * ig as f64 / ip.max(1) as f64,
+                );
+            }
+        }
         DEG_NONZERO.fetch_add(
             paths.iter().filter(|p| p.overhang_degree != 0.0).count(),
             Relaxed,

@@ -3404,6 +3404,41 @@ impl PerimeterGenerator {
         // spacing→width conversion). v1 covers Majora's closed outer/inner walls;
         // open extrusions keep the single-path form. Benchy/Cube are CLASSIC and
         // never reach here.
+        // R538 probe (ARACHPROBE=1): C++'s guard at PerimeterGenerator.cpp:667 is
+        // `detect_overhang_wall && layer_id > raft_layers` — it has NO `is_closed`
+        // test. Count how many lines our extra condition excludes, split by inset,
+        // before deciding whether that divergence matters.
+        if std::env::var_os("ARACHPROBE").is_some() {
+            use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+            static SEEN_EXT: AtomicUsize = AtomicUsize::new(0);
+            static OPEN_EXT: AtomicUsize = AtomicUsize::new(0);
+            static SEEN_INT: AtomicUsize = AtomicUsize::new(0);
+            static OPEN_INT: AtomicUsize = AtomicUsize::new(0);
+            let ext = line.inset_idx == 0;
+            if ext {
+                SEEN_EXT.fetch_add(1, Relaxed);
+                if !line.is_closed {
+                    OPEN_EXT.fetch_add(1, Relaxed);
+                }
+            } else {
+                SEEN_INT.fetch_add(1, Relaxed);
+                if !line.is_closed {
+                    OPEN_INT.fetch_add(1, Relaxed);
+                }
+            }
+            let tot = SEEN_EXT.load(Relaxed) + SEEN_INT.load(Relaxed);
+            if tot % 5_000 == 0 {
+                eprintln!(
+                    "[ARACHPROBE] external: {} lines, {} OPEN ({:.1}%)  |  internal: {} lines, {} OPEN ({:.1}%)",
+                    SEEN_EXT.load(Relaxed),
+                    OPEN_EXT.load(Relaxed),
+                    100.0 * OPEN_EXT.load(Relaxed) as f64 / SEEN_EXT.load(Relaxed).max(1) as f64,
+                    SEEN_INT.load(Relaxed),
+                    OPEN_INT.load(Relaxed),
+                    100.0 * OPEN_INT.load(Relaxed) as f64 / SEEN_INT.load(Relaxed).max(1) as f64,
+                );
+            }
+        }
         if self.config.detect_overhang_wall && line.is_closed {
             if let Some(lower) = self.config.lower_slices.as_ref() {
                 if !lower.is_empty() {

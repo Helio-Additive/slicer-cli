@@ -2635,3 +2635,93 @@ and whether the function internally compensates for the derivation.** Here the
 same grown polygons served as clip and as distance reference, with a
 `+nozzle/2` term inside the callee undoing the growth; passing the raw slices
 looked more "correct" and silently doubled every overhang degree.
+
+---
+
+## R538 — quantifying R537 per role, and eliminating four causes of the inner-wall residual
+
+**No behavioural change.** Two env-gated probes added (`SMOOTHROLE` inside
+`SMOOTHPROBE`, and `ARACHPROBE`); majora `e871ade4`, benchy `5a34af50`, cube
+`ab415621` all reproduce byte-identically, eight guard tests green.
+
+### R537's effect, now split by wall role
+
+R537 was measured in aggregate. Bucketing the same probe by `loop_role`:
+
+| | Majora external | Majora internal | Benchy external | Benchy internal |
+|---|---|---|---|---|
+| loops | 13,948 | 13,051 | 516 | 484 |
+| paths / loop | **15.72** | **2.60** | 19.36 | **1.18** |
+| `overhang_degree != 0` | 88.4% | 57.6% | 81.2% | **8.9%** |
+
+And in the G-code, ours vs C++ (`$D/runs.py`, `$D/segsplit.py`):
+
+| | before R537 | after R537 | C++ |
+|---|---|---|---|
+| Outer wall runs | 32,177 (0.19) | **133,825 (0.81)** | 165,849 |
+| Outer wall moves/run | 9.16 | **3.54** | 3.36 |
+| Outer wall G1 | 177,228 (0.43) | **334,845 (0.81)** | 415,330 |
+| Outer wall ARC | 117,357 (0.83) | **139,208 (0.98)** | 141,482 |
+| Inner wall ARC | 114,647 (0.98) | 116,703 (**0.99**) | 117,546 |
+| Inner wall runs | 19,252 (0.33) | 29,748 (0.51) | 58,633 |
+| Inner wall moves/run | 14.10 | 9.71 | 5.77 |
+
+**The outer wall is now structurally matched** — moves per run 3.54 against 3.36,
+arcs at 0.98. Both engines' arc counts agree to 1-2% on both walls, confirming
+again that the underlying polylines have the same point density.
+
+### The inner-wall residual: four suspects eliminated, none confirmed
+
+Inner-wall `G1 F`-only is 25,209 vs 53,474 (0.471). Splitting the feedrate
+population shows where the gap is NOT:
+
+```
+RUST Inner wall: total 25,209, DISTINCT 4,820     CPP: total 53,474, DISTINCT 21,285
+  12,581  F7150.945   <- dominant                   14,522  F7151.157   <- dominant
+   1,126  F3000                                        511  F3000
+   1,036  F2700                                        435  F2700
+```
+
+The **dominant-value counts nearly match** (12,581 vs 14,522). The entire deficit
+is in the ramp tail: 12,628 non-dominant against C++'s 38,952.
+
+Eliminated this round:
+
+1. **The smoothing implementation.** All six C++ functions are ported —
+   `mapping_speed` (GCode.cpp:5918), `get_speed_coor_x` (:5925),
+   `need_smooth_speed` (:5965), `split_and_mapping_speed` (:5973-6121),
+   `merge_same_speed_paths` (:6123-6161), `set_speed_transition` (:6163-6257),
+   `smooth_speed_discontinuity_area` (:6259-6272).
+2. **Its constants.** `smooth_speed_step = 10` and
+   `min_step_length = scale_(0.4)` match GCode.cpp:88,91 exactly, and
+   `f(x) = coeff * x^2` matches :5918-5923.
+3. **`overhang_degree_corr_speed`.** A faithful port of GCode.cpp:5931-5962,
+   including the `degree >= 4 || degree == int(degree)` short-circuit and the
+   two `0 -> normal_speed` fallbacks.
+4. **"Low inner-wall splitting is itself the bug."** Benchy's internal walls sit
+   at **1.18 paths/loop and 8.9% graded** — far *less* split than Majora's 2.60
+   / 57.6% — yet Benchy's inner-wall `G1 F` matches C++ at **0.943**. Sparse
+   inner-wall grading is normal; something else drives C++'s inner-wall ramps.
+
+Also tested and **disproved**: our arachne overhang block carries an extra
+`&& line.is_closed` condition that C++'s guard (PerimeterGenerator.cpp:667,
+`detect_overhang_wall && layer_id > raft_layers`) does not have. `ARACHPROBE=1`
+measured the excluded population — **external 519 / 12,747 open (4.1%), internal
+748 / 12,253 open (6.1%)**. Six percent cannot produce a 2x deficit.
+
+**The inner-wall residual is therefore narrowed but NOT closed.** Reporting it
+open rather than guessing.
+
+### Still queued
+
+- **inner wall 0.471** — the four causes above are ruled out.
+- **`detect_brigde_wall_arachne` (PerimeterGenerator.cpp:604-626) unported** —
+  the unsupported part still uses our hand-rolled binary classifier; overhang-wall
+  `G1 F` is 305 vs 1,136.
+- **distinct outer-wall feedrates 18,565 vs 49,568.**
+
+**New discipline (R538): when a fix lands, re-measure it split by the
+sub-populations it was supposed to affect.** R537's aggregate "paths/loop 9.38 vs
+Benchy 10.56" hid two very different stories — external 15.72 (matched) and
+internal 2.60 (not) — and the aggregate would have made the next round chase the
+wrong wall.
