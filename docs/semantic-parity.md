@@ -3737,3 +3737,86 @@ if it is correct by construction.** Three of six defaults coincided with the
 resolved config values for this fixture, which is exactly why a twelve-round hunt
 found only one of them. A coincidence that holds on your only fixture is not a
 match — the probe that prints all N values side by side costs one build.
+
+## R551 — transitions and beading reuse both cleared; the gap moves to line COUNT
+
+Two hypotheses, both eliminated, plus a re-measurement that changes where the
+remaining gap lives. No behavioural change; Majora stays at `4f9de6fe`.
+
+### Transitions are not the cause
+
+A new `TRANSPROBE` censuses the transition pipeline after each of its four
+stages on both engines, per `generate_toolpaths` call:
+
+| stage | edges_with/call R | C++ | items/call R | C++ |
+|---|---|---|---|---|
+| 0 after `generateTransitionMids` | 0.31 | 0.26 | 0.32 | 0.27 |
+| 1 after `filterTransitionMids` | 0.31 | 0.26 | 0.21 | 0.17 |
+| 2 after `generateAllTransitionEnds` | 0.31 | 0.26 | 0.21 | 0.17 |
+| 3 after `applyTransitions` | 0.31 | 0.26 | 0.21 | 0.17 |
+
+We create **more** transitions per call than C++, not fewer, and both engines
+filter with an **identical retention ratio** (items 7,793 -> 5,065 = 65% ours;
+10,710 -> 6,971 = 65% C++). The whole machinery — `generateTransitionMids`,
+`filterTransitionMids`, `dissolveNearbyTransitions`, `generateAllTransitionEnds`,
+`applyTransitions` — is behaviourally faithful.
+
+The round's stated premise was also wrong in magnitude: at ~0.2-0.3 transitions
+per call, transitions are two orders of magnitude too rare to account for 4.21
+`; LINE_WIDTH:` changes per feature block. **A "direct analogue" has to be
+checked for scale, not just for direction.**
+
+### `getNearestBeading` is dead code on this fixture — on both engines
+
+`GNBPROBE` on `getOrCreateBeading`:
+
+```
+RUST calls=3,200,000 | already_had_beading=3,200,000 | bead_count==-1=0 | HIT=0
+CPP  calls=7,400,000 | already_had_beading=7,400,000 | bead_count==-1=0 | HIT=0
+```
+
+The `bead_count == -1` branch — the only path that reaches
+`getNearestBeading` — is **never taken on either engine**. The last unprobed
+function in the beading chain turns out not to run at all here. Eliminated, and
+the shared-beading hypothesis it stood for goes with it.
+
+### The re-measurement that matters: R549/R550 closed 61% of the Arachne gap
+
+The `stageprobe` figures this campaign has been quoting were measured *before*
+R549. Re-run:
+
+| stage | flat% R (pre-R549) | flat% R (now) | flat% C++ | distinct/line R now | C++ |
+|---|---|---|---|---|---|
+| 0 after `generate_toolpaths` | 86.9 | **75.2** | 67.8 | 2.44 | 3.36 |
+| 5 after post-processing | 84.4 | **71.5** | 63.9 | 2.14 | 2.60 |
+
+The stage-0 flat% gap went from 19.1pp to 7.4pp — **61% of it closed by the two
+unit fixes.** But the scope check (R507) now matters: at stage 5 our Arachne
+output differs from C++ by only **1.21x** in distinct widths per line, while the
+emitted G-code differs by **3.5x** in `; LINE_WIDTH:` per feature block. Those
+cannot both be describing the same deficit.
+
+The reconciling quantity is line **count**: C++ produces **80,000** ExtrusionLines
+where we produce **40,001** — 2x — against matching feature-block counts
+(14,538 vs 14,864). C++ therefore packs about twice as many lines into each
+feature block, each contributing its own width changes. Total distinct-width
+instances: C++ ~208,000 vs ours ~85,600 = **2.43x**, which is the right order for
+the 3.5x G-code metric where 1.21x is not.
+
+This is the structural 2.3x graph-size difference first seen in R547 (C++ 14M
+edges vs our 6M) and deprioritised then because the *normalised* bead_count share
+was the dominant signal. **Those normalised signals now match, so the structural
+difference is what is left.** `discretization_step_size` is not the cause — it is
+`scaled(0.8)` on both sides, verified this round.
+
+**R552: chase the 2x ExtrusionLine / 2.3x graph-edge count.** Measure where the
+edge count diverges — Voronoi construction, `discretize`, or the polygon
+preparation feeding it (`prepared_outline`, the triple `offset` at
+`WallToolPaths.cpp:461`) — before touching anything downstream.
+
+**New discipline (R551): check a proposed "direct analogue" for SCALE before
+spending a round on it.** Transitions were the right kind of quantity and the
+wrong size by two orders of magnitude; one arithmetic sanity check up front
+would have redirected the round. Related: when an internal metric differs by
+1.21x and the output metric it supposedly drives differs by 3.5x, the mismatch
+itself is the finding — something other than the per-unit quantity is scaling.

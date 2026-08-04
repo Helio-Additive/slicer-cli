@@ -17,6 +17,7 @@ All are env-gated and off by default:
     CENTRALPROBE  central-edge and bead_count census after each marking stage    (R548)
     ISCPROBE      which branch of updateIsCentral decides each edge, + constants  (R548)
     WTPPARAMS     the six resolved WallToolPathsParams, deduped                   (R550)
+    TRANSPROBE    transition mids/ends surviving each stage of the ribs pipeline   (R551)
 
 Written because `git diff > file` in this environment does not produce an
 applicable patch (R548) — string injection is verifiable and survives the tool.
@@ -465,6 +466,79 @@ WTP_PARAMS_NEW = r"""    const double  transitioning_angle = Geometry::deg2rad(m
     }"""
 
 
+ST_TRANS_FN = r"""
+// R551: transition census after each stage of generateTransitioningRibs. The
+// direct analogue of the failing G-code metric (how often width changes along a
+// wall). Mirrors `transition_census` in the Rust crate.
+static void transprobe(const char *stage, size_t edges_with, size_t total_items)
+{
+    struct Acc { size_t calls, edges_with, items; };
+    static std::mutex                 mtx;
+    static std::map<std::string, Acc> acc;
+    static size_t                     rounds = 0;
+
+    std::lock_guard<std::mutex> lock(mtx);
+    Acc &a = acc[stage];
+    ++a.calls;
+    a.edges_with += edges_with;
+    a.items += total_items;
+
+    if (stage[0] == '3' && ++rounds % 4000 == 0) {
+        fprintf(stderr, "[CPP-TRANSPROBE] ---- cumulative ----\n");
+        for (const auto &kv : acc)
+            fprintf(stderr, "  %-34s calls=%7zu edges_with_transitions=%9zu items=%9zu\n",
+                    kv.first.c_str(), kv.second.calls, kv.second.edges_with, kv.second.items);
+    }
+}
+
+void SkeletalTrapezoidation::transitionCensus(const char *stage)
+{
+    size_t edges_with = 0, items = 0;
+    for (edge_t &e : graph.edges) {
+        if (e.data.hasTransitions(true)) {
+            ++edges_with;
+            if (auto t = e.data.getTransitions())
+                items += t->size();
+        }
+    }
+    transprobe(stage, edges_with, items);
+}
+
+void SkeletalTrapezoidation::generateTransitioningRibs()"""
+
+ST_TRANS_ANCHOR = "\nvoid SkeletalTrapezoidation::generateTransitioningRibs()"
+
+ST_TRANS_CALLS_OLD = """    generateTransitionMids(edge_transitions);
+"""
+ST_TRANS_CALLS_NEW = """    generateTransitionMids(edge_transitions);
+    if (probe_enabled("TRANSPROBE")) transitionCensus("0 after generateTransitionMids");
+"""
+
+ST_TRANS_CALLS2_OLD = """    filterTransitionMids();
+"""
+ST_TRANS_CALLS2_NEW = """    filterTransitionMids();
+    if (probe_enabled("TRANSPROBE")) transitionCensus("1 after filterTransitionMids");
+"""
+
+ST_TRANS_CALLS3_OLD = """    generateAllTransitionEnds(edge_transition_ends);
+"""
+ST_TRANS_CALLS3_NEW = """    generateAllTransitionEnds(edge_transition_ends);
+    if (probe_enabled("TRANSPROBE")) transitionCensus("2 after generateAllTransitionEnds");
+"""
+
+ST_TRANS_CALLS4_OLD = """    applyTransitions(edge_transition_ends);
+"""
+ST_TRANS_CALLS4_NEW = """    applyTransitions(edge_transition_ends);
+    if (probe_enabled("TRANSPROBE")) transitionCensus("3 after applyTransitions");
+"""
+
+ST_TRANS_HPP_OLD = """    void updateIsCentral();"""
+ST_TRANS_HPP_NEW = """    void updateIsCentral();
+
+    // Parity instrumentation (env-gated, TRANSPROBE); see scripts/inject-arachne-probes.py
+    void transitionCensus(const char *stage);"""
+
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -472,6 +546,11 @@ EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_COMPUTE2_OLD, ST_COMPUTE2_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROP_OLD, ST_PROP_NEW),
     ("SkeletalTrapezoidation.cpp", ST_GRAPH_OLD, ST_GRAPH_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_TRANS_CALLS_OLD, ST_TRANS_CALLS_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_TRANS_CALLS2_OLD, ST_TRANS_CALLS2_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_TRANS_CALLS3_OLD, ST_TRANS_CALLS3_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_TRANS_CALLS4_OLD, ST_TRANS_CALLS4_NEW),
+    ("SkeletalTrapezoidation.hpp", ST_TRANS_HPP_OLD, ST_TRANS_HPP_NEW),
     ("SkeletalTrapezoidation.cpp", ST_ISC_BRANCHES_OLD, ST_ISC_BRANCHES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_ISC_GEOM_OLD, ST_ISC_GEOM_NEW),
     ("SkeletalTrapezoidation.cpp", ST_CENTRAL_CALLS_OLD, ST_CENTRAL_CALLS_NEW),
@@ -514,6 +593,13 @@ def main():
             failures.append("SkeletalTrapezoidation.cpp: generateSegments anchor not unique")
         else:
             texts["SkeletalTrapezoidation.cpp"] = st.replace(anchor, ST_CENTRAL_FN + "\n" + anchor)
+
+    st3 = texts["SkeletalTrapezoidation.cpp"]
+    if "SkeletalTrapezoidation::transitionCensus" not in st3:
+        if st3.count(ST_TRANS_ANCHOR) != 1:
+            failures.append("SkeletalTrapezoidation.cpp: generateTransitioningRibs anchor not unique")
+        else:
+            texts["SkeletalTrapezoidation.cpp"] = st3.replace(ST_TRANS_ANCHOR, ST_TRANS_FN, 1)
 
     st2 = texts["SkeletalTrapezoidation.cpp"]
     if "iscprobe(int branch" not in st2:

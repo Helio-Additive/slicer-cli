@@ -1285,6 +1285,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
         let mut edge_transitions: Vec<Arc<RwLock<Vec<TransitionMiddle>>>> = Vec::new();
         // SkeletalTrapezoidation.cpp:800 generateTransitionMids(edge_transitions);
         self.generate_transition_mids(&mut edge_transitions);
+        self.transition_census("0 after generateTransitionMids");
 
         unsafe {
             // SkeletalTrapezoidation.cpp:802 for (edge_t& edge : graph.edges)
@@ -1305,14 +1306,17 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
         // SkeletalTrapezoidation.cpp:810 filterTransitionMids();
         self.filter_transition_mids();
+        self.transition_census("1 after filterTransitionMids");
 
         // SkeletalTrapezoidation.cpp:817 ptr_vector_t<std::list<TransitionEnd>> edge_transition_ends;
         let mut edge_transition_ends: Vec<Arc<RwLock<Vec<TransitionEnd>>>> = Vec::new();
         // SkeletalTrapezoidation.cpp:818 generateAllTransitionEnds(edge_transition_ends);
         self.generate_all_transition_ends(&mut edge_transition_ends);
+        self.transition_census("2 after generateAllTransitionEnds");
 
         // SkeletalTrapezoidation.cpp:824 applyTransitions(edge_transition_ends);
         self.apply_transitions(&mut edge_transition_ends);
+        self.transition_census("3 after applyTransitions");
         // SkeletalTrapezoidation.cpp:825 Note: the shared pointer lists go out of scope and are destroyed here.
         drop(edge_transitions);
     }
@@ -3112,6 +3116,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
         node_beadings: &mut Vec<Arc<RwLock<BeadingPropagation>>>,
     ) -> Arc<RwLock<BeadingPropagation>> {
         unsafe {
+            if node.as_ref().data.has_beading() {
+                gnbprobe(true, false, false);
+            }
             // SkeletalTrapezoidation.cpp:1854 if (! node->data.hasBeading())
             if !node.as_ref().data.has_beading() {
                 // SkeletalTrapezoidation.cpp:1856 if (node->data.bead_count == -1)
@@ -3120,6 +3127,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     let nearby_dist: Coord = scaled(0.1);
                     // SkeletalTrapezoidation.cpp:1859 auto nearest_beading = getNearestBeading(node, nearby_dist);
                     let nearest_beading = self.get_nearest_beading(node, nearby_dist);
+                    gnbprobe(false, true, nearest_beading.is_some());
                     // SkeletalTrapezoidation.cpp:1860 if (nearest_beading)
                     if let Some(nearest_beading) = nearest_beading {
                         // SkeletalTrapezoidation.cpp:1862 return nearest_beading;
@@ -4328,5 +4336,89 @@ fn geomprobe(d_r: Coord, d_d: Coord, cap: f64) {
         for (r, d, ratio, direct) in g.samples.iter() {
             eprintln!("   violation sample: d_r={r} d_d={d} ratio={ratio:.6} direct={direct}");
         }
+    }
+}
+
+impl SkeletalTrapezoidation<'_> {
+    /// R551: transition census after each stage of `generate_transitioning_ribs`,
+    /// mirroring the C++ `[CPP-TRANSPROBE]` counter. This is the direct analogue
+    /// of the failing G-code metric: how often the bead width changes along a wall.
+    pub(crate) fn transition_census(&self, stage: &str) {
+        if std::env::var_os("TRANSPROBE").is_none() {
+            return;
+        }
+        let mut edges_with = 0usize;
+        let mut items = 0usize;
+        for e in self.graph.edges.iter() {
+            if e.base.data.has_transitions(true) {
+                edges_with += 1;
+                if let Some(t) = e.base.data.get_transitions() {
+                    items += t.read().len();
+                }
+            }
+        }
+        transprobe(stage, edges_with, items);
+    }
+}
+
+fn transprobe(stage: &str, edges_with: usize, items: usize) {
+    use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use std::sync::Mutex;
+    #[derive(Default, Clone, Copy)]
+    struct Acc {
+        calls: usize,
+        edges_with: usize,
+        items: usize,
+    }
+    static ACC: Mutex<Option<BTreeMap<String, Acc>>> = Mutex::new(None);
+    static ROUNDS: AtomicUsize = AtomicUsize::new(0);
+    let Ok(mut g) = ACC.lock() else { return };
+    let m = g.get_or_insert_with(BTreeMap::new);
+    let a = m.entry(stage.to_string()).or_default();
+    a.calls += 1;
+    a.edges_with += edges_with;
+    a.items += items;
+    if stage.starts_with('3') && ROUNDS.fetch_add(1, Relaxed) % 4_000 == 3_999 {
+        eprintln!("[TRANSPROBE] ---- cumulative ----");
+        for (k, v) in m.iter() {
+            eprintln!(
+                "  {k:<34} calls={:7} edges_with_transitions={:9} items={:9}",
+                v.calls, v.edges_with, v.items
+            );
+        }
+    }
+}
+
+/// R551: how often `get_or_create_beading` reuses a NEIGHBOUR's beading object
+/// instead of computing a fresh one. A high reuse rate means adjacent nodes
+/// SHARE a beading -> uniform width along the wall. Mirrors `[CPP-GNBPROBE]`.
+fn gnbprobe(had_beading: bool, bead_count_minus_one: bool, nearest_hit: bool) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    if std::env::var_os("GNBPROBE").is_none() {
+        return;
+    }
+    static N: AtomicUsize = AtomicUsize::new(0);
+    static ALREADY: AtomicUsize = AtomicUsize::new(0);
+    static BC_M1: AtomicUsize = AtomicUsize::new(0);
+    static HITS: AtomicUsize = AtomicUsize::new(0);
+    let n = N.fetch_add(1, Relaxed) + 1;
+    if had_beading {
+        ALREADY.fetch_add(1, Relaxed);
+    }
+    if bead_count_minus_one {
+        BC_M1.fetch_add(1, Relaxed);
+    }
+    if nearest_hit {
+        HITS.fetch_add(1, Relaxed);
+    }
+    if n == 1 || n % 200_000 == 0 {
+        eprintln!(
+            "[GNBPROBE] calls={n} | already_had_beading={} | bead_count==-1={} | \
+             getNearestBeading HIT={}",
+            ALREADY.load(Relaxed),
+            BC_M1.load(Relaxed),
+            HITS.load(Relaxed),
+        );
     }
 }
