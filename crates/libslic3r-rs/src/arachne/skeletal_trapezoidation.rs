@@ -3385,6 +3385,25 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 generated_toolpaths[inset_idx].is_empty()
                     || !generated_toolpaths[inset_idx].last().unwrap().junctions.is_empty()
             );
+            // NEWLINEPROBE (R576) — which condition starts each new ExtrusionLine?
+            // C++ assembles 1.96x more outer-wall lines than we do (R574); this
+            // attributes every new-line decision to its cause. Outer wall only.
+            let nlp = crate::probe_enabled("NEWLINEPROBE") && inset_idx == 0;
+            let nlp_caller = force_new_path;
+            let nlp_empty = generated_toolpaths[inset_idx].is_empty();
+            let nlp_odd = !nlp_empty
+                && generated_toolpaths[inset_idx].last().unwrap().is_odd != is_odd;
+            let nlp_perim = !nlp_empty
+                && !nlp_odd
+                && generated_toolpaths[inset_idx]
+                    .last()
+                    .unwrap()
+                    .junctions
+                    .last()
+                    .unwrap()
+                    .perimeter_index
+                    != inset_idx;
+
             // SkeletalTrapezoidation.cpp:1947-1950 if (empty || back().is_odd != is_odd || back().junctions.back().perimeter_index != inset_idx)
             if generated_toolpaths[inset_idx].is_empty()
                 || generated_toolpaths[inset_idx].last().unwrap().is_odd != is_odd
@@ -3432,6 +3451,60 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 // SkeletalTrapezoidation.cpp:1972 generated_toolpaths[inset_idx].back().junctions.push_back(from);
                 generated_toolpaths[inset_idx].last_mut().unwrap().junctions.push(from.clone());
             } else {
+                // NEWLINEPROBE (R576) — classify the cause of this new line.
+                if nlp {
+                    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                    static N: AtomicU64 = AtomicU64::new(0);
+                    static EMPTY: AtomicU64 = AtomicU64::new(0);
+                    static ODD: AtomicU64 = AtomicU64::new(0);
+                    static PERIM: AtomicU64 = AtomicU64::new(0);
+                    static CALLER: AtomicU64 = AtomicU64::new(0);
+                    static GAP: AtomicU64 = AtomicU64::new(0);
+                    static WIDTH: AtomicU64 = AtomicU64::new(0);
+                    static THREEWAY: AtomicU64 = AtomicU64::new(0);
+                    if nlp_empty {
+                        EMPTY.fetch_add(1, Relaxed);
+                    } else if nlp_odd {
+                        ODD.fetch_add(1, Relaxed);
+                    } else if nlp_perim {
+                        PERIM.fetch_add(1, Relaxed);
+                    } else if nlp_caller {
+                        CALLER.fetch_add(1, Relaxed);
+                    } else {
+                        // Neither continuation test passed. Attribute to the first
+                        // failing sub-condition of the `from` test (cpp:1954-1958).
+                        let last = generated_toolpaths[inset_idx]
+                            .last()
+                            .unwrap()
+                            .junctions
+                            .last()
+                            .unwrap()
+                            .clone();
+                        let gap_ok = shorter_then(&(last.p - from.p), scaled(0.010));
+                        let w_ok = (last.w - from.w).abs() < scaled(0.010);
+                        if !gap_ok {
+                            GAP.fetch_add(1, Relaxed);
+                        } else if !w_ok {
+                            WIDTH.fetch_add(1, Relaxed);
+                        } else {
+                            THREEWAY.fetch_add(1, Relaxed);
+                        }
+                    }
+                    let n = N.fetch_add(1, Relaxed) + 1;
+                    if n % 2_000 == 0 {
+                        eprintln!(
+                            "[NEWLINEPROBE] newlines={} empty={} odd={} perim={} caller={} gap={} width={} threeway={}",
+                            n,
+                            EMPTY.load(Relaxed),
+                            ODD.load(Relaxed),
+                            PERIM.load(Relaxed),
+                            CALLER.load(Relaxed),
+                            GAP.load(Relaxed),
+                            WIDTH.load(Relaxed),
+                            THREEWAY.load(Relaxed),
+                        );
+                    }
+                }
                 // SkeletalTrapezoidation.cpp:1976 generated_toolpaths[inset_idx].emplace_back(inset_idx, is_odd);
                 generated_toolpaths[inset_idx].push(ExtrusionLine::new(inset_idx, is_odd));
                 // SkeletalTrapezoidation.cpp:1977 generated_toolpaths[inset_idx].back().junctions.push_back(from);

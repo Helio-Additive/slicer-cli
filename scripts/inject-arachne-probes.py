@@ -1135,6 +1135,68 @@ PG_SPLIT2_NEW = '''            if (getenv("SPLITPROBE") && extrusion->inset_idx 
             if (!paths.empty()) {
 '''
 
+# ---------------------------------------------------------------------------
+# NEWLINEPROBE (R576) - which condition starts each new ExtrusionLine? C++
+# assembles 1.96x more outer-wall lines than Rust (R574); this attributes every
+# new-line decision to its cause. Outer wall only (inset_idx == 0). Mirrors the
+# Rust probe of the same name in arachne/skeletal_trapezoidation.rs.
+# ---------------------------------------------------------------------------
+ST_NL_OLD = '''    if (generated_toolpaths[inset_idx].empty()
+        || generated_toolpaths[inset_idx].back().is_odd != is_odd
+        || generated_toolpaths[inset_idx].back().junctions.back().perimeter_index != inset_idx // inset_idx should always be consistent
+    )
+'''
+ST_NL_NEW = '''    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0;
+    const bool nlp_caller = force_new_path;
+    const bool nlp_empty = generated_toolpaths[inset_idx].empty();
+    const bool nlp_odd = !nlp_empty && generated_toolpaths[inset_idx].back().is_odd != is_odd;
+    const bool nlp_perim = !nlp_empty && !nlp_odd &&
+        generated_toolpaths[inset_idx].back().junctions.back().perimeter_index != inset_idx;
+
+    if (generated_toolpaths[inset_idx].empty()
+        || generated_toolpaths[inset_idx].back().is_odd != is_odd
+        || generated_toolpaths[inset_idx].back().junctions.back().perimeter_index != inset_idx // inset_idx should always be consistent
+    )
+'''
+
+ST_NL2_OLD = '''    else
+    {
+        generated_toolpaths[inset_idx].emplace_back(inset_idx, is_odd);
+        generated_toolpaths[inset_idx].back().junctions.push_back(from);
+        generated_toolpaths[inset_idx].back().junctions.push_back(to);
+    }
+'''
+ST_NL2_NEW = '''    else
+    {
+        if (nlp) {
+            static std::mutex nl_mtx;
+            static size_t nl_n = 0, nl_empty = 0, nl_odd = 0, nl_perim = 0,
+                          nl_caller = 0, nl_gap = 0, nl_width = 0, nl_3way = 0;
+            std::lock_guard<std::mutex> nl_lock(nl_mtx);
+            if (nlp_empty) ++nl_empty;
+            else if (nlp_odd) ++nl_odd;
+            else if (nlp_perim) ++nl_perim;
+            else if (nlp_caller) ++nl_caller;
+            else {
+                const ExtrusionJunction &last = generated_toolpaths[inset_idx].back().junctions.back();
+                const bool gap_ok = shorter_then(last.p - from.p, scaled<coord_t>(0.010));
+                const bool w_ok = std::abs(last.w - from.w) < scaled<coord_t>(0.010);
+                if (!gap_ok) ++nl_gap;
+                else if (!w_ok) ++nl_width;
+                else ++nl_3way;
+            }
+            ++nl_n;
+            if (nl_n % 2000 == 0)
+                fprintf(stderr,
+                    "[NEWLINEPROBE] newlines=%zu empty=%zu odd=%zu perim=%zu caller=%zu gap=%zu width=%zu threeway=%zu\\n",
+                    nl_n, nl_empty, nl_odd, nl_perim, nl_caller, nl_gap, nl_width, nl_3way);
+        }
+        generated_toolpaths[inset_idx].emplace_back(inset_idx, is_odd);
+        generated_toolpaths[inset_idx].back().junctions.push_back(from);
+        generated_toolpaths[inset_idx].back().junctions.push_back(to);
+    }
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -1183,6 +1245,8 @@ EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_LP2_OLD, ST_LP2_NEW),
     ("PerimeterGenerator.cpp", PG_SPLIT_OLD, PG_SPLIT_NEW),
     ("PerimeterGenerator.cpp", PG_SPLIT2_OLD, PG_SPLIT2_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_NL_OLD, ST_NL_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_NL2_OLD, ST_NL2_NEW),
 ]
 
 

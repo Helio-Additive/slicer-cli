@@ -5829,3 +5829,72 @@ numerator and denominator separately before naming a mechanism.** "We split
 1.88x more" survived a round and sent this one to instrument the wrong site; the
 numerators differed by 4%. **A quotient names a mechanism only if you know which
 half of it moved.**
+
+## R576 — the line-start conditions are faithful; the 2x comes from `empty` and `odd`
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. New
+`NEWLINEPROBE` on both engines in `add_toolpath_segment`, gated and default-OFF.
+
+### Prediction, and it was WRONG
+
+I predicted the **width test** would dominate our new-line starts more than
+C++'s. It fires **zero times on both engines** — a clean shared negative that
+removes one of the three candidates outright.
+
+Every new outer-wall `ExtrusionLine`, attributed to its cause (outer wall only,
+totals are floors at modulo 2,000):
+
+| cause | Rust | % | C++ | % | C−R | share of gap |
+|---|---|---|---|---|---|---|
+| **`empty`** (vector empty) | 24,492 | 76.5% | 39,812 | 62.2% | **+15,320** | **47.9%** |
+| **`odd`** (`is_odd` differs) | 6,002 | 18.8% | 19,290 | 30.1% | **+13,288** | **41.5%** |
+| `gap` (10 µm distance test) | 1,401 | 4.4% | 3,599 | 5.6% | +2,198 | 6.9% |
+| `caller` (`force_new_path` in) | 100 | 0.3% | 1,194 | 1.9% | +1,094 | 3.4% |
+| `threeway` | 5 | 0.0% | 105 | 0.2% | +100 | 0.3% |
+| `perim` (index differs) | 0 | — | 0 | — | 0 | 0.0% |
+| **`width`** (10 µm width test) | **0** | — | **0** | — | **0** | **0.0%** |
+| TOTAL | 32,000 | | 64,000 | | +32,000 | |
+
+Deltas sum to 32,000 = the total gap, exactly (R530). New-line ratio **2.000**,
+matching R574's independently-measured assembled-line ratio of 1.9575.
+
+### What this settles
+
+**The conditions themselves are faithful and are not the mechanism.** The width
+test never fires on either engine; the perimeter-index test never fires on
+either; the gap test accounts for 6.9% of the difference. What differs is the
+*input stream* reaching `add_toolpath_segment`, via two roughly equal terms:
+
+* **`empty` (+47.9%, ratio 1.63x)** — `generated_toolpaths[0]` is empty at the
+  moment of the call, i.e. this is the first outer segment of a fresh
+  `generateToolpaths` invocation. C++ has 1.63x more such invocations producing
+  outer-wall content.
+* **`odd` (+41.5%, ratio 3.21x)** — `back().is_odd != is_odd`. C++ alternates
+  between odd (single-bead/central) and even walls at inset 0 **3.2x more
+  often**, and each alternation forces a new line.
+
+Both are upstream of this function. Neither is a defect in the assembly logic.
+
+### R577
+
+Two independent targets, in order of size:
+
+1. **The `odd` alternation (3.21x).** Highest ratio and cheapest to check:
+   `is_odd` comes from the caller's `is_odd` argument, set from whether the
+   toolpath is a central/odd wall. Count odd-vs-even segments reaching
+   `add_toolpath_segment` at inset 0 on both engines. Note R548/R549 touched
+   `updateIsCentral` (and R549 fixed its `cap`), so this is adjacent to fixed
+   ground — **re-derive, do not assume** (R539/R540).
+2. **The `empty` term (1.63x)** — more `generateToolpaths` invocations carrying
+   outer-wall content. Adjacent to the region/surface-count question that
+   R557/R558 eliminated *as a width-metric cause*; this is a different quantity
+   (invocations producing outer segments) and needs its own count.
+
+The second factor of the tag gap (1.65x tags per assembled line) remains
+separate and untouched.
+
+**New discipline (R576): when a decision has several conditions, count them all
+before assuming the interesting one matters.** Two of the five candidate
+conditions here fire exactly zero times on both engines, and the one I predicted
+would dominate was one of them. **A condition that never fires is worth
+measuring precisely because it removes itself.**
