@@ -6210,3 +6210,78 @@ your probes will count it.** Sixteen thousand full Arachne invocations produce
 four used results. Every internal counter compared across the two engines for six
 rounds included them. **Before comparing internals, establish that both engines'
 work reaches the output.**
+
+## R581 — chain re-derived with speculation excluded: the dominant factor INVERTS
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. Injector
+gains `probe_speculative()` (thread-local, defined in `SkeletalTrapezoidation.cpp`,
+declared in `PerimeterGenerator.cpp`), set around the one-wall construction and
+tested by `JUNCPROBE`, `ODDPROBE`, `NEWLINEPROBE` and `LINEPROBE2`.
+
+Two anchor collisions had to be handled (R562): the includes string occurs in
+both `ST_INCLUDES_OLD` and `_NEW` (positional replace), and the `nlp` line occurs
+in `ST_NL_NEW`, `ST_ODD_OLD` and `ST_ODD_NEW` — all three are generated text and
+must move together or the ordered edits stop matching.
+
+### Every C++ internal count was inflated; several badly
+
+| quantity | Rust | C++ clean | C/R | C++ old | old C/R |
+|---|---|---|---|---|---|
+| `generateToolpaths` invocations | 25,876 | 26,415 | **1.021** | 41,188 | 1.592 |
+| junctions (JUNCPROBE) | 6,520,000 | 7,580,000 | **1.163** | 12,200,000 | 1.871 |
+| segments at inset 0 | 2,415,000 | 2,875,000 | **1.190** | 5,200,000 | 2.153 |
+| odd segments | 72,038 | 141,494 | 1.964 | 171,905 | 2.386 |
+| alternations | 22,639 | 59,199 | 2.615 | 106,949 | 4.724 |
+| new-line events | 32,000 | 40,000 | **1.250** | 64,000 | 2.000 |
+| assembled outer lines | 33,772 | 41,668 | **1.234** | 66,108 | 1.957 |
+
+**45% of C++'s counted segments and 38% of its junctions were speculative.**
+
+### The chain still closes exactly — but the split inverts
+
+| | assembled lines | x tags per line | = tags |
+|---|---|---|---|
+| **R574 (contaminated)** | 1.9575x | 1.6500x | 3.2299 |
+| **R581 (clean)** | **1.2338x** | **2.6178x** | **3.2299** |
+| observed | — | — | **3.2299** |
+
+Both factorisations reproduce the observed 3.2299x to four decimals, which is
+exactly why the contaminated one looked sound (R580). But they say opposite
+things. **The dominant term is not the number of assembled lines (1.23x) — it is
+how many width tags each line carries (2.62x).**
+
+### Two R577 conclusions revisited
+
+* **RETRACTED — "the odd SHARE is equal".** R577 measured 2.98% vs 3.31% and
+  concluded the mechanism was purely interleaving. Clean: **2.98% vs 4.92% =
+  1.650x.** C++ *does* emit proportionally more odd walls; the contamination hid
+  it.
+* **STANDS — alternations per segment.** 0.00937 vs 0.02059 = **2.197x**, against
+  R577's 2.194x. Unchanged by the correction, so it is a real signal and now the
+  strongest surviving upstream one.
+
+### Where this leaves the campaign
+
+Upstream supply is **near-parity**: invocations 1.02x, segments 1.19x, junctions
+1.16x, assembled lines 1.23x. Six rounds of "C++ has roughly twice the material"
+dissolve — that was the speculative pass throughout. What remains is
+**intra-line**: 2.62x tags per assembled line, with 2.20x alternations per segment
+and a 1.65x odd-wall share as the live upstream contributors.
+
+### R582
+
+The question is now sharply intra-line, which is where R567-R571 were looking
+before the supply story displaced them — **but those rounds' C++ figures are
+contaminated too** and must be re-derived before reuse: R571's "we generate 1.79x
+MORE distinct widths" used JUNCPROBE distinct counts (now 31,239 clean vs 15,634
+quoted at a matched n — the matched-n comparison itself needs redoing), and
+R572's 2.19x junction supply is now 1.16x.
+
+Re-run the R567-R572 measurements with `probe_speculative()` active, then attack
+tags-per-assembled-line directly.
+
+**New discipline (R581): when two different factorisations of the same product
+both reproduce it exactly, the arithmetic cannot tell you which is right.**
+1.9575 x 1.6500 and 1.2338 x 2.6178 both give 3.2299. Only knowing which inputs
+were measured on comparable populations distinguishes them. **A closing identity
+validates the algebra, never the measurement.**

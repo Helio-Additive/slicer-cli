@@ -56,7 +56,14 @@ ST_INCLUDES_NEW = """#include <stack>
 #include <cstdlib>
 #include <mutex>
 #include <vector>
-#include <boost/log/trivial.hpp>"""
+#include <boost/log/trivial.hpp>
+
+// R581: C++ speculatively builds a one-wall WallToolPaths on ~16,503 surfaces and
+// keeps 4 (R580, TOWPROBE seperate_POST=4). That call runs the WHOLE Arachne
+// pipeline, so every internal probe counted work that never reaches the G-code.
+// This flag lets the probes exclude it. Thread-local: the speculative call and
+// the pipeline it drives run on the same thread.
+bool& probe_speculative() { static thread_local bool v = false; return v; }"""
 
 ST_PROBES_OLD = """namespace Slic3r::Arachne
 {
@@ -882,6 +889,7 @@ PG_TOW_CALLS2_NEW = """                seperate_wall_generation = should_enable_
 
 PG_INCLUDES_OLD = """#include "PerimeterGenerator.hpp\""""
 PG_INCLUDES_NEW = """#include "PerimeterGenerator.hpp"
+bool& probe_speculative();   // R581, defined in SkeletalTrapezoidation.cpp
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -1020,7 +1028,7 @@ VW_TAIL_NEW = '''    if( path.polyline.is_valid() ) {
 # ---------------------------------------------------------------------------
 ST_JUNC_OLD = '''            ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
 '''
-ST_JUNC_NEW = '''            if (getenv("BEADPROBE")) {
+ST_JUNC_NEW = '''            if (getenv("BEADPROBE") && !probe_speculative()) {
                 static std::mutex jp_mtx;
                 static std::vector<coord_t> jp_w, jp_t;
                 static std::vector<std::pair<coord_t, coord_t>> jp_pairs;
@@ -1064,7 +1072,7 @@ ST_LP2_OLD = '''    generateSegments();
 '''
 ST_LP2_NEW = '''    generateSegments();
 
-    if (getenv("LINEPROBE2")) {
+    if (getenv("LINEPROBE2") && !probe_speculative()) {
         static std::mutex lp2_mtx;
         static size_t lp2_lines = 0, lp2_juncs = 0, lp2_distinct = 0, lp2_flat = 0, lp2_changes = 0;
         static size_t lp2_ol = 0, lp2_oj = 0, lp2_od = 0, lp2_of = 0, lp2_oc = 0;
@@ -1146,7 +1154,7 @@ ST_NL_OLD = '''    if (generated_toolpaths[inset_idx].empty()
         || generated_toolpaths[inset_idx].back().junctions.back().perimeter_index != inset_idx // inset_idx should always be consistent
     )
 '''
-ST_NL_NEW = '''    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0;
+ST_NL_NEW = '''    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0 && !probe_speculative();
     const bool nlp_caller = force_new_path;
     const bool nlp_empty = generated_toolpaths[inset_idx].empty();
     const bool nlp_odd = !nlp_empty && generated_toolpaths[inset_idx].back().is_odd != is_odd;
@@ -1204,9 +1212,9 @@ ST_NL2_NEW = '''    else
 # walls" (share differs) from "C++ interleaves them differently" (share matches,
 # alternations differ). Mirrors the Rust probe in skeletal_trapezoidation.rs.
 # ---------------------------------------------------------------------------
-ST_ODD_OLD = '''    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0;
+ST_ODD_OLD = '''    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0 && !probe_speculative();
 '''
-ST_ODD_NEW = '''    if (getenv("ODDPROBE") && inset_idx == 0) {
+ST_ODD_NEW = '''    if (getenv("ODDPROBE") && inset_idx == 0 && !probe_speculative()) {
         static std::mutex od_mtx;
         static size_t od_calls = 0, od_odd = 0, od_alt = 0;
         static int od_prev = 2;
@@ -1221,7 +1229,7 @@ ST_ODD_NEW = '''    if (getenv("ODDPROBE") && inset_idx == 0) {
                     od_calls, od_odd, od_calls - od_odd, od_alt);
     }
 
-    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0;
+    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0 && !probe_speculative();
 '''
 
 # ---------------------------------------------------------------------------
@@ -1231,6 +1239,20 @@ ST_ODD_NEW = '''    if (getenv("ODDPROBE") && inset_idx == 0) {
 # whether the gap is uniform or concentrated in a band. Mirrors the Rust probe of
 # the same name in perimeter_generator.rs.
 # ---------------------------------------------------------------------------
+PG_SPEC_OLD = '''            if (seperate_wall_generation) {
+                Arachne::WallToolPaths one_wall_paths(last_p, ext_perimeter_spacing, perimeter_spacing, 1, wall_0_inset, layer_height, input_params);
+'''
+PG_SPEC_NEW = '''            if (seperate_wall_generation) {
+                probe_speculative() = true;   // R581
+                Arachne::WallToolPaths one_wall_paths(last_p, ext_perimeter_spacing, perimeter_spacing, 1, wall_0_inset, layer_height, input_params);
+'''
+
+PG_SPEC2_OLD = '''                infill_contour_by_one_wall = union_ex(one_wall_paths.getInnerContour());
+'''
+PG_SPEC2_NEW = '''                infill_contour_by_one_wall = union_ex(one_wall_paths.getInnerContour());
+                probe_speculative() = false;  // R581
+'''
+
 PG_WTP_OLD = '''            coord_t wall_0_inset = 0;
             if (apply_precise_outer_wall)
                 wall_0_inset = -coord_t(ext_perimeter_width / 2 - ext_perimeter_spacing / 2);
@@ -1315,6 +1337,8 @@ EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_NL2_OLD, ST_NL2_NEW),
     ("SkeletalTrapezoidation.cpp", ST_ODD_OLD, ST_ODD_NEW),
     ("PerimeterGenerator.cpp", PG_WTP_OLD, PG_WTP_NEW),
+    ("PerimeterGenerator.cpp", PG_SPEC_OLD, PG_SPEC_NEW),
+    ("PerimeterGenerator.cpp", PG_SPEC2_OLD, PG_SPEC2_NEW),
 ]
 
 
