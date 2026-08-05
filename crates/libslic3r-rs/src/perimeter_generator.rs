@@ -3603,6 +3603,28 @@ impl PerimeterGenerator {
                         static SPREAD_UM: AtomicUsize = AtomicUsize::new(0);
                         static JUNCS: AtomicUsize = AtomicUsize::new(0);
                         static DISTINCT: AtomicUsize = AtomicUsize::new(0);
+                        // R567: the ORDERING-sensitive quantity. R566 established that
+                        // the output gap is a RATE — C++ changes width 2.73x more often
+                        // per extruded move (0.0368 vs 0.1003). Distinct-value counts
+                        // (R558, 1.24x) and spread (R549, MATCHED) are both blind to
+                        // ordering, so neither can speak to a rate. This counts how often
+                        // CONSECUTIVE junctions differ, which is the direct internal
+                        // analogue: transitions = n-1 per loop, changes = #{i : w[i] != w[i-1]}.
+                        // Tracked separately over ALL loops and over VARYING loops (mx != mn)
+                        // so the varying sub-population can be reported without building a
+                        // decomposition whose split criterion is the outcome (R566).
+                        static TRANSITIONS: AtomicUsize = AtomicUsize::new(0);
+                        static CHANGES: AtomicUsize = AtomicUsize::new(0);
+                        static V_LOOPS: AtomicUsize = AtomicUsize::new(0);
+                        static V_TRANS: AtomicUsize = AtomicUsize::new(0);
+                        static V_CHANGES: AtomicUsize = AtomicUsize::new(0);
+                        // R567: OUTER WALL only (inset_idx == 0). The 2.73x output rate
+                        // is measured over outer-wall feature blocks, so an all-loops
+                        // internal rate is a scope mismatch (R507) — the exact error class
+                        // that cost R559-R566. This bucket makes the comparison sound.
+                        static O_LOOPS: AtomicUsize = AtomicUsize::new(0);
+                        static O_TRANS: AtomicUsize = AtomicUsize::new(0);
+                        static O_CHANGES: AtomicUsize = AtomicUsize::new(0);
                         let ws: Vec<i64> = line.junctions.iter().map(|j| j.w).collect();
                         if !ws.is_empty() {
                             let mn = *ws.iter().min().unwrap();
@@ -3613,20 +3635,45 @@ impl PerimeterGenerator {
                             let n = LOOPS.fetch_add(1, Relaxed) + 1;
                             JUNCS.fetch_add(ws.len(), Relaxed);
                             DISTINCT.fetch_add(u.len(), Relaxed);
+                            let changes = ws.windows(2).filter(|p| p[0] != p[1]).count();
+                            let trans = ws.len().saturating_sub(1);
+                            TRANSITIONS.fetch_add(trans, Relaxed);
+                            CHANGES.fetch_add(changes, Relaxed);
                             // spread in microns (crate scale is 1e5 units/mm)
                             SPREAD_UM.fetch_add(((mx - mn) as f64 / 100.0) as usize, Relaxed);
                             if mx == mn {
                                 FLAT.fetch_add(1, Relaxed);
+                            } else {
+                                V_LOOPS.fetch_add(1, Relaxed);
+                                V_TRANS.fetch_add(trans, Relaxed);
+                                V_CHANGES.fetch_add(changes, Relaxed);
+                            }
+                            if line.inset_idx == 0 {
+                                O_LOOPS.fetch_add(1, Relaxed);
+                                O_TRANS.fetch_add(trans, Relaxed);
+                                O_CHANGES.fetch_add(changes, Relaxed);
                             }
                             if n % 5_000 == 0 {
+                                let (tr, ch) = (TRANSITIONS.load(Relaxed), CHANGES.load(Relaxed));
+                                let (vt, vc) = (V_TRANS.load(Relaxed), V_CHANGES.load(Relaxed));
                                 eprintln!(
                                     "[ARACHWIDTH] loops={n} flat(min==max)={} ({:.1}%) mean_spread={:.1}um \
-                                     juncs/loop={:.1} distinct_w/loop={:.2}",
+                                     juncs/loop={:.1} distinct_w/loop={:.2} | \
+                                     CHANGE_RATE all={:.4} ({}/{}) varying={:.4} ({}/{}) v_loops={} \
+                                     OUTER={:.4} ({}/{}) o_loops={}",
                                     FLAT.load(Relaxed),
                                     100.0 * FLAT.load(Relaxed) as f64 / n as f64,
                                     SPREAD_UM.load(Relaxed) as f64 / n as f64,
                                     JUNCS.load(Relaxed) as f64 / n as f64,
                                     DISTINCT.load(Relaxed) as f64 / n as f64,
+                                    ch as f64 / tr.max(1) as f64, ch, tr,
+                                    vc as f64 / vt.max(1) as f64, vc, vt,
+                                    V_LOOPS.load(Relaxed),
+                                    O_CHANGES.load(Relaxed) as f64
+                                        / O_TRANS.load(Relaxed).max(1) as f64,
+                                    O_CHANGES.load(Relaxed),
+                                    O_TRANS.load(Relaxed),
+                                    O_LOOPS.load(Relaxed),
                                 );
                             }
                         }

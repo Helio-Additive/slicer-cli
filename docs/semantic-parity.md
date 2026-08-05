@@ -5134,3 +5134,78 @@ to explain the outcome.** "Varying blocks are bigger" looked like a finding and
 is partly a tautology. **When splitting a ratio, check whether the split
 criterion is downstream of the thing being measured — and prefer a decomposition
 whose factors are both measurable without reference to the result.**
+
+## R567 — the beading carries most of the rate gap; scope-matching moved 1.78x to 2.18x
+
+`ARACHWIDTH` and `JWPROBE` both gained the ordering-sensitive quantity R566 asked
+for. The answer is neither of Step 2's clean branches: **the gap is mostly
+upstream, with a real downstream residual.** Baseline `d219a37e` unchanged
+(probes are opt-in), 8 guards green.
+
+### The measurement
+
+`count(w[i] != w[i-1]) / (n_junctions - 1)` per loop — the direct internal
+analogue of "tags per move". Distinct-value counts (R558, 1.24x) and spread
+(R549, matched) are both blind to ordering and so could never speak to a rate.
+
+| change rate | Rust | C++ | ratio |
+|---|---|---|---|
+| all loops | 0.0212 | 0.0376 | 1.78x |
+| varying loops only | 0.0612 | 0.0786 | 1.28x |
+| **outer wall only** | **0.0212** (11,177/526,155) | **0.0463** (25,606/553,138) | **2.18x** |
+
+### The scope mismatch, caught mid-round
+
+My first reading used the all-loops figure and concluded **"ordering adds
+essentially nothing — a negative result for the hypothesis."** That was wrong, and
+wrong for a specific reason: the 2.73x output rate is measured over **outer-wall**
+feature blocks, while the internal rate covered **every** loop, inner walls
+included. Comparing them is a scope mismatch (R507) — the same error class that
+cost R559 through R566.
+
+Restricting the internal probe to `inset_idx == 0` moved the ratio **1.78x ->
+2.18x**. Against the output's 2.73x that leaves a residual of **1.25x** arising
+below Arachne, not the 1.53x the mismatched comparison implied.
+
+So Step 2 resolves to *both* branches, in proportion: **the beading accounts for
+roughly 2.18 of the 2.73, and ~1.25x is created downstream.**
+
+### A caveat worth recording
+
+The two rates are not directly composable, and I am not going to pretend they are.
+Outer-wall tags (19,363 rust / 62,582 C++) exceed outer-wall junction changes
+(11,177 / 25,606) by 1.73x and 2.44x respectively — because the `; LINE_WIDTH:`
+register persists **across** paths, loops and blocks (R558), so a tag also fires
+when one loop's width differs from the previous loop's, which no per-junction
+count can see. Both engines show this; it is not a defect. It does mean the
+"1.25x residual" is a ratio-of-ratios, not a mechanism, and the residual could sit
+in `thick_polyline_to_multi_path`'s `scaled(0.05)` merge, in inter-loop width
+differences, or in both.
+
+Also worth noting: outer-wall junction transitions are nearly equal between the
+engines (526,155 vs 553,138 = 1.05x) while outer-wall extrude moves differ more
+(526,437 vs 623,903 = 1.19x). Ours are almost exactly 1 move per junction
+transition; C++ averages 1.13.
+
+### R568
+
+Two things, in order:
+
+1. **Attribute the 1.25x residual.** Count, per engine, how many outer-wall tags
+   fire at a path boundary where the *previous* path belonged to a different loop
+   versus within a loop. That separates "inter-loop width differences" from
+   "intra-loop splitting" and is measurable in the exporter without touching
+   Arachne. Do not assume the merge tolerance is responsible — it is one of at
+   least three candidates.
+2. **Then the 2.18x itself**, which is now the larger share and squarely inside
+   the beading: why does C++ assign a different width to adjacent junctions
+   2.18x more often on outer walls? `BEADPROBE` already exists on both engines
+   and reports per-`compute` width spread; extend it to report how often
+   successive `compute` calls along one loop return different bead widths.
+
+**New discipline (R567): match the SCOPE before comparing two rates, not just the
+denominator.** R562 taught "same count is not same population"; this is its
+sibling — same *unit* is not same *scope*. An all-loops internal rate and an
+outer-wall output rate are both honest numbers that mean different things, and
+the difference between them here was 1.78x versus 2.18x — enough to invert the
+round's conclusion.

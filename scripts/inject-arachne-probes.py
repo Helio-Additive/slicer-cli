@@ -758,23 +758,38 @@ PG_JW_FN = r"""
 // with min==max (43 junctions, 1.45 distinct widths); this is the reference to
 // compare that against. If C++ is far less flat, the width gap is in the BEADING,
 // upstream of every path-construction and emission mechanism already eliminated.
-static void jwprobe(size_t njunc, size_t distinct, coord_t spread, bool flat)
+// R567 adds the ORDERING-sensitive quantity: how often CONSECUTIVE junctions
+// differ. R566 established the output gap is a RATE (C++ changes width 2.73x more
+// often per extruded move). Distinct-value counts and spread are both blind to
+// ordering and so cannot speak to a rate; this is the direct internal analogue.
+// Mirrors the Rust ARACHWIDTH extension exactly.
+static void jwprobe(size_t njunc, size_t distinct, coord_t spread, bool flat,
+                    size_t transitions, size_t changes, bool outer)
 {
     if (::getenv("JWPROBE") == nullptr)
         return;
     static std::mutex mtx;
     static size_t loops = 0, tot_j = 0, tot_d = 0, tot_flat = 0;
+    static size_t tot_tr = 0, tot_ch = 0, v_loops = 0, v_tr = 0, v_ch = 0;
+    static size_t o_loops = 0, o_tr = 0, o_ch = 0; // R567: outer wall only
     static double tot_spread_um = 0;
     std::lock_guard<std::mutex> lock(mtx);
     ++loops; tot_j += njunc; tot_d += distinct; tot_spread_um += double(spread) / 100.0;
+    tot_tr += transitions; tot_ch += changes;
     if (flat) ++tot_flat;
+    else { ++v_loops; v_tr += transitions; v_ch += changes; }
+    if (outer) { ++o_loops; o_tr += transitions; o_ch += changes; }
     if (loops == 1 || loops % 5000 == 0)
         fprintf(stderr,
                 "[CPP-JWPROBE] loops=%zu flat(min==max)=%zu (%.1f%%) mean_spread=%.1fum "
-                "juncs/loop=%.2f distinct_w/loop=%.3f\n",
+                "juncs/loop=%.2f distinct_w/loop=%.3f | CHANGE_RATE all=%.4f (%zu/%zu) "
+                "varying=%.4f (%zu/%zu) v_loops=%zu OUTER=%.4f (%zu/%zu) o_loops=%zu\n",
                 loops, tot_flat, 100.0 * double(tot_flat) / double(loops),
                 tot_spread_um / double(loops),
-                double(tot_j) / double(loops), double(tot_d) / double(loops));
+                double(tot_j) / double(loops), double(tot_d) / double(loops),
+                double(tot_ch) / double(tot_tr ? tot_tr : 1), tot_ch, tot_tr,
+                double(v_ch) / double(v_tr ? v_tr : 1), v_ch, v_tr, v_loops,
+                double(o_ch) / double(o_tr ? o_tr : 1), o_ch, o_tr, o_loops);
 }
 """
 
@@ -801,7 +816,11 @@ PG_JW_CALLS_NEW = """            ZPath subject_path;
                     std::vector<coord_t> u = ws;
                     std::sort(u.begin(), u.end());
                     u.erase(std::unique(u.begin(), u.end()), u.end());
-                    jwprobe(ws.size(), u.size(), mx - mn, mn == mx);
+                    size_t ch = 0; // R567: consecutive junctions that differ
+                    for (size_t k = 1; k < ws.size(); ++k)
+                        if (ws[k] != ws[k - 1]) ++ch;
+                    jwprobe(ws.size(), u.size(), mx - mn, mn == mx, ws.size() - 1, ch,
+                            extrusion->inset_idx == 0);
                 }
             }"""
 
