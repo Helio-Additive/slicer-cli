@@ -5050,3 +5050,87 @@ sized against the old one.
 hottest loops in the program; collectively they cost more than the algorithms
 they were measuring, and the round that finally profiled found them at the top.
 **Price the probe when you add it, and prefer a cached predicate to a syscall.**
+
+## R566 — profile confirmed post-fix; the width metric is a RATE, and R564's split had a confound
+
+Two results, both corrections of measurement rather than of code. No source
+changed — baselines `d219a37e` / `5a34af50` / `ab415621` hold trivially.
+
+### The R565 fix is confirmed in the profile, not just the clock
+
+Re-recorded against the current binary (89.5 MB, 94,676 samples — down from
+117,851, consistent with the faster run):
+
+| | R564 | R566 |
+|---|---|---|
+| `__ulock_wait2`/`__ulock_wake` leaves | **12.52%** | **0.16%** |
+| nearest non-lock caller | `getenv` (12.39%) | allocator internals only |
+
+`getenv` is gone from the lock attribution entirely. **Prediction correct in both
+parts** (direction only, per R563-R565): shares of everything else rose while
+absolute work stayed put — Voronoi `mul_other` **9,194 -> 9,172 samples**
+(7.80% -> 9.69%), Clipper `BuildIntersectList` 3,976 -> 3,899. Nothing got slower;
+the denominator shrank (R530).
+
+Honest post-fix profile: **Clipper ~24%, Voronoi ~11.5%, allocator ~6.3%.** At
+1.033x there is no pressure to act on any of them, and Step 1 is closed by
+confirming the numbers rather than by chasing them.
+
+### Factor 2, and a confound in my own decomposition
+
+Conditioning on varying blocks only:
+
+| over VARYING blocks | Rust | C++ | ratio |
+|---|---|---|---|
+| tags per block | 5.62 | 10.83 | 1.93x |
+| **moves per block** | **44.49** | **67.84** | **1.52x** |
+| tags per move | 0.1264 | 0.1597 | 1.26x |
+| distinct widths per block | 5.04 | 8.49 | 1.68x |
+| (moves per ZERO-tag block) | 33.64 | 25.53 | 0.76x |
+
+1.52 x 1.26 = 1.92 ≈ the observed 1.93x, and I predicted the direction correctly.
+**But this decomposition is confounded.** A block with more moves is more likely
+to contain at least one tag *by construction*, so "varying blocks are bigger" is
+partly a selection artifact of how the sub-population was defined. R564's
+`1.64x x 1.93x` split runs along the same confounded boundary. Both splits are
+arithmetically exact; neither is safe to interpret.
+
+Without conditioning on the outcome:
+
+| | Rust | C++ | ratio |
+|---|---|---|---|
+| total extrude moves | 526,437 | 623,903 | 1.19x |
+| moves per block | 36.21 | 41.97 | **1.16x** |
+| **TAGS PER MOVE** | **0.0368** | **0.1003** | **2.73x** |
+| product | | | **3.16x** |
+| observed tags/block | 1.332 | 4.210 | **3.16x** |
+
+Exact, and free of the selection effect. **The quantity that actually differs is
+the width-change RATE per unit of extruded distance: 2.73x.** Block size
+contributes only 1.16x. Everything the campaign has called "tags per block" is
+better read as "how often the width changes per millimetre of wall".
+
+That also reconciles R564's run-length result. Our tags are *clustered* — when a
+change happens the next one is close (2.66 moves vs C++'s 3.17) — but they occur
+across far less of the wall. **C++ distributes width changes; we concentrate
+them.** Both facts are true and they are not in tension.
+
+### R567
+
+The open question is now sharply stated and denominator-safe: **why does C++
+change extrusion width 2.73x more often per extruded move?** The internal
+counterpart is `ARACHWIDTH` flat-loop fraction (84.4% vs 72.1%), which is only
+1.79x on the "varies at all" axis — so a rate gap of 2.73x is still not covered,
+and the residual must be *within* varying loops.
+
+Measure the per-junction width sequence inside a single varying loop on both
+engines — not how many distinct values it has (R558 did that, 1.24x) but how
+often consecutive junctions differ. That is the direct internal analogue of
+"tags per move" and it has never been measured; every prior census counted
+distinct values or spread, which are insensitive to ordering.
+
+**New discipline (R566): a sub-population defined by the outcome cannot be used
+to explain the outcome.** "Varying blocks are bigger" looked like a finding and
+is partly a tautology. **When splitting a ratio, check whether the split
+criterion is downstream of the thing being measured — and prefer a decomposition
+whose factors are both measurable without reference to the result.**
