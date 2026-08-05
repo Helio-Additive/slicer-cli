@@ -37,7 +37,7 @@ ARACHNE = os.path.join(
 LIBSLIC3R = os.path.join(
     ROOT, "libslic3r/bambustudio/references/BambuStudio/src/libslic3r"
 )
-LIBSLIC3R_FILES = ("PerimeterGenerator.cpp", "LayerRegion.cpp")
+LIBSLIC3R_FILES = ("PerimeterGenerator.cpp", "LayerRegion.cpp", "VariableWidth.cpp")
 
 ST_INCLUDES_OLD = """#include <stack>
 #include <functional>
@@ -934,6 +934,84 @@ LR_INCLUDES_NEW = """#include "RegionExpansion.hpp"
 #include <mutex>"""
 
 
+# ---------------------------------------------------------------------------
+# TPMPPROBE (R569) - width variation ENTERING thick_polyline_to_multi_path vs
+# the number of ExtrusionPaths LEAVING it. Each extra path is one intra-loop
+# `; LINE_WIDTH:` tag, so this brackets the exact stage R568 localised.
+# Mirrors the Rust probe of the same name in crates/libslic3r-rs/src/variable_width.rs.
+# ---------------------------------------------------------------------------
+VW_INCLUDES_OLD = '''#include "VariableWidth.hpp"
+'''
+VW_INCLUDES_NEW = '''#include "VariableWidth.hpp"
+#include <atomic>
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+
+// TPMPPROBE (R569)
+static bool tpmp_on() { static bool v = getenv("TPMPPROBE") != nullptr; return v; }
+static std::atomic<uint64_t> tpmp_calls{0}, tpmp_pts{0}, tpmp_changes{0},
+                             tpmp_distinct{0}, tpmp_spread{0}, tpmp_flat{0}, tpmp_paths{0};
+'''
+
+VW_HEAD_OLD = '''    ExtrusionMultiPath multi_path;
+    ExtrusionPath      path(role);
+    ThickLines         lines = thick_polyline.thicklines();
+'''
+VW_HEAD_NEW = '''    ExtrusionMultiPath multi_path;
+    ExtrusionPath      path(role);
+    ThickLines         lines = thick_polyline.thicklines();
+
+    // TPMPPROBE (R569) - scoped to the outer wall to match the G-code classification.
+    const bool tpmp = tpmp_on() && role == erExternalPerimeter;
+    size_t tpmp_chg = 0, tpmp_dis = 0;
+    uint64_t tpmp_spr = 0;
+    if (tpmp) {
+        const std::vector<coordf_t> &ws = thick_polyline.width;
+        for (size_t k = 1; k < ws.size(); ++k)
+            if (ws[k] != ws[k - 1]) ++tpmp_chg;
+        std::vector<coordf_t> d(ws.begin(), ws.end());
+        std::sort(d.begin(), d.end());
+        d.erase(std::unique(d.begin(), d.end()), d.end());
+        tpmp_dis = d.size();
+        if (!ws.empty())
+            tpmp_spr = (uint64_t)(*std::max_element(ws.begin(), ws.end()) -
+                                  *std::min_element(ws.begin(), ws.end()));
+    }
+'''
+
+VW_TAIL_OLD = '''    if( path.polyline.is_valid() ) {
+        path.overhang_degree = overhang;
+        multi_path.paths.emplace_back(std::move(path));
+    }
+    return multi_path;
+'''
+VW_TAIL_NEW = '''    if( path.polyline.is_valid() ) {
+        path.overhang_degree = overhang;
+        multi_path.paths.emplace_back(std::move(path));
+    }
+    // TPMPPROBE (R569) - cumulative totals; take the LAST printed line.
+    if (tpmp) {
+        tpmp_pts += thick_polyline.width.size();
+        tpmp_changes += tpmp_chg;
+        tpmp_distinct += tpmp_dis;
+        tpmp_spread += tpmp_spr;
+        if (tpmp_chg == 0) ++tpmp_flat;
+        tpmp_paths += multi_path.paths.size();
+        uint64_t n = ++tpmp_calls;
+        if (n % 50000 == 0)
+            printf("TPMPPROBE calls=%llu widthpts=%llu in_changes=%llu in_distinct=%llu "
+                   "in_spread=%llu flat_calls=%llu out_paths=%llu\\n",
+                   (unsigned long long)n, (unsigned long long)tpmp_pts.load(),
+                   (unsigned long long)tpmp_changes.load(),
+                   (unsigned long long)tpmp_distinct.load(),
+                   (unsigned long long)tpmp_spread.load(),
+                   (unsigned long long)tpmp_flat.load(),
+                   (unsigned long long)tpmp_paths.load());
+    }
+    return multi_path;
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -975,6 +1053,9 @@ EDITS = [
     ("WallToolPaths.cpp", WTP_AREA_CALLS3_OLD, WTP_AREA_CALLS3_NEW),
     ("WallToolPaths.cpp", WTP_AREA_CALLS4_OLD, WTP_AREA_CALLS4_NEW),
     ("WallToolPaths.cpp", WTP_PARAMS_OLD, WTP_PARAMS_NEW),
+    ("VariableWidth.cpp", VW_INCLUDES_OLD, VW_INCLUDES_NEW),
+    ("VariableWidth.cpp", VW_HEAD_OLD, VW_HEAD_NEW),
+    ("VariableWidth.cpp", VW_TAIL_OLD, VW_TAIL_NEW),
 ]
 
 
@@ -1080,6 +1161,7 @@ def main():
     print("Injected probes into: " + ", ".join(sorted(texts)))
     print("Revert with: cd libslic3r/bambustudio/references/BambuStudio && "
           "git checkout -- src/libslic3r/Arachne src/libslic3r/PerimeterGenerator.cpp "
+          "src/libslic3r/VariableWidth.cpp "
           "src/libslic3r/LayerRegion.cpp")
     return 0
 

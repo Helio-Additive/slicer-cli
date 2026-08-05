@@ -1271,11 +1271,41 @@ pub fn extrude_path_with_arc_fitting(
     // (0.43272-vs-0.43273, 0.42-vs-0.41999), so enabling it today ADDS
     // unmatched lines (83187 → 87805). Unlocks when width values converge.
     static LW_PERPATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    // EXPWPROBE (R569) — do the per-path widths produced by
+    // thick_polyline_to_multi_path still differ by the time they reach the
+    // emitter? Counts outer-wall paths seen and how many changed the register.
+    let expw = crate::probe_enabled("EXPWPROBE")
+        && path.role == crate::extrusion_entity::ExtrusionRole::ExternalPerimeter;
+
     if *LW_PERPATH.get_or_init(|| crate::faithful_gate("LINEWIDTH_PERPATH"))
         && path.width > 0.0
         && writer.width_tag_changed(path.width)
     {
         writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
+    }
+
+    if expw {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEEN: AtomicU64 = AtomicU64::new(0);
+        static CHANGED: AtomicU64 = AtomicU64::new(0);
+        static ZEROW: AtomicU64 = AtomicU64::new(0);
+        if path.width <= 0.0 {
+            ZEROW.fetch_add(1, Ordering::Relaxed);
+        }
+        static PREV: AtomicU64 = AtomicU64::new(0);
+        let cur = (path.width as f32).to_bits() as u64;
+        if PREV.swap(cur, Ordering::Relaxed) != cur {
+            CHANGED.fetch_add(1, Ordering::Relaxed);
+        }
+        let n = SEEN.fetch_add(1, Ordering::Relaxed) + 1;
+        if n % 50_000 == 0 {
+            println!(
+                "EXPWPROBE outer_paths={} width_changed={} zero_width={}",
+                n,
+                CHANGED.load(Ordering::Relaxed),
+                ZEROW.load(Ordering::Relaxed),
+            );
+        }
     }
 
     // R234: native _extrude emits ";LAYER_HEIGHT: %g" when the path height

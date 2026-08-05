@@ -5297,3 +5297,84 @@ different routes, the aggregate ratio is the least informative thing about it.**
 concealing that ours are 99.5% inter-loop and C++'s 94.7% intra-loop — a
 qualitative difference no ratio can express. **Classify the events before
 counting them.**
+
+## R569 — `thick_polyline_to_multi_path` is EXONERATED, and R568's headline was wrong
+
+Baseline byte-identical (`d219a37e`), all 8 guards green, submodule reverted.
+Both probes are gated and default-OFF.
+
+### Step 1 — the split condition, read on both sides
+
+C++ `VariableWidth.cpp:5-90` takes **two** thresholds that play **different roles**:
+
+* `tolerance` gates **subdividing a line**: `fabs(line.a_width - line.b_width) > tolerance` (:28), scaled units.
+* `merge_tolerance` gates **splitting the path**: `scaled(fabs(path.width - new_flow.width())) <= merge_tolerance` (:75-76).
+
+All four Arachne entry points (`ExtrusionLine.cpp:284-311`) pass
+`scaled<float>(0.05)` **and** `float(SCALED_EPSILON)` — and
+`SCALED_EPSILON = scale_(1e-4) = 10`, i.e. **0.0001 mm**.
+
+**So the merge tolerance is 0.1 um, not 50 um.** R568's suspect — "the
+`scaled(0.05)` merge tolerance swallows our 21 um spread" — is **dead**: 0.05 mm
+is the *subdivision* threshold, and I had conflated the two. Our callers
+(`extrusion_line.rs:628/655/716/737`) pass the same pair,
+`crate::libslic3r::SCALED_EPSILON = 10.0` and `scaled_f(0.05) = 5000` (`scaled_f`
+uses `crate::SCALING_FACTOR = 1e5`, matching C++ `scaled<double>` = `/1e-5`).
+The merge body is faithful line-for-line. `to_thick_polyline` and
+`to_thick_polyline_z` are faithful. **A faithful condition with matching
+constants cannot behave differently on identical input.**
+
+### Step 2 — instrumented, and the function is clean
+
+New `TPMPPROBE` on **both** engines (Rust `variable_width.rs`; C++ via the
+injector, which now carries `VariableWidth.cpp`). Scoped to the outer wall.
+Both runs capped at exactly 200,000 calls, so these are directly comparable:
+
+| at 200,000 calls | Rust | C++ | ratio |
+|---|---|---|---|
+| width points in | 1,430,046 | 1,547,672 | 1.08x |
+| **input width changes** | **13,888** | **39,330** | **2.83x** |
+| distinct widths in | 209,048 | 231,463 | 1.11x |
+| flat calls | 195,096 (97.5%) | 182,111 (91.1%) | — |
+| output paths | 211,761 | 236,696 | — |
+| **extra paths = intra-loop splits** | **11,761** | **36,696** | **3.12x** |
+
+**Splits per input width change: 0.847 (Rust) vs 0.933 (C++).** The function
+converts variation into splits at essentially the same rate on both engines.
+**`thick_polyline_to_multi_path` is EXONERATED** — it faithfully passes through
+whatever variation it is given, and it is given 2.83x less.
+
+### R568's "99.1% loss" was WRONG — and this measurement is how it died
+
+R568 concluded our Arachne makes 11,177 intra-loop width changes and 101 reach
+the G-code. But the builder demonstrably emits **11,761 extra paths** at 200k
+calls. Those paths are not being destroyed inside it.
+
+A second probe, `EXPWPROBE`, at the per-path emitter (`exporter.rs`, the
+default-ON `LINEWIDTH_PERPATH` site) shows **200,000 outer-wall paths reaching
+export with 8,810 width-register changes and zero zero-width paths**. So the
+paths **survive in count** all the way to the writer. What does not survive is
+their **adjacency**: R568 measured that only 101 of the file's tags follow an
+extrude, so ~98% of the register changes that do fire follow a **travel**.
+
+**Restated open question:** our split paths reach the G-code, but almost never
+*contiguously within a loop*. Either they are reordered so each is preceded by a
+travel, or the loop is fragmented before emission.
+
+### R570
+
+`shortest_path.rs::chain_and_reorder_extrusion_paths` — flagged in the code map
+as "path ORDERING, still never examined" — is now the leading candidate, because
+it is the one stage between the multipath builder and the writer that can change
+path adjacency. **It is a candidate, not a conclusion** (R560). Measure first:
+count, per outer-wall loop at export, how many of its paths are emitted
+contiguously versus separated by a travel, on both engines. The 2.83x input gap
+is a separate, still-open question and belongs to the beading (R567/R568), which
+this round did not touch.
+
+**New discipline (R569): when a threshold has two names in the same signature,
+read which comparison each one guards before blaming either.** `tolerance` and
+`merge_tolerance` differ by a factor of 500 and gate completely different
+branches; I carried "the merge tolerance is 50 um" for a full round, and it was
+never the merge tolerance at all. **The constant you can name is not the constant
+the branch uses.**

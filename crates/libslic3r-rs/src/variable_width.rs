@@ -72,6 +72,29 @@ pub fn thick_polyline_to_multi_path(
     merge_tolerance: f32,
     overhang: f64,
 ) -> ExtrusionMultiPath {
+    // TPMPPROBE (R569) — measure both ends of this function in one pass: how much
+    // width variation ENTERS (the ThickPolyline's widths) versus how many paths
+    // LEAVE (each extra path is one intra-loop `; LINE_WIDTH:` tag). Scoped to the
+    // outer wall so it matches the G-code classification in R568.
+    let tpmp_in: Option<(usize, usize, u64)> =
+        if crate::probe_enabled("TPMPPROBE") && role == ExtrusionRole::ExternalPerimeter {
+            let w = &thick_polyline.widths;
+            let changes = (1..w.len()).filter(|&k| w[k] != w[k - 1]).count();
+            let mut distinct: Vec<i64> = w.iter().map(|v| *v as i64).collect();
+            distinct.sort_unstable();
+            distinct.dedup();
+            let spread = if w.is_empty() {
+                0
+            } else {
+                let mx = w.iter().cloned().fold(f64::MIN, f64::max);
+                let mn = w.iter().cloned().fold(f64::MAX, f64::min);
+                (mx - mn) as u64
+            };
+            Some((changes, distinct.len(), spread))
+        } else {
+            None
+        };
+
     // VariableWidth.cpp:7-9
     let mut multi_path = ExtrusionMultiPath::new();
     let mut path = ExtrusionPath::new(role);
@@ -238,6 +261,40 @@ pub fn thick_polyline_to_multi_path(
         path.overhang_degree = overhang;
         multi_path.paths.push(path);
     }
+
+    // TPMPPROBE (R569) — cumulative totals; take the LAST printed line.
+    if let Some((changes, distinct, spread)) = tpmp_in {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static CALLS: AtomicU64 = AtomicU64::new(0);
+        static PTS: AtomicU64 = AtomicU64::new(0);
+        static CHANGES: AtomicU64 = AtomicU64::new(0);
+        static DISTINCT: AtomicU64 = AtomicU64::new(0);
+        static SPREAD: AtomicU64 = AtomicU64::new(0);
+        static FLAT: AtomicU64 = AtomicU64::new(0);
+        static PATHS: AtomicU64 = AtomicU64::new(0);
+        PTS.fetch_add(thick_polyline.widths.len() as u64, Ordering::Relaxed);
+        CHANGES.fetch_add(changes as u64, Ordering::Relaxed);
+        DISTINCT.fetch_add(distinct as u64, Ordering::Relaxed);
+        SPREAD.fetch_add(spread, Ordering::Relaxed);
+        if changes == 0 {
+            FLAT.fetch_add(1, Ordering::Relaxed);
+        }
+        PATHS.fetch_add(multi_path.paths.len() as u64, Ordering::Relaxed);
+        let n = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
+        if n % 50_000 == 0 {
+            println!(
+                "TPMPPROBE calls={} widthpts={} in_changes={} in_distinct={} in_spread={} flat_calls={} out_paths={}",
+                n,
+                PTS.load(Ordering::Relaxed),
+                CHANGES.load(Ordering::Relaxed),
+                DISTINCT.load(Ordering::Relaxed),
+                SPREAD.load(Ordering::Relaxed),
+                FLAT.load(Ordering::Relaxed),
+                PATHS.load(Ordering::Relaxed),
+            );
+        }
+    }
+
     // VariableWidth.cpp:97
     multi_path
 }
