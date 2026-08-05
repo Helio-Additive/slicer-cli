@@ -6349,3 +6349,73 @@ unchanged is a result worth the round.** `TPMPPROBE` was flagged as contaminated
 on the reasonable grounds that four sibling probes were. It was not — the
 speculative path does not reach it. **Verifying a doubt costs one run; carrying it
 costs every conclusion that touches it.**
+
+## R583 — the width-change deficit exists at birth; every downstream stage is exonerated
+
+R582 left a hypothesis: the reduction between the assembled `ExtrusionLine` and
+the builder's `ThickPolyline` is width-blind on our side, most plausibly through
+collinear-vertex removal that drops a vertex for being collinear in XY and takes
+its width change with it. This round instrumented that reduction on both engines.
+
+**The hypothesis is refuted at its own site.** `REDPROBE`, counting width changes
+into and out of the ZPath clip in `perimeter_generator.rs`, gives
+`pts 580,622 -> 976,036 (1.681x)` and `changes 11,496 -> 12,812 (1.115x)`. Both
+*increase*: clipping splits one subject into several ZPaths with duplicated
+endpoints. `clip_extrusion` does not destroy width changes.
+
+**`STAGEPROBE` gained a change-density axis and a speculation gate.** The five
+`WallToolPaths` post-processing stages were cleared on junction and line counts
+(R544/R547/R558) but never on width changes, which is what R581's dominant
+2.6178x tags-per-assembled-line term is made of. The probe now counts
+`w[k] != w[k-1]` per line and breaks out inset 0. It also predated R581 and was
+still counting the discarded speculative one-wall pass; it is now gated on
+`probe_speculative()`, so **every pre-R583 STAGEPROBE number is contaminated.**
+
+Matched on inset-0 line count (cpp 21,844 / rust 20,582):
+
+| stage | R i0 ch/junc | C i0 ch/junc | C/R |
+|---|---|---|---|
+| 0 after generate_toolpaths | 0.03114 | 0.04290 | **1.378** |
+| 1 after stitch_tool_paths | 0.03117 | 0.04301 | 1.380 |
+| 2 after remove_small_lines | 0.03107 | 0.04289 | 1.380 |
+| 3 after separate_out_inner_contour | 0.03107 | 0.04289 | 1.380 |
+| 4 after simplify_tool_paths | 0.05845 | 0.07254 | **1.241** |
+| 5 after remove_empty_tool_paths | 0.05845 | 0.07254 | 1.241 |
+
+**The gap is fully present at stage 0 and it NARROWS downstream.** Through
+post-processing we retain 0.3064 of inset-0 points and 0.5751 of inset-0 changes
+(ratio 1.877); C++ retains 0.2726 and 0.4609 (ratio 1.691). Our reduction is not
+width-blind — it is *more* width-preserving than C++'s, on the same axis that was
+supposed to indict it. All-inset the gap runs 1.272x -> 1.160x, same direction.
+
+Stage 0 is the output of `SkeletalTrapezoidation::generateToolpaths`, and its
+1.378x independently reproduces `LINEPROBE2`'s 1.306x measured inside that
+function by a different probe on the same population. Two instruments agree the
+deficit is created at birth.
+
+**Retracted mid-round.** A first reading put stage 0 at 2.493x. That compared
+C++ at 60,002 stage-5 lines against Rust at 40,001 — R573's population-mismatch
+error repeating. At matched population it is 1.378x. Only the matched figures
+above stand.
+
+**Not a finding.** Stage-5 inset-0 `ch/junc` (R 0.05845 / C 0.07254) does not
+equal the ZPath subject's `ch/point` (R 0.01996 / C 0.04187), which would suggest
+a further loss inside `PerimeterGenerator`. It does not: `subject_path` is built
+only inside `if (detect_overhang_wall && layer_id > raft_layers)`
+(`PerimeterGenerator.cpp:666`), so `REDPROBE`'s population is a strict subset of
+`STAGEPROBE`'s. The two are not comparable and no loss is attributable. Noted so
+a later round does not rediscover the artefact. `apply_fuzzy_skin` (`:663`) also
+rewrites `*extrusion` unconditionally on that path and has never been checked for
+width preservation — that remains open.
+
+**Where this leaves the search.** The entire downstream chain is now eliminated on
+the change-density axis: the clip, all five post-processing stages, and (R569)
+the builder and the writer. The deficit is created inside `generateToolpaths`
+itself, consistent with the strongest surviving upstream signal, R577's
+alternations-per-segment 2.197x. `generate_junctions` / `add_toolpath_segment`
+are where the next round has to look.
+
+**Baseline correction.** Benchy is `3921e715`, not the `5a34af50` carried in the
+round notes; the tracked value was stale. Proven by A/B: stashing this round's
+Rust edits and rebuilding reproduces `3921e715` exactly, so the change is inert.
+Majora `d219a37e` unchanged. All 8 guard tests pass.

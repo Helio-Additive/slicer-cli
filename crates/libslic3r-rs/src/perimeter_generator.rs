@@ -3758,6 +3758,13 @@ impl PerimeterGenerator {
                     // SPLITPROBE (R575) counters for the two splitting branches below.
                     let mut n_supported = 0usize;
                     let mut n_overhang = 0usize;
+                    // REDPROBE (R583) — does the clip destroy width changes?
+                    // R582: both engines discard POINTS at the same rate (0.962x)
+                    // but we retain only 9.0% of assembly width-changes against
+                    // C++'s 17.8% (1.972x). Count changes IN (the subject ZPath,
+                    // built 1:1 from junctions) versus OUT (the clipped ZPaths).
+                    let mut red_pts_out = 0usize;
+                    let mut red_ch_out = 0usize;
                     if crate::faithful_gate("ARACHNE_OVERHANG_DEGREE") {
                         // C++ passes `lower_slices_polygons()` — which is
                         // `offset(*lower_slices, scale_(+nozzle_diameter/2))`
@@ -3776,11 +3783,15 @@ impl PerimeterGenerator {
                             nozzle,
                         ) {
                             n_supported += 1;
+                            red_pts_out += zp.len();
+                            red_ch_out += (1..zp.len()).filter(|&k| zp[k].2 != zp[k - 1].2).count();
                             push_zpath(&mut paths, &zp, role, degree);
                         }
                     } else {
                         for zp in clip_extrusion(&subject, &clip, ClipType::Intersection).iter() {
                             n_supported += 1;
+                            red_pts_out += zp.len();
+                            red_ch_out += (1..zp.len()).filter(|&k| zp[k].2 != zp[k - 1].2).count();
                             push_zpath(&mut paths, zp, role, 0.0);
                         }
                     }
@@ -3837,6 +3848,8 @@ impl PerimeterGenerator {
                             }
                         }
                         n_overhang += 1;
+                        red_pts_out += zp.len();
+                        red_ch_out += (1..zp.len()).filter(|&k| zp[k].2 != zp[k - 1].2).count();
                         push_zpath(&mut paths, zp, ExtrusionRole::OverhangPerimeter, degree);
                     }
 
@@ -3845,6 +3858,32 @@ impl PerimeterGenerator {
                     // outer line vs C++'s 3.39 (1.88x), aggregated over every stage between
                     // generateToolpaths and extrusion_paths_append. This attributes the
                     // pieces to the two branches here. Outer wall only, to match R574.
+                    if crate::probe_enabled("REDPROBE") && role == ExtrusionRole::ExternalPerimeter {
+                        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                        static LINES: AtomicU64 = AtomicU64::new(0);
+                        static PIN: AtomicU64 = AtomicU64::new(0);
+                        static POUT: AtomicU64 = AtomicU64::new(0);
+                        static CIN: AtomicU64 = AtomicU64::new(0);
+                        static COUT: AtomicU64 = AtomicU64::new(0);
+                        let ch_in = (1..subject.len())
+                            .filter(|&k| subject[k].2 != subject[k - 1].2)
+                            .count();
+                        PIN.fetch_add(subject.len() as u64, Relaxed);
+                        POUT.fetch_add(red_pts_out as u64, Relaxed);
+                        CIN.fetch_add(ch_in as u64, Relaxed);
+                        COUT.fetch_add(red_ch_out as u64, Relaxed);
+                        let n = LINES.fetch_add(1, Relaxed) + 1;
+                        if n % 2_000 == 0 {
+                            let (pi, po) = (PIN.load(Relaxed), POUT.load(Relaxed));
+                            let (ci, co) = (CIN.load(Relaxed), COUT.load(Relaxed));
+                            eprintln!(
+                                "[REDPROBE] lines={} pts_in={} pts_out={} ({:.4}) ch_in={} ch_out={} ({:.4})",
+                                n, pi, po, po as f64 / pi.max(1) as f64,
+                                ci, co, co as f64 / ci.max(1) as f64,
+                            );
+                        }
+                    }
+
                     if crate::probe_enabled("SPLITPROBE") && role == ExtrusionRole::ExternalPerimeter
                     {
                         use std::sync::atomic::{AtomicU64, Ordering::Relaxed};

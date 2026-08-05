@@ -1610,11 +1610,23 @@ pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
     }
     use std::collections::HashMap;
     use std::sync::Mutex;
-    static ACC: Mutex<Option<HashMap<String, (usize, usize, usize, usize)>>> = Mutex::new(None);
+    type Cell = (usize, usize, usize, usize, usize, usize, usize, usize);
+    static ACC: Mutex<Option<HashMap<String, Cell>>> = Mutex::new(None);
     let mut lines = 0usize;
     let mut juncs = 0usize;
     let mut flat = 0usize;
     let mut distinct_total = 0usize;
+    // R583: width CHANGES, not just distinct widths. The five stages were cleared
+    // on junction and line counts (R544/R547/R558), never on change density -- and
+    // change density is what the 2.62x tags-per-line term is made of. Between
+    // assembly and the ZPath we retain 17.7% of changes against C++'s 25.3%, while
+    // retaining MORE points, so some stage here is collapsing widths width-blind.
+    let mut changes = 0usize;
+    // R583b: split out inset 0. All-inset change density narrows through these
+    // stages (1.314x -> 1.203x) yet the outer wall arriving at the ZPath is 2.10x
+    // adrift, so the outer wall must behave unlike the average. Same six stages,
+    // restricted to the population the G-code outer wall is built from.
+    let (mut l0, mut j0, mut c0) = (0usize, 0usize, 0usize);
     for vwl in toolpaths {
         for line in vwl.iter() {
             if line.junctions.is_empty() {
@@ -1622,6 +1634,15 @@ pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
             }
             lines += 1;
             juncs += line.junctions.len();
+            let ch = (1..line.junctions.len())
+                .filter(|&k| line.junctions[k].w != line.junctions[k - 1].w)
+                .count();
+            changes += ch;
+            if line.inset_idx == 0 {
+                l0 += 1;
+                j0 += line.junctions.len();
+                c0 += ch;
+            }
             let mut ws: Vec<i64> = line.junctions.iter().map(|j| j.w).collect();
             ws.sort_unstable();
             ws.dedup();
@@ -1633,11 +1654,15 @@ pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
     }
     if let Ok(mut g) = ACC.lock() {
         let m = g.get_or_insert_with(HashMap::new);
-        let e = m.entry(stage.to_string()).or_insert((0, 0, 0, 0));
+        let e = m.entry(stage.to_string()).or_insert((0, 0, 0, 0, 0, 0, 0, 0));
         e.0 += lines;
         e.1 += juncs;
         e.2 += flat;
         e.3 += distinct_total;
+        e.4 += changes;
+        e.5 += l0;
+        e.6 += j0;
+        e.7 += c0;
         // Print a full table every time stage 5 has accumulated a round number of
         // lines, so the stages are always compared on the same population.
         if stage.starts_with('5') && e.0 > 0 && e.0 % 20_000 < lines.max(1) {
@@ -1645,11 +1670,16 @@ pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
             keys.sort();
             eprintln!("[STAGEPROBE] ---- cumulative ----");
             for k in keys {
-                let (l, j, f, d) = m[k];
+                let (l, j, f, d, c, l0, j0, c0) = m[k];
                 eprintln!(
-                    "  {k:38} lines={l:8} juncs={j:9} flat={:5.1}% distinct_w/line={:.2}",
+                    "  {k:38} lines={l:8} juncs={j:9} flat={:5.1}% distinct_w/line={:.2} \
+                     ch={c:8} ch/line={:.4} ch/junc={:.5} | \
+                     i0_lines={l0:7} i0_juncs={j0:9} i0_ch={c0:8} i0_ch/junc={:.5}",
                     100.0 * f as f64 / l.max(1) as f64,
                     d as f64 / l.max(1) as f64,
+                    c as f64 / l.max(1) as f64,
+                    c as f64 / j.max(1) as f64,
+                    c0 as f64 / j0.max(1) as f64,
                 );
             }
         }

@@ -315,30 +315,51 @@ WTP_INCLUDES_NEW = """#include <algorithm> //For std::partition_copy and std::mi
 WTP_PROBE_OLD = """namespace Slic3r::Arachne
 {"""
 
-WTP_PROBE_NEW = r"""namespace Slic3r::Arachne
+WTP_PROBE_NEW = r"""bool &probe_speculative(); // R581, defined in SkeletalTrapezoidation.cpp (global scope)
+
+namespace Slic3r::Arachne
 {
 
 // ---------------------------------------------------------------------------
 // Parity instrumentation (env-gated via STAGEPROBE, off by default). Mirrors
 // `stageprobe` in crates/libslic3r-rs/src/arachne/wall_tool_paths.rs:
 // per-ExtrusionLine flat% and distinct widths per line, per stage.
+// R583: also count width CHANGES. The five stages were cleared on junction and
+// line counts (R544/R547/R558) but never on change density, which is what the
+// 2.62x tags-per-line term is made of.
+// R583: speculation-gated (R581) -- this probe predates probe_speculative() and
+// was still counting the discarded one-wall pass.
 // ---------------------------------------------------------------------------
 static void stageprobe(const char *stage, const std::vector<VariableWidthLines> &toolpaths)
 {
-    if (::getenv("STAGEPROBE") == nullptr)
+    if (::getenv("STAGEPROBE") == nullptr || probe_speculative())
         return;
 
-    struct Acc { size_t lines = 0, juncs = 0, flat = 0, distinct_total = 0; };
+    // R583b: inset 0 broken out -- the all-inset density narrows through these
+    // stages while the outer wall reaching the ZPath is 2.10x adrift.
+    struct Acc { size_t lines = 0, juncs = 0, flat = 0, distinct_total = 0, changes = 0,
+                        l0 = 0, j0 = 0, c0 = 0; };
     static std::mutex                 mtx;
     static std::map<std::string, Acc> acc;
 
-    size_t lines = 0, juncs = 0, flat = 0, distinct_total = 0;
+    size_t lines = 0, juncs = 0, flat = 0, distinct_total = 0, changes = 0;
+    size_t l0 = 0, j0 = 0, c0 = 0;
     for (const VariableWidthLines &vwl : toolpaths)
         for (const ExtrusionLine &line : vwl) {
             if (line.junctions.empty())
                 continue;
             ++lines;
             juncs += line.junctions.size();
+            size_t ch = 0;
+            for (size_t k = 1; k < line.junctions.size(); ++k)
+                if (line.junctions[k].w != line.junctions[k - 1].w)
+                    ++ch;
+            changes += ch;
+            if (line.inset_idx == 0) {
+                ++l0;
+                j0 += line.junctions.size();
+                c0 += ch;
+            }
             std::vector<coord_t> ws;
             ws.reserve(line.junctions.size());
             for (const ExtrusionJunction &j : line.junctions)
@@ -356,14 +377,25 @@ static void stageprobe(const char *stage, const std::vector<VariableWidthLines> 
     e.juncs += juncs;
     e.flat += flat;
     e.distinct_total += distinct_total;
+    e.changes += changes;
+    e.l0 += l0;
+    e.j0 += j0;
+    e.c0 += c0;
 
     if (stage[0] == '5' && e.lines > 0 && e.lines % 20000 < std::max<size_t>(lines, 1)) {
         fprintf(stderr, "[CPP-STAGEPROBE] ---- cumulative ----\n");
         for (const auto &kv : acc)
-            fprintf(stderr, "  %-38s lines=%8zu juncs=%9zu flat=%5.1f%% distinct_w/line=%.2f\n",
+            fprintf(stderr, "  %-38s lines=%8zu juncs=%9zu flat=%5.1f%% distinct_w/line=%.2f "
+                            "ch=%8zu ch/line=%.4f ch/junc=%.5f | "
+                            "i0_lines=%7zu i0_juncs=%9zu i0_ch=%8zu i0_ch/junc=%.5f\n",
                     kv.first.c_str(), kv.second.lines, kv.second.juncs,
                     100. * double(kv.second.flat) / double(std::max<size_t>(kv.second.lines, 1)),
-                    double(kv.second.distinct_total) / double(std::max<size_t>(kv.second.lines, 1)));
+                    double(kv.second.distinct_total) / double(std::max<size_t>(kv.second.lines, 1)),
+                    kv.second.changes,
+                    double(kv.second.changes) / double(std::max<size_t>(kv.second.lines, 1)),
+                    double(kv.second.changes) / double(std::max<size_t>(kv.second.juncs, 1)),
+                    kv.second.l0, kv.second.j0, kv.second.c0,
+                    double(kv.second.c0) / double(std::max<size_t>(kv.second.j0, 1)));
     }
 }"""
 
@@ -1286,6 +1318,31 @@ PG_WTP_NEW = '''            coord_t wall_0_inset = 0;
             }
 '''
 
+# ---------------------------------------------------------------------------
+# REDPROBE (R583) - width changes ENTERING the ZPath stage. R583 (Rust) found the
+# clip does NOT destroy changes (ch_out/ch_in = 1.11), but the subject arriving at
+# the clip carries only 0.82 changes/line against 4.72 at assembly -- so the loss
+# is UPSTREAM of the ZPath, in WallToolPaths post-processing. This counts the same
+# input quantity on the C++ side. Outer wall only (inset_idx == 0).
+# ---------------------------------------------------------------------------
+PG_RED_OLD = '''            ZPaths clip_paths;
+'''
+PG_RED_NEW = '''            if (getenv("REDPROBE") && extrusion->inset_idx == 0) {
+                static std::mutex rd_mtx;
+                static size_t rd_lines = 0, rd_pts = 0, rd_ch = 0;
+                std::lock_guard<std::mutex> rd_lock(rd_mtx);
+                ++rd_lines;
+                rd_pts += subject_path.size();
+                for (size_t k = 1; k < subject_path.size(); ++k)
+                    if (subject_path[k].z() != subject_path[k - 1].z()) ++rd_ch;
+                if (rd_lines % 2000 == 0)
+                    fprintf(stderr, "[REDPROBE] lines=%zu pts_in=%zu ch_in=%zu (%.4f/line)\\n",
+                            rd_lines, rd_pts, rd_ch, (double)rd_ch / (double)rd_lines);
+            }
+
+            ZPaths clip_paths;
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -1340,6 +1397,7 @@ EDITS = [
     ("PerimeterGenerator.cpp", PG_WTP_OLD, PG_WTP_NEW),
     ("PerimeterGenerator.cpp", PG_SPEC_OLD, PG_SPEC_NEW),
     ("PerimeterGenerator.cpp", PG_SPEC2_OLD, PG_SPEC2_NEW),
+    ("PerimeterGenerator.cpp", PG_RED_OLD, PG_RED_NEW),
 ]
 
 
