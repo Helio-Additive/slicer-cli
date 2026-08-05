@@ -5464,3 +5464,79 @@ reordering; measuring each directly killed both in one round, and the truth was
 that the symptom never needed a downstream mechanism at all. **When a downstream
 story requires a 200x effect, measure its size before believing any version of
 it.**
+
+## R571 — we produce MORE width variety than C++, not less; and R570's tension is settled
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. Both probe
+extensions gated and default-OFF.
+
+### Prediction, and it was WRONG in a useful way
+
+I predicted our `total_thickness` feeding the beadings would be **flatter** than
+C++'s — that the flatness originates upstream in the skeleton rather than in
+`compute`. New `JUNCPROBE` at the junction-creation site on **both** engines
+(`skeletal_trapezoidation.rs:3095` / `SkeletalTrapezoidation.cpp:1847`), counting
+DISTINCT values (order-independent, so safe under rayon — R559). Matched at
+**n = 6,400,000 junctions**:
+
+| at 6.4M junctions | Rust | C++ | ratio |
+|---|---|---|---|
+| outer-wall junctions (`idx0`) | 2,457,960 | 2,750,778 | 1.12x |
+| **distinct widths** | **28,001** | **15,634** | **0.56x** |
+| distinct thicknesses | 280,546 | 193,541 | 0.69x |
+| distinct (thickness,width) pairs | 567,714 | 393,853 | 0.69x |
+| width/thickness collapse | 10.02x | 12.38x | — |
+
+**We produce 1.79x MORE distinct width values than C++, and 1.45x more distinct
+thicknesses.** Our thicknesses are not flat and our widths are not impoverished.
+
+### This retires the framing the last four rounds were built on
+
+Every round since R567 has been looking for the place where our width variation
+is *lost*. There is no such place, and there is no deficit of variation to lose:
+we generate **more** distinct widths than the reference. What differs is **where
+that variation is spent** — ours between loops, C++'s within them:
+
+* R569: 97.5% of our loops arrive at the builder perfectly flat, vs 91.1%. So
+  non-flat loops are 2.5% vs 8.9% — a **3.6x** gap in *which loops carry
+  variation*, while the total variety we generate is larger.
+* R568: 99.5% of our outer-wall tags follow a travel (loop boundaries); 94.7% of
+  C++'s follow an extrude (mid-loop).
+
+So the same quantity of width diversity is distributed differently: we vary
+**loop-to-loop**, C++ varies **junction-to-junction within a loop**. No stage
+destroys anything — R568's "loss", R570's fragmentation and adjacency, and now
+"insufficient beading variety" are all dead.
+
+### R570's register tension: SETTLED, it was a probe artefact
+
+`EXPWPROBE` now also keeps a **global (all-roles)** register beside its
+outer-wall-only one:
+
+    outer_paths=200000 width_changed=8810 contiguous=189500 ch_contig=6988
+    ch_after_travel=1822 zero_width=0 EMITTED_ALLROLES=88406
+    GLOBAL_paths=311196 GLOBAL_changed=88406
+
+**`GLOBAL_changed` equals `EMITTED_ALLROLES` exactly (88,406).** The global
+register reproduces the emitter perfectly, confirming the emitter tests a
+cross-role register. The outer-wall-only 8,810 was never the comparable quantity
+and the 6,988-vs-101 discrepancy is fully explained as a scope artefact — **no
+new mechanism**, exactly as R570 suspected but could not then show.
+
+### R572
+
+The one remaining unmeasured quantity: **how many DISTINCT beading objects serve
+the junctions of a single emitted loop.** If ours is ~1 and C++'s is several,
+the difference is in which beading gets attached to each skeleton node along a
+loop. Note this is *not* covered by prior eliminations: R546/R547 cleared the
+propagation chain as a **porting defect**, and R551 cleared
+`getOrCreateBeading`/`getNearestBeading` — but nobody has measured per-loop
+beading diversity, which is a different question from whether the code is a
+faithful translation.
+
+**New discipline (R571): before hunting for where a quantity is lost, check that
+you have less of it than the reference.** Four rounds searched for the stage
+destroying our width variation. We had 1.79x more of it than C++ the whole time;
+the deficit was never in the amount, only in its distribution. **"Fewer events in
+the output" does not imply "less of the underlying quantity" — measure the
+quantity itself before assuming a loss.**

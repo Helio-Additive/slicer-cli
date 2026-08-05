@@ -1012,6 +1012,47 @@ VW_TAIL_NEW = '''    if( path.polyline.is_valid() ) {
     return multi_path;
 '''
 
+# ---------------------------------------------------------------------------
+# JUNCPROBE (R571) - the junction site is the FORK. bead_widths[idx] comes from a
+# Beading whose input is total_thickness. Counting DISTINCT values of each is
+# order-independent, so it is safe under parallelism (R559). Mirrors the Rust
+# probe of the same name in arachne/skeletal_trapezoidation.rs.
+# ---------------------------------------------------------------------------
+ST_JUNC_OLD = '''            ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
+'''
+ST_JUNC_NEW = '''            if (getenv("BEADPROBE")) {
+                static std::mutex jp_mtx;
+                static std::vector<coord_t> jp_w, jp_t;
+                static std::vector<std::pair<coord_t, coord_t>> jp_pairs;
+                static size_t jp_n = 0, jp_idx0 = 0;
+                std::lock_guard<std::mutex> jp_lock(jp_mtx);
+                ++jp_n;
+                if (junction_idx == 0) ++jp_idx0;
+                jp_w.push_back(beading->bead_widths[junction_idx]);
+                jp_t.push_back(beading->total_thickness);
+                jp_pairs.emplace_back(beading->total_thickness, beading->bead_widths[junction_idx]);
+                if (jp_n % 200000 == 0) {
+                    std::vector<coord_t> d(jp_w), dt(jp_t);
+                    std::sort(d.begin(), d.end());
+                    d.erase(std::unique(d.begin(), d.end()), d.end());
+                    std::sort(dt.begin(), dt.end());
+                    dt.erase(std::unique(dt.begin(), dt.end()), dt.end());
+                    std::vector<std::pair<coord_t, coord_t>> dp(jp_pairs);
+                    std::sort(dp.begin(), dp.end());
+                    dp.erase(std::unique(dp.begin(), dp.end()), dp.end());
+                    coord_t mn = *std::min_element(jp_w.begin(), jp_w.end());
+                    coord_t mx = *std::max_element(jp_w.begin(), jp_w.end());
+                    coord_t tmn = *std::min_element(jp_t.begin(), jp_t.end());
+                    coord_t tmx = *std::max_element(jp_t.begin(), jp_t.end());
+                    fprintf(stderr,
+                        "[JUNCPROBE] junctions=%zu idx0=%zu | distinct_width=%zu distinct_thick=%zu distinct_pairs=%zu | w_range=%.3f..%.3fmm t_range=%.3f..%.3fmm\\n",
+                        jp_n, jp_idx0, d.size(), dt.size(), dp.size(),
+                        mn / 1e5, mx / 1e5, tmn / 1e5, tmx / 1e5);
+                }
+            }
+            ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -1056,6 +1097,7 @@ EDITS = [
     ("VariableWidth.cpp", VW_INCLUDES_OLD, VW_INCLUDES_NEW),
     ("VariableWidth.cpp", VW_HEAD_OLD, VW_HEAD_NEW),
     ("VariableWidth.cpp", VW_TAIL_OLD, VW_TAIL_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_JUNC_OLD, ST_JUNC_NEW),
 ]
 
 

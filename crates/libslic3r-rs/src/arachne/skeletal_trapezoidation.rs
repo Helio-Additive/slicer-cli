@@ -3094,7 +3094,11 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     }
                     // SkeletalTrapezoidation.cpp:1847 ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
                     if crate::probe_enabled("BEADPROBE") {
-                        junctionprobe(beading.bead_widths[junction_idx]);
+                        junctionprobe(
+                            beading.bead_widths[junction_idx],
+                            beading.total_thickness,
+                            junction_idx,
+                        );
                     }
                     ret.push(ExtrusionJunction::with_hole_compensation(
                         junction,
@@ -4034,23 +4038,45 @@ pub(crate) fn beadprobe(thickness: i64, bead_count: i64, widths: &[i64]) {
 /// post-processing. Compare against `beadprobe` (what `compute` produced) and
 /// `ARACHWIDTH` (what the perimeter generator finally sees).
 #[allow(dead_code)]
-pub(crate) fn junctionprobe(w: i64) {
+// R571: the junction site is the FORK. `bead_widths[idx]` comes from a Beading
+// whose input is `total_thickness`. Counting DISTINCT values of each (order-
+// independent, so safe under rayon — R559) says which side is flat:
+//   many thicknesses, few widths  -> compute/interpolate flattens
+//   few thicknesses               -> the skeleton is flat, upstream of compute
+pub(crate) fn junctionprobe(w: i64, total_thickness: i64, idx: usize) {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::sync::Mutex;
     static N: AtomicUsize = AtomicUsize::new(0);
     static W: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+    static T: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+    static PAIRS: Mutex<Vec<(i64, i64)>> = Mutex::new(Vec::new());
+    static IDX0: AtomicUsize = AtomicUsize::new(0);
+    if idx == 0 {
+        IDX0.fetch_add(1, Relaxed);
+    }
     let n = N.fetch_add(1, Relaxed) + 1;
-    if let Ok(mut v) = W.lock() {
+    if let (Ok(mut v), Ok(mut t), Ok(mut pr)) = (W.lock(), T.lock(), PAIRS.lock()) {
         v.push(w);
+        t.push(total_thickness);
+        pr.push((total_thickness, w));
         if n % 200_000 == 0 {
             let mut d = v.clone();
             d.sort_unstable();
             d.dedup();
+            let mut dt = t.clone();
+            dt.sort_unstable();
+            dt.dedup();
+            let mut dp = pr.clone();
+            dp.sort_unstable();
+            dp.dedup();
             let mn = v.iter().min().copied().unwrap_or(0);
             let mx = v.iter().max().copied().unwrap_or(0);
+            let tmn = t.iter().min().copied().unwrap_or(0);
+            let tmx = t.iter().max().copied().unwrap_or(0);
             eprintln!(
-                "[JUNCPROBE] junctions created={n} | distinct widths={} | range={:.3}..{:.3}mm",
-                d.len(), mn as f64 / 1e5, mx as f64 / 1e5,
+                "[JUNCPROBE] junctions={n} idx0={} | distinct_width={} distinct_thick={} distinct_pairs={} | w_range={:.3}..{:.3}mm t_range={:.3}..{:.3}mm",
+                IDX0.load(Relaxed), d.len(), dt.len(), dp.len(),
+                mn as f64 / 1e5, mx as f64 / 1e5, tmn as f64 / 1e5, tmx as f64 / 1e5,
             );
         }
     }

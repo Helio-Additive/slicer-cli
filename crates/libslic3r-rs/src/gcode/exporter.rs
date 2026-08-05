@@ -1272,6 +1272,19 @@ pub fn extrude_path_with_arc_fitting(
     // unmatched lines (83187 → 87805). Unlocks when width values converge.
     static LW_PERPATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     static EXPW_EMITTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    // R571 STEP 2: a GLOBAL (all-roles) register, mirroring the writer's own
+    // `last_width_tag`, so the outer-wall-only count below can be checked
+    // against the quantity the emitter actually tests (R570's open tension).
+    static EXPW_GLOBAL_PREV: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    static EXPW_GLOBAL_CH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    static EXPW_GLOBAL_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    if crate::probe_enabled("EXPWPROBE") && path.width > 0.0 {
+        let bits = (path.width as f32).to_bits() as u64;
+        EXPW_GLOBAL_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if EXPW_GLOBAL_PREV.swap(bits, std::sync::atomic::Ordering::Relaxed) != bits {
+            EXPW_GLOBAL_CH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
     // EXPWPROBE (R569) — do the per-path widths produced by
     // thick_polyline_to_multi_path still differ by the time they reach the
     // emitter? Counts outer-wall paths seen and how many changed the register.
@@ -1327,7 +1340,7 @@ pub fn extrude_path_with_arc_fitting(
         let n = SEEN.fetch_add(1, Ordering::Relaxed) + 1;
         if n % 50_000 == 0 {
             println!(
-                "EXPWPROBE outer_paths={} width_changed={} contiguous={} ch_contig={} ch_after_travel={} zero_width={} EMITTED_ALLROLES={}",
+                "EXPWPROBE outer_paths={} width_changed={} contiguous={} ch_contig={} ch_after_travel={} zero_width={} EMITTED_ALLROLES={} GLOBAL_paths={} GLOBAL_changed={}",
                 n,
                 CHANGED.load(Ordering::Relaxed),
                 CONT.load(Ordering::Relaxed),
@@ -1335,6 +1348,8 @@ pub fn extrude_path_with_arc_fitting(
                 CH_TRAV.load(Ordering::Relaxed),
                 ZEROW.load(Ordering::Relaxed),
                 EXPW_EMITTED.load(Ordering::Relaxed),
+                EXPW_GLOBAL_N.load(Ordering::Relaxed),
+                EXPW_GLOBAL_CH.load(Ordering::Relaxed),
             );
         }
     }
