@@ -1224,6 +1224,45 @@ ST_ODD_NEW = '''    if (getenv("ODDPROBE") && inset_idx == 0) {
     const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0;
 '''
 
+# ---------------------------------------------------------------------------
+# WTPCALL (R580) - every WallToolPaths construction is one generateToolpaths
+# invocation. C++ makes 1.592x more of them (41,188 vs 25,876, R577), the larger
+# of the two upstream terms feeding the 3.23x tag chain. Buckets by layer to see
+# whether the gap is uniform or concentrated in a band. Mirrors the Rust probe of
+# the same name in perimeter_generator.rs.
+# ---------------------------------------------------------------------------
+PG_WTP_OLD = '''            coord_t wall_0_inset = 0;
+            if (apply_precise_outer_wall)
+                wall_0_inset = -coord_t(ext_perimeter_width / 2 - ext_perimeter_spacing / 2);
+'''
+PG_WTP_NEW = '''            coord_t wall_0_inset = 0;
+            if (apply_precise_outer_wall)
+                wall_0_inset = -coord_t(ext_perimeter_width / 2 - ext_perimeter_spacing / 2);
+
+            if (getenv("WTPCALL")) {
+                static std::mutex wtp_mtx;
+                static size_t wtp_calls = 0, wtp_onewall = 0, wtp_polys = 0;
+                static std::vector<unsigned> wtp_per_layer;
+                std::lock_guard<std::mutex> wtp_lock(wtp_mtx);
+                ++wtp_calls;
+                if (seperate_wall_generation) ++wtp_onewall;
+                wtp_polys += last_p.size();
+                const int li = this->layer_id < 0 ? 0 : this->layer_id;
+                if ((int)wtp_per_layer.size() <= li) wtp_per_layer.resize(li + 1, 0);
+                ++wtp_per_layer[li];
+                if (wtp_calls % 2000 == 0) {
+                    std::vector<unsigned> nz;
+                    for (unsigned v : wtp_per_layer) if (v > 0) nz.push_back(v);
+                    std::sort(nz.begin(), nz.end());
+                    const unsigned med = nz.empty() ? 0 : nz[nz.size() / 2];
+                    const unsigned mx = nz.empty() ? 0 : nz.back();
+                    fprintf(stderr,
+                        "[WTPCALL] calls=%zu onewall=%zu polys=%zu layers_touched=%zu per_layer_median=%u max=%u\\n",
+                        wtp_calls, wtp_onewall, wtp_polys, nz.size(), med, mx);
+                }
+            }
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -1275,6 +1314,7 @@ EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_NL_OLD, ST_NL_NEW),
     ("SkeletalTrapezoidation.cpp", ST_NL2_OLD, ST_NL2_NEW),
     ("SkeletalTrapezoidation.cpp", ST_ODD_OLD, ST_ODD_NEW),
+    ("PerimeterGenerator.cpp", PG_WTP_OLD, PG_WTP_NEW),
 ]
 
 

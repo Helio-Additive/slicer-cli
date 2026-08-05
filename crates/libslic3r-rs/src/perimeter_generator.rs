@@ -3065,6 +3065,44 @@ impl PerimeterGenerator {
                 let wall_0_inset: Coord = 0;
                 let layer_height = self.config.layer_height;
 
+                // WTPCALL (R580) — every WallToolPaths construction is one
+                // `generateToolpaths` invocation. C++ makes 1.592x more of them
+                // (41,188 vs 25,876, R577), the larger of the two upstream terms
+                // feeding the whole 3.23x tag chain. Bucket by layer to see
+                // whether the gap is uniform or concentrated in a band.
+                if crate::probe_enabled("WTPCALL") {
+                    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                    use std::sync::Mutex;
+                    static CALLS: AtomicU64 = AtomicU64::new(0);
+                    static ONEWALL: AtomicU64 = AtomicU64::new(0);
+                    static POLYS: AtomicU64 = AtomicU64::new(0);
+                    static PERLAYER: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+                    if is_one_wall {
+                        ONEWALL.fetch_add(1, Relaxed);
+                    }
+                    POLYS.fetch_add(last_p.len() as u64, Relaxed);
+                    let n = CALLS.fetch_add(1, Relaxed) + 1;
+                    if let Ok(mut v) = PERLAYER.lock() {
+                        let li = self.config.layer_id;
+                        if v.len() <= li {
+                            v.resize(li + 1, 0);
+                        }
+                        v[li] += 1;
+                        if n % 2_000 == 0 {
+                            let nz: Vec<u32> = v.iter().copied().filter(|&x| x > 0).collect();
+                            let layers = nz.len();
+                            let mx = nz.iter().copied().max().unwrap_or(0);
+                            let mut srt = nz.clone();
+                            srt.sort_unstable();
+                            let med = if srt.is_empty() { 0 } else { srt[srt.len() / 2] };
+                            eprintln!(
+                                "[WTPCALL] calls={} onewall={} polys={} layers_touched={} per_layer_median={} max={}",
+                                n, ONEWALL.load(Relaxed), POLYS.load(Relaxed), layers, med, mx,
+                            );
+                        }
+                    }
+                }
+
                 if is_one_wall {
                     // PerimeterGenerator.cpp:1617-1621  plan wall width as one wall
                     let mut one_wall_paths = WallToolPaths::new(

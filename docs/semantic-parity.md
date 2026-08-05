@@ -6119,3 +6119,94 @@ worst per-feature line-level score and is cheap to look at.
 rate.** Two rounds were spent unsure whether "unaligned" meant "different" or
 "the tool gave up". A counter that separates the two settled it in one run — and
 it also caught that the previous denominator was wrong.
+
+## R580 — the 1.592x invocation gap is SPECULATIVE WORK C++ throws away, and it contaminates the R572-R577 chain
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. New
+`WTPCALL` probe on both engines (gated, default-OFF).
+
+### Prediction, and it was WRONG in a useful direction
+
+I predicted the invocation gap would be roughly uniform across layers. The
+per-layer split is not where the answer was. `WTPCALL` at the `WallToolPaths`
+construction site:
+
+| | Rust | C++ |
+|---|---|---|
+| constructions (surfaces reaching the site) | 26,000 | 16,000 |
+| `onewall` branch taken | **0** | **15,999** |
+| polygons in `last_p` | 13,909 | 15,764 |
+| per-layer median / max | 42 / 80 | 25 / 420 |
+
+C++ takes a separate-wall branch essentially always; we never do. But the branch
+variable is **recomputed** — `seperate_wall_generation = !is_one_wall &&
+generate_one_wall_by_top` at `:1696`, the block at `:1752` builds
+`one_wall_paths` on that preliminary value, and `:1774` then *overwrites* it with
+`should_enable_top_one_wall(...)`. So `WTPCALL` was reading the preliminary
+predicate, not the branch that survives (R532 — read the emission expression,
+not the name).
+
+`TOWPROBE` gives the surviving rate directly:
+
+    surfaces=16,504 | seperate_PRE=16,503 | detect_runs=16,500 | seperate_POST=4
+
+**C++ speculatively builds a full one-wall `WallToolPaths` — a complete
+`generateToolpaths` invocation, Voronoi and all — on 16,503 surfaces, and keeps
+the result on 4 of them (0.024%).** That reproduces R560's 0.024% exactly, from a
+different probe.
+
+### Target 1 CLOSED: the gap is speculative, not structural
+
+| | value |
+|---|---|
+| C++ invocations, total | 41,188 |
+| of which speculative | 16,503 (kept: 4) |
+| C++ invocations, real | **24,685** |
+| Rust invocations | **25,876** |
+| **real-vs-real ratio** | **1.048x** |
+
+**The 1.592x is 1.048x once the discarded speculative pass is excluded.** There
+is no invocation-count defect. R577's `empty` new-line term (1.626x), which R577
+showed *is* the invocation count, is inert for the same reason.
+
+### This contaminates several C++-side counts from R572-R577
+
+The speculative `getToolPaths()` call runs the whole Arachne pipeline —
+`generateJunctions`, `addToolpathSegment`, `connectJunctions` — so **every
+internal C++ counter in this campaign includes work that never reaches the
+G-code**:
+
+| measurement | affected? |
+|---|---|
+| JUNCPROBE junctions 12.20M (R572) | **YES — includes speculative** |
+| ODDPROBE segments 5.20M (R577) | **YES** |
+| NEWLINEPROBE new lines 64,000 (R576) | **YES** |
+| LINEPROBE2 assembled lines 66,108 (R574) | **YES** |
+| tags per assembled line 1.6500x (R574) | **YES — derived from the above** |
+| outer-wall `; LINE_WIDTH:` 62,582 (G-code) | no — measured in the output |
+| body line count 2,445,983 (G-code) | no |
+| `line_compare.py` figures (R578/R579) | no |
+
+**The R572-R577 chain — 1.592x x 1.353x -> 2.153x -> 2.000x -> 1.9575x x 1.6500x
+-> 3.2299x — is therefore built partly on inflated C++ internals.** Its arithmetic
+closed at every step because the same inflation propagated consistently through
+it, which is exactly why it looked sound. The *output-side* facts (3.23x tags,
+12.9% body lines) stand; the internal attribution does not.
+
+### R581
+
+**Re-derive the chain with the speculative pass excluded.** The cleanest way is a
+probe flag set while `one_wall_paths` is being built, so every downstream C++
+counter can exclude speculative calls — `JUNCPROBE`, `ODDPROBE`, `NEWLINEPROBE`
+and `LINEPROBE2` all need it. Until then, **no C++-side internal ratio from
+R572-R577 should be quoted.**
+
+Then re-open the real question with clean numbers: after excluding speculation,
+how much of the 12.9% body-line gap and the 3.23x tag gap remains attributable
+upstream?
+
+**New discipline (R580): a reference implementation may do work it discards, and
+your probes will count it.** Sixteen thousand full Arachne invocations produce
+four used results. Every internal counter compared across the two engines for six
+rounds included them. **Before comparing internals, establish that both engines'
+work reaches the output.**
