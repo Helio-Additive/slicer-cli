@@ -4059,7 +4059,7 @@ pub(crate) fn junctionprobe(w: i64, total_thickness: i64, idx: usize) {
         v.push(w);
         t.push(total_thickness);
         pr.push((total_thickness, w));
-        if n % 200_000 == 0 {
+        if n % 20_000 == 0 {
             let mut d = v.clone();
             d.sort_unstable();
             d.dedup();

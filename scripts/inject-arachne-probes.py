@@ -1031,7 +1031,7 @@ ST_JUNC_NEW = '''            if (getenv("BEADPROBE")) {
                 jp_w.push_back(beading->bead_widths[junction_idx]);
                 jp_t.push_back(beading->total_thickness);
                 jp_pairs.emplace_back(beading->total_thickness, beading->bead_widths[junction_idx]);
-                if (jp_n % 200000 == 0) {
+                if (jp_n % 20000 == 0) {
                     std::vector<coord_t> d(jp_w), dt(jp_t);
                     std::sort(d.begin(), d.end());
                     d.erase(std::unique(d.begin(), d.end()), d.end());

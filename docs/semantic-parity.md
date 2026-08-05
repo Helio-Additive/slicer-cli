@@ -5540,3 +5540,71 @@ destroying our width variation. We had 1.79x more of it than C++ the whole time;
 the deficit was never in the amount, only in its distribution. **"Fewer events in
 the output" does not imply "less of the underlying quantity" — measure the
 quantity itself before assuming a loss.**
+
+## R572 — C++ feeds each emitted loop ~2x the junction density
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. Probe
+granularity tightened (modulo 200,000 -> 20,000) on both engines so the last
+printed line is a total with <=20k error instead of a 200k-wide floor.
+
+### Prediction, and it was RIGHT
+
+I predicted C++ creates substantially more `ExtrusionJunction`s in total than we
+do (>=1.5x). Totals from `JUNCPROBE`:
+
+| totals (<=20k floor error) | Rust | C++ | ratio |
+|---|---|---|---|
+| all junctions created | 6,520,000 | 12,200,000 | **1.87x** |
+| **outer-wall junctions (`idx0`)** | **2,538,701** | **5,549,046** | **2.19x** |
+
+**C++ creates 2.19x more outer-wall junctions than we do.** Note this is the
+direct measurement of a claim R558 made inferentially and had retired — it is now
+established by counting, and at a larger ratio than R558 guessed.
+
+### The density ratio, and what it does NOT say
+
+Against R570's emitted outer-wall runs (149,770 vs 165,942), outer-wall junctions
+per emitted run are **16.95 (Rust) vs 33.44 (C++) = 1.97x**. C++ feeds roughly
+twice the junction density into each emitted loop.
+
+But the emitted geometry does **not** scale with that supply — from R569, width
+points per builder call are 7.15 vs 7.74, only **1.08x**. So C++ discards or
+merges proportionally far more of its junctions than we do, and arrives at a loop
+of nearly the same point count from twice the raw material.
+
+**This does not by itself establish that the density causes the intra-loop width
+variety, and I am not going to claim it does (R571).** Two readings survive the
+data equally well:
+
+1. A denser junction supply gives more distinct widths to distribute along a
+   loop, so more survive the reduction as intra-loop changes.
+2. The extra junctions are redundant duplicates that reduce away entirely, and
+   the intra-loop variety comes from something else in the reduction step.
+
+Distinguishing them requires junctions grouped **per emitted `ExtrusionLine`**,
+which is what R572 Step 1 originally asked for and what the global counters
+cannot answer.
+
+### What was NOT done, and why
+
+R572 Step 1 asked for **distinct beading objects per emitted loop**, keyed by
+pointer identity. That is still unmeasured. The junction site is inside a
+per-edge traversal, and many edges feed one `ExtrusionLine`; wiring a per-line
+grouping key through that traversal on both engines is a larger change than this
+round had room for, and the global distinct-value counters answered a cheaper
+question first. **Stated plainly rather than quietly dropped** — it is the third
+round this specific measurement has been deferred.
+
+### R573
+
+Do the per-line grouping properly, on both engines: thread a monotonically
+increasing line-id (or use the `ExtrusionLine` address at assembly time) so each
+junction can be attributed to the loop it ends up in, then report per loop:
+distinct beading identities, distinct widths, and junction count. That single
+table settles readings (1) and (2) above and closes the last open mechanism.
+
+**New discipline (R572): a supply ratio and an output ratio measured on
+different populations do not compose into a causal chain.** 2.19x junctions in
+and 1.08x width points out is a real pair of measurements, but "therefore the
+supply causes the variety" is a third claim needing its own evidence. **The
+count you can get cheaply is rarely the count that closes the argument.**
