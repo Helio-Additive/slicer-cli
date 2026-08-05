@@ -6285,3 +6285,67 @@ both reproduce it exactly, the arithmetic cannot tell you which is right.**
 1.9575 x 1.6500 and 1.2338 x 2.6178 both give 3.2299. Only knowing which inputs
 were measured on comparable populations distinguishes them. **A closing identity
 validates the algebra, never the measurement.**
+
+## R582 — the reduction between assembly and the builder is width-BLIND on our side
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. `TPMPPROBE`
+is now speculation-gated too (all five internal C++ probes are).
+
+### Step 1 — `TPMPPROBE` was NOT contaminated (honest negative)
+
+Gating it changed nothing: `in_changes` 44,275 vs 44,181 ungated, `calls` 224,000
+both, `out_paths` 266,657 vs 266,529 — differences within the C++ engine's own
+run-to-run nondeterminism (R547). **Because `thick_polyline_to_multi_path` is
+reached via `extrusion_paths_append` on the FINAL toolpaths, the speculative
+one-wall result never passes through it.** R569's exoneration of the builder
+therefore **stands unmodified**, and the gate is kept as a guarantee rather than
+a fix.
+
+### Step 2 — the 2.62x splits cleanly across two stages
+
+| | Rust | C++ | C/R |
+|---|---|---|---|
+| changes per line **at assembly** | 4.7191 | 5.9571 | **1.262** |
+| changes per line **at the builder** | 0.4268 | 1.0626 | **2.490** |
+| tags per line **in the G-code** | 0.5737 | 1.5019 | **2.618** |
+
+`2.6178 = 1.2623 (assembly) x 2.0738 (downstream)`. Assembly is a minor term;
+**the stage between the assembled `ExtrusionLine` and the builder's
+`ThickPolyline` roughly doubles the gap.**
+
+### The mechanism, stated precisely
+
+| | Rust | C++ | C/R |
+|---|---|---|---|
+| junctions per line at assembly | 72.61 | 70.21 | 0.967 |
+| width points per line at builder | 45.96 | 42.76 | 0.930 |
+| **point retention** (wpts/junction) | **0.6329** | **0.6090** | **0.962** |
+| **change retention** | **0.0904** | **0.1784** | **1.972** |
+
+**Both engines discard points at the same rate (0.962x). Only the width changes
+diverge (1.972x).** We keep 9.0% of our assembly width-changes; C++ keeps 17.8%.
+A width-neutral reduction would lose changes in proportion to points — ours does
+not. **The reduction between assembly and the builder is effectively width-blind
+on our side.**
+
+Two independent routes agree on the size: **2.0738** (from G-code tags per line)
+and **1.9722** (from change retention). Different measurements, same stage.
+
+### R583
+
+Instrument the reduction itself on both engines: at the ZPath construction in
+`perimeter_generator.rs` (~:3545, subject built with `j.w` as z) count junctions
+in, points out, **and width-changes in versus out**. The prime suspect is
+collinear-vertex removal that is blind to the z channel — Clipper operates on XY
+and carries z as an attribute, so a vertex dropped for being collinear in XY
+takes its width change with it. **That is a hypothesis, not a finding** (R560):
+`clip_extrusion` z-preservation was verified in R568 and its split in R575, but
+neither measured *changes in versus out*, which is a different quantity (R539).
+
+Also still queued: `Floating vertical shell` at 1.7% line-level.
+
+**New discipline (R582): re-deriving a suspect measurement and finding it
+unchanged is a result worth the round.** `TPMPPROBE` was flagged as contaminated
+on the reasonable grounds that four sibling probes were. It was not — the
+speculative path does not reach it. **Verifying a doubt costs one run; carrying it
+costs every conclusion that touches it.**

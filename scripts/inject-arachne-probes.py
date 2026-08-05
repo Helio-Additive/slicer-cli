@@ -955,6 +955,7 @@ VW_INCLUDES_NEW = '''#include "VariableWidth.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+bool& probe_speculative();   // R582, defined in SkeletalTrapezoidation.cpp
 
 // TPMPPROBE (R569)
 static bool tpmp_on() { static bool v = getenv("TPMPPROBE") != nullptr; return v; }
@@ -971,7 +972,7 @@ VW_HEAD_NEW = '''    ExtrusionMultiPath multi_path;
     ThickLines         lines = thick_polyline.thicklines();
 
     // TPMPPROBE (R569) - scoped to the outer wall to match the G-code classification.
-    const bool tpmp = tpmp_on() && role == erExternalPerimeter;
+    const bool tpmp = tpmp_on() && role == erExternalPerimeter && !probe_speculative();
     size_t tpmp_chg = 0, tpmp_dis = 0;
     uint64_t tpmp_spr = 0;
     if (tpmp) {
