@@ -5608,3 +5608,79 @@ different populations do not compose into a causal chain.** 2.19x junctions in
 and 1.08x width points out is a real pair of measurements, but "therefore the
 supply causes the variety" is a third claim needing its own evidence. **The
 count you can get cheaply is rarely the count that closes the argument.**
+
+## R573 — the gap is 1.42x at assembly and 2.83x at the builder: the stage between DOUBLES it
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. New
+`LINEPROBE2` on both engines, gated and default-OFF.
+
+### Why beading identity per loop is not measurable without a struct change
+
+R572 queued "distinct beading objects per emitted loop, keyed by pointer
+identity". Tracing the assembly path settles that it cannot be done cheaply:
+`generate_junctions` fills junctions **per skeleton edge**; `connect_junctions`
+links edges; and **`add_toolpath_segment` receives only `from`/`to`
+`ExtrusionJunction`s** — the beading is out of scope at every point where a line
+is assembled. An `ExtrusionJunction` carries `p`, `w`, `perimeter_index` and the
+hole flag, and nothing that identifies its beading. Measuring beading identity
+per loop therefore requires **tagging `ExtrusionJunction` on both engines**, a
+struct change, not a probe. That is a finding about the code, not another
+deferral — and the equivalent per-loop quantity needs no struct change.
+
+### The measurement: per-assembled-line width variety
+
+`LINEPROBE2` runs at the end of `generateToolpaths` on both engines and walks
+`generated_toolpaths`, counting per line: junctions, distinct widths,
+consecutive width changes. This is the **earliest per-loop measurement possible**
+— before any downstream reduction. Outer wall (`inset == 0`):
+
+| outer wall @ assembly | Rust | C++ | ratio |
+|---|---|---|---|
+| assembled lines | 23,402 | 60,214 | 2.573x |
+| **junctions per line** | **92.66** | **84.05** | **0.907** |
+| distinct widths per line | 3.308 | 4.214 | 1.274x |
+| flat-line fraction | 64.85% | 55.59% | 0.857 |
+| **width changes per junction** | **0.0325** | **0.0462** | **1.423x** |
+
+**Our assembled lines carry MORE junctions each (92.66 vs 84.05)** — a third
+independent refutation of any "we have less raw material" reading. C++ makes
+2.57x more, slightly shorter lines.
+
+### The result that matters
+
+The same quantity — width-change rate — measured at two stages:
+
+| stage | Rust | C++ | ratio |
+|---|---|---|---|
+| **at assembly** (per junction) | 0.0325 | 0.0462 | **1.42x** |
+| **at the builder** (per width point, R569) | 0.0694 | 0.1967 | **2.83x** |
+
+**The gap is 1.42x when the line leaves Arachne and 2.83x when it reaches the
+extrusion builder. The stage between them roughly doubles the discrepancy.** At
+assembly the two engines are much closer than any downstream measurement
+suggested; most of the divergence is introduced *after* the skeleton is done.
+
+That stage is: WallToolPaths post-processing, plus `perimeter_generator`'s ZPath
+construction and overhang splitting. Note our 23,402 assembled outer lines feed
+**more than 200,000** outer-wall builder calls (the TPMPPROBE cap, R569), so each
+assembled line is being cut into many pieces before it reaches the builder —
+**but that cap is a floor, not a total, so the pieces-per-line ratio is not yet
+established and I am not quoting one (R572).**
+
+### R574
+
+Measure the split factor properly: total outer-wall builder calls per assembled
+outer line, on both engines, with the TPMPPROBE modulo tightened so both figures
+are totals rather than floors. If we cut each line into ~3x more pieces than C++
+does, the intra-loop variation is being redistributed into inter-loop variation
+by the splitting itself — which is exactly the R568 inversion, and would be the
+mechanism. **Prior eliminations do not cover this:** R544/R547/R558 cleared the
+five WallToolPaths stages as *porting fidelity* against a flat-percentage metric
+at a different scope; change-rate amplification across the stage is a new
+quantity (R539 — eliminations expire).
+
+**New discipline (R573): measure the same quantity at two stages before blaming
+either.** Four rounds compared engines at one stage at a time and kept relocating
+the mechanism. One rate measured at assembly *and* at the builder localises it in
+a single round: 1.42x in, 2.83x out. **A ratio at one point tells you there is a
+gap; the same ratio at two points tells you where it is made.**

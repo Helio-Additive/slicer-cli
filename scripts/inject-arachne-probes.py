@@ -1053,6 +1053,50 @@ ST_JUNC_NEW = '''            if (getenv("BEADPROBE")) {
             ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
 '''
 
+# ---------------------------------------------------------------------------
+# LINEPROBE2 (R573) - per-ASSEMBLED-LINE width variety, measured at the end of
+# generateToolpaths. The beading is out of scope at every assembly point
+# (addToolpathSegment receives only junctions), so this is the earliest per-loop
+# measurement possible without tagging ExtrusionJunction. Mirrors the Rust probe
+# of the same name in arachne/skeletal_trapezoidation.rs.
+# ---------------------------------------------------------------------------
+ST_LP2_OLD = '''    generateSegments();
+'''
+ST_LP2_NEW = '''    generateSegments();
+
+    if (getenv("LINEPROBE2")) {
+        static std::mutex lp2_mtx;
+        static size_t lp2_lines = 0, lp2_juncs = 0, lp2_distinct = 0, lp2_flat = 0, lp2_changes = 0;
+        static size_t lp2_ol = 0, lp2_oj = 0, lp2_od = 0, lp2_of = 0, lp2_oc = 0;
+        std::lock_guard<std::mutex> lp2_lock(lp2_mtx);
+        for (size_t inset = 0; inset < p_generated_toolpaths->size(); ++inset) {
+            for (const ExtrusionLine &line : (*p_generated_toolpaths)[inset]) {
+                const size_t n = line.junctions.size();
+                if (n == 0) continue;
+                std::vector<coord_t> w;
+                w.reserve(n);
+                for (const ExtrusionJunction &j : line.junctions) w.push_back(j.w);
+                size_t changes = 0;
+                for (size_t k = 1; k < w.size(); ++k) if (w[k] != w[k - 1]) ++changes;
+                std::sort(w.begin(), w.end());
+                w.erase(std::unique(w.begin(), w.end()), w.end());
+                const size_t d = w.size();
+                ++lp2_lines; lp2_juncs += n; lp2_distinct += d; lp2_changes += changes;
+                if (d == 1) ++lp2_flat;
+                if (inset == 0) {
+                    ++lp2_ol; lp2_oj += n; lp2_od += d; lp2_oc += changes;
+                    if (d == 1) ++lp2_of;
+                }
+            }
+        }
+        if (lp2_lines > 0 && (lp2_lines % 20000) < 200)
+            fprintf(stderr,
+                "[LINEPROBE2] lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu | OUTER lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu\\n",
+                lp2_lines, lp2_juncs, lp2_distinct, lp2_flat, lp2_changes,
+                lp2_ol, lp2_oj, lp2_od, lp2_of, lp2_oc);
+    }
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -1098,6 +1142,7 @@ EDITS = [
     ("VariableWidth.cpp", VW_HEAD_OLD, VW_HEAD_NEW),
     ("VariableWidth.cpp", VW_TAIL_OLD, VW_TAIL_NEW),
     ("SkeletalTrapezoidation.cpp", ST_JUNC_OLD, ST_JUNC_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_LP2_OLD, ST_LP2_NEW),
 ]
 
 

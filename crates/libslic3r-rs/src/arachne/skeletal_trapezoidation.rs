@@ -939,6 +939,63 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
         // SkeletalTrapezoidation.cpp:592 generateSegments();
         self.generate_segments();
+
+        // LINEPROBE2 (R573) — per-ASSEMBLED-LINE width variety, measured here
+        // because the beading is out of scope at every assembly point
+        // (add_toolpath_segment receives only junctions). This is the earliest
+        // per-loop measurement possible without tagging ExtrusionJunction.
+        if crate::probe_enabled("LINEPROBE2") {
+            use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+            static LINES: AtomicU64 = AtomicU64::new(0);
+            static JUNCS: AtomicU64 = AtomicU64::new(0);
+            static DISTINCT: AtomicU64 = AtomicU64::new(0);
+            static FLAT: AtomicU64 = AtomicU64::new(0);
+            static CHANGES: AtomicU64 = AtomicU64::new(0);
+            static O_LINES: AtomicU64 = AtomicU64::new(0);
+            static O_JUNCS: AtomicU64 = AtomicU64::new(0);
+            static O_DISTINCT: AtomicU64 = AtomicU64::new(0);
+            static O_FLAT: AtomicU64 = AtomicU64::new(0);
+            static O_CHANGES: AtomicU64 = AtomicU64::new(0);
+            for (inset, lines) in generated_toolpaths.iter().enumerate() {
+                for line in lines.iter() {
+                    let n = line.junctions.len() as u64;
+                    if n == 0 {
+                        continue;
+                    }
+                    let mut w: Vec<i64> = line.junctions.iter().map(|j| j.w).collect();
+                    let changes =
+                        (1..w.len()).filter(|&k| w[k] != w[k - 1]).count() as u64;
+                    w.sort_unstable();
+                    w.dedup();
+                    let d = w.len() as u64;
+                    LINES.fetch_add(1, Relaxed);
+                    JUNCS.fetch_add(n, Relaxed);
+                    DISTINCT.fetch_add(d, Relaxed);
+                    CHANGES.fetch_add(changes, Relaxed);
+                    if d == 1 {
+                        FLAT.fetch_add(1, Relaxed);
+                    }
+                    if inset == 0 {
+                        O_LINES.fetch_add(1, Relaxed);
+                        O_JUNCS.fetch_add(n, Relaxed);
+                        O_DISTINCT.fetch_add(d, Relaxed);
+                        O_CHANGES.fetch_add(changes, Relaxed);
+                        if d == 1 {
+                            O_FLAT.fetch_add(1, Relaxed);
+                        }
+                    }
+                }
+            }
+            let l = LINES.load(Relaxed);
+            if l > 0 && l % 20_000 < 200 {
+                eprintln!(
+                    "[LINEPROBE2] lines={} juncs={} distinct={} flat={} changes={} | OUTER lines={} juncs={} distinct={} flat={} changes={}",
+                    l, JUNCS.load(Relaxed), DISTINCT.load(Relaxed), FLAT.load(Relaxed), CHANGES.load(Relaxed),
+                    O_LINES.load(Relaxed), O_JUNCS.load(Relaxed), O_DISTINCT.load(Relaxed),
+                    O_FLAT.load(Relaxed), O_CHANGES.load(Relaxed),
+                );
+            }
+        }
     }
 
     // SkeletalTrapezoidation.cpp:603-651
