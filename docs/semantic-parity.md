@@ -5209,3 +5209,91 @@ sibling — same *unit* is not same *scope*. An all-loops internal rate and an
 outer-wall output rate are both honest numbers that mean different things, and
 the difference between them here was 1.78x versus 2.18x — enough to invert the
 round's conclusion.
+
+## R568 — the engines are INVERTED: our intra-loop width variation never reaches the G-code
+
+Step 1 produced the strongest result of the width campaign, and it redirects the
+investigation. No source changed — baselines `d219a37e` / `5a34af50` /
+`ab415621` hold trivially.
+
+### Where the tags actually fire
+
+Classifying every outer-wall `; LINE_WIDTH:` tag by what preceded it — a TRAVEL
+(new loop; the tag reflects a width difference against the *previous* loop, since
+the register persists, R567) or an EXTRUDE (the path was split mid-loop). Pure
+G-code, no instrumentation:
+
+| outer-wall tags | Rust | C++ |
+|---|---|---|
+| after TRAVEL — **inter**-loop | **19,271 (99.5%)** | 280 (0.4%) |
+| after EXTRUDE — **intra**-loop | **101 (0.5%)** | **59,242 (94.7%)** |
+| at block start | 4 (0.0%) | 3,060 (4.9%) |
+
+**The two engines are almost perfectly inverted.** We change extrusion width
+essentially only at loop boundaries — 101 intra-loop changes in 19,376 tags.
+C++ changes width *inside* loops 59,242 times.
+
+### The smoking gun
+
+Against R567's scope-matched internal counts:
+
+| outer wall | Rust | C++ |
+|---|---|---|
+| junction width changes (internal) | 11,177 | 25,606 |
+| intra-loop tags (G-code) | **101** | **59,242** |
+| survival | **0.9%** | 231% |
+
+**Our Arachne produces 11,177 intra-loop width changes on outer walls and 101 of
+them reach the G-code — a 99.1% loss.** C++ turns 25,606 into 59,242 (>100%,
+because paths split further than junctions alone imply). The beading gap R567
+measured at 2.18x is real but largely *moot*: almost none of our intra-loop
+variation survives to be emitted.
+
+This also reframes the 2.73x rate gap qualitatively rather than quantitatively.
+The two engines reach their tag counts by **entirely different routes** — ours
+from inter-loop differences, C++'s from intra-loop splitting. "C++ changes width
+2.73x more often per mm" is better stated as **"C++ has intra-loop width variation
+in its G-code and we have essentially none."**
+
+### What is NOT yet established
+
+`clip_extrusion` is fine: it flattens z, calls the shim and reads z back, and
+`clip_extrusion_interpolates_z` covers it. So the loss is below it, in
+`to_thick_polyline_z` -> `thick_polyline_to_multi_path`.
+
+The obvious suspect is that function's `scaled(0.05)` = 50 um merge tolerance
+against our 21 um mean per-loop spread — every intra-loop difference would merge.
+**But that cannot be the whole story: C++'s mean spread is 31 um, also well under
+50 um, and C++ splits anyway.** Either its effective split condition differs, or
+the mean hides a tail (R564 — this campaign has been caught by exactly that).
+**Naming the tolerance now would be a guess (R490/R555), and it is one of the
+three candidates R568 was told not to assume.**
+
+### Step 2 deferred, deliberately
+
+R568 also queued extending `BEADPROBE` to measure the successive-`compute`
+width-change rate behind the 2.18x. **Not done, and the reason is Step 1's
+result:** if 99.1% of our intra-loop variation is destroyed downstream, measuring
+*why the beading produces slightly less of it* is measuring the wrong end of the
+pipeline. The beading question stays open and is still the larger internal ratio,
+but it is no longer the binding constraint.
+
+### R569
+
+Read the split condition on both sides and **evaluate it on real data** (R504):
+C++ `VariableWidth.cpp` `thick_polyline_to_multi_path` versus ours, specifically
+what is compared against `tolerance`/`merge_tolerance` and in what units. Then
+instrument the loop that decides to split, on both engines, and count splits per
+loop directly. Only after that consider changing anything — and gate it, because
+a fix here changes G-code by construction.
+
+Also worth one cheap check: the per-loop spread **distribution**, not its mean.
+21 um vs 31 um are means over a population where 83.8% / 72.3% of loops are
+perfectly flat; the varying tail is what the tolerance actually sees.
+
+**New discipline (R568): when two engines produce the same output quantity by
+different routes, the aggregate ratio is the least informative thing about it.**
+"2.73x more width changes per mm" survived four rounds of decomposition while
+concealing that ours are 99.5% inter-loop and C++'s 94.7% intra-loop — a
+qualitative difference no ratio can express. **Classify the events before
+counting them.**
