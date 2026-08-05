@@ -522,7 +522,7 @@ impl PrintObject {
         for layer in &mut self.layers {
             layer.make_slices();
         }
-        if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+        if crate::probe_enabled("SLICE_PHASE_TIMING") {
             eprintln!("      slice(): make_slices {:.2}s", __t_ms.elapsed().as_secs_f64());
         }
 
@@ -673,7 +673,7 @@ impl PrintObject {
             }
             m
         };
-        if std::env::var_os("MMS_DEBUG").is_some() {
+        if crate::probe_enabled("MMS_DEBUG") {
             let seg_nonempty = segmented
                 .iter()
                 .filter(|l| l.iter().any(|s| !s.is_empty()))
@@ -933,7 +933,7 @@ impl PrintObject {
                 // before `slices.set(...)`. Accumulate the same way so a region fed by
                 // two painted extruders (possible under PAINTED_REGION_DEDUP) is merged
                 // rather than overwritten.
-                let merged = if std::env::var_os("MMSEG_CLOSING").is_some() {
+                let merged = if crate::probe_enabled("MMSEG_CLOSING") {
                     let prev = layer.regions()[region_id]
                         .slices
                         .surfaces
@@ -982,7 +982,7 @@ impl PrintObject {
                 // the opening is needed. NOTE the distance unit: `opening_ex` takes mm
                 // (the scale is applied inside `offset_expolygons`), so C++'s
                 // `scale_(5 * EPSILON)` is simply `5 * EPSILON` here.
-                if std::env::var_os("MMSEG_OPENING").is_some() && !remaining.is_empty() {
+                if crate::probe_enabled("MMSEG_OPENING") && !remaining.is_empty() {
                     remaining = crate::clipper_utils::opening_ex(
                         &remaining,
                         5.0 * crate::libslic3r::EPSILON,
@@ -1034,7 +1034,7 @@ impl PrintObject {
     pub fn make_perimeters(&mut self) -> Result<()> {
         // Prerequisites: slice must run first
         // PrintObject.cpp:456
-        let __mp_t = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let __mp_t = crate::probe_enabled("SLICE_PHASE_TIMING");
         let __t_slice = std::time::Instant::now();
         self.slice()?;
         let __slice_s = __t_slice.elapsed().as_secs_f64();
@@ -1315,7 +1315,7 @@ impl PrintObject {
 
         // SLICE_PHASE_TIMING (R392): time prepare_infill's sub-steps to locate the
         // Majora bottleneck (the ~35s is here, not in MMS segmentation).
-        let __pi_t = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let __pi_t = crate::probe_enabled("SLICE_PHASE_TIMING");
         let mut __pi: Vec<(&'static str, f64)> = Vec::new();
         macro_rules! pi_phase {
             ($name:expr, $body:expr) => {{
@@ -1631,7 +1631,7 @@ impl PrintObject {
         let mut surfaces_by_layer: BTreeMap<usize, Vec<CandidateSurface>> = BTreeMap::new();
 
         // ====================================================================
-        let __bt = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let __bt = crate::probe_enabled("SLICE_PHASE_TIMING");
         let __b0 = std::time::Instant::now();
         // SECTION: gather and filter surfaces for expanding, cluster by layer.
         // PrintObject.cpp:2196-2279
@@ -2922,7 +2922,7 @@ impl PrintObject {
                 let detect_top = spiral_mode || region_config.top_solid_layers > 0;
                 let detect_bottom = spiral_mode || region_config.bottom_solid_layers > 0;
 
-                if std::env::var_os("LSDBG").is_some()
+                if crate::probe_enabled("LSDBG")
                     && region_id == 0
                                     {
                     let ls = &layers[idx_layer].lslices;
@@ -3357,7 +3357,7 @@ impl PrintObject {
         // SLICE_PHASE_TIMING splits prepare_infill (incl. MMS segmentation) from
         // the parallel fill loop below — the two have very different perf
         // profiles on multicolour models.
-        let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
         let __t_prep = std::time::Instant::now();
         self.prepare_infill()?;
         let __prep_s = __t_prep.elapsed().as_secs_f64();
@@ -3416,7 +3416,7 @@ impl PrintObject {
                         areas
                     })
                     .unwrap_or_default();
-                if std::env::var_os("FVS_DEBUG").is_some() {
+                if crate::probe_enabled("FVS_DEBUG") {
                     use std::sync::atomic::Ordering::Relaxed;
                     crate::layer::FVS_LAYERS.fetch_add(1, Relaxed);
                     if self.layers[layer_idx].lower_layer_id.is_none() {
@@ -3496,7 +3496,7 @@ impl PrintObject {
                     layer.make_fills(lower_internal_areas, lower_sparse_polys)
                 })?;
 
-            if std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some() {
+            if crate::probe_enabled("GYROID_ENDPOINT_DEBUG") {
                 use crate::fill::{
                     GEP_CROSS_HIST, GEP_CROSS_N, GEP_CROSS_SUM_UM, GEP_HIST, GEP_N, GEP_PTS_HIST,
                     GEP_RAWVERT, GEP_RAW_SUM_UM, GEP_SUM_UM,
@@ -3541,7 +3541,7 @@ impl PrintObject {
                     GEP_RAWVERT.load(R3), GEP_RAW_SUM_UM.load(R3) as f64 / rn as f64,
                 );
             }
-            if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
+            if crate::probe_enabled("FILL_CONNECT_DEBUG") {
                 use crate::fill::fill_base::{
                     FB_ARCHES, FB_ENDS, FB_ENDS_UNCONNECTED, FB_IN, FB_LEN_IN, FB_LEN_OUT, FB_OUT,
                 };
@@ -3568,7 +3568,7 @@ impl PrintObject {
                     FB_TAIL_STUB_N.load(R2), f2(&FB_TAIL_STUB_LEN),
                 );
             }
-            if std::env::var_os("VSHELL_DEBUG").is_some() {
+            if crate::probe_enabled("VSHELL_DEBUG") {
                 use std::sync::atomic::Ordering::Relaxed as R5;
                 let n = crate::layer::VS_REG_IN.load(R5);
                 let d = crate::layer::VS_REG_DROP.load(R5);
@@ -3602,7 +3602,7 @@ impl PrintObject {
                     crate::layer::VS_C2.load(R5), crate::layer::VS_SAVED.load(R5),
                 );
             }
-            if std::env::var_os("FVS_DEBUG").is_some() {
+            if crate::probe_enabled("FVS_DEBUG") {
                 use std::sync::atomic::Ordering::Relaxed as R4;
                 eprintln!(
                     "FVS_NO_OVERLAP: concentric/floating expolygons={}  with EMPTY no_overlap={} ({:.1}%)",
@@ -3632,7 +3632,7 @@ impl PrintObject {
                     crate::layer::FVS_REGION_EMPTY.load(R4),
                 );
             }
-            if std::env::var_os("FILL_CONNECT_DEBUG").is_some() {
+            if crate::probe_enabled("FILL_CONNECT_DEBUG") {
                 use crate::fill::{CONN_IN, CONN_LEN_IN, CONN_LEN_OUT, CONN_OUT};
                 use std::sync::atomic::Ordering::Relaxed;
                 let f = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed) as f64 / 1000.0;
@@ -3646,7 +3646,7 @@ impl PrintObject {
 
             // R456: sparse-infill fill accounting — how much Internal AREA reached the
             // filler and how much of it produced no polylines at all.
-            if std::env::var_os("FILL_SURFACE_DEBUG").is_some() {
+            if crate::probe_enabled("FILL_SURFACE_DEBUG") {
                 use crate::fill::*;
                 use std::sync::atomic::Ordering::Relaxed;
                 let a = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed) as f64 / 1000.0;
@@ -4437,7 +4437,7 @@ impl PrintObject {
             None
         };
 
-        if std::env::var_os("VSHELL_DEBUG").is_some() {
+        if crate::probe_enabled("VSHELL_DEBUG") {
             eprintln!("VSHELL_REGIONS: num_printing_regions={} layers={}",
                       self.num_printing_regions(), self.layers.len());
         }
@@ -4728,7 +4728,7 @@ impl PrintObject {
                 } else {
                     difference(&internal_all, &holes)
                 };
-                if std::env::var_os("VSHELL_DEBUG").is_some() {
+                if crate::probe_enabled("VSHELL_DEBUG") {
                     use std::sync::atomic::Ordering::Relaxed;
                     let a = |v: &ExPolygons| -> usize {
                         (v.iter().map(|e| e.area().abs()).sum::<f64>() / (sf * sf) * 1000.0) as usize
@@ -4789,7 +4789,7 @@ impl PrintObject {
                     shrink(&opened, narrow_sparse_r - tiny_overlap_r, OffsetJoinType::Square)
                 };
 
-                if std::env::var_os("VSHELL_DEBUG").is_some() {
+                if crate::probe_enabled("VSHELL_DEBUG") {
                     use std::sync::atomic::Ordering::Relaxed;
                     let ain: f64 = shell_u.iter().map(|e| e.area().abs()).sum::<f64>() / (sf * sf);
                     let aout: f64 = regularized0.iter().map(|e| e.area().abs()).sum::<f64>() / (sf * sf);
@@ -4830,7 +4830,7 @@ impl PrintObject {
                         let grown_p = grow(&p1, min_pis, OffsetJoinType::Miter);
                         let cond2 =
                             difference(&internal_volume, &grown_p).len() >= internal_volume.len();
-                        if std::env::var_os("VSHELL_DEBUG").is_some() {
+                        if crate::probe_enabled("VSHELL_DEBUG") {
                             use std::sync::atomic::Ordering::Relaxed;
                             crate::layer::VS_REG_IN.fetch_add(1, Relaxed);
                             if cond1 { crate::layer::VS_C1.fetch_add(1, Relaxed); }

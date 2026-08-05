@@ -2470,7 +2470,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
             // R547: graph size at the same point as the C++ GRAPHPROBE, to test
             // whether our ~5x deficit in `compute` calls is a smaller skeleton or
             // a different share of nodes carrying a bead count.
-            if std::env::var_os("GRAPHPROBE").is_some() {
+            if crate::probe_enabled("GRAPHPROBE") {
                 let n_up = self
                     .graph
                     .edges
@@ -2577,7 +2577,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     if node.as_ref().data.transition_ratio == 0.0 {
                         // SkeletalTrapezoidation.cpp:1526 node_beadings.emplace_back(new BeadingPropagation(beading_strategy.compute(node.data.distance_to_boundary * 2, node.data.bead_count)));
                         let _c = self.beading_strategy.compute(dtb * 2, node_data_bead_count);
-                        if std::env::var_os("BEADPROBE").is_some() {
+                        if crate::probe_enabled("BEADPROBE") {
                             beadprobe(dtb * 2, node_data_bead_count, &_c.bead_widths);
                         }
                         let bp = Arc::new(RwLock::new(BeadingPropagation::new(_c)));
@@ -2828,7 +2828,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 // The `else` interpolates. Measure the split and the ratio, plus the
                 // runtime value of `beading_propagation_transition_dist` (R490/R525:
                 // read the constant, do not assume it).
-                if std::env::var_os("PROPPROBE").is_some() {
+                if crate::probe_enabled("PROPPROBE") {
                     propprobe(ratio_of_top, self.beading_propagation_transition_dist, total_dist);
                 }
                 // SkeletalTrapezoidation.cpp:1689 if (ratio_of_top >= 1.0)
@@ -3093,7 +3093,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         junction = a;
                     }
                     // SkeletalTrapezoidation.cpp:1847 ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
-                    if std::env::var_os("BEADPROBE").is_some() {
+                    if crate::probe_enabled("BEADPROBE") {
                         junctionprobe(beading.bead_widths[junction_idx]);
                     }
                     ret.push(ExtrusionJunction::with_hole_compensation(
@@ -3181,7 +3181,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     node.as_ref().data.distance_to_boundary * 2,
                     node.as_ref().data.bead_count,
                 );
-                if std::env::var_os("BEADPROBE").is_some() {
+                if crate::probe_enabled("BEADPROBE") {
                     beadprobe(
                         node.as_ref().data.distance_to_boundary * 2,
                         node.as_ref().data.bead_count,
@@ -3542,7 +3542,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         // ends of a segment already carry the same width, the flatness
                         // is upstream of this function; if they differ, something here
                         // drops it. Probe the input, not the transform (R541).
-                        if std::env::var_os("CJPROBE").is_some() {
+                        if crate::probe_enabled("CJPROBE") {
                             cjprobe(from_j.w, to_j.w);
                         }
                         // SkeletalTrapezoidation.cpp:2069 assert(from.perimeter_index == to.perimeter_index);
@@ -4154,7 +4154,7 @@ impl SkeletalTrapezoidation<'_> {
     /// "we mark fewer edges central" from "we mark the same edges and assign
     /// `bead_count <= 0` more often".
     pub(crate) fn central_census(&self, stage: &str) {
-        if std::env::var_os("CENTRALPROBE").is_none() {
+        if !crate::probe_enabled("CENTRALPROBE") {
             return;
         }
         let mut central_set = 0usize;
@@ -4248,7 +4248,7 @@ fn centralprobe(
 /// constants the last two branches turn on. Mirrors `[CPP-ISCPROBE]`.
 fn iscprobe(branch: usize, central: bool, oefl: Coord, cap: f64) {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-    if std::env::var_os("ISCPROBE").is_none() {
+    if !crate::probe_enabled("ISCPROBE") {
         return;
     }
     static N: AtomicUsize = AtomicUsize::new(0);
@@ -4292,7 +4292,7 @@ fn iscprobe(branch: usize, central: bool, oefl: Coord, cap: f64) {
 /// number on trust.
 fn geomprobe(d_r: Coord, d_d: Coord, cap: f64) {
     use std::sync::Mutex;
-    if std::env::var_os("ISCPROBE").is_none() {
+    if !crate::probe_enabled("ISCPROBE") {
         return;
     }
     struct G {
@@ -4344,7 +4344,7 @@ impl SkeletalTrapezoidation<'_> {
     /// mirroring the C++ `[CPP-TRANSPROBE]` counter. This is the direct analogue
     /// of the failing G-code metric: how often the bead width changes along a wall.
     pub(crate) fn transition_census(&self, stage: &str) {
-        if std::env::var_os("TRANSPROBE").is_none() {
+        if !crate::probe_enabled("TRANSPROBE") {
             return;
         }
         let mut edges_with = 0usize;
@@ -4395,7 +4395,7 @@ fn transprobe(stage: &str, edges_with: usize, items: usize) {
 /// SHARE a beading -> uniform width along the wall. Mirrors `[CPP-GNBPROBE]`.
 fn gnbprobe(had_beading: bool, bead_count_minus_one: bool, nearest_hit: bool) {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-    if std::env::var_os("GNBPROBE").is_none() {
+    if !crate::probe_enabled("GNBPROBE") {
         return;
     }
     static N: AtomicUsize = AtomicUsize::new(0);

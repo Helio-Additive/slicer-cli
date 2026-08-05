@@ -1532,7 +1532,7 @@ pub fn connect_infill(
     // see infill end points ON the boundary? An end point that fails to map
     // (BOUNDARY_IDX_UNCONNECTED) can never be chained, so a high unconnected count
     // means the caller handed us lines whose ends are not on `boundary_src`.
-    let fb_dbg = std::env::var_os("FILL_CONNECT_DEBUG").is_some();
+    let fb_dbg = crate::probe_enabled("FILL_CONNECT_DEBUG");
     let fb_out_start = polylines_out.len();
     if fb_dbg {
         use std::sync::atomic::Ordering::Relaxed;

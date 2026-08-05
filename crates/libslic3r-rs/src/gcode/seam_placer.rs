@@ -317,7 +317,7 @@ impl LayerSeams {
     /// `points_tree = std::make_unique<SeamCandidatesTree>(functor, points.size())`.
     /// SeamPlacer.cpp:944-945
     pub fn build_points_tree(&self) -> KDTreeIndirect<3, f32, impl Fn(usize, usize) -> f32 + '_> {
-        if std::env::var_os("KDCOUNT").is_some() {
+        if crate::probe_enabled("KDCOUNT") {
             KD_BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             KD_POINTS.fetch_add(self.points.len(), std::sync::atomic::Ordering::Relaxed);
         }

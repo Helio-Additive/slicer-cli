@@ -1621,7 +1621,7 @@ impl<'a> FillFloatingConcentric<'a> {
             // detect_floating_line(thick_polyline, floating_areas, default_width,
             //   !detect_floating_vertical_shell || is_self_intersect)
             let force_no_detect = !detect_floating_vs || is_self_intersect;
-            if std::env::var_os("FVS_DEBUG").is_some() {
+            if crate::probe_enabled("FVS_DEBUG") {
                 use std::sync::atomic::Ordering::Relaxed;
                 crate::layer::FVS_LINES.fetch_add(1, Relaxed);
                 if !detect_floating_vs { crate::layer::FVS_FLAG_OFF.fetch_add(1, Relaxed); }

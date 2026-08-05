@@ -1543,7 +1543,7 @@ impl WipeTower {
         // twice as many lines to cover the same depth, each at roughly half the flow.
         if crate::faithful_gate("WT_NOZZLE_CHANGE_WIDTH") {
             let nd = self.filament_params[idx].nozzle_diameter;
-            if std::env::var_os("WT_WIDTH_DEBUG").is_some() {
+            if crate::probe_enabled("WT_WIDTH_DEBUG") {
                 eprintln!("WT_WIDTH: set_extruder idx={idx} nd={nd} -> ncw={}", nozzle_change_width_for_nozzle(nd));
             }
             self.perimeter_width = nd * WIDTH_TO_NOZZLE_RATIO;
@@ -1605,7 +1605,7 @@ impl WipeTower {
         // tower and an E-per-mm of 0.05433, which this formula reproduces exactly at
         // h=0.3 / perimeter_width=0.5. Our measured tower E-per-mm is 0.04850. Print what
         // the fields actually hold at the moment the flow is computed.
-        if std::env::var_os("WT_WIDTH_DEBUG").is_some() {
+        if crate::probe_enabled("WT_WIDTH_DEBUG") {
             eprintln!(
                 "WT_WIDTH: set_layer z={:.3} layer_height={:.4} perimeter_width={:.6}                  nozzle_change_perimeter_width={:.6} => extrusion_flow={:.6}",
                 print_z, layer_height, self.perimeter_width,
@@ -1905,7 +1905,7 @@ impl WipeTower {
         } else {
             self.extra_spacing = 1.0;
         }
-        if std::env::var_os("WT_WIDTH_DEBUG").is_some() {
+        if crate::probe_enabled("WT_WIDTH_DEBUG") {
             eprintln!(
                 "WT_PLAN: max_depth(toolchanges)={:.3} min_wipe_tower_depth={:.3} height={:.3} has_tpu={} -> extra_spacing={:.4}",
                 max_depth, min_wipe_tower_depth, self.config.height, self.has_tpu_filament, self.extra_spacing
@@ -2189,7 +2189,7 @@ impl WipeTower {
         // with the load below, left the template's 2.0mm toolchange retraction only
         // 40% repaid entering the tower (R465).
         if crate::faithful_gate("WT_TOOLCHANGE_RETRACT_LEGACY")
-            && std::env::var_os("WT_TOOLCHANGE_RETRACT_LEGACY").is_some()
+            && crate::probe_enabled("WT_TOOLCHANGE_RETRACT_LEGACY")
         {
             if old_tool < self.filament_params.len() {
                 let retract = self.filament_params[old_tool].retract_length;
@@ -2221,7 +2221,7 @@ impl WipeTower {
         // GCode::append_tcr (see `emit_tower_tcr`), and it is
         // `retract_length_toolchange` (2.0), not `retract_length` (0.8).
         if crate::faithful_gate("WT_TOOLCHANGE_LOAD_LEGACY")
-            && std::env::var_os("WT_TOOLCHANGE_LOAD_LEGACY").is_some()
+            && crate::probe_enabled("WT_TOOLCHANGE_LOAD_LEGACY")
         {
             if new_tool < self.filament_params.len() {
                 let load = self.filament_params[new_tool].retract_length;
@@ -2327,12 +2327,12 @@ impl WipeTower {
         // (measured 379.0 over 2,723 toolchanges / 59,906 lines), we emitted
         // ~10 + ~10 = 344.0 mm. 34.5 mm x 2,723 = 94,000 mm, which is the whole
         // 94,632 mm purge deficit (R506).
-        let mut y = if std::env::var_os("TOWER_PURGE_START").is_some() {
+        let mut y = if crate::probe_enabled("TOWER_PURGE_START") {
             cleaning_box.ld.y
         } else {
             cleaning_box.ld.y + dy / 2.0
         };
-        if std::env::var_os("WTWL").is_some() {
+        if crate::probe_enabled("WTWL") {
             use std::sync::atomic::{AtomicUsize, Ordering};
             static N: AtomicUsize = AtomicUsize::new(0);
             static SUMW: AtomicUsize = AtomicUsize::new(0);
@@ -2640,7 +2640,7 @@ impl WipeTower {
         if inner_rect && layer_has_toolchange && fill_box.height() > self.perimeter_width {
             writer.rectangle(&fill_box);
         }
-        if std::env::var_os("WTFILLCNT").is_some() {
+        if crate::probe_enabled("WTFILLCNT") {
             // R505: count how often our finish-layer fill actually runs, and how
             // often each guard rejects it, to compare against C++'s dispatch
             // (656 layers, 592 block iterations, 386 full-skips, 206 passed).

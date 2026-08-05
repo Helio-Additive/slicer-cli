@@ -909,7 +909,7 @@ impl WallToolPaths {
         // WallToolPaths.cpp:456
         let transitioning_angle: f64 = deg2rad(self.m_params.wall_transition_angle as f64);
         // R550: the six resolved params, deduped, mirroring [CPP-WTPPARAMS].
-        if std::env::var_os("WTPPARAMS").is_some() {
+        if crate::probe_enabled("WTPPARAMS") {
             use std::collections::BTreeSet;
             use std::sync::Mutex;
             static SEEN: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
@@ -942,7 +942,7 @@ impl WallToolPaths {
         // EVERY step of this chain so a failure can be attributed to the step that
         // zeroes it (R536), and so "arrived empty" can be separated from "a step
         // killed it" (R511). Off by default; the area calls are not free.
-        let ap = std::env::var_os("AREAPROBE").is_some();
+        let ap = crate::probe_enabled("AREAPROBE");
         let mut areas: Vec<f64> = Vec::new();
         // R563: time the chain, split by whether the input was empty, so the
         // ~25,400 calls R562 found arriving empty can be PRICED rather than
@@ -1605,7 +1605,7 @@ mod tests {
 /// flat share jumps is the one that discards the variation.
 #[allow(dead_code)]
 pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
-    if std::env::var_os("STAGEPROBE").is_none() {
+    if !crate::probe_enabled("STAGEPROBE") {
         return;
     }
     use std::collections::HashMap;
@@ -1747,7 +1747,7 @@ fn polyprobe(stage: &str, polys: &crate::geometry::Polygons) {
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::sync::Mutex;
-    if std::env::var_os("POLYPROBE").is_none() {
+    if !crate::probe_enabled("POLYPROBE") {
         return;
     }
     #[derive(Default, Clone, Copy)]

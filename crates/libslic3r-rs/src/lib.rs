@@ -43,11 +43,49 @@
 /// `line_to_test.translate(-center_offset)`, MMS.cpp:2291) so painted lines stay
 /// aligned with the centered slices — multicolour toolchanges are preserved
 /// (painted_cube_e2e guards it). Set FRAME_UNIFY=0 / SLICE_CENTER=0 to opt out.
+/// R565: one-shot snapshot of the process environment.
+///
+/// `std::env::var`/`var_os` call libc `getenv`, and on macOS `getenv` takes a
+/// PROCESS-GLOBAL `_os_unfair_lock`. With 12 rayon workers all consulting gates
+/// inside the Arachne inner loops that lock became the single largest item in
+/// the profile: **12.52% of all samples were `__ulock_wait2`/`__ulock_wake`, and
+/// 12.39% of those resolved to `getenv`**, with a further 2.67% self time in
+/// `__findenv_locked` — 18.51% of samples had an env lookup somewhere on the
+/// stack (R565 profile, 117,851 samples).
+///
+/// Roughly 7.4% of that was DEBUG PROBES (`iscprobe` 3.25%, `gnbprobe` 2.43%,
+/// `polyprobe`, `stageprobe`, `central_census`, `transition_census`) asking
+/// whether they were enabled — and always being told no. The instrumentation
+/// added across R543-R562 was assumed free when off. Under contention it was not.
+///
+/// The environment cannot change during a slice run, so snapshotting it once is
+/// correct by construction: every gate returns exactly what it returned before.
+/// `OnceLock` after initialisation is a plain atomic load, so the global lock
+/// disappears entirely.
+///
+/// NOTE: this supersedes the "caching `faithful_gate` is a perf negative" entry
+/// on the eliminated list. That measurement predates the probe proliferation and
+/// the 12-thread contention it created (R540, applied to an elimination).
+fn env_snapshot() -> &'static std::collections::HashMap<String, String> {
+    static ENV: std::sync::OnceLock<std::collections::HashMap<String, String>> =
+        std::sync::OnceLock::new();
+    ENV.get_or_init(|| std::env::vars().collect())
+}
+
 pub fn faithful_gate(name: &str) -> bool {
-    match std::env::var(name) {
-        Ok(v) => v != "0",
-        Err(_) => true,
+    match env_snapshot().get(name) {
+        Some(v) => v != "0",
+        None => true,
     }
+}
+
+/// Default-OFF counterpart of [`faithful_gate`], for debug probes.
+///
+/// Equivalent to `std::env::var_os(name).is_some()` but served from
+/// [`env_snapshot`], so a disabled probe costs one hash lookup instead of a
+/// contended `getenv`. Mirrors the C++ probes' `::getenv(name) != nullptr`.
+pub fn probe_enabled(name: &str) -> bool {
+    env_snapshot().contains_key(name)
 }
 
 pub mod a_star;

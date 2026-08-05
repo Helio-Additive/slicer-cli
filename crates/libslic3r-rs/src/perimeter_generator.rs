@@ -2431,7 +2431,7 @@ fn traverse_loops(
         /// straight-vs-curved bridge discrimination (degree 6 → bridge_speed) is not modeled.
         // R536 probe (OHSPLITPROBE=1): count each sub-condition of the overhang-split
         // gate, so a loop that stays single-path names its own cause.
-        if std::env::var_os("OHSPLITPROBE").is_some() {
+        if crate::probe_enabled("OHSPLITPROBE") {
             use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
             static SEEN: AtomicUsize = AtomicUsize::new(0);
             static OK_DETECT: AtomicUsize = AtomicUsize::new(0);
@@ -3006,7 +3006,7 @@ impl PerimeterGenerator {
                 )
             };
 
-            if std::env::var_os("LASTPROBE").is_some() {
+            if crate::probe_enabled("LASTPROBE") {
                 let sp: usize = surface.contour.points.len()
                     + surface.holes.iter().map(|h| h.points.len()).sum::<usize>();
                 lastprobe("A surface.expolygon", 1, surface.holes.len(), sp);
@@ -3023,7 +3023,7 @@ impl PerimeterGenerator {
             }
             // PerimeterGenerator.cpp:1518-1522  Polygons last_p = to_polygons(last);
             let last_p: crate::geometry::Polygons = expolygons_to_polygons(&last);
-            if std::env::var_os("LASTPROBE").is_some() {
+            if crate::probe_enabled("LASTPROBE") {
                 let pp: usize = last_p.iter().map(|p| p.points.len()).sum();
                 lastprobe("D last_p (Polygons)", last_p.len(), 0, pp);
             }
@@ -3502,7 +3502,7 @@ impl PerimeterGenerator {
         // `detect_overhang_wall && layer_id > raft_layers` — it has NO `is_closed`
         // test. Count how many lines our extra condition excludes, split by inset,
         // before deciding whether that divergence matters.
-        if std::env::var_os("ARACHPROBE").is_some() {
+        if crate::probe_enabled("ARACHPROBE") {
             use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
             static SEEN_EXT: AtomicUsize = AtomicUsize::new(0);
             static OPEN_EXT: AtomicUsize = AtomicUsize::new(0);
@@ -3596,7 +3596,7 @@ impl PerimeterGenerator {
                     // R541 probe (ARACHPROBE=1): the builder is faithful, so if the emitted
                     // widths barely vary the INPUT junction widths must be near-constant.
                     // Measure the per-loop spread of the Arachne junction `w` directly.
-                    if std::env::var_os("ARACHPROBE").is_some() {
+                    if crate::probe_enabled("ARACHPROBE") {
                         use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
                         static LOOPS: AtomicUsize = AtomicUsize::new(0);
                         static FLAT: AtomicUsize = AtomicUsize::new(0);
@@ -3717,7 +3717,7 @@ impl PerimeterGenerator {
                         // 418 straight (degree 6) on Majora; ours is inverted. A ZPath
                         // with only two points tests as straight by construction, so
                         // count the point-count distribution of what we classify.
-                        if std::env::var_os("ARACHPROBE").is_some() {
+                        if crate::probe_enabled("ARACHPROBE") {
                             use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
                             static N2: AtomicUsize = AtomicUsize::new(0);
                             static N3_5: AtomicUsize = AtomicUsize::new(0);
@@ -3798,7 +3798,7 @@ impl PerimeterGenerator {
         // (ARACHPROBE only samples loops that reach the overhang split, which is
         // the other branch entirely). Reports how much width variation the input
         // junctions actually carry and how many paths the builder makes of them.
-        if std::env::var_os("LINEPROBE").is_some() {
+        if crate::probe_enabled("LINEPROBE") {
             use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
             static LOOPS: AtomicUsize = AtomicUsize::new(0);
             static FLAT: AtomicUsize = AtomicUsize::new(0);

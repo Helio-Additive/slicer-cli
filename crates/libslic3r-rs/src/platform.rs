@@ -185,7 +185,7 @@ pub fn detect_platform() {
                 } else if buf.contains("microsoft") || buf.contains("Microsoft") {
                     // Platform.cpp:73  if (boost::filesystem::exists("/run/WSL") && getenv("WSL_INTEROP") != nullptr) {
                     if std::path::Path::new("/run/WSL").exists()
-                        && std::env::var_os("WSL_INTEROP").is_some()
+                        && crate::probe_enabled("WSL_INTEROP")
                     {
                         // Platform.cpp:74  BOOST_LOG_TRIVIAL(info) << "Platform flavor: WSL2";
                         log::info!("Platform flavor: WSL2");

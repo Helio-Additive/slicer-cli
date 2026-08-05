@@ -493,7 +493,7 @@ impl LayerRegion {
         let perimeter_flow = self.flow(FlowRole::Perimeter, layer_height)?;
         let external_perimeter_flow = self.flow(FlowRole::ExternalPerimeter, layer_height)?;
 
-        if std::env::var_os("MPPROBE").is_some() {
+        if crate::probe_enabled("MPPROBE") {
             // R555: mirror of [CPP-MPPROBE] -- what make_perimeters receives.
             let h: usize = surface_fill
                 .surfaces
@@ -510,7 +510,7 @@ impl LayerRegion {
                 .sum();
             mpprobe(layer_id as i32, -1, surface_fill.surfaces.len(), h, p);
         }
-        if std::env::var_os("WTPCFG").is_some() {
+        if crate::probe_enabled("WTPCFG") {
             use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
             static ONCE: AtomicBool = AtomicBool::new(false);
             if !ONCE.swap(true, Relaxed) {
@@ -2375,7 +2375,7 @@ impl Layer {
                 // single expoly, reset spacing, then fill_surface_extrusion.
                 let mut out_entities: Vec<crate::extrusion_entity::ExtrusionEntityType> =
                     Vec::new();
-                let fvs_dbg = std::env::var_os("FVS_DEBUG").is_some();
+                let fvs_dbg = crate::probe_enabled("FVS_DEBUG");
                 if fvs_dbg {
                     FVS_EXPOLYS.fetch_add(
                         surface_fill.expolygons.len(),
@@ -2541,7 +2541,7 @@ impl Layer {
             // R456: per-expolygon accounting for sparse (InternalInfill) fills — how much
             // Internal AREA is handed to the filler, and how much of it yields no
             // polylines at all. `FILL_SURFACE_DEBUG=1`.
-            let fsdbg = std::env::var_os("FILL_SURFACE_DEBUG").is_some()
+            let fsdbg = crate::probe_enabled("FILL_SURFACE_DEBUG")
                 && surface_fill.params.extrusion_role
                     == crate::extrusion_entity::ExtrusionRole::InternalInfill;
             // FillBase.cpp:97 — Fill::fill_surface() shrinks the surface before handing
@@ -2692,7 +2692,7 @@ impl Layer {
                         // Computed directly against every edge, independent of EdgeGrid,
                         // to discriminate "the clip polygon differs from the one we hand
                         // the connector" from "EdgeGrid::closest_point cannot find them".
-                        if std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some() {
+                        if crate::probe_enabled("GYROID_ENDPOINT_DEBUG") {
                             use std::sync::atomic::Ordering::Relaxed;
                             let mut edges: Vec<(crate::geometry::Point, crate::geometry::Point)> =
                                 Vec::new();

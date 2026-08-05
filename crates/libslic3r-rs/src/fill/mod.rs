@@ -592,7 +592,7 @@ pub fn group_fills(
         // candidate) area vs the INTERNAL_VOID area that is skipped outright, plus the
         // density/filament that decide whether it gets filled at all. Aggregate the
         // stderr lines to find a region whose sparse infill silently disappears.
-        if std::env::var_os("FILL_REGION_DEBUG").is_some() {
+        if crate::probe_enabled("FILL_REGION_DEBUG") {
             let rc = region.region().config();
             let mut a_int = 0.0f64;
             let mut a_void = 0.0f64;
@@ -901,7 +901,7 @@ pub fn group_fills(
                     fill.expolygons.push(surface.expolygon.clone());
                     fill.region_id_group.push(region_id);
                     fill.no_overlap_expolygons = region.fill_no_overlap_expolygons.clone();
-                    if std::env::var_os("FVS_DEBUG").is_some() {
+                    if crate::probe_enabled("FVS_DEBUG") {
                         use std::sync::atomic::Ordering::Relaxed;
                         crate::layer::FVS_REGION_SEEN.fetch_add(1, Relaxed);
                         if region.fill_no_overlap_expolygons.is_empty() {
@@ -1005,7 +1005,7 @@ pub fn group_fills(
                 // EMPTY lower_internal_areas. Counting those would trip a reader into
                 // thinking 60% of real candidates have no lower layer; only count the
                 // real make_fills pass.
-                let __dbg = std::env::var_os("FVS_DEBUG").is_some()
+                let __dbg = crate::probe_enabled("FVS_DEBUG")
                     && !lower_internal_areas.is_empty();
                 if __dbg {
                     use std::sync::atomic::Ordering::Relaxed;
@@ -1661,7 +1661,7 @@ pub fn connect_infill(
     if infill_ordered.is_empty() {
         return;
     }
-    let dbg = std::env::var_os("FILL_CONNECT_DEBUG").is_some();
+    let dbg = crate::probe_enabled("FILL_CONNECT_DEBUG");
     let out_start = polylines_out.len();
     if dbg {
         use std::sync::atomic::Ordering::Relaxed;

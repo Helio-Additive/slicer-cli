@@ -2693,7 +2693,7 @@ fn intersection_segment_with_expolygons(
     // R471 (GYROID_ENDPOINT_DEBUG=1): verify AT THE SOURCE that a point emitted for a
     // crossing parameter really lies on a clip edge. If these all read ~0 here but the
     // caller measures ~26um, the displacement happens after this function.
-    let dbg_here = std::env::var_os("GYROID_ENDPOINT_DEBUG").is_some();
+    let dbg_here = crate::probe_enabled("GYROID_ENDPOINT_DEBUG");
     let dist_here = |p: &Point| -> f64 {
         let mut best = f64::MAX;
         for ex in clip {

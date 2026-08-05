@@ -413,7 +413,7 @@ pub fn extrude_loop(
     let smooth_coeff = config.smooth_coefficient;
     // R536 probe (SMOOTHPROBE=1): count each sub-condition of the smoothing gate
     // separately, so a closed gate names its own cause instead of being guessed at.
-    if std::env::var_os("SMOOTHPROBE").is_some() {
+    if crate::probe_enabled("SMOOTHPROBE") {
         use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
         static SEEN: AtomicUsize = AtomicUsize::new(0);
         static OK_DETECT: AtomicUsize = AtomicUsize::new(0);

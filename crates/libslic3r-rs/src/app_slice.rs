@@ -132,7 +132,7 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     }
 
     info!("Running Print::process() pipeline...");
-    let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+    let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
     let __t_proc = std::time::Instant::now();
     print
         .process(None, false)
@@ -323,7 +323,7 @@ pub fn slice_3mf_to_gcode(
     }
 
     info!("Running Print::process() pipeline...");
-    let __timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+    let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
     let __t_proc = std::time::Instant::now();
     print
         .process(None, false)

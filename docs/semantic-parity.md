@@ -4949,3 +4949,104 @@ be stated over the varying sub-population, never as a global mean.
 it.** `p50 = 0` on both sides means the average was never describing a typical
 block. Report the median and the zero-fraction alongside any mean that drives a
 campaign — this one drove roughly twenty-five rounds.
+
+## R565 — `getenv` was 18.5% of the profile; slicing time 1.448x -> 1.033x
+
+The largest item in R564's profile was not what it looked like, and the fix is
+the biggest performance result of the campaign. **All three baselines are
+byte-identical** (`d219a37e`, `5a34af50`, `ab415621`), 8 guards green — this
+changes only how a decision is looked up, never the decision.
+
+### It was not thread contention. It was `getenv`.
+
+I predicted the 12.5% in `__ulock_wait2`/`__ulock_wake` would be rayon workers
+parked while idle — i.e. unrecoverable. **Wrong.** Attributing each lock sample to
+its nearest non-lock caller:
+
+    total samples 117851;  __ulock_wait2/__ulock_wake leaves 14752 (12.52%)
+       12.39%   14602  getenv
+    6.44%  _os_unfair_lock_lock_slow   <- getenv <- std::sys::env::unix::getenv
+    5.94%  _os_unfair_lock_unlock_slow <- getenv <- std::sys::env::unix::getenv
+
+macOS `getenv` takes a **process-global `_os_unfair_lock`**. Twelve rayon workers
+consulting gates inside the Arachne inner loops serialise on it. With the 2.67%
+self time in `__findenv_locked`, **18.51% of all samples had an env lookup on the
+stack.**
+
+By call site — and this is the uncomfortable part:
+
+| site | share | kind |
+|---|---|---|
+| `iscprobe` | 3.25% | **debug probe (R548)** |
+| `connect_junctions` | 2.65% | gate |
+| `generate_junctions` | 2.43% | gate |
+| `gnbprobe` | 2.43% | **debug probe (R551)** |
+| `intersection_pl` | 1.68% | gate |
+| `update_is_central` | 1.01% | gate |
+| `polyprobe` / `stageprobe` / `central_census` / `transition_census` | 1.68% | **debug probes** |
+
+**Roughly 7.4% of all CPU was debug probes asking whether they were enabled and
+being told no.** The instrumentation added across R543-R562 was assumed free when
+off. On macOS, across twelve threads, it was the most expensive thing in the
+program after Clipper.
+
+### The fix
+
+`env_snapshot()` — a `OnceLock<HashMap>` built once from `std::env::vars()` —
+backs both `faithful_gate` and a new `probe_enabled`. The environment cannot
+change during a slice run, so every gate returns exactly what it returned before;
+after initialisation a lookup is a hash probe instead of a contended syscall.
+83 call sites rewritten mechanically (76 `.is_some()` + 7 `.is_none()` — the
+second pass mattered: the `.is_none()` form is what `ISCPROBE` and `GNBPROBE`
+use, the two hottest probes of all).
+
+### Result
+
+| | before | after | |
+|---|---|---|---|
+| instrumented `process` | 19.53 s | **10.78 s** | **-44.8%** |
+| instrumented `export_gcode` | 5.16 s | 4.81 s | -6.8% |
+| instrumented total | 24.72 s | **15.59 s** | -36.9% |
+| wall clock rust (min of 3) | 25.50 s | **16.04 s** | |
+| wall clock C++ (min of 3) | 17.60 s | 15.53 s | (ambient) |
+| **ratio** | **1.448x** | **1.033x** | |
+
+Measured in two stages, and the arithmetic checks out (R530): after the first
+pass rust was 18.44 s against C++ 15.67 s, a Rust-specific gain of ~17% once the
+ambient improvement in C++ is subtracted — matching the ~15-18% of samples that
+were env lookups. The second pass took `process` a further 12.94 -> 10.78 s.
+
+**Ask #3 is effectively closed: 1.033x.** C++'s own times were stable across all
+of today's runs (15.5-16.6 s), so the ratio is not a load artifact.
+
+### What this says about the campaign
+
+R563 blamed the 1.12x -> 1.45x regression on R549's `cap` fix and R558's
+variable-width builder — "both correct, both keeping their parity gains, neither
+ever priced". **That attribution was wrong.** Those fixes did add geometry work,
+but the dominant cost was the *instrumentation used to find them*. Every probe
+added to diagnose the width gap made the program slower in a way no round
+measured, because probes are supposed to be free when disabled.
+
+This also supersedes the entry "caching `faithful_gate` (perf NEGATIVE)" on the
+eliminated list. That measurement predates the probe proliferation and the
+12-thread contention it created. **An elimination is a measurement, and
+measurements expire (R539/R540 applied in reverse).**
+
+### R566
+
+The width metric's factor 2 — why C++ puts ~1.9x more width changes into the
+blocks that vary — remains the open parity question, and must be stated over the
+varying sub-population, never as a global mean (R564).
+
+On perf, re-profile before touching anything else: the remaining Clipper (~20%)
+and Voronoi (~9.3%) shares were measured *with* the getenv contention inflating
+wall time, so their true proportions have moved. At 1.033x the pressure is off,
+and the honest next step is to confirm the new profile rather than chase items
+sized against the old one.
+
+**New discipline (R565): instrumentation is not free, and "off" does not mean
+"absent".** Seven rounds of probes each added a per-call `getenv` inside the
+hottest loops in the program; collectively they cost more than the algorithms
+they were measuring, and the round that finally profiled found them at the top.
+**Price the probe when you add it, and prefer a cached predicate to a syscall.**

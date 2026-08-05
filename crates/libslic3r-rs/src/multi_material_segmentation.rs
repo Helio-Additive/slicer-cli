@@ -1559,7 +1559,7 @@ fn colorize_contours(
     // colour, AFTER colorize_line + filter_colorized_polygon. The MMU partition is a
     // nearest-boundary Voronoi over these colours, so the colour-0 share here is the
     // upstream cause of the partition's colour-0 AREA share (MMS_PARTITION leftover).
-    if std::env::var_os("MMS_DEBUG").is_some() {
+    if crate::probe_enabled("MMS_DEBUG") {
         use std::sync::atomic::Ordering::Relaxed;
         for color_lines in &colorized_contours {
             for cl in color_lines {
@@ -2823,7 +2823,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
 
     // SLICE_PHASE_TIMING sub-section timing (R392): input_prep / bbox+edgegrid /
     // projection / segmentation. Isolates which serial MMS pass dominates.
-    let __mms_t = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+    let __mms_t = crate::probe_enabled("SLICE_PHASE_TIMING");
     let __m0 = std::time::Instant::now();
 
     // Merge all regions and remove small holes. MultiMaterialSegmentation.cpp:2113-2141.
@@ -3018,7 +3018,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
         }
     }
 
-    if std::env::var_os("MMS_DEBUG").is_some() {
+    if crate::probe_enabled("MMS_DEBUG") {
         // How many painted lines survived projection+clip, per color? This
         // separates "the line was never projected / got clipped away" from
         // "colorize/merge dropped it later".
@@ -3070,7 +3070,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 // R454: length accounting across the three stages that can lose painted
                 // coverage — raw projected lines, post_process_painted_lines, then
                 // colorize_contours (counted inside colorize_contours itself).
-                if std::env::var_os("MMS_DEBUG").is_some() {
+                if crate::probe_enabled("MMS_DEBUG") {
                     use std::sync::atomic::Ordering::Relaxed;
                     let sum = |v: &[PaintedLine]| -> f64 {
                         v.iter()
@@ -3092,7 +3092,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
                     CONTOUR_LEN_TOTAL.fetch_add((cl * 1000.0) as usize, Relaxed);
                 }
                 let post_processed = post_process_painted_lines(contours, taken);
-                if std::env::var_os("MMS_DEBUG").is_some() {
+                if crate::probe_enabled("MMS_DEBUG") {
                     use std::sync::atomic::Ordering::Relaxed;
                     let s: f64 = post_processed
                         .iter()

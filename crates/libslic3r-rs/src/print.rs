@@ -1232,7 +1232,7 @@ impl Print {
         file.write_all(&body)?;
         drop(file);
 
-        if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+        if crate::probe_enabled("SLICE_PHASE_TIMING") {
             let total = export_t0.elapsed();
             eprintln!(
                 "--- export_gcode sub-phases (s): generate {:.3}  post-process(cooling/zsmooth) {:.3}  assemble+write {:.3}  total {:.3} ---{}",
@@ -1240,7 +1240,7 @@ impl Print {
                 (export_t_post - export_t_gen).as_secs_f64(),
                 (total - export_t_post).as_secs_f64(),
                 total.as_secs_f64(),
-                if std::env::var_os("KDCOUNT").is_some() {
+                if crate::probe_enabled("KDCOUNT") {
                     format!(
                         " [KD points_tree builds={} pts={}]",
                         crate::gcode::seam_placer::KD_BUILDS
@@ -1678,7 +1678,7 @@ impl Print {
         // slice_time map (Print.cpp:1787-1989: TIME_MAKE_PERIMETERS/INFILL/
         // GENERATE_SUPPORT); adds skirt/brim + simplify. Emitted before return.
         // This is the profiling hook that located the Majora serial fraction.
-        let phase_timing = std::env::var_os("SLICE_PHASE_TIMING").is_some();
+        let phase_timing = crate::probe_enabled("SLICE_PHASE_TIMING");
         let mut phase_times: Vec<(&'static str, f64)> = Vec::new();
         macro_rules! phase {
             ($name:expr, $body:block) => {{
@@ -1859,7 +1859,7 @@ impl Print {
             .first()
             .map(|o| o.num_printing_regions() > 1)
             .unwrap_or(false);
-        if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+        if crate::probe_enabled("SLICE_PHASE_TIMING") {
             eprintln!(
                 "      wipe tower gate: enable_prime_tower={} num_filaments={} is_multicolour={}",
                 self.config.enable_prime_tower, num_filaments, is_multicolour
@@ -2057,7 +2057,7 @@ impl Print {
                 // breaks the first: our fill count goes 207 -> 498 against C++'s 206.
                 // Separating them is the next step (R509).
                 cfg.enable_timelapse_print = self.config.timelapse_type == 1
-                    && std::env::var_os("TOWER_TIMELAPSE_DEPTH").is_some();
+                    && crate::probe_enabled("TOWER_TIMELAPSE_DEPTH");
                 // WipeTower.cpp:2907 — `min_wipe_tower_depth =
                 // get_limit_depth_by_height(m_wipe_tower_height)`, which feeds the
                 // `extra_spacing = min_wipe_tower_depth / max_depth` decision in
@@ -2148,7 +2148,7 @@ impl Print {
                 // R436 sizing probe: how much purge is demanded vs how much
                 // eligible (InternalInfill) object volume could absorb it under
                 // C++'s flush_into_infill routing.
-                if std::env::var_os("FLUSH_PROBE").is_some() {
+                if crate::probe_enabled("FLUSH_PROBE") {
                     let mut purge_total = 0.0f64;
                     let mut ot = initial;
                     for (_, _, tools) in &layer_seqs {
@@ -2257,7 +2257,7 @@ impl Print {
                     }
                 }
                 self.wipe_tower_results = wt.generate();
-                if std::env::var_os("WTSUM").is_some() {
+                if crate::probe_enabled("WTSUM") {
                     // Writer-only totals, matching the C++ probe at Print.cpp
                     // (after `generate_new`): `tcr.gcode` is the tower writer's
                     // own output in tower-local coordinates, BEFORE the
@@ -2331,7 +2331,7 @@ impl Print {
                     );
                 }
                 self.optimized_layer_tools = optimized_layer_tools;
-                if std::env::var_os("SLICE_PHASE_TIMING").is_some() {
+                if crate::probe_enabled("SLICE_PHASE_TIMING") {
                     let blocks: usize =
                         self.wipe_tower_results.iter().map(|l| l.len()).sum();
                     eprintln!(
@@ -3436,7 +3436,7 @@ fn emit_layer_by_island(
     // R469: the tower planned its purges against `optimized_layer_tools`. If emission
     // does NOT adopt that same order, the two disagree about which transitions exist
     // and every unmatched one falls through to the unpurged object path (R468).
-    if std::env::var_os("TOOLCHANGE_DEBUG").is_some() {
+    if crate::probe_enabled("TOOLCHANGE_DEBUG") {
         eprintln!(
             "TC_OPT z={:.3} optimized={:?} adopted={} tool_order={:?}",
             layer.print_z,
@@ -3452,7 +3452,7 @@ fn emit_layer_by_island(
     // the pre-pass is systematically one change short; R469 disproved the
     // layer-boundary explanation (only 4 of 411 fallbacks are at order[0], 407 are
     // mid-layer), so compare the two SETS directly.
-    if std::env::var_os("TOOLCHANGE_DEBUG").is_some() && multi_tool {
+    if crate::probe_enabled("TOOLCHANGE_DEBUG") && multi_tool {
         let with_work: Vec<usize> = tool_order
             .iter()
             .copied()
@@ -3519,7 +3519,7 @@ fn emit_layer_by_island(
                 // NO tower purge — C++ routes every change through append_tcr. Report
                 // what the tower DID plan for this layer so we can tell "the plan is
                 // missing an entry" from "we failed to match an entry that exists".
-                if std::env::var_os("TOOLCHANGE_DEBUG").is_some() {
+                if crate::probe_enabled("TOOLCHANGE_DEBUG") {
                     let planned: Vec<i32> = wipe_tower_layer
                         .map(|wt| {
                             wt.iter()
