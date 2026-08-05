@@ -1197,6 +1197,33 @@ ST_NL2_NEW = '''    else
     }
 '''
 
+# ---------------------------------------------------------------------------
+# ODDPROBE (R577) - the `odd` new-line cause is 3.21x (R576, 41.5% of factor 1).
+# Counts EVERY segment reaching addToolpathSegment at inset 0, split by is_odd,
+# plus alternations in the call sequence. Distinguishes "C++ generates more odd
+# walls" (share differs) from "C++ interleaves them differently" (share matches,
+# alternations differ). Mirrors the Rust probe in skeletal_trapezoidation.rs.
+# ---------------------------------------------------------------------------
+ST_ODD_OLD = '''    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0;
+'''
+ST_ODD_NEW = '''    if (getenv("ODDPROBE") && inset_idx == 0) {
+        static std::mutex od_mtx;
+        static size_t od_calls = 0, od_odd = 0, od_alt = 0;
+        static int od_prev = 2;
+        std::lock_guard<std::mutex> od_lock(od_mtx);
+        const int od_cur = is_odd ? 1 : 0;
+        if (od_prev != od_cur) ++od_alt;
+        od_prev = od_cur;
+        if (is_odd) ++od_odd;
+        ++od_calls;
+        if (od_calls % 5000 == 0)
+            fprintf(stderr, "[ODDPROBE] segments=%zu odd=%zu even=%zu alternations=%zu\\n",
+                    od_calls, od_odd, od_calls - od_odd, od_alt);
+    }
+
+    const bool nlp = getenv("NEWLINEPROBE") && inset_idx == 0;
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -1247,6 +1274,7 @@ EDITS = [
     ("PerimeterGenerator.cpp", PG_SPLIT2_OLD, PG_SPLIT2_NEW),
     ("SkeletalTrapezoidation.cpp", ST_NL_OLD, ST_NL_NEW),
     ("SkeletalTrapezoidation.cpp", ST_NL2_OLD, ST_NL2_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_ODD_OLD, ST_ODD_NEW),
 ]
 
 

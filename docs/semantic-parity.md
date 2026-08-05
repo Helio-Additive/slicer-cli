@@ -5898,3 +5898,76 @@ before assuming the interesting one matters.** Two of the five candidate
 conditions here fire exactly zero times on both engines, and the one I predicted
 would dominate was one of them. **A condition that never fires is worth
 measuring precisely because it removes itself.**
+
+## R577 — same odd-wall SHARE, 2.19x finer interleaving; and the `empty` term is fully explained
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. New
+`ODDPROBE` on both engines in `add_toolpath_segment`, gated and default-OFF.
+
+### Prediction, and it was WRONG
+
+I predicted C++ generates a higher **share** of odd segments. It does not — the
+shares are essentially equal:
+
+| outer wall @ `add_toolpath_segment` | Rust | C++ | C/R |
+|---|---|---|---|
+| segments (calls at inset 0) | 2,415,000 | 5,200,000 | **2.153** |
+| odd segments | 72,038 | 171,905 | 2.386 |
+| **odd SHARE** | **2.983%** | **3.306%** | **1.108** |
+| alternations | 22,639 | 106,949 | 4.724 |
+| **alternations per segment** | **0.00937** | **0.02057** | **2.194** |
+| mean odd-run length (2·odd/alt) | 6.36 | 3.21 | 0.505 |
+
+**C++ does not produce proportionally more odd walls — it interleaves the same
+proportion twice as finely.** Our odd walls arrive in runs of ~6.4 segments;
+C++'s in runs of ~3.2. Since every odd/even flip forces a new line, that halving
+is what R576 saw as the `odd` cause.
+
+### The `empty` term: explained exactly
+
+`LINEPROBE2` prints once per `generateToolpaths` call, so its line count is a
+direct invocation count:
+
+| | Rust | C++ | C/R |
+|---|---|---|---|
+| `generateToolpaths` invocations | 25,876 | 41,188 | **1.592** |
+| R576's `empty` new-line cause | 24,492 | 39,812 | 1.626 |
+
+**1.592 vs 1.626** — the `empty` term is simply the invocation count, as
+expected (each invocation contributes one empty-vector line start at inset 0).
+No separate mechanism.
+
+### Everything upstream now reduces to one product
+
+| factor | ratio |
+|---|---|
+| `generateToolpaths` invocations | 1.592x |
+| segments per invocation | 1.353x |
+| **product** | **2.153x** |
+| observed segment ratio | **2.153x** |
+
+Exact (R530). And 2.153x segments is the same ~2.2x seen as the outer-wall
+junction supply in R572 (2.19x) — **one underlying quantity, measured three
+different ways across three rounds.**
+
+### R578
+
+The chain is now: **1.59x invocations x 1.35x segments-per-invocation -> 2.15x
+segments -> 2.00x new lines -> 1.96x assembled lines -> (x 1.65x tags/line) ->
+3.23x tags.** Every link is measured and the arithmetic closes at each step.
+
+Attack the two remaining upstream terms:
+
+1. **`generateToolpaths` invocations, 1.592x.** How many times is
+   `WallToolPaths::generate` called, and on what? **R557/R558 eliminated the
+   region SURFACE COUNT as a *width-metric* cause — this is the invocation
+   count, a different quantity, and R539 says eliminations expire.** Count
+   invocations per layer and per region on both engines.
+2. **Segments per invocation, 1.353x.** Fewer skeleton segments per call.
+   Adjacent to the graph-size questions (R547/R559 `GRAPHPROBE`), which measured
+   edges, not emitted segments — re-derive.
+
+**New discipline (R577): when a count and a rate both differ, normalise before
+choosing which to chase.** The odd-segment *count* differs 2.39x, which looks
+like a mechanism; the odd *share* differs 1.11x, which says the mechanism is
+elsewhere. **The interesting quantity was the one the raw count was hiding.**

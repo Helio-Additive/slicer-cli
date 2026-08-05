@@ -3404,6 +3404,36 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     .perimeter_index
                     != inset_idx;
 
+            // ODDPROBE (R577) — the `odd` new-line cause is 3.21x (R576, 41.5% of
+            // factor 1). This counts EVERY segment reaching this function at inset
+            // 0, split by `is_odd`, plus alternations in the call sequence. That
+            // distinguishes "C++ generates more odd walls" (share differs) from
+            // "C++ interleaves them differently" (share matches, alternations differ).
+            if crate::probe_enabled("ODDPROBE") && inset_idx == 0 {
+                use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                static CALLS: AtomicU64 = AtomicU64::new(0);
+                static ODD: AtomicU64 = AtomicU64::new(0);
+                static ALT: AtomicU64 = AtomicU64::new(0);
+                static PREV: AtomicU64 = AtomicU64::new(2); // 2 = unset
+                let cur = u64::from(is_odd);
+                if PREV.swap(cur, Relaxed) != cur {
+                    ALT.fetch_add(1, Relaxed);
+                }
+                if is_odd {
+                    ODD.fetch_add(1, Relaxed);
+                }
+                let n = CALLS.fetch_add(1, Relaxed) + 1;
+                if n % 5_000 == 0 {
+                    eprintln!(
+                        "[ODDPROBE] segments={} odd={} even={} alternations={}",
+                        n,
+                        ODD.load(Relaxed),
+                        n - ODD.load(Relaxed),
+                        ALT.load(Relaxed),
+                    );
+                }
+            }
+
             // SkeletalTrapezoidation.cpp:1947-1950 if (empty || back().is_odd != is_odd || back().junctions.back().perimeter_index != inset_idx)
             if generated_toolpaths[inset_idx].is_empty()
                 || generated_toolpaths[inset_idx].last().unwrap().is_odd != is_odd
