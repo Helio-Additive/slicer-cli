@@ -987,7 +987,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 }
             }
             let l = LINES.load(Relaxed);
-            if l > 0 && l % 20_000 < 200 {
+            if l > 0 {
                 eprintln!(
                     "[LINEPROBE2] lines={} juncs={} distinct={} flat={} changes={} | OUTER lines={} juncs={} distinct={} flat={} changes={}",
                     l, JUNCS.load(Relaxed), DISTINCT.load(Relaxed), FLAT.load(Relaxed), CHANGES.load(Relaxed),

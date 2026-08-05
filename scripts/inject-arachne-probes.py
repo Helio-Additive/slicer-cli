@@ -999,7 +999,7 @@ VW_TAIL_NEW = '''    if( path.polyline.is_valid() ) {
         if (tpmp_chg == 0) ++tpmp_flat;
         tpmp_paths += multi_path.paths.size();
         uint64_t n = ++tpmp_calls;
-        if (n % 50000 == 0)
+        if (n % 1000 == 0)
             printf("TPMPPROBE calls=%llu widthpts=%llu in_changes=%llu in_distinct=%llu "
                    "in_spread=%llu flat_calls=%llu out_paths=%llu\\n",
                    (unsigned long long)n, (unsigned long long)tpmp_pts.load(),
@@ -1089,7 +1089,7 @@ ST_LP2_NEW = '''    generateSegments();
                 }
             }
         }
-        if (lp2_lines > 0 && (lp2_lines % 20000) < 200)
+        if (lp2_lines > 0)
             fprintf(stderr,
                 "[LINEPROBE2] lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu | OUTER lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu\\n",
                 lp2_lines, lp2_juncs, lp2_distinct, lp2_flat, lp2_changes,

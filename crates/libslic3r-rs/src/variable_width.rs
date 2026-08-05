@@ -281,7 +281,7 @@ pub fn thick_polyline_to_multi_path(
         }
         PATHS.fetch_add(multi_path.paths.len() as u64, Ordering::Relaxed);
         let n = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-        if n % 50_000 == 0 {
+        if n % 1_000 == 0 {
             println!(
                 "TPMPPROBE calls={} widthpts={} in_changes={} in_distinct={} in_spread={} flat_calls={} out_paths={}",
                 n,

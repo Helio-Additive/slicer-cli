@@ -5684,3 +5684,77 @@ either.** Four rounds compared engines at one stage at a time and kept relocatin
 the mechanism. One rate measured at assembly *and* at the builder localises it in
 a single round: 1.42x in, 2.83x out. **A ratio at one point tells you there is a
 gap; the same ratio at two points tells you where it is made.**
+
+## R574 — we split each assembled line into 1.88x more pieces; and R573's assembly numbers were sampling artefacts
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. Both probes
+tightened to report totals: `TPMPPROBE` modulo 50,000 -> 1,000 (floor error
+<=1,000), `LINEPROBE2` now prints on **every** `generateToolpaths` call, so its
+last line is exact.
+
+### CORRECTION: R573's assembly figures were boundary-sampled and are WRONG
+
+R573 read `LINEPROBE2` at a print gated on `lines % 20_000 < 200`. That fires at
+whatever point each engine happens to cross a 20k boundary — **the two engines
+were sampled at different points in their runs, so the numbers were not
+comparable.** With exact totals:
+
+| outer wall @ assembly | R573 (sampled) | R574 (exact) |
+|---|---|---|
+| junctions per line | 92.66 vs 84.05 — "**we carry MORE**" | **72.61 vs 79.80 — C++ carries 1.10x more** |
+| width changes per junction | 0.0325 vs 0.0462 = **1.42x** | **0.0650 vs 0.0577 = 0.888x** |
+
+**Both R573 claims are retracted.** The direction of the assembly comparison
+reverses: at assembly we have **more** width changes per junction than C++, not
+fewer, and C++ carries slightly more junctions per line. R571/R572's refutation
+of "we have less raw material" still stands on its own evidence (1.79x more
+distinct widths; 2.19x junction supply) — but R573's junctions-per-line figure
+was never valid support for it.
+
+### The measurement R574 was for
+
+| totals | Rust | C++ | C/R |
+|---|---|---|---|
+| **builder calls per assembled outer line** | **6.366** | **3.388** | **0.532** |
+| junctions per assembled line | 72.61 | 79.80 | 1.099 |
+| width points per builder call | 7.219 | 7.947 | 1.101 |
+| ASSEMBLY changes per junction | 0.0650 | 0.0577 | 0.888 |
+| ASSEMBLY flat-line fraction | 57.26% | 54.02% | 0.943 |
+| BUILDER changes per call | 6.70% | 19.72% | **2.942** |
+| BUILDER flat-call fraction | 97.64% | 91.29% | 0.935 |
+
+**We cut each assembled outer line into 6.37 builder pieces; C++ cuts it into
+3.39. That is 1.88x more splitting.** Prediction was right in direction.
+
+### What this establishes, and what it does not
+
+At assembly the engines are **equal or slightly in our favour** — 57.3% vs 54.0%
+flat lines, and we carry a *higher* width-change rate per junction. After the
+splitting stage we are **2.94x worse** on changes per call and markedly flatter
+(97.6% vs 91.3%). So the divergence is not attenuated across that stage, and it
+is not merely doubled as R573 claimed: **it is created there, and it reverses
+sign.** Smaller pieces are individually flatter, and the width variation ends up
+at piece boundaries — which the G-code register reads as inter-loop changes,
+exactly the R568 inversion.
+
+**Not established:** which split. The 1.88x is the aggregate of every stage
+between `generateToolpaths` and `extrusion_paths_append`. Note also that
+junction counts are **not** preserved into the builder (72.61 junctions per line
+becomes 6.37 calls x 7.22 width points), so both engines reduce heavily and the
+supply/output populations differ — no causal chain may be composed from those two
+numbers alone (R572).
+
+### R575
+
+Find which split produces the 1.88x. Instrument the candidates in order and count
+pieces-per-input-line at each: (1) `perimeter_generator.rs`'s overhang/ZPath
+`clip_extrusion` branch (~:3545) — it is the only stage that splits by geometry
+rather than by width, and `clip_extrusion` returns `ZPaths` (plural) by
+construction; (2) the WallToolPaths post-processing stages. Gate any change.
+
+**New discipline (R574): a modulo print is a sampler, and two samplers on
+different runs are not a comparison.** R573's headline survived a round because
+`lines % 20_000 < 200` looked like a total. It fired wherever each engine crossed
+a boundary, and the engines cross at different points. **Before comparing two
+cumulative counters, confirm each one is a total — not merely the last thing
+printed.**
