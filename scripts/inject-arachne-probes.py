@@ -1097,6 +1097,44 @@ ST_LP2_NEW = '''    generateSegments();
     }
 '''
 
+# ---------------------------------------------------------------------------
+# SPLITPROBE (R575) - how many pieces does ONE assembled ExtrusionLine become at
+# the overhang/ZPath split? R574 measured 6.37 builder calls per assembled outer
+# line vs C++'s 3.39 (1.88x) aggregated over every stage; this attributes the
+# pieces to the two branches at this site. Mirrors the Rust probe of the same
+# name in perimeter_generator.rs. Outer wall only (inset_idx == 0).
+# ---------------------------------------------------------------------------
+PG_SPLIT_OLD = '''            ZPaths path_overhang = clip_extrusion(subject_path, clip_paths, ClipperLib_Z::ctDifference);
+'''
+PG_SPLIT_NEW = '''            const size_t sp_supported = paths.size();
+            ZPaths path_overhang = clip_extrusion(subject_path, clip_paths, ClipperLib_Z::ctDifference);
+'''
+
+PG_SPLIT2_OLD = '''            // Reapply the nearest point search for starting point.
+            // We allow polyline reversal because Clipper may have randomly reversed polylines during clipping.
+            // Arachne sometimes creates extrusion with zero-length (just two same endpoints);
+            if (!paths.empty()) {
+'''
+PG_SPLIT2_NEW = '''            if (getenv("SPLITPROBE") && extrusion->inset_idx == 0) {
+                static std::mutex sp_mtx;
+                static size_t sp_lines = 0, sp_pieces = 0, sp_supp = 0, sp_over = 0, sp_juncs = 0;
+                std::lock_guard<std::mutex> sp_lock(sp_mtx);
+                ++sp_lines;
+                sp_pieces += paths.size();
+                sp_supp += sp_supported;
+                sp_over += (paths.size() >= sp_supported ? paths.size() - sp_supported : 0);
+                sp_juncs += extrusion->junctions.size();
+                if (sp_lines % 2000 == 0)
+                    fprintf(stderr,
+                        "[SPLITPROBE] lines=%zu juncs=%zu pieces=%zu supported=%zu overhang=%zu\\n",
+                        sp_lines, sp_juncs, sp_pieces, sp_supp, sp_over);
+            }
+            // Reapply the nearest point search for starting point.
+            // We allow polyline reversal because Clipper may have randomly reversed polylines during clipping.
+            // Arachne sometimes creates extrusion with zero-length (just two same endpoints);
+            if (!paths.empty()) {
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
@@ -1143,6 +1181,8 @@ EDITS = [
     ("VariableWidth.cpp", VW_TAIL_OLD, VW_TAIL_NEW),
     ("SkeletalTrapezoidation.cpp", ST_JUNC_OLD, ST_JUNC_NEW),
     ("SkeletalTrapezoidation.cpp", ST_LP2_OLD, ST_LP2_NEW),
+    ("PerimeterGenerator.cpp", PG_SPLIT_OLD, PG_SPLIT_NEW),
+    ("PerimeterGenerator.cpp", PG_SPLIT2_OLD, PG_SPLIT2_NEW),
 ]
 
 

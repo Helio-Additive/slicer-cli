@@ -5758,3 +5758,74 @@ different runs are not a comparison.** R573's headline survived a round because
 a boundary, and the engines cross at different points. **Before comparing two
 cumulative counters, confirm each one is a total — not merely the last thing
 printed.**
+
+## R575 — the split site is exonerated, and R574's "we split more" was causally misleading
+
+Baseline byte-identical (`d219a37e`), 8/8 guards, submodule reverted. New
+`SPLITPROBE` on both engines at the overhang/ZPath split
+(`perimeter_generator.rs` ~:3740 / `PerimeterGenerator.cpp:703-730`), gated and
+default-OFF.
+
+### The site R574 nominated is NOT the splitter
+
+| outer wall @ the ZPath split | Rust | C++ | C/R |
+|---|---|---|---|
+| pieces per line | 15.996 | 14.677 | 0.918 |
+| **pieces per junction** | **0.3821** | **0.4237** | **1.109** |
+| supported-branch pieces per line | 15.225 | 14.581 | 0.958 |
+| overhang-branch pieces per line | 0.075 | 0.095 | 1.270 |
+
+Per line we make 9% more pieces; **per junction C++ makes 11% more.** Either way
+this is ~1.1x, not the 1.88x R574 was chasing. **The overhang/ZPath split —
+including the `detect_overhang_degree` branch whose earlier miscalibration once
+over-split the outer wall 2.3x (the note at :3726) — is exonerated.**
+
+### CORRECTION: R574's ratio was driven by its denominator
+
+R574 reported "we cut each assembled outer line into 6.37 builder pieces vs
+C++'s 3.39 — 1.88x more splitting". Arithmetically correct, causally misleading:
+
+| | Rust | C++ | C/R |
+|---|---|---|---|
+| builder calls (numerator) | 215,000 | 224,000 | **1.042** |
+| assembled outer lines (denominator) | 33,772 | 66,108 | **1.957** |
+
+**The numerators are nearly equal.** The 1.88x is almost entirely the
+denominator: C++ assembles **1.96x more outer-wall `ExtrusionLine`s** for a
+similar number of builder calls. "We split each line into more pieces" is a true
+statement about the quotient and a false story about the mechanism — nothing is
+doing extra splitting on our side.
+
+### The tag gap decomposes exactly
+
+With that corrected, the outer-wall `; LINE_WIDTH:` gap factors cleanly
+(R530 check):
+
+| factor | value |
+|---|---|
+| assembled-line count | 66,108 / 33,772 = **1.9575** |
+| tags per assembled line | 0.9467 / 0.5737 = **1.6500** |
+| product | **3.2299** |
+| observed tag ratio (62,582 / 19,376) | **3.2299** |
+
+Exact to four decimals. **The gap is the product of two independent factors,
+each contributing roughly equally**, and neither is a downstream loss.
+
+### R576
+
+Attack the larger factor: **why does C++ assemble 1.96x more outer-wall
+`ExtrusionLine`s?** This is consistent with R572's 2.19x outer-wall junction
+supply and is now the dominant term. The lines are assembled in
+`add_toolpath_segment` (`:3345-3385`), which starts a new line when
+`force_new_path` is set or when the gap/width test against the previous
+junction fails (`shorter_then(..., scaled(0.010))` and
+`|w_prev - w| < scaled(0.010)`). **Instrument which of those three conditions
+starts each new line, on both engines** — that is a direct per-branch count and
+needs no struct change. The second factor (1.65x tags per line) stays open and is
+separate.
+
+**New discipline (R575): when a per-unit ratio is the headline, check the
+numerator and denominator separately before naming a mechanism.** "We split
+1.88x more" survived a round and sent this one to instrument the wrong site; the
+numerators differed by 4%. **A quotient names a mechanism only if you know which
+half of it moved.**

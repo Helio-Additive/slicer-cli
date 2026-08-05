@@ -3717,6 +3717,9 @@ impl PerimeterGenerator {
                     // and therefore falls back to `enable_overhang_speed`, which is
                     // ['1','1']. `fuzzy_skin_allows_overhang_slowdown` (:279-283) holds
                     // because neither fixture enables fuzzy skin.
+                    // SPLITPROBE (R575) counters for the two splitting branches below.
+                    let mut n_supported = 0usize;
+                    let mut n_overhang = 0usize;
                     if crate::faithful_gate("ARACHNE_OVERHANG_DEGREE") {
                         // C++ passes `lower_slices_polygons()` — which is
                         // `offset(*lower_slices, scale_(+nozzle_diameter/2))`
@@ -3734,10 +3737,12 @@ impl PerimeterGenerator {
                             &subject,
                             nozzle,
                         ) {
+                            n_supported += 1;
                             push_zpath(&mut paths, &zp, role, degree);
                         }
                     } else {
                         for zp in clip_extrusion(&subject, &clip, ClipType::Intersection).iter() {
+                            n_supported += 1;
                             push_zpath(&mut paths, zp, role, 0.0);
                         }
                     }
@@ -3793,7 +3798,39 @@ impl PerimeterGenerator {
                                 );
                             }
                         }
+                        n_overhang += 1;
                         push_zpath(&mut paths, zp, ExtrusionRole::OverhangPerimeter, degree);
+                    }
+
+                    // SPLITPROBE (R575) — how many pieces does ONE assembled ExtrusionLine
+                    // become at this site? R574 measured 6.37 builder calls per assembled
+                    // outer line vs C++'s 3.39 (1.88x), aggregated over every stage between
+                    // generateToolpaths and extrusion_paths_append. This attributes the
+                    // pieces to the two branches here. Outer wall only, to match R574.
+                    if crate::probe_enabled("SPLITPROBE") && role == ExtrusionRole::ExternalPerimeter
+                    {
+                        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                        static LINES: AtomicU64 = AtomicU64::new(0);
+                        static PIECES: AtomicU64 = AtomicU64::new(0);
+                        static SUPP: AtomicU64 = AtomicU64::new(0);
+                        static OVER: AtomicU64 = AtomicU64::new(0);
+                        static JUNCS: AtomicU64 = AtomicU64::new(0);
+                        LINES.fetch_add(1, Relaxed);
+                        PIECES.fetch_add(paths.len() as u64, Relaxed);
+                        SUPP.fetch_add(n_supported as u64, Relaxed);
+                        OVER.fetch_add(n_overhang as u64, Relaxed);
+                        JUNCS.fetch_add(line.junctions.len() as u64, Relaxed);
+                        let l = LINES.load(Relaxed);
+                        if l % 2_000 == 0 {
+                            eprintln!(
+                                "[SPLITPROBE] lines={} juncs={} pieces={} supported={} overhang={}",
+                                l,
+                                JUNCS.load(Relaxed),
+                                PIECES.load(Relaxed),
+                                SUPP.load(Relaxed),
+                                OVER.load(Relaxed),
+                            );
+                        }
                     }
 
                     if !paths.is_empty() {
