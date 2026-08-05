@@ -5971,3 +5971,77 @@ Attack the two remaining upstream terms:
 choosing which to chase.** The odd-segment *count* differs 2.39x, which looks
 like a mechanism; the odd *share* differs 1.11x, which says the mechanism is
 elsewhere. **The interesting quantity was the one the raw count was hiding.**
+
+## R578 — NEW ACCEPTANCE BAR: line-level parity ("every line the same except floats")
+
+User directive (2026-08-05): keep going until the code is very similar, slicing
+time matches, and the output is **essentially the same line-for-line** — numbers
+may differ in the last places, everything else should be identical. That is a far
+stricter bar than `semantic_compare.py`, which only checks material, layer count
+and swept-area IoU (both fixtures already PASS all five of those gates).
+
+New tool: **`scripts/line_compare.py`**. Hierarchical alignment, because naive
+alignment does not work here:
+
+    level 1   '; CHANGE_LAYER'    -> layers
+    level 2   '; FEATURE: <name>' -> feature blocks within a layer
+    level 3   extrude runs (islands), matched by ANCHOR GEOMETRY not order
+    level 4   windowed structural walk inside a matched island
+
+A line pair "matches at tolerance t" when its structural key (the line with every
+number replaced by `#`) is equal AND every numeric token agrees within t.
+
+### Two alignment artefacts found while building it — both would have been reported as findings
+
+1. **Structural key alone is not an alignment.** Nearly every extrude line has
+   the key `G# X# Y# E#`, so a two-pointer walk drifts and then pairs unrelated
+   lines. v1 reported 37.98% with "worst deviations" showing `I-1.217` vs
+   `I1.217` — sign-flipped nonsense from mispairing, not a mirrored toolpath.
+2. **The engines order a layer's islands differently.** After fixing (1), the
+   worst pairs had identical X and E with negated Y: the port loop compared
+   against the starboard one. Fixed by matching islands on anchor geometry.
+
+**Neither number was a parity result.** Recorded because the same shape of error
+has now cost this campaign three rounds (R573 sampler, R574 quotient, and this).
+
+### First readings — LOWER BOUNDS
+
+Unaligned does not mean different: the greedy island matcher leaves runs
+unpaired, so these understate similarity. Quoted as floors.
+
+| | Benchy (classic) | Majora (arachne, MM) |
+|---|---|---|
+| body lines rust / cpp | 129,547 / 130,669 | 2,166,427 / 2,445,983 |
+| **line-count gap** | **0.9%** | **12.9%** |
+| aligned pairs | 71,547 | 391,676 |
+| exact text | 65.42% | 7.50% |
+| **essentially identical (rel<=1e-4)** | **>=36.66%** | **>=2.20%** |
+| outer wall, essentially identical | **83.6%** | **17.6%** |
+| prime tower | n/a | 48.0% |
+
+**Benchy is close to line-identical on the walls (83.6%) and within 0.9% on line
+count. Majora is not** — 12.9% more lines in C++, outer wall 17.6%.
+
+The line-count gap is the one figure here that is alignment-free and therefore
+solid, and it splits the two fixtures cleanly: the classic perimeter path is
+nearly line-exact; the Arachne + multi-material path is not.
+
+### R579
+
+Two threads, both now aimed at the new bar:
+
+1. **Improve the matcher before trusting its absolute numbers** — replace greedy
+   nearest-anchor with a proper assignment over islands, and report an explicit
+   "unaligned because the tool could not pair" versus "unaligned because the line
+   has no counterpart" split. Until then only the per-feature *relative* figures
+   and the line-count gap should be quoted.
+2. **Majora's 12.9% line-count gap** is the same ~2.2x segment-supply story the
+   R572-R577 chain has been tracking, now visible directly in the output. The
+   chain closes arithmetically (1.59x invocations x 1.35x segments/invocation ->
+   2.15x segments -> 2.00x new lines -> 1.96x assembled lines -> x1.65 tags/line
+   -> 3.23x tags); R578 adds the output-side confirmation.
+
+**New discipline (R578): a new metric must be validated on the fixture you expect
+to score WELL before it is trusted on the one you expect to score badly.** Benchy
+scoring 83.6% on outer wall is what proved the matcher works at all; had I run
+Majora first, 17.6% would have looked like a finding instead of a tool defect.
