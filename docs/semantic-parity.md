@@ -6045,3 +6045,77 @@ Two threads, both now aimed at the new bar:
 to score WELL before it is trusted on the one you expect to score badly.** Benchy
 scoring 83.6% on outer wall is what proved the matcher works at all; had I run
 Majora first, 17.6% would have looked like a finding instead of a tool defect.
+
+## R579 Thread A — the matcher is fixed and is no longer the limiter
+
+`scripts/line_compare.py` rewritten in two places. No engine code touched.
+
+1. **`islands()`** — consecutive non-extrude lines are now ONE run. Previously
+   every travel/comment line became its own anchor-less run, flooding the
+   matcher with unpairable singletons.
+2. **`match_islands()`** — greedy nearest-anchor replaced by **mutual-nearest
+   neighbour iterated to a fixed point**: a pair is accepted only when each run
+   is the other's nearest available candidate. Greedy let one bad early match
+   consume a partner and cascade.
+3. **New diagnostic** — unpaired runs are split into *no counterpart* (the run
+   counts genuinely differ) versus *the matcher failed to pair them*.
+
+### The instrument now answers for itself
+
+| | Benchy | Majora |
+|---|---|---|
+| aligned share of rust body | **61.0%** | 21.9% |
+| unpaired runs | 21,350 | 819,048 |
+| **of which NO counterpart** | **21,248 (100%)** | **813,478 (99%)** |
+| matcher failures | **102** | **5,570** |
+
+**Only 102 runs on Benchy and 5,570 on Majora are matcher failures.** The
+unaligned bulk is genuine: the engines emit different numbers of extrusion runs
+per feature block. R578's caveat ("quote only relative figures") can be lifted —
+these absolute numbers now mean what they say.
+
+### Corrected readings
+
+**R578's denominators were undercounts** — lines inside unpaired runs were
+partly dropped, so its body totals (Benchy 129,547, Majora 2,166,427) were too
+small and its percentages correspondingly inflated. Corrected:
+
+| | Benchy | Majora |
+|---|---|---|
+| rust body lines | 160,963 | 2,553,030 |
+| aligned pairs | 98,249 | 558,281 |
+| exact text | 64.43% | 14.97% |
+| **essentially identical (rel<=1e-4)** | **40.38%** | **4.41%** |
+| outer wall | **80.4%** | **26.2%** |
+| inner wall | 69.1% | 19.4% |
+| prime tower | n/a | 27.3% |
+| floating vertical shell | — | 1.7% |
+
+Outer wall on Benchy reads 80.4% against R578's 83.6% — *lower* with the better
+matcher, because more and harder runs now align. That direction is expected and
+is the honest number.
+
+### What the numbers say
+
+**Benchy: 40.4% of body lines are essentially identical, 64.4% of aligned pairs
+are exact text.** The walls are the strong part (80.4%).
+
+**Majora: 4.4%.** 2,219,401 of 2,553,030 rust body lines sit in runs with no
+counterpart at all. That is the same divergence the R572-R577 chain measured
+upstream (2.153x segments at inset 0), now seen end-to-end in the output.
+
+`Floating vertical shell` at **1.7%** is the worst feature on either fixture and
+has never been examined — it was cleared only as an *area* question (R539's
+`VSHELL_DROP_FILTER` era), never line-for-line.
+
+### R580
+
+Thread B is untouched this round and stays queued: **`generateToolpaths`
+invocations 1.592x** — count `WallToolPaths::generate` calls per layer and per
+region on both engines. Then `Floating vertical shell` (1.7%), which is now the
+worst per-feature line-level score and is cheap to look at.
+
+**New discipline (R579): make a measuring instrument report its own failure
+rate.** Two rounds were spent unsure whether "unaligned" meant "different" or
+"the tool gave up". A counter that separates the two settled it in one run — and
+it also caught that the previous denominator was wrong.

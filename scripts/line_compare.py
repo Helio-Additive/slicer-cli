@@ -73,59 +73,98 @@ def split_layers(path):
 
 
 def islands(lines):
-    """Split a feature block into extrude runs separated by travels/other lines.
+    """Split a feature block into runs, alternating extrude / non-extrude.
 
-    Returns [(anchor, lines)] where anchor is the first extruding move's (X,Y),
-    used to match runs BETWEEN engines by geometry rather than by emission order
-    (R578: the engines order a layer's islands differently, which made an
-    order-based walk pair the port loop against the starboard one)."""
-    runs, cur, anchor = [], [], None
+    Returns [(anchor, lines)]; anchor is the first extruding move's (X,Y) for an
+    extrude run and None for a travel/comment run. Anchors let runs be matched
+    BETWEEN engines by geometry rather than emission order (R578: the engines
+    order a layer's islands differently, which made an order-based walk pair the
+    port loop against the starboard one).
+
+    R579: consecutive non-extrude lines are now ONE run. Previously each became
+    its own anchor-less run, flooding the matcher with unpairable singletons.
+    """
+    runs, cur, anchor, cur_is_ex = [], [], None, None
     for ln in lines:
-        is_extrude = (ln[:3] in ('G1 ', 'G2 ', 'G3 ')) and ' E' in ln
-        if is_extrude:
-            if anchor is None:
+        is_ex = (ln[:3] in ('G1 ', 'G2 ', 'G3 ')) and ' E' in ln
+        if cur_is_ex is None or is_ex == cur_is_ex:
+            if is_ex and anchor is None:
                 mx = re.search(r'X([-+0-9.]+)', ln)
                 my = re.search(r'Y([-+0-9.]+)', ln)
                 if mx and my:
                     anchor = (float(mx.group(1)), float(my.group(1)))
             cur.append(ln)
+            cur_is_ex = is_ex
         else:
-            if cur:
-                runs.append((anchor, cur))
-                cur, anchor = [], None
-            else:
-                cur.append(ln)
-                runs.append((None, cur))
-                cur = []
+            runs.append((anchor, cur))
+            cur, anchor, cur_is_ex = [ln], None, is_ex
+            if is_ex:
+                mx = re.search(r'X([-+0-9.]+)', ln)
+                my = re.search(r'Y([-+0-9.]+)', ln)
+                if mx and my:
+                    anchor = (float(mx.group(1)), float(my.group(1)))
     if cur:
         runs.append((anchor, cur))
     return runs
 
 
 def match_islands(rruns, cruns):
-    """Greedy nearest-anchor pairing; unpaired runs are returned separately."""
-    used = set()
-    pairs, r_un = [], []
-    for ra, rl in rruns:
-        best, bi = None, None
-        for k, (ca, cl) in enumerate(cruns):
-            if k in used:
-                continue
-            if ra is None or ca is None:
-                if ra is None and ca is None:
-                    best, bi = 0.0, k
-                    break
-                continue
-            d = (ra[0] - ca[0]) ** 2 + (ra[1] - ca[1]) ** 2
-            if best is None or d < best:
-                best, bi = d, k
-        if bi is None:
-            r_un.append((ra, rl))
-        else:
-            used.add(bi)
-            pairs.append((rl, cruns[bi][1]))
-    c_un = [cruns[k] for k in range(len(cruns)) if k not in used]
-    return pairs, r_un, c_un
+    """Mutual-nearest-neighbour pairing on anchor geometry.
+
+    R579: replaces R578's greedy nearest-anchor pass, where one bad early match
+    consumed a partner and cascaded. A pair is accepted only when each run is the
+    other's nearest available candidate; iterated to a fixed point. Anchor-less
+    (travel/comment) runs are matched in order among themselves.
+
+    Returns (pairs, r_unpaired, c_unpaired, surplus) where `surplus` is the part
+    of the leftovers explained by a difference in run COUNT — i.e. runs that have
+    no counterpart to pair with, as opposed to runs the matcher merely failed to
+    pair.
+    """
+    r_ex = [(i, a, l) for i, (a, l) in enumerate(rruns) if a is not None]
+    c_ex = [(j, a, l) for j, (a, l) in enumerate(cruns) if a is not None]
+    r_no = [(i, l) for i, (a, l) in enumerate(rruns) if a is None]
+    c_no = [(j, l) for j, (a, l) in enumerate(cruns) if a is None]
+
+    pairs = []
+    ropen = list(range(len(r_ex)))
+    copen = list(range(len(c_ex)))
+    while ropen and copen:
+        d2 = {}
+        rnear, cnear = {}, {}
+        for ri in ropen:
+            best, bj = None, None
+            for cj in copen:
+                a, b = r_ex[ri][1], c_ex[cj][1]
+                d = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
+                d2[(ri, cj)] = d
+                if best is None or d < best:
+                    best, bj = d, cj
+            rnear[ri] = bj
+        for cj in copen:
+            best, bi = None, None
+            for ri in ropen:
+                d = d2[(ri, cj)]
+                if best is None or d < best:
+                    best, bi = d, ri
+            cnear[cj] = bi
+        matched = [(ri, rnear[ri]) for ri in ropen
+                   if rnear[ri] is not None and cnear.get(rnear[ri]) == ri]
+        if not matched:
+            break
+        for ri, cj in matched:
+            pairs.append((r_ex[ri][2], c_ex[cj][2]))
+            ropen.remove(ri)
+            copen.remove(cj)
+
+    n = min(len(r_no), len(c_no))
+    for k in range(n):
+        pairs.append((r_no[k][1], c_no[k][1]))
+
+    r_un = [r_ex[ri][2] for ri in ropen] + [l for _, l in r_no[n:]]
+    c_un = [c_ex[cj][2] for cj in copen] + [l for _, l in c_no[n:]]
+    surplus = abs(len(rruns) - len(cruns))
+    return pairs, r_un, c_un, surplus
 
 
 def walk(rlines, clines, W, acc, worst):
@@ -179,7 +218,8 @@ def main():
     rl, cl = split_layers(rp), split_layers(cp)
     print(f"layers: rust {len(rl)}  cpp {len(cl)}")
 
-    acc = {'aligned': 0, 'ronly': 0, 'conly': 0, 'worse': 0, 'tol': [0] * len(TOLS)}
+    acc = {'aligned': 0, 'ronly': 0, 'conly': 0, 'worse': 0, 'tol': [0] * len(TOLS),
+           'unpaired_runs': 0, 'surplus_runs': 0, 'unpaired_lines': 0}
     worst = []
     feat_only = Counter()
     per_feat = {}
@@ -198,13 +238,19 @@ def main():
             for k in range(n):
                 before = dict(acc)
                 before_tol = list(acc['tol'])
-                pairs, r_un, c_un = match_islands(islands(rblocks[k]), islands(cblocks[k]))
+                ri_, ci_ = islands(rblocks[k]), islands(cblocks[k])
+                pairs, r_un, c_un, surplus = match_islands(ri_, ci_)
                 for rl_, cl_ in pairs:
                     walk(rl_, cl_, W, acc, worst)
-                for _, rl_ in r_un:
+                nun = len(r_un) + len(c_un)
+                for rl_ in r_un:
                     acc['ronly'] += len(rl_)
-                for _, cl_ in c_un:
+                    acc['unpaired_lines'] += len(rl_)
+                for cl_ in c_un:
                     acc['conly'] += len(cl_)
+                    acc['unpaired_lines'] += len(cl_)
+                acc['unpaired_runs'] += nun
+                acc['surplus_runs'] += min(surplus, nun)
                 d = per_feat.setdefault(name, {'aligned': 0, 'ok': 0, 'ronly': 0, 'conly': 0})
                 d['aligned'] += acc['aligned'] - before['aligned']
                 d['ok'] += acc['tol'][3] - before_tol[3]
@@ -223,6 +269,10 @@ def main():
     print(f"  aligned pairs   {acc['aligned']:>9}")
     print(f"  rust-only lines {acc['ronly']:>9}   ({100*acc['ronly']/max(tot_r,1):5.2f}% of rust body)")
     print(f"  cpp-only lines  {acc['conly']:>9}   ({100*acc['conly']/max(tot_c,1):5.2f}% of cpp body)")
+    ur, sr = acc['unpaired_runs'], acc['surplus_runs']
+    print(f"  unpaired runs   {ur:>9}   of which {sr} ({100*sr/max(ur,1):.0f}%) have NO counterpart")
+    print(f"                            the other {ur-sr} are runs the MATCHER failed to pair")
+    print(f"  lines in unpaired runs {acc['unpaired_lines']:>9}")
 
     print(f"\nNUMERIC AGREEMENT among {acc['aligned']} aligned pairs")
     for t, nm in enumerate(NAMES):
