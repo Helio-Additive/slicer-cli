@@ -1271,6 +1271,7 @@ pub fn extrude_path_with_arc_fitting(
     // (0.43272-vs-0.43273, 0.42-vs-0.41999), so enabling it today ADDS
     // unmatched lines (83187 → 87805). Unlocks when width values converge.
     static LW_PERPATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    static EXPW_EMITTED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     // EXPWPROBE (R569) — do the per-path widths produced by
     // thick_polyline_to_multi_path still differ by the time they reach the
     // emitter? Counts outer-wall paths seen and how many changed the register.
@@ -1282,6 +1283,9 @@ pub fn extrude_path_with_arc_fitting(
         && writer.width_tag_changed(path.width)
     {
         writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
+        if crate::probe_enabled("EXPWPROBE") {
+            EXPW_EMITTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     if expw {
@@ -1293,17 +1297,44 @@ pub fn extrude_path_with_arc_fitting(
             ZEROW.fetch_add(1, Ordering::Relaxed);
         }
         static PREV: AtomicU64 = AtomicU64::new(0);
+        static PREV_END: std::sync::Mutex<Option<(i64, i64)>> =
+            std::sync::Mutex::new(None);
+        static CH_CONT: AtomicU64 = AtomicU64::new(0);
+        static CH_TRAV: AtomicU64 = AtomicU64::new(0);
+        static CONT: AtomicU64 = AtomicU64::new(0);
+        // Contiguous == this path starts exactly where the previous one ended, so
+        // no travel was needed between them (the internal analogue of R568's
+        // G-code classification).
+        let contiguous = {
+            let mut g = PREV_END.lock().unwrap();
+            let f = path.polyline.points.first().map(|p| (p.x, p.y));
+            let c = *g == f;
+            *g = path.polyline.points.last().map(|p| (p.x, p.y));
+            c
+        };
+        if contiguous {
+            CONT.fetch_add(1, Ordering::Relaxed);
+        }
         let cur = (path.width as f32).to_bits() as u64;
         if PREV.swap(cur, Ordering::Relaxed) != cur {
             CHANGED.fetch_add(1, Ordering::Relaxed);
+            if contiguous {
+                CH_CONT.fetch_add(1, Ordering::Relaxed);
+            } else {
+                CH_TRAV.fetch_add(1, Ordering::Relaxed);
+            }
         }
         let n = SEEN.fetch_add(1, Ordering::Relaxed) + 1;
         if n % 50_000 == 0 {
             println!(
-                "EXPWPROBE outer_paths={} width_changed={} zero_width={}",
+                "EXPWPROBE outer_paths={} width_changed={} contiguous={} ch_contig={} ch_after_travel={} zero_width={} EMITTED_ALLROLES={}",
                 n,
                 CHANGED.load(Ordering::Relaxed),
+                CONT.load(Ordering::Relaxed),
+                CH_CONT.load(Ordering::Relaxed),
+                CH_TRAV.load(Ordering::Relaxed),
                 ZEROW.load(Ordering::Relaxed),
+                EXPW_EMITTED.load(Ordering::Relaxed),
             );
         }
     }

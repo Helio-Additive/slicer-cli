@@ -5378,3 +5378,89 @@ read which comparison each one guards before blaming either.** `tolerance` and
 branches; I carried "the merge tolerance is 50 um" for a full round, and it was
 never the merge tolerance at all. **The constant you can name is not the constant
 the branch uses.**
+
+## R570 — fragmentation and adjacency are BOTH dead; the output gap equals the input gap
+
+Baseline byte-identical (`d219a37e`), guards green, no C++ changes this round.
+Probes stay gated and default-OFF.
+
+### Prediction, and it was WRONG
+
+I predicted our outer-wall blocks would contain **more** extrude runs (more
+travels) than C++, since that was the only way R568's "tags follow travels"
+pattern could arise from fragmentation. New `$D/runsblk.py` (pure G-code):
+
+| outer wall | Rust | C++ |
+|---|---|---|
+| blocks | 14,538 | 14,864 |
+| extrudes | 526,443 | 623,886 |
+| travels | 192,580 -> **181,051** | 192,580 |
+| runs (contiguous extrude sequences) | 149,770 | 165,942 |
+| **runs/block** | **10.302** | **11.164** |
+| travels/block | 12.454 | 12.956 |
+| run length p10/p50/p90/p99/max | 1 / 1 / 8 / 39 / 281 | 1 / 1 / 9 / 43 / 957 |
+| **tags/run** | **0.1294** | **0.3771** |
+
+We have **fewer** runs and **fewer** travels per block, and the run-length
+distributions are nearly identical. **Fragmentation is not the mechanism** — it
+would need a ~200x effect and the measurement is 0.92x in the wrong direction.
+
+### Adjacency is dead too
+
+`EXPWPROBE` extended to test contiguity internally: a path is contiguous when it
+starts exactly where the previous one ended, so no travel was needed. At 200,000
+outer-wall paths:
+
+    outer_paths=200000 width_changed=8810 contiguous=189500
+    ch_contig=6988 ch_after_travel=1822 zero_width=0
+
+**94.75% of our outer-wall paths are contiguous with their predecessor**, and
+79% of the width changes land on a contiguous path. Our split partners are *not*
+being separated by travels, and they are *not* being reordered apart. Both
+mechanisms R570 was queued to test are refuted.
+
+**Caveat, stated because it matters (R567):** `ch_contig`/`ch_after_travel` are
+**not** directly comparable to R568's G-code buckets. The probe keeps its own
+outer-wall-only register, whereas the writer's `last_width_tag` is global across
+all roles — an infill path between two outer-wall paths moves the writer's
+register but not the probe's. The two counts answer different questions, and the
+residual tension between "6,988 contiguous internal changes" and "101 intra-run
+tags in the file" is **not resolved**; it is a scope artefact of at least one of
+the two registers and R571 should settle which.
+
+### What the round actually establishes
+
+The per-path emitter is the source of essentially every tag (88,406 written by
+the time 200k outer-wall paths had passed; 153,524 in the finished file versus
+215,199 for C++). And the decisive arithmetic:
+
+| quantity | Rust | C++ | ratio |
+|---|---|---|---|
+| input width changes per builder call (R569) | 6.94% | 19.67% | **2.83x** |
+| output tags per extrude run (R570) | 12.94% | 37.71% | **2.91x** |
+
+**2.83x in, 2.91x out.** Within the precision of two different denominators
+(builder calls vs G-code runs — not identical populations, so this is an
+agreement of *ratios*, not an identity), **everything downstream of the beading
+is proportional.** No stage between the beading and the writer amplifies or
+attenuates the gap.
+
+### R571 — the width campaign reduces to ONE question
+
+Fourteen rounds of downstream candidates are now exhausted. The whole
+`; LINE_WIDTH:` metric is explained by a single upstream fact: **we feed 2.83x
+less width variation into the extrusion builder**, i.e. 97.5% of our outer-wall
+loops arrive perfectly flat versus 91.1% for C++.
+
+That is the beading question, and it is where R567 left it (2.18x per-junction
+change rate on outer walls) and where R568 deferred it. **Do the deferred
+`BEADPROBE` extension**: how often do successive `BeadingStrategy::compute` calls
+along one loop return different bead widths, on both engines. That is now the
+only live lead, not one of several.
+
+**New discipline (R570): two hypotheses can share a symptom and both be wrong.**
+"Tags follow travels" was read as evidence for fragmentation *and* for
+reordering; measuring each directly killed both in one round, and the truth was
+that the symptom never needed a downstream mechanism at all. **When a downstream
+story requires a 200x effect, measure its size before believing any version of
+it.**
