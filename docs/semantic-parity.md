@@ -6937,3 +6937,82 @@ things did move, but the metric that was supposed to adjudicate cannot.
 Probe-only this round: majora `e8027b80` and benchy `a27419f0` both reproduce, 8/8
 guard tests pass. The R590 fix remains verified on the evidence that IS robust --
 byte-exact gate-OFF A/B, per-call graph density, semantic gates, and timing.
+
+## R592 — the acceptance instrument was the dominant term; new aligner, and the real feature map
+
+Nine rounds of internal-probe archaeology (R583-R591) moved graph density and found
+one real defect, while the line-level score sat still. This round attacked from the
+OUTPUT side and found that the score itself was wrong.
+
+**The control that broke it open.** Order-independent multiset over the whole Benchy
+file:
+
+    total lines            rust 164,976   cpp 166,903   gap 1.15%
+    EXACT line text shared 125,081  = 75.82% of rust, 74.94% of cpp
+    structural key shared  164,672  = 99.82% of rust, 98.66% of cpp
+
+**Three quarters of our lines are byte-identical to a C++ line**, and virtually all
+have a structural counterpart -- yet `line_compare.py` scored 40.39%. The 35-point
+shortfall was its own alignment.
+
+**Two independent symptoms confirmed it.** Among pairs `line_compare` called
+ALIGNED, per-field relative deviation reached **2.0** on X/Y/E/I/J -- a reldev of 2
+means opposite signs or one value near zero, i.e. unrelated lines paired, not float
+drift. And its unpaired counts were nearly symmetric (rust 62,646 / cpp 64,502)
+including **6,300 blank lines and ~7,000 comments** -- text that is trivially
+identical. A matcher that cannot pair blank lines is not measuring the engine.
+
+**New instrument: `scripts/line_align.py`.** Same segmentation (layer -> feature
+block), but the within-block stage is replaced by a longest-common-subsequence
+alignment (difflib) over structural keys. LCS is order-respecting, never pairs
+across a reordering, and reports unmatched lines as inserts/deletes instead of
+force-matching them. Scoring is unchanged: structural keys equal AND every numeric
+token within 1e-4.
+
+    Benchy   40.39%  ->  52.51%
+    Majora    4.42%  ->   8.19%
+
+**This is an instrument change, not an engine change** -- both baselines
+(`e8027b80`, `a27419f0`) reproduce unchanged, 8/8 guards pass, nothing was
+recompiled. v1's figures were not wrong about the engine, they were dominated by
+matcher noise. Even 52.51% remains a lower bound against the 75.82% exact-text
+control; the residual there is ordering/context, which an order-respecting aligner
+correctly refuses to credit.
+
+**The feature map, finally legible** (Benchy, essentially-identical share):
+
+| feature | v2 |
+|---|---|
+| Custom / (pre-feature) | 99.4% / 96.9% |
+| **Outer wall** | **62.7%** |
+| Inner wall | 55.1% |
+| Gap infill | 49.5% |
+| Sparse infill | 19.4% |
+| Top surface | 18.5% |
+| Internal solid infill | 14.2% |
+| Floating vertical shell | 11.4% |
+| Bottom surface | 9.1% |
+| Bridge | 2.9% |
+
+**The uncomfortable part: the walls are the BEST-performing features.** R583-R591
+spent nine rounds inside Arachne chasing outer-wall width changes -- on the feature
+that already scores highest. The worst are Bridge (2.9%), Bottom surface (9.1%),
+Floating vertical shell (11.4%) and Internal solid infill (14.2%): the solid-fill
+and bridging paths, a different subsystem entirely, and one this campaign has never
+examined line-for-line.
+
+Majora's map is uniformly low (outer wall 10.3%, prime tower 22.6%) with 70% of
+rust lines unaligned, consistent with its 11.8% body line-count gap; it is the
+harder fixture and should stay second in priority behind Benchy.
+
+**Prediction: half right, by an unexpected route.** I predicted the residual would
+be concentrated in a few line kinds rather than spread evenly, and specifically NOT
+in wall geometry. Both hold -- the spread across features is 2.9% to 99.4%, and the
+walls are fine. But I did not anticipate that the dominant term was the measuring
+instrument, and neither the prediction nor its fallback (pervasive float drift)
+named it. The R518 lesson applies to the line-level bar exactly as it did to the
+silhouette metric: validate a comparative metric with a control before trusting it.
+
+**R593 goes to the solid-fill path** -- Internal solid infill, Top/Bottom surface,
+Bridge on Benchy -- with `line_align.py` as the instrument and the per-feature
+figures above as the baseline to move.
