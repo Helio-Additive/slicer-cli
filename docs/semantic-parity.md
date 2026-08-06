@@ -8144,3 +8144,82 @@ that before assuming it. Fallback: if object features DO move, `retract_before_w
 non-zero and the change is not tower-local, so A/B it on Benchy too before shipping. The
 remaining `wipe_dist`-clamp difference on object features (Inner wall 0.636x, Top surface
 0.508x) is a separate item and should not be folded in.
+## R607 — two corrections to R606, and the defect relocated to the live path
+
+R607 set out to implement R606's fix. Checking the premises first (as the round's own
+brief required) invalidated two of them. Measurement only — no code changed, `git status`
+clean, baselines intact.
+
+**Correction 1: R606's "closing identity" was CIRCULAR.** R606 reported the prime-tower
+E ratio as 0.602 and announced that 0.76 / 1.2629 = 0.6018 "IS
+`retraction_length / retract_length_toolchange`". But 0.602 was itself computed as
+0.76 / 1.2629 — the check compared two numbers with themselves and could not have
+failed. The actual config, read this round from the 3MF:
+
+| key | value |
+|---|---|
+| `retraction_length` | 0.8 |
+| `retract_length_toolchange` | **2** |
+| `retract_before_wipe` | **0%** |
+| `wipe_distance` | 2 |
+| `prime_tower_max_speed` | 90 |
+
+`retraction_length / retract_length_toolchange` = 0.8 / 2 = **0.4**, not 0.602. The
+identity did not hold. R606's pre-registered fallback ("if the tower E/block does not
+land on 1.2629, the identity was coincidence — dump the actual config values") is what
+caught it.
+
+**The real identity, which is not circular.** Our 0.76 = 0.8 x 0.95 (plain retraction x
+the dE factor). C++'s toolchange wipes should be 2 x 0.95 = 1.90, and its Prime tower
+mean is a MIXTURE of toolchange and ordinary tower wipes:
+
+    E/blk = 0.76*(1-x) + 1.90*x,  x = toolchanges / tower wipe blocks = 2723/6161 = 0.4420
+          = 1.2639     vs measured 1.2629   (0.08%)
+
+That predicts C++'s measured mean from four independently-known quantities, so it does
+confirm C++ uses `retract_length_toolchange` for toolchange wipes. **It also invalidates
+R606's target for OUR output**: our ratio is 2721/3371 = 0.8072, so a correct fix should
+land near **1.6802**, not 1.2629.
+
+**Correction 2: R606 analysed DEAD CODE.** `exporter.rs:2600 pub fn wipe` — the function
+whose `_toolchange: bool` R606 built its finding on — **has no callers**. Its only
+would-be caller, `exporter.rs:2491 retract()`, is itself stubbed: `let _ = wipe;` with
+"TODO: Implement wipe integration ... For now, skip wipe". The live wipe is
+**`writer.rs:1564 pub fn retract()`**, which emits `; WIPE_START` at `:1610`/`:1701`.
+
+This is the DEAD-TWIN rule (R597/R600) — which R606 listed in its own checklist and did
+not apply to the function it was reading. Third dead-twin in this codebase after
+`fill/mod.rs` and `extrude_collection`.
+
+**What the live path actually does.** `writer.rs:1574-1623` is a faithful port and DOES
+apply the factor R606 said was missing entirely:
+
+```rust
+let length = self.retraction_length * (1.0 - self.config.retract_before_wipe / 100.0);
+```
+
+(note the `/100.0` — the config is a percentage, `0%`, so this term is inert here). So
+R606's "`retract_before_wipe` is never applied" is also wrong.
+
+**The defect that survives, correctly located.** `writer.rs:1564 retract()` takes **no
+`toolchange` parameter at all** and uses `self.retraction_length` unconditionally, so
+toolchange wipes retract 0.8 where C++ retracts 2. There is also no
+`retract_for_toolchange` anywhere in our writer, though C++'s `GCodeWriter` has one. The
+observation R606 made is real; only its site and its arithmetic were wrong.
+
+**Not fixed this round, deliberately.** `.retract()` has 14 call sites and none of them
+carries a toolchange flag, so this needs a `retract_for_toolchange` (or a flag threaded
+to the tower's retract) plus a probe to identify which call site emits the tower wipes.
+Rushing that at the end of a round spent correcting two errors is how the third gets
+made.
+
+**R608:** add the toolchange branch on the LIVE path. First probe `writer.rs:1564
+retract()` to identify which call site produces the 3,371 Prime-tower wipe blocks, then
+give that site `retract_length_toolchange` (C++ `GCodeWriter::retract_for_toolchange`,
+and `wipe_speed = prime_tower_max_speed` per `GCode.cpp:370`). **Pre-registered target,
+now derived rather than guessed: tower E/block 0.7600 -> ~1.6802, and the per-block max
+|E| in the Prime tower 0.76 -> 1.90 exactly.** Object features must be unchanged —
+`retract_before_wipe` is 0% so that term is inert, and their E/block already matches to
+four decimals. Fallback: if the tower wipes do not come from `writer.retract()` at all
+but from the tower template's own `G1 E-` lines, then the E discrepancy is in
+`wipe_tower.rs` and the toolchange branch is not the fix.
