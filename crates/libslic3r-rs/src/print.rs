@@ -530,6 +530,17 @@ impl Print {
         // C++ `GCode::m_toolchange_count` — print-wide, consumed by the
         // change_filament_gcode template (`toolchange_count`).
         let mut toolchange_count: i64 = 0;
+        // R603: print-wide TOTAL tool changes, needed UP FRONT for the `M73 E`
+        // countdown (C++ `total_filament_change`, GCodeProcessor.cpp:601-1119).
+        // C++ can count these in a post-process because it re-walks the finished
+        // gcode; we stream, so take the count from the tower plan, which is the
+        // same population the emitter draws from.
+        let total_tool_changes: i64 = self
+            .wipe_tower_results
+            .iter()
+            .flat_map(|grp| grp.iter())
+            .filter(|r| r.is_tool_change)
+            .count() as i64;
         while i < all_layers.len() {
             let print_z = all_layers[i].layer.print_z;
             let mut j = i + 1;
@@ -837,6 +848,7 @@ impl Print {
                     &mut prev_last_tool,
                     wipe_tower_layer,
                     &mut toolchange_count,
+                    total_tool_changes,
                     optimized_tools,
                 );
 
@@ -2945,6 +2957,9 @@ fn emit_tower_tcr(
     print_config: &crate::print_config::PrintConfig,
     max_layer_z: f64,
     toolchange_count: i64,
+    // R603: total tool changes in the whole print, for the `M73 E` countdown
+    // (C++ `total_filament_change`). 0 disables the emission.
+    total_tool_changes: i64,
     first_layer: bool,
 ) {
     // `transform_gcode`'s `pos` seed is the tower-LOCAL start (same frame as the
@@ -3152,6 +3167,44 @@ fn emit_tower_tcr(
     if tag_at_head {
         writer.write_raw(tower_feature);
     }
+    // R603: `M73 E<remaining filament changes>` — GCodeProcessor.cpp:601,
+    //     snprintf(buf, ..., "M73 E%d\n", total_filament_change - filament_change_num)
+    // inserted at each filament-block boundary (GCodeProcessor.cpp:1119). In the
+    // emitted gcode it lands immediately AFTER the bare `T<n>` tool command
+    // (verified at cpp_majora_new.gcode:6930-6931). C++ does this in a whole-file
+    // post-process; we have no such pass, so it is spliced into the substituted
+    // tower block at the same position, which is textually identical.
+    //
+    // The countdown uses OUR total, not C++'s, because that is what C++'s own
+    // formula would produce on our gcode. Measured before implementing: with our
+    // total (2,721) 2,304/2,721 of these lines land on an identical C++ line;
+    // forcing C++'s total (2,723) would score only 1,971. The 417 that still miss
+    // are where the two engines' tool changes sit on different layers -- a
+    // pre-existing 2-tool-change difference, not something this emission creates.
+    let g = if crate::faithful_gate("M73_REMAIN_FILAMENT_CHANGES")
+        && tcr.is_tool_change
+        && total_tool_changes > 0
+        && toolchange_count > 0
+    {
+        let t_line = format!("{}{}", print_config.toolchange_prefix, tcr.new_tool.max(0));
+        let m73 = format!("M73 E{}", total_tool_changes - toolchange_count);
+        let mut out = String::with_capacity(g.len() + m73.len() + 1);
+        let mut spliced = false;
+        for line in g.split_inclusive('\n') {
+            out.push_str(line);
+            if !spliced && line.trim_end() == t_line {
+                if !line.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str(&m73);
+                out.push('\n');
+                spliced = true;
+            }
+        }
+        out
+    } else {
+        g
+    };
     writer.write_raw_content(&g);
     // R475: we just wrote `; FEATURE: Prime tower` as raw text, so the writer's
     // persistent last-role (C++ m_last_extrusion_role, GCode.hpp:538) has to move
@@ -3180,6 +3233,9 @@ fn emit_layer_by_island(
     // Running print-wide tool-change counter (C++ `GCode::m_toolchange_count`),
     // used by the `change_filament_gcode` template.
     toolchange_count: &mut i64,
+    // R603: print-wide TOTAL tool changes, for the `M73 E` countdown
+    // (C++ `total_filament_change`, GCodeProcessor.cpp:601).
+    total_tool_changes: i64,
     // Minimum-flush tool order for THIS layer, when the optimizer ran; emission
     // must follow it so the tower's planned changes line up (R439).
     optimized_tools: Option<&[usize]>,
@@ -3541,6 +3597,7 @@ fn emit_layer_by_island(
                     print_config,
                     layer.print_z,
                     *toolchange_count,
+                    total_tool_changes,
                     is_first_layer,
                 );
                 writer.set_extruder(tool);
@@ -3637,6 +3694,8 @@ fn emit_layer_by_island(
             );
             // finish_layer tcr: not a tool change, so no change_filament block
             // (and no placeholder in its gcode) — the count is passed unchanged.
+            // R603's `M73 E` splice is guarded on `tcr.is_tool_change`, so it
+            // cannot fire here either.
             emit_tower_tcr(
                 writer,
                 fin,
@@ -3644,6 +3703,7 @@ fn emit_layer_by_island(
                 print_config,
                 layer.print_z,
                 *toolchange_count,
+                total_tool_changes,
                 is_first_layer,
             );
         }

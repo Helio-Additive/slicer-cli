@@ -7831,3 +7831,80 @@ header and lands as a near-exact +2,723. Fallback: if the values do not match a 
 countdown, they encode remaining time or filament and need the estimator, in which case
 they belong with `M73 P` as one larger piece of work. `M73 P` (5,798 lines) needs the
 time-estimation post-process and should be scoped separately.
+## R603 — `M73 E`: the countdown, and a gain computed exactly before writing any code
+
+R602 left three `M73` subtypes measured: `M73 L` already exact at 656, `M73 E` at
+C++ 2,723 vs our **0**, `M73 P` at C++ 5,798 vs our 2. This round did `M73 E`.
+
+**The whole value of the round was decided before any code was written.** C++'s
+countdown is `total_filament_change - filament_change_num` (GCodeProcessor.cpp:601),
+inserted at each filament-block boundary (:1119). C++'s total is **2,723**; ours is
+**2,721**. So our change #1 would emit `E2720` where C++ emits `E2722` — and whether
+those lines ever match depends entirely on WHERE C++'s two extra tool changes sit:
+
+* extras at the START -> our change *k* pairs with C++'s *k+2*, values coincide, all match
+* extras at the END -> every line is off by 2, nothing matches
+
+Neither, as it turned out. Comparing the per-layer tool-change sequences directly:
+the first divergence is at tool-change index **509** (C++ layer 142, ours 143), and
+the realignment is not a clean shift — C++ has 6 changes on layer 142 where we have 5,
+with the second extra elsewhere.
+
+That made the exact gain computable without building anything. Our change *k* emits
+`2721-k` at layer `r[k-1]`; it matches iff C++'s change *k+2* (same value) is on the
+same layer:
+
+| countdown total used | predicted matches |
+|---|---|
+| **ours (2,721)** — what C++'s formula yields on our gcode | **2,304 / 2,721 (84.7%)** |
+| C++'s (2,723) — forced | 1,971 / 2,721 |
+
+So the faithful choice is also the better-scoring one, which is worth stating: using
+our own total is not a compromise.
+
+**`M73_REMAIN_FILAMENT_CHANGES`, DEFAULT-ON.** C++ inserts these in a whole-file
+post-process; we have no such pass, so the line is spliced into the substituted tower
+block immediately after the bare `T<n>` command — textually the same position,
+verified against `cpp_majora_new.gcode:6930-6931` (`T4` then `M73 E2722`). Our output
+now reads `T3` / `M73 E2720` / `M620.1`, the same shape.
+
+The total is taken from the tower plan (`wipe_tower_results` with `is_tool_change`)
+because it is needed UP FRONT and we stream rather than re-walk. It came out at
+exactly 2,721 — the emitted count — confirmed by the first and last emitted values
+being `E2720` and `E0`.
+
+**Result — the prediction landed to the line:**
+
+| | R602 | R603 |
+|---|---|---|
+| Majora matched | 646,455 | **648,759 (+2,304)** |
+| Majora rate | 25.54% | **25.60%** |
+| body lines / gap | 2,531,418 / 9.01% | 2,534,139 / **8.91%** |
+| Prime tower | 62.7% | **62.8%** (275,280/438,333) |
+| `M73 E` | 0 | **2,721** (C++ 2,723) |
+
++2,721 lines emitted, +2,304 matched, 417 unmatched — and the 417 are precisely the
+changes sitting on a different layer than C++'s, i.e. the pre-existing
+2-tool-change difference, not something this emission introduced.
+
+**Benchy and cube byte-identical** (`304320a6`, `242f1fb8`). Gate OFF reproduces
+`2c763932`. 8/8 guards. **Re-baselined**: majora `2c763932` -> `56938d4d`.
+
+**Method note worth keeping.** R602's lesson was that a bare `grep -c` beats anything
+clever. R603 extends it: the two engines' *event sequences* (here, which layer each
+tool change falls on) were enough to predict the exact matched-line gain — 2,304,
+correct to the line — before a single edit. When a change emits one line per event,
+compare the event sequences first; the answer is arithmetic, not experiment.
+
+**R604:** the `; WIPE_START` deficit — C++ 44,174 blocks vs our 36,394, **7,780 short**,
+still unattributed to a site. Each block is ~6 lines (`; WIPE_START`, `G1 F<n>`,
+several `G1 X.. Y.. E-..` retract moves, `; WIPE_END`), so this is worth ~45k lines —
+the largest single remaining item found so far. Checked and ruled out this round: the
+tag TEXT is right (`grep -c "TYPE:Wipe_Start"` is **0 on both engines**, so
+`exporter.rs:2607`'s `; TYPE:Wipe_Start` string is not on this path and is not
+corrupting the count). Predict the deficit is a missing wipe-on-retract at some class
+of retraction — most likely the object-side retracts rather than the tower's, since
+the tower's own moves are already at parity. Fallback: if the wipe blocks are present
+but shorter, it is the per-wipe move COUNT (C++ splits the wipe path into more
+segments), which is a different fix in the same place.
+`M73 P` (5,798 lines) still needs the time-estimation post-process — scope separately.
