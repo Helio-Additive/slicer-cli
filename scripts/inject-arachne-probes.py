@@ -38,7 +38,8 @@ LIBSLIC3R = os.path.join(
     ROOT, "libslic3r/bambustudio/references/BambuStudio/src/libslic3r"
 )
 LIBSLIC3R_FILES = ("PerimeterGenerator.cpp", "LayerRegion.cpp", "VariableWidth.cpp",
-                   "BridgeDetector.cpp")  # R595: bridge angle candidates
+                   "BridgeDetector.cpp",  # R595: bridge angle candidates
+                   "Fill/FillBase.cpp")   # R597: the fill-angle CONSUMER
 
 ST_INCLUDES_OLD = """#include <stack>
 #include <functional>
@@ -1822,7 +1823,45 @@ LR_BIN_NEW = """        auto [bridging_dir, unsupported_dist] = detect_bridging_
         }
 """
 
+# ---------------------------------------------------------------------------
+# FILLANG (R597) - the CONSUMER of the bridge angle. R595/R596 both fixed producer
+# code that turned out not to reach Benchy's output. This probes where the angle is
+# actually READ: Fill::_infill_direction, FillBase.cpp:224. The branch hinges on
+# `surface->bridge_angle >= 0`; if Benchy's bridge surfaces arrive with it unset,
+# the direction comes from the alternating layer angle instead and the producer is
+# irrelevant for that fixture.
+# ---------------------------------------------------------------------------
+FB_INC_OLD = """#include "FillBase.hpp"
+"""
+FB_INC_NEW = """#include "FillBase.hpp"
+#include <mutex>
+#include <cstdio>
+#include <cstdlib>
+"""
+
+FB_OLD = """    out_angle += float(M_PI/2.);
+    return std::pair<float, Point>(out_angle, out_shift);
+"""
+FB_NEW = """    out_angle += float(M_PI/2.);
+    if (getenv("FILLANG")) {
+        static std::mutex fa_mtx;
+        static size_t fa_n = 0, fa_bridge = 0, fa_layer = 0;
+        std::lock_guard<std::mutex> fa_lock(fa_mtx);
+        ++fa_n;
+        if (surface->bridge_angle >= 0) ++fa_bridge; else ++fa_layer;
+        if (fa_n <= 20 || fa_n % 5000 == 0)
+            fprintf(stderr,
+                "[FILLANG] n=%zu used_bridge=%zu used_layer=%zu | surf_type=%d "
+                "bridge_angle=%.6f out_angle=%.6f\\n",
+                fa_n, fa_bridge, fa_layer, (int)surface->surface_type,
+                surface->bridge_angle, out_angle);
+    }
+    return std::pair<float, Point>(out_angle, out_shift);
+"""
+
 EDITS = [
+    ("Fill/FillBase.cpp", FB_INC_OLD, FB_INC_NEW),
+    ("Fill/FillBase.cpp", FB_OLD, FB_NEW),
     ("LayerRegion.cpp", LR_BIN_OLD, LR_BIN_NEW),
     ("BridgeDetector.cpp", BD_INC_OLD, BD_INC_NEW),
     ("BridgeDetector.cpp", BD_OLD, BD_NEW),

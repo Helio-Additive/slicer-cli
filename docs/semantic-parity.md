@@ -7310,3 +7310,68 @@ demonstrably does not — instrument the consumer, not the producer; (2)
 Benchy's Bridge 7.8% and (2) is a small refinement; fallback, if Benchy's bridge
 surfaces never carry an angle at all, the fill direction comes from the infill
 pattern default and the whole bridge line of enquiry is a dead end for that fixture.
+
+## R597 — the consumer answers it: our ported `_infill_direction` is dead code
+
+R595 and R596 each fixed producer code that turned out not to reach Benchy's output.
+This round inverted the approach and instrumented the CONSUMER — `Fill::_infill_direction`
+(`FillBase.cpp:224`), where the branch hinges on `surface->bridge_angle >= 0`.
+
+**Prediction CONFIRMED on the C++ side.** Over its first 20 fills on Benchy:
+
+    [FILLANG] n=20 used_bridge=0 used_layer=20 | surf_type=3 bridge_angle=-1.000000 out_angle=2.356194
+
+C++ never uses a bridge angle on this fixture — every surface arrives with
+`bridge_angle = -1` and the direction comes from the alternating layer angle. That
+is exactly why R596's producer fix was byte-identical on Benchy, and it retires the
+whole bridge-direction line of enquiry **for this fixture**. (The counters are
+cumulative over the first 20 calls only; the probe prints `n<=20 || n%5000==0` and
+no later line appeared, so totals beyond 20 are not established.)
+
+**And the Rust probe printed NOTHING — a second reachability finding, this time on
+our side.** `crate::fill::infill_direction` (`fill/mod.rs:1461`), the faithful port
+of `_infill_direction` complete with the `bridge_angle >= 0` branch, is **never
+called**. The real angle is chosen in `fill_rectilinear.rs:2318`:
+
+    let angle_deg = if faithful_dir {
+        config.angle + if layer_index & 1 == 1 { 90.0 } else { 0.0 } + 90.0
+    } else {
+        config.angle + config.angle_increment * layer_index as f64
+    };
+
+**Two concrete divergences follow, neither yet fixed:**
+
+1. **`bridge_angle` is never consulted.** C++ short-circuits to the surface's bridge
+   angle when it is set; our live path has no such branch at all. Inert on Benchy
+   (C++ also always falls back there) but not on Majora, where R596 showed the angle
+   IS consumed.
+2. **The layer index is not divided by `thickness_layers`.** C++ is
+   `_layer_angle(this->layer_id / surface->thickness_layers)`; ours uses
+   `layer_index` directly. For any surface spanning more than one layer the parity
+   flips, which changes the angle by exactly 90 degrees — the size of R594's
+   observed Bridge swing (L47 rust 45 vs cpp 135). **That is a hypothesis with the
+   right magnitude, not a finding: it needs `thickness_layers > 1` demonstrated on
+   the affected surfaces before it is credited.**
+
+There is also a stale comment at that site: it says "Gated; default keeps legacy",
+but `faithful_gate` returns TRUE unless the variable is `"0"`, so `TOPFILL_FAITHFUL`
+is DEFAULT-ON and the faithful branch is what actually runs. Worth correcting when
+the code is next touched.
+
+**Nothing was changed this round** — it is a pure measurement. Baselines reproduce
+(`bb313a93`, `a27419f0`), 8/8 guards.
+
+**R598:** (1) probe `thickness_layers` on the surfaces that reach
+`fill_rectilinear`, on both engines, and test hypothesis 2 directly; (2) if it
+holds, port the divisor and the `bridge_angle` short-circuit into the live path
+behind one gate and A/B both fixtures. Predict the divisor matters for solid
+surfaces over sparse infill (where `thickness_layers > 1`) and is inert elsewhere;
+fallback, if `thickness_layers == 1` everywhere on both fixtures, the divisor is
+cosmetic and the remaining Bridge/fill difference is the missing `bridge_angle`
+branch plus `config.angle`/`angle_increment` themselves.
+
+**Method note.** Three rounds running, the decisive fact came from asking "is this
+code even called?" rather than from reading it. R586's rule (a silent probe is a
+lead) has now produced R595, R596 and R597. The corollary worth keeping: **a
+faithful-looking port can be dead code, and the live path may be an older
+unfaithful one — check which one runs before comparing either against C++.**

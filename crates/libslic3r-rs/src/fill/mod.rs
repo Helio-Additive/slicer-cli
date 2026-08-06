@@ -1502,6 +1502,29 @@ pub fn infill_direction(
     // FillBase.cpp:239: out_angle += float(M_PI/2.);
     out_angle += std::f32::consts::FRAC_PI_2;
 
+    // FILLANG (R597): the CONSUMER of the bridge angle. R595/R596 both fixed
+    // producer code that turned out not to reach Benchy's output, so probe where
+    // the angle is actually READ. The branch hinges on `bridge_angle >= 0`.
+    if crate::probe_enabled("FILLANG") {
+        use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        static BRIDGE: AtomicUsize = AtomicUsize::new(0);
+        static LAYER: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Relaxed) + 1;
+        if bridge_angle >= 0.0 {
+            BRIDGE.fetch_add(1, Relaxed);
+        } else {
+            LAYER.fetch_add(1, Relaxed);
+        }
+        if n <= 20 || n % 5000 == 0 {
+            eprintln!(
+                "[FILLANG] n={n} used_bridge={} used_layer={} | surf_type=-1 bridge_angle={bridge_angle:.6} out_angle={out_angle:.6}",
+                BRIDGE.load(Relaxed),
+                LAYER.load(Relaxed),
+            );
+        }
+    }
+
     (out_angle, out_shift)
 }
 
