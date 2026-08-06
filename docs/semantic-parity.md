@@ -7737,3 +7737,97 @@ and ramming blocks — rather than absent geometry, since the tower's extrusion 
 total length already match (0.951x / 0.995x). Fallback: if the templates expand
 identically, the deficit is in per-toolchange fixed preamble C++ writes that we skip,
 and should be found by diffing one complete tool-change block line-for-line.
+## R602 — the tool-change header: `M220` never emitted, and a counter that never counted
+
+R601 left the prime tower as the largest single residual (61.0%, 84,953 lines short
+of C++) with the deficit concentrated in mcode / comment / gother / zmove rather than
+in moves. This round found three defects in the tool-change header.
+
+**Prediction: RIGHT.** The registered prediction was that the bulk is real emissions we
+skip rather than template expansion, because the tower's extrude count and length
+already matched (0.951x / 0.995x). File-wide counts confirmed it immediately:
+
+| construct | C++ | Rust | deficit |
+|---|---|---|---|
+| `; WIPE_START` blocks | 44,174 | 36,394 | 7,780 |
+| `M73` | 9,179 | 660 | 8,519 |
+| `M220` | 8,171 | **2** | **8,169** |
+
+**Defect 1 — `speed_override` was defined but never called.** `WipeTowerWriter::speed_override`
+existed in the port; nothing invoked it, and `speed_override_backup` / `speed_override_restore`
+(WipeTower.cpp:1156-1172) had never been ported at all. C++ brackets every tower block:
+
+```
+speed_override_backup();   // M220 B
+speed_override(100);       // M220 S100
+   ... tower ...
+speed_override_restore();  // M220 R
+```
+
+**Defect 2 — the header comments were wrong.** C++ writes (WipeTower.cpp:3272-3281,
+mirrored at :2068-2077):
+
+```
+;--------------------
+; CP TOOLCHANGE START
+; toolchange #N
+; material : <old> -> <new>
+;--------------------
+M220 B
+M220 S100
+; WIPE_TOWER_START
+```
+
+We wrote `; Tool change from Tx to Ty` — a line C++ never emits — and none of the rest.
+
+**Defect 3 — `num_tool_changes` was never incremented.** The field was reset and read
+but never advanced anywhere in the port (C++ does `++m_num_tool_changes` at
+WipeTower.cpp:3329 and :2162), so once defect 2 was fixed every block printed
+`; toolchange #1`. Fixed unconditionally, which is byte-neutral with the header gate
+off because the counter's only other consumer, `get_number_of_toolchanges`, is dead.
+
+**`WT_TOOLCHANGE_HEADER_CPP`, DEFAULT-ON.**
+
+**Result:**
+
+| | R601 | R602 |
+|---|---|---|
+| Majora matched | 630,879 | **646,455 (+15,576)** |
+| Majora rate | 25.06% | **25.54%** |
+| body lines / gap | 2,517,813 / 9.50% | 2,531,418 / **9.01%** |
+| Prime tower | 61.0% | **62.7%** (272,976/435,612) |
+| `M220` lines | 2 | **8,165** (C++ 8,171) |
+
+The `M220` count lands 6 short of C++, and that is exactly right: 3 lines per tool
+change on both engines, and C++ has 2 more tool changes than we do (2,723 vs 2,721) —
+a pre-existing count difference, not a new one. The prediction of +10,000 to +20,000
+matched lines held (+13,606 before the counter fix, +15,576 after).
+
+**Benchy and cube are byte-identical** (`304320a6`, `242f1fb8`) — neither has a wipe
+tower. Gate OFF reproduces `14ff4542`. 8/8 guards.
+
+**Re-baselined**, diff proven intentional: majora `14ff4542` -> `2c763932`.
+
+**The `M620.1 X0 Y0` lead was measured and dropped.** `change_filament.rs:105-123`
+stubs `travel_point_1/2/3_x/y` to zero with a comment saying they matter "only when
+`toolchange_count == 2`". That comment is CORRECT: C++'s whole Majora output contains
+exactly **3** `M620.1 X` lines, all in the first tool change. Three cosmetic lines is
+not worth a round. Recorded here so it is not re-opened — and as a counterweight to
+R601's lesson: a documented deferral is worth re-reading, but some of them really are
+as small as they claim.
+
+**R603:** `M73`. Subtype breakdown against C++:
+
+| subtype | C++ | Rust |
+|---|---|---|
+| `M73 L` (layer) | 656 | **656** — already correct |
+| `M73 E` | 2,723 | **0** |
+| `M73 P` (progress) | 5,798 | 2 |
+
+`M73 E` is emitted once per tool change and its values descend 2722 -> 0, i.e. it is a
+countdown of REMAINING tool changes — deterministic, no time estimation needed, and
+worth 2,723 lines. Predict it is emitted from the same tool-change site as this round's
+header and lands as a near-exact +2,723. Fallback: if the values do not match a plain
+countdown, they encode remaining time or filament and need the estimator, in which case
+they belong with `M73 P` as one larger piece of work. `M73 P` (5,798 lines) needs the
+time-estimation post-process and should be scoped separately.
