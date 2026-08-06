@@ -8059,3 +8059,88 @@ differently — check `clip_end` at `exporter.rs:2581` against C++'s
 `wipe_path.clip_end(wipe_path.length() - wipe_dist)`. The other three open wipe items
 are unchanged: the tower/nozzle-change install (`GCode.cpp:774`/`:1084`, Prime tower
 -2,790), the 9,958 missing retractions, and `M73 P` (5,798 lines).
+## R606 — the wipe move values: `_toolchange` is an unused parameter
+
+R605 made the wipe PATH C++-faithful yet bought nothing, so this round asked what turns
+a path into `G1 X Y E` lines. Measurement only — no code changed, `git status` clean,
+all three baselines intact.
+
+**A wrong turn first, recorded because it nearly stuck.** The opening move was
+`grep -A9 -m3 "; WIPE_START"` on both engines, which showed C++ emitting 5 moves per
+block against our 3 and, in one case, 1. That looked like a systematic segmentation
+defect. It was not: the first three blocks in file order are **not the same wipes**, and
+the full distribution on Benchy is at parity — C++ 2,029 blocks / 5,140 moves / mean
+2.53, Rust 2,041 / 5,068 / mean 2.48, with near-identical histograms. Comparing an
+unmatched pairing (R573/R593) and reading three samples as a distribution. Withdrawn.
+
+**Benchy is at parity; Majora is not — and that is the useful signal.**
+
+| | blocks | wipe moves | mean segs/block |
+|---|---|---|---|
+| Benchy C++ | 2,029 | 5,140 | 2.53 |
+| Benchy Rust | 2,041 | 5,068 | 2.48 |
+| **Majora C++** | 44,174 | **123,515** | **2.80** |
+| **Majora Rust** | 36,394 | **67,763** | **1.86** |
+
+So the real Majora deficit is **55,752 wipe MOVES**, not the 7,780 BLOCKS R604 measured —
+R604's decomposition was about blocks only and understated the item by 7x.
+
+**The vertex-density hypothesis was tested and REFUTED.** Coarser toolpaths would leave
+fewer vertices inside `wipe_dist`. Majora's walls are coarser (Outer wall segment length
+1.133x, Inner 1.108x, Internal solid 1.105x) and Benchy's are not (1.002x), which fits —
+but **Sparse infill has segment length at parity (1.004x) with wipe moves/block at
+0.48x**, and **Prime tower is coarser (1.046x) yet emits MORE wipe moves (1.28x)**. The
+correlation does not hold; density is not the mechanism.
+
+**What the E-per-block census settled.** Summing |E| over each wipe block:
+
+| feature | cpp mm/blk | rust mm/blk | x | cpp E/blk | rust E/blk | x |
+|---|---|---|---|---|---|---|
+| Outer wall | 2.948 | 3.301 | 1.120 | 0.7600 | 0.7600 | **1.000** |
+| Inner wall | 2.041 | 1.298 | 0.636 | 0.7600 | 0.7600 | **1.000** |
+| Sparse infill | 3.839 | 3.236 | 0.843 | 0.7600 | 0.7600 | **1.000** |
+| Internal solid | 1.511 | 1.175 | 0.777 | 0.7600 | 0.7600 | **1.000** |
+| Top surface | 1.936 | 0.983 | 0.508 | 0.7600 | 0.7600 | **1.000** |
+| **Prime tower** | 1.950 | **151.304** | **77.6** | **1.2629** | **0.7600** | **0.602** |
+
+**E per block is identical to four decimals on every object feature**, so `wipe_dist`,
+the retraction length and the `0.95` dE factor are all correct on the object path. The
+R606 prediction of a scalar difference is **REFUTED** for object features. The distance
+varies while E is pinned, so it is the `wipe_dist` clamp — C++'s "handle short path
+case" — that differs, not the extrusion math.
+
+**And the prime tower row is a real defect, with a closing identity.** `exporter.rs:2606`
+declares `_toolchange: bool` — present, underscore-prefixed, **deliberately unused** —
+and `:2616` is `let length = retraction_length;`. C++ (`GCode.cpp:373-376`) is:
+
+```cpp
+double length = toolchange ? retract_length_toolchange() : retraction_length();
+length *= (1. - retract_before_wipe());
+```
+
+Two omissions in one line: the toolchange branch is ignored, and `retract_before_wipe`
+is never applied at all. The measured prime-tower E ratio is **0.602**, and
+0.76 / 1.2629 = **0.6018** — the ratio is not a symptom of the missing branch, it IS
+`retraction_length / retract_length_toolchange`. C++ also switches the wipe SPEED to
+`prime_tower_max_speed` for toolchanges (`GCode.cpp:370`), which we likewise ignore;
+that is the likely other half of the 151 mm vs 1.95 mm travel.
+
+This is R602's defect class for the third time: a symbol that exists, looks ported, and
+is never used. R602 was a method with zero callers; this is a parameter the compiler was
+told to ignore. **Underscore-prefixing a parameter to silence a warning is how a missing
+port hides in plain sight — grep `fn.*_[a-z]+:` for it.**
+
+**Not fixed this round.** It needs `retract_length_toolchange`, `retract_before_wipe` and
+`prime_tower_max_speed` plumbed to the wipe site plus a gated A/B, which is R607's job
+rather than something to rush at the end of a measurement round (R604's precedent).
+
+**R607:** honour `toolchange` in `wipe()`. Use `retract_length_toolchange` when it is
+set, apply `length *= (1 - retract_before_wipe)` unconditionally, and switch the wipe
+speed to `prime_tower_max_speed` for toolchanges. Predict the prime-tower E/block moves
+0.7600 -> 1.2629 (an exact, checkable target) and its travel collapses from 151.3 mm
+toward C++'s 1.95 mm; predict object features are UNCHANGED, since their E/block already
+matches to four decimals and `retract_before_wipe` is likely 0 for this profile — verify
+that before assuming it. Fallback: if object features DO move, `retract_before_wipe` is
+non-zero and the change is not tower-local, so A/B it on Benchy too before shipping. The
+remaining `wipe_dist`-clamp difference on object features (Inner wall 0.636x, Top surface
+0.508x) is a separate item and should not be folded in.
