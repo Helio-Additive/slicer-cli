@@ -8295,3 +8295,61 @@ after-tower counts should move toward C++'s 2,512 / 931 from our 2,715 / 656.** 
 if moving the travel does not free the retract, the retract that precedes it is emitted
 elsewhere (object-side end-of-feature) and the fix is to suppress THAT one for tower
 entry rather than to reorder the travel.
+## R609 — R608's cause REFUTED; the tower wipe is fully enabled 2,718 times and still does not appear
+
+R609 set out to fix the ordering R608 blamed. Measuring first refuted that cause, and
+left a sharper contradiction. Two default-off probes added; all three baselines
+reproduce byte-for-byte.
+
+**R608's cause was wrong.** R608 concluded the writer is already `retracted` at tower
+entry (because we emit a travel C++ does not), so `retract()` early-returns. Both halves
+fail:
+
+* The emitted gcode shows **no retract before tower entry**. The actual sequence is
+  last object extrusion -> `G1 X.. Y.. F30000` travel -> the LAYER_HEIGHT/FEATURE/
+  LINE_WIDTH trio -> a zero-length `G1 X.. Y.. F1800` -> `; WIPE_TOWER_START`. R608 read
+  the travel as implying a preceding retract; there is none.
+* The `TOWER_ENTRY_WHY` census confirms it: of 2,721 tower-entry calls, only **3** were
+  `already_retracted`, **0** had wipe disabled, and **3** had a short path.
+
+**The call is fully enabled exactly 2,718 times:**
+
+    [TCWHY] n=2721 already_retracted=3 wipe_disabled=0 path_short=3 would_wipe=2718
+
+**2,718 is exactly the number of blocks C++ emits and we lack** (R608's position-class
+census). The guards are not the problem — the tower-entry wipe is enabled precisely as
+often as it should fire.
+
+**And yet the output gains only +2 `; WIPE_START`** (36,394 -> 36,396, confirmed on both
+the saved `r608_majora_on.gcode` and a fresh run of the same configuration). So the wipe
+is enabled 2,718 times and reaches the file twice.
+
+**The wipe branch itself is healthy.** A second probe at the emit decision
+(`kept.len() >= 2 && acc > 1e-4`) reports **34,991 emitted of 35,000** decisions, with
+`wipe_dist=1.0000 acc=1.0000 kept=3`. The machinery works for the ordinary object
+retracts that produce our 36,394 existing wipes.
+
+**What this leaves.** Enabled 2,718 times, emitted twice, with the emit logic otherwise
+sound. That points at the interaction between the writer's `write_raw` output and the
+raw tower-gcode splice in `emit_tower_tcr` — the retract is invoked between
+`write_raw_content(&g[..cut])` and `write_raw_content(&g[cut..])`, and its lines are not
+landing between them. I am NOT naming a mechanism for that here: R606 and R608 both lost
+a round to a diagnosis asserted from reading rather than measurement, and the honest
+state is "enabled 2,718, emitted 2, emit logic sound".
+
+**Shipped:** two default-off probes (`TOWER_ENTRY_WHY` in `retract_for_toolchange` and
+at the wipe emit decision). No behavioural change — `304320a6` / `56938d4d` /
+`242f1fb8` all reproduce, 8/8 guards. `TOWER_ENTRY_WIPE_CPP` remains OPT-IN.
+
+**R610:** find where the 2,716 enabled-but-absent wipes go. The decisive instrument is a
+probe INSIDE the emit branch that records the byte offset or a serial marker written to
+the output stream, run with the tower gate on, then grep the produced file for that
+marker: either the lines are written somewhere unexpected (an ordering/buffering
+interaction with `write_raw_content`) or they are written and later discarded. **Predict
+they ARE written but into a buffer that the tower splice overwrites or bypasses, because
+the emit decision reports success 34,991/35,000 and the file contains 36,396 blocks —
+the two numbers are close enough that the tower wipes are plausibly being counted as
+emitted internally while not reaching the file. Fallback: if the marker appears in the
+file, the wipes ARE present and the position-class census is mis-classifying them (e.g.
+they land before `; WIPE_TOWER_START` and count as after_tc), in which case re-run the
+R608 census on the gate-ON file rather than trusting the total.**

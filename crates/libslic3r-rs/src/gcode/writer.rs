@@ -1576,6 +1576,32 @@ impl GCodeWriter {
     /// entire retract+wipe, so this is the same semantics with no risk to the
     /// ordinary path.
     pub fn retract_for_toolchange(&mut self) {
+        // R609: TOWER_ENTRY_WHY=1 — report why this no-ops. R608 assumed the writer
+        // was already `retracted` at tower entry; the emitted gcode shows no retract
+        // there at all, so the blocker is one of the other guards at `retract()`'s
+        // wipe branch (`wipe_enabled`, `wipe_path.len() >= 2`). Measured, not
+        // inferred (R608).
+        if crate::probe_enabled("TOWER_ENTRY_WHY") {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static N: AtomicUsize = AtomicUsize::new(0);
+            static RET: AtomicUsize = AtomicUsize::new(0);
+            static NOWIPE: AtomicUsize = AtomicUsize::new(0);
+            static SHORT: AtomicUsize = AtomicUsize::new(0);
+            static OK: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed) + 1;
+            let r = if self.retracted { RET.fetch_add(1, Ordering::Relaxed) + 1 } else { RET.load(Ordering::Relaxed) };
+            let w = if !self.wipe_enabled { NOWIPE.fetch_add(1, Ordering::Relaxed) + 1 } else { NOWIPE.load(Ordering::Relaxed) };
+            let s = if self.wipe_path.len() < 2 { SHORT.fetch_add(1, Ordering::Relaxed) + 1 } else { SHORT.load(Ordering::Relaxed) };
+            let o = if !self.retracted && self.wipe_enabled && self.wipe_path.len() >= 2 {
+                OK.fetch_add(1, Ordering::Relaxed) + 1
+            } else {
+                OK.load(Ordering::Relaxed)
+            };
+            eprintln!(
+                "[TCWHY] n={n} already_retracted={r} wipe_disabled={w} path_short={s} would_wipe={o} (this call: path_len={})",
+                self.wipe_path.len()
+            );
+        }
         let saved = self.retraction_length;
         self.retraction_length = self.config.retract_length_toolchange;
         self.retract();
@@ -1623,6 +1649,23 @@ impl GCodeWriter {
                 }
                 // Handle short path (GCode.cpp:401-405).
                 let eff_wipe_dist = if acc < wipe_dist { acc.max(1e-4) } else { wipe_dist };
+                // R609: TOWER_ENTRY_WHY=1 also reports the post-guard decision, since
+                // the pre-guard census showed 2,718 calls fully enabled while only 2
+                // blocks were emitted -- so the block is decided HERE, not above.
+                if crate::probe_enabled("TOWER_ENTRY_WHY") {
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    static N: AtomicUsize = AtomicUsize::new(0);
+                    static EMIT: AtomicUsize = AtomicUsize::new(0);
+                    let n = N.fetch_add(1, Ordering::Relaxed) + 1;
+                    let ok = kept.len() >= 2 && acc > 1e-4;
+                    let e = if ok { EMIT.fetch_add(1, Ordering::Relaxed) + 1 } else { EMIT.load(Ordering::Relaxed) };
+                    if n <= 3 || n % 5000 == 0 {
+                        eprintln!(
+                            "[WIPEDEC] n={n} emitted={e} | wipe_dist={wipe_dist:.4} acc={acc:.4} kept={} pts={} len={length:.4}",
+                            kept.len(), pts.len()
+                        );
+                    }
+                }
                 if kept.len() >= 2 && acc > 1e-4 {
                     // R227: native wipe segments are extrude_to_xy calls, so
                     // they surface the pending (reset) accel before WIPE_START's
