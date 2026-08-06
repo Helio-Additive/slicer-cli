@@ -6617,3 +6617,68 @@ single atomic total. A probe that is silent is not a probe that found nothing.
 
 Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
 reproduce, 8/8 guard tests pass.
+
+## R587 — our upward pass seeds half as many nodes; centrality is the next link
+
+R586 reduced the question to one number: `propagateBeadingsDownward` finds `from`
+already holding a beading 14.25% of the time on C++ against 6.33% on ours (2.25x).
+Two candidates: the upward pass seeds fewer nodes, or the downward dispatcher walks
+a different edge set. `UPPROBE` and `DNPROBE` classify every iteration of each,
+by the FIRST guard that skips it, in source order.
+
+**Upward** (population: every `propagate_beadings_upward` iteration), at matched n:
+
+| guard | Rust | C++ |
+|---|---|---|
+| skip `to->bead_count >= 0` | 68.81% | 64.71% |
+| skip `!from->hasBeading()` | 28.30% | 30.27% |
+| skip `to->hasBeading()` | 0.01% | 0.03% |
+| **SEEDED** | **2.88%** | **4.98%** |
+
+Across the three matched checkpoints the seed ratio runs **2.431 / 2.107 / 1.727**.
+**Prediction confirmed: our upward pass seeds roughly half as many nodes.** The
+whole deficit comes from one guard -- we skip on `bead_count >= 0` about 4
+percentage points more often, and that shortfall lands directly in SEEDED. The
+other two guards are at parity.
+
+**Downward** (population: every `upward_quad_mid`) is NOT the cause:
+
+| branch | Rust | C++ |
+|---|---|---|
+| central skip | 60.10% | 56.67% |
+| equidistant `twin` | **0.0000%** | **0.0000%** |
+| normal | 39.90% | 43.33% (C/R 1.086) |
+
+**The equidistant `twin` branch never fires on EITHER engine** on this model, so the
+`propagateBeadingsDownward(upward_quad_mid->twin, ...)` path at
+`SkeletalTrapezoidation.cpp:1650` is dead in practice here and cannot be a
+divergence. `normal` is within 1.09x. The dispatcher is effectively at parity.
+
+**Where this points.** Two independent order-independent rates move together: we
+mark **more edges central** (60.10% vs 56.67%) and we skip **more upward seeds on
+`bead_count >= 0`** (68.81% vs 64.71%). A node acquires a local `bead_count` by way
+of centrality, so a higher central share plausibly produces the extra skips. That is
+a consistent direction, not a demonstrated cause -- 1.061x more central edges
+against a 4pp shift in the skip mix is the right sign but the magnitudes have not
+been tied together, and they are measured on different populations (edges versus
+upward iterations), so per R572/R585 they are NOT composed here.
+
+**R588 goes to centrality**: `updateIsCentral` / `filterCentral` / `updateBeadCount`.
+R548/R549 cleared those AS PORTED CODE and fixed `updateIsCentral`'s `cap`, but the
+central SHARE has not been compared as a per-edge rate since, and certainly not
+post-R581. `CENTRALPROBE` already exists and should be re-derived speculation-clean.
+
+**Process — two failures worth recording.**
+1. The C++ build FAILED and I nearly missed it. `ninja ... | grep error` makes the
+   pipeline's exit status the *grep's*, so the task notification reported success
+   while the compile had died. Capture ninja's own exit (`> log 2>&1; echo $?`) and
+   read the log. Conversely, `grep -c` exiting 1 on zero matches makes a *successful*
+   build look failed -- check the recorded `ninja exit=` line, not the task status.
+2. The compile error itself: `ST_INCLUDES_NEW` is a NON-RAW Python triple-quoted
+   string, so a `\n` written into it becomes a real newline and breaks the C++ format
+   string. Blocks in that variable need `\\n`; the `'''`-quoted probe blocks
+   elsewhere in the injector already do this. Same file, two different escaping
+   conventions.
+
+Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
+reproduce, 8/8 guard tests pass.

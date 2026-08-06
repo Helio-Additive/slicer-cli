@@ -2777,6 +2777,13 @@ impl<'a> SkeletalTrapezoidation<'a> {
             for &upward_edge in upward_quad_mids.iter().rev() {
                 let to = upward_edge.as_ref().to.unwrap();
                 let from = upward_edge.as_ref().from.unwrap();
+                if crate::probe_enabled("UPPROBE") {
+                    upprobe_tick(
+                        to.as_ref().data.bead_count >= 0,
+                        !from.as_ref().data.has_beading(),
+                        to.as_ref().data.has_beading(),
+                    );
+                }
                 // SkeletalTrapezoidation.cpp:1613 if (upward_edge->to->data.bead_count >= 0)
                 if to.as_ref().data.bead_count >= 0 {
                     // SkeletalTrapezoidation.cpp:1615 continue;
@@ -2824,6 +2831,17 @@ impl<'a> SkeletalTrapezoidation<'a> {
         unsafe {
             // SkeletalTrapezoidation.cpp:1639 for (edge_t* upward_quad_mid : upward_quad_mids)
             for &upward_quad_mid in upward_quad_mids.iter() {
+                if crate::probe_enabled("UPPROBE") {
+                    let dn_central = upward_quad_mid.as_ref().data.is_central();
+                    let f = upward_quad_mid.as_ref().from.unwrap();
+                    let t = upward_quad_mid.as_ref().to.unwrap();
+                    let dn_equi = !dn_central
+                        && f.as_ref().data.distance_to_boundary
+                            == t.as_ref().data.distance_to_boundary
+                        && f.as_ref().data.has_beading()
+                        && !t.as_ref().data.has_beading();
+                    dnprobe_tick(dn_central, dn_equi);
+                }
                 // SkeletalTrapezoidation.cpp:1642 if (!upward_quad_mid->data.isCentral())
                 if !upward_quad_mid.as_ref().data.is_central() {
                     let from = upward_quad_mid.as_ref().from.unwrap();
@@ -4864,5 +4882,70 @@ pub(crate) fn propclass_interp_delta(d: i64) {
         PC_INTERP_SMALL.fetch_add(1, Relaxed);
     } else {
         PC_INTERP_BIG.fetch_add(1, Relaxed);
+    }
+}
+
+/// R587 probe (UPPROBE=1): why does C++ reach the has-beading branch 2.25x more
+/// often than we do (R586: 14.25% vs 6.33%)? Two candidates, both per-item rates.
+///
+/// `upprobe_tick` classifies every `propagate_beadings_upward` iteration by the
+/// FIRST guard that skips it, in source order, so it says how many nodes the
+/// upward pass actually SEEDS. `dnprobe_tick` classifies every downward-dispatcher
+/// iteration into central-skip / equidistant-twin / normal, so it says whether the
+/// two engines walk the same set of edges.
+///
+/// Both take the checkpoint off a single atomic (R586: summing several atomic
+/// loads is racy under rayon and silently skips the `% N` boundary).
+pub(crate) fn upprobe_tick(s1: bool, s2: bool, s3: bool) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static TOTAL: AtomicUsize = AtomicUsize::new(0);
+    static SKIP_BC: AtomicUsize = AtomicUsize::new(0);
+    static SKIP_NOFROM: AtomicUsize = AtomicUsize::new(0);
+    static SKIP_TOHAS: AtomicUsize = AtomicUsize::new(0);
+    static SEED: AtomicUsize = AtomicUsize::new(0);
+    let n = TOTAL.fetch_add(1, Relaxed) + 1;
+    if s1 {
+        SKIP_BC.fetch_add(1, Relaxed);
+    } else if s2 {
+        SKIP_NOFROM.fetch_add(1, Relaxed);
+    } else if s3 {
+        SKIP_TOHAS.fetch_add(1, Relaxed);
+    } else {
+        SEED.fetch_add(1, Relaxed);
+    }
+    if n == 1 || n % 100_000 == 0 {
+        let d = n as f64;
+        eprintln!(
+            "[UPPROBE] up_total={n} skip_beadcount={} ({:.4}) skip_no_from={} ({:.4}) skip_to_has={} ({:.4}) SEEDED={} ({:.4})",
+            SKIP_BC.load(Relaxed), SKIP_BC.load(Relaxed) as f64 / d,
+            SKIP_NOFROM.load(Relaxed), SKIP_NOFROM.load(Relaxed) as f64 / d,
+            SKIP_TOHAS.load(Relaxed), SKIP_TOHAS.load(Relaxed) as f64 / d,
+            SEED.load(Relaxed), SEED.load(Relaxed) as f64 / d,
+        );
+    }
+}
+
+pub(crate) fn dnprobe_tick(central: bool, equi: bool) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static TOTAL: AtomicUsize = AtomicUsize::new(0);
+    static CENTRAL: AtomicUsize = AtomicUsize::new(0);
+    static TWIN: AtomicUsize = AtomicUsize::new(0);
+    static NORMAL: AtomicUsize = AtomicUsize::new(0);
+    let n = TOTAL.fetch_add(1, Relaxed) + 1;
+    if central {
+        CENTRAL.fetch_add(1, Relaxed);
+    } else if equi {
+        TWIN.fetch_add(1, Relaxed);
+    } else {
+        NORMAL.fetch_add(1, Relaxed);
+    }
+    if n == 1 || n % 100_000 == 0 {
+        let d = n as f64;
+        eprintln!(
+            "[DNPROBE] dn_total={n} central_skip={} ({:.4}) twin={} ({:.4}) normal={} ({:.4})",
+            CENTRAL.load(Relaxed), CENTRAL.load(Relaxed) as f64 / d,
+            TWIN.load(Relaxed), TWIN.load(Relaxed) as f64 / d,
+            NORMAL.load(Relaxed), NORMAL.load(Relaxed) as f64 / d,
+        );
     }
 }

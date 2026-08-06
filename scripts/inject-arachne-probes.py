@@ -84,6 +84,45 @@ std::atomic<size_t> g_ep_edges{0};
 // neighbours; only fresh and interp can. Counting the mix is the whole question.
 std::atomic<size_t> g_pc[4] = {};
 std::atomic<size_t> g_pc_total{0};
+
+// UPPROBE (R587): why does C++ reach the has-beading branch 2.25x more often
+// (R586: 14.25% vs 6.33%)? Two candidates, both counted here as per-item rates.
+//   upward: propagateBeadingsUpward SEEDS nodes; three guards can skip a seed.
+//   downward: the dispatcher skips central edges and has an equidistant `twin`
+//             branch, so the set of edges actually walked can differ.
+// Classify by FIRST failing guard, in source order.
+std::atomic<size_t> g_up_total{0}, g_up_skip_bc{0}, g_up_skip_nofrom{0},
+                    g_up_skip_tohas{0}, g_up_seed{0};
+std::atomic<size_t> g_dn_total{0}, g_dn_central{0}, g_dn_twin{0}, g_dn_normal{0};
+void upprobe_tick(bool s1, bool s2, bool s3)
+{
+    const size_t n = g_up_total.fetch_add(1) + 1;
+    if      (s1) g_up_skip_bc.fetch_add(1);
+    else if (s2) g_up_skip_nofrom.fetch_add(1);
+    else if (s3) g_up_skip_tohas.fetch_add(1);
+    else         g_up_seed.fetch_add(1);
+    if (n == 1 || n % 100000 == 0)
+        fprintf(stderr,
+            "[UPPROBE] up_total=%zu skip_beadcount=%zu (%.4f) skip_no_from=%zu (%.4f) "
+            "skip_to_has=%zu (%.4f) SEEDED=%zu (%.4f)\\n",
+            n, g_up_skip_bc.load(), double(g_up_skip_bc.load()) / double(n),
+            g_up_skip_nofrom.load(), double(g_up_skip_nofrom.load()) / double(n),
+            g_up_skip_tohas.load(), double(g_up_skip_tohas.load()) / double(n),
+            g_up_seed.load(), double(g_up_seed.load()) / double(n));
+}
+void dnprobe_tick(bool central, bool equi)
+{
+    const size_t n = g_dn_total.fetch_add(1) + 1;
+    if      (central) g_dn_central.fetch_add(1);
+    else if (equi)    g_dn_twin.fetch_add(1);
+    else              g_dn_normal.fetch_add(1);
+    if (n == 1 || n % 100000 == 0)
+        fprintf(stderr,
+            "[DNPROBE] dn_total=%zu central_skip=%zu (%.4f) twin=%zu (%.4f) normal=%zu (%.4f)\\n",
+            n, g_dn_central.load(), double(g_dn_central.load()) / double(n),
+            g_dn_twin.load(), double(g_dn_twin.load()) / double(n),
+            g_dn_normal.load(), double(g_dn_normal.load()) / double(n));
+}
 std::atomic<size_t> g_pc_interp_zero{0};   // interpolate() that changed nothing
 std::atomic<size_t> g_pc_interp_small{0};  // |delta w0| < 1um
 std::atomic<size_t> g_pc_interp_big{0};    // |delta w0| >= 1um
@@ -1523,9 +1562,42 @@ ST_PC_INTERP_NEW = """            const coord_t pc_w_before = bottom_beading.bea
             propclass_tick(3);
 """
 
+# ---------------------------------------------------------------------------
+# UPPROBE / DNPROBE (R587) - the two candidates for R586's 2.25x gap in how often
+# propagateBeadingsDownward finds `from` already seeded: upward SEED coverage, and
+# the set of edges the downward dispatcher actually walks.
+# ---------------------------------------------------------------------------
+ST_UP_OLD = """        edge_t* upward_edge = *upward_quad_mids_it;
+"""
+ST_UP_NEW = """        edge_t* upward_edge = *upward_quad_mids_it;
+        if (getenv("UPPROBE") && !probe_speculative())
+            upprobe_tick(upward_edge->to->data.bead_count >= 0,
+                         !upward_edge->from->data.hasBeading(),
+                         upward_edge->to->data.hasBeading());
+"""
+
+ST_DN_OLD = """    for (edge_t* upward_quad_mid : upward_quad_mids)
+    {
+        // Transfer beading information to lower nodes
+"""
+ST_DN_NEW = """    for (edge_t* upward_quad_mid : upward_quad_mids)
+    {
+        if (getenv("UPPROBE") && !probe_speculative()) {
+            const bool dn_central = upward_quad_mid->data.isCentral();
+            const bool dn_equi = !dn_central
+                && upward_quad_mid->from->data.distance_to_boundary == upward_quad_mid->to->data.distance_to_boundary
+                && upward_quad_mid->from->data.hasBeading()
+                && !upward_quad_mid->to->data.hasBeading();
+            dnprobe_tick(dn_central, dn_equi);
+        }
+        // Transfer beading information to lower nodes
+"""
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_EDGE_OLD, ST_EDGE_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_UP_OLD, ST_UP_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_DN_OLD, ST_DN_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PC_FRESH_OLD, ST_PC_FRESH_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PC_COPYNEW_OLD, ST_PC_COPYNEW_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PC_COPYRATIO_OLD, ST_PC_COPYRATIO_NEW),
