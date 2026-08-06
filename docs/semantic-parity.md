@@ -8417,3 +8417,62 @@ TOTAL moved by 2 while its COMPONENTS moved by 2,717 in each direction. R608's c
 the right instrument; it was simply pointed at the wrong file. **When a total barely
 moves, re-run the per-class census on the SAME artefact you are judging — never compare a
 new total against an old breakdown.**
+## R611 — the second retract: a stale flag, not a missing call. +8,175 lines, both gates DEFAULT-ON
+
+R610 left the tower-entry wipe correct but trading against the after-toolchange one.
+This round closed the trade — and the fix was not the one predicted.
+
+**Prediction WRONG, registered fallback RIGHT.** The prediction was that adding an
+explicit second `retract()` (mirroring `append_tcr`'s second call) would restore
+after_tc. Measured on the same file: **after_tc stayed at 0**. The fallback named the
+reason exactly — the writer is still `retracted` from the tower-entry call, so
+`retract()` early-returns.
+
+**The cause is state tracking, not a missing call.** The wipe-tower block is spliced in
+as RAW TEXT and unretracts inside itself (the `change_filament_gcode` template's
+`G1 E<n>` plus R466's `G1 E{retract_length_toolchange}` trailer). The writer never sees
+those lines, so once R608's tower-entry retract set `retracted = true`, it stayed true
+and every later `retract()` no-opped. That is why enabling `TOWER_ENTRY_WIPE_CPP` drove
+after-toolchange wipes from 2,715 to 0.
+
+The fix is a state sync, not an extra retract: `writer.mark_unretracted_after_raw()`,
+which clears the flag WITHOUT emitting. Calling `unretract()` would have added a
+Z-unlift and an E move C++ does not have there. **There was already precedent three
+lines below** — R475's `set_last_extrusion_role` after the same `write_raw_content`,
+for the same reason: raw writes change machine state the writer tracks separately.
+
+Also consumed at last: `tcr.wipe_path` is reinstalled before the retract, per
+`GCode.cpp:1081-1084`. That is the field R608 found populated and never read — the sixth
+unused-symbol instance, now used for what it was carried for.
+
+**Result — both positions match, measured on the file being judged (R610's rule):**
+
+| | after_tc | after_tower | in_tower | total |
+|---|---|---|---|---|
+| C++ | 2,512 @ 0.7600 | 931 @ 0.7600 | **2,718 @ 1.9000** | **6,161** |
+| Rust @R610 | 0 | 656 | 2,717 @ 1.9000 | 3,373 |
+| **Rust @R611** | **2,721 @ 0.7600** | 656 @ 0.7600 | **2,717 @ 1.9000** | **6,094** |
+
+Tower wipe blocks **3,373 -> 6,094** against C++'s 6,161 — from 54.7% to **98.9%** of
+C++'s count, with both |E| values exact to four decimals.
+
+**Parity: 648,759 -> 656,934, +8,175 matched lines.** Rate 25.60% -> **25.78%**;
+line-count gap 8.91% -> **8.42%**. Total `; WIPE_START` 36,394 -> 39,117 (+2,723),
+against the pre-registered ~39,100.
+
+**Both gates flipped DEFAULT-ON** (`TOWER_ENTRY_WIPE_CPP`, `TOWER_EXIT_WIPE_CPP`). They
+must ship together: entry alone was +14 (R610), the pair is +8,175. Gates OFF reproduces
+`56938d4d` byte-for-byte. Benchy and cube are byte-identical either way (no wipe tower),
+so only majora re-baselines: **`56938d4d` -> `69eb9767`**. 8/8 guards.
+
+**What is still off:** after_tc 2,721 vs C++'s 2,512 (we wipe on every tool change, C++
+on 2,512 of 2,723) and after_tower 656 vs 931. Together that is 67 blocks below C++'s
+total, against 2,788 before. Both are follow-ups, not blockers.
+
+**R612:** re-check `WIPE_MULTIPATH_CPP` for default-on (R600's rule — its upstream
+population just changed materially), then the remaining tower deltas: after_tower 656 vs
+931 (-275) and after_tc 2,721 vs 2,512 (+209). Predict the after_tower shortfall is the
+`finish_layer` tcr path, which takes the `!had_placeholder` branch and never reaches the
+new sync. Fallback: if `finish_layer` already syncs, the difference is C++ skipping the
+wipe on some tool changes (2,512 of 2,723) via a condition we do not model — find it
+before adding one.

@@ -3220,17 +3220,15 @@ fn emit_tower_tcr(
     // block: write up to and including the marker, emit the retract, then the rest.
     // Same technique as R603's `M73 E` splice.
     //
-    // SHIPPED OPT-IN AND NEARLY INERT — the ordering upstream defeats it. Measured:
-    // this adds only **2** wipe blocks (36,394 -> 36,396), not the ~2,718 predicted.
-    // Cause, confirmed structurally: we emit a travel to the tower BEFORE the block
-    // (`G1 X.. Y.. F1800` just above `;----`/`; CP TOOLCHANGE START`) which C++ does
-    // not, so the writer is already `retracted` by the time this runs and
-    // `retract()` early-returns. C++'s order is wipe-and-retract INSIDE the block
-    // first, then travel. Fixing that ordering is what makes this fire; the call
-    // itself is a faithful port of `append_tcr` (GCode.cpp:1081-1085) and is kept
-    // so the ordering round can build on it.
+    // R610 CORRECTION: R608's comment here claimed this was "nearly inert (+2 blocks)"
+    // because the writer was already `retracted`. BOTH halves were wrong. It fires
+    // 2,717 times (marker-verified) and every guard passes. R608 had judged a NEW
+    // total against an OLD per-class breakdown measured on a file built WITHOUT this
+    // gate. The real behaviour is a COMPENSATING TRADE:
+    //     after_tc 2,715 -> 0   and   in_tower 0 -> 2,717 (at |E| 1.9000, C++ 2,718)
+    // netting +2 on the total. The in-tower half is CONFIRMED CORRECT against C++.
     const WT_START: &str = "; WIPE_TOWER_START\n";
-    if crate::probe_enabled("TOWER_ENTRY_WIPE_CPP")
+    if crate::faithful_gate("TOWER_ENTRY_WIPE_CPP")
         && tcr.is_tool_change
         && g.contains(WT_START)
     {
@@ -3240,6 +3238,51 @@ fn emit_tower_tcr(
         writer.write_raw_content(&g[cut..]);
     } else {
         writer.write_raw_content(&g);
+    }
+
+    // R611: the SECOND retract. C++ `append_tcr` (GCode.cpp:1081-1085) does, AFTER the
+    // tower's own moves:
+    //
+    //     gcodegen.m_wipe.reset_path();
+    //     for (const Vec2f& wipe_pt : tcr.wipe_path)
+    //         gcodegen.m_wipe.path.points.emplace_back(
+    //             wipe_tower_point_to_object_point(gcodegen, transform_wt_pt(wipe_pt) + plate_origin_2d));
+    //     gcode += gcodegen.retract(false, false, auto_lift_type, true);
+    //
+    // i.e. it REINSTALLS a wipe path -- the TOWER's own, from `tcr.wipe_path` -- and
+    // retracts again with the ORDINARY length. That is why C++ has BOTH an in-tower
+    // wipe (|E| 1.9000) and an after-toolchange wipe (|E| 0.7600), while we had only
+    // one: our `retract()` ends with `self.wipe_path.clear()`, so once the tower-entry
+    // retract consumed the path there was nothing left for a second wipe to run along.
+    //
+    // `tcr.wipe_path` is the field R608 found is POPULATED AND NEVER CONSUMED
+    // (`wipe_tower.rs:340`, filled at `:1291`, copied at `:2889`) -- the sixth
+    // unused-symbol instance, and consuming it here is what it was carried for.
+    // Tower-local -> object coordinates is a translation by the tower offset
+    // (rotation is 0 on this profile, as `transform_gcode` is called with 0.0 above).
+    // R611 MEASURED: adding an explicit second `retract()` here produced ZERO extra
+    // after-toolchange wipes, because the writer was still `retracted` from the
+    // tower-entry call and `retract()` early-returns. The pre-registered fallback
+    // named exactly this. The cause is state tracking, not a missing call: the tower
+    // block is spliced in as RAW TEXT and unretracts inside it, so the writer's flag
+    // is stale-true. Sync it instead of adding a retract C++ does not have -- the
+    // ordinary object-side retract then fires again on its own, as it did before the
+    // entry gate existed.
+    if crate::faithful_gate("TOWER_EXIT_WIPE_CPP") && tcr.is_tool_change {
+        // C++ `append_tcr` (GCode.cpp:1081-1084) also reinstalls the TOWER's own wipe
+        // path from `tcr.wipe_path` before its next retract -- the field R608 found is
+        // populated and never consumed. Tower-local -> object coords is a translation
+        // by the tower offset (rotation is 0 here, as `transform_gcode` is called with
+        // 0.0 above).
+        let pts: Vec<(f64, f64)> = tcr
+            .wipe_path
+            .iter()
+            .map(|p| ((p.x + off.x) as f64, (p.y + off.y) as f64))
+            .collect();
+        if pts.len() >= 2 {
+            writer.set_wipe_path_points(pts);
+        }
+        writer.mark_unretracted_after_raw();
     }
     // R475: we just wrote `; FEATURE: Prime tower` as raw text, so the writer's
     // persistent last-role (C++ m_last_extrusion_role, GCode.hpp:538) has to move

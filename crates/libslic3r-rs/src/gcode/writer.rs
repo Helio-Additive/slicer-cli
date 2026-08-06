@@ -2017,6 +2017,24 @@ impl GCodeWriter {
     /// C++:     }
     /// C++:     return gcode;
     /// C++: }
+    /// Sync the tracked retract state to raw gcode that already unretracted.
+    ///
+    /// R611: the wipe-tower block is spliced in as RAW TEXT and contains its own
+    /// unretract (the `change_filament_gcode` template's `G1 E<n>`, plus R466's
+    /// `G1 E{retract_length_toolchange}` trailer). The writer never sees those, so
+    /// after R608's tower-entry retract its `retracted` flag stays true for the rest
+    /// of the print and every subsequent `retract()` early-returns -- which is why
+    /// enabling `TOWER_ENTRY_WIPE_CPP` drove after-toolchange wipes from 2,715 to 0.
+    ///
+    /// This clears the flag WITHOUT emitting, because the machine is already
+    /// unretracted; calling `unretract()` would add a Z-unlift and an E move that C++
+    /// does not have at this point. Same pattern as R475's `set_last_extrusion_role`
+    /// immediately below the tower's `write_raw_content` -- raw writes change machine
+    /// state the writer tracks separately, and that state has to be re-synced by hand.
+    pub fn mark_unretracted_after_raw(&mut self) {
+        self.retracted = false;
+    }
+
     pub fn unretract(&mut self) {
         if !self.retracted {
             return;
