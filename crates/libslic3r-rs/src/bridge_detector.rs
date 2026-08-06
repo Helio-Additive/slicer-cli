@@ -315,6 +315,30 @@ impl BridgeDetector {
             i += 1;
         }
 
+        // BRIDGEPROBE (R595): R594 found the bridge fill DIRECTION differs per
+        // layer (L47 rust 45 vs cpp 135). Dump every candidate so the divergence
+        // point is visible: same candidate set and coverages => the difference is
+        // tie-breaking (C++ std::sort is unstable, sort_by is stable); different
+        // coverages => the cause is upstream in _anchor_regions / expolygons.
+        if crate::probe_enabled("BRIDGEPROBE") {
+            use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+            static CALL: AtomicUsize = AtomicUsize::new(0);
+            let call = CALL.fetch_add(1, Relaxed) + 1;
+            if call <= 40 {
+                eprintln!(
+                    "[BRIDGEPROBE] call={call} ncand={} spacing={} i_best={i_best}",
+                    candidates.len(),
+                    self.spacing
+                );
+                for (bi, cd) in candidates.iter().enumerate().take(12) {
+                    eprintln!(
+                        "[BRIDGECAND] call={call} i={bi} angle={:.6} coverage={:.3} max_length={:.3} anchored={:.6}",
+                        cd.angle, cd.coverage, cd.max_length, cd.archored_percent
+                    );
+                }
+            }
+        }
+
         // BridgeDetector.cpp:168
         self.angle = candidates[i_best].angle;
         // BridgeDetector.cpp:169-170

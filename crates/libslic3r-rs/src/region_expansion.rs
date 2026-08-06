@@ -1766,9 +1766,27 @@ fn detect_bridging_direction_from_lines(
     for line in floating_edges {
         let dx = (line.b.x - line.a.x) as f64;
         let dy = (line.b.y - line.a.y) as f64;
-        // Normal = perpendicular to line direction
-        let nx = -dy;
-        let ny = dx;
+        // Normal = perpendicular to line direction.
+        //
+        // R595: C++ `Line::normal()` (Line.hpp:180) is `(dy, -dx)`; this port had
+        // `(-dy, dx)`, its NEGATION. The cost below uses abs() so costs are
+        // unaffected, and `result_dir` only flips sign (same line mod 180) -- but
+        // the dedup key is `ceil(atan2(n.y, n.x) * 1000)`, computed on an angle
+        // shifted by pi, so the buckets land differently and the CANDIDATE SET
+        // itself differs. That is how a bridge angle can come out 90 deg apart
+        // (R594: L47 rust 45 vs cpp 135).
+        //
+        // Shipped OPT-IN (default OFF), not default-on, per R557: measured against
+        // C++ it delivers NO improvement (Benchy byte-identical) and a 4-line
+        // regression on Majora (409,270 -> 409,266 matched of 2,518,598). The
+        // convention discrepancy is real and documented here; enabling it is a
+        // one-flag change if the upstream floating-edge input is ever corrected,
+        // at which point the bucket boundaries may start to matter.
+        let (nx, ny) = if crate::probe_enabled("BRIDGE_NORMAL_CPP") {
+            (dy, -dx)
+        } else {
+            (-dy, dx)
+        };
         let len = (nx * nx + ny * ny).sqrt();
         if len > 1e-10 {
             let normalized = PointF::new(nx / len, ny / len);

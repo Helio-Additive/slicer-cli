@@ -37,7 +37,8 @@ ARACHNE = os.path.join(
 LIBSLIC3R = os.path.join(
     ROOT, "libslic3r/bambustudio/references/BambuStudio/src/libslic3r"
 )
-LIBSLIC3R_FILES = ("PerimeterGenerator.cpp", "LayerRegion.cpp", "VariableWidth.cpp")
+LIBSLIC3R_FILES = ("PerimeterGenerator.cpp", "LayerRegion.cpp", "VariableWidth.cpp",
+                   "BridgeDetector.cpp")  # R595: bridge angle candidates
 
 ST_INCLUDES_OLD = """#include <stack>
 #include <functional>
@@ -1754,7 +1755,44 @@ ST_CV_STAGE_NEW = """    if (getenv("CONV") && !probe_speculative()) conv_stage(
     if (getenv("CONV") && !probe_speculative()) conv_stage(2, graph.edges.size(), graph.nodes.size());
 """
 
+# ---------------------------------------------------------------------------
+# BRIDGEPROBE (R595) - R594 found the bridge FILL DIRECTION differs per layer
+# (L47 rust 45 vs cpp 135, 90 apart). Two candidate causes: the candidate SET /
+# coverages differ (upstream: _anchor_regions / expolygons), or they agree and only
+# the tie-break differs (C++ std::sort is NOT stable; the port's sort_by IS).
+# Dump every candidate so the divergence point is visible rather than argued.
+# ---------------------------------------------------------------------------
+BD_OLD = """    this->angle = candidates[i_best].angle;
+"""
+BD_NEW = """    if (getenv("BRIDGEPROBE")) {
+        static std::mutex bd_mtx;
+        static size_t bd_call = 0;
+        std::lock_guard<std::mutex> bd_lock(bd_mtx);
+        ++bd_call;
+        if (bd_call <= 40) {
+            fprintf(stderr, "[BRIDGEPROBE] call=%zu ncand=%zu spacing=%d i_best=%zu\\n",
+                    bd_call, candidates.size(), (int)this->spacing, i_best);
+            for (size_t bi = 0; bi < candidates.size() && bi < 12; ++bi)
+                fprintf(stderr,
+                    "[BRIDGECAND] call=%zu i=%zu angle=%.6f coverage=%.3f max_length=%.3f anchored=%.6f\\n",
+                    bd_call, bi, candidates[bi].angle, candidates[bi].coverage,
+                    candidates[bi].max_length, candidates[bi].archored_percent);
+        }
+    }
+    this->angle = candidates[i_best].angle;
+"""
+
+BD_INC_OLD = """#include "BridgeDetector.hpp"
+"""
+BD_INC_NEW = """#include "BridgeDetector.hpp"
+#include <mutex>
+#include <cstdio>
+#include <cstdlib>
+"""
+
 EDITS = [
+    ("BridgeDetector.cpp", BD_INC_OLD, BD_INC_NEW),
+    ("BridgeDetector.cpp", BD_OLD, BD_NEW),
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_EDGE_OLD, ST_EDGE_NEW),
     ("SkeletalTrapezoidation.cpp", ST_CENSUS_OLD, ST_CENSUS_NEW),

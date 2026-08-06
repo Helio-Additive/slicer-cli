@@ -7169,3 +7169,74 @@ from both engines for a Benchy layer and find where the selection diverges;
 (3) deprioritise Top surface — its geometry is already correct.
 
 Probe-free round: majora `e8027b80` and benchy `a27419f0` reproduce, 8/8 guards.
+
+## R595 — the bridge hypothesis dies on reachability; the real producer, and a real but inert defect
+
+R594 proposed that Bridge's wrong fill angle came from `BridgeDetector::detect_angle`
+tie-breaking (C++ `std::sort` unstable, the port's `sort_by` stable). It was
+explicitly filed as a hypothesis. **It is refuted, and not on its merits — on
+reachability.**
+
+`BRIDGEPROBE` was added to both engines at the selection site and printed **nothing
+on either**. Per R586 a silent probe is suspect, so it was chased: on Benchy the
+bridge angle never passes through `detect_angle` at all. `LayerRegion.cpp:600-603`
+routes through `expand_bridges_detect_orientations` -> `detect_bridge_directions`,
+which at `LayerRegion.cpp:355` does
+
+    auto [bridging_dir, _] = detect_bridging_direction(lines, to_polygons(bridge.expolygon));
+    bridge.angle = M_PI + std::atan2(bridging_dir.y(), bridging_dir.x());
+
+`detect_angle` fires **0 times on both engines** — eliminated (R587), and the whole
+R594 tie-break argument with it. The real producer is
+`detect_bridging_direction` (`BridgeDetector.hpp:75`), ported as
+`detect_bridging_direction_from_lines` (`region_expansion.rs:1745`).
+
+**A genuine convention defect, found by reading the real producer.** C++
+`Line::normal()` (`Line.hpp:180`) is `(dy, -dx)`. The port computed `(-dy, dx)` —
+its negation. Consequences: the cost accumulates `abs(line.dot(dir))` so costs are
+unaffected; `result_dir = (n.y, -n.x)` merely flips sign, the same line mod 180. But
+the dedup key is `ceil(atan2(n.y, n.x) * 1000)`, computed on an angle shifted by pi,
+so the bucket boundaries land differently and the CANDIDATE SET can differ. That is
+a plausible route to a 90-degree swing, and the port's own comment already flags
+this function as order-sensitive on ties (R99 replaced a `HashMap` with a
+`BTreeMap` for exactly that reason; C++ uses an `unordered_map`, whose order is
+implementation-defined).
+
+**Fixed, measured, and shipped OPT-IN.** Behind `BRIDGE_NORMAL_CPP`:
+
+    Benchy   gate ON is BYTE-IDENTICAL to gate OFF (a27419f0)
+    Majora   gate ON changes output; matched lines 409,270 -> 409,266 of 2,518,598
+             (Bridge 1788 -> 1784); score 16.25% either way
+
+So the correction is faithful to C++ and delivers **no improvement and a 4-line
+regression**. R557 says a faithful port that regresses ships OPT-IN, so it is
+default-OFF and both baselines are unchanged (`e8027b80`, `a27419f0`). The
+discrepancy is now documented in code with the measurement beside it; flipping it on
+is one flag if the upstream input is ever corrected, at which point the bucket
+boundaries may begin to matter.
+
+**Why the bucket theory did not bite here.** The negation shifts every angle by pi,
+i.e. the key by `pi * 1000 = 3141.59...`, which is not an integer — so `ceil`
+boundaries move by a fraction and membership changes only for normals within about
+0.001 rad of a boundary. Rare, hence 4 lines. The mechanism is real; its leverage on
+these two fixtures is nil.
+
+**Bridge's wrong angle is therefore still UNEXPLAINED**, and this round says so
+rather than claiming the fix addressed it. Both remaining candidates are upstream of
+`detect_bridging_direction` and change its INPUT rather than its arithmetic:
+
+  * the floating-edge set `lines = diff_pl(to_polylines(bridge.expolygon),
+    expand(anchor_areas, SCALED_EPSILON))` — if the anchor areas or the bridge
+    expolygon differ, every direction cost changes;
+  * `compute_principal_components` on the fully-anchored branch, taken when
+    `floating_edges` is empty.
+
+**R596:** instrument `detect_bridging_direction`'s INPUT on both engines for one
+Benchy bridge — number of floating edges, their total length, and the resulting
+direction costs — and find whether the inputs already differ. Predict the inputs
+differ (the arithmetic between them is now verified line-by-line); fallback, if the
+inputs match and the costs match, then the min-cost tie-break is the cause after
+all and the `unordered_map`-vs-`BTreeMap` ordering becomes the target.
+
+Probe cleanup: `BridgeDetector.cpp` is now in the injector's `LIBSLIC3R_FILES`, so
+the submodule revert list must include it.
