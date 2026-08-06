@@ -47,3 +47,7 @@ tests/*.out.gcode
 
 # Misc
 _downloads
+
+# python bytecode from scripts/
+__pycache__/
+*.pyc
