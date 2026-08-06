@@ -7375,3 +7375,67 @@ code even called?" rather than from reading it. R586's rule (a silent probe is a
 lead) has now produced R595, R596 and R597. The corollary worth keeping: **a
 faithful-looking port can be dead code, and the live path may be an older
 unfaithful one — check which one runs before comparing either against C++.**
+
+## R598 — the divisor is cosmetic; and R597's headline was a prefix artefact
+
+Two results, and the second corrects the previous round.
+
+**1. Prediction WRONG; the pre-registered fallback fires.** I predicted
+`thickness_layers > 1` on solid surfaces over sparse infill, which would make the
+missing `layer_id / surface->thickness_layers` divisor a real 90-degree defect.
+Measured at the consumer on both fixtures:
+
+| fixture | calls | used_bridge | used_layer | **thickness_layers > 1** |
+|---|---|---|---|---|
+| Benchy | 500 | 16 | 484 | **0** |
+| Majora | 38,000 | 538 | 37,462 | **0** |
+
+`thickness_layers` is 1 for **every** surface on both fixtures. Reading the writer
+confirms why: C++ sets it only in `PrintObject::combine_infill`
+(`PrintObject.cpp:3679`, `templ.thickness_layers = layerms.size()`), for `stInternal`
+surfaces, and only when infill-combining is enabled — which neither fixture uses.
+**The divisor is COSMETIC here.** It remains a faithfulness defect worth fixing for
+ask #1, but it cannot explain any observed difference on these two models, so it is
+deprioritised rather than chased.
+
+**2. R597's `used_bridge=0` is CORRECTED — it was a prefix artefact.** That round
+printed only the first 20 calls and I flagged the limit at the time; carried to 500
+and 38,000 calls, the counter is **not** zero:
+
+    Benchy   16 of 500     (3.2%) use the surface's bridge angle
+    Majora  538 of 38,000  (1.4%)
+
+So C++ **does** consult `bridge_angle` on Benchy, on a small but non-empty set of
+surfaces. R597's conclusion that the bridge-direction enquiry was "retired for
+Benchy" is **withdrawn**: it is retired as the *dominant* explanation, not as a
+contributor. This is exactly the failure mode R573/R584 warned about — a prefix is
+not the population — and it cost a wrong conclusion one round later. **A counter
+that reads zero over a truncated prefix is not a zero.**
+
+**The live defect, now measured on both fixtures.** Our live fill path never
+consults `bridge_angle` at all, so those 16 + 538 surfaces get the alternating layer
+angle where C++ uses the detected bridge direction. The blocker is structural:
+
+    C++   Fill::_infill_direction(const Surface *surface)      // has the surface
+    Rust  generate_fill_rectilinear(fill_area, config, layer_index, is_grid)
+
+**The Rust entry point never receives the `Surface`**, so no per-surface datum —
+`bridge_angle` or `thickness_layers` — can reach the angle computation. That is a
+single architectural divergence which produces both of R597's findings, and it is an
+ask #1 (code-similarity) defect in its own right: a future maintainer following
+`_infill_direction` from the C++ side lands on `fill/mod.rs:1461`, which is dead.
+
+**Not changed this round, deliberately.** Threading the surface through is a real
+signature change, and the angle handoff needs care — `InfillConfig.angle` is in
+DEGREES while C++ `bridge_angle` is RADIANS, and the bridge branch must bypass both
+the per-layer alternation and the unconditional `+90`. That deserves its own gated
+A/B rather than being rushed at the end of a measurement round. Baselines reproduce
+(`bb313a93`, `a27419f0`), 8/8 guards.
+
+**R599:** thread the surface (or at least `bridge_angle`) to the live fill path and
+implement the `bridge_angle >= 0` short-circuit behind one gate; A/B both fixtures.
+Predict it moves Benchy's Bridge (7.8%) and Majora's Bridge (8.3%) and is inert
+elsewhere, since only 1.4-3.2% of fills are affected. Fallback: if Bridge does not
+move, the 16/538 surfaces are not the ones the Bridge FEATURE tag is emitted for,
+and the mapping from surface type to feature label needs checking before any more
+fill work.

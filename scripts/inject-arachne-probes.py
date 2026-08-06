@@ -1845,16 +1845,17 @@ FB_OLD = """    out_angle += float(M_PI/2.);
 FB_NEW = """    out_angle += float(M_PI/2.);
     if (getenv("FILLANG")) {
         static std::mutex fa_mtx;
-        static size_t fa_n = 0, fa_bridge = 0, fa_layer = 0;
+        static size_t fa_n = 0, fa_bridge = 0, fa_layer = 0, fa_thick = 0;
         std::lock_guard<std::mutex> fa_lock(fa_mtx);
         ++fa_n;
         if (surface->bridge_angle >= 0) ++fa_bridge; else ++fa_layer;
-        if (fa_n <= 20 || fa_n % 5000 == 0)
+        if (surface->thickness_layers > 1) ++fa_thick;
+        if (fa_n <= 5 || fa_n % 500 == 0)
             fprintf(stderr,
-                "[FILLANG] n=%zu used_bridge=%zu used_layer=%zu | surf_type=%d "
-                "bridge_angle=%.6f out_angle=%.6f\\n",
-                fa_n, fa_bridge, fa_layer, (int)surface->surface_type,
-                surface->bridge_angle, out_angle);
+                "[FILLANG] n=%zu used_bridge=%zu used_layer=%zu thick_gt1=%zu | "
+                "surf_type=%d thickness_layers=%d bridge_angle=%.6f out_angle=%.6f\\n",
+                fa_n, fa_bridge, fa_layer, fa_thick, (int)surface->surface_type,
+                (int)surface->thickness_layers, surface->bridge_angle, out_angle);
     }
     return std::pair<float, Point>(out_angle, out_shift);
 """
