@@ -7908,3 +7908,84 @@ the tower's own moves are already at parity. Fallback: if the wipe blocks are pr
 but shorter, it is the per-wipe move COUNT (C++ splits the wipe path into more
 segments), which is a different fix in the same place.
 `M73 P` (5,798 lines) still needs the time-estimation post-process — scope separately.
+## R604 — the `; WIPE_START` deficit: two missing install sites, and a decomposition
+
+R603 left `; WIPE_START` as the largest unattributed item: C++ 44,174 blocks vs our
+36,394, **7,780 short**, roughly 45,000 lines. This round is measurement only — no
+behavioural change, working tree clean, all three baselines trivially intact.
+
+**Prediction WRONG, and the registered fallback WRONG too.** The prediction was "a
+missing wipe-on-retract for some CLASS of retraction, most likely object-side"; the
+fallback was "the blocks are present but shorter". Neither. It is two overlapping
+effects, and the one I named second is the smaller.
+
+**The distribution is structured, not uniform:**
+
+| feature | cpp | rust | delta | x |
+|---|---|---|---|---|
+| Outer wall | 16,649 | 14,544 | -2,105 | 0.874 |
+| Sparse infill | 7,175 | 5,101 | -2,074 | 0.711 |
+| **Prime tower** | 6,161 | 3,371 | **-2,790** | **0.547** |
+| Inner wall | 5,110 | 4,996 | -114 | 0.978 |
+| Floating vertical shell | 3,001 | 2,812 | -189 | 0.937 |
+| **(pre-feature)** | 655 | **0** | -655 | **0.000** |
+| **Overhang wall** | 141 | **0** | -141 | **0.000** |
+| Internal solid infill | 4,742 | 4,861 | +119 | 1.025 |
+| Top surface | 243 | 391 | +148 | 1.609 |
+| Bridge | 285 | 310 | +25 | 1.088 |
+
+Two features emit **exactly zero** wipes (796 blocks), three emit MORE than C++, and
+the bulk is a partial deficit at three different ratios. That is a condition firing
+differently, not an absent feature.
+
+**The deficit decomposes cleanly.** C++ performs 168,246 retractions to our 158,288 —
+we retract 9,958 fewer times — and C++ wipes on 26.26% of them against our 22.99%:
+
+| term | blocks |
+|---|---|
+| fewer retractions | 2,290 |
+| lower wipe-per-retract rate | 5,490 |
+| **total** | **7,780** |
+
+The identity closes exactly. **The wipe RATE is the larger term**, which is why the
+prediction's "missing class of retraction" framing was wrong: we do wipe on most
+retractions, just less often, and we also retract less often.
+
+**The mechanism: C++ installs the wipe path at FOUR sites, we install at TWO.**
+
+| C++ site | function | Rust |
+|---|---|---|
+| `GCode.cpp:5601` | `GCode::extrude_loop` | present, `exporter.rs:653` |
+| `GCode.cpp:5704` | `GCode::extrude_path` | present, `exporter.rs:1750` |
+| **`GCode.cpp:5664`** | **`GCode::extrude_multi_path`** | **MISSING** |
+| **`GCode.cpp:774` / `:1084`** | wipe-tower / nozzle-change append | **MISSING** |
+
+`; WIPE_START` is emitted (`exporter.rs:2607`) only when the stored wipe path is
+non-empty, so every site that fails to install one silently converts a wipe into a
+bare retract.
+
+**The `extrude_multi_path` gap is a documented conflation.** `exporter.rs:1178` reads
+`pub use extrude_collection as extrude_multi_path;` — "Alias for backward
+compatibility (C++ has both multi_path and collections)". The two are not
+interchangeable for this purpose: C++'s `extrude_multi_path` builds ONE wipe path from
+the concatenation of all sub-paths (skipping duplicate joints) and reverses it, while
+our collection handler installs a wipe path per sub-path, so what survives is only the
+LAST sub-path. Another deliberate divergence found by grepping for one (R601's rule),
+and this time it is not the 3-line kind.
+
+**Not fixed this round, deliberately.** Both remaining sites are real ports, not
+one-line splices, and the `extrude_multi_path` fix changes wipe-path CONTENT for the
+36,394 wipes we already emit — not just the count. That needs its own gated A/B rather
+than being rushed at the end of a measurement round. No code changed; `git status`
+clean, baselines `304320a6` / `56938d4d` / `242f1fb8` unaffected.
+
+**R605:** port `GCode::extrude_multi_path`'s wipe-path installation
+(`GCode.cpp:5664-5673`) — concatenate all sub-paths skipping duplicate joints, then
+reverse — behind its own gate. Predict it lifts the wipe RATE toward C++'s 26.26% and
+recovers a large part of the 5,490-block rate term, with the Outer wall (0.874x),
+Sparse infill (0.711x) and Overhang wall (0.000x) deficits moving most, since those are
+where multi-paths dominate. Fallback: if the rate barely moves, the wipe path is being
+installed but emptied downstream (the `clip_end` at `exporter.rs:2581` or the
+`wipe_dist` guard), and the next probe belongs at `Wipe::wipe`'s entry rather than at
+its callers. The Prime tower term (-2,790) is the separate tower/nozzle-change site
+(`GCode.cpp:774`/`:1084`) and should be its own round.
