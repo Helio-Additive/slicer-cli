@@ -2327,21 +2327,48 @@ pub fn generate_fill_rectilinear(
     // R599: C++ Fill::_infill_direction (FillBase.cpp:224-239) short-circuits to
     // the surface's bridge angle when it is set, SKIPPING the per-layer
     // alternation, then still adds the unconditional +M_PI/2. `bridge_angle` is
-    // already in RADIANS (fill.rs:606), so this bypasses the degrees path rather
-    // than round-tripping through it.
+    // already in RADIANS, so this bypasses the degrees path rather than
+    // round-tripping through it. Populated in `group_fills` (fill/mod.rs:844);
+    // R599's comment here cited fill.rs:606, which is the DEAD twin module.
     //
-    // Shipped OPT-IN (default OFF) per R557: measured against C++ it makes the
-    // Bridge toolpath structurally closer (Benchy 1554 -> 1353 lines vs C++'s
-    // 1337; Majora 21,578 -> 20,847) and improves Majora's Bridge match rate
-    // (8.3% -> 8.7%, +22 lines), but REGRESSES total matched lines on both
-    // fixtures (Benchy -517, Majora -311) and drags Benchy's Internal solid
-    // infill from 24.2% to 21.9% -- so the surfaces carrying a bridge angle are
-    // NOT confined to the Bridge feature. Faithful, but not yet a net win.
-    let angle_rad = if crate::probe_enabled("FILL_BRIDGE_ANGLE") && config.bridge_angle >= 0.0 {
+    // R600: the branch below is only meaningful once `bridge_angle` is -1 on
+    // non-bridge surfaces. Until `FILL_PARAMS_BRIDGE_ANGLE_CPP` it was 0.0 there,
+    // so this fired on ~every fill where C++ fires on 3.2% of them (Benchy) --
+    // which is why R599 measured a regression.
+    //
+    // R600 flipped this DEFAULT-ON. With the population corrected it is a net gain
+    // on both fixtures and both instruments -- Benchy +13 matched lines
+    // (line_parity) / +28 (line_align), Majora +21 -- and it lifts the Bridge
+    // feature on both (7.8% -> 8.2%, 8.3% -> 8.7%). Benchy moves nowhere else;
+    // Majora's per-feature deltas sum to the +21 exactly, and are not all positive:
+    // Bridge +17, Outer wall +15, Sparse +14, but Floating vertical shell -20 and
+    // Top surface -9. Those two are the next thing to look at, not a reason to hold
+    // back a change that is verbatim `FillBase.cpp:224-239`.
+    let used_bridge = config.bridge_angle >= 0.0;
+    let angle_rad = if crate::faithful_gate("FILL_BRIDGE_ANGLE") && used_bridge {
         config.bridge_angle + std::f64::consts::FRAC_PI_2
     } else {
         angle_deg.to_radians()
     };
+    // FILL_BRIDGE_POP=1 — the R600 population census, counting the SAME quantity as
+    // the C++ FILLANG probe in `Fill::_infill_direction`: of all fills, how many
+    // present a usable bridge angle. Cumulative totals are printed, not a prefix
+    // (R598), and the branch is evaluated regardless of `FILL_BRIDGE_ANGLE` so the
+    // population can be measured without changing the output.
+    if crate::probe_enabled("FILL_BRIDGE_POP") {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        static USED: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed) + 1;
+        let used = USED.fetch_add(used_bridge as usize, Ordering::Relaxed) + used_bridge as usize;
+        // Print EVERY call: this path is entered a few hundred times, so a modulo
+        // stride prints once and reads as a prefix artefact (R598).
+        eprintln!(
+            "[FILLPOP] n={n} used_bridge={used} ({:.2}%) bridge_angle={:.6}",
+            100.0 * used as f64 / n as f64,
+            config.bridge_angle
+        );
+    }
 
     // Grid draws two perpendicular passes; FillRectilinear.cpp:3036
     // (fill_surface_by_multilines) divides density by the sweep count so the passes

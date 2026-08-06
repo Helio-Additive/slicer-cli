@@ -7505,3 +7505,110 @@ sets the angle on the same surfaces we do but its `stBottomBridge` -> feature-la
 mapping differs, so the same flag reaches different G-code tags; fallback, if the
 flag really is set on different surfaces, the defect is upstream in
 `expand_merge_surfaces`/surface classification, not in the filler.
+## R600 — the wrong fallback: `bridge_angle` was 0.0, not -1, on every non-bridge surface
+
+R599 shipped the `bridge_angle >= 0` short-circuit opt-in because it regressed both
+fixtures, and inferred that "the surfaces carrying `bridge_angle >= 0` are NOT
+confined to the `Bridge` feature". That inference was right. The cause is one token.
+
+**C++** (`Fill.cpp:243`) is a straight copy with no fallback:
+
+```cpp
+params.bridge_angle = float(surface.bridge_angle);
+```
+
+It needs no fallback because `Surface::bridge_angle` is already `-1` when undefined
+("in radians, ccw, 0 = East, only 0+ (negative means undefined)", `Surface.hpp:39`,
+initialised `bridge_angle(-1)` in every constructor).
+
+**Rust** (`fill/mod.rs:844`, the LIVE `group_fills`) substituted a config value:
+
+```rust
+bridge_angle: surface.bridge_angle.unwrap_or(region_config.bridge_angle) as f32,
+```
+
+Two defects in one token:
+
+* `region_config.bridge_angle` **defaults to 0.0**, and `0.0 >= 0` is TRUE — so every
+  non-bridge surface presented itself to `Fill::_infill_direction` as a bridge.
+* it is in **degrees** ("Bridge angle (degrees). 0 = auto") while `surface.bridge_angle`
+  is in **radians**. Even a non-zero config value would have been misread.
+
+**The census, measured rather than argued.** `FILL_BRIDGE_POP=1` counts the same
+quantity as R598's C++ `FILLANG` probe — of the fills reaching this path, how many
+present a usable bridge angle — and prints every call, so it cannot read as a prefix
+artefact (R598):
+
+| fallback | Benchy | Majora |
+|---|---|---|
+| `region_config.bridge_angle` (old) | **314 / 314 = 100.00%** | **1086 / 1086 = 100.00%** |
+| `-1.0` (C++ faithful) | **11 / 314 = 3.50%** | **353 / 1086 = 32.5%** |
+
+C++ measured 3.2% on Benchy (R598). The denominators are not the same population —
+C++'s probe sits in `_infill_direction`, which serves every fill type, ours on the
+rectilinear path — so this corroborates the magnitude, it is not an identity (R572).
+What it does establish exactly is the intra-engine ratio: 100% -> 3.5%.
+
+**`FILL_PARAMS_BRIDGE_ANGLE_CPP`, DEFAULT-ON.** With `FILL_BRIDGE_ANGLE` off the fix
+is byte-identical on both fixtures (`a27419f0`, `bb313a93`) — as predicted, because
+the only other reader is the `Ord` at `fill/mod.rs:439`, where a uniform 0.0 and a
+uniform -1.0 sort identically, and a real bridge cannot tie with a non-bridge across
+it (`bridge` is itself a sort key).
+
+**`FILL_BRIDGE_ANGLE` flipped DEFAULT-ON.** With the population corrected, R599's
+regression inverts on both fixtures and both instruments:
+
+| | Benchy OFF | Benchy ON | Majora OFF | Majora ON |
+|---|---|---|---|---|
+| matched (line_parity) | 115,887 | **115,900** | 409,297 | **409,318** |
+| matched (line_align) | 84,552 | **84,580** | — | — |
+| body lines / gap | 154,539 / 1.15% | 154,472 / 1.20% | 2,518,612 / 9.47% | 2,517,813 / 9.50% |
+| Bridge rate | 7.8% | **8.2%** | 8.3% | **8.7%** |
+| Bridge rust lines | 1,554 | **1,468** (C++ 1,337) | 21,578 | **20,841** (C++ 13,195) |
+| Internal solid infill | 24.2% | **24.2%** | 11.3% | 11.3% |
+
+R599's Internal-solid-infill regression (24.2% -> 21.9%) is gone. R599's Bridge line
+count of 1,353 looked closer to C++'s 1,337 than R600's 1,468, but it was an artefact
+of applying the bridge angle to *every* fill; the honest figure is 1,468.
+
+**The gains are small and not uniformly positive, and that is worth stating plainly.**
++13 lines on Benchy out of 115,900, +21 on Majora out of 409,318. Majora's per-feature
+deltas sum to the +21 exactly — Bridge +17, Outer wall +15, Sparse infill +14,
+Internal solid +2, Inner wall +1, Prime tower +1, **Floating vertical shell -20, Top
+surface -9**. Two features got worse. The change ships default-on anyway because it is
+verbatim `FillBase.cpp:224-239` and net positive on both fixtures under both
+instruments; the two losers become the next question, not a reason to hold it back.
+
+**Re-baselined**, diff proven intentional: benchy `a27419f0` -> `304320a6`, majora
+`bb313a93` -> `529545af`. 8/8 guards; both fixtures still pass all five
+`semantic_compare.py` gates.
+
+**Cube baseline correction, not caused by this round.** The cube reads `242f1fb8`
+against a recorded baseline of `ab415621`. It is identical under all three gate
+combinations — default, `FILL_BRIDGE_ANGLE=0`, and both gates off — and "both gates
+off" reproduces pre-R600 behaviour exactly, so R600 is provably inert on the cube and
+the drift predates it. Most likely R596, which shipped a default-on change and
+re-baselined only majora. Cube baseline corrected to `242f1fb8`; the lesson is that a
+re-baseline must cover every fixture, not just the ones the round was aimed at.
+
+**Prediction: RIGHT on every clause.** Byte-identical with the short-circuit off;
+total matched above 115,887 on Benchy; Internal solid infill back to 24.2%. The one
+thing it got wrong in emphasis was expecting the Bridge line count to stay at R599's
+1,353 — it should not have, and 1,468 is the correct value.
+
+**Also corrected:** R599's comment at `layer.rs:2487`/`:3323` cited `fill.rs:606` as
+the source of `params.bridge_angle`. `fill.rs` is the DEAD twin module (its
+`group_fills` at `fill.rs:467` is shadowed by `fill/mod.rs:553`, which is what
+`crate::fill::group_fills` resolves to) — and, tellingly, the dead module had the
+fallback RIGHT (`unwrap_or(-1.0)`). The R597 dead-code trap, hit a second time:
+reading the faithful-looking twin is what made this defect invisible for a round.
+
+**R601:** Majora's Floating vertical shell (-20) and Top surface (-9) under the bridge
+angle. Both are large features on Majora (394k and 24k rust lines) and both *gained*
+nothing while Bridge gained; predict they contain surfaces flagged `stBottomBridge`
+that C++ labels differently, i.e. the R600 fix corrected the VALUE but the surface
+POPULATION carrying it still differs — the R599/R600 fallback about
+`expand_merge_surfaces`/surface classification (`LayerRegion.cpp:600-620`) is now the
+live hypothesis. Fallback: if the populations match, the loss is the raster phase
+changing under a new angle, and belongs with the existing Internal-solid-infill
+sub-lattice scatter rather than with bridges.

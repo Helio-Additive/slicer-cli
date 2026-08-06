@@ -2490,8 +2490,9 @@ impl Layer {
                 angle: surface_fill.params.angle as f64,
                 angle_increment: 90.0,
                 // R599: C++ Fill::_infill_direction (FillBase.cpp:224) uses the
-                // surface's bridge angle when set. Populated at fill.rs:606 from
-                // `surface.bridge_angle.unwrap_or(-1.0)`; radians, -1 == none.
+                // surface's bridge angle when set. Radians, -1 == none. Populated
+                // in the LIVE `group_fills` at fill/mod.rs:844 -- R599's comment
+                // here named fill.rs:606, which belongs to the dead twin module.
                 bridge_angle: surface_fill.params.bridge_angle as f64,
                 density,
                 extrusion_width: surface_fill.params.spacing,
@@ -3330,8 +3331,9 @@ impl Layer {
                 angle: surface_fill.params.angle as f64,
                 angle_increment: 90.0,
                 // R599: C++ Fill::_infill_direction (FillBase.cpp:224) uses the
-                // surface's bridge angle when set. Populated at fill.rs:606 from
-                // `surface.bridge_angle.unwrap_or(-1.0)`; radians, -1 == none.
+                // surface's bridge angle when set. Radians, -1 == none. Populated
+                // in the LIVE `group_fills` at fill/mod.rs:844 -- R599's comment
+                // here named fill.rs:606, which belongs to the dead twin module.
                 bridge_angle: surface_fill.params.bridge_angle as f64,
                 density,
                 extrusion_width: surface_fill.params.spacing,

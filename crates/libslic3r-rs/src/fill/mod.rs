@@ -841,7 +841,25 @@ pub fn group_fills(
                 overlap: region_config.infill_overlap,
                 angle: region_config.fill_angle as f32,
                 bridge: is_bridge,
-                bridge_angle: surface.bridge_angle.unwrap_or(region_config.bridge_angle) as f32,
+                // R600: C++ is `params.bridge_angle = float(surface.bridge_angle);`
+                // (Fill.cpp:243) — a straight copy with NO fallback, because
+                // `Surface::bridge_angle` is already -1 ("negative means undefined",
+                // Surface.hpp:39) on every non-bridge surface. This port fell back to
+                // `region_config.bridge_angle`, which is TWO defects in one token:
+                //   * its default is 0.0, and `0.0 >= 0` is TRUE, so every non-bridge
+                //     surface presented itself as a bridge to `Fill::_infill_direction`
+                //     (FillBase.cpp:224). C++ takes that branch on 3.2% of Benchy's
+                //     fills; we would have taken it on ~all of them.
+                //   * it is in DEGREES ("Bridge angle (degrees). 0 = auto") while
+                //     `surface.bridge_angle` is in RADIANS.
+                // Latent until R599 wired `bridge_angle` into `InfillConfig` — before
+                // that the only reader was the `Ord` below, where a uniform 0.0 sorts
+                // identically to a uniform -1.0.
+                bridge_angle: if crate::faithful_gate("FILL_PARAMS_BRIDGE_ANGLE_CPP") {
+                    surface.bridge_angle.unwrap_or(-1.0) as f32
+                } else {
+                    surface.bridge_angle.unwrap_or(region_config.bridge_angle) as f32
+                },
                 density,
                 multiline: 1,
                 anchor_length,
