@@ -3041,6 +3041,23 @@ fn emit_tower_tcr(
     // fall inside the Prime tower feature. We emit after the block. Keeping the three
     // lines contiguous matches C++'s output shape; moving the whole trio upstream is a
     // separate change with per-feature-attribution consequences.
+    //
+    // R601 MEASURED THOSE CONSEQUENCES AND CLOSED THE DIVERGENCE.
+    // With the trio after the block, the entire tool change -- ramming, retracts,
+    // M620/M621, the filament end/start templates -- stays under whatever object
+    // feature happened to precede the tower. On Majora that mis-attributes
+    // ~190k M-codes, ~147k retracts and ~105k travels: C++ has 16,341 of its 16,347
+    // `M620` under `Prime tower` and we had ZERO, spraying them over Internal solid
+    // infill (6,930), Floating vertical shell (4,812) and Sparse infill (3,402).
+    // Since `line_parity.py` groups by (layer, feature), a mis-tagged line can never
+    // match even when it is byte-identical, so this depressed every Majora feature.
+    //
+    // R464's stated reason for the divergence does not survive scrutiny: the trio is
+    // three COMMENTS and cannot change any extrusion. The "outstanding retraction at
+    // the first purge stroke" it blamed was the missing toolchange unretract, fixed
+    // independently in R466 (`G1 E{retract_length_toolchange}` in the trailer below).
+    // C++ emits the trio immediately before `;----` / `; CP TOOLCHANGE START`.
+    let tag_at_head = crate::faithful_gate("TOWER_FEATURE_TAG_HEAD");
     let tower_feature = format!(
         "; LAYER_HEIGHT: {:.6}\n; FEATURE: Prime tower\n; LINE_WIDTH: {:.6}",
         tcr.layer_height, tcr.perimeter_width
@@ -3091,6 +3108,10 @@ fn emit_tower_tcr(
         }
         _ => String::new(),
     };
+    // R601: with the tag at the head the trailer keeps everything that is a real
+    // move (filament start template, travel, unretract) and drops only the three
+    // comment lines, which now precede the whole block.
+    let tail_marker = if tag_at_head { "" } else { tower_feature };
     let trailer = if had_placeholder && print_config.retract_length_toolchange > 0.0 {
         let speed = if print_config.retract_speed > 0.0 {
             print_config.retract_speed * 60.0
@@ -3098,12 +3119,13 @@ fn emit_tower_tcr(
             1800.0
         };
         format!(
-            "{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tower_feature}",
+            "{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tail_marker}",
             print_config.retract_length_toolchange, speed
         )
     } else {
-        format!("{fil_start}{travel_to_start}{tower_feature}")
+        format!("{fil_start}{travel_to_start}{tail_marker}")
     };
+    let trailer = trailer.trim_end_matches('\n').to_string();
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
         &g,
         block.as_deref(),
@@ -3120,6 +3142,14 @@ fn emit_tower_tcr(
         if !travel_to_start.is_empty() {
             writer.write_raw(travel_to_start.trim_end());
         }
+        if !tag_at_head {
+            writer.write_raw(tower_feature);
+        }
+    }
+    // R601: C++ writes the LAYER_HEIGHT/FEATURE/LINE_WIDTH trio at the head of
+    // `tcr.gcode`, immediately before `;----` / `; CP TOOLCHANGE START`, so the
+    // whole tool change is attributed to `Prime tower`.
+    if tag_at_head {
         writer.write_raw(tower_feature);
     }
     writer.write_raw_content(&g);

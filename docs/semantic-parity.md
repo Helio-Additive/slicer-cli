@@ -7612,3 +7612,128 @@ POPULATION carrying it still differs — the R599/R600 fallback about
 live hypothesis. Fallback: if the populations match, the loss is the raster phase
 changing under a new angle, and belongs with the existing Internal-solid-infill
 sub-lattice scatter rather than with bridges.
+## R601 — the tool change was under the wrong `; FEATURE:` tag: +221,561 lines
+
+R600 left two Majora features losing ground under the corrected bridge angle:
+Floating vertical shell (-20) and Top surface (-9). Both were also emitting far more
+lines than C++ (1.34x and 1.54x). This round chased that excess and found something
+much larger underneath it.
+
+**Prediction: WRONG. Fallback: half right.** The prediction was that we classify more
+area into those features, so extruded LENGTH would track the line ratio. It does not —
+Majora's per-feature length is at parity almost everywhere (Floating vertical shell
+1.014x, Internal solid infill 1.002x, Sparse infill 1.002x, Outer wall 0.992x). The
+registered fallback said "fragmentation: more and shorter segments", and that is also
+not it: deriving segment counts from length / mean-segment, Internal solid infill has
+**0.91x** the extruding segments while carrying **1.46x** the lines.
+
+**The divergence is in the lines that do not extrude.** A new instrument
+(`$D/line_kind.py`) classifies every body line as extrude / travel / retract / zmove /
+setfeed / gother / mcode / comment and histograms it per feature:
+
+| kind | Floating vert shell | Internal solid | Top surface | Prime tower |
+|---|---|---|---|---|
+| extrude | 1.040 | 0.907 | 1.110 | 0.951 |
+| travel | 2.087 | 2.011 | 1.800 | **0.174** |
+| retract | 4.692 | 4.739 | 4.222 | **0.118** |
+| mcode | **334.6** | **352.2** | 2.470 | **0.002** |
+| gother | 60.9 | 69.7 | inf | **0.113** |
+
+Extrusion is at parity; everything else is inflated in the object features and
+collapsed in the prime tower. Comparing gross per-feature movement against the net
+file-level difference separates redistribution from generation:
+
+| kind | file net delta | sum per-feature abs delta | redistributed | ratio |
+|---|---|---|---|---|
+| extrude | 104,126 | 122,524 | 18,398 | 1.2x |
+| retract | 15,404 | 162,226 | **146,822** | **10.5x** |
+| mcode | 39,909 | 229,817 | **189,908** | **5.8x** |
+| travel | 90,309 | 195,163 | 104,854 | 2.2x |
+
+Extruding moves are attributed almost consistently (1.2x). ~190k M-codes and ~147k
+retracts exist in both files and merely sit under different tags.
+
+**Where.** Of C++'s 16,347 `M620`/`M621` tool-change commands, **16,341 are inside
+`; FEATURE: Prime tower`**. We emitted **zero** there, spraying them across Internal
+solid infill (6,930), Floating vertical shell (4,812), Sparse infill (3,402), Outer
+wall (444) and Top surface (282). The tool-change COUNT was already right (16,335 vs
+16,347, 0.07% apart) — only the tag was wrong.
+
+**This was a known, deliberate divergence.** `print.rs:3039-3043` said so: "C++ emits
+the trio at the HEAD of `tcr.gcode`, i.e. BEFORE the change-filament block... moving
+the whole trio upstream is a separate change with per-feature-attribution
+consequences." R601 measured those consequences. R464's stated reason for diverging
+does not survive scrutiny: the trio is three COMMENTS and cannot change any extrusion.
+The "outstanding retraction at the first purge stroke" it blamed was the missing
+toolchange unretract, fixed independently in R466.
+
+C++ emits the trio immediately before `;----` / `; CP TOOLCHANGE START`. **Gate
+`TOWER_FEATURE_TAG_HEAD`, DEFAULT-ON**: the three comment lines move to the head of
+the tower block; the trailer keeps everything that is a real move (filament start
+template, travel, unretract).
+
+**Result — the largest single parity gain of the campaign:**
+
+| | before | after |
+|---|---|---|
+| **Majora matched lines** | 409,318 | **630,879 (+221,561)** |
+| **Majora rate** | 16.26% | **25.06%** |
+| body lines / gap | 2,517,813 / 9.50% | 2,517,813 / 9.50% (unchanged) |
+
+Body-line count is *identical* — the fix moves lines between groups without creating
+or destroying any, which is exactly what an attribution repair should do. Tool changes
+now land where C++ puts them: **Prime tower 16,331 / Custom 4**, against C++'s
+16,341 / 6.
+
+Every feature improved, and the line-count ratios normalised:
+
+| feature | matched | rate | rust/cpp lines |
+|---|---|---|---|
+| Prime tower | 35,749 -> **257,400** | 26.9% -> **61.0%** | 0.262 -> 0.832 |
+| Internal solid infill | 36,944 -> 36,946 | 11.3% -> **18.3%** | 1.462 -> **0.905** |
+| Floating vertical shell | 42,063 -> 42,043 | 10.7% -> **13.5%** | 1.336 -> **1.053** |
+| Sparse infill | 53,079 -> 53,093 | 19.4% -> **24.8%** | 1.137 -> 0.889 |
+| Top surface | 2,515 -> 2,498 | 10.5% -> **13.0%** | 1.543 -> **1.234** |
+| Bridge | 1,794 -> 1,811 | 8.3% -> **11.2%** | 1.579 -> 1.228 |
+| Outer wall | 165,767 -> 165,721 | 19.0% -> **19.2%** | 0.918 -> 0.910 |
+
+Note the object features' matched COUNTS barely move — the rate rises because the
+mis-attributed machinery left their denominators. That is the correct reading: those
+lines were never theirs.
+
+**Benchy is byte-identical either way** (`304320a6`) — single-material, no wipe tower,
+exactly as predicted. Gate OFF reproduces `529545af`. Cube unchanged (`242f1fb8`).
+8/8 guards.
+
+**Re-baselined**, diff proven intentional: majora `529545af` -> `14ff4542`. Benchy
+`304320a6` and cube `242f1fb8` unchanged.
+
+**A caution about the primary metric.** `line_parity.py` groups by (layer, feature), so
+a mis-tagged line can never match even when byte-identical. Majora's 16.26% was
+therefore partly an artefact of OUR tagging, not a statement about geometry. The
+instrument was not wrong — the G-code really did carry the wrong tags, and C++ is the
+reference — but it means a per-feature rate is only meaningful once attribution is
+verified. Worth checking the same way before trusting any future per-feature number.
+
+**R602:** Prime tower is now the largest single residual at 61.0% (257,400/422,007;
+C++ 506,960). Its post-fix line-kind census, measured this round, shows every kind
+back in a sane band (was 0.002x-0.18x) but still short by 84,953 lines:
+
+| kind | rust | cpp | delta | x |
+|---|---|---|---|---|
+| extrude | 64,449 | 67,794 | -3,345 | 0.951 |
+| travel | 101,559 | 109,559 | -8,000 | 0.927 |
+| retract | 91,571 | 97,635 | -6,064 | 0.938 |
+| **zmove** | 10,878 | 20,493 | **-9,615** | **0.531** |
+| **gother** | 15,512 | 26,387 | **-10,875** | **0.588** |
+| **mcode** | 66,330 | 93,179 | **-26,849** | **0.712** |
+| **comment** | 62,889 | 80,516 | **-17,627** | **0.781** |
+| setfeed | 6,092 | 8,674 | -2,582 | 0.702 |
+
+The moves (extrude/travel/retract) are within 5-7%; the deficit is concentrated in
+mcode, comment, gother and zmove. Predict the missing lines are a template body we
+evaluate to less output than C++ does — the `filament_end_gcode`/`filament_start_gcode`
+and ramming blocks — rather than absent geometry, since the tower's extrusion count and
+total length already match (0.951x / 0.995x). Fallback: if the templates expand
+identically, the deficit is in per-toolchange fixed preamble C++ writes that we skip,
+and should be found by diffing one complete tool-change block line-for-line.
