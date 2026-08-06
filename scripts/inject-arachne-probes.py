@@ -1790,7 +1790,40 @@ BD_INC_NEW = """#include "BridgeDetector.hpp"
 #include <cstdlib>
 """
 
+# ---------------------------------------------------------------------------
+# BRIDGEIN (R596) - R595 verified the ARITHMETIC of detect_bridging_direction and
+# eliminated BridgeDetector::detect_angle (0 calls on both engines). What remains
+# is its INPUT. Dump, at the call site: the floating-edge set (count + total
+# length), the bridge expolygon size, and the resulting direction/angle. If the
+# inputs already differ, the cause is upstream in the anchors/expansion, not here.
+# ---------------------------------------------------------------------------
+LR_BIN_OLD = """        auto [bridging_dir, unsupported_dist] = detect_bridging_direction(lines, to_polygons(bridge.expolygon));
+        bridge.angle = M_PI + std::atan2(bridging_dir.y(), bridging_dir.x());
+"""
+LR_BIN_NEW = """        auto [bridging_dir, unsupported_dist] = detect_bridging_direction(lines, to_polygons(bridge.expolygon));
+        bridge.angle = M_PI + std::atan2(bridging_dir.y(), bridging_dir.x());
+        if (getenv("BRIDGEIN")) {
+            static std::mutex bi_mtx;
+            static size_t bi_n = 0;
+            std::lock_guard<std::mutex> bi_lock(bi_mtx);
+            ++bi_n;
+            if (bi_n <= 30) {
+                double bi_len = 0.0;
+                for (const Line &bl : lines) bi_len += bl.length();
+                size_t bi_pts = 0;
+                for (const Polygon &bp : to_polygons(bridge.expolygon)) bi_pts += bp.points.size();
+                fprintf(stderr,
+                    "[BRIDGEIN] n=%zu edges=%zu edge_len=%.3f anchors=%zu poly_pts=%zu "
+                    "area=%.3f dir=%.6f,%.6f angle=%.6f unsup=%.3f\\n",
+                    bi_n, lines.size(), bi_len, anchor_areas.size(), bi_pts,
+                    std::abs(bridge.expolygon.area()), bridging_dir.x(), bridging_dir.y(),
+                    *bridge.angle, unsupported_dist);
+            }
+        }
+"""
+
 EDITS = [
+    ("LayerRegion.cpp", LR_BIN_OLD, LR_BIN_NEW),
     ("BridgeDetector.cpp", BD_INC_OLD, BD_INC_NEW),
     ("BridgeDetector.cpp", BD_OLD, BD_NEW),
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),

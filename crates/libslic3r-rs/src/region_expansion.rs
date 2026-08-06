@@ -1976,8 +1976,23 @@ fn detect_bridge_directions_impl(
         let bridge_polylines = expolygons_to_polylines(&[bridges[bridge_id].expolygon.clone()]);
 
         // Expand anchor areas slightly for the clipping test.
-        // C++ uses SCALED_EPSILON; we use a very small mm value.
-        let epsilon_mm = 0.001; // ~1 micron in mm
+        //
+        // R596: C++ is `expand(anchor_areas, float(SCALED_EPSILON))` with
+        // SCALED_EPSILON = scale_(1e-4) = 10 SCALED units. This module's header
+        // claims it "operates in mm (unscaled)", but that is not true here: the
+        // BRIDGEIN probe prints the SAME bridge area on both engines
+        // (107940309070), which is ~10.8 mm^2 only if the coordinates are scaled.
+        // So passing 0.001 expands by 0.001 SCALED units (~1e-8 mm) -- effectively
+        // nothing -- where C++ expands by 10. That leaves bridge outline edges
+        // lying on the anchor boundary classified as FLOATING, which is why we see
+        // 17/14/19/25/26/46/37 floating edges on bridges where C++ sees ZERO, and
+        // therefore take the cost branch where C++ takes the fully-anchored PCA
+        // branch (R596).
+        let epsilon_mm = if crate::faithful_gate("BRIDGE_ANCHOR_EPS_SCALED") {
+            10.0 // SCALED_EPSILON
+        } else {
+            0.001
+        };
         let anchor_expolygons: ExPolygons = if anchor_areas.is_empty() {
             Vec::new()
         } else {
@@ -1997,6 +2012,37 @@ fn detect_bridge_directions_impl(
             detect_bridging_direction_from_lines(&floating_lines, &overhang_polygons);
 
         bridges[bridge_id].angle = Some(PI + bridging_dir.y.atan2(bridging_dir.x));
+
+        // BRIDGEIN (R596): R595 verified the arithmetic of
+        // detect_bridging_direction and eliminated BridgeDetector::detect_angle
+        // (0 calls on both engines). What remains is its INPUT. Mirrors the probe
+        // at LayerRegion.cpp:355.
+        if crate::probe_enabled("BRIDGEIN") {
+            use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Relaxed) + 1;
+            if n <= 30 {
+                let edge_len: f64 = floating_lines
+                    .iter()
+                    .map(|l| {
+                        let dx = (l.b.x - l.a.x) as f64;
+                        let dy = (l.b.y - l.a.y) as f64;
+                        (dx * dx + dy * dy).sqrt()
+                    })
+                    .sum();
+                let poly_pts: usize = overhang_polygons.iter().map(|p| p.points.len()).sum();
+                eprintln!(
+                    "[BRIDGEIN] n={n} edges={} edge_len={edge_len:.3} anchors={} poly_pts={poly_pts} area={:.3} dir={:.6},{:.6} angle={:.6} unsup={:.3}",
+                    floating_lines.len(),
+                    anchor_areas.len(), // pre-expand polygon count, to match C++'s anchor_areas.size()
+                    bridges[bridge_id].expolygon.area().abs(),
+                    bridging_dir.x,
+                    bridging_dir.y,
+                    bridges[bridge_id].angle.unwrap(),
+                    _unsupported_dist,
+                );
+            }
+        }
     }
 }
 

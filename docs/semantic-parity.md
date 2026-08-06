@@ -7240,3 +7240,73 @@ all and the `unordered_map`-vs-`BTreeMap` ordering becomes the target.
 
 Probe cleanup: `BridgeDetector.cpp` is now in the injector's `LIBSLIC3R_FILES`, so
 the submodule revert list must include it.
+
+## R596 — the bridge anchor epsilon was 10,000x too small; branch divergence closed
+
+R595 verified the arithmetic of `detect_bridging_direction` and eliminated
+`BridgeDetector::detect_angle` (0 calls, both engines), leaving its INPUT as the
+only candidate. `BRIDGEIN` dumps that input at the call site
+(`LayerRegion.cpp:355` and `region_expansion.rs:1997`).
+
+**Prediction CONFIRMED: the inputs differ, and they flip the algorithm branch.**
+Matching bridges by area (identical to the unit on both engines):
+
+| bridge area | pts | C anchors | C edges | R anchors | R edges |
+|---|---|---|---|---|---|
+| 107940309070 | 146 | 9 | **0** | 9 | **17** |
+| 31367771108 | 71 | 9 | **0** | 9 | **14** |
+| 92809844837 | 130 | 9 | **0** | 9 | **19** |
+| 149528262781 | 164 | 10 | **0** | 10 | **46** |
+
+**Anchor collection is correct** — the counts match exactly (9/9, 10/10). But C++
+finds ZERO floating edges and takes the fully-anchored principal-components branch,
+while we find 14-46 and take the cost branch. Different algorithm, hence R594's
+90-degree swings.
+
+**A probe-definition trap, caught before it was quoted.** The first reading showed
+"anchors 9 vs 1" and looked like a smoking gun. It was not: C++ prints
+`anchor_areas.size()` (raw polygons, pre-expand) while the Rust probe printed
+`anchor_expolygons.len()` (post-`grow`, which unions overlaps into one). Corrected
+to the pre-expand count, the anchors agree exactly. Same class as R584/R585 — two
+quantities with the same name are not the same population.
+
+**The defect: a units error of 1e5.** C++ is
+`expand(anchor_areas, float(SCALED_EPSILON))` with `SCALED_EPSILON = scale_(1e-4) =
+10` SCALED units. The port passed `0.001`, with a comment calling it "~1 micron in
+mm" and a module header asserting this code "operates in mm (unscaled)". **The
+header is wrong here** and the probe proves it: both engines print the same bridge
+area `107940309070`, which is ~10.8 mm^2 only if the coordinates are scaled. So
+`grow(anchors, 0.001)` expanded by 0.001 SCALED units — about 1e-8 mm, effectively
+nothing — where C++ expands by 10. Bridge-outline edges lying exactly on the anchor
+boundary therefore survived `diff_pl` and were classified as floating.
+
+**Fixed behind `BRIDGE_ANCHOR_EPS_SCALED` (10.0), DEFAULT-ON.** Mechanism verified
+directly: floating edges **17 -> 0, 14 -> 0, 19 -> 0**, now matching C++, and both
+engines take the same branch.
+
+    Benchy   gate ON is BYTE-IDENTICAL to gate OFF (a27419f0)
+    Majora   matched lines 409,270 -> 409,276 (Bridge 1788 -> 1794); 16.25% both
+    guards 8/8; Majora still SEMANTICALLY EQUIVALENT (material 0.9974, silhouette 99.54%)
+
+Correct by construction and non-regressing, so DEFAULT-ON per R550/R558/R559.
+**Re-baselined: majora `e8027b80` -> `bb313a93`; benchy `a27419f0` unchanged.**
+
+**What this did NOT fix, stated plainly.** Benchy's G-code is byte-identical even
+though the probe proves its computed bridge directions changed. So on Benchy the
+angle produced here does not reach the output — the R595 reachability lesson
+repeating one level down, and Benchy's Bridge feature (7.8%) is therefore still
+unexplained. On Majora the angle IS consumed (the output moved), but the gain is 6
+lines.
+
+**Residual after the fix:** with both engines now on the PCA branch, the directions
+are *near-antiparallel* rather than orthogonal — C++ `dir=(0.9775, 0.2107)`,
+ours `(-0.9622, -0.2723)`, i.e. the same line mod 180 but off by ~3.6 degrees. That
+remaining difference is inside `compute_principal_components`, not the branch
+selection.
+
+**R597:** (1) find what actually sets Benchy's Bridge angle, since this path
+demonstrably does not — instrument the consumer, not the producer; (2)
+`compute_principal_components` for the residual ~3.6 degrees. Predict (1) resolves
+Benchy's Bridge 7.8% and (2) is a small refinement; fallback, if Benchy's bridge
+surfaces never carry an angle at all, the fill direction comes from the infill
+pattern default and the whole bridge line of enquiry is a dead end for that fixture.
