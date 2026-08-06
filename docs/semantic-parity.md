@@ -7016,3 +7016,93 @@ silhouette metric: validate a comparative metric with a control before trusting 
 **R593 goes to the solid-fill path** -- Internal solid infill, Top/Bottom surface,
 Bridge on Benchy -- with `line_align.py` as the instrument and the per-feature
 figures above as the baseline to move.
+
+## R593 — the third instrument, and the honest feature map: walls are done, fill is not
+
+R592 replaced v1's matcher with an LCS aligner and got Benchy 40.39% -> 52.51%.
+This round set out to diagnose the solid-fill features and found the aligner is
+STILL partly measuring itself, then replaced it with something that cannot be.
+
+**Why v2 was still wrong.** Among pairs v2 calls aligned, the absolute X/Y
+difference distribution is bimodal:
+
+| feature / field | n | median | p90 | p99 | max | <=1um |
+|---|---|---|---|---|---|---|
+| Outer wall X | 29,941 | 0.000 mm | 7.09 | 30.84 | 51.58 | 75.4% |
+| Internal solid infill X | 5,129 | 0.018 mm | 9.75 | 39.02 | 51.70 | 25.5% |
+| Bridge X | 480 | 2.18 mm | 11.66 | 17.70 | 18.00 | 14.2% |
+
+Deviations of 30-51 mm on a ~60 mm model are not measurements of anything. The
+cause: LCS matches on the structural key, and nearly every extrude line has the
+SAME key (`G1 X# Y# E#`). Inside a block every alignment scores identically, so
+difflib picks one arbitrarily. Three quarters of outer-wall pairs are exact; the
+rest are arbitrary pairings masquerading as misses.
+
+**Both aligners ask the wrong question.** "Which line corresponds to which" has no
+unique answer when the keys are degenerate, and it is not what was asked. The
+question is: *for each line we emit, does the other engine emit essentially the
+same line?* That is a multiset containment test and needs no alignment.
+
+**New instrument: `scripts/line_parity.py`.** Within each (layer, feature) group —
+so a line can only match one from the same place in the print — quantise every
+numeric token to 1e-3 mm and take the multiset intersection. Order-independent,
+immune to alignment ambiguity, symmetric, reported both ways.
+
+    Benchy   74.99% of rust body lines (115,887/154,539), line-count gap 1.15%
+    Majora   16.25% of rust body lines (409,270/2,518,598), gap 9.47%
+
+Benchy's 74.99% corroborates the independent whole-file exact-text control from
+R592 (75.82%); the small difference is the per-block grouping plus tolerance.
+Quote it WITH the v2 figure and the line-count gap: v2 is a lower bound (order
+respected), this is an upper bound (order ignored), and together they bracket.
+
+**The feature map, on the instrument that can be trusted:**
+
+| Benchy | identical | | Majora | identical |
+|---|---|---|---|---|
+| Custom / (pre-feature) | 99.2% / 97.9% | | (pre-feature) | 85.4% |
+| **Outer wall** | **93.5%** | | Prime tower | 26.9% |
+| Overhang wall | 89.2% | | Sparse infill | 19.4% |
+| Inner wall | 86.4% | | **Outer wall** | **19.0%** |
+| Gap infill | 80.1% | | Inner wall | 12.7% |
+| Top surface | 34.9% | | Internal solid infill | 11.3% |
+| Sparse infill | 32.0% | | Floating vertical shell | 10.7% |
+| Bottom surface | 26.1% | | Top surface | 10.4% |
+| Internal solid infill | 24.2% | | Bridge | 8.3% |
+| Floating vertical shell | 21.3% | | Overhang wall | 4.6% |
+| **Bridge** | **7.8%** | | Bottom surface | 3.1% |
+
+**On Benchy the walls are essentially done** — 93.5% / 89.2% / 86.4% — and the
+entire residual is the fill family, worst at Bridge 7.8%. **Majora is low
+everywhere including its walls (19.0%)**, which is a different and larger problem,
+consistent with its 9.47% line-count gap and multi-material path.
+
+**Prediction CONFIRMED.** I predicted the solid-fill family shares one cause and
+that it is path GEOMETRY rather than E or F bookkeeping. Field attribution over
+v2's genuinely-aligned pairs shows the misses are JOINT `[E,X,Y]` — Bridge 76%,
+Bottom surface 73%, Floating vertical shell 65%, Internal solid infill 42% — i.e.
+the path is somewhere else and E follows the changed segment length. F is
+negligible in the fill features (5% internal solid, 1% top surface). The fallback
+(E-dominated flow math) did not fire: E almost never misses without X/Y.
+
+**And a control that narrows it further.** Per-feature segment counts and total
+extruded lengths are at PARITY:
+
+| feature | R segs | C segs | R/C | R mm | C mm | R/C |
+|---|---|---|---|---|---|---|
+| Outer wall | 33,490 | 33,498 | 1.00 | 39,835.0 | 39,802.0 | 1.001 |
+| Internal solid infill | 9,578 | 10,215 | 0.94 | 26,842.3 | 26,773.2 | 1.003 |
+| Bridge | 1,315 | 1,102 | 1.19 | 4,685.0 | 4,690.1 | 0.999 |
+| Bottom surface | 255 | 257 | 0.99 | 414.3 | 418.2 | 0.991 |
+
+**We are not emitting extra or missing toolpath** — same segment counts, same total
+length to within 0.1-1%. The fill covers the same ground; the individual segments
+are placed differently. Bridge is the exception at 1.19x segments for identical
+total length, so its segmentation (not its coverage) differs.
+
+**R594: the fill path on Benchy**, starting with Bridge (7.8%, and the only feature
+with a segment-count anomaly) and Internal solid infill (24.2%, the largest fill
+body). The question is narrow: same coverage, same length, different placement —
+so it is fill line ORIGIN/PHASE or ordering, not fill area or density.
+
+Probe-free round: majora `e8027b80` and benchy `a27419f0` reproduce, 8/8 guards.
