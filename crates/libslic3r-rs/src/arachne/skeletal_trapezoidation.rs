@@ -310,6 +310,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
         } else {
             // SkeletalTrapezoidation.cpp:162 Points discretized = discretize(vd_edge, segments);
             let discretized = self.discretize(diagram, vd_edge, segments);
+            if crate::probe_enabled("GBUILD") {
+                gbuild_disc(discretized.len());
+            }
             // SkeletalTrapezoidation.cpp:163-167 assert/warn discretized.size() >= 2
             debug_assert!(discretized.len() >= 2);
             if discretized.len() < 2 {
@@ -668,6 +671,20 @@ impl<'a> SkeletalTrapezoidation<'a> {
             return;
         }
         let diagram = vd.diagram();
+
+        // GBUILD (R589): bracket where the 1.25x graph density (R588) appears --
+        // Voronoi INPUT (one segment per polygon point) versus raw Voronoi OUTPUT
+        // before any filtering. If the input already differs the cause is upstream
+        // outline discretisation, not the skeleton.
+        if crate::probe_enabled("GBUILD") {
+            gbuild_tick(
+                polys.len(),
+                segments.len(),
+                diagram.vertices().len(),
+                diagram.edges().len(),
+                diagram.cells().len(),
+            );
+        }
 
         // SkeletalTrapezoidation.cpp:443 for (const VD::cell_type &cell : voronoi_diagram.cells())
         for cell_idx in 0..diagram.cells().len() {
@@ -5015,6 +5032,55 @@ pub(crate) fn census_tick(
             NODES.load(Relaxed), BC.load(Relaxed), BC.load(Relaxed) as f64 / nn,
             HASB.load(Relaxed), HASB.load(Relaxed) as f64 / nn,
             EDGES.load(Relaxed), CENTRAL.load(Relaxed), CENTRAL.load(Relaxed) as f64 / ne,
+        );
+    }
+}
+
+/// R589 probe (GBUILD=1): where does the 1.25x skeletal-graph density come from?
+///
+/// R588 found C++ builds 1.254x the nodes and 1.256x the edges per `generate()`
+/// call while every per-item rate inside the graph matches -- there is simply more
+/// graph. This brackets the build: the Voronoi INPUT (one segment per polygon
+/// point), the raw Voronoi OUTPUT before any filtering, and how many points
+/// `discretize` emits per Voronoi edge. Input already 1.25x => upstream outline
+/// discretisation. Input matched but output 1.25x => Voronoi construction.
+/// Both matched => the discretise/filter chain.
+/// Mirrors `gbuild_tick`/`gbuild_disc` in scripts/inject-arachne-probes.py.
+pub(crate) fn gbuild_disc(n: usize) {
+    use std::sync::atomic::Ordering::Relaxed;
+    GB_DISC_CALLS.fetch_add(1, Relaxed);
+    GB_DISC_PTS.fetch_add(n, Relaxed);
+}
+
+static GB_DISC_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static GB_DISC_PTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) fn gbuild_tick(polys: usize, segs: usize, vv: usize, ve: usize, vc: usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    static POLYS: AtomicUsize = AtomicUsize::new(0);
+    static SEGS: AtomicUsize = AtomicUsize::new(0);
+    static VV: AtomicUsize = AtomicUsize::new(0);
+    static VE: AtomicUsize = AtomicUsize::new(0);
+    static VC: AtomicUsize = AtomicUsize::new(0);
+    POLYS.fetch_add(polys, Relaxed);
+    SEGS.fetch_add(segs, Relaxed);
+    VV.fetch_add(vv, Relaxed);
+    VE.fetch_add(ve, Relaxed);
+    VC.fetch_add(vc, Relaxed);
+    let n = CALLS.fetch_add(1, Relaxed) + 1;
+    if n == 1 || n % 2000 == 0 {
+        let d = n as f64;
+        let dc = GB_DISC_CALLS.load(Relaxed);
+        eprintln!(
+            "[GBUILD] calls={n} polys/call={:.3} segs/call={:.3} | vd_verts/call={:.3} vd_edges/call={:.3} vd_cells/call={:.3} | disc_calls={dc} disc_pts/call={:.3} pts_per_disc={:.4}",
+            POLYS.load(Relaxed) as f64 / d,
+            SEGS.load(Relaxed) as f64 / d,
+            VV.load(Relaxed) as f64 / d,
+            VE.load(Relaxed) as f64 / d,
+            VC.load(Relaxed) as f64 / d,
+            GB_DISC_PTS.load(Relaxed) as f64 / d,
+            GB_DISC_PTS.load(Relaxed) as f64 / dc.max(1) as f64,
         );
     }
 }

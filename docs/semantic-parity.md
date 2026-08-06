@@ -6745,3 +6745,58 @@ breaks the C++ format string. Knowing the rule was not enough -- the check that
 catches it is reading the INJECTED source for `\\n` before building, which takes
 seconds and is now the habit. Also: `nd.data` on the Rust side is `nd.base.data`;
 the graph node/edge types wrap their payload one level deeper than C++'s.
+
+## R589 — the density is created converting Voronoi to half-edges, not in Voronoi
+
+R588 found C++'s skeletal graph is ~25% denser with every per-item rate inside it
+matching. `GBUILD` brackets the build: the Voronoi INPUT (one segment per polygon
+point), the raw Voronoi OUTPUT before filtering, and how many points `discretize`
+emits per Voronoi edge.
+
+Per `constructFromPolygons` call, matched n = 24,000:
+
+| stage | Rust | C++ | C/R |
+|---|---|---|---|
+| Voronoi INPUT (segments) | 29.440 | 31.422 | 1.067 |
+| Voronoi OUTPUT (vd_edges) | 304.731 | 328.425 | 1.078 |
+| points per `discretize` call | 2.0527 | 2.0570 | **1.002** |
+| final half-edge graph edges | 284.420 | 357.254 | **1.256** |
+
+**Prediction confirmed on its main clause**: the input is at near-parity and the
+divergence appears downstream. But the named primary suspect is **REFUTED** --
+`discretization_step_size` and `discretize` are exonerated on output density, at
+1.002x. The alternative I registered ("or the edge-filtering that follows") is what
+holds.
+
+**The dominant term is the Voronoi-to-half-edge conversion.** Intra-engine
+multipliers, each computed from that engine's own data so no cross-population
+composition is involved:
+
+    graph edges per Voronoi edge   rust 0.9333   cpp 1.0878   C/R 1.1655
+    graph nodes per Voronoi vertex rust 1.5157   cpp 1.7544   C/R 1.1575
+
+**We emit FEWER half-edges than we have Voronoi edges (0.93); C++ emits MORE
+(1.09).** Arithmetically 1.078 x 1.1655 = 1.2564 against the observed 1.2561, so
+the two stages account for the density gap -- though per R581 that closure
+validates the algebra, not the measurement; it is offered as a decomposition of
+the same per-call quantities, not as independent confirmation.
+
+**R590 goes to the conversion itself**: the `for (cell : voronoi_diagram.cells())`
+loop and `transferEdge`, plus the graph surgery that follows
+(`removeDegenerateVerts` and any edge collapsing). The question is narrow and
+countable: per Voronoi edge transferred, how many half-edges does each engine
+create, and how many does each subsequently remove? We are losing them somewhere
+that C++ is not.
+
+**Residual worth recording, not chased here.** The Voronoi INPUT itself is 1.067x
+-- C++ feeds ~6.7% more polygon points per call. R562 cleared "outline SIZE", and
+6.7% is small against 1.256x, so it is not the driver; but it is not zero either,
+and if R590 closes the conversion gap this becomes the next-largest term.
+
+Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
+reproduce, 8/8 guard tests pass.
+
+**Process.** The R587/R588 escaping trap did not recur: writing the injector block
+as a RAW Python string puts `\\n` in the file verbatim, which the injector's
+non-raw `"""` then renders as `\n` for C++. Verified by grepping the INJECTED
+`.cpp` before building, which is the check that actually catches it.

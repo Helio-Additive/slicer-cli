@@ -103,6 +103,36 @@ std::atomic<size_t> g_dn_total{0}, g_dn_central{0}, g_dn_twin{0}, g_dn_normal{0}
 // guard actually tests. Summed across calls.
 std::atomic<size_t> g_cs_calls{0}, g_cs_nodes{0}, g_cs_bc{0}, g_cs_hasb{0},
                     g_cs_edges{0}, g_cs_central{0};
+
+// GBUILD (R589): R588 found C++'s skeletal graph is ~25% denser (1.254x nodes,
+// 1.256x edges per generate() call) while every per-item rate inside it matches.
+// This brackets WHERE the density appears: the Voronoi INPUT (one segment per
+// polygon point), the raw Voronoi OUTPUT before any filtering, and the number of
+// points `discretize` emits per Voronoi edge. If the input is already 1.25x the
+// cause is upstream outline discretisation; if input matches and Voronoi output
+// matches, it is the discretise/filter chain.
+std::atomic<size_t> g_gb_calls{0}, g_gb_polys{0}, g_gb_segs{0},
+                    g_gb_vd_verts{0}, g_gb_vd_edges{0}, g_gb_vd_cells{0};
+std::atomic<size_t> g_gb_disc_calls{0}, g_gb_disc_pts{0};
+void gbuild_disc(size_t n) { g_gb_disc_calls.fetch_add(1); g_gb_disc_pts.fetch_add(n); }
+void gbuild_tick(size_t polys, size_t segs, size_t vv, size_t ve, size_t vc)
+{
+    g_gb_polys.fetch_add(polys); g_gb_segs.fetch_add(segs);
+    g_gb_vd_verts.fetch_add(vv); g_gb_vd_edges.fetch_add(ve); g_gb_vd_cells.fetch_add(vc);
+    const size_t n = g_gb_calls.fetch_add(1) + 1;
+    if (n == 1 || n % 2000 == 0) {
+        const double d = double(n);
+        fprintf(stderr,
+            "[GBUILD] calls=%zu polys/call=%.3f segs/call=%.3f | vd_verts/call=%.3f "
+            "vd_edges/call=%.3f vd_cells/call=%.3f | disc_calls=%zu disc_pts/call=%.3f "
+            "pts_per_disc=%.4f\\n",
+            n, double(g_gb_polys.load()) / d, double(g_gb_segs.load()) / d,
+            double(g_gb_vd_verts.load()) / d, double(g_gb_vd_edges.load()) / d,
+            double(g_gb_vd_cells.load()) / d, g_gb_disc_calls.load(),
+            double(g_gb_disc_pts.load()) / d,
+            double(g_gb_disc_pts.load()) / double(std::max<size_t>(g_gb_disc_calls.load(), 1)));
+    }
+}
 void census_tick(size_t nodes, size_t bc, size_t hasb, size_t edges, size_t central)
 {
     g_cs_nodes.fetch_add(nodes); g_cs_bc.fetch_add(bc); g_cs_hasb.fetch_add(hasb);
@@ -1642,10 +1672,30 @@ ST_CENSUS_NEW = """    if (getenv("CENSUS") && !probe_speculative()) {
     for (auto upward_quad_mids_it = upward_quad_mids.rbegin(); upward_quad_mids_it != upward_quad_mids.rend(); ++upward_quad_mids_it)
 """
 
+# ---------------------------------------------------------------------------
+# GBUILD (R589) - bracket WHERE the 1.25x graph density appears: Voronoi input,
+# raw Voronoi output, and discretize() output per Voronoi edge.
+# ---------------------------------------------------------------------------
+ST_GB_OLD = """    voronoi_diagram.construct_voronoi(segments.cbegin(), segments.cend());
+"""
+ST_GB_NEW = """    voronoi_diagram.construct_voronoi(segments.cbegin(), segments.cend());
+    if (getenv("GBUILD") && !probe_speculative())
+        gbuild_tick(polys.size(), segments.size(), voronoi_diagram.num_vertices(),
+                    voronoi_diagram.num_edges(), voronoi_diagram.num_cells());
+"""
+
+ST_GBD_OLD = """        Points discretized = discretize(vd_edge, segments);
+"""
+ST_GBD_NEW = """        Points discretized = discretize(vd_edge, segments);
+        if (getenv("GBUILD") && !probe_speculative()) gbuild_disc(discretized.size());
+"""
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_EDGE_OLD, ST_EDGE_NEW),
     ("SkeletalTrapezoidation.cpp", ST_CENSUS_OLD, ST_CENSUS_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_GB_OLD, ST_GB_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_GBD_OLD, ST_GBD_NEW),
     ("SkeletalTrapezoidation.cpp", ST_UP_OLD, ST_UP_NEW),
     ("SkeletalTrapezoidation.cpp", ST_DN_OLD, ST_DN_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PC_FRESH_OLD, ST_PC_FRESH_NEW),
