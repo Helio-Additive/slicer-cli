@@ -114,6 +114,42 @@ std::atomic<size_t> g_cs_calls{0}, g_cs_nodes{0}, g_cs_bc{0}, g_cs_hasb{0},
 std::atomic<size_t> g_gb_calls{0}, g_gb_polys{0}, g_gb_segs{0},
                     g_gb_vd_verts{0}, g_gb_vd_edges{0}, g_gb_vd_cells{0};
 std::atomic<size_t> g_gb_disc_calls{0}, g_gb_disc_pts{0};
+
+// CONV (R590): R589 localised the 1.25x graph density to the Voronoi->half-edge
+// CONVERSION (graph edges per Voronoi edge: rust 0.9333 vs cpp 1.0878). Two ways
+// that can happen: we CREATE fewer half-edges, or we REMOVE more afterwards. The
+// creation path is transferEdge (from discretized points) plus makeRib (2 EXTRA_VD
+// edges per call); the removal path is collapseSmallEdges. Three edge counts --
+// after the cell loop, after separatePointyQuadEndNodes, after collapseSmallEdges --
+// decide it. Also counts cells seen vs skipped (`!cell.incident_edge()`).
+std::atomic<size_t> g_cv_calls{0}, g_cv_cells{0}, g_cv_cells_skipped{0};
+std::atomic<size_t> g_cv_e0{0}, g_cv_e1{0}, g_cv_e2{0};
+std::atomic<size_t> g_cv_n0{0}, g_cv_n1{0}, g_cv_n2{0};
+void conv_cell(bool skipped)
+{
+    g_cv_cells.fetch_add(1);
+    if (skipped) g_cv_cells_skipped.fetch_add(1);
+}
+void conv_stage(int stage, size_t edges, size_t nodes)
+{
+    if (stage == 0) { g_cv_e0.fetch_add(edges); g_cv_n0.fetch_add(nodes); }
+    else if (stage == 1) { g_cv_e1.fetch_add(edges); g_cv_n1.fetch_add(nodes); }
+    else {
+        g_cv_e2.fetch_add(edges); g_cv_n2.fetch_add(nodes);
+        const size_t n = g_cv_calls.fetch_add(1) + 1;
+        if (n == 1 || n % 2000 == 0) {
+            const double d = double(n);
+            fprintf(stderr,
+                "[CONV] calls=%zu cells/call=%.3f skipped/call=%.3f | e_after_cells/call=%.3f "
+                "e_after_separate/call=%.3f e_after_collapse/call=%.3f | n_after_cells/call=%.3f "
+                "n_after_collapse/call=%.3f | collapse_keep=%.4f\\n",
+                n, double(g_cv_cells.load()) / d, double(g_cv_cells_skipped.load()) / d,
+                double(g_cv_e0.load()) / d, double(g_cv_e1.load()) / d, double(g_cv_e2.load()) / d,
+                double(g_cv_n0.load()) / d, double(g_cv_n2.load()) / d,
+                double(g_cv_e2.load()) / double(std::max<size_t>(g_cv_e1.load(), 1)));
+        }
+    }
+}
 void gbuild_disc(size_t n) { g_gb_disc_calls.fetch_add(1); g_gb_disc_pts.fetch_add(n); }
 void gbuild_tick(size_t polys, size_t segs, size_t vv, size_t ve, size_t vc)
 {
@@ -1690,11 +1726,41 @@ ST_GBD_NEW = """        Points discretized = discretize(vd_edge, segments);
         if (getenv("GBUILD") && !probe_speculative()) gbuild_disc(discretized.size());
 """
 
+# ---------------------------------------------------------------------------
+# CONV (R590) - does the 1.25x density come from CREATING fewer half-edges or
+# REMOVING more? Edge counts after the cell loop, after separatePointyQuadEndNodes,
+# and after collapseSmallEdges, plus cells seen vs skipped.
+# ---------------------------------------------------------------------------
+ST_CV_CELL_OLD = """    for (const VD::cell_type &cell : voronoi_diagram.cells()) {
+        if (!cell.incident_edge())
+            continue; // There is no spoon
+"""
+ST_CV_CELL_NEW = """    for (const VD::cell_type &cell : voronoi_diagram.cells()) {
+        if (getenv("CONV") && !probe_speculative()) conv_cell(!cell.incident_edge());
+        if (!cell.incident_edge())
+            continue; // There is no spoon
+"""
+
+ST_CV_STAGE_OLD = """    separatePointyQuadEndNodes();
+
+    graph.collapseSmallEdges();
+"""
+ST_CV_STAGE_NEW = """    if (getenv("CONV") && !probe_speculative()) conv_stage(0, graph.edges.size(), graph.nodes.size());
+
+    separatePointyQuadEndNodes();
+    if (getenv("CONV") && !probe_speculative()) conv_stage(1, graph.edges.size(), graph.nodes.size());
+
+    graph.collapseSmallEdges();
+    if (getenv("CONV") && !probe_speculative()) conv_stage(2, graph.edges.size(), graph.nodes.size());
+"""
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_EDGE_OLD, ST_EDGE_NEW),
     ("SkeletalTrapezoidation.cpp", ST_CENSUS_OLD, ST_CENSUS_NEW),
     ("SkeletalTrapezoidation.cpp", ST_GB_OLD, ST_GB_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_CV_CELL_OLD, ST_CV_CELL_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_CV_STAGE_OLD, ST_CV_STAGE_NEW),
     ("SkeletalTrapezoidation.cpp", ST_GBD_OLD, ST_GBD_NEW),
     ("SkeletalTrapezoidation.cpp", ST_UP_OLD, ST_UP_NEW),
     ("SkeletalTrapezoidation.cpp", ST_DN_OLD, ST_DN_NEW),

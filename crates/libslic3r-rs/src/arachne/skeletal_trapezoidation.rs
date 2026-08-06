@@ -689,6 +689,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
         // SkeletalTrapezoidation.cpp:443 for (const VD::cell_type &cell : voronoi_diagram.cells())
         for cell_idx in 0..diagram.cells().len() {
             let cell = &diagram.cells()[cell_idx];
+            if crate::probe_enabled("CONV") {
+                conv_cell(cell.get_incident_edge().is_none());
+            }
             // SkeletalTrapezoidation.cpp:444-445 if (!cell.incident_edge()) continue;
             let incident_edge = match cell.get_incident_edge() {
                 Some(e) => e,
@@ -832,11 +835,39 @@ impl<'a> SkeletalTrapezoidation<'a> {
             }
         }
 
+        // CONV (R590): three edge counts decide whether the 1.25x density gap comes
+        // from CREATING fewer half-edges or REMOVING more. Creation is transfer_edge
+        // plus make_rib (2 EXTRA_VD edges per call); removal is collapse_small_edges.
+        if crate::probe_enabled("CONV") {
+            conv_stage(0, self.graph.edges.len(), self.graph.nodes.len());
+        }
+
         // SkeletalTrapezoidation.cpp:507 separatePointyQuadEndNodes();
         self.separate_pointy_quad_end_nodes();
+        if crate::probe_enabled("CONV") {
+            conv_stage(1, self.graph.edges.len(), self.graph.nodes.len());
+        }
 
         // SkeletalTrapezoidation.cpp:509 graph.collapseSmallEdges();
-        self.graph.collapse_small_edges(SNAP_DIST);
+        //
+        // R590: C++ has TWO distinct snap distances and this port conflated them.
+        // `SkeletalTrapezoidation::snap_dist` (hpp:71) is scaled<coord_t>(0.02) =
+        // 2000 and is used ONLY for transition ends -- "Only used to determine
+        // whether a transition really needs to insert an extra edge". The collapse
+        // uses a SEPARATE parameter, `collapseSmallEdges(coord_t snap_dist = 5)`
+        // (SkeletalTrapezoidationGraph.hpp:84), and C++ calls it with NO argument,
+        // i.e. 5. Passing SNAP_DIST here made our snap distance 400x C++'s, which
+        // is why collapse kept only 67.7% of our edges against C++'s 77.8% and left
+        // our skeletal graph ~25% sparser (R588/R589).
+        let collapse_snap_dist = if crate::faithful_gate("ARACHNE_COLLAPSE_SNAP_5") {
+            5
+        } else {
+            SNAP_DIST
+        };
+        self.graph.collapse_small_edges(collapse_snap_dist);
+        if crate::probe_enabled("CONV") {
+            conv_stage(2, self.graph.edges.len(), self.graph.nodes.len());
+        }
 
         // SkeletalTrapezoidation.cpp:513-515 for (edge_t& edge : graph.edges) if (!edge.prev) edge.from->incident_edge = &edge;
         unsafe {
@@ -5082,5 +5113,64 @@ pub(crate) fn gbuild_tick(polys: usize, segs: usize, vv: usize, ve: usize, vc: u
             GB_DISC_PTS.load(Relaxed) as f64 / d,
             GB_DISC_PTS.load(Relaxed) as f64 / dc.max(1) as f64,
         );
+    }
+}
+
+/// R590 probe (CONV=1): does the 1.25x graph-density gap come from CREATING fewer
+/// half-edges or from REMOVING more?
+///
+/// R589 localised the gap to the Voronoi->half-edge conversion (graph edges per
+/// Voronoi edge: 0.9333 for us against 1.0878 for C++). Creation happens in
+/// `transfer_edge` (from discretized points) plus `make_rib` (two EXTRA_VD edges
+/// per call); removal happens in `collapse_small_edges`. Edge counts at three
+/// points -- after the cell loop, after `separate_pointy_quad_end_nodes`, after
+/// `collapse_small_edges` -- separate the two. Also counts cells seen vs skipped
+/// for want of an incident edge. Mirrors `conv_cell`/`conv_stage` in the injector.
+pub(crate) fn conv_cell(skipped: bool) {
+    use std::sync::atomic::Ordering::Relaxed;
+    CV_CELLS.fetch_add(1, Relaxed);
+    if skipped {
+        CV_CELLS_SKIPPED.fetch_add(1, Relaxed);
+    }
+}
+
+static CV_CELLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static CV_CELLS_SKIPPED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) fn conv_stage(stage: usize, edges: usize, nodes: usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    static E0: AtomicUsize = AtomicUsize::new(0);
+    static E1: AtomicUsize = AtomicUsize::new(0);
+    static E2: AtomicUsize = AtomicUsize::new(0);
+    static N0: AtomicUsize = AtomicUsize::new(0);
+    static N2: AtomicUsize = AtomicUsize::new(0);
+    match stage {
+        0 => {
+            E0.fetch_add(edges, Relaxed);
+            N0.fetch_add(nodes, Relaxed);
+        }
+        1 => {
+            E1.fetch_add(edges, Relaxed);
+        }
+        _ => {
+            E2.fetch_add(edges, Relaxed);
+            N2.fetch_add(nodes, Relaxed);
+            let n = CALLS.fetch_add(1, Relaxed) + 1;
+            if n == 1 || n % 2000 == 0 {
+                let d = n as f64;
+                eprintln!(
+                    "[CONV] calls={n} cells/call={:.3} skipped/call={:.3} | e_after_cells/call={:.3} e_after_separate/call={:.3} e_after_collapse/call={:.3} | n_after_cells/call={:.3} n_after_collapse/call={:.3} | collapse_keep={:.4}",
+                    CV_CELLS.load(Relaxed) as f64 / d,
+                    CV_CELLS_SKIPPED.load(Relaxed) as f64 / d,
+                    E0.load(Relaxed) as f64 / d,
+                    E1.load(Relaxed) as f64 / d,
+                    E2.load(Relaxed) as f64 / d,
+                    N0.load(Relaxed) as f64 / d,
+                    N2.load(Relaxed) as f64 / d,
+                    E2.load(Relaxed) as f64 / E1.load(Relaxed).max(1) as f64,
+                );
+            }
+        }
     }
 }

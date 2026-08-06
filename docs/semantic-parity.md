@@ -6800,3 +6800,76 @@ reproduce, 8/8 guard tests pass.
 as a RAW Python string puts `\\n` in the file verbatim, which the injector's
 non-raw `"""` then renders as `\n` for C++. Verified by grepping the INJECTED
 `.cpp` before building, which is the check that actually catches it.
+
+## R590 — FOUND IT: `collapse_small_edges` was given a snap distance 400x too large
+
+R589 localised the 1.25x graph-density gap to the Voronoi-to-half-edge conversion.
+Two ways that can happen: we CREATE fewer half-edges, or we REMOVE more. `CONV`
+counts edges at three points -- after the cell loop, after
+`separatePointyQuadEndNodes`, after `collapseSmallEdges` -- plus cells seen versus
+skipped. Per call, matched n = 24,000:
+
+| | Rust | C++ | C/R |
+|---|---|---|---|
+| Voronoi cells seen | 58.899 | 63.249 | 1.074 |
+| cells skipped | 0.0000 | 0.0000 | — |
+| edges CREATED (after cell loop) | 415.467 | 453.762 | 1.092 |
+| edges after `separatePointyQuadEndNodes` | 415.467 | 453.762 | (adds none, either engine) |
+| edges FINAL (after collapse) | 281.408 | 353.038 | 1.255 |
+| **collapse KEEP fraction** | **0.6773** | **0.7780** | **1.149** |
+
+**Prediction WRONG; the pre-registered fallback fired.** I predicted cell/edge
+SKIPPING during transfer. No cell is skipped on either engine -- 0.0000 -- and we
+create edges at the rate the Voronoi supplies them (1.092 against vd_edges 1.078).
+The fallback was right: we DELETE what C++ keeps. `collapseSmallEdges` removes
+32.3% of our edges against 22.2% of C++'s. Decomposition 1.0922 x 1.1487 = 1.2546
+against the observed 1.2545.
+
+**The defect, exactly.** C++ has TWO distinct snap distances and this port conflated
+them:
+
+  * `SkeletalTrapezoidation.hpp:71` -- `static constexpr coord_t snap_dist =
+    scaled<coord_t>(0.02)` = **2000**, commented "Only used to determine whether a
+    transition really needs to insert an extra edge", and indeed used only at
+    `SkeletalTrapezoidation.cpp:1365` and `:1450`.
+  * `SkeletalTrapezoidationGraph.hpp:84` -- `void collapseSmallEdges(coord_t
+    snap_dist = 5)`, and `SkeletalTrapezoidation.cpp` calls `graph.collapseSmallEdges()`
+    with **no argument**, i.e. **5**.
+
+Our `skeletal_trapezoidation.rs` passed `SNAP_DIST` (= `scaled_c(0.02)` = 2000) to
+`collapse_small_edges`. **A snap distance 400x C++'s**, which is why collapse ate a
+third of our graph and left the skeleton ~25% sparser -- the root of the R583-R589
+chain.
+
+**Fixed behind `ARACHNE_COLLAPSE_SNAP_5`, shipped DEFAULT-ON.**
+
+    gate OFF  reproduces majora d219a37e and benchy 3921e715 byte-for-byte
+    gate ON   collapse_keep 0.6773 -> 0.7806 (C++ 0.7780 -- near parity)
+              graph edges/call 281.408 -> 323.291, density gap 1.2545 -> 1.0920
+
+The remaining 1.09x is just the Voronoi supply (vd_edges 1.078x), itself fed by the
+1.067x input -- the residual R589 flagged.
+
+**Verification.** Both fixtures still pass all five semantic gates (Benchy material
+1.0015, silhouette 99.99%; Majora material 0.9974, silhouette 99.54%, worst feature
+Top surface 1.173). 8/8 guard tests pass. Line-level is essentially unmoved --
+Benchy 40.38% -> 40.39%, Majora 4.41% -> 4.42%, outer wall 80.4% / 26.3% -- though
+the Majora body line-count gap narrows 12.9% -> 11.8%. **Slicing time is unaffected:
+16.45s gate ON against 16.50s OFF, so the denser graph costs nothing measurable.**
+
+**Honest note on scope.** This is a real porting defect, correct by construction, and
+it closes the density gap that eight rounds of measurement converged on. It does NOT
+by itself move the line-level acceptance metric. The R583-R586 chain predicted that
+graph density feeds beading variety feeds width changes; density is now at 1.09x
+instead of 1.26x, and whether the downstream terms followed has NOT yet been
+re-measured -- that is R591's job, and it must be measured rather than assumed.
+
+**Re-baselined** (diff proven intentional, gate-OFF A/B reproduces the old hashes):
+
+    majora  d219a37e -> e8027b80
+    benchy  3921e715 -> a27419f0
+
+A C++ timing figure taken mid-round was measured against an INSTRUMENTED binary
+(36.6s) and is discarded. Re-measured on a clean reverted build: **C++ 16.27s
+against Rust 16.45s = 1.011x**, so slicing time remains closed and is if anything
+better than the 1.033x carried since R565.
