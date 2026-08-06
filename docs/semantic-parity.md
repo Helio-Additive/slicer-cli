@@ -6682,3 +6682,66 @@ post-R581. `CENTRALPROBE` already exists and should be re-derived speculation-cl
 
 Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
 reproduce, 8/8 guard tests pass.
+
+## R588 — centrality is a red herring; our skeletal graph is 25% sparser
+
+R587 handed off a suspicion: we mark more edges central (60.10% vs 56.67%), which
+would give more nodes a local `bead_count` and starve the upward pass. `CENSUS`
+tests it directly, walking the whole graph once per `generate()` call and counting
+per-NODE and per-EDGE rates -- the populations the guard actually tests -- summed
+across calls so the statistic is order-independent.
+
+At matched calls = 24,000:
+
+| quantity | Rust | C++ | C/R |
+|---|---|---|---|
+| nodes with `bead_count >= 0` | 16.764% | 16.367% | 0.976 |
+| nodes with a beading | 16.735% | 16.325% | 0.976 |
+| edges central | 15.987% | 15.632% | 0.978 |
+| **nodes per call** | **143.2** | **179.6** | **1.254** |
+| **edges per call** | **284.4** | **357.3** | **1.256** |
+
+**Prediction WRONG on its main claim.** I predicted the node-level `bead_count >= 0`
+share would be higher on our side by a margin similar to the central share. All
+three rates are at **parity** (0.976-0.978; we are 2.4% higher, not the ~6% the
+upward-guard gap would need). The pre-registered fallback is what fired: **the
+node-level share is at parity, so centrality is a red herring.**
+
+**R587's handoff framing is corrected.** "We mark more edges central, 60.10% vs
+56.67%" was measured per DISPATCHER ITERATION over `upward_quad_mids` -- a filtered
+subset. At the true per-edge level over the whole graph it is 15.987% vs 15.632%.
+The 60/57 figure is not wrong, but it is a different population and does NOT
+indicate a centrality defect. R572/R585 again: state the population.
+
+**The real finding is structural and new: C++'s skeletal graph is about 25% denser
+than ours** -- 1.254x the nodes and 1.256x the edges per `generate()` call, stable
+across all four matched checkpoints (1.2541 / 1.2540 / 1.2543 / 1.2541). Every
+per-item rate inside the graph matches; there is simply more graph.
+
+**This is consistent with, not contradicted by, R584.** R584 measured 0.979x for the
+edge count and 1.022x for junctions per edge, but that population was *edges that
+emit junctions* in `generateJunctions`. Both hold at once: C++ has ~25% more total
+graph edges while the same number of them emit. C++'s surplus edges are
+non-emitting -- they fail the `bead_count` equality or `end_R >= start_R` guards at
+`SkeletalTrapezoidation.cpp:1780-1790`. A denser skeleton with the same emitting
+count still yields more nodes carrying independently-computed beadings, which is
+the supply the whole R583-R587 chain has been chasing.
+
+**R589 goes to graph construction/density.** Note the Rust comment at `stageprobe`'s
+neighbour records a "2.33x graph-edge gap" observed around R552 whose source was
+bracketed to the prepared-outline chain -- and R562 then cleared the outline chain
+and outline SIZE. The gap itself appears never to have been closed, only relocated.
+`GRAPHPROBE` exists and must be re-derived speculation-clean (R581) before any of
+its historical numbers are quoted. Candidates: Voronoi construction and
+`discretization_step_size` (R551 cleared it AS PORTED CODE -- a different question
+from its output density), and the filtering that removes graph edges.
+
+Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
+reproduce, 8/8 guard tests pass.
+
+**Process.** Hit the R587 escaping trap a second time in the same file: a `\n`
+written into `ST_INCLUDES_NEW` (a NON-RAW `"""` string) becomes a real newline and
+breaks the C++ format string. Knowing the rule was not enough -- the check that
+catches it is reading the INJECTED source for `\\n` before building, which takes
+seconds and is now the habit. Also: `nd.data` on the Rust side is `nd.base.data`;
+the graph node/edge types wrap their payload one level deeper than C++'s.

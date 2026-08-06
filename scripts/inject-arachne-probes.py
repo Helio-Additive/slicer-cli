@@ -94,6 +94,31 @@ std::atomic<size_t> g_pc_total{0};
 std::atomic<size_t> g_up_total{0}, g_up_skip_bc{0}, g_up_skip_nofrom{0},
                     g_up_skip_tohas{0}, g_up_seed{0};
 std::atomic<size_t> g_dn_total{0}, g_dn_central{0}, g_dn_twin{0}, g_dn_normal{0};
+
+// CENSUS (R588): R587 showed the upward pass seeds half as many nodes, the whole
+// deficit sitting in the `to->bead_count >= 0` guard, and that we mark more edges
+// central (60.10% vs 56.67%, measured per dispatcher iteration). This measures both
+// quantities DIRECTLY on the graph, as per-node and per-edge rates over the whole
+// graph, once per generate() call -- order-independent and on the population the
+// guard actually tests. Summed across calls.
+std::atomic<size_t> g_cs_calls{0}, g_cs_nodes{0}, g_cs_bc{0}, g_cs_hasb{0},
+                    g_cs_edges{0}, g_cs_central{0};
+void census_tick(size_t nodes, size_t bc, size_t hasb, size_t edges, size_t central)
+{
+    g_cs_nodes.fetch_add(nodes); g_cs_bc.fetch_add(bc); g_cs_hasb.fetch_add(hasb);
+    g_cs_edges.fetch_add(edges); g_cs_central.fetch_add(central);
+    const size_t n = g_cs_calls.fetch_add(1) + 1;
+    if (n == 1 || n % 2000 == 0) {
+        const double nn = double(std::max<size_t>(g_cs_nodes.load(), 1));
+        const double ne = double(std::max<size_t>(g_cs_edges.load(), 1));
+        fprintf(stderr,
+            "[CENSUS] calls=%zu nodes=%zu bead_count>=0=%zu (%.4f) hasBeading=%zu (%.4f) "
+            "| edges=%zu central=%zu (%.4f)\\n",
+            n, g_cs_nodes.load(), g_cs_bc.load(), double(g_cs_bc.load()) / nn,
+            g_cs_hasb.load(), double(g_cs_hasb.load()) / nn,
+            g_cs_edges.load(), g_cs_central.load(), double(g_cs_central.load()) / ne);
+    }
+}
 void upprobe_tick(bool s1, bool s2, bool s3)
 {
     const size_t n = g_up_total.fetch_add(1) + 1;
@@ -1593,9 +1618,34 @@ ST_DN_NEW = """    for (edge_t* upward_quad_mid : upward_quad_mids)
         // Transfer beading information to lower nodes
 """
 
+# ---------------------------------------------------------------------------
+# CENSUS (R588) - per-NODE `bead_count >= 0` share (the quantity the upward guard
+# actually tests) and per-EDGE central share, measured directly on the graph at the
+# moment propagateBeadingsUpward runs. R587 left both as the open question.
+# ---------------------------------------------------------------------------
+ST_CENSUS_OLD = """    for (auto upward_quad_mids_it = upward_quad_mids.rbegin(); upward_quad_mids_it != upward_quad_mids.rend(); ++upward_quad_mids_it)
+"""
+ST_CENSUS_NEW = """    if (getenv("CENSUS") && !probe_speculative()) {
+        size_t cs_nodes = 0, cs_bc = 0, cs_hasb = 0, cs_edges = 0, cs_central = 0;
+        for (node_t &nd : graph.nodes) {
+            ++cs_nodes;
+            if (nd.data.bead_count >= 0) ++cs_bc;
+            if (nd.data.hasBeading()) ++cs_hasb;
+        }
+        for (edge_t &eg : graph.edges) {
+            ++cs_edges;
+            if (eg.data.isCentral()) ++cs_central;
+        }
+        census_tick(cs_nodes, cs_bc, cs_hasb, cs_edges, cs_central);
+    }
+
+    for (auto upward_quad_mids_it = upward_quad_mids.rbegin(); upward_quad_mids_it != upward_quad_mids.rend(); ++upward_quad_mids_it)
+"""
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_EDGE_OLD, ST_EDGE_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_CENSUS_OLD, ST_CENSUS_NEW),
     ("SkeletalTrapezoidation.cpp", ST_UP_OLD, ST_UP_NEW),
     ("SkeletalTrapezoidation.cpp", ST_DN_OLD, ST_DN_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PC_FRESH_OLD, ST_PC_FRESH_NEW),

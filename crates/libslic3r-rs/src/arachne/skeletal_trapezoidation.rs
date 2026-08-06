@@ -2772,6 +2772,34 @@ impl<'a> SkeletalTrapezoidation<'a> {
         upward_quad_mids: &mut [EdgePtr],
         node_beadings: &mut Vec<Arc<RwLock<BeadingPropagation>>>,
     ) {
+        // CENSUS (R588): the per-NODE `bead_count >= 0` share is what the upward
+        // guard actually tests, and the per-EDGE central share is R587's handoff.
+        // Measured directly on the graph here, once per generate() call, so both are
+        // order-independent rates over the whole population.
+        if crate::probe_enabled("CENSUS") {
+            let mut cs_nodes = 0usize;
+            let mut cs_bc = 0usize;
+            let mut cs_hasb = 0usize;
+            for nd in self.graph.nodes.iter() {
+                cs_nodes += 1;
+                if nd.base.data.bead_count >= 0 {
+                    cs_bc += 1;
+                }
+                if nd.base.data.has_beading() {
+                    cs_hasb += 1;
+                }
+            }
+            let mut cs_edges = 0usize;
+            let mut cs_central = 0usize;
+            for eg in self.graph.edges.iter() {
+                cs_edges += 1;
+                if eg.base.data.is_central() {
+                    cs_central += 1;
+                }
+            }
+            census_tick(cs_nodes, cs_bc, cs_hasb, cs_edges, cs_central);
+        }
+
         unsafe {
             // SkeletalTrapezoidation.cpp:1610 for (auto upward_quad_mids_it = upward_quad_mids.rbegin(); ...; ++it)
             for &upward_edge in upward_quad_mids.iter().rev() {
@@ -4946,6 +4974,47 @@ pub(crate) fn dnprobe_tick(central: bool, equi: bool) {
             CENTRAL.load(Relaxed), CENTRAL.load(Relaxed) as f64 / d,
             TWIN.load(Relaxed), TWIN.load(Relaxed) as f64 / d,
             NORMAL.load(Relaxed), NORMAL.load(Relaxed) as f64 / d,
+        );
+    }
+}
+
+/// R588 probe (CENSUS=1): the two quantities R587 left open, measured directly on
+/// the graph at the moment `propagate_beadings_upward` runs.
+///
+/// R587 showed the upward pass seeds half as many nodes as C++'s, with the entire
+/// deficit in the `to->bead_count >= 0` guard, and that our dispatcher sees more
+/// central edges (60.10% vs 56.67%). Those were per-ITERATION rates; these are
+/// per-NODE and per-EDGE rates over the whole graph, which is the population the
+/// guard actually tests. Summed across generate() calls, so order-independent.
+/// Mirrors `census_tick` in scripts/inject-arachne-probes.py.
+pub(crate) fn census_tick(
+    nodes: usize,
+    bc: usize,
+    hasb: usize,
+    edges: usize,
+    central: usize,
+) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    static NODES: AtomicUsize = AtomicUsize::new(0);
+    static BC: AtomicUsize = AtomicUsize::new(0);
+    static HASB: AtomicUsize = AtomicUsize::new(0);
+    static EDGES: AtomicUsize = AtomicUsize::new(0);
+    static CENTRAL: AtomicUsize = AtomicUsize::new(0);
+    NODES.fetch_add(nodes, Relaxed);
+    BC.fetch_add(bc, Relaxed);
+    HASB.fetch_add(hasb, Relaxed);
+    EDGES.fetch_add(edges, Relaxed);
+    CENTRAL.fetch_add(central, Relaxed);
+    let n = CALLS.fetch_add(1, Relaxed) + 1;
+    if n == 1 || n % 2000 == 0 {
+        let nn = NODES.load(Relaxed).max(1) as f64;
+        let ne = EDGES.load(Relaxed).max(1) as f64;
+        eprintln!(
+            "[CENSUS] calls={n} nodes={} bead_count>=0={} ({:.4}) hasBeading={} ({:.4}) | edges={} central={} ({:.4})",
+            NODES.load(Relaxed), BC.load(Relaxed), BC.load(Relaxed) as f64 / nn,
+            HASB.load(Relaxed), HASB.load(Relaxed) as f64 / nn,
+            EDGES.load(Relaxed), CENTRAL.load(Relaxed), CENTRAL.load(Relaxed) as f64 / ne,
         );
     }
 }
