@@ -1392,6 +1392,58 @@ ST_EDGE_OLD = '''        Beading* beading = &getOrCreateBeading(edge->to, node_b
 '''
 ST_EDGE_NEW = '''        Beading* beading = &getOrCreateBeading(edge->to, node_beadings)->beading;
         if (getenv("BEADPROBE") && !probe_speculative()) g_ep_edges.fetch_add(1);
+
+        // BEADPAIR (R585): P(adjacent beadings differ in bead_widths[0]).
+        // R584 showed junctions-per-edge is at parity (1.022x) while the outer-wall
+        // change density is 1.378x, and that every change is one bead index
+        // resolving to a different beading at an edge boundary -- so the whole gap
+        // must live in this probability. A per-edge Bernoulli rate is ORDER-
+        // INDEPENDENT, unlike the prefix distinct-count R584 had to retract.
+        // Read-only: hasBeading()/getBeading() never create, so this cannot perturb
+        // the run (calling getOrCreateBeading on `from` would).
+        if (getenv("BEADPAIR") && !probe_speculative()) {
+            static std::mutex bp_mtx;
+            // bp_same: the two endpoints resolve to the SAME BeadingPropagation
+            // object, so their widths are identical by construction rather than by
+            // computation. If we share beadings across neighbouring nodes more than
+            // C++ does, that alone depresses P(differ).
+            static size_t bp_n = 0, bp_both = 0, bp_diff = 0, bp_tdiff = 0, bp_same = 0;
+            static size_t bp_d1 = 0, bp_d10 = 0, bp_d100 = 0, bp_dbig = 0;
+            static size_t bp_mod[100] = {0};
+            std::lock_guard<std::mutex> bp_lock(bp_mtx);
+            ++bp_n;
+            const coord_t w_to = beading->bead_widths.empty() ? -1 : beading->bead_widths[0];
+            if (w_to >= 0) ++bp_mod[w_to % 100];
+            if (w_to >= 0 && edge->from->data.hasBeading()) {
+                auto fb = edge->from->data.getBeading();
+                if (fb && !fb->beading.bead_widths.empty()) {
+                    ++bp_both;
+                    if (&fb->beading == beading) ++bp_same;
+                    const coord_t w_from = fb->beading.bead_widths[0];
+                    const coord_t d = std::abs(w_to - w_from);
+                    if (d != 0) ++bp_diff;
+                    if (fb->beading.total_thickness != beading->total_thickness) ++bp_tdiff;
+                    // coord_t is 1e-5 mm, so 100 units == 1 micron.
+                    if      (d == 0)     {}
+                    else if (d < 100)    ++bp_d1;
+                    else if (d < 1000)   ++bp_d10;
+                    else if (d < 10000)  ++bp_d100;
+                    else                 ++bp_dbig;
+                }
+            }
+            if (bp_n % 500000 == 0) {
+                size_t nz = 0;
+                for (int k = 0; k < 100; ++k) if (bp_mod[k]) ++nz;
+                fprintf(stderr,
+                    "[BEADPAIR] edges=%zu both=%zu differ=%zu (%.4f) tdiff=%zu (%.4f) same_obj=%zu (%.4f) | "
+                    "d<1um=%zu 1-10um=%zu 10-100um=%zu >100um=%zu | w0_mod100_nonzero=%zu/100\\n",
+                    bp_n, bp_both, bp_diff, double(bp_diff) / double(std::max<size_t>(bp_both, 1)),
+                    bp_tdiff, double(bp_tdiff) / double(std::max<size_t>(bp_both, 1)),
+                    bp_same, double(bp_same) / double(std::max<size_t>(bp_both, 1)),
+                    bp_d1, bp_d10, bp_d100, bp_dbig, nz);
+            }
+        }
+
         edge_junctions.emplace_back(std::make_shared<LineJunctions>());
 '''
 

@@ -6487,3 +6487,69 @@ but the command piped it through `tail -1` and the failure was invisible; the C+
 binary then silently ran without the probe and produced no output at all. Never
 filter the injector's output down to one line -- it fails loudly and that is the
 point. The working anchor is the `getOrCreateBeading` line above it.
+
+## R585 — P(adjacent beadings differ) confirmed large; two mechanisms killed
+
+R584 reduced the outer-wall change-density gap to a single quantity: junctions per
+edge is at parity (1.022x) and every width change is one bead index resolving to a
+different beading at an edge boundary, so the gap must live in
+`P(adjacent beadings differ in bead_widths[0])`. `BEADPAIR` measures it directly:
+for every graph edge that emits junctions, compare `bead_widths[0]` of `edge->to`'s
+beading against `edge->from`'s. This is a per-edge Bernoulli rate -- ORDER-
+INDEPENDENT, so it is safe to compare across engines, unlike the prefix
+distinct-count R584 had to retract. It reads through `hasBeading()`/`getBeading()`
+only; calling `getOrCreateBeading` on `from` would have created state and
+perturbed the run.
+
+| matched edges | R P(differ) | C P(differ) | C/R |
+|---|---|---|---|
+| 0.5M | 0.02742 | 0.05440 | 1.984 |
+| 1.0M | 0.02261 | 0.05245 | 2.320 |
+| 1.5M | 0.02050 | 0.04938 | 2.409 |
+| 2.0M | 0.01943 | 0.04666 | 2.401 |
+| 2.5M | 0.02431 | 0.04498 | 1.850 |
+
+**C++'s neighbouring beadings disagree 1.85x-2.41x more often than ours.**
+Direction predicted and confirmed; magnitude LARGER than the predicted 1.35-1.40x.
+
+**Two candidate mechanisms are dead.**
+
+*Quantisation.* If our widths landed on a coarser grid, neighbours would collapse
+to equal. Histogramming `bead_widths[0] % 100` (coord_t is 1e-5 mm, so 100 units is
+one micron) gives **100/100 non-empty buckets on BOTH engines**. Our widths are not
+coarser. Refuted.
+
+*Object sharing.* If we handed neighbouring nodes the same `BeadingPropagation`,
+their widths would be identical by construction. Pointer identity between the two
+endpoints' beadings is **0 on BOTH engines** -- neither ever shares. Refuted.
+
+**What the round does establish.** `total_thickness` disagrees between neighbours at
+near-parity (rust 0.0077-0.0102, cpp 0.0078-0.0111, C/R 1.05-1.21) while
+`bead_widths[0]` disagrees 1.85-2.41x more often on C++. **Same input variation,
+far less output variation on our side.** Note also that on BOTH engines width
+disagrees far more often than thickness does (C++ 5.6x, ours 3.1x), so the beading
+at a node is not a pure function of that node's thickness -- it is propagated and
+interpolated, and **C++'s propagation injects nearly twice as much width variation
+per unit of thickness variation as ours.**
+
+The magnitude distribution inverts too. Of all differing pairs, C++ puts **65.4%
+under 10um** (27.2% under 1um, 38.2% 1-10um) while we put **60.6% over 10um** (35.4%
+10-100um, 25.2% above). C++ makes many small width adjustments between neighbouring
+nodes; we make fewer, larger jumps.
+
+**What the round does NOT establish -- the identity does not close.** Composing
+this round's ratio with R584's denominator predicts a change-density ratio of
+2.40 / 1.022 = **2.35** against the observed **1.378**. That is not a validation
+and must not be read as one (R581). The two terms are measured on different
+populations: `BEADPAIR`'s comparable subset is only ~13% of edges (those whose
+`from` node already had a beading, which is traversal-order dependent) and spans
+all insets, whereas the 1.378x is inset 0 only. The DIRECTION is solid; the
+magnitude is not composable, and no factorisation is claimed.
+
+**Next.** The suspect is the beading VALUE chain: propagation/interpolation between
+nodes rather than `compute()` at a node. R546/R547 cleared the propagation chain as
+a PORTING defect, but on a different axis and on pre-R581 counts, so that clearance
+does not cover this question.
+
+Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
+reproduce, 8/8 guard tests pass.

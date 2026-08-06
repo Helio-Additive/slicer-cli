@@ -3113,6 +3113,35 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
 
+                // BEADPAIR (R585): P(adjacent beadings differ in bead_widths[0]).
+                // R584 showed junctions-per-edge is at parity (1.022x) while the
+                // outer-wall change density is 1.378x, and that every change is one
+                // bead index resolving to a different beading at an edge boundary --
+                // so the whole gap must live in this probability. A per-edge
+                // Bernoulli rate is ORDER-INDEPENDENT, unlike the prefix distinct
+                // count R584 had to retract. Read-only: `get_beading` never creates,
+                // so this cannot perturb the run.
+                if crate::probe_enabled("BEADPAIR") {
+                    let w_to = beading.bead_widths.first().copied();
+                    let w_from = from
+                        .as_ref()
+                        .data
+                        .get_beading()
+                        .and_then(|fb| fb.read().beading.bead_widths.first().copied());
+                    let t_from = from
+                        .as_ref()
+                        .data
+                        .get_beading()
+                        .map(|fb| fb.read().beading.total_thickness);
+                    let same_obj = from
+                        .as_ref()
+                        .data
+                        .get_beading()
+                        .map(|fb| std::sync::Arc::ptr_eq(&fb, &beading_arc))
+                        .unwrap_or(false);
+                    beadpair(w_to, w_from, t_from, beading.total_thickness, same_obj);
+                }
+
                 // SkeletalTrapezoidation.cpp:1799 assert(beading->total_thickness >= edge->to->data.distance_to_boundary * 2);
                 debug_assert!(beading.total_thickness >= to.as_ref().data.distance_to_boundary * 2);
                 // SkeletalTrapezoidation.cpp:1800 if(beading->total_thickness < edge->to->data.distance_to_boundary * 2)
@@ -4239,6 +4268,91 @@ pub(crate) fn beadprobe(thickness: i64, bead_count: i64, widths: &[i64]) {
 //   few thicknesses               -> the skeleton is flat, upstream of compute
 pub(crate) static EP_EDGES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
+
+/// R585 probe (BEADPAIR=1): the fraction of graph edges whose two endpoints carry
+/// beadings that DISAGREE on `bead_widths[0]`, plus the size distribution of the
+/// disagreement and a quantisation histogram of `bead_widths[0] % 100`.
+///
+/// R584 reduced the outer-wall change-density gap to exactly this quantity:
+/// junctions-per-edge is at parity (1.022x) and every width change is one bead
+/// index resolving to a different beading at an edge boundary, so
+/// `changes/junction ~ P(differ) / (junctions per edge)`. A per-edge Bernoulli
+/// rate is order-independent, so it is safe to compare across engines -- the
+/// prefix distinct-count R584 retracted was not.
+///
+/// The `% 100` histogram is the side-check: coord_t is 1e-5 mm, so 100 units is
+/// one micron. If our widths land on a coarser grid than C++'s, neighbouring
+/// beadings collapse to equal and P(differ) falls with everything structural at
+/// parity.
+pub(crate) fn beadpair(
+    w_to: Option<i64>,
+    w_from: Option<i64>,
+    t_from: Option<i64>,
+    t_to: i64,
+    same_obj: bool,
+) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    use std::sync::Mutex;
+    static N: AtomicUsize = AtomicUsize::new(0);
+    static BOTH: AtomicUsize = AtomicUsize::new(0);
+    static DIFF: AtomicUsize = AtomicUsize::new(0);
+    static TDIFF: AtomicUsize = AtomicUsize::new(0);
+    static D1: AtomicUsize = AtomicUsize::new(0);
+    static D10: AtomicUsize = AtomicUsize::new(0);
+    static D100: AtomicUsize = AtomicUsize::new(0);
+    static DBIG: AtomicUsize = AtomicUsize::new(0);
+    static MOD: Mutex<[usize; 100]> = Mutex::new([0; 100]);
+    // SAME: the two endpoints resolve to the SAME BeadingPropagation object, so
+    // their widths are identical by construction rather than by computation. If we
+    // share beadings across neighbouring nodes more than C++ does, that alone
+    // depresses P(differ).
+    static SAME: AtomicUsize = AtomicUsize::new(0);
+    let n = N.fetch_add(1, Relaxed) + 1;
+    if let Some(wt) = w_to {
+        if let Ok(mut m) = MOD.lock() {
+            m[(wt.rem_euclid(100)) as usize] += 1;
+        }
+        if let Some(wf) = w_from {
+            BOTH.fetch_add(1, Relaxed);
+            if same_obj {
+                SAME.fetch_add(1, Relaxed);
+            }
+            let d = (wt - wf).abs();
+            if d != 0 {
+                DIFF.fetch_add(1, Relaxed);
+            }
+            if t_from.map(|tf| tf != t_to).unwrap_or(false) {
+                TDIFF.fetch_add(1, Relaxed);
+            }
+            // coord_t is 1e-5 mm, so 100 units == 1 micron.
+            if d == 0 {
+            } else if d < 100 {
+                D1.fetch_add(1, Relaxed);
+            } else if d < 1000 {
+                D10.fetch_add(1, Relaxed);
+            } else if d < 10000 {
+                D100.fetch_add(1, Relaxed);
+            } else {
+                DBIG.fetch_add(1, Relaxed);
+            }
+        }
+    }
+    if n % 500_000 == 0 {
+        let both = BOTH.load(Relaxed).max(1);
+        let nz = MOD
+            .lock()
+            .map(|m| m.iter().filter(|&&c| c > 0).count())
+            .unwrap_or(0);
+        eprintln!(
+            "[BEADPAIR] edges={n} both={} differ={} ({:.4}) tdiff={} ({:.4}) same_obj={} ({:.4}) | d<1um={} 1-10um={} 10-100um={} >100um={} | w0_mod100_nonzero={}/100",
+            BOTH.load(Relaxed), DIFF.load(Relaxed),
+            DIFF.load(Relaxed) as f64 / both as f64,
+            TDIFF.load(Relaxed), TDIFF.load(Relaxed) as f64 / both as f64,
+            SAME.load(Relaxed), SAME.load(Relaxed) as f64 / both as f64,
+            D1.load(Relaxed), D10.load(Relaxed), D100.load(Relaxed), DBIG.load(Relaxed), nz,
+        );
+    }
+}
 
 pub(crate) fn junctionprobe(w: i64, total_thickness: i64, idx: usize) {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
