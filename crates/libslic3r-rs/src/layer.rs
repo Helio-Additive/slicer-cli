@@ -2489,6 +2489,10 @@ impl Layer {
                 line_spacing: surface_fill.params.spacing,
                 angle: surface_fill.params.angle as f64,
                 angle_increment: 90.0,
+                // R599: C++ Fill::_infill_direction (FillBase.cpp:224) uses the
+                // surface's bridge angle when set. Populated at fill.rs:606 from
+                // `surface.bridge_angle.unwrap_or(-1.0)`; radians, -1 == none.
+                bridge_angle: surface_fill.params.bridge_angle as f64,
                 density,
                 extrusion_width: surface_fill.params.spacing,
                 overlap: infill_overlap,
@@ -3325,6 +3329,10 @@ impl Layer {
                 line_spacing: surface_fill.params.spacing,
                 angle: surface_fill.params.angle as f64,
                 angle_increment: 90.0,
+                // R599: C++ Fill::_infill_direction (FillBase.cpp:224) uses the
+                // surface's bridge angle when set. Populated at fill.rs:606 from
+                // `surface.bridge_angle.unwrap_or(-1.0)`; radians, -1 == none.
+                bridge_angle: surface_fill.params.bridge_angle as f64,
                 density,
                 extrusion_width: surface_fill.params.spacing,
                 overlap: infill_overlap,

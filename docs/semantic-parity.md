@@ -7439,3 +7439,69 @@ elsewhere, since only 1.4-3.2% of fills are affected. Fallback: if Bridge does n
 move, the 16/538 surfaces are not the ones the Bridge FEATURE tag is emitted for,
 and the mapping from surface type to feature label needs checking before any more
 fill work.
+
+## R599 — the `bridge_angle` short-circuit: faithful, structurally right, net negative
+
+R598 left one measured defect: the live fill path never consults `bridge_angle`, so
+16 (Benchy) and 538 (Majora) surfaces get the alternating layer angle where C++ uses
+the detected bridge direction. This round implemented it.
+
+**The missing hop was one field.** `params.bridge_angle` is already populated from
+the surface (`fill.rs:606`, `surface.bridge_angle.unwrap_or(-1.0)`) and reaches the
+caller — it simply was not passed into `InfillConfig`. Added `InfillConfig.bridge_angle`
+(radians, -1 = none), populated at both call sites (`layer.rs:2487`, `:3323`), and
+short-circuited on the live path exactly as `FillBase.cpp:224-239`: the bridge angle
+REPLACES the base angle, SKIPS the per-layer alternation, and still takes the
+unconditional `+M_PI/2`. Because `bridge_angle` is already in radians it bypasses the
+degrees path rather than round-tripping through it.
+
+**Gate OFF reproduces both baselines byte-for-byte** (`a27419f0`, `bb313a93`).
+
+**Gate ON — mixed, and net negative on the primary measure:**
+
+| | Benchy OFF | Benchy ON | Majora OFF | Majora ON |
+|---|---|---|---|---|
+| matched lines | 115,887 | **115,370** | 409,276 | **408,965** |
+| rate | 74.99% | 75.04% | 16.25% | 16.24% |
+| Bridge matched | 121 | 105 | 1,794 | **1,816** |
+| Bridge rate | 7.8% | 7.8% | 8.3% | **8.7%** |
+| Bridge rust lines | 1,554 | **1,353** | 21,578 | **20,847** |
+| Internal solid infill | 24.2% | **21.9%** | 11.3% | 11.3% |
+
+**Beware the rate: Benchy's 74.99% -> 75.04% is a shrinking denominator, not more
+agreement.** Absolute matched lines fell by 517; the body line count fell from
+154,539 to 153,752 while C++ has 156,342, so the line-count gap actually widened
+(1.15% -> 1.66%). Quoting the percentage alone would have made a regression look like
+a win.
+
+**What genuinely improved:** the Bridge toolpath is structurally closer to C++ on
+both fixtures — Benchy 1,554 -> 1,353 lines against C++'s 1,337, Majora 21,578 ->
+20,847 — and Majora's Bridge match rate rose 8.3% -> 8.7% (+22 lines). So the
+short-circuit is doing the right thing to bridges.
+
+**What regressed, and why it matters:** Benchy's Internal solid infill fell 24.2% ->
+21.9%. **That means the surfaces carrying `bridge_angle >= 0` are NOT confined to
+the `Bridge` feature** — the pre-registered fallback from R598/R599 fires in part.
+Changing their angle helps the bridges and hurts the solid infill that shares the
+flag, and the net is negative on both fixtures.
+
+**Shipped OPT-IN (`FILL_BRIDGE_ANGLE`, default OFF) per R557**, with the measurement
+recorded beside the code. Baselines unchanged, 8/8 guards. It is faithful to
+`FillBase.cpp` and should become default-on once the surfaces it touches are
+correctly partitioned — it is currently a correct change applied to a
+partly-wrong population.
+
+**Prediction: PARTLY right.** Majora's Bridge moved as predicted (8.3% -> 8.7%).
+Benchy's Bridge *rate* did not move at all (7.8% both), and the claim that it would
+be "inert elsewhere" was **wrong** — Internal solid infill moved by 2.3 points.
+
+Also fixed in passing: the stale comment at `fill_rectilinear.rs:2312` claiming
+"Gated; default keeps legacy". `faithful_gate` returns true unless the variable is
+`"0"`, so `TOPFILL_FAITHFUL` is DEFAULT-ON and the faithful branch is what runs.
+
+**R600:** find why non-Bridge surfaces carry `bridge_angle >= 0` — dump
+`(surface_type, bridge_angle, feature label)` together on both engines. Predict C++
+sets the angle on the same surfaces we do but its `stBottomBridge` -> feature-label
+mapping differs, so the same flag reaches different G-code tags; fallback, if the
+flag really is set on different surfaces, the defect is upstream in
+`expand_merge_surfaces`/surface classification, not in the filler.

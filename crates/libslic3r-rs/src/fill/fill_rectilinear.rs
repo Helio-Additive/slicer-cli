@@ -2314,13 +2314,34 @@ pub fn generate_fill_rectilinear(
     // alternation, NOT 90*idx. 90*idx coincides only mod 180; the raster frame
     // needs mod-360 equality (a 180-rotated frame point-reflects the bbox and
     // shifts x0 for every adjust-branch solid fill). Plus _infill_direction's
-    // unconditional +90 (FillBase.cpp:239). Gated; default keeps legacy.
+    // unconditional +90 (FillBase.cpp:239).
+    //
+    // R599: `faithful_gate` is TRUE unless the variable is "0", so TOPFILL_FAITHFUL
+    // is DEFAULT-ON and the faithful branch is what actually runs. The previous
+    // comment here said "default keeps legacy", which was wrong.
     let angle_deg = if faithful_dir {
         config.angle + if layer_index & 1 == 1 { 90.0 } else { 0.0 } + 90.0
     } else {
         config.angle + config.angle_increment * layer_index as f64
     };
-    let angle_rad = angle_deg.to_radians();
+    // R599: C++ Fill::_infill_direction (FillBase.cpp:224-239) short-circuits to
+    // the surface's bridge angle when it is set, SKIPPING the per-layer
+    // alternation, then still adds the unconditional +M_PI/2. `bridge_angle` is
+    // already in RADIANS (fill.rs:606), so this bypasses the degrees path rather
+    // than round-tripping through it.
+    //
+    // Shipped OPT-IN (default OFF) per R557: measured against C++ it makes the
+    // Bridge toolpath structurally closer (Benchy 1554 -> 1353 lines vs C++'s
+    // 1337; Majora 21,578 -> 20,847) and improves Majora's Bridge match rate
+    // (8.3% -> 8.7%, +22 lines), but REGRESSES total matched lines on both
+    // fixtures (Benchy -517, Majora -311) and drags Benchy's Internal solid
+    // infill from 24.2% to 21.9% -- so the surfaces carrying a bridge angle are
+    // NOT confined to the Bridge feature. Faithful, but not yet a net win.
+    let angle_rad = if crate::probe_enabled("FILL_BRIDGE_ANGLE") && config.bridge_angle >= 0.0 {
+        config.bridge_angle + std::f64::consts::FRAC_PI_2
+    } else {
+        angle_deg.to_radians()
+    };
 
     // Grid draws two perpendicular passes; FillRectilinear.cpp:3036
     // (fill_surface_by_multilines) divides density by the sweep count so the passes

@@ -123,6 +123,14 @@ pub struct InfillConfig {
     pub angle: CoordF,
     /// Angle increment per layer
     pub angle_increment: CoordF,
+    /// R599: the surface's bridge angle in RADIANS, or -1 for "not a bridge"
+    /// (C++ `Surface::bridge_angle`, default -1). `Fill::_infill_direction`
+    /// (FillBase.cpp:224) short-circuits to this when >= 0, skipping the
+    /// per-layer alternation; the unconditional `+M_PI/2` at FillBase.cpp:239
+    /// still applies. The live fill path never consulted it before R599, so
+    /// bridge surfaces got the alternating layer angle instead (R597/R598:
+    /// 16/500 Benchy and 538/38,000 Majora fills are affected).
+    pub bridge_angle: CoordF,
     /// Fill density (0.0 to 1.0)
     pub density: CoordF,
     /// Extrusion width in mm
@@ -148,6 +156,7 @@ impl Default for InfillConfig {
             line_spacing: 0.4,
             angle: 45.0,
             angle_increment: 90.0,
+            bridge_angle: -1.0, // R599: -1 == not a bridge (C++ Surface default)
             density: 0.2,
             extrusion_width: 0.4,
             overlap: 0.25,
