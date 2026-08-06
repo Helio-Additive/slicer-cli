@@ -7106,3 +7106,66 @@ body). The question is narrow: same coverage, same length, different placement �
 so it is fill line ORIGIN/PHASE or ordering, not fill area or density.
 
 Probe-free round: majora `e8027b80` and benchy `a27419f0` reproduce, 8/8 guards.
+
+## R594 — the fill features do NOT share a cause; Bridge's ANGLE is wrong
+
+R593 left the Benchy residual as "same coverage, same length, different
+placement". `$D/fill_geom.py` separates the three ways that can happen, per
+(layer, feature): the fill ANGLE, the lattice PHASE (project segment midpoints
+onto the normal of the dominant direction), and — if both match — emission ORDER.
+
+**Prediction WRONG on both clauses.** I predicted the solid-fill family shares ONE
+cause and that it is the lattice PHASE. It shares no single cause, and phase is
+only implicated in two of five features.
+
+| feature | angle | phase delta | lattice lines matching <=1um |
+|---|---|---|---|
+| Top surface | 45 = 45 | **0.0000 mm** | **100%** (98/98, 38/38) |
+| Sparse infill L37 | match | 0.0000 mm | 100% (9/9) |
+| Sparse infill L6 | match | 0.7867 mm | 53.8% |
+| Internal solid infill | match | 0.0041 / 0.0026 mm | 30.4% / 9.6% |
+| Bottom surface | match | 0.0407 mm | 49.0% |
+| **Bridge** | **45 vs 135** | — | **0%** |
+
+**Bridge: the fill DIRECTION differs, per layer.** Length-weighted dominant angle:
+
+    layer 47   rust 45 deg (1548.9 mm)   cpp 135 deg (1532.6 mm)   90 deg apart
+    layer  3   rust 45 deg ( 700.8 mm)   cpp  12 deg ( 697.4 mm)   33 deg apart
+    layer 230  rust 135 deg ( 687.6 mm)  cpp  90 deg ( 707.1 mm)   45 deg apart
+
+That is not drift; it is a different answer from the bridge-direction search. It
+explains Bridge's 7.8% completely — every line is somewhere else — and it explains
+R593's Bridge anomaly (1.19x segments at identical total length): a different angle
+cuts the same region into a different number of spans.
+
+**Top surface: the geometry is IDENTICAL and it still scores 34.9%.** Phase delta
+0.0000 mm and 100% of lattice lines have a counterpart within 1 um. The
+pre-registered FALLBACK fires here and only here: for this feature the fill set is
+right and only the emission ORDER differs. That makes Top surface a much
+lower-value target than its 34.9% suggests — it is a reordering, not a defect.
+
+**Internal solid infill is a third thing.** The lattice phase agrees to 2.6-4.1 um
+— far tighter than the 1 um match threshold is strict — yet only 9.6-30.4% of
+lattice lines find a counterpart within 1 um. So the lattice is right in aggregate
+but individual lines scatter by tens of microns. That is consistent with the fill
+being clipped against slightly different island boundaries rather than laid on a
+different grid.
+
+**Code read on the bridge search — a hypothesis, not a finding.** `detect_angle`
+ports faithfully: the comparator (`coverage > other.coverage`, descending),
+`spacing` units (scaled `Coord` on both sides), and the "within extrusion width of
+coverage, prefer if shorter" loop all match `BridgeDetector.cpp:158-168`. The one
+structural difference is that C++ uses `std::sort`, which is **not stable**, while
+the port uses `sort_by`, which **is**. Candidates that tie on coverage — common
+when a bridge region is near-symmetric — therefore break ties differently, and
+`i_best` walks a differently-ordered list. This is a plausible mechanism for a
+90-degree flip and it is cheap to test by dumping both engines' candidate lists,
+but per R560 a hypothesis that survives reading can still die on its first count.
+**R595 tests it before anything is changed.**
+
+**R595 order of work:** (1) dump bridge candidates (angle, coverage, max_length)
+from both engines for a Benchy layer and find where the selection diverges;
+(2) Internal solid infill's sub-lattice scatter, which is the largest fill body;
+(3) deprioritise Top surface — its geometry is already correct.
+
+Probe-free round: majora `e8027b80` and benchy `a27419f0` reproduce, 8/8 guards.
