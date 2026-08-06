@@ -3268,6 +3268,13 @@ fn emit_tower_tcr(
     // is stale-true. Sync it instead of adding a retract C++ does not have -- the
     // ordinary object-side retract then fires again on its own, as it did before the
     // entry gate existed.
+    // R612 TESTED AND REVERTED: extending this sync to the `finish_layer` tcr (which is
+    // not a tool change, so R611's `&& tcr.is_tool_change` skips it) was the predicted
+    // cause of our after_tower shortfall (656 vs C++'s 931). Running it DEFAULT-ON left
+    // the majora output BYTE-IDENTICAL (`69eb9767`), so the finish-layer path is not the
+    // cause and the speculative branch was removed rather than carried as inert code.
+    // The remaining after_tower gap is therefore something C++ does that we do not model
+    // at all -- see the R612 round note.
     if crate::faithful_gate("TOWER_EXIT_WIPE_CPP") && tcr.is_tool_change {
         // C++ `append_tcr` (GCode.cpp:1081-1084) also reinstalls the TOWER's own wipe
         // path from `tcr.wipe_path` before its next retract -- the field R608 found is

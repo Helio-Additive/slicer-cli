@@ -8476,3 +8476,60 @@ population just changed materially), then the remaining tower deltas: after_towe
 new sync. Fallback: if `finish_layer` already syncs, the difference is C++ skipping the
 wipe on some tool changes (2,512 of 2,723) via a condition we do not model — find it
 before adding one.
+## R612 — two hypotheses tested, both refuted, both reported with numbers
+
+Two items, both pre-registered, both measured, both wrong. No behavioural change ships:
+one gate stays opt-in on the evidence, one speculative branch was reverted after proving
+inert. Baselines reproduce.
+
+**(1) `WIPE_MULTIPATH_CPP` re-checked for default-on (R600's rule) — still OPT-IN.**
+
+It shipped opt-in at R605 as parity-neutral (+10 benchy / −18 majora) when the tower
+wipes were absent. R601–R611 then added 2,723 wipe blocks to its upstream population,
+which is exactly the situation R600's rule exists for. Predicted it would now be
+net-positive on majora, since the wipe paths it corrects are consumed by far more wipes.
+
+| | baseline @R611 | with `WIPE_MULTIPATH_CPP=1` | delta |
+|---|---|---|---|
+| Benchy matched | 115,900 | 115,910 | **+10** |
+| Majora matched | 656,934 | 656,914 | **−20** |
+
+**Prediction WRONG.** Net −10, statistically identical to R605's −8; the 2,723 new wipe
+blocks did not change its verdict at all. The registered fallback said "if still
+negative, leave OPT-IN and say so with the numbers" — done. The re-check was still worth
+running: the rule is to re-examine opt-in gates when their population moves, and the
+answer being "no change" is a result, not a wasted round.
+
+**(2) The after_tower shortfall is NOT the `finish_layer` tcr.**
+
+R611 left after_tower at 656 against C++'s 931 (−275). The prediction was that
+`finish_layer`'s tcr never reaches R611's state sync, because that sync is gated on
+`tcr.is_tool_change` and `finish_layer` is not a tool change — structurally true, and
+easy to believe.
+
+Extending the sync to it, DEFAULT-ON, left majora **byte-identical** (`69eb9767`). Not
+"a small change" — no change at all. So either the branch never runs for `finish_layer`
+or the sync is a no-op there; either way the hypothesis is dead. **The speculative branch
+was reverted rather than kept as inert default-on code.**
+
+**What that leaves.** after_tower 656 vs 931 and after_tc 2,721 vs 2,512 — we emit 209
+too many in one class and 275 too few in another, netting 67 blocks below C++'s total.
+The registered fallback now stands as the live hypothesis: **C++ is skipping the wipe on
+some tool changes (2,512 of 2,723) via a condition we do not model**, and the surplus in
+our after_tc is the same 209 wipes C++ declines to emit. That is a condition to FIND in
+`GCode::retract`'s callers, not one to invent.
+
+**Nothing shipped.** `git status` shows only the reverted comment; majora `69eb9767`,
+benchy `304320a6`, cube `242f1fb8` all reproduce; 8/8 guards.
+
+**R613:** find C++'s skip condition. It emits 2,512 after-toolchange wipes for 2,723 tool
+changes — 211 skipped, and our surplus over C++ is 209, which is the same population to
+within two. **Instrument the C++ side** (`GCode::retract` / `Wipe::wipe` entry) to record,
+per tool change, whether the after-toolchange wipe fired, then correlate the skips
+against tool index, layer, and whether the next feature is on the same object. Predict
+the skip is `Wipe::has_path()` returning false because C++'s wipe path is consumed by the
+in-tower wipe and only re-armed when `tcr.wipe_path` is non-empty — i.e. C++ skips
+exactly the tool changes whose tcr carries no wipe path. **Fallback: if `tcr.wipe_path`
+is non-empty on all 2,723, the skip is a retract-level condition (`m_writer.retracted()`
+or the `EXTRUDER_CONFIG(wipe)` per-filament flag) and the census should be re-run keyed
+on filament id.**
