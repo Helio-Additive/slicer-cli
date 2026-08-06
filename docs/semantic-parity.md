@@ -6873,3 +6873,67 @@ A C++ timing figure taken mid-round was measured against an INSTRUMENTED binary
 (36.6s) and is discarded. Re-measured on a clean reverted build: **C++ 16.27s
 against Rust 16.45s = 1.011x**, so slicing time remains closed and is if anything
 better than the 1.033x carried since R565.
+
+## R591 — the fix's downstream effect, and a retraction of the chain's anchor number
+
+R590 fixed a real defect (collapse snap distance 400x too large) but line-level
+parity did not move. This round re-measured the downstream chain, A/B against
+`ARACHNE_COLLAPSE_SNAP_5=0` so every delta is attributable to the fix alone.
+
+**What robustly improved** (per-call rates over matched `generate()` calls):
+
+| quantity | gate OFF | gate ON | C++ | C/R was | C/R now |
+|---|---|---|---|---|---|
+| graph edges/call | 282.825 | 326.748 | 354.534 | 1.2535 | **1.0850** |
+| graph nodes/call | 142.414 | 164.376 | 178.241 | 1.2516 | **1.0844** |
+| interp share (per beading creation) | 0.02116 | 0.02326 | 0.04971 | 2.3489 | **2.1368** |
+| no-op interp fraction | 63.3% | 57.5% | 49.1% | — | closes ~1/3 of the gap |
+| flat (single-width) lines, all-inset | 75.7% | 75.1% | 71.8% | — | 0.6pp of a 3.9pp gap |
+
+So the fix does propagate: fewer of our interpolations are no-ops, fewer lines are
+single-width, and the interp share moved ~9% toward parity. **But "substantially
+toward parity" -- my prediction -- overstates it.** The interp share is still 2.14x.
+
+**What could NOT be measured, and why.** The upward SEED rate appears to move the
+wrong way (C/R 1.711 -> 1.870), but that comparison is invalid: the fix changes how
+many upward iterations exist per call, so matching on `up_total` no longer matches
+geometry (R584's rule, one level deeper). Not claimed in either direction.
+
+**The retraction, and it is the important part of this round.** R583's headline --
+inset-0 change density **1.378x** at the output of `generateToolpaths` -- is the
+anchor of the entire R583-R590 chain. It does not reproduce. Running the SAME
+binary with the gate OFF (hash-identical to the pre-fix build) three times gives
+
+    C/R = 1.159   1.270   1.329
+
+and the underlying value varies roughly **3x with prefix depth** within a single
+run (C++ stage-0 inset-0 ch/junc reads 0.02930, 0.03975, 0.08032 at successive
+checkpoints). The statistic is cumulative over calls that complete in
+nondeterministic thread order, so a checkpoint is a different sample of geometry
+every time.
+
+**Therefore: `1.378x` is withdrawn as a point estimate.** What survives is the
+DIRECTION -- C++'s outer-wall change density exceeds ours in every run measured --
+and that direction is corroborated independently by `BEADPAIR` (R585) and
+`PROPCLASS` (R586), which are per-item Bernoulli rates rather than cumulative
+prefix statistics. The chain's *shape* stands; its headline magnitude never had the
+precision it was quoted with, and neither did any other STAGEPROBE-derived ratio
+(R583's whole table).
+
+**Method rule going forward.** A cumulative-prefix counter in a multithreaded
+pipeline is not a reproducible point estimate. Any ratio quoted from one must be
+(a) repeated across runs with the spread reported, (b) expressed as an INTRA-ENGINE
+ratio (R589), or (c) measured to completion rather than at a prefix. R584 said
+matched SIZE is not matched GEOMETRY; this is the same error one level deeper --
+matched size is not matched geometry *even against yourself on a rerun*.
+
+**Prediction scored: partly WRONG, partly UNMEASURABLE.** Seed rate and interp share
+were predicted to move substantially toward parity -- interp moved 9%, seed rate is
+not validly measurable across the fix. Change density was predicted to improve less
+than proportionally; it cannot be resolved at all with the instrument available. The
+fallback ("if nothing moved, the chain was correlational") fires only partially:
+things did move, but the metric that was supposed to adjudicate cannot.
+
+Probe-only this round: majora `e8027b80` and benchy `a27419f0` both reproduce, 8/8
+guard tests pass. The R590 fix remains verified on the evidence that IS robust --
+byte-exact gate-OFF A/B, per-call graph density, semantic gates, and timing.
