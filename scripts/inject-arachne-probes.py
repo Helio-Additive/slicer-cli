@@ -70,7 +70,44 @@ bool& probe_speculative() { static thread_local bool v = false; return v; }
 // different beading on the next edge (LINEPROBE2 MECH: ch_idx=0 on both engines).
 // So changes/junction ~ P(adjacent beadings differ) / (junctions per edge).
 // This counts the denominator; the numerator is the idx-0 width spread below.
-std::atomic<size_t> g_ep_edges{0};"""
+std::atomic<size_t> g_ep_edges{0};
+
+// PROPCLASS (R586): how a node's beading comes to exist. R585 proved a node's
+// beading is NOT a pure function of its thickness -- it is propagated -- and that
+// C++ injects ~2x the width variation per unit of thickness variation. There are
+// exactly four sites:
+//   0 fresh      getOrCreateBeading -> beading_strategy.compute()
+//   1 copy_new   propagateBeadingsDownward, `from` had no beading: straight copy
+//   2 copy_ratio propagateBeadingsDownward, ratio_of_top >= 1.0: straight copy
+//   3 interp     propagateBeadingsDownward, else: interpolate()
+// A COPY is bit-identical to its source and cannot produce a width change between
+// neighbours; only fresh and interp can. Counting the mix is the whole question.
+std::atomic<size_t> g_pc[4] = {};
+std::atomic<size_t> g_pc_total{0};
+std::atomic<size_t> g_pc_interp_zero{0};   // interpolate() that changed nothing
+std::atomic<size_t> g_pc_interp_small{0};  // |delta w0| < 1um
+std::atomic<size_t> g_pc_interp_big{0};    // |delta w0| >= 1um
+void propclass_tick(int cls)
+{
+    if (::getenv("PROPCLASS") == nullptr || probe_speculative())
+        return;
+    // Increment the class counter, then take the checkpoint off a SINGLE atomic.
+    // Summing four separate loads is racy under TBB and skips the exact multiple,
+    // which is why the first attempt printed nothing at all.
+    g_pc[cls].fetch_add(1);
+    const size_t n = g_pc_total.fetch_add(1) + 1;
+    if (n == 1 || n % 100000 == 0) {
+        const size_t f = g_pc[0].load(), c1 = g_pc[1].load(),
+                     c2 = g_pc[2].load(), ip = g_pc[3].load();
+        const double tot = double(f + c1 + c2 + ip);
+        fprintf(stderr,
+            "[PROPCLASS] total=%.0f fresh=%zu (%.4f) copy_new=%zu (%.4f) copy_ratio=%zu (%.4f) "
+            "interp=%zu (%.4f) | copies=%.4f | interp_zero=%zu interp_small=%zu interp_big=%zu\\n",
+            tot, f, f / tot, c1, c1 / tot, c2, c2 / tot, ip, ip / tot,
+            double(c1 + c2) / tot,
+            g_pc_interp_zero.load(), g_pc_interp_small.load(), g_pc_interp_big.load());
+    }
+}"""
 
 ST_PROBES_OLD = """namespace Slic3r::Arachne
 {
@@ -1447,9 +1484,52 @@ ST_EDGE_NEW = '''        Beading* beading = &getOrCreateBeading(edge->to, node_b
         edge_junctions.emplace_back(std::make_shared<LineJunctions>());
 '''
 
+# ---------------------------------------------------------------------------
+# PROPCLASS (R586) - classify every beading creation into fresh / copy / interp.
+# A copy is bit-identical to its source and cannot produce a width change between
+# neighbours; only fresh and interp can. R585 left the propagation chain as the
+# only unexamined link behind the 1.85-2.41x P(adjacent beadings differ) gap.
+# ---------------------------------------------------------------------------
+ST_PC_FRESH_OLD = """        node_beadings.emplace_back(new BeadingPropagation(beading_strategy.compute(node->data.distance_to_boundary * 2, node->data.bead_count)));
+"""
+ST_PC_FRESH_NEW = """        propclass_tick(0);
+        node_beadings.emplace_back(new BeadingPropagation(beading_strategy.compute(node->data.distance_to_boundary * 2, node->data.bead_count)));
+"""
+
+ST_PC_COPYNEW_OLD = """        BeadingPropagation propagated_beading = top_beading;
+"""
+ST_PC_COPYNEW_NEW = """        propclass_tick(1);
+        BeadingPropagation propagated_beading = top_beading;
+"""
+
+ST_PC_COPYRATIO_OLD = """            bottom_beading = top_beading;
+            bottom_beading.dist_from_top_source += length;
+"""
+ST_PC_COPYRATIO_NEW = """            propclass_tick(2);
+            bottom_beading = top_beading;
+            bottom_beading.dist_from_top_source += length;
+"""
+
+ST_PC_INTERP_OLD = """            Beading merged_beading = interpolate(top_beading.beading, ratio_of_top, bottom_beading.beading, edge_to_peak->from->data.distance_to_boundary);
+"""
+ST_PC_INTERP_NEW = """            const coord_t pc_w_before = bottom_beading.beading.bead_widths.empty() ? -1 : bottom_beading.beading.bead_widths[0];
+            Beading merged_beading = interpolate(top_beading.beading, ratio_of_top, bottom_beading.beading, edge_to_peak->from->data.distance_to_boundary);
+            if (::getenv("PROPCLASS") && !probe_speculative() && pc_w_before >= 0 && !merged_beading.bead_widths.empty()) {
+                const coord_t pc_d = std::abs(merged_beading.bead_widths[0] - pc_w_before);
+                if (pc_d == 0)        g_pc_interp_zero.fetch_add(1);
+                else if (pc_d < 100)  g_pc_interp_small.fetch_add(1);
+                else                  g_pc_interp_big.fetch_add(1);
+            }
+            propclass_tick(3);
+"""
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_EDGE_OLD, ST_EDGE_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_PC_FRESH_OLD, ST_PC_FRESH_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_PC_COPYNEW_OLD, ST_PC_COPYNEW_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_PC_COPYRATIO_OLD, ST_PC_COPYRATIO_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_PC_INTERP_OLD, ST_PC_INTERP_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_COMPUTE1_OLD, ST_COMPUTE1_NEW),
     ("SkeletalTrapezoidation.cpp", ST_COMPUTE2_OLD, ST_COMPUTE2_NEW),

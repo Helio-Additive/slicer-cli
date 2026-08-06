@@ -2878,6 +2878,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 let mut propagated_beading = top_beading_arc.read().clone();
                 // SkeletalTrapezoidation.cpp:1674 propagated_beading.dist_from_top_source += length;
                 propagated_beading.dist_from_top_source += length;
+                propclass_tick(1);
                 // SkeletalTrapezoidation.cpp:1675 node_beadings.emplace_back(new BeadingPropagation(propagated_beading));
                 let total_thickness = propagated_beading.beading.total_thickness;
                 let bp = Arc::new(RwLock::new(propagated_beading));
@@ -2916,6 +2917,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 }
                 // SkeletalTrapezoidation.cpp:1689 if (ratio_of_top >= 1.0)
                 if ratio_of_top >= 1.0 {
+                    propclass_tick(2);
                     // SkeletalTrapezoidation.cpp:1691 bottom_beading = top_beading;
                     let mut new_bottom = top_beading_arc.read().clone();
                     // SkeletalTrapezoidation.cpp:1692 bottom_beading.dist_from_top_source += length;
@@ -2925,12 +2927,21 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // SkeletalTrapezoidation.cpp:1696 Beading merged_beading = interpolate(top_beading.beading, ratio_of_top, bottom_beading.beading, edge_to_peak->from->data.distance_to_boundary);
                     let top_beading_b = top_beading_arc.read().beading.clone();
                     let bottom_beading_b = bottom_beading_arc.read().beading.clone();
+                    let pc_w_before = bottom_beading_b.bead_widths.first().copied();
                     let merged_beading = self.interpolate4(
                         &top_beading_b,
                         ratio_of_top,
                         &bottom_beading_b,
                         from.as_ref().data.distance_to_boundary,
                     );
+                    if crate::probe_enabled("PROPCLASS") {
+                        if let (Some(wb), Some(wa)) =
+                            (pc_w_before, merged_beading.bead_widths.first().copied())
+                        {
+                            propclass_interp_delta((wa - wb).abs());
+                        }
+                    }
+                    propclass_tick(3);
                     // SkeletalTrapezoidation.cpp:1697 bottom_beading = BeadingPropagation(merged_beading);
                     let mut new_bottom = BeadingPropagation::new(merged_beading.clone());
                     // SkeletalTrapezoidation.cpp:1698 bottom_beading.is_upward_propagated_only = false;
@@ -3301,6 +3312,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 // SkeletalTrapezoidation.cpp:1886 assert(node->data.bead_count != -1);
                 debug_assert!(node.as_ref().data.bead_count != -1);
                 // SkeletalTrapezoidation.cpp:1887 node_beadings.emplace_back(new BeadingPropagation(beading_strategy.compute(node->data.distance_to_boundary * 2, node->data.bead_count)));
+                propclass_tick(0);
                 let _computed = self.beading_strategy.compute(
                     node.as_ref().data.distance_to_boundary * 2,
                     node.as_ref().data.bead_count,
@@ -4778,5 +4790,79 @@ fn gnbprobe(had_beading: bool, bead_count_minus_one: bool, nearest_hit: bool) {
             BC_M1.load(Relaxed),
             HITS.load(Relaxed),
         );
+    }
+}
+
+/// R586 probe (PROPCLASS=1): how a node's beading comes to exist.
+///
+/// R585 proved a node's beading is NOT a pure function of its thickness -- it is
+/// propagated -- and that C++ injects ~2x the width variation per unit of
+/// thickness variation. There are exactly four creation sites:
+///
+///   0 fresh       `get_or_create_beading` -> `beading_strategy.compute()`
+///   1 copy_new    `propagate_beadings_downward_edge`, `from` had no beading
+///   2 copy_ratio  same, `ratio_of_top >= 1.0`: straight copy of the top beading
+///   3 interp      same, else: `interpolate4`
+///
+/// A COPY is bit-identical to its source and so cannot produce a width change
+/// between neighbours; only fresh and interp can. The mix is the whole question.
+/// Mirrors `propclass_tick` in scripts/inject-arachne-probes.py.
+pub(crate) fn propclass_tick(cls: usize) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static PC: [AtomicUsize; 4] = [
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+    ];
+    if !crate::probe_enabled("PROPCLASS") {
+        return;
+    }
+    // Increment the class counter, then take the checkpoint off a SINGLE atomic.
+    // Summing four separate loads is racy under rayon and skips the exact
+    // multiple, which is why the first attempt printed nothing at all.
+    static TOTAL: AtomicUsize = AtomicUsize::new(0);
+    PC[cls].fetch_add(1, Relaxed);
+    let n = TOTAL.fetch_add(1, Relaxed) + 1;
+    if n == 1 || n % 100_000 == 0 {
+        let f = PC[0].load(Relaxed);
+        let c1 = PC[1].load(Relaxed);
+        let c2 = PC[2].load(Relaxed);
+        let ip = PC[3].load(Relaxed);
+        let tot = n as f64;
+        let (z, sm, bg) = interp_delta_counts();
+        eprintln!(
+            "[PROPCLASS] total={n} fresh={f} ({:.4}) copy_new={c1} ({:.4}) copy_ratio={c2} ({:.4}) interp={ip} ({:.4}) | copies={:.4} | interp_zero={z} interp_small={sm} interp_big={bg}",
+            f as f64 / tot, c1 as f64 / tot, c2 as f64 / tot, ip as f64 / tot,
+            (c1 + c2) as f64 / tot,
+        );
+    }
+}
+
+use std::sync::atomic::AtomicUsize as PcAtomic;
+static PC_INTERP_ZERO: PcAtomic = PcAtomic::new(0);
+static PC_INTERP_SMALL: PcAtomic = PcAtomic::new(0);
+static PC_INTERP_BIG: PcAtomic = PcAtomic::new(0);
+
+fn interp_delta_counts() -> (usize, usize, usize) {
+    use std::sync::atomic::Ordering::Relaxed;
+    (
+        PC_INTERP_ZERO.load(Relaxed),
+        PC_INTERP_SMALL.load(Relaxed),
+        PC_INTERP_BIG.load(Relaxed),
+    )
+}
+
+/// R586: did `interpolate4` actually move `bead_widths[0]`? coord_t is 1e-5 mm, so
+/// 100 units is one micron. An interpolation that returns the incoming width is
+/// indistinguishable from a copy as far as neighbour disagreement is concerned.
+pub(crate) fn propclass_interp_delta(d: i64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    if d == 0 {
+        PC_INTERP_ZERO.fetch_add(1, Relaxed);
+    } else if d < 100 {
+        PC_INTERP_SMALL.fetch_add(1, Relaxed);
+    } else {
+        PC_INTERP_BIG.fetch_add(1, Relaxed);
     }
 }

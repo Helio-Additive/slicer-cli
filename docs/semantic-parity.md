@@ -6553,3 +6553,67 @@ does not cover this question.
 
 Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
 reproduce, 8/8 guard tests pass.
+
+## R586 — we take the copy path too often; the cause is upstream of the branch
+
+R585 left the propagation chain as the only unexamined link behind the
+1.85x-2.41x gap in `P(adjacent beadings differ)`. A node's beading comes to exist
+at exactly four sites, and `PROPCLASS` counts all four:
+
+    0 fresh       getOrCreateBeading -> beading_strategy.compute()
+    1 copy_new    propagateBeadingsDownward, `from` had no beading: straight copy
+    2 copy_ratio  propagateBeadingsDownward, ratio_of_top >= 1.0: straight copy
+    3 interp      propagateBeadingsDownward, else: interpolate()
+
+A copy is bit-identical to its source and **cannot** produce a width change between
+neighbours. Only fresh and interp can. At matched total = 300,000 creations:
+
+| class | Rust | C++ | C/R |
+|---|---|---|---|
+| fresh | 0.244% | 0.437% | 1.789 |
+| copy_new | 93.429% | 85.313% | 0.913 |
+| copy_ratio | 4.208% | 9.142% | 2.172 |
+| **interp** | **2.118%** | **5.108%** | **2.412** |
+| copies (1+2) | 97.64% | 94.46% | 0.967 |
+
+**Prediction confirmed:** our copy share is higher and our interpolate share is
+lower. The interpolate-share ratio runs 1.801 / 2.154 / 2.412 across the three
+matched checkpoints, tracking R585's independently-measured
+`P(adjacent beadings differ)` ratio of 1.85-2.41 checkpoint for checkpoint. These
+are different measurements -- one is the code path taken per creation, the other a
+property of the resulting values per edge -- so the agreement is corroboration,
+not a tautology.
+
+A second, compounding effect: **when we do interpolate, 63.3% of the calls do not
+move `bead_widths[0]` at all, against C++'s 49.4%.** Combining, the share of
+creations that can change a width (fresh plus non-no-op interp) is 1.021% for us
+against 3.021% for C++. That composition is offered as a magnitude sketch only --
+it is not composed with R585's figure, which is measured on a different
+population (R585).
+
+**The localisation is the real result.** Split the two branches that require
+`from` to already hold a beading:
+
+    reach the has-beading branch    rust 6.33%   cpp 14.25%   C/R 2.25
+    interp / (interp + copy_ratio)  rust 33.5%   cpp 35.8%    C/R 1.07
+
+**The decision inside the branch is at parity.** `ratio_of_top >= 1.0` picks
+copy-versus-interpolate almost identically on both engines, so the ratio
+computation -- including the deliberate f32 evaluation our port replicates -- is
+NOT the defect. What differs is **how often the branch is reached at all**: C++
+finds `from` already carrying a beading 2.25x more often than we do.
+
+That is a traversal and coverage property, not a value property: it depends on how
+many nodes already hold beadings when `propagateBeadingsDownward` visits them,
+which is set by `propagateBeadingsUpward` and by the order and recursion of the
+downward pass. **R587 goes there.** Note R546/R547 cleared the propagation chain as
+a porting defect, but on a different axis and on pre-R581 counts, so that clearance
+does not cover this.
+
+**Process.** The probe printed nothing on its first two runs. The checkpoint was
+computed by summing four separate atomic loads, which is racy under rayon and TBB
+and skips the exact `% N` boundary entirely. Fixed by taking the checkpoint off a
+single atomic total. A probe that is silent is not a probe that found nothing.
+
+Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
+reproduce, 8/8 guard tests pass.
