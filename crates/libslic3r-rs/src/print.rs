@@ -3205,7 +3205,42 @@ fn emit_tower_tcr(
     } else {
         g
     };
-    writer.write_raw_content(&g);
+    // R608: C++ `append_tcr` retracts-with-wipe at TOWER ENTRY, immediately after
+    // `; WIPE_TOWER_START`, using the TOOLCHANGE retraction length. Measured on the
+    // reference output: 2,718 such blocks, each summing to exactly |E| = 1.9000
+    // (= retract_length_toolchange 2 x the 0.95 dE factor), wiping along the OBJECT
+    // path just printed -- their coordinates are object-space, they are only tagged
+    // in-tower because the marker precedes them. We emitted ZERO of these, and that
+    // is the entire Prime-tower E/block gap: our other tower wipes already match
+    // C++'s at 0.7600 (after-toolchange 2,715 vs 2,512; after-tower 656 vs 931).
+    // The mixture closes: 0.76*(3443/6161) + 1.90*(2718/6161) = 1.2631 vs C++'s
+    // measured 1.2629.
+    //
+    // Spliced rather than appended, because the wipe must land INSIDE the tower
+    // block: write up to and including the marker, emit the retract, then the rest.
+    // Same technique as R603's `M73 E` splice.
+    //
+    // SHIPPED OPT-IN AND NEARLY INERT — the ordering upstream defeats it. Measured:
+    // this adds only **2** wipe blocks (36,394 -> 36,396), not the ~2,718 predicted.
+    // Cause, confirmed structurally: we emit a travel to the tower BEFORE the block
+    // (`G1 X.. Y.. F1800` just above `;----`/`; CP TOOLCHANGE START`) which C++ does
+    // not, so the writer is already `retracted` by the time this runs and
+    // `retract()` early-returns. C++'s order is wipe-and-retract INSIDE the block
+    // first, then travel. Fixing that ordering is what makes this fire; the call
+    // itself is a faithful port of `append_tcr` (GCode.cpp:1081-1085) and is kept
+    // so the ordering round can build on it.
+    const WT_START: &str = "; WIPE_TOWER_START\n";
+    if crate::probe_enabled("TOWER_ENTRY_WIPE_CPP")
+        && tcr.is_tool_change
+        && g.contains(WT_START)
+    {
+        let cut = g.find(WT_START).unwrap() + WT_START.len();
+        writer.write_raw_content(&g[..cut]);
+        writer.retract_for_toolchange();
+        writer.write_raw_content(&g[cut..]);
+    } else {
+        writer.write_raw_content(&g);
+    }
     // R475: we just wrote `; FEATURE: Prime tower` as raw text, so the writer's
     // persistent last-role (C++ m_last_extrusion_role, GCode.hpp:538) has to move
     // with it. Without this the next object entity compares its role against the

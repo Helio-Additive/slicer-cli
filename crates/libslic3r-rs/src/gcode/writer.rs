@@ -1561,6 +1561,27 @@ impl GCodeWriter {
     /// C++:     }
     /// C++:     return gcode;
     /// C++: }
+    /// Retract using the TOOLCHANGE retraction length.
+    ///
+    /// C++ `GCodeWriter::retract_for_toolchange` / `Wipe::wipe`'s
+    /// `toolchange ? retract_length_toolchange() : retraction_length()`
+    /// (GCode.cpp:373-375). R608: at tower entry C++ retracts with the toolchange
+    /// length and wipes along the object path just printed, emitting a wipe block
+    /// whose |E| sums to exactly `retract_length_toolchange * 0.95` = 1.90 on this
+    /// profile. We emitted no such block at all (measured: C++ 2,718 in-tower wipe
+    /// blocks, us 0), which is the whole of the Prime-tower E/block discrepancy.
+    ///
+    /// Implemented by swapping the length around the existing `retract()` rather
+    /// than duplicating its ~130 lines: C++ applies the toolchange length to the
+    /// entire retract+wipe, so this is the same semantics with no risk to the
+    /// ordinary path.
+    pub fn retract_for_toolchange(&mut self) {
+        let saved = self.retraction_length;
+        self.retraction_length = self.config.retract_length_toolchange;
+        self.retract();
+        self.retraction_length = saved;
+    }
+
     pub fn retract(&mut self) {
         if self.retracted {
             return;

@@ -8223,3 +8223,75 @@ now derived rather than guessed: tower E/block 0.7600 -> ~1.6802, and the per-bl
 four decimals. Fallback: if the tower wipes do not come from `writer.retract()` at all
 but from the tower template's own `G1 E-` lines, then the E discrepancy is in
 `wipe_tower.rs` and the toolchange branch is not the fix.
+## R608 — the missing tower-entry wipe: located exactly, ported, and inert on ordering
+
+R607 left "add the toolchange branch to `writer.retract()`" as the target. Measuring
+first relocated it again, this time to something sharper and fully quantified.
+
+**Where the tower wipes actually are.** Classifying every Prime-tower `; WIPE_START` by
+its position inside the tool-change block:
+
+| position | C++ blocks | C++ mean \|E\|/block | Rust blocks | Rust \|E\| |
+|---|---|---|---|---|
+| after `CP TOOLCHANGE END` | 2,512 | 0.7600 | 2,715 | 0.7600 |
+| after `WIPE_TOWER_END` | 931 | 0.7600 | 656 | 0.7600 |
+| **inside `WIPE_TOWER_START`..`END`** | **2,718** | **1.9000** | **0** | — |
+
+**Our existing tower wipes already match C++'s exactly at 0.7600.** The entire
+Prime-tower E/block discrepancy is 2,718 wipe blocks we never emit, each summing to
+exactly **1.9000** = `retract_length_toolchange` (2) x the 0.95 dE factor. The mixture
+closes on directly-measured counts:
+
+    0.76*(3443/6161) + 1.90*(2718/6161) = 1.2631   vs C++ measured 1.2629
+
+This supersedes R607's identity, which used the toolchange count (2,723) as a proxy for
+the in-tower block count (2,718). Same arithmetic, but now the quantity is the one
+actually being counted.
+
+**A mid-round correction to my own C++ reading.** `append_tcr:1085` is
+`gcodegen.retract(false, ...)` — `toolchange` FALSE — which I first read as proof that
+C++ does not use the toolchange length here. Measuring the blocks directly showed
+1.9000 exactly, so the 1.90 comes from a different retract in the same region. Reading
+the call and inferring the value was wrong; measuring the emitted E settled it.
+
+**A fourth unused-symbol instance.** `ToolChangeResult.wipe_path` (`wipe_tower.rs:340`)
+is populated (`:1291`, copied at `:2889`) and **never consumed** — neither `print.rs`
+nor `wipe_tower_integration.rs` reference it. C++ reads exactly this field at
+`GCode.cpp:1083` to install the wipe path before retracting. After a method with zero
+callers, a counter never incremented, and an underscore-silenced parameter, this is the
+same class again: the data was carried all the way to the emitter and dropped.
+
+**What was implemented.** `writer.rs`: `retract_for_toolchange()`, which swaps in
+`retract_length_toolchange` around the existing `retract()` — C++ applies the toolchange
+length to the whole retract+wipe, so this is the same semantics without duplicating
+~130 lines. `print.rs`: splice the retract in immediately after `; WIPE_TOWER_START`,
+the exact position C++ uses (the in-tower wipe is the first thing in the block, and its
+coordinates are object-space — it wipes the path just printed and is tagged in-tower
+only because the marker precedes it).
+
+**Result: PREDICTION WRONG — +2 blocks, not ~2,718.** 36,394 -> 36,396.
+
+**Cause, confirmed structurally rather than guessed.** Comparing the nine lines before
+`; WIPE_TOWER_START` on both engines, ours carries an extra `G1 X.. Y.. F1800` — a
+travel to the tower emitted BEFORE the block, which C++ does not have. A travel implies
+a preceding retract, so the writer is already `retracted` when the splice runs and
+`retract()` early-returns. C++'s order is wipe-and-retract inside the block FIRST, then
+travel. The pre-registered fallback named exactly this ("the writer is already retracted
+at tower entry"), and the structural diff confirms it.
+
+**Shipped OPT-IN (`TOWER_ENTRY_WIPE_CPP`, default OFF).** It is a faithful port of
+`append_tcr`'s wipe install and is kept so the ordering round can build on it, but it is
+inert until the ordering is fixed and 2 arbitrary blocks are not a result worth
+defaulting on. Baselines reproduce: `304320a6` / `56938d4d` / `242f1fb8`. Benchy and
+cube are byte-identical either way (no wipe tower).
+
+**R609:** the ORDERING. C++ emits, inside the tower block: toolchange-retract-with-wipe,
+then the travel to the tower. We emit the travel first (`TOWER_TRAVEL_TO_START`, R476)
+and retract before it, which both consumes the retract and puts the travel outside the
+block. Move the travel to after the tower-entry retract and re-run with
+`TOWER_ENTRY_WIPE_CPP=1`. **Target unchanged and exact: ~2,718 new in-tower wipe blocks
+at |E| = 1.9000 each, tower mean E/block 0.7600 -> ~1.26, and the after-toolchange /
+after-tower counts should move toward C++'s 2,512 / 931 from our 2,715 / 656.** Fallback:
+if moving the travel does not free the retract, the retract that precedes it is emitted
+elsewhere (object-side end-of-feature) and the fix is to suppress THAT one for tower
+entry rather than to reorder the travel.
