@@ -312,6 +312,11 @@ pub struct GCodeWriter {
     wipe_path: Vec<(CoordF, CoordF)>, // (x, y) points in mm
     /// Whether wipe is enabled for this filament
     wipe_enabled: bool,
+    /// R610: true only while `retract_for_toolchange` is driving `retract()`, so the
+    /// TOWER_ENTRY_WHY probes can report the TOWER calls specifically. R609's
+    /// decision counter was global (35,000 retracts) and could not distinguish the
+    /// 2,718 tower calls from the ordinary object ones.
+    tc_retract_probe: bool,
     /// Wipe distance (mm) — how far to move while wiping
     wipe_distance: CoordF,
 
@@ -396,6 +401,7 @@ impl GCodeWriter {
             cooling_slowdown: 1.0,
             wipe_path: Vec::new(),
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
+            tc_retract_probe: false,
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
             last_height_tag: 0.0,
@@ -1604,7 +1610,9 @@ impl GCodeWriter {
         }
         let saved = self.retraction_length;
         self.retraction_length = self.config.retract_length_toolchange;
+        self.tc_retract_probe = true;
         self.retract();
+        self.tc_retract_probe = false;
         self.retraction_length = saved;
     }
 
@@ -1616,6 +1624,35 @@ impl GCodeWriter {
         let retract_speed = self.config.retract_speed * 60.0;
         let retraction_length = self.retraction_length;
 
+        // R610: per-guard census scoped to TOWER calls only. R609 instrumented three
+        // of the six sub-conditions on this path and its decision counter was global,
+        // so "enabled 2,718" and "emitted 2" could not be reconciled. Enumerated from
+        // the source, the guards between here and `; WIPE_START` are:
+        //   (a) self.retracted            -- early return above
+        //   (b) lift_faithful_gate()      -- NOT checked by R609's probe
+        //   (c) self.wipe_enabled
+        //   (d) self.wipe_path.len() >= 2
+        //   (e) length >= 0.0
+        //   (f) kept.len() >= 2 && acc > 1e-4
+        if self.tc_retract_probe && crate::probe_enabled("TOWER_ENTRY_WHY") {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static N: AtomicUsize = AtomicUsize::new(0);
+            static NO_GATE: AtomicUsize = AtomicUsize::new(0);
+            static NO_WIPE: AtomicUsize = AtomicUsize::new(0);
+            static SHORT: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed) + 1;
+            if !lift_faithful_gate() { NO_GATE.fetch_add(1, Ordering::Relaxed); }
+            if !self.wipe_enabled { NO_WIPE.fetch_add(1, Ordering::Relaxed); }
+            if self.wipe_path.len() < 2 { SHORT.fetch_add(1, Ordering::Relaxed); }
+            if n % 500 == 0 || n == 1 {
+                eprintln!(
+                    "[TCGUARD] tower_calls={n} no_lift_gate={} no_wipe={} path_short={}",
+                    NO_GATE.load(Ordering::Relaxed),
+                    NO_WIPE.load(Ordering::Relaxed),
+                    SHORT.load(Ordering::Relaxed)
+                );
+            }
+        }
         // Wipe during retraction (C++ Wipe::wipe from GCode.cpp:357-433)
         // Retract filament while moving along the reversed last extrusion path
         if lift_faithful_gate() && self.wipe_enabled && self.wipe_path.len() >= 2 {
@@ -1672,6 +1709,17 @@ impl GCodeWriter {
                     // first move.
                     self.flush_pending_accel();
                     self.write_raw("; WIPE_START");
+                    // R610: the decisive marker. Written into the stream immediately
+                    // after `; WIPE_START` for TOWER calls only. If the file ends up
+                    // containing ~2,718 of these, the lines ARE emitted and the
+                    // counting was wrong; if it contains ~2, the tower calls never
+                    // reach here and the guard census above says which one stops them.
+                    if self.tc_retract_probe && crate::probe_enabled("TOWER_ENTRY_WHY") {
+                        use std::sync::atomic::{AtomicUsize, Ordering};
+                        static M: AtomicUsize = AtomicUsize::new(0);
+                        let m = M.fetch_add(1, Ordering::Relaxed) + 1;
+                        self.write_raw(&format!("; _R610_{m}"));
+                    }
                     // R229: native Wipe::wipe ALWAYS emits its speed line —
                     // GCodeWriter::set_speed has NO dedup (GCodeWriter.cpp:387-399
                     // unconditionally formats G1 F), so every wipe carries

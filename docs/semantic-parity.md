@@ -8353,3 +8353,67 @@ emitted internally while not reaching the file. Fallback: if the marker appears 
 file, the wipes ARE present and the position-class census is mis-classifying them (e.g.
 they land before `; WIPE_TOWER_START` and count as after_tc), in which case re-run the
 R608 census on the gate-ON file rather than trusting the total.**
+## R610 — the tower wipe WAS firing all along; R608 measured the wrong file
+
+The marker test settled it in one build, and the answer was the branch I did not predict.
+
+**Prediction WRONG, fallback fired.** I predicted the marker count would be ~2 and that
+`lift_faithful_gate()` — the guard R609's probe had missed — would be the rejector. The
+per-guard census scoped to tower calls says **`no_lift_gate=0 no_wipe=0 path_short=0`**:
+every guard passes. And the file contains **2,717 `; _R610_` markers**, each immediately
+after a `; WIPE_START`. The wipes were being emitted the whole time.
+
+**Why R608 and R609 both read "+2".** R608's position-class census ran on
+`r605_majora_on.gcode` — a file produced **without** the tower gate. "We have zero
+in-tower wipes" was a true statement about the BASELINE, and R608 then read the +2
+change in the `; WIPE_START` TOTAL as "the fix didn't fire" without re-running the
+census on the gate-ON file. R609 inherited that framing and spent a round explaining a
+non-existent absence.
+
+**What the gate actually does — the accounting closes exactly:**
+
+| | after_tc | in_tower | in_tower mean \|E\| |
+|---|---|---|---|
+| C++ | 2,512 @ 0.7600 | **2,718** | **1.9000** |
+| Rust gate OFF | 2,715 @ 0.7600 | 0 | — |
+| **Rust gate ON** | **0** | **2,717** | **1.9000** |
+
+The gate does not ADD 2,717 wipes, it MOVES them: the tower-entry retract consumes the
+wipe path and the retracted state, so the after-toolchange retract that used to wipe no
+longer does. 2,715 out, 2,717 in, net +2 on the total — which is exactly the number that
+misled two rounds.
+
+**The in-tower wipes now match C++ to one block and to four decimals on |E|** (2,717 vs
+2,718, both 1.9000). That half of R608's port is correct and confirmed.
+
+**But it trades one divergence for another.** C++ retracts TWICE — once at tower entry
+with `retract_length_toolchange`, and again after the tool change with the ordinary
+length. We retract once, so gaining the in-tower wipe costs the after-toolchange one
+(2,715 -> 0 against C++'s 2,512).
+
+**Parity: 648,759 -> 648,773, +14 matched lines.** A wash, exactly as the trade implies —
+2,717 newly-correct blocks in, 2,715 previously-correct blocks out.
+
+**Stays OPT-IN.** It fixes a real divergence and creates a real one; net +14 of 648,773
+is not grounds to change the default. It becomes default-on when the second retract
+exists, at which point both positions should match C++ simultaneously.
+
+**Shipped:** the R610 marker and a per-guard tower-scoped census under
+`TOWER_ENTRY_WHY`, replacing R609's partial probe (which checked three of the six
+sub-conditions and counted globally rather than per tower call). Baselines reproduce:
+`304320a6` / `56938d4d` / `242f1fb8`; 8/8 guards.
+
+**R611:** add the SECOND retract so both positions match. C++'s after-toolchange retract
+uses the ordinary length (its after_tc blocks measure 0.7600); ours is currently consumed
+by the tower-entry one. The likely shape is an unretract-then-retract around the tool
+change, or simply not letting the tower-entry retract suppress the later one. **Target,
+exact: after_tc 0 -> ~2,512 at |E| 0.7600 while in_tower stays 2,717 at 1.9000; total
+tower blocks 3,373 -> ~5,900 against C++'s 6,161.** Fallback: if adding the second
+retract also re-suppresses the first, the two share the `retracted` flag and the fix is
+to model C++'s unretract between them rather than to add a call.
+
+**Method note.** Three rounds were spent on an absence that was not there, because a
+TOTAL moved by 2 while its COMPONENTS moved by 2,717 in each direction. R608's census was
+the right instrument; it was simply pointed at the wrong file. **When a total barely
+moves, re-run the per-class census on the SAME artefact you are judging — never compare a
+new total against an old breakdown.**
