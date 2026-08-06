@@ -7989,3 +7989,73 @@ installed but emptied downstream (the `clip_end` at `exporter.rs:2581` or the
 `wipe_dist` guard), and the next probe belongs at `Wipe::wipe`'s entry rather than at
 its callers. The Prime tower term (-2,790) is the separate tower/nozzle-change site
 (`GCode.cpp:774`/`:1084`) and should be its own round.
+## R605 — `extrude_multi_path`'s wipe path: ported, reachable, and parity-neutral
+
+R604 found that C++ installs the wipe path at four sites and we install at two, and
+named `GCode::extrude_multi_path` (`GCode.cpp:5664-5673`) as the tractable half. This
+round ported it.
+
+**The type distinction does not exist here, so the port does not guess.** Our
+`ExtrusionEntityType` has only `Path`, `Loop`, `Collection` — no `MultiPath` variant —
+and `exporter.rs:1178` aliases `extrude_collection as extrude_multi_path` "for backward
+compatibility". Dispatching each sub-path through `extrude_entity` installs a wipe path
+PER sub-path, so only the LAST survives; C++ keeps the whole concatenation, joints
+de-duplicated, reversed. The port therefore fires only on the shape a C++
+`ExtrusionMultiPath` actually takes here — a collection whose children are ALL paths,
+which is what `thick_polyline_to_multi_path` produces for Arachne variable-width walls
+and gap fill. Mixed collections are left alone, because C++ routes those through
+`extrude_collection` instead.
+
+**Reachability, checked before arguing about effect (R595).** A `WIPE_MULTIPATH_POP`
+census shows the branch firing **468 times on Benchy and 11,175 on Majora**. It is not
+dead code, and all three fixture hashes move when it is on.
+
+**Prediction: RIGHT on the mechanism, WRONG on the benefit.** The prediction was that
+the wipe COUNT would move little because both the old and new stored paths are
+non-empty, and that the gain would come from existing wipes matching C++ geometrically
+(+500 to +5,000 on Majora). The first half held exactly — the wipe count is
+**unchanged on both fixtures** (Benchy 2,041, Majora 36,394). The second half did not.
+
+| | Benchy OFF | Benchy ON | Majora OFF | Majora ON |
+|---|---|---|---|---|
+| matched lines | 115,900 | **115,910 (+10)** | 648,759 | **648,741 (-18)** |
+| body lines | 154,472 | 154,603 | 2,534,139 | 2,542,135 |
+| line-count gap | 1.20% | **1.11%** | 8.91% | **8.62%** |
+| `; WIPE_START` | 2,041 | 2,041 | 36,394 | 36,394 |
+
+Net across both fixtures: **-8 matched lines out of 764,659**, i.e. 0.001% — neutral,
+and fractionally negative on the larger fixture.
+
+**Shipped OPT-IN (`WIPE_MULTIPATH_CPP`, default OFF) per R557/R595/R599.** This is the
+same shape as R595 — faithful, reachable, tiny mixed effect, slightly negative on
+Majora — and gets the same disposition for consistency.
+
+**The gap improvement is real but is not evidence of correctness.** 8.91% -> 8.62% is
+the largest single gap improvement of the session, and we move TOWARD C++'s line count
+without overshooting (2,542,135 vs C++'s 2,781,977). But the gap metric rewards
+emitting lines whether or not they match: 8,127 body lines were added and essentially
+none of them matched. Quoting the gap alone here would be the R599 error wearing a
+different hat. The honest summary is: structurally closer, numerically no better.
+
+**What would make it net-positive.** The wipe PATH now matches C++; the emitted
+`G1 X.. Y.. E-..` moves depend on more than the path — `wipe_dist`, the retract length
+being repaid, and the wipe speed (`exporter.rs:2588-2660`). If those differ, a correct
+path still yields non-matching lines, which is exactly the pattern observed. That is
+the next thing to check, and it is a smaller, sharper question than the one this round
+started with.
+
+**Baselines unchanged** — the gate is default-OFF, so `304320a6` / `56938d4d` /
+`242f1fb8` all reproduce. 8/8 guards. Gate ON was also verified against
+`semantic_compare.py` so the change is not semantically harmful even when enabled.
+
+**R606:** the wipe MOVE VALUES. With `WIPE_MULTIPATH_CPP=1` the wipe paths match C++
+but the moves do not, so compare, for one wipe block on each engine, the emitted
+`G1 X Y E` triples and the preceding `G1 F` — checking `wipe_dist`
+(`exporter.rs:2597`), the `0.95` dE factor (`GCode.cpp:5622`) and the wipe speed
+against `GCode.cpp:402-416`. Predict a scalar difference (wipe_dist or the dE factor)
+rather than a geometric one, since the paths are now identical by construction.
+Fallback: if the moves differ geometrically too, the stored path is being consumed
+differently — check `clip_end` at `exporter.rs:2581` against C++'s
+`wipe_path.clip_end(wipe_path.length() - wipe_dist)`. The other three open wipe items
+are unchanged: the tower/nozzle-change install (`GCode.cpp:774`/`:1084`, Prime tower
+-2,790), the 9,958 missing retractions, and `M73 P` (5,798 lines).

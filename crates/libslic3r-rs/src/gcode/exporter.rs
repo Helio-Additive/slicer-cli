@@ -1023,6 +1023,84 @@ pub fn extrude_collection(
         extrude_entity(entity, writer, config, is_first_layer)?;
     }
 
+    // R605: port of `GCode::extrude_multi_path`'s wipe-path install
+    // (GCode.cpp:5664-5673). C++ builds ONE wipe path for the whole multipath --
+    // every sub-path concatenated, skipping a duplicated joint, then REVERSED:
+    //
+    //     m_wipe.path = Polyline();
+    //     for (ExtrusionPath &path : multipath.paths) {
+    //         if (!m_wipe.path.empty() && !path.empty() &&
+    //             m_wipe.path.last_point() == path.first_point())
+    //             m_wipe.path.append(path.polyline.points.begin() + 1, ...);
+    //         else
+    //             m_wipe.path.append(path.polyline);
+    //     }
+    //     m_wipe.path.reverse();
+    //
+    // Our `extrude_entity` has no multipath branch because `ExtrusionEntityType`
+    // has no `MultiPath` variant -- `exporter.rs` aliases
+    // `extrude_collection as extrude_multi_path` "for backward compatibility"
+    // (R604). The two are NOT interchangeable here: dispatching each sub-path
+    // through `extrude_entity` installs a wipe path PER sub-path, so what survives
+    // is only the LAST one, where C++ keeps the whole concatenation.
+    //
+    // Since the type distinction does not exist, this fires only on the shape a C++
+    // `ExtrusionMultiPath` actually takes here -- a collection whose children are
+    // ALL paths (what `thick_polyline_to_multi_path` produces for Arachne
+    // variable-width walls and gap fill). It deliberately does NOT guess on mixed
+    // collections, which C++ routes through `extrude_collection` instead.
+    //
+    // Shipped OPT-IN (default OFF) per R557/R595/R599. It is reachable (fires 468x
+    // on Benchy, 11,175x on Majora) and the wipe COUNT is unchanged on both
+    // fixtures (2,041 and 36,394), confirming this changes wipe CONTENT rather than
+    // how often we wipe. But matched lines are flat-to-negative: Benchy +10
+    // (115,900 -> 115,910), Majora **-18** (648,759 -> 648,741). The line-count gap
+    // improves on both (1.20% -> 1.11%, 8.91% -> 8.62%) because the longer wipe
+    // paths emit more moves and C++ emits them too -- but a narrowing gap is NOT
+    // evidence of correctness on its own, since the gap rewards emitting lines
+    // whether or not they match. Same shape as R595, so the same disposition.
+    //
+    // To make this net-positive the wipe MOVE VALUES have to match, not just the
+    // path: the emitted `G1 X.. Y.. E-..` depend on wipe_dist, retract length and
+    // wipe speed as well as the path. That is the next thing to check.
+    if crate::probe_enabled("WIPE_MULTIPATH_CPP")
+        && crate::gcode::writer::lift_faithful_gate()
+        && collection.entities.len() >= 2
+        && collection
+            .entities
+            .iter()
+            .all(|e| matches!(e, crate::extrusion_entity::ExtrusionEntityType::Path(_)))
+    {
+        let mut pts: Vec<(f64, f64)> = Vec::new();
+        for e in &collection.entities {
+            if let crate::extrusion_entity::ExtrusionEntityType::Path(p) = e {
+                for (k, pt) in p.polyline.points().iter().enumerate() {
+                    let q = (crate::unscale(pt.x()), crate::unscale(pt.y()));
+                    // C++'s "don't save a duplicated point into wipe path".
+                    if k == 0 && pts.last() == Some(&q) {
+                        continue;
+                    }
+                    pts.push(q);
+                }
+            }
+        }
+        pts.reverse();
+        // WIPE_MULTIPATH_POP=1 — reachability census (R595): prove the branch fires
+        // before arguing about whether it helped. Prints cumulative totals, never a
+        // truncated prefix (R598).
+        if crate::probe_enabled("WIPE_MULTIPATH_POP") {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static N: AtomicUsize = AtomicUsize::new(0);
+            static PTS: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed) + 1;
+            let tot = PTS.fetch_add(pts.len(), Ordering::Relaxed) + pts.len();
+            eprintln!("[WIPEMP] n={n} pts={} cum_pts={tot}", pts.len());
+        }
+        if pts.len() >= 2 {
+            writer.set_wipe_path_points(pts);
+        }
+    }
+
     Ok(())
 }
 
