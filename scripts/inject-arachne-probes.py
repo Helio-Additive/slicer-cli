@@ -56,6 +56,7 @@ ST_INCLUDES_NEW = """#include <stack>
 #include <cstdlib>
 #include <mutex>
 #include <vector>
+#include <atomic>
 #include <boost/log/trivial.hpp>
 
 // R581: C++ speculatively builds a one-wall WallToolPaths on ~16,503 surfaces and
@@ -63,7 +64,13 @@ ST_INCLUDES_NEW = """#include <stack>
 // pipeline, so every internal probe counted work that never reaches the G-code.
 // This flag lets the probes exclude it. Thread-local: the speculative call and
 // the pipeline it drives run on the same thread.
-bool& probe_speculative() { static thread_local bool v = false; return v; }"""
+bool& probe_speculative() { static thread_local bool v = false; return v; }
+
+// R584: every outer-wall width change is the SAME bead index resolving to a
+// different beading on the next edge (LINEPROBE2 MECH: ch_idx=0 on both engines).
+// So changes/junction ~ P(adjacent beadings differ) / (junctions per edge).
+// This counts the denominator; the numerator is the idx-0 width spread below.
+std::atomic<size_t> g_ep_edges{0};"""
 
 ST_PROBES_OLD = """namespace Slic3r::Arachne
 {
@@ -1063,16 +1070,19 @@ ST_JUNC_OLD = '''            ret.emplace_back(ExtrusionJunction(junction, beadin
 '''
 ST_JUNC_NEW = '''            if (getenv("BEADPROBE") && !probe_speculative()) {
                 static std::mutex jp_mtx;
-                static std::vector<coord_t> jp_w, jp_t;
+                static std::vector<coord_t> jp_w, jp_t, jp_w0;
                 static std::vector<std::pair<coord_t, coord_t>> jp_pairs;
                 static size_t jp_n = 0, jp_idx0 = 0;
                 std::lock_guard<std::mutex> jp_lock(jp_mtx);
                 ++jp_n;
-                if (junction_idx == 0) ++jp_idx0;
+                // R584: restrict the width spread to bead index 0 -- the outer wall
+                // draws every junction from bead_widths[0], so the global distinct
+                // count (mixed across all indices) does not speak to it.
+                if (junction_idx == 0) { ++jp_idx0; jp_w0.push_back(beading->bead_widths[0]); }
                 jp_w.push_back(beading->bead_widths[junction_idx]);
                 jp_t.push_back(beading->total_thickness);
                 jp_pairs.emplace_back(beading->total_thickness, beading->bead_widths[junction_idx]);
-                if (jp_n % 20000 == 0) {
+                if (jp_n % 500000 == 0) {  // R584: was 20000; the dedup sorts grow with the vector
                     std::vector<coord_t> d(jp_w), dt(jp_t);
                     std::sort(d.begin(), d.end());
                     d.erase(std::unique(d.begin(), d.end()), d.end());
@@ -1085,10 +1095,16 @@ ST_JUNC_NEW = '''            if (getenv("BEADPROBE") && !probe_speculative()) {
                     coord_t mx = *std::max_element(jp_w.begin(), jp_w.end());
                     coord_t tmn = *std::min_element(jp_t.begin(), jp_t.end());
                     coord_t tmx = *std::max_element(jp_t.begin(), jp_t.end());
+                    std::vector<coord_t> d0(jp_w0);
+                    std::sort(d0.begin(), d0.end());
+                    d0.erase(std::unique(d0.begin(), d0.end()), d0.end());
+                    const size_t ep_edges = g_ep_edges.load();
                     fprintf(stderr,
-                        "[JUNCPROBE] junctions=%zu idx0=%zu | distinct_width=%zu distinct_thick=%zu distinct_pairs=%zu | w_range=%.3f..%.3fmm t_range=%.3f..%.3fmm\\n",
+                        "[JUNCPROBE] junctions=%zu idx0=%zu | distinct_width=%zu distinct_thick=%zu distinct_pairs=%zu | w_range=%.3f..%.3fmm t_range=%.3f..%.3fmm | edges=%zu juncs/edge=%.4f distinct_w0=%zu w0_per_idx0=%.6f\\n",
                         jp_n, jp_idx0, d.size(), dt.size(), dp.size(),
-                        mn / 1e5, mx / 1e5, tmn / 1e5, tmx / 1e5);
+                        mn / 1e5, mx / 1e5, tmn / 1e5, tmx / 1e5,
+                        ep_edges, double(jp_n) / double(std::max<size_t>(ep_edges, 1)),
+                        d0.size(), double(d0.size()) / double(std::max<size_t>(jp_idx0, 1)));
                 }
             }
             ret.emplace_back(ExtrusionJunction(junction, beading->bead_widths[junction_idx], junction_idx, apply_hole_compensation));
@@ -1109,6 +1125,13 @@ ST_LP2_NEW = '''    generateSegments();
         static std::mutex lp2_mtx;
         static size_t lp2_lines = 0, lp2_juncs = 0, lp2_distinct = 0, lp2_flat = 0, lp2_changes = 0;
         static size_t lp2_ol = 0, lp2_oj = 0, lp2_od = 0, lp2_of = 0, lp2_oc = 0;
+        // R584: decompose the outer-wall width changes by MECHANISM. Within one
+        // graph edge every junction draws from a single beading (edge->to's) with
+        // junction_idx descending, so a change between consecutive junctions is
+        // either an index step or the SAME index resolving to a different beading
+        // on the next edge. R583 put the 1.378x change-density gap at birth here;
+        // this says which of the two mechanisms supplies it.
+        static size_t lp2_ch_idx = 0, lp2_ch_bead = 0, lp2_idx_same_w = 0, lp2_pairs = 0;
         std::lock_guard<std::mutex> lp2_lock(lp2_mtx);
         for (size_t inset = 0; inset < p_generated_toolpaths->size(); ++inset) {
             for (const ExtrusionLine &line : (*p_generated_toolpaths)[inset]) {
@@ -1127,14 +1150,27 @@ ST_LP2_NEW = '''    generateSegments();
                 if (inset == 0) {
                     ++lp2_ol; lp2_oj += n; lp2_od += d; lp2_oc += changes;
                     if (d == 1) ++lp2_of;
+                    for (size_t k = 1; k < n; ++k) {
+                        const ExtrusionJunction &a = line.junctions[k - 1];
+                        const ExtrusionJunction &b = line.junctions[k];
+                        ++lp2_pairs;
+                        if (b.w != a.w) {
+                            if (b.perimeter_index != a.perimeter_index) ++lp2_ch_idx;
+                            else                                        ++lp2_ch_bead;
+                        } else if (b.perimeter_index != a.perimeter_index) {
+                            ++lp2_idx_same_w;
+                        }
+                    }
                 }
             }
         }
         if (lp2_lines > 0)
             fprintf(stderr,
-                "[LINEPROBE2] lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu | OUTER lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu\\n",
+                "[LINEPROBE2] lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu | OUTER lines=%zu juncs=%zu distinct=%zu flat=%zu changes=%zu"
+                " | MECH pairs=%zu ch_idx=%zu ch_bead=%zu idx_same_w=%zu\\n",
                 lp2_lines, lp2_juncs, lp2_distinct, lp2_flat, lp2_changes,
-                lp2_ol, lp2_oj, lp2_od, lp2_of, lp2_oc);
+                lp2_ol, lp2_oj, lp2_od, lp2_of, lp2_oc,
+                lp2_pairs, lp2_ch_idx, lp2_ch_bead, lp2_idx_same_w);
     }
 '''
 
@@ -1343,8 +1379,25 @@ PG_RED_NEW = '''            if (getenv("REDPROBE") && extrusion->inset_idx == 0)
             ZPaths clip_paths;
 '''
 
+# ---------------------------------------------------------------------------
+# R584: count the graph edges that actually emit junctions, so JUNCPROBE can
+# report junctions-per-edge. Every outer-wall width change happens at an edge
+# boundary (LINEPROBE2 MECH: ch_idx=0), so this is the denominator of the
+# change-density gap.
+# ---------------------------------------------------------------------------
+# NOTE: the bare emplace_back line occurs 3x in this file -- anchor on the
+# getOrCreateBeading line above it, which is unique to generateJunctions.
+ST_EDGE_OLD = '''        Beading* beading = &getOrCreateBeading(edge->to, node_beadings)->beading;
+        edge_junctions.emplace_back(std::make_shared<LineJunctions>());
+'''
+ST_EDGE_NEW = '''        Beading* beading = &getOrCreateBeading(edge->to, node_beadings)->beading;
+        if (getenv("BEADPROBE") && !probe_speculative()) g_ep_edges.fetch_add(1);
+        edge_junctions.emplace_back(std::make_shared<LineJunctions>());
+'''
+
 EDITS = [
     ("SkeletalTrapezoidation.cpp", ST_INCLUDES_OLD, ST_INCLUDES_NEW),
+    ("SkeletalTrapezoidation.cpp", ST_EDGE_OLD, ST_EDGE_NEW),
     ("SkeletalTrapezoidation.cpp", ST_PROBES_OLD, ST_PROBES_NEW),
     ("SkeletalTrapezoidation.cpp", ST_COMPUTE1_OLD, ST_COMPUTE1_NEW),
     ("SkeletalTrapezoidation.cpp", ST_COMPUTE2_OLD, ST_COMPUTE2_NEW),

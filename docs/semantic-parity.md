@@ -6419,3 +6419,71 @@ are where the next round has to look.
 round notes; the tracked value was stale. Proven by A/B: stashing this round's
 Rust edits and rebuilding reproduces `3921e715` exactly, so the change is inert.
 Majora `d219a37e` unchanged. All 8 guard tests pass.
+
+## R584 — the graph structure is at parity; the divergence is in the beading VALUES
+
+R583 put the outer-wall change-density gap (1.378x) at birth, inside
+`generateToolpaths`. This round asked which mechanism inside it supplies the gap.
+
+**First, the mechanism is pinned exactly.** `LINEPROBE2` gained a decomposition of
+each consecutive junction pair on an inset-0 line into an index step versus a
+same-index beading change. Both engines report `ch_idx=0` and `idx_same_w=0`:
+every junction on an outer-wall line carries `perimeter_index == 0`, so **100% of
+outer-wall width changes are the same bead index resolving to a different beading
+on the next graph edge.** Within one edge all junctions draw from a single beading
+(`edge->to`'s) so no change is possible; changes occur only at edge boundaries.
+Degenerate by construction, but it fixes the identity
+
+    changes per junction  ~  P(adjacent beadings differ in bead_widths[0])
+                             / (junctions per edge)
+
+**Second, the denominator is at parity, so it is eliminated.** `JUNCPROBE` now
+counts the graph edges that emit junctions (`g_ep_edges` / `EP_EDGES`), giving
+junctions-per-edge. At matched n = 6,500,000 junctions:
+
+| | Rust | C++ | C/R |
+|---|---|---|---|
+| edges emitting junctions | 2,948,002 | 2,885,323 | 0.979 |
+| junctions per edge | 2.2049 | 2.2528 | **1.022** |
+
+A line crosses edges at the same rate on both engines. Taken alone this predicts a
+change-density ratio of **0.979** against the observed **1.378**. Neither the edge
+count nor the emission density explains anything.
+
+**Therefore the whole 1.378x lives in P(adjacent beadings differ).** That is a
+purely local property of the beading VALUES attached to neighbouring skeleton
+nodes -- not of graph structure, not of how densely junctions are emitted. Our
+neighbouring nodes agree on `bead_widths[0]` more often than C++'s do.
+
+**Third, a long-carried figure has to be withdrawn.** R571's "we generate 1.79x
+more distinct widths" was measured as a cumulative distinct count over a prefix of
+emitted junctions. That statistic is not well defined at a prefix: the two engines
+emit junctions in different orders, so equal junction COUNT does not mean equal
+geometry covered. Measured across matched prefixes the index-0 distinct count runs
+
+    rust    890 -> 1,630 -> ... -> 6,998 -> 19,426 -> 26,958
+    cpp   3,286 -> 5,334 -> ... -> 13,972 -> 14,364 -> 14,767
+    C/R    3.69 ->  3.27 -> ... ->   2.00 ->   0.74 ->   0.55
+
+The ratio swings from 3.69x to 0.55x on the same run. **R571's figure is RETRACTED
+as a measurement**, not merely re-derived; no distinct-value count taken at a
+prefix of this probe can be compared between engines. This generalises R573:
+matching on population SIZE is necessary but not sufficient -- the samples must
+cover the same geometry.
+
+**Prediction scored: WRONG on both counts.** I predicted the divergence would be in
+how often consecutive junctions draw from different beadings (edge-crossing
+frequency) -- that is at parity, 1.022x. And I predicted R571's direction would
+survive re-derivation -- it does not survive at all.
+
+Probe-only and parity-neutral: majora `d219a37e` and benchy `3921e715` both
+reproduce, 8/8 guard tests pass. The JUNCPROBE print modulo moved 20,000 ->
+500,000 on both engines; the dedup sorts grow with the accumulated vector, so
+frequent checkpoints were quadratic and stalled the C++ run past nine minutes.
+
+**Process note.** The injector refused this round's first anchor
+(`edge_junctions.emplace_back(...)` occurs 3x in the file) and said so on stderr,
+but the command piped it through `tail -1` and the failure was invisible; the C++
+binary then silently ran without the probe and produced no output at all. Never
+filter the injector's output down to one line -- it fails loudly and that is the
+point. The working anchor is the `getOrCreateBeading` line above it.

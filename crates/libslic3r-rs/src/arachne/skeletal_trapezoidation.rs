@@ -956,6 +956,16 @@ impl<'a> SkeletalTrapezoidation<'a> {
             static O_DISTINCT: AtomicU64 = AtomicU64::new(0);
             static O_FLAT: AtomicU64 = AtomicU64::new(0);
             static O_CHANGES: AtomicU64 = AtomicU64::new(0);
+            // R584: decompose the outer-wall width changes by MECHANISM. Within one
+            // graph edge every junction draws from a single beading (edge->to's)
+            // with junction_idx descending, so a change between consecutive
+            // junctions is either an index step or the SAME index resolving to a
+            // different beading on the next edge. R583 put the 1.378x change-density
+            // gap at birth here; this says which mechanism supplies it.
+            static M_PAIRS: AtomicU64 = AtomicU64::new(0);
+            static M_CH_IDX: AtomicU64 = AtomicU64::new(0);
+            static M_CH_BEAD: AtomicU64 = AtomicU64::new(0);
+            static M_IDX_SAME_W: AtomicU64 = AtomicU64::new(0);
             for (inset, lines) in generated_toolpaths.iter().enumerate() {
                 for line in lines.iter() {
                     let n = line.junctions.len() as u64;
@@ -983,16 +993,32 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         if d == 1 {
                             O_FLAT.fetch_add(1, Relaxed);
                         }
+                        for k in 1..line.junctions.len() {
+                            let a = &line.junctions[k - 1];
+                            let b = &line.junctions[k];
+                            M_PAIRS.fetch_add(1, Relaxed);
+                            if b.w != a.w {
+                                if b.perimeter_index != a.perimeter_index {
+                                    M_CH_IDX.fetch_add(1, Relaxed);
+                                } else {
+                                    M_CH_BEAD.fetch_add(1, Relaxed);
+                                }
+                            } else if b.perimeter_index != a.perimeter_index {
+                                M_IDX_SAME_W.fetch_add(1, Relaxed);
+                            }
+                        }
                     }
                 }
             }
             let l = LINES.load(Relaxed);
             if l > 0 {
                 eprintln!(
-                    "[LINEPROBE2] lines={} juncs={} distinct={} flat={} changes={} | OUTER lines={} juncs={} distinct={} flat={} changes={}",
+                    "[LINEPROBE2] lines={} juncs={} distinct={} flat={} changes={} | OUTER lines={} juncs={} distinct={} flat={} changes={} | MECH pairs={} ch_idx={} ch_bead={} idx_same_w={}",
                     l, JUNCS.load(Relaxed), DISTINCT.load(Relaxed), FLAT.load(Relaxed), CHANGES.load(Relaxed),
                     O_LINES.load(Relaxed), O_JUNCS.load(Relaxed), O_DISTINCT.load(Relaxed),
                     O_FLAT.load(Relaxed), O_CHANGES.load(Relaxed),
+                    M_PAIRS.load(Relaxed), M_CH_IDX.load(Relaxed), M_CH_BEAD.load(Relaxed),
+                    M_IDX_SAME_W.load(Relaxed),
                 );
             }
         }
@@ -3079,6 +3105,14 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 // SkeletalTrapezoidation.cpp:1797 LineJunctions& ret = *edge_junctions.back();
                 let mut ret = ret_arc.write();
 
+                // R584: count edges that emit junctions. Every outer-wall width
+                // change happens at an edge boundary (LINEPROBE2 MECH: ch_idx=0),
+                // so junctions-per-edge is the denominator of the 1.378x gap.
+                if crate::probe_enabled("BEADPROBE") {
+                    crate::arachne::skeletal_trapezoidation::EP_EDGES
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+
                 // SkeletalTrapezoidation.cpp:1799 assert(beading->total_thickness >= edge->to->data.distance_to_boundary * 2);
                 debug_assert!(beading.total_thickness >= to.as_ref().data.distance_to_boundary * 2);
                 // SkeletalTrapezoidation.cpp:1800 if(beading->total_thickness < edge->to->data.distance_to_boundary * 2)
@@ -4203,6 +4237,9 @@ pub(crate) fn beadprobe(thickness: i64, bead_count: i64, widths: &[i64]) {
 // independent, so safe under rayon — R559) says which side is flat:
 //   many thicknesses, few widths  -> compute/interpolate flattens
 //   few thicknesses               -> the skeleton is flat, upstream of compute
+pub(crate) static EP_EDGES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 pub(crate) fn junctionprobe(w: i64, total_thickness: i64, idx: usize) {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::sync::Mutex;
@@ -4211,15 +4248,23 @@ pub(crate) fn junctionprobe(w: i64, total_thickness: i64, idx: usize) {
     static T: Mutex<Vec<i64>> = Mutex::new(Vec::new());
     static PAIRS: Mutex<Vec<(i64, i64)>> = Mutex::new(Vec::new());
     static IDX0: AtomicUsize = AtomicUsize::new(0);
+    // R584: the outer wall draws every junction from bead_widths[0], so the global
+    // distinct count (mixed across all bead indices) does not speak to its spread.
+    static W0: Mutex<Vec<i64>> = Mutex::new(Vec::new());
     if idx == 0 {
         IDX0.fetch_add(1, Relaxed);
+        if let Ok(mut v0) = W0.lock() {
+            v0.push(w);
+        }
     }
     let n = N.fetch_add(1, Relaxed) + 1;
     if let (Ok(mut v), Ok(mut t), Ok(mut pr)) = (W.lock(), T.lock(), PAIRS.lock()) {
         v.push(w);
         t.push(total_thickness);
         pr.push((total_thickness, w));
-        if n % 20_000 == 0 {
+        // R584: was 20_000; the dedup sorts grow with the vector, so frequent
+        // checkpoints made this quadratic and stalled the C++ run past 9 minutes.
+        if n % 500_000 == 0 {
             let mut d = v.clone();
             d.sort_unstable();
             d.dedup();
@@ -4233,10 +4278,23 @@ pub(crate) fn junctionprobe(w: i64, total_thickness: i64, idx: usize) {
             let mx = v.iter().max().copied().unwrap_or(0);
             let tmn = t.iter().min().copied().unwrap_or(0);
             let tmx = t.iter().max().copied().unwrap_or(0);
+            let d0len = W0
+                .lock()
+                .map(|v0| {
+                    let mut d0 = v0.clone();
+                    d0.sort_unstable();
+                    d0.dedup();
+                    d0.len()
+                })
+                .unwrap_or(0);
             eprintln!(
-                "[JUNCPROBE] junctions={n} idx0={} | distinct_width={} distinct_thick={} distinct_pairs={} | w_range={:.3}..{:.3}mm t_range={:.3}..{:.3}mm",
+                "[JUNCPROBE] junctions={n} idx0={} | distinct_width={} distinct_thick={} distinct_pairs={} | w_range={:.3}..{:.3}mm t_range={:.3}..{:.3}mm | edges={} juncs/edge={:.4} distinct_w0={} w0_per_idx0={:.6}",
                 IDX0.load(Relaxed), d.len(), dt.len(), dp.len(),
                 mn as f64 / 1e5, mx as f64 / 1e5, tmn as f64 / 1e5, tmx as f64 / 1e5,
+                EP_EDGES.load(Relaxed),
+                n as f64 / EP_EDGES.load(Relaxed).max(1) as f64,
+                d0len,
+                d0len as f64 / IDX0.load(Relaxed).max(1) as f64,
             );
         }
     }
