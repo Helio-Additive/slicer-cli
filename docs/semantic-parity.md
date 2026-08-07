@@ -9017,3 +9017,76 @@ census's 210, now validated) and Majora matched lines rise.** Fallback: if the c
 866 but matched lines do not rise, the geometry is wrong rather than the count — dump against
 C++'s layer-138 block1 with `$D/r615_dump.py` and expect R616's 1.6mm span gap, which points
 back at step 4's plan-depth half as the next target either way.
+
+## R619 — `finish_block` is already emitted; the defect is packaging, not absence
+
+**Measurement only, no code changed.** R619's planned port would have been a double-emit, and
+the premise check caught it before a line was written (R607's rule). Baselines untouched:
+benchy `304320a6`, majora `137de4a3`, cube `242f1fb8`.
+
+### The premise was wrong: our `finish_layer` is a MERGED emitter
+
+R618 handed over "port `finish_block` as a separate ToolChangeResult; validated target
+656 → 866". Reading our `finish_layer` first shows it already serves **both** C++ functions,
+selected per layer (`wipe_tower.rs`, the `TOWER_FILL_BOX` knob):
+
+```rust
+let fill_box = if fill_box_faithful && !layer_has_toolchange {
+    // finish_layer_new's whole-layer box
+    BoxCoordinates::new(pw, pw, width - 2*pw, layer_depth - 2*pw)
+} else {
+    // finish_block's box (:3751), measured against the block's ALLOCATION
+    BoxCoordinates::new(pw, fill_box_y, width - 2*pw, alloc_depth - fill_box_y)
+};
+```
+
+The code's own R496/R503 notes say it outright — *"layers WITH tool changes are finished by
+`finish_block` (:3733), whose fill box runs from the depth already consumed by the
+toolchanges up to the block's allocation"* and *"C++'s finish-layer fill therefore comes
+almost entirely from `finish_block`"*. **So `finish_block`'s content is already being
+emitted** — inside `finish_layer`'s single `; WIPE_TOWER_START/END` pair. Adding a second
+emitter would have laid the fill twice on exactly the 210 layers R618 identified.
+
+This also explains R615's layer-138 dump precisely: ours is `[rect+grid][perimeter tail]`
+carrying E-values `1.9016`/`2.1190`, and C++'s block0 carries `2.1190`/`1.9017` — **the same
+content, in the opposite order, in one block instead of two.**
+
+### Sizing the real work
+
+Splitting our single block at `CP EMPTY GRID END` and comparing against C++'s two blocks on
+its 264 two-block layers:
+
+| | C++ | Rust |
+|---|---|---|
+| layers | 264 (2-block) | 207 with a grid (449 without) |
+| fill/grid part | 5,659 lines (mean 21.4) | 4,010 (mean 19.4) |
+| perimeter/wall part | 4,798 lines (mean 18.2) | 2,733 (mean 13.2) |
+
+Two things follow. First, **207 independently corroborates R618's census of 210** — the grid
+appears on essentially the layers where `block_needs_finish` is true, from a completely
+different measurement path. Second, **both halves are already short**: −1,649 lines of
+fill/grid and −2,065 of perimeter/wall. The packaging fix (two tcrs instead of one) is worth
+207 extra marker pairs = 414 lines; the *content* gap is 3,714 lines and dominates it.
+
+The perimeter shortfall is the gap-wall zigzag visible in C++'s block0 (`E-0.8`/`E+0.8`
+strokes from `use_gap_wall` / `prime_tower_skip_points`, R499) which our tail lacks; the fill
+shortfall is R616's 1.6mm span gap, owned by step 4's plan-depth half.
+
+### Why no code shipped
+
+The correct change is a **restructure** of a ~300-line emitter that R500/R506 record as
+having been tuned to land the tower at 0.9947 — splitting it into two tcrs, reordering
+perimeter before fill. That is not a change to make speculatively at the end of a round with
+no measurement of the intermediate state. R618's own lesson applies in reverse: a census
+before a big port is worth a round, and so is stopping one that would have been wrong.
+
+**R620:** split `finish_layer` into two ToolChangeResults **without changing any geometry** —
+tcr A = the outer perimeter, tcr B = the fill/grid — emitted in C++'s order (perimeter
+first), each with its own `; WIPE_TOWER_START/END`, on the 207 layers that currently carry a
+grid. `TOWER_FINISH_ALL` (R614) is default-on and will pick up the second tcr. **Predict the
+finish-block count moves 656 → 863 and matched lines rise by roughly the 414 marker lines,
+NOT by the full 3,714 — the content gap is a separate, larger item.** Fallback: if matched
+lines move by materially more than ~414, the split is also changing the emitted geometry
+(check the E-values against `$D/r615_dump.py` on layer 138), which would mean the two halves
+were sharing writer state and the restructure must preserve it explicitly (R611's
+raw-splice/state lesson applies to writer position and `left_to_right` here).
