@@ -9090,3 +9090,71 @@ lines move by materially more than ~414, the split is also changing the emitted 
 (check the E-values against `$D/r615_dump.py` on layer 138), which would mean the two halves
 were sharing writer state and the restructure must preserve it explicitly (R611's
 raw-splice/state lesson applies to writer position and `left_to_right` here).
+
+## R620 — the gap-wall skip points are entirely unported; ~16,200 missing lines
+
+**Prediction RIGHT on its first clause.** Measurement and scoping only, no code changed;
+baselines untouched. The item found is **four times** the size of the one R619 sized, and a
+cheap config check removed its worst dependency.
+
+### The zigzag is absent, not mis-sized
+
+R619 named C++ block0's `E-0.8`/`E+0.8` strokes as the cause of a 2,065-line perimeter
+shortfall. Counting them: **C++ 5,399, Rust 0.** Attributing by position class (R601):
+
+| | tower toolchange | tower finish | total |
+|---|---|---|---|
+| C++ | **2,723** | 2,676 | 5,399 |
+| Rust | 0 | 0 | **0** |
+
+C++'s toolchange count is **exactly 2,723 — one per tool change**. This is not a
+finish-block detail: the gap wall is missing from *both* block kinds, and R619's 2,065-line
+figure saw only its finish-block share.
+
+### Full pattern cost
+
+Each gap is retract / travel / unretract:
+
+| line kind | C++ | Rust | Δ |
+|---|---|---|---|
+| `G1 E-0.8000 F1800` | 5,399 | 0 | −5,399 |
+| `G1 E0.8000 F1800` | 5,399 | 0 | −5,399 |
+| `F600` travels | 7,884 | 2,449 | −5,435 |
+
+**≈16,200 lines, ~2.5% of Majora's body — the largest single remaining tower item**, and 4×
+R619's estimate for the entire finish-block content gap.
+
+### Tenth unused-symbol instance
+
+`wall_skip_points: Vec<Vec2f>` (`wipe_tower.rs:1504`) is declared, initialised `vec![]`
+(`:1579`), and never populated or read. C++ fills it from `get_all_wall_skip_points` →
+`get_wall_skip_points` (`:3138-3145`), **live** at `:3140` (the `:4661` call is the
+commented-out one), and consumes it at `:5067`/`:5138`/`:5158` via
+`contrust_gap_for_skip_points` / `remove_points_from_segment`.
+
+### Scoping — Majora's own config removed the worst dependency
+
+From the 3MF's `project_settings.config`:
+
+    "enable_tower_interface_features": "0"
+    "prime_tower_skip_points": "1"
+
+The first kills **both** conditional branches inside `get_wall_skip_points`. Since
+`block.layers_type` is read only inside `solid_toolchange && m_enable_tower_interface_features`,
+**the `WipeTowerLayerType` enum — the dependency that has blocked `finish_block_solid` since
+R616 — is not needed for this port at all.** The second confirms `m_use_gap_wall` is true, so
+the consumer path is live.
+
+For Majora the producer reduces to: per tool change, track `process_depth` per category and
+push **one** point chosen by a 4-way switch on `layer_id % 4`. Remaining dependencies:
+`get_block_by_category` (ported R617), `is_need_ramming` (present), `get_block_gap_width`,
+`is_valid_last_layer`, and a per-layer `extra_spacing` (we hold a global one).
+
+**R621:** port the producer `get_wall_skip_points` (`:3145-3186`, Majora-reduced form) behind
+one gate, and **measure the point count before porting the consumer** — R618's census lesson.
+**Predict ~2,723 points across 656 layers (one per tool change), and byte-neutral output,
+since nothing consumes them yet.** Fallback: if the count is far from 2,723, `process_depth`
+or the `% 4` switch is mis-derived — dump per-layer counts against C++'s per-layer
+`E-0.8000` tally before writing the consumer. Then R622 ports
+`remove_points_from_segment` + the wall-emission branches (`:5138`/`:5158`), which is where
+the ~16,200 lines are actually realised.
