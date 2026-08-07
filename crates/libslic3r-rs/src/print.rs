@@ -3772,7 +3772,24 @@ fn emit_layer_by_island(
     // Now that the reserved depth matches C++ (~38mm, R423), the finish fill
     // lands within the bed (Y≤~237.8) instead of overflowing.
     if multi_tool {
-        if let Some(fin) = wipe_tower_layer.and_then(|wt| wt.iter().find(|r| !r.is_tool_change)) {
+        // R614: `.find()` emitted only the FIRST non-tool-change tcr of the layer.
+        // Measured against C++: it writes 932 finish-layer tower blocks over 656
+        // layers -- 1 on 386 layers, 2 on 264, 3 on 6 -- while we wrote exactly one
+        // per layer, 656 total. The shortfall identity closes exactly:
+        // 264x1 + 6x2 = 276 = 932 - 656. Iterating the whole group instead of taking
+        // the first is what C++ does; `find` was silently dropping the rest.
+        let fins: Vec<&crate::gcode::wipe_tower::ToolChangeResult> =
+            if crate::faithful_gate("TOWER_FINISH_ALL") {
+                wipe_tower_layer
+                    .map(|wt| wt.iter().filter(|r| !r.is_tool_change).collect())
+                    .unwrap_or_default()
+            } else {
+                wipe_tower_layer
+                    .and_then(|wt| wt.iter().find(|r| !r.is_tool_change))
+                    .into_iter()
+                    .collect()
+            };
+        for fin in fins {
             let off = crate::gcode::wipe_tower::Vec2f::new(
                 print_config.wipe_tower_x as f32,
                 print_config.wipe_tower_y as f32,

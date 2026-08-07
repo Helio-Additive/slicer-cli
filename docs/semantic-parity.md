@@ -8593,3 +8593,79 @@ all 656+276 layers, the emitter is filtering them out and the condition is in
 layers and C++ emits 932 finish-layer blocks, i.e. **more than one per layer** — so
 resolve that first: count C++'s finish-layer blocks per layer before assuming a
 one-per-layer model.
+## R614 — the finish-layer emitter iterates all tcrs; the 276-block deficit is in the PLANNER
+
+**Prediction WRONG, registered fallback RIGHT.** All three baselines reproduce
+(`304320a6` / `69eb9767` / `242f1fb8`); the 8 guard tests pass.
+
+**The measurement R613 handed over.** We emit 656 finish-layer tower blocks against
+C++'s 932. The per-layer histogram makes the shape clear:
+
+| | finish-blocks | per-layer distribution |
+|---|---|---|
+| C++ | 932 on 656 layers | 1×386, 2×264, 3×6 |
+| Rust | 656 on 656 layers | 1×656 — exactly one, always |
+
+The identity closes exactly: 264×1 + 6×2 = **276** = 932 − 656.
+
+**R614 predicted the emitter.** `print.rs:3775` took only the FIRST non-toolchange tcr:
+`wt.iter().find(|r| !r.is_tool_change)`. Replaced with an iterate-all loop behind
+`TOWER_FINISH_ALL` (`faithful_gate`, default-on).
+
+    majora gate OFF: 69eb9767
+    majora gate ON:  69eb9767
+
+**Byte-identical.** Iterating all changes nothing, so **our plan holds exactly one
+non-toolchange tcr per layer** and the emitter was never the constraint. The
+pre-registered fallback named this outcome: *"if it stays 656, our plan only holds one
+non-toolchange tcr per layer and the defect is in the tower planner, not the emitter —
+which the same run distinguishes."*
+
+**The change is kept and shipped default-on anyway.** C++ emits every finish tcr in the
+layer, so iterate-all is the faithful form. It is inert today only because the planner
+under-produces, and it takes effect the moment the planner is fixed.
+
+**Where the planner diverges.** C++ `generate()` (`WipeTower.cpp:4749`) finishes the layer
+**per tower block**:
+
+```cpp
+for (WipeTowerBlock& block : m_wipe_tower_blocks) {
+    ...
+    ToolChangeResult finish_block_tcr;
+    if (block_solid) finish_block_tcr = finish_block_solid(block, finish_layer_filament, ...);
+    else             finish_block_tcr = finish_block(block, finish_layer_filament, ...);
+    // merge into a tool-change tcr whose filament matches, else push standalone
+    if (fc_iter != layer_result.end()) { *fc_iter = merge_tcr(*fc_iter, finish_block_tcr); ... }
+}
+```
+
+Ours (`wipe_tower.rs:2113`) is:
+
+```rust
+let finish_result = self.finish_layer();
+layer_results.push(finish_result);
+```
+
+One, unconditional, no blocks, no merge. That is precisely why our histogram can only ever
+be `{1: N}` — C++'s finish count varies with the number of tower blocks on the layer, ours
+cannot vary at all.
+
+**Root cause — the EIGHTH instance of the unused-symbol / dead-twin defect class, and the
+largest so far.** `WipeTowerBlock` is a fully-defined struct (`wipe_tower.rs:532`, 10
+fields) and `wipe_tower_blocks: Vec<WipeTowerBlock>` is a real field (`:1453`) initialised
+to `vec![]` (`:1527`) — **and never populated, never read.** The only other two mentions in
+the file are comments. C++ uses `m_wipe_tower_blocks` at **23 sites** spanning
+`generate_wipe_tower_blocks`, `plan_tower_new`, `finish_layer_new`, `finish_block`,
+`finish_block_solid` and `generate`. An entire planner concept — per-filament-category
+tower sub-blocks — is declared and never wired up.
+
+**R615:** wire `wipe_tower_blocks`. Start at `generate_wipe_tower_blocks()`
+(`WipeTower.cpp:4208`) — the population site — and `get_block_by_category`
+(`:4163`), which creates blocks lazily by filament adhesiveness category. **Predict Majora
+resolves to more than one block, so the per-layer finish histogram moves off `{1:656}`
+toward C++'s `{1:386, 2:264, 3:6}` and the 276-block deficit closes.** Fallback: if Majora
+resolves to exactly one block, the 2-and-3 counts come not from block multiplicity but
+from the standalone-vs-`merge_tcr` split — in which case measure how many of C++'s 932 are
+merged into a tool-change tcr before porting anything. **Population first: count the blocks
+C++ builds for Majora before assuming multiplicity is the mechanism** (R606's rule; R612's
+premise failure came from skipping exactly this step).
