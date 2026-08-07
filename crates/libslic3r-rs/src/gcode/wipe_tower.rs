@@ -638,6 +638,10 @@ pub struct WipeTowerConfig {
     pub first_layer_travel_accels: Vec<u32>,
     /// Maximum acceleration
     pub max_accel: u32,
+    /// Per-filament adhesiveness category (`filament_adhesiveness_category`).
+    /// WipeTower.cpp:1850 — `m_filpar[idx].category = config...get_at(idx)`.
+    /// One tower BLOCK is created per DISTINCT value. R617.
+    pub filament_categories: Vec<i32>,
     /// Enable accel-to-decel
     pub accel_to_decel_enable: bool,
     /// Accel-to-decel factor
@@ -693,6 +697,7 @@ impl Default for WipeTowerConfig {
             travel_accels: vec![1000],
             first_layer_travel_accels: vec![1000],
             max_accel: 5000,
+            filament_categories: vec![],
             accel_to_decel_enable: false,
             accel_to_decel_factor: 0.5,
             printable_height: vec![300.0],
@@ -1585,7 +1590,10 @@ impl WipeTower {
             rib_offset: Vec2f::zero(),
             filament_map: (0..num_filaments as i32).collect(),
             used_filament_ids: vec![],
-            filament_categories: vec![],
+            // WipeTower.cpp:1850 — one entry per filament; get_filament_category
+            // falls back to 0 past the end, so an empty list means "all one
+            // category", which is also the PrintConfig default. R617.
+            filament_categories: config.filament_categories.clone(),
             adhesion: true,
             is_multiple_nozzle: false,
             config,
@@ -1948,6 +1956,175 @@ impl WipeTower {
 
     /// Plan the entire tower
     // WipeTower.cpp:2933-3032
+    /// Adhesiveness category of a filament, 0 past the end of the list.
+    // WipeTower.cpp:4204-4209 — the out-of-range fallback is C++'s, not a guess:
+    //   if (filament_id >= m_filament_categories.size()) return 0;
+    fn get_filament_category(&self, filament_id: usize) -> i32 {
+        if filament_id >= self.filament_categories.len() {
+            return 0;
+        }
+        self.filament_categories[filament_id]
+    }
+
+    /// Index of the block for a category, creating it when asked.
+    // WipeTower.cpp:4161-4179 (get_block_by_category). C++ returns a pointer;
+    // returning an index instead keeps the borrow checker happy while leaving
+    // the create-on-miss semantics identical.
+    fn get_block_by_category(&mut self, category: i32, create: bool) -> Option<usize> {
+        if let Some(idx) = self
+            .wipe_tower_blocks
+            .iter()
+            .position(|b| b.filament_adhesiveness_category == category)
+        {
+            return Some(idx);
+        }
+        if create {
+            let block = WipeTowerBlock {
+                block_id: self.wipe_tower_blocks.len() as i32,
+                filament_adhesiveness_category: category,
+                ..Default::default()
+            };
+            self.wipe_tower_blocks.push(block);
+            return Some(self.wipe_tower_blocks.len() - 1);
+        }
+        None
+    }
+
+    /// Accumulate one tool change's depth into the current layer's category bucket.
+    // WipeTower.cpp:4182-4202 (add_depth_to_block). C++ takes filament_id but
+    // never reads it, so it is omitted here rather than carried as a dead arg.
+    fn add_depth_to_block(
+        &mut self,
+        category: i32,
+        depth: f32,
+        is_nozzle_change: bool,
+    ) {
+        let layer_depth = &mut self.all_layers_depth[self.layer_idx];
+        if let Some(e) = layer_depth.iter_mut().find(|i| i.category == category) {
+            e.depth += depth;
+            if is_nozzle_change {
+                e.nozzle_change_depth += depth;
+            }
+            return;
+        }
+        let mut new_block = BlockDepthInfo {
+            category,
+            depth,
+            nozzle_change_depth: 0.0,
+        };
+        if is_nozzle_change {
+            new_block.nozzle_change_depth += depth;
+        }
+        layer_depth.push(new_block);
+    }
+
+    /// Build the per-category tower blocks from the plan.
+    // WipeTower.cpp:4268-4315 — steps 1 to 3 of generate_wipe_tower_blocks.
+    //
+    // R617: this is the population that R614 found missing — `wipe_tower_blocks`
+    // was declared, initialised `vec![]`, and never written, which is why
+    // `finish_block`/`finish_block_solid` (both of which take a &WipeTowerBlock)
+    // could not be ported at all.
+    //
+    // Steps 1-3 only. C++'s step 4 (:4316-4323) then REWRITES `m_plan[i].depth`
+    // from the blocks, with a reverse-cumulative max over layer_depths; that is a
+    // real geometry change entangled with the two-depth problem (R509/R510), so it
+    // is kept out of this round deliberately — see TOWER_BLOCK_PLAN_DEPTH below.
+    // The `add_solid_flag` pass (:4335-4390) is also omitted: it classifies layers
+    // via WipeTowerLayerType, an enum this port does not have (we carry
+    // `solid_infill: Vec<bool>` instead), so porting it needs the enum first.
+    fn generate_wipe_tower_blocks(&mut self) {
+        // 1. accumulate every tool change's depth into its category, per layer.
+        self.all_layers_depth.clear();
+        self.all_layers_depth.resize(self.plan.len(), Vec::new());
+        let saved_layer_idx = self.layer_idx;
+        for layer_id in 0..self.plan.len() {
+            self.layer_idx = layer_id;
+            let changes: Vec<(usize, usize, f32, f32)> = self.plan[layer_id]
+                .tool_changes
+                .iter()
+                .map(|tc| {
+                    (
+                        tc.old_tool,
+                        tc.new_tool,
+                        tc.required_depth,
+                        tc.nozzle_change_depth,
+                    )
+                })
+                .collect();
+            for (old_tool, new_tool, required_depth, nozzle_change_depth) in changes {
+                if !self.is_need_ramming(old_tool, new_tool) {
+                    let cat = self.get_filament_category(new_tool);
+                    self.add_depth_to_block(cat, required_depth, false);
+                } else {
+                    let old_cat = self.get_filament_category(old_tool);
+                    self.add_depth_to_block(old_cat, nozzle_change_depth, true);
+                    let new_cat = self.get_filament_category(new_tool);
+                    self.add_depth_to_block(
+                        new_cat,
+                        required_depth - nozzle_change_depth,
+                        false,
+                    );
+                }
+            }
+        }
+        self.layer_idx = saved_layer_idx;
+
+        // 2. collapse each layer's buckets into category -> depth.
+        let num_layers = self.all_layers_depth.len();
+        let per_layer: Vec<Vec<(i32, f32)>> = self
+            .all_layers_depth
+            .iter()
+            .map(|blocks| blocks.iter().map(|b| (b.category, b.depth)).collect())
+            .collect();
+
+        // 3. build the blocks.
+        self.wipe_tower_blocks.clear();
+        for (layer_id, cats) in per_layer.iter().enumerate() {
+            for &(category, depth) in cats {
+                let idx = match self.get_block_by_category(category, true) {
+                    Some(i) => i,
+                    None => continue,
+                };
+                let block = &mut self.wipe_tower_blocks[idx];
+                if block.layer_depths.is_empty() {
+                    block.layer_depths = vec![0.0; num_layers];
+                    block.finish_depth = vec![0.0; num_layers];
+                    block.solid_infill = vec![false; num_layers];
+                }
+                block.depth = block.depth.max(depth);
+                block.layer_depths[layer_id] = depth;
+            }
+        }
+
+        if crate::probe_enabled("TOWER_BLOCKS_DEBUG") {
+            eprintln!(
+                "TOWER_BLOCKS: layers={} blocks={} categories={:?} depths={:?}",
+                num_layers,
+                self.wipe_tower_blocks.len(),
+                self.wipe_tower_blocks
+                    .iter()
+                    .map(|b| b.filament_adhesiveness_category)
+                    .collect::<Vec<_>>(),
+                self.wipe_tower_blocks
+                    .iter()
+                    .map(|b| b.depth)
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    /// Reset per-layer block bookkeeping.
+    // WipeTower.cpp:4219-4226 (reset_block_status), called at the top of each
+    // layer in generate().
+    fn reset_block_status(&mut self) {
+        for block in &mut self.wipe_tower_blocks {
+            block.cur_depth = block.start_depth;
+            block.last_filament_change_id = -1;
+            block.last_nozzle_change_id = -1;
+        }
+    }
+
     pub fn plan_tower(&mut self) {
         // WipeTower.cpp:2937-2939 — calculate extra spacing.
         let mut max_depth = 0.0f32;
@@ -1982,6 +2159,12 @@ impl WipeTower {
             let rd: f32 = self.plan.iter().flat_map(|l| l.tool_changes.iter()).map(|t| t.required_depth).sum();
             let n = self.plan.iter().map(|l| l.tool_changes.len()).sum::<usize>();
             eprintln!("WT_PLAN: tool_changes={n} sum(nozzle_change_depth)={ncd:.2} sum(required_depth)={rd:.2} ncw={:.3}", self.nozzle_change_perimeter_width);
+        }
+
+        // WipeTower.cpp:4483/4494 — plan_tower_new calls generate_wipe_tower_blocks
+        // once the plan's per-tool-change depths are known. R617.
+        if crate::faithful_gate("TOWER_BLOCKS_CPP") {
+            self.generate_wipe_tower_blocks();
         }
 
         // Apply spacing to layers
@@ -2144,6 +2327,11 @@ impl WipeTower {
         for (layer_idx, (z, height, num_tool_changes, new_tools)) in
             layer_data.into_iter().enumerate()
         {
+            // WipeTower.cpp:4652 — reset_block_status() at the top of every layer.
+            if crate::faithful_gate("TOWER_BLOCKS_CPP") {
+                self.reset_block_status();
+            }
+
             let mut layer_results: Vec<ToolChangeResult> = Vec::new();
 
             // Set layer

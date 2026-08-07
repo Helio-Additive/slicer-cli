@@ -1090,6 +1090,13 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
     config.filament_colours = get_str_array("filament_colour");
     config.filament_diameters = get_f64_array("filament_diameter");
     config.filament_densities = get_f64_array("filament_density");
+    // PrintConfig.cpp:2385 (coInts). Read as f64 then truncated, because the 3MF
+    // stores every value as a JSON string ("100") and get_f64_array is the
+    // existing reader for that shape. R617.
+    config.filament_adhesiveness_categories = get_f64_array("filament_adhesiveness_category")
+        .into_iter()
+        .map(|v| v as i32)
+        .collect();
     // Flattened NxN inter-filament flush volumes (row-major, matrix[old*N+new]),
     // consumed by the psWipeTower phase for per-tool-change purge volumes.
     config.flush_volumes_matrix = get_f64_array("flush_volumes_matrix");

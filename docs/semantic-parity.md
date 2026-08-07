@@ -8851,3 +8851,75 @@ becomes length 1 and the output is byte-neutral — the value is that it unblock
 and that difference must be understood before `finish_block` is added on top. **State plainly
 that a byte-neutral result is the expected and successful outcome here (R614's lesson), so it
 is not mistaken for a failed round.**
+## R617 — `wipe_tower_blocks` is populated at last; byte-neutral, as predicted
+
+**Prediction RIGHT on both clauses.** This round deliberately produces **no gcode change** —
+that was the pre-registered success condition (R614's lesson). Its value is that it removes
+the blocker R616 identified: `finish_block` / `finish_block_solid` both take a
+`WipeTowerBlock`, and until now there were none.
+
+### What was dead
+
+R614 found `wipe_tower_blocks` declared, initialised `vec![]`, never populated, never read.
+R617 checked the levels around it (R615's rule) and found **two more fields in the same
+state**: `all_layers_depth: Vec<Vec<BlockDepthInfo>>` (`:1503`) and `filament_categories:
+Vec<i32>` (`:1531`) — both `vec![]`, both never written or read. `BlockDepthInfo` itself was
+a fully-defined struct with no producer. The category never even reached `PrintConfig`:
+`filament_adhesiveness_category` appeared only in `preset.rs`'s known-filament-key allowlist.
+
+### What landed — behind `TOWER_BLOCKS_CPP` (`faithful_gate`, default-on)
+
+- **`print_config.rs`** — new `filament_adhesiveness_categories: Vec<i32>`
+  (`PrintConfig.cpp:2385`, `coInts`, default 0).
+- **`app_slice.rs`** — read the array from the 3MF alongside `filament_density`.
+- **`wipe_tower.rs`** — `WipeTowerConfig::filament_categories`, threaded into `WipeTower`
+  at construction (`WipeTower.cpp:1850`).
+- **`wipe_tower.rs`** — `get_filament_category` (`:4204`, including C++'s out-of-range → 0
+  fallback), `get_block_by_category` (`:4161`, create-on-miss; returns an index rather than
+  a pointer so the borrow checker is satisfied), `add_depth_to_block` (`:4182`),
+  `generate_wipe_tower_blocks` steps 1–3 (`:4268-4315`), `reset_block_status` (`:4219`).
+- **Call sites** — `generate_wipe_tower_blocks` from `plan_tower` (mirroring
+  `plan_tower_new:4483/4494`), `reset_block_status` at the top of each layer in `generate`
+  (`:4652`).
+
+**Deliberately NOT ported, and why.** C++'s step 4 (`:4316-4323`) then *rewrites*
+`m_plan[i].depth` from the blocks using a reverse-cumulative max over `layer_depths`. That is
+a real geometry change, entangled with the two-depth problem (R509/R510) that also owns the
+1.6mm finish-box span gap measured in R616 — so it is held back rather than smuggled into a
+round advertised as byte-neutral. The `add_solid_flag` classification pass (`:4335-4390`) is
+also out: it assigns `WipeTowerLayerType`, an enum this port lacks (we carry
+`solid_infill: Vec<bool>`), so it needs the enum first.
+
+### Measured
+
+    TOWER_BLOCKS: layers=656 blocks=1 categories=[100] depths=[38.5]
+    majora: 137de4a3   (unchanged)
+
+Exactly as predicted: **one** block, because Majora's eight filaments all carry category
+**100** — and the probe reports the real value `100`, not the `0` fallback, so the config
+path works end to end rather than accidentally agreeing. The block depth **38.5**
+independently matches the plate's known max toolchange depth of 38.50 (recorded at
+`print.rs:2082`), which is a cross-check that steps 1–3 compute the same quantity C++ does.
+
+Benchy `304320a6`, cube `242f1fb8`, Majora `137de4a3` all unchanged; `TOWER_BLOCKS_CPP=0`
+reproduces the same Majora hash (the gate is inert by construction this round); 31 guard
+tests pass. Line parity unchanged at **25.88% (660,333/2,551,163)**.
+
+### Why a byte-neutral round was worth spending
+
+Three rounds have now been shaped by one missing vector. R614 could not split the
+finish-layer tcr; R616 established the split needs `finish_block`; `finish_block` needs a
+block. That chain is now cut. The next round can port `finish_block` against real data
+instead of a stub.
+
+**R618:** port `finish_block` (`WipeTower.cpp:3743-3831`) and its `; WIPE_TOWER_START/END`
+pair, emitted as a **separate** ToolChangeResult ahead of `finish_layer_new`'s — R614's
+`TOWER_FINISH_ALL` iterate-all emitter is already default-on and waiting for a second
+non-toolchange tcr. **Predict the finish-layer block count moves 656 → ~920 and the
+per-layer histogram gains a 2-bucket (C++: `{1:386, 2:264, 3:6}`); the remaining ~12 are
+`only_generate_out_wall`, which is separately gated behind `TOWER_TIMELAPSE_DEPTH`.**
+Fallback: if the count moves but matched lines do NOT rise, the new block's geometry is
+wrong rather than its existence — compare the emitted block against C++'s layer-138 block0
+with `$D/r615_dump.py` before touching anything else, and expect the 1.6mm span gap to be
+the reason (R616), which means step 4 of `generate_wipe_tower_blocks` is the real next
+target.

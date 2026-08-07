@@ -131,6 +131,13 @@ pub struct PrintConfig {
     pub filament_diameters: Vec<CoordF>,
     /// Per-filament densities (g/cm³) — full `filament_density` array.
     pub filament_densities: Vec<CoordF>,
+    /// Per-filament adhesiveness category — full `filament_adhesiveness_category`
+    /// array (PrintConfig.cpp:2385, coInts, default 0).
+    /// BambuStudio groups the wipe tower into one BLOCK per DISTINCT category
+    /// (`WipeTower::get_block_by_category`, WipeTower.cpp:4161), and
+    /// `WipeTower::get_filament_category` (:4204) falls back to 0 for any index
+    /// past the end of the list. R617.
+    pub filament_adhesiveness_categories: Vec<i32>,
     /// Extrusion multiplier (flow rate adjustment).
     pub extrusion_multiplier: CoordF,
     /// Line width of initial layer (mm). 0 = use the per-role widths.
@@ -988,6 +995,7 @@ impl Default for PrintConfig {
             filament_colours: Vec::new(),
             filament_diameters: Vec::new(),
             filament_densities: Vec::new(),
+            filament_adhesiveness_categories: Vec::new(),
             extrusion_multiplier: 1.0,
             // PrintConfig.cpp:3004-3011 default ConfigOptionFloat(0.4)
             initial_layer_line_width: 0.4,

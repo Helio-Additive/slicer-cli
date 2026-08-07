@@ -2092,6 +2092,14 @@ impl Print {
                 // nozzle-change (ramming) depth on every change — doubling the
                 // reserved tower depth (77mm vs C++ ~38mm).
                 cfg.semm = true;
+                // WipeTower.cpp:1850 — per-filament adhesiveness category; the
+                // tower groups itself into one block per DISTINCT value. R617.
+                // Majora's 3MF sets all eight to 100, so it resolves to ONE block
+                // (measured R615), but the plumbing is what `finish_block` needs.
+                if crate::faithful_gate("TOWER_BLOCKS_CPP") {
+                    cfg.filament_categories =
+                        self.config.filament_adhesiveness_categories.clone();
+                }
                 // WipeTower.cpp:1769-1789 — the tower loads four acceleration lists
                 // and a max from the print config, and WipeTowerWriter emits M204
                 // from inside its move emitters (:760-763 for G1, :839-842 for arcs)
