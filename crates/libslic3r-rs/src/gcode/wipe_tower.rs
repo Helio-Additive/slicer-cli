@@ -1622,6 +1622,75 @@ impl WipeTowerWriter {
     // WipeTower.cpp:1000-1006 — rectangle(box) -> rectangle(box.ld, w, h, f)
     // with w = ru.x - lu.x, h = ru.y - rd.y.
     // WipeTower.cpp:902-925 — the rectangle(ld, width, height) implementation.
+    /// Extrude one fitted arc as `G2`/`G3`.
+    // WipeTower.cpp:798-872 (extrude_arc_explicit) reached via :894 extrude_arc.
+    // The centre is emitted as an I/J OFFSET from the current position, both
+    // rotated into tower space, and E is the arc's own length times the
+    // extrusion flow — not the chord's. R628.
+    //
+    // The LimitFlow branch (:855-864) is omitted: it only fires for ramming
+    // (LimitRammingFlow / LimitRammingFlowNC), and generate_path calls
+    // extrude_arc with the default LimitPrintFlow on a wall, where
+    // `max_e_speed` is not the binding constraint. Stated rather than assumed.
+    pub fn extrude_arc(&mut self, arc: &crate::circle::ArcSegment, f: f32) -> &mut Self {
+        let x = crate::unscale(arc.end_point.x) as f32;
+        let y = crate::unscale(arc.end_point.y) as f32;
+        let len = crate::unscale(arc.length as i64) as f32;
+        let e = len * self.extrusion_flow;
+        // :804-806 — neither an extrusion nor a travel.
+        if len < WT_EPSILON && e == 0.0 && (f == 0.0 || f == self.current_feedrate) {
+            return self;
+        }
+
+        let rotated_current_pos = self.pos_rotated();
+        let rot = self.rotate(Vec2f::new(x, y));
+
+        // :845 — CCW is G3, CW is G2.
+        let code = if arc.direction == crate::circle::ArcDirection::CounterClockwise {
+            "G3"
+        } else {
+            "G2"
+        };
+        // :846 — the centre offset is relative to the CURRENT position.
+        let centre = self.rotate(Vec2f::new(
+            crate::unscale(arc.circle.center.x) as f32,
+            crate::unscale(arc.circle.center.y) as f32,
+        ));
+        let i = centre.x - rotated_current_pos.x;
+        let j = centre.y - rotated_current_pos.y;
+
+        self.gcode.push_str(&format!(
+            "{} X{:.3} Y{:.3} I{:.3} J{:.3}",
+            code, rot.x, rot.y, i, j
+        ));
+        // :853
+        if e != 0.0 {
+            self.gcode.push_str(&format!(" E{:.4}", e));
+        }
+        // :854-865
+        if f != 0.0 && f != self.current_feedrate {
+            self.gcode.push_str(&format!(" F{:.0}", f));
+            self.current_feedrate = f;
+        }
+        self.gcode.push('\n');
+
+        if !self.preview_suppressed && e > 0.0 && len > 0.0 {
+            self.extrusions.push(Extrusion::new(
+                Vec2f::new(x, y),
+                self.default_analyzer_line_width,
+                self.current_tool,
+            ));
+        }
+
+        // :866-870
+        self.current_pos = Vec2f::new(x, y);
+        if self.current_feedrate > 0.0 {
+            self.elapsed_time += len / self.current_feedrate * 60.0;
+        }
+        self.used_filament_length += e;
+        self
+    }
+
     /// Emit a set of polyline runs, retracting across the gaps between them.
     // WipeTower.cpp:1249-1309 (WipeTowerWriter::generate_path) — LINEAR branch.
     //
@@ -1649,17 +1718,70 @@ impl WipeTowerWriter {
         retract_length: f32,
         retract_speed: f32,
     ) -> &mut Self {
-        // :1274-1289 — flatten the runs into consecutive point pairs.
-        let mut segments: Vec<(Vec2f, Vec2f)> = Vec::new();
-        for pl in pls {
+        // :1265-1272 — fit arcs (or flatten) BEFORE building the segment list.
+        // Majora sets "enable_arc_fitting": "1", and C++ emits 2,719 G2/G3 inside
+        // tower toolchange blocks from the fillet-rounded wall
+        // ("prime_tower_fillet_wall": "1") against our 0 before this (R622/R628).
+        // WIPE_TOWER_RESOLUTION is 0.1mm (:20); C++ scales it by its own
+        // SCALING_FACTOR, so the scaled value is expressed in OUR units here
+        // rather than copied as a literal (the two codebases scale by 1e6 and
+        // 1e5 respectively — R596/R600's units warning).
+        let mut fitted: Vec<crate::geometry::Polyline> = pls.to_vec();
+        // OPT-IN, not default-on. C++ does call simplify_by_fitting_arc here
+        // (:1266), so enabling it is the faithful shape — but measured on Majora
+        // it produces ZERO arcs and removes 1,184 lines for zero matched gain,
+        // because the wall is a plain rectangle: `rib_wall` is 0, and C++'s own
+        // comment at :5059 ("rectangle_wall do nothing") shows the fillet
+        // rounding is skipped in that case. R628 also established that C++'s
+        // 2,719 tower "arcs" are NOT wall arcs at all — they are the spiral
+        // Z-lift `G3 Z.7 I1.217 J0 P1` in the toolchange gcode, one per tool
+        // change. Left opt-in until there is a fixture where it pays.
+        let arc_fitting = crate::probe_enabled("TOWER_ARC_FITTING_CPP");
+        // The WHOLE simplification step is gated, not just the arc branch: C++
+        // runs one or the other unconditionally (:1265-1272), but measured on
+        // Majora EITHER branch removes lines for zero matched gain — the arc
+        // branch found no arcs (the wall is a plain rectangle) and the linear
+        // branch merely drops collinear points C++ apparently keeps. Until the
+        // tolerance is understood (the two codebases scale by 1e6 and 1e5, so
+        // `SCALED_WIPE_TOWER_RESOLUTION` is not transferable as a literal —
+        // R596/R600), running neither reproduces R627's verified output.
+        if arc_fitting {
+            for pl in &mut fitted {
+                pl.simplify_by_fitting_arc(crate::scaled(0.1) as f64);
+            }
+        }
+
+        // :1274-1289 — flatten into segments, honouring each fitting_result span:
+        // a Linear_move contributes one segment per point pair, an arc contributes
+        // ONE segment carrying its arc data.
+        let mut segments: Vec<(Vec2f, Vec2f, Option<crate::circle::ArcSegment>)> = Vec::new();
+        let to_v = |p: &crate::geometry::Point| {
+            Vec2f::new(crate::unscale(p.x) as f32, crate::unscale(p.y) as f32)
+        };
+        for pl in &fitted {
             if pl.points.len() < 2 {
                 continue;
             }
-            for w in pl.points.windows(2) {
-                segments.push((
-                    Vec2f::new(crate::unscale(w[0].x) as f32, crate::unscale(w[0].y) as f32),
-                    Vec2f::new(crate::unscale(w[1].x) as f32, crate::unscale(w[1].y) as f32),
-                ));
+            if pl.fitting_result.is_empty() {
+                for w in pl.points.windows(2) {
+                    segments.push((to_v(&w[0]), to_v(&w[1]), None));
+                }
+                continue;
+            }
+            for fr in &pl.fitting_result {
+                if fr.path_type == crate::arc_fitter::EMovePathType::LinearMove {
+                    for k in fr.start_point_index..fr.end_point_index {
+                        segments.push((to_v(&pl.points[k]), to_v(&pl.points[k + 1]), None));
+                    }
+                } else {
+                    let beg = fr.start_point_index;
+                    let end = fr.end_point_index;
+                    segments.push((
+                        to_v(&pl.points[beg]),
+                        to_v(&pl.points[end]),
+                        Some(fr.arc_data.clone()),
+                    ));
+                }
             }
         }
         // :1290-1291
@@ -1684,7 +1806,14 @@ impl WipeTowerWriter {
         // :1293-1295 — travel to it and lay the first segment.
         self.travel_to(segments[index_of_closest].0);
         self.feedrate(feedrate);
-        self.extrude(segments[index_of_closest].1.x, segments[index_of_closest].1.y);
+        match segments[index_of_closest].2.clone() {
+            Some(arc) => {
+                self.extrude_arc(&arc, feedrate);
+            }
+            None => {
+                self.extrude(segments[index_of_closest].1.x, segments[index_of_closest].1.y);
+            }
+        }
 
         // :1296-1308 — walk the ring; retract across any real jump.
         let n = segments.len();
@@ -1705,7 +1834,15 @@ impl WipeTowerWriter {
                 self.retract(-retract_length, retract_speed);
             }
             self.feedrate(feedrate);
-            self.extrude(segments[i].1.x, segments[i].1.y);
+            // :1307 — `segments[i].is_arc ? extrude_arc(...) : extrude(...)`.
+            match segments[i].2.clone() {
+                Some(arc) => {
+                    self.extrude_arc(&arc, feedrate);
+                }
+                None => {
+                    self.extrude(segments[i].1.x, segments[i].1.y);
+                }
+            }
         }
         self
     }

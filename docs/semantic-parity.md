@@ -9598,3 +9598,62 @@ parameters (`I`/`J` centre offsets) differ from C++'s even where the endpoints a
 one block with `$D/r615_dump.py` before tuning, and remember we already emit **29,423 more**
 object arcs than C++ (R622), so an arc-fitting change may move that too; attribute with
 `$D/r622_arc.py` before attributing any delta to the tower.
+
+## R628 — the tower "arcs" are spiral Z-lifts, not wall arcs
+
+Prediction **wrong on both clauses**, and the measurement refuted the premise this round
+**inherited from R622**. Arc fitting is ported but left **opt-in** because it pays nothing
+here; all three baselines are byte-identical to R627, 8 guard suites and the 20 wall-gap tests
+pass.
+
+### What R622 assumed, and what is actually there
+
+R622 recorded "C++ emits 2,719 tower arcs from the fillet-rounded wall, fitted by
+`simplify_by_fitting_arc`". Dumping one:
+
+```
+; WIPE_TOWER_START
+G1 E-2 F1800
+G17
+G3 Z.7 I1.217 J0 P1  F5400
+```
+
+That is a **spiral Z-lift** in the toolchange's filament-change gcode — one per tool change —
+not a wall arc. Two further facts confirm the wall cannot be the source: `prime_tower_rib_wall`
+is `"0"`, and C++'s own comment in `generate_support_wall_new` (`:5059`) reads
+*"rectangle_wall do nothing"* — the fillet rounding is **skipped** for a rectangular wall.
+C++'s tower wall is a plain rectangle, exactly like ours.
+
+### What was ported anyway
+
+`WipeTowerWriter::extrude_arc` (`WipeTower.cpp:798-872` via `:894`) emitting
+`G2`/`G3 X Y I J E [F]`, with the centre as an **I/J offset from the current position** and E
+from the **arc's** length rather than the chord's; plus `generate_path`'s `fitting_result` walk
+(`:1274-1289`). The Rust arc machinery already existed (`ArcFitter`, `PathFittingData`,
+`ArcSegment`, `Polyline::simplify_by_fitting_arc`) — only the tower writer's `extrude_arc` was
+missing, which is why the port was small.
+
+### Why it is opt-in
+
+With the gate on, measured on Majora: tower `G2`/`G3` stayed at **zero** (nothing to fit on a
+rectangle) while body lines fell 2,564,963 → 2,563,779 — **−1,184 lines** — and matched lines
+were **670,866, identical to R627**. A pure loss for zero gain; the 26.15% → 26.17% tick was
+denominator-driven again.
+
+The **whole** simplification step is gated, not just the arc branch: the linear branch
+(`simplify` + `reset_to_linear_move`) also removed lines for no gain, and flipping only the arc
+flag left the hash at `16ced1d9` rather than R627's `92c93130`. C++ runs one branch or the
+other unconditionally (`:1265-1272`), so running neither is a **known deviation, recorded
+rather than hidden**. The likely cause is the tolerance: C++'s `SCALED_WIPE_TOWER_RESOLUTION`
+is `0.1 / SCALING_FACTOR` with `SCALING_FACTOR = 1e-6`, while ours scales by `1e5`, so the
+constant is not transferable as a literal (R596/R600's units warning).
+
+**R629:** the spiral Z-lift, now correctly identified. C++ emits `G17` then
+`G3 Z<z> I<i> J0 P1 F<f>` at the head of every tower toolchange (2,719 of them, one per tool
+change); we emit a plain lift. **Our object writer already produces exactly this shape**
+(`writer.rs:1190`, `_spiral_travel_to_z`), so the work is reusing it in the tower's toolchange
+rather than porting anything new. **Predict tower `G2`/`G3` 0 → ~2,719, plus ~2,719 `G17`
+lines, and matched lines up several thousand.** Fallback: if the lift is emitted by the
+filament-change TEMPLATE rather than the writer, it will be in the change_filament gcode — grep
+the template for `G17`/`spiral` before touching the writer, since R426/R427 established that
+template lands as raw text.
