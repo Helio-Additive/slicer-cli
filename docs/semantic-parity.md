@@ -8533,3 +8533,63 @@ exactly the tool changes whose tcr carries no wipe path. **Fallback: if `tcr.wip
 is non-empty on all 2,723, the skip is a retract-level condition (`m_writer.retracted()`
 or the `EXTRUDER_CONFIG(wipe)` per-filament flag) and the census should be re-run keyed
 on filament id.**
+## R613 — C++ skips NO wipes; the residual is 276 missing finish-layer tower blocks
+
+Measurement only, no code changed (R612's revert already landed). All three baselines
+reproduce. This closes the tower-wipe investigation and replaces its last open item with
+a different, better-defined one.
+
+**R612's fallback premise was WRONG, and it was my own artefact.** R612 handed over
+"C++ skips the wipe on 211 of its 2,723 tool changes via a condition we do not model".
+Walking C++'s output directly — for each `; CP TOOLCHANGE END`, does a wipe follow before
+the next tool change?:
+
+    C++ after_tc wipes: fired=2723 skipped=0 total=2723
+
+**C++ skips none.** There is no condition to find. The "211 skipped" figure came from my
+own position-class census, which only counts wipes still tagged `Prime tower` — so it was
+measuring feature tagging and block interleaving, not wipe behaviour. Both engines in
+fact tag the first after-toolchange wipe as `Prime tower` on every single tool change
+(C++ 2,723, Rust 2,721).
+
+**Where the census numbers actually come from.** Splitting tower blocks by kind — a
+`WIPE_TOWER_START..END` is a TOOLCHANGE block if a `CP TOOLCHANGE START` is open, else a
+FINISH-LAYER block:
+
+| | toolchange blocks | in-tower wipes | finish-layer blocks |
+|---|---|---|---|
+| C++ | 2,723 | 2,718 | **932** |
+| Rust | 2,721 | 2,717 | **656** |
+
+The toolchange side is at parity — 2 blocks short, which is the long-known
+2,723-vs-2,721 tool-change difference, not anything new. The census's after_tc split
+(2,512 vs 2,721) is interleaving: 211 of C++'s toolchange wipes land after an intervening
+finish-layer block and get classed `after_tower`. Accounting for that, C++'s 931
+after_tower = ~211 reclassified toolchange wipes + ~720 finish-layer wipes, against our
+656 — a 64-wipe difference, which with the 2 toolchange and 1 in-tower blocks makes the
+67-block census total. **The identity closes.**
+
+**The real remaining item is a BLOCK COUNT, not a wipe count: we emit 656 finish-layer
+tower blocks against C++'s 932 — 276 short, 0.70x.** Every such block carries a wipe
+after it, which is why it surfaced through the wipe census; but the defect is that the
+blocks themselves are missing, which is a wipe-tower *planning* question, not a retract
+or wipe question.
+
+**Status of the tower-wipe chain.** With R611 landed, toolchange tower wipes are at
+parity in count, position and |E| (2,717 vs 2,718 at 1.9000; 2,721 vs 2,723 at 0.7600).
+Everything R604-R612 chased in the wipe machinery is now either fixed or measured to
+parity. The open item has moved up a level, to which layers get a finish-layer tower
+block at all.
+
+**R614:** the finish-layer tower block count — ours 656, C++'s 932. C++ emits a tower
+block on a layer even when no tool change happens there, to keep the tower's height in
+step with the object; the count difference means we skip that on ~276 layers. **Predict
+we only emit a finish-layer block when the layer already has a tool-change tcr, i.e. our
+`wipe_tower_layer.iter().find(|r| !r.is_tool_change)` finds nothing for layers whose plan
+has no entries at all — check whether `self.wipe_tower_results` even has a group for
+those layers before blaming the emitter.** Fallback: if the plan does contain groups for
+all 656+276 layers, the emitter is filtering them out and the condition is in
+`emit_layer_by_island`'s `finish_layer` lookup, not in the tower planner. Majora has 657
+layers and C++ emits 932 finish-layer blocks, i.e. **more than one per layer** — so
+resolve that first: count C++'s finish-layer blocks per layer before assuming a
+one-per-layer model.
