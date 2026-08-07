@@ -8669,3 +8669,92 @@ from the standalone-vs-`merge_tcr` split — in which case measure how many of C
 merged into a tool-change tcr before porting anything. **Population first: count the blocks
 C++ builds for Majora before assuming multiplicity is the mechanism** (R606's rule; R612's
 premise failure came from skipping exactly this step).
+## R615 — the tower acceleration chain was dead at three levels (+3,399 matched lines)
+
+Prediction on the finish-block question **WRONG**, registered fallback **RIGHT**; the round
+then found and fixed a separate, larger defect. Benchy `304320a6` and cube `242f1fb8`
+byte-identical (neither has a wipe tower). Majora re-baselined `69eb9767` → **`3bc2650c`**;
+`TOWER_ACCEL_CPP=0` reproduces `69eb9767` exactly. All 8 guard suites pass (31 tests).
+
+### Part 1 — block multiplicity is NOT the mechanism
+
+R614 predicted Majora resolves to more than one wipe-tower block, which would move the
+per-layer finish histogram off `{1:656}` toward C++'s `{1:386, 2:264, 3:6}`. Measuring the
+population first (R606's rule) by reading the 3MF's own `project_settings.config`:
+
+    "filament_adhesiveness_category": ["100","100","100","100","100","100","100","100"]
+
+All 8 filaments share one category, and `get_block_by_category` (`WipeTower.cpp:4161`)
+creates one block per **distinct** category — so **C++ builds exactly ONE block for
+Majora.** Multiplicity cannot produce the 2s and 3s. The fallback named this outcome.
+
+**What the extra blocks actually are**, from C++'s own output (layer 138, two finish
+blocks): block0 is the wall/perimeter pass carrying the `E-0.8`/`E+0.8` gap-wall zigzag;
+block1 is the `CP EMPTY GRID` fill. **We emit both pieces — concatenated into a single
+`WIPE_TOWER_START..END`, and in the opposite order** (grid first, perimeter last). The
+defect is not a missing extrusion but a missing **split**: C++'s `finish_block` /
+`finish_block_solid` and `finish_layer_new` return *separate* ToolChangeResults, each of
+which gets its own block markers when emitted. That re-scopes the port for R616.
+
+### Part 2 — the fix: the tower acceleration chain, inert at three levels
+
+C++'s `WipeTowerWriter` emits `M204` from inside its move emitters
+(`WipeTower.cpp:760-763` for `G1`, `:839-842` for arcs), choosing travel vs normal
+acceleration by whether the move extrudes. Ours emitted none, because the chain was dead at
+**every** level:
+
+1. `WipeTowerConfig`'s five accel fields were declared and **never assigned** —
+   `print.rs:2040` built the config with `..Default::default()`.
+2. `WipeTowerWriter`'s four lists were declared, initialised `vec![]`, **never populated** —
+   there was no setter to populate them at all.
+3. `set_normal_acceleration()` / `set_travel_acceleration()` were fully ported and had
+   **zero callers**, so even a populated list would never have been read.
+
+That is the **NINTH** instance of the unused-symbol/dead-twin class, and the first spanning
+three levels. (`multi_material.rs:192 to_wipe_tower_config` is a dead twin of the live
+`print.rs:2040` site and also leaves the fields unset — checked, not assumed.)
+
+The port, behind `TOWER_ACCEL_CPP` (`faithful_gate`, **default-on**):
+
+- **`print.rs`** — populate the five fields from `default_acceleration`,
+  `initial_layer_acceleration`, `travel_acceleration`, `initial_layer_travel_acceleration`
+  and `machine_max_acceleration_extruding`, rounded with C++'s `floor(value + 0.5)`
+  (`WipeTower.cpp:1769-1789`). C++ keeps per-extruder vectors and our PrintConfig keeps
+  scalars, so each list reduces to one entry — consistent with this port having no
+  multi-nozzle group result.
+- **`wipe_tower.rs`** — add the five public populators (`WipeTower.cpp:1356-1360`) and
+  `set_for_wipe_tower_writer` (`:2661-2667`), called at all three live
+  writer-construction sites (the other two are tests).
+- **`wipe_tower.rs`** — call the emitters from `travel_to` and `extrude_explicit`,
+  mirroring `:760-763`'s `e == 0` branch.
+
+**Measured on the file being judged (R610), by position class:**
+
+| | object | tower toolchange | tower finish-layer | total |
+|---|---|---|---|---|
+| C++ | 51,773 | 10,899 | **954** | 63,626 |
+| Rust before | 42,612 | 5,562 | **0** | 48,174 |
+| **Rust after** | 42,612 | **8,292** | **669** | **51,573** |
+
+**Line parity: 656,934 → 660,333 matched (+3,399); our body lines 2,547,764 → 2,551,163,
+also +3,399. Every added line matched — no regressions anywhere.** Rate 25.78% → **25.88%**,
+line-count gap 8.42% → **8.30%**.
+
+### Also quantified, left open
+
+Our tower emits **271 bare `G1` lines** (no arguments); C++ emits **zero**. These are the
+visible end of the redundant-travel deviation documented at `transform_gcode`'s
+`TOWER_XFORM_NO_RAW_ECHO` branch (R477): our tower writer travels to a point it is already
+at, which C++'s never does. Bounded at 271 lines.
+
+**R616:** split the finish-layer tcr. Port `finish_block` / `finish_block_solid`
+(`WipeTower.cpp:4749`'s loop) as a **separate** ToolChangeResult from `finish_layer_new`,
+rather than emitting one concatenated block — and put the perimeter pass **first**, matching
+C++'s observed order. **Predict the finish-layer block count moves 656 → ~932 and the
+per-layer histogram picks up a 2-bucket.** Fallback: if the count stays at 656, the two
+pieces are being produced by one function that cannot be split without also porting
+`merge_tcr`'s insert-into-matching-toolchange path — in which case measure how many of
+C++'s 932 are standalone versus merged before porting further. Note the two engines' finish
+blocks also sit **2.0mm apart in Y** (C++ `Y225.297`/`Y235.797` vs ours `Y227.297`/
+`Y237.797`) — a tower depth/offset difference worth resolving in the same round, since it
+blocks those lines from ever matching.

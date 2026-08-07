@@ -2092,6 +2092,32 @@ impl Print {
                 // nozzle-change (ramming) depth on every change — doubling the
                 // reserved tower depth (77mm vs C++ ~38mm).
                 cfg.semm = true;
+                // WipeTower.cpp:1769-1789 — the tower loads four acceleration lists
+                // and a max from the print config, and WipeTowerWriter emits M204
+                // from inside its move emitters (:760-763 for G1, :839-842 for arcs)
+                // whenever the value differs from the last one written.
+                // R615: all five fields already existed on WipeTowerConfig and were
+                // never assigned, so the writer's lists stayed empty, both
+                // `set_normal_acceleration()` / `set_travel_acceleration()` hit their
+                // `accels.is_empty()` early-return, and the tower emitted no M204 at
+                // all. Measured on Majora: C++ writes 954 M204 inside finish-layer
+                // tower blocks and 10,899 inside toolchange blocks; we wrote 0 and
+                // 5,562 (the latter come from the object-level writer, not this one).
+                // C++ keeps per-extruder vectors; our PrintConfig keeps scalars, so
+                // each list reduces to a single entry — consistent with this port
+                // having no multi-nozzle group result (wipe_tower.rs:1299-1303).
+                if crate::faithful_gate("TOWER_ACCEL_CPP") {
+                    // WipeTower.cpp:1771 — `(unsigned int) floor(value + 0.5)`.
+                    let round = |v: f64| (v + 0.5).floor().max(0.0) as u32;
+                    cfg.normal_accels = vec![round(self.config.default_acceleration)];
+                    cfg.first_layer_normal_accels =
+                        vec![round(self.config.initial_layer_acceleration)];
+                    cfg.travel_accels = vec![round(self.config.travel_acceleration)];
+                    cfg.first_layer_travel_accels =
+                        vec![round(self.config.initial_layer_travel_acceleration)];
+                    // WipeTower.cpp:1789 — `values.front()`, not a per-extruder list.
+                    cfg.max_accel = round(self.config.machine_max_acceleration_extruding);
+                }
                 let initial = layer_seqs
                     .first()
                     .and_then(|(_, _, t)| t.first().copied())

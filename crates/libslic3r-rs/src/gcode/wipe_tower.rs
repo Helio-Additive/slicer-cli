@@ -876,6 +876,37 @@ impl WipeTowerWriter {
         self.is_first_layer = is_first;
     }
 
+    /// Install the acceleration lists.
+    // WipeTower.cpp:1356-1360 — the public setters, called from
+    // `set_for_wipe_tower_writer` (:2663-2667). C++ overloads the names (a
+    // vector-taking public setter and a no-arg private emitter); Rust cannot
+    // overload, so the emitters keep the C++ name and these carry a `_values`
+    // suffix. R615: without these the lists stayed empty and every emitter
+    // early-returned.
+    pub fn set_normal_acceleration_values(&mut self, accelerations: Vec<u32>) {
+        self.normal_accelerations = accelerations;
+    }
+
+    // WipeTower.cpp:1357
+    pub fn set_first_layer_normal_acceleration_values(&mut self, accelerations: Vec<u32>) {
+        self.first_layer_normal_accelerations = accelerations;
+    }
+
+    // WipeTower.cpp:1358
+    pub fn set_travel_acceleration_values(&mut self, accelerations: Vec<u32>) {
+        self.travel_accelerations = accelerations;
+    }
+
+    // WipeTower.cpp:1359
+    pub fn set_first_layer_travel_acceleration_values(&mut self, accelerations: Vec<u32>) {
+        self.first_layer_travel_accelerations = accelerations;
+    }
+
+    // WipeTower.cpp:1360
+    pub fn set_max_acceleration(&mut self, acceleration: u32) {
+        self.max_acceleration = acceleration;
+    }
+
     /// Disable linear advance
     // WipeTower.cpp:688-697 — Klipper: SET_PRESSURE_ADVANCE ADVANCE=0;
     // RepRapFirmware: "M572 D<tool> S0"; otherwise (Marlin/etc.): "M900 K0".
@@ -981,6 +1012,13 @@ impl WipeTowerWriter {
         // y_shift is already folded into rotate() (WipeTower.cpp:1495), so it
         // must NOT be added again here.
         let rotated = self.rotate(target);
+        // WipeTower.cpp:760-763 — the acceleration is emitted immediately before
+        // the move, chosen by whether the move extrudes. C++ routes travels
+        // through `extrude_explicit(.., e = 0)`, so a travel always takes the
+        // travel branch; our travel writer is separate, so it takes it directly.
+        if crate::faithful_gate("TOWER_ACCEL_CPP") {
+            self.set_travel_acceleration();
+        }
         // WipeTower.cpp:766 emits travels as `G1` (e==0), NOT `G0` — the export
         // integration's `transform_gcode` only rewrites `G1 ` moves into bed
         // coordinates, so a `G0` travel would leak the tower-local position.
@@ -1032,6 +1070,16 @@ impl WipeTowerWriter {
         let dy = y - self.current_pos.y;
         let len = (dx * dx + dy * dy).sqrt();
 
+        // WipeTower.cpp:760-763 — same acceleration prologue as the travel writer,
+        // but here the branch is live: e == 0 takes the travel acceleration, any
+        // other value takes the normal (printing) one.
+        if crate::faithful_gate("TOWER_ACCEL_CPP") {
+            if e == 0.0 {
+                self.set_travel_acceleration();
+            } else {
+                self.set_normal_acceleration();
+            }
+        }
         // WipeTower.cpp:766-771 — y_shift is already folded into rotate(), so do
         // not add it again to the emitted Y coordinate. set_format_X/Y print 3
         // decimals, set_format_E prints 4 (WipeTower.cpp:1461-1478).
@@ -2119,6 +2167,26 @@ impl WipeTower {
         results
     }
 
+    /// Install the tower-wide writer settings on a freshly built writer.
+    // WipeTower.cpp:2661-2670 (set_for_wipe_tower_writer). Only the acceleration
+    // group is ported here; the multi-nozzle group result and accel-to-decel
+    // knobs have no equivalent in this reduced port, and first-layer/layer-id are
+    // already set by the individual call sites.
+    fn set_for_wipe_tower_writer(&self, writer: &mut WipeTowerWriter) {
+        if !crate::faithful_gate("TOWER_ACCEL_CPP") {
+            return;
+        }
+        writer.set_normal_acceleration_values(self.config.normal_accels.clone());
+        writer.set_travel_acceleration_values(self.config.travel_accels.clone());
+        writer.set_first_layer_normal_acceleration_values(
+            self.config.first_layer_normal_accels.clone(),
+        );
+        writer.set_first_layer_travel_acceleration_values(
+            self.config.first_layer_travel_accels.clone(),
+        );
+        writer.set_max_acceleration(self.config.max_accel);
+    }
+
     /// Perform a tool change
     pub fn tool_change(&mut self, new_tool: usize) -> ToolChangeResult {
         let old_tool = self.current_tool;
@@ -2166,6 +2234,9 @@ impl WipeTower {
             self.config.gcode_flavor,
             &self.filament_params,
         );
+        // WipeTower.cpp:2661 — every writer C++ builds is passed through
+        // set_for_wipe_tower_writer before use (R615).
+        self.set_for_wipe_tower_writer(&mut writer);
 
         writer.set_initial_position(
             Vec2f::new(self.perimeter_width, self.depth_traversed),
@@ -2516,6 +2587,9 @@ impl WipeTower {
             self.config.gcode_flavor,
             &self.filament_params,
         );
+        // WipeTower.cpp:2661 — every writer C++ builds is passed through
+        // set_for_wipe_tower_writer before use (R615).
+        self.set_for_wipe_tower_writer(&mut writer);
 
         writer.set_initial_position(
             Vec2f::new(self.perimeter_width, self.depth_traversed),
@@ -2910,6 +2984,8 @@ impl WipeTower {
                 self.config.gcode_flavor,
                 &self.filament_params,
             );
+            // WipeTower.cpp:2661 (R615).
+            self.set_for_wipe_tower_writer(&mut writer);
 
             writer.set_initial_position(
                 Vec2f::new(self.perimeter_width, 0.0),
