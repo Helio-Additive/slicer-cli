@@ -9158,3 +9158,63 @@ or the `% 4` switch is mis-derived — dump per-layer counts against C++'s per-l
 `E-0.8000` tally before writing the consumer. Then R622 ports
 `remove_points_from_segment` + the wall-emission branches (`:5138`/`:5158`), which is where
 the ~16,200 lines are actually realised.
+
+## R621 — the wall skip-point producer is ported; 2,721 points, byte-neutral
+
+**Prediction RIGHT on both clauses.** The tenth dead symbol is now populated. Output is
+byte-identical by design (nothing consumes the points yet) — the pre-registered success
+condition (R614/R617).
+
+    TOWER_SKIP_POINTS: layers=656 with_points=592 total=2721
+    majora: 137de4a3   (unchanged)
+
+**Two independent cross-checks land exactly.** `total = 2721` is one point per tool change
+(we plan 2,721; C++ plans 2,723, the long-known 2-toolchange difference). `with_points = 592`
+matches R613's separately-measured "2,721 toolchange blocks on 592 layers" — a figure from a
+different round and a different instrument.
+
+### What was ported
+
+`get_all_wall_skip_points` (`WipeTower.cpp:3135-3142`) and `get_wall_skip_points`
+(`:3145-3186`), behind `TOWER_SKIP_POINTS_CPP` (`faithful_gate`, default-on), called from
+`plan_tower` under `use_gap_wall` exactly as C++ calls it from `plan_tower_new:4559` — right
+after `update_all_layer_depth`, because the points are measured from each block's
+`start_depth`.
+
+`wall_skip_points` was also the **wrong shape**: `Vec<Vec2f>` against C++'s
+`vector<vector<Vec2f>>` (`WipeTower.hpp:524`). Being never populated, the wrong type had gone
+unnoticed. Now per-layer, as C++ has it.
+
+### Every simplification is measured, not assumed
+
+Three of C++'s terms collapse on this plate, and each was pinned before being dropped:
+
+- **The `enable_tower_interface_features` branches** (`:3190` and the per-block pass after
+  it) — the 3MF sets `"enable_tower_interface_features": "0"` (R620). These are also the
+  **only** readers of `block.layers_type`, which is why this port did not need the
+  `WipeTowerLayerType` enum that still blocks `finish_block_solid`.
+- **The `is_valid_last_layer` zeroing** (`:3159`) — probed `sum(nozzle_change_depth) = 0.00`
+  across all 2,721 tool changes, so it is a no-op. The ramming structure itself is kept so
+  the shape still matches C++.
+- **`infill_gap_width`** — `get_block_gap_width(new_filament, false)` (`:5226`) is
+  `extra_width + m_perimeter_width` for a no-ramming block (`:4439`), with
+  `extra_width = (m_extra_spacing - 1) * m_perimeter_width` (`:4433`). Majora's
+  `extra_spacing` is exactly **1.0** (probed `WT_PLAN`), so `extra_width = 0` and the gap
+  width is **exactly** `perimeter_width` — which is also C++'s own fallback when the category
+  is absent from the map (`:5232`). No approximation. The same 1.0 collapses
+  `m_plan[layer_id].extra_spacing * infill_gap_width`; we hold a global `extra_spacing` rather
+  than a per-layer one, so that factor is documented in place instead of faked as a field.
+
+Benchy `304320a6`, cube `242f1fb8`, Majora `137de4a3` all unchanged; `TOWER_SKIP_POINTS_CPP=0`
+reproduces the same hash; 31 guard tests pass. Line parity unchanged at **25.88%
+(660,333/2,551,163)**.
+
+**R622:** port the consumer — `remove_points_from_segment` and the wall-emission branches at
+`:5138`/`:5158`, plus `contrust_gap_for_skip_points` (`:5067`) if the rib-wall path needs it.
+That is where the ~16,200 lines are realised. **Predict the three line kinds move together
+toward C++'s counts — `G1 E-0.8000 F1800` 0 → ~5,399, its unretract likewise, and `F600`
+travels 2,449 → ~7,884 — and Majora matched lines rise by several thousand.** Fallback: if
+the retracts appear but the counts land near 2,721 rather than 5,399, only the toolchange
+blocks are being broken and the finish-block wall (C++'s other 2,676) uses a second emission
+site — attribute with `$D/r620_attr.py` before touching the geometry, since R620 showed the
+two block kinds carry almost equal shares.

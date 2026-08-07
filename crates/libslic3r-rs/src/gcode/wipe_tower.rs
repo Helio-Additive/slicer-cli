@@ -1501,7 +1501,11 @@ pub struct WipeTower {
     /// Outer wall polygons per Z height
     outer_wall: HashMap<i32, Vec<Polyline>>,
     /// Wall skip points
-    wall_skip_points: Vec<Vec2f>,
+    /// Per-LAYER wall skip points — the positions at which the tower's outer wall
+    /// is broken into gaps. WipeTower.hpp:524 declares
+    /// `std::vector<std::vector<Vec2f>>`; ours was a flat `Vec<Vec2f>` (never
+    /// populated, so the wrong shape had gone unnoticed). R621.
+    wall_skip_points: Vec<Vec<Vec2f>>,
     /// Wipe tower blocks (for multi-extruder)
     wipe_tower_blocks: Vec<WipeTowerBlock>,
     /// All layer depth info
@@ -2216,6 +2220,105 @@ impl WipeTower {
             < block.start_depth + layer_depth - self.perimeter_width
     }
 
+    /// Build the wall skip points for every layer.
+    // WipeTower.cpp:3135-3142 (get_all_wall_skip_points), called from
+    // plan_tower_new:4559 under `if (m_use_gap_wall)`. R621.
+    fn get_all_wall_skip_points(&mut self) {
+        self.wall_skip_points.clear();
+        self.wall_skip_points.resize(self.plan.len(), Vec::new());
+        for layer_id in 0..self.plan.len() {
+            self.get_wall_skip_points(layer_id);
+        }
+    }
+
+    /// Wall skip points for one layer.
+    // WipeTower.cpp:3145-3186 (get_wall_skip_points), in its Majora-reduced form.
+    //
+    // Two of C++'s constructs are deliberately omitted, each because Majora's own
+    // config or plan makes them inert — not as a shortcut:
+    //
+    //  * The `solid_toolchange && m_enable_tower_interface_features` branch
+    //    (:3190) and the per-block pass that follows it. The 3MF sets
+    //    `"enable_tower_interface_features": "0"` (read R620), so both are dead.
+    //    They are also the ONLY readers of `block.layers_type`, which is why this
+    //    port does not need the WipeTowerLayerType enum that still blocks
+    //    finish_block_solid.
+    //  * The ramming branch's `is_valid_last_layer` zeroing (:3159). Measured on
+    //    Majora: `sum(nozzle_change_depth) = 0.00` across all 2,721 tool changes,
+    //    so nozzle_change_depth is already zero and the zeroing is a no-op. The
+    //    ramming structure itself is kept below so the shape matches C++.
+    //
+    // `infill_gap_width` is `get_block_gap_width(new_filament, false)` (:5226),
+    // which for a block with no ramming is `extra_width + m_perimeter_width`
+    // (:4439) with `extra_width = (m_extra_spacing - 1) * m_perimeter_width`
+    // (:4433). Majora's extra_spacing is exactly 1.0 (probed WT_PLAN), so
+    // extra_width is 0 and the gap width is exactly `perimeter_width` — which is
+    // also C++'s own fallback when the category is absent from the map (:5232).
+    // The same 1.0 makes `m_plan[layer_id].extra_spacing * infill_gap_width`
+    // collapse to `infill_gap_width`; we hold a global extra_spacing, not a
+    // per-layer one, so that factor is stated here rather than faked as a field.
+    fn get_wall_skip_points(&mut self, layer_id: usize) {
+        use std::collections::HashMap;
+        let mut cur_block_depth: HashMap<i32, f32> = HashMap::new();
+
+        let changes: Vec<(usize, usize, f32, f32)> = self.plan[layer_id]
+            .tool_changes
+            .iter()
+            .map(|tc| {
+                (
+                    tc.old_tool,
+                    tc.new_tool,
+                    tc.required_depth,
+                    tc.nozzle_change_depth,
+                )
+            })
+            .collect();
+
+        let width = self.config.width;
+        let infill_gap_width = self.perimeter_width;
+
+        for (old_tool, new_tool, required_depth, nozzle_change_depth) in changes {
+            let wipe_depth = required_depth - nozzle_change_depth;
+
+            let new_cat = self.get_filament_category(new_tool);
+            let new_start = match self.get_block_by_category(new_cat, false) {
+                Some(idx) => self.wipe_tower_blocks[idx].start_depth,
+                // WipeTower.cpp:3157 — `if (!block) continue;`
+                None => continue,
+            };
+
+            let mut process_depth = *cur_block_depth.entry(new_cat).or_insert(new_start);
+
+            // WipeTower.cpp:3161-3173 — inert on Majora (nozzle_change_depth == 0)
+            // but kept so the shape matches C++.
+            if self.is_need_ramming(old_tool, new_tool) {
+                let old_cat = self.get_filament_category(old_tool);
+                if new_cat == old_cat {
+                    process_depth += nozzle_change_depth;
+                } else {
+                    let old_start = match self.get_block_by_category(old_cat, false) {
+                        Some(idx) => self.wipe_tower_blocks[idx].start_depth,
+                        None => continue,
+                    };
+                    let e = cur_block_depth.entry(old_cat).or_insert(old_start);
+                    *e += nozzle_change_depth;
+                }
+            }
+
+            // WipeTower.cpp:3177-3184 — the corner rotates every four layers.
+            let res = match layer_id % 4 {
+                0 => Vec2f::new(0.0, process_depth),
+                1 => Vec2f::new(width, process_depth + wipe_depth - infill_gap_width),
+                2 => Vec2f::new(width, process_depth),
+                _ => Vec2f::new(0.0, process_depth + wipe_depth - infill_gap_width),
+            };
+            self.wall_skip_points[layer_id].push(res);
+
+            // WipeTower.cpp:3187
+            cur_block_depth.insert(new_cat, process_depth + wipe_depth);
+        }
+    }
+
     /// Reset per-layer block bookkeeping.
     // WipeTower.cpp:4219-4226 (reset_block_status), called at the top of each
     // layer in generate().
@@ -2272,6 +2375,23 @@ impl WipeTower {
             // reset_block_status would rewind cur_depth to 0 instead of to the
             // block's origin. R618.
             self.update_all_layer_depth();
+        }
+
+        // WipeTower.cpp:4559 — `if (m_use_gap_wall) get_all_wall_skip_points();`,
+        // immediately after update_all_layer_depth (:4557), because the skip
+        // points are measured from each block's start_depth. R621.
+        if crate::faithful_gate("TOWER_SKIP_POINTS_CPP") && self.config.use_gap_wall {
+            self.get_all_wall_skip_points();
+            if crate::probe_enabled("TOWER_SKIP_POINTS_CENSUS") {
+                let total: usize = self.wall_skip_points.iter().map(|v| v.len()).sum();
+                let layers_with = self.wall_skip_points.iter().filter(|v| !v.is_empty()).count();
+                eprintln!(
+                    "TOWER_SKIP_POINTS: layers={} with_points={} total={}",
+                    self.wall_skip_points.len(),
+                    layers_with,
+                    total
+                );
+            }
         }
 
         // Apply spacing to layers
