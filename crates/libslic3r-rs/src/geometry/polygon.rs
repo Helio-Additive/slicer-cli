@@ -233,6 +233,26 @@ impl Polygon {
 
     /// Split a closed polygon into an open polyline, with the split point duplicated at both ends.
     /// Polygon.cpp:38 — `Polyline Polygon::split_at_index(int index) const`
+    /// Index of the vertex nearest to `point`.
+    // Polygon.hpp — `closest_point_index`, the companion of `split_at_index`
+    // (BambuStudio uses the pair together: find the index, then rotate the ring
+    // so it starts there). R624: only `split_at_index` had been ported, so the
+    // lookup half was missing.
+    pub fn closest_point_index(&self, point: &Point) -> i32 {
+        let mut best = -1i32;
+        let mut best_d = i64::MAX;
+        for (i, p) in self.points.iter().enumerate() {
+            let dx = p.x - point.x;
+            let dy = p.y - point.y;
+            let d = dx * dx + dy * dy;
+            if d < best_d {
+                best_d = d;
+                best = i as i32;
+            }
+        }
+        best
+    }
+
     pub fn split_at_index(&self, index: i32) -> Polyline {
         // Polygon.cpp:40-41
         let mut polyline = Polyline::new();

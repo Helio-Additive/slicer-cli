@@ -731,6 +731,282 @@ pub fn insert_points(
     }
 }
 
+/// Polygon -> Polyline, CLOSING the ring.
+// Polygon.hpp:224-231 (to_polyline) — the first point is pushed again at the
+// end. R624: omitting that closing point made an ungapped wall 3 sides long
+// instead of 4; caught by `gaps_actually_remove_length`, which measured the
+// "whole" baseline as SHORTER than the gapped wall.
+fn to_polyline(polygon: &crate::geometry::Polygon) -> crate::geometry::Polyline {
+    let mut pl = crate::geometry::Polyline::new();
+    let pts = polygon.points();
+    pl.points.reserve(pts.len() + 1);
+    for p in pts {
+        pl.points.push(*p);
+    }
+    if let Some(first) = pts.first() {
+        pl.points.push(*first);
+    }
+    pl
+}
+
+/// Insert three extra vertices on the polygon edge nearest the anchor.
+// WipeTower.cpp:417-506 (add_extra_point). The anchor is (bbox centre x, bbox
+// min y); the edge whose MIDPOINT is closest to it gets `offset_to_a`, `mid`
+// and `offset_to_b` spliced in after its start vertex, so the ring gains a
+// vertex exactly at the middle of that edge plus one either side.
+//
+// `range` is clamped to 0.9 * the shorter half-edge (`:471`) so the inserted
+// points cannot overshoot the edge.
+pub fn add_extra_point(polygon: &crate::geometry::Polygon, scale_range: f64) -> crate::geometry::Polygon {
+    use crate::geometry::Point;
+    let pts = polygon.points();
+    if pts.len() < 2 {
+        return polygon.clone();
+    }
+    let bbox = polygon.bounding_box();
+    // WipeTower.cpp:426 — X at the bbox centre, Y at the bbox bottom.
+    let anchor = Vec2f::new(
+        ((bbox.min.x + bbox.max.x) as f64 / 2.0) as f32,
+        bbox.min.y as f32,
+    );
+
+    // :429-446 — the edge whose midpoint is nearest the anchor.
+    let mut closest_edge_idx = 0usize;
+    let mut min_dist_sq = f32::MAX;
+    for i in 0..pts.len() {
+        let a = Vec2f::new(pts[i].x as f32, pts[i].y as f32);
+        let b_i = pts[(i + 1) % pts.len()];
+        let b = Vec2f::new(b_i.x as f32, b_i.y as f32);
+        let mid = Vec2f::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+        let dx = anchor.x - mid.x;
+        let dy = anchor.y - mid.y;
+        let d = dx * dx + dy * dy;
+        if d < min_dist_sq {
+            min_dist_sq = d;
+            closest_edge_idx = i;
+        }
+    }
+
+    let a_i = pts[closest_edge_idx];
+    let b_i = pts[(closest_edge_idx + 1) % pts.len()];
+    let a = Vec2f::new(a_i.x as f32, a_i.y as f32);
+    let b = Vec2f::new(b_i.x as f32, b_i.y as f32);
+    let mid = Vec2f::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+
+    let mut dir_to_a = Vec2f::new(a.x - mid.x, a.y - mid.y);
+    let mut dir_to_b = Vec2f::new(b.x - mid.x, b.y - mid.y);
+    let len_a = (dir_to_a.x * dir_to_a.x + dir_to_a.y * dir_to_a.y).sqrt();
+    let len_b = (dir_to_b.x * dir_to_b.x + dir_to_b.y * dir_to_b.y).sqrt();
+    // :464 — a degenerate edge is left alone.
+    if len_a < WT_EPSILON || len_b < WT_EPSILON {
+        return polygon.clone();
+    }
+    dir_to_a = Vec2f::new(dir_to_a.x / len_a, dir_to_a.y / len_a);
+    dir_to_b = Vec2f::new(dir_to_b.x / len_b, dir_to_b.y / len_b);
+
+    // :471-472 — clamp so the offsets stay on the edge.
+    let max_range = len_a.min(len_b) * 0.9;
+    let range = (scale_range as f32).min(max_range);
+
+    let to_int = |p: Vec2f| Point::new(p.x.round() as i64, p.y.round() as i64);
+    let off_a = to_int(Vec2f::new(mid.x + dir_to_a.x * range, mid.y + dir_to_a.y * range));
+    let mid_i = to_int(mid);
+    let off_b = to_int(Vec2f::new(mid.x + dir_to_b.x * range, mid.y + dir_to_b.y * range));
+
+    // :494-503 — rebuild, splicing the trio in after the edge's start vertex.
+    let mut res = crate::geometry::Polygon::new();
+    for (i, p) in pts.iter().enumerate() {
+        res.points_mut().push(*p);
+        if i == closest_edge_idx {
+            res.points_mut().push(off_a);
+            res.points_mut().push(mid_i);
+            res.points_mut().push(off_b);
+        }
+    }
+    res
+}
+
+/// Break the wall polygon open at every skip point.
+// WipeTower.cpp:510-593 (remove_points_from_polygon). Returns the surviving
+// polyline runs plus `insert_skip_pg`, the full ring INCLUDING the inserted gap
+// boundaries, which C++ hands back for the wipe path.
+//
+// Shape of the algorithm: densify the ring (add_extra_point), rotate it to start
+// at the vertex nearest the anchor, then for each skip point cast a horizontal
+// ray (inward from whichever side the point sits on) to find where it meets the
+// ring; walk `range` forwards and backwards from that hit to get the gap's two
+// boundaries; splice those in as tagged vertices; finally walk the ring emitting
+// runs and jumping across each tagged pair.
+pub fn remove_points_from_polygon(
+    polygon_ori: &crate::geometry::Polygon,
+    skip_points: &[Vec2f],
+    range: f64,
+    wt_width: f32,
+) -> (Vec<crate::geometry::Polyline>, crate::geometry::Polygon) {
+    use crate::geometry::{Point, Polygon, Polyline};
+    let polygon = add_extra_point(polygon_ori, crate::scaled(range) as f64);
+    let mut insert_skip_pg = Polygon::new();
+    if polygon.points().len() < 2 {
+        insert_skip_pg = polygon.clone();
+        return (vec![to_polyline(&polygon)], insert_skip_pg);
+    }
+
+    // :517 — anchor at (bbox centre x, bbox min y), same as add_extra_point's.
+    let bbox = polygon.bounding_box();
+    let anchor = Point::new((bbox.min.x + bbox.max.x) / 2, bbox.min.y);
+
+    // :519-526 — rotate the ring to start at the nearest vertex. C++ takes
+    // split_at_index (which repeats the start vertex at the end) and pops it.
+    let idx = polygon.closest_point_index(&anchor);
+    let tmp = polygon.split_at_index(idx);
+    let mut points: Vec<Vec2f> = tmp
+        .points
+        .iter()
+        .map(|p| Vec2f::new(crate::unscale(p.x) as f32, crate::unscale(p.y) as f32))
+        .collect();
+    points.pop();
+    if points.is_empty() {
+        return (Vec::new(), polygon);
+    }
+
+    // :528-545 — one ray per skip point; the first edge it meets defines the gap.
+    let mut inter_info: Vec<IntersectionInfo> = Vec::new();
+    for (i, sp) in skip_points.iter().enumerate() {
+        let is_left = sp.x.abs() < wt_width / 2.0;
+        let ray = if is_left { Vec2f::new(-1.0, 0.0) } else { Vec2f::new(1.0, 0.0) };
+        for j in 0..points.len() {
+            let p1 = points[j];
+            let p2 = points[(j + 1) % points.len()];
+            if let Some(inter_pos) = ray_intersetion_line(*sp, ray, p1, p2) {
+                let mut forward =
+                    move_point_along_polygon(&points, inter_pos, j, range as f32, true, i as i32);
+                let mut backward =
+                    move_point_along_polygon(&points, inter_pos, j, range as f32, false, i as i32);
+                forward.is_forward = true;
+                backward.is_forward = false;
+                inter_info.push(backward);
+                inter_info.push(forward);
+                break;
+            }
+        }
+    }
+
+    // :547-552 — seed the tagged ring, then splice the boundaries in from the
+    // BACK so earlier indices stay valid.
+    let mut new_pl: Vec<PointWithFlag> = points
+        .iter()
+        .map(|p| PointWithFlag { pos: *p, pair_idx: -1, is_forward: false })
+        .collect();
+    inter_info.sort_by(|l, r| {
+        if l.idx == r.idx {
+            l.dis_from_idx
+                .partial_cmp(&r.dis_from_idx)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        } else {
+            l.idx.cmp(&r.idx)
+        }
+    });
+    for info in inter_info.iter().rev() {
+        insert_points(
+            &mut new_pl,
+            info.idx.max(0) as usize,
+            info.pos,
+            info.pair_idx,
+            info.is_forward,
+        );
+    }
+
+    // :554-557 — the ring WITH the gap boundaries, returned for the wipe path.
+    for p in &new_pl {
+        insert_skip_pg
+            .points_mut()
+            .push(Point::new(crate::scaled(p.pos.x as f64), crate::scaled(p.pos.y as f64)));
+    }
+
+    // :559-588 — walk the ring, emitting runs and jumping across tagged pairs.
+    let mut result: Vec<Polyline> = Vec::new();
+    let beg = 0usize;
+    let mut skip = true;
+    let mut i = beg;
+    let mut pl = Polyline::new();
+    let n = new_pl.len();
+    if n == 0 {
+        return (result, insert_skip_pg);
+    }
+    loop {
+        if skip || new_pl[i].pair_idx == -1 {
+            pl.points.push(Point::new(
+                crate::scaled(new_pl[i].pos.x as f64),
+                crate::scaled(new_pl[i].pos.y as f64),
+            ));
+            i = (i + 1) % n;
+            skip = false;
+        } else {
+            if !pl.points.is_empty() {
+                pl.points.push(Point::new(
+                    crate::scaled(new_pl[i].pos.x as f64),
+                    crate::scaled(new_pl[i].pos.y as f64),
+                ));
+                result.push(std::mem::replace(&mut pl, Polyline::new()));
+            }
+            // Jump to this gap's partner, following any nested gap opened on the
+            // way (:577-580).
+            let mut left = new_pl[i].pair_idx;
+            let mut j = (i + 1) % n;
+            while j != beg && new_pl[j].pair_idx != left {
+                if new_pl[j].pair_idx != -1 && !new_pl[j].is_forward {
+                    left = new_pl[j].pair_idx;
+                }
+                j = (j + 1) % n;
+            }
+            i = j;
+            skip = true;
+        }
+        if i == beg {
+            break;
+        }
+    }
+    // :585-588
+    if !pl.points.is_empty() {
+        if new_pl[i].pair_idx == -1 {
+            pl.points.push(Point::new(
+                crate::scaled(new_pl[i].pos.x as f64),
+                crate::scaled(new_pl[i].pos.y as f64),
+            ));
+        }
+        result.push(pl);
+    }
+    (result, insert_skip_pg)
+}
+
+/// Wall polyline runs for a layer's skip points.
+// WipeTower.cpp:595-607 (contrust_gap_for_skip_points — C++'s spelling, kept).
+// With no skip points the whole ring is one run.
+pub fn contrust_gap_for_skip_points(
+    polygon: &crate::geometry::Polygon,
+    skip_points: &[Vec2f],
+    wt_width: f32,
+    gap_length: f64,
+) -> (Vec<crate::geometry::Polyline>, crate::geometry::Polygon) {
+    if skip_points.is_empty() {
+        return (vec![to_polyline(polygon)], polygon.clone());
+    }
+    remove_points_from_polygon(polygon, skip_points, gap_length, wt_width)
+}
+
+/// The tower's outer wall as a rectangle, counter-clockwise from `ld`.
+// WipeTower.cpp:610-618 (generate_rectange_polygon — C++'s spelling, kept).
+pub fn generate_rectange_polygon(wt_box_min: Vec2f, wt_box_max: Vec2f) -> crate::geometry::Polygon {
+    use crate::geometry::Point;
+    let mut res = crate::geometry::Polygon::new();
+    let s = |x: f32, y: f32| Point::new(crate::scaled(x as f64), crate::scaled(y as f64));
+    res.points_mut().push(s(wt_box_min.x, wt_box_min.y));
+    res.points_mut().push(s(wt_box_max.x, wt_box_min.y));
+    res.points_mut().push(s(wt_box_max.x, wt_box_max.y));
+    res.points_mut().push(s(wt_box_min.x, wt_box_max.y));
+    res
+}
+
 /// Block of wipe tower for multi-extruder support
 #[derive(Debug, Clone, Default)]
 pub struct WipeTowerBlock {

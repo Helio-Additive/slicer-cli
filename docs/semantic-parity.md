@@ -9360,3 +9360,74 @@ and byte-neutral output.** Fallback: if the count differs, the `2.5 * m_perimete
 is merging or splitting gaps — dump per-layer gap counts against `TOWER_SKIP_POINTS_CENSUS`
 before proceeding. Extend the same test file as each piece lands; it is the only oracle until
 `generate_path` is wired (R625).
+
+## R624 — the gap constructor is ported; a test caught a real port bug this time
+
+**Code shipped, byte-neutral, 20 tests passing** (up from 11). Unlike R623 — where the failing
+test was my own wrong expectation — this round's failure was **a genuine defect in the port**.
+
+### What landed
+
+- **`Polygon::closest_point_index`** (`geometry/polygon.rs`) — only `split_at_index` had been
+  ported; BambuStudio uses the pair together (find the index, rotate the ring to start there),
+  so the lookup half was missing.
+- **`add_extra_point`** (`WipeTower.cpp:417-506`) — splices `offset_to_a`, `mid`, `offset_to_b`
+  into the edge whose midpoint is nearest the anchor `(bbox centre x, bbox min y)`, with the
+  range clamped to `0.9 × the shorter half-edge` (`:471`).
+- **`remove_points_from_polygon`** (`:510-593`) — densify, rotate to the anchor, cast one
+  horizontal ray per skip point, walk `range` either way from the hit to get the gap
+  boundaries, splice them in as tagged vertices, then walk the ring emitting runs and jumping
+  across each tagged pair.
+- **`contrust_gap_for_skip_points`** (`:595`) and **`generate_rectange_polygon`** (`:610`).
+- **`to_polyline`** (`Polygon.hpp:224`) — see below.
+
+Nothing calls any of it yet, so all three baselines are unchanged.
+
+### The bug the test caught
+
+`gaps_actually_remove_length` failed with
+
+    gapped wall (144.500) should be shorter than whole (108.500)
+
+The gapped figure is exactly right: the 35 × 38.5 wall's closed perimeter is
+2 × (35 + 38.5) = **147**, and 147 − 2 × 1.25 (one gap, `range` either side of the hit) =
+**144.5**. The *baseline* was wrong — 108.5 = 35 + 38.5 + 35, i.e. **three sides**.
+
+Cause: `Polygon.hpp:224`'s `to_polyline` pushes the first point again to close the ring, and
+my port omitted it, so an ungapped wall came back one side short. Fixed by porting
+`to_polyline` properly and using it at both degenerate sites. The test now also pins the
+ungapped perimeter at exactly 147mm, so the same omission cannot return silently.
+
+This is the second round running where the only available oracle was a unit test, and the
+second time it found something. Here it found a real defect that byte-neutrality could never
+have surfaced.
+
+### The other failure was an expectation, and the code was right
+
+`two_skip_points_open_two_gaps` expected 2 runs and got 3. Three is correct: the walk
+(`:559-588`) starts at the ring vertex nearest the anchor, which sits **mid-arc**, so that arc
+is emitted as a head run and a tail run. Two cuts in a ring give two arcs, but one is split by
+the start position. C++ does the same. The expectation was corrected to 3 with the reasoning
+recorded.
+
+### Coverage
+
+20 tests: 4 on the ray intersection (hit, behind, parallel, past-the-end), 4 on the polygon
+walk (forward/backward × within-edge/across-corner), 3 on vertex insertion (tag-current,
+tag-next, splice), and 9 new ones on the constructor — rectangle winding, the three-vertex
+splice, which edge it targets, range clamping, the empty case, one gap, two gaps, the length
+identity, and the degenerate path.
+
+Benchy `304320a6`, cube `242f1fb8`, Majora `137de4a3` unchanged; the 8 guard suites pass.
+Line parity unchanged at **25.88% (660,333/2,551,163)**.
+
+**R625:** wire it up — `generate_support_wall_new`'s live path calls
+`contrust_gap_for_skip_points` and hands the runs to `WipeTowerWriter::generate_path`
+(`:1249`), whose per-gap triple `retract / travel(start, 600.) / retract(-…)` is the ~16,200
+missing lines. Port `generate_path`'s **linear** branch first and measure before touching arc
+fitting (R622: `enable_arc_fitting` is on and C++ emits 2,719 tower arcs, so the arc branch is
+its own round). **Predict `G1 E-0.8000 F1800` moves 0 → ~5,399 with its unretract and the
+`F600` travels tracking it, and matched lines rise by several thousand.** Fallback: if the
+retracts appear but the wall geometry regresses, the runs are being emitted in the wrong order
+— `generate_path` picks its start segment by proximity (`get_closet_idx`), which this port
+must reproduce rather than emitting runs in list order.

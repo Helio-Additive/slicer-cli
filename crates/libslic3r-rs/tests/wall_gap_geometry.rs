@@ -178,3 +178,155 @@ fn insert_points_splices_a_new_vertex() {
     // The original vertices keep their order around the splice.
     assert!((pl[2].pos.x - 10.0).abs() < 1e-4);
 }
+
+// ===========================================================================
+// R624 — the gap constructor itself, on top of R623's leaf helpers.
+// ===========================================================================
+
+use slicer::gcode::wipe_tower::{
+    add_extra_point, contrust_gap_for_skip_points, generate_rectange_polygon,
+    remove_points_from_polygon,
+};
+use slicer::geometry::Point;
+
+/// The tower wall used by C++ when rib_wall is off: a plain rectangle.
+/// Majora's is 35mm wide (`prime_tower_width`), so these use the same shape.
+fn wall(w: f32, d: f32) -> slicer::geometry::Polygon {
+    generate_rectange_polygon(Vec2f::new(0.0, 0.0), Vec2f::new(w, d))
+}
+
+#[test]
+fn rectangle_polygon_is_ccw_from_the_origin() {
+    let p = wall(35.0, 38.5);
+    assert_eq!(p.points().len(), 4);
+    // ld, rd, ru, lu — WipeTower.cpp:610-618.
+    assert_eq!(p.points()[0], Point::new(0, 0));
+    assert!(p.points()[1].x > 0 && p.points()[1].y == 0);
+    assert!(p.points()[2].x > 0 && p.points()[2].y > 0);
+    assert!(p.points()[3].x == 0 && p.points()[3].y > 0);
+}
+
+#[test]
+fn add_extra_point_splices_three_vertices() {
+    // C++ :494-503 inserts offset_to_a, mid, offset_to_b after the chosen edge's
+    // start vertex, so a 4-gon becomes a 7-gon.
+    let p = wall(35.0, 38.5);
+    let out = add_extra_point(&p, slicer::scaled(1.25) as f64);
+    assert_eq!(out.points().len(), 7, "three vertices should be spliced in");
+}
+
+#[test]
+fn add_extra_point_targets_the_bottom_edge() {
+    // The anchor is (bbox centre x, bbox min y), so on an axis-aligned
+    // rectangle the nearest edge midpoint is the BOTTOM edge (ld -> rd), i.e.
+    // index 0. The trio therefore lands at indices 1..3, all at y = 0.
+    let p = wall(35.0, 38.5);
+    let out = add_extra_point(&p, slicer::scaled(1.25) as f64);
+    for i in 1..=3 {
+        assert_eq!(out.points()[i].y, 0, "point {} should sit on the bottom edge", i);
+    }
+    // The middle of the trio is the edge midpoint.
+    assert_eq!(out.points()[2].x, slicer::scaled(17.5));
+}
+
+#[test]
+fn add_extra_point_clamps_the_range() {
+    // :471 — range is clamped to 0.9 * the shorter half-edge, so an absurd
+    // request cannot push the offsets past the edge's own endpoints.
+    let p = wall(35.0, 38.5);
+    let out = add_extra_point(&p, slicer::scaled(1000.0) as f64);
+    for i in 1..=3 {
+        let x = out.points()[i].x;
+        assert!(x >= 0 && x <= slicer::scaled(35.0), "point {} escaped the edge: {}", i, x);
+    }
+}
+
+#[test]
+fn no_skip_points_leaves_the_wall_whole() {
+    // :597-599 — the empty case returns the ring as a single run.
+    let p = wall(35.0, 38.5);
+    let (runs, ring) = contrust_gap_for_skip_points(&p, &[], 35.0, 1.25);
+    assert_eq!(runs.len(), 1, "an ungapped wall is one polyline");
+    assert_eq!(ring.points().len(), p.points().len());
+}
+
+#[test]
+fn one_skip_point_opens_one_gap() {
+    // A single skip point on the right edge (x == wt_width) should break the
+    // ring into exactly one run — the wall minus one gap is still one path,
+    // because the ring is cut open at a single place.
+    let p = wall(35.0, 38.5);
+    let skip = vec![Vec2f::new(35.0, 10.0)];
+    let (runs, ring) = contrust_gap_for_skip_points(&p, &skip, 35.0, 1.25);
+    assert!(!runs.is_empty(), "the wall should still be drawn");
+    // The returned ring carries the gap boundaries, so it has MORE points than
+    // the densified 7-gon that went in.
+    assert!(
+        ring.points().len() >= 7,
+        "insert_skip_pg should carry the gap boundaries, got {}",
+        ring.points().len()
+    );
+}
+
+#[test]
+fn two_skip_points_open_two_gaps() {
+    // One gap on each side: cutting a closed ring twice yields two runs.
+    let p = wall(35.0, 38.5);
+    let skip = vec![Vec2f::new(35.0, 10.0), Vec2f::new(0.0, 25.0)];
+    let (runs, _) = contrust_gap_for_skip_points(&p, &skip, 35.0, 1.25);
+    // THREE, not two: the walk (:559-588) starts at the ring vertex nearest the
+    // anchor, which is mid-way along an arc, so that arc is emitted as a head run
+    // and a tail run. Two cuts in a ring give two arcs, but one of them is split
+    // by the start position. C++ does exactly the same.
+    assert_eq!(runs.len(), 3, "two gaps, with the start mid-arc, give three runs");
+}
+
+#[test]
+fn gaps_actually_remove_length() {
+    // The whole point of the gap is that the wall is SHORTER than the ring.
+    let p = wall(35.0, 38.5);
+    let len_of = |runs: &Vec<slicer::geometry::Polyline>| -> f64 {
+        runs.iter()
+            .map(|pl| {
+                pl.points
+                    .windows(2)
+                    .map(|w| {
+                        let dx = slicer::unscale(w[1].x - w[0].x);
+                        let dy = slicer::unscale(w[1].y - w[0].y);
+                        (dx * dx + dy * dy).sqrt()
+                    })
+                    .sum::<f64>()
+            })
+            .sum()
+    };
+    // `whole` must be the CLOSED ring: 2*(35 + 38.5) = 147mm. An early version of
+    // the port dropped Polygon.hpp:224's closing point and returned 108.5mm
+    // (three sides), which made the gapped wall look LONGER than the whole one.
+    let (whole, _) = contrust_gap_for_skip_points(&p, &[], 35.0, 1.25);
+    let skip = vec![Vec2f::new(35.0, 10.0)];
+    let (gapped, _) = contrust_gap_for_skip_points(&p, &skip, 35.0, 1.25);
+    let (lw, lg) = (len_of(&whole), len_of(&gapped));
+    assert!(
+        (lw - 147.0).abs() < 1e-3,
+        "the ungapped wall must be the closed perimeter 147mm, got {:.3}",
+        lw
+    );
+    assert!(lg < lw, "gapped wall ({:.3}) should be shorter than whole ({:.3})", lg, lw);
+    // The gap is 2 * range wide by construction (range either side of the hit).
+    let removed = lw - lg;
+    assert!(
+        removed > 1.0 && removed < 6.0,
+        "one 1.25mm-range gap should remove a few mm, removed {:.3}",
+        removed
+    );
+}
+
+#[test]
+fn remove_points_from_polygon_is_stable_with_no_points() {
+    // Guard the degenerate path: no skip points reaches the same code as the
+    // wrapper's early-out but through the full routine.
+    let p = wall(35.0, 38.5);
+    let (runs, ring) = remove_points_from_polygon(&p, &[], 1.25, 35.0);
+    assert_eq!(runs.len(), 1, "no gaps -> one run");
+    assert_eq!(ring.points().len(), 7, "the ring is still the densified 7-gon");
+}
