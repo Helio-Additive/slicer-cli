@@ -9431,3 +9431,61 @@ its own round). **Predict `G1 E-0.8000 F1800` moves 0 → ~5,399 with its unretr
 retracts appear but the wall geometry regresses, the runs are being emitted in the wrong order
 — `generate_path` picks its start segment by proximity (`get_closet_idx`), which this port
 must reproduce rather than emitting runs in list order.
+
+## R625 — the gap wall is wired up: +7,825 matched lines, and an 11th unpopulated field
+
+Prediction **right** on the retract count and the line gain, **short** on the unretract and
+`F600` counts; the residual is localised and named below. Majora re-baselined
+`137de4a3` → **`4ffc6a0d`**. Benchy `304320a6` and cube `242f1fb8` unchanged; 8 guard suites
+and the 20 wall-gap tests pass.
+
+### Landed
+
+`WipeTowerWriter::generate_path` (`WipeTower.cpp:1249-1309`), **linear branch**, plus the call
+site in `finish_layer` mirroring `generate_support_wall_new` (`:3664`/`:5030`): build the wall
+rectangle, break it at this layer's skip points via `contrust_gap_for_skip_points`, emit the
+runs through `generate_path`. Behind `TOWER_WALL_GAPS_CPP` (`faithful_gate`, default-on). The
+start segment is chosen by **proximity** (`:1251-1264`, `get_closet_idx`), not list order.
+
+### An eleventh unpopulated field, found by the measurement
+
+The retract triple fired immediately, but a grep for `G1 E-0.8000 F1800` returned **0** —
+because we were writing **`F2100`**. Cause: `print.rs` built `FilamentParameters` with *only*
+`nozzle_diameter` plus `..Default::default()`, so `retract_length` sat at the struct default
+0.8 (which happens to match Majora) and `retract_speed` at **35**, against the 3MF's
+`"retraction_speed": 30`. Every tower retract carried the wrong feedrate. Now populated from
+config (`WipeTower.cpp:1793-1800`).
+
+That fix is deliberately **ungated** — a config-plumbing correction independent of the gap
+feature — so `TOWER_WALL_GAPS_CPP=0` yields `2c993879` rather than the old `137de4a3`. C++
+writes `F1800`; we now do too, gaps or no gaps.
+
+### Measured, on the file being judged
+
+| | C++ | before | after |
+|---|---|---|---|
+| `G1 E-0.8000 F1800` | 5,399 | 0 | **5,280** |
+| `G1 E0.8000 F1800` | 5,399 | 0 | 2,562 |
+| `F600` travels | 7,884 | 2,449 | 5,011 |
+
+**Line parity 660,333 → 668,158 matched (+7,825)**; 25.88% → **26.02%**; line-count gap
+8.30% → **7.71%**. Body lines grew 2,551,163 → 2,567,537 — **+16,374** emitted against R620's
+~16,200 estimate, of which about half match so far.
+
+### The residual, named rather than hidden (R622's rule)
+
+1. **The unretract asymmetry**, 2,562 against 5,280 retracts. C++'s `travel(start, 600.)`
+   writes the feedrate **on the travel line**; this port calls `feedrate(600)` separately, so
+   on roughly 2,718 gaps the following unretract omits its ` F1800` because the current
+   feedrate already matches. That also explains `F600` landing at 5,011 rather than 7,884.
+   An emission-shape difference, not a missing behaviour.
+2. **Arc fitting is not ported** (deliberately, R622): `enable_arc_fitting` is `"1"` and C++
+   emits 2,719 tower arcs against our 0, so our wall corners are straight where C++'s are
+   rounded.
+
+**R626:** fix (1) first — give the writer a `travel_to_with_feedrate(pos, f)` that writes `F`
+inline as C++ does, so the unretract keeps its feedrate. **Predict `G1 E0.8000 F1800` moves
+2,562 → ~5,280 and `F600` 5,011 → ~7,700, with matched lines up a few thousand more.**
+Fallback: if the unretracts rise but `F600` does not, our travels are already carrying F600 on
+a separate line that C++ folds in — compare layer 138 with `$D/r615_dump.py` before changing
+the writer further. Then take arc fitting (2,719 lines) as its own round.

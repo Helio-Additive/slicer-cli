@@ -2143,8 +2143,19 @@ impl Print {
                 // beyond what this fixture can validate. C++ comment at :1900 notes
                 // all extruders are assumed to share a diameter.
                 for idx in 0..num_filaments {
+                    // WipeTower.cpp:1793-1800 — m_filpar[idx].retract_length and
+                    // .retract_speed come from the filament config. R625: only
+                    // nozzle_diameter was being passed, so both sat at
+                    // FilamentParameters::default() — retract_length 0.8 (which
+                    // happens to match Majora) and retract_speed 35, against the
+                    // 3MF's "retraction_speed": 30. The wipe tower's gap-wall
+                    // retracts therefore came out `F2100` where C++ writes
+                    // `F1800`, which is 5,283 retracts plus 5,283 unretracts that
+                    // could never match on the feedrate alone.
                     let params = crate::gcode::wipe_tower::FilamentParameters {
                         nozzle_diameter: self.config.nozzle_diameter as f32,
+                        retract_length: self.config.retract_length as f32,
+                        retract_speed: self.config.retract_speed as f32,
                         ..Default::default()
                     };
                     wt.set_extruder(idx, params);

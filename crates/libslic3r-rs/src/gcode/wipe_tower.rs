@@ -1589,6 +1589,93 @@ impl WipeTowerWriter {
     // WipeTower.cpp:1000-1006 — rectangle(box) -> rectangle(box.ld, w, h, f)
     // with w = ru.x - lu.x, h = ru.y - rd.y.
     // WipeTower.cpp:902-925 — the rectangle(ld, width, height) implementation.
+    /// Emit a set of polyline runs, retracting across the gaps between them.
+    // WipeTower.cpp:1249-1309 (WipeTowerWriter::generate_path) — LINEAR branch.
+    //
+    // C++ branches on `m_enable_arc_fitting` and Majora sets it, so the real
+    // path runs `simplify_by_fitting_arc` and can emit G2/G3. That is NOT ported
+    // here: R622 measured C++ emitting 2,719 tower arcs against our 0, and doing
+    // the retract triple without the arcs would trade one divergence for another
+    // (R622's rule). This port takes the segments straight from the polyline
+    // points, which is what C++'s else-branch (`simplify` + `reset_to_linear_move`)
+    // produces; the arc residual is left to its own round and is stated as an
+    // open item rather than hidden.
+    //
+    // The important part is :1294-1308: the START segment is chosen by PROXIMITY
+    // to the current position (`get_closet_idx`), not by list order, and every
+    // subsequent segment whose start is away from the pen gets
+    //     retract(retract_length, retract_speed)
+    //     travel(start, 600.)
+    //     retract(-retract_length, retract_speed)
+    // before it is extruded. That triple is the gap-wall pattern R620 measured as
+    // entirely absent from our output.
+    pub fn generate_path(
+        &mut self,
+        pls: &[crate::geometry::Polyline],
+        feedrate: f32,
+        retract_length: f32,
+        retract_speed: f32,
+    ) -> &mut Self {
+        // :1274-1289 — flatten the runs into consecutive point pairs.
+        let mut segments: Vec<(Vec2f, Vec2f)> = Vec::new();
+        for pl in pls {
+            if pl.points.len() < 2 {
+                continue;
+            }
+            for w in pl.points.windows(2) {
+                segments.push((
+                    Vec2f::new(crate::unscale(w[0].x) as f32, crate::unscale(w[0].y) as f32),
+                    Vec2f::new(crate::unscale(w[1].x) as f32, crate::unscale(w[1].y) as f32),
+                ));
+            }
+        }
+        // :1290-1291
+        if segments.is_empty() {
+            return self;
+        }
+
+        // :1251-1264 (get_closet_idx) — nearest segment START to the pen.
+        let anchor = self.current_pos;
+        let mut index_of_closest = 0usize;
+        let mut min_d = f32::MAX;
+        for (i, seg) in segments.iter().enumerate() {
+            let dx = seg.0.x - anchor.x;
+            let dy = seg.0.y - anchor.y;
+            let d = dx * dx + dy * dy;
+            if d < min_d {
+                min_d = d;
+                index_of_closest = i;
+            }
+        }
+
+        // :1293-1295 — travel to it and lay the first segment.
+        self.travel_to(segments[index_of_closest].0);
+        self.feedrate(feedrate);
+        self.extrude(segments[index_of_closest].1.x, segments[index_of_closest].1.y);
+
+        // :1296-1308 — walk the ring; retract across any real jump.
+        let n = segments.len();
+        let mut i = index_of_closest;
+        loop {
+            i = (i + 1) % n;
+            if i == index_of_closest {
+                break;
+            }
+            let dx = segments[i].0.x - self.current_pos.x;
+            let dy = segments[i].0.y - self.current_pos.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len > WT_EPSILON {
+                self.retract(retract_length, retract_speed);
+                self.feedrate(600.0);
+                self.travel_to(segments[i].0);
+                self.retract(-retract_length, retract_speed);
+            }
+            self.feedrate(feedrate);
+            self.extrude(segments[i].1.x, segments[i].1.y);
+        }
+        self
+    }
+
     pub fn rectangle(&mut self, box_coords: &BoxCoordinates) -> &mut Self {
         let ld = box_coords.ld;
         let width = box_coords.ru.x - box_coords.lu.x;
@@ -3820,7 +3907,39 @@ impl WipeTower {
 
         // Only draw perimeter if this is first layer or we need it
         if is_first_layer || !self.config.no_sparse_layers {
-            writer.rectangle(&wt_box);
+            // WipeTower.cpp:3664 — finish_layer_new hands the wall to
+            // generate_support_wall_new, which under `skip_points`
+            // (= m_use_gap_wall = "prime_tower_skip_points": "1") breaks the ring
+            // at this layer's skip points and emits the runs through
+            // generate_path, retracting across each gap. R625.
+            //
+            // `rib_wall` only selects the polygon SHAPE and Majora sets
+            // "prime_tower_rib_wall": "0" (R622), so the shape is the plain
+            // rectangle either way; only the gapping differs.
+            let skip = self
+                .wall_skip_points
+                .get(self.layer_idx)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            if crate::faithful_gate("TOWER_WALL_GAPS_CPP")
+                && self.config.use_gap_wall
+                && !skip.is_empty()
+            {
+                let wall_polygon =
+                    generate_rectange_polygon(wt_box.ld, wt_box.ru);
+                // :5067 — the gap length is 2.5 * m_perimeter_width.
+                let (runs, _insert_skip_polygon) = contrust_gap_for_skip_points(
+                    &wall_polygon,
+                    skip,
+                    self.config.width,
+                    2.5 * self.perimeter_width as f64,
+                );
+                let rl = self.filament_params[self.current_tool].retract_length;
+                let rs = self.filament_params[self.current_tool].retract_speed * 60.0;
+                writer.generate_path(&runs, feedrate, rl, rs);
+            } else {
+                writer.rectangle(&wt_box);
+            }
         }
 
         // Print brim on first layer
