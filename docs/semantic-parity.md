@@ -9657,3 +9657,67 @@ lines, and matched lines up several thousand.** Fallback: if the lift is emitted
 filament-change TEMPLATE rather than the writer, it will be in the change_filament gcode — grep
 the template for `G17`/`spiral` before touching the writer, since R426/R427 established that
 template lands as raw text.
+
+## R629 — the spiral lift fires ~6× too often; cause localised to one guard
+
+**Measurement and localisation only, no code changed.** The round found a defect an order of
+magnitude larger than the one it was sent to fix, and localised it to a single predicate whose
+correct implementation already exists in a dead file.
+
+### The cheap check came back with the opposite sign
+
+R629 was to add the tower's 2,719 missing spiral lifts. Counting `G17` in both engines first
+(R627's rule) instead showed:
+
+| `G17` | C++ | Rust |
+|---|---|---|
+| object | 6,062 | **36,407** |
+| tower toolchange | **2,719** | 0 |
+| total | 8,781 | 36,407 |
+
+**+30,345 excess object `G17`** — about eleven times the tower deficit — tracking R622's
+separately-measured +29,423 excess object arcs, since each spiral lift is a `G17` + `G3` pair.
+R622 logged that excess as an open item; this round identifies its cause.
+
+### What is *not* the cause
+
+Majora sets `"z_hop_types": ["Auto Lift", "Auto Lift"]`, which looked like a mis-mapping on our
+side — but C++ maps `zhtAuto` to `LiftType::SpiralLift` outright (`GCode.cpp:743-744`,
+`:4095-4096`), so "Auto" means spiral there too. Our enum mapping is correct.
+
+### The cause
+
+C++ gates the spiral on **two** conditions (`GCodeWriter.cpp:478`, `:537`):
+
+```cpp
+if (m_to_lift_type == LiftType::SpiralLift && this->is_current_position_clear())
+```
+
+Our **live** writer (`gcode/writer.rs:1183`) checks:
+
+```rust
+if self.m_to_lift_type == 1 && self.position_known
+```
+
+`position_known` is set true at the first move (`:569`, `:576`) and **never cleared**, so the
+guard is effectively always satisfied. C++'s `m_is_current_pos_clear` is set *and cleared* as
+the toolpath moves, which is what holds its spiral count to 6,062.
+
+### Twelfth dead-twin instance — and this one has the correct logic
+
+`g_code_writer.rs:1873` defines `is_current_position_clear()` over an `m_is_current_pos_clear`
+field and uses it in the faithful form at `:1096`. **Nothing imports that module**; the live
+path is `gcode/writer.rs`, which lacks the field entirely. The right implementation was
+already written, in the file that is not used.
+
+No code shipped: making the live writer honour a flag it does not have means porting the
+set/clear sites too, and doing that half-way would change 36,407 lines on a guess.
+
+**R630:** port `m_is_current_pos_clear` into the live writer — the field plus every site that
+sets or clears it (`GCodeWriter.cpp`, and `GCode.cpp`'s callers), then use it in the spiral
+guard alongside `m_to_lift_type`. **Predict object `G17` 36,407 → ~6,062 and object `G3`
+462,017 → ~432,594, with matched lines up several thousand** (these are existing lines being
+*removed* where C++ has none, so also check body-line count — R626's lesson). Fallback: if the
+counts drop but overshoot below C++'s, our clear-sites fire more eagerly than C++'s — attribute
+with `$D/r629_attr.py` (G17) and `$D/r622_arc.py` (arcs) before adjusting. Only then add the
+tower's 2,719 lifts, which is the smaller half of this item.
