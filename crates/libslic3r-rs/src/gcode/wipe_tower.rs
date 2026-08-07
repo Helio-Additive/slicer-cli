@@ -2097,6 +2097,33 @@ impl WipeTower {
             }
         }
 
+        // 4a. Propagate each layer's depth DOWNWARD as a running max.
+        // WipeTower.cpp:4316-4323 — walking layers from the top:
+        //     block.layer_depths[i] = max(block.layer_depths[i], block.layer_depths[i+1]);
+        // R618: this is what makes `finish_block` fire at all. Without it,
+        // `layer_depths[i]` is exactly the sum of layer i's required depths, and
+        // `cur_depth` advances by exactly that sum, so generate()'s skip test
+        // (`cur_depth + EPS >= start_depth + layer_depths[i] - perimeter_width`)
+        // reduces to `slack == -perimeter_width` on EVERY layer — measured at a
+        // constant -0.500 across all 656. Raising a sparse layer's depth to the
+        // max of the layers above it is what leaves room for a finish block.
+        //
+        // C++ folds a second statement into the same loop —
+        // `m_plan[layer_id].depth = sum of block.layer_depths[layer_id]` — which
+        // rewrites the PLAN depths and is a real geometry change entangled with
+        // the two-depth problem (R509/R510). That half stays out; this half only
+        // touches `layer_depths`, which nothing but the block machinery reads.
+        if crate::faithful_gate("TOWER_BLOCK_LAYER_DEPTH_MAX") {
+            for layer_id in (0..num_layers.saturating_sub(1)).rev() {
+                for block in &mut self.wipe_tower_blocks {
+                    if layer_id + 1 < block.layer_depths.len() {
+                        block.layer_depths[layer_id] =
+                            block.layer_depths[layer_id].max(block.layer_depths[layer_id + 1]);
+                    }
+                }
+            }
+        }
+
         if crate::probe_enabled("TOWER_BLOCKS_DEBUG") {
             eprintln!(
                 "TOWER_BLOCKS: layers={} blocks={} categories={:?} depths={:?}",
@@ -2112,6 +2139,81 @@ impl WipeTower {
                     .collect::<Vec<_>>(),
             );
         }
+    }
+
+    /// Lay the blocks out along the tower depth.
+    // WipeTower.cpp:4237-4258 (update_all_layer_depth) — BLOCK SIDE ONLY.
+    //
+    // C++ also multiplies every `m_plan[i].depth` by `m_extra_spacing` from inside
+    // this loop (i.e. once per block, which is why it is a loop-body statement and
+    // not a separate pass), and under timelapse/wrapping overwrites all plan depths
+    // with `m_wipe_tower_depth`. Both are plan-side geometry changes; on Majora
+    // `extra_spacing` is 1.0 and timelapse is opt-in (R509), so they are no-ops
+    // here — porting them belongs with the two-depth separation (R509/R510), not
+    // with the block layout. R618.
+    fn update_all_layer_depth(&mut self) {
+        let start_offset = self.perimeter_width;
+        let mut start_depth = start_offset;
+        let extra_spacing = self.extra_spacing;
+        let mut tower_depth = 0.0f32;
+        for block in &mut self.wipe_tower_blocks {
+            block.depth *= extra_spacing;
+            block.start_depth = start_depth;
+            start_depth += block.depth;
+            tower_depth += block.depth;
+            for layer_depth in &mut block.layer_depths {
+                *layer_depth *= extra_spacing;
+            }
+        }
+        let _ = tower_depth;
+    }
+
+    /// Charge one tool change's consumed depth to its block.
+    // WipeTower.cpp:3333 (`block->cur_depth += wipe_depth - nozzle_change_depth`,
+    // plus `last_filament_change_id`) and :3479 (`+= nozzle_change_depth`, plus
+    // `last_nozzle_change_id`). The two together advance `cur_depth` by the full
+    // `wipe_depth` per tool change, which is the same quantity our single
+    // `depth_traversed` cursor tracks — but C++ keeps it PER BLOCK, and
+    // `finish_block` reads it to fill only the depth the tool changes left over.
+    // R618.
+    fn charge_tool_change_to_block(
+        &mut self,
+        old_tool: usize,
+        new_tool: usize,
+        wipe_depth: f32,
+        nozzle_change_depth: f32,
+    ) {
+        if nozzle_change_depth > 0.0 {
+            let old_cat = self.get_filament_category(old_tool);
+            if let Some(idx) = self.get_block_by_category(old_cat, false) {
+                let block = &mut self.wipe_tower_blocks[idx];
+                block.cur_depth += nozzle_change_depth;
+                block.last_nozzle_change_id = old_tool as i32;
+            }
+        }
+        let new_cat = self.get_filament_category(new_tool);
+        if let Some(idx) = self.get_block_by_category(new_cat, false) {
+            let block = &mut self.wipe_tower_blocks[idx];
+            block.cur_depth += wipe_depth - nozzle_change_depth;
+            block.last_filament_change_id = new_tool as i32;
+        }
+    }
+
+    /// Would C++ emit a `finish_block` for this block on the current layer?
+    // WipeTower.cpp:4751 — generate() SKIPS the block when the tool changes have
+    // already filled it:
+    //   if (block.cur_depth + EPSILON >= block.start_depth
+    //       + block.layer_depths[m_cur_layer_id] - m_perimeter_width) continue;
+    // This is the mechanism behind C++'s {1:386, 2:264, 3:6} finish-block
+    // histogram: on the 1-buckets the block is already full. R618.
+    fn block_needs_finish(&self, block: &WipeTowerBlock) -> bool {
+        let layer_depth = block
+            .layer_depths
+            .get(self.layer_idx)
+            .copied()
+            .unwrap_or(0.0);
+        block.cur_depth + WT_EPSILON
+            < block.start_depth + layer_depth - self.perimeter_width
     }
 
     /// Reset per-layer block bookkeeping.
@@ -2165,6 +2267,11 @@ impl WipeTower {
         // once the plan's per-tool-change depths are known. R617.
         if crate::faithful_gate("TOWER_BLOCKS_CPP") {
             self.generate_wipe_tower_blocks();
+            // WipeTower.cpp:4557 — plan_tower_new lays the blocks out once the
+            // depths are known. Without this every block keeps start_depth 0, so
+            // reset_block_status would rewind cur_depth to 0 instead of to the
+            // block's origin. R618.
+            self.update_all_layer_depth();
         }
 
         // Apply spacing to layers
@@ -2343,6 +2450,31 @@ impl WipeTower {
             for new_tool in new_tools {
                 let result = self.tool_change(new_tool);
                 layer_results.push(result);
+            }
+
+            // WipeTower.cpp:4749-4752 — C++ walks the blocks here and emits a
+            // finish_block tcr for each one the tool changes did NOT fill. R618
+            // measures how often that fires BEFORE porting the ~90-line emitter,
+            // so the block count can be checked against C++'s 276 in advance.
+            if crate::probe_enabled("TOWER_FINISH_BLOCK_CENSUS") {
+                let n = self
+                    .wipe_tower_blocks
+                    .iter()
+                    .filter(|b| self.block_needs_finish(b))
+                    .count();
+                let b = &self.wipe_tower_blocks[0];
+                eprintln!(
+                    "TOWER_FINISH_BLOCK: layer={} would_emit={} start={:.3} cur={:.3} layer_depth={:.3} pw={:.3} slack={:.3}",
+                    layer_idx,
+                    n,
+                    b.start_depth,
+                    b.cur_depth,
+                    b.layer_depths.get(self.layer_idx).copied().unwrap_or(0.0),
+                    self.perimeter_width,
+                    b.start_depth + b.layer_depths.get(self.layer_idx).copied().unwrap_or(0.0)
+                        - self.perimeter_width
+                        - b.cur_depth,
+                );
             }
 
             // Finish the layer
@@ -2563,6 +2695,16 @@ impl WipeTower {
 
         // Update state
         self.depth_traversed += wipe_depth;
+        // WipeTower.cpp:3333/:3479 — the same advance, but charged PER BLOCK so
+        // finish_block can fill only what is left over. R618.
+        if crate::faithful_gate("TOWER_BLOCKS_CPP") {
+            self.charge_tool_change_to_block(
+                old_tool,
+                new_tool,
+                wipe_depth,
+                nozzle_change_depth,
+            );
+        }
         self.left_to_right = !self.left_to_right;
 
         // Construct result

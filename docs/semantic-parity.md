@@ -8923,3 +8923,97 @@ wrong rather than its existence — compare the emitted block against C++'s laye
 with `$D/r615_dump.py` before touching anything else, and expect the 1.6mm span gap to be
 the reason (R616), which means step 4 of `generate_wipe_tower_blocks` is the real next
 target.
+
+## R618 — the `finish_block` skip is an identity without step 4; census 0 → 210
+
+Prediction **WRONG** on the census clause, then **right in kind** after the diagnosis; the
+registered fallback named the outcome both times. Byte-neutral throughout — Majora stays
+`137de4a3`, benchy `304320a6`, cube `242f1fb8`. This round deliberately spent one build on a
+census instead of ~90 lines of emitter, and that is what caught the problem.
+
+### Reading first: `finish_block` needs two things we did not have
+
+`finish_block` (`WipeTower.cpp:3743-3831`) and `finish_layer_new` (`:3550-3721`) are
+structurally near-identical — both do `rectangle_fill_box` + `CP EMPTY GRID` + outer
+perimeter. The difference is the fill box: `finish_block` spans `block.cur_depth` →
+`block.start_depth + block.layer_depths[cur]`, i.e. only the depth this layer's tool changes
+left over. Two prerequisites follow, neither of which existed:
+
+1. **`cur_depth` must be advanced by the tool changes** — C++ does it at `:3333`
+   (`+= wipe_depth - nozzle_change_depth`, sets `last_filament_change_id`) and `:3479`
+   (`+= nozzle_change_depth`, sets `last_nozzle_change_id`). R617 added only
+   `reset_block_status`, which *rewinds* `cur_depth`; nothing advanced it.
+2. **`start_depth` must be laid out** — `update_all_layer_depth` (`:4237`) walks the blocks
+   assigning `start_depth`, starting from `m_perimeter_width`. Without it every block kept
+   `start_depth = 0`, so the rewind went to 0 rather than to the block's origin.
+
+And generate() `:4751` **skips** the block entirely when the tool changes already filled it:
+
+```cpp
+if (block.cur_depth + EPSILON >= block.start_depth + block.layer_depths[m_cur_layer_id] - m_perimeter_width) continue;
+```
+
+That skip — not any property of the emitter — is what produces C++'s `{1:386, 2:264, 3:6}`.
+
+### Landed (both `faithful_gate`, default-on, both byte-neutral)
+
+`TOWER_BLOCKS_CPP` gains `update_all_layer_depth` (block side only) and
+`charge_tool_change_to_block`; a new `TOWER_BLOCK_LAYER_DEPTH_MAX` carries step 4's
+depth propagation. Plus `block_needs_finish` (the `:4751` predicate) and a
+`TOWER_FINISH_BLOCK_CENSUS` probe.
+
+### The measurement that changed the round
+
+With prerequisites 1 and 2 in place the census reported **0 emissions on all 656 layers**.
+Dumping the terms rather than guessing:
+
+    layer=0   start=0.500 cur=17.000 layer_depth=16.500 pw=0.500 slack=-0.500
+    layer=139 start=0.500 cur=28.000 layer_depth=27.500 pw=0.500 slack=-0.500
+    layer=299 start=0.500 cur=33.500 layer_depth=33.000 pw=0.500 slack=-0.500
+    layer=654 start=0.500 cur= 0.500 layer_depth= 0.000 pw=0.500 slack=-0.500
+
+**The slack is exactly −`perimeter_width` on every single layer — an algebraic identity, not
+a data error.** `layer_depths[i]` is the sum of layer i's `required_depth`s (that is what
+`add_depth_to_block` accumulates) and `cur_depth` advances by exactly `required_depth` per
+change, so `cur_depth ≡ start_depth + layer_depths[i]` and the predicate can never fire.
+Layer 0 checks out to the digit: 0.5 + 16.5 = 17.0.
+
+C++ escapes the identity through **step 4** (`:4316-4323`), the half R617 deliberately held
+back, which raises each layer's depth to the running max from the layers **above**:
+
+```cpp
+block.layer_depths[layer_id] = max(block.layer_depths[layer_id], block.layer_depths[layer_id + 1]);
+```
+
+A sparse layer inherits a taller block from above, and that inherited slack is exactly what
+`finish_block` fills. Porting only that half — byte-neutral, since nothing but the block
+machinery reads `layer_depths` — moved the census:
+
+| | total | per-layer |
+|---|---|---|
+| before | 0 | `{0: 656}` |
+| **after** | **210** | `{0: 446, 1: 210}` |
+| C++ (extra blocks) | 276 | `{0: 386, 1: 264, 2: 6}` |
+
+**210 of C++'s 264 one-extra layers (79.5%)**, and none of the 6 two-extra layers — those are
+`only_generate_out_wall`, which is separately gated behind `TOWER_TIMELAPSE_DEPTH`. So the
+mechanism is confirmed and the remaining 54 belong to step 4's *other* half, the
+`m_plan[i].depth` rewrite that is entangled with the two-depth problem (R509/R510).
+
+C++ folds both statements into one loop; only the `layer_depths` half is ported here,
+because the plan-depth half changes geometry and this round is byte-neutral by construction.
+
+### Why the census was worth a round
+
+Writing `finish_block` first would have produced an emitter that fires zero times, and the
+zero would have looked like a broken port rather than an unfired predicate. The census cost
+one build and established the target count **in advance**: R619 should see the finish-block
+count go 656 → **866**, not 932.
+
+**R619:** port `finish_block` (`WipeTower.cpp:3743-3831`) with its own
+`; WIPE_TOWER_START/END` pair, emitted as a separate ToolChangeResult; `TOWER_FINISH_ALL`
+(R614) is default-on and waiting. **Predict the finish-block count moves 656 → 866 (the
+census's 210, now validated) and Majora matched lines rise.** Fallback: if the count reaches
+866 but matched lines do not rise, the geometry is wrong rather than the count — dump against
+C++'s layer-138 block1 with `$D/r615_dump.py` and expect R616's 1.6mm span gap, which points
+back at step 4's plan-depth half as the next target either way.
