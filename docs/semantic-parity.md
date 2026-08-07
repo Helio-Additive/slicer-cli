@@ -9542,3 +9542,59 @@ F1800` 2,562 → ~5,283, and matched lines up by roughly 2,700 — a genuine gai
 these are existing lines gaining a correct suffix rather than new lines being added.**
 Fallback: if the bare count does not move, the emitter is not `load`/`retract` but a direct
 `append`, so grep for the literal before changing the writer.
+
+## R627 — the gap-wall ironing travels lost their feedrates: +2,715 matched lines
+
+Prediction **right on all three counts, two of them exact**. A genuine gain this time: body
+lines are unchanged, so the rise is matched lines rather than a shrinking denominator. Majora
+re-baselined `bacdfefb` → **`92c93130`**. Benchy `304320a6`, cube `242f1fb8` unchanged; 8 guard
+suites and the 20 wall-gap tests pass.
+
+### Located by attribution, not by guessing
+
+All 2,721 bare `G1 E0.8000` sat in tower **toolchange** blocks (C++ has zero anywhere), and the
+surrounding travels carried the trailing-space coordinates that mark tower gcode after
+`transform_gcode`. That pinned the emitter to the tower writer rather than the object one, and
+led to `wipe_tower.rs:3588` — our port of C++'s gap-wall ironing at `WipeTower.cpp:4085-4094`
+(the `prime_tower_skip_points` ironing, R499).
+
+### The defect
+
+C++ gives both ironing travels an explicit feedrate:
+
+```cpp
+writer.retract(retract_length, retract_speed);
+writer.travel(writer.x() - 1.5 * ironing_length, writer.y(), 600.);
+writer.travel(writer.x() + 1.5 * ironing_length, writer.y(), 240.);
+writer.retract(-retract_length, retract_speed);
+```
+
+We passed none. With no feedrate written, `m_current_feedrate` stayed at `retract_speed`, so
+the **closing** retract's `f != m_current_feedrate` test suppressed its suffix — one bare
+`G1 E0.8000` per tool change. Fixed by using R626's `travel_to_f` with 600 and 240.
+
+### Measured, on the file being judged
+
+| | C++ | before | after |
+|---|---|---|---|
+| bare `G1 E0.8000` | 0 | 2,721 | **0** |
+| `G1 E0.8000 F1800` | 5,399 | 2,562 | **5,283** |
+| `F240` travels | 2,723 | 0 | **2,721** |
+
+The `F240` count lands 2 short of C++ — exactly the long-known 2-tool-change difference
+(2,723 vs 2,721), not a new discrepancy.
+
+**Parity: matched 668,151 → 670,866, i.e. +2,715** against a predicted ~2,700. Body lines
+2,564,969 → 2,564,963 (−6), so this is a **real gain** — existing lines acquiring a correct
+suffix — and not the denominator effect that made R626 flat. Rate 26.05% → **26.15%**;
+line-count gap unchanged at 7.80%.
+
+**R628:** tower arc fitting. `enable_arc_fitting` is `"1"` and C++ emits **2,719** `G2`/`G3`
+inside tower toolchange blocks against our **0** (R622), because the fillet-rounded wall
+(`prime_tower_fillet_wall: "1"`) is fitted to arcs by `simplify_by_fitting_arc` before
+`generate_path` builds its segment list. **Predict tower `G2`/`G3` 0 → ~2,719 and matched lines
+up a couple of thousand.** Fallback: if the arcs appear but matched lines fall, our arc
+parameters (`I`/`J` centre offsets) differ from C++'s even where the endpoints agree — compare
+one block with `$D/r615_dump.py` before tuning, and remember we already emit **29,423 more**
+object arcs than C++ (R622), so an arc-fitting change may move that too; attribute with
+`$D/r622_arc.py` before attributing any delta to the tower.

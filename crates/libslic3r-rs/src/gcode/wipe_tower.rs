@@ -3585,9 +3585,16 @@ impl WipeTower {
                     let dir = if dx >= 0.0 { 1.0 } else { -1.0 };
                     writer.extrude(x0 + dir * il, y);
                     let x1 = writer.x();
+                    // WipeTower.cpp:4085-4094 — both travels carry an explicit
+                    // feedrate: 600 out, 240 back (the non-flat-ironing branch).
+                    // R627: we omitted both, so `current_feedrate` stayed at
+                    // retract_speed and the CLOSING retract's
+                    // `f != m_current_feedrate` test suppressed its suffix —
+                    // 2,721 bare `G1 E0.8000` against C++'s zero, one per tool
+                    // change, all inside tower toolchange blocks (attributed).
                     writer.retract(retract_len, retract_spd);
-                    writer.travel(x1 - dir * 1.5 * il, y);
-                    writer.travel(x1, y);
+                    writer.travel_to_f(Vec2f::new(x1 - dir * 1.5 * il, y), 600.0);
+                    writer.travel_to_f(Vec2f::new(x1, y), 240.0);
                     writer.retract(-retract_len, retract_spd);
                 }
                 writer.extrude(x_end, y);
