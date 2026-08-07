@@ -2876,9 +2876,13 @@ impl WipeTower {
                 }
             }
 
-            // WipeTower.cpp:3643-3644 — closes the block, with C++'s separator
-            // and its seven trailing blank lines.
-            writer.append("; CP EMPTY GRID END\n;------------------\n\n\n\n\n\n\n\n");
+            // WipeTower.cpp:3643-3644 — closes the block. C++'s literal is
+            //     "; CP EMPTY GRID END\n" ";------------------\n\n\n\n\n\n\n"
+            // i.e. SEVEN newlines after the separator text, which terminate the
+            // separator line and leave SIX blank lines. R616: we emitted eight,
+            // so every EMPTY GRID close carried one extra blank line — measured
+            // on Majora as C++ {6 blanks: 209} against our {7 blanks: 207}.
+            writer.append("; CP EMPTY GRID END\n;------------------\n\n\n\n\n\n\n");
         }
 
         // Draw outer perimeter

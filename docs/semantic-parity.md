@@ -8758,3 +8758,96 @@ C++'s 932 are standalone versus merged before porting further. Note the two engi
 blocks also sit **2.0mm apart in Y** (C++ `Y225.297`/`Y235.797` vs ours `Y227.297`/
 `Y237.797`) — a tower depth/offset difference worth resolving in the same round, since it
 blocks those lines from ever matching.
+## R616 — the finish split is blocked on the planner; the Y offset is NOT a rigid shift
+
+Prediction **RIGHT** on the one change made. Two measurements this round stopped a wrong fix
+and sequenced the right one. Majora re-baselined `3bc2650c` → **`137de4a3`**.
+
+### Measurement 1 — the 2.0mm Y offset is real, finish-block-specific, and NOT a translation
+
+R615 handed over "the finish blocks sit 2.0mm apart in Y; measure whether it is a constant
+offset on every tower line or only on the finish blocks **before changing any geometry**."
+Sweeping every constant offset in [-3, +3] mm at 1µm steps and counting how many distinct
+Rust Y values land on a C++ one:
+
+| | C++ distinct Y | Rust | exact-shared | best constant offset |
+|---|---|---|---|---|
+| tower toolchange | 5,903 | 4,090 | 268 | −0.250 → 271/4,090 |
+| tower finish-layer | 90 | 59 | 41 | **−2.000 → 49/59** |
+
+So the offset is **confined to the finish blocks** — the toolchange blocks show no offset at
+all (the best shift buys 3 values out of 4,090, i.e. noise). But applying it would be wrong:
+the two ranges are C++ `[194.248, 239.346]` (span **45.098**) against ours
+`[197.047, 240.547]` (span **43.500**). **Our finish box is also 1.6mm shorter**, so this is
+a box extent/depth difference, not a rigid translation — and it is the same two-depths
+problem already documented at R509/R510 (`block.layer_depths[cur]` for `finish_block`'s box
+vs `m_layer_info->depth` for `finish_layer_new`'s). **No geometry was changed.** Measuring
+first is what prevented shipping a constant shift that would have mis-aligned the span.
+
+### Measurement 2 — why we can only ever emit one finish block, and what unblocks it
+
+C++ writes `; WIPE_TOWER_START` / `; WIPE_TOWER_END` from **seven** sites, one per
+tcr-producing function (`WipeTower.cpp:2088/2161`, `2691/2831`, `3288/3328`, `3550/3721`,
+`3743/3831`, `3859/3947`, `4966/4988`):
+
+| function | emits its own marker pair |
+|---|---|
+| `tool_change` / `tool_change_new` | yes |
+| `finish_layer` / `finish_layer_new` | yes |
+| **`finish_block`** | **yes** |
+| **`finish_block_solid`** | **yes** |
+| **`only_generate_out_wall`** | **yes** |
+
+We have **two** (`wipe_tower.rs:2299/2355` tool change, `:2617/:2911` finish layer). Per
+layer C++ can therefore emit `finish_layer_new` + `finish_block` + `only_generate_out_wall`
+= up to three finish-side blocks, which is exactly the observed `{1:386, 2:264, 3:6}`; ours
+is structurally pinned at `{1:656}`.
+
+**The split cannot be ported yet.** `finish_block(const WipeTowerBlock &block, int
+filament_id, bool extrude_fill)` and `finish_block_solid(...)` both take a
+`WipeTowerBlock` — and R614 established that `wipe_tower_blocks` is declared, initialised
+`vec![]`, and never populated. So the finish-layer split is **downstream of** the planner
+port, not an alternative to it. That sequences the work: `generate_wipe_tower_blocks`
+(`:4208`) + `get_block_by_category` (`:4163`) must land first. (`only_generate_out_wall` is
+separately gated: it fires under `only_generate_wall`, which C++ has ON for Majora via
+`timelapse_type = 1`, while ours is opt-in behind `TOWER_TIMELAPSE_DEPTH` pending R509's
+two-depth separation.)
+
+### The one fix landed — an off-by-one blank line at the EMPTY GRID close
+
+C++'s literal (`WipeTower.cpp:3643-3644`) is
+
+```cpp
+writer.append("; CP EMPTY GRID END\n"
+              ";------------------\n\n\n\n\n\n\n");
+```
+
+— seven newlines after the separator text: one terminates the separator line, six are blank.
+Ours had eight. Measured blank-runs following `;------------------`, both engines, same
+files:
+
+| | before | after |
+|---|---|---|
+| C++ | `{0: 5655, 2: 211, 3: 2512, 6: 209}` | (unchanged) |
+| Rust | `{0: 5649, 2: 2721, 7: 207}` | `{0: 5649, 2: 2721, 6: 207}` |
+
+Our `7`-bucket moved to `6`, matching C++'s. **Line parity is unchanged at 25.88%
+(660,333/2,551,163, body-line count identical), which confirms `line_parity.py` strips blank
+lines** — so this is faithfulness (ask #1), not a parity gain, and is reported as such.
+
+### Also found, left open
+
+The same census shows a second blank-line divergence in the **toolchange** separator: C++
+`{2: 211, 3: 2512}` against our `{2: 2721}` — C++ varies between two and three blanks across
+its 2,723 tool changes while we always emit two. The 211/2,512 split is conditional on
+something we do not model; **do not "fix" this by making it constantly three.**
+
+**R617:** port `generate_wipe_tower_blocks` (`WipeTower.cpp:4208`) + `get_block_by_category`
+(`:4163`) to populate `wipe_tower_blocks`, behind one gate, and measure before porting
+`finish_block`. Majora has ONE filament category (R615), so **predict the block vector
+becomes length 1 and the output is byte-neutral — the value is that it unblocks
+`finish_block`, not that it changes gcode.** Fallback: if the output does change, the block's
+`start_depth`/`cur_depth`/`layer_depths` are feeding a path we already compute differently,
+and that difference must be understood before `finish_block` is added on top. **State plainly
+that a byte-neutral result is the expected and successful outcome here (R614's lesson), so it
+is not mistaken for a failed round.**
