@@ -1491,6 +1491,39 @@ impl WipeTowerWriter {
         self.travel_to(Vec2f::new(x, y))
     }
 
+    /// Travel to position, writing the feedrate ON the move line.
+    // WipeTower.cpp:884 — `travel(const Vec2f &dest, float f = 0.f)` forwards to
+    // extrude_explicit(dest.x, dest.y, 0.f, f, ...), which appends set_format_F(f)
+    // to the same `G1`. R626: `generate_path`'s gap travels were emitting a
+    // standalone `G1 F600` line AND a bare `G1 X.. Y..` — two lines where C++
+    // writes one, measured as 5,011 standalone `G1 F600` against C++'s 2,485.
+    pub fn travel_to_f(&mut self, target: Vec2f, f: f32) -> &mut Self {
+        if f <= 0.0 || f == self.current_feedrate {
+            // Nothing to fold in; C++'s set_format_F is skipped on f == 0 and the
+            // move is identical to a plain travel.
+            return self.travel_to(target);
+        }
+        let rotated = self.rotate(target);
+        self.gcode.push_str(&format!(
+            "G1 X{:.3} Y{:.3} F{:.0}\n",
+            rotated.x, rotated.y, f
+        ));
+        self.current_feedrate = f;
+
+        if !self.preview_suppressed {
+            self.extrusions
+                .push(Extrusion::new(target, 0.0, self.current_tool));
+        }
+        let dx = target.x - self.current_pos.x;
+        let dy = target.y - self.current_pos.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        if self.current_feedrate > 0.0 {
+            self.elapsed_time += len / self.current_feedrate * 60.0;
+        }
+        self.current_pos = target;
+        self
+    }
+
     /// Travel to position
     pub fn travel_to(&mut self, target: Vec2f) -> &mut Self {
         // WipeTower.cpp:766-771 — gcode uses rot.x()/rot.y() directly; the
@@ -1666,8 +1699,9 @@ impl WipeTowerWriter {
             let len = (dx * dx + dy * dy).sqrt();
             if len > WT_EPSILON {
                 self.retract(retract_length, retract_speed);
-                self.feedrate(600.0);
-                self.travel_to(segments[i].0);
+                // :1304 — `travel(segments[i].start, 600.)`, feedrate INLINE on
+                // the move, not a separate `G1 F600` line (R626).
+                self.travel_to_f(segments[i].0, 600.0);
                 self.retract(-retract_length, retract_speed);
             }
             self.feedrate(feedrate);

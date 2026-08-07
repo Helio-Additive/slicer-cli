@@ -9489,3 +9489,56 @@ inline as C++ does, so the unretract keeps its feedrate. **Predict `G1 E0.8000 F
 Fallback: if the unretracts rise but `F600` does not, our travels are already carrying F600 on
 a separate line that C++ folds in — compare layer 138 with `$D/r615_dump.py` before changing
 the writer further. Then take arc fitting (2,719 lines) as its own round.
+
+## R626 — fold the gap travel's feedrate inline: faithful, and parity-neutral
+
+Prediction **right and exact** on the mechanism; the parity effect is **flat** and reported as
+such. Majora re-baselined `4ffc6a0d` → **`bacdfefb`**. Benchy `304320a6` and cube `242f1fb8`
+unchanged; 8 guard suites and the 20 wall-gap tests pass.
+
+### R625's handover reasoning was wrong, and measuring first caught it
+
+R625 blamed the unretract asymmetry on our gap travels leaving the following unretract without
+its feedrate. Counting the actual line shapes:
+
+| | C++ | Rust @R625 |
+|---|---|---|
+| `G1 E0.8000 F1800` | 5,399 | 2,562 |
+| bare `G1 E0.8000` | **0** | **2,721** |
+| standalone `G1 F600` | 2,485 | 5,011 |
+
+**2,721 is exactly our tool-change count**, so the F-less unretracts are the pre-existing
+R608/R611 tower wipe — not the new gap code, which was already emitting its 2,562 correctly.
+And C++ *does* emit standalone `G1 F600` (2,485), so "C++ always folds F into the move" was
+wrong too.
+
+### What was actually wrong, and is now fixed
+
+Each gap travel emitted a standalone `G1 F600` line **and** a bare `G1 X.. Y..` — two lines
+where C++'s `travel(dest, 600.)` (`WipeTower.cpp:884`, via `extrude_explicit`'s
+`set_format_F`) writes one. Added `travel_to_f`, which appends the feedrate to the move line,
+and used it in `generate_path` (`:1304`).
+
+**Measured: standalone `G1 F600` 5,011 → 2,449** — exactly our pre-existing count, so all
+2,562 gap travels now fold their feedrate inline (2,449 + 2,562 = 5,011 F600-bearing lines,
+unchanged). C++ has 2,485 standalone; we are 36 short, a separate small item.
+
+### Parity effect, stated plainly
+
+**Matched lines 668,158 → 668,151 — that is −7, i.e. flat.** Our body lines fell
+2,567,537 → 2,564,969 as the 2,568 spurious lines went away. The rate ticks 26.02% → **26.05%**
+but that is **denominator-driven, not a gain** (R599/R605), and the line-count gap actually
+**widens** 7.71% → 7.80%, because we already had fewer lines than C++.
+
+Kept anyway: it is the faithful emission shape — proven by the count landing exactly on the
+pre-existing 2,449 — and it removes 2,568 lines that could never have matched. But it is not a
+parity win and is not counted as one.
+
+**R627:** the 2,721 bare `G1 E0.8000` unretracts in the pre-existing R608/R611 wipe path.
+C++ has **zero** bare ones; every unretract carries `F1800`. Find the call that passes a
+feedrate equal to the writer's current one (so `load`'s `f != m_current_feedrate` test
+suppresses it) and give it C++'s value. **Predict bare `G1 E0.8000` 2,721 → 0, `G1 E0.8000
+F1800` 2,562 → ~5,283, and matched lines up by roughly 2,700 — a genuine gain this time, since
+these are existing lines gaining a correct suffix rather than new lines being added.**
+Fallback: if the bare count does not move, the emitter is not `load`/`retract` but a direct
+`append`, so grep for the literal before changing the writer.
