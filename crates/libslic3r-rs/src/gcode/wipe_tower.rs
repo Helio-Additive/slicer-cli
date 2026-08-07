@@ -527,6 +527,210 @@ impl WipeTowerLayerInfo {
     }
 }
 
+// ============================================================================
+// Wall-gap geometry helpers (R623)
+//
+// These are the leaf functions of C++'s LIVE wall-gap chain:
+//     generate_support_wall_new (WipeTower.cpp:5030)
+//       -> contrust_gap_for_skip_points (:595)
+//         -> remove_points_from_polygon (:510)
+//       -> WipeTowerWriter::generate_path (:1249)
+//
+// R622 established that the OTHER chain — `generate_support_wall` (:5081) and
+// `remove_points_from_segment` (:298) — is dead; both of its call sites (:3661,
+// :4977) are commented out. These three helpers belong to the live side.
+//
+// They are ported here as pure functions with unit tests, ahead of
+// `remove_points_from_polygon` itself, because that function is meaningless
+// until they are correct and they can be checked in isolation. Nothing calls
+// them yet, so this is byte-neutral by construction.
+// ============================================================================
+
+/// 2D cross product. WipeTower.cpp uses Slic3r's `cross2`.
+fn cross2(a: Vec2f, b: Vec2f) -> f64 {
+    a.x as f64 * b.y as f64 - a.y as f64 * b.x as f64
+}
+
+/// Intersect the ray `a + t*v1` (t >= 0) with the segment `b..c`.
+// WipeTower.cpp:230-246 (ray_intersetion_line — C++'s spelling, kept).
+// Returns the hit point only when t1 >= 0 (forward along the ray) and
+// 0 <= t2 <= 1 (within the segment).
+pub fn ray_intersetion_line(a: Vec2f, v1: Vec2f, b: Vec2f, c: Vec2f) -> Option<Vec2f> {
+    let v2 = Vec2f::new(c.x - b.x, c.y - b.y);
+    let denom = cross2(v1, v2);
+    if denom.abs() < WT_EPSILON as f64 {
+        return None;
+    }
+    let v12 = Vec2f::new(a.x - b.x, a.y - b.y);
+    let t1 = cross2(v2, v12) / denom;
+    let t2 = cross2(v1, v12) / denom;
+    if t1 >= 0.0 && t2 >= 0.0 && t2 <= 1.0 {
+        return Some(Vec2f::new(
+            a.x + t1 as f32 * v1.x,
+            a.y + t1 as f32 * v1.y,
+        ));
+    }
+    None
+}
+
+/// A point on the wall polygon, tagged with the gap it belongs to.
+// WipeTower.cpp's PointWithFlag.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointWithFlag {
+    pub pos: Vec2f,
+    /// Index of the skip point that opened this gap, or -1 for an ordinary vertex.
+    pub pair_idx: i32,
+    pub is_forward: bool,
+}
+
+/// Where a gap boundary lands on the polygon.
+// WipeTower.cpp's IntersectionInfo.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IntersectionInfo {
+    pub pos: Vec2f,
+    pub idx: i32,
+    pub pair_idx: i32,
+    pub dis_from_idx: f32,
+    pub is_forward: bool,
+}
+
+impl Default for IntersectionInfo {
+    fn default() -> Self {
+        Self { pos: Vec2f::zero(), idx: 0, pair_idx: -1, dis_from_idx: 0.0, is_forward: false }
+    }
+}
+
+fn dist(a: Vec2f, b: Vec2f) -> f32 {
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    (dx * dx + dy * dy).sqrt()
+}
+
+/// Walk `offset` mm along the polygon from `start_point`, forwards or backwards.
+// WipeTower.cpp:337-397 (move_point_along_polygon). The two directions are NOT
+// mirror images in C++ — the backward branch measures `dis_from_idx` as
+// `segmentLength - remainingDistance` and steps from `points[(i+1) % mod]`,
+// while the forward branch measures it as `remainingDistance` from `points[i]`.
+// Both are reproduced literally rather than folded together.
+pub fn move_point_along_polygon(
+    points: &[Vec2f],
+    start_point: Vec2f,
+    start_idx: usize,
+    offset: f32,
+    forward: bool,
+    pair_idx: i32,
+) -> IntersectionInfo {
+    let mut remaining = offset;
+    let m = points.len();
+    let mut res = IntersectionInfo { pair_idx, ..Default::default() };
+    if m == 0 {
+        return res;
+    }
+    let next = (start_idx + 1) % m;
+
+    if forward {
+        remaining -= dist(points[next], start_point);
+        if remaining <= 0.0 {
+            let d = dist(points[next], start_point);
+            let dir = if d > 0.0 {
+                Vec2f::new((points[next].x - start_point.x) / d, (points[next].y - start_point.y) / d)
+            } else {
+                Vec2f::zero()
+            };
+            res.idx = start_idx as i32;
+            res.pos = Vec2f::new(start_point.x + dir.x * offset, start_point.y + dir.y * offset);
+            res.dis_from_idx = dist(points[start_idx], res.pos);
+            return res;
+        }
+        let mut i = (start_idx + 1) % m;
+        while i != start_idx {
+            let j = (i + 1) % m;
+            let seg = dist(points[j], points[i]);
+            if remaining <= seg {
+                let ratio = if seg > 0.0 { remaining / seg } else { 0.0 };
+                res.idx = i as i32;
+                res.pos = Vec2f::new(
+                    points[i].x + ratio * (points[j].x - points[i].x),
+                    points[i].y + ratio * (points[j].y - points[i].y),
+                );
+                res.dis_from_idx = remaining;
+                return res;
+            }
+            remaining -= seg;
+            i = (i + 1) % m;
+        }
+        res.idx = ((start_idx + m - 1) % m) as i32;
+        res.pos = points[start_idx];
+        res.dis_from_idx = dist(res.pos, points[res.idx as usize]);
+    } else {
+        remaining -= dist(points[start_idx], start_point);
+        if remaining <= 0.0 {
+            let d = dist(points[next], points[start_idx]);
+            let dir = if d > 0.0 {
+                Vec2f::new((points[next].x - points[start_idx].x) / d, (points[next].y - points[start_idx].y) / d)
+            } else {
+                Vec2f::zero()
+            };
+            res.idx = start_idx as i32;
+            res.pos = Vec2f::new(start_point.x - dir.x * offset, start_point.y - dir.y * offset);
+            res.dis_from_idx = dist(res.pos, points[start_idx]);
+            return res;
+        }
+        let mut i = (start_idx + m - 1) % m;
+        while i != start_idx {
+            let j = (i + 1) % m;
+            let seg = dist(points[j], points[i]);
+            if remaining <= seg {
+                let ratio = if seg > 0.0 { remaining / seg } else { 0.0 };
+                res.idx = i as i32;
+                res.pos = Vec2f::new(
+                    points[j].x - ratio * (points[j].x - points[i].x),
+                    points[j].y - ratio * (points[j].y - points[i].y),
+                );
+                res.dis_from_idx = seg - remaining;
+                return res;
+            }
+            remaining -= seg;
+            i = (i + m - 1) % m;
+        }
+        res.idx = start_idx as i32;
+        res.pos = points[res.idx as usize];
+        res.dis_from_idx = 0.0;
+    }
+    res
+}
+
+/// Tag an existing vertex, or splice a new one in after `idx`.
+// WipeTower.cpp:399-413 (insert_points). C++ compares with squaredNorm against
+// EPSILON, i.e. a squared tolerance; reproduced as such rather than as a
+// distance comparison.
+pub fn insert_points(
+    pl: &mut Vec<PointWithFlag>,
+    idx: usize,
+    pos: Vec2f,
+    pair_idx: i32,
+    is_forward: bool,
+) {
+    if pl.is_empty() {
+        return;
+    }
+    let next = (idx + 1) % pl.len();
+    let sq = |a: Vec2f, b: Vec2f| {
+        let dx = a.x - b.x;
+        let dy = a.y - b.y;
+        dx * dx + dy * dy
+    };
+    if sq(pos, pl[idx].pos) < WT_EPSILON {
+        pl[idx].pair_idx = pair_idx;
+        pl[idx].is_forward = is_forward;
+    } else if sq(pos, pl[next].pos) < WT_EPSILON {
+        pl[next].pair_idx = pair_idx;
+        pl[next].is_forward = is_forward;
+    } else {
+        pl.insert(idx + 1, PointWithFlag { pos, pair_idx, is_forward });
+    }
+}
+
 /// Block of wipe tower for multi-extruder support
 #[derive(Debug, Clone, Default)]
 pub struct WipeTowerBlock {
@@ -3986,3 +4190,4 @@ mod tests {
         }
     }
 }
+

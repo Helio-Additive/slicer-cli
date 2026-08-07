@@ -9291,3 +9291,72 @@ measure whether the tower's straight segments match before touching arcs; (c) ar
 last — it is worth a bounded 2,719 lines against the ~16,200 of (b). Fallback for (a): if the
 gap count differs from 2,721, the `2.5 * m_perimeter_width` range is merging or splitting
 gaps — dump the per-layer gap count against the per-layer skip-point count before proceeding.
+
+## R623 — the wall-gap leaf helpers, ported with tests; one test caught my own error
+
+**Code shipped**, ending the three-measurement-rounds-in-four streak. Three leaf functions of
+C++'s live wall-gap chain are ported as pure functions with **11 unit tests, all passing**.
+Byte-neutral by construction — nothing calls them yet — so all three baselines are unchanged.
+
+### Why helpers first, and why tests
+
+R622 mapped the live chain:
+
+    generate_support_wall_new (:5030)
+      -> contrust_gap_for_skip_points (:595)
+        -> remove_points_from_polygon (:510)
+      -> WipeTowerWriter::generate_path (:1249)
+
+Sizing `remove_points_from_polygon` gave **267 lines** once its four helpers are counted
+(84 main + 90 `add_extra_point` + 61 `move_point_along_polygon` + 17 `ray_intersetion_line` +
+15 `insert_points`), plus a `Polygon::closest_point_index` this crate lacks. Writing all of
+that in one round and validating it only by a gap count would repeat the mistake of the last
+three rounds in a new form. **Since nothing consumes the output yet, gcode parity cannot check
+this code at all** — unit tests are the only available oracle, so the leaves were ported and
+tested first.
+
+Ported: `ray_intersetion_line` (`:230`), `move_point_along_polygon` (`:337`), `insert_points`
+(`:399`), plus the `PointWithFlag` / `IntersectionInfo` carriers. Left for next round:
+`add_extra_point` (`:417`), `closest_point_index`, and the main function.
+
+### The test that earned its keep
+
+`move_backward_across_a_corner` **failed on the first run** — and the bug was in my
+*expectation*, not the port. Walking 5mm backwards from (2,0) on a CCW 10mm square: 2mm
+reaches the origin, then C++ (`:381-383`) computes the remainder from the edge's **far** end,
+
+```cpp
+pos = points[i+1] - ratio * (points[i+1] - points[i])
+    = (0,0) - 0.3 * ((0,0) - (0,10)) = (0, 3)
+```
+
+so the answer is 3mm **above** the origin. I had asserted `(0, 7)`, measuring from the top
+corner. The Rust port already produced `(0, 3)`, matching C++ exactly. The assertion was
+corrected and the reasoning written into the test, since it is the natural mistake to make.
+
+That is the point of testing a component nothing consumes: the only error this round could
+surface was a silent one, and it surfaced.
+
+The backward branch is **not** a mirror of the forward branch in C++ — it measures
+`dis_from_idx` as `segmentLength - remainingDistance` and steps from `points[(i+1) % mod]`,
+where forward measures `remainingDistance` from `points[i]`. Both are reproduced literally
+rather than folded together, and both directions are covered by tests.
+
+### Note on the test harness
+
+The tests live in `crates/libslic3r-rs/tests/wall_gap_geometry.rs` rather than a
+`#[cfg(test)]` module because **`cargo test --lib` does not compile in this crate** —
+pre-existing and unrelated (unresolved `print_object` imports, `CSGType`, `CoolingConfig`,
+`InfillPattern`). That is why all eight guard suites are integration tests; this is now the
+ninth.
+
+Benchy `304320a6`, cube `242f1fb8`, Majora `137de4a3` unchanged; the 8 existing guard suites
+pass. Line parity unchanged at **25.88% (660,333/2,551,163)**.
+
+**R624:** port `add_extra_point` (`:417`) and `Polygon::closest_point_index`, then
+`remove_points_from_polygon` (`:510`) itself, still emitting nothing. **Predict the gap
+construction yields 2,721 gap polylines across 592 layers, matching R621's skip-point count,
+and byte-neutral output.** Fallback: if the count differs, the `2.5 * m_perimeter_width` range
+is merging or splitting gaps — dump per-layer gap counts against `TOWER_SKIP_POINTS_CENSUS`
+before proceeding. Extend the same test file as each piece lands; it is the only oracle until
+`generate_path` is wired (R625).
