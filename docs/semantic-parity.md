@@ -9218,3 +9218,76 @@ the retracts appear but the counts land near 2,721 rather than 5,399, only the t
 blocks are being broken and the finish-block wall (C++'s other 2,676) uses a second emission
 site — attribute with `$D/r620_attr.py` before touching the geometry, since R620 showed the
 two block kinds carry almost equal shares.
+
+## R622 — the consumer plan named the wrong function twice; plus 2,719 missing tower arcs
+
+**Measurement and correction only, no code changed.** R622 was slated to ship the consumer
+port. Checking which twin is live *before* coding (R600/R607/R615) showed the handed-over
+plan named the wrong function **twice**, and the live path carries a dependency that makes it
+a multi-round port. Shipping the named port would have replaced a correct wall with a wrong
+one.
+
+### Correction 1 — `generate_support_wall` (`:5081`) is DEAD
+
+Both its call sites (`:3661`, `:4977`) are commented out. The live emitter is
+`generate_support_wall_new` (`:5030`). The `remove_points_from_segment` helper and the
+`:5138`/`:5158` branches the plan named belong to the **dead** twin.
+
+### Correction 2 — the live helper is `remove_points_from_polygon`
+
+`:510` (84 lines), reached via `contrust_gap_for_skip_points` (`:595`). The plan said to use
+`contrust_gap_for_skip_points` "only if the rib-wall path needs it" — backwards. `rib_wall`
+only selects the polygon **shape** (`generate_rib_polygon` vs `generate_rectange_polygon`),
+and Majora sets `"prime_tower_rib_wall": "0"`, so the shape is a plain rectangle — but the
+gap construction runs regardless, gated on `skip_points` (= `m_use_gap_wall` =
+`"prime_tower_skip_points": "1"`).
+
+### The live chain, pinned end to end
+
+    generate_support_wall_new (:5030)
+      -> contrust_gap_for_skip_points (:595)
+        -> remove_points_from_polygon (:510)
+      -> writer.generate_path (:1249)
+
+and `generate_path` is where the missing lines are emitted, per gap (`:1302-1305`):
+
+```cpp
+retract(retract_length, retract_speed);
+travel(segments[i].start, 600.);
+retract(-retract_length, retract_speed);
+```
+
+**That triple is exactly the pattern R620 counted** — `G1 E-0.8000 F1800`, an `F600` travel,
+`G1 E0.8000 F1800`. The mechanism was right; only its location was wrong.
+
+### The dependency that makes this multi-round
+
+`generate_path` branches on `m_enable_arc_fitting`, and Majora sets
+`"enable_arc_fitting": "1"`, so it takes `simplify_by_fitting_arc` and builds its segment
+list from `Polyline::fitting_result`, emitting arcs via `extrude_arc`. Not inert here —
+measured:
+
+| G2/G3 | object | tower toolchange | tower finish | total |
+|---|---|---|---|---|
+| C++ | 432,594 | **2,719** | 0 | 435,313 |
+| Rust | 462,017 | **0** | 0 | 462,017 |
+
+C++ emits **2,719 arcs inside toolchange tower blocks** — again one per tool change — from
+the fillet-rounded wall (`"prime_tower_fillet_wall": "1"`). We emit zero in the tower.
+Porting `generate_path` without arc fitting would add the retract triples **while introducing
+a new geometry divergence** (straight corners where C++ emits arcs). That is why no code
+shipped rather than a partial port.
+
+### Separate finding, previously unrecorded
+
+We emit **462,017 object arcs against C++'s 432,594 — 29,423 more.** Opposite sign to the
+tower gap and unrelated to the tower; logged as its own item rather than folded in.
+
+**R623 sequencing:** (a) port `remove_points_from_polygon` (`:510`) and
+`generate_rectange_polygon` (`:610`) — pure geometry, byte-neutral, verifiable by point
+count; **predict the gap construction yields 2,721 gaps matching R621's point count.**
+(b) port `generate_path`'s **linear** branch plus the retract triple behind a gate, and
+measure whether the tower's straight segments match before touching arcs; (c) arc fitting
+last — it is worth a bounded 2,719 lines against the ~16,200 of (b). Fallback for (a): if the
+gap count differs from 2,721, the `2.5 * m_perimeter_width` range is merging or splitting
+gaps — dump the per-layer gap count against the per-layer skip-point count before proceeding.
