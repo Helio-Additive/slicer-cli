@@ -1191,7 +1191,17 @@ impl GCodeWriter {
         // For Normal/Auto linear hops (G1 Z), the XY travel does NOT include Z:
         //   retract → G1 Z{hop} → G1 X Y (no Z) → [unretract: G1 Z{layer}] → E restore
         // Reference: GCodeWriter.cpp — travel after _spiral_travel_to_z() uses G1 with Z.
-        let use_g1_travel_with_z = self.retracted
+        //
+        // R632: this branch was UNREACHABLE until R632. `config.z_hop_type` was
+        // never read from the config and sat at its `Auto` default, so the
+        // `matches!(.., Spiral)` test was always false. Resolving the filament
+        // override made Benchy `Spiral` and woke it up — at a cost of 82 matched
+        // lines. It is also not a port of anything: C++ has no z_hop_type gate
+        // here; its XY-with-Z travel comes out of `travel_to_xyz`'s combined move
+        // (GCodeWriter.cpp:565-580), which we already emit. Left opt-in rather
+        // than deleted, so the shape stays visible next to the C++ it approximates.
+        let use_g1_travel_with_z = crate::probe_enabled("TRAVEL_G1_WITH_Z")
+            && self.retracted
             && self.retract_lift > 0.0
             && matches!(self.config.z_hop_type, ZHopType::Spiral);
 

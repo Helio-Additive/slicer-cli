@@ -9882,3 +9882,94 @@ is in `lslices` or the diff, upstream of everything R631 touched. Fallback: if t
 the producer is right and the defect is in the predicate — compare the actual travel polylines
 that C++ promotes against ours for one layer, since our clip length and bbox reject are the only
 places left to differ.
+
+## R632 — the producer was never wrong; `z_hop_type` was never read
+
+**Instrumented the C++ producer as planned. It agrees with ours to 100.0% of area on all 299
+Benchy layers. The prediction was wrong, the fallback fired, and the real defect turned out to be
+a config-resolution bug that had been silently shaping the last three rounds.**
+
+### The C++ dump settles the producer
+
+`PrintObject::detect_overhangs_for_lift` was instrumented in the submodule to print, per layer,
+`lslices` count and area, the raw `diff_ex` overhangs and their area, and the post-`offset2_ex`
+result and its area. Against our `OVERHANG_LIFT_CENSUS` on the same fixture:
+
+| Benchy, 299 layers | C++ | Rust |
+|---|---|---|
+| `lslices` area | 96,572.0 mm² | 96,572.0 mm² |
+| raw overhang area | 421.02 mm² | 421.02 mm² |
+| opened overhang area | 395.45 mm² | 395.45 mm² |
+
+**100.0%.** Layer for layer. R631's port is exact, and R631's own framing of the result was
+wrong twice over: the opening is not destructive (it keeps 93.9% of the area — the layers that
+came back empty had almost no area to begin with), and the region is not too small.
+
+The instrumentation has been reverted inside the submodule and the stock engine rebuilt; both
+status checks are clean.
+
+### The actual defect
+
+While the C++ build ran, checking Benchy's profile chain turned up this:
+
+```
+machine  "Bambu Lab H2D 0.4 nozzle.json"  z_hop_types          = ["Auto Lift", ...]
+filament "Bambu PLA Basic @BBL H2D.json"  filament_z_hop_types = ["Spiral Lift", "Spiral Lift"]
+```
+
+C++ reads `ZHopType(FILAMENT_CONFIG(z_hop_types))`, and `FILAMENT_CONFIG(OPT)` is
+`m_config.OPT.get_at(get_filament_config_index(...))` (`GCode.cpp:1272`) — the filament-resolved
+value. **On Benchy that is `Spiral Lift`, so C++ never calls `is_through_overhang` there at all.**
+Every Benchy travel is a plain SpiralLift. That is why its 2,029 `G17` spread evenly across all
+300 layers while our overhang area sits in a handful of them — a mismatch I had been reading as
+evidence about the geometry.
+
+On our side `config.z_hop_type` was **never read from the config at all**. It sat at its
+`ZHopType::Auto` default (`print_config.rs:1041`). Majora happens to be "Auto Lift" with
+`filament_z_hop_types` all `nil`, so it was accidentally right; Benchy was accidentally wrong.
+
+Fixed in `apply_filament_overrides`: resolve `z_hop_types` from the config, filament override
+first, machine second, mapping the four `PrintConfig.cpp:475-480` key strings. Also added
+`filament_z_hop_types` to `patch_filament_overrides_in_json` so the template-visible value is
+merged the way C++ merges it.
+
+### What that buys
+
+**Benchy is now immune to `LIFT_TYPE_AUTO_CPP` — identical hash with the gate on and off.** The
+"Benchy regression" that kept both R630's and R631's gates switched off was never about
+overhangs; it was this bug letting Benchy into a branch C++ never enters.
+
+| | off (shipped) | + `LIFT_TYPE_AUTO_CPP` |
+|---|---|---|
+| Benchy matched | 115,900 | **115,900** (was 112,756 before this fix) |
+| Benchy `G17` | 2,040 | **2,040** (C++ 2,029) |
+| Majora matched | 670,865 | 667,490 |
+| Majora `G17` | 36,406 | 1,234 (C++ 6,062) |
+
+Majora is unchanged — it was always Auto — so the Auto path still loses there and the gates stay
+off. But the loss is now isolated to one fixture and one mechanism.
+
+### Fourteenth dead branch
+
+`use_g1_travel_with_z` (`gcode/writer.rs`) tests `matches!(z_hop_type, ZHopType::Spiral)`, so with
+`z_hop_type` pinned at `Auto` it had **never once been true**. Fixing the config woke it and cost
+82 matched lines. It is also not a port of anything — C++ has no z_hop_type gate there; the
+XY-with-Z travel comes from `travel_to_xyz`'s combined move (`GCodeWriter.cpp:565-580`), which we
+already emit. Left behind `TRAVEL_G1_WITH_Z`, default off, rather than deleted.
+
+### Readings
+
+Benchy **75.03%** (115,900/154,472), Majora **26.15%** (670,865/2,564,962) — flat, ±1 line.
+Baselines re-taken: benchy `c93f963f` → **`2a5ec3d6`**, cube `242f1fb8` → **`7497af44`** (same
+filament, same fix); majora **`98c75afb`** unchanged.
+
+**R633:** Majora is now the only fixture in the Auto branch, and its predicate under-fires 5×
+(1,234 against C++'s 6,062). The producer is proven exact, so the gap is in the predicate's
+INPUTS, and the prime suspect is object scope: C++'s `is_through_overhang` walks
+`m_curr_print->layers_sorted_for_object(z_range...)` over **every object and every instance**
+(`GCode.cpp:6984`), translating each layer's overhangs by `objects_instances_shift`, while our
+writer is handed only the current object's layer. **Majora is multi-object; Benchy is not — which
+is exactly why this never showed up before.** Port the object/instance loop, then re-enable both
+gates and re-measure. **Predict Majora `G17` 1,234 → ~6,062 with matched lines UP.** Fallback: if
+it barely moves, dump for one Majora layer the travels C++ promotes against ours — the clip
+length (7.63mm) and the bbox reject are the only remaining places to differ.

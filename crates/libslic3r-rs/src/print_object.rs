@@ -3773,13 +3773,22 @@ impl PrintObject {
             // PrintObject.cpp:849
             let bbox = crate::geometry::get_extents(&opened);
             if crate::probe_enabled("OVERHANG_LIFT_CENSUS") {
+                // R632: AREA is the discriminator, not the polygon count — a
+                // count of 0 after the opening says nothing about how much
+                // overhang was there to begin with. Areas are in scaled units^2;
+                // divide by SCALING_FACTOR^2 for mm^2.
+                let sf = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
                 eprintln!(
-                    "OHLIFT layer={} lslices={} lower_lslices={} raw={} opened={} lw={:.4}",
+                    "OHLIFT layer={} z={:.3} lslices={} lslices_area={:.4} lower_lslices={} raw={} raw_area={:.4} opened={} opened_area={:.4} lw={:.4}",
                     layer_id,
+                    self.layers[layer_id].print_z,
                     self.layers[layer_id].lslices.len(),
+                    crate::geometry::area_expolygons(&self.layers[layer_id].lslices) / sf,
                     self.layers[layer_id - 1].lslices.len(),
                     overhangs.len(),
+                    crate::geometry::area_expolygons(&overhangs) / sf,
                     opened.len(),
+                    crate::geometry::area_expolygons(&opened) / sf,
                     self.config.line_width
                 );
             }

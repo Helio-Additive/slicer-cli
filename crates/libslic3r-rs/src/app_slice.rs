@@ -1202,6 +1202,7 @@ fn patch_filament_overrides_in_json(json: &mut serde_json::Value) {
         ("filament_retraction_speed", "retraction_speed"),
         ("filament_deretraction_speed", "deretraction_speed"),
         ("filament_z_hop", "z_hop"),
+        ("filament_z_hop_types", "z_hop_types"),
     ];
 
     if let Some(obj) = json.as_object_mut() {
@@ -1262,5 +1263,40 @@ fn apply_filament_overrides(config: &mut PrintConfig, json: &serde_json::Value) 
     }
     if let Some(v) = get_filament_val("filament_z_hop") {
         config.retract_lift = v;
+    }
+
+    // R632: `z_hop_type` had NEVER been read from the config at all — it sat at
+    // its `ZHopType::Auto` default (print_config.rs:1041). Majora happens to BE
+    // "Auto Lift", so it looked right; Benchy's machine profile says "Auto Lift"
+    // too, but its FILAMENT overrides it to "Spiral Lift", and C++ reads the
+    // filament-resolved value: `ZHopType(FILAMENT_CONFIG(z_hop_types))`, where
+    // `FILAMENT_CONFIG(OPT)` is `m_config.OPT.get_at(filament index)`
+    // (GCode.cpp:1272). So on Benchy C++ never consults `is_through_overhang` at
+    // all — every travel is a plain SpiralLift, which is why its 2,029 `G17`
+    // spread evenly across all 300 layers while our overhang area is
+    // concentrated in a handful.
+    let z_hop_str = |key: &str| -> Option<String> {
+        match json.get(key) {
+            Some(serde_json::Value::Array(arr)) => arr
+                .first()
+                .and_then(|v| v.as_str())
+                .filter(|s| *s != "nil")
+                .map(|s| s.to_string()),
+            Some(serde_json::Value::String(s)) if s != "nil" => Some(s.clone()),
+            _ => None,
+        }
+    };
+    // Filament first, machine second — the filament preset overrides
+    // (PrintConfig.cpp:64 registers `filament_z_hop_types` as the override key).
+    if let Some(s) = z_hop_str("filament_z_hop_types").or_else(|| z_hop_str("z_hop_types")) {
+        // PrintConfig.cpp:475-480 — the four config key strings.
+        config.z_hop_type = match s.as_str() {
+            "Normal Lift" => crate::print_config::ZHopType::Normal,
+            "Slope Lift" => crate::print_config::ZHopType::Slope,
+            "Spiral Lift" => crate::print_config::ZHopType::Spiral,
+            "Auto Lift" => crate::print_config::ZHopType::Auto,
+            // PrintConfig.cpp:4442 — the option's own C++ default is zhtSpiral.
+            _ => crate::print_config::ZHopType::Spiral,
+        };
     }
 }
