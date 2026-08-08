@@ -262,6 +262,30 @@ pub struct PrintConfig {
     pub fan_cooling_layer_time: f64,
     /// Disable fan for first N layers.
     pub close_fan_the_first_x_layers: usize,
+    // R647: the nine fields below existed ONLY on `PerExtruderCoolingConfig`,
+    // which is never populated from the project config — so
+    // `Print::export_gcode` built its single fallback entry from the seven
+    // scalars above and left these nine at `Default`. They are read by the
+    // live fan calculator (GCodeEditor.cpp:402-460 / cooling.rs:2335-2438),
+    // so a project value that differs from the default was silently dropped.
+    /// Layer at which the fan reaches full speed (ramp). 0 = disabled.
+    pub full_fan_speed_layer: i32,
+    /// Overhang fan speed (0-100%).
+    pub overhang_fan_speed: i32,
+    /// Start the fan at `fan_min_speed` rather than 0 to reduce start/stop cycles.
+    pub reduce_fan_stop_start_freq: bool,
+    /// Auxiliary (chamber) fan speed, 0-100% — drives `M106 P2`.
+    pub additional_cooling_fan_speed: i32,
+    /// Fan speed for the first `close_fan_the_first_x_layers` layers (0-100%).
+    pub first_x_layer_fan_speed: i32,
+    /// Look-ahead for the overhang fan (seconds).
+    pub pre_start_fan_time: f32,
+    /// Don't slow external perimeters down for cooling.
+    pub no_slow_down_for_cooling_on_outwalls: bool,
+    /// Cooling slowdown logic: 0 = uniform_cooling, 1 = consistent_surface.
+    pub cooling_slowdown_logic: i32,
+    /// Perimeter transition distance for consistent_surface (mm).
+    pub cooling_perimeter_transition_distance: f32,
 
     // === Per-Extruder Cooling (Vec fields for multi-extruder) ===
     /// Per-extruder cooling configurations. If empty, a single default config is created from scalar fields above.
@@ -1058,6 +1082,17 @@ impl Default for PrintConfig {
             fan_max_speed: 100,
             fan_cooling_layer_time: 100.0,
             close_fan_the_first_x_layers: 1,
+            // R647 — same values `PerExtruderCoolingConfig::default()` uses, so
+            // a config that omits these keys behaves exactly as before.
+            full_fan_speed_layer: 0,
+            overhang_fan_speed: 100,
+            reduce_fan_stop_start_freq: false,
+            additional_cooling_fan_speed: 0,
+            first_x_layer_fan_speed: 0,
+            pre_start_fan_time: 0.0,
+            no_slow_down_for_cooling_on_outwalls: false,
+            cooling_slowdown_logic: 0,
+            cooling_perimeter_transition_distance: 5.0,
 
             // Per-extruder cooling (empty = derive from scalar fields above)
             per_extruder_cooling: Vec::new(),
@@ -2517,6 +2552,64 @@ impl PrintConfig {
                 }
                 true
             }
+            // R647 — the nine keys the fan calculator reads but nothing ever set.
+            "full_fan_speed_layer" => {
+                if let Some(v) = parse_f64(value) {
+                    self.full_fan_speed_layer = v as i32;
+                }
+                true
+            }
+            "overhang_fan_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.overhang_fan_speed = v as i32;
+                }
+                true
+            }
+            "reduce_fan_stop_start_freq" => {
+                if let Some(v) = parse_bool(value) {
+                    self.reduce_fan_stop_start_freq = v;
+                }
+                true
+            }
+            "additional_cooling_fan_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.additional_cooling_fan_speed = v as i32;
+                }
+                true
+            }
+            "first_x_layer_fan_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.first_x_layer_fan_speed = v as i32;
+                }
+                true
+            }
+            "pre_start_fan_time" => {
+                if let Some(v) = parse_f64(value) {
+                    self.pre_start_fan_time = v as f32;
+                }
+                true
+            }
+            "no_slow_down_for_cooling_on_outwalls" => {
+                if let Some(v) = parse_bool(value) {
+                    self.no_slow_down_for_cooling_on_outwalls = v;
+                }
+                true
+            }
+            // PrintConfig.cpp:1585-1586 — enum_values are the two strings below.
+            "cooling_slowdown_logic" => {
+                self.cooling_slowdown_logic = match value {
+                    "consistent_surface" => 1,
+                    "uniform_cooling" => 0,
+                    other => parse_f64(other).map(|v| v as i32).unwrap_or(0),
+                };
+                true
+            }
+            "cooling_perimeter_transition_distance" => {
+                if let Some(v) = parse_f64(value) {
+                    self.cooling_perimeter_transition_distance = v as f32;
+                }
+                true
+            }
 
             // === Plate temps (handled by apply_bed_temperature, but capture here too) ===
             "cool_plate_temp" => {
@@ -2548,6 +2641,26 @@ impl PrintConfig {
             "machine_max_acceleration_extruding" => {
                 if let Some(v) = parse_f64(value) {
                     self.machine_max_acceleration_extruding = v;
+                }
+                true
+            }
+            // R647: the sibling keys had no handler, so the `M204 P R T` machine
+            // limit line (GCode.cpp:3601-3607) and the time estimator both read
+            // struct defaults instead of the profile. Majora sets travel=9000
+            // against our default 20000.
+            "machine_max_acceleration_retracting" => {
+                if crate::faithful_gate("MACHINE_ACCEL_KEYS") {
+                    if let Some(v) = parse_f64(value) {
+                        self.machine_max_acceleration_retracting = v;
+                    }
+                }
+                true
+            }
+            "machine_max_acceleration_travel" => {
+                if crate::faithful_gate("MACHINE_ACCEL_KEYS") {
+                    if let Some(v) = parse_f64(value) {
+                        self.machine_max_acceleration_travel = v;
+                    }
                 }
                 true
             }

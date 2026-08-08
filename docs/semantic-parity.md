@@ -10971,3 +10971,117 @@ thousands of lines. Do it systematically instead:
 value.** Fallback: if every field is either assigned or matches its default, the hole is narrower
 than it looks — say so, and move to `;_EXTRUDE_SET_SPEED` (−172) and the remaining sweep items
 (`; FLUSH_START` +232, `G1 X3 F12000; move aside…` +236).
+
+## R647 — the config-field sweep: one struct never populated, 78,621 spurious lines removed
+
+**Majora `af309663` → `92d8bb20`: matched 700,352 → 700,354 (+2), our body 2,579,685 → 2,501,064
+(−78,621). Benchy 115,900 → 115,961 (+61). This round is a PRECISION fix, not a recall gain —
+say so plainly: the rate moved 27.15% → 28.00% almost entirely because the denominator shrank,
+which is exactly the trap R631/R639/R640 warn about. What makes it real is WHAT shrank: 78,621
+`M106` lines C++ never emits.**
+
+### The sweep
+
+Four defects of one shape had each been found by accident (R632 `z_hop_type`, R634
+`retract_when_changing_layer`, R641 `timelapse_type`, R646 `travel_speed`). The method: for every
+field of every config struct, grep for an assignment outside `Default`/`new`; any field never
+assigned elsewhere is a candidate; then read the mirrored key out of Majora's
+`project_settings.config` and compare against our default.
+
+Fields never assigned outside `Default`, by struct:
+
+| struct | fields | never assigned | live path? |
+|---|---|---|---|
+| `PrintConfig` | 202 | 18 | yes |
+| `PrintObjectConfig` | 179 | 2 | yes |
+| `PrintRegionConfig` | 89 | **0** | yes |
+| `PerimeterConfig` | 42 | **0** | yes |
+| `InfillConfig` | 11 | **0** | yes |
+| `GCodeConfig` | 4 | **0** | yes |
+| `WipeTowerConfig` | 43 | 14 | yes |
+| `CoolingConfig` | 14 | 2 | — |
+| `TravelConfig` | 5 | 3 | **DEAD** |
+| `MultiMaterialConfig` | 24 | 5 | **DEAD** (`to_wipe_tower_config`) |
+| `ToolOrderingConfig` | 19 | 4 | **DEAD** (`ToolOrdering::new` — tests + the dead coordinator only) |
+| `SeamPlacerConfig` | 3 | 1 | fallback only |
+
+**The object-side geometry configs are clean** — `PrintRegionConfig`, `PerimeterConfig`,
+`InfillConfig`, `FuzzySkinConfig`, `MedialAxisConfig`, `ExternalSurfaceConfig` have zero
+never-assigned fields between them. The hole is entirely on the gcode-emission side.
+
+Checking each live candidate against Majora's config, almost all of the WipeTower ones turn out
+inert, and the honest tally is smaller than the field counts suggest:
+
+- `no_sparse_layers` (0=false), `use_rib_wall` (0), `extra_rib_length` (0), `tower_framework` (0),
+  `flat_ironing` (0), `physical_extruder_map` (`["0"]`), `first_layer_flow_ratio`
+  (`initial_layer_flow_ratio`=1) — **default already equals the configured value.**
+- `rib_width` (0 vs **8**) and `use_fillet` (false vs **1**) — differ, but `reads=0`: unported
+  features, not config-read defects.
+- `filament_change_length`/`_nc` (20 vs **10**) — differ and are read, but only under
+  `is_need_ramming`, which is false for Majora once `set_filament_map(vec![0; n])` makes
+  `is_same_extruder` true. **Inert.**
+
+### The real find: `PerExtruderCoolingConfig` is never populated
+
+`PrintConfig::per_extruder_cooling` is declared, defaulted to `Vec::new()` — and **assigned
+nowhere**. So `export_gcode` always takes the fallback branch, which builds a single entry from
+seven scalar fields and leaves the other **nine at `Default`**. C++'s `EXTRUDER_CONFIG` macro
+(GCodeEditor.cpp:402-460) reads all sixteen.
+
+Two of the nine differ from Majora's config:
+
+| field | our default | Majora | read at |
+|---|---|---|---|
+| `reduce_fan_stop_start_freq` | `false` | **`1`** | cooling.rs:2335 |
+| `additional_cooling_fan_speed` | `0` | **`70`** | cooling.rs:2340 |
+
+Neither key existed on `PrintConfig` at all, so no `set_deserialize` handler could ever have been
+written for them. Added all nine as fields + handlers, plus `machine_max_acceleration_travel` /
+`_retracting`, which had the same gap.
+
+### What `reduce_fan_stop_start_freq` was actually costing
+
+`false` makes the base fan speed 0, so `overhang_fan_control = overhang_fan_speed(100) >
+fan_speed_new(0)` is **true** and every `;_OVERHANG_FAN_START/END` pair emitted a pair of `M106`
+lines. With the configured `true`, the base is `fan_min_speed`=100, `100 > 100` is false, and the
+overhang fan control switches off — as it does in C++. The four-way A/B isolates it exactly:
+
+| run | hash | matched | our body | `M106` |
+|---|---|---|---|---|
+| both gates off | **`af309663`** (reproduces R646) | 700,352 | 2,579,685 | 89,529 |
+| cooling only | `98485914` | 700,354 | 2,501,064 | 10,908 |
+| accel only | `b911c6d2` | 700,352 | 2,579,685 | 89,529 |
+| both | **`92d8bb20`** | 700,354 | 2,501,064 | 10,908 |
+
+**We were emitting 89,529 `M106` lines against C++'s 16,364 — a 73,165-line over-emission.** That
+is why matched barely moved: those lines never matched anything. Note the base run reproduces
+R646's hash byte-for-byte, which is what makes the other three rows trustworthy.
+
+**The accel handlers are inert**: `accel` differs from `base` in exactly one line — the
+`; estimated printing time` header (2d 12h 7m 39s → 2d 12h 10m 20s). C++ writes `M204 P20000 R5000
+T20000`, i.e. the *extruding* value, because `gcode_flavor == gcfMarlinLegacy` takes that branch
+(GCode.cpp:3601-3603) and `machine_max_acceleration_travel` is never consulted. Kept anyway — the
+config value should reach the struct — but scored as **zero**.
+
+Also fixed: `format_set_additional_fan` rounded where GCodeWriter.cpp:907 truncates
+(`(int)(255.0 * speed / 100.0)`), so 70% gave `S179` against C++'s `S178`. Worth exactly +1 here,
+but it would have poisoned every P2 line the moment R648 lands.
+
+### R648 — the marker we classify and never emit
+
+The P2 census after the fix is the tell: **1** `M106 P2 S178` against C++'s **2,721**. The cause is
+localised and exact. C++ appends `;_FORCE_RESUME_FAN_SPEED` at GCode.cpp:944 and :7479, right
+before `set_current_position_clear(false)`; `GCodeEditor.cpp:556-561` turns that marker into a
+forced re-emission of *both* fans. We have the marker constant (`TYPE_FORCE_RESUME_FAN`,
+cooling.rs:1404), the classifier (cooling.rs:2256) and the emitter (cooling.rs:2551-2567) — and
+**we never write the marker**. Total `M106` deficit is now 16,364 − 10,908 = **5,456 ≈ 2 × 2,728
+tool changes**, which is exactly two lines per tool change: the `M106 S<current>` and the
+`M106 P2 S178`.
+
+Our `print.rs:3363` already cites "GCode.cpp:945 and :7480" and quotes C++'s comment from that very
+block — while omitting the line C++ writes there. **This is R645's lesson for the third time: a
+comment naming a C++ line range next to code that does not implement it is a lead.**
+
+**Predict R648 recovers ~5,456 `M106` lines and ~4,000-5,400 matched.** Fallback: if the marker
+fires but the emitter stays silent, the state machine's `m_set_fan_changing_filament_start` is
+never set — check the `;_SET_FAN_CHANGING_FILAMENT` producer next, same shape, same file.

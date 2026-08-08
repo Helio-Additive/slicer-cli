@@ -903,7 +903,30 @@ impl Print {
                     slow_down_min_speed: self.config.slow_down_min_speed as f32,
                     fan_cooling_layer_time: self.config.fan_cooling_layer_time as f32,
                     close_fan_the_first_x_layers: self.config.close_fan_the_first_x_layers as i32,
-                    ..crate::print_config::PerExtruderCoolingConfig::default()
+                    // R647: these nine were left at `Default` — the fallback
+                    // entry only forwarded the seven above. `EXTRUDER_CONFIG`
+                    // (GCodeEditor.cpp:402-460) reads all sixteen, so Majora's
+                    // additional_cooling_fan_speed=70 and
+                    // reduce_fan_stop_start_freq=1 never reached the fan
+                    // calculator.
+                    full_fan_speed_layer: self.config.full_fan_speed_layer,
+                    overhang_fan_speed: self.config.overhang_fan_speed,
+                    reduce_fan_stop_start_freq: crate::faithful_gate("COOLING_CFG_KEYS")
+                        && self.config.reduce_fan_stop_start_freq,
+                    additional_cooling_fan_speed: if crate::faithful_gate("COOLING_CFG_KEYS") {
+                        self.config.additional_cooling_fan_speed
+                    } else {
+                        0
+                    },
+                    first_x_layer_fan_speed: self.config.first_x_layer_fan_speed,
+                    pre_start_fan_time: self.config.pre_start_fan_time,
+                    no_slow_down_for_cooling_on_outwalls: self
+                        .config
+                        .no_slow_down_for_cooling_on_outwalls,
+                    cooling_slowdown_logic: self.config.cooling_slowdown_logic,
+                    cooling_perimeter_transition_distance: self
+                        .config
+                        .cooling_perimeter_transition_distance,
                 }]
             };
 

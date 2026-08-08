@@ -1763,8 +1763,11 @@ fn format_set_fan(fan_speed: i32) -> String {
 }
 
 /// Format M106 P2 Sxxx for additional (auxiliary) fan.
+/// GCodeWriter.cpp:907 — `(int)(255.0 * speed / 100.0)`, a TRUNCATION. R647:
+/// this rounded instead, so the first configured value that lands on a .5
+/// boundary diverged (70% → 178.5: C++ 178, ours 179).
 fn format_set_additional_fan(fan_speed: i32) -> String {
-    let s_val = ((fan_speed as f32) * 255.0 / 100.0).round() as i32;
+    let s_val = (255.0 * fan_speed as f64 / 100.0) as i32;
     format!("M106 P2 S{}\n", s_val.min(255).max(0))
 }
 
