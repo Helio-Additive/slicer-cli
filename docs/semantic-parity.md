@@ -10274,3 +10274,80 @@ sites.
 
 `auto_lift_type()` + `retract_with_lift_type()` (unwired). Both gates remain off; all three
 baselines byte-identical; submodule reverted and stock engine rebuilt.
+## R637 — the budget closes: 85% of C++'s spirals are EAGER, and we have one eager call site
+
+**The funnel counter reconciles. After eight rounds of partial attribution, every spiral C++ emits
+now has a named source, and the answer is a path we barely use.**
+
+### The funnel
+
+A counter inside `GCodeWriter::_spiral_travel_to_z` — the single function every spiral passes
+through — plus tags on its two callers, run on Majora:
+
+| source | spirals | share |
+|---|---|---|
+| `eager_lift` (`GCodeWriter.cpp:484`) | **7,538** | **85%** |
+| `travel_to_xyz` (`GCodeWriter.cpp:542`) | 1,307 | 15% |
+| **funnel total** | **8,845** | |
+| gcode `G17` (cross-check) | 8,781 | |
+
+The 64-line difference between the funnel and the gcode is spirals built into strings that are
+discarded or re-emitted; it does not affect the split.
+
+**And it reconciles with R636.** The forced-lift retract sites measured last round totalled
+**7,542** calls (`:747` 3,443 + `:1085` 3,443 + `:4582` 656) — against `eager_lift`'s **7,538**.
+Those sites pass `apply_instantly = true`, which is exactly what routes C++ to `eager_lift`
+(immediate emission) instead of the lazy path. The two independent censuses agree to four calls.
+
+### What that means for us
+
+`retract(..., LiftType, apply_instantly = true)` → `eager_lift` → immediate spiral. That is C++'s
+dominant spiral mechanism, and **we call our equivalent from exactly one place**:
+
+```
+crates/libslic3r-rs/src/print.rs:663:   writer.eager_spiral_lift();
+```
+
+Everything else we emit goes through `lazy_lift_faithful` and only becomes a spiral if the next
+`travel_to_xyz` decides to. So we are not missing a predicate, a geometry test, or a config value —
+we are missing ~7,000 invocations of the *eager* path at retract sites that C++ marks
+`apply_instantly`.
+
+### The full attribution, at last
+
+| mechanism | C++ Majora spirals | our equivalent |
+|---|---|---|
+| `eager_lift` from forced/`apply_instantly` retracts | 7,538 | 1 call site |
+| `travel_to_xyz` lazy path (predicate-gated) | 1,307 | 1,234 — **already close** |
+| total | 8,845 | ~1,234 |
+
+The travel path we spent R630-R635 porting is **within 6% of C++ already** (1,234 vs 1,307). It was
+never the deficit. The deficit is entirely the eager path.
+
+### Method note
+
+This is what the "count every mechanism, and make the tally sum" rule buys. R629 attributed the
+whole deficit to one guard; R635 attributed the remainder to a mechanism it had not counted; R636
+counted that mechanism and found it worth 656. Only a counter at the **funnel** — the one place
+everything must pass — closed the books, and it cost a single build. When a budget refuses to sum
+after two attempts, instrument the funnel rather than the next candidate.
+
+### R638
+
+Wire `retract_with_lift_type()` (shipped R636) to route through the **eager** lift when the caller
+is one of C++'s `apply_instantly = true` sites, and call it at our equivalents of `:747`/`:1085`
+(wipe-tower toolchange, ~6,886 calls, tower region) and `:4582`/`:5283` (timelapse and layer
+change, 656 each, object region). Our `eager_spiral_lift()` already exists and is faithful
+(`GCodeWriter.cpp:456-495`); it needs the `to_lift < EPSILON` early-out honoured so it no-ops where
+C++ does — that is why 7,542 retracts yield 7,538 spirals and not more.
+**PREDICT Majora `G17` 1,234 → ~8,000 (tower ~2,700 + object ~5,300) with matched lines UP
+substantially; Benchy unchanged.** **Quote matched AND body lines — this ADDS ~14,000 lines
+(G17+G3 pairs), so the denominator moves too.** Fallback: if `G17` overshoots, our eager path is
+missing C++'s `to_lift = target_lift - m_lifted; if (to_lift < EPSILON) return;` guard — check
+`m_lifted` bookkeeping before adjusting call sites.
+
+### Shipped
+
+The funnel/caller instrumentation is reverted inside the submodule (both status checks clean, stock
+engine rebuilt). No Rust change this round; both gates remain off; all three baselines
+byte-identical.
