@@ -10850,3 +10850,70 @@ are NOT in the timelapse block.** Fallback: if they are, the branch body is bein
 its first lines — dump one whole block and compare line-for-line.
 Also still open from step 1: **`;_EXTRUDE_SET_SPEED` (C++ 172, ours 0)** — we strip a marker C++
 keeps, a 172-line item in `strip_cooling_markers`.
+
+## R645 — the toolchange trailer was documented and never emitted: +5,442
+
+**Majora 26.92% → 27.04% (692,188 → 697,630 matched). The prediction was right, and the marker
+classifier pointed straight at the site.**
+
+### The prediction held
+
+R644 handed over `G92 E0` at −2,727 with a warning not to assume it was the timelapse block.
+Classifying every `G92 E0` by its nearest preceding marker:
+
+| preceding marker | C++ | ours |
+|---|---|---|
+| **`; WIPE_TOWER_END`** | **2,723** | **0** |
+| `M622 J1` / timelapse | 656 | 656 — **exact** |
+| `M620.11 S0`, `; FLUSH_END` | 2,723 each | 2,721 each |
+
+**The entire deficit sits after `; WIPE_TOWER_END`**, and the timelapse block matches to the line —
+confirming R641's fix and the prediction that the gap was elsewhere.
+
+### It was three lines, not one
+
+Dumping both sides after the marker:
+
+```
+C++:  ; WIPE_TOWER_END / M220 R / G1 F30000 / G4 S0 / G92 E0 / ; CP TOOLCHANGE END
+ours: ; WIPE_TOWER_END / M220 R /                              ; CP TOOLCHANGE END
+```
+
+`WipeTower.cpp:2171-2177` is a five-call chain:
+
+```cpp
+writer.speed_override_restore();            // M220 R      <- we had this
+writer.feedrate(m_travel_speed * 60.f)      // G1 F30000   <- missing
+      .flush_planner_queue()                // G4 S0       <- missing
+      .reset_extruder()                     // G92 E0      <- missing
+      .append("; CP TOOLCHANGE END\n" ...);
+```
+
+We called only the first. **The comment already sitting above our call site named the missing
+trailer verbatim** — "`G1 F30000` / `G4 S0` / `G92 E0` trailer, verified against the reference
+output at cpp_majora_new.gcode:7094-7099" — so this was documented, verified against C++, and then
+not written. `flush_planner_queue` did not exist on our writer at all; added it.
+
+### Measurement
+
+| | matched | body | rate |
+|---|---|---|---|
+| base | 692,188 | 2,571,520 | 26.92% |
+| **R645** | **697,630** | 2,579,683 | **27.04%** |
+
+**+5,442 matched** on +8,163 body lines (3 × 2,721 tool changes) — a 67% match rate on the new
+lines, so `G92 E0` and `G4 S0` land while `G1 F30000` often does not, presumably a feedrate value
+difference. Worth a follow-up but the net is clearly positive. Benchy `2a5ec3d6` and cube
+`7497af44` byte-identical; suites unchanged. Majora re-baselined `3f9e7fd3` → **`cad562e8`**.
+
+### R646
+
+1. **The `G1 F30000` remainder (~2,721 unmatched).** Compare our emitted feedrate against C++'s at
+   that site — `m_travel_speed * 60` on both, so if they differ the travel-speed value or its
+   formatting differs. One grep of the two lines side by side.
+2. **`;_EXTRUDE_SET_SPEED` (−172)** — we strip a marker C++ keeps 172 times. Check WHICH markers
+   C++ keeps before widening `strip_cooling_markers`; it clearly keeps some and strips others.
+3. **A comment in the tree that names an unimplemented behaviour is a lead, not documentation.**
+   R645's target was described precisely in our own source and never acted on. **Grep the gcode
+   modules for comments naming C++ line ranges next to code that does not implement them** — the
+   same shape may sit elsewhere, and it is a cheap sweep of exactly the kind that paid in R642.

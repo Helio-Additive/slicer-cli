@@ -2065,6 +2065,13 @@ impl WipeTowerWriter {
         self
     }
 
+    /// WipeTower.cpp `flush_planner_queue` — `G4 S0`, a zero dwell that drains
+    /// the motion planner. R645.
+    pub fn flush_planner_queue(&mut self) -> &mut Self {
+        self.gcode.push_str("G4 S0\n");
+        self
+    }
+
     /// Append raw G-code
     pub fn append(&mut self, gcode: &str) -> &mut Self {
         self.gcode.push_str(gcode);
@@ -3546,6 +3553,20 @@ impl WipeTower {
         // output at cpp_majora_new.gcode:7094-7099.
         if crate::faithful_gate("WT_TOOLCHANGE_HEADER_CPP") {
             writer.speed_override_restore();
+            // WipeTower.cpp:2172-2174 — the trailer this comment has named since
+            // it was written, but which was never emitted:
+            //     writer.feedrate(m_travel_speed * 60.f)
+            //           .flush_planner_queue()
+            //           .reset_extruder()
+            // R645 measured the cost by classifying `G92 E0` by preceding marker:
+            // C++ emits 2,723 of them right after `; WIPE_TOWER_END` and we emitted
+            // ZERO, while the timelapse block matched exactly at 656 — so the
+            // deficit was entirely here, three lines per tool change.
+            let travel_f = self.config.travel_speed * 60.0;
+            writer
+                .feedrate(travel_f as f32)
+                .flush_planner_queue()
+                .reset_extruder();
         }
 
         // WipeTower.cpp:3341-3343 — closes the CP TOOLCHANGE block.
