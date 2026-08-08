@@ -10646,3 +10646,78 @@ landing outside the `; WIPE_TOWER` markers. One build.
 `wrapping_detection_gcode`) and compare each branch marker's occurrence count between the two
 outputs. R641 found a 6,560-line defect that way in about two minutes, and the same class of bug
 may sit in another template.
+
+## R642 — the template sweep finds a 12,238-line defect: `;` is only a comment if preceded by a space
+
+**No code change; this is a localisation round. The sweep predicted in R641's handover fired
+immediately and led, in four measurements, to a precise one-place root cause worth roughly twice
+R641's gain.**
+
+### Step 1: the branch sweep (as predicted)
+
+Extracting every `{if}`/`{elsif}` branch from Majora's eight gcode templates and counting each
+branch's first body line in both outputs — 24 branches checked, **6 mismatches**:
+
+| template branch | body line | C++ | ours |
+|---|---|---|---|
+| `{if flush_length_2/3/4 > 1}` | `G1 X3 F12000; move aside to extrude` | **3,308** | **3** |
+| `{elsif timelapse_type == 1}` | `G92 E0` | 9,498 | 6,771 |
+| `{if flush_length_1 > 1}` | `; FLUSH_START` | 8,756 | 8,988 |
+| `{if long_retractions_when_cut[…]}` | `M620.11 S0` | 5,448 | 5,444 |
+
+### The `flush_length` branches are NOT a wrong-branch bug
+
+The obvious reading — "we take the wrong branch, as in R641" — is wrong, and the discipline caught
+it. `flush_count`'s formula and all three constants (`g_min_purge_volume` 100,
+`g_purge_volume_one_time` 135, `g_max_flush_count` 4) are **identical** to
+`GCode.cpp:918-933`. And the branches demonstrably DO fire: `; FLUSH_START` is 8,988 on our side
+against C++'s 8,756, well above the 2,730 that branch 1 alone could produce.
+
+Dumping both sides at the same point:
+
+```
+C++:  G91 / 'G1 X3 F12000; move aside to extrude' / G90 / M83
+ours: G91 / 'G1 X3 F12000'                        / G90 / M83
+```
+
+We emit the branch, the `G91`, the `G90`, the `M83` and every flush move. **We drop the inline
+comment**, so the line does not match.
+
+### Root cause: the comment delimiter needs leading whitespace
+
+Comparing lines whose comments survive against those that vanish:
+
+| template line | our output |
+|---|---|
+| `G1 X165 F15000; wipe and shake` — **no space** before `;` | comment **LOST** |
+| `G1 X3 F12000; move aside to extrude` — **no space** | comment **LOST** |
+| `G1 X80 ; shake to put down garbage` — **space** | comment **KEPT** |
+
+Our line handling only treats `;` as a comment delimiter when it follows whitespace; otherwise the
+`;` and everything after it are swallowed as part of the preceding token (`F12000;`).
+
+### Scope
+
+Command lines carrying an inline comment, whole Majora file:
+
+| | C++ | ours |
+|---|---|---|
+| `^[GM]\d+…;…` | **19,731** | **7,493** |
+
+**A 12,238-line gap**, every one of which differs from C++ by a stripped comment suffix and
+therefore cannot match. The biggest single contributors are `;move aside to extrude` (3,305 → 1),
+`;wipe and shake` (2,724 → 0), `;do not need pulsatile flushing for start` (2,723 → 0) and
+`;Compensate for filament spillage during…` (2,723 → 0) — all no-space forms. The space-form
+`;shake to put down garbage` survives at 2,722 vs 2,724, confirming the discriminator.
+
+### R643
+
+Find the parser that splits a gcode line at `;` and make it match C++'s
+(`GCodeReader`/`check_add_eol` path treat `;` as a delimiter regardless of preceding whitespace),
+then re-measure. **Predict Majora matched +8,000 to +12,000 with the denominator roughly flat** —
+these are lines we already emit, so the fix changes their content rather than their count; the
+body-line delta should be near zero while matched rises sharply. That shape is the opposite of
+R631/R639/R640's false positives and a strong check that the fix is real.
+**Fallback: if matched rises far less than the 12,238 line gap, the surviving lines differ from C++
+in more than the comment — diff ten of them character-by-character before widening the fix.**
+**Check both other fixtures: Benchy and cube use the same templates and should also gain.**
