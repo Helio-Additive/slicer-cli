@@ -11167,3 +11167,88 @@ absent `G1 Z1.5` — port that instead and re-measure. Second lead from the same
 `; Slow Down Start`/`End` (GCode.cpp:6597/6768) has no producer, so `not_join_cooling` is never
 set and we slow down paths C++ leaves alone — check what drives `use_seperate_speed` first, since
 it is the circle-compensation path and may be inert on both fixtures.
+
+## R649 — the inherited ordering premise was WRONG; the real defect was a second `flush_planner_queue`
+
+**Majora `50d674f9` → `dee06c25`: matched 705,796 → 708,517 (+2,721), body 2,506,506 → 2,509,227
+(+2,721). Recall again — body and matched move together. Benchy `4d8dd7ad` and cube `ebda7d03`
+byte-identical.**
+
+### The premise, refuted
+
+R648's handoff claimed: "C++ emits `travel_to_start` BEFORE the filament-start template; we emit it
+after." **That is wrong, and reading the C++ before touching the code is what caught it.**
+
+`GCode.cpp:1051` really does assemble `start_filament_gcode_str + wipe_next_start_point_str +
+toolchange_unretract_str` — template, then travel, then unretract — which is exactly our
+`{fil_start}{travel_to_start}G1 E…`. **Our ordering already matched C++.** A longer dump confirms
+it: C++ has a travel on *both* sides of `; filament start gcode`, and we match the one after it.
+
+```
+C++:   M621 S4A / M106 S255 / M106 P2 S178 / G1 X180.18 Y208.797 F30000 / G1 Z1.5 /
+       ; filament start gcode / M106 P3 S150 / G1 X185.729 Y208.797 Z1.9 / G1 Z1.5 /
+       G1 E2 F1800 / G4 S0 / ; CP_TOOLCHANGE_WIPE
+ours:  M621 S4A / M106 S255 / M106 P2 S178 /
+       ; filament start gcode / M106 P3 S150 / G1 X185.729 Y199.297 F30000 /
+       G1 E2.0000 F1800 /        / ; CP_TOOLCHANGE_WIPE
+```
+
+The travel C++ has *before* the template is a different thing entirely: `travel_to_wipe_tower_gcode`
+(GCode.cpp:1002-1015), the intermediate points of the avoid-crossing-perimeters detour, appended to
+`toolchange_gcode_str` in the `is_used_travel_avoid_perimeter` branch — a path we do not implement
+at all. Reordering our trailer would have moved a correct line to a wrong place.
+
+I also checked and discarded a second hypothesis on the way: that the travel came from the tower's
+own gcode between `[change_filament_gcode]` and `[filament_start_gcode]`. WipeTower.cpp:2465-2483
+shows those two placeholders are adjacent — the travel block between them is `#if 0`'d out with the
+comment "BBS: do travel in GCode::append_tcr() for lazy_lift".
+
+### What the dump actually showed
+
+One line in C++'s block had no counterpart anywhere in ours: **`G4 S0`**, between the unretract and
+`; CP_TOOLCHANGE_WIPE`. A census sized it immediately:
+
+| class | C++ | ours @R648 |
+|---|---|---|
+| **`G4 S0`** | **5,446** | **2,721** |
+| `G1 Z<only>` | 47,528 | 36,410 |
+| `; CP_TOOLCHANGE_WIPE` | 2,723 | 2,721 |
+
+5,446 = 2 × 2,723; we had exactly one per tool change. `WipeTower::toolchange_Change` closes with
+
+```cpp
+writer.append("[filament_start_gcode]\n");
+writer.flush_planner_queue();          // WipeTower.cpp:2485
+```
+
+**R645 ported the *other* `flush_planner_queue`** — WipeTower.cpp:2173/3339, the `; WIPE_TOWER_END`
+trailer — and this one stayed missing. C++ has five call sites; we had one live.
+
+| run | hash | matched | body | `G4 S0` |
+|---|---|---|---|---|
+| `TOOLCHANGE_FLUSH_QUEUE=0` | **`50d674f9`** (reproduces R648) | 705,796 | 2,506,506 | 2,721 |
+| **`=1`** | **`dee06c25`** | **708,517** | **2,509,227** | **5,442** |
+| C++ | | | 2,781,977 | **5,446** |
+
++2,721 matched, +2,721 body — the residual 4 is the known 2-tool-change difference, so this class
+is exhausted too. The predicted range (~2,700–5,400) contained the answer, but **the mechanism was
+not the predicted one**: the number landed inside only because both candidate defects happen to be
+one line per tool change.
+
+### R650
+
+The same dump leaves two sized, unexplained differences in this block:
+
+1. **`G1 Z<only>` — C++ 47,528, ours 36,410, deficit 11,118 ≈ 4 × 2,723.** In C++'s toolchange block
+   the travel carries a Z (`G1 X185.729 Y208.797 Z1.9`) and is followed by a bare `G1 Z1.5`; ours
+   emits `G1 X… Y… F30000` with no Z at all. That is the lazy-lift restore. **Census the deficit by
+   region (tower vs object) before porting — 4× per tool change is suspiciously neat and may be two
+   separate causes.**
+2. **The avoid-crossing-perimeters detour** (GCode.cpp:966-1017) — unimplemented, and now confirmed
+   to produce real output lines rather than being inert. This is the `exporter.rs:2433` TODO with a
+   measured consequence for the first time.
+
+**Predict R650's Z census splits the 11,118 into a tower-block term of ~5,446 (two per tool change,
+the travel's Z rider plus the following bare `G1 Z`) and an object-side remainder of ~5,700.**
+Fallback: if the tower term is not ~5,446, the deficit is not the toolchange lift and the census
+tells you where it actually is — follow that, do not port the lift on faith.

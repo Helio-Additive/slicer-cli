@@ -3242,6 +3242,21 @@ fn emit_tower_tcr(
     } else {
         ""
     };
+    // R649 — WipeTower.cpp:2485. `toolchange_Change` closes with
+    //
+    //     writer.append("[filament_start_gcode]\n");
+    //     writer.flush_planner_queue();
+    //
+    // so a `G4 S0` follows the whole filament-start expansion (template + travel
+    // + unretract) before the tower's first wipe move. R645 ported the OTHER
+    // `flush_planner_queue` — WipeTower.cpp:2173/3339, the `; WIPE_TOWER_END`
+    // trailer — and this one stayed missing, which is why Majora carried 2,721
+    // `G4 S0` against C++'s 5,446: exactly one per tool change short.
+    let flush_queue = if had_placeholder && crate::faithful_gate("TOOLCHANGE_FLUSH_QUEUE") {
+        "\nG4 S0"
+    } else {
+        ""
+    };
     let trailer = if had_placeholder && print_config.retract_length_toolchange > 0.0 {
         let speed = if print_config.retract_speed > 0.0 {
             print_config.retract_speed * 60.0
@@ -3249,11 +3264,11 @@ fn emit_tower_tcr(
             1800.0
         };
         format!(
-            "{force_resume}{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tail_marker}",
+            "{force_resume}{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tail_marker}{flush_queue}",
             print_config.retract_length_toolchange, speed
         )
     } else {
-        format!("{force_resume}{fil_start}{travel_to_start}{tail_marker}")
+        format!("{force_resume}{fil_start}{travel_to_start}{tail_marker}{flush_queue}")
     };
     let trailer = trailer.trim_end_matches('\n').to_string();
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(
