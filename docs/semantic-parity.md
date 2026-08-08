@@ -9721,3 +9721,99 @@ guard alongside `m_to_lift_type`. **Predict object `G17` 36,407 → ~6,062 and o
 counts drop but overshoot below C++'s, our clear-sites fire more eagerly than C++'s — attribute
 with `$D/r629_attr.py` (G17) and `$D/r622_arc.py` (arcs) before adjusting. Only then add the
 tower's 2,719 lifts, which is the smaller half of this item.
+
+## R630 — R629's localisation was the smaller half: the lift TYPE is chosen per travel, not once
+
+**Two faithful ports shipped, both OPT-IN, both measured. The round's value is the correction:
+`m_is_current_pos_clear` accounts for 656 of the ~29,700-line spiral-lift excess. The other
+~29,000 come from a hardcoded lift type.**
+
+### What R629 handed over, and what was wrong with it
+
+R629 measured Majora object `G17` at 36,407 against C++'s 6,062 and localised the cause to one
+guard — our live writer's spiral test used `position_known` (never cleared) where C++ uses
+`is_current_position_clear()`. That reading was correct as far as it went. R630 ported the flag
+faithfully: the field (`GCodeWriter.hpp:164`), the four true-sites (`GCodeWriter.cpp:410`,
+`:582`, `:593`, `:622`), the clear-sites after our raw-gcode splices (`GCode.cpp:945`/`:7480`
+change_filament, `:4538` timelapse; `:2729` is the default-false constructor), the `eager_lift`
+guard (`:478`) and the two `travel_to_xyz` reads we had been running with the wrong flag (`:520`,
+`:546`) — including C++'s "force to move xy first then z after filament change" split at `:568`
+and `:606`, which we had never had at all.
+
+**It bought 656 `G17`.** 36,407 → 35,751. The predicted ~30,345 did not arrive.
+
+### The rest of it — `travel_lift_type`
+
+C++ does NOT resolve `zhtAuto` to one lift type. It resolves it **per call site**:
+
+| site | Auto resolves to |
+|---|---|
+| layer change (`GCode.cpp:5283`) | `SpiralLift`, forced |
+| layer-change lift setup (`:4094-4096`) | `SpiralLift` |
+| **every travel** (`:7046`, `:7089`, in `needs_retraction`) | **`is_through_overhang(clipped_travel) ? SpiralLift : SlopeLift`** |
+
+Our writer passed a literal `1` (SpiralLift) at both `lazy_lift_faithful` call sites, from an R206
+reading — and R206 measured **Benchy**, so the constant looked right. Both fixtures are actually
+`"Auto Lift"`, and on Majora C++ takes the *slope* branch for most travels. The object-travel line
+census shows it directly:
+
+| Majora, object only | C++ | Rust |
+|---|---|---|
+| `G1 X Y Z` | 58,937 | 35,758 |
+| `G17` | 6,062 | 35,751 |
+
+Our `G1 X Y Z` count tracks our `G17` count exactly — every one of ours is the move after a spiral.
+C++'s 52,875 surplus is the slope pre-move plus its combined move, on travels we spiral instead.
+
+### Both halves measured, both left OFF, and why
+
+Taking the Slope branch unconditionally under Auto — the naive completion — **regresses both
+fixtures**, because `is_through_overhang` is not a detail of the rule, it IS the rule:
+
+| gate | Majora matched | Benchy matched | Majora `G17` | Benchy `G17` |
+|---|---|---|---|---|
+| both off (shipped) | **670,865** | **115,901** | 35,751 | 2,040 |
+| `WRITER_POS_CLEAR_CPP` | 669,555 | 115,901 | 35,095 | — |
+| + `LIFT_TYPE_AUTO_CPP` | 665,793 | 112,680 | 0 | 299 |
+| C++ | — | — | 6,062 | 2,029 |
+
+Benchy is the clearest signal: C++ emits 2,029 spirals there against 300 layers, so ~1,729 of its
+travels DO cross an overhang and C++ promotes every one of them. Forcing Slope drops us to 299 —
+the layer-change lifts alone. Majora goes to 0 for the same reason. The demotion without the
+promotion removes the right lifts in the wrong places, so both gates ship default-OFF with the
+measurements recorded at the gate.
+
+### Thirteenth dead-symbol instance
+
+`Layer::loverhangs`, `loverhangs_with_type` and `loverhangs_bbox` are declared at `layer.rs:1274-1276`
+and initialised empty at `:1327-1329`. **Nothing else in the crate mentions them** — the producer,
+`PrintObject::detect_overhangs_for_lift` (`PrintObject.cpp:814-852`), was never ported. So R631 is
+two ports, not one: the producer, then the predicate that reads it.
+
+### Readings
+
+Majora **26.15%** (670,865/2,564,962), Benchy **75.03%** (115,901/154,471) — both level with R629
+(−1 and +1 line). Baselines re-taken: majora `92c93130` → **`98c75afb`**, benchy `304320a6` →
+**`c93f963f`**; the drift is the `eager_lift` position-clear guard on the print's very first lift,
+which is now genuinely unknown as C++ has it. Cube unchanged.
+
+**R631:** port `PrintObject::detect_overhangs_for_lift` (`PrintObject.cpp:814-852` —
+`diff_ex(layer.lslices, offset_ex(lower.lslices, scale_(line_width * 0.3)))` then
+`offset2_ex(±0.1 * line_width)`, plus the support-island append and the bbox), then
+`is_through_overhang` (`GCode.cpp:6972-7027`), then enable **both** gates together and re-measure.
+**Predict Majora object `G17` 35,751 → ~6,062 and Benchy 2,040 → ~2,029 with matched lines UP on
+both.** **Quote matched lines AND body lines — this removes ~29,000 spirals and adds ~29,000 slope
+moves, so the counts move in both directions.** Fallback 1: if `loverhangs` comes back empty, the
+`lslices` we diff are not populated at that stage — dump `layer.lslices.len()` before theorising.
+Fallback 2: if `G17` lands near 6,062 on Majora but Benchy collapses again, our overhang polygons
+are too small — check the `offset2_ex` sign convention and `line_width` units before touching the
+predicate.
+
+### Tooling correction
+
+`benchy_integration` and `cube_integration` do **not compile** (E0282/E0432/E0433) — the same
+pre-existing breakage as `cargo test --lib`, so they are not part of the runnable guard set.
+`multi_material_integration::test_wipe_tower_bounds_to_polygon` fails on HEAD `de150aa` too,
+verified by stashing. The suites that do run and pass: `multi_material_integration` (25/26),
+`painted_cube_e2e`, `three_mf_parse`, `gcode_template`, `gcode_template_majora`, `arachne_infill`,
+`wall_gap_geometry` (20).

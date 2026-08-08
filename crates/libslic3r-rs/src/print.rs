@@ -697,6 +697,10 @@ impl Print {
                     let processed =
                         crate::gcode::process_gcode_template(tl_tmpl, &tl_settings, &self.config);
                     writer.write_raw_content(&processed);
+                    // GCode.cpp:4538 — the spliced template may move the head, so
+                    // the writer no longer knows where it is; the next lift must
+                    // be a normal lift, not a spiral. R630.
+                    writer.set_current_position_clear(false);
                     writer.write_raw(""); // blank separator matching C++ output
                 }
             }
@@ -3283,6 +3287,13 @@ fn emit_tower_tcr(
         writer.write_raw_content(&g[cut..]);
     } else {
         writer.write_raw_content(&g);
+        // GCode.cpp:945 and :7480 — the tower block carries the spliced
+        // change_filament / tool-change templates, after which "gcode writer
+        // doesn't know where the extruder is ... so that normal lift will be
+        // used the first time after tool change" (C++'s own comment at :7477).
+        // Same raw-splice state class as R611's mark_unretracted_after_raw,
+        // three lines below. R630.
+        writer.set_current_position_clear(false);
     }
 
     // R611: the SECOND retract. C++ `append_tcr` (GCode.cpp:1081-1085) does, AFTER the

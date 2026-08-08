@@ -262,6 +262,20 @@ pub struct GCodeWriter {
 
     /// Whether position is known.
     position_known: bool,
+    /// GCodeWriter.hpp:164 `bool m_is_current_pos_clear = false;`
+    ///
+    /// Distinct from `position_known`: that one records whether we have ever had
+    /// a position at all and is never cleared. THIS one is C++'s "the writer
+    /// knows where the extruder is right now" flag — set true when a travel
+    /// completes and cleared whenever raw/custom gcode is spliced in, because
+    /// the splice may move the head. C++'s own note (GCode.cpp:7477): "gcode
+    /// writer doesn't know where the extruder is ... Set this flag so that
+    /// normal lift will be used the first time after tool change."
+    ///
+    /// R629 measured the cost of not having it: the spiral-lift guard fell back
+    /// to `position_known`, which is always true, so we emitted 36,407 object
+    /// `G17` against C++'s 6,062. R630.
+    m_is_current_pos_clear: bool,
 
     /// Current layer index.
     layer_index: usize,
@@ -385,6 +399,9 @@ impl GCodeWriter {
             absolute_extrusion: !config.use_relative_e,
             extruder_index: 0,
             position_known: false,
+            // GCodeWriter.hpp:164 — defaults to FALSE, so the first lift of the
+            // print is a normal lift, not a spiral.
+            m_is_current_pos_clear: false,
             layer_index: 0,
             total_layers: 0,
             layer_z: 0.0,
@@ -472,6 +489,36 @@ impl GCodeWriter {
     /// Check if position is known.
     pub fn is_position_known(&self) -> bool {
         self.position_known
+    }
+
+    /// GCodeWriter.hpp:126 `bool is_current_position_clear() const`.
+    ///
+    /// MEASURED R630 — opt-in, NOT default-on. Enabling this alone costs Majora
+    /// 1,310 matched lines (670,865 -> 669,555) to remove only 656 `G17`. It is
+    /// faithful C++, but it is HALF a mechanism: C++ demotes a lift to normal
+    /// when the position is unclear AND promotes travels crossing an overhang to
+    /// spiral (`is_through_overhang`, GCode.cpp:6972 — not ported). Landing only
+    /// the demotion removes the right lifts in the wrong places. Enable together
+    /// with `LIFT_TYPE_AUTO_CPP` once R631 ports the overhang predicate, and
+    /// re-measure the pair, not either half.
+    ///
+    /// NOTE `probe_enabled` tests for the key's PRESENCE, so `WRITER_POS_CLEAR_CPP=0`
+    /// turns this ON, not off. To A/B, set or unset the variable entirely.
+    pub fn is_current_position_clear(&self) -> bool {
+        if !crate::probe_enabled("WRITER_POS_CLEAR_CPP") {
+            // Pre-R630 behaviour; measured better than the faithful one today.
+            return self.position_known;
+        }
+        self.m_is_current_pos_clear
+    }
+
+    /// GCodeWriter.hpp:125 `void set_current_position_clear(bool clear)`.
+    /// Called with `false` after every raw/custom gcode splice — see the five
+    /// C++ sites at GCode.cpp:945, :2729, :4538, :4601 and :7480, all of which
+    /// follow an inserted template (change_filament, timelapse, wrapping
+    /// detection, tool change) or the start of export. R630.
+    pub fn set_current_position_clear(&mut self, clear: bool) {
+        self.m_is_current_pos_clear = clear;
     }
 
     /// Check if currently retracted.
@@ -1094,6 +1141,60 @@ impl GCodeWriter {
         // (the extrusion speed) untouched, so it survives across travels.
         self.last_emitted_f = f;
         self.position_known = true;
+        // GCodeWriter.cpp:410 — travel_to_xy sets the position-clear flag. R630.
+        self.m_is_current_pos_clear = true;
+    }
+
+    /// GCode.cpp:6949-6961 `GCode::to_lift_type`. zhtAuto has NO entry in the
+    /// switch, so it falls to `default: return LiftType::NormalLift` — the Auto
+    /// case is resolved by the CALLER, differently per call site.
+    fn to_lift_type(&self) -> u8 {
+        match self.config.z_hop_type {
+            ZHopType::Normal => 0,
+            ZHopType::Slope => 2,
+            ZHopType::Spiral => 1,
+            ZHopType::Auto => 0,
+        }
+    }
+
+    /// The lift type for a RETRACTION BEFORE A TRAVEL — GCode.cpp:7046 and
+    /// :7089, both inside `needs_retraction`:
+    ///
+    /// ```text
+    /// if (ZHopType(FILAMENT_CONFIG(z_hop_types)) == ZHopType::zhtAuto)
+    ///     lift_type = is_through_overhang(clipped_travel) ? SpiralLift : SlopeLift;
+    /// else
+    ///     lift_type = to_lift_type(ZHopType(FILAMENT_CONFIG(z_hop_types)));
+    /// ```
+    ///
+    /// R630: we previously hardcoded SpiralLift here, from an R206 reading taken
+    /// on Benchy — whose profile is "Spiral Lift", so the constant happened to be
+    /// right. Majora's profile is "Auto Lift", where C++ takes the SLOPE branch
+    /// for every travel that does not cross an overhang. That single constant was
+    /// the whole of the 35,751-vs-6,062 object `G17` excess R629 measured; the
+    /// position-clear flag ported earlier this round only accounted for 656 of it.
+    ///
+    /// `is_through_overhang` (GCode.cpp:6972-7027) is not ported yet, so under
+    /// Auto we take the Slope branch unconditionally; that undershoots C++ by the
+    /// ~5,882 travels that DO cross an overhang. R631.
+    ///
+    /// MEASURED R630, opt-in until `is_through_overhang` lands: taking the Slope
+    /// branch unconditionally under Auto REGRESSES both fixtures, because both
+    /// profiles are "Auto Lift" and C++ resolves a large share of their travels
+    /// to Spiral via the overhang test. Majora object `G17` 35,751 -> 0 against
+    /// C++'s 6,062 (matched 669,555 -> 665,793); Benchy 2,040 -> 299 against
+    /// C++'s 2,029 (matched 115,901 -> 112,680). The constant was wrong, but so
+    /// is the naive branch — the overhang predicate IS the decision. R631.
+    fn travel_lift_type(&self) -> u8 {
+        if self.config.z_hop_type == ZHopType::Auto {
+            if crate::probe_enabled("LIFT_TYPE_AUTO_CPP") {
+                2 // SlopeLift — correct only once is_through_overhang() exists.
+            } else {
+                1 // pre-R630 constant: SpiralLift.
+            }
+        } else {
+            self.to_lift_type()
+        }
     }
 
     /// R205: GCodeWriter::lazy_lift (GCodeWriter.cpp:425-452), non-spiral-vase,
@@ -1114,6 +1215,15 @@ impl GCodeWriter {
     pub fn eager_spiral_lift(&mut self) {
         let to_lift = self.retract_lift - self.m_lifted;
         if to_lift < 1e-4 {
+            return;
+        }
+        // GCodeWriter.cpp:478 `type == LiftType::SpiralLift && this->is_current_position_clear()`
+        // — "spiral lift only safe with known position"; :488 falls back to a
+        // normal lift when it is not. R630.
+        if !self.is_current_position_clear() {
+            self.travel_to_z(self.z + to_lift, None);
+            self.m_lifted = self.retract_lift;
+            self.m_to_lift = 0.0;
             return;
         }
         let slope_threshold = 3.0 * std::f64::consts::PI / 180.0;
@@ -1166,7 +1276,12 @@ impl GCodeWriter {
         let travel_f = self.config.travel_speed * 60.0;
         if self.m_to_lift.abs() > EPSILON {
             let mut dest_z = z;
-            let same_pos = self.position_known && (self.x - x).abs() < 1e-12 && (self.y - y).abs() < 1e-12 && (self.z - z).abs() < 1e-12;
+            // GCodeWriter.cpp:520 `(!this->is_current_position_clear() || m_pos != dest_point)`.
+            // R630: the first conjunct was `position_known`, which is never cleared.
+            let same_pos = self.is_current_position_clear()
+                && (self.x - x).abs() < 1e-12
+                && (self.y - y).abs() < 1e-12
+                && (self.z - z).abs() < 1e-12;
             if !same_pos && self.m_to_lift + self.z > z {
                 self.m_lifted = self.m_to_lift + self.z - z;
                 dest_z = self.m_to_lift + self.z;
@@ -1179,7 +1294,10 @@ impl GCodeWriter {
             let slope_threshold = 3.0 * std::f64::consts::PI / 180.0;
 
             if delta.2 > 0.0 && delta_no_z_norm != 0.0 {
-                if self.m_to_lift_type == 1 && self.position_known {
+                // GCodeWriter.cpp:537 — `m_to_lift_type == LiftType::SpiralLift
+                // && this->is_current_position_clear()`. R630: the second
+                // conjunct was `position_known`, which is never cleared.
+                if self.m_to_lift_type == 1 && self.is_current_position_clear() {
                     // SpiralLift (GCodeWriter.cpp:536-543): radius from climb,
                     // ij = rotate90(radius * dir).
                     let radius = delta.2 / (2.0 * std::f64::consts::PI * slope_threshold.atan());
@@ -1199,7 +1317,7 @@ impl GCodeWriter {
                     self.z = dest_z;
                     self.last_emitted_f = travel_f;
                 } else if self.m_to_lift_type == 2
-                    && self.position_known
+                    && self.is_current_position_clear()
                     && delta.2.atan2(delta_no_z_norm) < slope_threshold
                 {
                     // SlopeLift (GCodeWriter.cpp:545-559): early climb to the
@@ -1222,19 +1340,36 @@ impl GCodeWriter {
                 }
             }
 
-            // xy_z_move (GCodeWriter.cpp:565-580) — combined XYZ.
-            self.write_command(&GCodeCommand::LinearMove {
-                x: Some(x),
-                y: Some(y),
-                z: Some(dest_z),
-                e: None,
-                f: Some(travel_f),
-            });
-            self.x = x;
-            self.y = y;
-            self.z = dest_z;
-            self.last_emitted_f = travel_f;
+            // xy_z_move (GCodeWriter.cpp:565-580). When the writer does not know
+            // where the head is, C++ splits the move: XY first, then Z. R630.
+            if self.is_current_position_clear() {
+                self.write_command(&GCodeCommand::LinearMove {
+                    x: Some(x),
+                    y: Some(y),
+                    z: Some(dest_z),
+                    e: None,
+                    f: Some(travel_f),
+                });
+                self.x = x;
+                self.y = y;
+                self.z = dest_z;
+                self.last_emitted_f = travel_f;
+            } else {
+                self.write_command(&GCodeCommand::LinearMove {
+                    x: Some(x),
+                    y: Some(y),
+                    z: None,
+                    e: None,
+                    f: Some(travel_f),
+                });
+                self.x = x;
+                self.y = y;
+                self.last_emitted_f = travel_f;
+                self.travel_to_z(dest_z, None);
+            }
             self.position_known = true;
+            // GCodeWriter.cpp:582.
+            self.m_is_current_pos_clear = true;
         } else if !self.will_move_z(z) {
             // GCodeWriter.cpp:586-598.
             let nominal_z = self.z - self.m_lifted;
@@ -1242,22 +1377,42 @@ impl GCodeWriter {
             if self.m_lifted.abs() < EPSILON {
                 self.m_lifted = 0.0;
             }
+            // GCodeWriter.cpp:593 — set before the travel_to_xy delegation.
+            self.m_is_current_pos_clear = true;
             self.travel_to(x, y, None);
         } else {
-            // GCodeWriter.cpp:600-612 — plain combined XYZ, lift cancelled.
+            // GCodeWriter.cpp:600-622 — plain XYZ, lift cancelled. C++:606 forces
+            // "xy first then z after filament change" when the position is not
+            // clear. R630.
             self.m_lifted = 0.0;
-            self.write_command(&GCodeCommand::LinearMove {
-                x: Some(x),
-                y: Some(y),
-                z: Some(z),
-                e: None,
-                f: Some(travel_f),
-            });
-            self.x = x;
-            self.y = y;
-            self.z = z;
-            self.last_emitted_f = travel_f;
+            if self.is_current_position_clear() {
+                self.write_command(&GCodeCommand::LinearMove {
+                    x: Some(x),
+                    y: Some(y),
+                    z: Some(z),
+                    e: None,
+                    f: Some(travel_f),
+                });
+                self.x = x;
+                self.y = y;
+                self.z = z;
+                self.last_emitted_f = travel_f;
+            } else {
+                self.write_command(&GCodeCommand::LinearMove {
+                    x: Some(x),
+                    y: Some(y),
+                    z: None,
+                    e: None,
+                    f: Some(travel_f),
+                });
+                self.x = x;
+                self.y = y;
+                self.last_emitted_f = travel_f;
+                self.travel_to_z(z, None);
+            }
             self.position_known = true;
+            // GCodeWriter.cpp:622.
+            self.m_is_current_pos_clear = true;
         }
     }
 
@@ -1892,9 +2047,10 @@ impl GCodeWriter {
         // Z lift — use spiral or normal depending on config
         if lift_faithful_gate() {
             // R206: native defers the lift (lazy_lift) and merges it into the
-            // next travel_to_xyz. Effective type on this profile = SpiralLift
-            // (native gcode: 1742 spirals, 0 slope moves).
-            self.lazy_lift_faithful(1);
+            // next travel_to_xyz. R630: the type is per-profile, not a constant —
+            // GCode.cpp:7046/:7089 pick it inside needs_retraction.
+            let lt = self.travel_lift_type();
+            self.lazy_lift_faithful(lt);
         } else {
             self.do_z_hop();
         }
@@ -1967,9 +2123,10 @@ impl GCodeWriter {
         // Z lift — use spiral or normal depending on config
         if lift_faithful_gate() {
             // R206: native defers the lift (lazy_lift) and merges it into the
-            // next travel_to_xyz. Effective type on this profile = SpiralLift
-            // (native gcode: 1742 spirals, 0 slope moves).
-            self.lazy_lift_faithful(1);
+            // next travel_to_xyz. R630: the type is per-profile, not a constant —
+            // GCode.cpp:7046/:7089 pick it inside needs_retraction.
+            let lt = self.travel_lift_type();
+            self.lazy_lift_faithful(lt);
         } else {
             self.do_z_hop();
         }
