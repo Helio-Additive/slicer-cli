@@ -10499,3 +10499,71 @@ measured at ONE call, so the reference is stale even though the behaviour fires 
 of several thousand.** Fallback: if the new spirals land in-tower again, the position class is
 decided by where the splice writes them relative to `WT_START` — dump one tool change with
 `$D/r615_dump.py` before moving call sites.
+
+## R640 — the object-side eager spirals are not the tower's, and the prediction was wrong again
+
+**No parity change; the wiring measured as a no-gain and ships opt-in. The round's value is that it
+replaced an INFERENCE with a MEASUREMENT and killed a plausible-but-wrong target.**
+
+### The premise was an inference; measuring it changed the plan
+
+R639 handed over: "the two tower sites total 6,886 retracts but yield only 2,719 in-tower spirals,
+so roughly 4,167 emit outside the markers." That was arithmetic, not observation. Classifying every
+C++ object-region `G17` by its nearest preceding marker:
+
+| after | C++ | ours (gate ON, pre-R640) | gap |
+|---|---|---|---|
+| `; WIPE_END` | 4,751 | 538 | −4,213 |
+| `M622 J1` (timelapse, `:4582`) | **656** | **0** | −656 |
+| `; update layer progress` (layer change, `:5283`) | 654 | **655** | **already correct** |
+
+Two things fall straight out. **The layer-change site is already right** — `print.rs:663` covers it,
+so R639's suspicion about it is closed. And the **timelapse retract emits nothing at all** on our
+side: a clean, exactly-sized 656-line target that no previous round had isolated.
+
+### The change, and why it does not pay
+
+C++ has two tower toolchange retracts: `:747`, whose `toolchange_retract_str` is **prepended** to
+the tower gcode (so its wipe + spiral land before `; WIPE_TOWER_START`, in the object region), and
+`:1085` in `append_tcr`, after the tower's moves. R638 wired only the second. Adding the first:
+
+| | matched | body | object `G17` | tower `G17` |
+|---|---|---|---|---|
+| off (shipped) | **673,583** | 2,564,962 | 33,688 | **2,718** |
+| on | **673,583** | 2,562,245 | 36,406 | **0** |
+
+**Matched is identical to the line.** The rate reads 26.26% → 26.29%, which is entirely the
+denominator dropping 2,717 — the trap, for the third round running.
+
+Worse, it **undoes R638**: the pre-tower retract fires first and lifts before `WT_START`, and then
+the post-tower retract's `to_lift < EPSILON` guard suppresses the spiral R638 had correctly placed
+in-tower. Tower `G17` 2,718 → 0. The call moves spirals rather than creating them, and moves them
+the wrong way. Shipped behind `TOWER_PRE_RETRACT`, default **off**, with the measurement recorded at
+the call site.
+
+### What this rules out
+
+C++'s 4,751 object spirals after `; WIPE_END` do **not** come from a second tower-toolchange
+retract — we now have that call and it produces none of them. They come from ordinary object
+retracts that wipe and then lift eagerly, at sites still unidentified. R639's "~4,167 outside the
+markers" arithmetic was wrong: the tower sites' 6,886 retracts do not split 2,719/4,167 across the
+marker, because most of them hit the `to_lift < EPSILON` guard and emit no spiral at all.
+
+### R641
+
+Two targets, both now exactly sized and independent:
+
+1. **The timelapse retract, 656 lines.** `GCode.cpp:4582` —
+   `if (retract_when_changing_layer) gcode += retract(false,false,auto_lift_type,true)` immediately
+   before `insert_timelapse_gcode()`. Our timelapse splice (`print.rs:668-703`) has no retract at
+   all. Small, isolated, and the marker classifier (`M622 J1`) verifies it directly.
+2. **The 4,213 after `; WIPE_END`.** Do NOT guess the site again — instrument C++'s `eager_lift`
+   with a caller tag (extend R637's `SPIRAL_FUNNEL` to print the return address or add a tag
+   argument at each `GCode::retract` call site) and count which callers land outside the tower
+   markers. R637's funnel proved this class of instrument settles the question in one build; R639's
+   and R640's arithmetic guesses have now failed twice in a row.
+
+**Predict the timelapse retract adds ~656 matched lines with the denominator up ~1,300 (`G17`+`G3`
+pairs), and `M622 J1`-preceded spirals go 0 → ~656.** Fallback: if it emits nothing, our timelapse
+splice runs when the writer is already retracted AND already lifted — check `m_lifted` at that
+point, since `eager_lift`'s EPSILON guard is exactly what suppressed R640's call.

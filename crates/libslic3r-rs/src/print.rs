@@ -3279,12 +3279,28 @@ fn emit_tower_tcr(
         && g.contains(WT_START)
     {
         let cut = g.find(WT_START).unwrap() + WT_START.len();
-        writer.write_raw_content(&g[..cut]);
-        // GCode.cpp:747 — C++ passes `auto_lift_type` and `apply_instantly = true`
-        // here, so the tower toolchange retract emits an IMMEDIATE spiral lift.
-        // R637's funnel measured this site at 3,443 calls, and `eager_lift` at
-        // 7,538 against our single call site. R638.
+        // GCode.cpp:747 — `toolchange_retract_str` is PREPENDED to the tower
+        // gcode, so its wipe + immediate spiral land BEFORE `; WIPE_TOWER_START`,
+        // i.e. in the OBJECT region. R640 measured C++'s object spirals by
+        // preceding marker: 4,751 follow `; WIPE_END`, and only ~1,243 of those
+        // are the travel path — the rest are these. R638 wired only the
+        // post-`WT_START` retract (GCode.cpp:1085), which is why our 2,718 all
+        // landed in-tower and the object region kept a 4,213 shortfall.
+        //
+        // MEASURED R640 — OPT-IN, not default. Adding this retract does NOT add
+        // spirals: it fires first, lifts before `WT_START`, and then the
+        // post-tower retract's `to_lift < EPSILON` guard suppresses the one R638
+        // landed. Net effect on Majora: `G17` tower_tc 2,718 -> 0 (R638's fix
+        // UNDONE), object 33,688 -> 36,406, matched lines UNCHANGED at 673,583,
+        // body -2,717. It moves spirals rather than creating them, and moves them
+        // the wrong way. The object-region eager spirals C++ emits after
+        // `; WIPE_END` come from somewhere this call is not.
         let alt = writer.auto_lift_type();
+        if crate::probe_enabled("TOWER_PRE_RETRACT") {
+            writer.retract_for_toolchange_with_lift(alt, true);
+        }
+        writer.write_raw_content(&g[..cut]);
+        // GCode.cpp:1085 — `append_tcr`'s retract, AFTER the tower's own moves.
         writer.retract_for_toolchange_with_lift(alt, true);
         writer.write_raw_content(&g[cut..]);
     } else {
