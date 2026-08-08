@@ -686,7 +686,18 @@ impl Print {
                         // rust previously missed (leaving M9711 placeholders
                         // unsubstituted + the wrong-branch whitespace).
                         tl_settings["has_timelapse_safe_pos"] = serde_json::json!(1);
-                        tl_settings["timelapse_type"] = serde_json::json!(0);
+                        // R641: this was hardcoded to 0, which selects the
+                        // template's `{if timelapse_type == 0}` "timelapse
+                        // WITHOUT wipe tower" branch. `timelapse_type` is a real
+                        // config option (C++ `m_config.timelapse_type`, read
+                        // correctly elsewhere at print.rs:2072), and Majora's is
+                        // **1** — the "with wipe tower" branch, which carries a
+                        // `G17` + `G2` arc. R640's marker classifier measured the
+                        // cost: C++ emits 657 `; timelapse with wipe tower`
+                        // blocks and we emitted 1, exactly the 656 `M622 J1`
+                        // spirals that round mis-attributed to a missing retract.
+                        tl_settings["timelapse_type"] =
+                            serde_json::json!(self.config.timelapse_type);
                         tl_settings["timelapse_pos_x"] = serde_json::json!(0);
                         tl_settings["timelapse_pos_y"] = serde_json::json!(83);
                         tl_settings["most_used_physical_extruder_id"] = serde_json::json!(0);

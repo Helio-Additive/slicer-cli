@@ -10567,3 +10567,82 @@ Two targets, both now exactly sized and independent:
 pairs), and `M622 J1`-preceded spirals go 0 → ~656.** Fallback: if it emits nothing, our timelapse
 splice runs when the writer is already retracted AND already lifted — check `m_lifted` at that
 point, since `eager_lift`'s EPSILON guard is exactly what suppressed R640's call.
+
+## R641 — the "timelapse retract" was a template branch: +6,560 matched
+
+**Majora 26.26% → 26.45% (673,583 → 680,143 matched) with the denominator UP 6,558 — a genuine
+addition, the largest gain since R601's chain and second only to R638 in this stretch.**
+
+### The handover said "add a retract". It was wrong, and one dump showed why
+
+R640 measured 656 C++ object spirals preceded by `M622 J1` and attributed them to
+`GCode.cpp:4582`'s `retract(false, false, auto_lift_type, true)` before `insert_timelapse_gcode()`.
+Dumping the actual C++ lines around one of them instead of trusting the attribution:
+
+```
+M622 J1
+ ; timelapse with wipe tower
+G92 E0
+G1 X65 Y245 F20000 ; move to safe pos
+G17
+G3 Z.7 I1.217 J0 P1  F30000
+```
+
+The `G17` is **literal text inside the `time_lapse_gcode` template**, not emitted by
+`GCode::retract` at all. The template branches:
+
+```
+{if timelapse_type == 0} ; timelapse without wipe tower
+...
+{elsif timelapse_type == 1} ; timelapse with wipe tower
+G92 E0
+G1 X65 Y245 F20000 ; move to safe pos
+G17
+G2 Z{layer_z} I0.86 J0.86 P1 F20000
+...
+```
+
+Counting which branch each side takes settled it in one grep: C++ emits **657**
+`; timelapse with wipe tower` blocks, we emitted **1**.
+
+### The defect
+
+`print.rs:689` hardcoded `tl_settings["timelapse_type"] = json!(0)` — the "without wipe tower"
+branch. `timelapse_type` is a real config option (C++ `m_config.timelapse_type`), **Majora's is 1**,
+and our own code already reads it correctly 1,400 lines away at `print.rs:2072`
+(`cfg.enable_timelapse_print = self.config.timelapse_type == 1`). The template substitution simply
+never asked. Fixed to `json!(self.config.timelapse_type)`.
+
+This is the third instance of the R632 class — a config value that exists, is resolved, and is
+ignored at the point of use. R632's `z_hop_type` was never read at all; R634's
+`retract_when_changing_layer` is mapped to the wrong field; this one is hardcoded past a correct
+value. **The standing sweep for config fields never read or mis-mapped is now overdue by three
+confirmed instances.**
+
+### Measurement
+
+| | matched | body | rate | object `G17` | `; timelapse with wipe tower` |
+|---|---|---|---|---|---|
+| base | 673,583 | 2,564,962 | 26.26% | 33,688 | 1 |
+| **R641** | **680,143** | **2,571,520** | **26.45%** | 34,344 | **657** (C++ 657) |
+
+**+6,560 matched with the denominator also up 6,558** — the opposite of the shrinking-denominator
+trap that produced three false positives in R631/R639/R640. The gain is ~10x the predicted 656
+because the whole branch body lands, not just the spiral. Benchy `2a5ec3d6` and cube `7497af44`
+byte-identical; suites unchanged.
+
+Majora re-baselined `d16f15e6` → **`88e956a4`**.
+
+### R642
+
+**Target 2 from R641 is untouched and unchanged: the ~4,213 object spirals after `; WIPE_END`.**
+Do NOT guess a site — R639's and R640's arithmetic guesses both failed, and R641's assigned target
+turned out not to be a retract at all. Extend R637's `SPIRAL_FUNNEL` to tag WHICH `GCode::retract`
+caller reaches `eager_lift` (tag argument or `__builtin_return_address(0)`) and count callers
+landing outside the `; WIPE_TOWER` markers. One build.
+**Also worth one cheap grep first, in the spirit of what just worked:** count
+`{if ...}`/`{elsif ...}` branches across ALL templates in Majora's config
+(`machine_start_gcode`, `change_filament_gcode`, `layer_change_gcode`,
+`wrapping_detection_gcode`) and compare each branch marker's occurrence count between the two
+outputs. R641 found a 6,560-line defect that way in about two minutes, and the same class of bug
+may sit in another template.
