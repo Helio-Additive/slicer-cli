@@ -10043,3 +10043,80 @@ and the next step is a per-layer polygon diff, not a per-call one.
 
 `tests/overhang_predicate.rs` (5 tests) and the `OVERHANG_PRED_CENSUS` probe. Both gates remain
 off; all three baselines byte-identical.
+
+## R634 — the prediction died before the build; the shortfall is the predicate's own verdict
+
+**No parity change. The round refuted its own assigned hypothesis on a config read, eliminated the
+producer on the fixture that matters, and finally measured the thing four rounds had inferred
+around: the predicate's RESULT.**
+
+### The assigned prediction was wrong, and cost nothing to find out
+
+R633 handed over: "C++ tests the avoid-crossing-perimeters route; ours is a straight segment; the
+dumps will disagree on WHICH SEGMENTS are tested." Majora's config says
+
+    reduce_crossing_wall = 0
+    max_travel_detour_distance = 0
+
+so C++'s `m_avoid_crossing_perimeters` never engages and its travel is the same straight two-point
+segment as ours. The hypothesis was dead before `devbox run bambu:build` was worth starting. (Our
+side has the router as an explicit TODO at `exporter.rs:2433` with the flag defaulted false — so
+even where it does matter, we are knowingly out of that branch.)
+
+### The producer matches on Majora too
+
+R632 proved the producer exact on Benchy; it had never been checked on the fixture that actually
+enters the Auto branch. Re-instrumented C++ and ran Majora:
+
+| Majora, 655 layers | C++ | Rust |
+|---|---|---|
+| `lslices` area | 1,187,681.4 mm² | 1,189,237.0 mm² |
+| raw overhang area | 6,645.11 mm² | 6,589.28 mm² |
+| opened overhang area | 5,635.21 mm² | **5,579.42 mm² (99.0%)** |
+| overhang polygons | 2,740 | 2,681 (97.8%) |
+
+627 of 655 layers agree within 1%. One layer (10) differs materially — 32.15 mm² against 0.36 —
+and 27 differ by a sliver. Not a 4.3× effect. Eliminated.
+
+The instrumentation is reverted inside the submodule; both status checks clean.
+
+### The measurement that was missing
+
+R633 logged the predicate's *inputs* and eliminated four suspects without ever logging its
+*output*. Doing that:
+
+| Majora, `LIFT_TYPE_AUTO_CPP=1` | count | rate |
+|---|---|---|
+| `is_through_overhang` calls | 35,754 | — |
+| returning **true** | **611** | **1.7%** |
+| returning false | 35,143 | 98.3% |
+| consumer reads `lift_type=1` | 662 | — |
+| consumer reads `lift_type=2` | 38,466 | — |
+| **C++ spiral promotions** | **6,062 / 41,434** | **14.6%** |
+
+The consumer is faithful — 611 trues in, 662 spirals out (the extra 51 are the non-travel retract
+sites reading the pending value, which is correct behaviour). **The verdict is not being lost
+downstream. The predicate genuinely answers false about 8.5× too often**, on inputs that have now
+each been independently verified: correct region (99.0% of C++'s area), correct frame (bboxes
+coincide), correct clip (1.0–7.63 mm), correct threshold (`min_travel=1.0000`), and a
+geometry primitive that passes five shaped tests.
+
+That is a real narrowing: every *input* is exonerated and the disagreement is now provably in the
+test itself, on a specific and reproducible set of 35,143 calls.
+
+### R635
+
+Instrument C++'s `is_through_overhang` to print its per-call verdict AND the segment, run Majora,
+and join the two dumps on the segment endpoints. With the router disengaged the segments are
+directly comparable, so the join is exact rather than approximate. **Predict a large set of
+segments where C++ says true and we say false, concentrated on the layers where C++'s bbox-reject
+at `GCode.cpp:7013-7017` passes and ours rejects** — i.e. the per-polygon bbox test, the one part
+of the predicate that has never been checked in isolation (R633 checked the AGGREGATE bbox overlap,
+which is a different quantity). Fallback: if the two agree per-segment wherever both are called,
+then C++ is being CALLED on segments we never test — count C++'s calls (not its trues) and compare
+against our 35,754 before looking anywhere else.
+
+### Shipped
+
+`OHRESOLVE` / `OHCONSUME` logging under the existing `OVERHANG_PRED_CENSUS` probe. Both gates
+remain off; all three baselines byte-identical.

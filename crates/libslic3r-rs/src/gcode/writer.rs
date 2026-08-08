@@ -673,7 +673,15 @@ impl GCodeWriter {
     fn resolve_travel_lift_type(&mut self, from: crate::Point, to: crate::Point) {
         if self.config.z_hop_type == ZHopType::Auto {
             let clipped = self.clipped_travel_for_lift(from, to);
-            self.m_pending_travel_lift_type = if self.is_through_overhang(&clipped) { 1 } else { 2 };
+            let through = self.is_through_overhang(&clipped);
+            self.m_pending_travel_lift_type = if through { 1 } else { 2 };
+            // R634: log the RESULT. R633 logged only the predicate's inputs, which
+            // is why it could eliminate four suspects and still not say whether the
+            // shortfall is the predicate returning false or the verdict being lost
+            // downstream between resolution and emission.
+            if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
+                eprintln!("OHRESOLVE through={}", through as u8);
+            }
         } else {
             self.m_pending_travel_lift_type = self.to_lift_type();
         }
@@ -2193,6 +2201,9 @@ impl GCodeWriter {
             // next travel_to_xyz. R630: the type is per-profile, not a constant —
             // GCode.cpp:7046/:7089 pick it inside needs_retraction.
             let lt = self.travel_lift_type();
+            if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
+                eprintln!("OHCONSUME lift_type={}", lt);
+            }
             self.lazy_lift_faithful(lt);
         } else {
             self.do_z_hop();
@@ -2269,6 +2280,9 @@ impl GCodeWriter {
             // next travel_to_xyz. R630: the type is per-profile, not a constant —
             // GCode.cpp:7046/:7089 pick it inside needs_retraction.
             let lt = self.travel_lift_type();
+            if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
+                eprintln!("OHCONSUME lift_type={}", lt);
+            }
             self.lazy_lift_faithful(lt);
         } else {
             self.do_z_hop();
