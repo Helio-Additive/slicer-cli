@@ -3222,6 +3222,26 @@ fn emit_tower_tcr(
     // move (filament start template, travel, unretract) and drops only the three
     // comment lines, which now precede the whole block.
     let tail_marker = if tag_at_head { "" } else { tower_feature };
+    // R648 — the marker we classify and never write. C++ appends
+    // `;_FORCE_RESUME_FAN_SPEED` immediately after the tool-change template
+    // (GCode.cpp:944 for `toolchange_gcode_str`, :7479 for the `set_extruder`
+    // path), and `GCodeEditor.cpp:556-561` turns it into a forced re-emission of
+    // BOTH fans:
+    //
+    //     if (m_current_fan_speed != -1) new_gcode += set_fan(..., m_current_fan_speed);
+    //     if (m_additional_fan_speed != -1 && m_set_fan_changing_filament_start
+    //         && auxiliary_fan) new_gcode += set_additional_fan(m_additional_fan_speed);
+    //
+    // We already had the constant (cooling.rs:1404), the classifier
+    // (cooling.rs:2256) and the emitter (cooling.rs:2551) — only the producer was
+    // missing, so the branch could never fire. C++'s output shows the pair landing
+    // between the template's closing `M621 S<n>A` and the tower's first travel,
+    // which is exactly the head of this trailer.
+    let force_resume = if had_placeholder && crate::faithful_gate("FORCE_RESUME_FAN_MARKER") {
+        ";_FORCE_RESUME_FAN_SPEED\n"
+    } else {
+        ""
+    };
     let trailer = if had_placeholder && print_config.retract_length_toolchange > 0.0 {
         let speed = if print_config.retract_speed > 0.0 {
             print_config.retract_speed * 60.0
@@ -3229,11 +3249,11 @@ fn emit_tower_tcr(
             1800.0
         };
         format!(
-            "{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tail_marker}",
+            "{force_resume}{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tail_marker}",
             print_config.retract_length_toolchange, speed
         )
     } else {
-        format!("{fil_start}{travel_to_start}{tail_marker}")
+        format!("{force_resume}{fil_start}{travel_to_start}{tail_marker}")
     };
     let trailer = trailer.trim_end_matches('\n').to_string();
     let g = crate::gcode::wipe_tower_integration::substitute_change_filament(

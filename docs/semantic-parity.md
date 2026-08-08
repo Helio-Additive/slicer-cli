@@ -11085,3 +11085,85 @@ comment naming a C++ line range next to code that does not implement it is a lea
 **Predict R648 recovers ~5,456 `M106` lines and ~4,000-5,400 matched.** Fallback: if the marker
 fires but the emitter stays silent, the state machine's `m_set_fan_changing_filament_start` is
 never set — check the `;_SET_FAN_CHANGING_FILAMENT` producer next, same shape, same file.
+
+## R648 — the marker we classify and never write: +5,442, every added line matches
+
+**Majora `92d8bb20` → `50d674f9`: matched 700,354 → 705,796 (+5,442), body 2,501,064 → 2,506,506
+(+5,442). Body and matched moved by the SAME amount — every line this round adds is a line C++
+also has. That is a recall gain, not the precision gain R647 was. Benchy `4d8dd7ad` and cube
+`ebda7d03` byte-identical.**
+
+### The three-stage check, generalised
+
+R647's residual pointed at `;_FORCE_RESUME_FAN_SPEED`. Before porting it, run the check over the
+whole marker set — for each string the cooling classifier recognises, does anything outside
+`cooling.rs`/`g_code_editor.rs` write it?
+
+| marker | producers outside the classifier |
+|---|---|
+| `;_EXTRUDE_END` | 1 |
+| `;_OVERHANG_FAN_START` / `_END` | 2 / 2 |
+| `;_SET_FAN_SPEED_CHANGING_LAYER` | 4 |
+| `; COOLING_NODE:` | 2 |
+| **`;_FORCE_RESUME_FAN_SPEED`** | **0** |
+| **`;set fan changing filament`** | **0** |
+| **`; Slow Down Start` / `End`** | **0** |
+
+**Three markers we classify and never produce.** The second turned out to be a non-issue and the
+check is why I know that rather than guessing: `;set fan changing filament` has no producer in C++
+libslic3r either — it would come from a printer profile's template, and Majora's config contains
+the string nowhere. Both sides default `m_set_fan_changing_filament_start = true`
+(GCodeEditor.hpp:483, cooling.rs:1820), so the gate on the P2 emission was already satisfied and
+R648's pre-registered fallback was ruled out before writing any code.
+
+### The fix
+
+C++ appends the marker immediately after the tool-change template — GCode.cpp:944 for
+`toolchange_gcode_str`, :7479 for the `set_extruder` path — and `GCodeEditor.cpp:556-561` expands
+it into a forced re-emission of both fans. Dumping C++'s output around the third `M621 S4A` shows
+exactly where the pair lands:
+
+```
+M621 S4A          <- the template's last line
+M106 S255         <- FORCE_RESUME, main fan
+M106 P2 S178      <- FORCE_RESUME, auxiliary fan
+G1 X180.18 Y208.797 F30000
+```
+
+That is the head of `emit_tower_tcr`'s trailer, so the producer is one line there. Our
+`print.rs:3363` had cited "GCode.cpp:945 and :7480" and quoted C++'s comment from that block for
+eighteen rounds while omitting the line C++ writes at it.
+
+| run | hash | matched | body | `M106` | `M106 P2 S178` |
+|---|---|---|---|---|---|
+| `FORCE_RESUME_FAN_MARKER=0` | **`92d8bb20`** (reproduces R647) | 700,354 | 2,501,064 | 10,905 | 1 |
+| **`=1`** | **`50d674f9`** | **705,796** | **2,506,506** | **16,347** | **2,719** |
+| C++ | | | 2,781,977 | **16,364** | **2,721** |
+
+Predicted "~5,456 `M106` lines and ~4,000-5,400 matched": actual **+5,442 and +5,442**, at the top
+of the range. The `M106` deficit closes from 5,459 to **17** and the P2 deficit from 2,720 to
+**2** — and 2 is the known 2-tool-change difference, i.e. this class is now exhausted.
+
+### R649 — the ordering the same dump hands us
+
+The side-by-side after the fix shows the pair landing correctly and one difference remaining:
+
+```
+C++:   M621 S4A / M106 S255 / M106 P2 S178 / G1 X180.18 Y208.797 F30000 / G1 Z1.5 / (blank) / ; filament start gcode / M106 P3 S150
+ours:  M621 S4A / M106 S255 / M106 P2 S178 /                                       ; filament start gcode / M106 P3 S150 / G1 X185.729 Y199.297 F30000
+```
+
+**C++ emits the travel BEFORE the filament-start template; we emit it after** — and C++ has a
+`G1 Z1.5` we do not emit at all. Our trailer is built `{fil_start}{travel_to_start}…` on the
+strength of a comment citing GCode.cpp:1051; the observed output contradicts that reading, so
+**check which C++ path actually produces this block before reordering** (R642's lesson: a root
+cause from a code comment is a hypothesis). At ~2,723 tool changes, the misordered travel plus the
+missing `G1 Z` is worth up to ~5,400 lines.
+
+**Predict R649 recovers ~2,700 (the travel alone, if order is what blocks the match) to ~5,400
+(travel + the missing `G1 Z`).** Fallback: if reordering moves matched by less than 500, the
+grouping in `line_parity.py` is order-insensitive within a feature and the real defect is the
+absent `G1 Z1.5` — port that instead and re-measure. Second lead from the same sweep:
+`; Slow Down Start`/`End` (GCode.cpp:6597/6768) has no producer, so `not_join_cooling` is never
+set and we slow down paths C++ leaves alone — check what drives `use_seperate_speed` first, since
+it is the circle-compensation path and may be inert on both fixtures.
