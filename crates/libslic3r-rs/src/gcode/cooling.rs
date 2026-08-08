@@ -2640,17 +2640,26 @@ impl GCodeEditorState {
                         let f_end = after_f
                             .find(|c: char| c == ' ' || c == ';' || c == '\n')
                             .unwrap_or(after_f.len());
-                        let rest = &after_f[f_end..end_pos.saturating_sub(fpos)];
+                        // R643: `rest` stopped at `end_pos` (the `;`), silently
+                        // dropping the inline comment. C++'s cooling buffer
+                        // rewrites the F value in place and keeps the remainder of
+                        // the line, comment included. Measured cost of truncating:
+                        // Majora carried 12,249 F-bearing lines with an inline
+                        // comment in C++ against 18 in ours, while comment-less
+                        // lines matched at 7,482 vs 7,475 — the whole gap was here.
+                        let rest = &after_f[f_end..];
                         let clean_rest = strip_cooling_markers_str(rest);
                         if !clean_rest.is_empty() {
                             new_gcode.push_str(&clean_rest);
                         }
                         new_gcode.push('\n');
                     } else {
-                        // Not slowed, different feedrate — emit without comments
+                        // R643: this truncated at `;` and the comment above said
+                        // so outright. C++ keeps the comment here too — the only
+                        // thing its cooling buffer strips is its own `;_` markers.
                         current_feedrate = new_feedrate;
-                        let trimmed = sline[..end_pos].trim_end();
-                        new_gcode.push_str(trimmed);
+                        let clean = strip_cooling_markers(sline);
+                        new_gcode.push_str(clean.trim_end());
                         new_gcode.push('\n');
                     }
                 } else {

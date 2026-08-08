@@ -10721,3 +10721,73 @@ R631/R639/R640's false positives and a strong check that the fix is real.
 **Fallback: if matched rises far less than the 12,238 line gap, the surviving lines differ from C++
 in more than the comment — diff ten of them character-by-character before widening the fix.**
 **Check both other fixtures: Benchy and cube use the same templates and should also gain.**
+
+## R643 — the comment truncation was in the cooling buffer, not the parser: +12,045
+
+**Majora 26.45% → 26.92% (680,143 → 692,188 matched) with the body-line count BYTE-IDENTICAL at
+2,571,520. Largest single gain since R601's chain.**
+
+### R642's root cause was wrong; the discriminator is `F`, not whitespace
+
+R642 concluded we treat `;` as a comment delimiter only when it follows whitespace, from three
+examples. Splitting C++'s inline-comment command lines by whether the line carries an `F`
+parameter refutes that in one measurement:
+
+| inline-comment command lines | C++ | ours (pre-fix) |
+|---|---|---|
+| **no** `F` param | 7,482 | 7,475 — **fine** |
+| **has** `F` param | **12,249** | **18** |
+
+The whitespace hypothesis was a coincidence of the samples: all three no-space examples happened to
+carry an `F`, and the space example did not. The real rule is that only F-bearing lines lose their
+comments — and those are exactly the lines the cooling buffer rewrites.
+
+### The defect
+
+`gcode/cooling.rs`, two sites on the feedrate-rewrite path, both truncating at `end_pos` (the `;`):
+
+```rust
+let rest = &after_f[f_end..end_pos.saturating_sub(fpos)];   // comment excluded
+...
+// Not slowed, different feedrate — emit without comments
+let trimmed = sline[..end_pos].trim_end();
+```
+
+The second even documented the behaviour in its own comment. C++'s cooling buffer rewrites the `F`
+value in place and keeps the rest of the line; the only thing it strips is its own `;_` markers.
+Both sites now keep the remainder, still passing it through `strip_cooling_markers`.
+
+### Measurement
+
+| | matched | body | rate |
+|---|---|---|---|
+| base | 680,143 | 2,571,520 | 26.45% |
+| **R643** | **692,188** | **2,571,520** | **26.92%** |
+
+**+12,045 matched, denominator unchanged to the line.** This was the pre-registered falsification
+shape — the fix alters line CONTENT, not count — and is the exact inverse of the
+shrinking-denominator false positives from R631/R639/R640. It also lands inside the predicted
+8,000–12,000 band.
+
+Benchy `2a5ec3d6` and cube `7497af44` are byte-identical, and Benchy's parity is unchanged at
+115,900 — no regression, but no gain either: those fixtures evidently have no F-bearing template
+lines with inline comments. Majora re-baselined `88e956a4` → **`430d7a2b`**.
+
+### One thing this opened
+
+We now emit **15,755** F-bearing inline-comment lines against C++'s **12,249** — a 3,506
+overshoot. Some of those comments belong to lines C++ removes outright, or C++ strips a comment we
+keep. Worth a round on its own; it is a smaller and opposite-signed error to the one just fixed.
+
+### R644
+
+1. **The 3,506 overshoot.** Classify our surplus F-comment lines by comment text and compare
+   against C++'s, the way R642's sweep did — if a whole comment class appears only on our side,
+   C++ is dropping those lines and the cooling buffer's *removal* predicate differs.
+2. **Re-run the R642 branch sweep** — the other five mismatches (`timelapse_type == 1` body
+   `G92 E0` 9,498 vs 6,771; `; FLUSH_START` 8,756 vs 8,988; `M620.11 S0` 5,448 vs 5,444) were
+   measured before this fix and may have moved.
+**Predict the sweep's `; FLUSH_START` and `M620.11` gaps are now smaller or gone, and the `G92 E0`
+gap persists** (it is a bare command with no comment, so this fix cannot touch it). Fallback: if
+every branch count is unchanged, they are independent defects and the sweep should be treated as
+four separate open items rather than one.
