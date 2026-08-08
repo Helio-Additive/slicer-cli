@@ -3280,7 +3280,12 @@ fn emit_tower_tcr(
     {
         let cut = g.find(WT_START).unwrap() + WT_START.len();
         writer.write_raw_content(&g[..cut]);
-        writer.retract_for_toolchange();
+        // GCode.cpp:747 — C++ passes `auto_lift_type` and `apply_instantly = true`
+        // here, so the tower toolchange retract emits an IMMEDIATE spiral lift.
+        // R637's funnel measured this site at 3,443 calls, and `eager_lift` at
+        // 7,538 against our single call site. R638.
+        let alt = writer.auto_lift_type();
+        writer.retract_for_toolchange_with_lift(alt, true);
         writer.write_raw_content(&g[cut..]);
     } else {
         writer.write_raw_content(&g);

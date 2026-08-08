@@ -295,6 +295,13 @@ pub struct GCodeWriter {
     /// path lets `needs_retraction` choose. R636.
     m_forced_lift_type: Option<u8>,
 
+    /// C++'s `apply_instantly` argument to `GCode::retract` (`GCode.cpp:7097`).
+    /// True routes the lift through `eager_lift` (immediate emission), false
+    /// through `lazy_lift` (deferred, merged into the next `travel_to_xyz`).
+    /// R637 measured 7,538 of C++'s 8,845 Majora spirals coming through the
+    /// eager path. R638.
+    m_apply_lift_instantly: bool,
+
     /// The lift type `needs_retraction` resolved for the travel about to happen
     /// (GCode.cpp:7046/:7089 write C++'s by-reference `lift_type` out-param here).
     /// 0 = NormalLift, 1 = SpiralLift, 2 = SlopeLift. R631.
@@ -430,6 +437,7 @@ impl GCodeWriter {
             // value needs_retraction starts from before it decides.
             m_pending_travel_lift_type: 1,
             m_forced_lift_type: None,
+            m_apply_lift_instantly: false,
             layer_index: 0,
             total_layers: 0,
             layer_z: 0.0,
@@ -1388,13 +1396,46 @@ impl GCodeWriter {
         }
     }
 
-    /// `retract()` with C++'s explicit `LiftType` argument
-    /// (`GCode::retract(bool, bool, LiftType, bool)`), for the non-travel sites.
-    /// R636.
-    pub fn retract_with_lift_type(&mut self, lift_type: u8) {
-        let prev = self.m_forced_lift_type.replace(lift_type);
+    /// GCodeWriter.cpp:456-495 `eager_lift` — immediate emission, dispatching on
+    /// the lift type. The `to_lift < EPSILON` early-out at `:459` is why C++'s
+    /// 7,542 forced retracts yield 7,538 spirals and not more. R638.
+    fn eager_lift(&mut self, lift_type: u8) {
+        let to_lift = self.retract_lift - self.m_lifted;
+        if to_lift < 1e-4 {
+            // GCodeWriter.cpp:459-460 — nothing to lift; C++ returns an empty move.
+            return;
+        }
+        match lift_type {
+            1 => self.eager_spiral_lift(),
+            _ => {
+                // GCodeWriter.cpp:475 — "if position is unknown use normal lift".
+                self.travel_to_z(self.z + to_lift, None);
+                self.m_lifted = self.retract_lift;
+                self.m_to_lift = 0.0;
+            }
+        }
+    }
+
+    /// `retract_for_toolchange()` with C++'s explicit `LiftType` and
+    /// `apply_instantly` arguments — `GCode.cpp:747`
+    /// `retract(tcr.is_tool_change && !is_nozzle_change, false, auto_lift_type, true)`.
+    /// R637 measured this site at 3,443 calls on Majora. R638.
+    pub fn retract_for_toolchange_with_lift(&mut self, lift_type: u8, apply_instantly: bool) {
+        let prev_lt = self.m_forced_lift_type.replace(lift_type);
+        let prev_ai = std::mem::replace(&mut self.m_apply_lift_instantly, apply_instantly);
+        self.retract_for_toolchange();
+        self.m_forced_lift_type = prev_lt;
+        self.m_apply_lift_instantly = prev_ai;
+    }
+
+    /// `retract()` with C++'s explicit `LiftType` and `apply_instantly` arguments
+    /// (`GCode::retract(bool, bool, LiftType, bool)`). R636/R638.
+    pub fn retract_with_lift_type(&mut self, lift_type: u8, apply_instantly: bool) {
+        let prev_lt = self.m_forced_lift_type.replace(lift_type);
+        let prev_ai = std::mem::replace(&mut self.m_apply_lift_instantly, apply_instantly);
         self.retract();
-        self.m_forced_lift_type = prev;
+        self.m_forced_lift_type = prev_lt;
+        self.m_apply_lift_instantly = prev_ai;
     }
 
     /// R205: GCodeWriter::lazy_lift (GCodeWriter.cpp:425-452), non-spiral-vase,
@@ -1971,8 +2012,50 @@ impl GCodeWriter {
         self.retraction_length = saved;
     }
 
+    /// GCode.cpp:7117-7124 — the lift half of `GCode::retract`:
+    ///
+    /// ```cpp
+    /// gcode += toolchange ? m_writer.retract_for_toolchange() : m_writer.retract();
+    /// gcode += m_writer.reset_e();
+    /// if (m_writer.filament()->retraction_length() > 0 || use_firmware_retraction) {
+    ///     if (apply_instantly) gcode += m_writer.eager_lift(lift_type, toolchange);
+    ///     else                 gcode += m_writer.lazy_lift(lift_type, ...);
+    /// }
+    /// ```
+    ///
+    /// R638: the crucial detail is that this block is **not** guarded by whether
+    /// the retraction emitted anything. C++'s `m_writer.retract()` returns an
+    /// empty string when the filament is already retracted, and the lift still
+    /// runs. Ours returned early from the whole function, so an
+    /// already-retracted call emitted no lift at all — which is why R637 found
+    /// C++ reaching `eager_lift` 7,538 times against our single call site.
+    fn emit_lift_after_retract(&mut self) {
+        if lift_faithful_gate() {
+            let lt = self
+                .m_forced_lift_type
+                .unwrap_or_else(|| self.travel_lift_type());
+            if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
+                eprintln!("OHCONSUME lift_type={}", lt);
+            }
+            if self.m_apply_lift_instantly {
+                // GCode.cpp:7121 `eager_lift` — immediate emission.
+                self.eager_lift(lt);
+            } else {
+                self.lazy_lift_faithful(lt);
+            }
+        } else {
+            self.do_z_hop();
+        }
+    }
+
     pub fn retract(&mut self) {
         if self.retracted {
+            // GCode.cpp:7112-7124 — C++'s writer-level retract is the no-op here,
+            // NOT the lift. Emitting the lift anyway is what R637 measured as the
+            // whole remaining spiral deficit. R638.
+            if crate::faithful_gate("RETRACT_LIFT_ALWAYS") {
+                self.emit_lift_after_retract();
+            }
             return;
         }
 
@@ -2244,23 +2327,7 @@ impl GCodeWriter {
             });
         }
 
-        // Z lift — use spiral or normal depending on config
-        if lift_faithful_gate() {
-            // R206: native defers the lift (lazy_lift) and merges it into the
-            // next travel_to_xyz. R630: the type is per-profile, not a constant —
-            // GCode.cpp:7046/:7089 pick it inside needs_retraction.
-            // R636: a forced type wins — that is C++'s explicit `LiftType`
-            // argument. Only the travel path consults the predicate.
-            let lt = self
-                .m_forced_lift_type
-                .unwrap_or_else(|| self.travel_lift_type());
-            if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
-                eprintln!("OHCONSUME lift_type={}", lt);
-            }
-            self.lazy_lift_faithful(lt);
-        } else {
-            self.do_z_hop();
-        }
+        self.emit_lift_after_retract();
 
         self.retracted = true;
         self.stats.retraction_count += 1;
@@ -2327,23 +2394,7 @@ impl GCodeWriter {
             });
         }
 
-        // Z lift — use spiral or normal depending on config
-        if lift_faithful_gate() {
-            // R206: native defers the lift (lazy_lift) and merges it into the
-            // next travel_to_xyz. R630: the type is per-profile, not a constant —
-            // GCode.cpp:7046/:7089 pick it inside needs_retraction.
-            // R636: a forced type wins — that is C++'s explicit `LiftType`
-            // argument. Only the travel path consults the predicate.
-            let lt = self
-                .m_forced_lift_type
-                .unwrap_or_else(|| self.travel_lift_type());
-            if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
-                eprintln!("OHCONSUME lift_type={}", lt);
-            }
-            self.lazy_lift_faithful(lt);
-        } else {
-            self.do_z_hop();
-        }
+        self.emit_lift_after_retract();
 
         self.retracted = true;
         self.stats.retraction_count += 1;

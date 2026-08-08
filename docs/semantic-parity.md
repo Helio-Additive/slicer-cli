@@ -10351,3 +10351,89 @@ missing C++'s `to_lift = target_lift - m_lifted; if (to_lift < EPSILON) return;`
 The funnel/caller instrumentation is reverted inside the submodule (both status checks clean, stock
 engine rebuilt). No Rust change this round; both gates remain off; all three baselines
 byte-identical.
+
+## R638 — the eager path lands: +2,718 matched, and the tower's missing spirals are closed
+
+**First parity gain since R627. Majora 26.15% → 26.26% (670,865 → 673,583 matched) with the
+denominator UNCHANGED at 2,564,962 — a clean gain, not a shrinking-denominator artefact.**
+
+### The mechanism, and why it was structural rather than fifteen call sites
+
+R637 localised the deficit to `eager_lift`. Reading `GCode::retract` (`GCode.cpp:7097-7128`) showed
+why we never reached it:
+
+```cpp
+gcode += toolchange ? m_writer.retract_for_toolchange() : m_writer.retract();  // MAY BE EMPTY
+gcode += m_writer.reset_e();
+if (m_writer.filament()->retraction_length() > 0 || m_config.use_firmware_retraction) {
+    if (apply_instantly) gcode += m_writer.eager_lift(lift_type, toolchange);
+    else                 gcode += m_writer.lazy_lift(lift_type, ...);
+}
+```
+
+**The lift is not guarded by whether the retraction emitted anything.** C++'s writer-level
+`retract()` returns an empty string when the filament is already retracted — and the lift still
+runs. Ours began `if self.retracted { return; }`, skipping the lift entirely. This is also the
+exact shape R611 hit and worked around: "adding an explicit second retract produced ZERO extra
+wipes because `retract()` early-returns".
+
+### What shipped
+
+- **`emit_lift_after_retract()`** — the lift half of `GCode::retract` factored out of both retract
+  paths, so it can run independently of the retraction early-out.
+- **`m_apply_lift_instantly`** — C++'s `apply_instantly` argument; true routes to `eager_lift`
+  (immediate), false to `lazy_lift` (deferred).
+- **`eager_lift(lift_type)`** — `GCodeWriter.cpp:456-495`, including the `to_lift < EPSILON`
+  early-out at `:459` that is why C++'s 7,542 forced retracts yield 7,538 spirals and not more.
+- **`retract_for_toolchange_with_lift()` / `retract_with_lift_type(lift_type, apply_instantly)`**.
+- The wipe-tower toolchange site wired to `GCode.cpp:747`'s
+  `retract(..., auto_lift_type, /*apply_instantly=*/true)`.
+- All behind `RETRACT_LIFT_ALWAYS` (default-ON); with it off the output is byte-identical to the
+  R637 baselines, which is the regression check.
+
+### The measurement
+
+| Majora `G17` | C++ | before | after |
+|---|---|---|---|
+| object | 6,062 | 36,406 | 33,688 |
+| **tower_tc** | **2,719** | **0** | **2,718** |
+| total | 8,781 | 36,406 | 36,406 |
+
+**The tower's 2,719 missing spiral lifts — open since R628 — are now 2,718, off by one.** Note the
+total did not change: 2,718 spirals *moved* from the object region into the tower block, which is
+where C++ emits them. That is the pre-registered fallback scenario ("if `G17` lands right but
+matched lines do not rise, the spirals are in the wrong position class") resolved in the positive
+direction — they moved into the right class AND matched.
+
+| | matched | body | rate |
+|---|---|---|---|
+| off | 670,865 | 2,564,962 | 26.15% |
+| **on** | **673,583** | **2,564,962** | **26.26%** |
+
+Benchy 115,900 and cube `7497af44` both unchanged, as predicted — Benchy's filament resolves to
+Spiral so its sites already agreed.
+
+### On the round's prediction
+
+Predicted `G17` 1,234 → ~8,000. **Wrong in shape**: the count did not rise at all, because the
+spirals we were already emitting in the object region were the same ones, mis-placed. The gain came
+from *relocation*, not addition. The prediction assumed our object spirals and C++'s were disjoint
+populations; they overlap.
+
+An intermediate step also measured as a no-op and is worth recording: restructuring `retract()`
+alone (the early-out fix) left both fixtures byte-identical, because nothing set `apply_instantly`
+— the lift still routed to the lazy path. The restructure was necessary but not sufficient, and
+only wiring a call site made it observable.
+
+### R639
+
+The object region still shows 33,688 spirals against C++'s 6,062 — a 27,626 excess, now the
+largest single item on this path and unchanged by this round. With the tower closed and the eager
+mechanism in place, the remaining object excess is the `LIFT_TYPE_AUTO_CPP` gate's territory
+(measured R631 at 1,234 when enabled, i.e. it removes ~32,000 of the 33,688). **Re-run the
+three-way gate A/B (`$D/r631.sh`) now that the eager path exists** — the gate was measured as a
+loss in R631 against a writer that had no eager path, so its earlier verdict is stale.
+**Predict enabling `LIFT_TYPE_AUTO_CPP` on top of R638 now GAINS rather than loses, because the
+object spirals it removes are replaced by correctly-placed eager ones.** Fallback: if it still
+loses, attribute the removed lines with `$D/r627_attr.py` before adjusting — the slope moves it
+substitutes may be the mismatch rather than the spirals it deletes.
