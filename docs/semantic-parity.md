@@ -10201,3 +10201,76 @@ count in the wrong places — attribute with `$D/r629_attr.py` before adjusting,
 
 `OHRUST` segment logging under `OVERHANG_PRED_CENSUS`. Both gates remain off; all three baselines
 byte-identical; submodule reverted and stock engine rebuilt.
+
+## R636 — the fifteen sites are three, and they are not the answer either
+
+**No parity change. The round built the mechanism, then measured the sites exactly and found
+R635's attribution was wrong too. Object spirals remain mostly unexplained — but the unexplained
+share is now pinned at ~3,900 with three candidates eliminated by count.**
+
+### The premise check that mattered
+
+R635 concluded "~4,584 object spirals come from `auto_lift_type`'s fifteen retract sites". Mapping
+each site to its guard before wiring anything showed four of them (`:4908`, `:4929`, `:5078`,
+`:5089`) are gated on `!has_wipe_tower` — and **Majora has a tower**, so they cannot fire. That
+alone broke the arithmetic, so instead of porting on a guess I tagged all thirteen call sites with
+a per-site counter and ran Majora:
+
+| C++ site | calls | region |
+|---|---|---|
+| `:747` wipe-tower toolchange retract | 3,443 | tower |
+| `:1085` wipe-tower retract | 3,443 | tower |
+| `:4582` timelapse / layer retract | **656** | object |
+| the other ten | **0** | — |
+| **total forced-lift retracts** | **7,542** | |
+
+**Ten of the thirteen never fire.** The object-side contribution is 656 — one per layer — not
+4,584. R635's attribution is corrected: `auto_lift_type` is real and worth porting, but it is a
+656-line item on the object side, not a 4,800-line one.
+
+### The object-spiral budget, as far as it is now known
+
+| source | C++ object `G17` |
+|---|---|
+| overhang predicate (R635, measured) | 1,478 |
+| `auto_lift_type` site `:4582` (R636, measured) | 656 |
+| **still unattributed** | **~3,928** |
+| total | 6,062 |
+
+Two thirds of C++'s object spirals still have no measured source. Candidates not yet counted:
+`GCode.cpp:5283` (the layer-change retract, which forces SpiralLift for `zhtAuto` **without** going
+through the `auto_lift_type` variable, so it was invisible to this round's grep) and `:3039`
+(`retract(..., SpiralLift, true)`). Neither was tagged here.
+
+### What shipped
+
+`GCodeWriter::auto_lift_type()` (`GCode.cpp:4092-4096`) and `retract_with_lift_type()`, mirroring
+C++'s explicit `LiftType` argument to `GCode::retract(bool, bool, LiftType, bool)`, plus an
+`m_forced_lift_type` override that `retract()` consults before falling back to the travel
+predicate. The mechanism is correct and compiles clean, but is **deliberately not wired to any
+call site yet** — the census says only one object-side site matters and it is worth 656 lines, so
+wiring it blind ahead of the missing two thirds would be guesswork of exactly the kind the last
+four rounds have been paying for.
+
+### On the method
+
+This is the third round in a row where the handover's target was wrong, and the second where the
+error was mine from the previous round. R635 applied "count by mechanism" to the predicate and got
+a real answer, then immediately attributed the *remainder* to a mechanism it had not counted. The
+rule needs its second half stated: **counting mechanism A does not license attributing the
+remainder to mechanism B — count B too.** The per-site census here cost one C++ build and settled
+it in one run.
+
+**R637:** tag `GCode.cpp:5283` and `:3039` the same way (per-site counter, one build), and add a
+catch-all counter inside `GCodeWriter::_spiral_travel_to_z` — the single funnel every spiral passes
+through — so the per-site counts can be checked against the total and any remaining source shows
+up as the unexplained balance. **Predict `:5283` accounts for ~655 (one per layer) and the funnel
+total reconciles to 6,062, leaving a named residual.** Fallback: if the tagged sites still do not
+sum to 6,062, the residual is being emitted from `travel_to_xyz`'s spiral branch under a lift type
+set somewhere not yet inspected — dump `m_to_lift_type` at the branch instead of tagging more call
+sites.
+
+### Shipped
+
+`auto_lift_type()` + `retract_with_lift_type()` (unwired). Both gates remain off; all three
+baselines byte-identical; submodule reverted and stock engine rebuilt.

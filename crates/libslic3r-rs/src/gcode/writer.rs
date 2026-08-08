@@ -289,6 +289,12 @@ pub struct GCodeWriter {
     /// overhang of their own yet sit within 0.4mm of one that does.
     layer_overhangs: std::collections::VecDeque<(CoordF, Vec<crate::geometry::ExPolygon>)>,
 
+    /// GCode.cpp:4093-4096 `auto_lift_type`. When set, `retract()` uses this
+    /// instead of consulting the travel predicate — C++ passes an explicit
+    /// `LiftType` argument to `retract()` at fifteen sites, and only the travel
+    /// path lets `needs_retraction` choose. R636.
+    m_forced_lift_type: Option<u8>,
+
     /// The lift type `needs_retraction` resolved for the travel about to happen
     /// (GCode.cpp:7046/:7089 write C++'s by-reference `lift_type` out-param here).
     /// 0 = NormalLift, 1 = SpiralLift, 2 = SlopeLift. R631.
@@ -423,6 +429,7 @@ impl GCodeWriter {
             // GCode.cpp:6815 `LiftType lift_type = LiftType::SpiralLift;` — the
             // value needs_retraction starts from before it decides.
             m_pending_travel_lift_type: 1,
+            m_forced_lift_type: None,
             layer_index: 0,
             total_layers: 0,
             layer_z: 0.0,
@@ -1360,6 +1367,36 @@ impl GCodeWriter {
         }
     }
 
+    /// GCode.cpp:4092-4096 — the lift type used by every retract site that is NOT
+    /// a travel:
+    ///
+    /// ```cpp
+    /// LiftType auto_lift_type = LiftType::NormalLift;
+    /// if (z_hope_type == zhtAuto || zhtSpiral || zhtSlope)
+    ///     auto_lift_type = LiftType::SpiralLift;
+    /// ```
+    ///
+    /// R635 measured why this matters: C++'s overhang predicate returns true only
+    /// 1,478 times on Majora, yet C++ emits 6,062 object `G17`. The other ~4,584
+    /// come from the fifteen sites that pass `auto_lift_type` — layer change,
+    /// timelapse, object change, wipe-tower entry — each an UNCONDITIONAL spiral
+    /// with no overhang test at all. R636.
+    pub fn auto_lift_type(&self) -> u8 {
+        match self.config.z_hop_type {
+            ZHopType::Auto | ZHopType::Spiral | ZHopType::Slope => 1, // SpiralLift
+            ZHopType::Normal => 0,                                   // NormalLift
+        }
+    }
+
+    /// `retract()` with C++'s explicit `LiftType` argument
+    /// (`GCode::retract(bool, bool, LiftType, bool)`), for the non-travel sites.
+    /// R636.
+    pub fn retract_with_lift_type(&mut self, lift_type: u8) {
+        let prev = self.m_forced_lift_type.replace(lift_type);
+        self.retract();
+        self.m_forced_lift_type = prev;
+    }
+
     /// R205: GCodeWriter::lazy_lift (GCodeWriter.cpp:425-452), non-spiral-vase,
     /// non-toolchange path. retract_lift_above/below default to always-active
     /// for this pipeline (0..huge); target = z_hop (self.retract_lift).
@@ -2212,7 +2249,11 @@ impl GCodeWriter {
             // R206: native defers the lift (lazy_lift) and merges it into the
             // next travel_to_xyz. R630: the type is per-profile, not a constant —
             // GCode.cpp:7046/:7089 pick it inside needs_retraction.
-            let lt = self.travel_lift_type();
+            // R636: a forced type wins — that is C++'s explicit `LiftType`
+            // argument. Only the travel path consults the predicate.
+            let lt = self
+                .m_forced_lift_type
+                .unwrap_or_else(|| self.travel_lift_type());
             if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
                 eprintln!("OHCONSUME lift_type={}", lt);
             }
@@ -2291,7 +2332,11 @@ impl GCodeWriter {
             // R206: native defers the lift (lazy_lift) and merges it into the
             // next travel_to_xyz. R630: the type is per-profile, not a constant —
             // GCode.cpp:7046/:7089 pick it inside needs_retraction.
-            let lt = self.travel_lift_type();
+            // R636: a forced type wins — that is C++'s explicit `LiftType`
+            // argument. Only the travel path consults the predicate.
+            let lt = self
+                .m_forced_lift_type
+                .unwrap_or_else(|| self.travel_lift_type());
             if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
                 eprintln!("OHCONSUME lift_type={}", lt);
             }
