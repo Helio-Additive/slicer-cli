@@ -680,7 +680,19 @@ impl GCodeWriter {
             // shortfall is the predicate returning false or the verdict being lost
             // downstream between resolution and emission.
             if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
-                eprintln!("OHRESOLVE through={}", through as u8);
+                // R635: same fields and units as C++'s OHCPP line, so the two
+                // dumps join exactly. Printed in mm — C++ scales at 1e-6 and we
+                // scale at 1e5, so raw coords are NOT comparable.
+                let a = clipped.points.first().copied().unwrap_or(from);
+                let b = clipped.points.last().copied().unwrap_or(to);
+                eprintln!(
+                    "OHRUST x0={:.4} y0={:.4} x1={:.4} y1={:.4} through={}",
+                    crate::unscale(a.x),
+                    crate::unscale(a.y),
+                    crate::unscale(b.x),
+                    crate::unscale(b.y),
+                    through as u8
+                );
             }
         } else {
             self.m_pending_travel_lift_type = self.to_lift_type();

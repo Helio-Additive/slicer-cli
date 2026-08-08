@@ -10120,3 +10120,84 @@ against our 35,754 before looking anywhere else.
 
 `OHRESOLVE` / `OHCONSUME` logging under the existing `OVERHANG_PRED_CENSUS` probe. Both gates
 remain off; all three baselines byte-identical.
+
+## R635 — the overhang predicate was never the main mechanism
+
+**The per-call join reframes five rounds of work. C++'s `is_through_overhang` returns true only
+1,478 times on Majora — it cannot be the source of 6,062 object spirals. Roughly three quarters of
+them come from a mechanism with no overhang test at all.**
+
+### The dumps
+
+Instrumented both of C++'s `is_through_overhang` call sites (`GCode.cpp:7046`, `:7089`) to print
+the clipped segment and the verdict, and matched our `OHRESOLVE` line to the same fields and units
+(C++ scales at 1e-6, we scale at 1e5, so raw coordinates are not comparable — both now print mm).
+
+| Majora | C++ | Rust |
+|---|---|---|
+| predicate **calls** | **51,669** | 35,754 |
+| predicate returns **true** | **1,478** (2.9%) | 611 (1.7%) |
+| object `G17` emitted | **6,062** | 1,234 |
+
+**1,478 ≠ 6,062.** The predicate accounts for at most a quarter of C++'s object spirals. Every
+round from R630 onward — including this one's assigned prediction — has been treating it as the
+whole mechanism.
+
+### Where the rest come from
+
+`GCode.cpp:4094-4096`:
+
+```cpp
+ZHopType z_hope_type = ZHopType(FILAMENT_CONFIG(z_hop_types));
+LiftType auto_lift_type = LiftType::NormalLift;
+if (z_hope_type == zhtAuto || z_hope_type == zhtSpiral || z_hope_type == zhtSlope)
+    auto_lift_type = LiftType::SpiralLift;
+```
+
+`auto_lift_type` is then passed to **fifteen** retract sites — `:742`, `:744`, `:747`, `:775`,
+`:1085`, `:4582`, `:4679`, `:4688`, `:4702`, `:4710`, `:4908`, `:4929`, `:5078`, `:5089`, `:5189`
+— covering layer change, timelapse, object change, the wipe-tower entry and more. Every one of
+them is an **unconditional spiral** under Auto. No overhang test, no travel geometry, no
+`is_through_overhang` call. That is consistent with R629's old observation that 5,882 of C++'s
+6,062 object `G17` sit nowhere near a layer change: they are scattered through the layer because
+these fifteen sites are scattered through the layer.
+
+### On the round's own prediction
+
+Predicted: "a large set of segments where C++ says true and we say false, concentrated in the
+per-polygon bbox reject." **Wrong** — the per-segment verdict gap is only 1,478 vs 611, far too
+small to matter. The pre-registered fallback was right in direction: C++ *is* called on more
+segments (51,669 vs 35,754, 1.45×), because those extra calls come from retract sites we never
+reach. But even the fallback framed the predicate as the target, and it is not.
+
+The remaining predicate gap (1,478 vs 611) stays open and is now correctly sized: worth roughly
+870 spirals, not 4,800.
+
+### What this costs and what it buys
+
+Five rounds (R630-R635) were spent porting and then validating the overhang chain — the producer,
+the predicate, the z-window, the clip. That work is correct and stays: the producer matches C++ to
+99.0-100.0% of area, and the predicate is a faithful port. It was simply aimed at the smaller half
+of the problem, and no round before this one measured C++'s spiral sources by mechanism rather
+than by count.
+
+The lesson is specific enough to be worth stating: **counting a mechanism's OUTPUT on our side and
+comparing it to a TOTAL on C++'s side attributes the whole total to that mechanism.** R629's
+"36,407 vs 6,062" framed the entire object-`G17` deficit as one guard's fault, and every round
+since inherited it.
+
+### R636
+
+Port `auto_lift_type` (`GCode.cpp:4094-4096`) and the fifteen retract sites that consume it. Our
+equivalents are the layer-change and splice-adjacent `retract()` calls in `print.rs` and
+`exporter.rs` — all of which currently take the writer's default lift path rather than a forced
+SpiralLift. **Predict Majora object `G17` 1,234 → ~5,000+ with matched lines UP; Benchy unchanged
+(its filament is "Spiral Lift", so `auto_lift_type` is SpiralLift there too and the sites already
+agree).** Fallback: if `G17` rises but matched lines do not, the spirals are landing at the right
+count in the wrong places — attribute with `$D/r629_attr.py` before adjusting, and check the
+`; WIPE_TOWER` position class, since four of the fifteen sites are tower-adjacent.
+
+### Shipped
+
+`OHRUST` segment logging under `OVERHANG_PRED_CENSUS`. Both gates remain off; all three baselines
+byte-identical; submodule reverted and stock engine rebuilt.
