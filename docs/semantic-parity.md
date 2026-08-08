@@ -10791,3 +10791,62 @@ keep. Worth a round on its own; it is a smaller and opposite-signed error to the
 gap persists** (it is a bare command with no comment, so this fix cannot touch it). Fallback: if
 every branch count is unchanged, they are independent defects and the sweep should be treated as
 four separate open items rather than one.
+
+## R644 — the overshoot was a comment C++ never writes; the sweep's other items are independent
+
+**No parity change (matched flat at 692,188). Two measurements, one small faithfulness fix, and a
+prediction that was half right.**
+
+### Step 1: the 3,506 overshoot is one class
+
+Classifying our surplus F-bearing inline-comment lines by comment text:
+
+| comment | C++ | ours |
+|---|---|---|
+| `;Travel to a Wipe Tower` | **0** | **3,377** |
+| `;move aside to extrude` | 3,305 | 3,541 (+236) |
+| `;_EXTRUDE_SET_SPEED` | **172** | **0** |
+
+C++ *does* pass `"Travel to a Wipe Tower"` to `travel_to` (`GCode.cpp:698-701`) — but
+`GCodeWriter::emit_comment` is gated on `full_gcode_comment`, which is **off** on both fixtures, so
+the string appears **zero** times in its output. We emitted it unconditionally on every tower
+travel. **We do not model `full_gcode_comment` at all**, which means writer-generated comments must
+simply not be written; the comments that legitimately appear in C++'s output come from gcode
+TEMPLATES, which are verbatim text and unaffected.
+
+Emitting the travel bare brings F-comment lines **15,755 → 12,378** against C++'s **12,249** — the
+overshoot is now 129 rather than 3,506.
+
+**But matched is unchanged at 692,188.** Those 3,377 lines still do not match, so they differ from
+C++ in more than the comment — coordinates, feedrate, or C++ does not emit that travel at all.
+This is a faithfulness fix with zero parity effect, and it is worth stating plainly rather than
+banking the improved comment count as a win.
+
+The `;_EXTRUDE_SET_SPEED` row is the opposite defect: C++ keeps that marker in its final output 172
+times and we strip all of them.
+
+### Step 2: the sweep re-run, prediction half right
+
+| branch body | C++ | ours | vs R642 |
+|---|---|---|---|
+| `G92 E0` (timelapse) | 9,498 | 6,771 | **unchanged, −2,727** |
+| `; FLUSH_START` | 8,756 | 8,988 | **unchanged, +232** |
+| `G1 X3 F12000; move aside…` | 3,308 | 3,544 | was 3 → **R643 fixed it**, now +236 |
+| `M620.11 S0` | 5,448 | 5,444 | **unchanged, −4** |
+
+**Predicted `; FLUSH_START` and `M620.11` would shrink or vanish — they did not.** Only `G92 E0`
+behaved as predicted (it persists, being a bare command R643's fix cannot touch). The pre-registered
+fallback applies: these are **independent defects**, and the sweep should be tracked as four
+separate open items rather than one.
+
+### R645
+
+**`G92 E0` is the largest at −2,727** and sits in the timelapse "with wipe tower" branch R641
+enabled. We emit 6,771 against C++'s 9,498. `G92 E0` appears in that branch AND elsewhere, so
+**classify by preceding marker first** (the R640 instrument) rather than assuming it is the
+timelapse one — R641's `; timelapse with wipe tower` count is already exact at 657, so the branch
+fires the right number of times and the deficit is likely elsewhere. **Predict the missing `G92 E0`
+are NOT in the timelapse block.** Fallback: if they are, the branch body is being truncated after
+its first lines — dump one whole block and compare line-for-line.
+Also still open from step 1: **`;_EXTRUDE_SET_SPEED` (C++ 172, ours 0)** — we strip a marker C++
+keeps, a 172-line item in `strip_cooling_markers`.

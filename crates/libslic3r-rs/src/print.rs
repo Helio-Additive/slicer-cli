@@ -3162,8 +3162,15 @@ fn emit_tower_tcr(
         } else {
             30000.0
         };
+        // R644: emitted BARE. C++ does pass "Travel to a Wipe Tower" to
+        // `travel_to` (GCode.cpp:698-701), but `GCodeWriter::emit_comment` is
+        // gated on `full_gcode_comment`, which is OFF on both fixtures — the
+        // string appears ZERO times in C++'s Majora output against our 3,377.
+        // We do not model `full_gcode_comment` at all, so writer-generated
+        // comments must simply not be written; the ones that DO appear in C++'s
+        // output come from gcode TEMPLATES, which are verbatim text.
         format!(
-            "G1 X{:.3} Y{:.3} F{:.0} ; Travel to a Wipe Tower\n",
+            "G1 X{:.3} Y{:.3} F{:.0}\n",
             tcr.start_pos.x, tcr.start_pos.y, f
         )
     } else {
