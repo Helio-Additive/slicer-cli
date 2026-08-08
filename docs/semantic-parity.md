@@ -10917,3 +10917,57 @@ difference. Worth a follow-up but the net is clearly positive. Benchy `2a5ec3d6`
    R645's target was described precisely in our own source and never acted on. **Grep the gcode
    modules for comments naming C++ line ranges next to code that does not implement them** — the
    same shape may sit elsewhere, and it is a cheap sweep of exactly the kind that paid in R642.
+
+## R646 — the tower's travel speed was never read: +2,722, and a fourth config-read defect
+
+**Majora 27.04% → 27.15% (697,630 → 700,352 matched) with the denominator flat (+2). Prediction
+held for the second round running.**
+
+### Step 1: the `G1 F30000` remainder
+
+R645 added three lines per tool change and only ~67% matched. Dumping the block side by side:
+
+```
+C++:  ; WIPE_TOWER_END / M220 R / G1 F30000 / G4 S0 / G92 E0 / ; CP TOOLCHANGE END
+ours: ; WIPE_TOWER_END / M220 R / G1 F9000  / G4 S0 / G92 E0 / ; CP TOOLCHANGE END
+```
+
+**Predicted the VALUE would differ, not the format — it does.** 30000 vs 9000, i.e. travel speeds
+of 500 vs 150 mm/s. `WipeTower.cpp:1739` sets `m_travel_speed(config.travel_speed.get_at(...))`,
+Majora's `travel_speed` is **500**, and our `WipeTowerConfig.travel_speed` was **never assigned
+anywhere** — it kept `Default`'s hardcoded `150.0`.
+
+**This is the FOURTH instance of the R632 class**, after `z_hop_type` (never read), 
+`retract_when_changing_layer` (mapped to the wrong field) and `timelapse_type` (hardcoded past a
+correct value). The pattern is now unmistakable: our config plumbing has a systematic hole where
+a struct field is declared, defaulted, and never connected to the resolved config.
+
+| | matched | body | rate |
+|---|---|---|---|
+| R645 | 697,630 | 2,579,683 | 27.04% |
+| **R646** | **700,352** | 2,579,685 | **27.15%** |
+
+**+2,722 matched — exactly one per tool change** — with the denominator flat, the R643 shape.
+Benchy `2a5ec3d6` and cube `7497af44` byte-identical; suites unchanged. Majora re-baselined
+`cad562e8` → **`af309663`**.
+
+Note the tower's `travel_speed` also feeds `wipe_tower.rs:3441` and `:3824`, so other tower
+feedrates were wrong by the same 150-vs-500 factor and are now corrected too — part of the +2,722.
+
+### R647
+
+**THE CONFIG-FIELD SWEEP IS NOW FOUR-FOR-FOUR AND MUST BE THE NEXT ROUND.** Four separate defects
+of one shape have each been found by accident while chasing something else, and each was worth
+thousands of lines. Do it systematically instead:
+
+1. For every field of `WipeTowerConfig`, `PrintConfig` and the other config structs, grep for an
+   assignment other than in `Default`/`new`. **Any field never assigned outside its default is a
+   candidate** — that is exactly how `travel_speed` (150 vs 500) and `z_hop_type` presented.
+2. For each candidate, find the C++ field it mirrors and read the value out of Majora's
+   `project_settings.config`. **Report every field whose default differs from the fixture's
+   configured value, with both numbers, before changing anything.**
+
+**Predict the sweep finds at least three more fields whose default silently overrides a configured
+value.** Fallback: if every field is either assigned or matches its default, the hole is narrower
+than it looks — say so, and move to `;_EXTRUDE_SET_SPEED` (−172) and the remaining sweep items
+(`; FLUSH_START` +232, `G1 X3 F12000; move aside…` +236).

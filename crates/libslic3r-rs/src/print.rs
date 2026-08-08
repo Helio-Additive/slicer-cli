@@ -2053,6 +2053,14 @@ impl Print {
                 cfg.pos_x = self.config.wipe_tower_x as f32;
                 cfg.pos_y = self.config.wipe_tower_y as f32;
                 cfg.width = self.config.prime_tower_width as f32;
+                // WipeTower.cpp:1739 — `m_travel_speed(config.travel_speed.get_at(...))`.
+                // R646: this was never assigned, so the tower kept
+                // `WipeTowerConfig::default()`'s hardcoded 150 mm/s and emitted
+                // `G1 F9000` where C++ emits `G1 F30000` (Majora's travel_speed is
+                // 500). FOURTH instance of the R632 class — a config value that
+                // exists, is resolved, and is never read at the point of use
+                // (after `z_hop_type`, `retract_when_changing_layer`, `timelapse_type`).
+                cfg.travel_speed = self.config.travel_speed as f32;
                 // WipeTower.cpp:1747 — `m_use_gap_wall(config.prime_tower_skip_points)`.
                 // The key had no PrintConfig field at all until R499, so this was
                 // permanently false and the tower emitted none of the ironing
