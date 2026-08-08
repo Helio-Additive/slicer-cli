@@ -9973,3 +9973,73 @@ is exactly why this never showed up before.** Port the object/instance loop, the
 gates and re-measure. **Predict Majora `G17` 1,234 → ~6,062 with matched lines UP.** Fallback: if
 it barely moves, dump for one Majora layer the travels C++ promotes against ours — the clip
 length (7.63mm) and the bbox reject are the only remaining places to differ.
+
+## R633 — the assigned target was moot; four suspects eliminated, and the predicate still under-fires
+
+**No parity change. The round's product is a set of eliminations backed by measurement, five new
+tests, and a reusable probe. The assigned cause was refuted in the first two minutes.**
+
+### The object/instance loop was a dead end
+
+R632 handed over "port `layers_sorted_for_object` and the instance loop — Majora is multi-object".
+It is not. Neither C++'s output nor ours contains a single `M624` or
+`; start printing object, unique label id:` line, and C++ emits those whenever
+`m_enable_label_object` is set, which it sets exactly when `num_object_instances > 1`. **Majora is
+single-instance**, so C++'s object/instance loop collapses to one object with a zero shift — which
+is what we already do. Nothing to port.
+
+### Where the gap actually sits
+
+| Majora, object travels | C++ | Rust |
+|---|---|---|
+| retractions | 41,434 | 36,406 |
+| of which spiral (`G17`) | 6,062 (**14.6%**) | 1,234 (**3.4%**) |
+
+The retraction *count* is within 12%; the *promotion rate* is 4.3× low. So the defect is in the
+predicate, not in how often it is consulted.
+
+### Four suspects eliminated, each by measurement
+
+1. **The region does not reach the predicate** — refuted. The Majora census (the first time it was
+   run on Majora at all; R631/R632 only ever ran it on Benchy) shows 655 layers, 446 with
+   substantial overhang, **5,579 mm²** of opened area. A new `OVERHANG_PRED_CENSUS` probe confirms
+   29,732 of 35,754 predicate calls receive a non-empty region, and the z-window holds 2 layers as
+   C++'s 0.4mm `protect_z` requires at Majora's 0.3mm layer height.
+2. **Coordinate frames disagree** — refuted. Travel bbox and overhang bbox coincide
+   (±103mm vs ±98mm over the whole print), and **50.9%** of calls with a non-empty region have
+   bbox overlap. C++'s plate-frame translation at `GCode.cpp:7038` has no analogue to miss here.
+3. **`intersection_pl` mishandles a contained path** — refuted, by five new tests in
+   `tests/overhang_predicate.rs`. A travel entirely inside the overhang, one crossing the boundary,
+   one clear of it, one inside a hole, and a sub-millimetre one all behave correctly. This was the
+   strongest hypothesis: a fully-contained open path returning empty would have produced exactly
+   this signature.
+4. **The clip length and min-travel threshold are wrong** — refuted. The probe reports
+   `min_travel=1.0000` and `lift=0.4000`, both correct, and the clipped segments run 1.0mm to
+   exactly 7.63mm — the `max_z_hop / tan(3°)` threshold, hit precisely.
+
+**A correction on that last one:** mid-round I read the probe's scaled coordinates as 1e6-scaled
+and reported that every segment was 10× under the minimum-travel threshold. `SCALING_FACTOR` in
+this crate is **1e5** (`lib.rs:489`), so that was a division error in the analysis script, not a
+defect in the code. The bbox-overlap and frame conclusions above are unaffected — those are ratios.
+
+### What is left
+
+Every input to the predicate now checks out, and it still fires 4.3× too rarely. The remaining
+structural difference is the travel geometry itself: C++ tests
+`Polyline(travel.points[0], travel.points[1])` where `travel` is the **avoid-crossing-perimeters
+path**, which can have many points and can be routed far from the straight line; ours is always a
+straight two-point segment between the last position and the target. Same first segment only when
+the router did not deflect.
+
+**R634:** instrument C++'s `is_through_overhang` to print, per call, the clipped segment endpoints
+and the boolean result, and diff against the same dump from ours for one Majora layer — R632
+proved this is the fast path, and every cheaper hypothesis is now spent. **Predict the two dumps
+disagree on WHICH SEGMENTS are tested, not on the verdicts for shared segments** — i.e. C++'s
+`travel.points[1]` differs from our target point on a large fraction of calls. Fallback: if the
+segments match and the verdicts differ, the divergence is inside the overhang polygons after all
+and the next step is a per-layer polygon diff, not a per-call one.
+
+### Shipped
+
+`tests/overhang_predicate.rs` (5 tests) and the `OVERHANG_PRED_CENSUS` probe. Both gates remain
+off; all three baselines byte-identical.

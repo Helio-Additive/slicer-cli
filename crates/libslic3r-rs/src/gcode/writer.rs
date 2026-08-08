@@ -604,6 +604,27 @@ impl GCodeWriter {
             return false;
         }
         let travel_bbox = crate::geometry::BoundingBox::from_points(&travel.points);
+        // R633: dump the predicate's TERMS. C++ translates the clipped travel into
+        // the plate frame at GCode.cpp:7038 before testing; if our travel and our
+        // overhangs live in different frames the intersection almost never fires,
+        // which is what a 3.4%-vs-14.6% promotion rate looks like.
+        if crate::probe_enabled("OVERHANG_PRED_CENSUS") {
+            let mut ob = crate::geometry::BoundingBox::new();
+            for (_z, ohs) in &self.layer_overhangs {
+                for o in ohs {
+                    ob.merge(&crate::geometry::get_extents(std::slice::from_ref(o)));
+                }
+            }
+            eprintln!(
+                "OHPRED travel=({},{})-({},{}) overhang_bbox=({},{})-({},{}) nlayers={} npolys={} min_travel={:.4} lift={:.4}",
+                travel_bbox.min.x, travel_bbox.min.y, travel_bbox.max.x, travel_bbox.max.y,
+                ob.min.x, ob.min.y, ob.max.x, ob.max.y,
+                self.layer_overhangs.len(),
+                self.layer_overhangs.iter().map(|(_, o)| o.len()).sum::<usize>(),
+                self.config.retract_before_travel,
+                self.retract_lift
+            );
+        }
         let subject = [travel.clone()];
         for (_z, overhangs) in &self.layer_overhangs {
             for overhang in overhangs {
