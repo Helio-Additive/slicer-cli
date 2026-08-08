@@ -10437,3 +10437,65 @@ loss in R631 against a writer that had no eager path, so its earlier verdict is 
 object spirals it removes are replaced by correctly-placed eager ones.** Fallback: if it still
 loses, attribute the removed lines with `$D/r627_attr.py` before adjusting — the slope moves it
 substitutes may be the mismatch rather than the spirals it deletes.
+
+## R639 — the gate still loses, but 4.8x less, and the residual is now exactly sized
+
+**No parity change; gates stay off. The prediction was wrong — but the re-measurement was worth
+doing, because it converts the last open item from "27,626 excess spirals" into a named,
+quantified mechanism.**
+
+### The re-measurement
+
+R631 measured `LIFT_TYPE_AUTO_CPP` against a writer with no eager path. R638 added one, so the
+verdict was re-taken on top of it:
+
+| variant | matched | body | rate | object `G17` | tower `G17` |
+|---|---|---|---|---|---|
+| **base (shipped)** | **673,583** | 2,564,962 | 26.26% | 33,688 | 2,718 |
+| `+LIFT_TYPE_AUTO_CPP` | 672,885 | 2,517,535 | **26.73%** | 1,193 | 2,718 |
+| `+both gates` | 671,575 | 2,516,880 | 26.68% | 538 | 2,718 |
+| C++ | — | — | — | 6,062 | 2,719 |
+
+**Predicted the gate would now gain. It does not — matched falls 698.** The 26.26% → 26.73% rate
+rise is the R631 trap exactly: the denominator drops 47,427 while matched drops 698.
+
+But the loss is **4.8x smaller than R631's −3,375**, which is the eager path doing real work: a
+large share of what the gate used to destroy was spirals that R638 has since relocated correctly.
+
+### What the gate exposes
+
+With the gate on, object `G17` collapses to **1,193** against C++'s **6,062** — a 4,869 shortfall.
+R637's funnel gives the expected value directly: `eager_lift` fires 7,538 times total, the tower
+takes 2,719, so **object-region eager spirals ≈ 4,819**. The two numbers agree to within 1%.
+
+So the picture is now fully decomposed:
+
+| Majora object `G17` = 6,062 | C++ | ours (gate on) |
+|---|---|---|
+| travel / lazy path | ~1,243 | 1,193 — **matches** |
+| **eager path** | **~4,819** | **0** |
+
+Our travel path is right. **We emit zero object-region eager spirals**, and that single gap is
+worth ~4,819 — the entire remaining object deficit, and the reason the gate cannot pay yet: it
+correctly deletes ~32,000 wrong spirals but there is nothing correct to replace them with.
+
+### Where those 4,819 come from
+
+R636's per-site census found only three live sites: `:747` (3,443), `:1085` (3,443), `:4582` (656).
+The two tower sites total 6,886 retracts but yield only 2,719 in-tower spirals — so roughly 4,167
+of them emit **outside** the `; WIPE_TOWER` markers and land in the object region. That, plus
+`:4582`'s 656, accounts for the ~4,819. The sites are already identified; what is missing is that
+our equivalents fire only inside the tower block.
+
+### R640
+
+Wire the object-region half of the tower toolchange retracts. R638 wired the `WT_START` splice
+path (`print.rs:3283`), which is why our 2,718 land in-tower; C++'s `:747`/`:1085` also fire on
+tool changes whose lift is emitted before the tower markers. **Check the `else` branch at
+`print.rs:3285` — the non-`WT_START` path — and `:4582`'s timelapse retract, which our
+`print.rs:663` eager lift may or may not already cover** (its comment cites `:3039`, which R637
+measured at ONE call, so the reference is stale even though the behaviour fires per layer).
+**Predict object `G17` 1,193 → ~6,000 with the gate ON, and the gate flipping from −698 to a gain
+of several thousand.** Fallback: if the new spirals land in-tower again, the position class is
+decided by where the splice writes them relative to `WT_START` — dump one tool change with
+`$D/r615_dump.py` before moving call sites.
