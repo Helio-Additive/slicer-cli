@@ -1808,15 +1808,10 @@ impl Print {
             // }
             // TODO: Port timing
 
-            // Print.cpp:1991-1999
-            for _obj in &mut self.objects {
-                // if (need_slicing_objects.count(obj) != 0) {
-                //     obj->detect_overhangs_for_lift();
-                // } else {
-                //     if (obj->set_started(posDetectOverhangsForLift))
-                //         obj->set_done(posDetectOverhangsForLift);
-                // }
-                // TODO: Port detect_overhangs_for_lift with caching logic
+            // Print.cpp:1991-1999. Every object needs slicing in this pipeline,
+            // so the cached branch (set_started/set_done only) has no analogue. R631.
+            for obj in &mut self.objects {
+                obj.detect_overhangs_for_lift();
             }
         } else {
             // Print.cpp:2001-2025
@@ -1850,6 +1845,8 @@ impl Print {
                 obj.ironing()?;
                 // Print.cpp:2018: unconditional; the callee gates internally.
                 obj.generate_support_material()?;
+                // Print.cpp:2019
+                obj.detect_overhangs_for_lift();
             }
         }
 
@@ -3428,6 +3425,9 @@ fn emit_layer_by_island(
             density_ok,
         });
     }
+    // GCode.cpp:6979-6981 reaches the overhang region through `m_layer`; hand it
+    // to the writer once per layer instead. R631.
+    writer.set_layer_overhangs(layer.print_z, &layer.loverhangs);
     let n_slices = layer.lslices.len();
     let n_regions = layer.region_count();
 

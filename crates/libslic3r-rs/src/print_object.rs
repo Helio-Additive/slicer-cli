@@ -3716,6 +3716,84 @@ impl PrintObject {
         }
     }
 
+    /// PrintObject.cpp:801-810 `PrintObject::clear_overhangs_for_lift`.
+    fn clear_overhangs_for_lift(&mut self) {
+        for l in &mut self.layers {
+            l.loverhangs.clear();
+        }
+    }
+
+    /// PrintObject.cpp:814-853 `PrintObject::detect_overhangs_for_lift`.
+    ///
+    /// Fills `Layer::loverhangs` — the avoidance region the Auto z-hop consults.
+    /// C++'s `is_through_overhang` (GCode.cpp:6972-7027) tests each travel against
+    /// these polygons and promotes the lift to a spiral when the travel crosses
+    /// one; otherwise the lift is a slope. R630 measured what happens without
+    /// this: the lift type collapses to a single constant and Majora emits 35,751
+    /// object `G17` against C++'s 6,062. Until R631 the field was declared and
+    /// initialised empty at layer.rs:1274/1327 and read by nothing.
+    ///
+    /// The overhang of a layer is what it adds beyond its lower layer, allowing
+    /// `g_min_overhang_percent_for_lift` (0.3) of a line width of overlap, then
+    /// opened by ±0.1 line widths to drop slivers.
+    pub fn detect_overhangs_for_lift(&mut self) {
+        use crate::clipper_utils::{
+            difference_clib, offset2_ex_clib, offset_expolygons_clib, OffsetJoinType,
+        };
+
+        // PrintObject.cpp:816-817
+        const G_MIN_OVERHANG_PERCENT_FOR_LIFT: crate::CoordF = 0.3;
+        let min_overlap = self.config.line_width * G_MIN_OVERHANG_PERCENT_FOR_LIFT;
+        let open_delta = 0.1 * self.config.line_width;
+        let num_raft_layers = self.slicing_params.raft_layers();
+
+        // PrintObject.cpp:823
+        self.clear_overhangs_for_lift();
+
+        // PrintObject.cpp:826 — `blocked_range(num_raft_layers + 1, num_layers)`:
+        // layer 0 (and any raft layer) has no lower layer, so it is skipped.
+        for layer_id in (num_raft_layers + 1)..self.layers.len() {
+            // PrintObject.cpp:831-832
+            // The `_clib` variants are the C++-exact Clipper ports; the `geo`
+            // ones diverge enough here to matter — R631 measured the geo path
+            // opening 275 overhang polygons across Benchy's 299 layers, most
+            // layers ending empty, and `is_through_overhang` fired 6x too rarely
+            // as a result.
+            let overhangs = difference_clib(
+                &self.layers[layer_id].lslices,
+                &offset_expolygons_clib(
+                    &self.layers[layer_id - 1].lslices,
+                    min_overlap,
+                    OffsetJoinType::Miter,
+                ),
+            );
+            let opened =
+                offset2_ex_clib(&overhangs, -open_delta, open_delta, OffsetJoinType::Miter);
+
+            // PrintObject.cpp:849
+            let bbox = crate::geometry::get_extents(&opened);
+            if crate::probe_enabled("OVERHANG_LIFT_CENSUS") {
+                eprintln!(
+                    "OHLIFT layer={} lslices={} lower_lslices={} raw={} opened={} lw={:.4}",
+                    layer_id,
+                    self.layers[layer_id].lslices.len(),
+                    self.layers[layer_id - 1].lslices.len(),
+                    overhangs.len(),
+                    opened.len(),
+                    self.config.line_width
+                );
+            }
+            let layer = &mut self.layers[layer_id];
+            layer.loverhangs = opened;
+            layer.loverhangs_bbox = bbox;
+        }
+
+        // PrintObject.cpp:836-847 REGISTER_SUPPORTS_FOR_LIFT appends the support
+        // islands (or the spacing-covered support fills) to the same region. Not
+        // ported yet — neither Benchy nor Majora prints support, so it cannot
+        // move either fixture; port it before trusting a supported model.
+    }
+
     /// Generate support material using SupportGenerator from support/
     /// PrintObject.cpp:856-901
     pub fn generate_support_material(&mut self) -> Result<()> {

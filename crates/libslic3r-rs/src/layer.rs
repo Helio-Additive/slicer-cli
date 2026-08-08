@@ -1270,9 +1270,11 @@ pub struct Layer {
     /// Layer.hpp:184
     pub lslices_bboxes: Vec<BoundingBox>,
 
-    /// Layer.hpp:187-189
-    pub loverhangs: Polygons,
-    pub loverhangs_with_type: Vec<(Polygon, u32)>,
+    /// Layer.hpp:168-170. R631: these were `Polygons`/`Vec<(Polygon, u32)>`;
+    /// C++ declares `ExPolygons` and `vector<pair<ExPolygon, int>>`, and the
+    /// overhang region has holes that matter to `is_through_overhang`.
+    pub loverhangs: ExPolygons,
+    pub loverhangs_with_type: Vec<(crate::geometry::ExPolygon, i32)>,
     pub loverhangs_bbox: BoundingBox,
 
     /// Layer.hpp:192
@@ -1324,7 +1326,7 @@ impl Layer {
             lslices: ExPolygons::new(),
             lslices_extrudable: ExPolygons::new(),
             lslices_bboxes: Vec::new(),
-            loverhangs: Polygons::new(),
+            loverhangs: ExPolygons::new(),
             loverhangs_with_type: Vec::new(),
             loverhangs_bbox: BoundingBox::empty(),
             loop_nodes: Vec::new(),

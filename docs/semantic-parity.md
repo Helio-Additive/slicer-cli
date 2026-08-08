@@ -9817,3 +9817,68 @@ pre-existing breakage as `cargo test --lib`, so they are not part of the runnabl
 verified by stashing. The suites that do run and pass: `multi_material_integration` (25/26),
 `painted_cube_e2e`, `three_mf_parse`, `gcode_template`, `gcode_template_majora`, `arachne_infill`,
 `wall_gap_geometry` (20).
+
+## R631 — the overhang chain is ported end to end, and it is starved at the source
+
+**Producer, predicate and z-window all shipped and wired; both gates stay OFF. The rate on
+Majora RISES to 26.54% and that is exactly the trap — matched lines FALL on both fixtures.**
+
+### What landed
+
+- **`PrintObject::detect_overhangs_for_lift`** (`PrintObject.cpp:814-853`) and
+  `clear_overhangs_for_lift` (`:801-810`), wired at both C++ call sites (`Print.cpp:2092`, `:2019`),
+  which had been TODO comments. `Layer::loverhangs` was the thirteenth dead symbol — declared,
+  initialised empty, read by nothing.
+- **`Layer::loverhangs` retyped** `Polygons` → `ExPolygons` and `loverhangs_with_type`
+  `Vec<(Polygon, u32)>` → `Vec<(ExPolygon, i32)>`, matching `Layer.hpp:168-170`. The overhang
+  region has holes and they reach the predicate.
+- **`is_through_overhang`** (`GCode.cpp:6972-7027`) and the travel clip at `:7028-7042`
+  (`max_z_hop / tan(slope_threshold)` = 7.63mm here), resolved inside `needs_retraction_faithful`
+  at both of C++'s decision points (`:7046`, `:7089`) into `m_pending_travel_lift_type` — C++'s
+  by-reference out-param.
+- **The 0.4mm z-window** (`:6977-6981`): `is_through_overhang` consults every layer whose print_z
+  falls in `[print_z - 0.4, print_z]`, not just the current one. At 0.16mm layers that is three
+  layers. The writer now keeps a pruned deque instead of a single layer's polygons.
+
+### It is starved, and the census says where
+
+Benchy, 299 layers: **107 have any overhang at all, 275 polygons in total.** Most layers produce
+1-9 raw overhang slivers and the `offset2_ex(-0.1·lw, +0.1·lw)` opening takes them to zero. The
+predicate consequently fires on 357 travels against C++'s 2,029.
+
+| | C++ | off (shipped) | + `LIFT_TYPE_AUTO_CPP` | + both gates |
+|---|---|---|---|---|
+| Majora `G17` | 6,062 | 36,406 | 1,234 | 579 |
+| Majora matched | — | **670,865** | 667,490 | 666,180 |
+| Majora body | 2,827,544 | 2,564,962 | 2,514,656 | 2,514,001 |
+| Benchy `G17` | 2,029 | 2,040 | 357 | 357 |
+| Benchy matched | — | **115,901** | 112,756 | 112,756 |
+
+Majora's rate reads 26.15% → **26.54%** under the gate. That number is worthless: matched lines
+fell by 3,375 while the denominator fell by 50,306. Benchy has no such cover and shows the same
+sign, −3,145. Both gates stay off; baselines `98c75afb` / `c93f963f` reproduce byte-exactly with
+them off, which is also the regression check that the new producer is inert.
+
+### Eliminated: the clipper backend
+
+The obvious suspect for a too-small offset result was the `geo` clipper path. Re-running the
+producer through the C++-exact `difference_clib` / `offset_expolygons_clib` / `offset2_ex_clib`
+gives **byte-identical census output** — nonempty=107, sum_opened=275, same per-layer raw counts.
+The backend is not the cause. (The `_clib` calls were kept: they are the faithful ones regardless.)
+
+### What that leaves
+
+The arithmetic is C++'s, the units are right (`line_width` reads 0.4200, and
+`offset_expolygons` takes unscaled mm — confirmed against `bridge_detector.rs:656-662`, which
+divides C++'s `scale_`d delta by `SCALING_FACTOR`), and the clipper backend is exonerated. So
+either our `lslices` differ from C++'s at this stage, or C++'s hits come from a few large
+overhang regions we are also finding but failing to intersect. Distinguishing those needs the
+C++ side instrumented, not more guessing on ours.
+
+**R632:** instrument the C++ `detect_overhangs_for_lift` to dump per-layer overhang polygon count
+and total area for Benchy, and compare against the same dump from ours (`OVERHANG_LIFT_CENSUS=1`,
+extended to report area). **Predict our total overhang area is < 20% of C++'s** — if so the defect
+is in `lslices` or the diff, upstream of everything R631 touched. Fallback: if the areas MATCH,
+the producer is right and the defect is in the predicate — compare the actual travel polylines
+that C++ promotes against ours for one layer, since our clip length and bbox reject are the only
+places left to differ.

@@ -277,6 +277,23 @@ pub struct GCodeWriter {
     /// `G17` against C++'s 6,062. R630.
     m_is_current_pos_clear: bool,
 
+    /// `Layer::loverhangs` (Layer.hpp:168) for every layer inside C++'s
+    /// protect-z window, newest last, as `(print_z, overhangs)`. R631.
+    ///
+    /// `is_through_overhang` does NOT test only the current layer: GCode.cpp:6979
+    /// builds `z_range = [print_z - 0.4, print_z]` and
+    /// `layers_sorted_for_object` returns EVERY layer in it, so at a 0.16mm layer
+    /// height the current layer plus the two below it all contribute. Testing the
+    /// current layer alone (the first R631 attempt) undercounts badly — Benchy
+    /// `G17` came back 338 against C++'s 2,029, because 192 of 299 layers have no
+    /// overhang of their own yet sit within 0.4mm of one that does.
+    layer_overhangs: std::collections::VecDeque<(CoordF, Vec<crate::geometry::ExPolygon>)>,
+
+    /// The lift type `needs_retraction` resolved for the travel about to happen
+    /// (GCode.cpp:7046/:7089 write C++'s by-reference `lift_type` out-param here).
+    /// 0 = NormalLift, 1 = SpiralLift, 2 = SlopeLift. R631.
+    m_pending_travel_lift_type: u8,
+
     /// Current layer index.
     layer_index: usize,
 
@@ -402,6 +419,10 @@ impl GCodeWriter {
             // GCodeWriter.hpp:164 — defaults to FALSE, so the first lift of the
             // print is a normal lift, not a spiral.
             m_is_current_pos_clear: false,
+            layer_overhangs: std::collections::VecDeque::new(),
+            // GCode.cpp:6815 `LiftType lift_type = LiftType::SpiralLift;` — the
+            // value needs_retraction starts from before it decides.
+            m_pending_travel_lift_type: 1,
             layer_index: 0,
             total_layers: 0,
             layer_z: 0.0,
@@ -552,8 +573,93 @@ impl GCodeWriter {
     ///      a perimeter && sparse density > 0 && travel inside an internal
     ///      island without crossing walls -> false
     ///   4. else true
+    /// Hand the writer the layer's overhang region, as C++'s `m_layer` does.
+    /// R631.
+    pub fn set_layer_overhangs(&mut self, print_z: CoordF, overhangs: &[crate::geometry::ExPolygon]) {
+        // GCode.cpp:6977-6981 — `const float protect_z = 0.4;`
+        const PROTECT_Z: CoordF = 0.4;
+        self.layer_overhangs.push_back((print_z, overhangs.to_vec()));
+        while let Some((z, _)) = self.layer_overhangs.front() {
+            if *z < print_z - PROTECT_Z {
+                self.layer_overhangs.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// GCode.cpp:6972-7027 `is_through_overhang`, reduced to this pipeline.
+    ///
+    /// C++ gathers every object layer whose print_z falls in
+    /// `[print_z - 0.4, print_z]` via `layers_sorted_for_object`, walks each
+    /// instance whose bounding box meets the travel, and tests the travel against
+    /// that layer's `loverhangs`. Here the writer holds ONE layer's overhangs —
+    /// the current one — and instances are already baked into print coordinates,
+    /// so the object/instance loop and the sort by `loverhangs_bbox.area()` (a
+    /// pure ordering optimisation — the result is an OR over all of them)
+    /// collapse away. The remaining deviation is the 0.4mm z-window: C++ also
+    /// consults the layer BELOW when its print_z is within 0.4mm. R631.
+    fn is_through_overhang(&self, travel: &crate::geometry::Polyline) -> bool {
+        if self.layer_overhangs.is_empty() {
+            return false;
+        }
+        let travel_bbox = crate::geometry::BoundingBox::from_points(&travel.points);
+        let subject = [travel.clone()];
+        for (_z, overhangs) in &self.layer_overhangs {
+            for overhang in overhangs {
+                // GCode.cpp:7013-7017 — bbox reject before the clip.
+                let bbox = crate::geometry::get_extents(std::slice::from_ref(overhang));
+                if !bbox.intersects(&travel_bbox) {
+                    continue;
+                }
+                if !crate::clipper_utils::intersection_pl(&subject, std::slice::from_ref(overhang))
+                    .is_empty()
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// GCode.cpp:7028-7042 — the travel is clipped to the distance a slope lift
+    /// would need to reach full z_hop (`max_z_hop / tan(slope_threshold)`), and
+    /// only that head segment is tested. R631.
+    fn clipped_travel_for_lift(&self, from: crate::Point, to: crate::Point) -> crate::geometry::Polyline {
+        let slope_threshold = 3.0 * std::f64::consts::PI / 180.0;
+        let thresh_mm = self.retract_lift / slope_threshold.tan();
+        let mut pl = crate::geometry::Polyline::new();
+        pl.points.push(from);
+        let dx = (to.x - from.x) as f64;
+        let dy = (to.y - from.y) as f64;
+        let len = (dx * dx + dy * dy).sqrt();
+        let thresh = crate::scale(thresh_mm) as f64;
+        if len > thresh && len > 0.0 {
+            let r = thresh / len;
+            pl.points.push(crate::Point::new(
+                from.x + (dx * r) as crate::Coord,
+                from.y + (dy * r) as crate::Coord,
+            ));
+        } else {
+            pl.points.push(to);
+        }
+        pl
+    }
+
+    /// GCode.cpp:7044-7095 — resolve the lift type for the travel that is about
+    /// to be retracted for, writing C++'s by-reference `lift_type` out-param into
+    /// `m_pending_travel_lift_type`. R631.
+    fn resolve_travel_lift_type(&mut self, from: crate::Point, to: crate::Point) {
+        if self.config.z_hop_type == ZHopType::Auto {
+            let clipped = self.clipped_travel_for_lift(from, to);
+            self.m_pending_travel_lift_type = if self.is_through_overhang(&clipped) { 1 } else { 2 };
+        } else {
+            self.m_pending_travel_lift_type = self.to_lift_type();
+        }
+    }
+
     pub fn needs_retraction_faithful(
-        &self,
+        &mut self,
         from: crate::Point,
         to: crate::Point,
         dest_role: crate::extrusion_entity::ExtrusionRole,
@@ -580,6 +686,8 @@ impl GCodeWriter {
             last,
             Some(ExtrusionRole::ExternalPerimeter) | Some(ExtrusionRole::OverhangPerimeter)
         ) {
+            // GCode.cpp:7045-7051
+            self.resolve_travel_lift_type(from, to);
             return true;
         }
         // GCode.cpp:7068-7086 — reduce_infill_retraction skip
@@ -596,6 +704,8 @@ impl GCodeWriter {
                 }
             }
         }
+        // GCode.cpp:7087-7094
+        self.resolve_travel_lift_type(from, to);
         true
     }
 
@@ -1188,7 +1298,9 @@ impl GCodeWriter {
     fn travel_lift_type(&self) -> u8 {
         if self.config.z_hop_type == ZHopType::Auto {
             if crate::probe_enabled("LIFT_TYPE_AUTO_CPP") {
-                2 // SlopeLift — correct only once is_through_overhang() exists.
+                // R631: resolved per travel by needs_retraction_faithful, which
+                // runs is_through_overhang exactly where C++ does.
+                self.m_pending_travel_lift_type
             } else {
                 1 // pre-R630 constant: SpiralLift.
             }
