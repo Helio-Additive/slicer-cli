@@ -12053,3 +12053,67 @@ sort comparator's tie-break subtracts the segment norm on BOTH sides -- C++ line
 `... - (a->to->p - a->from->p).cast<int64_t>().norm()`, which our `- a_seg` at :2652 mirrors. The
 list's membership and its order are therefore not obviously divergent by inspection; R662 has to
 measure.
+
+## R662 — the seed deficit factors 1.17x × 1.44x, and the bigger factor is the other guard
+
+R662: the seed deficit factors 1.17x x 1.44x, and the bigger factor is the OTHER guard
+
+Prediction CONFIRMED in kind and REFUTED in magnitude: the list is composed differently, but the
+composition gap is 1.05x against a 1.68x seed deficit, so it cannot be the cause. Conditioning the
+four recorded C++ rates splits the deficit cleanly and moves the target one guard down. No engine
+change (`UQM` is `probe_enabled`, default OFF); all three hashes unchanged (benchy 248ff22a, cube
+14566293, majora 3d741dde); suites unchanged.
+
+FIRST, GUARD 1 IS STATIC -- THE ORDERING FALLBACK DOES NOT APPLY TO IT. `propagateBeadingsUpward`
+calls `setBeading`, never `setBeadCount`, so `to->data.bead_count` cannot change during the pass.
+Verified on both sides: C++ `SkeletalTrapezoidationJoint::setBeading` (Joint.hpp:45-48) assigns the
+weak_ptr only, and ours (skeletal_trapezoidation_joint.rs:108) is the same assignment. The census
+confirms it empirically -- reading the list once, after the sort, BEFORE the pass runs, gives 0.6992
+against `UPPROBE`'s mid-walk 0.6983. Same number. Guard 1 is pure list composition.
+
+SECOND, THE COMPOSITION IS ENRICHED -- BUT SO IS C++'S, ALMOST EQUALLY.
+
+  list size / generate() call                             42.03
+  distinct `to` nodes / call                              37.00   (1.136 edges per target)
+  members whose `to` has bead_count >= 0                  0.6992
+  DISTINCT targets with bead_count >= 0                   0.6714   (so not a multiplicity artefact)
+  whole-graph nodes with bead_count >= 0                  0.1684
+
+The list's targets are enriched 4.152x over the graph. C++'s recorded pair (0.6471 skip against
+0.16367 of nodes, R587/R588) gives 3.954x. **Ratio 1.05.** Our list IS composed differently, exactly
+as predicted, and the difference is nowhere near large enough to produce a 1.68x seed deficit. The
+prediction is right about the mechanism and wrong about its size -- which is the same failure mode as
+R657's "quantisation": a real effect, mistaken for the dominant one.
+
+THIRD, THE DECOMPOSITION, WHICH IS THE ACTUAL RESULT. All four UPPROBE categories were recorded for
+C++ at R587, so the rates can be conditioned rather than compared flat. Guard 1 fires first, so
+guards 2 and 3 should be read as shares of ITS SURVIVORS:
+
+                                        Rust      C++     C/R
+  survive guard 1 (bead_count < 0)     0.3017   0.3529   1.170
+  ... of those, skip on !from.hasBeading()  90.2%   85.8%     --
+  ... of those, SEEDED                  9.8%    14.1%   1.44
+  SEEDED overall                       0.0296   0.0499   1.68     (0.3017 x 0.098 = 0.0296 checks)
+
+**The 1.68x is 1.17x x 1.44x, and the larger factor is guard 2, not guard 1.** Among edges that
+reach it, our `from` node lacks a beading 90.2% of the time against C++'s 85.8%. Composition
+contributes the smaller share.
+
+AND GUARD 2 IS THE ONE THAT IS ORDER-SENSITIVE. `setBeading` during the pass makes later members'
+`from` nodes eligible, so unlike guard 1 this guard compounds: every seed we miss removes a source
+for a later edge. That is a positive feedback on the deficit and it is where R662's pre-registered
+ordering fallback actually belongs -- one guard down from where I aimed it.
+
+R663: guard 2. Two separable questions, and they need separating before either is touched.
+  1. STATIC: at list-build time, before the pass, what share of members' `from` nodes already have a
+     beading? Compare against the 9.8% pre-pass share the same census can measure for `to`. If the
+     pre-pass `from` share is already ~85-90% empty on both engines, the initial store at
+     SkeletalTrapezoidation.cpp:1518-1547 is the target, not the walk.
+  2. DYNAMIC: how many of C++'s seeds come from a `from` that an EARLIER member of the same pass
+     seeded? Count seeds whose source beading was created by this pass versus by the initial store.
+Predict the dynamic term dominates on C++ and is near zero for us -- a chain that never starts. FALLBACK:
+if our pre-pass `from`-has-beading share is itself lower, the deficit is inherited from the initial
+store loop and the target becomes `node.data.bead_count <= 0` at cpp:1520, NOT the propagation.
+Note CENSUS says nodes with a beading (0.1682) and nodes with bead_count >= 0 (0.1684) are the same
+population for us, and R588 recorded the same identity for C++ (0.16325 / 0.16367) -- so any
+`from`-side deficit is about WHICH nodes are in the list, not about the store dropping any.

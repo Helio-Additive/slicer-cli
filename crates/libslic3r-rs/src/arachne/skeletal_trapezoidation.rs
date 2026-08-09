@@ -2748,6 +2748,74 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 }
             // SkeletalTrapezoidation.cpp:1548 }
 
+            // R662 — UQM. `UPPROBE` measures the `to->bead_count >= 0` skip DURING the
+            // upward walk (69.97% ours vs 64.71% C++), but the walk SEEDS as it goes, so
+            // that figure mixes two causes: members whose target already had a bead_count
+            // before the pass started, and members whose target was seeded by an EARLIER
+            // member of the same list. This census separates them by reading the list
+            // once, here, after the sort and before the pass mutates anything.
+            //   n_list      list size per generate() call
+            //   pre_bc      members whose `to.bead_count >= 0` ALREADY, pre-pass
+            //   distinct_to distinct `to` nodes across the list -- if several edges share
+            //               a target, the first seeds it and the rest necessarily skip,
+            //               which is an ORDERING/multiplicity effect, not composition
+            //   graph nodes / nodes with bead_count >= 0, for the R588 baseline
+            if crate::probe_enabled("UQM") {
+                use std::collections::BTreeSet;
+                use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                static CALLS: AtomicU64 = AtomicU64::new(0);
+                static N_LIST: AtomicU64 = AtomicU64::new(0);
+                static PRE_BC: AtomicU64 = AtomicU64::new(0);
+                static DISTINCT_TO: AtomicU64 = AtomicU64::new(0);
+                static DISTINCT_TO_BC: AtomicU64 = AtomicU64::new(0);
+                static G_NODES: AtomicU64 = AtomicU64::new(0);
+                static G_NODES_BC: AtomicU64 = AtomicU64::new(0);
+                unsafe {
+                    let mut tos: BTreeSet<usize> = BTreeSet::new();
+                    let mut tos_bc: BTreeSet<usize> = BTreeSet::new();
+                    let mut pre = 0u64;
+                    for &e in upward_quad_mids.iter() {
+                        let to = e.as_ref().to.unwrap();
+                        let key = to.as_ptr() as usize;
+                        tos.insert(key);
+                        if to.as_ref().data.bead_count >= 0 {
+                            pre += 1;
+                            tos_bc.insert(key);
+                        }
+                    }
+                    N_LIST.fetch_add(upward_quad_mids.len() as u64, Relaxed);
+                    PRE_BC.fetch_add(pre, Relaxed);
+                    DISTINCT_TO.fetch_add(tos.len() as u64, Relaxed);
+                    DISTINCT_TO_BC.fetch_add(tos_bc.len() as u64, Relaxed);
+                }
+                let mut gn = 0u64;
+                let mut gbc = 0u64;
+                for nd in self.graph.nodes.iter() {
+                    gn += 1;
+                    if nd.base.data.bead_count >= 0 {
+                        gbc += 1;
+                    }
+                }
+                G_NODES.fetch_add(gn, Relaxed);
+                G_NODES_BC.fetch_add(gbc, Relaxed);
+                let c = CALLS.fetch_add(1, Relaxed) + 1;
+                if c % 2_000 == 0 {
+                    let (nl, pb) = (N_LIST.load(Relaxed), PRE_BC.load(Relaxed));
+                    let (dt, dtb) = (DISTINCT_TO.load(Relaxed), DISTINCT_TO_BC.load(Relaxed));
+                    let (gn2, gb2) = (G_NODES.load(Relaxed), G_NODES_BC.load(Relaxed));
+                    eprintln!(
+                        "[UQM] calls={c} list/call={:.2} PRE bead_count>=0 in list={:.4} ({}/{}) |                          distinct_to/call={:.2} edges_per_to={:.4} distinct_to with bc>=0={:.4} |                          GRAPH nodes/call={:.2} node bc>=0={:.4}",
+                        nl as f64 / c as f64,
+                        pb as f64 / nl.max(1) as f64, pb, nl,
+                        dt as f64 / c as f64,
+                        nl as f64 / dt.max(1) as f64,
+                        dtb as f64 / dt.max(1) as f64,
+                        gn2 as f64 / c as f64,
+                        gb2 as f64 / gn2.max(1) as f64,
+                    );
+                }
+            }
+
             // SkeletalTrapezoidation.cpp:1555 propagateBeadingsUpward(upward_quad_mids, node_beadings);
             self.propagate_beadings_upward(&mut upward_quad_mids, &mut node_beadings);
 
