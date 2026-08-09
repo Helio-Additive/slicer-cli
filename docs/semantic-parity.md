@@ -11741,3 +11741,69 @@ the loss is in the beading strategy's quantisation — C++ keeping bead widths o
 together** — since our count is close to half, which smells like pairs collapsing. Fallback: if the
 width sequences have the same *shape* but ours is shifted or scaled, it is the flow/width
 computation downstream of beading, not the beading itself — say which and follow it.
+
+## R657 — the width gap is not quantisation: it is 223 layers where our wall stops varying at all
+
+**Prediction REFUTED. No engine change; all three hashes unchanged.** The census was the round and it
+kills the quantisation hypothesis outright.
+
+### The constants are identical
+
+`discretization_step_size` is `scaled(0.8)` on both sides (`WallToolPaths.cpp:457`,
+`wall_tool_paths.rs:935`), as are `transition_filter_dist` (`scaled(100)`) and
+`allowed_filter_deviation`. Nothing is being rounded together by a different step size.
+
+### The values are not a coarsened version of C++'s — they are a different solution, per layer
+
+Dumping the outer-wall width sequence at three layers:
+
+| layer | C++ tags / distinct | ours tags / distinct | our distinct with a C++ match ≤1e-3 |
+|---|---|---|---|
+| 150 | 130 / 109 | **18 / 11** | **27%** |
+| 300 | 282 / 170 | 132 / 99 | 82% |
+| 450 | 158 / 100 | 123 / 95 | 64% |
+
+At layer 300 the two engines largely agree on the values (82% of ours have a C++ counterpart within
+1e-3) and we simply emit fewer. At layer 150 we emit **11 distinct widths against C++'s 109** and
+only 27% even correspond. **The failure is per-layer and near-binary, not a uniform coarsening** —
+which is what a quantisation difference would have produced.
+
+### Sized across the model
+
+Over the 509 layers where C++'s outer wall has ≥20 distinct widths:
+
+- **223 layers (44%) are collapsed** — our distinct count is under 35% of C++'s.
+- On those layers our **path count is comparable**: median 317 extrusion runs against C++'s 359. We
+  print the wall; it just barely changes width.
+- The extremes are the early layers. Layer 2: C++ 1,117 distinct widths, **ours 0** — not one
+  `; LINE_WIDTH:` in the entire outer wall — across 413 runs. Layer 3: C++ 421, ours 0.
+
+### A third of it is re-attribution, not loss
+
+Summing distinct widths across **all** wall features (Outer wall, Inner wall, Overhang wall,
+Floating vertical shell) on those same collapsed layers:
+
+| | C++ median | ours median | ratio |
+|---|---|---|---|
+| Outer wall only | — | — | **< 0.35** |
+| all wall features | 230 | 144 | **0.67** |
+
+So a substantial part of the "missing" outer-wall variety exists in our output but is **labelled as
+a different wall feature** — consistent with R655's finding that Floating vertical shell has *more*
+variety than C++'s (+8.1%). The remaining third is a genuine deficit.
+
+### R658
+
+Two separable targets, and they need separating before either is touched:
+
+1. **Wall-feature attribution.** Our variable-width wall paths are landing under the wrong
+   `; FEATURE:` label. This is measurable directly: for a collapsed layer, dump our feature sequence
+   against C++'s over the same Z and see which label our variable-width paths carry.
+2. **The residual variety** (33% even after summing all wall features), catastrophic on layers 1-3.
+
+**Predict attribution dominates on mid-model layers and genuine loss dominates on layers 1-12**,
+since the early layers are near-zero on *both* measures while layer 300 is 82% value-agreement.
+Fallback: if the feature sequences match and only the widths differ, attribution is not the issue
+and the whole gap is beading — say so and take `BeadingStrategy` directly. **Do the layer-1-vs-300
+comparison first; they may have different causes and treating them as one is what would waste the
+round.**
