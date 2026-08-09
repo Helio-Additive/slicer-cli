@@ -2991,6 +2991,34 @@ impl PerimeterGenerator {
         };
 
         for surface in slices.iter() {
+            // R674 — one hop BACK from R670. R670's POLYPROBE "0 input outline" is
+            // `WallToolPaths::outline`, i.e. ALREADY past this function's `simplify_p`
+            // and `offset_ex`. This counts `surface` as `generate_arachne` receives it,
+            // which is the true input, and matches C++'s `surface.expolygon` at
+            // PerimeterGenerator.cpp:1511 before its `simplify_p`. Points-per-contour
+            // (R670's rule: per-call mixes populations, per-contour does not).
+            if crate::probe_enabled("SURFPROBE") {
+                use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                static CALLS: AtomicU64 = AtomicU64::new(0);
+                static CONTOURS: AtomicU64 = AtomicU64::new(0);
+                static POINTS: AtomicU64 = AtomicU64::new(0);
+                let mut c = 1u64;
+                let mut pts = surface.contour.points.len() as u64;
+                for h in &surface.holes {
+                    c += 1;
+                    pts += h.points.len() as u64;
+                }
+                CONTOURS.fetch_add(c, Relaxed);
+                POINTS.fetch_add(pts, Relaxed);
+                let n = CALLS.fetch_add(1, Relaxed) + 1;
+                if n % 2_000 == 0 {
+                    let (co, po) = (CONTOURS.load(Relaxed), POINTS.load(Relaxed));
+                    eprintln!(
+                        "[SURFPROBE] surfaces={n} contours={co} points={po} points_per_contour={:.3}",
+                        po as f64 / co.max(1) as f64,
+                    );
+                }
+            }
             // PerimeterGenerator.cpp:1507  loop_number = wall_loops + extra_perimeters - 1
             let loop_number: i32 = self.config.perimeter_count as i32 - 1;
 

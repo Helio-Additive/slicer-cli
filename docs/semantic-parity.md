@@ -12745,3 +12745,54 @@ hop further back than R670 measured. Predict the 1.069x is already present there
 inside `WallToolPaths` is now accounted for. FALLBACK: if `surface.expolygon` matches, the loss is
 IN `simplify_p` itself -- our DP and C++'s `simplify_p` disagree at equal tolerance -- and the target
 becomes the two implementations, which is a direct algorithm comparison and not a constant hunt.
+
+## R674 — prediction confirmed: the true-input deficit is 1.652x
+
+R674: PREDICTION CONFIRMED -- the deficit at the true input is 1.652x, not 1.069x
+
+First confirmed prediction since R666, and the number is much larger than the one it was predicted to
+explain. The outline coarseness is present before the perimeter generator touches anything, and
+R670's 1.069x turns out to be the REMNANT of a bigger deficit that C++'s own simplification partly
+erases. No Rust behaviour change (`SURFPROBE` is `probe_enabled`, default OFF); the C++
+instrumentation is reverted with both status checks empty and the engine rebuilt pristine; all three
+hashes unchanged (benchy 248ff22a, cube 14566293, majora 3d741dde); suites unchanged.
+
+FIRST, A SCOPE CORRECTION TO R670. Its POLYPROBE "0 input outline" is `WallToolPaths::outline` --
+which is `last_p`, already past `generate_arachne`'s own `simplify_p` AND its `offset_ex`. So R670
+measured the outline AFTER the perimeter generator had simplified it, not as it arrives. `SURFPROBE`
+counts `surface` at `generate_arachne`'s surface loop, matching C++'s `surface.expolygon` at
+PerimeterGenerator.cpp:1511 before its `simplify_p`.
+
+  points per contour                          Rust       C++     C/R
+  surface.expolygon (BEFORE simplify_p)     50.956    84.158   1.652
+  WallToolPaths outline (AFTER simplify_p)  45.693    48.829   1.069
+
+  simplify_p KEEP rate                      0.8967    0.5802
+
+**The deficit at the true input is 1.652x.** C++ then throws away 42% of its points and we throw away
+10%, which is why the gap has shrunk to 1.069x by the time R670 was looking. Two engines converging
+because the richer one discards more is not agreement, and reading the downstream number alone would
+have kept understating the problem by a factor of fifteen (0.652 vs 0.069 in excess).
+
+WHAT THAT MEANS FOR THE CHAIN. Every stage from `simplify_p` forward is now measured and none of
+them originates anything: the prep chain (R670), the Voronoi diagram and its conversion (R669,
+1.017x and 1.006x), `collapse_small_edges` (R668), the `isUpward` filter (R666). The 1.652x arrives
+with `surface.expolygon`, which is the LayerRegion slice -- upstream of the perimeter generator
+entirely.
+
+AND IT SITS AWKWARDLY WITH R671, WHICH IS WHY R675 STARTS THERE. R671 verified the mesh slicer's DP
+tolerance is faithful (`print_object.rs:452-453` mirrors `PrintObjectSlice.cpp:144` exactly,
+hardcoded 0.0025 and the same ternary). So a 1.652x point loss appears between a faithful mesh
+slicer and the LayerRegion slices. Something between those two points removes points that C++ keeps.
+
+R675: the slice-to-region path. `PrintObjectSlice.cpp` applies `poly_ex.douglas_peucker(resolution)`
+at four sites -- :509 and :567 in `groupingVolumes`, :600 in `applyNegtiveVolumes`, :613 in
+`reGroupingLayerPolygons` -- and that `resolution` is a DIFFERENT variable from the `params_base.resolution`
+R671 cleared. Census points-per-contour at the mesh slicer's output and after each of those four
+sites, both engines. Predict the loss is at one of those `douglas_peucker` calls, since they are the
+only point-removing operations between the slicer and the regions and R671 already cleared the one
+constant that is shared. FALLBACK: if all four match, the loss is in how the slice ExPolygons are
+converted into `LayerRegion::slices` -- a union or an offset that reconstructs contours -- and the
+target becomes that conversion; say so.
+**Do NOT assume the four sites use the same tolerance as the mesh slicer: R671 cleared
+`params_base.resolution` specifically, and these read a separate `resolution` in scope. Check each.**
