@@ -3115,6 +3115,27 @@ impl PerimeterGenerator {
             // `offset_ex(surface.expolygon.simplify_p(res), -...)` with NO union
             // -- `offset_ex` reconstructs the ExPolygons itself, so a prior union
             // only risks merging contours. We had inherited the classic form here.
+            // R696 — `simplify_p` carries TWO documented F1 approximations, and the
+            // retention it produces is 0.9225 against C++'s 0.8230 (R695). The
+            // tolerance is NOT the cause: `surface_simplify_resolution` is
+            // `print_config.resolution` (0.012 mm) and both engines take the 0.2x
+            // arc-fitting branch, so both intend 0.0024 mm, and
+            // `geometry::simplify::douglas_peucker` re-scales mm internally
+            // (geometry/mod.rs:107 re-exports THAT one, not the already-scaled
+            // `multi_point::douglas_peucker`). What differs is the algorithm:
+            //   1. the DP distance is a ROUNDED projection (`Line::distance_to_squared`)
+            //      where C++ uses pure double — `douglas_peucker_faithful` (R122);
+            //   2. the post-DP step is `simplify_polygons_clipper`, a geo-clipper
+            //      union standing in for ClipperLib `SimplifyPolygons` with
+            //      StrictlySimple(true) — "the KEY difference from a plain ctUnion:
+            //      different vertex retention" (clipper_utils.rs, R91).
+            // Both faithful halves already exist; this routes through them so the
+            // retention can be measured against C++'s 0.8230.
+            let simplify_faithful = |ex: &crate::geometry::ExPolygon| -> Vec<crate::geometry::Polygon> {
+                let tol_scaled = surface_simplify_resolution * crate::SCALING_FACTOR;
+                let rings = ex.simplify_p_dp_rings_faithful(tol_scaled);
+                crate::clipper_utils::simplify_polygons_clib(&rings, 1)
+            };
             let simplified: crate::geometry::ExPolygons =
                 if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
                     // PerimeterGenerator.cpp:1511 offset_ex(surface.expolygon.simplify_p(res), ...)
@@ -3126,7 +3147,11 @@ impl PerimeterGenerator {
             let last = if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
                 // PerimeterGenerator.cpp:1511 — offset the raw simplify_p polygons.
                 crate::clipper_utils::offset_polygons(
-                    &surface.simplify_p(surface_simplify_resolution),
+                    &if crate::opt_in_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
+                        simplify_faithful(surface)
+                    } else {
+                        surface.simplify_p(surface_simplify_resolution)
+                    },
                     inset / crate::SCALING_FACTOR,
                     self.config.join_type,
                 )

@@ -14406,3 +14406,84 @@ No Rust source changed. Our probe run emitted majora `d6ccfdbb`; benchy
 `248ff22a` and cube `14566293` stand from R693. Eight suites at standing results.
 Both C++ patches (hand-written bracket + injector) reverted, both status checks
 empty, C++ rebuilt.
+
+## R696 — the retention gap is not the tolerance, not the units, and not the algorithm: it is a CONSEQUENCE of the segmentation difference
+
+R695 found the Arachne-entry near-match (1.072×) is a 1.201× segmentation
+deficit masked by our `simplify_p` retaining 0.9225 of points where C++ retains
+0.8230. R696 set out to find the tolerance that reproduces C++'s 17.7% removal.
+Three candidate causes were tested and all three are refuted.
+
+### 1. Units — refuted by reading
+
+`geometry/simplify.rs:136-139` documents two `douglas_peucker` functions with
+*opposite* unit conventions: `geometry::simplify::douglas_peucker` takes **mm**
+and re-scales internally, while `multi_point::douglas_peucker` takes an
+**already-scaled** tolerance and does not. `geometry/mod.rs:107` re-exports the
+mm one, which is what `ExPolygon::simplify_p` uses. Our call passes mm. Correct.
+
+That docstring also explains R672's collapse exactly — *"passing a scaled value
+here squares the scale factor (~1e5) and collapses contours"* — so
+`ARACHNE_SIMPLIFY_SCALED` failed because it fed the mm-convention function a
+scaled number, not because our value was wrong.
+
+### 2. Tolerance — refuted by config
+
+Majora's config: `resolution = 0.012`, `enable_arc_fitting = 1`,
+`fuzzy_skin = none`. Both engines therefore take the `0.2 ×` branch
+(`PerimeterGenerator.cpp:1500` / `perimeter_generator.rs:3041-3047`), and ours
+resolves `surface_simplify_resolution` from `print_config.resolution`
+(`layer.rs:579`) with `arc_fitting_enabled: true` (`layer.rs:583`). **Both intend
+0.0024 mm.** The tolerances agree.
+
+### 3. Algorithm — refuted by measurement
+
+`simplify_p` carries two documented F1 approximations: a **rounded-projection DP
+distance** where C++ uses pure double (R122), and **`simplify_polygons_clipper`**,
+a geo-clipper union standing in for ClipperLib `SimplifyPolygons` with
+`StrictlySimple(true)` — which `clipper_utils.rs` calls *"the KEY difference from
+a plain ctUnion: different vertex retention (R91)"*. Vertex retention is exactly
+the measured quantity, and both faithful halves already exist in-tree.
+
+New gate `ARACHNE_SIMPLIFY_FAITHFUL` (`opt_in_gate`, default OFF) routes the
+arachne path through `simplify_p_dp_rings_faithful` + `simplify_polygons_clib`:
+
+| | bracket C points | entry points | retention |
+|---|---|---|---|
+| OFF | 1,328,201 | 1,225,335 | **0.9226** |
+| ON | 1,328,201 | 1,225,200 | **0.9225** |
+| C++ | 1,595,300 | 1,312,936 | **0.8230** |
+
+**Reachable but retention-inert.** The majora hash moves `d6ccfdbb` →
+`347562df`, so the gate genuinely runs and changes output — this is a real null,
+not a no-op (the R691 discipline). Neither documented approximation explains the
+retention gap.
+
+### What that leaves — and a correction to R695's framing
+
+Same tolerance, same units, same algorithm, different removal rate ⇒ **the inputs
+differ in how much is removable**. Our bracket-C polygons have already passed
+through `MMSEG_OPENING`'s `opening_ex`, which smooths and drops vertices; the
+survivors sit further apart, so a 0.0024 mm DP finds less to remove. C++'s pieces
+still carry the finer detail its DP then removes.
+
+**So retention is not an independent knob — it is downstream of the segmentation
+difference.** R695's counterfactual table assumed the two terms were orthogonal
+and concluded that fixing segmentation alone would overshoot to 0.892. That
+assumption is now unsupported: if our bracket C carried C++'s finer detail, our
+retention would likely fall toward 0.8230 on its own, landing near 1.000 rather
+than overshooting. Three independent interventions failed to move retention,
+which is the evidence against treating it as separately tunable.
+
+**The practical consequence is that the joint fix R696 was scoped to build is not
+two changes but one:** correct the segmentation cleanup and *re-measure*
+retention rather than assuming it holds. R697 should A/B the `opening_ex`
+tolerance in `apply_mm_segmentation_tier1` against C++'s `opening`, and read
+bracket C, retention and the entry ratio together.
+
+### Baselines and suites
+
+Default path unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`.
+`ARACHNE_SIMPLIFY_FAITHFUL` is default-OFF and unscored on the parity metrics —
+parked as a diagnostic, not shipped. Eight suites at standing results. No C++
+instrumented this round; the submodule was never touched.
