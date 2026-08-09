@@ -13891,3 +13891,100 @@ UPWARD pass seeds before the downward pass runs, so compare `SEEDED` per node an
 at `propagateBeadingsUpward`'s guard — R663 examined that chain against a since-disqualified
 metric and its elimination does not bind. **Both engines' totals must be printed; our
 PROPCLASS series is NOT converged at 400,000, so report whole-run means only.**
+
+## R690 — the upward pass: prediction refuted, R587's carried claim refuted, and the residual named
+
+R689 sized the mechanism (we copy where C++ interpolates, 1.761×) and pointed at
+the `hasBeading()` split at `SkeletalTrapezoidation.cpp:1671`, which is fed by
+how many nodes the *upward* pass seeds. R690 measured that pass on both engines
+with `UPPROBE`, `DNPROBE` and `CENSUS` — all three already carried by
+`scripts/inject-arachne-probes.py`, so no new instrument was written. Ours ran
+with `ARACHNE_TOP_ONE_WALL=1` for population matching.
+
+### UPPROBE — per iteration of `propagateBeadingsUpward`
+
+| | ours (@1,800,000) | C++ (@1,100,000) | C++/ours |
+|---|---|---|---|
+| `skip_beadcount` | 0.6898 | 0.6745 | 0.978 |
+| `skip_no_from` | 0.2871 | 0.2740 | 0.954 |
+| `skip_to_has` | 0.0001 | 0.0003 | 4.56 |
+| **`SEEDED`** | **0.0231** | **0.0513** | **2.223** |
+
+**The prediction is refuted.** R690 predicted our `skip_no_from` share would be
+the larger one — that the downward pass reaches nodes whose `from` has not yet
+been given a beading, an ordering property. It is *not* larger in any meaningful
+sense: 0.2871 vs 0.2740, a 5% gap, and `skip_beadcount` matches equally closely.
+
+**R587's carried claim is also refuted.** R587 recorded that the seeding deficit
+was *entirely* in the `to->bead_count >= 0` guard. The four rates sum to 1, so
+`SEEDED` is a residual of two large near-equal terms:
+
+- `skip_beadcount` is ours-heavy by **+0.0153**
+- `skip_no_from` is ours-heavy by **+0.0131**
+- their sum **+0.0284** against a `SEEDED` gap of **+0.0282**
+- split **54% / 46%** — roughly half each, not "entire"
+
+A 2.22× ratio on a quantity that is 2.3% of iterations is *amplification of a
+small difference between two large numbers*, not localisation to one guard. Add
+this to the metric-pitfall list beside R689's convergence trap: **a ratio on a
+complement-of-large-terms residual does not localise anything.**
+
+### The graph state matches — so state is not the cause
+
+| CENSUS | ours (40,000 calls) | C++ (26,000 calls) | C++/ours |
+|---|---|---|---|
+| nodes per call | 178.2 | 171.2 | 0.960 |
+| `bead_count>=0` per node | 0.1665 | 0.1646 | 0.988 |
+| `hasBeading` per node | 0.1663 | 0.1641 | 0.987 |
+| `central` per edge | 0.1605 | 0.1570 | 0.978 |
+
+Every population is within 4%. `DNPROBE` agrees: `central_skip` 0.6123 vs
+0.5920, `normal` 0.3877 vs 0.4080. **`twin = 0` on BOTH engines** — the
+equidistant-twin branch is dead bilaterally, which confirms R587's elimination
+of it rather than leaving it open.
+
+### The fallback, in its own unit
+
+| | ours | C++ | C++/ours |
+|---|---|---|---|
+| seeds per node | 0.00582 | 0.01267 | **2.176** |
+| seeds per graph call | 1.038 | 2.169 | **2.090** |
+
+Consistent with the per-iteration 2.223×. So: **C++ seeds ~2.2× more nodes on a
+graph whose node count, bead-count coverage, hasBeading coverage and centrality
+all match within 4%, with per-iteration guard rates matching within 5%.** State
+does not explain it; no single guard explains it. What is left is the *order* in
+which the pass walks its array — seeding is self-affecting, since each seed
+flips a later `to->hasBeading()` test. `skip_to_has` is indeed the one rate that
+is C++-heavy (4.56×), though at 0.03% of iterations it pays none of the budget.
+
+### A structural difference found by reading, not by probing
+
+`SkeletalTrapezoidation.cpp:1488` sorts `upward_quad_mids` with **`std::sort`**,
+which is introsort and **not stable**. `skeletal_trapezoidation.rs:2631` uses
+**`sort_by`**, which **is** stable. The comparator keys on
+`distance_to_boundary` — heavily quantised (see R686's bucket histogram) — so
+its equality classes are not rare. Where the comparator reports equal, C++
+permutes and we preserve insertion order, and the two passes that consume the
+array (`propagateBeadingsUpward` walks it in reverse, `propagateBeadingsDownward`
+forward) are sequentially self-affecting.
+
+Membership is not the difference: the list is 45 edges/call for us against 42.3
+for C++ (1.06×), and the construction filter (`prev && next && isUpward()`) is a
+line-for-line port. It is the *order within ties*.
+
+R661 previously eliminated "`upward_quad_mids` construction and sort tie-break",
+but that elimination was scored against the metric R679 disqualified, so it does
+not bind — the same caveat R690 inherited for R663.
+
+**Note the asymmetry before acting on it:** C++'s tie order is *unspecified* by
+the standard, so there is no "correct" order to port to — only libstdc++'s
+actual introsort permutation, which is deterministic for a given input but
+expensive to replicate. Do not start there. Size the effect first.
+
+### Baselines and suites
+
+Unchanged — this round wrote no Rust source. benchy `248ff22a`, cube
+`14566293`, majora `d6ccfdbb`; eight suites at their standing results
+(`multi_material_integration` 25/26, pre-existing). Submodule reverted, both
+status checks empty, C++ rebuilt clean.
