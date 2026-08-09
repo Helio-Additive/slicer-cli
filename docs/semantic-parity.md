@@ -11389,3 +11389,79 @@ almost everywhere, this round's fix was worth even less than it looks, and the r
 
 The M204 deficit itself is untouched and still unexplained: −2,898 tower and −9,161 object, now
 known **not** to be the wipe ordering.
+
+## R652 — the order-sensitive metric: 243,000 Majora lines are right but in the wrong place
+
+**New instrument `scripts/seq_parity.py`. Both clauses of the prediction held, and the control
+retroactively re-scores R651 from zero to +7,740.**
+
+### What it is
+
+v3 `line_parity.py` matches by tolerant **multiset** intersection inside each `(layer, feature)`
+group — its own docstring calls that an upper bound, but the practical consequence went unnoticed
+for fifty rounds: it cannot see intra-group ordering at all. v2 `line_align.py` does respect order
+but aligns on *structural keys* (`G1 X# Y# E#`), which are degenerate, so its pairs mix true
+matches with coin flips.
+
+`seq_parity.py` keeps v3's grouping **and** v3's quantisation — a match is still "the same line to
+1e-3 mm", never an arbitrary pairing — and replaces the multiset intersection with a
+longest-matching-block walk (`difflib`, `autojunk=False`) over the two sequences. A line counts only
+if it is essentially identical **and** reachable in order, so `in_order <= matched` always and the
+gap between them *is* the ordering defect. difflib's walk is a heuristic rather than a strict LCS,
+so `in_order` is a lower bound — it never over-reports, which is the safe direction. Groups are
+small (largest observed 7,360 lines), nothing was skipped, and the cap that would report a skip is
+in the code.
+
+### The readings
+
+| fixture | content | **in order** | misordered |
+|---|---|---|---|
+| Benchy | 75.07% (115,961/154,472) | **63.61% (98,259)** | **17,702 — 15.27% of content matches** |
+| Majora | 28.32% (711,537/2,512,604) | **18.65% (468,570)** | **242,967 — 34.15% of content matches** |
+
+**A third of every Majora line we get right is in the wrong place.** Per feature, in-order share of
+our own lines:
+
+| feature | ours | content-matched | in order |
+|---|---|---|---|
+| Outer wall | 796,792 | 165,733 | **71,753 (9.0%)** |
+| Prime tower | 488,204 | 330,542 | 269,323 (55.2%) |
+| Inner wall | 434,746 | 56,821 | 31,232 (7.2%) |
+| Floating vertical shell | 310,855 | 42,120 | 15,341 (4.9%) |
+| (pre-feature) | 22,205 | 20,789 | 20,787 (93.6%) |
+
+The wipe-tower work of the last fifty rounds shows up exactly where it was done: Prime tower is the
+only large feature above 50% in order. The object-side walls are the opposite — Outer wall matches
+20.8% of its lines by content but only 9.0% in order.
+
+### The control, and R651 re-scored
+
+R651's `WIPE_ACCEL_AFTER_MARKER` moved 15,081 lines into their C++ position and scored **zero** on
+the content metric. Under the new one:
+
+| run | content | in order |
+|---|---|---|
+| `WIPE_ACCEL_AFTER_MARKER=0` | 711,537 | 460,830 (18.34%) |
+| `=1` | 711,537 | **468,570 (18.65%)** |
+
+**+7,740 in-order lines.** The metric registers precisely the change the old one could not see,
+which is the validation this instrument needed: it was not tuned to produce a number, it was checked
+against a known-good change whose size was established independently. **R651 is re-scored from ZERO
+to +7,740 in-order.**
+
+`$D/r643_m.sh` now prints both rates on every round.
+
+### R653
+
+The ordering loss is 242,967 lines and it is concentrated in the object walls, not the tower.
+**Localise it the way R650 localised the Z deficit: pick the worst feature (Outer wall, 9.0% in
+order against 20.8% by content) and dump the first diverging block against C++** — `seq_parity`'s
+matching blocks give the exact indices where the sequences part company, so extend it with a
+`--dump-first-divergence <feature>` mode rather than eyeballing.
+
+**Predict the Outer wall divergence is a systematic per-loop emission-order difference (seam/segment
+start, or the `; LINE_WIDTH:`/`M204` interleave R651 exposed), not scattered noise** — 9.0% in-order
+against 20.8% content-matched is far too structured to be random. Fallback: if the diverging
+positions are scattered with no repeating shape, the cause is upstream geometry (segment
+subdivision) rather than emission order, and the right target is the Arachne/fill path instead —
+say so and go back to the M204 producer hunt (−2,898 tower / −9,161 object).
