@@ -12226,3 +12226,69 @@ FALLBACK: if the `from`-with-beading nodes look distributionally identical to th
 gap is not positional either and the remaining candidate is the initial store's own guard
 (`node.data.bead_count <= 0`, cpp:1520) admitting a different SET at equal count -- instrument that
 guard's population directly and say so.
+
+## R665 — the base gap is 93% depth mix, in one bucket; and a scale correction to R660
+
+R665: the base gap is 93% depth MIX, and a scale check killed a dramatic false finding
+
+Prediction HALF RIGHT: our survivor population IS shifted deeper, but the mechanism I named -- the
+initial store firing on the wrong nodes, a RATE effect -- is not it. The rate contributes NEGATIVE
+33%; the depth MIX contributes 93%, and it is concentrated in a single bucket. The fallback did not
+fire (the distributions are not identical). No Rust behaviour change (`UQM`/`UQMDEPTH` are
+`probe_enabled`, default OFF); the C++ instrumentation is reverted, both status checks empty, engine
+rebuilt pristine; all three hashes unchanged (benchy 248ff22a, cube 14566293, majora 3d741dde);
+suites unchanged.
+
+FIRST, A CORRECTION THAT MATTERS BEYOND THIS ROUND. BambuStudio's `SCALING_FACTOR` is **0.00001**
+(libslic3r.h:58) -- 1e5 units per mm, IDENTICAL to our crate. R660 recorded the opposite ("ours 1e5,
+C++ 1e6, consistent within each system") and that premise has been carried in the eliminated list
+ever since. R660's conclusion survives -- identical scales are trivially consistent -- but its stated
+reason was wrong, and anything else built on "C++ is 1e6" should be re-checked.
+
+I found this because the first version of this round's C++ probe used a 200,000 divisor for its
+0.2 mm buckets. It produced a spectacular result: C++'s survivor nodes all within 0.6 mm of the
+boundary against ours spread past 1.8 mm, distributions barely overlapping. That was entirely my own
+10x mis-scaling. The empirical check settles it: raw max `distance_to_boundary` is 972,244 on our
+side and 955,118 on C++'s -- 9.72 mm vs 9.55 mm, 1.8% apart. Same units, same model.
+
+SECOND, THE REAL DECOMPOSITION. Same 0.2 mm buckets on both engines, over guard-1 survivors, on
+`from.distance_to_boundary`:
+
+  bucket   mm        mix_R   mix_C   C/R    rate_R  rate_C  C/R     contrib_R  contrib_C
+    0    0.0-0.2    0.0648  0.1449  2.24    0.0544  0.0709  1.30     0.00353    0.01027
+    1    0.2-0.4    0.1071  0.1161  1.08    0.0538  0.0549  1.02     0.00576    0.00637
+    2    0.4-0.6    0.1231  0.1124  0.91    0.0420  0.0364  0.87     0.00517    0.00409
+    3    0.6-0.8    0.1080  0.0936  0.87    0.0338  0.0216  0.64     0.00365    0.00202
+    4    0.8-1.0    0.0892  0.0781  0.88    0.0110  0.0064  0.58     0.00098    0.00050
+   5-8   1.0-1.8    0.2497  0.2238  0.90     ~0      ~0      --      0.00033    0.00020
+    9    >=1.8      0.2580  0.2310  0.90    0.0001  0.0001  1.00     0.00003    0.00002
+
+Recomposing gives 0.01945 (measured 0.0192) and 0.02349 (measured 0.0235), so the table is the base.
+
+  total base gap                                    0.00403
+  bucket 0 alone                                    0.00675   (167% of the gap)
+  C++'s MIX with OUR rates                          0.02320   -> mix explains  93%
+  OUR mix with C++'s RATES                          0.01811   -> rate explains -33%
+
+**The entire base gap is one bucket.** Below 0.2 mm from the boundary C++ has 2.24x our share of
+survivor-edge `from` nodes, and that single bucket supplies 44% of C++'s whole base against our 18%.
+Everywhere deeper our rates are equal or BETTER (buckets 2-4 run 0.87x/0.64x/0.58x in our favour),
+which is why the rate term comes out negative. In absolute terms, normalising by calls (ours 12.5
+survivors/call, C++ 16.8), C++ has 3.0x our count of sub-0.2 mm survivor edges and only 1.20x our
+count of deep ones.
+
+WHAT THAT MEANS. This is not the initial store choosing different nodes -- at matched depth we store
+beadings at least as often as C++ does. It is that C++'s `upward_quad_mids` contains three times as
+many edges whose `from` node hugs the boundary. R588 found our whole graph 25% sparser and R590 cut
+that to 1.085x; this says the residual sparsity is not uniform -- it is concentrated within one
+bead-width of the boundary, exactly where `isUpward()` edges are shortest and where R590's
+`collapse_small_edges` snap operates.
+
+R666: absolute near-boundary edge counts, not shares. Count, per `generate()` call and in the WHOLE
+graph rather than in the list: nodes with `distance_to_boundary < 0.2 mm`, edges with both endpoints
+under it, and how many of those pass `prev && next && isUpward()`. Predict the deficit is already in
+the GRAPH at that depth rather than in the `isUpward` filter, since R661 verified the filter is
+identical line for line. FALLBACK: if the graph has them and the filter drops them, `isUpward()` is
+the target -- it compares `distance_to_boundary` of the two endpoints, and at sub-0.2 mm depths that
+comparison is between values a few hundred scaled units apart, where an off-by-one or a `>=`/`>`
+difference decides the outcome; diff the two implementations directly and say so.

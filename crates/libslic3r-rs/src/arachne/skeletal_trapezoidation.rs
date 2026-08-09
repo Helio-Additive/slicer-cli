@@ -2772,6 +2772,12 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 static G_NODES_BC: AtomicU64 = AtomicU64::new(0);
                 static SURV: AtomicU64 = AtomicU64::new(0);
                 static SURV_FROM_HAS: AtomicU64 = AtomicU64::new(0);
+                #[allow(clippy::declare_interior_mutable_const)]
+                const Z: AtomicU64 = AtomicU64::new(0);
+                static SURV_BIN: [AtomicU64; 10] = [Z; 10];
+                static SURV_BIN_HAS: [AtomicU64; 10] = [Z; 10];
+                static DTB_MAX: AtomicU64 = AtomicU64::new(0);
+                static DTB_SUM: AtomicU64 = AtomicU64::new(0);
                 unsafe {
                     let mut tos: BTreeSet<usize> = BTreeSet::new();
                     let mut tos_bc: BTreeSet<usize> = BTreeSet::new();
@@ -2792,8 +2798,25 @@ impl<'a> SkeletalTrapezoidation<'a> {
                             tos_bc.insert(key);
                         } else {
                             SURV.fetch_add(1, Relaxed);
-                            if e.as_ref().from.unwrap().as_ref().data.has_beading() {
+                            // R665 — decompose the static base by DEPTH. The base is a
+                            // conditional rate, so a gap in it is either a different
+                            // depth MIX or a different rate AT a given depth. Bucket
+                            // `from.distance_to_boundary` in 0.2 mm steps (crate scale
+                            // is 1e5 units/mm, so 20_000 per bucket; the C++ probe uses
+                            // 200_000 for its 1e6 scale — same millimetres).
+                            let f = e.as_ref().from.unwrap();
+                            let b = ((f.as_ref().data.distance_to_boundary.max(0) as i64
+                                / 20_000) as usize)
+                                .min(9);
+                            SURV_BIN[b].fetch_add(1, Relaxed);
+                            // R665 — RAW max, to rule out a scale error before the
+                            // depth rows are read as a finding (R633's 1e5/1e6 trap).
+                            let raw = f.as_ref().data.distance_to_boundary.max(0) as u64;
+                            DTB_MAX.fetch_max(raw, Relaxed);
+                            DTB_SUM.fetch_add(raw, Relaxed);
+                            if f.as_ref().data.has_beading() {
                                 SURV_FROM_HAS.fetch_add(1, Relaxed);
+                                SURV_BIN_HAS[b].fetch_add(1, Relaxed);
                             }
                         }
                     }
@@ -2828,6 +2851,24 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         gb2 as f64 / gn2.max(1) as f64,
                         SURV.load(Relaxed),
                         SURV_FROM_HAS.load(Relaxed) as f64 / SURV.load(Relaxed).max(1) as f64,
+                    );
+                    let mix: Vec<f64> = (0..10)
+                        .map(|i| SURV_BIN[i].load(Relaxed) as f64 / SURV.load(Relaxed).max(1) as f64)
+                        .collect();
+                    let rate: Vec<f64> = (0..10)
+                        .map(|i| {
+                            SURV_BIN_HAS[i].load(Relaxed) as f64
+                                / SURV_BIN[i].load(Relaxed).max(1) as f64
+                        })
+                        .collect();
+                    eprintln!(
+                        "[UQMDEPTH] raw dtb max={} mean={:.0} (crate scale 1e5/mm => {:.3}mm / {:.3}mm)\n  bucket = 0.2mm each, 0..9\n  mix ={}\n  rate={}",
+                        DTB_MAX.load(Relaxed),
+                        DTB_SUM.load(Relaxed) as f64 / SURV.load(Relaxed).max(1) as f64,
+                        DTB_MAX.load(Relaxed) as f64 / 100_000.0,
+                        DTB_SUM.load(Relaxed) as f64 / SURV.load(Relaxed).max(1) as f64 / 100_000.0,
+                        mix.iter().map(|v| format!(" {:.4}", v)).collect::<String>(),
+                        rate.iter().map(|v| format!(" {:.4}", v)).collect::<String>(),
                     );
                 }
             }
