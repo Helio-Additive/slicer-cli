@@ -11252,3 +11252,73 @@ The same dump leaves two sized, unexplained differences in this block:
 the travel's Z rider plus the following bare `G1 Z`) and an object-side remainder of ~5,700.**
 Fallback: if the tower term is not ~5,446, the deficit is not the toolchange lift and the census
 tells you where it actually is — follow that, do not port the lift on faith.
+
+## R650 — the Z census: prediction held on both terms, and the tower half is now closed
+
+**Majora `dee06c25` → `c00edd1d`: matched 708,517 → 711,537 (+3,020), body 2,509,227 → 2,512,604
+(+3,377). Benchy `4d8dd7ad` and cube `ebda7d03` byte-identical.**
+
+### The census (the whole point of the round)
+
+Splitting `G1 Z<only>` by region — inside `; WIPE_TOWER_START`…`_END` versus everywhere else:
+
+| region | C++ | ours @R649 | deficit |
+|---|---|---|---|
+| tower | 10,892 | 5,442 | **5,450** |
+| object | 42,095 | 36,422 | **5,673** |
+
+**Predicted "a tower-block term of ~5,446 and an object-side remainder of ~5,700" — measured 5,450
+and 5,673.** Both terms held, so the deficit really is two separate causes and porting one blind
+would have been half a fix.
+
+Splitting again by whether the line carries an `F` sharpened it to a single class:
+
+| | C++ | ours |
+|---|---|---|
+| tower, `hasF` | 5,446 | 5,442 |
+| tower, **`noF`** | **5,446** | **0** |
+
+The F-bearing tower Z lines (after `M204` and after `M400`) already matched. **Every missing tower
+Z line was a bare `G1 Z<z>` following a travel** — C++'s `travel_to` is an XY move *followed by* a
+`travel_to_z` (GCodeWriter.cpp:626), and we emitted only the XY half. Two per tool change: one for
+the `wipe_next_start_point` travel, one for the avoid-perimeter detour travel we do not emit at all.
+
+### The fix
+
+One line at `emit_tower_tcr`'s `travel_to_start`, formatted with `format_gcode_value(_, 3)` so
+`1.5` → `1.5` and `0.3` → `.3` — verified against C++'s `G1 Z.3` at `cpp_majora_new.gcode:8582`.
+
+| run | hash | matched | body | bare `G1 Z` |
+|---|---|---|---|---|
+| `TOWER_TRAVEL_Z=0` | **`dee06c25`** (reproduces R649) | 708,517 | 2,509,227 | 36,410 |
+| **`=1`** | **`c00edd1d`** | **711,537** | **2,512,604** | **39,787** |
+
++3,377 lines emitted, **+3,020 matched** — 89%. The tower `noF` class goes 0 → 2,721 (one per tool
+change, exactly as predicted) and 656 more land in the once-per-layer finish-tower blocks, which
+also match. Note the honest shortfall: 357 of the added lines do **not** match, a small precision
+cost against a clear recall win.
+
+### What remains, sized
+
+Re-censusing after the fix:
+
+| class | C++ | ours @R650 | remaining |
+|---|---|---|---|
+| tower `noF` | 5,446 | 2,721 | **2,725** — the detour travel |
+| object `noF` | 42,089 | 37,073 | **5,016** |
+| **`M204`** | **63,626** | **51,567** | **12,059** (newly sized) |
+
+Two object-side sub-classes are already localised by preceding line: **656** C++ Z lines follow
+`; SKIPPABLE_END` (the timelapse block — exactly the layer count, and C++ also emits an `M204
+S10000` there that we lack), and **211** follow an `M73`, which are ordinary travel-then-drop pairs
+with a progress line interleaved.
+
+### R651
+
+**The `M204` deficit (12,059) is now the largest single sized class and has never been examined.**
+Census it the same way — by region and by preceding line — before touching anything. **Predict it
+splits with a per-layer term near 656 (the `; SKIPPABLE_END` site found above) and a much larger
+per-feature term**, because C++ resets acceleration per extrusion role and we appear to emit
+`M204` only at block boundaries. Fallback: if the census shows the deficit concentrated in the
+tower instead, it is the same detour-travel gap as the remaining tower Z lines — port the detour
+(GCode.cpp:966-1017) and both classes close together.

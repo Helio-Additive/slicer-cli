@@ -3200,8 +3200,27 @@ fn emit_tower_tcr(
         // We do not model `full_gcode_comment` at all, so writer-generated
         // comments must simply not be written; the ones that DO appear in C++'s
         // output come from gcode TEMPLATES, which are verbatim text.
+        // R650: C++'s `travel_to` is an XY move FOLLOWED BY a Z move
+        // (GCodeWriter::travel_to_z, GCodeWriter.cpp:626) — the lazy lift is
+        // cancelled by dropping back to the layer's print_z. We emitted the XY
+        // half only. The R650 census sized it exactly: inside `; WIPE_TOWER_START`
+        // …`_END`, C++ has 5,446 bare `G1 Z<z>` lines (no F) against our ZERO,
+        // while the F-bearing ones match at 5,442/5,446 — the whole tower Z
+        // deficit is this one class, two per tool change (one for this travel,
+        // one for the avoid-perimeter detour travel we do not emit at all).
+        // Formatted with `format_gcode_value(_, 3)` so 1.5 → "1.5" and 0.3 →
+        // ".3", matching C++'s `emit_z` (verified against `G1 Z.3` at
+        // cpp_majora_new.gcode:8582).
+        let z_line = if crate::faithful_gate("TOWER_TRAVEL_Z") {
+            format!(
+                "G1 Z{}\n",
+                crate::gcode::format_gcode_value(tcr.print_z as f64, 3)
+            )
+        } else {
+            String::new()
+        };
         format!(
-            "G1 X{:.3} Y{:.3} F{:.0}\n",
+            "G1 X{:.3} Y{:.3} F{:.0}\n{z_line}",
             tcr.start_pos.x, tcr.start_pos.y, f
         )
     } else {
