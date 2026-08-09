@@ -14174,3 +14174,91 @@ callers. That is R693.
 No Rust source changed — only `scripts/inject-arachne-probes.py`. Baselines
 stand at benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`; eight suites at
 standing results. Submodule reverted, both status checks empty, C++ rebuilt.
+
+## R693 — `probe_enabled` is presence-only: R692's headline was an A/B with the gate ON in both arms
+
+R692 concluded that we run the Arachne skeleton 1.5× more often than C++ does
+real work (40,000 `generateSegments` calls against 26,400), and reported that
+our `ARACHNE_TOP_ONE_WALL` gate-ON and gate-OFF arms both gave 40,000 — which it
+read as proof the gate was not the source. R693 set out to attribute those calls
+to their callers and found the opposite: **both arms had the gate ON.**
+
+### The defect
+
+```rust
+pub fn probe_enabled(name: &str) -> bool { env_snapshot().contains_key(name) }
+```
+
+Presence-only, deliberately mirroring the C++ probes' `getenv(name) != nullptr`.
+That is right for a debug counter and wrong for anything that changes output:
+**writing `NAME=0` to mean "off" turns the gate ON.** `faithful_gate` has the
+value semantics (`v != "0"`), but seven behavioural gates were on
+`probe_enabled` — `ARACHNE_TOP_ONE_WALL`, `ARACHNE_SIMPLIFY_SCALED`,
+`LINEWIDTH_BEFORE_SPEED`, `WIPE_TOWER_FORCE_TAGS`, `WRITER_POS_CLEAR_CPP`,
+`LIFT_TYPE_AUTO_CPP`, `TOWER_PRE_RETRACT`.
+
+Caught by the output hash, not by the counters: running with
+`ARACHNE_TOP_ONE_WALL=0` produced `b3d794f7` — R684's recorded **gate-ON** hash —
+instead of the `d6ccfdbb` baseline. The counters alone looked plausible.
+
+Fixed by adding a default-OFF gate with value semantics and moving all nine call
+sites onto it:
+
+```rust
+pub fn opt_in_gate(name: &str) -> bool {
+    matches!(env_snapshot().get(name), Some(v) if v != "0")
+}
+```
+
+Verified: unset → `d6ccfdbb`, `=0` → `d6ccfdbb`, `=1` → `b3d794f7`.
+
+### The corrected measurement — call counts MATCH
+
+| ours, gate genuinely off (25,800 calls) vs C++ non-speculative (26,400) | ours | C++ | C++/ours |
+|---|---|---|---|
+| **`generateSegments` calls** | **25,800** | **26,400** | **1.023** |
+| nodes per call | 158.67 | 170.30 | **1.073** |
+| edges per node | 1.9874 | 1.9885 | 1.001 |
+| upward mids per node | 0.2555 | 0.2579 | 1.009 |
+| `bead_count > 0` per node | 0.1694 | 0.1645 | 0.971 |
+
+**R692's 1.5× call-count gap does not exist.** We invoke the skeleton the same
+number of times C++ does; both of R692's competing readings are void, and so is
+the slicing-time implication drawn from them.
+
+What survives, and is now measured cleanly: **C++'s graphs carry 7.3% more nodes
+per call**, with the per-node structure (edges, upward mids) matching to 0.1–0.9%.
+That is the long-standing "per-call skeletal edge density" item, and it points
+the same way as the other open item — the bracket-C cleanup residual, where our
+polygons carry **0.892× the pieces and 0.833× the points at equal area**. Fewer
+input points feeding the Voronoi gives a smaller skeleton. Those two are likely
+one finding, which makes the outline fed into Arachne the next target.
+
+### Why the R692 run differed at all
+
+The gate-ON arm does real extra work: 40,000 calls at 178.2 nodes/call against
+25,800 at 158.7. R684 recorded the gate as `+4 content / −14 in-order`, so it
+was never inert — R692 simply never had it off. R685–R691 set
+`ARACHNE_TOP_ONE_WALL=1` deliberately for population matching, so those rounds
+measured what they intended; only R692's "gate OFF" arm is affected.
+
+**The blast radius is bounded, and the shared harness was never wrong.**
+`scripts/ab_template.sh:8` reads `if [ "$arm" = "ON" ]; then export $GATE=1;
+else unset $GATE; fi` — it *unsets* for the OFF arm, which is correct under
+presence-only semantics. So every A/B driven through it stands, including
+R654 (`LINEWIDTH_BEFORE_SPEED`), R656 (`WIPE_TOWER_FORCE_TAGS`) and R684
+(`ARACHNE_TOP_ONE_WALL`). Only hand-rolled loops of the form
+`for G in 0 1; do NAME=$G ...` are affected, which is what R692 used.
+
+**New standing rule: verify a gate's OFF arm by its OUTPUT HASH, not by its
+counters.** An A/B whose two arms produce the same hash tested nothing, and an
+arm whose hash matches the *other* arm's recorded value is the tell. Prefer
+`ab_template.sh` over an ad-hoc loop; if a loop is unavoidable, `unset` the
+variable rather than assigning `0`.
+
+### Baselines and suites
+
+benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb` — all three re-verified
+after the gate change (the default path is unchanged; only the meaning of an
+explicit `=0` moved). Eight suites at standing results. No C++ instrumented this
+round; the submodule was never touched.

@@ -3029,7 +3029,7 @@ impl PerimeterGenerator {
         // taking an UNSCALED millimetre tolerance, so 250 is a 250 mm tolerance and the
         // pre-existing unscaled value was right FOR THIS FUNCTION. Kept as an opt-in
         // switch because the collapse is itself a measurement (see the round notes).
-        let surface_simplify_resolution = if crate::probe_enabled("ARACHNE_SIMPLIFY_SCALED") {
+        let surface_simplify_resolution = if crate::opt_in_gate("ARACHNE_SIMPLIFY_SCALED") {
             let scaled = self.config.surface_simplify_resolution / 0.00001_f64;
             if self.config.arc_fitting_enabled
                 && self.config.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None
@@ -3192,7 +3192,7 @@ impl PerimeterGenerator {
                 let generate_one_wall_by_top =
                     self.config.top_one_wall && self.config.upper_slices.is_some();
                 // PerimeterGenerator.cpp:1532  is_one_wall
-                let is_one_wall = if crate::probe_enabled("ARACHNE_TOP_ONE_WALL") {
+                let is_one_wall = if crate::opt_in_gate("ARACHNE_TOP_ONE_WALL") {
                     loop_number == 0
                         || generate_one_wall_by_first_layer
                         || generate_one_wall_by_top_most
@@ -3200,7 +3200,7 @@ impl PerimeterGenerator {
                     loop_number == 0
                 };
                 // PerimeterGenerator.cpp:1534
-                let mut seperate_wall_generation = crate::probe_enabled("ARACHNE_TOP_ONE_WALL")
+                let mut seperate_wall_generation = crate::opt_in_gate("ARACHNE_TOP_ONE_WALL")
                     && !is_one_wall
                     && generate_one_wall_by_top;
 

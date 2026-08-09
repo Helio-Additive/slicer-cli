@@ -88,6 +88,23 @@ pub fn probe_enabled(name: &str) -> bool {
     env_snapshot().contains_key(name)
 }
 
+/// Default-OFF **behavioural** gate, with the same value semantics as
+/// [`faithful_gate`]: `NAME=0` is OFF, any other value is ON, absent is OFF.
+///
+/// R693 — behavioural gates must NOT use [`probe_enabled`]. That function is
+/// presence-only (it mirrors the C++ probes' `getenv(name) != nullptr`), which
+/// is right for a debug counter but wrong for anything that changes output:
+/// writing `NAME=0` to mean "off" silently turns the gate **ON**. R692 ran an
+/// A/B as `ARACHNE_TOP_ONE_WALL=0` against `=1`, got the gate in BOTH arms, and
+/// concluded from it that we call the skeleton 1.5x more often than C++ — an
+/// artifact. With the gate genuinely off the call counts match (1.023x).
+///
+/// Use this for any gate that alters the G-code; keep [`probe_enabled`] for
+/// probes that only print.
+pub fn opt_in_gate(name: &str) -> bool {
+    matches!(env_snapshot().get(name), Some(v) if v != "0")
+}
+
 pub mod a_star;
 pub mod aabb_mesh;
 pub mod aabb_tree_indirect;

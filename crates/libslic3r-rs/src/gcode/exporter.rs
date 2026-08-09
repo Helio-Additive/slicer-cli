@@ -1055,7 +1055,7 @@ pub fn extrude_collection(
             // tag (GCode.cpp:6607) and only then `set_speed` (:6663). Defer ours
             // to just after the tag rather than dropping it, so the line count is
             // untouched and only its position changes.
-            if crate::probe_enabled("LINEWIDTH_BEFORE_SPEED") {
+            if crate::opt_in_gate("LINEWIDTH_BEFORE_SPEED") {
                 writer.set_speed_pending(feature_speed * 60.0, cooling_comment);
             } else {
                 writer.set_speed(feature_speed * 60.0, cooling_comment);
@@ -1426,7 +1426,7 @@ pub fn extrude_path_with_arc_fitting(
     // The fallback pre-registered for exactly this: park it, stop adding tags,
     // and re-run this A/B once the Arachne width-variety gap is closed. Two
     // flips then land together — this and `LINEWIDTH_BEFORE_SPEED`.
-    let force_tags = crate::probe_enabled("WIPE_TOWER_FORCE_TAGS")
+    let force_tags = crate::opt_in_gate("WIPE_TOWER_FORCE_TAGS")
         && writer.take_force_analyzer_tags();
 
     if *LW_PERPATH.get_or_init(|| crate::faithful_gate("LINEWIDTH_PERPATH"))
@@ -4717,7 +4717,7 @@ mod tests {
 /// `extrude_collection` — the A/B proved that gate a NO-OP (identical hash), so
 /// `skip_pre_speed` is already true there and these five are the real producers.
 fn set_speed_before_path(writer: &mut GCodeWriter, speed: crate::CoordF, comment: &str) {
-    if crate::probe_enabled("LINEWIDTH_BEFORE_SPEED") {
+    if crate::opt_in_gate("LINEWIDTH_BEFORE_SPEED") {
         writer.set_speed_pending(speed, comment);
     } else {
         writer.set_speed(speed, comment);

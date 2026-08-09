@@ -3399,7 +3399,7 @@ fn emit_tower_tcr(
         // the wrong way. The object-region eager spirals C++ emits after
         // `; WIPE_END` come from somewhere this call is not.
         let alt = writer.auto_lift_type();
-        if crate::probe_enabled("TOWER_PRE_RETRACT") {
+        if crate::opt_in_gate("TOWER_PRE_RETRACT") {
             writer.retract_for_toolchange_with_lift(alt, true);
         }
         writer.write_raw_content(&g[..cut]);

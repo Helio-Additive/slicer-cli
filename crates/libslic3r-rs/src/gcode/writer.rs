@@ -558,7 +558,7 @@ impl GCodeWriter {
     /// NOTE `probe_enabled` tests for the key's PRESENCE, so `WRITER_POS_CLEAR_CPP=0`
     /// turns this ON, not off. To A/B, set or unset the variable entirely.
     pub fn is_current_position_clear(&self) -> bool {
-        if !crate::probe_enabled("WRITER_POS_CLEAR_CPP") {
+        if !crate::opt_in_gate("WRITER_POS_CLEAR_CPP") {
             // Pre-R630 behaviour; measured better than the faithful one today.
             return self.position_known;
         }
@@ -1408,7 +1408,7 @@ impl GCodeWriter {
     /// is the naive branch — the overhang predicate IS the decision. R631.
     fn travel_lift_type(&self) -> u8 {
         if self.config.z_hop_type == ZHopType::Auto {
-            if crate::probe_enabled("LIFT_TYPE_AUTO_CPP") {
+            if crate::opt_in_gate("LIFT_TYPE_AUTO_CPP") {
                 // R631: resolved per travel by needs_retraction_faithful, which
                 // runs is_through_overhang exactly where C++ does.
                 self.m_pending_travel_lift_type
