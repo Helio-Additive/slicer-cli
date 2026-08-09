@@ -13665,3 +13665,80 @@ route and the deficit is in the *bead_count* argument rather than the thickness,
 `(bead_count(to), bead_count(from))` instead — `compute` takes both, and R681 measured
 `bead_widths[0]` only, which is blind to a bead-count difference that reshuffles the rest of
 the vector.
+
+## R687 — prediction REFUTED structurally (`dtb_eq = 0` on BOTH engines), and reading the strategy explains why `bead_widths[0]` barely varies at all
+
+Extended `BEADPAIR` with `|dtb(to) − dtb(from)|` bucketed and an exactly-equal counter,
+reported as **rates over the edge denominator** rather than a growing distinct-set (R686's
+instrument was order-dependent). Mirrored into C++ `generateJunctions` at the same point,
+immediately after `getOrCreateBeading(edge->to, …)`, reading `edge->from` read-only. Our
+side ran with `ARACHNE_TOP_ONE_WALL=1` (R685).
+
+| at block index 5,500,000 | ours | C++ |
+|---|---|---|
+| **dtb exactly equal** | **0** | **0** |
+| dtb < 1 µm | 5,804 (0.106%) | 10,236 (0.186%) |
+| dtb 1–10 µm | 39,991 (0.727%) | 50,483 (0.918%) |
+| dtb > 10 µm | 5,454,205 (99.17%) | 5,439,281 (98.90%) |
+| both-have-beading | 670,299 | 724,315 |
+| **P(differ in `bead_widths[0]`)** | **0.0244** | **0.0432** |
+
+**The prediction — "our exactly-equal `dtb` fraction is markedly higher" — is REFUTED
+structurally.** It is *zero on both engines*, and it must be: `generateJunctions` keeps only
+the upward half-edges (`from.dtb > to.dtb` → `continue`) and skips `end_R >= start_R`, so
+the two endpoints have strictly different `distance_to_boundary` by construction. The
+hypothesis was not merely wrong, it was unaskable at this site — the same class of error as
+R661 and R675.
+
+Worse for it: in the near-equal buckets **ours is the sparser side** — 0.106% vs 0.186%
+below 1 µm. Our adjacent nodes present *more* differing thicknesses than C++'s, and still
+get the *same* `bead_widths[0]` 1.77× more often. Thickness cannot be the route.
+
+*(Caveat: the block indices match at 5,500,000 but the coverage does not — our edge total is
+in [5.5M, 6.0M) and C++'s in [6.5M, 7.0M), so ours is near-complete while C++'s is at ~85%.
+Treat the distribution rows directionally. `dtb_eq = 0` is exact and unaffected, and the
+P(differ) figure is consistent with R685's 1.823× taken at a different truncation.)*
+
+### Reading the strategy explains the whole shape
+
+`RedistributeBeadingStrategy.cpp:83` — and `redistribute_beading_strategy.rs:151-155`,
+which is identical:
+
+```cpp
+const coord_t actual_outer_thickness = bead_count > 2 ? std::min(thickness / 2, optimal_width_outer)
+                                                      : thickness / bead_count;
+```
+
+`bead_widths[0]` *is* `actual_outer_thickness`. So:
+- **`bead_count > 2`** and the wall thicker than `2 * optimal_width_outer` → `bead_widths[0]`
+  is **pinned to `optimal_width_outer`**, a constant, no matter how the thickness varies.
+- **`bead_count <= 2`** → `thickness / bead_count`, which varies continuously.
+
+**Two adjacent nodes can therefore only differ in `bead_widths[0]` when at least one of them
+is in the `bead_count <= 2` (or sub-`minimum_variable_line_ratio`) regime.** P(differ) is a
+measure of how often the pair straddles that regime boundary — which is a **bead-count**
+question, not a thickness question. That is exactly the pre-registered fallback, now
+supported by the source rather than only by elimination.
+
+It also retro-explains R686: our strategy returned *more* distinct `bead_widths[0]` per
+thickness bucket precisely because those distinct values come from the `thickness /
+bead_count` branch; a richer spread there is consistent with, not contradictory to, a lower
+P(differ) overall.
+
+Baselines unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`. All eight suites
+unchanged (multi_material_integration 25/26, pre-existing). C++ submodule reverted; both
+status checks empty; rebuilt.
+
+**R688: measure `bead_count` at the two endpoints — the fallback, now source-supported.**
+Extend the same `BEADPAIR`/`r687_note` pair with `(bead_count(to), bead_count(from))`: the
+rate at which the two are equal, the rate at which **both are > 2** (the pinned regime where
+`bead_widths[0]` cannot differ), and the rate at which the pair **straddles** the `> 2`
+boundary. Predict our both-pinned rate is markedly higher — that is the only remaining way
+to get 1.77× fewer differing widths out of an identical strategy fed *more*-varied
+thicknesses. Fallback: if the bead-count regimes match too, then `bead_widths[0]` is the
+wrong observable entirely and the deficit lives in the *rest* of the width vector — re-run
+the comparison on `bead_widths[idx]` for the idx each junction actually uses
+(`SkeletalTrapezoidation.cpp:1847` passes `junction_idx`), which R681/R685/R687 have all
+been blind to. **Run our side with `ARACHNE_TOP_ONE_WALL=1`, and this time also print each
+engine's TOTAL edge count so the coverage mismatch that clouded this round's distribution
+rows can be corrected for.**

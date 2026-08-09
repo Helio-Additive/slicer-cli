@@ -3433,7 +3433,22 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         .get_beading()
                         .map(|fb| std::sync::Arc::ptr_eq(&fb, &beading_arc))
                         .unwrap_or(false);
-                    beadpair(w_to, w_from, t_from, beading.total_thickness, same_obj);
+                    // R687 — the quantity R686's fallback named. `compute` is driven by
+                    // `distance_to_boundary * 2`, so two adjacent nodes can only get
+                    // different beadings if they present different dtb. Reported as a
+                    // RATE over the same fixed denominator as `differ`, not as a growing
+                    // distinct-set (R686's instrument was order-dependent).
+                    let dtb_to = to.as_ref().data.distance_to_boundary;
+                    let dtb_from = from.as_ref().data.distance_to_boundary;
+                    beadpair(
+                        w_to,
+                        w_from,
+                        t_from,
+                        beading.total_thickness,
+                        same_obj,
+                        dtb_to,
+                        dtb_from,
+                    );
                 }
 
                 // SkeletalTrapezoidation.cpp:1799 assert(beading->total_thickness >= edge->to->data.distance_to_boundary * 2);
@@ -4616,9 +4631,31 @@ pub(crate) fn beadpair(
     t_from: Option<i64>,
     t_to: i64,
     same_obj: bool,
+    dtb_to: i64,
+    dtb_from: i64,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::sync::Mutex;
+    // R687 — `distance_to_boundary` on the two endpoints. `compute` is driven by
+    // dtb*2, so equal dtb forces equal beadings regardless of the strategy (which
+    // R686 exonerated). All three counters are RATES over the edge count N, so the
+    // print modulus cannot change the answer the way R686's distinct-set did.
+    static DTB_EQ: AtomicUsize = AtomicUsize::new(0);
+    static DTB_D1: AtomicUsize = AtomicUsize::new(0);
+    static DTB_D10: AtomicUsize = AtomicUsize::new(0);
+    static DTB_DBIG: AtomicUsize = AtomicUsize::new(0);
+    {
+        let d = (dtb_to - dtb_from).abs();
+        if d == 0 {
+            DTB_EQ.fetch_add(1, Relaxed);
+        } else if d < 100 {
+            DTB_D1.fetch_add(1, Relaxed);
+        } else if d < 1000 {
+            DTB_D10.fetch_add(1, Relaxed);
+        } else {
+            DTB_DBIG.fetch_add(1, Relaxed);
+        }
+    }
     static N: AtomicUsize = AtomicUsize::new(0);
     static BOTH: AtomicUsize = AtomicUsize::new(0);
     static DIFF: AtomicUsize = AtomicUsize::new(0);
@@ -4670,12 +4707,14 @@ pub(crate) fn beadpair(
             .map(|m| m.iter().filter(|&&c| c > 0).count())
             .unwrap_or(0);
         eprintln!(
-            "[BEADPAIR] edges={n} both={} differ={} ({:.4}) tdiff={} ({:.4}) same_obj={} ({:.4}) | d<1um={} 1-10um={} 10-100um={} >100um={} | w0_mod100_nonzero={}/100",
+            "[BEADPAIR] edges={n} both={} differ={} ({:.4}) tdiff={} ({:.4}) same_obj={} ({:.4}) | d<1um={} 1-10um={} 10-100um={} >100um={} | dtb_eq={} ({:.4}) dtb<1um={} dtb1-10um={} dtb>10um={} | w0_mod100_nonzero={}/100",
             BOTH.load(Relaxed), DIFF.load(Relaxed),
             DIFF.load(Relaxed) as f64 / both as f64,
             TDIFF.load(Relaxed), TDIFF.load(Relaxed) as f64 / both as f64,
             SAME.load(Relaxed), SAME.load(Relaxed) as f64 / both as f64,
-            D1.load(Relaxed), D10.load(Relaxed), D100.load(Relaxed), DBIG.load(Relaxed), nz,
+            D1.load(Relaxed), D10.load(Relaxed), D100.load(Relaxed), DBIG.load(Relaxed),
+            DTB_EQ.load(Relaxed), DTB_EQ.load(Relaxed) as f64 / n as f64,
+            DTB_D1.load(Relaxed), DTB_D10.load(Relaxed), DTB_DBIG.load(Relaxed), nz,
         );
     }
 }
