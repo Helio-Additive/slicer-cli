@@ -11465,3 +11465,90 @@ against 20.8% content-matched is far too structured to be random. Fallback: if t
 positions are scattered with no repeating shape, the cause is upstream geometry (segment
 subdivision) rather than emission order, and the right target is the Arachne/fill path instead —
 say so and go back to the M204 producer hunt (−2,898 tower / −9,161 object).
+
+## R653 — the ordering loss has a shape: 148,548 inverted `; LINE_WIDTH:` / `G1 F` pairs
+
+**Prediction held. The divergence is systematic, not scattered — and both worst Outer wall groups
+part company at index 0, the very first line.** No engine code changed; all three hashes unchanged.
+
+### The tool
+
+`scripts/seq_parity.py --dump-divergence "<feature>" [n]` — for the n worst groups of a feature, it
+uses difflib's matching blocks to find the first index our sequence stops tracking C++'s and prints
+both neighbourhoods side by side with indices. No eyeballing: the blocks already know where the
+sequences part.
+
+### What it showed
+
+```
+=== layer 163  ours 2801 lines, cpp 3184, out-of-order 2735
+    first divergence at ours[0] / cpp[0]
+  >>     0 G1 F7150.945                    |     0 ; LINE_WIDTH: 0.399991
+         1 ; LINE_WIDTH: 0.400001          |     1 G1 F7151.157
+         2 M204 S5000                      |     2 M204 S5000
+```
+
+**The same three lines, with the first two swapped.** A census over the whole file:
+
+| | `; LINE_WIDTH:` total | followed by a bare `G1 F` | preceded by one |
+|---|---|---|---|
+| C++ | 215,199 | **203,408** | **0** |
+| ours | 154,063 | 3 | **148,548** |
+
+**148,548 inverted pairs.** C++ never once emits the feedrate before the width tag; we almost always
+do. Both lines match by content, so `line_parity.py` scores them as two hits — this is precisely the
+class R651 proved it cannot see, and it is the single largest ordering defect in the file. Note this
+is a different question from the one R558/R567/R570/R571 closed: those were about *how many*
+`; LINE_WIDTH:` lines we emit, not their position relative to the feedrate.
+
+**Root cause located.** C++'s Width tag (GCode.cpp:6607) is emitted inside `_extrude` *before*
+`set_speed` (:6663). Ours comes out of `extrude_path_with_arc_fitting` at `exporter.rs:1376`, but a
+**collection-level pre-set feedrate at `exporter.rs:1017` runs first** — and C++ has no
+collection-level F at all. Our own comment at `exporter.rs:997-1003` already says so ("native never
+emits a collection-level feature-speed F before a perimeter loop") and guards it with
+`skip_pre_speed`, but that guard requires `config.enable_overhang_speed` **and** a `Loop` entity
+**and** a perimeter role. Majora's config sets `enable_overhang_speed` to `1`, yet the dump shows
+the pre-set F still being emitted on Outer wall — **so either the guard is not resolving true or the
+F comes from a second site. Establish which before changing anything (R649).**
+
+### The second cause, unsized
+
+Layer 142's Outer wall shows the same four points in a different order:
+
+```
+ours: 67.945,211.801 → 68.176,211.37 → 68.499,211.829 → 68.221,211.868
+cpp:  68.5,211.828   → 68.157,211.875 → 67.946,211.802 → 68.158,211.408
+```
+
+Different loop start point **and** traversal direction — the seam. That is a geometry-ordering
+difference, not an emission-order one, and it will not yield to the same fix.
+
+Layer 163 also shows C++ emitting a per-segment speed ramp we do not
+(`G1 F3047.933` / `G1 X… E.00113` / `G1 F2766.257` / …) — a content difference, separate again.
+
+
+### Inner wall cross-check
+
+Same shape at index 0, plus a third item:
+
+```
+ours: G1 F7150.945 / ; LINE_WIDTH: 0.400001 / G1 X67.774 Y122.848 …
+cpp:  ; LINE_WIDTH: 0.399991 / ; LAYER_HEIGHT: 0.3 / G1 F7151.157 / G2 X47.83 Y208.203 …
+```
+
+The inversion reproduces exactly. C++ also emits `; LAYER_HEIGHT:` immediately after the width tag
+where we do not (we emit it elsewhere, `exporter.rs:1444`). And the geometry after the header is
+unrelated — ours starts at (67.774, 122.848), C++ at (47.83, 208.203) — so on Inner wall the
+**island/region visit order** differs too, a larger structural divergence than the Outer wall seam.
+Three distinct causes now, only one of them sized.
+
+### R654
+
+**Fix the inversion.** First establish which site emits the offending `G1 F` — instrument it, do not
+infer from the guard's source. Then make the width tag precede it, gated, and A/B on **both** rates.
+
+**Predict a large in-order gain (order 100k lines) and ZERO content change**, since no line is
+created or destroyed — the exact inverse of the R648-R650 rounds and the same signature as R651,
+which is now the precedent for reading such a result correctly. Fallback: if in-order moves by less
+than 20k, the inversion is not what breaks the alignment and the seam difference dominates — say so,
+and take the seam (loop start point and direction) as the target instead.

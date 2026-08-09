@@ -44,10 +44,72 @@ from line_parity import DEC, groups, quantise  # noqa: E402
 MAX_GROUP = 60000
 
 
+def dump_divergence(rg, cg, dec, feat_want, n, ctx):
+    """R653: for the n worst groups of one feature, show where the sequences part.
+
+    The matching blocks already know the answer — the first index not covered by
+    a block is the first divergence. Printing that neighbourhood raw is the only
+    way to tell a systematic per-loop emission-order difference from scatter.
+    """
+    scored = []
+    for key in set(rg) | set(cg):
+        layer, feat = key
+        if feat != feat_want:
+            continue
+        r = [quantise(x, dec) for x in rg.get(key, [])]
+        c = [quantise(x, dec) for x in cg.get(key, [])]
+        if not r or not c:
+            continue
+        blocks = SequenceMatcher(None, r, c, autojunk=False).get_matching_blocks()
+        o = sum(b.size for b in blocks)
+        scored.append((len(r) - o, layer, r, c, blocks, rg.get(key, []), cg.get(key, [])))
+    scored.sort(reverse=True, key=lambda t: t[0])
+    print(f"feature {feat_want!r}: {len(scored)} groups; showing the {min(n, len(scored))} worst\n")
+    for loss, layer, r, c, blocks, rraw, craw in scored[:n]:
+        # first index of ours not covered by a matching block
+        i = 0
+        for b in blocks:
+            if b.a > i:
+                break
+            i = b.a + b.size
+        j = 0
+        for b in blocks:
+            if b.a + b.size > i:
+                j = b.b
+                break
+            j = b.b + b.size
+        print(f"=== layer {layer}  ours {len(r)} lines, cpp {len(c)}, out-of-order {loss}")
+        print(f"    first divergence at ours[{i}] / cpp[{j}]")
+        lo_r, hi_r = max(0, i - ctx), min(len(rraw), i + ctx)
+        lo_c, hi_c = max(0, j - ctx), min(len(craw), j + ctx)
+        width = max(hi_r - lo_r, hi_c - lo_c)
+        for k in range(width):
+            ri, ci = lo_r + k, lo_c + k
+            rl = rraw[ri][:52] if ri < hi_r else ""
+            cl = craw[ci][:52] if ci < hi_c else ""
+            mark = ">>" if (ri == i or ci == j) else "  "
+            print(f"  {mark} {ri:>5} {rl:<52} | {ci:>5} {cl}")
+        print()
+
+
 def main():
-    rp, cp = sys.argv[1], sys.argv[2]
-    dec = int(sys.argv[3]) if len(sys.argv) > 3 else DEC
+    argv = list(sys.argv[1:])
+    feat_want = None
+    n_dump, ctx = 3, 12
+    if '--dump-divergence' in argv:
+        k = argv.index('--dump-divergence')
+        feat_want = argv[k + 1]
+        rest = argv[k + 2:]
+        n_dump = int(rest[0]) if rest and rest[0].isdigit() else n_dump
+        argv = argv[:k]
+
+    rp, cp = argv[0], argv[1]
+    dec = int(argv[2]) if len(argv) > 2 else DEC
     rg, cg = groups(rp), groups(cp)
+
+    if feat_want is not None:
+        dump_divergence(rg, cg, dec, feat_want, n_dump, ctx)
+        return
 
     tot_r = sum(len(v) for v in rg.values())
     tot_c = sum(len(v) for v in cg.values())
