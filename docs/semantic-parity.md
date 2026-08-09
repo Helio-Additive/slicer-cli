@@ -13260,3 +13260,88 @@ matches per call and only `e_after_collapse` differs, `collapse_small_edges` rem
 on our side — which R668 "eliminated" on a metric R679 has since disqualified, so re-open
 it rather than defer to it. **Both prior GBUILD/CONV readings are from R589 on a long-dead
 baseline; re-measure ours in the same run rather than carrying them.**
+
+## R682 — prediction HALF right, fallback REFUTED, and a named unported feature found
+
+Mirrored the Rust `CONV` probe's three stage boundaries into C++
+`SkeletalTrapezoidation::constructFromPolygons` (before `separatePointyQuadEndNodes()`,
+between it and `graph.collapseSmallEdges()`, and after), per call.
+
+| whole-run mean per `constructFromPolygons` call | ours | C++ | C++/ours |
+|---|---|---|---|
+| calls | [24,000, 26,000) | [40,000, 42,000) | **1.54–1.75** |
+| `e_after_cells/call` | 416.189 | 494.212 | **1.187** |
+| `e_after_separate/call` | 416.189 | 494.212 | 1.187 |
+| `e_after_collapse/call` | 324.827 | 384.334 | **1.183** |
+| `n_after_cells/call` | 197.687 | 234.361 | 1.186 |
+| `n_after_collapse/call` | 163.415 | 193.137 | 1.182 |
+| **`collapse_keep`** | **0.7805** | **0.7777** | **0.996** |
+| total edges after collapse | 7.80M | 15.37M | 1.97 |
+
+**The fallback is REFUTED and `collapse_small_edges` is exonerated.** Its keep fraction is
+identical to three decimal places (0.7805 vs 0.7777), and the per-call deficit is already
+fully present at `e_after_cells` — before any removal runs. The R668 re-opening can be
+closed: the collapse is not the mechanism, this time measured per-call with matched keep
+fractions rather than against the disqualified distinct-width metric.
+
+**The prediction is HALF right.** Its *location* was correct — the deficit is at
+`e_after_cells`, in construction — but its *size* was wrong: 1.19×, not ~2×.
+
+**So R681's ~2.1× decomposes again, and again the new factor dominates:**
+**call count ≈1.64× × per-call edge density 1.183× ≈ 1.94×**, against the directly measured
+total-edge ratio of 1.97×. Self-consistent.
+
+*(Caveat on method: comparing each engine at call index 24,000 gives 1.386× for the
+density, but C++'s first 24,000 calls cover only ~60% of the model while ours cover all of
+it — a coverage mismatch. The whole-run means above are the population-correct figures,
+and they reproduce the independently measured total ratio, which the index-matched
+numbers do not.)*
+
+### The call count: a named, unported feature
+
+C++ has **seven** `Arachne::WallToolPaths` construction sites; we have seven too, and all
+three fill sites (`FillConcentric.cpp:93`, `FillConcentricInternal.cpp:37`,
+`FillFloatingConcentric.cpp:900`) are ported. But the **perimeter** path has four in C++
+and only two in ours:
+
+| C++ | ours |
+|---|---|
+| `PerimeterGenerator.cpp:1566` `one_wall_paths` (probe pass) | — |
+| `PerimeterGenerator.cpp:1600` `paths_new` (remaining walls) | — |
+| `PerimeterGenerator.cpp:1617` `one_wall_paths` | `perimeter_generator.rs:3184` |
+| `PerimeterGenerator.cpp:1625` `normal_paths` | `perimeter_generator.rs:3197` |
+
+We have only the `else` arm (C++ `:1614-1631`). **The entire `seperate_wall_generation`
+branch (C++ `:1565-1613`) — "only generate one wall around top areas" — is unported.**
+`seperate_wall_generation`, `should_enable_top_one_wall` (`PerimeterGenerator.cpp:1806`),
+`generate_one_wall_by_top`, `generate_one_wall_by_top_most` and
+`generate_one_wall_by_first_layer` appear **nowhere** in `crates/libslic3r-rs/src`. The
+divergence is visible in one line:
+
+```
+C++  :1532  bool is_one_wall = loop_number == 0 || generate_one_wall_by_first_layer || generate_one_wall_by_top_most;
+C++  :1534  bool seperate_wall_generation = !is_one_wall && generate_one_wall_by_top;
+ours :3112  let is_one_wall = loop_number == 0;
+```
+
+Three of the four disjuncts and the whole second flag are missing. When the branch is
+active C++ builds a skeletal graph **twice** for the same surface — once as a probe
+(`one_wall_paths` at `:1566`, whose inner contour feeds `should_enable_top_one_wall`) and
+again for the remaining walls (`paths_new` at `:1600`). That is a direct, arithmetically
+plausible source of the 1.54–1.75× call-count term: it would need to fire on roughly
+54–75% of surfaces.
+
+This is a genuine `main.cpp`-reachable porting gap in its own right, independent of the
+width-variation campaign — it changes the wall COUNT on top surfaces, not just the
+instrumentation totals.
+
+**R683: measure how often the branch fires before porting it (census before porting,
+R650).** Add a `CPPUP` counter in C++ at `:1534` and `:1587` recording, per
+`generate_arachne`-equivalent call: how many surfaces have `seperate_wall_generation` true
+initially, how many survive `should_enable_top_one_wall`, and how many reach `:1600` with
+`loop_number > 0`. Predict the surviving fraction times two, plus one, accounts for the
+1.54–1.75× — i.e. roughly 54–75% of surfaces take the double-construction path. Fallback:
+if the branch fires on far fewer surfaces than that, the call-count term has a second
+source and the next place to look is how many surfaces reach the Arachne path at all on
+each engine (bracket C put our surfaces at 14,924 against C++'s 16,738, only 1.12×, so a
+gap that large would have to come from somewhere else entirely).
