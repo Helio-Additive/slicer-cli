@@ -11322,3 +11322,70 @@ per-feature term**, because C++ resets acceleration per extrusion role and we ap
 `M204` only at block boundaries. Fallback: if the census shows the deficit concentrated in the
 tower instead, it is the same detour-travel gap as the remaining tower Z lines — port the detour
 (GCode.cpp:966-1017) and both classes close together.
+
+## R651 — the M204 census, a correction to my own reading, and proof the primary metric is order-blind
+
+**Majora `c00edd1d` → `3d741dde`: matched 711,537 → 711,537, body 2,512,604 → 2,512,604. ZERO on
+both.** Benchy 115,961/154,472 unchanged; all three hashes changed (`4d8dd7ad` → `248ff22a`,
+`ebda7d03` → `14566293`) so lines *moved* on every fixture and nothing matched differently.
+
+### The census
+
+`M204` by region and by immediately-preceding line:
+
+| | C++ | ours | delta |
+|---|---|---|---|
+| tower | 11,853 | 8,955 | −2,898 |
+| object | 51,774 | 42,613 | −9,161 |
+
+Preceding-line breakdown surfaced the striking rows — C++ has **16,932** `M204` whose previous line
+is `; WIPE_START` and we had **zero**; C++ has 2,720 after `; CP_TOOLCHANGE_WIPE` and we had zero.
+Against that, *we* had thousands C++ lacks: `; LINE_WIDTH`-preceded 4,491 (C++ 38), `G2`-preceded
+9,165 (C++ 3,273), `G3`-preceded 2,566 (C++ 1,273).
+
+**That pattern is a position difference, not a presence difference — and I should have read it that
+way immediately.** A preceding-line census measures *where* lines sit, not *whether* they exist. The
+16,932 was never 16,932 missing lines.
+
+The C++ contract is exact: 16,931 of the 16,932 are `M204 S10000` = `default_acceleration`, emitted
+between the `; WIPE_START` tag (GCode.cpp:408) and the wipe's first `extrude_to_xy`. Our
+`writer.rs:2148` had flushed the pending acceleration one line **earlier** — R227 had the mechanism
+right and the side of the marker wrong.
+
+### The fix, and its zero
+
+Moving `flush_pending_accel()` to after the marker put the lines where C++ has them: **0 → 15,081**
+(C++ 16,932). The `M204` total is unchanged at 51,567, as it must be — no line was created or
+destroyed.
+
+| run | hash | matched | body | `M204` | after `; WIPE_START` |
+|---|---|---|---|---|---|
+| `WIPE_ACCEL_AFTER_MARKER=0` | **`c00edd1d`** (reproduces R650) | 711,537 | 2,512,604 | 51,567 | 0 |
+| `=1` | `3d741dde` | **711,537** | **2,512,604** | 51,567 | **15,081** |
+
+**Kept** — it is verifiably what C++ does — but scored honestly as **zero**, the R644 outcome.
+
+### The finding that actually matters
+
+`scripts/line_parity.py` groups by `(layer, feature)` and matches by content, so **it cannot see
+intra-group ordering at all**. 15,081 lines moved to their correct C++ position and the primary
+metric did not register a single one. R649's fallback hypothesised this; R651 proves it.
+
+That is a hole in the measurement, not just in the port, and it matters directly for the standing
+bar ("all lines are essentially exactly the same"): a file could reach a high line-parity rate with
+every feature's internals shuffled. **Every ordering defect found so far has been invisible to the
+number we have been steering by.**
+
+### R652 — build the order-sensitive metric first
+
+Before chasing another line class, add a **sequence metric**: within each `(layer, feature)` group,
+compare the two line sequences with an LCS/diff rather than a multiset, and report
+`in-order-matched / matched`. Run it against the current baselines to size how much of the existing
+28.32% is order-correct. **Predict the sequence rate comes in materially below 28.32%** — R650's
+`G1 Z` and R651's `M204` both landed as content matches whose positions were only sometimes right.
+Fallback: if the sequence rate is within a point of the content rate, ordering is already fine
+almost everywhere, this round's fix was worth even less than it looks, and the remaining 12,059
+`M204` deficit is genuinely missing lines — go back to the census and find their producer.
+
+The M204 deficit itself is untouched and still unexplained: −2,898 tower and −9,161 object, now
+known **not** to be the wipe ordering.

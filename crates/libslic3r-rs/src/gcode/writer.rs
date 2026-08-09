@@ -2145,8 +2145,23 @@ impl GCodeWriter {
                     // R227: native wipe segments are extrude_to_xy calls, so
                     // they surface the pending (reset) accel before WIPE_START's
                     // first move.
-                    self.flush_pending_accel();
+                    //
+                    // R651 — right idea, WRONG SIDE OF THE MARKER. The M204 census
+                    // by preceding line is unambiguous: C++ has **16,932** `M204`
+                    // lines whose immediately preceding line is `; WIPE_START`
+                    // (16,931 of them `M204 S10000` = default_acceleration), and we
+                    // had **zero** — ours flushed one line earlier, which is why our
+                    // M204s pile up after `; LINE_WIDTH` (4,491 vs C++'s 38) and
+                    // after arcs (G2-preceded 9,165 vs 3,273). Same lines, wrong
+                    // place. C++ emits the reset between the tag (GCode.cpp:408) and
+                    // the first `extrude_to_xy` of the wipe.
+                    if !crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") {
+                        self.flush_pending_accel();
+                    }
                     self.write_raw("; WIPE_START");
+                    if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") {
+                        self.flush_pending_accel();
+                    }
                     // R610: the decisive marker. Written into the stream immediately
                     // after `; WIPE_START` for TOWER calls only. If the file ends up
                     // containing ~2,718 of these, the lines ARE emitted and the
