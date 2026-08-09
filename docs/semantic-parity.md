@@ -12581,3 +12581,57 @@ PROCESS NOTE. The C++ patch failed to build the first time because the helper la
 function body. The R669 preservation check passed (nothing was deleted) and still missed it, so that
 check needs a companion: after inserting a file-scope helper, assert the text immediately preceding
 it is not inside a function. I checked it by printing the preceding non-blank line this time.
+
+## R671 — the slicer is faithful; the Arachne path's DP tolerance is unscaled
+
+R671: the slice resolution is faithful -- but the ARACHNE path passes an UNSCALED DP tolerance
+
+Prediction REFUTED at the constant it named, and the round found a different, concrete defect
+instead: the same units bug R122 fixed for the classic perimeter path is still live in the Arachne
+path. No engine change this round (reading and tracing only); all three hashes unchanged (benchy
+248ff22a, cube 14566293, majora 3d741dde); suites unchanged; the submodule is clean.
+
+THE PREDICTED TARGET IS CLEARED. I predicted a resolution/tolerance constant in the SLICING path.
+`PrintObjectSlice.cpp:144` sets `params_base.resolution = print_config.resolution <= 0.001 ? 0.0f :
+0.0025` -- a hardcoded 0.0025 mm, deliberately not the config value -- and our
+`print_object.rs:452-453` mirrors it exactly, ternary and constant. The slicer is faithful. So is
+`slice_closing_radius`. Whatever coarsens our outline, it is not the mesh slicer's DP tolerance.
+
+THE PRODUCER IS ONE LINE, AND IT IS NOT IN THE SLICER. `PerimeterGenerator.cpp:1511`:
+
+    ExPolygons last = offset_ex(surface.expolygon.simplify_p(surface_simplify_resolution), ...);
+
+That `simplify_p` is what hands `WallToolPaths` its outline, so R670's "0 input outline" is this
+call's output. `surface_simplify_resolution` (cpp:1500, and the identical cpp:914 for the classic
+path) is `(enable_arc_fitting && fuzzy_skin == None) ? 0.2 * m_scaled_resolution :
+m_scaled_resolution`, where **`m_scaled_resolution = scaled<double>(print_config.resolution)`** --
+for resolution 0.0125 mm that is 1250 scaled units, so the tolerance is 250.
+
+THE DEFECT. Our config field holds the UNSCALED millimetre value (`layer.rs:579
+surface_simplify_resolution: print_config.resolution`), and the two paths treat it differently:
+
+  classic  perimeter_generator.rs:525-531   0.2 * (surface_simplify_resolution / 0.00001)   -> 250   correct
+  arachne  perimeter_generator.rs:2962-2968 0.2 *  surface_simplify_resolution              -> 0.0025 UNSCALED
+
+and :2991 / :2997 pass that straight into `surface.simplify_p(...)`. R122 found exactly this bug in
+the classic path, documented it at :517-524, and gated the fix behind `F1_UNION`. **The Arachne path
+was never corrected.** It is the path Majora's walls go through.
+
+I AM NOT CLAIMING THIS EXPLAINS R670's DEFICIT, AND THE DIRECTION IS WHY. A tolerance 1e5x too small
+means LESS simplification, which would leave us with MORE points -- and R670 measured FEWER (45.693
+vs 48.829). So on the naive reading it pushes the wrong way. But R122's own note says the default
+geo DP "rounds near-collinear projections to 0, removing points the tiny tolerance never would",
+so with a near-zero tolerance the point removal is decided by rounding rather than by the tolerance,
+and its direction is not predictable from the source. That is precisely the situation R654's rule
+covers: do not infer, A/B it.
+
+R672: A/B the Arachne tolerance. Scale it the way the classic path does, behind a new gate
+(`ARACHNE_SIMPLIFY_SCALED`), and measure points-per-contour at "0 input outline" plus BOTH parity
+rates with the gate on and off. Predict the fix RAISES our point count and therefore does NOT close
+R670's gap -- the honest expectation from the direction argument above -- in which case the round's
+value is a correctness fix plus a refuted mechanism, and the 1.069x needs a different cause.
+FALLBACK: if the point count DROPS toward C++'s 48.829, the rounding effect dominates the tolerance,
+the direction argument is wrong, and this is the origin -- say so and re-run the whole chain
+(R669's segments, R668's shallow-shallow) to see how far up it propagates. Either way this is a
+units bug in a live path and worth fixing on its own terms; score it on both parity rates before
+shipping it (R654 and R656 both went negative on a locally-faithful change).
