@@ -12406,3 +12406,56 @@ what collapse removes but in what it MERGES INTO -- C++ reassigns endpoints as i
 reassigns against stale state; census surviving edges whose endpoints moved, and say so. Either way,
 A/B a cascading (in-loop) variant against the deferred one behind a new gate before touching the
 shipped path (R654; and R656's rule about honouring the fallback).
+
+## R668 — collapse is innocent; the near-boundary edges are missing at construction
+
+R668: collapse is fully innocent -- the near-boundary edges are missing at construction
+
+Prediction REFUTED, and the fallback's premise turned out not to apply either: the answer is one
+step further back than either branch anticipated. The shallow-to-shallow deficit is ALREADY 1.647x
+before `collapse_small_edges` runs, and the function leaves it essentially unchanged. No Rust
+behaviour change (`COLLAPSEPROBE` is `probe_enabled`, default OFF); the C++ instrumentation is
+reverted with both status checks empty and the engine rebuilt pristine; all three hashes unchanged
+(benchy 248ff22a, cube 14566293, majora 3d741dde); suites unchanged.
+
+BEFORE AND AFTER, SAME 20000-UNIT (0.2 mm) THRESHOLD ON BOTH ENGINES:
+
+  per generate() call                    Rust       C++     C/R
+  ALL edges before collapse            412.980   496.560   1.202
+  shallow-shallow BEFORE collapse       32.722    53.901   1.647
+  shallow-shallow removed                7.151    12.654   1.770
+  shallow-shallow removal FRACTION       0.2185    0.2348   1.075
+  shallow-shallow SURVIVING             25.571    41.247   1.613
+
+R667 left two hypotheses: the deficit is already 1.62x before collapse (collapse innocent, the edges
+never existed), or it is ~1.2x before and 1.62x after (collapse removes the wrong set). **It is the
+first, and not marginally: 1.647x before, 1.613x after.** Collapse does not create the deficit, and
+it does not widen it -- if anything it narrows it slightly, since we remove a SMALLER fraction of
+shallow-shallow edges than C++ does (21.85% vs 23.48%). My prediction was that our removals would
+skew shallow; they skew the other way.
+
+THE NON-UNIFORMITY IS PRESENT AT CONSTRUCTION. At the same moment -- graph built, collapse not yet
+run -- the global edge deficit is 1.202x while the shallow-shallow subset is 1.647x. Expressed as a
+share of all edges, shallow-shallow pairs are 7.92% of our graph against 10.85% of C++'s, a ratio of
+1.370. That is the same 1.36x connectivity figure R666 measured after the whole pipeline, which
+means it was never introduced downstream at all: **the skeletal graph is born with 1.37x too little
+near-boundary adjacency, and every stage after that faithfully preserves the shortfall.**
+
+Three stages are now cleared in sequence, each by measurement rather than inspection: the `isUpward`
+filter (R666, pass rate 1.022x), collapse's REMOVAL COUNT (R667, fraction 1.014x), and collapse's
+REMOVED SET (this round, 1.075x on the shallow subset and in the wrong direction to help). The
+deferred-vs-in-loop removal difference I flagged at R667 is real as a code divergence but it is not
+the cause of this deficit -- it operates on a graph that is already short.
+
+R669: the Voronoi-to-half-edge conversion. R589 already identified that step as where the density is
+created rather than in the Voronoi diagram itself, and it is now the only stage left between the
+input polygon and the first measurement. Count, on both engines: Voronoi cells and edges IN, and
+graph nodes and edges OUT, with the shallow subset separated. Predict the deficit appears in the
+conversion rather than in the Voronoi diagram, since the diagram is computed by the same boost
+Voronoi construction on both sides while the conversion is hand-ported -- specifically that we
+discard or merge more near-boundary cell edges while transcribing. FALLBACK: if the conversion's
+in/out ratio matches, the deficit is in the INPUT to the Voronoi -- the discretized boundary segment
+count -- and the target becomes how each engine samples the polygon before building the diagram;
+count segments in and say so. That fallback is worth taking seriously: a coarser boundary
+discretization would produce exactly this signature, a graph that is globally similar but missing
+the fine near-boundary structure.

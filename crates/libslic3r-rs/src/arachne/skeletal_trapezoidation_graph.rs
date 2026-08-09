@@ -657,9 +657,38 @@ impl SkeletalTrapezoidationGraph {
                 static E_BEFORE: AtomicU64 = AtomicU64::new(0);
                 static E_REMOVED: AtomicU64 = AtomicU64::new(0);
                 static N_REMOVED: AtomicU64 = AtomicU64::new(0);
+                static SH_BEFORE: AtomicU64 = AtomicU64::new(0);
+                static SH_REMOVED: AtomicU64 = AtomicU64::new(0);
                 E_BEFORE.fetch_add(self.edges.iter().count() as u64, Relaxed);
                 E_REMOVED.fetch_add(edges_to_remove.len() as u64, Relaxed);
                 N_REMOVED.fetch_add(nodes_to_remove.len() as u64, Relaxed);
+                // R668 — the decisive split. R667 showed collapse removes the same
+                // FRACTION on both engines, yet R666 measured the surviving
+                // shallow-to-shallow adjacency 1.62x thinner against a 1.19x node
+                // deficit. Either the shallow-shallow deficit is ALREADY 1.62x before
+                // this function runs (collapse innocent, the edges never existed) or it
+                // is ~1.2x before and 1.62x after (collapse removes the wrong SET).
+                // Removal here is deferred, so the graph is still in its pre-collapse
+                // state: count shallow-shallow now, and count how many of them are in
+                // the removal set.
+                {
+                    let mut sh = 0u64;
+                    let mut sh_removed = 0u64;
+                    for eg in self.edges.iter() {
+                        if let (Some(f), Some(t)) = (eg.base.from, eg.base.to) {
+                            if f.as_ref().data.distance_to_boundary < 20_000
+                                && t.as_ref().data.distance_to_boundary < 20_000
+                            {
+                                sh += 1;
+                                if edges_to_remove.contains(&(&eg.base as *const _)) {
+                                    sh_removed += 1;
+                                }
+                            }
+                        }
+                    }
+                    SH_BEFORE.fetch_add(sh, Relaxed);
+                    SH_REMOVED.fetch_add(sh_removed, Relaxed);
+                }
                 let c = CALLS.fetch_add(1, Relaxed) + 1;
                 if c % 2_000 == 0 {
                     let (b, e, n) = (
@@ -669,11 +698,16 @@ impl SkeletalTrapezoidationGraph {
                     );
                     eprintln!(
                         "[COLLAPSEPROBE] calls={c} edges_before/call={:.2} edges_removed/call={:.2} \
-                         ({:.4} of them) nodes_removed/call={:.2}",
+                         ({:.4} of them) nodes_removed/call={:.2} | SHALLOW-SHALLOW before/call={:.3} \
+                         removed/call={:.3} ({:.4} of them) surviving/call={:.3}",
                         b as f64 / c as f64,
                         e as f64 / c as f64,
                         e as f64 / b.max(1) as f64,
                         n as f64 / c as f64,
+                        SH_BEFORE.load(Relaxed) as f64 / c as f64,
+                        SH_REMOVED.load(Relaxed) as f64 / c as f64,
+                        SH_REMOVED.load(Relaxed) as f64 / SH_BEFORE.load(Relaxed).max(1) as f64,
+                        (SH_BEFORE.load(Relaxed) - SH_REMOVED.load(Relaxed)) as f64 / c as f64,
                     );
                 }
             }
