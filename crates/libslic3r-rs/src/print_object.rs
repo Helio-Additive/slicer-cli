@@ -567,6 +567,13 @@ impl PrintObject {
             // and SURFPROBE can be checked against them instead of against a
             // call count that revisits inflate (R676).
             let (mut pairs, mut surfaces) = (0u64, 0u64);
+            let mut area = 0.0f64;
+            // R679 — UNITS TRAP: `crate::SCALING_FACTOR` (lib.rs:489) is 100_000.0,
+            // while `crate::libslic3r::SCALING_FACTOR` (libslic3r.rs:19, the C++
+            // mirror of libslic3r.h:58) is 0.00001. They are RECIPROCALS and both
+            // are in scope. `area()` returns scaled units^2, so mm^2 is a DIVISION
+            // by the lib.rs constant — the same convention MMS_PARTITION uses.
+            let sf2 = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
             for layer in self.layers.iter() {
                 for r in layer.regions() {
                     if r.slices.surfaces.is_empty() {
@@ -574,9 +581,12 @@ impl PrintObject {
                     }
                     pairs += 1;
                     surfaces += r.slices.surfaces.len() as u64;
+                    for sf in r.slices.surfaces.iter() {
+                        area += sf.expolygon.area() / sf2;
+                    }
                 }
             }
-            eprintln!("[SLICEPTS] A population: pairs={pairs} surfaces={surfaces}");
+            eprintln!("[SLICEPTS] A population: pairs={pairs} surfaces={surfaces} area_mm2={area:.3}");
         }
         for layer in &mut self.layers {
             layer.make_slices();
@@ -629,8 +639,14 @@ impl PrintObject {
         // bracket that shares a population with `generate_arachne`'s input.
         // The (layer, region) pair count is printed so the next bracket can be
         // checked against it rather than against a raw call count (R676).
+        // R679 — + total AREA. C++ conserves it exactly across this stage
+        // (1,189,508.593 -> 1,189,508.418 mm2), which is what a partition must do.
+        // A matching area with a mismatched piece count means the CLEANUP tolerance
+        // is off; a mismatched area means the PARTITION is misplaced.
         if crate::probe_enabled("SLICEPTS") {
             let (mut c, mut p, mut pairs, mut surfaces) = (0u64, 0u64, 0u64, 0u64);
+            let mut area = 0.0f64;
+            let sf2 = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
             for layer in self.layers.iter() {
                 for r in layer.regions() {
                     if r.slices.surfaces.is_empty() {
@@ -642,6 +658,7 @@ impl PrintObject {
                         c += 1 + sf.expolygon.holes.len() as u64;
                         p += sf.expolygon.contour.points.len() as u64
                             + sf.expolygon.holes.iter().map(|h| h.points.len() as u64).sum::<u64>();
+                        area += sf.expolygon.area() / sf2;
                     }
                 }
             }
@@ -654,7 +671,7 @@ impl PrintObject {
             eprintln!(
                 "[SLICEPTS] {:34} layers={n_layers} nonempty={n_nonempty} pairs={pairs} \
                  surfaces={surfaces} contours={c} points={p} \
-                 points_per_contour={:.3} points_per_layer={:.3}",
+                 points_per_contour={:.3} points_per_layer={:.3} area_mm2={area:.3}",
                 "C region slices (post segmentation)",
                 p as f64 / c.max(1) as f64,
                 p as f64 / n_layers.max(1) as f64

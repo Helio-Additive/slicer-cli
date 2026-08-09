@@ -13052,3 +13052,85 @@ piece count with a mismatched area means the partition is misplaced, a matching 
 a mismatched piece count means the cleanup tolerance is off. Predict the areas match and
 the difference is in the cleanup. Fallback: if the areas differ, the target is the painted
 partition (`multi_material_segmentation_by_painting_tier1`), not the cleanup.
+
+## R679 — the areas match (partition is right, cleanup is the residual), and the number this chain has been anchored on is the WRONG number
+
+**Prediction CONFIRMED.** Plus a re-census that redirects the campaign.
+
+### 1. The area census — partition eliminated, cleanup named
+
+`r677_bracket()` (C++) and the Rust bracket-A/C blocks extended with a total
+`expolygon.area()`. Populations printed alongside, and they agree.
+
+| bracket | engine | layers | pairs | surfaces | points | **area mm²** |
+|---|---|---|---|---|---|---|
+| A pre-segmentation | C++ | 656 | 656 | 1,346 | 499,188 | **1,189,508.593** |
+| A pre-segmentation | Rust | 656 | 656 | 1,346 | 495,747 | **1,191,101.827** |
+| C post-segmentation | C++ | 656 | 3,375 | 16,738 | 1,595,339 | **1,189,508.418** |
+| C post-segmentation | Rust | 656 | 3,387 | 14,924 | 1,328,201 | **1,191,121.945** |
+
+**The areas agree to 0.13% at both brackets** (Rust/C++ = 1.00134 at A, 1.00136 at C),
+and both engines conserve area across segmentation — C++ by −0.175 mm² (−0.00001%),
+ours by +20.1 mm² (+0.0017%; a shrink-then-grow opening can add area at concavities).
+
+So: **matching area with a mismatched piece count (14,924 vs 16,738, 0.892×) and point
+count (0.833×) means the CLEANUP TOLERANCE is off, not the partition.** The pre-registered
+fallback — "if the areas differ, the target is
+`multi_material_segmentation_by_painting_tier1`" — does **not** fire. The painted partition
+is placed correctly; `opening_ex` is merging/removing slightly more than C++'s `opening`.
+
+**UNITS TRAP found in passing.** `crate::SCALING_FACTOR` (`lib.rs:489`) is `100_000.0`
+while `crate::libslic3r::SCALING_FACTOR` (`libslic3r.rs:19`, the mirror of
+`libslic3r.h:58`) is `0.00001`. **They are reciprocals and both are in scope**, so
+`area() * sf2` and `area() / sf2` are both plausible-looking and differ by 1e20. The first
+run printed `area_mm2=1.19e26`. Caught only because the expected magnitude was known from
+the C++ side — which is the argument for measuring the reference first. Commented at the
+divisor. This is also a genuine hazard for the "files look like the C++" goal: two
+constants, same name, reciprocal values, one crate.
+
+### 2. The re-census — the anchor number is a consequence, not the cause
+
+The `; LINE_WIDTH:` chain was measured entirely on the old baseline. Re-run on `d6ccfdbb`:
+
+| | ours | C++ | ratio |
+|---|---|---|---|
+| outer-wall `; LINE_WIDTH:` tags | 19,707 | 62,582 | **3.18×** |
+| outer-wall distinct values | 11,858 | 21,181 | 1.79× |
+| outer-wall extrusion lines | **523,246** | **623,886** | **1.19×** |
+| extrusion lines per tag | 26.6 | 10.0 | — |
+
+**Distinct values moved from 11,845 to 11,858 — thirteen — despite R678 closing a genuine
+1.698× geometric error.** The reason is now visible: the deficit is not in width VARIETY,
+it is in PATH COUNT. We emit 3.18× fewer outer-wall `; LINE_WIDTH:` tags while carrying
+only 1.19× fewer extrusion lines. Per emitted tag we have *more* width variety than C++
+(0.602 distinct/tag vs 0.338).
+
+Neither engine suppresses consecutive duplicates (ours 19,032 runs across 19,707 tags;
+C++ 61,678 across 62,582), so under the shipped `LINEWIDTH_PERPATH` both emit **one tag
+per ExtrusionPath**. C++'s outer wall is therefore **62,582 paths averaging 10.0 extrusion
+lines**; ours is **19,707 paths averaging 26.6**. We merge what C++ keeps as separate
+variable-width paths.
+
+Per feature, this is specific to the wall family and absent elsewhere:
+
+| feature | tag ratio | extrude ratio |
+|---|---|---|
+| Overhang wall | **11.57×** | 1.33× |
+| Outer wall | **3.18×** | 1.19× |
+| Inner wall | 1.67× | 1.13× |
+| Floating vertical shell | 0.93× | 0.99× |
+| Prime tower | 1.08× | 0.99× |
+
+Floating vertical shell and Prime tower match on both counts, so this is not a global
+emit-frequency difference — it is the wall path split specifically.
+
+**R680: measure the PATH SPLIT, not the width values.** Count `ExtrusionPath` objects
+produced per outer-wall loop on both engines at the point where Arachne's junctions become
+paths (`thick_polyline_to_multi_path` on ours; `thick_polyline_to_extrusion_paths` in
+`PerimeterGenerator.cpp` on C++), with the loop population printed alongside. Predict C++
+starts a new path on every beading-width change while we coalesce consecutive junctions
+whose widths are close, so its paths-per-loop is ~2.7× ours at equal loop count. Fallback:
+if paths-per-loop MATCHES and the loop counts differ instead, the deficit is in loop
+generation, not path splitting, and the target moves back to `WallToolPaths`. **Overhang
+wall at 11.57× on 1.33× the lines is the sharpest instance — measure it too; a 3× outlier
+inside the same family usually names the mechanism faster than the average does.**
