@@ -12459,3 +12459,65 @@ count -- and the target becomes how each engine samples the polygon before build
 count segments in and say so. That fallback is worth taking seriously: a coarser boundary
 discretization would produce exactly this signature, a graph that is globally similar but missing
 the fine near-boundary structure.
+
+## R669 — the conversion is at parity; the Voronoi input is 1.17x short
+
+R669: the conversion is at parity -- we feed the Voronoi 1.17x fewer boundary segments
+
+Prediction REFUTED and the pre-registered fallback fires, exactly as worded. The Voronoi-to-half-edge
+conversion transcribes at the same rate on both engines (1.006x); the deficit is in the INPUT. No
+Rust behaviour change (`GBUILD`/`CONV` are `probe_enabled`, default OFF, and pre-existing from R589);
+the C++ instrumentation is reverted with both status checks empty and the engine rebuilt pristine;
+all three hashes unchanged (benchy 248ff22a, cube 14566293, majora 3d741dde); suites unchanged.
+
+THE WHOLE BUILD, PER `constructFromPolygons` CALL:
+
+  per constructFromPolygons call        Rust       C++     C/R
+  Voronoi INPUT segments              29.420    34.403   1.169
+  Voronoi OUT vd_verts                94.431   113.355   1.200
+  Voronoi OUT vd_edges               304.541   362.320   1.190
+  graph edges (post-conversion)      414.763   496.378   1.197
+  graph nodes (post-conversion)      197.018   249.159   1.265
+
+  CONVERSION graph_edges per Voronoi edge   rust 1.3619   cpp 1.3700   C/R 1.006
+  DIAGRAM    vd_edges per input segment     rust 10.3515  cpp 10.5316  C/R 1.017
+
+**The deficit is present at the input and passes through everything unchanged.** 1.169x segments in,
+1.190x Voronoi edges, 1.197x graph edges; the diagram contributes 1.7% and the conversion 0.6%. Six
+stages have now been cleared by measurement, and the seventh -- the conversion, which R589 named as
+the dominant term -- is at parity too.
+
+R589 IS SUPERSEDED, TWICE OVER. It recorded the conversion at C/R 1.1655 (rust 0.9333 vs cpp 1.0878
+graph-edges-per-Voronoi-edge) and made it the primary target. Both engines now read ~1.36-1.37. R590's
+collapse fix moved our figure from 0.9333 to 1.3619 measured pre-collapse, so the conversion gap
+R589 found has already been closed and the target it handed forward no longer exists. R589 also
+recorded the input segments at 29.440 vs 31.422 (1.067x) and dismissed the residual as "small
+against 1.256x"; it now reads 29.420 vs 34.403 (1.169x). Ours is unchanged to four digits; C++'s
+moved. One of the two measurements is wrong and I cannot tell which from here, so the 1.169x should
+be re-confirmed before anything is built on it -- but it is the current, directly-measured value and
+it is the only term left.
+
+WHAT STILL IS NOT EXPLAINED, STATED PLAINLY. The global deficit is 1.197x and the input accounts for
+it. The shallow-shallow deficit is 1.647x (R668), which is 1.376x BEYOND the global figure. A 1.169x
+coarser boundary sampling does not arithmetically produce a 1.376x near-boundary connectivity loss on
+its own. Near-boundary skeleton edges arise between ADJACENT boundary segments, so their count
+plausibly scales superlinearly with segment density -- but that is a hypothesis, not a measurement,
+and it is the one thing R670 must not assume.
+
+R670: why do we feed 1.169x fewer segments? The input is one segment per polygon point
+(`SkeletalTrapezoidation.cpp:419-422`, mirrored at skeletal_trapezoidation.rs:659-665), so the
+question is the POLYGON, not the loop: our `polys` arrive with fewer points. Count points per
+polygon on both engines at the `constructFromPolygons` boundary, and walk back one stage to whoever
+produces them. Predict the loss is in a simplify/douglas-peucker step applied to the slice outline
+before Arachne sees it, since that is the only thing in the path that removes points and it is
+tuned by a tolerance constant. FALLBACK: if the point counts match at the producer and diverge only
+at the consumer, the divergence is in how the polygon is passed (closed vs open, first point
+repeated), which changes the count by exactly one per contour -- check the per-contour delta, and if
+it is ~1.0 say so, because 29.42 vs 34.40 over ~1.007 polygons per call is a delta of 5, not 1.
+
+PROCESS FAILURE WORTH RECORDING. My first C++ patch replaced a two-statement block and the
+replacement text omitted `separatePointyQuadEndNodes();` -- I deleted a live call from the engine.
+The build succeeded and the slice died silently inside wall generation with no diagnostic. The check
+that would have caught it immediately is asserting the replaced call still appears exactly once in
+the patched function, which I now do. A string-replace patch must verify what it PRESERVED, not
+only what it added.
