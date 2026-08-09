@@ -14085,3 +14085,92 @@ node at exactly zero, so R690's matched CENSUS figure does not settle this.
 Byte-identical output on all three fixtures: benchy `248ff22a`, cube `14566293`,
 majora `d6ccfdbb`. Eight suites at standing results. No C++ was instrumented this
 round — the submodule was never touched.
+
+## R692 — the initial condition matches; the chain has been chasing a 3%-leverage term; the real gap is CALL COUNT
+
+R691 pointed here: both propagation passes compound the population the "Store
+beading" block at `SkeletalTrapezoidation.cpp:1517-1547` seeds (every node with
+`bead_count > 0`), so measure the initial condition rather than the loops.
+
+### A tooling defect found first, which changed every number
+
+`GRAPHPROBE` is an R547 probe; `probe_speculative()` is an R581 flag added after
+it, marking the speculative one-wall `WallToolPaths` build that C++ runs on
+~16,503 surfaces and keeps 4 of. `UPPROBE`, `PROPCLASS` and `GBUILD` all exclude
+that pass. **`GRAPHPROBE` was the last probe that did not** — so on C++ it
+counted work that never reaches the G-code, making its per-call node and edge
+counts incomparable to the Rust side.
+
+The symptom that exposed it: within a *single* C++ run, `GRAPHPROBE` reported
+2,045,918 upward mids while `UPPROBE` ticked only ~1.1M iterations — 54%. Ours
+matched its own count at 98.3%. After adding `&& !probe_speculative()` to the
+injected `GRAPHPROBE`, C++ reports 26,400 calls and `UPPROBE` covers 94.9% of
+them. That also reconciles R690's CENSUS figure (26,000 calls), which had been
+non-speculative all along.
+
+**This invalidates R690's "seeds per node" (2.176×):** it divided `UPPROBE`
+totals (non-speculative) by CENSUS node counts (a different site, a different
+run). Recomputed below from one run per engine with matched denominators.
+
+### The initial condition matches, and so does every per-node statistic
+
+| ours gate-OFF (40,000 calls) vs C++ non-speculative (26,400) | ours | C++ | C++/ours |
+|---|---|---|---|
+| nodes per call | 178.22 | 170.30 | 0.956 |
+| edges per node | 1.9888 | 1.9885 | 1.000 |
+| upward mids per node | 0.2570 | 0.2579 | 1.004 |
+| **`bead_count > 0` per node** | **0.16627** | **0.16446** | **0.989** |
+
+The store block's starting population matches to 1.1%, with ours slightly
+*ahead*. The graph itself matches per node on every axis. **The initial
+condition is not the cause.**
+
+### The leverage the chain never measured
+
+Seeds per node, recomputed cleanly (both extrapolated to full coverage): ours
+0.00587, C++ 0.01307 — **2.227×**, so the ratio itself survives. But its
+leverage does not:
+
+| beaded population | ours | C++ | C++/ours |
+|---|---|---|---|
+| before the upward pass | 0.16627 | 0.16446 | 0.989 |
+| after the upward pass | 0.17214 | 0.17753 | **1.031** |
+
+**The upward pass supplies 3.4% of our beaded nodes and 7.4% of C++'s.** A
+2.227× difference in that increment moves the population it feeds by 3.1%.
+Twelve rounds (R680–R691) converged on a term with roughly 3% leverage on its
+own output. That is the honest sizing, and it should have been computed the
+moment the ratio was first quoted.
+
+**New standing rule: a ratio is not an effect. Before chasing one, compute what
+share of the downstream quantity the term actually supplies.**
+
+### What the same data does show: we run the skeleton 1.5× more often
+
+| | ours | C++ real | C++/ours |
+|---|---|---|---|
+| `generateSegments` calls | 40,000 | 26,400 | 0.660 |
+| total nodes | 7,128,686 | 4,495,918 | 0.631 |
+| total upward mids | 1,831,751 | 1,159,703 | 0.633 |
+
+Per node everything matches; the totals differ by 1.5–1.6× purely because we
+call the skeleton more often. Our gate-ON and gate-OFF arms both report 40,000
+calls, so `ARACHNE_TOP_ONE_WALL` is not the source — consistent with R684's
+finding that our probe pass does no work.
+
+**Two readings, and this data cannot separate them:**
+1. We perform 40,000 real skeletal constructions against C++'s 26,400 — we do
+   1.5× more work, which bears directly on ask #3 (slicing time).
+2. Our 40,000 is suspiciously close to C++'s *total* 41,000 (26,400 real +
+   14,600 speculative), which would mean we run C++'s speculative surfaces too
+   but unconditionally, never marking or discarding them.
+
+Reading 2 is the more likely one given how closely 40,000 tracks 41,000, and it
+is testable: instrument our `generate_segments` call sites and attribute them to
+callers. That is R693.
+
+### Baselines and suites
+
+No Rust source changed — only `scripts/inject-arachne-probes.py`. Baselines
+stand at benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`; eight suites at
+standing results. Submodule reverted, both status checks empty, C++ rebuilt.

@@ -355,7 +355,11 @@ ST_GRAPH_OLD = """void SkeletalTrapezoidation::generateSegments()
 
 ST_GRAPH_NEW = r"""void SkeletalTrapezoidation::generateSegments()
 {
-    if (probe_enabled("GRAPHPROBE")) {
+    // R692: exclude the R581 speculative one-wall pass, exactly as UPPROBE /
+    // PROPCLASS / GBUILD do. GRAPHPROBE predates that flag (R547 vs R581), so it
+    // was the last probe still counting work that never reaches the G-code —
+    // which made its per-call node/edge counts incomparable to the Rust side.
+    if (probe_enabled("GRAPHPROBE") && !probe_speculative()) {
         static std::mutex mtx;
         static size_t calls = 0, nodes = 0, edges = 0, upward = 0, beaded = 0;
         size_t n_up = 0, n_bead = 0;
