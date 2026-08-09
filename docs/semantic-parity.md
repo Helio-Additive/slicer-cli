@@ -14329,3 +14329,80 @@ No Rust source changed — only `scripts/inject-arachne-probes.py`. Our probe ru
 emitted majora `d6ccfdbb`; benchy `248ff22a` and cube `14566293` stand from
 R693. Eight suites at standing results. Submodule reverted, both status checks
 empty, C++ rebuilt.
+
+## R695 — the 1.07× at the Arachne entry is a CANCELLATION of a 1.20× and a 0.89×
+
+R694 localised the whole skeletal gap to an 8% point deficit already present at
+the Arachne entry, and pointed upstream. R695 measured `SLICEPTS` brackets A and
+C on both engines against `POLYPROBE`'s entry, each side from a single run.
+
+C++ side re-derived rather than carried: a fresh `CPPUP`-gated `r695_bracket()`
+in `PrintObjectSlice.cpp` (file-scope, before `slice_volumes()`, verified to
+precede both call sites), called pre-`apply_mm_segmentation` and post-fuzzy-skin.
+R679's C++ figures could not simply be reused — combining them with today's
+`POLYPROBE` would divide one probe's numerator by another probe's denominator
+across runs, the exact error R692 caught.
+
+`SLICEPTS` needed no speculative guard: it aggregates over layers once per stage,
+in slicing, upstream of the `PerimeterGenerator` where the speculative pass runs.
+
+### The three brackets
+
+| stage | ours | C++ | C++/ours |
+|---|---|---|---|
+| **A** points (pre mm-segmentation) | 495,747 | 499,188 | **1.007** |
+| A contours | 1,391 | 1,443 | 1.037 |
+| **C** points (post segmentation) | 1,328,201 | 1,595,300 | **1.201** |
+| C surfaces | 14,924 | 16,732 | 1.121 |
+| C contours | 14,968 | 18,472 | 1.234 |
+| C area mm² | 1,191,122 | 1,189,508 | **0.999** |
+| **entry** points (`POLYPROBE` step 0) | 1,225,288 | 1,312,936 | **1.072** |
+
+Bracket A matches to 0.7% — the mesh slicer and region assembly are right, as
+R677 found. Area matches at C to 0.1%, so the partition is right and the cleanup
+is the residual, as R679 found. Both stand on a fresh measurement.
+
+### The deficit is born at C and then partly hidden
+
+| | ours | C++ | C++/ours |
+|---|---|---|---|
+| retention across `generate_arachne`'s `simplify_p` (C → entry) | 0.9225 | 0.8230 | **0.892** |
+
+**C++ removes 17.7% of its points there; we remove 7.7%.** So the 1.201× born at
+segmentation is *masked* down to 1.072× by our under-simplifying — two errors in
+opposite directions, partially cancelling.
+
+Note this is a **different** `simplify_p` from the one R694 cleared. R694 measured
+retention *inside* `WallToolPaths` (1.008×, matching). This is the earlier one at
+`PerimeterGenerator.cpp:1511`, before `WallToolPaths` is constructed.
+
+### Why neither term can be fixed alone
+
+| counterfactual | our entry points | resulting ratio |
+|---|---|---|
+| fix segmentation only (C → C++'s, our retention kept) | 1,471,691 | **0.892 — overshoot** |
+| fix `simplify_p` only (retention → C++'s, our C kept) | 1,093,113 | **1.201 — worse** |
+| both fixed | 1,312,936 | 1.000 |
+
+**Chasing the 1.072× alone would be chasing a cancellation.** Either fix in
+isolation makes the Arachne input *less* like C++'s than it is today. This is the
+`A RATIO IS NOT AN EFFECT` rule in a new form: a small residual can be the
+difference of two large opposing errors, and "improving" one of them regresses
+the observable.
+
+### What this re-opens
+
+`ARACHNE_SIMPLIFY_SCALED` (R672/R673) was parked because passing the scaled
+tolerance collapses every contour (26,782 polys → 0). That verdict was scored on
+*collapse-vs-not*, never on **retention parity** — and retention parity is now a
+measurable target: 0.8230 against our 0.9225. The parked gate tested one specific
+wrong value; it did not establish that our current value is right. R696 should
+find the tolerance that reproduces C++'s 17.7% removal, and score it jointly with
+the segmentation term rather than alone.
+
+### Baselines and suites
+
+No Rust source changed. Our probe run emitted majora `d6ccfdbb`; benchy
+`248ff22a` and cube `14566293` stand from R693. Eight suites at standing results.
+Both C++ patches (hand-written bracket + injector) reverted, both status checks
+empty, C++ rebuilt.
