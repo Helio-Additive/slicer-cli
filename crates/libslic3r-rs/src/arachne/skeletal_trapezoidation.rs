@@ -2778,6 +2778,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 static SURV_BIN_HAS: [AtomicU64; 10] = [Z; 10];
                 static DTB_MAX: AtomicU64 = AtomicU64::new(0);
                 static DTB_SUM: AtomicU64 = AtomicU64::new(0);
+                static G_SHALLOW: AtomicU64 = AtomicU64::new(0);
+                static GE_SHALLOW: AtomicU64 = AtomicU64::new(0);
+                static GE_SHALLOW_UP: AtomicU64 = AtomicU64::new(0);
                 unsafe {
                     let mut tos: BTreeSet<usize> = BTreeSet::new();
                     let mut tos_bc: BTreeSet<usize> = BTreeSet::new();
@@ -2827,12 +2830,40 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 }
                 let mut gn = 0u64;
                 let mut gbc = 0u64;
+                let mut gshallow = 0u64;
                 for nd in self.graph.nodes.iter() {
                     gn += 1;
                     if nd.base.data.bead_count >= 0 {
                         gbc += 1;
                     }
+                    // R666 — whole-graph near-boundary counts. R665 localised the base
+                    // gap to a single depth bucket (<0.2mm), where C++ has 3.0x our
+                    // count of survivor edges. Shares cannot say whether that is fewer
+                    // such EDGES in our graph or a filter dropping them, so count both
+                    // absolutely: nodes under 0.2mm, edges with BOTH endpoints under it,
+                    // and how many of those pass `prev && next && isUpward()`.
+                    if nd.base.data.distance_to_boundary < 20_000 {
+                        gshallow += 1;
+                    }
                 }
+                let mut ge_shallow = 0u64;
+                let mut ge_shallow_up = 0u64;
+                for eg in self.graph.edges.iter() {
+                    let (f, t) = (eg.base.from, eg.base.to);
+                    if let (Some(f), Some(t)) = (f, t) {
+                        if f.as_ref().data.distance_to_boundary < 20_000
+                            && t.as_ref().data.distance_to_boundary < 20_000
+                        {
+                            ge_shallow += 1;
+                            if eg.base.prev.is_some() && eg.base.next.is_some() && eg.is_upward() {
+                                ge_shallow_up += 1;
+                            }
+                        }
+                    }
+                }
+                G_SHALLOW.fetch_add(gshallow, Relaxed);
+                GE_SHALLOW.fetch_add(ge_shallow, Relaxed);
+                GE_SHALLOW_UP.fetch_add(ge_shallow_up, Relaxed);
                 G_NODES.fetch_add(gn, Relaxed);
                 G_NODES_BC.fetch_add(gbc, Relaxed);
                 let c = CALLS.fetch_add(1, Relaxed) + 1;
@@ -2851,6 +2882,15 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         gb2 as f64 / gn2.max(1) as f64,
                         SURV.load(Relaxed),
                         SURV_FROM_HAS.load(Relaxed) as f64 / SURV.load(Relaxed).max(1) as f64,
+                    );
+                    eprintln!(
+                        "[UQMSHALLOW] per generate() call: nodes<0.2mm={:.3} edges(both<0.2mm)={:.3} \
+                         of those isUpward+prev+next={:.3} (pass rate {:.4}) | all nodes/call={:.2}",
+                        G_SHALLOW.load(Relaxed) as f64 / c as f64,
+                        GE_SHALLOW.load(Relaxed) as f64 / c as f64,
+                        GE_SHALLOW_UP.load(Relaxed) as f64 / c as f64,
+                        GE_SHALLOW_UP.load(Relaxed) as f64 / GE_SHALLOW.load(Relaxed).max(1) as f64,
+                        gn2 as f64 / c as f64,
                     );
                     let mix: Vec<f64> = (0..10)
                         .map(|i| SURV_BIN[i].load(Relaxed) as f64 / SURV.load(Relaxed).max(1) as f64)

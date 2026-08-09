@@ -12292,3 +12292,56 @@ identical line for line. FALLBACK: if the graph has them and the filter drops th
 the target -- it compares `distance_to_boundary` of the two endpoints, and at sub-0.2 mm depths that
 comparison is between values a few hundred scaled units apart, where an off-by-one or a `>=`/`>`
 difference decides the outcome; diff the two implementations directly and say so.
+
+## R666 — the filter is at parity; the near-boundary graph is 1.62x thinner
+
+R666: prediction CONFIRMED -- the filter is at parity, the graph is 1.62x thinner at the boundary
+
+First confirmed prediction in nine rounds. `isUpward()` is innocent: it passes 10.4% of near-boundary
+edge pairs on C++ and 10.2% on ours, a 1.022x difference. The deficit is already in the GRAPH. The
+fallback (a `>=`/`>` divergence in `isUpward`) does not fire. No Rust behaviour change (`UQM` is
+`probe_enabled`, default OFF); the C++ instrumentation is reverted with both status checks empty and
+the engine rebuilt pristine; all three hashes unchanged (benchy 248ff22a, cube 14566293, majora
+3d741dde); suites unchanged.
+
+ABSOLUTE COUNTS, PER `generate()` CALL, SAME 20000-UNIT (0.2 mm) THRESHOLD ON BOTH ENGINES:
+
+  per generate() call                   Rust       C++     C/R
+  all nodes                          163.950   194.110   1.184
+  nodes < 0.2 mm                     124.116   148.224   1.194
+  edges with BOTH ends < 0.2 mm       25.547    41.469   1.623
+  ... passing prev && next && isUpward 2.601     4.314   1.659
+  FILTER pass rate                    0.1018    0.1040   1.022
+
+THE SHAPE OF IT IS THE RESULT. Nodes are uniformly about 1.19x sparser -- shallow ones (1.194)
+exactly like the graph as a whole (1.184). But shallow-to-shallow EDGES are 1.62x sparser, and the
+filter passes them at the same rate, so the 1.659x deficit in near-boundary upward edges is
+inherited whole from the edge count. Edges per shallow node: 0.2058 ours against 0.2798 C++.
+**The local connectivity is 1.36x thinner than our node count alone would predict.** For a planar
+skeletal graph edges scale with nodes, so a 1.19x node deficit should give a 1.19x edge deficit; we
+lose an extra 36% of the near-boundary adjacency on top.
+
+That is a different defect from the one R588/R590 chased. R588 measured node and edge counts
+falling together at 1.25x, and R590's `collapse_small_edges` fix moved both. This says what remains
+is NOT a uniform thinning: our nodes are where C++'s are, and the edges between the close-together
+ones are missing.
+
+ONE NUMBER TO TREAT WITH SUSPICION. Overall graph density here reads C/R 1.184, where R591 recorded
+1.085 after the R590 fix. Different measurement points and different aggregation, so I am not
+claiming a regression -- but the two do not agree and one of them is wrong about something. Worth a
+direct check before either is used as a baseline again (R584's rule, and R665's).
+
+R667: the near-boundary adjacency. The question is now narrow and structural -- which edges exist
+between nodes under 0.2 mm from the boundary. Two candidates, and they are separable:
+  1. `collapse_small_edges` still removing more than C++ does. R590 fixed the snap DISTANCE (400x
+     too large) but the fix was scored on line parity, not on edge counts; count collapses per call
+     on both engines, and the shallow-shallow subset specifically.
+  2. The Voronoi-to-half-edge conversion, which R589 already identified as where the density is
+     created rather than in the Voronoi diagram itself. Count edges entering and leaving that
+     conversion, shallow subset.
+Predict (1) -- `collapse_small_edges` operates on exactly the short edges that a sub-0.2 mm
+adjacency is made of, and its gate `ARACHNE_COLLAPSE_SNAP_5` is still shipped ON with a value that
+was tuned against a different metric. FALLBACK: if collapse counts match, the edges never existed,
+and the target is the conversion in (2) -- instrument its input and output edge counts directly and
+say so. A/B `ARACHNE_COLLAPSE_SNAP_5=0` against the shallow edge count either way; it is one env var
+and it separates the two candidates in a single run (R654: A/B, do not infer).
