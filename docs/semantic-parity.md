@@ -11982,3 +11982,74 @@ many land in the variable branch (`thickness < 2 * optimal_width_outer`, where t
 because our upstream `thickness` is quantised or our bead_count is clamped. FALLBACK: if the branch
 mix is comparable, the loss is in `SkeletalTrapezoidation::generateJunctions` interpolating between
 identical endpoint beadings -- census the beading pairs per edge instead, and say so.
+
+## R661 — the strategy is not the ceiling: the variable branch is unreachable
+
+R661: the strategy is not the ceiling -- the variable branch is unreachable and 28,984 widths exist
+
+Prediction REFUTED, and refuted structurally rather than numerically: the branch whose mix I set out
+to compare cannot be taken. The pre-registered fallback fires, and it lands on the R585-R587
+propagation chain, re-measured here for the first time since R591. No engine change (BEADPROBE is
+`probe_enabled`, default OFF); all three hashes unchanged (benchy 248ff22a, cube 14566293, majora
+3d741dde); suites unchanged.
+
+THE BRANCH MIX IS NOT A THING. Over 640,000 `RedistributeBeadingStrategy::compute` calls on Majora
+(optimal_width_outer = 35,562 = 0.356 mm):
+
+    bead_count > 2, thickness/2 >= optimal_width_outer  (CONSTANT)   515,789   80.6%
+    bead_count > 2, thickness/2 <  optimal_width_outer  (VARIABLE)         0    0.0%
+    bead_count <= 2                                     (thickness/bc) 124,211  19.4%
+
+The variable branch fires ZERO times, and that is arithmetic, not luck:
+`RedistributeBeadingStrategy::getOptimalBeadCount` only returns more than 2 when
+`thickness > 2 * optimal_width_outer`, so by the time `compute` sees `bead_count > 2` the `min` has
+already resolved to `optimal_width_outer`. There is no branch mix to compare against C++, on this
+model or any other. The prediction was not merely wrong, it was unaskable.
+
+AND THE STRATEGY IS NOT THE CEILING. The same run: 28,984 distinct `actual_outer_thickness` values
+over 294,523 distinct thicknesses, and a pre-existing probe that shares the `BEADPROBE` env name
+(skeletal_trapezoidation.rs, R584-era) independently reports 28,147 distinct `bead_widths[0]`
+spanning 0.190-0.762 mm. Against C++'s 21,181 distinct outer-wall widths in the whole Majora gcode.
+The beading strategy manufactures MORE width variety than C++'s output contains -- all of it from
+the 19.4% thin branch. Nothing is quantised or clamped here. R661's stated cause is dead.
+
+THE FALLBACK, AND WHAT IT COSTS TO SKIP THE ARCHIVE. The fallback named
+`SkeletalTrapezoidation::generateJunctions` interpolating between identical endpoint beadings --
+which is exactly where R585, R586 and R587 already were, and R590 fixed one root of it
+(`collapse_small_edges` snap distance 400x too large). Those probes are still in the tree. Re-run
+now, against the C++ figures those rounds recorded (C++ is unchanged, so its numbers still stand):
+
+  quantity                                    R585-587    NOW      C++      C/R now
+  BEADPAIR P(adjacent beadings differ in w0)   0.0243*   0.0309   ~0.0450    ~1.46
+  PROPCLASS interp share                       0.0212    0.0234    0.0511     2.18
+  no-op interpolations                          63.3%     57.4%     49.1%      --
+  `from` already had a beading (ratio+interp)   6.33%     6.91%    14.25%     2.06
+  UPPROBE SEEDED                                2.88%     2.96%     4.98%     1.68
+  DNPROBE normal                               39.90%    37.92%    43.33%     1.14
+  (* R585's deepest checkpoint was 2.5M edges, this one 3.0M; R591 showed this statistic drifts
+   with prefix depth, so read the BEADPAIR row as direction, not as a point estimate.)
+
+R590's fix moved P(differ) and the no-op rate; it did NOT move the two terms that matter. We still
+interpolate 2.18x less often than C++, and `propagateBeadingsDownward` still finds `from` already
+holding a beading only half as often. A copy is bit-identical to its source and cannot create a
+width difference between neighbours, so a 2x copy surplus is a 2x variety deficit, directly.
+
+R662: the upward seed rate. `propagate_beadings_upward` skips on `to->bead_count >= 0` 69.97% of
+iterations against C++'s 64.71%, and the entire shortfall lands in SEEDED (2.96% vs 4.98%). R588
+already showed the per-NODE `bead_count >= 0` share is at parity (16.76% vs 16.37%), so this is not
+a property of the nodes -- it is a property of which nodes the upward walk VISITS, or of the ORDER
+it visits them in (the pass seeds progressively, so an edge arriving after its target was already
+counted is skipped). Census `upward_quad_mids` itself: size per `generate()` call, and the
+distribution of `to->bead_count >= 0` over its members versus over the whole graph. Predict the
+population is composed differently -- our list over-represents nodes that already have a bead_count.
+FALLBACK: if the list's composition matches the graph's, the difference is ORDERING, and the test
+becomes whether our traversal order differs from C++'s `upward_quad_mids` sort
+(SkeletalTrapezoidation.cpp) -- say so, and the target becomes the sort comparator.
+
+Two things checked and cleared in passing, so R662 does not re-open them: the
+`upward_quad_mids` construction (`prev && next && isUpward()`,
+SkeletalTrapezoidation.cpp:1480-1486 vs skeletal_trapezoidation.rs:2622-2627) is identical, and the
+sort comparator's tie-break subtracts the segment norm on BOTH sides -- C++ line 1496 ends
+`... - (a->to->p - a->from->p).cast<int64_t>().norm()`, which our `- a_seg` at :2652 mirrors. The
+list's membership and its order are therefore not obviously divergent by inspection; R662 has to
+measure.

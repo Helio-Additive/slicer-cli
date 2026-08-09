@@ -171,6 +171,59 @@ impl BeadingStrategy for RedistributeBeadingStrategy {
         // C++: return ret;
         ret.total_thickness = thickness;
         ret.left_over = thickness - ret.bead_widths.iter().sum::<Coord>();
+
+        // R661 — BEADPROBE. R660 cleared every stage downstream of here: the outer
+        // wall is already near-constant when it leaves the beading (1-9 distinct
+        // junction widths per FLAT layer) and `thick_polyline_to_multi_path` only
+        // adds variety. This rule is where the outer bead width is decided, and it
+        // has two branches: `bead_count > 2` gives `min(thickness/2,
+        // optimal_width_outer)` — CONSTANT at `optimal_width_outer` whenever the
+        // wall is at least two outer-widths thick — and otherwise `thickness /
+        // bead_count`, which varies. Bin the branch actually taken and census the
+        // distinct outer widths this strategy is capable of producing; that number
+        // is the ceiling on everything downstream.
+        if crate::probe_enabled("BEADPROBE") {
+            use std::collections::BTreeSet;
+            use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+            use std::sync::Mutex;
+            static CALLS: AtomicU64 = AtomicU64::new(0);
+            static CONST_BR: AtomicU64 = AtomicU64::new(0);
+            static VAR_BR: AtomicU64 = AtomicU64::new(0);
+            static THIN_BR: AtomicU64 = AtomicU64::new(0);
+            static W_SET: Mutex<BTreeSet<i64>> = Mutex::new(BTreeSet::new());
+            static T_SET: Mutex<BTreeSet<i64>> = Mutex::new(BTreeSet::new());
+            static BC_SET: Mutex<BTreeSet<i64>> = Mutex::new(BTreeSet::new());
+            if bead_count > 2 {
+                if thickness / 2 >= self.optimal_width_outer {
+                    CONST_BR.fetch_add(1, Relaxed);
+                } else {
+                    VAR_BR.fetch_add(1, Relaxed);
+                }
+            } else {
+                THIN_BR.fetch_add(1, Relaxed);
+            }
+            if let (Ok(mut w), Ok(mut t), Ok(mut b)) =
+                (W_SET.lock(), T_SET.lock(), BC_SET.lock())
+            {
+                w.insert(actual_outer_thickness as i64);
+                t.insert(thickness as i64);
+                b.insert(bead_count as i64);
+                let n = CALLS.fetch_add(1, Relaxed) + 1;
+                if n % 20_000 == 0 {
+                    eprintln!(
+                        "[BEADPROBE] calls={n} optimal_width_outer={} | branch const={} var={} thin(bc<=2)={} |                          distinct outer_w={} thickness={} bead_count={} bc_vals={:?}",
+                        self.optimal_width_outer,
+                        CONST_BR.load(Relaxed),
+                        VAR_BR.load(Relaxed),
+                        THIN_BR.load(Relaxed),
+                        w.len(),
+                        t.len(),
+                        b.len(),
+                        b.iter().take(12).collect::<Vec<_>>(),
+                    );
+                }
+            }
+        }
         ret
     }
 
