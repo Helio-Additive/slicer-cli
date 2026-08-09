@@ -11612,3 +11612,74 @@ suppressing tags C++ emits — rather than by paths we never visit**, since the 
 match closely. Census `width_tag_changed` calls versus emissions, both sides, before changing
 anything. Fallback: if the register fires about as often as C++'s, the deficit is in the *paths*,
 not the tags — count paths per feature on both sides and follow that instead.
+
+## R655 — the tag deficit is neither the register nor the paths: it is width VARIETY
+
+**Prediction WRONG, and the pre-registered fallback's first clause WRONG too. No engine change; all
+three hashes unchanged.** The census was the round, and it rules out both named causes.
+
+### The registers are equivalent
+
+Ours (`writer.rs:894`) casts f64→f32 and compares for inequality; C++ (`GCode.cpp:6605`) stores a
+`float` and compares for inequality. Same granularity, no epsilon on either side. **The register is
+not suppressing anything.**
+
+### The paths are nearly all there
+
+Counting maximal runs of consecutive extrusion moves per feature:
+
+| feature | C++ runs | our runs | Δ | C++ tags | our tags | Δ |
+|---|---|---|---|---|---|---|
+| Outer wall | 168,373 | 149,555 | **−11.2%** | 62,582 | 19,722 | **−68.5%** |
+| Inner wall | 59,351 | 46,848 | −21.1% | 40,567 | 24,309 | −40.1% |
+| Internal solid infill | 42,688 | 34,140 | −20.0% | 33,011 | 24,571 | −25.6% |
+| Floating vertical shell | 74,392 | 79,694 | +7.1% | 70,424 | 76,126 | **+8.1%** |
+
+Outer wall paths are 11% short while its tags are 69% short. **The deficit is not the paths.**
+
+### It is how much the width VARIES
+
+| feature | | tags | distinct widths | tags per distinct |
+|---|---|---|---|---|
+| Outer wall | C++ | 62,582 | **21,181** | 2.95 |
+| | ours | 19,722 | **11,845** | 1.67 |
+| Inner wall | C++ | 40,567 | 17,731 | 2.29 |
+| | ours | 24,309 | 12,498 | 1.95 |
+| Floating vertical shell | C++ | 70,424 | 50,631 | 1.39 |
+| | ours | 76,126 | 57,007 | 1.34 |
+
+Two things at once on the walls: we produce **about half as many distinct widths** (11,845 vs
+21,181 on the outer wall) **and** our widths alternate back and forth far less (2.95 → 1.67 tags per
+distinct value). Meanwhile Floating vertical shell has *more* variety than C++'s. **The width
+variation is not missing so much as mis-distributed across features** — and that is upstream of the
+emitter entirely: it is the Arachne variable-width beading, the R592 chain.
+
+A sanity check that confirms the reading: Sparse infill has **exactly one** distinct width on both
+sides (0.45), so every tag there marks an *entry* into the feature — C++ enters 2,940 times, we
+enter 4,649. That is feature interleaving, not width at all.
+
+Per the pre-registered fallback, quantifying before attempting: closing the tag count is worth **at
+most +61,136 content lines** (the tags are comments C++ also emits). Its worth on the **order**
+metric cannot be quantified until the tags exist — which is exactly why it blocks R654's parked fix
+rather than being schedulable against it.
+
+### One exact thing this census did find
+
+`GCode.cpp:6591` computes `last_was_wipe_tower = (m_last_processor_extrusion_role == erWipeTower)`
+and both the Width tag (`:6605`) and the Height tag (`:6619`) are emitted when it is true
+**regardless of value** — the comment says why: "PrusaMultiMaterial::Writer may generate
+Height_Tag lines without updating m_last_height". **We have no such force-emit and no
+`last_processor_extrusion_role` register at all.** Worth roughly one Width and one Height tag per
+tool change (~2,723 each) — small, exact, and cheap.
+
+### R656
+
+**Port `last_was_wipe_tower`.** Add a `last_processor_role` register to the writer, set it where the
+`; FEATURE:` role tag is emitted, and force the Width and Height tags on the first path after a
+wipe-tower block. Gate it; A/B on **both** rates.
+
+**Predict a small positive on content (~+2,700 Width and ~+2,700 Height, C++ has both) and a small
+positive or flat on order**, since these tags are re-anchoring points immediately after a block
+boundary that both engines agree on. **Fallback: if order goes negative like R654, the same
+anchoring problem applies and it parks alongside `LINEWIDTH_BEFORE_SPEED` — in which case stop
+adding tags entirely until the Arachne width chain is closed, and say so.**
