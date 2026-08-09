@@ -11931,3 +11931,54 @@ later still — carry the census into `extrude_path` and read `path.width` at th
 one more hop and ends the search either way. Note R569/R582 examined `thick_polyline_to_multi_path`
 before and cleared it; that was for path SPLITTING, not width collapse, so this is a new question
 about the same function, not a re-test.
+
+## R660 — the width collapse is not downstream: our inset-0 beading is already flat
+
+R660: the collapse is NOT downstream -- our inset-0 beading is already flat
+
+Prediction REFUTED. `thick_polyline_to_multi_path` preserves or AMPLIFIES width variety; the outer
+wall arrives at it already near-constant. No engine change (both new probes are `probe_enabled`,
+default OFF); all three hashes unchanged (benchy 248ff22a, cube 14566293, majora 3d741dde).
+
+THE FUNCTION IS INNOCENT. TPMPPROBE, extended to census its OUTPUT, over 215,000 ExternalPerimeter
+calls on Majora: widthpts=1,530,846  in_distinct=224,888  out_distinct=226,238  out_paths=227,641
+and flat_calls=209,807 -- 97.6% of calls receive a ThickPolyline whose widths are all equal. It
+emits slightly MORE distinct widths than it receives (the tolerance split interpolates), and only
+2,299 calls collapse a varied input to a single output. Nothing is averaged away here.
+
+Per-call flatness alone would not settle it -- distinct lines can carry distinct widths and still
+give a varied layer -- so AWIDTH censuses the same quantity per `layer_id`, outer wall only, at the
+one site where both the ExtrusionLine and the layer index are in scope (perimeter_generator.rs:3351):
+distinct junction `w` going IN against distinct `ExtrusionPath::width` coming OUT.
+
+  layer            2    3    4    5   33   66   69   70   75   76   77   80 | 150  300  450
+  junctions IN     1    1    4    9    9    5    2    4    2    4    1    4 |   5   34  118
+  paths OUT        1    1    3   21    9    4    1    3    1    1    1    1 |   5   87   76
+  paths emitted  557  555  593  693  514  384  313  400  514  748  813  550 |1065  561  208
+
+OUT >= IN on the layers that have anything to work with (5: 9 -> 21; 300: 34 -> 87). The stage adds
+variety. What enters it is the problem: 1-9 distinct widths for an entire layer's outer wall.
+
+THIS QUALIFIES R659. R659's "beading produced 4-36" was an ALL-INSET count -- WTPLAYER walks every
+`total_perimeters` line. Restricted to inset 0 the same beading yields 1-9. The variety R659 saw is
+real but it lives in the INNER walls; the outer bead was flat all along. The stage-by-stage rule
+still paid: it took one probe to find that, where four rounds of hypotheses would not have.
+
+WHY THAT IS NOT YET A BUG -- AND WHAT MAKES IT ONE. Both engines run the identical strategy chain
+(Distributed -> Redistribute -> Widening -> [OuterWallInset] -> Limited; ours matches
+BeadingStrategyFactory.cpp:35-56 line for line, OuterWallContour `#if 0` on both sides), and
+`RedistributeBeadingStrategy::compute` (:151-155, faithful to RedistributeBeadingStrategy.cpp:82-89)
+sets the outer bead to `min(thickness/2, optimal_width_outer)` -- CONSTANT for every wall at least
+two outer-widths thick. A flat outer wall is what that rule prescribes. So C++'s 1,117 distinct
+outer-wall widths on layer 2, where ours is literally one across 557 paths, cannot come from the
+redistribute step: it must come from regions thin enough to fall under `2 * optimal_width_outer`, or
+from bead counts we are not reaching. The divergence is in what `thickness`/`bead_count` the
+skeletal trapezoidation hands the strategy, not in the strategy.
+
+R661: census `bead_count` and `thickness` at the strategy boundary. For the FLAT layers, bin the
+(thickness, bead_count) pairs `RedistributeBeadingStrategy::compute` is called with and count how
+many land in the variable branch (`thickness < 2 * optimal_width_outer`, where the outer width is
+`thickness/2` and therefore varies). Predict we take the constant branch far more often than C++,
+because our upstream `thickness` is quantised or our bead_count is clamped. FALLBACK: if the branch
+mix is comparable, the loss is in `SkeletalTrapezoidation::generateJunctions` interpolating between
+identical endpoint beadings -- census the beading pairs per edge instead, and say so.

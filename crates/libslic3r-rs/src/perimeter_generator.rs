@@ -3349,6 +3349,63 @@ impl PerimeterGenerator {
                     ExtrusionRole::Perimeter
                 };
                 let ext_paths = self.arachne_line_to_extrusion_paths(ext, role);
+                // R660 — AWIDTH. TPMPPROBE showed `thick_polyline_to_multi_path`
+                // receives an ALREADY-FLAT ThickPolyline on 97.6% of calls, so the
+                // collapse is not inside it. That probe is per-call, though, and
+                // per-call flatness is compatible with plenty of per-LAYER variety
+                // (different lines, different widths). This census answers the
+                // per-layer question at the only site where `layer_id` is in scope
+                // AND the ExtrusionPaths exist: distinct junction `w` going IN
+                // against distinct `path.width` coming OUT, outer wall only, so it
+                // is directly comparable to both WTPLAYER and the gcode.
+                if crate::probe_enabled("AWIDTH") && role == ExtrusionRole::ExternalPerimeter {
+                    use std::collections::BTreeSet;
+                    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                    use std::sync::Mutex;
+                    static IN: Mutex<Vec<BTreeSet<u64>>> = Mutex::new(Vec::new());
+                    static OUT: Mutex<Vec<BTreeSet<u64>>> = Mutex::new(Vec::new());
+                    static NPATH: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+                    static N: AtomicU64 = AtomicU64::new(0);
+                    let li = self.config.layer_id;
+                    if let (Ok(mut vin), Ok(mut vout), Ok(mut vnp)) =
+                        (IN.lock(), OUT.lock(), NPATH.lock())
+                    {
+                        if vin.len() <= li {
+                            vin.resize(li + 1, BTreeSet::new());
+                            vout.resize(li + 1, BTreeSet::new());
+                            vnp.resize(li + 1, 0u64);
+                        }
+                        for j in &ext.junctions {
+                            vin[li].insert((j.w as f32).to_bits() as u64);
+                        }
+                        for p in &ext_paths {
+                            vout[li].insert((p.width as f32).to_bits() as u64);
+                        }
+                        vnp[li] += ext_paths.len() as u64;
+                        let n = N.fetch_add(1, Relaxed) + 1;
+                        // R660 — 250, not 4000: the R654 rule. At 4000 the last print
+                        // landed 4k calls before the end and layers 300/450 still read
+                        // zero, which is indistinguishable from "no variety there".
+                        if n % 250 == 0 {
+                            let flat = [2usize, 3, 4, 5, 33, 66, 69, 70, 75, 76, 77, 80];
+                            let ctrl = [150usize, 300, 450];
+                            let gi = |i: usize| vin.get(i).map(|s| s.len()).unwrap_or(0);
+                            let go = |i: usize| vout.get(i).map(|s| s.len()).unwrap_or(0);
+                            let gp = |i: usize| *vnp.get(i).unwrap_or(&0);
+                            let tot_in: usize = vin.iter().map(|s| s.len()).sum();
+                            let tot_out: usize = vout.iter().map(|s| s.len()).sum();
+                            eprintln!(
+                                "[AWIDTH] n={n} sum_in={tot_in} sum_out={tot_out}\n  FLAT  in={:?}\n  FLAT out={:?}\n  FLAT npath={:?}\n  CTRL  in={:?}\n  CTRL out={:?}\n  CTRL npath={:?}",
+                                flat.iter().map(|&i| gi(i)).collect::<Vec<_>>(),
+                                flat.iter().map(|&i| go(i)).collect::<Vec<_>>(),
+                                flat.iter().map(|&i| gp(i)).collect::<Vec<_>>(),
+                                ctrl.iter().map(|&i| gi(i)).collect::<Vec<_>>(),
+                                ctrl.iter().map(|&i| go(i)).collect::<Vec<_>>(),
+                                ctrl.iter().map(|&i| gp(i)).collect::<Vec<_>>(),
+                            );
+                        }
+                    }
+                }
                 if !ext_paths.is_empty() {
                     if ext.is_closed {
                         // PerimeterGenerator.cpp:780 — elrDefault if contour, else elrPerimeterHole.

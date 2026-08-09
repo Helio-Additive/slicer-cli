@@ -272,6 +272,8 @@ pub fn thick_polyline_to_multi_path(
         static SPREAD: AtomicU64 = AtomicU64::new(0);
         static FLAT: AtomicU64 = AtomicU64::new(0);
         static PATHS: AtomicU64 = AtomicU64::new(0);
+        static OUTDISTINCT: AtomicU64 = AtomicU64::new(0);
+        static COLLAPSED: AtomicU64 = AtomicU64::new(0);
         PTS.fetch_add(thick_polyline.widths.len() as u64, Ordering::Relaxed);
         CHANGES.fetch_add(changes as u64, Ordering::Relaxed);
         DISTINCT.fetch_add(distinct as u64, Ordering::Relaxed);
@@ -280,6 +282,23 @@ pub fn thick_polyline_to_multi_path(
             FLAT.fetch_add(1, Ordering::Relaxed);
         }
         PATHS.fetch_add(multi_path.paths.len() as u64, Ordering::Relaxed);
+        // R660 — the OUTPUT side. R659 showed the beading produces the variety and
+        // the gcode does not have it; this function is the first stage where a
+        // per-junction width must collapse to a per-path scalar (`path.width =
+        // new_flow.width()` from the length-weighted mean, VariableWidth.cpp:135-139).
+        // Counting distinct OUT widths against distinct IN widths says whether the
+        // collapse happens here.
+        {
+            use std::collections::BTreeSet;
+            let mut ow: BTreeSet<u64> = BTreeSet::new();
+            for pp in &multi_path.paths {
+                ow.insert((pp.width as f32).to_bits() as u64);
+            }
+            OUTDISTINCT.fetch_add(ow.len() as u64, Ordering::Relaxed);
+            if ow.len() <= 1 && distinct > 1 {
+                COLLAPSED.fetch_add(1, Ordering::Relaxed);
+            }
+        }
         let n = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
         if n % 1_000 == 0 {
             println!(
@@ -291,6 +310,11 @@ pub fn thick_polyline_to_multi_path(
                 SPREAD.load(Ordering::Relaxed),
                 FLAT.load(Ordering::Relaxed),
                 PATHS.load(Ordering::Relaxed),
+            );
+            println!(
+                "TPMPPROBE   out_distinct_sum={} collapsed_calls={} (in_distinct>1 but out_distinct<=1)",
+                OUTDISTINCT.load(Ordering::Relaxed),
+                COLLAPSED.load(Ordering::Relaxed),
             );
         }
     }
