@@ -647,6 +647,36 @@ impl SkeletalTrapezoidationGraph {
             // The removal set was filled with `quad_*.as_ptr()` (== `&payload.base`),
             // and `&e.base` below (via `Box` deref) is that same stable address, so
             // the identity comparison matches and survivors keep valid pointers.
+            // R667 — COLLAPSEPROBE. R666 put the near-boundary edge deficit at 1.62x
+            // with local connectivity 1.36x thinner than the node count predicts. This
+            // counts what this function actually removes, so it can be compared against
+            // the same counter in C++ rather than inferred from the source (R654).
+            if crate::probe_enabled("COLLAPSEPROBE") {
+                use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                static CALLS: AtomicU64 = AtomicU64::new(0);
+                static E_BEFORE: AtomicU64 = AtomicU64::new(0);
+                static E_REMOVED: AtomicU64 = AtomicU64::new(0);
+                static N_REMOVED: AtomicU64 = AtomicU64::new(0);
+                E_BEFORE.fetch_add(self.edges.iter().count() as u64, Relaxed);
+                E_REMOVED.fetch_add(edges_to_remove.len() as u64, Relaxed);
+                N_REMOVED.fetch_add(nodes_to_remove.len() as u64, Relaxed);
+                let c = CALLS.fetch_add(1, Relaxed) + 1;
+                if c % 2_000 == 0 {
+                    let (b, e, n) = (
+                        E_BEFORE.load(Relaxed),
+                        E_REMOVED.load(Relaxed),
+                        N_REMOVED.load(Relaxed),
+                    );
+                    eprintln!(
+                        "[COLLAPSEPROBE] calls={c} edges_before/call={:.2} edges_removed/call={:.2} \
+                         ({:.4} of them) nodes_removed/call={:.2}",
+                        b as f64 / c as f64,
+                        e as f64 / c as f64,
+                        e as f64 / b.max(1) as f64,
+                        n as f64 / c as f64,
+                    );
+                }
+            }
             if !edges_to_remove.is_empty() {
                 let mut new_edges: std::collections::LinkedList<Box<STHalfEdge>> =
                     std::collections::LinkedList::new();

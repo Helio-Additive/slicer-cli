@@ -12345,3 +12345,64 @@ was tuned against a different metric. FALLBACK: if collapse counts match, the ed
 and the target is the conversion in (2) -- instrument its input and output edge counts directly and
 say so. A/B `ARACHNE_COLLAPSE_SNAP_5=0` against the shallow edge count either way; it is one env var
 and it separates the two candidates in a single run (R654: A/B, do not infer).
+
+## R667 — collapse removes the same fraction; same count, different set
+
+R667: collapse removes the same FRACTION -- the edges never existed, and the A/B ran backwards
+
+Prediction REFUTED twice over, and the pre-registered fallback fires. `collapse_small_edges` is not
+over-removing: it takes 21.94% of edges on our side against C++'s 22.24%, a 1.014x difference. And
+the A/B moved the wrong way -- disabling R590's fix makes the deficit WORSE, not better. No Rust
+behaviour change (`COLLAPSEPROBE` is `probe_enabled`, default OFF); the C++ instrumentation is
+reverted with both status checks empty and the engine rebuilt pristine; all three hashes unchanged
+(benchy 248ff22a, cube 14566293, majora 3d741dde); suites unchanged.
+
+THE A/B, WHICH I EXPECTED TO INCRIMINATE THE GATE AND WHICH EXONERATES IT:
+
+  ARACHNE_COLLAPSE_SNAP_5   nodes<0.2mm   edges(both<0.2mm)   all nodes/call   majora hash
+  ON   (shipped, R590 fix)      122.648            24.534           162.11      3d741dde
+  OFF  (pre-R590 snap)          106.904            16.563           143.38      d92c0205
+  C++                           148.224            41.469           194.11         --
+
+Turning the fix off collapses harder (the old snap distance was 400x too large) and leaves 16.6
+near-boundary edges against 24.5 -- further from C++'s 41.5, not closer. R590's value is already
+pulling in the right direction; the residual is not a snap-distance problem. Worth recording because
+the obvious next move -- "tune the snap smaller still" -- is now measured as the wrong direction.
+
+THE COUNTERS, SAME QUANTITY ON BOTH ENGINES:
+
+  collapse_small_edges              Rust       C++     C/R
+  edges BEFORE collapse / call    414.07    496.56    1.199
+  edges removed / call             90.85    110.44    1.216
+  removal FRACTION                0.2194    0.2224    1.014
+  nodes removed / call             45.42     55.22    1.216
+
+**The graph is already 1.199x sparser BEFORE this function runs**, and the function then removes the
+same proportion on both sides. The fallback's wording was "if collapse counts match, the edges never
+existed" -- they match, and they didn't.
+
+BUT THE ROUND ENDS ON A TENSION, AND IT IS THE USEFUL PART. Implied edges after collapse are 323.22
+against 386.12, C/R 1.195 -- uniform, matching the node deficit. Yet R666 measured the surviving
+shallow-to-shallow edges at 1.623x while nodes under 0.2 mm are 1.194x. So collapse removes the same
+COUNT and the same FRACTION, and the global result stays uniform, but our near-boundary adjacency
+comes out 1.36x thinner than the node count predicts. **Same number of edges removed, different SET.**
+
+That reframes the search away from "how many" and onto "which". One concrete mechanism is already
+visible in the port: C++'s `collapseSmallEdges` erases from `edges` DURING the iteration
+(SkeletalTrapezoidationGraph.cpp:196-208, `safelyRemoveEdge` advancing the loop iterator), so later
+iterations see the already-collapsed graph and cascading collapses are suppressed. Ours collects
+pointers into a `HashSet` and rebuilds the list at the end
+(skeletal_trapezoidation_graph.rs:650-671), so every decision is made against the ORIGINAL graph. In
+a mutate-while-iterating algorithm those are not the same function even when they remove equal
+counts -- which is exactly the signature measured here.
+
+R668: the SET, not the count. Instrument WHICH edges each engine removes, keyed by a stable
+geometric identity (endpoint coordinates, which are comparable across engines) rather than by
+pointer: per call, the removed set's `min(from.dtb, to.dtb)` distribution in the same 0.2 mm buckets
+R665/R666 used. Predict our removals are skewed toward the shallow buckets -- deferred removal cannot
+see that an earlier collapse already merged a node pair, so it removes both members of a chain where
+C++ removes one. FALLBACK: if the removed-set depth distributions match, the divergence is not in
+what collapse removes but in what it MERGES INTO -- C++ reassigns endpoints as it goes and ours
+reassigns against stale state; census surviving edges whose endpoints moved, and say so. Either way,
+A/B a cascading (in-loop) variant against the deferred one behind a new gate before touching the
+shipped path (R654; and R656's rule about honouring the fallback).
