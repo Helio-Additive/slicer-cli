@@ -12636,7 +12636,7 @@ the direction argument is wrong, and this is the origin -- say so and re-run the
 units bug in a live path and worth fixing on its own terms; score it on both parity rates before
 shipping it (R654 and R656 both went negative on a locally-faithful change).
 
-## R672 — the fix is parity-inert and collapses the outline; R671's defect claim withdrawn
+## R672 — RETRACTED BY R673 (the collapsed arm crashed; the A/B hashed a stale file). Original text follows.
 
 R672: the "fix" is parity-inert AND collapses the outline -- `simplify_p` takes millimetres
 
@@ -12691,3 +12691,57 @@ and out of that consumer, and say so.
 **DO NOT carry R670's "the outline arrives 1.069x coarse" forward as attributed to this site until
 R673 says which site the walls actually come from.** The 1.069x measurement stands; its location
 does not.
+
+## R673 — R672 retracted: the collapsed arm panicked and the A/B hashed a stale file
+
+R673: R672 IS RETRACTED -- the collapsed arm CRASHED, and the A/B hashed a stale file
+
+Prediction REFUTED, fallback REFUTED, and the round's real result is a correction to the one before
+it. R672 concluded that collapsing the outline left the gcode byte-identical and therefore that the
+patched site's walls never reach the output. **That is wrong.** The collapsed arm did not produce
+gcode at all -- it panicked -- and my A/B script hashed the file left over from the previous run. No
+Rust behaviour change this round; all three hashes unchanged (benchy 248ff22a, cube 14566293, majora
+3d741dde); suites unchanged.
+
+THE MEASUREMENT THAT CAUGHT IT. Re-running the same gate with `AWIDTH` on, checking the exit code
+this time:
+
+  arm         exit   AWIDTH blocks   outer-wall ExtrusionLines
+  BASE         0        62           n=15,500  sum_in=9,057  sum_out=15,601
+  COLLAPSED  101         0           none at all
+
+`exit=101` is a panic, at `crates/libslic3r-rs/src/gcode/tool_order_utils.rs:2133` -- `groups[0].insert(...)`
+on an empty `groups`, reached because an object with no walls produces no tool assignment. The same
+panic line appears in R672's own ON-arm log, which I did not read because the script reported a hash
+and I took the hash at face value.
+
+WHAT THIS RESTORES AND WHAT IT KILLS.
+  - **R672's "the patched site's walls do NOT reach the gcode" is RETRACTED.** They do. Emptying the
+    outline destroys the walls so thoroughly that the slicer cannot finish. The site is live and
+    load-bearing, exactly as R670/R671 assumed.
+  - **R672's OTHER conclusion stands on its own evidence**: a 250-unit tolerance annihilates every
+    contour, so `simplify_p` takes an UNSCALED millimetre tolerance and the shipped unscaled value is
+    correct for that callee. R671's units-bug claim remains withdrawn.
+  - **R673's own prediction is refuted too**: there is no live/dead twin here. `generate_arachne` is
+    the only function containing `WallToolPaths::new` (two sites, :3131 and :3144, both inside it),
+    the chain `simplified` -> `last` -> `last_p` -> `WallToolPaths::new` is unbroken (:3009 -> :3017
+    -> :3048 -> :3132), and it is reached. The fallback ("its output is discarded later") is refuted
+    by the same panic.
+
+THE PROCESS DEFECT, WHICH IS THE THING WORTH KEEPING. My A/B script ran the slice, ignored the exit
+code, and copied `tests/.tmp/nu3mf/majorasmask.gcode` unconditionally. A failed slice leaves the
+previous run's output in place, so the copy succeeded and produced a plausible, *identical* hash --
+the most convincing possible wrong answer. Two rounds of reasoning were built on it within one round
+of it being produced. `$D/ab_template.sh` now `rm -f`s the target first, checks `rc` and file
+existence, prints `SLICE FAILED` with the panic line, and refuses to hash a missing file.
+
+R674: the chain is restored to where R670/R671 left it, minus their attribution error. The outline
+handed to `WallToolPaths` is 1.069x coarse (R670) and it IS produced at `generate_arachne`'s
+`simplify_p` (:3009/:3026) -- the site is live, and the tolerance it passes is CORRECT for its
+callee. So the coarseness is not a tolerance bug: it is the INPUT to that `simplify_p`, i.e.
+`surface.expolygon` as the perimeter generator receives it. Census points-per-contour on
+`surface.expolygon` at `generate_arachne`'s entry versus C++'s at `PerimeterGenerator.cpp:1511`, one
+hop further back than R670 measured. Predict the 1.069x is already present there, since every stage
+inside `WallToolPaths` is now accounted for. FALLBACK: if `surface.expolygon` matches, the loss is
+IN `simplify_p` itself -- our DP and C++'s `simplify_p` disagree at equal tolerance -- and the target
+becomes the two implementations, which is a direct algorithm comparison and not a constant hunt.
