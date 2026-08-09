@@ -12848,3 +12848,54 @@ DP tolerance is faithful and yet nothing downstream has been shown to remove poi
 slicer's per-layer totals MATCH and the deficit appears only later, the loss is in the segmentation
 or region assembly, and the target is whichever of the three brackets it first appears in -- say
 which.
+
+## R676 — the layer population is 656; SURFPROBE's absolute totals are revisit-inflated
+
+R676: the layer population is 656, not 4,720 -- and SURFPROBE's absolute totals are inflated by
+repeated visits
+
+No confirmed prediction and no localisation. What the round produced is a disqualification of the
+absolute numbers I have been quoting on OUR side of the bracket, and the reason the last two attempts
+to localise the 1.652x failed. No engine behaviour change (`SLICEPTS` is `probe_enabled`, default
+OFF); all three hashes unchanged (benchy 248ff22a, cube 14566293, majora 3d741dde); suites unchanged.
+
+THE POPULATION, PRINTED THIS TIME:
+
+  A region slices (pre make_slices)   layers=656  nonempty=656  contours=1,391  points=495,747
+                                      points/contour=356.396   points/layer=755.712
+  B lslices (post make_slices)        layers=656  nonempty=656  contours=1,391  points=501,553
+                                      points/contour=360.570   points/layer=764.562
+  SURFPROBE at generate_arachne       surfaces=26,000  contours=26,122  points=1,331,805
+                                      points/contour=50.984
+
+**`self.layers` holds 656 layers, not the 4,720 I had been assuming from the gcode's
+`; LAYER_HEIGHT:` count** -- that count includes the wipe tower and multiple entries per layer, so it
+was never the layer count. 656 layers at 0.3 mm is ~197 mm, which is the model. Every layer is
+non-empty, so bracket A is reading a populated field; R675's "1,391 contours across 4,720 layers is
+not credible" was itself based on the wrong denominator.
+
+AND THE BRACKET STILL DOES NOT COMPARE. 495,747 points at slice() become 1,331,805 at
+`generate_arachne` -- 2.69x more -- across 656 layers and 26,000 surface visits. That is ~40 surface
+visits per layer against 2.12 contours per layer at slice(). Segmentation subdivision cannot multiply
+points by 2.69; the surplus is `generate_arachne` being entered repeatedly for the same geometry
+(per region, and `make_perimeters` re-entering). **SURFPROBE accumulates over repeated visits, so its
+absolute point and contour totals are inflated by an unknown revisit factor.**
+
+WHAT THAT DOES AND DOES NOT INVALIDATE. It does NOT touch the 1.652x: SURFPROBE counts the same way
+on both engines, at the same call site, so the revisit factor divides out of the RATIO. R674's
+finding stands. What it invalidates is any attempt to chain SURFPROBE's absolute totals to an
+earlier bracket's absolute totals -- which is precisely what R675 tried and what R676 was going to
+try with per-layer sums. Per-layer totals fix the subdivision problem; they do not fix the
+repeat-visit problem, so this round's plan was unsound before it ran.
+
+R677: make the unit revisit-proof before comparing anything across brackets. Key SURFPROBE by
+(layer_id, region_id) in a set and count each pair ONCE, on both engines; then per-layer point totals
+are comparable to bracket A's. Predict the deficit is present at bracket A -- the same prediction
+R676 carried, now with an instrument that can actually test it, since R671 cleared the slicer's
+tolerance and nothing between has been shown to remove points. FALLBACK: if the deduplicated
+per-layer totals MATCH at bracket A and diverge later, the loss is in segmentation or region
+assembly and the target is whichever bracket it first appears in.
+**BEFORE MEASURING: print the population (layers, and now also distinct (layer, region) pairs) at
+EVERY bracket and confirm they agree. Three rounds in a row have been lost to comparing quantities
+that were not the same quantity — R675 to subdivision, R676 to revisits, and R675's own critique to
+a wrong layer count.**

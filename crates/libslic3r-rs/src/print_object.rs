@@ -535,9 +535,21 @@ impl PrintObject {
                     c += dc;
                     p += dp;
                 }
+                // R676 — print the LAYER population too. R675's bracket A read 1,391
+                // contours across a 4,720-layer model (0.29 per layer), which is not
+                // credible; without the layer count there was no way to see that the
+                // probe might be reading a field the slicer had not filled.
+                let n_layers = self.layers.len();
+                let n_nonempty = self
+                    .layers
+                    .iter()
+                    .filter(|l| l.regions().iter().any(|r| !r.slices.surfaces.is_empty()))
+                    .count();
                 eprintln!(
-                    "[SLICEPTS] {tag:34} contours={c} points={p} points_per_contour={:.3}",
-                    p as f64 / c.max(1) as f64
+                    "[SLICEPTS] {tag:34} layers={n_layers} nonempty={n_nonempty} contours={c} points={p} \
+                     points_per_contour={:.3} points_per_layer={:.3}",
+                    p as f64 / c.max(1) as f64,
+                    p as f64 / n_layers.max(1) as f64
                 );
             };
             f("A region slices (pre make_slices)", &|layer: &crate::layer::Layer| {
@@ -564,10 +576,14 @@ impl PrintObject {
                         + ex.holes.iter().map(|h| h.points.len() as u64).sum::<u64>();
                 }
             }
+            let n_layers = self.layers.len();
+            let n_nonempty = self.layers.iter().filter(|l| !l.lslices.is_empty()).count();
             eprintln!(
-                "[SLICEPTS] {:34} contours={c} points={p} points_per_contour={:.3}",
+                "[SLICEPTS] {:34} layers={n_layers} nonempty={n_nonempty} contours={c} points={p} \
+                 points_per_contour={:.3} points_per_layer={:.3}",
                 "B lslices (post make_slices)",
-                p as f64 / c.max(1) as f64
+                p as f64 / c.max(1) as f64,
+                p as f64 / n_layers.max(1) as f64
             );
         }
         if crate::probe_enabled("SLICE_PHASE_TIMING") {
