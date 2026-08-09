@@ -13742,3 +13742,76 @@ the comparison on `bead_widths[idx]` for the idx each junction actually uses
 been blind to. **Run our side with `ARACHNE_TOP_ONE_WALL=1`, and this time also print each
 engine's TOTAL edge count so the coverage mismatch that clouded this round's distribution
 rows can be corrected for.**
+
+## R688 — prediction REFUTED: the bead-count regimes MATCH, and that also disqualifies R687's mechanism claim
+
+Extended the `BEADPAIR` / `r68x_note` pair on both engines with
+`(bead_count(to), bead_count(from))`: the equal rate, the **both-pinned** rate (both
+`> 2`, where `RedistributeBeadingStrategy.cpp:83` fixes `bead_widths[0]` to
+`optimal_width_outer` so it *cannot* differ), and the **straddle** rate. Every figure is a
+rate over the same edge denominator (R686/R687). Our side ran `ARACHNE_TOP_ONE_WALL=1`.
+
+| at matched block index 5,500,000 | ours | C++ | C++/ours |
+|---|---|---|---|
+| both-have-beading | 673,575 | 721,119 | 1.071 |
+| **P(differ in `bead_widths[0]`)** | 16,360 (**0.0243**) | 30,856 (**0.0428**) | **1.761** |
+| `bc_eq` | 2,554,110 (0.4644) | 2,678,817 (0.4871) | 1.049 |
+| **`bc_both_pinned`** | 1,411 (**0.0003**) | 1,051 (**0.0002**) | **0.667** |
+| `bc_straddle` | 2,664,289 (0.4844) | 2,536,308 (0.4611) | 0.952 |
+
+**The prediction — "our both-pinned rate is markedly higher" — is REFUTED.** It is ~0.0003
+on both engines, and ours is if anything the *higher* of two numbers that are both
+essentially zero. The bead-count regimes agree across the board: equal-rate within 5%,
+straddle-rate within 5%, and ours straddles **more** (0.4844 vs 0.4611) — i.e. we have
+*more* opportunity for the width to differ, not less, while differing 1.761× less often.
+**The pre-registered fallback fires.**
+
+### It also disqualifies R687's mechanism claim
+
+R687 read `RedistributeBeadingStrategy.cpp:83` and concluded "P(differ) is a bead-count
+question, not a thickness question". Measuring the bead counts shows that framing is wrong
+too: **`bc_both_pinned` is ~0.02–0.03% on both engines**, so the pinned branch is almost
+never active for a *pair*. Nearly every edge has at least one endpoint with
+`bead_count <= 2`, i.e. in the varying `thickness / bead_count` branch — and R687 already
+established that the two endpoints' thicknesses differ on **every** edge (`dtb_eq = 0`).
+
+That combination is the real finding, and it is uncomfortable: **on both engines, ~96–98% of
+adjacent node pairs carry an *identical* `bead_widths[0]` even though their thicknesses
+always differ and the width formula is thickness-dependent for almost all of them.** A
+freshly computed beading could not do that. The stored beadings must therefore be
+overwhelmingly **propagated copies** rather than per-node computations — which is what
+`propagateBeadingsUpward`/`Downward` do — and P(differ) is really measuring *how often the
+two endpoints' beadings trace back to different sources*, not how either was computed.
+Consistent with that, `total_thickness` differs on only 0.73% of our pairs (R681 measured
+0.88% on C++'s) — the beadings are near-uniform along a chain on both sides.
+
+So three successive mechanism claims have now been eliminated for the same 1.76–1.82×:
+the strategy's width mapping (R686), the endpoint thicknesses (R687), and the endpoint bead
+counts (R688). What is left is the **propagation structure** — which R663/R664 examined
+under a different question and a since-disqualified metric.
+
+*(Coverage caveat, unchanged from R687: our edge total is in [5.5M, 6.0M) and C++'s in
+[6.5M, 7.0M), so at index 5,500,000 ours is near-complete and C++'s is at ~85%. These are
+rates over a running denominator rather than cumulative sets, so they are far more robust
+than R686's instrument, but the residual mismatch is real and the ratios should be read to
+two significant figures at most.)*
+
+Baselines unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`. All eight suites
+unchanged (multi_material_integration 25/26, pre-existing). C++ submodule reverted; both
+status checks empty; rebuilt.
+
+**R689: measure the propagation structure — how many DISTINCT beading SOURCES a wall's nodes
+draw from.** The `BeadingPropagation` already carries `dist_from_top_source`,
+`dist_to_bottom_source` and `is_upward_propagated_only`; extend the same probe with, per
+qualifying edge, the rate at which the two endpoints' beadings have **equal
+`total_thickness` AND equal `bead_widths[0]`** (a propagated pair) versus **differing**
+(a fresh-vs-propagated or two-source pair), and bucket by
+`is_upward_propagated_only(to) == is_upward_propagated_only(from)`. Predict our propagated
+pairs are the larger share — the only remaining way to hold widths equal across always-
+differing thicknesses. Fallback: if the propagated-pair rates match too, then the deficit is
+not in *which* beading a node holds but in the junction **index** each edge reads
+(`bead_widths[junction_idx]`, `SkeletalTrapezoidation.cpp:1847`) — every round from R681 has
+measured `[0]` only, and `generateJunctions` walks `junction_idx` downward from the middle,
+so a difference in `toolpath_locations.size()` would change which entry each junction takes
+without changing `[0]` at all. **Keep `ARACHNE_TOP_ONE_WALL=1`; keep every figure a rate;
+and print both engines' total edge counts so the coverage gap can finally be quantified.**

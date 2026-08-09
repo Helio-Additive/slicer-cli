@@ -3440,6 +3440,12 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // distinct-set (R686's instrument was order-dependent).
                     let dtb_to = to.as_ref().data.distance_to_boundary;
                     let dtb_from = from.as_ref().data.distance_to_boundary;
+                    // R688 — `compute(thickness, bead_count)`; R687 showed
+                    // `bead_widths[0]` is PINNED to `optimal_width_outer` whenever
+                    // bead_count > 2 (RedistributeBeadingStrategy.cpp:83), so the
+                    // width can only differ when the pair straddles that boundary.
+                    let bc_to = to.as_ref().data.bead_count;
+                    let bc_from = from.as_ref().data.bead_count;
                     beadpair(
                         w_to,
                         w_from,
@@ -3448,6 +3454,8 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         same_obj,
                         dtb_to,
                         dtb_from,
+                        bc_to,
+                        bc_from,
                     );
                 }
 
@@ -4633,6 +4641,8 @@ pub(crate) fn beadpair(
     same_obj: bool,
     dtb_to: i64,
     dtb_from: i64,
+    bc_to: i64,
+    bc_from: i64,
 ) {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     use std::sync::Mutex;
@@ -4640,6 +4650,24 @@ pub(crate) fn beadpair(
     // dtb*2, so equal dtb forces equal beadings regardless of the strategy (which
     // R686 exonerated). All three counters are RATES over the edge count N, so the
     // print modulus cannot change the answer the way R686's distinct-set did.
+    // R688 — bead-count regimes. `bead_widths[0]` is pinned for bead_count > 2, so
+    // BOTH_PINNED edges CANNOT differ in it; STRADDLE edges are the only ones that
+    // can. Rates over the same edge denominator N.
+    static BC_EQ: AtomicUsize = AtomicUsize::new(0);
+    static BC_BOTH_PINNED: AtomicUsize = AtomicUsize::new(0);
+    static BC_STRADDLE: AtomicUsize = AtomicUsize::new(0);
+    {
+        if bc_to == bc_from {
+            BC_EQ.fetch_add(1, Relaxed);
+        }
+        let p_to = bc_to > 2;
+        let p_from = bc_from > 2;
+        if p_to && p_from {
+            BC_BOTH_PINNED.fetch_add(1, Relaxed);
+        } else if p_to != p_from {
+            BC_STRADDLE.fetch_add(1, Relaxed);
+        }
+    }
     static DTB_EQ: AtomicUsize = AtomicUsize::new(0);
     static DTB_D1: AtomicUsize = AtomicUsize::new(0);
     static DTB_D10: AtomicUsize = AtomicUsize::new(0);
@@ -4707,14 +4735,17 @@ pub(crate) fn beadpair(
             .map(|m| m.iter().filter(|&&c| c > 0).count())
             .unwrap_or(0);
         eprintln!(
-            "[BEADPAIR] edges={n} both={} differ={} ({:.4}) tdiff={} ({:.4}) same_obj={} ({:.4}) | d<1um={} 1-10um={} 10-100um={} >100um={} | dtb_eq={} ({:.4}) dtb<1um={} dtb1-10um={} dtb>10um={} | w0_mod100_nonzero={}/100",
+            "[BEADPAIR] edges={n} both={} differ={} ({:.4}) tdiff={} ({:.4}) same_obj={} ({:.4}) | d<1um={} 1-10um={} 10-100um={} >100um={} | dtb_eq={} ({:.4}) dtb<1um={} dtb1-10um={} dtb>10um={} | bc_eq={} ({:.4}) bc_both_pinned={} ({:.4}) bc_straddle={} ({:.4}) | w0_mod100_nonzero={}/100",
             BOTH.load(Relaxed), DIFF.load(Relaxed),
             DIFF.load(Relaxed) as f64 / both as f64,
             TDIFF.load(Relaxed), TDIFF.load(Relaxed) as f64 / both as f64,
             SAME.load(Relaxed), SAME.load(Relaxed) as f64 / both as f64,
             D1.load(Relaxed), D10.load(Relaxed), D100.load(Relaxed), DBIG.load(Relaxed),
             DTB_EQ.load(Relaxed), DTB_EQ.load(Relaxed) as f64 / n as f64,
-            DTB_D1.load(Relaxed), DTB_D10.load(Relaxed), DTB_DBIG.load(Relaxed), nz,
+            DTB_D1.load(Relaxed), DTB_D10.load(Relaxed), DTB_DBIG.load(Relaxed),
+            BC_EQ.load(Relaxed), BC_EQ.load(Relaxed) as f64 / n as f64,
+            BC_BOTH_PINNED.load(Relaxed), BC_BOTH_PINNED.load(Relaxed) as f64 / n as f64,
+            BC_STRADDLE.load(Relaxed), BC_STRADDLE.load(Relaxed) as f64 / n as f64, nz,
         );
     }
 }
