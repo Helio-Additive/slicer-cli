@@ -3416,6 +3416,13 @@ fn emit_tower_tcr(
         // three lines below. R630.
         writer.set_current_position_clear(false);
     }
+    // R656 — GCode.cpp:4718-4720: `process_layer` sets
+    // `m_last_processor_extrusion_role = erWipeTower` once per (layer, extruder)
+    // that has a wipe tower, so the NEXT object path force-emits the analyzer
+    // Width and Height tags regardless of value (:6605 / :6619). We arm the
+    // one-shot here, after the tower block is written, which is the same point
+    // in the stream.
+    writer.set_force_analyzer_tags();
 
     // R611: the SECOND retract. C++ `append_tcr` (GCode.cpp:1081-1085) does, AFTER the
     // tower's own moves:

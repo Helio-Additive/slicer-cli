@@ -11683,3 +11683,61 @@ positive or flat on order**, since these tags are re-anchoring points immediatel
 boundary that both engines agree on. **Fallback: if order goes negative like R654, the same
 anchoring problem applies and it parks alongside `LINEWIDTH_BEFORE_SPEED` — in which case stop
 adding tags entirely until the Arachne width chain is closed, and say so.**
+
+## R656 — `last_was_wipe_tower` ported: the Height class all but closes, and order falls again
+
+**Prediction half right. Content **+1,204** (711,537 → 712,741) as predicted in sign, though not in
+size or composition. Order **−2,117** (468,570 → 466,453) — predicted "small positive or flat".
+Shipped OPT-IN per the pre-registered fallback; all three baseline hashes unchanged.**
+
+### Reachability checked first
+
+`GCode.cpp:4718-4720` — `process_layer` sets `m_last_processor_extrusion_role = erWipeTower` once
+per (layer, extruder) that has a wipe tower. `:6591` reads it once per `_extrude`, and **both** the
+Width tag (`:6605`) and the Height tag (`:6619`) use that same value before `:6600` overwrites the
+register with the path's own role. So it is a one-shot consumed by the first path after the tower —
+which is how it is modelled here: `set_force_analyzer_tags()` after the tower block,
+`take_force_analyzer_tags()` once at the top of the path, both guards reading the taken value.
+
+### What it did
+
+| | LINE_WIDTH | LAYER_HEIGHT | content | in order |
+|---|---|---|---|---|
+| off (`3d741dde`) | 154,063 | 4,720 | 711,537 | 468,570 |
+| **on** (`de3b7876`) | 154,088 | **8,058** | **712,741** | **466,453** |
+| C++ | 215,199 | **8,297** | | |
+
+**The Height class was 43% short and is now 3% short** — 4,720 → 8,058 against C++'s 8,297. That is
+the round's real finding and it is unambiguous.
+
+The Width half is the surprise: **+25 lines, not the ~2,700 predicted.** The force-emit almost never
+fires there because the width had already changed — the register was going to emit anyway. The
+prediction treated the two tags as symmetric; they are not, and R655's census already implied it
+(our widths vary less, so a forced re-emit lands on a value that differs anyway only rarely).
+
+Of the 3,363 lines added, **1,204 match by content** (36%) — C++ has many of them, in those places.
+
+### Parked, per the pre-registration
+
+Order fell 2,117. The fallback written before the round said: if order goes negative like R654, park
+it, stop adding tags, and say so. **Honouring that.** This is the second time a demonstrably
+C++-faithful tag addition has cost order while `; LINE_WIDTH:` is 61,136 short (R654: −26,309).
+
+The trade being deferred is explicit: **+1,204 content against −2,117 order.** It is not obviously
+the wrong call to ship it — but the rule was fixed in advance precisely so that "it should help"
+reasoning, which is what failed in R654, does not get a second vote. Two flips now wait on the same
+blocker: `WIPE_TOWER_FORCE_TAGS` and `LINEWIDTH_BEFORE_SPEED`.
+
+### R657 — the Arachne width-variety gap, or nothing else
+
+Everything queued is behind it. R655 sized it: outer wall 11,845 distinct widths against C++'s
+21,181, alternating 1.67 tags per distinct value against 2.95. Worth ≤ +61,136 content directly,
+plus it unblocks two finished changes worth a measured +1,204 content and an unknown (currently
+−28,426) order.
+
+**Start by finding where the variety is lost, not by porting anything**: dump the width sequence of
+one outer-wall loop from both engines at the same layer and compare the beading directly. **Predict
+the loss is in the beading strategy's quantisation — C++ keeping bead widths our chain rounds
+together** — since our count is close to half, which smells like pairs collapsing. Fallback: if the
+width sequences have the same *shape* but ours is shifted or scaled, it is the flow/width
+computation downstream of beading, not the beading itself — say which and follow it.

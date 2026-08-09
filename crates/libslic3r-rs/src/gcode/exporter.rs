@@ -1414,9 +1414,28 @@ pub fn extrude_path_with_arc_fitting(
     let expw = crate::probe_enabled("EXPWPROBE")
         && path.role == crate::extrusion_entity::ExtrusionRole::ExternalPerimeter;
 
+    // R656 — GCode.cpp:6591 evaluates `last_was_wipe_tower` ONCE per `_extrude`
+    // and both the Width tag (:6605) and the Height tag (:6619) read that same
+    // value, so take it here rather than at each guard.
+    // SHIPPED OPT-IN (probe, default OFF) per R656's PRE-REGISTERED fallback.
+    // The port is right: it takes `; LAYER_HEIGHT:` from 4,720 to 8,058 against
+    // C++'s 8,297 — a class that was 43% short is now 3% short — and content
+    // matched rises +1,204. But IN-ORDER falls 2,117, the second time a
+    // demonstrably C++-faithful tag addition has cost order while the
+    // `; LINE_WIDTH:` count is still 61,136 short (R654 was the first, −26,309).
+    // The fallback pre-registered for exactly this: park it, stop adding tags,
+    // and re-run this A/B once the Arachne width-variety gap is closed. Two
+    // flips then land together — this and `LINEWIDTH_BEFORE_SPEED`.
+    let force_tags = crate::probe_enabled("WIPE_TOWER_FORCE_TAGS")
+        && writer.take_force_analyzer_tags();
+
     if *LW_PERPATH.get_or_init(|| crate::faithful_gate("LINEWIDTH_PERPATH"))
         && path.width > 0.0
-        && writer.width_tag_changed(path.width)
+        // R656: `width_tag_changed` must run either way — it is the register
+        // update, and C++ assigns `m_last_width = path.width` inside the same
+        // branch. Evaluate it FIRST so the force-emit cannot leave the register
+        // stale.
+        && (writer.width_tag_changed(path.width) | force_tags)
     {
         writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
         if crate::probe_enabled("EXPWPROBE") {
@@ -1488,7 +1507,7 @@ pub fn extrude_path_with_arc_fitting(
     // changes (print.rs, GCode.cpp:4065).
     if crate::gcode::writer::lift_faithful_gate()
         && path.height > 0.0
-        && (writer.last_height_tag - path.height).abs() > 1e-4
+        && ((writer.last_height_tag - path.height).abs() > 1e-4 || force_tags)
     {
         writer.last_height_tag = path.height;
         writer.write_comment(&format!("LAYER_HEIGHT: {}", fmt_g6(path.height)));

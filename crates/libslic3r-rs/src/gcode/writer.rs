@@ -385,6 +385,14 @@ pub struct GCodeWriter {
     /// inverted 148,548 times (R653). Holding it here and flushing it right after
     /// the tag reproduces C++'s order without creating or destroying a line.
     pending_speed: Option<(CoordF, String)>,
+    /// R656 — mirror of C++ `m_last_processor_extrusion_role == erWipeTower`
+    /// (GCode.cpp:6591). `process_layer` sets the register to `erWipeTower` once
+    /// per (layer, extruder) that has a wipe tower (GCode.cpp:4718-4720), and the
+    /// NEXT path force-emits both the Width tag (:6605) and the Height tag
+    /// (:6619) regardless of value — C++'s comment explains why: the wipe-tower
+    /// writer can emit Height_Tag lines without updating `m_last_height`.
+    /// One-shot: C++'s register is overwritten by the first path's own role.
+    force_analyzer_tags: bool,
     /// Per-layer context for the faithful needs_retraction (ZSMOOTH_FAITHFUL):
     /// internal-island polygons + wall boundary lines of the current layer.
     pub zsmooth_retract_ctx: Option<RetractCtx>,
@@ -468,6 +476,7 @@ impl GCodeWriter {
             is_first_layer: false,
             pending_accel: 0,
             pending_speed: None,
+            force_analyzer_tags: false,
             zsmooth_retract_ctx: None,
             last_width_tag: 0.0,
             gcode_origin_x: 0.0,
@@ -936,6 +945,17 @@ impl GCodeWriter {
     /// See `pending_speed`. Overwrites any unflushed value: the collection-level
     /// pre-set is per-entity, so a second one before a flush means the first
     /// entity emitted no path and its F was never C++-visible either.
+    /// R656 — arm the one-shot force-emit for the analyzer Width/Height tags.
+    pub fn set_force_analyzer_tags(&mut self) {
+        self.force_analyzer_tags = true;
+    }
+
+    /// R656 — read and clear it. Both tag guards in one `_extrude` must see the
+    /// SAME value, so the caller takes it once at the top of the path.
+    pub fn take_force_analyzer_tags(&mut self) -> bool {
+        std::mem::replace(&mut self.force_analyzer_tags, false)
+    }
+
     pub fn set_speed_pending(&mut self, speed: CoordF, comment: &str) {
         self.pending_speed = Some((speed, comment.to_string()));
     }
