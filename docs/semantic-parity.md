@@ -13134,3 +13134,71 @@ if paths-per-loop MATCHES and the loop counts differ instead, the deficit is in 
 generation, not path splitting, and the target moves back to `WallToolPaths`. **Overhang
 wall at 11.57× on 1.33× the lines is the sharpest instance — measure it too; a 3× outlier
 inside the same family usually names the mechanism faster than the average does.**
+
+## R680 — prediction AND fallback both refuted; the splitter is faithful and the deficit is its INPUT
+
+R679 named the outer-wall `; LINE_WIDTH:` deficit as a 3.18× path-count deficit and sent
+this round to `thick_polyline_to_multi_path`. Reading both implementations first:
+
+- **The two splitters are line-for-line the same rule.** C++ (`VariableWidth.cpp:80-90`)
+  starts a new `ExtrusionPath` when `scaled(|path.width - new_flow.width()|) >
+  merge_tolerance`, and every Arachne call site (`Arachne/utils/ExtrusionLine.cpp:288/297/
+  304/309`) passes `merge_tolerance = float(SCALED_EPSILON)` = 10 scaled units = 1e-4 mm.
+  Ours (`variable_width.rs:241-253`) computes the same `scaled_f(|Δwidth|)` against
+  `crate::libslic3r::SCALED_EPSILON = 10.0`, from the same four call sites. **No units bug,
+  no tolerance difference, and the `-- i` re-examination on split is modelled correctly.**
+
+So the split RULE was never a candidate. The measurement then had to be the rule's input.
+`TPMPPROBE` (ours, already in the tree) and a matching `CPPUP`-gated counter added to
+`VariableWidth.cpp`, both scoped to `erExternalPerimeter`/`ExtrusionRole::ExternalPerimeter`
+so the populations are identical by construction:
+
+| per outer-wall thick polyline | ours | C++ | C++/ours |
+|---|---|---|---|
+| calls (loop population) | 214,000 | 224,000 | 1.047 |
+| width points | 7.114 | 7.924 | 1.114 |
+| **width changes IN** | **0.0699** | **0.1960** | **2.802** |
+| distinct widths IN | 1.046 | 1.156 | 1.105 |
+| out paths | 1.059 | 1.188 | **1.122** |
+| **flat calls (zero width change)** | **97.59%** | **91.31%** | — |
+| **NON-flat fraction** | **2.41%** | **8.69%** | **3.605** |
+
+**The prediction — "C++'s paths-per-loop is ~2.7× ours" — is REFUTED: it is 1.122×.**
+**The fallback — "paths-per-loop matches and the LOOP COUNTS differ" — is also REFUTED:
+the loop counts agree to 4.7%.** Neither branch of the pre-registered disjunction holds,
+which is itself the result: the path split is not where the deficit is made.
+
+**Where it is made: the width variation ENTERING the splitter, at 2.802×** — which is the
+3.176× outer-wall tag ratio measured in the gcode at R679, arriving from upstream. Stated
+the way that survives normalisation: **97.6% of our outer-wall thick polylines have ZERO
+width variation along their entire length, against C++'s 91.3%. Only 2.41% of our outer
+walls vary in width where 8.69% of C++'s do.** Given a flat input, a faithful splitter
+correctly emits one path — so our 1.06 paths per loop is the *right* answer to the *wrong*
+input.
+
+**A correction to R679.** R679 asserted "both engines emit one tag per `ExtrusionPath`",
+inferred from the shipped `LINEWIDTH_PERPATH` gate rather than measured. It is wrong:
+scaled to equal loop counts we produce ~237,000 outer-wall paths for 19,707 tags (12.03
+paths per tag) and C++ produces 266,029 for 62,582 (4.25 per tag). Both engines suppress
+heavily; we suppress ~2.8× more, which is the same 2.80× input-variation ratio showing up
+at the emitter because consecutive equal-width paths cannot produce a new tag value. The
+gcode tag count is a faithful readout of input width variation — it just is not a path
+count on either engine.
+
+**TOOLING DEFECT FIXED.** The background wait-loops used
+`read -t 3 </dev/null || true` as a sleep. Reading `/dev/null` returns EOF immediately, so
+the delay was zero and the loop burned its whole iteration budget in milliseconds — it
+"waited" by luck of ordering, not by timing. Replaced with a `python3` poll using
+`time.sleep(3)`. `sleep` itself is blocked in the foreground; python is not.
+
+**R681: measure the junction widths one stage upstream, per outer-wall LOOP.** The input to
+`thick_polyline_to_multi_path` is `to_thick_polyline(extrusion)` over an
+`Arachne::ExtrusionLine`, so the flatness is already present in the `ExtrusionJunction`
+widths. Count, per outer-wall `ExtrusionLine` on both engines, the junctions and how many
+adjacent junction pairs differ in `w`, printing the line population alongside. Predict the
+2.80× is already there — the junctions themselves are flat and `to_thick_polyline` is a
+faithful copy. Fallback: if the junction-level variation MATCHES and only the thick
+polyline is flat, `to_thick_polyline` is quantising or averaging and that is the fix.
+**Note that R661 "eliminated" the beading strategy and R585 the quantisation — both on the
+pre-R678 baseline and both against the distinct-width metric that R679 disqualified. If
+R681 lands on the beading, those eliminations must be re-opened rather than deferred to.**
