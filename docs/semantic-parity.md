@@ -14930,3 +14930,67 @@ matches, which this pricing does not establish.**
 No source changed this round — measurement only, on G-codes already on disk. The
 submodule was never touched. benchy `248ff22a`, cube `14566293`, majora
 `d6ccfdbb`.
+
+## R703 — negative volumes now LOAD (verified to the triangle); subtraction is next
+
+R702 priced the port at 10,932 lines. R703 built the load half and verified it
+against arithmetic that was known independently of the code.
+
+### C++'s shape, read first
+
+`model_volume_needs_slicing` (`PrintObjectSlice.cpp:110`) returns true for
+`NEGATIVE_VOLUME` — C++ *slices* these — and `slices_to_regions` (`:403-421`)
+subtracts them: for a negative region, `diff_ex` every preceding non-negative
+region's expolygons against it, gated on `overlap_in_xy`. **It is a per-layer 2D
+subtraction, not a 3D mesh boolean**, so the port keeps the negative geometry as
+a separate mesh rather than CSG-ing it into the positive one.
+
+### The id mapping is 1:1, which makes the reader change small
+
+BambuStudio records the role only in `Metadata/model_settings.config`
+(`subtype="negative_part"`); `3D/3dmodel.model` says merely `type="other"`. On
+Majora the two id spaces coincide exactly:
+
+| 3dmodel | model_settings |
+|---|---|
+| object 1 — `type="model"` | part 1 — `normal_part` |
+| objects 2–7 — `type="other"` | parts 2–7 — `negative_part` |
+| object 8 — `type="model"`, components 1…7 | (container) |
+
+### What landed
+
+- `parse_negative_part_ids_from_model_settings` — returns only `negative_part`
+  ids. `modifier_part` and anything unrecognised stay excluded, preserving the
+  existing conservative behaviour (a modifier merged as positive solid would be
+  worse than omitting it).
+- `parse_3mf_model_xml_with_negatives` — instantiates those objects into a
+  **separate** mesh with the same transforms; `parse_3mf_model_xml` keeps its old
+  signature and behaviour as a wrapper.
+- `Loaded3mf::negative_mesh` / `Parsed3mfModel::negative_mesh`.
+
+### Verified against the known arithmetic
+
+```
+Parsed 3MF negative volumes: 5418 vertices, 10812 triangles (6 objects)
+```
+
+**5 × 2,158 (`Connector-1_A`…`5_A`) + 22 (`Connector-7_B`) = 10,812 — exact**, and
+6 objects as the model declares. Two fixture-free tests cover the subtype parse
+(only `negative_part`; `normal_part`/`modifier_part` excluded), in the R699 style.
+
+### Deliberately inert so far
+
+Majora stays byte-identical at `d6ccfdbb`: the geometry is loaded and reported,
+nothing subtracts it yet. That is the correct intermediate state — the load side
+is independently verifiable, and R704 wires the per-layer `diff_ex` into the
+slice path with `SLICEPTS` bracket A as the acceptance instrument (**holes 45 →
+97, and per layer the counts must match C++ exactly — they already do on all 24
+layers where we produce holes at all**).
+
+### Baselines and suites
+
+benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb` — all unchanged. Seven
+suites green (`multi_material_integration` 25/26 pre-existing), `three_mf_parse`
+9/9 including the two new assertions and the pre-existing
+`skips_negative_and_other_typed_objects`, `hole_preservation` 5/5. No C++ was
+instrumented; the submodule was never touched.

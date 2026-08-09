@@ -201,8 +201,18 @@ pub fn slice_3mf_to_gcode(
         settings_json: embedded_settings,
         identify_ids,
         mmu_facets,
+        negative_mesh,
     } = load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     info!("Loaded {} triangles", mesh.triangle_count());
+    // R703 — negative volumes are loaded but NOT yet subtracted; the per-layer
+    // `diff_ex` that mirrors C++ `slices_to_regions` (:403-421) is the next step.
+    // Reported here so the load side is verifiable on its own.
+    if negative_mesh.triangle_count() > 0 {
+        info!(
+            "Loaded {} negative-volume triangles (not yet subtracted)",
+            negative_mesh.triangle_count()
+        );
+    }
     // Painted multi-material: decode the annotation over the merged mesh to
     // learn which extruder slots are painted (campaign B layer 3). The painted
     // regions are declared on the Print below; splitting the layer surfaces
@@ -363,6 +373,8 @@ pub fn slice_3mf_to_gcode(
 #[derive(Debug)]
 pub struct Parsed3mfModel {
     pub mesh: TriangleMesh,
+    /// R703 — see [`Loaded3mf::negative_mesh`].
+    pub negative_mesh: TriangleMesh,
     /// Painted multi-material state per merged-mesh triangle — the pragmatic
     /// equivalent of C++ `ModelVolume::mmu_segmentation_facets` (Model.hpp:961).
     pub mmu_facets: FacetsAnnotation,
@@ -379,6 +391,17 @@ pub struct Loaded3mf {
     pub identify_ids: Vec<usize>,
     /// Painted-MMU annotation, merged-mesh triangle order.
     pub mmu_facets: FacetsAnnotation,
+    /// R703 — merged NEGATIVE-volume mesh (`subtype="negative_part"` in
+    /// `Metadata/model_settings.config`), transforms applied exactly as for the
+    /// printable mesh. Empty when the model declares none.
+    ///
+    /// C++ slices these (`model_volume_needs_slicing`, `PrintObjectSlice.cpp:110`
+    /// returns true for `NEGATIVE_VOLUME`) and subtracts them from every
+    /// preceding non-negative region in `slices_to_regions` (`:403-421`,
+    /// `diff_ex` gated on `overlap_in_xy`). Kept as a separate mesh here so the
+    /// subtraction can happen per layer in 2D, which is what C++ does — a 3D
+    /// mesh boolean would NOT be the faithful shape.
+    pub negative_mesh: TriangleMesh,
 }
 
 /// Load a [`TriangleMesh`] from a `.3mf` ZIP by parsing `3D/3dmodel.model`.
@@ -432,14 +455,79 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         buf
     };
 
+    // R703 — which <object id>s are negative volumes. BambuStudio records the
+    // role in model_settings, not in 3dmodel.model (which only says
+    // type="other"), so the printable/negative/modifier distinction needs both.
+    let negative_ids = if let Ok(mut entry) = archive.by_name("Metadata/model_settings.config") {
+        let mut buf = String::new();
+        entry.read_to_string(&mut buf).ok();
+        parse_negative_part_ids_from_model_settings(&buf)
+    } else {
+        std::collections::HashSet::new()
+    };
+
     // Parse vertices, triangles, and painted-MMU state from the XML
-    let parsed = parse_3mf_model_xml(&model_xml)?;
+    let parsed = parse_3mf_model_xml_with_negatives(&model_xml, &negative_ids)?;
     Ok(Loaded3mf {
         mesh: parsed.mesh,
         settings_json,
         identify_ids,
         mmu_facets: parsed.mmu_facets,
+        negative_mesh: parsed.negative_mesh,
     })
+}
+
+/// R703 — the `<object id>`s that `Metadata/model_settings.config` marks
+/// `subtype="negative_part"`.
+///
+/// BambuStudio writes one `<part id="N" subtype="...">` per volume, and that id
+/// is the same one `3D/3dmodel.model` uses for `<object id="N">` — verified on
+/// Majora, whose model declares 1 `normal_part` (object 1) and 6 `negative_part`
+/// (objects 2-7), with object 8 the container referencing components 1..7.
+///
+/// Only `negative_part` is returned. `modifier_part` and anything unrecognised
+/// stay excluded, matching the existing conservative behaviour: a modifier
+/// merged as positive solid would be worse than omitting it, and modifiers need
+/// the Tier-2 ModelVolume work.
+pub fn parse_negative_part_ids_from_model_settings(xml: &str) -> std::collections::HashSet<u32> {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    let mut out = std::collections::HashSet::new();
+    let mut reader = Reader::from_str(xml);
+    reader.trim_text(true);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                if e.name().as_ref() == b"part" {
+                    let mut id: Option<u32> = None;
+                    let mut subtype = String::new();
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"id" => {
+                                id = String::from_utf8_lossy(&attr.value).parse::<u32>().ok();
+                            }
+                            b"subtype" => {
+                                subtype = String::from_utf8_lossy(&attr.value).to_string();
+                            }
+                            _ => {}
+                        }
+                    }
+                    if subtype == "negative_part" {
+                        if let Some(i) = id {
+                            out.insert(i);
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    out
 }
 
 /// Parse identify_ids from Metadata/model_settings.config XML.
@@ -555,6 +643,22 @@ fn parse_identify_ids_from_model_settings(xml: &str) -> Vec<usize> {
 /// `slic3rpe:mmu_segmentation`) are captured into
 /// [`Parsed3mfModel::mmu_facets`], indexed by merged-mesh triangle order.
 pub fn parse_3mf_model_xml(xml: &str) -> Result<Parsed3mfModel> {
+    parse_3mf_model_xml_with_negatives(xml, &std::collections::HashSet::new())
+}
+
+/// R703 — as [`parse_3mf_model_xml`], but `negative_ids` names the `<object id>`s
+/// that `Metadata/model_settings.config` marks `subtype="negative_part"`. Those
+/// are instantiated into a SEPARATE mesh (same transforms) instead of being
+/// dropped, so the slicer can subtract them per layer the way C++ does.
+///
+/// In BambuStudio 3MFs the model_settings `<part id="N">` and the 3dmodel
+/// `<object id="N">` share the same id space (verified on Majora: object 1 =
+/// `normal_part`, objects 2-7 = the six `negative_part`s, object 8 = the
+/// container whose components are 1..7), so the set is used directly.
+pub fn parse_3mf_model_xml_with_negatives(
+    xml: &str,
+    negative_ids: &std::collections::HashSet<u32>,
+) -> Result<Parsed3mfModel> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -834,7 +938,11 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<Parsed3mfModel> {
     let mut all_triangles: Vec<Triangle> = Vec::new();
     // Painted-MMU strings parallel to `all_triangles` (merged-mesh order).
     let mut all_paints: Vec<Option<String>> = Vec::new();
+    // R703 — negative-volume geometry, kept apart from the printable mesh.
+    let mut neg_vertices: Vec<Point3F> = Vec::new();
+    let mut neg_triangles: Vec<Triangle> = Vec::new();
 
+    #[allow(clippy::too_many_arguments)]
     fn instantiate_object(
         obj_id: u32,
         transform: &[f64; 12],
@@ -843,12 +951,33 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<Parsed3mfModel> {
         all_triangles: &mut Vec<Triangle>,
         all_paints: &mut Vec<Option<String>>,
         identity: &[f64; 12],
+        negative_ids: &std::collections::HashSet<u32>,
+        neg_vertices: &mut Vec<Point3F>,
+        neg_triangles: &mut Vec<Triangle>,
     ) {
         if let Some(mesh_data) = objects.get(&obj_id) {
-            // Skip non-printable objects (`type != "model"`, e.g. `type="other"`
-            // negative/modifier volumes). Their subtree is that role too, so no
-            // component recursion either. See MeshData::is_model.
+            // Non-printable objects (`type != "model"`, e.g. `type="other"`
+            // negative/modifier volumes). See MeshData::is_model.
+            //
+            // R703 — one that model_settings marks `negative_part` is collected
+            // into the negative mesh (same transform) rather than dropped; a
+            // modifier (or anything unlabelled) is still skipped, since merging
+            // it as positive solid would be wrong and modifiers need the Tier-2
+            // ModelVolume work.
             if !mesh_data.is_model {
+                if negative_ids.contains(&obj_id) && !mesh_data.vertices.is_empty() {
+                    let v_offset = neg_vertices.len() as u32;
+                    for v in &mesh_data.vertices {
+                        neg_vertices.push(apply_transform(v, transform));
+                    }
+                    for tri in mesh_data.triangles.iter() {
+                        neg_triangles.push(Triangle::new(
+                            tri[0] + v_offset,
+                            tri[1] + v_offset,
+                            tri[2] + v_offset,
+                        ));
+                    }
+                }
                 return;
             }
             // If object has a mesh, instantiate it
@@ -877,6 +1006,9 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<Parsed3mfModel> {
                     all_triangles,
                     all_paints,
                     identity,
+                    negative_ids,
+                    neg_vertices,
+                    neg_triangles,
                 );
             }
         }
@@ -908,6 +1040,9 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<Parsed3mfModel> {
                 &mut all_triangles,
                 &mut all_paints,
                 &identity,
+                negative_ids,
+                &mut neg_vertices,
+                &mut neg_triangles,
             );
         }
     }
@@ -947,8 +1082,17 @@ pub fn parse_3mf_model_xml(xml: &str) -> Result<Parsed3mfModel> {
         objects.len(),
         build_items.len()
     );
+    if !neg_triangles.is_empty() {
+        info!(
+            "Parsed 3MF negative volumes: {} vertices, {} triangles ({} objects)",
+            neg_vertices.len(),
+            neg_triangles.len(),
+            negative_ids.len(),
+        );
+    }
     Ok(Parsed3mfModel {
         mesh: TriangleMesh::from_parts(all_vertices, all_triangles),
+        negative_mesh: TriangleMesh::from_parts(neg_vertices, neg_triangles),
         mmu_facets,
     })
 }

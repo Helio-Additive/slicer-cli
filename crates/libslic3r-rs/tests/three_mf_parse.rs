@@ -267,3 +267,42 @@ fn rejects_production_extension_with_clear_error() {
         "error should point at --engine native, got: {msg}"
     );
 }
+
+/// R703 — `Metadata/model_settings.config` is the ONLY place BambuStudio records
+/// whether a `type="other"` object is a negative volume or a modifier; the
+/// 3dmodel.model says only "other". This asserts the subtype parse, fixture-free.
+///
+/// Shape taken from Majora's real model_settings: object 1 is the printable
+/// mask, objects 2-7 are the six `Connector-*` negative volumes.
+#[test]
+fn parses_negative_part_ids_from_model_settings() {
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="1">
+    <part id="1" subtype="normal_part">
+      <metadata key="name" value="AI3M_full_mask (2).stl"/>
+    </part>
+    <part id="2" subtype="negative_part">
+      <metadata key="name" value="Connector-1_A"/>
+    </part>
+    <part id="3" subtype="negative_part">
+      <metadata key="name" value="Connector-2_A"/>
+    </part>
+    <part id="9" subtype="modifier_part">
+      <metadata key="name" value="SomeModifier"/>
+    </part>
+  </object>
+</config>"#;
+    let ids = slicer::app_slice::parse_negative_part_ids_from_model_settings(xml);
+    let mut got: Vec<u32> = ids.into_iter().collect();
+    got.sort_unstable();
+    // Only negative_part; normal_part and modifier_part must NOT be included —
+    // merging a modifier as solid would be worse than omitting it.
+    assert_eq!(got, vec![2, 3]);
+}
+
+#[test]
+fn negative_part_parse_is_empty_without_the_subtype() {
+    let xml = r#"<config><object id="1"><part id="1" subtype="normal_part"/></object></config>"#;
+    assert!(slicer::app_slice::parse_negative_part_ids_from_model_settings(xml).is_empty());
+}
