@@ -12796,3 +12796,55 @@ converted into `LayerRegion::slices` -- a union or an offset that reconstructs c
 target becomes that conversion; say so.
 **Do NOT assume the four sites use the same tolerance as the mesh slicer: R671 cleared
 `params_base.resolution` specifically, and these read a separate `resolution` in scope. Check each.**
+
+## R675 — the four douglas_peucker sites are first-layer brim only; my bracket mixed populations
+
+R675: the four douglas_peucker sites are FIRST-LAYER BRIM ONLY -- and my bracket measured two
+different populations
+
+Prediction REFUTED at the target it named, and the round's own measurement failed for a reason worth
+recording rather than a result worth reporting. No engine behaviour change (`SLICEPTS` is
+`probe_enabled`, default OFF); all three hashes unchanged (benchy 248ff22a, cube 14566293, majora
+3d741dde); suites unchanged.
+
+THE PREDICTED TARGET IS NOT IN THE PATH. All four `douglas_peucker` calls
+(PrintObjectSlice.cpp:509, :567, :600, :613) are reached from ONE caller --
+`groupingVolumesForBrim` (:772) -- which passes `scaled_resolution` (:774) and operates on
+`layers.front()`. They are the FIRST-LAYER BRIM grouping. They cannot produce a 1.652x
+points-per-contour deficit across 4,720 layers, so the prediction is refuted structurally, the way
+R661's was.
+
+A PORTING GAP FOUND IN PASSING, AND IT IS NOT THIS BUG. We have no counterpart to
+`groupingVolumes`, `applyNegtiveVolumes` or `reGroupingLayerPolygons` at all -- the names do not
+appear anywhere in `crates/libslic3r-rs/src`. That is a genuine unported function group affecting
+first-layer brim grouping on multi-volume objects. Worth its own round; it is NOT the 1.652x.
+
+THE BRACKET I RAN DOES NOT ANSWER THE QUESTION, AND HERE IS WHY. `SLICEPTS` counts
+points-per-contour at two points inside `PrintObject::slice()`:
+
+  A region slices (pre make_slices)   contours=1,391   points=495,747   points/contour=356.396
+  B lslices (post make_slices)        contours=1,391   points=501,553   points/contour=360.570
+  SURFPROBE at generate_arachne       contours=26,123  points=1,340,410 points/contour=51.311
+
+**1,391 contours become 26,123, and 495,747 points become 1,340,410.** The surfaces are subdivided
+between the two sites -- `apply_mm_segmentation_tier1` splits region 0 into painted regions and every
+new border adds vertices -- so points-per-contour at A and at SURFPROBE are not the same quantity
+measured twice, they are two different populations. Comparing them says nothing about where points
+are lost. That is R572/R585/R588's rule -- state the population -- and I violated it by placing a
+probe where the population changes.
+
+WHAT SURVIVES. The cross-engine number is unaffected: SURFPROBE is the same stage and the same
+population definition on both engines, and it reads 51.311 against C++'s 84.158 (R674 read 50.956;
+the drift is cumulative-at-modulus sampling, not a change). The 1.652x stands. Only its localisation
+is still open.
+
+R676: bracket it on the ONE population that is stable across the whole path -- total points and
+total contours per LAYER, not per surface, measured on both engines at (1) the mesh slicer's output,
+(2) after `make_slices`, and (3) at `generate_arachne`. Per-layer totals survive subdivision: splitting
+one contour into five changes the contour count but not the point total except at new borders, so a
+points-per-LAYER comparison localises real loss while points-per-contour does not. Predict the
+per-layer point total is already short at the mesh slicer's output, since R671 verified the slicer's
+DP tolerance is faithful and yet nothing downstream has been shown to remove points. FALLBACK: if the
+slicer's per-layer totals MATCH and the deficit appears only later, the loss is in the segmentation
+or region assembly, and the target is whichever of the three brackets it first appears in -- say
+which.

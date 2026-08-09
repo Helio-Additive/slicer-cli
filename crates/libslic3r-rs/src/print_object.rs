@@ -519,8 +519,56 @@ impl PrintObject {
         // lslices from region slices. This is needed for detect_surfaces_type()
         // to correctly diff between adjacent layers.
         let __t_ms = std::time::Instant::now();
+        // R675 — bracket the slicer→region path on OUR side. R674 measured
+        // 50.956 points-per-contour at `generate_arachne`'s `surface` against
+        // C++'s 84.158. This counts the SAME unit at the two points before it:
+        // "A region slices (pre make_slices)" is what the slicer produced and
+        // stored per region; "B lslices (post make_slices)" is the per-layer
+        // union. If A already reads ~51 the loss is in the SLICER itself,
+        // despite R671 confirming its DP tolerance is faithful; if A reads ~84
+        // the loss is in this assembly.
+        if crate::probe_enabled("SLICEPTS") {
+            let mut f = |tag: &str, get: &dyn Fn(&crate::layer::Layer) -> (u64, u64)| {
+                let (mut c, mut p) = (0u64, 0u64);
+                for layer in self.layers.iter() {
+                    let (dc, dp) = get(layer);
+                    c += dc;
+                    p += dp;
+                }
+                eprintln!(
+                    "[SLICEPTS] {tag:34} contours={c} points={p} points_per_contour={:.3}",
+                    p as f64 / c.max(1) as f64
+                );
+            };
+            f("A region slices (pre make_slices)", &|layer: &crate::layer::Layer| {
+                let (mut c, mut p) = (0u64, 0u64);
+                for r in layer.regions() {
+                    for sf in r.slices.surfaces.iter() {
+                        c += 1 + sf.expolygon.holes.len() as u64;
+                        p += sf.expolygon.contour.points.len() as u64
+                            + sf.expolygon.holes.iter().map(|h| h.points.len() as u64).sum::<u64>();
+                    }
+                }
+                (c, p)
+            });
+        }
         for layer in &mut self.layers {
             layer.make_slices();
+        }
+        if crate::probe_enabled("SLICEPTS") {
+            let (mut c, mut p) = (0u64, 0u64);
+            for layer in self.layers.iter() {
+                for ex in &layer.lslices {
+                    c += 1 + ex.holes.len() as u64;
+                    p += ex.contour.points.len() as u64
+                        + ex.holes.iter().map(|h| h.points.len() as u64).sum::<u64>();
+                }
+            }
+            eprintln!(
+                "[SLICEPTS] {:34} contours={c} points={p} points_per_contour={:.3}",
+                "B lslices (post make_slices)",
+                p as f64 / c.max(1) as f64
+            );
         }
         if crate::probe_enabled("SLICE_PHASE_TIMING") {
             eprintln!("      slice(): make_slices {:.2}s", __t_ms.elapsed().as_secs_f64());
