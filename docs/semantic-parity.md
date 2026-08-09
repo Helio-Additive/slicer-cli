@@ -13815,3 +13815,79 @@ measured `[0]` only, and `generateJunctions` walks `junction_idx` downward from 
 so a difference in `toolpath_locations.size()` would change which entry each junction takes
 without changing `[0]` at all. **Keep `ARACHNE_TOP_ONE_WALL=1`; keep every figure a rate;
 and print both engines' total edge counts so the coverage gap can finally be quantified.**
+
+## R689 — prediction CONFIRMED: the propagation mix IS the mechanism, and it is sized at exactly R688's number
+
+**The instrument already existed on both engines.** `PROPCLASS` (R586) classifies every
+beading creation into four sites, and `scripts/inject-arachne-probes.py` already carries a
+`propclass_tick` mirror for the C++ submodule. No new probe was written; the injector was
+run, C++ built, measured, and reverted.
+
+```
+0 fresh       get_or_create_beading -> beading_strategy.compute()
+1 copy_new    propagateBeadingsDownward, `from` had no beading
+2 copy_ratio  same, ratio_of_top >= 1.0: straight copy of the top beading
+3 interp      same, else: interpolate4
+```
+
+Its own R586 docstring already states what R688 re-derived from scratch: *"A COPY is
+bit-identical to its source and so cannot produce a width change between neighbours; only
+fresh and interp can. The mix is the whole question."*
+
+### The result
+
+Our side ran `ARACHNE_TOP_ONE_WALL=1` (R685). Whole-run figures, each engine at its own
+last block (ours 700,000 creations, C++ 400,000):
+
+| | ours | C++ | C++/ours |
+|---|---|---|---|
+| fresh | 0.0026 | 0.0041 | 1.58 |
+| copy_new | 0.9249 | 0.8571 | 0.93 |
+| copy_ratio | 0.0442 | 0.0885 | 2.00 |
+| interp | 0.0283 | 0.0503 | **1.777** |
+| **copies (copy_new + copy_ratio)** | **0.9691** | **0.9456** | 0.98 |
+| **fresh + interp** — the only classes that can create a width change | **0.0309** | **0.0544** | **1.761** |
+
+**Prediction CONFIRMED.** Our propagated-copy share is the larger one, and the
+change-capable classes are correspondingly rarer.
+
+**The number is 1.761. R688 measured P(differ in `bead_widths[0]`) at 1.761.** Two
+independent probes, at different sites, measuring different quantities — the propagation
+*class mix* at the creation sites, and the width *difference probability* at
+`generateJunctions` — agree to three decimal places. That is the strongest internal
+consistency check this campaign has produced, and it identifies the mechanism: **we copy
+where C++ interpolates.**
+
+**A methodological catch worth recording.** The matched-block-index comparison (R687/R688's
+habit) reads **2.542×** here, not 1.761×. Our per-block series is not converged —
+0.0267, 0.0269, 0.0231, 0.0214, 0.0223, 0.0219, 0.0309 — while C++'s is stable at
+0.0568, 0.0559, 0.0539, 0.0544. Comparing at index 400,000 catches ours at a local trough
+and inflates the ratio by 44%. **The whole-run figure is the correct one (R682's rule), and
+it is also the one that agrees with the independent R688 measurement.** Matching indices
+remains not the same as matching coverage — and this round shows the error can run in
+either direction.
+
+### Where it localises
+
+The split is `if (! edge_to_peak->from->data.hasBeading())` at
+`SkeletalTrapezoidation.cpp:1671`. The "from HAS a beading" arm (copy_ratio + interp) is
+taken on 0.0725 of our creations against C++'s 0.1388 — **1.91× more often on C++**. Ours
+funnels into `copy_new` instead. `UPPROBE`'s own R587 docstring already asked this question
+("why does C++ reach the has-beading branch 2.25× more"), so the observation is not new —
+but it is now sized on a matched population and tied to an output-side deficit.
+
+Baselines unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`. All eight suites
+unchanged (multi_material_integration 25/26, pre-existing). No source was modified; the C++
+submodule was injected, measured, reverted (both status checks empty) and rebuilt.
+
+**R690: measure why `from` already has a beading 1.91× more often at the downward-propagation
+site.** `UPPROBE` and `DNPROBE` exist on both engines (the injector carries them) and
+`UPPROBE` reports `skip_beadcount` / `skip_no_from` / `skip_to_has` / `SEEDED`. Run both with
+`ARACHNE_TOP_ONE_WALL=1` and compare whole-run rates, not matched indices. Predict our
+`skip_no_from` is the larger share — i.e. our downward pass reaches nodes whose `from` has
+not yet been given a beading, which is an ORDERING property of the traversal rather than a
+geometric one. Fallback: if the skip mix matches, the difference is in how many nodes the
+UPWARD pass seeds before the downward pass runs, so compare `SEEDED` per node and then look
+at `propagateBeadingsUpward`'s guard — R663 examined that chain against a since-disqualified
+metric and its elimination does not bind. **Both engines' totals must be printed; our
+PROPCLASS series is NOT converged at 400,000, so report whole-run means only.**
