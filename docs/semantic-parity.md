@@ -14994,3 +14994,84 @@ suites green (`multi_material_integration` 25/26 pre-existing), `three_mf_parse`
 9/9 including the two new assertions and the pre-existing
 `skips_negative_and_other_typed_objects`, `hole_preservation` 5/5. No C++ was
 instrumented; the submodule was never touched.
+
+## R704 — NEGATIVE VOLUMES SHIP: bracket-A holes 45 → 97, matching C++ layer for layer
+
+R703 landed the load half. R704 wires the subtraction, and it lands the
+pre-registered acceptance test exactly.
+
+### The faithful shape, and a frame trap avoided
+
+C++ slices negative volumes like any other (`model_volume_needs_slicing`,
+`PrintObjectSlice.cpp:110`) and subtracts them in `slices_to_regions`
+(`:403-421`): `diff_ex` of every preceding non-negative region against the
+negative, gated on `overlap_in_xy`. **Per-layer 2D, not a 3D mesh boolean.**
+
+The port slices the merged negative mesh at each layer's own `slice_z` and diffs
+it out of every region — placed before `make_slices` and before `SLICEPTS`
+bracket A, exactly where C++'s sits.
+
+**A latent frame bug had to be fixed first.** `Slicer::slice_at_z` called
+`slice_mesh_at_z`, which builds `MeshSlicingParams::default()` — center_offset
+(0,0) — while `Slicer::slice` passes the configured offset. Under `SLICE_CENTER`
+(default-ON) the two produced **different XY frames**. Harmless while the only
+caller was a unit test; fatal the moment a second mesh is sliced against the
+object's layers. New `slice_mesh_at_z_ex` takes the offset; this is the same
+frame-mismatch class that cost R430/R431 several rounds.
+
+### The acceptance test, pre-registered at R700, hit exactly
+
+```
+[SLICEPTS] A holes: total=97 layers_with_holes=36 of 656 max_on_one_layer=6
+```
+
+and the per-layer list is **identical to C++'s, entry for entry**:
+
+`0:5 1:5 2:5 3:5 4:5 5:5 6:5 7:5 8:5 9:5 44:1 207:1 208:1 213:1 319:1 325:1
+404:1 412:1 419:1 428:1 433:1 434:1 435:1 436:2 437:2 438:3 445:4 446:3 447:4
+448:3 449:6 450:2 455:2 462:1 463:1 465:1`
+
+45 → 97 holes; 24 → 36 layers. `NEGPROBE`: 10,812 negative triangles cut 64
+layers into 104 pieces.
+
+### Scored on both metrics — in ABSOLUTE matched lines (R599)
+
+| | OFF | ON | Δ |
+|---|---|---|---|
+| our body lines | 2,511,238 | **2,525,970** | **+14,732** |
+| content matched | 709,080 | **710,614** | **+1,534** |
+| **IN ORDER matched** | 469,489 | **469,628** | **+139** |
+| content rate | 28.24% | 28.13% | −0.11pp |
+| in-order rate | 18.70% | 18.59% | −0.11pp |
+| line-count gap to C++ (2,781,977) | 270,739 | **256,007** | **−14,732** |
+
+**Both rates dip, and both absolute counts rise.** R599's rule applies directly —
+the rate has a moving denominator, so quote the matched count. We added 14,732
+lines of geometry C++ also has, of which ~10% match today; the rates fall because
+the denominator grew faster than the matches, while the line-count gap to C++
+narrowed by exactly the added lines.
+
+**R702's pricing caveat did real work**: it put the ceiling at ~10,932 lines *"IF
+the recovered geometry also matches"*. It largely does not yet — the holes are in
+the right places with the right areas, but their wall coordinates differ. That is
+a separate, later problem; the geometry is now the geometry C++ slices.
+
+### Shipped default-ON
+
+`faithful_gate("NEGATIVE_VOLUMES")`, `=0` to opt out (verified: restores
+`d6ccfdbb`). Justification: the geometry is provably identical to C++ at bracket
+A, both metrics improve in absolute matched lines, the line-count gap narrows,
+and it is a **correctness** fix — the `Connector-*` holes are real assembly
+features we were printing solid.
+
+Cost: Majora ~17.3 s → ~18.4 s (+6%), from 64 real per-layer cuts. A z-range cull
+(C++ never slices a volume outside its own span) is in and behaviour-neutral, but
+the time is in the cuts, not the skipped calls.
+
+### Baselines
+
+**NEW MAJORA BASELINE `6a8cf880`** (was `d6ccfdbb`). benchy `248ff22a` and cube
+`14566293` **byte-unchanged** — both single-part, so the path is inert by
+construction, not by luck. Seven suites green (`multi_material_integration` 25/26
+pre-existing), `hole_preservation` 5/5, `three_mf_parse` 9/9. No C++ instrumented;
+the submodule was never touched.

@@ -308,6 +308,11 @@ pub fn slice_3mf_to_gcode(
     }
     print_object.painted_submeshes = painted_submeshes;
     print_object.num_total_filaments = print_config.num_filaments();
+    // R704 — negative volumes travel with the object and are subtracted per
+    // layer in PrintObject::slice (gate NEGATIVE_VOLUMES). They are NOT merged
+    // into `mesh`: C++ keeps them as separate ModelVolumes and does the
+    // subtraction in 2D per layer (slices_to_regions, PrintObjectSlice.cpp:403).
+    print_object.set_negative_mesh(negative_mesh);
 
     info!("Creating Print...");
     let mut print = Print::new();

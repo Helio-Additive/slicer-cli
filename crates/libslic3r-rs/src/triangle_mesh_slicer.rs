@@ -1954,6 +1954,23 @@ fn its_from_triangle_mesh(mesh: &TriangleMesh) -> indexed_triangle_set {
 }
 
 /// Slice a mesh at a single Z height, returning ExPolygons.
+/// R704 — [`slice_mesh_at_z`] with the slice-frame XY `center_offset` applied,
+/// so a second mesh can be sliced into the SAME frame as the object's layers.
+/// The offset enters the fused f32 transform exactly as in the multi-Z path
+/// (`v_xy = f32(s) * (v_xy - center_offset)`).
+pub fn slice_mesh_at_z_ex(mesh: &TriangleMesh, z: CoordF, center_offset: (f64, f64)) -> ExPolygons {
+    if mesh.is_empty() {
+        return ExPolygons::new();
+    }
+    let its = its_from_triangle_mesh(mesh);
+    let mut params = MeshSlicingParams::default();
+    params.center_offset = center_offset;
+    let loops = slice_mesh_plane_its(&its, z as f32, &params);
+    let mut slices = ExPolygons::new();
+    make_expolygons(&loops, 0.0, 0.0, ClipperPolyFillType::NonZero, &mut slices);
+    slices
+}
+
 pub fn slice_mesh_at_z(mesh: &TriangleMesh, z: CoordF) -> ExPolygons {
     if mesh.is_empty() {
         return ExPolygons::new();

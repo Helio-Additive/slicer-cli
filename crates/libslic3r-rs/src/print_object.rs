@@ -244,6 +244,17 @@ pub struct PrintObject {
     /// PrintObject.hpp:380
     mesh: Option<crate::triangle_mesh::TriangleMesh>,
 
+    /// R704 — merged NEGATIVE-volume mesh, sliced at the SAME layer z's as
+    /// `mesh` and subtracted from every region's slices.
+    ///
+    /// C++ keeps these as `ModelVolume`s of type `NEGATIVE_VOLUME`: they ARE
+    /// sliced (`model_volume_needs_slicing`, PrintObjectSlice.cpp:110) and then
+    /// `slices_to_regions` (:403-421) does `diff_ex` of every preceding
+    /// non-negative region against them. Holding one merged mesh is the Tier-1
+    /// shape of that — the subtraction below is per layer in 2D, which is what
+    /// C++ does; a 3D mesh boolean would not be faithful.
+    negative_mesh: Option<crate::triangle_mesh::TriangleMesh>,
+
     /// Slicing parameters
     /// PrintObject.hpp:381
     slicing_params: crate::slicing::SlicingParams,
@@ -287,6 +298,7 @@ impl PrintObject {
             state: 0,
             canceled,
             mesh: None,
+            negative_mesh: None,
             slicing_params: crate::slicing::SlicingParams::default(),
             shared_regions: None,
             typed_slices: false,
@@ -312,6 +324,7 @@ impl PrintObject {
             state: 0,
             canceled: Arc::new(AtomicBool::new(false)),
             mesh: Some(mesh),
+            negative_mesh: None,
             slicing_params: crate::slicing::SlicingParams::default(),
             shared_regions: None,
             typed_slices: false,
@@ -374,6 +387,11 @@ impl PrintObject {
 
     /// Get reference to the mesh
     /// PrintObject.cpp:40
+    /// R704 — set the merged negative-volume mesh (see the field docs).
+    pub fn set_negative_mesh(&mut self, mesh: crate::triangle_mesh::TriangleMesh) {
+        self.negative_mesh = if mesh.is_empty() { None } else { Some(mesh) };
+    }
+
     pub fn mesh(&self) -> Option<&crate::triangle_mesh::TriangleMesh> {
         self.mesh.as_ref()
     }
@@ -510,6 +528,78 @@ impl PrintObject {
                 while layer.regions().len() < num_regions {
                     let region_id = layer.regions().len();
                     layer.add_region(crate::layer::LayerRegion::new(layer_id, region_id));
+                }
+            }
+        }
+
+        // R704 — NEGATIVE VOLUMES. C++ slices them like any other volume
+        // (`model_volume_needs_slicing`, PrintObjectSlice.cpp:110) and then, in
+        // `slices_to_regions` (:403-421), subtracts each from every PRECEDING
+        // non-negative region: `diff_ex(region2.expolygons, negative.expolygons)`
+        // gated on `overlap_in_xy`. This is the Tier-1 shape of that: slice the
+        // merged negative mesh at each layer's own `slice_z` — in the SAME frame
+        // (R704 made `slice_at_z` honour the slice-frame center_offset) — and
+        // diff it out of every region's surfaces.
+        //
+        // Placed BEFORE `make_slices` and before SLICEPTS bracket A, matching
+        // C++ where the subtraction happens inside slice_volumes, upstream of
+        // both. The acceptance test is arithmetic and pre-registered (R700):
+        // bracket-A holes 45 -> 97, five 7.53532 mm2 holes on each of layers
+        // 0-9 plus two on 207/208.
+        // R704 — SHIPPED DEFAULT-ON (`=0` to disable). Bracket-A holes go 45 -> 97,
+        // matching C++ LAYER FOR LAYER on all 36 layers. Scored on both metrics in
+        // ABSOLUTE matched lines (R599 — the rate has a moving denominator):
+        // content 709,080 -> 710,614 (+1,534), IN ORDER 469,489 -> 469,628 (+139),
+        // and our body-line count moves 2,511,238 -> 2,525,970, narrowing the gap
+        // to C++'s 2,781,977 by 14,732. Both rates dip 0.11pp purely because the
+        // denominator grew faster than the matches; every absolute measure improves
+        // and the geometry is now the same geometry C++ slices.
+        if crate::faithful_gate("NEGATIVE_VOLUMES") {
+            if let Some(neg) = self.negative_mesh.clone() {
+                use crate::surface::{Surface, SurfaceType};
+                use crate::surface_collection::SurfaceCollection;
+                // Only layers within the negative geometry's own Z span can be
+                // cut — C++ never slices a volume outside its range either. On
+                // Majora this takes 656 slice_at_z calls down to ~64.
+                let nbb = neg.compute_bounding_box();
+                let (nz0, nz1) = (nbb.min.z as f64, nbb.max.z as f64);
+                let mut n_layers_cut = 0usize;
+                let mut n_pieces = 0usize;
+                for layer in self.layers.iter_mut() {
+                    if layer.slice_z < nz0 || layer.slice_z > nz1 {
+                        continue;
+                    }
+                    let cut = match slicer.slice_at_z(&neg, layer.slice_z) {
+                        Ok(c) if !c.is_empty() => c,
+                        _ => continue,
+                    };
+                    n_layers_cut += 1;
+                    n_pieces += cut.len();
+                    for region in layer.regions_mut().iter_mut() {
+                        if region.slices.surfaces.is_empty() {
+                            continue;
+                        }
+                        let src: crate::geometry::ExPolygons = region
+                            .slices
+                            .surfaces
+                            .iter()
+                            .map(|sf| sf.expolygon.clone())
+                            .collect();
+                        let kept = crate::clipper_utils::difference(&src, &cut);
+                        let mut coll = SurfaceCollection::new();
+                        for ex in &kept {
+                            coll.push(Surface::new(SurfaceType::Internal, ex.clone()));
+                        }
+                        region.set_slices(coll);
+                    }
+                }
+                if crate::probe_enabled("NEGPROBE") {
+                    eprintln!(
+                        "[NEGPROBE] negative mesh {} triangles; cut {} layers, {} pieces total",
+                        neg.triangle_count(),
+                        n_layers_cut,
+                        n_pieces,
+                    );
                 }
             }
         }

@@ -344,8 +344,19 @@ impl Slicer {
             // TriangleMeshSlicer.cpp:135
             return Err(Error::Mesh("Cannot slice an empty mesh".into()));
         }
-        // TriangleMeshSlicer.cpp:138
-        Ok(triangle_mesh_slicer::slice_mesh_at_z(mesh, z))
+        // R704 — slice in THIS Slicer's frame, not the raw one.
+        // `slice_mesh_at_z` builds `MeshSlicingParams::default()`, i.e.
+        // center_offset (0,0), while `Slicer::slice` passes the configured
+        // offset (slicer.rs:144). Under SLICE_CENTER (default-ON) that made
+        // `slice_at_z` land in a DIFFERENT XY frame from `slice` — harmless
+        // while the only caller was a unit test, but wrong the moment a second
+        // mesh is sliced against the object's layers (negative volumes). The
+        // frame-mismatch class already cost R430/R431 several rounds.
+        Ok(triangle_mesh_slicer::slice_mesh_at_z_ex(
+            mesh,
+            z,
+            self.slice_center_offset,
+        ))
     }
 }
 
