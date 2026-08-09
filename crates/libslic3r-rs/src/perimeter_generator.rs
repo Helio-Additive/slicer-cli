@@ -2934,6 +2934,62 @@ impl PerimeterGenerator {
     /// falls back to the input outline; the control flow below remains a
     /// line-by-line translation of the C++ so it produces correct output once
     /// the wall-maker lands.
+    /// PerimeterGenerator.cpp:1806-1828 — bool PerimeterGenerator::should_enable_top_one_wall(
+    ///     const ExPolygons& original_expolys, ExPolygons& top)
+    ///
+    /// R684. NOT the same computation as the classic path's only_one_wall_top block
+    /// (`generate_classic_one`, mirroring PerimeterGenerator.cpp:1116-1183): that one
+    /// also carries an `offset_top_surface` term which this function has no
+    /// counterpart for, so the two cannot share code (R671→R672 — check the callee,
+    /// do not assume a sibling path computes the same thing).
+    ///
+    /// UNITS: C++ builds `min_width_top_surface` from `scaled_spacing()`/`scaled_width()`
+    /// and feeds it to `offset_ex`, which takes scaled coords. Our `offset_expolygons`
+    /// takes MILLIMETRES (see `opening_ex`'s callers), so the widths are taken from
+    /// `Flow::spacing()`/`Flow::width()` in mm instead of their `scaled_*` twins.
+    /// `ExPolygon::area()` returns SCALED squared units, so C++'s `scale_(1)*scale_(1)`
+    /// (1 mm²) is `SCALING_FACTOR²` here — the `lib.rs` constant, 100_000 (R679: two
+    /// reciprocal constants of that name are in scope).
+    fn should_enable_top_one_wall(&self, original_expolys: &[ExPolygon], top: &mut ExPolygons) -> bool {
+        // C++ :1808-1809
+        let perimeter_width = self.config.perimeter_flow.width();
+        let ext_perimeter_spacing = self.config.ext_perimeter_flow.spacing();
+
+        // C++ :1811-1815
+        let area_of = |v: &[ExPolygon]| -> f64 { v.iter().map(|e| e.area()).sum() };
+
+        // C++ :1818 — BBS: filter small area and extend top surface a bit to hide the wall line
+        let min_width_top_surface = (self.config.top_area_threshold / 100.0)
+            * (ext_perimeter_spacing / 2.0).max(perimeter_width / 2.0);
+        // C++ :1819
+        let shrunk_top = crate::clipper_utils::offset_expolygons(
+            top,
+            -min_width_top_surface,
+            crate::clipper_utils::OffsetJoinType::Miter,
+        );
+        // C++ :1820-1821
+        let shrunk_area = area_of(&shrunk_top);
+        let original_area = area_of(original_expolys);
+
+        // C++ :1823 — `scale_(1) * scale_(1)` is one square millimetre in scaled units.
+        let one_mm2 = crate::SCALING_FACTOR * crate::SCALING_FACTOR;
+        if shrunk_area / (original_area + crate::libslic3r::EPSILON) < 0.1
+            || original_area < one_mm2
+        {
+            // C++ :1824
+            top.clear();
+        } else {
+            // C++ :1826
+            *top = crate::clipper_utils::offset_expolygons(
+                &shrunk_top,
+                min_width_top_surface + perimeter_width,
+                crate::clipper_utils::OffsetJoinType::Miter,
+            );
+        }
+        // C++ :1827
+        !top.is_empty()
+    }
+
     fn generate_arachne(&self, slices: &[ExPolygon]) -> PerimeterResult {
         let mut result = PerimeterResult::new();
 
@@ -3108,8 +3164,45 @@ impl PerimeterGenerator {
             let surface_infill: ExPolygons;
 
             if loop_number >= 0 {
+                // PerimeterGenerator.cpp:1528-1534 — the top-one-wall decision.
+                //
+                // R683/R684: the ARACHNE path carried only the `loop_number == 0`
+                // disjunct; the other two, and the whole `seperate_wall_generation`
+                // branch (C++ :1565-1613), were never wired in here. The feature IS
+                // implemented for the CLASSIC path (`generate_classic_one`, the
+                // only_one_wall_top block), which is why every config key and
+                // `upper_slices` were already present — Majora is
+                // `wall_generator = arachne`, so all of it was dead for this fixture.
+                //
+                // C++ :1528 generate_one_wall_by_first_layer = only_one_wall_first_layer && layer_id == 0
+                // `only_one_wall_first_layer` is not threaded into PerimeterConfig
+                // (see the note at the classic site) and is 0 in every fixture config,
+                // so it is modelled as false rather than guessed at.
+                let generate_one_wall_by_first_layer = false;
+                // C++ :1529 generate_one_wall_by_top_most = top_one_wall_type != None && upper_slices == nullptr
+                // C++ :1530 generate_one_wall_by_top      = top_one_wall_type == Alltop && upper_slices != nullptr
+                // `self.config.top_one_wall` is the boolean collapse of
+                // `top_one_wall_type == Alltop`. The C++ enum has three values
+                // (None/Alltop/Topmost, PrintConfig.hpp:234-239), so `!= None` and
+                // `== Alltop` coincide only while the value is Alltop or None — which
+                // it is for every fixture here. A Topmost config would need the full
+                // enum threaded through.
+                let generate_one_wall_by_top_most =
+                    self.config.top_one_wall && self.config.upper_slices.is_none();
+                let generate_one_wall_by_top =
+                    self.config.top_one_wall && self.config.upper_slices.is_some();
                 // PerimeterGenerator.cpp:1532  is_one_wall
-                let is_one_wall = loop_number == 0;
+                let is_one_wall = if crate::probe_enabled("ARACHNE_TOP_ONE_WALL") {
+                    loop_number == 0
+                        || generate_one_wall_by_first_layer
+                        || generate_one_wall_by_top_most
+                } else {
+                    loop_number == 0
+                };
+                // PerimeterGenerator.cpp:1534
+                let mut seperate_wall_generation = crate::probe_enabled("ARACHNE_TOP_ONE_WALL")
+                    && !is_one_wall
+                    && generate_one_wall_by_top;
 
                 // PerimeterGenerator.cpp:1537-1553  WallToolPathsParams input_params.
                 let mut input_params = WallToolPathsParams::default();
@@ -3179,7 +3272,127 @@ impl PerimeterGenerator {
                     }
                 }
 
-                if is_one_wall {
+                // PerimeterGenerator.cpp:1556-1558 — only valid when the wall
+                // generation is separated.
+                let mut first_perimeters: Vec<VariableWidthLines> = Vec::new();
+                let mut infill_contour_by_one_wall: ExPolygons = Vec::new();
+                let mut top_expolys_by_one_wall: ExPolygons = Vec::new();
+
+                // PerimeterGenerator.cpp:1565-1588 — the PROBE pass. Build one wall,
+                // take its inner contour, and diff it against the upper and lower
+                // slices to isolate the areas that are top-but-not-bottom. C++ clips
+                // the upper/lower polygons to the infill bbox first
+                // (`clip_clipper_polygons_with_subject_bbox`, :1578/:1583); that is a
+                // pure speed optimisation on the clip operand and does not change the
+                // difference, so it is omitted rather than approximated.
+                if seperate_wall_generation {
+                    // C++ :1566
+                    let mut one_wall_paths = WallToolPaths::new(
+                        last_p.clone(),
+                        ext_perimeter_spacing,
+                        perimeter_spacing,
+                        1,
+                        wall_0_inset,
+                        layer_height,
+                        input_params,
+                    );
+                    // C++ :1570-1571
+                    first_perimeters = one_wall_paths.get_tool_paths().clone();
+                    infill_contour_by_one_wall =
+                        union_polygons_ex(one_wall_paths.get_inner_contour());
+
+                    // C++ :1576-1579  top = infill_contour_by_one_wall - upper_slices
+                    top_expolys_by_one_wall = match self.config.upper_slices.as_ref() {
+                        Some(upper) => {
+                            crate::clipper_utils::difference(&infill_contour_by_one_wall, upper)
+                        }
+                        None => infill_contour_by_one_wall.clone(),
+                    };
+                    // C++ :1581-1584  bottom = top - lower_slices
+                    let bottom_expolys = match self.config.lower_slices.as_ref() {
+                        Some(lower) => {
+                            crate::clipper_utils::difference(&top_expolys_by_one_wall, lower)
+                        }
+                        None => top_expolys_by_one_wall.clone(),
+                    };
+                    // C++ :1586  top = top - bottom
+                    top_expolys_by_one_wall = crate::clipper_utils::difference(
+                        &top_expolys_by_one_wall,
+                        &bottom_expolys,
+                    );
+                    // C++ :1587
+                    let before = seperate_wall_generation;
+                    seperate_wall_generation =
+                        self.should_enable_top_one_wall(&last, &mut top_expolys_by_one_wall);
+                    // R684 census: how often the probe pass SURVIVES. If the survival
+                    // rate is ~0 the extra construction is a discarded probe and the
+                    // call-count term is downstream-inert.
+                    if crate::probe_enabled("TOPONEWALL") {
+                        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                        static PROBED: AtomicU64 = AtomicU64::new(0);
+                        static SURVIVED: AtomicU64 = AtomicU64::new(0);
+                        static TOPEMPTY: AtomicU64 = AtomicU64::new(0);
+                        let _ = before;
+                        let n = PROBED.fetch_add(1, Relaxed) + 1;
+                        if seperate_wall_generation {
+                            SURVIVED.fetch_add(1, Relaxed);
+                        }
+                        if top_expolys_by_one_wall.is_empty() {
+                            TOPEMPTY.fetch_add(1, Relaxed);
+                        }
+                        if n % 2_000 == 0 {
+                            let s = SURVIVED.load(Relaxed);
+                            eprintln!(
+                                "[TOPONEWALL] probed={n} survived={s} ({:.4}) top_empty_after={}",
+                                s as f64 / n as f64,
+                                TOPEMPTY.load(Relaxed)
+                            );
+                        }
+                    }
+                }
+
+                if seperate_wall_generation {
+                    // PerimeterGenerator.cpp:1591-1613 — only generate one wall around
+                    // top areas; keep the first generated wall and deal with the rest.
+                    // C++ :1594-1595
+                    total_perimeters = first_perimeters;
+                    surface_infill = if loop_number > 0 {
+                        // C++ :1598-1599
+                        let last2 = crate::clipper_utils::difference(
+                            &infill_contour_by_one_wall,
+                            &top_expolys_by_one_wall,
+                        );
+                        let last_p2: crate::geometry::Polygons = expolygons_to_polygons(&last2);
+                        // C++ :1600  NOTE bead_width_0 is perimeter_spacing here, not
+                        // ext_perimeter_spacing — the outer wall is already placed.
+                        let mut paths_new = WallToolPaths::new(
+                            last_p2,
+                            perimeter_spacing,
+                            perimeter_spacing,
+                            loop_number as usize,
+                            wall_0_inset,
+                            layer_height,
+                            input_params,
+                        );
+                        // C++ :1601-1609  append with inset_idx shifted by one.
+                        let new_perimeters = paths_new.get_tool_paths().clone();
+                        for mut perimeters in new_perimeters {
+                            if !perimeters.is_empty() {
+                                for p in perimeters.iter_mut() {
+                                    p.inset_idx += 1;
+                                }
+                                total_perimeters.push(perimeters);
+                            }
+                        }
+                        // C++ :1610-1611
+                        let mut acc = union_polygons_ex(paths_new.get_inner_contour());
+                        acc.extend(top_expolys_by_one_wall.iter().cloned());
+                        let acc = crate::clipper_utils::union_ex(&acc);
+                        crate::clipper_utils::intersection(&acc, &infill_contour_by_one_wall)
+                    } else {
+                        crate::clipper_utils::union_ex(&infill_contour_by_one_wall)
+                    };
+                } else if is_one_wall {
                     // PerimeterGenerator.cpp:1617-1621  plan wall width as one wall
                     let mut one_wall_paths = WallToolPaths::new(
                         last_p,

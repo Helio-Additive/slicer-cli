@@ -13428,3 +13428,90 @@ is correct but our downstream ordering cannot absorb the extra paths, and the ga
 parked with the finding recorded. **Score BOTH metrics and split per feature before
 deciding (R678); benchy and cube must be re-checked too — unlike `MMSEG_OPENING` this
 change is NOT multi-material-only and will move every fixture.**
+
+## R684 — the branch is PORTED and the call count now matches C++ exactly; prediction REFUTED, and the finding invalidates R681's use of the edge factor
+
+The `seperate_wall_generation` branch (C++ `PerimeterGenerator.cpp:1528-1613` +
+`should_enable_top_one_wall` at `:1806-1828`) is now implemented in `generate_arachne`,
+gated `ARACHNE_TOP_ONE_WALL` (`probe_enabled`, **default OFF**).
+
+**A sibling-path reuse was checked and rejected (R671→R672).** The classic path's
+only-one-wall-top block (`generate_classic_one`, mirroring `PerimeterGenerator.cpp:1116-1183`)
+shares the `min_width_top_surface` expression but also carries an `offset_top_surface` term
+that `should_enable_top_one_wall` has no counterpart for. They are different computations,
+so the helper was ported separately rather than reused.
+
+**Two units decisions, both taken from the callee rather than from memory (R679).**
+C++ builds `min_width_top_surface` from `scaled_spacing()`/`scaled_width()` and feeds
+`offset_ex`, which takes scaled coords; our `offset_expolygons` takes **millimetres**, so
+the widths come from `Flow::spacing()`/`Flow::width()`. And `ExPolygon::area()` returns
+scaled² units, so C++'s `scale_(1)*scale_(1)` is `crate::SCALING_FACTOR²` (the `lib.rs`
+constant, 100_000).
+
+### Reachability: the call count now matches C++ exactly
+
+| arm | majora hash | `GBUILD` calls |
+|---|---|---|
+| OFF | `d6ccfdbb` | 24,000 |
+| **ON** | `b3d794f7` | **40,000** |
+| **C++ (R682)** | — | **[40,000, 42,000)** |
+
+`WTPCALL` also reports `onewall=1` on the ON arm — `generate_one_wall_by_top_most` firing on
+the topmost layer, exactly as the config predicts. The 1.54–1.75× call-count deficit that
+R682 measured and R683 attributed to this branch is **closed**.
+
+### But the output barely moves — prediction REFUTED
+
+| | OFF | ON | Δ |
+|---|---|---|---|
+| Majora content | 709,080 / 2,511,238 | 709,084 / 2,511,249 | **+4** |
+| Majora IN ORDER | 469,489 | 469,475 | **−14** |
+| Benchy | `248ff22a` | `248ff22a` | byte-unchanged |
+| cube | `14566293` | `14566293` | byte-unchanged |
+
+The prediction — "the in-order rate improves; it doubles the outer-wall path population on
+top areas" — is **refuted**. The pre-registered fallback fires: **the gate is parked**,
+default OFF.
+
+### Why, measured rather than guessed
+
+A `TOPONEWALL` census at the `should_enable_top_one_wall` call site:
+
+```
+[TOPONEWALL] probed=14000 survived=4 (0.0003) top_empty_after=13996
+```
+
+**Four surfaces out of 14,000 survive the test.** That is the feature working as designed —
+`should_enable_top_one_wall` discards any top region whose shrunk area is under 10% of the
+original, and on a tall model like Majora almost every layer's genuine top area is far below
+that. The probe construction at `:1566` runs on every surface and its result is thrown away
+99.97% of the time.
+
+**This corrects R681's decomposition.** R681 factored the outer-wall width-variation deficit
+as *edge count ~2.1× × beading probability 1.393× ≈ 2.9×*, and R682 factored the edge count
+as *call count ~1.64× × per-call density 1.183×*. But **the call-count factor is a discarded
+probe pass** — those extra graphs never reach `thick_polyline_to_multi_path` and cannot
+create width-change opportunities in the G-code. C++ pays exactly the same wasted cost.
+Removing it from the product leaves **1.183 × 1.393 = 1.648×** acting on the output against
+the 2.802× width-changes-per-loop deficit R680 measured, so **roughly 1.7× of that deficit is
+now unexplained again** — a real regression in the causal account, and better to know it than
+to keep multiplying a factor that does no work.
+
+Parking is also the right call for slicing time (ask #3): shipping it would double our
+Arachne graph constructions on Majora to buy a −14 in-order change. C++ pays that cost; we
+need not.
+
+Baselines unchanged with the gate off: benchy `248ff22a`, cube `14566293`, majora
+`d6ccfdbb`. All eight suites unchanged (multi_material_integration 25/26, pre-existing).
+
+**R685: re-derive the width-variation account now that the edge factor is disqualified.**
+Re-run `TPMPPROBE` and `BEADPAIR` with `ARACHNE_TOP_ONE_WALL=1` on our side: if the extra
+probe graphs are excluded from the OUTPUT path, our width-changes-per-loop should be
+unchanged (0.0699) while the raw edge totals double — confirming that edges-in-discarded-
+graphs inflate R681's numerator on BOTH engines. Then re-measure C++'s
+`in_changes`-per-outer-wall-loop against ours as the ONLY output-side quantity that matters,
+and attribute the residual 1.7× from scratch. Predict the per-loop figures are unchanged by
+the gate. Fallback: if our per-loop width changes DO rise with the gate on, the probe graphs
+are not fully discarded and the branch's second construction is contributing after all —
+in which case re-examine whether the four surviving surfaces are the only ones that should
+survive.
