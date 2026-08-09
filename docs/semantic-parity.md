@@ -14784,3 +14784,79 @@ Default path unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`.
 Seven suites green, `multi_material_integration` 25/26 pre-existing, plus the
 five `hole_preservation` assertions. Submodule reverted, both status checks
 empty, C++ rebuilt.
+
+## R701 — ROOT CAUSE: the missing holes are the six `negative_part` volumes we skip at load
+
+R700 pinned the hole deficit to layers 0–9 (50 holes) plus 207–208 (2). R701
+checked the hole SIZE first, before theorising about first-layer compensation —
+and the size settled it immediately.
+
+### The size check kills the compensation hypothesis
+
+C++ hole areas on layers 0–9, dumped per hole:
+
+| layer | surfaces | hole areas mm² |
+|---|---|---|
+| 0 | 1 | 7.53532, 7.53532, 7.53532, 7.53532, 7.53531 |
+| 1–9 | 1 each | the same five, to five decimals |
+
+**Five identical 7.53532 mm² holes** (~3.1 mm diameter), on all ten layers, with
+areas constant to 5 dp. Nothing operating at compensation scale (~0.0005 mm)
+closes a 7.5 mm² hole, and constant area across ten layers means a vertical
+feature. The pre-registered fallback fires: *the first ten layers differ in what
+geometry reaches the slicer at all.*
+
+### The model tells the rest
+
+`Metadata/model_settings.config` has **7 parts — 1 `normal_part` and 6
+`negative_part`**:
+
+| part | subtype | name | faces |
+|---|---|---|---|
+| 1 | normal_part | AI3M_full_mask (2).stl | 799,380 |
+| 2–6 | **negative_part** | **Connector-1_A … Connector-5_A** | **2,158 each** |
+| 7 | **negative_part** | **Connector-7_B** | **22** |
+
+**Five identical 2,158-face negative meshes → the five identical holes on layers
+0–9. One 22-face negative mesh elsewhere → the two holes on layers 207–208.**
+
+**5 × 10 + 1 × 2 = 52 — exactly the missing holes, with nothing left over.**
+
+### We skip them deliberately, at load
+
+`app_slice.rs:574-581`, on the 3MF reader's `is_model` flag:
+
+> *"BambuStudio stores negative/modifier volumes as `type="other"` objects
+> referenced via `<component>` (their real role lives in
+> Metadata/model_settings.config `subtype`, e.g. `negative_part`). Tier-1 merges
+> only printable `model` geometry and SKIPS the rest — unioning a negative part
+> as positive solid is worse than omitting it, and true boolean subtraction needs
+> the Tier-2 ModelVolume work."*
+
+The skip is deliberate and correctly reasoned as far as it goes. What was wrong
+is its **impact assessment**: `project_rust_3mf_tier1` records negative volumes as
+*"quantified R515, near-inert for parity."* They are not near-inert — they are
+the entire bracket-A hole deficit and the dominant term at bracket C (C++'s
+415/409/326 holes on layers 0/1/2 are 1,150 of its 1,739).
+
+### What this closes
+
+The chain that began at R679 with a 3.18× outer-wall `; LINE_WIDTH:` tag deficit
+now terminates in a named, unported feature. Every intermediate suspect was
+eliminated on evidence: the beading pipeline (R686–R689, ~3% leverage), the
+Voronoi (R694, faithful to 1.6%), the mm-segmentation cleanup (R697, causally
+inert under a 1.93× sweep), the boolean primitives (R699, five passing
+assertions), and ExPolygon reconstruction (R699). What remains is geometry we
+never load.
+
+**This is Tier-2 ModelVolume work, not a same-round fix.** R702 should scope
+negative-volume subtraction: read the volumes with their transforms, and subtract
+them per layer after slicing (C++ does this through `ModelVolume` typing, so the
+faithful shape is to carry volume type through the mesh path rather than to
+special-case the slice).
+
+### Baselines and suites
+
+No Rust source changed — this round was a C++ census plus reading. benchy
+`248ff22a`, cube `14566293`, majora `d6ccfdbb`. Submodule reverted, both status
+checks empty, C++ rebuilt.
