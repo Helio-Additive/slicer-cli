@@ -13594,3 +13594,74 @@ Fallback: if the per-bucket distinct counts match, the strategies agree and the 
 in *which* thickness each node presents, i.e. `distance_to_boundary`, and the target moves to
 the graph geometry rather than the strategy. **Run our side with `ARACHNE_TOP_ONE_WALL=1` so
 the populations match C++ (R685) — this is now mandatory for every whole-graph comparison.**
+
+## R686 — prediction REFUTED: the beading strategy is NOT the flattener, and it is slightly RICHER than C++'s
+
+Read both factory chains first. They are the same construction —
+`DistributedBeadingStrategy` → `RedistributeBeadingStrategy` → `WideningBeadingStrategy`
+(if `print_thin_walls`) → `OuterWallInsetBeadingStrategy` (if `outer_wall_offset != 0`) →
+`LimitedBeadingStrategy` — in the same order, from
+`BeadingStrategyFactory.cpp:35-56` and `beading_strategy_factory.rs:51-110`. The four
+`beading_strategy.compute` call sites also correspond 1:1: C++ `:1526/:1536/:1537/:1887`
+against ours `:2710/:2726/:2729/:3599`.
+
+**Instrumented the two sites whose result is STORED** (C++ `:1535` and `:1926` after the
+relocation, ours `:2710` and `:3599`) — the beadings `generateJunctions` later reads. The
+other three `setBeading` sites store interpolated or propagated copies, not strategy
+output, so they are out of scope for "what does the strategy return". Census: bucket the
+input thickness into 0.05 mm bins (5000 scaled units) and collect the set of distinct
+`bead_widths[0]` returned in each bin. Our side ran with `ARACHNE_TOP_ONE_WALL=1` so the
+graph population matches C++'s (R685) — and it did: **384 buckets on both engines**, and
+store counts within 1.7% (ours 1,180,000, C++ 1,200,000).
+
+| at largest available store count | ours (1,180,000) | C++ (1,200,000) |
+|---|---|---|
+| thickness buckets | **384** | **384** |
+| distinct `bead_widths[0]` total | 36,171 | 34,114 |
+| **distinct per bucket** | **94.20** | **88.84** |
+
+Per-bucket detail at the low end (`b6`…`b11`): ours 535 / 2,520 / 2,684 / 3,125 / 3,226 /
+3,843 against C++'s 647 / 2,511 / 2,571 / 2,800 / 2,918 / 3,382 — ours is higher in five of
+six.
+
+**The prediction — "our strategy returns a coarser quantisation of `bead_widths[0]`" — is
+REFUTED.** Our strategy is not coarser; for the same thickness bucket it returns *at least
+as many* distinct widths as C++'s. **The pre-registered fallback fires: the strategies
+agree, so the difference is in WHICH thickness each node presents — `distance_to_boundary`
+— and the target moves to the graph geometry rather than the strategy.**
+
+**Instrument caveat, stated plainly.** The census is cumulative-at-modulus and both engines
+accumulate their sets in traversal order, so the intermediate ratio swings badly — 0.489× at
+800,000 stores, 0.955× at 1,000,000, 1.240× at 1,100,000. Only the near-complete figures are
+comparable, and even those carry the residue of a 1.7% store-count difference. What is solid
+is the *direction and the bucket count*: 384 = 384 buckets, and our per-bucket distinct
+count is not below C++'s at any near-complete point. The claim being made is "not coarser",
+not "richer by 6%".
+
+**This re-closes R661.** The beading strategy was eliminated at R661 against a metric R679
+disqualified, and R685 promoted the term it governs to 1.823× — the largest measured factor.
+R686 re-tested it properly, on a matched population, with the right unit, and the
+elimination holds: **the strategy is exonerated as a width-flattener.** The 1.823× BEADPAIR
+deficit is therefore not produced by the strategy's mapping from thickness to width; it must
+come from adjacent nodes presenting *more similar thicknesses* on our graph.
+
+Also recorded from `BEADPROBE` on the same run: over 1,180,000 stores our thickness values
+take **297,739 distinct values** spanning 0.023–19.652 mm, and `bead_widths[0]` takes 28,133
+distinct values spanning 0.190–0.762 mm. C++'s counterpart figure was not captured this
+round and is the obvious next measurement.
+
+Baselines unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`. All eight suites
+unchanged (multi_material_integration 25/26, pre-existing). C++ submodule reverted; both
+status checks empty; rebuilt.
+
+**R687: measure `distance_to_boundary` on adjacent nodes — the quantity the fallback named.**
+Extend `BEADPAIR` (which already walks `edge->from` / `edge->to` read-only) to record, per
+qualifying edge, `|dtb(to) − dtb(from)|` bucketed, plus the count of edges where the two are
+*exactly equal*. Mirror it in C++ at the same point in `generateJunctions`. Run our side with
+`ARACHNE_TOP_ONE_WALL=1`. Predict our exactly-equal fraction is markedly higher — that is
+the only remaining way to get 1.823× fewer differing beadings out of a strategy that is not
+coarser. Fallback: if the `dtb` differences match too, then equal thicknesses are not the
+route and the deficit is in the *bead_count* argument rather than the thickness, so bucket by
+`(bead_count(to), bead_count(from))` instead — `compute` takes both, and R681 measured
+`bead_widths[0]` only, which is blind to a bead-count difference that reshuffles the rest of
+the vector.

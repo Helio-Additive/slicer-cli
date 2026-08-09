@@ -4524,12 +4524,43 @@ pub(crate) fn beadprobe(thickness: i64, bead_count: i64, widths: &[i64]) {
             FLATW.fetch_add(1, Relaxed);
         }
     }
+    // R686 — the QUANTISATION census, mirroring the C++ `r686_note` helper exactly:
+    // bucket the input thickness into 0.05 mm bins (5000 scaled units) and collect
+    // the set of distinct `bead_widths[0]` the strategy returns in each bin. A
+    // coarser quantisation on our side shows up as fewer distinct values per bucket,
+    // which is what would make adjacent nodes resolve to equal widths. Global
+    // distinct counts (below) cannot separate that from a narrower thickness range.
+    static HIST: Mutex<Option<std::collections::BTreeMap<i64, std::collections::BTreeSet<i64>>>> =
+        Mutex::new(None);
+    if let Some(&w0) = widths.first() {
+        if let Ok(mut h) = HIST.lock() {
+            h.get_or_insert_with(std::collections::BTreeMap::new)
+                .entry(thickness / 5000)
+                .or_default()
+                .insert(w0);
+        }
+    }
     if let (Ok(mut t), Ok(mut w)) = (THICK.lock(), W0.lock()) {
         t.push(thickness);
         if let Some(&w0) = widths.first() {
             w.push(w0);
         }
         if n % 20_000 == 0 || n == 2_000 {
+            if let Ok(h) = HIST.lock() {
+                if let Some(m) = h.as_ref() {
+                    let buckets = m.len();
+                    let tot: usize = m.values().map(|s| s.len()).sum();
+                    let head: String = m
+                        .iter()
+                        .take(10)
+                        .map(|(k, v)| format!(" b{}={}", k, v.len()))
+                        .collect();
+                    eprintln!(
+                        "[R686] stores={n} buckets={buckets} distinct_total={tot} per_bucket={:.2} |{head}",
+                        tot as f64 / buckets.max(1) as f64
+                    );
+                }
+            }
             let mut td: Vec<i64> = t.clone();
             td.sort_unstable();
             td.dedup();
