@@ -1140,9 +1140,17 @@ impl PrintObject {
                 // (the scale is applied inside `offset_expolygons`), so C++'s
                 // `scale_(5 * EPSILON)` is simply `5 * EPSILON` here.
                 if crate::faithful_gate("MMSEG_OPENING") && !remaining.is_empty() {
+                    // R697 — DIAGNOSTIC sweep knob. The nominal value is C++'s
+                    // `scale_(5 * EPSILON)`; EPSILON is 1e-4 on both engines and
+                    // `opening_ex` takes mm, so 5.0 * EPSILON is the faithful
+                    // translation and is the DEFAULT. The multiplier exists only to
+                    // locate where our surface count crosses C++'s 16,732: opening
+                    // OFF gives 26,620 and 5x gives 14,924, so the target is
+                    // bracketed and monotonic. Not a shipping knob.
+                    let mult = crate::env_f64("MMSEG_OPEN_MULT").unwrap_or(5.0);
                     remaining = crate::clipper_utils::opening_ex(
                         &remaining,
-                        5.0 * crate::libslic3r::EPSILON,
+                        mult * crate::libslic3r::EPSILON,
                     );
                 }
                 let mut coll = SurfaceCollection::new();

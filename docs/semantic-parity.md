@@ -14487,3 +14487,84 @@ Default path unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`.
 `ARACHNE_SIMPLIFY_FAITHFUL` is default-OFF and unscored on the parity metrics —
 parked as a diagnostic, not shipped. Eight suites at standing results. No C++
 instrumented this round; the submodule was never touched.
+
+## R697 — the Arachne entry is INVARIANT to the segmentation cleanup, and the deficit is a CONTOUR-count deficit
+
+R695 concluded the entry deficit is "born at bracket C"; R696 concluded the
+masking retention term is "downstream of the segmentation difference". R697
+swept the one knob both conclusions pointed at. Both are refuted.
+
+### Units checked first, and they are right
+
+`opening_ex` takes **mm** — asserted independently in two places
+(`print_object.rs:1139-1141` and `print_object.rs:3056-3059`: *"this crate's
+clipper primitives operate in UNSCALED (mm) space"*). `EPSILON` is `1e-4` on both
+engines (`libslic3r.rs:24` / `libslic3r.h:52`), so C++'s `scale_(5 * EPSILON)` is
+exactly our `5.0 * EPSILON`. And `opening_ex` already routes through
+`offset2_ex_clib(-d, +d, Miter)` at full ClipperLib precision, because
+`TOPFILL_FAITHFUL` is default-ON. **Tolerance, units and operation are all
+faithful.**
+
+### The sweep
+
+A diagnostic multiplier (`MMSEG_OPEN_MULT`, default 5.0 = the faithful value)
+over the opening distance, each arm reporting bracket C and the Arachne entry in
+the same run:
+
+| mult | C surfaces | C points | **entry points** | retention | majora hash |
+|---|---|---|---|---|---|
+| 5 (faithful) | 14,924 | 1,328,201 | **1,225,050** | 0.9223 | `d6ccfdbb` |
+| 4 | 17,262 | 1,347,199 | **1,224,125** | 0.9086 | `f75a4fd0` |
+| 3 | 20,719 | 1,364,359 | **1,223,403** | 0.8967 | `0637931d` |
+| 2 | 25,335 | 1,380,184 | **1,224,829** | 0.8874 | `21d01631` |
+| 1 | 28,811 | 1,397,558 | **1,225,608** | 0.8770 | `c0040577` |
+| C++ | 16,732 | 1,595,300 | **1,312,936** | 0.8230 | — |
+
+**Bracket C swings 5.2% in points and 1.93× in surfaces. The entry moves 0.18%.**
+The entry ratio is 1.072 / 1.073 / 1.073 / 1.072 / 1.071 — flat to three decimals
+across the whole sweep.
+
+### What that overturns
+
+- **R697's own prediction is refuted.** Raising bracket C toward C++'s point
+  count does not raise the entry; the entry is pinned at ~1,225,000.
+- **R695's "the deficit is born at bracket C" is wrong.** Bracket C's 1.201×
+  deficit is real but *does not propagate*. The entry deficit has another source.
+- **R696's causal story needs restating.** Retention is not "downstream of
+  segmentation" in any useful sense — it is simply a fixed numerator over a
+  moving denominator. It fell from 0.9223 to 0.8770 during the sweep while the
+  quantity it is supposed to explain never moved.
+- **Surface count is not the lever either.** The crossover past C++'s 16,732
+  happens between mult 5 and 4 (~4.2), and mult=4 already *exceeds* it at 17,262
+  — with the entry unchanged.
+
+`simplify_p` **saturates**: any input between 1.33M and 1.40M points maps to
+~1.225M. C++'s saturates at 1.313M. Douglas-Peucker at 0.0024 mm returns the
+vertex set the *shape* requires, not a function of how finely it was sampled —
+so input sampling was never going to move it, and three rounds of chasing the
+sampling were mis-aimed.
+
+### Where the deficit actually is
+
+Splitting the invariant entry figure:
+
+| entering `WallToolPaths` | ours | C++ | C++/ours |
+|---|---|---|---|
+| **contours** | 26,791 | 29,512 | **1.102** |
+| points per contour | 45.73 | 44.49 | **0.973** |
+| total points | 1,225,050 | 1,312,936 | 1.072 |
+
+**It is a contour-count deficit, not a detail deficit.** Our contours are
+individually slightly *richer* than C++'s (0.973×); we simply have 10% fewer of
+them. Normalised by bracket A, C++ still ends with 6.4% more entry points per
+input point (2.630 vs 2.471).
+
+That reframes the target completely: the question is no longer "why do we drop
+vertices" but **"why does the same region produce 10% fewer separate contours at
+the Arachne entry"** — a topology/splitting question, upstream of any tolerance.
+
+### Baselines and suites
+
+Default path unchanged (`MMSEG_OPEN_MULT` defaults to the faithful 5.0): benchy
+`248ff22a`, cube `14566293`, majora `d6ccfdbb` with the variable unset. Eight
+suites at standing results. No C++ instrumented; the submodule was never touched.

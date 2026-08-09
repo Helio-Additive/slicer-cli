@@ -105,6 +105,12 @@ pub fn opt_in_gate(name: &str) -> bool {
     matches!(env_snapshot().get(name), Some(v) if v != "0")
 }
 
+/// R697 — read a float from the environment snapshot, for DIAGNOSTIC sweep knobs
+/// only (never for shipping behaviour). Returns None when unset or unparseable.
+pub fn env_f64(name: &str) -> Option<f64> {
+    env_snapshot().get(name).and_then(|v| v.parse::<f64>().ok())
+}
+
 pub mod a_star;
 pub mod aabb_mesh;
 pub mod aabb_tree_indirect;
