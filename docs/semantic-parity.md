@@ -13202,3 +13202,61 @@ polyline is flat, `to_thick_polyline` is quantising or averaging and that is the
 **Note that R661 "eliminated" the beading strategy and R585 the quantisation — both on the
 pre-R678 baseline and both against the distinct-width metric that R679 disqualified. If
 R681 lands on the beading, those eliminations must be re-opened rather than deferred to.**
+
+## R681 — prediction CONFIRMED, and the 2.80× decomposes: edge count 2.1×, beading probability 1.39×
+
+**Read both implementations first (R680's rule), and it settled the fallback before any build.**
+`to_thick_polyline` is line-for-line identical on the two engines — C++
+`Arachne/utils/ExtrusionLine.hpp:201-219` and ours `extrusion_line.rs:521-545`, same
+`[j0.w, j1.w]` seed then `(prev.w, cur.w)` per subsequent junction, same for the
+`ClipperLib_Z::Path` overload. **The pre-registered fallback — "`to_thick_polyline` is
+quantising or averaging" — is structurally refuted.** It also means `TPMPPROBE`'s
+`in_changes` already counts junction-to-junction changes exactly, because the widths array
+is `[j0,j1, j1,j2, j2,j3, …]` and each junction transition appears once. **The prediction —
+the 2.80× flatness is already present in the `ExtrusionJunction` widths — is CONFIRMED by
+construction.**
+
+Junction `w` is `beading->bead_widths[junction_idx]`
+(`SkeletalTrapezoidation.cpp:1847`), so a flat wall means adjacent chained edges resolved
+to equal bead widths. The archive already had the instrument: `BEADPAIR` (R585) measures
+exactly P(adjacent beadings differ in `bead_widths[0]`), read-only. Mirrored it into C++
+`generateJunctions` at the same point — immediately after
+`getOrCreateBeading(edge->to, …)`, reading `edge->from` read-only.
+
+| | ours | C++ | C++/ours |
+|---|---|---|---|
+| edges reaching `generateJunctions` | ≥3.0M | ≥6.5M | **1.86–2.33** |
+| qualifying fraction (`both`/edges) | 0.1205 | 0.1277 | 1.06 |
+| **P(adjacent beadings differ)**, matched on `both` (361,438 vs 355,825) | **0.0318** | **0.0443** | **1.393** |
+| P(total_thickness differs) | 0.0072 | 0.0068 | 0.94 |
+
+Both runs are truncated at their print modulus, so ours is in [3.0M, 3.5M) edges and C++'s
+in [6.5M, 7.0M) — the edge ratio is bounded at 1.86–2.33×, midpoint ≈2.1×. The `both`
+comparison is taken at matched population (361,438 vs 355,825, 1.6% apart) rather than at
+each run's last block, so the probability ratio is not a truncation artefact.
+
+**The decomposition: 1.393 × ≈2.1 ≈ 2.9×, which is R680's 2.802× width-changes-per-loop
+and R679's 3.176× gcode tag ratio.** Two multiplicative terms, and **the dominant one is
+the EDGE COUNT reaching `generateJunctions`, not the beading probability.** A wall's width
+changes when it crosses from one node's beading to a different-valued one; with half as
+many graph edges per wall there are half as many opportunities for that to happen, and the
+per-opportunity probability is only 1.39× short.
+
+This also re-frames the R585→R668 sub-chain. Those rounds measured the beading probability
+and its near-boundary structure and found real but undersized effects (R662's 1.05× of
+1.68×, R666's 1.022×, R668's 1.376×). They were undersized because **the beading
+probability was never the larger term** — it is 1.39× of a ~2.9× product. R668's
+near-boundary edge-count deficit of 1.62× was the closer measurement of the term that
+actually dominates, and it was recorded as a supporting detail rather than the headline.
+
+**R682: measure the graph edge count per wall loop on both engines, at the same site.**
+`generateJunctions` iterates `graph.edges` wholesale, so its 2.1× is a whole-graph
+property, not a per-wall one. Normalise it: count `graph.edges` per `WallToolPaths::generate`
+call on both engines (the `GBUILD`/`CONV` probes already report `e_after_cells/call` and
+`e_after_collapse/call` on our side — mirror them in C++ rather than writing new ones).
+Predict the per-call edge deficit is ~2× and is already present at `e_after_cells`, i.e. in
+the Voronoi→half-edge construction, before any collapse. Fallback: if `e_after_cells`
+matches per call and only `e_after_collapse` differs, `collapse_small_edges` removes more
+on our side — which R668 "eliminated" on a metric R679 has since disqualified, so re-open
+it rather than defer to it. **Both prior GBUILD/CONV readings are from R589 on a long-dead
+baseline; re-measure ours in the same run rather than carrying them.**
