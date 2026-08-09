@@ -13515,3 +13515,82 @@ the gate. Fallback: if our per-loop width changes DO rise with the gate on, the 
 are not fully discarded and the branch's second construction is contributing after all —
 in which case re-examine whether the four surviving surfaces are the only ones that should
 survive.
+
+## R685 — prediction CONFIRMED, and every ratio in the decomposition was measured on an unmatched population
+
+The `ARACHNE_TOP_ONE_WALL` gate turns out to be a **population-matching instrument**: with it
+on, our skeletal-graph population becomes C++'s (40,000 `constructFromPolygons` calls vs
+C++'s 40,000) while the G-code moves by +4/−14 lines. That makes it possible, for the first
+time, to compare whole-graph quantities on like populations.
+
+### The prediction: output-side figures are unchanged by the gate
+
+| | OFF | ON | ratio |
+|---|---|---|---|
+| TPMPPROBE calls (outer-wall thick polylines) | 214,000 | 214,000 | 1.000 |
+| **`in_changes` (output-side width changes)** | **15,007** | **15,045** | **1.0025** |
+| `flat_calls` | 208,831 | 208,817 | 1.000 |
+| `out_paths` | 226,552 | 226,617 | 1.000 |
+| BEADPAIR edges (whole graph) | 3,000,000 | **5,500,000+** | **≥1.83** |
+
+**Prediction CONFIRMED.** The same model, sliced twice, has *identical* output-side width
+variation while its whole-graph edge total nearly doubles. That is a direct demonstration —
+on one engine, holding the output fixed — that **whole-graph edge totals are decoupled from
+output-side width-change opportunity.** The fallback (per-loop changes rising with the gate)
+correctly did not fire.
+
+### The consequence: both R681 and R682 ratios were unmatched, and both move
+
+C++ *always* runs the probe pass, so its graph population always contains probe graphs. Our
+OFF arm contains none. Every cross-engine graph ratio taken before this round therefore
+compared a probe-contaminated population against a clean one. Re-measured with the gate on,
+so both sides carry probe graphs:
+
+| quantity | as measured before | matched population | direction |
+|---|---|---|---|
+| per-call skeletal edge density (`e_after_collapse/call`) | 1.183× (R682) | **1.091×** | shrinks |
+| P(adjacent beadings differ in `bead_widths[0]`) | 1.393× (R681) | **1.823×** | **grows** |
+| whole-graph edge total | ~2.1× (R681) | dissolved (R684) | gone |
+
+Per-call figures on matched 40,000-call populations: `e_after_cells` 451.623 vs 494.212,
+`e_after_collapse` 352.165 vs 384.334, `n_after_collapse` 177.084 vs 193.137,
+`collapse_keep` 0.7798 vs 0.7777 — the collapse stays exonerated (R682) and the construction
+deficit is only 1.09×.
+
+### Where the account now stands
+
+```
+output-side deficit (in_changes per outer-wall loop)   2.802x   (ours 0.0699-0.0703, C++ 0.1960)
+  per-call skeletal edge density                       1.091x
+  P(adjacent beadings differ)                          1.823x
+  product                                              1.995x
+  RESIDUAL                                             1.405x  still unexplained
+```
+
+**The beading-difference probability is now by far the dominant measured term** — 1.823×,
+where R681 sized it at 1.393× and treated it as the minor factor. That vindicates the
+re-opening of the **beading strategy (R661)** and the **Arachne quantisation constants
+(R585/R657)**: both were eliminated against a metric R679 disqualified, and the term they
+govern has just doubled in importance.
+
+Two caveats stated plainly. First, the two surviving factors are whole-graph quantities used
+to explain an output-side deficit; they are probe-contaminated *equally* on both sides now,
+which makes the comparison fair but does not make the product a proven decomposition.
+Second, the residual is 1.405× — smaller than R684's ~1.7×, but only because the beading term
+grew, not because anything new was explained.
+
+No source was modified this round. All eight suites unchanged (multi_material_integration
+25/26, pre-existing); the OFF arm reproduced majora `d6ccfdbb`.
+
+**R686: go straight at the beading strategy — it is now the largest measured term (1.823×).**
+Compare `BeadingStrategy::compute` output on both engines for the same input width: the chain
+is `WideningBeadingStrategy` → `DistributedBeadingStrategy` → `RedistributeBeadingStrategy` →
+`LimitedBeadingStrategy` (`BeadingStrategyFactory.cpp`). Instrument at the outermost
+`compute(thickness, bead_count)` with a histogram of `(thickness bucket) -> distinct
+bead_widths[0]`, scoped identically on both engines, and print the call population. Predict
+our strategy returns a *coarser quantisation* of `bead_widths[0]` — fewer distinct values per
+thickness bucket — which is exactly what would make adjacent nodes resolve to equal widths.
+Fallback: if the per-bucket distinct counts match, the strategies agree and the difference is
+in *which* thickness each node presents, i.e. `distance_to_boundary`, and the target moves to
+the graph geometry rather than the strategy. **Run our side with `ARACHNE_TOP_ONE_WALL=1` so
+the populations match C++ (R685) — this is now mandatory for every whole-graph comparison.**
