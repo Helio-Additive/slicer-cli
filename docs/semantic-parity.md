@@ -11552,3 +11552,63 @@ created or destroyed — the exact inverse of the R648-R650 rounds and the same 
 which is now the precedent for reading such a result correctly. Fallback: if in-order moves by less
 than 20k, the inversion is not what breaks the alignment and the seam difference dominates — say so,
 and take the seam (loop start point and direction) as the target instead.
+
+## R654 — the inversion is fixed exactly, and it made the order metric WORSE by 26,309
+
+**Prediction: half right and half wrong, in the more interesting direction.** Content moved **zero**,
+as predicted. In-order moved **−26,309** (468,570 → 442,261) — the opposite of the ~100k gain
+predicted. Shipped **OPT-IN** (`probe_enabled("LINEWIDTH_BEFORE_SPEED")`, default OFF); all three
+baseline hashes unchanged.
+
+### The producer was not where R653 said
+
+R653 named the collection-level pre-set at `extrude_collection`. **The A/B refuted it in one run:
+gate on and gate off produced the identical hash `3d741dde`** — `skip_pre_speed` is already true
+there, so that site never fires on these paths. Inference from the guard's source would have shipped
+a no-op; the A/B is why it didn't.
+
+The real producers are **five** `set_speed` calls made immediately before `extrude_path`:
+`exporter.rs:544, 554, 596, 608` (all four in `extrude_loop`) and `:1860` (`extrude_entity`'s Path
+arm). C++ does both inside *one* function, tag first — Width tag at `GCode.cpp:6607`, `set_speed` at
+`:6663`. Routing all five through a pending slot flushed straight after the tag reproduces C++'s
+order exactly:
+
+| | `; LINE_WIDTH:` | followed by bare `G1 F` | preceded by one |
+|---|---|---|---|
+| ours, gate off | 154,063 | 3 | **148,548** |
+| **ours, gate on** | 154,063 | **148,551** | **0** |
+| C++ | 215,199 | 203,408 | **0** |
+
+The adjacency is now C++'s exactly, and the tag total is untouched — no line created or destroyed,
+which the unchanged content rate confirms independently.
+
+### Why it still made things worse
+
+**We emit 154,063 width tags against C++'s 215,199 — a 61,136 deficit.** Our tags therefore cannot
+anchor one-to-one against C++'s. While the `G1 F` lines floated free of the tags they aligned with
+C++'s `G1 F` lines on their own; binding each one to a tag that is *often missing relative to C++*
+destroys that alignment at every absent tag. The local order is right and the global sequence is
+worse.
+
+That is a real result, not a metric artefact: R652 validated `seq_parity.py` against a change of
+independently known size, and here it is reporting a cost that the content metric cannot see in
+either direction. **A locally C++-faithful change can be globally worse when a related count is
+still wrong** — new rule, and the reason this ships OFF rather than ON.
+
+### R655 — close the tag COUNT first
+
+The 61,136 `; LINE_WIDTH:` deficit is now the blocking item: until our tags correspond to C++'s
+one-for-one, no amount of correcting their *position* can help, and this round's code is waiting
+behind it with a one-line flip.
+
+Note this re-opens a question R558/R567/R570/R571 closed — legitimately, with new evidence. Those
+rounds settled the *entity-level* emitter; the live emitter is now the per-path one under
+`LINEWIDTH_PERPATH` (`exporter.rs:1372-1380`), whose own parked comment says the gate "ADDS unmatched
+lines (83187 → 87805)" because our f64 widths drift from C++'s f32 chain in the 6th significant
+digit. **That comment predates the order metric and was written against the content rate alone.**
+
+**Predict the deficit is dominated by width-register misses — our `width_tag_changed` register
+suppressing tags C++ emits — rather than by paths we never visit**, since the path counts elsewhere
+match closely. Census `width_tag_changed` calls versus emissions, both sides, before changing
+anything. Fallback: if the register fires about as often as C++'s, the deficit is in the *paths*,
+not the tags — count paths per feature on both sides and follow that instead.

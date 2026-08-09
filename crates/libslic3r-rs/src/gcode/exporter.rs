@@ -541,7 +541,7 @@ pub fn extrude_loop(
                 } else {
                     ";_EXTRUDE_SET_SPEED"
                 };
-                writer.set_speed(path.smooth_speed * 60.0, cooling_comment);
+                set_speed_before_path(writer, path.smooth_speed * 60.0, cooling_comment);
             } else if path.role == ExtrusionRole::OverhangPerimeter {
                 // GCode.cpp:5401-5408 — overhang/bridge wall speed.
                 let ovh_speed = if (path.overhang_degree - 5.0).abs() < f64::EPSILON
@@ -551,7 +551,7 @@ pub fn extrude_loop(
                 } else {
                     config.bridge_speed
                 };
-                writer.set_speed(ovh_speed * 60.0, "");
+                set_speed_before_path(writer, ovh_speed * 60.0, "");
             }
             let fan_marker = zsmooth_markers && overhang_fan_marker_needed(config, path);
             if fan_marker {
@@ -593,7 +593,7 @@ pub fn extrude_loop(
             } else {
                 ";_EXTRUDE_SET_SPEED"
             };
-            writer.set_speed(corr * 60.0, cooling_comment);
+            set_speed_before_path(writer, corr * 60.0, cooling_comment);
         } else if path.role == ExtrusionRole::OverhangPerimeter {
             // GCode.cpp:5401-5408 — overhang/bridge wall speed.
             //   degree==5 -> overhang_totally_speed; else (degree 6) -> bridge_speed.
@@ -605,7 +605,7 @@ pub fn extrude_loop(
                 config.bridge_speed
             };
             // Bridge moves are not cooling-adjustable.
-            writer.set_speed(ovh_speed * 60.0, "");
+            set_speed_before_path(writer, ovh_speed * 60.0, "");
         }
         let fan_marker = zsmooth_markers && overhang_fan_marker_needed(config, path);
         if fan_marker {
@@ -1013,8 +1013,53 @@ pub fn extrude_collection(
                     | ExtrusionRole::Perimeter
                     | ExtrusionRole::OverhangPerimeter
             );
+        // R654 — instrument first (do not infer from the guard's source, R649).
+        if crate::probe_enabled("PRESPEED_PROBE") {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static N: AtomicU64 = AtomicU64::new(0);
+            static SKIP: AtomicU64 = AtomicU64::new(0);
+            static NO_OH: AtomicU64 = AtomicU64::new(0);
+            static NO_LOOP: AtomicU64 = AtomicU64::new(0);
+            static NO_ROLE: AtomicU64 = AtomicU64::new(0);
+            let n = N.fetch_add(1, Ordering::Relaxed) + 1;
+            if skip_pre_speed {
+                SKIP.fetch_add(1, Ordering::Relaxed);
+            } else {
+                if !config.enable_overhang_speed {
+                    NO_OH.fetch_add(1, Ordering::Relaxed);
+                }
+                if !matches!(entity, crate::extrusion_entity::ExtrusionEntityType::Loop(_)) {
+                    NO_LOOP.fetch_add(1, Ordering::Relaxed);
+                }
+                if !matches!(
+                    entity_role,
+                    ExtrusionRole::ExternalPerimeter
+                        | ExtrusionRole::Perimeter
+                        | ExtrusionRole::OverhangPerimeter
+                ) {
+                    NO_ROLE.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            if n % 200000 == 0 {
+                eprintln!(
+                    "[PRESPEED] n={n} skipped={} | blocked_by: !overhang_speed={} !Loop={} !perimeter_role={}",
+                    SKIP.load(Ordering::Relaxed),
+                    NO_OH.load(Ordering::Relaxed),
+                    NO_LOOP.load(Ordering::Relaxed),
+                    NO_ROLE.load(Ordering::Relaxed)
+                );
+            }
+        }
         if !skip_pre_speed {
-            writer.set_speed(feature_speed * 60.0, cooling_comment);
+            // R654: C++ emits NO collection-level F — `_extrude` writes the Width
+            // tag (GCode.cpp:6607) and only then `set_speed` (:6663). Defer ours
+            // to just after the tag rather than dropping it, so the line count is
+            // untouched and only its position changes.
+            if crate::probe_enabled("LINEWIDTH_BEFORE_SPEED") {
+                writer.set_speed_pending(feature_speed * 60.0, cooling_comment);
+            } else {
+                writer.set_speed(feature_speed * 60.0, cooling_comment);
+            }
         }
 
         /// Recursively extrude the entity
@@ -1378,6 +1423,11 @@ pub fn extrude_path_with_arc_fitting(
             EXPW_EMITTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }
+    // R654 — the deferred collection-level feedrate lands HERE, after the width
+    // tag, which is where C++'s `set_speed` (GCode.cpp:6663) sits relative to the
+    // Width tag (:6607). Unconditional: if the tag did not fire, the F must still
+    // be emitted exactly once, so the line count is identical either way.
+    writer.flush_pending_speed();
 
     if expw {
         use std::sync::atomic::{AtomicU64, Ordering};
@@ -1807,7 +1857,7 @@ pub fn extrude_entity(
                     } else {
                         ";_EXTRUDE_SET_SPEED"
                     };
-                    writer.set_speed(speed * 60.0, cooling_comment);
+                    set_speed_before_path(writer, speed * 60.0, cooling_comment);
                 }
             }
             extrude_path(path, writer, config, is_first_layer);
@@ -4624,5 +4674,33 @@ mod tests {
             "Overhang should use 70% fan ({})",
             content
         );
+    }
+}
+
+/// R654 — the five sites that set the path feedrate immediately before calling
+/// `extrude_path`, which is where the `; LINE_WIDTH:` tag is written.
+///
+/// C++ does both inside ONE function, tag first: `_extrude` emits the Width tag
+/// at GCode.cpp:6607 and only then `set_speed` at :6663. Our split puts the speed
+/// in the caller, so the pair came out inverted 148,548 times against C++'s ZERO
+/// (R653's census). Deferring the F to a pending slot, flushed straight after the
+/// tag, reproduces C++'s order without creating or destroying a line.
+///
+/// SHIPPED OPT-IN (probe, default OFF). Making the adjacency exactly C++'s
+/// (G1F->LW 148,548 -> 0, C++ 0) moved content ZERO as predicted but cost
+/// **-26,309 IN-ORDER lines** (468,570 -> 442,261). The reason is the tag
+/// COUNT, not its order: we emit 154,063 `; LINE_WIDTH:` against C++'s
+/// 215,199, a 61,136 deficit, so our tags cannot anchor 1:1 with C++'s.
+/// Binding the F to a tag we under-emit destroys alignment that the F lines
+/// previously kept on their own. Close the COUNT first, then flip this ON.
+///
+/// R654 note: the first suspect was the collection-level pre-set at
+/// `extrude_collection` — the A/B proved that gate a NO-OP (identical hash), so
+/// `skip_pre_speed` is already true there and these five are the real producers.
+fn set_speed_before_path(writer: &mut GCodeWriter, speed: crate::CoordF, comment: &str) {
+    if crate::probe_enabled("LINEWIDTH_BEFORE_SPEED") {
+        writer.set_speed_pending(speed, comment);
+    } else {
+        writer.set_speed(speed, comment);
     }
 }

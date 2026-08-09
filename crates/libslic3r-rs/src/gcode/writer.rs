@@ -378,6 +378,13 @@ pub struct GCodeWriter {
     /// next extrusion move (GCodeWriter.cpp:168-171 set_acceleration stores;
     /// extrude_to_xy:717 prepends set_extrude_acceleration()). 0 = none.
     pending_accel: u32,
+    /// R654 — the same deferral, for the collection-level feature feedrate.
+    /// C++ has no collection-level `G1 F` at all: `_extrude` emits the Width tag
+    /// (GCode.cpp:6607) and only then `set_speed` (:6663). Ours pre-set the F in
+    /// `extrude_collection` before descending into the path, so the pair came out
+    /// inverted 148,548 times (R653). Holding it here and flushing it right after
+    /// the tag reproduces C++'s order without creating or destroying a line.
+    pending_speed: Option<(CoordF, String)>,
     /// Per-layer context for the faithful needs_retraction (ZSMOOTH_FAITHFUL):
     /// internal-island polygons + wall boundary lines of the current layer.
     pub zsmooth_retract_ctx: Option<RetractCtx>,
@@ -460,6 +467,7 @@ impl GCodeWriter {
             last_height_tag: 0.0,
             is_first_layer: false,
             pending_accel: 0,
+            pending_speed: None,
             zsmooth_retract_ctx: None,
             last_width_tag: 0.0,
             gcode_origin_x: 0.0,
@@ -924,6 +932,23 @@ impl GCodeWriter {
     /// R227: GCodeWriter::set_extrude_acceleration (GCodeWriter.cpp:198-201) —
     /// emit the pending accel through the shared register, deduped. Called by
     /// every extrusion move (and the wipe segments) under the gate.
+    /// R654 — hold the feature feedrate until the width tag has been written.
+    /// See `pending_speed`. Overwrites any unflushed value: the collection-level
+    /// pre-set is per-entity, so a second one before a flush means the first
+    /// entity emitted no path and its F was never C++-visible either.
+    pub fn set_speed_pending(&mut self, speed: CoordF, comment: &str) {
+        self.pending_speed = Some((speed, comment.to_string()));
+    }
+
+    /// Emit a pending feature feedrate, if any. Called immediately after the
+    /// `; LINE_WIDTH:` tag in `extrude_path_with_arc_fitting`, which is where
+    /// C++'s `set_speed` sits relative to the Width tag.
+    pub fn flush_pending_speed(&mut self) {
+        if let Some((speed, comment)) = self.pending_speed.take() {
+            self.set_speed(speed, &comment);
+        }
+    }
+
     pub fn flush_pending_accel(&mut self) {
         if !lift_faithful_gate() || self.pending_accel == 0 {
             return;
