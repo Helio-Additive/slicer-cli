@@ -1104,7 +1104,25 @@ impl PrintObject {
             }
             if !stolen_total.is_empty() {
                 // Remainder stays in region 0.
-                let mut remaining = crate::clipper_utils::difference(region0_ex, &stolen_total);
+                // R698 — HOLE LOSS. C++ builds this remainder with
+                // `diff(mine, segmented.expolygons)` + `union_ex(mine)`
+                // (PrintObjectSlice.cpp:937/951), and subtracting painted islands
+                // from the base region is exactly what CREATES holes: C++ carries
+                // 1,740 holes at bracket C where we carry 44 (39.6x), with our area
+                // 0.14% LARGER — both symptoms of holes being filled in rather than
+                // kept.
+                //
+                // The asymmetry is in the primitives: `intersection` routes to the
+                // vertex-exact `intersection_clib` under the default-ON CLIPPER_INT
+                // gate, but `difference` has NO such routing — it always takes the
+                // geo-clipper path at a 1um grid, even though `difference_clib`
+                // exists and is faithful. Gated here (not inside `difference`) to
+                // keep the blast radius to this one call site.
+                let mut remaining = if crate::opt_in_gate("MMSEG_DIFF_CLIB") {
+                    crate::clipper_utils::difference_clib(region0_ex, &stolen_total)
+                } else {
+                    crate::clipper_utils::difference(region0_ex, &stolen_total)
+                };
                 // R678 — SHIPPED ON, reversing R557's parking decision. R557 rejected
                 // this on a WALL-LINES IoU metric that is no longer the bar; R677 then
                 // showed by bracketing BOTH engines around this exact stage that it is

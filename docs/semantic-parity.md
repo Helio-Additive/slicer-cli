@@ -14568,3 +14568,83 @@ the Arachne entry"** — a topology/splitting question, upstream of any toleranc
 Default path unchanged (`MMSEG_OPEN_MULT` defaults to the faithful 5.0): benchy
 `248ff22a`, cube `14566293`, majora `d6ccfdbb` with the variable unset. Eight
 suites at standing results. No C++ instrumented; the submodule was never touched.
+
+## R698 — the contour deficit is a HOLE deficit, and it starts in slicing, not segmentation
+
+R697 reduced the Arachne-entry gap to a 1.102× contour-count deficit with our
+contours individually *richer*. R698 split contour counts into outer contours and
+holes. `SLICEPTS` already reports both surfaces and contours per stage, and
+`contours = surfaces + holes`, so this needed no new instrument — each figure
+comes from one probe line in one engine's own run.
+
+### The split
+
+| stage | ours surfaces | ours holes | C++ surfaces | C++ holes | hole ratio |
+|---|---|---|---|---|---|
+| A pre-segmentation | 1,346 | **45** | 1,346 | **97** | **2.16×** |
+| C post-segmentation | 14,924 | **44** | 16,732 | **1,740** | **39.6×** |
+
+**It is a hole deficit.** At bracket A the surface counts are *identical* (1,346 =
+1,346) and the holes differ 2.16×. Across segmentation C++ **gains 1,643 holes**
+and we gain **−1**.
+
+This is also consistent with the area residual R679 recorded and never explained:
+ours is **+1,614 mm² (0.14%) larger**, which is what filling in ~1,700 small holes
+would do. Holes are being lost, not merely uncounted.
+
+### The opening is exonerated
+
+Re-reading R697's sweep logs for holes rather than points:
+
+| mult | 5 | 4 | 3 | 2 | 1 | C++ |
+|---|---|---|---|---|---|---|
+| holes | 44 | 49 | 60 | 66 | 74 | **1,740** |
+
+Even at the weakest opening we carry 74 holes against C++'s 1,740. The cleanup
+does not destroy them — **they are never created.**
+
+### A candidate found by reading, and refuted by measuring
+
+`clipper_utils.rs` has a real asymmetry: `intersection` (`:306`) routes to the
+vertex-exact `intersection_clib` under the default-ON `CLIPPER_INT` gate, while
+`difference` (`:330`) has **no such routing** and always takes the geo-clipper
+path on a 1 µm grid — even though a faithful `difference_clib` exists at `:1351`
+and is never reached from it. `print_object.rs` builds the base-colour remainder
+with exactly that `difference`, and subtracting painted islands from the base
+region is precisely what should create holes.
+
+Gated at that one call site as `MMSEG_DIFF_CLIB` (`opt_in_gate`, default OFF):
+
+| | C surfaces | C holes | C area mm² | entry polys | majora hash |
+|---|---|---|---|---|---|
+| OFF | 14,924 | 44 | 1,191,122 | 26,792 | `d6ccfdbb` |
+| ON | 25,813 | **52** | 1,191,063 | 26,834 | `ef67f170` |
+| C++ | 16,732 | **1,740** | 1,189,508 | 29,512 | — |
+
+**Reachable and dramatic on surfaces (1.73×), inert on holes (44 → 52).** The
+difference primitive is not where the holes go. Parked default-OFF and unscored,
+alongside `ARACHNE_SIMPLIFY_FAITHFUL`.
+
+Note the entry moved 26,792 → 26,834 (0.16%) while bracket C surfaces went 1.73× —
+**R697's invariance reproduces on a completely different intervention.** That is
+now two independent confirmations that bracket C does not drive the entry.
+
+### Where it actually starts
+
+**Bracket A already carries the deficit** (45 vs 97, at identical surface counts),
+so hole loss begins in **slicing / ExPolygon reconstruction**, upstream of
+`apply_mm_segmentation_tier1` entirely. Segmentation then fails to *add* the
+1,643 holes C++ creates, which is a second, larger symptom of the same defect:
+whatever reconstructs ExPolygons from boolean output is not nesting interior
+rings as holes.
+
+The next target is the PolyTree/union reconstruction shared by both paths
+(`union_polygons_ex` / `union_ex_clib`), not any tolerance — R699 should count
+holes directly out of a single boolean op on both engines rather than at stage
+boundaries.
+
+### Baselines and suites
+
+Default path unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`.
+Seven suites green, `multi_material_integration` 25/26 pre-existing. No C++
+instrumented this round; the submodule was never touched.
