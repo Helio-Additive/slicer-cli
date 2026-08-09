@@ -12976,3 +12976,79 @@ Majora, because the fragmentation feeds the Arachne input directly and R677 has 
 it is the sole source of the 1.652×. Fallback: if both metrics are flat or worse, the
 fragmentation is real but downstream-inert, and the next target is the point *count*
 deficit at bracket C (1,360,799 vs 1,595,256) rather than the piece count.
+
+## R678 — MMSEG_OPENING SHIPS: R557's parking decision reversed, the R677 root cause is closed
+
+**Prediction CONFIRMED.** R677 localised the whole contour-coarseness deficit to
+`apply_mm_segmentation_tier1` and found the C++ cleanup already ported and switched off.
+R678 re-scored it on the current metrics and shipped it.
+
+### Reachability and the geometric effect
+
+Four arms on Majora, each exit-code-checked, each printing `SLICEPTS` bracket C:
+
+| arm | majora hash | bracket C surfaces | points/contour |
+|---|---|---|---|
+| OFF | `3d741dde` | 26,620 | 50.884 |
+| **MMSEG_OPENING** | `d6ccfdbb` | **14,924** | **88.736** |
+| MMSEG_CLOSING | `3d741dde` (byte-identical) | 26,620 | 50.884 |
+| both | `d6ccfdbb` | 14,924 | 88.736 |
+
+C++ reads 16,728 surfaces / 86.384 points-per-contour. **`MMSEG_OPENING` alone takes the
+deficit from 1.698× to 1.027×** — the root cause R677 named is closed by the change R557
+parked. We now land 2.7% *above* C++'s points-per-contour and 11% *below* its piece count.
+
+**`MMSEG_CLOSING` is inert here**, and structurally so: its `prev` is non-empty only when
+an earlier painted extruder in the same layer already wrote to the same `region_id`, which
+`PAINTED_REGION_DEDUP`'s one-region-per-filament map never produces on this model. The
+byte-identical hash is the empirical confirmation.
+
+### Scored on BOTH current metrics
+
+| | OFF | ON | Δ |
+|---|---|---|---|
+| Majora content (order-blind) | 28.32% (711,537/2,512,604) | 28.24% (709,080/2,511,238) | **−2,457** |
+| Majora IN ORDER | 18.65% (468,570) | **18.70% (469,489)** | **+919** |
+| Benchy | `248ff22a` | `248ff22a` | byte-unchanged |
+| cube | `14566293` | `14566293` | byte-unchanged |
+
+Benchy and cube are single-material, so `apply_mm_segmentation_tier1` never runs — the
+change is Majora-only by construction, not by luck.
+
+**The per-feature split is what settles it.** Both metrics move in the *same two features*,
+in *opposite directions*:
+
+| feature | Δ our lines | Δ content-matched | Δ IN-ORDER |
+|---|---|---|---|
+| Outer wall | −843 | **−1,257** | **+802** |
+| Inner wall | −277 | **−799** | **+407** |
+| Sparse infill | +327 | −268 | −218 |
+| everything else | −573 | −133 | −72 |
+
+Outer wall in-order-as-a-fraction-of-content goes 43.3% → 44.1%; inner wall 55.0% →
+56.5%. The change makes the wall *structure* right while shifting individual coordinates:
+fewer lines match as unordered text, more of the ones that do match appear in the correct
+sequence. The order-blind metric is precisely the one R651/R652 established is
+insufficient, and the strict metric improves on exactly the features the change targets.
+
+**Both prior parkings were driven by the ORDER metric getting worse** — R654
+(content 0 / order −26,309) and R656 (content +1,204 / order −2,117). Here the order metric
+improves. The precedent supports shipping, and the standing rule "score both rates before
+shipping" is satisfied, not bypassed.
+
+Both gates flipped from `probe_enabled` to `faithful_gate` (default ON, `=0` to disable).
+All eight suites unchanged (multi_material_integration 25/26, pre-existing).
+
+**NEW MAJORA BASELINE: `d6ccfdbb`** (was `3d741dde`, held since R651). Benchy `248ff22a`
+and cube `14566293` unchanged.
+
+**R679: the residual at bracket C.** With the fix in, our post-segmentation surfaces are
+14,924 against C++'s 16,728 (0.892×) and our points 1,328,201 against 1,595,256 (0.833×) —
+points-per-contour now matches but we still carry ~17% less boundary detail in total. The
+piece count has crossed over from 1.59× too many to 0.89× too few, which suggests the
+opening is slightly stronger than C++'s or that our painted/base partition differs in
+extent. Measure the per-`(layer, region)` AREA at bracket C on both engines — a matching
+piece count with a mismatched area means the partition is misplaced, a matching area with
+a mismatched piece count means the cleanup tolerance is off. Predict the areas match and
+the difference is in the cleanup. Fallback: if the areas differ, the target is the painted
+partition (`multi_material_segmentation_by_painting_tier1`), not the cleanup.

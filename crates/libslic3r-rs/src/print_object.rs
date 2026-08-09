@@ -1050,7 +1050,13 @@ impl PrintObject {
                 // before `slices.set(...)`. Accumulate the same way so a region fed by
                 // two painted extruders (possible under PAINTED_REGION_DEDUP) is merged
                 // rather than overwritten.
-                let merged = if crate::probe_enabled("MMSEG_CLOSING") {
+                // R678 — SHIPPED ON. Inert on Majora (byte-identical output, bracket C
+                // unchanged at 26,620 surfaces): `prev` is non-empty only when an
+                // earlier painted extruder in the SAME layer already wrote to the SAME
+                // region_id, which PAINTED_REGION_DEDUP's one-region-per-filament map
+                // never produces here. Kept ON because it is the faithful C++ shape and
+                // costs nothing until a config does hit the multi-contribution case.
+                let merged = if crate::faithful_gate("MMSEG_CLOSING") {
                     let prev = layer.regions()[region_id]
                         .slices
                         .surfaces
@@ -1082,13 +1088,30 @@ impl PrintObject {
             if !stolen_total.is_empty() {
                 // Remainder stays in region 0.
                 let mut remaining = crate::clipper_utils::difference(region0_ex, &stolen_total);
+                // R678 — SHIPPED ON, reversing R557's parking decision. R557 rejected
+                // this on a WALL-LINES IoU metric that is no longer the bar; R677 then
+                // showed by bracketing BOTH engines around this exact stage that it is
+                // the sole source of the long-hunted contour-coarseness deficit.
+                // Bracket C (post-segmentation LayerRegion slices, Majora, 656 layers):
+                //     OFF   26,620 surfaces   50.884 points/contour
+                //     ON    14,924 surfaces   88.736 points/contour
+                //     C++   16,728 surfaces   86.384 points/contour
+                // i.e. the 1.698x deficit becomes 1.027x. Scored on BOTH current
+                // metrics: Majora in-order +919 lines (18.65% -> 18.70%), concentrated
+                // in the two features it targets (Outer wall +802, Inner wall +407);
+                // Majora order-blind content -2,457, in those same walls. Structure
+                // right, coordinates shifted — and the order-blind metric is the one
+                // R651/R652 established is insufficient. Benchy and cube are
+                // byte-unchanged (single-material: this function never runs).
+                // Both prior parkings (R654, R656) were driven by the ORDER metric
+                // getting worse; here it improves. Disable with MMSEG_OPENING=0.
                 // R557: SHIPS OPT-IN (not default-ON). The port is faithful and moves
                 // our internal geometry decisively toward C++ (surfaces per
                 // layer-region 7.78 -> 4.40 against C++'s 4.97; make_perimeters call
                 // count 3,400 -> 3,200, exactly C++'s), but it does NOT move the
                 // `; LINE_WIDTH:` metric it was aimed at (1.19, unchanged) and costs
                 // 0.06pp of wall-lines IoU — a real regression, stable across three
-                // independent C++ references. Enable with MMSEG_OPENING=1.
+                // independent C++ references.
                 // R557 / PrintObjectSlice.cpp:946-947 — C++ filters the remainder:
                 //   if (! mine.empty())
                 //       mine = opening(union_ex(mine), float(scale_(5 * EPSILON)),
@@ -1099,7 +1122,7 @@ impl PrintObject {
                 // the opening is needed. NOTE the distance unit: `opening_ex` takes mm
                 // (the scale is applied inside `offset_expolygons`), so C++'s
                 // `scale_(5 * EPSILON)` is simply `5 * EPSILON` here.
-                if crate::probe_enabled("MMSEG_OPENING") && !remaining.is_empty() {
+                if crate::faithful_gate("MMSEG_OPENING") && !remaining.is_empty() {
                     remaining = crate::clipper_utils::opening_ex(
                         &remaining,
                         5.0 * crate::libslic3r::EPSILON,
