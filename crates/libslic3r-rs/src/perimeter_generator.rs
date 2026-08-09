@@ -2959,7 +2959,30 @@ impl PerimeterGenerator {
         // PerimeterGenerator.cpp:1499-1500
         // C++: double surface_simplify_resolution = (enable_arc_fitting && fuzzy_skin == None)
         //          ? 0.2 * m_scaled_resolution : m_scaled_resolution;
-        let surface_simplify_resolution = if self.config.arc_fitting_enabled
+        //
+        // R672 — UNITS. `m_scaled_resolution` is `scaled<double>(print_config.resolution)`,
+        // so for 0.0125 mm the C++ tolerance is 0.2 * 1250 = 250 SCALED units. Our
+        // `config.surface_simplify_resolution` holds the UNSCALED millimetre value
+        // (layer.rs sets it to `print_config.resolution`), so passing it straight to
+        // `simplify_p` is a 1e5x-too-small tolerance. R122 found exactly this in the
+        // CLASSIC path and fixed it there (:525-531, gated `F1_UNION`); the arachne path
+        // kept the unscaled value. Gated separately so the A/B is attributable.
+        // R672 — DEFAULT OFF (`probe_enabled`, not `faithful_gate`). The A/B showed the
+        // scaled value COLLAPSES every contour: POLYPROBE's "0 input outline" goes from
+        // 26,782 polys / 1,223,769 points to 0/0. That is the signature of `simplify_p`
+        // taking an UNSCALED millimetre tolerance, so 250 is a 250 mm tolerance and the
+        // pre-existing unscaled value was right FOR THIS FUNCTION. Kept as an opt-in
+        // switch because the collapse is itself a measurement (see the round notes).
+        let surface_simplify_resolution = if crate::probe_enabled("ARACHNE_SIMPLIFY_SCALED") {
+            let scaled = self.config.surface_simplify_resolution / 0.00001_f64;
+            if self.config.arc_fitting_enabled
+                && self.config.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None
+            {
+                0.2 * scaled
+            } else {
+                scaled
+            }
+        } else if self.config.arc_fitting_enabled
             && self.config.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None
         {
             0.2 * self.config.surface_simplify_resolution

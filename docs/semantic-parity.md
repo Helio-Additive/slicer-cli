@@ -12635,3 +12635,59 @@ the direction argument is wrong, and this is the origin -- say so and re-run the
 (R669's segments, R668's shallow-shallow) to see how far up it propagates. Either way this is a
 units bug in a live path and worth fixing on its own terms; score it on both parity rates before
 shipping it (R654 and R656 both went negative on a locally-faithful change).
+
+## R672 — the fix is parity-inert and collapses the outline; R671's defect claim withdrawn
+
+R672: the "fix" is parity-inert AND collapses the outline -- `simplify_p` takes millimetres
+
+Prediction REFUTED, the fallback did not fire either, and the A/B produced a third outcome neither
+branch anticipated: scaling the tolerance destroys the outline upstream and changes nothing
+downstream. That combination is the finding. The gate ships DEFAULT OFF (`probe_enabled`, not
+`faithful_gate`); all three hashes unchanged (benchy 248ff22a, cube 14566293, majora 3d741dde);
+suites unchanged.
+
+THE A/B, BOTH ARMS, MAJORA + BENCHY + CUBE:
+
+  arm   majora     benchy     cube       maj content   benchy content
+  ON    3d741dde   248ff22a   14566293   28.32%        75.07%
+  OFF   3d741dde   248ff22a   14566293   28.32%        75.07%
+
+Byte-identical on all three fixtures and identical on both parity rates. But the same run's
+POLYPROBE, at the outline `WallToolPaths` receives:
+
+  arm   "0 input outline"            polys      points
+  OFF   (shipped)                   26,782   1,223,769
+  ON    (scaled tolerance)               0           0
+
+**The scaled value collapses every contour to nothing, and the gcode does not change by one byte.**
+
+FIRST CONCLUSION: R671's DEFECT CLAIM IS WRONG, AND I AM WITHDRAWING IT. A 250-unit tolerance
+annihilating the contours is the signature of `simplify_p` taking an UNSCALED MILLIMETRE tolerance --
+250 means 250 mm. The classic path at :525-531 divides by 0.00001 because it feeds a DIFFERENT
+function (`simplify_p_dp_rings_faithful`, the R122 faithful-DP path), not `simplify_p`. So the two
+sites were never the same call and the "same bug fixed in one path, live in the other" reading was
+mistaken. The pre-existing unscaled value is correct for the function it is passed to. R671's
+prediction was already refuted at its constant; its replacement claim is now refuted too.
+
+SECOND CONCLUSION, AND IT IS THE ONE THAT MATTERS: an outline of ZERO polygons produced
+byte-identical gcode. Whatever `WallToolPaths::generate()` is handed at this call site, its walls do
+not reach the output. R671 identified `PerimeterGenerator.cpp:1511` as the producer of the Arachne
+wall outline by reading C++; that mapping does not hold for our engine at the site I patched. Either
+the function I edited is not the live Arachne wall path, or its result is discarded downstream.
+
+I am not going to guess which. Both are checkable in one run and the check is R595's, which this
+round's own instructions demanded and which I did not do first: VERIFY REACHABILITY BEFORE
+ATTRIBUTING. The A/B was the reachability test in disguise and it came back negative.
+
+R673: find the live producer. Put a counter at every `WallToolPaths::new` / `generate()` call site in
+`perimeter_generator.rs` keyed by site, and a second counter on the extrusion entities each one's
+result contributes to `entities` — then correlate with the ~15,500 outer-wall `ExtrusionLine`s
+AWIDTH counts. Predict the live path is `generate_arachne_one`'s sibling rather than the function I
+patched, since our port has a documented history of parallel live/dead twins (the `fill/` module has
+two, and `crate::fill::` resolves to the live one while `fill/fill.rs` is dead and often the more
+faithful). FALLBACK: if the site I patched IS the only one and IS reached, then its output is
+discarded later, and the target becomes whatever consumes `entities` -- census the entity count in
+and out of that consumer, and say so.
+**DO NOT carry R670's "the outline arrives 1.069x coarse" forward as attributed to this site until
+R673 says which site the walls actually come from.** The 1.069x measurement stands; its location
+does not.
