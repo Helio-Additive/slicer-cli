@@ -14648,3 +14648,65 @@ boundaries.
 Default path unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`.
 Seven suites green, `multi_material_integration` 25/26 pre-existing. No C++
 instrumented this round; the submodule was never touched.
+
+## R699 — the boolean primitives are innocent: a five-assertion unit test clears them in milliseconds
+
+R698 localised the Arachne-entry contour deficit to a **hole** deficit (2.16× at
+bracket A on identical surface counts, 39.6× after segmentation, and consistent
+with the long-unexplained +0.14% area excess) and named the ExPolygon
+reconstruction as the suspect. R699 tested that directly instead of at a stage
+boundary.
+
+### The instrument: one square, one hole
+
+`crates/libslic3r-rs/tests/hole_preservation.rs` — a 10 mm square with a centred
+2 mm hole, pushed through each primitive on its own. No fixture, no pipeline,
+0.00 s to run.
+
+| assertion | expolygons | holes | area mm² |
+|---|---|---|---|
+| `union_polygons_ex(rings)` | 1 | **1** | 96.0000 |
+| `union_ex([ex])` | 1 | **1** | 96.0000 |
+| `intersection(ex, cover)` | 1 | **1** | 96.0000 |
+| `difference(ex, disjoint)` | 1 | **1** | 96.0000 |
+| **`difference(solid, island)`** | 1 | **1** | 96.0000 |
+
+**All five pass.** The last one matters most: subtracting an interior island from
+a solid square — exactly the mm-segmentation shape — **creates** a hole, with the
+area landing at 100 − 4 = 96 mm² as it must.
+
+**R699's prediction is refuted.** The geo path does not drop or un-nest holes,
+`union_polygons_ex` re-nests interior rings correctly, and the reconstruction
+shared by every un-gated primitive is faithful on this shape. Combined with
+R698's `MMSEG_DIFF_CLIB` result (1.73× surfaces, holes 44 → 52), the boolean
+layer is now cleared from two independent directions.
+
+### What that leaves — and it is sharper than before
+
+If `difference(solid, island)` makes a hole whenever the island is interior, and
+we run that operation ~15,000 times per model yet gain **−1** hole where C++ gains
+**+1,643**, then our subtracted islands are *not interior*. The deficit is in the
+**inputs** to the booleans, in two places:
+
+1. **The mesh slices already carry half the holes** — bracket A, 45 vs 97, at
+   *identical* surface counts (1,346 = 1,346). That is `TriangleMeshSlicer` /
+   `make_slices`, a subsystem nothing in R679–R698 touched.
+2. **The painted segmentation output must itself be nearly hole-free**, and its
+   islands must meet the region boundary rather than sit inside it — otherwise
+   the proven-correct `difference` would have produced holes.
+
+R700 should count holes in `multi_material_segmentation_by_painting_tier1`'s
+output directly (before any region assembly), and separately compare bracket-A
+hole counts per layer against C++'s to see whether the slicer deficit is uniform
+or concentrated. Both are counts on existing data, not new tolerances.
+
+The unit test stays in the tree as a regression guard: it is cheap, it has no
+fixture dependency, and it would catch a future reconstruction change that does
+drop holes.
+
+### Baselines and suites
+
+Default path unchanged: majora `d6ccfdbb`; the new test target does not touch the
+slicer binary. Seven suites green, `multi_material_integration` 25/26
+pre-existing, plus the five new assertions. No C++ instrumented; the submodule
+was never touched.
