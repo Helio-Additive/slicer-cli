@@ -951,6 +951,7 @@ impl WallToolPaths {
         if ap {
             areas.push(area_polygons(&self.outline));
         }
+        polyprobe("0 input outline", &self.outline);
         let mut prepared_outline = offset_polygons(
             &offset_polygons(
                 &offset_polygons(&self.outline, -epsilon_offset),
@@ -974,18 +975,21 @@ impl WallToolPaths {
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
+        polyprobe("3 after fixSelfIntersections", &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         remove_degenerate_verts(&mut prepared_outline);
+        polyprobe("4 after removeDegenerateVerts", &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         remove_colinear_edges(&mut prepared_outline, 0.005);
+        polyprobe("5 after removeColinearEdges", &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -993,12 +997,14 @@ impl WallToolPaths {
 
         // Removing collinear edges may introduce self intersections, so we need to fix them again
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
+        polyprobe("3 after fixSelfIntersections", &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
         outline_size_change |= original_outline_size != prepared_outline.len();
 
         remove_degenerate_verts(&mut prepared_outline);
+        polyprobe("4 after removeDegenerateVerts", &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }

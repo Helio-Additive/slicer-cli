@@ -12521,3 +12521,63 @@ The build succeeded and the slice died silently inside wall generation with no d
 that would have caught it immediately is asserting the replaced call still appears exactly once in
 the patched function, which I now do. A string-replace patch must verify what it PRESERVED, not
 only what it added.
+
+## R670 — the outline arrives 1.07x coarse; the prep chain adds 1.08x
+
+R670: the deficit splits evenly -- the outline ARRIVES 1.07x coarse and the prep chain adds 1.08x
+
+Prediction HALF RIGHT. `simplify` is a real contributor but it is not the cause: the outline already
+arrives 6.9% short of C++'s before Arachne touches it, and the whole prep chain adds only about as
+much again. The fallback did not fire (the divergence is not a per-contour off-by-one). No Rust
+behaviour change (`POLYPROBE` is `probe_enabled`, default OFF); the C++ instrumentation is reverted
+with both status checks empty and the engine rebuilt pristine; all three hashes unchanged (benchy
+248ff22a, cube 14566293, majora 3d741dde); suites unchanged.
+
+POINTS PER CONTOUR THROUGH THE WHOLE `prepared_outline` CHAIN (WallToolPaths.cpp:455-486, mirrored
+at wall_tool_paths.rs:954-1021), both engines, same stage labels:
+
+  stage                          Rust    C++     C/R
+  0 input outline               45.693  48.829  1.069
+  1 after triple offset         46.446  50.970  1.097
+  2 after simplify              28.360  32.030  1.129
+  5 after removeColinearEdges   28.174  31.806  1.129
+  9 final prepared_outline      28.278  32.572  1.152
+
+  input contour deficit         1.069x
+  prep chain adds               1.078x   (1.152 / 1.069)
+
+**Points per CONTOUR is the right unit here and it is call-count independent**, which matters
+because the two engines do not call `generate()` the same number of times -- R560/R562 recorded C++
+calling it about twice per surface, one speculatively -- so anything per-call mixes populations. On
+that unit the final 1.152x lines up with the 1.169x segments-per-`constructFromPolygons` R669
+measured, as it must, since a segment is a point.
+
+WHERE IT COMES FROM, IN TWO ROUGHLY EQUAL PARTS. The outline handed to `WallToolPaths` is ALREADY
+1.069x coarser than C++'s -- that is upstream of everything Arachne does and upstream of every stage
+this round instrumented. The chain then widens it to 1.152x, and `simplify` is where most of that
+happens: it keeps 61.06% of points on our side against C++'s 62.84%, a 1.029x difference applied to
+an already-short outline. `fixSelfIntersections`, `removeDegenerateVerts` and `removeColinearEdges`
+move the ratio by nothing at all (1.129 through all three on both engines).
+
+So the prediction named a real effect and got its size wrong again -- the same failure mode as R662
+and R665. Simplify contributes; it is not the origin.
+
+AND IT STILL DOES NOT REACH THE SHALLOW RESIDUAL. R668's near-boundary connectivity deficit is
+1.376x BEYOND the global figure. A 1.152x coarser contour does not produce that arithmetically, and
+nothing measured this round changes that. It remains the open term.
+
+R671: go upstream of `WallToolPaths`. The outline arrives 1.069x coarse, so the question is who
+produces it -- the slice contour, and whatever simplification the slicing stage applies before
+regions are built. Predict a resolution/tolerance constant in the SLICING path (not Arachne's), since
+the input deficit is uniform (1.069x at stage 0, before any Arachne stage touches it) and a
+resolution constant is the only thing that produces a uniform per-contour point loss. FALLBACK: if
+the slice contours match at the producer, the loss is in what `WallToolPaths` is HANDED -- an
+`offset`/`union` applied between the slice and the wall generator, and the target becomes that
+call's parameters. Instrument point-per-contour at the slice output and at every hop to
+`WallToolPaths::generate`, on both engines; the chain is short and one run covers it.
+
+PROCESS NOTE. The C++ patch failed to build the first time because the helper landed inside
+`WallToolPaths::generate()` rather than at file scope -- a static function definition nested in a
+function body. The R669 preservation check passed (nothing was deleted) and still missed it, so that
+check needs a companion: after inserting a file-scope helper, assert the text immediately preceding
+it is not inside a function. I checked it by printing the preceding non-blank line this time.
