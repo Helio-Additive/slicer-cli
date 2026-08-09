@@ -12117,3 +12117,58 @@ store loop and the target becomes `node.data.bead_count <= 0` at cpp:1520, NOT t
 Note CENSUS says nodes with a beading (0.1682) and nodes with bead_count >= 0 (0.1684) are the same
 population for us, and R588 recorded the same identity for C++ (0.16325 / 0.16367) -- so any
 `from`-side deficit is about WHICH nodes are in the list, not about the store dropping any.
+
+## R663 — the chain does start: a 1.97% base amplified 5.07×
+
+R663: the chain does start -- it starts from a 1.97% base and amplifies 5.07x
+
+Prediction REFUTED on its central clause. I predicted the dynamic term dominates on C++ and is near
+zero for us -- "a chain that never starts". It starts, and it carries 80% of our seeds. No engine
+change (`UQM`/`UQMSEED` are `probe_enabled`, default OFF); all three hashes unchanged (benchy
+248ff22a, cube 14566293, majora 3d741dde); suites unchanged.
+
+THE DYNAMIC TERM NEEDED NO NEW STATE. C++ already marks every beading the upward pass creates --
+`upper_beading.is_upward_propagated_only = true` (SkeletalTrapezoidation.cpp:1630) -- and the
+initial store leaves it false (BeadingPropagation's constructor, Joint.hpp:24-29). Reading that flag
+on the SOURCE at each seed says directly whether the pass is feeding itself. Our port already
+carried the field, faithfully set at the same line.
+
+BOTH TERMS, MEASURED (Majora, ~31,800 seeds total; UQMSEED's last print is at 30,000):
+
+  pre-pass `from.hasBeading()` among guard-1 survivors    0.0197   (300,770 survivors)
+  seeds whose SOURCE was created by this same pass        0.8028
+  conditional seed rate (SEEDED / guard-1 survivors)      0.0984   (0.0294 / 0.2989)
+
+Those three are not independent, and the identity closes: a static base amplified by the chain gives
+0.0197 / (1 - 0.8028) = 0.0999 against a measured 0.0984 -- 1.5% apart. So the pass is well described
+by two numbers, a STATIC BASE of 1.97% and an AMPLIFICATION of 1/(1-0.8028) = 5.07x.
+
+WHAT THAT DOES TO R662'S 1.44x. C++'s conditional seed rate is 0.141 (R587). Under the same model
+that is its own base times its own amplification, and I have neither. The gap can be closed by a
+small divergence in EITHER parameter:
+
+    if C++'s chained share equals ours (0.8028)  ->  its static base is 0.0278   (1.41x ours)
+    if C++'s static base equals ours (0.0197)    ->  its chained share is 0.860  (ours 0.803)
+
+**That is the useful result: we are not looking for a 2x defect here.** A 1.41x static base, or five
+percentage points more chaining, each fully accounts for the 1.44x on its own. Any hypothesis that
+would move either parameter by much more than that is the wrong size (R662's rule, applied to itself).
+
+THE FALLBACK CANNOT BE EVALUATED, AND I AM NOT GOING TO PRETEND IT CAN. It was worded "if OUR
+pre-pass `from`-has-beading share is itself lower" -- lower than C++'s, which was never measured.
+1.97% is not low or high against anything. Splitting the two parameters requires the same flag read
+on the C++ side, which is the one measurement this round did not make.
+
+R664: instrument C++. Two counters in `propagateBeadingsUpward`, both trivial and both already
+supported by existing C++ state:
+  1. Before the loop, walk `upward_quad_mids` once and count members with `to->data.bead_count < 0`
+     whose `from->data.hasBeading()` -- C++'s static base, directly comparable to our 0.0197.
+  2. At the seed, count `lower_beading.is_upward_propagated_only` -- C++'s chained share, directly
+     comparable to our 0.8028.
+The submodule is git-managed: revert from inside it afterwards, verify BOTH status checks, rebuild.
+PREDICT the static base carries most of the 1.44x (C++ near 0.027, chained share within a point or
+two of ours), because the amplification is a property of the traversal order and R661 verified the
+sort comparator matches line for line while the base depends on which nodes the initial store
+reached. FALLBACK: if the bases match and the chained shares diverge, the sort's ties are resolving
+differently despite identical source -- and the target becomes `std::sort` versus `sort_by` on equal
+keys, which is a REAL divergence class (C++'s introsort is unstable, Rust's `sort_by` is stable).

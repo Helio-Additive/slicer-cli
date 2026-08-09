@@ -2770,10 +2770,19 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 static DISTINCT_TO_BC: AtomicU64 = AtomicU64::new(0);
                 static G_NODES: AtomicU64 = AtomicU64::new(0);
                 static G_NODES_BC: AtomicU64 = AtomicU64::new(0);
+                static SURV: AtomicU64 = AtomicU64::new(0);
+                static SURV_FROM_HAS: AtomicU64 = AtomicU64::new(0);
                 unsafe {
                     let mut tos: BTreeSet<usize> = BTreeSet::new();
                     let mut tos_bc: BTreeSet<usize> = BTreeSet::new();
                     let mut pre = 0u64;
+                    // R663 — the `from` side, pre-pass. R662 factored the seed deficit
+                    // into 1.17x (guard 1, list composition) x 1.44x (guard 2,
+                    // `!from.hasBeading()`), and guard 2 is the order-sensitive one.
+                    // Split it: FROM_HAS_PRE is what the walk starts with, and any
+                    // excess seeds beyond that came from the pass feeding itself.
+                    // Restricted to members that SURVIVE guard 1, since that is the
+                    // population guard 2 actually sees.
                     for &e in upward_quad_mids.iter() {
                         let to = e.as_ref().to.unwrap();
                         let key = to.as_ptr() as usize;
@@ -2781,6 +2790,11 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         if to.as_ref().data.bead_count >= 0 {
                             pre += 1;
                             tos_bc.insert(key);
+                        } else {
+                            SURV.fetch_add(1, Relaxed);
+                            if e.as_ref().from.unwrap().as_ref().data.has_beading() {
+                                SURV_FROM_HAS.fetch_add(1, Relaxed);
+                            }
                         }
                     }
                     N_LIST.fetch_add(upward_quad_mids.len() as u64, Relaxed);
@@ -2804,7 +2818,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     let (dt, dtb) = (DISTINCT_TO.load(Relaxed), DISTINCT_TO_BC.load(Relaxed));
                     let (gn2, gb2) = (G_NODES.load(Relaxed), G_NODES_BC.load(Relaxed));
                     eprintln!(
-                        "[UQM] calls={c} list/call={:.2} PRE bead_count>=0 in list={:.4} ({}/{}) |                          distinct_to/call={:.2} edges_per_to={:.4} distinct_to with bc>=0={:.4} |                          GRAPH nodes/call={:.2} node bc>=0={:.4}",
+                        "[UQM] calls={c} list/call={:.2} PRE bead_count>=0 in list={:.4} ({}/{}) |                          distinct_to/call={:.2} edges_per_to={:.4} distinct_to with bc>=0={:.4} |                          GRAPH nodes/call={:.2} node bc>=0={:.4} | PRE-PASS survivors={} from.hasBeading={:.4}",
                         nl as f64 / c as f64,
                         pb as f64 / nl.max(1) as f64, pb, nl,
                         dt as f64 / c as f64,
@@ -2812,6 +2826,8 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         dtb as f64 / dt.max(1) as f64,
                         gn2 as f64 / c as f64,
                         gb2 as f64 / gn2.max(1) as f64,
+                        SURV.load(Relaxed),
+                        SURV_FROM_HAS.load(Relaxed) as f64 / SURV.load(Relaxed).max(1) as f64,
                     );
                 }
             }
@@ -2944,6 +2960,30 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 if to.as_ref().data.has_beading() {
                     // SkeletalTrapezoidation.cpp:1624 continue;
                     continue;
+                }
+                // R663 — the DYNAMIC term, measured with no new state. C++ already
+                // marks every beading this pass creates (`is_upward_propagated_only =
+                // true`, cpp:1630) and the initial store leaves it false
+                // (BeadingPropagation's constructor, Joint.hpp:24-29). So at a seed,
+                // that flag on the SOURCE says whether the chain is feeding itself.
+                if crate::probe_enabled("UQM") {
+                    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                    static SEEDS: AtomicU64 = AtomicU64::new(0);
+                    static FROM_PASS: AtomicU64 = AtomicU64::new(0);
+                    let chained = lower_beading_arc.read().is_upward_propagated_only;
+                    let n = SEEDS.fetch_add(1, Relaxed) + 1;
+                    if chained {
+                        FROM_PASS.fetch_add(1, Relaxed);
+                    }
+                    // 5,000, not 20,000: total seeds are only ~31,800, so a 20,000
+                    // modulus put the last print 63% through the run (R660's rule).
+                    if n % 5_000 == 0 {
+                        eprintln!(
+                            "[UQMSEED] seeds={n} source_created_by_this_pass={} ({:.4})",
+                            FROM_PASS.load(Relaxed),
+                            FROM_PASS.load(Relaxed) as f64 / n as f64,
+                        );
+                    }
                 }
                 // SkeletalTrapezoidation.cpp:1627 coord_t length = (upward_edge->to->p - upward_edge->from->p).cast<int64_t>().norm();
                 let length = (to.as_ref().p - from.as_ref().p).length() as Coord;
