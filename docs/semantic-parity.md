@@ -13345,3 +13345,86 @@ if the branch fires on far fewer surfaces than that, the call-count term has a s
 source and the next place to look is how many surfaces reach the Arachne path at all on
 each engine (bracket C put our surfaces at 14,924 against C++'s 16,738, only 1.12×, so a
 gap that large would have to come from somewhere else entirely).
+
+## R683 — prediction CONFIRMED quantitatively, with no C++ build: the branch is live on ~every surface, and the feature is ported into the WRONG PATH
+
+Reading the config settled reachability before any instrumentation. Majora
+(`$D/mj3mf/Metadata/project_settings.config`):
+
+```
+top_one_wall_type          = "all top"     -> TopOneWallType::Alltop
+only_one_wall_first_layer  = 0
+top_area_threshold         = 200%
+wall_generator             = arachne
+wall_loops                 = 2             -> loop_number = 1
+```
+
+Against `PerimeterGenerator.cpp:1528-1534`:
+
+```
+generate_one_wall_by_first_layer = only_one_wall_first_layer && layer_id == 0   -> ALWAYS FALSE (config 0)
+generate_one_wall_by_top_most    = top_one_wall_type != None && upper_slices == nullptr  -> topmost layer only
+generate_one_wall_by_top         = top_one_wall_type == Alltop && upper_slices != nullptr -> TRUE on every layer with an upper layer
+is_one_wall                      = loop_number == 0 || … || …                   -> FALSE except the topmost layer
+seperate_wall_generation         = !is_one_wall && generate_one_wall_by_top      -> TRUE on essentially EVERY perimeter surface
+```
+
+So C++ takes the double-construction path on essentially every perimeter surface of
+Majora, and we take the single-construction `else` arm on all of them.
+
+### The arithmetic closes exactly
+
+Ours, one Rust run, both probes at once: `WTPCALL` (perimeter `WallToolPaths` calls) reads
+**14,000** and `GBUILD` (all `constructFromPolygons` calls) reads **24,000**, each truncated
+at its modulus of 2,000.
+
+| | value |
+|---|---|
+| perimeter constructions P | [14,000, 16,000) |
+| total constructions T | [24,000, 26,000) |
+| perimeter share P/T | **0.538 – 0.667** |
+| **predicted C++ total = T + P** (one extra construction per perimeter surface) | **[38,000, 42,000)** |
+| **C++ measured (R682)** | **[40,000, 42,000)** |
+
+The prediction was "the surviving fraction accounts for 1.54–1.75×, i.e. ~54–75% of
+surfaces take the double-construction path". Measured perimeter share is 53.8–66.7% and the
+predicted C++ call total contains the measured one. **Prediction CONFIRMED; the fallback
+(a second source for the call-count term) does not fire.** The whole 1.54–1.75× call-count
+term is accounted for by the one unported branch, and the three ported fill sites dilute it
+from 2.0× to the observed value exactly as the model says they should.
+
+`should_enable_top_one_wall` (`PerimeterGenerator.cpp:1806-1828`) is 22 lines: shrink the
+top region by `(top_area_threshold/100) * max(ext_perimeter_spacing/2, perimeter_width/2)`,
+drop it if the shrunk area is under 10% of the original or the original is under 1 mm², else
+re-grow by `min_width + perimeter_width`.
+
+### The feature IS ported — into the sibling path this config never takes
+
+`top_one_wall_type`, `only_one_wall_first_layer` and `top_area_threshold` all exist in
+`preset.rs`, `print_config.rs` and `perimeter_generator.rs`, `upper_slices` is available, and
+the top-area shrink/re-grow logic is implemented at `perimeter_generator.rs:1088-1150` —
+**all of it inside `generate_classic_one` (`:486`)**. `generate_arachne` (`:2937`) carries
+none of it; its decision is the bare `let is_one_wall = loop_number == 0;` at `:3112`.
+Majora sets `wall_generator = arachne`, so the entire feature is dead for this fixture.
+
+This is the sharpest instance yet of R649's rule — **a ported function is not all its call
+sites ported.** Nothing was missing from the config plumbing or the geometry helpers; the
+decision simply was never wired into the Arachne branch.
+
+No source was modified this round and no C++ patch was needed. The majora hash from this
+round's own probe run is `d6ccfdbb`, unchanged; all eight suites unchanged
+(multi_material_integration 25/26, pre-existing).
+
+**R684: port the `seperate_wall_generation` branch into `generate_arachne`, gated
+`ARACHNE_TOP_ONE_WALL`, and A/B it on both metrics.** The pieces: (1) extend `:3112` to
+C++'s three-disjunct `is_one_wall` and add `generate_one_wall_by_top`; (2) port
+`should_enable_top_one_wall` (or reuse the classic path's shrink/re-grow at `:1125-1150` if
+the constants match — check, do not assume); (3) the probe construction at `:1566` feeding
+`top_expolys_by_one_wall` via `diff_ex` against upper and lower slices; (4) the second
+construction at `:1600` with `inset_idx += 1` on its lines before appending. Predict the
+in-order rate improves on Majora — it doubles the outer-wall path population on top areas,
+which is the term R680 measured as 3.18× short. Fallback: if in-order regresses, the branch
+is correct but our downstream ordering cannot absorb the extra paths, and the gate stays
+parked with the finding recorded. **Score BOTH metrics and split per feature before
+deciding (R678); benchy and cube must be re-checked too — unlike `MMSEG_OPENING` this
+change is NOT multi-material-only and will move every fixture.**
