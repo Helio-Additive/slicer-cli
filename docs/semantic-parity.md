@@ -12172,3 +12172,57 @@ sort comparator matches line for line while the base depends on which nodes the 
 reached. FALLBACK: if the bases match and the chained shares diverge, the sort's ties are resolving
 differently despite identical source -- and the target becomes `std::sort` versus `sort_by` on equal
 keys, which is a REAL divergence class (C++'s introsort is unstable, Rust's `sort_by` is stable).
+
+## R664 — both parameters measured: 1.20× base × 1.18× amplification
+
+R664: both parameters measured -- the 1.44x is 1.20x base x 1.18x amplification, split evenly
+
+Prediction HALF RIGHT. C++'s static base IS higher and lands close to the predicted value, but it
+does NOT carry most of the gap: the two factors are 1.198x and 1.179x, near enough a 50/50 split.
+The pre-registered fallback did NOT fire -- it required the bases to MATCH, and they do not. No Rust
+change; the C++ instrumentation is env-gated (`CPPUP`) and has been REVERTED -- both status checks
+(the submodule's own and the parent's) are empty and the engine is rebuilt from pristine source.
+
+BOTH PARAMETERS, MEASURED ON THE SAME MODEL, SAME POPULATION (guard-1 survivors):
+
+                                          Rust      C++     C/R
+  static base (pre-pass from.hasBeading)  0.0197   0.0236   1.198
+  chained share (source made this pass)   0.8028   0.8327     --
+  amplification 1/(1-chained)             5.07x    5.98x    1.179
+  conditional seed rate = base x amp      0.0999   0.1411   1.412
+  ... measured directly                   0.0984   0.141    1.434
+
+THE MODEL IS NOW VALIDATED ON BOTH ENGINES, AND ON C++ IT IS EXACT. R663 built
+`conditional_rate = static_base / (1 - chained_share)` from Rust numbers and it closed to 1.5%.
+Applying it to C++'s two freshly-measured parameters predicts 0.1411 against the 0.141 R587 recorded
+-- a different run, different counters, three-decimal agreement. That is an independent check of the
+model, not a restatement of it.
+
+WHAT IT MEANS FOR THE SEARCH. R663 framed this as an either/or: a 1.41x base OR five more points of
+chaining. It is BOTH, and each is small. Two separate ~1.19x effects have to be found, and neither
+is the kind of defect that shows up as a wrong constant. Concretely:
+  - the BASE is positional. Our graph has MORE nodes carrying a beading than C++'s (CENSUS 0.1684 /
+    0.1693 against R588's C++ 0.16367, so 1.03x in OUR favour), yet FEWER of them sit at the `from`
+    end of a guard-1-survivor edge (0.83x). More beadings, worse placed. That tension is the lead.
+  - the AMPLIFICATION is traversal order, and it is the half the R663 fallback was aimed at. The
+    fallback's precondition failed, but its target survives for this half specifically: `std::sort`
+    is an unstable introsort and Rust's `sort_by` is stable, so equal keys in `upward_quad_mids`
+    come out in a different order, and the pass seeds progressively. 5.98x versus 5.07x is exactly
+    the size of effect a tie-order difference would produce.
+
+ONE OBSERVATION HELD LOOSELY. C++ reached 95,000 seeds on this model where our whole run makes about
+31,800 -- 3.0x, against a 1.68x rate difference. That would imply ~1.8x more upward iterations, far
+more than the 1.085x graph-density gap R591 left. But the two counters print on different triggers
+and I did not match call counts, so this is an observation to test, not a result (R584's rule).
+
+R665: take the BASE half, because it is measurable without touching C++ again. The question is
+positional, and the census belongs on our side: for guard-1-survivor edges, what distinguishes a
+`from` node that has a beading from one that does not -- `distance_to_boundary`, `bead_count`,
+degree, is-it-a-transition-node? Compare that distribution against the whole-graph node
+distribution. Predict our beadings sit deeper (higher `distance_to_boundary`) than C++'s, i.e. the
+initial store fires on the right COUNT of nodes but the wrong ONES, because `bead_count` is set by
+`generateTransitioningRibs` and R590 showed our transition machinery was mis-tuned once already.
+FALLBACK: if the `from`-with-beading nodes look distributionally identical to the graph, the base
+gap is not positional either and the remaining candidate is the initial store's own guard
+(`node.data.bead_count <= 0`, cpp:1520) admitting a different SET at equal count -- instrument that
+guard's population directly and say so.
