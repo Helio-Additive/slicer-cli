@@ -587,6 +587,41 @@ impl PrintObject {
                 }
             }
             eprintln!("[SLICEPTS] A population: pairs={pairs} surfaces={surfaces} area_mm2={area:.3}");
+            // R700 — is the bracket-A hole deficit UNIFORM or CONCENTRATED?
+            // Ours carries 45 holes to C++'s 97 across 656 layers at IDENTICAL
+            // surface counts (1,346). 52 missing holes over 656 layers is
+            // 0.08/layer, which cannot be a uniform per-layer shortfall — so the
+            // histogram distinguishes "we drop small holes everywhere" (a
+            // tolerance/area-filter question) from "specific layers lose their
+            // interior rings" (specific geometry).
+            {
+                let mut per_layer: Vec<(usize, u64)> = Vec::new();
+                for (li, layer) in self.layers.iter().enumerate() {
+                    let mut h = 0u64;
+                    for r in layer.regions() {
+                        for sf in r.slices.surfaces.iter() {
+                            h += sf.expolygon.holes.len() as u64;
+                        }
+                    }
+                    if h > 0 {
+                        per_layer.push((li, h));
+                    }
+                }
+                let total: u64 = per_layer.iter().map(|(_, h)| *h).sum();
+                eprintln!(
+                    "[SLICEPTS] A holes: total={total} layers_with_holes={} of {} \
+                     max_on_one_layer={}",
+                    per_layer.len(),
+                    self.layers.len(),
+                    per_layer.iter().map(|(_, h)| *h).max().unwrap_or(0),
+                );
+                let head: Vec<String> = per_layer
+                    .iter()
+                    .take(40)
+                    .map(|(li, h)| format!("{li}:{h}"))
+                    .collect();
+                eprintln!("[SLICEPTS] A holes by layer: {}", head.join(" "));
+            }
         }
         for layer in &mut self.layers {
             layer.make_slices();
@@ -1013,6 +1048,35 @@ impl PrintObject {
             let region0_ex = &layer_slices[layer_idx];
             if region0_ex.is_empty() {
                 continue;
+            }
+            // R700 — holes in the SEGMENTATION OUTPUT itself, before any region
+            // assembly. R699 proved `difference(solid, island)` creates a hole
+            // whenever the island is interior, so if these painted ExPolygons are
+            // hole-free AND meet the region boundary, the 39.6x hole deficit at
+            // bracket C follows with no primitive at fault.
+            if crate::probe_enabled("SEGHOLES") {
+                use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                static PIECES: AtomicU64 = AtomicU64::new(0);
+                static HOLES: AtomicU64 = AtomicU64::new(0);
+                static LAYERS: AtomicU64 = AtomicU64::new(0);
+                let mut p = 0u64;
+                let mut h = 0u64;
+                for slot in segmented[layer_idx].iter() {
+                    for ex in slot.iter() {
+                        p += 1;
+                        h += ex.holes.len() as u64;
+                    }
+                }
+                PIECES.fetch_add(p, Relaxed);
+                HOLES.fetch_add(h, Relaxed);
+                let n = LAYERS.fetch_add(1, Relaxed) + 1;
+                if n % 200 == 0 {
+                    eprintln!(
+                        "[SEGHOLES] layers={n} painted_pieces={} holes={}",
+                        PIECES.load(Relaxed),
+                        HOLES.load(Relaxed),
+                    );
+                }
             }
             let mut stolen_total: crate::geometry::ExPolygons = Vec::new();
             for (i, &extruder) in painted_order.iter().enumerate() {

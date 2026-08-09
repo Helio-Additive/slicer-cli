@@ -14710,3 +14710,77 @@ Default path unchanged: majora `d6ccfdbb`; the new test target does not touch th
 slicer binary. Seven suites green, `multi_material_integration` 25/26
 pre-existing, plus the five new assertions. No C++ instrumented; the submodule
 was never touched.
+
+## R700 — the hole deficit is TEN LAYERS: bracket A matches exactly everywhere else
+
+R699 cleared the boolean primitives and forced the conclusion that the deficit is
+in their *inputs*. R700 counted holes per layer at bracket A and in the
+segmentation output, on both engines.
+
+### Prediction, on record before measuring
+
+52 missing holes across 656 layers is 0.08/layer, which cannot be a uniform
+per-layer shortfall — so the deficit was predicted **concentrated**, not uniform.
+A uniform result would have meant a tolerance/area filter dropping small holes
+everywhere; a concentrated one means specific geometry.
+
+### Bracket A, per layer
+
+| | C++ | ours |
+|---|---|---|
+| total holes | 97 on 36 layers | 45 on 24 layers |
+| **layers 0–9** | **5 holes each = 50** | **0** |
+| layers 207, 208 | 1 each = 2 | 0 |
+| all 24 other layers | 45 | **45 — equal, layer by layer** |
+
+The two lists are otherwise *identical*: 44:1, 213:1, 319:1, 325:1, 404:1, 412:1,
+419:1, 428:1, 433:1, 434:1, 435:1, 436:2, 437:2, 438:3, 445:4, 446:3, 447:4,
+448:3, 449:6, 450:2, 455:2, 462:1, 463:1, 465:1 — on every layer where we produce
+holes at all, we produce **exactly** C++'s count.
+
+**Prediction confirmed, and more sharply than expected: the entire deficit is
+layers 0–9 (50 of 52) plus layers 207–208.** Our first ten layers carry zero
+holes where C++ carries five each.
+
+### Bracket C is dominated the same way
+
+C++'s post-segmentation holes: **415 / 409 / 326 on layers 0 / 1 / 2** — 1,150 of
+its 1,739 total, on three layers. So the 39.6× bracket-C gap is largely the same
+bottom-of-model geometry, amplified by segmentation rather than created by it.
+
+### The segmentation output confirms it independently
+
+`SEGHOLES` (new this round, both engines, counted before any region assembly):
+
+| | painted pieces | holes |
+|---|---|---|
+| C++ | 18,486 | **459** |
+| ours | 17,687 | **50** |
+
+Piece counts agree to 4.3%; holes differ 9.2×. The painted ExPolygons we feed to
+`difference` are essentially hole-free, which is exactly what R699's unit test
+predicted we would find given that `difference(solid, island)` demonstrably
+*creates* holes when the island is interior.
+
+### What this rules in and out
+
+This is no longer a tolerance question, a boolean question, or a segmentation
+question. **It is bottom-of-model slicing geometry**, confined to the first ten
+layers, where five interior rings exist in C++'s slices and none in ours. Every
+other layer in the model agrees exactly, which is strong evidence the mesh, the
+z-values and the stitching are right in general.
+
+R701 should look at what is special about the first layers — first-layer
+compensation is the obvious candidate (`ElephantFootCompensation` is the very
+first include in `PrintObjectSlice.cpp`, and XY size compensation is documented
+as disabled for painted objects) — and check whether an inward/outward
+compensation is closing small interior rings. A fixture-free test in the R699
+style applies: a slice with a small hole, through the first-layer compensation
+path, asserting the hole survives.
+
+### Baselines and suites
+
+Default path unchanged: benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb`.
+Seven suites green, `multi_material_integration` 25/26 pre-existing, plus the
+five `hole_preservation` assertions. Submodule reverted, both status checks
+empty, C++ rebuilt.
