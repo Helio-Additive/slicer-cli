@@ -12899,3 +12899,80 @@ assembly and the target is whichever bracket it first appears in.
 EVERY bracket and confirm they agree. Three rounds in a row have been lost to comparing quantities
 that were not the same quantity — R675 to subdivision, R676 to revisits, and R675's own critique to
 a wrong layer count.**
+
+## R677 — the 1.652× is created ENTIRELY by mm-segmentation, and the fix is already ported but parked
+
+**Prediction REFUTED, pre-registered fallback FIRES and NAMES the bracket.**
+
+R674 measured `surface.expolygon` at `generate_arachne` reading ~51 points-per-contour
+against C++'s 84.158 (1.652×). R675 and R676 both failed to localise it because they
+compared populations that were not the same population. R677 fixed the instrument first
+and then measured the SAME field on the SAME layer population at the SAME two brackets on
+BOTH engines.
+
+C++ instrumentation: a `CPPUP`-gated file-scope helper `r677_bracket()` in
+`PrintObjectSlice.cpp`, called at two points inside `slice_volumes()` — immediately after
+the top-empty-layer trim (pre `apply_mm_segmentation`) and immediately after
+`apply_fuzzy_skin_segmentation` (post segmentation, pre `InterlockingGenerator`). Rust: a
+new `SLICEPTS` bracket C after `apply_mm_segmentation_tier1()`, plus the pair/surface
+population at bracket A.
+
+| bracket | engine | layers | pairs | surfaces | contours | points | pts/contour | pts/layer |
+|---|---|---|---|---|---|---|---|---|
+| A pre-segmentation  | C++  | 656 | 656 | 1,346 | 1,443 | 499,188 | 345.938 | 760.957 |
+| A pre-segmentation  | Rust | 656 | 656 | 1,346 | 1,391 | 495,747 | 356.396 | 755.712 |
+| C post-segmentation | C++  | 656 | 3,375 | 16,728 | 18,467 | 1,595,256 | 86.384 | 2431.793 |
+| C post-segmentation | Rust | 656 | 3,437 | 26,620 | 26,743 | 1,360,799 | 50.884 | 2074.389 |
+
+**Bracket A is IDENTICAL.** Layers 656 = 656, `(layer, region)` pairs 656 = 656, surfaces
+1,346 = 1,346 — the populations agree exactly, so the point totals are comparable without
+any correction. Points 499,188 vs 495,747 = 1.007×; points-per-contour 345.938 vs
+356.396, with Rust marginally *higher*. The mesh slicer and region assembly are in
+agreement. **The prediction that the deficit is already present at bracket A is wrong.**
+
+**Bracket C is where all of it happens.** Points-per-contour 86.384 vs 50.884 = **1.698×**,
+which is R674's 1.652× measured one stage earlier and on a population-matched unit. The
+mechanism is now explicit: from the *same* 1,346 input surfaces we emit **26,620**
+surfaces where C++ emits **16,728** — 1.59× more pieces — while producing *fewer* total
+points (1,360,799 vs 1,595,256, 0.853×). We fragment the layer into more, smaller pieces.
+Surfaces per `(layer, region)` pair: ours 7.74, C++'s 4.96.
+
+**Two corrections to carried premises.**
+1. **R676's revisit inflation is refuted.** Bracket C counts 26,620 surfaces and SURFPROBE
+   counts ~26,000 surface visits, and the new call probe reads
+   `generate_arachne calls=2000 distinct_layer_ids=342 calls_per_layer=5.848` against
+   bracket C's 3,437/656 = 5.24 pairs per layer. `generate_arachne` is entered about once
+   per `(layer, region)` pair. SURFPROBE's absolute totals are NOT revisit-inflated; the
+   2.69× A→SURFPROBE growth R676 called impossible is real subdivision, and bracket C
+   reproduces it exactly (495,747 → 1,360,799 = 2.75×).
+2. **R675's "segmentation subdivides, so the brackets are incomparable" is only half
+   right.** The populations do change across segmentation — but they change on BOTH
+   engines, so bracketing *both sides of the same stage on both engines* is exactly the
+   measurement that works. The error was measuring one engine only.
+
+**The fix is already in the tree and switched off.** `apply_mm_segmentation_tier1`
+(`print_object.rs`) carries faithful ports of both C++ cleanups:
+- `MMSEG_OPENING` — `PrintObjectSlice.cpp:946-947`,
+  `mine = opening(union_ex(mine), scale_(5 * EPSILON), scale_(5 * EPSILON))` on the base
+  region's remainder. The C++ comment states our exact symptom: *"subtraction from
+  layerm.region() could produce a huge number of small unprintable regions for the model's
+  base extruder."*
+- `MMSEG_CLOSING` — `PrintObjectSlice.cpp:962-964`,
+  `closing_ex(src.expolygons, scale_(10 * EPSILON))` when a region received more than one
+  contribution (`needs_merge`).
+
+Both are `probe_enabled`, i.e. **default OFF**. They were parked at R557, whose own note
+records the same quantity R677 has now re-derived independently: *"surfaces per
+layer-region 7.78 -> 4.40 against C++'s 4.97"*. R557 rejected them because they cost
+0.06pp of a **wall-lines IoU** metric and did not move a `; LINE_WIDTH:` ratio of 1.19 —
+neither of which is the current bar. The acceptance test has since been raised to
+line-level parity and the scoring metrics are now `line_parity.py` content and
+`seq_parity.py` in-order. **A change parked on a superseded metric has to be re-scored on
+the current one before it can stay parked.**
+
+**R678: A/B `MMSEG_OPENING` and `MMSEG_CLOSING` on BOTH current metrics** with
+`scripts/ab_template.sh` (exit-code-checked). Predict the in-order rate improves on
+Majora, because the fragmentation feeds the Arachne input directly and R677 has now shown
+it is the sole source of the 1.652×. Fallback: if both metrics are flat or worse, the
+fragmentation is real but downstream-inert, and the next target is the point *count*
+deficit at bracket C (1,360,799 vs 1,595,256) rather than the piece count.

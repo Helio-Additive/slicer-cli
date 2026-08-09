@@ -563,6 +563,20 @@ impl PrintObject {
                 }
                 (c, p)
             });
+            // R677 — the (layer, region) pair and surface populations at A, so C
+            // and SURFPROBE can be checked against them instead of against a
+            // call count that revisits inflate (R676).
+            let (mut pairs, mut surfaces) = (0u64, 0u64);
+            for layer in self.layers.iter() {
+                for r in layer.regions() {
+                    if r.slices.surfaces.is_empty() {
+                        continue;
+                    }
+                    pairs += 1;
+                    surfaces += r.slices.surfaces.len() as u64;
+                }
+            }
+            eprintln!("[SLICEPTS] A population: pairs={pairs} surfaces={surfaces}");
         }
         for layer in &mut self.layers {
             layer.make_slices();
@@ -606,6 +620,45 @@ impl PrintObject {
         // region first is byte-equivalent and cheap.
         if num_regions > 1 && !self.painted_submeshes.is_empty() {
             self.apply_mm_segmentation_tier1()?;
+        }
+
+        // R677 — bracket C. A and B are both PRE-segmentation, so neither is
+        // comparable to SURFPROBE (R675: 1,391 contours become 26,122 here).
+        // C counts the SAME field as A on the SAME layer population, after the
+        // split, so A -> C isolates what segmentation does and C is the first
+        // bracket that shares a population with `generate_arachne`'s input.
+        // The (layer, region) pair count is printed so the next bracket can be
+        // checked against it rather than against a raw call count (R676).
+        if crate::probe_enabled("SLICEPTS") {
+            let (mut c, mut p, mut pairs, mut surfaces) = (0u64, 0u64, 0u64, 0u64);
+            for layer in self.layers.iter() {
+                for r in layer.regions() {
+                    if r.slices.surfaces.is_empty() {
+                        continue;
+                    }
+                    pairs += 1;
+                    for sf in r.slices.surfaces.iter() {
+                        surfaces += 1;
+                        c += 1 + sf.expolygon.holes.len() as u64;
+                        p += sf.expolygon.contour.points.len() as u64
+                            + sf.expolygon.holes.iter().map(|h| h.points.len() as u64).sum::<u64>();
+                    }
+                }
+            }
+            let n_layers = self.layers.len();
+            let n_nonempty = self
+                .layers
+                .iter()
+                .filter(|l| l.regions().iter().any(|r| !r.slices.surfaces.is_empty()))
+                .count();
+            eprintln!(
+                "[SLICEPTS] {:34} layers={n_layers} nonempty={n_nonempty} pairs={pairs} \
+                 surfaces={surfaces} contours={c} points={p} \
+                 points_per_contour={:.3} points_per_layer={:.3}",
+                "C region slices (post segmentation)",
+                p as f64 / c.max(1) as f64,
+                p as f64 / n_layers.max(1) as f64
+            );
         }
 
         // Check for cancellation after slicing

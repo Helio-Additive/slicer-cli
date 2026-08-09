@@ -2990,6 +2990,31 @@ impl PerimeterGenerator {
             self.config.surface_simplify_resolution
         };
 
+        // R677 — SURFPROBE's absolute totals are revisit-inflated (R676): 26,000
+        // surface visits over 656 layers is ~40 per layer against ~2 contours per
+        // layer at bracket A. This counts the CALLS and the DISTINCT layer_ids so
+        // the inflation factor is a measured number rather than an assumption.
+        // calls / distinct_layers, divided by the (layer, region) pairs-per-layer
+        // that SLICEPTS bracket C prints, IS the revisit factor.
+        if crate::probe_enabled("SURFPROBE") {
+            use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+            use std::sync::Mutex;
+            static ARACHNE_CALLS: AtomicU64 = AtomicU64::new(0);
+            static LAYERS_SEEN: Mutex<Option<std::collections::HashSet<usize>>> = Mutex::new(None);
+            let n = ARACHNE_CALLS.fetch_add(1, Relaxed) + 1;
+            let mut g = LAYERS_SEEN.lock().unwrap();
+            let set = g.get_or_insert_with(std::collections::HashSet::new);
+            set.insert(self.config.layer_id);
+            if n % 2_000 == 0 {
+                eprintln!(
+                    "[SURFPROBE] generate_arachne calls={n} distinct_layer_ids={} \
+                     surfaces_this_call={} calls_per_layer={:.3}",
+                    set.len(),
+                    slices.len(),
+                    n as f64 / set.len().max(1) as f64,
+                );
+            }
+        }
         for surface in slices.iter() {
             // R674 — one hop BACK from R670. R670's POLYPROBE "0 input outline" is
             // `WallToolPaths::outline`, i.e. ALREADY past this function's `simplify_p`
