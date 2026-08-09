@@ -13988,3 +13988,100 @@ Unchanged — this round wrote no Rust source. benchy `248ff22a`, cube
 `14566293`, majora `d6ccfdbb`; eight suites at their standing results
 (`multi_material_integration` 25/26, pre-existing). Submodule reverted, both
 status checks empty, C++ rebuilt clean.
+
+## R691 — the comparator was inconsistent, tie order is inert, and the ordering hypothesis dies
+
+R690 ended by naming `std::sort` (unstable) against `sort_by` (stable) as the
+concrete asymmetry behind the 2.2× seeding gap, and left ORDER as the only
+surviving explanation. R691 read the comparator itself and found something
+larger than a stability difference — then measured the effect and killed the
+hypothesis.
+
+### The defect: an inconsistent comparator
+
+`SkeletalTrapezoidation.cpp:1488` passes a **strict weak ordering** `less` to
+`std::sort`. Two elements are *equivalent* when neither `less(a,b)` nor
+`less(b,a)`, and the lambda has an explicit "Ordering is not important" branch at
+`:1510`, so equivalents certainly occur. Our translation was:
+
+```rust
+if less() { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
+```
+
+This **never returns `Equal`**, so `compare(a,b)` and `compare(b,a)` both report
+`Greater`. That is an inconsistent comparator: `sort_by` documents the resulting
+order as unspecified for such a comparator, and because the merge takes the
+right-hand element whenever the left is not `<=`, equivalent runs come out
+*reversed* rather than preserved.
+
+**R690's framing was wrong in a way that mattered:** stability never applied. A
+stable sort preserves input order only for pairs the comparator calls `Equal`,
+and this one called none. Shipped as `faithful_gate("UQM_STRICT_WEAK")`
+(default-ON):
+
+```rust
+if uqm_less(a, b) { Ordering::Less }
+else if uqm_less(b, a) { Ordering::Greater }
+else { Ordering::Equal }
+```
+
+### The measurement: ties are common, and completely inert
+
+New probe `TIEDENS` counts adjacent pairs of the *sorted* array the comparator
+calls equivalent. **12.24% of adjacencies are tied** (219,200 of 1,790,979 over
+40,000 calls) — so the branch is not dead for lack of ties.
+
+| `ARACHNE_TOP_ONE_WALL=1` | gate OFF (pre-R691) | gate ON (strict weak) | C++ |
+|---|---|---|---|
+| `skip_beadcount` | 0.6909 | 0.6914 | 0.6745 |
+| `skip_no_from` | 0.2864 | 0.2861 | 0.2740 |
+| `SEEDED` | 0.0226 | 0.0225 | **0.0513** |
+| tied adjacencies | 0.1224 | 0.1224 | — |
+
+**And the G-code is byte-identical in both arms** — majora `d6ccfdbb` either
+way, benchy `248ff22a`, cube `14566293`. The arms genuinely differ internally
+(`skip_beadcount` 1,243,649 vs 1,244,502; `SEEDED` 40,708 vs 40,495), so this is
+a real null and not a no-op change.
+
+**Tie order in `upward_quad_mids` is inert — for seeding and for the whole
+output. The ordering hypothesis is dead, including R690's own closing claim.**
+The fix ships anyway: it is faithful to the C++ contract, removes a latent
+unspecified-order hazard (newer Rust can panic on an inconsistent comparator),
+and is provably byte-neutral on all three fixtures.
+
+### Where the gap actually lives: condition on the guard order
+
+R690 dismissed the guards because their ratios were 0.978 and 0.954. That was the
+wrong reading — the guards are sequential, so `skip_no_from` is conditional on
+surviving `skip_beadcount`. Among guard-1 survivors:
+
+| among edges passing `to->bead_count >= 0` | ours | C++ | C++/ours |
+|---|---|---|---|
+| survivors | 0.3102 | 0.3255 | 1.05 |
+| skipped for `!from->hasBeading()` | 0.9255 | 0.8418 | 0.91 |
+| **SEEDED** | **0.0745** | **0.1576** | **2.12** |
+
+Of edges that pass the bead-count guard, C++ finds `from` already has a beading
+15.8% of the time and we find it 7.5% of the time. **This is the same
+`hasBeading()` term R689 found on the downward side at 1.91×** — upward 2.12×,
+downward 1.91×, the same quantity seen from two passes.
+
+### The next target, and why it is upstream
+
+Both passes compound the same initial condition. The "Store beading" block at
+`:1517-1547` gives a beading to **every node with `bead_count > 0`**, then upward
+and downward propagation run. Seeding is self-reinforcing — more seeds means more
+`from` nodes carry beadings, which produces more seeds — so a small difference in
+the *starting* population amplifies through both passes. That makes the initial
+population, not the loops, the thing to measure.
+
+`GRAPHPROBE` (`~:4899`) already reports `nodes with bead_count>0` on both engines
+and is carried by the injector. Note CENSUS measures `bead_count >= 0`, which is
+a **different predicate** from the store block's `> 0` — the two differ by every
+node at exactly zero, so R690's matched CENSUS figure does not settle this.
+
+### Baselines and suites
+
+Byte-identical output on all three fixtures: benchy `248ff22a`, cube `14566293`,
+majora `d6ccfdbb`. Eight suites at standing results. No C++ was instrumented this
+round — the submodule was never touched.

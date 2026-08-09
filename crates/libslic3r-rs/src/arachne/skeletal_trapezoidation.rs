@@ -2628,13 +2628,30 @@ impl<'a> SkeletalTrapezoidation<'a> {
             }
 
             // SkeletalTrapezoidation.cpp:1488 std::sort(upward_quad_mids.begin(), upward_quad_mids.end(), [](edge_t* a, edge_t* b) { ... });
-            upward_quad_mids.sort_by(|&a, &b| {
+            //
+            // R691 — the C++ lambda is a STRICT WEAK ORDERING passed to std::sort.
+            // Two elements are EQUIVALENT when neither less(a,b) nor less(b,a), and
+            // the lambda has an explicit "Ordering is not important" branch at
+            // :1510, so equivalents certainly occur. Translating `less` as
+            // `if less(a,b) { Less } else { Greater }` — as this comparator did
+            // before R691 — never yields `Equal`, so compare(a,b) and compare(b,a)
+            // BOTH report Greater. That is an INCONSISTENT comparator: `sort_by`
+            // documents the resulting order as unspecified for such a comparator,
+            // and because the merge takes the right-hand element whenever the left
+            // is not <=, every equivalent run comes out REVERSED. Stability is not
+            // the issue and never was — a stable sort preserves input order only
+            // for pairs the comparator calls Equal, and this one called none.
+            //
+            // The consumers are order-sensitive and self-affecting:
+            // propagateBeadingsUpward walks this array in REVERSE (:1610) and
+            // propagateBeadingsDownward walks it FORWARD (:1639), each seeding
+            // beadings that change later `hasBeading()` tests.
+            let uqm_less = |a: EdgePtr, b: EdgePtr| -> bool {
                 let a_to_dtb = a.as_ref().to.unwrap().as_ref().data.distance_to_boundary;
                 let b_to_dtb = b.as_ref().to.unwrap().as_ref().data.distance_to_boundary;
                 let a_from_dtb = a.as_ref().from.unwrap().as_ref().data.distance_to_boundary;
                 let b_from_dtb = b.as_ref().from.unwrap().as_ref().data.distance_to_boundary;
-                // The C++ comparator returns a `bool` (a<b ordering). We translate `less(a,b)`
-                // into a std::cmp::Ordering. The `less` body:
+                // The C++ comparator returns a `bool` (a<b ordering). The `less` body:
                 let less = || -> bool {
                     // SkeletalTrapezoidation.cpp:1490 if (a->to->...dtb == b->to->...dtb)
                     if a_to_dtb == b_to_dtb {
@@ -2679,12 +2696,35 @@ impl<'a> SkeletalTrapezoidation<'a> {
                         a_to_dtb > b_to_dtb
                     }
                 };
-                if less() {
+                less()
+            };
+
+            upward_quad_mids.sort_by(|&a, &b| {
+                if uqm_less(a, b) {
                     std::cmp::Ordering::Less
-                } else {
+                } else if !crate::faithful_gate("UQM_STRICT_WEAK") {
+                    // Pre-R691 behaviour: report Greater even for equivalents.
                     std::cmp::Ordering::Greater
+                } else if uqm_less(b, a) {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
                 }
             });
+
+            // R691 — count how often the comparator reports EQUIVALENT among the
+            // pairs the SORTED array actually places next to each other. This is
+            // what bounds how much the equivalence handling can matter: near-zero
+            // adjacent ties would mean the ordering of equivalents is inert.
+            if crate::probe_enabled("TIEDENS") {
+                let mut t = 0u64;
+                for w in upward_quad_mids.windows(2) {
+                    if !uqm_less(w[0], w[1]) && !uqm_less(w[1], w[0]) {
+                        t += 1;
+                    }
+                }
+                tiedens_tick(upward_quad_mids.len() as u64, t);
+            }
 
             // SkeletalTrapezoidation.cpp:1516 ptr_vector_t<BeadingPropagation> node_beadings;
             let mut node_beadings: Vec<Arc<RwLock<BeadingPropagation>>> = Vec::new();
@@ -5287,6 +5327,32 @@ pub(crate) fn upprobe_tick(s1: bool, s2: bool, s3: bool) {
             SKIP_NOFROM.load(Relaxed), SKIP_NOFROM.load(Relaxed) as f64 / d,
             SKIP_TOHAS.load(Relaxed), SKIP_TOHAS.load(Relaxed) as f64 / d,
             SEED.load(Relaxed), SEED.load(Relaxed) as f64 / d,
+        );
+    }
+}
+
+/// R691 — `TIEDENS`: how many ADJACENT pairs of the sorted `upward_quad_mids`
+/// the comparator calls EQUIVALENT (neither less(a,b) nor less(b,a)).
+///
+/// Bounds how much the equivalence handling can matter. Before R691 the
+/// comparator reported `Greater` for these pairs instead of `Equal`, making it
+/// inconsistent — so this rate is the share of adjacencies whose relative order
+/// was previously unspecified rather than determined by the C++ ordering.
+pub(crate) fn tiedens_tick(len: u64, ties: u64) {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    static PAIRS: AtomicUsize = AtomicUsize::new(0);
+    static TIES: AtomicUsize = AtomicUsize::new(0);
+    let n = CALLS.fetch_add(1, Relaxed) + 1;
+    PAIRS.fetch_add(len.saturating_sub(1) as usize, Relaxed);
+    TIES.fetch_add(ties as usize, Relaxed);
+    if n == 1 || n % 2_000 == 0 {
+        let p = PAIRS.load(Relaxed).max(1) as f64;
+        eprintln!(
+            "[TIEDENS] calls={n} adj_pairs={} tied={} ({:.4})",
+            PAIRS.load(Relaxed),
+            TIES.load(Relaxed),
+            TIES.load(Relaxed) as f64 / p,
         );
     }
 }
