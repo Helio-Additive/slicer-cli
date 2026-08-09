@@ -1182,6 +1182,53 @@ impl WallToolPaths {
             .all(|w| w[0][0].inset_idx <= w[1][0].inset_idx));
         // WallToolPaths.cpp:548
         self.toolpaths_generated = true;
+        // R659 — does the variable-width solution leave THIS function varied?
+        // R658 isolated 40 Majora layers whose outer wall reaches gcode at
+        // exactly one width with C++'s path count. The question is whether the
+        // flattening is here (beading resolves to one bead) or downstream. This
+        // bins each `generate()` call by the number of DISTINCT junction widths
+        // in its result and prints one summary at the end (R654: a probe that
+        // prints every N calls prints nothing when N is never reached).
+        if crate::probe_enabled("WTPWIDTH") {
+            use std::collections::BTreeSet;
+            use std::sync::Mutex;
+            static BINS: Mutex<Option<Vec<u64>>> = Mutex::new(None);
+            static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let mut widths: BTreeSet<u64> = BTreeSet::new();
+            let mut junctions = 0usize;
+            for lines in &self.toolpaths {
+                for line in lines {
+                    for j in &line.junctions {
+                        junctions += 1;
+                        widths.insert((j.w as f32).to_bits() as u64);
+                    }
+                }
+            }
+            let d = widths.len();
+            if let Ok(mut g) = BINS.lock() {
+                let v = g.get_or_insert_with(|| vec![0u64; 8]);
+                let bin = match d {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    3..=4 => 3,
+                    5..=8 => 4,
+                    9..=16 => 5,
+                    17..=64 => 6,
+                    _ => 7,
+                };
+                v[bin] += 1;
+                let n = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                // Print a running summary rarely, and the caller can read the
+                // last one as the final tally.
+                if n % 5000 == 0 || n == 200 {
+                    eprintln!(
+                        "[WTPWIDTH] calls={n} distinct-width bins 0/1/2/3-4/5-8/9-16/17-64/65+ = {:?} (last call: {} junctions, {} distinct)",
+                        v, junctions, d
+                    );
+                }
+            }
+        }
         // WallToolPaths.cpp:549
         &self.toolpaths
     }

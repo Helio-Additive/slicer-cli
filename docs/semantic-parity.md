@@ -11870,3 +11870,64 @@ Fallback: if the widths coming out of `WallToolPaths` *are* varied and the flatt
 the target is between beading and gcode — `thick_polyline_to_multi_path` / `extrude_path`'s
 `path.width` — and the census should move downstream one stage at a time until the variety
 disappears.
+
+## R659 — the beading DOES produce the variety; it is lost downstream
+
+**Prediction REFUTED. The pre-registered fallback's first clause is the answer. No engine behaviour
+changed — both probes are `probe_enabled` (default OFF) — and all three hashes are unchanged.**
+
+### Two probes, one answer
+
+`WTPWIDTH` bins every `WallToolPaths::generate()` call by the number of distinct junction widths in
+its result. Over 25,000 calls on Majora:
+
+| distinct widths | 0 | **1** | 2 | 3-4 | 5-8 | 9-16 | 17-64 | 65+ |
+|---|---|---|---|---|---|---|---|---|
+| calls | 128 | **11,520** | 3,372 | 3,066 | 3,092 | 2,181 | 1,542 | 99 |
+
+46% of calls return a single width — which *looks* like the predicted single-bead story, but a
+single bead is the correct answer for a thin region, so the bin alone proves nothing. Note also that
+call order is not layer order (the slice is parallel), so the drift across running totals cannot be
+read as a per-layer trend.
+
+`WTPLAYER` settles it by keying on `layer_id`, which is in scope at the `WallToolPaths` call site.
+Distinct widths **produced by the beading** on the FLAT layers R658 isolated, against what reached
+the gcode:
+
+| layer | 2 | 3 | 4 | 5 | 33 | 66 | 69 | 70 | 75 | 76 | 77 | 80 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **beading produced** | 1 | 1 | **10** | **36** | **33** | **24** | **19** | **23** | **14** | **5** | 1 | **4** |
+| reached gcode (outer wall) | 0 | 0 | **0** | ~2 | ≤2 | ≤2 | ≤2 | ≤2 | ≤2 | ≤2 | ≤2 | ≤2 |
+
+Controls: layer 150 beading 12 / gcode 11; layer 300 beading 70 / gcode 99; layer 450 beading 135 /
+gcode 95.
+
+**On 10 of the 12 sampled FLAT layers the beading produced 4-36 distinct widths and the gcode shows
+at most two.** Only layers 2, 3 and 77 genuinely returned a single-width solution. The variety is
+computed and then discarded.
+
+Caveat stated plainly: the probe counts distinct widths across the whole layer's beading (all
+regions) while the gcode figure is outer-wall only, so the magnitudes are not directly comparable —
+but "beading produced 36, outer wall shows ≤2" is not a magnitude artefact.
+
+### Where that puts the target
+
+Per the pre-registered fallback: the flattening is **between beading and gcode**. The candidates in
+order of the pipeline are `thick_polyline_to_multi_path` (which converts a `VariableWidthLines`
+junction chain into `ExtrusionPath`s, each with a single `width`) and whatever sets `path.width`
+before `extrude_path` reads it at `exporter.rs:1417`.
+
+### R660
+
+**Census the same layers one stage further down.** Instrument `thick_polyline_to_multi_path`'s
+output the way `WTPLAYER` instruments the beading's: distinct `ExtrusionPath::width` per layer,
+same FLAT list, same controls. That single comparison localises the loss to one side of that
+function.
+
+**Predict the loss is inside `thick_polyline_to_multi_path` — the junction widths are averaged or
+taken from one endpoint when a chain becomes a path**, since that is the only place a per-junction
+width has to collapse to a per-path scalar. Fallback: if its output is still varied, the loss is
+later still — carry the census into `extrude_path` and read `path.width` at the emitter, which is
+one more hop and ends the search either way. Note R569/R582 examined `thick_polyline_to_multi_path`
+before and cleared it; that was for path SPLITTING, not width collapse, so this is a new question
+about the same function, not a re-test.

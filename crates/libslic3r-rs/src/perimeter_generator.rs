@@ -3130,6 +3130,45 @@ impl PerimeterGenerator {
                     total_perimeters = normal_paths.get_tool_paths().clone();
                     surface_infill = union_polygons_ex(normal_paths.get_inner_contour());
                 }
+                // R659 — distinct junction widths produced for THIS layer, so the
+                // 40 FLAT layers R658 isolated in the gcode can be correlated with
+                // what the beading actually returned. `layer_id` is in scope here
+                // (the WTPCALL probe above uses it); `WallToolPaths::generate` is
+                // not, which is why the census sits at the call site.
+                if crate::probe_enabled("WTPLAYER") {
+                    use std::collections::BTreeSet;
+                    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+                    use std::sync::Mutex;
+                    static PERLAYER: Mutex<Vec<BTreeSet<u64>>> = Mutex::new(Vec::new());
+                    static N: AtomicU64 = AtomicU64::new(0);
+                    let li = self.config.layer_id;
+                    if let Ok(mut v) = PERLAYER.lock() {
+                        if v.len() <= li {
+                            v.resize(li + 1, BTreeSet::new());
+                        }
+                        for lines in &total_perimeters {
+                            for line in lines {
+                                for j in &line.junctions {
+                                    v[li].insert((j.w as f32).to_bits() as u64);
+                                }
+                            }
+                        }
+                        let n = N.fetch_add(1, Relaxed) + 1;
+                        if n % 4000 == 0 {
+                            // FLAT layers from R658 vs two healthy controls.
+                            let flat = [2usize, 3, 4, 5, 33, 66, 69, 70, 75, 76, 77, 80];
+                            let ctrl = [150usize, 300, 450];
+                            let g = |i: usize| v.get(i).map(|s| s.len()).unwrap_or(0);
+                            eprintln!(
+                                "[WTPLAYER] n={n} FLAT{:?}={:?} CTRL{:?}={:?}",
+                                flat,
+                                flat.iter().map(|&i| g(i)).collect::<Vec<_>>(),
+                                ctrl,
+                                ctrl.iter().map(|&i| g(i)).collect::<Vec<_>>()
+                            );
+                        }
+                    }
+                }
             } else {
                 // PerimeterGenerator.cpp:1634  infill_contour = last;
                 surface_infill = last;
