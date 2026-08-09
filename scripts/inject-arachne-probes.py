@@ -770,7 +770,11 @@ WTP_POLY_FN = r"""
 // Brackets the 2.33x graph-edge gap at its source.
 static void polyprobe(const char *stage, const Polygons &polys)
 {
-    if (::getenv("POLYPROBE") == nullptr)
+    // R694: exclude the R581 speculative one-wall pass, as UPPROBE / PROPCLASS /
+    // GBUILD / GRAPHPROBE (R692) do. POLYPROBE is an R552 probe and predates the
+    // flag, so it was counting outline preparation that never reaches the
+    // G-code — 50,200 calls against the Rust side's 28,000.
+    if (::getenv("POLYPROBE") == nullptr || probe_speculative())
         return;
     struct Acc { size_t calls, polys, points; };
     static std::mutex                 mtx;

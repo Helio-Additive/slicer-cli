@@ -14262,3 +14262,70 @@ benchy `248ff22a`, cube `14566293`, majora `d6ccfdbb` — all three re-verified
 after the gate change (the default path is unchanged; only the meaning of an
 explicit `=0` moved). Eight suites at standing results. No C++ instrumented this
 round; the submodule was never touched.
+
+## R694 — the outline explains the graph; the Voronoi is faithful; the root is upstream of the perimeter generator
+
+R693 left one clean number: C++'s skeletal graphs carry 7.3% more nodes per
+call, with per-node structure matching to 0.1–0.9%. R694 asked whether the
+outline fed into Arachne accounts for it.
+
+### Prediction, stated before measuring
+
+Voronoi node count is roughly linear in input segment count, so **the node ratio
+should equal the prepared-outline point ratio**. The bracket-C residual (our
+polygons at 0.833× the points, i.e. C++/ours 1.200) would *over*-explain a
+1.073× node ratio by ~12%, so bracket C — a slicing-stage census — could not be
+the quantity that matters. The right quantity is the outline `WallToolPaths`
+actually receives.
+
+### A second unfiltered probe, found the same way as R692's
+
+`POLYPROBE` is an R552 probe and, like `GRAPHPROBE` before R692, never got the
+R581 `probe_speculative()` guard: it reported **50,200 calls on C++ against our
+28,000**. Patched the injected helper to return early under
+`probe_speculative()`; C++ drops to 31,400 calls and the two sides become
+comparable. (`SURFPROBE` returns nothing on C++ — it is Rust-only, added at
+R674 — so `POLYPROBE` step 0 is the shared entry measure.)
+
+### The chain, both sides non-speculative
+
+| prepared-outline chain (points) | ours | C++ | C++/ours |
+|---|---|---|---|
+| 0 outline (entry to `WallToolPaths`) | 1,225,508 | 1,311,419 | **1.070** |
+| 1 after triple offset | 1,214,761 | 1,304,606 | 1.074 |
+| 2 after simplify | 741,457 | 802,475 | 1.082 |
+| 3 final prepared_outline | 736,211 | 795,243 | **1.080** |
+| `simplify` retention | 0.6104 | 0.6151 | **1.008** |
+
+### The prediction holds to 0.6%
+
+| | value |
+|---|---|
+| predicted node ratio (= point ratio) | **1.080** |
+| measured nodes per call (R693) | **1.073** |
+| measured total-node ratio | 1.098 |
+| **skeleton nodes per prepared-outline point** | ours 5.565, C++ 5.655 — **1.016** |
+
+**The Voronoi construction is faithful**: it produces the same number of nodes
+per input point on both engines, to within 1.6%. The whole nodes-per-call gap is
+the outline carrying 8% fewer points.
+
+### Where it is NOT, which is the useful half
+
+The gap is already **1.070× at entry**, before any preparation runs, and
+`simplify_p` retention matches at **1.008×**. So neither `simplify_p` nor
+`offset_ex` nor the triple offset is the source — **the surfaces handed to
+`generate_arachne` already carry ~7% fewer points**. That is upstream of the
+perimeter generator entirely, in slicing / surface preparation.
+
+It also **corrects the bracket-C figure as the operative number**: bracket C
+reads 0.833× points (C++/ours 1.200), but the deficit that actually reaches
+Arachne is 1.070×. The two are the same phenomenon at different stages, and the
+smaller, later one is the one with leverage on the skeleton.
+
+### Baselines and suites
+
+No Rust source changed — only `scripts/inject-arachne-probes.py`. Our probe run
+emitted majora `d6ccfdbb`; benchy `248ff22a` and cube `14566293` stand from
+R693. Eight suites at standing results. Submodule reverted, both status checks
+empty, C++ rebuilt.
