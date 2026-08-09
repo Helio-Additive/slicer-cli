@@ -11807,3 +11807,66 @@ Fallback: if the feature sequences match and only the widths differ, attribution
 and the whole gap is beading — say so and take `BeadingStrategy` directly. **Do the layer-1-vs-300
 comparison first; they may have different causes and treating them as one is what would waste the
 round.**
+
+## R658 — not attribution: 40 layers where our outer wall is literally one width
+
+**Prediction REFUTED, and it forces a correction to R657's own reading. No engine change; all three
+hashes unchanged.**
+
+### The feature composition matches — nothing is mis-labelled
+
+Dumping the `; FEATURE:` block sequence and per-feature counts at three layers:
+
+| layer | | blocks | Outer wall tags/distinct/runs | Inner wall | Floating vert. shell |
+|---|---|---|---|---|---|
+| 150 (collapsed) | C++ | 84 | 130 / 109 / **515** | 39 / 16 / 58 | 33 / 23 / 43 |
+| | ours | 88 | **18 / 11 / 557** | 30 / 13 / 52 | 30 / 27 / 38 |
+| 300 (healthy) | C++ | 119 | 282 / 170 / 557 | 133 / 78 / 170 | 194 / 173 / 208 |
+| | ours | 124 | 132 / 99 / 440 | 96 / 59 / 133 | 140 / 127 / 159 |
+| 2 (extreme) | C++ | 64 | 1537 / 1117 / 1820 | 495 / 412 / 567 | — |
+| | ours | 53 | **0 / 0 / 413** | 20 / 11 / 156 | — |
+
+At layer 150 we print **more** outer-wall runs than C++ (557 vs 515) with **11 distinct widths
+against 109**, while every other feature is comparable. At layer 2 we emit **zero** `; LINE_WIDTH:`
+across 413 outer-wall runs. The block sequences and feature sets agree throughout. **Attribution is
+not the mechanism.**
+
+### Correction to R657
+
+R657 reported that summing distinct widths over all wall features lifted us from <35% to 0.67 of
+C++, and read that as "roughly a third of the missing variety is mis-labelled". **That reading was
+wrong.** The per-layer dumps show the other wall features were never collapsed in the first place —
+summing them simply diluted the outer wall's collapse with healthy features. It is the same error
+as R651's: treating an aggregate as evidence of a mechanism without checking the parts.
+
+### The real structure
+
+Over the 502 layers where C++'s outer wall has ≥20 distinct widths and we emit ≥50 runs:
+
+| class | layers | C++ distinct (median) | our distinct | C++ runs | our runs |
+|---|---|---|---|---|---|
+| **FLAT** — our distinct ≤2 | **40** | 52 | **1** | 326 | **327** |
+| PARTIAL — <35% but >2 | 183 | 79 | 12 | 363 | 316 |
+| OK — ≥35% | 279 | 64 | 39 | 252 | 186 |
+
+**The FLAT class is the clean signal: 40 layers where we lay down the same number of outer-wall
+paths as C++ (327 vs 326) at exactly one width, against C++'s 52.** Not fewer paths, not different
+labels, not a coarser sampling — no variation at all. They are scattered through the model
+(2, 3, 4, 5, 33, 66, 69, 70, 75-87, 93-96, 99, 104, 105, 110, 111, 113, 117, 136 …), so this is not
+a first-layer special case either.
+
+### R659
+
+**Take the 40 FLAT layers.** They are the sharpest entry point into the Arachne chain that has
+appeared: binary outcome, matched path count, and a specific layer list to instrument. Everything
+else about the width gap — the 183 PARTIAL layers, the two parked changes — is downstream of
+understanding why a wall comes out uniform.
+
+**Predict our `WallToolPaths` returns a single-bead (uniform) solution on those layers rather than a
+variable-width one** — i.e. the beading is running but resolving to one bead, not that Arachne is
+bypassed. Instrument the Rust side directly: count distinct bead widths coming out of
+`WallToolPaths::generate` per layer and correlate with the FLAT list, before reading any more C++.
+Fallback: if the widths coming out of `WallToolPaths` *are* varied and the flattening happens later,
+the target is between beading and gcode — `thick_polyline_to_multi_path` / `extrude_path`'s
+`path.width` — and the census should move downstream one stage at a time until the variety
+disappears.
