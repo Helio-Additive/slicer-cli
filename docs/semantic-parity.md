@@ -14860,3 +14860,73 @@ special-case the slice).
 No Rust source changed — this round was a C++ census plus reading. benchy
 `248ff22a`, cube `14566293`, majora `d6ccfdbb`. Submodule reverted, both status
 checks empty, C++ rebuilt.
+
+## R702 — pricing the negative-volume port: ~10,900 lines (0.46%), 12× the last shipped gain
+
+R701 named the root cause (six skipped `negative_part` volumes). R702 prices it
+on the current bar before any Tier-2 work, because `project_rust_3mf_tier1`'s
+"near-inert" verdict was scored on silhouette (96.67%→96.73%) and the bar has
+since moved to line-level parity — **a parked verdict binds only the metric it
+was scored on**.
+
+### Prediction, on record — and it was 10× low
+
+Predicted: 52 hole-instances × ~9.74 mm circumference (3.1 mm circle) × 2 wall
+loops ≈ 1,010 mm of extra wall path ≈ **1–2k lines, ~0.05%**, i.e. not the lever.
+
+### Measured, without touching C++ at all
+
+Both G-codes already exist, so the cost is directly countable per layer — no
+patch, no rebuild, ~30 s instead of a ~15 min instrumented A/B:
+
+| layer | C++ body lines | ours | delta |
+|---|---|---|---|
+| 0 | 6,444 | 3,556 | **2,888** |
+| 1 | 11,259 | 4,553 | **6,706** |
+| 2 | 7,084 | 3,254 | **3,830** |
+| 3–9 | — | — | 274 … 1,032 |
+| 10 (no holes) | 5,608 | 3,334 | 2,274 |
+| 11 (no holes) | 4,004 | 3,400 | 604 |
+
+Layers 3–11 average **831 lines/layer** of deficit with no hole amplification —
+that is the background rate. Layers 0–2 carry **10,932 lines above it**, and
+those are exactly the layers R700 found carrying 415/409/326 post-segmentation
+holes.
+
+| | value |
+|---|---|
+| hole-attributable excess | **10,932 lines** |
+| share of C++ body lines (2,395,266 by this counter) | **0.46%** |
+| share of the 185,608-line total deficit | **5.9%** |
+| vs the last shipped parity gain (`MMSEG_OPENING`, +919) | **12×** |
+
+**The prediction was directionally right (sub-1%) but an order of magnitude low.**
+The error is instructive: I costed only the five holes' own wall perimeters and
+ignored that mm-segmentation *amplifies* five geometric holes into hundreds of
+painted-region holes on layers 0–2. The amplification factor R700 already
+measured (1,150 post-segmentation holes from 15 geometric ones) was in hand and
+went unused in the estimate.
+
+*(Denominators note: this counter takes non-empty non-comment lines — 2,395,266 /
+2,209,658. The parity scripts use their own body-line definition (2,781,977 /
+2,511,238). Ratios above stay inside one counter; do not mix the two.)*
+
+### Verdict
+
+**Worth building, with the ceiling stated.** At 0.46% of body lines it will not
+move Majora's 28.24%/18.70% far, but it is 12× the largest gain shipped since
+R651 and it is *correctness* work regardless — the connector holes are real
+assembly features that we currently print solid.
+
+R703 scopes the port: thread volume type through the mesh path (C++ carries it on
+`ModelVolume` and subtracts in `slices_to_regions`, `PrintObjectSlice.cpp:403`),
+rather than special-casing the slice. Our reader drops these objects at parse
+(`app_slice.rs` `is_model`), so that is where the work starts. **Score on both
+metrics afterwards — the 10,932 lines only count if the recovered geometry also
+matches, which this pricing does not establish.**
+
+### Baselines and suites
+
+No source changed this round — measurement only, on G-codes already on disk. The
+submodule was never touched. benchy `248ff22a`, cube `14566293`, majora
+`d6ccfdbb`.
