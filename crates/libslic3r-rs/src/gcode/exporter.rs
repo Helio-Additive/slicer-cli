@@ -1442,12 +1442,6 @@ pub fn extrude_path_with_arc_fitting(
             EXPW_EMITTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }
-    // R654 — the deferred collection-level feedrate lands HERE, after the width
-    // tag, which is where C++'s `set_speed` (GCode.cpp:6663) sits relative to the
-    // Width tag (:6607). Unconditional: if the tag did not fire, the F must still
-    // be emitted exactly once, so the line count is identical either way.
-    writer.flush_pending_speed();
-
     if expw {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEEN: AtomicU64 = AtomicU64::new(0);
@@ -1512,6 +1506,14 @@ pub fn extrude_path_with_arc_fitting(
         writer.last_height_tag = path.height;
         writer.write_comment(&format!("LAYER_HEIGHT: {}", fmt_g6(path.height)));
     }
+
+    // R708 — the deferred collection-level feedrate lands HERE. R654 flushed it
+    // straight after the Width tag, one tag too early: C++ writes Width
+    // (GCode.cpp:6607), then Height (:6619-6623), and only then `set_speed`
+    // (:6663), so the F must follow the height tag, not precede it.
+    // Unconditional: if neither tag fired, the F is still emitted exactly once,
+    // so the line count is identical either way.
+    writer.flush_pending_speed();
 
     // C++ reference: GCode.cpp:4211-4220
     // C++: // get path properties

@@ -15285,3 +15285,149 @@ than suspecting a field of them.
 ### Baselines
 
 No source changed. benchy `248ff22a`, cube `14566293`, majora `6a8cf880`.
+
+## R708 — the ordering loss is REAL, 46% of it is the path header, and the metric that rejected the fix cannot score it at Majora's density
+
+R706/R707 closed the config-default line. The remaining large term was the **ordering loss** — the
+gap between content-matched lines and in-order lines — which R706 proved independent of coordinates
+(benchy-arachne read 33.98% before *and* after the width fix). R708 attacks it.
+
+### First: is the ordering loss real, or an artifact of the instrument?
+
+`seq_parity.py` computes `in_order` with `difflib.get_matching_blocks`, a recursive longest-block
+heuristic, **not a true LCS**; its own docstring calls the result a lower bound. A lower bound is
+only usable if you know how slack it is, and there was a specific reason to fear the slack **grows
+with sparsity**: scattered singleton matches are exactly what a longest-block search cannot chain.
+That matters because the fixtures being compared have very different densities — classic matches
+75.1% of lines, arachne 24.6%. If the slack scaled with density, the difference between "15.27%" and
+"33.98%" would be measuring the density and nothing else.
+
+**The control** (R518's rule — validate a comparative metric by perturbing one input in a way whose
+true effect you know exactly): build a synthetic `rust` from the C++ file by corrupting a fraction
+`p` of lines **in place**. Order and line count are preserved exactly, so the true ordering loss is
+**zero at every `p`** and anything reported is pure artifact.
+
+    corrupt%   content%   in-order%   ARTIFACT ordering loss
+        0.0%    100.00%     100.00%       0.00%  (0 lines)
+       25.0%     74.99%      74.99%       0.00%  (0 lines)   <- classic density
+       55.0%     44.95%      44.81%       0.31%  (305 lines)
+       75.5%     24.55%      24.25%       1.22%  (652 lines) <- arachne density
+
+**PREDICTION MISSED, in the direction that validates the target.** A 10–25% artifact was predicted at
+arachne's density; the measurement is **1.22%**, and at classic's density it is **zero lines**. So
+classic's 15.27% ordering loss is 100% real and ~32.8 of arachne's 33.98 points are real. Promoted to
+`scripts/seq_parity_control.py`; re-run it whenever the ordering figure is used to compare fixtures
+of different densities.
+
+### What the ordering loss is MADE of
+
+A single number is not actionable. `scripts/order_loss_kinds.py` (new) identifies exactly the lines
+the metric counts as content-matched-but-out-of-order — per distinct line text,
+`leftover = min(count_rust, count_cpp) - aligned_count`, assigned to the uncovered occurrences — and
+classifies them. Benchy classic, 17,702 lost lines:
+
+| kind | lines | share |
+|---|---|---|
+| `G1` extrude XY+E | 6,603 | 37.3% |
+| `; LINE_WIDTH:` | 2,816 | 15.9% |
+| `M204` | 2,068 | 11.7% |
+| `G1` speed-only F | 1,933 | 10.9% |
+| `; COOLING_NODE:` | 749 | 4.2% |
+| `; WIPE_START` / `; WIPE_END` | 572 | 3.2% |
+| `G2`/`G3` arcs | 802 | 4.5% |
+| travel / retract | 1,716 | 9.7% |
+
+**46% of the ordering loss is the per-path HEADER block** (8,138 lines), not path geometry. Dumping
+the worst groups shows why, and the first divergence is at index 0 of the group:
+
+    ours: G1 F3000                cpp: ; LINE_WIDTH: 0.119582
+          ; LINE_WIDTH: ...            G1 F3000
+          M204 S500                    M204 S500
+
+C++ writes the Width tag before the feedrate; we write it after. Everything downstream keeps the same
+"tag precedes its extrusion" pattern, so this is a one-position phase shift at each block head.
+
+### That fix already existed, parked — and was rejected on the wrong fixture
+
+`LINEWIDTH_BEFORE_SPEED` (R654) does exactly this. It was measured at **−26,309 in-order** and parked
+with an explicit re-test condition: *"The reason is the tag COUNT, not its order... Close the COUNT
+first, then flip this ON."* That count was measured **on Majora**. Current `; LINE_WIDTH:` counts:
+
+| fixture | rust | cpp | deficit | ratio |
+|---|---|---|---|---|
+| classic | 9,980 | 10,871 | 891 | **0.9180** |
+| arachne | 22,577 | 34,921 | 12,344 | 0.6465 |
+| majora | 155,072 | 215,199 | 60,127 | 0.7206 |
+
+The gate's own stated blocker is **worst on the only fixture it was ever scored on**. Re-scored (OFF
+arms verified by hash against all three tracked baselines; line counts identical in every arm, so no
+line is created or destroyed):
+
+| fixture | in-order OFF → ON | Δ | content Δ |
+|---|---|---|---|
+| classic | 98,259 → 99,567 | **+1,308** | +3 |
+| arachne | 32,977 → 33,316 | **+339** | +1 |
+| majora | 469,628 → 444,071 | **−25,557** | 0 |
+
+(+1,308 was below the predicted +2,000–5,000 — a second miss, recorded.) Net −23,910, so the gate
+**stays parked**. But the reason it loses is not the reason R654 gave.
+
+### R654's mechanism is refuted by the adjacency census
+
+A per-line Bernoulli rate over the whole file — order-independent, the class of ratio that survives:
+
+| adjacency | C++ | ours OFF | ours ON |
+|---|---|---|---|
+| `; LINE_WIDTH:` followed by speed-only `G1 F` | 94.5% | 0% | **96.4%** |
+| speed-only `G1 F` preceded by `; LINE_WIDTH:` | 61.2% | 0% | **48.4%** |
+| `G1 F` preceded by `; FEATURE:` | 18,222 | 41,493 | **18,230** |
+
+Gate-ON reproduces C++'s structure on three independent rates, one to within **8 lines**, and still
+loses 25,557. **The output is provably more faithful and the metric scores it worse.** R654 blamed
+the tag count "destroying alignment"; that story does not survive this table.
+
+### The real mechanism: `in_order` is not monotone in faithfulness at low density
+
+Per-feature Majora, OFF → ON:
+
+| feature | content match | in-order Δ |
+|---|---|---|
+| Prime tower | 67.7% | **0** |
+| (pre-feature) | 93.6% | **0** |
+| Custom | 99.8% | **0** |
+| Sparse infill | 24.7% | −6,739 |
+| Internal solid infill | 18.2% | −4,657 |
+| Inner wall | 12.8% | −3,111 |
+| Floating vertical shell | 13.6% | −2,149 |
+
+The three features the gate does not touch (the wipe tower has its own emitter, `exporter.rs:2763`)
+move by **exactly zero**, confirming the change has no side effects. Every feature that loses sits at
+5–25% content match; the **same features** on benchy classic sit at 74–82% and gain. Where the
+surrounding lines match, putting the F where C++ puts it helps; where they do not, the F lines were
+anchoring the alignment on their own and relocating them costs more than the adjacency gains.
+
+**Consequence for the whole parked list.** `MMSEG_DIFF_CLIB`, `ARACHNE_SIMPLIFY_FAITHFUL`,
+`ARACHNE_TOP_ONE_WALL`, `WIPE_TOWER_FORCE_TAGS` and `LINEWIDTH_BEFORE_SPEED` were all rejected on
+Majora, at 28% content density, by a metric that cannot score an order-only change fairly there.
+Score order-only changes on the **highest-density fixture available**, and re-score the list as
+content parity rises. This also explains R656's paradox (a C++-faithful tag addition costing 2,117
+in-order) without needing the tag-count story.
+
+### Shipped
+
+A real ordering bug found by reading C++: R654 flushed the pending feedrate immediately after the
+Width tag, but C++ writes Width (`GCode.cpp:6607`), then **Height** (`:6619-6623`), and only then
+`set_speed` (`:6663`). The flush moved to after the `LAYER_HEIGHT` block. **Byte-verified no-op on
+all three fixtures** (gate-ON hashes `a40f7b28` / `612c244a` / `7a4d1728` unchanged before and after),
+because no path on these fixtures fires a height tag inside that window — so it is a faithfulness
+correction, not a parity gain, and it is reported as such.
+
+Baselines unchanged: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+Suites: eight green (`multi_material_integration` 25/26 pre-existing), `hole_preservation` 5/5,
+`three_mf_parse` 9/9.
+
+**STILL OPEN:** the 37% of the ordering loss that IS path geometry (island/region visit order,
+`ShortestPath.cpp`'s `chain_expolygons` — still unexamined); raising content density on Majora so the
+parked order-only gates can be scored honestly; Benchy's FILL family; arachne wall coordinates
+(outer 10.1% content); the fan markers, which C++ emits inside `_extrude` after the Width tag
+(`:6630-6645`) and we emit in `extrude_loop` at `:558` — a second header-order divergence, unmeasured.
