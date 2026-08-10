@@ -15075,3 +15075,65 @@ the time is in the cuts, not the skipped calls.
 construction, not by luck. Seven suites green (`multi_material_integration` 25/26
 pre-existing), `hole_preservation` 5/5, `three_mf_parse` 9/9. No C++ instrumented;
 the submodule was never touched.
+
+## R705 — the wall deficit is ARACHNE, not multi-material: Benchy+arachne reproduces Majora
+
+Twenty-five rounds (R679–R704) treated Majora's wall deficit as an arachne
+problem, but Majora differs from Benchy in **two** ways at once — arachne walls
+*and* 8-colour multi-material. The attribution was never tested. R705 tested it
+by changing one variable.
+
+### The experiment
+
+`tests/configs/benchy-016-arachne.jsonnet` — byte-identical to `benchy-016`
+except `wall_generator: 'arachne'` (jsonnet object-merge over the stock process
+profile). Same STL, same machine, same filament, **single material, no wipe
+tower, no toolchanges, no painted regions**. Arachne confirmed live on both
+engines: 34,921 `LINE_WIDTH` tags / 14,298 distinct on C++ against 10,871 / 7,590
+for classic.
+
+### Prediction, on record
+
+If arachne is the cause, Benchy-arachne's outer wall should collapse from 93.6%
+content. If it holds up, the cause is multi-material and the arachne focus was
+aimed at the wrong variable.
+
+### Result — it collapses, onto Majora's numbers
+
+| | Benchy classic | **Benchy arachne** | Majora (arachne + MMU) |
+|---|---|---|---|
+| content | 75.07% | **23.13%** | 28.13% |
+| in-order | 63.61% | **15.27%** | 18.59% |
+| Outer wall in-order | 81.8% | **9.7%** | **9.0%** |
+| Inner wall in-order | 74.0% | **5.2%** | 7.2% |
+| ordering loss | 15.27% | **33.98%** | **33.91%** |
+
+**A single-material Benchy with arachne walls reproduces Majora almost exactly.**
+Outer wall 9.7% against 9.0%; ordering loss matching to two decimal places.
+
+### What this settles
+
+1. **The subsystem was right.** R679–R704's focus on the arachne pipeline is
+   vindicated — the deficit follows the wall generator, not the material count.
+2. **Multi-material is exonerated as the wall cause.** The wipe tower, toolchange
+   ordering and painted segmentation are not what holds Majora's walls back. (The
+   tower is separately at 55.2% in-order, the best-matching large feature.)
+3. **The skeleton is not the problem, the paths downstream of it are.** R694
+   proved the Voronoi faithful (1.016× nodes per input point) and R704 made
+   bracket-A geometry identical layer-for-layer — yet arachne walls still match
+   under 10%. So the loss is between a correct skeleton and the emitted path:
+   beading → junctions → `to_thick_polyline` → `thick_polyline_to_multi_path`.
+
+### The deliverable is the fixture
+
+`benchy-016-arachne` slices in **2.79 s** against Majora's **19.05 s** — a **6.8×
+cheaper** arachne reproducer with every multi-material variable removed. Every
+future arachne investigation should use it: same signal, a fraction of the cost,
+and no confounds. This is the fixture-discipline point from
+`reference_parity_fixtures` in a new form — a config that isolates one variable
+is worth more than a faster script.
+
+### Baselines
+
+No source changed — a new config file only. benchy `248ff22a`, cube `14566293`,
+majora `6a8cf880`, all unchanged. The submodule was never touched.
