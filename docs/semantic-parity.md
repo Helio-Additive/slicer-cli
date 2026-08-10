@@ -15223,3 +15223,65 @@ majora `6a8cf880` (classic walls do not read these; Majora's 3MF already declare
 them). Seven suites green, `multi_material_integration` 25/26 pre-existing.
 
 **Two rounds after the fixture was built, it has already paid for itself.**
+
+## R707 — the default audit: 24 mismatches, ALL inert. R706 was the only live one.
+
+R706's bug was a struct default, not logic — a mechanically checkable class. R707
+swept it and promoted the sweep to `scripts/audit-config-defaults.py`.
+
+### Prediction, on record
+
+A handful more mismatches, most inert, with the `coPercent` options the
+interesting ones (percent-vs-mm is the mechanism that produced the 850×).
+
+### The sweep
+
+C++ declares **402** options with an explicit `set_default_value`. Mapping keys
+to our fields via the `set_deserialize` match arms and reading the struct-literal
+defaults gives **302** mapped keys and **235** numeric defaults to compare.
+**24 disagree.**
+
+### The filter that matters: does any fixture declare the key?
+
+A default only bites when nothing declares it — which is exactly why R706 went
+unnoticed. Applying that filter:
+
+| verdict | count |
+|---|---|
+| declared by **both** benchy and majora → default is dead code | **16** |
+| live on at least one fixture | 8 |
+
+And each of the 8 dies on inspection:
+
+- **`raft_first_layer_density`, `raft_first_layer_expansion`, `raft_expansion`,
+  `raft_contact_distance`** — benchy's chain resolves `raft_layers = 0`, so no
+  raft code runs.
+- **`ironing_direction`** — `ironing_type = "no ironing"`.
+- **`default_jerk` (C++ 0 / ours 9), `travel_jerk` (9 / 12)** — checked against
+  the emitted G-code rather than reasoned about: **`M205 X9.00 Y9.00 Z3.00 E2.50`,
+  one occurrence, byte-identical on both engines** across all three fixtures. The
+  jerk line comes from the machine profile's start G-code, not from these options.
+- **`elefant_foot_min_width` (0.2 / 0)** — live on *both* fixtures, but grepping
+  the whole C++ tree shows it is consumed only by **SLA**
+  (`SLAPrintSteps.cpp:90`); no FDM path reads it, and neither does ours.
+
+**All 24 are inert. R706 was the only live instance of its own bug class.**
+
+### Coverage, stated honestly
+
+This is a **negative result with bounded scope**, not a proof of absence. The
+key→field mapping is regex over match arms, and only numeric struct-literal
+defaults are compared — enum, bool, string and vector options are out of scope,
+as are computed defaults. 235 of 402 options were actually compared. The script
+prints those counts every run so the bound travels with the answer.
+
+### Value
+
+The sweep is now `scripts/audit-config-defaults.py`, documented with the R706
+motivation and the "a mismatch is not automatically a bug" filter. Any future
+round can re-run it in a second — and knowing R706 was a one-off is worth more
+than suspecting a field of them.
+
+### Baselines
+
+No source changed. benchy `248ff22a`, cube `14566293`, majora `6a8cf880`.
