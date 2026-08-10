@@ -35,7 +35,42 @@ RESULT (R711, benchy classic):
   hypotheses (angle, spacing, phase, direction) died here; the boundary is the
   target.
 
-Usage: fill_geometry.py <rust.gcode> <cpp.gcode> [feature ...]
+`--runs` (R713) adds two more tests, aimed at what is left after the pattern
+and the region were both cleared:
+
+  6. RUN STRUCTURE  how many extrusion runs (maximal stretches between travels)
+                    and how long, which is what `connect_infill` decides
+  7. VERTEX POSITION where the non-matching vertices sit in their run -- first,
+                     interior or last -- which separates end-anchoring from a
+                     whole-path difference
+
+RESULT (R713, benchy classic) -- the fills are NOT one defect:
+
+    feature                    runs r/c   median   mean r/c
+    Outer wall (CONTROL)        904/918    16/16   28.84/28.41
+    Sparse infill               276/277    10/10   10.53/10.59   <- same structure
+    Floating vertical shell     316/317    12/11   12.11/11.87   <- same structure
+    Internal solid infill       629/600      4/5   12.29/13.85   <- differs
+    Bridge                       28/31     28/23   39.50/33.65   <- differs
+
+  (G2/G3 arcs are not split on here, so an arc-aware pass shifts these counts
+  a little; the two classes are the same either way.)
+
+  Sparse and Floating vertical shell have an IDENTICAL run structure yet share
+  only 41.8% and 4.1% of vertices: same paths, wrong positions, so connection
+  is faithful for them. Internal solid and Bridge differ in structure too.
+
+  And the mismatches are spread THROUGH the runs, not concentrated at the ends
+  (Sparse interior 43.8% vs first 33.3% / last 24.3%; wall control interior
+  99.8%), so it is not purely an end-anchoring effect. Note the wall control's
+  run-START rate of 80.2% against 99.8% interior -- that dip is the seam.
+
+  Not quoted, deliberately: a run-pairing distance metric was tried and FAILED
+  its wall control (64% where walls are 99.5% vertex-identical), because greedy
+  nearest-start pairing conflates island ORDER with position. Discarded rather
+  than reported.
+
+Usage: fill_geometry.py <rust.gcode> <cpp.gcode> [feature ...] [--runs]
 """
 import math
 import re
@@ -105,9 +140,74 @@ def phase(segs, want_deg, tol=2.0):
     return sorted(out)
 
 
+def runs_of(lines):
+    """[[pt, ...]] -- one list per maximal extrusion run, split by travels."""
+    out, cur = [], []
+    x = y = None
+    for s in lines:
+        t = s.strip()
+        if t[:2] not in ('G1', 'G0'):
+            continue
+        d = {m.group(1): float(m.group(2)) for m in XY.finditer(t)}
+        e = EE.search(t)
+        nx, ny = d.get('X', x), d.get('Y', y)
+        moved = 'X' in d or 'Y' in d
+        ext = e is not None and float(e.group(1)) > 0 and moved
+        if ext and None not in (x, y, nx, ny):
+            if not cur:
+                cur.append((round(x, 3), round(y, 3)))
+            cur.append((round(nx, 3), round(ny, 3)))
+        elif moved and cur:
+            out.append(cur)
+            cur = []
+        x, y = nx, ny
+    if cur:
+        out.append(cur)
+    return out
+
+
+def run_tests(rg, cg, feats):
+    print("\n6. RUN STRUCTURE (what `connect_infill` decides)")
+    print(f"  {'feature':<26} {'runs r/c':>13} {'median':>9} {'mean r/c':>14}")
+    per = {}
+    for feat in feats:
+        R, C = [], []
+        for key in set(rg) | set(cg):
+            _, f = key
+            if f != feat:
+                continue
+            R += runs_of(rg.get(key, []))
+            C += runs_of(cg.get(key, []))
+        if not R or not C:
+            continue
+        per[feat] = (R, C)
+        lr = sorted(len(p) - 1 for p in R)
+        lc = sorted(len(p) - 1 for p in C)
+        print(f"  {feat:<26} {len(R):>6}/{len(C):<6} "
+              f"{lr[len(lr)//2]:>4}/{lc[len(lc)//2]:<4} "
+              f"{sum(lr)/len(lr):>6.2f}/{sum(lc)/len(lc):<6.2f}")
+
+    print("\n7. VERTEX POSITION of the matches (end-anchoring vs whole path)")
+    print(f"  {'feature':<26} {'position':<10} {'ours':>7} {'matched':>8} {'rate':>7}")
+    for feat, (R, C) in per.items():
+        avail = Counter(pt for p in C for pt in p)
+        tot, mat = Counter(), Counter()
+        for p in R:
+            for i, pt in enumerate(p):
+                pos = 'first' if i == 0 else ('last' if i == len(p) - 1 else 'interior')
+                tot[pos] += 1
+                if avail[pt] > 0:
+                    avail[pt] -= 1
+                    mat[pos] += 1
+        for pos in ('first', 'interior', 'last'):
+            if tot[pos]:
+                print(f"  {feat:<26} {pos:<10} {tot[pos]:>7} {mat[pos]:>8} "
+                      f"{100*mat[pos]/tot[pos]:>6.1f}%")
+
+
 def main():
     rp, cp = sys.argv[1], sys.argv[2]
-    feats = sys.argv[3:] or DEFAULT_FEATS
+    feats = [a for a in sys.argv[3:] if not a.startswith('--')] or DEFAULT_FEATS
     if CONTROL not in feats:
         feats = list(feats) + [CONTROL]
     rg, cg = groups(rp), groups(cp)
@@ -176,6 +276,9 @@ def main():
         lc = sum(L for _, _, _, L in C)
         print(f"  {feat:<26} {len(RP):>8} {len(CP):>8} {sh:>8} "
               f"{100*sh/max(len(RP),1):>6.1f}% {lr/max(lc,1e-9):>10.4f}")
+    if '--runs' in sys.argv:
+        run_tests(rg, cg, list(per))
+
     print(f"\n  ({CONTROL} is the CONTROL -- if it does not score near 100%, the"
           " measurement is broken, not the fills.)")
 

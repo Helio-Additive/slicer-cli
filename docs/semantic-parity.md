@@ -15763,3 +15763,79 @@ fill divergence; Bridge's `bridge_angle` (R711 found its angle sets genuinely di
 sparse/solid — a separate defect); where the loop reordering is introduced (all four chain stages
 cleared, split 50/49); the 60 `SET differs` Outer wall layers; the fan markers; re-scoring the parked
 order-only gates on the highest-density fixture.
+
+## R713 — the fills are not ONE defect: two classes, and the anchor-default lead is inert
+
+R711 cleared the fill pattern (angle, spacing, grid phase, total length); R712 cleared the fill
+region. R713 went inside `Fill` itself, predicting the divergence would trace to `connect_infill` —
+R711 had measured the same total length with a different median segment length, the signature of
+infill lines being chained into polylines differently.
+
+### PREDICTION HALF-REFUTED, and the half that failed is the useful half
+
+Extrusion-run structure — how many maximal runs between travels, and how long — is exactly what
+`connect_infill` decides:
+
+| feature | runs r/c | median | mean r/c |
+|---|---|---|---|
+| **Outer wall (CONTROL)** | 904/918 | 16/16 | 28.84/28.41 |
+| Sparse infill | **276/277** | **10/10** | **10.53/10.59** |
+| Floating vertical shell | **316/317** | **12/11** | **12.11/11.87** |
+| Internal solid infill | 629/600 | 4/5 | 12.29/13.85 |
+| Bridge | 28/31 | 28/23 | 39.50/33.65 |
+
+**Sparse infill and Floating vertical shell have an essentially identical run structure — yet share
+only 41.8% and 4.1% of their vertices.** Same number of runs, same lengths, different positions. For
+those two, connection is faithful and the prediction is wrong. Internal solid and Bridge *do* differ
+in structure, so for them it is supported. **The fill family is at least two distinct defects, and
+treating it as one is why it has resisted five rounds of single-cause hypotheses.**
+
+### Where the mismatches sit: not at the ends
+
+If the cause were end-anchoring against the perimeter, the mismatches would concentrate at run ends:
+
+| feature | first | interior | last |
+|---|---|---|---|
+| **Outer wall (CONTROL)** | 80.3% | **99.8%** | 96.0% |
+| Sparse infill | 32.6% | **43.9%** | 24.3% |
+| Floating vertical shell | 13.0% | 4.1% | 1.9% |
+| Internal solid infill | 17.3% | 14.8% | 6.0% |
+
+They do not. On Sparse the interior is the *best*-matching class. So this is not purely an anchoring
+effect — the whole path is displaced. (The control's own run-START dip, 80.3% against 99.8% interior,
+is the seam — an independent corroboration of a known open item.)
+
+### A measurement discarded rather than reported
+
+A run-pairing distance metric (pair runs by nearest start, measure the offset) was tried. **It failed
+its wall control — 64% within 0.01 mm where the walls are 99.5% vertex-identical** — because greedy
+nearest-start pairing conflates island ORDER with position. Discarded. Recording it because the
+control is the only reason it was caught, and an uncontrolled version of that number would have
+looked like a finding.
+
+### The anchor-default lead: real mismatch, inert
+
+`sparse_infill_anchor` / `sparse_infill_anchor_max` are `coFloatOrPercent`, which R707's audit
+explicitly could not compare (it reads single-argument numeric `set_default_value` literals; a
+two-argument `FloatOrPercent(v, is_percent)` falls outside its stated coverage). Neither fixture
+declares them, so defaults decide — R706's exact setup.
+
+| key | C++ | `print_config.rs` | `region_config.rs` |
+|---|---|---|---|
+| `sparse_infill_anchor` | `FloatOrPercent(400, true)` | **2.5** | `with(400.0, …)` ✓ |
+| `sparse_infill_anchor_max` | `FloatOrPercent(20, false)` | **12.0** | `with(20.0, …)` ✓ |
+
+**The mismatch in `print_config.rs` is real but INERT:** the fill path consumes `region_config`'s
+`infill_anchor`/`infill_anchor_max` (`fill/fill.rs:711`, mirroring `Fill.cpp:287-291`), and those
+defaults are correct. R707's reachability filter applies — a mismatch is not automatically a bug.
+The stale values in the other struct are a latent trap worth normalising, not a live defect.
+
+Promoted both working tests to `scripts/fill_geometry.py --runs`. No engine source changed; baselines
+unchanged by construction: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+
+**STILL OPEN:** the two fill classes now need separate attacks — **(a) same-structure/wrong-position
+(Sparse, Floating vertical shell), where angle, spacing, phase, region and connection are ALL cleared
+and the whole path is nonetheless displaced; (b) different-structure (Internal solid, Bridge)**, where
+`connect_infill` genuinely differs; Bridge's `bridge_angle` (separate defect); where the loop
+reordering is introduced; the seam (corroborated here by the wall control's 80.3% run-start rate); the
+fan markers; re-scoring the parked order-only gates.
