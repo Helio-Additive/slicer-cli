@@ -15614,3 +15614,81 @@ per-feature entity ordering, split 50/49; the fill family's GEOMETRY deficit, no
 ordering and worth more than the ordering ceiling; the 60 `SET differs` layers; the fan markers
 (`GCode.cpp:6630-6645` vs `exporter.rs:558`); re-scoring the parked order-only gates on the
 highest-density fixture.
+
+## R711 — the fills sit on the RIGHT grid and cover the RIGHT length; what differs is where every line is CLIPPED
+
+R710 proved the fill family's defect is geometry rather than ordering: on layers where the island
+order matches C++ exactly, Sparse scores 32.3% in-order, Internal solid 27.8%, Floating vertical
+shell 15.7% and Bridge 12.4%, while the walls on those same layers score 87-94%. That says the fills
+are wrong without saying which part. R711 tests the fill pipeline's parameters one at a time, all
+from the emitted G-code — no build, no probe, the data had been on disk the whole time.
+
+**Every stage carries `Outer wall` as a CONTROL.** A measurement that cannot show the walls matching
+is measuring itself, not the engine.
+
+### Four hypotheses, all refuted by measurement
+
+**PREDICTION REFUTED (fill angle).** The round opened by predicting a wrong `fill_angle` or per-layer
+rotation, on the reasoning that it would move every infill line while leaving walls untouched —
+exactly the observed signature. It is not that:
+
+| | rust | cpp |
+|---|---|---|
+| Sparse infill angles | 45° 20%, 135° 20%, 90° 19% | 45° 20%, 135° 20%, 90° 19% |
+| dominant angle sets | {0,3,45,90,135,177} | {0,3,45,90,135,177} — **identical** |
+
+A per-layer "dominant angle" statistic initially suggested 37 of 137 layers had 45 and 135 swapped.
+That statistic is decided by whichever island has more segments, so a near-tie flips it. Comparing
+the actual per-layer 45/135/90 split instead: **67 layers identical, 20 an exact 45↔135 swap, 50
+differing in other ways** — the swap is real but small, and not the mechanism.
+
+**Spacing and phase are faithful.** The perpendicular offsets of the 45° family give the grid's pitch
+and origin directly: spacing **identical** (5.54 mm sparse, 0.39 mm solid), first offset **identical**
+(`shift = 0.000`) on nearly every sampled layer.
+
+**Total coverage is right.** Total extruded length ratio ours/C++: Sparse 0.9837, Internal solid
+1.0034, Bridge 0.9951, Floating vertical shell 0.9893, Outer wall 0.9989. **Within 0.3-1.6% on every
+fill feature** — we are filling the same amount of material.
+
+**Direction reversal explains almost nothing.** Segments matching exactly vs matching reversed:
+
+| feature | same | reversed | neither |
+|---|---|---|---|
+| **Outer wall (control)** | **95.7%** | 0.0% | 4.3% |
+| Sparse infill | 20.2% | 9.3% | 70.5% |
+| Internal solid infill | 4.2% | 3.7% | 92.1% |
+| Bridge | 0.7% | 0.0% | 99.3% |
+| Floating vertical shell | 0.1% | 0.0% | 99.9% |
+
+### What IS wrong: the endpoints
+
+| feature | our pts | cpp pts | shared | % ours |
+|---|---|---|---|---|
+| **Outer wall (control)** | 26,367 | 26,378 | 26,237 | **99.5%** |
+| Sparse infill | 3,045 | 3,072 | 1,273 | 41.8% |
+| Top surface | 1,126 | 1,131 | 214 | 19.0% |
+| Internal solid infill | 7,902 | 8,482 | 1,106 | 14.0% |
+| Bottom surface | 193 | 192 | 32 | 16.6% |
+| Floating vertical shell | 3,915 | 3,848 | 162 | 4.1% |
+| Bridge | 1,121 | 1,057 | 30 | **2.7%** |
+
+**The fill lines lie on the same grid, at the same pitch, from the same origin, covering the same
+total length — and their endpoints do not match.** A line whose direction, spacing and phase are all
+correct but whose two ends are wrong has been **clipped against a different boundary**. The fill
+PATTERN is faithful; the fill REGION is not.
+
+That is a much narrower target than "the fills are wrong", and it points at the surface handed to the
+fill — `infill_area` / `no_overlap_area` out of the perimeter generator, and the `SET differs` layers
+R710 counted (Internal solid 95 of 192 layers, Bridge 9 of 13). It also explains why the fill family
+resisted every ordering fix: nothing about emission order can repair a boundary.
+
+Promoted to `scripts/fill_geometry.py`, which runs all five tests with the wall control built in.
+
+No engine source changed this round. Baselines unchanged by construction: benchy `248ff22a`, arachne
+`14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+
+**STILL OPEN:** the fill CLIPPING BOUNDARY — R712's target, now separated from the fill pattern
+(which is faithful) and from ordering (which R710 cleared); where the loop reordering is introduced
+now that all four chain stages are cleared (split 50/49); the 60 `SET differs` Outer wall layers; the
+fan markers (`GCode.cpp:6630-6645` vs `exporter.rs:558`); re-scoring the parked order-only gates on
+the highest-density fixture.
