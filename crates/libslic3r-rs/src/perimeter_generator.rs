@@ -1871,6 +1871,34 @@ impl PerimeterGenerator {
                 }
             }
             crate::stage_dump::dump("tail_infill", self.config.layer_id, &infill_exp);
+
+            // R712 — R711 proved the fill PATTERN is faithful (angle, spacing,
+            // grid phase and total extruded length all match C++) while only
+            // 2.7-42% of fill VERTICES match, which means every line is clipped
+            // against a different boundary. This prints that boundary at the
+            // moment it is committed, against C++ `PerimeterGenerator.cpp`
+            // (`this->fill_surfaces->append(infill_exp, stInternal)`, FILLB).
+            // Count/area apart from bbox: a missing region and a wrong inset
+            // need opposite fixes.
+            if crate::probe_enabled("FILLB") {
+                let mut area = 0.0f64;
+                let bb: Vec<String> = infill_exp
+                    .iter()
+                    .map(|e| {
+                        area += e.area();
+                        let b = e.bounding_box();
+                        format!("{},{},{},{}", b.min.x, b.min.y, b.max.x, b.max.y)
+                    })
+                    .collect();
+                eprintln!(
+                    "[FILLB] layer={} n={} bb={} area={:.0}",
+                    self.config.layer_id,
+                    infill_exp.len(),
+                    bb.join(";"),
+                    area
+                );
+            }
+
             let infill_out = infill_exp;
 
             // PerimeterGenerator.cpp:1415-1430 — BBS: get the no-overlap infill

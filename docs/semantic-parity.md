@@ -15692,3 +15692,74 @@ No engine source changed this round. Baselines unchanged by construction: benchy
 now that all four chain stages are cleared (split 50/49); the 60 `SET differs` Outer wall layers; the
 fan markers (`GCode.cpp:6630-6645` vs `exporter.rs:558`); re-scoring the parked order-only gates on
 the highest-density fixture.
+
+## R712 — the fill REGION is faithful; an identical region does not produce matching fills, so the defect is inside `Fill` itself
+
+R711 localised the fill defect to "the clipping boundary" on the strength of an inference: the fill
+lines have the right angle, pitch, phase and total length but the wrong endpoints, so they must be
+clipped against a different region. R712 probed the region directly. **The inference was wrong.**
+
+### The probe
+
+`FILLB` was injected on both sides at the moment the fill region is committed — C++
+`PerimeterGenerator.cpp`, `this->fill_surfaces->append(infill_exp, stInternal)`, and the
+corresponding tail in `perimeter_generator.rs` — printing per island the surface count, total area
+and each surface's bounding box. Count/area separates "a region is missing" from "the region has the
+wrong outline"; those need opposite fixes.
+
+### Two of my own mid-round numbers were artifacts, caught before they became conclusions
+
+**"Bbox sets differ on 202 of 300 layers."** The actual difference on layer 2 was
+`(-2527590, -758445, 1277572, 758582)` against `(-2527590, -758444, 1277571, 758582)` — **one scaled
+unit, 10 nanometres.** That is float rounding, not geometry. Re-run with an 80 nm tolerance:
+**95.7% of bboxes match.**
+
+**"Total fill area ratio 1.7415."** Our probe fires 1,406 times to C++'s 726, because it sits in our
+per-surface path while C++'s sits in its per-island loop. **The probe placements are not equivalent,
+so the call counts are not comparable and summing per-call areas double-counts.** Restricted to the
+46 layers where the call counts do line up:
+
+| | |
+|---|---|
+| surface COUNT identical | **46 / 46 (100%)** |
+| AREA within 0.1% | 35 / 46 (76.1%) |
+| BBOX within 80 nm | 44 / 46 (95.7%) |
+| **total area ratio** | **1.0000** |
+
+**Where the comparison is valid, the fill region is essentially identical.**
+
+### The decisive test: does an identical region produce matching fills?
+
+If R711's boundary story were right, the fills should score well exactly on the layers where the
+region provably matches. Splitting the metric by that predicate — walls carried as the control:
+
+| | bucket | rust lines | in-order | rate |
+|---|---|---|---|---|
+| FILL | **region comparable** | 7,904 | 1,072 | **13.6%** |
+| FILL | region probe differs | 27,785 | 5,821 | 21.0% |
+| WALL | **region comparable** | 5,607 | 5,129 | **91.5%** |
+| WALL | region probe differs | 56,188 | 45,434 | 80.9% |
+
+**On the layers where the fill region is provably identical, the fills score 13.6% — no better than
+elsewhere — while the walls on those same layers score 91.5%.** An identical region does not produce
+matching fills. The region is exonerated.
+
+### What this leaves
+
+Angle, spacing, grid phase, total extruded length (R711) and now the fill REGION (R712) are all
+faithful. The divergence is therefore inside `Fill` itself: how the pattern is clipped, connected and
+anchored *within* a correct boundary — `Fill::fill_surface` / `_fill_surface_single`, the infill
+connection (`connect_infill`, `chain_infill_lines`), and anchoring against the perimeter. That is a
+much narrower object than "the fills are wrong", and it is where R713 goes.
+
+The Rust `FILLB` probe is kept (`probe_enabled("FILLB")`, default OFF). The C++ injection was
+reverted and the submodule rebuilt clean.
+
+Baselines unchanged: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+Suites: eight green (`multi_material_integration` 25/26 pre-existing).
+
+**STILL OPEN:** `Fill`'s path construction — R713's target, now the only surviving explanation for the
+fill divergence; Bridge's `bridge_angle` (R711 found its angle sets genuinely differ, unlike
+sparse/solid — a separate defect); where the loop reordering is introduced (all four chain stages
+cleared, split 50/49); the 60 `SET differs` Outer wall layers; the fan markers; re-scoring the parked
+order-only gates on the highest-density fixture.
