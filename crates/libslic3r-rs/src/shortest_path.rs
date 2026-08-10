@@ -1426,7 +1426,7 @@ where
 // chaining lambdas use. The Rust port stores a `Vec<ExtrusionEntityType>` enum, so the
 // `ee->first_point()` / `ee->last_point()` / `ee->is_loop()` / `ee->can_reverse()` /
 // `ee->reverse()` calls dispatch over the enum instead of through a vtable.
-fn entity_first_point(ee: &ExtrusionEntityType) -> Point {
+pub(crate) fn entity_first_point(ee: &ExtrusionEntityType) -> Point {
     match ee {
         ExtrusionEntityType::Path(p) => p.first_point(),
         ExtrusionEntityType::Loop(l) => l.first_point(),

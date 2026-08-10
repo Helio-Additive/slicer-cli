@@ -15533,3 +15533,84 @@ the perimeter generator — R710's target, worth up to +6,599 on `Outer wall` al
 `SET differs` layers (geometry, not ordering); the fan markers C++ emits inside `_extrude`
 (`GCode.cpp:6630-6645`) vs ours in `extrude_loop` (`exporter.rs:558`); re-scoring the parked
 order-only gates on the highest-density fixture.
+
+## R710 — all four ordering stages are faithful by direct probe, the ceiling is +11,911, and the fill family's defect is NOT ordering
+
+R709 priced island/loop visit order at +6,599 in-order lines on `Outer wall` and cleared
+`Layer::make_slices` by probe. R710 probes the two stages R709 cleared only by *reading*, measures
+the ceiling across all features, and corrects a claim R710 itself made mid-round.
+
+### The two remaining chain stages are faithful too
+
+R709's reading is weaker evidence than it looked: a faithful call fed a different **input** still
+diverges. Two probes were injected on both sides, mirroring R709's `MKSL`:
+
+| probe | stage | C++ site |
+|---|---|---|
+| `PGSO` | `process_classic`'s surface order (keys on per-surface bbox centres) | `PerimeterGenerator.cpp:919` |
+| `PGCH` | `traverse`'s entity chain (keys on per-entity first points, plus the seed) | `PerimeterGenerator.cpp:478` |
+
+| probe | comparable calls | input points identical | order identical |
+|---|---|---|---|
+| `PGSO` | 156 | **155** | **155 of 155** |
+| `PGCH` | 67 | **67** | **67 of 67** |
+
+`PGSO`'s lone exception is layer 0 — the elephant-foot-compensated first layer, exactly the same
+exception `MKSL` found. `PGCH` shows 2,430 of 2,513 calls carry fewer than two entities, so the
+traverse chain almost never has anything to order: the emitted loop sequence comes from the recursion
+structure, not from that chain.
+
+**All four ordering stages are now cleared:** `make_slices` (R709, 155/155), `chain_expolygons`
+(155/155), the `traverse` chain (67/67), and the seed (`zero_point` identical on every comparable
+call). The reordering is introduced somewhere else.
+
+### The ceiling, per feature — and a correction to R709's framing
+
+`scripts/island_order.py --all` (new mode) totals it:
+
+| feature | ORDER same | ORDER differs | ceiling |
+|---|---|---|---|
+| Outer wall | 94.4% | 63.1% | **+6,599** |
+| Gap infill | 81.3% | 47.6% | **+3,188** |
+| Inner wall | 87.7% | 53.4% | **+2,044** |
+| Sparse / Internal solid / Top / Floating / Bridge | 12–32% | — | +78 combined |
+| | | **TOTAL** | **+11,911** |
+
+Nearly double R709's wall-only figure. But the more useful half of this table is the **fill family**:
+it scores badly *even on layers where the island order matches exactly* — Sparse 32.3%, Internal
+solid 27.8%, Floating vertical shell 15.7%, Bridge 12.4%. **Ordering is not what ails the fills;
+their geometry is.** Only walls and gap infill (94.4/87.7/81.3% when ordered correctly) are
+ordering-actionable, and they are +11,831 of the +11,911. That splits Benchy's long-standing FILL
+deficit away from the ordering work for the first time.
+
+### A mid-round claim of my own, corrected
+
+R710 first reported the layer-vs-feature discriminator as **93 layers disagree vs 6 agree**,
+concluding the reordering is per-feature and that `process_layer`'s island loop was eliminated.
+**That was an artifact.** The check compared raw permutation *tuples* across features, but features
+have different island counts, so `(0,1)` vs `(2,3,0,1,4)` counts as "disagree" even when both are the
+identity — nearly every layer registers as disagreement by construction.
+
+Comparing the right thing — the boolean "is this feature reordered" — over 194 layers with at least
+two comparable features:
+
+| | |
+|---|---|
+| ALL features in order | 95 |
+| ALL features reordered | **50** — consistent with one layer-level decision |
+| MIXED (some reordered, some not) | **49** — a per-feature decision |
+
+**Genuinely split, so neither suspect is eliminated**; both mechanisms appear present. The corrected
+statistic and the tuple trap are documented in the script so the mistake is not repeatable.
+
+Baselines unchanged: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880` (all
+re-verified after a root rebuild, per R709's rule — the binary was confirmed to carry the new probes
+before any conclusion was drawn). Suites: eight green (`multi_material_integration` 25/26
+pre-existing). C++ injection reverted, submodule rebuilt clean. Rust probes kept, default OFF.
+
+**STILL OPEN:** where the loop reordering is actually introduced, now that all four chain stages are
+cleared — the two live candidates are `GCode::process_layer`'s island/region emission loop and the
+per-feature entity ordering, split 50/49; the fill family's GEOMETRY deficit, now separated from
+ordering and worth more than the ordering ceiling; the 60 `SET differs` layers; the fan markers
+(`GCode.cpp:6630-6645` vs `exporter.rs:558`); re-scoring the parked order-only gates on the
+highest-density fixture.

@@ -44,7 +44,27 @@ RESULT (R709, benchy classic, feature 'Outer wall'):
   that chain directly against C++ and found the ordering points identical on
   155 of 156 multi-island layers and the chain order identical on all 155.
 
+`--all` (R710) runs every feature and totals the ceiling, and prints the
+per-layer/per-feature DISCRIMINATOR: on a layer, are ALL multi-island features
+reordered together (consistent with one layer-level decision) or only SOME (a
+per-feature decision)?
+
+  R710, benchy classic: per-feature ceilings Outer wall +6,599, Gap infill
+  +3,188, Inner wall +2,044, everything else under +50 -- TOTAL +11,911.
+  The fill family scores badly even when the order MATCHES (Sparse 32.3%,
+  Internal solid 27.8%, Bridge 12.4%), so their defect is geometry, not
+  ordering; walls and gap infill are the ordering-actionable part.
+  Discriminator, of 194 layers with >=2 comparable features: 95 all in order,
+  50 all reordered, 49 mixed -- genuinely split, so neither a layer-level nor a
+  per-feature cause is eliminated.
+
+  Beware comparing raw permutation TUPLES across features: features have
+  different island counts, so (0,1) vs (2,3,0,1,4) "differ" even when both are
+  the identity. R710 first reported 93-vs-6 from exactly that mistake. Compare
+  the BOOLEAN "is this feature reordered", not the tuples.
+
 Usage: island_order.py <rust.gcode> <cpp.gcode> [feature] [res_mm] [--leverage]
+       island_order.py <rust.gcode> <cpp.gcode> --all [res_mm]
 """
 import re
 import sys
@@ -101,13 +121,91 @@ def classify(rraw, craw, res):
     return ('ORDER same' if rk == ck else 'ORDER differs'), rk, ck
 
 
+FEATS = ['Outer wall', 'Inner wall', 'Gap infill', 'Sparse infill',
+         'Internal solid infill', 'Top surface', 'Bottom surface',
+         'Floating vertical shell', 'Overhang wall', 'Bridge']
+
+
+def run_all(rg, cg, res):
+    """Per-feature ceilings + the layer-vs-feature discriminator (R710)."""
+    bucket = defaultdict(lambda: defaultdict(Counter))
+    reordered = defaultdict(dict)      # layer -> feat -> is_in_order
+
+    for key in sorted(set(rg) | set(cg)):
+        layer, feat = key
+        if feat not in FEATS:
+            continue
+        rraw, craw = rg.get(key, []), cg.get(key, [])
+        if not rraw or not craw:
+            continue
+        b, rk, ck = classify(rraw, craw, res)
+        if len(rk) > 1 and b != 'SET differs':
+            reordered[layer][feat] = (b == 'ORDER same')
+        r = [quantise(x, DEC) for x in rraw]
+        c = [quantise(x, DEC) for x in craw]
+        d = bucket[feat][b]
+        d['layers'] += 1
+        d['rust'] += len(r)
+        d['content'] += sum((Counter(r) & Counter(c)).values())
+        d['in_order'] += sum(bl.size for bl in SequenceMatcher(
+            None, r, c, autojunk=False).get_matching_blocks())
+
+    print(f"{'feature':<26} {'bucket':<14} {'layers':>6} {'rust':>8} "
+          f"{'in-order':>9} {'in-ord%':>8}")
+    total = 0
+    for feat in FEATS:
+        bs = bucket.get(feat)
+        if not bs:
+            continue
+        for b in ('ORDER same', 'ORDER differs', 'SET differs'):
+            d = bs.get(b)
+            if d:
+                print(f"{feat:<26} {b:<14} {d['layers']:>6} {d['rust']:>8} "
+                      f"{d['in_order']:>9} "
+                      f"{100*d['in_order']/max(d['rust'],1):>7.1f}%")
+        same, diff = bs.get('ORDER same'), bs.get('ORDER differs')
+        if same and diff and same['rust'] and diff['rust']:
+            good = same['in_order'] / same['rust']
+            ceil = min(good * diff['rust'] - diff['in_order'],
+                       diff['content'] - diff['in_order'])
+            if ceil > 0:
+                total += ceil
+                print(f"{'':<26} {'CEILING':<14} {'':>6} {'':>8} "
+                      f"{'+' + str(int(ceil)):>9}")
+    print(f"\nTOTAL island-order ceiling across features: +{int(total)} in-order lines")
+
+    # Discriminator -- compare the BOOLEAN, never the permutation tuples.
+    all_ok = all_re = mixed = 0
+    for layer, feats in reordered.items():
+        if len(feats) < 2:
+            continue
+        vals = list(feats.values())
+        if all(vals):
+            all_ok += 1
+        elif not any(vals):
+            all_re += 1
+        else:
+            mixed += 1
+    print(f"\nDISCRIMINATOR over {all_ok + all_re + mixed} layers with >=2 "
+          f"comparable features:")
+    print(f"  ALL features in order  : {all_ok}")
+    print(f"  ALL features reordered : {all_re}  (consistent with ONE layer-level decision)")
+    print(f"  MIXED                  : {mixed}  (a per-FEATURE decision)")
+
+
 def main():
-    argv = [a for a in sys.argv[1:] if a != '--leverage']
+    argv = [a for a in sys.argv[1:] if a not in ('--leverage', '--all')]
     leverage = '--leverage' in sys.argv
     rp, cp = argv[0], argv[1]
     want = argv[2] if len(argv) > 2 else 'Outer wall'
     res = float(argv[3]) if len(argv) > 3 else RES
     rg, cg = groups(rp), groups(cp)
+
+    if '--all' in sys.argv:
+        res = float(argv[2]) if len(argv) > 2 else RES
+        print(f"rust={rp}\ncpp ={cp}\nbbox resolution={res} mm\n")
+        run_all(rg, cg, res)
+        return
 
     stats = Counter()
     buckets = defaultdict(Counter)

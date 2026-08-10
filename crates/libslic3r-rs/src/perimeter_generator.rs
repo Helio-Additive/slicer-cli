@@ -447,6 +447,28 @@ impl PerimeterGenerator {
         } else {
             (0..slices.len()).collect()
         };
+
+        // R710 — R709 verified this chain by READING both sides, which cannot
+        // catch a faithful call fed a different input. Print the bbox centers
+        // `chain_expolygons` keys on and the order it returned, to compare
+        // against the same probe in C++ (`PerimeterGenerator.cpp:919`, PGSO).
+        if crate::probe_enabled("PGSO") {
+            let c: Vec<String> = slices
+                .iter()
+                .map(|e| {
+                    let b = e.bounding_box();
+                    format!("{},{}", b.center().x, b.center().y)
+                })
+                .collect();
+            let o: Vec<String> = order.iter().map(|i| i.to_string()).collect();
+            eprintln!(
+                "[PGSO] layer={} n={} c={} order={}",
+                self.config.layer_id,
+                slices.len(),
+                c.join(";"),
+                o.join(",")
+            );
+        }
         for &slice_idx in &order {
             let slice = &slices[slice_idx];
             let surface_result = self.generate_classic_one(slice);
@@ -2842,6 +2864,31 @@ fn traverse_loops(
     /// travel. Use the faithful port so the emission order matches native.
     let chain: Vec<(usize, bool)> =
         crate::shortest_path::chain_extrusion_entities(&coll.entities, Some(&zero_point));
+
+    // R710 — same reason as PGSO: the call is faithful, the INPUT may not be.
+    // Print the entity first points this chain keys on, the seed, and the
+    // resulting order, against C++ `PerimeterGenerator.cpp:478` (PGCH).
+    // Must run BEFORE the drain below, which empties `coll.entities`.
+    if crate::probe_enabled("PGCH") {
+        let fp: Vec<String> = coll
+            .entities
+            .iter()
+            .map(|e| {
+                let p = crate::shortest_path::entity_first_point(e);
+                format!("{},{}", p.x, p.y)
+            })
+            .collect();
+        let ch: Vec<String> = chain.iter().map(|(i, _)| i.to_string()).collect();
+        eprintln!(
+            "[PGCH] layer={} n={} zp={},{} fp={} chain={}",
+            config.layer_id,
+            coll.entities.len(),
+            zero_point.x,
+            zero_point.y,
+            fp.join(";"),
+            ch.join(",")
+        );
+    }
 
     // Move entities out of coll for indexed access.
     let mut entities: Vec<Option<ExtrusionEntityType>> =
