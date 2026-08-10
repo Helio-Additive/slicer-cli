@@ -15431,3 +15431,105 @@ Suites: eight green (`multi_material_integration` 25/26 pre-existing), `hole_pre
 parked order-only gates can be scored honestly; Benchy's FILL family; arachne wall coordinates
 (outer 10.1% content); the fan markers, which C++ emits inside `_extrude` after the Width tag
 (`:6630-6645`) and we emit in `extrude_loop` at `:558` — a second header-order divergence, unmeasured.
+
+## R709 — the geometry ordering loss is island/loop VISIT ORDER, priced at +6,599 lines; `make_slices` chaining is faithful; and R708's "no-op" claim was a stale build
+
+R708 split benchy classic's 17,702-line ordering loss into 46% per-path header and **37% real path
+geometry**. R709 attacks the geometry half.
+
+### Correction to R708 first
+
+R708 reported the `flush_pending_speed` move as a "byte-verified no-op on all three fixtures". **That
+was wrong.** The rebuild used
+`cargo build --release --manifest-path crates/libslic3r-rs/Cargo.toml`, which builds only the
+`slicer` *library*; the `slicer-cli` binary comes from the root package `helio-slicer-cli`, so it was
+never rebuilt and every arm ran the old code. Rebuilt properly with `cargo build --release` from the
+root:
+
+| | R708 claimed | actual |
+|---|---|---|
+| classic gate-ON hash | `a40f7b28` (unchanged) | **`34443fde`** (changed) |
+| classic gate-ON in-order | 99,567 | **99,578** (+11) |
+
+So the flush correction is a real, if small, improvement rather than a no-op, and the
+`LINEWIDTH_BEFORE_SPEED` delta on classic is **+1,319**. Everything else in R708 survives: the gate
+A/B itself is toggled by an env var on a compiled-in gate, so those numbers were never stale, and all
+four baselines re-verified against a correct build (benchy `248ff22a`, arachne `14b1d2e6`, cube
+`14566293`, majora `6a8cf880`) — the shipped change is genuinely default-inert.
+
+**A hash that is unchanged after an edit you expected to matter is evidence of a stale build until
+proven otherwise.** Confirm the binary moved (mtime, or `strings | grep <probe>`) before reporting a
+no-op.
+
+### Island SET is right; island ORDER is not
+
+`scripts/island_order.py` (new) splits each (layer, feature) group into islands — a maximal run of
+extrusion moves, broken by any travel — and keys each by its bounding box at 0.1 mm. A bbox survives
+the G1-vs-G2/G3 arc-fitting difference that defeats point-level comparison, and is invariant to where
+the loop is seamed, so a key match means "the same island, however it was drawn". Benchy classic,
+`Outer wall`, 300 layers:
+
+| | |
+|---|---|
+| islands, ours vs cpp | **938 vs 940** (count differs on 1 layer) |
+| island SET identical | 240 layers → **ORDER identical 166, ORDER DIFFERS 74** |
+| island SET differs | 60 layers |
+
+**PREDICTION REFUTED.** R709 predicted that if chaining were faithful the geometry loss would be the
+SEAM (a rotated loop). It is not: the sets match and the *order* differs, on 31% of set-identical
+layers, with a systematic repeated permutation — `[4,2,3,0,1]` on layers 71-75, `[3,1,2,0]` on 76.
+
+### Priced before chasing (R692's leverage rule)
+
+Splitting the per-layer in-order rate by bucket:
+
+| bucket | layers | rust | content | in-order | in-order % | ordering loss |
+|---|---|---|---|---|---|---|
+| **ORDER same** | 166 | 37,100 | 35,432 | 35,028 | **94.4%** | **1.1%** |
+| **ORDER differs** | 74 | 21,047 | 20,048 | 13,272 | **63.1%** | **33.8%** |
+| SET differs | 60 | 3,648 | 2,390 | 2,263 | 62.0% | 5.3% |
+
+Where the island order matches, the walls are essentially clean — 1.1% ordering loss. Where it
+differs, 33.8%. **Ceiling: +6,599 in-order lines on `Outer wall` alone**, ~6.7% of benchy's entire
+in-order count. This is the best-priced single target on the board.
+
+### It is NOT `Layer::make_slices` — measured, not assumed
+
+The obvious suspect was the layer-level island chain. C++ `Layer::make_slices` keys on
+`ex.contour.first_point()` (`Layer.cpp:63-70`), which is *rotation-dependent*: a contour that starts
+at a different vertex moves the ordering key to a different place on the same island. A matching
+`MKSL` probe was injected on both sides (C++ `Layer.cpp`, Rust `layer.rs`) printing the ordering
+points and the resulting order per layer:
+
+| | |
+|---|---|
+| layers matched by z | 300 |
+| multi-island layers (where order can differ) | 156 |
+| ordering points **identical** | **155** |
+| chain order **identical** | **155 of 155** |
+
+The single exception is z=0.2, the elephant-foot-compensated first layer, which C++ re-sorts
+separately at `PrintObjectSlice.cpp:1323-1339`. **Our `chain_points` port and its input are both
+faithful** — a clean negative that removes a suspect carried on the open list for many rounds. The
+Rust probe is kept (`probe_enabled("MKSL")`, default OFF); the C++ injection was reverted and the
+submodule rebuilt clean.
+
+Both other chainings were also read and are faithful: `process_classic` calls `chain_expolygons`
+(`PerimeterGenerator.cpp:919`, ours `perimeter_generator.rs:446`), `process_arachne` does not chain
+on either side (so our early return at `:434` is correct), and `traverse` chains entities seeded at
+`zero_point` (`PerimeterGenerator.cpp:460-478`, ours via
+`shortest_path::chain_extrusion_entities(&coll.entities, Some(&zero_point))`).
+
+So the divergence is above all three: the order in which *surfaces* reach the perimeter generator, or
+the island/region visit order inside `GCode::process_layer`. My island key counts ~3.1 runs per layer
+against 156/300 multi-island layers, so what is reordering is loop groups within a feature, not
+lslices islands.
+
+Baselines unchanged: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+Suites: eight green (`multi_material_integration` 25/26 pre-existing). Submodule clean.
+
+**STILL OPEN:** the loop-group visit order inside `GCode::process_layer` / the surface order reaching
+the perimeter generator — R710's target, worth up to +6,599 on `Outer wall` alone; the 60
+`SET differs` layers (geometry, not ordering); the fan markers C++ emits inside `_extrude`
+(`GCode.cpp:6630-6645`) vs ours in `extrude_loop` (`exporter.rs:558`); re-scoring the parked
+order-only gates on the highest-density fixture.

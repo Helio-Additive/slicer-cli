@@ -1818,6 +1818,26 @@ impl Layer {
             chain_points(&ordering_points)
         };
 
+        // R709 — island ORDER, not the island set, is what costs the lines:
+        // benchy Outer wall layers whose island order matches C++ score 94.4%
+        // in-order, those that differ score 63.1% (ceiling +6,599 lines). Print
+        // the ordering points and the resulting order so they can be compared
+        // against the same probe in C++ (`Layer.cpp`, `MKSL`).
+        if crate::probe_enabled("MKSL") {
+            let pts: Vec<String> = ordering_points
+                .iter()
+                .map(|p| format!("{},{}", p.x, p.y))
+                .collect();
+            let ord: Vec<String> = order.iter().map(|i| i.to_string()).collect();
+            eprintln!(
+                "[MKSL] z={:.6} n={} pts={} order={}",
+                self.print_z,
+                ordering_points.len(),
+                pts.join(";"),
+                ord.join(",")
+            );
+        }
+
         // Layer.cpp:72-74
         // populate slices vector
         // C++: for (size_t i : order)
