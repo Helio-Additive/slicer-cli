@@ -2166,6 +2166,22 @@ pub fn parse_f64(s: &str) -> Option<f64> {
     s.trim_end_matches('%').parse::<f64>().ok()
 }
 
+/// R706 — parse a BambuStudio `coPercent` option as its PERCENT NUMBER.
+///
+/// `min_bead_width` / `min_feature_size` / `wall_transition_length` /
+/// `wall_transition_filter_deviation` are all `coPercent` in C++
+/// (PrintConfig.cpp:5940-6010) and their consumer multiplies by
+/// `0.01 * min_nozzle_diameter` (PerimeterGenerator.cpp:1540-1549), which our
+/// `perimeter_generator.rs:3238-3250` mirrors. So the stored value must be the
+/// PERCENT (85), not a fraction (0.85) and not millimetres (0.34).
+///
+/// Accepts `"85%"` and `"85"` alike, both -> 85.0. Contrast [`parse_pct`], which
+/// returns a FRACTION (0.85) — feeding that to the percent consumer under-scales
+/// by 100x, and feeding millimetres under-scales by ~250-850x (R706).
+pub fn parse_percent_number(s: &str) -> Option<f64> {
+    s.trim().trim_end_matches('%').trim().parse::<f64>().ok()
+}
+
 pub fn parse_pct(s: &str) -> Option<f64> {
     if s.ends_with('%') {
         s.trim_end_matches('%')
@@ -3201,19 +3217,22 @@ impl PrintObjectConfig {
                 true
             }
             "min_bead_width" => {
-                if let Some(v) = parse_f64(value) {
+                // R706 — coPercent: store the percent number (see parse_percent_number).
+                if let Some(v) = parse_percent_number(value) {
                     self.arachne_min_bead_width = v;
                 }
                 true
             }
             "min_feature_size" => {
-                if let Some(v) = parse_f64(value) {
+                // R706 — coPercent: store the percent number (see parse_percent_number).
+                if let Some(v) = parse_percent_number(value) {
                     self.arachne_min_feature_size = v;
                 }
                 true
             }
             "wall_transition_length" => {
-                if let Some(v) = parse_f64(value) {
+                // R706 — coPercent: store the percent number (see parse_percent_number).
+                if let Some(v) = parse_percent_number(value) {
                     self.arachne_wall_transition_length = v;
                 }
                 true
@@ -3527,9 +3546,15 @@ impl Default for PrintObjectConfig {
             // unverified behavioral change; revisit if a config that omits the key
             // is found to diverge from C++.
             perimeter_mode: PerimeterMode::Classic,
-            arachne_min_bead_width: 0.1,
-            arachne_min_feature_size: 0.1,
-            arachne_wall_transition_length: 0.4,
+            // R706 — PERCENT of nozzle diameter, matching C++'s coPercent
+            // defaults (min_bead_width 85%, min_feature_size 25%,
+            // wall_transition_length 100%) and the consumer's `* 0.01 * nozzle`.
+            // These were 0.1/0.1/0.4 (millimetre-ish guesses), which made the
+            // effective limits 850x/250x/250x too small — i.e. no minimum bead,
+            // no minimum feature, no transition length at all.
+            arachne_min_bead_width: 85.0,
+            arachne_min_feature_size: 25.0,
+            arachne_wall_transition_length: 100.0,
             interface_shells: false,
             spiral_vase: false,
             detect_narrow_internal_solid_infill: true,
@@ -5537,17 +5562,20 @@ impl PrintObjectConfig {
                 };
             }
             "min_bead_width" => {
-                if let Some(v) = parse_pct(value) {
-                    self.arachne_min_bead_width = v * self.line_width.max(0.4);
+                // R706 — coPercent: percent number, NOT mm. The old
+                // `parse_pct(v) * line_width` stored millimetres, which the
+                // percent-semantics consumer then scaled by 0.01*nozzle again.
+                if let Some(v) = parse_percent_number(value) {
+                    self.arachne_min_bead_width = v;
                 }
             }
             "min_feature_size" => {
-                if let Some(v) = parse_pct(value) {
-                    self.arachne_min_feature_size = v * self.line_width.max(0.4);
+                if let Some(v) = parse_percent_number(value) {
+                    self.arachne_min_feature_size = v;
                 }
             }
             "wall_transition_length" => {
-                if let Some(v) = parse_f64(value) {
+                if let Some(v) = parse_percent_number(value) {
                     self.arachne_wall_transition_length = v;
                 }
             }

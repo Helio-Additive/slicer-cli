@@ -449,9 +449,10 @@ fn create_default_object_config(
 
         // Arachne
         perimeter_mode: slicer::print_config::PerimeterMode::Classic,
-        arachne_min_bead_width: 0.34,
-        arachne_min_feature_size: 0.25,
-        arachne_wall_transition_length: 0.4,
+        // R706 — PERCENT of nozzle (C++ coPercent defaults), not mm.
+        arachne_min_bead_width: 85.0,
+        arachne_min_feature_size: 25.0,
+        arachne_wall_transition_length: 100.0,
 
         // Narrow region detection
         detect_narrow_internal_solid_infill: true,

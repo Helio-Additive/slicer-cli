@@ -15137,3 +15137,89 @@ is worth more than a faster script.
 
 No source changed — a new config file only. benchy `248ff22a`, cube `14566293`,
 majora `6a8cf880`, all unchanged. The submodule was never touched.
+
+## R706 — three arachne limits were 250–850× too small: a DEFAULT mismatch, found in one round on the new fixture
+
+R705's reproducer made this a 2.8-second question. Looking at the emitted
+outer-wall paths directly — the data was already on disk — gave the answer before
+any probe was written.
+
+### The distributions, not the anecdote
+
+One layer showed our first path at width 0.148 against C++'s 0.374, but a single
+layer is an anecdote. The distributions are the finding:
+
+| outer wall | RUST | C++ |
+|---|---|---|
+| total segments | 44,567 | 45,513 (0.98×) |
+| paths | 1,599 | 2,347 |
+| width median | 0.4200 | 0.4200 |
+| **width min** | **0.1272** | **0.3671** |
+| **width max** | **0.5000** | **0.6027** |
+
+Same total extrusion, same median width — but our range is shifted low and
+clipped at a suspiciously round 0.5000.
+
+### The cause: percent-semantics defaults
+
+`min_bead_width`, `min_feature_size` and `wall_transition_length` are `coPercent`
+in C++ (`PrintConfig.cpp:5940-6010`, defaults **85% / 25% / 100%** of nozzle) and
+the consumer multiplies by `0.01 * min_nozzle_diameter` — which
+`perimeter_generator.rs:3238-3250` mirrors correctly. But `print_config.rs`
+defaulted them to **0.1 / 0.1 / 0.4**, millimetre-ish guesses, giving:
+
+| | ours (effective) | C++ intends | error |
+|---|---|---|---|
+| `min_bead_width` | 0.0004 mm | 0.34 mm | **850×** |
+| `min_feature_size` | 0.0004 mm | 0.10 mm | **250×** |
+| `wall_transition_length` | 0.0016 mm | 0.40 mm | **250×** |
+
+**Arachne was running with no minimum bead width, no minimum feature size and no
+transition length at all.**
+
+**It is purely a DEFAULT mismatch, and the scope is the profile-JSON path.**
+Walking the full inheritance chain (`0.16mm Standard @BBL H2D` →
+`fdm_process_dual_0.16_nozzle_0.4` → `fdm_process_dual_common` →
+`fdm_process_common`) shows **none of the four declares these keys**, so both
+engines fall back to their own defaults. Majora is unaffected: its 3MF *does*
+declare `85%`/`25%`/`100%`, and `parse_f64` already strips a trailing `%`
+(`:2166`), so the 3MF path was always correct — which is why Majora's hash does
+not move.
+
+Also hardened (not the operative fix): `apply_key_value` stored
+`parse_pct(v) * line_width` — **millimetres** — which the percent-semantics
+consumer would then scale by `0.01 * nozzle` a second time. New
+`parse_percent_number` accepts `"85%"` and `"85"` alike and both parsers now
+store the percent number.
+
+### Result — every statistic moved toward C++
+
+| outer wall | before | **after** | C++ |
+|---|---|---|---|
+| width min | 0.1272 | **0.3403** | 0.3671 |
+| width max | 0.5000 | **0.6385** | 0.6027 |
+| width mean | 0.4079 | **0.4245** | **0.4247** |
+| paths | 1,599 | **2,033** | 2,347 |
+| seg/path median | 13.0 | **3.0** | 2.0 |
+
+Mean width matches to four decimals; the 0.34 floor is now visible in the minimum.
+
+| benchy-arachne | before | after |
+|---|---|---|
+| content matched | 48,798 | **49,952 (+1,154)** |
+| in-order matched | 32,216 | **32,977 (+761)** |
+| content rate | 23.13% | **24.59% (+1.46pp)** |
+| in-order rate | 15.27% | **16.24% (+0.97pp)** |
+
+**Both absolute counts and both rates improve** — unlike R704, where the rates
+fell. Ordering loss is unchanged at 33.98%, confirming R705's point that ordering
+is a *separate* term this does not touch.
+
+### Shipped unconditionally
+
+No gate: it is a default correction toward C++'s documented values, and all three
+tracked baselines are **byte-unchanged** — benchy `248ff22a`, cube `14566293`,
+majora `6a8cf880` (classic walls do not read these; Majora's 3MF already declared
+them). Seven suites green, `multi_material_integration` 25/26 pre-existing.
+
+**Two rounds after the fixture was built, it has already paid for itself.**
