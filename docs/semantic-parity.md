@@ -16217,3 +16217,72 @@ settle marker-vs-cause; the anchoring pass's `&[]` lower areas (inert, but a rea
 Rectilinear/Monotonic assignment trade; Bridge's `bridge_angle`; the `Fill.cpp:354` union TODO; the
 unported `Layer::make_fills` and `make_ironing`; where the loop reordering is introduced; the seam;
 the fan markers; re-scoring the parked order-only gates.
+
+## R719 — the FVS effect survives a narrowness control, is LARGEST on the widest regions, and hits only the interior fills
+
+R718 cautioned that R717's FVS↔Sparse correlation was probably a **marker** for narrow awkward
+regions rather than a cause, because R717 controlled island count but not narrowness. R719 ran that
+control. **The caution was wrong.**
+
+### PREDICTION REFUTED — narrowness does not explain it
+
+Narrowness measured directly on the Sparse regions themselves (median island bbox min-side, mm), then
+re-split on FVS presence:
+
+| sparse-region narrowness | no FVS | FVS present | delta |
+|---|---|---|---|
+| < 3 mm | 33.9% (9 layers) | 28.1% (10) | −5.8 |
+| 3–6 mm | 73.6% (6) | 21.1% (4) | (small n) |
+| 6–12 mm | 46.7% (9) | 27.5% (20) | **−19.3** |
+| **≥ 12 mm** | **64.1%** (26) | **33.2%** (52) | **−30.8** |
+
+**The effect survives, and it is LARGEST on the WIDEST regions** — the exact opposite of a narrowness
+proxy, which would concentrate in the narrow bands. Read down the columns: without FVS the rate
+climbs 33.9 → 46.7 → 64.1% as regions widen, while **with FVS it stays pinned near 28–33% no matter
+how wide the region is**. Narrowness behaves like a normal difficulty gradient in the no-FVS column
+and is simply overridden when FVS is present.
+
+R718's "probably a marker" is therefore refuted by measurement, and R717's correlation stands as a
+genuine predictor. (Ninth consecutive round whose prediction failed — but this one failed in the
+direction that keeps the lead alive, which is worth as much.)
+
+### The effect is SPECIFIC to the interior fills
+
+If FVS-bearing layers were simply "hard layers", every feature on them would suffer. They do not:
+
+| feature | no-FVS | FVS present | delta |
+|---|---|---|---|
+| **Outer wall** | 99.8% (159 layers) | 99.8% (86) | **+0.0** |
+| Inner wall | 89.3% (142) | 90.7% (72) | +1.4 |
+| Gap infill | 94.1% (127) | 91.9% (62) | −2.1 |
+| Top surface | 18.4% (20) | 17.5% (10) | −0.9 |
+| **Sparse infill** | 58.7% (50) | 31.1% (86) | **−27.6** |
+| **Internal solid infill** | 16.6% (79) | 4.0% (47) | **−12.6** |
+
+**Walls are untouched to a tenth of a point.** Only the two fills that share the layer's *interior*
+with FVS collapse — Sparse by 27.6 points and Internal solid by 12.6. This is not layer difficulty;
+it is something specific to the interior region on FVS-bearing layers.
+
+Note Internal solid falls to **4.0%** on FVS layers despite R715/R716 clearing its filler
+(`FillConcentricInternal`) end to end. A cleared filler producing 4% means its *input* differs there.
+
+### A coverage question this raises for R712/R715
+
+R712 cleared the fill region and R715 cleared `fill_no_overlap` — both computed on the **46
+call-aligned layers**, which is the subset where the probes' call structure lined up. An indicative
+join suggests only ~14 of those 46 are FVS-bearing, but the two probes key on PrintObject layer ids
+while the gcode keys on `CHANGE_LAYER` counts, so **that join is not exact and is not claimed as a
+result**. Establishing it properly — matching the id spaces and re-checking whether the region was
+ever verified *on FVS layers specifically* — is the first task for R720, because it decides whether
+the region is genuinely cleared where it matters. This is R715's own lesson applied to R715: a
+clearing covers only the population it measured.
+
+No engine source changed. Baselines unchanged by construction: benchy `248ff22a`, arachne `14b1d2e6`,
+cube `14566293`, majora `6a8cf880`.
+
+**STILL OPEN:** whether R712/R715's clearings covered FVS-bearing layers at all (R720's first task,
+one exact join); `FillFloatingConcentric`'s own path generation (FVS 4.1%, 74 K — localise before
+reading); why Internal solid drops to 4.0% on FVS layers with a cleared filler; the anchoring pass's
+`&[]` lower areas; the `Fill.cpp:354` union TODO; the Rectilinear/Monotonic assignment trade; Bridge's
+`bridge_angle`; where the loop reordering is introduced; the seam; the fan markers; re-scoring the
+parked order-only gates.
