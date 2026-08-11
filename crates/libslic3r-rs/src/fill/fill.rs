@@ -1263,8 +1263,14 @@ impl Layer {
 //     type legend helpers; not part of byte-exact G-code output.
 //
 // - Layer::make_fills (Fill.cpp:588-770)
-// - Layer::generate_sparse_infill_polylines_for_anchoring (Fill.cpp:772-875)
 // - Layer::make_ironing (Fill.cpp:879-1103)
+//
+// R717 CORRECTION: `Layer::generate_sparse_infill_polylines_for_anchoring`
+// (Fill.cpp:772-875) was listed here as BLOCKED and is NOT — it is ported at
+// `layer.rs::generate_sparse_infill_polylines_for_anchoring` and is LIVE:
+// `print_object.rs` calls it to build `lower_sparse_polys`, which is threaded
+// into `make_fills` exactly as C++ does at Fill.cpp:669. R717 nearly built a
+// round on the stale entry; a comment is a carried claim like any other.
 //     BLOCKED on the virtual Fill dispatch infrastructure: a Fill base type
 //     with Fill::new_from_type (FillBase.cpp:33-67) returning concrete
 //     fillers (FillConcentricInternal, FillLightning::Filler,

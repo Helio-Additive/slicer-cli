@@ -16087,3 +16087,71 @@ No engine source changed this round. Baselines unchanged by construction: benchy
 the `Fill.cpp:354` union TODO (unreachable on our side, C++ side unmeasured); the unported
 `Layer::make_fills` and `generate_sparse_infill_polylines_for_anchoring`; where the loop reordering is
 introduced; the seam; the fan markers; re-scoring the parked order-only gates.
+
+## R717 — Sparse infill's divergence is predicted by FLOATING VERTICAL SHELL being present on the same layer
+
+R716 left Sparse as a graded continuum — 20 near-perfect layers against 37 near-zero ones — and
+handed R717 that contrast set. Splitting the metric on a structural predicate has now produced the
+best result in four of the last nine rounds, so that is what R717 did.
+
+### PREDICTION REFUTED BEFORE MEASUREMENT — by reading, and by our own stale comment
+
+R717 predicted the near-perfect layers were those with no anchoring work, and that the unported
+`Layer::generate_sparse_infill_polylines_for_anchoring` was the discriminator. **It is not unported.**
+It is implemented at `layer.rs:3319` as a faithful port (C++ line cites throughout, calling
+`group_fills` and iterating `stInternal` surfaces), and it is **live**: `print_object.rs:3776-3814`
+calls it to build `lower_sparse_polys`, which is threaded into `make_fills` exactly as C++ does at
+`Fill.cpp:669`. It also feeds `ipFloatingConcentric`, not Sparse, so the premise conflated two
+features.
+
+The "BLOCKED" entry in `fill/fill.rs` that suggested otherwise is **stale documentation**, and it
+nearly bought a round. Corrected in place — **a comment is a carried claim like any other.**
+
+### The contrast set names a different culprit
+
+Splitting the 20 HIGH (≥80%) against the 37 LOW (<20%) layers:
+
+| predicate | HIGH | LOW |
+|---|---|---|
+| **Floating vertical shell present on layer** | **10%** | **70%** |
+| Gap infill present | 50% | 89% |
+| Top surface present | 10% | 38% |
+| Bridge present | 0% | 19% |
+| Internal solid present | 90% | 95% (no signal) |
+| island sets agree | 100% | 81% |
+| mean islands | 1.4 | 2.2 |
+
+**Sparse matches well on layers WITHOUT floating vertical shell and badly on layers WITH it** — a 7×
+separation on the single strongest predicate. Island count also separates, so it is a confound and
+has to be controlled rather than waved away:
+
+| islands | no FVS | FVS present |
+|---|---|---|
+| 1 | 61.9% (25 layers) | 52.2% (9) |
+| 2 | **58.9%** (20) | **30.4%** (57) |
+| 3+ | **51.0%** (5) | **24.4%** (20) |
+
+**The effect survives at every island count** — −9.7, −28.5 and −26.6 points — while island count
+alone moves the no-FVS row only 61.9% → 51.0%. FVS presence is the dominant term, not a proxy for
+geometric complexity.
+
+### Why this matters
+
+It unifies two open items that had been tracked separately. `Floating vertical shell` is the worst
+feature on the board (4.1% shared vertices) **and** its presence is what predicts Sparse's failure on
+the same layer. That points at one upstream cause rather than two: the narrow-region classification
+that creates FVS surfaces (`Fill.cpp:489-530`, `narrow_floating_expoly_idx`) **splits `surface_fills`**,
+carving FVS out of what would otherwise be sparse or solid. If that classification differs, the
+residual sparse region differs — and R714 already measured FloatingVerticalShell at **88 ours vs 90
+C++**, a small but real count difference in exactly that classification.
+
+That is R718's target, and it is now specific: the narrow / narrow-floating split in `group_fills`.
+
+Only a comment changed in engine source; all four baselines re-verified byte-identical after a root
+rebuild: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+
+**STILL OPEN:** the narrow/narrow-floating classification in `group_fills` (R718's target — one cause
+for both FVS's 4.1% and Sparse's FVS-correlated deficit); the Rectilinear/Monotonic assignment trade;
+Bridge's `bridge_angle`; the `Fill.cpp:354` union TODO (unreachable on our side); the unported
+`Layer::make_fills` and `make_ironing`, and the DEAD faithful `group_fills` in `fill/fill.rs`; where
+the loop reordering is introduced; the seam; the fan markers; re-scoring the parked order-only gates.
