@@ -15839,3 +15839,94 @@ and the whole path is nonetheless displaced; (b) different-structure (Internal s
 `connect_infill` genuinely differs; Bridge's `bridge_angle` (separate defect); where the loop
 reordering is introduced; the seam (corroborated here by the wall control's 80.3% run-start rate); the
 fan markers; re-scoring the parked order-only gates.
+
+## R714 — the fill ASSIGNMENT is essentially faithful despite an unported `make_fills`; and R713's "class (a)" was not a class
+
+R713 grouped Sparse infill and Floating vertical shell into one class because their extrusion-run
+structure matched. R714 opened by checking whether they share a mechanism at all. **They do not.**
+
+### R713's class (a) was a coincidence of run statistics
+
+`Floating vertical shell` is assigned `ipFloatingConcentric` (`Fill.cpp:494/522`) and filled by
+`FillFloatingConcentric` — a **concentric** fill. Sparse is a rectilinear grid. They share no
+algorithm, so "same run structure" grouped two unrelated defects. It also means R711's
+angle/spacing/grid-phase measurements, which are rectilinear concepts, were never meaningful for the
+floating shell. **The run-structure classes are not mechanism classes**, and R713's framing is
+corrected here.
+
+### The structural fact: the live fill path is a divergent reimplementation
+
+Our own source says so, and the call path confirms it rather than merely asserting it:
+
+- `print_object.rs:3833` → `layer.rs:2275` `make_fills` → `layer.rs:2301` `crate::fill::group_fills`
+- `crate::fill::group_fills` resolves to **`fill/mod.rs:553`** (`fill/mod.rs:42` states the type and
+  function are defined there; no re-export)
+- the faithful port of `Fill.cpp`'s `group_fills` sits at **`fill/fill.rs:467`, dead**
+- `Layer::make_fills` (`Fill.cpp:588-770`) is explicitly listed as **unported**, blocked on the
+  `Fill::new_from_type` polymorphic base
+
+So six rounds of fill measurement have been measuring a knowingly divergent stage.
+
+### PREDICTION REFUTED: the divergent stage still assigns almost exactly what C++ assigns
+
+`FILLASN` was injected on both sides at the fill-generation loop (`Fill.cpp:607`, and after
+`group_fills` returns in `layer.rs`), printing pattern, role, expolygon count, area, spacing and
+angle per surface fill. Benchy classic:
+
+| | C++ | ours |
+|---|---|---|
+| **surface fills** | **576** | **577** |
+
+| role | C++ | ours |
+|---|---|---|
+| InternalInfill | 139 | **139** |
+| TopSolidInfill | 49 | **49** |
+| BridgeInfill | 16 | **16** |
+| BottomSurface | 1 | **1** |
+| SolidInfill | 281 | 284 |
+| FloatingVerticalShell | 90 | 88 |
+
+| pattern | C++ | ours |
+|---|---|---|
+| Grid | 139 | **139** |
+| MonotonicLine | 49 | **49** |
+| ConcentricInternal / Concentric | 176 | 178 |
+| FloatingConcentric | 90 | 88 |
+| Rectilinear | 121 | 116 |
+| Monotonic | 1 | 7 |
+
+**The assignment is essentially faithful.** Four roles and two patterns match exactly; the rest are
+within a few. The prediction that a divergent `group_fills` would show a materially different
+assignment is refuted — whatever the fills get wrong, it is not *which filler gets which surface*.
+
+The one real residual is a **trade of ~5-6 surfaces between Rectilinear (116 vs 121) and Monotonic
+(7 vs 1)**, which is small but live and worth its own look.
+
+### A "wrong filler" finding I withdrew before shipping it
+
+The census reads `Concentric` 178 / `ConcentricInternal` 0 on our side against C++'s `ipConcentric` 0
+/ `ipConcentricInternal` 176, and `fill/mod.rs:310` does collapse
+`ConcentricInternal => Concentric`. That looked like ~176 surfaces getting the wrong filler.
+
+**It is not.** `layer.rs:2361-2365` dispatches `InfillPattern::Concentric` to
+**`FillConcentricInternal`**, which is exactly what C++ runs for `ipConcentricInternal`. The collapse
+changes the enum LABEL, not the filler. What remains is a **latent trap**: a genuine `ipConcentric`
+surface would also be routed to `FillConcentricInternal` — inert on benchy, where C++'s `ipConcentric`
+count is 0. Same lesson as R707 and R713: check what the consumer does before calling a mismatch live.
+
+### Also recorded
+
+The first injector attempt asserted on `#include "Fill.hpp"` not being unique — `Fill.cpp` has no
+such include, and already carries `<stdio.h>`. The occurrence check caught it instead of silently
+patching the wrong place, which is the whole point of that rule.
+
+Baselines unchanged: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+Suites: eight green (`multi_material_integration` 25/26 pre-existing). C++ injection reverted,
+submodule rebuilt clean. Rust `FILLASN` probe kept, default OFF.
+
+**STILL OPEN:** with assignment, region, pattern parameters and connection all cleared, the fill
+divergence must live **inside the fillers' own path generation** — `FillConcentricInternal` for the
+solid/concentric family and the rectilinear raster for Sparse, each now a separate target; the
+Rectilinear/Monotonic assignment trade (~5-6 surfaces); Bridge's `bridge_angle`; the unported
+`Layer::make_fills` and the dead faithful `group_fills` in `fill/fill.rs`; where the loop reordering
+is introduced; the seam; the fan markers; re-scoring the parked order-only gates.

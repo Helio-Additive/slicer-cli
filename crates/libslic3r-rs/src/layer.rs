@@ -2299,6 +2299,31 @@ impl Layer {
         //      std::vector<SurfaceFill> surface_fills = group_fills(*this, lock_param);
         let mut lock_param = crate::fill::LockRegionParam::default();
         let surface_fills = crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?;
+
+        // R714 — the fill ASSIGNMENT census, against C++ `Fill/Fill.cpp`'s
+        // generation loop (FILLASN). R711/R712/R713 cleared the fill pattern's
+        // parameters, the fill region and the connection structure, so the
+        // remaining question is whether the two engines even hand the same
+        // surfaces to the same fillers. Note this crate reaches
+        // `crate::fill::group_fills` = `fill/mod.rs`, a DIVERGENT
+        // reimplementation; the faithful port of `Fill.cpp`'s group_fills sits
+        // unused in `fill/fill.rs`, and `Layer::make_fills` is unported.
+        if crate::probe_enabled("FILLASN") {
+            for (i, sf) in surface_fills.iter().enumerate() {
+                let area: f64 = sf.expolygons.iter().map(|e| e.area()).sum();
+                eprintln!(
+                    "[FILLASN] z={:.3} i={} pat={:?} role={:?} n={} area={:.0} spacing={} angle={:.4}",
+                    self.print_z,
+                    i,
+                    sf.params.pattern,
+                    sf.params.extrusion_role,
+                    sf.expolygons.len(),
+                    area,
+                    sf.params.spacing as i64,
+                    sf.params.angle
+                );
+            }
+        }
         // Fill.cpp:597-598
         // C++: const Slic3r::BoundingBox bbox = this->object()->bounding_box();
         //      const auto resolution = this->object()->print()->config().resolution.value;
