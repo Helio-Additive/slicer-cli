@@ -30,6 +30,46 @@ use std::f64::consts::PI;
 // primitives take mm and snap at the geo-clipper scale (F1); local int32 truncation would
 // be meaningless against the F1 approximation.
 
+/// R722 — exact-integer fingerprint of one stage of the fill-boundary chain,
+/// mirroring the C++ `fbis_dump` injected at the same four statements
+/// (PerimeterGenerator.cpp:1395-1428). Vertex count and coordinate sums are
+/// exact, so the first stage at which the engines diverge is unambiguous —
+/// area and bbox tolerances hid this for nine rounds (R712/R715/R720/R721).
+fn fbis_dump(stage: &str, lid: usize, v: &[ExPolygon]) {
+    if !crate::probe_enabled("FBIS") {
+        return;
+    }
+    let mut nv = 0usize;
+    let mut sx: i64 = 0;
+    let mut sy: i64 = 0;
+    let mut area = 0.0f64;
+    for ex in v {
+        area += ex.area();
+        nv += ex.contour.points.len();
+        for p in ex.contour.points.iter() {
+            sx = sx.wrapping_add(p.x() as i64);
+            sy = sy.wrapping_add(p.y() as i64);
+        }
+        for h in ex.holes.iter() {
+            nv += h.points.len();
+            for p in h.points.iter() {
+                sx = sx.wrapping_add(p.x() as i64);
+                sy = sy.wrapping_add(p.y() as i64);
+            }
+        }
+    }
+    eprintln!(
+        "[FBIS] stage={} lid={} n={} v={} sx={} sy={} area={:.0}",
+        stage,
+        lid,
+        v.len(),
+        nv,
+        sx,
+        sy,
+        area
+    );
+}
+
 /// Overlap tolerance for perimeter insets
 /// libslic3r.h:72
 /// C++: static constexpr double INSET_OVERLAP_TOLERANCE = 0.4;
@@ -1725,6 +1765,16 @@ impl PerimeterGenerator {
                 inset -= infill_peri_overlap;
             }
 
+            // R722 SHIPPED ON. The FBIS bisect proved this is the exact point at
+            // which the fill boundary diverges: `last` and `not_filled_exp` are
+            // bit-identical to C++ on 35/35 aligned records, while `infill_exp`
+            // was bit-identical on 0/35. Computing the offset2_ex deltas the way
+            // native does — on truncated coord_t integers, not mm doubles —
+            // takes `infill_exp` to 35/35 and `polyWithoutOverlap` to 33/35.
+            // Scored: benchy classic +146 in-order, cube +2, arachne 0, majora 0
+            // (both of those take the Arachne wall path, which does not run this
+            // tail). FILLBOUND_QUANT=0 restores the old mm-double arithmetic.
+            //
             // R285 (TOPFILL_FAITHFUL): native computes the whole tail on coord_t
             // ints (PG.cpp:1383-1430): inset = spacing/2 INT div; overlap =
             // trunc(ratio * ((inset + S_si/2_int) * 1e-5) / 1e-5); min_pis =
@@ -1752,6 +1802,11 @@ impl PerimeterGenerator {
             // C++: Polygons pp;
             // C++: for (ExPolygon &ex : last) ex.simplify_p(m_scaled_resolution, &pp);
             // C++: ExPolygons not_filled_exp = union_ex(pp);
+            // R722 — bisect the fill-boundary chain at EXACT coordinate
+            // resolution. Mirrors the C++ FBIS probe injected at the same four
+            // statements (PerimeterGenerator.cpp:1395-1428).
+            fbis_dump("last", self.config.layer_id, last);
+
             let mut pp: Vec<Polygon> = Vec::new();
             // Native `ex.simplify_p(m_scaled_resolution, &pp)` — the tolerance is
             // SCALED units and the DP distance is the pure-double perpendicular
@@ -1777,6 +1832,7 @@ impl PerimeterGenerator {
             } else {
                 union_polygons_ex(&pp)
             };
+            fbis_dump("notfilled", self.config.layer_id, &not_filled_exp);
             // PerimeterGenerator.cpp:1400-1406
             // C++: coord_t min_perimeter_infill_spacing = coord_t(solid_infill_spacing * (1. - INSET_OVERLAP_TOLERANCE));
             // C++: ExPolygons infill_exp = offset2_ex(not_filled_exp,
@@ -1785,7 +1841,7 @@ impl PerimeterGenerator {
             let min_perimeter_infill_spacing =
                 self.config.solid_infill_spacing * (1.0 - INSET_OVERLAP_TOLERANCE);
             let mut infill_exp = if f1_infill {
-                if std::env::var("FILLBOUND_QUANT").is_ok() {
+                if crate::faithful_gate("FILLBOUND_QUANT") {
                     crate::clipper_utils::offset2_ex_clib(
                         &not_filled_exp,
                         -(inset_c + min_pis_c / 2.0) / SCALING_FACTOR,
@@ -1809,6 +1865,8 @@ impl PerimeterGenerator {
                 )
             };
 
+            fbis_dump("infillraw", self.config.layer_id, &infill_exp);
+
             // PerimeterGenerator.cpp:1407-1413
             // C++: ExPolygons top_infill_exp = intersection_ex(fill_clip, offset_ex(top_fills, double(ext_perimeter_spacing / 2)));
             // C++: if (!top_fills.empty()) {
@@ -1817,7 +1875,7 @@ impl PerimeterGenerator {
             let top_infill_exp = if f1_infill {
                 crate::clipper_utils::intersection_clib(
                     &fill_clip,
-                    &if std::env::var("FILLBOUND_QUANT").is_ok() {
+                    &if crate::faithful_gate("FILLBOUND_QUANT") {
                         crate::clipper_utils::offset_expolygons_clib_scaled(
                             &top_fills,
                             (ext_sp_c / 2.0).trunc(),
@@ -1843,7 +1901,7 @@ impl PerimeterGenerator {
             };
             if !top_fills.is_empty() {
                 if f1_infill {
-                    let grown = if std::env::var("FILLBOUND_QUANT").is_ok() {
+                    let grown = if crate::faithful_gate("FILLBOUND_QUANT") {
                         crate::clipper_utils::offset_expolygons_clib_scaled(
                             &top_infill_exp,
                             overlap_c,
@@ -1916,14 +1974,14 @@ impl PerimeterGenerator {
             // MonotonicLine raster clips against (R100 class). Gated full-res.
             let f1 = crate::faithful_gate("TOPFILL_FAITHFUL");
             // Native condition: min_pis/2 (INT div) > overlap (PG.cpp:1418).
-            let no_cond = if f1 && std::env::var("FILLBOUND_QUANT").is_ok() {
+            let no_cond = if f1 && crate::faithful_gate("FILLBOUND_QUANT") {
                 (min_pis_c / 2.0).trunc() > overlap_c
             } else {
                 min_perimeter_infill_spacing / 2.0 > infill_peri_overlap
             };
             let mut poly_without_overlap = if no_cond {
                 if f1 {
-                    if std::env::var("FILLBOUND_QUANT").is_ok() {
+                    if crate::faithful_gate("FILLBOUND_QUANT") {
                         crate::clipper_utils::offset2_ex_clib(
                             &not_filled_exp,
                             -(inset_c + min_pis_c / 2.0) / SCALING_FACTOR,
@@ -1947,7 +2005,7 @@ impl PerimeterGenerator {
                     )
                 }
             } else if f1 {
-                if std::env::var("FILLBOUND_QUANT").is_ok() {
+                if crate::faithful_gate("FILLBOUND_QUANT") {
                     crate::clipper_utils::offset_expolygons_clib_scaled(
                         &not_filled_exp,
                         -(inset_c + overlap_c),
@@ -1980,6 +2038,7 @@ impl PerimeterGenerator {
                 };
             }
             crate::stage_dump::dump("tail_nooverlap", self.config.layer_id, &poly_without_overlap);
+            fbis_dump("nooverlap", self.config.layer_id, &poly_without_overlap);
 
             // R715 — `fill_no_overlap` is what `FillConcentricInternal` actually
             // iterates (`no_overlap_expolygons`), NOT the `fill_surfaces` region
