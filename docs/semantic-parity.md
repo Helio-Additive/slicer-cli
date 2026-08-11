@@ -16286,3 +16286,77 @@ reading); why Internal solid drops to 4.0% on FVS layers with a cleared filler; 
 `&[]` lower areas; the `Fill.cpp:354` union TODO; the Rectilinear/Monotonic assignment trade; Bridge's
 `bridge_angle`; where the loop reordering is introduced; the seam; the fan markers; re-scoring the
 parked order-only gates.
+
+## R720 — the join is exact, the clearings DID cover the FVS layers, and identical inputs still produce a 1.9% output
+
+R719 raised a coverage question: R712 cleared the fill region and R715 cleared `fill_no_overlap`, both
+on "the 46 call-aligned layers", and an indicative join hinted those might under-represent the
+FVS-bearing layers where the fills fail. R720 made the join exact.
+
+### The join
+
+The gcode emits `; Z_HEIGHT:` after every `; CHANGE_LAYER` (300 of each), and both engines' `FILLB`
+logs cover **layer ids 0–299 with identical id sets**. So the probe id space and the gcode layer index
+differ by exactly one (`groups()` starts at 0 and increments per `CHANGE_LAYER`), and the join needs
+no rebuild.
+
+### PREDICTION REFUTED — the aligned layers are representative
+
+| | among the 46 aligned | among all 300 |
+|---|---|---|
+| FVS-bearing | **15 (33%)** | 87 (29%) |
+| Sparse-bearing | 32 (70%) | 138 (46%) |
+
+R720 predicted FVS layers were under-represented and the region was never verified where it fails.
+They are slightly **over**-represented.
+
+### And the region is verified on those layers directly
+
+Representativeness is an argument, so the region and no-overlap were re-compared restricted to the 15
+FVS-bearing aligned layers:
+
+| probe | population | count same | area within 0.1% | bbox within 80 nm | area ratio |
+|---|---|---|---|---|---|
+| `FILLB` | **FVS layers (15)** | **15/15** | **15/15** | **15/15** | **1.0000** |
+| `FILLB` | non-FVS layers (31) | 31/31 | 20/31 | 29/31 | 1.0000 |
+| `FILLNOV` | **FVS layers (15)** | **15/15** | **15/15** | **15/15** | **1.0000** |
+| `FILLNOV` | non-FVS layers (31) | 31/31 | 20/31 | 29/31 | 1.0000 |
+
+The FVS layers are not merely covered — they are the **cleanest** rows in the table. **The region is
+not a live suspect. R719's coverage worry is closed.**
+
+### The airtight consequence
+
+On those same 15 layers — where the fill region and the no-overlap set are provably identical between
+the engines — the fills still fail:
+
+| feature | rust pts | shared | rate |
+|---|---|---|---|
+| **Outer wall (CONTROL)** | 444 | 441 | **99.3%** |
+| Inner wall | 100 | 91 | 91.0% |
+| Sparse infill | 427 | 185 | 43.3% |
+| **Internal solid infill** | 420 | 8 | **1.9%** |
+| **Floating vertical shell** | 744 | 21 | **2.8%** |
+
+**Identical inputs in, ~2% matching vertices out.** Every upstream explanation is now eliminated by
+measurement rather than by inference: the pattern parameters (R711), the region (R712/R720), the
+connection (R713), the assignment (R714), the filler's `no_overlap` input (R715/R720), the Arachne
+params (R716), the anchoring function (R717) and the narrow classification (R718).
+
+**The defect is inside the concentric fillers' path generation.** And that sharpens R715's puzzle
+rather than resolving it: `FillConcentricInternal` was read end to end and found line-for-line
+faithful, yet fed identical inputs it produces 1.9%. A faithful function producing 2% from identical
+inputs means the divergence is in something it *calls*. Both concentric fillers construct an
+`Arachne::WallToolPaths` — and that invocation's **output** has never been probed on the fill path.
+R694 proved the Voronoi faithful for the WALL generator, which is a different call with different
+arguments (`min_spacing, min_spacing, loops_count, 0, layer_height` plus hardcoded params). That is
+R721's target, and it is now the only stage left standing.
+
+No engine source changed. Baselines unchanged by construction: benchy `248ff22a`, arachne `14b1d2e6`,
+cube `14566293`, majora `6a8cf880`.
+
+**STILL OPEN:** the `Arachne::WallToolPaths` invocation inside the concentric fillers — its OUTPUT,
+never probed on the fill path (R721's target); the Rectilinear/Monotonic assignment trade; Bridge's
+`bridge_angle`; the anchoring pass's `&[]` lower areas; the `Fill.cpp:354` union TODO; the unported
+`Layer::make_fills` and `make_ironing`; where the loop reordering is introduced; the seam; the fan
+markers; re-scoring the parked order-only gates.
