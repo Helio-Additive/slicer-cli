@@ -768,6 +768,16 @@ fn shorter_than_extrusion_line(shape: &ExtrusionLine, check_length: Coord) -> bo
 /// internally for SimplifyPolygons, but the crate's `union_polygons_ex` uses the geo backend
 /// (non-zero, fixed scale 1000) rather than ClipperLib at coord_t integer precision.
 fn clipper_simplify_polygons(thiss: &Polygons) -> Polygons {
+    // R725 — with the prep offset on the coord_t path, `p0`/`p1` become
+    // bit-identical (92/94) and the 1 um snap is RE-INTRODUCED here, at `p2`
+    // (0/94): `fixSelfIntersections` is pure integer arithmetic apart from this
+    // trailing SimplifyPolygons. Native calls ClipperLib::SimplifyPolygons at
+    // coord_t precision; `union_polygons_ex` is the geo backend at fixed scale
+    // 1000, exactly as the FIDELITY-NOTE above says.
+    if crate::faithful_gate("ARACHNE_PREP_CLIB") {
+        // fill_type 0 = EvenOdd, which is what ClipperLib::SimplifyPolygons uses.
+        return expolygons_to_polygons(&clipper_utils::union_ex_clib(thiss, 0));
+    }
     let ex = clipper_utils::union_polygons_ex(thiss);
     expolygons_to_polygons(&ex)
 }
@@ -787,6 +797,11 @@ fn expolygons_to_polygons(ex: &[ExPolygon]) -> Polygons {
 
 /// `union_(const Polygons&)` — NonZero fill. ClipperUtils.cpp.
 fn union_polygons(subject: &Polygons) -> Polygons {
+    // R725 — same class as `clipper_simplify_polygons`: native `union_()` is
+    // ClipperLib NonZero at coord_t precision, not the geo backend.
+    if crate::faithful_gate("ARACHNE_PREP_CLIB") {
+        return expolygons_to_polygons(&clipper_utils::union_ex_clib(subject, 1));
+    }
     expolygons_to_polygons(&clipper_utils::union_polygons_ex(subject))
 }
 
@@ -808,15 +823,14 @@ fn offset_polygons(polygons: &Polygons, delta: Coord) -> Polygons {
     // sx=4543000, sy=0: every vertex snapped to the 1 um grid the FIDELITY-NOTE
     // below names. Native runs ClipperOffset at coord_t (10 nm) precision and
     // does NOT pre-union.
-    // PARKED DEFAULT-OFF (R724). This arm is the faithful one for the offset
-    // itself, but switching it alone does NOT make `prepared_outline`
-    // bit-identical (still 0/93) — the reproducer's prep stays at sx=4543000,
-    // sy=0. So the 1 um snap is applied by a LATER step in the prep chain,
-    // most likely the final `union_polygons` below (the R100 class the
-    // clipper_utils comment names). It changes G-code (hash 721cb301) without
-    // achieving the bit-identity that would justify it, so it stays off until
-    // the whole prep chain runs at coord_t precision.
-    if crate::opt_in_gate("ARACHNE_PREP_OFFSET_CLIB") {
+    // SHIPPED ON @R725. R724 measured this arm ALONE as insufficient and parked
+    // it; R725 split the prep chain into its nine steps and found why — the
+    // offset fix IS correct (p0/p1 go 0/94 -> 92/94), and the 1 um snap is
+    // RE-INTRODUCED at p2 by the trailing SimplifyPolygons inside
+    // fixSelfIntersections, then again by the final union_. With all three on
+    // the coord_t path the whole chain is bit-identical: p0-p7 92/94 and
+    // `prepared_outline` 91/93, against 0/94 and 0/93 before.
+    if crate::faithful_gate("ARACHNE_PREP_CLIB") {
         // native: `Polygons offset(const Polygons&, const float delta)` —
         // ClipperOffset, jtMiter/ML3, raw paths out, no union reconstruction.
         // Each input path is offset independently, so each Polygon becomes its
@@ -1007,6 +1021,7 @@ impl WallToolPaths {
             -epsilon_offset,
         );
         polyprobe("1 after triple offset", &prepared_outline);
+        agen_dump_poly("p0", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1016,6 +1031,7 @@ impl WallToolPaths {
         // WallToolPaths.cpp:470-477  process_with_size_check(...) — operation then size check.
         simplify_polygons(&mut prepared_outline, smallest_segment, allowed_distance);
         polyprobe("2 after simplify", &prepared_outline);
+        agen_dump_poly("p1", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1023,6 +1039,7 @@ impl WallToolPaths {
 
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
         polyprobe("3 after fixSelfIntersections", &prepared_outline);
+        agen_dump_poly("p2", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1030,6 +1047,7 @@ impl WallToolPaths {
 
         remove_degenerate_verts(&mut prepared_outline);
         polyprobe("4 after removeDegenerateVerts", &prepared_outline);
+        agen_dump_poly("p3", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1037,6 +1055,7 @@ impl WallToolPaths {
 
         remove_colinear_edges(&mut prepared_outline, 0.005);
         polyprobe("5 after removeColinearEdges", &prepared_outline);
+        agen_dump_poly("p4", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1045,6 +1064,7 @@ impl WallToolPaths {
         // Removing collinear edges may introduce self intersections, so we need to fix them again
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
         polyprobe("3 after fixSelfIntersections", &prepared_outline);
+        agen_dump_poly("p5", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1052,6 +1072,7 @@ impl WallToolPaths {
 
         remove_degenerate_verts(&mut prepared_outline);
         polyprobe("4 after removeDegenerateVerts", &prepared_outline);
+        agen_dump_poly("p6", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1062,6 +1083,7 @@ impl WallToolPaths {
             self.small_area_length * self.small_area_length,
             false,
         );
+        agen_dump_poly("p7", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1072,6 +1094,7 @@ impl WallToolPaths {
         // WallToolPaths.cpp:483
         prepared_outline = union_polygons(&prepared_outline);
         polyprobe("3 final prepared_outline", &prepared_outline);
+        agen_dump_poly("p8", agen_orig, &prepared_outline, agen_ic);
         if ap {
             areas.push(area_polygons(&prepared_outline));
             let ns = ap_t0.map_or(0, |t| t.elapsed().as_nanos() as u64);
