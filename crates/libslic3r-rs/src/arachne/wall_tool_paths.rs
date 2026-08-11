@@ -799,6 +799,43 @@ fn area_polygons(polys: &Polygons) -> f64 {
 /// FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib — offset is computed via the
 /// geo backend (fixed scale 1000) rather than ClipperLib at coord_t integer precision.
 fn offset_polygons(polygons: &Polygons, delta: Coord) -> Polygons {
+    // R724 — this is where the Arachne fill divergence is CREATED. The AGEN
+    // bisect fingerprinted all seven stages of `generate()` on both engines:
+    // `prepared_outline` already differs on 93/93 shared-input records (0%
+    // coordinate agreement) before the Voronoi runs. On the 4-vertex reproducer
+    // C++ returns the outline UNCHANGED through the epsilon round-trip
+    // (sx=4543154, sy=12 — exactly the input) while the geo backend returned
+    // sx=4543000, sy=0: every vertex snapped to the 1 um grid the FIDELITY-NOTE
+    // below names. Native runs ClipperOffset at coord_t (10 nm) precision and
+    // does NOT pre-union.
+    // PARKED DEFAULT-OFF (R724). This arm is the faithful one for the offset
+    // itself, but switching it alone does NOT make `prepared_outline`
+    // bit-identical (still 0/93) — the reproducer's prep stays at sx=4543000,
+    // sy=0. So the 1 um snap is applied by a LATER step in the prep chain,
+    // most likely the final `union_polygons` below (the R100 class the
+    // clipper_utils comment names). It changes G-code (hash 721cb301) without
+    // achieving the bit-identity that would justify it, so it stays off until
+    // the whole prep chain runs at coord_t precision.
+    if crate::opt_in_gate("ARACHNE_PREP_OFFSET_CLIB") {
+        // native: `Polygons offset(const Polygons&, const float delta)` —
+        // ClipperOffset, jtMiter/ML3, raw paths out, no union reconstruction.
+        // Each input path is offset independently, so each Polygon becomes its
+        // own single-contour ExPolygon rather than being unioned first.
+        let exs: Vec<crate::geometry::ExPolygon> = polygons
+            .iter()
+            .map(|p| crate::geometry::ExPolygon {
+                contour: p.clone(),
+                holes: Vec::new(),
+            })
+            .collect();
+        return clipper_utils::offset_expolygons_clib_raw_scaled(
+            &exs,
+            delta as CoordF,
+            clipper_utils::OffsetJoinType::Miter,
+        );
+    }
+    // FIDELITY-NOTE(F1): geo-clipper approximation — offset via the geo backend
+    // (fixed scale 1000) rather than ClipperLib at coord_t integer precision.
     let ex = clipper_utils::union_polygons_ex(polygons);
     let off = clipper_utils::offset_expolygons(
         &ex,
@@ -892,6 +929,16 @@ impl WallToolPaths {
         if self.inset_count < 1 {
             return &self.toolpaths;
         }
+
+        // R724 — fingerprint the ctor's outline ONCE, before any borrow of
+        // self.toolpaths, so every AGEN line self-identifies and joins exactly
+        // to the ARWTP records (which key on the same iv/ix/iy).
+        let agen_orig = if crate::probe_enabled("AGEN") {
+            agen_fp(&self.outline)
+        } else {
+            (0usize, 0i64, 0i64)
+        };
+        let agen_ic = self.inset_count;
 
         // WallToolPaths.cpp:446
         let original_outline_size = self.outline.len();
@@ -1124,6 +1171,7 @@ impl WallToolPaths {
             );
             // C++ ctor body: constructFromPolygons(polys) — here `polys` is the
             // prepared_outline argument the C++ ctor receives at WallToolPaths.cpp:522.
+            agen_dump_poly("prep", agen_orig, &prepared_outline, agen_ic);
             wall_maker.construct_from_polygons(&prepared_outline);
             // WallToolPaths.cpp:634 wall_maker.generateToolpaths(toolpaths);
             //
@@ -1161,26 +1209,32 @@ impl WallToolPaths {
         // distinct) and 98% flat per loop by the time the perimeter generator sees
         // it, so exactly one of these five stages flattens it.
         stageprobe("0 after generate_toolpaths", &self.toolpaths);
+        agen_dump_tp("gen", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:534
         Self::stitch_tool_paths(&mut self.toolpaths, self.bead_width_x);
         stageprobe("1 after stitch_tool_paths", &self.toolpaths);
+        agen_dump_tp("stitch", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:536
         Self::remove_small_lines(&mut self.toolpaths);
         stageprobe("2 after remove_small_lines", &self.toolpaths);
+        agen_dump_tp("small", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:538
         self.separate_out_inner_contour();
         stageprobe("3 after separate_out_inner_contour", &self.toolpaths);
+        agen_dump_tp("sep", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:540
         Self::simplify_tool_paths(&mut self.toolpaths);
         stageprobe("4 after simplify_tool_paths", &self.toolpaths);
+        agen_dump_tp("simp", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:542
         Self::remove_empty_tool_paths(&mut self.toolpaths);
         stageprobe("5 after remove_empty_tool_paths", &self.toolpaths);
+        agen_dump_tp("empty", agen_orig, &self.toolpaths, agen_ic);
         // WallToolPaths.cpp:543-547  assert sorted by inset_idx (debug-only)
         debug_assert!(self
             .toolpaths
@@ -1824,6 +1878,91 @@ fn areaprobe(areas: &[f64], n_input_polys: usize, elapsed_ns: u64) {
             }
         }
     }
+}
+
+/// R724 — exact-integer fingerprint of one stage of `WallToolPaths::generate()`,
+/// mirroring the C++ `agen_dump_*` injected at the same statements. R723 proved
+/// that 89 of 90 bit-identical inputs produce different Arachne output, with
+/// loop and line counts matching 100% and junction counts only 53.3%; this
+/// bisects `generate()` the way R722 bisected the fill boundary.
+///
+/// Every line carries the ORIGINAL outline's fingerprint so a record joins
+/// exactly to the `ARWTP` data and the fill-path calls can be separated from
+/// the wall-path calls (R718: match the population, not just the placement).
+fn agen_fp(polys: &crate::geometry::Polygons) -> (usize, i64, i64) {
+    let mut v = 0usize;
+    let mut sx: i64 = 0;
+    let mut sy: i64 = 0;
+    for p in polys.iter() {
+        v += p.points.len();
+        for pt in p.points.iter() {
+            sx = sx.wrapping_add(pt.x() as i64);
+            sy = sy.wrapping_add(pt.y() as i64);
+        }
+    }
+    (v, sx, sy)
+}
+
+fn agen_dump_poly(stage: &str, orig: (usize, i64, i64), v: &crate::geometry::Polygons, ic: usize) {
+    if !crate::probe_enabled("AGEN") {
+        return;
+    }
+    let (ov, osx, osy) = orig;
+    let (nv, sx, sy) = agen_fp(v);
+    eprintln!(
+        "[AGEN] stage={} ov={} osx={} osy={} ic={} n={} el=0 jn={} sx={} sy={} w=0",
+        stage,
+        ov,
+        osx,
+        osy,
+        ic,
+        v.len(),
+        nv,
+        sx,
+        sy
+    );
+}
+
+fn agen_dump_tp(
+    stage: &str,
+    orig: (usize, i64, i64),
+    tp: &[VariableWidthLines],
+    ic: usize,
+) {
+    if !crate::probe_enabled("AGEN") {
+        return;
+    }
+    let (ov, osx, osy) = orig;
+    let mut el = 0usize;
+    let mut jn = 0usize;
+    let mut sx: i64 = 0;
+    let mut sy: i64 = 0;
+    let mut w: i64 = 0;
+    for lp in tp.iter() {
+        for line in lp.iter() {
+            el += 1;
+            jn += line.junctions.len();
+            for j in line.junctions.iter() {
+                sx = sx.wrapping_add(j.p.x() as i64);
+                sy = sy.wrapping_add(j.p.y() as i64);
+                w = w.wrapping_add(j.w as i64);
+            }
+        }
+    }
+    eprintln!(
+        "[AGEN] stage={} ov={} osx={} osy={} ic={} n={} el={} jn={} sx={} sy={} w={}",
+        stage,
+        ov,
+        osx,
+        osy,
+        ic,
+        tp.len(),
+        el,
+        jn,
+        sx,
+        sy,
+        w
+    );
 }
 
 fn polyprobe(stage: &str, polys: &crate::geometry::Polygons) {
