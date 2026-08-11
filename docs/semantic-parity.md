@@ -16360,3 +16360,86 @@ never probed on the fill path (R721's target); the Rectilinear/Monotonic assignm
 `bridge_angle`; the anchoring pass's `&[]` lower areas; the `Fill.cpp:354` union TODO; the unported
 `Layer::make_fills` and `make_ironing`; where the loop reordering is introduced; the seam; the fan
 markers; re-scoring the parked order-only gates.
+
+## R721–R723 — the fill boundary is fixed, and the residual is Arachne itself
+
+### R721: the Arachne fill output is structurally faithful; the "identical inputs" claim was tolerance-limited
+
+Probing `Arachne::WallToolPaths::getToolPaths()` at `FillConcentricInternal.cpp:37` on both engines
+showed the tool-path **counts do not differ**: loops 499 vs 498 (exact on 99.7% of 378 paired
+records), `ExtrusionLine` count 589 vs 585 (99.2%), total path length within **0.08%**. What differs
+is a systematic **1.4% junction deficit** (101 records short by exactly one, tail to −8, against 14
+long by one) and coordinates essentially everywhere.
+
+The same probe carried exact integer fingerprints of the *input* polygons, which no earlier probe
+did — and R720's "identical inputs" turned out to be tolerance-limited. R712/R715/R720 compared the
+fill region at **0.1% area / 80 nm bbox**; at exact resolution the input was bit-identical on **2 of
+391 records**.
+
+### R722: the divergence is created at `offset2_ex`
+
+The `FBIS` probe fingerprints four consecutive stages of `process_classic`
+(`PerimeterGenerator.cpp:1395-1428`) with exact vertex counts and coordinate sums:
+
+| stage | v exact | v+sx+sy exact |
+|---|---|---|
+| `last` | 35/35 | **35/35** |
+| `notfilled` | 35/35 | **35/35** |
+| `infillraw` | 28/35 | **0/35** |
+| `nooverlap` | 34/35 | **0/35** |
+
+Everything upstream is bit-perfect — `simplify_p` included, decimating 156 → 61 vertices identically
+on both sides. Native computes the `offset2_ex` deltas on truncated `coord_t` integers and casts
+them to `float`; our default path used mm doubles, so every delta was off in its last digits.
+Shipping the integer arithmetic (`FILLBOUND_QUANT`, promoted to a default-ON `faithful_gate`) took
+`infill_exp` to **35/35 bit-identical** and scored **+148 in-order** (benchy +146, cube +2; arachne
+and majora unaffected — they take the Arachne wall path, which never runs this tail).
+
+### R723: with the boundary fixed, 89 of 90 identical inputs still produce different Arachne output
+
+Three measurements, no source change.
+
+**1. The parked `FILL_NOOVERLAP_SAFETY` did not flip.** R723 predicted the corrected boundary was
+its missing compensator. Re-scored: benchy **−8** (was −4), majora **−72** (unchanged). It stays
+parked. **Prediction refuted, 13th consecutive.**
+
+**2. The corrected boundary moved the fills by ~1 point, not more.** Shared fill vertices, with
+`Outer wall` as control:
+
+| feature | before | after |
+|---|---|---|
+| Outer wall (CONTROL) | 99.5% | 99.5% |
+| Sparse infill | 41.8% | **43.4%** |
+| Internal solid infill | 14.0% | **15.3%** |
+| Floating vertical shell | 4.1% | **4.4%** |
+| Bridge | 2.7% | 1.6% |
+
+**3. The decisive one.** R721 could only ask "does Arachne diverge on bit-identical input?" with
+n=1. With the boundary corrected the population is **n=90**:
+
+| | old boundary | corrected |
+|---|---|---|
+| records with bit-identical input | 1 | **90** |
+| `loops` equal | 100% | **100%** |
+| `ExtrusionLine` count equal | 100% | **100%** |
+| junction count equal | 100% | **53.3%** |
+| **output bit-identical** | 0/1 | **1/90 (1.1%)** |
+
+**89 of 90 provably-identical inputs produce different Arachne output**, with matching loop and line
+counts but differing junction counts and coordinates. The residual fill defect is inside Arachne's
+path generation on the fill path, and it is no longer an inference.
+
+The reproducer is small enough to unit-test: `lid=214` is a **4-vertex** input polygon
+(`ia=76755080289`, `ix=4543154`, `iy=12`, `loops_count=30`) producing one loop and one
+`ExtrusionLine` with **5 junctions on our side against 6 on C++**, coordinate sums apart by ~2 mm.
+Layers 215–217 are the same shape one layer up, with the same 5-vs-6 split; 218 goes the other way
+(9 vs 6).
+
+**STILL OPEN:** the Arachne fill-path divergence on identical input (n=90, with a 4-vertex
+reproducer); the 1.4% junction deficit and its two unchecked callees
+(`calculateExtrusionAreaDeviationError`, `Line::distance_to_infinite`); `nooverlap` 33/35 — the two
+residual records are on layers where `infillraw` IS bit-identical, so the cause is in the
+no-overlap-only path (`top_infill_exp` / `fill_clip`, neither yet fingerprinted); the 1,406-vs-726
+island-loop population mismatch; layer 2's 3.4× input-vertex deficit; the Rectilinear/Monotonic
+assignment trade; Bridge's `bridge_angle`; the unported `Layer::make_fills` and `make_ironing`;
+where the loop reordering is introduced; the seam; the fan markers.
