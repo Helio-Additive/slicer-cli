@@ -47,6 +47,11 @@ use super::FillParams;
 /// Carries the `Fill` base members this fill reads plus the
 /// `FillConcentricInternal`-specific config pointers (FillConcentricInternal.hpp:19-20).
 pub struct FillConcentricInternal<'a> {
+    // Fill base (FillBase.hpp:111): `size_t layer_id;` — index of the layer,
+    // assigned by the caller at Fill.cpp:611. This filler does not read it for
+    // output; it is carried so the ARWTP probe can key on the same value the
+    // C++ probe prints.
+    pub layer_id: usize,
     // Fill base (FillBase.hpp): `coordf_t spacing;` — in unscaled coordinates.
     pub spacing: f64,
     // Fill base (FillBase.hpp): `coord_t loop_clipping;` — in scaled coordinates.
@@ -121,6 +126,31 @@ impl<'a> FillConcentricInternal<'a> {
             // FillConcentricInternal.cpp:35
             input_params.wall_distribution_count = 1;
 
+            // R721 — the ARWTP probe reads the INPUT before `polygons` is moved
+            // into the constructor. Gated, so nothing is computed when off.
+            let probe_arwtp = crate::probe_enabled("ARWTP");
+            let (probe_np, probe_ia, probe_iv, probe_ix, probe_iy) = if probe_arwtp {
+                let mut iv = 0usize;
+                let mut ix: i64 = 0;
+                let mut iy: i64 = 0;
+                for pg in polygons.iter() {
+                    iv += pg.points.len();
+                    for pt in pg.points.iter() {
+                        ix = ix.wrapping_add(pt.x() as i64);
+                        iy = iy.wrapping_add(pt.y() as i64);
+                    }
+                }
+                (
+                    polygons.len(),
+                    polygons.iter().map(|p| p.area()).sum(),
+                    iv,
+                    ix,
+                    iy,
+                )
+            } else {
+                (0usize, 0.0f64, 0usize, 0i64, 0i64)
+            };
+
             // FillConcentricInternal.cpp:37
             let mut wall_tool_paths = WallToolPaths::new(
                 polygons,
@@ -134,6 +164,51 @@ impl<'a> FillConcentricInternal<'a> {
 
             // FillConcentricInternal.cpp:39
             let loops: Vec<VariableWidthLines> = wall_tool_paths.get_tool_paths().clone();
+
+            // R721 — probe the Arachne output the filler actually consumes.
+            // Mirrors the C++ ARWTP probe injected at the same statement.
+            if probe_arwtp {
+                let mut el = 0usize;
+                let mut jn = 0usize;
+                let mut len = 0.0f64;
+                let mut wsum = 0.0f64;
+                let mut ox: i64 = 0;
+                let mut oy: i64 = 0;
+                for lp in loops.iter() {
+                    for w in lp.iter() {
+                        el += 1;
+                        jn += w.junctions.len();
+                        for k in 0..w.junctions.len() {
+                            wsum += w.junctions[k].w as f64;
+                            ox = ox.wrapping_add(w.junctions[k].p.x() as i64);
+                            oy = oy.wrapping_add(w.junctions[k].p.y() as i64);
+                            if k > 0 {
+                                let dx = (w.junctions[k].p.x() - w.junctions[k - 1].p.x()) as f64;
+                                let dy = (w.junctions[k].p.y() - w.junctions[k - 1].p.y()) as f64;
+                                len += (dx * dx + dy * dy).sqrt();
+                            }
+                        }
+                    }
+                }
+                eprintln!(
+                    "[ARWTP] lid={} np={} ia={:.0} iv={} ix={} iy={} lcnt={} loops={} el={} jn={} len={:.0} wsum={:.0} ox={} oy={}",
+                    self.layer_id,
+                    probe_np,
+                    probe_ia,
+                    probe_iv,
+                    probe_ix,
+                    probe_iy,
+                    loops_count,
+                    loops.len(),
+                    el,
+                    jn,
+                    len,
+                    wsum,
+                    ox,
+                    oy
+                );
+            }
+
             // FillConcentricInternal.cpp:40
             let mut all_extrusions: Vec<&ExtrusionLine> = Vec::new();
             // FillConcentricInternal.cpp:41

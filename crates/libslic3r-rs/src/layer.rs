@@ -2286,6 +2286,11 @@ impl Layer {
         // not ported yet.
         let resolution = self.object().print().config().resolution;
 
+        // Fill.cpp:611 — f->layer_id = this->id() - this->object()->get_layer(0)->id().
+        // Captured up front so no borrow of `self` overlaps the region mutation
+        // below; consumed by the concentric fillers (FillBase.hpp:111).
+        let fill_layer_id = self.id();
+
         // Fill.cpp:588-590
         // C++: for (LayerRegion *layerm : m_regions)
         //          layerm->fills.clear();
@@ -2460,6 +2465,25 @@ impl Layer {
                             continue;
                         }
                         vec![expoly.clone()]
+                    } else if crate::opt_in_gate("FILL_NOOVERLAP_SAFETY") {
+                        // Fill.cpp:740 passes ApplySafetyOffset::Yes; the plain
+                        // `intersection` below drops it. R721 measured the fill
+                        // input as bit-identical to C++ on only 2 of 391 records
+                        // — the vertex counts and areas agree, the coordinates
+                        // do not — which is what a missing safety offset on the
+                        // clip paths looks like.
+                        //
+                        // PARKED DEFAULT-OFF (R721). This arm is the faithful
+                        // one, but it scores in-order benchy −4 / arachne +12 /
+                        // cube 0 / majora −72 = net −64 matched lines. A change
+                        // that provably matches C++ and still scores negative
+                        // means something downstream compensates for the missing
+                        // offset; shipping it now would mask that. Turn on with
+                        // FILL_NOOVERLAP_SAFETY=1 once the compensator is found.
+                        crate::clipper_utils::intersection_clib_safety(
+                            &surface_fill.no_overlap_expolygons,
+                            std::slice::from_ref(expoly),
+                        )
                     } else {
                         crate::clipper_utils::intersection(
                             &surface_fill.no_overlap_expolygons,
@@ -2483,6 +2507,8 @@ impl Layer {
                         filler.fill_surface_extrusion(&surface_for_fill, &fp, &mut out_entities);
                     } else {
                         let mut filler = FillConcentricInternal {
+                            // Fill.cpp:611 — f->layer_id = this->id() - object->get_layer(0)->id()
+                            layer_id: fill_layer_id,
                             // Fill.cpp:747 — f->spacing = surface_fill.params.spacing (mm)
                             spacing: surface_fill.params.spacing,
                             loop_clipping,
