@@ -16012,3 +16012,78 @@ submodule rebuilt clean. Rust `FILLNOV` probe kept and `FILLASN` extended, both 
 Sparse (41.8%); the Rectilinear/Monotonic assignment trade; Bridge's `bridge_angle`; the unported
 `Layer::make_fills`; where the loop reordering is introduced; the seam; the fan markers; re-scoring
 the parked order-only gates.
+
+## R716 — there are no member initialisers to diff: the concentric line is exhausted, and Sparse is a graded continuum
+
+R715 left `WallToolPathsParams::default()` as the last candidate for the concentric family, on the
+premise that `FillConcentricInternal` sets six fields explicitly and **inherits the rest from the C++
+struct's member initialisers**. R716 opened by reading the struct.
+
+### PREMISE REFUTED — the struct has no defaults at all
+
+```cpp
+class WallToolPathsParams {
+public:
+    float min_bead_width;                    float min_feature_size;
+    float wall_transition_length;            float wall_transition_angle;
+    float wall_transition_filter_deviation;  int   wall_distribution_count;
+};
+```
+
+**Six bare fields, no member initialisers, nothing to inherit.** Every C++ construction site must
+therefore assign all six, and every one does — `FillConcentricInternal.cpp:29-35`,
+`FillConcentric.cpp:85-91`, `FillFloatingConcentric.cpp:892-897`, and
+`PerimeterGenerator.cpp:1537-1552`. Ours assign all six at the matching sites too
+(`fill_concentric_internal.rs:110-125` verified in R715; `perimeter_generator.rs:3332-3354` under the
+default-ON `ARACHNE_WTP_PARAMS`; `fill_concentric.rs:228-240`). **Our `Default::default()` values are
+fully overwritten and never reach the algorithm at any of these sites**, so there is no R706-class
+default bug here. The premise was wrong and the check cost one read.
+
+A genuine inter-variant difference was confirmed correct in passing: `FillConcentric.cpp:88` uses
+`wall_transition_length = 1.0 * min_nozzle_diameter` where the *Internal* and *Floating* variants use
+a literal `0.4`. Ours reproduces each variant's own value.
+
+**With the filler, its region, its no-overlap input, its assignment and now its parameters all
+cleared, the concentric line is exhausted.** Per R715's pre-registered fallback, the round pivots to
+the rectilinear raster, which is the larger population anyway.
+
+### The pivot: Sparse infill is a graded continuum, not a broken subset
+
+Splitting the per-layer vertex-match rate (walls carried as the control):
+
+| band | Sparse layers | Outer wall layers |
+|---|---|---|
+| 0–20% | 37 | 0 |
+| 20–40% | 47 | 0 |
+| 40–60% | 23 | 0 |
+| 60–80% | 9 | 3 |
+| 80–100% | **20** | **242** |
+
+Sparse: 136 layers, 3,035 points, 41.2% shared, median 31.2%, and **20 layers essentially perfect**.
+This is a graded spread rather than an all-or-nothing failure, which points at a cause that *varies
+per layer* rather than a constant algorithmic difference.
+
+### The 45↔135 swap is a minor term, not the mechanism
+
+R711 found 20 layers where the 45°/135° segment counts are exactly swapped. Testing whether those are
+the low-scoring layers:
+
+| layer class | layers | mean vertex match |
+|---|---|---|
+| 45/135 counts SWAPPED | 21 | 36.3% |
+| 45/135 counts IDENTICAL | 72 | **48.8%** |
+| otherwise differing | 43 | 27.4% |
+
+The correlation is real but weak. **Layers whose per-layer angle distribution matches C++ exactly
+still share under half their vertices (48.8%)**, so the swap explains a slice of the gap and not the
+gap. The residual sits in where the lines start and end within a correct grid at a correct angle mix —
+which is `FillRectilinear`'s own clipping, and R717's target.
+
+No engine source changed this round. Baselines unchanged by construction: benchy `248ff22a`, arachne
+`14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+
+**STILL OPEN:** `FillRectilinear`'s per-line clipping for Sparse (R717's target, bounded above by the
+48.8% figure); the Rectilinear/Monotonic assignment trade (~5-6 surfaces); Bridge's `bridge_angle`;
+the `Fill.cpp:354` union TODO (unreachable on our side, C++ side unmeasured); the unported
+`Layer::make_fills` and `generate_sparse_infill_polylines_for_anchoring`; where the loop reordering is
+introduced; the seam; the fan markers; re-scoring the parked order-only gates.
