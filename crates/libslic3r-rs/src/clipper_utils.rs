@@ -29,7 +29,55 @@ pub enum ApplySafetyOffset {
 /// This tells geo-clipper how many internal units per mm to use.
 /// Using 1000 (standard for mm precision) gives good performance.
 /// Our SCALING_FACTOR (100,000) is separate and used for our internal coordinates.
-const GEO_CLIPPER_SCALE: f64 = 1_000.0;
+const GEO_CLIPPER_SCALE_LEGACY: f64 = 1_000.0;
+
+/// R726 — the geo backend's internal integer scale. At the legacy 1_000 it
+/// quantises every vertex to a 1 um grid, where native ClipperLib works on
+/// `coord_t` at 10 nm (100_000 units/mm). R724/R725 measured that snap costing
+/// 5,208 matched lines in ONE function (`WallToolPaths::generate`), and the
+/// same backend serves ~570 other call sites across the crate. Raising the
+/// scale to 100_000 makes every one of them lossless in a single place rather
+/// than converting them to `_clib` one at a time.
+///
+/// PARKED DEFAULT-OFF (R726). Measured on benchy classic, this is worth
+/// **+2,934 in-order lines** (101,558 -> 104,492) but costs **2.3x slice time**
+/// (3.43s -> 7.83s), against the standing requirement that slicing time match
+/// C++. The knob sweep:
+///
+///   GEO_SCALE   in-order    time
+///   1_000       101,558     3.43s
+///   5_000       103,611     4.25s
+///   10_000      103,936     5.50s
+///   20_000      104,118     6.93s
+///   100_000     104,492     7.83s
+///
+/// The slowness is NOT inherent to coord_t precision: native runs real
+/// ClipperLib at coord_t in 1.94s, and R725's three `_clib` conversions cost
+/// zero measurable time. So the right vehicle is routing hot call sites to the
+/// vendored-ClipperLib `_clib` family (faithful AND fast), not widening the geo
+/// backend. This gate stays off as a measuring instrument that PRICES the whole
+/// class at ~+2,900 lines.
+///
+/// `GEO_SCALE=<n>` overrides both arms for sweeping. `GEO_SCALE_COORDT=1` forces
+/// the coord_t arm on.
+#[inline]
+fn geo_clipper_scale() -> f64 {
+    use std::sync::OnceLock;
+    static S: OnceLock<f64> = OnceLock::new();
+    *S.get_or_init(|| {
+        // GEO_SCALE=<n> overrides both arms, for sweeping the knob (R697/R698).
+        if let Some(v) = crate::env_f64("GEO_SCALE") {
+            if v > 0.0 {
+                return v;
+            }
+        }
+        if crate::opt_in_gate("GEO_SCALE_COORDT") {
+            100_000.0
+        } else {
+            GEO_CLIPPER_SCALE_LEGACY
+        }
+    })
+}
 
 /// Clipper arc tolerance in scaled units (matches BambuStudio DefaultMiterLimit).
 /// When joinType = jtRound, BambuStudio uses miterLimit as ArcTolerance = 3.0 scaled units.
@@ -258,7 +306,7 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
     // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
     // Single union of the whole set (NonZero) instead of iterative pairwise union.
     let geo_multi = expolygons_to_geo_multi(polygons);
-    let result = geo_multi.union(&geo_multi, GEO_CLIPPER_SCALE);
+    let result = geo_multi.union(&geo_multi, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order (CCW contours, CW holes).
@@ -410,7 +458,7 @@ pub fn offset_polyline(polyline: &Polyline, delta_scaled: CoordF) -> Vec<Polygon
         unscale_delta(delta_scaled),
         JoinType::Square,
         EndType::OpenButt,
-        GEO_CLIPPER_SCALE,
+        geo_clipper_scale(),
     );
     result.0.iter().map(geo_to_polygon).collect()
 }
@@ -451,7 +499,7 @@ pub fn offset_polyline_miter(
         unscale_delta(delta_scaled),
         JoinType::Miter(miter_limit),
         EndType::OpenButt,
-        GEO_CLIPPER_SCALE,
+        geo_clipper_scale(),
     );
     result.0.iter().map(geo_to_polygon).collect()
 }
@@ -483,7 +531,7 @@ pub fn offset_polygon(polygon: &Polygon, delta: CoordF, join_type: OffsetJoinTyp
     let geo_poly = polygon_to_geo(polygon);
     let jt = join_type.into();
 
-    let result = geo_poly.offset(delta, jt, EndType::ClosedPolygon, GEO_CLIPPER_SCALE);
+    let result = geo_poly.offset(delta, jt, EndType::ClosedPolygon, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
@@ -505,7 +553,7 @@ pub fn offset_expolygon(
     let geo_poly = expolygon_to_geo(expolygon);
     let jt = join_type.into();
 
-    let result = geo_poly.offset(delta, jt, EndType::ClosedPolygon, GEO_CLIPPER_SCALE);
+    let result = geo_poly.offset(delta, jt, EndType::ClosedPolygon, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
@@ -531,7 +579,7 @@ pub fn offset_expolygons(
     let geo_multi = expolygons_to_geo_multi(expolygons);
     let jt = join_type.into();
 
-    let result = geo_multi.offset(delta, jt, EndType::ClosedPolygon, GEO_CLIPPER_SCALE);
+    let result = geo_multi.offset(delta, jt, EndType::ClosedPolygon, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
@@ -564,7 +612,7 @@ pub fn offset_expolygons_miter_limit(
         delta,
         JoinType::Miter(miter_limit),
         EndType::ClosedPolygon,
-        GEO_CLIPPER_SCALE,
+        geo_clipper_scale(),
     );
     let mut expolygons = geo_multi_to_expolygons(&result);
 
@@ -589,7 +637,7 @@ pub fn offset_polygons(
     let geo_multi = polygons_to_geo_multi(polygons);
     let jt = join_type.into();
 
-    let result = geo_multi.offset(delta, jt, EndType::ClosedPolygon, GEO_CLIPPER_SCALE);
+    let result = geo_multi.offset(delta, jt, EndType::ClosedPolygon, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
@@ -621,7 +669,7 @@ pub fn offset_polygons_round(
         delta,
         JoinType::Round(arc_tolerance_mm),
         EndType::ClosedPolygon,
-        GEO_CLIPPER_SCALE,
+        geo_clipper_scale(),
     );
     let mut expolygons = geo_multi_to_expolygons(&result);
 
@@ -649,7 +697,7 @@ pub fn offset_expolygons_round(
         delta,
         JoinType::Round(arc_tolerance_mm),
         EndType::ClosedPolygon,
-        GEO_CLIPPER_SCALE,
+        geo_clipper_scale(),
     );
     let mut expolygons = geo_multi_to_expolygons(&result);
 
@@ -741,7 +789,7 @@ fn intersection_base(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     let subject_geo = expolygons_to_geo_multi(subject);
     let clip_geo = expolygons_to_geo_multi(clip);
 
-    let result = subject_geo.intersection(&clip_geo, GEO_CLIPPER_SCALE);
+    let result = subject_geo.intersection(&clip_geo, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
     expolygons.retain(|ex| !ex.is_empty());
     expolygons
