@@ -1980,6 +1980,30 @@ impl PerimeterGenerator {
                 };
             }
             crate::stage_dump::dump("tail_nooverlap", self.config.layer_id, &poly_without_overlap);
+
+            // R715 — `fill_no_overlap` is what `FillConcentricInternal` actually
+            // iterates (`no_overlap_expolygons`), NOT the `fill_surfaces` region
+            // R712 probed. Print it against C++ `PerimeterGenerator.cpp`'s
+            // `this->fill_no_overlap->insert(...)` (FILLNOV).
+            if crate::probe_enabled("FILLNOV") {
+                let mut area = 0.0f64;
+                let bb: Vec<String> = poly_without_overlap
+                    .iter()
+                    .map(|e| {
+                        area += e.area();
+                        let b = e.bounding_box();
+                        format!("{},{},{},{}", b.min.x, b.min.y, b.max.x, b.max.y)
+                    })
+                    .collect();
+                eprintln!(
+                    "[FILLNOV] layer={} n={} bb={} area={:.0}",
+                    self.config.layer_id,
+                    poly_without_overlap.len(),
+                    bb.join(";"),
+                    area
+                );
+            }
+
             return (infill_out, poly_without_overlap, top_band_out);
         }
     }

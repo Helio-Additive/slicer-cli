@@ -2311,8 +2311,14 @@ impl Layer {
         if crate::probe_enabled("FILLASN") {
             for (i, sf) in surface_fills.iter().enumerate() {
                 let area: f64 = sf.expolygons.iter().map(|e| e.area()).sum();
+                // R715 — `regions` and `nov` matter for the concentric family:
+                // `FillConcentricInternal` iterates `no_overlap_expolygons`, and
+                // C++ `Fill.cpp:354` UNIONS that set across every region a fill
+                // spans. Ours keeps only the first region's (a TODO at
+                // `fill/mod.rs:942`), so a fill with regions>1 is where the two
+                // engines can hand the filler different geometry.
                 eprintln!(
-                    "[FILLASN] z={:.3} i={} pat={:?} role={:?} n={} area={:.0} spacing={} angle={:.4}",
+                    "[FILLASN] z={:.3} i={} pat={:?} role={:?} n={} area={:.0} spacing={} angle={:.4} regions={} nov={}",
                     self.print_z,
                     i,
                     sf.params.pattern,
@@ -2320,7 +2326,9 @@ impl Layer {
                     sf.expolygons.len(),
                     area,
                     sf.params.spacing as i64,
-                    sf.params.angle
+                    sf.params.angle,
+                    sf.region_id_group.len(),
+                    sf.no_overlap_expolygons.len()
                 );
             }
         }

@@ -15930,3 +15930,85 @@ solid/concentric family and the rectilinear raster for Sparse, each now a separa
 Rectilinear/Monotonic assignment trade (~5-6 surfaces); Bridge's `bridge_angle`; the unported
 `Layer::make_fills` and the dead faithful `group_fills` in `fill/fill.rs`; where the loop reordering
 is introduced; the seam; the fan markers; re-scoring the parked order-only gates.
+
+## R715 — `FillConcentricInternal` is a faithful port fed faithful geometry; and R712's "region is cleared" had a coverage gap
+
+R714 cleared the fill assignment, leaving the fillers' own path generation as the last stage
+standing. R715 takes `FillConcentricInternal` — 176 surfaces, and at 102 C++ lines small enough to
+read end-to-end rather than sample.
+
+### The port is line-for-line faithful
+
+`FillConcentricInternal.cpp` was read in full against
+`crates/libslic3r-rs/src/fill/fill_concentric_internal.rs`. Every step corresponds, with the C++ line
+number cited at each: the `no_overlap_expolygons` loop, `min_spacing = params.flow.scaled_spacing()`,
+`loops_count = max(bbox.x, bbox.y) / min_spacing + 1`, the six hardcoded
+`Arachne::WallToolPathsParams` fields, the `WallToolPaths` construction, the
+`to_thick_polyline` + closed-loop rotate-to-`last_pos(0,0)` seam, `clip_end(loop_clipping)` with the
+compaction loop, `reorder_by_shortest_traverse`, and
+`variable_width(..., params.flow.with_spacing(this->spacing))`. **No divergence found by reading.**
+
+### R712's clearing of "the fill region" did not cover this filler's input
+
+R712 concluded the fill region is faithful by probing `infill_exp` → `fill_surfaces`. But
+`FillConcentricInternal::fill_surface_extrusion` iterates **`this->no_overlap_expolygons`**, which
+comes from `fill_no_overlap` (`PerimeterGenerator.cpp:1415-1430`, the `polyWithoutOverlap` block) — a
+**different object**. R712's conclusion was true of what it measured and did not extend to the
+concentric family. Closing that gap with a `FILLNOV` probe on both sides, using R712's own rules
+(compare only where the call structure lines up; one coordinate unit is 10 nm, so compare with a
+tolerance):
+
+| | |
+|---|---|
+| layers where call counts line up | 46 |
+| expolygon COUNT identical | **46 / 46 (100%)** |
+| AREA within 0.1% | 35 / 46 (76.1%) |
+| BBOX within 80 nm | 44 / 46 (95.7%) |
+| **total area ratio** | **1.0000** |
+
+**`fill_no_overlap` is faithful too.** So this filler is a faithful port, fed a faithful region *and*
+a faithful no-overlap set, with the right pattern assignment — and Internal solid infill still shares
+only 14.0% of its vertices.
+
+### A genuine unported step, measured inert on our side
+
+C++ `Fill.cpp:354` unions the no-overlap set across every region a fill spans:
+
+```cpp
+fill.no_overlap_expolygons = union_ex(fill.no_overlap_expolygons, layerm.fill_no_overlap_expolygons);
+```
+
+Ours has a bare `// TODO` at `fill/mod.rs:942` and keeps only the first region's. Since this filler
+reads exactly that set, a multi-region fill would be handed different geometry. Reachability, per
+R707's filter — `FILLASN` extended to print `regions` and `nov`:
+
+| fixture | fills | fills with regions > 1 | fills with empty no_overlap |
+|---|---|---|---|
+| benchy | 577 | **0** | 0 |
+| majora | 10,147 | **0** | 0 |
+
+**No fill spans more than one region on either fixture, so the missing union cannot fire in our
+engine.** Stated with its bound: this measures OUR grouping only. If C++ produces multi-region fills
+where we do not, that is itself a grouping divergence — and an unmeasured one. The TODO stays on the
+list as a real gap that is currently unreachable rather than as a defect.
+
+### What this leaves
+
+For the concentric family, the filler, its region, its no-overlap input and its assignment are all
+now cleared. The remaining candidates are inside the filler's own call to Arachne: the
+`WallToolPaths(polygons, min_spacing, min_spacing, loops_count, 0, layer_height, input_params)`
+invocation, and — the sharper one — **`WallToolPathsParams::default()`**. C++ sets six fields
+explicitly and leaves the rest to the struct's own member initialisers; ours fills them from
+`Default::default()`. That is R706's bug class (a default nobody declares) in a place
+`scripts/audit-config-defaults.py` structurally cannot reach, because these are C++ struct member
+initialisers rather than config `set_default_value` calls. R716 checks those field by field.
+
+Baselines unchanged: benchy `248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`.
+Suites: eight green (`multi_material_integration` 25/26 pre-existing). C++ injection reverted,
+submodule rebuilt clean. Rust `FILLNOV` probe kept and `FILLASN` extended, both default OFF.
+
+**STILL OPEN:** `WallToolPathsParams::default()` vs C++'s member initialisers (R716's target); the
+`Fill.cpp:354` union TODO (unreachable on our side, C++ side unmeasured); the rectilinear raster for
+Sparse (41.8%); the Rectilinear/Monotonic assignment trade; Bridge's `bridge_angle`; the unported
+`Layer::make_fills`; where the loop reordering is introduced; the seam; the fan markers; re-scoring
+the parked order-only gates.
