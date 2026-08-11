@@ -1062,6 +1062,34 @@ pub fn group_fills(
                 }
             }
 
+            // R718 — the narrow / narrow-floating classification census, against
+            // C++ `Fill.cpp` (FVSCLS). R717 showed FVS presence on a layer
+            // predicts Sparse's divergence there, and FVS surfaces are made
+            // HERE: a fill flips pattern only when ALL its expolygons land in
+            // one bucket, so one expolygon changing bucket changes the fill's
+            // identity. Note `generate_sparse_infill_polylines_for_anchoring`
+            // also calls group_fills with an EMPTY lower_internal_areas (R481);
+            // that pass is excluded so the counts stay comparable with C++'s
+            // single make_fills pass.
+            // Logged on EVERY call, including the anchoring pass, because C++'s
+            // probe cannot distinguish passes either — matching the populations
+            // is what makes the counts comparable at all (R712). `lowarea` marks
+            // whether this call saw lower_internal_areas, which is itself a real
+            // asymmetry: C++ `group_fills` derives them internally from
+            // `layer.lower_layer`, so BOTH its passes see them, while our
+            // anchoring pass is handed `&[]`.
+            if crate::probe_enabled("FVSCLS") {
+                eprintln!(
+                    "[FVSCLS] z={:.3} i={} n={} narrow={} floating={} lowarea={}",
+                    layer.print_z,
+                    i,
+                    expolygons_size,
+                    narrow_expoly_idx.len(),
+                    narrow_floating_expoly_idx.len(),
+                    if lower_internal_areas.is_empty() { 0 } else { 1 }
+                );
+            }
+
             // Fill.cpp:489-492
             if narrow_expoly_idx.is_empty() && narrow_floating_expoly_idx.is_empty() {
                 // BBS: has no narrow expolygon

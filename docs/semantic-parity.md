@@ -16155,3 +16155,65 @@ for both FVS's 4.1% and Sparse's FVS-correlated deficit); the Rectilinear/Monoto
 Bridge's `bridge_angle`; the `Fill.cpp:354` union TODO (unreachable on our side); the unported
 `Layer::make_fills` and `make_ironing`, and the DEAD faithful `group_fills` in `fill/fill.rs`; where
 the loop reordering is introduced; the seam; the fan markers; re-scoring the parked order-only gates.
+
+## R718 — the narrow/narrow-floating classification is faithful, and that reframes R717's causal claim
+
+R717 found that Floating vertical shell's presence on a layer predicts Sparse infill's divergence
+there, and pointed at the classification that creates FVS surfaces (`Fill.cpp:466-550`) as one cause
+for both. R718 read that block end to end on both sides and probed it.
+
+### PREDICTION REFUTED BY READING
+
+R718 predicted the narrow-detection **threshold** differs, producing a slightly different narrow set
+(consistent with R714's FVS count of 88 ours vs 90 C++). It does not:
+
+| | C++ | ours |
+|---|---|---|
+| `NARROW_INFILL_AREA_THRESHOLD` | `3` | `3.0` |
+| `is_narrow_infill_area` | `offset_ex(ex, -scale_(3)).empty()` | same, mm-scaled per the R697 unit rule |
+| bbox test | `BoundingBox::overlap` | `BoundingBox::intersects` |
+| split + removal | `Fill.cpp:507-549` | `fill/mod.rs:1082-1163` |
+
+`overlap` is `!(max.x < o.min.x || min.x > o.max.x || …)` and `intersects` is
+`min.x <= o.max.x && max.x >= o.min.x && …` — **the same inequalities**. Ours additionally requires
+both boxes `defined`, which is unreachable here because `!clipped_internals.empty()` guards the test
+first. The split loop (move narrow → `ipConcentricInternal`, narrow-floating → `ipFloatingConcentric`,
+then delete both from the original, sorted ascending and erased from the back) matches line for line.
+
+### The decisive number was already population-matched
+
+The `FVSCLS` probe's raw counts are **not** comparable as first written: ours logged 139 calls against
+C++'s 397, because our probe excluded the anchoring pass. Matching the populations (log every call)
+gives **419 ours vs 397 C++** — and surfaces a genuine structural asymmetry worth recording: C++'s
+`group_fills` derives `lower_internal_areas` internally from `layer.lower_layer`, so **both** its
+passes see them, while our anchoring pass is handed `&[]` (`layer.rs:3332`). That is inert for output —
+the anchoring pass consumes only `stInternal` surfaces — but it is a real difference in kind, not
+just in count.
+
+The comparison that *is* population-matched is R714's `FILLASN` census, one entry per final surface
+fill: **FloatingVerticalShell 88 ours vs 90 C++**. **Two fills out of ninety cannot explain a 96%
+vertex miss.** The classification is cleared as the dominant cause.
+
+### This reframes R717 — and R717's causal claim needs narrowing
+
+R717 reported FVS presence as predicting Sparse's divergence and inferred one shared upstream cause.
+With the classification now proven faithful, that inference is too strong. R717 controlled for island
+count but **not** for region narrowness — and FVS exists *precisely because* a layer has narrow solid
+regions. So FVS presence is most likely a **marker** for "this layer has narrow, awkward regions",
+which is also what makes Sparse hard, rather than a cause of Sparse's divergence through the
+classification. The correlation stands; the mechanism does not follow from it.
+
+**What remains for FVS's 4.1%** is inside `FillFloatingConcentric` itself (74 K on both sides, too
+large for the end-to-end read that worked at R715's 102 lines) — localise before reading.
+
+Only probe code changed in engine source; all four baselines re-verified byte-identical: benchy
+`248ff22a`, arachne `14b1d2e6`, cube `14566293`, majora `6a8cf880`. Suites: eight green
+(`multi_material_integration` 25/26 pre-existing). C++ injection reverted, submodule rebuilt clean.
+Rust `FVSCLS` probe kept, default OFF.
+
+**STILL OPEN:** `FillFloatingConcentric`'s own path generation (FVS 4.1%) — localise first; a
+controlled test of whether Sparse's FVS correlation survives a *narrowness* control, which would
+settle marker-vs-cause; the anchoring pass's `&[]` lower areas (inert, but a real asymmetry); the
+Rectilinear/Monotonic assignment trade; Bridge's `bridge_angle`; the `Fill.cpp:354` union TODO; the
+unported `Layer::make_fills` and `make_ironing`; where the loop reordering is introduced; the seam;
+the fan markers; re-scoring the parked order-only gates.
