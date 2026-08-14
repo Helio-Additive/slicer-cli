@@ -26,6 +26,7 @@ fn main() -> ExitCode {
     slicer::clipper_utils::unionprof_report();
     slicer::layer::fillprof_report();
     slicer::gcode::exporter::expprof_report();
+    slicer::gcode::seam_placer::spprof_report();
     match r {
         Ok(code) => ExitCode::from(code),
         Err(err) => {

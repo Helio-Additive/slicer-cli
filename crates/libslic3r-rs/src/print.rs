@@ -468,6 +468,7 @@ impl Print {
                 .partial_cmp(&b.layer.print_z)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+        let __gen_layers_ms = __gen_setup_t.elapsed().as_secs_f64() * 1000.0;
 
         // -- SeamPlacer::init per object -- GCode.cpp / SeamPlacer.cpp:1395 --
         // C++ runs `m_seam_placer.init(print)` once before layer export, building
@@ -520,6 +521,7 @@ impl Print {
                 })
                 .collect()
         };
+        let __gen_seam_ms = __gen_setup_t.elapsed().as_secs_f64() * 1000.0;
 
         // Group layers by print_z for by-layer printing
         let __gen_setup_ms = __gen_setup_t.elapsed().as_secs_f64() * 1000.0;
@@ -890,8 +892,10 @@ impl Print {
         // Finish G-code generation and collect stats
         if crate::probe_enabled("EXPPROF") {
             eprintln!(
-                "[EXPPROF] generate split: pre-loop (all_layers + SeamPlacer::init) {:.1}ms | layer loop {:.1}ms",
-                __gen_setup_ms,
+                "[EXPPROF] generate split: all_layers {:.1}ms | SeamPlacer::init {:.1}ms | rest-of-preloop {:.1}ms | layer loop {:.1}ms",
+                __gen_layers_ms,
+                __gen_seam_ms - __gen_layers_ms,
+                __gen_setup_ms - __gen_seam_ms,
                 __gen_loop_t.elapsed().as_secs_f64() * 1000.0
             );
         }

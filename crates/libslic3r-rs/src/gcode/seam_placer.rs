@@ -67,6 +67,27 @@ use crate::utils::{next_idx_modulo, prev_idx_modulo};
 use nalgebra::{Vector2, Vector3};
 use std::collections::VecDeque;
 
+/// R734 — stage census for `SeamPlacer::init`, proven at 1,100.7 ms = 42% of the
+/// whole benchy slice. `SPPROF=1` prints at exit.
+pub static SPPROF_OCCL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_GATHER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_VIS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_OVER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_ALIGN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn spprof_report() {
+    use std::sync::atomic::Ordering::Relaxed;
+    if !crate::probe_enabled("SPPROF") {
+        return;
+    }
+    let f = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed) as f64 / 1e6;
+    eprintln!(
+        "[SPPROF] occlusion {:.1}ms | gather {:.1}ms | visibility {:.1}ms | overhangs {:.1}ms | align {:.1}ms",
+        f(&SPPROF_OCCL), f(&SPPROF_GATHER), f(&SPPROF_VIS), f(&SPPROF_OVER), f(&SPPROF_ALIGN)
+    );
+}
+
+
 /// Eigen `Vec3f = Matrix<float,3,1>`. Point.hpp
 pub type Vec3f = Vector3<f32>;
 /// Eigen `Vec2f = Matrix<float,2,1>`. Point.hpp
@@ -3039,14 +3060,22 @@ impl SeamPlacer {
         // per-vertex occlusion values (breaking the symmetric-loop angle/overhang ties
         // the comparator would otherwise resolve arbitrarily).
         self.frame_offset_xy = Self::seam_frame_offset(po).unwrap_or((0, 0));
+        let __t = std::time::Instant::now();
         let global_model_info = compute_global_occlusion(po);
+        SPPROF_OCCL.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
 
         // SeamPlacer.cpp:1456 — gather_seam_candidates.
+        let __t = std::time::Instant::now();
         self.gather_seam_candidates(po, &global_model_info, configured_seam_preference);
+        SPPROF_GATHER.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
         // SeamPlacer.cpp:1457 — calculate_candidates_visibility (visibility==1.0).
+        let __t = std::time::Instant::now();
         self.calculate_candidates_visibility(po, &global_model_info);
+        SPPROF_VIS.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
         // SeamPlacer.cpp:1458 — calculate_overhangs_and_layer_embedding.
+        let __t = std::time::Instant::now();
         self.calculate_overhangs_and_layer_embedding(po);
+        SPPROF_OVER.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
 
         // SeamPlacer.cpp:1459-1460 — pick the initial seam of every perimeter,
         // then run alignment. In C++ the per-perimeter pick happens inside a
