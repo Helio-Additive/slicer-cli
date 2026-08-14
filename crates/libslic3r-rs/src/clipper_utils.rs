@@ -276,7 +276,7 @@ pub fn union(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     let subject_geo = expolygons_to_geo_multi(subject);
     let clip_geo = expolygons_to_geo_multi(clip);
 
-    let result = subject_geo.union(&clip_geo, 1000.0);
+    let result = subject_geo.union(&clip_geo, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
@@ -320,6 +320,16 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
 /// Compute the union of raw Polygons into ExPolygons.
 /// This is used after simplification to reconstruct proper ExPolygons with holes.
 /// Equivalent to BambuStudio's union_ex(simplify_p(...))
+/// R727 TRAP — do NOT add a `_clib` dispatch to this function (or to
+/// [`union_ex`] / [`difference`]) without FIRST giving the `_clib` family a
+/// non-dispatching reconstruction. `union_ex_clib` rebuilds its output through
+/// `union_ex`, and `difference_clib` / `intersection_clib` /
+/// `offset_expolygons_clib_impl` rebuild theirs through `union_polygons_ex`, so
+/// a wrapper-level dispatch recurses forever. (`intersection` has dispatched to
+/// `intersection_clib` since CLIPPER_INT shipped precisely because only ONE
+/// side of that pair dispatches.) The prerequisite is private geo-only bodies —
+/// `union_polygons_ex_geo` / `union_ex_geo` — for the `_clib` internals to call;
+/// there are 8 such internal call sites.
 pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
     if polygons.is_empty() {
         return vec![];
@@ -329,7 +339,7 @@ pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
     let geo_multi = polygons_to_geo_multi(polygons);
 
     // Union with itself to merge overlapping polygons and establish proper holes
-    let result = geo_multi.union(&geo_multi, 1000.0);
+    let result = geo_multi.union(&geo_multi, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // CRITICAL: Ensure canonical winding order (CCW for contours, CW for holes)
@@ -363,7 +373,7 @@ pub fn intersection(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     let subject_geo = expolygons_to_geo_multi(subject);
     let clip_geo = expolygons_to_geo_multi(clip);
 
-    let result = subject_geo.intersection(&clip_geo, 1000.0);
+    let result = subject_geo.intersection(&clip_geo, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
@@ -386,7 +396,7 @@ pub fn difference(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     let subject_geo = expolygons_to_geo_multi(subject);
     let clip_geo = expolygons_to_geo_multi(clip);
 
-    let result = subject_geo.difference(&clip_geo, 1000.0);
+    let result = subject_geo.difference(&clip_geo, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
@@ -409,7 +419,7 @@ pub fn xor(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     let subject_geo = expolygons_to_geo_multi(subject);
     let clip_geo = expolygons_to_geo_multi(clip);
 
-    let result = subject_geo.xor(&clip_geo, 1000.0);
+    let result = subject_geo.xor(&clip_geo, geo_clipper_scale());
     let mut expolygons = geo_multi_to_expolygons(&result);
 
     // Ensure canonical winding order
