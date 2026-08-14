@@ -554,6 +554,9 @@ impl SurfaceFill {
 pub static GFPROF_UNION_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static GFPROF_NARROW_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static GFPROF_NARROW_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static GFPROF_CLIP_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static GFPROF_ISNARROW_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static GFPROF_ISNARROW_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Group surfaces by fill parameters
 /// Fill.cpp:164-547
@@ -1033,11 +1036,13 @@ pub fn group_fills(
                 // Fill.cpp:476
                 let bbox = get_extents_expoly(&surface_fills[i].expolygons[j]);
                 // Fill.cpp:477 — bbox.inflated(scale_(2)); expand a little.
+                let __t_clip = std::time::Instant::now();
                 let clipped_internals = clip_clipper_polygons_with_subject_bbox_expolygons(
                     lower_internal_areas,
                     &bbox.expanded(scale(2.0)),
                     false,
                 );
+                GFPROF_CLIP_NS.fetch_add(__t_clip.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
                 // Fill.cpp:478
                 let clipped_internal_bbox = get_extents_polygons(&clipped_internals);
                 // Fill.cpp:479-486
@@ -1053,7 +1058,11 @@ pub fn group_fills(
                     crate::layer::FVS_CAND.fetch_add(1, Relaxed);
                     if clipped_internals.is_empty() { crate::layer::FVS_CLIP_EMPTY.fetch_add(1, Relaxed); }
                 }
-                if is_narrow_infill_area(&surface_fills[i].expolygons[j]) {
+                let __t_narrow = std::time::Instant::now();
+                let __is_narrow = is_narrow_infill_area(&surface_fills[i].expolygons[j]);
+                GFPROF_ISNARROW_NS.fetch_add(__t_narrow.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
+                GFPROF_ISNARROW_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if __is_narrow {
                     if __dbg { crate::layer::FVS_NARROW.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }
                     // Fill.cpp:480 — offset_ex(expoly, SCALED_EPSILON); the crate's
                     // offset helpers take millimeters.

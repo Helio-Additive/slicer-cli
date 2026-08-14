@@ -37,10 +37,13 @@ pub fn fillprof_report() {
     let c = FILLPROF_CI_NS.load(Relaxed) as f64 / 1e6;
     let tot = FILLPROF_LOOP_NS.load(Relaxed) as f64 / 1e6;
     eprintln!(
-        "[GFPROF] union_block {:.1}ms | narrow_block {:.1}ms (calls={})",
+        "[GFPROF] union_block {:.1}ms | narrow_block {:.1}ms (calls={}) | bbox_clip {:.1}ms | is_narrow {:.1}ms (calls={})",
         crate::fill::GFPROF_UNION_NS.load(Relaxed) as f64 / 1e6,
         crate::fill::GFPROF_NARROW_NS.load(Relaxed) as f64 / 1e6,
         crate::fill::GFPROF_NARROW_CALLS.load(Relaxed),
+        crate::fill::GFPROF_CLIP_NS.load(Relaxed) as f64 / 1e6,
+        crate::fill::GFPROF_ISNARROW_NS.load(Relaxed) as f64 / 1e6,
+        crate::fill::GFPROF_ISNARROW_CALLS.load(Relaxed),
     );
     eprintln!(
         "[FILLPROF] group_fills {:.1}ms | loop_total {:.1}ms | FloatingConcentric {:.1}ms calls={} verts={} | ConcentricInternal {:.1}ms calls={} verts={} | other {:.1}ms | concentric share {:.0}%",

@@ -345,6 +345,25 @@ impl SurfaceFill {
 // BBS: used to judge whether the internal solid infill area is narrow
 // static bool is_narrow_infill_area(const ExPolygon& expolygon)
 pub fn is_narrow_infill_area(expolygon: &ExPolygon) -> bool {
+    // R732 PERF (bit-identical): the offset below is 99% of the narrow
+    // classification's cost — 1,226 calls at ~1.4 ms each, and 5.4x more
+    // expensive on exact coord_t boundaries, which is what parks the +2,905-line
+    // CLIPPER_UNION_GEO gate.
+    //
+    // A shape's inset is contained in its bounding box's inset, so if the bbox
+    // cannot survive a -NARROW_INFILL_AREA_THRESHOLD inset then neither can the
+    // shape: the result is provably empty and the answer is `true` without
+    // running clipper. Strict `<` so the exactly-equal case still takes the real
+    // path — this can only skip offsets whose result is empty by construction.
+    // NARROW_BBOX_EARLYOUT=0 restores the unconditional offset.
+    if crate::faithful_gate("NARROW_BBOX_EARLYOUT") {
+        let bb = expolygon.contour.bounding_box();
+        let min_side = std::cmp::min(bb.max.x - bb.min.x, bb.max.y - bb.min.y);
+        if (min_side as f64) < 2.0 * NARROW_INFILL_AREA_THRESHOLD * crate::SCALING_FACTOR {
+            return true;
+        }
+    }
+
     // Fill.cpp:159
     // ExPolygons offsets = offset_ex(expolygon, -scale_(NARROW_INFILL_AREA_THRESHOLD));
     // C++ passes the delta in scaled units; this crate's offset helpers take
