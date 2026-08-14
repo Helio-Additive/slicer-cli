@@ -1861,10 +1861,47 @@ pub fn variable_offset_inner_ex_clib(
     read_grouped_zpaths(raw)
 }
 
+/// R729 — call/size/time census for `union_ex_clib`, to separate per-CALL
+/// overhead from per-VERTEX work. `UNIONPROF=1` prints a histogram at exit.
+static UNIONPROF_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static UNIONPROF_VERTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static UNIONPROF_NANOS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static UNIONPROF_FFI_NANOS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// buckets by total input vertex count: <4, <10, <32, <128, <512, >=512
+static UNIONPROF_BUCKETS: [std::sync::atomic::AtomicUsize; 6] = [
+    std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0),
+    std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0),
+    std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0),
+];
+
+pub fn unionprof_report() {
+    use std::sync::atomic::Ordering::Relaxed;
+    if !crate::probe_enabled("UNIONPROF") {
+        return;
+    }
+    let c = UNIONPROF_CALLS.load(Relaxed);
+    let v = UNIONPROF_VERTS.load(Relaxed);
+    let n = UNIONPROF_NANOS.load(Relaxed);
+    let f = UNIONPROF_FFI_NANOS.load(Relaxed);
+    let b: Vec<usize> = UNIONPROF_BUCKETS.iter().map(|x| x.load(Relaxed)).collect();
+    eprintln!(
+        "[UNIONPROF] calls={c} verts={v} verts_per_call={:.1} total_ms={:.1} ffi_ms={:.1} ffi_share={:.0}%",
+        if c > 0 { v as f64 / c as f64 } else { 0.0 },
+        n as f64 / 1e6, f as f64 / 1e6,
+        if n > 0 { 100.0 * f as f64 / n as f64 } else { 0.0 }
+    );
+    eprintln!(
+        "[UNIONPROF] size buckets  <4:{} <10:{} <32:{} <128:{} <512:{} >=512:{}",
+        b[0], b[1], b[2], b[3], b[4], b[5]
+    );
+}
+
 pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
     if loops.is_empty() {
         return vec![];
     }
+    let prof = crate::probe_enabled("UNIONPROF");
+    let t_start = if prof { Some(std::time::Instant::now()) } else { None };
     // Flatten loops into (x,y) i32 pairs + per-path lengths.
     let mut xy: Vec<i32> = Vec::new();
     let mut lens: Vec<i32> = Vec::new();
@@ -1888,7 +1925,12 @@ pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
 
     // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
     // them. The returned CzZPaths owns malloc'd buffers we copy out then free.
+    let t_ffi = if prof { Some(std::time::Instant::now()) } else { None };
     let raw = unsafe { clipper_z_sys::cz_union_ex(xy.as_ptr(), lens.as_ptr(), num, fill_type) };
+    if let Some(t) = t_ffi {
+        use std::sync::atomic::Ordering::Relaxed;
+        UNIONPROF_FFI_NANOS.fetch_add(t.elapsed().as_nanos() as usize, Relaxed);
+    }
 
     let mut result: ExPolygons = Vec::new();
     if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
@@ -1925,6 +1967,17 @@ pub fn union_ex_clib(loops: &[Polygon], fill_type: i32) -> ExPolygons {
 
     // SAFETY: `raw` was produced by cz_union_ex and not freed yet.
     unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+
+    if let Some(t) = t_start {
+        use std::sync::atomic::Ordering::Relaxed;
+        let nv = xy.len() / 2;
+        UNIONPROF_CALLS.fetch_add(1, Relaxed);
+        UNIONPROF_VERTS.fetch_add(nv, Relaxed);
+        UNIONPROF_NANOS.fetch_add(t.elapsed().as_nanos() as usize, Relaxed);
+        let bi = if nv < 4 { 0 } else if nv < 10 { 1 } else if nv < 32 { 2 }
+                 else if nv < 128 { 3 } else if nv < 512 { 4 } else { 5 };
+        UNIONPROF_BUCKETS[bi].fetch_add(1, Relaxed);
+    }
 
     result
 }

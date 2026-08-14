@@ -21,7 +21,10 @@ fn main() -> ExitCode {
     // Surface the slicer library's `log::info!/warn!` output (progress markers,
     // painted-MMU diagnostics). Off by default; enable with RUST_LOG=info.
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    match run_cli() {
+    let r = run_cli();
+    // R729 — UNIONPROF census (default OFF); prints once at exit.
+    slicer::clipper_utils::unionprof_report();
+    match r {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
             eprintln!("error: {err}");
