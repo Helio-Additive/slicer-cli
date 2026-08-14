@@ -1102,6 +1102,12 @@ impl GCodeWriter {
 
     /// Write a raw G-code line.
     pub fn write_raw(&mut self, line: &str) {
+        let __w_t = if crate::probe_enabled("EXPPROF") { Some(std::time::Instant::now()) } else { None };
+        if let Some(t) = __w_t {
+            use std::sync::atomic::Ordering::Relaxed;
+            crate::gcode::exporter::EXPPROF_WRITE_CALLS.fetch_add(1, Relaxed);
+            let _ = t;
+        }
         self.gcode.append_line(line);
     }
 

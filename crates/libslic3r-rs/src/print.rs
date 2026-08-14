@@ -450,6 +450,7 @@ impl Print {
             layer_idx: usize,
             layer: &'a crate::layer::Layer,
         }
+        let __gen_setup_t = std::time::Instant::now();
         let mut all_layers: Vec<LayerToPrint> = Vec::new();
         for (obj_idx, object) in self.objects.iter().enumerate() {
             writer.set_total_layers(object.layers.len());
@@ -521,6 +522,8 @@ impl Print {
         };
 
         // Group layers by print_z for by-layer printing
+        let __gen_setup_ms = __gen_setup_t.elapsed().as_secs_f64() * 1000.0;
+        let __gen_loop_t = std::time::Instant::now();
         let mut i = 0;
         // Cross-layer tool-change continuity (Tier-1 multicolour): the last tool
         // printed on the previous layer, so the next layer can start with it and
@@ -885,6 +888,13 @@ impl Print {
         }
 
         // Finish G-code generation and collect stats
+        if crate::probe_enabled("EXPPROF") {
+            eprintln!(
+                "[EXPPROF] generate split: pre-loop (all_layers + SeamPlacer::init) {:.1}ms | layer loop {:.1}ms",
+                __gen_setup_ms,
+                __gen_loop_t.elapsed().as_secs_f64() * 1000.0
+            );
+        }
         let mut layer_gcode = writer.finish();
         let export_t_gen = export_t0.elapsed();
 

@@ -674,12 +674,46 @@ pub fn extrude_loop(
 /// # Returns
 /// * `Ok(())` on success
 /// * `Err` on write errors
+
+
+/// R733 — cost census for gcode `generate`. It is 1.206 s = 46% of the benchy
+/// slice and had never been profiled. `EXPPROF=1` prints at exit.
+pub static EXPPROF_EXTRUDE_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static EXPPROF_EXTRUDE_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static EXPPROF_WRITE_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static EXPPROF_WRITE_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Accumulates on drop so every return path in `extrude_collection` is counted.
+pub struct ExpProfGuard(pub std::time::Instant);
+impl Drop for ExpProfGuard {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        EXPPROF_EXTRUDE_NS.fetch_add(self.0.elapsed().as_nanos() as usize, Relaxed);
+        EXPPROF_EXTRUDE_CALLS.fetch_add(1, Relaxed);
+    }
+}
+
+pub fn expprof_report() {
+    use std::sync::atomic::Ordering::Relaxed;
+    if !crate::probe_enabled("EXPPROF") {
+        return;
+    }
+    eprintln!(
+        "[EXPPROF] extrude_collection {:.1}ms calls={} | writer emit {:.1}ms calls={}",
+        EXPPROF_EXTRUDE_NS.load(Relaxed) as f64 / 1e6,
+        EXPPROF_EXTRUDE_CALLS.load(Relaxed),
+        EXPPROF_WRITE_NS.load(Relaxed) as f64 / 1e6,
+        EXPPROF_WRITE_CALLS.load(Relaxed),
+    );
+}
 pub fn extrude_collection(
     collection: &ExtrusionEntityCollection,
     writer: &mut GCodeWriter,
     config: &crate::print_config::PrintObjectConfig,
     is_first_layer: bool,
 ) -> Result<()> {
+    let __ex_guard = if crate::probe_enabled("EXPPROF") { Some(ExpProfGuard(std::time::Instant::now())) } else { None };
+
     /// Extrude an ExtrusionEntityCollection by iterating entities
     /// GCode.cpp:2800-3100
     /// C++: std::string GCode::extrude_entity(const ExtrusionEntity &entity, const std::string &description, double speed)
