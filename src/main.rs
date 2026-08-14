@@ -24,6 +24,7 @@ fn main() -> ExitCode {
     let r = run_cli();
     // R729 — UNIONPROF census (default OFF); prints once at exit.
     slicer::clipper_utils::unionprof_report();
+    slicer::layer::fillprof_report();
     match r {
         Ok(code) => ExitCode::from(code),
         Err(err) => {

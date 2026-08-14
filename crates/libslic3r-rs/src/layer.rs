@@ -16,6 +16,35 @@
 
 use crate::clipper_utils::{union_ex, OffsetJoinType};
 
+/// R730 — per-filler cost census for `fill_loop`. R729 localised the
+/// CLIPPER_UNION_GEO slowdown to this loop (0.248s -> 1.806s, 7.3x); this says
+/// WHICH filler. `FILLPROF=1` prints at exit.
+pub static FILLPROF_FVS_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FILLPROF_CI_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FILLPROF_FVS_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FILLPROF_CI_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FILLPROF_FVS_V: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FILLPROF_CI_V: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FILLPROF_LOOP_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FILLPROF_GROUP_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn fillprof_report() {
+    use std::sync::atomic::Ordering::Relaxed;
+    if !crate::probe_enabled("FILLPROF") {
+        return;
+    }
+    let f = FILLPROF_FVS_NS.load(Relaxed) as f64 / 1e6;
+    let c = FILLPROF_CI_NS.load(Relaxed) as f64 / 1e6;
+    let tot = FILLPROF_LOOP_NS.load(Relaxed) as f64 / 1e6;
+    eprintln!(
+        "[FILLPROF] group_fills {:.1}ms | loop_total {:.1}ms | FloatingConcentric {:.1}ms calls={} verts={} | ConcentricInternal {:.1}ms calls={} verts={} | other {:.1}ms | concentric share {:.0}%",
+        FILLPROF_GROUP_NS.load(Relaxed) as f64 / 1e6, tot, f, FILLPROF_FVS_N.load(Relaxed), FILLPROF_FVS_V.load(Relaxed),
+        c, FILLPROF_CI_N.load(Relaxed), FILLPROF_CI_V.load(Relaxed),
+        (tot - f - c).max(0.0),
+        if tot > 0.0 { 100.0 * (f + c) / tot } else { 0.0 }
+    );
+}
+
 /// R474 diagnostic (`FVS_DEBUG=1`): how many Concentric / FloatingConcentric
 /// expolygons reach the filler, and how many of them had NO `no_overlap_expolygons`
 /// to fill (Fill.cpp:740 — C++ emits nothing for those).
@@ -2303,7 +2332,14 @@ impl Layer {
         //      set_outlook_range(lock_param);
         //      std::vector<SurfaceFill> surface_fills = group_fills(*this, lock_param);
         let mut lock_param = crate::fill::LockRegionParam::default();
+        let __gf_t = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
         let surface_fills = crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?;
+        if let Some(t) = __gf_t {
+            FILLPROF_GROUP_NS.fetch_add(
+                t.elapsed().as_nanos() as usize,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
 
         // R714 — the fill ASSIGNMENT census, against C++ `Fill/Fill.cpp`'s
         // generation loop (FILLASN). R711/R712/R713 cleared the fill pattern's
@@ -2344,6 +2380,7 @@ impl Layer {
 
         // Fill.cpp:605-750
         // C++: for (SurfaceFill &surface_fill : surface_fills)
+        let __fl_t = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
         for surface_fill in surface_fills {
             // Fill.cpp:607-632
             // Create the filler object
@@ -2494,6 +2531,12 @@ impl Layer {
                         continue;
                     }
 
+                    let __fp = crate::probe_enabled("FILLPROF");
+                    let __fp_t = if __fp { Some(std::time::Instant::now()) } else { None };
+                    let __fp_v: usize = if __fp {
+                        no_overlap.iter().map(|e| e.contour.points.len()
+                            + e.holes.iter().map(|h| h.points.len()).sum::<usize>()).sum()
+                    } else { 0 };
                     if is_floating {
                         let mut filler = FillFloatingConcentric {
                             spacing: surface_fill.params.spacing,
@@ -2517,6 +2560,19 @@ impl Layer {
                             print_object_config: Some(print_object_config),
                         };
                         filler.fill_surface_extrusion(&surface_for_fill, &fp, &mut out_entities);
+                    }
+                    if let Some(t) = __fp_t {
+                        use std::sync::atomic::Ordering::Relaxed;
+                        let ns = t.elapsed().as_nanos() as usize;
+                        if is_floating {
+                            FILLPROF_FVS_NS.fetch_add(ns, Relaxed);
+                            FILLPROF_FVS_N.fetch_add(1, Relaxed);
+                            FILLPROF_FVS_V.fetch_add(__fp_v, Relaxed);
+                        } else {
+                            FILLPROF_CI_NS.fetch_add(ns, Relaxed);
+                            FILLPROF_CI_N.fetch_add(1, Relaxed);
+                            FILLPROF_CI_V.fetch_add(__fp_v, Relaxed);
+                        }
                     }
                 }
 
@@ -3298,6 +3354,13 @@ impl Layer {
                 }
             }
         }
+        if let Some(t) = __fl_t {
+            FILLPROF_LOOP_NS.fetch_add(
+                t.elapsed().as_nanos() as usize,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+
 
         // Fill.cpp:753-763
         // Add thin fill regions
