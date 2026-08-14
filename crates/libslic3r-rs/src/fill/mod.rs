@@ -547,6 +547,14 @@ impl SurfaceFill {
     }
 }
 
+
+/// R731 — sub-stage census for `group_fills`. R730 localised the
+/// CLIPPER_UNION_GEO slowdown to this function (195ms -> 907ms, 4.6x); these
+/// say WHICH stage. `FILLPROF=1` prints them via `layer::fillprof_report`.
+pub static GFPROF_UNION_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static GFPROF_NARROW_NS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static GFPROF_NARROW_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Group surfaces by fill parameters
 /// Fill.cpp:164-547
 /// C++: std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_param)
@@ -953,6 +961,7 @@ pub fn group_fills(
     // skipped this whole block. The union merges near-touching fragments (drops
     // bridge over-extrusion; sparse is unaffected because the grid emitter already
     // unions internally) and the diff prevents inter-group double-extrusion.
+    let __gfu = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
     {
         let mut all_polygons: Vec<Polygon> = Vec::new();
         let n = surface_fills.len();
@@ -996,11 +1005,16 @@ pub fn group_fills(
             }
         }
     }
+    if let Some(t) = __gfu {
+        GFPROF_UNION_NS.fetch_add(t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
+    }
+
 
     // BBS: detect narrow internal solid infill area and use ipConcentricInternal pattern instead
     // Fill.cpp:453-546. `lower_internal_areas` is the union of the lower layer's
     // stInternal/stInternalVoid fill-surface expolygons, gathered by the caller
     // (Fill.cpp:455-464) because `group_fills` cannot reach a sibling Layer here.
+    let __gfn = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
     if layer.object().config().detect_narrow_internal_solid_infill {
         let surface_fills_size = surface_fills.len();
         for i in 0..surface_fills_size {
@@ -1164,6 +1178,11 @@ pub fn group_fills(
             }
         }
     }
+    if let Some(t) = __gfn {
+        GFPROF_NARROW_NS.fetch_add(t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
+        GFPROF_NARROW_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
 
     Ok(surface_fills)
 }

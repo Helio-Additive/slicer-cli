@@ -37,6 +37,12 @@ pub fn fillprof_report() {
     let c = FILLPROF_CI_NS.load(Relaxed) as f64 / 1e6;
     let tot = FILLPROF_LOOP_NS.load(Relaxed) as f64 / 1e6;
     eprintln!(
+        "[GFPROF] union_block {:.1}ms | narrow_block {:.1}ms (calls={})",
+        crate::fill::GFPROF_UNION_NS.load(Relaxed) as f64 / 1e6,
+        crate::fill::GFPROF_NARROW_NS.load(Relaxed) as f64 / 1e6,
+        crate::fill::GFPROF_NARROW_CALLS.load(Relaxed),
+    );
+    eprintln!(
         "[FILLPROF] group_fills {:.1}ms | loop_total {:.1}ms | FloatingConcentric {:.1}ms calls={} verts={} | ConcentricInternal {:.1}ms calls={} verts={} | other {:.1}ms | concentric share {:.0}%",
         FILLPROF_GROUP_NS.load(Relaxed) as f64 / 1e6, tot, f, FILLPROF_FVS_N.load(Relaxed), FILLPROF_FVS_V.load(Relaxed),
         c, FILLPROF_CI_N.load(Relaxed), FILLPROF_CI_V.load(Relaxed),
