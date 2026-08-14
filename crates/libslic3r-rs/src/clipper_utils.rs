@@ -303,6 +303,17 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
         return polygons.to_vec();
     }
 
+    // R728 — see `union_polygons_ex`. Nothing in the `_clib` family calls this
+    // wrapper (verified by brace-counting scan), so it can dispatch directly.
+    if crate::opt_in_gate("CLIPPER_UNION_GEO") {
+        let mut loops: Vec<Polygon> = Vec::new();
+        for e in polygons {
+            loops.push(e.contour.clone());
+            loops.extend(e.holes.iter().cloned());
+        }
+        return union_ex_clib(&loops, 1);
+    }
+
     // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
     // Single union of the whole set (NonZero) instead of iterative pairwise union.
     let geo_multi = expolygons_to_geo_multi(polygons);
@@ -331,6 +342,30 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
 /// `union_polygons_ex_geo` / `union_ex_geo` — for the `_clib` internals to call;
 /// there are 8 such internal call sites.
 pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
+    // R728 — native `union_ex(Polygons)` is one NonZero ClipperLib union at
+    // coord_t; the geo body re-grids every vertex to 1 um.
+    //
+    // PARKED DEFAULT-OFF: measured on benchy classic at load ~7, 3 reps,
+    // interleaved, this arm is worth **+2,905 in-order lines** but costs
+    // **1.70x slice time** (2.72s -> 4.62s) — it carries the ENTIRE cost of the
+    // `_clib` conversion, while `difference` (CLIPPER_DIFF_GEO, shipped ON)
+    // buys +1,087 at 1.004x. Union is by far the hottest op (109 `union_ex` +
+    // 103 `union_polygons_ex` call sites), so the per-call FFI marshalling in
+    // `union_ex_clib` dominates. Making that cheap would unlock +2,905 for
+    // free and is the highest-value perf item on the board.
+    if crate::opt_in_gate("CLIPPER_UNION_GEO") {
+        return union_ex_clib(polygons, 1);
+    }
+    union_polygons_ex_geo(polygons)
+}
+
+/// R728 — the geo-backend body of [`union_polygons_ex`], callable from the
+/// `_clib` family without re-entering the public wrapper. `difference_clib`,
+/// `intersection_clib`, `difference_clib_safety` and
+/// `offset_expolygons_clib_impl` rebuild their ClipperLib output through this
+/// (4 call sites, found by brace-counting scan), so once the public wrapper
+/// dispatches to `_clib` those calls MUST land here or it recurses forever.
+fn union_polygons_ex_geo(polygons: &[Polygon]) -> ExPolygons {
     if polygons.is_empty() {
         return vec![];
     }
@@ -391,6 +426,12 @@ pub fn difference(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     }
     if clip.is_empty() {
         return subject.to_vec();
+    }
+
+    // R728 — `difference_clib` is a signature-identical drop-in running the
+    // vendored ClipperLib at coord_t.
+    if crate::faithful_gate("CLIPPER_DIFF_GEO") {
+        return difference_clib(subject, clip);
     }
 
     let subject_geo = expolygons_to_geo_multi(subject);
@@ -1327,7 +1368,7 @@ fn offset_expolygons_clib_impl(
     if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
-    union_polygons_ex(&all_paths)
+    union_polygons_ex_geo(&all_paths)
 }
 
 /// ClipperLib-backed `shrink` (negative offset) for the perimeter inner-wall path.
@@ -1484,7 +1525,7 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
-    union_polygons_ex(&all_paths)
+    union_polygons_ex_geo(&all_paths)
 }
 
 /// ClipperLib-backed `intersection_ex(subject, clip)` (ClipperUtils.cpp:802,
@@ -1551,7 +1592,7 @@ pub fn intersection_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygon
     if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
-    union_polygons_ex(&all_paths)
+    union_polygons_ex_geo(&all_paths)
 }
 
 /// ClipperLib-backed `diff_ex(subject, clip, ApplySafetyOffset::Yes)`
@@ -1679,7 +1720,7 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
     if crate::faithful_gate("F1_UNION") {
         return union_ex_clib(&all_paths, 1);
     }
-    union_polygons_ex(&all_paths)
+    union_polygons_ex_geo(&all_paths)
 }
 
 /// ClipperLib-backed `union_ex(const Polygons&, PolyFillType)`
