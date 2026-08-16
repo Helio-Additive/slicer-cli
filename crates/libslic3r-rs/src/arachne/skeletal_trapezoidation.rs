@@ -3968,18 +3968,53 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
     // SkeletalTrapezoidation.cpp:1982-2100
     // void SkeletalTrapezoidation::connectJunctions(ptr_vector_t<LineJunctions>& edge_junctions)
+    /// R743 — faithful stand-in for native's `EdgeSet`
+    /// (`SkeletalTrapezoidation.hpp:86`: `ankerl::unordered_dense::set<edge_t*>`).
+    ///
+    /// `unordered_dense` keeps its elements in a DENSE VECTOR IN INSERTION ORDER
+    /// and erases by moving the LAST element into the vacated slot, so
+    /// `*set.begin()` is fully deterministic — driven by `graph.edges` order and
+    /// that swap-remove pattern, NOT by pointer addresses.
+    ///
+    /// R99's comment at the call site assumed `std::unordered_set` and replaced
+    /// the choice with a geometric min-key to escape ASLR/RandomState. That made
+    /// US deterministic, but it picks a DIFFERENT loop start than native — which
+    /// R742 measured on a 4-vertex reproducer as a pure ROTATION of the emitted
+    /// junction loop (same 11 points, different first element).
+    fn quadstart_dense_new() -> (
+        Vec<*const HalfEdge<EdgeData, NodeData>>,
+        std::collections::HashMap<*const HalfEdge<EdgeData, NodeData>, usize>,
+    ) {
+        (Vec::new(), std::collections::HashMap::new())
+    }
+
     pub fn connect_junctions(&mut self, edge_junctions: &mut Vec<Arc<RwLock<LineJunctions>>>) {
         unsafe {
             // SkeletalTrapezoidation.cpp:1984 EdgeSet unprocessed_quad_starts(graph.edges.size() * 5 / 2);
             let mut unprocessed_quad_starts: std::collections::HashSet<*const HalfEdge<EdgeData, NodeData>> =
                 std::collections::HashSet::new();
+            // R743: parallel dense/insertion-ordered view of the same set, mirroring
+            // native's `ankerl::unordered_dense::set` (see quadstart_dense_new).
+            // SHIPPED ON @R743. Emulating native's container took `gen` from
+            // 1/95 to 76/95 bit-identical against the C++ AGEN fingerprints, and
+            // scored +9,525 in-order across the four fixtures (benchy +2,972,
+            // arachne +2,359, majora +4,193, cube +1) at 0.986x/1.007x — free.
+            // It is also DETERMINISTIC (the order derives from `graph.edges`, not
+            // from pointer values), so it satisfies R99's original concern
+            // properly rather than by substituting a different rule.
+            // ARACHNE_QUADSTART_DENSE=0 restores R99's geometric min-key.
+            let quadstart_dense = crate::faithful_gate("ARACHNE_QUADSTART_DENSE");
+            let (mut qs_dense, mut qs_index) = Self::quadstart_dense_new();
             // SkeletalTrapezoidation.cpp:1985 for (edge_t& edge : graph.edges)
             for edge in self.graph.edges.iter() {
                 // SkeletalTrapezoidation.cpp:1987 if (!edge.prev)
                 if edge.base.prev.is_none() {
                     // SkeletalTrapezoidation.cpp:1989 unprocessed_quad_starts.emplace(&edge);
-                    unprocessed_quad_starts
-                        .insert(SkeletalTrapezoidationGraph::edge_ptr(edge).as_ptr() as *const _);
+                    let __p = SkeletalTrapezoidationGraph::edge_ptr(edge).as_ptr() as *const _;
+                    if unprocessed_quad_starts.insert(__p) && quadstart_dense {
+                        qs_index.insert(__p, qs_dense.len());
+                        qs_dense.push(__p);
+                    }
                 }
             }
 
@@ -3996,15 +4031,21 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     // SkeletalTrapezoidation.cpp:1997, is stable-per-run). Pick the
                     // unprocessed start by a stable GEOMETRIC key (min endpoint coords);
                     // min is order-invariant, so the ptr iteration order is irrelevant.
-                    let p = *unprocessed_quad_starts
-                        .iter()
-                        .min_by_key(|&&e| {
-                            let er = &*e;
-                            let f = er.from.unwrap().as_ref().p;
-                            let t = er.to.unwrap().as_ref().p;
-                            (f.x, f.y, t.x, t.y)
-                        })
-                        .unwrap();
+                    let p = if quadstart_dense {
+                        // native: `*unprocessed_quad_starts.begin()` — the front of the
+                        // insertion-ordered dense storage.
+                        qs_dense[0]
+                    } else {
+                        *unprocessed_quad_starts
+                            .iter()
+                            .min_by_key(|&&e| {
+                                let er = &*e;
+                                let f = er.from.unwrap().as_ref().p;
+                                let t = er.to.unwrap().as_ref().p;
+                                (f.x, f.y, t.x, t.y)
+                            })
+                            .unwrap()
+                    };
                     EdgePtr::new(p as *mut _).unwrap()
                 };
                 // SkeletalTrapezoidation.cpp:1998 edge_t* quad_start = poly_domain_start;
@@ -4026,7 +4067,18 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     let edge_from_peak = edge_to_peak.as_ref().next.unwrap();
 
                     // SkeletalTrapezoidation.cpp:2012 unprocessed_quad_starts.erase(quad_start);
-                    unprocessed_quad_starts.remove(&(quad_start.as_ptr() as *const _));
+                    let __rp = quad_start.as_ptr() as *const _;
+                    unprocessed_quad_starts.remove(&__rp);
+                    if quadstart_dense {
+                        // `unordered_dense::erase`: move the LAST element into the hole.
+                        if let Some(i) = qs_index.remove(&__rp) {
+                            let last = qs_dense.pop().unwrap();
+                            if i < qs_dense.len() {
+                                qs_dense[i] = last;
+                                qs_index.insert(last, i);
+                            }
+                        }
+                    }
 
                     // SkeletalTrapezoidation.cpp:2014 if (! edge_to_peak->data.hasExtrusionJunctions())
                     if !edge_to_peak.as_ref().data.has_extrusion_junctions(false) {
