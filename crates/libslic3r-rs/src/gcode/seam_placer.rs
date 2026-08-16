@@ -74,6 +74,10 @@ pub static SPPROF_GATHER: std::sync::atomic::AtomicUsize = std::sync::atomic::At
 pub static SPPROF_VIS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static SPPROF_OVER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static SPPROF_ALIGN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_DECIM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_SAMPLE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_AABB: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static SPPROF_RAYCAST: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub fn spprof_report() {
     use std::sync::atomic::Ordering::Relaxed;
@@ -82,8 +86,9 @@ pub fn spprof_report() {
     }
     let f = |x: &std::sync::atomic::AtomicUsize| x.load(Relaxed) as f64 / 1e6;
     eprintln!(
-        "[SPPROF] occlusion {:.1}ms | gather {:.1}ms | visibility {:.1}ms | overhangs {:.1}ms | align {:.1}ms",
-        f(&SPPROF_OCCL), f(&SPPROF_GATHER), f(&SPPROF_VIS), f(&SPPROF_OVER), f(&SPPROF_ALIGN)
+        "[SPPROF] occlusion {:.1}ms (decimate {:.1} | sample {:.1} | aabb {:.1} | raycast {:.1}) | gather {:.1}ms | visibility {:.1}ms | overhangs {:.1}ms | align {:.1}ms",
+        f(&SPPROF_OCCL), f(&SPPROF_DECIM), f(&SPPROF_SAMPLE), f(&SPPROF_AABB), f(&SPPROF_RAYCAST),
+        f(&SPPROF_GATHER), f(&SPPROF_VIS), f(&SPPROF_OVER), f(&SPPROF_ALIGN)
     );
 }
 
@@ -1073,10 +1078,12 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
                 nu.indices.len(), nu.vertices.len(), mn[0], mn[1], mn[2], mx[0], mx[1], mx[2]
             );
         }
+        let __t = std::time::Instant::now();
         crate::short_edge_collapse::its_short_edge_collpase(
             &mut nu,
             FAST_DECIMATION_TRIANGLE_COUNT_TARGET,
         );
+        SPPROF_DECIM.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
         if std::env::var("OCCDBG").is_ok() {
             let (mut mn, mut mx) = ([1e9f32; 3], [-1e9f32; 3]);
             for v in &nu.vertices {
@@ -1139,10 +1146,12 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
         );
     }
     // SeamPlacer.cpp:609 — sample the decimated mesh surface uniformly by area.
+    let __t = std::time::Instant::now();
     result.mesh_samples = crate::triangle_set_sampling::sample_its_uniform_parallel(
         RAYCASTING_VISIBILITY_SAMPLES_COUNT,
         &triangle_set,
     );
+    SPPROF_SAMPLE.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
     // SeamPlacer.cpp:610-611 — coordinate functor + KD tree (the tree is built on
     // demand from `mesh_samples.positions`; the functor copy here is unused but
     // kept for structural parity).
@@ -1172,10 +1181,13 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
         .iter()
         .map(|i| [i.x as usize, i.y as usize, i.z as usize])
         .collect();
+    let __t = std::time::Instant::now();
     let raycasting_tree =
         crate::aabb_tree_indirect::build_aabb_tree_over_indexed_triangle_set(&verts_f64, &faces_usize);
+    SPPROF_AABB.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
 
     // SeamPlacer.cpp:637 — raycast per-sample visibility.
+    let __t = std::time::Instant::now();
     result.mesh_samples_visibility = raycast_visibility(
         &raycasting_tree,
         &triangle_set,
@@ -1184,6 +1196,7 @@ pub fn compute_global_occlusion(po: &PrintObject) -> GlobalModelInfo {
         &result.mesh_samples,
         negative_volumes_start_index,
     );
+    SPPROF_RAYCAST.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
 
     if std::env::var("OCCDBG").is_ok() {
         let mut h: u64 = 1469598103934665603;

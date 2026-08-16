@@ -9,6 +9,7 @@
 #include <vector>
 #include <algorithm>
 #include <Eigen/Geometry>
+#include <thread>
 
 // ---------------------------------------------------------------------------
 // R190: native raycast_visibility (SeamPlacer.cpp:135-214, non-negative-volume
@@ -102,7 +103,18 @@ extern "C" void secol_raycast_visibility(const float *verts, int64_t n_verts,
 
     // SeamPlacer.cpp:157-181 (model_contains_negative_parts == false branch).
     const float decrease_step = 1.0f / (sqr_rays_per_sample_point * sqr_rays_per_sample_point);
-    for (int64_t s_idx = 0; s_idx < n_samples; ++s_idx) {
+
+    // R735: native wraps this loop in `tbb::parallel_for(blocked_range(0, result.size()))`
+    // (SeamPlacer.cpp:156). The R190 port kept the body and dropped the
+    // parallelism, leaving 30,000 samples x sqr_rays^2 rays on one thread — 1,046 ms,
+    // 97% of `compute_global_occlusion` and ~41% of the whole slice.
+    //
+    // Every iteration writes ONLY `out_visibility[s_idx]` and reads shared data
+    // immutably, so chunking across threads is bit-identical by construction —
+    // no reduction, no ordering, no shared mutable state. SEAM_RAYCAST_SERIAL=1
+    // restores the single-threaded loop for A/B.
+    auto run_range = [&](int64_t begin, int64_t end) {
+    for (int64_t s_idx = begin; s_idx < end; ++s_idx) {
         out_visibility[s_idx] = 1.0f;
         const Vec3f center(sample_positions[3 * s_idx], sample_positions[3 * s_idx + 1], sample_positions[3 * s_idx + 2]);
         const Vec3f normal(sample_normals[3 * s_idx], sample_normals[3 * s_idx + 1], sample_normals[3 * s_idx + 2]);
@@ -117,5 +129,26 @@ extern "C" void secol_raycast_visibility(const float *verts, int64_t n_verts,
             bool  hit = Slic3r::AABBTreeIndirect::intersect_ray_first_hit(vertices, faces, raycasting_tree, ray_origin_d, final_ray_dir_d, hitpoint);
             if (hit && its_face_normal_local(vertices, faces[hitpoint.id]).dot(final_ray_dir) <= 0) { out_visibility[s_idx] -= decrease_step; }
         }
+    }
+    };
+
+    unsigned int nthreads = 1;
+    if (std::getenv("SEAM_RAYCAST_SERIAL") == nullptr) {
+        nthreads = std::thread::hardware_concurrency();
+        if (nthreads == 0) nthreads = 1;
+    }
+    if (nthreads <= 1 || n_samples < 256) {
+        run_range(0, n_samples);
+    } else {
+        std::vector<std::thread> pool;
+        pool.reserve(nthreads);
+        const int64_t chunk = (n_samples + (int64_t) nthreads - 1) / (int64_t) nthreads;
+        for (unsigned int t = 0; t < nthreads; ++t) {
+            const int64_t b = (int64_t) t * chunk;
+            const int64_t e = std::min(b + chunk, n_samples);
+            if (b >= e) break;
+            pool.emplace_back([&run_range, b, e]() { run_range(b, e); });
+        }
+        for (auto &th : pool) th.join();
     }
 }
