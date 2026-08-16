@@ -369,11 +369,30 @@ pub fn is_narrow_infill_area(expolygon: &ExPolygon) -> bool {
     // C++ passes the delta in scaled units; this crate's offset helpers take
     // millimeters (the geo backend unscales the coordinates), so the
     // -scale_() wrapper drops out.
-    let offsets = offset_expolygon(
-        expolygon,
-        -NARROW_INFILL_AREA_THRESHOLD,
-        OffsetJoinType::Miter,
-    );
+    // R740: native is `offset_ex(...)` — real ClipperLib at coord_t — so the geo
+    // backend is the deviation here (the R737 pattern). It is also the whole
+    // cost: a NARROWCENSUS of all 1,094 calls found only 8 above 1 ms, and ONE
+    // 5,628-vertex expolygon taking **359.5 ms — 89% of the function's 402 ms
+    // and 22% of the entire slice** — to produce a single boolean (its -3 mm
+    // inset is empty, so the answer is `true`).
+    //
+    // Units: the geo helpers UNSCALE (`expolygon_to_geo` maps every point
+    // through `unscale`), so geo's delta is in mm; `offset_expolygons_clib`
+    // (via `shrink_clib`) also takes mm. The delta is unchanged by this swap —
+    // only the backend and its coordinate grid change.
+    let offsets = if crate::faithful_gate("NARROW_OFFSET_CLIB") {
+        crate::clipper_utils::shrink_clib(
+            std::slice::from_ref(expolygon),
+            NARROW_INFILL_AREA_THRESHOLD,
+            OffsetJoinType::Miter,
+        )
+    } else {
+        offset_expolygon(
+            expolygon,
+            -NARROW_INFILL_AREA_THRESHOLD,
+            OffsetJoinType::Miter,
+        )
+    };
     // Fill.cpp:160-161
     if offsets.is_empty() {
         return true;

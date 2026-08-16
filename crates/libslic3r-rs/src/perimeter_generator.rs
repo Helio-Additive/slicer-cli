@@ -3187,6 +3187,12 @@ impl PerimeterGenerator {
         // taking an UNSCALED millimetre tolerance, so 250 is a 250 mm tolerance and the
         // pre-existing unscaled value was right FOR THIS FUNCTION. Kept as an opt-in
         // switch because the collapse is itself a measurement (see the round notes).
+        // R739 STATUS: **BROKEN, not merely unhelpful — do not re-score it.**
+        // Turning this on collapses the arachne fixture from 37,349 in-order
+        // matched lines to 9,312 and the slice from 1.79 s to 0.387 s: the output
+        // is largely GONE, not differently ordered. The R672/R673 premise (that
+        // the resolution belongs in scaled units) needs re-deriving from
+        // PerimeterGenerator.cpp before this is touched again.
         let surface_simplify_resolution = if crate::opt_in_gate("ARACHNE_SIMPLIFY_SCALED") {
             let scaled = self.config.surface_simplify_resolution / 0.00001_f64;
             if self.config.arc_fitting_enabled

@@ -1272,6 +1272,14 @@ impl PrintObject {
                 // geo-clipper path at a 1um grid, even though `difference_clib`
                 // exists and is faithful. Gated here (not inside `difference`) to
                 // keep the blast radius to this one call site.
+                // R739 STATUS: this gate is INERT. Re-scored on all four fixtures
+                // against today's default and the output hash was IDENTICAL to the
+                // ungated build on every one, majora included — it changes nothing.
+                // Its premise (R698) predates the `_clib` conversions that have
+                // since shipped (CLIPPER_DIFF_GEO R728, CLIPPER_UNION_GEO R738),
+                // which already route this difference through ClipperLib. Do not
+                // spend another parity run on it; delete it with the next cleanup
+                // of the geo/clib gate family.
                 let mut remaining = if crate::opt_in_gate("MMSEG_DIFF_CLIB") {
                     crate::clipper_utils::difference_clib(region0_ex, &stolen_total)
                 } else {

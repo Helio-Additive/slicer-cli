@@ -1060,8 +1060,20 @@ pub fn group_fills(
                 }
                 let __t_narrow = std::time::Instant::now();
                 let __is_narrow = is_narrow_infill_area(&surface_fills[i].expolygons[j]);
-                GFPROF_ISNARROW_NS.fetch_add(__t_narrow.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
+                let __narrow_ns = __t_narrow.elapsed().as_nanos() as usize;
+                GFPROF_ISNARROW_NS.fetch_add(__narrow_ns, std::sync::atomic::Ordering::Relaxed);
                 GFPROF_ISNARROW_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                // NARROWCENSUS (R740, default OFF): the stage total says 402 ms
+                // over 1,094 calls, which cannot distinguish "a few huge
+                // expolygons" from "the geo offset is just slow per vertex".
+                // Print one line per call over 1 ms with its vertex count.
+                if crate::probe_enabled("NARROWCENSUS") && __narrow_ns > 1_000_000 {
+                    let ep = &surface_fills[i].expolygons[j];
+                    let nv = ep.contour.points().len()
+                        + ep.holes.iter().map(|h| h.points().len()).sum::<usize>();
+                    eprintln!("[NARROWCENSUS] verts={nv} holes={} {:.3}ms narrow={__is_narrow}",
+                              ep.holes.len(), __narrow_ns as f64 / 1e6);
+                }
                 if __is_narrow {
                     if __dbg { crate::layer::FVS_NARROW.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }
                     // Fill.cpp:480 — offset_ex(expoly, SCALED_EPSILON); the crate's
