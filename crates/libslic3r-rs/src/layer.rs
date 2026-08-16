@@ -3427,6 +3427,33 @@ impl Layer {
         // group_fills only consults `lower_internal_areas` for stInternalSolid
         // (narrow-solid -> ipConcentricInternal) surfaces; this function emits
         // only stInternal surfaces, so an empty slice is faithful here.
+        // R738: this generator's ONLY output comes from SurfaceFills whose
+        // `surface_type == stInternal` (the `continue` just below, Fill.cpp:782).
+        // `group_fills` never CREATES an Internal surface — the single
+        // surface_type assignment in fill/mod.rs (:1143) converts Internal ->
+        // InternalSolid for narrow areas, so Internal can only DECREASE. Hence a
+        // layer with no Internal fill surface provably yields no anchor lines,
+        // and the whole `group_fills` call is dead work.
+        //
+        // That is not a corner case: on benchy, layer 2 (the bottom solid shell)
+        // has no Internal surface, and layer 3's snapshot pass ran this on it for
+        // **0.1011 s of a 1.25 s slice (8%)** — 0.3645 s under CLIPPER_UNION_GEO,
+        // where it was 57% of that gate's entire +0.636 s `fill_loop` cost — and
+        // threw every bit of it away (lines=0).
+        //
+        // Provably-empty early-out, so bit-identical (R732). ANCHOR_GEN_EARLYOUT=0
+        // restores the unconditional call.
+        if crate::faithful_gate("ANCHOR_GEN_EARLYOUT")
+            && !self.regions().iter().any(|lm| {
+                lm.fill_surfaces
+                    .surfaces
+                    .iter()
+                    .any(|s| s.surface_type == SurfaceType::Internal)
+            })
+        {
+            return Ok(Vec::new());
+        }
+
         let mut lock_param = crate::fill::LockRegionParam::default();
         let surface_fills = crate::fill::group_fills(self, &[], &mut lock_param)?;
 

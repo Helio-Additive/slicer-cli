@@ -305,7 +305,7 @@ pub fn union_ex(polygons: &[ExPolygon]) -> ExPolygons {
 
     // R728 — see `union_polygons_ex`. Nothing in the `_clib` family calls this
     // wrapper (verified by brace-counting scan), so it can dispatch directly.
-    if crate::opt_in_gate("CLIPPER_UNION_GEO") {
+    if crate::faithful_gate("CLIPPER_UNION_GEO") {
         let mut loops: Vec<Polygon> = Vec::new();
         for e in polygons {
             loops.push(e.contour.clone());
@@ -347,13 +347,19 @@ pub fn union_polygons_ex(polygons: &[Polygon]) -> ExPolygons {
     //
     // PARKED DEFAULT-OFF: measured on benchy classic at load ~7, 3 reps,
     // interleaved, this arm is worth **+2,905 in-order lines** but costs
-    // **1.70x slice time** (2.72s -> 4.62s) — it carries the ENTIRE cost of the
-    // `_clib` conversion, while `difference` (CLIPPER_DIFF_GEO, shipped ON)
-    // buys +1,087 at 1.004x. Union is by far the hottest op (109 `union_ex` +
-    // 103 `union_polygons_ex` call sites), so the per-call FFI marshalling in
-    // `union_ex_clib` dominates. Making that cheap would unlock +2,905 for
-    // free and is the highest-value perf item on the board.
-    if crate::opt_in_gate("CLIPPER_UNION_GEO") {
+    // SHIPPED ON @R738 after four rounds parked on cost. It was 1.70x slice time
+    // at R728 and 1.646x at R737; R735 (parallel seam raycast), R736 (bridge
+    // anchor memo), R737 (bridge anchor -> ClipperLib) and R738 (the
+    // provably-empty anchoring early-out) took the baseline from 2.72s to 1.15s,
+    // and the union arm to 1.766s — **0.900x of C++'s 1.963s**, i.e. Rust stays
+    // FASTER than native with exact coord_t unions on.
+    //
+    // Priced on all four fixtures, in-order matched lines: benchy +3,183
+    // (102,645 -> 105,828; Sparse infill 28.5% -> 40.7%), arachne +1,651
+    // (35,698 -> 37,349), majora +2,560 (471,204 -> 473,764), cube 0.
+    // **Total +7,394.** Majora slice time is 0.984x — the gate is free there.
+    // CLIPPER_UNION_GEO=0 restores the geo backend.
+    if crate::faithful_gate("CLIPPER_UNION_GEO") {
         return union_ex_clib(polygons, 1);
     }
     union_polygons_ex_geo(polygons)

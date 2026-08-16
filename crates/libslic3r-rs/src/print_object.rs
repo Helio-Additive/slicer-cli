@@ -3725,12 +3725,26 @@ impl PrintObject {
             // per-layer lower-layer snapshots, then (2) the parallel MUTATE pass
             // handing each layer its snapshot — same work, same order.
             use rayon::prelude::*;
+
+            // FLPROF (R738, default OFF): per-layer census of BOTH fill passes.
+            // `fill_loop` is 0.230 s with CLIPPER_UNION_GEO off and 0.866 s with it
+            // on (+0.636 s) — the one blocker on that gate's +3,183 in-order. The
+            // stage total cannot say whether that delta is spread over the 300
+            // layers or concentrated in a few, and the last three findings
+            // (R736, R737, R737's union census) were each ONE layer of 300.
+            let flprof = crate::probe_enabled("FLPROF");
+            let fl_snap: std::sync::Mutex<Vec<(usize, f64)>> =
+                std::sync::Mutex::new(Vec::new());
+            let fl_make: std::sync::Mutex<Vec<(usize, f64)>> =
+                std::sync::Mutex::new(Vec::new());
+
             let lower_snapshots: Vec<(
                 Vec<crate::geometry::ExPolygon>,
                 Vec<crate::geometry::Polygon>,
             )> = (0..self.layers.len())
                 .into_par_iter()
                 .map(|layer_idx| {
+                let __t_snap = std::time::Instant::now();
                 // BBS Fill.cpp:455-464 — gather the lower layer's stInternal /
                 // stInternalVoid fill-surface expolygons (the floating-vertical-shell
                 // detection in group_fills needs them). `group_fills` runs per-Layer
@@ -3778,9 +3792,16 @@ impl PrintObject {
                     .lower_layer_id
                     .and_then(|lid| self.layers.get(lid))
                     .map(|lower| {
+                        let __t_anch = std::time::Instant::now();
                         let lines = lower
                             .generate_sparse_infill_polylines_for_anchoring()
                             .unwrap_or_default();
+                        if flprof && __t_anch.elapsed().as_secs_f64() > 0.005 {
+                            eprintln!(
+                                "[FLPROF]   anchoring-gen for layer={layer_idx} \
+(on lower layer) lines={} {:.4}s",
+                                lines.len(), __t_anch.elapsed().as_secs_f64());
+                        }
                         if lines.is_empty() {
                             return Vec::new();
                         }
@@ -3804,6 +3825,13 @@ impl PrintObject {
                         for pl in &lines {
                             grown.extend(crate::clipper_utils::offset_polyline(pl, delta));
                         }
+                        if flprof {
+                            let nv: usize = grown.iter().map(|g| g.points.len()).sum();
+                            eprintln!(
+                                "[FLPROF]   snapshot-union layer={layer_idx} \
+lines={} grown_polys={} grown_verts={}",
+                                lines.len(), grown.len(), nv);
+                        }
                         // union_(grown): collapse to non-overlapping polygons.
                         crate::clipper_utils::union_polygons_ex(&grown)
                             .into_iter()
@@ -3814,6 +3842,10 @@ impl PrintObject {
                     })
                     .unwrap_or_default();
 
+                if flprof {
+                    fl_snap.lock().unwrap()
+                        .push((layer_idx, __t_snap.elapsed().as_secs_f64()));
+                }
                 (lower_internal_areas, lower_sparse_polys)
                 })
                 .collect();
@@ -3830,8 +3862,32 @@ impl PrintObject {
                     }
                     let (lower_internal_areas, lower_sparse_polys) =
                         &lower_snapshots[layer_idx];
-                    layer.make_fills(lower_internal_areas, lower_sparse_polys)
+                    let __t_mk = std::time::Instant::now();
+                    let r = layer.make_fills(lower_internal_areas, lower_sparse_polys);
+                    if flprof {
+                        fl_make.lock().unwrap()
+                            .push((layer_idx, __t_mk.elapsed().as_secs_f64()));
+                    }
+                    r
                 })?;
+
+            if flprof {
+                let report = |name: &str, m: std::sync::Mutex<Vec<(usize, f64)>>| {
+                    let mut v = m.into_inner().unwrap();
+                    let total: f64 = v.iter().map(|x| x.1).sum();
+                    v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                    let top10: f64 = v.iter().take(10).map(|x| x.1).sum();
+                    eprintln!(
+                        "[FLPROF] {name} layers={} sum={:.3}s top10={:.3}s ({:.1}%)",
+                        v.len(), total, top10,
+                        if total > 0.0 { 100.0 * top10 / total } else { 0.0 });
+                    for (l, t) in v.iter().take(8) {
+                        eprintln!("[FLPROF]   {name} layer={l} {:.4}s", t);
+                    }
+                };
+                report("snapshot", fl_snap);
+                report("make_fills", fl_make);
+            }
 
             if crate::probe_enabled("GYROID_ENDPOINT_DEBUG") {
                 use crate::fill::{
