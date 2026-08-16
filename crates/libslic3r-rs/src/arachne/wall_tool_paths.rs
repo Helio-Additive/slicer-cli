@@ -1195,6 +1195,7 @@ impl WallToolPaths {
             // C++ ctor body: constructFromPolygons(polys) — here `polys` is the
             // prepared_outline argument the C++ ctor receives at WallToolPaths.cpp:522.
             agen_dump_poly("prep", agen_orig, &prepared_outline, agen_ic);
+            agenpts_poly("prep", agen_orig, &prepared_outline, agen_ic);
             wall_maker.construct_from_polygons(&prepared_outline);
             // WallToolPaths.cpp:634 wall_maker.generateToolpaths(toolpaths);
             //
@@ -1233,6 +1234,7 @@ impl WallToolPaths {
         // it, so exactly one of these five stages flattens it.
         stageprobe("0 after generate_toolpaths", &self.toolpaths);
         agen_dump_tp("gen", agen_orig, &self.toolpaths, agen_ic);
+        agenpts_tp("gen", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:534
         Self::stitch_tool_paths(&mut self.toolpaths, self.bead_width_x);
@@ -1924,6 +1926,52 @@ fn agen_fp(polys: &crate::geometry::Polygons) -> (usize, i64, i64) {
         }
     }
     (v, sx, sy)
+}
+
+/// AGENPTS (R742, default OFF): dump the ACTUAL points, not a fingerprint, for
+/// the small calls that make good reproducers. R741 localised the `gen`
+/// divergence to junction POSITIONS on a FOUR-vertex outline
+/// (`ov=4 osx=4220748 osy=0 ic=30`), which is small enough to trace by hand —
+/// but only if we can see the coordinates. Gated on outline size so the dump
+/// stays readable: AGENPTS_MAXOV (default 6).
+fn agenpts_max_ov() -> usize {
+    crate::env_f64("AGENPTS_MAXOV").map(|v| v as usize).unwrap_or(6)
+}
+
+fn agenpts_poly(stage: &str, orig: (usize, i64, i64), v: &crate::geometry::Polygons, ic: usize) {
+    if !crate::probe_enabled("AGENPTS") || orig.0 > agenpts_max_ov() {
+        return;
+    }
+    for (pi, poly) in v.iter().enumerate() {
+        let pts: Vec<String> = poly
+            .points()
+            .iter()
+            .map(|p| format!("({},{})", p.x, p.y))
+            .collect();
+        eprintln!(
+            "[AGENPTS] stage={} ov={} osx={} osy={} ic={} poly={} n={} pts={}",
+            stage, orig.0, orig.1, orig.2, ic, pi, pts.len(), pts.join(" ")
+        );
+    }
+}
+
+fn agenpts_tp(stage: &str, orig: (usize, i64, i64), tp: &[VariableWidthLines], ic: usize) {
+    if !crate::probe_enabled("AGENPTS") || orig.0 > agenpts_max_ov() {
+        return;
+    }
+    for (li, lp) in tp.iter().enumerate() {
+        for (ei, line) in lp.iter().enumerate() {
+            let js: Vec<String> = line
+                .junctions
+                .iter()
+                .map(|j| format!("({},{},w{})", j.p.x(), j.p.y(), j.w))
+                .collect();
+            eprintln!(
+                "[AGENPTS] stage={} ov={} osx={} osy={} ic={} path={} line={} jn={} js={}",
+                stage, orig.0, orig.1, orig.2, ic, li, ei, js.len(), js.join(" ")
+            );
+        }
+    }
 }
 
 fn agen_dump_poly(stage: &str, orig: (usize, i64, i64), v: &crate::geometry::Polygons, ic: usize) {
