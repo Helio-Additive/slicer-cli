@@ -85,6 +85,39 @@ fn active_place_seam(polygon: &crate::geometry::Polygon, last_pos: Point) -> Opt
     })
 }
 
+/// Apply a placed seam to a perimeter loop, making it the loop's start vertex.
+///
+/// SeamPlacer.cpp:1521-1527 — native is a TWO-STEP:
+/// ```cpp
+/// // Because the G-code export has 1um resolution, don't generate segments
+/// // shorter than 1.5 microns, thus empty path segments will not be produced.
+/// if (!loop.split_at_vertex(seam_point, scaled<double>(0.0015)))
+///     loop.split_at(seam_point, true);   // default eps = scaled<double>(0.001)
+/// ```
+/// `split_at_vertex` merely ROTATES the loop onto an existing vertex and
+/// inserts nothing; only when no vertex sits within 1.5 um does native fall
+/// back to `split_at`, which projects the seam onto the closest segment and
+/// inserts a NEW vertex there.
+///
+/// Our port called `split_at` unconditionally, so a seam that coincided with a
+/// loop vertex still got projected — landing on the segment BEFORE that vertex
+/// and emitting a short corrective segment to reach it. That is the "0.4mm
+/// corrective mini-travel" R228 observed and worked around downstream.
+///
+/// Note the two epsilons are different in native and are NOT interchangeable:
+/// 0.0015 is the vertex-snap tolerance, 0.001 is `split_at`'s own default.
+/// `prefer_non_overhang` is `true` here; the `false` variant belongs to the
+/// non-perimeter branch at GCode.cpp:5456.
+fn apply_seam_split(l: &mut crate::extrusion_entity::ExtrusionLoop, seam: &Point) {
+    if crate::faithful_gate("SEAM_SPLIT_AT_VERTEX") {
+        if !l.split_at_vertex(seam, crate::scale(0.0015) as f64) {
+            l.split_at(seam, true, crate::scale(0.001) as f64);
+        }
+    } else {
+        l.split_at(seam, false, crate::scale(0.0015) as f64);
+    }
+}
+
 /// Configuration for travel moves.
 ///
 /// C++ reference: GCode class member variables
@@ -299,14 +332,9 @@ pub fn extrude_loop(
             polygon.points()[seam_idx]
         }
     };
-    // C++ GCode.cpp:5088 / ExtrusionLoop::split_at — split the loop at the seam
-    // point so it becomes the loop's new start vertex. This is the faithful
-    // within-path split (ExtrusionEntity.cpp:255-305): it splits the containing
-    // path at the seam point even for single-path loops, unlike the legacy
-    // path-only rotate. `prefer_non_overhang = false` matches the seam-placer
-    // path (the placer already steered the seam off overhangs). The epsilon is
-    // C++'s `scaled<double>(0.0015)` snapping tolerance.
-    loop_copy.split_at(&seam_point, false, scale(0.0015) as f64);
+    // SeamPlacer.cpp:1521-1527 — try the vertex rotate first, project only as a
+    // fallback. See `apply_seam_split`.
+    apply_seam_split(&mut loop_copy, &seam_point);
 
     if std::env::var("SPLITDBG2").is_ok() {
         let post = loop_copy
@@ -1210,7 +1238,7 @@ fn travel_target_for_entity(
             // feature-F lines). Run the same split here and return its
             // actual first vertex.
             let mut probe = l.clone();
-            probe.split_at(&seam, false, crate::scale(0.0015) as f64);
+            apply_seam_split(&mut probe, &seam);
             if let Some(fp) = probe
                 .paths
                 .first()
