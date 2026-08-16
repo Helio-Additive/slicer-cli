@@ -74,14 +74,18 @@ impl<'a> Drop for SeamContextGuard<'a> {
 /// installed [`SeamPlacer`], mirroring C++ `m_seam_placer.place_seam(...)`.
 /// Returns `None` when no context is installed or the placer has no data for
 /// the loop (caller falls back to the legacy `find_best_seam_index` heuristic).
-fn active_place_seam(polygon: &crate::geometry::Polygon, last_pos: Point) -> Option<Point> {
+fn active_place_seam(
+    loop_ref: &crate::extrusion_entity::ExtrusionLoop,
+    polygon: &crate::geometry::Polygon,
+    last_pos: Point,
+) -> Option<Point> {
     SEAM_CTX.with(|c| {
         let (placer_ptr, layer_idx) = c.get()?;
         // SAFETY: the pointer is valid for the lifetime of the installed
         // `SeamContextGuard`, which strictly encloses every `extrude_loop` call
         // that can observe this context (single-threaded sequential export).
         let placer: &SeamPlacer = unsafe { &*placer_ptr };
-        placer.place_seam(layer_idx, polygon, last_pos)
+        placer.place_seam(layer_idx, loop_ref, polygon, last_pos)
     })
 }
 
@@ -321,7 +325,7 @@ pub fn extrude_loop(
     // (SeamPlacer.cpp:1463). Otherwise fall back to the legacy per-loop
     // angle/nearest heuristic (`find_best_seam_index`).
     let polygon = loop_copy.as_polygon();
-    let seam_point = match active_place_seam(&polygon, last_pos) {
+    let seam_point = match active_place_seam(&loop_copy, &polygon, last_pos) {
         Some(p) => p,
         None => {
             let seam_idx = super::seam_placer::find_best_seam_index(
@@ -1228,7 +1232,7 @@ fn travel_target_for_entity(
     use crate::extrusion_entity::ExtrusionEntityType;
     if let ExtrusionEntityType::Loop(l) = entity {
         let polygon = l.as_polygon();
-        if let Some(seam) = active_place_seam(&polygon, last_pos) {
+        if let Some(seam) = active_place_seam(l, &polygon, last_pos) {
             // R228: native travels to loop.first_point() AFTER split_at
             // (GCode.cpp:5085-5090). For outer walls the placed seam IS a
             // loop vertex, but for inner walls place_seam can return a point

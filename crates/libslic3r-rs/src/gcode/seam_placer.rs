@@ -3209,7 +3209,17 @@ impl SeamPlacer {
     /// Returns `None` when this layer has no seam data for the polygon (e.g. the
     /// loop is not a region perimeter, or the layer index is out of range), so
     /// the caller can fall back to the legacy heuristic.
-    pub fn place_seam(&self, layer_idx: usize, polygon: &Polygon, last_pos: Point) -> Option<Point> {
+    /// `loop_ref` is the loop being extruded. C++ takes `ExtrusionLoop &loop`
+    /// and reads both `loop.first_point()` and `loop.role()` from it, and calls
+    /// `loop.get_closest_path_and_point` in the concave-corner block; we keep the
+    /// pre-derived `polygon` for the tree query and take the loop alongside it.
+    pub fn place_seam(
+        &self,
+        layer_idx: usize,
+        loop_ref: &crate::extrusion_entity::ExtrusionLoop,
+        polygon: &Polygon,
+        last_pos: Point,
+    ) -> Option<Point> {
         let dbg = std::env::var("SEAMDBG").is_ok();
         macro_rules! ret_none {
             ($why:expr) => {{
@@ -3259,6 +3269,10 @@ impl SeamPlacer {
         let perim_idx = layer.points[nearest_point_index].perimeter;
         let perimeter = &layer.perimeters[perim_idx];
 
+        // SeamPlacer.cpp:1484-1495 — pick the seam position AND remember which
+        // candidate index it came from; the concave-corner block below needs the
+        // candidate, not just its position (C++ keeps both in `seam_index`).
+        let mut seam_index: usize = perimeter.seam_index;
         // SeamPlacer.cpp:1505-1520 — pick the seam position.
         let seam_position: Vec3f = if self.config_mode == SeamPositionMode::Nearest {
             // SeamPlacer.cpp:1505 — nearest is resolved against the live position.
@@ -3274,20 +3288,87 @@ impl SeamPlacer {
                 perimeter.start_index,
                 &preffered,
             );
+            seam_index = idx;
             layer.points[idx].position
         } else if perimeter.finalized {
-            // SeamPlacer.cpp:1512 — aligned/random/rear store final_seam_position.
+            // SeamPlacer.cpp:1487-1488 — aligned/random/rear store
+            // final_seam_position; seam_index stays perimeter.seam_index.
             perimeter.final_seam_position
         } else {
-            // SeamPlacer.cpp:1515 — fall back to the per-perimeter seam_index.
+            // SeamPlacer.cpp:1492-1493 — fall back to the per-perimeter seam_index.
             layer.points[perimeter.seam_index].position
         };
 
         // Scale back to coord_t (the loop is in scaled coordinates).
-        Some(Point::new(
+        // SeamPlacer.cpp:1497 — Point seam_point = Point::new_scale(...)
+        let mut seam_point = Point::new(
             crate::scale(seam_position.x as f64) + self.frame_offset_xy.0,
             crate::scale(seam_position.y as f64) + self.frame_offset_xy.1,
-        ))
+        );
+
+        // SeamPlacer.cpp:1499-1519 — concave-corner realignment.
+        //
+        // "In this case, we are at internal perimeter, where the external
+        //  perimeter has seam in concave angle. We want to align the internal
+        //  seam into the concave corner, and not on the perpendicular projection
+        //  on the closest edge (which is what the split_at function does)."
+        //
+        // Without this, an inner-wall seam that C++ pushes into the corner stays
+        // on our loop as the perpendicular foot — landing one vertex EARLY and
+        // emitting a short corrective segment to reach the corner (R752/R753).
+        //
+        // All SeamPlacer arithmetic is UNSCALED f32 mm: the 4.0 threshold is a
+        // 2 mm radius, and `depth` unscales the (scaled) seam-to-foot vector.
+        // Positions here are in the placer's centred frame, so differences are
+        // frame-free and only the final absolute point re-adds `frame_offset_xy`.
+        if crate::opt_in_gate("SEAM_CONCAVE_CORNER") {
+            let perimeter_point = &layer.points[seam_index];
+            // SeamPlacer.cpp:1500-1502 — three-way guard.
+            if (self.config_mode == SeamPositionMode::Nearest
+                || self.config_mode == SeamPositionMode::Aligned)
+                && loop_ref.role() == ExtrusionRole::Perimeter
+                && (seam_position - perimeter_point.position).norm_squared() < 4.0
+                && perimeter_point.local_ccw_angle < -(EPSILON as f32)
+            {
+                let per = &layer.perimeters[perimeter_point.perimeter];
+                // SeamPlacer.cpp:1505-1506 — wrap on the perimeter's own range.
+                // `end_index` is PAST-THE-END despite the C++ header comment
+                // claiming "inclusive!"; every native use is `i < end_index` and
+                // `end_index - 1` for the last vertex.
+                let index_of_prev = if seam_index == per.start_index {
+                    per.end_index - 1
+                } else {
+                    seam_index - 1
+                };
+                let index_of_next = if seam_index == per.end_index - 1 {
+                    per.start_index
+                } else {
+                    seam_index + 1
+                };
+                // SeamPlacer.cpp:1508-1510
+                let to_prev = (perimeter_point.position - layer.points[index_of_prev].position)
+                    .xy()
+                    .normalize();
+                let to_next = (perimeter_point.position - layer.points[index_of_next].position)
+                    .xy()
+                    .normalize();
+                let dir_to_middle = (to_prev + to_next) * 0.5;
+                // SeamPlacer.cpp:1512-1514 — depth of the perpendicular foot.
+                let projected = loop_ref.get_closest_path_and_point(&seam_point, true);
+                let depth = unscale_point(&(seam_point - projected.foot_pt)).length() as f32;
+                // SeamPlacer.cpp:1515-1517 — overshoot so it snaps into the corner.
+                let angle_factor = (-perimeter_point.local_ccw_angle / 2.0).cos();
+                let final_pos =
+                    perimeter_point.position.xy() + dir_to_middle * (1.4142 * depth / angle_factor);
+                // SeamPlacer.cpp:1518
+                seam_point = Point::new(
+                    crate::scale(final_pos.x as f64) + self.frame_offset_xy.0,
+                    crate::scale(final_pos.y as f64) + self.frame_offset_xy.1,
+                );
+            }
+        }
+
+        Some(seam_point)
     }
 }
 
