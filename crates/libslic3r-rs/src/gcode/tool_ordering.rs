@@ -1218,10 +1218,19 @@ impl ToolOrdering {
                     .unwrap()
             }
         } else {
-            // No previous extruder, just take the first one.
-            // R99 determinism: min extruder id (HashSet<u32>.iter().next() is
-            // RandomState-ordered per run).
-            *remaining.iter().min().unwrap()
+        // R744: native iterates `curr_layer_extruders` — a std::vector — with a
+        // parallel `is_visited` (ToolOrderUtils.cpp, solve_extruder_order_with_greedy),
+        // so BOTH the seed (`std::find_if(is_visited, ==0)`) and the tie-break
+        // (strict `<`, first index wins) follow the INPUT ORDER. R99 replaced a
+        // nondeterministic `HashSet::iter().next()` with the MIN EXTRUDER ID —
+        // deterministic, but a different rule than native's, and the `min_by` over
+        // a HashSet below still left TIES on RandomState order.
+        // TOOLORDER_INPUT_ORDER=0 restores R99's min-id behaviour.
+            if crate::faithful_gate("TOOLORDER_INPUT_ORDER") {
+                *extruders.iter().find(|e| remaining.contains(e)).unwrap()
+            } else {
+                *remaining.iter().min().unwrap()
+            }
         };
 
         result.push(first);
@@ -1230,7 +1239,14 @@ impl ToolOrdering {
         // Greedily add remaining extruders
         while !remaining.is_empty() {
             let current = *result.last().unwrap();
-            let next = *remaining
+            // R744: iterate the INPUT order so ties resolve to the first index,
+            // as native's indexed loop with strict `<` does.
+            let order: Vec<u32> = if crate::faithful_gate("TOOLORDER_INPUT_ORDER") {
+                extruders.iter().copied().filter(|e| remaining.contains(e)).collect()
+            } else {
+                remaining.iter().copied().collect()
+            };
+            let next = *order
                 .iter()
                 .min_by(|&&a, &&b| {
                     let flush_a = self.config.get_flush_volume(current as usize, a as usize);
@@ -1706,7 +1722,13 @@ pub fn optimize_extruder_sequence(
     // RandomState-ordered per run).
     let start = start_extruder
         .filter(|e| remaining.contains(e))
-        .or_else(|| remaining.iter().min().copied())
+        .or_else(|| {
+            if crate::faithful_gate("TOOLORDER_INPUT_ORDER") {
+                extruders.iter().find(|e| remaining.contains(e)).copied()
+            } else {
+                remaining.iter().min().copied()
+            }
+        })
         .unwrap();
 
     result.push(start);
@@ -1715,7 +1737,12 @@ pub fn optimize_extruder_sequence(
     // Greedy nearest neighbor
     while !remaining.is_empty() {
         let current = *result.last().unwrap();
-        let next = remaining
+        let order: Vec<u32> = if crate::faithful_gate("TOOLORDER_INPUT_ORDER") {
+            extruders.iter().copied().filter(|e| remaining.contains(e)).collect()
+        } else {
+            remaining.iter().copied().collect()
+        };
+        let next = order
             .iter()
             .min_by(|&&a, &&b| {
                 let flush_a = flush_matrix.get(current as usize, a as usize);
