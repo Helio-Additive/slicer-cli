@@ -1245,6 +1245,12 @@ pub fn process_external_surfaces_wave(
     );
 
     for layer_surfaces in surfaces.iter_mut() {
+        // PESPROF (R736, default OFF): stage split of one layer's wave. Benchy's
+        // layer 2 alone is 96% of this function's total cost across all 300
+        // layers, so only a PER-CALL split can say which stage is pathological.
+        let __pes = crate::probe_enabled("PESPROF");
+        let __t_start = std::time::Instant::now();
+
         // ── Extract expansion zones from current fill surfaces ──
         //
         // Zone 0: InternalSolid (shells)
@@ -1287,6 +1293,8 @@ pub fn process_external_surfaces_wave(
             },
         ];
 
+        let __t_zones = __t_start.elapsed().as_secs_f64();
+
         // ── Step 1: Process bridges ──
         //
         //      Otherwise, uses expand_bridges_detect_orientations which detects
@@ -1303,6 +1311,8 @@ pub fn process_external_surfaces_wave(
         } else {
             expand_bridges_detect_orientations(layer_surfaces, &mut expansion_zones, closing_radius)
         };
+
+        let __t_bridges = __t_start.elapsed().as_secs_f64();
 
         // ── Step 2: Handle Top expolygons from zone 2 ──
         //
@@ -1326,6 +1336,8 @@ pub fn process_external_surfaces_wave(
             None,
         );
 
+        let __t_bottoms = __t_start.elapsed().as_secs_f64();
+
         // ── Step 4: Expand Top surfaces ──
         //
         expansion_zones[0].parameters =
@@ -1348,6 +1360,8 @@ pub fn process_external_surfaces_wave(
             closing_radius,
             None,
         );
+
+        let __t_tops = __t_start.elapsed().as_secs_f64();
 
         // ── Step 5: Minimum sparse infill area ──
         //
@@ -1375,6 +1389,14 @@ pub fn process_external_surfaces_wave(
                 expansion_zones[0].expolygons =
                     union_ex(&[expansion_zones[0].expolygons.clone(), areas_to_solid].concat());
             }
+        }
+
+        if __pes && __t_tops > 0.02 {
+            eprintln!(
+                "[PESPROF] wave surfaces={} zones={:.3}s bridges={:.3}s \
+bottoms={:.3}s tops={:.3}s",
+                layer_surfaces.len(), __t_zones, __t_bridges - __t_zones,
+                __t_bottoms - __t_bridges, __t_tops - __t_bottoms);
         }
 
         // ── Step 6: Reassemble fill surfaces ──
@@ -1762,6 +1784,8 @@ fn detect_bridging_direction_from_lines(
     // below is order-dependent on ties, which leaked into the bridge direction.
     // `or_insert` keeps first-seen (matches C++ `emplace`, not overwrite). With a
     // unique min-cost the result is identical to C++ regardless of order.
+    let __pes = crate::probe_enabled("PESPROF");
+    let __t = std::time::Instant::now();
     let mut directions: std::collections::BTreeMap<i64, PointF> = std::collections::BTreeMap::new();
     for line in floating_edges {
         let dx = (line.b.x - line.a.x) as f64;
@@ -1807,6 +1831,13 @@ fn detect_bridging_direction_from_lines(
             // The dot product already contains the line length. dir is normalized.
             *cost += (line_vec_x * dir.x + line_vec_y * dir.y).abs();
         }
+    }
+
+    if __pes && __t.elapsed().as_secs_f64() > 0.005 {
+        eprintln!("[PESPROF] bridging_dir L={} D={} LxD={} {:.3}s",
+                  floating_edges.len(), direction_costs.len(),
+                  floating_edges.len() * direction_costs.len(),
+                  __t.elapsed().as_secs_f64());
     }
 
     // Find minimum cost direction and rotate 90° to get bridge direction
@@ -1934,9 +1965,26 @@ fn detect_bridge_directions_impl(
 
     let mut anchor_iter = 0usize;
 
+    // R736: the anchor `grow` below is a pure function of the boundary indices
+    // that produced `anchor_areas` — `expansion_zones` is `&[ExpansionZone]`, so
+    // the index -> polygon mapping cannot change inside this loop, and the
+    // epsilon is loop-invariant. On benchy layer 2, 7 of 8 bridges anchor to the
+    // SAME 1205-point boundary and each re-ran the identical 66 ms offset:
+    // 0.52 s of the 0.64 s that this one layer cost, which was 38% of the whole
+    // 1.68 s slice. Memoising is bit-identical by construction.
+    //
+    // BTreeMap, not HashMap: this crate had a determinism bug (R99) from HashMap
+    // iteration order. Nothing here iterates, but the ordered map costs nothing
+    // and keeps the invariant local.
+    // BRIDGE_GROW_CACHE=0 disables it for A/B.
+    let grow_cache_on = crate::faithful_gate("BRIDGE_GROW_CACHE");
+    let mut grow_cache: std::collections::BTreeMap<Vec<i64>, ExPolygons> =
+        std::collections::BTreeMap::new();
+
     for bridge_id in 0..bridges.len() {
         let mut anchor_areas: Vec<Polygon> = Vec::new();
         let mut last_anchor_boundary: i64 = -1;
+        let mut anchor_key: Vec<i64> = Vec::new();
 
         // Collect anchor areas for this bridge from wave seeds.
         // Each WaveSeed tells us which boundary expolygon this bridge touches.
@@ -1946,6 +1994,7 @@ fn detect_bridge_directions_impl(
             let boundary_idx = sorted_anchors[anchor_iter].boundary as i64;
             if last_anchor_boundary != boundary_idx {
                 last_anchor_boundary = boundary_idx;
+                anchor_key.push(boundary_idx);
 
                 // Find which expansion zone this boundary index belongs to.
                 // The boundary indices are a flat namespace across all zones:
@@ -1973,7 +2022,10 @@ fn detect_bridge_directions_impl(
 
         // Compute unsupported/floating edges of this bridge.
         //                                   expand(anchor_areas, float(SCALED_EPSILON))))};
+        let __pes2 = crate::probe_enabled("PESPROF");
+        let __t2 = std::time::Instant::now();
         let bridge_polylines = expolygons_to_polylines(&[bridges[bridge_id].expolygon.clone()]);
+        let __t2_pl = __t2.elapsed().as_secs_f64();
 
         // Expand anchor areas slightly for the clipping test.
         //
@@ -1995,16 +2047,36 @@ fn detect_bridge_directions_impl(
         };
         let anchor_expolygons: ExPolygons = if anchor_areas.is_empty() {
             Vec::new()
+        } else if let Some(hit) = grow_cache.get(&anchor_key).filter(|_| grow_cache_on) {
+            hit.clone()
         } else {
             let anchor_ex: ExPolygons = anchor_areas
                 .iter()
                 .map(|p| ExPolygon::new(p.clone()))
                 .collect();
-            grow(&anchor_ex, epsilon_mm, OffsetJoinType::Square)
+            let grown = grow(&anchor_ex, epsilon_mm, OffsetJoinType::Square);
+            if grow_cache_on {
+                grow_cache.insert(anchor_key.clone(), grown.clone());
+            }
+            grown
         };
 
+        let __t2_grow = __t2.elapsed().as_secs_f64();
         let floating_polylines = diff_pl(&bridge_polylines, &anchor_expolygons);
+        let __t2_diff = __t2.elapsed().as_secs_f64();
         let floating_lines = polylines_to_lines(&floating_polylines);
+        let __t2_lines = __t2.elapsed().as_secs_f64();
+        if __pes2 && __t2_lines > 0.005 {
+            eprintln!(
+                "[PESPROF]   bridge={} key={:?} anchor_pts={} anchors={} bridge_pl={} float_pl={} float_lines={} | \
+to_pl={:.3}s grow={:.3}s diff_pl={:.3}s to_lines={:.3}s",
+                bridge_id, anchor_key,
+                anchor_areas.iter().map(|p| p.points.len()).sum::<usize>(),
+                anchor_expolygons.len(), bridge_polylines.len(),
+                floating_polylines.len(), floating_lines.len(),
+                __t2_pl, __t2_grow - __t2_pl, __t2_diff - __t2_grow,
+                __t2_lines - __t2_diff);
+        }
 
         // Detect bridge direction.
         let overhang_polygons: Vec<Polygon> = vec![bridges[bridge_id].expolygon.contour.clone()];
@@ -2162,18 +2234,27 @@ pub fn expand_bridges_detect_orientations(
     if bridge_expolygons.is_empty() {
         return Vec::new();
     }
+    let n_bridge_ep = bridge_expolygons.len();
+
+    // PESPROF (R736, default OFF): this whole function is 0.640s of benchy's
+    // 1.68s slice, all of it on ONE layer with 11 surfaces — split it per step.
+    let __pes = crate::probe_enabled("PESPROF");
+    let __t = std::time::Instant::now();
 
     // Step 2: Expand into zones, getting both anchors and expanded ExPolygons
     let expansion_result = expand_expolygons_with_anchors(&bridge_expolygons, expansion_zones);
+    let __t_expand = __t.elapsed().as_secs_f64();
 
     // Step 3: Group bridges by overlapping expansions (union-find)
     let mut bridges = get_grouped_bridges(bridge_expolygons, &expansion_result.expansions);
+    let __t_group = __t.elapsed().as_secs_f64();
 
     // Step 4: Detect per-bridge directions using anchor areas
     // Sort anchors by src then boundary (required by detect_bridge_directions_impl)
     let mut sorted_anchors = expansion_result.anchors.clone();
     sorted_anchors.sort_by(|a, b| a.src.cmp(&b.src).then(a.boundary.cmp(&b.boundary)));
     detect_bridge_directions_impl(&sorted_anchors, &mut bridges, expansion_zones);
+    let __t_detect = __t.elapsed().as_secs_f64();
 
     // Step 5: Sort expansions by src_id for merge_bridges, then merge
     let mut sorted_expansions = expansion_result.expansions;
@@ -2183,6 +2264,15 @@ pub fn expand_bridges_detect_orientations(
             .then(a.boundary_id.cmp(&b.boundary_id))
     });
     let out = merge_bridges(&mut bridges, &sorted_expansions, closing_radius);
+    let __t_merge = __t.elapsed().as_secs_f64();
+    if __pes && __t_merge > 0.02 {
+        eprintln!(
+            "[PESPROF] bridges n_bridge_ep={} n_anchors={} n_expansions={} | \
+expand={:.3}s group={:.3}s detect={:.3}s merge={:.3}s",
+            n_bridge_ep, sorted_anchors.len(), sorted_expansions.len(),
+            __t_expand, __t_group - __t_expand, __t_detect - __t_group,
+            __t_merge - __t_detect);
+    }
 
     // Step 6: Clip expansion zones by the expanded bridges
     // Collect all output expolygons for subtraction

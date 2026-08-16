@@ -5832,21 +5832,87 @@ impl PrintObject {
                 .unwrap_or(false));
         let _ = has_voids; // see FIDELITY-NOTE above
 
+        // PrintObject.cpp:1728 — one layer's work. Shared by the parallel and the
+        // serial arm below so the two can never drift apart.
+        fn one_layer(layer: &mut Layer, region_id: usize) -> Result<()> {
+            // m_layers[layer_idx]->get_region(region_id)->process_external_surfaces(...)
+            // layer.height mirrors C++ m_layer->height threaded into LayerRegion::flow.
+            let layer_height = layer.height;
+            if let Some(region) = layer.regions_mut().get_mut(region_id) {
+                region.process_external_surfaces(layer_height)?;
+            }
+            Ok(())
+        }
+
+        // PESPROF (R736, default OFF): per-layer wall-clock for the loop below.
+        // The stage total alone cannot say whether the cost is SPREAD over layers
+        // (parallelism helps) or CONCENTRATED in a few (it cannot) — and the A/B
+        // said parallelising changed nothing, so the distribution is the finding.
+        let pesprof = crate::probe_enabled("PESPROF");
+        let pes_times: std::sync::Mutex<Vec<(usize, usize, f64)>> =
+            std::sync::Mutex::new(Vec::new());
+
+        // R736: native wraps this layer loop in
+        // `tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()))`
+        // (PrintObject.cpp:1722). This port kept the loop body and dropped the
+        // parallelism — the same porting move that cost 41% of the slice in the
+        // seam raycast (R735). Serial, it was 0.662 s of prepare_infill's 0.750 s
+        // (87.9%) and 39% of benchy's whole 1.68 s slice.
+        //
+        // Chunking across layers is bit-identical by construction: `one_layer`
+        // writes only `layers[i].regions[region_id].fill_surfaces` and reads only
+        // that same region plus the Arc'd, immutable config hierarchy. There is no
+        // reduction, no ordering, and no shared mutable state — `region_expansion`
+        // holds no statics, no RNG and no interior mutability. Note this port is
+        // MORE independent than native, which reads `m_layers[layer_idx - 1]` for
+        // the void-trim path we do not implement (see the FIDELITY-NOTE above).
+        //
+        // PES_PARALLEL=0 restores the serial loop for A/B.
+        let canceled = self.canceled.clone();
+        let parallel = crate::faithful_gate("PES_PARALLEL");
         // PrintObject.cpp:1720 — for each printing region.
         for region_id in 0..self.num_printing_regions() {
             // PrintObject.cpp:1722-1731 — for each layer, drive the LayerRegion member.
-            for layer in &mut self.layers {
-                // PrintObject.cpp:1726
-                // C++: m_print->throw_if_canceled();
-                if self.canceled.load(std::sync::atomic::Ordering::Relaxed) {
-                    return Err(crate::Error::Cancelled);
+            if parallel {
+                use rayon::prelude::*;
+                self.layers.par_iter_mut().enumerate().try_for_each(|(li, layer)| {
+                    // PrintObject.cpp:1726 — C++: m_print->throw_if_canceled();
+                    if canceled.load(Ordering::Relaxed) {
+                        return Err(Error::Cancelled);
+                    }
+                    let t = std::time::Instant::now();
+                    let r = one_layer(layer, region_id);
+                    if pesprof {
+                        pes_times.lock().unwrap().push(
+                            (region_id, li, t.elapsed().as_secs_f64()));
+                    }
+                    r
+                })?;
+            } else {
+                for (li, layer) in self.layers.iter_mut().enumerate() {
+                    if canceled.load(Ordering::Relaxed) {
+                        return Err(Error::Cancelled);
+                    }
+                    let t = std::time::Instant::now();
+                    one_layer(layer, region_id)?;
+                    if pesprof {
+                        pes_times.lock().unwrap().push(
+                            (region_id, li, t.elapsed().as_secs_f64()));
+                    }
                 }
-                // PrintObject.cpp:1728 — m_layers[layer_idx]->get_region(region_id)->process_external_surfaces(...)
-                // layer.height mirrors C++ m_layer->height threaded into LayerRegion::flow.
-                let layer_height = layer.height;
-                if let Some(region) = layer.regions_mut().get_mut(region_id) {
-                    region.process_external_surfaces(layer_height)?;
-                }
+            }
+        }
+        if pesprof {
+            let mut v = pes_times.into_inner().unwrap();
+            let total: f64 = v.iter().map(|x| x.2).sum();
+            v.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
+            let top: f64 = v.iter().take(10).map(|x| x.2).sum();
+            eprintln!(
+                "[PESPROF] records={} sum={:.3}s top10={:.3}s ({:.1}%) parallel={}",
+                v.len(), total, top,
+                if total > 0.0 { 100.0 * top / total } else { 0.0 }, parallel);
+            for (r, l, t) in v.iter().take(10) {
+                eprintln!("[PESPROF]   region={r} layer={l} {:.4}s", t);
             }
         }
         Ok(())
