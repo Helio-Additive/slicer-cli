@@ -2040,7 +2040,7 @@ fn detect_bridge_directions_impl(
         // 17/14/19/25/26/46/37 floating edges on bridges where C++ sees ZERO, and
         // therefore take the cost branch where C++ takes the fully-anchored PCA
         // branch (R596).
-        let epsilon_mm = if crate::faithful_gate("BRIDGE_ANCHOR_EPS_SCALED") {
+        let epsilon_mm: CoordF = if crate::faithful_gate("BRIDGE_ANCHOR_EPS_SCALED") {
             10.0 // SCALED_EPSILON
         } else {
             0.001
@@ -2054,7 +2054,29 @@ fn detect_bridge_directions_impl(
                 .iter()
                 .map(|p| ExPolygon::new(p.clone()))
                 .collect();
-            let grown = grow(&anchor_ex, epsilon_mm, OffsetJoinType::Square);
+            // R737: `grow` routes to the geo-clipper backend, and on benchy layer 2
+            // this ONE offset of a 1205-point anchor costs 65 ms — 0.131 s of a
+            // 1.24 s slice after R736's memo, and +0.213 s more under
+            // CLIPPER_UNION_GEO (that gate's ENTIRE `process_external_surfaces`
+            // cost is this call on this layer). The vendored-ClipperLib twin is
+            // the R725/R728 "faithful AND fast" path.
+            //
+            // UNIT HAZARD: geo `offset_expolygons` multiplies BOTH the input
+            // coordinates and `delta` by `geo_clipper_scale()`, so its delta is in
+            // the same units as the input — here SCALED units (epsilon_mm is
+            // SCALED_EPSILON = 10 scaled units, see the R596 note above, NOT mm).
+            // `offset_expolygons_clib` would treat it as mm and multiply by 1e5,
+            // turning a 1e-4 mm epsilon into 10 mm. The correct twin is the
+            // _scaled variant, which takes the final delta as-is.
+            // SHIPPED ON (R737): faithful (native uses real ClipperLib at coord_t),
+            // bit-identical on benchy/arachne/cube, +2 in-order on majora, and
+            // 0.900x on benchy / 0.70x on arachne. BRIDGE_ANCHOR_GROW_CLIB=0 reverts.
+            let grown = if crate::faithful_gate("BRIDGE_ANCHOR_GROW_CLIB") {
+                crate::clipper_utils::offset_expolygons_clib_scaled(
+                    &anchor_ex, epsilon_mm.abs(), OffsetJoinType::Square)
+            } else {
+                grow(&anchor_ex, epsilon_mm, OffsetJoinType::Square)
+            };
             if grow_cache_on {
                 grow_cache.insert(anchor_key.clone(), grown.clone());
             }
