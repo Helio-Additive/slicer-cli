@@ -6,7 +6,6 @@
 pub mod avoid_crossing_perimeters;
 pub mod conflict_checker;
 pub mod cooling;
-pub mod cooling_buffer;
 pub mod exporter;
 pub mod extruder;
 pub mod g_code_editor;
