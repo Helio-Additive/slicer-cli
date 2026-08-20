@@ -541,6 +541,11 @@ impl PerimeterGenerator {
             );
         }
         if crate::probe_enabled("PAPROBE") {
+            eprintln!(
+                "PACALL lid={} nsurf={} mode=classic",
+                self.config.layer_id,
+                slices.len()
+            );
             for surface in slices.iter() {
                 let mut iv: i64 = surface.contour.points.len() as i64;
                 let mut ix: i64 = 0;
@@ -3338,6 +3343,13 @@ impl PerimeterGenerator {
                     n as f64 / set.len().max(1) as f64,
                 );
             }
+        }
+        if crate::probe_enabled("PAPROBE") {
+            eprintln!(
+                "PACALL lid={} nsurf={} mode=arachne",
+                self.config.layer_id,
+                slices.len()
+            );
         }
         for surface in slices.iter() {
             if crate::probe_enabled("PAPROBE") {
