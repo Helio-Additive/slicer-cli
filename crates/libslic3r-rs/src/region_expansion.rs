@@ -2162,11 +2162,14 @@ to_pl={:.3}s grow={:.3}s diff_pl={:.3}s to_lines={:.3}s",
                     .copied()
                     .unwrap_or(crate::geometry::Point::new(0, 0));
                 eprintln!(
-                    "[BRIDGEIN] n={n} fp={},{} cs={},{} edges={} edge_len={edge_len:.3} anchors={} poly_pts={poly_pts} area={:.3} dir={:.6},{:.6} angle={:.6} unsup={:.3}",
+                    "[BRIDGEIN] n={n} fp={},{} cs={},{} as={}:{},{} edges={} edge_len={edge_len:.3} anchors={} poly_pts={poly_pts} area={:.3} dir={:.6},{:.6} angle={:.6} unsup={:.3}",
                     fp0.x(),
                     fp0.y(),
                     bridges[bridge_id].expolygon.contour.points.iter().map(|p| p.x()).sum::<i64>(),
                     bridges[bridge_id].expolygon.contour.points.iter().map(|p| p.y()).sum::<i64>(),
+                    anchor_areas.iter().map(|p| p.points.len()).sum::<usize>(),
+                    anchor_areas.iter().flat_map(|p| p.points.iter()).map(|p| p.x()).sum::<i64>(),
+                    anchor_areas.iter().flat_map(|p| p.points.iter()).map(|p| p.y()).sum::<i64>(),
                     floating_lines.len(),
                     anchor_areas.len(), // pre-expand polygon count, to match C++'s anchor_areas.size()
                     bridges[bridge_id].expolygon.area().abs(),
@@ -2293,6 +2296,20 @@ pub fn expand_bridges_detect_orientations(
     // Step 1: Extract BottomBridge expolygons
     let bridge_expolygons =
         extract_expolygons_by_type(surfaces, crate::surface::SurfaceType::BottomBridge);
+    if crate::probe_enabled("BREXP") {
+        for e in &bridge_expolygons {
+            let ix: i64 = e.contour.points.iter().map(|p| p.x()).sum();
+            let iy: i64 = e.contour.points.iter().map(|p| p.y()).sum();
+            eprintln!(
+                "BREXP n={} holes={} ix={} iy={} a={:.1}",
+                e.contour.points.len(),
+                e.holes.len(),
+                ix,
+                iy,
+                e.area().abs()
+            );
+        }
+    }
     if bridge_expolygons.is_empty() {
         return Vec::new();
     }
