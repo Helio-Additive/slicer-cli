@@ -860,6 +860,26 @@ impl LayerRegion {
                 for path in &paths {
                     path.polygons_covered_by_width(&mut covered, 10.0);
                 }
+                if crate::probe_enabled("GFPROBE") {
+                    let mut iv: i64 = 0;
+                    let mut ix: i64 = 0;
+                    let mut iy: i64 = 0;
+                    for pg in &covered {
+                        iv += pg.points.len() as i64;
+                        for pt in &pg.points {
+                            ix += pt.x();
+                            iy += pt.y();
+                        }
+                    }
+                    eprintln!(
+                        "GFPROBE lid={} np={} iv={} ix={} iy={}",
+                        self.layer_id,
+                        covered.len(),
+                        iv,
+                        ix,
+                        iy
+                    );
+                }
 
                 for path in paths {
                     self.thin_fills
@@ -913,6 +933,28 @@ impl LayerRegion {
                         }
                         self.fill_expolygons = new_infill;
                         self.fill_no_overlap_expolygons = new_no;
+                        if crate::probe_enabled("NOPROBE2") {
+                            for e in self.fill_no_overlap_expolygons.iter() {
+                                let mut iv: i64 = e.contour.points.len() as i64;
+                                let mut ix: i64 = 0;
+                                let mut iy: i64 = 0;
+                                for pt in &e.contour.points {
+                                    ix += pt.x();
+                                    iy += pt.y();
+                                }
+                                for h in &e.holes {
+                                    iv += h.points.len() as i64;
+                                    for pt in &h.points {
+                                        ix += pt.x();
+                                        iy += pt.y();
+                                    }
+                                }
+                                eprintln!(
+                                    "NOPROBE2 lid={} holes={} iv={} ix={} iy={}",
+                                    self.layer_id, e.holes.len(), iv, ix, iy
+                                );
+                            }
+                        }
                     } else {
                     // Subtract from the Internal fill_surfaces (the infill region produced
                     // by the perimeter generator; top/bottom skins are unaffected).

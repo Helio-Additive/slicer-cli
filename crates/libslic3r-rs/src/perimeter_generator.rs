@@ -35,6 +35,37 @@ use std::f64::consts::PI;
 /// (PerimeterGenerator.cpp:1395-1428). Vertex count and coordinate sums are
 /// exact, so the first stage at which the engines diverge is unambiguous —
 /// area and bbox tolerances hid this for nine rounds (R712/R715/R720/R721).
+fn noprobe_dump(tag: &str, lid: usize, v: &[ExPolygon]) {
+    if !crate::probe_enabled("NOPROBE") {
+        return;
+    }
+    for e in v {
+        let mut iv: i64 = e.contour.points.len() as i64;
+        let mut ix: i64 = 0;
+        let mut iy: i64 = 0;
+        for pt in &e.contour.points {
+            ix += pt.x();
+            iy += pt.y();
+        }
+        for h in &e.holes {
+            iv += h.points.len() as i64;
+            for pt in &h.points {
+                ix += pt.x();
+                iy += pt.y();
+            }
+        }
+        eprintln!(
+            "{} lid={} holes={} iv={} ix={} iy={}",
+            tag,
+            lid,
+            e.holes.len(),
+            iv,
+            ix,
+            iy
+        );
+    }
+}
+
 fn fbis_dump(stage: &str, lid: usize, v: &[ExPolygon]) {
     if !crate::probe_enabled("FBIS") {
         return;
@@ -508,6 +539,32 @@ impl PerimeterGenerator {
                 c.join(";"),
                 o.join(",")
             );
+        }
+        if crate::probe_enabled("PAPROBE") {
+            for surface in slices.iter() {
+                let mut iv: i64 = surface.contour.points.len() as i64;
+                let mut ix: i64 = 0;
+                let mut iy: i64 = 0;
+                for pt in &surface.contour.points {
+                    ix += pt.x();
+                    iy += pt.y();
+                }
+                for h in &surface.holes {
+                    iv += h.points.len() as i64;
+                    for pt in &h.points {
+                        ix += pt.x();
+                        iy += pt.y();
+                    }
+                }
+                eprintln!(
+                    "PAPROBE lid={} holes={} iv={} ix={} iy={}",
+                    self.config.layer_id,
+                    surface.holes.len(),
+                    iv,
+                    ix,
+                    iy
+                );
+            }
         }
         for &slice_idx in &order {
             let slice = &slices[slice_idx];
@@ -995,6 +1052,16 @@ impl PerimeterGenerator {
                 }
             }
 
+            if crate::probe_enabled("LOOPI") {
+                noprobe_dump(&format!("LOOPI{}", i), self.config.layer_id, &offsets);
+                if !offsets_with_smaller_width.is_empty() {
+                    noprobe_dump(
+                        &format!("LOOPS{}", i),
+                        self.config.layer_id,
+                        &offsets_with_smaller_width,
+                    );
+                }
+            }
             /// PerimeterGenerator.cpp:1037-1044
             /// C++: if (offsets.empty() && offsets_with_smaller_width.empty()) {
             /// C++:     loop_number = i - 1;
@@ -1432,11 +1499,17 @@ impl PerimeterGenerator {
                 // `intersection_clib` = cz_intersection_closed + the same union_ex_clib
                 // reconstruction difference_clib uses, matching native's
                 // PolyTreeToExPolygons(clipper_do_polytree(ctIntersection,...)).
+                if crate::probe_enabled("TSPROBE") {
+                    noprobe_dump("TS_PRE", self.config.layer_id, &last);
+                }
                 last = if f1_top {
                     crate::clipper_utils::intersection_clib(&inner_polygons, &last)
                 } else {
                     intersection(&inner_polygons, &last)
                 };
+                if crate::probe_enabled("TSPROBE") {
+                    noprobe_dump("TS_POST", self.config.layer_id, &last);
+                }
 
                 // PerimeterGenerator.cpp:1170-1171
                 // C++: if (has_gap_fill) last = union_ex(last, temp_gap);
@@ -1448,6 +1521,9 @@ impl PerimeterGenerator {
                     } else {
                         union_ex(&merged)
                     };
+                }
+                if crate::probe_enabled("TSPROBE") {
+                    noprobe_dump("TS_UNION", self.config.layer_id, &last);
                 }
 
                 // TOPDBG (diagnostics only, env-gated): dump the perimeter-derived
@@ -1806,6 +1882,7 @@ impl PerimeterGenerator {
             // resolution. Mirrors the C++ FBIS probe injected at the same four
             // statements (PerimeterGenerator.cpp:1395-1428).
             fbis_dump("last", self.config.layer_id, last);
+            noprobe_dump("LASTPROBE", self.config.layer_id, last);
 
             let mut pp: Vec<Polygon> = Vec::new();
             // Native `ex.simplify_p(m_scaled_resolution, &pp)` — the tolerance is
@@ -1833,6 +1910,7 @@ impl PerimeterGenerator {
                 union_polygons_ex(&pp)
             };
             fbis_dump("notfilled", self.config.layer_id, &not_filled_exp);
+            noprobe_dump("NFPROBE", self.config.layer_id, &not_filled_exp);
             // PerimeterGenerator.cpp:1400-1406
             // C++: coord_t min_perimeter_infill_spacing = coord_t(solid_infill_spacing * (1. - INSET_OVERLAP_TOLERANCE));
             // C++: ExPolygons infill_exp = offset2_ex(not_filled_exp,
@@ -2039,6 +2117,32 @@ impl PerimeterGenerator {
             }
             crate::stage_dump::dump("tail_nooverlap", self.config.layer_id, &poly_without_overlap);
             fbis_dump("nooverlap", self.config.layer_id, &poly_without_overlap);
+            if crate::probe_enabled("NOPROBE") {
+                for e in poly_without_overlap.iter() {
+                    let mut iv: i64 = e.contour.points.len() as i64;
+                    let mut ix: i64 = 0;
+                    let mut iy: i64 = 0;
+                    for pt in &e.contour.points {
+                        ix += pt.x();
+                        iy += pt.y();
+                    }
+                    for h in &e.holes {
+                        iv += h.points.len() as i64;
+                        for pt in &h.points {
+                            ix += pt.x();
+                            iy += pt.y();
+                        }
+                    }
+                    eprintln!(
+                        "NOPROBE lid={} holes={} iv={} ix={} iy={}",
+                        self.config.layer_id,
+                        e.holes.len(),
+                        iv,
+                        ix,
+                        iy
+                    );
+                }
+            }
 
             // R715 — `fill_no_overlap` is what `FillConcentricInternal` actually
             // iterates (`no_overlap_expolygons`), NOT the `fill_surfaces` region
@@ -3236,6 +3340,30 @@ impl PerimeterGenerator {
             }
         }
         for surface in slices.iter() {
+            if crate::probe_enabled("PAPROBE") {
+                let mut iv: i64 = surface.contour.points.len() as i64;
+                let mut ix: i64 = 0;
+                let mut iy: i64 = 0;
+                for pt in &surface.contour.points {
+                    ix += pt.x();
+                    iy += pt.y();
+                }
+                for h in &surface.holes {
+                    iv += h.points.len() as i64;
+                    for pt in &h.points {
+                        ix += pt.x();
+                        iy += pt.y();
+                    }
+                }
+                eprintln!(
+                    "PAPROBE lid={} holes={} iv={} ix={} iy={}",
+                    self.config.layer_id,
+                    surface.holes.len(),
+                    iv,
+                    ix,
+                    iy
+                );
+            }
             // R674 — one hop BACK from R670. R670's POLYPROBE "0 input outline" is
             // `WallToolPaths::outline`, i.e. ALREADY past this function's `simplify_p`
             // and `offset_ex`. This counts `surface` as `generate_arachne` receives it,
