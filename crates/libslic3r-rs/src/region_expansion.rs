@@ -1769,8 +1769,27 @@ fn detect_bridging_direction_from_lines(
     overhang_polygons: &[Polygon],
 ) -> (PointF, f64) {
     if floating_edges.is_empty() {
-        // Fully anchored — use principal components to find shortest bridge direction.
-        // axis (shortest direction).
+        // R761: BridgeDetector.hpp:77-85 — fully-anchored overhangs take pc2
+        // (the MINOR axis) of compute_principal_components, the f32 AREA-moment
+        // PCA in PrincipalComponents2D.cpp. The faithful port of that function
+        // existed (principal_components2_d.rs) but this path called a
+        // home-grown f64 VERTEX-covariance PCA instead — the third dead-twin
+        // (cf. fill/fill.rs, gcode/cooling_buffer.rs): identical 146-pt inputs
+        // gave directions 3.6-50 deg off cpp on every edges=0 bridge.
+        // Native normalizes pc2 in f32 (Vec2f::normalized) before the double
+        // cast; `pc2 == Vec2f::Zero()` is the degenerate check.
+        if crate::faithful_gate("BRIDGE_PCA_FAITHFUL") {
+            let (_pc1, pc2) = crate::principal_components2_d::compute_principal_components(
+                &overhang_polygons.to_vec(),
+            );
+            let (x, y) = (pc2.x as f32, pc2.y as f32);
+            if x == 0.0 && y == 0.0 {
+                return (PointF::new(1.0, 0.0), 0.0);
+            }
+            let len = (x * x + y * y).sqrt();
+            return (PointF::new((x / len) as f64, (y / len) as f64), 0.0);
+        }
+        // Legacy divergent helper (BRIDGE_PCA_FAITHFUL=0).
         if let Some(dir) = principal_component_direction(overhang_polygons) {
             return (dir, 0.0);
         }
@@ -2101,7 +2120,17 @@ to_pl={:.3}s grow={:.3}s diff_pl={:.3}s to_lines={:.3}s",
         }
 
         // Detect bridge direction.
-        let overhang_polygons: Vec<Polygon> = vec![bridges[bridge_id].expolygon.contour.clone()];
+        // R761: native passes to_polygons(bridge.expolygon) — contour AND holes
+        // (LayerRegion.cpp:324); the PCA in the edges-empty branch weighs hole
+        // triangles negatively. Contour-only starved it.
+        let overhang_polygons: Vec<Polygon> = if crate::faithful_gate("BRIDGE_PCA_FAITHFUL") {
+            let ex = &bridges[bridge_id].expolygon;
+            let mut v = vec![ex.contour.clone()];
+            v.extend(ex.holes.iter().cloned());
+            v
+        } else {
+            vec![bridges[bridge_id].expolygon.contour.clone()]
+        };
         let (bridging_dir, _unsupported_dist) =
             detect_bridging_direction_from_lines(&floating_lines, &overhang_polygons);
 
@@ -2125,8 +2154,19 @@ to_pl={:.3}s grow={:.3}s diff_pl={:.3}s to_lines={:.3}s",
                     })
                     .sum();
                 let poly_pts: usize = overhang_polygons.iter().map(|p| p.points.len()).sum();
+                let fp0 = bridges[bridge_id]
+                    .expolygon
+                    .contour
+                    .points
+                    .first()
+                    .copied()
+                    .unwrap_or(crate::geometry::Point::new(0, 0));
                 eprintln!(
-                    "[BRIDGEIN] n={n} edges={} edge_len={edge_len:.3} anchors={} poly_pts={poly_pts} area={:.3} dir={:.6},{:.6} angle={:.6} unsup={:.3}",
+                    "[BRIDGEIN] n={n} fp={},{} cs={},{} edges={} edge_len={edge_len:.3} anchors={} poly_pts={poly_pts} area={:.3} dir={:.6},{:.6} angle={:.6} unsup={:.3}",
+                    fp0.x(),
+                    fp0.y(),
+                    bridges[bridge_id].expolygon.contour.points.iter().map(|p| p.x()).sum::<i64>(),
+                    bridges[bridge_id].expolygon.contour.points.iter().map(|p| p.y()).sum::<i64>(),
                     floating_lines.len(),
                     anchor_areas.len(), // pre-expand polygon count, to match C++'s anchor_areas.size()
                     bridges[bridge_id].expolygon.area().abs(),

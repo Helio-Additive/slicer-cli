@@ -189,6 +189,12 @@ pub fn compute_principal_components(polys: &Polygons) -> (PointF, PointF) {
         }
     }
 
+    if crate::probe_enabled("PCAPROBE") {
+        eprintln!(
+            "PCA area={:.9e} cx={:.9e} cy={:.9e} vx={:.9e} vy={:.9e} cov={:.17e}",
+            area as f64, centroid.0 as f64, centroid.1 as f64, variance.0 as f64, variance.1 as f64, covariance
+        );
+    }
     // now we find the first principal component of the covered area by computing max eigenvalue and the correspoding eigenvector of
     // covariance matrix
     //  covaraince matrix C is :  | VarX  Cov  |
