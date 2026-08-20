@@ -3416,6 +3416,47 @@ impl PrintObject {
                             opening_ex(&bottom_diff, offset),
                             SurfaceType::BottomBridge,
                         );
+                        if crate::probe_enabled("BOTPROBE") && idx_layer == 2 {
+                            let (mut six, mut siy, mut sn) = (0i64, 0i64, 0i64);
+                            for sf in current_slices.iter() {
+                                sn += sf.expolygon.contour.points.len() as i64;
+                                for pt in &sf.expolygon.contour.points {
+                                    six += pt.x();
+                                    siy += pt.y();
+                                }
+                            }
+                            let (mut lix, mut liy, mut ln) = (0i64, 0i64, 0i64);
+                            for e in lower_lslices.iter() {
+                                ln += e.contour.points.len() as i64;
+                                for pt in &e.contour.points {
+                                    lix += pt.x();
+                                    liy += pt.y();
+                                }
+                            }
+                            eprintln!(
+                                "BOTPROBE in slices={}:{},{} lsl={}:{},{} off={:.4}",
+                                sn,
+                                six,
+                                siy,
+                                ln,
+                                lix,
+                                liy,
+                                offset * crate::SCALING_FACTOR
+                            );
+                            for sf in bottom.iter() {
+                                let ix: i64 =
+                                    sf.expolygon.contour.points.iter().map(|p| p.x()).sum();
+                                let iy: i64 =
+                                    sf.expolygon.contour.points.iter().map(|p| p.y()).sum();
+                                eprintln!(
+                                    "BOTPROBE out n={} ix={} iy={} a={:.1}",
+                                    sf.expolygon.contour.points.len(),
+                                    ix,
+                                    iy,
+                                    sf.expolygon.area().abs()
+                                );
+                            }
+                        }
 
                         /// PrintObject.cpp:1547-1559
                         /// C++: if (interface_shells) {
