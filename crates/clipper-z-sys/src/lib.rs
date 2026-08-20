@@ -61,6 +61,36 @@ extern "C" {
         miter_limit: f64,
     ) -> CzZPaths;
 
+    /// Faithful replica of `ClipperUtils.cpp` `offset(const Polygons&, delta)`
+    /// (`offset_paths` -> `expand_paths`/`shrink_paths` over `raw_offset`).
+    /// Unlike [`cz_offset_expolygon`], the input is a flat set of paths whose
+    /// ORIENTATION is meaningful: each path is offset on its own with
+    /// `Execute(ccw ? delta : -delta)` and its output reversed when the input
+    /// was CW, then the whole set is unioned (pftNonZero for delta > 0; the
+    /// bounding-frame pftNegative trick with the outermost polygon dropped for
+    /// delta < 0). `xy` is flat (x,y) pairs, `lens` per-path point counts.
+    /// Free via [`cz_free_zpaths`].
+    pub fn cz_offset_paths(
+        xy: *const i32,
+        lens: *const i32,
+        num: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+
+    /// PolyTree sibling of [`cz_offset_paths`]: `offset_ex(const Polygons&,
+    /// delta)` (ClipperUtils.cpp:415). Output uses the grouped z-encoding of
+    /// [`cz_union_ex`] — contour points carry z=0, hole points z=1.
+    pub fn cz_offset_paths_ex(
+        xy: *const i32,
+        lens: *const i32,
+        num: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+
     /// Faithful replica of `RegionExpansion.cpp` `propagate_wave_from_boundary`
     /// (+ `wavefront_initial`/`wavefront_step`/`wavefront_clip`): the ClipperLib
     /// wavefront propagation for one (boundary, src) seed group. `seed_*` are the

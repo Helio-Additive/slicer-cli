@@ -4536,7 +4536,24 @@ pub fn generate_fill_rectilinear_monotonic(
     } else {
         config.angle + config.angle_increment * layer_index as f64
     };
-    let angle_rad = angle_deg.to_radians();
+    // R765 — `Fill::_infill_direction` (FillBase.cpp:224-239) short-circuits to
+    // the surface's bridge angle, SKIPPING the per-layer alternation, and it
+    // lives on the BASE class: `FillMonotonic : public FillRectilinear`
+    // (FillRectilinear.hpp:47) inherits it exactly as the plain rectilinear
+    // filler does. This generator never consulted `bridge_angle`, so every
+    // bridge whose fill pattern resolved to Monotonic -- which is what
+    // Fill.cpp:232 picks for an EXTERNAL bridge when `top_surface_pattern` is
+    // monotonic, i.e. every bottom bridge on these fixtures -- was drawn at the
+    // default 45-degree direction with the layer alternation on top, ignoring a
+    // bridge angle that had been correctly detected and correctly carried all
+    // the way to `SurfaceFillParams`.
+    // FILL_BRIDGE_ANGLE_MONOTONIC=0 restores the alternation-only direction.
+    let used_bridge = config.bridge_angle >= 0.0;
+    let angle_rad = if crate::faithful_gate("FILL_BRIDGE_ANGLE_MONOTONIC") && used_bridge {
+        config.bridge_angle + std::f64::consts::FRAC_PI_2
+    } else {
+        angle_deg.to_radians()
+    };
 
     // Grid draws two perpendicular passes; halve per-pass density so they combine to the
     // target density (FillRectilinear.cpp:3036, params.density /= sweep count).

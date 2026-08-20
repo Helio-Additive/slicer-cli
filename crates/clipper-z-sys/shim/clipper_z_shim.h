@@ -116,6 +116,39 @@ CzZPaths cz_offset_expolygon(const int32_t *contour_xy, int32_t contour_n,
                              int32_t hole_num, double delta, int32_t join_type,
                              double miter_limit);
 
+// Faithful replica of libslic3r ClipperUtils.cpp
+// `offset(const Slic3r::Polygons&, const float delta, ...)`
+// (ClipperUtils.cpp:413) = `offset_paths<ClipperLib::Paths>`, which is
+// `expand_paths` for delta > 0 and `shrink_paths` for delta < 0, both over
+// `raw_offset` (ClipperUtils.cpp:273-299, 366-397).
+//
+// This is NOT the same operation as cz_offset_expolygon: that one replicates
+// `offset_expolygon_inner`, which takes ONE ExPolygon and gives its holes the
+// opposite signum. This one takes a flat set of paths whose orientation is
+// meaningful on its own, and reproduces three things the ExPolygon form has no
+// equivalent of:
+//   * per path, `ccw = Orientation(path)` and `Execute(out, ccw ? d : -d)`,
+//     because ClipperOffset::Execute reorients the outermost contour to a
+//     positive area before offsetting -- so a CW path (a hole) needs the signum
+//     reversed, and its OUTPUT reversed back;
+//   * for delta > 0, a trailing `clipper_union` at pftNonZero;
+//   * for delta < 0, `shrink_paths`' frame trick: union the raw output together
+//     with a bounding rectangle under pftNegative with ReverseSolution, then
+//     drop the outermost polygon.
+//
+// Layout: `xy` = flat int32 (x,y) pairs, `lens` = per-path point counts, `num` =
+// path count. join_type: 0=jtMiter, 1=jtRound, 2=jtSquare. delta is in input
+// integer units. Free via cz_free_zpaths.
+CzZPaths cz_offset_paths(const int32_t *xy, const int32_t *lens, int32_t num,
+                         double delta, int32_t join_type, double miter_limit);
+
+// The PolyTree sibling of cz_offset_paths: ClipperUtils.cpp `offset_ex(const
+// Polygons&, delta)` (:415). Same raw_offset front half; the union is executed
+// into a PolyTree and flattened with the exact PolyTreeToExPolygons nesting.
+// OUTPUT uses the grouped z-encoding of cz_union_ex (contour z=0, hole z=1).
+CzZPaths cz_offset_paths_ex(const int32_t *xy, const int32_t *lens, int32_t num,
+                            double delta, int32_t join_type, double miter_limit);
+
 // Faithful replica of libslic3r ClipperUtils.cpp `_clipper` /
 // `clipper_do<ClipperLib::Paths>(ctDifference, subject, clip, pftNonZero)`
 // (ClipperUtils.cpp:309-322, 669-692): a closed-path boolean DIFFERENCE

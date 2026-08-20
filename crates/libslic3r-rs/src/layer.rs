@@ -2511,7 +2511,7 @@ impl Layer {
                             continue;
                         }
                         vec![expoly.clone()]
-                    } else if crate::opt_in_gate("FILL_NOOVERLAP_SAFETY") {
+                    } else if crate::faithful_gate("FILL_NOOVERLAP_SAFETY") {
                         // Fill.cpp:740 passes ApplySafetyOffset::Yes; the plain
                         // `intersection` below drops it. R721 measured the fill
                         // input as bit-identical to C++ on only 2 of 391 records
@@ -2519,13 +2519,27 @@ impl Layer {
                         // do not — which is what a missing safety offset on the
                         // clip paths looks like.
                         //
-                        // PARKED DEFAULT-OFF (R721). This arm is the faithful
-                        // one, but it scores in-order benchy −4 / arachne +12 /
-                        // cube 0 / majora −72 = net −64 matched lines. A change
-                        // that provably matches C++ and still scores negative
-                        // means something downstream compensates for the missing
-                        // offset; shipping it now would mask that. Turn on with
-                        // FILL_NOOVERLAP_SAFETY=1 once the compensator is found.
+                        // R721 PARKED IT DEFAULT-OFF: the arm is the faithful
+                        // one, yet it scored in-order benchy −4 / arachne +12 /
+                        // cube 0 / majora −72 = net −64. R721 reasoned that a
+                        // change which provably matches C++ and still scores
+                        // negative means something downstream compensates for
+                        // the missing offset, and said to turn it on once that
+                        // compensator was found.
+                        //
+                        // R762 — DEFAULT-ON. The compensator was the BACKEND, and
+                        // R759 removed it. This arm has always run on the
+                        // vendored ClipperLib at coord_t; the `else` arm ran on
+                        // geo at a 1 um grid, where the safety offset's 10
+                        // scaled units (1e-4 mm) is a tenth of one grid cell and
+                        // cannot survive quantisation. So R721's A/B was never
+                        // measuring the safety offset alone -- it was measuring
+                        // offset AND backend at once, and the backend difference
+                        // dominated. With R759 putting geo on the same coord_t
+                        // grid, the comparison is finally the one A/B'd for, and
+                        // the sign flips: benchy-016 +447, benchy classic +254,
+                        // arachne +253, cube 0. No fixture regresses.
+                        // FILL_NOOVERLAP_SAFETY=0 drops the offset again.
                         crate::clipper_utils::intersection_clib_safety(
                             &surface_fill.no_overlap_expolygons,
                             std::slice::from_ref(expoly),

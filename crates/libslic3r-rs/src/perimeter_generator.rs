@@ -3310,15 +3310,36 @@ impl PerimeterGenerator {
             let inset = -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0);
             let last = if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
                 // PerimeterGenerator.cpp:1511 — offset the raw simplify_p polygons.
-                crate::clipper_utils::offset_polygons(
-                    &if crate::opt_in_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
+                {
+                    let rings = if crate::faithful_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
                         simplify_faithful(surface)
                     } else {
                         surface.simplify_p(surface_simplify_resolution)
-                    },
-                    inset / crate::SCALING_FACTOR,
-                    self.config.join_type,
-                )
+                    };
+                    // R764 — PerimeterGenerator.cpp:1511 is `offset_ex(Polygons,
+                    // delta)`, the flat-Polygons overload: ClipperUtils.cpp:415 ->
+                    // offset_paths<PolyTree> -> shrink_paths (the inset is
+                    // negative) over raw_offset, then PolyTreeToExPolygons. The
+                    // geo `offset_polygons` here is a MultiPolygon offset that
+                    // treats every ring as its own outer contour, so it neither
+                    // reads each path's orientation the way raw_offset does nor
+                    // applies shrink_paths' bounding-frame pftNegative union.
+                    // Same defect class as the Arachne prep offset in R763.
+                    // ARACHNE_SIMPLIFY_OFFSET_EX=0 restores the geo call.
+                    if crate::faithful_gate("ARACHNE_SIMPLIFY_OFFSET_EX") {
+                        crate::clipper_utils::offset_paths_ex_clib_scaled(
+                            &rings,
+                            inset,
+                            self.config.join_type,
+                        )
+                    } else {
+                        crate::clipper_utils::offset_polygons(
+                            &rings,
+                            inset / crate::SCALING_FACTOR,
+                            self.config.join_type,
+                        )
+                    }
+                }
             } else {
                 offset_expolygons(
                     &simplified,
@@ -3381,7 +3402,16 @@ impl PerimeterGenerator {
                 let generate_one_wall_by_top =
                     self.config.top_one_wall && self.config.upper_slices.is_some();
                 // PerimeterGenerator.cpp:1532  is_one_wall
-                let is_one_wall = if crate::opt_in_gate("ARACHNE_TOP_ONE_WALL") {
+                //
+                // R761 — DEFAULT-ON. R683/R684 wired this up and shipped it
+                // opt-in; re-scored on top of R757-R760 it is +1,546 in-order
+                // lines on arachne and EXACTLY ZERO on benchy-016, benchy
+                // classic and cube, which is what a correct port of an
+                // arachne-only branch should look like: those three fixtures
+                // are `wall_generator = classic`, where the same feature was
+                // already live in `generate_classic_one`.
+                // ARACHNE_TOP_ONE_WALL=0 restores the single-disjunct form.
+                let is_one_wall = if crate::faithful_gate("ARACHNE_TOP_ONE_WALL") {
                     loop_number == 0
                         || generate_one_wall_by_first_layer
                         || generate_one_wall_by_top_most
@@ -3389,7 +3419,7 @@ impl PerimeterGenerator {
                     loop_number == 0
                 };
                 // PerimeterGenerator.cpp:1534
-                let mut seperate_wall_generation = crate::opt_in_gate("ARACHNE_TOP_ONE_WALL")
+                let mut seperate_wall_generation = crate::faithful_gate("ARACHNE_TOP_ONE_WALL")
                     && !is_one_wall
                     && generate_one_wall_by_top;
 

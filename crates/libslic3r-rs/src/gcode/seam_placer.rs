@@ -3321,7 +3321,17 @@ impl SeamPlacer {
         // 2 mm radius, and `depth` unscales the (scaled) seam-to-foot vector.
         // Positions here are in the placer's centred frame, so differences are
         // frame-free and only the final absolute point re-adds `frame_offset_xy`.
-        if crate::opt_in_gate("SEAM_CONCAVE_CORNER") {
+        //
+        // R754 shipped this DEFAULT-OFF: it fixed the inner-wall seams it was
+        // ported for, yet cost 801 in-order lines, all of them downstream in
+        // Outer wall, whose loops reordered when the moved seam changed
+        // `last_pos`. R754 concluded "the block is right and something
+        // downstream of it is wrong". It named the right suspect: the
+        // downstream defect was R757's island emission order. With that fixed
+        // the block is a NET GAIN on every fixture and is now DEFAULT-ON
+        // (R758): benchy-016 +1,665, benchy classic +1,274, arachne +422,
+        // cube 0 (inert). SEAM_CONCAVE_CORNER=0 restores the R757 output.
+        if crate::faithful_gate("SEAM_CONCAVE_CORNER") {
             let perimeter_point = &layer.points[seam_index];
             // SeamPlacer.cpp:1500-1502 — three-way guard.
             if (self.config_mode == SeamPositionMode::Nearest

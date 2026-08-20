@@ -3705,9 +3705,27 @@ fn emit_layer_by_island(
             }
         }
     }
-    // Emit per-island, per region. Under the gate, use the first-appearance
-    // (chain_expolygons) order; otherwise the natural slice order.
-    let emit_order: Vec<usize> = if zsmooth_gate {
+    // Emit per-island, per region, in the island vector's INDEX order.
+    //
+    // R757 — native's island order is the `lslices` order, full stop.
+    // `object_islands_by_extruder` sizes the vector `n_slices + 1` and stores
+    // every extrusion at `islands[island_idx]`, where `island_idx` is the
+    // LSLICES index of the containing slice (GCode.cpp:4428-4443); the
+    // bbox-area `slices_test_order` only decides which slice is TESTED first,
+    // never where the entity is filed. Emission then walks that vector with a
+    // plain range-for (GCode.cpp:4869), i.e. 0..=n_slices.
+    //
+    // The port used to emit in FIRST-APPEARANCE order instead -- the order the
+    // islands happen to show up while scanning `region.perimeters.entities` --
+    // on the reading that GCode.cpp:4388 (the BUCKETING loop) also fixed the
+    // emission order. It does not: 4388 only sorts entities into buckets.
+    // Restoring the index order is worth, in seq_parity in-order lines,
+    // benchy-016 +12,530, benchy classic +10,040, arachne +6,334, cube 0
+    // (single island, byte-identical) -- and it is what closes R709/R710's
+    // measured island-order ceiling of +11,934 on benchy-016.
+    //
+    // ISLAND_ORDER_INDEX=0 restores the first-appearance order.
+    let emit_order: Vec<usize> = if zsmooth_gate && !crate::faithful_gate("ISLAND_ORDER_INDEX") {
         let mut v = island_emit_order.clone();
         for i in 0..islands.len() {
             if !v.contains(&i) {
