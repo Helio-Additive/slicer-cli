@@ -760,6 +760,30 @@ fn shorter_than_extrusion_line(shape: &ExtrusionLine, check_length: Coord) -> bo
 // ClipperLib::SimplifyPolygons port. Used by fix_self_intersections.
 // ===========================================================================
 
+/// R763 — `ARACHNE_PREP_CLIB` routes THREE distinct ops in the Arachne prep
+/// chain to the vendored ClipperLib: the outline `offset`, the trailing
+/// `SimplifyPolygons` inside `fixSelfIntersections`, and the final `union_`.
+/// R724/R725 landed them as one flip because only all three together made
+/// `prepared_outline` bit-identical to native (91/93, from 0/93).
+///
+/// Since R759 put the geo backend on the same coord_t grid, the two arms no
+/// longer differ in PRECISION -- only in op STRUCTURE (raw per-path offset with
+/// no pre-union; EvenOdd vs NonZero union) -- and the whole gate now scores
+/// arachne +8,045 when turned OFF. These per-op sub-knobs exist to find which
+/// of the three carries that, without giving up the other two. Each defaults to
+/// the parent gate; `ARACHNE_PREP_CLIB_OFFSET=0` (or `_SIMPLIFY`, `_UNION`)
+/// reverts just that op to the geo backend.
+fn prep_clib(op: &str) -> bool {
+    if !crate::faithful_gate("ARACHNE_PREP_CLIB") {
+        return false;
+    }
+    match op {
+        "OFFSET" => crate::faithful_gate("ARACHNE_PREP_CLIB_OFFSET"),
+        "SIMPLIFY" => crate::faithful_gate("ARACHNE_PREP_CLIB_SIMPLIFY"),
+        _ => crate::faithful_gate("ARACHNE_PREP_CLIB_UNION"),
+    }
+}
+
 /// `ClipperLib::SimplifyPolygons(ClipperUtils::PolygonsProvider(thiss))` — performs a union of the
 /// polygons with itself under the default (non-zero/even-odd-agnostic) fill rule, returning the
 /// simplified `Polygons`. The crate's clipper backend exposes this via `union_polygons_ex` →
@@ -774,7 +798,7 @@ fn clipper_simplify_polygons(thiss: &Polygons) -> Polygons {
     // trailing SimplifyPolygons. Native calls ClipperLib::SimplifyPolygons at
     // coord_t precision; `union_polygons_ex` is the geo backend at fixed scale
     // 1000, exactly as the FIDELITY-NOTE above says.
-    if crate::faithful_gate("ARACHNE_PREP_CLIB") {
+    if prep_clib("SIMPLIFY") {
         // fill_type 0 = EvenOdd, which is what ClipperLib::SimplifyPolygons uses.
         return expolygons_to_polygons(&clipper_utils::union_ex_clib(thiss, 0));
     }
@@ -799,7 +823,7 @@ fn expolygons_to_polygons(ex: &[ExPolygon]) -> Polygons {
 fn union_polygons(subject: &Polygons) -> Polygons {
     // R725 — same class as `clipper_simplify_polygons`: native `union_()` is
     // ClipperLib NonZero at coord_t precision, not the geo backend.
-    if crate::faithful_gate("ARACHNE_PREP_CLIB") {
+    if prep_clib("UNION") {
         return expolygons_to_polygons(&clipper_utils::union_ex_clib(subject, 1));
     }
     expolygons_to_polygons(&clipper_utils::union_polygons_ex(subject))
@@ -830,11 +854,26 @@ fn offset_polygons(polygons: &Polygons, delta: Coord) -> Polygons {
     // fixSelfIntersections, then again by the final union_. With all three on
     // the coord_t path the whole chain is bit-identical: p0-p7 92/94 and
     // `prepared_outline` 91/93, against 0/94 and 0/93 before.
-    if crate::faithful_gate("ARACHNE_PREP_CLIB") {
-        // native: `Polygons offset(const Polygons&, const float delta)` —
-        // ClipperOffset, jtMiter/ML3, raw paths out, no union reconstruction.
-        // Each input path is offset independently, so each Polygon becomes its
-        // own single-contour ExPolygon rather than being unioned first.
+    if prep_clib("OFFSET") {
+        // native: `Polygons offset(const Polygons&, const float delta)`
+        // (ClipperUtils.cpp:413) = offset_paths -> expand_paths/shrink_paths over
+        // raw_offset. R763 gave that its own primitive; before it, this arm used
+        // the ExPolygon offset with each Polygon wrapped as a hole-less
+        // ExPolygon, which silently dropped three things native does:
+        // raw_offset's per-path `ccw = Orientation(path)` signum flip (and the
+        // matching output reversal), expand_paths' trailing pftNonZero union,
+        // and shrink_paths' bounding-frame pftNegative union. The first of those
+        // GROWS every clockwise path where native shrinks it, so any outline
+        // with holes came out wrong -- which is why turning this whole arm off
+        // was worth +8,045 in-order lines on arachne.
+        // ARACHNE_PREP_OFFSET_PATHS=0 restores the ExPolygon-shaped call.
+        if crate::faithful_gate("ARACHNE_PREP_OFFSET_PATHS") {
+            return clipper_utils::offset_paths_clib_scaled(
+                polygons,
+                delta as CoordF,
+                clipper_utils::OffsetJoinType::Miter,
+            );
+        }
         let exs: Vec<crate::geometry::ExPolygon> = polygons
             .iter()
             .map(|p| crate::geometry::ExPolygon {

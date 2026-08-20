@@ -1325,6 +1325,87 @@ pub fn offset_expolygons_clib(
 /// EXACTLY: per-expolygon ClipperOffset paths concatenated as flat `Polygons` —
 /// NO union / PolyTree reconstruction (Class-5: the union re-merges overlapping
 /// grown islands native keeps separate). `delta_scaled` = final f64 delta.
+/// R763 — `offset(const Slic3r::Polygons&, const float delta)`
+/// (ClipperUtils.cpp:413) on the vendored ClipperLib, at coord_t precision.
+///
+/// This is the flat-`Polygons` overload, which is NOT the same operation as the
+/// ExPolygon one. Native routes it through `offset_paths` -> `expand_paths` /
+/// `shrink_paths` over `raw_offset`, and three things fall out of that which
+/// [`offset_expolygons_clib_raw_scaled`] has no equivalent of:
+///
+///   * `raw_offset` reads each path's own ORIENTATION: `ccw = Orientation(path)`
+///     then `Execute(out, ccw ? delta : -delta)`, reversing the output when the
+///     input was CW. ClipperOffset::Execute reorients the outermost contour to a
+///     positive area before offsetting, so without this a CW path (a hole) grows
+///     where native shrinks it.
+///   * for delta > 0 the raw output is unioned at pftNonZero (`expand_paths`).
+///   * for delta < 0 `shrink_paths` unions it with a bounding rectangle under
+///     pftNegative with ReverseSolution, then drops the outermost polygon.
+///
+/// `delta_scaled` is in scaled (coord_t) units, matching the caller's
+/// coordinates.
+pub fn offset_paths_clib_scaled(
+    polygons: &[Polygon],
+    delta_scaled: CoordF,
+    join_type: OffsetJoinType,
+) -> Vec<Polygon> {
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::with_capacity(polygons.len());
+    for p in polygons {
+        let pts = p.points();
+        if pts.is_empty() {
+            continue;
+        }
+        lens.push(pts.len() as i32);
+        for pt in pts {
+            assert_i32_scaled(pt.x);
+            assert_i32_scaled(pt.y);
+            xy.push(pt.x as i32);
+            xy.push(pt.y as i32);
+        }
+    }
+    if lens.is_empty() {
+        return Vec::new();
+    }
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
+    // them and returns malloc'd buffers we copy out then free.
+    let raw = unsafe {
+        clipper_z_sys::cz_offset_paths(
+            xy.as_ptr(),
+            lens.as_ptr(),
+            lens.len() as i32,
+            delta_scaled,
+            clib_join_code(join_type),
+            CLIB_MITER_LIMIT,
+        )
+    };
+    let mut out: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                pts.push(Point::new(
+                    coords[cursor * 3] as i64,
+                    coords[cursor * 3 + 1] as i64,
+                ));
+                cursor += 1;
+            }
+            out.push(Polygon::from_points(pts));
+        }
+    }
+    // SAFETY: `raw` was produced by cz_offset_paths and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    out
+}
+
 pub fn offset_expolygons_clib_raw_scaled(
     expolygons: &[ExPolygon],
     delta_scaled: CoordF,
