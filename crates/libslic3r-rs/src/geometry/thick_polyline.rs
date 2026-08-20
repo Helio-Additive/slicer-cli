@@ -206,6 +206,37 @@ impl ThickPolyline {
             }
             return lines;
         }
+        // R758b: native's `width` is ALWAYS the pair model — 2 entries per
+        // SEGMENT (Polyline.hpp:282 assigns `(n-1)*2`; ExtrusionLine.hpp:203-218
+        // to_thick_polyline emits [w0,w1, w1,w2, w2,w3, ...]). Our arachne
+        // `to_thick_polyline` port faithfully writes that layout into `widths`,
+        // but this reader indexed it per-VERTEX: segment i read (widths[i],
+        // widths[i+1]), which from segment 1 on yields (w1,w1), (w1,w2), ... —
+        // shifted and FLATTENED. That collapse is what R660's TPMPPROBE measured
+        // as "already-flat on 97.6% of calls" and why variable-width fills merge
+        // paths native splits (benchy layer-6 ISI: one 0.386 path vs native
+        // 0.375/0.410/0.452/0.496). Detect the pair layout by length — a
+        // per-vertex array has len == n < 2*(n-1) for n >= 3, and for n == 2 the
+        // two layouts coincide. clip_end (points-only, like native's inherited
+        // Polyline::clip_end) may leave the array longer than 2*(n-1); native
+        // thicklines() ignores the tail, so `>=` mirrors it.
+        if self.points.len() >= 2
+            && self.widths.len() >= 2 * (self.points.len() - 1)
+            && crate::faithful_gate("THICKLINES_PAIR_MODEL")
+        {
+            lines.reserve(self.points.len() - 1);
+            for i in 0..(self.points.len() - 1) {
+                let a_width = self.widths.get(2 * i).copied().unwrap_or(0.0);
+                let b_width = self.widths.get(2 * i + 1).copied().unwrap_or(0.0);
+                lines.push(ThickLine::new(
+                    self.points[i],
+                    self.points[i + 1],
+                    a_width,
+                    b_width,
+                ));
+            }
+            return lines;
+        }
         if self.points.len() >= 2 {
             lines.reserve(self.points.len() - 1);
             for i in 0..(self.points.len() - 1) {

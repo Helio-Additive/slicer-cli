@@ -292,6 +292,30 @@ impl<'a> FillConcentricInternal<'a> {
         // FillConcentricInternal.cpp:85  can be sorted inside the pass
         coll_nosort.no_sort = self.no_sort();
 
+        if crate::probe_enabled("FCIPROBE") {
+            for tp in thick_polylines_out.iter() {
+                if tp.points.is_empty() {
+                    continue;
+                }
+                let fx = crate::unscale(tp.points[0].x());
+                let fy = crate::unscale(tp.points[0].y());
+                if fx > 0.0 && fx < 6.0 && fy > -16.0 && fy < -12.0 {
+                    let mut s = format!("FCIPROBE tp n={} pts=", tp.points.len());
+                    for pt in tp.points.iter() {
+                        s.push_str(&format!(
+                            "({:.3},{:.3})",
+                            crate::unscale(pt.x()),
+                            crate::unscale(pt.y())
+                        ));
+                    }
+                    s.push_str(" w=");
+                    for w in tp.widths.iter() {
+                        s.push_str(&format!("{:.4},", crate::unscale(*w as crate::Coord)));
+                    }
+                    eprintln!("{}", s);
+                }
+            }
+        }
         // FillConcentricInternal.cpp:87
         if !thick_polylines_out.is_empty() {
             // FillConcentricInternal.cpp:88
