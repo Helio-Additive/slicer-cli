@@ -58,8 +58,22 @@ const GEO_CLIPPER_SCALE_LEGACY: f64 = 1_000.0;
 /// backend. This gate stays off as a measuring instrument that PRICES the whole
 /// class at ~+2,900 lines.
 ///
-/// `GEO_SCALE=<n>` overrides both arms for sweeping. `GEO_SCALE_COORDT=1` forces
-/// the coord_t arm on.
+/// UNPARKED DEFAULT-ON (R759). The 2.3x is GONE: re-measured on this tree, best
+/// of three, benchy-016 5.60s -> 5.57s, arachne 10.03s -> 9.86s, benchy classic
+/// and cube flat. R726's cost was the geo backend being on the hot path; R736,
+/// R737 and R740 have since routed the expensive offsets to the vendored
+/// ClipperLib, so widening geo's grid now costs nothing measurable, and the only
+/// reason the gate was parked no longer holds.
+///
+/// What it buys, in seq_parity in-order lines: benchy-016 +412, benchy classic
+/// +253, cube +30, and **arachne +45,201** (46,379 -> 91,580; content 30.2% ->
+/// 51.9%). The arachne number is the point -- that fixture is dominated by
+/// `WallToolPaths::generate`, the function R724/R725 measured losing 5,208 lines
+/// to the 1 um snap, and its walls are exactly what the snap was destroying:
+/// Outer wall in-order 16.7% -> 46.9%, Inner wall 11.2% -> 29.6%.
+///
+/// `GEO_SCALE=<n>` overrides both arms for sweeping. `GEO_SCALE_COORDT=0`
+/// restores the legacy 1 um grid.
 #[inline]
 fn geo_clipper_scale() -> f64 {
     use std::sync::OnceLock;
@@ -71,7 +85,7 @@ fn geo_clipper_scale() -> f64 {
                 return v;
             }
         }
-        if crate::opt_in_gate("GEO_SCALE_COORDT") {
+        if crate::faithful_gate("GEO_SCALE_COORDT") {
             100_000.0
         } else {
             GEO_CLIPPER_SCALE_LEGACY
