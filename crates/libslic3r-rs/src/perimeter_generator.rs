@@ -3381,7 +3381,16 @@ impl PerimeterGenerator {
                 let generate_one_wall_by_top =
                     self.config.top_one_wall && self.config.upper_slices.is_some();
                 // PerimeterGenerator.cpp:1532  is_one_wall
-                let is_one_wall = if crate::opt_in_gate("ARACHNE_TOP_ONE_WALL") {
+                //
+                // R761 — DEFAULT-ON. R683/R684 wired this up and shipped it
+                // opt-in; re-scored on top of R757-R760 it is +1,546 in-order
+                // lines on arachne and EXACTLY ZERO on benchy-016, benchy
+                // classic and cube, which is what a correct port of an
+                // arachne-only branch should look like: those three fixtures
+                // are `wall_generator = classic`, where the same feature was
+                // already live in `generate_classic_one`.
+                // ARACHNE_TOP_ONE_WALL=0 restores the single-disjunct form.
+                let is_one_wall = if crate::faithful_gate("ARACHNE_TOP_ONE_WALL") {
                     loop_number == 0
                         || generate_one_wall_by_first_layer
                         || generate_one_wall_by_top_most
@@ -3389,7 +3398,7 @@ impl PerimeterGenerator {
                     loop_number == 0
                 };
                 // PerimeterGenerator.cpp:1534
-                let mut seperate_wall_generation = crate::opt_in_gate("ARACHNE_TOP_ONE_WALL")
+                let mut seperate_wall_generation = crate::faithful_gate("ARACHNE_TOP_ONE_WALL")
                     && !is_one_wall
                     && generate_one_wall_by_top;
 
