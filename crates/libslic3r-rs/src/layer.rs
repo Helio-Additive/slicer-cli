@@ -722,6 +722,15 @@ impl LayerRegion {
         // width, which over-extruded ~4.6x (contour ~2x length, full width vs thin).
         // C++ instead: collapse the gaps to the truly-thin band, run medial_axis to get
         // variable-width centerlines, and emit those via variable_width().
+        if crate::env_f64("GFPROBE_LID") == Some(self.layer_id as f64) {
+            for ex in &result.gap_fills {
+                let mut line = format!("GFRAW lid={} n={}", self.layer_id, ex.contour.points.len());
+                for pt in &ex.contour.points {
+                    line.push_str(&format!(" {},{}", pt.x(), pt.y()));
+                }
+                eprintln!("{}", line);
+            }
+        }
         if !result.gap_fills.is_empty() {
             use crate::clipper_utils::{difference_clib, offset2_clib, OffsetJoinType};
             use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
@@ -783,6 +792,31 @@ impl LayerRegion {
             } else {
                 (min, max)
             };
+            let gfp = crate::env_f64("GFPROBE_LID") == Some(self.layer_id as f64);
+            if gfp {
+                eprintln!(
+                    "GFPARAM lid={} min={:.6} max={:.6} half_min={:.6}",
+                    self.layer_id,
+                    bmin / crate::SCALING_FACTOR.recip(),
+                    bmax / crate::SCALING_FACTOR.recip(),
+                    (bmin / 2.0) / crate::SCALING_FACTOR.recip()
+                );
+            }
+            let gfdump = |tag: &str, v: &ExPolygons| {
+                for ex in v {
+                    let mut line = format!("{} lid={} n={}", tag, self.layer_id, ex.contour.points.len());
+                    for pt in &ex.contour.points {
+                        line.push_str(&format!(" {},{}", pt.x(), pt.y()));
+                    }
+                    for h in &ex.holes {
+                        line.push_str(&format!(" H{}", h.points.len()));
+                        for pt in &h.points {
+                            line.push_str(&format!(" {},{}", pt.x(), pt.y()));
+                        }
+                    }
+                    eprintln!("{}", line);
+                }
+            };
             for gap_set in &gap_sets {
                 let opened_min =
                     offset2_clib(gap_set, bmin / 2.0, bmin / 2.0, OffsetJoinType::Miter);
@@ -792,7 +826,13 @@ impl LayerRegion {
                     bmax / 2.0 + CLIPPER_SAFETY_OFFSET,
                     OffsetJoinType::Miter,
                 );
-                gaps_ex.extend(difference_clib(&opened_min, &wide_part));
+                let piece = difference_clib(&opened_min, &wide_part);
+                if gfp {
+                    gfdump("GFC1", &opened_min);
+                    gfdump("GFC2", &wide_part);
+                    gfdump("GFC3", &piece);
+                }
+                gaps_ex.extend(piece);
             }
 
             // PerimeterGenerator.cpp:914 — surface_simplify_resolution =
@@ -830,6 +870,33 @@ impl LayerRegion {
                     ex.medial_axis_scaled(0.2 * w_sc * (1.0 - 0.4), 2.0 * s_sc, &mut polylines);
                 } else {
                     ex.medial_axis(min, max, &mut polylines);
+                }
+            }
+            if crate::env_f64("GFPROBE_LID") == Some(self.layer_id as f64) {
+                for ex in &gaps_ex {
+                    let mut line = format!("GFGAPEX lid={} n={}", self.layer_id, ex.contour.points.len());
+                    for pt in &ex.contour.points {
+                        line.push_str(&format!(" {},{}", pt.x(), pt.y()));
+                    }
+                    eprintln!("{}", line);
+                }
+                for tp in &polylines {
+                    let mut line = format!(
+                        "GFMA lid={} n={} ep={},{}",
+                        self.layer_id,
+                        tp.points.len(),
+                        tp.endpoints[0] as i32,
+                        tp.endpoints[1] as i32
+                    );
+                    for pt in &tp.points {
+                        line.push_str(&format!(" {},{}", pt.x(), pt.y()));
+                    }
+                    line.push_str(" W");
+                    let ws: &[f64] = if tp.edge_widths.is_empty() { &tp.widths } else { &tp.edge_widths };
+                    for w in ws {
+                        line.push_str(&format!(" {:.1}", w));
+                    }
+                    eprintln!("{}", line);
                 }
             }
 
@@ -879,6 +946,27 @@ impl LayerRegion {
                         ix,
                         iy
                     );
+                    if crate::env_f64("GFPROBE_LID") == Some(self.layer_id as f64) {
+                        for pg in &covered {
+                            let mut line = format!("GFPOLY lid={} n={}", self.layer_id, pg.points.len());
+                            for pt in &pg.points {
+                                line.push_str(&format!(" {},{}", pt.x(), pt.y()));
+                            }
+                            eprintln!("{}", line);
+                        }
+                        for path in &paths {
+                            let mut line = format!(
+                                "GFPATH lid={} w={:.6} n={}",
+                                self.layer_id,
+                                path.width,
+                                path.polyline.points.len()
+                            );
+                            for pt in &path.polyline.points {
+                                line.push_str(&format!(" {},{}", pt.x(), pt.y()));
+                            }
+                            eprintln!("{}", line);
+                        }
+                    }
                 }
 
                 for path in paths {

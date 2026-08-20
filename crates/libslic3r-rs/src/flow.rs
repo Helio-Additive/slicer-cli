@@ -126,8 +126,14 @@ pub struct Flow {
 /// volumetric-capped F digits. Gated separately (FLOW_F32) so its
 /// geometry impact can be measured in isolation.
 pub fn flow_f32() -> bool {
+    // R760: default ON. The f64 Flow chain made scaled widths off by one unit
+    // (q64 0.45 → 45000 vs native float 0.44999999 → 44999), which shifted the
+    // gap-collapse `min` by 0.12 units and drifted the gap-fill footprint on
+    // all 254 gap layers (the R759 bisect's sole non-byte-exact stage).
+    // Was presence-only env (R693 trap: FLOW_F32=0 turned it ON); now
+    // faithful_gate semantics — set FLOW_F32=0 for the old f64 arm.
     static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *G.get_or_init(|| std::env::var("FLOW_F32").is_ok())
+    *G.get_or_init(|| crate::faithful_gate("FLOW_F32"))
 }
 
 /// Quantize to f32 under the FLOW_F32 gate (native float member store).
