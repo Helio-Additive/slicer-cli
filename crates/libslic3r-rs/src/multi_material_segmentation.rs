@@ -2616,14 +2616,28 @@ fn cut_segmented_layers(
                 let ex_polygons = &segmented_regions[layer_idx][extruder_idx];
                 if !ex_polygons.is_empty() {
                     // diff_ex(ex_polygons, offset_ex(input_expolygons[layer_idx], -region_cut_width))
-                    segmented_regions_cuts[extruder_idx] = difference(
-                        ex_polygons,
-                        &offset_expolygons(
-                            &input_expolygons[layer_idx],
-                            -(region_cut_width as f64) / SCALING_FACTOR,
-                            OffsetJoinType::Miter,
-                        ),
-                    );
+                    // R765 (MMSEG_CLIB): native runs ClipperLib @1e5; the geo
+                    // route re-grids every boundary at 1um (the Majora content
+                    // noise class). Same mm deltas, exact backend.
+                    segmented_regions_cuts[extruder_idx] = if crate::faithful_gate("MMSEG_CLIB") {
+                        crate::clipper_utils::difference_clib(
+                            ex_polygons,
+                            &crate::clipper_utils::offset_expolygons_clib(
+                                &input_expolygons[layer_idx],
+                                -(region_cut_width as f64) / SCALING_FACTOR,
+                                OffsetJoinType::Miter,
+                            ),
+                        )
+                    } else {
+                        difference(
+                            ex_polygons,
+                            &offset_expolygons(
+                                &input_expolygons[layer_idx],
+                                -(region_cut_width as f64) / SCALING_FACTOR,
+                                OffsetJoinType::Miter,
+                            ),
+                        )
+                    };
                 }
             }
             segmented_regions[layer_idx] = segmented_regions_cuts;
@@ -2660,10 +2674,17 @@ fn merge_segmented_layers(
                     if !top_and_bottom_by_extruder[layer_idx].is_empty()
                         && !segmented_regions_trimmed.is_empty()
                     {
-                        segmented_regions_trimmed = difference(
-                            &segmented_regions_trimmed,
-                            &top_and_bottom_by_extruder[layer_idx],
-                        );
+                        segmented_regions_trimmed = if crate::faithful_gate("MMSEG_CLIB") {
+                            crate::clipper_utils::difference_clib(
+                                &segmented_regions_trimmed,
+                                &top_and_bottom_by_extruder[layer_idx],
+                            )
+                        } else {
+                            difference(
+                                &segmented_regions_trimmed,
+                                &top_and_bottom_by_extruder[layer_idx],
+                            )
+                        };
                     }
                 }
 
@@ -2682,11 +2703,26 @@ fn merge_segmented_layers(
                 // grows then shrinks by SCALED_EPSILON == crate `closing` with the
                 // equivalent mm distance.
                 if !was_top_and_bottom_empty {
-                    segmented_regions_merged[layer_idx][extruder_id - 1] = closing(
-                        &union_ex(&segmented_regions_merged[layer_idx][extruder_id - 1]),
-                        SCALED_EPSILON / SCALING_FACTOR,
-                        OffsetJoinType::Miter,
-                    );
+                    segmented_regions_merged[layer_idx][extruder_id - 1] = if crate::faithful_gate("MMSEG_CLIB") {
+                        // native offset2_ex(union_ex(..), +SCALED_EPSILON, -SCALED_EPSILON)
+                        crate::clipper_utils::offset2_ex_clib(
+                            &crate::clipper_utils::union_ex_clib(
+                                &crate::geometry::to_polygons(
+                                    &segmented_regions_merged[layer_idx][extruder_id - 1],
+                                ),
+                                1,
+                            ),
+                            SCALED_EPSILON / SCALING_FACTOR,
+                            -(SCALED_EPSILON / SCALING_FACTOR),
+                            OffsetJoinType::Miter,
+                        )
+                    } else {
+                        closing(
+                            &union_ex(&segmented_regions_merged[layer_idx][extruder_id - 1]),
+                            SCALED_EPSILON / SCALING_FACTOR,
+                            OffsetJoinType::Miter,
+                        )
+                    };
                 }
             }
         }
@@ -2837,8 +2873,21 @@ pub fn multi_material_segmentation_by_painting_tier1(
     let mut input_expolygons: Vec<ExPolygons> = Vec::with_capacity(num_layers);
     for layer_idx in 0..num_layers {
         // cpp:2121 offset_ex(+10*SCALED_EPSILON) then cpp:2124 union_ex.
-        let grown = offset_expolygons(&layer_slices[layer_idx], grow_mm, OffsetJoinType::Miter);
-        let mut ex = union_ex(&grown);
+        let clib = crate::faithful_gate("MMSEG_CLIB");
+        let grown = if clib {
+            crate::clipper_utils::offset_expolygons_clib(
+                &layer_slices[layer_idx],
+                grow_mm,
+                OffsetJoinType::Miter,
+            )
+        } else {
+            offset_expolygons(&layer_slices[layer_idx], grow_mm, OffsetJoinType::Miter)
+        };
+        let mut ex = if clib {
+            crate::clipper_utils::union_ex_clib(&crate::geometry::to_polygons(&grown), 1)
+        } else {
+            union_ex(&grown)
+        };
         // cpp:2126
         crate::ex_polygon::remove_small_and_small_holes(&mut ex, min_area);
         // cpp:2134 — remove_duplicates(expolygons_simplify(offset_ex(ex, -10*SCALED_EPSILON),
@@ -2847,7 +2896,11 @@ pub fn multi_material_segmentation_by_painting_tier1(
         // and downstream segment extraction — and in practice the un-simplified input also
         // explodes the segmentation output into fragment soup (first Majora run spent
         // >30min of release-mode clipper time in Layer::make_slices on it).
-        let shrunk = offset_expolygons(&ex, -grow_mm, OffsetJoinType::Miter);
+        let shrunk = if clib {
+            crate::clipper_utils::offset_expolygons_clib(&ex, -grow_mm, OffsetJoinType::Miter)
+        } else {
+            offset_expolygons(&ex, -grow_mm, OffsetJoinType::Miter)
+        };
         // expolygons_simplify(…, 5*SCALED_EPSILON) — tolerance is scaled units;
         // clipper_utils::simplify takes mm and re-scales internally.
         let simplified =
@@ -3127,7 +3180,13 @@ pub fn multi_material_segmentation_by_painting_tier1(
                     let poly_buckets = extract_colored_segments(&graph, num_extruders);
                     *segmented_slot = poly_buckets
                         .iter()
-                        .map(|polys| union_polygons_ex(polys))
+                        .map(|polys| {
+                            if crate::faithful_gate("MMSEG_CLIB") {
+                                crate::clipper_utils::union_ex_clib(polys, 1)
+                            } else {
+                                union_polygons_ex(polys)
+                            }
+                        })
                         .collect();
                 }
             });
