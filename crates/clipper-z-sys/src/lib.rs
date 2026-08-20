@@ -79,6 +79,18 @@ extern "C" {
         miter_limit: f64,
     ) -> CzZPaths;
 
+    /// PolyTree sibling of [`cz_offset_paths`]: `offset_ex(const Polygons&,
+    /// delta)` (ClipperUtils.cpp:415). Output uses the grouped z-encoding of
+    /// [`cz_union_ex`] — contour points carry z=0, hole points z=1.
+    pub fn cz_offset_paths_ex(
+        xy: *const i32,
+        lens: *const i32,
+        num: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+
     /// Faithful replica of `RegionExpansion.cpp` `propagate_wave_from_boundary`
     /// (+ `wavefront_initial`/`wavefront_step`/`wavefront_clip`): the ClipperLib
     /// wavefront propagation for one (boundary, src) seed group. `seed_*` are the

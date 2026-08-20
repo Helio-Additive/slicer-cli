@@ -142,6 +142,13 @@ CzZPaths cz_offset_expolygon(const int32_t *contour_xy, int32_t contour_n,
 CzZPaths cz_offset_paths(const int32_t *xy, const int32_t *lens, int32_t num,
                          double delta, int32_t join_type, double miter_limit);
 
+// The PolyTree sibling of cz_offset_paths: ClipperUtils.cpp `offset_ex(const
+// Polygons&, delta)` (:415). Same raw_offset front half; the union is executed
+// into a PolyTree and flattened with the exact PolyTreeToExPolygons nesting.
+// OUTPUT uses the grouped z-encoding of cz_union_ex (contour z=0, hole z=1).
+CzZPaths cz_offset_paths_ex(const int32_t *xy, const int32_t *lens, int32_t num,
+                            double delta, int32_t join_type, double miter_limit);
+
 // Faithful replica of libslic3r ClipperUtils.cpp `_clipper` /
 // `clipper_do<ClipperLib::Paths>(ctDifference, subject, clip, pftNonZero)`
 // (ClipperUtils.cpp:309-322, 669-692): a closed-path boolean DIFFERENCE

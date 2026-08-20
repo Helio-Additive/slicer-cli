@@ -3310,15 +3310,36 @@ impl PerimeterGenerator {
             let inset = -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0);
             let last = if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
                 // PerimeterGenerator.cpp:1511 — offset the raw simplify_p polygons.
-                crate::clipper_utils::offset_polygons(
-                    &if crate::opt_in_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
+                {
+                    let rings = if crate::faithful_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
                         simplify_faithful(surface)
                     } else {
                         surface.simplify_p(surface_simplify_resolution)
-                    },
-                    inset / crate::SCALING_FACTOR,
-                    self.config.join_type,
-                )
+                    };
+                    // R764 — PerimeterGenerator.cpp:1511 is `offset_ex(Polygons,
+                    // delta)`, the flat-Polygons overload: ClipperUtils.cpp:415 ->
+                    // offset_paths<PolyTree> -> shrink_paths (the inset is
+                    // negative) over raw_offset, then PolyTreeToExPolygons. The
+                    // geo `offset_polygons` here is a MultiPolygon offset that
+                    // treats every ring as its own outer contour, so it neither
+                    // reads each path's orientation the way raw_offset does nor
+                    // applies shrink_paths' bounding-frame pftNegative union.
+                    // Same defect class as the Arachne prep offset in R763.
+                    // ARACHNE_SIMPLIFY_OFFSET_EX=0 restores the geo call.
+                    if crate::faithful_gate("ARACHNE_SIMPLIFY_OFFSET_EX") {
+                        crate::clipper_utils::offset_paths_ex_clib_scaled(
+                            &rings,
+                            inset,
+                            self.config.join_type,
+                        )
+                    } else {
+                        crate::clipper_utils::offset_polygons(
+                            &rings,
+                            inset / crate::SCALING_FACTOR,
+                            self.config.join_type,
+                        )
+                    }
+                }
             } else {
                 offset_expolygons(
                     &simplified,

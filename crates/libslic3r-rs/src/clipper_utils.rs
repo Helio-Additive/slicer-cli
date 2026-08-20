@@ -1325,6 +1325,85 @@ pub fn offset_expolygons_clib(
 /// EXACTLY: per-expolygon ClipperOffset paths concatenated as flat `Polygons` —
 /// NO union / PolyTree reconstruction (Class-5: the union re-merges overlapping
 /// grown islands native keeps separate). `delta_scaled` = final f64 delta.
+/// R764 — `offset_ex(const Slic3r::Polygons&, const float delta)`
+/// (ClipperUtils.cpp:415), the PolyTree sibling of [`offset_paths_clib_scaled`].
+/// Same `raw_offset` front half (per-path orientation signum flip and output
+/// reversal); the union is executed into a PolyTree and flattened with the exact
+/// `PolyTreeToExPolygons` nesting, so holes come back attached to their contour
+/// rather than as separate rings.
+///
+/// `delta_scaled` is in scaled (coord_t) units.
+pub fn offset_paths_ex_clib_scaled(
+    polygons: &[Polygon],
+    delta_scaled: CoordF,
+    join_type: OffsetJoinType,
+) -> ExPolygons {
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::with_capacity(polygons.len());
+    for p in polygons {
+        let pts = p.points();
+        if pts.is_empty() {
+            continue;
+        }
+        lens.push(pts.len() as i32);
+        for pt in pts {
+            assert_i32_scaled(pt.x);
+            assert_i32_scaled(pt.y);
+            xy.push(pt.x as i32);
+            xy.push(pt.y as i32);
+        }
+    }
+    if lens.is_empty() {
+        return Vec::new();
+    }
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads
+    // them and returns malloc'd buffers we copy out then free.
+    let raw = unsafe {
+        clipper_z_sys::cz_offset_paths_ex(
+            xy.as_ptr(),
+            lens.as_ptr(),
+            lens.len() as i32,
+            delta_scaled,
+            clib_join_code(join_type),
+            CLIB_MITER_LIMIT,
+        )
+    };
+    let mut result: ExPolygons = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            let mut is_hole = 0i32;
+            for i in 0..len {
+                if i == 0 {
+                    is_hole = coords[cursor * 3 + 2];
+                }
+                pts.push(Point::new(
+                    coords[cursor * 3] as i64,
+                    coords[cursor * 3 + 1] as i64,
+                ));
+                cursor += 1;
+            }
+            let ring = Polygon::from_points(pts);
+            if is_hole == 0 {
+                result.push(ExPolygon::new(ring));
+            } else if let Some(last) = result.last_mut() {
+                last.holes.push(ring);
+            }
+        }
+    }
+    // SAFETY: `raw` was produced by cz_offset_paths_ex and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    result
+}
+
 /// R763 — `offset(const Slic3r::Polygons&, const float delta)`
 /// (ClipperUtils.cpp:413) on the vendored ClipperLib, at coord_t precision.
 ///

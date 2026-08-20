@@ -1113,6 +1113,59 @@ extern "C" CzZPaths cz_variable_offset_inner_ex(const int32_t *xy, const int32_t
     return marshal_grouped(out_paths, out_is_hole);
 }
 
+// ---------------------------------------------------------------------------
+// cz_offset_paths_ex — the PolyTree sibling of cz_offset_paths: a faithful
+// replica of ClipperUtils.cpp `offset_ex(const Slic3r::Polygons&, delta)`
+// (:415) = `PolyTreeToExPolygons(offset_paths<ClipperLib::PolyTree>(...))`.
+// Same raw_offset front half; the union is executed into a PolyTree and
+// flattened with the exact PolyTreeToExPolygons nesting, so the output uses the
+// grouped z-encoding (contour z=0, hole z=1) shared with cz_union_ex.
+// ---------------------------------------------------------------------------
+extern "C" CzZPaths cz_offset_paths_ex(const int32_t *xy, const int32_t *lens, int32_t num,
+                                       double delta, int32_t join_type, double miter_limit) {
+    ClipperLib::JoinType jt = ClipperLib::jtMiter;
+    if (join_type == 1) jt = ClipperLib::jtRound;
+    else if (join_type == 2) jt = ClipperLib::jtSquare;
+
+    ClipperLib::Paths paths = read_closed_paths(xy, lens, num);
+    ClipperLib::Paths out_paths;
+    std::vector<int32_t> out_is_hole;
+    if (paths.empty())
+        return marshal_grouped(out_paths, out_is_hole);
+
+    ClipperLib::Paths raw = cz_raw_offset(paths, delta, jt, miter_limit);
+    if (raw.empty())
+        return marshal_grouped(out_paths, out_is_hole);
+
+    ClipperLib::PolyTree polytree;
+    if (delta > 0) {
+        // expand_paths<PolyTree>: clipper_union at pftNonZero.
+        ClipperLib::Clipper clipper;
+        clipper.AddPaths(raw, ClipperLib::ptSubject, true);
+        clipper.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNonZero,
+                        ClipperLib::pftNonZero);
+    } else {
+        // shrink_paths<PolyTree>: frame + pftNegative + ReverseSolution, then
+        // PolyTree::RemoveOutermostPolygon.
+        ClipperLib::Clipper clipper;
+        clipper.AddPaths(raw, ClipperLib::ptSubject, true);
+        ClipperLib::IntRect r = clipper.GetBounds();
+        ClipperLib::Path frame;
+        frame.emplace_back(r.left - 10, r.bottom + 10);
+        frame.emplace_back(r.right + 10, r.bottom + 10);
+        frame.emplace_back(r.right + 10, r.top - 10);
+        frame.emplace_back(r.left - 10, r.top - 10);
+        clipper.AddPath(frame, ClipperLib::ptSubject, true);
+        clipper.ReverseSolution(true);
+        clipper.Execute(ClipperLib::ctUnion, polytree, ClipperLib::pftNegative,
+                        ClipperLib::pftNegative);
+        polytree.RemoveOutermostPolygon();
+    }
+    for (int i = 0; i < polytree.ChildCount(); ++i)
+        polytree_to_grouped(*polytree.Childs[i], out_paths, out_is_hole);
+    return marshal_grouped(out_paths, out_is_hole);
+}
+
 extern "C" CzZPaths cz_union_ex(const int32_t *xy, const int32_t *lens, int32_t num,
                                 int32_t fill_type) {
     ClipperLib::Paths subject = read_closed_paths(xy, lens, num);
