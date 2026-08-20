@@ -1121,7 +1121,16 @@ pub fn extrude_collection(
             // tag (GCode.cpp:6607) and only then `set_speed` (:6663). Defer ours
             // to just after the tag rather than dropping it, so the line count is
             // untouched and only its position changes.
-            if crate::opt_in_gate("LINEWIDTH_BEFORE_SPEED") {
+            //
+            // R760 — DEFAULT-ON. R654 parked this opt-in; re-scored on top of
+            // R757/R758/R759 it is positive on every fixture, in seq_parity
+            // in-order lines: benchy-016 +1,514, benchy classic +1,172, arachne
+            // +1,076, cube +15 (+3,777 total). It is also the plainly faithful
+            // order: for every feature run we emitted `G1 F...` BEFORE
+            // `; LINE_WIDTH:` where native emits the tag first, so the two files
+            // parted company at the first line of nearly every run.
+            // LINEWIDTH_BEFORE_SPEED=0 restores the pre-tag position.
+            if crate::faithful_gate("LINEWIDTH_BEFORE_SPEED") {
                 writer.set_speed_pending(feature_speed * 60.0, cooling_comment);
             } else {
                 writer.set_speed(feature_speed * 60.0, cooling_comment);
@@ -4773,19 +4782,32 @@ mod tests {
 /// (R653's census). Deferring the F to a pending slot, flushed straight after the
 /// tag, reproduces C++'s order without creating or destroying a line.
 ///
-/// SHIPPED OPT-IN (probe, default OFF). Making the adjacency exactly C++'s
-/// (G1F->LW 148,548 -> 0, C++ 0) moved content ZERO as predicted but cost
-/// **-26,309 IN-ORDER lines** (468,570 -> 442,261). The reason is the tag
-/// COUNT, not its order: we emit 154,063 `; LINE_WIDTH:` against C++'s
-/// 215,199, a 61,136 deficit, so our tags cannot anchor 1:1 with C++'s.
-/// Binding the F to a tag we under-emit destroys alignment that the F lines
-/// previously kept on their own. Close the COUNT first, then flip this ON.
+/// R654 SHIPPED IT OPT-IN: the adjacency became exactly C++'s (G1F->LW 148,548
+/// -> 0, C++ 0) and content moved ZERO as predicted, but IN-ORDER fell
+/// **-26,309** (468,570 -> 442,261). R654 blamed the tag COUNT rather than its
+/// order — we under-emit `; LINE_WIDTH:`, so our tags cannot anchor 1:1 with
+/// C++'s, and binding the F to a tag we under-emit destroyed alignment the F
+/// lines had been keeping on their own. Its instruction was: close the COUNT
+/// first, then flip this ON.
+///
+/// R760 — DEFAULT-ON, with the count still open, because the A/B has flipped
+/// sign. Re-scored on top of R757 (island order), R758 (concave-corner seam) and
+/// R759 (coord_t geo grid), in seq_parity in-order lines: benchy-016 +1,514,
+/// benchy classic +1,172, arachne +1,076, cube +15 — +3,777, positive on all
+/// four. R654's diagnosis was sound and is simply no longer binding: the
+/// alignment that the misplaced F lines were propping up is now carried by
+/// correctly ordered islands, so paying a tag-count deficit to sit where C++
+/// sits is cheaper than the inversion. The deficit itself is much smaller than
+/// R654 measured on its fixture: benchy-016 9,920 tags vs C++ 10,856 (9%),
+/// arachne 22,644 vs 34,882 (35%), and closing it is still worth a round.
 ///
 /// R654 note: the first suspect was the collection-level pre-set at
 /// `extrude_collection` — the A/B proved that gate a NO-OP (identical hash), so
 /// `skip_pre_speed` is already true there and these five are the real producers.
+/// That still holds: flipping the collection-level site alone changes nothing;
+/// the whole +3,777 comes from these five.
 fn set_speed_before_path(writer: &mut GCodeWriter, speed: crate::CoordF, comment: &str) {
-    if crate::opt_in_gate("LINEWIDTH_BEFORE_SPEED") {
+    if crate::faithful_gate("LINEWIDTH_BEFORE_SPEED") {
         writer.set_speed_pending(speed, comment);
     } else {
         writer.set_speed(speed, comment);
