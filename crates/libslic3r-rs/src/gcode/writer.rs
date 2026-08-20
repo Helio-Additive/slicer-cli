@@ -2941,12 +2941,19 @@ impl GCodeWriter {
         // Update the logical extrusion speed (C++ m_current_speed) regardless of
         // whether a new F line is needed.
         self.feedrate = adjusted_speed;
-        // Emit a fresh `F` only when the value last written to the gcode differs.
-        // After a travel move (which emits F60000 but leaves `feedrate` alone),
-        // `last_emitted_f` holds the travel speed, so re-asserting the extrusion
-        // speed here correctly re-emits `G1 F<extrude_speed>` and prevents the
-        // travel feedrate from leaking onto the following extrusion moves.
-        if (self.last_emitted_f - adjusted_speed).abs() > 0.01 {
+        // Native GCodeWriter::set_speed (GCodeWriter.cpp:387) emits
+        // UNCONDITIONALLY — a same-value `G1 F..;_EXTRUDE_SET_SPEED` line is the
+        // GCodeEditor's adjustable-block opener, and the editor removes
+        // redundant F lines AFTER the cooling pass consumed the markers
+        // (GCodeEditor.cpp write_layer_gcode: new_feedrate == current_feedrate
+        // → skip line). Deduping here starved the cooling model: layer 81 had
+        // 121 adjustable blocks vs native 207 (R757). Without the gate, emit
+        // only when the value last written to the gcode differs — after a
+        // travel (F60000 inline), re-asserting the extrusion speed re-emits and
+        // prevents the travel feedrate from leaking onto extrusion moves.
+        if crate::faithful_gate("SET_SPEED_ALWAYS_EMIT")
+            || (self.last_emitted_f - adjusted_speed).abs() > 0.01
+        {
             self.last_emitted_f = adjusted_speed;
             // Native GCodeWriter::set_speed formats F via GCodeG1Formatter::emit_f
             // (XYZF_EXPORT_DIGITS = 3, trailing zeros/dot trimmed) — fractional

@@ -998,6 +998,14 @@ impl Print {
                     } else {
                         String::new()
                     });
+                    if let Some(rp) = std::env::var_os("COOLPROBE_RAW") {
+                        use std::io::Write;
+                        if let Ok(mut fp) =
+                            std::fs::OpenOptions::new().create(true).append(true).open(&rp)
+                        {
+                            let _ = write!(fp, "; COOLPROBE_LAYER {}\n{}", layer_idx, &raw[start..end]);
+                        }
+                    }
                     let parsed = editor_state.process_layer_parse_only(
                         &raw[start..end],
                         layer_idx,
@@ -1019,7 +1027,34 @@ impl Print {
                     last_end = end;
                 }
 
+                let coolprobe = crate::probe_enabled("COOLPROBE");
+                if coolprobe {
+                    for (li, lay) in smoother.layers_wall_collection.iter().enumerate() {
+                        let mut s =
+                            format!("COOLPROBE pre li={} t={:.6}", li, parsed_layers[li].layer_time);
+                        for oc in lay {
+                            for (k, n) in &oc.cooling_nodes {
+                                s.push_str(&format!(
+                                    " n{}={:.3}/{:.3}",
+                                    k, n.max_feedrate, n.filter_feedrate
+                                ));
+                            }
+                        }
+                        eprintln!("{}", s);
+                    }
+                }
                 smoother.smooth_layer_speed();
+                if coolprobe {
+                    for (li, lay) in smoother.layers_wall_collection.iter().enumerate() {
+                        let mut s = format!("COOLPROBE post li={}", li);
+                        for oc in lay {
+                            for (k, n) in &oc.cooling_nodes {
+                                s.push_str(&format!(" n{}={:.3}", k, n.filter_feedrate));
+                            }
+                        }
+                        eprintln!("{}", s);
+                    }
+                }
 
                 for (layer_idx, parsed) in parsed_layers.iter_mut().enumerate() {
                     if layer_idx > 0 {

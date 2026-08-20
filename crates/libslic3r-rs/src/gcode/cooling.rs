@@ -2821,6 +2821,32 @@ fn calculate_layer_slowdown_postproc(
     per_extruder_adjustments: &mut [PostProcAdjustments],
     cooling_logic_proportional: bool,
 ) -> f32 {
+    static COOLPROBE_LAYER: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+    let probe_layer = COOLPROBE_LAYER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let cp = crate::probe_enabled("COOLPROBE_SOLVER");
+    let cpl: Option<i32> = crate::env_f64("COOLPROBE_LINES").map(|v| v as i32);
+    if cp {
+        for adj in per_extruder_adjustments.iter() {
+            let tt: f32 = adj.lines.iter().map(|l| l.time).sum();
+            eprintln!(
+                "CPSOLVE li={} ex={} en={} n={} tt={:.6} target={:.4}",
+                probe_layer,
+                adj.extruder_id,
+                adj.cooling_slow_down_enabled as i32,
+                adj.lines.len(),
+                tt,
+                adj.slow_down_layer_time
+            );
+            if cpl == Some(probe_layer) {
+                for (i, l) in adj.lines.iter().enumerate() {
+                    eprintln!(
+                        "CPLINE li={} i={} type={:x} len={:.5} f={:.4} t={:.6} tmax={:.6}",
+                        probe_layer, i, l.line_type, l.length, l.feedrate, l.time, l.time_max
+                    );
+                }
+            }
+        }
+    }
     // Sort extruders by slow_down_layer_time (increasing)
     // Reference: CoolingBuffer.cpp:259-350
     let mut by_slowdown_time: Vec<usize> = Vec::new();
@@ -2934,6 +2960,9 @@ fn calculate_layer_slowdown_postproc(
         adj.lines.sort_by_key(|l| l.line_start);
     }
 
+    if cp {
+        eprintln!("CPSOLVE-RES li={} t={:.6}", probe_layer, elapsed_time_total0);
+    }
     elapsed_time_total0
 }
 
@@ -2992,6 +3021,56 @@ fn proportional_slowdown(
     }
 
     total_after
+}
+
+/// Iterative exact-stretch feedrate solver for the post-processor path.
+/// Reference: CoolingBuffer.cpp:4-49 `new_feedrate_to_reach_time_stretch`.
+/// nomin/denom are doubles in C++; the per-line products are float promoted.
+fn new_feedrate_to_reach_time_stretch_postproc(
+    adjustments: &[PostProcAdjustments],
+    indices: &[usize],
+    mut min_feedrate: f32,
+    time_stretch: f32,
+    max_iter: usize,
+) -> f32 {
+    let mut new_feedrate = min_feedrate;
+    for _iter in 0..max_iter {
+        let mut nomin = 0.0f64;
+        let mut denom = time_stretch as f64;
+        for &idx in indices {
+            let adj = &adjustments[idx];
+            for i in 0..adj.n_lines_adjustable {
+                let line = &adj.lines[i];
+                if line.feedrate > min_feedrate {
+                    nomin += line.time as f64 * line.feedrate as f64;
+                    denom += line.time as f64;
+                }
+            }
+        }
+        if denom < 0.0 {
+            return min_feedrate;
+        }
+        new_feedrate = (nomin / denom) as f32;
+        if new_feedrate < min_feedrate + EPSILON {
+            return new_feedrate;
+        }
+        let mut not_finished = false;
+        'scan: for &idx in indices {
+            let adj = &adjustments[idx];
+            for i in 0..adj.n_lines_adjustable {
+                let line = &adj.lines[i];
+                if line.feedrate > min_feedrate && line.feedrate < new_feedrate {
+                    not_finished = true;
+                    break 'scan;
+                }
+            }
+        }
+        if !not_finished {
+            return new_feedrate;
+        }
+        min_feedrate = new_feedrate;
+    }
+    new_feedrate
 }
 
 /// Non-proportional slowdown for post-processor (equalize feedrates).
@@ -3076,6 +3155,25 @@ fn non_proportional_slowdown(
                         .time_stretch_when_slowing_down_to_feedrate(feedrate_limit);
                 }
                 if time_stretch_max >= time_stretch {
+                    if crate::faithful_gate("COOLING_EXACT_STRETCH") {
+                        // CoolingBuffer.cpp:191 — the final tier solves the
+                        // exact feedrate via new_feedrate_to_reach_time_stretch
+                        // (iterative weighted mean, double accumulators), NOT a
+                        // tolerance-bounded binary search. The graft below
+                        // overshot the target layer time by up to 0.21 s (rust
+                        // hit 4.004 s on 6/300 layers vs native 190/300, R757).
+                        let f = new_feedrate_to_reach_time_stretch_postproc(
+                            adjustments,
+                            &by_min_speed[tier_idx..],
+                            feedrate_limit,
+                            time_stretch,
+                            20,
+                        );
+                        for i in tier_idx..by_min_speed.len() {
+                            adjustments[by_min_speed[i]].slow_down_to_feedrate(f);
+                        }
+                        return;
+                    }
                     // Binary search for exact feedrate
                     let mut f_low = feedrate_limit;
                     let mut f_high = feedrate;

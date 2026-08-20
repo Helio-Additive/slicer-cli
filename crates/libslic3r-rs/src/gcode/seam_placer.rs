@@ -3321,7 +3321,13 @@ impl SeamPlacer {
         // 2 mm radius, and `depth` unscales the (scaled) seam-to-foot vector.
         // Positions here are in the placer's centred frame, so differences are
         // frame-free and only the final absolute point re-adds `frame_offset_xy`.
-        if crate::opt_in_gate("SEAM_CONCAVE_CORNER") {
+        //
+        // R754 shipped this OFF: it fixed the reproducer but cost -801 in-order
+        // lines. R755 traced that loss to the cooling speed cap amplifying the
+        // (correct) inner-wall shortening; R757 made the cap faithful
+        // (SET_SPEED_ALWAYS_EMIT + COOLING_EXACT_STRETCH), after which this
+        // block scores +1,075 — so it is now default-ON like the port it mirrors.
+        if crate::faithful_gate("SEAM_CONCAVE_CORNER") {
             let perimeter_point = &layer.points[seam_index];
             // SeamPlacer.cpp:1500-1502 — three-way guard.
             if (self.config_mode == SeamPositionMode::Nearest
