@@ -1068,17 +1068,30 @@ pub fn extrude_collection(
         // perimeter roles under enable_overhang_speed, so the pre-set is safely
         // skippable there. Default path keeps the pre-set (byte-locked).
         let skip_pre_speed = crate::faithful_gate("ZSMOOTH_FAITHFUL")
-            && config.enable_overhang_speed
-            && matches!(
-                entity,
-                crate::extrusion_entity::ExtrusionEntityType::Loop(_)
-            )
-            && matches!(
-                entity_role,
-                ExtrusionRole::ExternalPerimeter
-                    | ExtrusionRole::Perimeter
-                    | ExtrusionRole::OverhangPerimeter
-            );
+            && (config.enable_overhang_speed
+                && matches!(
+                    entity,
+                    crate::extrusion_entity::ExtrusionEntityType::Loop(_)
+                )
+                && matches!(
+                    entity_role,
+                    ExtrusionRole::ExternalPerimeter
+                        | ExtrusionRole::Perimeter
+                        | ExtrusionRole::OverhangPerimeter
+                )
+                // R758: Path entities re-emit their own F in the R245 per-path
+                // block below (native _extrude, GCode.cpp:6663) — native has NO
+                // collection-level F before them either. Under
+                // SET_SPEED_ALWAYS_EMIT the pre-set became a visible duplicate
+                // `G1 F..;_EXTRUDE_SET_SPEED` pair (benchy layer-6 sparse:
+                // 4 blocks vs native 2). PARKED OFF: byte-inert on benchy (the
+                // cooling rewrite deletes the duplicates) but −51 in-order on
+                // arachne — re-score after the arachne width-segmentation gap.
+                || (crate::opt_in_gate("NO_COLLECTION_PRESPEED")
+                    && matches!(
+                        entity,
+                        crate::extrusion_entity::ExtrusionEntityType::Path(_)
+                    )));
         // R654 — instrument first (do not infer from the guard's source, R649).
         if crate::probe_enabled("PRESPEED_PROBE") {
             use std::sync::atomic::{AtomicU64, Ordering};
