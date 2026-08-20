@@ -1492,8 +1492,14 @@ impl PrintObject {
             // slicing (apply_first_layer_compensation in PrintObjectSlice.cpp). It is
             // kept here as this crate's integration point; retained to avoid silently
             // dropping the feature, not because the C++ runs it from make_perimeters.
+            // R764: default ON. The faithful route (R316) was parked behind a
+            // presence-only env; the legacy step left layer-0 slices at 1277
+            // verts vs native 1452 — the R759/R763 layer-0 structural root.
+            // With this ON the layer-0 surface matches native's structure
+            // exactly (1452 pts / 8 holes; the 76-pt island byte-exact).
+            // L0_EFC=0 restores the legacy arm.
             if idx == 0
-                && std::env::var("L0_EFC").is_ok()
+                && crate::faithful_gate("L0_EFC")
                 && object_config.elephant_foot_compensation > 0.0
             {
                 // R316: native L0 (PrintObjectSlice.cpp:1228-46): slices.set(
