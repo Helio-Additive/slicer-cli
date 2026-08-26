@@ -159,7 +159,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
         echo "  Installing libnoise (Bambu fork)..."
         LIBNOISE_TMP=$(mktemp -d)
-        git clone --depth=1 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
+        git clone --depth=1 --branch v1.0.0 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
         cmake -S "$LIBNOISE_TMP" -B "$LIBNOISE_TMP/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build "$LIBNOISE_TMP/build" --parallel
         run_as_root cmake --install "$LIBNOISE_TMP/build"
@@ -231,7 +231,7 @@ elif [[ -f /etc/debian_version ]]; then
             && ! [ -f /usr/local/lib64/liblibnoise_static.a ] ); then
         echo "  Installing libnoise (Bambu fork)..."
         LIBNOISE_TMP=$(mktemp -d)
-        git clone --depth=1 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
+        git clone --depth=1 --branch v1.0.0 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
         cmake -S "$LIBNOISE_TMP" -B "$LIBNOISE_TMP/build" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/usr/local \

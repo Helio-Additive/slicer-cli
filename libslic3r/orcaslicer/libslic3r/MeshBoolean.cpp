@@ -18,6 +18,7 @@
 #include <CGAL/Cartesian_converter.h>
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/repair.h>
+#include <CGAL/version.h>
 #include <CGAL/Polygon_mesh_processing/remesh.h>
 #include <CGAL/Polygon_mesh_processing/repair_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/orientation.h>
@@ -332,7 +333,11 @@ void segment(CGALMesh& src, std::vector<CGALMesh>& dst, double smoothing_alpha =
         typedef boost::graph_traits<_EpicMesh>::halfedge_descriptor      halfedge_descriptor;
         typedef boost::graph_traits<_EpicMesh>::vertex_descriptor        vertex_descriptor;
         std::vector<halfedge_descriptor> border_cycles;
+#if CGAL_VERSION_NR >= 1060200000
+        CGAL::extract_boundary_cycles(out, std::back_inserter(border_cycles));
+#else
         CGAL::Polygon_mesh_processing::extract_boundary_cycles(out, std::back_inserter(border_cycles));
+#endif
         for (halfedge_descriptor h : border_cycles)
         {
             std::vector<face_descriptor>  patch_facets;
@@ -523,7 +528,11 @@ bool repair(TriangleMesh& mesh, RepairedMeshErrors* repaired_errors, std::string
             using halfedge_descriptor = boost::graph_traits<_EpicMesh>::halfedge_descriptor;
 
             std::vector<halfedge_descriptor> borders;
+#if CGAL_VERSION_NR >= 1060200000
+            CGAL::extract_boundary_cycles(cgal_mesh, std::back_inserter(borders));
+#else
             PMP::extract_boundary_cycles(cgal_mesh, std::back_inserter(borders));
+#endif
 
             for (halfedge_descriptor h : borders) {
                 std::vector<typename boost::graph_traits<_EpicMesh>::face_descriptor> patch_facets;
