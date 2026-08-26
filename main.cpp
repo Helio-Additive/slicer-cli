@@ -1413,6 +1413,9 @@ int main(int argc, char** argv) {
         // the BBS variant-array normalization is needed.  Just seed every key with the
         // engine's defaults; load_bbs_3mf (next) overlays the 3MF's project_settings.config.
         config.apply(Slic3r::FullPrintConfig::defaults(), true);
+        // Orca validates relative extrusion profiles before slicing.  Its desktop
+        // profile always supplies this reset; standalone defaults must do so too.
+        config.set_key_value("before_layer_change_gcode", new Slic3r::ConfigOptionString("G92 E0\n"));
 #endif
 
         // Load model
@@ -1998,6 +2001,32 @@ int main(int argc, char** argv) {
         // golden B — so no driver-side filament_map injection is needed here. Model
         // per-extruder static tables (setExtruderParams/setPrintSpeedTable) are still set
         // after apply(), exactly as Orca's own headless CLI does.
+        // Standalone Orca defaults can leave per-filament vector options empty;
+        // the slicing pipeline indexes these with get_at(0). Pad scalar vector
+        // options once, while leaving polygon/group options untouched.
+        for (const auto& key : config.keys()) {
+            auto* opt = config.option(key, false);
+            if (!opt) continue;
+#define PAD_ORCA(Type, value) \
+            if (auto* v = dynamic_cast<Slic3r::Type*>(opt)) { \
+                if (v->values.empty()) v->values.push_back(value); \
+            } else
+            PAD_ORCA(ConfigOptionBoolsNullable, (unsigned char)0)
+            PAD_ORCA(ConfigOptionBools, (unsigned char)0)
+            PAD_ORCA(ConfigOptionIntsNullable, 0)
+            PAD_ORCA(ConfigOptionInts, 0)
+            PAD_ORCA(ConfigOptionFloatsNullable, 0.0)
+            PAD_ORCA(ConfigOptionFloats, 0.0)
+            PAD_ORCA(ConfigOptionPercentsNullable, 0.0)
+            PAD_ORCA(ConfigOptionPercents, 0.0)
+            PAD_ORCA(ConfigOptionFloatsOrPercentsNullable, (Slic3r::FloatOrPercent{0.0, false}))
+            PAD_ORCA(ConfigOptionFloatsOrPercents, (Slic3r::FloatOrPercent{0.0, false}))
+            PAD_ORCA(ConfigOptionStrings, std::string{})
+            PAD_ORCA(ConfigOptionEnumsGenericNullable, 0)
+            PAD_ORCA(ConfigOptionEnumsGeneric, 0)
+            { /* polygon/group options are intentionally not padded */ }
+#undef PAD_ORCA
+        }
 #endif // ENGINE_ORCA
 
         // Apply command-line overrides
