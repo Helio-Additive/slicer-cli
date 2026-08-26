@@ -110,8 +110,9 @@ jobs:
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
             libexpat1-dev libssl-dev libboost-all-dev libcgal-dev unzip \
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
-            libocct-modeling-algorithms-dev libocct-data-exchange-dev \
-            libocct-foundation-dev libocct-draw-dev \
+            libocct-foundation-dev libocct-modeling-algorithms-dev \
+            libocct-modeling-data-dev libocct-data-exchange-dev \
+            libocct-ocaf-dev libocct-visualization-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
             libnlopt-dev libicu-dev libjpeg-dev
           # libnoise — Bambu's fork, not in apt
