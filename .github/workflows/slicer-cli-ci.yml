@@ -138,8 +138,8 @@ jobs:
           path: C:\vcpkg\installed
           # Keep engine caches disjoint while using the runner's current vcpkg
           # baseline; old pinned MSYS package URLs are no longer available.
-          key: vcpkg-x64-windows-current-${{ matrix.engine }}-v2
-          restore-keys: vcpkg-x64-windows-current-${{ matrix.engine }}-v2
+          key: vcpkg-x64-windows-occt793-${{ matrix.engine }}-v3
+          restore-keys: vcpkg-x64-windows-occt793-${{ matrix.engine }}-v3
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -158,7 +158,7 @@ jobs:
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
-          VCPKG_ARGS=()
+          VCPKG_ARGS=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays-common")
           if [[ "${{ matrix.engine }}" == "bambu" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi
