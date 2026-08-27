@@ -1413,6 +1413,9 @@ int main(int argc, char** argv) {
         // the BBS variant-array normalization is needed.  Just seed every key with the
         // engine's defaults; load_bbs_3mf (next) overlays the 3MF's project_settings.config.
         config.apply(Slic3r::FullPrintConfig::defaults(), true);
+        // Orca validates relative extrusion profiles before slicing.  Its desktop
+        // profile always supplies this reset; standalone defaults must do so too.
+        config.set_key_value("before_layer_change_gcode", new Slic3r::ConfigOptionString("G92 E0\n"));
 #endif
 
         // Load model

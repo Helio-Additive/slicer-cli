@@ -42,7 +42,6 @@ jobs:
           - os: Windows-x86_64
             runner: blacksmith-16vcpu-windows-2025
             cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release"
-          # Linux re-enable when ready
           # - os: macOS-x86_64
           #   runner: macos-13
           #   cmake_preset: ""
@@ -57,14 +56,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      # Homebrew CGAL 6.2 moved extract_boundary_cycles out of the
-      # Polygon_mesh_processing namespace. Windows vcpkg CGAL retains the PMP
-      # namespace, so only macOS Orca builds need this parent-owned patch.
-      - name: Apply macOS Orca CGAL 6.2 compatibility patch
-        if: matrix.engine == 'orca' && runner.os == 'macOS'
-        shell: bash
-        run: patch -d references/OrcaSlicer -p1 < ci/patches/orca-cgal6-extract-boundary-cycles.patch
 
       - name: Remove Mono framework (shadows libpng headers)
         if: runner.os == 'macOS'
@@ -110,12 +101,13 @@ jobs:
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
             libexpat1-dev libssl-dev libboost-all-dev libcgal-dev unzip \
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
-            libocct-modeling-algorithms-dev libocct-data-exchange-dev \
-            libocct-foundation-dev libocct-draw-dev \
+            libocct-foundation-dev libocct-modeling-algorithms-dev \
+            libocct-modeling-data-dev libocct-data-exchange-dev \
+            libocct-ocaf-dev libocct-visualization-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
-            libnlopt-dev libicu-dev libjpeg-dev
+            libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
           # libnoise — Bambu's fork, not in apt
-          git clone --depth=1 https://github.com/bambulab/libnoise.git /tmp/libnoise
+          git clone --depth=1 --branch v1.0.0 https://github.com/bambulab/libnoise.git /tmp/libnoise
           cmake -S /tmp/libnoise -B /tmp/libnoise/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -144,13 +136,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
-          # so the previous cache (OCCT 8.0.0, which fails to compile against the
-          # pinned BambuStudio source) is NOT restored — it would shadow the pin.
-          # Bambu requires the project CGAL 5.4 overlay; Orca builds against the
-          # baseline CGAL 6 port. Keep their caches disjoint.
-          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v6
-          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v6
+          # Keep engine caches disjoint while using the runner's current vcpkg
+          # baseline; old pinned MSYS package URLs are no longer available.
+          key: vcpkg-x64-windows-occt793-${{ matrix.engine }}-v3
+          restore-keys: vcpkg-x64-windows-occt793-${{ matrix.engine }}-v3
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -160,24 +149,16 @@ jobs:
           VCPKG_FEATURE_FLAGS: -compilertracking
           VCPKG_FORCE_SYSTEM_BINARIES: 1
         run: |
-          # vcpkg is pre-installed on GitHub Actions Windows runners, but it is
-          # UNPINNED — `vcpkg install` resolves each port to whatever the runner
-          # image's vcpkg checkout has at build time. Between 2026-05-07 (last
-          # green `main`) and 2026-06-01 its OpenCASCADE moved 7.9.3 → 8.0.0; the
-          # 8.0 header reorganisation breaks the pinned BambuStudio source
-          # (Format/STEP.cpp + Shape/TextShape.cpp: TDF_LabelSequence /
-          # TColStd_SequenceOfHAsciiString "undeclared identifier"). Pin the
-          # runner's vcpkg to a 2026-05-06 baseline (OCCT 7.9.3) so the build is
-          # reproducible and matches the proven-good toolchain. Bambu uses the
-          # project CGAL 5.4 overlay; Orca uses the baseline CGAL 6 port.
-          VCPKG_PIN=de03680510e75aa77d07750159adac4e570a6a81
-          git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin "$VCPKG_PIN"
-          git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach "$VCPKG_PIN"
+          # Blacksmith's preinstalled checkout currently references removed
+          # MSYS package revisions. Refresh the port tree and bootstrap the
+          # matching vcpkg executable before installing dependencies.
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin master
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach FETCH_HEAD
           "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
-          VCPKG_ARGS=()
+          VCPKG_ARGS=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays-common")
           if [[ "${{ matrix.engine }}" == "bambu" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           fi

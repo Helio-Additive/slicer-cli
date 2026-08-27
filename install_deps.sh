@@ -8,6 +8,16 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+run_as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command -v sudo &>/dev/null; then
+        sudo "$@"
+    else
+        echo -e "${RED}  root privileges required (install sudo or run as root)${NC}"
+        exit 1
+    fi
+}
 
 # BambuStudio v02.08.01.55 uses CGAL v5.4's Polygon_mesh_processing API.
 # CGAL 6 moved extract_boundary_cycles out of that namespace, so Bambu cannot
@@ -53,7 +63,7 @@ install_cgal5() {
         -DBUILD_DOC=OFF \
         -DCGAL_BUILD_THREE_DOC=OFF
     if [ "$use_sudo" = 'yes' ]; then
-        sudo cmake --install "$workdir/build"
+        run_as_root cmake --install "$workdir/build"
     else
         cmake --install "$workdir/build"
     fi
@@ -149,10 +159,10 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
         echo "  Installing libnoise (Bambu fork)..."
         LIBNOISE_TMP=$(mktemp -d)
-        git clone --depth=1 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
+        git clone --depth=1 --branch v1.0.0 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
         cmake -S "$LIBNOISE_TMP" -B "$LIBNOISE_TMP/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build "$LIBNOISE_TMP/build" --parallel
-        sudo cmake --install "$LIBNOISE_TMP/build"
+        run_as_root cmake --install "$LIBNOISE_TMP/build"
         rm -rf "$LIBNOISE_TMP"
     else
         echo "  ✓ libnoise (already installed)"
@@ -164,6 +174,7 @@ elif [[ -f /etc/debian_version ]]; then
 
     PACKAGES=(
         cmake
+        git
         build-essential
         libboost-all-dev
         libcgal-dev   # ENGINE=orca uses the distro CGAL 6 API; Bambu gets its separate pinned 5.4 tree below
@@ -179,24 +190,28 @@ elif [[ -f /etc/debian_version ]]; then
         libopencv-dev
         libassimp-dev
         libnlopt-dev
+        libnlopt-cxx-dev
         libqhull-dev
         libfreetype6-dev
         libfontconfig1-dev
         libjpeg-dev    # ENGINE=orca: OrcaSlicer's GCode/Thumbnails.cpp needs libjpeg (find_package(JPEG))
-        libocct-modeling-algorithms-dev
-        libocct-data-exchange-dev
         libocct-foundation-dev
+        libocct-modeling-algorithms-dev
+        libocct-modeling-data-dev
+        libocct-data-exchange-dev
+        libocct-ocaf-dev
+        libocct-visualization-dev
     )
 
-    echo "  sudo apt update"
-    sudo apt update -qq
+    echo "  apt update"
+    run_as_root apt update -qq
 
     for pkg in "${PACKAGES[@]}"; do
         if dpkg -s "$pkg" &>/dev/null 2>&1; then
             echo "  ✓ $pkg"
         else
             echo "  Installing $pkg..."
-            sudo apt install -y -qq "$pkg"
+            run_as_root apt install -y -qq "$pkg"
         fi
     done
 
@@ -205,14 +220,37 @@ elif [[ -f /etc/debian_version ]]; then
         install_cgal5 "$CGAL5_PREFIX" yes
     fi
 
+    # libnoise (Bambu fork) — not in apt for Linux CI or local Ubuntu installs.
+    if ! [ -f /usr/local/include/noise/noise.h ] \
+       && ! [ -f /usr/local/include/libnoise/noise.h ] \
+       || ( ! [ -f /usr/local/lib/libnoise.a ] \
+            && ! [ -f /usr/local/lib/libnoise_static.a ] \
+            && ! [ -f /usr/local/lib/liblibnoise_static.a ] \
+            && ! [ -f /usr/local/lib64/libnoise.a ] \
+            && ! [ -f /usr/local/lib64/libnoise_static.a ] \
+            && ! [ -f /usr/local/lib64/liblibnoise_static.a ] ); then
+        echo "  Installing libnoise (Bambu fork)..."
+        LIBNOISE_TMP=$(mktemp -d)
+        git clone --depth=1 --branch v1.0.0 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
+        cmake -S "$LIBNOISE_TMP" -B "$LIBNOISE_TMP/build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        cmake --build "$LIBNOISE_TMP/build" --parallel
+        run_as_root cmake --install "$LIBNOISE_TMP/build"
+        rm -rf "$LIBNOISE_TMP"
+    else
+        echo "  ✓ libnoise (already installed)"
+    fi
+
     # cereal is header-only — check manually
     if [ ! -f /usr/include/cereal/cereal.hpp ]; then
         echo "  Installing cereal (header-only)..."
-        sudo apt install -y -qq libcereal-dev 2>/dev/null || {
+            run_as_root apt install -y -qq libcereal-dev 2>/dev/null || {
             echo -e "${RED}  cereal not in apt — installing from source${NC}"
             TMP=$(mktemp -d)
             git clone --depth 1 https://github.com/USCiLab/cereal.git "$TMP/cereal"
-            sudo cp -R "$TMP/cereal/include/cereal" /usr/local/include/
+            run_as_root cp -R "$TMP/cereal/include/cereal" /usr/local/include/
             rm -rf "$TMP"
         }
     else

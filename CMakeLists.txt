@@ -170,6 +170,37 @@ find_package(ZLIB    REQUIRED)
 find_package(EXPAT   REQUIRED)
 find_package(OpenSSL REQUIRED)
 
+# Some OpenSSL package configurations provide the legacy library variables
+# without defining the imported targets used below.
+if(NOT TARGET OpenSSL::Crypto AND OPENSSL_CRYPTO_LIBRARY)
+    add_library(OpenSSL::Crypto UNKNOWN IMPORTED)
+    set_target_properties(OpenSSL::Crypto PROPERTIES
+        IMPORTED_LOCATION "${OPENSSL_CRYPTO_LIBRARY}")
+endif()
+if(NOT TARGET OpenSSL::SSL AND OPENSSL_SSL_LIBRARY)
+    add_library(OpenSSL::SSL UNKNOWN IMPORTED)
+    set_target_properties(OpenSSL::SSL PROPERTIES
+        IMPORTED_LOCATION "${OPENSSL_SSL_LIBRARY}")
+endif()
+if(APPLE)
+    find_library(_HELIO_OPENSSL_SSL ssl
+        PATHS /opt/homebrew/opt/openssl@3/lib /usr/local/opt/openssl@3/lib
+        NO_DEFAULT_PATH)
+    find_library(_HELIO_OPENSSL_CRYPTO crypto
+        PATHS /opt/homebrew/opt/openssl@3/lib /usr/local/opt/openssl@3/lib
+        NO_DEFAULT_PATH)
+    if(_HELIO_OPENSSL_SSL AND TARGET OpenSSL::SSL AND
+       (NOT OPENSSL_SSL_LIBRARY OR NOT EXISTS "${OPENSSL_SSL_LIBRARY}"))
+        set_property(TARGET OpenSSL::SSL PROPERTY IMPORTED_LOCATION
+            "${_HELIO_OPENSSL_SSL}")
+    endif()
+    if(_HELIO_OPENSSL_CRYPTO AND TARGET OpenSSL::Crypto AND
+       (NOT OPENSSL_CRYPTO_LIBRARY OR NOT EXISTS "${OPENSSL_CRYPTO_LIBRARY}"))
+        set_property(TARGET OpenSSL::Crypto PROPERTY IMPORTED_LOCATION
+            "${_HELIO_OPENSSL_CRYPTO}")
+    endif()
+endif()
+
 set(Boost_NO_WARN_NEW_VERSIONS ON)
 # boost_system is header-only since 1.69 — don't request it as a component.
 # Try static first, fall back to shared.
@@ -224,6 +255,34 @@ if(NOT OpenCASCADE_FOUND)
       /usr/local/lib/cmake/opencascade)
 endif()
 if(NOT OpenCASCADE_FOUND)
+  find_path(_OCCT_INCLUDE_DIR TopoDS_Shape.hxx
+      PATHS /usr/include/opencascade /usr/local/include/opencascade)
+  find_library(_OCCT_STEP_LIB TKSTEP
+      PATHS /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+  if(_OCCT_INCLUDE_DIR AND _OCCT_STEP_LIB)
+    message(STATUS "OpenCASCADE package not found; using system OCCT headers and libraries")
+    set(OpenCASCADE_FOUND TRUE)
+    set(OpenCASCADE_INCLUDE_DIR "${_OCCT_INCLUDE_DIR}")
+    set(OpenCASCADE_INSTALL_PREFIX "/usr")
+  endif()
+endif()
+if(NOT OpenCASCADE_FOUND)
+  find_package(OCE QUIET)
+  if(OCE_FOUND)
+    message(STATUS "OpenCASCADE package not found; using OCE compatibility package")
+    set(OpenCASCADE_FOUND TRUE)
+    set(OpenCASCADE_INCLUDE_DIR "${OCE_INCLUDE_DIRS}")
+    # Find one toolkit library to infer the common parent install location.
+    find_library(_OCCT_STEP_LIB TKSTEP)
+    if(_OCCT_STEP_LIB)
+      get_filename_component(_OCCT_STEP_DIR "${_OCCT_STEP_LIB}" DIRECTORY)
+      get_filename_component(OpenCASCADE_INSTALL_PREFIX "${_OCCT_STEP_DIR}" DIRECTORY)
+    else()
+      set(OpenCASCADE_INSTALL_PREFIX "/usr")
+    endif()
+  endif()
+endif()
+if(NOT OpenCASCADE_FOUND)
   message(FATAL_ERROR "OpenCASCADE (OCCT) not found. Install: brew install opencascade")
 endif()
 
@@ -249,6 +308,11 @@ endif()
 # Source: https://github.com/bambulab/libnoise (tag v1.0.0)
 # Build+install libnoise once, then pass CMAKE_PREFIX_PATH=<install-root>
 # when configuring. Uses BBS's own Findlibnoise.cmake module.
+list(FIND CMAKE_PREFIX_PATH "/usr/local" _SLICER_CLI_HAS_USR_LOCAL)
+if (_SLICER_CLI_HAS_USR_LOCAL EQUAL -1)
+  list(PREPEND CMAKE_PREFIX_PATH "/usr/local")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${REF_SRC}/../cmake/modules")
 find_package(libnoise REQUIRED)
 
