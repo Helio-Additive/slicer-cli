@@ -138,8 +138,8 @@ jobs:
           path: C:\vcpkg\installed
           # Keep engine caches disjoint while using the runner's current vcpkg
           # baseline; old pinned MSYS package URLs are no longer available.
-          key: vcpkg-x64-windows-current-${{ matrix.engine }}-v1
-          restore-keys: vcpkg-x64-windows-current-${{ matrix.engine }}-v1
+          key: vcpkg-x64-windows-current-${{ matrix.engine }}-v2
+          restore-keys: vcpkg-x64-windows-current-${{ matrix.engine }}-v2
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -149,8 +149,12 @@ jobs:
           VCPKG_FEATURE_FLAGS: -compilertracking
           VCPKG_FORCE_SYSTEM_BINARIES: 1
         run: |
-          # Use the runner-maintained vcpkg checkout. Pinning the old checkout
-          # makes vcpkg request removed MSYS package revisions.
+          # Blacksmith's preinstalled checkout currently references removed
+          # MSYS package revisions. Refresh the port tree and bootstrap the
+          # matching vcpkg executable before installing dependencies.
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin master
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach FETCH_HEAD
+          "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
           # which aren't in our previous explicit list. Meta-package installs all.
