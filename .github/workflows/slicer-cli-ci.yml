@@ -49,6 +49,38 @@ jobs:
         if: steps.cache-linux-occt.outputs.cache-hit != 'true'
         run: SLICER_CLI_OCCT_ONLY=1 ./install_deps.sh
 
+      - name: Build pinned libnoise prefix
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+          LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix"
+          LIBNOISE_MARKER="$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
+          git init "$RUNNER_TEMP/libnoise-src"
+          git -C "$RUNNER_TEMP/libnoise-src" remote add origin https://github.com/bambulab/libnoise.git
+          git -C "$RUNNER_TEMP/libnoise-src" fetch --depth=1 origin "$LIBNOISE_COMMIT"
+          git -C "$RUNNER_TEMP/libnoise-src" checkout --detach "$LIBNOISE_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/libnoise-src" rev-parse HEAD)" = "$LIBNOISE_COMMIT"
+          cmake -S "$RUNNER_TEMP/libnoise-src" -B "$RUNNER_TEMP/libnoise-build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$LIBNOISE_PREFIX" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build "$RUNNER_TEMP/libnoise-build" --parallel
+          cmake --install "$RUNNER_TEMP/libnoise-build"
+          test -f "$LIBNOISE_PREFIX/include/noise/noise.h" -o -f "$LIBNOISE_PREFIX/include/libnoise/noise.h"
+          test -f "$LIBNOISE_PREFIX/lib/libnoise.a" -o -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" -o -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a"
+          MARKER_TMP="$(mktemp "$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete.XXXXXX")"
+          printf 'source_commit=%s\n' "$LIBNOISE_COMMIT" > "$MARKER_TMP"
+          chmod 0644 "$MARKER_TMP"
+          mv "$MARKER_TMP" "$LIBNOISE_MARKER"
+
+      - name: Upload pinned libnoise prefix
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64-libnoise-prefix
+          path: ${{ runner.temp }}/libnoise-prefix/
+          if-no-files-found: error
+
   build-linux:
     name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
     needs: linux-occt
@@ -133,7 +165,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/cgal-5.4
-          key: linux-x86_64-cgal-5.4-bambu-v2
+          key: linux-x86_64-cgal-5.4-bambu-v3
 
       - name: Restore Linux pinned CGAL (orca)
         if: runner.os == 'Linux' && matrix.engine == 'orca'
@@ -141,6 +173,13 @@ jobs:
         with:
           path: /opt/slicer-cli/cgal-5.6.3
           key: linux-x86_64-cgal-5.6.3-orca-v2
+
+      - name: Download pinned libnoise prefix (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64-libnoise-prefix
+          path: ${{ runner.temp }}/libnoise-prefix
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -168,26 +207,24 @@ jobs:
           test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake
           test -f /opt/slicer-cli/occt-7.6/lib/libTKernel.a
           test -f /opt/slicer-cli/occt-7.6/lib/libTKBRep.a
-          # libnoise — Bambu's fork, not in apt
-          LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
-          git init /tmp/libnoise
-          git -C /tmp/libnoise remote add origin https://github.com/bambulab/libnoise.git
-          git -C /tmp/libnoise fetch --depth=1 origin "$LIBNOISE_COMMIT"
-          git -C /tmp/libnoise checkout --detach "$LIBNOISE_COMMIT"
-          test "$(git -C /tmp/libnoise rev-parse HEAD)" = "$LIBNOISE_COMMIT"
-          cmake -S /tmp/libnoise -B /tmp/libnoise/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=/usr/local \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-          sudo cmake --build /tmp/libnoise/build --target install --parallel
+          LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix"
+          LIBNOISE_MARKER="$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
+          test -r "$LIBNOISE_MARKER"
+          grep -qx 'source_commit=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8' "$LIBNOISE_MARKER"
+          test -f "$LIBNOISE_PREFIX/include/noise/noise.h" -o -f "$LIBNOISE_PREFIX/include/libnoise/noise.h"
+          test -f "$LIBNOISE_PREFIX/lib/libnoise.a" -o -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" -o -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a"
           if [[ "${{ matrix.engine }}" == "bambu" ]]; then
             CGAL_VERSION=5.4
             CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
-            if [[ ! -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" ]]; then
+            CGAL_PATCH=references/BambuStudio/deps/CGAL/0001-clang19.patch
+            CGAL_PATCH_SHA256="$(sha256sum "$CGAL_PATCH" | awk '{print $1}')"
+            CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.4-complete"
+            if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && grep -qx "source_commit=$CGAL_COMMIT" "$CGAL_MARKER" && grep -qx "patch_sha256=$CGAL_PATCH_SHA256" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
+              sudo rm -rf "$CGAL_ROOT"
               git clone --depth=1 --branch "v${CGAL_VERSION}" https://github.com/CGAL/cgal.git /tmp/cgal-src
               [ "$(git -C /tmp/cgal-src rev-parse HEAD)" = "$CGAL_COMMIT" ] || { echo "CGAL commit mismatch"; exit 1; }
-              patch -d /tmp/cgal-src -p1 < references/BambuStudio/deps/CGAL/0001-clang19.patch
+              patch -d /tmp/cgal-src -p1 < "$CGAL_PATCH"
               cmake -S /tmp/cgal-src -B /tmp/cgal-build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
@@ -197,6 +234,17 @@ jobs:
                 -DBUILD_DOC=OFF \
                 -DCGAL_BUILD_THREE_DOC=OFF
               sudo cmake --install /tmp/cgal-build
+              test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
+              test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
+              test -f "$CGAL_ROOT/include/CGAL/version.h"
+              MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.4-complete.XXXXXX")"
+              {
+                printf 'version=%s\n' "$CGAL_VERSION"
+                printf 'source_commit=%s\n' "$CGAL_COMMIT"
+                printf 'patch_sha256=%s\n' "$CGAL_PATCH_SHA256"
+              } | sudo tee "$MARKER_TMP" >/dev/null
+              sudo chmod 0644 "$MARKER_TMP"
+              sudo mv "$MARKER_TMP" "$CGAL_MARKER"
             fi
           else
             CGAL_VERSION=5.6.3
@@ -314,6 +362,7 @@ jobs:
           # Setting both PNG_PNG_INCLUDE_DIR and PNG_LIBRARY short-circuits
           # FindPNG's search entirely.
           EXTRA=()
+          CMAKE_PREFIXES="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             LIBPNG=$(brew --prefix libpng)
             EXTRA+=(-DPNG_PNG_INCLUDE_DIR="$LIBPNG/include" -DPNG_LIBRARY="$LIBPNG/lib/libpng.dylib")
@@ -330,6 +379,7 @@ jobs:
           else
             OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
             [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
+            CMAKE_PREFIXES="$RUNNER_TEMP/libnoise-prefix;$CMAKE_PREFIXES"
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
             if [[ "${{ matrix.engine }}" == "bambu" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
@@ -346,7 +396,7 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DENGINE=${{ matrix.engine }} \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
-            -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
+            -DCMAKE_PREFIX_PATH="$CMAKE_PREFIXES" \
             "${EXTRA[@]}" \
             ${{ matrix.cmake_preset }}
 
@@ -921,7 +971,7 @@ jobs:
   # so the manifest's executablePath still points at the default binary.
   package:
     name: Package — ${{ matrix.os }}
-    needs: [build-linux, build-nonlinux]
+    needs: build-nonlinux
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -1078,10 +1128,95 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  package-linux:
+    name: Package - Linux x86_64
+    needs: build-linux
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download Bambu engine binary
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-Linux-x86_64-bambu
+          path: engine-bambu
+
+      - name: Download Orca engine binary
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-Linux-x86_64-orca
+          path: engine-orca
+
+      - name: Assemble and validate Linux package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#slicer-cli/v}"; VERSION="${VERSION#v}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then VERSION="0.0.0-${GITHUB_SHA::12}"; fi
+          PLATFORM=linux-x86_64
+          ASSET="slicer-cli-v${VERSION}-${PLATFORM}.tar.gz"
+          rm -rf dist/package dist/release dist/verify
+          P=dist/package/slicer-cli
+          mkdir -p "$P/resources/profiles" dist/release
+          cp engine-bambu/slicer_cli "$P/slicer_cli"
+          cp engine-orca/slicer_cli-orcaslicer "$P/slicer_cli-orcaslicer"
+          chmod +x "$P/slicer_cli" "$P/slicer_cli-orcaslicer"
+          cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
+          cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
+          cp LICENSE NOTICE README.md "$P/"
+          cat > "$P/manifest.json" <<EOF
+          {
+            "version": "${VERSION}",
+            "gitSha": "${GITHUB_SHA}",
+            "platform": "${PLATFORM}",
+            "executablePath": "slicer-cli/slicer_cli",
+            "profilesPath": "slicer-cli/resources/profiles/BBL",
+            "orcaProfilesPath": "slicer-cli/resources/profiles-orca",
+            "engines": [
+              { "engine": "bambustudio", "path": "slicer-cli/slicer_cli" },
+              { "engine": "orcaslicer", "path": "slicer-cli/slicer_cli-orcaslicer" }
+            ]
+          }
+          EOF
+          tar -C dist/package -czf "dist/release/${ASSET}" slicer-cli
+          HASH="$(sha256sum "dist/release/${ASSET}" | awk '{print $1}')"
+          printf '%s  %s\n' "$HASH" "$ASSET" > "dist/release/${ASSET}.sha256"
+          cat > "dist/release/engine-platform-${PLATFORM}.json" <<EOF
+          {
+            "platform": "${PLATFORM}",
+            "assetFilename": "${ASSET}",
+            "sha256": "${HASH}",
+            "executablePath": "slicer-cli/slicer_cli",
+            "profilesPath": "slicer-cli/resources/profiles/BBL"
+          }
+          EOF
+          mkdir -p dist/verify
+          tar -C dist/verify -xzf "dist/release/${ASSET}"
+          test -x dist/verify/slicer-cli/slicer_cli
+          test -x dist/verify/slicer-cli/slicer_cli-orcaslicer
+          test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
+          test -d dist/verify/slicer-cli/resources/profiles/BBL/process
+          test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/machine
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/process
+          test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/filament
+          dist/verify/slicer-cli/slicer_cli --help >/dev/null
+          dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
+
+      - name: Upload Linux release package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: slicer-cli-release-Linux-x86_64
+          path: dist/release/*
+          if-no-files-found: error
+
   release:
     name: Publish slicer-cli release assets
-    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')
-    needs: package
+    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && (needs.package.result == 'success' || needs['package-linux'].result == 'success') }}
+    needs: [package, package-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write

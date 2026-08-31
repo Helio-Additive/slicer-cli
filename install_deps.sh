@@ -42,13 +42,33 @@ install_cgal5() {
     local prefix="$1"
     local use_sudo="$2"
     local config="$prefix/lib/cmake/CGAL/CGALConfig.cmake"
+    local marker="$prefix/.slicer-cli-cgal-5.4-complete"
+    local patch_sha256
+    if command -v sha256sum &>/dev/null; then
+        patch_sha256="$(sha256sum "$CGAL5_PATCH" | awk '{print $1}')"
+    else
+        patch_sha256="$(shasum -a 256 "$CGAL5_PATCH" | awk '{print $1}')"
+    fi
 
-    if [ -f "$config" ] && grep -q "${CGAL5_VERSION}" "$config"; then
+    if [ -r "$marker" ] \
+       && grep -qx "version=${CGAL5_VERSION}" "$marker" \
+       && grep -qx "source_commit=${CGAL5_COMMIT}" "$marker" \
+       && grep -qx "patch_sha256=${patch_sha256}" "$marker" \
+       && [ -f "$config" ] \
+       && [ -f "$prefix/lib/cmake/CGAL/CGALConfigVersion.cmake" ] \
+       && [ -f "$prefix/include/CGAL/version.h" ]; then
         echo "  ✓ CGAL ${CGAL5_VERSION} ($prefix)"
         return
     fi
 
     echo "  Installing CGAL ${CGAL5_VERSION} from pinned upstream commit ${CGAL5_COMMIT}..."
+    if [ -e "$prefix" ]; then
+        if [ "$use_sudo" = 'yes' ]; then
+            run_as_root rm -rf "$prefix"
+        else
+            rm -rf "$prefix"
+        fi
+    fi
     local workdir
     workdir=$(mktemp -d)
     local source_dir="$workdir/cgal"
@@ -73,6 +93,33 @@ install_cgal5() {
     else
         cmake --install "$workdir/build"
     fi
+    if ! [ -f "$config" ] \
+       || ! [ -f "$prefix/lib/cmake/CGAL/CGALConfigVersion.cmake" ] \
+       || ! [ -f "$prefix/include/CGAL/version.h" ]; then
+        echo -e "${RED}CGAL ${CGAL5_VERSION} installation is incomplete${NC}"
+        exit 1
+    fi
+    local marker_tmp
+    if [ "$use_sudo" = 'yes' ]; then
+        marker_tmp=$(run_as_root mktemp "$prefix/.slicer-cli-cgal-5.4-complete.XXXXXX")
+        {
+            printf 'version=%s\n' "$CGAL5_VERSION"
+            printf 'source_commit=%s\n' "$CGAL5_COMMIT"
+            printf 'patch_sha256=%s\n' "$patch_sha256"
+        } | run_as_root tee "$marker_tmp" >/dev/null
+        run_as_root chmod 0644 "$marker_tmp"
+        run_as_root mv "$marker_tmp" "$marker"
+    else
+        marker_tmp=$(mktemp "$prefix/.slicer-cli-cgal-5.4-complete.XXXXXX")
+        {
+            printf 'version=%s\n' "$CGAL5_VERSION"
+            printf 'source_commit=%s\n' "$CGAL5_COMMIT"
+            printf 'patch_sha256=%s\n' "$patch_sha256"
+        } > "$marker_tmp"
+        chmod 0644 "$marker_tmp"
+        mv "$marker_tmp" "$marker"
+    fi
+    rm -rf "$workdir"
 }
 
 install_cgal63() {
@@ -386,14 +433,17 @@ elif [[ -f /etc/debian_version ]]; then
     install_occt76
 
     # libnoise (Bambu fork) — not in apt for Linux CI or local Ubuntu installs.
-    if ! [ -f /usr/local/include/noise/noise.h ] \
-       && ! [ -f /usr/local/include/libnoise/noise.h ] \
-       || ( ! [ -f /usr/local/lib/libnoise.a ] \
-            && ! [ -f /usr/local/lib/libnoise_static.a ] \
-            && ! [ -f /usr/local/lib/liblibnoise_static.a ] \
-            && ! [ -f /usr/local/lib64/libnoise.a ] \
-            && ! [ -f /usr/local/lib64/libnoise_static.a ] \
-            && ! [ -f /usr/local/lib64/liblibnoise_static.a ] ); then
+    LIBNOISE_PREFIX=/usr/local
+    LIBNOISE_MARKER="$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
+    if ! { [ -r "$LIBNOISE_MARKER" ] \
+           && grep -qx "source_commit=${LIBNOISE_COMMIT}" "$LIBNOISE_MARKER" \
+           && { [ -f "$LIBNOISE_PREFIX/include/noise/noise.h" ] || [ -f "$LIBNOISE_PREFIX/include/libnoise/noise.h" ]; } \
+           && { [ -f "$LIBNOISE_PREFIX/lib/libnoise.a" ] \
+                || [ -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" ] \
+                || [ -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a" ] \
+                || [ -f "$LIBNOISE_PREFIX/lib64/libnoise.a" ] \
+                || [ -f "$LIBNOISE_PREFIX/lib64/libnoise_static.a" ] \
+                || [ -f "$LIBNOISE_PREFIX/lib64/liblibnoise_static.a" ]; }; }; then
         echo "  Installing libnoise (Bambu fork)..."
         LIBNOISE_TMP=$(mktemp -d)
         git init "$LIBNOISE_TMP"
@@ -411,6 +461,20 @@ elif [[ -f /etc/debian_version ]]; then
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build "$LIBNOISE_TMP/build" --parallel
         run_as_root cmake --install "$LIBNOISE_TMP/build"
+        if ! { { [ -f "$LIBNOISE_PREFIX/include/noise/noise.h" ] || [ -f "$LIBNOISE_PREFIX/include/libnoise/noise.h" ]; } \
+               && { [ -f "$LIBNOISE_PREFIX/lib/libnoise.a" ] \
+                    || [ -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" ] \
+                    || [ -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a" ] \
+                    || [ -f "$LIBNOISE_PREFIX/lib64/libnoise.a" ] \
+                    || [ -f "$LIBNOISE_PREFIX/lib64/libnoise_static.a" ] \
+                    || [ -f "$LIBNOISE_PREFIX/lib64/liblibnoise_static.a" ]; }; }; then
+            echo -e "${RED}libnoise installation is incomplete${NC}"
+            exit 1
+        fi
+        LIBNOISE_MARKER_TMP=$(run_as_root mktemp "$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete.XXXXXX")
+        printf 'source_commit=%s\n' "$LIBNOISE_COMMIT" | run_as_root tee "$LIBNOISE_MARKER_TMP" >/dev/null
+        run_as_root chmod 0644 "$LIBNOISE_MARKER_TMP"
+        run_as_root mv "$LIBNOISE_MARKER_TMP" "$LIBNOISE_MARKER"
         rm -rf "$LIBNOISE_TMP"
     else
         echo "  ✓ libnoise (already installed)"
