@@ -80,6 +80,7 @@ jobs:
           name: linux-x86_64-libnoise-prefix
           path: ${{ runner.temp }}/libnoise-prefix/
           if-no-files-found: error
+          include-hidden-files: true
 
   build-linux:
     name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
