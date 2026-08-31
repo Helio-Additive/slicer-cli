@@ -148,50 +148,6 @@ jobs:
         shell: /bin/bash -e {0}
         run: ENGINE=${{ matrix.engine }} /bin/bash install_deps.sh
 
-      - name: Prepare macOS pinned CGAL prefix (Orca)
-        if: runner.os == 'macOS' && matrix.engine == 'orca'
-        run: |
-          sudo mkdir -p /opt/slicer-cli/cgal-5.6.3
-          sudo chown -R "$USER" /opt/slicer-cli/cgal-5.6.3
-
-      - name: Restore macOS pinned CGAL (Orca)
-        if: runner.os == 'macOS' && matrix.engine == 'orca'
-        uses: actions/cache@v4
-        with:
-          path: /opt/slicer-cli/cgal-5.6.3
-          key: macos-${{ runner.arch }}-cgal-5.6.3-orca-v1
-          restore-keys: macos-${{ runner.arch }}-cgal-5.6.3-orca-v1
-
-      - name: Build macOS pinned CGAL (Orca)
-        if: runner.os == 'macOS' && matrix.engine == 'orca'
-        shell: /bin/bash -e {0}
-        run: |
-          CGAL_VERSION=5.6.3
-          CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
-          CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.tar.xz"
-          CGAL_ARCHIVE_SHA256=15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111
-          CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete"
-          if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
-            sudo rm -rf "$CGAL_ROOT"
-            curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.tar.xz
-            echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.tar.xz" | shasum -a 256 -c -
-            tar -xJf /tmp/cgal-${CGAL_VERSION}.tar.xz -C /tmp
-            cmake -S /tmp/CGAL-${CGAL_VERSION} -B /tmp/cgal-build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
-              -DBUILD_TESTING=OFF \
-              -DBUILD_DOC=OFF \
-              -DCGAL_BUILD_THREE_DOC=OFF
-            sudo cmake --install /tmp/cgal-build
-            test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
-            test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
-            test -f "$CGAL_ROOT/include/CGAL/version.h"
-            MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete.XXXXXX")"
-            printf 'version=%s\n' "$CGAL_VERSION" | sudo tee "$MARKER_TMP" >/dev/null
-            sudo chmod 0644 "$MARKER_TMP"
-            sudo mv "$MARKER_TMP" "$CGAL_MARKER"
-          fi
-
       - name: Prepare Linux OpenCASCADE prefix
         if: runner.os == 'Linux'
         run: |
@@ -428,10 +384,6 @@ jobs:
               CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
-            else
-              CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
-              [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
-              EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
             fi
           else
             OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
@@ -663,6 +615,51 @@ jobs:
         shell: /bin/bash -e {0}
         run: ENGINE=${{ matrix.engine }} /bin/bash install_deps.sh
 
+      - name: Prepare macOS pinned CGAL prefix (Orca)
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
+        run: |
+          sudo mkdir -p /opt/slicer-cli/cgal-5.6.3
+          sudo chown -R "$USER" /opt/slicer-cli/cgal-5.6.3
+
+      - name: Restore macOS pinned CGAL (Orca)
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/cgal-5.6.3
+          key: macos-${{ runner.arch }}-cgal-5.6.3-orca-v1
+          restore-keys: macos-${{ runner.arch }}-cgal-5.6.3-orca-v1
+
+      - name: Build macOS pinned CGAL (Orca)
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
+        shell: /bin/bash -e {0}
+        run: |
+          CGAL_VERSION=5.6.3
+          CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
+          CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.tar.xz"
+          CGAL_ARCHIVE_SHA256=15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111
+          CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete"
+          if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
+            sudo rm -rf "$CGAL_ROOT"
+            curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.tar.xz
+            echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.tar.xz" | shasum -a 256 -c -
+            tar -xJf /tmp/cgal-${CGAL_VERSION}.tar.xz -C /tmp
+            cmake -S /tmp/CGAL-${CGAL_VERSION} -B /tmp/cgal-build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
+              -DBUILD_TESTING=OFF \
+              -DBUILD_DOC=OFF \
+              -DCGAL_BUILD_THREE_DOC=OFF
+            sudo cmake --install /tmp/cgal-build
+            test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
+            test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
+            test -f "$CGAL_ROOT/include/CGAL/version.h"
+            MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete.XXXXXX")"
+            printf 'version=%s\n' "$CGAL_VERSION" | sudo tee "$MARKER_TMP" >/dev/null
+            sudo chmod 0644 "$MARKER_TMP"
+            sudo mv "$MARKER_TMP" "$CGAL_MARKER"
+          fi
+
+
       - name: Prepare Linux OpenCASCADE prefix
         if: runner.os == 'Linux'
         run: |
@@ -868,6 +865,10 @@ jobs:
               CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            else
+              CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
+              [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
             fi
           else
             OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
