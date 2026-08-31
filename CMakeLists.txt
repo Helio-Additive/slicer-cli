@@ -202,6 +202,20 @@ if(ENGINE STREQUAL "bambu")
         "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
     endif()
   endif()
+elseif(UNIX AND NOT APPLE)
+  if(DEFINED CGAL_DIR)
+    find_package(CGAL 5.6.3 CONFIG REQUIRED)
+  else()
+    find_package(CGAL 5.6.3 CONFIG QUIET
+      PATHS
+        /opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
+      NO_DEFAULT_PATH)
+    if(NOT CGAL_FOUND)
+      message(FATAL_ERROR
+        "OrcaSlicer requires CGAL 5.6.3 on Linux. "
+        "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
+    endif()
+  endif()
 else()
   find_package(CGAL REQUIRED)
 endif()
@@ -216,12 +230,27 @@ else()
   message(WARNING "NLopt not found — arrangement quality may be reduced")
 endif()
 
-# OpenCASCADE — Homebrew installs as "opencascade"
-find_package(OpenCASCADE QUIET)
-if(NOT OpenCASCADE_FOUND)
-  find_package(OpenCASCADE QUIET PATHS
-      /opt/homebrew/lib/cmake/opencascade
-      /usr/local/lib/cmake/opencascade)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  if(NOT DEFINED OpenCASCADE_DIR OR OpenCASCADE_DIR STREQUAL "")
+    set(OpenCASCADE_DIR "/opt/slicer-cli/occt-7.6/lib/cmake/opencascade"
+        CACHE PATH "Pinned Linux OpenCASCADE 7.6.0 package directory")
+  endif()
+  if(NOT EXISTS "${OpenCASCADE_DIR}/OpenCASCADEConfig.cmake")
+    message(FATAL_ERROR
+      "Pinned Linux OpenCASCADE 7.6.0 not found at ${OpenCASCADE_DIR}. "
+      "Run ./install_deps.sh before configuring.")
+  endif()
+  find_package(OpenCASCADE CONFIG REQUIRED
+      PATHS "${OpenCASCADE_DIR}"
+      NO_DEFAULT_PATH)
+else()
+  # OpenCASCADE — Homebrew installs as "opencascade"
+  find_package(OpenCASCADE QUIET)
+  if(NOT OpenCASCADE_FOUND)
+    find_package(OpenCASCADE QUIET PATHS
+        /opt/homebrew/lib/cmake/opencascade
+        /usr/local/lib/cmake/opencascade)
+  endif()
 endif()
 if(NOT OpenCASCADE_FOUND)
   message(FATAL_ERROR "OpenCASCADE (OCCT) not found. Install: brew install opencascade")
@@ -249,6 +278,13 @@ endif()
 # Source: https://github.com/bambulab/libnoise (tag v1.0.0)
 # Build+install libnoise once, then pass CMAKE_PREFIX_PATH=<install-root>
 # when configuring. Uses BBS's own Findlibnoise.cmake module.
+if(UNIX AND NOT APPLE)
+  list(FIND CMAKE_PREFIX_PATH "/usr/local" _SLICER_CLI_HAS_USR_LOCAL)
+  if (_SLICER_CLI_HAS_USR_LOCAL EQUAL -1)
+    list(PREPEND CMAKE_PREFIX_PATH "/usr/local")
+  endif()
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${REF_SRC}/../cmake/modules")
 find_package(libnoise REQUIRED)
 
