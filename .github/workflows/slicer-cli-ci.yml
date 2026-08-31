@@ -1204,6 +1204,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install Linux package smoke runtime
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends libqhullcpp8.0
+
       - name: Download Bambu engine binary
         uses: actions/download-artifact@v4
         with:
