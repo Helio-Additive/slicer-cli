@@ -24,8 +24,34 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  linux-occt:
+    name: Provision Linux OpenCASCADE 7.6.0
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install OCCT build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends build-essential cmake curl ninja-build
+          sudo mkdir -p /opt/slicer-cli/occt-7.6
+          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6
+
+      - name: Cache OpenCASCADE 7.6.0
+        id: cache-linux-occt
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/occt-7.6
+          key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
+
+      - name: Build OpenCASCADE 7.6.0
+        if: steps.cache-linux-occt.outputs.cache-hit != 'true'
+        run: SLICER_CLI_OCCT_ONLY=1 ./install_deps.sh
+
+  build-linux:
     name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
+    needs: linux-occt
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -34,15 +60,11 @@ jobs:
         # #ifdef paths against two libslic3r forks). Build both; the package job
         # fans them into one package and the app routes per printer at slice time.
         engine: [bambu, orca]
-        os: [macOS-arm64, Windows-x86_64]
+        os: [Linux-x86_64]
         include:
-          - os: macOS-arm64
-            runner: macos-14          # Apple Silicon — primary dev target
+          - os: Linux-x86_64
+            runner: ubuntu-22.04
             cmake_preset: ""
-          - os: Windows-x86_64
-            runner: blacksmith-16vcpu-windows-2025
-            cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release"
-          # Linux re-enable when ready
           # - os: macOS-x86_64
           #   runner: macos-13
           #   cmake_preset: ""
@@ -57,14 +79,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      # Homebrew CGAL 6.2 moved extract_boundary_cycles out of the
-      # Polygon_mesh_processing namespace. Windows vcpkg CGAL retains the PMP
-      # namespace, so only macOS Orca builds need this parent-owned patch.
-      - name: Apply macOS Orca CGAL 6.2 compatibility patch
-        if: matrix.engine == 'orca' && runner.os == 'macOS'
-        shell: bash
-        run: patch -d references/OrcaSlicer -p1 < ci/patches/orca-cgal6-extract-boundary-cycles.patch
 
       - name: Remove Mono framework (shadows libpng headers)
         if: runner.os == 'macOS'
@@ -101,6 +115,33 @@ jobs:
         shell: /bin/bash -e {0}
         run: ENGINE=${{ matrix.engine }} /bin/bash install_deps.sh
 
+      - name: Prepare Linux OpenCASCADE prefix
+        if: runner.os == 'Linux'
+        run: |
+          sudo mkdir -p /opt/slicer-cli/occt-7.6
+          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6
+
+      - name: Restore OpenCASCADE 7.6.0 (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/occt-7.6
+          key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
+
+      - name: Restore Linux pinned CGAL (bambu)
+        if: runner.os == 'Linux' && matrix.engine == 'bambu'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/cgal-5.4
+          key: linux-x86_64-cgal-5.4-bambu-v2
+
+      - name: Restore Linux pinned CGAL (orca)
+        if: runner.os == 'Linux' && matrix.engine == 'orca'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/cgal-5.6.3
+          key: linux-x86_64-cgal-5.6.3-orca-v2
+
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -110,12 +151,30 @@ jobs:
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
             libexpat1-dev libssl-dev libboost-all-dev libcgal-dev unzip \
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
-            libocct-modeling-algorithms-dev libocct-data-exchange-dev \
-            libocct-foundation-dev libocct-draw-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
-            libnlopt-dev libicu-dev libjpeg-dev
+            libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
+          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfig.cmake
+          test -r /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          grep -qx 'version=7.6.0' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          grep -qx 'source_sha256=73f8f71be02c1d9a977e854bcc9202502184d339f1f212c19797a5f23baefabe' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          grep -qx 'library_type=static' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake
+          test -f /opt/slicer-cli/occt-7.6/lib/libTKernel.a
+          test -f /opt/slicer-cli/occt-7.6/lib/libTKBRep.a
+          test -r /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          grep -qx 'version=7.6.0' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          grep -qx 'source_sha256=73f8f71be02c1d9a977e854bcc9202502184d339f1f212c19797a5f23baefabe' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          grep -qx 'library_type=static' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
+          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake
+          test -f /opt/slicer-cli/occt-7.6/lib/libTKernel.a
+          test -f /opt/slicer-cli/occt-7.6/lib/libTKBRep.a
           # libnoise — Bambu's fork, not in apt
-          git clone --depth=1 https://github.com/bambulab/libnoise.git /tmp/libnoise
+          LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+          git init /tmp/libnoise
+          git -C /tmp/libnoise remote add origin https://github.com/bambulab/libnoise.git
+          git -C /tmp/libnoise fetch --depth=1 origin "$LIBNOISE_COMMIT"
+          git -C /tmp/libnoise checkout --detach "$LIBNOISE_COMMIT"
+          test "$(git -C /tmp/libnoise rev-parse HEAD)" = "$LIBNOISE_COMMIT"
           cmake -S /tmp/libnoise -B /tmp/libnoise/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -125,18 +184,46 @@ jobs:
             CGAL_VERSION=5.4
             CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
-            git clone --depth=1 --branch "v${CGAL_VERSION}" https://github.com/CGAL/cgal.git /tmp/cgal-src
-            [ "$(git -C /tmp/cgal-src rev-parse HEAD)" = "$CGAL_COMMIT" ] || { echo "CGAL commit mismatch"; exit 1; }
-            patch -d /tmp/cgal-src -p1 < references/BambuStudio/deps/CGAL/0001-clang19.patch
-            cmake -S /tmp/cgal-src -B /tmp/cgal-build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
-              -DCGAL_HEADER_ONLY=ON \
-              -DCGAL_INSTALL_CMAKE_DIR=lib/cmake/CGAL \
-              -DBUILD_TESTING=OFF \
-              -DBUILD_DOC=OFF \
-              -DCGAL_BUILD_THREE_DOC=OFF
-            sudo cmake --install /tmp/cgal-build
+            if [[ ! -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" ]]; then
+              git clone --depth=1 --branch "v${CGAL_VERSION}" https://github.com/CGAL/cgal.git /tmp/cgal-src
+              [ "$(git -C /tmp/cgal-src rev-parse HEAD)" = "$CGAL_COMMIT" ] || { echo "CGAL commit mismatch"; exit 1; }
+              patch -d /tmp/cgal-src -p1 < references/BambuStudio/deps/CGAL/0001-clang19.patch
+              cmake -S /tmp/cgal-src -B /tmp/cgal-build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
+                -DCGAL_HEADER_ONLY=ON \
+                -DCGAL_INSTALL_CMAKE_DIR=lib/cmake/CGAL \
+                -DBUILD_TESTING=OFF \
+                -DBUILD_DOC=OFF \
+                -DCGAL_BUILD_THREE_DOC=OFF
+              sudo cmake --install /tmp/cgal-build
+            fi
+          else
+            CGAL_VERSION=5.6.3
+            CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
+            CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.tar.xz"
+            CGAL_ARCHIVE_SHA256=15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111
+            CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete"
+            if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
+              sudo rm -rf "$CGAL_ROOT"
+              curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.tar.xz
+              echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.tar.xz" | sha256sum -c -
+              tar -xJf /tmp/cgal-${CGAL_VERSION}.tar.xz -C /tmp
+              cmake -S /tmp/CGAL-${CGAL_VERSION} -B /tmp/cgal-build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
+                -DBUILD_TESTING=OFF \
+                -DBUILD_DOC=OFF \
+                -DCGAL_BUILD_THREE_DOC=OFF
+              sudo cmake --install /tmp/cgal-build
+              test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
+              test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
+              test -f "$CGAL_ROOT/include/CGAL/version.h"
+              MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete.XXXXXX")"
+              printf 'version=%s\n' "$CGAL_VERSION" | sudo tee "$MARKER_TMP" >/dev/null
+              sudo chmod 0644 "$MARKER_TMP"
+              sudo mv "$MARKER_TMP" "$CGAL_MARKER"
+            fi
           fi
 
       - name: Cache vcpkg packages (Windows)
@@ -160,16 +247,6 @@ jobs:
           VCPKG_FEATURE_FLAGS: -compilertracking
           VCPKG_FORCE_SYSTEM_BINARIES: 1
         run: |
-          # vcpkg is pre-installed on GitHub Actions Windows runners, but it is
-          # UNPINNED — `vcpkg install` resolves each port to whatever the runner
-          # image's vcpkg checkout has at build time. Between 2026-05-07 (last
-          # green `main`) and 2026-06-01 its OpenCASCADE moved 7.9.3 → 8.0.0; the
-          # 8.0 header reorganisation breaks the pinned BambuStudio source
-          # (Format/STEP.cpp + Shape/TextShape.cpp: TDF_LabelSequence /
-          # TColStd_SequenceOfHAsciiString "undeclared identifier"). Pin the
-          # runner's vcpkg to a 2026-05-06 baseline (OCCT 7.9.3) so the build is
-          # reproducible and matches the proven-good toolchain. Bambu uses the
-          # project CGAL 5.4 overlay; Orca uses the baseline CGAL 6 port.
           VCPKG_PIN=de03680510e75aa77d07750159adac4e570a6a81
           git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin "$VCPKG_PIN"
           git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach "$VCPKG_PIN"
@@ -251,10 +328,444 @@ jobs:
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
             fi
           else
+            OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
+            [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
+            EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
             if [[ "${{ matrix.engine }}" == "bambu" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            else
+              CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
+              [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
+            fi
+          fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DENGINE=${{ matrix.engine }} \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
+            -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
+            "${EXTRA[@]}" \
+            ${{ matrix.cmake_preset }}
+
+
+      # Ninja is required for sccache cache hits on Windows — the
+      # Visual Studio generator does not reliably invoke compiler
+      # launchers (sccache#957, sccache#1097).  Ninja ships with VS
+      # 2022 C++ CMake tools on the runner, but choco provides a
+      # fresh, standalone binary that is immune to VS installer drift.
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y --no-progress
+
+      # Ninja needs the MSVC compiler on PATH; the Visual Studio
+      # generator self-discovers cl.exe via vcvars but Ninja does
+      # not.  ilammy/msvc-dev-cmd persists the VS dev environment
+      # for all subsequent steps in the job.
+      - name: Setup MSVC environment (Ninja)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DENGINE=${{ matrix.engine }} `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
+            -DCMAKE_PREFIX_PATH="$env:LIBNOISE_ROOT" `
+            -DCGAL_DIR="$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\cgal" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            ${{ matrix.cmake_preset }}
+
+      - name: Build
+        # Explicit parallel job count — `--parallel` alone can degrade to
+        # single-threaded with some toolchains. macos-14 has 3 cores,
+        # ubuntu-22.04 has 4, windows-2022 has 4. Use 4 across the matrix
+        # (extra jobs queue, not contend) to keep the BBS source compile
+        # (~1500 .cpp files) under an hour.
+        if: runner.os != 'Windows'
+        run: cmake --build build --config Release --parallel 4
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config Release --parallel 16
+
+      - name: Show sccache stats
+        shell: bash
+        run: sccache --show-stats
+
+      - name: Assert package metadata
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: |
+          cd build
+          METADATA=$(cpack --config CPackConfig.cmake -G TGZ 2>&1 || true)
+          # Inspect the cmake-generated CPackConfig for the key fields
+          if grep -q "CPACK_PACKAGE_NAME.*slicer_cli" CPackConfig.cmake; then
+            echo "PASS: CPACK_PACKAGE_NAME is slicer_cli"
+          else
+            echo "FAIL: CPACK_PACKAGE_NAME does not contain slicer_cli"
+            grep "CPACK_PACKAGE_NAME" CPackConfig.cmake
+            exit 1
+          fi
+
+      - name: Run feature-exclusion regression tests (bambu)
+        # BambuStudio-specific excluded-source set; orca's differs, so this gates
+        # the bambu engine only. Orca gets a plain --help smoke below.
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_excluded_features.sh build/slicer_cli
+
+      - name: Smoke --help (orca, macOS/Linux)
+        if: runner.os != 'Windows' && matrix.engine == 'orca'
+        run: build/slicer_cli --help
+
+      - name: Run feature-exclusion regression tests (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Adapted for PowerShell; minimal smoke only
+          $b = "build\Release\slicer_cli.exe"
+          if (-not (Test-Path $b)) { $b = "build\slicer_cli.exe" }
+          & $b --help
+          if ($LASTEXITCODE -ne 0) { Write-Error "slicer_cli --help failed"; exit 1 }
+
+      - name: Bundle for macOS (arm64 only)
+        if: matrix.os == 'macOS-arm64'
+        # The scripts use `declare -A` (associative arrays) which require bash 4+.
+        # macOS's /bin/bash is 3.2, so invoke Homebrew's bash directly.
+        run: |
+          # Use Homebrew bash 5 (installed via install_deps.sh) for declare -A support.
+          # smoke-clean-host.sh is bash 3.2 compatible; plain bash is fine for it.
+          /opt/homebrew/bin/bash scripts/bundle-macos.sh build/slicer_cli dist
+          bash scripts/smoke-clean-host.sh dist/slicer_cli
+
+      # Stage this engine's binary under the in-package filename convention used by
+      # the app + slicer-updater: default engine = plain slicer_cli[.exe]; others are
+      # slicer_cli-<engine-key>[.exe]. Keys match slicer.engine (bambu→plain
+      # =bambustudio, orca→slicer_cli-orcaslicer). The package job fans both engines in.
+      - name: Stage engine binary (macOS / Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="build/slicer_cli"
+          [ -x "dist/slicer_cli" ] && BIN="dist/slicer_cli"
+          mkdir -p staged
+          if [ "${{ matrix.engine }}" = "bambu" ]; then
+            cp "$BIN" staged/slicer_cli
+          else
+            cp "$BIN" staged/slicer_cli-orcaslicer
+          fi
+          # macOS: carry this engine's bundled Frameworks; the package job unions both
+          # engines' sets (orca links libjpeg that bambu does not).
+          if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/Frameworks ]; then
+            cp -R dist/Frameworks staged/Frameworks
+          fi
+
+      - name: Stage engine binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = "build\Release\slicer_cli.exe"
+          if (-not (Test-Path $bin)) { $bin = "build\slicer_cli.exe" }
+          New-Item -ItemType Directory -Force staged | Out-Null
+          if ("${{ matrix.engine }}" -eq "bambu") {
+            Copy-Item $bin staged\slicer_cli.exe
+          } else {
+            Copy-Item $bin staged\slicer_cli-orcaslicer.exe
+          }
+          # Carry runtime DLLs beside the binary; package job unions both engines'.
+          $binDir = Split-Path $bin
+          Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination staged\
+
+      - name: Upload engine binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.os }}-${{ matrix.engine }}
+          path: staged/
+          if-no-files-found: error
+
+  build-nonlinux:
+    name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Engine is a compile-time choice (-DENGINE=bambu|orca → mutually-exclusive
+        # #ifdef paths against two libslic3r forks). Build both; the package job
+        # fans them into one package and the app routes per printer at slice time.
+        engine: [bambu, orca]
+        os: [macOS-arm64, Windows-x86_64]
+        include:
+          - os: macOS-arm64
+            runner: macos-14          # Apple Silicon — primary dev target
+            cmake_preset: ""
+          - os: Windows-x86_64
+            runner: blacksmith-16vcpu-windows-2025
+            cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release"
+          # - os: macOS-x86_64
+          #   runner: macos-13
+          #   cmake_preset: ""
+          # - os: Linux-x86_64
+          #   runner: ubuntu-22.04
+          #   cmake_preset: ""
+
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Remove Mono framework (shadows libpng headers)
+        if: runner.os == 'macOS'
+        # macos-14 pre-installs Mono. Even with explicit -DPNG_PNG_INCLUDE_DIR
+        # pointing at Homebrew, the compiler still resolves <png.h> to
+        # /Library/Frameworks/Mono.framework/Headers/png.h (libpng 1.4) — likely
+        # via implicit framework search (-F /Library/Frameworks). Nuking Mono
+        # makes the conflict impossible. We don't use Mono for anything in this
+        # build; runner is ephemeral.
+        run: sudo rm -rf /Library/Frameworks/Mono.framework
+
+      - name: Cache Homebrew packages
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /opt/homebrew/Cellar
+            /opt/homebrew/lib
+            /opt/homebrew/include
+            /opt/homebrew/bin
+            /usr/local/lib/libnoise*
+            /usr/local/include/libnoise
+          # v7 has both the system CGAL 6 package for Orca and the project-managed
+          # Bambu CGAL 5.4 keg.
+          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
+          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        # Use /bin/bash (macOS system bash 3.2) to avoid PATH resolution
+        # picking up Homebrew's bash 5, which depends on ncurses — a dep that
+        # is absent on a cold cache. install_deps.sh is bash 3.2 compatible.
+        shell: /bin/bash -e {0}
+        run: ENGINE=${{ matrix.engine }} /bin/bash install_deps.sh
+
+      - name: Prepare Linux OpenCASCADE prefix
+        if: runner.os == 'Linux'
+        run: |
+          sudo mkdir -p /opt/slicer-cli/occt-7.6
+          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6
+
+      - name: Restore OpenCASCADE 7.6.0 (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/occt-7.6
+          key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
+
+      - name: Restore Linux pinned CGAL (bambu)
+        if: runner.os == 'Linux' && matrix.engine == 'bambu'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/cgal-5.4
+          key: linux-x86_64-cgal-5.4-bambu-v2
+
+      - name: Restore Linux pinned CGAL (orca)
+        if: runner.os == 'Linux' && matrix.engine == 'orca'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/cgal-5.6.3
+          key: linux-x86_64-cgal-5.6.3-orca-v2
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
+            libexpat1-dev libssl-dev libboost-all-dev libcgal-dev unzip \
+            libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
+            libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
+            libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
+          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfig.cmake
+          # libnoise — Bambu's fork, not in apt
+          LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+          git init /tmp/libnoise
+          git -C /tmp/libnoise remote add origin https://github.com/bambulab/libnoise.git
+          git -C /tmp/libnoise fetch --depth=1 origin "$LIBNOISE_COMMIT"
+          git -C /tmp/libnoise checkout --detach "$LIBNOISE_COMMIT"
+          test "$(git -C /tmp/libnoise rev-parse HEAD)" = "$LIBNOISE_COMMIT"
+          cmake -S /tmp/libnoise -B /tmp/libnoise/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          sudo cmake --build /tmp/libnoise/build --target install --parallel
+          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            CGAL_VERSION=5.4
+            CGAL_COMMIT=c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4
+            CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
+            if [[ ! -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" ]]; then
+              git clone --depth=1 --branch "v${CGAL_VERSION}" https://github.com/CGAL/cgal.git /tmp/cgal-src
+              [ "$(git -C /tmp/cgal-src rev-parse HEAD)" = "$CGAL_COMMIT" ] || { echo "CGAL commit mismatch"; exit 1; }
+              patch -d /tmp/cgal-src -p1 < references/BambuStudio/deps/CGAL/0001-clang19.patch
+              cmake -S /tmp/cgal-src -B /tmp/cgal-build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
+                -DCGAL_HEADER_ONLY=ON \
+                -DCGAL_INSTALL_CMAKE_DIR=lib/cmake/CGAL \
+                -DBUILD_TESTING=OFF \
+                -DBUILD_DOC=OFF \
+                -DCGAL_BUILD_THREE_DOC=OFF
+              sudo cmake --install /tmp/cgal-build
+            fi
+          else
+            CGAL_VERSION=5.6.3
+            CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
+            CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.tar.xz"
+            CGAL_ARCHIVE_SHA256=15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111
+            CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete"
+            if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
+              sudo rm -rf "$CGAL_ROOT"
+              curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.tar.xz
+              echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.tar.xz" | sha256sum -c -
+              tar -xJf /tmp/cgal-${CGAL_VERSION}.tar.xz -C /tmp
+              cmake -S /tmp/CGAL-${CGAL_VERSION} -B /tmp/cgal-build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
+                -DBUILD_TESTING=OFF \
+                -DBUILD_DOC=OFF \
+                -DCGAL_BUILD_THREE_DOC=OFF
+              sudo cmake --install /tmp/cgal-build
+              test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
+              test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
+              test -f "$CGAL_ROOT/include/CGAL/version.h"
+              MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete.XXXXXX")"
+              printf 'version=%s\n' "$CGAL_VERSION" | sudo tee "$MARKER_TMP" >/dev/null
+              sudo chmod 0644 "$MARKER_TMP"
+              sudo mv "$MARKER_TMP" "$CGAL_MARKER"
+            fi
+          fi
+
+      - name: Cache vcpkg packages (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
+          # so the previous cache (OCCT 8.0.0, which fails to compile against the
+          # pinned BambuStudio source) is NOT restored — it would shadow the pin.
+          # Bambu requires the project CGAL 5.4 overlay; Orca builds against the
+          # baseline CGAL 6 port. Keep their caches disjoint.
+          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v6
+          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v6
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          # Prevent vcpkg from trying to download a newer cmake/powershell
+          VCPKG_FEATURE_FLAGS: -compilertracking
+          VCPKG_FORCE_SYSTEM_BINARIES: 1
+        run: |
+          VCPKG_PIN=de03680510e75aa77d07750159adac4e570a6a81
+          git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth 1 origin "$VCPKG_PIN"
+          git -C "$VCPKG_INSTALLATION_ROOT" checkout --detach "$VCPKG_PIN"
+          "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          # Use vcpkg meta-package "boost" instead of individual components:
+          # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
+          # which aren't in our previous explicit list. Meta-package installs all.
+          VCPKG_ARGS=()
+          if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+            VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
+          fi
+          vcpkg install "${VCPKG_ARGS[@]}" \
+            tbb:x64-windows eigen3:x64-windows \
+            boost:x64-windows \
+            cgal:x64-windows "opencv[core]:x64-windows" assimp:x64-windows opencascade:x64-windows \
+            qhull:x64-windows cereal:x64-windows nlopt:x64-windows \
+            openssl:x64-windows libpng:x64-windows zlib:x64-windows \
+            expat:x64-windows freetype:x64-windows libjpeg-turbo:x64-windows
+          # libnoise (Bambu fork) — not in vcpkg, build from source.
+          # Previous run failed at install with "cmake_install.cmake:39 file
+          # cannot create directory: D:/a/_temp/libnoise/INSTALL/lib" despite
+          # passing -DCMAKE_INSTALL_PREFIX=.../libnoise/install (lowercase).
+          # libnoise's CMakeLists.txt is innocent — uses GNUInstallDirs.
+          # Workarounds:
+          #   1. Use a prefix dir without "install" substring to sidestep any
+          #      MSBuild INSTALL.vcxproj target name collision.
+          #   2. Two-step build then `cmake --install --prefix` — bypasses
+          #      MSBuild's INSTALL target entirely and runs cmake_install.cmake
+          #      directly. --prefix overrides the cached prefix at install time.
+          # Diagnostic head -60 cmake_install.cmake makes the next failure log
+          # informative if this still doesn't work.
+          git clone --depth=1 https://github.com/bambulab/libnoise.git "${RUNNER_TEMP}/libnoise"
+          cmake -S "${RUNNER_TEMP}/libnoise" -B "${RUNNER_TEMP}/libnoise/build" \
+            -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build "${RUNNER_TEMP}/libnoise/build" --config Release
+          echo "--- DIAGNOSTIC: head of cmake_install.cmake ---"
+          head -60 "${RUNNER_TEMP}/libnoise/build/cmake_install.cmake"
+          echo "--- END DIAGNOSTIC ---"
+          cmake --install "${RUNNER_TEMP}/libnoise/build" --config Release \
+            --prefix "${RUNNER_TEMP}/libnoise-prefix"
+          echo "LIBNOISE_ROOT=${RUNNER_TEMP}/libnoise-prefix" >> $GITHUB_ENV
+
+
+      # Cache compiled objects across runs. sccache intercepts compiler
+      # invocations (MSVC, Clang, GCC) via CMAKE_C(XX)_COMPILER_LAUNCHER
+      # and stores results in the GitHub Actions cache.  A warm-cache
+      # rebuild of ~1500 .cpp files drops from ~3 h to ~10 min (link +
+      # smoke tests).  Cold runs populate the cache with no slowdown.
+      # macOS and Windows share the sccache binary but use separate
+      # namespace-qualified caches per engine + platform + compiler.
+      - name: Setup sccache (compile cache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: "v0.10.0"
+      - name: Configure (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          # Mono.framework (pre-installed on macos-14) ships libpng 1.4 headers
+          # in /Library/Frameworks/Mono.framework/Headers/png.h. CMake's default
+          # CMAKE_FIND_FRAMEWORK=FIRST searches frameworks before regular paths,
+          # so find_package(PNG) picks up Mono's stale png.h while linking
+          # against Homebrew's current libpng — header/library mismatch breaks
+          # PNGReadWrite.cpp on png_const_bytep (libpng 1.6+ symbol).
+          # Setting both PNG_PNG_INCLUDE_DIR and PNG_LIBRARY short-circuits
+          # FindPNG's search entirely.
+          EXTRA=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            LIBPNG=$(brew --prefix libpng)
+            EXTRA+=(-DPNG_PNG_INCLUDE_DIR="$LIBPNG/include" -DPNG_LIBRARY="$LIBPNG/lib/libpng.dylib")
+            # Homebrew eigen's cmake config location varies by runner image version.
+            # Use find to locate Eigen3Config.cmake regardless of path, then pass
+            # the directory directly so find_package(Eigen3) short-circuits search.
+            EIGEN3_CMAKE_DIR="$(dirname "$(find /opt/homebrew -name "Eigen3Config.cmake" 2>/dev/null | head -1)" 2>/dev/null)"
+            [[ -n "$EIGEN3_CMAKE_DIR" ]] && EXTRA+=(-DEigen3_DIR="$EIGEN3_CMAKE_DIR")
+            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+              CGAL5_DIR="$(brew --cellar)/cgal@5/5.4/lib/cmake/CGAL"
+              [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            fi
+          else
+            OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
+            [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
+            EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
+            if [[ "${{ matrix.engine }}" == "bambu" ]]; then
+              CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
+              [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
+            else
+              CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
+              [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
             fi
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -410,7 +921,7 @@ jobs:
   # so the manifest's executablePath still points at the default binary.
   package:
     name: Package — ${{ matrix.os }}
-    needs: build
+    needs: [build-linux, build-nonlinux]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
