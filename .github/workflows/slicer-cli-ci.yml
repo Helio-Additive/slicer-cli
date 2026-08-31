@@ -1225,7 +1225,9 @@ jobs:
       - name: Install Linux package smoke runtime
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends libqhullcpp8.0
+          sudo apt-get install -y --no-install-recommends \
+            libqhullcpp8.0 \
+            libtbb12
 
       - name: Download Bambu engine binary
         uses: actions/download-artifact@v4
