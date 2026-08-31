@@ -1226,8 +1226,24 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
+            libassimp5 \
+            libboost-nowide1.74.0 \
+            libbrotli1 \
+            libssl3 \
+            libdraco4 \
+            libexpat1 \
+            libfontconfig1 \
+            libfreetype6 \
+            libgmp10 \
+            libicu70 \
+            libjpeg-turbo8 \
+            libminizip1 \
+            libmpfr6 \
+            libnlopt0 \
+            libpng16-16 \
             libqhullcpp8.0 \
-            libtbb12
+            libtbb12 \
+            libuuid1
 
       - name: Download Bambu engine binary
         uses: actions/download-artifact@v4
