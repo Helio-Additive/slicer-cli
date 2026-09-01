@@ -274,15 +274,19 @@ if(NOT CEREAL_INCLUDE_DIR)
   message(FATAL_ERROR "Cereal not found. Install: brew install cereal")
 endif()
 
-# libnoise — required by FuzzySkin.cpp since BBS v02.05.03.
-# Source: https://github.com/bambulab/libnoise (tag v1.0.0)
-# Build+install libnoise once, then pass CMAKE_PREFIX_PATH=<install-root>
-# when configuring. Uses BBS's own Findlibnoise.cmake module.
+# libnoise — required by FuzzySkin.cpp in both engines.
+# CI passes the verified engine-specific install root explicitly so a stale
+# /usr/local installation cannot satisfy the wrong engine.
+set(SLICER_CLI_LIBNOISE_PREFIX "" CACHE PATH
+    "Verified engine-specific libnoise installation prefix")
 if(UNIX AND NOT APPLE)
   list(FIND CMAKE_PREFIX_PATH "/usr/local" _SLICER_CLI_HAS_USR_LOCAL)
   if (_SLICER_CLI_HAS_USR_LOCAL EQUAL -1)
     list(PREPEND CMAKE_PREFIX_PATH "/usr/local")
   endif()
+endif()
+if(SLICER_CLI_LIBNOISE_PREFIX)
+  list(PREPEND CMAKE_PREFIX_PATH "${SLICER_CLI_LIBNOISE_PREFIX}")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${REF_SRC}/../cmake/modules")

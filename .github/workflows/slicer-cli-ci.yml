@@ -53,26 +53,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
-          LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix"
-          LIBNOISE_MARKER="$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
-          git init "$RUNNER_TEMP/libnoise-src"
-          git -C "$RUNNER_TEMP/libnoise-src" remote add origin https://github.com/bambulab/libnoise.git
-          git -C "$RUNNER_TEMP/libnoise-src" fetch --depth=1 origin "$LIBNOISE_COMMIT"
-          git -C "$RUNNER_TEMP/libnoise-src" checkout --detach "$LIBNOISE_COMMIT"
-          test "$(git -C "$RUNNER_TEMP/libnoise-src" rev-parse HEAD)" = "$LIBNOISE_COMMIT"
-          cmake -S "$RUNNER_TEMP/libnoise-src" -B "$RUNNER_TEMP/libnoise-build" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$LIBNOISE_PREFIX" \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-          cmake --build "$RUNNER_TEMP/libnoise-build" --parallel
-          cmake --install "$RUNNER_TEMP/libnoise-build"
-          test -f "$LIBNOISE_PREFIX/include/noise/noise.h" -o -f "$LIBNOISE_PREFIX/include/libnoise/noise.h"
-          test -f "$LIBNOISE_PREFIX/lib/libnoise.a" -o -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" -o -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a"
-          MARKER_TMP="$(mktemp "$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete.XXXXXX")"
-          printf 'source_commit=%s\n' "$LIBNOISE_COMMIT" > "$MARKER_TMP"
-          chmod 0644 "$MARKER_TMP"
-          mv "$MARKER_TMP" "$LIBNOISE_MARKER"
+          for ENGINE in bambu orca; do
+            if [[ "$ENGINE" == bambu ]]; then
+              LIBNOISE_REPOSITORY=https://github.com/bambulab/libnoise.git
+              LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+            else
+              LIBNOISE_REPOSITORY=https://github.com/SoftFever/Orca-deps-libnoise.git
+              LIBNOISE_COMMIT=f25d5331570ae109f0e645cb729ecab155612714
+            fi
+            LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix/$ENGINE"
+            LIBNOISE_SOURCE="$RUNNER_TEMP/libnoise-src-$ENGINE"
+            LIBNOISE_BUILD="$RUNNER_TEMP/libnoise-build-$ENGINE"
+            mkdir -p "$LIBNOISE_PREFIX"
+            git init "$LIBNOISE_SOURCE"
+            git -C "$LIBNOISE_SOURCE" remote add origin "$LIBNOISE_REPOSITORY"
+            git -C "$LIBNOISE_SOURCE" fetch --depth=1 origin "$LIBNOISE_COMMIT"
+            git -C "$LIBNOISE_SOURCE" checkout --detach "$LIBNOISE_COMMIT"
+            test "$(git -C "$LIBNOISE_SOURCE" rev-parse HEAD)" = "$LIBNOISE_COMMIT"
+            cmake -S "$LIBNOISE_SOURCE" -B "$LIBNOISE_BUILD" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="$LIBNOISE_PREFIX" \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+            cmake --build "$LIBNOISE_BUILD" --parallel
+            cmake --install "$LIBNOISE_BUILD"
+            test -f "$LIBNOISE_PREFIX/include/noise/noise.h" -o -f "$LIBNOISE_PREFIX/include/libnoise/noise.h"
+            test -f "$LIBNOISE_PREFIX/lib/libnoise.a" -o -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" -o -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a"
+            MARKER_TMP="$(mktemp "$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete.XXXXXX")"
+            {
+              printf 'source_repository=%s\n' "$LIBNOISE_REPOSITORY"
+              printf 'source_commit=%s\n' "$LIBNOISE_COMMIT"
+            } > "$MARKER_TMP"
+            chmod 0644 "$MARKER_TMP"
+            mv "$MARKER_TMP" "$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
+          done
 
       - name: Upload pinned libnoise prefix
         uses: actions/upload-artifact@v4
@@ -208,10 +221,16 @@ jobs:
           test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake
           test -f /opt/slicer-cli/occt-7.6/lib/libTKernel.a
           test -f /opt/slicer-cli/occt-7.6/lib/libTKBRep.a
-          LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix"
+          LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix/${{ matrix.engine }}"
           LIBNOISE_MARKER="$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
           test -r "$LIBNOISE_MARKER"
-          grep -qx 'source_commit=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8' "$LIBNOISE_MARKER"
+          if [[ "${{ matrix.engine }}" == bambu ]]; then
+            grep -qx 'source_repository=https://github.com/bambulab/libnoise.git' "$LIBNOISE_MARKER"
+            grep -qx 'source_commit=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8' "$LIBNOISE_MARKER"
+          else
+            grep -qx 'source_repository=https://github.com/SoftFever/Orca-deps-libnoise.git' "$LIBNOISE_MARKER"
+            grep -qx 'source_commit=f25d5331570ae109f0e645cb729ecab155612714' "$LIBNOISE_MARKER"
+          fi
           test -f "$LIBNOISE_PREFIX/include/noise/noise.h" -o -f "$LIBNOISE_PREFIX/include/libnoise/noise.h"
           test -f "$LIBNOISE_PREFIX/lib/libnoise.a" -o -f "$LIBNOISE_PREFIX/lib/libnoise_static.a" -o -f "$LIBNOISE_PREFIX/lib/liblibnoise_static.a"
           if [[ "${{ matrix.engine }}" == "bambu" ]]; then
@@ -344,7 +363,18 @@ jobs:
           #      directly. --prefix overrides the cached prefix at install time.
           # Diagnostic head -60 cmake_install.cmake makes the next failure log
           # informative if this still doesn't work.
-          git clone --depth=1 https://github.com/bambulab/libnoise.git "${RUNNER_TEMP}/libnoise"
+          if [[ "${{ matrix.engine }}" == bambu ]]; then
+            LIBNOISE_REPOSITORY=https://github.com/bambulab/libnoise.git
+            LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+          else
+            LIBNOISE_REPOSITORY=https://github.com/SoftFever/Orca-deps-libnoise.git
+            LIBNOISE_COMMIT=f25d5331570ae109f0e645cb729ecab155612714
+          fi
+          git init "${RUNNER_TEMP}/libnoise"
+          git -C "${RUNNER_TEMP}/libnoise" remote add origin "$LIBNOISE_REPOSITORY"
+          git -C "${RUNNER_TEMP}/libnoise" fetch --depth=1 origin "$LIBNOISE_COMMIT"
+          git -C "${RUNNER_TEMP}/libnoise" checkout --detach "$LIBNOISE_COMMIT"
+          test "$(git -C "${RUNNER_TEMP}/libnoise" rev-parse HEAD)" = "$LIBNOISE_COMMIT"
           cmake -S "${RUNNER_TEMP}/libnoise" -B "${RUNNER_TEMP}/libnoise/build" \
             -G "Visual Studio 17 2022" -A x64 \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
@@ -397,7 +427,9 @@ jobs:
           else
             OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
             [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
-            CMAKE_PREFIXES="$RUNNER_TEMP/libnoise-prefix;$CMAKE_PREFIXES"
+            ENGINE_LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix/${{ matrix.engine }}"
+            CMAKE_PREFIXES="$ENGINE_LIBNOISE_PREFIX;$CMAKE_PREFIXES"
+            EXTRA+=(-DSLICER_CLI_LIBNOISE_PREFIX="$ENGINE_LIBNOISE_PREFIX")
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
             if [[ "${{ matrix.engine }}" == "bambu" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
@@ -531,6 +563,9 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/Frameworks ]; then
             cp -R dist/Frameworks staged/Frameworks
           fi
+          if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/THIRD_PARTY_LICENSES ]; then
+            cp -R dist/THIRD_PARTY_LICENSES staged/THIRD_PARTY_LICENSES
+          fi
 
       - name: Stage engine binary (Windows)
         if: runner.os == 'Windows'
@@ -548,6 +583,21 @@ jobs:
           $binDir = Split-Path $bin
           Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination staged\
+          $licenseRoot = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed"
+          $licenseDestination = "staged\THIRD_PARTY_LICENSES\vcpkg"
+          New-Item -ItemType Directory -Force $licenseDestination | Out-Null
+          $licenseCount = 0
+          Get-ChildItem $licenseRoot -Directory | ForEach-Object {
+            $triplet = $_.Name
+            Get-ChildItem (Join-Path $_.FullName "share") -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+              $copyright = Join-Path $_.FullName "copyright"
+              if (Test-Path $copyright) {
+                Copy-Item $copyright (Join-Path $licenseDestination "$triplet--$($_.Name).txt")
+                $licenseCount++
+              }
+            }
+          }
+          if ($licenseCount -eq 0) { throw "vcpkg dependency copyright files were not found" }
 
       - name: Upload engine binary artifact
         uses: actions/upload-artifact@v4
@@ -709,9 +759,15 @@ jobs:
             libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
           test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfig.cmake
           # libnoise — Bambu's fork, not in apt
-          LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+          if [[ "${{ matrix.engine }}" == bambu ]]; then
+            LIBNOISE_REPOSITORY=https://github.com/bambulab/libnoise.git
+            LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+          else
+            LIBNOISE_REPOSITORY=https://github.com/SoftFever/Orca-deps-libnoise.git
+            LIBNOISE_COMMIT=f25d5331570ae109f0e645cb729ecab155612714
+          fi
           git init /tmp/libnoise
-          git -C /tmp/libnoise remote add origin https://github.com/bambulab/libnoise.git
+          git -C /tmp/libnoise remote add origin "$LIBNOISE_REPOSITORY"
           git -C /tmp/libnoise fetch --depth=1 origin "$LIBNOISE_COMMIT"
           git -C /tmp/libnoise checkout --detach "$LIBNOISE_COMMIT"
           test "$(git -C /tmp/libnoise rev-parse HEAD)" = "$LIBNOISE_COMMIT"
@@ -835,7 +891,18 @@ jobs:
           #      directly. --prefix overrides the cached prefix at install time.
           # Diagnostic head -60 cmake_install.cmake makes the next failure log
           # informative if this still doesn't work.
-          git clone --depth=1 https://github.com/bambulab/libnoise.git "${RUNNER_TEMP}/libnoise"
+          if [[ "${{ matrix.engine }}" == bambu ]]; then
+            LIBNOISE_REPOSITORY=https://github.com/bambulab/libnoise.git
+            LIBNOISE_COMMIT=7e7c98c06a67d5203dd780b45e9a25d3ec930fd8
+          else
+            LIBNOISE_REPOSITORY=https://github.com/SoftFever/Orca-deps-libnoise.git
+            LIBNOISE_COMMIT=f25d5331570ae109f0e645cb729ecab155612714
+          fi
+          git init "${RUNNER_TEMP}/libnoise"
+          git -C "${RUNNER_TEMP}/libnoise" remote add origin "$LIBNOISE_REPOSITORY"
+          git -C "${RUNNER_TEMP}/libnoise" fetch --depth=1 origin "$LIBNOISE_COMMIT"
+          git -C "${RUNNER_TEMP}/libnoise" checkout --detach "$LIBNOISE_COMMIT"
+          test "$(git -C "${RUNNER_TEMP}/libnoise" rev-parse HEAD)" = "$LIBNOISE_COMMIT"
           cmake -S "${RUNNER_TEMP}/libnoise" -B "${RUNNER_TEMP}/libnoise/build" \
             -G "Visual Studio 17 2022" -A x64 \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
@@ -1024,6 +1091,9 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/Frameworks ]; then
             cp -R dist/Frameworks staged/Frameworks
           fi
+          if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/THIRD_PARTY_LICENSES ]; then
+            cp -R dist/THIRD_PARTY_LICENSES staged/THIRD_PARTY_LICENSES
+          fi
 
       - name: Stage engine binary (Windows)
         if: runner.os == 'Windows'
@@ -1041,6 +1111,21 @@ jobs:
           $binDir = Split-Path $bin
           Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination staged\
+          $licenseRoot = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed"
+          $licenseDestination = "staged\THIRD_PARTY_LICENSES\vcpkg"
+          New-Item -ItemType Directory -Force $licenseDestination | Out-Null
+          $licenseCount = 0
+          Get-ChildItem $licenseRoot -Directory | ForEach-Object {
+            $triplet = $_.Name
+            Get-ChildItem (Join-Path $_.FullName "share") -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+              $copyright = Join-Path $_.FullName "copyright"
+              if (Test-Path $copyright) {
+                Copy-Item $copyright (Join-Path $licenseDestination "$triplet--$($_.Name).txt")
+                $licenseCount++
+              }
+            }
+          }
+          if ($licenseCount -eq 0) { throw "vcpkg dependency copyright files were not found" }
 
       - name: Upload engine binary artifact
         uses: actions/upload-artifact@v4
@@ -1103,14 +1188,42 @@ jobs:
           chmod +x "$P/slicer_cli" "$P/slicer_cli-orcaslicer"
           # Union both engines' bundled Frameworks.
           for d in engine-bambu engine-orca; do
-            if [ -d "$d/Frameworks" ]; then mkdir -p "$P/Frameworks"; cp -R "$d/Frameworks/." "$P/Frameworks/"; fi
+            if [ -d "$d/Frameworks" ]; then
+              mkdir -p "$P/Frameworks"
+              for framework in "$d"/Frameworks/*; do
+                [ -e "$framework" ] || continue
+                destination="$P/Frameworks/$(basename "$framework")"
+                if [ -e "$destination" ] && ! cmp -s "$framework" "$destination"; then
+                  echo "Framework collision between engine bundles: $(basename "$framework")" >&2
+                  exit 1
+                fi
+                cp -R "$framework" "$destination"
+              done
+            fi
           done
+          mkdir -p "$P/THIRD_PARTY_LICENSES"
+          for d in engine-bambu engine-orca; do
+            [ -d "$d/THIRD_PARTY_LICENSES" ] || continue
+            while IFS= read -r license; do
+              relative="${license#"$d/THIRD_PARTY_LICENSES/"}"
+              destination="$P/THIRD_PARTY_LICENSES/$relative"
+              mkdir -p "$(dirname "$destination")"
+              if [ -e "$destination" ] && ! cmp -s "$license" "$destination"; then
+                echo "Third-party record collision: $relative" >&2
+                exit 1
+              fi
+              cp "$license" "$destination"
+            done < <(find "$d/THIRD_PARTY_LICENSES" -type f -print)
+          done
+          test -n "$(find "$P/THIRD_PARTY_LICENSES" -type f -print -quit)"
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
           # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
           # slice-resolvable by name via the orca engine. The browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
+          cp references/BambuStudio/LICENSE.txt "$P/BAMBUSTUDIO-LICENSE.txt"
+          cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
           cat > "$P/manifest.json" <<EOF
           {
             "version": "${VERSION}",
@@ -1165,14 +1278,43 @@ jobs:
           Copy-Item engine-bambu\slicer_cli.exe "$P\slicer_cli.exe"
           Copy-Item engine-orca\slicer_cli-orcaslicer.exe "$P\slicer_cli-orcaslicer.exe"
           # Union runtime DLLs from both engine artifacts (orca adds libjpeg).
-          Get-ChildItem engine-bambu, engine-orca -Filter *.dll -File -ErrorAction SilentlyContinue |
-            Copy-Item -Destination "$P\" -Force
+          Get-ChildItem engine-bambu, engine-orca -Filter *.dll -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $destination = Join-Path $P $_.Name
+            if (Test-Path $destination) {
+              $sourceHash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+              $destinationHash = (Get-FileHash $destination -Algorithm SHA256).Hash
+              if ($sourceHash -ne $destinationHash) { throw "DLL collision between engine bundles: $($_.Name)" }
+            } else {
+              Copy-Item $_.FullName $destination
+            }
+          }
+          New-Item -ItemType Directory -Force "$P\THIRD_PARTY_LICENSES" | Out-Null
+          foreach ($engineDirectory in @("engine-bambu", "engine-orca")) {
+            $sourceRoot = Join-Path $engineDirectory "THIRD_PARTY_LICENSES"
+            if (-not (Test-Path $sourceRoot)) { continue }
+            $resolvedRoot = (Resolve-Path $sourceRoot).Path
+            Get-ChildItem $sourceRoot -Recurse -File | ForEach-Object {
+              $relative = $_.FullName.Substring($resolvedRoot.Length + 1)
+              $destination = Join-Path "$P\THIRD_PARTY_LICENSES" $relative
+              New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
+              if (Test-Path $destination) {
+                if ((Get-FileHash $_.FullName).Hash -ne (Get-FileHash $destination).Hash) {
+                  throw "Third-party record collision: $relative"
+                }
+              } else {
+                Copy-Item $_.FullName $destination
+              }
+            }
+          }
+          if (-not (Get-ChildItem "$P\THIRD_PARTY_LICENSES" -Recurse -File)) { throw "missing third-party dependency records" }
           Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL "$P\resources\profiles\BBL"
           # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
           # slice-resolvable by name via the orca engine. Browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
           Copy-Item LICENSE, NOTICE, README.md "$P\"
+          Copy-Item references\BambuStudio\LICENSE.txt "$P\BAMBUSTUDIO-LICENSE.txt"
+          Copy-Item references\OrcaSlicer\LICENSE.txt "$P\ORCASLICER-LICENSE.txt"
           @{
             version = $version; gitSha = $env:GITHUB_SHA; platform = $platform
             executablePath = "slicer-cli/slicer_cli.exe"
@@ -1222,10 +1364,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Linux package smoke runtime
+      - name: Install Linux bundling inputs
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
+            patchelf \
             libassimp5 \
             libboost-nowide1.74.0 \
             libbrotli1 \
@@ -1240,6 +1383,7 @@ jobs:
             libminizip1 \
             libmpfr6 \
             libnlopt0 \
+            libopencv-core4.5d \
             libpng16-16 \
             libqhullcpp8.0 \
             libtbb12 \
@@ -1274,6 +1418,8 @@ jobs:
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
+          cp references/BambuStudio/LICENSE.txt "$P/BAMBUSTUDIO-LICENSE.txt"
+          cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
           cat > "$P/manifest.json" <<EOF
           {
             "version": "${VERSION}",
@@ -1288,6 +1434,7 @@ jobs:
             ]
           }
           EOF
+          bash scripts/bundle-linux.sh "$P" "$P/slicer_cli" "$P/slicer_cli-orcaslicer"
           tar -C dist/package -czf "dist/release/${ASSET}" slicer-cli
           HASH="$(sha256sum "dist/release/${ASSET}" | awk '{print $1}')"
           printf '%s  %s\n' "$HASH" "$ASSET" > "dist/release/${ASSET}.sha256"
@@ -1310,8 +1457,8 @@ jobs:
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/machine
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/process
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/filament
-          dist/verify/slicer-cli/slicer_cli --help >/dev/null
-          dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
+          test -n "$(find dist/verify/slicer-cli/THIRD_PARTY_LICENSES -type f -print -quit)"
+          bash tests/test-portable-bundle.sh dist/verify/slicer-cli
 
       - name: Upload Linux release package artifact
         uses: actions/upload-artifact@v4
@@ -1322,7 +1469,7 @@ jobs:
 
   release:
     name: Publish slicer-cli release assets
-    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && (needs.package.result == 'success' || needs['package-linux'].result == 'success') }}
+    if: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && needs.package.result == 'success' && needs['package-linux'].result == 'success' }}
     needs: [package, package-linux]
     runs-on: ubuntu-latest
     permissions:
@@ -1357,6 +1504,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "slicer-cli engine package"
+          RELEASE_STATE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft 2>/dev/null || true)"
+          if [ -z "$RELEASE_STATE" ]; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --title "$GITHUB_REF_NAME" --notes "slicer-cli engine package"
+          elif [ "$RELEASE_STATE" != true ]; then
+            echo "Refusing to replace assets on an already-published release" >&2
+            exit 1
+          fi
+          RELEASE_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .id)"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --jq '.[].id' |
+            while IFS= read -r asset_id; do
+              [ -n "$asset_id" ] && gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+            done
           gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/release/* --clobber
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

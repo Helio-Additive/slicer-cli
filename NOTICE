@@ -34,6 +34,12 @@ preserved under AGPLv3.
                         https://github.com/bambulab/BambuStudio
                         AGPLv3.
 
+  OrcaSlicer          — Fork of BambuStudio/PrusaSlicer maintained by the
+                        OrcaSlicer project. The separate Orca CLI binary and
+                        profile tree are built from pinned OrcaSlicer source.
+                        https://github.com/OrcaSlicer/OrcaSlicer
+                        AGPLv3.
+
 `slicer-cli` carries forward this lineage. Modifications made for the
 CLI build (CGAL 6.x compatibility patches, Eigen 3.4 SparseMatrix
 migration in libigl, Boost ≥ 1.85 compatibility shims, headless
@@ -82,8 +88,12 @@ Bundled sub-libraries (compiled into slicer-cli from the BambuStudio submodule)
                        Zlib.
 
 ================================================================================
-External dependencies (linked, not bundled — see install_deps.sh)
+External dependencies (linked; portable packages also bundle runtime libraries)
 ================================================================================
+
+  Portable archives include the platform runtime dependency closure. Exact
+  package-manager copyright/license records or provenance are included under
+  THIRD_PARTY_LICENSES/ in each archive; see install_deps.sh for build inputs.
 
   TBB                — Apache 2.0
   Boost              — Boost Software License 1.0
@@ -95,7 +105,10 @@ External dependencies (linked, not bundled — see install_deps.sh)
   OpenCV (core)      — Apache 2.0
   Qhull              — Custom permissive (Qhull license)
   Cereal             — BSD 3-clause
-  libnoise (Bambu)   — LGPLv3 (Bambu's fork at https://github.com/bambulab/libnoise)
+  libnoise (Bambu)   — LGPLv3; pinned Bambu fork v1.0.0 source.
+                       https://github.com/bambulab/libnoise
+  libnoise (Orca)    — Orca engine dependency from the pinned Orca fork.
+                       https://github.com/SoftFever/Orca-deps-libnoise
   NLopt              — LGPLv2.1 (optional)
   libpng / zlib /    — Their respective permissive licenses (zlib/libpng,
   libexpat /           zlib, MIT, Apache).

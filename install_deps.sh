@@ -35,8 +35,13 @@ CGAL63_VERSION='5.6.3'
 CGAL63_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL63_VERSION}/CGAL-${CGAL63_VERSION}.tar.xz"
 CGAL63_ARCHIVE_SHA256='15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111'
 CGAL63_PREFIX=''
-LIBNOISE_REPOSITORY='https://github.com/bambulab/libnoise.git'
-LIBNOISE_COMMIT='7e7c98c06a67d5203dd780b45e9a25d3ec930fd8'
+if [ "${ENGINE:-bambu}" = 'orca' ]; then
+    LIBNOISE_REPOSITORY='https://github.com/SoftFever/Orca-deps-libnoise.git'
+    LIBNOISE_COMMIT='f25d5331570ae109f0e645cb729ecab155612714'
+else
+    LIBNOISE_REPOSITORY='https://github.com/bambulab/libnoise.git'
+    LIBNOISE_COMMIT='7e7c98c06a67d5203dd780b45e9a25d3ec930fd8'
+fi
 
 install_cgal5() {
     local prefix="$1"
@@ -268,14 +273,31 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         install_cgal5 "$CGAL5_PREFIX" no
     fi
 
-    # libnoise (Bambu fork) — not in Homebrew, must build from source
-    if ! [ -f /usr/local/lib/libnoise.a ] && ! [ -f /usr/local/lib/libnoise.dylib ]; then
-        echo "  Installing libnoise (Bambu fork)..."
+    # Engine-specific pinned libnoise — not in Homebrew, build from source.
+    LIBNOISE_PREFIX=/usr/local
+    LIBNOISE_MARKER="$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
+    if ! { [ -r "$LIBNOISE_MARKER" ] \
+           && grep -qx "source_repository=${LIBNOISE_REPOSITORY}" "$LIBNOISE_MARKER" \
+           && grep -qx "source_commit=${LIBNOISE_COMMIT}" "$LIBNOISE_MARKER" \
+           && { [ -f "$LIBNOISE_PREFIX/lib/libnoise.a" ] || [ -f "$LIBNOISE_PREFIX/lib/libnoise.dylib" ]; }; }; then
+        echo "  Installing engine-specific libnoise..."
         LIBNOISE_TMP=$(mktemp -d)
-        git clone --depth=1 https://github.com/bambulab/libnoise.git "$LIBNOISE_TMP"
+        git init "$LIBNOISE_TMP"
+        git -C "$LIBNOISE_TMP" remote add origin "$LIBNOISE_REPOSITORY"
+        git -C "$LIBNOISE_TMP" fetch --depth=1 origin "$LIBNOISE_COMMIT"
+        git -C "$LIBNOISE_TMP" checkout --detach "$LIBNOISE_COMMIT"
+        [ "$(git -C "$LIBNOISE_TMP" rev-parse HEAD)" = "$LIBNOISE_COMMIT" ] || {
+            echo -e "${RED}libnoise commit mismatch${NC}"
+            exit 1
+        }
         cmake -S "$LIBNOISE_TMP" -B "$LIBNOISE_TMP/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         cmake --build "$LIBNOISE_TMP/build" --parallel
         sudo cmake --install "$LIBNOISE_TMP/build"
+        LIBNOISE_MARKER_TMP=$(sudo mktemp "$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete.XXXXXX")
+        printf 'source_repository=%s\nsource_commit=%s\n' "$LIBNOISE_REPOSITORY" "$LIBNOISE_COMMIT" \
+            | sudo tee "$LIBNOISE_MARKER_TMP" >/dev/null
+        sudo chmod 0644 "$LIBNOISE_MARKER_TMP"
+        sudo mv "$LIBNOISE_MARKER_TMP" "$LIBNOISE_MARKER"
         rm -rf "$LIBNOISE_TMP"
     else
         echo "  ✓ libnoise (already installed)"

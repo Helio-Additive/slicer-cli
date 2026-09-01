@@ -1,6 +1,7 @@
 # slicer-cli
 
-Standalone command-line slicer derived from BambuStudio's `libslic3r`. AGPLv3.
+Standalone dual-engine command-line slicer derived from BambuStudio and
+OrcaSlicer's `libslic3r` forks. AGPLv3.
 
 `slicer-cli` is the AGPL boundary that closed apps subprocess. Run it directly,
 embed it in CI, or wrap it from any tool that wants reproducible BambuStudio-
@@ -10,10 +11,9 @@ compatible STL → gcode slicing without dragging in a UI.
 
 AGPL-3.0-or-later. See `LICENSE`.
 
-This project is derived from BambuStudio (also AGPLv3), which is derived from
-PrusaSlicer (also AGPLv3), which is derived from Slic3r (AGPLv3). The full
-attribution chain — including bundled sub-libraries and their licenses — is in
-`NOTICE`.
+This project includes separate BambuStudio and OrcaSlicer engine binaries. Both
+are derived from PrusaSlicer and Slic3r under AGPLv3. The full attribution chain
+and engine-specific dependency provenance are in `NOTICE`.
 
 If you run `slicer-cli` (or a modified version of it) on a server and let
 network users interact with it, AGPL § 13 requires you to offer them the
@@ -70,13 +70,16 @@ a feature branch first.
 
 Release builds are produced by GitHub Actions (`.github/workflows/`) for:
 
-- Linux x86_64 + arm64 (static where licence-compatible)
-- macOS arm64 + x86_64 (notarized via Apple Developer ID)
-- Windows x86_64 (Authenticode-signed)
+- Linux x86_64
+- macOS arm64
+- Windows x86_64
 
-Each release is a relocatable binary: non-system dylibs are bundled inside
-the package with corrected install names. A clean-host smoke test in CI
-verifies the binary runs on a host with no Homebrew dependencies preinstalled.
+Linux packages target Ubuntu 22.04/glibc 2.35 and bundle non-glibc runtime
+libraries. macOS packages bundle non-system dylibs and reject Homebrew or build
+paths. CI artifacts are not currently notarized or Authenticode-signed.
+
+The engine dependency contract, upstream-aligned pins, and documented platform
+exceptions are recorded in `docs/engine-dependency-contract.md`.
 
 Package metadata identifies the artefact as `slicer_cli` (not `BambuStudio`).
 A CI assertion fails the build if the metadata regresses.
