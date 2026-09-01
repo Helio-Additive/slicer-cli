@@ -564,7 +564,8 @@ jobs:
             cp -R dist/Frameworks staged/Frameworks
           fi
           if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/THIRD_PARTY_LICENSES ]; then
-            cp -R dist/THIRD_PARTY_LICENSES staged/THIRD_PARTY_LICENSES
+            mkdir -p "staged/THIRD_PARTY_LICENSES/${{ matrix.engine }}"
+            cp -R dist/THIRD_PARTY_LICENSES/. "staged/THIRD_PARTY_LICENSES/${{ matrix.engine }}/"
           fi
 
       - name: Stage engine binary (Windows)
@@ -584,7 +585,7 @@ jobs:
           Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination staged\
           $licenseRoot = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed"
-          $licenseDestination = "staged\THIRD_PARTY_LICENSES\vcpkg"
+          $licenseDestination = "staged\THIRD_PARTY_LICENSES\${{ matrix.engine }}\vcpkg"
           New-Item -ItemType Directory -Force $licenseDestination | Out-Null
           $licenseCount = 0
           Get-ChildItem $licenseRoot -Directory | ForEach-Object {
@@ -1092,7 +1093,8 @@ jobs:
             cp -R dist/Frameworks staged/Frameworks
           fi
           if [ "${{ runner.os }}" = "macOS" ] && [ -d dist/THIRD_PARTY_LICENSES ]; then
-            cp -R dist/THIRD_PARTY_LICENSES staged/THIRD_PARTY_LICENSES
+            mkdir -p "staged/THIRD_PARTY_LICENSES/${{ matrix.engine }}"
+            cp -R dist/THIRD_PARTY_LICENSES/. "staged/THIRD_PARTY_LICENSES/${{ matrix.engine }}/"
           fi
 
       - name: Stage engine binary (Windows)
@@ -1112,7 +1114,7 @@ jobs:
           Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination staged\
           $licenseRoot = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed"
-          $licenseDestination = "staged\THIRD_PARTY_LICENSES\vcpkg"
+          $licenseDestination = "staged\THIRD_PARTY_LICENSES\${{ matrix.engine }}\vcpkg"
           New-Item -ItemType Directory -Force $licenseDestination | Out-Null
           $licenseCount = 0
           Get-ChildItem $licenseRoot -Directory | ForEach-Object {
@@ -1222,7 +1224,7 @@ jobs:
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
-          cp references/BambuStudio/LICENSE.txt "$P/BAMBUSTUDIO-LICENSE.txt"
+          cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
           cat > "$P/manifest.json" <<EOF
           {
@@ -1278,16 +1280,10 @@ jobs:
           Copy-Item engine-bambu\slicer_cli.exe "$P\slicer_cli.exe"
           Copy-Item engine-orca\slicer_cli-orcaslicer.exe "$P\slicer_cli-orcaslicer.exe"
           # Union runtime DLLs from both engine artifacts (orca adds libjpeg).
-          Get-ChildItem engine-bambu, engine-orca -Filter *.dll -File -ErrorAction SilentlyContinue | ForEach-Object {
-            $destination = Join-Path $P $_.Name
-            if (Test-Path $destination) {
-              $sourceHash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-              $destinationHash = (Get-FileHash $destination -Algorithm SHA256).Hash
-              if ($sourceHash -ne $destinationHash) { throw "DLL collision between engine bundles: $($_.Name)" }
-            } else {
-              Copy-Item $_.FullName $destination
-            }
-          }
+          # Preserve the previously released package contract: both engines use
+          # the same pinned vcpkg baseline and runtime DLLs are unioned in order.
+          Get-ChildItem engine-bambu, engine-orca -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination "$P\" -Force
           New-Item -ItemType Directory -Force "$P\THIRD_PARTY_LICENSES" | Out-Null
           foreach ($engineDirectory in @("engine-bambu", "engine-orca")) {
             $sourceRoot = Join-Path $engineDirectory "THIRD_PARTY_LICENSES"
@@ -1313,7 +1309,7 @@ jobs:
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
           Copy-Item LICENSE, NOTICE, README.md "$P\"
-          Copy-Item references\BambuStudio\LICENSE.txt "$P\BAMBUSTUDIO-LICENSE.txt"
+          Copy-Item references\BambuStudio\LICENSE "$P\BAMBUSTUDIO-LICENSE.txt"
           Copy-Item references\OrcaSlicer\LICENSE.txt "$P\ORCASLICER-LICENSE.txt"
           @{
             version = $version; gitSha = $env:GITHUB_SHA; platform = $platform
@@ -1418,7 +1414,7 @@ jobs:
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
-          cp references/BambuStudio/LICENSE.txt "$P/BAMBUSTUDIO-LICENSE.txt"
+          cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
           cat > "$P/manifest.json" <<EOF
           {
