@@ -2906,6 +2906,27 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
         }
     }
 
+    // R769 stage probe: raw projections after the occlusion trim.
+    if crate::probe_enabled("TBPROBE2") {
+        for e in 0..ne1 {
+            for lid in 0..num_layers.min(4) {
+                for (tag, raw) in [("top", &top_raw), ("bot", &bottom_raw)] {
+                    if !raw[e].is_empty() && !raw[e][lid].is_empty() {
+                        let a: f64 = raw[e][lid].iter().map(|p| p.area().abs()).sum();
+                        eprintln!(
+                            "TBPROBE2 raw{} e={} lid={} n={} area={:.0}",
+                            tag,
+                            e,
+                            lid,
+                            raw[e][lid].len(),
+                            a
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // MMS.cpp:1461-1472 — double-length (granularity-group split) accumulators.
     let mut triangles_by_color_top: Vec<Vec<ExPolygons>> =
         vec![vec![ExPolygons::new(); num_layers * 2]; ne1];
@@ -2963,11 +2984,25 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
     // MMS.cpp:1521-1565 — propagate top/bottom projections down/up with a
     // shrinking offset, `granularity`-grouped into the two array halves.
     let granularity = granularity as usize;
+    let tbprobe3 = crate::probe_enabled("TBPROBE3");
     for layer_idx in 0..num_layers {
         let group_idx = layer_idx / granularity;
         let layer_idx_offset = (group_idx & 1) * num_layers;
         for color_idx in 0..ne1 {
             let stat = layer_color_stat(layer_idx, color_idx);
+            if tbprobe3 && layer_idx < 4 {
+                eprintln!(
+                    "TBPROBE3 lid={} c={} nreg={} w={:.3} srt={:.3} sp={:.3} top={} bot={}",
+                    layer_idx,
+                    color_idx,
+                    stat.num_regions,
+                    stat.extrusion_width,
+                    stat.small_region_threshold,
+                    stat.extrusion_spacing,
+                    stat.top_color_penetration_layers,
+                    stat.bottom_color_penetration_layers
+                );
+            }
             if !top_raw[color_idx].is_empty() && !top_raw[color_idx][layer_idx].is_empty() {
                 // union_ex(Polygons) — NonZero union of the raw loops (MMS.cpp:1526).
                 let top_ex =
@@ -3030,23 +3065,51 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
                                 &layer_slices_trimmed,
                                 &input_expolygons[last_idx],
                             );
-                            let last = tb_opening_ex(
-                                &crate::clipper_utils::intersection_clib(
-                                    &bottom_ex,
-                                    &crate::clipper_utils::offset_expolygons_clib(
-                                        &layer_slices_trimmed,
-                                        tb_mm(offset),
-                                        OffsetJoinType::Miter,
-                                    ),
-                                ),
-                                stat.small_region_threshold,
+                            let shrunk = crate::clipper_utils::offset_expolygons_clib(
+                                &layer_slices_trimmed,
+                                tb_mm(offset),
+                                OffsetJoinType::Miter,
                             );
+                            let isect = crate::clipper_utils::intersection_clib(&bottom_ex, &shrunk);
+                            let last = tb_opening_ex(&isect, stat.small_region_threshold);
+                            if tbprobe3 && layer_idx == 0 && color_idx <= 1 {
+                                let a = |ex: &ExPolygons| -> f64 { ex.iter().map(|e| e.area()).sum() };
+                                eprintln!(
+                                    "TBPROBE5 c={} last={} off={:.1} bex={:.0} trim={:.0} shrunk={:.0} isect={:.0} open={:.0}",
+                                    color_idx, last_idx, offset,
+                                    a(&bottom_ex), a(&layer_slices_trimmed), a(&shrunk), a(&isect), a(&last)
+                                );
+                            }
                             if last.is_empty() {
                                 break;
                             }
                             shell_triangles_by_color_bottom[color_idx][last_idx + layer_idx_offset]
                                 .extend(last);
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // R769 stage probe: direct projections vs propagated shells (halves summed).
+    if crate::probe_enabled("TBPROBE2") {
+        for c in 0..ne1 {
+            for lid in 0..num_layers.min(4) {
+                for (tag, arr) in [
+                    ("dbot", &triangles_by_color_bottom),
+                    ("dtop", &triangles_by_color_top),
+                    ("sbot", &shell_triangles_by_color_bottom),
+                    ("stop", &shell_triangles_by_color_top),
+                ] {
+                    let n = arr[c][lid].len() + arr[c][lid + num_layers].len();
+                    if n > 0 {
+                        let a: f64 = arr[c][lid]
+                            .iter()
+                            .chain(arr[c][lid + num_layers].iter())
+                            .map(|e| e.area())
+                            .sum();
+                        eprintln!("TBPROBE2 {} c={} lid={} n={} area={:.0}", tag, c, lid, n, a);
                     }
                 }
             }
@@ -3112,6 +3175,26 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
             &triangles_by_color_merged[0][layer_idx],
             &painted_regions,
         );
+    }
+
+    // R769 census probe: per-(layer, color) island count + scaled² area of the
+    // top/bottom output, low layers only (the bottom-penetration overshoot zone).
+    if crate::probe_enabled("TBPROBE") {
+        for layer_idx in 0..num_layers.min(6) {
+            for (color_idx, per_layer) in triangles_by_color_merged.iter().enumerate() {
+                let ex = &per_layer[layer_idx];
+                if !ex.is_empty() {
+                    let area: f64 = ex.iter().map(|e| e.area()).sum();
+                    eprintln!(
+                        "TBPROBE lid={} color={} n={} area={:.0}",
+                        layer_idx,
+                        color_idx,
+                        ex.len(),
+                        area
+                    );
+                }
+            }
+        }
     }
 
     triangles_by_color_merged
@@ -3376,10 +3459,33 @@ pub fn multi_material_segmentation_by_painting_tier1(
         } else {
             offset_expolygons(&ex, -grow_mm, OffsetJoinType::Miter)
         };
-        // expolygons_simplify(…, 5*SCALED_EPSILON) — tolerance is scaled units;
-        // clipper_utils::simplify takes mm and re-scales internally.
-        let simplified =
-            crate::clipper_utils::simplify(&shrunk, (5.0 * SCALED_EPSILON) / SCALING_FACTOR);
+        // expolygons_simplify(…, 5*SCALED_EPSILON) — tolerance in scaled units.
+        //
+        // R769 (gate MMSEG_SIMPLIFY_DP): the faithful chain is per-expolygon
+        // `union_ex(simplify_polygons(DP rings))` (ExPolygon.hpp:451 →
+        // ExPolygon.cpp:231-261). The previous stand-in, `clipper_utils::simplify`,
+        // runs a NAIVE chord-deviation filter (`Polygon::simplify_in_place`) that
+        // collapses dense smooth rings — Majora's five 1,073-point negative-connector
+        // hole circles (sagitta ~2.6 scaled < tol 50) lose EVERY point and the <3-pt
+        // holes are dropped, so the mm-seg input lost its connector holes (+37.7mm²
+        // vs native at lids 0-2, amplified through the top/bottom shells into the
+        // base-layer island overshoot). DP + SimplifyPolygons keeps them.
+        let simplified = if crate::faithful_gate("MMSEG_SIMPLIFY_DP") {
+            // simplify_p_dp_rings routes through geometry::douglas_peucker, which
+            // takes MM and scales internally (units trap: check the helper).
+            let tol_mm = (5.0 * SCALED_EPSILON) / SCALING_FACTOR;
+            let mut out = ExPolygons::new();
+            for e in &shrunk {
+                // ExPolygon::simplify_p (DP rings) + simplify_polygons + union_ex,
+                // routed through the vertex-exact ClipperLib (the R91 chain).
+                let rings = e.simplify_p_dp_rings(tol_mm);
+                let cleaned = crate::clipper_utils::simplify_polygons_clib(&rings, 1);
+                out.extend(crate::clipper_utils::union_ex_clib(&cleaned, 1));
+            }
+            out
+        } else {
+            crate::clipper_utils::simplify(&shrunk, (5.0 * SCALED_EPSILON) / SCALING_FACTOR)
+        };
         // remove_duplicates(…, scaled(0.01), PI/6)
         let deduped = crate::mutable_polygon::remove_duplicates_expolygons(
             simplified,
@@ -3387,6 +3493,54 @@ pub fn multi_material_segmentation_by_painting_tier1(
             std::f64::consts::PI / 6.0,
         );
         input_expolygons.push(deduped);
+    }
+
+    // R769: dump the raw lid-0 layer_slices for offline chain debugging.
+    if let Ok(path) = std::env::var("TBDUMP") {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::File::create(path) {
+            let mut ring = |tag: &str, i: usize, idx: usize, p: &crate::geometry::Polygon| {
+                let pts: Vec<String> =
+                    p.points().iter().map(|q| format!("{},{}", q.x, q.y)).collect();
+                let _ = writeln!(f, "{} {} {} {}", tag, i, idx, pts.join(";"));
+            };
+            for (i, ex) in layer_slices[0].iter().enumerate() {
+                ring("contour", i, 0, &ex.contour);
+                for (hi, h) in ex.holes.iter().enumerate() {
+                    ring("hole", i, hi, h);
+                }
+            }
+        }
+    }
+
+    // R769: hole census at the prepared mm-seg input (compare against the cpp
+    // probe at the same spot; the negative-connector holes must survive prep).
+    if crate::probe_enabled("TBPROBE3") {
+        for lid in 0..num_layers.min(4) {
+            let ex = &input_expolygons[lid];
+            let nh: usize = ex.iter().map(|e| e.holes.len()).sum();
+            let net: f64 = ex.iter().map(|e| e.area()).sum();
+            let hole_abs: f64 = ex
+                .iter()
+                .flat_map(|e| e.holes.iter())
+                .map(|h| h.area().abs())
+                .sum();
+            eprintln!(
+                "TBPROBE6 lid={} n={} holes={} net={:.0} hole_abs={:.0}",
+                lid,
+                ex.len(),
+                nh,
+                net,
+                hole_abs
+            );
+        }
+        // And the raw layer_slices feeding prep.
+        for lid in 0..num_layers.min(4) {
+            let ex = &layer_slices[lid];
+            let nh: usize = ex.iter().map(|e| e.holes.len()).sum();
+            let net: f64 = ex.iter().map(|e| e.area()).sum();
+            eprintln!("TBPROBE6raw lid={} n={} holes={} net={:.0}", lid, ex.len(), nh, net);
+        }
     }
 
     let __m1 = std::time::Instant::now();

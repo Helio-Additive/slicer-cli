@@ -2516,6 +2516,7 @@ fn make_slab_loops(
             }
         }
         if !in_lines.is_empty() {
+            let n_in = in_lines.len();
             let mut open_polylines: Vec<OpenPolyline> = Vec::new();
             chain_lines_by_triangle_connectivity(
                 &mut in_lines,
@@ -2523,6 +2524,18 @@ fn make_slab_loops(
                 &mut open_polylines,
             );
             // C++ only logs when chaining leaves open polylines behind.
+            if !open_polylines.is_empty() && crate::probe_enabled("TBPROBE4") {
+                let open_pts: usize = open_polylines.iter().map(|p| p.points.len()).sum();
+                eprintln!(
+                    "TBPROBE4 slab-chain-open {} line_idx={} in={} loops={} open={} open_pts={}",
+                    if projection_from_top { "top" } else { "bottom" },
+                    line_idx,
+                    n_in,
+                    layers[line_idx].len(),
+                    open_polylines.len(),
+                    open_pts
+                );
+            }
         }
     }
     layers

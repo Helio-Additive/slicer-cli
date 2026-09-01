@@ -605,11 +605,29 @@ impl PrintObject {
                 }
                 if crate::probe_enabled("NEGPROBE") {
                     eprintln!(
-                        "[NEGPROBE] negative mesh {} triangles; cut {} layers, {} pieces total",
+                        "[NEGPROBE] negative mesh {} triangles; cut {} layers, {} pieces total; neg z-span {:.4}..{:.4}; layer0 slice_z {:.4}",
                         neg.triangle_count(),
                         n_layers_cut,
                         n_pieces,
+                        nz0,
+                        nz1,
+                        self.layers.first().map(|l| l.slice_z).unwrap_or(-1.0),
                     );
+                    for (li, layer) in self.layers.iter().enumerate().take(4) {
+                        let (mut nh, mut ah) = (0usize, 0.0f64);
+                        for region in layer.regions() {
+                            for sf in &region.slices.surfaces {
+                                nh += sf.expolygon.holes.len();
+                                for h in &sf.expolygon.holes {
+                                    ah += h.area().abs();
+                                }
+                            }
+                        }
+                        eprintln!(
+                            "[NEGPROBE] lid={} slice_z={:.4} holes={} hole_area={:.0}",
+                            li, layer.slice_z, nh, ah
+                        );
+                    }
                 }
             }
         }
