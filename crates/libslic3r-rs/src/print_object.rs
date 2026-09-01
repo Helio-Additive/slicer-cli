@@ -282,6 +282,12 @@ pub struct PrintObject {
     /// states omitted; empty vec = no painting (or loader predates R768).
     pub painted_submeshes_strict: Vec<(u8, crate::normal_utils::indexed_triangle_set)>,
 
+    /// R770 — raw per-layer negative-volume slices (index-aligned with
+    /// `layers`), captured during the R704 subtraction for the MM
+    /// segmentation's fill + clip-back flow (cpp `neg_slices`, MMS.cpp:2217).
+    /// Empty when the object has no negative volumes.
+    pub mm_negative_layer_slices: Vec<crate::geometry::ExPolygons>,
+
     /// Total configured filament slots (PrintConfig::num_filaments at setup) —
     /// the `num_extruders` the MMU segmentation indexes by (MMS.cpp:2097).
     pub num_total_filaments: usize,
@@ -312,6 +318,7 @@ impl PrintObject {
             typed_slices: false,
             painted_submeshes: Vec::new(),
             painted_submeshes_strict: Vec::new(),
+            mm_negative_layer_slices: Vec::new(),
             num_total_filaments: 1,
         }
     }
@@ -339,6 +346,7 @@ impl PrintObject {
             typed_slices: false,
             painted_submeshes: Vec::new(),
             painted_submeshes_strict: Vec::new(),
+            mm_negative_layer_slices: Vec::new(),
             num_total_filaments: 1,
         }
     }
@@ -575,7 +583,11 @@ impl PrintObject {
                 let (nz0, nz1) = (nbb.min.z as f64, nbb.max.z as f64);
                 let mut n_layers_cut = 0usize;
                 let mut n_pieces = 0usize;
-                for layer in self.layers.iter_mut() {
+                // R770 — keep the raw per-layer negative slices for the MM
+                // segmentation's fill/clip-back flow (cpp neg_slices, MMS.cpp:2217).
+                self.mm_negative_layer_slices =
+                    vec![crate::geometry::ExPolygons::new(); self.layers.len()];
+                for (layer_i, layer) in self.layers.iter_mut().enumerate() {
                     if layer.slice_z < nz0 || layer.slice_z > nz1 {
                         continue;
                     }
@@ -583,6 +595,7 @@ impl PrintObject {
                         Ok(c) if !c.is_empty() => c,
                         _ => continue,
                     };
+                    self.mm_negative_layer_slices[layer_i] = cut.clone();
                     n_layers_cut += 1;
                     n_pieces += cut.len();
                     for region in layer.regions_mut().iter_mut() {
@@ -1006,6 +1019,11 @@ impl PrintObject {
             0.0,
             mms_center_offset,
             tb_ctx.as_ref(),
+            if self.mm_negative_layer_slices.is_empty() {
+                None
+            } else {
+                Some(self.mm_negative_layer_slices.as_slice())
+            },
         );
 
         // Move painted areas out of region 0 into the painted regions.

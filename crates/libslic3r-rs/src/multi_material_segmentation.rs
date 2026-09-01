@@ -3406,6 +3406,12 @@ pub fn multi_material_segmentation_by_painting_tier1(
     // R768 — inputs for `mmu_segmentation_top_and_bottom_layers` (MMS.cpp:2393);
     // `None` reproduces the pre-R768 empty stub.
     topbot_ctx: Option<&TopBottomCtx>,
+    // R770 — raw per-layer negative-volume slices (cpp `neg_slices`,
+    // MMS.cpp:2217): with negative volumes the side chain segments FILLED
+    // geometry (holes filled back so painted lines can match all contour
+    // edges) and the result is clipped back to the holed input (cpp:2369-83).
+    // Empty/None = no negative volumes.
+    negative_slices: Option<&[ExPolygons]>,
 ) -> Vec<Vec<ExPolygons>> {
     // MultiMaterialSegmentation.cpp:2098-2105
     let num_layers = layer_slices.len();
@@ -3545,15 +3551,71 @@ pub fn multi_material_segmentation_by_painting_tier1(
 
     let __m1 = std::time::Instant::now();
 
-    // Negative-volume handling (cpp:2143-2197) is OMITTED: the Tier-1 loader drops negative
-    // volumes, so `input_for_edge_grid == input_expolygons` everywhere below.
+    // R770 — negative-volume fill (cpp:2202-2255). With negative volumes the
+    // painted-line projection, edge grids, and the whole side-segmentation
+    // chain run on FILLED geometry (holes filled back), and the segmented
+    // regions are clipped back to the holed `input_expolygons` afterwards
+    // (cpp:2369-83). Gate MMSEG_NEGFILL.
+    let has_negative_volumes = crate::faithful_gate("MMSEG_NEGFILL")
+        && negative_slices.map_or(false, |ns| ns.iter().any(|s| !s.is_empty()));
+    let input_expolygons_filled: Vec<ExPolygons> = if has_negative_volumes {
+        let ns = negative_slices.unwrap();
+        let mut filled: Vec<ExPolygons> = Vec::with_capacity(num_layers);
+        for i in 0..num_layers {
+            if ns.get(i).map_or(true, |s| s.is_empty()) {
+                // cpp:2233-2234
+                filled.push(input_expolygons[i].clone());
+                continue;
+            }
+            // cpp:2236-2246 — merged = offset_ex(input, +10eps) ++ neg; union_ex;
+            // remove_small_and_small_holes; then the same prep tail as the input
+            // (shrink −10eps, expolygons_simplify(DP), remove_duplicates).
+            let grown = crate::clipper_utils::offset_expolygons_clib(
+                &input_expolygons[i],
+                grow_mm,
+                OffsetJoinType::Miter,
+            );
+            let mut loops = crate::geometry::to_polygons(&grown);
+            loops.extend(crate::geometry::to_polygons(&ns[i]));
+            let mut merged = crate::clipper_utils::union_ex_clib(&loops, 1);
+            crate::ex_polygon::remove_small_and_small_holes(&mut merged, min_area);
+            let shrunk = crate::clipper_utils::offset_expolygons_clib(
+                &merged,
+                -grow_mm,
+                OffsetJoinType::Miter,
+            );
+            let tol_mm = (5.0 * SCALED_EPSILON) / SCALING_FACTOR;
+            let mut simplified = ExPolygons::new();
+            for e in &shrunk {
+                let rings = e.simplify_p_dp_rings(tol_mm);
+                let cleaned = crate::clipper_utils::simplify_polygons_clib(&rings, 1);
+                simplified.extend(crate::clipper_utils::union_ex_clib(&cleaned, 1));
+            }
+            filled.push(crate::mutable_polygon::remove_duplicates_expolygons(
+                simplified,
+                scale_(0.01),
+                std::f64::consts::PI / 6.0,
+            ));
+        }
+        filled
+    } else {
+        Vec::new()
+    };
+    // cpp:2257 — const &input_for_edge_grid = has_negative_volumes ? filled : input.
+    let input_for_edge_grid: &[ExPolygons] = if has_negative_volumes {
+        &input_expolygons_filled
+    } else {
+        &input_expolygons
+    };
 
     // Per-layer bounding boxes. MultiMaterialSegmentation.cpp:2199-2204.
-    // Tier-1: the layer's regions ARE `input_expolygons`, so the extents come from it alone
-    // (the C++ `get_extents(layers[l]->regions())` merged with `get_extents(input...)`).
+    // Tier-1: the layer's regions ARE `input_expolygons`, so the extents come from
+    // `input_for_edge_grid` alone (the C++ `get_extents(layers[l]->regions())`
+    // merged with `get_extents(input_for_edge_grid...)`; region holes never move
+    // the bbox, so filled-vs-holed extents coincide).
     let mut layer_bboxes: Vec<BoundingBox> = Vec::with_capacity(num_layers);
     for layer_idx in 0..num_layers {
-        layer_bboxes.push(crate::ex_polygon::get_extents(&input_expolygons[layer_idx]));
+        layer_bboxes.push(crate::ex_polygon::get_extents(&input_for_edge_grid[layer_idx]));
     }
 
     // Build one EdgeGrid per layer. MultiMaterialSegmentation.cpp:2206-2218.
@@ -3574,7 +3636,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
         // grid's own (contour-derived) bbox.
         let mut grid = EdgeGrid::new();
         grid.set_bbox(bbox);
-        let contours = expolygons_to_edge_grid_contours(&input_expolygons[layer_idx]);
+        let contours = expolygons_to_edge_grid_contours(&input_for_edge_grid[layer_idx]);
         grid.create_from_polygons(&contours, scale_(10.));
         edge_grids.push(grid);
     }
@@ -3627,7 +3689,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 let slice_z_f = slice_z as f32; // C++ `float(layer->slice_z)`
 
                 // cpp:2266
-                if input_expolygons[layer_idx].is_empty()
+                if input_for_edge_grid[layer_idx].is_empty()
                     || is_less(slice_z_f, facet[0].z)
                     || is_less(facet[2].z, slice_z_f)
                 {
@@ -3736,7 +3798,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
     // segmented_regions — same per-index writes the C++ lambda performs.
     {
         use rayon::prelude::*;
-        let input_expolygons = &input_expolygons;
+        let input_for_edge_grid = &input_for_edge_grid;
         painted_lines
             .par_drain(..)
             .zip(segmented_regions.par_iter_mut())
@@ -3798,7 +3860,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 if has_layer_only_one_color(&color_poly) {
                     // cpp:2349-2351 — whole layer one color: assign the input directly to that slot.
                     let one_color = color_poly.first().unwrap().first().unwrap().color as usize;
-                    segmented_slot[one_color] = input_expolygons[layer_idx].clone();
+                    segmented_slot[one_color] = input_for_edge_grid[layer_idx].clone();
                 } else {
                     // cpp:2352-2357
                     let mut graph = build_graph(layer_idx, &color_poly);
@@ -3821,7 +3883,25 @@ pub fn multi_material_segmentation_by_painting_tier1(
             });
     }
 
-    // Clip-back to actual geometry (cpp:2369-2383) is OMITTED — no negative volumes in Tier-1.
+    // R770 — clip segmented regions back to the actual (holed) geometry
+    // (cpp:2369-2383): the segmentation ran on filled geometry, subtract the
+    // negative-volume holes back out.
+    if has_negative_volumes {
+        for layer_idx in 0..num_layers {
+            for region in segmented_regions[layer_idx].iter_mut() {
+                if !region.is_empty() {
+                    *region = if crate::faithful_gate("MMSEG_CLIB") {
+                        crate::clipper_utils::intersection_clib(
+                            region,
+                            &input_expolygons[layer_idx],
+                        )
+                    } else {
+                        crate::clipper_utils::intersection(region, &input_expolygons[layer_idx])
+                    };
+                }
+            }
+        }
+    }
 
     // Interlocking / cut. MultiMaterialSegmentation.cpp:2385-2390.
     // Tier-1: `interlocking_beam` is always false; the gate reduces to `max_width > 0 ||
