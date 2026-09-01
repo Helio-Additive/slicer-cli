@@ -3866,13 +3866,44 @@ pub fn multi_material_segmentation_by_painting_tier1(
                     let mut graph = build_graph(layer_idx, &color_poly);
                     remove_multiple_edges_in_vertices(&mut graph, &color_poly);
                     graph.remove_nodes_with_one_arc();
-                    // extract_colored_segments returns polygon buckets (num_extruders + 1); union each
-                    // into an ExPolygons (the C++ extract does the union_ex internally).
+                    // extract_colored_segments returns polygon buckets (num_extruders + 1).
+                    // R771 (gate MMSEG_RAW_EXTRACT): the COMPILED C++ variant (the
+                    // MMU_Graph one, MMS.cpp:413-481) stores each accepted walk polygon
+                    // DIRECTLY as its own ExPolygon — NO union (the union_ex belongs to
+                    // the other, commented-out variant at cpp:1150). The old rust union
+                    // WELDED adjacent walk polygons that native keeps as separate
+                    // surfaces (measured lid=385 c=1: rust 8 pieces vs native 17, same
+                    // total area to 1e-5) — piece structure feeds per-surface perimeter
+                    // generation, so the weld reshapes walls wholesale.
                     let poly_buckets = extract_colored_segments(&graph, num_extruders);
+                    if crate::probe_enabled("TBPROBE9")
+                        && (layer_idx == 385 || layer_idx == 12)
+                    {
+                        for (c, polys) in poly_buckets.iter().enumerate() {
+                            if !polys.is_empty() {
+                                let pts: usize = polys.iter().map(|p| p.points().len()).sum();
+                                eprintln!(
+                                    "TBPROBE9 lid={} c={} cells={} pts={}",
+                                    layer_idx,
+                                    c,
+                                    polys.len(),
+                                    pts
+                                );
+                            }
+                        }
+                    }
                     *segmented_slot = poly_buckets
                         .iter()
                         .map(|polys| {
-                            if crate::faithful_gate("MMSEG_CLIB") {
+                            if crate::faithful_gate("MMSEG_RAW_EXTRACT") {
+                                polys
+                                    .iter()
+                                    .map(|p| ExPolygon {
+                                        contour: p.clone(),
+                                        holes: Vec::new(),
+                                    })
+                                    .collect()
+                            } else if crate::faithful_gate("MMSEG_CLIB") {
                                 crate::clipper_utils::union_ex_clib(polys, 1)
                             } else {
                                 union_polygons_ex(polys)
@@ -3881,6 +3912,49 @@ pub fn multi_material_segmentation_by_painting_tier1(
                         .collect();
                 }
             });
+    }
+
+    // R771 census: side-segmentation output per (layer, color) — n/pts/area —
+    // to localize the 0.01-0.05mm boundary drift class (island near-misses).
+    if crate::probe_enabled("TBPROBE7") {
+        for &lid in &[12usize, 23, 80, 385] {
+            if lid >= num_layers {
+                continue;
+            }
+            for (c, ex) in segmented_regions[lid].iter().enumerate() {
+                if !ex.is_empty() {
+                    let pts: usize = ex
+                        .iter()
+                        .map(|e| {
+                            e.contour.points().len()
+                                + e.holes.iter().map(|h| h.points().len()).sum::<usize>()
+                        })
+                        .sum();
+                    let a: f64 = ex.iter().map(|e| e.area()).sum();
+                    eprintln!("TBPROBE7 lid={} c={} n={} pts={} area={:.0}", lid, c, ex.len(), pts, a);
+                }
+            }
+        }
+    }
+
+    // R771 per-piece census on the structurally-divergent slots.
+    if crate::probe_enabled("TBPROBE8") {
+        for &(lid, c) in &[(385usize, 1usize), (12, 0), (12, 5)] {
+            if lid >= num_layers || c >= segmented_regions[lid].len() {
+                continue;
+            }
+            for (i, e) in segmented_regions[lid][c].iter().enumerate() {
+                eprintln!(
+                    "TBPROBE8 lid={} c={} i={} pts={} holes={} area={:.0}",
+                    lid,
+                    c,
+                    i,
+                    e.contour.points().len(),
+                    e.holes.len(),
+                    e.area()
+                );
+            }
+        }
     }
 
     // R770 — clip segmented regions back to the actual (holed) geometry
