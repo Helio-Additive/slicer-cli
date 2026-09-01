@@ -29,7 +29,7 @@
 //!   functions operate on `indexed_triangle_set` and are exposed alongside.
 
 use crate::geometry::{ExPolygon, ExPolygons, Point, Polygon, Polygons};
-use crate::normal_utils::{indexed_triangle_set, StlVertex};
+use crate::normal_utils::{indexed_triangle_set, StlTriangleVertexIndices, StlVertex};
 use crate::triangle_mesh::{its_face_edge_ids, Vec3i};
 use crate::triangle_mesh::TriangleMesh;
 use crate::{scale, unscale, CoordF};
@@ -2018,6 +2018,611 @@ pub fn slice_mesh_ex(
     }
     let its = its_from_triangle_mesh(mesh);
     slice_mesh_ex_its(&its, zs, params, throw_on_cancel)
+}
+
+// ===========================================================================
+// Slab slicing (R768) — `slice_mesh_slabs` and helpers, the projection of
+// painted triangle sets onto slice slabs used by
+// `mmu_segmentation_top_and_bottom_layers` (MultiMaterialSegmentation.cpp:1321).
+// TriangleMeshSlicer.cpp:563-1005 + 1535-1660 + 2058-2160.
+// ===========================================================================
+
+// TriangleMeshSlicer.cpp:565-576 — for projecting triangle sets onto slice slabs.
+/// Intersection lines of a slice with a triangle set (`at_slice`, CCW oriented)
+/// plus projections of triangle-set boundary lines into the layer below (top
+/// projection) or above (bottom projection) (`between_slices`, CCW oriented).
+struct SlabLines {
+    at_slice: Vec<IntersectionLines>,
+    between_slices: Vec<IntersectionLines>,
+}
+
+// TriangleMeshSlicer.cpp:578-590 — orientation of the face normal w.r.t. an
+// upwards-pointing XY plane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FaceOrientation {
+    Up,
+    Down,
+    Vertical,
+    // Degenerate triangles are still sliced for the connectivity info they carry.
+    Degenerate,
+}
+
+// `to_2d(v).cast<coord_t>()` — Eigen's float->int64 cast truncates toward zero.
+fn to_2d_coord(v: &StlVertex) -> Point {
+    Point::new(v.x as i64, v.y as i64)
+}
+
+// TriangleMeshSlicer.cpp:586-905 — `template<bool ProjectionFromTop> slice_facet_with_slabs`.
+// The template parameter becomes the runtime `projection_from_top` flag; the
+// `std::array<std::mutex, 64>` bucket locks are no-ops (sequential execution).
+#[allow(clippy::too_many_arguments)]
+fn slice_facet_with_slabs(
+    projection_from_top: bool,
+    // Scaled XY / unscaled Z vertices (transform already applied by the caller).
+    mesh_vertices: &[StlVertex],
+    mesh_triangles: &[StlTriangleVertexIndices],
+    facet_idx: usize,
+    facet_neighbors: &Vec3i,
+    facet_edge_ids: &Vec3i,
+    // Edge IDs at the top plane of the slab are increased by num_edges to allow
+    // chaining from the bottom plane of the slab to the top plane and vice versa.
+    num_edges: i32,
+    zs: &[f32],
+    lines: &mut SlabLines,
+) {
+    let indices = &mesh_triangles[facet_idx];
+    let vertices: [StlVertex; 3] = [
+        mesh_vertices[indices[0] as usize],
+        mesh_vertices[indices[1] as usize],
+        mesh_vertices[indices[2] as usize],
+    ];
+
+    // find facet extents — TriangleMeshSlicer.cpp:606-609
+    let min_z = vertices[0].z.min(vertices[1].z.min(vertices[2].z));
+    let max_z = vertices[0].z.max(vertices[1].z.max(vertices[2].z));
+    let horizontal = min_z == max_z;
+
+    // find layer extents — TriangleMeshSlicer.cpp:611-615
+    let min_layer = lower_bound(zs, min_z);
+    let max_layer = min_layer + upper_bound(&zs[min_layer..], max_z);
+
+    // TriangleMeshSlicer.cpp:617-623
+    let emit_slab_edge =
+        |lines: &mut SlabLines, mut il: IntersectionLine, slab_id: usize, reverse: bool| {
+            if reverse {
+                il.reverse();
+            }
+            lines.between_slices[slab_id].push(il);
+        };
+
+    if min_layer == max_layer || horizontal {
+        // Horizontal face or a nearly horizontal face that fits between two layers
+        // or below the bottom-most or above the top-most layer.
+        // TriangleMeshSlicer.cpp:625-629
+        if horizontal && min_layer != zs.len() && zs[min_layer] == min_z {
+            // Slicing a horizontal triangle with a slicing plane.
+            // TriangleMeshSlicer.cpp:630-661
+            let slice_id = min_layer;
+            // Project the coplanar bottom facing triangles to the plane ABOVE the
+            // slicing plane to match slice_mesh() / slice_mesh_ex() (which slice top
+            // facing surfaces on-plane but miss bottom facing surfaces).
+            let line_id = if projection_from_top { slice_id } else { slice_id + 1 };
+            if projection_from_top || line_id < lines.at_slice.len() {
+                for iedge in 0..3usize {
+                    if facet_neighbors[iedge] == -1 {
+                        let i = iedge;
+                        let j = (i + 1) % 3;
+                        let il = IntersectionLine {
+                            a: to_2d_coord(&vertices[i]),
+                            b: to_2d_coord(&vertices[j]),
+                            a_id: indices[i],
+                            b_id: indices[j],
+                            edge_a_id: -1,
+                            edge_b_id: -1,
+                            edge_type: if projection_from_top {
+                                FacetEdgeType::Bottom
+                            } else {
+                                FacetEdgeType::Top
+                            },
+                            flags: 0,
+                        };
+                        // Don't flip the Top edge, it will be flipped when chaining.
+                        lines.at_slice[line_id].push(il);
+                    }
+                }
+            }
+        } else {
+            // Triangle is completely between two slicing planes.
+            // TriangleMeshSlicer.cpp:662-698
+            let mut slab_id: usize;
+            if projection_from_top {
+                if max_layer == 0 {
+                    // Below the lowest layer.
+                    return;
+                }
+                slab_id = max_layer;
+            } else {
+                if min_layer == zs.len() {
+                    // Above the highest layer.
+                    return;
+                }
+                slab_id = min_layer;
+            }
+            if projection_from_top {
+                slab_id -= 1;
+            }
+            for iedge in 0..3usize {
+                if facet_neighbors[iedge] == -1 {
+                    let i = iedge;
+                    let j = (i + 1) % 3;
+                    emit_slab_edge(
+                        lines,
+                        IntersectionLine {
+                            a: to_2d_coord(&vertices[i]),
+                            b: to_2d_coord(&vertices[j]),
+                            a_id: indices[i],
+                            b_id: indices[j],
+                            edge_a_id: -1,
+                            edge_b_id: -1,
+                            edge_type: FacetEdgeType::Slab,
+                            flags: 0,
+                        },
+                        slab_id,
+                        !projection_from_top,
+                    );
+                }
+            }
+        }
+    } else {
+        // The triangle is not horizontal and at least one slicing plane intersects it.
+        // TriangleMeshSlicer.cpp:699-701
+        let idx_vertex_lowest: i32 = if vertices[1].z == min_z {
+            1
+        } else if vertices[2].z == min_z {
+            2
+        } else {
+            0
+        };
+        let mut il_prev = IntersectionLine::default();
+        for it in min_layer..max_layer {
+            // TriangleMeshSlicer.cpp:703-705
+            let mut il = IntersectionLine::default();
+            let mut typ = slice_facet(
+                zs[it],
+                &vertices,
+                indices,
+                facet_edge_ids,
+                idx_vertex_lowest,
+                false,
+                &mut il,
+            );
+            if typ != FacetSliceType::NoSlice {
+                if il.edge_type == FacetEdgeType::Top || il.edge_type == FacetEdgeType::Bottom {
+                    // The non-horizontal triangle is being sliced at one of its edges.
+                    // TriangleMeshSlicer.cpp:710-767
+                    let edge_id: usize = if typ == FacetSliceType::Cutting {
+                        // The edge is oriented CCW along the face perimeter.
+                        if il.a_id == indices[0] {
+                            0
+                        } else if il.a_id == indices[1] {
+                            1
+                        } else {
+                            2
+                        }
+                    } else {
+                        // Slicing — the edge is oriented CW along the face perimeter.
+                        if il.b_id == indices[0] {
+                            0
+                        } else if il.b_id == indices[1] {
+                            1
+                        } else {
+                            2
+                        }
+                    };
+                    let neighbor_idx = facet_neighbors[edge_id];
+                    if neighbor_idx == -1 {
+                        // Open edge — save it for sure.
+                        typ = FacetSliceType::Slicing;
+                    } else if il.edge_type == FacetEdgeType::Top {
+                        // The edge belongs to both the slab below and above the plane.
+                        il.edge_type = FacetEdgeType::TopBottom;
+                    } else {
+                        // The neighbor triangle will add the same edge as TopBottom
+                        // (type == Cutting, edge_type == Bottom): don't add it here.
+                    }
+                }
+                if typ == FacetSliceType::Slicing {
+                    // TriangleMeshSlicer.cpp:769-776
+                    if !projection_from_top {
+                        il.reverse();
+                    }
+                    lines.at_slice[it].push(il.clone());
+                }
+            }
+            // Try to project unbound edges. TriangleMeshSlicer.cpp:777-866
+            if !projection_from_top || it != 0 {
+                let slab_id = if projection_from_top { it - 1 } else { it };
+                for iedge in 0..3usize {
+                    if facet_neighbors[iedge] == -1 {
+                        // Unbound edge.
+                        let edge_id = facet_edge_ids[iedge];
+                        let intersects_this = il.edge_a_id == edge_id || il.edge_b_id == edge_id;
+                        let intersects_prev =
+                            il_prev.edge_a_id == edge_id || il_prev.edge_b_id == edge_id;
+                        let i = iedge;
+                        let j = (i + 1) % 3;
+                        let edge_up = vertices[j].z > vertices[i].z;
+                        if intersects_this && intersects_prev {
+                            // Intersects both planes: the segment between the intersections.
+                            let a = if il_prev.edge_a_id == edge_id { il_prev.a } else { il_prev.b };
+                            let b = if il.edge_a_id == edge_id { il.a } else { il.b };
+                            emit_slab_edge(
+                                lines,
+                                IntersectionLine {
+                                    a,
+                                    b,
+                                    a_id: -1,
+                                    b_id: -1,
+                                    edge_a_id: edge_id,
+                                    edge_b_id: edge_id + num_edges,
+                                    edge_type: FacetEdgeType::Slab,
+                                    flags: 0,
+                                },
+                                slab_id,
+                                projection_from_top != edge_up,
+                            );
+                        } else if intersects_this {
+                            // Intersects just the top plane, may touch the bottom plane.
+                            let a = to_2d_coord(if edge_up { &vertices[i] } else { &vertices[j] });
+                            let b = if il.edge_a_id == edge_id { il.a } else { il.b };
+                            emit_slab_edge(
+                                lines,
+                                IntersectionLine {
+                                    a,
+                                    b,
+                                    a_id: if edge_up { indices[i] } else { indices[j] },
+                                    b_id: -1,
+                                    edge_a_id: -1,
+                                    edge_b_id: edge_id + num_edges,
+                                    edge_type: FacetEdgeType::Slab,
+                                    flags: 0,
+                                },
+                                slab_id,
+                                projection_from_top != edge_up,
+                            );
+                        } else if intersects_prev {
+                            // Intersects just the bottom plane, may touch the top vertex.
+                            let a = if il_prev.edge_a_id == edge_id { il_prev.a } else { il_prev.b };
+                            let b = to_2d_coord(if edge_up { &vertices[j] } else { &vertices[i] });
+                            emit_slab_edge(
+                                lines,
+                                IntersectionLine {
+                                    a,
+                                    b,
+                                    a_id: -1,
+                                    b_id: if edge_up { indices[j] } else { indices[i] },
+                                    edge_a_id: edge_id,
+                                    edge_b_id: -1,
+                                    edge_type: FacetEdgeType::Slab,
+                                    flags: 0,
+                                },
+                                slab_id,
+                                projection_from_top != edge_up,
+                            );
+                        } else {
+                            let zi = vertices[i].z;
+                            let zj = vertices[j].z;
+                            if zi < zs[it] || zj < zs[it] {
+                                // The edge intersects neither the current nor the previous
+                                // plane; both points have to be inside the slab.
+                                let mut inside_slab = true;
+                                if it != min_layer {
+                                    let z_prev = zs[it - 1];
+                                    // One point may touch the plane below, the other must not.
+                                    inside_slab = zi > z_prev || zj > z_prev;
+                                }
+                                if inside_slab {
+                                    emit_slab_edge(
+                                        lines,
+                                        IntersectionLine {
+                                            a: to_2d_coord(&vertices[i]),
+                                            b: to_2d_coord(&vertices[j]),
+                                            a_id: indices[i],
+                                            b_id: indices[j],
+                                            edge_a_id: -1,
+                                            edge_b_id: -1,
+                                            edge_type: FacetEdgeType::Slab,
+                                            flags: 0,
+                                        },
+                                        slab_id,
+                                        !projection_from_top,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            il_prev = il;
+        }
+        // Try to project unbound edges above the last slicing plane to the last slab.
+        // TriangleMeshSlicer.cpp:867-903
+        if projection_from_top || max_layer != zs.len() {
+            let it = max_layer - 1;
+            let slab_id = if projection_from_top { max_layer - 1 } else { max_layer };
+            for iedge in 0..3usize {
+                if facet_neighbors[iedge] == -1 {
+                    // Unbound edge.
+                    let edge_id = facet_edge_ids[iedge];
+                    let i = iedge;
+                    let j = (i + 1) % 3;
+                    if il_prev.edge_a_id == edge_id || il_prev.edge_b_id == edge_id {
+                        // Intersects just the bottom plane, may touch the top vertex.
+                        let edge_up = vertices[j].z > vertices[i].z;
+                        let a = if il_prev.edge_a_id == edge_id { il_prev.a } else { il_prev.b };
+                        let b = to_2d_coord(if edge_up { &vertices[j] } else { &vertices[i] });
+                        emit_slab_edge(
+                            lines,
+                            IntersectionLine {
+                                a,
+                                b,
+                                a_id: -1,
+                                b_id: if edge_up { indices[j] } else { indices[i] },
+                                edge_a_id: edge_id,
+                                edge_b_id: -1,
+                                edge_type: FacetEdgeType::Slab,
+                                flags: 0,
+                            },
+                            slab_id,
+                            projection_from_top != edge_up,
+                        );
+                    } else {
+                        let zi = vertices[i].z;
+                        let zj = vertices[j].z;
+                        if zi > zs[it] || zj > zs[it] {
+                            // Both points inside the (top-most open) slab.
+                            emit_slab_edge(
+                                lines,
+                                IntersectionLine {
+                                    a: to_2d_coord(&vertices[i]),
+                                    b: to_2d_coord(&vertices[j]),
+                                    a_id: indices[i],
+                                    b_id: indices[j],
+                                    edge_a_id: -1,
+                                    edge_b_id: -1,
+                                    edge_type: FacetEdgeType::Slab,
+                                    flags: 0,
+                                },
+                                slab_id,
+                                !projection_from_top,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// TriangleMeshSlicer.cpp:907-976 — produce on-slice and between-slices lines,
+// returning (top, bottom) SlabLines. Sequential (no TBB).
+#[allow(clippy::too_many_arguments)]
+fn slice_slabs_make_lines(
+    vertices: &[StlVertex],
+    indices: &[StlTriangleVertexIndices],
+    face_neighbors: &[Vec3i],
+    face_edge_ids: &[Vec3i],
+    // Total number of edges; all face_edge_ids are lower. Used to distinguish
+    // intersections with the top and bottom plane.
+    num_edges: i32,
+    face_orientation: &[FaceOrientation],
+    zs: &[f32],
+    top: bool,
+    bottom: bool,
+) -> (SlabLines, SlabLines) {
+    let mut lines_top = SlabLines { at_slice: Vec::new(), between_slices: Vec::new() };
+    let mut lines_bottom = SlabLines { at_slice: Vec::new(), between_slices: Vec::new() };
+    if top {
+        lines_top.at_slice = vec![IntersectionLines::new(); zs.len()];
+        lines_top.between_slices = vec![IntersectionLines::new(); zs.len()];
+    }
+    if bottom {
+        lines_bottom.at_slice = vec![IntersectionLines::new(); zs.len()];
+        lines_bottom.between_slices = vec![IntersectionLines::new(); zs.len()];
+    }
+
+    for face_idx in 0..indices.len() {
+        let fo = face_orientation[face_idx];
+        let edge_ids = face_edge_ids[face_idx];
+        if top && (fo == FaceOrientation::Up || fo == FaceOrientation::Degenerate) {
+            let mut neighbors = face_neighbors[face_idx];
+            // Reset neighborship of this triangle in case the other triangle is
+            // oriented backwards from this one.
+            for i in 0..3 {
+                if neighbors[i] != -1 {
+                    let fo2 = face_orientation[neighbors[i] as usize];
+                    if fo2 != FaceOrientation::Up && fo2 != FaceOrientation::Degenerate {
+                        neighbors[i] = -1;
+                    }
+                }
+            }
+            slice_facet_with_slabs(
+                true, vertices, indices, face_idx, &neighbors, &edge_ids, num_edges, zs,
+                &mut lines_top,
+            );
+        }
+        if bottom && (fo == FaceOrientation::Down || fo == FaceOrientation::Degenerate) {
+            let mut neighbors = face_neighbors[face_idx];
+            for i in 0..3 {
+                if neighbors[i] != -1 {
+                    let fo2 = face_orientation[neighbors[i] as usize];
+                    if fo2 != FaceOrientation::Down && fo2 != FaceOrientation::Degenerate {
+                        neighbors[i] = -1;
+                    }
+                }
+            }
+            slice_facet_with_slabs(
+                false, vertices, indices, face_idx, &neighbors, &edge_ids, num_edges, zs,
+                &mut lines_bottom,
+            );
+        }
+    }
+
+    (lines_top, lines_bottom)
+}
+
+// TriangleMeshSlicer.cpp:1535-1660 — produce loops from on-slice lines and
+// between-slices lines. Lines have their flags modified.
+fn make_slab_loops(
+    projection_from_top: bool,
+    lines: &mut SlabLines,
+    // To differentiate edge IDs of the top plane from the edge IDs of the bottom
+    // plane for chaining.
+    num_edges: i32,
+) -> Vec<Polygons> {
+    debug_assert!(lines.at_slice.len() == lines.between_slices.len());
+    let num = lines.at_slice.len();
+    let mut layers: Vec<Polygons> = vec![Polygons::new(); num];
+    for line_idx in 0..num {
+        let mut in_lines: IntersectionLines = Vec::new();
+        let slice_below: i64 = if projection_from_top { line_idx as i64 } else { line_idx as i64 - 1 };
+        let slice_above = if projection_from_top { line_idx + 1 } else { line_idx };
+        let has_slice_below = projection_from_top || line_idx > 0;
+        let has_slice_above = !projection_from_top || line_idx + 1 < num;
+        if has_slice_below {
+            for l in &lines.at_slice[slice_below as usize] {
+                if l.edge_type != FacetEdgeType::Top {
+                    in_lines.push(l.clone());
+                }
+            }
+        }
+        // Edges in between slice_below and slice_above. Edge IDs of end points on
+        // in-between lines that touch the layer above are already increased by num_edges.
+        in_lines.extend(lines.between_slices[line_idx].iter().cloned());
+        if has_slice_above {
+            for lsrc in &lines.at_slice[slice_above] {
+                if lsrc.edge_type != FacetEdgeType::Bottom {
+                    let mut l = lsrc.clone();
+                    l.reverse();
+                    // Differentiate edge IDs of the top plane from the bottom plane.
+                    if l.edge_a_id >= 0 {
+                        l.edge_a_id += num_edges;
+                    }
+                    if l.edge_b_id >= 0 {
+                        l.edge_b_id += num_edges;
+                    }
+                    in_lines.push(l);
+                }
+            }
+        }
+        if !in_lines.is_empty() {
+            let mut open_polylines: Vec<OpenPolyline> = Vec::new();
+            chain_lines_by_triangle_connectivity(
+                &mut in_lines,
+                &mut layers[line_idx],
+                &mut open_polylines,
+            );
+            // C++ only logs when chaining leaves open polylines behind.
+        }
+    }
+    layers
+}
+
+// TriangleMeshSlicer.cpp:2058-2160 — `slice_mesh_slabs`.
+//
+// Project the upwards-pointing triangles onto the slicing planes (top) and the
+// downwards-pointing triangles (bottom). DIVERGENCE from the C++ signature: the
+// caller passes the transformed vertices (XY scaled by 1/SCALING_FACTOR, Z in
+// mm — the exact `transform_mesh_vertices_for_slicing` output, e.g. via the
+// Eigen shim) plus the `mirrored` flag (trafo determinant < 0) instead of a
+// `Transform3d`; `vertical_points` (BBS overhang wall detection) is not needed
+// by any Tier-1 caller and is omitted.
+pub fn slice_mesh_slabs(
+    mesh: &indexed_triangle_set,
+    // Unscaled Zs
+    zs: &[f32],
+    vertices_transformed: &[StlVertex],
+    mirrored: bool,
+    want_top: bool,
+    want_bottom: bool,
+) -> (Vec<Polygons>, Vec<Polygons>) {
+    // TriangleMeshSlicer.cpp:2115-2144 — face orientation from the signed area
+    // of the XY-projected (scaled, coord_t-truncated) triangle.
+    let mirrored_sign: i64 = if mirrored { -1 } else { 1 };
+    let mut face_orientation: Vec<FaceOrientation> =
+        vec![FaceOrientation::Up; mesh.indices.len()];
+    for (tri_idx, tri) in mesh.indices.iter().enumerate() {
+        let fa = &vertices_transformed[tri[0] as usize];
+        let fb = &vertices_transformed[tri[1] as usize];
+        let fc = &vertices_transformed[tri[2] as usize];
+        let a = to_2d_coord(fa);
+        let b = to_2d_coord(fb);
+        let c = to_2d_coord(fc);
+        let d = ((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)) * mirrored_sign;
+        face_orientation[tri_idx] = if d > 0 {
+            FaceOrientation::Up
+        } else if d < 0 {
+            FaceOrientation::Down
+        } else if fa == fb || fa == fc || fb == fc {
+            FaceOrientation::Degenerate
+        } else {
+            FaceOrientation::Vertical
+        };
+    }
+
+    // TriangleMeshSlicer.cpp:2146-2151
+    let face_neighbors = crate::triangle_mesh::its_face_neighbors_par(mesh);
+    let mut num_edges: i32 = 0;
+    let face_edge_ids = crate::triangle_mesh::its_face_edge_ids_neighbors(
+        mesh,
+        &face_neighbors,
+        true,
+        Some(&mut num_edges),
+    );
+    let (mut lines_top, mut lines_bottom) = slice_slabs_make_lines(
+        vertices_transformed,
+        &mesh.indices,
+        &face_neighbors,
+        &face_edge_ids,
+        num_edges,
+        &face_orientation,
+        zs,
+        want_top,
+        want_bottom,
+    );
+
+    // TriangleMeshSlicer.cpp:2155-2158
+    let out_top = if want_top {
+        make_slab_loops(true, &mut lines_top, num_edges)
+    } else {
+        Vec::new()
+    };
+    let out_bottom = if want_bottom {
+        make_slab_loops(false, &mut lines_bottom, num_edges)
+    } else {
+        Vec::new()
+    };
+    (out_top, out_bottom)
+}
+
+/// Single-plane raw-`Polygons` slice of pre-transformed vertices — the
+/// `slice_mesh(mesh, zs[0], slicing_params)` call of the sinking-volume branch
+/// (MultiMaterialSegmentation.cpp:1378). Runs the plain make-lines + make-loops
+/// pipeline (TriangleMeshSlicer.cpp:1864-1902 for a single z, mode Regular).
+pub fn slice_mesh_at_z_transformed(
+    mesh: &indexed_triangle_set,
+    vertices_transformed: &[StlVertex],
+    z: f32,
+) -> Polygons {
+    let face_edge_ids = its_face_edge_ids(mesh);
+    let mut lines_layers = slice_make_lines(
+        vertices_transformed,
+        &mesh.indices,
+        &face_edge_ids,
+        &[z],
+        &|| {},
+    );
+    make_loops_single(&mut lines_layers[0])
 }
 
 #[allow(dead_code)]

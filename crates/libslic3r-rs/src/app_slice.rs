@@ -274,6 +274,8 @@ pub fn slice_3mf_to_gcode(
     // (C++: ModelVolume::mmu_segmentation_facets → get_facets, MMS.cpp:2226).
     let mut painting_extruders: Vec<u8> = Vec::new();
     let mut painted_submeshes: Vec<(u8, crate::normal_utils::indexed_triangle_set)> = Vec::new();
+    let mut painted_submeshes_strict: Vec<(u8, crate::normal_utils::indexed_triangle_set)> =
+        Vec::new();
     if !mmu_facets.is_empty() {
         let mut selector =
             crate::triangle_selector::TriangleSelector::new(mesh.clone(), 0.0);
@@ -292,6 +294,16 @@ pub fn slice_3mf_to_gcode(
         }
         // Ascending-extruder pairing drives the painted region order.
         painting_extruders = painted_submeshes.iter().map(|(e, _)| *e).collect();
+        // R768 — strict per-state sub-meshes for top/bottom painted propagation
+        // (C++ get_facets_strict over states 0..num_extruders incl. state 0 =
+        // the unpainted rest, MMS.cpp:1354-1356).
+        for state_i in 0..=(print_config.num_filaments() as u8) {
+            let state = crate::triangle_selector::EnforcerBlockerType(state_i as i8);
+            let its = selector.get_facets_strict(state);
+            if !its.indices.is_empty() {
+                painted_submeshes_strict.push((state_i, its));
+            }
+        }
         info!(
             "3MF painted multi-material: {} painted facets, extruders {:?} — \
              segmenting per-layer painted regions (Tier-1)",
@@ -307,6 +319,7 @@ pub fn slice_3mf_to_gcode(
         print_object.label_id = id;
     }
     print_object.painted_submeshes = painted_submeshes;
+    print_object.painted_submeshes_strict = painted_submeshes_strict;
     print_object.num_total_filaments = print_config.num_filaments();
     // R704 — negative volumes travel with the object and are subtracted per
     // layer in PrintObject::slice (gate NEGATIVE_VOLUMES). They are NOT merged

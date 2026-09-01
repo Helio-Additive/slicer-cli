@@ -274,6 +274,14 @@ pub struct PrintObject {
     /// index i maps to painted print region `1 + i` (install_painted_regions).
     pub painted_submeshes: Vec<(u8, crate::normal_utils::indexed_triangle_set)>,
 
+    /// R768 — strict per-state sub-meshes for the top/bottom painted-surface
+    /// propagation: one `(state, mesh)` per `EnforcerBlockerType` state
+    /// 0..=num_filaments (state 0 = the unpainted rest), from
+    /// `TriangleSelector::get_facets_strict` (MMS.cpp:1356; strict splits
+    /// T-joints so the slab slicer sees watertight neighbor topology). Empty
+    /// states omitted; empty vec = no painting (or loader predates R768).
+    pub painted_submeshes_strict: Vec<(u8, crate::normal_utils::indexed_triangle_set)>,
+
     /// Total configured filament slots (PrintConfig::num_filaments at setup) —
     /// the `num_extruders` the MMU segmentation indexes by (MMS.cpp:2097).
     pub num_total_filaments: usize,
@@ -303,6 +311,7 @@ impl PrintObject {
             shared_regions: None,
             typed_slices: false,
             painted_submeshes: Vec::new(),
+            painted_submeshes_strict: Vec::new(),
             num_total_filaments: 1,
         }
     }
@@ -329,6 +338,7 @@ impl PrintObject {
             shared_regions: None,
             typed_slices: false,
             painted_submeshes: Vec::new(),
+            painted_submeshes_strict: Vec::new(),
             num_total_filaments: 1,
         }
     }
@@ -899,6 +909,76 @@ impl PrintObject {
         } else {
             crate::geometry::Point::new(0, 0)
         };
+        // R768 (gate MMS_TOPBOT) — inputs for the top/bottom painted-surface
+        // propagation (`mmu_segmentation_top_and_bottom_layers`, MMS.cpp:2393).
+        // The C++ calls it unconditionally; the ctx is None only when the loader
+        // provided no strict sub-meshes (unpainted object) or the gate is off.
+        let tb_region_cfgs: Vec<crate::multi_material_segmentation::TopBottomRegionCfg> = self
+            .shared_regions
+            .as_ref()
+            .map(|sr| {
+                sr.all_regions
+                    .iter()
+                    .map(|r| {
+                        let c = r.config();
+                        crate::multi_material_segmentation::TopBottomRegionCfg {
+                            wall_filament: c.wall_filament,
+                            outer_wall_line_width: c.outer_wall_line_width,
+                            top_color_penetration_layers: c.top_color_penetration_layers,
+                            bottom_color_penetration_layers: c.bottom_color_penetration_layers,
+                            gap_fill_speed: c.gap_fill_speed,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let tb_layer_heights: Vec<f64> = self.layers.iter().map(|l| l.height).collect();
+        let tb_trafo = self.mesh().map(|mesh| {
+            // The FRAME_UNIFY trafo derivation (see slice_mesh_its): C++ centers the
+            // volume on its f32 bbox; volume_trafo = trafo_centered() * get_matrix()
+            // nets to translate(quantization residue XY, bbox center Z) applied to
+            // (placed - voff) — byte-matched to the object slicing path.
+            let (mut xlo, mut ylo, mut zlo) = (f32::MAX, f32::MAX, f32::MAX);
+            let (mut xhi, mut yhi, mut zhi) = (f32::MIN, f32::MIN, f32::MIN);
+            for p in mesh.vertices() {
+                let (x, y, z) = (p.x as f32, p.y as f32, p.z as f32);
+                xlo = xlo.min(x);
+                xhi = xhi.max(x);
+                ylo = ylo.min(y);
+                yhi = yhi.max(y);
+                zlo = zlo.min(z);
+                zhi = zhi.max(z);
+            }
+            let center_x = ((xlo + xhi) * 0.5) as f64;
+            let center_y = ((ylo + yhi) * 0.5) as f64;
+            let center_z = ((zlo + zhi) * 0.5) as f64;
+            let sf = crate::libslic3r::SCALING_FACTOR;
+            let quantize = |v: f64| -> f64 { ((v / sf) as i64) as f64 * sf };
+            let res_x = center_x - quantize(center_x);
+            let res_y = center_y - quantize(center_y);
+            let trafo16: [f64; 16] = [
+                1.0, 0.0, 0.0, res_x,
+                0.0, 1.0, 0.0, res_y,
+                0.0, 0.0, 1.0, center_z,
+                0.0, 0.0, 0.0, 1.0,
+            ];
+            (trafo16, (center_x, center_y, center_z))
+        });
+        let tb_ctx = match (&tb_trafo, crate::faithful_gate("MMS_TOPBOT")) {
+            (Some((trafo16, voff)), true) if !self.painted_submeshes_strict.is_empty() => {
+                Some(crate::multi_material_segmentation::TopBottomCtx {
+                    strict_submeshes: &self.painted_submeshes_strict,
+                    zs: layer_zs.iter().map(|&z| z as f32).collect(),
+                    layer_heights: &tb_layer_heights,
+                    region_configs: &tb_region_cfgs,
+                    default_line_width: self.config.line_width,
+                    nozzle_diameter: self.print_config.nozzle_diameter,
+                    trafo16: *trafo16,
+                    voff: *voff,
+                })
+            }
+            _ => None,
+        };
         let segmented = crate::multi_material_segmentation::multi_material_segmentation_by_painting_tier1(
             &layer_slices,
             &layer_zs,
@@ -907,6 +987,7 @@ impl PrintObject {
             0.0,
             0.0,
             mms_center_offset,
+            tb_ctx.as_ref(),
         );
 
         // Move painted areas out of region 0 into the painted regions.

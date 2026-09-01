@@ -1442,6 +1442,85 @@ fn clib_flatten_expolygons(expolygons: &[ExPolygon]) -> (Vec<i32>, Vec<i32>, i32
     (xy, lens, num)
 }
 
+/// Flatten raw `Polygons` (orientation preserved as stored) for the clipper-z
+/// shim — the raw-path counterpart of [`clib_flatten_expolygons`].
+fn clib_flatten_polygons(polygons: &[Polygon]) -> (Vec<i32>, Vec<i32>, i32) {
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    for ring in polygons {
+        let pts = ring.points();
+        if pts.is_empty() {
+            continue;
+        }
+        lens.push(pts.len() as i32);
+        for p in pts {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+    }
+    let num = lens.len() as i32;
+    (xy, lens, num)
+}
+
+/// ClipperLib-backed `diff(const Polygons &subject, const ExPolygons &clip)`
+/// returning raw `Polygons` (ClipperUtils `diff` = `clipper_do<Paths>
+/// (ctDifference, ..., pftNonZero)` with the output paths taken as-is — NO
+/// PolyTree re-union, unlike `diff_ex`). Used by
+/// `mmu_segmentation_top_and_bottom_layers`'s occlusion trim (MMS.cpp:1447-1452),
+/// which keeps working on raw polygon soup until the per-layer `union_ex`.
+pub fn difference_polygons_clib(subject: &[Polygon], clip: &[ExPolygon]) -> Vec<Polygon> {
+    if subject.is_empty() {
+        return vec![];
+    }
+    if clip.is_empty() {
+        return subject.to_vec();
+    }
+    let (subject_xy, subject_lens, subject_num) = clib_flatten_polygons(subject);
+    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    if subject_num == 0 {
+        return vec![];
+    }
+    // SAFETY: pointers reference live, correctly-sized Vecs for the call; the
+    // shim only reads them. The returned CzZPaths owns malloc'd buffers we copy
+    // out then free via cz_free_zpaths.
+    let raw = unsafe {
+        clipper_z_sys::cz_difference_closed(
+            subject_xy.as_ptr(),
+            subject_lens.as_ptr(),
+            subject_num,
+            if clip_xy.is_empty() { std::ptr::null() } else { clip_xy.as_ptr() },
+            if clip_lens.is_empty() { std::ptr::null() } else { clip_lens.as_ptr() },
+            clip_num,
+        )
+    };
+    let mut all_paths: Vec<Polygon> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            all_paths.push(Polygon::from_points(pts));
+        }
+    }
+    // SAFETY: `raw` was produced by cz_difference_closed and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    all_paths
+}
+
 /// ClipperLib-backed `diff_ex(subject, clip, ApplySafetyOffset::No)`
 /// (ClipperUtils.cpp:742-768): closed-path boolean DIFFERENCE (subject - clip)
 /// over the vertex-exact vendored ClipperLib (clipper-z-sys @ 1e5), instead of

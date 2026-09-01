@@ -257,6 +257,15 @@ pub struct PrintRegionConfig {
     /// PrintConfig.hpp:976
     pub gap_fill_speed: CoordF,
 
+    // === Multi-material top/bottom color penetration ===
+    /// Number of layers of top paint penetration (C++ top_color_penetration_layers,
+    /// PrintConfig.cpp:5552, default 4, min 1).
+    pub top_color_penetration_layers: i32,
+
+    /// Number of layers of bottom paint penetration (C++
+    /// bottom_color_penetration_layers, PrintConfig.cpp:5559, default 3, min 1).
+    pub bottom_color_penetration_layers: i32,
+
     // === Seam ===
     /// Seam position preference
     /// PrintConfig.hpp:1000
@@ -873,6 +882,20 @@ impl PrintRegionConfig {
                 true
             }
 
+            // === Multi-material top/bottom color penetration ===
+            "top_color_penetration_layers" => {
+                if let Some(v) = parse_f64(value) {
+                    self.top_color_penetration_layers = v as i32;
+                }
+                true
+            }
+            "bottom_color_penetration_layers" => {
+                if let Some(v) = parse_f64(value) {
+                    self.bottom_color_penetration_layers = v as i32;
+                }
+                true
+            }
+
             // === Embedding Wall (InterlockingGenerator) ===
             "embedding_wall_into_infill" => {
                 if let Some(v) = parse_bool(value) {
@@ -1116,6 +1139,10 @@ impl Default for PrintRegionConfig {
             // Gap Fill
             gap_fill_enabled: true,
             gap_fill_speed: 20.0,
+
+            // Multi-material top/bottom color penetration (PrintConfig.cpp:5552-5564)
+            top_color_penetration_layers: 4,
+            bottom_color_penetration_layers: 3,
 
             // Seam
             seam_position: SeamPosition::Aligned,

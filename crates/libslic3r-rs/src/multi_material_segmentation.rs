@@ -2645,6 +2645,478 @@ fn cut_segmented_layers(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Top / bottom painted-surface propagation (R768).
+// MultiMaterialSegmentation.cpp:1313-1615.
+// ---------------------------------------------------------------------------
+
+/// Per-print-region config snapshot for `layer_color_stat`
+/// (MultiMaterialSegmentation.cpp:1489-1519). One entry per printing region —
+/// every layer carries LayerRegions for ALL printing regions at this stage, so
+/// the per-layer walk reduces to a walk over the region configs (only
+/// `layer.height` varies per layer).
+pub struct TopBottomRegionCfg {
+    /// 1-based wall filament (C++ `wall_filament`).
+    pub wall_filament: usize,
+    pub outer_wall_line_width: f64,
+    pub top_color_penetration_layers: i32,
+    pub bottom_color_penetration_layers: i32,
+    /// C++ `gap_infill_speed.get_at(...)` — gap fill enabled iff > 0.
+    pub gap_fill_speed: f64,
+}
+
+/// Caller-prepared inputs for [`mmu_segmentation_top_and_bottom_layers_tier1`]
+/// (no `PrintObject` in Tier-1).
+pub struct TopBottomCtx<'a> {
+    /// One `(state, strict sub-mesh)` per `EnforcerBlockerType` state
+    /// 0..=num_extruders (state 0 = unpainted), from
+    /// `TriangleSelector::get_facets_strict` over the PLACED mesh
+    /// (MMS.cpp:1356). Empty sub-meshes are omitted.
+    pub strict_submeshes: &'a [(u8, indexed_triangle_set)],
+    /// `zs_from_layers` — float(layer->slice_z), mm.
+    pub zs: Vec<f32>,
+    /// Per-layer `layer.height`, mm.
+    pub layer_heights: &'a [f64],
+    pub region_configs: &'a [TopBottomRegionCfg],
+    /// Object config `line_width` (C++ `default_line_width`).
+    pub default_line_width: f64,
+    /// Scalar `nozzle_diameter` (single-nozzle Tier-1 stands in for `get_at`).
+    pub nozzle_diameter: f64,
+    /// C++ `volume_trafo = object_trafo * mv->get_matrix()`, row-major 4x4 —
+    /// the FRAME_UNIFY derivation (see `slice_mesh_its`): XY = scaled-grid
+    /// quantization residue, Z = volume bbox center.
+    pub trafo16: [f64; 16],
+    /// Volume offset subtracted from the placed verts before the trafo
+    /// (= the OBJECT mesh bbox center, f32-summed like C++'s volume centering).
+    pub voff: (f64, f64, f64),
+}
+
+// MultiMaterialSegmentation.cpp:1441-1520 — LayerColorStat.
+#[derive(Default, Clone, Copy)]
+struct LayerColorStat {
+    num_regions: i32,
+    // Scaled f32, like the C++ (`scaled<float>` applied after the loop).
+    extrusion_width: f32,
+    small_region_threshold: f32,
+    top_color_penetration_layers: i32,
+    bottom_color_penetration_layers: i32,
+    extrusion_spacing: f32,
+}
+
+// `scaled<float>(v)` — f32 division by float(SCALING_FACTOR), no rounding
+// (Point.hpp:529; matches triangle_mesh_slicer::scaled_f32).
+fn tb_scaled_f32(v: f32) -> f32 {
+    v / (crate::libslic3r::SCALING_FACTOR as f32)
+}
+
+// Scaled-f32 delta -> the mm convention of the clib offset helpers (they
+// multiply by 1e5 internally, so this round-trips to the C++ double(f32) delta
+// up to f64 rounding).
+fn tb_mm(scaled: f32) -> f64 {
+    (scaled as f64) * crate::libslic3r::SCALING_FACTOR
+}
+
+// C++ `union_ex(const ExPolygons &)` via the vendored ClipperLib: flatten to
+// loops (holes keep their stored CW orientation) + NonZero union.
+fn tb_union_ex(ex: &[ExPolygon]) -> ExPolygons {
+    if ex.is_empty() {
+        return ExPolygons::new();
+    }
+    crate::clipper_utils::union_ex_clib(&crate::geometry::to_polygons(ex), 1)
+}
+
+// C++ `opening_ex(ex, delta)` = offset2_ex(ex, -delta, +delta) with the default
+// jtMiter / miterLimit 3 (ClipperUtils.hpp:428).
+fn tb_opening_ex(ex: &[ExPolygon], delta_scaled: f32) -> ExPolygons {
+    crate::clipper_utils::offset2_ex_clib(
+        ex,
+        -tb_mm(delta_scaled),
+        tb_mm(delta_scaled),
+        OffsetJoinType::Miter,
+    )
+}
+
+// MultiMaterialSegmentation.cpp:1310-1318 — is_volume_sinking. The C++ checks
+// `(trafo_f * vertex).z() < SINKING_Z_THRESHOLD` on the volume-local verts; our
+// verts are PLACED, so local = placed - voff (f32, as the Eigen shim does), and
+// the translation-only trafo contributes tz = trafo16[11] to z.
+fn tb_is_volume_sinking(its: &indexed_triangle_set, trafo16: &[f64; 16], voff: (f64, f64, f64)) -> bool {
+    const SINKING_Z_THRESHOLD: f32 = -0.001; // Model.hpp:1839
+    let oz = voff.2 as f32;
+    let tz = trafo16[11] as f32;
+    its.vertices.iter().any(|v| (v.z - oz) + tz < SINKING_Z_THRESHOLD)
+}
+
+/// Faithful Tier-1 port of `mmu_segmentation_top_and_bottom_layers`
+/// (MultiMaterialSegmentation.cpp:1321-1615): project upwards-pointing painted
+/// triangles over top surfaces and downwards-pointing ones over bottom
+/// surfaces, then propagate them `top/bottom_color_penetration_layers` deep
+/// with a per-layer shrinking offset. Returns `[extruder 0..=num_extruders][layer]`
+/// (0 = "don't know"), the shape `merge_segmented_layers` consumes.
+///
+/// Clipper ops run on the vendored ClipperLib (the MMSEG_CLIB backend — this
+/// chain is new code, so there is no geo fallback arm). The tbb::parallel_for
+/// loops run sequentially; the granularity-group `layer_idx_offset` split into
+/// `[0, num_layers)` / `[num_layers, 2*num_layers)` halves is reproduced
+/// deterministically from `layer_idx / granularity` (both halves are unioned in
+/// the merge step, so TBB's actual range partitioning cannot alter the result).
+pub fn mmu_segmentation_top_and_bottom_layers_tier1(
+    input_expolygons: &[ExPolygons],
+    ctx: &TopBottomCtx,
+    num_extruders: usize,
+) -> Vec<Vec<ExPolygons>> {
+    // BBS: the C++ `num_extruders` inside this function is filament count + 1
+    // (MMS.cpp:1326).
+    let ne1 = num_extruders + 1;
+    let num_layers = input_expolygons.len();
+    debug_assert!(ctx.zs.len() == num_layers && ctx.layer_heights.len() == num_layers);
+
+    // MMS.cpp:1330-1339
+    let mut max_top_layers: i32 = 0;
+    let mut max_bottom_layers: i32 = 0;
+    let mut granularity: i32 = 1;
+    for cfg in ctx.region_configs {
+        max_top_layers = max_top_layers.max(cfg.top_color_penetration_layers);
+        max_bottom_layers = max_bottom_layers.max(cfg.bottom_color_penetration_layers);
+        granularity = granularity.max(
+            cfg.top_color_penetration_layers.max(cfg.bottom_color_penetration_layers) - 1,
+        );
+    }
+
+    // MMS.cpp:1341-1408 — project painted triangles over top/bottom surfaces.
+    let mut top_raw: Vec<Vec<crate::geometry::Polygons>> = vec![Vec::new(); ne1];
+    let mut bottom_raw: Vec<Vec<crate::geometry::Polygons>> = vec![Vec::new(); ne1];
+    if max_top_layers > 0 || max_bottom_layers > 0 {
+        for (state, painted) in ctx.strict_submeshes {
+            let extruder_idx = *state as usize;
+            if extruder_idx >= ne1 || painted.indices.is_empty() {
+                continue;
+            }
+            // transform_mesh_vertices_for_slicing(painted, volume_trafo) via the
+            // Eigen shim (XY scaled, Z mm) — the FRAME_UNIFY vertex prep.
+            let mut flat_in: Vec<f32> = Vec::with_capacity(painted.vertices.len() * 3);
+            for p in &painted.vertices {
+                flat_in.push(p.x);
+                flat_in.push(p.y);
+                flat_in.push(p.z);
+            }
+            let flat_out = eigen_transform_sys::transform_verts_unified(
+                &ctx.trafo16,
+                crate::libslic3r::SCALING_FACTOR,
+                ctx.voff,
+                &flat_in,
+            );
+            let verts: Vec<Vec3f> = flat_out
+                .chunks_exact(3)
+                .map(|c| Vec3f::new(c[0], c[1], c[2]))
+                .collect();
+
+            let want_top = max_top_layers > 0;
+            let want_bottom = max_bottom_layers > 0;
+            let (mut top, mut bottom);
+            if !ctx.zs.is_empty() && tb_is_volume_sinking(painted, &ctx.trafo16, ctx.voff) {
+                // MMS.cpp:1366-1381 — sinking volume: prepend z=0, slice, then
+                // drop the extra plane (bottom keeps a union with the zs[0] slice).
+                let mut zs_sinking: Vec<f32> = vec![0.0];
+                zs_sinking.extend_from_slice(&ctx.zs);
+                let (t, b) = crate::triangle_mesh_slicer::slice_mesh_slabs(
+                    painted, &zs_sinking, &verts, false, want_top, want_bottom,
+                );
+                top = t;
+                bottom = b;
+                if !top.is_empty() {
+                    top.remove(0);
+                }
+                if bottom.len() > 1 {
+                    let bottom_slice = crate::triangle_mesh_slicer::slice_mesh_at_z_transformed(
+                        painted, &verts, ctx.zs[0],
+                    );
+                    bottom.remove(0);
+                    let mut merged = std::mem::take(&mut bottom[0]);
+                    merged.extend(bottom_slice);
+                    bottom[0] = crate::clipper_utils::union_flat_clib(&merged);
+                }
+            } else {
+                let (t, b) = crate::triangle_mesh_slicer::slice_mesh_slabs(
+                    painted, &ctx.zs, &verts, false, want_top, want_bottom,
+                );
+                top = t;
+                bottom = b;
+            }
+            // MMS.cpp:1385-1403 — merge into the per-extruder raw stacks.
+            let merge = |src: Vec<crate::geometry::Polygons>, dst: &mut Vec<crate::geometry::Polygons>| {
+                if let Some(first) = src.iter().position(|p| !p.is_empty()) {
+                    if dst.is_empty() {
+                        *dst = src;
+                    } else {
+                        debug_assert!(src.len() == dst.len());
+                        for (idx, s) in src.into_iter().enumerate() {
+                            if idx >= first && !s.is_empty() {
+                                if dst[idx].is_empty() {
+                                    dst[idx] = s;
+                                } else {
+                                    dst[idx].extend(s);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            merge(top, &mut top_raw[extruder_idx]);
+            merge(bottom, &mut bottom_raw[extruder_idx]);
+        }
+    }
+
+    // MMS.cpp:1410-1420 — filter out polygons under 0.1mm^2 (unprintable,
+    // caused dimples on outer perimeters, BBS #7104). remove_small keeps
+    // |area| >= min_area (Polygon.cpp:600).
+    let min_area = sqr_f64(scale_(0.1) as f64);
+    let mut filter_out_small_polygons = |raw_surfaces: &mut Vec<Vec<crate::geometry::Polygons>>| {
+        for by_extruder in raw_surfaces.iter_mut() {
+            for polys in by_extruder.iter_mut() {
+                polys.retain(|p| p.area().abs() >= min_area);
+            }
+        }
+    };
+    filter_out_small_polygons(&mut top_raw);
+    filter_out_small_polygons(&mut bottom_raw);
+
+    // MMS.cpp:1446-1459 — an occluded upper surface is no longer an upper surface.
+    for extruder_idx in 0..ne1 {
+        for layer_idx in 0..num_layers {
+            if !top_raw[extruder_idx].is_empty()
+                && !top_raw[extruder_idx][layer_idx].is_empty()
+                && layer_idx + 1 < num_layers
+            {
+                top_raw[extruder_idx][layer_idx] = crate::clipper_utils::difference_polygons_clib(
+                    &top_raw[extruder_idx][layer_idx],
+                    &input_expolygons[layer_idx + 1],
+                );
+            }
+            if !bottom_raw[extruder_idx].is_empty()
+                && !bottom_raw[extruder_idx][layer_idx].is_empty()
+                && layer_idx > 0
+            {
+                bottom_raw[extruder_idx][layer_idx] =
+                    crate::clipper_utils::difference_polygons_clib(
+                        &bottom_raw[extruder_idx][layer_idx],
+                        &input_expolygons[layer_idx - 1],
+                    );
+            }
+        }
+    }
+
+    // MMS.cpp:1461-1472 — double-length (granularity-group split) accumulators.
+    let mut triangles_by_color_top: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_layers * 2]; ne1];
+    let mut triangles_by_color_bottom: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_layers * 2]; ne1];
+    let mut shell_triangles_by_color_top: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_layers * 2]; ne1];
+    let mut shell_triangles_by_color_bottom: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_layers * 2]; ne1];
+
+    // MMS.cpp:1489-1519 — layer_color_stat. All-f32 like the C++ floats.
+    let layer_color_stat = |layer_idx: usize, color_idx: usize| -> LayerColorStat {
+        let mut out = LayerColorStat::default();
+        let layer_height = ctx.layer_heights[layer_idx];
+        for cfg in ctx.region_configs {
+            // color_idx == 0 means "don't know" aka the underlying extruder; as
+            // this region may split existing regions, collect over all regions.
+            if color_idx == 0 || cfg.wall_filament == color_idx {
+                let nozzle_diameter = ctx.nozzle_diameter as f32;
+                let cfg_width = cfg.outer_wall_line_width as f32;
+                let default_line_width = ctx.default_line_width as f32;
+                let outer_wall_line_width = if cfg_width == 0.0 {
+                    if default_line_width == 0.0 { nozzle_diameter } else { default_line_width }
+                } else {
+                    cfg_width
+                };
+                out.extrusion_width = out.extrusion_width.max(outer_wall_line_width);
+                out.top_color_penetration_layers =
+                    out.top_color_penetration_layers.max(cfg.top_color_penetration_layers);
+                out.bottom_color_penetration_layers = out
+                    .bottom_color_penetration_layers
+                    .max(cfg.bottom_color_penetration_layers);
+                let spacing = crate::flow::Flow::rounded_rectangle_extrusion_spacing(
+                    outer_wall_line_width as f64,
+                    layer_height,
+                )
+                .unwrap_or(0.0) as f32;
+                out.small_region_threshold = if cfg.gap_fill_speed > 0.0 {
+                    // Gap fill enabled: a single line of 1/2 extrusion width.
+                    0.5 * outer_wall_line_width
+                } else {
+                    // Gap fill disabled: two lines slightly overlapping.
+                    outer_wall_line_width + 0.7 * spacing
+                };
+                out.small_region_threshold = tb_scaled_f32(out.small_region_threshold * 0.5);
+                out.extrusion_spacing = spacing;
+                out.num_regions += 1;
+            }
+        }
+        out.extrusion_width = tb_scaled_f32(out.extrusion_width);
+        out.extrusion_spacing = tb_scaled_f32(out.extrusion_spacing);
+        out
+    };
+
+    // MMS.cpp:1521-1565 — propagate top/bottom projections down/up with a
+    // shrinking offset, `granularity`-grouped into the two array halves.
+    let granularity = granularity as usize;
+    for layer_idx in 0..num_layers {
+        let group_idx = layer_idx / granularity;
+        let layer_idx_offset = (group_idx & 1) * num_layers;
+        for color_idx in 0..ne1 {
+            let stat = layer_color_stat(layer_idx, color_idx);
+            if !top_raw[color_idx].is_empty() && !top_raw[color_idx][layer_idx].is_empty() {
+                // union_ex(Polygons) — NonZero union of the raw loops (MMS.cpp:1526).
+                let top_ex =
+                    crate::clipper_utils::union_ex_clib(&top_raw[color_idx][layer_idx], 1);
+                if !top_ex.is_empty() {
+                    // Clean up thin projections; they are not printable anyway.
+                    let top_ex = tb_opening_ex(&top_ex, stat.small_region_threshold);
+                    if !top_ex.is_empty() {
+                        triangles_by_color_top[color_idx][layer_idx + layer_idx_offset]
+                            .extend(top_ex.iter().cloned());
+                        let mut offset: f32 = 0.0;
+                        let mut layer_slices_trimmed = input_expolygons[layer_idx].clone();
+                        let lower =
+                            (layer_idx as i64 - stat.top_color_penetration_layers as i64).max(0);
+                        let mut last_idx = layer_idx as i64 - 1;
+                        while last_idx > lower {
+                            // BBS: offset by spacing+width to avoid overlap of wall lines.
+                            offset -= stat.extrusion_spacing + stat.extrusion_width;
+                            layer_slices_trimmed = crate::clipper_utils::intersection_clib(
+                                &layer_slices_trimmed,
+                                &input_expolygons[last_idx as usize],
+                            );
+                            let last = tb_opening_ex(
+                                &crate::clipper_utils::intersection_clib(
+                                    &top_ex,
+                                    &crate::clipper_utils::offset_expolygons_clib(
+                                        &layer_slices_trimmed,
+                                        tb_mm(offset),
+                                        OffsetJoinType::Miter,
+                                    ),
+                                ),
+                                stat.small_region_threshold,
+                            );
+                            if last.is_empty() {
+                                break;
+                            }
+                            shell_triangles_by_color_top[color_idx]
+                                [last_idx as usize + layer_idx_offset]
+                                .extend(last);
+                            last_idx -= 1;
+                        }
+                    }
+                }
+            }
+            if !bottom_raw[color_idx].is_empty() && !bottom_raw[color_idx][layer_idx].is_empty() {
+                let bottom_ex =
+                    crate::clipper_utils::union_ex_clib(&bottom_raw[color_idx][layer_idx], 1);
+                if !bottom_ex.is_empty() {
+                    let bottom_ex = tb_opening_ex(&bottom_ex, stat.small_region_threshold);
+                    if !bottom_ex.is_empty() {
+                        triangles_by_color_bottom[color_idx][layer_idx + layer_idx_offset]
+                            .extend(bottom_ex.iter().cloned());
+                        let mut offset: f32 = 0.0;
+                        let mut layer_slices_trimmed = input_expolygons[layer_idx].clone();
+                        let upper = (layer_idx + stat.bottom_color_penetration_layers.max(0) as usize)
+                            .min(num_layers);
+                        for last_idx in (layer_idx + 1)..upper {
+                            offset -= stat.extrusion_spacing + stat.extrusion_width;
+                            layer_slices_trimmed = crate::clipper_utils::intersection_clib(
+                                &layer_slices_trimmed,
+                                &input_expolygons[last_idx],
+                            );
+                            let last = tb_opening_ex(
+                                &crate::clipper_utils::intersection_clib(
+                                    &bottom_ex,
+                                    &crate::clipper_utils::offset_expolygons_clib(
+                                        &layer_slices_trimmed,
+                                        tb_mm(offset),
+                                        OffsetJoinType::Miter,
+                                    ),
+                                ),
+                                stat.small_region_threshold,
+                            );
+                            if last.is_empty() {
+                                break;
+                            }
+                            shell_triangles_by_color_bottom[color_idx][last_idx + layer_idx_offset]
+                                .extend(last);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MMS.cpp:1567-1613 — merge the two halves, the shells, and trim overlaps.
+    let mut triangles_by_color_merged: Vec<Vec<ExPolygons>> =
+        vec![vec![ExPolygons::new(); num_layers]; ne1];
+    for layer_idx in 0..num_layers {
+        let mut painted_exploys = ExPolygons::new();
+        for color_idx in 0..ne1 {
+            let mut own = std::mem::take(&mut triangles_by_color_merged[color_idx][layer_idx]);
+            own.extend(std::mem::take(&mut triangles_by_color_bottom[color_idx][layer_idx]));
+            own.extend(std::mem::take(
+                &mut triangles_by_color_bottom[color_idx][layer_idx + num_layers],
+            ));
+            own.extend(std::mem::take(&mut triangles_by_color_top[color_idx][layer_idx]));
+            own.extend(std::mem::take(
+                &mut triangles_by_color_top[color_idx][layer_idx + num_layers],
+            ));
+            let own = tb_union_ex(&own);
+            painted_exploys.extend(own.iter().cloned());
+            triangles_by_color_merged[color_idx][layer_idx] = own;
+        }
+
+        let painted_exploys = tb_union_ex(&painted_exploys);
+
+        // BBS: merge the top and bottom shell layers.
+        for color_idx in 0..ne1 {
+            let mut shell_top = std::mem::take(&mut shell_triangles_by_color_top[color_idx][layer_idx]);
+            shell_top.extend(std::mem::take(
+                &mut shell_triangles_by_color_top[color_idx][layer_idx + num_layers],
+            ));
+            let top_area =
+                crate::clipper_utils::difference_clib(&tb_union_ex(&shell_top), &painted_exploys);
+            let mut shell_bottom =
+                std::mem::take(&mut shell_triangles_by_color_bottom[color_idx][layer_idx]);
+            shell_bottom.extend(std::mem::take(
+                &mut shell_triangles_by_color_bottom[color_idx][layer_idx + num_layers],
+            ));
+            let bottom_area = crate::clipper_utils::difference_clib(
+                &tb_union_ex(&shell_bottom),
+                &painted_exploys,
+            );
+            let own = &mut triangles_by_color_merged[color_idx][layer_idx];
+            own.extend(top_area);
+            own.extend(bottom_area);
+            *own = tb_union_ex(own);
+        }
+
+        // Trim one region by the other if some of the regions overlap.
+        let mut painted_regions = ExPolygons::new();
+        for color_idx in 1..ne1 {
+            triangles_by_color_merged[color_idx][layer_idx] = crate::clipper_utils::difference_clib(
+                &triangles_by_color_merged[color_idx][layer_idx],
+                &painted_regions,
+            );
+            painted_regions
+                .extend(triangles_by_color_merged[color_idx][layer_idx].iter().cloned());
+        }
+        triangles_by_color_merged[0][layer_idx] = crate::clipper_utils::difference_clib(
+            &triangles_by_color_merged[0][layer_idx],
+            &painted_regions,
+        );
+    }
+
+    triangles_by_color_merged
+}
+
 // MultiMaterialSegmentation.cpp:1968
 // `top_and_bottom_layers` is taken by value (the C++ takes
 // `std::vector<std::vector<ExPolygons>> &&`). The tbb::parallel_for runs serially and
@@ -2848,6 +3320,9 @@ pub fn multi_material_segmentation_by_painting_tier1(
     // no longer overlap the slices and every painted region — hence every toolchange —
     // vanishes. `(0,0)` reproduces the historic placed-frame behavior byte-for-byte.
     center_offset: Point,
+    // R768 — inputs for `mmu_segmentation_top_and_bottom_layers` (MMS.cpp:2393);
+    // `None` reproduces the pre-R768 empty stub.
+    topbot_ctx: Option<&TopBottomCtx>,
 ) -> Vec<Vec<ExPolygons>> {
     // MultiMaterialSegmentation.cpp:2098-2105
     let num_layers = layer_slices.len();
@@ -3208,10 +3683,16 @@ pub fn multi_material_segmentation_by_painting_tier1(
     }
 
     // Top/bottom painted-surface propagation. MultiMaterialSegmentation.cpp:2393.
-    // FIDELITY-NOTE (see doc-comment): stubbed to the empty "no top/bottom overrides" structure.
+    // R768 — the real `mmu_segmentation_top_and_bottom_layers` port when the caller
+    // supplies the ctx (gate MMS_TOPBOT in print_object.rs); `None` keeps the historic
+    // empty "no top/bottom overrides" structure.
     // Shape expected by merge_segmented_layers is [extruder 0..=num_extruders][layer].
-    let top_and_bottom_layers: Vec<Vec<ExPolygons>> =
-        vec![vec![ExPolygons::new(); num_layers]; num_extruders + 1];
+    let top_and_bottom_layers: Vec<Vec<ExPolygons>> = match topbot_ctx {
+        Some(ctx) => {
+            mmu_segmentation_top_and_bottom_layers_tier1(&input_expolygons, ctx, num_extruders)
+        }
+        None => vec![vec![ExPolygons::new(); num_layers]; num_extruders + 1],
+    };
 
     if __mms_t {
         let __m4 = std::time::Instant::now();

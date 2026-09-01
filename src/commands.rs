@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use tempfile::{NamedTempFile, TempDir};
 
 use crate::{
+    bambu::{default_bambu_binary, run_bambu_slice},
     cli::{
         CompareArgs, CompatibleProcessesArgs, Engine, PresetsArgs, ProfilesArgs, ProfilesCommand,
         SliceArgs,
@@ -21,7 +22,6 @@ use crate::{
     locations::{
         materialize_input, prepare_output, upload_output, write_json_to_location, PreparedOutput,
     },
-    bambu::{default_bambu_binary, run_bambu_slice},
     profiles::{compatible_processes_for_printer, list_profiles, resolve_config_refs},
 };
 
@@ -260,7 +260,10 @@ pub fn compare(args: CompareArgs) -> Result<u8, String> {
 
     if let Ok(keep) = std::env::var("COMPARE_KEEP_DIR") {
         let _ = std::fs::create_dir_all(&keep);
-        let _ = std::fs::write(std::path::Path::new(&keep).join("bambu.gcode"), &bambu_gcode);
+        let _ = std::fs::write(
+            std::path::Path::new(&keep).join("bambu.gcode"),
+            &bambu_gcode,
+        );
         let _ = std::fs::write(std::path::Path::new(&keep).join("rust.gcode"), &rust_gcode);
     }
 
@@ -282,7 +285,10 @@ fn timing_report(bambu_secs: f64, rust_secs: f64, rust_runs: u32) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
     let _ = writeln!(out, "--- slice time (wall-clock) ---");
-    let _ = writeln!(out, "bambu (C++)     {bambu_secs:.3}s  (subprocess, incl. spawn)");
+    let _ = writeln!(
+        out,
+        "bambu (C++)     {bambu_secs:.3}s  (subprocess, incl. spawn)"
+    );
     let runs_note = if rust_runs > 1 {
         format!("  (best of {rust_runs})")
     } else {
@@ -375,8 +381,7 @@ fn diff_gcode(bambu: &[u8], rust: &[u8]) -> String {
     let bambu_features = feature_counts(&bambu_lines);
     let rust_features = feature_counts(&rust_lines);
     let _ = writeln!(out, "FEATURE tag counts (bambu vs rust):");
-    let mut all_tags: Vec<&String> =
-        bambu_features.keys().chain(rust_features.keys()).collect();
+    let mut all_tags: Vec<&String> = bambu_features.keys().chain(rust_features.keys()).collect();
     all_tags.sort();
     all_tags.dedup();
     if all_tags.is_empty() {

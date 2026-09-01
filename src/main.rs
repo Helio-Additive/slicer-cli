@@ -6,13 +6,13 @@ mod commands;
 // main.cpp:55-137 — the structured stdout event protocol (R528).
 // Emitters are ported and unit-tested; the emission SITES are not all wired
 // yet (see docs/main-cpp-correspondence.md), hence dead_code here.
+mod bambu;
+mod config;
 #[allow(dead_code)]
 mod events;
-mod config;
 mod job_config;
 mod json_utils;
 mod locations;
-mod bambu;
 mod profiles;
 
 use cli::{Cli, Commands};
