@@ -3725,8 +3725,26 @@ pub fn multi_material_segmentation_by_painting_tier1(
 
                 // cpp:2289-2291
                 let mut line_to_test = Line::new(
-                    Point::new(scale_(line_start_f.x as f64), scale_(line_start_f.y as f64)),
-                    Point::new(scale_(line_end_f.x as f64), scale_(line_end_f.y as f64)),
+                    // R784 (gate MMS_PAINT_TRUNC): native `Point(scale_(f32))` runs the
+                    // implicit double->coord_t conversion = TRUNCATION toward zero;
+                    // crate::scale ROUNDS. ±1-unit endpoint flips on ~88% of painted
+                    // lines (PLDUMP lid385: 296/2425 common).
+                    if crate::opt_in_gate("MMS_PAINT_TRUNC") {
+                        Point::new(
+                            (line_start_f.x as f64 / crate::libslic3r::SCALING_FACTOR) as Coord,
+                            (line_start_f.y as f64 / crate::libslic3r::SCALING_FACTOR) as Coord,
+                        )
+                    } else {
+                        Point::new(scale_(line_start_f.x as f64), scale_(line_start_f.y as f64))
+                    },
+                    if crate::opt_in_gate("MMS_PAINT_TRUNC") {
+                        Point::new(
+                            (line_end_f.x as f64 / crate::libslic3r::SCALING_FACTOR) as Coord,
+                            (line_end_f.y as f64 / crate::libslic3r::SCALING_FACTOR) as Coord,
+                        )
+                    } else {
+                        Point::new(scale_(line_end_f.x as f64), scale_(line_end_f.y as f64))
+                    },
                 );
                 // cpp:2291 — line_to_test.translate(-center_offset). When the slices are
                 // centered, `center_offset` is the scaled bbox-XY center that centers the
@@ -3790,6 +3808,34 @@ pub fn multi_material_segmentation_by_painting_tier1(
             "MMS_DEBUG painted_lines after projection+clip: per_color={:?} layers_with_color={:?}",
             per_color, layers_with
         );
+    }
+
+    // R784 — per-line dump of the raw projected painted lines at one layer
+    // (PLDUMP=<layer_idx>), sorted for cross-engine diff.
+    if let Ok(want) = std::env::var("PLDUMP") {
+        if let Ok(lid) = want.parse::<usize>() {
+            if lid < painted_lines.len() {
+                let mut rows: Vec<String> = painted_lines[lid]
+                    .iter()
+                    .map(|pl| {
+                        format!(
+                            "PLDUMP ci={} li={} c={} {},{} {},{}",
+                            pl.contour_idx,
+                            pl.line_idx,
+                            pl.color,
+                            pl.projected_line.a.x,
+                            pl.projected_line.a.y,
+                            pl.projected_line.b.x,
+                            pl.projected_line.b.y
+                        )
+                    })
+                    .collect();
+                rows.sort();
+                for r in rows {
+                    eprintln!("{r}");
+                }
+            }
+        }
     }
 
     let __m3 = std::time::Instant::now();
