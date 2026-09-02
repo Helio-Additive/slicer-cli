@@ -292,7 +292,8 @@ pub fn slice_3mf_to_gcode(
     // f32 affine (rotation matmul = the R85 wall); paint_frame_offset carries
     // the integer center_offset to the projection.
     let mut paint_frame_offset: Option<(i64, i64)> = None;
-    let paint_pair: Option<([f64; 16], [f64; 16])> = if crate::opt_in_gate("MMS_PAINT_FRAME")
+    let mut paint_tb_trafo: Option<[f64; 16]> = None;
+    let paint_pair: Option<([f64; 16], [f64; 16])> = if crate::faithful_gate("MMS_PAINT_FRAME")
         && !mmu_facets.is_empty()
         && paint_segments.len() == 1
         && paint_segments[0].0 == 0
@@ -371,6 +372,22 @@ pub fn slice_3mf_to_gcode(
             c[6], c[7], c[8], c[11],
             0.0, 0.0, 0.0, 1.0,
         ];
+        // R788 — topbot volume_trafo = trafo_centered() * get_matrix()
+        // (MMS.cpp:1345): trafo_centered = Translate(-unscale(center_offset)) ∘
+        // trafo() (Print.hpp:376), composed in f64 like native's Transform3d
+        // product; the slab shim then applies prescale ∘ trafo cast to f32
+        // (make_trafo_for_slicing) over the LOCAL strict verts with voff 0.
+        let mut tc = b0;
+        tc[9] -= ox as f64 * crate::libslic3r::SCALING_FACTOR;
+        tc[10] -= oy as f64 * crate::libslic3r::SCALING_FACTOR;
+        tc[11] += dz;
+        let vt = compose12(c, &tc);
+        paint_tb_trafo = Some([
+            vt[0], vt[1], vt[2], vt[9],
+            vt[3], vt[4], vt[5], vt[10],
+            vt[6], vt[7], vt[8], vt[11],
+            0.0, 0.0, 0.0, 1.0,
+        ]);
         Some((a16, b16))
     } else {
         None
@@ -438,9 +455,11 @@ pub fn slice_3mf_to_gcode(
         // the unpainted rest, MMS.cpp:1354-1356).
         for state_i in 0..=(print_config.num_filaments() as u8) {
             let state = crate::triangle_selector::EnforcerBlockerType(state_i as i8);
-            let mut its = selector.get_facets_strict(state);
+            let its = selector.get_facets_strict(state);
             if !its.indices.is_empty() {
-                paint_transform_its(&mut its);
+                // R788 — native keeps strict meshes LOCAL and hands
+                // slice_mesh_slabs volume_trafo = trafo_centered() * get_matrix()
+                // (MMS.cpp:1345-1355); the tb ctx carries that trafo instead.
                 painted_submeshes_strict.push((state_i, its));
             }
         }
@@ -460,6 +479,7 @@ pub fn slice_3mf_to_gcode(
     }
     print_object.painted_submeshes = painted_submeshes;
     print_object.paint_frame_offset = paint_frame_offset;
+    print_object.paint_tb_trafo = paint_tb_trafo;
     print_object.painted_submeshes_strict = painted_submeshes_strict;
     print_object.num_total_filaments = print_config.num_filaments();
     // R704 — negative volumes travel with the object and are subtracted per

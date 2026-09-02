@@ -287,6 +287,11 @@ pub struct PrintObject {
     /// as an integer translate. None when the paint frame is inactive.
     pub paint_frame_offset: Option<(i64, i64)>,
 
+    /// R788 — native's topbot volume_trafo (trafo_centered * volume matrix);
+    /// when set, the strict sub-meshes are volume-LOCAL and the slab chain
+    /// uses this trafo with voff (0,0,0).
+    pub paint_tb_trafo: Option<[f64; 16]>,
+
     /// R770 — raw per-layer negative-volume slices (index-aligned with
     /// `layers`), captured during the R704 subtraction for the MM
     /// segmentation's fill + clip-back flow (cpp `neg_slices`, MMS.cpp:2217).
@@ -325,6 +330,7 @@ impl PrintObject {
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
+            paint_tb_trafo: None,
             num_total_filaments: 1,
         }
     }
@@ -354,6 +360,7 @@ impl PrintObject {
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
+            paint_tb_trafo: None,
             num_total_filaments: 1,
         }
     }
@@ -1009,6 +1016,13 @@ impl PrintObject {
         });
         let tb_ctx = match (&tb_trafo, crate::faithful_gate("MMS_TOPBOT")) {
             (Some((trafo16, voff)), true) if !self.painted_submeshes_strict.is_empty() => {
+                // R788 — with the paint frame active the strict meshes are
+                // volume-LOCAL and the trafo is native's volume_trafo.
+                let (t16, vo) = if let Some(t) = self.paint_tb_trafo {
+                    (t, (0.0, 0.0, 0.0))
+                } else {
+                    (*trafo16, *voff)
+                };
                 Some(crate::multi_material_segmentation::TopBottomCtx {
                     strict_submeshes: &self.painted_submeshes_strict,
                     zs: layer_zs.iter().map(|&z| z as f32).collect(),
@@ -1016,8 +1030,8 @@ impl PrintObject {
                     region_configs: &tb_region_cfgs,
                     default_line_width: self.config.line_width,
                     nozzle_diameter: self.print_config.nozzle_diameter,
-                    trafo16: *trafo16,
-                    voff: *voff,
+                    trafo16: t16,
+                    voff: vo,
                 })
             }
             _ => None,

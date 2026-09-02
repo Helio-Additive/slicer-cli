@@ -2742,9 +2742,19 @@ fn tb_opening_ex(ex: &[ExPolygon], delta_scaled: f32) -> ExPolygons {
 // the translation-only trafo contributes tz = trafo16[11] to z.
 fn tb_is_volume_sinking(its: &indexed_triangle_set, trafo16: &[f64; 16], voff: (f64, f64, f64)) -> bool {
     const SINKING_Z_THRESHOLD: f32 = -0.001; // Model.hpp:1839
-    let oz = voff.2 as f32;
-    let tz = trafo16[11] as f32;
-    its.vertices.iter().any(|v| (v.z - oz) + tz < SINKING_Z_THRESHOLD)
+    // Native: (trafo.cast<float>() * vertex).z() < threshold (MMS.cpp:1311-15).
+    // General f32 z-row apply; the old translation-only trafo (m8=m9=0, m10=1)
+    // reduces to (z - oz) + tz.
+    let (ox, oy, oz) = (voff.0 as f32, voff.1 as f32, voff.2 as f32);
+    let (m8, m9, m10, m11) = (
+        trafo16[8] as f32,
+        trafo16[9] as f32,
+        trafo16[10] as f32,
+        trafo16[11] as f32,
+    );
+    its.vertices
+        .iter()
+        .any(|v| m8 * (v.x - ox) + m9 * (v.y - oy) + m10 * (v.z - oz) + m11 < SINKING_Z_THRESHOLD)
 }
 
 /// Faithful Tier-1 port of `mmu_segmentation_top_and_bottom_layers`
@@ -3776,6 +3786,14 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 // centered, `center_offset` is the scaled bbox-XY center that centers the
                 // painted lines onto them; `(0,0)` (mesh pre-placed) leaves them unmoved.
                 line_to_test = line_to_test.translate(-center_offset);
+                if let Ok(ptd) = std::env::var("PTDUMP") {
+                    if ptd.parse::<usize>() == Ok(layer_idx) {
+                        eprintln!(
+                            "PTDUMP c={} {},{} {},{}",
+                            color, line_to_test.a.x, line_to_test.a.y, line_to_test.b.x, line_to_test.b.y
+                        );
+                    }
+                }
 
                 // Clip the painted line against the EdgeGrid's bbox. MultiMaterialSegmentation.cpp:2293-2303.
                 let edge_grid_bbox = *edge_grids[layer_idx].bbox();
