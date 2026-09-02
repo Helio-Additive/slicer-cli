@@ -2265,6 +2265,16 @@ fn merge_bridges(
             union_ex(&acc)
         };
 
+        if crate::probe_enabled("BRGROUP") && acc.len() >= 8 {
+            let aa: f64 = merged.iter().map(|e| e.area()).sum();
+            eprintln!(
+                "BRCLOSE acc={} merged={} area={:.0} radius={:.4}",
+                acc.len(),
+                merged.len(),
+                aa,
+                closing_radius
+            );
+        }
         // Create surfaces
         for ep in merged {
             let mut s = crate::surface::Surface::new(crate::surface::SurfaceType::BottomBridge, ep);
@@ -2326,6 +2336,26 @@ pub fn expand_bridges_detect_orientations(
 
     // Step 3: Group bridges by overlapping expansions (union-find)
     let mut bridges = get_grouped_bridges(bridge_expolygons, &expansion_result.expansions);
+    if crate::probe_enabled("BRGROUP") && bridges.len() >= 4 {
+        let mut heads = std::collections::BTreeSet::new();
+        for i in 0..bridges.len() {
+            heads.insert(resolve_group_id(&mut bridges, i as u32));
+        }
+        let ea: f64 = expansion_result
+            .expansions
+            .iter()
+            .map(|e| e.expolygon.area().abs())
+            .sum();
+        let ba: f64 = bridges.iter().map(|b| b.expolygon.area().abs()).sum();
+        eprintln!(
+            "BRGROUP bridges={} expansions={} groups={} bridge_area={:.0} exp_area={:.0}",
+            bridges.len(),
+            expansion_result.expansions.len(),
+            heads.len(),
+            ba,
+            ea
+        );
+    }
     let __t_group = __t.elapsed().as_secs_f64();
 
     // Step 4: Detect per-bridge directions using anchor areas

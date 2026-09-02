@@ -579,6 +579,29 @@ pub fn group_fills(
         crate::debug::topdbg::dump_top_surfaces(layer.id(), "d5_group_fills_top", &all);
     }
 
+    // R778 — bridge-surface census at group_fills entry: how many
+    // stBottomBridge pieces exist and what angles they carry (native lid=2
+    // has 8 pieces with distinct detected angles; one shared angle here means
+    // the pieces bucket together and the union welds the connected band).
+    if crate::probe_enabled("SFBRIDGE") {
+        for region_id in 0..layer.region_count() {
+            if let Some(region) = layer.get_region(region_id) {
+                for s in &region.fill_surfaces.surfaces {
+                    if s.surface_type == crate::surface::SurfaceType::BottomBridge {
+                        eprintln!(
+                            "SFBRIDGE z={:.2} region={} area={:.0} angle={:?} pts={}",
+                            layer.print_z,
+                            region_id,
+                            s.expolygon.area(),
+                            s.bridge_angle,
+                            s.expolygon.contour.points.len()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// Fill.cpp:166
     /// C++: std::vector<SurfaceFill> surface_fills
     let mut surface_fills: Vec<SurfaceFill> = Vec::new();

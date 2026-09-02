@@ -3513,6 +3513,22 @@ impl Layer {
 
 
         // Fill.cpp:753-763
+        // R778 FILLEEC — mirror of the cpp probe: per fills EEC, first role + count.
+        if crate::probe_enabled("FILLEEC") {
+            for region in &self.regions {
+                for ent in &region.fills.entities {
+                    if let crate::extrusion_entity::ExtrusionEntityType::Collection(c) = ent {
+                        let role = c
+                            .entities
+                            .first()
+                            .map(|e| format!("{:?}", crate::gcode::exporter::get_entity_role(e)))
+                            .unwrap_or_default();
+                        eprintln!("FILLEEC z={:.2} role={} n={}", self.print_z, role, c.entities.len());
+                    }
+                }
+            }
+        }
+
         // Add thin fill regions
         // C++: for (LayerRegion *layerm : m_regions)
         //          for (const ExtrusionEntity *thin_fill : layerm->thin_fills.entities)
