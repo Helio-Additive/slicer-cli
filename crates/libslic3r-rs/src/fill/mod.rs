@@ -1885,6 +1885,23 @@ pub fn connect_infill_expolygon(
     params: &FillParams,
     polylines_out: &mut Vec<Polyline>,
 ) {
+    // R790 (gate FILL_CONNECT_FAITHFUL) — route to the faithful
+    // BoundaryInfillGraph connector in fill_base.rs (the full
+    // FillBase.cpp:1501-1733 port with contour parameterization and
+    // boundary-anchored arches; R459-473 era, previously unwired). The old
+    // 2.5x-spacing endpoint-merge stub below never chains gyroid at all
+    // (its own R459 note) and produced none of native's boundary anchor
+    // points (R789: layer-87.9 gyroid moves 102 vs native 147).
+    if crate::faithful_gate("FILL_CONNECT_FAITHFUL") {
+        fill_base::connect_infill_expolygon(
+            infill_ordered,
+            boundary,
+            polylines_out,
+            spacing,
+            params,
+        );
+        return;
+    }
     let mut polygons: Vec<Polygon> = Vec::with_capacity(boundary.holes.len() + 1);
     polygons.push(boundary.contour.clone());
     for hole in &boundary.holes {
