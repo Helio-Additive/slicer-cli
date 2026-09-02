@@ -3304,6 +3304,21 @@ impl Layer {
                     }
                 };
                 let mut collection = ExtrusionEntityCollection::new();
+                // R779 — faithful filler no_sort (FillBase.hpp:149 + overrides):
+                // Concentric/ConcentricInternal/Monotonic/MonotonicLine(WGapFill)
+                // return true; the rectilinear base (which native uses for BRIDGE
+                // fills via ipRectilinear) returns false. The flag decides whether
+                // GCode Region::append flattens the collection for the nearest-
+                // neighbor fill chain (ISLAND_FLATTEN).
+                collection.no_sort = crate::opt_in_gate("ISLAND_FLATTEN")
+                    && !surface_fill.params.bridge
+                    && matches!(
+                        fill_pattern,
+                        InfillPattern::Concentric
+                            | InfillPattern::FloatingConcentric
+                            | InfillPattern::Monotonic
+                            | InfillPattern::MonotonicLine
+                    );
                 if is_monotonic_line && crate::faithful_gate("TOPFILL_FAITHFUL") {
                     // Native FillMonotonicLineWGapFill emits via
                     // extrusion_entities_append_paths_with_wipe (FillRectilinear.cpp:

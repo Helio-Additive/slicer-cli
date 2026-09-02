@@ -3703,6 +3703,16 @@ fn emit_layer_by_island(
                 if !island_emit_order.contains(&isl) {
                     island_emit_order.push(isl);
                 }
+                // R779 (gate ISLAND_FLATTEN) — cpp Region::append (GCode.cpp:7727-7735)
+                // FLATTENS can_sort collections into individual entities (only
+                // no_sort EECs stay whole); the island is chosen by the parent
+                // EEC's first point. This is what lets the emission chain
+                // interleave e.g. the 13 bridge paths with the solid EECs.
+                // R779 — perimeter EECs: cpp marks them no_sort=true at creation
+                // (PerimeterGenerator), so Region::append keeps them whole; the
+                // rust EECs default no_sort=false, so a blanket can_sort flatten
+                // here wrongly unpacked perimeters (arachne −5,043 in-order).
+                // Keep perimeters whole; the flatten applies to FILLS only.
                 assign(&mut islands, region_id, fp, ent.clone(), 0, node_id);
             }
         }
@@ -3729,7 +3739,20 @@ fn emit_layer_by_island(
                             if idx == layer.lslices.len() { " CATCH-ALL" } else { "" }
                         );
                     }
-                    assign(&mut islands, region_id, fp, ent.clone(), 1, -1);
+                    let mut flattened = false;
+                    if crate::opt_in_gate("ISLAND_FLATTEN") {
+                        if let crate::extrusion_entity::ExtrusionEntityType::Collection(c) = ent {
+                            if !c.no_sort {
+                                for child in &c.entities {
+                                    assign(&mut islands, region_id, fp, child.clone(), 1, -1);
+                                }
+                                flattened = true;
+                            }
+                        }
+                    }
+                    if !flattened {
+                        assign(&mut islands, region_id, fp, ent.clone(), 1, -1);
+                    }
                 }
             }
             for ent in &region.thin_fills.entities {
