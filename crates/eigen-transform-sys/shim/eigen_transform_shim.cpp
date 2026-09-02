@@ -69,6 +69,29 @@ extern "C" void eigen_transform_verts_affine_f32(const double *trafo16,
     }
 }
 
+// R787 — native MMS.cpp:2303 composes the paint transform IN F32:
+//   Transform3f tr = trafo().cast<float>() * get_matrix().cast<float>();
+// (f32 x f32 matrix product, NOT an f64 compose then cast). a16 = trafo(),
+// b16 = volume matrix, both f64 row-major 4x4; per vertex out = tr * v.
+extern "C" void eigen_transform_verts_affine_f32_pair(const double *a16, const double *b16,
+                                                      const float *verts_in, float *verts_out,
+                                                      int32_t n) {
+    Transform3d a, b;
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c) {
+            a.matrix()(r, c) = a16[r * 4 + c];
+            b.matrix()(r, c) = b16[r * 4 + c];
+        }
+    Transform3f tr = a.cast<float>() * b.cast<float>();
+    for (int32_t i = 0; i < n; ++i) {
+        stl_vertex v(verts_in[3 * i], verts_in[3 * i + 1], verts_in[3 * i + 2]);
+        v = tr * v;
+        verts_out[3 * i] = v.x();
+        verts_out[3 * i + 1] = v.y();
+        verts_out[3 * i + 2] = v.z();
+    }
+}
+
 extern "C" void eigen_transform_verts_for_slicing(double scaling_factor, double cx,
                                                   double cy, const float *verts_in,
                                                   float *verts_out, int32_t n) {

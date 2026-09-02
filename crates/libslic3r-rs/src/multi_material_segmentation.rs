@@ -3704,7 +3704,17 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 // lerp is NOT the source of the 1-30 unit colored-boundary vertex
                 // drift (TBPROBE8V lid385). The drift enters later in the painted
                 // -line chain (post_process/colorize discrete decisions).
-                let line_start_f = facet[0] + (facet[2] - facet[0]) * t;
+                let line_start_f = if crate::opt_in_gate("MMS_PAINT_FMA") {
+                    // clang arm64 default fp-contract fuses Eigen's v0 + t*(v2-v0)
+                    // into per-component fma (R783 retest against exact-frame verts).
+                    Vec3f::new(
+                        t.mul_add(facet[2].x - facet[0].x, facet[0].x),
+                        t.mul_add(facet[2].y - facet[0].y, facet[0].y),
+                        t.mul_add(facet[2].z - facet[0].z, facet[0].z),
+                    )
+                } else {
+                    facet[0] + (facet[2] - facet[0]) * t
+                };
 
                 // cpp:2274-2287
                 let line_end_f: Vec3f = if (is_equal(facet[0].z, facet[1].z)
@@ -3716,11 +3726,27 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 } else if (facet[1].z as f64) > slice_z {
                     // [P0, P2] and [P0, P1]
                     let t1 = (slice_z_f - facet[0].z) / (facet[1].z - facet[0].z);
-                    facet[0] + (facet[1] - facet[0]) * t1
+                    if crate::opt_in_gate("MMS_PAINT_FMA") {
+                        Vec3f::new(
+                            t1.mul_add(facet[1].x - facet[0].x, facet[0].x),
+                            t1.mul_add(facet[1].y - facet[0].y, facet[0].y),
+                            t1.mul_add(facet[1].z - facet[0].z, facet[0].z),
+                        )
+                    } else {
+                        facet[0] + (facet[1] - facet[0]) * t1
+                    }
                 } else {
                     // [P0, P2] and [P1, P2]
                     let t2 = (slice_z_f - facet[1].z) / (facet[2].z - facet[1].z);
-                    facet[1] + (facet[2] - facet[1]) * t2
+                    if crate::opt_in_gate("MMS_PAINT_FMA") {
+                        Vec3f::new(
+                            t2.mul_add(facet[2].x - facet[1].x, facet[1].x),
+                            t2.mul_add(facet[2].y - facet[1].y, facet[1].y),
+                            t2.mul_add(facet[2].z - facet[1].z, facet[1].z),
+                        )
+                    } else {
+                        facet[1] + (facet[2] - facet[1]) * t2
+                    }
                 };
 
                 // cpp:2289-2291

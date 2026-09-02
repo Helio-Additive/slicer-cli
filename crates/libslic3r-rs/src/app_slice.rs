@@ -204,6 +204,7 @@ pub fn slice_3mf_to_gcode(
         negative_mesh,
         paint_segments,
         paint_raw_vertices,
+        paint_instance_matrix,
     } = load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     info!("Loaded {} triangles", mesh.triangle_count());
     // R703 — negative volumes are loaded but NOT yet subtracted; the per-layer
@@ -278,115 +279,144 @@ pub fn slice_3mf_to_gcode(
     let mut painted_submeshes: Vec<(u8, crate::normal_utils::indexed_triangle_set)> = Vec::new();
     let mut painted_submeshes_strict: Vec<(u8, crate::normal_utils::indexed_triangle_set)> =
         Vec::new();
-    // R786 (gate MMS_PAINT_FRAME) — rebuild the mesh vertices the way NATIVE's
-    // painted-facet projection sees them: per printable segment, local = f32(raw)
-    // − f32(volume bbox center); then the eigen shim applies
-    // Transform3f(dz ∘ loader_transform ∘ translate(center)) — the exact f32
-    // affine (rotation matmul included, the R85 wall) of MMS.cpp:2303. The
-    // painted sub-meshes extracted below then carry native's f32 vertex values,
-    // making the painted-line endpoints byte-comparable.
+    // R786/R787 (gate MMS_PAINT_FRAME) — rebuild the mesh vertices the way
+    // NATIVE's painted-facet projection sees them (MMS.cpp:2303):
+    //   tr = Transform3f(print_object.trafo() * volume.get_matrix())
+    //   facet[p] = tr * volume_local_vertex
+    // where trafo() = instance matrix with the XY translation ZEROED
+    // (PrintApply.cpp:148-152; Z translation kept) and the placement rides
+    // center_offset = Point::new_scale(raw_bounding_box().center().xy)
+    // (PrintObject.cpp:88, Model.cpp:1559-73: bbox over MODEL parts under the
+    // fully-untranslated instance matrix ∘ volume matrix), subtracted from the
+    // scaled painted-line ints (MMS.cpp:2373). The eigen shim applies the exact
+    // f32 affine (rotation matmul = the R85 wall); paint_frame_offset carries
+    // the integer center_offset to the projection.
     let mut paint_frame_offset: Option<(i64, i64)> = None;
-    let paint_mesh: Option<TriangleMesh> = if crate::opt_in_gate("MMS_PAINT_FRAME")
+    let paint_pair: Option<([f64; 16], [f64; 16])> = if crate::opt_in_gate("MMS_PAINT_FRAME")
         && !mmu_facets.is_empty()
-        && !paint_segments.is_empty()
+        && paint_segments.len() == 1
+        && paint_segments[0].0 == 0
         && paint_raw_vertices.len() == mesh.vertices().len()
     {
-        let dz_applied = {
-            // The bed-drop applied above: recover from current mesh bbox vs raw?
-            // The translate ran just before this block; capture via closure is
-            // simpler: recompute dz the same way (min z of the ORIGINAL placed
-            // verts). The mesh was translated in place, so derive dz from the
-            // difference between mesh verts and apply_transform(raw)... Instead
-            // the loader's placed z-min: dz = -(placed_min_z), where placed =
-            // segment transform applied to raw. Compute it directly:
-            let mut minz = f64::MAX;
-            for &(off, n, ref tf) in &paint_segments {
-                for v in &paint_raw_vertices[off..off + n] {
-                    let z = tf[6] * v.x + tf[7] * v.y + tf[8] * v.z + tf[11];
-                    if z < minz {
-                        minz = z;
-                    }
-                }
-            }
-            if minz.is_finite() {
-                -minz
-            } else {
-                0.0
-            }
-        };
-        let mut new_verts: Vec<Point3F> = mesh.vertices().to_vec();
-        for &(off, n, ref tf) in &paint_segments {
-            let raw = &paint_raw_vertices[off..off + n];
-            // Volume bbox center over the f32 raw verts (native centers the
-            // volume mesh; f64 midpoint of f32 extremes).
-            let (mut xl, mut yl, mut zl) = (f32::MAX, f32::MAX, f32::MAX);
-            let (mut xh, mut yh, mut zh) = (f32::MIN, f32::MIN, f32::MIN);
-            for v in raw {
-                let (x, y, z) = (v.x as f32, v.y as f32, v.z as f32);
-                xl = xl.min(x);
-                xh = xh.max(x);
-                yl = yl.min(y);
-                yh = yh.max(y);
-                zl = zl.min(z);
-                zh = zh.max(z);
-            }
-            let c = (
-                (xl as f64 + xh as f64) * 0.5,
-                (yl as f64 + yh as f64) * 0.5,
-                (zl as f64 + zh as f64) * 0.5,
-            );
-            let (cf0, cf1, cf2) = (c.0 as f32, c.1 as f32, c.2 as f32);
-            let mut flat: Vec<f32> = Vec::with_capacity(n * 3);
-            for v in raw {
-                flat.push(v.x as f32 - cf0);
-                flat.push(v.y as f32 - cf1);
-                flat.push(v.z as f32 - cf2);
-            }
-            // trafo16 = translate(0,0,dz) ∘ tf(3x4 row-major) ∘ translate(c),
-            // with the XY translation QUANTIZED away à la FRAME_UNIFY: native's
-            // trafo() carries no XY (PrintApply resets it; the placement rides
-            // `center_offset = new_scale(xy)`, subtracted from the scaled ints).
-            // Keep only the sub-grid residue in the f32 transform and export the
-            // scaled integer offset so the projection can add it back losslessly.
-            let t = tf;
-            let tx = t[0] * c.0 + t[1] * c.1 + t[2] * c.2 + t[9];
-            let ty = t[3] * c.0 + t[4] * c.1 + t[5] * c.2 + t[10];
-            let tz = t[6] * c.0 + t[7] * c.1 + t[8] * c.2 + t[11] + dz_applied;
-            let sf = 0.00001f64;
-            let qx = ((tx / sf) as i64) as f64 * sf; // new_scale = trunc
-            let qy = ((ty / sf) as i64) as f64 * sf;
-            paint_frame_offset = Some((
-                paint_frame_offset.map_or((tx / sf) as i64, |o| o.0),
-                paint_frame_offset.map_or((ty / sf) as i64, |o| o.1),
-            ));
-            let trafo16: [f64; 16] = [
-                t[0], t[1], t[2], tx - qx, t[3], t[4], t[5], ty - qy, t[6], t[7], t[8], tz,
-                0.0, 0.0, 0.0, 1.0,
-            ];
-            let out = eigen_transform_sys::transform_verts_affine_f32(&trafo16, &flat);
-            for (i, ch) in out.chunks_exact(3).enumerate() {
-                new_verts[off + i] = Point3F {
-                    x: ch[0] as f64,
-                    y: ch[1] as f64,
-                    z: ch[2] as f64,
-                };
+        // b∘a with translation at [9..12] (a applied first).
+        fn compose12(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
+            [
+                b[0] * a[0] + b[1] * a[3] + b[2] * a[6],
+                b[0] * a[1] + b[1] * a[4] + b[2] * a[7],
+                b[0] * a[2] + b[1] * a[5] + b[2] * a[8],
+                b[3] * a[0] + b[4] * a[3] + b[5] * a[6],
+                b[3] * a[1] + b[4] * a[4] + b[5] * a[7],
+                b[3] * a[2] + b[4] * a[5] + b[5] * a[8],
+                b[6] * a[0] + b[7] * a[3] + b[8] * a[6],
+                b[6] * a[1] + b[7] * a[4] + b[8] * a[7],
+                b[6] * a[2] + b[7] * a[5] + b[8] * a[8],
+                b[0] * a[9] + b[1] * a[10] + b[2] * a[11] + b[9],
+                b[3] * a[9] + b[4] * a[10] + b[5] * a[11] + b[10],
+                b[6] * a[9] + b[7] * a[10] + b[8] * a[11] + b[11],
+            ]
+        }
+        let b = &paint_instance_matrix;
+        // trafo(): XY translation zeroed, Z kept (PrintApply.cpp:151-152).
+        let mut b0 = *b;
+        b0[9] = 0.0;
+        b0[10] = 0.0;
+        // raw_bounding_box: instance matrix with NO translation at all
+        // (get_matrix(true)) ∘ volume matrix, f64 over the f32-stored verts.
+        let mut bnt = b0;
+        bnt[11] = 0.0;
+        let (mut bxl, mut byl, mut bxh, mut byh) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        // Bed-drop the loader applied to the PLACED mesh (translate to z=0):
+        // native keeps trafo()'s Z, so the paint mesh needs the same drop for
+        // its layer-z assignment. Derived from the placed (b ∘ vol) min z.
+        let mut placed_minz = f64::MAX;
+        for &(off, n, ref cvol) in &paint_segments {
+            let m = compose12(cvol, &bnt);
+            let pm = compose12(cvol, b);
+            for v in &paint_raw_vertices[off..off + n] {
+                let (x, y, z) = (v.x as f32 as f64, v.y as f32 as f64, v.z as f32 as f64);
+                let tx = m[0] * x + m[1] * y + m[2] * z + m[9];
+                let ty = m[3] * x + m[4] * y + m[5] * z + m[10];
+                bxl = bxl.min(tx);
+                bxh = bxh.max(tx);
+                byl = byl.min(ty);
+                byh = byh.max(ty);
+                let pz = pm[6] * x + pm[7] * y + pm[8] * z + pm[11];
+                placed_minz = placed_minz.min(pz);
             }
         }
-        let tri_copy: Vec<crate::triangle_mesh::Triangle> = (0..mesh.triangle_count())
-            .map(|i| {
-                let idx = mesh.triangle_indices(i);
-                crate::triangle_mesh::Triangle::new(idx[0], idx[1], idx[2])
-            })
-            .collect();
-        Some(TriangleMesh::from_parts(new_verts, tri_copy))
+        let dz = if placed_minz.is_finite() { -placed_minz } else { 0.0 };
+        let (cx, cy) = ((bxl + bxh) * 0.5, (byl + byh) * 0.5);
+        // Point::new_scale = coord_t(val / SCALING_FACTOR): TRUNCATION.
+        let ox = (cx / crate::libslic3r::SCALING_FACTOR) as i64;
+        let oy = (cy / crate::libslic3r::SCALING_FACTOR) as i64;
+        paint_frame_offset = Some((ox, oy));
+        if crate::probe_enabled("PFDBG") {
+            eprintln!("PFDBG center_offset=({},{}) center=({:.6},{:.6}) dz={:.6}", ox, oy, cx, cy, dz);
+        }
+        // Native composes the pair IN F32: trafo().cast<float>() * get_matrix()
+        // .cast<float>() (MMS.cpp:2303). The bed drop rides trafo()'s Z (native
+        // has none; dz reconciles our z=0 frame). Only the pair is exported —
+        // the selector runs on the VOLUME-LOCAL mesh (splits happen in local
+        // f32, THEN the split verts are transformed, exactly like native).
+        let a16: [f64; 16] = [
+            b0[0], b0[1], b0[2], b0[9],
+            b0[3], b0[4], b0[5], b0[10],
+            b0[6], b0[7], b0[8], b0[11] + dz,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let c = &paint_segments[0].2;
+        let b16: [f64; 16] = [
+            c[0], c[1], c[2], c[9],
+            c[3], c[4], c[5], c[10],
+            c[6], c[7], c[8], c[11],
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        Some((a16, b16))
     } else {
         None
     };
     if !mmu_facets.is_empty() {
-        let mut selector = crate::triangle_selector::TriangleSelector::new(
-            paint_mesh.clone().unwrap_or_else(|| mesh.clone()),
-            0.0,
-        );
+        // R787 — with the paint frame active, the selector operates on the
+        // VOLUME-LOCAL mesh (f32 file verts): facet splits are computed in
+        // local f32 exactly like native TriangleSelector, and the resulting
+        // (possibly split) verts are then pushed through the f32 pair
+        // transform — native's split-then-transform order.
+        let sel_mesh = if paint_pair.is_some() {
+            let raw32: Vec<Point3F> = paint_raw_vertices
+                .iter()
+                .map(|v| Point3F {
+                    x: v.x as f32 as f64,
+                    y: v.y as f32 as f64,
+                    z: v.z as f32 as f64,
+                })
+                .collect();
+            let tris: Vec<crate::triangle_mesh::Triangle> = (0..mesh.triangle_count())
+                .map(|i| {
+                    let idx = mesh.triangle_indices(i);
+                    crate::triangle_mesh::Triangle::new(idx[0], idx[1], idx[2])
+                })
+                .collect();
+            TriangleMesh::from_parts(raw32, tris)
+        } else {
+            mesh.clone()
+        };
+        let paint_transform_its = |its: &mut crate::triangle_mesh::indexed_triangle_set| {
+            if let Some((a16, b16)) = &paint_pair {
+                let mut flat: Vec<f32> = Vec::with_capacity(its.vertices.len() * 3);
+                for v in &its.vertices {
+                    flat.push(v.x);
+                    flat.push(v.y);
+                    flat.push(v.z);
+                }
+                let out = eigen_transform_sys::transform_verts_affine_f32_pair(a16, b16, &flat);
+                for (v, ch) in its.vertices.iter_mut().zip(out.chunks_exact(3)) {
+                    v.x = ch[0];
+                    v.y = ch[1];
+                    v.z = ch[2];
+                }
+            }
+        };
+        let mut selector = crate::triangle_selector::TriangleSelector::new(sel_mesh, 0.0);
         selector.deserialize(
             &mmu_facets.data,
             false,
@@ -395,8 +425,9 @@ pub fn slice_3mf_to_gcode(
             crate::triangle_selector::EnforcerBlockerType::NONE,
         );
         for state in selector.used_states() {
-            let its = selector.get_facets(state);
+            let mut its = selector.get_facets(state);
             if !its.indices.is_empty() {
+                paint_transform_its(&mut its);
                 painted_submeshes.push((state.0 as u8, its));
             }
         }
@@ -407,8 +438,9 @@ pub fn slice_3mf_to_gcode(
         // the unpainted rest, MMS.cpp:1354-1356).
         for state_i in 0..=(print_config.num_filaments() as u8) {
             let state = crate::triangle_selector::EnforcerBlockerType(state_i as i8);
-            let its = selector.get_facets_strict(state);
+            let mut its = selector.get_facets_strict(state);
             if !its.indices.is_empty() {
+                paint_transform_its(&mut its);
                 painted_submeshes_strict.push((state_i, its));
             }
         }
@@ -513,6 +545,9 @@ pub struct Parsed3mfModel {
     /// R786 — RAW (untransformed) vertices aligned with the merged mesh's
     /// vertex indices (only printable segments are populated).
     pub paint_raw_vertices: Vec<Point3F>,
+    /// R787 — the build-item (instance) matrix for the painted object; identity
+    /// when absent. paint_segments transforms are the VOLUME chain only.
+    pub paint_instance_matrix: [f64; 12],
 }
 
 /// Everything the Tier-1 loader extracts from a `.3mf` archive.
@@ -541,6 +576,9 @@ pub struct Loaded3mf {
     pub paint_segments: Vec<(usize, usize, [f64; 12])>,
     /// R786 — see [`Parsed3mfModel::paint_raw_vertices`].
     pub paint_raw_vertices: Vec<Point3F>,
+    /// R787 — the build-item (instance) matrix for the painted object; identity
+    /// when absent. paint_segments transforms are the VOLUME chain only.
+    pub paint_instance_matrix: [f64; 12],
 }
 
 /// Load a [`TriangleMesh`] from a `.3mf` ZIP by parsing `3D/3dmodel.model`.
@@ -615,6 +653,7 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         negative_mesh: parsed.negative_mesh,
         paint_segments: parsed.paint_segments,
         paint_raw_vertices: parsed.paint_raw_vertices,
+        paint_instance_matrix: parsed.paint_instance_matrix,
     })
 }
 
@@ -1085,6 +1124,7 @@ pub fn parse_3mf_model_xml_with_negatives(
     // R786 — paint-frame reconstruction data (see Parsed3mfModel fields).
     let mut paint_segments: Vec<(usize, usize, [f64; 12])> = Vec::new();
     let mut paint_raw_vertices: Vec<Point3F> = Vec::new();
+    let mut paint_instance: Option<[f64; 12]> = None;
 
     #[allow(clippy::too_many_arguments)]
     fn instantiate_object(
@@ -1100,6 +1140,9 @@ pub fn parse_3mf_model_xml_with_negatives(
         neg_triangles: &mut Vec<Triangle>,
         paint_segments: &mut Vec<(usize, usize, [f64; 12])>,
         paint_raw_vertices: &mut Vec<Point3F>,
+        build_tf: &[f64; 12],
+        vol_tf: &[f64; 12],
+        paint_instance: &mut Option<[f64; 12]>,
     ) {
         if let Some(mesh_data) = objects.get(&obj_id) {
             // Non-printable objects (`type != "model"`, e.g. `type="other"`
@@ -1129,9 +1172,13 @@ pub fn parse_3mf_model_xml_with_negatives(
             // If object has a mesh, instantiate it
             if !mesh_data.vertices.is_empty() {
                 let v_offset = all_vertices.len() as u32;
-                // R786 — record the raw verts + the composed transform for this
-                // printable segment (native paint-frame reconstruction).
-                paint_segments.push((v_offset as usize, mesh_data.vertices.len(), *transform));
+                // R786/R787 — record the raw verts + the VOLUME-chain transform
+                // (component matrices only; native's ModelVolume::get_matrix()),
+                // and the build-item transform once (ModelInstance::get_matrix()).
+                paint_segments.push((v_offset as usize, mesh_data.vertices.len(), *vol_tf));
+                if paint_instance.is_none() {
+                    *paint_instance = Some(*build_tf);
+                }
                 for v in &mesh_data.vertices {
                     all_vertices.push(apply_transform(v, transform));
                     paint_raw_vertices.push(*v);
@@ -1148,6 +1195,7 @@ pub fn parse_3mf_model_xml_with_negatives(
             // If object has components, recurse with composed transforms
             for &(comp_id, ref comp_transform) in &mesh_data.components {
                 let composed = compose_transforms(comp_transform, transform);
+                let vol_composed = compose_transforms(comp_transform, vol_tf);
                 instantiate_object(
                     comp_id,
                     &composed,
@@ -1161,6 +1209,9 @@ pub fn parse_3mf_model_xml_with_negatives(
                     neg_triangles,
                     paint_segments,
                     paint_raw_vertices,
+                    build_tf,
+                    &vol_composed,
+                    paint_instance,
                 );
             }
         }
@@ -1199,6 +1250,9 @@ pub fn parse_3mf_model_xml_with_negatives(
                 &mut neg_triangles,
                 &mut paint_segments,
                 &mut paint_raw_vertices,
+                transform,
+                &identity,
+                &mut paint_instance,
             );
         }
     }
@@ -1246,9 +1300,11 @@ pub fn parse_3mf_model_xml_with_negatives(
             negative_ids.len(),
         );
     }
+    let paint_instance_matrix = paint_instance.unwrap_or(identity);
     Ok(Parsed3mfModel {
         paint_segments,
         paint_raw_vertices,
+        paint_instance_matrix,
         mesh: TriangleMesh::from_parts(all_vertices, all_triangles),
         negative_mesh: TriangleMesh::from_parts(neg_vertices, neg_triangles),
         mmu_facets,

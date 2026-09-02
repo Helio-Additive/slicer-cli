@@ -31,6 +31,16 @@ extern "C" {
         n: i32,
     );
 
+    /// R787 — native's f32 pair compose: `Transform3f(a).cast * Transform3f(b).cast`
+    /// then per-vertex apply (MMS.cpp:2303 paint transform).
+    pub fn eigen_transform_verts_affine_f32_pair(
+        a16: *const f64,
+        b16: *const f64,
+        verts_in: *const f32,
+        verts_out: *mut f32,
+        n: i32,
+    );
+
     /// R87 frame-unification: `slice_vert = prescale·params2.trafo·(rust_raw − voff)`.
     /// `trafo16` = f64 params2.trafo (row-major 4x4). Bit-exact via real Eigen.
     pub fn eigen_transform_verts_unified(
@@ -51,6 +61,26 @@ pub fn transform_verts_affine_f32(trafo16: &[f64; 16], verts_in: &[f32]) -> Vec<
     let mut out = vec![0.0f32; verts_in.len()];
     unsafe {
         eigen_transform_verts_affine_f32(trafo16.as_ptr(), verts_in.as_ptr(), out.as_mut_ptr(), n);
+    }
+    out
+}
+
+/// Safe wrapper for [`eigen_transform_verts_affine_f32_pair`].
+pub fn transform_verts_affine_f32_pair(
+    a16: &[f64; 16],
+    b16: &[f64; 16],
+    verts_in: &[f32],
+) -> Vec<f32> {
+    let n = (verts_in.len() / 3) as i32;
+    let mut out = vec![0.0f32; verts_in.len()];
+    unsafe {
+        eigen_transform_verts_affine_f32_pair(
+            a16.as_ptr(),
+            b16.as_ptr(),
+            verts_in.as_ptr(),
+            out.as_mut_ptr(),
+            n,
+        );
     }
     out
 }

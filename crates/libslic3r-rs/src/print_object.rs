@@ -937,11 +937,11 @@ impl PrintObject {
         // (0,0). slice_center_offset is the unscaled (mm) center (self set at slice());
         // new_scale() re-scales it to the painted-line coordinate space. Keeping this in
         // lock-step with the slicer's decision is what preserves painted-region overlap.
-        // R786 — when the paint frame is active, painted lines are built in
-        // native's centered frame; add the stripped XY offset back as the
-        // (negated) center_offset integer translate.
+        // R787 — when the paint frame is active, paint_frame_offset IS native's
+        // center_offset (raw-bbox center, scaled trunc); the projection does
+        // line_to_test.translate(-center_offset) exactly like MMS.cpp:2373.
         let mms_center_offset = if let Some((ox, oy)) = self.paint_frame_offset {
-            crate::geometry::Point::new(-ox, -oy)
+            crate::geometry::Point::new(ox, oy)
         } else if crate::faithful_gate("SLICE_CENTER")
             && (self.slice_center_offset.0 != 0.0 || self.slice_center_offset.1 != 0.0)
         {
