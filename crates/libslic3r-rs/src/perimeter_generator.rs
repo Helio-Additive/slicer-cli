@@ -3448,17 +3448,43 @@ impl PerimeterGenerator {
                     union_polygons_ex(&surface.simplify_p(surface_simplify_resolution))
                 };
             let inset = -(ext_perimeter_width as f64 / 2.0 - ext_perimeter_spacing as f64 / 2.0);
+            if crate::probe_enabled("AWDELTA") {
+                use std::sync::Mutex;
+                static SEEN: Mutex<Vec<(i64, i64, i64)>> = Mutex::new(Vec::new());
+                let key = (ext_perimeter_width, ext_perimeter_spacing, inset as i64);
+                if let Ok(mut v) = SEEN.lock() {
+                    if !v.contains(&key) {
+                        v.push(key);
+                        eprintln!("AWDELTA ext_w={} ext_sp={} inset={:.3}", ext_perimeter_width, ext_perimeter_spacing, inset);
+                    }
+                }
+            }
             let last = if crate::faithful_gate("ARACHNE_NO_PRE_UNION") {
                 // PerimeterGenerator.cpp:1511 — offset the raw simplify_p polygons.
-                crate::clipper_utils::offset_polygons(
-                    &if crate::opt_in_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
-                        simplify_faithful(surface)
-                    } else {
-                        surface.simplify_p(surface_simplify_resolution)
-                    },
-                    inset / crate::SCALING_FACTOR,
-                    self.config.join_type,
-                )
+                let simplified_polys = if crate::opt_in_gate("ARACHNE_SIMPLIFY_FAITHFUL") {
+                    simplify_faithful(surface)
+                } else {
+                    surface.simplify_p(surface_simplify_resolution)
+                };
+                if crate::faithful_gate("ARACHNE_OFFSET_CLIB") {
+                    // R775 — the vertex-exact `offset_ex(Polygons, float delta)`
+                    // (per-path raw_offset + polytree shrink reconstruction). The
+                    // geo route re-gridded every boundary at 1µm — AWIN measured
+                    // ~0.7µm/pt drift on EVERY WallToolPaths input, which then
+                    // shifted every arachne junction. delta f32-rounded like the
+                    // C++ float parameter.
+                    crate::clipper_utils::offset_ex_polygons_clib(
+                        &simplified_polys,
+                        (inset as f32) as f64,
+                        self.config.join_type,
+                    )
+                } else {
+                    crate::clipper_utils::offset_polygons(
+                        &simplified_polys,
+                        inset / crate::SCALING_FACTOR,
+                        self.config.join_type,
+                    )
+                }
             } else {
                 offset_expolygons(
                     &simplified,

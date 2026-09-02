@@ -165,6 +165,21 @@ extern "C" {
     /// Free via [`cz_free_zpaths`].
     pub fn cz_union_ex(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
 
+    /// Faithful `offset_ex(const Polygons&, float delta)` (ClipperUtils.cpp:415):
+    /// per-path orientation-aware raw_offset, then PolyTree reconstruction
+    /// (NonZero union for delta > 0; the bounding-rect + pftNegative shrink trick
+    /// for delta < 0). `delta` is scaled (caller pre-rounds to f32 to match the
+    /// C++ float parameter); join_type 0=miter/1=round/2=square. Grouped output
+    /// like [`cz_union_ex`]. Free via [`cz_free_zpaths`].
+    pub fn cz_offset_ex_paths(
+        xy: *const i32,
+        lens: *const i32,
+        num: i32,
+        delta: f64,
+        join_type: i32,
+        miter_limit: f64,
+    ) -> CzZPaths;
+
     /// R320: faithful `variable_offset_inner_ex` (ClipperUtils.cpp:1390) —
     /// verbatim mitered per-vertex offset + Clipper1 NEGATIVE-fill cleanup.
     /// One ExPolygon (rings flat i32 xy + lens; ring 0 = contour) + per-ring

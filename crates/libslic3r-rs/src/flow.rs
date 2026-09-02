@@ -268,7 +268,17 @@ impl Flow {
     // re-routing scaling per-file.
     #[inline]
     pub fn scaled_width(&self) -> Coord {
-        scale(self.width)
+        // R775 (gate FLOW_SCALED_TRUNC): native `coord_t(scale_(m_width))` is a
+        // TRUNCATION of double(f32 width)/1e-5 — e.g. width 0.42: f32 round-trip
+        // gives 41999.998 scaled, native truncates to 41999 while the crate's
+        // rounding `scale()` returned 42000. The 1-unit width shifted the arachne
+        // `last` inset by 0.5 units, which moved EVERY WallToolPaths input point
+        // (AWIN median drift 1.00 unit/pt).
+        if crate::faithful_gate("FLOW_SCALED_TRUNC") {
+            ((self.width as f32) as f64 / crate::libslic3r::SCALING_FACTOR) as Coord
+        } else {
+            scale(self.width)
+        }
     }
 
     /// Get the extrusion height / layer height (mm).
@@ -289,7 +299,12 @@ impl Flow {
     // C++ coord_t(scale_(...)) (truncate-toward-zero, int32).
     #[inline]
     pub fn scaled_spacing(&self) -> Coord {
-        scale(self.spacing)
+        // R775 — see scaled_width: native truncates double(f32 spacing)/1e-5.
+        if crate::faithful_gate("FLOW_SCALED_TRUNC") {
+            ((self.spacing as f32) as f64 / crate::libslic3r::SCALING_FACTOR) as Coord
+        } else {
+            scale(self.spacing)
+        }
     }
 
     /// Get the nozzle diameter (mm).

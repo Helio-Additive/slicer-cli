@@ -969,6 +969,44 @@ impl WallToolPaths {
                 self.bead_width_x,
                 self.inset_count
             );
+            // R775 — full-coordinate dump of a signature-matched outline, for
+            // standalone repro of ST crashes (AWINDUMP=<sx> match).
+            if let Ok(want) = std::env::var("AWINDUMP") {
+                if want.parse::<i64>() == Ok(sx) {
+                    for p in &self.outline {
+                        let pts: Vec<String> =
+                            p.points.iter().map(|q| format!("{},{}", q.x(), q.y())).collect();
+                        eprintln!("AWINDUMP {}", pts.join(";"));
+                    }
+                }
+            }
+            // R775 — on-panic dump of the outline the CRASHING thread was
+            // processing (a plain "last AWIN line" is scrambled by rayon).
+            {
+                use std::cell::RefCell;
+                use std::sync::Once;
+                thread_local! {
+                    static LAST_OUTLINE: RefCell<String> = const { RefCell::new(String::new()) };
+                }
+                let mut s = format!("bw0={} bwx={} ic={} w0i={} lh={}", self.bead_width_0, self.bead_width_x, self.inset_count, self.wall_0_inset, self.layer_height);
+                for p in &self.outline {
+                    s.push(' ');
+                    let pts: Vec<String> =
+                        p.points.iter().map(|q| format!("{},{}", q.x(), q.y())).collect();
+                    s.push_str(&pts.join(";"));
+                }
+                LAST_OUTLINE.with(|l| *l.borrow_mut() = s);
+                static HOOK: Once = Once::new();
+                HOOK.call_once(|| {
+                    let prev = std::panic::take_hook();
+                    std::panic::set_hook(Box::new(move |info| {
+                        LAST_OUTLINE.with(|l| {
+                            eprintln!("AWINPANIC {}", l.borrow());
+                        });
+                        prev(info);
+                    }));
+                });
+            }
         }
 
         // WallToolPaths.cpp:446
