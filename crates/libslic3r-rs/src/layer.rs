@@ -67,6 +67,8 @@ pub static FVS_REGION_EMPTY: std::sync::atomic::AtomicUsize =
 pub static FVS_LINES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FVS_FLAG_OFF: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FVS_SELF_INT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_CLOSED_DUP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static FVS_CLOSED_NODUP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static FVS_NO_AREAS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// R481: detect_narrow_internal_solid_infill classification counters.
 pub static FVS_CAND: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

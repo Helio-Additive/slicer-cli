@@ -1625,9 +1625,12 @@ impl<'a> FillFloatingConcentric<'a> {
                 // grid.create({polyline.points}, scaled(10.), !all_extrusions[idx]->is_closed);
                 let mut grid = crate::edge_grid::EdgeGrid::new();
                 grid.set_bbox(bbox_line);
-                grid.create_from_polylines(
+                // Native: grid.create({polyline.points}, scaled(10.),
+                // !is_closed) — the closed flag keeps the raw closing edge.
+                grid.create_from_polylines_flag(
                     std::slice::from_ref(&polyline),
                     crate::scale(10.0),
+                    !all_extrusions[idx].is_closed,
                 );
                 // FillFloatingConcentric.cpp:699-700
                 if grid.has_intersecting_edges() {
@@ -1640,6 +1643,13 @@ impl<'a> FillFloatingConcentric<'a> {
             let force_no_detect = !detect_floating_vs || is_self_intersect;
             if crate::probe_enabled("FVS_DEBUG") {
                 use std::sync::atomic::Ordering::Relaxed;
+                if all_extrusions[idx].is_closed
+                    && thick_polyline.points.first() == thick_polyline.points.last()
+                {
+                    crate::layer::FVS_CLOSED_DUP.fetch_add(1, Relaxed);
+                } else if all_extrusions[idx].is_closed {
+                    crate::layer::FVS_CLOSED_NODUP.fetch_add(1, Relaxed);
+                }
                 crate::layer::FVS_LINES.fetch_add(1, Relaxed);
                 if !detect_floating_vs { crate::layer::FVS_FLAG_OFF.fetch_add(1, Relaxed); }
                 if is_self_intersect { crate::layer::FVS_SELF_INT.fetch_add(1, Relaxed); }

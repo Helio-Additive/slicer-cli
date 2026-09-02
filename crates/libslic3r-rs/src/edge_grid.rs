@@ -386,9 +386,23 @@ impl EdgeGrid {
                         let jcontour = &self.contours[jc];
                         let jp1 = *jcontour.segment_start(jpt);
                         let jp2 = *jcontour.segment_end(jpt);
-                        // EdgeGrid.cpp:1471-1473
-                        // skip the shared-endpoint adjacency case on the same contour.
-                        let adjacent = ic == jc && (ip1 == jp2 || jp1 == ip2);
+                        // EdgeGrid.cpp:1471-1473 — native skips adjacency by
+                        // POINTER equality (&ip1 == &jp2 || &jp1 == &ip2), i.e.
+                        // the same point SLOT, not the same value. Two segments
+                        // that merely touch at equal coordinates DO count as
+                        // intersecting (R799 — value-compare here made
+                        // has_intersecting_edges inert on arachne loops: rust
+                        // 0/11212 self-intersections vs native 8545/11195).
+                        let end_slot = |cont: &Contour, k: usize| -> usize {
+                            if k + 1 >= cont.points().len() { 0 } else { k + 1 }
+                        };
+                        let adjacent = if crate::faithful_gate("FVS_SELFX") {
+                            ic == jc
+                                && (ipt == end_slot(jcontour, jpt)
+                                    || jpt == end_slot(icontour, ipt))
+                        } else {
+                            ic == jc && (ip1 == jp2 || jp1 == ip2)
+                        };
                         if !adjacent
                             && crate::geometry::segments_intersect(ip1, ip2, jp1, jp2)
                         {
@@ -497,12 +511,29 @@ impl EdgeGrid {
     /// repeated last point is dropped.
     /// EdgeGrid.cpp:52-75
     pub fn create_from_polylines(&mut self, polylines: &[Polyline], resolution: i64) {
+        self.create_from_polylines_flag(polylines, resolution, true);
+    }
+
+    /// Native `create(const Polylines&, coord_t, bool open)` (EdgeGrid.cpp:50-75):
+    /// `open == false` stores each polyline as a CLOSED contour with its points
+    /// AS-IS — a duplicated first==last point keeps a degenerate closing edge,
+    /// exactly like native (feeds the pointer-adjacency semantics above).
+    pub fn create_from_polylines_flag(
+        &mut self,
+        polylines: &[Polyline],
+        resolution: i64,
+        open: bool,
+    ) {
         self.contours = Vec::new();
         for polyline in polylines {
             let pts = polyline.points();
             // EdgeGrid.cpp:58 — only points with size > 1.
             if pts.len() > 1 {
-                self.contours.push(Self::contour_from_open_points(pts));
+                if open {
+                    self.contours.push(Self::contour_from_open_points(pts));
+                } else {
+                    self.contours.push(Contour::new_closed(pts.to_vec()));
+                }
             }
         }
         self.create_from_contours(resolution);

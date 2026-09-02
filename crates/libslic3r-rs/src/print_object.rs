@@ -4225,9 +4225,10 @@ lines={} grown_polys={} grown_verts={}",
                     crate::layer::FVS_CLIP_EMPTY.load(R4),
                 );
                 eprintln!(
-                    "FVS_SPLIT: beads={} flag_off={} self_intersect={} no_floating_areas={}",
+                    "FVS_SPLIT: beads={} flag_off={} self_intersect={} no_floating_areas={} closed_dup={} closed_nodup={}",
                     crate::layer::FVS_LINES.load(R4), crate::layer::FVS_FLAG_OFF.load(R4),
                     crate::layer::FVS_SELF_INT.load(R4), crate::layer::FVS_NO_AREAS.load(R4),
+                    crate::layer::FVS_CLOSED_DUP.load(R4), crate::layer::FVS_CLOSED_NODUP.load(R4),
                 );
                 eprintln!(
                     "FVS_NO_OVERLAP: group_fills saw {} first-surface regions, {} with an EMPTY LayerRegion::fill_no_overlap_expolygons",
