@@ -640,6 +640,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "boost-voronoi-sys"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "boostvoronoi"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3007,6 +3014,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitflags",
+ "boost-voronoi-sys",
  "boostvoronoi",
  "chrono",
  "clap",
