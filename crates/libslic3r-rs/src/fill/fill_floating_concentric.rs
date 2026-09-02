@@ -641,6 +641,23 @@ pub fn floating_thick_polyline_to_extrusion_paths(
     }
 
     // FillFloatingConcentric.cpp:202
+    if crate::probe_enabled("FVSPROBE") {
+        let all = floating_polyline.floating_thicklines();
+        let nfl = all.iter().filter(|l| l.is_a_floating && l.is_b_floating).count();
+        let fp = floating_polyline
+            .points
+            .first()
+            .copied()
+            .unwrap_or_else(|| crate::geometry::Point::new(0, 0));
+        eprintln!(
+            "FVSPROBE n={} fl={} out={} p0={},{}",
+            all.len(),
+            nfl,
+            paths.len(),
+            fp.x,
+            fp.y
+        );
+    }
     paths
 }
 
