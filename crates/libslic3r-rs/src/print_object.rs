@@ -1010,6 +1010,18 @@ impl PrintObject {
             }
             _ => None,
         };
+        // R785 FINDING (code removed as insufficient): native projects painted
+        // facets through Transform3f(trafo()*get_matrix()) — for the Majora 3MF
+        // this is a FULL 3D ROTATION (TRDUMP: x->-z tilt combo, translation
+        // (0,0,98.46), center_offset (2248446,1698337)), not a translate. The
+        // f32 rotation matmul over volume-LOCAL verts (the R85 Eigen wall)
+        // cannot be reproduced from our f64-baked placed vertices — a plain
+        // center round-trip moved only 9/2425 painted lines. The faithful fix
+        // needs (a) the raw local painted submeshes + the instance/volume
+        // matrices threaded from the 3MF loader and (b) an eigen-shim entry for
+        // the plain f32 affine apply. Until then the ±1-unit painted-line
+        // endpoint drift (PLDUMP lid385: 296/2425 byte-common) remains the
+        // Majora colored-boundary noise floor.
         let segmented = crate::multi_material_segmentation::multi_material_segmentation_by_painting_tier1(
             &layer_slices,
             &layer_zs,
