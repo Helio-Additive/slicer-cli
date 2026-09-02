@@ -2890,7 +2890,41 @@ impl Layer {
                 let emitter_pair_grid = is_grid;
                 let mut pair_boundary: Vec<crate::geometry::Polygon> = Vec::new();
 
+                // R791 (gate GYROID_FSS) — the faithful FillGyroid::
+                // _fill_surface_single: rotate the expolygon by −(angle +
+                // CorrectionAngle), generate + clip + prune + CONNECT in the
+                // rotated frame, rotate back (FillGyroid.cpp:151-210). The
+                // legacy arm below generated and connected UNROTATED, which
+                // moved every boundary-anchor vertex (R789/R790).
+                let mut fss_connected = false;
                 let generated = match fill_pattern {
+                    InfillPattern::Gyroid if crate::faithful_gate("GYROID_FSS") => {
+                        // R456: rust SurfaceFillParams.spacing carries the flow
+                        // WIDTH here; native f->spacing receives the flow
+                        // SPACING — flow.spacing() is the faithful source.
+                        // Native f->angle is RADIANS (Fill.cpp deg2rad of
+                        // infill_direction); rust SurfaceFillParams.angle is
+                        // DEGREES (group_fills copies fill_angle raw).
+                        let mut fill = crate::fill::fill_gyroid::FillGyroid::new(
+                            (surface_fill.params.angle as f64).to_radians() as f32,
+                            self.print_z,
+                            surface_fill.params.flow.spacing(),
+                        );
+                        let mut fp = crate::fill::FillParams::new();
+                        fp.density = density;
+                        fp.anchor_length = surface_fill.params.anchor_length as f64;
+                        fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
+                        let mut out: Vec<crate::geometry::Polyline> = Vec::new();
+                        fill.fill_surface_single(
+                            &fp,
+                            1,
+                            &(0.0f32, crate::geometry::Point::new(0, 0)),
+                            expoly.clone(),
+                            &mut out,
+                        );
+                        fss_connected = true;
+                        out.into_iter().map(InfillPath::Line).collect()
+                    }
                     _ if emitter_pair_grid => {
                         let (raw, boundary) =
                             crate::fill::fill_rectilinear::generate_grid_raw_lines(
@@ -3211,7 +3245,7 @@ impl Layer {
                         &fp,
                     );
                     polylines = connected;
-                } else if infill_config.connect_infill && !is_monotonic {
+                } else if infill_config.connect_infill && !is_monotonic && !fss_connected {
                     let mut connected = Vec::new();
                     if crate::faithful_gate("FILL_CONNECT_FAITHFUL") {
                         // C++ Fill::fill_surface_single ends by calling
