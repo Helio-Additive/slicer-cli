@@ -2521,6 +2521,17 @@ impl Layer {
         // C++: for (SurfaceFill &surface_fill : surface_fills)
         let __fl_t = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
         for surface_fill in surface_fills {
+            // R778 — per-surface_fill census: role/pattern/expolygon count.
+            if crate::probe_enabled("FILLSF") {
+                eprintln!(
+                    "FILLSF z={:.2} role={:?} pattern={:?} nexp={} bridge={}",
+                    self.print_z,
+                    surface_fill.params.extrusion_role,
+                    surface_fill.params.pattern,
+                    surface_fill.expolygons.len(),
+                    surface_fill.params.bridge
+                );
+            }
             // Fill.cpp:607-632
             // Create the filler object
             // C++: std::unique_ptr<Fill> f = std::unique_ptr<Fill>(Fill::new_from_type(surface_fill.params.pattern));

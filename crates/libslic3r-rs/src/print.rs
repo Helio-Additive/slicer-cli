@@ -3709,6 +3709,26 @@ fn emit_layer_by_island(
         if !skip_infill {
             for ent in &region.fills.entities {
                 if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+                    // R778 — which island does each fill EEC land in?
+                    if crate::probe_enabled("ISLPROBE") {
+                        let mut idx = layer.lslices.len();
+                        for i in 0..layer.lslices.len() {
+                            if layer.lslices[i].contour.contains_point(&fp) {
+                                idx = i;
+                                break;
+                            }
+                        }
+                        eprintln!(
+                            "ISLPROBE z={:.2} region={} role={:?} fp=({},{}) island={}{}",
+                            layer.print_z,
+                            region_id,
+                            format!("{:?}", crate::gcode::exporter::get_entity_role(ent)),
+                            fp.x,
+                            fp.y,
+                            idx,
+                            if idx == layer.lslices.len() { " CATCH-ALL" } else { "" }
+                        );
+                    }
                     assign(&mut islands, region_id, fp, ent.clone(), 1, -1);
                 }
             }

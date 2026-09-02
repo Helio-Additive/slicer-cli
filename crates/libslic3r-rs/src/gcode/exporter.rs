@@ -1350,7 +1350,7 @@ pub fn get_entity_first_point(entity: &ExtrusionEntityType) -> Option<Point> {
 
 /// Helper to extract role from ExtrusionEntityType
 /// GCode.cpp:2100-2120 (role accessor methods)
-fn get_entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
+pub(crate) fn get_entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
     match entity {
         ExtrusionEntityType::Path(path) => path.role,
         ExtrusionEntityType::Loop(loop_entity) => {
