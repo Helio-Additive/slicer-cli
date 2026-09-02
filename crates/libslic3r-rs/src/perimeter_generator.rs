@@ -3797,9 +3797,22 @@ impl PerimeterGenerator {
                             }
                         }
                     }
+                    let (mut sv, mut sx2, mut sy2) = (0i64, 0i64, 0i64);
+                    sv += surface.contour.points.len() as i64;
+                    for pt in &surface.contour.points {
+                        sx2 = sx2.wrapping_add(pt.x());
+                        sy2 = sy2.wrapping_add(pt.y());
+                    }
+                    for h in &surface.holes {
+                        sv += h.points.len() as i64;
+                        for pt in &h.points {
+                            sx2 = sx2.wrapping_add(pt.x());
+                            sy2 = sy2.wrapping_add(pt.y());
+                        }
+                    }
                     eprintln!(
-                        "AWALL lid={} nl={} nj={} jx={} jy={} jw={}",
-                        self.config.layer_id, nl, nj, jx, jy, jw
+                        "AWALL lid={} surf={}/{}/{} nl={} nj={} jx={} jy={} jw={}",
+                        self.config.layer_id, sv, sx2, sy2, nl, nj, jx, jy, jw
                     );
                 }
                 // R659 — distinct junction widths produced for THIS layer, so the
