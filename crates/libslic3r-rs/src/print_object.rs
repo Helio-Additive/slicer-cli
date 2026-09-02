@@ -282,6 +282,11 @@ pub struct PrintObject {
     /// states omitted; empty vec = no painting (or loader predates R768).
     pub painted_submeshes_strict: Vec<(u8, crate::normal_utils::indexed_triangle_set)>,
 
+    /// R786 — the scaled XY offset stripped from the paint-frame transform
+    /// (native's `center_offset`); the painted-line construction adds it back
+    /// as an integer translate. None when the paint frame is inactive.
+    pub paint_frame_offset: Option<(i64, i64)>,
+
     /// R770 — raw per-layer negative-volume slices (index-aligned with
     /// `layers`), captured during the R704 subtraction for the MM
     /// segmentation's fill + clip-back flow (cpp `neg_slices`, MMS.cpp:2217).
@@ -319,6 +324,7 @@ impl PrintObject {
             painted_submeshes: Vec::new(),
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
+            paint_frame_offset: None,
             num_total_filaments: 1,
         }
     }
@@ -347,6 +353,7 @@ impl PrintObject {
             painted_submeshes: Vec::new(),
             painted_submeshes_strict: Vec::new(),
             mm_negative_layer_slices: Vec::new(),
+            paint_frame_offset: None,
             num_total_filaments: 1,
         }
     }
@@ -930,7 +937,12 @@ impl PrintObject {
         // (0,0). slice_center_offset is the unscaled (mm) center (self set at slice());
         // new_scale() re-scales it to the painted-line coordinate space. Keeping this in
         // lock-step with the slicer's decision is what preserves painted-region overlap.
-        let mms_center_offset = if crate::faithful_gate("SLICE_CENTER")
+        // R786 — when the paint frame is active, painted lines are built in
+        // native's centered frame; add the stripped XY offset back as the
+        // (negated) center_offset integer translate.
+        let mms_center_offset = if let Some((ox, oy)) = self.paint_frame_offset {
+            crate::geometry::Point::new(-ox, -oy)
+        } else if crate::faithful_gate("SLICE_CENTER")
             && (self.slice_center_offset.0 != 0.0 || self.slice_center_offset.1 != 0.0)
         {
             crate::geometry::Point::new_scale(

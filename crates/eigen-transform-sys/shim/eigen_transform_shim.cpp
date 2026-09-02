@@ -48,6 +48,27 @@ extern "C" void eigen_transform_verts_unified(const double *trafo16, double scal
     }
 }
 
+// R786 — plain f32 affine apply: `out = Transform3f(trafo16) * v` per vertex,
+// NO prescale, NO voff. Replicates MultiMaterialSegmentation.cpp:2303's
+// `facet[p] = tr * vertices[idx]` (tr = (trafo() * get_matrix()).cast<float>())
+// with the exact Eigen f32 codegen (rotation matmul = the R85 1-ULP wall).
+extern "C" void eigen_transform_verts_affine_f32(const double *trafo16,
+                                                 const float *verts_in, float *verts_out,
+                                                 int32_t n) {
+    Transform3d trafo;
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c)
+            trafo.matrix()(r, c) = trafo16[r * 4 + c];
+    Transform3f tf = trafo.cast<float>();
+    for (int32_t i = 0; i < n; ++i) {
+        stl_vertex v(verts_in[3 * i], verts_in[3 * i + 1], verts_in[3 * i + 2]);
+        v = tf * v;
+        verts_out[3 * i] = v.x();
+        verts_out[3 * i + 1] = v.y();
+        verts_out[3 * i + 2] = v.z();
+    }
+}
+
 extern "C" void eigen_transform_verts_for_slicing(double scaling_factor, double cx,
                                                   double cy, const float *verts_in,
                                                   float *verts_out, int32_t n) {

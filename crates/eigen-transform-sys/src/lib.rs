@@ -22,6 +22,15 @@ extern "C" {
         n: i32,
     );
 
+    /// R786 — plain f32 affine apply (`Transform3f(trafo16) * v`), no prescale,
+    /// no voff. The painted-facet projection transform.
+    pub fn eigen_transform_verts_affine_f32(
+        trafo16: *const f64,
+        verts_in: *const f32,
+        verts_out: *mut f32,
+        n: i32,
+    );
+
     /// R87 frame-unification: `slice_vert = prescale·params2.trafo·(rust_raw − voff)`.
     /// `trafo16` = f64 params2.trafo (row-major 4x4). Bit-exact via real Eigen.
     pub fn eigen_transform_verts_unified(
@@ -34,6 +43,16 @@ extern "C" {
         verts_out: *mut f32,
         n: i32,
     );
+}
+
+/// Safe wrapper for [`eigen_transform_verts_affine_f32`].
+pub fn transform_verts_affine_f32(trafo16: &[f64; 16], verts_in: &[f32]) -> Vec<f32> {
+    let n = (verts_in.len() / 3) as i32;
+    let mut out = vec![0.0f32; verts_in.len()];
+    unsafe {
+        eigen_transform_verts_affine_f32(trafo16.as_ptr(), verts_in.as_ptr(), out.as_mut_ptr(), n);
+    }
+    out
 }
 
 /// Safe wrapper for [`eigen_transform_verts_unified`].

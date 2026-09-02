@@ -202,6 +202,8 @@ pub fn slice_3mf_to_gcode(
         identify_ids,
         mmu_facets,
         negative_mesh,
+        paint_segments,
+        paint_raw_vertices,
     } = load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     info!("Loaded {} triangles", mesh.triangle_count());
     // R703 — negative volumes are loaded but NOT yet subtracted; the per-layer
@@ -276,9 +278,115 @@ pub fn slice_3mf_to_gcode(
     let mut painted_submeshes: Vec<(u8, crate::normal_utils::indexed_triangle_set)> = Vec::new();
     let mut painted_submeshes_strict: Vec<(u8, crate::normal_utils::indexed_triangle_set)> =
         Vec::new();
+    // R786 (gate MMS_PAINT_FRAME) — rebuild the mesh vertices the way NATIVE's
+    // painted-facet projection sees them: per printable segment, local = f32(raw)
+    // − f32(volume bbox center); then the eigen shim applies
+    // Transform3f(dz ∘ loader_transform ∘ translate(center)) — the exact f32
+    // affine (rotation matmul included, the R85 wall) of MMS.cpp:2303. The
+    // painted sub-meshes extracted below then carry native's f32 vertex values,
+    // making the painted-line endpoints byte-comparable.
+    let mut paint_frame_offset: Option<(i64, i64)> = None;
+    let paint_mesh: Option<TriangleMesh> = if crate::opt_in_gate("MMS_PAINT_FRAME")
+        && !mmu_facets.is_empty()
+        && !paint_segments.is_empty()
+        && paint_raw_vertices.len() == mesh.vertices().len()
+    {
+        let dz_applied = {
+            // The bed-drop applied above: recover from current mesh bbox vs raw?
+            // The translate ran just before this block; capture via closure is
+            // simpler: recompute dz the same way (min z of the ORIGINAL placed
+            // verts). The mesh was translated in place, so derive dz from the
+            // difference between mesh verts and apply_transform(raw)... Instead
+            // the loader's placed z-min: dz = -(placed_min_z), where placed =
+            // segment transform applied to raw. Compute it directly:
+            let mut minz = f64::MAX;
+            for &(off, n, ref tf) in &paint_segments {
+                for v in &paint_raw_vertices[off..off + n] {
+                    let z = tf[6] * v.x + tf[7] * v.y + tf[8] * v.z + tf[11];
+                    if z < minz {
+                        minz = z;
+                    }
+                }
+            }
+            if minz.is_finite() {
+                -minz
+            } else {
+                0.0
+            }
+        };
+        let mut new_verts: Vec<Point3F> = mesh.vertices().to_vec();
+        for &(off, n, ref tf) in &paint_segments {
+            let raw = &paint_raw_vertices[off..off + n];
+            // Volume bbox center over the f32 raw verts (native centers the
+            // volume mesh; f64 midpoint of f32 extremes).
+            let (mut xl, mut yl, mut zl) = (f32::MAX, f32::MAX, f32::MAX);
+            let (mut xh, mut yh, mut zh) = (f32::MIN, f32::MIN, f32::MIN);
+            for v in raw {
+                let (x, y, z) = (v.x as f32, v.y as f32, v.z as f32);
+                xl = xl.min(x);
+                xh = xh.max(x);
+                yl = yl.min(y);
+                yh = yh.max(y);
+                zl = zl.min(z);
+                zh = zh.max(z);
+            }
+            let c = (
+                (xl as f64 + xh as f64) * 0.5,
+                (yl as f64 + yh as f64) * 0.5,
+                (zl as f64 + zh as f64) * 0.5,
+            );
+            let (cf0, cf1, cf2) = (c.0 as f32, c.1 as f32, c.2 as f32);
+            let mut flat: Vec<f32> = Vec::with_capacity(n * 3);
+            for v in raw {
+                flat.push(v.x as f32 - cf0);
+                flat.push(v.y as f32 - cf1);
+                flat.push(v.z as f32 - cf2);
+            }
+            // trafo16 = translate(0,0,dz) ∘ tf(3x4 row-major) ∘ translate(c),
+            // with the XY translation QUANTIZED away à la FRAME_UNIFY: native's
+            // trafo() carries no XY (PrintApply resets it; the placement rides
+            // `center_offset = new_scale(xy)`, subtracted from the scaled ints).
+            // Keep only the sub-grid residue in the f32 transform and export the
+            // scaled integer offset so the projection can add it back losslessly.
+            let t = tf;
+            let tx = t[0] * c.0 + t[1] * c.1 + t[2] * c.2 + t[9];
+            let ty = t[3] * c.0 + t[4] * c.1 + t[5] * c.2 + t[10];
+            let tz = t[6] * c.0 + t[7] * c.1 + t[8] * c.2 + t[11] + dz_applied;
+            let sf = 0.00001f64;
+            let qx = ((tx / sf) as i64) as f64 * sf; // new_scale = trunc
+            let qy = ((ty / sf) as i64) as f64 * sf;
+            paint_frame_offset = Some((
+                paint_frame_offset.map_or((tx / sf) as i64, |o| o.0),
+                paint_frame_offset.map_or((ty / sf) as i64, |o| o.1),
+            ));
+            let trafo16: [f64; 16] = [
+                t[0], t[1], t[2], tx - qx, t[3], t[4], t[5], ty - qy, t[6], t[7], t[8], tz,
+                0.0, 0.0, 0.0, 1.0,
+            ];
+            let out = eigen_transform_sys::transform_verts_affine_f32(&trafo16, &flat);
+            for (i, ch) in out.chunks_exact(3).enumerate() {
+                new_verts[off + i] = Point3F {
+                    x: ch[0] as f64,
+                    y: ch[1] as f64,
+                    z: ch[2] as f64,
+                };
+            }
+        }
+        let tri_copy: Vec<crate::triangle_mesh::Triangle> = (0..mesh.triangle_count())
+            .map(|i| {
+                let idx = mesh.triangle_indices(i);
+                crate::triangle_mesh::Triangle::new(idx[0], idx[1], idx[2])
+            })
+            .collect();
+        Some(TriangleMesh::from_parts(new_verts, tri_copy))
+    } else {
+        None
+    };
     if !mmu_facets.is_empty() {
-        let mut selector =
-            crate::triangle_selector::TriangleSelector::new(mesh.clone(), 0.0);
+        let mut selector = crate::triangle_selector::TriangleSelector::new(
+            paint_mesh.clone().unwrap_or_else(|| mesh.clone()),
+            0.0,
+        );
         selector.deserialize(
             &mmu_facets.data,
             false,
@@ -319,6 +427,7 @@ pub fn slice_3mf_to_gcode(
         print_object.label_id = id;
     }
     print_object.painted_submeshes = painted_submeshes;
+    print_object.paint_frame_offset = paint_frame_offset;
     print_object.painted_submeshes_strict = painted_submeshes_strict;
     print_object.num_total_filaments = print_config.num_filaments();
     // R704 — negative volumes travel with the object and are subtracted per
@@ -396,6 +505,14 @@ pub struct Parsed3mfModel {
     /// Painted multi-material state per merged-mesh triangle — the pragmatic
     /// equivalent of C++ `ModelVolume::mmu_segmentation_facets` (Model.hpp:961).
     pub mmu_facets: FacetsAnnotation,
+    /// R786 — per printable instantiation: (merged-vertex offset, vertex count,
+    /// composed loader transform row-major 3x4). Together with the RAW vertices
+    /// (below) this reconstructs native's paint frame: local = f32(raw) −
+    /// f32(volume bbox center); tr = transform ∘ translate(center).
+    pub paint_segments: Vec<(usize, usize, [f64; 12])>,
+    /// R786 — RAW (untransformed) vertices aligned with the merged mesh's
+    /// vertex indices (only printable segments are populated).
+    pub paint_raw_vertices: Vec<Point3F>,
 }
 
 /// Everything the Tier-1 loader extracts from a `.3mf` archive.
@@ -420,6 +537,10 @@ pub struct Loaded3mf {
     /// subtraction can happen per layer in 2D, which is what C++ does — a 3D
     /// mesh boolean would NOT be the faithful shape.
     pub negative_mesh: TriangleMesh,
+    /// R786 — see [`Parsed3mfModel::paint_segments`].
+    pub paint_segments: Vec<(usize, usize, [f64; 12])>,
+    /// R786 — see [`Parsed3mfModel::paint_raw_vertices`].
+    pub paint_raw_vertices: Vec<Point3F>,
 }
 
 /// Load a [`TriangleMesh`] from a `.3mf` ZIP by parsing `3D/3dmodel.model`.
@@ -492,6 +613,8 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         identify_ids,
         mmu_facets: parsed.mmu_facets,
         negative_mesh: parsed.negative_mesh,
+        paint_segments: parsed.paint_segments,
+        paint_raw_vertices: parsed.paint_raw_vertices,
     })
 }
 
@@ -959,6 +1082,9 @@ pub fn parse_3mf_model_xml_with_negatives(
     // R703 — negative-volume geometry, kept apart from the printable mesh.
     let mut neg_vertices: Vec<Point3F> = Vec::new();
     let mut neg_triangles: Vec<Triangle> = Vec::new();
+    // R786 — paint-frame reconstruction data (see Parsed3mfModel fields).
+    let mut paint_segments: Vec<(usize, usize, [f64; 12])> = Vec::new();
+    let mut paint_raw_vertices: Vec<Point3F> = Vec::new();
 
     #[allow(clippy::too_many_arguments)]
     fn instantiate_object(
@@ -972,6 +1098,8 @@ pub fn parse_3mf_model_xml_with_negatives(
         negative_ids: &std::collections::HashSet<u32>,
         neg_vertices: &mut Vec<Point3F>,
         neg_triangles: &mut Vec<Triangle>,
+        paint_segments: &mut Vec<(usize, usize, [f64; 12])>,
+        paint_raw_vertices: &mut Vec<Point3F>,
     ) {
         if let Some(mesh_data) = objects.get(&obj_id) {
             // Non-printable objects (`type != "model"`, e.g. `type="other"`
@@ -1001,8 +1129,12 @@ pub fn parse_3mf_model_xml_with_negatives(
             // If object has a mesh, instantiate it
             if !mesh_data.vertices.is_empty() {
                 let v_offset = all_vertices.len() as u32;
+                // R786 — record the raw verts + the composed transform for this
+                // printable segment (native paint-frame reconstruction).
+                paint_segments.push((v_offset as usize, mesh_data.vertices.len(), *transform));
                 for v in &mesh_data.vertices {
                     all_vertices.push(apply_transform(v, transform));
+                    paint_raw_vertices.push(*v);
                 }
                 for (i, tri) in mesh_data.triangles.iter().enumerate() {
                     all_triangles.push(Triangle::new(
@@ -1027,6 +1159,8 @@ pub fn parse_3mf_model_xml_with_negatives(
                     negative_ids,
                     neg_vertices,
                     neg_triangles,
+                    paint_segments,
+                    paint_raw_vertices,
                 );
             }
         }
@@ -1037,6 +1171,8 @@ pub fn parse_3mf_model_xml_with_negatives(
         for (_, mesh_data) in &objects {
             if mesh_data.is_model && !mesh_data.vertices.is_empty() {
                 let v_offset = all_vertices.len() as u32;
+                paint_segments.push((v_offset as usize, mesh_data.vertices.len(), identity));
+                paint_raw_vertices.extend_from_slice(&mesh_data.vertices);
                 all_vertices.extend_from_slice(&mesh_data.vertices);
                 for (i, tri) in mesh_data.triangles.iter().enumerate() {
                     all_triangles.push(Triangle::new(
@@ -1061,6 +1197,8 @@ pub fn parse_3mf_model_xml_with_negatives(
                 negative_ids,
                 &mut neg_vertices,
                 &mut neg_triangles,
+                &mut paint_segments,
+                &mut paint_raw_vertices,
             );
         }
     }
@@ -1109,6 +1247,8 @@ pub fn parse_3mf_model_xml_with_negatives(
         );
     }
     Ok(Parsed3mfModel {
+        paint_segments,
+        paint_raw_vertices,
         mesh: TriangleMesh::from_parts(all_vertices, all_triangles),
         negative_mesh: TriangleMesh::from_parts(neg_vertices, neg_triangles),
         mmu_facets,
