@@ -1640,7 +1640,20 @@ impl<'a> FillFloatingConcentric<'a> {
             // FillFloatingConcentric.cpp:702
             // detect_floating_line(thick_polyline, floating_areas, default_width,
             //   !detect_floating_vertical_shell || is_self_intersect)
-            let force_no_detect = !detect_floating_vs || is_self_intersect;
+            // R801 — NATIVE UB: FFC.cpp:707-710 builds the self-intersect
+            // EdgeGrid from `{ polyline.points }`, a TEMPORARY vector<Points>;
+            // native Contour stores raw pointers into it, and
+            // has_intersecting_edges reads FREED memory (FVSDUMP4: garbage
+            // coords (0,0)-(0,0), always slots 1/3). The result: native's
+            // is_self_intersect fires on ~76% of loops as allocator noise and
+            // floating detection is EFFECTIVELY OFF (347/138,450 floating
+            // thicklines on Majora). Rust cannot reproduce use-after-free, so
+            // FVS_FORCE_NO_DETECT (faithful ON) mirrors native's dominant
+            // observable behaviour: skip detection. The exact-machinery arm
+            // (FVS_SELFX grid) stays for the day native fixes the UB.
+            let force_no_detect = !detect_floating_vs
+                || is_self_intersect
+                || crate::faithful_gate("FVS_FORCE_NO_DETECT");
             if crate::probe_enabled("FVS_DEBUG") {
                 use std::sync::atomic::Ordering::Relaxed;
                 if all_extrusions[idx].is_closed
