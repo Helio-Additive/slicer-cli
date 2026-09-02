@@ -2923,6 +2923,20 @@ impl Layer {
                             &mut out,
                         );
                         fss_connected = true;
+                        if let Ok(v) = std::env::var("FSSOUT") {
+                            if let Ok(zq) = v.parse::<f64>() {
+                                if (self.print_z - zq).abs() < 1e-6 {
+                                    for (pi, pl) in out.iter().enumerate() {
+                                        let pts: Vec<String> = pl
+                                            .points
+                                            .iter()
+                                            .map(|p| format!("({:.2},{:.2})", p.x as f64 * crate::libslic3r::SCALING_FACTOR, p.y as f64 * crate::libslic3r::SCALING_FACTOR))
+                                            .collect();
+                                        eprintln!("FSSOUT z={} pl={} n={} {}", zq, pi, pl.points.len(), pts.join(" "));
+                                    }
+                                }
+                            }
+                        }
                         out.into_iter().map(InfillPath::Line).collect()
                     }
                     _ if emitter_pair_grid => {
