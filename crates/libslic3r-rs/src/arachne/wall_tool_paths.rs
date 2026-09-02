@@ -954,6 +954,23 @@ impl WallToolPaths {
         };
         let agen_ic = self.inset_count;
 
+        // R774 AWIN — per-call WTP INPUT checksum (mirrors [CPP-AWIN]): pins
+        // the surfaces where the pre-WTP chain forks despite byte-exact
+        // perimeter inputs.
+        if crate::probe_enabled("AWIN") {
+            let (n, sx, sy) = agen_fp(&self.outline);
+            eprintln!(
+                "AWIN np={} pts={} sx={} sy={} bw0={} bwx={} ic={}",
+                self.outline.len(),
+                n,
+                sx,
+                sy,
+                self.bead_width_0,
+                self.bead_width_x,
+                self.inset_count
+            );
+        }
+
         // WallToolPaths.cpp:446
         let original_outline_size = self.outline.len();
         // WallToolPaths.cpp:447

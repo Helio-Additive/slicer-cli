@@ -3521,7 +3521,13 @@ impl PerimeterGenerator {
                 let generate_one_wall_by_top =
                     self.config.top_one_wall && self.config.upper_slices.is_some();
                 // PerimeterGenerator.cpp:1532  is_one_wall
-                let is_one_wall = if crate::opt_in_gate("ARACHNE_TOP_ONE_WALL") {
+                // R774 — flipped opt-in -> faithful default ON: with the gate off,
+                // rust made 2,000 WallToolPaths calls vs native 2,719 (AWIN census)
+                // because the per-surface SPECULATIVE one-wall pass (cpp:1896-1921,
+                // 733 ic=1 calls on benchy-arachne) never ran for Alltop configs.
+                // ON matches the call census exactly (2,722v2,719) and scores up on
+                // BOTH fixtures (benchy-arachne +770 in-order, Majora +80).
+                let is_one_wall = if crate::faithful_gate("ARACHNE_TOP_ONE_WALL") {
                     loop_number == 0
                         || generate_one_wall_by_first_layer
                         || generate_one_wall_by_top_most
@@ -3529,7 +3535,7 @@ impl PerimeterGenerator {
                     loop_number == 0
                 };
                 // PerimeterGenerator.cpp:1534
-                let mut seperate_wall_generation = crate::opt_in_gate("ARACHNE_TOP_ONE_WALL")
+                let mut seperate_wall_generation = crate::faithful_gate("ARACHNE_TOP_ONE_WALL")
                     && !is_one_wall
                     && generate_one_wall_by_top;
 
