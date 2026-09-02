@@ -164,6 +164,13 @@ impl LayerRegion {
 
         // LayerRegion.cpp:793-794
         // if (enable_arc_fitting && !spiral_mode) {
+        let arcprobe = crate::probe_enabled("ARCPROBE");
+        let ap_n_in = path.polyline.points.len();
+        let (ap_p0, ap_pe) = if ap_n_in > 0 {
+            (path.polyline.points[0], path.polyline.points[ap_n_in - 1])
+        } else {
+            (crate::geometry::Point::new(0, 0), crate::geometry::Point::new(0, 0))
+        };
         if enable_arc_fitting && !spiral_mode {
             // LayerRegion.cpp:795-798
             // if (path->role() == erInternalInfill)
@@ -179,6 +186,24 @@ impl LayerRegion {
             // LayerRegion.cpp:800
             // path->simplify(scaled_resolution);
             path.simplify(scaled_resolution);
+        }
+        if arcprobe {
+            let mut ap_arcs = 0usize;
+            let mut ap_lins = 0usize;
+            for fr in &path.polyline.fitting_result {
+                if matches!(fr.path_type, crate::arc_fitter::EMovePathType::LinearMove) {
+                    ap_lins += 1;
+                } else {
+                    ap_arcs += 1;
+                }
+            }
+            eprintln!(
+                "ARCPROBE r={:?} n={} p0={},{} pe={},{} arcs={} lins={} nout={}",
+                path.role,
+                ap_n_in, ap_p0.x, ap_p0.y, ap_pe.x, ap_pe.y,
+                ap_arcs, ap_lins,
+                path.polyline.points.len()
+            );
         }
     }
 
