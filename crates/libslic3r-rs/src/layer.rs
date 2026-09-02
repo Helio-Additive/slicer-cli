@@ -3310,7 +3310,12 @@ impl Layer {
                 // fills via ipRectilinear) returns false. The flag decides whether
                 // GCode Region::append flattens the collection for the nearest-
                 // neighbor fill chain (ISLAND_FLATTEN).
-                collection.no_sort = crate::opt_in_gate("ISLAND_FLATTEN")
+                // R780 — flipped default ON: without the flag, the emission-side
+                // chained_path_from re-chained INSIDE concentric/monotonic
+                // collections whose internal order native preserves (no_sort=true
+                // fillers, FillBase.hpp:149 overrides). A/B: benchy-arachne content
+                // +5,892 / in-order +1,481; Majora and benchy classic neutral.
+                collection.no_sort = crate::faithful_gate("FILL_NO_SORT")
                     && !surface_fill.params.bridge
                     && matches!(
                         fill_pattern,
