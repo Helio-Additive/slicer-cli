@@ -959,6 +959,22 @@ impl<'a> SkeletalTrapezoidation<'a> {
         // SkeletalTrapezoidation.cpp:553 updateIsCentral();
         self.update_is_central();
         self.central_census("0 after updateIsCentral");
+        // R773 TBARACH — dump the (deterministic) 72-node surface's full graph
+        // state after key stages, mirroring the cpp probe.
+        let tbarach = crate::probe_enabled("TBARACH")
+            && self
+                .graph
+                .nodes
+                .iter()
+                .any(|n| n.base.p.x == 1062038 && n.base.p.y == 857217)
+            && {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static ONCE: AtomicBool = AtomicBool::new(false);
+                !ONCE.swap(true, Ordering::Relaxed)
+            };
+        if tbarach {
+            self.tbarach_dump("s0");
+        }
 
         // SkeletalTrapezoidation.cpp:559 filterCentral(central_filter_dist);
         self.filter_central(CENTRAL_FILTER_DIST);
@@ -973,6 +989,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
         // SkeletalTrapezoidation.cpp:568 updateBeadCount();
         self.update_bead_count();
         self.central_census("2 after updateBeadCount");
+        if tbarach {
+            self.tbarach_dump("s2");
+        }
 
         // SkeletalTrapezoidation.cpp:574 filterNoncentralRegions();
         self.filter_noncentral_regions();
@@ -4999,6 +5018,39 @@ impl SkeletalTrapezoidation<'_> {
     /// `edge.to` of every central edge (`update_bead_count`), so this separates
     /// "we mark fewer edges central" from "we mark the same edges and assign
     /// `bead_count <= 0` more often".
+    // R773 — full-graph state dump for the TBARACH first-surface drill;
+    // sorted so both engines' outputs diff line-by-line.
+    pub(crate) fn tbarach_dump(&self, stage: &str) {
+        let mut lines: Vec<String> = Vec::new();
+        for n in self.graph.nodes.iter() {
+            lines.push(format!(
+                "TBARACH N {} {} {} bc={}",
+                stage, n.base.p.x, n.base.p.y, n.base.data.bead_count
+            ));
+        }
+        for e in self.graph.edges.iter() {
+            let (fx, fy, tx, ty) = unsafe {
+                let f = e.base.from.unwrap().as_ref();
+                let t = e.base.to.unwrap().as_ref();
+                (f.p.x, f.p.y, t.p.x, t.p.y)
+            };
+            let c = if e.base.data.central_is_set() {
+                if e.base.data.is_central() {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                -1
+            };
+            lines.push(format!("TBARACH E {} {} {} {} {} c={}", stage, fx, fy, tx, ty, c));
+        }
+        lines.sort();
+        for l in lines {
+            eprintln!("{l}");
+        }
+    }
+
     pub(crate) fn central_census(&self, stage: &str) {
         if !crate::probe_enabled("CENTRALPROBE") {
             return;
