@@ -3698,6 +3698,12 @@ pub fn multi_material_segmentation_by_painting_tier1(
 
                 // cpp:2270-2271
                 let t = (slice_z_f - facet[0].z) / (facet[2].z - facet[0].z);
+                // R783 NOTE: an FMA-fused variant of these lerps (mul_add per
+                // component, matching a hypothetical clang fp-contract of the
+                // Eigen expression) was A/B'd and was BYTE-INERT — the projection
+                // lerp is NOT the source of the 1-30 unit colored-boundary vertex
+                // drift (TBPROBE8V lid385). The drift enters later in the painted
+                // -line chain (post_process/colorize discrete decisions).
                 let line_start_f = facet[0] + (facet[2] - facet[0]) * t;
 
                 // cpp:2274-2287
@@ -3953,6 +3959,15 @@ pub fn multi_material_segmentation_by_painting_tier1(
                     e.holes.len(),
                     e.area()
                 );
+                if crate::probe_enabled("TBPROBE8V") {
+                    let pts: Vec<String> = e
+                        .contour
+                        .points()
+                        .iter()
+                        .map(|p| format!("{},{}", p.x, p.y))
+                        .collect();
+                    eprintln!("TBPROBE8V lid={} c={} i={} {}", lid, c, i, pts.join(";"));
+                }
             }
         }
     }
