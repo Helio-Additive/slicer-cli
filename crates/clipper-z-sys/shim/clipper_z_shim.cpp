@@ -592,6 +592,35 @@ ClipperLib::Paths cz_safety_offset(const ClipperLib::Paths &paths) {
 
 } // namespace
 
+// R792 — faithful `_clipper_pl_open(ctIntersection, subject, clip)`
+// (ClipperUtils.cpp:841-849, the intersection_pl family): OPEN subject
+// polylines against closed clip polygons, Execute into a PolyTree
+// (pftNonZero/pftNonZero), then the PolyTreeToPolylines preorder flatten
+// (ClipperUtils.cpp:213-229 — parent contour before children).
+extern "C" CzZPaths cz_intersection_pl(const int32_t *subject_xy, const int32_t *subject_lens,
+                                       int32_t subject_num, const int32_t *clip_xy,
+                                       const int32_t *clip_lens, int32_t clip_num) {
+    ClipperLib::Paths subject = read_closed_paths(subject_xy, subject_lens, subject_num);
+    ClipperLib::Paths clip = read_closed_paths(clip_xy, clip_lens, clip_num);
+
+    ClipperLib::Clipper clipper;
+    clipper.AddPaths(subject, ClipperLib::ptSubject, false);
+    clipper.AddPaths(clip, ClipperLib::ptClip, true);
+    ClipperLib::PolyTree tree;
+    clipper.Execute(ClipperLib::ctIntersection, tree, ClipperLib::pftNonZero,
+                    ClipperLib::pftNonZero);
+
+    ClipperLib::Paths out;
+    struct Rec {
+        static void add(ClipperLib::PolyNode &node, ClipperLib::Paths &o) {
+            if (!node.Contour.empty()) o.push_back(node.Contour);
+            for (ClipperLib::PolyNode *child : node.Childs) add(*child, o);
+        }
+    };
+    Rec::add(tree, out);
+    return marshal_paths(out);
+}
+
 extern "C" CzZPaths cz_difference_closed_safety(const int32_t *subject_xy, const int32_t *subject_lens,
                                                 int32_t subject_num, const int32_t *clip_xy,
                                                 const int32_t *clip_lens, int32_t clip_num) {

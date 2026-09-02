@@ -176,6 +176,12 @@ CzZPaths cz_intersection_closed(const int32_t *subject_xy, const int32_t *subjec
                                 int32_t subject_num, const int32_t *clip_xy,
                                 const int32_t *clip_lens, int32_t clip_num);
 
+// R792 — _clipper_pl_open(ctIntersection): open subject polylines clipped by
+// closed polygons; PolyTree preorder output (ClipperUtils.cpp:841/213).
+CzZPaths cz_intersection_pl(const int32_t *subject_xy, const int32_t *subject_lens,
+                            int32_t subject_num, const int32_t *clip_xy,
+                            const int32_t *clip_lens, int32_t clip_num);
+
 // Faithful replica of libslic3r FillFloatingConcentric.cpp `detect_floating_line`
 // (FillFloatingConcentric.cpp:431-475): the Z-aware open-path clip used to mark
 // which segments of a thick polyline fall in the floating (unsupported) area.

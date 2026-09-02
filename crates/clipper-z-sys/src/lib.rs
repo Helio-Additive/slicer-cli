@@ -135,6 +135,17 @@ extern "C" {
         clip_num: i32,
     ) -> CzZPaths;
 
+    /// R792 — faithful `_clipper_pl_open(ctIntersection)` (ClipperUtils.cpp:841):
+    /// OPEN subject polylines vs closed clip polygons; PolyTree preorder output.
+    pub fn cz_intersection_pl(
+        subject_xy: *const i32,
+        subject_lens: *const i32,
+        subject_num: i32,
+        clip_xy: *const i32,
+        clip_lens: *const i32,
+        clip_num: i32,
+    ) -> CzZPaths;
+
     /// Faithful `detect_floating_line` Z-clipper (FillFloatingConcentric.cpp:431-475):
     /// runs the ClipperLib_Z Clipper twice on the same inputs (ctIntersection +
     /// ctDifference) under the detect_floating_line ZFillFunction (tags intersection

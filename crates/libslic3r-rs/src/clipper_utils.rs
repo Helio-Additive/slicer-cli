@@ -2861,6 +2861,15 @@ pub fn intersection_pl(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyli
         return vec![];
     }
 
+    // R792 (gate CLIB_INTERSECTION_PL) — the vendored-ClipperLib open-path clip
+    // (_clipper_pl_open ctIntersection, ClipperUtils.cpp:841): ONE Execute over
+    // all subjects+clips with the PolyTree preorder output, replacing this
+    // hand-rolled per-segment clipper whose crossing points and path order both
+    // deviate from native.
+    if crate::faithful_gate("CLIB_INTERSECTION_PL") {
+        return intersection_pl_clib(polylines, clip);
+    }
+
     let mut result = Vec::new();
 
     for polyline in polylines {
@@ -2869,6 +2878,67 @@ pub fn intersection_pl(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyli
     }
 
     result
+}
+
+/// R792 — `intersection_pl(Polylines, ExPolygons)` via the vendored ClipperLib
+/// (cz_intersection_pl): open subjects, closed clips, pftNonZero, PolyTree
+/// preorder flatten (ClipperUtils.cpp:841-849 + 213-229).
+pub fn intersection_pl_clib(polylines: &[Polyline], clip: &[ExPolygon]) -> Vec<Polyline> {
+    let mut subject_xy: Vec<i32> = Vec::new();
+    let mut subject_lens: Vec<i32> = Vec::new();
+    for pl in polylines {
+        if pl.points.len() < 2 {
+            continue;
+        }
+        subject_lens.push(pl.points.len() as i32);
+        for p in &pl.points {
+            subject_xy.push(p.x as i32);
+            subject_xy.push(p.y as i32);
+        }
+    }
+    let (clip_xy, clip_lens, clip_num) = clib_flatten_expolygons(clip);
+    if subject_lens.is_empty() || clip_num == 0 {
+        return vec![];
+    }
+
+    // SAFETY: pointers reference live, correctly-sized Vecs; the shim only reads them.
+    let raw = unsafe {
+        clipper_z_sys::cz_intersection_pl(
+            subject_xy.as_ptr(),
+            subject_lens.as_ptr(),
+            subject_lens.len() as i32,
+            clip_xy.as_ptr(),
+            clip_lens.as_ptr(),
+            clip_num,
+        )
+    };
+
+    let mut out: Vec<Polyline> = Vec::with_capacity(raw.num_paths.max(0) as usize);
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        // SAFETY: shim guarantees path_lens has num_paths entries and coords has
+        // 3*total_points i32s with sum(path_lens) == total_points.
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                let x = coords[cursor * 3] as i64;
+                let y = coords[cursor * 3 + 1] as i64;
+                pts.push(Point::new(x, y));
+                cursor += 1;
+            }
+            if pts.len() >= 2 {
+                out.push(Polyline::from_points(pts));
+            }
+        }
+    }
+    // SAFETY: `raw` was produced by cz_intersection_pl and not freed yet.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    out
 }
 
 /// Compute intersection of a single polyline with ExPolygons.
