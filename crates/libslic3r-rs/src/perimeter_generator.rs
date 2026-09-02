@@ -3748,6 +3748,28 @@ impl PerimeterGenerator {
                     total_perimeters = normal_paths.get_tool_paths().clone();
                     surface_infill = union_polygons_ex(normal_paths.get_inner_contour());
                 }
+                // R772 — per-call wall-output checksum (mirrors the cpp AWALL
+                // probe): with byte-exact perimeter INPUTS (726/726), the first
+                // AWALL divergence pins the surface where the arachne generator
+                // itself forks.
+                if crate::probe_enabled("AWALL") {
+                    let (mut nl, mut nj, mut jx, mut jy, mut jw) = (0i64, 0i64, 0i64, 0i64, 0i64);
+                    for lines in &total_perimeters {
+                        for line in lines {
+                            nl += 1;
+                            for j in &line.junctions {
+                                nj += 1;
+                                jx = jx.wrapping_add(j.p.x);
+                                jy = jy.wrapping_add(j.p.y);
+                                jw = jw.wrapping_add(j.w);
+                            }
+                        }
+                    }
+                    eprintln!(
+                        "AWALL lid={} nl={} nj={} jx={} jy={} jw={}",
+                        self.config.layer_id, nl, nj, jx, jy, jw
+                    );
+                }
                 // R659 — distinct junction widths produced for THIS layer, so the
                 // 40 FLAT layers R658 isolated in the gcode can be correlated with
                 // what the beading actually returned. `layer_id` is in scope here

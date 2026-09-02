@@ -1,0 +1,12 @@
+[package]
+name = "boost-voronoi-sys"
+version = "0.1.0"
+edition = "2021"
+description = "C ABI shim around the REAL boost::polygon Voronoi builder (the same headers + -O3 codegen as the native libslic3r), for byte-exact diagram parity."
+
+[lib]
+name = "boost_voronoi_sys"
+path = "src/lib.rs"
+
+[build-dependencies]
+cc = "1"
