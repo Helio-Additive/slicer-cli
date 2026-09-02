@@ -3775,7 +3775,22 @@ impl Layer {
                         for pt in &expoly.contour.points {
                             bb.merge_point(*pt);
                         }
-                        let raw_line_width = surface_fill.params.flow.width();
+                        // R798 (gate FVS_ANCHOR_GYROID): the anchor lines must be
+                        // the SAME gyroid the real sparse fill lays down — native's
+                        // anchoring generator runs the actual filler (Fill.cpp:869).
+                        // This arm had BOTH known traps: spacing fed the flow WIDTH
+                        // (waves ~7% off pitch, R456) and the clip was the old
+                        // per-vertex contains_point walk (ignores holes, truncates
+                        // at the last inside vertex — replaced in the live arm by
+                        // R792's exact clib clip). Wrong anchors made nearly every
+                        // FVS line "unsupported": floating thicklines 46,374 vs
+                        // native 347 (R797 FVSPROBE).
+                        let faithful_anchor = crate::faithful_gate("FVS_ANCHOR_GYROID");
+                        let raw_line_width = if faithful_anchor {
+                            surface_fill.params.flow.spacing()
+                        } else {
+                            surface_fill.params.flow.width()
+                        };
                         let gyroid_config = GyroidConfig {
                             z: self.print_z,
                             spacing: raw_line_width,
@@ -3783,6 +3798,15 @@ impl Layer {
                             angle: surface_fill.params.angle as f64,
                         };
                         let raw_polylines = generate_gyroid_infill(&gyroid_config, bb.min, bb.max);
+                        if faithful_anchor {
+                            crate::clipper_utils::intersection_pl(
+                                &raw_polylines,
+                                std::slice::from_ref(&expoly),
+                            )
+                            .into_iter()
+                            .map(InfillPath::Line)
+                            .collect()
+                        } else {
                         let mut clipped = Vec::new();
                         for pl in raw_polylines {
                             let mut current_segment = Vec::new();
@@ -3805,6 +3829,7 @@ impl Layer {
                             }
                         }
                         clipped
+                        }
                     }
                     _ => {
                         let polylines = generate_infill(
