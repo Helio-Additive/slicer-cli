@@ -44,6 +44,7 @@
 // links Boost::log and Boost::log_setup unconditionally (CMakeLists.txt — the
 // same list for ENGINE=bambu and ENGINE=orca), so attaching one more sink adds
 // no new dependency on either engine.
+#include <csignal>
 #include <mutex>
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
@@ -336,6 +337,76 @@ public:
         }
     }
 };
+
+// ── Channel 4 (OPTIONAL HUNK): in-band crash notice ────────────────────────
+// Nothing after a SIGSEGV runs, so no ordinary emitter can report the crash
+// itself; the host only learns of it from the wait status. A fatal-signal
+// handler is the only way to put a final record in the event stream, and it is
+// bound by async-signal-safety: no std::cout, no nlohmann::json, no malloc.
+// The payload is therefore a fixed literal per signal, written with write(2),
+// after which the default disposition is restored and the signal re-raised so
+// the exit status the host sees is unchanged (still "killed by signal 11").
+//
+// Review this hunk separately: it is the only part of the patch that runs in a
+// signal context, and it is the only part that is not purely additive
+// bookkeeping.
+//
+// POSIX-only: SIGBUS does not exist on Windows and write(2) is not the Windows
+// spelling, so the whole handler is compiled out there rather than half-ported.
+#ifndef _WIN32
+extern "C" void slicer_cli_fatal_signal_handler(int signum) {
+    const char* line = nullptr;
+    switch (signum) {
+        case SIGSEGV:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":11,\"signal_name\":\"SIGSEGV\",\"message\":\"engine crashed "
+                   "(segmentation fault); the last engine_log event before this line is the "
+                   "closest diagnostic\"}\n";
+            break;
+        case SIGBUS:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":10,\"signal_name\":\"SIGBUS\",\"message\":\"engine crashed (bus error)\"}\n";
+            break;
+        case SIGFPE:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":8,\"signal_name\":\"SIGFPE\",\"message\":\"engine crashed (arithmetic fault)\"}\n";
+            break;
+        case SIGABRT:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":6,\"signal_name\":\"SIGABRT\",\"message\":\"engine aborted "
+                   "(uncaught exception or assertion)\"}\n";
+            break;
+        default:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"message\":\"engine crashed\"}\n";
+            break;
+    }
+    // Length computed without strlen(): these are compile-time literals, but
+    // strlen is async-signal-safe in practice on both platforms we ship.
+    size_t len = 0;
+    while (line[len] != '\0') ++len;
+    ssize_t written = 0;
+    while (written < (ssize_t)len) {
+        ssize_t n = ::write(1, line + written, len - written);
+        if (n <= 0) break;
+        written += n;
+    }
+    // Restore the default disposition and re-raise so the parent still observes
+    // the true termination signal.
+    ::signal(signum, SIG_DFL);
+    ::raise(signum);
+}
+
+#endif  // !_WIN32
+
+void install_fatal_signal_events() {
+#ifndef _WIN32
+    ::signal(SIGSEGV, slicer_cli_fatal_signal_handler);
+    ::signal(SIGBUS,  slicer_cli_fatal_signal_handler);
+    ::signal(SIGFPE,  slicer_cli_fatal_signal_handler);
+    ::signal(SIGABRT, slicer_cli_fatal_signal_handler);
+#endif
+}
 
 void install_engine_log_bridge() {
     using Backend = EngineLogEventBackend;
@@ -1610,6 +1681,11 @@ int main(int argc, char** argv) {
     // would break the parse. The slice path below is the only path whose stdout
     // is already a mixed text stream, so it is the only one that gains events.
     install_engine_log_bridge();
+    // OPTIONAL HUNK — see the note on slicer_cli_fatal_signal_handler. Drop
+    // this one line to take the rest of the patch without a signal handler.
+    // Also kept after the layout branches, which install their own SIGINT
+    // cancellation handler and own their exit contract.
+    install_fatal_signal_events();
 
     if (input_file.empty() && !calib_self_geometry) {
         std::cerr << "Error: No input file specified\n\n";
