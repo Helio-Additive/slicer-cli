@@ -39,6 +39,22 @@
 
 #include <boost/filesystem.hpp>
 
+// Boost.Log bridge: libslic3r raises most of its diagnostics through
+// BOOST_LOG_TRIVIAL and never through any callback. `libslic3r_core` already
+// links Boost::log and Boost::log_setup unconditionally (CMakeLists.txt — the
+// same list for ENGINE=bambu and ENGINE=orca), so attaching one more sink adds
+// no new dependency on either engine.
+#include <csignal>
+#include <mutex>
+#include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/expressions.hpp>
+#include <boost/log/sinks/sync_frontend.hpp>
+#include <boost/log/sinks/basic_sink_backend.hpp>
+#include <boost/log/attributes/value_extraction.hpp>
+#include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
+
 #include "calib_args.hpp"
 #include "layout_plan.hpp"
 
@@ -101,12 +117,309 @@ const char* string_exception_tag(Slic3r::StringExceptionType t) {
     return "STRING_EXCEPT_UNKNOWN";
 }
 
+// Serializes event writes. `set_status_callback` already fires from the TBB
+// worker threads inside process(), and the Boost.Log sink added below can fire
+// from any thread that logs; without this lock two events can interleave inside
+// one line and corrupt both JSON objects. (Pre-existing latent defect: the
+// status-callback path was already multi-threaded.)
+std::mutex g_event_mutex;
+
 void emit_event(const json& payload) {
     // One JSON object per line so a streaming line-reader in TS can split
     // events without buffering. Flush so the host sees events as the slice
     // progresses (warnings can fire mid-pipeline).
-    std::cout << SLICER_EVENT_PREFIX << payload.dump() << '\n';
+    //
+    // dump() with the default error handler throws type_error.316 on any byte
+    // sequence that is not valid UTF-8, and event payloads now carry engine
+    // strings the driver never chose: file paths, object names, filament names,
+    // raw log lines. Replacing invalid bytes keeps a diagnostic from turning a
+    // slice that used to succeed into a failure; the event stream reports, it
+    // never decides. `ensure_ascii=false` preserves today's byte output for the
+    // four pre-existing event kinds.
+    std::string line;
+    try {
+        line = payload.dump(-1, ' ', false, json::error_handler_t::replace);
+    } catch (...) {
+        return;  // a diagnostic must never be the reason a slice fails
+    }
+    std::lock_guard<std::mutex> lock(g_event_mutex);
+    std::cout << SLICER_EVENT_PREFIX << line << '\n';
     std::cout.flush();
+}
+
+// ── Channel 1: config deserialization findings ──────────────────────────────
+// `ConfigSubstitutionContext` (Config.hpp:255) accumulates BOTH the forward-
+// compatibility substitutions the engine silently performed AND the keys it did
+// not recognize at all. The GUI shows these ("some settings were incompatible
+// and have been substituted"); the CLI constructs the context, hands it to
+// load_bbs_3mf / load_from_json, and then never reads it.
+void emit_config_substitutions(const Slic3r::ConfigSubstitutionContext& ctx,
+                               const std::string& source) {
+    for (const auto& sub : ctx.substitutions) {
+        json e;
+        e["event"]     = "config_substituted";
+        e["tag"]       = "ForwardCompatibilitySubstitution";
+        e["source"]    = source;
+        e["opt_key"]   = sub.opt_def ? sub.opt_def->opt_key : std::string{};
+        e["old_value"] = sub.old_value;
+        e["new_value"] = sub.new_value ? sub.new_value->serialize() : std::string{};
+        e["message"]   = "Setting '" + (sub.opt_def ? sub.opt_def->opt_key : std::string("<unknown>")) +
+                         "' had an unusable value '" + sub.old_value + "'; the engine substituted a default";
+        emit_event(e);
+    }
+    if (!ctx.unrecogized_keys.empty()) {  // sic — upstream spelling
+        json e;
+        e["event"]   = "config_unknown_keys";
+        e["tag"]     = "UnrecognizedConfigKeys";
+        e["source"]  = source;
+        e["keys"]    = ctx.unrecogized_keys;
+        e["count"]   = ctx.unrecogized_keys.size();
+        e["message"] = "The engine did not recognize " +
+                       std::to_string(ctx.unrecogized_keys.size()) +
+                       " configuration key(s) from " + source + "; they were ignored";
+        emit_event(e);
+    }
+}
+
+// ── Channel 2: G-code processor findings ───────────────────────────────────
+// `GCodeProcessorResult` (GCodeProcessor.hpp:165) is populated by export_gcode
+// and carries the entire set of post-slice checks the GUI surfaces: the slicing
+// warning list, toolpath conflict detection, the multi-extruder printable
+// area/height check bitfield, unprintable-filament findings, the
+// toolpath-outside-bed flag and the timelapse warning code. main() passes
+// `&gcode_result` purely because GCode.cpp dereferences it, then discards it.
+const char* slice_warning_level_tag(int level) {
+    switch (level) {
+        case 0:  return "tip";
+        case 1:  return "warning";
+        case 2:  return "error";
+        default: return "unknown";
+    }
+}
+
+void emit_gcode_check_result(const Slic3r::GCodeProcessorResult& r) {
+    const int code = r.gcode_check_result.error_code;
+    if (code == 0) return;
+    // Bit meanings are documented at GCodeProcessor.hpp:141-143.
+    static const std::pair<int, const char*> kBits[] = {
+        {1 << 0,  "multi_extruder_printable_area"},
+        {1 << 1,  "multi_extruder_printable_height"},
+        {1 << 2,  "plate_printable_area"},
+        {1 << 3,  "plate_printable_height"},
+        {1 << 4,  "wrapping_detection_area"},
+        {1 << 10, "filament_map"},
+        {1 << 11, "printing_mass_over_limit"},
+    };
+    json flags = json::array();
+    for (const auto& [bit, name] : kBits)
+        if (code & bit) flags.push_back(name);
+    json e;
+    e["event"]      = "gcode_check";
+    e["tag"]        = "GCodeCheckResult";
+    e["error_code"] = code;
+    e["flags"]      = flags;
+    e["message"]    = "Post-slice G-code check reported error_code " + std::to_string(code);
+    json areas = json::object();
+    for (const auto& [extruder, entries] : r.gcode_check_result.print_area_error_infos) {
+        json list = json::array();
+        for (const auto& [filament_id, object_label_id] : entries)
+            list.push_back(json{{"filament_id", filament_id}, {"object_label_id", object_label_id}});
+        areas[std::to_string(extruder)] = list;
+    }
+    if (!areas.empty()) e["print_area_errors"] = areas;
+    json heights = json::object();
+    for (const auto& [extruder, entries] : r.gcode_check_result.print_height_error_infos) {
+        json list = json::array();
+        for (const auto& [filament_id, object_label_id] : entries)
+            list.push_back(json{{"filament_id", filament_id}, {"object_label_id", object_label_id}});
+        heights[std::to_string(extruder)] = list;
+    }
+    if (!heights.empty()) e["print_height_errors"] = heights;
+    emit_event(e);
+}
+
+void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
+    for (const auto& w : r.warnings) {
+        json e;
+        e["event"]      = "slice_warning";
+        e["tag"]        = w.msg;          // the enum-name string the GUI keys off
+        e["level"]      = slice_warning_level_tag(w.level);
+        e["error_code"] = w.error_code;   // the code BambuStudio shows the user
+        e["message"]    = w.msg;
+        if (!w.params.empty()) e["params"] = w.params;
+        emit_event(e);
+    }
+    if (r.conflict_result.has_value()) {
+        const auto& c = *r.conflict_result;
+        json e;
+        e["event"]    = "toolpath_conflict";
+        e["tag"]      = "ToolpathConflict";
+        e["object_a"] = c._objName1;
+        e["object_b"] = c._objName2;
+        e["height"]   = c._height;
+        e["layer"]    = c.layer;
+        // A null _obj1 means the conflicting party is the prime/wipe tower.
+        e["involves_wipe_tower"] = (c._obj1 == nullptr || c._obj2 == nullptr);
+        e["message"]  = "Toolpaths of '" + c._objName1 + "' and '" + c._objName2 +
+                        "' conflict at height " + std::to_string(c._height);
+        emit_event(e);
+    }
+    emit_gcode_check_result(r);
+    // `filament_printable_reuslt` (sic — upstream spelling) carries a
+    // has_value() helper, but it is `const` on BambuStudio and NOT const on
+    // OrcaSlicer, so calling it through this const& breaks the orca build.
+    // Both engines define it as exactly this emptiness test.
+    if (!r.filament_printable_reuslt.conflict_filament.empty()) {
+        json e;
+        e["event"]             = "filament_unprintable";
+        e["tag"]               = "FilamentPrintableResult";
+        e["conflict_filament"] = r.filament_printable_reuslt.conflict_filament;
+        e["plate_name"]        = r.filament_printable_reuslt.plate_name;
+        e["message"]           = "One or more filaments cannot be printed on their assigned extruder";
+        emit_event(e);
+    }
+    if (r.toolpath_outside) {
+        emit_event({{"event","toolpath_outside_bed"},
+                    {"tag","ToolpathOutside"},
+                    {"message","Some toolpaths fall outside the printable area"}});
+    }
+    if (r.timelapse_warning_code != 0) {
+        emit_event({{"event","timelapse_warning"},
+                    {"tag","TimelapseWarning"},
+                    {"code", r.timelapse_warning_code},
+                    {"message","Timelapse configuration produced a warning"}});
+    }
+    if (!r.limit_filament_maps.empty()) {
+        emit_event({{"event","filament_map_limited"},
+                    {"tag","LimitFilamentMaps"},
+                    {"limit_filament_maps", r.limit_filament_maps},
+                    {"message","The engine constrained the filament-to-extruder map"}});
+    }
+}
+
+// ── Channel 3: the Boost.Log bridge ────────────────────────────────────────
+// Most engine diagnostics have NO callback and NO return value: they are
+// BOOST_LOG_TRIVIAL(error/warning) lines that land on stdout as free text,
+// interleaved with the CLI's own banner output. Attach a second sink that
+// mirrors warning-and-above records into the structured stream. The existing
+// console output is left exactly as it is: humans keep the text log, agents get
+// JSON. libslic3r's set_logging_level() installs a CORE filter
+// (utils.cpp:113-121), so this sink can never see records the core dropped; the
+// sink's own filter pins the event stream at warning+ regardless of -v.
+const char* boost_severity_tag(boost::log::trivial::severity_level level) {
+    switch (level) {
+        case boost::log::trivial::trace:   return "trace";
+        case boost::log::trivial::debug:   return "debug";
+        case boost::log::trivial::info:    return "info";
+        case boost::log::trivial::warning: return "warning";
+        case boost::log::trivial::error:   return "error";
+        case boost::log::trivial::fatal:   return "fatal";
+    }
+    return "unknown";
+}
+
+class EngineLogEventBackend final
+    : public boost::log::sinks::basic_sink_backend<
+          boost::log::sinks::combine_requirements<
+              boost::log::sinks::synchronized_feeding>::type> {
+public:
+    void consume(const boost::log::record_view& rec) {
+        // An exception thrown here would propagate out of the BOOST_LOG_TRIVIAL
+        // statement inside arbitrary libslic3r code, i.e. this bridge could
+        // abort a slice that previously succeeded. Swallow everything: the
+        // event stream informs, it never changes the outcome.
+        try {
+            auto severity = rec[boost::log::trivial::severity];
+            auto message  = rec[boost::log::expressions::smessage];
+            json e;
+            e["event"]    = "engine_log";
+            e["tag"]      = "EngineLogRecord";
+            e["severity"] = severity ? boost_severity_tag(severity.get()) : "unknown";
+            e["message"]  = message ? message.get() : std::string{};
+            emit_event(e);
+        } catch (...) {
+        }
+    }
+};
+
+// ── Channel 4 (OPTIONAL HUNK): in-band crash notice ────────────────────────
+// Nothing after a SIGSEGV runs, so no ordinary emitter can report the crash
+// itself; the host only learns of it from the wait status. A fatal-signal
+// handler is the only way to put a final record in the event stream, and it is
+// bound by async-signal-safety: no std::cout, no nlohmann::json, no malloc.
+// The payload is therefore a fixed literal per signal, written with write(2),
+// after which the default disposition is restored and the signal re-raised so
+// the exit status the host sees is unchanged (still "killed by signal 11").
+//
+// Review this hunk separately: it is the only part of the patch that runs in a
+// signal context, and it is the only part that is not purely additive
+// bookkeeping.
+//
+// POSIX-only: SIGBUS does not exist on Windows and write(2) is not the Windows
+// spelling, so the whole handler is compiled out there rather than half-ported.
+#ifndef _WIN32
+extern "C" void slicer_cli_fatal_signal_handler(int signum) {
+    const char* line = nullptr;
+    switch (signum) {
+        case SIGSEGV:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":11,\"signal_name\":\"SIGSEGV\",\"message\":\"engine crashed "
+                   "(segmentation fault); the last engine_log event before this line is the "
+                   "closest diagnostic\"}\n";
+            break;
+        case SIGBUS:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":10,\"signal_name\":\"SIGBUS\",\"message\":\"engine crashed (bus error)\"}\n";
+            break;
+        case SIGFPE:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":8,\"signal_name\":\"SIGFPE\",\"message\":\"engine crashed (arithmetic fault)\"}\n";
+            break;
+        case SIGABRT:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"signal\":6,\"signal_name\":\"SIGABRT\",\"message\":\"engine aborted "
+                   "(uncaught exception or assertion)\"}\n";
+            break;
+        default:
+            line = "[[SLICER_EVENT]] {\"event\":\"engine_crash\",\"tag\":\"FatalSignal\","
+                   "\"message\":\"engine crashed\"}\n";
+            break;
+    }
+    // Length computed without strlen(): these are compile-time literals, but
+    // strlen is async-signal-safe in practice on both platforms we ship.
+    size_t len = 0;
+    while (line[len] != '\0') ++len;
+    ssize_t written = 0;
+    while (written < (ssize_t)len) {
+        ssize_t n = ::write(1, line + written, len - written);
+        if (n <= 0) break;
+        written += n;
+    }
+    // Restore the default disposition and re-raise so the parent still observes
+    // the true termination signal.
+    ::signal(signum, SIG_DFL);
+    ::raise(signum);
+}
+
+#endif  // !_WIN32
+
+void install_fatal_signal_events() {
+#ifndef _WIN32
+    ::signal(SIGSEGV, slicer_cli_fatal_signal_handler);
+    ::signal(SIGBUS,  slicer_cli_fatal_signal_handler);
+    ::signal(SIGFPE,  slicer_cli_fatal_signal_handler);
+    ::signal(SIGABRT, slicer_cli_fatal_signal_handler);
+#endif
+}
+
+void install_engine_log_bridge() {
+    using Backend = EngineLogEventBackend;
+    using Sink    = boost::log::sinks::synchronous_sink<Backend>;
+    auto sink = boost::make_shared<Sink>(boost::make_shared<Backend>());
+    // Only warning and above become events; the core filter set by
+    // set_logging_level() still governs what reaches any sink at all.
+    sink->set_filter(boost::log::trivial::severity >= boost::log::trivial::warning);
+    boost::log::core::get()->add_sink(sink);
 }
 
 void emit_status_warning(const Slic3r::PrintBase::SlicingStatus& s) {
@@ -1363,6 +1676,21 @@ int main(int argc, char** argv) {
         return 0;
 
     }
+    // ── Structured-diagnostics install point ───────────────────────────────
+    // Deliberately placed AFTER every layout early-return above. `layout
+    // capabilities`, `--layout-plan` and `--layout` all treat stdout as a
+    // strict single-JSON-document channel (see the `out.dump()` at the end of
+    // the --layout branch), and ohmyhelio parses it as one — arrangement code
+    // can log, and a single [[SLICER_EVENT]] line prepended to that document
+    // would break the parse. The slice path below is the only path whose stdout
+    // is already a mixed text stream, so it is the only one that gains events.
+    install_engine_log_bridge();
+    // OPTIONAL HUNK — see the note on slicer_cli_fatal_signal_handler. Drop
+    // this one line to take the rest of the patch without a signal handler.
+    // Also kept after the layout branches, which install their own SIGINT
+    // cancellation handler and own their exit contract.
+    install_fatal_signal_events();
+
     if (input_file.empty() && !calib_self_geometry) {
         std::cerr << "Error: No input file specified\n\n";
         print_usage(argv[0]);
@@ -1483,13 +1811,31 @@ int main(int argc, char** argv) {
                 plate_id   // 0 = all plates, >0 = specific plate
             );
 #endif
+            // Surface what the engine silently changed or ignored while
+            // deserializing Metadata/project_settings.config. This is the
+            // channel the GUI renders as "incompatible settings were
+            // substituted", and it is also where an unknown key (a setting the
+            // host wrote that this engine has no definition for) is recorded.
+            emit_config_substitutions(config_subst, "3mf:project_settings.config");
+
             if (!result) {
+                emit_event({{"event","load_error"},
+                            {"tag","ThreeMfLoadFailed"},
+                            {"path", input_file},
+                            {"message","Failed to load 3MF file"}});
                 std::cerr << "Failed to load 3MF file\n";
                 return 1;
             }
 
             // Validate --plate against actual plate count
             if (plate_id > 0 && (int)plate_data.size() < plate_id) {
+                emit_event({{"event","input_error"},
+                            {"tag","PlateOutOfRange"},
+                            {"requested_plate", plate_id},
+                            {"plate_count", (int)plate_data.size()},
+                            {"message","--plate " + std::to_string(plate_id) +
+                                       " but the 3MF has only " +
+                                       std::to_string(plate_data.size()) + " plate(s)"}});
                 std::cerr << "Error: --plate " << plate_id
                           << " but 3MF only has " << plate_data.size() << " plate(s)\n";
                 return 1;
@@ -1710,10 +2056,22 @@ int main(int argc, char** argv) {
                             }
                         }
                     } catch (const std::exception& e) {
+                        emit_event({{"event","preset_error"},
+                                    {"tag","PresetBundleException"},
+                                    {"message", std::string("PresetBundle exception: ") + e.what()}});
                         std::cerr << "  PresetBundle exception: " << e.what() << "\n";
                     }
                 }
                 if (!preset_loaded) {
+                    // The slice is about to run on the flat, merged 3MF config
+                    // instead of a preset-resolved one. The desktop app can
+                    // never be in this state, so nothing downstream expects it;
+                    // it must not stay a plain stdout line.
+                    emit_event({{"event","preset_resolution_failed"},
+                                {"tag","FlatThreeMfConfigFallback"},
+                                {"exe_dir", exe_dir.empty() ? std::string{} : exe_dir.string()},
+                                {"profiles_dir", profiles_dir.empty() ? std::string{} : profiles_dir.string()},
+                                {"message","Presets were not resolved; slicing from the flat 3MF config"}});
                     std::cout << "  WARNING: Using flat 3MF config (presets not resolved)\n";
                     if (!exe_dir.empty())
                         std::cout << "  exe_dir: " << exe_dir << "\n";
@@ -1760,30 +2118,39 @@ int main(int argc, char** argv) {
                       << " volumes, " << obj->instances.size() << " instances)\n";
         }
 
+        // Mesh auto-repair census. The GUI puts a warning icon beside every
+        // object whose mesh admesh had to repair, with a "(Repair)" hyperlink
+        // (GUI_ObjectList.cpp:516/521). The CLI repairs silently, so an agent
+        // cannot tell a clean input from one that was rewritten under it.
+        for (auto* obj : model.objects) {
+            const int repaired = obj->get_repaired_errors_count();
+            if (repaired <= 0) continue;
+            emit_event({{"event","mesh_repaired"},
+                        {"tag","RepairedMeshErrors"},
+                        {"object", obj->name},
+                        {"repaired_error_count", repaired},
+                        {"message","Mesh errors were auto-repaired on load for '" + obj->name + "'"}});
+        }
+
         // Load config files in order (later ones can override earlier ones)
-        if (!bundle_config.empty()) {
-            if (!load_json_config(bundle_config, config, verbose)) {
-                std::cerr << "Warning: Failed to load bundle config\n";
-            }
-        }
-
-        if (!machine_config.empty()) {
-            if (!load_json_config(machine_config, config, verbose)) {
-                std::cerr << "Warning: Failed to load machine config\n";
-            }
-        }
-
-        if (!process_config.empty()) {
-            if (!load_json_config(process_config, config, verbose)) {
-                std::cerr << "Warning: Failed to load process config\n";
-            }
-        }
-
-        if (!filament_config.empty()) {
-            if (!load_json_config(filament_config, config, verbose)) {
-                std::cerr << "Warning: Failed to load filament config\n";
-            }
-        }
+        // A profile that fails to load leaves the slice running on whatever was
+        // already in `config` — silently, with only a stderr line. The agent
+        // that chose that profile must be told it did not take effect.
+        auto load_profile = [&](const std::string& path, const char* kind) {
+            if (path.empty()) return;
+            if (load_json_config(path, config, verbose)) return;
+            emit_event({{"event","config_load_failed"},
+                        {"tag","ProfileLoadFailed"},
+                        {"kind", kind},
+                        {"path", path},
+                        {"message", std::string("Failed to load ") + kind +
+                                    " config; slicing continues with the previously resolved settings"}});
+            std::cerr << "Warning: Failed to load " << kind << " config\n";
+        };
+        load_profile(bundle_config,   "bundle");
+        load_profile(machine_config,  "machine");
+        load_profile(process_config,  "process");
+        load_profile(filament_config, "filament");
 
 #ifdef ENGINE_BAMBU
         // ── BBS toolchanger / per-extruder normalizations ───────────────────
@@ -2014,6 +2381,11 @@ int main(int argc, char** argv) {
                     config.set_key_value(key, new Slic3r::ConfigOptionInts({std::stoi(value)}));
                 }
             } catch (const std::exception& e) {
+                emit_event({{"event","override_rejected"},
+                            {"tag","InvalidOverrideValue"},
+                            {"opt_key", key},
+                            {"value", value},
+                            {"message","Command-line override for '" + key + "' was rejected and had no effect"}});
                 std::cerr << "Warning: Invalid value for " << key << ": " << value << "\n";
             }
         }
@@ -2144,7 +2516,39 @@ int main(int argc, char** argv) {
             // Soft warnings get emitted as JSON events and slicing proceeds —
             // matching what BBS GUI does in this case.
             Slic3r::StringObjectException validation_warning;
-            Slic3r::StringObjectException validation_result = print.validate(&validation_warning);
+            // The GUI calls validate() with all three out-params
+            // (Plater.cpp:10835) and paints the returned hulls on the plate;
+            // a human sees the collision as geometry, with no text anywhere.
+            // Passing them here is the only way an agent can learn WHERE a
+            // sequential-print clearance violation is, rather than just that
+            // one happened.
+            Slic3r::Polygons collision_polygons;
+            std::vector<std::pair<Slic3r::Polygon, float>> height_polygons;
+            Slic3r::StringObjectException validation_result =
+                print.validate(&validation_warning, &collision_polygons, &height_polygons);
+            if (!collision_polygons.empty() || !height_polygons.empty()) {
+                json e;
+                e["event"] = "clearance_violation";
+                e["tag"]   = "SequentialPrintClearance";
+                e["collision_hull_count"] = collision_polygons.size();
+                e["height_hull_count"]    = height_polygons.size();
+                json hulls = json::array();
+                for (const auto& poly : collision_polygons) {
+                    json points = json::array();
+                    for (const auto& p : poly.points)
+                        points.push_back(json{{"x_mm", Slic3r::unscaled<double>(p.x())},
+                                              {"y_mm", Slic3r::unscaled<double>(p.y())}});
+                    hulls.push_back(points);
+                }
+                if (!hulls.empty()) e["collision_hulls"] = hulls;
+                json heights = json::array();
+                for (const auto& [poly, height] : height_polygons)
+                    heights.push_back(json{{"height_mm", height},
+                                           {"point_count", poly.points.size()}});
+                if (!heights.empty()) e["height_hulls"] = heights;
+                e["message"] = "Object clearance hulls overlap; the GUI would paint these regions red on the plate";
+                emit_event(e);
+            }
             if (!validation_warning.string.empty()) {
                 emit_validation_event(validation_warning);
                 std::cout << "Validation warning: " << validation_warning.string << "\n";
@@ -2171,6 +2575,12 @@ int main(int argc, char** argv) {
                 /// C++: std::string export_gcode(const std::string &path, GCodeProcessorResult* result, ThumbnailsGeneratorCallback thumbnail_cb);
                 Slic3r::GCodeProcessorResult gcode_result;
                 print.export_gcode(output_file, &gcode_result, nullptr);
+
+                // The result object is fully populated by the export. Drain
+                // every check the GUI would show a human before reporting
+                // success — a run can exit 0 and still carry warnings,
+                // toolpath conflicts or printable-area failures.
+                emit_gcode_result_diagnostics(gcode_result);
 
                 std::cout << "✓ G-code export complete!\n";
                 std::cout << "\nOutput file: " << output_file << "\n";
