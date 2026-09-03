@@ -265,7 +265,11 @@ void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
         emit_event(e);
     }
     emit_gcode_check_result(r);
-    if (r.filament_printable_reuslt.has_value()) {  // sic — upstream spelling
+    // `filament_printable_reuslt` (sic — upstream spelling) carries a
+    // has_value() helper, but it is `const` on BambuStudio and NOT const on
+    // OrcaSlicer, so calling it through this const& breaks the orca build.
+    // Both engines define it as exactly this emptiness test.
+    if (!r.filament_printable_reuslt.conflict_filament.empty()) {
         json e;
         e["event"]             = "filament_unprintable";
         e["tag"]               = "FilamentPrintableResult";
