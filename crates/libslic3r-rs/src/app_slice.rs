@@ -392,6 +392,22 @@ pub fn slice_3mf_to_gcode(
     } else {
         None
     };
+    // R805 — raw volume-local mesh for exact-frame slicing (SLICE_VOLUME_TRAFO).
+    let raw_local_mesh: Option<TriangleMesh> = if paint_pair.is_some() {
+        let raw32: Vec<Point3F> = paint_raw_vertices
+            .iter()
+            .map(|v| Point3F { x: v.x as f32 as f64, y: v.y as f32 as f64, z: v.z as f32 as f64 })
+            .collect();
+        let tris: Vec<crate::triangle_mesh::Triangle> = (0..mesh.triangle_count())
+            .map(|i| {
+                let idx = mesh.triangle_indices(i);
+                crate::triangle_mesh::Triangle::new(idx[0], idx[1], idx[2])
+            })
+            .collect();
+        Some(TriangleMesh::from_parts(raw32, tris))
+    } else {
+        None
+    };
     if !mmu_facets.is_empty() {
         // R787 — with the paint frame active, the selector operates on the
         // VOLUME-LOCAL mesh (f32 file verts): facet splits are computed in
@@ -480,6 +496,7 @@ pub fn slice_3mf_to_gcode(
     print_object.painted_submeshes = painted_submeshes;
     print_object.paint_frame_offset = paint_frame_offset;
     print_object.paint_tb_trafo = paint_tb_trafo;
+    print_object.raw_local_mesh = raw_local_mesh;
     print_object.painted_submeshes_strict = painted_submeshes_strict;
     print_object.num_total_filaments = print_config.num_filaments();
     // R704 — negative volumes travel with the object and are subtracted per

@@ -1410,6 +1410,10 @@ pub struct MeshSlicingParams {
     // matching transform_mesh_vertices_for_slicing's non-identity path
     // (TriangleMeshSlicer.cpp:1853-1860). Z untouched (R65 preserved).
     pub center_offset: (f64, f64),
+    /// R805 — exact per-volume slicing transform (trafo_centered * volume matrix, 4x4
+    /// row-major f64) applied by the Eigen shim to VOLUME-LOCAL vertices; when set,
+    /// the FRAME_UNIFY bbox derivation and center_offset are bypassed.
+    pub frame_trafo: Option<[f64; 16]>,
 }
 
 impl Default for MeshSlicingParams {
@@ -1420,6 +1424,7 @@ impl Default for MeshSlicingParams {
             slicing_mode_normal_below_layer: 0,
             mode_below: SlicingMode::Regular,
             center_offset: (0.0, 0.0),
+            frame_trafo: None,
         }
     }
 }
@@ -1472,7 +1477,30 @@ fn slice_mesh_its(
         // trans=0 → z passes through bit-exact) → R65 preserved. (0,0) = historic
         // identity path (v.x*=s, v.y*=s).
         let (cx, cy) = params.center_offset;
-        let scaled_vertices: Vec<StlVertex> = if crate::faithful_gate("FRAME_UNIFY") {
+        let scaled_vertices: Vec<StlVertex> = if let (true, Some(t16)) = (crate::faithful_gate("FRAME_UNIFY"), params.frame_trafo) {
+            // R805 — Majora: the main volume carries a real 3D rotation
+            // (R785), which native applies INSIDE the f32 slicing transform
+            // (make_trafo_for_slicing(trafo_centered * get_matrix)). Slicing the
+            // pre-placed f64 mesh reproduced 55% of the slice points 1 unit off
+            // (layer 100: 714/1,293). Apply the exact composed trafo to the raw
+            // volume-local vertices through the Eigen shim instead (voff = 0).
+            let mut flat_in: Vec<f32> = Vec::with_capacity(mesh.vertices.len() * 3);
+            for p in &mesh.vertices {
+                flat_in.push(p.x);
+                flat_in.push(p.y);
+                flat_in.push(p.z);
+            }
+            let flat_out = eigen_transform_sys::transform_verts_unified(
+                &t16,
+                crate::libslic3r::SCALING_FACTOR,
+                (0.0, 0.0, 0.0),
+                &flat_in,
+            );
+            flat_out
+                .chunks_exact(3)
+                .map(|c| StlVertex::new(c[0], c[1], c[2]))
+                .collect()
+        } else if crate::faithful_gate("FRAME_UNIFY") {
             // R87 frame-unification (GENERALIZED, R386): slice rust's PLACED verts
             // through C++'s exact `params2.trafo` after subtracting the volume offset,
             // via the Eigen shim (bit-exact, R85 1-ULP wall). Derived from the mesh bbox
@@ -1897,6 +1925,16 @@ pub fn slice_mesh_ex_its(
                     xmx as f64 / sf,
                     ymx as f64 / sf,
                 );
+            }
+        }
+        if let Ok(w) = std::env::var("SLICEDUMP_LI") {
+            if w.parse::<usize>().ok() == Some(layer_id) {
+                use std::fmt::Write as _;
+                for (pi, poly) in layers_p[layer_id].iter().enumerate() {
+                    let mut o = format!("SLICEDUMP li={} poly={} n={}", layer_id, pi, poly.points.len());
+                    for (k, pt) in poly.points.iter().enumerate() { let _ = write!(o, "{}{},{}", if k > 0 { ";" } else { " " }, pt.x(), pt.y()); }
+                    eprintln!("{o}");
+                }
             }
         }
         let mut expolygons = ExPolygons::new();

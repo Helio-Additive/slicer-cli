@@ -25,6 +25,8 @@ pub struct Slicer {
     /// Slice-frame XY center_offset (mm), the C++ `trafo_centered` offset applied
     /// INSIDE the fused f32 slice transform (R85). (0,0) = raw frame (default).
     slice_center_offset: (CoordF, CoordF),
+    /// R805 — exact per-volume slicing transform (see MeshSlicingParams::frame_trafo).
+    frame_trafo: Option<[f64; 16]>,
     /// Morphological closing radius (mm) threaded into `MeshSlicingParamsEx.closing_radius`.
     /// PrintObjectSlice passes `print_config.slice_closing_radius` (default 0.049) so
     /// `make_expolygons` runs `offset2_ex(union, +scale(r), -scale(r))` — the post-union
@@ -43,6 +45,7 @@ impl Slicer {
             params,
             slice_resolution: 0.0,
             slice_center_offset: (0.0, 0.0),
+            frame_trafo: None,
             slice_closing_radius: 0.0,
         }
     }
@@ -60,6 +63,11 @@ impl Slicer {
     }
 
     /// Set the slice-frame XY center_offset (mm). See `slice_center_offset`.
+    /// R805 — set the exact per-volume slicing transform (None = derive from bbox).
+    pub fn set_frame_trafo(&mut self, t: Option<[f64; 16]>) {
+        self.frame_trafo = t;
+    }
+
     pub fn set_slice_center_offset(&mut self, cx: CoordF, cy: CoordF) {
         self.slice_center_offset = (cx, cy);
     }
@@ -88,16 +96,32 @@ impl Slicer {
     /// Slice a mesh into layers.
     /// TriangleMeshSlicer.cpp:40-42
     pub fn slice(&self, mesh: &TriangleMesh) -> Result<Vec<Layer>> {
-        // TriangleMeshSlicer.cpp:41
-        self.slice_with_callback(mesh, |_| {})
+        self.slice_with_geometry(mesh, None)
+    }
+
+    /// R805 — like [`slice`], but the slice GEOMETRY comes from `geom` (the raw
+    /// volume-local mesh, transformed by `frame_trafo` inside the slicer) while
+    /// layer heights / bounds still derive from the placed `mesh`.
+    pub fn slice_with_geometry(&self, mesh: &TriangleMesh, geom: Option<&TriangleMesh>) -> Result<Vec<Layer>> {
+        self.slice_with_callback_geom(mesh, geom, |_| {})
     }
 
     /// Slice a mesh into layers with a progress callback.
     /// TriangleMeshSlicer.cpp:45-90
-    pub fn slice_with_callback<F>(&self, mesh: &TriangleMesh, mut callback: F) -> Result<Vec<Layer>>
+    pub fn slice_with_callback<F>(&self, mesh: &TriangleMesh, callback: F) -> Result<Vec<Layer>>
     where
         F: FnMut(f64),
     {
+        self.slice_with_callback_geom(mesh, None, callback)
+    }
+
+    /// R805 — slicing body; `geom` (raw volume-local mesh) supplies the slice
+    /// geometry when given, `mesh` (placed) always supplies heights and bounds.
+    pub fn slice_with_callback_geom<F>(&self, mesh: &TriangleMesh, geom: Option<&TriangleMesh>, mut callback: F) -> Result<Vec<Layer>>
+    where
+        F: FnMut(f64),
+    {
+        let geom_mesh: &TriangleMesh = geom.unwrap_or(mesh);
         // TriangleMeshSlicer.cpp:50
         // TriangleMeshSlicer.cpp:51
         if mesh.is_empty() {
@@ -148,9 +172,10 @@ impl Slicer {
             // byte-match path (this block only runs under SLICE_SIMPLIFY/SLICE_CENTER);
             // the default slice_mesh() path is left unchanged.
             params.closing_radius = self.slice_closing_radius as f32;
-            triangle_mesh_slicer::slice_mesh_ex(mesh, &zs_f32, &params, &|| {})
+            params.base.frame_trafo = if geom.is_some() { self.frame_trafo } else { None };
+            triangle_mesh_slicer::slice_mesh_ex(geom_mesh, &zs_f32, &params, &|| {})
         } else {
-            triangle_mesh_slicer::slice_mesh(mesh, &slice_zs)
+            triangle_mesh_slicer::slice_mesh(geom_mesh, &slice_zs)
         };
 
         // TriangleMeshSlicer.cpp:68

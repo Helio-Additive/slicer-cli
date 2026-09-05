@@ -291,6 +291,9 @@ pub struct PrintObject {
     /// when set, the strict sub-meshes are volume-LOCAL and the slab chain
     /// uses this trafo with voff (0,0,0).
     pub paint_tb_trafo: Option<[f64; 16]>,
+    /// R805 — raw VOLUME-LOCAL f32 mesh of the main volume (same triangles as
+    /// `mesh`), sliced through `paint_tb_trafo` under SLICE_VOLUME_TRAFO.
+    pub raw_local_mesh: Option<crate::triangle_mesh::TriangleMesh>,
 
     /// R770 — raw per-layer negative-volume slices (index-aligned with
     /// `layers`), captured during the R704 subtraction for the MM
@@ -331,6 +334,7 @@ impl PrintObject {
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
             paint_tb_trafo: None,
+            raw_local_mesh: None,
             num_total_filaments: 1,
         }
     }
@@ -361,6 +365,7 @@ impl PrintObject {
             mm_negative_layer_slices: Vec::new(),
             paint_frame_offset: None,
             paint_tb_trafo: None,
+            raw_local_mesh: None,
             num_total_filaments: 1,
         }
     }
@@ -525,7 +530,19 @@ impl PrintObject {
 
         // Perform actual mesh slicing
         // PrintObjectSlice.cpp:801
-        let layers = slicer.slice(mesh)?;
+        // R805 SLICE_VOLUME_TRAFO (faithful ON): slice the raw volume-local mesh
+        // through the exact composed f32 transform (native make_trafo_for_slicing
+        // of trafo_centered*get_matrix) instead of the pre-placed f64 mesh.
+        let use_vol_trafo = crate::faithful_gate("SLICE_VOLUME_TRAFO")
+            && self.paint_tb_trafo.is_some()
+            && self.raw_local_mesh.is_some();
+        if use_vol_trafo {
+            slicer.set_frame_trafo(self.paint_tb_trafo);
+        }
+        let layers = slicer.slice_with_geometry(
+            mesh,
+            if use_vol_trafo { self.raw_local_mesh.as_ref() } else { None },
+        )?;
 
         // Check for empty result
         // PrintObjectSlice.cpp:838-839
