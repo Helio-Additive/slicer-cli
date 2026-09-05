@@ -4394,13 +4394,24 @@ impl PerimeterGenerator {
                     // Grow the lower slices by half a nozzle: anything within that of
                     // the lower slice is "supported" (cpp process_arachne:26).
                     let nozzle = self.config.perimeter_flow.nozzle_diameter();
-                    let grown = crate::clipper_utils::grow(lower, 0.5 * nozzle, OffsetJoinType::Miter);
+                    // R803c — native (PerimeterGenerator.cpp:1781):
+                    //   m_lower_slices_polygons = offset(*lower_slices, float(scale_(+nozzle/2)))
+                    // is ClipperLib raw_offset + union over ALL rings (contours and
+                    // holes, orientation-signed), jtMiter/ML3. The geo `grow` route
+                    // re-gridded the boundary and joined corners differently, so the
+                    // signed distances behind every arachne overhang degree — and
+                    // therefore the split positions of the speed pieces — drifted by
+                    // up to ~0.9mm on straight stretches (layer-8 benchy-arachne).
+                    let grown_rings: Vec<Polygon> = if crate::faithful_gate("ARACHNE_LOWER_GROW_CLIB") {
+                        let rings = expolygons_to_polygons(lower);
+                        let delta = (crate::scaled_f(0.5 * nozzle) as f32) as f64;
+                        crate::clipper_utils::offset_polygons_clib(&rings, delta, OffsetJoinType::Miter)
+                    } else {
+                        expolygons_to_polygons(&crate::clipper_utils::grow(lower, 0.5 * nozzle, OffsetJoinType::Miter))
+                    };
                     let mut clip: ZPaths = Vec::new();
-                    for ex in &grown {
-                        clip.push(ex.contour.points.iter().map(|p| (p.x(), p.y(), 0i64)).collect());
-                        for h in &ex.holes {
-                            clip.push(h.points.iter().map(|p| (p.x(), p.y(), 0i64)).collect());
-                        }
+                    for ring in &grown_rings {
+                        clip.push(ring.points.iter().map(|p| (p.x(), p.y(), 0i64)).collect());
                     }
 
                     // Build an avg-width ExtrusionPath from a split Z-path.
@@ -4584,7 +4595,7 @@ impl PerimeterGenerator {
                         // slice. Handing it the ungrown polys double-counts the nozzle
                         // offset: it inflated every degree and over-split the outer wall
                         // 2.3x against C++ before this was corrected.
-                        let lower_polys = expolygons_to_polygons(&grown);
+                        let lower_polys = grown_rings.clone();
                         for (zp, degree) in crate::overhang_detector::detect_overhang_degree_arachne(
                             &lower_polys,
                             &clip,
@@ -4745,7 +4756,7 @@ impl PerimeterGenerator {
                                 for (i, p) in paths.iter().enumerate() {
                                     let r = match p.role { ExtrusionRole::ExternalPerimeter => 'E', ExtrusionRole::Perimeter => 'P', ExtrusionRole::OverhangPerimeter => 'O', _ => '?' };
                                     let fp = p.polyline.first_point();
-                                    let _ = writeln!(o, "OVHDEG lid={} line={} i={} role={} deg={} len={:.1} x={} y={} w={:.4}", self.config.layer_id, line.inset_idx, i, r, p.overhang_degree as i32, p.length(), fp.x, fp.y, p.width);
+                                    let _ = writeln!(o, "OVHDEG lid={} line={} i={} role={} deg={} degf={:.4} len={:.1} x={} y={} w={:.4}", self.config.layer_id, line.inset_idx, i, r, p.overhang_degree as i32, p.overhang_degree, p.length(), fp.x, fp.y, p.width);
                                 }
                                 eprint!("{}", o);
                             }
