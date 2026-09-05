@@ -605,11 +605,31 @@ impl PrintObject {
                     if layer.slice_z < nz0 || layer.slice_z > nz1 {
                         continue;
                     }
-                    let cut = match slicer.slice_at_z(&neg, layer.slice_z) {
+                    // R804 NEGVOL_SLICE_PARAMS (faithful ON): negative volumes go
+                    // through the same simplifying/closing slice parameters as
+                    // the model parts (PrintObjectSlice.cpp:156-158).
+                    let cut_res = if crate::faithful_gate("NEGVOL_SLICE_PARAMS") {
+                        slicer.slice_at_z_faithful(&neg, layer.slice_z)
+                    } else {
+                        slicer.slice_at_z(&neg, layer.slice_z)
+                    };
+                    let cut = match cut_res {
                         Ok(c) if !c.is_empty() => c,
                         _ => continue,
                     };
                     self.mm_negative_layer_slices[layer_i] = cut.clone();
+                    if crate::probe_enabled("NEGPROBE") && layer_i < 2 {
+                        for (ci, ex) in cut.iter().enumerate() {
+                            let bb = crate::geometry::BoundingBox::from_points(&ex.contour.points);
+                            eprintln!("[NEGCUT] lid={} piece={} pts={} holes={} area={:.0} bb=({},{})-({},{}) ccw={}", layer_i, ci, ex.contour.points.len(), ex.holes.len(), ex.contour.area(), bb.min.x, bb.min.y, bb.max.x, bb.max.y, ex.contour.is_counter_clockwise());
+                        }
+                        if let Some(r0) = layer.regions().first() {
+                            if let Some(sf) = r0.slices.surfaces.first() {
+                                let bb = crate::geometry::BoundingBox::from_points(&sf.expolygon.contour.points);
+                                eprintln!("[NEGCUT] lid={} src pts={} area={:.0} bb=({},{})-({},{})", layer_i, sf.expolygon.contour.points.len(), sf.expolygon.contour.area(), bb.min.x, bb.min.y, bb.max.x, bb.max.y);
+                            }
+                        }
+                    }
                     n_layers_cut += 1;
                     n_pieces += cut.len();
                     for region in layer.regions_mut().iter_mut() {
@@ -808,8 +828,43 @@ impl PrintObject {
         // segmentation border through the slow offset path (observed >30min
         // release wall on Majora). Building lslices from the single pre-split
         // region first is byte-equivalent and cheap.
+        if crate::probe_enabled("LSLPROBE") {
+            // R804 pre-MMS region census (cpp twin: PRESL before apply_mm_segmentation).
+            for (li, layer) in self.layers.iter().enumerate() {
+                for (ri, lr) in layer.regions().iter().enumerate() {
+                    let (mut rn, mut rp, mut rx, mut ry) = (0usize, 0usize, 0i64, 0i64);
+                    for sf in &lr.slices.surfaces {
+                        rn += 1 + sf.expolygon.holes.len();
+                        for pt in &sf.expolygon.contour.points { rp += 1; rx += pt.x(); ry += pt.y(); }
+                        for h in &sf.expolygon.holes { for pt in &h.points { rp += 1; rx += pt.x(); ry += pt.y(); } }
+                    }
+                    eprintln!("PRESL li={} r={} ns={} n={} pts={} sx={} sy={}", li, ri, lr.slices.surfaces.len(), rn, rp, rx, ry);
+                }
+            }
+        }
         if num_regions > 1 && !self.painted_submeshes.is_empty() {
             self.apply_mm_segmentation_tier1()?;
+        }
+        if crate::probe_enabled("LSLPROBE") {
+            // R804 per-layer lslices + per-region slice census (cpp twin: PrintObjectSlice.cpp).
+            for (li, layer) in self.layers.iter().enumerate() {
+                let (mut n, mut pts, mut sx, mut sy) = (0usize, 0usize, 0i64, 0i64);
+                for ex in &layer.lslices {
+                    n += 1 + ex.holes.len();
+                    for pt in &ex.contour.points { pts += 1; sx += pt.x(); sy += pt.y(); }
+                    for h in &ex.holes { for pt in &h.points { pts += 1; sx += pt.x(); sy += pt.y(); } }
+                }
+                eprintln!("LSL li={} z={:.4} n={} pts={} sx={} sy={}", li, layer.print_z, n, pts, sx, sy);
+                for (ri, lr) in layer.regions().iter().enumerate() {
+                    let (mut rn, mut rp, mut rx, mut ry) = (0usize, 0usize, 0i64, 0i64);
+                    for sf in &lr.slices.surfaces {
+                        rn += 1 + sf.expolygon.holes.len();
+                        for pt in &sf.expolygon.contour.points { rp += 1; rx += pt.x(); ry += pt.y(); }
+                        for h in &sf.expolygon.holes { for pt in &h.points { rp += 1; rx += pt.x(); ry += pt.y(); } }
+                    }
+                    eprintln!("REGSL li={} r={} ns={} n={} pts={} sx={} sy={}", li, ri, lr.slices.surfaces.len(), rn, rp, rx, ry);
+                }
+            }
         }
 
         // R677 — bracket C. A and B are both PRE-segmentation, so neither is

@@ -338,6 +338,29 @@ impl Slicer {
 
     /// Slice the mesh at a single Z height, returning ExPolygons.
     /// TriangleMeshSlicer.cpp:133-140
+    /// R804 — slice one z through the SAME `slice_mesh_ex` parameters the main
+    /// slice uses (resolution 0.0025 DP, closing radius, centre offset). Native
+    /// slices negative volumes with `MeshSlicingParamsEx params{params_base}`
+    /// (PrintObjectSlice.cpp:156-158); the plain `slice_at_z` skips the
+    /// simplification, which left Majora's five negative-volume holes at
+    /// ~1,100 raw points each instead of ~64 (region-0 slices 6,541 v 1,486).
+    pub fn slice_at_z_faithful(&self, mesh: &TriangleMesh, z: CoordF) -> Result<ExPolygons> {
+        if mesh.is_empty() {
+            return Err(Error::Mesh("Cannot slice an empty mesh".into()));
+        }
+        let mut params = triangle_mesh_slicer::MeshSlicingParamsEx::default();
+        if crate::faithful_gate("SLICE_SIMPLIFY") && self.slice_resolution != 0.0 {
+            params.resolution = self.slice_resolution;
+        }
+        if crate::faithful_gate("SLICE_CENTER")
+            && (self.slice_center_offset.0 != 0.0 || self.slice_center_offset.1 != 0.0)
+        {
+            params.center_offset = self.slice_center_offset;
+        }
+        params.closing_radius = self.slice_closing_radius as f32;
+        Ok(triangle_mesh_slicer::slice_mesh_at_z_params(mesh, z, &params))
+    }
+
     pub fn slice_at_z(&self, mesh: &TriangleMesh, z: CoordF) -> Result<ExPolygons> {
         // TriangleMeshSlicer.cpp:134
         if mesh.is_empty() {

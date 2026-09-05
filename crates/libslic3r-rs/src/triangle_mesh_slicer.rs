@@ -1917,12 +1917,20 @@ pub fn slice_mesh_ex_its(
         // The caller sets params.resolution = print_config.resolution<=0.001 ? 0 : 0.0025
         // (PrintObjectSlice.cpp:144). R82: rust had omitted this → ~6x slice vertices.
         let resolution_scaled = scale(params.resolution) as f64;
+        let slicedbg = crate::probe_enabled("SLICEDBG");
+        let (mut raw_n, mut raw_pts) = (0usize, 0usize);
+        if slicedbg { for ex in &expolygons { raw_n += 1 + ex.holes.len(); raw_pts += ex.contour.points.len() + ex.holes.iter().map(|h| h.points.len()).sum::<usize>(); } }
         if resolution_scaled != 0.0 {
             let mut simplified = ExPolygons::with_capacity(expolygons.len());
             for ex in &expolygons {
                 simplified.extend(expolygon_simplify(ex, resolution_scaled));
             }
             expolygons = simplified;
+        }
+        if slicedbg {
+            let (mut sn, mut sp) = (0usize, 0usize);
+            for ex in &expolygons { sn += 1 + ex.holes.len(); sp += ex.contour.points.len() + ex.holes.iter().map(|h| h.points.len()).sum::<usize>(); }
+            eprintln!("SLICEDBG li={} res={:.3} raw_n={} raw_pts={} n={} pts={} closing={:.4}", layer_id, resolution_scaled, raw_n, raw_pts, sn, sp, params.closing_radius);
         }
         expolygons
         })
@@ -1958,6 +1966,33 @@ fn its_from_triangle_mesh(mesh: &TriangleMesh) -> indexed_triangle_set {
 /// so a second mesh can be sliced into the SAME frame as the object's layers.
 /// The offset enters the fused f32 transform exactly as in the multi-Z path
 /// (`v_xy = f32(s) * (v_xy - center_offset)`).
+/// R804 — [`slice_mesh_at_z_ex`] plus the per-volume post-processing native's
+/// `slice_mesh_ex` applies to EVERY volume (TriangleMeshSlicer.cpp:2028-2044):
+/// `make_expolygons(closing_radius, extra_offset)` and the
+/// `ExPolygon::simplify(scaled(resolution))` pass. Same frame as
+/// `slice_mesh_at_z_ex` (per-plane FRAME_UNIFY centering), which is what keeps a
+/// negative volume aligned with the model-part slices.
+pub fn slice_mesh_at_z_params(mesh: &TriangleMesh, z: CoordF, params: &MeshSlicingParamsEx) -> ExPolygons {
+    if mesh.is_empty() {
+        return ExPolygons::new();
+    }
+    let its = its_from_triangle_mesh(mesh);
+    let mut plane_params = MeshSlicingParams::default();
+    plane_params.center_offset = params.center_offset;
+    let loops = slice_mesh_plane_its(&its, z as f32, &plane_params);
+    let mut slices = ExPolygons::new();
+    make_expolygons(&loops, params.closing_radius, params.extra_offset, ClipperPolyFillType::NonZero, &mut slices);
+    let resolution_scaled = scale(params.resolution) as f64;
+    if resolution_scaled != 0.0 {
+        let mut simplified = ExPolygons::with_capacity(slices.len());
+        for ex in &slices {
+            simplified.extend(expolygon_simplify(ex, resolution_scaled));
+        }
+        slices = simplified;
+    }
+    slices
+}
+
 pub fn slice_mesh_at_z_ex(mesh: &TriangleMesh, z: CoordF, center_offset: (f64, f64)) -> ExPolygons {
     if mesh.is_empty() {
         return ExPolygons::new();
