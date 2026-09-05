@@ -1194,6 +1194,19 @@ impl Default for WipeTowerConfig {
 // Wipe Tower Writer
 // ============================================================================
 
+/// R808: `TOWER_WRITER_CPP=0` restores the pre-R808 always-`X Y E` writer lines
+/// (and separate `G1 F` speed lines).
+/// R808 purge-row port gate (see `toolchange_wipe`).
+fn tower_wipe_cpp() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("TOWER_WIPE_CPP"))
+}
+
+fn tower_writer_cpp() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("TOWER_WRITER_CPP"))
+}
+
 /// G-code writer specifically for wipe tower operations
 #[derive(Debug, Clone)]
 pub struct WipeTowerWriter {
@@ -1237,6 +1250,10 @@ pub struct WipeTowerWriter {
     default_analyzer_line_width: f32,
     /// Used filament length
     used_filament_length: f32,
+    /// R808: per-filament area / max E speed for the faithful emitter
+    /// (WipeTower.cpp:748 width, :776 flow limit).
+    filpar_area: Vec<f32>,
+    filpar_max_e_speed: Vec<f32>,
     /// G-code flavor
     gcode_flavor: GCodeFlavor,
     /// Is first layer
@@ -1267,7 +1284,7 @@ impl WipeTowerWriter {
         layer_height: f32,
         perimeter_width: f32,
         gcode_flavor: GCodeFlavor,
-        _filament_parameters: &[FilamentParameters],
+        filament_parameters: &[FilamentParameters],
     ) -> Self {
         let extrusion_flow = Self::calculate_extrusion_flow(layer_height, perimeter_width);
 
@@ -1292,6 +1309,8 @@ impl WipeTowerWriter {
             current_temp: 0,
             default_analyzer_line_width: perimeter_width,
             used_filament_length: 0.0,
+            filpar_area: filament_parameters.iter().map(|p| p.filament_area).collect(),
+            filpar_max_e_speed: filament_parameters.iter().map(|p| p.max_e_speed).collect(),
             gcode_flavor,
             is_first_layer: false,
             normal_accelerations: vec![],
@@ -1498,6 +1517,9 @@ impl WipeTowerWriter {
     // standalone `G1 F600` line AND a bare `G1 X.. Y..` — two lines where C++
     // writes one, measured as 5,011 standalone `G1 F600` against C++'s 2,485.
     pub fn travel_to_f(&mut self, target: Vec2f, f: f32) -> &mut Self {
+        if tower_writer_cpp() {
+            return self.extrude_explicit_f(target.x, target.y, 0.0, f, false, true);
+        }
         if f <= 0.0 || f == self.current_feedrate {
             // Nothing to fold in; C++'s set_format_F is skipped on f == 0 and the
             // move is identical to a plain travel.
@@ -1526,6 +1548,9 @@ impl WipeTowerWriter {
 
     /// Travel to position
     pub fn travel_to(&mut self, target: Vec2f) -> &mut Self {
+        if tower_writer_cpp() {
+            return self.extrude_explicit_f(target.x, target.y, 0.0, 0.0, false, true);
+        }
         // WipeTower.cpp:766-771 — gcode uses rot.x()/rot.y() directly; the
         // y_shift is already folded into rotate() (WipeTower.cpp:1495), so it
         // must NOT be added again here.
@@ -1561,6 +1586,9 @@ impl WipeTowerWriter {
 
     /// Extrude to position
     pub fn extrude(&mut self, x: f32, y: f32) -> &mut Self {
+        if tower_writer_cpp() {
+            return self.extrude_f(x, y, 0.0);
+        }
         let dx = x - self.current_pos.x;
         let dy = y - self.current_pos.y;
         self.extrude_explicit(
@@ -1581,6 +1609,9 @@ impl WipeTowerWriter {
         width: f32,
         _limit_flow: bool,
     ) -> &mut Self {
+        if tower_writer_cpp() {
+            return self.extrude_explicit_f(x, y, e, 0.0, false, _limit_flow);
+        }
         let target = Vec2f::new(x, y);
         let rotated = self.rotate(target);
 
@@ -1617,6 +1648,112 @@ impl WipeTowerWriter {
         self.current_pos = target;
         self
     }
+
+    /// WipeTower.cpp:730-797 `extrude_explicit(x, y, e, f, record_length,
+    /// limit_flow)` — the ONE emitter every native travel/extrude goes through:
+    /// an axis only when it changes (compared AFTER rotation), E only when
+    /// non-zero, F inline as `%d` only when it changes (flow-limited by
+    /// max_e_speed), and the feedrate register updated. The post-transform
+    /// (GCode.cpp:1096) re-inserts X/Y, so rust's always-`X Y E` lines came
+    /// out as "G1  X..   E.." against native "G1  X..  E..", and its separate
+    /// `G1 F` lines had no native twin (Majora: 0 of 67k tower extrusion
+    /// lines matched @R807). R808.
+    pub fn extrude_explicit_f(
+        &mut self,
+        x: f32,
+        y: f32,
+        e: f32,
+        f: f32,
+        record_length: bool,
+        limit_flow: bool,
+    ) -> &mut Self {
+        if (x - self.current_pos.x).abs() <= WT_EPSILON
+            && (y - self.current_pos.y).abs() < WT_EPSILON
+            && e == 0.0
+            && (f == 0.0 || f == self.current_feedrate)
+        {
+            return self;
+        }
+        let dx = x - self.current_pos.x;
+        let dy = y - self.current_pos.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        if record_length {
+            self.used_filament_length += e;
+        }
+        let rotated_current = self.pos_rotated();
+        let target = Vec2f::new(x, y);
+        let rot = self.rotate(target);
+        if !self.preview_suppressed {
+            if e > 0.0 && len > 0.0 {
+                let fa = self
+                    .filpar_area
+                    .get(self.current_tool)
+                    .copied()
+                    .unwrap_or(PI * 0.875 * 0.875);
+                let mut width = e * fa / (len * self.layer_height);
+                width += self.layer_height * (1.0 - PI / 4.0);
+                self.extrusions
+                    .push(Extrusion::new(target, width, self.current_tool));
+            } else if e == 0.0 {
+                self.extrusions
+                    .push(Extrusion::new(target, 0.0, self.current_tool));
+            }
+        }
+        if crate::faithful_gate("TOWER_ACCEL_CPP") {
+            if e == 0.0 {
+                self.set_travel_acceleration();
+            } else {
+                self.set_normal_acceleration();
+            }
+        }
+        let mut line = String::from("G1");
+        if (rot.x - rotated_current.x).abs() > WT_EPSILON {
+            line.push_str(&format!(" X{:.3}", rot.x));
+        }
+        if (rot.y - rotated_current.y).abs() > WT_EPSILON {
+            line.push_str(&format!(" Y{:.3}", rot.y));
+        }
+        if e != 0.0 {
+            line.push_str(&format!(" E{:.4}", e));
+        }
+        let mut f = f;
+        if f != 0.0 && f != self.current_feedrate {
+            if limit_flow {
+                let denom = if len == 0.0 { e.abs() } else { len };
+                let e_speed = e / (denom / f * 60.0);
+                let tmp = self
+                    .filpar_max_e_speed
+                    .get(self.current_tool)
+                    .copied()
+                    .unwrap_or(f32::MAX);
+                f /= (e_speed / tmp).max(1.0);
+            }
+            line.push_str(&format!(" F{}", (f + 0.5).floor() as i64));
+            self.current_feedrate = f;
+        }
+        self.current_pos = target;
+        if self.current_feedrate > 0.0 {
+            let denom = if len == 0.0 { e.abs() } else { len };
+            self.elapsed_time += denom / self.current_feedrate * 60.0;
+        }
+        line.push('\n');
+        self.gcode.push_str(&line);
+        self
+    }
+
+    /// WipeTower.cpp:888 `extrude(x, y, f)` — E from the extrusion flow, F inline.
+    pub fn extrude_f(&mut self, x: f32, y: f32, f: f32) -> &mut Self {
+        let dx = x - self.current_pos.x;
+        let dy = y - self.current_pos.y;
+        let e = (dx * dx + dy * dy).sqrt() * self.extrusion_flow;
+        self.extrude_explicit_f(x, y, e, f, false, true)
+    }
+
+    /// WipeTower.cpp:881 `travel(x, y, f)`.
+    pub fn travel_f(&mut self, x: f32, y: f32, f: f32) -> &mut Self {
+        self.extrude_explicit_f(x, y, 0.0, f, false, true)
+    }
+
 
     /// Extrude a rectangle
     // WipeTower.cpp:1000-1006 — rectangle(box) -> rectangle(box.ld, w, h, f)
@@ -1669,7 +1806,19 @@ impl WipeTowerWriter {
         }
         // :854-865
         if f != 0.0 && f != self.current_feedrate {
-            self.gcode.push_str(&format!(" F{:.0}", f));
+            if tower_writer_cpp() {
+                // set_format_F: " F%d" of floor(f+0.5), and the register moves.
+                self.gcode.push_str(&format!(" F{}", (f + 0.5).floor() as i64));
+                self.current_feedrate = f;
+            } else {
+                if tower_writer_cpp() {
+                    // set_format_F: " F%d" of floor(f+0.5), and the register moves.
+                    self.gcode.push_str(&format!(" F{}", (f + 0.5).floor() as i64));
+                    self.current_feedrate = f;
+                } else {
+                    self.gcode.push_str(&format!(" F{:.0}", f));
+                }
+            }
             self.current_feedrate = f;
         }
         self.gcode.push('\n');
@@ -3424,7 +3573,7 @@ impl WipeTower {
         self.set_for_wipe_tower_writer(&mut writer);
 
         writer.set_initial_position(
-            Vec2f::new(self.perimeter_width, self.depth_traversed),
+            if tower_wipe_cpp() { self.get_next_pos(&cleaning_box, wipe_length) } else { Vec2f::new(self.perimeter_width, self.depth_traversed) },
             self.internal_rotation,
             self.y_shift,
         );
@@ -3442,7 +3591,9 @@ impl WipeTower {
         };
 
         // Travel to start position
-        writer.feedrate(feedrate);
+        if !tower_wipe_cpp() {
+            writer.feedrate(feedrate);
+        }
 
         // WipeTower.cpp:3270-3272 (tool_change_new) — the GCodeProcessor reserved
         // block markers. R530: these are real gcode CONTENT that C++ emits and we
@@ -3584,7 +3735,9 @@ impl WipeTower {
                 nozzle_change_depth,
             );
         }
-        self.left_to_right = !self.left_to_right;
+        if !tower_wipe_cpp() {
+            self.left_to_right = !self.left_to_right;
+        }
 
         // Construct result
         self.construct_tcr(&writer, false, old_tool, false, true, purge_volume)
@@ -3608,7 +3761,185 @@ impl WipeTower {
     }
 
     /// Wipe during tool change
+    /// R808: `TOWER_WIPE_CPP=0` restores the pre-R808 purge (bottom-up rows from
+    /// ld.y + dy/2, one `G1 F` speed line, no start-corner rotation).
     fn toolchange_wipe(
+        &mut self,
+        writer: &mut WipeTowerWriter,
+        cleaning_box: &BoxCoordinates,
+        wipe_length: f32,
+    ) {
+        if tower_wipe_cpp() {
+            self.toolchange_wipe_cpp(writer, cleaning_box, wipe_length);
+        } else {
+            self.toolchange_wipe_legacy(writer, cleaning_box, wipe_length);
+        }
+    }
+
+    /// WipeTower.cpp:5300-5330 `get_next_pos` — the purge start corner rotates
+    /// with the layer index: ld, rd+top, rd, ld+top (top = line_count*dy), and
+    /// it is where the tcr's start_pos (the tower-entry travel target) lands.
+    fn get_next_pos(&self, cleaning_box: &BoxCoordinates, wipe_length: f32) -> Vec2f {
+        let xl = cleaning_box.ld.x;
+        let xr = cleaning_box.rd.x;
+        let line_count = (wipe_length / (xr - xl)) as i32;
+        let dy = self.layer_extra_spacing() * self.perimeter_width;
+        let y_offset = line_count as f32 * dy;
+        match self.layer_idx % 4 {
+            0 => cleaning_box.ld,
+            1 => Vec2f::new(cleaning_box.rd.x, cleaning_box.rd.y + y_offset),
+            2 => cleaning_box.rd,
+            _ => Vec2f::new(cleaning_box.ld.x, cleaning_box.ld.y + y_offset),
+        }
+    }
+
+    /// `m_layer_info->extra_spacing` (1.0 when the plan has no entry).
+    fn layer_extra_spacing(&self) -> f32 {
+        self.plan
+            .get(self.layer_idx)
+            .map(|l| l.extra_spacing)
+            .unwrap_or(1.0)
+    }
+
+    /// WipeTower.cpp:3958-4160 `toolchange_wipe_new` (single-nozzle, no
+    /// interface/cooling features): rows alternate direction, walk up on even
+    /// layers and down on odd ones, speeds step through WipeSpeedMap with the F
+    /// inline on the row's extrude, and the first row carries the gap-wall
+    /// ironing (3 mm extrude, retract, back 1.5x at F600, forward at F240,
+    /// deretract). R808.
+    fn toolchange_wipe_cpp(
+        &mut self,
+        writer: &mut WipeTowerWriter,
+        cleaning_box: &BoxCoordinates,
+        wipe_length: f32,
+    ) {
+        let first = self.layer_idx == 0;
+        let pw = self.perimeter_width;
+        writer.set_extrusion_flow(
+            self.extrusion_flow * if first { self.config.first_layer_flow_ratio } else { 1.0 },
+        );
+        writer.append(&format!("; CP_TOOLCHANGE_WIPE CT0 FL{}\n", if first { 1 } else { 0 }));
+        if !self.nozzle_change_result.gcode.is_empty() {
+            writer.append(&format!("; LINE_WIDTH: {:.6}\n", pw));
+        }
+        if first {
+            writer.append(&format!(
+                "; LINE_WIDTH: {:.6}\n",
+                self.config.first_layer_flow_ratio * pw
+            ));
+        }
+        let (retract_length, retract_speed) = self
+            .filament_params
+            .get(self.current_tool)
+            .map_or((0.0, 0.0), |p| (p.retract_length, p.retract_speed * 60.0));
+        let xl = cleaning_box.ld.x;
+        let xr = cleaning_box.rd.x;
+        let overlap = WIPE_TOWER_WALL_INFILL_OVERLAP * pw;
+        let mut x_to_wipe = wipe_length;
+        let dy = if first { pw } else { self.layer_extra_spacing() * pw };
+        let max_speed = self.config.max_speed * 60.0;
+        let target_speed = if first {
+            (self.config.first_layer_speed * 60.0).min(max_speed)
+        } else {
+            max_speed
+        };
+        let speed_map = [
+            0.33 * target_speed,
+            0.375 * target_speed,
+            0.458 * target_speed,
+            0.875 * target_speed,
+            target_speed.min(0.875 * target_speed + 50.0),
+        ];
+        let mut wipe_speed = speed_map[0];
+        self.left_to_right = (self.layer_idx + 3) % 4 >= 2;
+        let is_from_up = self.layer_idx % 2 == 1;
+        let mut i = 0usize;
+        loop {
+            if i < speed_map.len() {
+                wipe_speed = speed_map[i];
+            }
+            // need_thick_bridge_flow() is false for layer_height >= 0.2; the
+            // floating-area branch below that is not ported.
+            let mut ironing_length = 3.0_f32;
+            if i == 0 && self.config.use_gap_wall {
+                if self.left_to_right {
+                    let dx = xr + overlap - writer.x();
+                    if dx.abs() < ironing_length {
+                        ironing_length = dx.abs();
+                    }
+                    let (x, y) = (writer.x(), writer.y());
+                    writer.extrude_f(x + ironing_length, y, wipe_speed);
+                    writer.retract(retract_length, retract_speed);
+                    let x = writer.x();
+                    writer.travel_f(x - 1.5 * ironing_length, y, 600.0);
+                    let x = writer.x();
+                    writer.travel_f(x + 1.5 * ironing_length, y, 240.0);
+                    writer.retract(-retract_length, retract_speed);
+                    let y = writer.y();
+                    writer.extrude_f(xr + overlap, y, wipe_speed);
+                } else {
+                    let dx = xl - overlap - writer.x();
+                    if dx.abs() < ironing_length {
+                        ironing_length = dx.abs();
+                    }
+                    let (x, y) = (writer.x(), writer.y());
+                    writer.extrude_f(x - ironing_length, y, wipe_speed);
+                    writer.retract(retract_length, retract_speed);
+                    let x = writer.x();
+                    writer.travel_f(x + 1.5 * ironing_length, y, 600.0);
+                    let x = writer.x();
+                    writer.travel_f(x - 1.5 * ironing_length, y, 240.0);
+                    writer.retract(-retract_length, retract_speed);
+                    let y = writer.y();
+                    writer.extrude_f(xl - overlap, y, wipe_speed);
+                }
+            } else {
+                let y = writer.y();
+                if self.left_to_right {
+                    writer.extrude_f(xr + overlap, y, wipe_speed);
+                } else {
+                    writer.extrude_f(xl - overlap, y, wipe_speed);
+                }
+            }
+            let y = writer.y();
+            if !is_from_up && (y + dy - WT_EPSILON > cleaning_box.lu.y - pw) {
+                break;
+            }
+            if is_from_up && (y - dy + WT_EPSILON) < cleaning_box.ld.y {
+                break;
+            }
+            x_to_wipe -= xr - xl;
+            if x_to_wipe < WT_EPSILON {
+                break;
+            }
+            let x = writer.x();
+            if is_from_up {
+                writer.extrude_f(x, y - dy, 0.0);
+            } else {
+                writer.extrude_f(x, y + dy, 0.0);
+            }
+            self.left_to_right = !self.left_to_right;
+            i += 1;
+        }
+        let (x, y) = (writer.x(), writer.y());
+        writer.add_wipe_point(Vec2f::new(x, y));
+        writer.add_wipe_point(Vec2f::new(
+            if !self.left_to_right { self.config.width } else { 0.0 },
+            y,
+        ));
+        if let Some(last) = self.plan.get(self.layer_idx).and_then(|l| l.tool_changes.last()) {
+            if self.current_tool != last.new_tool {
+                self.left_to_right = !self.left_to_right;
+            }
+        }
+        writer.set_extrusion_flow(self.extrusion_flow);
+        if first {
+            writer.append(&format!("; LINE_WIDTH: {:.6}\n", pw));
+        }
+    }
+
+
+    fn toolchange_wipe_legacy(
         &self,
         writer: &mut WipeTowerWriter,
         cleaning_box: &BoxCoordinates,

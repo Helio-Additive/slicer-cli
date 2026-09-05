@@ -558,6 +558,8 @@ pub struct PrintConfig {
     /// (WipeTower.cpp:1747), which gates the ironing block that opens every
     /// toolchange wipe (:4079-4116) and `m_flat_ironing` (:1768).
     pub prime_tower_skip_points: bool,
+    /// BambuStudio: `prime_tower_max_speed` (mm/s) — WipeTower::m_max_speed = value*60 (R808).
+    pub prime_tower_max_speed: CoordF,
 
     // === Multi-material ===
     /// Flush into infill to reduce waste.
@@ -1212,6 +1214,7 @@ impl Default for PrintConfig {
             enable_prime_tower: false,
             prime_tower_width: 60.0,
             prime_tower_skip_points: false,
+            prime_tower_max_speed: 90.0,
 
             // Multi-material
             flush_into_infill: false,
@@ -2743,6 +2746,12 @@ impl PrintConfig {
             // preset.rs's key list and generator.rs's defaults, so our
             // `use_gap_wall` was permanently false and the tower emitted none of
             // the per-toolchange ironing geometry.
+            "prime_tower_max_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.prime_tower_max_speed = v;
+                }
+                true
+            }
             "prime_tower_skip_points" => {
                 if let Some(v) = parse_bool(value) {
                     self.prime_tower_skip_points = v;

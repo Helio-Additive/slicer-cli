@@ -63,6 +63,13 @@ impl Value {
             Value::Str(s) => s.clone(),
             Value::Float(f) => {
                 // Trim trailing zeros for a stable, compact form.
+                // R808: native PlaceholderParser renders doubles through
+                // `std::ostringstream <<` = %g with 6 significant digits
+                // (299.339, 6.31062), not 6 decimals (299.33896, 6.310615).
+                // TEMPLATE_NUM_G6=0 restores the decimal form.
+                if crate::faithful_gate("TEMPLATE_NUM_G6") {
+                    return format_g6(*f);
+                }
                 let s = format!("{:.6}", f);
                 let s = s.trim_end_matches('0').trim_end_matches('.');
                 if s.is_empty() || s == "-0" {
@@ -577,4 +584,25 @@ fn replace_delimited(s: &str, open: char, close: char, ctx: &Context) -> String 
         i += 1;
     }
     out
+}
+
+
+/// C `%g` with precision 6: shortest of fixed/scientific, trailing zeros removed.
+pub fn format_g6(f: f64) -> String {
+    if f == 0.0 || !f.is_finite() {
+        return if f.is_finite() { "0".to_string() } else { f.to_string() };
+    }
+    let exp = f.abs().log10().floor() as i32;
+    // Round to 6 significant digits first (the exponent may move on rounding).
+    let sci = format!("{:.5e}", f);
+    let (mant, e) = sci.split_once('e').unwrap();
+    let e: i32 = e.parse().unwrap_or(exp);
+    if e < -4 || e >= 6 {
+        let mant = mant.trim_end_matches('0').trim_end_matches('.');
+        return format!("{}e{}{:02}", mant, if e < 0 { '-' } else { '+' }, e.abs());
+    }
+    let decimals = (5 - e).max(0) as usize;
+    let s = format!("{:.*}", decimals, f);
+    let s = if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.') } else { &s };
+    if s == "-0" { "0".to_string() } else { s.to_string() }
 }

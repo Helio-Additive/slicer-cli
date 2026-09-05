@@ -2247,6 +2247,13 @@ impl Print {
                 // permanently false and the tower emitted none of the ironing
                 // geometry that opens each toolchange wipe (:4079-4116).
                 cfg.use_gap_wall = self.config.prime_tower_skip_points;
+                if crate::faithful_gate("TOWER_SPEEDS_CPP") {
+                    // WipeTower.cpp:1754 m_max_speed = prime_tower_max_speed*60;
+                    // :1795 m_first_layer_speed = initial_layer_speed (default/2 if 0).
+                    cfg.max_speed = self.config.prime_tower_max_speed as f32;
+                    let fls = self.config.first_layer_speed as f32;
+                    cfg.first_layer_speed = if fls == 0.0 { cfg.max_speed / 2.0 } else { fls };
+                }
                 // WipeTower.cpp:1742 —
                 //   m_enable_timelapse_print(config.timelapse_type.value == TimelapseType::tlSmooth)
                 // with `tlSmooth = 1` (PrintConfig.hpp:216-219). Majora's config sets
@@ -3215,7 +3222,19 @@ fn emit_tower_tcr(
         tcr.start_pos.x - off.x,
         tcr.start_pos.y - off.y,
     );
-    let g = crate::gcode::wipe_tower_integration::transform_gcode(&tcr.gcode, local_seed, off, 0.0);
+    // R808: GCode.cpp:1096-1140 post_process_wipe_tower_moves subtracts the
+    // extruder offset (`extruder_offset = 0x2` on Majora's printer) from every
+    // transformed tower coordinate; the entry travel (tcr.start_pos) does not.
+    // TOWER_EXTRUDER_OFFSET=0 restores the unshifted tower.
+    let off_gcode = if crate::faithful_gate("TOWER_EXTRUDER_OFFSET") {
+        crate::gcode::wipe_tower::Vec2f::new(
+            off.x - print_config.extruder_offset_x as f32,
+            off.y - print_config.extruder_offset_y as f32,
+        )
+    } else {
+        off
+    };
+    let g = crate::gcode::wipe_tower_integration::transform_gcode(&tcr.gcode, local_seed, off_gcode, 0.0);
     // Substitute the tower's `[change_filament_gcode]` placeholder with the
     // evaluated custom tool-change template (append_tcr, GCode.cpp:936-1058).
     // Only real tool changes carry one; the finish_layer tcr has no placeholder,
@@ -3440,9 +3459,16 @@ fn emit_tower_tcr(
         } else {
             1800.0
         };
+        // R808: native is GCodeWriter::unretract (`G1 E2 F1800`), not the tower
+        // writer's 4-decimal E. TOWER_DERETRACT_FMT=0 restores `E2.0000`.
+        let e_str = if crate::faithful_gate("TOWER_DERETRACT_FMT") {
+            crate::gcode::format_gcode_value(print_config.retract_length_toolchange, 5)
+        } else {
+            format!("{:.4}", print_config.retract_length_toolchange)
+        };
         format!(
-            "{force_resume}{fil_start}{travel_to_start}G1 E{:.4} F{:.0}\n{tail_marker}{flush_queue}",
-            print_config.retract_length_toolchange, speed
+            "{force_resume}{fil_start}{travel_to_start}G1 E{} F{:.0}\n{tail_marker}{flush_queue}",
+            e_str, speed
         )
     } else {
         format!("{force_resume}{fil_start}{travel_to_start}{tail_marker}{flush_queue}")

@@ -112,6 +112,11 @@ pub fn transform_gcode(gcode: &str, mut pos: Vec2f, translation: Vec2f, angle: f
         .split('\n')
         .map(|line| {
             if !line.starts_with("G1 ") {
+                // GCode.cpp:1133-1145: after the change-filament placeholder the
+                // tracker forgets its position, so the next move re-emits X and Y.
+                if line == "[change_filament_gcode]" && crate::faithful_gate("TOWER_XFORM_TC_RESET") {
+                    old_pos = Vec2f::new(-1000.1, -1000.1);
+                }
                 return line.to_string();
             }
             // Char-scan the whole line: X/Y consume their number into `pos`;
