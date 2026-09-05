@@ -546,12 +546,30 @@ pub fn extrude_loop(
     {
         // Build a smoothed copy of the paths whose `smooth_speed` ramps across
         // discontinuities, then emit each with its smoothed feedrate.
+        // R803 SSD_LID probe (cpp twin: ssd_dump in GCode::extrude_loop).
+        let ssd_on = std::env::var("SSD_LID").ok().and_then(|w| w.parse::<usize>().ok())
+            .map(|want| SEAM_CTX.with(|c| c.get().map(|(_, idx)| idx == want).unwrap_or(false)))
+            .unwrap_or(false)
+            && loop_role == Some(ExtrusionRole::ExternalPerimeter);
+        let ssd_dump = |tag: &str, ps: &[ExtrusionPath], v_of: &dyn Fn(&ExtrusionPath) -> f64| {
+            use std::fmt::Write as _;
+            let mut sx: i64 = 0;
+            for p in ps { let pts = &p.polyline.points; for k in 0..pts.len().saturating_sub(1) { sx += pts[k].x(); } }
+            let mut o = format!("SSDLOOP {} sx={} n={}\n", tag, sx, ps.len());
+            for (i, p) in ps.iter().enumerate() {
+                let fp = p.polyline.first_point();
+                let _ = writeln!(o, "{} {} role={} deg={:.3} len={:.1} v={:.3} sv={:.3} x={} y={}", tag, i, p.role as i32, p.overhang_degree, p.length(), v_of(p), p.smooth_speed, fp.x, fp.y);
+            }
+            eprint!("{}", o);
+        };
+        if ssd_on { ssd_dump("SSDIN", &paths, &path_speed_fn); }
         let mut smoothed: Vec<ExtrusionPath> = paths.clone();
         super::smooth_speed::smooth_speed_discontinuity_area(
             smooth_coeff,
             &mut smoothed,
             path_speed_fn,
         );
+        if ssd_on { ssd_dump("SSDOUT", &smoothed, &path_speed_fn); }
         // GCode.cpp:6599-6601 — per-path ";FEATURE: <role>" on role change.
         let mut last_path_role = smoothed.first().map(|p| p.role);
         for path in &smoothed {

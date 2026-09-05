@@ -2963,6 +2963,14 @@ fn calculate_layer_slowdown_postproc(
     if cp {
         eprintln!("CPSOLVE-RES li={} t={:.6}", probe_layer, elapsed_time_total0);
     }
+    if cpl == Some(probe_layer) {
+        // R803 CPOUT: post-solve feedrates (cpp twin: same line)
+        for adj in per_extruder_adjustments.iter() {
+            for l in adj.lines.iter() {
+                eprintln!("CPOUT li={} pos={} type={:x} len={:.5} f={:.4} t={:.6}", probe_layer, l.line_start, l.line_type, l.length, l.feedrate, l.time);
+            }
+        }
+    }
     elapsed_time_total0
 }
 

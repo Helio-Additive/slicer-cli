@@ -3259,6 +3259,10 @@ impl PerimeterGenerator {
 
     fn generate_arachne(&self, slices: &[ExPolygon]) -> PerimeterResult {
         let mut result = PerimeterResult::new();
+        // R803e — see the LoopNode block in the per-line loop below.
+        let arachne_nodes_on = self.config.z_direction_outwall_speed_continuous
+            && crate::faithful_gate("ARACHNE_LOOP_NODES");
+        let arachne_node_first = result.loop_nodes.len();
 
         if slices.is_empty() {
             result.infill_area = slices.to_vec();
@@ -4055,12 +4059,33 @@ impl PerimeterGenerator {
             }
 
             // PerimeterGenerator.cpp:1792  traverse_extrusions -> append to loops.
+            // R803e — PerimeterGenerator.cpp:684-707/937: with
+            // z_direction_outwall_speed_continuous, native records ONE LoopNode per
+            // outer ExtrusionLine (contour = junction points + widths, loop_id = the
+            // entity index it is about to get) and brackets the collection's
+            // loop_node_range. Rust only did this on the classic path, so arachne
+            // layers had NO cooling nodes: no `; COOLING_NODE:` tags, and the
+            // cross-layer outer-wall speed smoother in the GCodeEditor never ran.
             for ext in ordered_extrusions.iter() {
                 let role = if ext.inset_idx == 0 {
                     ExtrusionRole::ExternalPerimeter
                 } else {
                     ExtrusionRole::Perimeter
                 };
+                if arachne_nodes_on && ext.inset_idx == 0 {
+                    let pts: Vec<crate::Point> = ext.junctions.iter().map(|j| j.p).collect();
+                    let widths: Vec<crate::Coord> = ext.junctions.iter().map(|j| j.w).collect();
+                    let bb = crate::geometry::BoundingBox::from_points(&pts);
+                    // native: bbox.offset(outer_wall_line_width / 2) — a mm value on a
+                    // scaled box, truncated to 0 by the coord_t conversion.
+                    let mut node = crate::layer::LoopNode::new(
+                        result.loop_nodes.len(),
+                        entities.entities.len(),
+                        bb,
+                    );
+                    node.node_contour = crate::layer::NodeContour { pts, widths, is_loop: ext.is_closed };
+                    result.loop_nodes.push(node);
+                }
                 let ext_paths = self.arachne_line_to_extrusion_paths(ext, role);
                 // R660 — AWIDTH. TPMPPROBE showed `thick_polyline_to_multi_path`
                 // receives an ALREADY-FLAT ThickPolyline on 97.6% of calls, so the
@@ -4179,6 +4204,9 @@ impl PerimeterGenerator {
         }
 
         result.entities = entities;
+        if arachne_nodes_on {
+            result.entities.loop_node_range = (arachne_node_first, result.loop_nodes.len());
+        }
         result.infill_area = infill_contour;
         result.no_overlap_area = no_overlap_contour;
         result

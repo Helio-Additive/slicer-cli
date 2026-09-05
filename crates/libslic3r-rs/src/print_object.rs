@@ -1766,6 +1766,15 @@ impl PrintObject {
                     .flat_map(|l| l.loop_nodes.iter())
                     .filter(|n| !n.lower_node_ids.is_empty())
                     .count();
+                let (mut ents, mut ents_with_node, mut regions_ranged) = (0usize, 0usize, 0usize);
+                for l in self.layers.iter() {
+                    for r in l.regions() {
+                        ents += r.perimeters.entities.len();
+                        ents_with_node += r.entity_cooling_nodes.iter().filter(|&&v| v != -1).count();
+                        if r.perimeters.loop_node_range.1 > r.perimeters.loop_node_range.0 { regions_ranged += 1; }
+                    }
+                }
+                eprintln!("NODEDBG entities={} with_node={} regions_ranged={}", ents, ents_with_node, regions_ranged);
                 eprintln!(
                     "NODEDBG layers={} nodes={} linked={} max_merged_id={}",
                     self.layers.len(),
