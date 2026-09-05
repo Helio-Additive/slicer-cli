@@ -4726,6 +4726,30 @@ impl PerimeterGenerator {
                             &mut paths,
                             Some(&start),
                         );
+                        // PerimeterGenerator.cpp:836-838 — after chaining, native
+                        // lowpass-filters the per-piece overhang degrees
+                        // (smooth_overhang_level) whenever overhang speed is on.
+                        // R803: rust had NO twin, so every short degree flip
+                        // reached the writer as its own speed change: arachne
+                        // benchy outer walls carried +7,936 speed-only `G1 F`
+                        // lines (20,032 v 12,096).
+                        if crate::faithful_gate("ARACHNE_OVERHANG_DEGREE")
+                            && crate::faithful_gate("ARACHNE_SMOOTH_OVERHANG")
+                        {
+                            smooth_overhang_level(&mut paths);
+                        }
+                        if let Ok(want) = std::env::var("OVHDEG_LID") {
+                            if want == self.config.layer_id.to_string() {
+                                use std::fmt::Write as _;
+                                let mut o = String::new();
+                                for (i, p) in paths.iter().enumerate() {
+                                    let r = match p.role { ExtrusionRole::ExternalPerimeter => 'E', ExtrusionRole::Perimeter => 'P', ExtrusionRole::OverhangPerimeter => 'O', _ => '?' };
+                                    let fp = p.polyline.first_point();
+                                    let _ = writeln!(o, "OVHDEG lid={} line={} i={} role={} deg={} len={:.1} x={} y={} w={:.4}", self.config.layer_id, line.inset_idx, i, r, p.overhang_degree as i32, p.length(), fp.x, fp.y, p.width);
+                                }
+                                eprint!("{}", o);
+                            }
+                        }
                         return paths;
                     }
                     // else fall through to the single-path form.
@@ -4956,5 +4980,115 @@ fn lastprobe(stage: &str, contours: usize, holes: usize, points: usize) {
                 v.calls, v.contours, v.holes, v.points
             );
         }
+    }
+}
+
+
+/// PerimeterGenerator.cpp:527-608 — `static void smooth_overhang_level(ExtrusionPaths&)`.
+///
+/// For every run of consecutive wall pieces (Perimeter / ExternalPerimeter) that
+/// share an integer overhang degree and are together shorter than 0.8 mm, replace
+/// the run's degree by the length-weighted average degree over a 6.5 mm window
+/// (the run plus its neighbours on both sides, wrapping around the loop, stopping
+/// at an OverhangPerimeter piece). Degrees are read and written as C++ `int`
+/// (truncation), exactly like `get_overhang_degree()` / `set_overhang_degree(int)`.
+fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
+    let threshold_length: f64 = crate::scaled_f(0.8);
+    let filter_range: f64 = crate::scaled_f(6.5);
+
+    // 0. save old overhang series first which is input of filter
+    let path_num = paths.len() as i64;
+    if path_num < 2 {
+        // don't need to do filtering if only has one path in vector
+        return;
+    }
+    let old: Vec<i32> = paths.iter().map(|p| p.overhang_degree as i32).collect();
+    let is_wall = |r: ExtrusionRole| {
+        r == ExtrusionRole::Perimeter || r == ExtrusionRole::ExternalPerimeter
+    };
+
+    let mut i: i64 = 0;
+    while i < path_num {
+        if !is_wall(paths[i as usize].role) {
+            i += 1;
+            continue;
+        }
+        let current_length = paths[i as usize].length();
+        let current_overhang_degree = old[i as usize];
+        let mut total_lens = current_length;
+        let mut pt = i + 1;
+        while pt < path_num {
+            let p = &paths[pt as usize];
+            if (p.overhang_degree as i32) != current_overhang_degree || !is_wall(p.role) {
+                break;
+            }
+            total_lens += p.length();
+            pt += 1;
+        }
+
+        if total_lens < threshold_length {
+            let mut left_total_length = (filter_range - total_lens) / 2.0;
+            let mut right_total_length = left_total_length;
+            let mut neighbor_path: Vec<(f64, i32)> = Vec::new();
+
+            let mut j = i - 1;
+            let mut guard = 0i64;
+            while left_total_length > 0.0 {
+                let index = if j < 0 { path_num - 1 } else { j };
+                if paths[index as usize].role == ExtrusionRole::OverhangPerimeter {
+                    break;
+                }
+                let temp_length = paths[index as usize].length();
+                if temp_length > left_total_length {
+                    neighbor_path.push((left_total_length, old[index as usize]));
+                } else {
+                    neighbor_path.push((temp_length, old[index as usize]));
+                }
+                left_total_length -= temp_length;
+                j = index;
+                j -= 1;
+                guard += 1;
+                if guard > 4 * path_num + 8 {
+                    break; // all-zero-length loop: native would spin here
+                }
+            }
+
+            j = pt;
+            guard = 0;
+            while right_total_length > 0.0 {
+                let index = j % path_num;
+                if paths[index as usize].role == ExtrusionRole::OverhangPerimeter {
+                    break;
+                }
+                let temp_length = paths[index as usize].length();
+                if temp_length > right_total_length {
+                    neighbor_path.push((right_total_length, old[index as usize]));
+                } else {
+                    neighbor_path.push((temp_length, old[index as usize]));
+                }
+                right_total_length -= temp_length;
+                j += 1;
+                guard += 1;
+                if guard > 4 * path_num + 8 {
+                    break;
+                }
+            }
+
+            let mut sum = 0.0_f64;
+            let mut length_sum = 0.0_f64;
+            for (l, d) in &neighbor_path {
+                sum += l * (*d as f64);
+                length_sum += l;
+            }
+            let average_overhang =
+                (total_lens * current_overhang_degree as f64 + sum) / (length_sum + total_lens);
+            for idx in i..pt {
+                // set_overhang_degree(int): clamp to [0, 10] on perimeter roles.
+                let v = (average_overhang as i32).clamp(0, 10);
+                paths[idx as usize].overhang_degree = v as f64;
+            }
+        }
+
+        i = pt;
     }
 }
