@@ -1508,6 +1508,53 @@ impl PrintObject {
             }
             if !stolen_total.is_empty() {
                 // Remainder stays in region 0.
+                // R806 MMSEG_REMAINDER_SEQ (faithful ON) — PrintObjectSlice.cpp:948-976:
+                // native builds the unpainted remainder on flat Polygons, subtracting
+                // each extruder's SEGMENTED pieces one ctDifference at a time (extruder
+                // order, own extruder skipped, bbox-gated), then
+                // opening(union_ex(mine), 5*EPSILON) via the Paths offset variants,
+                // then union_ex. The one-shot ExPolygon difference rounds its
+                // intersection vertices differently (457 Majora layers diverged in
+                // region 0 alone).
+                let seq_remainder: Option<crate::geometry::ExPolygons> = if crate::faithful_gate("MMSEG_REMAINDER_SEQ") {
+                    use crate::clipper_utils::OffsetJoinType;
+                    let pts0: Vec<crate::Point> = region0_ex.iter().flat_map(|ex| ex.contour.points.iter().copied()).collect();
+                    let bb0 = crate::geometry::BoundingBox::from_points(&pts0);
+                    let mut mine: Vec<crate::geometry::Polygon> = crate::geometry::to_polygons(region0_ex);
+                    for slot in 0..segmented[layer_idx].len() {
+                        let extruder = (slot + 1) as u8;
+                        let seg = &segmented[layer_idx][slot];
+                        if seg.is_empty() {
+                            continue;
+                        }
+                        let is_self = crate::faithful_gate("PAINTED_REGION_DEDUP")
+                            && extruder_to_region.get(&extruder) == Some(&0);
+                        if is_self {
+                            continue;
+                        }
+                        let ptss: Vec<crate::Point> = seg.iter().flat_map(|ex| ex.contour.points.iter().copied()).collect();
+                        let bbs = crate::geometry::BoundingBox::from_points(&ptss);
+                        if !(bb0.min.x <= bbs.max.x && bb0.max.x >= bbs.min.x && bb0.min.y <= bbs.max.y && bb0.max.y >= bbs.min.y) {
+                            continue;
+                        }
+                        mine = crate::clipper_utils::difference_polygons_clib(&mine, seg);
+                        if mine.is_empty() {
+                            break;
+                        }
+                    }
+                    if mine.is_empty() {
+                        Some(Vec::new())
+                    } else {
+                        let u = crate::clipper_utils::union_ex_clib(&mine, 1);
+                        let rings = crate::geometry::to_polygons(&u);
+                        let d = (crate::scaled_f(5.0 * crate::libslic3r::EPSILON) as f32) as f64;
+                        let shr = crate::clipper_utils::offset_polygons_clib(&rings, -d, OffsetJoinType::Miter);
+                        let exp = crate::clipper_utils::offset_polygons_clib(&shr, d, OffsetJoinType::Miter);
+                        Some(crate::clipper_utils::union_ex_clib(&exp, 1))
+                    }
+                } else {
+                    None
+                };
                 // R698 — HOLE LOSS. C++ builds this remainder with
                 // `diff(mine, segmented.expolygons)` + `union_ex(mine)`
                 // (PrintObjectSlice.cpp:937/951), and subtracting painted islands
@@ -1530,7 +1577,9 @@ impl PrintObject {
                 // which already route this difference through ClipperLib. Do not
                 // spend another parity run on it; delete it with the next cleanup
                 // of the geo/clib gate family.
-                let mut remaining = if crate::opt_in_gate("MMSEG_DIFF_CLIB") {
+                let mut remaining = if let Some(r) = seq_remainder {
+                    r
+                } else if crate::opt_in_gate("MMSEG_DIFF_CLIB") {
                     crate::clipper_utils::difference_clib(region0_ex, &stolen_total)
                 } else {
                     crate::clipper_utils::difference(region0_ex, &stolen_total)
@@ -1569,7 +1618,7 @@ impl PrintObject {
                 // the opening is needed. NOTE the distance unit: `opening_ex` takes mm
                 // (the scale is applied inside `offset_expolygons`), so C++'s
                 // `scale_(5 * EPSILON)` is simply `5 * EPSILON` here.
-                if crate::faithful_gate("MMSEG_OPENING") && !remaining.is_empty() {
+                if !crate::faithful_gate("MMSEG_REMAINDER_SEQ") && crate::faithful_gate("MMSEG_OPENING") && !remaining.is_empty() {
                     // R697 — DIAGNOSTIC sweep knob. The nominal value is C++'s
                     // `scale_(5 * EPSILON)`; EPSILON is 1e-4 on both engines and
                     // `opening_ex` takes mm, so 5.0 * EPSILON is the faithful
