@@ -294,6 +294,8 @@ pub struct PrintObject {
     /// R805 — raw VOLUME-LOCAL f32 mesh of the main volume (same triangles as
     /// `mesh`), sliced through `paint_tb_trafo` under SLICE_VOLUME_TRAFO.
     pub raw_local_mesh: Option<crate::triangle_mesh::TriangleMesh>,
+    /// R805 — negative volumes as (volume-local mesh, exact 4x4 slicing transform).
+    pub negative_volumes_raw: Vec<(crate::triangle_mesh::TriangleMesh, [f64; 16])>,
 
     /// R770 — raw per-layer negative-volume slices (index-aligned with
     /// `layers`), captured during the R704 subtraction for the MM
@@ -335,6 +337,7 @@ impl PrintObject {
             paint_frame_offset: None,
             paint_tb_trafo: None,
             raw_local_mesh: None,
+            negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
     }
@@ -366,6 +369,7 @@ impl PrintObject {
             paint_frame_offset: None,
             paint_tb_trafo: None,
             raw_local_mesh: None,
+            negative_volumes_raw: Vec::new(),
             num_total_filaments: 1,
         }
     }
@@ -614,6 +618,12 @@ impl PrintObject {
                 let (nz0, nz1) = (nbb.min.z as f64, nbb.max.z as f64);
                 let mut n_layers_cut = 0usize;
                 let mut n_pieces = 0usize;
+                // R805 NEGVOL_EXACT_FRAME: slice each negative volume from its raw
+                // local vertices through its exact composed f32 frame.
+                let neg_exact = crate::faithful_gate("NEGVOL_EXACT_FRAME") && !self.negative_volumes_raw.is_empty();
+                let neg_raw = if neg_exact { self.negative_volumes_raw.clone() } else { Vec::new() };
+                let neg_res = if crate::faithful_gate("SLICE_SIMPLIFY") && self.print_config.resolution > 0.001 { 0.0025 } else { 0.0 };
+                let neg_closing = self.config.slice_closing_radius as f32;
                 // R770 — keep the raw per-layer negative slices for the MM
                 // segmentation's fill/clip-back flow (cpp neg_slices, MMS.cpp:2217).
                 self.mm_negative_layer_slices =
@@ -625,7 +635,20 @@ impl PrintObject {
                     // R804 NEGVOL_SLICE_PARAMS (faithful ON): negative volumes go
                     // through the same simplifying/closing slice parameters as
                     // the model parts (PrintObjectSlice.cpp:156-158).
-                    let cut_res = if crate::faithful_gate("NEGVOL_SLICE_PARAMS") {
+                    let cut_res = if neg_exact {
+                        let mut all: crate::geometry::ExPolygons = Vec::new();
+                        for (m, t16) in &neg_raw {
+                            let mut params = crate::triangle_mesh_slicer::MeshSlicingParamsEx::default();
+                            params.resolution = neg_res;
+                            params.closing_radius = neg_closing;
+                            params.base.frame_trafo = Some(*t16);
+                            let mut ls = crate::triangle_mesh_slicer::slice_mesh_ex(m, &[layer.slice_z as f32], &params, &|| {});
+                            if !ls.is_empty() {
+                                all.append(&mut ls[0]);
+                            }
+                        }
+                        Ok(all)
+                    } else if crate::faithful_gate("NEGVOL_SLICE_PARAMS") {
                         slicer.slice_at_z_faithful(&neg, layer.slice_z)
                     } else {
                         slicer.slice_at_z(&neg, layer.slice_z)

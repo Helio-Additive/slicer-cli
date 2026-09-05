@@ -205,6 +205,7 @@ pub fn slice_3mf_to_gcode(
         paint_segments,
         paint_raw_vertices,
         paint_instance_matrix,
+        negative_segments,
     } = load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     info!("Loaded {} triangles", mesh.triangle_count());
     // R703 — negative volumes are loaded but NOT yet subtracted; the per-layer
@@ -293,6 +294,7 @@ pub fn slice_3mf_to_gcode(
     // the integer center_offset to the projection.
     let mut paint_frame_offset: Option<(i64, i64)> = None;
     let mut paint_tb_trafo: Option<[f64; 16]> = None;
+    let mut paint_tc: Option<[f64; 12]> = None;
     let paint_pair: Option<([f64; 16], [f64; 16])> = if crate::faithful_gate("MMS_PAINT_FRAME")
         && !mmu_facets.is_empty()
         && paint_segments.len() == 1
@@ -382,6 +384,7 @@ pub fn slice_3mf_to_gcode(
         tc[10] -= oy as f64 * crate::libslic3r::SCALING_FACTOR;
         tc[11] += dz;
         let vt = compose12(c, &tc);
+        paint_tc = Some(tc);
         paint_tb_trafo = Some([
             vt[0], vt[1], vt[2], vt[9],
             vt[3], vt[4], vt[5], vt[10],
@@ -497,6 +500,30 @@ pub fn slice_3mf_to_gcode(
     print_object.paint_frame_offset = paint_frame_offset;
     print_object.paint_tb_trafo = paint_tb_trafo;
     print_object.raw_local_mesh = raw_local_mesh;
+    // R805 — negative volumes through the exact per-volume frame.
+    print_object.negative_volumes_raw = if let Some(tc) = paint_tc {
+        negative_segments
+            .iter()
+            .map(|(verts, tris, vol_tf)| {
+                let raw32: Vec<Point3F> = verts
+                    .iter()
+                    .map(|v| Point3F { x: v.x as f32 as f64, y: v.y as f32 as f64, z: v.z as f32 as f64 })
+                    .collect();
+                let tri: Vec<crate::triangle_mesh::Triangle> =
+                    tris.iter().map(|t| crate::triangle_mesh::Triangle::new(t[0], t[1], t[2])).collect();
+                let vt = compose12_rows(vol_tf, &tc);
+                let t16: [f64; 16] = [
+                    vt[0], vt[1], vt[2], vt[9],
+                    vt[3], vt[4], vt[5], vt[10],
+                    vt[6], vt[7], vt[8], vt[11],
+                    0.0, 0.0, 0.0, 1.0,
+                ];
+                (TriangleMesh::from_parts(raw32, tri), t16)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     print_object.painted_submeshes_strict = painted_submeshes_strict;
     print_object.num_total_filaments = print_config.num_filaments();
     // R704 — negative volumes travel with the object and are subtracted per
@@ -585,6 +612,8 @@ pub struct Parsed3mfModel {
     /// R787 — the build-item (instance) matrix for the painted object; identity
     /// when absent. paint_segments transforms are the VOLUME chain only.
     pub paint_instance_matrix: [f64; 12],
+    /// R805 — per negative volume: volume-local vertices, triangles, composed volume transform.
+    pub negative_segments: Vec<(Vec<Point3F>, Vec<[u32; 3]>, [f64; 12])>,
 }
 
 /// Everything the Tier-1 loader extracts from a `.3mf` archive.
@@ -616,6 +645,8 @@ pub struct Loaded3mf {
     /// R787 — the build-item (instance) matrix for the painted object; identity
     /// when absent. paint_segments transforms are the VOLUME chain only.
     pub paint_instance_matrix: [f64; 12],
+    /// R805 — per negative volume: volume-local vertices, triangles, composed volume transform.
+    pub negative_segments: Vec<(Vec<Point3F>, Vec<[u32; 3]>, [f64; 12])>,
 }
 
 /// Load a [`TriangleMesh`] from a `.3mf` ZIP by parsing `3D/3dmodel.model`.
@@ -691,6 +722,7 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         paint_segments: parsed.paint_segments,
         paint_raw_vertices: parsed.paint_raw_vertices,
         paint_instance_matrix: parsed.paint_instance_matrix,
+        negative_segments: parsed.negative_segments,
     })
 }
 
@@ -1162,6 +1194,7 @@ pub fn parse_3mf_model_xml_with_negatives(
     let mut paint_segments: Vec<(usize, usize, [f64; 12])> = Vec::new();
     let mut paint_raw_vertices: Vec<Point3F> = Vec::new();
     let mut paint_instance: Option<[f64; 12]> = None;
+    let mut negative_segments: Vec<(Vec<Point3F>, Vec<[u32; 3]>, [f64; 12])> = Vec::new();
 
     #[allow(clippy::too_many_arguments)]
     fn instantiate_object(
@@ -1180,6 +1213,7 @@ pub fn parse_3mf_model_xml_with_negatives(
         build_tf: &[f64; 12],
         vol_tf: &[f64; 12],
         paint_instance: &mut Option<[f64; 12]>,
+        negative_segments: &mut Vec<(Vec<Point3F>, Vec<[u32; 3]>, [f64; 12])>,
     ) {
         if let Some(mesh_data) = objects.get(&obj_id) {
             // Non-printable objects (`type != "model"`, e.g. `type="other"`
@@ -1203,6 +1237,10 @@ pub fn parse_3mf_model_xml_with_negatives(
                             tri[2] + v_offset,
                         ));
                     }
+                    // R805 — keep the volume-LOCAL vertices + composed volume
+                    // transform so the negative can be sliced through the exact
+                    // f32 frame (NEGVOL_EXACT_FRAME), like paint_segments.
+                    negative_segments.push((mesh_data.vertices.clone(), mesh_data.triangles.clone(), *vol_tf));
                 }
                 return;
             }
@@ -1249,6 +1287,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                     build_tf,
                     &vol_composed,
                     paint_instance,
+                    negative_segments,
                 );
             }
         }
@@ -1290,6 +1329,7 @@ pub fn parse_3mf_model_xml_with_negatives(
                 transform,
                 &identity,
                 &mut paint_instance,
+                &mut negative_segments,
             );
         }
     }
@@ -1342,6 +1382,7 @@ pub fn parse_3mf_model_xml_with_negatives(
         paint_segments,
         paint_raw_vertices,
         paint_instance_matrix,
+        negative_segments,
         mesh: TriangleMesh::from_parts(all_vertices, all_triangles),
         negative_mesh: TriangleMesh::from_parts(neg_vertices, neg_triangles),
         mmu_facets,
@@ -1694,4 +1735,22 @@ fn apply_filament_overrides(config: &mut PrintConfig, json: &serde_json::Value) 
             _ => crate::print_config::ZHopType::Spiral,
         };
     }
+}
+
+/// R805 — row-major 3x4 affine composition (same as the paint block's compose12).
+fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
+    [
+        b[0] * a[0] + b[1] * a[3] + b[2] * a[6],
+        b[0] * a[1] + b[1] * a[4] + b[2] * a[7],
+        b[0] * a[2] + b[1] * a[5] + b[2] * a[8],
+        b[3] * a[0] + b[4] * a[3] + b[5] * a[6],
+        b[3] * a[1] + b[4] * a[4] + b[5] * a[7],
+        b[3] * a[2] + b[4] * a[5] + b[5] * a[8],
+        b[6] * a[0] + b[7] * a[3] + b[8] * a[6],
+        b[6] * a[1] + b[7] * a[4] + b[8] * a[7],
+        b[6] * a[2] + b[7] * a[5] + b[8] * a[8],
+        b[0] * a[9] + b[1] * a[10] + b[2] * a[11] + b[9],
+        b[3] * a[9] + b[4] * a[10] + b[5] * a[11] + b[10],
+        b[6] * a[9] + b[7] * a[10] + b[8] * a[11] + b[11],
+    ]
 }
