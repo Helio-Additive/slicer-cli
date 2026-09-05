@@ -831,6 +831,18 @@ impl PrintObject {
         for layer in &mut self.layers {
             layer.make_slices();
         }
+        if crate::probe_enabled("LSLPROBE") {
+            // R806 — lslices AFTER the post-MMS make_slices (the LSL dump above is pre-rebuild).
+            for (li, layer) in self.layers.iter().enumerate() {
+                let (mut n, mut pts, mut sx, mut sy) = (0usize, 0usize, 0i64, 0i64);
+                for ex in &layer.lslices {
+                    n += 1 + ex.holes.len();
+                    for pt in &ex.contour.points { pts += 1; sx += pt.x(); sy += pt.y(); }
+                    for h in &ex.holes { for pt in &h.points { pts += 1; sx += pt.x(); sy += pt.y(); } }
+                }
+                eprintln!("LSL2 li={} n={} pts={} sx={} sy={}", li, n, pts, sx, sy);
+            }
+        }
         if crate::probe_enabled("SLICEPTS") {
             let (mut c, mut p) = (0u64, 0u64);
             for layer in self.layers.iter() {
@@ -884,6 +896,32 @@ impl PrintObject {
         }
         if num_regions > 1 && !self.painted_submeshes.is_empty() {
             self.apply_mm_segmentation_tier1()?;
+            // R806 LSLICES_POST_MMS (faithful ON): native rebuilds lslices from the
+            // post-segmentation regions (PrintObjectSlice.cpp:1355 make_slices →
+            // union_safety_offset_ex over all regions). The pre-split lslices are
+            // NOT byte-equivalent: the safety-offset union keeps region-boundary
+            // vertices (Majora layer 2: 1,403 v 1,845 points), and lslices feed
+            // overhang/bridge detection and the fills.
+            if crate::faithful_gate("LSLICES_POST_MMS") {
+                let __t = std::time::Instant::now();
+                for layer in &mut self.layers {
+                    layer.make_slices();
+                }
+                if crate::probe_enabled("SLICE_PHASE_TIMING") {
+                    eprintln!("[SLICE_PHASE_TIMING] lslices post-MMS rebuild {:.3}s", __t.elapsed().as_secs_f64());
+                }
+                if crate::probe_enabled("LSLPROBE") {
+                    for (li, layer) in self.layers.iter().enumerate() {
+                        let (mut n, mut pts, mut sx, mut sy) = (0usize, 0usize, 0i64, 0i64);
+                        for ex in &layer.lslices {
+                            n += 1 + ex.holes.len();
+                            for pt in &ex.contour.points { pts += 1; sx += pt.x(); sy += pt.y(); }
+                            for h in &ex.holes { for pt in &h.points { pts += 1; sx += pt.x(); sy += pt.y(); } }
+                        }
+                        eprintln!("LSL3 li={} n={} pts={} sx={} sy={}", li, n, pts, sx, sy);
+                    }
+                }
+            }
         }
         if crate::probe_enabled("LSLPROBE") {
             // R804 per-layer lslices + per-region slice census (cpp twin: PrintObjectSlice.cpp).

@@ -3424,6 +3424,15 @@ pub fn union_safety_offset_ex(polygons: &[Polygon]) -> ExPolygons {
     if polygons.is_empty() {
         return ExPolygons::new();
     }
+    // R806 — native `union_safety_offset_ex(const Polygons&)` is exactly
+    // `offset_ex(polygons, ClipperSafetyOffset)` (ClipperUtils.hpp:372): one
+    // per-path raw_offset(+10) and ONE PolyTree union. The older clib twin ran a
+    // safety offset plus two union passes, which re-rounds the merged boundary
+    // (Majora post-MMS lslices: 0/656 layers exact even where every region was
+    // byte-exact). Gate LSLICES_OFFSET_EX (faithful ON).
+    if crate::faithful_gate("CLIPPER_INT") && crate::faithful_gate("LSLICES_OFFSET_EX") {
+        return offset_ex_polygons_clib(polygons, (10.0f32) as f64, OffsetJoinType::Miter);
+    }
 
     if crate::faithful_gate("CLIPPER_INT") {
         return union_safety_offset_ex_clib(polygons);
