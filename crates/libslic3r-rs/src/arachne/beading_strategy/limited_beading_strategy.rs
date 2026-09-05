@@ -252,6 +252,23 @@ impl BeadingStrategy for LimitedBeadingStrategy {
     /// C++: }
     fn get_optimal_bead_count(&self, thickness: Coord) -> Coord {
         let parent_bead_count = self.parent.get_optimal_bead_count(thickness);
+        if crate::probe_enabled("OBCPROBE") {
+            let r = if parent_bead_count <= self.max_bead_count {
+                parent_bead_count
+            } else if parent_bead_count == self.max_bead_count + 1 {
+                if thickness
+                    < self.parent.get_optimal_thickness(self.max_bead_count + 1)
+                        - scaled_coord(0.01)
+                {
+                    self.max_bead_count
+                } else {
+                    self.max_bead_count + 1
+                }
+            } else {
+                self.max_bead_count + 1
+            };
+            eprintln!("OBC {} {} w={} m={}", thickness, r, self.optimal_width(), self.max_bead_count);
+        }
         if parent_bead_count <= self.max_bead_count {
             self.parent.get_optimal_bead_count(thickness)
         } else if parent_bead_count == self.max_bead_count + 1 {

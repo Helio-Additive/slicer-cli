@@ -63,8 +63,11 @@ const SKELETAL_TRAPEZOIDATION_BEAD_SEARCH_MAX: Coord = 1000;
 /// `crate::scaled` is not a `const fn`, so the `static constexpr` members below are
 /// expressed as `const fn` for use in `const`-contexts.
 const fn scaled_c(mm: f64) -> Coord {
-    // crate::SCALING_FACTOR == 100_000.0; round to nearest.
-    (mm * crate::SCALING_FACTOR + 0.5) as Coord
+    // R803 — native `scaled<coord_t>(mm)` = `coord_t(mm / SCALING_FACTOR)`
+    // (Point.hpp:540): DIVISION by the double 1e-5, then truncation. That is
+    // one unit BELOW `mm * 1e5` for 0.5 (49999), 2.0 (199999), 0.02 (1999),
+    // 0.005 (499), 0.01 (999) — see crate::scaled.
+    (mm / 0.00001_f64) as Coord
 }
 
 // SkeletalTrapezoidation.hpp:70 static constexpr coord_t central_filter_dist = scaled<coord_t>(0.02);
@@ -395,7 +398,29 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
     // SkeletalTrapezoidation.cpp:219-329
     // Points SkeletalTrapezoidation::discretize(const VD::edge_type& vd_edge, const std::vector<Segment>& segments)
+    /// R803 DISC — wrapper that dumps every discretize() result for the
+    /// AWST_SX-matched call (cpp twin prints the same line).
     fn discretize(
+        &self,
+        diagram: &bv::Diagram,
+        vd_edge: bv::EdgeIndex,
+        segments: &[PolygonsSegmentIndex],
+    ) -> Vec<Point> {
+        let r = self.discretize_inner(diagram, vd_edge, segments);
+        if Self::awst_on_inner() {
+            use std::fmt::Write as _;
+            let e = &diagram.edges()[vd_edge.usize()];
+            let lc = diagram.cell(e.cell().unwrap()).unwrap();
+            let rc = diagram.cell(diagram.edges()[e.twin().unwrap().usize()].cell().unwrap()).unwrap();
+            let kind = if (!lc.contains_point() && !rc.contains_point()) || e.is_secondary() { 0 } else if lc.contains_point() != rc.contains_point() { 1 } else { 2 };
+            let mut o = format!("DISC kind={} n={}", kind, r.len());
+            for q in &r { let _ = write!(o, " {},{}", q.x, q.y); }
+            eprintln!("{o}");
+        }
+        r
+    }
+
+    fn discretize_inner(
         &self,
         diagram: &bv::Diagram,
         vd_edge: bv::EdgeIndex,
@@ -654,6 +679,14 @@ impl<'a> SkeletalTrapezoidation<'a> {
         // Build the parallel (`Line` for VD construction) + (`PolygonsSegmentIndex`
         // for source lookup) arrays in identical order so cell.source_index() maps
         // to the right segment (the crate's VD is built from `&[Line]`).
+        // R803 AWVIN — the exact Voronoi input rings for the AWST_SX-matched
+        // call, in examples/voronoi_ab.rs format ("TAG i s x,y;x,y;...").
+        if Self::awst_on_inner() {
+            for (i, poly) in polys.iter().enumerate() {
+                let pts: Vec<String> = poly.points.iter().map(|q| format!("{},{}", q.x(), q.y())).collect();
+                eprintln!("AWVIN {} - {}", i, pts.join(";"));
+            }
+        }
         let mut segments: Vec<PolygonsSegmentIndex> = Vec::new();
         let mut lines: Vec<Line> = Vec::new();
         for poly_idx in 0..polys.len() {
@@ -843,7 +876,13 @@ impl<'a> SkeletalTrapezoidation<'a> {
         }
 
         // SkeletalTrapezoidation.cpp:507 separatePointyQuadEndNodes();
+        if Self::awst_on_inner() {
+            self.tbarach_dump("cA");
+        }
         self.separate_pointy_quad_end_nodes();
+        if Self::awst_on_inner() {
+            self.tbarach_dump("cB");
+        }
         if crate::probe_enabled("CONV") {
             conv_stage(1, self.graph.edges.len(), self.graph.nodes.len());
         }
@@ -865,6 +904,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
             SNAP_DIST
         };
         self.graph.collapse_small_edges(collapse_snap_dist);
+        if Self::awst_on_inner() {
+            self.tbarach_dump("c0");
+        }
         if crate::probe_enabled("CONV") {
             conv_stage(2, self.graph.edges.len(), self.graph.nodes.len());
         }
@@ -961,7 +1003,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
         self.central_census("0 after updateIsCentral");
         // R773 TBARACH — dump the (deterministic) 72-node surface's full graph
         // state after key stages, mirroring the cpp probe.
-        let tbarach = crate::probe_enabled("TBARACH")
+        let tbarach = Self::awst_on_inner() || crate::probe_enabled("TBARACH")
             && self
                 .graph
                 .nodes
@@ -996,13 +1038,22 @@ impl<'a> SkeletalTrapezoidation<'a> {
         // SkeletalTrapezoidation.cpp:574 filterNoncentralRegions();
         self.filter_noncentral_regions();
         self.central_census("3 after filterNoncentralRegions");
+        if tbarach {
+            self.tbarach_dump("s3");
+        }
 
         // SkeletalTrapezoidation.cpp:580 generateTransitioningRibs();
         self.generate_transitioning_ribs();
         self.central_census("4 after generateTransitioningRibs");
+        if tbarach {
+            self.tbarach_dump("s4");
+        }
 
         // SkeletalTrapezoidation.cpp:586 generateExtraRibs();
         self.generate_extra_ribs();
+        if tbarach {
+            self.tbarach_dump("s5");
+        }
 
         // SkeletalTrapezoidation.cpp:592 generateSegments();
         self.generate_segments();
@@ -5020,6 +5071,11 @@ impl SkeletalTrapezoidation<'_> {
     /// `bead_count <= 0` more often".
     // R773 — full-graph state dump for the TBARACH first-surface drill;
     // sorted so both engines' outputs diff line-by-line.
+    /// R803 — true on the thread running the AWST_SX-matched WallToolPaths call.
+    fn awst_on_inner() -> bool {
+        crate::arachne::wall_tool_paths::AWST_ON.with(|c| c.get())
+    }
+
     pub(crate) fn tbarach_dump(&self, stage: &str) {
         let mut lines: Vec<String> = Vec::new();
         for n in self.graph.nodes.iter() {

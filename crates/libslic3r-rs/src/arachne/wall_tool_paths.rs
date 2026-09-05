@@ -53,8 +53,11 @@ pub const MESHFIX_MAXIMUM_EXTRUSION_AREA_DEVIATION: Coord = scaled_c(2.0);
 /// `const`-context `scaled<coord_t>(mm)` — multiply by `SCALING_FACTOR` (100_000) and round.
 /// Used for the `constexpr` constants above. `crate::scaled` is not `const fn`.
 const fn scaled_c(mm: f64) -> Coord {
-    // crate::SCALING_FACTOR == 100_000.0; round to nearest.
-    (mm * crate::SCALING_FACTOR + 0.5) as Coord
+    // R803 — native `scaled<coord_t>(mm)` = `coord_t(mm / SCALING_FACTOR)`
+    // (Point.hpp:540): DIVISION by the double 1e-5, then truncation. That is
+    // one unit BELOW `mm * 1e5` for 0.5 (49999), 2.0 (199999), 0.02 (1999),
+    // 0.005 (499), 0.01 (999) — see crate::scaled.
+    (mm / 0.00001_f64) as Coord
 }
 
 /// `Slic3r::sqr(x)` — square helper.
@@ -225,9 +228,13 @@ pub fn simplify_polygon(
 
         // WallToolPaths.cpp:97
         let length2: i64 = (current - previous).length_squared() as i64;
+        let awst = AWST_ON.with(|c| c.get());
         if length2 < scaled(25.0) {
             // We're allowed to always delete segments of less than 5 micron.
             // WallToolPaths.cpp:99-100
+            if awst {
+                eprintln!("SIMP {} {},{} len2={} br=tiny", point_idx, current.x, current.y, length2);
+            }
             continue;
         }
 
@@ -238,6 +245,9 @@ pub fn simplify_polygon(
 
         // WallToolPaths.cpp:106-107  Two line segments form a line back and forth with no area.
         if base_length_2 == 0 {
+            if awst {
+                eprintln!("SIMP {} {},{} len2={} br=base0", point_idx, current.x, current.y, length2);
+            }
             continue; // Remove the vertex.
         }
         // We want to check if the height of the triangle formed by previous, current and next vertices
@@ -253,10 +263,14 @@ pub fn simplify_polygon(
             / base_length_2 as f64) as i64;
         // WallToolPaths.cpp:116-118
         // scaled<double>(0.005) == 0.005 * SCALING_FACTOR (100_000) == 500.0
+        let awst_d = if awst { Line::distance_to_infinite(current, previous, next) } else { 0.0 };
         if height_2 <= sqr_i64(scaled(0.005)) // Almost exactly colinear (barring rounding errors).
-            && Line::distance_to_infinite(current, previous, next) <= 0.005 * crate::SCALING_FACTOR
+            && Line::distance_to_infinite(current, previous, next) <= crate::scaled_f(0.005) // scaled<double>(0.005) = 499.99999999999994
         {
             // make sure that height_2 is not small because of cancellation of positive and negative areas
+            if awst {
+                eprintln!("SIMP {} {},{} len2={} h2={} d={:.9} br=colin", point_idx, current.x, current.y, length2, height_2, awst_d);
+            }
             continue;
         }
 
@@ -286,6 +300,9 @@ pub fn simplify_polygon(
                     {
                         // New point seems like a valid one.
                         // WallToolPaths.cpp:140-141
+                        if awst {
+                            eprintln!("SIMP {} {},{} len2={} h2={} d={:.9} br=isect-ok ip={},{}", point_idx, current.x, current.y, length2, height_2, awst_d, intersection_point.x, intersection_point.y);
+                        }
                         current = intersection_point;
                         // If there was a previous point added, remove it.
                         // WallToolPaths.cpp:143-146
@@ -298,15 +315,24 @@ pub fn simplify_polygon(
                         // We can't find a better spot for it, but the size of the line is more than 5 micron.
                         // So the only thing we can do here is leave it in...
                         // WallToolPaths.cpp:135-138
+                        if awst {
+                            eprintln!("SIMP {} {},{} len2={} h2={} d={:.9} br=isect-no has={} ip={:?}", point_idx, current.x, current.y, length2, height_2, awst_d, intersection.is_some(), intersection.map(|p| (p.x, p.y)));
+                        }
                     }
                 }
             } else {
                 // WallToolPaths.cpp:148-149
+                if awst {
+                    eprintln!("SIMP {} {},{} len2={} h2={} d={:.9} br=remove", point_idx, current.x, current.y, length2, height_2, awst_d);
+                }
                 continue; // Remove the vertex.
             }
         }
         // Don't remove the vertex.
         // WallToolPaths.cpp:152-156
+        if awst {
+            eprintln!("SIMP {} {},{} len2={} h2={} d={:.9} br=keep", point_idx, current.x, current.y, length2, height_2, awst_d);
+        }
         accumulated_area_removed = removed_area_next; // so that in the next iteration it's the area between the origin, [previous] and [current]
         previous_previous = previous;
         previous = current; // Note that "previous" is only updated if we don't remove the vertex.
@@ -830,6 +856,21 @@ fn offset_polygons(polygons: &Polygons, delta: Coord) -> Polygons {
     // fixSelfIntersections, then again by the final union_. With all three on
     // the coord_t path the whole chain is bit-identical: p0-p7 92/94 and
     // `prepared_outline` 91/93, against 0/94 and 0/93 before.
+    // R803 — the ring START matters. AGEN's Σx/Σy fingerprints are rotation-
+    // invariant, so R725 could not see that the raw-paths arm below returns the
+    // native point SET rotated (lid-4 benchy-arachne: rotation 94 of 153). The
+    // next step, `simplify`, walks from index 0 and keeps a different vertex
+    // subset (70 v 71), which then feeds a different Voronoi diagram — the
+    // "arachne first-order fork" R772-R781 chased. Native `offset(Polygons)`
+    // is raw_offset + clipper_union<Paths>/shrink_paths<Paths>, whose
+    // BuildResult decides the start vertex; run exactly that.
+    if crate::faithful_gate("ARACHNE_PREP_OFFSET_PATHS") {
+        return clipper_utils::offset_polygons_clib(
+            polygons,
+            (delta as f32) as f64,
+            clipper_utils::OffsetJoinType::Miter,
+        );
+    }
     if crate::faithful_gate("ARACHNE_PREP_CLIB") {
         // native: `Polygons offset(const Polygons&, const float delta)` —
         // ClipperOffset, jtMiter/ML3, raw paths out, no union reconstruction.
@@ -953,6 +994,13 @@ impl WallToolPaths {
             (0usize, 0i64, 0i64)
         };
         let agen_ic = self.inset_count;
+        // R803 AWST_SX=<Σx of the ctor outline>: full junction dump after every
+        // post-processing stage for ONE signature-matched call (cpp twin: same name).
+        let awst: bool = std::env::var("AWST_SX")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .is_some_and(|want| want == agen_fp(&self.outline).1);
+        AWST_ON.with(|c| c.set(awst));
 
         // R774 AWIN — per-call WTP INPUT checksum (mirrors [CPP-AWIN]): pins
         // the surfaces where the pre-WTP chain forks despite byte-exact
@@ -1077,6 +1125,7 @@ impl WallToolPaths {
         );
         polyprobe("1 after triple offset", &prepared_outline);
         agen_dump_poly("p0", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p0", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1087,6 +1136,7 @@ impl WallToolPaths {
         simplify_polygons(&mut prepared_outline, smallest_segment, allowed_distance);
         polyprobe("2 after simplify", &prepared_outline);
         agen_dump_poly("p1", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p1", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1095,6 +1145,7 @@ impl WallToolPaths {
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
         polyprobe("3 after fixSelfIntersections", &prepared_outline);
         agen_dump_poly("p2", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p2", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1103,6 +1154,7 @@ impl WallToolPaths {
         remove_degenerate_verts(&mut prepared_outline);
         polyprobe("4 after removeDegenerateVerts", &prepared_outline);
         agen_dump_poly("p3", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p3", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1111,6 +1163,7 @@ impl WallToolPaths {
         remove_colinear_edges(&mut prepared_outline, 0.005);
         polyprobe("5 after removeColinearEdges", &prepared_outline);
         agen_dump_poly("p4", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p4", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1120,6 +1173,7 @@ impl WallToolPaths {
         fix_self_intersections(epsilon_offset, &mut prepared_outline);
         polyprobe("3 after fixSelfIntersections", &prepared_outline);
         agen_dump_poly("p5", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p5", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1128,6 +1182,7 @@ impl WallToolPaths {
         remove_degenerate_verts(&mut prepared_outline);
         polyprobe("4 after removeDegenerateVerts", &prepared_outline);
         agen_dump_poly("p6", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p6", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1139,6 +1194,7 @@ impl WallToolPaths {
             false,
         );
         agen_dump_poly("p7", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p7", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
         }
@@ -1150,6 +1206,7 @@ impl WallToolPaths {
         prepared_outline = union_polygons(&prepared_outline);
         polyprobe("3 final prepared_outline", &prepared_outline);
         agen_dump_poly("p8", agen_orig, &prepared_outline, agen_ic);
+        awst_poly("p8", awst, &prepared_outline);
         if ap {
             areas.push(area_polygons(&prepared_outline));
             let ns = ap_t0.map_or(0, |t| t.elapsed().as_nanos() as u64);
@@ -1288,32 +1345,57 @@ impl WallToolPaths {
         // distinct) and 98% flat per loop by the time the perimeter generator sees
         // it, so exactly one of these five stages flattens it.
         stageprobe("0 after generate_toolpaths", &self.toolpaths);
+        awst_dump("0", awst, &self.toolpaths);
         agen_dump_tp("gen", agen_orig, &self.toolpaths, agen_ic);
         agenpts_tp("gen", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:534
         Self::stitch_tool_paths(&mut self.toolpaths, self.bead_width_x);
         stageprobe("1 after stitch_tool_paths", &self.toolpaths);
+        awst_dump("1", awst, &self.toolpaths);
         agen_dump_tp("stitch", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:536
         Self::remove_small_lines(&mut self.toolpaths);
         stageprobe("2 after remove_small_lines", &self.toolpaths);
+        awst_dump("2", awst, &self.toolpaths);
         agen_dump_tp("small", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:538
         self.separate_out_inner_contour();
         stageprobe("3 after separate_out_inner_contour", &self.toolpaths);
+        awst_dump("3", awst, &self.toolpaths);
         agen_dump_tp("sep", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:540
         Self::simplify_tool_paths(&mut self.toolpaths);
         stageprobe("4 after simplify_tool_paths", &self.toolpaths);
+        awst_dump("4", awst, &self.toolpaths);
         agen_dump_tp("simp", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:542
         Self::remove_empty_tool_paths(&mut self.toolpaths);
         stageprobe("5 after remove_empty_tool_paths", &self.toolpaths);
+        // R803 AWOUT — per-call INPUT fingerprint + OUTPUT checksum, so the
+        // divergent WallToolPaths calls can be listed directly (cpp twin: same
+        // line), independent of which surface / speculative pass they belong to.
+        if crate::probe_enabled("AWOUT") {
+            let (n, sx, sy) = agen_fp(&self.outline);
+            let (mut nl, mut nj, mut jx, mut jy, mut jw) = (0i64, 0i64, 0i64, 0i64, 0i64);
+            for lines in &self.toolpaths {
+                for line in lines {
+                    nl += 1;
+                    for j in &line.junctions {
+                        nj += 1;
+                        jx = jx.wrapping_add(j.p.x);
+                        jy = jy.wrapping_add(j.p.y);
+                        jw = jw.wrapping_add(j.w);
+                    }
+                }
+            }
+            eprintln!("AWOUT pts={} sx={} sy={} ic={} nl={} nj={} jx={} jy={} jw={}", n, sx, sy, self.inset_count, nl, nj, jx, jy, jw);
+        }
+        awst_dump("5", awst, &self.toolpaths);
         agen_dump_tp("empty", agen_orig, &self.toolpaths, agen_ic);
         // WallToolPaths.cpp:543-547  assert sorted by inset_idx (debug-only)
         debug_assert!(self
@@ -1791,6 +1873,42 @@ mod tests {
 /// of lines whose junction widths are all equal ("flat"). The stage where the
 /// flat share jumps is the one that discards the variation.
 #[allow(dead_code)]
+thread_local! {
+    /// R803 — set by `generate()` for the AWST_SX-matched call so the
+    /// SkeletalTrapezoidation stages can dump their graph for that call only.
+    pub(crate) static AWST_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// R803 — keyed ring dump of the prepared-outline chain (cpp twin: awst_poly).
+pub(crate) fn awst_poly(stage: &str, on: bool, polys: &[crate::geometry::Polygon]) {
+    if !on {
+        return;
+    }
+    for (i, poly) in polys.iter().enumerate() {
+        let pts: Vec<String> = poly.points.iter().map(|q| format!("{},{}", q.x(), q.y())).collect();
+        eprintln!("AWPOLY {} {} n={} {}", stage, i, poly.points.len(), pts.join(";"));
+    }
+}
+
+/// R803 — keyed full-junction dump of one WallToolPaths call, per stage.
+pub(crate) fn awst_dump(stage: &str, on: bool, toolpaths: &[VariableWidthLines]) {
+    if !on {
+        return;
+    }
+    use std::fmt::Write as _;
+    let mut o = String::new();
+    for (li, lines) in toolpaths.iter().enumerate() {
+        for (lj, line) in lines.iter().enumerate() {
+            let _ = write!(o, "AWST {} {}/{} inset={} odd={} closed={} n={}", stage, li, lj, line.inset_idx, line.is_odd as i32, line.is_closed as i32, line.junctions.len());
+            for j in &line.junctions {
+                let _ = write!(o, " {},{},{}", j.p.x, j.p.y, j.w);
+            }
+            o.push('\n');
+        }
+    }
+    eprint!("{}", o);
+}
+
 pub(crate) fn stageprobe(stage: &str, toolpaths: &[VariableWidthLines]) {
     if !crate::probe_enabled("STAGEPROBE") {
         return;

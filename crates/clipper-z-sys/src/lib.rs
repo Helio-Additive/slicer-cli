@@ -239,6 +239,9 @@ extern "C" {
     /// StrictlySimple(true). The ExPolygon::simplify_p post-DP step. Returns flat
     /// Paths (z=0); caller re-unions into ExPolygons. fill_type: 0..3 as above.
     pub fn cz_simplify_polygons(xy: *const i32, lens: *const i32, num: i32, fill_type: i32) -> CzZPaths;
+    /// R803: faithful `offset(const Polygons&, float delta)` — flat Paths in
+    /// Clipper's BuildResult order (ring START vertex preserved).
+    pub fn cz_offset_paths(xy: *const i32, lens: *const i32, num: i32, delta: f64, join_type: i32, miter_limit: f64) -> CzZPaths;
     pub fn cz_union_flat(xy: *const i32, lens: *const i32, num: i32) -> CzZPaths;
 
     /// `intersection(subject, clip, ApplySafetyOffset::Yes)` — ctIntersection

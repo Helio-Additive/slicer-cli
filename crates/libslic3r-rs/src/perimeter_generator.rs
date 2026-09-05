@@ -3510,6 +3510,9 @@ impl PerimeterGenerator {
             }
             // PerimeterGenerator.cpp:1518-1522  Polygons last_p = to_polygons(last);
             let last_p: crate::geometry::Polygons = expolygons_to_polygons(&last);
+            // R803 AWDUMP needs the WTP input after `last_p` is moved into the generator.
+            let last_p_dump: Option<crate::geometry::Polygons> =
+                if std::env::var("AWDUMP_LID").is_ok() { Some(last_p.clone()) } else { None };
             if crate::probe_enabled("LASTPROBE") {
                 let pp: usize = last_p.iter().map(|p| p.points.len()).sum();
                 lastprobe("D last_p (Polygons)", last_p.len(), 0, pp);
@@ -3814,6 +3817,31 @@ impl PerimeterGenerator {
                         "AWALL lid={} surf={}/{}/{} nl={} nj={} jx={} jy={} jw={}",
                         self.config.layer_id, sv, sx2, sy2, nl, nj, jx, jy, jw
                     );
+                }
+                // R803 — AWDUMP_LID=<lid>: full junction dump of every wall line the
+                // arachne generator returned for that layer, plus the WTP input
+                // polygons (mirrors the cpp probe of the same name). Built into one
+                // String and printed once so parallel layers cannot interleave.
+                if let Ok(want) = std::env::var("AWDUMP_LID") {
+                    if want == self.config.layer_id.to_string() {
+                        use std::fmt::Write as _;
+                        let mut o = String::new();
+                        let last_p = last_p_dump.as_deref().unwrap_or(&[]);
+                        let _ = writeln!(o, "AWDUMP lid={} npoly={} nlines={}", self.config.layer_id, last_p.len(), total_perimeters.len());
+                        for (i, poly) in last_p.iter().enumerate() {
+                            let _ = write!(o, "AWDIN {} n={}", i, poly.points.len());
+                            for pt in &poly.points { let _ = write!(o, " {},{}", pt.x(), pt.y()); }
+                            o.push('\n');
+                        }
+                        for (li, lines) in total_perimeters.iter().enumerate() {
+                            for (lj, line) in lines.iter().enumerate() {
+                                let _ = write!(o, "AWDL {}/{} inset={} odd={} closed={} n={}", li, lj, line.inset_idx, line.is_odd, line.is_closed, line.junctions.len());
+                                for j in &line.junctions { let _ = write!(o, " {},{},{}", j.p.x, j.p.y, j.w); }
+                                o.push('\n');
+                            }
+                        }
+                        eprint!("{}", o);
+                    }
                 }
                 // R659 — distinct junction widths produced for THIS layer, so the
                 // 40 FLAT layers R658 isolated in the gcode can be correlated with

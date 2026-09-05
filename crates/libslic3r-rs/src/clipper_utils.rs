@@ -2377,6 +2377,66 @@ pub fn simplify_polygons_clib(loops: &[Polygon], fill_type: i32) -> Vec<Polygon>
     out
 }
 
+/// R803 — faithful `offset(const Polygons&, float delta)` (ClipperUtils.cpp:413)
+/// via the ClipperLib shim: per-path raw_offset, then `clipper_union<Paths>`
+/// (delta > 0) or the pftNegative shrink trick (delta <= 0). Returns the flat
+/// Paths in Clipper's own order, ring START vertex included — the property the
+/// geo route and the raw-paths route both lose, and which
+/// `WallToolPaths::generate` depends on (its `simplify` walks from index 0).
+/// `delta` is SCALED; callers pass it f32-rounded like the C++ float parameter.
+pub fn offset_polygons_clib(loops: &[Polygon], delta: f64, join_type: OffsetJoinType) -> Vec<Polygon> {
+    if loops.is_empty() {
+        return vec![];
+    }
+    let mut xy: Vec<i32> = Vec::new();
+    let mut lens: Vec<i32> = Vec::new();
+    for ring in loops {
+        let pts = ring.points();
+        if pts.is_empty() {
+            continue;
+        }
+        lens.push(pts.len() as i32);
+        for p in pts {
+            assert_i32_scaled(p.x);
+            assert_i32_scaled(p.y);
+            xy.push(p.x as i32);
+            xy.push(p.y as i32);
+        }
+    }
+    let num = lens.len() as i32;
+    if num == 0 {
+        return vec![];
+    }
+    let jt: i32 = match join_type {
+        OffsetJoinType::Round => 1,
+        OffsetJoinType::Square => 2,
+        _ => 0,
+    };
+    // SAFETY: live, correctly-sized buffers; shim only reads them, returns malloc'd
+    // output we copy out then free.
+    let raw = unsafe { clipper_z_sys::cz_offset_paths(xy.as_ptr(), lens.as_ptr(), num, delta, jt, 3.0) };
+    let mut out: Vec<Polygon> = Vec::new();
+    if raw.num_paths > 0 && !raw.coords.is_null() && !raw.path_lens.is_null() {
+        let path_lens =
+            unsafe { std::slice::from_raw_parts(raw.path_lens, raw.num_paths as usize) };
+        let coords =
+            unsafe { std::slice::from_raw_parts(raw.coords, (raw.total_points * 3) as usize) };
+        let mut cursor = 0usize;
+        for &len in path_lens {
+            let len = len.max(0) as usize;
+            let mut pts: Vec<Point> = Vec::with_capacity(len);
+            for _ in 0..len {
+                pts.push(Point::new(coords[cursor * 3] as i64, coords[cursor * 3 + 1] as i64));
+                cursor += 1;
+            }
+            out.push(Polygon::from_points(pts));
+        }
+    }
+    // SAFETY: `raw` from cz_offset_paths, not yet freed.
+    unsafe { clipper_z_sys::cz_free_zpaths(raw) };
+    out
+}
+
 /// Detect gaps between two polygon sets.
 ///
 /// Gaps are the narrow regions that exist in the outer area but not in the

@@ -94,6 +94,12 @@ CzZPaths cz_offset2_ex(const int32_t *xy, const int32_t *lens, const int32_t *is
 CzZPaths cz_simplify_polygons(const int32_t *xy, const int32_t *lens, int32_t num,
                               int32_t fill_type);
 
+// R803: faithful `offset(const Polygons&, float delta)` (ClipperUtils.cpp:413)
+// — raw_offset + clipper_union<Paths> / shrink_paths<Paths>; flat Paths in
+// Clipper's BuildResult order (ring start preserved). join_type 0=Miter,1=Round,2=Square.
+CzZPaths cz_offset_paths(const int32_t *xy, const int32_t *lens, int32_t num,
+                         double delta, int32_t join_type, double miter_limit);
+
 // Faithful replica of libslic3r ClipperUtils.cpp `offset_expolygon_inner`
 // (ClipperUtils.cpp:437-506): offset a SINGLE ExPolygon (contour + holes) by
 // `delta` (in scaled integer units) using the vertex-exact ClipperOffset

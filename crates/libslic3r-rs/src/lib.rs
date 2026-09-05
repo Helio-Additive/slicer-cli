@@ -529,7 +529,31 @@ pub fn unscale(v: Coord) -> CoordF {
 /// Scale a floating-point coordinate to integer (same as scale, for compatibility)
 /// libslic3r.h:52-55
 pub fn scaled(v: CoordF) -> Coord {
-    scale(v)
+    // R803 — native `scaled<coord_t>(v)` is `coord_t(v / SCALING_FACTOR)`
+    // (Point.hpp:540): a DIVISION by the double 1e-5 (which is slightly above
+    // 1e-5), then a TRUNCATING conversion. For 9 of the crate's 20 literal
+    // constants the quotient lands just below the integer, so native gets one
+    // unit LESS than `(v * 1e5).round()`: 0.5 -> 49999, 1.0 -> 99999,
+    // 0.005 -> 499, 0.01 -> 999, 0.02 -> 1999, 2.0 -> 199999, 10 -> 999999.
+    // Arachne's `simplify` compares `height_2 <= sqr(scaled(0.005))` = 249001
+    // natively, 250000 here — the lid-97 benchy-arachne prepared outline kept
+    // a different vertex on exactly that boundary. Gate SCALED_DIV_TRUNC
+    // (faithful ON) runs the native arithmetic; cached because this is hot.
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *G.get_or_init(|| faithful_gate("SCALED_DIV_TRUNC")) {
+        (v / 0.00001_f64) as Coord
+    } else {
+        scale(v)
+    }
+}
+
+/// Native `scaled<double>(v)` / `scale_(v)`: `v / SCALING_FACTOR` as a double
+/// (Point.hpp:529). NOT `v * 1e5` — the two differ by an ULP for many
+/// literals (0.005 -> 499.99999999999994, not 500.0), which matters at
+/// `<=` thresholds.
+#[inline]
+pub fn scaled_f(v: CoordF) -> CoordF {
+    v / 0.00001_f64
 }
 
 #[inline]
