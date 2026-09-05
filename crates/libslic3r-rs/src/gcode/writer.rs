@@ -353,7 +353,9 @@ pub struct GCodeWriter {
 
     /// Wipe state: accumulated extrusion path for wipe-during-retraction.
     /// C++ equivalent: GCode::m_wipe (Wipe class with path field)
-    wipe_path: Vec<(CoordF, CoordF)>, // (x, y) points in mm
+    wipe_path: Vec<(CoordF, CoordF)>,
+    /// WIPEPROBE: who installed the current wipe path (R807 diagnostics).
+    wipe_path_src: &'static str, // (x, y) points in mm
     /// Whether wipe is enabled for this filament
     wipe_enabled: bool,
     /// R610: true only while `retract_for_toolchange` is driving `retract()`, so the
@@ -468,6 +470,7 @@ impl GCodeWriter {
             layer_extrusion_time: 0.0,
             cooling_slowdown: 1.0,
             wipe_path: Vec::new(),
+            wipe_path_src: "init",
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             tc_retract_probe: false,
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
@@ -1086,7 +1089,12 @@ impl GCodeWriter {
     /// (GCode.cpp:5600-5610), not the emitted (arc-fitted) moves. The exporter
     /// installs it at loop end.
     pub fn set_wipe_path_points(&mut self, pts: Vec<(CoordF, CoordF)>) {
+        self.set_wipe_path_points_from(pts, "set");
+    }
+
+    pub fn set_wipe_path_points_from(&mut self, pts: Vec<(CoordF, CoordF)>, src: &'static str) {
         self.wipe_path = pts;
+        self.wipe_path_src = src;
     }
 
     /// R220: config accessor for exporter-side seam-gap math.
@@ -1414,7 +1422,7 @@ impl GCodeWriter {
     /// is the naive branch — the overhang predicate IS the decision. R631.
     fn travel_lift_type(&self) -> u8 {
         if self.config.z_hop_type == ZHopType::Auto {
-            if crate::opt_in_gate("LIFT_TYPE_AUTO_CPP") {
+            if crate::faithful_gate("LIFT_TYPE_AUTO_CPP") {
                 // R631: resolved per travel by needs_retraction_faithful, which
                 // runs is_through_overhang exactly where C++ does.
                 self.m_pending_travel_lift_type
@@ -1857,6 +1865,9 @@ impl GCodeWriter {
         // Accumulate wipe path (C++ m_wipe.path)
         if self.wipe_enabled {
             if self.wipe_path.is_empty() || self.wipe_path.last() != Some(&(x, y)) {
+                if self.wipe_path.is_empty() {
+                    self.wipe_path_src = "accum";
+                }
                 self.wipe_path.push((x, y));
             }
         }
@@ -2153,7 +2164,19 @@ impl GCodeWriter {
             if length >= 0.0 {
                 // Native: wipe_distance.get_at(filament) — the per-filament
                 // value (1.0 on this profile), not the writer's 2.0 default.
-                let wipe_dist = self.config.filament_wipe_distance;
+                // R807: the profile key is `wipe_distance` (BBS FILAMENT_CONFIG,
+                // GCode.cpp:380), parsed into `config.wipe_distance_profile`;
+                // `filament_wipe_distance` is only fed by a key no profile
+                // carries, so every wipe was clipped at its 1.0 mm default
+                // against native's 2.0 (Majora sparse len/wipe 1.000 v 2.000).
+                // `WIPE_DIST_CONFIG=0` restores the old field.
+                let wipe_dist = if crate::faithful_gate("WIPE_DIST_CONFIG") {
+                    self.config
+                        .wipe_distance_profile
+                        .unwrap_or(self.config.filament_wipe_distance)
+                } else {
+                    self.config.filament_wipe_distance
+                };
                 // wipe_path = [current] + stored[1..] (forward).
                 let mut pts: Vec<(CoordF, CoordF)> = vec![(self.x, self.y)];
                 pts.extend(self.wipe_path.iter().skip(1).copied());
@@ -2175,6 +2198,16 @@ impl GCodeWriter {
                 }
                 // Handle short path (GCode.cpp:401-405).
                 let eff_wipe_dist = if acc < wipe_dist { acc.max(1e-4) } else { wipe_dist };
+                if crate::probe_enabled("WIPEPROBE") {
+                    use std::sync::atomic::{AtomicUsize, Ordering};
+                    static N: AtomicUsize = AtomicUsize::new(0);
+                    let n = N.fetch_add(1, Ordering::Relaxed) + 1;
+                    let head: Vec<String> = self.wipe_path.iter().take(3).map(|p| format!("({:.3},{:.3})", p.0, p.1)).collect();
+                    eprintln!(
+                        "[WIPE] n={n} src={} wp={} pts={} kept={} acc={acc:.3} wd={wipe_dist} prof={:?} cur=({:.3},{:.3}) head={}",
+                        self.wipe_path_src, self.wipe_path.len(), pts.len(), kept.len(), self.config.wipe_distance_profile, self.x, self.y, head.join(" ")
+                    );
+                }
                 // R609: TOWER_ENTRY_WHY=1 also reports the post-guard decision, since
                 // the pre-guard census showed 2,718 calls fully enabled while only 2
                 // blocks were emitted -- so the block is decided HERE, not above.

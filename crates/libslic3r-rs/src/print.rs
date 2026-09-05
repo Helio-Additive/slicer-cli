@@ -1972,6 +1972,74 @@ impl Print {
             // from the last EMITTED tool — otherwise the tower plan's tool changes
             // drift out of step with the export and the interleave both
             // double-emits and leaves object toolchanges un-replaced.
+            // R807: ToolOrdering.cpp:522-528 + 539-603. With first_extruder == -1
+            // (Print.cpp:3202) native fixes the FIRST layer's tool order by the largest
+            // MINIMAL contour area per extruder (raw_slices surviving a
+            // -0.2*initial_layer_line_width shrink), pins it through the custom-seq
+            // callback, and only flush-orders later layers. Rust flush-ordered layer 0
+            // from its first-appearance order, so Majora ran the extruder cycle one
+            // layer ahead of native for layers 1-76 (76/657 layers' T sequences).
+            // `FIRST_LAYER_TOOL_ORDER=0` restores the old path.
+            let flo_gate = crate::faithful_gate("FIRST_LAYER_TOOL_ORDER");
+            let first_layer_order: Vec<usize> = if flo_gate {
+                use crate::clipper_utils::{offset_ex_polygons_clib, OffsetJoinType};
+                // offset_ex(expoly, float delta): the scaled double is narrowed to f32.
+                let shrink = (-0.2 * crate::scaled_f(self.config.initial_layer_line_width)) as f32 as f64;
+                let survives = |ex: &crate::geometry::ExPolygon| -> bool {
+                    !offset_ex_polygons_clib(&ex.to_polygons(), shrink, OffsetJoinType::Miter).is_empty()
+                };
+                let mut min_areas: std::collections::BTreeMap<usize, f64> = Default::default();
+                let mut all_found = true;
+                for object in &self.objects {
+                    let target = object.layers().iter().find(|layer| {
+                        layer
+                            .regions()
+                            .iter()
+                            .any(|r| r.raw_slices.surfaces.iter().any(|s| survives(&s.expolygon)))
+                    });
+                    let Some(target) = target else {
+                        all_found = false;
+                        break;
+                    };
+                    for r in target.regions() {
+                        let ext = r
+                            .region
+                            .as_ref()
+                            .map(|pr| pr.config().wall_filament)
+                            .unwrap_or(1)
+                            .max(1)
+                            - 1;
+                        for s in &r.raw_slices.surfaces {
+                            if !survives(&s.expolygon) {
+                                continue;
+                            }
+                            let a = s.expolygon.contour.area();
+                            let e = min_areas.entry(ext).or_insert(a);
+                            if a < *e {
+                                *e = a;
+                            }
+                        }
+                    }
+                }
+                let mut order: Vec<usize> = Vec::new();
+                if all_found {
+                    // std::map ascending by extruder; insert before the first entry
+                    // with a SMALLER minimal area (descending area, ties ascending id).
+                    for (&ext, &a) in &min_areas {
+                        let pos = order
+                            .iter()
+                            .position(|e| min_areas[e] < a)
+                            .unwrap_or(order.len());
+                        order.insert(pos, ext);
+                    }
+                }
+                if crate::probe_enabled("FLOPROBE") {
+                    eprintln!("[FLO] all_found={all_found} min_areas={min_areas:?} order={order:?}");
+                }
+                order
+            } else {
+                Vec::new()
+            };
             let mut prev_last: Option<usize> = None;
             let mut layer_seqs: Vec<(f32, f32, Vec<usize>)> = Vec::new();
             for layer in object.layers() {
@@ -2011,7 +2079,14 @@ impl Print {
                 if multi_tool {
                     if let Some(last) = prev_last {
                         if let Some(pos) = tool_order.iter().position(|&t| t == last) {
-                            tool_order.rotate_left(pos);
+                            if flo_gate {
+                                // ToolOrdering.cpp:300-318: the previous layer's last extruder
+                                // is MOVED to the front (memmove), the others keep their order.
+                                let t = tool_order.remove(pos);
+                                tool_order.insert(0, t);
+                            } else {
+                                tool_order.rotate_left(pos);
+                            }
                         }
                     }
                 }
@@ -2023,13 +2098,30 @@ impl Print {
                 };
                 // Emitted sequence: multi-tool layers skip no-work tools (emit's
                 // has_work `continue`); single-tool layers always print their tool.
-                let emitted: Vec<usize> = if multi_tool {
+                let mut emitted: Vec<usize> = if multi_tool {
                     tool_order.into_iter().filter(|&t| tool_has_work(t)).collect()
                 } else {
                     tool_order
                 };
                 // prev_last carries the last EMITTED tool; unchanged if the layer
                 // printed nothing (emit only updates last_emitted_tool when set).
+                // ToolOrdering.cpp:260-284 handle_dontcare_extruder(tool_order_layer0):
+                // the generated order first, then the rest in their original order.
+                if flo_gate && layer_seqs.is_empty() && !first_layer_order.is_empty() {
+                    let mut rest = emitted.clone();
+                    let mut out: Vec<usize> = Vec::new();
+                    for &e in &first_layer_order {
+                        if let Some(p) = rest.iter().position(|&x| x == e) {
+                            out.push(e);
+                            rest[p] = usize::MAX;
+                        }
+                    }
+                    out.extend(rest.into_iter().filter(|&e| e != usize::MAX));
+                    if out.is_empty() {
+                        out.push(first_layer_order[0]);
+                    }
+                    emitted = out;
+                }
                 if let Some(&last) = emitted.last() {
                     prev_last = Some(last);
                 }
@@ -2077,12 +2169,29 @@ impl Print {
                     std::collections::HashMap::new();
                 nozzle_status.insert(0, first_tool as i32);
                 let mut opt_seqs: Vec<Vec<u32>> = Vec::new();
+                // R807: pin layer 0 (ToolOrdering.cpp:1916 create_custom_seq_function with
+                // include_first_layer = !reorder_first_layer = true; :1162 returns the
+                // first layer's filaments +1). The solver then only orders later layers.
+                let layer0_seq: Vec<i32> = layer_seqs
+                    .first()
+                    .map(|(_, _, t)| t.iter().map(|&x| x as i32 + 1).collect())
+                    .unwrap_or_default();
+                let layer0_pin = move |layer: i32, out: &mut Vec<i32>| -> bool {
+                    if layer == 0 && !layer0_seq.is_empty() {
+                        *out = layer0_seq.clone();
+                        true
+                    } else {
+                        false
+                    }
+                };
+                let layer0_custom: Option<&dyn Fn(i32, &mut Vec<i32>) -> bool> =
+                    if flo_gate { Some(&layer0_pin) } else { None };
                 let _ = tou::reorder_filaments_for_minimum_flush_volume(
                     &used,
                     &vec![0i32; n],
                     &layer_filaments,
                     &[matrix],
-                    None,
+                    layer0_custom,
                     Some(&mut opt_seqs),
                     &nozzle_status,
                 );

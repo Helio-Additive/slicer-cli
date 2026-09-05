@@ -1007,6 +1007,16 @@ impl PrintObject {
 
         // Mark step as complete
         // PrintObjectSlice.cpp:843
+        // R807: PrintObjectSlice.cpp:834 `layer.backup_untyped_slices()` — the
+        // per-region untyped slices native keeps for restore_untyped_slices and
+        // for the first-layer tool order (ToolOrdering.cpp:539 reads raw_slices).
+        // Rust never called it, so `raw_slices` stayed empty and Majora's first
+        // layer found no target. `BACKUP_UNTYPED_SLICES=0` restores that.
+        if crate::faithful_gate("BACKUP_UNTYPED_SLICES") {
+            for layer in &mut self.layers {
+                layer.backup_untyped_slices();
+            }
+        }
         self.set_step_done(PrintObjectStep::Slice);
         Ok(())
     }

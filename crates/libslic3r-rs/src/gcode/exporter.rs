@@ -580,6 +580,7 @@ pub fn extrude_loop(
                 ));
                 last_path_role = Some(path.role);
             }
+            width_tag_before_speed(writer, path);
             if apply_overhang_speed
                 && matches!(
                     path.role,
@@ -612,6 +613,15 @@ pub fn extrude_loop(
                 writer.write_raw(";_OVERHANG_FAN_END");
             }
         }
+        // R807: native replaces m_wipe.path with the loop's concatenated paths
+        // AFTER extruding them on this branch too (GCode.cpp:5654-5663). Rust
+        // returned early and left the writer's accumulator, which lacks the
+        // loop's first point (the travel target) — every wipe skipped p1 and the
+        // accumulator spanned earlier loops when no retract cleared it.
+        // `WIPE_PATH_SSD=0` restores that.
+        if crate::gcode::writer::lift_faithful_gate() && crate::faithful_gate("WIPE_PATH_SSD") {
+            set_loop_wipe_path(writer, &smoothed[..]);
+        }
         writer.reset_acceleration_default(is_first_layer);
         return;
     }
@@ -628,6 +638,7 @@ pub fn extrude_loop(
             ));
             last_path_role = Some(path.role);
         }
+        width_tag_before_speed(writer, path);
         if apply_overhang_speed
             && matches!(
                 path.role,
@@ -690,17 +701,7 @@ pub fn extrude_loop(
     // R222: native wipe path = the loop's SOURCE polyline points (clipped
     // paths concatenated, duplicate joints skipped) — GCode.cpp:5600-5610.
     if crate::gcode::writer::lift_faithful_gate() {
-        let mut pts: Vec<(f64, f64)> = Vec::new();
-        for path in paths.iter() {
-            for (k, pt) in path.polyline.points().iter().enumerate() {
-                let p = (crate::unscale(pt.x()), crate::unscale(pt.y()));
-                if k == 0 && pts.last() == Some(&p) {
-                    continue;
-                }
-                pts.push(p);
-            }
-        }
-        writer.set_wipe_path_points(pts);
+        set_loop_wipe_path(writer, &paths[..]);
     }
 }
 
@@ -1148,6 +1149,14 @@ pub fn extrude_collection(
             }
         }
         if !skip_pre_speed {
+            // R807: fills take their F from THIS collection-level set_speed,
+            // ahead of extrude_path's Width tag — native `_extrude` orders
+            // Width (GCode.cpp:6662) before set_speed (:6720). Record/emit the
+            // entity's first path width first (FVS 69,668 + solid 33,033 +
+            // sparse 4,640 `G1 F`→`; LINE_WIDTH:` pairs on Majora @R807c).
+            if let Some(p) = first_extrusion_path(entity) {
+                width_tag_before_speed(writer, p);
+            }
             // R654: C++ emits NO collection-level F — `_extrude` writes the Width
             // tag (GCode.cpp:6607) and only then `set_speed` (:6663). Defer ours
             // to just after the tag rather than dropping it, so the line count is
@@ -1967,6 +1976,7 @@ pub fn extrude_entity(
                 } else {
                     base
                 };
+                width_tag_before_speed(writer, path);
                 if speed > 0.0 {
                     let cooling_comment = if role == ExtrusionRole::BridgeInfill {
                         ""
@@ -1993,7 +2003,7 @@ pub fn extrude_entity(
                     .map(|pt| (crate::unscale(pt.x()), crate::unscale(pt.y())))
                     .collect();
                 if pts.len() >= 2 {
-                    writer.set_wipe_path_points(pts);
+                    writer.set_wipe_path_points_from(pts, "path_rev");
                 }
             }
             // R227: native extrude_path wrapper resets accel after the path
@@ -4815,6 +4825,53 @@ mod tests {
 /// R654 note: the first suspect was the collection-level pre-set at
 /// `extrude_collection` — the A/B proved that gate a NO-OP (identical hash), so
 /// `skip_pre_speed` is already true there and these five are the real producers.
+/// R807: native `_extrude` writes the Width tag (GCode.cpp:6662-6665) BEFORE
+/// `set_speed` (:6720). Rust set the speed at the loop/entity level and then
+/// `extrude_path` wrote the tag, so `G1 F` landed above `; LINE_WIDTH:` on
+/// every width change (118k out-of-order lines on Majora @R806c). Emit the
+/// tag here, before the speed; `width_tag_changed` records it, so the check in
+/// `extrude_path` is then a no-op for the same width. `LW_BEFORE_SPEED=0` off.
+/// GCode.cpp:5654-5663 — after a loop's paths are extruded, `m_wipe.path` is
+/// replaced by the loop's clipped paths concatenated (forward, joint
+/// duplicates skipped). Shared by both `extrude_loop` branches (R807).
+fn set_loop_wipe_path(writer: &mut GCodeWriter, paths: &[ExtrusionPath]) {
+    let mut pts: Vec<(f64, f64)> = Vec::new();
+    for path in paths.iter() {
+        for (k, pt) in path.polyline.points().iter().enumerate() {
+            let p = (crate::unscale(pt.x()), crate::unscale(pt.y()));
+            if k == 0 && pts.last() == Some(&p) {
+                continue;
+            }
+            pts.push(p);
+        }
+    }
+    writer.set_wipe_path_points_from(pts, "loop");
+}
+
+/// First ExtrusionPath reached by native's per-path `_extrude` for an entity
+/// (Path itself, a loop's first path, a collection's first leaf). R807.
+fn first_extrusion_path(
+    entity: &crate::extrusion_entity::ExtrusionEntityType,
+) -> Option<&ExtrusionPath> {
+    use crate::extrusion_entity::ExtrusionEntityType as T;
+    match entity {
+        T::Path(p) => Some(p),
+        T::Loop(l) => l.paths.first(),
+        T::Collection(c) => c.entities.iter().find_map(first_extrusion_path),
+    }
+}
+
+fn width_tag_before_speed(writer: &mut GCodeWriter, path: &ExtrusionPath) {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *G.get_or_init(|| {
+        crate::faithful_gate("LW_BEFORE_SPEED") && crate::faithful_gate("LINEWIDTH_PERPATH")
+    }) && path.width > 0.0
+        && writer.width_tag_changed(path.width)
+    {
+        writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
+    }
+}
+
 fn set_speed_before_path(writer: &mut GCodeWriter, speed: crate::CoordF, comment: &str) {
     if crate::opt_in_gate("LINEWIDTH_BEFORE_SPEED") {
         writer.set_speed_pending(speed, comment);

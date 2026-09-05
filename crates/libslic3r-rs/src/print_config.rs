@@ -417,6 +417,9 @@ pub struct PrintConfig {
     /// Filament wipe distance (mm). Per-filament override.
     /// BambuStudio: `filament_wipe_distance`.
     pub filament_wipe_distance: CoordF,
+    /// R807: the profile key `wipe_distance` (BBS FILAMENT_CONFIG, GCode.cpp:380),
+    /// which no parser fed into `filament_wipe_distance` (left at its 1.0 default).
+    pub wipe_distance_profile: Option<CoordF>,
     /// Filament retraction minimum travel (mm). Per-filament override.
     /// BambuStudio: `filament_retraction_minimum_travel`.
     pub filament_retraction_minimum_travel: CoordF,
@@ -1146,6 +1149,7 @@ impl Default for PrintConfig {
             filament_deretraction_speed: 0.0, // 0 = use retraction speed
             filament_z_hop: 0.4,
             filament_wipe_distance: 1.0,
+            wipe_distance_profile: None,
             filament_retraction_minimum_travel: 2.0,
             filament_retract_when_changing_layer: false,
             filament_start_gcode: String::new(),
@@ -2781,6 +2785,19 @@ impl PrintConfig {
             "flush_into_objects" => {
                 if let Some(v) = parse_bool(value) {
                     self.flush_into_objects = v;
+                }
+                true
+            }
+            "wipe_distance" => {
+                // R807: BBS filament key (GCode.cpp:380 wipe_distance.get_at);
+                // previously dropped by the vetted fallback below, leaving the
+                // writer at its 1.0 mm default against the profile's 2.0.
+                if let Some(v) = value
+                    .split(',')
+                    .next()
+                    .and_then(|t| t.trim().parse::<f64>().ok())
+                {
+                    self.wipe_distance_profile = Some(v);
                 }
                 true
             }
@@ -4837,6 +4854,20 @@ impl PrintConfig {
                 if let Some(v) = parse_f64(value) {
                     self.retract_before_travel = v;
                     self.filament_retraction_minimum_travel = v;
+                }
+            }
+            "wipe_distance" => {
+                // Per-filament comma-list ("2,2"); native reads get_at(filament).
+                // parse_f64 rejects the comma, so take the first element.
+                if let Some(v) = value
+                    .split(',')
+                    .next()
+                    .and_then(|t| t.trim().trim_end_matches('%').parse::<f64>().ok())
+                {
+                    if crate::probe_enabled("WIPEPROBE") {
+                        eprintln!("[WIPECFG] wipe_distance={value:?} -> {v}");
+                    }
+                    self.wipe_distance_profile = Some(v);
                 }
             }
             "filament_wipe_distance" => {

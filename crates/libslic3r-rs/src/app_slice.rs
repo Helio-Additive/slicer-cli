@@ -1691,6 +1691,12 @@ fn apply_filament_overrides(config: &mut PrintConfig, json: &serde_json::Value) 
     if let Some(v) = get_filament_val("filament_retraction_length") {
         config.retract_length = v;
     }
+    // R807: `filament_wipe_distance` overrides the machine `wipe_distance`
+    // (PrintConfig.cpp filament override list; Benchy's filament sets 1 over
+    // the machine's 2, Majora has none and uses 2).
+    if let Some(v) = get_filament_val("filament_wipe_distance") {
+        config.wipe_distance_profile = Some(v);
+    }
     if let Some(v) = get_filament_val("filament_retraction_speed") {
         config.retract_speed = v;
     }
