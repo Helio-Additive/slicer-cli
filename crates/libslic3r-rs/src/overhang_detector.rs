@@ -438,7 +438,15 @@ pub fn add_sampling_points(path: &ZPath, min_sampling_interval: f64) -> ZPath {
             let next_p = Point::new(next_zp.0, next_zp.1);
 
             // OverhangDetector.cpp:124 — double dist = (next_p - curr_p).cast<double>().norm();
-            let dist = (next_p - curr_p).to_f64().length();
+            // OverhangDetector.cpp:127 — (next_p - curr_p).cast<double>().norm(), in
+            // SCALED units. R803: `Point::to_f64()` UNSCALES to mm, so the old
+            // `to_f64().length()` compared millimetres against a scaled
+            // `min_sampling_interval` (200,000) and never inserted a sample —
+            // native adds one every 2mm, and the degree ramps / split points of
+            // every arachne overhang piece depend on them.
+            let dxf = (next_p.x() - curr_p.x()) as f64;
+            let dyf = (next_p.y() - curr_p.y()) as f64;
+            let dist = (dxf * dxf + dyf * dyf).sqrt();
             // OverhangDetector.cpp:125 — if (dist > min_sampling_interval)
             if dist > min_sampling_interval {
                 // OverhangDetector.cpp:126 — size_t num_samples = floor(dist / min_sampling_interval);
@@ -526,6 +534,20 @@ pub fn detect_overhang_degree_arachne(
     // OverhangDetector.cpp:177 — intersection first, "would be faster".
     let paths_in_range = clip_extrusion(extrusion_path, clip_paths, ClipType::Intersection);
     // OverhangDetector.cpp:179 — add_sampling_points(paths_in_range, scale_(2)).
+    if crate::perimeter_generator::OVHD_ON.with(|c| c.get()) {
+        use std::fmt::Write as _;
+        for (i, pth) in paths_in_range.iter().enumerate() {
+            let mut o = format!("OVHPATH {} n={}", i, pth.len());
+            for q in pth { let _ = write!(o, " {},{},{}", q.0, q.1, q.2); }
+            eprintln!("{o}");
+        }
+        let mut o = format!("OVHSUBJ n={}", extrusion_path.len());
+        for q in extrusion_path { let _ = write!(o, " {},{},{}", q.0, q.1, q.2); }
+        eprintln!("{o}");
+        let mut o = format!("OVHCLIP n={}", clip_paths.len());
+        for cp in clip_paths { let _ = write!(o, " [{}]", cp.len()); }
+        eprintln!("{o}");
+    }
     let paths_in_range = add_sampling_points_paths(&paths_in_range, scale_(2.0));
 
     // OverhangDetector.cpp:188-190 — LOCAL lambda, distinct from the file-scope
@@ -633,6 +655,9 @@ pub fn detect_overhang_degree_arachne(
                     lo as f64 * (1.0 - t) + t * hi as f64
                 }
             };
+            if crate::perimeter_generator::OVHD_ON.with(|c| c.get()) {
+                eprintln!("OVHD x={} y={} w={:.0} dist={:.4} real={:.4} deg={:.4} mapped={:.4}", px, py, width, overhang_dist, real_dist, degree, mapped_degree);
+            }
             overhang_degree_arr.push(mapped_degree);
         }
 

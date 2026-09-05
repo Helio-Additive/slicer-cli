@@ -4596,6 +4596,7 @@ impl PerimeterGenerator {
                         // offset: it inflated every degree and over-split the outer wall
                         // 2.3x against C++ before this was corrected.
                         let lower_polys = grown_rings.clone();
+                        OVHD_ON.with(|c| c.set(std::env::var("OVHD_LID").map(|w| w == self.config.layer_id.to_string()).unwrap_or(false) && line.inset_idx == 0));
                         for (zp, degree) in crate::overhang_detector::detect_overhang_degree_arachne(
                             &lower_polys,
                             &clip,
@@ -5102,4 +5103,10 @@ fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
 
         i = pt;
     }
+}
+
+thread_local! {
+    /// R803 OVHD — per-sample overhang distance probe flag, read by
+    /// overhang_detector::detect_overhang_degree_arachne.
+    pub(crate) static OVHD_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
