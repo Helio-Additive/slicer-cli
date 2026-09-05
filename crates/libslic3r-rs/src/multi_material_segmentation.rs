@@ -827,6 +827,32 @@ fn is_less_eps(left: f32, right: f32, eps: f32) -> bool {
 // Assumes that is at most same projected_l length or below than projection_l
 // MultiMaterialSegmentation.cpp:493
 fn project_line_on_line(projection_l: &Line, projected_l: &Line, new_projected: &mut Line) -> bool {
+    // R806 MMS_PROJECT_SHIM (faithful ON): the native 2D dot products contract to
+    // FMA under clang's default -ffp-contract=on; the pure-rust twin does not, and
+    // the truncating cast turns that ULP into a 1-unit endpoint flip on ~1% of
+    // painted-line projections (layer-12 Majora: 6/625 coloured lines), which
+    // then moves Voronoi vertices and every segmented piece. Same expression,
+    // same Eigen, same codegen via the shim.
+    if crate::faithful_gate("MMS_PROJECT_SHIM") {
+        return match eigen_transform_sys::project_line_on_line(
+            (projection_l.a.x, projection_l.a.y),
+            (projection_l.b.x, projection_l.b.y),
+            (projected_l.a.x, projected_l.a.y),
+            (projected_l.b.x, projected_l.b.y),
+        ) {
+            Some(o) => {
+                if crate::probe_enabled("PROJDBG") && (o[0] == -7803031 || o[0] == -7803032 || o[2] == -7803031 || o[2] == -7803032) {
+                    let v1 = pt_to_vec2d(projection_l.b - projection_l.a);
+                    let va = pt_to_vec2d(projected_l.a - projection_l.a);
+                    let l2 = v1.length_squared();
+                    eprintln!("PROJDBG pa={},{} pb={},{} qa={},{} qb={},{} t1={:.17e} dot1={:.17e} l2={:.17e} -> {},{} {},{}", projection_l.a.x, projection_l.a.y, projection_l.b.x, projection_l.b.y, projected_l.a.x, projected_l.a.y, projected_l.b.x, projected_l.b.y, (va.dot(&v1) / l2).clamp(0.0, 1.0), va.dot(&v1), l2, o[0], o[1], o[2], o[3]);
+                }
+                *new_projected = Line::new(Point::new(o[0], o[1]), Point::new(o[2], o[3]));
+                true
+            }
+            None => false,
+        };
+    }
     // MultiMaterialSegmentation.cpp:495-498
     let v1 = pt_to_vec2d(projection_l.b - projection_l.a);
     let va = pt_to_vec2d(projected_l.a - projection_l.a);
@@ -3503,11 +3529,26 @@ pub fn multi_material_segmentation_by_painting_tier1(
             crate::clipper_utils::simplify(&shrunk, (5.0 * SCALED_EPSILON) / SCALING_FACTOR)
         };
         // remove_duplicates(…, scaled(0.01), PI/6)
+        let mmsin_dbg = std::env::var("MMSIN_LID").ok().and_then(|w| w.parse::<usize>().ok()) == Some(layer_idx);
+        let simplified_dbg = if mmsin_dbg { Some(simplified.clone()) } else { None };
         let deduped = crate::mutable_polygon::remove_duplicates_expolygons(
             simplified,
             scale_(0.01),
             std::f64::consts::PI / 6.0,
         );
+        if mmsin_dbg {
+            let simplified = simplified_dbg.as_ref().unwrap();
+            let pr = |tag: &str, eps: &ExPolygons| {
+                let (mut n, mut pts, mut sx, mut sy) = (0usize, 0usize, 0i64, 0i64);
+                for e in eps { n += 1 + e.holes.len(); for q in &e.contour.points { pts += 1; sx += q.x(); sy += q.y(); } for h in &e.holes { for q in &h.points { pts += 1; sx += q.x(); sy += q.y(); } } }
+                eprintln!("MMSIN {} n={} pts={} sx={} sy={}", tag, n, pts, sx, sy);
+            };
+            pr("S2", &ex); pr("S3", &shrunk); pr("S4", simplified); pr("S5", &deduped);
+            use std::fmt::Write as _;
+            for (i, e) in deduped.iter().enumerate() { let mut o = format!("MMSINR {} n={}", i, e.contour.points.len()); for q in &e.contour.points { let _ = write!(o, " {},{}", q.x(), q.y()); } eprintln!("{o}"); }
+            for (i, e) in simplified.iter().enumerate() { let mut o = format!("MMSINR4 {} n={}", i, e.contour.points.len()); for q in &e.contour.points { let _ = write!(o, " {},{}", q.x(), q.y()); } eprintln!("{o}"); }
+            for (i, e) in shrunk.iter().enumerate() { let mut o = format!("MMSINR3 {} n={}", i, e.contour.points.len()); for q in &e.contour.points { let _ = write!(o, " {},{}", q.x(), q.y()); } eprintln!("{o}"); }
+        }
         input_expolygons.push(deduped);
     }
 
@@ -3931,7 +3972,21 @@ pub fn multi_material_segmentation_by_painting_tier1(
                     }
                     CONTOUR_LEN_TOTAL.fetch_add((cl * 1000.0) as usize, Relaxed);
                 }
+                let ppd = std::env::var("PPDUMP_LID").ok().and_then(|w| w.parse::<usize>().ok()) == Some(layer_idx); // R806
+                if ppd {
+                    for pl in &taken {
+                        eprintln!("PPRAW ci={} li={} {},{} {},{} c={}", pl.contour_idx, pl.line_idx, pl.projected_line.a.x, pl.projected_line.a.y, pl.projected_line.b.x, pl.projected_line.b.y, pl.color);
+                    }
+                }
                 let post_processed = post_process_painted_lines(contours, taken);
+                if ppd {
+                    for (ci, v) in post_processed.iter().enumerate() {
+                        for pl in v {
+                            eprintln!("PPOST ci={} li={} {},{} {},{} c={}", pl.contour_idx, pl.line_idx, pl.projected_line.a.x, pl.projected_line.a.y, pl.projected_line.b.x, pl.projected_line.b.y, pl.color);
+                        }
+                        let _ = ci;
+                    }
+                }
                 if crate::probe_enabled("MMS_DEBUG") {
                     use std::sync::atomic::Ordering::Relaxed;
                     let s: f64 = post_processed
@@ -3946,6 +4001,16 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 }
                 // cpp:2341
                 let color_poly = colorize_contours(contours, &post_processed);
+                if let Ok(w) = std::env::var("CPDUMP_LID") {
+                    if w.parse::<usize>().ok() == Some(layer_idx) {
+                        use std::fmt::Write as _;
+                        for (pi, poly) in color_poly.iter().enumerate() {
+                            let mut o = format!("CPDUMP lid={} poly={} n={}", layer_idx, pi, poly.len());
+                            for (k, cl) in poly.iter().enumerate() { let _ = write!(o, "{}{},{},{},{},{}", if k > 0 { ";" } else { " " }, cl.line.a.x(), cl.line.a.y(), cl.line.b.x(), cl.line.b.y(), cl.color); }
+                            eprintln!("{o}");
+                        }
+                    }
+                }
                 // cpp:2347-2348
                 debug_assert!(!color_poly.is_empty());
                 debug_assert!(!color_poly.first().unwrap().is_empty());

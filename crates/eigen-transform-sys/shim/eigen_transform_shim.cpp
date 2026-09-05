@@ -4,6 +4,8 @@
 #include "eigen_transform_shim.h"
 
 #include <cstdio>
+#include <vector>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <Eigen/Geometry>
@@ -120,5 +122,78 @@ extern "C" void eigen_transform_verts_for_slicing(double scaling_factor, double 
         verts_out[3 * i] = v.x();
         verts_out[3 * i + 1] = v.y();
         verts_out[3 * i + 2] = v.z();
+    }
+}
+
+// R806 — MultiMaterialSegmentation.cpp:493-513 `project_line_on_line`, run through
+// the REAL Eigen with the native expression order (so the compiler's FMA
+// contraction of the 2D dot products matches the libslic3r build). Points are
+// integer coord_t; the projection endpoints are `a + (t * v1).cast<coord_t>()`
+// (truncation toward zero). Returns 0 when the projection line is degenerate.
+extern "C" int32_t eigen_project_line_on_line(int64_t pax, int64_t pay, int64_t pbx, int64_t pby,
+                                             int64_t qax, int64_t qay, int64_t qbx, int64_t qby,
+                                             int64_t *out4) {
+    using Vec2d = Eigen::Matrix<double, 2, 1>;
+    using Vec2i = Eigen::Matrix<int64_t, 2, 1>;
+    const Vec2i pa(pax, pay), pb(pbx, pby), qa(qax, qay), qb(qbx, qby);
+    const Vec2d  v1 = (pb - pa).cast<double>();
+    const Vec2d  va = (qa - pa).cast<double>();
+    const Vec2d  vb = (qb - pa).cast<double>();
+    const double l2 = v1.squaredNorm();
+    if (l2 == 0.0)
+        return 0;
+    double t1 = va.dot(v1) / l2;
+    double t2 = vb.dot(v1) / l2;
+    t1 = std::clamp(t1, 0., 1.);
+    t2 = std::clamp(t2, 0., 1.);
+    const Vec2i p1 = pa + (t1 * v1).cast<int64_t>();
+    const Vec2i p2 = pa + (t2 * v1).cast<int64_t>();
+    out4[0] = p1.x(); out4[1] = p1.y(); out4[2] = p2.x(); out4[3] = p2.y();
+    return 1;
+}
+
+// R806 — MultiPoint.cpp:179-230 `_douglas_peucker` with Line.hpp:40-69
+// `line_alg::distance_to_squared`, run through the REAL Eigen with the native
+// expression order so the compiler's FMA contraction matches libslic3r. Marks
+// keep[i]=1 for every retained point of the open polyline xy[0..n).
+extern "C" void eigen_douglas_peucker(const int64_t *xy, int32_t n, double tolerance, uint8_t *keep) {
+    using Vec2d = Eigen::Matrix<double, 2, 1>;
+    using Vec2i = Eigen::Matrix<int64_t, 2, 1>;
+    for (int32_t i = 0; i < n; ++i) keep[i] = 0;
+    if (n <= 0) return;
+    auto P = [&](int32_t i) { return Vec2i(xy[2 * i], xy[2 * i + 1]); };
+    auto dist2 = [&](int32_t i, int32_t a, int32_t b) -> double {
+        const Vec2i pa = P(a), pb = P(b), pt = P(i);
+        const Vec2d  v  = (pb - pa).cast<double>();
+        const Vec2d  va = (pt - pa).cast<double>();
+        const double l2 = v.squaredNorm();
+        if (l2 == 0.0) return va.squaredNorm();
+        const double t = va.dot(v) / l2;
+        if (t <= 0.0) return va.squaredNorm();
+        else if (t >= 1.0) return (pt - pb).cast<double>().squaredNorm();
+        return (t * v - va).squaredNorm();
+    };
+    const double tolerance_sq = tolerance * tolerance;
+    int32_t anchor_idx = 0, floater_idx = n - 1;
+    keep[0] = 1;
+    if (anchor_idx != floater_idx) {
+        std::vector<int32_t> dpStack; dpStack.reserve(n); dpStack.push_back(floater_idx);
+        for (;;) {
+            double max_dist_sq = 0.0; int32_t furthest_idx = anchor_idx;
+            for (int32_t i = anchor_idx + 1; i < floater_idx; ++i) {
+                double d = dist2(i, anchor_idx, floater_idx);
+                if (d > max_dist_sq) { max_dist_sq = d; furthest_idx = i; }
+            }
+            if (max_dist_sq <= tolerance_sq) {
+                keep[floater_idx] = 1;
+                anchor_idx = floater_idx;
+                dpStack.pop_back();
+                if (dpStack.empty()) break;
+                floater_idx = dpStack.back();
+            } else {
+                floater_idx = furthest_idx;
+                dpStack.push_back(floater_idx);
+            }
+        }
     }
 }

@@ -56,5 +56,13 @@ void secol_min_vertex_dots(const float *verts, int64_t n_verts,
                            float *out);
 
 #ifdef __cplusplus
+
+// R806 — MMS project_line_on_line through Eigen (see .cpp). Returns 0 on degenerate.
+int32_t eigen_project_line_on_line(int64_t pax, int64_t pay, int64_t pbx, int64_t pby,
+                                   int64_t qax, int64_t qay, int64_t qbx, int64_t qby,
+                                   int64_t *out4);
+
+// R806 — native _douglas_peucker through Eigen (keep mask output).
+void eigen_douglas_peucker(const int64_t *xy, int32_t n, double tolerance, uint8_t *keep);
 }
 #endif

@@ -13,6 +13,16 @@ extern "C" {
     /// `tf = (Identity.pretranslate(-cx,-cy,0).prescale(1/sf,1/sf,1)).cast<float>()`,
     /// then per vertex `out = tf * v` (Eigen `Affine3f * Vector3f`). `scaling_factor`
     /// = SCALING_FACTOR (1e-5); `cx`/`cy` = unscaled (mm) center_offset.
+    /// R806 — MultiPoint::_douglas_peucker via Eigen (keep mask).
+    pub fn eigen_douglas_peucker(xy: *const i64, n: i32, tolerance: f64, keep: *mut u8);
+
+    /// R806 — MultiMaterialSegmentation.cpp:493-513 project_line_on_line via Eigen.
+    pub fn eigen_project_line_on_line(
+        pax: i64, pay: i64, pbx: i64, pby: i64,
+        qax: i64, qay: i64, qbx: i64, qby: i64,
+        out4: *mut i64,
+    ) -> i32;
+
     pub fn eigen_transform_verts_for_slicing(
         scaling_factor: f64,
         cx: f64,
@@ -290,4 +300,24 @@ pub fn raycast_visibility_native(
         );
     }
     out
+}
+
+/// R806 — project `projected` (qa→qb) onto the line `projection` (pa→pb) exactly
+/// like native `project_line_on_line` (Eigen dot products, truncating cast).
+/// Returns None when the projection line is degenerate.
+pub fn project_line_on_line(pa: (i64, i64), pb: (i64, i64), qa: (i64, i64), qb: (i64, i64)) -> Option<[i64; 4]> {
+    let mut out = [0i64; 4];
+    let ok = unsafe { eigen_project_line_on_line(pa.0, pa.1, pb.0, pb.1, qa.0, qa.1, qb.0, qb.1, out.as_mut_ptr()) };
+    if ok != 0 { Some(out) } else { None }
+}
+
+/// R806 — Douglas-Peucker keep mask for an open polyline, computed by the native
+/// algorithm (MultiPoint.cpp:179) with Eigen distances. `tolerance` in scaled units.
+pub fn douglas_peucker_keep(xy: &[i64], tolerance: f64) -> Vec<u8> {
+    let n = (xy.len() / 2) as i32;
+    let mut keep = vec![0u8; n.max(0) as usize];
+    if n > 0 {
+        unsafe { eigen_douglas_peucker(xy.as_ptr(), n, tolerance, keep.as_mut_ptr()) };
+    }
+    keep
 }

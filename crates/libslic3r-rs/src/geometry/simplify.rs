@@ -149,6 +149,21 @@ impl SimplifyConfig {
 ///
 /// A new vector of simplified points. The first and last points are always preserved.
 pub fn douglas_peucker(points: &[Point], tolerance: CoordF) -> Vec<Point> {
+    // R806 DP_SHIM (faithful ON): native's Line::distance_to_squared contracts to
+    // FMA under clang's default -ffp-contract=on; the pure-rust distances rank two
+    // near-duplicate vertices (1 unit apart) the other way round, so DP keeps a
+    // different one (Majora layer 12 MMS input: 3/1075 points) and every
+    // downstream painted-line projection, Voronoi vertex and segmented piece
+    // inherits it. Same algorithm, same Eigen, same codegen via the shim.
+    if points.len() > 2 && crate::faithful_gate("DP_SHIM") {
+        let mut xy: Vec<i64> = Vec::with_capacity(points.len() * 2);
+        for p in points {
+            xy.push(p.x);
+            xy.push(p.y);
+        }
+        let keep = eigen_transform_sys::douglas_peucker_keep(&xy, scale(tolerance) as f64);
+        return points.iter().zip(keep.iter()).filter(|(_, &k)| k != 0).map(|(p, _)| *p).collect();
+    }
     if points.len() <= 2 {
         return points.to_vec();
     }
