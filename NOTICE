@@ -107,7 +107,9 @@ External dependencies (linked; portable packages also bundle runtime libraries)
   Cereal             — BSD 3-clause
   libnoise (Bambu)   — LGPLv3; pinned Bambu fork v1.0.0 source.
                        https://github.com/bambulab/libnoise
-  libnoise (Orca)    — Orca engine dependency from the pinned Orca fork.
+  libnoise (Orca)    — LGPLv2.1-or-later; pinned Orca fork of libnoise 1.0.
+                       Copyright (C) 2003, 2004 Jason Bevins.
+                       Fork README provenance: Nick Johnson, 2 December 2024.
                        https://github.com/SoftFever/Orca-deps-libnoise
   NLopt              — LGPLv2.1 (optional)
   libpng / zlib /    — Their respective permissive licenses (zlib/libpng,

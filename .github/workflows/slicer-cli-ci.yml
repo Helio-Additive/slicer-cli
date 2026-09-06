@@ -174,6 +174,12 @@ jobs:
           path: /opt/slicer-cli/occt-7.6
           key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
 
+      - name: Prepare Linux pinned CGAL prefixes
+        if: runner.os == 'Linux'
+        run: |
+          sudo mkdir -p /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-5.6.3
+          sudo chown -R "$USER" /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-5.6.3
+
       - name: Restore Linux pinned CGAL (bambu)
         if: runner.os == 'Linux' && matrix.engine == 'bambu'
         uses: actions/cache@v4
@@ -1407,11 +1413,20 @@ jobs:
           ASSET="slicer-cli-v${VERSION}-${PLATFORM}.tar.gz"
           rm -rf dist/package dist/release dist/verify
           P=dist/package/slicer-cli
-          mkdir -p "$P/resources/profiles" dist/release
-          cp engine-bambu/slicer_cli "$P/slicer_cli"
-          cp engine-orca/slicer_cli-orcaslicer "$P/slicer_cli-orcaslicer"
-          chmod +x "$P/slicer_cli" "$P/slicer_cli-orcaslicer"
+          mkdir -p "$P/bin" "$P/resources/profiles" dist/release
+          # Bambu resolves presets relative to the real executable's ../resources.
+          # Keep the published entry points through relative symlinks.
+          cp engine-bambu/slicer_cli "$P/bin/slicer_cli"
+          cp engine-orca/slicer_cli-orcaslicer "$P/bin/slicer_cli-orcaslicer"
+          chmod +x "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer"
+          ln -s bin/slicer_cli "$P/slicer_cli"
+          ln -s bin/slicer_cli-orcaslicer "$P/slicer_cli-orcaslicer"
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
+          cp references/BambuStudio/resources/profiles/BBL.json "$P/resources/profiles/BBL.json"
+          mkdir -p "$P/resources/info"
+          for info in filament_info.json nozzle_info.json nozzle_incompatibles.json; do
+            cp "references/BambuStudio/resources/info/$info" "$P/resources/info/$info"
+          done
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
@@ -1430,7 +1445,7 @@ jobs:
             ]
           }
           EOF
-          bash scripts/bundle-linux.sh "$P" "$P/slicer_cli" "$P/slicer_cli-orcaslicer"
+          bash scripts/bundle-linux.sh "$P" "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer"
           tar -C dist/package -czf "dist/release/${ASSET}" slicer-cli
           HASH="$(sha256sum "dist/release/${ASSET}" | awk '{print $1}')"
           printf '%s  %s\n' "$HASH" "$ASSET" > "dist/release/${ASSET}.sha256"

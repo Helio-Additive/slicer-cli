@@ -75,7 +75,10 @@ done
 }
 
 for BINARY in "$@"; do
-    patchelf --set-rpath '$ORIGIN/lib' "$BINARY"
+    # Support both a flat package and bin/ without embedding a build path.
+    BINARY_DIR="$(dirname "$(realpath "$BINARY")")"
+    RELATIVE_LIB_DIR="$(realpath --relative-to="$BINARY_DIR" "$LIB_DIR")"
+    patchelf --set-rpath "\$ORIGIN/$RELATIVE_LIB_DIR" "$BINARY"
 done
 for LIBRARY in "$LIB_DIR"/*; do
     [ -e "$LIBRARY" ] || continue

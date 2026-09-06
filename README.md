@@ -84,6 +84,36 @@ exceptions are recorded in `docs/engine-dependency-contract.md`.
 Package metadata identifies the artefact as `slicer_cli` (not `BambuStudio`).
 A CI assertion fails the build if the metadata regresses.
 
+## Using a release package
+
+Choose the engine by choosing its binary: `slicer_cli` uses BambuStudio;
+`slicer_cli-orcaslicer` uses OrcaSlicer. Run the examples from the extracted
+`slicer-cli` directory, using profiles from the matching engine's tree.
+On Windows, use the corresponding `.exe` filename.
+
+BambuStudio can read the settings embedded in a Bambu 3MF:
+
+```sh
+./slicer_cli model.3mf -o bambu.gcode
+```
+
+For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles.
+First supply `resolved-orca-config.json` containing their complete inherited
+settings. The caller must resolve the profiles' `inherits` chains: the CLI
+loads JSON overrides directly and does not resolve those chains itself.
+Passing only the leaf files below would leave parent settings at defaults.
+
+```sh
+./slicer_cli-orcaslicer model.stl \
+  --config resolved-orca-config.json \
+  --machine 'resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json' \
+  --filament 'resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json' \
+  --process 'resources/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json' \
+  -o orca.gcode
+```
+
+Use profiles matching your actual printer, nozzle, and material before printing.
+
 ## Versioning
 
 `slicer-cli` uses semver. The major version may bump when the supported-
