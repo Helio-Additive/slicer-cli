@@ -16,6 +16,14 @@ BINARY="${1:?Usage: $0 <path-to-slicer_cli>}"
 
 echo "=== Clean-host smoke test: $BINARY ==="
 
+for TARGET in "$BINARY" "$(dirname "$BINARY")"/Frameworks/*.dylib; do
+    [ -e "$TARGET" ] || continue
+    if otool -L "$TARGET" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)|/(build|\.cache|_temp)/'; then
+        echo "FAIL: non-relocatable dependency in $TARGET"
+        exit 1
+    fi
+done
+
 # Clear every Homebrew dyld hint
 CLEAN_ENV=(
     env -i
@@ -26,21 +34,15 @@ CLEAN_ENV=(
 )
 
 set +e
-# Run without arguments — binary prints help and exits non-zero, which is fine.
-# We only care that it ran (all dylibs loaded). Crash signals (SIGABRT=134,
-# SIGSEGV=139) indicate a missing bundled dylib; any other exit code means success.
-OUTPUT=$("${CLEAN_ENV[@]}" "$BINARY" 2>&1)
+OUTPUT=$("${CLEAN_ENV[@]}" "$BINARY" --help 2>&1)
 EXIT_CODE=$?
 set -e
 
 echo "Exit code: $EXIT_CODE"
 echo "Output:    $OUTPUT"
 
-if [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -eq 139 ]; then
-    echo "FAIL: slicer_cli crashed (signal, exit $EXIT_CODE) — likely a missing bundled dylib"
-    echo ""
-    echo "This usually means a Homebrew dylib was not bundled."
-    echo "Run scripts/bundle-macos.sh first, then re-run this script."
+if [ "$EXIT_CODE" -ne 0 ]; then
+    echo "FAIL: slicer_cli --help failed on the clean environment (exit $EXIT_CODE)"
     exit 1
 fi
 
@@ -49,5 +51,5 @@ if echo "$OUTPUT" | grep -qi "Library not loaded\|image not found"; then
     exit 1
 fi
 
-echo "PASS: binary ran without crash on clean host (exit $EXIT_CODE)"
+echo "PASS: binary ran successfully on clean host"
 exit 0
