@@ -91,11 +91,18 @@ Choose the engine by choosing its binary: `slicer_cli` uses BambuStudio;
 `slicer-cli` directory, using profiles from the matching engine's tree.
 On Windows, use the corresponding `.exe` filename.
 
-BambuStudio can read the settings embedded in a Bambu 3MF:
+On Linux, the BambuStudio package can reconstruct named presets from the
+bundled profiles when reading a Bambu 3MF:
 
 ```sh
 ./slicer_cli model.3mf -o bambu.gcode
 ```
+
+This automatic preset-lookup example is Linux-only. The current macOS and
+Windows archives retain their older flat layout and omit the `BBL.json`
+vendor index, so this lookup falls back to the flat 3MF configuration there.
+On those platforms, supply complete resolved settings explicitly with
+`--config`; do not rely on automatic reconstruction of named Bambu presets.
 
 For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles.
 First supply `resolved-orca-config.json` containing their complete inherited
