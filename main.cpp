@@ -463,6 +463,7 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 // with filament_map [1,2], and reassign_objects_to_master_nozzle() moved every
 // object to physical nozzle 0 — on the X2D the Bowden head — instead of letting
 // the engine's automatic grouping (ToolOrdering.cpp:1910-1914) pick the head.
+/// Derives and applies a manual nozzle map only when input provenance is explicit.
 bool apply_explicit_nozzle_mapping(
     Slic3r::DynamicPrintConfig& config,
     bool explicit_config_supplied_nozzle_map,

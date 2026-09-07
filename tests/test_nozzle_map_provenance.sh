@@ -13,6 +13,7 @@ trap 'rm -rf "$WORKDIR"' EXIT
 PASS=0
 FAIL=0
 
+# Records one labeled assertion and marks the suite failed when it does not match.
 record() {
     local label="$1" expected="$2" output="$3"
     if grep -Fq "$expected" <<<"$output"; then
@@ -23,6 +24,7 @@ record() {
     fi
 }
 
+# Runs a slice case and checks provenance, derivation, and reassignment output.
 run_case() {
     local label="$1" input="$2" provenance="$3" derivation="$4" reassignment="$5"; shift 5
     set +e
@@ -48,6 +50,7 @@ run_case() {
     fi
 }
 
+# Runs an invalid-input case and checks provenance plus validation failure.
 run_validation_failure() {
     local label="$1" input="$2" provenance="$3" derivation="$4" reassignment="$5" validation="$6"; shift 6
     set +e
