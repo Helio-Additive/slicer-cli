@@ -67,26 +67,6 @@
 #endif
 using json = nlohmann::json;
 
-// Engine static configuration constructors log before main(). Keep those
-// records off stdout so strict-JSON commands are valid from the first byte.
-// core::get() lazily constructs the logging core; no streams are used here.
-#ifdef _MSC_VER
-#pragma init_seg(lib)
-#endif
-namespace {
-struct StartupLogSilencer {
-    StartupLogSilencer() { boost::log::core::get()->set_logging_enabled(false); }
-};
-#if defined(__GNUC__) || defined(__clang__)
-StartupLogSilencer startup_log_silencer __attribute__((init_priority(101)));
-#else
-StartupLogSilencer startup_log_silencer;
-#endif
-}
-#ifdef _MSC_VER
-#pragma init_seg(user)
-#endif
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Structured warning event emission (purely additive — does NOT alter slicing
 // or G-code output).
