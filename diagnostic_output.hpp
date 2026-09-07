@@ -9,6 +9,7 @@ namespace slicer_cli { namespace diagnostics {
 // stdout FILE lock also used by printf and synchronized std::cout (including
 // the engine console sink). An event-only mutex cannot protect those writers.
 // The leading newline separates an event even from an unfinished text line.
+/// Writes one flushed, newline-delimited SLICER_EVENT record to stdout.
 inline void write_event(const std::string& payload) {
     const std::string record = "\n[[SLICER_EVENT]] " + payload + '\n';
     std::fwrite(record.data(), 1, record.size(), stdout);

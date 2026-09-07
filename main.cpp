@@ -167,6 +167,7 @@ void emit_event(const json& payload) {
 // not recognize at all. The GUI shows these ("some settings were incompatible
 // and have been substituted"); the CLI constructs the context, hands it to
 // load_bbs_3mf / load_from_json, and then never reads it.
+/// Emits structured events for substituted and unrecognized loaded-config values.
 void emit_config_substitutions(const Slic3r::ConfigSubstitutionContext& ctx,
                                const std::string& source) {
     for (const auto& sub : ctx.substitutions) {
@@ -202,6 +203,7 @@ void emit_config_substitutions(const Slic3r::ConfigSubstitutionContext& ctx,
 // area/height check bitfield, unprintable-filament findings, the
 // toolpath-outside-bed flag and the timelapse warning code. main() passes
 // `&gcode_result` purely because GCode.cpp dereferences it, then discards it.
+/// Maps engine slice-warning levels to stable event severity tags.
 const char* slice_warning_level_tag(int level) {
     switch (level) {
         case 0:  return "tip";
@@ -211,6 +213,7 @@ const char* slice_warning_level_tag(int level) {
     }
 }
 
+/// Emits structured flags and details from an engine G-code check result.
 void emit_gcode_check_result(const Slic3r::GCodeProcessorResult& r) {
     const int code = r.gcode_check_result.error_code;
     if (code == 0) return;
@@ -252,6 +255,7 @@ void emit_gcode_check_result(const Slic3r::GCodeProcessorResult& r) {
     emit_event(e);
 }
 
+/// Emits diagnostics retained in a completed G-code processing result.
 void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
     for (const auto& w : r.warnings) {
         json e;
@@ -320,6 +324,7 @@ void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r) {
 // JSON. libslic3r's set_logging_level() installs a CORE filter
 // (utils.cpp:113-121), so this sink can never see records the core dropped; the
 // sink's own filter pins the event stream at warning+ regardless of -v.
+/// Maps Boost.Log severities to stable structured-event tags.
 const char* boost_severity_tag(boost::log::trivial::severity_level level) {
     switch (level) {
         case boost::log::trivial::trace:   return "trace";
@@ -337,6 +342,7 @@ class EngineLogEventBackend final
           boost::log::sinks::combine_requirements<
               boost::log::sinks::synchronized_feeding>::type> {
 public:
+    /// Converts an accepted engine log record into a best-effort structured event.
     void consume(const boost::log::record_view& rec) {
         // An exception thrown here would propagate out of the BOOST_LOG_TRIVIAL
         // statement inside arbitrary libslic3r code, i.e. this bridge could
@@ -356,6 +362,7 @@ public:
     }
 };
 
+/// Installs console and warning-or-higher structured-event Boost.Log sinks.
 void install_engine_log_bridge() {
     // Register a real console sink before adding the event sink. Boost.Log's
     // fallback console is disabled as soon as any explicit sink is present.
@@ -2494,9 +2501,15 @@ int main(int argc, char** argv) {
                 }
                 if (!hulls.empty()) e["collision_hulls"] = hulls;
                 json heights = json::array();
-                for (const auto& [poly, height] : height_polygons)
+                for (const auto& [poly, height] : height_polygons) {
+                    json points = json::array();
+                    for (const auto& p : poly.points)
+                        points.push_back(json{{"x_mm", Slic3r::unscaled<double>(p.x())},
+                                              {"y_mm", Slic3r::unscaled<double>(p.y())}});
                     heights.push_back(json{{"height_mm", height},
-                                           {"point_count", poly.points.size()}});
+                                           {"point_count", poly.points.size()},
+                                           {"points", points}});
+                }
                 if (!heights.empty()) e["height_hulls"] = heights;
                 e["message"] = "Object clearance hulls overlap; the GUI would paint these regions red on the plate";
                 emit_event(e);
