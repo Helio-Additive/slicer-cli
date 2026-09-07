@@ -445,8 +445,24 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 // Bambu-only config keys/enums (e.g. fmmNozzleManual, filament_extruder_variant),
 // so they are compiled only for ENGINE_BAMBU and called only from the gated
 // front-end blocks in main(). OrcaSlicer needs none of them.
-bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config)
+// `input_supplied_nozzle_map` says whether the loaded input (a 3MF's
+// project_settings.config) carried its own `filament_nozzle_map`.  Bambu's own
+// headless CLI only consumes a nozzle map the input supplies
+// (BambuStudio.cpp:6836-6838, `if (m_extra_config.has("filament_nozzle_map"))`);
+// it never fabricates one.  Before this guard, the seed set_default_config()
+// writes ({1}) was padded by the extruder-count normalisation to [1,0] and read
+// back here as if it were the file's: a fresh STL (or any input with <=2 slots
+// and no nozzle map) on a two-head machine was then forced to "Nozzle Manual"
+// with filament_map [1,2], and reassign_objects_to_master_nozzle() moved every
+// object to physical nozzle 0 — on the X2D the Bowden head — instead of letting
+// the engine's automatic grouping (ToolOrdering.cpp:1910-1914) pick the head.
+bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config, bool input_supplied_nozzle_map)
 {
+    // No file-supplied nozzle map: there is nothing explicit to apply.  Leave the
+    // engine in the mode the input asked for (Auto For Flush by default).
+    if (!input_supplied_nozzle_map)
+        return false;
+
     // If the plate-level filament_maps were already applied (mode set to "Nozzle Manual"
     // before calling this function), skip re-derivation — the mapping is already correct.
     {
@@ -1408,6 +1424,10 @@ int main(int argc, char** argv) {
         // types) PLUS the BBS-specific extruder-variant normalization that coaxes the
         // Bambu engine into accepting a non-Bambu (e.g. Snapmaker U1) printer config.
         set_default_config(config);
+        // Remember the driver's own seed so a nozzle map can later be told apart
+        // from one the input file supplied (see apply_explicit_nozzle_mapping).
+        const std::vector<int> driver_nozzle_map_seed =
+            config.option<Slic3r::ConfigOptionInts>("filament_nozzle_map", true)->values;
 #else
         // OrcaSlicer handles non-Bambu printers (U1/Prusa/Voron/…) natively, so none of
         // the BBS variant-array normalization is needed.  Just seed every key with the
@@ -1423,6 +1443,9 @@ int main(int argc, char** argv) {
         model.set_backup_path(boost::filesystem::temp_directory_path().string() + "/slicer_cli_backup");
         bool is_bbl_3mf = false;
         Slic3r::PlateDataPtrs plate_data;  // hoisted so it is accessible after the 3mf block
+#ifdef ENGINE_BAMBU
+        bool input_supplied_nozzle_map = false;  // set only when a 3MF carried its own filament_nozzle_map
+#endif
 
         if (input_file.find(".stl") != std::string::npos ||
             input_file.find(".STL") != std::string::npos) {
@@ -1487,6 +1510,12 @@ int main(int argc, char** argv) {
                 std::cerr << "Failed to load 3MF file\n";
                 return 1;
             }
+#ifdef ENGINE_BAMBU
+            // Compare BEFORE any extruder-count padding: a value that differs
+            // from the driver's seed can only have come from the file.
+            if (auto* nm = config.option<Slic3r::ConfigOptionInts>("filament_nozzle_map", false))
+                input_supplied_nozzle_map = nm->values != driver_nozzle_map_seed;
+#endif
 
             // Validate --plate against actual plate count
             if (plate_id > 0 && (int)plate_data.size() < plate_id) {
@@ -1934,7 +1963,7 @@ int main(int argc, char** argv) {
         // filament_nozzle_map fallback: the latter's object reassignment is
         // exclusively for an otherwise-auto mapping.
         bool nozzle_mapping_derived =
-            explicit_plate_mapping_applied ? false : apply_explicit_nozzle_mapping(config);
+            explicit_plate_mapping_applied ? false : apply_explicit_nozzle_mapping(config, input_supplied_nozzle_map);
 
         // When apply_explicit_nozzle_mapping derived a cross-nozzle split from
         // "Auto For Flush" mode (filament_maps="1 1"), reassign all objects to
