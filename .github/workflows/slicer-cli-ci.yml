@@ -146,12 +146,16 @@ jobs:
           key: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-${{ hashFiles('install_deps.sh') }}
           restore-keys: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-
 
-      - name: Unlink legacy OpenSSL (macOS)
+      - name: Prepare OpenSSL links (macOS)
         if: runner.os == 'macOS'
         shell: /bin/bash -e {0}
         run: |
-          if brew list --versions openssl@1.1 >/dev/null 2>&1; then
-            brew unlink openssl@1.1
+          # Hosted images can retain orphaned openssl@1.1 prefix symlinks.
+          install_status=0
+          brew install openssl@3 || install_status=$?
+          brew link --overwrite --force openssl@3
+          if (( install_status != 0 )); then
+            brew install openssl@3
           fi
 
       - name: Install dependencies (macOS)
@@ -671,12 +675,16 @@ jobs:
           key: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-${{ hashFiles('install_deps.sh') }}
           restore-keys: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-
 
-      - name: Unlink legacy OpenSSL (macOS)
+      - name: Prepare OpenSSL links (macOS)
         if: runner.os == 'macOS'
         shell: /bin/bash -e {0}
         run: |
-          if brew list --versions openssl@1.1 >/dev/null 2>&1; then
-            brew unlink openssl@1.1
+          # Hosted images can retain orphaned openssl@1.1 prefix symlinks.
+          install_status=0
+          brew install openssl@3 || install_status=$?
+          brew link --overwrite --force openssl@3
+          if (( install_status != 0 )); then
+            brew install openssl@3
           fi
 
       - name: Install dependencies (macOS)
