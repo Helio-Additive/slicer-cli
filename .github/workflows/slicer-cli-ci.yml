@@ -153,6 +153,8 @@ jobs:
           # Hosted images can retain orphaned openssl@1.1 prefix symlinks.
           install_status=0
           brew install openssl@3 || install_status=$?
+          # Clear stale linked-keg state so link cannot return Already linked.
+          brew unlink openssl@3
           brew link --overwrite --force openssl@3
           if (( install_status != 0 )); then
             brew install openssl@3
@@ -686,6 +688,8 @@ jobs:
           # Hosted images can retain orphaned openssl@1.1 prefix symlinks.
           install_status=0
           brew install openssl@3 || install_status=$?
+          # Clear stale linked-keg state so link cannot return Already linked.
+          brew unlink openssl@3
           brew link --overwrite --force openssl@3
           if (( install_status != 0 )); then
             brew install openssl@3
