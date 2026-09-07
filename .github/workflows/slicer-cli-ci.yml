@@ -146,6 +146,14 @@ jobs:
           key: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-${{ hashFiles('install_deps.sh') }}
           restore-keys: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-
 
+      - name: Unlink legacy OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        shell: /bin/bash -e {0}
+        run: |
+          if brew list --versions openssl@1.1 >/dev/null 2>&1; then
+            brew unlink openssl@1.1
+          fi
+
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         # Use /bin/bash (macOS system bash 3.2) to avoid PATH resolution
@@ -666,6 +674,14 @@ jobs:
           path: ~/Library/Caches/Homebrew
           key: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-${{ hashFiles('install_deps.sh') }}
           restore-keys: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-
+
+      - name: Unlink legacy OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        shell: /bin/bash -e {0}
+        run: |
+          if brew list --versions openssl@1.1 >/dev/null 2>&1; then
+            brew unlink openssl@1.1
+          fi
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
