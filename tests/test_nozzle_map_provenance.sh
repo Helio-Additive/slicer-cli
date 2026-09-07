@@ -161,7 +161,7 @@ EOF
 
 cat > "$WORKDIR/cross-map.json" <<'EOF'
 {
-  "filament_nozzle_map": ["2", "1"]
+  "filament_nozzle_map": ["1", "0"]
 }
 EOF
 
@@ -182,7 +182,11 @@ for destination, cross_map in ((mapless_destination, False), (native_destination
                 config.pop("filament_nozzle_map", None)
                 config.update({
                     "filament_map": ["1", "1"],
-                    "physical_extruder_map": ["1", "2"],
+                    "physical_extruder_map": ["0", "1"],
+                    # Stop at validation after observing actual reassignment:
+                    # slot 1 is printable, slot 2 deliberately is not.
+                    "textured_plate_temp": ["55", "0"],
+                    "textured_plate_temp_initial_layer": ["55", "0"],
                     "nozzle_diameter": ["0.4", "0.4"],
                     "filament_volume_map": ["0", "0"],
                     "extruder_nozzle_stats": ["Standard#1", "Standard#1"],
@@ -198,10 +202,10 @@ for destination, cross_map in ((mapless_destination, False), (native_destination
                     "filament_map_mode": "Auto For Flush",
                 })
                 if cross_map:
-                    config["filament_nozzle_map"] = ["2", "1"]
+                    config["filament_nozzle_map"] = ["1", "0"]
                 else:
                     stl_profile = dict(config)
-                    stl_profile["filament_nozzle_map"] = ["2", "1"]
+                    stl_profile["filament_nozzle_map"] = ["1", "0"]
                     with open(stl_profile_destination, "w") as profile:
                         json.dump(stl_profile, profile, indent=2)
                 data = json.dumps(config, indent=2).encode()
@@ -234,26 +238,31 @@ run_case "mapless-3mf-default" "$WORKDIR/mapless.3mf" \
 run_validation_failure "stl-config-cross-map" "$WORKDIR/cube.stl" \
     "Nozzle-map provenance: explicit config map=yes" \
     "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" \
-    "Nozzle-map reassignment: object_extruders=[1]" \
+    "Nozzle-map reassignment: object_extruders=[2]" \
     "Validation error: cube.stl is too close to exclusion area" \
     --config "$WORKDIR/stl-cross-map.json"
 
 # Each CLI overlay must establish provenance after a mapless native 3MF load.
-# [2,1] is the helper's derived logical map for physical mapping [1,2]; the
-# master physical nozzle is 2 and reassigns the cube to filament slot 1.
+# Physical nozzle zero is the master. With physical mapping [0,1] and
+# nozzle map [1,0], the derived logical map is [2,1]. Reassignment must
+# change the object from filament slot 1 to slot 2, not merely log a call.
+# The synthetic slot-2 profile then fails plate validation deliberately;
+# these cases test the mutated model, not a complete two-filament print.
 for flag in --config --machine --process --filament; do
     label="mapless-3mf-${flag#--}"
-    run_case "$label" "$WORKDIR/mapless.3mf" \
+    run_validation_failure "$label" "$WORKDIR/mapless.3mf" \
         "Nozzle-map provenance: explicit config map=yes" \
         "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" \
-        "Nozzle-map reassignment: object_extruders=[1]" \
+        "Nozzle-map reassignment: object_extruders=[2]" \
+        "Validation error: Plate 1: Textured PEI Plate does not support filament 2" \
         "$flag" "$WORKDIR/cross-map.json"
 done
 
-run_case "native-3mf-cross-map" "$WORKDIR/native-cross-map.3mf" \
+run_validation_failure "native-3mf-cross-map" "$WORKDIR/native-cross-map.3mf" \
     "Nozzle-map provenance: explicit config map=yes" \
     "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" \
-    "Nozzle-map reassignment: object_extruders=[1]"
+    "Nozzle-map reassignment: object_extruders=[2]" \
+    "Validation error: Plate 1: Textured PEI Plate does not support filament 2"
 
 run_case "plate-cross-map-single-nozzle" "$WORKDIR/plate-cross-map.3mf" \
     "Nozzle-map provenance: explicit config map=no" \
