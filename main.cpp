@@ -607,7 +607,8 @@ void print_usage(const char* prog_name) {
 }
 
 // Load JSON config file and apply to DynamicPrintConfig
-bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& config, bool verbose = false) {
+bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& config,
+                      bool verbose = false, const std::string& diagnostic_source = {}) {
     if (verbose) {
         std::cout << "Loading config: " << filepath << "\n";
     }
@@ -626,14 +627,16 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 
         // Iterate through all key-value pairs
         for (auto& [key, value] : j.items()) {
-            // Skip metadata fields
+            // Skip profile metadata, including identity/version fields handled
+            // separately by both engines' ConfigBase::load_from_json.
             if (key == "type" || key == "name" || key == "inherits" ||
                 key == "from" || key == "setting_id" || key == "instantiation" ||
                 key == "description" || key == "compatible_printers" ||
                 key == "compatible_prints" || key == "include" ||
                 key == "upward_compatible_machine" || key == "printer_model" ||
                 key == "printer_variant" || key == "default_filament_profile" ||
-                key == "default_print_profile") {
+                key == "default_print_profile" || key == "filament_id" ||
+                key == "version" || key == "url" || key == "is_custom_defined") {
                 continue;
             }
 
@@ -673,10 +676,25 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
                     config.set_deserialize(key, value_str, substitution_context);
                 }
             } catch (const std::exception& e) {
+                if (!diagnostic_source.empty()) {
+                    emit_event({{"event", "config_value_rejected"},
+                            {"tag", "ProfileConfigValueRejected"},
+                            {"source", diagnostic_source},
+                            {"opt_key", key},
+                            {"message", "Failed to deserialize setting '" + key +
+                                        "'; its value may have changed: " + e.what()}});
+                }
                 if (verbose) {
                     std::cerr << "Warning: Failed to set config key '" << key << "': " << e.what() << "\n";
                 }
             }
+        }
+
+        // Keep non-fatal forward-compatibility substitutions and unknown keys
+        // visible before success when the caller opts into slicing events.
+        // Legacy --layout callers leave diagnostic_source empty.
+        if (!diagnostic_source.empty()) {
+            emit_config_substitutions(substitution_context, diagnostic_source);
         }
 
         if (verbose) {
@@ -2077,7 +2095,8 @@ int main(int argc, char** argv) {
         // that chose that profile must be told it did not take effect.
         auto load_profile = [&](const std::string& path, const char* kind) {
             if (path.empty()) return;
-            if (load_json_config(path, config, verbose)) return;
+            if (load_json_config(path, config, verbose,
+                                 std::string("profile:") + kind + ":" + path)) return;
             emit_event({{"event","config_load_failed"},
                         {"tag","ProfileLoadFailed"},
                         {"kind", kind},
