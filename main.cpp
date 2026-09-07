@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 #include <fstream>
 #include <string>
 #include <memory>
@@ -547,6 +548,11 @@ bool bbs_3mf_config_contains_nozzle_map(const std::string& filepath,
             std::string name(stat.m_filename);
             std::replace(name.begin(), name.end(), '\\', '/');
             if (!boost::algorithm::iequals(name, "Metadata/project_settings.config")) continue;
+            constexpr mz_uint64 max_project_settings_size = 16ULL * 1024 * 1024;
+            if (stat.m_uncomp_size > max_project_settings_size) {
+                mz_zip_reader_end(&zip);
+                throw std::runtime_error("3MF project settings exceed the 16 MiB safety limit");
+            }
             std::string content(stat.m_uncomp_size, '\0');
             if (mz_zip_reader_extract_to_mem(&zip, file_idx, content.data(), content.size(), 0)) {
                 try {
