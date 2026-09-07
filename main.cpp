@@ -447,9 +447,16 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 // front-end blocks in main(). OrcaSlicer needs none of them.
 // `input_supplied_nozzle_map` says whether the loaded input (a 3MF's
 // project_settings.config) carried its own `filament_nozzle_map`.  Bambu's own
-// headless CLI only consumes a nozzle map the input supplies
-// (BambuStudio.cpp:6836-6838, `if (m_extra_config.has("filament_nozzle_map"))`);
-// it never fabricates one.  Before this guard, the seed set_default_config()
+// headless CLI never derives a filament map from a default: under an automatic
+// mode it takes the mode from the plate/global config (BambuStudio.cpp:6662-6665)
+// and lets ToolOrdering group the filaments (ToolOrdering.cpp:1897-1914); the
+// engine reads filament_nozzle_map only under Nozzle Manual
+// (ToolOrdering.cpp:1885-1889), a mode the CLI refuses on one-nozzle-per-
+// extruder machines such as the X2D/H2D (BambuStudio.cpp:6841-6846); and the
+// CLI-argument nozzle map is consumed only on multi-nozzle machines in a manual
+// mode (BambuStudio.cpp:6789, 6836-6838).  Bambu Studio exports always carry
+// the key (PresetBundle.cpp:61, written as zeros at 2090-2091), so real Bambu
+// files keep their previous behaviour here.  Before this guard, the seed set_default_config()
 // writes ({1}) was padded by the extruder-count normalisation to [1,0] and read
 // back here as if it were the file's: a fresh STL (or any input with <=2 slots
 // and no nozzle map) on a two-head machine was then forced to "Nozzle Manual"
