@@ -33,7 +33,7 @@ cp "$BINARY" "$OUTPUT/slicer_cli"
 # These are used as a fallback when per-file @rpath resolution fails (e.g.
 # transitive GCC runtime libs whose copies in Frameworks/ have @loader_path
 # rpaths that become meaningless after the copy).
-declare -a GLOBAL_RPATH_DIRS=()
+declare -a GLOBAL_RPATH_DIRS=("__slicer_cli_rpath_sentinel__")
 while IFS= read -r RP; do
     RP="${RP//\(.*\)/}"
     RP="${RP//[[:space:]]/}"
@@ -45,9 +45,60 @@ done < <(otool -l "$OUTPUT/slicer_cli" 2>/dev/null | grep -A2 'LC_RPATH' | grep 
 # Recurse through otool -L output until no new deps are found.
 # "Non-system" = anything NOT under /usr/lib or /System/Library.
 
-declare -A SEEN
-declare -A SRC_OF   # maps dist/Frameworks/X → original absolute path of X
+declare -a SEEN=("__slicer_cli_seen_sentinel__")
+declare -a SRC_KEYS=("__slicer_cli_source_sentinel__")
+declare -a SRC_VALUES=("")
 QUEUE=("$OUTPUT/slicer_cli")
+
+record_homebrew_provenance() {
+    local SOURCE_PATH="$1" RELATIVE FORMULA DESTINATION
+    case "$SOURCE_PATH" in
+        /opt/homebrew/opt/*)
+            RELATIVE="${SOURCE_PATH#/opt/homebrew/opt/}"
+            ;;
+        /usr/local/opt/*)
+            RELATIVE="${SOURCE_PATH#/usr/local/opt/}"
+            ;;
+        /opt/homebrew/Cellar/*)
+            RELATIVE="${SOURCE_PATH#/opt/homebrew/Cellar/}"
+            ;;
+        /usr/local/Cellar/*)
+            RELATIVE="${SOURCE_PATH#/usr/local/Cellar/}"
+            ;;
+        *)
+            echo "ERROR: no provenance collector for bundled library $SOURCE_PATH" >&2
+            return 1
+            ;;
+    esac
+    FORMULA="${RELATIVE%%/*}"
+    DESTINATION="$OUTPUT/THIRD_PARTY_LICENSES/homebrew"
+    mkdir -p "$DESTINATION"
+    if [ ! -s "$DESTINATION/$FORMULA.json" ]; then
+        brew info --json=v2 "$FORMULA" > "$DESTINATION/$FORMULA.json"
+    fi
+    if [ ! -s "$DESTINATION/$FORMULA.rb" ]; then
+        brew cat "$FORMULA" > "$DESTINATION/$FORMULA.rb"
+    fi
+}
+
+already_seen() {
+    local CANDIDATE="$1" ITEM
+    for ITEM in "${SEEN[@]}"; do
+        [[ "$ITEM" == "$CANDIDATE" ]] && return 0
+    done
+    return 1
+}
+
+source_for() {
+    local CANDIDATE="$1" INDEX
+    for ((INDEX=0; INDEX<${#SRC_KEYS[@]}; INDEX++)); do
+        if [[ "${SRC_KEYS[$INDEX]}" == "$CANDIDATE" ]]; then
+            echo "${SRC_VALUES[$INDEX]}"
+            return 0
+        fi
+    done
+    return 0
+}
 
 resolve_rpath() {
     local BASENAME="$1" CURRENT_FILE="$2"
@@ -60,7 +111,8 @@ resolve_rpath() {
     done < <(otool -l "$CURRENT_FILE" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}' || true)
     # 2. Resolve @loader_path via original source directory (copies in
     #    dist/Frameworks/ lose their @loader_path context after being moved).
-    local ORIG="${SRC_OF[$CURRENT_FILE]:-}"
+    local ORIG
+    ORIG="$(source_for "$CURRENT_FILE")"
     if [[ -n "$ORIG" ]]; then
         local ORIG_DIR
         ORIG_DIR="$(dirname "$ORIG")"
@@ -70,7 +122,7 @@ resolve_rpath() {
     for DIR in "${GLOBAL_RPATH_DIRS[@]}"; do
         [[ -f "$DIR/$BASENAME" ]] && echo "$DIR/$BASENAME" && return 0
     done
-    return 0  # not found — caller checks for empty FOUND
+    return 0  # caller treats an empty result as fatal
 }
 
 while [ "${#QUEUE[@]}" -gt 0 ]; do
@@ -84,21 +136,23 @@ while [ "${#QUEUE[@]}" -gt 0 ]; do
         if [[ "$LIB" == @rpath/* ]]; then
             BASENAME="${LIB#@rpath/}"
             FOUND="$(resolve_rpath "$BASENAME" "$CURRENT")"
-            [[ -z "$FOUND" ]] && continue
+            [[ -z "$FOUND" ]] && { echo "ERROR: cannot resolve $LIB for $CURRENT" >&2; exit 1; }
             LIB="$FOUND"
         fi
         # Skip remaining @-prefixed refs, system libs
         [[ "$LIB" == @* ]] && continue
         [[ "$LIB" =~ ^/usr/lib/ ]] && continue
         [[ "$LIB" =~ ^/System/ ]] && continue
-        [[ -n "${SEEN[$LIB]+x}" ]] && continue
-        SEEN["$LIB"]=1
-        [[ ! -f "$LIB" ]] && { echo "WARNING: cannot find $LIB"; continue; }
+        already_seen "$LIB" && continue
+        SEEN+=("$LIB")
+        [[ ! -f "$LIB" ]] && { echo "ERROR: cannot find $LIB" >&2; exit 1; }
         DEST="$FRAMEWORKS/$(basename "$LIB")"
         [[ -f "$DEST" ]] && continue
         echo "Bundling: $LIB → $DEST"
         cp "$LIB" "$DEST"
-        SRC_OF["$DEST"]="$LIB"
+        record_homebrew_provenance "$LIB"
+        SRC_KEYS+=("$DEST")
+        SRC_VALUES+=("$LIB")
         QUEUE+=("$DEST")
     done < <(otool -L "$CURRENT" 2>/dev/null | tail -n +2)
 done
@@ -107,36 +161,55 @@ done
 rewrite_refs() {
     local TARGET="$1"
     chmod +w "$TARGET"
+    if [[ "$TARGET" == "$FRAMEWORKS/"* ]]; then
+        install_name_tool -id "@rpath/$(basename "$TARGET")" "$TARGET"
+    fi
     # Rewrite absolute Homebrew paths
-    for SRC_LIB in "${!SEEN[@]}"; do
+    for SRC_LIB in "${SEEN[@]}"; do
         local BASENAME
         BASENAME="$(basename "$SRC_LIB")"
-        install_name_tool -change "$SRC_LIB" \
-            "@executable_path/Frameworks/$BASENAME" \
-            "$TARGET" 2>/dev/null || true
+        if otool -L "$TARGET" | tail -n +2 | awk '{print $1}' | grep -Fxq "$SRC_LIB"; then
+            install_name_tool -change "$SRC_LIB" \
+                "@executable_path/Frameworks/$BASENAME" \
+                "$TARGET"
+        fi
     done
     # Rewrite @rpath/X references for bundled libs
     while IFS= read -r RPATH_LIB; do
         RPATH_LIB="$(echo "$RPATH_LIB" | awk '{print $1}')"
         [[ "$RPATH_LIB" != @rpath/* ]] && continue
         local BASENAME="${RPATH_LIB#@rpath/}"
-        [[ -f "$FRAMEWORKS/$BASENAME" ]] && \
+        if [[ -f "$FRAMEWORKS/$BASENAME" ]]; then
             install_name_tool -change "$RPATH_LIB" \
                 "@executable_path/Frameworks/$BASENAME" \
-                "$TARGET" 2>/dev/null || true
+                "$TARGET"
+        else
+            echo "ERROR: unresolved bundled dependency $RPATH_LIB in $TARGET" >&2
+            exit 1
+        fi
     done < <(otool -L "$TARGET" 2>/dev/null | tail -n +2)
     # Remove Homebrew rpaths (now replaced with @executable_path refs)
     while IFS= read -r RPATH; do
         RPATH="${RPATH//\(.*\)/}"
         RPATH="${RPATH//[[:space:]]/}"
-        [[ "$RPATH" =~ homebrew|Homebrew ]] && \
-            install_name_tool -delete_rpath "$RPATH" "$TARGET" 2>/dev/null || true
+        if [[ "$RPATH" =~ homebrew|Homebrew ]]; then
+            install_name_tool -delete_rpath "$RPATH" "$TARGET"
+        fi
     done < <(otool -l "$TARGET" 2>/dev/null | grep -A2 'LC_RPATH' | grep 'path' | awk '{print $2}')
 }
 
 rewrite_refs "$OUTPUT/slicer_cli"
-for DYLIB in "$FRAMEWORKS"/*.dylib; do
+shopt -s nullglob
+DYLIBS=("$FRAMEWORKS"/*.dylib)
+for DYLIB in "${DYLIBS[@]}"; do
     rewrite_refs "$DYLIB"
+done
+
+for TARGET in "$OUTPUT/slicer_cli" "${DYLIBS[@]}"; do
+    if otool -L "$TARGET" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)|/(build|\.cache|_temp)/'; then
+        echo "ERROR: non-relocatable dependency remains in $TARGET" >&2
+        exit 1
+    fi
 done
 
 # install_name_tool mutates Mach-O load commands after the linker creates the
@@ -144,7 +217,7 @@ done
 # dyld load time with "Code Signature Invalid". Re-sign every copied dylib first
 # and the launcher last so the package remains runnable after extraction.
 if command -v codesign >/dev/null 2>&1; then
-    for DYLIB in "$FRAMEWORKS"/*.dylib; do
+    for DYLIB in "${DYLIBS[@]}"; do
         codesign --force --sign - "$DYLIB"
     done
     codesign --force --sign - "$OUTPUT/slicer_cli"

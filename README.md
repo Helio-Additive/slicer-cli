@@ -1,6 +1,7 @@
 # slicer-cli
 
-Standalone command-line slicer derived from BambuStudio's `libslic3r`. AGPLv3.
+Standalone dual-engine command-line slicer derived from BambuStudio and
+OrcaSlicer's `libslic3r` forks. AGPLv3.
 
 `slicer-cli` is the AGPL boundary that closed apps subprocess. Run it directly,
 embed it in CI, or wrap it from any tool that wants reproducible BambuStudio-
@@ -10,10 +11,9 @@ compatible STL → gcode slicing without dragging in a UI.
 
 AGPL-3.0-or-later. See `LICENSE`.
 
-This project is derived from BambuStudio (also AGPLv3), which is derived from
-PrusaSlicer (also AGPLv3), which is derived from Slic3r (AGPLv3). The full
-attribution chain — including bundled sub-libraries and their licenses — is in
-`NOTICE`.
+This project includes separate BambuStudio and OrcaSlicer engine binaries. Both
+are derived from PrusaSlicer and Slic3r under AGPLv3. The full attribution chain
+and engine-specific dependency provenance are in `NOTICE`.
 
 If you run `slicer-cli` (or a modified version of it) on a server and let
 network users interact with it, AGPL § 13 requires you to offer them the
@@ -70,16 +70,56 @@ a feature branch first.
 
 Release builds are produced by GitHub Actions (`.github/workflows/`) for:
 
-- Linux x86_64 + arm64 (static where licence-compatible)
-- macOS arm64 + x86_64 (notarized via Apple Developer ID)
-- Windows x86_64 (Authenticode-signed)
+- Linux x86_64
+- macOS arm64
+- Windows x86_64
 
-Each release is a relocatable binary: non-system dylibs are bundled inside
-the package with corrected install names. A clean-host smoke test in CI
-verifies the binary runs on a host with no Homebrew dependencies preinstalled.
+Linux packages target Ubuntu 22.04/glibc 2.35 and bundle non-glibc runtime
+libraries. macOS packages bundle non-system dylibs and reject Homebrew or build
+paths. CI artifacts are not currently notarized or Authenticode-signed.
+
+The engine dependency contract, upstream-aligned pins, and documented platform
+exceptions are recorded in `docs/engine-dependency-contract.md`.
 
 Package metadata identifies the artefact as `slicer_cli` (not `BambuStudio`).
 A CI assertion fails the build if the metadata regresses.
+
+## Using a release package
+
+Choose the engine by choosing its binary: `slicer_cli` uses BambuStudio;
+`slicer_cli-orcaslicer` uses OrcaSlicer. Run the examples from the extracted
+`slicer-cli` directory, using profiles from the matching engine's tree.
+On Windows, use the corresponding `.exe` filename.
+
+On Linux, the BambuStudio package can reconstruct named presets from the
+bundled profiles when reading a Bambu 3MF:
+
+```sh
+./slicer_cli model.3mf -o bambu.gcode
+```
+
+This automatic preset-lookup example is Linux-only. The current macOS and
+Windows archives retain their older flat layout and omit the `BBL.json`
+vendor index, so this lookup falls back to the flat 3MF configuration there.
+On those platforms, supply complete resolved settings explicitly with
+`--config`; do not rely on automatic reconstruction of named Bambu presets.
+
+For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles.
+First supply `resolved-orca-config.json` containing their complete inherited
+settings. The caller must resolve the profiles' `inherits` chains: the CLI
+loads JSON overrides directly and does not resolve those chains itself.
+Passing only the leaf files below would leave parent settings at defaults.
+
+```sh
+./slicer_cli-orcaslicer model.stl \
+  --config resolved-orca-config.json \
+  --machine 'resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json' \
+  --filament 'resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json' \
+  --process 'resources/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json' \
+  -o orca.gcode
+```
+
+Use profiles matching your actual printer, nozzle, and material before printing.
 
 ## Versioning
 
