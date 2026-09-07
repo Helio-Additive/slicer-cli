@@ -64,7 +64,8 @@ no_events()  { ! grep -q "\[\[SLICER_EVENT\]\]" "$1"; }
 
 OUT=$(mktemp "${TMPDIR:-/tmp}/diag_out.XXXXXX")
 ERR=$(mktemp "${TMPDIR:-/tmp}/diag_err.XXXXXX")
-trap 'rm -f "$OUT" "$ERR"' EXIT
+LAYOUT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/diag_layout.XXXXXX")
+trap 'rm -f "$OUT" "$ERR"; rm -rf "$LAYOUT_DIR"' EXIT
 
 # ── Slice path: engine log records reach the event stream ───────────────────
 # A missing input makes libslic3r log `[error] Unable to open the file ...`
@@ -74,6 +75,7 @@ run "$OUT" "$ERR" "$FIXTURES/does_not_exist.3mf" -o /dev/null
 if [ "$LAST_EXIT" -eq 1 ] \
    && has_event "$OUT" "engine_log" \
    && grep -q "\"severity\":\"error\"" "$OUT" \
+   && grep -Eq '^\[[^]]+\] \[[^]]+\] \[error\].*Unable to open' "$OUT" \
    && has_event "$OUT" "load_error"; then
     record "slice-missing-input-emits-engine-log-and-load-error" 1
 else
@@ -87,7 +89,7 @@ if [ -f "$BASE_3MF" ]; then
     # still exits 0 — the agent learns from the event that its chosen filament
     # profile never took effect.
     GC=$(mktmp_gcode)
-    run "$OUT" "$ERR" "$BASE_3MF" --filament "$FIXTURES/does_not_exist.json" -o "$GC"
+    run "$OUT" "$ERR" "$BASE_3MF" --verbose --filament "$FIXTURES/does_not_exist.json" -o "$GC"
     if [ "$LAST_EXIT" -eq 0 ] \
        && has_event "$OUT" "config_load_failed" \
        && grep -q "\"kind\":\"filament\"" "$OUT"; then
@@ -95,6 +97,11 @@ if [ -f "$BASE_3MF" ]; then
     else
         record "profile-load-failure-is-an-event-not-a-refusal" 0 \
             "exit=$LAST_EXIT (want 0); config_load_failed/kind=filament not found"
+    fi
+    if grep -Eq '^\[[^]]+\] \[[^]]+\] \[(info|debug|trace)\]' "$OUT"; then
+        record "verbose-preserves-plain-engine-diagnostics" 1
+    else
+        record "verbose-preserves-plain-engine-diagnostics" 0
     fi
     rm -f "$GC"
 
@@ -130,24 +137,36 @@ fi
 # ── Strict-JSON path 1: layout capabilities ─────────────────────────────────
 # Exactly one JSON document line on stdout, and no event line beside it.
 run "$OUT" "$ERR" layout capabilities --json
-DOC_LINES=$(grep -c '^{' "$OUT" || true)
-if [ "$LAST_EXIT" -eq 0 ] && no_events "$OUT" && [ "$DOC_LINES" = "1" ]; then
+valid_json() { python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin), dict)' < "$1"; }
+if [ "$LAST_EXIT" -eq 0 ] && no_events "$OUT" && valid_json "$OUT"; then
     record "layout-capabilities-stdout-stays-one-json-document" 1
 else
     record "layout-capabilities-stdout-stays-one-json-document" 0 \
-        "exit=$LAST_EXIT (want 0); json-document lines=$DOC_LINES (want 1); or an event line leaked"
+        "exit=$LAST_EXIT (want 0); stdout must parse as exactly one JSON object with no event lines"
 fi
 
 # ── Strict-JSON path 2: --layout-plan ───────────────────────────────────────
-# This is the case the install point exists to protect, and the assertion is
-# only meaningful if engine code actually logs on this path — so the test
-# proves that first: the run must produce warning/error BOOST_LOG_TRIVIAL text
-# on stdout (model load, backup-path setup) AND still carry no event line.
-# Install the bridge any earlier and those records become [[SLICER_EVENT]]
-# lines inside a document every caller parses as one.
-PROFILES_DIR="$SCRIPT_DIR/../references/BambuStudio/resources/profiles"
+# Require successful planning and parse the entire stdout, not a matching line.
+PROFILES_DIR="${SLICER_TEST_PROFILES_DIR:-$SCRIPT_DIR/../references/BambuStudio/resources/profiles}"
 MACHINE_PROFILE="BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"
-if [ -f "$BASE_3MF" ] && [ -f "$PROFILES_DIR/$MACHINE_PROFILE" ]; then
+if [ -f "$PROFILES_DIR/$MACHINE_PROFILE" ]; then
+    # The generic layout reader does not import Bambu project components.
+    # A watertight cube exercises actual model loading and arrangement.
+    python3 - "$LAYOUT_DIR/cube.stl" <<'PY'
+import sys
+vertices = [(0,0,0), (10,0,0), (10,10,0), (0,10,0),
+            (0,0,10), (10,0,10), (10,10,10), (0,10,10)]
+faces = [(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),
+         (1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
+with open(sys.argv[1], "w") as f:
+    f.write("solid cube\n")
+    for face in faces:
+        f.write("facet normal 0 0 0\nouter loop\n")
+        for index in face:
+            f.write("vertex %s %s %s\n" % vertices[index])
+        f.write("endloop\nendfacet\n")
+    f.write("endsolid cube\n")
+PY
     PROBLEM=$(mktemp "${TMPDIR:-/tmp}/diag_problem.XXXXXX")
     cat > "$PROBLEM" <<EOF
 {
@@ -155,22 +174,43 @@ if [ -f "$BASE_3MF" ] && [ -f "$PROFILES_DIR/$MACHINE_PROFILE" ]; then
   "engine": "bambu",
   "profilesDir": "$PROFILES_DIR",
   "profiles": { "machine": "$MACHINE_PROFILE" },
-  "spacing": { "min_object_distance_mm": 10.0 },
-  "models": [ { "id": "a", "path": "$BASE_3MF" } ]
+  "spacing": { "minObjectDistanceMm": 10.0 },
+  "models": [ { "id": "a", "path": "$LAYOUT_DIR/cube.stl" } ]
 }
 EOF
     run "$OUT" "$ERR" --layout-plan --input "$PROBLEM"
     LAYOUT_EXIT=$LAST_EXIT
-    ENGINE_LOGGED=0
-    grep -qE "\[(warning|error)\]" "$OUT" && ENGINE_LOGGED=1
-    if [ "$ENGINE_LOGGED" = "1" ] && no_events "$OUT"; then
-        record "layout-plan-stdout-carries-no-events-while-engine-logs" 1
-    elif [ "$ENGINE_LOGGED" = "0" ]; then
-        record "layout-plan-stdout-carries-no-events-while-engine-logs" 0 \
-            "the run logged nothing at warning+ (exit=$LAYOUT_EXIT), so the no-event assertion proves nothing — fix the fixture"
+    if [ "$LAYOUT_EXIT" -eq 0 ] && no_events "$OUT" && valid_json "$OUT"; then
+        record "layout-plan-stdout-stays-one-json-document" 1
     else
-        record "layout-plan-stdout-carries-no-events-while-engine-logs" 0 \
-            "an event line leaked into the --layout-plan stdout document (exit=$LAYOUT_EXIT)"
+        record "layout-plan-stdout-stays-one-json-document" 0 \
+            "exit=$LAYOUT_EXIT (want 0); stdout must parse as exactly one JSON object"
+        cat "$ERR"
+    fi
+    # Legacy --layout permits engine text before the placements document.
+    # Preserve that contract without adding structured slicing events.
+    cat > "$PROBLEM" <<EOF
+{
+  "profilesDir": "$PROFILES_DIR",
+  "profiles": { "machine": "$MACHINE_PROFILE" },
+  "objects": [ { "stl": "$LAYOUT_DIR/cube.stl" } ]
+}
+EOF
+    run "$OUT" "$ERR" --layout "$PROBLEM"
+    if [ "$LAST_EXIT" -eq 0 ] && no_events "$OUT" && python3 - "$OUT" <<'PY'
+import json
+import sys
+with open(sys.argv[1]) as f:
+    lines = [line for line in f if line.strip()]
+result = json.loads(lines[-1])
+assert result["engine"] == "bambu"
+assert len(result["placements"]) == 1
+PY
+    then
+        record "legacy-layout-keeps-placement-result-without-events" 1
+    else
+        record "legacy-layout-keeps-placement-result-without-events" 0 \
+            "exit=$LAST_EXIT (want 0); missing placements or slicing events leaked"
     fi
     rm -f "$PROBLEM"
 else
