@@ -1556,7 +1556,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RELEASE_STATE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft 2>/dev/null || true)"
+          # List releases so draft releases are included. API failures remain fatal.
+          find_release() {
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases" |
+              jq -s --arg tag "$GITHUB_REF_NAME" '
+                [.[][] | select(.tag_name == $tag)] |
+                if length <= 1 then .[0] else error("Duplicate release tag") end'
+          }
+          RELEASE_JSON="$(find_release)"
+          RELEASE_STATE="$(jq -r 'if . == null then "" elif .draft == true then "true" elif .draft == false then "false" else error("Missing release draft state") end' <<< "$RELEASE_JSON")"
           if [ -z "$RELEASE_STATE" ]; then
             gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
               --draft --title "$GITHUB_REF_NAME" --notes "slicer-cli engine package"
@@ -1564,7 +1572,8 @@ jobs:
             echo "Refusing to replace assets on an already-published release" >&2
             exit 1
           fi
-          RELEASE_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .id)"
+          RELEASE_JSON="$(find_release)"
+          RELEASE_ID="$(jq -er 'if .draft == true and (.id | type) == "number" then .id else error("Expected a draft release with an ID") end' <<< "$RELEASE_JSON")"
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --jq '.[].id' |
             while IFS= read -r asset_id; do
               [ -n "$asset_id" ] && gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
