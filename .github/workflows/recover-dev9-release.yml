@@ -1,0 +1,75 @@
+name: Recover dev-9 release
+
+on:
+  push:
+    branches: [fix/dev9-release-recovery]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: recover-dev9-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download original successful packages
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: Helio-Additive/slicer-cli
+          run-id: 34178720814
+          pattern: slicer-cli-release-*
+          merge-multiple: true
+          path: assets
+
+      - name: Verify and publish existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        working-directory: assets
+        run: |
+          set -euo pipefail
+          REPO=Helio-Additive/slicer-cli
+          TAG=slicer-cli/v0.1.0-dev-9
+          SHA=76c531eeba8ba376eb229fc6359cf2b66f60bb03
+          test "$(gh api "repos/$REPO/actions/runs/34178720814" --jq .head_sha)" = "$SHA"
+          TAG_OBJECT="$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq .object.sha)"
+          test "$(gh api "repos/$REPO/git/tags/$TAG_OBJECT" --jq .object.sha)" = "$SHA"
+          gh api "repos/$REPO/releases/384450849" |
+            jq -e --arg tag "$TAG" '.draft == true and .tag_name == $tag' >/dev/null
+          ARCHIVES=(slicer-cli-v0.1.0-dev-9-linux-x86_64.tar.gz
+                    slicer-cli-v0.1.0-dev-9-macos-arm64.tar.gz
+                    slicer-cli-v0.1.0-dev-9-windows-x86_64.zip)
+          for archive in "${ARCHIVES[@]}"; do
+            expected="$(awk '{print $1}' "$archive.sha256")"
+            test "$(sha256sum "$archive" | cut -d ' ' -f 1)" = "$expected"
+          done
+          jq -s --arg version '0.1.0-dev-9' --arg gitSha "$SHA" '
+            if length == 3 and
+              ([.[].platform] | sort) == ["linux-x86_64", "macos-arm64", "windows-x86_64"]
+            then {version: $version, gitSha: $gitSha, platforms: .}
+            else error("Expected all three platform manifests") end' \
+            engine-platform-*.json > engine-manifest.json
+          FILES=("${ARCHIVES[@]}" "${ARCHIVES[@]/%/.sha256}" engine-manifest.json)
+          for file in "${FILES[@]}"; do
+            gh api "repos/$REPO/releases/384450849" |
+              jq -e --arg tag "$TAG" '.draft == true and .tag_name == $tag' >/dev/null
+            digest="sha256:$(sha256sum "$file" | cut -d ' ' -f 1)"
+            existing="$(gh api --paginate "repos/$REPO/releases/384450849/assets" |
+              jq -sr --arg name "$file" '[.[][] | select(.name == $name)] |
+                if length == 0 then "" elif length == 1 then .[0].digest
+                else error("Duplicate asset") end')"
+            if [ -n "$existing" ]; then
+              test "$existing" = "$digest"
+              continue
+            fi
+            curl --fail --silent --show-error --connect-timeout 20 --max-time 180 \
+              -H "Authorization: Bearer $GH_TOKEN" -H 'Content-Type: application/octet-stream' \
+              --data-binary "@$file" \
+              "https://uploads.github.com/repos/$REPO/releases/384450849/assets?name=$file" >/dev/null
+          done
+          gh api --method PATCH "repos/$REPO/releases/384450849" -F draft=false >/dev/null
