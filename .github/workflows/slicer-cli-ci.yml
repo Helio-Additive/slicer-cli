@@ -136,22 +136,29 @@ jobs:
         # build; runner is ephemeral.
         run: sudo rm -rf /Library/Frameworks/Mono.framework
 
-      - name: Cache Homebrew packages
+      - name: Cache Homebrew downloads
         if: runner.os == 'macOS'
         uses: actions/cache@v4
         with:
-          path: |
-            ~/Library/Caches/Homebrew
-            /opt/homebrew/Cellar
-            /opt/homebrew/lib
-            /opt/homebrew/include
-            /opt/homebrew/bin
-            /usr/local/lib/libnoise*
-            /usr/local/include/libnoise
-          # v7 has both the system CGAL 6 package for Orca and the project-managed
-          # Bambu CGAL 5.4 keg.
-          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
-          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
+          # Never restore installed kegs or symlinks over a different runner
+          # image. Cache downloaded bottles only; brew owns the installation.
+          path: ~/Library/Caches/Homebrew
+          key: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-${{ hashFiles('install_deps.sh') }}
+          restore-keys: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-
+
+      - name: Prepare OpenSSL links (macOS)
+        if: runner.os == 'macOS'
+        shell: /bin/bash -e {0}
+        run: |
+          # Hosted images can retain orphaned openssl@1.1 prefix symlinks.
+          install_status=0
+          brew install openssl@3 || install_status=$?
+          # Clear stale linked-keg state so link cannot return Already linked.
+          brew unlink openssl@3
+          brew link --overwrite --force openssl@3
+          if (( install_status != 0 )); then
+            brew install openssl@3
+          fi
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
@@ -518,11 +525,19 @@ jobs:
             exit 1
           fi
 
+      - name: Run structured-diagnostics event tests (bambu)
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_diagnostic_events.sh build/slicer_cli
+
       - name: Run feature-exclusion regression tests (bambu)
         # BambuStudio-specific excluded-source set; orca's differs, so this gates
         # the bambu engine only. Orca gets a plain --help smoke below.
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_excluded_features.sh build/slicer_cli
+
+      - name: Test diagnostic transport
+        if: runner.os != 'Windows'
+        run: python3 tests/test_diagnostic_transport.py
 
       - name: Smoke --help (orca, macOS/Linux)
         if: runner.os != 'Windows' && matrix.engine == 'orca'
@@ -656,22 +671,29 @@ jobs:
         # build; runner is ephemeral.
         run: sudo rm -rf /Library/Frameworks/Mono.framework
 
-      - name: Cache Homebrew packages
+      - name: Cache Homebrew downloads
         if: runner.os == 'macOS'
         uses: actions/cache@v4
         with:
-          path: |
-            ~/Library/Caches/Homebrew
-            /opt/homebrew/Cellar
-            /opt/homebrew/lib
-            /opt/homebrew/include
-            /opt/homebrew/bin
-            /usr/local/lib/libnoise*
-            /usr/local/include/libnoise
-          # v7 has both the system CGAL 6 package for Orca and the project-managed
-          # Bambu CGAL 5.4 keg.
-          key: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
-          restore-keys: homebrew-${{ runner.os }}-${{ runner.arch }}-v7
+          # Never restore installed kegs or symlinks over a different runner
+          # image. Cache downloaded bottles only; brew owns the installation.
+          path: ~/Library/Caches/Homebrew
+          key: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-${{ hashFiles('install_deps.sh') }}
+          restore-keys: homebrew-downloads-${{ runner.os }}-${{ runner.arch }}-v8-
+
+      - name: Prepare OpenSSL links (macOS)
+        if: runner.os == 'macOS'
+        shell: /bin/bash -e {0}
+        run: |
+          # Hosted images can retain orphaned openssl@1.1 prefix symlinks.
+          install_status=0
+          brew install openssl@3 || install_status=$?
+          # Clear stale linked-keg state so link cannot return Already linked.
+          brew unlink openssl@3
+          brew link --overwrite --force openssl@3
+          if (( install_status != 0 )); then
+            brew install openssl@3
+          fi
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
@@ -1052,6 +1074,17 @@ jobs:
         # the bambu engine only. Orca gets a plain --help smoke below.
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_excluded_features.sh build/slicer_cli
+
+      - name: Run structured-diagnostics event tests (bambu)
+        # Asserts engine diagnostics reach stdout as [[SLICER_EVENT]] lines on
+        # the slice path with unchanged exit codes, and that the strict-JSON
+        # paths (layout capabilities / --layout-plan) stay single-document.
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_diagnostic_events.sh build/slicer_cli
+
+      - name: Test diagnostic transport
+        if: runner.os != 'Windows'
+        run: python3 tests/test_diagnostic_transport.py
 
       - name: Smoke --help (orca, macOS/Linux)
         if: runner.os != 'Windows' && matrix.engine == 'orca'
