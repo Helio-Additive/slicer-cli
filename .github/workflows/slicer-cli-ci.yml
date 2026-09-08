@@ -529,11 +529,19 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
 
+      - name: Run structured-diagnostics event tests (bambu)
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_diagnostic_events.sh build/slicer_cli
+
       - name: Run feature-exclusion regression tests (bambu)
         # BambuStudio-specific excluded-source set; orca's differs, so this gates
         # the bambu engine only. Orca gets a plain --help smoke below.
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_excluded_features.sh build/slicer_cli
+
+      - name: Test diagnostic transport
+        if: runner.os != 'Windows'
+        run: python3 tests/test_diagnostic_transport.py
 
       - name: Smoke --help (orca, macOS/Linux)
         if: runner.os != 'Windows' && matrix.engine == 'orca'
@@ -1074,6 +1082,17 @@ jobs:
         # the bambu engine only. Orca gets a plain --help smoke below.
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_excluded_features.sh build/slicer_cli
+
+      - name: Run structured-diagnostics event tests (bambu)
+        # Asserts engine diagnostics reach stdout as [[SLICER_EVENT]] lines on
+        # the slice path with unchanged exit codes, and that the strict-JSON
+        # paths (layout capabilities / --layout-plan) stay single-document.
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_diagnostic_events.sh build/slicer_cli
+
+      - name: Test diagnostic transport
+        if: runner.os != 'Windows'
+        run: python3 tests/test_diagnostic_transport.py
 
       - name: Smoke --help (orca, macOS/Linux)
         if: runner.os != 'Windows' && matrix.engine == 'orca'

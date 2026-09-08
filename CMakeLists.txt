@@ -533,7 +533,9 @@ list(APPEND LIBSLIC3R_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/standalone_stubs.cpp")
 
 # ─── libslic3r_core (main library) ─────────────────────────────────────────
-add_library(libslic3r_core ${LIBSLIC3R_SOURCES}
+# Keep engine constructors in the executable's initialization domain so the
+# driver's startup log silencer runs before them, even if BUILD_SHARED_LIBS is ON.
+add_library(libslic3r_core STATIC ${LIBSLIC3R_SOURCES}
     "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h")
 
 # Generate a compatibility shim for deprecated Boost APIs that were removed in
@@ -816,7 +818,7 @@ set_target_properties(libslic3r_core PROPERTIES
 add_library(libslic3r ALIAS libslic3r_core)
 
 # ─── CLI executable ────────────────────────────────────────────────────────
-add_executable(slicer_cli main.cpp calib_args.cpp layout_plan.cpp)
+add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_plan.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 target_include_directories(slicer_cli PRIVATE
     "${VENDOR}"
