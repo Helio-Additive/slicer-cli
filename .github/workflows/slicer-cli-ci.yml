@@ -525,6 +525,10 @@ jobs:
             exit 1
           fi
 
+      - name: Run nozzle-map provenance regression tests (bambu)
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
+
       - name: Run structured-diagnostics event tests (bambu)
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_diagnostic_events.sh build/slicer_cli
@@ -1068,6 +1072,10 @@ jobs:
             grep "CPACK_PACKAGE_NAME" CPackConfig.cmake
             exit 1
           fi
+
+      - name: Run nozzle-map provenance regression tests (bambu)
+        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
 
       - name: Run feature-exclusion regression tests (bambu)
         # BambuStudio-specific excluded-source set; orca's differs, so this gates

@@ -2,6 +2,8 @@
 // Supports loading BambuStudio JSON config files (machine, filament, process)
 
 #include <iostream>
+#include <limits>
+#include <stdexcept>
 #include <fstream>
 #include <string>
 #include <memory>
@@ -606,9 +608,56 @@ void print_usage(const char* prog_name) {
               << "\nNote: Config files are located in BambuStudio's resources/profiles/ directory\n";
 }
 
-// Load JSON config file and apply to DynamicPrintConfig
+#ifdef ENGINE_BAMBU
+// ConfigOptionInts does not check stream failures and can throw after appending
+// part of a vector. Check extraction first, then deserialize into a scratch
+// option so an invalid overlay cannot replace an earlier accepted map.
+bool deserialize_usable_nozzle_map(const std::string& text, Slic3r::ConfigOptionInts& out) {
+    if (text.empty()) return false;
+    std::istringstream stream(text);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+        std::istringstream item(token);
+        int nozzle;
+        if (!(item >> nozzle) || nozzle < 0) return false;
+        item >> std::ws;
+        if (!item.eof()) return false;
+    }
+    Slic3r::ConfigOptionInts candidate;
+    try {
+        if (!candidate.deserialize(text) || candidate.values.empty()) return false;
+    } catch (...) {
+        return false;
+    }
+    out.values = std::move(candidate.values);
+    return true;
+}
+
+// Match ConfigBase::load_from_json's string/array conversion for coInts:
+// homogeneous arrays, string leaves, commas within arrays, '#' between groups.
+bool nozzle_map_json_text(const json& value, std::string& text) {
+    if (value.is_string()) {
+        text += value.get<std::string>();
+        return true;
+    }
+    if (!value.is_array()) return false;
+    std::string type;
+    bool first = true;
+    for (const auto& element : value) {
+        if (first) type = element.type_name();
+        else if (type != element.type_name()) return false;
+        if (!first) text += element.is_array() ? '#' : ',';
+        first = false;
+        if (!nozzle_map_json_text(element, text)) return false;
+    }
+    return true;
+}
+#endif
+
+// Load JSON config and record only accepted, usable nozzle-map overlays.
 bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& config,
-                      bool verbose = false, const std::string& diagnostic_source = {}) {
+                      bool verbose = false, const std::string& diagnostic_source = {},
+                      bool* supplied_nozzle_map = nullptr) {
     if (verbose) {
         std::cout << "Loading config: " << filepath << "\n";
     }
@@ -641,6 +690,19 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
             }
 
             try {
+#ifdef ENGINE_BAMBU
+                if (supplied_nozzle_map && key == "filament_nozzle_map" &&
+                    !value.is_string() && !value.is_number() && !value.is_array())
+                    continue;
+                if (supplied_nozzle_map && key == "filament_nozzle_map" && value.is_array()) {
+                    // The generic loader drops unsupported elements. Do not turn
+                    // a malformed nozzle-map array into an apparently valid map.
+                    bool valid_types = !value.empty();
+                    for (const auto& element : value)
+                        valid_types = valid_types && (element.is_string() || element.is_number());
+                    if (!valid_types) continue;
+                }
+#endif
                 // Use set_deserialize to respect existing config types
                 // This handles type conversion properly
                 std::string value_str;
@@ -672,6 +734,41 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
                 }
 
                 if (!value_str.empty() && value_str != "nil") {
+#ifdef ENGINE_BAMBU
+                    if (supplied_nozzle_map && key == "filament_nozzle_map") {
+                        // The generic numeric conversion uses double formatting
+                        // (1 becomes "1.000000"). Preserve integer map tokens
+                        // without permitting fractional or malformed values.
+                        auto map_token = [](const json& element) -> std::string {
+                            if (element.is_string()) return element.get<std::string>();
+                            if (element.is_number_float()) {
+                                const double number = element.get<double>();
+                                if (number >= 0 && number <= std::numeric_limits<int>::max() &&
+                                    number == static_cast<int>(number))
+                                    return std::to_string(static_cast<int>(number));
+                            }
+                            return element.dump();
+                        };
+                        if (value.is_array()) {
+                            value_str.clear();
+                            for (size_t i = 0; i < value.size(); ++i) {
+                                if (i != 0) value_str += ',';
+                                value_str += map_token(value[i]);
+                            }
+                        } else if (value.is_number()) {
+                            value_str = map_token(value);
+                        }
+                        Slic3r::ConfigOptionInts accepted;
+                        if (!deserialize_usable_nozzle_map(value_str, accepted)) continue;
+                        Slic3r::DynamicPrintConfig scratch;
+                        scratch.set_deserialize(key, value_str, substitution_context);
+                        const auto* parsed = scratch.option<Slic3r::ConfigOptionInts>(key, false);
+                        if (!parsed || parsed->values.empty()) continue;
+                        config.set_key_value(key, parsed->clone());
+                        *supplied_nozzle_map = true;
+                        continue;
+                    }
+#endif
                     // set_deserialize respects the existing option type
                     config.set_deserialize(key, value_str, substitution_context);
                 }
@@ -708,6 +805,51 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
     }
 }
 
+#ifdef ENGINE_BAMBU
+// load_bbs_3mf applies Metadata/project_settings.config directly to config.
+// Inspect the same input layer before defaults or vector normalization obscure
+// whether the file explicitly supplied a nozzle map.
+bool bbs_3mf_config_contains_nozzle_map(const std::string& filepath,
+                                      Slic3r::ConfigOptionInts& accepted_map) {
+    mz_zip_archive zip;
+    mz_zip_zero_struct(&zip);
+    if (!Slic3r::open_zip_reader(&zip, filepath))
+        return false;
+
+    bool contains_nozzle_map = false;
+    const mz_uint count = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint file_idx = 0; file_idx < count; ++file_idx) {
+        mz_zip_archive_file_stat stat;
+        if (mz_zip_reader_file_stat(&zip, file_idx, &stat)) {
+            std::string name(stat.m_filename);
+            std::replace(name.begin(), name.end(), '\\', '/');
+            if (!boost::algorithm::iequals(name, "Metadata/project_settings.config")) continue;
+            constexpr mz_uint64 max_project_settings_size = 16ULL * 1024 * 1024;
+            if (stat.m_uncomp_size > max_project_settings_size) {
+                mz_zip_reader_end(&zip);
+                throw std::runtime_error("3MF project settings exceed the 16 MiB safety limit");
+            }
+            std::string content(stat.m_uncomp_size, '\0');
+            if (mz_zip_reader_extract_to_mem(&zip, file_idx, content.data(), content.size(), 0)) {
+                try {
+                    const auto settings = json::parse(content);
+                    if (settings.is_object() && settings.contains("filament_nozzle_map")) {
+                        std::string text;
+                        if (nozzle_map_json_text(settings["filament_nozzle_map"], text) &&
+                            deserialize_usable_nozzle_map(text, accepted_map))
+                            contains_nozzle_map = true;
+                    }
+                } catch (...) {
+                    // load_bbs_3mf remains the authoritative parser and reports malformed input.
+                }
+            }
+        }
+    }
+    mz_zip_reader_end(&zip);
+    return contains_nozzle_map;
+}
+#endif
+
 // When a 3MF already carries explicit per-filament physical nozzle assignments,
 // recover the corresponding logical extruder map before slicing.  This avoids
 // the auto-grouping path re-solving an already-constrained dual-nozzle setup
@@ -721,8 +863,35 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
 // Bambu-only config keys/enums (e.g. fmmNozzleManual, filament_extruder_variant),
 // so they are compiled only for ENGINE_BAMBU and called only from the gated
 // front-end blocks in main(). OrcaSlicer needs none of them.
-bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config)
+// `explicit_config_supplied_nozzle_map` says whether the fully-overlaid config
+// carries its own `filament_nozzle_map`, rather than the driver's seed. Bambu's own
+// headless CLI never derives a filament map from a default: under an automatic
+// mode it takes the mode from the plate/global config (BambuStudio.cpp:6662-6665)
+// and lets ToolOrdering group the filaments (ToolOrdering.cpp:1897-1914); the
+// engine reads filament_nozzle_map only under Nozzle Manual
+// (ToolOrdering.cpp:1885-1889), a mode the CLI refuses on one-nozzle-per-
+// extruder machines such as the X2D/H2D (BambuStudio.cpp:6841-6846); and the
+// CLI-argument nozzle map is consumed only on multi-nozzle machines in a manual
+// mode (BambuStudio.cpp:6789, 6836-6838).  Bambu Studio exports always carry
+// the key (PresetBundle.cpp:61, written as zeros at 2090-2091), so real Bambu
+// files keep their previous behaviour here.  Before this guard, the seed set_default_config()
+// writes ({1}) was padded by the extruder-count normalisation to [1,0] and read
+// back here as if it were the file's: a fresh STL (or any input with <=2 slots
+// and no nozzle map) on a two-head machine was then forced to "Nozzle Manual"
+// with filament_map [1,2], and reassign_objects_to_master_nozzle() moved every
+// object to physical nozzle 0 — on the X2D the Bowden head — instead of letting
+// the engine's automatic grouping (ToolOrdering.cpp:1910-1914) pick the head.
+/// Derives and applies a manual nozzle map only when input provenance is explicit.
+bool apply_explicit_nozzle_mapping(
+    Slic3r::DynamicPrintConfig& config,
+    bool explicit_config_supplied_nozzle_map,
+    bool verbose)
 {
+    // No explicit config nozzle map: there is nothing to apply. Leave the
+    // engine in the mode the input asked for (Auto For Flush by default).
+    if (!explicit_config_supplied_nozzle_map)
+        return false;
+
     // If the plate-level filament_maps were already applied (mode set to "Nozzle Manual"
     // before calling this function), skip re-derivation — the mapping is already correct.
     {
@@ -777,14 +946,20 @@ bool apply_explicit_nozzle_mapping(Slic3r::DynamicPrintConfig& config)
         filament_map_2->values[i] = derived_map[i] - 1;
 
     // Force Nozzle Manual mode when filament_nozzle_map gives a cross-extruder
-    // assignment.  In this case the input 3MF's nozzle map is the authoritative
-    // source for which filament goes on which physical nozzle.  Without real AMS
+    // assignment. In this case the explicit config map is the authoritative
+    // source for which filament goes on which physical nozzle. Without real AMS
     // data the fmmAutoForFlush algorithm always assigns every filament to the
     // master extruder, overriding the correct split.  Switching to Nozzle Manual
     // preserves the derived_map computed above.
     {
         Slic3r::ConfigSubstitutionContext substitution_context(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
         config.set_deserialize("filament_map_mode", "Nozzle Manual", substitution_context);
+    }
+    if (verbose) {
+        std::cout << "Nozzle-map derivation: filament_map=[";
+        for (size_t i = 0; i < derived_map.size(); ++i)
+            std::cout << (i == 0 ? "" : ",") << derived_map[i];
+        std::cout << "] mode=Nozzle Manual\n";
     }
     return true;
 }
@@ -1708,6 +1883,9 @@ int main(int argc, char** argv) {
         model.set_backup_path(boost::filesystem::temp_directory_path().string() + "/slicer_cli_backup");
         bool is_bbl_3mf = false;
         Slic3r::PlateDataPtrs plate_data;  // hoisted so it is accessible after the 3mf block
+#ifdef ENGINE_BAMBU
+        bool explicit_config_supplied_nozzle_map = false;
+#endif
 
         if (input_file.find(".stl") != std::string::npos ||
             input_file.find(".STL") != std::string::npos) {
@@ -1718,6 +1896,12 @@ int main(int argc, char** argv) {
             }
         } else if (input_file.find(".3mf") != std::string::npos ||
                    input_file.find(".3MF") != std::string::npos) {
+#ifdef ENGINE_BAMBU
+            Slic3r::ConfigOptionInts accepted_3mf_nozzle_map(
+                config.option<Slic3r::ConfigOptionInts>("filament_nozzle_map", true)->values);
+            explicit_config_supplied_nozzle_map =
+                bbs_3mf_config_contains_nozzle_map(input_file, accepted_3mf_nozzle_map);
+#endif
             Slic3r::ConfigSubstitutionContext config_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
             std::vector<Slic3r::Preset*> presets;
             Slic3r::Semver file_version;
@@ -1783,7 +1967,12 @@ int main(int argc, char** argv) {
                 std::cerr << "Failed to load 3MF file\n";
                 return 1;
             }
-
+#ifdef ENGINE_BAMBU
+            // The importer may partially mutate a vector before rejecting it.
+            // Retain the last usable input map, or the original driver default
+            // when no usable map was supplied. This does not establish provenance.
+            config.set_key_value("filament_nozzle_map", accepted_3mf_nozzle_map.clone());
+#endif
             // Validate --plate against actual plate count
             if (plate_id > 0 && (int)plate_data.size() < plate_id) {
                 emit_event({{"event","input_error"},
@@ -2096,7 +2285,13 @@ int main(int argc, char** argv) {
         auto load_profile = [&](const std::string& path, const char* kind) {
             if (path.empty()) return;
             if (load_json_config(path, config, verbose,
-                                 std::string("profile:") + kind + ":" + path)) return;
+                                 std::string("profile:") + kind + ":" + path,
+#ifdef ENGINE_BAMBU
+                                 &explicit_config_supplied_nozzle_map
+#else
+                                 nullptr
+#endif
+                                 )) return;
             emit_event({{"event","config_load_failed"},
                         {"tag","ProfileLoadFailed"},
                         {"kind", kind},
@@ -2111,6 +2306,13 @@ int main(int argc, char** argv) {
         load_profile(filament_config, "filament");
 
 #ifdef ENGINE_BAMBU
+        // Provenance is accumulated while each input/profile layer is parsed,
+        // before normalization pads vector options. A supplied [1] is explicit
+        // even when it equals the driver's seed value.
+        if (verbose)
+            std::cout << "Nozzle-map provenance: explicit config map="
+                      << (explicit_config_supplied_nozzle_map ? "yes" : "no") << "\n";
+
         // ── BBS toolchanger / per-extruder normalizations ───────────────────
         // Everything from here to the matching #endif exists to make the Bambu
         // engine accept a non-Bambu printer config (vector-array padding/collapse,
@@ -2199,7 +2401,7 @@ int main(int argc, char** argv) {
         // JSON configs may have left some vectors empty or missing
         ensure_vector_config_sizes(config);
 
-        // If the 3MF plate carries an explicit per-filament nozzle assignment,
+        // If the fully-overlaid config carries an explicit per-filament nozzle assignment,
         // apply it directly to config's filament_map.  This reproduces the
         // BambuStudio desktop behaviour where the user has already constrained the
         // mapping in the GUI ("Nozzle Manual" mode) and saved it in the plate metadata.
@@ -2259,13 +2461,30 @@ int main(int argc, char** argv) {
         // filament_nozzle_map fallback: the latter's object reassignment is
         // exclusively for an otherwise-auto mapping.
         bool nozzle_mapping_derived =
-            explicit_plate_mapping_applied ? false : apply_explicit_nozzle_mapping(config);
+            explicit_plate_mapping_applied ? false : apply_explicit_nozzle_mapping(
+                config, explicit_config_supplied_nozzle_map, verbose);
 
         // When apply_explicit_nozzle_mapping derived a cross-nozzle split from
         // "Auto For Flush" mode (filament_maps="1 1"), reassign all objects to
         // the master (right) nozzle to match BambuStudio desktop behavior.
-        if (nozzle_mapping_derived)
+        if (nozzle_mapping_derived) {
             reassign_objects_to_master_nozzle(model, config);
+            if (verbose) {
+                std::cout << "Nozzle-map reassignment: object_extruders=[";
+                for (size_t i = 0; i < model.objects.size(); ++i) {
+                    const auto* extruder = dynamic_cast<const Slic3r::ConfigOptionInt*>(
+                        model.objects[i]->config.option("extruder"));
+                    std::cout << (i == 0 ? "" : ",")
+                              << (extruder ? std::to_string(extruder->value) : "missing");
+                }
+                std::cout << "]\n";
+            }
+        } else if (verbose) {
+            const auto* mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>(
+                "filament_map_mode", false);
+            const std::string mode_name = mode ? mode->serialize() : "<unset>";
+            std::cout << "Nozzle-map derivation: skipped mode=" << mode_name << "\n";
+        }
 
         // Disable prime tower when there is no actual multi-material printing.
         //
