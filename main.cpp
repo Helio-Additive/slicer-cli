@@ -1754,21 +1754,46 @@ bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config,
                     nozzle_count > 1 && old_size % nozzle_count == 0 &&
                     exact_square_root(old_size / nozzle_count, per_head_root) && per_head_root > 1;
 
+                // Diagonal zero pattern as shape evidence.  The GUI always writes
+                // a filament's self-purge as 0, so whichever reading is right has
+                // a zero at every diagonal cell it claims.  Bounded to indices the
+                // saved LENGTH actually has, so no reading can step past the
+                // vector whatever shape it is probed with.
+                auto diagonals_all_zero = [&](size_t side, size_t blocks) {
+                    for (size_t block = 0; block < blocks; ++block)
+                        for (size_t d = 0; d < side; ++d) {
+                            const size_t idx = block * side * side + d * side + d;
+                            if (idx >= old_size || flush_matrix->values[idx] != 0.)
+                                return false;
+                        }
+                    return true;
+                };
+
                 if (whole_is_square && square_root > 1 && square_root >= filament_count) {
-                    // One saved square block that covers the active roster, read as
-                    // a single N*N table whatever else the file claims about the
-                    // machine.  This is the reading that keeps every pair the roster
-                    // can name, and it is the one the GUI writes, so it wins over
-                    // the per-head one when both fit.  The ambiguity is narrow —
-                    // only a saved matrix shorter than the target that is also a
-                    // whole number of head blocks — and this is its conservative
-                    // side.  Four heads with sixteen saved values and a roster of
-                    // three are one 4x4 matrix (pairs for filaments 0..2 preserved)
-                    // as easily as four 2x2 head blocks (which would keep only the
-                    // first two filaments and drop the third); a matrix whose size
-                    // already matches the target is never reshaped at all, which is
-                    // what tells four right-sized 2x2 head blocks apart.
-                    old_filament_count = square_root;
+                    // One saved square block that covers the active roster — the
+                    // reading that keeps every pair the roster can name, and the
+                    // one the GUI writes.  Four heads with sixteen saved values and
+                    // a roster of three fit a single 4x4 table (pairs for filaments
+                    // 0..2 preserved) as easily as four 2x2 head blocks (which keep
+                    // only the first two filaments), so the diagonal zeros decide:
+                    // four flattened 2x2 blocks put cross-purges at indices 5 and
+                    // 10, failing the whole-square diagonal while every per-head
+                    // diagonal is zero; a single saved 4x4 passes the whole-square
+                    // test and fails the per-head one, whose diagonals land on its
+                    // cross-purges (3, 4, 7…).  Per-head takes precedence only on
+                    // that one-sided evidence; if both shapes satisfy the test
+                    // there is no definitive encoding, so the conservative
+                    // whole-square choice stands.  A matrix whose size already
+                    // matches the target is never reshaped at all, which is what
+                    // tells four right-sized 2x2 head blocks apart.
+                    const bool per_head_shape =
+                        per_head_blocks && diagonals_all_zero(per_head_root, nozzle_count);
+                    if (per_head_shape && !diagonals_all_zero(square_root, 1)) {
+                        old_filament_count = per_head_root;
+                        old_nozzle_count   = nozzle_count;
+                    } else {
+                        old_filament_count = square_root;
+                    }
                 } else if (per_head_blocks) {
                     // Whole N*N blocks per head: exactly the engine's layout, and
                     // the only reading left when the saved square cannot cover the
