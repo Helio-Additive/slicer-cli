@@ -1455,13 +1455,12 @@ jobs:
           rm -rf dist/package dist/release dist/verify
           P=dist/package/slicer-cli
           mkdir -p "$P/bin" "$P/resources/profiles" dist/release
-          # Bambu resolves presets relative to the real executable's ../resources.
-          # Keep the published entry points through relative symlinks.
+          # Both published entry points are real copies under bin/. Bambu
+          # resolves presets relative to the real executable's ../resources,
+          # and the archive carries no symlinks.
           cp engine-bambu/slicer_cli "$P/bin/slicer_cli"
           cp engine-orca/slicer_cli-orcaslicer "$P/bin/slicer_cli-orcaslicer"
           chmod +x "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer"
-          ln -s bin/slicer_cli "$P/slicer_cli"
-          ln -s bin/slicer_cli-orcaslicer "$P/slicer_cli-orcaslicer"
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
           cp references/BambuStudio/resources/profiles/BBL.json "$P/resources/profiles/BBL.json"
           mkdir -p "$P/resources/info"
@@ -1472,22 +1471,42 @@ jobs:
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
-          cat > "$P/manifest.json" <<EOF
+          # The manifest sits beside the binaries it describes, as the macOS and
+          # Windows packages do, and its paths stay archive-relative.
+          cat > "$P/bin/manifest.json" <<EOF
           {
             "version": "${VERSION}",
             "gitSha": "${GITHUB_SHA}",
             "platform": "${PLATFORM}",
-            "executablePath": "slicer-cli/slicer_cli",
+            "executablePath": "slicer-cli/bin/slicer_cli",
             "profilesPath": "slicer-cli/resources/profiles/BBL",
             "orcaProfilesPath": "slicer-cli/resources/profiles-orca",
             "engines": [
-              { "engine": "bambustudio", "path": "slicer-cli/slicer_cli" },
-              { "engine": "orcaslicer", "path": "slicer-cli/slicer_cli-orcaslicer" }
+              { "engine": "bambustudio", "path": "slicer-cli/bin/slicer_cli" },
+              { "engine": "orcaslicer", "path": "slicer-cli/bin/slicer_cli-orcaslicer" }
             ]
           }
           EOF
           bash scripts/bundle-linux.sh "$P" "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer"
-          tar -C dist/package -czf "dist/release/${ASSET}" slicer-cli
+          # The published archive is symlink-free. Reject any symlink before
+          # archiving it, whether we created it or it arrived inside a
+          # third-party asset, rather than silently rewriting it.
+          if [ -n "$(find "$P" -type l -print -quit)" ]; then
+            echo "Symlinks in staged package tree:" >&2
+            find "$P" -type l >&2
+            exit 1
+          fi
+          # --hard-dereference collapses hardlinked members into real file
+          # entries: the updater rejects hardlink members outright.
+          tar --hard-dereference -C dist/package -czf "dist/release/${ASSET}" slicer-cli
+          # Stream the listing rather than buffering it: the profile tree is
+          # large. pipefail makes a tar read error fail this gate too, so a
+          # broken archive cannot reach the hash and upload below.
+          if ! tar -tvzf "dist/release/${ASSET}" |
+            awk '{ if (substr($1, 1, 1) == "l" || substr($1, 1, 1) == "h") { print; bad = 1 } } END { exit bad }'; then
+            echo "Archive listing failed or contains symlink/hardlink members: ${ASSET}" >&2
+            exit 1
+          fi
           HASH="$(sha256sum "dist/release/${ASSET}" | awk '{print $1}')"
           printf '%s  %s\n' "$HASH" "$ASSET" > "dist/release/${ASSET}.sha256"
           cat > "dist/release/engine-platform-${PLATFORM}.json" <<EOF
@@ -1495,14 +1514,26 @@ jobs:
             "platform": "${PLATFORM}",
             "assetFilename": "${ASSET}",
             "sha256": "${HASH}",
-            "executablePath": "slicer-cli/slicer_cli",
+            "executablePath": "slicer-cli/bin/slicer_cli",
             "profilesPath": "slicer-cli/resources/profiles/BBL"
           }
           EOF
           mkdir -p dist/verify
           tar -C dist/verify -xzf "dist/release/${ASSET}"
-          test -x dist/verify/slicer-cli/slicer_cli
-          test -x dist/verify/slicer-cli/slicer_cli-orcaslicer
+          test -x dist/verify/slicer-cli/bin/slicer_cli
+          test -x dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
+          # The relocated layout has no root binaries or symlinks, and the
+          # manifest lives beside the binaries it describes.
+          test ! -e dist/verify/slicer-cli/slicer_cli
+          test ! -e dist/verify/slicer-cli/slicer_cli-orcaslicer
+          test ! -e dist/verify/slicer-cli/manifest.json
+          test -f dist/verify/slicer-cli/bin/manifest.json
+          test -z "$(find dist/verify/slicer-cli -type l -print -quit)"
+          test -d dist/verify/slicer-cli/lib
+          jq -e '
+            .executablePath == "slicer-cli/bin/slicer_cli"
+            and ([.engines[].path] | sort == ["slicer-cli/bin/slicer_cli", "slicer-cli/bin/slicer_cli-orcaslicer"])
+          ' dist/verify/slicer-cli/bin/manifest.json >/dev/null
           test -d dist/verify/slicer-cli/resources/profiles/BBL/machine
           test -d dist/verify/slicer-cli/resources/profiles/BBL/process
           test -d dist/verify/slicer-cli/resources/profiles/BBL/filament
@@ -1510,6 +1541,8 @@ jobs:
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/process
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/filament
           test -n "$(find dist/verify/slicer-cli/THIRD_PARTY_LICENSES -type f -print -quit)"
+          dist/verify/slicer-cli/bin/slicer_cli --help >/dev/null
+          dist/verify/slicer-cli/bin/slicer_cli-orcaslicer --help >/dev/null
           bash tests/test-portable-bundle.sh dist/verify/slicer-cli
 
       - name: Upload Linux release package artifact

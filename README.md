@@ -89,13 +89,17 @@ A CI assertion fails the build if the metadata regresses.
 Choose the engine by choosing its binary: `slicer_cli` uses BambuStudio;
 `slicer_cli-orcaslicer` uses OrcaSlicer. Run the examples from the extracted
 `slicer-cli` directory, using profiles from the matching engine's tree.
-On Windows, use the corresponding `.exe` filename.
+On Linux the binaries live under `bin/` inside the extracted `slicer-cli`
+directory (`./bin/slicer_cli`, `./bin/slicer_cli-orcaslicer`) and nothing
+launches from that directory's top level; the macOS and Windows archives keep
+their flat layout with the binaries directly inside `slicer-cli`. On Windows,
+use the corresponding `.exe` filename.
 
 On Linux, the BambuStudio package can reconstruct named presets from the
 bundled profiles when reading a Bambu 3MF:
 
 ```sh
-./slicer_cli model.3mf -o bambu.gcode
+./bin/slicer_cli model.3mf -o bambu.gcode
 ```
 
 This automatic preset-lookup example is Linux-only. The current macOS and
@@ -104,14 +108,16 @@ vendor index, so this lookup falls back to the flat 3MF configuration there.
 On those platforms, supply complete resolved settings explicitly with
 `--config`; do not rely on automatic reconstruction of named Bambu presets.
 
-For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles.
+For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles
+(shown with the Linux `bin/` path; on macOS and Windows run
+`./slicer_cli-orcaslicer` from the extracted `slicer-cli` directory).
 First supply `resolved-orca-config.json` containing their complete inherited
 settings. The caller must resolve the profiles' `inherits` chains: the CLI
 loads JSON overrides directly and does not resolve those chains itself.
 Passing only the leaf files below would leave parent settings at defaults.
 
 ```sh
-./slicer_cli-orcaslicer model.stl \
+./bin/slicer_cli-orcaslicer model.stl \
   --config resolved-orca-config.json \
   --machine 'resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json' \
   --filament 'resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json' \
