@@ -1612,10 +1612,10 @@ bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config, bool 
 
     // filament_self_index: only extend to a variant table that already covers the
     // roster.  The slot count can be smaller than the filament count (one slot
-    // per extruder × nozzle volume), and growing it past the table would make the
-    // side-by-side walk in PrintObject.cpp:342-345 index the shorter vector out
-    // of range.  New slots take the 1..N owner of the filament they belong to,
-    // the shape PresetBundle::full_fff_config() stamps (PresetBundle.cpp:221-231).
+    // per extruder × nozzle volume), and growing it past the table would make
+    // PrintObject.cpp:342-345 index the shorter variant vector out of range.
+    // A one-slot-per-filament table has owners 1..N; extra variant slots have
+    // no derivable owner, so preserve the existing get_at() front fallback.
     auto* variant_list = config.option<Slic3r::ConfigOptionStrings>("filament_extruder_variant", false);
     auto* self_index = config.option<Slic3r::ConfigOptionInts>("filament_self_index", false);
     if (variant_list && self_index) {
@@ -1624,7 +1624,8 @@ bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config, bool 
             const size_t known = self_index->values.size();
             self_index->values.resize(slots, 1);
             for (size_t i = known; i < slots; ++i)
-                self_index->values[i] = int(i) + 1;
+                self_index->values[i] = slots == filament_count
+                    ? int(i) + 1 : self_index->values.front();
             ++extended;
         }
     }
@@ -1639,36 +1640,77 @@ bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config, bool 
     auto* flush_matrix = config.option<Slic3r::ConfigOptionFloats>("flush_volumes_matrix", false);
     if (flush_vector && !flush_vector->values.empty() &&
         flush_vector->values.size() < 2 * filament_count) {
-        const double load   = flush_vector->values[0];
-        const double unload = flush_vector->values.size() > 1 ? flush_vector->values[1] : 140.;
-        while (flush_vector->values.size() < 2 * filament_count) {
+        // The matrix pairing below reads the vector positionally — even entries
+        // from the outgoing filament, odd from the incoming one — so an
+        // odd-length vector has to have its half pair completed before whole
+        // pairs are appended.  Appending pairs to an odd total overshoots 2*N by
+        // one and leaves a stray value the wipe-tower generator never paired
+        // with a filament.
+        const double unload = flush_vector->values[0];
+        const double load   = flush_vector->values.size() > 1 ? flush_vector->values[1] : 140.;
+        if (flush_vector->values.size() % 2 != 0)
             flush_vector->values.push_back(load);
+        while (flush_vector->values.size() + 2 <= 2 * filament_count) {
             flush_vector->values.push_back(unload);
+            flush_vector->values.push_back(load);
         }
         ++extended;
     }
-    if (flush_matrix && flush_vector && flush_vector->values.size() >= 2 * filament_count) {
+    if (flush_matrix && flush_vector && flush_vector->values.size() >= 2 * filament_count &&
+        flush_matrix->values.size() > 0) {
+        // Per-nozzle count.  nozzle_diameter is declared coFloats
+        // (PrintConfig.cpp:4245) and is stored as ConfigOptionFloats, not the
+        // nullable spelling — casting to the nullable sibling yields nullptr and
+        // silently collapses a multi-nozzle machine to one nozzle.
         size_t nozzle_count = 1;
-        if (const auto* nd = config.option<Slic3r::ConfigOptionFloatsNullable>("nozzle_diameter", false))
+        if (const auto* nd = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter", false))
             nozzle_count = std::max<size_t>(1, nd->values.size());
         const size_t matrix_target = filament_count * filament_count * nozzle_count;
 
-        if (flush_matrix->values.size() > 0 && flush_matrix->values.size() < matrix_target) {
-            // How many filaments and nozzles the present matrix covers, so the
-            // pairs it already describes can be carried over unchanged.
-            size_t old_nozzle_count = 1;
-            if (const auto* multiplier = config.option<Slic3r::ConfigOptionFloats>("flush_multiplier", false))
-                old_nozzle_count = std::max<size_t>(1, multiplier->values.size());
-
+        if (flush_matrix->values.size() < matrix_target) {
+            // Shape of the matrix already saved in the project, so the pairs it
+            // does describe can be carried over unchanged.  The matrix is one
+            // N*N block per nozzle, block after block (get_flush_volumes_matrix,
+            // PrintConfig.hpp:1945; GCode.cpp:4752,8090 read it that way), so its
+            // LENGTH is what fixes N, and the nozzle count is the machine's own
+            // head count — the dimension this reshape is building toward.
+            // flush_multiplier is deliberately NOT read here: its length is a
+            // per-head hint that a saved project does not keep in step with the
+            // matrix (a two-entry multiplier can sit beside a one-nozzle 2x2
+            // matrix), and decomposing the matrix by it would read those four
+            // saved values as two 1x1 blocks and drop every one of them.
             size_t old_filament_count = 0;
-            const size_t old_size = flush_matrix->values.size();
-            if (old_size % old_nozzle_count == 0) {
-                const size_t per_nozzle = old_size / old_nozzle_count;
+            size_t old_nozzle_count   = 1;
+            {
+                const size_t old_size = flush_matrix->values.size();
+
+                auto exact_square_root = [](size_t value, size_t& root) {
+                    root = 1;
+                    while (root * root < value)
+                        ++root;
+                    return root * root == value;
+                };
+
                 size_t root = 1;
-                while (root * root < per_nozzle)
-                    ++root;
-                if (root * root == per_nozzle)
+                if (nozzle_count > 1 && old_size % nozzle_count == 0 &&
+                    exact_square_root(old_size / nozzle_count, root)) {
+                    // Whole N*N blocks per head: exactly the engine's layout.
                     old_filament_count = root;
+                    old_nozzle_count   = nozzle_count;
+                } else if (exact_square_root(old_size, root)) {
+                    // A single-head N*N matrix, whatever else the file claims.
+                    old_filament_count = root;
+                } else {
+                    // Largest whole block that still divides the length.
+                    size_t candidate = 1;
+                    while ((candidate + 1) * (candidate + 1) <= old_size)
+                        ++candidate;
+                    for (; candidate > 1; --candidate)
+                        if (old_size % (candidate * candidate) == 0)
+                            break;
+                    old_filament_count = candidate;
+                    old_nozzle_count   = old_size / (candidate * candidate);
+                }
             }
 
             const size_t old_sub = old_filament_count * old_filament_count;
@@ -1678,7 +1720,7 @@ bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config, bool 
                 for (size_t j = 0; j < filament_count; ++j) {
                     for (size_t nozzle_id = 0; nozzle_id < nozzle_count; ++nozzle_id) {
                         double value;
-                        if (old_filament_count != 0 && nozzle_id < old_nozzle_count &&
+                        if (nozzle_id < old_nozzle_count &&
                             i < old_filament_count && j < old_filament_count) {
                             value = flush_matrix->values[(i * old_filament_count + j) + old_sub * nozzle_id];
                         } else if (i == j) {
@@ -2717,13 +2759,6 @@ int main(int argc, char** argv) {
             std::cout << "Nozzle-map derivation: skipped mode=" << mode_name << "\n";
         }
 
-        // Align every per-filament array with the filament roster the project
-        // loaded (see align_per_filament_config_vectors above).  This is the last
-        // point before print.apply() snapshots the config: the plate map overlay
-        // and the nozzle-map derivation above are already in place, and the prime
-        // tower heuristic below sees the real per-filament colours and maps.
-        align_per_filament_config_vectors(config, verbose);
-
         // Disable prime tower when there is no actual multi-material printing.
         //
         // BambuStudio (BambuStudio.cpp:3885-3913) disables prime tower when
@@ -2742,9 +2777,14 @@ int main(int argc, char** argv) {
             if (ept && ept->value) {
                 bool disable = false;
 
-                // Single filament slot: trivially no multi-material
-                auto* fd = config.option<Slic3r::ConfigOptionFloats>("filament_diameter", false);
-                if (fd && fd->values.size() <= 1)
+                // Single filament slot: trivially no multi-material.  This asks
+                // the roster the project declared (filament_colour /
+                // settings_id / ids / type / diameter) rather than one array's
+                // own length, because alignment now runs after the command-line
+                // overrides, just before print.apply: at this point a
+                // per-filament array can still hold its single-slot seed while
+                // the project carries four filaments.
+                if (project_filament_count(config) <= 1)
                     disable = true;
 
                 // Multiple slots: disable when all filament colors are the same
@@ -2884,6 +2924,19 @@ int main(int argc, char** argv) {
             std::cout << "Generating pressure-advance pattern geometry...\n";
             slicer_cli::apply_pa_pattern(calib_params, config, model, calib_is_bbl_machine);
         }
+
+#ifdef ENGINE_BAMBU
+        // Align every per-filament array with the filament roster the project
+        // loaded (see align_per_filament_config_vectors above).  This is the one
+        // and only alignment, and it is the last config write before
+        // print.apply() snapshots the config, so every layer that can reshape a
+        // per-filament array is already in place: the plate map overlay and the
+        // nozzle-map derivation, the legacy-gcode token aliasing, the calibration
+        // pattern, and the command-line overrides — an override such as --temp
+        // rewrites nozzle_temperature down to a single value, so aligning any
+        // earlier would leave that array short again.
+        align_per_filament_config_vectors(config, verbose);
+#endif // ENGINE_BAMBU
 
         try {
             std::cout << "Applying configuration...\n";

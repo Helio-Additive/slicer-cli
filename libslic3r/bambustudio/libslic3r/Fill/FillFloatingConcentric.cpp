@@ -117,7 +117,7 @@ static ExtrusionPaths floating_thick_polyline_to_extrusion_paths(const FloatingT
                 }
                 path.polyline.append(lines[i].a);
                 if (length > SCALED_EPSILON) {
-                    if (lines[i].is_a_floating && lines[i].is_b_floating)
+                    if (is_floating)
                         path.set_customize_flag(CustomizeFlag::cfFloatingVerticalShell);
                     set_flow_for_path(path, sum / length);
                     paths.emplace_back(std::move(path));
@@ -194,7 +194,7 @@ static ExtrusionPaths floating_thick_polyline_to_extrusion_paths(const FloatingT
         }
         path.polyline.append(lines[final_size - 1].b);
         if (length > SCALED_EPSILON) {
-            if (lines[final_size - 1].is_a_floating && lines[final_size - 1].is_b_floating)
+            if (is_floating)
                 path.set_customize_flag(CustomizeFlag::cfFloatingVerticalShell);
             set_flow_for_path(path, sum / length);
             paths.emplace_back(std::move(path));
@@ -235,9 +235,9 @@ double interpolate_width(const ZPath& path,
         size_t next_z_idx = path[next_idx].z();
         width_next = line.get_width_at(next_z_idx);
     }
-    Point prev(path[prev_idx].x(), path[prev_idx].y());
-    Point next(path[next_idx].x(), path[next_idx].y());
     Point curr(path[idx].x(), path[idx].y());
+    Point prev = prev_idx >= 0 ? Point(path[prev_idx].x(), path[prev_idx].y()) : curr;
+    Point next = next_idx < int(path.size()) ? Point(path[next_idx].x(), path[next_idx].y()) : curr;
     double d_total = (next - prev).cast<double>().norm();
     double d_curr = (curr - prev).cast<double>().norm();
     double t = (d_total > 0) ? (d_curr / d_total) : 0.0;
