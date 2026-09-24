@@ -22,12 +22,18 @@ FloatingPolyline FloatingPolyline::rebase_at(size_t idx)
 
     FloatingPolyline ret = *this;
     static_cast<Polyline&>(ret) = Polyline::rebase_at(idx);
+    // is_floating mirrors points one for one and repeats points' own closure:
+    // entry n-1 is the flag of the point that duplicates entry 0, exactly as
+    // Polyline::rebase_at writes points[n-1] = points.front() with the same n.
+    // The rotation below covers the n-1 distinct flags, so that last index takes
+    // the rotated closure flag — overwritten in place, never appended, or the
+    // array grows one past points and describes a segment that is not there.
     size_t n = this->points.size();
     ret.is_floating.resize(n);
     for (size_t j = 0; j < n - 1; ++j) {
         ret.is_floating[j] = this->is_floating[(idx + j) % (n-1)];
     }
-    ret.is_floating.emplace_back(ret.is_floating.front());
+    ret.is_floating[n - 1] = ret.is_floating.front();
     return ret;
 }
 
@@ -37,12 +43,15 @@ FloatingThickPolyline FloatingThickPolyline::rebase_at(size_t idx)
         return {};
     FloatingThickPolyline ret = *this;
     static_cast<ThickPolyline&>(ret) = ThickPolyline::rebase_at(idx);
+    // Same closure contract as FloatingPolyline::rebase_at: the last index holds
+    // the rotated closure flag in place of the appended copy, keeping is_floating
+    // the same length as points.
     size_t n = this->points.size();
     ret.is_floating.resize(n);
     for (size_t j = 0; j < n - 1; ++j) {
         ret.is_floating[j] = this->is_floating[(idx + j) % (n - 1)];
     }
-    ret.is_floating.emplace_back(ret.is_floating.front());
+    ret.is_floating[n - 1] = ret.is_floating.front();
     return ret;
 }
 
