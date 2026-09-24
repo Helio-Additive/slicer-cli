@@ -38,7 +38,9 @@ dependency closure under `lib/`, and are tested in a network-disabled minimal
 Ubuntu 22.04 container with a Bambu 3MF slice (including preset resolution) and
 an Orca STL slice using packaged profiles. Linux executables live in `bin/`
 so Bambu can find `../resources/profiles`, including the `BBL.json` vendor
-index; relative symlinks retain the published package entry points.
+index; the published Linux entry points are `bin/slicer_cli` and
+`bin/slicer_cli-orcaslicer` (named by `bin/manifest.json`), and the archive
+carries no root-level launchers, symlinks or hardlinks.
 macOS bundling fails on unresolved non-system dylibs or
 remaining Homebrew/build paths. Release publication requires every supported
 package job to succeed.
