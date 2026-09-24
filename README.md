@@ -89,10 +89,11 @@ A CI assertion fails the build if the metadata regresses.
 Choose the engine by choosing its binary: `slicer_cli` uses BambuStudio;
 `slicer_cli-orcaslicer` uses OrcaSlicer. Run the examples from the extracted
 `slicer-cli` directory, using profiles from the matching engine's tree.
-On Linux the binaries live under `bin/` (`./bin/slicer_cli`,
-`./bin/slicer_cli-orcaslicer`) with no launchers at the archive root; the
-macOS and Windows archives keep their flat layout with the binaries at the
-root. On Windows, use the corresponding `.exe` filename.
+On Linux the binaries live under `bin/` inside the extracted `slicer-cli`
+directory (`./bin/slicer_cli`, `./bin/slicer_cli-orcaslicer`) and nothing
+launches from that directory's top level; the macOS and Windows archives keep
+their flat layout with the binaries directly inside `slicer-cli`. On Windows,
+use the corresponding `.exe` filename.
 
 On Linux, the BambuStudio package can reconstruct named presets from the
 bundled profiles when reading a Bambu 3MF:
@@ -109,7 +110,7 @@ On those platforms, supply complete resolved settings explicitly with
 
 For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles
 (shown with the Linux `bin/` path; on macOS and Windows run
-`./slicer_cli-orcaslicer` from the archive root).
+`./slicer_cli-orcaslicer` from the extracted `slicer-cli` directory).
 First supply `resolved-orca-config.json` containing their complete inherited
 settings. The caller must resolve the profiles' `inherits` chains: the CLI
 loads JSON overrides directly and does not resolve those chains itself.
