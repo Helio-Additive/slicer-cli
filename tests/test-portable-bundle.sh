@@ -6,8 +6,14 @@ PACKAGE_ROOT="$(cd "$PACKAGE_ROOT" && pwd -P)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 FIXTURES="$SCRIPT_DIR/fixtures"
 
-test -x "$PACKAGE_ROOT/slicer_cli"
-test -x "$PACKAGE_ROOT/slicer_cli-orcaslicer"
+test -x "$PACKAGE_ROOT/bin/slicer_cli"
+test -x "$PACKAGE_ROOT/bin/slicer_cli-orcaslicer"
+test -f "$PACKAGE_ROOT/bin/manifest.json"
+# The archive publishes binaries only under bin/, with no symlinks anywhere.
+test ! -e "$PACKAGE_ROOT/slicer_cli"
+test ! -e "$PACKAGE_ROOT/slicer_cli-orcaslicer"
+test ! -e "$PACKAGE_ROOT/manifest.json"
+test -z "$(find "$PACKAGE_ROOT" -type l -print -quit)"
 test -d "$PACKAGE_ROOT/resources/profiles/BBL/machine"
 test -f "$PACKAGE_ROOT/resources/profiles/BBL.json"
 test -d "$PACKAGE_ROOT/resources/profiles-orca/Snapmaker/machine"
@@ -69,12 +75,14 @@ docker run --rm --platform linux/amd64 --network none -i \
 # Use the container filesystem as an extracted installation would. In
 # particular, preset staging must not depend on host-bind copy_file semantics.
 cp -R /package-input /package
-/package/slicer_cli --help >/dev/null
-/package/slicer_cli-orcaslicer --help >/dev/null
+/package/bin/slicer_cli --help >/dev/null
+/package/bin/slicer_cli-orcaslicer --help >/dev/null
+test -f /package/bin/manifest.json
+test -z "$(find /package -type l -print -quit)"
 
 # This existing 3MF names all three Bambu presets. A successful process alone
 # is insufficient: explicitly reject the silent flat-config fallback.
-if ! /package/slicer_cli /fixtures/calib_base.3mf -o /tmp/bambu.gcode > /tmp/bambu.log 2>&1; then
+if ! /package/bin/slicer_cli /fixtures/calib_base.3mf -o /tmp/bambu.gcode > /tmp/bambu.log 2>&1; then
     cat /tmp/bambu.log
     exit 1
 fi
@@ -120,7 +128,7 @@ endloop
 endfacet
 endsolid portable_test
 STL
-if ! /package/slicer_cli-orcaslicer /tmp/model.stl \
+if ! /package/bin/slicer_cli-orcaslicer /tmp/model.stl \
     --config /resolved/config.json \
     --machine '/package/resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json' \
     --filament '/package/resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json' \
