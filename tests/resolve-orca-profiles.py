@@ -17,7 +17,7 @@ merged = {}
 for kind, name in selected:
     profiles = {}
     for path in (vendor / kind).rglob("*.json"):
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         key = data.get("name", path.stem)
         if key in profiles:
             raise ValueError(f"Duplicate {kind} profile: {key}")
@@ -38,4 +38,4 @@ for kind, name in selected:
 assert merged["gcode_flavor"] == "klipper"
 assert merged["nozzle_temperature"] == ["220"]
 assert merged["layer_height"] == "0.2"
-pathlib.Path(sys.argv[2]).write_text(json.dumps(merged))
+pathlib.Path(sys.argv[2]).write_text(json.dumps(merged), encoding="utf-8")

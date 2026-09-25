@@ -91,6 +91,11 @@ STL
         exit 1
     fi
     test -s "$WORKDIR/orca.gcode"
-    grep -Eq '^G1 .*X.*Y.*E[0-9]' "$WORKDIR/orca.gcode"
+    # Orca writes extrusion amounts without a leading zero (E.12345).
+    if ! grep -Eq '^G1 .*X.*Y.*E([0-9]|\.[0-9])' "$WORKDIR/orca.gcode"; then
+        echo 'FAIL: Orca output has no XY extrusion moves'
+        head -n 80 "$WORKDIR/orca.gcode"
+        exit 1
+    fi
     echo "PASS: packaged orca slice resolved its own resources root"
 fi
