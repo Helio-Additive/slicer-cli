@@ -1914,11 +1914,15 @@ static boost::filesystem::path engine_executable_dir(const char* argv0) {
 }
 
 /// The profiles tree the resource folders sit beside, or empty when no known
-/// layout is present. Ordered most-specific first: a checkout's references tree,
+/// layout is present. Ordered most-specific first: a checkout's references tree
+/// (from build/ or build/<config>/),
 /// the package layouts — Linux puts the binaries in bin/ with resources/ as its
 /// sibling, macOS and Windows put them at the package root next to resources/.
 static boost::filesystem::path engine_profiles_dir(const boost::filesystem::path& exe_dir) {
     for (const auto& p : std::vector<boost::filesystem::path>{
+        // checkout: build/slicer_cli (single-config) and build/Release/slicer_cli
+        // (multi-config generators), both under the repo root
+        exe_dir / ".." / "references" / "BambuStudio" / "resources" / "profiles",
         exe_dir / ".." / ".." / "references" / "BambuStudio" / "resources" / "profiles",
         exe_dir / ".." / "resources" / "profiles",
         exe_dir / "resources" / "profiles",
