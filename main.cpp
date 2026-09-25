@@ -1934,6 +1934,32 @@ static boost::filesystem::path engine_profiles_dir(const boost::filesystem::path
     return boost::filesystem::path();
 }
 
+#ifdef ENGINE_BAMBU
+/// Stage one vendor directory under data_dir/system for the PresetBundle
+/// rebuild: a directory symlink where the platform grants one, otherwise a
+/// copy. Windows refuses CreateSymbolicLink without the symlink privilege or
+/// Developer Mode, and boost then throws; a staging failure must not send the
+/// slice to the flat 3MF config.
+static void stage_vendor_dir(const boost::filesystem::path& src,
+                             const boost::filesystem::path& dst) {
+    const boost::filesystem::path real_src = boost::filesystem::canonical(src);
+    try {
+        boost::filesystem::create_directory_symlink(real_src, dst);
+        return;
+    } catch (const boost::filesystem::filesystem_error&) {
+        boost::filesystem::remove(dst);
+    }
+    boost::filesystem::create_directories(dst);
+    for (boost::filesystem::recursive_directory_iterator it(real_src), end; it != end; ++it) {
+        const boost::filesystem::path target = dst / boost::filesystem::relative(it->path(), real_src);
+        if (boost::filesystem::is_directory(it->path()))
+            boost::filesystem::create_directories(target);
+        else
+            boost::filesystem::copy_file(it->path(), target);
+    }
+}
+#endif // ENGINE_BAMBU
+
 /// Point libslic3r at the resources that ship beside the profiles tree. The
 /// profiles directory's parent is the resources root for both engines, so one
 /// call covers Bambu and Orca.
@@ -2544,8 +2570,7 @@ int main(int argc, char** argv) {
                         for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
                             auto dst = sysdir / entry.path().filename();
                             if (boost::filesystem::is_directory(entry.path()))
-                                boost::filesystem::create_directory_symlink(
-                                    boost::filesystem::canonical(entry.path()), dst);
+                                stage_vendor_dir(entry.path(), dst);
                             else if (entry.path().extension() == ".json")
                                 boost::filesystem::copy_file(entry.path(), dst);
                         }

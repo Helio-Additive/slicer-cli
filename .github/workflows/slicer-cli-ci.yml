@@ -1266,6 +1266,9 @@ jobs:
           done
           test -n "$(find "$P/THIRD_PARTY_LICENSES" -type f -print -quit)"
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
+          # The vendor index: the PresetBundle rebuild loads vendors from the
+          # profiles directory's *.json entries only (main.cpp, load_vendor_configs_from_json).
+          cp references/BambuStudio/resources/profiles/BBL.json "$P/resources/profiles/BBL.json"
           # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
           # slice-resolvable by name via the orca engine. The browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
@@ -1324,8 +1327,13 @@ jobs:
           test -f dist/verify/slicer-cli/resources/flush/flush_data_material_pair.json
           test -f dist/verify/slicer-cli/resources/flush/flush_data_standard.txt
           test -f dist/verify/slicer-cli/resources/filament_mixing/standard_color_recipes.json
+          test -f dist/verify/slicer-cli/resources/profiles/BBL.json
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
+          # A packaged slice must resolve presets from the package and read the
+          # resource folders without a swallowed parse error (libslic3r logs
+          # "parse info/…" and continues on its hardcoded tables).
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli
 
       - name: Assemble + validate package (Windows x86_64)
         if: matrix.os == 'Windows-x86_64'
@@ -1365,6 +1373,9 @@ jobs:
           }
           if (-not (Get-ChildItem "$P\THIRD_PARTY_LICENSES" -Recurse -File)) { throw "missing third-party dependency records" }
           Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL "$P\resources\profiles\BBL"
+          # The vendor index: the PresetBundle rebuild loads vendors from the
+          # profiles directory's *.json entries only (main.cpp, load_vendor_configs_from_json).
+          Copy-Item references\BambuStudio\resources\profiles\BBL.json "$P\resources\profiles\BBL.json"
           # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
           # slice-resolvable by name via the orca engine. Browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
@@ -1415,8 +1426,13 @@ jobs:
           if (-not (Test-Path dist\verify\slicer-cli\resources\flush\flush_data_material_pair.json)) { throw "missing flush_data_material_pair.json" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\flush\flush_data_standard.txt)) { throw "missing flush_data_standard.txt" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\filament_mixing\standard_color_recipes.json)) { throw "missing standard_color_recipes.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL.json)) { throw "missing BBL.json vendor index" }
           & dist\verify\slicer-cli\slicer_cli.exe --help
           & dist\verify\slicer-cli\slicer_cli-orcaslicer.exe --help
+          # A packaged slice must resolve presets from the package and read the
+          # resource folders without a swallowed parse error.
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe
+          if ($LASTEXITCODE -ne 0) { throw "packaged slice assertion failed" }
 
       - name: Upload engine release package artifact
         uses: actions/upload-artifact@v4

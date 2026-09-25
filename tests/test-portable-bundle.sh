@@ -91,6 +91,12 @@ grep -F "Preset match: printer=1 (resolved='Bambu Lab X1 Carbon 0.4 nozzle') pri
 if grep -F 'WARNING: Using flat 3MF config' /tmp/bambu.log; then
     exit 1
 fi
+# libslic3r logs a failed resource read and continues on its hardcoded tables
+# (Print.cpp get_filament_temp_type: "parse info/filament_info.json got a …
+# parse_error"); a swallowed read must fail the package.
+if grep -E 'parse (info|flush|filament_mixing)/|PresetBundle exception' /tmp/bambu.log; then
+    exit 1
+fi
 test -s /tmp/bambu.gcode
 grep -Eq '^G1 .*X.*Y.*E[0-9]' /tmp/bambu.gcode
 
