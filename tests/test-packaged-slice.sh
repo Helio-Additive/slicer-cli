@@ -30,7 +30,7 @@ fi
 # libslic3r logs a failed resource read and continues on its hardcoded tables
 # (Print.cpp get_filament_temp_type: "parse info/filament_info.json got a …
 # parse_error"); a swallowed read must fail the package.
-if grep -E 'parse (info|flush|filament_mixing)/|PresetBundle exception' "$WORKDIR/slice.log"; then
+if grep -E 'parse (.*[/\\])?(info|flush|filament_mixing)[/\\]|PresetBundle exception' "$WORKDIR/slice.log"; then
     exit 1
 fi
 test -s "$WORKDIR/out.gcode"

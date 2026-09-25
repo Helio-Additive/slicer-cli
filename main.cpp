@@ -1895,7 +1895,17 @@ static int parse_cli_int(const char* flag, const char* val, const char* prog) {
 /// Directory holding the running executable.
 static boost::filesystem::path engine_executable_dir(const char* argv0) {
     boost::filesystem::path exe_dir;
-#ifdef __APPLE__
+#if defined(_WIN32)
+    {
+        // The image path, wherever the process was launched from (a PATH lookup
+        // by basename leaves argv[0] without a directory).
+        wchar_t pathbuf[MAX_PATH + 1];
+        DWORD length = GetModuleFileNameW(nullptr, pathbuf, MAX_PATH + 1);
+        if (length > 0 && length <= MAX_PATH) {
+            try { exe_dir = boost::filesystem::canonical(boost::filesystem::path(pathbuf)).parent_path(); } catch (...) {}
+        }
+    }
+#elif defined(__APPLE__)
     {
         char pathbuf[PATH_MAX];
         uint32_t size = sizeof(pathbuf);
@@ -1993,14 +2003,20 @@ static boost::filesystem::path engine_resources_root(const boost::filesystem::pa
 /// it. It goes to stderr: this runs before the CLI options are read, and the
 /// layout-plan subcommand's stdout must stay exactly one JSON document
 /// (tests/test_diagnostic_events.sh layout-plan-stdout-stays-one-json-document).
-static void configure_engine_resources(const char* argv0) {
+///
+/// `quiet` drops the line: `--layout-plan` owns both streams as JSON documents
+/// (stdout for the plan, stderr for LayoutErrorV1 — layout_plan.hpp), so that
+/// mode configures the root silently.
+static void configure_engine_resources(const char* argv0, bool quiet) {
     const boost::filesystem::path root = engine_resources_root(engine_executable_dir(argv0));
     if (root.empty()) {
-        std::cerr << "  Engine resources: <not found>\n";
+        if (!quiet)
+            std::cerr << "  Engine resources: <not found>\n";
         return;
     }
     Slic3r::set_resources_dir(root.string());
-    std::cerr << "  Engine resources: " << root.string() << "\n";
+    if (!quiet)
+        std::cerr << "  Engine resources: " << root.string() << "\n";
 }
 
 int main(int argc, char** argv) {
@@ -2041,7 +2057,13 @@ int main(int argc, char** argv) {
     // relative to this root, which depends on no argument: resolve it once here
     // so the ENGINE_ORCA build gets it too, and so STL and calibration slices
     // stop falling back to the hardcoded tables.
-    configure_engine_resources(argv[0]);
+    {
+        bool layout_plan_json = false;
+        for (int i = 1; i < argc; ++i)
+            if (std::string(argv[i]) == "--layout-plan")
+                layout_plan_json = true;
+        configure_engine_resources(argv[0], layout_plan_json);
+    }
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
