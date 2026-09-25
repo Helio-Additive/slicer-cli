@@ -1989,15 +1989,18 @@ static boost::filesystem::path engine_resources_root(const boost::filesystem::pa
 }
 
 /// Point libslic3r at this engine's resources root. The line printed here is
-/// the only runtime evidence of which root was chosen; the package tests grep it.
+/// the only runtime evidence of which root was chosen; the package tests grep
+/// it. It goes to stderr: this runs before the CLI options are read, and the
+/// layout-plan subcommand's stdout must stay exactly one JSON document
+/// (tests/test_diagnostic_events.sh layout-plan-stdout-stays-one-json-document).
 static void configure_engine_resources(const char* argv0) {
     const boost::filesystem::path root = engine_resources_root(engine_executable_dir(argv0));
     if (root.empty()) {
-        std::cout << "  Engine resources: <not found>\n";
+        std::cerr << "  Engine resources: <not found>\n";
         return;
     }
     Slic3r::set_resources_dir(root.string());
-    std::cout << "  Engine resources: " << root.string() << "\n";
+    std::cerr << "  Engine resources: " << root.string() << "\n";
 }
 
 int main(int argc, char** argv) {
