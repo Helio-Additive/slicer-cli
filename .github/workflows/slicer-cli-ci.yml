@@ -1274,7 +1274,7 @@ jobs:
           # Print.cpp:2687/2722/2755 (info/*.json),
           # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
           # (filament_mixing/). resources_dir() is the parent of the resolved
-          # profiles directory (main.cpp:2506-2508), i.e. resources/ here.
+          # profiles directory (main.cpp configure_engine_resources()), i.e. resources/ here.
           cp -R references/BambuStudio/resources/info "$P/resources/info"
           cp -R references/BambuStudio/resources/flush "$P/resources/flush"
           cp -R references/BambuStudio/resources/filament_mixing "$P/resources/filament_mixing"
@@ -1373,7 +1373,7 @@ jobs:
           # Print.cpp:2687/2722/2755 (info/*.json),
           # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
           # (filament_mixing/). resources_dir() is the parent of the resolved
-          # profiles directory (main.cpp:2506-2508), i.e. resources\ here.
+          # profiles directory (main.cpp configure_engine_resources()), i.e. resources\ here.
           Copy-Item -Recurse references\BambuStudio\resources\info "$P\resources\info"
           Copy-Item -Recurse references\BambuStudio\resources\flush "$P\resources\flush"
           Copy-Item -Recurse references\BambuStudio\resources\filament_mixing "$P\resources\filament_mixing"
