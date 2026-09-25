@@ -1270,6 +1270,14 @@ jobs:
           # slice-resolvable by name via the orca engine. The browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
+          # libslic3r reads these folders beside the profile trees at slice time:
+          # Print.cpp:2687/2722/2755 (info/*.json),
+          # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
+          # (filament_mixing/). resources_dir() is the parent of the resolved
+          # profiles directory (main.cpp:2506-2508), i.e. resources/ here.
+          cp -R references/BambuStudio/resources/info "$P/resources/info"
+          cp -R references/BambuStudio/resources/flush "$P/resources/flush"
+          cp -R references/BambuStudio/resources/filament_mixing "$P/resources/filament_mixing"
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
@@ -1310,6 +1318,12 @@ jobs:
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/machine
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/process
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/filament
+          test -f dist/verify/slicer-cli/resources/info/filament_info.json
+          test -f dist/verify/slicer-cli/resources/info/nozzle_info.json
+          test -f dist/verify/slicer-cli/resources/info/nozzle_incompatibles.json
+          test -f dist/verify/slicer-cli/resources/flush/flush_data_material_pair.json
+          test -f dist/verify/slicer-cli/resources/flush/flush_data_standard.txt
+          test -f dist/verify/slicer-cli/resources/filament_mixing/standard_color_recipes.json
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
 
@@ -1355,6 +1369,14 @@ jobs:
           # slice-resolvable by name via the orca engine. Browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
+          # libslic3r reads these folders beside the profile trees at slice time:
+          # Print.cpp:2687/2722/2755 (info/*.json),
+          # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
+          # (filament_mixing/). resources_dir() is the parent of the resolved
+          # profiles directory (main.cpp:2506-2508), i.e. resources\ here.
+          Copy-Item -Recurse references\BambuStudio\resources\info "$P\resources\info"
+          Copy-Item -Recurse references\BambuStudio\resources\flush "$P\resources\flush"
+          Copy-Item -Recurse references\BambuStudio\resources\filament_mixing "$P\resources\filament_mixing"
           Copy-Item LICENSE, NOTICE, README.md "$P\"
           Copy-Item references\BambuStudio\LICENSE "$P\BAMBUSTUDIO-LICENSE.txt"
           Copy-Item references\OrcaSlicer\LICENSE.txt "$P\ORCASLICER-LICENSE.txt"
@@ -1387,6 +1409,12 @@ jobs:
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\machine)) { throw "missing orca Snapmaker machine profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\process)) { throw "missing orca Snapmaker process profiles" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles-orca\Snapmaker\filament)) { throw "missing orca Snapmaker filament profiles" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\info\filament_info.json)) { throw "missing filament_info.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\info\nozzle_info.json)) { throw "missing nozzle_info.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\info\nozzle_incompatibles.json)) { throw "missing nozzle_incompatibles.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\flush\flush_data_material_pair.json)) { throw "missing flush_data_material_pair.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\flush\flush_data_standard.txt)) { throw "missing flush_data_standard.txt" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\filament_mixing\standard_color_recipes.json)) { throw "missing standard_color_recipes.json" }
           & dist\verify\slicer-cli\slicer_cli.exe --help
           & dist\verify\slicer-cli\slicer_cli-orcaslicer.exe --help
 
@@ -1463,10 +1491,14 @@ jobs:
           chmod +x "$P/bin/slicer_cli" "$P/bin/slicer_cli-orcaslicer"
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
           cp references/BambuStudio/resources/profiles/BBL.json "$P/resources/profiles/BBL.json"
-          mkdir -p "$P/resources/info"
-          for info in filament_info.json nozzle_info.json nozzle_incompatibles.json; do
-            cp "references/BambuStudio/resources/info/$info" "$P/resources/info/$info"
-          done
+          # libslic3r reads these folders beside the profile trees at slice time:
+          # Print.cpp:2687/2722/2755 (info/*.json),
+          # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
+          # (filament_mixing/). The whole folders ship, not a file allowlist, so a
+          # reader that adds a file cannot be silently starved.
+          cp -R references/BambuStudio/resources/info "$P/resources/info"
+          cp -R references/BambuStudio/resources/flush "$P/resources/flush"
+          cp -R references/BambuStudio/resources/filament_mixing "$P/resources/filament_mixing"
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
@@ -1540,6 +1572,12 @@ jobs:
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/machine
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/process
           test -d dist/verify/slicer-cli/resources/profiles-orca/Snapmaker/filament
+          test -f dist/verify/slicer-cli/resources/info/filament_info.json
+          test -f dist/verify/slicer-cli/resources/info/nozzle_info.json
+          test -f dist/verify/slicer-cli/resources/info/nozzle_incompatibles.json
+          test -f dist/verify/slicer-cli/resources/flush/flush_data_material_pair.json
+          test -f dist/verify/slicer-cli/resources/flush/flush_data_standard.txt
+          test -f dist/verify/slicer-cli/resources/filament_mixing/standard_color_recipes.json
           test -n "$(find dist/verify/slicer-cli/THIRD_PARTY_LICENSES -type f -print -quit)"
           dist/verify/slicer-cli/bin/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/bin/slicer_cli-orcaslicer --help >/dev/null
