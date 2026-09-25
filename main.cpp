@@ -2617,9 +2617,19 @@ int main(int argc, char** argv) {
                         // Always start fresh to avoid stale cached copies of
                         // vendor JSON files that can cause extruder variant
                         // lookup failures (see update_values_to_printer_extruders).
-                        auto tmpdir = boost::filesystem::temp_directory_path() / "slicer_cli_presets";
+                        // One staging directory per process: two packaged slices
+                        // running at once must not delete each other's vendor
+                        // files mid-load (a shared fixed path with remove_all did).
+                        auto tmpdir = boost::filesystem::temp_directory_path()
+                            / boost::filesystem::unique_path("slicer_cli_presets-%%%%%%%%");
                         auto sysdir = tmpdir / "system";
-                        boost::filesystem::remove_all(tmpdir);
+                        struct StagingCleanup {
+                            boost::filesystem::path dir;
+                            ~StagingCleanup() {
+                                boost::system::error_code ignored;
+                                boost::filesystem::remove_all(dir, ignored);
+                            }
+                        } staging_cleanup{tmpdir};
                         boost::filesystem::create_directories(sysdir);
                         for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
                             auto dst = sysdir / entry.path().filename();
