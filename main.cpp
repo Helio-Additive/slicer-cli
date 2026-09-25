@@ -1960,15 +1960,44 @@ static void stage_vendor_dir(const boost::filesystem::path& src,
 }
 #endif // ENGINE_BAMBU
 
-/// Point libslic3r at the resources that ship beside the profiles tree. The
-/// profiles directory's parent is the resources root for both engines, so one
-/// call covers Bambu and Orca.
-static void configure_engine_resources(const char* argv0) {
-    const boost::filesystem::path profiles_dir =
-        engine_profiles_dir(engine_executable_dir(argv0));
+/// The resources root this engine's libslic3r reads at slice time, or empty
+/// when no known layout is present. The two engines' resource files differ
+/// (OrcaSlicer's flush/flush_data_standard.txt and info/*.json are not
+/// BambuStudio's bytes), so each engine has its own root:
+///   Bambu: the parent of the Bambu profiles tree (resources/ in the package,
+///          references/BambuStudio/resources in a checkout);
+///   Orca:  resources/orca in the package, references/OrcaSlicer/resources in
+///          a checkout (build/ or build/<config>/).
+static boost::filesystem::path engine_resources_root(const boost::filesystem::path& exe_dir) {
+#ifdef ENGINE_ORCA
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        exe_dir / ".." / "references" / "OrcaSlicer" / "resources",
+        exe_dir / ".." / ".." / "references" / "OrcaSlicer" / "resources",
+        exe_dir / ".." / "resources" / "orca",
+        exe_dir / "resources" / "orca",
+    }) {
+        if (boost::filesystem::exists(p / "info") && boost::filesystem::is_directory(p / "info"))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+#else
+    const boost::filesystem::path profiles_dir = engine_profiles_dir(exe_dir);
     if (profiles_dir.empty())
+        return boost::filesystem::path();
+    return boost::filesystem::canonical(profiles_dir / "..");
+#endif
+}
+
+/// Point libslic3r at this engine's resources root. The line printed here is
+/// the only runtime evidence of which root was chosen; the package tests grep it.
+static void configure_engine_resources(const char* argv0) {
+    const boost::filesystem::path root = engine_resources_root(engine_executable_dir(argv0));
+    if (root.empty()) {
+        std::cout << "  Engine resources: <not found>\n";
         return;
-    Slic3r::set_resources_dir((profiles_dir / "..").string());
+    }
+    Slic3r::set_resources_dir(root.string());
+    std::cout << "  Engine resources: " << root.string() << "\n";
 }
 
 int main(int argc, char** argv) {

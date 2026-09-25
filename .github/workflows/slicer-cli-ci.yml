@@ -1281,6 +1281,12 @@ jobs:
           cp -R references/BambuStudio/resources/info "$P/resources/info"
           cp -R references/BambuStudio/resources/flush "$P/resources/flush"
           cp -R references/BambuStudio/resources/filament_mixing "$P/resources/filament_mixing"
+          # The Orca engine's own root (main.cpp engine_resources_root(), ENGINE_ORCA):
+          # Orca Print.cpp:2883/2916 (info/*.json), FlushVolPredictor.cpp:318-324
+          # (flush/*.txt). Its bytes differ from BambuStudio's, so they never share a folder.
+          mkdir -p "$P/resources/orca"
+          cp -R references/OrcaSlicer/resources/info "$P/resources/orca/info"
+          cp -R references/OrcaSlicer/resources/flush "$P/resources/orca/flush"
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"
@@ -1327,13 +1333,16 @@ jobs:
           test -f dist/verify/slicer-cli/resources/flush/flush_data_material_pair.json
           test -f dist/verify/slicer-cli/resources/flush/flush_data_standard.txt
           test -f dist/verify/slicer-cli/resources/filament_mixing/standard_color_recipes.json
+          test -f dist/verify/slicer-cli/resources/orca/info/nozzle_info.json
+          test -f dist/verify/slicer-cli/resources/orca/info/nozzle_incompatibles.json
+          test -f dist/verify/slicer-cli/resources/orca/flush/flush_data_standard.txt
           test -f dist/verify/slicer-cli/resources/profiles/BBL.json
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error (libslic3r logs
           # "parse info/…" and continues on its hardcoded tables).
-          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
 
       - name: Assemble + validate package (Windows x86_64)
         if: matrix.os == 'Windows-x86_64'
@@ -1388,6 +1397,12 @@ jobs:
           Copy-Item -Recurse references\BambuStudio\resources\info "$P\resources\info"
           Copy-Item -Recurse references\BambuStudio\resources\flush "$P\resources\flush"
           Copy-Item -Recurse references\BambuStudio\resources\filament_mixing "$P\resources\filament_mixing"
+          # The Orca engine's own root (main.cpp engine_resources_root(), ENGINE_ORCA):
+          # Orca Print.cpp:2883/2916 (info/*.json), FlushVolPredictor.cpp:318-324
+          # (flush/*.txt). Its bytes differ from BambuStudio's, so they never share a folder.
+          New-Item -ItemType Directory -Force "$P\resources\orca" | Out-Null
+          Copy-Item -Recurse references\OrcaSlicer\resources\info "$P\resources\orca\info"
+          Copy-Item -Recurse references\OrcaSlicer\resources\flush "$P\resources\orca\flush"
           Copy-Item LICENSE, NOTICE, README.md "$P\"
           Copy-Item references\BambuStudio\LICENSE "$P\BAMBUSTUDIO-LICENSE.txt"
           Copy-Item references\OrcaSlicer\LICENSE.txt "$P\ORCASLICER-LICENSE.txt"
@@ -1426,12 +1441,15 @@ jobs:
           if (-not (Test-Path dist\verify\slicer-cli\resources\flush\flush_data_material_pair.json)) { throw "missing flush_data_material_pair.json" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\flush\flush_data_standard.txt)) { throw "missing flush_data_standard.txt" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\filament_mixing\standard_color_recipes.json)) { throw "missing standard_color_recipes.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\orca\info\nozzle_info.json)) { throw "missing orca nozzle_info.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\orca\info\nozzle_incompatibles.json)) { throw "missing orca nozzle_incompatibles.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\orca\flush\flush_data_standard.txt)) { throw "missing orca flush_data_standard.txt" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL.json)) { throw "missing BBL.json vendor index" }
           & dist\verify\slicer-cli\slicer_cli.exe --help
           & dist\verify\slicer-cli\slicer_cli-orcaslicer.exe --help
           # A packaged slice must resolve presets from the package and read the
           # resource folders without a swallowed parse error.
-          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe
+          bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe
           if ($LASTEXITCODE -ne 0) { throw "packaged slice assertion failed" }
 
       - name: Upload engine release package artifact
@@ -1515,6 +1533,12 @@ jobs:
           cp -R references/BambuStudio/resources/info "$P/resources/info"
           cp -R references/BambuStudio/resources/flush "$P/resources/flush"
           cp -R references/BambuStudio/resources/filament_mixing "$P/resources/filament_mixing"
+          # The Orca engine's own root (main.cpp engine_resources_root(), ENGINE_ORCA):
+          # Orca Print.cpp:2883/2916 (info/*.json), FlushVolPredictor.cpp:318-324
+          # (flush/*.txt). Its bytes differ from BambuStudio's, so they never share a folder.
+          mkdir -p "$P/resources/orca"
+          cp -R references/OrcaSlicer/resources/info "$P/resources/orca/info"
+          cp -R references/OrcaSlicer/resources/flush "$P/resources/orca/flush"
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
@@ -1594,6 +1618,9 @@ jobs:
           test -f dist/verify/slicer-cli/resources/flush/flush_data_material_pair.json
           test -f dist/verify/slicer-cli/resources/flush/flush_data_standard.txt
           test -f dist/verify/slicer-cli/resources/filament_mixing/standard_color_recipes.json
+          test -f dist/verify/slicer-cli/resources/orca/info/nozzle_info.json
+          test -f dist/verify/slicer-cli/resources/orca/info/nozzle_incompatibles.json
+          test -f dist/verify/slicer-cli/resources/orca/flush/flush_data_standard.txt
           test -n "$(find dist/verify/slicer-cli/THIRD_PARTY_LICENSES -type f -print -quit)"
           dist/verify/slicer-cli/bin/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/bin/slicer_cli-orcaslicer --help >/dev/null

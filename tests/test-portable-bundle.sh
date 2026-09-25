@@ -24,44 +24,7 @@ test -f "$FIXTURES/calib_base.3mf"
 # the packaged Snapmaker parents on the test host, as a calling app must do.
 CONFIG_DIR="$(mktemp -d)"
 trap 'rm -rf "$CONFIG_DIR"' EXIT
-python3 - "$PACKAGE_ROOT/resources/profiles-orca/Snapmaker" "$CONFIG_DIR/config.json" <<'PY'
-import json
-import pathlib
-import sys
-
-vendor = pathlib.Path(sys.argv[1])
-selected = (
-    ("machine", "Snapmaker U1 (0.4 nozzle)"),
-    ("filament", "Snapmaker PLA @U1"),
-    ("process", "0.20 Standard @Snapmaker U1 (0.4 nozzle)"),
-)
-merged = {}
-for kind, name in selected:
-    profiles = {}
-    for path in (vendor / kind).rglob("*.json"):
-        data = json.loads(path.read_text())
-        key = data.get("name", path.stem)
-        if key in profiles:
-            raise ValueError(f"Duplicate {kind} profile: {key}")
-        profiles[key] = data
-
-    def resolve(key, ancestors=()):
-        if key in ancestors:
-            raise ValueError(f"Profile inheritance cycle: {key}")
-        data = profiles[key]
-        parent = data.get("inherits", "")
-        result = resolve(parent, (*ancestors, key)) if parent else {}
-        result.update(data)
-        result.pop("inherits", None)
-        return result
-
-    merged.update(resolve(name))
-
-assert merged["gcode_flavor"] == "klipper"
-assert merged["nozzle_temperature"] == ["220"]
-assert merged["layer_height"] == "0.2"
-pathlib.Path(sys.argv[2]).write_text(json.dumps(merged))
-PY
+python3 "$SCRIPT_DIR/resolve-orca-profiles.py" "$PACKAGE_ROOT/resources/profiles-orca/Snapmaker" "$CONFIG_DIR/config.json"
 
 # Mount only the archive and test inputs: source-checkout fallbacks must not
 # satisfy profile lookup, and network access must not supply missing inputs.
@@ -87,6 +50,7 @@ if ! /package/bin/slicer_cli /fixtures/calib_base.3mf -o /tmp/bambu.gcode > /tmp
     exit 1
 fi
 cat /tmp/bambu.log
+grep -F "  Engine resources: /package/resources" /tmp/bambu.log
 grep -F "Preset match: printer=1 (resolved='Bambu Lab X1 Carbon 0.4 nozzle') print=1 (resolved='0.20mm Standard @BBL X1C') filament=1 (resolved='Bambu PLA Basic @BBL X1C')" /tmp/bambu.log
 if grep -F 'WARNING: Using flat 3MF config' /tmp/bambu.log; then
     exit 1
@@ -144,6 +108,13 @@ if ! /package/bin/slicer_cli-orcaslicer /tmp/model.stl \
     exit 1
 fi
 cat /tmp/orca.log
+# The Orca engine's own root: resources/orca (its info/*.json and flush/*.txt
+# are not BambuStudio's bytes). Print::get_hrc_by_nozzle_type reads
+# info/nozzle_info.json on every slice; a swallowed read logs "parse …".
+grep -F "  Engine resources: /package/resources/orca" /tmp/orca.log
+if grep -E 'parse (.*/)?(info|flush)/' /tmp/orca.log; then
+    exit 1
+fi
 test -s /tmp/orca.gcode
 if ! grep -Eq '^G1 .*X.*Y.*E([0-9]|\.[0-9])' /tmp/orca.gcode; then
     echo 'FAIL: Orca output has no XY extrusion moves'
