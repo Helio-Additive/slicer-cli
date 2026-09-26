@@ -95,18 +95,23 @@ launches from that directory's top level; the macOS and Windows archives keep
 their flat layout with the binaries directly inside `slicer-cli`. On Windows,
 use the corresponding `.exe` filename.
 
-On Linux, the BambuStudio package can reconstruct named presets from the
-bundled profiles when reading a Bambu 3MF:
+On every platform, the BambuStudio package reconstructs named presets from
+the bundled profiles when reading a Bambu 3MF (the archive ships the `BBL`
+profile tree and its `BBL.json` vendor index, and each package job slices a
+Bambu 3MF from the extracted archive and requires the three presets to
+resolve):
 
 ```sh
-./bin/slicer_cli model.3mf -o bambu.gcode
+./bin/slicer_cli model.3mf -o bambu.gcode          # Linux
+./slicer_cli model.3mf -o bambu.gcode              # macOS / Windows (.exe)
 ```
 
-This automatic preset-lookup example is Linux-only. The current macOS and
-Windows archives retain their older flat layout and omit the `BBL.json`
-vendor index, so this lookup falls back to the flat 3MF configuration there.
-On those platforms, supply complete resolved settings explicitly with
-`--config`; do not rely on automatic reconstruction of named Bambu presets.
+Both engines also read their slice-time resource folders from the package:
+the Bambu engine `resources/info`, `resources/flush` and
+`resources/filament_mixing`; the Orca engine its own `resources/orca/info`
+and `resources/orca/flush`. Each engine prints the root it configured on
+stderr at startup (`Engine resources: …`), except under `--layout-plan`,
+whose stdout and stderr are JSON documents.
 
 For OrcaSlicer, this example selects the packaged Snapmaker U1 profiles
 (shown with the Linux `bin/` path; on macOS and Windows run

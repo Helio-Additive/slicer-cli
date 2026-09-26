@@ -1883,6 +1883,142 @@ static int parse_cli_int(const char* flag, const char* val, const char* prog) {
     }
 }
 
+// ── Engine resource roots ────────────────────────────────────────────────
+// Both engines read folders that sit beside the profiles tree at slice time:
+// Bambu Print.cpp:2687/2722/2755 (info/*.json), FlushVolPredictor.cpp:413 and
+// :320 (flush/), ColorDecomposeRecipe.cpp:103 (filament_mixing/); Orca
+// Print.cpp:2883/2916 (info/*.json). resources_dir() is an empty global in both
+// engines until set_resources_dir() is called, so without the call below both
+// binaries open "info/…" relative to the working directory and silently fall
+// back to their hardcoded filament/nozzle tables.
+
+/// Directory holding the running executable.
+static boost::filesystem::path engine_executable_dir(const char* argv0) {
+    boost::filesystem::path exe_dir;
+#if defined(_WIN32)
+    {
+        // The image path, wherever the process was launched from (a PATH lookup
+        // by basename leaves argv[0] without a directory).
+        wchar_t pathbuf[MAX_PATH + 1];
+        DWORD length = GetModuleFileNameW(nullptr, pathbuf, MAX_PATH + 1);
+        if (length > 0 && length <= MAX_PATH) {
+            try { exe_dir = boost::filesystem::canonical(boost::filesystem::path(pathbuf)).parent_path(); } catch (...) {}
+        }
+    }
+#elif defined(__APPLE__)
+    {
+        char pathbuf[PATH_MAX];
+        uint32_t size = sizeof(pathbuf);
+        if (_NSGetExecutablePath(pathbuf, &size) == 0) {
+            try { exe_dir = boost::filesystem::canonical(pathbuf).parent_path(); } catch (...) {}
+        }
+    }
+#else
+    try { exe_dir = boost::filesystem::canonical("/proc/self/exe").parent_path(); } catch (...) {}
+#endif
+    // Final fallback: derive from argv[0]
+    if (exe_dir.empty()) {
+        try { exe_dir = boost::filesystem::canonical(argv0).parent_path(); } catch (...) {}
+    }
+    return exe_dir;
+}
+
+/// The profiles tree the resource folders sit beside, or empty when no known
+/// layout is present. Ordered most-specific first: a checkout's references tree
+/// (from build/ or build/<config>/),
+/// the package layouts — Linux puts the binaries in bin/ with resources/ as its
+/// sibling, macOS and Windows put them at the package root next to resources/.
+static boost::filesystem::path engine_profiles_dir(const boost::filesystem::path& exe_dir) {
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        // checkout: build/slicer_cli (single-config) and build/Release/slicer_cli
+        // (multi-config generators), both under the repo root
+        exe_dir / ".." / "references" / "BambuStudio" / "resources" / "profiles",
+        exe_dir / ".." / ".." / "references" / "BambuStudio" / "resources" / "profiles",
+        exe_dir / ".." / "resources" / "profiles",
+        exe_dir / "resources" / "profiles",
+        boost::filesystem::path("/home/user/slicer/references/BambuStudio/resources/profiles"),
+    }) {
+        if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+}
+
+#ifdef ENGINE_BAMBU
+/// Stage one vendor directory under data_dir/system for the PresetBundle
+/// rebuild: a directory symlink where the platform grants one, otherwise a
+/// copy. Windows refuses CreateSymbolicLink without the symlink privilege or
+/// Developer Mode, and boost then throws; a staging failure must not send the
+/// slice to the flat 3MF config.
+static void stage_vendor_dir(const boost::filesystem::path& src,
+                             const boost::filesystem::path& dst) {
+    const boost::filesystem::path real_src = boost::filesystem::canonical(src);
+    try {
+        boost::filesystem::create_directory_symlink(real_src, dst);
+        return;
+    } catch (const boost::filesystem::filesystem_error&) {
+        boost::filesystem::remove(dst);
+    }
+    boost::filesystem::create_directories(dst);
+    for (boost::filesystem::recursive_directory_iterator it(real_src), end; it != end; ++it) {
+        const boost::filesystem::path target = dst / boost::filesystem::relative(it->path(), real_src);
+        if (boost::filesystem::is_directory(it->path()))
+            boost::filesystem::create_directories(target);
+        else
+            boost::filesystem::copy_file(it->path(), target);
+    }
+}
+#endif // ENGINE_BAMBU
+
+/// The resources root this engine's libslic3r reads at slice time, or empty
+/// when no known layout is present. The two engines' resource files differ
+/// (OrcaSlicer's flush/flush_data_standard.txt and info/*.json are not
+/// BambuStudio's bytes), so each engine has its own root:
+///   Bambu: the parent of the Bambu profiles tree (resources/ in the package,
+///          references/BambuStudio/resources in a checkout);
+///   Orca:  resources/orca in the package, references/OrcaSlicer/resources in
+///          a checkout (build/ or build/<config>/).
+static boost::filesystem::path engine_resources_root(const boost::filesystem::path& exe_dir) {
+#ifdef ENGINE_ORCA
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        exe_dir / ".." / "references" / "OrcaSlicer" / "resources",
+        exe_dir / ".." / ".." / "references" / "OrcaSlicer" / "resources",
+        exe_dir / ".." / "resources" / "orca",
+        exe_dir / "resources" / "orca",
+    }) {
+        if (boost::filesystem::exists(p / "info") && boost::filesystem::is_directory(p / "info"))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+#else
+    const boost::filesystem::path profiles_dir = engine_profiles_dir(exe_dir);
+    if (profiles_dir.empty())
+        return boost::filesystem::path();
+    return boost::filesystem::canonical(profiles_dir / "..");
+#endif
+}
+
+/// Point libslic3r at this engine's resources root. The line printed here is
+/// the only runtime evidence of which root was chosen; the package tests grep
+/// it. It goes to stderr: this runs before the CLI options are read, and the
+/// layout-plan subcommand's stdout must stay exactly one JSON document
+/// (tests/test_diagnostic_events.sh layout-plan-stdout-stays-one-json-document).
+///
+/// `quiet` drops the line: `--layout-plan` owns both streams as JSON documents
+/// (stdout for the plan, stderr for LayoutErrorV1 — layout_plan.hpp), so that
+/// mode configures the root silently.
+static void configure_engine_resources(const char* argv0, bool quiet) {
+    const boost::filesystem::path root = engine_resources_root(engine_executable_dir(argv0));
+    if (root.empty()) {
+        if (!quiet)
+            std::cerr << "  Engine resources: <not found>\n";
+        return;
+    }
+    Slic3r::set_resources_dir(root.string());
+    if (!quiet)
+        std::cerr << "  Engine resources: " << root.string() << "\n";
+}
+
 int main(int argc, char** argv) {
     // Initialize libslic3r
     Slic3r::set_logging_level(3); // Info level
@@ -1915,6 +2051,18 @@ int main(int argc, char** argv) {
         layout_plan::install_cancellation_handler();  // ignore SIGPIPE so write failures surface as errors
         boost::log::core::get()->set_logging_enabled(false);
         return layout_plan::run_capabilities();
+    }
+
+    // Both engines read slice-time resources (info/, flush/, filament_mixing/)
+    // relative to this root, which depends on no argument: resolve it once here
+    // so the ENGINE_ORCA build gets it too, and so STL and calibration slices
+    // stop falling back to the hardcoded tables.
+    {
+        bool layout_plan_json = false;
+        for (int i = 1; i < argc; ++i)
+            if (std::string(argv[i]) == "--layout-plan")
+                layout_plan_json = true;
+        configure_engine_resources(argv[0], layout_plan_json);
     }
 
     for (int i = 1; i < argc; ++i) {
@@ -2455,34 +2603,12 @@ int main(int argc, char** argv) {
             // If this fails (profiles not found, names don't match, etc.)
             // we silently fall back to the flat 3MF config from load_bbs_3mf.
             {
-                // Find resources/profiles/ directory
-                boost::filesystem::path exe_dir;
-#ifdef __APPLE__
-                {
-                    char pathbuf[PATH_MAX];
-                    uint32_t size = sizeof(pathbuf);
-                    if (_NSGetExecutablePath(pathbuf, &size) == 0) {
-                        try { exe_dir = boost::filesystem::canonical(pathbuf).parent_path(); } catch (...) {}
-                    }
-                }
-#else
-                try { exe_dir = boost::filesystem::canonical("/proc/self/exe").parent_path(); } catch (...) {}
-#endif
-                // Final fallback: derive from argv[0]
-                if (exe_dir.empty()) {
-                    try { exe_dir = boost::filesystem::canonical(argv[0]).parent_path(); } catch (...) {}
-                }
-                boost::filesystem::path profiles_dir;
-                for (const auto& p : std::vector<boost::filesystem::path>{
-                    exe_dir / ".." / ".." / "references" / "BambuStudio" / "resources" / "profiles",
-                    exe_dir / ".." / "resources" / "profiles",
-                    boost::filesystem::path("/home/user/slicer/references/BambuStudio/resources/profiles"),
-                }) {
-                    if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p)) {
-                        profiles_dir = boost::filesystem::canonical(p);
-                        break;
-                    }
-                }
+                // Same executable dir and profiles tree that
+                // configure_engine_resources() resolved at startup, including
+                // the package-root layout. exe_dir is kept for the
+                // preset_resolution_failed diagnostic below.
+                const boost::filesystem::path exe_dir = engine_executable_dir(argv[0]);
+                const boost::filesystem::path profiles_dir = engine_profiles_dir(exe_dir);
 
                 bool preset_loaded = false;
                 if (!profiles_dir.empty()) {
@@ -2491,21 +2617,30 @@ int main(int argc, char** argv) {
                         // Always start fresh to avoid stale cached copies of
                         // vendor JSON files that can cause extruder variant
                         // lookup failures (see update_values_to_printer_extruders).
-                        auto tmpdir = boost::filesystem::temp_directory_path() / "slicer_cli_presets";
+                        // One staging directory per process: two packaged slices
+                        // running at once must not delete each other's vendor
+                        // files mid-load (a shared fixed path with remove_all did).
+                        auto tmpdir = boost::filesystem::temp_directory_path()
+                            / boost::filesystem::unique_path("slicer_cli_presets-%%%%%%%%");
                         auto sysdir = tmpdir / "system";
-                        boost::filesystem::remove_all(tmpdir);
+                        struct StagingCleanup {
+                            boost::filesystem::path dir;
+                            ~StagingCleanup() {
+                                boost::system::error_code ignored;
+                                boost::filesystem::remove_all(dir, ignored);
+                            }
+                        } staging_cleanup{tmpdir};
                         boost::filesystem::create_directories(sysdir);
                         for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
                             auto dst = sysdir / entry.path().filename();
                             if (boost::filesystem::is_directory(entry.path()))
-                                boost::filesystem::create_directory_symlink(
-                                    boost::filesystem::canonical(entry.path()), dst);
+                                stage_vendor_dir(entry.path(), dst);
                             else if (entry.path().extension() == ".json")
                                 boost::filesystem::copy_file(entry.path(), dst);
                         }
+                        // resources_dir() already points at profiles_dir/.. — set
+                        // once for both engines by configure_engine_resources().
                         Slic3r::set_data_dir(tmpdir.string());
-                        Slic3r::set_resources_dir(
-                            (profiles_dir / "..").string());
 
                         Slic3r::PresetBundle preset_bundle;
 
