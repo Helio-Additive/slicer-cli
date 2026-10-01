@@ -37,6 +37,44 @@ test -s "$WORKDIR/out.gcode"
 grep -Eq '^G1 .*X.*Y.*E[0-9]' "$WORKDIR/out.gcode"
 echo "PASS: packaged slice resolved presets and read resources"
 
+# Staging must also work when the profiles dir and the temp dir are on
+# different filesystems. boost::filesystem::copy_file uses the copy_file_range
+# syscall on Linux, which reports EXDEV (Invalid cross-device link) when the
+# packaged vendor JSONs and TMPDIR live on different filesystems — the Linux
+# host that hit this had the profiles tree on btrfs and /tmp on tmpfs. The
+# vendor-JSON copy has to fall back to a stream copy (main.cpp stage_file_copy)
+# rather than failing the preset load, and a staging failure must never leave
+# the slice running on the flat 3MF config.
+# /dev/shm is tmpfs on the Linux runners and a different device from the
+# checkout the package is unpacked into.
+if [ -d /dev/shm ] && [ -w /dev/shm ]; then
+    XDEV_DIR="$(mktemp -d /dev/shm/slicer_cli_xdev.XXXXXX)"
+    BIN_DEV="$(stat -c '%d' "$(dirname "$BINARY")" 2>/dev/null || stat -f '%d' "$(dirname "$BINARY")")"
+    XDEV_DEV="$(stat -c '%d' "$XDEV_DIR" 2>/dev/null || stat -f '%d' "$XDEV_DIR")"
+    if [ "$BIN_DEV" = "$XDEV_DEV" ]; then
+        echo "SKIP: /dev/shm is on the same filesystem as the packaged engine"
+        rm -rf "$XDEV_DIR"
+    else
+        echo "Presets dir and TMPDIR on different filesystems (devices $BIN_DEV vs $XDEV_DEV)"
+        if ! TMPDIR="$XDEV_DIR" "$BINARY" "$FIXTURE" -o "$WORKDIR/xdev.gcode" > "$WORKDIR/xdev.log" 2>&1; then
+            cat "$WORKDIR/xdev.log"
+            rm -rf "$XDEV_DIR"
+            exit 1
+        fi
+        cat "$WORKDIR/xdev.log"
+        grep -F "Preset match: printer=1 (resolved='Bambu Lab X1 Carbon 0.4 nozzle') print=1 (resolved='0.20mm Standard @BBL X1C') filament=1 (resolved='Bambu PLA Basic @BBL X1C')" "$WORKDIR/xdev.log"
+        if grep -E 'Invalid cross-device link|PresetBundle exception|Preset staging failed|WARNING: Using flat 3MF config' "$WORKDIR/xdev.log"; then
+            rm -rf "$XDEV_DIR"
+            exit 1
+        fi
+        test -s "$WORKDIR/xdev.gcode"
+        rm -rf "$XDEV_DIR"
+        echo "PASS: presets staged from a different filesystem than TMPDIR"
+    fi
+else
+    echo "SKIP: no writable /dev/shm on this host (cross-filesystem staging case is Linux-only)"
+fi
+
 # The Orca engine has its own root (resources/orca): its info/*.json and
 # flush/*.txt differ from BambuStudio's. Print::get_hrc_by_nozzle_type reads
 # info/nozzle_info.json on every slice, so the root must resolve and no
