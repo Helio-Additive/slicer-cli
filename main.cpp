@@ -1945,6 +1945,43 @@ static boost::filesystem::path engine_profiles_dir(const boost::filesystem::path
 }
 
 #ifdef ENGINE_BAMBU
+/// Copy one preset file into the staging tree.
+///
+/// boost::filesystem::copy_file delegates to the copy_file_range syscall on
+/// Linux (selected once from uname in Boost's static init). That syscall
+/// reports EXDEV — "Invalid cross-device link" — when source and destination
+/// are on different filesystems and the destination has no native copy path:
+/// the packaged vendor JSONs on the root filesystem (or a user profiles dir on
+/// btrfs) against a TMPDIR on tmpfs (/dev/shm, a tmpfs /tmp) is exactly that
+/// case. A stream copy moves the bytes through user space and works there.
+///
+/// A destination that even the stream copy cannot write is a real staging
+/// failure: it throws, and the caller stops the slice instead of continuing on
+/// the flat 3MF config.
+static void stage_file_copy(const boost::filesystem::path& src,
+                            const boost::filesystem::path& dst) {
+    boost::system::error_code copy_ec;
+    boost::filesystem::copy_file(src, dst, copy_ec);
+    if (!copy_ec)
+        return;
+
+    const std::string why = copy_ec.message();
+    // boost::filesystem::path is not implicitly convertible to the fstream
+    // path overload (and MSVC's is exact-match only), so pass the strings.
+    std::ifstream in(src.string(), std::ios::binary);
+    std::ofstream out(dst.string(), std::ios::binary | std::ios::trunc);
+    if (!in.is_open())
+        throw std::runtime_error("cannot read " + src.string() + " (copy_file: " + why + ")");
+    if (!out.is_open())
+        throw std::runtime_error("cannot write " + dst.string() + " (copy_file: " + why + ")");
+    out << in.rdbuf();
+    if (in.bad())
+        throw std::runtime_error("read failed for " + src.string() + " (copy_file: " + why + ")");
+    out.close();
+    if (out.fail())
+        throw std::runtime_error("write failed for " + dst.string() + " (copy_file: " + why + ")");
+}
+
 /// Stage one vendor directory under data_dir/system for the PresetBundle
 /// rebuild: a directory symlink where the platform grants one, otherwise a
 /// copy. Windows refuses CreateSymbolicLink without the symlink privilege or
@@ -1965,7 +2002,7 @@ static void stage_vendor_dir(const boost::filesystem::path& src,
         if (boost::filesystem::is_directory(it->path()))
             boost::filesystem::create_directories(target);
         else
-            boost::filesystem::copy_file(it->path(), target);
+            stage_file_copy(it->path(), target);
     }
 }
 #endif // ENGINE_BAMBU
@@ -2631,12 +2668,27 @@ int main(int argc, char** argv) {
                             }
                         } staging_cleanup{tmpdir};
                         boost::filesystem::create_directories(sysdir);
-                        for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
-                            auto dst = sysdir / entry.path().filename();
-                            if (boost::filesystem::is_directory(entry.path()))
-                                stage_vendor_dir(entry.path(), dst);
-                            else if (entry.path().extension() == ".json")
-                                boost::filesystem::copy_file(entry.path(), dst);
+                        // A staging copy that even the stream-copy fallback
+                        // cannot complete is fatal: the same event + exit-code
+                        // shape as the other preset failures below, except the
+                        // slice stops here instead of running on the flat 3MF
+                        // config with no presets at all.
+                        try {
+                            for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
+                                auto dst = sysdir / entry.path().filename();
+                                if (boost::filesystem::is_directory(entry.path()))
+                                    stage_vendor_dir(entry.path(), dst);
+                                else if (entry.path().extension() == ".json")
+                                    stage_file_copy(entry.path(), dst);
+                            }
+                        } catch (const std::exception& e) {
+                            emit_event({{"event","preset_error"},
+                                        {"tag","PresetStagingFailed"},
+                                        {"exe_dir", exe_dir.empty() ? std::string{} : exe_dir.string()},
+                                        {"profiles_dir", profiles_dir.string()},
+                                        {"message", std::string("Preset staging failed: ") + e.what()}});
+                            std::cerr << "  Preset staging failed: " << e.what() << "\n";
+                            return 1;
                         }
                         // resources_dir() already points at profiles_dir/.. — set
                         // once for both engines by configure_engine_resources().
