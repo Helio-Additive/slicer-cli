@@ -178,6 +178,12 @@ jobs:
           test -f "$BOOST_PREFIX/lib/libboost_atomic.a"
           test -f "$BOOST_PREFIX/lib/libboost_locale.a"
           test -f "$BOOST_PREFIX/lib/libboost_nowide.a"
+          # Boost.Regex is header-only in the 1.84 CMake superproject
+          # (libs/regex/CMakeLists.txt declares an INTERFACE target); only b2
+          # still builds libboost_regex. The engine consumes it through
+          # BoostConfig, so the package and headers are what must be present.
+          test -f "$BOOST_PREFIX/lib/cmake/boost_regex-1.84.0/boost_regex-config.cmake"
+          test -f "$BOOST_PREFIX/include/boost/regex.hpp"
           MARKER_TMP="$(mktemp "$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete.XXXXXX")"
           {
             printf 'version=%s\n' "$BOOST_VERSION"
