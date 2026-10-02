@@ -167,23 +167,50 @@ jobs:
           cmake --install /tmp/boost-build
           # Prove the prefix is real and complete before it is cached: a stale or
           # partial cache would otherwise surface as a configure or link failure
-          # in the build jobs, far from the cause.
-          grep -qx '#define BOOST_LIB_VERSION "1_84"' "$BOOST_PREFIX/include/boost/version.hpp"
-          test -f "$BOOST_PREFIX/lib/cmake/Boost-1.84.0/BoostConfig.cmake"
-          test -f "$BOOST_PREFIX/lib/libboost_filesystem.a"
-          test -f "$BOOST_PREFIX/lib/libboost_thread.a"
-          test -f "$BOOST_PREFIX/lib/libboost_log.a"
-          test -f "$BOOST_PREFIX/lib/libboost_log_setup.a"
-          test -f "$BOOST_PREFIX/lib/libboost_regex.a"
-          test -f "$BOOST_PREFIX/lib/libboost_atomic.a"
-          test -f "$BOOST_PREFIX/lib/libboost_locale.a"
-          test -f "$BOOST_PREFIX/lib/libboost_nowide.a"
+          # in the build jobs, far from the cause. Each check names what is
+          # missing, so a failure here is diagnosable from the log alone.
           # Boost.Regex is header-only in the 1.84 CMake superproject
           # (libs/regex/CMakeLists.txt declares an INTERFACE target); only b2
-          # still builds libboost_regex. The engine consumes it through
-          # BoostConfig, so the package and headers are what must be present.
-          test -f "$BOOST_PREFIX/lib/cmake/boost_regex-1.84.0/boost_regex-config.cmake"
-          test -f "$BOOST_PREFIX/include/boost/regex.hpp"
+          # still builds libboost_regex, so its package and headers are what the
+          # engine consumes.
+          for REL in \
+            lib/cmake/Boost-1.84.0/BoostConfig.cmake \
+            lib/cmake/Boost-1.84.0/BoostConfigVersion.cmake \
+            lib/libboost_filesystem.a \
+            lib/libboost_thread.a \
+            lib/libboost_log.a \
+            lib/libboost_log_setup.a \
+            lib/libboost_atomic.a \
+            lib/libboost_locale.a \
+            lib/libboost_nowide.a \
+            lib/cmake/boost_regex-1.84.0/boost_regex-config.cmake \
+            include/boost/regex.hpp; do
+            test -f "$BOOST_PREFIX/$REL" || { echo "missing from the Boost 1.84.0 prefix: $REL"; exit 1; }
+          done
+          # Resolve the prefix the way the engine will: config mode, through the
+          # installed package, for every component the engine asks for. This is
+          # what proves the version and the component set, not a text match on
+          # headers. PROBE is quoted so the nested CMake lists stay literal.
+          mkdir -p /tmp/boost-probe
+          cat > /tmp/boost-probe/CMakeLists.txt <<'PROBE'
+          cmake_minimum_required(VERSION 3.20)
+          project(boost_probe LANGUAGES CXX)
+          find_package(Boost 1.84.0 CONFIG REQUIRED COMPONENTS
+            filesystem thread log log_setup regex atomic locale nowide)
+          if(NOT Boost_VERSION_STRING VERSION_EQUAL "1.84.0")
+            message(FATAL_ERROR "BoostConfig reports ${Boost_VERSION_STRING}, want 1.84.0")
+          endif()
+          foreach(_t Boost::filesystem Boost::thread Boost::log Boost::log_setup
+                     Boost::regex Boost::atomic Boost::locale Boost::nowide Boost::headers)
+            if(NOT TARGET ${_t})
+              message(FATAL_ERROR "BoostConfig did not define target ${_t}")
+            endif()
+          endforeach()
+          message(STATUS "boost-probe ok: ${Boost_VERSION_STRING}")
+          PROBE
+          cmake -S /tmp/boost-probe -B /tmp/boost-probe/build \
+            -DCMAKE_PREFIX_PATH="$BOOST_PREFIX" \
+            -DBoost_NO_SYSTEM_PATHS=ON
           MARKER_TMP="$(mktemp "$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete.XXXXXX")"
           {
             printf 'version=%s\n' "$BOOST_VERSION"
