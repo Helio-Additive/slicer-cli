@@ -5134,7 +5134,16 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 static int run_info(const std::string& argv0, const std::string& path) {
     json out;
     out["file"] = path;
-    if (!boost::filesystem::exists(path)) {
+    // The non-throwing check: a path that cannot be queried (permissions, a
+    // failing mount) is still one JSON document, never an uncaught exception.
+    boost::system::error_code exists_ec;
+    const bool exists = boost::filesystem::exists(path, exists_ec);
+    if (exists_ec && exists_ec != boost::system::errc::no_such_file_or_directory) {
+        out["error"] = cli_error_sentence(CLI_ENVIRONMENT_ERROR) + " Cannot check " + path + ": " + exists_ec.message();
+        std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+        return CLI_ENVIRONMENT_ERROR;
+    }
+    if (!exists) {
         out["error"] = cli_error_sentence(CLI_FILE_NOTFOUND);
         std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
         return CLI_FILE_NOTFOUND;
