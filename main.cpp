@@ -429,7 +429,7 @@ void emit_validation_event(const Slic3r::StringObjectException& v) {
 // `initial_no_support_filament_idx` and any identifier that merely embeds the token are
 // never touched. (The separately-bound `initial_filament_id` is a different, shorter
 // string and is never searched for, so it is inherently safe.)
-int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config) {
+int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config, bool report_event = true) {
     static const std::string kLegacyToken = "initial_no_support_filament_id";
     static const std::string kBoundToken  = "initial_no_support_extruder";
     // Single-string (coString) custom-gcode keys.
@@ -511,7 +511,7 @@ int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config) {
             rewritten_keys.push_back(key);
         }
     }
-    if (total_rewrites > 0) {
+    if (total_rewrites > 0 && report_event) {
         json e;
         e["event"]   = "config_normalized";
         e["tag"]     = "LegacyGcodeTokenAliased";
@@ -5161,9 +5161,9 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         apply_command_line_overrides(config, o.overrides, /*report_rejections=*/false);
         // The slice ran its custom G-code with the legacy placeholder aliased
         // (normalize_legacy_gcode_tokens, before print.apply); the project
-        // states the same templates.
+        // states the same templates. The slice already reported the alias.
         if (o.normalize_legacy_gcode)
-            normalize_legacy_gcode_tokens(config);
+            normalize_legacy_gcode_tokens(config, /*report_event=*/false);
         for (const PlateOutcome& out : outcomes) {
             if (!out.plate_data) continue;
             const int idx = out.plate_id - 1;
@@ -5263,6 +5263,31 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
                     {"message","--slice " + std::to_string(o.slice_plate) +
                                " but the file has only " + std::to_string(plate_count) + " plate(s)"}});
         return CLI_INVALID_PARAMS;
+    }
+
+    // --export-3mf NAME is written into --outputdir next to result.json and
+    // plate_N.gcode; a NAME that is one of them would overwrite it (or be
+    // overwritten). Compared without case: Windows and macOS file systems
+    // treat Result.json and result.json as one file.
+    if (!o.export_3mf.empty()) {
+        const auto key = [](const fs::path& p) {
+            return fs::absolute(p).lexically_normal().generic_string();
+        };
+        const std::string target = key(outdir / o.export_3mf);
+        std::vector<std::string> taken = {"result.json"};
+        for (int p = (o.slice_plate == 0 ? 1 : o.slice_plate);
+             p <= (o.slice_plate == 0 ? plate_count : o.slice_plate); ++p)
+            taken.push_back("plate_" + std::to_string(p) + ".gcode");
+        for (const std::string& name : taken) {
+            if (!boost::algorithm::iequals(target, key(outdir / name))) continue;
+            const std::string detail = "--export-3mf " + o.export_3mf + " is the run's own " + name +
+                                       " in --outputdir; choose another name.";
+            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+                              cli_error_sentence(CLI_INVALID_PARAMS) + " " + detail, {}, 0, 0);
+            std::cerr << "Error: " << detail << "\n";
+            emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
+            return CLI_INVALID_PARAMS;
+        }
     }
 
     const auto run_started = std::chrono::steady_clock::now();

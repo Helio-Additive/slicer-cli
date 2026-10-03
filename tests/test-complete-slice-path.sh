@@ -203,7 +203,21 @@ import json, zipfile
 g = json.loads(zipfile.ZipFile("legacy-export/out/sliced.3mf").read("Metadata/project_settings.config"))["machine_start_gcode"]
 assert "{initial_no_support_extruder}" in g and "initial_no_support_filament_id" not in g, g[-200:]
 '
-echo "PASS: the exported project states the custom G-code the slice ran"
+[ "$(grep -c '"tag":"LegacyGcodeTokenAliased"' legacy-export/stdout)" = 1 ] || fail "the placeholder alias was reported more than once"
+echo "PASS: the exported project states the custom G-code the slice ran (reported once)"
+
+# --export-3mf may not name the run's own result.json or plate G-code.
+for name in result.json PLATE_1.gcode; do
+    run clash "$B" "$FIXTURE" --slice 1 --outputdir clash/out --export-3mf "$name"
+    [ "$(rc clash)" != 0 ] || fail "--export-3mf $name was accepted"
+    grep -q '"tag":"ExportNameTaken"' clash/stdout || { show clash; fail "no ExportNameTaken event for $name"; }
+    py '
+import json; d = json.load(open("clash/out/result.json"))
+assert d["return_code"] != 0 and "export-3mf" in d["error_string"], d
+'
+    rm -rf clash
+done
+echo "PASS: --export-3mf refuses the name of a file the run writes"
 
 # Presets by name with every parent applied (desktop result: 220 C, 200 mm/s
 # outer wall) and --arrange 1 centring the cube on the 180 mm A1 mini bed. Both engines.
