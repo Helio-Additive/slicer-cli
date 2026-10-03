@@ -5341,8 +5341,14 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         if (inside_outdir && boost::algorithm::iends_with(o.export_3mf, ".3mf") &&
             fs::is_regular_file(fs::symlink_status(export_path, status_ec)) &&
             !boost::algorithm::iequals(target, key(fs::path(o.input_file)))) {
-            boost::system::error_code ignored;
-            fs::remove(export_path, ignored);
+            // Never the input under another name (a symlink or hard link):
+            // equivalent() compares the files, not the path text.
+            boost::system::error_code same_ec;
+            const bool is_input = fs::equivalent(export_path, fs::path(o.input_file), same_ec);
+            if (!is_input && !same_ec) {
+                boost::system::error_code ignored;
+                fs::remove(export_path, ignored);
+            }
         }
     }
 
