@@ -581,6 +581,9 @@ void print_usage(const char* prog_name) {
               << "                         --slice writes result.json there\n"
               << "  --info <file>          Print what the file is (printer, plates, maker app)\n"
               << "                         and which engine binary fits it, as JSON\n"
+              << "  --allow-newer-file     Slice a 3MF saved by a newer app version than this engine\n"
+              << "  --allow-substitution   Slice a 3MF whose settings hold values this engine does not\n"
+              << "                         know, with the engine's substitutes (default: refused)\n"
               << "  --progress             Progress events ({\"event\":\"progress\",...}); on with --slice\n"
               << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
               << "                         tokens (e.g. initial_no_support_filament_id) in\n"
@@ -1943,6 +1946,67 @@ static int count_3mf_plates(const std::string& path) {
     return plates;
 }
 
+/// Text of every <metadata name="KEY">VALUE</metadata> in a 3MF model part.
+static std::map<std::string, std::string> model_metadata(const std::string& model_xml) {
+    std::map<std::string, std::string> out;
+    size_t pos = 0;
+    while ((pos = model_xml.find("<metadata", pos)) != std::string::npos) {
+        const size_t tag_end = model_xml.find('>', pos);
+        if (tag_end == std::string::npos) break;
+        const std::string tag = model_xml.substr(pos, tag_end - pos);
+        pos = tag_end + 1;
+        if (!tag.empty() && tag.back() == '/') continue;
+        const size_t n = tag.find("name=\"");
+        if (n == std::string::npos) continue;
+        const size_t n_end = tag.find('"', n + 6);
+        if (n_end == std::string::npos) continue;
+        const size_t close = model_xml.find("</metadata>", pos);
+        if (close == std::string::npos) break;
+        out[tag.substr(n + 6, n_end - n - 6)] = model_xml.substr(pos, close - pos);
+        pos = close;
+    }
+    return out;
+}
+
+/// The file version this engine's 3MF loader reads: OrcaSlicer takes the
+/// OrcaSlicer tag when present, else the Application version after
+/// "BambuStudio-" or "OrcaSlicer-" (bbs_3mf.cpp 1422-1430, 3945-3961 at
+/// 31f6803); BambuStudio reads only "BambuStudio-" (bbs_3mf.cpp 1481 at
+/// 5873b5f).
+static boost::optional<Slic3r::Semver> engine_file_version(const std::map<std::string, std::string>& meta) {
+    const auto app = meta.find("Application");
+#ifdef ENGINE_ORCA
+    if (const auto orca = meta.find("OrcaSlicer"); orca != meta.end())
+        if (auto v = Slic3r::Semver::parse(orca->second)) return v;
+    if (app != meta.end()) {
+        if (boost::starts_with(app->second, "BambuStudio-")) return Slic3r::Semver::parse(app->second.substr(12));
+        if (boost::starts_with(app->second, "OrcaSlicer-"))  return Slic3r::Semver::parse(app->second.substr(11));
+    }
+#else
+    if (app != meta.end() && boost::starts_with(app->second, "BambuStudio-"))
+        return Slic3r::Semver::parse(app->second.substr(12));
+#endif
+    return boost::none;
+}
+
+static std::string engine_version_text() {
+#ifdef ENGINE_ORCA
+    return SoftFever_VERSION;
+#else
+    return SLIC3R_VERSION;
+#endif
+}
+
+/// The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
+/// OrcaSlicer.cpp 1588-1592 at 31f6803): a file whose major.minor is newer
+/// than the engine's.
+static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
+    const auto engine = Slic3r::Semver::parse(engine_version_text());
+    if (!engine) return false;
+    return engine->maj() < file_version.maj() ||
+           (engine->maj() == file_version.maj() && engine->min() < file_version.min());
+}
+
 // ── Engine resource roots ────────────────────────────────────────────────
 // Both engines read folders that sit beside the profiles tree at slice time:
 // Bambu Print.cpp:2687/2722/2755 (info/*.json), FlushVolPredictor.cpp:413 and
@@ -2472,6 +2536,9 @@ struct CliOptions {
     std::string outputdir;
     // Progress events: on with --slice, or asked for with --progress.
     bool        progress    = false;
+    // Official overrides of the refusals below (BambuStudio.cpp: allow_newer_file).
+    bool        allow_newer_file   = false;
+    bool        allow_substitution = false;
 };
 
 /// What one plate's slice produced, in the shape the official CLI records per
@@ -3067,6 +3134,77 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     }
                 }
             }
+            // The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
+            // OrcaSlicer.cpp 1588-1592 at 31f6803): a file saved by a newer
+            // major.minor than this engine is refused unless --allow-newer-file.
+            // The sentence adds what the file says about its maker: a Bambu
+            // Studio 02.07 project on the Orca 2.4 build is newer only in the
+            // other app's numbering, and the binary to use is the maker's.
+            if (!o.allow_newer_file && file_version.maj() + file_version.min() > 0 &&
+                file_newer_than_engine(file_version)) {
+                std::string model_xml;
+                std::map<std::string, std::string> meta;
+                if (read_zip_member(input_file, "3D/3dmodel.model", model_xml))
+                    meta = model_metadata(model_xml);
+                const auto app = meta.find("Application");
+                std::string detail = "The file is version " + file_version.to_string() +
+                                     (app != meta.end() ? " (" + app->second + ")" : std::string()) +
+                                     "; this engine is " + engine_version_text() + ".";
+#ifdef ENGINE_ORCA
+                if (meta.count("OrcaSlicer") == 0 && app != meta.end() &&
+                    boost::starts_with(app->second, "BambuStudio-"))
+                    detail += " It was made by Bambu Studio: use slicer_cli (BambuStudio).";
+#endif
+                emit_event({{"event","config_refused"},
+                            {"tag","FileVersionNewerThanEngine"},
+                            {"file_version", file_version.to_string()},
+                            {"engine_version", engine_version_text()},
+                            {"message", cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) + " " + detail}});
+                std::cerr << "Error: " << cli_error_sentence(CLI_FILE_VERSION_NOT_SUPPORTED) << " " << detail << "\n";
+                set_outcome_failure(outcome, CLI_FILE_VERSION_NOT_SUPPORTED, detail);
+                return 1;
+            }
+            // A setting whose value this engine has no meaning for is a
+            // different print from the one the file states, so it is refused,
+            // naming the setting, the value and the values this engine has
+            // (owner ruling 10-03: meaning differs -> refuse). Only enum
+            // substitutions: those are the ones where the engine swapped in
+            // its own default for a word it does not know. --allow-substitution
+            // keeps the old behaviour (slice with the engine's substitute).
+            if (!o.allow_substitution) {
+                std::vector<std::string> refused;
+                json items = json::array();
+                for (const auto& sub : config_subst.substitutions) {
+                    if (!sub.opt_def) continue;
+                    const auto type = sub.opt_def->type;
+                    if (type != Slic3r::coEnum && type != Slic3r::coEnums) continue;
+                    std::string allowed;
+                    if (sub.opt_def->enum_keys_map)
+                        for (const auto& [name, value] : *sub.opt_def->enum_keys_map)
+                            allowed += (allowed.empty() ? "" : ", ") + name;
+                    refused.push_back("'" + sub.opt_def->opt_key + "' is '" + sub.old_value +
+                                      "', which this engine does not have (its values: " + allowed + ")");
+                    items.push_back(json{{"opt_key", sub.opt_def->opt_key}, {"value", sub.old_value},
+                                         {"allowed", allowed}});
+                }
+                if (!refused.empty()) {
+#ifdef ENGINE_ORCA
+                    std::string sentence = "OrcaSlicer cannot print this file as it is: ";
+#else
+                    std::string sentence = "BambuStudio cannot print this file as it is: ";
+#endif
+                    for (size_t i = 0; i < refused.size(); ++i)
+                        sentence += (i ? "; " : "") + refused[i];
+                    sentence += ".";
+                    emit_event({{"event","config_refused"},
+                                {"tag","UnknownEnumValue"},
+                                {"settings", items},
+                                {"message", sentence}});
+                    std::cerr << "Error: " << sentence << "\n";
+                    set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
+                    return 1;
+                }
+            }
 #ifdef ENGINE_BAMBU
             // The importer may partially mutate a vector before rejecting it.
             // Retain the last usable input map, or the original driver default
@@ -3410,6 +3548,32 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         load_profile(machine_config,  "machine");
         load_profile(process_config,  "process");
         load_profile(filament_config, "filament");
+
+        // The official value check (OrcaSlicer.cpp 3574-3581 at 31f6803,
+        // BambuStudio.cpp 4134-4141 at 5873b5f): DynamicPrintConfig::validate(true)
+        // over the settings as the file and profiles state them, before this
+        // driver pads any vector. Out-of-range values are refused, each named
+        // with the engine's own sentence ("tree_support_wall_count: -1 not in
+        // range [0,2]").
+        if (!calib_self_geometry) {
+            const std::map<std::string, std::string> validity = config.validate(true);
+            if (!validity.empty()) {
+                std::string sentence;
+                json items = json::object();
+                for (const auto& [key, why] : validity) {
+                    sentence += (sentence.empty() ? "" : "; ") + key + ": " + why;
+                    items[key] = why;
+                }
+                sentence += ".";
+                emit_event({{"event","config_refused"},
+                            {"tag","InvalidValues"},
+                            {"settings", items},
+                            {"message", sentence}});
+                std::cerr << "Param values in 3mf/config error: " << sentence << "\n";
+                set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
+                return 1;
+            }
+        }
 
 #ifdef ENGINE_BAMBU
         // Filament roster the project declares, captured before the BBS
@@ -4072,67 +4236,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
     }
 }
 
-/// Text of every <metadata name="KEY">VALUE</metadata> in a 3MF model part.
-static std::map<std::string, std::string> model_metadata(const std::string& model_xml) {
-    std::map<std::string, std::string> out;
-    size_t pos = 0;
-    while ((pos = model_xml.find("<metadata", pos)) != std::string::npos) {
-        const size_t tag_end = model_xml.find('>', pos);
-        if (tag_end == std::string::npos) break;
-        const std::string tag = model_xml.substr(pos, tag_end - pos);
-        pos = tag_end + 1;
-        if (!tag.empty() && tag.back() == '/') continue;
-        const size_t n = tag.find("name=\"");
-        if (n == std::string::npos) continue;
-        const size_t n_end = tag.find('"', n + 6);
-        if (n_end == std::string::npos) continue;
-        const size_t close = model_xml.find("</metadata>", pos);
-        if (close == std::string::npos) break;
-        out[tag.substr(n + 6, n_end - n - 6)] = model_xml.substr(pos, close - pos);
-        pos = close;
-    }
-    return out;
-}
-
-/// The file version this engine's 3MF loader reads: OrcaSlicer takes the
-/// OrcaSlicer tag when present, else the Application version after
-/// "BambuStudio-" or "OrcaSlicer-" (bbs_3mf.cpp 1422-1430, 3945-3961 at
-/// 31f6803); BambuStudio reads only "BambuStudio-" (bbs_3mf.cpp 1481 at
-/// 5873b5f).
-static boost::optional<Slic3r::Semver> engine_file_version(const std::map<std::string, std::string>& meta) {
-    const auto app = meta.find("Application");
-#ifdef ENGINE_ORCA
-    if (const auto orca = meta.find("OrcaSlicer"); orca != meta.end())
-        if (auto v = Slic3r::Semver::parse(orca->second)) return v;
-    if (app != meta.end()) {
-        if (boost::starts_with(app->second, "BambuStudio-")) return Slic3r::Semver::parse(app->second.substr(12));
-        if (boost::starts_with(app->second, "OrcaSlicer-"))  return Slic3r::Semver::parse(app->second.substr(11));
-    }
-#else
-    if (app != meta.end() && boost::starts_with(app->second, "BambuStudio-"))
-        return Slic3r::Semver::parse(app->second.substr(12));
-#endif
-    return boost::none;
-}
-
-static std::string engine_version_text() {
-#ifdef ENGINE_ORCA
-    return SoftFever_VERSION;
-#else
-    return SLIC3R_VERSION;
-#endif
-}
-
-/// The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
-/// OrcaSlicer.cpp 1588-1592 at 31f6803): a file whose major.minor is newer
-/// than the engine's.
-static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
-    const auto engine = Slic3r::Semver::parse(engine_version_text());
-    if (!engine) return false;
-    return engine->maj() < file_version.maj() ||
-           (engine->maj() == file_version.maj() && engine->min() < file_version.min());
-}
-
 /// --info FILE: what the file is and which binary of this package slices it,
 /// as one JSON document on stdout. The plugin calls this first to pick the
 /// binary. The app that made the file is reported, and is the tie-break when
@@ -4435,6 +4538,10 @@ int main(int argc, char** argv) {
             o.outputdir = argv[++i];
         } else if (arg == "--progress") {
             o.progress = true;
+        } else if (arg == "--allow-newer-file") {
+            o.allow_newer_file = true;
+        } else if (arg == "--allow-substitution") {
+            o.allow_substitution = true;
         } else if (arg == "--info" && i + 1 < argc) {
             info_file = argv[++i];
         } else if (arg[0] != '-') {
