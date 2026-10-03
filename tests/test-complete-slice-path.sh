@@ -240,6 +240,15 @@ assert d["return_code"] != 0 and "layer_height" in d["error_string"], d
 [ ! -e badlh/out/sliced.3mf ] || fail "a stale sliced.3mf survived a failed run"
 echo "PASS: a bad override is refused before slicing; no stale project is left"
 
+# Only an earlier export (a plain .3mf name inside --outputdir) is ever removed:
+# a NAME pointing outside it is never deleted by a run that fails.
+mkdir -p keep/out
+echo "keep" > keep/important.txt
+run keep "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir keep/out --export-3mf ../important.txt
+[ "$(rc keep)" != 0 ] || fail "--layer-height -0.1 was sliced"
+[ "$(cat keep/important.txt)" = keep ] || fail "a failed run deleted a file outside --outputdir"
+echo "PASS: a failed export run deletes nothing outside --outputdir"
+
 # A 3MF without plate metadata slices as one plate, and its export carries
 # that plate's G-code (the official CLI always has plate 1).
 py '

@@ -5321,9 +5321,19 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         // current; result.json stays the verdict. Never the input itself:
         // the export reloads it. The official CLI only overwrites
         // (export_project to <outputdir>/NAME, BambuStudio.cpp 7509, 8156).
-        if (!boost::algorithm::iequals(target, key(fs::path(o.input_file)))) {
+        // Only an earlier export can be removed: a plain .3mf file name inside
+        // --outputdir, a regular file. A NAME with a directory part (such as
+        // ../other.txt) or another extension is never deleted; it is only
+        // overwritten by a successful export, as the official CLI does.
+        const fs::path name_path(o.export_3mf);
+        const bool plain_3mf_name = !name_path.has_parent_path() &&
+                                    boost::algorithm::iends_with(o.export_3mf, ".3mf");
+        boost::system::error_code status_ec;
+        if (plain_3mf_name &&
+            fs::is_regular_file(fs::symlink_status(outdir / name_path, status_ec)) &&
+            !boost::algorithm::iequals(target, key(fs::path(o.input_file)))) {
             boost::system::error_code ignored;
-            fs::remove(outdir / o.export_3mf, ignored);
+            fs::remove(outdir / name_path, ignored);
         }
     }
 
