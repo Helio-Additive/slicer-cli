@@ -9,6 +9,7 @@
 #include <memory>
 #include <map>
 #include <vector>
+#include <set>
 #include <cstdint>
 #include <cstdlib>
 #include <algorithm>
@@ -5312,6 +5313,30 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 #endif
         }
         apply_command_line_overrides(config, o.overrides, /*report_rejections=*/false);
+        // The writer lists a plate's instances from objects_and_instances
+        // (store_bbs_3mf, bbs_3mf.cpp 8208, 8328-8350 at 5873b5f), which the
+        // desktop fills from the plate's own object set (PartPlate.cpp 6918).
+        // A reload leaves it empty: the loader keeps each plate's instances
+        // only as obj_inst_map and stamps every loaded instance with that
+        // plate's identify_id (bbs_3mf.cpp 2411-2445; Orca 2345). Fill it the
+        // same way, by identify_id, so the exported plates keep their objects.
+        for (PlateData* pd : plates) {
+            if (pd == nullptr || !pd->objects_and_instances.empty()) continue;
+            std::set<int> identify_ids;
+            for (const auto& entry : pd->obj_inst_map)
+                if (entry.second.second > 0) identify_ids.insert(entry.second.second);
+            for (size_t oi = 0; oi < model.objects.size(); ++oi)
+                for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
+                    const int loaded = model.objects[oi]->instances[ii]->loaded_id;
+                    if (loaded > 0 && identify_ids.count(loaded))
+                        pd->objects_and_instances.emplace_back(int(oi), int(ii));
+                }
+        }
+        // One plate whose instances carry no identify_id: it holds every object.
+        if (plates.size() == 1 && plates.front() != nullptr && plates.front()->objects_and_instances.empty())
+            for (size_t oi = 0; oi < model.objects.size(); ++oi)
+                for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii)
+                    plates.front()->objects_and_instances.emplace_back(int(oi), int(ii));
         // A 3MF without plate metadata sliced as one plate holding every
         // object: the official CLI's PartPlateList always has that plate and
         // exports it (partplate_list.store_to_3mf_structure, BambuStudio.cpp

@@ -164,8 +164,13 @@ echo "PASS: plates keep the maker's positions (plate grid origin, no corner snap
 run export "$B" "$FIXTURE" --slice 1 --outputdir export/out --export-3mf sliced.3mf
 [ "$(rc export)" = 0 ] || { show export; fail "--export-3mf exit $(rc export)"; }
 py '
-import zipfile; n = zipfile.ZipFile("export/out/sliced.3mf").namelist()
+import zipfile; z = zipfile.ZipFile("export/out/sliced.3mf"); n = z.namelist()
 assert "Metadata/plate_1.gcode" in n and "Metadata/slice_info.config" in n, n
+# The exported plate still lists its object (model_instance), so the project
+# reopens with the part on plate 1.
+m = z.read("Metadata/model_settings.config").decode()
+plate = m[m.index("<plate>"):m.index("</plate>")]
+assert "<model_instance>" in plate, plate
 '
 # Progress reaches 100 only after the 3MF is written (official ladder:
 # last plate 93, "Exporting 3mf" 97, "All done, Success" 100).
