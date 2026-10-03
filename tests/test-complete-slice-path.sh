@@ -118,6 +118,14 @@ assert p["id"] == 1 and p["total_predication"] > 0 and p["objects"], p
 grep -q '"event":"progress".*"percent":100' slice/stdout || fail "no progress event at 100"
 echo "PASS: --slice writes plate_1.gcode, result.json and progress events"
 
+# A result.json that cannot be written fails the run (a directory stands in its place).
+mkdir -p noresult/out/result.json
+run noresult "$B" "$FIXTURE" --slice 1 --outputdir noresult/out
+[ "$(rc noresult)" != 0 ] || fail "--slice exited 0 without writing result.json"
+grep -q '"tag":"ResultNotWritten"' noresult/stdout || { show noresult; fail "no ResultNotWritten event"; }
+grep -q '"percent":100' noresult/stdout && fail "progress reached 100 on a run without result.json"
+echo "PASS: a result.json that cannot be written fails the run"
+
 # Parts stay where the maker put them: the fixture's 25.6 mm cube is saved
 # centred at (128, 128), so its box starts at (115.2, 115.2). The plate's own
 # plate_1.json describes another part; it must not move the cube.
@@ -142,7 +150,39 @@ py '
 import zipfile; n = zipfile.ZipFile("export/out/sliced.3mf").namelist()
 assert "Metadata/plate_1.gcode" in n and "Metadata/slice_info.config" in n, n
 '
-echo "PASS: --export-3mf writes the sliced 3MF"
+# Progress reaches 100 only after the 3MF is written (official ladder:
+# last plate 93, "Exporting 3mf" 97, "All done, Success" 100).
+py '
+import json
+events = []
+for line in open("export/stdout", encoding="utf-8", errors="replace"):
+    line = line.strip()
+    if line.startswith("[[SLICER_EVENT]] "):
+        events.append(json.loads(line[len("[[SLICER_EVENT]] "):]))
+written = [i for i, e in enumerate(events) if e.get("event") == "exported_3mf"]
+progress = [(i, e) for i, e in enumerate(events) if e.get("event") == "progress"]
+assert written and progress, (written, len(progress))
+assert all(e["percent"] < 100 for i, e in progress if i < written[0]), [e for i, e in progress if e["percent"] >= 100]
+last = progress[-1][1]
+assert progress[-1][0] > written[0] and last["percent"] == 100 and last["message"] == "All done, Success", last
+'
+echo "PASS: --export-3mf writes the sliced 3MF; progress reaches 100 after it"
+
+# The exported project states the settings its G-code was sliced with: the
+# Bambu build's mm line widths and a command-line override.
+run pct-export "$B" pct.3mf --slice 1 --layer-height 0.16 --outputdir pct-export/out --export-3mf sliced.3mf
+[ "$(rc pct-export)" = 0 ] || { show pct-export; fail "--export-3mf with converted widths exit $(rc pct-export)"; }
+py '
+import json, zipfile
+d = json.loads(zipfile.ZipFile("pct-export/out/sliced.3mf").read("Metadata/project_settings.config"))
+def num(k):
+    v = d[k]; v = v[0] if isinstance(v, list) else v
+    return float(str(v).rstrip("%"))
+assert abs(num("skin_infill_line_width") - 0.4) < 1e-6, d["skin_infill_line_width"]
+assert abs(num("support_line_width") - 0.42) < 1e-6, d["support_line_width"]
+assert abs(num("layer_height") - 0.16) < 1e-6, d["layer_height"]
+'
+echo "PASS: the exported project keeps the converted widths and the command-line override"
 
 # Presets by name with every parent applied (desktop result: 220 C, 200 mm/s
 # outer wall) and --arrange 1 centring the cube on the 180 mm A1 mini bed. Both engines.
@@ -174,6 +214,18 @@ assert "0.20mm Standard @BBL A1M" in d["processes"]
 ' list-$e.json
 done
 echo "PASS: --list-presets names the default process (both engines)"
+
+# A printer whose stated default the engine does not ship (Orca pin: the
+# Snapmaker U1 0.4 names "0.20mm Standard @Snapmaker"): the listing gives the
+# fallback a slice would take, so the listed default is one it accepts.
+"$O" --list-presets --printer "Snapmaker U1 (0.4 nozzle)" > list-u1.json
+py '
+import json; d = json.load(open("list-u1.json"))
+assert d["default_process"] in d["processes"], (d["default_process"], d["processes"][:5])
+assert all(f in d["filaments"] for f in d["default_filaments"]), d["default_filaments"]
+assert any("process" in r for r in d["defaults_replaced"]), d["defaults_replaced"]
+'
+echo "PASS: --list-presets gives the default a slice takes when the stated one is missing"
 
 # A part larger than the bed: refused with the official -50 code and its size.
 run big-bambu "$B" big.stl --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir big-bambu/out

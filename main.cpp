@@ -2687,7 +2687,7 @@ static std::string mm_text(double v) {
 /// official ones: "engine", per-plate "gcode_file" and "warnings" (every
 /// slicing warning, where "warning_message" keeps only the last, as the
 /// official one does).
-static void write_result_json(const std::string& outputdir, int code, int plate_id,
+static bool write_result_json(const std::string& outputdir, int code, int plate_id,
                               const std::string& error_string,
                               const std::vector<PlateOutcome>& outcomes,
                               long long prepare_time_ms, long long export_time_ms) {
@@ -2738,7 +2738,17 @@ static void write_result_json(const std::string& outputdir, int code, int plate_
     }
     const std::string path = (boost::filesystem::path(outputdir) / "result.json").string();
     std::ofstream out(path, std::ios::out | std::ios::trunc);
-    out << j.dump(4, ' ', false, json::error_handler_t::replace) << std::endl;
+    if (out.is_open())
+        out << j.dump(4, ' ', false, json::error_handler_t::replace) << std::endl;
+    if (out.is_open() && out.good())
+        return true;
+    // The official writer swallows this (c.open ... catch (...) {} in record_exit_reson,
+    // BambuStudio.cpp 594-599). A run whose result document is missing is
+    // not a finished run here: say so, and let the caller fail it.
+    std::cerr << "Error: cannot write " << path << "\n";
+    emit_event({{"event","output_error"}, {"tag","ResultNotWritten"}, {"path", path},
+                {"message","Could not write " + path}});
+    return false;
 }
 
 /// One progress event: {"event":"progress","percent":N,...}. The overall
@@ -2747,11 +2757,13 @@ static void write_result_json(const std::string& outputdir, int code, int plate_
 /// by the plates of this run. The official CLI writes progress only into a
 /// named pipe and only on Linux (#if __linux__, BambuStudio.cpp 243-430);
 /// this is the same event stream as the warnings, on every OS.
-static void emit_progress(const PlateOutcome& outcome, int plate_percent, const std::string& message) {
+/// A finished last plate is 93, not 100: the official run reports "Exporting
+/// 3mf" at 97 (BambuStudio.cpp 8131) and 100 only with "All done, Success"
+/// after everything is written (8237), see emit_run_progress.
+static void emit_progress_event(const PlateOutcome& outcome, int total, int plate_percent,
+                                const std::string& message) {
     const int count = std::max(1, outcome.plate_count);
     const int index = std::max(1, outcome.plate_index);
-    int total = 3 + int(((index - 1) * 90.0) / count + (plate_percent * 0.9) / count);
-    if (plate_percent >= 100 && index == count) total = 100;
     emit_event({{"event", "progress"},
                 {"tag", "SliceProgress"},
                 {"percent", std::min(100, std::max(0, total))},
@@ -2760,6 +2772,19 @@ static void emit_progress(const PlateOutcome& outcome, int plate_percent, const 
                 {"plate_count", count},
                 {"plate_percent", std::min(100, std::max(0, plate_percent))},
                 {"message", message}});
+}
+
+static void emit_progress(const PlateOutcome& outcome, int plate_percent, const std::string& message) {
+    const int count = std::max(1, outcome.plate_count);
+    const int index = std::max(1, outcome.plate_index);
+    const int total = 3 + int(((index - 1) * 90.0) / count + (plate_percent * 0.9) / count);
+    emit_progress_event(outcome, total, plate_percent, message);
+}
+
+/// A run-level step after the plates: the official CLI's fixed percents
+/// (97 "Exporting 3mf", BambuStudio.cpp 8131; 100 "All done, Success", 8237).
+static void emit_run_progress(const PlateOutcome& last, int total, const std::string& message) {
+    emit_progress_event(last, total, 100, message);
 }
 
 
@@ -2868,19 +2893,24 @@ static bool arrange_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfi
     BoundingBoxf bed;
     for (const Vec2d& pt : area->values) bed.merge(pt);
     const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    // Each instance on its own: the arrange kernel places every instance as
+    // its own item (get_arrange_polys, one ArrangePolygon per instance), so
+    // copies that start far apart are not one object wider than the bed.
     for (ModelObject* object : model.objects) {
         object->ensure_on_bed();
-        const BoundingBoxf3 box = object_world_bbox(object);
-        const Vec3d size = box.size();
-        const bool too_wide = size.x() > bed.size().x() + EPSILON || size.y() > bed.size().y() + EPSILON;
-        const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
-        if (too_wide || too_tall) {
-            const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
-                                       "; the bed is " + bed_size_text(config) + ".";
-            set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
-            emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
-                        {"object", object->name}, {"message", detail}});
-            return false;
+        for (size_t i = 0; i < object->instances.size(); ++i) {
+            const BoundingBoxf3 box = object->instance_bounding_box(i);
+            const Vec3d size = box.size();
+            const bool too_wide = size.x() > bed.size().x() + EPSILON || size.y() > bed.size().y() + EPSILON;
+            const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
+            if (too_wide || too_tall) {
+                const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
+                                           "; the bed is " + bed_size_text(config) + ".";
+                set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
+                emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
+                            {"object", object->name}, {"message", detail}});
+                return false;
+            }
         }
     }
 
@@ -3218,6 +3248,31 @@ static std::string near_preset_names(const Slic3r::PresetCollection& collection,
 /// when a printer is picked) and returns full_config(). Refuses an unknown
 /// name with close matches, and a process or filament the printer cannot use
 /// (official CLI_PROCESS_NOT_COMPATIBLE, BambuStudio.cpp at 5873b5f).
+/// A preset of this name exists and suits the selected printer.
+static bool preset_usable(Slic3r::PresetCollection& collection, const std::string& name) {
+    const Slic3r::Preset* p = name.empty() ? nullptr : collection.find_preset(name, false);
+    return p && p->name == name && p->is_compatible;
+}
+
+/// The compatible preset whose name shares the most words with the
+/// default the printer states ("0.20mm Standard @Snapmaker" -> a
+/// compatible "0.20mm Standard ..."; "Snapmaker PLA" -> a PLA), so the
+/// fallback keeps the default's layer height and material.
+static std::string closest_compatible_preset(Slic3r::PresetCollection& collection, const std::string& like) {
+    std::vector<std::string> words;
+    boost::algorithm::split(words, like, boost::is_any_of(" @()"), boost::token_compress_on);
+    std::string best;
+    int best_score = -1;
+    for (const Slic3r::Preset& p : collection) {
+        if (!is_listed_preset(p) || !p.is_compatible) continue;
+        int score = 0;
+        for (const std::string& w : words)
+            if (!w.empty() && boost::algorithm::icontains(p.name, w)) ++score;
+        if (score > best_score) { best_score = score; best = p.name; }
+    }
+    return best;
+}
+
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
     namespace fs = boost::filesystem;
@@ -3276,34 +3331,12 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // Snapmaker U1 names "0.20mm Standard @Snapmaker", which it does not
     // ship), the first compatible system preset, as the desktop's
     // update_compatible(PresetSelectCompatibleType::Always) replaces one.
-    auto usable = [&](Slic3r::PresetCollection& collection, const std::string& name) {
-        const Slic3r::Preset* p = name.empty() ? nullptr : collection.find_preset(name, false);
-        return p && p->name == name && p->is_compatible;
-    };
-    // The compatible preset whose name shares the most words with the
-    // default the printer states ("0.20mm Standard @Snapmaker" -> a
-    // compatible "0.20mm Standard ..."; "Snapmaker PLA" -> a PLA), so the
-    // fallback keeps the default's layer height and material.
-    auto first_compatible = [&](Slic3r::PresetCollection& collection, const std::string& like) -> std::string {
-        std::vector<std::string> words;
-        boost::algorithm::split(words, like, boost::is_any_of(" @()"), boost::token_compress_on);
-        std::string best;
-        int best_score = -1;
-        for (const Slic3r::Preset& p : collection) {
-            if (!is_listed_preset(p) || !p.is_compatible) continue;
-            int score = 0;
-            for (const std::string& w : words)
-                if (!w.empty() && boost::algorithm::icontains(p.name, w)) ++score;
-            if (score > best_score) { best_score = score; best = p.name; }
-        }
-        return best;
-    };
     std::vector<std::string> substituted_defaults;
     std::string process = o.process_preset;
     if (process.empty() && printer.has("default_print_profile"))
         process = printer.opt_string("default_print_profile");
-    if (o.process_preset.empty() && !usable(bundle.prints, process)) {
-        const std::string fallback = first_compatible(bundle.prints, process);
+    if (o.process_preset.empty() && !preset_usable(bundle.prints, process)) {
+        const std::string fallback = closest_compatible_preset(bundle.prints, process);
         if (!fallback.empty()) {
             substituted_defaults.push_back("process '" + fallback + "' (the printer's default '" + process + "' is not available)");
             process = fallback;
@@ -3333,8 +3366,8 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         std::string wanted;
         if (const auto* d = printer.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
             if (!d->values.empty()) wanted = d->values.front();
-        if (!usable(bundle.filaments, wanted)) {
-            const std::string fallback = first_compatible(bundle.filaments, wanted);
+        if (!preset_usable(bundle.filaments, wanted)) {
+            const std::string fallback = closest_compatible_preset(bundle.filaments, wanted);
             if (!fallback.empty()) {
                 substituted_defaults.push_back("filament '" + fallback + "' (the printer's default '" + wanted + "' is not available)");
                 wanted = fallback;
@@ -3432,11 +3465,27 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
         const Slic3r::DynamicPrintConfig& cfg = bundle.printers.get_edited_preset().config;
         out["printer"] = printer_name;
-        out["default_process"] = cfg.has("default_print_profile") ? cfg.opt_string("default_print_profile") : std::string();
+        // The defaults a slice with only --printer-preset takes: the printer's
+        // stated default, or the compatible fallback resolve_named_presets
+        // picks when this engine does not ship it, so a listed default is
+        // always one --process-preset/--filament-preset accepts.
+        json defaults_replaced = json::array();
+        auto effective = [&](Slic3r::PresetCollection& collection, const std::string& declared,
+                             const char* kind) -> std::string {
+            if (declared.empty() || preset_usable(collection, declared)) return declared;
+            const std::string fallback = closest_compatible_preset(collection, declared);
+            if (fallback.empty()) return declared;
+            defaults_replaced.push_back(std::string(kind) + " '" + fallback + "' (the printer's default '" +
+                                        declared + "' is not available)");
+            return fallback;
+        };
+        out["default_process"] = effective(bundle.prints,
+            cfg.has("default_print_profile") ? cfg.opt_string("default_print_profile") : std::string(), "process");
         json default_filaments = json::array();
         if (const auto* d = cfg.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
-            for (const auto& v : d->values) default_filaments.push_back(v);
+            for (const auto& v : d->values) default_filaments.push_back(effective(bundle.filaments, v, "filament"));
         out["default_filaments"] = default_filaments;
+        out["defaults_replaced"] = defaults_replaced;
         json processes = json::array(), filaments = json::array();
         for (const Slic3r::Preset& p : bundle.prints)
             if (is_listed_preset(p) && p.is_compatible) processes.push_back(p.name);
@@ -3474,6 +3523,36 @@ static Slic3r::Vec2d plate_grid_origin(const Slic3r::DynamicPrintConfig& file_co
     const int row = index / cols, col = index % cols;
     const double gap = 1. / 5.;   // LOGICAL_PART_PLATE_GAP
     return Slic3r::Vec2d(col * width * (1. + gap), -row * depth * (1. + gap));
+}
+
+/// The command-line setting overrides (--layer-height, --fill-density, ...)
+/// over `config`. The slice reports a rejected value; the --export-3mf
+/// rebuild of the same settings stays quiet (the slice already said it).
+static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
+                                         const std::map<std::string, std::string>& overrides,
+                                         bool report_rejections) {
+    for (const auto& [key, value] : overrides) {
+        try {
+            if (key == "layer_height" || key == "nozzle_diameter") {
+                config.set_key_value(key, new Slic3r::ConfigOptionFloat(std::stof(value)));
+            } else if (key == "fill_density") {
+                config.set_key_value(key, new Slic3r::ConfigOptionPercent(std::stoi(value)));
+                config.set_key_value("sparse_infill_density", new Slic3r::ConfigOptionPercent(std::stoi(value)));
+            } else if (key == "perimeters") {
+                config.set_key_value(key, new Slic3r::ConfigOptionInt(std::stoi(value)));
+            } else if (key == "nozzle_temperature" || key == "bed_temperature") {
+                config.set_key_value(key, new Slic3r::ConfigOptionInts({std::stoi(value)}));
+            }
+        } catch (const std::exception& e) {
+            if (!report_rejections) continue;
+            emit_event({{"event","override_rejected"},
+                        {"tag","InvalidOverrideValue"},
+                        {"opt_key", key},
+                        {"value", value},
+                        {"message","Command-line override for '" + key + "' was rejected and had no effect"}});
+            std::cerr << "Warning: Invalid value for " << key << ": " << value << "\n";
+        }
+    }
 }
 
 /// One slice of one plate: load the input, resolve its settings, slice and
@@ -4454,27 +4533,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #endif // ENGINE_ORCA
 
         // Apply command-line overrides
-        for (const auto& [key, value] : overrides) {
-            try {
-                if (key == "layer_height" || key == "nozzle_diameter") {
-                    config.set_key_value(key, new Slic3r::ConfigOptionFloat(std::stof(value)));
-                } else if (key == "fill_density") {
-                    config.set_key_value(key, new Slic3r::ConfigOptionPercent(std::stoi(value)));
-                    config.set_key_value("sparse_infill_density", new Slic3r::ConfigOptionPercent(std::stoi(value)));
-                } else if (key == "perimeters") {
-                    config.set_key_value(key, new Slic3r::ConfigOptionInt(std::stoi(value)));
-                } else if (key == "nozzle_temperature" || key == "bed_temperature") {
-                    config.set_key_value(key, new Slic3r::ConfigOptionInts({std::stoi(value)}));
-                }
-            } catch (const std::exception& e) {
-                emit_event({{"event","override_rejected"},
-                            {"tag","InvalidOverrideValue"},
-                            {"opt_key", key},
-                            {"value", value},
-                            {"message","Command-line override for '" + key + "' was rejected and had no effect"}});
-                std::cerr << "Warning: Invalid value for " << key << ": " << value << "\n";
-            }
-        }
+        apply_command_line_overrides(config, overrides, /*report_rejections=*/true);
 
         // Display active settings
         std::cout << "\nActive print settings:\n";
@@ -4992,18 +5051,49 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         Semver file_version;
         const auto strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig |
                               LoadStrategy::AddDefaultInstances | LoadStrategy::LoadAuxiliary;
+        // The project carries the settings its G-code was sliced with, as the
+        // official export stores m_print_config: the file's settings with the
+        // command line applied (BambuStudio.cpp 4091, 8156-8157), never a
+        // plate's own overlay (applied to a copy, 6902-6904). So the reload
+        // reads what the slice read: on the Bambu build the copy with
+        // percentage line widths in mm (project and object scope), then the
+        // same --config/--machine/--process/--filament files in the same
+        // order, then the command-line overrides.
+        std::string load_path = o.input_file;
+#ifdef ENGINE_BAMBU
+        PercentRewrite percent_rewrite;
+        rewrite_percent_line_widths(o.input_file, percent_rewrite);
+        if (!percent_rewrite.refusal.empty()) {
+            error = percent_rewrite.refusal;
+            return CLI_EXPORT_3MF_ERROR;
+        }
+        if (percent_rewrite.changed)
+            load_path = percent_rewrite.temp_path;
+#endif
 #ifdef ENGINE_ORCA
         bool is_orca_3mf = false;
-        const bool loaded = load_bbs_3mf(o.input_file.c_str(), &config, &subst, &model, &plates, &project_presets,
+        const bool loaded = load_bbs_3mf(load_path.c_str(), &config, &subst, &model, &plates, &project_presets,
                                          &is_bbl_3mf, &is_orca_3mf, &file_version, nullptr, strategy, nullptr, 0);
 #else
-        const bool loaded = load_bbs_3mf(o.input_file.c_str(), &config, &subst, &model, &plates, &project_presets,
+        const bool loaded = load_bbs_3mf(load_path.c_str(), &config, &subst, &model, &plates, &project_presets,
                                          &is_bbl_3mf, &file_version, nullptr, strategy, nullptr, 0);
 #endif
         if (!loaded) {
             error = "The input could not be reloaded for export.";
             return CLI_EXPORT_3MF_ERROR;
         }
+        // The slice already reported a profile that did not load; the same
+        // file fails the same way here and leaves the settings as they were.
+        for (const std::string* profile : {&o.bundle_config, &o.machine_config, &o.process_config, &o.filament_config}) {
+            if (profile->empty()) continue;
+#ifdef ENGINE_BAMBU
+            bool supplied_nozzle_map = false;   // same parse as the slice's load_profile
+            load_json_config(*profile, config, false, std::string(), &supplied_nozzle_map);
+#else
+            load_json_config(*profile, config, false, std::string(), nullptr);
+#endif
+        }
+        apply_command_line_overrides(config, o.overrides, /*report_rejections=*/false);
         for (const PlateOutcome& out : outcomes) {
             if (!out.plate_data) continue;
             const int idx = out.plate_id - 1;
@@ -5125,8 +5215,15 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         outcome.gcode_path  = (outdir / ("plate_" + std::to_string(plates[i]) + ".gcode")).string();
         const int rc = slice_one_plate(o, calib_params, per_plate_load ? plates[i] : 0,
                                        outcome.gcode_path, outcome);
+        // A failure that set no official code (an engine exception in the
+        // process or export step) is the official CLI's slicing failure with
+        // its sentence (record_exit_reson(..., CLI_SLICING_ERROR, index+1,
+        // cli_errors[CLI_SLICING_ERROR], ...), BambuStudio.cpp 7139, 7423);
+        // the exception text is in the slicing_error event.
         if (rc != 0 && outcome.cli_code == 0)
-            outcome.cli_code = CLI_SLICING_ERROR;
+            set_outcome_failure(outcome, CLI_SLICING_ERROR);
+        if (outcome.cli_code != 0 && outcome.error_string.empty())
+            outcome.error_string = cli_error_sentence(outcome.cli_code);
         outcomes.push_back(outcome);
         if (outcome.cli_code != 0) {
             code = outcome.cli_code;
@@ -5139,7 +5236,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         const auto export_started = std::chrono::steady_clock::now();
         if (o.progress) {
             PlateOutcome last = outcomes.empty() ? PlateOutcome() : outcomes.back();
-            emit_progress(last, 100, "Exporting 3mf");
+            emit_run_progress(last, 97, "Exporting 3mf");
         }
         std::string export_error;
         try {
@@ -5159,10 +5256,20 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     for (const PlateOutcome& p : outcomes) sliced_ms += p.sliced_time_ms;
     if (code == 0) error_string = cli_error_sentence(CLI_SUCCESS);
     const int reported_plate = (code != 0 && !outcomes.empty()) ? outcomes.back().plate_id : o.slice_plate;
-    write_result_json(outdir.string(), code, reported_plate, error_string, outcomes,
-                      std::max(0LL, total_ms - sliced_ms - export_ms), export_ms);
+    const bool result_written = write_result_json(outdir.string(), code, reported_plate, error_string, outcomes,
+                                                  std::max(0LL, total_ms - sliced_ms - export_ms), export_ms);
     if (code != 0)
         std::cerr << "Error: " << error_string << "\n";
+    // No result document is a failed run, with the code this mode already
+    // uses when --outputdir cannot be made (CLI_ENVIRONMENT_ERROR above).
+    if (code == 0 && !result_written)
+        code = CLI_ENVIRONMENT_ERROR;
+    // 100 only once everything is written ("All done, Success",
+    // BambuStudio.cpp 8237).
+    if (code == 0 && o.progress) {
+        PlateOutcome last = outcomes.empty() ? PlateOutcome() : outcomes.back();
+        emit_run_progress(last, 100, "All done, Success");
+    }
     return code;
 }
 
@@ -5171,7 +5278,12 @@ static int run_cli_slice(const CliOptions& o, Slic3r::Calib_Params& calib_params
         return run_slice_mode(o, calib_params);
     PlateOutcome outcome;
     outcome.plate_id = o.plate_id;
-    return slice_one_plate(o, calib_params, o.plate_id, o.output_file, outcome);
+    const int rc = slice_one_plate(o, calib_params, o.plate_id, o.output_file, outcome);
+    // --progress on the single-file call ends like --slice: 100 once the
+    // G-code is written ("All done, Success", BambuStudio.cpp 8237).
+    if (rc == 0 && o.progress)
+        emit_run_progress(outcome, 100, "All done, Success");
+    return rc;
 }
 
 int main(int argc, char** argv) {
