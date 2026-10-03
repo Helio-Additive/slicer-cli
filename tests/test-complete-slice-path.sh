@@ -227,35 +227,24 @@ assert d["return_code"] != 0 and "export-3mf" in d["error_string"], d
 done
 echo "PASS: --export-3mf refuses the name of a file the run writes"
 
-# A command-line override is range-checked like the file's values, and a run
-# that fails leaves no earlier run's project at the --export-3mf name.
-mkdir -p badlh/out
-echo "stale" > badlh/out/sliced.3mf
+# A command-line override is range-checked like the file's values.
 run badlh "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir badlh/out --export-3mf sliced.3mf
 [ "$(rc badlh)" != 0 ] || fail "--layer-height -0.1 was sliced"
 py '
 import json; d = json.load(open("badlh/out/result.json"))
 assert d["return_code"] != 0 and "layer_height" in d["error_string"], d
 '
-[ ! -e badlh/out/sliced.3mf ] || fail "a stale sliced.3mf survived a failed run"
-echo "PASS: a bad override is refused before slicing; no stale project is left"
+echo "PASS: a bad override is refused before slicing"
 
-# Only an earlier export (a plain .3mf name inside --outputdir) is ever removed:
-# a NAME pointing outside it is never deleted by a run that fails.
+# A failed run deletes nothing: like the official CLI, --export-3mf only ever
+# overwrites on success, and result.json says whether this run worked.
 mkdir -p keep/out
 echo "keep" > keep/important.txt
 run keep "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir keep/out --export-3mf ../important.txt
 [ "$(rc keep)" != 0 ] || fail "--layer-height -0.1 was sliced"
 [ "$(cat keep/important.txt)" = keep ] || fail "a failed run deleted a file outside --outputdir"
-echo "PASS: a failed export run deletes nothing outside --outputdir"
+echo "PASS: a failed export run deletes nothing"
 
-# An earlier export in a subfolder of --outputdir is cleared like one at the top.
-mkdir -p nested/out/projects
-echo "stale" > nested/out/projects/sliced.3mf
-run nested "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir nested/out --export-3mf projects/sliced.3mf
-[ "$(rc nested)" != 0 ] || fail "--layer-height -0.1 was sliced"
-[ ! -e nested/out/projects/sliced.3mf ] || fail "a stale nested sliced.3mf survived a failed run"
-echo "PASS: a stale export in a subfolder of --outputdir is cleared"
 
 # A 3MF without plate metadata slices as one plate, and its export carries
 # that plate's G-code (the official CLI always has plate 1).

@@ -5316,40 +5316,6 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
             return CLI_INVALID_PARAMS;
         }
-        // The project this run exports starts absent, so a run that fails
-        // (no export) cannot leave an earlier run's archive at NAME looking
-        // current; result.json stays the verdict. Never the input itself:
-        // the export reloads it. The official CLI only overwrites
-        // (export_project to <outputdir>/NAME, BambuStudio.cpp 7509, 8156).
-        // Only an earlier export can be removed: a .3mf regular file that
-        // resolves (symlinks followed, ".." folded) to a place inside
-        // --outputdir, at any depth. A NAME that leaves --outputdir (such as
-        // ../other.txt) or has another extension is never deleted; it is only
-        // overwritten by a successful export, as the official CLI does.
-        const fs::path export_path = outdir / fs::path(o.export_3mf);
-        bool inside_outdir = false;
-        {
-            boost::system::error_code ec1, ec2;
-            const fs::path root = fs::weakly_canonical(outdir, ec1);
-            const fs::path where = fs::weakly_canonical(export_path, ec2);
-            if (!ec1 && !ec2) {
-                const fs::path rel = where.lexically_relative(root);
-                inside_outdir = !rel.empty() && rel.begin()->string() != ".." && rel.string() != ".";
-            }
-        }
-        boost::system::error_code status_ec;
-        if (inside_outdir && boost::algorithm::iends_with(o.export_3mf, ".3mf") &&
-            fs::is_regular_file(fs::symlink_status(export_path, status_ec)) &&
-            !boost::algorithm::iequals(target, key(fs::path(o.input_file)))) {
-            // Never the input under another name (a symlink or hard link):
-            // equivalent() compares the files, not the path text.
-            boost::system::error_code same_ec;
-            const bool is_input = fs::equivalent(export_path, fs::path(o.input_file), same_ec);
-            if (!is_input && !same_ec) {
-                boost::system::error_code ignored;
-                fs::remove(export_path, ignored);
-            }
-        }
     }
 
     const auto run_started = std::chrono::steady_clock::now();
