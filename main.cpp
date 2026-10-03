@@ -41,6 +41,7 @@
 #include <nlohmann/json.hpp>
 
 #include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
 
 // Boost.Log bridge: libslic3r raises most of its diagnostics through
 // BOOST_LOG_TRIVIAL and never through any callback. `libslic3r_core` already
@@ -1967,10 +1968,13 @@ static void stage_file_copy(const boost::filesystem::path& src,
         return;
 
     const std::string why = copy_ec.message();
-    // boost::filesystem::path is not implicitly convertible to the fstream
-    // path overload (and MSVC's is exact-match only), so pass the strings.
-    std::ifstream in(src.string(), std::ios::binary);
-    std::ofstream out(dst.string(), std::ios::binary | std::ios::trunc);
+    // Boost's path-taking streams open the native path: the wide path on
+    // Windows/MSVC, where path::string() would narrow it to the ANSI code page
+    // and lose characters outside it. BambuStudio opens a file it copies by
+    // size the same way (src/libslic3r/Format/bbs_3mf.cpp:6668 @5873b5f;
+    // OrcaSlicer bbs_3mf.cpp:6385 @31f6803).
+    boost::filesystem::ifstream in(src, std::ios::binary);
+    boost::filesystem::ofstream out(dst, std::ios::binary | std::ios::trunc);
     if (!in.is_open())
         throw std::runtime_error("cannot read " + src.string() + " (copy_file: " + why + ")");
     if (!out.is_open())
