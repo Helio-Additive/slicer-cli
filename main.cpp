@@ -39,6 +39,8 @@
 #include "libslic3r/Arrange.hpp"
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/Semver.hpp"
+#include "libslic3r_version.h"
 
 // For JSON parsing (using libslic3r's built-in nlohmann/json)
 #include <nlohmann/json.hpp>
@@ -577,6 +579,8 @@ void print_usage(const char* prog_name) {
               << "                         writes <outputdir>/plate_N.gcode per plate\n"
               << "  --outputdir <dir>      Output folder for --slice (default: current folder);\n"
               << "                         --slice writes result.json there\n"
+              << "  --info <file>          Print what the file is (printer, plates, maker app)\n"
+              << "                         and which engine binary fits it, as JSON\n"
               << "  --progress             Progress events ({\"event\":\"progress\",...}); on with --slice\n"
               << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
               << "                         tokens (e.g. initial_no_support_filament_id) in\n"
@@ -1953,6 +1957,89 @@ static boost::filesystem::path engine_profiles_dir(const boost::filesystem::path
     return boost::filesystem::path();
 }
 
+/// The OrcaSlicer profiles tree beside this binary, or empty: the package
+/// ships it as resources/profiles-orca (Linux: bin/../resources; macOS and
+/// Windows: next to the binaries), a checkout has references/OrcaSlicer.
+static boost::filesystem::path orca_profiles_dir(const boost::filesystem::path& exe_dir) {
+    for (const auto& p : std::vector<boost::filesystem::path>{
+        exe_dir / ".." / "references" / "OrcaSlicer" / "resources" / "profiles",
+        exe_dir / ".." / ".." / "references" / "OrcaSlicer" / "resources" / "profiles",
+        exe_dir / ".." / "resources" / "profiles-orca",
+        exe_dir / "resources" / "profiles-orca",
+    }) {
+        if (boost::filesystem::exists(p) && boost::filesystem::is_directory(p))
+            return boost::filesystem::canonical(p);
+    }
+    return boost::filesystem::path();
+}
+
+/// The printer models a profiles tree offers: every vendor file's
+/// machine_model_list (the list PresetBundle::load_vendor_configs_from_json
+/// reads its printer models from, PresetBundle.cpp in both engines).
+static std::set<std::string> catalog_printer_models(const boost::filesystem::path& profiles_dir) {
+    std::set<std::string> models;
+    if (profiles_dir.empty()) return models;
+    try {
+        for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
+            if (entry.path().extension() != ".json") continue;
+            std::ifstream f(entry.path().string());
+            if (!f.is_open()) continue;
+            try {
+                const json vendor = json::parse(f);
+                if (!vendor.is_object() || !vendor.contains("machine_model_list")) continue;
+                for (const auto& m : vendor["machine_model_list"])
+                    if (m.is_object() && m.contains("name") && m["name"].is_string())
+                        models.insert(m["name"].get<std::string>());
+            } catch (...) {
+            }
+        }
+    } catch (...) {
+    }
+    return models;
+}
+
+/// Which engine binary of this package has a printer model. "this" is the
+/// build running; "other" its sibling in the same package.
+struct EngineFit {
+    std::string this_app, this_binary, other_app, other_binary;
+    bool this_catalog_found  = false;
+    bool other_catalog_found = false;
+    bool this_has  = false;
+    bool other_has = false;
+};
+
+static EngineFit engine_fit_for(const std::string& argv0, const std::string& printer_model) {
+    const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
+#ifdef ENGINE_ORCA
+    const boost::filesystem::path this_dir  = orca_profiles_dir(exe_dir);
+    const boost::filesystem::path other_dir = engine_profiles_dir(exe_dir);
+    EngineFit fit{"OrcaSlicer", "slicer_cli-orcaslicer", "BambuStudio", "slicer_cli"};
+#else
+    const boost::filesystem::path this_dir  = engine_profiles_dir(exe_dir);
+    const boost::filesystem::path other_dir = orca_profiles_dir(exe_dir);
+    EngineFit fit{"BambuStudio", "slicer_cli", "OrcaSlicer", "slicer_cli-orcaslicer"};
+#endif
+    const std::set<std::string> this_models  = catalog_printer_models(this_dir);
+    const std::set<std::string> other_models = catalog_printer_models(other_dir);
+    fit.this_catalog_found  = !this_models.empty();
+    fit.other_catalog_found = !other_models.empty();
+    fit.this_has  = this_models.count(printer_model) > 0;
+    fit.other_has = other_models.count(printer_model) > 0;
+    return fit;
+}
+
+/// The sentence for a printer this engine does not have, naming the binary
+/// that has it (owner ruling 10-03: a file for one engine sent to the other
+/// is refused, never substituted, and the refusal names the engine that fits).
+static std::string engine_mismatch_sentence(const EngineFit& fit, const std::string& printer_model) {
+    std::string s = fit.this_app + " has no " + printer_model + " printer; ";
+    if (fit.other_has)
+        s += "use " + fit.other_binary + " (" + fit.other_app + ").";
+    else
+        s += "neither engine in this package has it.";
+    return s;
+}
+
 #ifdef ENGINE_BAMBU
 /// Copy one preset file into the staging tree.
 ///
@@ -2675,6 +2762,33 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 std::cerr << "Failed to load 3MF file\n";
                 set_outcome_failure(outcome, CLI_DATA_FILE_ERROR);
                 return 1;
+            }
+            // Engine fit: a project for a printer this engine does not have is
+            // refused before anything is sliced. Without the printer's presets
+            // the engine slices the flat file against its own defaults (a
+            // 200 x 200 bed for a U1 project on the Bambu build) and reports
+            // success. Keyed on printer_model, not on the app that made the
+            // file: OrcaSlicer ships Bambu Lab printers too, so a Bambu
+            // printer's project is valid on both builds.
+            if (config.has("printer_model")) {
+                const std::string printer_model = config.opt_string("printer_model");
+                if (!printer_model.empty()) {
+                    const EngineFit fit = engine_fit_for(o.argv0, printer_model);
+                    if (fit.this_catalog_found && !fit.this_has) {
+                        const std::string sentence = engine_mismatch_sentence(fit, printer_model);
+                        json fits = json::array();
+                        if (fit.other_has) fits.push_back(fit.other_binary);
+                        emit_event({{"event","engine_mismatch"},
+                                    {"tag","PrinterModelNotInEngine"},
+                                    {"printer_model", printer_model},
+                                    {"engine", fit.this_binary},
+                                    {"fits", fits},
+                                    {"message", sentence}});
+                        std::cerr << "Error: " << sentence << "\n";
+                        set_outcome_failure(outcome, CLI_3MF_NOT_SUPPORT_MACHINE_CHANGE, sentence);
+                        return 1;
+                    }
+                }
             }
 #ifdef ENGINE_BAMBU
             // The importer may partially mutate a vector before rejecting it.
@@ -3681,6 +3795,155 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
     }
 }
 
+/// Text of every <metadata name="KEY">VALUE</metadata> in a 3MF model part.
+static std::map<std::string, std::string> model_metadata(const std::string& model_xml) {
+    std::map<std::string, std::string> out;
+    size_t pos = 0;
+    while ((pos = model_xml.find("<metadata", pos)) != std::string::npos) {
+        const size_t tag_end = model_xml.find('>', pos);
+        if (tag_end == std::string::npos) break;
+        const std::string tag = model_xml.substr(pos, tag_end - pos);
+        pos = tag_end + 1;
+        if (!tag.empty() && tag.back() == '/') continue;
+        const size_t n = tag.find("name=\"");
+        if (n == std::string::npos) continue;
+        const size_t n_end = tag.find('"', n + 6);
+        if (n_end == std::string::npos) continue;
+        const size_t close = model_xml.find("</metadata>", pos);
+        if (close == std::string::npos) break;
+        out[tag.substr(n + 6, n_end - n - 6)] = model_xml.substr(pos, close - pos);
+        pos = close;
+    }
+    return out;
+}
+
+/// The file version this engine's 3MF loader reads: OrcaSlicer takes the
+/// OrcaSlicer tag when present, else the Application version after
+/// "BambuStudio-" or "OrcaSlicer-" (bbs_3mf.cpp 1422-1430, 3945-3961 at
+/// 31f6803); BambuStudio reads only "BambuStudio-" (bbs_3mf.cpp 1481 at
+/// 5873b5f).
+static boost::optional<Slic3r::Semver> engine_file_version(const std::map<std::string, std::string>& meta) {
+    const auto app = meta.find("Application");
+#ifdef ENGINE_ORCA
+    if (const auto orca = meta.find("OrcaSlicer"); orca != meta.end())
+        if (auto v = Slic3r::Semver::parse(orca->second)) return v;
+    if (app != meta.end()) {
+        if (boost::starts_with(app->second, "BambuStudio-")) return Slic3r::Semver::parse(app->second.substr(12));
+        if (boost::starts_with(app->second, "OrcaSlicer-"))  return Slic3r::Semver::parse(app->second.substr(11));
+    }
+#else
+    if (app != meta.end() && boost::starts_with(app->second, "BambuStudio-"))
+        return Slic3r::Semver::parse(app->second.substr(12));
+#endif
+    return boost::none;
+}
+
+static std::string engine_version_text() {
+#ifdef ENGINE_ORCA
+    return SoftFever_VERSION;
+#else
+    return SLIC3R_VERSION;
+#endif
+}
+
+/// The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
+/// OrcaSlicer.cpp 1588-1592 at 31f6803): a file whose major.minor is newer
+/// than the engine's.
+static bool file_newer_than_engine(const Slic3r::Semver& file_version) {
+    const auto engine = Slic3r::Semver::parse(engine_version_text());
+    if (!engine) return false;
+    return engine->maj() < file_version.maj() ||
+           (engine->maj() == file_version.maj() && engine->min() < file_version.min());
+}
+
+/// --info FILE: what the file is and which binary of this package slices it,
+/// as one JSON document on stdout. The plugin calls this first to pick the
+/// binary. The app that made the file is reported, and is the tie-break when
+/// both engines have the printer; it never refuses anything by itself.
+static int run_info(const std::string& argv0, const std::string& path) {
+    json out;
+    out["file"] = path;
+    if (!boost::filesystem::exists(path)) {
+        out["error"] = cli_error_sentence(CLI_FILE_NOTFOUND);
+        std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+        return CLI_FILE_NOTFOUND;
+    }
+    const bool is_3mf = input_is_3mf(path);
+    out["kind"] = is_3mf ? "3mf" : (input_is_stl(path) ? "stl" : "unknown");
+
+    std::string printer_model;
+    std::string maker_app;
+    if (is_3mf) {
+        std::string settings_text, model_xml;
+        json settings = json::object();
+        if (read_zip_member(path, "Metadata/project_settings.config", settings_text)) {
+            try { settings = json::parse(settings_text); } catch (...) {}
+        }
+        auto text = [&](const char* key) -> json {
+            return settings.contains(key) ? settings[key] : json(nullptr);
+        };
+        if (settings.contains("printer_model") && settings["printer_model"].is_string())
+            printer_model = settings["printer_model"].get<std::string>();
+        out["printer_model"]   = printer_model.empty() ? json(nullptr) : json(printer_model);
+        out["printer_preset"]  = text("printer_settings_id");
+        out["process_preset"]  = text("print_settings_id");
+        out["filament_presets"] = text("filament_settings_id");
+        out["nozzle_diameter"] = text("nozzle_diameter");
+        out["plates"] = std::max(1, count_3mf_plates(path));
+
+        std::map<std::string, std::string> meta;
+        if (read_zip_member(path, "3D/3dmodel.model", model_xml))
+            meta = model_metadata(model_xml);
+        json maker = json::object();
+        const auto app = meta.find("Application");
+        const auto orca = meta.find("OrcaSlicer");
+        maker["application"] = app != meta.end() ? json(app->second) : json(nullptr);
+        maker["orcaslicer"]  = orca != meta.end() ? json(orca->second) : json(nullptr);
+        // OrcaSlicer writes "BambuStudio-<its Bambu base>" as Application and
+        // its own version in the OrcaSlicer tag (bbs_3mf.cpp 6837 at 31f6803).
+        if (orca != meta.end() || (app != meta.end() && boost::starts_with(app->second, "OrcaSlicer-")))
+            maker_app = "OrcaSlicer";
+        else if (app != meta.end() && boost::starts_with(app->second, "BambuStudio-"))
+            maker_app = "BambuStudio";
+        else if (app != meta.end())
+            maker_app = app->second.substr(0, app->second.find('-'));
+        maker["app"] = maker_app.empty() ? json(nullptr) : json(maker_app);
+        out["maker"] = maker;
+
+        json this_engine = {{"version", engine_version_text()}};
+        if (const auto v = engine_file_version(meta)) {
+            this_engine["file_version"] = v->to_string();
+            this_engine["file_newer_than_engine"] = file_newer_than_engine(*v);
+        }
+        out["this_engine_reads"] = this_engine;
+    } else {
+        out["plates"] = 1;
+    }
+
+    EngineFit fit = engine_fit_for(argv0, printer_model);
+    json engines = json::array();
+    json fits = json::array();
+    auto add = [&](const std::string& app, const std::string& binary, bool found, bool has) {
+        const bool fits_printer = printer_model.empty() ? found : has;
+        engines.push_back(json{{"app", app}, {"binary", binary}, {"catalog_found", found},
+                               {"has_printer", printer_model.empty() ? json(nullptr) : json(has)}});
+        if (fits_printer) fits.push_back(binary);
+    };
+    add(fit.this_app, fit.this_binary, fit.this_catalog_found, fit.this_has);
+    add(fit.other_app, fit.other_binary, fit.other_catalog_found, fit.other_has);
+    out["engines"] = engines;
+    out["fits"] = fits;
+    json recommended = nullptr;
+    for (const auto& e : engines)
+        if (std::find(fits.begin(), fits.end(), e["binary"]) != fits.end() && e["app"] == maker_app)
+            recommended = e["binary"];
+    if (recommended.is_null() && !fits.empty() && !printer_model.empty())
+        recommended = fits.front();
+    out["recommended"] = recommended;
+    std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+    return 0;
+}
+
 /// --slice: every plate (0) or plate N of the input, one G-code each as
 /// <outputdir>/plate_N.gcode, through the same single-plate path the default
 /// call runs. The official loop stops at the first plate that fails
@@ -3797,6 +4060,7 @@ int main(int argc, char** argv) {
     int& plate_id = o.plate_id;  // 0 = all plates (default); >0 = slice only that plate
     bool& normalize_legacy_gcode = o.normalize_legacy_gcode;
     std::string layout_json_file;
+    std::string info_file;
     bool        layout_plan_mode = false;
     slicer_cli::CalibOptions calib_opts;
     // Override settings
@@ -3894,6 +4158,8 @@ int main(int argc, char** argv) {
             o.outputdir = argv[++i];
         } else if (arg == "--progress") {
             o.progress = true;
+        } else if (arg == "--info" && i + 1 < argc) {
+            info_file = argv[++i];
         } else if (arg[0] != '-') {
             input_file = arg;
         } else {
@@ -3925,6 +4191,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 #endif
+
+    // --info: one JSON document on stdout, nothing sliced.
+    if (!info_file.empty()) {
+        boost::log::core::get()->set_logging_enabled(false);
+        return run_info(o.argv0, info_file);
+    }
 
     if (o.slice_mode)
         o.progress = true;   // --slice reports progress like the official --pipe
