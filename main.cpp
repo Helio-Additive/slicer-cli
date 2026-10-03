@@ -5421,6 +5421,21 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         return CLI_ENVIRONMENT_ERROR;
     }
 
+    // A missing input is the official "not found", not an unparseable model:
+    // the official CLI checks every input before loading it
+    // (BambuStudio.cpp 1854-1859 at 5873b5f).
+    {
+        boost::system::error_code exists_ec;
+        if (!fs::exists(fs::path(o.input_file), exists_ec)) {
+            write_result_json(outdir.string(), CLI_FILE_NOTFOUND, o.slice_plate,
+                              cli_error_sentence(CLI_FILE_NOTFOUND), {}, 0, 0);
+            std::cerr << "No such file: " << o.input_file << "\n";
+            emit_event({{"event","input_error"}, {"tag","InputNotFound"}, {"path", o.input_file},
+                        {"message","No such file: " + o.input_file}});
+            return CLI_FILE_NOTFOUND;
+        }
+    }
+
     // A project with plate metadata slices plate by plate; anything else (an
     // STL, a 3MF without plates) is one plate holding every object — the
     // official CLI resets plate_to_slice to 0 for a non-Bambu 3MF

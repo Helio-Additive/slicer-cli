@@ -126,6 +126,15 @@ assert p["id"] == 1 and p["total_predication"] > 0 and p["objects"], p
 grep -q '"event":"progress".*"percent":100' slice/stdout || fail "no progress event at 100"
 echo "PASS: --slice writes plate_1.gcode, result.json and progress events"
 
+# A missing input is "not found" (-3), not an unparseable model.
+run missing "$B" no-such-file.3mf --slice 1 --outputdir missing/out
+[ "$(rc missing)" != 0 ] || fail "a missing input was sliced"
+py '
+import json; d = json.load(open("missing/out/result.json"))
+assert d["return_code"] == -3, d
+'
+echo "PASS: a missing --slice input is reported as not found"
+
 # A result.json that cannot be written fails the run (a directory stands in its place).
 mkdir -p noresult/out/result.json
 run noresult "$B" "$FIXTURE" --slice 1 --outputdir noresult/out
