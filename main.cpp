@@ -3192,7 +3192,7 @@ static bool is_listed_preset(const Slic3r::Preset& preset) {
     return preset.is_system && !preset.is_default;
 }
 
-/// Names of presets near `wanted` (same words), for a refusal that points on.
+/// Names of presets similar `wanted` (same words), for a refusal that points on.
 static std::string near_preset_names(const Slic3r::PresetCollection& collection, const std::string& wanted) {
     std::vector<std::string> words;
     boost::algorithm::split(words, wanted, boost::is_any_of(" @"), boost::token_compress_on);
@@ -3238,9 +3238,9 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     auto find = [&](Slic3r::PresetCollection& collection, const std::string& name, const char* kind) -> bool {
         const Slic3r::Preset* preset = collection.find_preset(name, false);
         if (preset && preset->name == name) return true;
-        const std::string near = near_preset_names(collection, name);
+        const std::string similar = near_preset_names(collection, name);
         error = app + " has no " + kind + " preset named '" + name + "'." +
-                (near.empty() ? std::string() : " Close names: " + near + ".") +
+                (similar.empty() ? std::string() : " Close names: " + similar + ".") +
                 " See --list-presets.";
         code = CLI_CONFIG_FILE_ERROR;
         return false;
@@ -3345,8 +3345,8 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         const Slic3r::Preset* printer = bundle.printers.find_preset(printer_name, false);
         if (!printer || printer->name != printer_name) {
             out["error"] = "No printer preset named '" + printer_name + "'.";
-            const std::string near = near_preset_names(bundle.printers, printer_name);
-            if (!near.empty()) out["close_names"] = near;
+            const std::string similar = near_preset_names(bundle.printers, printer_name);
+            if (!similar.empty()) out["close_names"] = similar;
             std::cout << out.dump(2) << std::endl;
             return CLI_CONFIG_FILE_ERROR;
         }
