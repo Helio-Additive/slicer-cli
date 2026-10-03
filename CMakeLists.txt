@@ -182,6 +182,25 @@ if(NOT Boost_FOUND)
         filesystem thread log log_setup regex atomic locale)
 endif()
 
+# The component list above is satisfied by Ubuntu's Boost 1.74 as happily as by
+# the version both vendored engines pin, so a build can silently link a Boost
+# that neither engine ships (BambuStudio and OrcaSlicer both pin 1.84.0 in
+# their deps/Boost/Boost.cmake). Callers that know the required version pass it
+# and a mismatch stops the configure instead of producing a divergent binary.
+if(DEFINED SLICER_CLI_REQUIRED_BOOST_VERSION AND SLICER_CLI_REQUIRED_BOOST_VERSION)
+  set(_boost_found_version "${Boost_VERSION_STRING}")
+  if(NOT _boost_found_version)
+    set(_boost_found_version "${Boost_VERSION}")
+  endif()
+  if(NOT _boost_found_version VERSION_EQUAL "${SLICER_CLI_REQUIRED_BOOST_VERSION}")
+    message(FATAL_ERROR
+      "Boost ${_boost_found_version} found in ${Boost_INCLUDE_DIRS}, but "
+      "SLICER_CLI_REQUIRED_BOOST_VERSION=${SLICER_CLI_REQUIRED_BOOST_VERSION} "
+      "was required. Point BOOST_ROOT/CMAKE_PREFIX_PATH at the pinned Boost build "
+      "(CI: the linux-boost job) or drop the requirement explicitly.")
+  endif()
+endif()
+
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
 if(ENGINE STREQUAL "bambu")
   # install_deps.sh installs Bambu-patched CGAL 5.4 in one of these

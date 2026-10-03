@@ -95,9 +95,139 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
 
+  linux-boost:
+    name: Provision Linux Boost 1.84.0
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install Boost build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends build-essential cmake curl git ninja-build zlib1g-dev
+          sudo mkdir -p /opt/slicer-cli/boost-1.84.0
+          sudo chown -R "$USER" /opt/slicer-cli/boost-1.84.0
+
+      # The engine's Boost patch lives in the BambuStudio submodule. The checkout
+      # runs before the cache lookup because the cache key hashes that patch:
+      # hashFiles() returns '' for a missing file, so a lookup without the
+      # sources would key on nothing and never match the build jobs' restore.
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache Boost 1.84.0
+        id: cache-linux-boost
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/boost-1.84.0
+          # The engine's Boost patch is hashed into the key, so a submodule bump
+          # that changes it rebuilds the prefix. Bump -v1 by hand whenever the
+          # Boost version or the CMake args in "Build Boost 1.84.0" change. The
+          # build jobs' "Restore Boost 1.84.0 (Linux)" steps must use this exact
+          # key, and their Configure steps re-check the marker's hashes.
+          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
+
+      - name: Build Boost 1.84.0
+        if: steps.cache-linux-boost.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          # Version, tarball, hash and CMake args come from the engine pins, so the
+          # Linux engine links the same Boost both vendored engines link:
+          #   references/BambuStudio/deps/Boost/Boost.cmake:34-45 — 1.84.0 tarball,
+          #     hash, the macOS OBS header patch, ICU off, BUILD_TESTING off, and
+          #     contract|fiber|numpy|wave|test excluded
+          #   references/OrcaSlicer/deps/Boost/Boost.cmake:12-24 — same pin, plus
+          #     iostreams bzip2/zstd off (avoids libbz2/libzstd soname drift)
+          # One prefix serves both engines: Bambu's exclusion list (it keeps the
+          # stacktrace headers, which the engines' sources include) and Orca's
+          # iostreams backends off.
+          BOOST_VERSION=1.84.0
+          BOOST_SHA256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95
+          BOOST_URL="https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}.tar.gz"
+          BOOST_PREFIX="/opt/slicer-cli/boost-${BOOST_VERSION}"
+          curl -fsSL "$BOOST_URL" -o "/tmp/boost-${BOOST_VERSION}.tar.gz"
+          echo "${BOOST_SHA256}  /tmp/boost-${BOOST_VERSION}.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/boost-src
+          tar -xzf "/tmp/boost-${BOOST_VERSION}.tar.gz" -C /tmp/boost-src --strip-components=1
+          # Same source patch the engines' deps build applies, with the same flags,
+          # then a grep so a silently-skipped hunk cannot pass as a patched tree.
+          BOOST_PATCH=references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch
+          test -r "$BOOST_PATCH"
+          git -C /tmp/boost-src apply --verbose --ignore-space-change --whitespace=fix "$PWD/$BOOST_PATCH"
+          grep -q 'int error_sink() const' /tmp/boost-src/libs/process/include/boost/process/detail/posix/executor.hpp
+          # Static only: the engine links Boost statically (CMakeLists.txt sets
+          # Boost_USE_STATIC_LIBS), so no Boost shared object may reach the bundle.
+          cmake -G Ninja -S /tmp/boost-src -B /tmp/boost-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$BOOST_PREFIX" \
+            -DBUILD_SHARED_LIBS:BOOL=OFF \
+            '-DBOOST_EXCLUDE_LIBRARIES:STRING=contract;fiber;numpy;wave;test' \
+            -DBOOST_LOCALE_ENABLE_ICU:BOOL=OFF \
+            -DBOOST_IOSTREAMS_ENABLE_BZIP2:BOOL=OFF \
+            -DBOOST_IOSTREAMS_ENABLE_ZSTD:BOOL=OFF \
+            -DBUILD_TESTING:BOOL=OFF
+          cmake --build /tmp/boost-build --parallel "$(nproc)"
+          cmake --install /tmp/boost-build
+          # Prove the prefix is real and complete before it is cached: a stale or
+          # partial cache would otherwise surface as a configure or link failure
+          # in the build jobs, far from the cause. Each check names what is
+          # missing, so a failure here is diagnosable from the log alone.
+          # Boost.Regex is header-only in the 1.84 CMake superproject
+          # (libs/regex/CMakeLists.txt declares an INTERFACE target); only b2
+          # still builds libboost_regex, so its package and headers are what the
+          # engine consumes.
+          for REL in \
+            lib/cmake/Boost-1.84.0/BoostConfig.cmake \
+            lib/cmake/Boost-1.84.0/BoostConfigVersion.cmake \
+            lib/libboost_filesystem.a \
+            lib/libboost_thread.a \
+            lib/libboost_log.a \
+            lib/libboost_log_setup.a \
+            lib/libboost_atomic.a \
+            lib/libboost_locale.a \
+            lib/libboost_nowide.a \
+            lib/cmake/boost_regex-1.84.0/boost_regex-config.cmake \
+            include/boost/regex.hpp; do
+            test -f "$BOOST_PREFIX/$REL" || { echo "missing from the Boost 1.84.0 prefix: $REL"; exit 1; }
+          done
+          # Resolve the prefix the way the engine will: config mode, through the
+          # installed package, for every component the engine asks for. This is
+          # what proves the version and the component set, not a text match on
+          # headers. PROBE is quoted so the nested CMake lists stay literal.
+          mkdir -p /tmp/boost-probe
+          cat > /tmp/boost-probe/CMakeLists.txt <<'PROBE'
+          cmake_minimum_required(VERSION 3.20)
+          project(boost_probe LANGUAGES CXX)
+          find_package(Boost 1.84.0 CONFIG REQUIRED COMPONENTS
+            filesystem thread log log_setup regex atomic locale nowide)
+          if(NOT Boost_VERSION_STRING VERSION_EQUAL "1.84.0")
+            message(FATAL_ERROR "BoostConfig reports ${Boost_VERSION_STRING}, want 1.84.0")
+          endif()
+          foreach(_t Boost::filesystem Boost::thread Boost::log Boost::log_setup
+                     Boost::regex Boost::atomic Boost::locale Boost::nowide Boost::headers)
+            if(NOT TARGET ${_t})
+              message(FATAL_ERROR "BoostConfig did not define target ${_t}")
+            endif()
+          endforeach()
+          message(STATUS "boost-probe ok: ${Boost_VERSION_STRING}")
+          PROBE
+          cmake -S /tmp/boost-probe -B /tmp/boost-probe/build \
+            -DCMAKE_PREFIX_PATH="$BOOST_PREFIX" \
+            -DBoost_NO_SYSTEM_PATHS=ON
+          MARKER_TMP="$(mktemp "$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete.XXXXXX")"
+          {
+            printf 'version=%s\n' "$BOOST_VERSION"
+            printf 'source_url=%s\n' "$BOOST_URL"
+            printf 'source_sha256=%s\n' "$BOOST_SHA256"
+            printf 'patch_sha256=%s\n' "$(sha256sum "$BOOST_PATCH" | awk '{print $1}')"
+            printf 'library_type=static\n'
+          } > "$MARKER_TMP"
+          chmod 0644 "$MARKER_TMP"
+          mv "$MARKER_TMP" "$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete"
+
   build-linux:
     name: Build & Test — ${{ matrix.os }} (${{ matrix.engine }})
-    needs: linux-occt
+    needs: [linux-occt, linux-boost]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -201,6 +331,19 @@ jobs:
           path: /opt/slicer-cli/cgal-5.6.3
           key: linux-x86_64-cgal-5.6.3-orca-v2
 
+      - name: Prepare Linux Boost prefix
+        if: runner.os == 'Linux'
+        run: |
+          sudo mkdir -p /opt/slicer-cli/boost-1.84.0
+          sudo chown -R "$USER" /opt/slicer-cli/boost-1.84.0
+
+      - name: Restore Boost 1.84.0 (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/boost-1.84.0
+          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
+
       - name: Download pinned libnoise prefix (Linux)
         if: runner.os == 'Linux'
         uses: actions/download-artifact@v4
@@ -215,7 +358,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config \
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
-            libexpat1-dev libssl-dev libboost-all-dev libcgal-dev unzip \
+            libexpat1-dev libssl-dev libcgal-dev unzip \
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
             libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
@@ -441,8 +584,30 @@ jobs:
             OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
             [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
             ENGINE_LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix/${{ matrix.engine }}"
-            CMAKE_PREFIXES="$ENGINE_LIBNOISE_PREFIX;$CMAKE_PREFIXES"
+            # Boost 1.84.0 is the version both vendored engines pin
+            # (references/*/deps/Boost/Boost.cmake). The prefix job installs it;
+            # BOOST_ROOT + Boost_NO_SYSTEM_PATHS keep the distro Boost (1.74,
+            # pulled in by libcgal-dev) from satisfying any component, and
+            # SLICER_CLI_REQUIRED_BOOST_VERSION makes CMake fail loudly rather
+            # than silently link a different version.
+            BOOST_PREFIX=/opt/slicer-cli/boost-1.84.0
+            BOOST_MARKER="$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete"
+            # The marker must match this checkout's Boost inputs, not only the
+            # version: a prefix built from another tarball or another engine
+            # patch is stale even though it is still Boost 1.84.0.
+            BOOST_PATCH_SHA256="$(sha256sum references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch | awk '{print $1}')"
+            if ! { test -r "$BOOST_MARKER" && grep -qx 'version=1.84.0' "$BOOST_MARKER" && grep -qx 'library_type=static' "$BOOST_MARKER" \
+                   && grep -qx 'source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95' "$BOOST_MARKER" \
+                   && grep -qx "patch_sha256=$BOOST_PATCH_SHA256" "$BOOST_MARKER"; }; then
+              echo "missing or stale pinned Boost 1.84.0 static prefix at $BOOST_PREFIX"
+              echo "want source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95 patch_sha256=$BOOST_PATCH_SHA256; marker has:"
+              cat "$BOOST_MARKER" 2>/dev/null || echo "(no marker)"
+              exit 1
+            fi
+            CMAKE_PREFIXES="$BOOST_PREFIX;$ENGINE_LIBNOISE_PREFIX;$CMAKE_PREFIXES"
             EXTRA+=(-DSLICER_CLI_LIBNOISE_PREFIX="$ENGINE_LIBNOISE_PREFIX")
+            EXTRA+=(-DBOOST_ROOT="$BOOST_PREFIX" -DBoost_ROOT="$BOOST_PREFIX")
+            EXTRA+=(-DBoost_NO_SYSTEM_PATHS=ON -DSLICER_CLI_REQUIRED_BOOST_VERSION=1.84.0)
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
             if [[ "${{ matrix.engine }}" == "bambu" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
@@ -779,6 +944,22 @@ jobs:
           path: /opt/slicer-cli/cgal-5.6.3
           key: linux-x86_64-cgal-5.6.3-orca-v2
 
+      # The Linux rows below are currently commented out of the matrix; if one
+      # is re-enabled, add `linux-boost` to this job's `needs:` so the pinned
+      # prefix is provisioned before Configure runs.
+      - name: Prepare Linux Boost prefix
+        if: runner.os == 'Linux'
+        run: |
+          sudo mkdir -p /opt/slicer-cli/boost-1.84.0
+          sudo chown -R "$USER" /opt/slicer-cli/boost-1.84.0
+
+      - name: Restore Boost 1.84.0 (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/boost-1.84.0
+          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
+
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -786,7 +967,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config \
             libtbb-dev libeigen3-dev libpng-dev zlib1g-dev \
-            libexpat1-dev libssl-dev libboost-all-dev libcgal-dev unzip \
+            libexpat1-dev libssl-dev libcgal-dev unzip \
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
             libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
@@ -971,6 +1152,7 @@ jobs:
           # Setting both PNG_PNG_INCLUDE_DIR and PNG_LIBRARY short-circuits
           # FindPNG's search entirely.
           EXTRA=()
+          CMAKE_PREFIXES="/opt/homebrew;/usr/local"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             LIBPNG=$(brew --prefix libpng)
             EXTRA+=(-DPNG_PNG_INCLUDE_DIR="$LIBPNG/include" -DPNG_LIBRARY="$LIBPNG/lib/libpng.dylib")
@@ -991,6 +1173,23 @@ jobs:
           else
             OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
             [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
+            BOOST_PREFIX=/opt/slicer-cli/boost-1.84.0
+            BOOST_MARKER="$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete"
+            # The marker must match this checkout's Boost inputs, not only the
+            # version: a prefix built from another tarball or another engine
+            # patch is stale even though it is still Boost 1.84.0.
+            BOOST_PATCH_SHA256="$(sha256sum references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch | awk '{print $1}')"
+            if ! { test -r "$BOOST_MARKER" && grep -qx 'version=1.84.0' "$BOOST_MARKER" && grep -qx 'library_type=static' "$BOOST_MARKER" \
+                   && grep -qx 'source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95' "$BOOST_MARKER" \
+                   && grep -qx "patch_sha256=$BOOST_PATCH_SHA256" "$BOOST_MARKER"; }; then
+              echo "missing or stale pinned Boost 1.84.0 static prefix at $BOOST_PREFIX (provisioned by the linux-boost job)"
+              echo "want source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95 patch_sha256=$BOOST_PATCH_SHA256; marker has:"
+              cat "$BOOST_MARKER" 2>/dev/null || echo "(no marker)"
+              exit 1
+            fi
+            CMAKE_PREFIXES="$BOOST_PREFIX;/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade"
+            EXTRA+=(-DBOOST_ROOT="$BOOST_PREFIX" -DBoost_ROOT="$BOOST_PREFIX")
+            EXTRA+=(-DBoost_NO_SYSTEM_PATHS=ON -DSLICER_CLI_REQUIRED_BOOST_VERSION=1.84.0)
             EXTRA+=(-DOpenCASCADE_DIR="$OCCT_DIR")
             if [[ "${{ matrix.engine }}" == "bambu" ]]; then
               CGAL5_DIR=/opt/slicer-cli/cgal-5.4/lib/cmake/CGAL
@@ -1007,7 +1206,7 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DENGINE=${{ matrix.engine }} \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
-            -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade" \
+            -DCMAKE_PREFIX_PATH="$CMAKE_PREFIXES" \
             "${EXTRA[@]}" \
             ${{ matrix.cmake_preset }}
 
@@ -1475,7 +1674,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             patchelf \
             libassimp5 \
-            libboost-nowide1.74.0 \
             libbrotli1 \
             libssl3 \
             libdraco4 \
