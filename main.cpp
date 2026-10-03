@@ -3601,8 +3601,9 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
 
 /// The selected plate's own settings, as the official CLI lays them over the
 /// project's per plate (see the call site): the plate's PlateData::config
-/// without the filament-map keys (handled by the plate filament-map block on
-/// the Bambu build) and without keys this engine does not define. Empty
+/// without the filament-map keys (handled by the plate filament-map blocks
+/// of each build: mode always, map in a manual mode) and without keys this
+/// engine does not define. Empty
 /// without a named plate (plate_id 0 is a whole-file load, not one plate).
 static Slic3r::DynamicPrintConfig plate_own_settings(const Slic3r::PlateDataPtrs& plate_data, int plate_id) {
     Slic3r::DynamicPrintConfig plate_config;
@@ -4488,7 +4489,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
             const bool is_manual_mode = real_mode == Slic3r::FilamentMapMode::fmmManual ||
                                         real_mode == Slic3r::FilamentMapMode::fmmNozzleManual;
-            bool has_explicit = pm.size() >= 2 && is_manual_mode;
+            // Any saved map in a manual mode, one slot included: the official
+            // CLI slices a manual plate with get_real_filament_maps(), the
+            // plate's own map whenever it has one (BambuStudio.cpp 6751;
+            // PartPlate.cpp 266-276), whatever its length.
+            bool has_explicit = !pm.empty() && is_manual_mode;
             if (has_explicit) {
                 auto* fm = config.option<Slic3r::ConfigOptionInts>("filament_map", true);
                 fm->values = pm;  // already 1-based per PlateData docs
@@ -4638,14 +4643,46 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // The filament-map keys are not taken here: on the Bambu build the
         // plate block above applies the plate's mode and, in a manual mode,
         // its maps (an automatic mode regroups whatever map was saved,
-        // ToolOrdering.cpp 1897-1914); the Orca build keeps its native
-        // Auto-For-Flush resolution. Only with a plate named (--plate N or
+        // ToolOrdering.cpp 1897-1914); on the Orca build the block just
+        // below does the same. Only with a plate named (--plate N or
         // --slice): a whole-file load is not one plate.
         // The plate wins over the --config/--machine/--process/--filament
         // files: they are the official --load_settings/--load_filaments,
         // which merge into m_print_config (update_full_config, BambuStudio.cpp
         // 3246, 3384; OrcaSlicer.cpp 2781, 2925) before the plate is laid over
         // it. The command-line overrides (m_extra_config) come last.
+#ifdef ENGINE_ORCA
+        // The plate's filament-map keys on the Orca build. The official Orca
+        // CLI lays the whole plate config over the project's
+        // (OrcaSlicer.cpp 5905-5907), mode and map included. Here: the
+        // plate's mode when it states one (PartPlate::get_real_filament_map_mode,
+        // fmmDefault defers to the project), and in the manual mode the
+        // plate's own map (get_real_filament_maps, the map whenever the plate
+        // has one) and nozzle-volume map. An automatic mode keeps the
+        // engine's native Auto-For-Flush resolution with the project's map,
+        // as before (the U1 toolchanger case).
+        if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr) {
+            const Slic3r::PlateData& plate = *plate_data[plate_id - 1];
+            Slic3r::FilamentMapMode real_mode = Slic3r::FilamentMapMode::fmmAutoForFlush;
+            if (auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", false))
+                real_mode = mode_opt->value;
+            if (auto* plate_mode = plate.config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode");
+                plate_mode && plate_mode->value != Slic3r::FilamentMapMode::fmmDefault) {
+                real_mode = plate_mode->value;
+                config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", true)->value = real_mode;
+            }
+            if (real_mode == Slic3r::FilamentMapMode::fmmManual && !plate.filament_maps.empty()) {
+                config.option<Slic3r::ConfigOptionInts>("filament_map", true)->values = plate.filament_maps;
+                if (const auto* pvm = plate.config.option<Slic3r::ConfigOptionInts>("filament_volume_map");
+                    pvm && pvm->values.size() == plate.filament_maps.size())
+                    config.option<Slic3r::ConfigOptionInts>("filament_volume_map", true)->values = pvm->values;
+                emit_event({{"event","config_normalized"}, {"tag","PlateFilamentMapApplied"},
+                            {"plate_id", plate_id}, {"filament_map", plate.filament_maps},
+                            {"message","Plate " + std::to_string(plate_id) +
+                                       " is in Manual mode: its own filament map applies"}});
+            }
+        }
+#endif
         {
             const Slic3r::DynamicPrintConfig plate_config = plate_own_settings(plate_data, plate_id);
             if (!plate_config.empty()) {
