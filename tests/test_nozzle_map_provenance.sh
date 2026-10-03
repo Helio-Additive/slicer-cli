@@ -211,18 +211,21 @@ for destination, cross_map in ((mapless_destination, False), (native_destination
                 data = json.dumps(config, indent=2).encode()
             dst.writestr(info, data)
 
-# Keep a 1-nozzle-per-extruder variant where a plate-level diverse
-# filament_maps value drives explicit mapping. This must skip re-derivation and
-# disable master-object reassignment.
-with zipfile.ZipFile(plate_destination, "w") as dst:
-    with zipfile.ZipFile(mapless_destination) as src:
-        for info in src.infolist():
-            data = src.read(info.filename)
-            if info.filename == "Metadata/model_settings.config":
-                text = data.decode()
-                text = text.replace('key="filament_maps" value="1"', 'key="filament_maps" value="2 1"')
-                data = text.encode()
-            dst.writestr(info, data)
+# A 1-nozzle-per-extruder variant with a plate-level diverse filament_maps
+# value, once in the plate's "Auto For Flush" and once with the plate set to
+# Manual (only then does the stored map drive the mapping).
+for destination, manual in ((plate_destination, False), (plate_destination.replace(".3mf", "-manual.3mf"), True)):
+    with zipfile.ZipFile(destination, "w") as dst:
+        with zipfile.ZipFile(mapless_destination) as src:
+            for info in src.infolist():
+                data = src.read(info.filename)
+                if info.filename == "Metadata/model_settings.config":
+                    text = data.decode()
+                    text = text.replace('key="filament_maps" value="1"', 'key="filament_maps" value="2 1"')
+                    if manual:
+                        text = text.replace('key="filament_map_mode" value="Auto For Flush"', 'key="filament_map_mode" value="Manual"')
+                    data = text.encode()
+                dst.writestr(info, data)
 PY
 
 run_case "seed-only" "$WORKDIR/cube.stl" \
@@ -258,13 +261,24 @@ for flag in --config --machine --process --filament; do
         "$flag" "$WORKDIR/cross-map.json"
 done
 
-run_validation_failure "native-3mf-cross-map" "$WORKDIR/native-cross-map.3mf" \
-    "Nozzle-map provenance: explicit config map=yes" \
-    "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" \
-    "Nozzle-map reassignment: object_extruders=[2]" \
-    "Validation error: Plate 1: Textured PEI Plate does not support filament 2"
+# A file's own filament_nozzle_map is what an earlier slice grouped, not a
+# request: under "Auto For Flush" the engine groups itself, as the official
+# CLI does (it reads a nozzle map only from its command line, in a manual
+# mode). No derivation, no reassignment, the object stays on filament 1.
+run_case "native-3mf-cross-map" "$WORKDIR/native-cross-map.3mf" \
+    "Nozzle-map provenance: explicit config map=no" \
+    "Nozzle-map derivation: skipped mode=Auto For Flush" \
+    ""
 
-run_case "plate-cross-map-single-nozzle" "$WORKDIR/plate-cross-map.3mf" \
+# A plate saved with a mixed map but in "Auto For Flush" stays automatic:
+# the stored map is only used when the plate's mode is manual.
+run_case "plate-cross-map-auto" "$WORKDIR/plate-cross-map.3mf" \
+    "Nozzle-map provenance: explicit config map=no" \
+    "Nozzle-map derivation: skipped mode=Auto For Flush" \
+    ""
+
+# The same plate map with the plate set to Manual is applied as saved.
+run_case "plate-cross-map-manual" "$WORKDIR/plate-cross-map-manual.3mf" \
     "Nozzle-map provenance: explicit config map=no" \
     "Nozzle-map derivation: skipped mode=Manual" \
     ""

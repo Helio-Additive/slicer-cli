@@ -3542,8 +3542,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #ifdef ENGINE_BAMBU
             Slic3r::ConfigOptionInts accepted_3mf_nozzle_map(
                 config.option<Slic3r::ConfigOptionInts>("filament_nozzle_map", true)->values);
-            explicit_config_supplied_nozzle_map =
-                bbs_3mf_config_contains_nozzle_map(input_file, accepted_3mf_nozzle_map);
+            // The file's own filament_nozzle_map is what an earlier slice grouped
+            // (written back from Print::get_filament_nozzle_maps, BambuStudio.cpp
+            // 7107-7108), not a placement anyone asked for: the official CLI
+            // reads a nozzle map only from its command line, and only in a
+            // manual mode (BambuStudio.cpp 6789, 6836-6838). So it is kept as
+            // the file's value but never makes the mapping explicit; only a
+            // --config/--machine/--process/--filament overlay can.
+            bbs_3mf_config_contains_nozzle_map(input_file, accepted_3mf_nozzle_map);
 #endif
             // The path the engine's 3MF loader reads: the input itself, or on
             // the Bambu build a converted copy when the file states line widths
@@ -4295,15 +4301,24 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         bool explicit_plate_mapping_applied = false;
         if (!plate_data.empty() && plate_data[plate_data_idx] != nullptr) {
             const auto& pm = plate_data[plate_data_idx]->filament_maps;
-            bool has_diverse_values = pm.size() >= 2 &&
-                std::adjacent_find(pm.begin(), pm.end(), std::not_equal_to<int>()) != pm.end();
-            bool is_manual_mode = false;
-            {
-                auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", false);
-                if (mode_opt && mode_opt->value == Slic3r::FilamentMapMode::fmmNozzleManual)
-                    is_manual_mode = true;
+            // The plate's own mode, else the project's
+            // (PartPlate::get_real_filament_map_mode, PartPlate.cpp 278-289;
+            // BambuStudio.cpp 6661-6665), applied over the print config as the
+            // official CLI applies the plate config (BambuStudio.cpp 6905-6907).
+            // The stored plate map is used only in a manual mode: under an
+            // automatic mode the engine groups the filaments itself
+            // (ToolOrdering.cpp 1897-1914), whatever map an earlier slice saved.
+            Slic3r::FilamentMapMode real_mode = Slic3r::FilamentMapMode::fmmAutoForFlush;
+            if (auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", false))
+                real_mode = mode_opt->value;
+            if (auto* plate_mode = plate_data[plate_data_idx]->config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode");
+                plate_mode && plate_mode->value != Slic3r::FilamentMapMode::fmmDefault) {
+                real_mode = plate_mode->value;
+                config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode", true)->value = real_mode;
             }
-            bool has_explicit = pm.size() >= 2 && (has_diverse_values || is_manual_mode);
+            const bool is_manual_mode = real_mode == Slic3r::FilamentMapMode::fmmManual ||
+                                        real_mode == Slic3r::FilamentMapMode::fmmNozzleManual;
+            bool has_explicit = pm.size() >= 2 && is_manual_mode;
             if (has_explicit) {
                 auto* fm = config.option<Slic3r::ConfigOptionInts>("filament_map", true);
                 fm->values = pm;  // already 1-based per PlateData docs
@@ -4589,6 +4604,41 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // earlier would leave that array short again.
         align_per_filament_config_vectors(config, project_filaments, verbose);
 
+        // Automatic filament grouping on a machine with several extruders
+        // groups against the AMS slots it is told about. With none, every
+        // filament lands on the master extruder. The official CLI gives each
+        // extruder one estimated 4-slot AMS ("1#0|4#1") holding the project's
+        // filament colours and types in turn (BambuStudio.cpp 6911-6950 at
+        // 5873b5f; estimate_mode is off on this path). OrcaSlicer.cpp
+        // 5914-5951 has the same block; the Orca build is left as it is here,
+        // since its toolchanger grouping (U1) is matched without it.
+        {
+            const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+            const int extruder_count = nozzles ? int(nozzles->values.size()) : 1;
+            const auto* map_mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode");
+            if (extruder_count > 1 && (!map_mode || Slic3r::is_auto_filament_map_mode(map_mode->value))) {
+                const auto* filament_colour = config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+                const auto* filament_type = config.option<Slic3r::ConfigOptionStrings>("filament_type");
+                std::vector<std::string> colors = filament_colour ? filament_colour->vserialize() : std::vector<std::string>{};
+                if (colors.empty()) colors.push_back("#FFFFFFFF");
+                std::vector<std::string> types = filament_type ? filament_type->vserialize() : std::vector<std::string>{"PLA"};
+                if (types.empty()) types.push_back("PLA");
+                std::vector<std::string> extruder_ams_count(extruder_count, "1#0|4#1");
+                std::vector<std::vector<Slic3r::DynamicPrintConfig>> extruder_filament_info(extruder_count);
+                int color_count = 0;
+                for (int e = 0; e < extruder_count; ++e)
+                    for (int slot = 0; slot < 4; ++slot, ++color_count) {
+                        Slic3r::DynamicPrintConfig slot_config;
+                        slot_config.set_key_value("filament_colour", new Slic3r::ConfigOptionStrings({colors[color_count % colors.size()]}));
+                        slot_config.set_key_value("filament_type", new Slic3r::ConfigOptionStrings({types[color_count % types.size()]}));
+                        slot_config.set_key_value("filament_is_support", new Slic3r::ConfigOptionBools({false}));
+                        slot_config.set_key_value("tray_name", new Slic3r::ConfigOptionStrings({"A1"}));
+                        extruder_filament_info[e].push_back(std::move(slot_config));
+                    }
+                config.option<Slic3r::ConfigOptionStrings>("extruder_ams_count", true)->values = extruder_ams_count;
+                print.set_extruder_filament_info(extruder_filament_info);
+            }
+        }
 #endif // ENGINE_BAMBU
 
         try {
