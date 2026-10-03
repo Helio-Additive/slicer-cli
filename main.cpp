@@ -3599,6 +3599,24 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
     }
 }
 
+/// The selected plate's own settings, as the official CLI lays them over the
+/// project's per plate (see the call site): the plate's PlateData::config
+/// without the filament-map keys (handled by the plate filament-map block on
+/// the Bambu build) and without keys this engine does not define. Empty
+/// without a named plate (plate_id 0 is a whole-file load, not one plate).
+static Slic3r::DynamicPrintConfig plate_own_settings(const Slic3r::PlateDataPtrs& plate_data, int plate_id) {
+    Slic3r::DynamicPrintConfig plate_config;
+    if (plate_id <= 0 || (int)plate_data.size() < plate_id || plate_data[plate_id - 1] == nullptr)
+        return plate_config;
+    plate_config = plate_data[plate_id - 1]->config;
+    for (const char* key : {"filament_map_mode", "filament_map", "filament_volume_map"})
+        plate_config.erase(key);
+    for (const std::string& key : plate_config.keys())
+        if (Slic3r::print_config_def.get(key) == nullptr)
+            plate_config.erase(key);
+    return plate_config;
+}
+
 /// One slice of one plate: load the input, resolve its settings, slice and
 /// export G-code to `output_file`. This is the whole single-plate path the
 /// default call (`file [--plate N] -o out.gcode`) has always run; `--slice`
@@ -4231,9 +4249,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (further down); here they go onto a copy for the check only, and
         // without overrides the check reads `config` as before.
         if (!calib_self_geometry) {
+            // The plate's own settings are checked the same way, in the order
+            // they are applied below (plate, then command line). The official
+            // CLI checks m_print_config (BambuStudio.cpp 4134) before it lays
+            // the plate over it (6903), so it never range-checks a plate
+            // value; checking the settings a plate is sliced with is stricter
+            // and changes nothing for a plate that states none.
+            const Slic3r::DynamicPrintConfig plate_settings = plate_own_settings(plate_data, plate_id);
             std::unique_ptr<Slic3r::DynamicPrintConfig> with_overrides;
-            if (!overrides.empty()) {
+            if (!overrides.empty() || !plate_settings.empty()) {
                 with_overrides = std::make_unique<Slic3r::DynamicPrintConfig>(config);
+                with_overrides->apply(plate_settings, true);
                 apply_command_line_overrides(*with_overrides, overrides, /*report_rejections=*/false);
             }
             const std::map<std::string, std::string> validity =
@@ -4615,13 +4641,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // ToolOrdering.cpp 1897-1914); the Orca build keeps its native
         // Auto-For-Flush resolution. Only with a plate named (--plate N or
         // --slice): a whole-file load is not one plate.
-        if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr) {
-            Slic3r::DynamicPrintConfig plate_config = plate_data[plate_id - 1]->config;
-            for (const char* key : {"filament_map_mode", "filament_map", "filament_volume_map"})
-                plate_config.erase(key);
-            for (const std::string& key : plate_config.keys())   // keys this engine does not define
-                if (Slic3r::print_config_def.get(key) == nullptr)
-                    plate_config.erase(key);
+        // The plate wins over the --config/--machine/--process/--filament
+        // files: they are the official --load_settings/--load_filaments,
+        // which merge into m_print_config (update_full_config, BambuStudio.cpp
+        // 3246, 3384; OrcaSlicer.cpp 2781, 2925) before the plate is laid over
+        // it. The command-line overrides (m_extra_config) come last.
+        {
+            const Slic3r::DynamicPrintConfig plate_config = plate_own_settings(plate_data, plate_id);
             if (!plate_config.empty()) {
                 config.apply(plate_config, true);
                 emit_event({{"event","config_normalized"}, {"tag","PlateSettingsApplied"},

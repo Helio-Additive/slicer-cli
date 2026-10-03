@@ -357,6 +357,24 @@ grep -q '^; curr_bed_type = Cool Plate$' platebed/out.lf || fail "the plate's Co
 grep -q '"tag":"PlateSettingsApplied"' platebed/stdout || fail "no PlateSettingsApplied event"
 echo "PASS: the plate's own bed type applies over the project's"
 
+# A plate value out of the engine's range is refused like a project value.
+py '
+import zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("plateseq.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            t = data.decode()
+            mark = "<metadata key=\"plater_id\" value=\"1\"/>"
+            t = t.replace(mark, mark + "\n    <metadata key=\"first_layer_print_sequence\" value=\"99\"/>", 1)
+            data = t.encode()
+        zout.writestr(item, data)
+'
+run plateseq "$B" plateseq.3mf --plate 1 -o plateseq/out.gcode
+[ "$(rc plateseq)" != 0 ] || fail "a plate value out of range was sliced"
+grep -q 'first_layer_print_sequence: 99 not in range' plateseq/stderr || { show plateseq; fail "no range refusal for the plate value"; }
+echo "PASS: a plate value out of range is refused"
+
 # Default path: a printer this engine does not have is refused, naming the binary that has it.
 run u1 "$B" u1.3mf --plate 1 -o u1/out.gcode
 [ "$(rc u1)" != 0 ] || fail "Bambu build sliced a Snapmaker U1 file"
