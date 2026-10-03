@@ -2976,7 +2976,7 @@ static void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Mo
     for (const Slic3r::ModelObject* object : model.objects) {
         bool printed = false;
         for (const Slic3r::ModelInstance* inst : object->instances)
-            printed = printed || inst->print_volume_state == Slic3r::ModelInstancePVS_Inside;
+            printed = printed || inst->print_volume_state != Slic3r::ModelInstancePVS_Fully_Outside;
         if (!printed) continue;
         const Slic3r::BoundingBoxf3 box = object_world_bbox(object);
         const size_t triangles = object->facets_count();
@@ -3138,7 +3138,8 @@ static boost::filesystem::path this_engine_profiles_dir(const std::string& argv0
 /// profiles tree staged as <data_dir>/system, then
 /// load_system_presets_from_json. `staging` is removed by the caller's guard.
 static bool load_system_presets(const std::string& argv0, Slic3r::PresetBundle& bundle,
-                                const boost::filesystem::path& staging, std::string& error) {
+                                const boost::filesystem::path& staging, std::string& error,
+                                bool document_mode = false) {
     const boost::filesystem::path profiles_dir = this_engine_profiles_dir(argv0);
     if (profiles_dir.empty()) {
         error = "No profiles tree was found beside this binary.";
@@ -3165,8 +3166,13 @@ static bool load_system_presets(const std::string& argv0, Slic3r::PresetBundle& 
     auto [substitutions, errors] =
         bundle.load_presets(app_config, Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
     (void)substitutions;
-    if (!errors.empty())
-        emit_event({{"event","preset_warning"}, {"tag","SystemPresetLoadErrors"}, {"message", errors}});
+    if (!errors.empty()) {
+        // --list-presets owns stdout as one JSON document: warnings go to stderr there.
+        if (document_mode)
+            std::cerr << "Warning: " << errors << "\n";
+        else
+            emit_event({{"event","preset_warning"}, {"tag","SystemPresetLoadErrors"}, {"message", errors}});
+    }
 #endif
     return true;
 }
@@ -3310,7 +3316,7 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
     out["engine"] = "bambustudio";
 #endif
     try {
-        if (!load_system_presets(o.argv0, bundle, staging, error)) {
+        if (!load_system_presets(o.argv0, bundle, staging, error, /*document_mode=*/true)) {
             out["error"] = error;
             std::cout << out.dump(2) << std::endl;
             return CLI_ENVIRONMENT_ERROR;
@@ -3401,6 +3407,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // never touches the read-only /bamboo_model network path.
         model.set_backup_path(boost::filesystem::temp_directory_path().string() + "/slicer_cli_backup");
         bool is_bbl_3mf = false;
+        // Values this engine has no word for (unknown enum values), reported
+        // together with the out-of-range values at the value check below.
+        std::vector<std::string> unknown_values;
+        json unknown_items = json::array();
         Slic3r::PlateDataPtrs plate_data;  // hoisted so it is accessible after the 3mf block
 #ifdef ENGINE_BAMBU
         bool explicit_config_supplied_nozzle_map = false;
@@ -3579,8 +3589,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // its own default for a word it does not know. --allow-substitution
             // keeps the old behaviour (slice with the engine's substitute).
             if (!o.allow_substitution) {
-                std::vector<std::string> refused;
-                json items = json::array();
+                std::vector<std::string>& refused = unknown_values;
+                json& items = unknown_items;
                 for (const auto& sub : config_subst.substitutions) {
                     if (!sub.opt_def) continue;
                     const auto type = sub.opt_def->type;
@@ -3593,23 +3603,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                       "', which this engine does not have (its values: " + allowed + ")");
                     items.push_back(json{{"opt_key", sub.opt_def->opt_key}, {"value", sub.old_value},
                                          {"allowed", allowed}});
-                }
-                if (!refused.empty()) {
-#ifdef ENGINE_ORCA
-                    std::string sentence = "OrcaSlicer cannot print this file as it is: ";
-#else
-                    std::string sentence = "BambuStudio cannot print this file as it is: ";
-#endif
-                    for (size_t i = 0; i < refused.size(); ++i)
-                        sentence += (i ? "; " : "") + refused[i];
-                    sentence += ".";
-                    emit_event({{"event","config_refused"},
-                                {"tag","UnknownEnumValue"},
-                                {"settings", items},
-                                {"message", sentence}});
-                    std::cerr << "Error: " << sentence << "\n";
-                    set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
-                    return 1;
                 }
             }
 #ifdef ENGINE_BAMBU
@@ -3968,17 +3961,30 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // range [0,2]").
         if (!calib_self_geometry) {
             const std::map<std::string, std::string> validity = config.validate(true);
-            if (!validity.empty()) {
-                std::string sentence;
+            if (!validity.empty() || !unknown_values.empty()) {
+                // One refusal naming every value at once: unknown enum
+                // values first, then the engine's range findings.
+#ifdef ENGINE_ORCA
+                std::string sentence = "OrcaSlicer cannot print this file as it is: ";
+#else
+                std::string sentence = "BambuStudio cannot print this file as it is: ";
+#endif
+                bool first = true;
+                for (const std::string& u : unknown_values) {
+                    sentence += (first ? "" : "; ") + u;
+                    first = false;
+                }
                 json items = json::object();
                 for (const auto& [key, why] : validity) {
-                    sentence += (sentence.empty() ? "" : "; ") + key + ": " + why;
+                    sentence += (first ? "" : "; ") + key + ": " + why;
+                    first = false;
                     items[key] = why;
                 }
                 sentence += ".";
                 emit_event({{"event","config_refused"},
-                            {"tag","InvalidValues"},
+                            {"tag", unknown_values.empty() ? "InvalidValues" : "InvalidOrUnknownValues"},
                             {"settings", items},
+                            {"unknown_values", unknown_items},
                             {"message", sentence}});
                 std::cerr << "Param values in 3mf/config error: " << sentence << "\n";
                 set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
