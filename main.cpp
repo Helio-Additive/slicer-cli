@@ -9,6 +9,7 @@
 #include <memory>
 #include <map>
 #include <vector>
+#include <cstdint>
 #include <cstdlib>
 #ifdef _WIN32
 #include <windows.h>
@@ -40,6 +41,7 @@
 #include <nlohmann/json.hpp>
 
 #include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
 
 // Boost.Log bridge: libslic3r raises most of its diagnostics through
 // BOOST_LOG_TRIVIAL and never through any callback. `libslic3r_core` already
@@ -1945,6 +1947,72 @@ static boost::filesystem::path engine_profiles_dir(const boost::filesystem::path
 }
 
 #ifdef ENGINE_BAMBU
+/// Copy one preset file into the staging tree.
+///
+/// boost::filesystem::copy_file delegates to the copy_file_range syscall on
+/// Linux (selected once from uname in Boost's static init). That syscall
+/// reports EXDEV — "Invalid cross-device link" — when source and destination
+/// are on different filesystems and the destination has no native copy path:
+/// the packaged vendor JSONs on the root filesystem (or a user profiles dir on
+/// btrfs) against a TMPDIR on tmpfs (/dev/shm, a tmpfs /tmp) is exactly that
+/// case. A stream copy moves the bytes through user space and works there.
+///
+/// A destination that even the stream copy cannot write is a real staging
+/// failure: it throws, and the caller stops the slice instead of continuing on
+/// the flat 3MF config.
+static void stage_file_copy(const boost::filesystem::path& src,
+                            const boost::filesystem::path& dst) {
+    boost::system::error_code copy_ec;
+    boost::filesystem::copy_file(src, dst, copy_ec);
+    if (!copy_ec)
+        return;
+
+    const std::string why = copy_ec.message();
+    // Boost's path-taking streams open the native path: the wide path on
+    // Windows/MSVC, where path::string() would narrow it to the ANSI code page
+    // and lose characters outside it. BambuStudio opens a file it copies by
+    // size the same way (src/libslic3r/Format/bbs_3mf.cpp:6668 @5873b5f;
+    // OrcaSlicer bbs_3mf.cpp:6385 @31f6803).
+    boost::filesystem::ifstream in(src, std::ios::binary);
+    boost::filesystem::ofstream out(dst, std::ios::binary | std::ios::trunc);
+    if (!in.is_open())
+        throw std::runtime_error("cannot read " + src.string() + " (copy_file: " + why + ")");
+    if (!out.is_open())
+        throw std::runtime_error("cannot write " + dst.string() + " (copy_file: " + why + ")");
+    // `out << in.rdbuf()` reads through the stream buffer and never sets
+    // `in`'s state, and a filebuf need not tell a read error apart from EOF,
+    // so a source read that fails part-way could pass as a short, "complete"
+    // copy. Copy in a read loop and count the bytes, then compare the count
+    // against the source size — the same size check BambuStudio's check_copy()
+    // makes on a copied file (src/libslic3r/utils.cpp:977-1006 @5873b5f).
+    std::vector<char> buf(64 * 1024);
+    std::uintmax_t copied = 0;
+    for (;;) {
+        in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+        const std::streamsize got = in.gcount();
+        if (got > 0) {
+            out.write(buf.data(), got);
+            copied += static_cast<std::uintmax_t>(got);
+        }
+        if (!in || !out)
+            break;
+    }
+    out.close();
+    if (out.fail())
+        throw std::runtime_error("write failed for " + dst.string() + " (copy_file: " + why + ")");
+    if (in.bad())
+        throw std::runtime_error("read failed for " + src.string() + " (copy_file: " + why + ")");
+    boost::system::error_code size_ec;
+    const std::uintmax_t src_size = boost::filesystem::file_size(src, size_ec);
+    if (size_ec)
+        throw std::runtime_error("cannot size " + src.string() + ": " + size_ec.message()
+                                 + " (copy_file: " + why + ")");
+    if (copied != src_size)
+        throw std::runtime_error("read failed for " + src.string() + ": copied "
+                                 + std::to_string(copied) + " of " + std::to_string(src_size)
+                                 + " bytes (copy_file: " + why + ")");
+}
+
 /// Stage one vendor directory under data_dir/system for the PresetBundle
 /// rebuild: a directory symlink where the platform grants one, otherwise a
 /// copy. Windows refuses CreateSymbolicLink without the symlink privilege or
@@ -1965,7 +2033,7 @@ static void stage_vendor_dir(const boost::filesystem::path& src,
         if (boost::filesystem::is_directory(it->path()))
             boost::filesystem::create_directories(target);
         else
-            boost::filesystem::copy_file(it->path(), target);
+            stage_file_copy(it->path(), target);
     }
 }
 #endif // ENGINE_BAMBU
@@ -2620,23 +2688,49 @@ int main(int argc, char** argv) {
                         // One staging directory per process: two packaged slices
                         // running at once must not delete each other's vendor
                         // files mid-load (a shared fixed path with remove_all did).
-                        auto tmpdir = boost::filesystem::temp_directory_path()
-                            / boost::filesystem::unique_path("slicer_cli_presets-%%%%%%%%");
-                        auto sysdir = tmpdir / "system";
+                        //
+                        // The cleanup guard lives outside the fatal try below so
+                        // the staged tree survives the PresetBundle load; it gets
+                        // its path before create_directories so a half-created
+                        // staging dir is still removed.
+                        boost::filesystem::path tmpdir;
+                        boost::filesystem::path sysdir;
                         struct StagingCleanup {
                             boost::filesystem::path dir;
                             ~StagingCleanup() {
+                                if (dir.empty())
+                                    return;
                                 boost::system::error_code ignored;
                                 boost::filesystem::remove_all(dir, ignored);
                             }
-                        } staging_cleanup{tmpdir};
-                        boost::filesystem::create_directories(sysdir);
-                        for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
-                            auto dst = sysdir / entry.path().filename();
-                            if (boost::filesystem::is_directory(entry.path()))
-                                stage_vendor_dir(entry.path(), dst);
-                            else if (entry.path().extension() == ".json")
-                                boost::filesystem::copy_file(entry.path(), dst);
+                        } staging_cleanup;
+                        // A staging step that fails — creating the staging dir
+                        // or a copy that even the stream-copy fallback cannot
+                        // complete — is fatal: the same event + exit-code shape
+                        // as the other preset failures below, except the slice
+                        // stops here instead of running on the flat 3MF config
+                        // with no presets at all.
+                        try {
+                            tmpdir = boost::filesystem::temp_directory_path()
+                                / boost::filesystem::unique_path("slicer_cli_presets-%%%%%%%%");
+                            sysdir = tmpdir / "system";
+                            staging_cleanup.dir = tmpdir;
+                            boost::filesystem::create_directories(sysdir);
+                            for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
+                                auto dst = sysdir / entry.path().filename();
+                                if (boost::filesystem::is_directory(entry.path()))
+                                    stage_vendor_dir(entry.path(), dst);
+                                else if (entry.path().extension() == ".json")
+                                    stage_file_copy(entry.path(), dst);
+                            }
+                        } catch (const std::exception& e) {
+                            emit_event({{"event","preset_error"},
+                                        {"tag","PresetStagingFailed"},
+                                        {"exe_dir", exe_dir.empty() ? std::string{} : exe_dir.string()},
+                                        {"profiles_dir", profiles_dir.string()},
+                                        {"message", std::string("Preset staging failed: ") + e.what()}});
+                            std::cerr << "  Preset staging failed: " << e.what() << "\n";
+                            return 1;
                         }
                         // resources_dir() already points at profiles_dir/.. — set
                         // once for both engines by configure_engine_resources().
