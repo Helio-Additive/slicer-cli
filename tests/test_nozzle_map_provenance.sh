@@ -283,5 +283,49 @@ run_case "plate-cross-map-manual" "$WORKDIR/plate-cross-map-manual.3mf" \
     "Nozzle-map derivation: skipped mode=Manual" \
     ""
 
+# --export-3mf keeps the derived routing: a mapless project whose slot 2 is
+# printable, sliced with a cross-nozzle --config map, exports the derived
+# map and Nozzle Manual (project and plate) and the object on slot 2.
+python3 - "$WORKDIR/mapless.3mf" "$WORKDIR/mapless-ok.3mf" <<'PY'
+import json, sys, zipfile
+source, destination = sys.argv[1:]
+with zipfile.ZipFile(source) as src, zipfile.ZipFile(destination, "w") as dst:
+    for info in src.infolist():
+        data = src.read(info.filename)
+        if info.filename == "Metadata/project_settings.config":
+            config = json.loads(data)
+            config["textured_plate_temp"] = ["55", "55"]
+            config["textured_plate_temp_initial_layer"] = ["55", "55"]
+            data = json.dumps(config, indent=2).encode()
+        dst.writestr(info, data)
+PY
+set +e
+export_output=$("$BINARY" --verbose "$WORKDIR/mapless-ok.3mf" --config "$WORKDIR/cross-map.json" \
+    --slice 1 --outputdir "$WORKDIR/export-routing" --export-3mf routed.3mf 2>&1)
+export_status=$?
+set -e
+if [ "$export_status" -ne 0 ]; then
+    FAIL=$((FAIL + 1)); echo "FAIL [export-derived-routing] exit=$export_status"
+    echo "  output: $export_output"
+else
+    record "export-derived-routing/derivation" "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" "$export_output"
+    if python3 - "$WORKDIR/export-routing/routed.3mf" <<'PY'
+import json, re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+project = json.loads(z.read("Metadata/project_settings.config"))
+assert [int(v) for v in project["filament_map"]] == [2, 1], project["filament_map"]
+assert project["filament_map_mode"] == "Nozzle Manual", project["filament_map_mode"]
+model = z.read("Metadata/model_settings.config").decode()
+plate = model[model.index("<plate>"):model.index("</plate>")]
+assert 'key="filament_map_mode" value="Nozzle Manual"' in plate, plate[:400]
+assert 'key="filament_maps" value="2 1"' in plate, plate[:400]
+obj = model[model.index("<object"):model.index("</object>")]
+assert re.search(r'key="extruder" value="2"', obj), obj[:400]
+PY
+    then PASS=$((PASS + 1)); echo "PASS [export-derived-routing/project]"
+    else FAIL=$((FAIL + 1)); echo "FAIL [export-derived-routing/project]"
+    fi
+fi
+
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -366,6 +366,7 @@ with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("plateseq.3mf", "w", zi
         if item.filename == "Metadata/model_settings.config":
             t = data.decode()
             mark = "<metadata key=\"plater_id\" value=\"1\"/>"
+            assert mark in t
             t = t.replace(mark, mark + "\n    <metadata key=\"first_layer_print_sequence\" value=\"99\"/>", 1)
             data = t.encode()
         zout.writestr(item, data)

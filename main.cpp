@@ -1000,16 +1000,17 @@ bool apply_explicit_nozzle_mapping(
 // This only runs when apply_explicit_nozzle_mapping returned true, meaning the
 // plate had filament_maps="1 1" (auto) but filament_nozzle_map showed a cross-
 // nozzle split.  Explicit plate maps (e.g. "2 1") skip this path entirely.
-void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config)
+/// The 1-based filament slot on the master physical nozzle, or -1.
+int master_nozzle_filament_slot(const Slic3r::DynamicPrintConfig& config)
 {
     const auto* filament_map = config.option<Slic3r::ConfigOptionInts>("filament_map");
     const auto* physical_extruder_map = config.option<Slic3r::ConfigOptionInts>("physical_extruder_map");
     if (!filament_map || !physical_extruder_map)
-        return;
+        return -1;
 
     const size_t extruder_count = physical_extruder_map->values.size();
     if (extruder_count < 2)
-        return;
+        return -1;
 
     // Find master logical extruder: the one whose physical_extruder_map value is 0
     // (physical nozzle 0 = right/master on H2D).
@@ -1021,7 +1022,7 @@ void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::Dynam
         }
     }
     if (master_logical_idx < 0)
-        return;
+        return -1;
 
     // Find the filament slot (1-based) that maps to the master logical extruder.
     // filament_map[i] is the 1-based logical extruder for filament i.
@@ -1033,11 +1034,13 @@ void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::Dynam
             break;
         }
     }
-    if (master_filament_slot < 0)
-        return;
+    return master_filament_slot;
+}
 
-    // Reassign each object's extruder to the master nozzle's filament slot.
-    for (auto* obj : model.objects) {
+/// Every given object (and its volume-level overrides) onto `master_filament_slot`.
+void assign_objects_to_filament_slot(const std::vector<Slic3r::ModelObject*>& objects, int master_filament_slot)
+{
+    for (auto* obj : objects) {
         int cur = obj->config.extruder();
         if (cur != master_filament_slot) {
             obj->config.set_key_value("extruder", new Slic3r::ConfigOptionInt(master_filament_slot));
@@ -1050,6 +1053,15 @@ void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::Dynam
             }
         }
     }
+}
+
+void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config)
+{
+    const int master_filament_slot = master_nozzle_filament_slot(config);
+    if (master_filament_slot < 0)
+        return;
+    // Reassign each object's extruder to the master nozzle's filament slot.
+    assign_objects_to_filament_slot(model.objects, master_filament_slot);
 }
 
 // Initialize configuration with BambuStudio defaults
@@ -2635,6 +2647,10 @@ struct PlateOutcome {
     std::shared_ptr<Slic3r::Model>              export_model;   // STL input: the placed model
     std::shared_ptr<Slic3r::DynamicPrintConfig> export_config;  // STL input: the settings it sliced with
     std::map<size_t, Slic3r::Vec3d>             moved;          // 3MF + --arrange: loaded_id -> offset change
+    // Bambu build: routing the slice derived from a supplied filament_nozzle_map
+    // (apply_explicit_nozzle_mapping); empty when nothing was derived.
+    std::vector<int>                            derived_filament_map;
+    int                                         master_filament_slot = -1;  // objects reassigned onto it, or -1
 };
 
 
@@ -4564,6 +4580,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // the master (right) nozzle to match BambuStudio desktop behavior.
         if (nozzle_mapping_derived) {
             reassign_objects_to_master_nozzle(model, config);
+            // --export-3mf reloads the file, which knows nothing of this
+            // routing: keep it so the project states what the slice used.
+            if (o.slice_mode && !o.export_3mf.empty()) {
+                outcome.derived_filament_map = config.option<Slic3r::ConfigOptionInts>("filament_map", true)->values;
+                outcome.master_filament_slot = master_nozzle_filament_slot(config);
+            }
             if (verbose) {
                 std::cout << "Nozzle-map reassignment: object_extruders=[";
                 for (size_t i = 0; i < model.objects.size(); ++i) {
@@ -5332,6 +5354,33 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
                 if (moved != out.moved.end())
                     inst->set_offset(inst->get_offset() + moved->second);
             }
+#ifdef ENGINE_BAMBU
+            // The routing the slice derived from a supplied nozzle map: the
+            // map and Nozzle Manual in the project settings and on the plate
+            // (store_bbs_3mf writes a plate's filament_map_mode and
+            // filament_maps from its config, bbs_3mf.cpp 8260-8279 at 5873b5f;
+            // PartPlate::set_filament_maps keeps the map there, PartPlate.cpp
+            // 3860-3863), and this plate's objects on the master nozzle's slot
+            // as reassign_objects_to_master_nozzle put them.
+            if (!out.derived_filament_map.empty()) {
+                std::vector<int> map0(out.derived_filament_map.size());
+                for (size_t i = 0; i < map0.size(); ++i) map0[i] = out.derived_filament_map[i] - 1;
+                ConfigSubstitutionContext mode_subst(ForwardCompatibilitySubstitutionRule::Enable);
+                for (DynamicPrintConfig* target : {&config, static_cast<DynamicPrintConfig*>(&pd->config)}) {
+                    target->option<ConfigOptionInts>("filament_map", true)->values = out.derived_filament_map;
+                    target->set_deserialize("filament_map_mode", "Nozzle Manual", mode_subst);
+                }
+                config.option<ConfigOptionInts>("filament_map_2", true)->values = map0;
+                if (out.master_filament_slot > 0) {
+                    std::vector<ModelObject*> plate_objects;
+                    for (const auto& [obj_idx, inst_idx] : pd->objects_and_instances)
+                        if (obj_idx >= 0 && obj_idx < int(model.objects.size()) &&
+                            std::find(plate_objects.begin(), plate_objects.end(), model.objects[obj_idx]) == plate_objects.end())
+                            plate_objects.push_back(model.objects[obj_idx]);
+                    assign_objects_to_filament_slot(plate_objects, out.master_filament_slot);
+                }
+            }
+#endif
         }
     }
 
