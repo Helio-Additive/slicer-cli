@@ -569,6 +569,9 @@ void print_usage(const char* prog_name) {
               << "\n=== Output Options ===\n"
               << "  -o, --output <file>    Output G-code file (default: output.gcode)\n"
               << "  --plate <N>            Slice only plate N from a multi-plate 3MF (1-based)\n"
+              << "  --slice <N>            Official plate loop: 0 = every plate, N = plate N;\n"
+              << "                         writes <outputdir>/plate_N.gcode per plate\n"
+              << "  --outputdir <dir>      Output folder for --slice (default: current folder)\n"
               << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
               << "                         tokens (e.g. initial_no_support_filament_id) in\n"
               << "                         custom G-code. Default: normalization is on.\n"
@@ -2056,12 +2059,12 @@ static void configure_engine_resources(const char* argv0, bool quiet) {
         std::cerr << "  Engine resources: " << root.string() << "\n";
 }
 
-int main(int argc, char** argv) {
-    // Initialize libslic3r
-    Slic3r::set_logging_level(3); // Info level
-    boost::log::core::get()->set_logging_enabled(true);
-
-    // Parse arguments
+// ── Command-line options and per-plate outcome ──────────────────────────
+// The default call (file, --plate, -o, --machine/--process/--filament,
+// --layout-plan) is what the product drives; every flag added after it only
+// changes behaviour when it is passed.
+struct CliOptions {
+    std::string argv0;
     std::string input_file;
     std::string output_file = "output.gcode";
     std::string machine_config;
@@ -2069,361 +2072,93 @@ int main(int argc, char** argv) {
     std::string process_config;
     std::string bundle_config;
     bool verbose = false;
-    int plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
+    int  plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
     bool normalize_legacy_gcode = true;
-    std::string layout_json_file;
-    bool        layout_plan_mode = false;
-    slicer_cli::CalibOptions calib_opts;
-    // Override settings
-
     std::map<std::string, std::string> overrides;
 
+    // --slice / --outputdir: the official CLI's plate loop and output folder.
+    bool        slice_mode  = false;
+    int         slice_plate = 0;   // 0 = every plate
+    std::string outputdir;
+};
 
-    // subcommand: slicer_cli layout capabilities --json
-    if (argc >= 3 && std::string(argv[1]) == "layout" && std::string(argv[2]) == "capabilities") {
-        if (argc != 4 || std::string(argv[3]) != "--json") {
-            std::cerr << "Usage: " << argv[0] << " layout capabilities --json\n";
-            return 1;
-        }
-        layout_plan::install_cancellation_handler();  // ignore SIGPIPE so write failures surface as errors
-        boost::log::core::get()->set_logging_enabled(false);
-        return layout_plan::run_capabilities();
+/// What one plate's slice produced, in the shape the official CLI records per
+/// plate (sliced_plate_info_t, BambuStudio.cpp 191-219 at 5873b5f).
+struct PlateOutcome {
+    int         plate_id   = 0;
+    int         plate_index = 1;   // 1-based position in this run, for progress
+    int         plate_count = 1;   // plates this run slices, for progress
+    int         cli_code   = 0;    // CLI_SUCCESS, or the official CLI_* code of the failure
+    std::string error_string;      // the official sentence for cli_code, plus specifics
+    std::string gcode_path;
+};
+
+static bool input_is_stl(const std::string& path) {
+    return path.find(".stl") != std::string::npos || path.find(".STL") != std::string::npos;
+}
+
+static bool input_is_3mf(const std::string& path) {
+    return !input_is_stl(path) &&
+           (path.find(".3mf") != std::string::npos || path.find(".3MF") != std::string::npos);
+}
+
+/// Reads one member of a zip archive (case-insensitive name, either slash).
+/// False when the archive or the member cannot be read.
+static bool read_zip_member(const std::string& archive, const std::string& member,
+                            std::string& content, size_t max_size = 64ULL * 1024 * 1024) {
+    mz_zip_archive zip;
+    mz_zip_zero_struct(&zip);
+    if (!Slic3r::open_zip_reader(&zip, archive))
+        return false;
+    bool found = false;
+    const mz_uint count = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint file_idx = 0; file_idx < count && !found; ++file_idx) {
+        mz_zip_archive_file_stat stat;
+        if (!mz_zip_reader_file_stat(&zip, file_idx, &stat)) continue;
+        std::string name(stat.m_filename);
+        std::replace(name.begin(), name.end(), '\\', '/');
+        if (!boost::algorithm::iequals(name, member)) continue;
+        if (stat.m_uncomp_size > max_size) break;
+        content.assign(stat.m_uncomp_size, '\0');
+        found = mz_zip_reader_extract_to_mem(&zip, file_idx, content.data(), content.size(), 0);
     }
+    Slic3r::close_zip_reader(&zip);
+    return found;
+}
 
-    // Both engines read slice-time resources (info/, flush/, filament_mixing/)
-    // relative to this root, which depends on no argument: resolve it once here
-    // so the ENGINE_ORCA build gets it too, and so STL and calibration slices
-    // stop falling back to the hardcoded tables.
-    {
-        bool layout_plan_json = false;
-        for (int i = 1; i < argc; ++i)
-            if (std::string(argv[i]) == "--layout-plan")
-                layout_plan_json = true;
-        configure_engine_resources(argv[0], layout_plan_json);
-    }
+/// Number of plates a Bambu/Orca project declares (one <plate> element each in
+/// Metadata/model_settings.config, which is what load_bbs_3mf builds its
+/// PlateData list from); 0 when the file declares none.
+static int count_3mf_plates(const std::string& path) {
+    std::string settings;
+    if (!read_zip_member(path, "Metadata/model_settings.config", settings))
+        return 0;
+    int plates = 0;
+    for (size_t pos = settings.find("<plate>"); pos != std::string::npos;
+         pos = settings.find("<plate>", pos + 7))
+        ++plates;
+    return plates;
+}
 
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-
-        if (arg == "-h" || arg == "--help") {
-            print_usage(argv[0]);
-            return 0;
-        } else if (arg == "-v" || arg == "--verbose") {
-            verbose = true;
-            Slic3r::set_logging_level(5);
-        } else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
-            output_file = argv[++i];
-        } else if (arg == "--machine" && i + 1 < argc) {
-            machine_config = argv[++i];
-        } else if (arg == "--filament" && i + 1 < argc) {
-            filament_config = argv[++i];
-        } else if (arg == "--process" && i + 1 < argc) {
-            process_config = argv[++i];
-        } else if (arg == "--config" && i + 1 < argc) {
-            bundle_config = argv[++i];
-        } else if (arg == "--layer-height" && i + 1 < argc) {
-            overrides["layer_height"] = argv[++i];
-        } else if (arg == "--infill" && i + 1 < argc) {
-            overrides["fill_density"] = argv[++i];
-        } else if (arg == "--perimeters" && i + 1 < argc) {
-            overrides["perimeters"] = argv[++i];
-        } else if (arg == "--nozzle" && i + 1 < argc) {
-            overrides["nozzle_diameter"] = argv[++i];
-        } else if (arg == "--temp" && i + 1 < argc) {
-            overrides["nozzle_temperature"] = argv[++i];
-        } else if (arg == "--bed-temp" && i + 1 < argc) {
-            overrides["bed_temperature"] = argv[++i];
-        } else if (arg == "--plate" && i + 1 < argc) {
-            plate_id = std::stoi(argv[++i]);
-        } else if (arg == "--input" && i + 1 < argc) {
-            input_file = argv[++i];
-        } else if (arg == "--no-normalize-legacy-gcode") {
-            normalize_legacy_gcode = false;
-        } else if (arg == "--calib-mode" && i + 1 < argc) {
-            calib_opts.mode = argv[++i];
-        } else if (arg == "--calib-start" && i + 1 < argc) {
-            calib_opts.start = parse_cli_double("--calib-start", argv[++i], argv[0]); calib_opts.has_start = true;
-        } else if (arg == "--calib-end" && i + 1 < argc) {
-            calib_opts.end = parse_cli_double("--calib-end", argv[++i], argv[0]); calib_opts.has_end = true;
-        } else if (arg == "--calib-step" && i + 1 < argc) {
-            calib_opts.step = parse_cli_double("--calib-step", argv[++i], argv[0]); calib_opts.has_step = true;
-        } else if (arg == "--calib-extruder-id" && i + 1 < argc) {
-            calib_opts.extruder_id = parse_cli_int("--calib-extruder-id", argv[++i], argv[0]);
-        } else if (arg == "--calib-no-numbers") {
-            calib_opts.print_numbers = false;
-        } else if (arg == "--layout" && i + 1 < argc) {
-            layout_json_file = argv[++i];
-        } else if (arg == "--layout-plan") {
-            layout_plan_mode = true;
-        } else if (arg[0] != '-') {
-            input_file = arg;
-        } else {
-            std::cerr << "Unknown option: " << arg << "\n";
-            print_usage(argv[0]);
-            return 1;
-        }
-    }
-
-    // cli #5: resolve the calibration mode/params up front so a bad --calib-*
-    // value fails fast with usage, before any model/config work.
-    Slic3r::Calib_Params calib_params;
-    try {
-        calib_params = slicer_cli::build_calib_params(calib_opts);
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n\n";
-        print_usage(argv[0]);
-        return 1;
-    }
+/// One slice of one plate: load the input, resolve its settings, slice and
+/// export G-code to `output_file`. This is the whole single-plate path the
+/// default call (`file [--plate N] -o out.gcode`) has always run; `--slice`
+/// runs it once per plate (the official CLI's plate loop, BambuStudio.cpp
+/// 6437-6505 at 5873b5f). The return value is the process exit code of the
+/// default call; `outcome` carries what `--slice` mode reports on top.
+static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params,
+                           int plate_id, const std::string& output_file, PlateOutcome& outcome) {
+    const std::string& input_file      = o.input_file;
+    const std::string& machine_config  = o.machine_config;
+    const std::string& filament_config = o.filament_config;
+    const std::string& process_config  = o.process_config;
+    const std::string& bundle_config   = o.bundle_config;
+    const bool verbose                 = o.verbose;
+    const bool normalize_legacy_gcode  = o.normalize_legacy_gcode;
+    const auto& overrides              = o.overrides;
     const bool calib_enabled       = calib_params.mode != Slic3r::CalibMode::Calib_None;
     const bool calib_self_geometry = slicer_cli::calib_mode_generates_geometry(calib_params.mode);
-
-#ifdef ENGINE_ORCA
-    // pressure_advance_pattern's geometry generator is ported only for the Bambu
-    // engine (Orca's CalibPressureAdvancePattern API differs); reject it cleanly
-    // here so the Orca binary fails fast instead of throwing from apply_pa_pattern.
-    if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
-        std::cerr << "Error: pressure_advance_pattern is not yet supported on the OrcaSlicer "
-                     "engine; use a tower or pressure_advance_line calib mode instead.\n";
-        return 1;
-    }
-#endif
-
-    // Detect conflicting layout flags
-    if (layout_plan_mode && !layout_json_file.empty()) {
-        std::cerr << "Error: --layout-plan and --layout are mutually exclusive\n";
-        return 1;
-    }
-
-    // --layout-plan: versioned headless arrange contract (issue #7)
-    if (layout_plan_mode) {
-        layout_plan::install_cancellation_handler();  // before input read: honor SIGINT during parse
-        json raw;
-        std::string input_data;
-        int fd = -1;
-        if (!input_file.empty()) {
-            // opening a FIFO blocks until a writer connects; loop on EINTR and
-            // treat it as a cancellation check point
-            bool cancelled = false;
-            for (;;) {
-                if (layout_plan::is_cancelled()) { cancelled = true; break; }
-#ifdef _WIN32
-                fd = ::_open(input_file.c_str(), _O_RDONLY | _O_BINARY);  // binary: no Ctrl+Z EOF, no newline translation
-#else
-                fd = ::open(input_file.c_str(), O_RDONLY);
-                if (fd < 0 && errno == EINTR) {
-                    if (layout_plan::is_cancelled()) { cancelled = true; break; }
-                    continue;
-                }
-#endif
-                break;
-            }
-            if (cancelled) {
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input open"}}}}.dump() << std::endl;
-                return 5;
-            }
-            if (fd < 0) {
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","cannot open --input file"}}}}.dump() << std::endl;
-                return 3;
-            }
-        } else {
-            fd = 0;  // stdin
-        }
-        // route --input through the same cancellable fd read loop as stdin so
-        // FIFOs/slow streams observe SIGINT/Ctrl+C with a bounded exit
-        int rrc = read_all_cancellable(fd, input_data);
-        if (fd > 0) {
-#ifdef _WIN32
-            ::_close(fd);
-#else
-            ::close(fd);
-#endif
-        }
-        if (rrc == 1) {
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
-            return 5;
-        }
-        if (rrc == 2) {
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","failed to read input stream"}}}}.dump() << std::endl;
-            return 3;
-        }
-        try { raw = json::parse(input_data); } catch (const std::exception& e) {
-            if (layout_plan::is_cancelled()) {  // SIGINT during the parse → cancel, not parse-error
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
-                return 5;
-            }
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
-            return 3;
-        }
-        if (layout_plan::is_cancelled()) {  // SIGINT during a large parse → CANCELLED, no continued work
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
-            return 5;
-        }
-        layout_plan::LayoutProblemV1 problem;
-        layout_plan::LayoutErrorV1   parse_err;
-        if (!layout_plan::parse_input(raw, problem, parse_err)) {
-            json err_json = {
-                {"schemaVersion", parse_err.SCHEMA_VERSION},
-                {"error", {
-                    {"code",    parse_err.error.code},
-                    {"message", parse_err.error.message}
-                }}
-            };
-            if (!parse_err.error.object_ids.empty())
-                err_json["error"]["object_ids"] = parse_err.error.object_ids;
-            std::cerr << err_json.dump() << std::endl;
-            return parse_err.error.code == "CANCELLED" ? 5 : 3;
-        }
-        boost::log::core::get()->set_logging_enabled(false);
-        return layout_plan::run_layout_plan(problem);
-    }
-
-    // --layout: headless arrange spike (issue #7 milestone 1)
-    if (!layout_json_file.empty()) {
-        std::ifstream lf(layout_json_file);
-        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON: " << layout_json_file << "\n"; return 1; }
-        json lj;
-        try { lj = json::parse(lf); } catch (const std::exception& e) {
-            std::cerr << "Failed to parse layout JSON: " << e.what() << "\n"; return 1;
-        }
-        std::string profiles_dir = lj.value("profilesDir", "");
-        while (!profiles_dir.empty() && profiles_dir.back() == '/') profiles_dir.pop_back();
-
-        Slic3r::DynamicPrintConfig cfg;
-        if (lj.contains("profiles")) {
-            if (profiles_dir.empty()) {
-                std::cerr << "profilesDir is required when profiles is specified\n";
-                return 1;
-            }
-            for (auto& [_, path] : lj["profiles"].items()) {
-                if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
-                    std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
-                    return 1;
-                }
-            }
-        }
-        using namespace Slic3r;
-        using namespace Slic3r::arrangement;
-
-        ArrangeParams params;
-#ifdef ENGINE_ORCA
-        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#else
-        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#endif
-
-        // Load all STLs into a single Model (one ModelObject per STL)
-        Model model;
-        if (!lj.contains("objects") || !lj["objects"].is_array()) {
-            std::cerr << "objects must be a JSON array\n";
-            return 1;
-        }
-        for (auto& obj : lj["objects"]) {
-            if (!obj.is_object()) {
-                std::cerr << "each object entry must be a JSON object\n";
-                return 1;
-            }
-            std::string stl_path = obj.value("stl", "");
-            if (stl_path.empty()) continue;
-            try {
-                Model m = Model::read_from_file(stl_path);
-                for (ModelObject* mo : m.objects) {
-                    ModelObject* new_obj = model.add_object(*mo);
-                    if (new_obj->instances.empty())
-                        new_obj->add_instance();
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "Failed to load " << stl_path << ": " << e.what() << "\n";
-                return 1;
-            }
-        }
-        params.min_obj_distance = scaled<coord_t>(lj.value("spacingMm", 10.0));
-        params.allow_rotations = lj.value("allowRotations", true);
-        params.do_final_align = lj.value("doFinalAlign", true);
-
-        // Use get_arrange_polys -> arrange pipeline (same as GUI ArrangeJob)
-        ModelInstancePtrs instances;
-        auto input = get_arrange_polys(model, instances);
-
-#ifdef ENGINE_ORCA
-        update_arrange_params(params, &cfg, input);
-        update_selected_items_inflation(input, &cfg, params);
-        Points bed_pts = get_shrink_bedpts(&cfg, params);
-#else
-        update_arrange_params(params, cfg, input);
-        update_selected_items_inflation(input, cfg, params);
-        Points bed_pts = get_shrink_bedpts(cfg, params);
-#endif
-        arrangement::arrange(input, {}, bed_pts, params);
-
-        // Apply results back to model instances
-        apply_arrange_polys(input, instances, [](ArrangePolygon&) {});
-
-        json out;
-        out["engine"] =
-        #ifdef ENGINE_ORCA
-            "orca";
-        #else
-            "bambu";
-        #endif
-        out["placements"] = json::array();
-        for (auto& ap : input) {
-            json p;
-            p["name"] = ap.name;
-            p["bed_idx"] = ap.bed_idx;
-            p["x_mm"] = unscaled<double>(ap.translation.x());
-            p["y_mm"] = unscaled<double>(ap.translation.y());
-            p["rotation_deg"] = ap.rotation * 180.0 / M_PI;
-            BoundingBox bb = ap.transformed_poly().contour.bounding_box();
-            p["cx_mm"] = unscaled<double>(bb.min.x() + bb.max.x()) / 2.0;
-            p["cy_mm"] = unscaled<double>(bb.min.y() + bb.max.y()) / 2.0;
-            out["placements"].push_back(p);
-        }
-        std::cout << out.dump() << std::endl;
-        return 0;
-
-    }
-    // ── Structured-diagnostics install point ───────────────────────────────
-    // Install only on the slicing path. Capabilities and --layout-plan require
-    // one JSON document. Legacy --layout can include engine text before its
-    // result; keep its existing output free of structured diagnostic events.
-    install_engine_log_bridge();
-
-    if (input_file.empty() && !calib_self_geometry) {
-        std::cerr << "Error: No input file specified\n\n";
-        print_usage(argv[0]);
-        return 1;
-    }
-    if (calib_self_geometry) {
-        // pressure_advance_pattern DISCARDS the loaded model and generates its own
-        // geometry, but it still needs a fully-resolved printer/filament/process
-        // config AND the 3MF's per-plate custom-gcode scaffolding. Require a real
-        // .3mf --input: a profile bundle alone is insufficient (its files load
-        // later with only a warning on failure, and no plate metadata is set up,
-        // so the pattern would silently slice the default/wrong printer). An STL
-        // supplies only geometry, which the pattern throws away.
-        //
-        // Mirror the loader's dispatch (it checks .stl FIRST), so a path like
-        // `part.3mf.stl` — which loads as STL — is NOT mistaken for a 3MF here.
-        const bool input_is_stl = input_file.find(".stl") != std::string::npos ||
-                                  input_file.find(".STL") != std::string::npos;
-        const bool input_is_3mf = !input_is_stl &&
-                                  (input_file.find(".3mf") != std::string::npos ||
-                                   input_file.find(".3MF") != std::string::npos);
-        if (!input_is_3mf) {
-            std::cerr << "Error: pressure_advance_pattern requires a .3mf --input for its "
-                         "printer/filament config (it discards the model geometry but reads the "
-                         "embedded config + plate setup; a profile bundle or STL is not "
-                         "sufficient)\n\n";
-            print_usage(argv[0]);
-            return 1;
-        }
-    }
-
-    std::cout << "libslic3r_standalone - Standalone slicing tool\n";
-    std::cout << "Based on BambuStudio libslic3r\n\n";
-
+    (void)outcome;
     try {
         // Create configuration BEFORE model loading so load_bbs_3mf can populate it
         // from the embedded Metadata/project_settings.config JSON.
@@ -2644,7 +2379,7 @@ int main(int argc, char** argv) {
                 // configure_engine_resources() resolved at startup, including
                 // the package-root layout. exe_dir is kept for the
                 // preset_resolution_failed diagnostic below.
-                const boost::filesystem::path exe_dir = engine_executable_dir(argv[0]);
+                const boost::filesystem::path exe_dir = engine_executable_dir(o.argv0.c_str());
                 const boost::filesystem::path profiles_dir = engine_profiles_dir(exe_dir);
 
                 bool preset_loaded = false;
@@ -3479,4 +3214,472 @@ int main(int argc, char** argv) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
+}
+
+/// --slice: every plate (0) or plate N of the input, one G-code each as
+/// <outputdir>/plate_N.gcode, through the same single-plate path the default
+/// call runs. The official loop stops at the first plate that fails
+/// (flush_and_exit inside the plate loop, BambuStudio.cpp 6533-7240), and so
+/// does this one. The exit status is the official CLI_* code of that failure.
+static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_params) {
+    namespace fs = boost::filesystem;
+    const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
+    std::vector<PlateOutcome> outcomes;
+    int code = 0;
+    std::string error_string;
+
+    try {
+        fs::create_directories(outdir);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: cannot create --outputdir " << outdir.string() << ": " << e.what() << "\n";
+        return CLI_ENVIRONMENT_ERROR;
+    }
+
+    // A project with plate metadata slices plate by plate; anything else (an
+    // STL, a 3MF without plates) is one plate holding every object — the
+    // official CLI resets plate_to_slice to 0 for a non-Bambu 3MF
+    // (BambuStudio.cpp 2192-2196).
+    int plate_count = 1;
+    bool per_plate_load = false;
+    if (input_is_3mf(o.input_file)) {
+        const int declared = count_3mf_plates(o.input_file);
+        if (declared > 0) {
+            plate_count = declared;
+            per_plate_load = true;
+        }
+    }
+    if (o.slice_plate > plate_count) {
+        std::cerr << "Error: --slice " << o.slice_plate << " but the file has only "
+                  << plate_count << " plate(s)\n";
+        emit_event({{"event","input_error"},
+                    {"tag","PlateOutOfRange"},
+                    {"requested_plate", o.slice_plate},
+                    {"plate_count", plate_count},
+                    {"message","--slice " + std::to_string(o.slice_plate) +
+                               " but the file has only " + std::to_string(plate_count) + " plate(s)"}});
+        return CLI_INVALID_PARAMS;
+    }
+
+    std::vector<int> plates;
+    if (o.slice_plate == 0)
+        for (int p = 1; p <= plate_count; ++p) plates.push_back(p);
+    else
+        plates.push_back(o.slice_plate);
+
+    for (size_t i = 0; i < plates.size(); ++i) {
+        PlateOutcome outcome;
+        outcome.plate_id    = plates[i];
+        outcome.plate_index = int(i) + 1;
+        outcome.plate_count = int(plates.size());
+        outcome.gcode_path  = (outdir / ("plate_" + std::to_string(plates[i]) + ".gcode")).string();
+        const int rc = slice_one_plate(o, calib_params, per_plate_load ? plates[i] : 0,
+                                       outcome.gcode_path, outcome);
+        if (rc != 0 && outcome.cli_code == 0)
+            outcome.cli_code = CLI_SLICING_ERROR;
+        outcomes.push_back(outcome);
+        if (outcome.cli_code != 0) {
+            code = outcome.cli_code;
+            error_string = outcome.error_string;
+            break;
+        }
+    }
+    (void)error_string;
+    return code;
+}
+
+static int run_cli_slice(const CliOptions& o, Slic3r::Calib_Params& calib_params) {
+    if (o.slice_mode)
+        return run_slice_mode(o, calib_params);
+    PlateOutcome outcome;
+    outcome.plate_id = o.plate_id;
+    return slice_one_plate(o, calib_params, o.plate_id, o.output_file, outcome);
+}
+
+int main(int argc, char** argv) {
+    // Initialize libslic3r
+    Slic3r::set_logging_level(3); // Info level
+    boost::log::core::get()->set_logging_enabled(true);
+
+    // Parse arguments
+    CliOptions o;
+    o.argv0 = argv[0];
+    std::string& input_file = o.input_file;
+    std::string& output_file = o.output_file;
+    std::string& machine_config = o.machine_config;
+    std::string& filament_config = o.filament_config;
+    std::string& process_config = o.process_config;
+    std::string& bundle_config = o.bundle_config;
+    bool& verbose = o.verbose;
+    int& plate_id = o.plate_id;  // 0 = all plates (default); >0 = slice only that plate
+    bool& normalize_legacy_gcode = o.normalize_legacy_gcode;
+    std::string layout_json_file;
+    bool        layout_plan_mode = false;
+    slicer_cli::CalibOptions calib_opts;
+    // Override settings
+
+    std::map<std::string, std::string>& overrides = o.overrides;
+
+
+    // subcommand: slicer_cli layout capabilities --json
+    if (argc >= 3 && std::string(argv[1]) == "layout" && std::string(argv[2]) == "capabilities") {
+        if (argc != 4 || std::string(argv[3]) != "--json") {
+            std::cerr << "Usage: " << argv[0] << " layout capabilities --json\n";
+            return 1;
+        }
+        layout_plan::install_cancellation_handler();  // ignore SIGPIPE so write failures surface as errors
+        boost::log::core::get()->set_logging_enabled(false);
+        return layout_plan::run_capabilities();
+    }
+
+    // Both engines read slice-time resources (info/, flush/, filament_mixing/)
+    // relative to this root, which depends on no argument: resolve it once here
+    // so the ENGINE_ORCA build gets it too, and so STL and calibration slices
+    // stop falling back to the hardcoded tables.
+    {
+        bool layout_plan_json = false;
+        for (int i = 1; i < argc; ++i)
+            if (std::string(argv[i]) == "--layout-plan")
+                layout_plan_json = true;
+        configure_engine_resources(argv[0], layout_plan_json);
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (arg == "-h" || arg == "--help") {
+            print_usage(argv[0]);
+            return 0;
+        } else if (arg == "-v" || arg == "--verbose") {
+            verbose = true;
+            Slic3r::set_logging_level(5);
+        } else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
+            output_file = argv[++i];
+        } else if (arg == "--machine" && i + 1 < argc) {
+            machine_config = argv[++i];
+        } else if (arg == "--filament" && i + 1 < argc) {
+            filament_config = argv[++i];
+        } else if (arg == "--process" && i + 1 < argc) {
+            process_config = argv[++i];
+        } else if (arg == "--config" && i + 1 < argc) {
+            bundle_config = argv[++i];
+        } else if (arg == "--layer-height" && i + 1 < argc) {
+            overrides["layer_height"] = argv[++i];
+        } else if (arg == "--infill" && i + 1 < argc) {
+            overrides["fill_density"] = argv[++i];
+        } else if (arg == "--perimeters" && i + 1 < argc) {
+            overrides["perimeters"] = argv[++i];
+        } else if (arg == "--nozzle" && i + 1 < argc) {
+            overrides["nozzle_diameter"] = argv[++i];
+        } else if (arg == "--temp" && i + 1 < argc) {
+            overrides["nozzle_temperature"] = argv[++i];
+        } else if (arg == "--bed-temp" && i + 1 < argc) {
+            overrides["bed_temperature"] = argv[++i];
+        } else if (arg == "--plate" && i + 1 < argc) {
+            plate_id = std::stoi(argv[++i]);
+        } else if (arg == "--input" && i + 1 < argc) {
+            input_file = argv[++i];
+        } else if (arg == "--no-normalize-legacy-gcode") {
+            normalize_legacy_gcode = false;
+        } else if (arg == "--calib-mode" && i + 1 < argc) {
+            calib_opts.mode = argv[++i];
+        } else if (arg == "--calib-start" && i + 1 < argc) {
+            calib_opts.start = parse_cli_double("--calib-start", argv[++i], argv[0]); calib_opts.has_start = true;
+        } else if (arg == "--calib-end" && i + 1 < argc) {
+            calib_opts.end = parse_cli_double("--calib-end", argv[++i], argv[0]); calib_opts.has_end = true;
+        } else if (arg == "--calib-step" && i + 1 < argc) {
+            calib_opts.step = parse_cli_double("--calib-step", argv[++i], argv[0]); calib_opts.has_step = true;
+        } else if (arg == "--calib-extruder-id" && i + 1 < argc) {
+            calib_opts.extruder_id = parse_cli_int("--calib-extruder-id", argv[++i], argv[0]);
+        } else if (arg == "--calib-no-numbers") {
+            calib_opts.print_numbers = false;
+        } else if (arg == "--layout" && i + 1 < argc) {
+            layout_json_file = argv[++i];
+        } else if (arg == "--layout-plan") {
+            layout_plan_mode = true;
+        } else if (arg == "--slice" && i + 1 < argc) {
+            // Official meaning (BambuStudio.cpp 6438 at 5873b5f): 0 = every
+            // plate, N = plate N; each written as plate_N.gcode in --outputdir.
+            o.slice_mode  = true;
+            o.slice_plate = parse_cli_int("--slice", argv[++i], argv[0]);
+            if (o.slice_plate < 0) {
+                std::cerr << "Error: --slice expects 0 (every plate) or a plate number\n\n";
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (arg == "--outputdir" && i + 1 < argc) {
+            o.outputdir = argv[++i];
+        } else if (arg[0] != '-') {
+            input_file = arg;
+        } else {
+            std::cerr << "Unknown option: " << arg << "\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    // cli #5: resolve the calibration mode/params up front so a bad --calib-*
+    // value fails fast with usage, before any model/config work.
+    Slic3r::Calib_Params calib_params;
+    try {
+        calib_params = slicer_cli::build_calib_params(calib_opts);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+    const bool calib_self_geometry = slicer_cli::calib_mode_generates_geometry(calib_params.mode);
+
+#ifdef ENGINE_ORCA
+    // pressure_advance_pattern's geometry generator is ported only for the Bambu
+    // engine (Orca's CalibPressureAdvancePattern API differs); reject it cleanly
+    // here so the Orca binary fails fast instead of throwing from apply_pa_pattern.
+    if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
+        std::cerr << "Error: pressure_advance_pattern is not yet supported on the OrcaSlicer "
+                     "engine; use a tower or pressure_advance_line calib mode instead.\n";
+        return 1;
+    }
+#endif
+
+    if (o.slice_mode && plate_id > 0) {
+        std::cerr << "Error: --plate and --slice are mutually exclusive; use --slice N for plate N\n";
+        return 1;
+    }
+
+    // Detect conflicting layout flags
+    if (layout_plan_mode && !layout_json_file.empty()) {
+        std::cerr << "Error: --layout-plan and --layout are mutually exclusive\n";
+        return 1;
+    }
+
+    // --layout-plan: versioned headless arrange contract (issue #7)
+    if (layout_plan_mode) {
+        layout_plan::install_cancellation_handler();  // before input read: honor SIGINT during parse
+        json raw;
+        std::string input_data;
+        int fd = -1;
+        if (!input_file.empty()) {
+            // opening a FIFO blocks until a writer connects; loop on EINTR and
+            // treat it as a cancellation check point
+            bool cancelled = false;
+            for (;;) {
+                if (layout_plan::is_cancelled()) { cancelled = true; break; }
+#ifdef _WIN32
+                fd = ::_open(input_file.c_str(), _O_RDONLY | _O_BINARY);  // binary: no Ctrl+Z EOF, no newline translation
+#else
+                fd = ::open(input_file.c_str(), O_RDONLY);
+                if (fd < 0 && errno == EINTR) {
+                    if (layout_plan::is_cancelled()) { cancelled = true; break; }
+                    continue;
+                }
+#endif
+                break;
+            }
+            if (cancelled) {
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input open"}}}}.dump() << std::endl;
+                return 5;
+            }
+            if (fd < 0) {
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","cannot open --input file"}}}}.dump() << std::endl;
+                return 3;
+            }
+        } else {
+            fd = 0;  // stdin
+        }
+        // route --input through the same cancellable fd read loop as stdin so
+        // FIFOs/slow streams observe SIGINT/Ctrl+C with a bounded exit
+        int rrc = read_all_cancellable(fd, input_data);
+        if (fd > 0) {
+#ifdef _WIN32
+            ::_close(fd);
+#else
+            ::close(fd);
+#endif
+        }
+        if (rrc == 1) {
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
+            return 5;
+        }
+        if (rrc == 2) {
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","failed to read input stream"}}}}.dump() << std::endl;
+            return 3;
+        }
+        try { raw = json::parse(input_data); } catch (const std::exception& e) {
+            if (layout_plan::is_cancelled()) {  // SIGINT during the parse → cancel, not parse-error
+                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
+                return 5;
+            }
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
+            return 3;
+        }
+        if (layout_plan::is_cancelled()) {  // SIGINT during a large parse → CANCELLED, no continued work
+            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
+            return 5;
+        }
+        layout_plan::LayoutProblemV1 problem;
+        layout_plan::LayoutErrorV1   parse_err;
+        if (!layout_plan::parse_input(raw, problem, parse_err)) {
+            json err_json = {
+                {"schemaVersion", parse_err.SCHEMA_VERSION},
+                {"error", {
+                    {"code",    parse_err.error.code},
+                    {"message", parse_err.error.message}
+                }}
+            };
+            if (!parse_err.error.object_ids.empty())
+                err_json["error"]["object_ids"] = parse_err.error.object_ids;
+            std::cerr << err_json.dump() << std::endl;
+            return parse_err.error.code == "CANCELLED" ? 5 : 3;
+        }
+        boost::log::core::get()->set_logging_enabled(false);
+        return layout_plan::run_layout_plan(problem);
+    }
+
+    // --layout: headless arrange spike (issue #7 milestone 1)
+    if (!layout_json_file.empty()) {
+        std::ifstream lf(layout_json_file);
+        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON: " << layout_json_file << "\n"; return 1; }
+        json lj;
+        try { lj = json::parse(lf); } catch (const std::exception& e) {
+            std::cerr << "Failed to parse layout JSON: " << e.what() << "\n"; return 1;
+        }
+        std::string profiles_dir = lj.value("profilesDir", "");
+        while (!profiles_dir.empty() && profiles_dir.back() == '/') profiles_dir.pop_back();
+
+        Slic3r::DynamicPrintConfig cfg;
+        if (lj.contains("profiles")) {
+            if (profiles_dir.empty()) {
+                std::cerr << "profilesDir is required when profiles is specified\n";
+                return 1;
+            }
+            for (auto& [_, path] : lj["profiles"].items()) {
+                if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
+                    std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
+                    return 1;
+                }
+            }
+        }
+        using namespace Slic3r;
+        using namespace Slic3r::arrangement;
+
+        ArrangeParams params;
+#ifdef ENGINE_ORCA
+        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#else
+        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
+        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
+#endif
+
+        // Load all STLs into a single Model (one ModelObject per STL)
+        Model model;
+        if (!lj.contains("objects") || !lj["objects"].is_array()) {
+            std::cerr << "objects must be a JSON array\n";
+            return 1;
+        }
+        for (auto& obj : lj["objects"]) {
+            if (!obj.is_object()) {
+                std::cerr << "each object entry must be a JSON object\n";
+                return 1;
+            }
+            std::string stl_path = obj.value("stl", "");
+            if (stl_path.empty()) continue;
+            try {
+                Model m = Model::read_from_file(stl_path);
+                for (ModelObject* mo : m.objects) {
+                    ModelObject* new_obj = model.add_object(*mo);
+                    if (new_obj->instances.empty())
+                        new_obj->add_instance();
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Failed to load " << stl_path << ": " << e.what() << "\n";
+                return 1;
+            }
+        }
+        params.min_obj_distance = scaled<coord_t>(lj.value("spacingMm", 10.0));
+        params.allow_rotations = lj.value("allowRotations", true);
+        params.do_final_align = lj.value("doFinalAlign", true);
+
+        // Use get_arrange_polys -> arrange pipeline (same as GUI ArrangeJob)
+        ModelInstancePtrs instances;
+        auto input = get_arrange_polys(model, instances);
+
+#ifdef ENGINE_ORCA
+        update_arrange_params(params, &cfg, input);
+        update_selected_items_inflation(input, &cfg, params);
+        Points bed_pts = get_shrink_bedpts(&cfg, params);
+#else
+        update_arrange_params(params, cfg, input);
+        update_selected_items_inflation(input, cfg, params);
+        Points bed_pts = get_shrink_bedpts(cfg, params);
+#endif
+        arrangement::arrange(input, {}, bed_pts, params);
+
+        // Apply results back to model instances
+        apply_arrange_polys(input, instances, [](ArrangePolygon&) {});
+
+        json out;
+        out["engine"] =
+        #ifdef ENGINE_ORCA
+            "orca";
+        #else
+            "bambu";
+        #endif
+        out["placements"] = json::array();
+        for (auto& ap : input) {
+            json p;
+            p["name"] = ap.name;
+            p["bed_idx"] = ap.bed_idx;
+            p["x_mm"] = unscaled<double>(ap.translation.x());
+            p["y_mm"] = unscaled<double>(ap.translation.y());
+            p["rotation_deg"] = ap.rotation * 180.0 / M_PI;
+            BoundingBox bb = ap.transformed_poly().contour.bounding_box();
+            p["cx_mm"] = unscaled<double>(bb.min.x() + bb.max.x()) / 2.0;
+            p["cy_mm"] = unscaled<double>(bb.min.y() + bb.max.y()) / 2.0;
+            out["placements"].push_back(p);
+        }
+        std::cout << out.dump() << std::endl;
+        return 0;
+
+    }
+    // ── Structured-diagnostics install point ───────────────────────────────
+    // Install only on the slicing path. Capabilities and --layout-plan require
+    // one JSON document. Legacy --layout can include engine text before its
+    // result; keep its existing output free of structured diagnostic events.
+    install_engine_log_bridge();
+
+    if (input_file.empty() && !calib_self_geometry) {
+        std::cerr << "Error: No input file specified\n\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+    if (calib_self_geometry) {
+        // pressure_advance_pattern DISCARDS the loaded model and generates its own
+        // geometry, but it still needs a fully-resolved printer/filament/process
+        // config AND the 3MF's per-plate custom-gcode scaffolding. Require a real
+        // .3mf --input: a profile bundle alone is insufficient (its files load
+        // later with only a warning on failure, and no plate metadata is set up,
+        // so the pattern would silently slice the default/wrong printer). An STL
+        // supplies only geometry, which the pattern throws away.
+        //
+        // Mirror the loader's dispatch (it checks .stl FIRST), so a path like
+        // `part.3mf.stl` — which loads as STL — is NOT mistaken for a 3MF here.
+        const bool input_is_stl = input_file.find(".stl") != std::string::npos ||
+                                  input_file.find(".STL") != std::string::npos;
+        const bool input_is_3mf = !input_is_stl &&
+                                  (input_file.find(".3mf") != std::string::npos ||
+                                   input_file.find(".3MF") != std::string::npos);
+        if (!input_is_3mf) {
+            std::cerr << "Error: pressure_advance_pattern requires a .3mf --input for its "
+                         "printer/filament config (it discards the model geometry but reads the "
+                         "embedded config + plate setup; a profile bundle or STL is not "
+                         "sufficient)\n\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    std::cout << "libslic3r_standalone - Standalone slicing tool\n";
+    std::cout << "Based on BambuStudio libslic3r\n\n";
+
+    return run_cli_slice(o, calib_params);
 }
