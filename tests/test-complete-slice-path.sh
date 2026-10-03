@@ -219,6 +219,26 @@ assert d["return_code"] != 0 and "export-3mf" in d["error_string"], d
 done
 echo "PASS: --export-3mf refuses the name of a file the run writes"
 
+# A 3MF without plate metadata slices as one plate, and its export carries
+# that plate's G-code (the official CLI always has plate 1).
+py '
+import re, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("noplates.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            data = re.sub(r"\s*<plate>.*?</plate>", "", data.decode(), flags=re.S).encode()
+            assert b"<plate>" not in data
+        zout.writestr(item, data)
+'
+run noplates "$B" noplates.3mf --slice 1 --outputdir noplates/out --export-3mf sliced.3mf
+[ "$(rc noplates)" = 0 ] || { show noplates; fail "plate-less 3MF --export-3mf exit $(rc noplates)"; }
+py '
+import zipfile; n = zipfile.ZipFile("noplates/out/sliced.3mf").namelist()
+assert "Metadata/plate_1.gcode" in n, n
+'
+echo "PASS: a plate-less 3MF exports with its plate G-code"
+
 # Presets by name with every parent applied (desktop result: 220 C, 200 mm/s
 # outer wall) and --arrange 1 centring the cube on the 180 mm A1 mini bed. Both engines.
 for e in bambu orca; do

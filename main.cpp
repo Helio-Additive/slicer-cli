@@ -5159,6 +5159,20 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 #endif
         }
         apply_command_line_overrides(config, o.overrides, /*report_rejections=*/false);
+        // A 3MF without plate metadata sliced as one plate holding every
+        // object: the official CLI's PartPlateList always has that plate and
+        // exports it (partplate_list.store_to_3mf_structure, BambuStudio.cpp
+        // 7483-7484, then export_project 8156), so the project gets plate 1
+        // here too, as the STL branch above builds it.
+        if (plates.empty() && !outcomes.empty() && outcomes.front().plate_id == 1 && outcomes.front().plate_data) {
+            auto* pd = new PlateData(*outcomes.front().plate_data);
+            pd->plate_index = 0;
+            pd->objects_and_instances.clear();
+            for (size_t oi = 0; oi < model.objects.size(); ++oi)
+                for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii)
+                    pd->objects_and_instances.emplace_back(int(oi), int(ii));
+            plates.push_back(pd);
+        }
         // The slice ran its custom G-code with the legacy placeholder aliased
         // (normalize_legacy_gcode_tokens, before print.apply); the project
         // states the same templates. The slice already reported the alias.
