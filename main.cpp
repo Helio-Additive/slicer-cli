@@ -5321,19 +5321,28 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         // current; result.json stays the verdict. Never the input itself:
         // the export reloads it. The official CLI only overwrites
         // (export_project to <outputdir>/NAME, BambuStudio.cpp 7509, 8156).
-        // Only an earlier export can be removed: a plain .3mf file name inside
-        // --outputdir, a regular file. A NAME with a directory part (such as
-        // ../other.txt) or another extension is never deleted; it is only
+        // Only an earlier export can be removed: a .3mf regular file that
+        // resolves (symlinks followed, ".." folded) to a place inside
+        // --outputdir, at any depth. A NAME that leaves --outputdir (such as
+        // ../other.txt) or has another extension is never deleted; it is only
         // overwritten by a successful export, as the official CLI does.
-        const fs::path name_path(o.export_3mf);
-        const bool plain_3mf_name = !name_path.has_parent_path() &&
-                                    boost::algorithm::iends_with(o.export_3mf, ".3mf");
+        const fs::path export_path = outdir / fs::path(o.export_3mf);
+        bool inside_outdir = false;
+        {
+            boost::system::error_code ec1, ec2;
+            const fs::path root = fs::weakly_canonical(outdir, ec1);
+            const fs::path where = fs::weakly_canonical(export_path, ec2);
+            if (!ec1 && !ec2) {
+                const fs::path rel = where.lexically_relative(root);
+                inside_outdir = !rel.empty() && rel.begin()->string() != ".." && rel.string() != ".";
+            }
+        }
         boost::system::error_code status_ec;
-        if (plain_3mf_name &&
-            fs::is_regular_file(fs::symlink_status(outdir / name_path, status_ec)) &&
+        if (inside_outdir && boost::algorithm::iends_with(o.export_3mf, ".3mf") &&
+            fs::is_regular_file(fs::symlink_status(export_path, status_ec)) &&
             !boost::algorithm::iequals(target, key(fs::path(o.input_file)))) {
             boost::system::error_code ignored;
-            fs::remove(outdir / name_path, ignored);
+            fs::remove(export_path, ignored);
         }
     }
 

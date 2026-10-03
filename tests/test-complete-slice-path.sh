@@ -249,6 +249,14 @@ run keep "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir keep/out --ex
 [ "$(cat keep/important.txt)" = keep ] || fail "a failed run deleted a file outside --outputdir"
 echo "PASS: a failed export run deletes nothing outside --outputdir"
 
+# An earlier export in a subfolder of --outputdir is cleared like one at the top.
+mkdir -p nested/out/projects
+echo "stale" > nested/out/projects/sliced.3mf
+run nested "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir nested/out --export-3mf projects/sliced.3mf
+[ "$(rc nested)" != 0 ] || fail "--layer-height -0.1 was sliced"
+[ ! -e nested/out/projects/sliced.3mf ] || fail "a stale nested sliced.3mf survived a failed run"
+echo "PASS: a stale export in a subfolder of --outputdir is cleared"
+
 # A 3MF without plate metadata slices as one plate, and its export carries
 # that plate's G-code (the official CLI always has plate 1).
 py '
