@@ -581,6 +581,7 @@ void print_usage(const char* prog_name) {
               << "                         --slice writes result.json there\n"
               << "  --info <file>          Print what the file is (printer, plates, maker app)\n"
               << "                         and which engine binary fits it, as JSON\n"
+              << "  --arrange <0|1>        1 = place the objects on the bed before slicing (with --slice)\n"
               << "  --allow-newer-file     Slice a 3MF saved by a newer app version than this engine\n"
               << "  --allow-substitution   Slice a 3MF whose settings hold values this engine does not\n"
               << "                         know, with the engine's substitutes (default: refused)\n"
@@ -2539,6 +2540,8 @@ struct CliOptions {
     // Official overrides of the refusals below (BambuStudio.cpp: allow_newer_file).
     bool        allow_newer_file   = false;
     bool        allow_substitution = false;
+    // --arrange 1: place the objects on the bed before slicing (official name).
+    bool        arrange = false;
 };
 
 /// What one plate's slice produced, in the shape the official CLI records per
@@ -2803,6 +2806,99 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
         emit_event({{"event","plate_error"}, {"tag","NoObjectInsideBed"}, {"message", detail}});
         return false;
     }
+    return true;
+}
+
+
+/// --arrange 1: place every object of the plate on the printer's bed, with the
+/// arrange kernel `--layout-plan` already uses (get_arrange_polys ->
+/// update_arrange_params -> update_selected_items_inflation ->
+/// get_shrink_bedpts -> arrangement::arrange, the GUI ArrangeJob pipeline,
+/// layout_plan.cpp 624-744), then sit each object on the bed. An object
+/// larger than the bed is refused first, with the official -50 sentence plus
+/// its size against the bed; objects that do not fit together are refused
+/// with the official arrange sentence (-21, BambuStudio.cpp 5938-5944).
+/// Rotations stay off, as in Bambu Studio's Arrange by default.
+static bool arrange_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                           PlateOutcome& outcome) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    const auto* area = config.option<ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 3) {
+        set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, "The printer states no bed shape (printable_area).");
+        return false;
+    }
+    BoundingBoxf bed;
+    for (const Vec2d& pt : area->values) bed.merge(pt);
+    const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    for (ModelObject* object : model.objects) {
+        object->ensure_on_bed();
+        const BoundingBoxf3 box = object_world_bbox(object);
+        const Vec3d size = box.size();
+        const bool too_wide = size.x() > bed.size().x() + EPSILON || size.y() > bed.size().y() + EPSILON;
+        const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
+        if (too_wide || too_tall) {
+            const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
+                                       "; the bed is " + bed_size_text(config) + ".";
+            set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
+            emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
+                        {"object", object->name}, {"message", detail}});
+            return false;
+        }
+    }
+
+    ArrangeParams params;
+    double clearance = 1.0;
+    if (config.has("extruder_clearance_max_radius")) {
+        const double v = config.opt_float("extruder_clearance_max_radius");
+        if (v > 0) clearance = v;
+    }
+#ifdef ENGINE_ORCA
+    params.clearance_radius = clearance;
+#else
+    params.cleareance_radius = clearance;
+#endif
+    params.progressind      = [](unsigned, std::string) {};
+    params.min_obj_distance = scaled<coord_t>(10.0);
+    params.allow_rotations  = false;
+    params.do_final_align   = true;
+
+    ModelInstancePtrs instances;
+    ArrangePolygons input = get_arrange_polys(model, instances);
+#ifdef ENGINE_ORCA
+    update_arrange_params(params, &config, input);
+    update_selected_items_inflation(input, &config, params);
+    Points bed_pts = get_shrink_bedpts(&config, params);
+#else
+    update_arrange_params(params, config, input);
+    update_selected_items_inflation(input, config, params);
+    Points bed_pts = get_shrink_bedpts(config, params);
+#endif
+    arrangement::arrange(input, {}, bed_pts, params);
+
+    std::string off_bed;
+    for (const ArrangePolygon& ap : input)
+        if (ap.bed_idx != 0)
+            off_bed += (off_bed.empty() ? "'" : ", '") + ap.name + "'";
+    if (!off_bed.empty()) {
+        const std::string detail = "These objects do not fit on the " + bed_size_text(config) +
+                                   " bed together: " + off_bed + ".";
+        set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, detail);
+        emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
+        return false;
+    }
+    apply_arrange_polys(input, instances, [](ArrangePolygon&) {});
+    for (ModelObject* object : model.objects)
+        object->ensure_on_bed();
+    json placed = json::array();
+    for (const ModelObject* object : model.objects) {
+        const BoundingBoxf3 box = object_world_bbox(object);
+        placed.push_back(json{{"object", object->name},
+                              {"center_x_mm", box.center().x()}, {"center_y_mm", box.center().y()}});
+    }
+    emit_event({{"event","arranged"}, {"tag","ObjectsArranged"}, {"objects", placed},
+                {"message","Placed " + std::to_string(model.objects.size()) + " object(s) on the " +
+                           bed_size_text(config) + " bed"}});
     return true;
 }
 
@@ -3944,8 +4040,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // object fully inside is refused; objects wholly outside are left
         // out of the print, as the official CLI's apply() leaves them out.
         if (o.slice_mode && !calib_self_geometry) {
-            if (!check_objects_inside_bed(model, config, outcome))
+            if (o.arrange && !arrange_on_bed(model, config, outcome)) {
+                std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
+            }
+            if (!check_objects_inside_bed(model, config, outcome)) {
+                std::cerr << "Error: " << outcome.error_string << "\n";
+                return 1;
+            }
         }
 
         // Initialize print
@@ -4538,6 +4640,8 @@ int main(int argc, char** argv) {
             o.outputdir = argv[++i];
         } else if (arg == "--progress") {
             o.progress = true;
+        } else if (arg == "--arrange" && i + 1 < argc) {
+            o.arrange = parse_cli_int("--arrange", argv[++i], argv[0]) != 0;
         } else if (arg == "--allow-newer-file") {
             o.allow_newer_file = true;
         } else if (arg == "--allow-substitution") {
@@ -4582,6 +4686,10 @@ int main(int argc, char** argv) {
         return run_info(o.argv0, info_file);
     }
 
+    if (o.arrange && !o.slice_mode) {
+        std::cerr << "Error: --arrange needs --slice (the official CLI arranges inside its plate loop)\n";
+        return 1;
+    }
     if (o.slice_mode)
         o.progress = true;   // --slice reports progress like the official --pipe
     if (o.slice_mode && plate_id > 0) {
