@@ -106,23 +106,26 @@ jobs:
           sudo mkdir -p /opt/slicer-cli/boost-1.84.0
           sudo chown -R "$USER" /opt/slicer-cli/boost-1.84.0
 
+      # The engine's Boost patch lives in the BambuStudio submodule. The checkout
+      # runs before the cache lookup because the cache key hashes that patch:
+      # hashFiles() returns '' for a missing file, so a lookup without the
+      # sources would key on nothing and never match the build jobs' restore.
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
       - name: Cache Boost 1.84.0
         id: cache-linux-boost
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/boost-1.84.0
-          # Bump -v1 whenever the Boost version, CMake args, or the engine's Boost
-          # patch change: those inputs are not part of the key, so a stale entry
-          # would otherwise keep serving a prefix built from the old recipe.
-          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-v1
-
-      # The engine's Boost patch lives in the BambuStudio submodule, and nothing
-      # else in this job needs the sources, so the checkout rides on the cache miss.
-      - name: Checkout (with submodules)
-        if: steps.cache-linux-boost.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+          # The engine's Boost patch is hashed into the key, so a submodule bump
+          # that changes it rebuilds the prefix. Bump -v1 by hand whenever the
+          # Boost version or the CMake args in "Build Boost 1.84.0" change. The
+          # build jobs' "Restore Boost 1.84.0 (Linux)" steps must use this exact
+          # key, and their Configure steps re-check the marker's hashes.
+          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
 
       - name: Build Boost 1.84.0
         if: steps.cache-linux-boost.outputs.cache-hit != 'true'
@@ -339,7 +342,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/boost-1.84.0
-          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-v1
+          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
 
       - name: Download pinned libnoise prefix (Linux)
         if: runner.os == 'Linux'
@@ -589,8 +592,16 @@ jobs:
             # than silently link a different version.
             BOOST_PREFIX=/opt/slicer-cli/boost-1.84.0
             BOOST_MARKER="$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete"
-            if ! { test -r "$BOOST_MARKER" && grep -qx 'version=1.84.0' "$BOOST_MARKER" && grep -qx 'library_type=static' "$BOOST_MARKER"; }; then
-              echo "missing pinned Boost 1.84.0 static prefix at $BOOST_PREFIX"
+            # The marker must match this checkout's Boost inputs, not only the
+            # version: a prefix built from another tarball or another engine
+            # patch is stale even though it is still Boost 1.84.0.
+            BOOST_PATCH_SHA256="$(sha256sum references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch | awk '{print $1}')"
+            if ! { test -r "$BOOST_MARKER" && grep -qx 'version=1.84.0' "$BOOST_MARKER" && grep -qx 'library_type=static' "$BOOST_MARKER" \
+                   && grep -qx 'source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95' "$BOOST_MARKER" \
+                   && grep -qx "patch_sha256=$BOOST_PATCH_SHA256" "$BOOST_MARKER"; }; then
+              echo "missing or stale pinned Boost 1.84.0 static prefix at $BOOST_PREFIX"
+              echo "want source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95 patch_sha256=$BOOST_PATCH_SHA256; marker has:"
+              cat "$BOOST_MARKER" 2>/dev/null || echo "(no marker)"
               exit 1
             fi
             CMAKE_PREFIXES="$BOOST_PREFIX;$ENGINE_LIBNOISE_PREFIX;$CMAKE_PREFIXES"
@@ -947,7 +958,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/boost-1.84.0
-          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-v1
+          key: linux-x86_64-boost-1.84.0-static-ubuntu-22.04-${{ hashFiles('references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch') }}-v1
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -1164,8 +1175,16 @@ jobs:
             [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
             BOOST_PREFIX=/opt/slicer-cli/boost-1.84.0
             BOOST_MARKER="$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete"
-            if ! { test -r "$BOOST_MARKER" && grep -qx 'version=1.84.0' "$BOOST_MARKER" && grep -qx 'library_type=static' "$BOOST_MARKER"; }; then
-              echo "missing pinned Boost 1.84.0 static prefix at $BOOST_PREFIX (provisioned by the linux-boost job)"
+            # The marker must match this checkout's Boost inputs, not only the
+            # version: a prefix built from another tarball or another engine
+            # patch is stale even though it is still Boost 1.84.0.
+            BOOST_PATCH_SHA256="$(sha256sum references/BambuStudio/deps/Boost/0001-FIX-OBS-cannot-start-streaming-on-MAC.patch | awk '{print $1}')"
+            if ! { test -r "$BOOST_MARKER" && grep -qx 'version=1.84.0' "$BOOST_MARKER" && grep -qx 'library_type=static' "$BOOST_MARKER" \
+                   && grep -qx 'source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95' "$BOOST_MARKER" \
+                   && grep -qx "patch_sha256=$BOOST_PATCH_SHA256" "$BOOST_MARKER"; }; then
+              echo "missing or stale pinned Boost 1.84.0 static prefix at $BOOST_PREFIX (provisioned by the linux-boost job)"
+              echo "want source_sha256=4d27e9efed0f6f152dc28db6430b9d3dfb40c0345da7342eaa5a987dde57bd95 patch_sha256=$BOOST_PATCH_SHA256; marker has:"
+              cat "$BOOST_MARKER" 2>/dev/null || echo "(no marker)"
               exit 1
             fi
             CMAKE_PREFIXES="$BOOST_PREFIX;/opt/homebrew;/usr/local;/usr/lib/x86_64-linux-gnu/cmake/opencascade;/usr/share/opencascade"
