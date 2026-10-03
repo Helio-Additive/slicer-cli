@@ -227,6 +227,19 @@ assert d["return_code"] != 0 and "export-3mf" in d["error_string"], d
 done
 echo "PASS: --export-3mf refuses the name of a file the run writes"
 
+# A command-line override is range-checked like the file's values, and a run
+# that fails leaves no earlier run's project at the --export-3mf name.
+mkdir -p badlh/out
+echo "stale" > badlh/out/sliced.3mf
+run badlh "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir badlh/out --export-3mf sliced.3mf
+[ "$(rc badlh)" != 0 ] || fail "--layer-height -0.1 was sliced"
+py '
+import json; d = json.load(open("badlh/out/result.json"))
+assert d["return_code"] != 0 and "layer_height" in d["error_string"], d
+'
+[ ! -e badlh/out/sliced.3mf ] || fail "a stale sliced.3mf survived a failed run"
+echo "PASS: a bad override is refused before slicing; no stale project is left"
+
 # A 3MF without plate metadata slices as one plate, and its export carries
 # that plate's G-code (the official CLI always has plate 1).
 py '

@@ -4224,8 +4224,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // driver pads any vector. Out-of-range values are refused, each named
         // with the engine's own sentence ("tree_support_wall_count: -1 not in
         // range [0,2]").
+        // The official check runs after the command line is applied
+        // (m_print_config.apply(m_extra_config) at BambuStudio.cpp 4091,
+        // OrcaSlicer.cpp 3542), so a command-line override is range-checked
+        // too. The overrides themselves still land where they always have
+        // (further down); here they go onto a copy for the check only, and
+        // without overrides the check reads `config` as before.
         if (!calib_self_geometry) {
-            const std::map<std::string, std::string> validity = config.validate(true);
+            std::unique_ptr<Slic3r::DynamicPrintConfig> with_overrides;
+            if (!overrides.empty()) {
+                with_overrides = std::make_unique<Slic3r::DynamicPrintConfig>(config);
+                apply_command_line_overrides(*with_overrides, overrides, /*report_rejections=*/false);
+            }
+            const std::map<std::string, std::string> validity =
+                (with_overrides ? *with_overrides : config).validate(true);
             if (!validity.empty() || !unknown_values.empty()) {
                 // One refusal naming every value at once: unknown enum
                 // values first, then the engine's range findings.
@@ -5303,6 +5315,15 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             std::cerr << "Error: " << detail << "\n";
             emit_event({{"event","input_error"}, {"tag","ExportNameTaken"}, {"message", detail}});
             return CLI_INVALID_PARAMS;
+        }
+        // The project this run exports starts absent, so a run that fails
+        // (no export) cannot leave an earlier run's archive at NAME looking
+        // current; result.json stays the verdict. Never the input itself:
+        // the export reloads it. The official CLI only overwrites
+        // (export_project to <outputdir>/NAME, BambuStudio.cpp 7509, 8156).
+        if (!boost::algorithm::iequals(target, key(fs::path(o.input_file)))) {
+            boost::system::error_code ignored;
+            fs::remove(outdir / o.export_3mf, ignored);
         }
     }
 
