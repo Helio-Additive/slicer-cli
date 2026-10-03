@@ -1911,13 +1911,17 @@ static int parse_cli_int(const char* flag, const char* val, const char* prog) {
     }
 }
 
+/// The input's kind by its final extension, any case, as both official
+/// CLIs and their loaders tell files apart (boost::algorithm::iends_with:
+/// BambuStudio.cpp 1873 and Model.cpp 326 at 5873b5f; OrcaSlicer.cpp 1555
+/// and Model.cpp 278 at 31f6803). A folder named "x.stl" or a file named
+/// "a.3mf.bak" no longer counts.
 static bool input_is_stl(const std::string& path) {
-    return path.find(".stl") != std::string::npos || path.find(".STL") != std::string::npos;
+    return boost::algorithm::iends_with(path, ".stl");
 }
 
 static bool input_is_3mf(const std::string& path) {
-    return !input_is_stl(path) &&
-           (path.find(".3mf") != std::string::npos || path.find(".3MF") != std::string::npos);
+    return boost::algorithm::iends_with(path, ".3mf");
 }
 
 /// Reads one member of a zip archive (case-insensitive name, either slash).
@@ -3648,16 +3652,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         bool explicit_config_supplied_nozzle_map = false;
 #endif
 
-        if (input_file.find(".stl") != std::string::npos ||
-            input_file.find(".STL") != std::string::npos) {
+        if (input_is_stl(input_file)) {
             bool result = Slic3r::load_stl(input_file.c_str(), &model);
             if (!result) {
                 std::cerr << "Failed to load STL file\n";
                 set_outcome_failure(outcome, CLI_DATA_FILE_ERROR);
                 return 1;
             }
-        } else if (input_file.find(".3mf") != std::string::npos ||
-                   input_file.find(".3MF") != std::string::npos) {
+        } else if (input_is_3mf(input_file)) {
 #ifdef ENGINE_BAMBU
             Slic3r::ConfigOptionInts accepted_3mf_nozzle_map(
                 config.option<Slic3r::ConfigOptionInts>("filament_nozzle_map", true)->values);
@@ -5304,6 +5306,18 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         }
     }
 
+    // Every plate this run will slice starts without a G-code in
+    // --outputdir: a plate that fails before export_gcode must not leave
+    // plate_N.gcode from an earlier run looking current. The official CLI
+    // only overwrites (export to <outputdir>/plate_N.gcode, BambuStudio.cpp
+    // 7170-7186; flush_and_exit removes backups only, 458-473); result.json
+    // stays the verdict, and a G-code written by this run is kept.
+    for (int p = (o.slice_plate == 0 ? 1 : o.slice_plate);
+         p <= (o.slice_plate == 0 ? plate_count : o.slice_plate); ++p) {
+        boost::system::error_code ignored;
+        fs::remove(outdir / ("plate_" + std::to_string(p) + ".gcode"), ignored);
+    }
+
     const auto run_started = std::chrono::steady_clock::now();
     if (o.progress) {
         PlateOutcome preparing;
@@ -5828,14 +5842,9 @@ int main(int argc, char** argv) {
         // so the pattern would silently slice the default/wrong printer). An STL
         // supplies only geometry, which the pattern throws away.
         //
-        // Mirror the loader's dispatch (it checks .stl FIRST), so a path like
-        // `part.3mf.stl` — which loads as STL — is NOT mistaken for a 3MF here.
-        const bool input_is_stl = input_file.find(".stl") != std::string::npos ||
-                                  input_file.find(".STL") != std::string::npos;
-        const bool input_is_3mf = !input_is_stl &&
-                                  (input_file.find(".3mf") != std::string::npos ||
-                                   input_file.find(".3MF") != std::string::npos);
-        if (!input_is_3mf) {
+        // The loader's own test (input_is_3mf: the final extension), so a
+        // path like `part.3mf.stl` — which loads as STL — is NOT a 3MF here.
+        if (!input_is_3mf(input_file)) {
             std::cerr << "Error: pressure_advance_pattern requires a .3mf --input for its "
                          "printer/filament config (it discards the model geometry but reads the "
                          "embedded config + plate setup; a profile bundle or STL is not "

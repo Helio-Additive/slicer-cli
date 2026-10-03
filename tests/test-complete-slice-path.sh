@@ -103,6 +103,14 @@ py '
 import json; d = json.load(open("info-u1.json"))
 assert d["fits"] == ["slicer_cli-orcaslicer"], d
 '
+# The kind comes from the final extension, any case, not from a folder name.
+mkdir -p "dir.stl"
+cp "$FIXTURE" "dir.stl/Project.3Mf"
+"$B" --info "dir.stl/Project.3Mf" > info-ext.json
+py '
+import json; d = json.load(open("info-ext.json"))
+assert d["kind"] == "3mf" and d["printer_model"] == "Bambu Lab X1 Carbon", d
+'
 echo "PASS: --info names the printer and the engine that fits"
 
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
@@ -325,8 +333,12 @@ grep -q 'use slicer_cli (BambuStudio)' orca-newer/stderr || { show orca-newer; f
 echo "PASS: Orca refuses a newer Bambu Studio file, naming slicer_cli"
 
 # Cross-engine values on the Orca build: out-of-range and unknown values refused in one sentence.
+# A G-code left from an earlier run in the same --outputdir must not survive a failed plate.
+mkdir -p orca-values/out
+echo "; stale" > orca-values/out/plate_1.gcode
 run orca-values "$O" "$FIXTURE" --slice 1 --allow-newer-file --outputdir orca-values/out
 [ "$(rc orca-values)" != 0 ] || fail "Orca sliced a file with values it does not have"
+[ ! -e orca-values/out/plate_1.gcode ] || fail "a stale plate_1.gcode survived a failed plate"
 grep -q 'tree_support_wall_count: -1 not in range' orca-values/stderr || { show orca-values; fail "no range refusal"; }
 grep -q "'ensure_vertical_shell_thickness' is 'enabled'" orca-values/stderr || { show orca-values; fail "no unknown-value refusal"; }
 echo "PASS: Orca refuses out-of-range and unknown values, naming each"
