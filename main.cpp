@@ -591,8 +591,9 @@ void print_usage(const char* prog_name) {
               << "                         settings per plate) as <outputdir>/<name>\n"
               << "  --arrange <0|1>        1 = place the objects on the bed before slicing (with --slice)\n"
               << "  --allow-newer-file     Slice a 3MF saved by a newer app version than this engine\n"
-              << "  --allow-substitution   Slice a 3MF whose settings hold values this engine does not\n"
-              << "                         know, with the engine's substitutes (default: refused)\n"
+              << "  --allow-substitution   With --slice: slice a 3MF whose settings hold values this\n"
+              << "                         engine does not know, with the engine's substitutes\n"
+              << "                         (--slice refuses them; the default call substitutes)\n"
               << "  --progress             Progress events ({\"event\":\"progress\",...}); on with --slice\n"
               << "  --no-normalize-legacy-gcode  Do NOT alias unbound legacy placeholder\n"
               << "                         tokens (e.g. initial_no_support_filament_id) in\n"
@@ -3639,7 +3640,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // substitutions: those are the ones where the engine swapped in
             // its own default for a word it does not know. --allow-substitution
             // keeps the old behaviour (slice with the engine's substitute).
-            if (!o.allow_substitution) {
+            // Step 0 (2026-10-03 corpus): the product's own Mode A retarget of
+            // an OrcaSlicer-made project to a Bambu printer still carries
+            // Orca words (ensure_all, rectilinear) that the default call has
+            // always substituted. The product's call must not change, so the
+            // refusal is part of the --slice mode only.
+            if (o.slice_mode && !o.allow_substitution) {
                 std::vector<std::string>& refused = unknown_values;
                 json& items = unknown_items;
                 for (const auto& sub : config_subst.substitutions) {
