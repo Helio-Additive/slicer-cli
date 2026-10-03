@@ -71,6 +71,24 @@ def rewrite(dst, settings=None, app=None):
 rewrite("pct.3mf", settings={"skin_infill_line_width": "100%", "support_line_width": "105%"})
 rewrite("u1.3mf", settings={"printer_model": "Snapmaker U1"})
 rewrite("newer.3mf", app="BambuStudio-99.01.00.00")
+
+# Two plates, the cube on plate 2. The desktop lays plates out in a grid:
+# 2 plates -> 2 columns, stride = 256 mm bed * 1.2, so plate 2 starts at
+# x = 307.2 and the cube saved at (128, 128) on it is stored at (435.2, 128).
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("two-plates.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "3D/3dmodel.model":
+            data = data.replace(b"127.999992 127.999992 12.8000002", b"435.199992 127.999992 12.8000002")
+        if item.filename == "Metadata/model_settings.config":
+            text = data.decode()
+            start = text.index("  <plate>"); end = text.index("  </plate>") + len("  </plate>\n")
+            plate = text[start:end]
+            empty = re.sub(r"    <model_instance>.*?</model_instance>\n", "", plate, flags=re.S)
+            second = plate.replace("key=\"plater_id\" value=\"1\"", "key=\"plater_id\" value=\"2\"")
+            text = text[:start] + empty + second + text[end:]
+            data = text.encode()
+        zout.writestr(item, data)
 '
 
 # --info names the printer and the binaries that have it.
@@ -99,6 +117,23 @@ assert p["id"] == 1 and p["total_predication"] > 0 and p["objects"], p
 '
 grep -q '"event":"progress".*"percent":100' slice/stdout || fail "no progress event at 100"
 echo "PASS: --slice writes plate_1.gcode, result.json and progress events"
+
+# Parts stay where the maker put them: the fixture's 25.6 mm cube is saved
+# centred at (128, 128), so its box starts at (115.2, 115.2). The plate's own
+# plate_1.json describes another part; it must not move the cube.
+py '
+import json, sys
+o = json.load(open(sys.argv[1]))["sliced_plates"][0]["objects"][0]["bbox"]
+assert abs(o["x"] - 115.2) < 0.5 and abs(o["y"] - 115.2) < 0.5, o
+' slice/out/result.json
+run plate2 "$B" two-plates.3mf --slice 2 --outputdir plate2/out
+[ "$(rc plate2)" = 0 ] || { show plate2; fail "plate 2 of a two-plate file exit $(rc plate2)"; }
+py '
+import json, sys
+o = json.load(open(sys.argv[1]))["sliced_plates"][0]["objects"][0]["bbox"]
+assert abs(o["x"] - 115.2) < 0.5 and abs(o["y"] - 115.2) < 0.5, o
+' plate2/out/result.json
+echo "PASS: plates keep the maker's positions (plate grid origin, no corner snap)"
 
 # --export-3mf: the sliced project carries the plate G-code.
 run export "$B" "$FIXTURE" --slice 1 --outputdir export/out --export-3mf sliced.3mf

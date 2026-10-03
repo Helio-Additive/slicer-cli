@@ -3449,6 +3449,33 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
     return 0;
 }
 
+/// The scene origin of plate `index` (0-based) in a project of `plate_count`
+/// plates, as the desktop's PartPlateList lays them out (see the call site).
+static Slic3r::Vec2d plate_grid_origin(const Slic3r::DynamicPrintConfig& file_config,
+                                       const Slic3r::Semver& file_version, int index, int plate_count)
+{
+    if (index <= 0 || plate_count <= 1)
+        return Slic3r::Vec2d::Zero();
+    const auto* area = file_config.option<Slic3r::ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 4)
+        return Slic3r::Vec2d::Zero();
+    double width = (int)(area->values[2].x() - area->values[0].x());
+    double depth = (int)(area->values[2].y() - area->values[0].y());
+    if (file_version.maj() + file_version.min() + file_version.patch() > 0 &&
+        file_version < Slic3r::Semver(1, 5, 9)) {
+        // + bed3d_ax3s_default_tip_radius, through reset_size(int, int, ...).
+        width = (int)(width + 2.5f * 0.5f);
+        depth = (int)(depth + 2.5f * 0.5f);
+    }
+    // compute_colum_count (PartPlate.hpp:38).
+    const float value = std::sqrt((float)plate_count);
+    const float round_value = std::round(value);
+    const int cols = value > round_value ? (int)round_value + 1 : (int)round_value;
+    const int row = index / cols, col = index % cols;
+    const double gap = 1. / 5.;   // LOGICAL_PART_PLATE_GAP
+    return Slic3r::Vec2d(col * width * (1. + gap), -row * depth * (1. + gap));
+}
+
 /// One slice of one plate: load the input, resolve its settings, slice and
 /// export G-code to `output_file`. This is the whole single-plate path the
 /// default call (`file [--plate N] -o out.gcode`) has always run; `--slice`
@@ -3737,67 +3764,57 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
 
             // ── Multi-plate coordinate translation ───────────────────────
-            // Multi-plate 3MFs store objects at global positions (plate N
-            // offset by N * plate_stride from the global origin).  When slicing
-            // a specific plate, translate objects back to plate-local coords
-            // so they land within the printer's build volume.
-            // Strategy:
-            //   1. If plate_N.json exists in the 3MF, use its bbox_all to get
-            //      the expected plate-local min coords and apply that offset.
-            //   2. If no JSON exists for this plate, translate so the objects'
-            //      bounding box starts at (0, 0) — i.e. snap to bed origin.
+            // A Bambu/Orca 3MF stores every object at its scene position: plate
+            // i (0-based) sits at the grid origin the desktop's PartPlateList
+            // gives it, and the CLI slices that plate with its print origin set
+            // there.  Port of that rule (pins 5873b5f / 31f6803):
+            //   - plate size = (int)(printable_area[2] - printable_area[0]) from
+            //     the FILE's config (BambuStudio.cpp 2054-2056), plus
+            //     bed3d_ax3s_default_tip_radius (2.5 * 0.5 mm) for files older
+            //     than 1.5.9 (BambuStudio.cpp 1911-1914, 4316-4318; OrcaSlicer.cpp
+            //     3727-3729);
+            //   - cols = compute_colum_count(plate count) (PartPlate.hpp:38);
+            //   - origin(i) = (col * w * 1.2, -row * d * 1.2) with
+            //     LOGICAL_PART_PLATE_GAP = 1/5 (PartPlate.cpp:55, 4343-4355, 5240-5254).
+            // We keep the print origin at 0 and move the objects by -origin, which
+            // is the same placement.  The objects stay where the maker put them on
+            // their plate: no snap to the bed corner, no plate_N.json bbox guess
+            // (both moved parts, and on beds with an exclusion area the corner
+            // snap pushed them into it).
             if (plate_id > 0 && is_bbl_3mf && !model.objects.empty()) {
-                // Compute actual model bounding box (with instance transforms)
-                Slic3r::BoundingBoxf3 actual_bbox;
-                for (auto* obj : model.objects) {
-                    for (size_t i = 0; i < obj->instances.size(); i++) {
-                        actual_bbox.merge(obj->instance_bounding_box(i));
-                    }
-                }
-
-                double expected_min_x = 0.0;
-                double expected_min_y = 0.0;
                 bool is_seq_print_plate = false;
-
-                mz_zip_archive zip;
-                mz_zip_zero_struct(&zip);
-                if (Slic3r::open_zip_reader(&zip, input_file)) {
-                    std::string plate_json_path = "Metadata/plate_" + std::to_string(plate_id) + ".json";
-                    int file_idx = mz_zip_reader_locate_file(&zip, plate_json_path.c_str(), nullptr, 0);
-                    if (file_idx >= 0) {
-                        mz_zip_archive_file_stat stat;
-                        if (mz_zip_reader_file_stat(&zip, file_idx, &stat)) {
-                            std::string content(stat.m_uncomp_size, '\0');
-                            mz_zip_reader_extract_to_mem(&zip, file_idx, content.data(), content.size(), 0);
-                            try {
-                                auto plate_json = json::parse(content);
-                                if (plate_json.contains("bbox_all") && plate_json["bbox_all"].size() >= 4) {
-                                    expected_min_x = plate_json["bbox_all"][0].get<double>();
-                                    expected_min_y = plate_json["bbox_all"][1].get<double>();
-                                }
-                                if (plate_json.contains("is_seq_print"))
-                                    is_seq_print_plate = plate_json["is_seq_print"].get<bool>();
-                            } catch (...) {}
+                {
+                    mz_zip_archive zip;
+                    mz_zip_zero_struct(&zip);
+                    if (Slic3r::open_zip_reader(&zip, input_file)) {
+                        std::string plate_json_path = "Metadata/plate_" + std::to_string(plate_id) + ".json";
+                        int file_idx = mz_zip_reader_locate_file(&zip, plate_json_path.c_str(), nullptr, 0);
+                        if (file_idx >= 0) {
+                            mz_zip_archive_file_stat stat;
+                            if (mz_zip_reader_file_stat(&zip, file_idx, &stat)) {
+                                std::string content(stat.m_uncomp_size, '\0');
+                                mz_zip_reader_extract_to_mem(&zip, file_idx, content.data(), content.size(), 0);
+                                try {
+                                    auto plate_json = json::parse(content);
+                                    if (plate_json.contains("is_seq_print"))
+                                        is_seq_print_plate = plate_json["is_seq_print"].get<bool>();
+                                } catch (...) {}
+                            }
                         }
+                        mz_zip_reader_end(&zip);
                     }
-                    mz_zip_reader_end(&zip);
                 }
 
-                double offset_x = expected_min_x - actual_bbox.min.x();
-                double offset_y = expected_min_y - actual_bbox.min.y();
-                if (std::abs(offset_x) > 1.0 || std::abs(offset_y) > 1.0) {
-                    if (verbose)
-                        std::cout << "Plate " << plate_id << " coord translation: ("
-                                  << offset_x << ", " << offset_y << ")\n";
-                    for (auto* obj : model.objects) {
+                const Slic3r::Vec2d origin = plate_grid_origin(config, file_version, plate_id - 1, (int)plate_data.size());
+                if (verbose)
+                    std::cout << "Plate " << plate_id << " of " << plate_data.size()
+                              << ": grid origin (" << origin.x() << ", " << origin.y() << ")\n";
+                if (origin.x() != 0.0 || origin.y() != 0.0) {
+                    for (auto* obj : model.objects)
                         for (auto* inst : obj->instances) {
                             Slic3r::Vec3d off = inst->get_offset();
-                            inst->set_offset(Slic3r::Vec3d(
-                                off.x() + offset_x,
-                                off.y() + offset_y,
-                                off.z()));
+                            inst->set_offset(Slic3r::Vec3d(off.x() - origin.x(), off.y() - origin.y(), off.z()));
                         }
-                    }
                 }
 
                 // Apply sequential print flag from plate metadata
@@ -4528,6 +4545,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         /// Print.hpp:986
         /// C++: void set_plate_origin(Vec3d origin) { m_origin = origin; }
         print.set_plate_origin(Slic3r::Vec3d(0.0, 0.0, 0.0));
+        // The plate's own per-plate values (wipe_tower_x/y are one entry per
+        // plate, read with get_at(m_plate_index): Print.cpp 2213, GCode.cpp 5006)
+        // need the plate's index, as the desktop sets it (PartPlate.cpp:2299).
+        // Left at 0, plate N's prime tower stood where plate 1's does.
+        if (plate_id > 0)
+            print.set_plate_index(plate_id - 1);
 
         // cli #4: alias the unbound `initial_no_support_filament_id` placeholder to the
         // engine-bound `initial_no_support_extruder` across custom-gcode keys, BEFORE
@@ -4565,6 +4588,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // rewrites nozzle_temperature down to a single value, so aligning any
         // earlier would leave that array short again.
         align_per_filament_config_vectors(config, project_filaments, verbose);
+
 #endif // ENGINE_BAMBU
 
         try {
