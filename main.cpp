@@ -9,6 +9,7 @@
 #include <memory>
 #include <map>
 #include <vector>
+#include <cstdint>
 #include <cstdlib>
 #include <algorithm>
 #include <chrono>
@@ -2442,12 +2443,38 @@ static void stage_file_copy(const boost::filesystem::path& src,
         throw std::runtime_error("cannot read " + src.string() + " (copy_file: " + why + ")");
     if (!out.is_open())
         throw std::runtime_error("cannot write " + dst.string() + " (copy_file: " + why + ")");
-    out << in.rdbuf();
-    if (in.bad())
-        throw std::runtime_error("read failed for " + src.string() + " (copy_file: " + why + ")");
+    // `out << in.rdbuf()` reads through the stream buffer and never sets
+    // `in`'s state, and a filebuf need not tell a read error apart from EOF,
+    // so a source read that fails part-way could pass as a short, "complete"
+    // copy. Copy in a read loop and count the bytes, then compare the count
+    // against the source size — the same size check BambuStudio's check_copy()
+    // makes on a copied file (src/libslic3r/utils.cpp:977-1006 @5873b5f).
+    std::vector<char> buf(64 * 1024);
+    std::uintmax_t copied = 0;
+    for (;;) {
+        in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+        const std::streamsize got = in.gcount();
+        if (got > 0) {
+            out.write(buf.data(), got);
+            copied += static_cast<std::uintmax_t>(got);
+        }
+        if (!in || !out)
+            break;
+    }
     out.close();
     if (out.fail())
         throw std::runtime_error("write failed for " + dst.string() + " (copy_file: " + why + ")");
+    if (in.bad())
+        throw std::runtime_error("read failed for " + src.string() + " (copy_file: " + why + ")");
+    boost::system::error_code size_ec;
+    const std::uintmax_t src_size = boost::filesystem::file_size(src, size_ec);
+    if (size_ec)
+        throw std::runtime_error("cannot size " + src.string() + ": " + size_ec.message()
+                                 + " (copy_file: " + why + ")");
+    if (copied != src_size)
+        throw std::runtime_error("read failed for " + src.string() + ": copied "
+                                 + std::to_string(copied) + " of " + std::to_string(src_size)
+                                 + " bytes (copy_file: " + why + ")");
 }
 
 /// Stage one vendor directory under data_dir/system for the PresetBundle
@@ -3276,10 +3303,13 @@ static std::string closest_compatible_preset(Slic3r::PresetCollection& collectio
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
     namespace fs = boost::filesystem;
-    const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_named-%%%%%%%%");
-    struct Cleanup { fs::path dir; ~Cleanup() { boost::system::error_code e; fs::remove_all(dir, e); } } cleanup{staging};
+    // The temp folder lookup throws on a bad TMPDIR/TMP; it sits inside the
+    // try so that is a refusal with a sentence, never an uncaught exception.
+    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
     Slic3r::PresetBundle bundle;
     try {
+        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_named-%%%%%%%%");
+        cleanup.dir = staging;
         if (!load_system_presets(o.argv0, bundle, staging, error)) { code = CLI_ENVIRONMENT_ERROR; return false; }
     } catch (const std::exception& e) {
         error = std::string("Loading the system presets failed: ") + e.what();
@@ -3423,8 +3453,7 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
 /// and its defaults.
 static int run_list_presets(const CliOptions& o, const std::string& printer_name) {
     namespace fs = boost::filesystem;
-    const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_list-%%%%%%%%");
-    struct Cleanup { fs::path dir; ~Cleanup() { boost::system::error_code e; fs::remove_all(dir, e); } } cleanup{staging};
+    struct Cleanup { fs::path dir; ~Cleanup() { if (dir.empty()) return; boost::system::error_code e; fs::remove_all(dir, e); } } cleanup;
     Slic3r::PresetBundle bundle;
     std::string error;
     json out;
@@ -3434,6 +3463,9 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
     out["engine"] = "bambustudio";
 #endif
     try {
+        // Inside the try: the temp folder lookup throws on a bad TMPDIR/TMP.
+        const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_list-%%%%%%%%");
+        cleanup.dir = staging;
         if (!load_system_presets(o.argv0, bundle, staging, error, /*document_mode=*/true)) {
             out["error"] = error;
             std::cout << out.dump(2) << std::endl;
@@ -3941,23 +3973,34 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         // One staging directory per process: two packaged slices
                         // running at once must not delete each other's vendor
                         // files mid-load (a shared fixed path with remove_all did).
-                        auto tmpdir = boost::filesystem::temp_directory_path()
-                            / boost::filesystem::unique_path("slicer_cli_presets-%%%%%%%%");
-                        auto sysdir = tmpdir / "system";
+                        //
+                        // The cleanup guard lives outside the fatal try below so
+                        // the staged tree survives the PresetBundle load; it gets
+                        // its path before create_directories so a half-created
+                        // staging dir is still removed.
+                        boost::filesystem::path tmpdir;
+                        boost::filesystem::path sysdir;
                         struct StagingCleanup {
                             boost::filesystem::path dir;
                             ~StagingCleanup() {
+                                if (dir.empty())
+                                    return;
                                 boost::system::error_code ignored;
                                 boost::filesystem::remove_all(dir, ignored);
                             }
-                        } staging_cleanup{tmpdir};
-                        boost::filesystem::create_directories(sysdir);
-                        // A staging copy that even the stream-copy fallback
-                        // cannot complete is fatal: the same event + exit-code
-                        // shape as the other preset failures below, except the
-                        // slice stops here instead of running on the flat 3MF
-                        // config with no presets at all.
+                        } staging_cleanup;
+                        // A staging step that fails — creating the staging dir
+                        // or a copy that even the stream-copy fallback cannot
+                        // complete — is fatal: the same event + exit-code shape
+                        // as the other preset failures below, except the slice
+                        // stops here instead of running on the flat 3MF config
+                        // with no presets at all.
                         try {
+                            tmpdir = boost::filesystem::temp_directory_path()
+                                / boost::filesystem::unique_path("slicer_cli_presets-%%%%%%%%");
+                            sysdir = tmpdir / "system";
+                            staging_cleanup.dir = tmpdir;
+                            boost::filesystem::create_directories(sysdir);
                             for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
                                 auto dst = sysdir / entry.path().filename();
                                 if (boost::filesystem::is_directory(entry.path()))
