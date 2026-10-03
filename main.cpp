@@ -34,6 +34,7 @@
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/AppConfig.hpp"
 #include "libslic3r/miniz_extension.hpp"
 #include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/Arrange.hpp"
@@ -581,6 +582,11 @@ void print_usage(const char* prog_name) {
               << "                         --slice writes result.json there\n"
               << "  --info <file>          Print what the file is (printer, plates, maker app)\n"
               << "                         and which engine binary fits it, as JSON\n"
+              << "  --printer-preset <name>  Printer system preset by name (STL input); the\n"
+              << "  --process-preset <name>  desktop app's settings, every parent applied.\n"
+              << "  --filament-preset <name> Repeat for more filaments. Omitted process/filament:\n"
+              << "                         the printer's defaults.\n"
+              << "  --list-presets [--printer <name>]  This engine's system presets as JSON\n"
               << "  --arrange <0|1>        1 = place the objects on the bed before slicing (with --slice)\n"
               << "  --allow-newer-file     Slice a 3MF saved by a newer app version than this engine\n"
               << "  --allow-substitution   Slice a 3MF whose settings hold values this engine does not\n"
@@ -2402,7 +2408,8 @@ static void rewrite_percent_line_widths(const std::string& input, PercentRewrite
 }
 #endif // ENGINE_BAMBU
 
-#ifdef ENGINE_BAMBU
+// Preset staging, both engines: the Bambu 3MF preset rebuild and the
+// preset-by-name path (--printer-preset ...) stage a profiles tree the same way.
 /// Copy one preset file into the staging tree.
 ///
 /// boost::filesystem::copy_file delegates to the copy_file_range syscall on
@@ -2463,7 +2470,7 @@ static void stage_vendor_dir(const boost::filesystem::path& src,
             stage_file_copy(it->path(), target);
     }
 }
-#endif // ENGINE_BAMBU
+// (end of preset staging helpers)
 
 /// The resources root this engine's libslic3r reads at slice time, or empty
 /// when no known layout is present. The two engines' resource files differ
@@ -2542,7 +2549,18 @@ struct CliOptions {
     bool        allow_substitution = false;
     // --arrange 1: place the objects on the bed before slicing (official name).
     bool        arrange = false;
+    // Presets by name, resolved like the desktop app (every parent applied).
+    std::string printer_preset;
+    std::string process_preset;
+    std::vector<std::string> filament_presets;
+    bool uses_presets() const {
+        return !printer_preset.empty() || !process_preset.empty() || !filament_presets.empty();
+    }
 };
+
+// The settings the named presets resolve to, computed once per run (loading a
+// profiles tree takes seconds) and applied to every plate.
+static std::unique_ptr<Slic3r::DynamicPrintConfig> g_preset_config;
 
 /// What one plate's slice produced, in the shape the official CLI records per
 /// plate (sliced_plate_info_t, BambuStudio.cpp 191-219 at 5873b5f).
@@ -3044,6 +3062,250 @@ static bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& m
         return false;
     }
     return true;
+}
+
+
+// ── Presets by name (desktop-app inheritance) ────────────────────────────────
+// The desktop app loads every vendor's system presets with
+// PresetBundle::load_system_presets_from_json (BambuStudio PresetBundle.cpp
+// 1594 at 5873b5f; OrcaSlicer PresetBundle.cpp 2163 at 31f6803), which
+// flattens each preset over its "inherits" chain while it loads
+// (load_vendor_configs_from_json), and builds the print's settings with
+// PresetBundle::full_config(): defaults, then process, printer and filament
+// presets. Neither official CLI does this for --load-settings files: they
+// read the one file given and stop at its parent. This path is the desktop's.
+
+/// This engine's profiles tree: Bambu's for the Bambu build, Orca's for Orca.
+static boost::filesystem::path this_engine_profiles_dir(const std::string& argv0) {
+    const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
+#ifdef ENGINE_ORCA
+    return orca_profiles_dir(exe_dir);
+#else
+    return engine_profiles_dir(exe_dir);
+#endif
+}
+
+/// Loads this engine's system presets the way the desktop app does: the
+/// profiles tree staged as <data_dir>/system, then
+/// load_system_presets_from_json. `staging` is removed by the caller's guard.
+static bool load_system_presets(const std::string& argv0, Slic3r::PresetBundle& bundle,
+                                const boost::filesystem::path& staging, std::string& error) {
+    const boost::filesystem::path profiles_dir = this_engine_profiles_dir(argv0);
+    if (profiles_dir.empty()) {
+        error = "No profiles tree was found beside this binary.";
+        return false;
+    }
+    const boost::filesystem::path sysdir = staging / "system";
+    boost::filesystem::create_directories(sysdir);
+    for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
+        const auto dst = sysdir / entry.path().filename();
+        if (boost::filesystem::is_directory(entry.path()))
+            stage_vendor_dir(entry.path(), dst);
+        else if (entry.path().extension() == ".json" && entry.path().stem() != "blacklist")
+            stage_file_copy(entry.path(), dst);
+    }
+    Slic3r::set_data_dir(staging.string());
+    // The desktop app's own entry point (PresetBundle::load_presets, Bambu
+    // PresetBundle.cpp 551 / Orca 513): system presets through
+    // load_system_presets_from_json, then the (empty) user folder, then the
+    // compatibility pass. A fresh AppConfig is what a first launch has.
+    Slic3r::AppConfig app_config;
+#ifdef ENGINE_ORCA
+    bundle.load_presets(app_config, Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+#else
+    auto [substitutions, errors] =
+        bundle.load_presets(app_config, Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+    (void)substitutions;
+    if (!errors.empty())
+        emit_event({{"event","preset_warning"}, {"tag","SystemPresetLoadErrors"}, {"message", errors}});
+#endif
+    return true;
+}
+
+/// A vendor preset a person can pick. Templates (instantiation "false") never
+/// become presets at all (load_vendor_configs_from_json keeps them only as
+/// parents), and the built-in "Default" presets are not system presets.
+static bool is_listed_preset(const Slic3r::Preset& preset) {
+    return preset.is_system && !preset.is_default;
+}
+
+/// Names of presets near `wanted` (same words), for a refusal that points on.
+static std::string near_preset_names(const Slic3r::PresetCollection& collection, const std::string& wanted) {
+    std::vector<std::string> words;
+    boost::algorithm::split(words, wanted, boost::is_any_of(" @"), boost::token_compress_on);
+    std::vector<std::pair<int, std::string>> scored;
+    for (const Slic3r::Preset& preset : collection) {
+        if (!is_listed_preset(preset)) continue;
+        int score = 0;
+        for (const std::string& w : words)
+            if (!w.empty() && boost::algorithm::icontains(preset.name, w)) ++score;
+        if (score > 0) scored.emplace_back(-score, preset.name);
+    }
+    std::sort(scored.begin(), scored.end());
+    std::string out;
+    for (size_t i = 0; i < scored.size() && i < 5; ++i)
+        out += (i ? "; " : "") + scored[i].second;
+    return out;
+}
+
+/// Selects the named presets (printer first, then its compatible process and
+/// filaments; an omitted process or filament takes the printer's own
+/// default_print_profile / default_filament_profile, as the desktop app does
+/// when a printer is picked) and returns full_config(). Refuses an unknown
+/// name with close matches, and a process or filament the printer cannot use
+/// (official CLI_PROCESS_NOT_COMPATIBLE, BambuStudio.cpp at 5873b5f).
+static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
+                                  int& code, std::string& error) {
+    namespace fs = boost::filesystem;
+    const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_named-%%%%%%%%");
+    struct Cleanup { fs::path dir; ~Cleanup() { boost::system::error_code e; fs::remove_all(dir, e); } } cleanup{staging};
+    Slic3r::PresetBundle bundle;
+    try {
+        if (!load_system_presets(o.argv0, bundle, staging, error)) { code = CLI_ENVIRONMENT_ERROR; return false; }
+    } catch (const std::exception& e) {
+        error = std::string("Loading the system presets failed: ") + e.what();
+        code = CLI_ENVIRONMENT_ERROR;
+        return false;
+    }
+#ifdef ENGINE_ORCA
+    const std::string app = "OrcaSlicer";
+#else
+    const std::string app = "BambuStudio";
+#endif
+    auto find = [&](Slic3r::PresetCollection& collection, const std::string& name, const char* kind) -> bool {
+        const Slic3r::Preset* preset = collection.find_preset(name, false);
+        if (preset && preset->name == name) return true;
+        const std::string near = near_preset_names(collection, name);
+        error = app + " has no " + kind + " preset named '" + name + "'." +
+                (near.empty() ? std::string() : " Close names: " + near + ".") +
+                " See --list-presets.";
+        code = CLI_CONFIG_FILE_ERROR;
+        return false;
+    };
+
+    if (o.printer_preset.empty()) {
+        error = "--process-preset and --filament-preset need --printer-preset.";
+        code = CLI_INVALID_PARAMS;
+        return false;
+    }
+    if (!find(bundle.printers, o.printer_preset, "printer")) return false;
+    bundle.printers.select_preset_by_name(o.printer_preset, true);
+    // Compatibility flags against this printer, keeping the selections.
+    bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
+    const Slic3r::DynamicPrintConfig& printer = bundle.printers.get_edited_preset().config;
+
+    std::string process = o.process_preset;
+    if (process.empty() && printer.has("default_print_profile"))
+        process = printer.opt_string("default_print_profile");
+    if (process.empty()) {
+        error = "Printer preset '" + o.printer_preset + "' names no default process; give --process-preset.";
+        code = CLI_INVALID_PARAMS;
+        return false;
+    }
+    if (!find(bundle.prints, process, "process")) return false;
+    if (!bundle.prints.find_preset(process, false)->is_compatible) {
+        error = "Process preset '" + process + "' is not for printer '" + o.printer_preset +
+                "'. See --list-presets --printer \"" + o.printer_preset + "\".";
+        code = CLI_PROCESS_NOT_COMPATIBLE;
+        return false;
+    }
+    bundle.prints.select_preset_by_name(process, true);
+
+    std::vector<std::string> filaments = o.filament_presets;
+    if (filaments.empty()) {
+        if (const auto* d = printer.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
+            if (!d->values.empty()) filaments.push_back(d->values.front());
+    }
+    if (filaments.empty()) {
+        error = "Printer preset '" + o.printer_preset + "' names no default filament; give --filament-preset.";
+        code = CLI_INVALID_PARAMS;
+        return false;
+    }
+    for (const std::string& f : filaments) {
+        if (!find(bundle.filaments, f, "filament")) return false;
+        if (!bundle.filaments.find_preset(f, false)->is_compatible) {
+            error = "Filament preset '" + f + "' is not for printer '" + o.printer_preset +
+                    "'. See --list-presets --printer \"" + o.printer_preset + "\".";
+            code = CLI_PROCESS_NOT_COMPATIBLE;
+            return false;
+        }
+    }
+    bundle.filaments.select_preset_by_name(filaments.front(), true);
+    bundle.filament_presets = filaments;
+
+    out = bundle.full_config();
+    // full_config() writes each filament's own colour; a slot without one
+    // keeps the engine default.
+    emit_event({{"event","presets_resolved"},
+                {"tag","NamedPresetsResolved"},
+                {"printer", o.printer_preset},
+                {"process", process},
+                {"filaments", filaments},
+                {"message","Settings built from " + app + " system presets with every parent applied"}});
+    return true;
+}
+
+/// --list-presets [--printer NAME]: the system presets of this engine, as one
+/// JSON document. With a printer: the processes and filaments it can use,
+/// and its defaults.
+static int run_list_presets(const CliOptions& o, const std::string& printer_name) {
+    namespace fs = boost::filesystem;
+    const fs::path staging = fs::temp_directory_path() / fs::unique_path("slicer_cli_list-%%%%%%%%");
+    struct Cleanup { fs::path dir; ~Cleanup() { boost::system::error_code e; fs::remove_all(dir, e); } } cleanup{staging};
+    Slic3r::PresetBundle bundle;
+    std::string error;
+    json out;
+#ifdef ENGINE_ORCA
+    out["engine"] = "orcaslicer";
+#else
+    out["engine"] = "bambustudio";
+#endif
+    try {
+        if (!load_system_presets(o.argv0, bundle, staging, error)) {
+            out["error"] = error;
+            std::cout << out.dump(2) << std::endl;
+            return CLI_ENVIRONMENT_ERROR;
+        }
+    } catch (const std::exception& e) {
+        out["error"] = std::string("Loading the system presets failed: ") + e.what();
+        std::cout << out.dump(2) << std::endl;
+        return CLI_ENVIRONMENT_ERROR;
+    }
+    if (printer_name.empty()) {
+        json printers = json::array();
+        for (const Slic3r::Preset& p : bundle.printers)
+            if (is_listed_preset(p))
+                printers.push_back(json{{"name", p.name},
+                                        {"printer_model", p.config.has("printer_model") ? p.config.opt_string("printer_model") : std::string()}});
+        out["printers"] = printers;
+    } else {
+        const Slic3r::Preset* printer = bundle.printers.find_preset(printer_name, false);
+        if (!printer || printer->name != printer_name) {
+            out["error"] = "No printer preset named '" + printer_name + "'.";
+            const std::string near = near_preset_names(bundle.printers, printer_name);
+            if (!near.empty()) out["close_names"] = near;
+            std::cout << out.dump(2) << std::endl;
+            return CLI_CONFIG_FILE_ERROR;
+        }
+        bundle.printers.select_preset_by_name(printer_name, true);
+        bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
+        const Slic3r::DynamicPrintConfig& cfg = bundle.printers.get_edited_preset().config;
+        out["printer"] = printer_name;
+        out["default_process"] = cfg.has("default_print_profile") ? cfg.opt_string("default_print_profile") : std::string();
+        json default_filaments = json::array();
+        if (const auto* d = cfg.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
+            for (const auto& v : d->values) default_filaments.push_back(v);
+        out["default_filaments"] = default_filaments;
+        json processes = json::array(), filaments = json::array();
+        for (const Slic3r::Preset& p : bundle.prints)
+            if (is_listed_preset(p) && p.is_compatible) processes.push_back(p.name);
+        for (const Slic3r::Preset& p : bundle.filaments)
+            if (is_listed_preset(p) && p.is_compatible) filaments.push_back(p.name);
+        out["processes"] = processes;
+        out["filaments"] = filaments;
+    }
+    std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+    return 0;
 }
 
 /// One slice of one plate: load the input, resolve its settings, slice and
@@ -3640,6 +3902,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                     " config; slicing continues with the previously resolved settings"}});
             std::cerr << "Warning: Failed to load " << kind << " config\n";
         };
+        // Presets by name: the desktop app's full_config() for the named
+        // printer, process and filaments, over the engine defaults.
+        if (g_preset_config)
+            config.apply(*g_preset_config);
         load_profile(bundle_config,   "bundle");
         load_profile(machine_config,  "machine");
         load_profile(process_config,  "process");
@@ -4061,6 +4327,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // set_BBL_Printer is a BambuStudio-only Print method (enables M981/M1003
         // BBL printer features).  OrcaSlicer's Print has no such method.
         if (is_bbl_3mf)
+            print.set_BBL_Printer(true);
+        // Named presets: the official CLI decides from printer_model
+        // (BambuStudio.cpp 7184-7198 at 5873b5f), as the desktop app does.
+        else if (g_preset_config && config.opt_string("printer_model", true).rfind("Bambu Lab", 0) == 0)
             print.set_BBL_Printer(true);
 #endif
 #ifdef ENGINE_ORCA
@@ -4543,6 +4813,8 @@ int main(int argc, char** argv) {
     bool& normalize_legacy_gcode = o.normalize_legacy_gcode;
     std::string layout_json_file;
     std::string info_file;
+    bool        list_presets = false;
+    std::string list_printer;
     bool        layout_plan_mode = false;
     slicer_cli::CalibOptions calib_opts;
     // Override settings
@@ -4640,6 +4912,16 @@ int main(int argc, char** argv) {
             o.outputdir = argv[++i];
         } else if (arg == "--progress") {
             o.progress = true;
+        } else if (arg == "--printer-preset" && i + 1 < argc) {
+            o.printer_preset = argv[++i];
+        } else if (arg == "--process-preset" && i + 1 < argc) {
+            o.process_preset = argv[++i];
+        } else if (arg == "--filament-preset" && i + 1 < argc) {
+            o.filament_presets.push_back(argv[++i]);   // repeat for more filaments
+        } else if (arg == "--list-presets") {
+            list_presets = true;
+        } else if (arg == "--printer" && i + 1 < argc) {
+            list_printer = argv[++i];
         } else if (arg == "--arrange" && i + 1 < argc) {
             o.arrange = parse_cli_int("--arrange", argv[++i], argv[0]) != 0;
         } else if (arg == "--allow-newer-file") {
@@ -4686,6 +4968,30 @@ int main(int argc, char** argv) {
         return run_info(o.argv0, info_file);
     }
 
+    if (list_presets) {
+        boost::log::core::get()->set_logging_enabled(false);
+        return run_list_presets(o, list_printer);
+    }
+    if (o.uses_presets()) {
+        if (!input_is_stl(input_file)) {
+            std::cerr << "Error: --printer-preset/--process-preset/--filament-preset apply to an STL; "
+                         "a 3MF carries its own settings\n";
+            return 1;
+        }
+        g_preset_config = std::make_unique<Slic3r::DynamicPrintConfig>();
+        int code = 0;
+        std::string error;
+        if (!resolve_named_presets(o, *g_preset_config, code, error)) {
+            emit_event({{"event","preset_error"}, {"tag","NamedPresetRefused"}, {"message", error}});
+            std::cerr << "Error: " << error << "\n";
+            if (o.slice_mode) {
+                write_result_json(o.outputdir.empty() ? "." : o.outputdir, code, o.slice_plate,
+                                  cli_error_sentence(code) + " " + error, {}, 0, 0);
+                return code;
+            }
+            return 1;
+        }
+    }
     if (o.arrange && !o.slice_mode) {
         std::cerr << "Error: --arrange needs --slice (the official CLI arranges inside its plate loop)\n";
         return 1;
