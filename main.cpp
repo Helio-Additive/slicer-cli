@@ -3236,8 +3236,16 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     const std::string app = "BambuStudio";
 #endif
     auto find = [&](Slic3r::PresetCollection& collection, const std::string& name, const char* kind) -> bool {
-        const Slic3r::Preset* preset = collection.find_preset(name, false);
-        if (preset && preset->name == name) return true;
+        Slic3r::Preset* preset = collection.find_preset(name, false);
+        if (preset && preset->name == name) {
+            // A fresh AppConfig has no printer models installed, so system
+            // presets load invisible, and select_preset_by_name skips an
+            // invisible preset (Preset.cpp 3206 at 5873b5f / 3493 at
+            // 31f6803). Naming a preset is installing it, as the desktop
+            // app's setup wizard does.
+            preset->is_visible = true;
+            return true;
+        }
         const std::string similar = near_preset_names(collection, name);
         error = app + " has no " + kind + " preset named '" + name + "'." +
                 (similar.empty() ? std::string() : " Close names: " + similar + ".") +
@@ -3253,6 +3261,11 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     }
     if (!find(bundle.printers, o.printer_preset, "printer")) return false;
     bundle.printers.select_preset_by_name(o.printer_preset, true);
+    if (bundle.printers.get_edited_preset().name != o.printer_preset) {
+        error = "Printer preset '" + o.printer_preset + "' could not be selected.";
+        code = CLI_CONFIG_FILE_ERROR;
+        return false;
+    }
     // Compatibility flags against this printer, keeping the selections.
     bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
     const Slic3r::DynamicPrintConfig& printer = bundle.printers.get_edited_preset().config;
@@ -3273,6 +3286,11 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         return false;
     }
     bundle.prints.select_preset_by_name(process, true);
+    if (bundle.prints.get_edited_preset().name != process) {
+        error = "Process preset '" + process + "' could not be selected.";
+        code = CLI_CONFIG_FILE_ERROR;
+        return false;
+    }
 
     std::vector<std::string> filaments = o.filament_presets;
     if (filaments.empty()) {
@@ -3294,6 +3312,11 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         }
     }
     bundle.filaments.select_preset_by_name(filaments.front(), true);
+    if (bundle.filaments.get_edited_preset().name != filaments.front()) {
+        error = "Filament preset '" + filaments.front() + "' could not be selected.";
+        code = CLI_CONFIG_FILE_ERROR;
+        return false;
+    }
     bundle.filament_presets = filaments;
 
     out = bundle.full_config();
@@ -3350,6 +3373,7 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
             std::cout << out.dump(2) << std::endl;
             return CLI_CONFIG_FILE_ERROR;
         }
+        const_cast<Slic3r::Preset*>(printer)->is_visible = true;   // see resolve_named_presets
         bundle.printers.select_preset_by_name(printer_name, true);
         bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
         const Slic3r::DynamicPrintConfig& cfg = bundle.printers.get_edited_preset().config;
@@ -3540,8 +3564,26 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // success. Keyed on printer_model, not on the app that made the
             // file: OrcaSlicer ships Bambu Lab printers too, so a Bambu
             // printer's project is valid on both builds.
-            if (config.has("printer_model")) {
-                const std::string printer_model = config.opt_string("printer_model");
+            // printer_model as the file states it: a loader that does not take
+            // the file for its own app's project (the Bambu loader with an
+            // "OrcaSlicer-" Application) leaves the setting at the default.
+            std::string file_printer_model;
+            {
+                std::string text;
+                if (read_zip_member(input_file, "Metadata/project_settings.config", text)) {
+                    try {
+                        const json settings = json::parse(text);
+                        if (settings.is_object() && settings.contains("printer_model") &&
+                            settings["printer_model"].is_string())
+                            file_printer_model = settings["printer_model"].get<std::string>();
+                    } catch (...) {
+                    }
+                }
+                if (file_printer_model.empty() && config.has("printer_model"))
+                    file_printer_model = config.opt_string("printer_model");
+            }
+            {
+                const std::string& printer_model = file_printer_model;
                 if (!printer_model.empty()) {
                     const EngineFit fit = engine_fit_for(o.argv0, printer_model);
                     if (fit.this_catalog_found && !fit.this_has) {
