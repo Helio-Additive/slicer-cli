@@ -5426,7 +5426,19 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // (BambuStudio.cpp 1854-1859 at 5873b5f).
     {
         boost::system::error_code exists_ec;
-        if (!fs::exists(fs::path(o.input_file), exists_ec)) {
+        const bool input_exists = fs::exists(fs::path(o.input_file), exists_ec);
+        if (exists_ec && exists_ec != boost::system::errc::no_such_file_or_directory) {
+            // The path could not be checked (permissions, I/O): say so, not
+            // "not found".
+            const std::string detail = "Cannot check the input " + o.input_file + ": " + exists_ec.message();
+            write_result_json(outdir.string(), CLI_ENVIRONMENT_ERROR, o.slice_plate,
+                              cli_error_sentence(CLI_ENVIRONMENT_ERROR) + " " + detail, {}, 0, 0);
+            std::cerr << "Error: " << detail << "\n";
+            emit_event({{"event","input_error"}, {"tag","InputUnreadable"}, {"path", o.input_file},
+                        {"message", detail}});
+            return CLI_ENVIRONMENT_ERROR;
+        }
+        if (!input_exists) {
             write_result_json(outdir.string(), CLI_FILE_NOTFOUND, o.slice_plate,
                               cli_error_sentence(CLI_FILE_NOTFOUND), {}, 0, 0);
             std::cerr << "No such file: " << o.input_file << "\n";
