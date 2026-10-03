@@ -587,6 +587,8 @@ void print_usage(const char* prog_name) {
               << "  --filament-preset <name> Repeat for more filaments. Omitted process/filament:\n"
               << "                         the printer's defaults.\n"
               << "  --list-presets [--printer <name>]  This engine's system presets as JSON\n"
+              << "  --export-3mf <name>    With --slice: write the sliced project (G-code and\n"
+              << "                         settings per plate) as <outputdir>/<name>\n"
               << "  --arrange <0|1>        1 = place the objects on the bed before slicing (with --slice)\n"
               << "  --allow-newer-file     Slice a 3MF saved by a newer app version than this engine\n"
               << "  --allow-substitution   Slice a 3MF whose settings hold values this engine does not\n"
@@ -2553,6 +2555,8 @@ struct CliOptions {
     std::string printer_preset;
     std::string process_preset;
     std::vector<std::string> filament_presets;
+    // --export-3mf NAME: the sliced project, written into --outputdir.
+    std::string export_3mf;
     bool uses_presets() const {
         return !printer_preset.empty() || !process_preset.empty() || !filament_presets.empty();
     }
@@ -2588,6 +2592,12 @@ struct PlateOutcome {
     float       layer_height = 0.f;
     int         wall_loops   = 0;
     float       sparse_infill_density = 0.f;
+
+    // --export-3mf: what the sliced project needs from this plate.
+    std::shared_ptr<Slic3r::PlateData>          plate_data;     // slice result, as the GUI stores it
+    std::shared_ptr<Slic3r::Model>              export_model;   // STL input: the placed model
+    std::shared_ptr<Slic3r::DynamicPrintConfig> export_config;  // STL input: the settings it sliced with
+    std::map<size_t, Slic3r::Vec3d>             moved;          // 3MF + --arrange: loaded_id -> offset change
 };
 
 
@@ -2983,6 +2993,45 @@ static void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Mo
     if (const auto* d = config.option<Slic3r::ConfigOptionPercent>("sparse_infill_density"))
         outcome.sparse_infill_density = float(d->value);
     (void)print;
+}
+
+
+/// The slice result of one plate in the shape the GUI stores it into a
+/// project (PartPlateList::store_to_3mf_structure, slic3r/GUI/PartPlate.cpp
+/// at 5873b5f): G-code file, predicted time, weight, filaments used per slot
+/// (PlateData::parse_filament_info), and the processor's per-plate facts.
+static void record_plate_for_export(const Slic3r::Print& print, const Slic3r::Model& model,
+                                    const Slic3r::DynamicPrintConfig& config,
+                                    Slic3r::GCodeProcessorResult& result, const std::string& gcode_file,
+                                    bool stl_input, PlateOutcome& outcome) {
+    auto pd = std::make_shared<Slic3r::PlateData>();
+    pd->plate_index      = std::max(0, outcome.plate_id - 1);
+    pd->gcode_file       = gcode_file;
+    pd->is_sliced_valid  = true;
+    pd->gcode_prediction = std::to_string(int(result.print_statistics
+        .modes[static_cast<size_t>(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal)].time));
+    pd->toolpath_outside         = result.toolpath_outside;
+    pd->timelapse_warning_code   = result.timelapse_warning_code;
+    pd->is_label_object_enabled  = result.label_object_enabled;
+    pd->limit_filament_maps      = result.limit_filament_maps;
+    pd->layer_filaments          = result.layer_filaments;
+    pd->filament_change_sequence = result.filament_change_sequence;
+    pd->nozzle_change_sequence   = result.nozzle_change_sequence;
+    pd->optimal_assignment       = result.optimal_assignment;
+    pd->filament_maps            = print.get_filament_maps();
+    const double weight = print.print_statistics().total_weight;
+    if (weight != 0.) {
+        char text[32];
+        std::snprintf(text, sizeof text, "%.2f", weight);
+        pd->gcode_weight = text;
+    }
+    pd->is_support_used = print.is_support_used();
+    pd->parse_filament_info(&result);
+    outcome.plate_data = pd;
+    if (stl_input) {
+        outcome.export_model  = std::make_shared<Slic3r::Model>(model);
+        outcome.export_config = std::make_shared<Slic3r::DynamicPrintConfig>(config);
+    }
 }
 
 /// The objects a G-code check names: each instance's label id is the one the
@@ -4306,10 +4355,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // object fully inside is refused; objects wholly outside are left
         // out of the print, as the official CLI's apply() leaves them out.
         if (o.slice_mode && !calib_self_geometry) {
+            std::map<size_t, Slic3r::Vec3d> before;
+            for (const Slic3r::ModelObject* object : model.objects)
+                for (const Slic3r::ModelInstance* inst : object->instances)
+                    before[inst->loaded_id] = inst->get_offset();
             if (o.arrange && !arrange_on_bed(model, config, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
             }
+            if (o.arrange && !o.export_3mf.empty())
+                for (const Slic3r::ModelObject* object : model.objects)
+                    for (const Slic3r::ModelInstance* inst : object->instances)
+                        if (inst->loaded_id != 0 && before.count(inst->loaded_id))
+                            outcome.moved[inst->loaded_id] = inst->get_offset() - before[inst->loaded_id];
             if (!check_objects_inside_bed(model, config, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
@@ -4551,6 +4609,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     if (!post_slice_checks(print, model, gcode_result, outcome))
                         return 1;
                     outcome.exported = true;
+                    if (!o.export_3mf.empty())
+                        record_plate_for_export(print, model, config, gcode_result, output_file,
+                                                input_is_stl(input_file), outcome);
                     if (o.progress)
                         emit_progress(outcome, 100, "Slicing finished");
                 }
@@ -4696,6 +4757,116 @@ static int run_info(const std::string& argv0, const std::string& path) {
     return 0;
 }
 
+
+/// --export-3mf: the sliced project, written with store_bbs_3mf as the
+/// official CLI writes it (CLI::export_project, BambuStudio.cpp 8470-8505 at
+/// 5873b5f: Silence | WithGcode | SplitModel | UseLoadedId | ShareMesh, one
+/// plate or all). A 3MF input is reloaded whole (every plate, its own
+/// positions and settings) and each sliced plate gets its G-code and slice
+/// facts; an STL input is the one placed plate with the settings it sliced
+/// with. No thumbnails are rendered (the CLI has no OpenGL), so a project
+/// keeps the plate pictures it came with.
+static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path& outdir,
+                             std::vector<PlateOutcome>& outcomes, std::string& error) {
+    using namespace Slic3r;
+    const std::string path = (outdir / o.export_3mf).string();
+    Model model;
+    model.set_backup_path((boost::filesystem::temp_directory_path() /
+                           boost::filesystem::unique_path("slicer_cli_export-%%%%%%%%")).string());
+    DynamicPrintConfig config;
+    PlateDataPtrs plates;
+    std::vector<Preset*> project_presets;
+    struct Release {
+        PlateDataPtrs& plates; std::vector<Preset*>& presets;
+        ~Release() { release_PlateData_list(plates); for (Preset* p : presets) delete p; presets.clear(); }
+    } release{plates, project_presets};
+
+    if (input_is_stl(o.input_file)) {
+        if (outcomes.empty() || !outcomes.front().export_model || !outcomes.front().plate_data) {
+            error = "Nothing was sliced to export.";
+            return CLI_EXPORT_3MF_ERROR;
+        }
+        model  = *outcomes.front().export_model;
+        config = *outcomes.front().export_config;
+        auto* pd = new PlateData(*outcomes.front().plate_data);
+        pd->plate_index = 0;
+        pd->objects_and_instances.clear();
+        for (size_t oi = 0; oi < model.objects.size(); ++oi)
+            for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii)
+                pd->objects_and_instances.emplace_back(int(oi), int(ii));
+        plates.push_back(pd);
+    } else {
+        config.apply(FullPrintConfig::defaults(), true);
+        ConfigSubstitutionContext subst(ForwardCompatibilitySubstitutionRule::Enable);
+        bool is_bbl_3mf = false;
+        Semver file_version;
+        const auto strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig |
+                              LoadStrategy::AddDefaultInstances | LoadStrategy::LoadAuxiliary;
+#ifdef ENGINE_ORCA
+        bool is_orca_3mf = false;
+        const bool loaded = load_bbs_3mf(o.input_file.c_str(), &config, &subst, &model, &plates, &project_presets,
+                                         &is_bbl_3mf, &is_orca_3mf, &file_version, nullptr, strategy, nullptr, 0);
+#else
+        const bool loaded = load_bbs_3mf(o.input_file.c_str(), &config, &subst, &model, &plates, &project_presets,
+                                         &is_bbl_3mf, &file_version, nullptr, strategy, nullptr, 0);
+#endif
+        if (!loaded) {
+            error = "The input could not be reloaded for export.";
+            return CLI_EXPORT_3MF_ERROR;
+        }
+        for (const PlateOutcome& out : outcomes) {
+            if (!out.plate_data) continue;
+            const int idx = out.plate_id - 1;
+            if (idx < 0 || idx >= int(plates.size())) continue;
+            PlateData* pd = plates[idx];
+            const PlateData& sliced = *out.plate_data;
+            pd->gcode_file               = sliced.gcode_file;
+            pd->is_sliced_valid          = true;
+            pd->gcode_prediction         = sliced.gcode_prediction;
+            pd->gcode_weight             = sliced.gcode_weight;
+            pd->toolpath_outside         = sliced.toolpath_outside;
+            pd->timelapse_warning_code   = sliced.timelapse_warning_code;
+            pd->is_label_object_enabled  = sliced.is_label_object_enabled;
+            pd->limit_filament_maps      = sliced.limit_filament_maps;
+            pd->layer_filaments          = sliced.layer_filaments;
+            pd->filament_change_sequence = sliced.filament_change_sequence;
+            pd->nozzle_change_sequence   = sliced.nozzle_change_sequence;
+            pd->optimal_assignment       = sliced.optimal_assignment;
+            pd->filament_maps            = sliced.filament_maps;
+            pd->is_support_used          = sliced.is_support_used;
+            pd->slice_filaments_info     = sliced.slice_filaments_info;
+            // --arrange moved this plate's objects: carry the same moves
+            // into the project, matched by the id the file gave each instance.
+            for (const auto& [obj_idx, inst_idx] : pd->objects_and_instances) {
+                if (obj_idx < 0 || obj_idx >= int(model.objects.size())) continue;
+                ModelObject* object = model.objects[obj_idx];
+                if (inst_idx < 0 || inst_idx >= int(object->instances.size())) continue;
+                ModelInstance* inst = object->instances[inst_idx];
+                const auto moved = out.moved.find(inst->loaded_id);
+                if (moved != out.moved.end())
+                    inst->set_offset(inst->get_offset() + moved->second);
+            }
+        }
+    }
+
+    StoreParams store;
+    store.path = path.c_str();
+    store.model = &model;
+    store.plate_data_list = plates;
+    store.project_presets = project_presets;
+    store.config = &config;
+    store.strategy = SaveStrategy::Silence | SaveStrategy::WithGcode | SaveStrategy::SplitModel |
+                     SaveStrategy::UseLoadedId | SaveStrategy::ShareMesh;
+    store.export_plate_idx = o.slice_plate - 1;
+    if (!store_bbs_3mf(store)) {
+        error = "Writing " + path + " failed.";
+        return CLI_EXPORT_3MF_ERROR;
+    }
+    emit_event({{"event","exported_3mf"}, {"tag","SlicedProjectWritten"}, {"path", path},
+                {"message","Wrote the sliced project " + path}});
+    return 0;
+}
+
 /// --slice: every plate (0) or plate N of the input, one G-code each as
 /// <outputdir>/plate_N.gcode, through the same single-plate path the default
 /// call runs. The official loop stops at the first plate that fails
@@ -4773,6 +4944,25 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             break;
         }
     }
+    long long export_ms = 0;
+    if (code == 0 && !o.export_3mf.empty()) {
+        const auto export_started = std::chrono::steady_clock::now();
+        if (o.progress) {
+            PlateOutcome last = outcomes.empty() ? PlateOutcome() : outcomes.back();
+            emit_progress(last, 100, "Exporting 3mf");
+        }
+        std::string export_error;
+        try {
+            code = export_sliced_3mf(o, outdir, outcomes, export_error);
+        } catch (const std::exception& e) {
+            code = CLI_EXPORT_3MF_ERROR;
+            export_error = e.what();
+        }
+        if (code != 0)
+            error_string = cli_error_sentence(code) + (export_error.empty() ? "" : " " + export_error);
+        export_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - export_started).count();
+    }
     const long long total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - run_started).count();
     long long sliced_ms = 0;
@@ -4780,7 +4970,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     if (code == 0) error_string = cli_error_sentence(CLI_SUCCESS);
     const int reported_plate = (code != 0 && !outcomes.empty()) ? outcomes.back().plate_id : o.slice_plate;
     write_result_json(outdir.string(), code, reported_plate, error_string, outcomes,
-                      std::max(0LL, total_ms - sliced_ms), 0);
+                      std::max(0LL, total_ms - sliced_ms - export_ms), export_ms);
     if (code != 0)
         std::cerr << "Error: " << error_string << "\n";
     return code;
@@ -4922,6 +5112,8 @@ int main(int argc, char** argv) {
             list_presets = true;
         } else if (arg == "--printer" && i + 1 < argc) {
             list_printer = argv[++i];
+        } else if (arg == "--export-3mf" && i + 1 < argc) {
+            o.export_3mf = argv[++i];
         } else if (arg == "--arrange" && i + 1 < argc) {
             o.arrange = parse_cli_int("--arrange", argv[++i], argv[0]) != 0;
         } else if (arg == "--allow-newer-file") {
@@ -4991,6 +5183,10 @@ int main(int argc, char** argv) {
             }
             return 1;
         }
+    }
+    if (!o.export_3mf.empty() && !o.slice_mode) {
+        std::cerr << "Error: --export-3mf needs --slice\n";
+        return 1;
     }
     if (o.arrange && !o.slice_mode) {
         std::cerr << "Error: --arrange needs --slice (the official CLI arranges inside its plate loop)\n";
