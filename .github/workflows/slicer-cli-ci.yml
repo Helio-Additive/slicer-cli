@@ -1523,6 +1523,9 @@ jobs:
           # resource folders without a swallowed parse error (libslic3r logs
           # "parse info/…" and continues on its hardcoded tables).
           bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
+          # --info, --list-presets) and the default-path checks, on both engines.
+          bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
 
       - name: Assemble + validate package (Windows x86_64)
         if: matrix.os == 'Windows-x86_64'
@@ -1631,6 +1634,8 @@ jobs:
           # resource folders without a swallowed parse error.
           bash tests/test-packaged-slice.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe
           if ($LASTEXITCODE -ne 0) { throw "packaged slice assertion failed" }
+          bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli.exe dist/verify/slicer-cli/slicer_cli-orcaslicer.exe
+          if ($LASTEXITCODE -ne 0) { throw "complete slice path assertion failed" }
 
       - name: Upload engine release package artifact
         uses: actions/upload-artifact@v4
@@ -1804,6 +1809,7 @@ jobs:
           dist/verify/slicer-cli/bin/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/bin/slicer_cli-orcaslicer --help >/dev/null
           bash tests/test-portable-bundle.sh dist/verify/slicer-cli
+          bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/bin/slicer_cli dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
 
       - name: Upload Linux release package artifact
         uses: actions/upload-artifact@v4
