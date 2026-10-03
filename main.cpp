@@ -2588,6 +2588,7 @@ struct PlateOutcome {
     json        objects   = json::array();
     json        filaments = json::array();
     json        warnings  = json::array();   // every slicing warning, not only the last
+    std::vector<std::string> unknown_settings;  // keys in the file this engine has no definition for
     // sliced_info_t print summary (BambuStudio.cpp 221-231)
     float       layer_height = 0.f;
     int         wall_loops   = 0;
@@ -2704,6 +2705,12 @@ static void write_result_json(const std::string& outputdir, int code, int plate_
     j["layer_height"]          = summary ? summary->layer_height : 0.f;
     j["wall_loops"]            = summary ? summary->wall_loops : 0;
     j["sparse_infill_density"] = summary ? summary->sparse_infill_density : 0.f;
+    // Settings the file states that this engine has no definition for (the
+    // engine ignores them; the GUI lists them as incompatible settings).
+    std::set<std::string> unknown;
+    for (const PlateOutcome& p : outcomes)
+        unknown.insert(p.unknown_settings.begin(), p.unknown_settings.end());
+    j["unknown_settings"] = std::vector<std::string>(unknown.begin(), unknown.end());
     j["sliced_plates"] = json::array();
     for (const PlateOutcome& p : outcomes) {
         if (!p.exported) continue;
@@ -2725,6 +2732,7 @@ static void write_result_json(const std::string& outputdir, int code, int plate_
         if (!p.filaments.empty()) plate["filaments"] = p.filaments;
         plate["warnings"]   = p.warnings;
         plate["gcode_file"] = p.gcode_path;
+        plate["unknown_settings"] = p.unknown_settings;
         j["sliced_plates"].push_back(plate);
     }
     const std::string path = (boost::filesystem::path(outputdir) / "result.json").string();
@@ -3514,6 +3522,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // substituted", and it is also where an unknown key (a setting the
             // host wrote that this engine has no definition for) is recorded.
             emit_config_substitutions(config_subst, "3mf:project_settings.config");
+            outcome.unknown_settings = config_subst.unrecogized_keys;   // sic — upstream spelling
 
             if (!result) {
                 emit_event({{"event","load_error"},
