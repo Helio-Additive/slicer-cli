@@ -5306,18 +5306,6 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         }
     }
 
-    // Every plate this run will slice starts without a G-code in
-    // --outputdir: a plate that fails before export_gcode must not leave
-    // plate_N.gcode from an earlier run looking current. The official CLI
-    // only overwrites (export to <outputdir>/plate_N.gcode, BambuStudio.cpp
-    // 7170-7186; flush_and_exit removes backups only, 458-473); result.json
-    // stays the verdict, and a G-code written by this run is kept.
-    for (int p = (o.slice_plate == 0 ? 1 : o.slice_plate);
-         p <= (o.slice_plate == 0 ? plate_count : o.slice_plate); ++p) {
-        boost::system::error_code ignored;
-        fs::remove(outdir / ("plate_" + std::to_string(p) + ".gcode"), ignored);
-    }
-
     const auto run_started = std::chrono::steady_clock::now();
     if (o.progress) {
         PlateOutcome preparing;
@@ -5336,6 +5324,18 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         outcome.plate_index = int(i) + 1;
         outcome.plate_count = int(plates.size());
         outcome.gcode_path  = (outdir / ("plate_" + std::to_string(plates[i]) + ".gcode")).string();
+        // The plate about to be sliced starts without a G-code in --outputdir,
+        // so a failure before export_gcode cannot leave an earlier run's
+        // plate_N.gcode looking current. Only this plate: a run that stops
+        // here leaves the plates it never reached as they were. The official
+        // CLI only overwrites (export to <outputdir>/plate_N.gcode,
+        // BambuStudio.cpp 7170-7186; flush_and_exit removes backups only,
+        // 458-473); result.json stays the verdict, and a G-code written by
+        // this run is kept.
+        {
+            boost::system::error_code ignored;
+            fs::remove(outcome.gcode_path, ignored);
+        }
         const int rc = slice_one_plate(o, calib_params, per_plate_load ? plates[i] : 0,
                                        outcome.gcode_path, outcome);
         // A failure that set no official code (an engine exception in the
