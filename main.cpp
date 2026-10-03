@@ -3286,6 +3286,10 @@ static bool preset_usable(Slic3r::PresetCollection& collection, const std::strin
 /// compatible "0.20mm Standard ..."; "Snapmaker PLA" -> a PLA), so the
 /// fallback keeps the default's layer height and material.
 static std::string closest_compatible_preset(Slic3r::PresetCollection& collection, const std::string& like) {
+    // A printer that states no default gets no guess: the caller asks for
+    // --process-preset / --filament-preset by name.
+    if (like.empty())
+        return {};
     std::vector<std::string> words;
     boost::algorithm::split(words, like, boost::is_any_of(" @()"), boost::token_compress_on);
     std::string best;
@@ -4879,6 +4883,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
             std::cout << "\n✓ Slicing complete!\n";
 
+            // --slice: toolpath conflicts stop the plate before any G-code
+            // is written, as the official CLI checks them right after
+            // process() and exits before export_gcode (BambuStudio.cpp
+            // 7111-7116 at 5873b5f). Print::process() sets the conflict
+            // result in both engines (Print.cpp 2396 / 2553).
+            if (o.slice_mode) {
+                const std::string conflict = print.get_conflict_string();
+                if (!conflict.empty()) {
+                    set_outcome_failure(outcome, CLI_GCODE_PATH_CONFLICTS, conflict + ".");
+                    emit_event({{"event","plate_error"}, {"tag","GcodePathConflicts"}, {"message", conflict}});
+                    return 1;
+                }
+            }
+
             // Attempt G-code export
             std::cout << "\nExporting G-code to: " << output_file << "\n";
 
@@ -5137,6 +5155,11 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 #endif
         }
         apply_command_line_overrides(config, o.overrides, /*report_rejections=*/false);
+        // The slice ran its custom G-code with the legacy placeholder aliased
+        // (normalize_legacy_gcode_tokens, before print.apply); the project
+        // states the same templates.
+        if (o.normalize_legacy_gcode)
+            normalize_legacy_gcode_tokens(config);
         for (const PlateOutcome& out : outcomes) {
             if (!out.plate_data) continue;
             const int idx = out.plate_id - 1;

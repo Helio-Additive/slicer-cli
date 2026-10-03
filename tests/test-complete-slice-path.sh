@@ -184,6 +184,27 @@ assert abs(num("layer_height") - 0.16) < 1e-6, d["layer_height"]
 '
 echo "PASS: the exported project keeps the converted widths and the command-line override"
 
+# ... and the custom G-code as it ran: the legacy placeholder aliased.
+py '
+import json, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("legacy.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["machine_start_gcode"] = d["machine_start_gcode"] + "\n; first {initial_no_support_filament_id}\n"
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+'
+run legacy-export "$B" legacy.3mf --slice 1 --outputdir legacy-export/out --export-3mf sliced.3mf
+[ "$(rc legacy-export)" = 0 ] || { show legacy-export; fail "--export-3mf with a legacy placeholder exit $(rc legacy-export)"; }
+py '
+import json, zipfile
+g = json.loads(zipfile.ZipFile("legacy-export/out/sliced.3mf").read("Metadata/project_settings.config"))["machine_start_gcode"]
+assert "{initial_no_support_extruder}" in g and "initial_no_support_filament_id" not in g, g[-200:]
+'
+echo "PASS: the exported project states the custom G-code the slice ran"
+
 # Presets by name with every parent applied (desktop result: 220 C, 200 mm/s
 # outer wall) and --arrange 1 centring the cube on the 180 mm A1 mini bed. Both engines.
 for e in bambu orca; do
