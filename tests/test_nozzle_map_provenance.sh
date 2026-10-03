@@ -296,6 +296,7 @@ with zipfile.ZipFile(source) as src, zipfile.ZipFile(destination, "w") as dst:
             config = json.loads(data)
             config["textured_plate_temp"] = ["55", "55"]
             config["textured_plate_temp_initial_layer"] = ["55", "55"]
+            config["extruder_printable_height"] = ["250", "250"]
             data = json.dumps(config, indent=2).encode()
         dst.writestr(info, data)
 PY
