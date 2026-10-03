@@ -2763,15 +2763,15 @@ static void emit_progress(const PlateOutcome& outcome, int plate_percent, const 
 }
 
 
-/// The bed as a person reads it: "180 × 180 × 180 mm".
+/// The bed as a person reads it: "180 x 180 x 180 mm".
 static std::string bed_size_text(const Slic3r::DynamicPrintConfig& config) {
     const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
     if (!area || area->values.empty()) return "unknown";
     Slic3r::BoundingBoxf bed;
     for (const Slic3r::Vec2d& p : area->values) bed.merge(p);
-    std::string text = mm_text(bed.size().x()) + " × " + mm_text(bed.size().y());
+    std::string text = mm_text(bed.size().x()) + " x " + mm_text(bed.size().y());
     if (config.has("printable_height"))
-        text += " × " + mm_text(config.opt_float("printable_height"));
+        text += " x " + mm_text(config.opt_float("printable_height"));
     return text + " mm";
 }
 
@@ -2784,7 +2784,7 @@ static Slic3r::BoundingBoxf3 object_world_bbox(const Slic3r::ModelObject* object
 
 static std::string object_size_text(const Slic3r::BoundingBoxf3& box) {
     const Slic3r::Vec3d size = box.size();
-    return mm_text(size.x()) + " × " + mm_text(size.y()) + " × " + mm_text(size.z()) + " mm";
+    return mm_text(size.x()) + " x " + mm_text(size.y()) + " x " + mm_text(size.z()) + " mm";
 }
 
 /// The official per-plate gate before apply (BambuStudio.cpp 6527-6567 at
