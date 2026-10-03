@@ -3667,6 +3667,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         std::vector<std::string> unknown_values;
         json unknown_items = json::array();
         Slic3r::PlateDataPtrs plate_data;  // hoisted so it is accessible after the 3mf block
+        // load_bbs_3mf allocates the plates; free them when this plate's slice
+        // ends, so --slice 0 does not keep every plate's load alive
+        // (the export keeps its own copy: record_plate_for_export).
+        struct PlateDataRelease {
+            Slic3r::PlateDataPtrs& plates;
+            ~PlateDataRelease() { Slic3r::release_PlateData_list(plates); }
+        } plate_data_release{plate_data};
 #ifdef ENGINE_BAMBU
         bool explicit_config_supplied_nozzle_map = false;
 #endif
@@ -3719,6 +3726,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #endif
             Slic3r::ConfigSubstitutionContext config_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
             std::vector<Slic3r::Preset*> presets;
+            struct PresetsRelease {
+                std::vector<Slic3r::Preset*>& presets;
+                ~PresetsRelease() { for (Slic3r::Preset* p : presets) delete p; presets.clear(); }
+            } presets_release{presets};
             Slic3r::Semver file_version;
 
             // Pass &config so load_bbs_3mf extracts project_settings.config from the
