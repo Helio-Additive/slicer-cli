@@ -3319,6 +3319,13 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         return false;
     }
     bundle.filament_presets = filaments;
+    // The desktop app runs this whenever the filament list changes: it sizes
+    // the project's flush_volumes_matrix to filaments x filaments per nozzle
+    // and flush_multiplier to the nozzle count (PresetBundle.cpp at both
+    // pins). Without it a two-nozzle printer (X2D, H2D) reads past the
+    // matrix in ToolOrdering::reorder_extruders_for_minimum_flush_volume.
+    bundle.update_multi_material_filament_presets();
+    filaments = bundle.filament_presets;
 
     out = bundle.full_config();
     // full_config() writes each filament's own colour; a slot without one
@@ -5240,6 +5247,8 @@ int main(int argc, char** argv) {
             emit_event({{"event","preset_error"}, {"tag","NamedPresetRefused"}, {"message", error}});
             std::cerr << "Error: " << error << "\n";
             if (o.slice_mode) {
+                boost::system::error_code mk;
+                boost::filesystem::create_directories(o.outputdir.empty() ? "." : o.outputdir, mk);
                 write_result_json(o.outputdir.empty() ? "." : o.outputdir, code, o.slice_plate,
                                   cli_error_sentence(code) + " " + error, {}, 0, 0);
                 return code;
