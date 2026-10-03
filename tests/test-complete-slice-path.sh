@@ -227,6 +227,19 @@ assert d["return_code"] != 0 and "export-3mf" in d["error_string"], d
 done
 echo "PASS: --export-3mf refuses the name of a file the run writes"
 
+# ... and a NAME that is a link to one of them (POSIX only: Git Bash on
+# Windows makes copies, not links).
+case "$(uname -s)" in
+MINGW*|MSYS*|CYGWIN*) echo "SKIP: export name links (Windows)";;
+*)
+    mkdir -p alias/out
+    ln -s result.json alias/out/link.3mf
+    run alias "$B" "$FIXTURE" --slice 1 --outputdir alias/out --export-3mf link.3mf
+    [ "$(rc alias)" != 0 ] || fail "--export-3mf through a link to result.json was accepted"
+    grep -q '"tag":"ExportNameTaken"' alias/stdout || { show alias; fail "no ExportNameTaken event for a link"; }
+    echo "PASS: --export-3mf refuses a link to the run's result.json";;
+esac
+
 # A command-line override is range-checked like the file's values.
 run badlh "$B" "$FIXTURE" --slice 1 --layer-height -0.1 --outputdir badlh/out --export-3mf sliced.3mf
 [ "$(rc badlh)" != 0 ] || fail "--layer-height -0.1 was sliced"
@@ -321,6 +334,28 @@ assert "300" in d["error_string"], d["error_string"]
 ' big-$e/out/result.json
 done
 echo "PASS: a part larger than the bed is refused with its size (both engines)"
+
+# Default path: the plate's own settings apply over the project's (official
+# new_print_config.apply(plate config)); plate 1 states a Cool Plate.
+py '
+import zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("platebed.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            t = data.decode()
+            mark = "<metadata key=\"plater_id\" value=\"1\"/>"
+            assert mark in t
+            t = t.replace(mark, mark + "\n    <metadata key=\"bed_type\" value=\"Cool Plate\"/>", 1)
+            data = t.encode()
+        zout.writestr(item, data)
+'
+run platebed "$B" platebed.3mf --plate 1 -o platebed/out.gcode
+[ "$(rc platebed)" = 0 ] || { show platebed; fail "plate bed type exit $(rc platebed)"; }
+tr -d '\r' < platebed/out.gcode > platebed/out.lf
+grep -q '^; curr_bed_type = Cool Plate$' platebed/out.lf || fail "the plate's Cool Plate was not applied"
+grep -q '"tag":"PlateSettingsApplied"' platebed/stdout || fail "no PlateSettingsApplied event"
+echo "PASS: the plate's own bed type applies over the project's"
 
 # Default path: a printer this engine does not have is refused, naming the binary that has it.
 run u1 "$B" u1.3mf --plate 1 -o u1/out.gcode

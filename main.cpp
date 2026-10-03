@@ -4466,6 +4466,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (has_explicit) {
                 auto* fm = config.option<Slic3r::ConfigOptionInts>("filament_map", true);
                 fm->values = pm;  // already 1-based per PlateData docs
+                // The plate's nozzle-volume map with it, as the official
+                // plate config carries both (bbs_3mf.cpp 4612-4624).
+                if (const auto* pvm = plate_data[plate_data_idx]->config.option<Slic3r::ConfigOptionInts>("filament_volume_map");
+                    pvm && pvm->values.size() == pm.size())
+                    config.option<Slic3r::ConfigOptionInts>("filament_volume_map", true)->values = pvm->values;
 
                 // Also sync filament_map_2 (0-based mirror used by some code paths)
                 auto* fm2 = config.option<Slic3r::ConfigOptionInts>("filament_map_2", true);
@@ -4596,6 +4601,35 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // per-extruder static tables (setExtruderParams/setPrintSpeedTable) are still set
         // after apply(), exactly as Orca's own headless CLI does.
 #endif // ENGINE_ORCA
+
+        // The selected plate's own settings over the project's, then the
+        // command line over both: the official CLI slices each plate with
+        // new_print_config = m_print_config; apply(*part_plate->config());
+        // apply(m_extra_config) (BambuStudio.cpp 6902-6904 at 5873b5f;
+        // OrcaSlicer.cpp 5905-5907 at 31f6803). A plate states bed type,
+        // print sequence, first/other layer order, spiral mode and the
+        // filament-switcher flags (bbs_3mf.cpp 4563-4728 / Orca 4419-4563).
+        // The filament-map keys are not taken here: on the Bambu build the
+        // plate block above applies the plate's mode and, in a manual mode,
+        // its maps (an automatic mode regroups whatever map was saved,
+        // ToolOrdering.cpp 1897-1914); the Orca build keeps its native
+        // Auto-For-Flush resolution. Only with a plate named (--plate N or
+        // --slice): a whole-file load is not one plate.
+        if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr) {
+            Slic3r::DynamicPrintConfig plate_config = plate_data[plate_id - 1]->config;
+            for (const char* key : {"filament_map_mode", "filament_map", "filament_volume_map"})
+                plate_config.erase(key);
+            for (const std::string& key : plate_config.keys())   // keys this engine does not define
+                if (Slic3r::print_config_def.get(key) == nullptr)
+                    plate_config.erase(key);
+            if (!plate_config.empty()) {
+                config.apply(plate_config, true);
+                emit_event({{"event","config_normalized"}, {"tag","PlateSettingsApplied"},
+                            {"plate_id", plate_id}, {"keys", plate_config.keys()},
+                            {"message","Applied plate " + std::to_string(plate_id) + "'s own settings: " +
+                                       boost::algorithm::join(plate_config.keys(), ", ")}});
+            }
+        }
 
         // Apply command-line overrides
         apply_command_line_overrides(config, overrides, /*report_rejections=*/true);
@@ -5296,18 +5330,38 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // --export-3mf NAME is written into --outputdir next to result.json and
     // plate_N.gcode; a NAME that is one of them would overwrite it (or be
     // overwritten). Compared without case: Windows and macOS file systems
-    // treat Result.json and result.json as one file.
+    // treat Result.json and result.json as one file. Links are followed
+    // (the NAME's own link chain, then weakly_canonical for every existing
+    // part),
+    // and two existing names for one file (a hard link) are caught by
+    // fs::equivalent, so a NAME that is another name for one of them is
+    // refused too.
     if (!o.export_3mf.empty()) {
         const auto key = [](const fs::path& p) {
-            return fs::absolute(p).lexically_normal().generic_string();
+            // A link whose target does not exist yet (result.json before
+            // the run writes it) is not resolved by weakly_canonical: follow
+            // the chain by hand first.
+            fs::path q = fs::absolute(p);
+            boost::system::error_code ec;
+            for (int hops = 0; hops < 40 && fs::is_symlink(q, ec) && !ec; ++hops) {
+                const fs::path link = fs::read_symlink(q, ec);
+                if (ec) break;
+                q = link.is_absolute() ? link : q.parent_path() / link;
+            }
+            ec.clear();
+            const fs::path resolved = fs::weakly_canonical(q, ec);
+            return (ec ? q : resolved).lexically_normal().generic_string();
         };
-        const std::string target = key(outdir / o.export_3mf);
+        const fs::path target_path = outdir / o.export_3mf;
+        const std::string target = key(target_path);
         std::vector<std::string> taken = {"result.json"};
         for (int p = (o.slice_plate == 0 ? 1 : o.slice_plate);
              p <= (o.slice_plate == 0 ? plate_count : o.slice_plate); ++p)
             taken.push_back("plate_" + std::to_string(p) + ".gcode");
         for (const std::string& name : taken) {
-            if (!boost::algorithm::iequals(target, key(outdir / name))) continue;
+            boost::system::error_code ec;
+            const bool same_file = fs::equivalent(target_path, outdir / name, ec) && !ec;
+            if (!same_file && !boost::algorithm::iequals(target, key(outdir / name))) continue;
             const std::string detail = "--export-3mf " + o.export_3mf + " is the run's own " + name +
                                        " in --outputdir; choose another name.";
             write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
