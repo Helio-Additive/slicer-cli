@@ -1907,10 +1907,22 @@ static int count_3mf_plates(const std::string& path) {
     std::string settings;
     if (!read_zip_member(path, "Metadata/model_settings.config", settings))
         return 0;
+    // Every <plate> start tag, by XML name rules: the name ends at
+    // whitespace, '>' or '/', so `<plate >` and a tag with attributes count
+    // and `<plates>` does not; comments are skipped.
     int plates = 0;
-    for (size_t pos = settings.find("<plate>"); pos != std::string::npos;
-         pos = settings.find("<plate>", pos + 7))
-        ++plates;
+    for (size_t pos = 0; (pos = settings.find('<', pos)) != std::string::npos; ++pos) {
+        if (settings.compare(pos, 4, "<!--") == 0) {
+            const size_t end = settings.find("-->", pos + 4);
+            if (end == std::string::npos) break;
+            pos = end + 2;
+            continue;
+        }
+        if (settings.compare(pos, 6, "<plate") != 0 || pos + 6 >= settings.size()) continue;
+        const char next = settings[pos + 6];
+        if (next == '>' || next == '/' || next == ' ' || next == '\t' || next == '\r' || next == '\n')
+            ++plates;
+    }
     return plates;
 }
 
@@ -3873,7 +3885,9 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
 #endif
     auto find = [&](Slic3r::PresetCollection& collection, const std::string& name, const char* kind) -> bool {
         Slic3r::Preset* preset = collection.find_preset(name, false);
-        if (preset && preset->name == name) {
+        // Only the system presets --list-presets offers: never a built-in
+        // "- default -" preset, which is no printer's, process's or filament's.
+        if (preset && preset->name == name && is_listed_preset(*preset)) {
             // A fresh AppConfig has no printer models installed, so system
             // presets load invisible, and select_preset_by_name skips an
             // invisible preset (Preset.cpp 3206 at 5873b5f / 3493 at
@@ -4027,7 +4041,7 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         out["printers"] = printers;
     } else {
         const Slic3r::Preset* printer = bundle.printers.find_preset(printer_name, false);
-        if (!printer || printer->name != printer_name) {
+        if (!printer || printer->name != printer_name || !is_listed_preset(*printer)) {
             out["error"] = "No printer preset named '" + printer_name + "'.";
             const std::string similar = near_preset_names(bundle.printers, printer_name);
             if (!similar.empty()) out["close_names"] = similar;
