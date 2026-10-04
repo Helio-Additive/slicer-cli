@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Bambu provenance regressions. Assertions use the production CLI's config
-# loading, explicit-map derivation, and object reassignment path.
+# loading and explicit-map derivation. A derived routing is the plate's; no
+# object is moved to another filament (Bambu Studio and OrcaSlicer never do).
 # Usage: tests/test_nozzle_map_provenance.sh /path/to/bambu/slicer_cli
 
 set -euo pipefail
@@ -50,23 +51,29 @@ run_case() {
     fi
 }
 
-# Runs an invalid-input case and checks provenance plus validation failure.
-run_validation_failure() {
-    local label="$1" input="$2" provenance="$3" derivation="$4" reassignment="$5" validation="$6"; shift 6
+# Runs a derived-routing case: provenance and derivation as stated, no object
+# moved to another filament, and `absent` (when given) not in the output. The
+# exit status is not the subject here, only that the run did not crash.
+run_routing_case() {
+    local label="$1" input="$2" provenance="$3" derivation="$4" absent="$5"; shift 5
     set +e
     local output
     output=$("$BINARY" --verbose "$input" "$@" -o "$WORKDIR/$label.gcode" 2>&1)
     local status=$?
     set -e
-    if [ "$status" -ne 1 ]; then
-        FAIL=$((FAIL + 1)); echo "FAIL [$label] exit=$status (expected validation exit 1)"
+    if [ "$status" -ge 128 ]; then
+        FAIL=$((FAIL + 1)); echo "FAIL [$label] crashed, exit=$status"
         echo "  output: $output"
         return
     fi
     record "$label/provenance" "$provenance" "$output"
     record "$label/derivation" "$derivation" "$output"
-    record "$label/reassignment" "$reassignment" "$output"
-    record "$label/validation" "$validation" "$output"
+    if grep -Fq "Nozzle-map reassignment:" <<<"$output" || { [ -n "$absent" ] && grep -Fq "$absent" <<<"$output"; }; then
+        FAIL=$((FAIL + 1)); echo "FAIL [$label/objects-keep-filament]"
+        echo "  output: $output"
+    else
+        PASS=$((PASS + 1)); echo "PASS [$label/objects-keep-filament]"
+    fi
 }
 
 # Closed 20 mm cube: 12 triangles, suitable for a successful real slice.
@@ -238,26 +245,24 @@ run_case "mapless-3mf-default" "$WORKDIR/mapless.3mf" \
     "Nozzle-map derivation: skipped mode=Auto For Flush" \
     ""
 
-run_validation_failure "stl-config-cross-map" "$WORKDIR/cube.stl" \
+# One nozzle per extruder (extruder_max_nozzle_count 1,1): the derived map
+# takes Manual, as the official CLI refuses Nozzle Manual on such machines.
+run_routing_case "stl-config-cross-map" "$WORKDIR/cube.stl" \
     "Nozzle-map provenance: explicit config map=yes" \
-    "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" \
-    "Nozzle-map reassignment: object_extruders=[2]" \
-    "Validation error: cube.stl is too close to exclusion area" \
+    "Nozzle-map derivation: filament_map=[2,1] mode=Manual" \
+    "does not support filament 2" \
     --config "$WORKDIR/stl-cross-map.json"
 
 # Each CLI overlay must establish provenance after a mapless native 3MF load.
-# Physical nozzle zero is the master. With physical mapping [0,1] and
-# nozzle map [1,0], the derived logical map is [2,1]. Reassignment must
-# change the object from filament slot 1 to slot 2, not merely log a call.
-# The synthetic slot-2 profile then fails plate validation deliberately;
-# these cases test the mutated model, not a complete two-filament print.
+# With physical mapping [0,1] and nozzle map [1,0], the derived logical map
+# is [2,1]. The object stays on filament slot 1: slot 2 is deliberately
+# unprintable on the plate, so an object moved onto it would be refused.
 for flag in --config --machine --process --filament; do
     label="mapless-3mf-${flag#--}"
-    run_validation_failure "$label" "$WORKDIR/mapless.3mf" \
+    run_routing_case "$label" "$WORKDIR/mapless.3mf" \
         "Nozzle-map provenance: explicit config map=yes" \
-        "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" \
-        "Nozzle-map reassignment: object_extruders=[2]" \
-        "Validation error: Plate 1: Textured PEI Plate does not support filament 2" \
+        "Nozzle-map derivation: filament_map=[2,1] mode=Manual" \
+        "does not support filament 2" \
         "$flag" "$WORKDIR/cross-map.json"
 done
 
@@ -283,9 +288,9 @@ run_case "plate-cross-map-manual" "$WORKDIR/plate-cross-map-manual.3mf" \
     "Nozzle-map derivation: skipped mode=Manual" \
     ""
 
-# --export-3mf keeps the derived routing: a mapless project whose slot 2 is
-# printable, sliced with a cross-nozzle --config map, exports the derived
-# map and Nozzle Manual (project and plate) and the object on slot 2.
+# --export-3mf keeps the derived routing on the plate: a mapless project
+# sliced with a cross-nozzle --config map exports the derived map and Manual
+# on its plate, the project's own mode untouched, and the object on slot 1.
 python3 - "$WORKDIR/mapless.3mf" "$WORKDIR/mapless-ok.3mf" <<'PY'
 import json, sys, zipfile
 source, destination = sys.argv[1:]
@@ -309,19 +314,18 @@ if [ "$export_status" -ne 0 ]; then
     FAIL=$((FAIL + 1)); echo "FAIL [export-derived-routing] exit=$export_status"
     echo "  output: $export_output"
 else
-    record "export-derived-routing/derivation" "Nozzle-map derivation: filament_map=[2,1] mode=Nozzle Manual" "$export_output"
+    record "export-derived-routing/derivation" "Nozzle-map derivation: filament_map=[2,1] mode=Manual" "$export_output"
     if python3 - "$WORKDIR/export-routing/routed.3mf" <<'PY'
 import json, re, sys, zipfile
 z = zipfile.ZipFile(sys.argv[1])
 project = json.loads(z.read("Metadata/project_settings.config"))
-assert [int(v) for v in project["filament_map"]] == [2, 1], project["filament_map"]
-assert project["filament_map_mode"] == "Nozzle Manual", project["filament_map_mode"]
+assert project["filament_map_mode"] == "Auto For Flush", project["filament_map_mode"]
 model = z.read("Metadata/model_settings.config").decode()
 plate = model[model.index("<plate>"):model.index("</plate>")]
-assert 'key="filament_map_mode" value="Nozzle Manual"' in plate, plate[:400]
+assert 'key="filament_map_mode" value="Manual"' in plate, plate[:400]
 assert 'key="filament_maps" value="2 1"' in plate, plate[:400]
 obj = model[model.index("<object"):model.index("</object>")]
-assert re.search(r'key="extruder" value="2"', obj), obj[:400]
+assert not re.search(r'key="extruder" value="2"', obj), obj[:400]
 PY
     then PASS=$((PASS + 1)); echo "PASS [export-derived-routing/project]"
     else FAIL=$((FAIL + 1)); echo "FAIL [export-derived-routing/project]"

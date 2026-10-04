@@ -886,8 +886,8 @@ bool bbs_3mf_config_contains_nozzle_map(const std::string& filepath,
 // Returns true if it actually derived and applied a cross-nozzle filament_map.
 #ifdef ENGINE_BAMBU
 // ── BBS-only config-normalization helpers ───────────────────────────────────
-// These four helpers (apply_explicit_nozzle_mapping, reassign_objects_to_master_
-// nozzle, set_default_config, ensure_vector_config_sizes) exist solely to coax
+// These helpers (apply_explicit_nozzle_mapping, set_default_config,
+// ensure_vector_config_sizes) exist solely to coax
 // the Bambu engine into accepting a non-Bambu printer config. Their bodies use
 // Bambu-only config keys/enums (e.g. fmmNozzleManual, filament_extruder_variant),
 // so they are compiled only for ENGINE_BAMBU and called only from the gated
@@ -907,9 +907,9 @@ bool bbs_3mf_config_contains_nozzle_map(const std::string& filepath,
 // writes ({1}) was padded by the extruder-count normalisation to [1,0] and read
 // back here as if it were the file's: a fresh STL (or any input with <=2 slots
 // and no nozzle map) on a two-head machine was then forced to "Nozzle Manual"
-// with filament_map [1,2], and reassign_objects_to_master_nozzle() moved every
-// object to physical nozzle 0 — on the X2D the Bowden head — instead of letting
-// the engine's automatic grouping (ToolOrdering.cpp:1910-1914) pick the head.
+// with filament_map [1,2], and every object was then moved to physical nozzle 0
+// — on the X2D the Bowden head — instead of letting the engine's automatic
+// grouping (ToolOrdering.cpp:1910-1914) pick the head.
 /// Derives and applies a manual nozzle map only when input provenance is explicit.
 bool apply_explicit_nozzle_mapping(
     Slic3r::DynamicPrintConfig& config,
@@ -974,95 +974,29 @@ bool apply_explicit_nozzle_mapping(
     for (size_t i = 0; i < derived_map.size(); ++i)
         filament_map_2->values[i] = derived_map[i] - 1;
 
-    // Force Nozzle Manual mode when filament_nozzle_map gives a cross-extruder
-    // assignment. In this case the explicit config map is the authoritative
-    // source for which filament goes on which physical nozzle. Without real AMS
-    // data the fmmAutoForFlush algorithm always assigns every filament to the
-    // master extruder, overriding the correct split.  Switching to Nozzle Manual
-    // preserves the derived_map computed above.
+    // A manual mode keeps the derived map: without real AMS data the
+    // automatic grouping would put every filament on the master extruder.
+    // Which manual mode follows the machine, as the official CLI decides: a
+    // machine with several nozzles per extruder takes Nozzle Manual, and one
+    // nozzle per extruder (H2D, X2D) takes Manual, since the official CLI
+    // refuses Nozzle Manual there (support_multi_nozzle, BambuStudio.cpp
+    // 3417 and 6841-6846 at 5873b5f).
+    bool has_multiple_nozzles_per_extruder = false;
+    if (auto* counts = config.option<Slic3r::ConfigOptionInts>("extruder_max_nozzle_count", false))
+        has_multiple_nozzles_per_extruder = std::any_of(counts->values.begin(), counts->values.end(),
+                                                        [](int count) { return count > 1; });
+    const char* manual_mode = has_multiple_nozzles_per_extruder ? "Nozzle Manual" : "Manual";
     {
         Slic3r::ConfigSubstitutionContext substitution_context(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-        config.set_deserialize("filament_map_mode", "Nozzle Manual", substitution_context);
+        config.set_deserialize("filament_map_mode", manual_mode, substitution_context);
     }
     if (verbose) {
         std::cout << "Nozzle-map derivation: filament_map=[";
         for (size_t i = 0; i < derived_map.size(); ++i)
             std::cout << (i == 0 ? "" : ",") << derived_map[i];
-        std::cout << "] mode=Nozzle Manual\n";
+        std::cout << "] mode=" << manual_mode << "\n";
     }
     return true;
-}
-
-// When apply_explicit_nozzle_mapping derived a cross-nozzle filament_map from
-// "Auto For Flush" mode, BambuStudio desktop reassigns objects to the master
-// (right) nozzle during Print::process().  Replicate this by changing each
-// object's "extruder" config to the filament slot on the master physical nozzle.
-//
-// This only runs when apply_explicit_nozzle_mapping returned true, meaning the
-// plate had filament_maps="1 1" (auto) but filament_nozzle_map showed a cross-
-// nozzle split.  Explicit plate maps (e.g. "2 1") skip this path entirely.
-/// The 1-based filament slot on the master physical nozzle, or -1.
-int master_nozzle_filament_slot(const Slic3r::DynamicPrintConfig& config)
-{
-    const auto* filament_map = config.option<Slic3r::ConfigOptionInts>("filament_map");
-    const auto* physical_extruder_map = config.option<Slic3r::ConfigOptionInts>("physical_extruder_map");
-    if (!filament_map || !physical_extruder_map)
-        return -1;
-
-    const size_t extruder_count = physical_extruder_map->values.size();
-    if (extruder_count < 2)
-        return -1;
-
-    // Find master logical extruder: the one whose physical_extruder_map value is 0
-    // (physical nozzle 0 = right/master on H2D).
-    int master_logical_idx = -1;
-    for (size_t i = 0; i < extruder_count; ++i) {
-        if (physical_extruder_map->values[i] == 0) {
-            master_logical_idx = static_cast<int>(i);
-            break;
-        }
-    }
-    if (master_logical_idx < 0)
-        return -1;
-
-    // Find the filament slot (1-based) that maps to the master logical extruder.
-    // filament_map[i] is the 1-based logical extruder for filament i.
-    int master_extruder_1based = master_logical_idx + 1;
-    int master_filament_slot = -1;  // 1-based filament slot
-    for (size_t i = 0; i < filament_map->values.size(); ++i) {
-        if (filament_map->values[i] == master_extruder_1based) {
-            master_filament_slot = static_cast<int>(i) + 1;
-            break;
-        }
-    }
-    return master_filament_slot;
-}
-
-/// Every given object (and its volume-level overrides) onto `master_filament_slot`.
-void assign_objects_to_filament_slot(const std::vector<Slic3r::ModelObject*>& objects, int master_filament_slot)
-{
-    for (auto* obj : objects) {
-        int cur = obj->config.extruder();
-        if (cur != master_filament_slot) {
-            obj->config.set_key_value("extruder", new Slic3r::ConfigOptionInt(master_filament_slot));
-        }
-        // Also update any volume-level extruder overrides
-        for (auto* vol : obj->volumes) {
-            const Slic3r::ConfigOption* vopt = vol->config.option("extruder");
-            if (vopt && vopt->getInt() != 0 && vopt->getInt() != master_filament_slot) {
-                vol->config.set_key_value("extruder", new Slic3r::ConfigOptionInt(master_filament_slot));
-            }
-        }
-    }
-}
-
-void reassign_objects_to_master_nozzle(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config)
-{
-    const int master_filament_slot = master_nozzle_filament_slot(config);
-    if (master_filament_slot < 0)
-        return;
-    // Reassign each object's extruder to the master nozzle's filament slot.
-    assign_objects_to_filament_slot(model.objects, master_filament_slot);
 }
 
 // Initialize configuration with BambuStudio defaults
@@ -2651,7 +2585,7 @@ struct PlateOutcome {
     // Bambu build: routing the slice derived from a supplied filament_nozzle_map
     // (apply_explicit_nozzle_mapping); empty when nothing was derived.
     std::vector<int>                            derived_filament_map;
-    int                                         master_filament_slot = -1;  // objects reassigned onto it, or -1
+    std::string                                 derived_filament_map_mode;  // "Manual" or "Nozzle Manual"
 };
 
 
@@ -4597,32 +4531,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         // The selected plate already expresses physical routing when it carries
         // a diverse map. Do not re-derive that routing from the general
-        // filament_nozzle_map fallback: the latter's object reassignment is
-        // exclusively for an otherwise-auto mapping.
+        // filament_nozzle_map fallback, which is for an otherwise-auto mapping.
         bool nozzle_mapping_derived =
             explicit_plate_mapping_applied ? false : apply_explicit_nozzle_mapping(
                 config, explicit_config_supplied_nozzle_map, verbose);
 
-        // When apply_explicit_nozzle_mapping derived a cross-nozzle split from
-        // "Auto For Flush" mode (filament_maps="1 1"), reassign all objects to
-        // the master (right) nozzle to match BambuStudio desktop behavior.
+        // The derived routing is the plate's (filament_map + its mode); every
+        // object keeps its own filament, as in Bambu Studio and OrcaSlicer,
+        // which never move an object to another filament for routing.
         if (nozzle_mapping_derived) {
-            reassign_objects_to_master_nozzle(model, config);
             // --export-3mf reloads the file, which knows nothing of this
-            // routing: keep it so the project states what the slice used.
+            // routing: keep it so the plate states what the slice used.
             if (o.slice_mode && !o.export_3mf.empty()) {
                 outcome.derived_filament_map = config.option<Slic3r::ConfigOptionInts>("filament_map", true)->values;
-                outcome.master_filament_slot = master_nozzle_filament_slot(config);
-            }
-            if (verbose) {
-                std::cout << "Nozzle-map reassignment: object_extruders=[";
-                for (size_t i = 0; i < model.objects.size(); ++i) {
-                    const auto* extruder = dynamic_cast<const Slic3r::ConfigOptionInt*>(
-                        model.objects[i]->config.option("extruder"));
-                    std::cout << (i == 0 ? "" : ",")
-                              << (extruder ? std::to_string(extruder->value) : "missing");
-                }
-                std::cout << "]\n";
+                outcome.derived_filament_map_mode = config.opt_serialize("filament_map_mode");
             }
         } else if (verbose) {
             const auto* mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>(
@@ -5416,30 +5338,17 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
                     inst->set_offset(inst->get_offset() + moved->second);
             }
 #ifdef ENGINE_BAMBU
-            // The routing the slice derived from a supplied nozzle map: the
-            // map and Nozzle Manual in the project settings and on the plate
-            // (store_bbs_3mf writes a plate's filament_map_mode and
-            // filament_maps from its config, bbs_3mf.cpp 8260-8279 at 5873b5f;
+            // The routing the slice derived from a supplied nozzle map, on this
+            // plate only: store_bbs_3mf writes a plate's filament_map_mode and
+            // filament_maps from its config (bbs_3mf.cpp 8260-8279 at 5873b5f;
             // PartPlate::set_filament_maps keeps the map there, PartPlate.cpp
-            // 3860-3863), and this plate's objects on the master nozzle's slot
-            // as reassign_objects_to_master_nozzle put them.
+            // 3860-3863), and a plate mode other than Default wins over the
+            // project's (PartPlate.cpp 278-289). The objects keep their own
+            // filaments, so an object with copies on other plates stays as it is.
             if (!out.derived_filament_map.empty()) {
-                std::vector<int> map0(out.derived_filament_map.size());
-                for (size_t i = 0; i < map0.size(); ++i) map0[i] = out.derived_filament_map[i] - 1;
                 ConfigSubstitutionContext mode_subst(ForwardCompatibilitySubstitutionRule::Enable);
-                for (DynamicPrintConfig* target : {&config, static_cast<DynamicPrintConfig*>(&pd->config)}) {
-                    target->option<ConfigOptionInts>("filament_map", true)->values = out.derived_filament_map;
-                    target->set_deserialize("filament_map_mode", "Nozzle Manual", mode_subst);
-                }
-                config.option<ConfigOptionInts>("filament_map_2", true)->values = map0;
-                if (out.master_filament_slot > 0) {
-                    std::vector<ModelObject*> plate_objects;
-                    for (const auto& [obj_idx, inst_idx] : pd->objects_and_instances)
-                        if (obj_idx >= 0 && obj_idx < int(model.objects.size()) &&
-                            std::find(plate_objects.begin(), plate_objects.end(), model.objects[obj_idx]) == plate_objects.end())
-                            plate_objects.push_back(model.objects[obj_idx]);
-                    assign_objects_to_filament_slot(plate_objects, out.master_filament_slot);
-                }
+                pd->config.option<ConfigOptionInts>("filament_map", true)->values = out.derived_filament_map;
+                pd->config.set_deserialize("filament_map_mode", out.derived_filament_map_mode, mode_subst);
             }
 #endif
         }
