@@ -2061,7 +2061,9 @@ static std::set<std::string> catalog_printer_models(const boost::filesystem::pat
     try {
         for (auto& entry : boost::filesystem::directory_iterator(profiles_dir)) {
             if (entry.path().extension() != ".json") continue;
-            std::ifstream f(entry.path().string());
+            // The native path: on Windows a narrowed path loses characters
+            // outside the ANSI code page (as stage_file_copy's streams).
+            boost::filesystem::ifstream f(entry.path());
             if (!f.is_open()) continue;
             try {
                 const json vendor = json::parse(f);
@@ -2749,8 +2751,8 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
         plate["unknown_settings"] = p.unknown_settings;
         j["sliced_plates"].push_back(plate);
     }
-    const std::string path = (boost::filesystem::path(outputdir) / "result.json").string();
-    std::ofstream out(path, std::ios::out | std::ios::trunc);
+    const boost::filesystem::path path = boost::filesystem::path(outputdir) / "result.json";
+    boost::filesystem::ofstream out(path, std::ios::out | std::ios::trunc);
     if (out.is_open())
         out << j.dump(4, ' ', false, json::error_handler_t::replace) << std::endl;
     if (out.is_open() && out.good())
@@ -2758,9 +2760,10 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
     // The official writer swallows this (c.open ... catch (...) {} in record_exit_reson,
     // BambuStudio.cpp 594-599). A run whose result document is missing is
     // not a finished run here: say so, and let the caller fail it.
-    std::cerr << "Error: cannot write " << path << "\n";
-    emit_event({{"event","output_error"}, {"tag","ResultNotWritten"}, {"path", path},
-                {"message","Could not write " + path}});
+    const std::string shown = path.string();
+    std::cerr << "Error: cannot write " << shown << "\n";
+    emit_event({{"event","output_error"}, {"tag","ResultNotWritten"}, {"path", shown},
+                {"message","Could not write " + shown}});
     return false;
 }
 
