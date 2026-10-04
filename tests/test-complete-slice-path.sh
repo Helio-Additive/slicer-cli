@@ -349,6 +349,45 @@ assert "300" in d["error_string"], d["error_string"]
 done
 echo "PASS: a part larger than the bed is refused with its size (both engines)"
 
+# --arrange 1 keeps clear of the bed exclusion area, as the official per-plate
+# arrange does (PartPlateList::preprocess_exclude_areas, fixed items plus
+# excluded regions). The X1 Carbon excludes its 18 x 28 mm front-left corner;
+# a 230 mm square centred on the 256 mm bed spans 13..243 and would cross it,
+# so the arrange must put the square at x >= 18 or y >= 28.
+X1C="Bambu Lab X1 Carbon 0.4 nozzle"
+py '
+v = [(x, y, z) for z in (0, 2) for y in (0, 230) for x in (0, 230)]
+f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+with open("wide.stl", "w") as o:
+    o.write("solid t\n")
+    for a, b, c in f:
+        o.write("facet normal 0 0 0\nouter loop\n")
+        for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
+        o.write("endloop\nendfacet\n")
+    o.write("endsolid t\n")
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run wide-$e "$bin" wide.stl --slice 1 --arrange 1 --printer-preset "$X1C" --process-preset "0.20mm Standard @BBL X1C" --filament-preset "Bambu PLA Basic @BBL X1C" --outputdir wide-$e/out
+    [ "$(rc wide-$e)" = 0 ] || { show wide-$e; fail "$e: X1 Carbon arrange exit $(rc wide-$e)"; }
+    py '
+import json, sys
+events = []
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    line = line.strip()
+    if line.startswith("[[SLICER_EVENT]] "):
+        events.append(json.loads(line[len("[[SLICER_EVENT]] "):]))
+arranged = [e for e in events if e.get("event") == "arranged"]
+assert arranged, "no arranged event"
+o = arranged[-1]["objects"][0]
+x0, y0 = o["center_x_mm"] - 115, o["center_y_mm"] - 115
+x1, y1 = o["center_x_mm"] + 115, o["center_y_mm"] + 115
+assert -0.01 <= x0 and x1 <= 256.01 and -0.01 <= y0 and y1 <= 256.01, ("off the bed", x0, y0, x1, y1)
+assert not (x0 < 18 and y0 < 28), ("over the exclusion area", x0, y0)
+' wide-$e/stdout
+done
+echo "PASS: --arrange keeps clear of the bed exclusion area (both engines)"
+
 # Default path: the plate's own settings apply over the project's (official
 # new_print_config.apply(plate config)); plate 1 states a Cool Plate.
 py '
