@@ -122,4 +122,25 @@ if ! grep -Eq '^G1 .*X.*Y.*E([0-9]|\.[0-9])' /tmp/orca.gcode; then
     exit 1
 fi
 echo 'PASS: both packaged engines sliced in the clean offline container'
+
+# Preset staging across filesystems: /package sits on the container's
+# overlayfs and /dev/shm is a tmpfs, so copy_file copies between two devices
+# (EXDEV from copy_file_range on Linux) and staging must still load the
+# presets (main.cpp stage_file_copy). The devices are checked first, so the
+# case can never pass without crossing filesystems.
+XDEV_DIR="$(mktemp -d /dev/shm/slicer_cli_xdev.XXXXXX)"
+if [ "$(stat -c %d /package)" = "$(stat -c %d "$XDEV_DIR")" ]; then
+    echo 'FAIL: /dev/shm and /package are on one device; the cross-filesystem case would prove nothing'
+    exit 1
+fi
+if ! TMPDIR="$XDEV_DIR" /package/bin/slicer_cli /fixtures/calib_base.3mf -o /tmp/xdev.gcode > /tmp/xdev.log 2>&1; then
+    cat /tmp/xdev.log
+    exit 1
+fi
+grep -F "Preset match: printer=1 (resolved='Bambu Lab X1 Carbon 0.4 nozzle') print=1 (resolved='0.20mm Standard @BBL X1C') filament=1 (resolved='Bambu PLA Basic @BBL X1C')" /tmp/xdev.log
+if grep -E 'Invalid cross-device link|PresetBundle exception|Preset staging failed|WARNING: Using flat 3MF config' /tmp/xdev.log; then
+    exit 1
+fi
+test -s /tmp/xdev.gcode
+echo 'PASS: presets staged from overlayfs into a tmpfs TMPDIR'
 CONTAINER
