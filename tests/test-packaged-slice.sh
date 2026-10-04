@@ -46,9 +46,15 @@ echo "PASS: packaged slice resolved presets and read resources"
 # rather than failing the preset load, and a staging failure must never leave
 # the slice running on the flat 3MF config.
 # /dev/shm is tmpfs on Linux hosts and usually a different device from the
-# directory the package is unpacked into. (CI runs this script only in the
-# macOS/Windows package jobs, where this case skips; Linux CI coverage is #30.)
-if [ -d /dev/shm ] && [ -w /dev/shm ]; then
+# directory the package is unpacked into. CI runs this script in the macOS and
+# Windows package jobs, where this case skips; the Linux package job runs it
+# in tests/test-portable-bundle.sh. Windows skips because its binary takes the
+# temp folder from TMP/TEMP (GetTempPathW), never TMPDIR, so a Git Bash
+# /dev/shm would give a PASS that crossed no filesystem.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) XDEV_HOST=windows ;; *) XDEV_HOST=posix ;; esac
+if [ "$XDEV_HOST" = windows ]; then
+    echo "SKIP: Windows takes its temp folder from TMP/TEMP, not TMPDIR (cross-filesystem staging case is Linux-only)"
+elif [ -d /dev/shm ] && [ -w /dev/shm ]; then
     XDEV_DIR="$(mktemp -d /dev/shm/slicer_cli_xdev.XXXXXX)"
     # set -e can exit on any failed check below; remove the /dev/shm dir too.
     trap 'rm -rf "$WORKDIR" "$XDEV_DIR"' EXIT
