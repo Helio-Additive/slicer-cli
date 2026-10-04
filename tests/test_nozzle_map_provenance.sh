@@ -52,8 +52,8 @@ run_case() {
 }
 
 # Runs a derived-routing case: provenance and derivation as stated, no object
-# moved to another filament, and `absent` (when given) not in the output. The
-# exit status is not the subject here, only that the run did not crash.
+# moved to another filament, `absent` (when given) not in the output, and the
+# routed plate sliced to G-code.
 run_routing_case() {
     local label="$1" input="$2" provenance="$3" derivation="$4" absent="$5"; shift 5
     set +e
@@ -61,8 +61,8 @@ run_routing_case() {
     output=$("$BINARY" --verbose "$input" "$@" -o "$WORKDIR/$label.gcode" 2>&1)
     local status=$?
     set -e
-    if [ "$status" -ge 128 ]; then
-        FAIL=$((FAIL + 1)); echo "FAIL [$label] crashed, exit=$status"
+    if [ "$status" -ne 0 ] || [ ! -s "$WORKDIR/$label.gcode" ]; then
+        FAIL=$((FAIL + 1)); echo "FAIL [$label] exit=$status (expected a sliced plate)"
         echo "  output: $output"
         return
     fi
@@ -255,8 +255,9 @@ run_routing_case "stl-config-cross-map" "$WORKDIR/cube.stl" \
 
 # Each CLI overlay must establish provenance after a mapless native 3MF load.
 # With physical mapping [0,1] and nozzle map [1,0], the derived logical map
-# is [2,1]. The object stays on filament slot 1: slot 2 is deliberately
-# unprintable on the plate, so an object moved onto it would be refused.
+# is [2,1]. The object stays on filament slot 1 and the plate slices: slot 2
+# is deliberately unprintable on the plate, so an object moved onto it would
+# be refused.
 for flag in --config --machine --process --filament; do
     label="mapless-3mf-${flag#--}"
     run_routing_case "$label" "$WORKDIR/mapless.3mf" \
