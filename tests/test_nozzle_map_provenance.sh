@@ -247,7 +247,17 @@ run_case "mapless-3mf-default" "$WORKDIR/mapless.3mf" \
 
 # One nozzle per extruder (extruder_max_nozzle_count 1,1): the derived map
 # takes Manual, as the official CLI refuses Nozzle Manual on such machines.
-run_routing_case "stl-config-cross-map" "$WORKDIR/cube.stl" \
+# The same cube at the bed centre: the profile is the X1 Carbon's, whose
+# bed_exclude_area corner (0-18 x 0-28 mm) the origin cube sits in.
+python3 - "$WORKDIR/cube.stl" "$WORKDIR/cube-centre.stl" <<'PY'
+import re, sys
+src, dst = sys.argv[1:]
+text = open(src).read()
+text = re.sub(r"vertex (\S+) (\S+) (\S+)",
+              lambda m: "vertex %g %g %s" % (float(m.group(1)) + 118, float(m.group(2)) + 118, m.group(3)), text)
+open(dst, "w").write(text)
+PY
+run_routing_case "stl-config-cross-map" "$WORKDIR/cube-centre.stl" \
     "Nozzle-map provenance: explicit config map=yes" \
     "Nozzle-map derivation: filament_map=[2,1] mode=Manual" \
     "does not support filament 2" \
