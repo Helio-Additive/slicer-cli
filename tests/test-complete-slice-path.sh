@@ -324,17 +324,21 @@ assert "0.20mm Standard @BBL A1M" in d["processes"]
 done
 echo "PASS: --list-presets names the default process (both engines)"
 
-# The Snapmaker U1 0.4 names its own default process through the upstream
-# profile fix packaged from profile-overrides/ (OrcaSlicer 6312caaf13): at the
-# pin it inherited "0.20mm Standard @Snapmaker", which Orca does not ship.
+# The Snapmaker U1 0.4 names a default process Orca does not ship ("0.20mm
+# Standard @Snapmaker", fdm_toolchanger.json) and a default filament it has no
+# compatible preset of ("Snapmaker PLA"). A fresh OrcaSlicer 2.4.2 app then
+# selects "0.08 Extra Fine @Snapmaker U1 (0.4 nozzle)" and "Generic ABS
+# @System"; a slice with only --printer-preset takes the same, and says so.
 "$O" --list-presets --printer "Snapmaker U1 (0.4 nozzle)" > list-u1.json
 py '
 import json; d = json.load(open("list-u1.json"))
-assert d["default_process"] == "0.20 Standard @Snapmaker U1 (0.4 nozzle)", d["default_process"]
-assert not any(r.startswith("process") for r in d["defaults_replaced"]), d["defaults_replaced"]
-assert all(f in d["filaments"] for f in d["default_filaments"]), d["default_filaments"]
+assert d["default_process"] == "0.08 Extra Fine @Snapmaker U1 (0.4 nozzle)", d["default_process"]
+assert d["default_filaments"] == ["Generic ABS @System"], d["default_filaments"]
+assert len(d["processes"]) == 15, len(d["processes"])
+assert any(r.startswith("process") for r in d["defaults_replaced"]), d["defaults_replaced"]
+assert any(r.startswith("filament") for r in d["defaults_replaced"]), d["defaults_replaced"]
 '
-echo "PASS: the Snapmaker U1 0.4 default process is the upstream one"
+echo "PASS: the Snapmaker U1 0.4 defaults are the ones the OrcaSlicer app selects"
 
 # A part larger than the bed: refused with the official -50 code and its size.
 run big-bambu "$B" big.stl --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir big-bambu/out
