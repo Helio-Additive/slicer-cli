@@ -3020,19 +3020,20 @@ std::vector<std::set<int>> Print::get_physical_unprintable_filaments(const std::
         return physical_unprintables;
 
     auto get_unprintable_extruder_id = [&](unsigned int filament_idx) -> int {
-        // slicer-cli override: bounds check before the raw read. Without it a
-        // filament_printable vector shorter than the filament roster (seen
-        // empty on the Orca build for a 10-filament X2D project, 2026-10-03)
-        // is read past its end and the process dies with SIGSEGV inside
-        // _make_wipe_tower. The engine's other reader of this option uses
-        // get_at() (GCode/ToolOrdering.cpp:71); here a missing entry is an
-        // error the caller can report, never a guess.
-        if (filament_idx >= m_config.filament_printable.values.size())
+        // slicer-cli override: the raw values[filament_idx] read ran past the
+        // end of a filament_printable vector shorter than the filament roster
+        // (seen empty on the Orca build for a 10-filament X2D project,
+        // 2026-10-03) and the process died with SIGSEGV inside
+        // _make_wipe_tower. A short vector now repeats its first value, as
+        // the engine's other reader of this option does with get_at()
+        // (GCode/ToolOrdering.cpp:71); only an empty one, which states
+        // nothing, is an error the caller can report.
+        if (m_config.filament_printable.values.empty())
             throw Slic3r::SlicingError((boost::format(
-                "The project's filament_printable setting lists %1% filament(s), but filament %2% is used. "
-                "Its filament settings do not cover every filament it prints with.")
-                % m_config.filament_printable.values.size() % (filament_idx + 1)).str());
-        int status = m_config.filament_printable.values[filament_idx];
+                "The project's filament_printable setting is empty, but filament %1% is used. "
+                "Its filament settings do not cover the filaments it prints with.")
+                % (filament_idx + 1)).str());
+        int status = m_config.filament_printable.get_at(filament_idx);
         for (int i = 0; i < extruder_num; ++i) {
             if (!(status >> i & 1)) {
                 return i;
