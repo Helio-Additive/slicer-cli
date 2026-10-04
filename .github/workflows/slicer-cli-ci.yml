@@ -1472,6 +1472,8 @@ jobs:
           # slice-resolvable by name via the orca engine. The browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
+          # Upstream profile fixes made after the pin (profile-overrides/README.md).
+          cp -R profile-overrides/orcaslicer/. "$P/resources/profiles-orca/"
           # libslic3r reads these folders beside the profile trees at slice time:
           # Print.cpp:2687/2722/2755 (info/*.json),
           # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
@@ -1591,6 +1593,13 @@ jobs:
           # slice-resolvable by name via the orca engine. Browse listing is
           # gated server-side to Snapmaker by default (orca_browse_vendors).
           Copy-Item -Recurse references\OrcaSlicer\resources\profiles "$P\resources\profiles-orca"
+          # Upstream profile fixes made after the pin (profile-overrides/README.md).
+          $OverrideRoot = (Resolve-Path profile-overrides\orcaslicer).Path
+          Get-ChildItem -Recurse -File $OverrideRoot | ForEach-Object {
+            $Dest = Join-Path "$P\resources\profiles-orca" $_.FullName.Substring($OverrideRoot.Length + 1)
+            New-Item -ItemType Directory -Force (Split-Path $Dest) | Out-Null
+            Copy-Item -Force -LiteralPath $_.FullName -Destination $Dest
+          }
           # libslic3r reads these folders beside the profile trees at slice time:
           # Print.cpp:2687/2722/2755 (info/*.json),
           # FlushVolPredictor.cpp:413 and :320 (flush/), ColorDecomposeRecipe.cpp:103
@@ -1743,6 +1752,8 @@ jobs:
           cp -R references/OrcaSlicer/resources/info "$P/resources/orca/info"
           cp -R references/OrcaSlicer/resources/flush "$P/resources/orca/flush"
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
+          # Upstream profile fixes made after the pin (profile-overrides/README.md).
+          cp -R profile-overrides/orcaslicer/. "$P/resources/profiles-orca/"
           cp LICENSE NOTICE README.md "$P/"
           cp references/BambuStudio/LICENSE "$P/BAMBUSTUDIO-LICENSE.txt"
           cp references/OrcaSlicer/LICENSE.txt "$P/ORCASLICER-LICENSE.txt"

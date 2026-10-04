@@ -324,17 +324,17 @@ assert "0.20mm Standard @BBL A1M" in d["processes"]
 done
 echo "PASS: --list-presets names the default process (both engines)"
 
-# A printer whose stated default the engine does not ship (Orca pin: the
-# Snapmaker U1 0.4 names "0.20mm Standard @Snapmaker"): the listing gives the
-# fallback a slice would take, so the listed default is one it accepts.
+# The Snapmaker U1 0.4 names its own default process through the upstream
+# profile fix packaged from profile-overrides/ (OrcaSlicer 6312caaf13): at the
+# pin it inherited "0.20mm Standard @Snapmaker", which Orca does not ship.
 "$O" --list-presets --printer "Snapmaker U1 (0.4 nozzle)" > list-u1.json
 py '
 import json; d = json.load(open("list-u1.json"))
-assert d["default_process"] in d["processes"], (d["default_process"], d["processes"][:5])
+assert d["default_process"] == "0.20 Standard @Snapmaker U1 (0.4 nozzle)", d["default_process"]
+assert not any(r.startswith("process") for r in d["defaults_replaced"]), d["defaults_replaced"]
 assert all(f in d["filaments"] for f in d["default_filaments"]), d["default_filaments"]
-assert any("process" in r for r in d["defaults_replaced"]), d["defaults_replaced"]
 '
-echo "PASS: --list-presets gives the default a slice takes when the stated one is missing"
+echo "PASS: the Snapmaker U1 0.4 default process is the upstream one"
 
 # A part larger than the bed: refused with the official -50 code and its size.
 run big-bambu "$B" big.stl --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir big-bambu/out

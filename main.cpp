@@ -3301,32 +3301,68 @@ static std::string near_preset_names(const Slic3r::PresetCollection& collection,
 /// name with close matches, and a process or filament the printer cannot use
 /// (official CLI_PROCESS_NOT_COMPATIBLE, BambuStudio.cpp at 5873b5f).
 /// A preset of this name exists and suits the selected printer.
-static bool preset_usable(Slic3r::PresetCollection& collection, const std::string& name) {
+static bool preset_usable(const Slic3r::PresetCollection& collection, const std::string& name) {
     const Slic3r::Preset* p = name.empty() ? nullptr : collection.find_preset(name, false);
     return p && p->name == name && p->is_compatible;
 }
 
-/// The compatible preset whose name shares the most words with the
-/// default the printer states ("0.20mm Standard @Snapmaker" -> a
-/// compatible "0.20mm Standard ..."; "Snapmaker PLA" -> a PLA), so the
-/// fallback keeps the default's layer height and material.
-static std::string closest_compatible_preset(Slic3r::PresetCollection& collection, const std::string& like) {
-    // A printer that states no default gets no guess: the caller asks for
-    // --process-preset / --filament-preset by name.
-    if (like.empty())
-        return {};
-    std::vector<std::string> words;
-    boost::algorithm::split(words, like, boost::is_any_of(" @()"), boost::token_compress_on);
+/// The first compatible, listed preset with the highest match quality, the
+/// desktop's PresetCollection::first_compatible_idx (Preset.hpp 630 at
+/// 5873b5f, 686-709 at 31f6803): ties keep the earlier preset in collection
+/// order. The desktop counts only visible presets; here a listed preset is
+/// visible, as naming the printer installs its presets, the way the setup
+/// wizard does.
+template<class Quality>
+static std::string first_compatible_name(const Slic3r::PresetCollection& collection, Quality quality) {
     std::string best;
-    int best_score = -1;
+    int best_quality = -1;
     for (const Slic3r::Preset& p : collection) {
         if (!is_listed_preset(p) || !p.is_compatible) continue;
-        int score = 0;
-        for (const std::string& w : words)
-            if (!w.empty() && boost::algorithm::icontains(p.name, w)) ++score;
-        if (score > best_score) { best_score = score; best = p.name; }
+        const int q = quality(p);
+        if (q > best_quality) { best_quality = q; best = p.name; }
     }
     return best;
+}
+
+/// The process the desktop selects for a printer picked with no process
+/// selected yet: PresetBundle::update_compatible re-selects through
+/// first_compatible_idx with PreferedPrintProfileMatch(nullptr,
+/// default_print_profile), which scores the printer's default name 3 and
+/// any other visible preset 2 (PresetBundle.cpp 5617-5640 at 5873b5f,
+/// 5215-5240 at 31f6803). A default this engine does not ship (the Orca
+/// pin's Snapmaker U1 0.4 names "0.20mm Standard @Snapmaker") therefore
+/// gives the first compatible process.
+static std::string desktop_default_process(const Slic3r::PresetCollection& prints, const std::string& declared) {
+    return first_compatible_name(prints, [&](const Slic3r::Preset& p) { return (p.name == declared ? 1 : 0) + 2; });
+}
+
+/// The filament the desktop selects the same way, through
+/// PreferedFilamentsProfileMatch(nullptr, default_filament_profile): a
+/// named default scores 2, any other 1, and a PLA ten times that ("BBS:
+/// default choose PLA"; PresetBundle.cpp 5672-5700 at 5873b5f, 5270-5300
+/// at 31f6803).
+static std::string desktop_default_filament(const Slic3r::PresetCollection& filaments,
+                                            const std::vector<std::string>& declared) {
+    return first_compatible_name(filaments, [&](const Slic3r::Preset& p) {
+        int q = (std::find(declared.begin(), declared.end(), p.name) != declared.end() ? 1 : 0) + 1;
+        if (p.config.has("filament_type") && p.config.opt_string("filament_type", 0u) == "PLA") q *= 10;
+        return q;
+    });
+}
+
+/// Why the desktop's pick is not the printer's first stated default, or
+/// empty when it is.
+static std::string default_replaced_note(const Slic3r::PresetCollection& collection, const char* kind,
+                                         const std::string& picked, const std::string& declared) {
+    if (picked.empty() || picked == declared) return {};
+    std::string why;
+    if (declared.empty())
+        why = "the printer names no default";
+    else if (!preset_usable(collection, declared))
+        why = "the printer's default '" + declared + "' is not available";
+    else
+        why = "the desktop app prefers a PLA to the printer's default '" + declared + "'";
+    return std::string(kind) + " '" + picked + "' (" + why + ")";
 }
 
 static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
@@ -3385,24 +3421,19 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
     const Slic3r::DynamicPrintConfig& printer = bundle.printers.get_edited_preset().config;
 
-    // An omitted process or filament takes the printer's default; when the
-    // default is not a compatible preset of this engine's set (the Orca pin's
-    // Snapmaker U1 names "0.20mm Standard @Snapmaker", which it does not
-    // ship), the first compatible system preset, as the desktop's
-    // update_compatible(PresetSelectCompatibleType::Always) replaces one.
+    // An omitted process or filament takes what the desktop selects when
+    // the printer is picked: its default when this engine ships it, else
+    // the desktop's own fallback (desktop_default_process/_filament).
     std::vector<std::string> substituted_defaults;
     std::string process = o.process_preset;
-    if (process.empty() && printer.has("default_print_profile"))
-        process = printer.opt_string("default_print_profile");
-    if (o.process_preset.empty() && !preset_usable(bundle.prints, process)) {
-        const std::string fallback = closest_compatible_preset(bundle.prints, process);
-        if (!fallback.empty()) {
-            substituted_defaults.push_back("process '" + fallback + "' (the printer's default '" + process + "' is not available)");
-            process = fallback;
-        }
+    if (process.empty()) {
+        const std::string declared = printer.has("default_print_profile") ? printer.opt_string("default_print_profile") : std::string();
+        process = desktop_default_process(bundle.prints, declared);
+        const std::string note = default_replaced_note(bundle.prints, "process", process, declared);
+        if (!note.empty()) substituted_defaults.push_back(note);
     }
     if (process.empty()) {
-        error = "Printer preset '" + o.printer_preset + "' names no default process; give --process-preset.";
+        error = "Printer preset '" + o.printer_preset + "' has no compatible process; give --process-preset.";
         code = CLI_INVALID_PARAMS;
         return false;
     }
@@ -3422,20 +3453,17 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
 
     std::vector<std::string> filaments = o.filament_presets;
     if (filaments.empty()) {
-        std::string wanted;
+        std::vector<std::string> declared;
         if (const auto* d = printer.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
-            if (!d->values.empty()) wanted = d->values.front();
-        if (!preset_usable(bundle.filaments, wanted)) {
-            const std::string fallback = closest_compatible_preset(bundle.filaments, wanted);
-            if (!fallback.empty()) {
-                substituted_defaults.push_back("filament '" + fallback + "' (the printer's default '" + wanted + "' is not available)");
-                wanted = fallback;
-            }
-        }
+            declared = d->values;
+        const std::string wanted = desktop_default_filament(bundle.filaments, declared);
+        const std::string note = default_replaced_note(bundle.filaments, "filament", wanted,
+                                                       declared.empty() ? std::string() : declared.front());
+        if (!note.empty()) substituted_defaults.push_back(note);
         if (!wanted.empty()) filaments.push_back(wanted);
     }
     if (filaments.empty()) {
-        error = "Printer preset '" + o.printer_preset + "' names no default filament; give --filament-preset.";
+        error = "Printer preset '" + o.printer_preset + "' has no compatible filament; give --filament-preset.";
         code = CLI_INVALID_PARAMS;
         return false;
     }
@@ -3526,26 +3554,25 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
         bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Never);
         const Slic3r::DynamicPrintConfig& cfg = bundle.printers.get_edited_preset().config;
         out["printer"] = printer_name;
-        // The defaults a slice with only --printer-preset takes: the printer's
-        // stated default, or the compatible fallback resolve_named_presets
-        // picks when this engine does not ship it, so a listed default is
-        // always one --process-preset/--filament-preset accepts.
+        // The process and filament a slice with only --printer-preset takes:
+        // the desktop's pick (desktop_default_process/_filament), so a listed
+        // default is always one --process-preset/--filament-preset accepts.
         json defaults_replaced = json::array();
-        auto effective = [&](Slic3r::PresetCollection& collection, const std::string& declared,
-                             const char* kind) -> std::string {
-            if (declared.empty() || preset_usable(collection, declared)) return declared;
-            const std::string fallback = closest_compatible_preset(collection, declared);
-            if (fallback.empty()) return declared;
-            defaults_replaced.push_back(std::string(kind) + " '" + fallback + "' (the printer's default '" +
-                                        declared + "' is not available)");
-            return fallback;
-        };
-        out["default_process"] = effective(bundle.prints,
-            cfg.has("default_print_profile") ? cfg.opt_string("default_print_profile") : std::string(), "process");
-        json default_filaments = json::array();
+        const std::string declared_process = cfg.has("default_print_profile") ? cfg.opt_string("default_print_profile") : std::string();
+        const std::string process = desktop_default_process(bundle.prints, declared_process);
+        out["default_process"] = process;
+        if (const std::string note = default_replaced_note(bundle.prints, "process", process, declared_process); !note.empty())
+            defaults_replaced.push_back(note);
+        std::vector<std::string> declared_filaments;
         if (const auto* d = cfg.option<Slic3r::ConfigOptionStrings>("default_filament_profile"))
-            for (const auto& v : d->values) default_filaments.push_back(effective(bundle.filaments, v, "filament"));
+            declared_filaments = d->values;
+        const std::string filament = desktop_default_filament(bundle.filaments, declared_filaments);
+        json default_filaments = json::array();
+        if (!filament.empty()) default_filaments.push_back(filament);
         out["default_filaments"] = default_filaments;
+        if (const std::string note = default_replaced_note(bundle.filaments, "filament", filament,
+                declared_filaments.empty() ? std::string() : declared_filaments.front()); !note.empty())
+            defaults_replaced.push_back(note);
         out["defaults_replaced"] = defaults_replaced;
         json processes = json::array(), filaments = json::array();
         for (const Slic3r::Preset& p : bundle.prints)
