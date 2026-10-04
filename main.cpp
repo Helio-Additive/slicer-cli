@@ -2387,6 +2387,21 @@ static void stage_file_copy(const boost::filesystem::path& src,
         return;
 
     const std::string why = copy_ec.message();
+    // Only a failed data copy falls back. copy_file creates the destination
+    // with O_EXCL first and leaves it behind when copy_file_range then fails
+    // (Boost.Filesystem 1.84 src/operations.cpp 2847-2934): that file is ours
+    // to fill. Any other error, an existing destination (EEXIST) above all,
+    // keeps copy_file's refusal to overwrite.
+    namespace errc = boost::system::errc;
+    const bool data_copy_failed = copy_ec == errc::cross_device_link || copy_ec == errc::not_supported ||
+                                  copy_ec == errc::operation_not_supported || copy_ec == errc::invalid_argument ||
+                                  copy_ec == errc::function_not_supported;
+    if (!data_copy_failed)
+        throw std::runtime_error("cannot copy " + src.string() + " to " + dst.string() + ": " + why);
+    // The file copy_file created, never a link put in its place.
+    boost::system::error_code status_ec;
+    if (boost::filesystem::symlink_status(dst, status_ec).type() != boost::filesystem::regular_file)
+        throw std::runtime_error("cannot write " + dst.string() + " (copy_file: " + why + ")");
     // Boost's path-taking streams open the native path: the wide path on
     // Windows/MSVC, where path::string() would narrow it to the ANSI code page
     // and lose characters outside it. BambuStudio opens a file it copies by
