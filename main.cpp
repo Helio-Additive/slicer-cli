@@ -5746,6 +5746,24 @@ static int run_info(const std::string& argv0, const std::string& path) {
     // A 3MF the slicer cannot open is not inspected: the archive must open and
     // its model part (3D/3dmodel.model, the part load_bbs_3mf reads the
     // objects from) must decompress intact, as the slice path would refuse it (-2).
+    // An STL is loaded with the slice path's own loader (Slic3r::load_stl), so
+    // a folder named .stl or an empty or malformed file is refused here as the
+    // slice would refuse it (-2).
+    if (input_is_stl(path)) {
+        Slic3r::Model stl_model;
+        bool loaded = false;
+        try {
+            loaded = Slic3r::load_stl(path.c_str(), &stl_model) && !stl_model.objects.empty();
+        } catch (...) {
+            loaded = false;
+        }
+        if (!loaded) {
+            out["kind"] = "stl";
+            out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path + " is not a readable STL file.";
+            std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+            return CLI_DATA_FILE_ERROR;
+        }
+    }
     if (is_3mf && !zip_member_readable(path, "3D/3dmodel.model")) {
         out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path +
                        " is not a readable 3MF archive with a 3D/3dmodel.model part.";

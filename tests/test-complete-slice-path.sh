@@ -131,6 +131,23 @@ import json; d = json.load(open("info-bad.json"))
 assert "error" in d and "3D/3dmodel.model" in d["error"], d
 '
 done
+# A real STL is inspected; an unreadable one (a folder named .stl, or an
+# empty file) is refused (-2).
+"$B" --info cube.stl > info-stl.json || fail "--info refused cube.stl"
+py '
+import json; d = json.load(open("info-stl.json"))
+assert d["kind"] == "stl" and "error" not in d, d
+'
+
+mkdir -p folder.stl
+: > empty.stl
+for bad in folder.stl empty.stl; do
+    if "$B" --info "$bad" > info-bad.json; then fail "--info accepted $bad"; fi
+    py '
+import json; d = json.load(open("info-bad.json"))
+assert "error" in d and "STL" in d["error"], d
+'
+done
 echo "PASS: --info names the printer and the engine that fits"
 
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
