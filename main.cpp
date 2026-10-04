@@ -3260,12 +3260,21 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
     // Each instance on its own: the arrange places every instance as its own
     // item, so copies that start far apart are not one object wider than the bed.
+    // On an I3 printer the arrange may turn a part's long side onto Y
+    // (align_to_y_axis below), so a part counts as too wide only when it fits
+    // the bed in neither orientation; whether it does fit is then the
+    // arrange's own call (-21 when it lands off the bed).
+    bool may_turn_to_y = false;
+    if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
+        may_turn_to_y = printer_structure_opt->value == PrinterStructure::psI3;
     for (ModelObject* object : model.objects) {
         object->ensure_on_bed();
         for (size_t i = 0; i < object->instances.size(); ++i) {
             const BoundingBoxf3 box = object->instance_bounding_box(i);
             const Vec3d size = box.size();
-            const bool too_wide = size.x() > bed.size().x() + EPSILON || size.y() > bed.size().y() + EPSILON;
+            const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
+            const bool fits_turned = size.y() <= bed.size().x() + EPSILON && size.x() <= bed.size().y() + EPSILON;
+            const bool too_wide = !fits_as_is && !(may_turn_to_y && fits_turned);
             const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
             if (too_wide || too_tall) {
                 const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
