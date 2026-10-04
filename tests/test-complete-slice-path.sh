@@ -429,3 +429,42 @@ run orca-values "$O" "$FIXTURE" --slice 1 --allow-newer-file --outputdir orca-va
 grep -q 'tree_support_wall_count: -1 not in range' orca-values/stderr || { show orca-values; fail "no range refusal"; }
 grep -q "'ensure_vertical_shell_thickness' is 'enabled'" orca-values/stderr || { show orca-values; fail "no unknown-value refusal"; }
 echo "PASS: Orca refuses out-of-range and unknown values, naming each"
+
+# A project whose plates carry no identify_id (#31): plate membership comes
+# from position, as the desktop places every instance, and --arrange moves
+# reach the exported project. The cube sits off-centre on plate 2 (plate 2
+# starts at x = 307.2), so arranging it moves it to the plate's centre.
+py '
+import re, zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("noid.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "3D/3dmodel.model":
+            assert b"127.999992 127.999992 12.8000002" in data
+            data = data.replace(b"127.999992 127.999992 12.8000002", b"347.2 40 12.8000002")
+        if item.filename == "Metadata/model_settings.config":
+            text = re.sub(r"\s*<metadata key=\"identify_id\" value=\"[0-9]+\"/>", "", data.decode())
+            start = text.index("  <plate>"); end = text.index("  </plate>") + len("  </plate>\n")
+            plate = text[start:end]
+            empty = re.sub(r"    <model_instance>.*?</model_instance>\n", "", plate, flags=re.S)
+            second = plate.replace("key=\"plater_id\" value=\"1\"", "key=\"plater_id\" value=\"2\"")
+            text = text[:start] + empty + second + text[end:]
+            data = text.encode()
+        zout.writestr(item, data)
+'
+run noid "$B" noid.3mf --slice 2 --arrange 1 --outputdir noid/out --export-3mf sliced.3mf
+[ "$(rc noid)" = 0 ] || { show noid; fail "identify_id-less --arrange --export-3mf exit $(rc noid)"; }
+py '
+import re, zipfile
+z = zipfile.ZipFile("noid/out/sliced.3mf")
+model = z.read("Metadata/model_settings.config").decode()
+plates = re.findall(r"<plate>.*?</plate>", model, re.S)
+assert len(plates) == 2, len(plates)
+assert "<model_instance>" not in plates[0] and "<model_instance>" in plates[1], plates
+main = z.read("3D/3dmodel.model").decode()
+items = re.findall(r"<item [^>]*transform=\"([^\"]+)\"", main)
+assert len(items) == 1, items
+x, y = (float(v) for v in items[0].split()[9:11])
+assert abs(x - (307.2 + 128)) < 2 and abs(y - 128) < 2, (x, y)
+'
+echo "PASS: plates without identify_id keep their objects, and --arrange moves reach the export"

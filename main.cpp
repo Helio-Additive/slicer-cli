@@ -2582,6 +2582,12 @@ struct PlateOutcome {
     std::shared_ptr<Slic3r::Model>              export_model;   // STL input: the placed model
     std::shared_ptr<Slic3r::DynamicPrintConfig> export_config;  // STL input: the settings it sliced with
     std::map<size_t, Slic3r::Vec3d>             moved;          // 3MF + --arrange: loaded_id -> offset change
+    // 3MF + --arrange, an instance the file gives no identify_id (loaded_id
+    // 0): its object, and its scene position before the move, to find it in
+    // the export's reload of the whole project.
+    struct PoseMove { std::string object; size_t volumes = 0; Slic3r::Vec3d scene_before; Slic3r::Vec3d delta; };
+    std::vector<PoseMove>                       moved_by_pose;
+    Slic3r::Vec2d                               plate_origin = Slic3r::Vec2d::Zero();  // plate_grid_origin of this plate
     // Bambu build: routing the slice derived from a supplied filament_nozzle_map
     // (apply_explicit_nozzle_mapping); empty when nothing was derived.
     std::vector<int>                            derived_filament_map;
@@ -3520,13 +3526,11 @@ static int run_list_presets(const CliOptions& o, const std::string& printer_name
     return 0;
 }
 
-/// The scene origin of plate `index` (0-based) in a project of `plate_count`
-/// plates, as the desktop's PartPlateList lays them out (see the call site).
-static Slic3r::Vec2d plate_grid_origin(const Slic3r::DynamicPrintConfig& file_config,
-                                       const Slic3r::Semver& file_version, int index, int plate_count)
+/// A plate's logical width and depth, as the desktop's PartPlateList sizes
+/// it from the printable area: whole millimetres, plus the axes tip for files
+/// older than 1.5.9 (through reset_size(int, int, ...)). Zero without an area.
+static Slic3r::Vec2d plate_logical_size(const Slic3r::DynamicPrintConfig& file_config, const Slic3r::Semver& file_version)
 {
-    if (index <= 0 || plate_count <= 1)
-        return Slic3r::Vec2d::Zero();
     const auto* area = file_config.option<Slic3r::ConfigOptionPoints>("printable_area");
     if (!area || area->values.size() < 4)
         return Slic3r::Vec2d::Zero();
@@ -3538,13 +3542,43 @@ static Slic3r::Vec2d plate_grid_origin(const Slic3r::DynamicPrintConfig& file_co
         width = (int)(width + 2.5f * 0.5f);
         depth = (int)(depth + 2.5f * 0.5f);
     }
+    return Slic3r::Vec2d(width, depth);
+}
+
+/// The scene origin of plate `index` (0-based) in a project of `plate_count`
+/// plates, as the desktop's PartPlateList lays them out (see the call site).
+static Slic3r::Vec2d plate_grid_origin(const Slic3r::DynamicPrintConfig& file_config,
+                                       const Slic3r::Semver& file_version, int index, int plate_count)
+{
+    if (index <= 0 || plate_count <= 1)
+        return Slic3r::Vec2d::Zero();
+    const Slic3r::Vec2d size = plate_logical_size(file_config, file_version);
+    if (size.x() <= 0. || size.y() <= 0.)
+        return Slic3r::Vec2d::Zero();
     // compute_colum_count (PartPlate.hpp:38).
     const float value = std::sqrt((float)plate_count);
     const float round_value = std::round(value);
     const int cols = value > round_value ? (int)round_value + 1 : (int)round_value;
     const int row = index / cols, col = index % cols;
     const double gap = 1. / 5.;   // LOGICAL_PART_PLATE_GAP
-    return Slic3r::Vec2d(col * width * (1. + gap), -row * depth * (1. + gap));
+    return Slic3r::Vec2d(col * size.x() * (1. + gap), -row * size.y() * (1. + gap));
+}
+
+/// Plate `index`'s box in the scene, PartPlate::get_build_volume (PartPlate.cpp
+/// 3263-3285 at 5873b5f): its origin plus the first printable_area point, its
+/// logical size and the printable height, widened by SceneEpsilon.
+static Slic3r::BoundingBoxf3 plate_scene_box(const Slic3r::DynamicPrintConfig& file_config,
+                                             const Slic3r::Semver& file_version, int index, int plate_count)
+{
+    const Slic3r::Vec2d origin = plate_grid_origin(file_config, file_version, index, plate_count);
+    const Slic3r::Vec2d size = plate_logical_size(file_config, file_version);
+    const auto* area = file_config.option<Slic3r::ConfigOptionPoints>("printable_area");
+    const Slic3r::Vec2d first = area && !area->values.empty() ? area->values.front() : Slic3r::Vec2d::Zero();
+    const double height = file_config.has("printable_height") ? file_config.opt_float("printable_height") : 0.;
+    const double eps = Slic3r::BuildVolume::SceneEpsilon;
+    return Slic3r::BoundingBoxf3(
+        Slic3r::Vec3d(origin.x() + first.x() - eps, origin.y() + first.y() - eps, -eps),
+        Slic3r::Vec3d(origin.x() + first.x() + size.x() + eps, origin.y() + first.y() + size.y() + eps, height + eps));
 }
 
 /// The command-line setting overrides (--layer-height, --fill-density, ...)
@@ -3941,6 +3975,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 }
 
                 const Slic3r::Vec2d origin = plate_grid_origin(config, file_version, plate_id - 1, (int)plate_data.size());
+                outcome.plate_origin = origin;
                 if (verbose)
                     std::cout << "Plate " << plate_id << " of " << plate_data.size()
                               << ": grid origin (" << origin.x() << ", " << origin.y() << ")\n";
@@ -4707,19 +4742,26 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // object fully inside is refused; objects wholly outside are left
         // out of the print, as the official CLI's apply() leaves them out.
         if (o.slice_mode && !calib_self_geometry) {
-            std::map<size_t, Slic3r::Vec3d> before;
+            std::map<const Slic3r::ModelInstance*, Slic3r::Vec3d> before;
             for (const Slic3r::ModelObject* object : model.objects)
                 for (const Slic3r::ModelInstance* inst : object->instances)
-                    before[inst->loaded_id] = inst->get_offset();
+                    before[inst] = inst->get_offset();
             if (o.arrange && !arrange_on_bed(model, config, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
             }
             if (o.arrange && !o.export_3mf.empty())
                 for (const Slic3r::ModelObject* object : model.objects)
-                    for (const Slic3r::ModelInstance* inst : object->instances)
-                        if (inst->loaded_id != 0 && before.count(inst->loaded_id))
-                            outcome.moved[inst->loaded_id] = inst->get_offset() - before[inst->loaded_id];
+                    for (const Slic3r::ModelInstance* inst : object->instances) {
+                        const auto it = before.find(inst);
+                        if (it == before.end()) continue;
+                        const Slic3r::Vec3d delta = inst->get_offset() - it->second;
+                        if (inst->loaded_id != 0)
+                            outcome.moved[inst->loaded_id] = delta;
+                        else
+                            outcome.moved_by_pose.push_back({object->name, object->volumes.size(),
+                                it->second + Slic3r::Vec3d(outcome.plate_origin.x(), outcome.plate_origin.y(), 0.), delta});
+                    }
             if (!check_objects_inside_bed(model, config, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
@@ -5250,6 +5292,9 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
             error = "The input could not be reloaded for export.";
             return CLI_EXPORT_3MF_ERROR;
         }
+        // The plates are laid out from the file's own printer, before any
+        // command-line profile, as the slice computed its plate origin.
+        const DynamicPrintConfig file_config = config;
         // The slice already reported a profile that did not load; the same
         // file fails the same way here and leaves the settings as they were.
         for (const std::string* profile : {&o.bundle_config, &o.machine_config, &o.process_config, &o.filament_config}) {
@@ -5281,11 +5326,30 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
                         pd->objects_and_instances.emplace_back(int(oi), int(ii));
                 }
         }
-        // One plate whose instances carry no identify_id: it holds every object.
-        if (plates.size() == 1 && plates.front() != nullptr && plates.front()->objects_and_instances.empty())
+        // An instance the file ties to no plate by identify_id goes to the first
+        // plate its box meets, as the desktop places every loaded instance
+        // (PartPlateList::reload_all_objects -> PartPlate::intersect_instance,
+        // PartPlate.cpp 5668-5710, 2651-2677 at 5873b5f; load_from_3mf_structure
+        // leaves membership to that rebuild, 6976+).
+        if (!plates.empty()) {
+            std::set<std::pair<int, int>> placed;
+            for (const PlateData* pd : plates)
+                if (pd != nullptr)
+                    placed.insert(pd->objects_and_instances.begin(), pd->objects_and_instances.end());
+            std::vector<BoundingBoxf3> boxes;
+            for (size_t k = 0; k < plates.size(); ++k)
+                boxes.push_back(plate_scene_box(file_config, file_version, int(k), int(plates.size())));
             for (size_t oi = 0; oi < model.objects.size(); ++oi)
-                for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii)
-                    plates.front()->objects_and_instances.emplace_back(int(oi), int(ii));
+                for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
+                    if (placed.count({int(oi), int(ii)})) continue;
+                    const BoundingBoxf3 box = model.objects[oi]->instance_convex_hull_bounding_box(ii);
+                    for (size_t k = 0; k < plates.size(); ++k)
+                        if (plates[k] != nullptr && boxes[k].intersects(box)) {
+                            plates[k]->objects_and_instances.emplace_back(int(oi), int(ii));
+                            break;
+                        }
+                }
+        }
         // A 3MF without plate metadata sliced as one plate holding every
         // object: the official CLI's PartPlateList always has that plate and
         // exports it (partplate_list.store_to_3mf_structure, BambuStudio.cpp
@@ -5337,6 +5401,25 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
                 if (moved != out.moved.end())
                     inst->set_offset(inst->get_offset() + moved->second);
             }
+            // Instances with no identify_id: the same object at the same scene
+            // position (both loads read the same file), each matched once.
+            std::set<const ModelInstance*> matched;
+            for (const PlateOutcome::PoseMove& move : out.moved_by_pose)
+                for (const auto& [obj_idx, inst_idx] : pd->objects_and_instances) {
+                    if (obj_idx < 0 || obj_idx >= int(model.objects.size())) continue;
+                    ModelObject* object = model.objects[obj_idx];
+                    if (inst_idx < 0 || inst_idx >= int(object->instances.size())) continue;
+                    ModelInstance* inst = object->instances[inst_idx];
+                    const Vec3d offset = inst->get_offset();
+                    if (inst->loaded_id != 0 || matched.count(inst) || object->name != move.object ||
+                        object->volumes.size() != move.volumes ||
+                        std::abs(offset.x() - move.scene_before.x()) > 1e-3 ||
+                        std::abs(offset.y() - move.scene_before.y()) > 1e-3)
+                        continue;
+                    inst->set_offset(offset + move.delta);
+                    matched.insert(inst);
+                    break;
+                }
 #ifdef ENGINE_BAMBU
             // The routing the slice derived from a supplied nozzle map, on this
             // plate only: store_bbs_3mf writes a plate's filament_map_mode and
