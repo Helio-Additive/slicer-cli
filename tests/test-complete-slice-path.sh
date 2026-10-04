@@ -111,6 +111,16 @@ py '
 import json; d = json.load(open("info-ext.json"))
 assert d["kind"] == "3mf" and d["printer_model"] == "Bambu Lab X1 Carbon", d
 '
+# An unreadable 3MF (not a ZIP, or a folder named .3mf) is refused (-2).
+echo "not a zip" > broken.3mf
+mkdir -p folder.3mf
+for bad in broken.3mf folder.3mf; do
+    if "$B" --info "$bad" > info-bad.json; then fail "--info accepted $bad"; fi
+    py '
+import json; d = json.load(open("info-bad.json"))
+assert "error" in d and "3D/3dmodel.model" in d["error"], d
+'
+done
 echo "PASS: --info names the printer and the engine that fits"
 
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.

@@ -1900,6 +1900,25 @@ static bool read_zip_member(const std::string& archive, const std::string& membe
     return found;
 }
 
+/// The archive opens as a ZIP and lists `member` (any size; nothing is read).
+static bool zip_has_member(const std::string& archive, const std::string& member) {
+    mz_zip_archive zip;
+    mz_zip_zero_struct(&zip);
+    if (!Slic3r::open_zip_reader(&zip, archive))
+        return false;
+    bool found = false;
+    const mz_uint count = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint file_idx = 0; file_idx < count && !found; ++file_idx) {
+        mz_zip_archive_file_stat stat;
+        if (!mz_zip_reader_file_stat(&zip, file_idx, &stat)) continue;
+        std::string name(stat.m_filename);
+        std::replace(name.begin(), name.end(), '\\', '/');
+        found = boost::algorithm::iequals(name, member);
+    }
+    Slic3r::close_zip_reader(&zip);
+    return found;
+}
+
 /// Number of plates a Bambu/Orca project declares (one <plate> element each in
 /// Metadata/model_settings.config, which is what load_bbs_3mf builds its
 /// PlateData list from); 0 when the file declares none.
@@ -5719,6 +5738,15 @@ static int run_info(const std::string& argv0, const std::string& path) {
 
     std::string printer_model;
     std::string maker_app;
+    // A 3MF the slicer cannot open is not inspected: the archive must open and
+    // hold its model part (3D/3dmodel.model, the part load_bbs_3mf reads the
+    // objects from), as the slice path would refuse it (-2).
+    if (is_3mf && !zip_has_member(path, "3D/3dmodel.model")) {
+        out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path +
+                       " is not a readable 3MF archive with a 3D/3dmodel.model part.";
+        std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+        return CLI_DATA_FILE_ERROR;
+    }
     if (is_3mf) {
         std::string settings_text, model_xml;
         json settings = json::object();
