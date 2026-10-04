@@ -2943,7 +2943,7 @@ static void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
     if (wrapping != nullptr && wrapping->value) {
         const auto* area = config.option<ConfigOptionPoints>("wrapping_exclude_area");
         if (area != nullptr && !area->values.empty()) {
-            Polygon ap{};
+            Slic3r::Polygon ap{};
             for (const Vec2d& p : area->values)
                 ap.append({scale_(p(0)), scale_(p(1))});
             arrangement::ArrangePolygon ret;
@@ -2961,7 +2961,7 @@ static void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
     const std::vector<BoundingBoxf> boxes = arrange_exclude_boxes(config);
     for (size_t index = 0; index < boxes.size(); ++index) {
         const BoundingBoxf& box = boxes[index];
-        Polygon ap({
+        Slic3r::Polygon ap({
             {scaled(box.min.x()), scaled(box.min.y())},
             {scaled(box.max.x()), scaled(box.min.y())},
             {scaled(box.max.x()), scaled(box.max.y())},
@@ -3374,7 +3374,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_index, 0);
 
             ArrangePolygon wipe_tower_ap;
-            Polygon ap({
+            Slic3r::Polygon ap({
                 {scaled(x - wp_brim_width), scaled(y - wp_brim_width)},
                 {scaled(x + w + wp_brim_width), scaled(y - wp_brim_width)},
                 {scaled(x + w + wp_brim_width), scaled(y + depth + wp_brim_width)},
