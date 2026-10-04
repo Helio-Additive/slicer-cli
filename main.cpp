@@ -3260,13 +3260,13 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
     // Each instance on its own: the arrange places every instance as its own
     // item, so copies that start far apart are not one object wider than the bed.
-    // On an I3 printer the arrange may turn a part's long side onto Y
-    // (align_to_y_axis below), so a part counts as too wide only when it fits
-    // the bed in neither orientation; whether it does fit is then the
-    // arrange's own call (-21 when it lands off the bed).
-    bool may_turn_to_y = false;
-    if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
-        may_turn_to_y = printer_structure_opt->value == PrinterStructure::psI3;
+    // A part counts as larger than the bed only when it fits in neither
+    // orientation. Whether one that fits only turned 90 degrees is turned is
+    // the arrange's call, and the engines differ: Bambu's arrange offers a
+    // too-big item its minimum-area rotation even with rotations off
+    // (Arrange.cpp 937-941 at 5873b5f), Orca's only with rotations on
+    // (Arrange.cpp 995-1004 at 31f6803), and both turn a long part onto Y on
+    // I3 printers. When the arrange leaves it off the bed, -21 below says why.
     for (ModelObject* object : model.objects) {
         object->ensure_on_bed();
         for (size_t i = 0; i < object->instances.size(); ++i) {
@@ -3274,7 +3274,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             const Vec3d size = box.size();
             const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
             const bool fits_turned = size.y() <= bed.size().x() + EPSILON && size.x() <= bed.size().y() + EPSILON;
-            const bool too_wide = !fits_as_is && !(may_turn_to_y && fits_turned);
+            const bool too_wide = !fits_as_is && !fits_turned;
             const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
             if (too_wide || too_tall) {
                 const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
@@ -3463,13 +3463,26 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
 
     // Every selected item must land on this plate (BambuStudio.cpp 5936-5945;
     // OrcaSlicer.cpp 5196-5205).
-    std::string off_bed;
-    for (const ArrangePolygon& ap : selected)
-        if (ap.bed_idx != 0)
-            off_bed += (off_bed.empty() ? "'" : ", '") + ap.name + "'";
+    std::string off_bed, only_turned;
+    for (size_t k = 0; k < selected.size(); ++k) {
+        if (selected[k].bed_idx == 0)
+            continue;
+        off_bed += (off_bed.empty() ? "'" : ", '") + selected[k].name + "'";
+        // A part that fits the bed only turned 90 degrees, which this
+        // engine's arrange did not do.
+        const ModelInstance* inst = selected_instances[k];
+        const ModelObject* object = inst->get_object();
+        const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
+        const Vec3d size = object->instance_bounding_box(size_t(it - object->instances.begin())).size();
+        if (!(size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON))
+            only_turned += (only_turned.empty() ? "'" : ", '") + object->name + "'";
+    }
     if (!off_bed.empty()) {
-        const std::string detail = "These objects do not fit on the " + bed_size_text(config) +
-                                   " bed together: " + off_bed + ".";
+        std::string detail = "These objects do not fit on the " + bed_size_text(config) +
+                             " bed together: " + off_bed + ".";
+        if (!only_turned.empty())
+            detail += " " + only_turned + " fit" + (only_turned.find(',') == std::string::npos ? "s" : "") +
+                      " the bed only turned 90 degrees, which this arrange does not do; turn it in the file.";
         set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, detail);
         emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
         return false;
