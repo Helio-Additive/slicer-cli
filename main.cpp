@@ -40,6 +40,10 @@
 #include "libslic3r/miniz_extension.hpp"
 #include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/Arrange.hpp"
+#include "libslic3r/GCode/WipeTower.hpp"
+#ifdef ENGINE_BAMBU
+#include "libslic3r/FilamentMixer.hpp"
+#endif
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/Semver.hpp"
@@ -2924,17 +2928,366 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
 }
 
 
-/// --arrange 1: place every object of the plate on the printer's bed, with the
-/// arrange kernel `--layout-plan` already uses (get_arrange_polys ->
-/// update_arrange_params -> update_selected_items_inflation ->
-/// get_shrink_bedpts -> arrangement::arrange, the GUI ArrangeJob pipeline,
-/// layout_plan.cpp 624-744), then sit each object on the bed. An object
-/// larger than the bed is refused first, with the official -50 sentence plus
-/// its size against the bed; objects that do not fit together are refused
-/// with the official arrange sentence (-21, BambuStudio.cpp 5938-5944).
-/// Rotations stay off, as in Bambu Studio's Arrange by default.
-static bool arrange_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                           PlateOutcome& outcome) {
+// ── --arrange 1: the official per-plate arrange ─────────────────────────
+// Port of the official CLI's "arrange this plate only" branch (BambuStudio.cpp
+// 5730-5952 at 5873b5f; OrcaSlicer.cpp 4990-5210 at 31f6803). The official
+// keeps its plates in slic3r/GUI/PartPlate.cpp, which slicer-cli does not
+// link; the few plate steps it needs are ported here, each with its source.
+//
+// Coordinates: the caller has already moved this plate's objects by minus the
+// plate's grid origin (plate_grid_origin, the multi-plate translation in
+// slice_one_plate), and the print origin stays at 0. Objects, the bed
+// (printable_area), the exclusion boxes (bed_exclude_area) and the prime
+// tower (wipe_tower_x/y, per plate) are therefore all in the same plate-local
+// bed frame; the official reads the boxes from plate 0, whose origin is
+// (0, 0), and the tower from the plate's own wipe_tower_x/y entry, both in
+// that frame. Nothing is translated here.
+
+/// A print setting from `config`, or the engine's default when the config
+/// does not hold it (FullPrintConfig::defaults(), the values a fresh Print
+/// starts with).
+static const Slic3r::ConfigOption* arrange_opt(const Slic3r::DynamicPrintConfig& config, const std::string& key) {
+    if (const Slic3r::ConfigOption* opt = config.option(key))
+        return opt;
+    return Slic3r::FullPrintConfig::defaults().option(key);
+}
+
+/// The printer's bed exclusion boxes, as PartPlate::calc_bounding_boxes makes
+/// them from bed_exclude_area: every 4 points are one box (Bambu
+/// slic3r/GUI/PartPlate.cpp 375-392; Orca PartPlate.cpp 418-435). Plate 0's
+/// position is (0, 0) (PartPlate::set_shape adds it, Bambu PartPlate.cpp
+/// 3185-3189), so the boxes are plate-local bed coordinates.
+static std::vector<Slic3r::BoundingBoxf> arrange_exclude_boxes(const Slic3r::DynamicPrintConfig& config) {
+    std::vector<Slic3r::BoundingBoxf> boxes;
+    const auto* area = config.option<Slic3r::ConfigOptionPoints>("bed_exclude_area");
+    if (area == nullptr)
+        return boxes;
+    Slic3r::BoundingBoxf box;
+    for (size_t index = 0; index < area->values.size(); ++index) {
+        if (index % 4 == 0)
+            box = Slic3r::BoundingBoxf();
+        box.merge(area->values[index]);
+        if (index % 4 == 3)
+            boxes.push_back(box);
+    }
+    return boxes;
+}
+
+/// PartPlateList::preprocess_exclude_areas (Bambu PartPlate.cpp 5906-5972;
+/// Orca PartPlate.cpp 5363-5429, the same code): the wrapping-detection area
+/// when enable_wrapping_detection is on (BambuStudio.cpp 4175-4176;
+/// OrcaSlicer.cpp 3588), then one fixed virtual item per exclusion box. The
+/// official adds a copy for every bed up to the sliced plate; a one-plate
+/// arrange places items on bed 0 only, so only bed 0's copy is added.
+static void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
+                                      const Slic3r::DynamicPrintConfig& config, double inflation) {
+    using namespace Slic3r;
+    const auto* wrapping = config.option<ConfigOptionBool>("enable_wrapping_detection");
+    if (wrapping != nullptr && wrapping->value) {
+        const auto* area = config.option<ConfigOptionPoints>("wrapping_exclude_area");
+        if (area != nullptr && !area->values.empty()) {
+            Polygon ap{};
+            for (const Vec2d& p : area->values)
+                ap.append({scale_(p(0)), scale_(p(1))});
+            arrangement::ArrangePolygon ret;
+            ret.poly.contour   = ap;
+            ret.translation    = Vec2crd(0, 0);
+            ret.rotation       = 0.0f;
+            ret.is_virt_object = true;
+            ret.bed_idx        = 0;
+            ret.height         = 1;
+            ret.name           = "WrappingRegion";
+            ret.inflation      = inflation;
+            out.emplace_back(std::move(ret));
+        }
+    }
+    const std::vector<BoundingBoxf> boxes = arrange_exclude_boxes(config);
+    for (size_t index = 0; index < boxes.size(); ++index) {
+        const BoundingBoxf& box = boxes[index];
+        Polygon ap({
+            {scaled(box.min.x()), scaled(box.min.y())},
+            {scaled(box.max.x()), scaled(box.min.y())},
+            {scaled(box.max.x()), scaled(box.max.y())},
+            {scaled(box.min.x()), scaled(box.max.y())}
+        });
+        arrangement::ArrangePolygon ret;
+        ret.poly.contour   = ap;
+        ret.translation    = Vec2crd(0, 0);
+        ret.rotation       = 0.0f;
+        ret.is_virt_object = true;
+        ret.bed_idx        = 0;
+        ret.height         = 1;
+        ret.name           = "ExcludedRegion" + std::to_string(index);
+        ret.inflation      = inflation;
+        out.emplace_back(std::move(ret));
+    }
+}
+
+/// The filaments this plate's objects use, as PartPlate::get_extruders_under_cli
+/// (true, config) lists them (Bambu PartPlate.cpp 1275-1428; Orca PartPlate.cpp
+/// 1625-1739): each printable instance's volumes, its layer ranges, its support
+/// filaments when it has support, the plate's tool-change G-codes, sorted and
+/// unique. The model holds only this plate's objects (load_bbs_3mf with the
+/// plate id), so every instance is the plate's. Bambu's per-feature block
+/// (separate_filaments_for_features) is not ported: no such setting is defined
+/// in src/libslic3r at 5873b5f, so the official's block never runs.
+static std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
+                                                const Slic3r::DynamicPrintConfig& full_config, int plate_index) {
+    using namespace Slic3r;
+    std::vector<int> plate_extruders;
+    const int glb_support_intf_extr = arrange_opt(full_config, "support_interface_filament")->getInt();
+    const int glb_support_extr      = arrange_opt(full_config, "support_filament")->getInt();
+#ifdef ENGINE_ORCA
+    const int glb_wall_extr          = arrange_opt(full_config, "wall_filament")->getInt();
+    const int glb_sparse_infill_extr = arrange_opt(full_config, "sparse_infill_filament")->getInt();
+    const int glb_solid_infill_extr  = arrange_opt(full_config, "solid_infill_filament")->getInt();
+#endif
+    bool glb_support = arrange_opt(full_config, "enable_support")->getBool();
+    glb_support |= arrange_opt(full_config, "raft_layers")->getInt() > 0;
+
+    for (const ModelObject* object : model.objects) {
+        for (const ModelInstance* instance : object->instances) {
+            if (!instance->printable)
+                continue;
+            for (const ModelVolume* mv : object->volumes) {
+                const std::vector<int> volume_extruders = mv->get_extruders();
+                plate_extruders.insert(plate_extruders.end(), volume_extruders.begin(), volume_extruders.end());
+            }
+            // layer range
+            for (const auto& layer_range : object->layer_config_ranges) {
+                if (layer_range.second.has("extruder")) {
+                    if (auto id = layer_range.second.option("extruder")->getInt(); id > 0)
+                        plate_extruders.push_back(id);
+                }
+            }
+            bool obj_support = false;
+            const ConfigOption* obj_support_opt = object->config.option("enable_support");
+            const ConfigOption* obj_raft_opt    = object->config.option("raft_layers");
+            if (obj_support_opt != nullptr || obj_raft_opt != nullptr) {
+                if (obj_support_opt != nullptr)
+                    obj_support = obj_support_opt->getBool();
+                if (obj_raft_opt != nullptr)
+                    obj_support |= obj_raft_opt->getInt() > 0;
+            } else
+                obj_support = glb_support;
+            if (!obj_support)
+                continue;
+
+            int obj_support_intf_extr = 0;
+            if (const ConfigOption* opt = object->config.option("support_interface_filament"))
+                obj_support_intf_extr = opt->getInt();
+            if (obj_support_intf_extr != 0)
+                plate_extruders.push_back(obj_support_intf_extr);
+            else if (glb_support_intf_extr != 0)
+                plate_extruders.push_back(glb_support_intf_extr);
+
+            int obj_support_extr = 0;
+            if (const ConfigOption* opt = object->config.option("support_filament"))
+                obj_support_extr = opt->getInt();
+            if (obj_support_extr != 0)
+                plate_extruders.push_back(obj_support_extr);
+            else if (glb_support_extr != 0)
+                plate_extruders.push_back(glb_support_extr);
+#ifdef ENGINE_ORCA
+            // Orca also lists the wall / infill filaments (PartPlate.cpp 1703-1728).
+            int obj_wall_extr = 1;
+            if (const ConfigOption* opt = object->config.option("wall_filament"))
+                obj_wall_extr = opt->getInt();
+            if (obj_wall_extr != 1)
+                plate_extruders.push_back(obj_wall_extr);
+            else if (glb_wall_extr != 1)
+                plate_extruders.push_back(glb_wall_extr);
+
+            int obj_sparse_infill_extr = 1;
+            if (const ConfigOption* opt = object->config.option("sparse_infill_filament"))
+                obj_sparse_infill_extr = opt->getInt();
+            if (obj_sparse_infill_extr != 1)
+                plate_extruders.push_back(obj_sparse_infill_extr);
+            else if (glb_sparse_infill_extr != 1)
+                plate_extruders.push_back(glb_sparse_infill_extr);
+
+            int obj_solid_infill_extr = 1;
+            if (const ConfigOption* opt = object->config.option("solid_infill_filament"))
+                obj_solid_infill_extr = opt->getInt();
+            if (obj_solid_infill_extr != 1)
+                plate_extruders.push_back(obj_solid_infill_extr);
+            else if (glb_solid_infill_extr != 1)
+                plate_extruders.push_back(glb_solid_infill_extr);
+#endif
+        }
+    }
+
+    // conside_custom_gcode: the plate's tool changes.
+    if (const auto* color_option = dynamic_cast<const ConfigOptionStrings*>(full_config.option("filament_colour"))) {
+        const int nums_extruders = (int)color_option->values.size();
+        auto it = model.plates_custom_gcodes.find(plate_index);
+        if (it != model.plates_custom_gcodes.end()) {
+            for (const auto& item : it->second.gcodes)
+                if (item.type == CustomGCode::Type::ToolChange && item.extruder <= nums_extruders)
+                    plate_extruders.push_back(item.extruder);
+        }
+    }
+
+    std::sort(plate_extruders.begin(), plate_extruders.end());
+    auto it_end = std::unique(plate_extruders.begin(), plate_extruders.end());
+    plate_extruders.resize(std::distance(plate_extruders.begin(), it_end));
+
+#ifdef ENGINE_BAMBU
+    // Mixed filament slots count as their physical parts (PartPlate.cpp 1414-1426).
+    if (auto* is_mixed_opt = full_config.option<ConfigOptionBools>("filament_is_mixed")) {
+        if (auto* comp_strs_opt = full_config.option<ConfigOptionStrings>("filament_mixed_components")) {
+            if (has_any_mixed_filament(is_mixed_opt->values)) {
+                std::vector<unsigned int> ext_0based;
+                for (int e : plate_extruders)
+                    if (e >= 1) ext_0based.push_back((unsigned int)(e - 1));
+                auto expanded = expand_mixed_filaments(ext_0based, is_mixed_opt->values, comp_strs_opt->values);
+                plate_extruders.clear();
+                for (unsigned int e : expanded)
+                    plate_extruders.push_back((int)(e + 1));
+            }
+        }
+    }
+#endif
+    return plate_extruders;
+}
+
+/// PartPlate::contain_instance_totally(obj, 0) before the arrange: the
+/// instance is on the plate and PartPlate::check_outside finds it inside the
+/// plate box and clear of every exclusion box (Bambu PartPlate.cpp 2597-2648;
+/// Orca PartPlate.cpp 2529+). The official tests the instance's convex hull
+/// against each exclusion box; this uses the hull's bounding box.
+static bool arrange_instance_totally_inside(const Slic3r::ModelObject* object, const Slic3r::BoundingBoxf3& plate_box_in,
+                                            const std::vector<Slic3r::BoundingBoxf>& exclude_boxes) {
+    using namespace Slic3r;
+    if (object->instances.empty())
+        return false;
+    const BoundingBoxf3 instance_box = object->instance_convex_hull_bounding_box(size_t(0));
+    BoundingBoxf3 plate_box = plate_box_in;
+    if (instance_box.max.z() > plate_box.min.z())
+        plate_box.min.z() += instance_box.min.z(); // not considering outsize if sinking
+    if (!plate_box.contains(instance_box))
+        return false;
+    for (const BoundingBoxf& box : exclude_boxes)
+        if (box.min.x() < instance_box.max.x() && instance_box.min.x() < box.max.x() &&
+            box.min.y() < instance_box.max.y() && instance_box.min.y() < box.max.y())
+            return false;
+    return true;
+}
+
+/// PartPlate::estimate_wipe_tower_size (Bambu PartPlate.cpp 2159-2233; Orca
+/// PartPlate.cpp 2099-2165). The two engines differ in the tallest-object
+/// measure (Bambu: every instance's top; Orca: the object's exact height) and
+/// in the rib-wall settings (Bambu prime_tower_rib_wall / prime_tower_rib_width
+/// / prime_tower_extra_rib_length; Orca wipe_tower_wall_type == Rib /
+/// wipe_tower_rib_width / wipe_tower_extra_rib_length). The official reads the
+/// filament-change length, filament diameter and extra rib length from the
+/// plate's Print, which at arrange time is a fresh `new Print()` (PartPlateList
+/// init, Bambu PartPlate.cpp 4024) holding the engine defaults; so do we.
+static Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                                                      const double w, const double wipe_volume, int extruder_count,
+                                                      int plate_extruder_size, bool enable_wrapping_detection,
+                                                      const Slic3r::BoundingBoxf3& plate_box,
+                                                      const std::vector<Slic3r::BoundingBoxf>& exclude_boxes) {
+    using namespace Slic3r;
+    Vec3d wipe_tower_size;
+    double layer_height = 0.08f; // hard code layer height
+    double max_height = 0.f;
+    wipe_tower_size.setZero();
+
+    if (const ConfigOption* layer_height_opt = config.option("layer_height"))
+        layer_height = layer_height_opt->getFloat();
+
+    // The official counts the plate's filaments again for an empty count
+    // (get_extruders(true)); the caller's count already is that list.
+    if (plate_extruder_size == 0)
+        return wipe_tower_size;
+
+    for (const ModelObject* mo : model.objects) {
+        if (!arrange_instance_totally_inside(mo, plate_box, exclude_boxes))
+            continue;
+#ifdef ENGINE_ORCA
+        BoundingBoxf3 bbox = mo->bounding_box_exact();
+        max_height = std::max(bbox.size().z(), max_height);
+#else
+        for (size_t i = 0; i < mo->instances.size(); ++i) {
+            BoundingBoxf3 bbox = mo->instance_bounding_box(i);
+            max_height         = std::max(bbox.max.z(), max_height);
+        }
+#endif
+    }
+    wipe_tower_size(2) = max_height;
+    auto timelapse_type  = config.option<ConfigOptionEnum<TimelapseType>>("timelapse_type");
+    bool need_wipe_tower = (timelapse_type ? (timelapse_type->value == TimelapseType::tlSmooth) : false) | enable_wrapping_detection;
+    double extra_spacing = arrange_opt(config, "prime_tower_infill_gap")->getFloat() / 100.;
+    const FullPrintConfig& print_defaults = FullPrintConfig::defaults();
+#ifdef ENGINE_ORCA
+    const auto* use_rib_wall_opt = config.option<ConfigOptionEnum<WipeTowerWallType>>("wipe_tower_wall_type");
+    bool use_rib_wall = use_rib_wall_opt ? use_rib_wall_opt->value == WipeTowerWallType::wtwRib : false;
+    double rib_width = arrange_opt(config, "wipe_tower_rib_width")->getFloat();
+    const double extra_rib_length = print_defaults.wipe_tower_extra_rib_length.value;
+#else
+    const ConfigOptionBool* use_rib_wall_opt = config.option<ConfigOptionBool>("prime_tower_rib_wall");
+    bool use_rib_wall = use_rib_wall_opt ? use_rib_wall_opt->value : true;
+    double rib_width = arrange_opt(config, "prime_tower_rib_width")->getFloat();
+    const double extra_rib_length = print_defaults.prime_tower_extra_rib_length.value;
+#endif
+    double depth;
+    double filament_change_volume = 0.;
+    {
+        const std::vector<double>& filament_change_lengths = print_defaults.filament_change_length.values;
+        double length = filament_change_lengths.empty() ? 0 : *std::max_element(filament_change_lengths.begin(), filament_change_lengths.end());
+        double diameter = 1.75;
+        const std::vector<double>& diameters = print_defaults.filament_diameter.values;
+        diameter = diameters.empty() ? diameter : *std::max_element(diameters.begin(), diameters.end());
+        filament_change_volume = length * PI * diameter * diameter / 4.;
+    }
+    double volume = wipe_volume * (extruder_count == 2 ? plate_extruder_size : (plate_extruder_size - 1));
+    if (extruder_count == 2) volume += filament_change_volume * (int) (plate_extruder_size / 2);
+    if (use_rib_wall) {
+        depth = std::sqrt(volume / layer_height * extra_spacing);
+        if (need_wipe_tower || plate_extruder_size > 1) {
+            float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
+            double volume_depth        = depth;
+            depth = std::max((double) min_wipe_tower_depth, depth);
+            rib_width = std::min(rib_width, depth / 2);
+            depth = rib_width / std::sqrt(2) + std::max(depth + extra_rib_length, volume_depth);
+            wipe_tower_size(0) = wipe_tower_size(1) = depth;
+        }
+    } else {
+        depth = volume / (layer_height * w) * extra_spacing;
+        if (need_wipe_tower || depth > EPSILON) {
+            float min_wipe_tower_depth = WipeTower::get_limit_depth_by_height(max_height);
+            depth = std::max((double) min_wipe_tower_depth, depth);
+        }
+        wipe_tower_size(0) = w;
+        wipe_tower_size(1) = depth;
+    }
+    return wipe_tower_size;
+}
+
+/// --arrange 1: place this plate's objects on the bed the way the official CLI
+/// arranges one plate (`--arrange 1` with a plate to slice; BambuStudio.cpp
+/// 5730-5952 at 5873b5f, OrcaSlicer.cpp 4990-5210 at 31f6803):
+///   - each printable instance is an item from get_instance_arrange_poly
+///     (libslic3r/ModelArrange.cpp 119, both engines), which carries its
+///     height, temperatures, name and a brim width from its support settings;
+///     unprintable instances are arranged on their own;
+///   - the prime tower, when the plate needs one, is a fixed item where the
+///     plate's wipe_tower_x/y put it, clamped inside the bed, and the clamped
+///     position is written back to the plate's wipe_tower_x/y entry;
+///   - the bed exclusion boxes (and the wrapping-detection area when it is on)
+///     are fixed items and excluded regions;
+///   - the arrange settings are the official ones (min_obj_distance 0 so the
+///     items' own inflation applies, print-by-object, I3 alignment, the
+///     printer's clearances), then update_arrange_params,
+///     update_selected_items_inflation, update_unselected_items_inflation,
+///     (Orca) update_selected_items_axis_align and get_shrink_bedpts.
+/// An object larger than the bed is refused first, with the official -50
+/// sentence plus its size against the bed; objects that do not all land on
+/// the bed are refused with the official arrange sentence (-21,
+/// BambuStudio.cpp 5938-5944; OrcaSlicer.cpp 5198-5204).
+static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
+                           int plate_index, size_t sliced_filament_count, PlateOutcome& outcome) {
     using namespace Slic3r;
     using namespace Slic3r::arrangement;
     const auto* area = config.option<ConfigOptionPoints>("printable_area");
@@ -2945,9 +3298,8 @@ static bool arrange_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfi
     BoundingBoxf bed;
     for (const Vec2d& pt : area->values) bed.merge(pt);
     const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
-    // Each instance on its own: the arrange kernel places every instance as
-    // its own item (get_arrange_polys, one ArrangePolygon per instance), so
-    // copies that start far apart are not one object wider than the bed.
+    // Each instance on its own: the arrange places every instance as its own
+    // item, so copies that start far apart are not one object wider than the bed.
     for (ModelObject* object : model.objects) {
         object->ensure_on_bed();
         for (size_t i = 0; i < object->instances.size(); ++i) {
@@ -2966,37 +3318,184 @@ static bool arrange_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfi
         }
     }
 
+    // A fresh set of arrange settings (BambuStudio.cpp 5579; OrcaSlicer.cpp
+    // 4839), with the progress callback quiet: its default prints to stdout.
     ArrangeParams params;
-    double clearance = 1.0;
-    if (config.has("extruder_clearance_max_radius")) {
-        const double v = config.opt_float("extruder_clearance_max_radius");
-        if (v > 0) clearance = v;
+    params.progressind = [](unsigned, std::string) {};
+    // Print by object, from the plate's own sequence or else the project's
+    // (get_print_sequence, BambuStudio.cpp 4403-4416, called at 5624;
+    // OrcaSlicer.cpp 4883). The caller has already laid the plate's own
+    // print_sequence (plate_N.json is_seq_print, the plate's settings) over
+    // the config.
+    if (const auto* seq = config.option<ConfigOptionEnum<PrintSequence>>("print_sequence"))
+        params.is_seq_print = seq->value == PrintSequence::ByObject;
+
+    // Step 1: the items (BambuStudio.cpp 5734-5767; OrcaSlicer.cpp 4994-5027).
+    ArrangePolygons selected, unselected, unprintable;
+    ModelInstancePtrs selected_instances, unprintable_instances;
+    for (ModelObject* mo : model.objects) {
+        for (ModelInstance* minst : mo->instances) {
+            ArrangePolygon ap = get_instance_arrange_poly(minst, config);
+            ArrangePolygons& cont = minst->printable ? selected : unprintable;
+            ModelInstancePtrs& owners = minst->printable ? selected_instances : unprintable_instances;
+            ap.itemid = cont.size();
+            cont.emplace_back(std::move(ap));
+            owners.emplace_back(minst);
+        }
     }
-#ifdef ENGINE_ORCA
-    params.clearance_radius = clearance;
-#else
-    params.cleareance_radius = clearance;
-#endif
-    params.progressind      = [](unsigned, std::string) {};
-    params.min_obj_distance = scaled<coord_t>(10.0);
-    params.allow_rotations  = false;
-    params.do_final_align   = true;
 
-    ModelInstancePtrs instances;
-    ArrangePolygons input = get_arrange_polys(model, instances);
-#ifdef ENGINE_ORCA
-    update_arrange_params(params, &config, input);
-    update_selected_items_inflation(input, &config, params);
-    Points bed_pts = get_shrink_bedpts(&config, params);
-#else
-    update_arrange_params(params, config, input);
-    update_selected_items_inflation(input, config, params);
-    Points bed_pts = get_shrink_bedpts(config, params);
-#endif
-    arrangement::arrange(input, {}, bed_pts, params);
+    const BoundingBoxf3 plate_box(Vec3d(bed.min.x(), bed.min.y(), 0.), Vec3d(bed.max.x(), bed.max.y(), bed_height));
+    const std::vector<BoundingBoxf> exclude_boxes = arrange_exclude_boxes(config);
+    const auto* wrapping_opt = config.option<ConfigOptionBool>("enable_wrapping_detection");
+    const bool enable_wrapping_detect = wrapping_opt != nullptr && wrapping_opt->value;
+    const auto* wrapping_area = config.option<ConfigOptionPoints>("wrapping_exclude_area");
+    const bool wrapping_area_empty = wrapping_area == nullptr || wrapping_area->values.empty();
+    // Smooth timelapse needs the official CLI's enable_timelapse option
+    // (default false, BambuStudio.cpp 4183-4187; OrcaSlicer.cpp 3596-3599);
+    // slicer-cli has no such option, so it is the default.
+    const bool is_smooth_timelapse = false;
 
+    // The prime tower as a fixed item (BambuStudio.cpp 5770-5878; OrcaSlicer.cpp
+    // 5030-5134). No duplicate copies in slicer-cli, so the tower starts where
+    // the plate's wipe_tower_x/y put it ("keep the original").
+    if (config.has("wipe_tower_x") && (is_smooth_timelapse || !params.is_seq_print || (selected.size() <= 1))) {
+        float x = dynamic_cast<const ConfigOptionFloats*>(config.option("wipe_tower_x"))->get_at(plate_index);
+        float y = dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "wipe_tower_y"))->get_at(plate_index);
+        float w = arrange_opt(config, "prime_tower_width")->getFloat();
+        float a = arrange_opt(config, "wipe_tower_rotation_angle")->getFloat();
+#ifdef ENGINE_ORCA
+        float v = arrange_opt(config, "prime_volume")->getFloat();
+#else
+        std::vector<double> volumes = dynamic_cast<const ConfigOptionFloats*>(arrange_opt(config, "filament_prime_volume"))->values;
+        if (config.option<ConfigOptionEnum<PrimeVolumeMode>>("prime_volume_mode", true)->value == pvmSaving) {
+            for (auto& val : volumes)
+                val = 15.f;
+        }
+        const double v = volumes.empty() ? 0. : *std::max_element(volumes.begin(), volumes.end());
+#endif
+        // The plate's filament count from its last slice (slice_info), else the
+        // filaments its objects use (PartPlate::get_extruders_under_cli).
+        unsigned int filaments_cnt = (unsigned int)sliced_filament_count;
+        if (filaments_cnt == 0)
+            filaments_cnt = (unsigned int)arrange_plate_extruders(model, config, plate_index).size();
+
+        if ((filaments_cnt <= 1) && !is_smooth_timelapse && (!enable_wrapping_detect || wrapping_area_empty)) {
+            // Not a multi-colour plate: no tower to keep clear of.
+        } else {
+            // The printer's extruder count: one per nozzle_diameter entry
+            // (DynamicPrintConfig::support_different_extruders, Bambu
+            // PrintConfig.cpp 7776-7783; OrcaSlicer.cpp 2874-2875).
+            int extruder_count = 1;
+            if (const auto* nozzles = dynamic_cast<const ConfigOptionVectorBase*>(config.option("nozzle_diameter")))
+                extruder_count = std::max(1, (int)nozzles->size());
+            Vec3d wipe_tower_size = arrange_estimate_wipe_tower_size(model, config, w, v, extruder_count, (int)filaments_cnt,
+                                                                     enable_wrapping_detect, plate_box, exclude_boxes);
+            // PartPlateList's plate size: the bed's whole-mm width and depth
+            // (BambuStudio.cpp 2054-2056, 4242-4247; reset_size 4313-4320).
+            const int plate_width = area->values.size() >= 4 ? (int)(area->values[2].x() - area->values[0].x()) : (int)bed.size().x();
+            const int plate_depth = area->values.size() >= 4 ? (int)(area->values[2].y() - area->values[0].y()) : (int)bed.size().y();
+            float depth = wipe_tower_size(1);
+            float margin = 15.f, wp_brim_width = 0.f;
+            if (const ConfigOption* wipe_tower_brim_width_opt = config.option("prime_tower_brim_width")) {
+                wp_brim_width = wipe_tower_brim_width_opt->getFloat();
+                if (wp_brim_width < 0) wp_brim_width = WipeTower::get_auto_brim_by_height((float) wipe_tower_size.z());
+            }
+            w = wipe_tower_size(0);
+            if ((y + depth + margin + wp_brim_width) > (float)plate_depth)
+                y = (float)plate_depth - depth - margin - wp_brim_width;
+            if ((x + w + margin + wp_brim_width) > (float)plate_width)
+                x = (float)plate_width - w - margin - wp_brim_width;
+            if (x < margin)
+                x = margin;
+            if (y < margin)
+                y = margin;
+            // The clamped position is the plate's tower position from here on:
+            // print.set_plate_index makes the slice read this entry.
+            ConfigOptionFloat wt_x_opt(x);
+            ConfigOptionFloat wt_y_opt(y);
+            config.option<ConfigOptionFloats>("wipe_tower_x", true)->set_at(&wt_x_opt, plate_index, 0);
+            config.option<ConfigOptionFloats>("wipe_tower_y", true)->set_at(&wt_y_opt, plate_index, 0);
+
+            ArrangePolygon wipe_tower_ap;
+            Polygon ap({
+                {scaled(x - wp_brim_width), scaled(y - wp_brim_width)},
+                {scaled(x + w + wp_brim_width), scaled(y - wp_brim_width)},
+                {scaled(x + w + wp_brim_width), scaled(y + depth + wp_brim_width)},
+                {scaled(x - wp_brim_width), scaled(y + depth + wp_brim_width)}
+            });
+            wipe_tower_ap.bed_idx = 0;
+            wipe_tower_ap.setter = NULL; // do not move wipe tower
+            wipe_tower_ap.poly.contour = std::move(ap);
+            wipe_tower_ap.translation  = {scaled(0.f), scaled(0.f)};
+            wipe_tower_ap.rotation     = a;
+            wipe_tower_ap.name = "WipeTower";
+            wipe_tower_ap.is_virt_object = true;
+            wipe_tower_ap.is_wipe_tower = true;
+            ++wipe_tower_ap.priority;
+            unselected.emplace_back(std::move(wipe_tower_ap));
+        }
+    }
+
+    // The exclusion areas as fixed items (BambuStudio.cpp 5882; OrcaSlicer.cpp 5138).
+    arrange_add_exclude_areas(unselected, config, 0.);
+
+    // Step 2: the arrange settings (BambuStudio.cpp 5886-5909; OrcaSlicer.cpp
+    // 5142-5166), with the official CLI's option values: allow_multicolor_oneplate
+    // true and avoid_extrusion_cali_region false (their defaults, PrintConfig.cpp
+    // 9896-9909 at 5873b5f, 10743-10756 at 31f6803); the clearances and the
+    // printable height from the printer (BambuStudio.cpp 4226-4230;
+    // OrcaSlicer.cpp 3638-3642).
+    //
+    // Rotations stay off. This is a deliberate choice: it follows the desktop
+    // app's Arrange (GLCanvas3D.hpp ArrangeSettings enable_rotation = false,
+    // line 564 at 5873b5f, 493 at 31f6803), not the official CLI, whose
+    // allow_rotations option defaults to true (PrintConfig.cpp 9901-9904 at
+    // 5873b5f, 10748-10751 at 31f6803). On an I3 printer align_to_y_axis
+    // still turns a long part to the Y axis, as the official does (Bambu
+    // Arrange.cpp 946-959, long side > 1.1 x short side; Orca
+    // update_selected_items_axis_align, Arrange.cpp 155-254).
+    params.allow_rotations                     = false;
+    params.allow_multi_materials_on_same_plate = true;
+    params.avoid_extrusion_cali_region         = false;
+    params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
+    params.clearance_height_to_lid             = arrange_opt(config, "extruder_clearance_height_to_lid")->getFloat();
+#ifdef ENGINE_ORCA
+    params.clearance_radius                    = arrange_opt(config, "extruder_clearance_radius")->getFloat();
+#else
+    params.cleareance_radius                   = arrange_opt(config, "extruder_clearance_max_radius")->getFloat();
+#endif
+    params.printable_height                    = arrange_opt(config, "printable_height")->getFloat();
+    params.min_obj_distance = 0;
+    if (params.is_seq_print) {
+        // BED_SHRINK_SEQ_PRINT: 0 on Bambu, 5 on Orca (each engine's Arrange.hpp).
+        params.bed_shrink_x = BED_SHRINK_SEQ_PRINT;
+        params.bed_shrink_y = BED_SHRINK_SEQ_PRINT;
+    }
+    if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
+        params.align_to_y_axis = (printer_structure_opt->value == PrinterStructure::psI3);
+
+#ifdef ENGINE_ORCA
+    update_arrange_params(params, &config, selected);
+    update_selected_items_inflation(selected, &config, params);
+    update_unselected_items_inflation(unselected, &config, params);
+    update_selected_items_axis_align(selected, &config, params);
+    Points beds = get_shrink_bedpts(&config, params);
+#else
+    update_arrange_params(params, config, selected);
+    update_selected_items_inflation(selected, config, params);
+    update_unselected_items_inflation(unselected, config, params);
+    Points beds = get_shrink_bedpts(config, params);
+#endif
+    arrange_add_exclude_areas(params.excluded_regions, config, scale_(1));
+
+    // Step 3 (BambuStudio.cpp 5925-5926; OrcaSlicer.cpp 5185-5186).
+    arrangement::arrange(selected, unselected, beds, params);
+    arrangement::arrange(unprintable, {}, beds, params);
+
+    // Every selected item must land on this plate (BambuStudio.cpp 5936-5945;
+    // OrcaSlicer.cpp 5196-5205).
     std::string off_bed;
-    for (const ArrangePolygon& ap : input)
+    for (const ArrangePolygon& ap : selected)
         if (ap.bed_idx != 0)
             off_bed += (off_bed.empty() ? "'" : ", '") + ap.name + "'";
     if (!off_bed.empty()) {
@@ -3006,7 +3505,11 @@ static bool arrange_on_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfi
         emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
         return false;
     }
-    apply_arrange_polys(input, instances, [](ArrangePolygon&) {});
+    apply_arrange_polys(selected, selected_instances, [](ArrangePolygon&) {});
+    // Unprintable instances: the official moves them on to a virtual bed past
+    // the last plate (BambuStudio.cpp 5989-5997); a one-plate slice has no such
+    // bed, so they keep their own arrange result on this bed. They are not printed.
+    apply_arrange_polys(unprintable, unprintable_instances, [](ArrangePolygon&) {});
     for (ModelObject* object : model.objects)
         object->ensure_on_bed();
     json placed = json::array();
@@ -4762,7 +5265,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             for (const Slic3r::ModelObject* object : model.objects)
                 for (const Slic3r::ModelInstance* inst : object->instances)
                     before[inst->loaded_id] = inst->get_offset();
-            if (o.arrange && !arrange_on_bed(model, config, outcome)) {
+            // The plate's filament count from its last slice (slice_info), as
+            // the official reads plate_data_src[plate]->slice_filaments_info
+            // (BambuStudio.cpp 5794; OrcaSlicer.cpp 5050); 0 for an STL.
+            size_t sliced_filament_count = 0;
+            if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr)
+                sliced_filament_count = plate_data[plate_id - 1]->slice_filaments_info.size();
+            if (o.arrange && !arrange_on_bed(model, config, plate_id > 0 ? plate_id - 1 : 0,
+                                             sliced_filament_count, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
             }
