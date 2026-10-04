@@ -1900,23 +1900,28 @@ static bool read_zip_member(const std::string& archive, const std::string& membe
     return found;
 }
 
-/// The archive opens as a ZIP and lists `member` (any size; nothing is read).
-static bool zip_has_member(const std::string& archive, const std::string& member) {
+/// The archive opens as a ZIP and `member` decompresses with a matching CRC.
+/// The bytes stream to a discarding sink, so any size is checked without
+/// holding it in memory.
+static bool zip_member_readable(const std::string& archive, const std::string& member) {
     mz_zip_archive zip;
     mz_zip_zero_struct(&zip);
     if (!Slic3r::open_zip_reader(&zip, archive))
         return false;
-    bool found = false;
+    bool readable = false;
     const mz_uint count = mz_zip_reader_get_num_files(&zip);
-    for (mz_uint file_idx = 0; file_idx < count && !found; ++file_idx) {
+    for (mz_uint file_idx = 0; file_idx < count; ++file_idx) {
         mz_zip_archive_file_stat stat;
         if (!mz_zip_reader_file_stat(&zip, file_idx, &stat)) continue;
         std::string name(stat.m_filename);
         std::replace(name.begin(), name.end(), '\\', '/');
-        found = boost::algorithm::iequals(name, member);
+        if (!boost::algorithm::iequals(name, member)) continue;
+        auto discard = [](void*, mz_uint64, const void*, size_t n) -> size_t { return n; };
+        readable = mz_zip_reader_extract_to_callback(&zip, file_idx, discard, nullptr, 0);
+        break;
     }
     Slic3r::close_zip_reader(&zip);
-    return found;
+    return readable;
 }
 
 /// Number of plates a Bambu/Orca project declares (one <plate> element each in
@@ -5739,9 +5744,9 @@ static int run_info(const std::string& argv0, const std::string& path) {
     std::string printer_model;
     std::string maker_app;
     // A 3MF the slicer cannot open is not inspected: the archive must open and
-    // hold its model part (3D/3dmodel.model, the part load_bbs_3mf reads the
-    // objects from), as the slice path would refuse it (-2).
-    if (is_3mf && !zip_has_member(path, "3D/3dmodel.model")) {
+    // its model part (3D/3dmodel.model, the part load_bbs_3mf reads the
+    // objects from) must decompress intact, as the slice path would refuse it (-2).
+    if (is_3mf && !zip_member_readable(path, "3D/3dmodel.model")) {
         out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path +
                        " is not a readable 3MF archive with a 3D/3dmodel.model part.";
         std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;

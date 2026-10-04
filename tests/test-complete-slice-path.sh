@@ -111,10 +111,20 @@ py '
 import json; d = json.load(open("info-ext.json"))
 assert d["kind"] == "3mf" and d["printer_model"] == "Bambu Lab X1 Carbon", d
 '
-# An unreadable 3MF (not a ZIP, or a folder named .3mf) is refused (-2).
+# An unreadable 3MF (not a ZIP, a folder named .3mf, or a model part that
+# fails its CRC) is refused (-2).
 echo "not a zip" > broken.3mf
 mkdir -p folder.3mf
-for bad in broken.3mf folder.3mf; do
+py '
+import zipfile
+with zipfile.ZipFile("crc.3mf", "w", zipfile.ZIP_STORED) as z:
+    z.writestr("3D/3dmodel.model", "<model>" + "x" * 64 + "</model>")
+data = bytearray(open("crc.3mf", "rb").read())
+at = data.index(b"xxxx")
+data[at] = ord("y")
+open("crc.3mf", "wb").write(bytes(data))
+'
+for bad in broken.3mf folder.3mf crc.3mf; do
     if "$B" --info "$bad" > info-bad.json; then fail "--info accepted $bad"; fi
     py '
 import json; d = json.load(open("info-bad.json"))
