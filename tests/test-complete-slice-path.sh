@@ -390,6 +390,48 @@ assert "300" in d["error_string"], d["error_string"]
 done
 echo "PASS: a part larger than the bed is refused with its size (both engines)"
 
+# Each engine's own X1 Carbon project of the 20 mm cube (base.3mf is newer
+# than the OrcaSlicer build reads), and two copies of it: edge-<engine>.3mf
+# with the cube moved over the bed's edge (x = 250 on the 256 mm bed), and
+# platebed-<engine>.3mf with plate 1 stating its own High Temp Plate.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run proj-$e "$bin" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" --outputdir proj-$e/out --export-3mf proj.3mf
+    [ "$(rc proj-$e)" = 0 ] || { show proj-$e; fail "$e: X1 Carbon cube project exit $(rc proj-$e)"; }
+    py '
+import sys, zipfile
+def rewrite(dst, name, old, new):
+    with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == name:
+                assert old in data, (name, old)
+                data = data.replace(old, new, 1)
+            zout.writestr(item, data)
+e = sys.argv[2]
+rewrite("edge-%s.3mf" % e, "3D/3dmodel.model", b" 128 128 10\"", b" 250 128 10\"")
+rewrite("platebed-%s.3mf" % e, "Metadata/model_settings.config", b"  <plate>\n",
+        b"  <plate>\n    <metadata key=\"bed_type\" value=\"High Temp Plate\"/>\n")
+' proj-$e/out/proj.3mf $e
+done
+
+# --no-check does not skip the printable-area refusals: the official CLI
+# refuses a plate with nothing fully inside (-50, BambuStudio.cpp 6530-6535;
+# OrcaSlicer.cpp 5647-5652) and an object over the bed's edge (-52,
+# BambuStudio.cpp 6576-6581; OrcaSlicer.cpp 5693-5698) whatever no_check says.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run bignc-$e "$bin" big.stl --slice 1 --arrange 1 --no-check --printer-preset "$A1M" --outputdir bignc-$e/out
+    run edgenc-$e "$bin" edge-$e.3mf --slice 1 --no-check --outputdir edgenc-$e/out
+    py '
+import json, sys
+for path, want in ((sys.argv[1], -50), (sys.argv[2], -52)):
+    d = json.load(open(path))
+    assert d["return_code"] == want, (path, d)
+' bignc-$e/out/result.json edgenc-$e/out/result.json
+done
+echo "PASS: --no-check keeps the printable-area refusals (both engines)"
+
 # --arrange 1 keeps clear of the bed exclusion area, as the official per-plate
 # arrange does (PartPlateList::preprocess_exclude_areas, fixed items plus
 # excluded regions). The X1 Carbon excludes its 18 x 28 mm front-left corner;
@@ -626,6 +668,27 @@ run cbtplate "$B" platebed.3mf --plate 1 --curr-bed-type "High Temp Plate" -o cb
 [ "$(rc cbtplate)" = 0 ] || { show cbtplate; fail "--curr-bed-type over a plate's bed type exit $(rc cbtplate)"; }
 has_line cbtplate/out.gcode '; curr_bed_type = High Temp Plate' || fail "the command line did not win over the plate's bed type"
 echo "PASS: --curr-bed-type applies over the printer's and the plate's plate type, and refuses unknown plates (both engines)"
+
+# --export-settings writes the project's settings, not a plate's: the official
+# action saves m_print_config before the plate loop lays a plate's own
+# settings over it (BambuStudio.cpp 6366-6370 and 6902-6904; OrcaSlicer.cpp
+# 5499-5503 and 5905-5907). Plate 1 of platebed-<engine>.3mf (made above) is
+# sliced on its High Temp Plate; the file keeps the project's plate.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    for n in 1 0; do
+        run pset$n-$e "$bin" platebed-$e.3mf --slice $n --export-settings pset$n-$e.json --outputdir pset$n-$e/out
+        [ "$(rc pset$n-$e)" = 0 ] || { show pset$n-$e; fail "$e: --slice $n --export-settings exit $(rc pset$n-$e)"; }
+        has_line pset$n-$e/out/plate_1.gcode '; curr_bed_type = High Temp Plate' || fail "$e: --slice $n did not slice on the plate's own bed type"
+        py '
+import json, sys, zipfile
+want = json.loads(zipfile.ZipFile(sys.argv[2]).read("Metadata/project_settings.config"))["curr_bed_type"]
+got = json.load(open(sys.argv[1])).get("curr_bed_type")
+assert want != "High Temp Plate" and got == want, ("exported plate type", got, "project", want)
+' pset$n-$e.json platebed-$e.3mf
+    done
+done
+echo "PASS: --export-settings with --slice writes the project's settings, not plate 1's (both engines)"
 
 # A 3MF keeps its own filament_printable (H2D: a two-nozzle printer).
 run h2d "$B" cube.stl --slice 1 --printer-preset "Bambu Lab H2D 0.4 nozzle" --outputdir h2d/out --export-3mf h2d.3mf
