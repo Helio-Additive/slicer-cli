@@ -1479,17 +1479,87 @@ assert len(o) == 2 and abs(x0 - 65) < 0.5 and abs(x1 - 115) < 0.5 and abs(y0 - 8
 done
 echo "PASS: a printer change moves the plate after the setting flags apply (both engines)"
 
+# The tower an arrange sets is the one the project keeps: with --repetitions
+# on a printer with another bed, the exported tower is the one the copies were
+# arranged with, not the one moved to the new bed (the official exports the
+# m_print_config its arrange updated, BambuStudio.cpp 5693-5700 and 8156;
+# OrcaSlicer.cpp 4954-4961 and 6985).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run rpt-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --load-settings a1m-$e.json --repetitions 2 \
+        --outputdir rpt-$e/out --export-3mf rpt.3mf
+    [ "$(rc rpt-$e)" = 0 ] || { show rpt-$e; fail "$e: --repetitions on a printer change exit $(rc rpt-$e)"; }
+    py '
+import json, re, sys, zipfile
+d = sys.argv[1]
+g = open(d + "/plate_1.gcode", errors="replace").read()
+gx = float(re.search(r"^; wipe_tower_x = (.*)$", g, re.M).group(1).split(",")[0])
+gy = float(re.search(r"^; wipe_tower_y = (.*)$", g, re.M).group(1).split(",")[0])
+s = json.loads(zipfile.ZipFile(d + "/rpt.3mf").read("Metadata/project_settings.config"))
+ex, ey = float(s["wipe_tower_x"][0]), float(s["wipe_tower_y"][0])
+assert abs(gx - ex) < 0.01 and abs(gy - ey) < 0.01, ("sliced", gx, gy, "exported", ex, ey)
+' rpt-$e/out || { show rpt-$e; fail "$e: the exported tower is not the one the copies were arranged with"; }
+done
+echo "PASS: --repetitions on a printer change exports the tower the copies were arranged with (both engines)"
+
+# --ensure-on-bed lifts a sunk object before the actions given before --slice
+# (BambuStudio.cpp 6188-6194 then the action loop at 6336; OrcaSlicer.cpp
+# 5443-5455 then 5470): --export-stl writes the lifted objects.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    py '
+import re, sys, zipfile
+zi = zipfile.ZipFile(sys.argv[1]); zo = zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED)
+for it in zi.infolist():
+    data = zi.read(it.filename)
+    if it.filename == "3D/3dmodel.model":
+        def sink(m):
+            v = m.group(2).split(); v[11] = "%g" % (float(v[11]) - 5.0)
+            return m.group(1) + " ".join(v) + chr(34)
+        t, n = re.subn(r"(<item [^>]*transform=\")([^\"]*)\"", sink, data.decode())
+        assert n > 0, "no build item"
+        data = t.encode()
+    zo.writestr(it, data)
+zo.close()
+' ftow-$e/out/ftow.3mf sunk-$e.3mf
+    run eob-$e "$bin" sunk-$e.3mf --ensure-on-bed --export-stl --slice 1 --outputdir eob-$e/out
+    [ "$(rc eob-$e)" = 0 ] || { show eob-$e; fail "$e: --ensure-on-bed --export-stl --slice 1 exit $(rc eob-$e)"; }
+    py '
+import glob, re, struct, sys
+zs = []
+for f in glob.glob(sys.argv[1] + "/*.stl"):
+    d = open(f, "rb").read()
+    if d[:5] == b"solid" and b"facet" in d[:300]:
+        zs += [float(m.split()[2]) for m in re.findall(rb"vertex\s+(\S+\s+\S+\s+\S+)", d)]
+    else:
+        n = struct.unpack("<I", d[80:84])[0]
+        for i in range(n):
+            v = struct.unpack("<12f", d[84 + 50 * i:84 + 50 * i + 48])
+            zs += [v[5], v[8], v[11]]
+assert zs and abs(min(zs)) < 0.01, ("lowest z", min(zs) if zs else None)
+' eob-$e/out/stl || { show eob-$e; fail "$e: --export-stl wrote the sunk object before --ensure-on-bed lifted it"; }
+done
+echo "PASS: --ensure-on-bed lifts a sunk object before the actions given before --slice (both engines)"
+
 # --slice 0 never arranges a by-object plate again for wider clearances: the
 # official does so only for one named plate (plate_to_slice > 0,
 # BambuStudio.cpp 5275; OrcaSlicer.cpp 4538).
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
     run clr0-$e "$bin" seq2-$e/out/seq2.3mf --slice 0 --load-settings p1s-wide-$e.json --outputdir clr0-$e/out
+    # Not arranged again, the two cubes stand too close for the wider
+    # clearance: the by-object check refuses the plate (-63), as the official
+    # does for --slice 0 (CLI_OBJECT_COLLISION_IN_SEQ_PRINT, BambuStudio.cpp
+    # 7000-7001; OrcaSlicer.cpp 6007-6008).
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -63, (d["return_code"], d.get("error_string"))
+' clr0-$e/out/result.json || { show clr0-$e; fail "$e: --slice 0 on the by-object project did not end with the clearance refusal (-63), exit $(rc clr0-$e)"; }
     if events clr0-$e/stdout arranged | grep ClearanceArrange >/dev/null; then
         fail "$e: --slice 0 arranged a by-object plate again"
     fi
 done
-echo "PASS: --slice 0 does not arrange a by-object plate again for wider clearances (both engines)"
+echo "PASS: --slice 0 does not arrange a by-object plate again for wider clearances; the clearance check refuses it (-63) (both engines)"
 
 # A printer change moves every plate of the exported project onto the new
 # bed, sliced or not (translate_models, BambuStudio.cpp 4516-4642;
@@ -1626,7 +1696,10 @@ echo "PASS: --nozzle, --engine-info on a geometry-only 3MF and --slice 0 --expor
 # after it only once every plate has sliced: --slice is one action of the
 # official loop, with each plate's bed check inside it (BambuStudio.cpp 6336,
 # 6437, 6527-6534; OrcaSlicer.cpp 5470, 5561, 5650). Plate 2 of this list
-# stands off the A1 mini's bed, so its bed check fails (-50).
+# stands off the A1 mini's bed, so its bed check fails (-50). --slice 0 on
+# several plates checks every plate before it slices any (pre_check,
+# BambuStudio.cpp 6441, 7027, 7428; OrcaSlicer.cpp 5565, 6034, 6222), so
+# neither order writes a G-code.
 py '
 import json
 json.dump({"plates": [
@@ -1653,9 +1726,11 @@ b = sorted(n for n in os.listdir(sys.argv[2]) if n.endswith(".stl")) if os.path.
 assert len(a) == 2, ("--export-stls before --slice", a)
 assert b == [], ("--export-stls after --slice", b)
 ' obA-$e/stls obB-$e/stls || fail "$e: --export-stls did not follow its place against --slice"
-    [ -s obB-$e/out/plate_1.gcode ] || fail "$e: plate 1 was not sliced before plate 2 failed"
+    for n in obA obB; do
+        [ ! -e $n-$e/out/plate_1.gcode ] || fail "$e: --slice 0 sliced plate 1 although plate 2 is off the bed ($n)"
+    done
 done
-echo "PASS: --export-stls before --slice runs before the bed checks, after --slice only once every plate has sliced (both engines)"
+echo "PASS: --export-stls before --slice runs before the bed checks, after --slice only once every plate has sliced; --slice 0 checks every plate before slicing any (both engines)"
 
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then

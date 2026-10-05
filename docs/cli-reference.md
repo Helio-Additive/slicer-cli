@@ -33,6 +33,10 @@ slicer_cli model.3mf --slice 0 --outputdir out            # every plate
 slicer_cli model.3mf --slice 2 --outputdir out --export-3mf sliced.3mf
 ```
 
+With `--slice 0` on a project of several plates, every plate is checked
+(bed, settings) before any plate is sliced, as the official command lines do.
+A plate that fails ends the run, and no plate's G-code is written.
+
 Every flag below works with both calls unless its row says otherwise.
 
 ## Input files

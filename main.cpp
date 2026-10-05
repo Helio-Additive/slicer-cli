@@ -159,6 +159,11 @@ const char* string_exception_tag(Slic3r::StringExceptionType t) {
     return "STRING_EXCEPT_UNKNOWN";
 }
 
+// --slice 0's check pass over every plate (run_slice_mode) holds its events
+// here: they reach the stream only when that pass refuses a plate, as the
+// slice pass that follows emits each plate's events again.
+static std::vector<std::string>* g_held_events = nullptr;
+
 void emit_event(const json& payload) {
     // One JSON object per line so a streaming line-reader in TS can split
     // events without buffering. Flush so the host sees events as the slice
@@ -174,6 +179,10 @@ void emit_event(const json& payload) {
     std::string line;
     try {
         line = payload.dump(-1, ' ', false, json::error_handler_t::replace);
+        if (g_held_events) {
+            g_held_events->push_back(std::move(line));
+            return;
+        }
         slicer_cli::diagnostics::write_event(line);
     } catch (...) {
         return;  // a diagnostic must never be the reason a slice fails
@@ -2605,6 +2614,9 @@ struct PlateOutcome {
     bool                                        no_check = false;
     bool                                        actions_only = false;
     bool                                        run_step_failed = false;  // a model action failed: reported as plate 0
+    // --slice 0 on several plates: the check pass, which stops before the
+    // slice (run_slice_mode).
+    bool                                        pre_check = false;
     // --load-settings and friends: what the merge decided, for the export.
     std::shared_ptr<slicer_cli::SettingsMerge>  settings_merge;
     // --export-3mf: the plate's Metadata/plate_N.json (first-layer boxes).
@@ -4955,13 +4967,13 @@ static Slic3r::DynamicPrintConfig plate_own_settings(const Slic3r::PlateDataPtrs
 /// The model actions run once per run, not once per plate (--slice 0).
 static bool g_model_actions_done = false;
 
-/// The per-plate steps on the placed objects, in the official order:
-/// --ensure-on-bed (BambuStudio.cpp 6188-6194), --skip-objects (6541-6581,
-/// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left); the same lines
-/// in OrcaSlicer.cpp 5443-5455 and 5645-5720. --mtcpp follows the bed check
-/// (plate_triangle_limit).
+/// --skip-objects on the placed objects (BambuStudio.cpp 6541-6581,
+/// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left; OrcaSlicer.cpp
+/// 5645-5720): inside the slice action, after the model actions. Its caller
+/// runs --ensure-on-bed first, before the actions (BambuStudio.cpp 6188-6194
+/// then the action loop at 6336; OrcaSlicer.cpp 5443-5455 then 5470).
+/// --mtcpp follows the bed check (plate_triangle_limit).
 static bool plate_object_steps(const CliOptions& o, Slic3r::Model& model, int plate, PlateOutcome& outcome) {
-    slicer_cli::ensure_on_bed_if_asked(o, model);
     std::vector<int> skipped;
     if (slicer_cli::apply_skip_objects(o, model, skipped) < 0) {
         const std::string why = "Every object on plate " + std::to_string(plate) + " is in --skip-objects.";
@@ -6598,6 +6610,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     int duplicate_count = 0;
                     a = slicer_cli::apply_transforms(o, *whole, nullptr, 0, outcome.plate_count, duplicate_count);
                 }
+                // --ensure-on-bed lifts every loaded object after the
+                // transforms, before the actions (BambuStudio.cpp 6188-6194;
+                // OrcaSlicer.cpp 5443-5455).
+                if (a.code == 0)
+                    slicer_cli::ensure_on_bed_if_asked(o, *whole);
             }
             // --export-settings writes the project's settings, not this
             // plate's (see project_settings above). The command line is
@@ -6605,9 +6622,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             std::optional<Slic3r::DynamicPrintConfig> settings_to_export = project_settings;
             if (settings_to_export)
                 apply_command_line_overrides(*settings_to_export, overrides, /*report_rejections=*/false);
-            if (a.code == 0)
+            if (a.code == 0) {
+                // The actions run once per run, also from the check pass:
+                // their events are not held.
+                std::vector<std::string>* const held = g_held_events;
+                g_held_events = nullptr;
                 a = slicer_cli::run_model_actions(o, model, settings_to_export ? *settings_to_export : config, whole.get(),
                                                   phase);
+                g_held_events = held;
+            }
             if (a.code != 0) {
                 std::cerr << "Error: " << a.message << "\n";
                 set_outcome_failure(outcome, a.code, a.message);
@@ -6699,6 +6722,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     outcome.duplicate_count = 0;
                 }
             }
+            // --repetitions arranges the copies and sets the tower in `config`
+            // (arrange_repetitions); the project keeps that tower.
+            bool repetitions_arranged = false;
             if (assemble_input) {
                 // An assemble list's plates take the list's own arrange in
                 // place of --arrange and --repetitions (BambuStudio.cpp
@@ -6728,6 +6754,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         assemble_tower_default_corner(config, arrange_plate_index, WIPE_TOWER_MARGIN);
                 }
             } else if (outcome.duplicate_count > 0) {
+                repetitions_arranged = true;
                 std::set<int> skip_ids;
                 for (int id : o.cli.option<Slic3r::ConfigOptionInts>("skip_objects")->values)
                     skip_ids.insert(id);
@@ -6752,8 +6779,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (plate_moved && !o.export_3mf.empty()) {
                 const auto* wx = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_x");
                 const auto* wy = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_y");
-                if (!o.arrange_forced() && !clearance_arrange && new_bed_tower)
-                    outcome.arranged_wipe_tower = new_bed_tower;   // moved to the new bed only
+                // Moved to the new bed only: no arrange set the tower since.
+                // After an arrange the project keeps the arranged tower, as the
+                // official exports the m_print_config its arrange updated
+                // (BambuStudio.cpp 5693-5700, export 8156-8157; OrcaSlicer.cpp
+                // 4954-4961, export 6985).
+                if (!o.arrange_forced() && !clearance_arrange && !repetitions_arranged && new_bed_tower)
+                    outcome.arranged_wipe_tower = new_bed_tower;
                 else if (wx && wy && !wx->values.empty() && !wy->values.empty())
                     outcome.arranged_wipe_tower = Slic3r::Vec2d(wx->get_at(arrange_plate_index), wy->get_at(arrange_plate_index));
             }
@@ -6773,6 +6805,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             outcome.moved_by_pose.push_back({object->name, object->volumes.size(),
                                 it->second + Slic3r::Vec3d(outcome.plate_origin.x(), outcome.plate_origin.y(), 0.), delta});
                     }
+            // --ensure-on-bed before the actions given before --slice, as the
+            // official lifts the objects before its action loop
+            // (BambuStudio.cpp 6188-6194 then 6336; OrcaSlicer.cpp 5443-5455
+            // then 5470); --skip-objects stays in the slice step after them.
+            slicer_cli::ensure_on_bed_if_asked(o, model);
             if (slicer_cli::has_model_actions(o) && !g_model_actions_done) {
                 g_model_actions_done = true;
                 if (!run_model_action_step(slicer_cli::ActionPhase::BeforeSlice))
@@ -6788,6 +6825,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (!plate_triangle_limit(o, model, step_plate, outcome))
                 return 1;
         } else if (!calib_self_geometry) {
+            slicer_cli::ensure_on_bed_if_asked(o, model);
             if (!plate_object_steps(o, model, std::max(1, plate_id), outcome) ||
                 !plate_triangle_limit(o, model, std::max(1, plate_id), outcome))
                 return 1;
@@ -6951,7 +6989,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // (7034-7046: its index and the run's plate count, 4 to begin),
             // and every status the slice reports (cli_status_callback).
             const bool piped = slicer_cli::pipe_started();
-            if (piped) {
+            // The check pass sends nothing: the official reports a plate
+            // only once it slices it (BambuStudio.cpp 7034-7046, after the
+            // check pass's continue at 7027).
+            if (piped && !outcome.pre_check) {
                 if (outcome.plate_index <= 1) {
                     slicer_cli::pipe_update(2, "Loading files finished");
                     slicer_cli::pipe_update(3, "Prepare slicing");
@@ -7093,6 +7134,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, validate_error, validation_result.string);
                 return 1;
             }
+            // --slice 0 on several plates: the check pass ends here for this
+            // plate, once its bed check, apply and validate passed
+            // (BambuStudio.cpp 7027-7028; OrcaSlicer.cpp 6034-6035).
+            if (outcome.pre_check)
+                return 0;
 
             // --load-slicedata: the plate's saved slicing, else a normal
             // slice (BambuStudio.cpp 7076-7099; OrcaSlicer.cpp 6067-6090).
@@ -8015,7 +8061,48 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     else
         plates.push_back(o.slice_plate);
 
-    for (size_t i = 0; i < plates.size(); ++i) {
+    // --slice 0 on several plates checks every plate before it slices any
+    // (pre_check, BambuStudio.cpp 6441, 7027-7028, 7428-7429; OrcaSlicer.cpp
+    // 5565, 6034-6035, 6222-6223): each plate runs up to its slice, and the
+    // first refusal ends the run with no G-code written. A plate that passes
+    // is run again by the slice pass below, so its events are held and
+    // dropped; a refused plate's events are sent with its result.
+    const bool pre_check = o.slice_plate == 0 && plates.size() > 1;
+    for (size_t i = 0; pre_check && i < plates.size(); ++i) {
+        PlateOutcome outcome;
+        outcome.plate_id    = plates[i];
+        outcome.plate_index = int(i) + 1;
+        outcome.plate_count = int(plates.size());
+        outcome.gcode_path  = (outdir / ("plate_" + std::to_string(plates[i]) + ".gcode")).string();
+        outcome.pre_check   = true;
+        std::vector<std::string> held;
+        g_held_events = &held;
+        int rc = 0;
+        try {
+            rc = slice_one_plate(o, calib_params, per_plate_load ? plates[i] : 0, outcome.gcode_path, outcome);
+        } catch (...) {
+            g_held_events = nullptr;
+            throw;
+        }
+        g_held_events = nullptr;
+        if (rc == 0 && outcome.cli_code == 0)
+            continue;
+        for (const std::string& line : held)
+            slicer_cli::diagnostics::write_event(line);
+        if (outcome.cli_code == 0)
+            set_outcome_failure(outcome, CLI_SLICING_ERROR);
+        if (outcome.error_string.empty())
+            outcome.error_string = cli_error_sentence(outcome.cli_code);
+        // The refused plate starts without a G-code, as in the slice pass.
+        boost::system::error_code ignored;
+        fs::remove(outcome.gcode_path, ignored);
+        outcomes.push_back(outcome);
+        code = outcome.cli_code;
+        error_string = outcome.error_string;
+        break;
+    }
+
+    for (size_t i = 0; code == 0 && i < plates.size(); ++i) {
         PlateOutcome outcome;
         outcome.plate_id    = plates[i];
         outcome.plate_index = int(i) + 1;
