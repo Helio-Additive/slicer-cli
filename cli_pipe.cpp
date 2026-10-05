@@ -66,11 +66,11 @@ struct CliCallbackMgr {
         j["total_percent"] = m_total_progress;
         const char* key = m_warning_step >= 0 ? "warning" : "message";
         // The official writes each record into a PIPE_BUFFER_SIZE buffer with
-        // snprintf, so a record longer than 511 bytes loses its end and its
-        // newline, and the reader gets broken JSON joined to the next line.
-        // Here the message is shortened (at a UTF-8 character boundary) until
-        // the record with its newline fits the same 512 bytes: every record
-        // stays one whole JSON line of the official size.
+        // snprintf, which keeps 511 bytes: a record over 510 bytes loses its
+        // end and its newline, and the reader gets broken JSON joined to the
+        // next line. Here the message is shortened (at a UTF-8 character
+        // boundary) until the record (at most 510 bytes) and its newline fit
+        // those 511: every record stays one whole JSON line of the official size.
         std::string text = m_message;
         std::string notify_message;
         while (true) {

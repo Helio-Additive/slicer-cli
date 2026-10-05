@@ -1330,6 +1330,84 @@ assert len(names) == 1 and "würfel" in names[0], names
 done
 echo "PASS: non-ASCII file names and folders (both engines)"
 
+# A printer change through --load-settings moves the plate onto the new bed
+# (translate_models, BambuStudio.cpp 4497-4644; OrcaSlicer.cpp 3885-3980): an
+# X1 Carbon project whose cube stands at (220, 220) lands on the A1 mini's
+# 180 mm bed. A by-object project whose printer change widens the extruder
+# clearance is arranged again (BambuStudio.cpp 5275-5288; OrcaSlicer.cpp
+# 4538-4549) instead of failing the clearance check (-63).
+py '
+import json
+json.dump({"plates": [{"plate_name": "p", "need_arrange": False,
+            "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [220], "pos_y": [220]}]}]},
+          open("far.json", "w"))
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True, "plate_params": {"print_sequence": "by object"},
+            "objects": [{"path": "cube.stl", "count": 2, "filaments": [1]}]}]}, open("seq2.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run far-$e "$bin" --load-assemble-list far.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir far-$e/out --export-3mf far.3mf
+    [ "$(rc far-$e)" = 0 ] || { show far-$e; fail "$e: far-corner X1 Carbon project exit $(rc far-$e)"; }
+    run a1mset-$e "$bin" cube.stl --printer-preset "$A1M" --export-settings a1m-all-$e.json
+    run p1sset-$e "$bin" cube.stl --printer-preset "Bambu Lab P1S 0.4 nozzle" --export-settings p1s-all-$e.json
+    py '
+import json, sys
+e = sys.argv[1]
+d = json.load(open("a1m-all-%s.json" % e))
+d.update({"type": "machine", "from": "system", "name": "Bambu Lab A1 mini 0.4 nozzle", "instantiation": "true"})
+d.pop("inherits", None)
+json.dump(d, open("a1m-%s.json" % e, "w"), indent=1)
+d = json.load(open("p1s-all-%s.json" % e))
+d.update({"type": "machine", "from": "system", "name": "Bambu Lab P1S 0.4 nozzle", "instantiation": "true"})
+d.pop("inherits", None)
+d["extruder_clearance_radius" if "extruder_clearance_radius" in d else "extruder_clearance_max_radius"] = "110"
+json.dump(d, open("p1s-wide-%s.json" % e, "w"), indent=1)
+' $e
+    run sw-$e "$bin" far-$e/out/far.3mf --slice 1 --load-settings a1m-$e.json --outputdir sw-$e/out
+    [ "$(rc sw-$e)" = 0 ] || { show sw-$e; fail "$e: printer change to the A1 mini exit $(rc sw-$e)"; }
+    events sw-$e/stdout arranged | grep MovedToNewBed >/dev/null || fail "$e: no MovedToNewBed event"
+    py '
+import json, sys
+o = json.load(open(sys.argv[1]))["sliced_plates"][0]["objects"]
+b = o[0]["bbox"]
+assert len(o) == 1 and 0 <= b["x"] and b["x"] + b["width"] <= 180 and 0 <= b["y"] and b["y"] + b["depth"] <= 180, o
+' sw-$e/out/result.json
+    run seq2-$e "$bin" --load-assemble-list seq2.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir seq2-$e/out --export-3mf seq2.3mf
+    [ "$(rc seq2-$e)" = 0 ] || { show seq2-$e; fail "$e: by-object X1 Carbon project exit $(rc seq2-$e)"; }
+    run clr-$e "$bin" seq2-$e/out/seq2.3mf --slice 1 --load-settings p1s-wide-$e.json --outputdir clr-$e/out
+    [ "$(rc clr-$e)" = 0 ] || { show clr-$e; fail "$e: a wider clearance on a printer change exit $(rc clr-$e)"; }
+    events clr-$e/stdout arranged | grep ClearanceArrange >/dev/null || fail "$e: no ClearanceArrange event"
+done
+echo "PASS: a printer change moves the plate onto the new bed, and a wider clearance arranges a by-object plate again (both engines)"
+
+# --nozzle writes nozzle_diameter as the list it is; --engine-info counts a
+# geometry-only 3MF as one plate; --slice 0 --export-stls exports every
+# plate's objects once (the official loads the whole project for --slice 0).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run noz-$e "$bin" cube.stl --printer-preset "$A1M" --nozzle 0.4 -o noz-$e.gcode
+    [ "$(rc noz-$e)" = 0 ] && [ -s noz-$e.gcode ] || { show noz-$e; fail "$e: --nozzle 0.4 exit $(rc noz-$e)"; }
+    run eig-$e "$bin" --engine-info geo-plates.3mf
+    py '
+import json, sys
+text = open(sys.argv[1]).read()
+d = json.loads(text[text.index("{"):])
+assert d.get("plates") == 1, d.get("plates")
+' eig-$e/stdout
+    rm -rf stl0-$e
+    run stl0-$e "$bin" asm-$e.3mf --slice 0 --export-stls stl0-$e --outputdir stl0-$e/out
+    [ "$(rc stl0-$e)" = 0 ] || { show stl0-$e; fail "$e: --slice 0 --export-stls exit $(rc stl0-$e)"; }
+    py '
+import os, sys
+names = sorted(n for n in os.listdir(sys.argv[1]) if n.endswith(".stl"))
+# Plate 1: two cubes; plate 2: one object of two merged copies.
+assert len(names) == 3, names
+' stl0-$e
+done
+echo "PASS: --nozzle, --engine-info on a geometry-only 3MF and --slice 0 --export-stls on a two-plate project (both engines)"
+
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
     for e in bambu orca; do

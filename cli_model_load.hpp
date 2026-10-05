@@ -4,7 +4,8 @@
 // main.cpp's 3MF path. Every other model file loads here: STL, OBJ, AMF, a
 // 3MF that holds only geometry, STEP, and on the BambuStudio build GLB, glTF
 // and FBX; several of them in one call. Placement on the bed is the desktop
-// app's (desktop_place_on_bed) unless --arrange 1 asks for an arrange.
+// app's (desktop_place_on_bed) unless --arrange 0 or 1 is given: then the
+// file's own coordinates are kept (and 1 arranges them).
 #pragma once
 
 #include <string>

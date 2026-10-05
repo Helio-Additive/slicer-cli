@@ -47,6 +47,7 @@ struct ProjectFacts {
     int old_printable_width = 0, old_printable_depth = 0, old_printable_height = 0;
     float old_height_to_rod = 0.f, old_height_to_lid = 0.f, old_max_radius = 0.f, old_distance_to_rod = 0.f;
     bool old_exclude_area_empty = true;     // the file's bed_exclude_area (B 2053)
+    std::vector<Slic3r::Vec2d> old_exclude_area;   // the same, its points (B 2053; O 1702)
     int filament_count = 0;
 };
 
@@ -58,6 +59,9 @@ struct SettingsMerge {
     bool machine_switch = false;
     bool machine_upwards = false;
     bool disable_wipe_tower_after_mapping = false;
+    // Kept for parity: the official reads it only to clear the plate
+    // thumbnails (BambuStudio.cpp 5297-5322; OrcaSlicer.cpp
+    // 4553-4578), and slicer-cli makes no pictures.
     bool filament_color_changed = false;
     int  filament_count = 0;
     int  new_extruder_count = 1;

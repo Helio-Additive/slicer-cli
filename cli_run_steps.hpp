@@ -51,7 +51,15 @@ bool model_actions_only(const CliOptions& o);
 
 /// Step 6 before the plate loop: --export-settings, --info, --export-stl and
 /// --export-stls, in command-line order.
-StepResult run_model_actions(const CliOptions& o, Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config);
+/// Which of the actions a call runs: the model-wide ones (--info,
+/// --export-stl, --export-stls) run once on the whole project for --slice 0
+/// (run_slice_mode), the rest on the plate's settings.
+enum class ModelActions { All, ModelWideOnly, AllButModelWide };
+StepResult run_model_actions(const CliOptions& o, Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                             ModelActions which = ModelActions::All);
+
+/// True when the command line asks for --info, --export-stl or --export-stls.
+bool has_model_wide_actions(const CliOptions& o);
 
 /// The per-plate limits and switches the actions set for the plate loop.
 struct PlateLoopSwitches {

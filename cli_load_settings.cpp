@@ -352,8 +352,10 @@ void read_project_facts(const DynamicPrintConfig& config, ProjectFacts& f) {
         f.current_print_compatible_printers = v->values;
     if (const auto* v = config.option<ConfigOptionStrings>("different_settings_to_system"))
         f.current_different_settings = v->values;
-    if (const auto* exclude = config.option<ConfigOptionPoints>("bed_exclude_area"))
+    if (const auto* exclude = config.option<ConfigOptionPoints>("bed_exclude_area")) {
         f.old_exclude_area_empty = exclude->values.empty();
+        f.old_exclude_area = exclude->values;
+    }
     if (const auto* area = config.option<ConfigOptionPoints>("printable_area"); area && area->values.size() >= 4) {
         f.old_printable_width = (int)(area->values[2].x() - area->values[0].x());
         f.old_printable_depth = (int)(area->values[2].y() - area->values[0].y());

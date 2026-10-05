@@ -177,6 +177,16 @@ flag takes its value as the next word or after `=`.
 Settings priority, highest first: setting flags on the command line, then
 `--load-settings` and `--load-filaments`, then the 3MF.
 
+A project moved to a printer with another bed (a machine file in
+`--load-settings`) has its plate moved onto the new bed, as the official
+command lines do: on a larger bed the plate keeps its place around the bed
+centre; on a smaller one, or one with another exclusion area, the objects and
+the prime tower are centred (event `arranged` / `MovedToNewBed`). The
+OrcaSlicer engine decides this from the two beds alone, as its official command
+line does. A plate printed by
+object whose new printer has other extruder clearances is arranged again
+(`arranged` / `ClearanceArrange`).
+
 ### Every print setting
 
 Every setting of the program's engine is a flag of the same name, with dashes:
