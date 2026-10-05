@@ -1732,6 +1732,21 @@ assert b == [], ("--export-stls after --slice", b)
 done
 echo "PASS: --export-stls before --slice runs before the bed checks, after --slice only once every plate has sliced; --slice 0 checks every plate before slicing any (both engines)"
 
+# --slice 0's check pass sends no event of its own: each plate's settings
+# events come once, from its slice (two plates, so twice in all).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run ev2-$e "$bin" far2-$e/out/far2.3mf --slice 0 --load-settings a1m-$e.json --outputdir ev2-$e/out
+    [ "$(rc ev2-$e)" = 0 ] || { show ev2-$e; fail "$e: --slice 0 --load-settings on two plates exit $(rc ev2-$e)"; }
+    events ev2-$e/stdout config_normalized > ev2-$e/normalized.jsonl
+    py '
+import collections, json, sys
+c = collections.Counter(json.loads(l)["tag"] for l in open(sys.argv[1]) if l.strip())
+assert c.get("SettingsFilesMerged") == 2 and set(c.values()) == {2}, dict(c)
+' ev2-$e/normalized.jsonl || { show ev2-$e; fail "$e: --slice 0 sent a settings event more than once per plate"; }
+done
+echo "PASS: --slice 0's check pass sends no event twice (both engines)"
+
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
     for e in bambu orca; do

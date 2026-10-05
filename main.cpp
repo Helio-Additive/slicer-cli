@@ -159,11 +159,6 @@ const char* string_exception_tag(Slic3r::StringExceptionType t) {
     return "STRING_EXCEPT_UNKNOWN";
 }
 
-// --slice 0's check pass over every plate (run_slice_mode) holds its events
-// here: they reach the stream only when that pass refuses a plate, as the
-// slice pass that follows emits each plate's events again.
-static std::vector<std::string>* g_held_events = nullptr;
-
 void emit_event(const json& payload) {
     // One JSON object per line so a streaming line-reader in TS can split
     // events without buffering. Flush so the host sees events as the slice
@@ -179,11 +174,7 @@ void emit_event(const json& payload) {
     std::string line;
     try {
         line = payload.dump(-1, ' ', false, json::error_handler_t::replace);
-        if (g_held_events) {
-            g_held_events->push_back(std::move(line));
-            return;
-        }
-        slicer_cli::diagnostics::write_event(line);
+        slicer_cli::diagnostics::write_event(line);   // held during --slice 0's check pass
     } catch (...) {
         return;  // a diagnostic must never be the reason a slice fails
     }
@@ -6625,11 +6616,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (a.code == 0) {
                 // The actions run once per run, also from the check pass:
                 // their events are not held.
-                std::vector<std::string>* const held = g_held_events;
-                g_held_events = nullptr;
+                std::vector<std::string>* const held = slicer_cli::diagnostics::held_events;
+                slicer_cli::diagnostics::held_events = nullptr;
                 a = slicer_cli::run_model_actions(o, model, settings_to_export ? *settings_to_export : config, whole.get(),
                                                   phase);
-                g_held_events = held;
+                slicer_cli::diagnostics::held_events = held;
             }
             if (a.code != 0) {
                 std::cerr << "Error: " << a.message << "\n";
@@ -8064,9 +8055,13 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // --slice 0 on several plates checks every plate before it slices any
     // (pre_check, BambuStudio.cpp 6441, 7027-7028, 7428-7429; OrcaSlicer.cpp
     // 5565, 6034-6035, 6222-6223): each plate runs up to its slice, and the
-    // first refusal ends the run with no G-code written. A plate that passes
-    // is run again by the slice pass below, so its events are held and
-    // dropped; a refused plate's events are sent with its result.
+    // first refusal ends the run with no G-code written. Every event of the
+    // pass is held (diagnostics::held_events). A plate that passes is run
+    // again by the slice pass below, so its events are dropped. When a later
+    // plate is refused they stay dropped: no plate was sliced, and the
+    // official's check pass reports only the refused plate (record_exit_reson
+    // with its index, BambuStudio.cpp 6533, 6579; OrcaSlicer.cpp 5650). The
+    // refused plate's events are sent with its result.
     const bool pre_check = o.slice_plate == 0 && plates.size() > 1;
     for (size_t i = 0; pre_check && i < plates.size(); ++i) {
         PlateOutcome outcome;
@@ -8076,19 +8071,19 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         outcome.gcode_path  = (outdir / ("plate_" + std::to_string(plates[i]) + ".gcode")).string();
         outcome.pre_check   = true;
         std::vector<std::string> held;
-        g_held_events = &held;
+        slicer_cli::diagnostics::held_events = &held;
         int rc = 0;
         try {
             rc = slice_one_plate(o, calib_params, per_plate_load ? plates[i] : 0, outcome.gcode_path, outcome);
         } catch (...) {
-            g_held_events = nullptr;
+            slicer_cli::diagnostics::held_events = nullptr;
             throw;
         }
-        g_held_events = nullptr;
+        slicer_cli::diagnostics::held_events = nullptr;
         if (rc == 0 && outcome.cli_code == 0)
             continue;
         for (const std::string& line : held)
-            slicer_cli::diagnostics::write_event(line);
+            slicer_cli::diagnostics::write_event_now(line);
         if (outcome.cli_code == 0)
             set_outcome_failure(outcome, CLI_SLICING_ERROR);
         if (outcome.error_string.empty())
