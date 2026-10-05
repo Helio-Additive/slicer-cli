@@ -139,6 +139,13 @@ Any other value is refused with this list (return code -2).
 
 ## Flags
 
+A switch (a flag whose value column is empty or says `=0` or `=1`) takes no
+separate value, as on the official command lines (`DynamicConfig::read_cli`,
+Config.cpp 1719-1726 at both pins): `--normative-check` or
+`--normative-check=1` turns it on, `--normative-check=0` turns it off, and
+`--normative-check 0` turns it on and reads `0` as a model file. Every other
+flag takes its value as the next word or after `=`.
+
 ### Files and presets
 
 | Flag | Value | What it does | Works in |
@@ -154,7 +161,7 @@ Any other value is refused with this list (return code -2).
 | `--config` | file | A settings bundle (JSON) | both binaries |
 | `--load-settings` | "machine.json;process.json" | Printer and process settings files, merged over the project's | both binaries |
 | `--load-filaments` | "f1.json;f2.json;..." | Filament settings files, one per filament | both binaries |
-| `--load-defaultfila` | 0 or 1 | Use the first filament file for filaments without one | both binaries |
+| `--load-defaultfila` | `=0` or `=1` | Use the first filament file for filaments without one | both binaries |
 | `--uptodate` | | Update the project's settings to the current system presets | both binaries |
 | `--uptodate-settings` | "machine.json;process.json" | The system printer and process files for `--uptodate` | both binaries |
 | `--uptodate-filaments` | "f1.json;..." | The system filament files for `--uptodate` | both binaries |
@@ -162,8 +169,8 @@ Any other value is refused with this list (return code -2).
 | `--load-filament-ids` | "1,2,3" | The filament of each loaded object | both binaries |
 | `--clone-objects` | "1,3" | Copies of each loaded object | both binaries |
 | `--load-custom-gcodes` | file | Plate custom G-code (tool changes, pauses) from JSON | both binaries |
-| `--skip-modified-gcodes` | 0 or 1 | Keep the system presets' G-code where the project changed it | both binaries |
-| `--allow-newer-file` | 0 or 1 | Slice a 3MF saved by a newer app version | both binaries |
+| `--skip-modified-gcodes` | `=0` or `=1` | Keep the system presets' G-code where the project changed it | both binaries |
+| `--allow-newer-file` | `=0` or `=1` | Slice a 3MF saved by a newer app version | both binaries |
 | `--allow-substitution` | | With `--slice`: slice a 3MF whose values this engine has to substitute | both binaries |
 | `--datadir` | folder | Accepted; no effect (slicer-cli keeps no settings between runs) | both binaries |
 
@@ -208,8 +215,8 @@ These older shortcuts set one setting each and keep working:
 | `--mtcpp` | count | Refuse a plate with more triangles (-59) | both binaries |
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | both binaries |
 | `--no-check` | | Skip the validity checks (a layer height over the printer's limit becomes a warning; G-code conflict and printable-area checks are skipped) | both binaries |
-| `--allow-mix-temp` | 0 or 1 | Allow filaments with very different temperatures on one plate | both binaries |
-| `--normative-check` | 0 or 1 | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | both binaries |
+| `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate | both binaries |
+| `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | both binaries |
 | `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | both binaries |
 | `--load-slicedata` | folder | Slice each plate from the slicing data saved in `<folder>/<plate>`; a plate without usable data is sliced normally | both binaries |
 | `--export-slicedata` | folder | Save each plate's slicing data in `<folder>/<plate>` | both binaries |
@@ -256,12 +263,12 @@ Transforms run in the order given, before the objects are placed.
 | Flag | Value | What it does | Works in |
 |-|-|-|-|
 | `--export-3mf` | file | With `--slice`: the sliced project, written into `--outputdir` | both binaries |
-| `--min-save` | 0 or 1 | Write the 3MF without the model geometry | both binaries |
+| `--min-save` | `=0` or `=1` | Write the 3MF without the model geometry | both binaries |
 | `--metadata-name` | "n1;n2" | Metadata names for the 3MF (pair with `--metadata-value`) | both binaries |
 | `--metadata-value` | "v1;v2" | Metadata values for the 3MF | both binaries |
 | `--makerlab-name` | name | MakerLab name in the 3MF | both binaries |
 | `--makerlab-version` | version | MakerLab version in the 3MF | both binaries |
-| `--skip-useless-pick` | 0 or 1 | Leave pick pictures out of the 3MF | slicer_cli only (Bambu Studio engine) |
+| `--skip-useless-pick` | `=0` or `=1` | Leave pick pictures out of the 3MF | slicer_cli only (Bambu Studio engine) |
 | `--export-settings` | file | Write the settings as JSON and stop | both binaries |
 | `--export-stl` | | Write the objects as one STL and stop | both binaries |
 | `--export-stls` | folder | Write each object as its own STL and stop | both binaries |
@@ -293,7 +300,8 @@ of either.
 | `-v`, `--verbose` | | The engine's log on stdout | both binaries |
 | `--debug` | 0-5 | The engine's log level | both binaries |
 | `--single-instance` | | Accepted and ignored | both binaries |
-| `--calib-mode` | mode | A calibration print: `temp_tower`, `retraction_tower`, `pressure_advance_line`, `pressure_advance_pattern`, `pressure_advance_tower` | both binaries |
+| `--calib-mode` | mode | A calibration print: `temp_tower`, `retraction_tower`, `pressure_advance_line`, `pressure_advance_tower` | both binaries |
+| `--calib-mode` | `pressure_advance_pattern` | The pressure advance pattern calibration print (slicer_cli-orcaslicer refuses it: the OrcaSlicer engine's pattern calibration differs) | slicer_cli only (Bambu Studio engine) |
 | `--calib-start`, `--calib-end`, `--calib-step` | number | The calibration range | both binaries |
 | `--calib-extruder-id` | N | The extruder to calibrate (default 0) | both binaries |
 | `--calib-no-numbers` | | No number labels (`pressure_advance_line`) | both binaries |

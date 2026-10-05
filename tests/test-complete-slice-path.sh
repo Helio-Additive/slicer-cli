@@ -748,6 +748,37 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 assert len(d["sliced_plates"][0]["objects"]) == 2, d["sliced_plates"][0]["objects"]
 ' multi-$e/out/result.json
+    # --arrange 2 (any value but 0 and 1) is automatic, as no --arrange: model
+    # files with several objects are arranged apart ("0-disable, 1-enable,
+    # others-auto", BambuStudio.cpp 5066-5081; OrcaSlicer.cpp 4327-4342).
+    for a in none 2; do
+        flag=""; [ $a = 2 ] && flag="--arrange 2"
+        run arr$a-$e "$bin" cube.stl cube.stl --slice 1 $flag --printer-preset "$A1M" --outputdir arr$a-$e/out
+        [ "$(rc arr$a-$e)" = 0 ] || { show arr$a-$e; fail "$e: two cubes with --arrange $a exit $(rc arr$a-$e)"; }
+        py '
+import json, sys
+o = json.load(open(sys.argv[1]))["sliced_plates"][0]["objects"]
+assert len(o) == 2, o
+a, b = o[0]["bbox"], o[1]["bbox"]
+apart = a["x"] + a["width"] <= b["x"] or b["x"] + b["width"] <= a["x"] or a["y"] + a["depth"] <= b["y"] or b["y"] + b["depth"] <= a["y"]
+assert apart, (sys.argv[2], a, b)
+' arr$a-$e/out/result.json $a
+    done
+    # A geometry-only 3MF (no project settings) whose model_settings.config
+    # still lists two plates is one plate: --slice 0 slices it once.
+    py '
+import zipfile
+src = zipfile.ZipFile("geo.3mf")
+with zipfile.ZipFile("geo-plates.3mf", "w", zipfile.ZIP_DEFLATED) as z:
+    for item in src.infolist():
+        z.writestr(item, src.read(item.filename))
+    z.writestr("Metadata/model_settings.config",
+               "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config>\n<plate>\n<metadata key=\"plater_id\" value=\"1\"/>\n</plate>\n"
+               "<plate>\n<metadata key=\"plater_id\" value=\"2\"/>\n</plate>\n</config>\n")
+'
+    run geop-$e "$bin" geo-plates.3mf --slice 0 --printer-preset "$A1M" --outputdir geop-$e/out
+    [ "$(rc geop-$e)" = 0 ] || { show geop-$e; fail "$e: a geometry-only 3MF with plate tags exit $(rc geop-$e)"; }
+    [ -s geop-$e/out/plate_1.gcode ] && [ ! -e geop-$e/out/plate_2.gcode ] || fail "$e: a geometry-only 3MF was sliced as two plates"
     run geo-$e "$bin" geo.3mf --slice 1 --outputdir geo-$e/out
     # The exit status of -2 reads differently per shell and system; result.json is the record.
     [ "$(rc geo-$e)" != 0 ] || { show geo-$e; fail "$e: a geometry-only 3MF without a printer was sliced"; }
@@ -757,7 +788,19 @@ assert d["return_code"] == -2, d
 ' geo-$e/out/result.json
     grep -q -- '--printer-preset' geo-$e/stderr || fail "$e: the geometry-only refusal does not name --printer-preset"
 done
-echo "PASS: OBJ, AMF, a geometry-only 3MF and several files at once load and are placed (both engines)"
+echo "PASS: OBJ, AMF, a geometry-only 3MF and several files at once load and are placed; --arrange 2 is automatic (both engines)"
+
+# A switch takes no separate value, as on the official command lines
+# (DynamicConfig::read_cli, Config.cpp 1719-1726): --normative-check=0 turns
+# it off; in "--normative-check 0" the 0 is read as a model file.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run boolon-$e "$bin" cube.stl --normative-check=0 --slice 1 --printer-preset "$A1M" --outputdir boolon-$e/out
+    [ "$(rc boolon-$e)" = 0 ] || { show boolon-$e; fail "$e: --normative-check=0 exit $(rc boolon-$e)"; }
+    run boolsep-$e "$bin" cube.stl --normative-check 0 --slice 1 --printer-preset "$A1M" --outputdir boolsep-$e/out
+    [ "$(rc boolsep-$e)" != 0 ] || fail "$e: --normative-check 0 took 0 as the switch value"
+done
+echo "PASS: a switch takes its value only after = (both engines)"
 
 # --engine-info names a model file's kind and, with --printer-preset, the
 # printer and the binary that has it.
@@ -985,6 +1028,62 @@ assert d["return_code"] == int(sys.argv[2]), d
     done
 done
 echo "PASS: --load-assemble-list builds, arranges and slices every plate of its list (both engines)"
+
+# Coloured OBJs in an assemble list (slicer_cli: their colours become the
+# filaments). The second OBJ repeats 5 of the first's 10 colours and adds 5:
+# a repeated colour keeps its filament and adds none, so the palette holds
+# fewer colours than the capacity check counts; the nearest-colour fallback
+# compares only the colours there. Every face's filament is one of the
+# project's filaments.
+py '
+import json
+def cubes(path, colours):
+    lines, n = [], 0
+    for k, (r, g, b) in enumerate(colours):
+        x0 = (k % 5) * 12; y0 = (k // 5) * 12
+        for z in (0, 10):
+            for y in (0, 10):
+                for x in (0, 10):
+                    lines.append("v %g %g %g %g %g %g" % (x0 + x, y0 + y, z, r, g, b))
+        for a, b2, c in ((1,3,2),(2,3,4),(5,6,7),(6,8,7),(1,2,5),(2,6,5),(3,7,4),(4,7,8),(1,5,3),(3,5,7),(2,4,6),(4,8,6)):
+            lines.append("f %d %d %d" % (n + a, n + b2, n + c))
+        n += 8
+    open(path, "w").write("\n".join(lines) + "\n")
+V = (0, 0.2, 0.6, 1)
+A = [(0, g, b) for g in V for b in V][:10]
+B = A[:5] + [(0.2, g, 0) for g in V] + [(0.2, 0, 1)]
+cubes("pal-a.obj", A); cubes("pal-b.obj", B)
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
+            "objects": [{"path": "pal-a.obj", "count": 1, "filaments": [1]},
+                        {"path": "pal-b.obj", "count": 1, "filaments": [1]}]}]}, open("pal-list.json", "w"))
+'
+run palset "$B" pal-a.obj --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" --export-settings pal-all.json
+py '
+import json
+d = json.load(open("pal-all.json"))
+f = {k: (v[:1] if isinstance(v, list) else v) for k, v in d.items() if k.startswith("filament_") and k != "filament_settings_id"}
+f.update({"type": "filament", "from": "system", "name": "Test Filament A", "filament_id": "GFL99"})
+json.dump(f, open("pal-fil.json", "w"), indent=1)
+'
+run pal "$B" --load-assemble-list pal-list.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+    --load-filaments pal-fil.json --outputdir pal/out --export-3mf pal.3mf
+[ "$(rc pal)" = 0 ] || { show pal; fail "coloured OBJs with repeated colours exit $(rc pal)"; }
+py '
+import json, re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+d = json.loads(z.read("Metadata/project_settings.config"))
+n = len(d["filament_colour"])
+assert 10 < n <= 16, d["filament_colour"]
+used = set()
+for name in z.namelist():
+    if name.startswith("3D/") and name.endswith(".model"):
+        text = z.read(name).decode(errors="replace")
+        used |= {int(v) for v in re.findall(r"<metadata key=\"extruder\" value=\"(\d+)\"", text)}
+model = z.read("Metadata/model_settings.config").decode(errors="replace")
+used |= {int(v) for v in re.findall(r"key=\"extruder\" value=\"(\d+)\"", model)}
+assert all(1 <= u <= n for u in used), (sorted(used), n)
+' pal/out/pal.3mf
+echo "PASS: coloured OBJs that repeat colours map every colour to a project filament (slicer_cli)"
 
 # --downward-check checks every plate of the project, not only the sliced
 # one: the assemble export has a 20 mm plate 1 and a 50 x 80 mm plate 2, so
@@ -1251,7 +1350,18 @@ assert last.get("message") == "All done, Success" and last["total_percent"] == 1
 assert all(set(l) >= {"plate_index", "plate_count", "plate_percent", "total_percent"} for l in lines), lines
 totals = [l["total_percent"] for l in lines]
 assert totals == sorted(totals), totals
+# Each record fits the official 512-byte buffer with its newline.
+raw = open(sys.argv[1], "rb").read().split(b"\n")
+assert all(len(r) + 1 <= 511 for r in raw if r), max(len(r) for r in raw)
 ' pipe-$e.lines
+        # A reader that leaves after the first byte: the slice goes on and
+        # finishes (SIGPIPE is ignored; the official OrcaSlicer CLI ignores
+        # it for every run, OrcaSlicer.cpp 7464-7468).
+        rm -f pipeq-$e.fifo; mkfifo pipeq-$e.fifo
+        timeout 120 head -c 1 pipeq-$e.fifo > /dev/null & reader=$!
+        run pipeq-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --outputdir pipeq-$e/out --pipe pipeq-$e.fifo
+        wait $reader || true
+        [ "$(rc pipeq-$e)" = 0 ] && [ -s pipeq-$e/out/plate_1.gcode ] || { show pipeq-$e; fail "$e: --pipe with a reader that left exit $(rc pipeq-$e)"; }
     done
-    echo "PASS: --pipe writes the official progress lines (both engines, Linux)"
+    echo "PASS: --pipe writes the official progress lines, and a reader that leaves does not stop the slice (both engines, Linux)"
 fi

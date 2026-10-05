@@ -60,6 +60,11 @@ struct CliOptions {
     // 0 = do not arrange, 1 = arrange, any other value = automatic. -1 = not given.
     int         arrange = -1;
     bool arrange_forced() const { return arrange == 1; }
+    // --arrange: 0 off, 1 forced, any other value (or none given) automatic,
+    // which keeps each input's own need_arrange (BambuStudio.cpp 5066-5081;
+    // OrcaSlicer.cpp 4327-4342; "0-disable, 1-enable, others-auto",
+    // PrintConfig.cpp 9674).
+    bool arrange_auto() const { return arrange != 0 && arrange != 1; }
     // Presets by name, resolved like the desktop app (every parent applied).
     std::string printer_preset;
     std::string process_preset;

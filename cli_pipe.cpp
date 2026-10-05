@@ -2,8 +2,10 @@
 #include "cli_pipe.hpp"
 
 #if defined(__linux__) || defined(__LINUX__)
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -62,14 +64,28 @@ struct CliCallbackMgr {
         j["plate_count"]   = m_plate_count;
         j["plate_percent"] = m_progress;
         j["total_percent"] = m_total_progress;
-        if (m_warning_step >= 0)
-            j["warning"] = m_message;
-        else
-            j["message"] = m_message;
-        const std::string notify_message = j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
-        char pipe_message[kPipeBufferSize] = {0};
-        std::snprintf(pipe_message, kPipeBufferSize, "%s\n", notify_message.c_str());
-        const ssize_t ret = ::write(m_pipe_fd, pipe_message, std::strlen(pipe_message));
+        const char* key = m_warning_step >= 0 ? "warning" : "message";
+        // The official writes each record into a PIPE_BUFFER_SIZE buffer with
+        // snprintf, so a record longer than 511 bytes loses its end and its
+        // newline, and the reader gets broken JSON joined to the next line.
+        // Here the message is shortened (at a UTF-8 character boundary) until
+        // the record with its newline fits the same 512 bytes: every record
+        // stays one whole JSON line of the official size.
+        std::string text = m_message;
+        std::string notify_message;
+        while (true) {
+            j[key] = text;
+            notify_message = j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+            if (notify_message.size() + 1 < kPipeBufferSize || text.empty())
+                break;
+            size_t cut = std::min(text.size(), notify_message.size() + 1 - (kPipeBufferSize - 1));
+            size_t keep = text.size() - std::max<size_t>(cut, 1);
+            while (keep > 0 && (static_cast<unsigned char>(text[keep]) & 0xC0) == 0x80)
+                --keep;
+            text.resize(keep);
+        }
+        notify_message.push_back('\n');
+        const ssize_t ret = ::write(m_pipe_fd, notify_message.data(), notify_message.size());
         (void)ret;
     }
 
@@ -121,6 +137,11 @@ struct CliCallbackMgr {
     }
 
     bool start(const std::string& pipe_name) {
+        // A reader that goes away makes write() raise SIGPIPE, which would end
+        // the slice; with it ignored, write() fails with EPIPE and the slice
+        // goes on. The official OrcaSlicer CLI ignores SIGPIPE for every run
+        // (main, OrcaSlicer.cpp 7464-7468); the BambuStudio CLI does not.
+        std::signal(SIGPIPE, SIG_IGN);
         int retry_count = 0;
         m_pipe_fd = ::open(pipe_name.c_str(), O_WRONLY | O_NONBLOCK);
         while (m_pipe_fd < 0) {

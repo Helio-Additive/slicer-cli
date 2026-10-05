@@ -183,14 +183,25 @@ bool convert_obj_cluster_colors(std::vector<RGBA>& input_colors, std::vector<RGB
             all_colours.push_back(cluster_colors[i]);
             cluster_color_maps[i] = int(all_colours.size());
         } else {
-            std::vector<ColorDistValue> color_dists(max_filament_count);
-            for (int j = 0; j < max_filament_count; j++) {
-                color_dists[j].distance = calc_color_distance(cluster_colors[i], all_colours[j]);
-                color_dists[j].id       = j + 1;
+            // The nearest colour already given a filament. The official scans
+            // max_filament_count entries (BambuStudio.cpp 1008-1013), but a
+            // cluster that matched an earlier colour added none, so fewer may
+            // exist and it reads past the end; only the colours there are
+            // compared. The capacity rule above is the official one.
+            const size_t known = std::min(all_colours.size(), size_t(max_filament_count));
+            if (known == 0) {
+                all_colours.push_back(cluster_colors[i]);
+                cluster_color_maps[i] = int(all_colours.size());
+            } else {
+                std::vector<ColorDistValue> color_dists(known);
+                for (size_t j = 0; j < known; j++) {
+                    color_dists[j].distance = calc_color_distance(cluster_colors[i], all_colours[j]);
+                    color_dists[j].id       = int(j) + 1;
+                }
+                std::sort(color_dists.begin(), color_dists.end(),
+                          [](const ColorDistValue& a, const ColorDistValue& b) { return a.distance < b.distance; });
+                cluster_color_maps[i] = color_dists[0].id;
             }
-            std::sort(color_dists.begin(), color_dists.end(),
-                      [](const ColorDistValue& a, const ColorDistValue& b) { return a.distance < b.distance; });
-            cluster_color_maps[i] = color_dists[0].id;
         }
         if (cluster_color_maps[i] < first_filament_id)
             first_filament_id = cluster_color_maps[i];

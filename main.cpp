@@ -6220,10 +6220,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // AddDefaultInstances, BambuStudio.cpp 1884), then --arrange 1
         // arranges below. Otherwise the desktop's placement on load
         // (cli_model_load.cpp). A project 3MF's own objects keep their places.
-        if (geometry_only_3mf && !o.given_flag("arrange"))
+        if (geometry_only_3mf && o.arrange_auto())
             slicer_cli::desktop_center_geometry_3mf(model, config);
         if (needs_placement) {
-            if (o.given_flag("arrange") && (o.arrange == 0 || o.arrange_forced()))
+            if (!o.arrange_auto())
                 model.add_default_instances();
             else
                 slicer_cli::desktop_place_on_bed(model, config);
@@ -6249,7 +6249,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr)
                 sliced_filament_count = plate_data[plate_id - 1]->slice_filaments_info.size();
             const int arrange_plate_index = plate_id > 0 ? plate_id - 1 : 0;
-            // Several objects from model files and no --arrange: the official
+            // Several objects from model files and --arrange automatic (not 0
+            // or 1, or not given): the official
             // CLI arranges model files (need_arrange is set for them,
             // BambuStudio.cpp 2077 / OrcaSlicer.cpp 1724, and --arrange only
             // overrides it, 5066-5081 / 4327-4342), where the desktop's
@@ -6260,7 +6261,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 for (const Slic3r::ModelObject* object : model.objects)
                     for (const Slic3r::ModelInstance* inst : object->instances)
                         model_file_instances += inst->printable ? 1 : 0;
-            const bool auto_arrange_model_files = !o.given_flag("arrange") && model_file_instances > 1;
+            const bool auto_arrange_model_files = o.arrange_auto() && model_file_instances > 1;
             // --repetitions: a spiral vase is copied only when printing by
             // object (BambuStudio.cpp 5259-5269; OrcaSlicer.cpp 4519-4529).
             if (!assemble_input && outcome.duplicate_count > 0) {
@@ -7407,7 +7408,9 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     if (g_assemble) {
         plate_count = int(g_assemble->plates.size());
         per_plate_load = true;
-    } else if (input_is_3mf(o.input_file)) {
+    } else if (input_is_3mf(o.input_file) && !slicer_cli::is_geometry_only_3mf(o.input_file)) {
+        // A geometry-only 3MF (no project settings) loads whole as model
+        // geometry, whatever plate tags its model_settings.config keeps.
         const int declared = count_3mf_plates(o.input_file);
         if (declared > 0) {
             plate_count = declared;
