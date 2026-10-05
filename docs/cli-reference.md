@@ -478,13 +478,16 @@ for -2):
 
 ## Known upstream behaviour
 
-Two OrcaSlicer behaviours come from the OrcaSlicer engine at its pin, not from
-slicer-cli; slicer_cli-orcaslicer keeps them as they are.
+These OrcaSlicer behaviours come from the OrcaSlicer engine or the printer
+profiles it ships at its pin, not from slicer-cli; slicer_cli-orcaslicer keeps
+them as they are.
 
-- **Raise3D Pro3 0.4 (Dual) can crash while writing the G-code.** The official
-  OrcaSlicer v2.4.0-alpha Linux AppImage crashed in 11 of 20 runs of the same
-  cube, printer, process and filaments, against 3 in 20 for
-  slicer_cli-orcaslicer. Every crash frame is in the engine's G-code export
+- **Raise3D Pro3 0.4 (Dual, Left or Right) can crash while writing the
+  G-code.** The official OrcaSlicer v2.4.0-alpha Linux AppImage crashed in 11
+  of 20 runs of the same cube, printer, process and filaments, against 3 in 20
+  for slicer_cli-orcaslicer (Dual). The crash is intermittent across the Pro3
+  presets: in one sweep it hit the Right preset (SIGSEGV), and in 3 reruns
+  each the Right and the Dual preset crashed once while the Left was clean. Every crash frame is in the engine's G-code export
   (`GCode::append_full_config`, `GCodeProcessor::update_slice_warnings`,
   destructors, a glibc double free); none is in slicer-cli. slicer-cli sets
   the filaments up as the desktop app does
@@ -497,3 +500,21 @@ slicer-cli; slicer_cli-orcaslicer keeps them as they are.
   OrcaSlicer alpha gives the same -57. slicer_cli-orcaslicer then slices the
   plate normally and reports `SliceDataNotLoaded`. Bambu Studio's paths hold a
   plain `Polyline` (`ExtrusionEntity.hpp` 215), so slicer_cli round-trips.
+- **`--arrange 1` cannot place even a small part on some printers.** The
+  official OrcaSlicer v2.4.0-alpha CLI fails the same way with the same
+  settings (its arrange leaves the part off the plate and the run ends with
+  -50, "nothing to be sliced"; slicer_cli-orcaslicer stops at the arrange with
+  -21). Without `--arrange 1` these printers slice. Three causes:
+  - A skirt with a first-layer line width given as a percentage (Construct 1,
+    iQ TiQ8; any printer with `skirt_loops` above 0 and, for example,
+    `initial_layer_line_width = 120%`): `get_real_skirt_dist` reads the
+    percentage as mm (`PrintConfig.cpp` 11314-11338), and `update_arrange_params`
+    shrinks the bed by that much on each side (`Arrange.cpp` 87-92). Avoid it
+    with `--initial-layer-line-width` in mm (for example 0.48) or `--skirt-loops 0`.
+  - Anycubic Kobra 3 (all nozzles): its `bed_exclude_area` lists the whole bed
+    square and then an inner square; the engine makes one exclusion box from
+    every 4 points (`PartPlate.cpp` 418-435), so the first box covers the
+    whole bed. Avoid it with `--bed-exclude-area 0x0`.
+  - Folgertech i3 0.6: its `printable_area` is not a rectangle
+    (0x0, 20x0, 200x200, 0x200). No flag avoids it; without `--arrange 1` the
+    part is refused as over the bed edge (-52).
