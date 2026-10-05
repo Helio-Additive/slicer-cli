@@ -5849,6 +5849,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // then 3885), so a flag's tower position or prime tower moves too.
         int shrink_to_new_bed = 0;
         std::map<const Slic3r::ModelInstance*, Slic3r::Vec3d> before_new_bed;
+        std::optional<Slic3r::Vec2d> new_bed_tower;
         if (project_facts.is_bbl_3mf && !assemble_input && !model.objects.empty()) {
             for (const Slic3r::ModelObject* object : model.objects)
                 for (const Slic3r::ModelInstance* inst : object->instances)
@@ -5864,6 +5865,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                      << ", " << moved.y() << ") mm onto this printer's bed";
                 emit_event({{"event","arranged"}, {"tag","MovedToNewBed"}, {"shrink_to_new_bed", shrink_to_new_bed},
                             {"message", text.str()}});
+                // The moved tower is what the project keeps (the official
+                // exports m_print_config, BambuStudio.cpp 8156-8157); the
+                // flags laid over the plate below (6902-6904) reach only the
+                // slice.
+                const auto* wx = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_x");
+                const auto* wy = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_y");
+                const int index = plate_id > 0 ? plate_id - 1 : 0;
+                if (wx && wy && !wx->values.empty() && !wy->values.empty())
+                    new_bed_tower = Slic3r::Vec2d(wx->get_at(index), wy->get_at(index));
             } else
                 before_new_bed.clear();
         }
@@ -6742,7 +6752,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             if (plate_moved && !o.export_3mf.empty()) {
                 const auto* wx = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_x");
                 const auto* wy = config.option<Slic3r::ConfigOptionFloats>("wipe_tower_y");
-                if (wx && wy && !wx->values.empty() && !wy->values.empty())
+                if (!o.arrange_forced() && !clearance_arrange && new_bed_tower)
+                    outcome.arranged_wipe_tower = new_bed_tower;   // moved to the new bed only
+                else if (wx && wy && !wx->values.empty() && !wy->values.empty())
                     outcome.arranged_wipe_tower = Slic3r::Vec2d(wx->get_at(arrange_plate_index), wy->get_at(arrange_plate_index));
             }
             if (plate_moved && !o.export_3mf.empty())

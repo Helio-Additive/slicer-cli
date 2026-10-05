@@ -1492,11 +1492,14 @@ echo "PASS: --slice 0 does not arrange a by-object plate again for wider clearan
 
 # A printer change moves every plate of the exported project onto the new
 # bed, sliced or not (translate_models, BambuStudio.cpp 4516-4642;
-# OrcaSlicer.cpp 3901-3977): each cube is centred on its plate and each plate
-# goes to its place in the A1 mini's grid (3 plates: 2 columns, stride 180 *
-# 1.2 = 216 mm). The tower list holds 2 values for 3 plates: plate 3's entry
-# is the first value moved (set_at and get_at fill with the first value,
-# Config.hpp 437), here 100 - 38 and 120 - 38.
+# OrcaSlicer.cpp 3901-3977): each cube (saved centred at 138, 138) is
+# centred on its plate, a move of -48 mm, and each plate goes to its place in
+# the A1 mini's grid (3 plates: 2 columns, stride 180 * 1.2 = 216 mm). The
+# tower list holds 2 values for 3 plates (given as flags for --slice 2, in
+# the settings file for --slice 3): plate 3's entry is the first value moved
+# (set_at and get_at fill with the first value, Config.hpp 437), here
+# 100 - 48 and 120 - 48. The project keeps the moved tower (the official
+# exports m_print_config).
 py '
 import json
 plate = lambda n: {"plate_name": n, "need_arrange": False,
@@ -1509,18 +1512,15 @@ for e in bambu orca; do
         --outputdir three-$e/out --export-3mf three.3mf
     [ "$(rc three-$e)" = 0 ] || { show three-$e; fail "$e: three-plate X1 Carbon project exit $(rc three-$e)"; }
     py '
-import json, sys, zipfile
-src, dst = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
-    for item in zin.infolist():
-        data = zin.read(item.filename)
-        if item.filename == "Metadata/project_settings.config":
-            d = json.loads(data); d["wipe_tower_x"] = ["100", "150"]; d["wipe_tower_y"] = ["120", "140"]
-            data = json.dumps(d, indent=4).encode()
-        zout.writestr(item, data)
-' three-$e/out/three.3mf three-$e.3mf
+import json, sys
+d = json.load(open("a1m-%s.json" % sys.argv[1]))
+d["wipe_tower_x"] = ["100", "150"]; d["wipe_tower_y"] = ["120", "140"]
+json.dump(d, open("a1m-tw-%s.json" % sys.argv[1], "w"), indent=1)
+' $e
     for p in 2 3; do
-        run mv$p-$e "$bin" three-$e.3mf --slice $p --load-settings a1m-$e.json --outputdir mv$p-$e/out --export-3mf moved.3mf
+        if [ $p = 2 ]; then tower="--load-settings a1m-$e.json --wipe-tower-x 100,150 --wipe-tower-y 120,140"
+        else tower="--load-settings a1m-tw-$e.json"; fi
+        run mv$p-$e "$bin" three-$e/out/three.3mf --slice $p $tower --outputdir mv$p-$e/out --export-3mf moved.3mf
         [ "$(rc mv$p-$e)" = 0 ] || { show mv$p-$e; fail "$e: --slice $p after a printer change exit $(rc mv$p-$e)"; }
         py '
 import json, re, sys, zipfile
@@ -1529,10 +1529,11 @@ model = z.read("3D/3dmodel.model").decode()
 build = model[model.index("<build"):model.index("</build>")]
 centres = sorted((round(float(t[9])), round(float(t[10])))
                  for t in (m.split() for m in re.findall(r"<item [^>]*transform=\"([^\"]+)\"", build)))
-assert centres == sorted([(90, 90), (306, 90), (90, -126)]), centres
 d = json.loads(z.read("Metadata/project_settings.config"))
 wx = [round(float(v)) for v in d["wipe_tower_x"]]; wy = [round(float(v)) for v in d["wipe_tower_y"]]
-assert wx == [62, 112, 62] and wy == [82, 102, 82], (wx, wy)
+ok_centres = centres == sorted([(90, 90), (306, 90), (90, -126)])
+ok_tower = wx == [52, 102, 52] and wy == [72, 92, 72]
+assert ok_centres and ok_tower, ("centres", centres, "tower", wx, wy)
 ' mv$p-$e/out/moved.3mf
     done
 done
