@@ -5825,6 +5825,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
         }
 
+        // The project's settings before a plate's own are laid over them, for
+        // --export-settings: the official action saves m_print_config before
+        // the plate loop applies *part_plate->config() (BambuStudio.cpp
+        // 6366-6370 and 6902-6904; OrcaSlicer.cpp 5499-5503 and 5905-5907).
+        // Taken below, just before the first read of the plate's own data,
+        // and only when an action asks for it.
+        std::optional<Slic3r::DynamicPrintConfig> project_settings;
+
 #ifdef ENGINE_BAMBU
         // Filament roster the project declares, captured before the BBS
         // normalization below reshapes any vector option.  It is taken from the
@@ -5990,6 +5998,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // Ensure vector options after loading JSON configs and forcing single-extruder
         // JSON configs may have left some vectors empty or missing
         ensure_vector_config_sizes(config);
+
+        if (slicer_cli::has_model_actions(o))
+            project_settings = config;
 
         // If the fully-overlaid config carries an explicit per-filament nozzle assignment,
         // apply it directly to config's filament_map.  This reproduces the
@@ -6160,6 +6171,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // golden B — so no driver-side filament_map injection is needed here. Model
         // per-extruder static tables (setExtruderParams/setPrintSpeedTable) are still set
         // after apply(), exactly as Orca's own headless CLI does.
+        if (slicer_cli::has_model_actions(o))
+            project_settings = config;
 #endif // ENGINE_ORCA
 
         // The selected plate's own settings over the project's, then the
@@ -6703,8 +6716,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     a = slicer_cli::apply_transforms(o, *whole, nullptr, 0, outcome.plate_count, duplicate_count);
                 }
             }
+            // --export-settings writes the project's settings, not this
+            // plate's (see project_settings above). The command line is
+            // already in them; the setting flags go on as on `config`.
+            if (project_settings)
+                apply_command_line_overrides(*project_settings, overrides, /*report_rejections=*/false);
             if (a.code == 0)
-                a = slicer_cli::run_model_actions(o, model, config, whole.get());
+                a = slicer_cli::run_model_actions(o, model, project_settings ? *project_settings : config, whole.get());
             if (a.code != 0) {
                 std::cerr << "Error: " << a.message << "\n";
                 set_outcome_failure(outcome, a.code, a.message);

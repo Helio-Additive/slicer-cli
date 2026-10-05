@@ -224,7 +224,7 @@ These older shortcuts set one setting each and keep working:
 | `--skip-objects` | "3,5,10" | Leave out the objects with these ids (the 3MF's object ids) | both binaries |
 | `--mtcpp` | count | Refuse a plate with more triangles (-59) | both binaries |
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | both binaries |
-| `--no-check` | | Skip the validity checks (a layer height over the printer's limit becomes a warning; G-code conflict and printable-area checks are skipped) | both binaries |
+| `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | both binaries |
 | `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate | both binaries |
 | `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19), or with a mixed filament (-25, Bambu Studio). On by default with `--slice` | both binaries |
 | `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | both binaries |
@@ -279,7 +279,7 @@ Transforms run in the order given, before the objects are placed.
 | `--makerlab-name` | name | MakerLab name in the 3MF | both binaries |
 | `--makerlab-version` | version | MakerLab version in the 3MF | both binaries |
 | `--skip-useless-pick` | `=0` or `=1` | Leave pick pictures out of the 3MF | slicer_cli only (Bambu Studio engine) |
-| `--export-settings` | file | Write the settings as JSON and stop | both binaries |
+| `--export-settings` | file | Write the project's settings as JSON (not a plate's own) and stop; with `--slice` the slice goes on | both binaries |
 | `--export-stl` | | Write the objects as one STL and stop | both binaries |
 | `--export-stls` | folder | Write each object as its own STL and stop | both binaries |
 | `--info` | | Print each object's size, volume and facets, and stop | both binaries |
