@@ -370,7 +370,7 @@ The `event` kinds:
 | `validation_error`, `validation_warning` | The engine's checks before slicing |
 | `slicing_error`, `slice_warning`, `warning`, `timelapse_warning`, `filament_map_limited` | Slicing |
 | `toolpath_conflict`, `toolpath_outside_bed`, `clearance_violation`, `filament_unprintable`, `gcode_check` | The checks on the finished G-code |
-| `export`, `export_note` | Files written by actions and exports |
+| `export`, `exported_3mf`, `export_note` | Files written by actions and exports |
 | `engine_log` | Engine log lines (`--verbose`) |
 
 The `tag` names the case within a kind; tools should read `event` and `tag`,
