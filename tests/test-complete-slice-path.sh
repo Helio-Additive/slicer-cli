@@ -1448,6 +1448,108 @@ assert len(o) == 1 and 0 <= b["x"] and b["x"] + b["width"] <= 180 and 0 <= b["y"
 done
 echo "PASS: a printer change moves the plate onto the new bed, and a wider clearance arranges a by-object plate again (both engines)"
 
+# A printer change moves the plate after the settings given as flags apply
+# (BambuStudio.cpp 4091 then 4659; OrcaSlicer.cpp 3542 then 3885): an X1
+# Carbon project with two filaments and the prime tower, switched to the A1
+# mini with --enable-prime-tower=0, centres its two cubes alone (no tower in
+# the box). Its two cubes stand side by side, so their box is 50 x 20 mm and
+# lands at 65..115 x 80..100 on the 180 mm bed.
+py '
+import json
+json.dump({"plates": [{"plate_name": "t", "need_arrange": False,
+            "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2], "pos_x": [195, 225], "pos_y": [220, 220]}]}]},
+          open("ftow.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run ftow-$e "$bin" --load-assemble-list ftow.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
+        --enable-prime-tower --outputdir ftow-$e/out --export-3mf ftow.3mf
+    [ "$(rc ftow-$e)" = 0 ] || { show ftow-$e; fail "$e: two-filament X1 Carbon project exit $(rc ftow-$e)"; }
+    run swt-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --load-settings a1m-$e.json --enable-prime-tower=0 --outputdir swt-$e/out
+    [ "$(rc swt-$e)" = 0 ] || { show swt-$e; fail "$e: printer change with --enable-prime-tower=0 exit $(rc swt-$e)"; }
+    py '
+import json, sys
+o = json.load(open(sys.argv[1]))["sliced_plates"][0]["objects"]
+x0 = min(b["bbox"]["x"] for b in o); x1 = max(b["bbox"]["x"] + b["bbox"]["width"] for b in o)
+y0 = min(b["bbox"]["y"] for b in o); y1 = max(b["bbox"]["y"] + b["bbox"]["depth"] for b in o)
+assert len(o) == 2 and abs(x0 - 65) < 0.5 and abs(x1 - 115) < 0.5 and abs(y0 - 80) < 0.5 and abs(y1 - 100) < 0.5, (x0, x1, y0, y1)
+' swt-$e/out/result.json
+done
+echo "PASS: a printer change moves the plate after the setting flags apply (both engines)"
+
+# --slice 0 never arranges a by-object plate again for wider clearances: the
+# official does so only for one named plate (plate_to_slice > 0,
+# BambuStudio.cpp 5275; OrcaSlicer.cpp 4538).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run clr0-$e "$bin" seq2-$e/out/seq2.3mf --slice 0 --load-settings p1s-wide-$e.json --outputdir clr0-$e/out
+    if events clr0-$e/stdout arranged | grep ClearanceArrange >/dev/null; then
+        fail "$e: --slice 0 arranged a by-object plate again"
+    fi
+done
+echo "PASS: --slice 0 does not arrange a by-object plate again for wider clearances (both engines)"
+
+# A printer change moves every plate of the exported project onto the new
+# bed, sliced or not (translate_models, BambuStudio.cpp 4516-4642;
+# OrcaSlicer.cpp 3901-3977): each cube is centred on its plate and each plate
+# goes to its place in the A1 mini's grid (3 plates: 2 columns, stride 180 *
+# 1.2 = 216 mm). The tower list holds 2 values for 3 plates: plate 3's entry
+# is the first value moved (set_at and get_at fill with the first value,
+# Config.hpp 437), here 100 - 38 and 120 - 38.
+py '
+import json
+plate = lambda n: {"plate_name": n, "need_arrange": False,
+                   "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [128], "pos_y": [128]}]}
+json.dump({"plates": [plate("a"), plate("b"), plate("c")]}, open("three.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run three-$e "$bin" --load-assemble-list three.json --slice 0 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir three-$e/out --export-3mf three.3mf
+    [ "$(rc three-$e)" = 0 ] || { show three-$e; fail "$e: three-plate X1 Carbon project exit $(rc three-$e)"; }
+    py '
+import json, sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["wipe_tower_x"] = ["100", "150"]; d["wipe_tower_y"] = ["120", "140"]
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' three-$e/out/three.3mf three-$e.3mf
+    for p in 2 3; do
+        run mv$p-$e "$bin" three-$e.3mf --slice $p --load-settings a1m-$e.json --outputdir mv$p-$e/out --export-3mf moved.3mf
+        [ "$(rc mv$p-$e)" = 0 ] || { show mv$p-$e; fail "$e: --slice $p after a printer change exit $(rc mv$p-$e)"; }
+        py '
+import json, re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+model = z.read("3D/3dmodel.model").decode()
+build = model[model.index("<build"):model.index("</build>")]
+centres = sorted((round(float(t[9])), round(float(t[10])))
+                 for t in (m.split() for m in re.findall(r"<item [^>]*transform=\"([^\"]+)\"", build)))
+assert centres == sorted([(90, 90), (306, 90), (90, -126)]), centres
+d = json.loads(z.read("Metadata/project_settings.config"))
+wx = [round(float(v)) for v in d["wipe_tower_x"]]; wy = [round(float(v)) for v in d["wipe_tower_y"]]
+assert wx == [62, 112, 62] and wy == [82, 102, 82], (wx, wy)
+' mv$p-$e/out/moved.3mf
+    done
+done
+echo "PASS: a printer change moves every plate of the exported project, and a short tower list fills with its first value (both engines)"
+
+# --nozzle on a two-extruder printer keeps both extruders: the value fills
+# the list at its size (the extruder count is that size).
+for e in bambu orca; do
+    bin=$B; P="Bambu Lab H2D 0.4 nozzle"; N=0.4
+    [ $e = orca ] && { bin=$O; P="Lulzbot Taz Pro Dual 0.5 nozzle"; N=0.5; }
+    run noz2-$e "$bin" cube.stl --slice 1 --printer-preset "$P" --nozzle $N --outputdir noz2-$e/out
+    [ "$(rc noz2-$e)" = 0 ] || { show noz2-$e; fail "$e: --nozzle on $P exit $(rc noz2-$e)"; }
+    has_line noz2-$e/out/plate_1.gcode "; nozzle_diameter = $N,$N" ||
+        fail "$e: --nozzle on $P left $(grep -m1 '^; nozzle_diameter' noz2-$e/out/plate_1.gcode.lf)"
+done
+echo "PASS: --nozzle keeps a two-extruder printer's two nozzles (both engines)"
+
 # --nozzle writes nozzle_diameter as the list it is; --engine-info counts a
 # geometry-only 3MF as one plate; --slice 0 --export-stls exports every
 # plate's objects once (the official loads the whole project for --slice 0).
