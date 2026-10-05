@@ -4398,6 +4398,15 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
         code = CLI_CONFIG_FILE_ERROR;
         return false;
     }
+    // The desktop adds each filament slot with PresetBundle::set_num_filaments
+    // (Sidebar::add_custom_filament: BambuStudio Plater.cpp 4198, PresetBundle.cpp
+    // 2343-2393; OrcaSlicer Plater.cpp 3243, PresetBundle.cpp 2993-3027),
+    // which sizes the project's per-filament lists (filament_colour,
+    // filament_multi_colour, filament_colour_type, filament_map, and on
+    // BambuStudio the nozzle and volume maps) to the slot count, each new slot
+    // taking the last slot's value. No colour is picked here, as no one picks
+    // one on the command line.
+    bundle.set_num_filaments(unsigned(filaments.size()), std::string());
     bundle.filament_presets = filaments;
     // The desktop app runs this whenever the filament list changes: it sizes
     // the project's flush_volumes_matrix to filaments x filaments per nozzle

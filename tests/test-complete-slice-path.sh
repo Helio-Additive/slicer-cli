@@ -1032,12 +1032,32 @@ for name, colour in (("Test Filament A", "#FF0000"), ("Test Filament B", "#0000F
 '
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    # A two-filament project with the prime tower on (slicer-cli turns it off
-    # for a one-filament project).
-    run towp-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --filament-preset "Bambu PLA Basic @BBL A1M" \
-        --filament-preset "Bambu PLA Matte @BBL A1M" --enable-prime-tower --outputdir towp-$e/out --export-3mf tower.3mf
+    # A project with the prime tower on whose plate prints two filaments: two
+    # copies of the cube, one on each filament. A plate that prints one
+    # filament has no tower in either engine (the official legacy check,
+    # BambuStudio.cpp 5816-5865; normalize_fdm_2, OrcaSlicer PrintConfig.cpp
+    # 8455-8470).
+    py '
+import json
+json.dump({"plates": [{"plate_name": "two", "need_arrange": True,
+                       "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2]}]}]},
+          open("tower-list.json", "w"))
+'
+    run towp-$e "$bin" --load-assemble-list tower-list.json --slice 1 --printer-preset "$A1M" \
+        --filament-preset "Bambu PLA Basic @BBL A1M" --filament-preset "Bambu PLA Matte @BBL A1M" \
+        --enable-prime-tower --outputdir towp-$e/out --export-3mf tower.3mf
     [ "$(rc towp-$e)" = 0 ] || { show towp-$e; fail "$e: tower project export exit $(rc towp-$e)"; }
     cp towp-$e/out/tower.3mf tower-$e.3mf
+    # Two named filaments give two slots in every per-filament list.
+    py '
+import json, sys, zipfile
+d = json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))
+for k in ("filament_settings_id", "filament_colour", "filament_multi_colour", "filament_colour_type",
+          "filament_type", "filament_ids", "filament_map"):
+    if k in d:
+        assert len(d[k]) == 2, (k, d[k])
+assert len(d["flush_volumes_matrix"]) % 4 == 0, d["flush_volumes_matrix"]
+' tower-$e.3mf
     run tow1-$e "$bin" tower-$e.3mf --slice 1 --load-filaments "a-fil.json;a-fil.json" --outputdir tow1-$e/out
     [ "$(rc tow1-$e)" = 0 ] || { show tow1-$e; fail "$e: --load-filaments with one filament exit $(rc tow1-$e)"; }
     has_line tow1-$e/out/plate_1.gcode '; enable_prime_tower = 0' || fail "$e: one filament in every slot kept the prime tower"
@@ -1047,22 +1067,23 @@ for e in bambu orca; do
     if events tow2-$e/stdout config_normalized | grep PrimeTowerOffOneFilament >/dev/null; then
         fail "$e: two different filaments turned the prime tower off"
     fi
-    # The OrcaSlicer build's named presets give a one-filament project here,
-    # whose tower slicer-cli turns off on its own; the Bambu project keeps it.
-    if [ $e = bambu ]; then
-        has_line tow2-$e/out/plate_1.gcode '; enable_prime_tower = 1' || fail "$e: two filaments lost the prime tower"
-    fi
+    has_line tow2-$e/out/plate_1.gcode '; enable_prime_tower = 1' || fail "$e: two filaments lost the prime tower"
 done
 echo "PASS: one filament in every slot turns the prime tower off (both engines)"
 
 # Non-ASCII names: a part named "würfel" in a folder "ü-<engine>" slices, and
-# --export-stls writes it (boost::filesystem reads UTF-8 paths on Windows too).
+# --export-stls writes it into a non-ASCII folder (boost::filesystem reads
+# UTF-8 paths on Windows too). The export reads the part from the current
+# folder: on Windows an STL's object name keeps any folder written with "/"
+# (load_stl splits on "\\" only, STL.cpp 10-12 and 33-34 in both engines), and
+# that folder is then missing under the export folder.
+cp cube.stl würfel.stl
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
     mkdir -p "ü-$e"; cp cube.stl "ü-$e/würfel.stl"
     run u8-$e "$bin" "ü-$e/würfel.stl" --slice 1 --printer-preset "$A1M" --outputdir "ü-$e/aus"
     [ "$(rc u8-$e)" = 0 ] && [ -s "ü-$e/aus/plate_1.gcode" ] || { show u8-$e; fail "$e: a non-ASCII path exit $(rc u8-$e)"; }
-    run u8s-$e "$bin" "ü-$e/würfel.stl" --export-stls "ü-$e/stls"
+    run u8s-$e "$bin" würfel.stl --export-stls "ü-$e/stls"
     [ "$(rc u8s-$e)" = 0 ] || { show u8s-$e; fail "$e: --export-stls with a non-ASCII name exit $(rc u8s-$e)"; }
     py '
 import os, sys

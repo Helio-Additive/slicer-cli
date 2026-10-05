@@ -518,3 +518,11 @@ them as they are.
   - Folgertech i3 0.6: its `printable_area` is not a rectangle
     (0x0, 20x0, 200x200, 0x200). No flag avoids it; without `--arrange 1` the
     part is refused as over the bed edge (-52).
+
+In both engines on Windows, an STL or OBJ object is named from the text after
+the last `\` of its path only (`DIR_SEPARATOR` in `Format/STL.cpp` lines 10-12
+and 33-34, and in `Format/OBJ.cpp`, of both engines). A path written with `/`,
+such as `parts/cube.stl`, names the object `parts/cube.stl`. `--export-stls`
+then writes `<folder>/obj_1_parts/cube.stl` into a folder that does not exist,
+and reports "Writing ... failed". Give the path with `\`, or run from the
+model's folder.
