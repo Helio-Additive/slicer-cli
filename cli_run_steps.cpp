@@ -189,16 +189,42 @@ void ensure_on_bed_if_asked(const CliOptions& o, Slic3r::Model& model) {
             obj->ensure_on_bed();
 }
 
+namespace {
+
+/// Whether the action at `index` of o.actions belongs to `phase`: before or
+/// after --slice in command-line order (no --slice: all before it).
+bool in_phase(const CliOptions& o, size_t index, ActionPhase phase) {
+    if (phase == ActionPhase::All)
+        return true;
+    const auto slice = std::find(o.actions.begin(), o.actions.end(), std::string("slice"));
+    const size_t slice_index = slice == o.actions.end() ? o.actions.size() : size_t(slice - o.actions.begin());
+    return phase == ActionPhase::BeforeSlice ? index < slice_index : index > slice_index;
+}
+
+bool is_model_action(const std::string& a) {
+    return a == "info" || a == "export_settings" || a == "export_stl" || a == "export_stls";
+}
+
+bool is_model_wide_action(const std::string& a) {
+    return a == "info" || a == "export_stl" || a == "export_stls";
+}
+
+} // namespace
+
 bool has_model_actions(const CliOptions& o) {
-    for (const std::string& a : o.actions)
-        if (a == "info" || a == "export_settings" || a == "export_stl" || a == "export_stls")
+    return has_model_actions(o, ActionPhase::All);
+}
+
+bool has_model_actions(const CliOptions& o, ActionPhase phase) {
+    for (size_t i = 0; i < o.actions.size(); ++i)
+        if (is_model_action(o.actions[i]) && in_phase(o, i, phase))
             return true;
     return false;
 }
 
-bool has_model_wide_actions(const CliOptions& o) {
-    for (const std::string& a : o.actions)
-        if (a == "info" || a == "export_stl" || a == "export_stls")
+bool has_model_wide_actions(const CliOptions& o, ActionPhase phase) {
+    for (size_t i = 0; i < o.actions.size(); ++i)
+        if (is_model_wide_action(o.actions[i]) && in_phase(o, i, phase))
             return true;
     return false;
 }
@@ -208,10 +234,13 @@ bool model_actions_only(const CliOptions& o) {
 }
 
 StepResult run_model_actions(const CliOptions& o, Slic3r::Model& plate_model, const Slic3r::DynamicPrintConfig& config,
-                             Slic3r::Model* whole) {
+                             Slic3r::Model* whole, ActionPhase phase) {
     StepResult r;
     Slic3r::Model& model = whole ? *whole : plate_model;
-    for (const std::string& opt_key : o.actions) {
+    for (size_t index = 0; index < o.actions.size(); ++index) {
+        const std::string& opt_key = o.actions[index];
+        if (!in_phase(o, index, phase))
+            continue;
         if (opt_key == "export_settings") {
             // BambuStudio.cpp 6366-6370; OrcaSlicer.cpp 5499-5503.
             const std::string file = o.cli.opt_string("export_settings");

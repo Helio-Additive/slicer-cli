@@ -46,6 +46,17 @@ void ensure_on_bed_if_asked(const CliOptions& o, Slic3r::Model& model);
 /// --export-stl, --export-stls).
 bool has_model_actions(const CliOptions& o);
 
+/// Which model actions a call runs, by their place on the command line
+/// against --slice: the official runs every action in one loop in
+/// command-line order (BambuStudio.cpp 6336; OrcaSlicer.cpp 5470), --slice
+/// being one of them (6437; 5561) with every plate's bed check and slice in
+/// it, so an action given before --slice runs before any plate is checked and
+/// one given after it runs once every plate has sliced.
+enum class ActionPhase { All, BeforeSlice, AfterSlice };
+
+/// True when the command line asks for a model action in `phase`.
+bool has_model_actions(const CliOptions& o, ActionPhase phase);
+
 /// True when the command line asks for no slice at all: model actions only.
 bool model_actions_only(const CliOptions& o);
 
@@ -57,10 +68,11 @@ bool model_actions_only(const CliOptions& o);
 /// several plates, slice_one_plate), else on `model`; --export-settings
 /// saves `config`.
 StepResult run_model_actions(const CliOptions& o, Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                             Slic3r::Model* whole = nullptr);
+                             Slic3r::Model* whole = nullptr, ActionPhase phase = ActionPhase::All);
 
-/// True when the command line asks for --info, --export-stl or --export-stls.
-bool has_model_wide_actions(const CliOptions& o);
+/// True when the command line asks for --info, --export-stl or --export-stls
+/// in `phase`.
+bool has_model_wide_actions(const CliOptions& o, ActionPhase phase = ActionPhase::All);
 
 /// The per-plate limits and switches the actions set for the plate loop.
 struct PlateLoopSwitches {

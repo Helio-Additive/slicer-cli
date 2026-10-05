@@ -1620,6 +1620,41 @@ assert 216 <= p2[0] and p2[1] <= 396 and 0 <= p2[2] and p2[3] <= 180, boxes
 done
 echo "PASS: --nozzle, --engine-info on a geometry-only 3MF and --slice 0 --export-stls on a two-plate project, in command-line order and on a new printer's bed (both engines)"
 
+# An action given before --slice runs before any plate's bed check, one given
+# after it only once every plate has sliced: --slice is one action of the
+# official loop, with each plate's bed check inside it (BambuStudio.cpp 6336,
+# 6437, 6527-6534; OrcaSlicer.cpp 5470, 5561, 5650). Plate 2 of this list
+# stands off the A1 mini's bed, so its bed check fails (-50).
+py '
+import json
+json.dump({"plates": [
+    {"plate_name": "on", "need_arrange": True, "objects": [{"path": "cube.stl", "count": 1, "filaments": [1]}]},
+    {"plate_name": "off", "need_arrange": False,
+     "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [400], "pos_y": [400]}]}]},
+    open("offbed.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    rm -rf obA-$e obB-$e
+    run obA-$e "$bin" --load-assemble-list offbed.json --export-stls obA-$e/stls --slice 0 --printer-preset "$A1M" --outputdir obA-$e/out
+    run obB-$e "$bin" --load-assemble-list offbed.json --slice 0 --export-stls obB-$e/stls --printer-preset "$A1M" --outputdir obB-$e/out
+    for n in obA obB; do
+        py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -50, d
+' $n-$e/out/result.json || { show $n-$e; fail "$e: the off-bed plate 2 did not end with -50 ($n)"; }
+    done
+    py '
+import os, sys
+a = sorted(n for n in os.listdir(sys.argv[1]) if n.endswith(".stl")) if os.path.isdir(sys.argv[1]) else []
+b = sorted(n for n in os.listdir(sys.argv[2]) if n.endswith(".stl")) if os.path.isdir(sys.argv[2]) else []
+assert len(a) == 2, ("--export-stls before --slice", a)
+assert b == [], ("--export-stls after --slice", b)
+' obA-$e/stls obB-$e/stls || fail "$e: --export-stls did not follow its place against --slice"
+    [ -s obB-$e/out/plate_1.gcode ] || fail "$e: plate 1 was not sliced before plate 2 failed"
+done
+echo "PASS: --export-stls before --slice runs before the bed checks, after --slice only once every plate has sliced (both engines)"
+
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
     for e in bambu orca; do

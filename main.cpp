@@ -6503,6 +6503,110 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     inst->use_loaded_id_for_label = true;
         }
 
+        // Actions that work on the loaded model and settings (--info,
+        // --export-settings, --export-stl, --export-stls). The official runs
+        // every action in one loop in command-line order, the first that fails
+        // stopping the rest (BambuStudio.cpp 6336, 6366-6401; OrcaSlicer.cpp
+        // 5470, 5499-5534), --slice among them (6437; 5561) with each plate's
+        // bed check and slice inside it. So with --slice the actions given
+        // before it run before the first plate's bed check, and those given
+        // after it once the last plate has sliced; without --slice they are the
+        // whole run. A failure is recorded with plate 0, as the official records
+        // these (record_exit_reson(..., CLI_EXPORT_STL_ERROR, 0, ...),
+        // BambuStudio.cpp 6391, 6399).
+        const auto run_model_action_step = [&](slicer_cli::ActionPhase phase) -> bool {
+            // --info, --export-stl, --export-stls with --slice 0 on a project
+            // of several plates work on every plate's objects: the official
+            // loads the whole project for --slice 0 (plate_to_slice 0,
+            // BambuStudio.cpp 1889; OrcaSlicer.cpp 1571), and this pass loads
+            // only its own plate. --slice N loads plate N, as the official does.
+            std::unique_ptr<Slic3r::Model> whole;
+            slicer_cli::StepResult a;
+            if (o.slice_plate == 0 && outcome.plate_count > 1 && slicer_cli::has_model_wide_actions(o, phase)) {
+                whole = std::make_unique<Slic3r::Model>();
+                std::vector<std::vector<std::pair<int, int>>> members;
+                Slic3r::DynamicPrintConfig whole_file_config;
+                if (assemble_input) {
+                    for (const slicer_cli::AssemblePlate& plate : g_assemble->plates)
+                        for (const Slic3r::ModelObject* object : plate.loaded_obj_list)
+                            whole->add_object(*object);
+                } else if (!load_plate_objects(input_file, 0, *whole, &members, &whole_file_config)) {
+                    a.code    = CLI_DATA_FILE_ERROR;
+                    a.message = "The project " + input_file + " could not be read for --info, --export-stl or --export-stls.";
+                }
+                // Each plate moves onto a new printer's bed first, as this
+                // plate did (move_to_new_bed): the official runs translate_models
+                // on every plate (BambuStudio.cpp 4645-4659; OrcaSlicer.cpp
+                // 3982-3996) before its transforms and actions. Its offset there
+                // also takes the plate from its old grid origin to the one of the
+                // new bed size (compute_origin_using_new_size, BambuStudio.cpp
+                // 4534; OrcaSlicer.cpp 3919).
+                const auto* new_area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
+                if (a.code == 0 && project_facts.is_bbl_3mf && !assemble_input && new_area && new_area->values.size() >= 4)
+                    for (int index = 0; index < (int)members.size() && index < (int)plate_origins.size(); ++index) {
+                        if (members[index].empty())
+                            continue;
+                        Slic3r::Model plate_model;
+                        if (!load_plate_objects(input_file, index + 1, plate_model)) {
+                            a.code    = CLI_DATA_FILE_ERROR;
+                            a.message = "The project " + input_file + " could not be read for --info, --export-stl or --export-stls.";
+                            break;
+                        }
+                        const Slic3r::Vec2d old_origin = plate_origins[index];
+                        for (Slic3r::ModelObject* object : plate_model.objects)
+                            for (Slic3r::ModelInstance* inst : object->instances)
+                                inst->set_offset(inst->get_offset() - Slic3r::Vec3d(old_origin.x(), old_origin.y(), 0.));
+                        // The tower where the file has it: this pass already
+                        // moved (and may have arranged) its own plate's.
+                        Slic3r::DynamicPrintConfig plate_config = config;
+                        for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+                            if (const auto* file_tower = whole_file_config.option<Slic3r::ConfigOptionFloats>(key))
+                                plate_config.set_key_value(key, file_tower->clone());
+                        Slic3r::Vec3d moved;
+                        const int shrink = move_to_new_bed(project_facts, settings_merge.machine_switch, plate_model,
+                                                           plate_config, index, plate_sequence(index), moved);
+#ifdef ENGINE_ORCA
+                        const bool translated = shrink > 0;                   // OrcaSlicer.cpp 3902
+#else
+                        const bool translated = settings_merge.machine_switch; // BambuStudio.cpp 4516
+                        (void)shrink;
+#endif
+                        if (!translated)
+                            continue;
+                        const Slic3r::Vec2d new_origin =
+                            plate_grid_origin(config, Slic3r::Semver(), index, (int)plate_data.size());
+                        const Slic3r::Vec3d delta = moved + Slic3r::Vec3d(new_origin.x() - old_origin.x(),
+                                                                          new_origin.y() - old_origin.y(), 0.);
+                        for (const auto& [oi, ii] : members[index])
+                            if (oi >= 0 && oi < (int)whole->objects.size() && ii >= 0 &&
+                                ii < (int)whole->objects[oi]->instances.size()) {
+                                Slic3r::ModelInstance* inst = whole->objects[oi]->instances[ii];
+                                inst->set_offset(inst->get_offset() + delta);
+                            }
+                    }
+                if (a.code == 0 && !o.transforms.empty()) {
+                    int duplicate_count = 0;
+                    a = slicer_cli::apply_transforms(o, *whole, nullptr, 0, outcome.plate_count, duplicate_count);
+                }
+            }
+            // --export-settings writes the project's settings, not this
+            // plate's (see project_settings above). The command line is
+            // already in them; the setting flags go on as on `config`.
+            std::optional<Slic3r::DynamicPrintConfig> settings_to_export = project_settings;
+            if (settings_to_export)
+                apply_command_line_overrides(*settings_to_export, overrides, /*report_rejections=*/false);
+            if (a.code == 0)
+                a = slicer_cli::run_model_actions(o, model, settings_to_export ? *settings_to_export : config, whole.get(),
+                                                  phase);
+            if (a.code != 0) {
+                std::cerr << "Error: " << a.message << "\n";
+                set_outcome_failure(outcome, a.code, a.message);
+                outcome.run_step_failed = true;
+                return false;
+            }
+            return true;
+        };
+
         // --slice: the official per-plate gate before apply (BambuStudio.cpp
         // 6527-6567 at 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803). An
         // object partly over the bed edge is refused, and a plate with no
@@ -6657,6 +6761,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             outcome.moved_by_pose.push_back({object->name, object->volumes.size(),
                                 it->second + Slic3r::Vec3d(outcome.plate_origin.x(), outcome.plate_origin.y(), 0.), delta});
                     }
+            if (slicer_cli::has_model_actions(o) && !g_model_actions_done) {
+                g_model_actions_done = true;
+                if (!run_model_action_step(slicer_cli::ActionPhase::BeforeSlice))
+                    return 1;
+            }
             const int step_plate = plate_id > 0 ? plate_id : std::max(1, o.slice_plate);
             if (!plate_object_steps(o, model, step_plate, outcome))
                 return 1;
@@ -6672,102 +6781,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 return 1;
         }
 
-        // Actions that work on the loaded model and settings (--info,
-        // --export-settings, --export-stl, --export-stls), before the plate
-        // loop as in the official CLI. Without --slice they are the whole run.
-        // One loop in command-line order; the first that fails stops the rest
-        // (BambuStudio.cpp 6336, 6366-6401; OrcaSlicer.cpp 5470, 5499-5534).
+        // Without --slice, or for the calibration prints that make their own
+        // model, the actions run here; with --slice those before it ran before
+        // the bed check above.
         if (slicer_cli::has_model_actions(o) && !g_model_actions_done) {
             g_model_actions_done = true;
-            // --info, --export-stl, --export-stls with --slice 0 on a project
-            // of several plates work on every plate's objects: the official
-            // loads the whole project for --slice 0 (plate_to_slice 0,
-            // BambuStudio.cpp 1889; OrcaSlicer.cpp 1571), and this pass loads
-            // only its own plate. --slice N loads plate N, as the official does.
-            std::unique_ptr<Slic3r::Model> whole;
-            slicer_cli::StepResult a;
-            if (o.slice_plate == 0 && outcome.plate_count > 1 && slicer_cli::has_model_wide_actions(o)) {
-                whole = std::make_unique<Slic3r::Model>();
-                std::vector<std::vector<std::pair<int, int>>> members;
-                Slic3r::DynamicPrintConfig whole_file_config;
-                if (assemble_input) {
-                    for (const slicer_cli::AssemblePlate& plate : g_assemble->plates)
-                        for (const Slic3r::ModelObject* object : plate.loaded_obj_list)
-                            whole->add_object(*object);
-                } else if (!load_plate_objects(input_file, 0, *whole, &members, &whole_file_config)) {
-                    a.code    = CLI_DATA_FILE_ERROR;
-                    a.message = "The project " + input_file + " could not be read for --info, --export-stl or --export-stls.";
-                }
-                // Each plate moves onto a new printer's bed first, as this
-                // plate did (move_to_new_bed): the official runs translate_models
-                // on every plate (BambuStudio.cpp 4645-4659; OrcaSlicer.cpp
-                // 3982-3996) before its transforms and actions. Its offset there
-                // also takes the plate from its old grid origin to the one of the
-                // new bed size (compute_origin_using_new_size, BambuStudio.cpp
-                // 4534; OrcaSlicer.cpp 3919).
-                const auto* new_area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
-                if (a.code == 0 && project_facts.is_bbl_3mf && !assemble_input && new_area && new_area->values.size() >= 4)
-                    for (int index = 0; index < (int)members.size() && index < (int)plate_origins.size(); ++index) {
-                        if (members[index].empty())
-                            continue;
-                        Slic3r::Model plate_model;
-                        if (!load_plate_objects(input_file, index + 1, plate_model)) {
-                            a.code    = CLI_DATA_FILE_ERROR;
-                            a.message = "The project " + input_file + " could not be read for --info, --export-stl or --export-stls.";
-                            break;
-                        }
-                        const Slic3r::Vec2d old_origin = plate_origins[index];
-                        for (Slic3r::ModelObject* object : plate_model.objects)
-                            for (Slic3r::ModelInstance* inst : object->instances)
-                                inst->set_offset(inst->get_offset() - Slic3r::Vec3d(old_origin.x(), old_origin.y(), 0.));
-                        // The tower where the file has it: this pass already
-                        // moved (and may have arranged) its own plate's.
-                        Slic3r::DynamicPrintConfig plate_config = config;
-                        for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
-                            if (const auto* file_tower = whole_file_config.option<Slic3r::ConfigOptionFloats>(key))
-                                plate_config.set_key_value(key, file_tower->clone());
-                        Slic3r::Vec3d moved;
-                        const int shrink = move_to_new_bed(project_facts, settings_merge.machine_switch, plate_model,
-                                                           plate_config, index, plate_sequence(index), moved);
-#ifdef ENGINE_ORCA
-                        const bool translated = shrink > 0;                   // OrcaSlicer.cpp 3902
-#else
-                        const bool translated = settings_merge.machine_switch; // BambuStudio.cpp 4516
-                        (void)shrink;
-#endif
-                        if (!translated)
-                            continue;
-                        const Slic3r::Vec2d new_origin =
-                            plate_grid_origin(config, Slic3r::Semver(), index, (int)plate_data.size());
-                        const Slic3r::Vec3d delta = moved + Slic3r::Vec3d(new_origin.x() - old_origin.x(),
-                                                                          new_origin.y() - old_origin.y(), 0.);
-                        for (const auto& [oi, ii] : members[index])
-                            if (oi >= 0 && oi < (int)whole->objects.size() && ii >= 0 &&
-                                ii < (int)whole->objects[oi]->instances.size()) {
-                                Slic3r::ModelInstance* inst = whole->objects[oi]->instances[ii];
-                                inst->set_offset(inst->get_offset() + delta);
-                            }
-                    }
-                if (a.code == 0 && !o.transforms.empty()) {
-                    int duplicate_count = 0;
-                    a = slicer_cli::apply_transforms(o, *whole, nullptr, 0, outcome.plate_count, duplicate_count);
-                }
-            }
-            // --export-settings writes the project's settings, not this
-            // plate's (see project_settings above). The command line is
-            // already in them; the setting flags go on as on `config`.
-            if (project_settings)
-                apply_command_line_overrides(*project_settings, overrides, /*report_rejections=*/false);
-            if (a.code == 0)
-                a = slicer_cli::run_model_actions(o, model, project_settings ? *project_settings : config, whole.get());
-            if (a.code != 0) {
-                std::cerr << "Error: " << a.message << "\n";
-                set_outcome_failure(outcome, a.code, a.message);
-                // The official records these with plate 0 (record_exit_reson(...,
-                // CLI_EXPORT_STL_ERROR, 0, ...), BambuStudio.cpp 6391, 6399).
-                outcome.run_step_failed = true;
+            if (!run_model_action_step(o.slice_mode ? slicer_cli::ActionPhase::BeforeSlice : slicer_cli::ActionPhase::All))
                 return 1;
-            }
             if (slicer_cli::model_actions_only(o)) {
                 outcome.actions_only = true;
                 return 0;
@@ -7179,6 +7199,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
                 std::cout << "✓ G-code export complete!\n";
                 std::cout << "\nOutput file: " << output_file << "\n";
+
+                // The actions given after --slice, once the last plate has
+                // sliced (see run_model_action_step).
+                if (o.slice_mode && outcome.plate_index == outcome.plate_count &&
+                    slicer_cli::has_model_actions(o, slicer_cli::ActionPhase::AfterSlice) &&
+                    !run_model_action_step(slicer_cli::ActionPhase::AfterSlice))
+                    return 1;
 
             } catch (const Slic3r::RuntimeError& e) {
                 emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
