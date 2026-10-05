@@ -840,16 +840,32 @@ assert len(d["sliced_plates"][0]["objects"]) == 3, d["sliced_plates"][0]["object
 done
 echo "PASS: --repetitions copies the plate (both engines)"
 
+# A project 3MF of each engine's own (the Bambu fixture is too new for the
+# OrcaSlicer engine).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run proj-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --outputdir proj-$e/out --export-3mf proj.3mf
+    [ "$(rc proj-$e)" = 0 ] || { show proj-$e; fail "$e: project export exit $(rc proj-$e)"; }
+    cp proj-$e/out/proj.3mf proj-$e.3mf
+    # A bare output file name writes into the current folder.
+    run bare-$e "$bin" proj-$e.3mf --plate 1 -o bare-$e.gcode
+    [ "$(rc bare-$e)" = 0 ] && [ -s bare-$e.gcode ] || { show bare-$e; fail "$e: -o with a bare file name"; }
+done
+
 # --export-slicedata writes the plate's slicing; --load-slicedata slices from it.
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    run sdx-$e "$bin" "$FIXTURE" --slice 1 --export-slicedata sd-$e --outputdir sdx-$e/out
+    run sdx-$e "$bin" proj-$e.3mf --slice 1 --export-slicedata sd-$e --outputdir sdx-$e/out
     [ "$(rc sdx-$e)" = 0 ] || { show sdx-$e; fail "$e: --export-slicedata exit $(rc sdx-$e)"; }
     [ -n "$(ls sd-$e/1 2>/dev/null)" ] || fail "$e: --export-slicedata wrote nothing under sd-$e/1"
-    run sdl-$e "$bin" "$FIXTURE" --slice 1 --load-slicedata sd-$e --outputdir sdl-$e/out
+    run sdl-$e "$bin" proj-$e.3mf --slice 1 --load-slicedata sd-$e --outputdir sdl-$e/out
     [ "$(rc sdl-$e)" = 0 ] || { show sdl-$e; fail "$e: --load-slicedata exit $(rc sdl-$e)"; }
-    events sdl-$e/stdout model_loaded | grep SliceDataLoaded >/dev/null || { show sdl-$e; fail "$e: --load-slicedata did not load"; }
-    run sdr-$e "$bin" "$FIXTURE" --slice 1 --load-slicedata sd-$e --repetitions 2 --outputdir sdr-$e/out
+    # OrcaSlicer's loader at its pin cannot read what its own exporter writes
+    # (Print::load_cached_data, -57), so that engine slices the plate normally
+    # and says so, as its own command line falls back (OrcaSlicer.cpp 6067-6090).
+    want=SliceDataLoaded; [ $e = orca ] && want=SliceDataNotLoaded
+    events sdl-$e/stdout model_loaded | grep $want >/dev/null || { show sdl-$e; fail "$e: --load-slicedata: no $want"; }
+    run sdr-$e "$bin" proj-$e.3mf --slice 1 --load-slicedata sd-$e --repetitions 2 --outputdir sdr-$e/out
     py '
 import json, sys; d = json.load(open(sys.argv[1]))
 assert d["return_code"] == -2, d
@@ -868,7 +884,7 @@ for name, size in (("Roomy Test Printer", 200), ("Tiny Test Printer", 10)):
 '
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
-    run dw-$e "$bin" "$FIXTURE" --slice 1 --downward-check --downward-settings roomy.json --downward-settings tiny.json --outputdir dw-$e/out
+    run dw-$e "$bin" proj-$e.3mf --slice 1 --downward-check --downward-settings roomy.json --downward-settings tiny.json --outputdir dw-$e/out
     [ "$(rc dw-$e)" = 0 ] || { show dw-$e; fail "$e: --downward-check exit $(rc dw-$e)"; }
     py '
 import json, sys; d = json.load(open(sys.argv[1]))

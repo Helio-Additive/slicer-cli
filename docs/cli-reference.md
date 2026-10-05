@@ -166,7 +166,9 @@ These older shortcuts set one setting each and keep working:
 
 `--load-slicedata` is refused with `--repetitions`; slicer_cli-orcaslicer also
 refuses it together with `--export-slicedata`, as OrcaSlicer's command line
-does. `--downward-check` needs a project 3MF. Without `--downward-settings` it
+does. At its pinned version OrcaSlicer's loader cannot read the data its
+exporter writes, so slicer_cli-orcaslicer slices every plate normally and
+reports `SliceDataNotLoaded`. `--downward-check` needs a project 3MF. Without `--downward-settings` it
 uses the printer's list in `resources/profiles/BBL/cli_config.json`, whose
 machine files (the `machine_full` folder) the open-source apps do not ship;
 each missing file is reported and left out.
@@ -257,7 +259,59 @@ sliced project goes there too, holding the G-code of each sliced plate and a
 `--slice` always writes `result.json` into `--outputdir`, also when the run
 fails. Its fields follow the official command lines' result file:
 
-RESULT_SAMPLE
+A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --outputdir out`
+(the feature times are shortened here):
+
+```json
+{
+    "engine": "bambustudio",
+    "error_string": "Success.",
+    "export_time": 0,
+    "layer_height": 0.20000000298023224,
+    "plate_index": 1,
+    "prepare_time": 1,
+    "return_code": 0,
+    "sliced_plates": [
+        {
+            "feature_type_times": {
+                "Outer wall": 133.3519744873047,
+                "Sparse infill": 253.5850372314453,
+                "Travel": 185.76556396484375
+            },
+            "filament_change_times": 0,
+            "filaments": [
+                {
+                    "filament_id": "GFA00",
+                    "id": 1,
+                    "main_used_g": 3.7003644055772265,
+                    "total_used_g": 3.7003644055772265
+                }
+            ],
+            "gcode_file": "out/plate_1.gcode",
+            "id": 1,
+            "main_predication": 746.7215576171875,
+            "objects": [
+                {
+                    "bbox": {"depth": 20.0, "height": 20.0, "width": 20.0, "x": 80.0, "y": 80.0, "z": 0.0},
+                    "id": 18,
+                    "name": "cube.stl",
+                    "triangle_count": 12
+                }
+            ],
+            "sliced_time": 58,
+            "sliced_time_with_cache": 0,
+            "total_predication": 1133.287353515625,
+            "triangle_count": 12,
+            "unknown_settings": [],
+            "warning_message": "",
+            "warnings": []
+        }
+    ],
+    "sparse_infill_density": 15.0,
+    "unknown_settings": [],
+    "wall_loops": 2
+}
+```
 
 | Field | Meaning |
 |-|-|
@@ -294,7 +348,13 @@ While it runs, slicer-cli writes one line per event on stdout:
 [[SLICER_EVENT]] {"event":"<kind>","tag":"<what happened>","message":"<for people>", ...}
 ```
 
-EVENT_SAMPLE
+From the same run:
+
+```
+[[SLICER_EVENT]] {"curr_bed_type":"Textured PEI Plate","curr_bed_type_reason":"the printer model's default plate","defaults_replaced":[],"event":"presets_resolved","filaments":["Bambu PLA Basic @BBL A1M"],"message":"Settings built from BambuStudio system presets with every parent applied","printer":"Bambu Lab A1 mini 0.4 nozzle","process":"0.20mm Standard @BBL A1M","tag":"NamedPresetsResolved"}
+[[SLICER_EVENT]] {"event":"model_loaded","message":"Loaded 1 object(s) from cube.stl","objects":1,"path":"cube.stl","tag":"ModelFileLoaded"}
+[[SLICER_EVENT]] {"event":"progress","message":"All done, Success","percent":100,"plate_count":1,"plate_id":1,"plate_index":1,"plate_percent":100,"tag":"SliceProgress"}
+```
 
 The `event` kinds:
 

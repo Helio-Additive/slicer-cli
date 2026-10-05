@@ -53,6 +53,7 @@
 // For JSON parsing (using libslic3r's built-in nlohmann/json)
 #include <nlohmann/json.hpp>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem.hpp>
 
@@ -2043,6 +2044,33 @@ struct EngineFit {
     bool this_has  = false;
     bool other_has = false;
 };
+
+/// The printer model of a printer system preset, read from the profiles tree:
+/// <vendor>/machine/<name>.json, following "inherits" to the file that states
+/// printer_model. Empty when the tree has no such preset.
+static std::string preset_printer_model(const boost::filesystem::path& profiles_dir, const std::string& name) {
+    if (profiles_dir.empty() || name.empty()) return {};
+    try {
+        for (auto& vendor : boost::filesystem::directory_iterator(profiles_dir)) {
+            if (!boost::filesystem::is_directory(vendor.path())) continue;
+            std::string current = name;
+            for (int depth = 0; depth < 16 && !current.empty(); ++depth) {
+                const boost::filesystem::path file = vendor.path() / "machine" / (current + ".json");
+                if (!boost::filesystem::exists(file)) break;
+                boost::filesystem::ifstream f(file);
+                json preset;
+                try { preset = json::parse(f); } catch (...) { break; }
+                if (preset.contains("printer_model") && preset["printer_model"].is_string() &&
+                    !preset["printer_model"].get<std::string>().empty())
+                    return preset["printer_model"].get<std::string>();
+                current = preset.contains("inherits") && preset["inherits"].is_string()
+                              ? preset["inherits"].get<std::string>() : std::string();
+            }
+        }
+    } catch (...) {
+    }
+    return {};
+}
 
 static EngineFit engine_fit_for(const std::string& argv0, const std::string& printer_model) {
     const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
@@ -6125,7 +6153,12 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 /// Print.hpp:848
                 /// C++: std::string export_gcode(const std::string &path, GCodeProcessorResult* result, ThumbnailsGeneratorCallback thumbnail_cb);
                 Slic3r::GCodeProcessorResult gcode_result;
-                print.export_gcode(output_file, &gcode_result, nullptr);
+                // GCode::do_export makes the file's folder when it is missing and
+                // throws on a bare file name, whose folder is "" (GCode.cpp
+                // 1793-1797 at 5873b5f): the current folder is named for it.
+                const std::string export_path = boost::filesystem::path(output_file).has_parent_path()
+                                                    ? output_file : (boost::filesystem::path(".") / output_file).string();
+                print.export_gcode(export_path, &gcode_result, nullptr);
 
                 // The result object is fully populated by the export. Drain
                 // every check the GUI would show a human before reporting
@@ -6169,6 +6202,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     if (const std::string export_dir = slicer_cli::slicedata_dir(o, "export_slicedata", cache_plate);
                         !export_dir.empty()) {
                         const bool with_space = Slic3r::get_logging_level() >= 4;
+                        // Print::export_cached_data makes the plate's folder
+                        // only, so the folder given on the command line is made
+                        // first (the official fails with -53 when it is missing).
+                        {
+                            boost::system::error_code mk;
+                            boost::filesystem::create_directories(boost::filesystem::path(export_dir).parent_path(), mk);
+                        }
 #ifdef ENGINE_ORCA
                         const int ret = print.export_cached_data(export_dir, with_space);
 #else
