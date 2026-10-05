@@ -503,6 +503,8 @@ void print_help(std::ostream& out, const char* prog) {
     out << "Usage: " << prog << " [OPTIONS] [model files: .3mf .stl .obj .amf .step .stp"
 #ifndef ENGINE_ORCA
         << " .glb .gltf .fbx"
+#else
+        << " .svg"
 #endif
         << " ...]\n"
         << "\nEngine of this binary: " << kThisApp << ". The other slicer-cli binary runs " << kOtherApp << ".\n"

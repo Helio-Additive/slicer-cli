@@ -746,7 +746,12 @@ d = json.load(open(sys.argv[1]))
 assert len(d["sliced_plates"][0]["objects"]) == 2, d["sliced_plates"][0]["objects"]
 ' multi-$e/out/result.json
     run geo-$e "$bin" geo.3mf --slice 1 --outputdir geo-$e/out
-    [ "$(rc geo-$e)" = 254 ] || [ "$(rc geo-$e)" = -2 ] || { show geo-$e; fail "$e: a geometry-only 3MF without a printer exit $(rc geo-$e)"; }
+    # The exit status of -2 reads differently per shell and system; result.json is the record.
+    [ "$(rc geo-$e)" != 0 ] || { show geo-$e; fail "$e: a geometry-only 3MF without a printer was sliced"; }
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+' geo-$e/out/result.json
     grep -q -- '--printer-preset' geo-$e/stderr || fail "$e: the geometry-only refusal does not name --printer-preset"
 done
 echo "PASS: OBJ, AMF, a geometry-only 3MF and several files at once load and are placed (both engines)"
