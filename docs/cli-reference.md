@@ -63,6 +63,59 @@ meters or inches is reported (`model_warning` event `ModelUnitsLookWrong`);
 `--convert-unit` converts it. An object larger than the bed is scaled down to
 fit when it is far too large, as the desktop does, and reported.
 
+### Assemble lists
+
+`--load-assemble-list list.json --slice 0 --outputdir out` builds the plates
+from a list instead of model files, as the official command lines do (no
+model files with it; slicer_cli-orcaslicer also takes no transforms with it).
+Every plate of the list is sliced, whatever plate `--slice` names. The list:
+
+```json
+{"plates": [
+  {"plate_name": "left", "need_arrange": true,
+   "plate_params": {"sparse_infill_density": "25%"},
+   "objects": [
+     {"path": "part.stl", "count": 2, "filaments": [1, 2],
+      "assemble_index": [0], "pos_x": [60], "pos_y": [60], "pos_z": [0],
+      "print_params": {"wall_loops": "3"},
+      "height_ranges": [{"min_z": 0, "max_z": 5, "range_params": {"sparse_infill_density": "50%"}}]}],
+   "assembled_params": [{"assemble_index": 1, "print_params": {"wall_loops": "4"}}]}]}
+```
+
+- `plate_params` are the plate's own settings; `print_params` and
+  `height_ranges` an object's.
+- `count` copies of each part. Each per-copy list (`filaments`,
+  `assemble_index`, `pos_x`, `pos_y`, `pos_z`) holds one value per copy or one
+  value for all.
+- Parts with the same `assemble_index` above 0 are merged into one object,
+  `assemble_<n>`, whose settings come from `assembled_params`.
+- `need_arrange` arranges the plate; otherwise the objects stay at their
+  positions. A copy is moved by its own position from where the first copy is.
+- STL parts, and OBJ parts (an OBJ's colours become filaments; on slicer_cli
+  that needs `--load-filaments`). slicer_cli also reads `"subtype"` (`normal_part`,
+  `modifier_part`, `negative_part`, `support_enforcer`, `support_blocker`)
+  for a part that is merged into another.
+
+A missing list or part is -3, a list that cannot be read or has wrong counts
+-5, an unreadable part -6, a part of another kind -2, and a plate that does
+not fit -21.
+
+### Progress pipe
+
+On Linux, `--pipe NAME` writes the official progress lines into the named
+pipe NAME (make it with `mkfifo` and read it before the run starts; a pipe
+nobody reads within 1 second is left unused). One JSON object per line:
+
+```json
+{"message":"Slicing begins","plate_count":2,"plate_index":1,"plate_percent":4,"total_percent":4}
+```
+
+A slicing warning comes as `"warning"` in place of `"message"`. As in the
+official command lines, the pipe carries the latest step each time its writer
+wakes, so a fast slice can skip steps; the run ends with `"All done, Success"`
+at 100. slicer-cli writes no "Generate thumbnails"
+line, as it makes no pictures.
+
 ## Plate type
 
 The plate type (`curr_bed_type`) follows the desktop app:
@@ -163,12 +216,17 @@ These older shortcuts set one setting each and keep working:
 | `--downward-check` | | List the other printers the plates also fit on, in `result.json` | both binaries |
 | `--downward-settings` | "m1.json;m2.json" | The printers (system machine files) for `--downward-check` | both binaries |
 | `--progress` | | Progress events (on with `--slice`) | both binaries |
+| `--load-assemble-list` | file.json | Build the plates from a JSON list of STL and OBJ parts, then slice every plate (needs `--slice`) | both binaries |
+| `--pipe` | name | Linux only: write the official progress lines into the named pipe (a FIFO the caller made and reads) | both binaries |
 
 `--load-slicedata` is refused with `--repetitions`; slicer_cli-orcaslicer also
 refuses it together with `--export-slicedata`, as OrcaSlicer's command line
-does. At its pinned version OrcaSlicer's loader cannot read the data its
-exporter writes, so slicer_cli-orcaslicer slices every plate normally and
-reports `SliceDataNotLoaded`. `--downward-check` needs a project 3MF. Without `--downward-settings` it
+does. OrcaSlicer's loader cannot read the data its own exporter writes (see
+[Known upstream behaviour](#known-upstream-behaviour)), so slicer_cli-orcaslicer
+slices every plate normally and reports `SliceDataNotLoaded`. The official
+command lines honour `--export-slicedata` and `--load-slicedata` only when
+they come before `--slice` on the command line; slicer-cli takes them in any
+order. `--downward-check` needs a project 3MF. Without `--downward-settings` it
 uses the printer's list in `resources/profiles/BBL/cli_config.json`, whose
 machine files (the `machine_full` folder) the open-source apps do not ship;
 each missing file is reported and left out.
@@ -221,8 +279,7 @@ thumbnail block.
 | Flag | Works in | Why |
 |-|-|-|
 | `--export-png`, `--camera-view` | slicer_cli only (Bambu Studio engine) | slicer-cli makes no pictures |
-| `--pipe` | both binaries | progress goes to stdout as events on every system (`--progress`) |
-| `--load-assemble-list` | both binaries | not ported yet; give the model files on the command line |
+| `--pipe` on macOS and Windows | both binaries | the official pipe exists on Linux only; progress goes to stdout as events on every system (`--progress`) |
 
 Names that both official command lines only mention in comments (such as
 `--cut`, `--export-obj`, `--center`, `--repair`) are refused as not being flags
@@ -418,3 +475,25 @@ for -2):
 | -105 | G-code in the wrapping detection area |
 
 `result.json` gives the sentence for each code.
+
+## Known upstream behaviour
+
+Two OrcaSlicer behaviours come from the OrcaSlicer engine at its pin, not from
+slicer-cli; slicer_cli-orcaslicer keeps them as they are.
+
+- **Raise3D Pro3 0.4 (Dual) can crash while writing the G-code.** The official
+  OrcaSlicer v2.4.0-alpha Linux AppImage crashed in 11 of 20 runs of the same
+  cube, printer, process and filaments, against 3 in 20 for
+  slicer_cli-orcaslicer. Every crash frame is in the engine's G-code export
+  (`GCode::append_full_config`, `GCodeProcessor::update_slice_warnings`,
+  destructors, a glibc double free); none is in slicer-cli. slicer-cli sets
+  the filaments up as the desktop app does
+  (`update_multi_material_filament_presets`).
+- **`--load-slicedata` returns -57 and the plate is sliced normally.**
+  OrcaSlicer's `Print.cpp` writes each extrusion path's polyline as a
+  `Polyline3` (`[[x, y, z]]`, line 3861; `ExtrusionEntity.hpp` 153) and reads it
+  back as a 2D `Polyline` (lines 4116 and 4137), so the read stops with a JSON
+  type error 305 and the load returns -57 (lines 4902-4904). The official
+  OrcaSlicer alpha gives the same -57. slicer_cli-orcaslicer then slices the
+  plate normally and reports `SliceDataNotLoaded`. Bambu Studio's paths hold a
+  plain `Polyline` (`ExtrusionEntity.hpp` 215), so slicer_cli round-trips.
