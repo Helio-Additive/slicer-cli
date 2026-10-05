@@ -666,8 +666,11 @@ for e in bambu orca; do
         grep -q 'Unknown option' refuse-$e/stderr && fail "$e: $args gave Unknown option"
         rm -rf refuse-$e
     done
-    run pipe-$e "$bin" cube.stl --pipe x
-    grep -q -- '--pipe is a flag of' pipe-$e/stderr || { show pipe-$e; fail "$e: --pipe not refused by name"; }
+    # --pipe exists on Linux only, as in the official command lines.
+    if [ "$(uname -s)" != Linux ]; then
+        run pipe-$e "$bin" cube.stl --pipe x
+        grep -q -- '--pipe is a flag of' pipe-$e/stderr || { show pipe-$e; fail "$e: --pipe not refused by name"; }
+    fi
 done
 run png-bambu "$B" cube.stl --export-png 1
 grep -q -- '--export-png is a flag of' png-bambu/stderr || { show png-bambu; fail "bambu: --export-png not refused by name"; }
@@ -922,3 +925,88 @@ for k in ("downward_compatible_machine", "upward_compatible_machine", "upward_co
 ' "$f"
 done
 echo "PASS: result.json gains no keys unless the flags ask for them"
+
+# --load-assemble-list: plates built from a JSON list. Plate 1 is arranged
+# (two copies of the cube); plate 2 keeps the list's positions, merges its two
+# copies into one object (assemble_index 1) and has its own settings.
+py '
+import json
+json.dump({"plates": [
+    {"plate_name": "arranged", "need_arrange": True,
+     "objects": [{"path": "cube.stl", "count": 2, "filaments": [1]}]},
+    {"plate_name": "placed", "need_arrange": False,
+     "plate_params": {"sparse_infill_density": "25%"},
+     "objects": [{"path": "cube.stl", "count": 2, "filaments": [1], "assemble_index": [1],
+                  "pos_x": [60, 30], "pos_y": [60], "print_params": {"wall_loops": "3"},
+                  "height_ranges": [{"min_z": 0, "max_z": 5, "range_params": {"sparse_infill_density": "50%"}}]}],
+     "assembled_params": [{"assemble_index": 1, "print_params": {"wall_loops": "4"}}]}]},
+    open("asm.json", "w"))
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
+                       "objects": [{"path": "missing.stl", "count": 1, "filaments": [1]}]}]},
+          open("asm-missing.json", "w"))
+json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
+                       "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 1, 1]}]}]},
+          open("asm-bad.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    # --slice 1: an assemble list slices every plate, as the official does.
+    run asml-$e "$bin" --load-assemble-list asm.json --slice 1 --printer-preset "$A1M" --outputdir asml-$e/out --export-3mf asm.3mf
+    [ "$(rc asml-$e)" = 0 ] || { show asml-$e; fail "$e: --load-assemble-list exit $(rc asml-$e)"; }
+    [ -s asml-$e/out/plate_1.gcode ] && [ -s asml-$e/out/plate_2.gcode ] || fail "$e: --load-assemble-list did not slice both plates"
+    events asml-$e/stdout config_normalized | grep AssembleListSlicesEveryPlate >/dev/null || fail "$e: no note that every plate is sliced"
+    has_line asml-$e/out/plate_2.gcode '; sparse_infill_density = 25%' || fail "$e: plate 2's own settings were not applied"
+    py '
+import json, re, sys, zipfile
+d = json.load(open(sys.argv[1]))
+plates = d["sliced_plates"]
+assert [p["id"] for p in plates] == [1, 2], plates
+assert len(plates[0]["objects"]) == 2, plates[0]["objects"]
+assert [o["name"] for o in plates[1]["objects"]] == ["assemble_1"], plates[1]["objects"]
+box = plates[1]["objects"][0]["bbox"]
+# The copies stay where the list puts them: x 60..110, y 60..140.
+assert abs(box["x"] - 60) < 0.5 and abs(box["width"] - 50) < 0.5, box
+assert abs(box["y"] - 60) < 0.5 and abs(box["depth"] - 80) < 0.5, box
+z = zipfile.ZipFile(sys.argv[2])
+model = z.read("Metadata/model_settings.config").decode()
+assert len(re.findall(r"<plate>", model)) == 2, model
+assert "\"placed\"" in model and "\"arranged\"" in model, "plate names missing"
+' asml-$e/out/result.json asml-$e/out/asm.3mf
+    # With a model file: -2. A part the list names that does not exist: -3.
+    # A per-copy list of the wrong length: -5.
+    for c in "files:cube.stl --load-assemble-list asm.json:-2" "missing:--load-assemble-list asm-missing.json:-3" \
+             "bad:--load-assemble-list asm-bad.json:-5"; do
+        n=${c%%:*}; rest=${c#*:}; args=${rest%:*}; want=${rest##*:}
+        run asm$n-$e "$bin" $args --slice 0 --printer-preset "$A1M" --outputdir asm$n-$e/out
+        py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == int(sys.argv[2]), d
+' asm$n-$e/out/result.json "$want"
+    done
+done
+echo "PASS: --load-assemble-list builds, arranges and slices every plate of its list (both engines)"
+
+# --pipe (Linux only): one JSON line per progress step into the named pipe.
+if [ "$(uname -s)" = Linux ]; then
+    for e in bambu orca; do
+        bin=$B; [ $e = orca ] && bin=$O
+        rm -f pipe-$e.fifo; mkfifo pipe-$e.fifo
+        timeout 120 cat pipe-$e.fifo > pipe-$e.lines & reader=$!
+        run pipe-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --outputdir pipe-$e/out --pipe pipe-$e.fifo
+        wait $reader || true
+        [ "$(rc pipe-$e)" = 0 ] || { show pipe-$e; fail "$e: --pipe exit $(rc pipe-$e)"; }
+        py '
+import json, sys
+lines = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+assert lines, "nothing came through the pipe"
+# The writer sends the latest step when it wakes, as the official one does,
+# so a fast slice may skip steps; the last one is always the run end.
+last = lines[-1]
+assert last.get("message") == "All done, Success" and last["total_percent"] == 100, last
+assert all(set(l) >= {"plate_index", "plate_count", "plate_percent", "total_percent"} for l in lines), lines
+totals = [l["total_percent"] for l in lines]
+assert totals == sorted(totals), totals
+' pipe-$e.lines
+    done
+    echo "PASS: --pipe writes the official progress lines (both engines, Linux)"
+fi

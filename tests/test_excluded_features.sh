@@ -90,6 +90,8 @@ rm -f "$SL1_TMP"
 XYZ_TMP=$(mktemp /tmp/test_XXXXXX.xyz)
 echo "fake xyz" > "$XYZ_TMP"
 check "xyz-rejected"          1 "Unsupported file format"   "$XYZ_TMP"
+# The refusal names the kinds this engine loads.
+check "xyz-names-kinds"       1 "This engine loads: stl, obj"   "$XYZ_TMP"
 rm -f "$XYZ_TMP"
 
 # ── Missing-input rejection ─────────────────────────────────────────────────

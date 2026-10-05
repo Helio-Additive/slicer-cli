@@ -31,13 +31,12 @@ const std::map<std::string, std::string>& not_supported() {
         // slicer-cli makes no pictures.
         {"export_png",  "slicer-cli makes no pictures (the official CLI draws them with its GUI renderer)"},
         {"camera_view", "slicer-cli makes no pictures (the official CLI draws them with its GUI renderer)"},
+#if !defined(__linux__) && !defined(__LINUX__)
         // The official pipe works on Linux only (BambuStudio.cpp 244-437,
-        // OrcaSlicer.cpp 220-410); slicer-cli keeps one behaviour on every OS
-        // and reports progress as events on stdout instead (--progress).
+        // OrcaSlicer.cpp 220-410; cli_pipe.cpp ports it there). Elsewhere
+        // progress comes as events on stdout instead (--progress).
         {"pipe",        "the official pipe exists on Linux only; slicer-cli reports progress on every OS as events on stdout (--progress)"},
-        // BambuStudio.cpp 746-1345, 1848-1856, 2177; OrcaSlicer.cpp 609-1160,
-        // 1530-1538, 1824. Not ported yet: give the parts as model files instead.
-        {"load_assemble_list", "building a plate from an assemble list is not ported yet; give the model files on the command line instead"},
+#endif
     };
     return why;
 }

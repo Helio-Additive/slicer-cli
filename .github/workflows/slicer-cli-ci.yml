@@ -1692,6 +1692,7 @@ jobs:
             libmpfr6 \
             libnlopt0 \
             libopencv-core4.5d \
+            libopencv-imgproc4.5d \
             libpng16-16 \
             libqhullcpp8.0 \
             libtbb12 \

@@ -17,6 +17,7 @@
 // settings and says so in a preset_warning event.
 #pragma once
 
+#include <array>
 #include <memory>
 #include <set>
 #include <string>
@@ -70,6 +71,9 @@ struct SettingsMerge {
     // project's process, marked compatible with the new printer, named
     // "<name>(auto)" (BambuStudio.cpp 3049-3095).
     std::shared_ptr<Slic3r::Preset> new_preset;
+    // Input, set by the caller: the colours of an assemble list's OBJ files,
+    // which become the filaments (BambuStudio only, BambuStudio.cpp 2573-2620).
+    std::vector<std::array<float, 4>> input_obj_colours;
 };
 
 /// True when the command line asks for any of the merge's inputs.

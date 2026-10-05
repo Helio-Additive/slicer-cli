@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <map>
+#include <sstream>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
@@ -566,6 +568,41 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         }
     }
 
+#ifndef ENGINE_ORCA
+    // The colours of an assemble list's OBJ files (B 2573-2620): one filament
+    // per colour, copies of the first loaded filament where too few were
+    // given, each coloured as the OBJ is. OrcaSlicer's CLI leaves them out.
+    if (!out.input_obj_colours.empty()) {
+        const int input_color_count = int(out.input_obj_colours.size());
+        if (load_filament_count == 0 || load_filaments_config.empty())
+            return fail(CLI_INVALID_PARAMS, "The assemble list's OBJ files carry colours, which become filaments: "
+                                            "give the filaments with --load-filaments.");
+        if (m_extra_config.option<ConfigOptionStrings>("filament_colour"))
+            return fail(CLI_INVALID_PARAMS, "The assemble list's OBJ files set the filament colours; "
+                                            "--filament-colour cannot be given with them.");
+        if (load_filament_count < input_color_count) {
+            const int delta = input_color_count - load_filament_count;
+            for (int index = 0; index < delta; index++) {
+                load_filaments_id.push_back(load_filaments_id[0]);
+                load_filaments_name.push_back(load_filaments_name[0]);
+                load_filaments_config.push_back(load_filaments_config[0]);
+                load_filaments_index.push_back(index + 1 + load_filament_count);
+                load_filaments_inherit.push_back(load_filaments_inherit[0]);
+            }
+            load_filament_count = input_color_count;
+        }
+        std::vector<std::string>& filament_colors =
+            m_extra_config.option<ConfigOptionStrings>("filament_colour", true)->values;
+        filament_colors.resize(input_color_count);
+        for (int index = 0; index < input_color_count; index++) {
+            std::ostringstream stream;
+            for (int c = 0; c < 4; c++)
+                stream << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+                       << std::clamp((int) (out.input_obj_colours[index][c] * 255.f), 0, 255);
+            filament_colors[index] = "#" + stream.str();
+        }
+    }
+#endif
     if (filament_count == 0)
         filament_count = load_filament_count;
     if (is_bbl_3mf && load_filament_count > 0 && load_filaments_set.size() == 1 && !estimate_mode)
