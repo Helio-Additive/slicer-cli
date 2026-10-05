@@ -1346,6 +1346,41 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     return StepResult();
 }
 
+bool disable_tower_after_mapping(const CliOptions& o, const SettingsMerge& merge, DynamicPrintConfig& print_config,
+                                 const DynamicPrintConfig& extra_config) {
+    if (!merge.disable_wipe_tower_after_mapping)
+        return false;
+    // The settings as the official reads them here: the flags laid over.
+    DynamicPrintConfig view = print_config;
+    view.apply(extra_config, true);
+    const auto* wrapping_opt = view.option<ConfigOptionBool>("enable_wrapping_detection");
+    const bool enable_wrapping_detect = wrapping_opt && wrapping_opt->value;
+    const auto* wrapping_area = view.option<ConfigOptionPoints>("wrapping_exclude_area");
+    if (enable_wrapping_detect && wrapping_area && !wrapping_area->values.empty())
+        return false;
+    const bool enable_timelapse = o.given_flag("enable_timelapse") && o.cli.opt_bool("enable_timelapse");
+    const ConfigOption* timelapse_type_opt = view.option("timelapse_type");
+    if (enable_timelapse && timelapse_type_opt && timelapse_type_opt->getInt() == TimelapseType::tlSmooth)
+        return false;
+    print_config.option<ConfigOptionBool>("enable_prime_tower", true)->value = false;
+    // The process's list of settings that differ from its system preset
+    // gains enable_prime_tower (different_settings_to_system[0]).
+    std::vector<std::string>& different_settings =
+        print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
+    if (different_settings.empty())
+        different_settings.resize(1);
+    const std::string diff_settings = different_settings[0];
+    if (diff_settings.empty())
+        different_settings[0] = "enable_prime_tower";
+    else {
+        std::vector<std::string> different_keys;
+        Slic3r::unescape_strings_cstyle(diff_settings, different_keys);
+        if (std::find(different_keys.begin(), different_keys.end(), "enable_prime_tower") == different_keys.end())
+            different_settings[0] = diff_settings + ";enable_prime_tower";
+    }
+    return true;
+}
+
 void update_object_configs_after_switch(const ProjectFacts& facts, const SettingsMerge& merge,
                                         const DynamicPrintConfig& print_config, Model& model) {
     if (!merge.machine_switch)

@@ -56,6 +56,15 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/nowide/args.hpp>
+// boost::nowide::nowide_filesystem: <boost/nowide/filesystem.hpp> since Boost
+// 1.73 (OrcaSlicer.cpp 44); the older bundled Nowide calls the header
+// integration/filesystem.hpp (BambuStudio.cpp 43).
+#if __has_include(<boost/nowide/filesystem.hpp>)
+#include <boost/nowide/filesystem.hpp>
+#else
+#include <boost/nowide/integration/filesystem.hpp>
+#endif
 
 // Boost.Log bridge: libslic3r raises most of its diagnostics through
 // BOOST_LOG_TRIVIAL and never through any callback. `libslic3r_core` already
@@ -4600,6 +4609,51 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
     }
 }
 
+/// One plate's objects, loaded alone from the project 3MF, for
+/// --downward-check: the official sizes every plate of the project
+/// (check_plate_wipe_tower per plate, BambuStudio.cpp 4645-4658; OrcaSlicer.cpp
+/// 3986-3996), whichever plate is sliced.
+static bool load_plate_objects(const std::string& input_file, int plate_id, Slic3r::Model& model) {
+    using namespace Slic3r;
+    DynamicPrintConfig scratch;
+    scratch.apply(FullPrintConfig::defaults(), true);
+    ConfigSubstitutionContext subst(ForwardCompatibilitySubstitutionRule::Enable);
+    PlateDataPtrs plates;
+    std::vector<Preset*> presets;
+    bool is_bbl = false;
+    Semver version;
+    std::string load_path = input_file;
+#ifdef ENGINE_BAMBU
+    PercentRewrite percent_rewrite;
+    rewrite_percent_line_widths(input_file, percent_rewrite);
+    if (!percent_rewrite.refusal.empty())
+        return false;
+    if (percent_rewrite.changed)
+        load_path = percent_rewrite.temp_path;
+#endif
+    const auto strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances;
+    // A writable backup folder, as the slice's own load sets (never the
+    // loader's default /bamboo_model).
+    model.set_backup_path(boost::filesystem::temp_directory_path().string() + "/slicer_cli_backup");
+    bool loaded = false;
+    try {
+#ifdef ENGINE_ORCA
+        bool is_orca = false;
+        loaded = load_bbs_3mf(load_path.c_str(), &scratch, &subst, &model, &plates, &presets, &is_bbl, &is_orca,
+                              &version, nullptr, strategy, nullptr, plate_id);
+#else
+        loaded = load_bbs_3mf(load_path.c_str(), &scratch, &subst, &model, &plates, &presets, &is_bbl,
+                              &version, nullptr, strategy, nullptr, plate_id);
+#endif
+    } catch (const std::exception&) {
+        loaded = false;
+    }
+    release_PlateData_list(plates);
+    for (Preset* p : presets)
+        delete p;
+    return loaded;
+}
+
 /// The selected plate's own settings, as the official CLI lays them over the
 /// project's per plate (see the call site): the plate's PlateData::config
 /// without the filament-map keys (handled by the plate filament-map blocks
@@ -4624,8 +4678,9 @@ static bool g_model_actions_done = false;
 
 /// The per-plate steps on the placed objects, in the official order:
 /// --ensure-on-bed (BambuStudio.cpp 6188-6194), --skip-objects (6541-6581,
-/// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left) and --mtcpp
-/// (6592-6603); the same lines in OrcaSlicer.cpp 5443-5455 and 5645-5720.
+/// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left); the same lines
+/// in OrcaSlicer.cpp 5443-5455 and 5645-5720. --mtcpp follows the bed check
+/// (plate_triangle_limit).
 static bool plate_object_steps(const CliOptions& o, Slic3r::Model& model, int plate, PlateOutcome& outcome) {
     slicer_cli::ensure_on_bed_if_asked(o, model);
     std::vector<int> skipped;
@@ -4636,6 +4691,12 @@ static bool plate_object_steps(const CliOptions& o, Slic3r::Model& model, int pl
         return false;
     }
     outcome.skipped_objects = skipped;
+    return true;
+}
+
+/// --mtcpp, once the bed check has marked each instance inside or not
+/// (BambuStudio.cpp 6541-6597; OrcaSlicer.cpp 5657-5720).
+static bool plate_triangle_limit(const CliOptions& o, const Slic3r::Model& model, int plate, PlateOutcome& outcome) {
     const slicer_cli::StepResult tri = slicer_cli::check_triangle_limit(o, model, plate);
     if (tri.code != 0) {
         std::cerr << "Error: " << tri.message << "\n";
@@ -5390,6 +5451,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
             slicer_cli::update_object_configs_after_switch(project_facts, settings_merge, config, model);
             outcome.settings_merge = std::make_shared<slicer_cli::SettingsMerge>(settings_merge);
+            if (slicer_cli::disable_tower_after_mapping(o, settings_merge, config, extra))
+                emit_event({{"event","config_normalized"}, {"tag","PrimeTowerOffOneFilament"},
+                            {"message","Every filament slot holds the same filament: the prime tower is off"}});
         }
         // --load-custom-gcodes, --skip-modified-gcodes (cli_load_settings.cpp).
         {
@@ -5905,8 +5969,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 
         // --downward-check, before the transforms as the official runs it
         // (BambuStudio.cpp 4669-4914; OrcaSlicer.cpp 4006-4175). The
-        // official checks the plates of a 3MF project (plate_obj_size_infos
-        // exists only then, BambuStudio.cpp 4646-4658).
+        // official checks the plates of a project (plate_obj_size_infos
+        // exists only then, BambuStudio.cpp 4646-4658), every one of them.
         if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check")) {
             if (plate_data.empty()) {
                 const std::string why = "--downward-check checks the plates of a 3MF project; this input has none";
@@ -5921,28 +5985,98 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, loaded.code, loaded.message);
                 return 1;
             }
-            const int size_plate_index = plate_id > 0 ? plate_id - 1 : 0;
-            bool is_sequence = false;
-            if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
-                is_sequence = seq->value == Slic3r::PrintSequence::ByObject;
+            // Every plate of the project, whichever is sliced (BambuStudio.cpp
+            // 4779-4790; OrcaSlicer.cpp 4104-4117): each plate's objects, and
+            // its own print sequence or else the project's (get_print_sequence,
+            // BambuStudio.cpp 4403-4416). The sliced plate is the model in hand.
+            struct DownwardPlate {
+                int index = 0;
+                std::unique_ptr<Slic3r::Model> loaded;
+                const Slic3r::Model* model = nullptr;
+                bool is_sequence = false;
+            };
+            bool project_sequence = false;
+            {
+                std::string project_seq;
+                if (const Slic3r::ConfigOption* opt = extra.option("print_sequence"))
+                    project_seq = opt->serialize();
+                else if (assemble_input) {
+                    if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
+                        project_seq = seq->serialize();
+                } else {
+                    std::string text;
+                    if (read_zip_member(input_file, "Metadata/project_settings.config", text)) {
+                        try {
+                            const json settings = json::parse(text);
+                            if (settings.contains("print_sequence") && settings["print_sequence"].is_string())
+                                project_seq = settings["print_sequence"].get<std::string>();
+                        } catch (...) {
+                        }
+                    }
+                }
+                project_sequence = project_seq == "by object";
+            }
+            const auto plate_sequence = [&](int index) {
+                if (index < (int)plate_data.size() && plate_data[index] != nullptr)
+                    if (const auto* seq = plate_data[index]->config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
+                        seq && seq->value != Slic3r::PrintSequence::ByDefault)
+                        return seq->value == Slic3r::PrintSequence::ByObject;
+                return project_sequence;
+            };
+            std::vector<DownwardPlate> downward_plates;
+            const int project_plates = (int)plate_data.size();
+            for (int index = 0; index < project_plates; ++index) {
+                DownwardPlate plate;
+                plate.index = index;
+                if (project_plates == 1 || index == plate_id - 1) {
+                    plate.model = &model;
+                    bool is_sequence = false;
+                    if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
+                        is_sequence = seq->value == Slic3r::PrintSequence::ByObject;
+                    plate.is_sequence = is_sequence;
+                } else {
+                    plate.loaded = std::make_unique<Slic3r::Model>();
+                    if (assemble_input) {
+                        for (const Slic3r::ModelObject* object : g_assemble->plates[index].loaded_obj_list)
+                            plate.loaded->add_object(*object);
+                    } else if (!load_plate_objects(input_file, index + 1, *plate.loaded)) {
+                        const std::string why = "--downward-check could not read plate " + std::to_string(index + 1) +
+                                                " of " + input_file + ".";
+                        std::cerr << "Error: " << why << "\n";
+                        set_outcome_failure(outcome, CLI_DATA_FILE_ERROR, why);
+                        return 1;
+                    }
+                    plate.model = plate.loaded.get();
+                    plate.is_sequence = plate_sequence(index);
+                }
+                downward_plates.push_back(std::move(plate));
+            }
             // A Bambu-made 3MF with support on anywhere (BambuStudio.cpp 2197-2210).
             bool has_support = false;
             if (is_bbl_3mf) {
                 const auto* support = config.option<Slic3r::ConfigOptionBool>("enable_support");
                 has_support = support && support->value;
-                for (const Slic3r::ModelObject* object : model.objects) {
-                    const auto* obj_support = object->config.get().option<Slic3r::ConfigOptionBool>("enable_support");
-                    has_support |= obj_support && obj_support->value;
-                }
+                for (const DownwardPlate& plate : downward_plates)
+                    for (const Slic3r::ModelObject* object : plate.model->objects) {
+                        const auto* obj_support = object->config.get().option<Slic3r::ConfigOptionBool>("enable_support");
+                        has_support |= obj_support && obj_support->value;
+                    }
             }
             outcome.downward_checked = true;
-            outcome.sequence_plate   = is_sequence;
             for (const slicer_cli::DownwardPrinter& p : printers)
                 outcome.downward_printers.push_back(p.name);
-            if (!printers.empty())
-                outcome.downward_failed = slicer_cli::downward_failures(
-                    printers, downward_plate_size(model, config, size_plate_index, is_sequence), is_sequence, config,
-                    project_facts, has_support);
+            for (const DownwardPlate& plate : downward_plates) {
+                outcome.sequence_plate |= plate.is_sequence;
+                if (printers.empty())
+                    continue;
+                const std::vector<std::string> failed = slicer_cli::downward_failures(
+                    printers, downward_plate_size(*plate.model, config, plate.index, plate.is_sequence),
+                    plate.is_sequence, config, project_facts, has_support);
+                for (const std::string& name : failed)
+                    if (std::find(outcome.downward_failed.begin(), outcome.downward_failed.end(), name) ==
+                        outcome.downward_failed.end())
+                        outcome.downward_failed.push_back(name);
+            }
         }
 
         // The transforms on the command line, in its order, then orient
@@ -6097,14 +6231,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             outcome.moved_by_pose.push_back({object->name, object->volumes.size(),
                                 it->second + Slic3r::Vec3d(outcome.plate_origin.x(), outcome.plate_origin.y(), 0.), delta});
                     }
-            if (!plate_object_steps(o, model, plate_id > 0 ? plate_id : std::max(1, o.slice_plate), outcome))
+            const int step_plate = plate_id > 0 ? plate_id : std::max(1, o.slice_plate);
+            if (!plate_object_steps(o, model, step_plate, outcome))
                 return 1;
             if (!check_objects_inside_bed(model, config, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
             }
+            if (!plate_triangle_limit(o, model, step_plate, outcome))
+                return 1;
         } else if (!calib_self_geometry) {
-            if (!plate_object_steps(o, model, std::max(1, plate_id), outcome))
+            if (!plate_object_steps(o, model, std::max(1, plate_id), outcome) ||
+                !plate_triangle_limit(o, model, std::max(1, plate_id), outcome))
                 return 1;
         }
 
@@ -6900,6 +7038,7 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
                 return CLI_EXPORT_3MF_ERROR;
             }
             slicer_cli::update_object_configs_after_switch(facts, merge, config, model);
+            slicer_cli::disable_tower_after_mapping(o, merge, config, extra);
             // The "(auto)" process the printer change needs (BambuStudio.cpp 3094).
             if (merge.new_preset)
                 project_presets.push_back(new Preset(*merge.new_preset));
@@ -7346,6 +7485,19 @@ static int run_cli_slice(const CliOptions& o, Slic3r::Calib_Params& calib_params
 }
 
 int main(int argc, char** argv) {
+    // UTF-8 everywhere, as the official command lines start: on Windows the
+    // arguments come from the wide command line as UTF-8 (BambuStudio.cpp
+    // 8636-8660, the wide entry of BambuStudio_app_msvc.cpp; the same in
+    // OrcaSlicer), and boost::filesystem paths take UTF-8 strings
+    // (nowide_filesystem, BambuStudio.cpp 1510-1523; OrcaSlicer.cpp 1233-1246).
+    // Elsewhere both are no-ops.
+    boost::nowide::args utf8_args(argc, argv);
+    try {
+        boost::nowide::nowide_filesystem();
+    } catch (const std::runtime_error& ex) {
+        std::cerr << "boost::nowide::nowide_filesystem failed; slicer-cli stops here.\n" << ex.what() << "\n";
+        return CLI_ENVIRONMENT_ERROR;
+    }
     // Initialize libslic3r
     Slic3r::set_logging_level(3); // Info level
     boost::log::core::get()->set_logging_enabled(true);

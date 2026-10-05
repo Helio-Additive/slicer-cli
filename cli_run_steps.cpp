@@ -290,21 +290,24 @@ StepResult check_triangle_limit(const CliOptions& o, const Slic3r::Model& model,
     const int limit = plate_loop_switches(o).max_triangle_count;
     if (limit == 0)
         return r;
+    // Every instance inside the bed counts its parts' triangles, a skipped
+    // one none (BambuStudio.cpp 6541-6597; OrcaSlicer.cpp 5657-5720).
     long long count = 0;
     for (const Slic3r::ModelObject* obj : model.objects) {
-        bool any_printable = false;
-        for (const Slic3r::ModelInstance* inst : obj->instances)
-            any_printable |= inst->printable;
-        if (!any_printable)
-            continue;
-        for (const Slic3r::ModelVolume* vol : obj->volumes)
-            if (vol->is_model_part())
+        for (const Slic3r::ModelInstance* inst : obj->instances) {
+            if (!inst->printable || inst->print_volume_state != Slic3r::ModelInstancePVS_Inside)
+                continue;
+            for (const Slic3r::ModelVolume* vol : obj->volumes) {
+                if (!vol->is_model_part())
+                    continue;
                 count += (long long)vol->mesh().facets_count();
-        if (count > limit) {
-            r.code    = CLI_TRIANGLE_COUNT_EXCEEDS_LIMIT;
-            r.message = "Plate " + std::to_string(plate_id) + " has " + std::to_string(count) +
-                        " triangles, more than the --mtcpp limit of " + std::to_string(limit) + ".";
-            return r;
+                if (count > limit) {
+                    r.code    = CLI_TRIANGLE_COUNT_EXCEEDS_LIMIT;
+                    r.message = "Plate " + std::to_string(plate_id) + " has " + std::to_string(count) +
+                                " triangles, more than the --mtcpp limit of " + std::to_string(limit) + ".";
+                    return r;
+                }
+            }
         }
     }
     return r;

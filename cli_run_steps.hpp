@@ -74,8 +74,10 @@ StepResult normative_check(const CliOptions& o, const Slic3r::DynamicPrintConfig
 /// or -1 when every object on the plate was skipped (CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP).
 int apply_skip_objects(const CliOptions& o, Slic3r::Model& model, std::vector<int>& skipped_ids);
 
-/// --mtcpp: the triangle count of the printable objects on the plate is over
-/// the limit (BambuStudio.cpp 6592-6603).
+/// --mtcpp: the triangle count of the plate's printable instances inside
+/// the bed is over the limit; each instance counts its object's parts
+/// (BambuStudio.cpp 6541-6597; OrcaSlicer.cpp 5657-5720). Run after the
+/// bed check has set each instance's print_volume_state.
 StepResult check_triangle_limit(const CliOptions& o, const Slic3r::Model& model, int plate_id);
 
 /// --load-slicedata and --export-slicedata: the plate's folder under the

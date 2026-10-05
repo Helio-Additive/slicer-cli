@@ -93,6 +93,16 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts,
 void update_object_configs_after_switch(const ProjectFacts& facts, const SettingsMerge& merge,
                                         const Slic3r::DynamicPrintConfig& print_config, Slic3r::Model& model);
 
+/// Every filament slot loaded with --load-filaments is one filament: the
+/// prime tower goes off, unless wrapping detection with an exclusion area or
+/// a smooth timelapse needs it (BambuStudio.cpp 4176-4215; OrcaSlicer.cpp
+/// 3588-3625). `extra_config` is the settings given as flags, which the
+/// official has laid over the settings by then (BambuStudio.cpp 4091).
+/// True when the tower was turned off.
+bool disable_tower_after_mapping(const CliOptions& o, const SettingsMerge& merge,
+                                 Slic3r::DynamicPrintConfig& print_config,
+                                 const Slic3r::DynamicPrintConfig& extra_config);
+
 /// --load-custom-gcodes and --skip-modified-gcodes on the model's per-plate
 /// custom G-code (BambuStudio.cpp 2213-2246, 4013-4044; OrcaSlicer.cpp
 /// 1845-1878, 3507-3538).

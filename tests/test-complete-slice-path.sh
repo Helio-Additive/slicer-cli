@@ -986,6 +986,92 @@ assert d["return_code"] == int(sys.argv[2]), d
 done
 echo "PASS: --load-assemble-list builds, arranges and slices every plate of its list (both engines)"
 
+# --downward-check checks every plate of the project, not only the sliced
+# one: the assemble export has a 20 mm plate 1 and a 50 x 80 mm plate 2, so
+# a 60 mm printer fails on plate 2 even when only plate 1 is sliced.
+py '
+import json
+json.dump({"type": "machine", "from": "system", "name": "Mid Test Printer", "instantiation": "true",
+           "printable_area": ["0x0", "60x0", "60x60", "0x60"], "printable_height": "60"},
+          open("mid.json", "w"), indent=4)
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    cp asml-$e/out/asm.3mf asm-$e.3mf
+    run dwall-$e "$bin" asm-$e.3mf --slice 1 --downward-check --downward-settings roomy.json --downward-settings mid.json --outputdir dwall-$e/out
+    [ "$(rc dwall-$e)" = 0 ] || { show dwall-$e; fail "$e: --downward-check on a two-plate project exit $(rc dwall-$e)"; }
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d.get("downward_compatible_machine") == ["Roomy Test Printer"], d.get("downward_compatible_machine")
+' dwall-$e/out/result.json
+done
+echo "PASS: --downward-check checks every plate of the project (both engines)"
+
+# --mtcpp counts every instance inside the bed: three copies of the 12-triangle
+# cube are 36 triangles.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run mtr-$e "$bin" cube.stl --repetitions 3 --slice 1 --mtcpp 30 --printer-preset "$A1M" --outputdir mtr-$e/out
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -59, d
+' mtr-$e/out/result.json
+    run mtok-$e "$bin" cube.stl --repetitions 3 --slice 1 --mtcpp 40 --printer-preset "$A1M" --outputdir mtok-$e/out
+    [ "$(rc mtok-$e)" = 0 ] || { show mtok-$e; fail "$e: --mtcpp 40 on 36 triangles exit $(rc mtok-$e)"; }
+done
+echo "PASS: --mtcpp counts the triangles of every instance (both engines)"
+
+# --load-filaments with one filament in every slot turns the prime tower off;
+# two different filaments keep it.
+py '
+import json
+for name, colour in (("Test Filament A", "#FF0000"), ("Test Filament B", "#0000FF")):
+    json.dump({"type": "filament", "from": "system", "name": name, "filament_id": "GFL99",
+               "filament_type": ["PLA"], "filament_colour": [colour]},
+              open(name.split()[-1].lower() + "-fil.json", "w"), indent=4)
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    # A two-filament project with the prime tower on (slicer-cli turns it off
+    # for a one-filament project).
+    run towp-$e "$bin" cube.stl --slice 1 --printer-preset "$A1M" --filament-preset "Bambu PLA Basic @BBL A1M" \
+        --filament-preset "Bambu PLA Matte @BBL A1M" --enable-prime-tower --outputdir towp-$e/out --export-3mf tower.3mf
+    [ "$(rc towp-$e)" = 0 ] || { show towp-$e; fail "$e: tower project export exit $(rc towp-$e)"; }
+    cp towp-$e/out/tower.3mf tower-$e.3mf
+    run tow1-$e "$bin" tower-$e.3mf --slice 1 --load-filaments "a-fil.json;a-fil.json" --outputdir tow1-$e/out
+    [ "$(rc tow1-$e)" = 0 ] || { show tow1-$e; fail "$e: --load-filaments with one filament exit $(rc tow1-$e)"; }
+    has_line tow1-$e/out/plate_1.gcode '; enable_prime_tower = 0' || fail "$e: one filament in every slot kept the prime tower"
+    events tow1-$e/stdout config_normalized | grep PrimeTowerOffOneFilament >/dev/null || fail "$e: no PrimeTowerOffOneFilament event"
+    run tow2-$e "$bin" tower-$e.3mf --slice 1 --load-filaments "a-fil.json;b-fil.json" --outputdir tow2-$e/out
+    [ "$(rc tow2-$e)" = 0 ] || { show tow2-$e; fail "$e: --load-filaments with two filaments exit $(rc tow2-$e)"; }
+    if events tow2-$e/stdout config_normalized | grep PrimeTowerOffOneFilament >/dev/null; then
+        fail "$e: two different filaments turned the prime tower off"
+    fi
+    # The OrcaSlicer build's named presets give a one-filament project here,
+    # whose tower slicer-cli turns off on its own; the Bambu project keeps it.
+    if [ $e = bambu ]; then
+        has_line tow2-$e/out/plate_1.gcode '; enable_prime_tower = 1' || fail "$e: two filaments lost the prime tower"
+    fi
+done
+echo "PASS: one filament in every slot turns the prime tower off (both engines)"
+
+# Non-ASCII names: a part named "würfel" in a folder "ü-<engine>" slices, and
+# --export-stls writes it (boost::filesystem reads UTF-8 paths on Windows too).
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    mkdir -p "ü-$e"; cp cube.stl "ü-$e/würfel.stl"
+    run u8-$e "$bin" "ü-$e/würfel.stl" --slice 1 --printer-preset "$A1M" --outputdir "ü-$e/aus"
+    [ "$(rc u8-$e)" = 0 ] && [ -s "ü-$e/aus/plate_1.gcode" ] || { show u8-$e; fail "$e: a non-ASCII path exit $(rc u8-$e)"; }
+    run u8s-$e "$bin" "ü-$e/würfel.stl" --export-stls "ü-$e/stls"
+    [ "$(rc u8s-$e)" = 0 ] || { show u8s-$e; fail "$e: --export-stls with a non-ASCII name exit $(rc u8s-$e)"; }
+    py '
+import os, sys
+names = os.listdir(sys.argv[1])
+assert len(names) == 1 and "würfel" in names[0], names
+' "ü-$e/stls"
+done
+echo "PASS: non-ASCII file names and folders (both engines)"
+
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
     for e in bambu orca; do
