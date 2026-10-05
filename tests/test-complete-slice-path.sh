@@ -1452,19 +1452,20 @@ echo "PASS: a printer change moves the plate onto the new bed, and a wider clear
 # (BambuStudio.cpp 4091 then 4659; OrcaSlicer.cpp 3542 then 3885): an X1
 # Carbon project with two filaments and the prime tower, switched to the A1
 # mini with --enable-prime-tower=0, centres its two cubes alone (no tower in
-# the box). Its two cubes stand side by side, so their box is 50 x 20 mm and
-# lands at 65..115 x 80..100 on the 180 mm bed.
+# the box). Its two cubes stand side by side (a copy is the first cube moved
+# again by its own entry, BambuStudio.cpp 1253-1259), so their box is
+# 50 x 20 mm and lands at 65..115 x 80..100 on the 180 mm bed.
 py '
 import json
 json.dump({"plates": [{"plate_name": "t", "need_arrange": False,
-            "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2], "pos_x": [195, 225], "pos_y": [220, 220]}]}]},
+            "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2], "pos_x": [195, 30], "pos_y": [220, 0]}]}]},
           open("ftow.json", "w"))
 '
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
     run ftow-$e "$bin" --load-assemble-list ftow.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
         --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
-        --enable-prime-tower --outputdir ftow-$e/out --export-3mf ftow.3mf
+        --enable-prime-tower --wipe-tower-x 20 --wipe-tower-y 20 --outputdir ftow-$e/out --export-3mf ftow.3mf
     [ "$(rc ftow-$e)" = 0 ] || { show ftow-$e; fail "$e: two-filament X1 Carbon project exit $(rc ftow-$e)"; }
     run swt-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --load-settings a1m-$e.json --enable-prime-tower=0 --outputdir swt-$e/out
     [ "$(rc swt-$e)" = 0 ] || { show swt-$e; fail "$e: printer change with --enable-prime-tower=0 exit $(rc swt-$e)"; }
