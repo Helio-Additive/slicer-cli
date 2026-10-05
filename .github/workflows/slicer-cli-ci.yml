@@ -694,14 +694,16 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
 
-      - name: Run structured-diagnostics event tests (bambu)
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+      - name: Run structured-diagnostics event tests (${{ matrix.engine }})
+        # Engine-aware: the script reads the engine from `layout capabilities`
+        # and uses that engine's fixture and profiles.
+        if: runner.os != 'Windows'
         run: bash tests/test_diagnostic_events.sh build/slicer_cli
 
-      - name: Run feature-exclusion regression tests (bambu)
-        # BambuStudio-specific excluded-source set; orca's differs, so this gates
-        # the bambu engine only. Orca gets a plain --help smoke below.
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+      - name: Run feature-exclusion regression tests (${{ matrix.engine }})
+        # Engine-aware: each engine slices its own fixtures; checks of a
+        # Bambu-only feature (pressure_advance_pattern) SKIP on Orca with the reason.
+        if: runner.os != 'Windows'
         run: bash tests/test_excluded_features.sh build/slicer_cli
 
       - name: Test diagnostic transport
@@ -1276,17 +1278,18 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh build/slicer_cli
 
-      - name: Run feature-exclusion regression tests (bambu)
-        # BambuStudio-specific excluded-source set; orca's differs, so this gates
-        # the bambu engine only. Orca gets a plain --help smoke below.
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+      - name: Run feature-exclusion regression tests (${{ matrix.engine }})
+        # Engine-aware: each engine slices its own fixtures; checks of a
+        # Bambu-only feature (pressure_advance_pattern) SKIP on Orca with the reason.
+        if: runner.os != 'Windows'
         run: bash tests/test_excluded_features.sh build/slicer_cli
 
-      - name: Run structured-diagnostics event tests (bambu)
+      - name: Run structured-diagnostics event tests (${{ matrix.engine }})
         # Asserts engine diagnostics reach stdout as [[SLICER_EVENT]] lines on
         # the slice path with unchanged exit codes, and that the strict-JSON
         # paths (layout capabilities / --layout-plan) stay single-document.
-        if: runner.os != 'Windows' && matrix.engine == 'bambu'
+        # Engine-aware: the script uses this engine's fixture and profiles.
+        if: runner.os != 'Windows'
         run: bash tests/test_diagnostic_events.sh build/slicer_cli
 
       - name: Test diagnostic transport
