@@ -482,16 +482,6 @@ These OrcaSlicer behaviours come from the OrcaSlicer engine or the printer
 profiles it ships at its pin, not from slicer-cli; slicer_cli-orcaslicer keeps
 them as they are.
 
-- **Raise3D Pro3 0.4 (Dual, Left or Right) can crash while writing the
-  G-code.** The official OrcaSlicer v2.4.0-alpha Linux AppImage crashed in 11
-  of 20 runs of the same cube, printer, process and filaments, against 3 in 20
-  for slicer_cli-orcaslicer (Dual). The crash is intermittent across the Pro3
-  presets: in one sweep it hit the Right preset (SIGSEGV), and in 3 reruns
-  each the Right and the Dual preset crashed once while the Left was clean. Every crash frame is in the engine's G-code export
-  (`GCode::append_full_config`, `GCodeProcessor::update_slice_warnings`,
-  destructors, a glibc double free); none is in slicer-cli. slicer-cli sets
-  the filaments up as the desktop app does
-  (`update_multi_material_filament_presets`).
 - **`--load-slicedata` returns -57 and the plate is sliced normally.**
   OrcaSlicer's `Print.cpp` writes each extrusion path's polyline as a
   `Polyline3` (`[[x, y, z]]`, line 3861; `ExtrusionEntity.hpp` 153) and reads it
@@ -501,8 +491,8 @@ them as they are.
   plate normally and reports `SliceDataNotLoaded`. Bambu Studio's paths hold a
   plain `Polyline` (`ExtrusionEntity.hpp` 215), so slicer_cli round-trips.
 - **`--arrange 1` cannot place even a small part on some printers.** The
-  official OrcaSlicer v2.4.0-alpha CLI fails the same way with the same
-  settings (its arrange leaves the part off the plate and the run ends with
+  official OrcaSlicer v2.4.0-alpha CLI, given the printer's own shipped
+  profiles, fails the same way (its arrange leaves the part off the plate and the run ends with
   -50, "nothing to be sliced"; slicer_cli-orcaslicer stops at the arrange with
   -21). Without `--arrange 1` these printers slice. Three causes:
   - A skirt with a first-layer line width given as a percentage (Construct 1,
