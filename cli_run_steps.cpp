@@ -207,13 +207,11 @@ bool model_actions_only(const CliOptions& o) {
     return has_model_actions(o) && !o.given_flag("slice");
 }
 
-StepResult run_model_actions(const CliOptions& o, Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                             ModelActions which) {
+StepResult run_model_actions(const CliOptions& o, Slic3r::Model& plate_model, const Slic3r::DynamicPrintConfig& config,
+                             Slic3r::Model* whole) {
     StepResult r;
+    Slic3r::Model& model = whole ? *whole : plate_model;
     for (const std::string& opt_key : o.actions) {
-        const bool model_wide = opt_key == "info" || opt_key == "export_stl" || opt_key == "export_stls";
-        if ((which == ModelActions::ModelWideOnly && !model_wide) || (which == ModelActions::AllButModelWide && model_wide))
-            continue;
         if (opt_key == "export_settings") {
             // BambuStudio.cpp 6366-6370; OrcaSlicer.cpp 5499-5503.
             const std::string file = o.cli.opt_string("export_settings");

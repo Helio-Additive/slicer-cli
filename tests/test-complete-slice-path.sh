@@ -1343,6 +1343,9 @@ json.dump({"plates": [{"plate_name": "p", "need_arrange": False,
           open("far.json", "w"))
 json.dump({"plates": [{"plate_name": "p", "need_arrange": True, "plate_params": {"print_sequence": "by object"},
             "objects": [{"path": "cube.stl", "count": 2, "filaments": [1]}]}]}, open("seq2.json", "w"))
+far = {"plate_name": "p", "need_arrange": False,
+       "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [220], "pos_y": [220]}]}
+json.dump({"plates": [far, dict(far, plate_name="q")]}, open("far2.json", "w"))
 '
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
@@ -1405,8 +1408,52 @@ names = sorted(n for n in os.listdir(sys.argv[1]) if n.endswith(".stl"))
 # Plate 1: two cubes; plate 2: one object of two merged copies.
 assert len(names) == 3, names
 ' stl0-$e
+    # The actions run in command-line order, and the first that fails stops
+    # the rest (one action loop, BambuStudio.cpp 6366-6401; OrcaSlicer.cpp
+    # 5499-5534): an --export-stls into a regular file fails with -11 after
+    # an --export-settings before it, and before an --export-settings after it.
+    rm -rf stlbad-$e ord1-$e ord2-$e ord1-$e.json ord2-$e.json; : > stlbad-$e
+    run ord1-$e "$bin" asm-$e.3mf --slice 0 --export-settings ord1-$e.json --export-stls stlbad-$e --outputdir ord1-$e/out
+    run ord2-$e "$bin" asm-$e.3mf --slice 0 --export-stls stlbad-$e --export-settings ord2-$e.json --outputdir ord2-$e/out
+    for n in ord1 ord2; do
+        py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -11 and d["plate_index"] == 0, d
+' $n-$e/out/result.json || { show $n-$e; fail "$e: --slice 0 with a failing --export-stls did not end with -11 on plate 0"; }
+    done
+    test -s ord1-$e.json || { show ord1-$e; fail "$e: --export-settings before a failing --export-stls wrote no settings"; }
+    test ! -e ord2-$e.json || fail "$e: --export-settings after a failing --export-stls ran"
+    # The whole project moves onto a new printer's bed before the actions, as
+    # each plate does (translate_models on every plate, BambuStudio.cpp
+    # 4645-4659; OrcaSlicer.cpp 3982-3996, before the actions): a two-plate X1
+    # Carbon project with a cube at (220, 220) on each plate, on the A1 mini's
+    # 180 mm bed. Plate 1's cube is on that bed; plate 2's is on plate 2 of a
+    # 180 mm grid (origin x = 180 * 1.2 = 216, compute_origin_using_new_size).
+    run far2-$e "$bin" --load-assemble-list far2.json --slice 0 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir far2-$e/out --export-3mf far2.3mf
+    [ "$(rc far2-$e)" = 0 ] || { show far2-$e; fail "$e: two-plate far-corner X1 Carbon project exit $(rc far2-$e)"; }
+    rm -rf sw2-$e
+    run sw2-$e "$bin" far2-$e/out/far2.3mf --slice 0 --load-settings a1m-$e.json --export-stls sw2-$e/stls --outputdir sw2-$e/out
+    [ "$(rc sw2-$e)" = 0 ] || { show sw2-$e; fail "$e: --slice 0 --export-stls on a printer change exit $(rc sw2-$e)"; }
+    py '
+import os, struct, sys
+boxes = []
+for n in sorted(n for n in os.listdir(sys.argv[1]) if n.endswith(".stl")):
+    data = open(os.path.join(sys.argv[1], n), "rb").read()
+    count = struct.unpack_from("<I", data, 80)[0]
+    xs, ys = [], []
+    for i in range(count):
+        v = struct.unpack_from("<12f", data, 84 + 50 * i)
+        xs += v[3::3]; ys += v[4::3]
+    boxes.append((min(xs), max(xs), min(ys), max(ys)))
+boxes.sort()
+assert len(boxes) == 2, boxes
+p1, p2 = boxes
+assert 0 <= p1[0] and p1[1] <= 180 and 0 <= p1[2] and p1[3] <= 180, boxes
+assert 216 <= p2[0] and p2[1] <= 396 and 0 <= p2[2] and p2[3] <= 180, boxes
+' sw2-$e/stls || { show sw2-$e; fail "$e: --slice 0 --export-stls did not move the plates onto the new bed"; }
 done
-echo "PASS: --nozzle, --engine-info on a geometry-only 3MF and --slice 0 --export-stls on a two-plate project (both engines)"
+echo "PASS: --nozzle, --engine-info on a geometry-only 3MF and --slice 0 --export-stls on a two-plate project, in command-line order and on a new printer's bed (both engines)"
 
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
