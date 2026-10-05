@@ -6283,7 +6283,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 /// as one JSON document on stdout. The plugin calls this first to pick the
 /// binary. The app that made the file is reported, and is the tie-break when
 /// both engines have the printer; it never refuses anything by itself.
-static int run_info(const std::string& argv0, const std::string& path) {
+static int run_info(const std::string& argv0, const std::string& path, const std::string& printer_preset) {
     json out;
     out["file"] = path;
     // The non-throwing check: a path that cannot be queried (permissions, a
@@ -6301,7 +6301,13 @@ static int run_info(const std::string& argv0, const std::string& path) {
         return CLI_FILE_NOTFOUND;
     }
     const bool is_3mf = input_is_3mf(path);
-    out["kind"] = is_3mf ? "3mf" : (input_is_stl(path) ? "stl" : "unknown");
+    // The model file kinds this engine reads (cli_model_load.cpp), by extension.
+    std::string kind = "unknown";
+    if (slicer_cli::is_loadable_model_file(path)) {
+        kind = boost::filesystem::path(path).extension().string().substr(1);
+        boost::algorithm::to_lower(kind);
+    }
+    out["kind"] = kind;
 
     std::string printer_model;
     std::string maker_app;
@@ -6322,6 +6328,25 @@ static int run_info(const std::string& argv0, const std::string& path) {
         if (!loaded) {
             out["kind"] = "stl";
             out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path + " is not a readable STL file.";
+            std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
+            return CLI_DATA_FILE_ERROR;
+        }
+    }
+    // Any other model file: read with the slice path's loader.
+    if (!is_3mf && !input_is_stl(path) && kind != "unknown") {
+        bool loaded = false;
+        try {
+            Slic3r::Model m = boost::algorithm::iends_with(path, ".step") || boost::algorithm::iends_with(path, ".stp")
+                ? Slic3r::Model::read_from_step(path, Slic3r::LoadStrategy::LoadModel, nullptr, nullptr,
+                                                [](Slic3r::Step&, double& l, double& a, bool& s) -> int { l = 0.003; a = 0.5; s = false; return 1; },
+                                                0.003, 0.5, false)
+                : Slic3r::Model::read_from_file(path, nullptr, nullptr, Slic3r::LoadStrategy::LoadModel);
+            loaded = !m.objects.empty();
+        } catch (...) {
+            loaded = false;
+        }
+        if (!loaded) {
+            out["error"] = cli_error_sentence(CLI_DATA_FILE_ERROR) + " " + path + " is not a readable " + kind + " file.";
             std::cout << out.dump(2, ' ', false, json::error_handler_t::replace) << std::endl;
             return CLI_DATA_FILE_ERROR;
         }
@@ -6377,6 +6402,20 @@ static int run_info(const std::string& argv0, const std::string& path) {
         out["this_engine_reads"] = this_engine;
     } else {
         out["plates"] = 1;
+    }
+    // A model file with --printer-preset: the printer is the preset's model,
+    // from either engine's profiles tree.
+    if (printer_model.empty() && !printer_preset.empty()) {
+        const boost::filesystem::path exe_dir = engine_executable_dir(argv0.c_str());
+        printer_model = preset_printer_model(this_engine_profiles_dir(argv0), printer_preset);
+        if (printer_model.empty())
+#ifdef ENGINE_ORCA
+            printer_model = preset_printer_model(engine_profiles_dir(exe_dir), printer_preset);
+#else
+            printer_model = preset_printer_model(orca_profiles_dir(exe_dir), printer_preset);
+#endif
+        out["printer_preset"] = printer_preset;
+        out["printer_model"]  = printer_model.empty() ? json(nullptr) : json(printer_model);
     }
 
     EngineFit fit = engine_fit_for(argv0, printer_model);
@@ -7026,7 +7065,7 @@ int main(int argc, char** argv) {
     // --info: one JSON document on stdout, nothing sliced.
     if (!mode_args.engine_info_file.empty()) {
         boost::log::core::get()->set_logging_enabled(false);
-        return run_info(o.argv0, mode_args.engine_info_file);
+        return run_info(o.argv0, mode_args.engine_info_file, o.printer_preset);
     }
 
     if (mode_args.list_presets) {

@@ -756,6 +756,19 @@ assert d["return_code"] == -2, d
 done
 echo "PASS: OBJ, AMF, a geometry-only 3MF and several files at once load and are placed (both engines)"
 
+# --engine-info names a model file's kind and, with --printer-preset, the
+# printer and the binary that has it.
+"$B" --engine-info cube.obj > ei-obj.json
+"$B" --engine-info cube.obj --printer-preset "$A1M" > ei-a1m.json
+"$B" --engine-info cube.stl --printer-preset "Snapmaker U1 (0.4 nozzle)" > ei-u1.json
+py '
+import json
+d = json.load(open("ei-obj.json"));  assert d["kind"] == "obj", d
+d = json.load(open("ei-a1m.json"));  assert d["kind"] == "obj" and d["printer_model"] == "Bambu Lab A1 mini" and "slicer_cli" in d["fits"], d
+d = json.load(open("ei-u1.json"));   assert d["printer_model"] == "Snapmaker U1" and d["fits"] == ["slicer_cli-orcaslicer"] and d["recommended"] == "slicer_cli-orcaslicer", d
+'
+echo "PASS: --engine-info reports model kinds and the printer of --printer-preset"
+
 # Units: a model in meters is reported; --convert-unit scales it.
 py '
 v = [(x, y, z) for z in (0, 0.02) for y in (0, 0.02) for x in (0, 0.02)]
