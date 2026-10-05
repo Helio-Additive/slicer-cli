@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The complete slice path on a PACKAGED engine pair: --slice/--outputdir
-# (result.json + progress), --arrange, presets by name, --export-3mf, --info,
+# (result.json + progress), --arrange, presets by name, --export-3mf, --engine-info,
 # --list-presets, and the default-path checks (printer this engine lacks,
 # percentage line widths, file newer than the engine, value ranges).
 # Usage: tests/test-complete-slice-path.sh /path/to/slicer_cli[.exe] /path/to/slicer_cli-orcaslicer[.exe]
@@ -91,14 +91,14 @@ with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("two-plates.3mf", "w", 
         zout.writestr(item, data)
 '
 
-# --info names the printer and the binaries that have it.
-"$B" --info "$FIXTURE" > info.json
+# --engine-info names the printer and the binaries that have it.
+"$B" --engine-info "$FIXTURE" > info.json
 py '
 import json; d = json.load(open("info.json"))
 assert d["printer_model"] == "Bambu Lab X1 Carbon", d
 assert "slicer_cli" in d["fits"], d
 '
-"$B" --info u1.3mf > info-u1.json
+"$B" --engine-info u1.3mf > info-u1.json
 py '
 import json; d = json.load(open("info-u1.json"))
 assert d["fits"] == ["slicer_cli-orcaslicer"], d
@@ -106,7 +106,7 @@ assert d["fits"] == ["slicer_cli-orcaslicer"], d
 # The kind comes from the final extension, any case, not from a folder name.
 mkdir -p "dir.stl"
 cp "$FIXTURE" "dir.stl/Project.3Mf"
-"$B" --info "dir.stl/Project.3Mf" > info-ext.json
+"$B" --engine-info "dir.stl/Project.3Mf" > info-ext.json
 py '
 import json; d = json.load(open("info-ext.json"))
 assert d["kind"] == "3mf" and d["printer_model"] == "Bambu Lab X1 Carbon", d
@@ -125,7 +125,7 @@ data[at] = ord("y")
 open("crc.3mf", "wb").write(bytes(data))
 '
 for bad in broken.3mf folder.3mf crc.3mf; do
-    if "$B" --info "$bad" > info-bad.json; then fail "--info accepted $bad"; fi
+    if "$B" --engine-info "$bad" > info-bad.json; then fail "--engine-info accepted $bad"; fi
     py '
 import json; d = json.load(open("info-bad.json"))
 assert "error" in d and "3D/3dmodel.model" in d["error"], d
@@ -133,7 +133,7 @@ assert "error" in d and "3D/3dmodel.model" in d["error"], d
 done
 # A real STL is inspected; an unreadable one (a folder named .stl, or an
 # empty file) is refused (-2).
-"$B" --info cube.stl > info-stl.json || fail "--info refused cube.stl"
+"$B" --engine-info cube.stl > info-stl.json || fail "--engine-info refused cube.stl"
 py '
 import json; d = json.load(open("info-stl.json"))
 assert d["kind"] == "stl" and "error" not in d, d
@@ -142,13 +142,13 @@ assert d["kind"] == "stl" and "error" not in d, d
 mkdir -p folder.stl
 : > empty.stl
 for bad in folder.stl empty.stl; do
-    if "$B" --info "$bad" > info-bad.json; then fail "--info accepted $bad"; fi
+    if "$B" --engine-info "$bad" > info-bad.json; then fail "--engine-info accepted $bad"; fi
     py '
 import json; d = json.load(open("info-bad.json"))
 assert "error" in d and "STL" in d["error"], d
 '
 done
-echo "PASS: --info names the printer and the engine that fits"
+echo "PASS: --engine-info names the printer and the engine that fits"
 
 # --slice N --outputdir: one G-code per plate, result.json in the official shape, progress to 100.
 run slice "$B" "$FIXTURE" --slice 1 --outputdir slice/out
@@ -548,3 +548,343 @@ x, y = (float(v) for v in items[0].split()[9:11])
 assert abs(x - (307.2 + 128)) < 2 and abs(y - 128) < 2, (x, y)
 '
 echo "PASS: plates without identify_id keep their objects, and --arrange moves reach the export"
+
+# ── Flags, plate types and model files (both engines) ─────────────────────
+
+# events FILE KIND: the [[SLICER_EVENT]] records of one kind, as JSON lines.
+events() { grep '^\[\[SLICER_EVENT\]\]' "$1" | sed 's/^\[\[SLICER_EVENT\]\] //' | grep "\"event\":\"$2\"" || true; }
+# has_line FILE LINE: FILE (CRLF or LF) holds LINE exactly. No pipe into
+# grep -q: with pipefail, grep -q's early exit fails the writer.
+has_line() { tr -d '\r' < "$1" > "$1.lf"; grep -qxF -- "$2" "$1.lf"; }
+bed_line() { tr -d '\r' < "$1" > "$1.lf"; grep -m1 '^; curr_bed_type' "$1.lf" || true; }
+
+# An STL with only the printer named takes the plate type the desktop app
+# picks for that printer, and the exported project keeps the filaments'
+# filament_printable (no INT_MAX "nil" marker).
+#   BambuStudio: a Bambu Lab printer's model default_bed_type when offered.
+#   OrcaSlicer: Preset::get_default_bed_type (a number, else by model id).
+bed_case() {  # engine binary printer expected-plate
+    local e=$1 bin=$2 printer=$3 want=$4 n
+    n="bed-$e-$(printf '%s' "$printer" | tr -c 'A-Za-z0-9' '_')"
+    run "$n" "$bin" cube.stl --slice 1 --printer-preset "$printer" --outputdir "$n/out" --export-3mf c.3mf
+    [ "$(rc "$n")" = 0 ] || { show "$n"; fail "$e $printer: exit $(rc "$n")"; }
+    has_line "$n/out/plate_1.gcode" "; curr_bed_type = $want" ||
+        fail "$e $printer: plate is $(bed_line "$n/out/plate_1.gcode"), want $want"
+    py '
+import json, sys, zipfile
+s = zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config").decode()
+assert "2147483647" not in s, "INT_MAX in the exported settings"
+fp = json.loads(s).get("filament_printable")
+assert fp and all(int(v) > 0 for v in fp), fp
+' "$n/out/c.3mf"
+}
+bed_case bambu "$B" "Bambu Lab A1 mini 0.4 nozzle" "Textured PEI Plate"
+bed_case bambu "$B" "Bambu Lab X1 Carbon 0.4 nozzle" "Textured PEI Plate"
+bed_case bambu "$B" "Bambu Lab H2D 0.4 nozzle" "Textured PEI Plate"
+bed_case bambu "$B" "Bambu Lab P1S 0.4 nozzle" "Textured PEI Plate"
+bed_case orca "$O" "Snapmaker U1 (0.4 nozzle)" "High Temp Plate"
+bed_case orca "$O" "Bambu Lab X1 Carbon 0.4 nozzle" "Cool Plate"
+bed_case orca "$O" "Prusa MK4 0.4 nozzle" "High Temp Plate"
+bed_case orca "$O" "Creality K1C 0.4 nozzle" "High Temp Plate"
+echo "PASS: an STL takes the desktop app's plate type for the printer; no INT_MAX in the export (both engines)"
+
+# --curr-bed-type: the official setting flag. A known plate wins over the
+# printer's and over a plate's own (official apply order: plate, then the
+# command line). An unknown plate is refused (-2), listing the plates.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run cbt-$e "$bin" cube.stl --slice 1 --printer-preset "$X1C" --curr-bed-type "High Temp Plate" --outputdir cbt-$e/out
+    [ "$(rc cbt-$e)" = 0 ] || { show cbt-$e; fail "$e: --curr-bed-type exit $(rc cbt-$e)"; }
+    has_line cbt-$e/out/plate_1.gcode '; curr_bed_type = High Temp Plate' || fail "$e: --curr-bed-type not applied"
+    for bad in "Glass Plate" "Default Plate"; do
+        run cbtbad-$e "$bin" cube.stl --slice 1 --printer-preset "$X1C" --curr-bed-type "$bad" --outputdir cbtbad-$e/out
+        [ "$(rc cbtbad-$e)" != 0 ] || fail "$e: --curr-bed-type $bad was taken"
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+assert "Textured PEI Plate" in d["error_string"] and "Cool Plate" in d["error_string"], d["error_string"]
+' cbtbad-$e/out/result.json
+        rm -rf cbtbad-$e
+    done
+done
+# The fixture with its plate set to the Cool Plate (the plate's own bed_type,
+# bbs_3mf.cpp 4563-4567).
+py '
+import zipfile
+with zipfile.ZipFile("base.3mf") as zin, zipfile.ZipFile("platebed.3mf", "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/model_settings.config":
+            data = data.replace(b"  <plate>\n", b"  <plate>\n    <metadata key=\"bed_type\" value=\"Cool Plate\"/>\n", 1)
+        zout.writestr(item, data)
+'
+run platebed "$B" platebed.3mf --plate 1 -o platebed/out.gcode
+[ "$(rc platebed)" = 0 ] || { show platebed; fail "a plate with its own bed type exit $(rc platebed)"; }
+has_line platebed/out.gcode '; curr_bed_type = Cool Plate' || fail "the plate's own bed type was not used"
+run cbtplate "$B" platebed.3mf --plate 1 --curr-bed-type "High Temp Plate" -o cbtplate/out.gcode
+[ "$(rc cbtplate)" = 0 ] || { show cbtplate; fail "--curr-bed-type over a plate's bed type exit $(rc cbtplate)"; }
+has_line cbtplate/out.gcode '; curr_bed_type = High Temp Plate' || fail "the command line did not win over the plate's bed type"
+echo "PASS: --curr-bed-type applies over the printer's and the plate's plate type, and refuses unknown plates (both engines)"
+
+# A 3MF keeps its own filament_printable (H2D: a two-nozzle printer).
+run h2d "$B" cube.stl --slice 1 --printer-preset "Bambu Lab H2D 0.4 nozzle" --outputdir h2d/out --export-3mf h2d.3mf
+[ "$(rc h2d)" = 0 ] || { show h2d; fail "H2D STL exit $(rc h2d)"; }
+py '
+import json, zipfile
+src = zipfile.ZipFile("h2d/out/h2d.3mf")
+with zipfile.ZipFile("h2d-fp.3mf", "w", zipfile.ZIP_DEFLATED) as out:
+    for item in src.infolist():
+        data = src.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["filament_printable"] = ["1"]; data = json.dumps(d, indent=4).encode()
+        if item.filename.endswith(".gcode") or item.filename.endswith(".md5"):
+            continue
+        out.writestr(item, data)
+'
+run h2dfp "$B" h2d-fp.3mf --slice 1 --outputdir h2dfp/out --export-3mf again.3mf
+[ "$(rc h2dfp)" = 0 ] || { show h2dfp; fail "H2D 3MF exit $(rc h2dfp)"; }
+py '
+import json, zipfile
+d = json.loads(zipfile.ZipFile("h2dfp/out/again.3mf").read("Metadata/project_settings.config"))
+assert d["filament_printable"] == ["1"], d["filament_printable"]
+'
+echo "PASS: a 3MF keeps its own filament_printable"
+
+# The official flags parse with each engine's own definitions; flags that are
+# not in this binary refuse by name, never "Unknown option".
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    "$bin" --help > help-$e.txt
+    grep -q -- '--curr-bed-type values: ' help-$e.txt || fail "$e: --help lists no plate types"
+    grep -q -- '--load-settings' help-$e.txt || fail "$e: --help lists no official flags"
+    for args in "--cut 3" "--export-obj" "--no-such-flag 1"; do
+        run refuse-$e "$bin" cube.stl $args
+        [ "$(rc refuse-$e)" != 0 ] || fail "$e: $args was taken"
+        flag=${args%% *}
+        grep -q -- "$flag" refuse-$e/stderr || { show refuse-$e; fail "$e: the refusal of $args does not name it"; }
+        grep -q 'Unknown option' refuse-$e/stderr && fail "$e: $args gave Unknown option"
+        rm -rf refuse-$e
+    done
+    run pipe-$e "$bin" cube.stl --pipe x
+    grep -q -- '--pipe is a flag of' pipe-$e/stderr || { show pipe-$e; fail "$e: --pipe not refused by name"; }
+done
+run png-bambu "$B" cube.stl --export-png 1
+grep -q -- '--export-png is a flag of' png-bambu/stderr || { show png-bambu; fail "bambu: --export-png not refused by name"; }
+run png-orca "$O" cube.stl --export-png 1
+grep -q 'works only in slicer_cli' png-orca/stderr || { show png-orca; fail "orca: --export-png does not name the binary that has it"; }
+grep -q 'Also: --layer-height' help-bambu.txt || fail "--help does not list the flags shared with a setting"
+echo "PASS: unsupported and foreign flags refuse by name (both engines)"
+
+# Any print setting is a flag (m_extra_config), on both engines.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run setting-$e "$bin" cube.stl --printer-preset "$X1C" --sparse-infill-density 15% --wall-loops 4 -o setting-$e/out.gcode
+    [ "$(rc setting-$e)" = 0 ] || { show setting-$e; fail "$e: setting flags exit $(rc setting-$e)"; }
+    tr -d '\r' < setting-$e/out.gcode > setting-$e/out.lf
+    grep -q '^; sparse_infill_density = 15%$' setting-$e/out.lf || fail "$e: --sparse-infill-density not applied"
+    grep -q '^; wall_loops = 4$' setting-$e/out.lf || fail "$e: --wall-loops not applied"
+done
+echo "PASS: print settings work as flags (both engines)"
+
+# --engine-info is slicer-cli's own report; --info is the official model report.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run info-$e "$bin" cube.stl --info
+    [ "$(rc info-$e)" = 0 ] || { show info-$e; fail "$e: --info exit $(rc info-$e)"; }
+    grep -q 'size_x = 20' info-$e/stdout || { show info-$e; fail "$e: --info printed no model size"; }
+    test ! -e output.gcode || fail "$e: --info alone sliced"
+done
+echo "PASS: --info reports the model, and slices nothing (both engines)"
+
+# Model files other than STL: OBJ, AMF, STEP, several at once, and a 3MF that
+# holds only geometry (named presets apply; without them it is refused).
+py '
+v = [(x, y, z) for z in (0, 20) for y in (0, 20) for x in (0, 20)]
+f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+with open("cube.obj", "w") as o:
+    for p in v: o.write("v %g %g %g\n" % p)
+    for a, b, c in f: o.write("f %d %d %d\n" % (a + 1, b + 1, c + 1))
+with open("cube.amf", "w") as o:
+    o.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<amf unit=\"millimeter\">\n<object id=\"0\"><mesh><vertices>\n")
+    for p in v: o.write("<vertex><coordinates><x>%g</x><y>%g</y><z>%g</z></coordinates></vertex>\n" % p)
+    o.write("</vertices><volume>\n")
+    for a, b, c in f: o.write("<triangle><v1>%d</v1><v2>%d</v2><v3>%d</v3></triangle>\n" % (a, b, c))
+    o.write("</volume></mesh></object>\n</amf>\n")
+import zipfile
+model = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+         "<model unit=\"millimeter\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">",
+         "<resources><object id=\"1\" type=\"model\"><mesh><vertices>"]
+model += ["<vertex x=\"%g\" y=\"%g\" z=\"%g\"/>" % p for p in v]
+model += ["</vertices><triangles>"]
+model += ["<triangle v1=\"%d\" v2=\"%d\" v3=\"%d\"/>" % t for t in f]
+model += ["</triangles></mesh></object></resources><build><item objectid=\"1\"/></build></model>"]
+with zipfile.ZipFile("geo.3mf", "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("[Content_Types].xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"model\" ContentType=\"application/vnd.ms-package.3dmanufacturing-3dmodel+xml\"/></Types>")
+    z.writestr("_rels/.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Target=\"/3D/3dmodel.model\" Id=\"rel0\" Type=\"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel\"/></Relationships>")
+    z.writestr("3D/3dmodel.model", "\n".join(model))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    for f in cube.obj cube.amf geo.3mf; do
+        n="kind-$e-${f%%.*}-${f##*.}"
+        run "$n" "$bin" "$f" --slice 1 --printer-preset "$A1M" --outputdir "$n/out"
+        [ "$(rc "$n")" = 0 ] || { show "$n"; fail "$e: $f exit $(rc "$n")"; }
+        py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+o = d["sliced_plates"][0]["objects"][0]["bbox"]
+# Placed by the desktop rule: centred on the 180 mm A1 mini bed.
+assert abs(o["x"] + o["width"] / 2 - 90) < 1 and abs(o["y"] + o["depth"] / 2 - 90) < 1, o
+' "$n/out/result.json"
+    done
+    run multi-$e "$bin" cube.stl cube.obj --slice 1 --printer-preset "$A1M" --outputdir multi-$e/out
+    [ "$(rc multi-$e)" = 0 ] || { show multi-$e; fail "$e: two model files exit $(rc multi-$e)"; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert len(d["sliced_plates"][0]["objects"]) == 2, d["sliced_plates"][0]["objects"]
+' multi-$e/out/result.json
+    run geo-$e "$bin" geo.3mf --slice 1 --outputdir geo-$e/out
+    [ "$(rc geo-$e)" = 254 ] || [ "$(rc geo-$e)" = -2 ] || { show geo-$e; fail "$e: a geometry-only 3MF without a printer exit $(rc geo-$e)"; }
+    grep -q -- '--printer-preset' geo-$e/stderr || fail "$e: the geometry-only refusal does not name --printer-preset"
+done
+echo "PASS: OBJ, AMF, a geometry-only 3MF and several files at once load and are placed (both engines)"
+
+# Units: a model in meters is reported; --convert-unit scales it.
+py '
+v = [(x, y, z) for z in (0, 0.02) for y in (0, 0.02) for x in (0, 0.02)]
+f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+with open("meters.stl", "w") as o:
+    o.write("solid t\n")
+    for a, b, c in f:
+        o.write("facet normal 0 0 0\nouter loop\n")
+        for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
+        o.write("endloop\nendfacet\n")
+    o.write("endsolid t\n")
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run m-$e "$bin" meters.stl --info
+    events m-$e/stdout model_warning | grep ModelUnitsLookWrong >/dev/null || { show m-$e; fail "$e: no units event for a model in meters"; }
+    run mc-$e "$bin" meters.stl --convert-unit --info
+    grep -q 'size_x = 20' mc-$e/stdout || { show mc-$e; fail "$e: --convert-unit did not scale meters to mm"; }
+done
+echo "PASS: model units are reported, and --convert-unit converts (both engines)"
+
+# Transforms, in command-line order: --scale, --rotate, --orient, --assemble.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run scale-$e "$bin" cube.stl --scale 2 --info
+    grep -q 'size_x = 40' scale-$e/stdout || { show scale-$e; fail "$e: --scale 2 did not double the cube"; }
+    run rot-$e "$bin" wide.stl --rotate-x 90 --info
+    grep -q 'size_z = 230' rot-$e/stdout || { show rot-$e; fail "$e: --rotate-x 90 did not stand the plate up"; }
+    run asm-$e "$bin" cube.stl cube.obj --assemble --slice 1 --arrange 1 --printer-preset "$A1M" --outputdir asm-$e/out
+    [ "$(rc asm-$e)" = 0 ] || { show asm-$e; fail "$e: --assemble exit $(rc asm-$e)"; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert len(d["sliced_plates"][0]["objects"]) == 1, d["sliced_plates"][0]["objects"]
+' asm-$e/out/result.json
+done
+echo "PASS: --scale, --rotate-x and --assemble transform the model (both engines)"
+
+# Actions: --export-stl writes each object; --export-settings writes the settings.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run stl-$e "$bin" cube.stl cube.obj --export-stl --outputdir stl-$e/out
+    [ "$(rc stl-$e)" = 0 ] || { show stl-$e; fail "$e: --export-stl exit $(rc stl-$e)"; }
+    [ "$(ls stl-$e/out/stl | wc -l | tr -d ' ')" = 2 ] || fail "$e: --export-stl did not write two STLs"
+    run set-$e "$bin" cube.stl --printer-preset "$A1M" --export-settings set-$e.json
+    [ "$(rc set-$e)" = 0 ] || { show set-$e; fail "$e: --export-settings exit $(rc set-$e)"; }
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d.get("printer_model") == "Bambu Lab A1 mini", d.get("printer_model")
+' set-$e.json
+done
+echo "PASS: --export-stl and --export-settings write their files (both engines)"
+
+# --skip-objects leaves the named object out; skipping all of them is -60.
+run skipall "$B" "$FIXTURE" --slice 1 --skip-objects 999999 --outputdir skipall/out
+[ "$(rc skipall)" = 0 ] || { show skipall; fail "--skip-objects of an id the file lacks exit $(rc skipall)"; }
+ID=$(py '
+import re, zipfile
+m = zipfile.ZipFile("base.3mf").read("Metadata/model_settings.config").decode()
+print(re.search(r"key=\"identify_id\" value=\"([0-9]+)\"", m).group(1))
+')
+run skipone "$B" "$FIXTURE" --slice 1 --skip-objects "$ID" --outputdir skipone/out
+py '
+import json; d = json.load(open("skipone/out/result.json"))
+assert d["return_code"] == -60, d
+'
+echo "PASS: --skip-objects skips by the file's object id; nothing left is -60"
+
+# --mtcpp: a triangle limit below the cube's 12 is -59.
+run mtcpp "$B" "$FIXTURE" --slice 1 --mtcpp 5 --outputdir mtcpp/out
+py '
+import json; d = json.load(open("mtcpp/out/result.json"))
+assert d["return_code"] == -59, d
+'
+echo "PASS: --mtcpp refuses a plate over the triangle limit"
+
+# --repetitions N: the plate N times in all (N-1 copies), as many as fit.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run rep-$e "$bin" cube.stl --repetitions 3 --slice 1 --printer-preset "$A1M" --outputdir rep-$e/out
+    [ "$(rc rep-$e)" = 0 ] || { show rep-$e; fail "$e: --repetitions exit $(rc rep-$e)"; }
+    py '
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert len(d["sliced_plates"][0]["objects"]) == 3, d["sliced_plates"][0]["objects"]
+' rep-$e/out/result.json
+done
+echo "PASS: --repetitions copies the plate (both engines)"
+
+# --export-slicedata writes the plate's slicing; --load-slicedata slices from it.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run sdx-$e "$bin" "$FIXTURE" --slice 1 --export-slicedata sd-$e --outputdir sdx-$e/out
+    [ "$(rc sdx-$e)" = 0 ] || { show sdx-$e; fail "$e: --export-slicedata exit $(rc sdx-$e)"; }
+    [ -n "$(ls sd-$e/1 2>/dev/null)" ] || fail "$e: --export-slicedata wrote nothing under sd-$e/1"
+    run sdl-$e "$bin" "$FIXTURE" --slice 1 --load-slicedata sd-$e --outputdir sdl-$e/out
+    [ "$(rc sdl-$e)" = 0 ] || { show sdl-$e; fail "$e: --load-slicedata exit $(rc sdl-$e)"; }
+    events sdl-$e/stdout model_loaded | grep SliceDataLoaded >/dev/null || { show sdl-$e; fail "$e: --load-slicedata did not load"; }
+    run sdr-$e "$bin" "$FIXTURE" --slice 1 --load-slicedata sd-$e --repetitions 2 --outputdir sdr-$e/out
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -2, d
+' sdr-$e/out/result.json
+done
+echo "PASS: --export-slicedata and --load-slicedata round-trip; with --repetitions it is refused (both engines)"
+
+# --downward-check with --downward-settings: the printers the plate also fits.
+py '
+import json
+for name, size in (("Roomy Test Printer", 200), ("Tiny Test Printer", 10)):
+    json.dump({"type": "machine", "from": "system", "name": name, "instantiation": "true",
+               "printable_area": ["0x0", "%dx0" % size, "%dx%d" % (size, size), "0x%d" % size],
+               "printable_height": str(size)},
+              open(name.split()[0].lower() + ".json", "w"), indent=4)
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run dw-$e "$bin" "$FIXTURE" --slice 1 --downward-check --downward-settings roomy.json --downward-settings tiny.json --outputdir dw-$e/out
+    [ "$(rc dw-$e)" = 0 ] || { show dw-$e; fail "$e: --downward-check exit $(rc dw-$e)"; }
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d.get("downward_compatible_machine") == ["Roomy Test Printer"], d.get("downward_compatible_machine")
+' dw-$e/out/result.json
+done
+run dwstl "$B" cube.stl --slice 1 --printer-preset "$A1M" --downward-check --outputdir dwstl/out
+[ "$(rc dwstl)" != 0 ] || fail "--downward-check on an STL was taken"
+echo "PASS: --downward-check lists the printers the plate fits (both engines)"
+
+# Without those flags result.json gains no compatibility keys.
+for f in sdx-bambu/out/result.json sdx-orca/out/result.json; do
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+for k in ("downward_compatible_machine", "upward_compatible_machine", "upward_compatibility_taint"):
+    assert k not in d, k
+' "$f"
+done
+echo "PASS: result.json gains no keys unless the flags ask for them"

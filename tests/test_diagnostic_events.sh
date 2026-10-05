@@ -109,14 +109,14 @@ if [ -f "$BASE_3MF" ]; then
     # The value cannot be parsed, so the override silently had no effect. The
     # slice still runs to completion with the unmodified setting.
     GC=$(mktmp_gcode)
-    run "$OUT" "$ERR" "$BASE_3MF" --layer-height not-a-number -o "$GC"
+    run "$OUT" "$ERR" "$BASE_3MF" --infill not-a-number -o "$GC"
     if [ "$LAST_EXIT" -eq 0 ] \
        && has_event "$OUT" "override_rejected" \
-       && grep -q "\"opt_key\":\"layer_height\"" "$OUT"; then
+       && grep -q "\"opt_key\":\"fill_density\"" "$OUT"; then
         record "rejected-override-is-an-event" 1
     else
         record "rejected-override-is-an-event" 0 \
-            "exit=$LAST_EXIT (want 0); override_rejected/layer_height not found"
+            "exit=$LAST_EXIT (want 0); override_rejected/fill_density not found"
     fi
     rm -f "$GC"
 
