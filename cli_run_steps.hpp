@@ -50,13 +50,14 @@ bool has_model_actions(const CliOptions& o);
 bool model_actions_only(const CliOptions& o);
 
 /// Step 6 before the plate loop: --export-settings, --info, --export-stl and
-/// --export-stls, in command-line order.
-/// Which of the actions a call runs: the model-wide ones (--info,
-/// --export-stl, --export-stls) run once on the whole project for --slice 0
-/// (run_slice_mode), the rest on the plate's settings.
-enum class ModelActions { All, ModelWideOnly, AllButModelWide };
+/// --export-stls, in command-line order (one loop over the actions,
+/// BambuStudio.cpp 6336-6437; OrcaSlicer.cpp 5471-5561); the first that fails
+/// stops the rest. The model-wide ones (--info, --export-stl, --export-stls)
+/// work on `whole` when it is given (the whole project for --slice 0 on
+/// several plates, slice_one_plate), else on `model`; --export-settings
+/// saves `config`.
 StepResult run_model_actions(const CliOptions& o, Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                             ModelActions which = ModelActions::All);
+                             Slic3r::Model* whole = nullptr);
 
 /// True when the command line asks for --info, --export-stl or --export-stls.
 bool has_model_wide_actions(const CliOptions& o);
