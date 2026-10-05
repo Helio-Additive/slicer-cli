@@ -290,12 +290,15 @@ StepResult check_triangle_limit(const CliOptions& o, const Slic3r::Model& model,
     const int limit = plate_loop_switches(o).max_triangle_count;
     if (limit == 0)
         return r;
-    // Every instance inside the bed counts its parts' triangles, a skipped
-    // one none (BambuStudio.cpp 6541-6597; OrcaSlicer.cpp 5657-5720).
+    // Every instance inside the bed counts its parts' triangles, one on the
+    // --skip-objects list none (BambuStudio.cpp 6541-6597; OrcaSlicer.cpp
+    // 5657-5720). An instance the user made unprintable still counts.
+    const std::vector<int>& skip = o.cli.option<Slic3r::ConfigOptionInts>("skip_objects")->values;
+    const std::set<int> skipped(skip.begin(), skip.end());
     long long count = 0;
     for (const Slic3r::ModelObject* obj : model.objects) {
         for (const Slic3r::ModelInstance* inst : obj->instances) {
-            if (!inst->printable || inst->print_volume_state != Slic3r::ModelInstancePVS_Inside)
+            if (skipped.count(inst->loaded_id) || inst->print_volume_state != Slic3r::ModelInstancePVS_Inside)
                 continue;
             for (const Slic3r::ModelVolume* vol : obj->volumes) {
                 if (!vol->is_model_part())

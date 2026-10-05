@@ -1007,6 +1007,78 @@ assert d.get("downward_compatible_machine") == ["Roomy Test Printer"], d.get("do
 done
 echo "PASS: --downward-check checks every plate of the project (both engines)"
 
+# A plate 2 with the prime tower and two filaments: its objects and its tower
+# are measured at plate 2's own origin (BambuStudio.cpp 4486-4489;
+# OrcaSlicer.cpp 3875-3878), so the 200 mm printer fits every plate. The
+# merged settings decide the other plates' print sequence: with a process
+# that prints by object, plate 2 (two objects) has no tower, so the 60 mm
+# printer fits too (BambuStudio.cpp 4785). With --slice 0 each plate is read
+# from the project once per run.
+py '
+import json
+json.dump({"plates": [
+    {"plate_name": "one", "need_arrange": True, "objects": [{"path": "cube.stl", "count": 1, "filaments": [1]}]},
+    {"plate_name": "two", "need_arrange": True, "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2]}]}]},
+    open("asm-tower.json", "w"))
+json.dump({"type": "process", "from": "user", "name": "By Object Test Process", "inherits": "",
+           "print_sequence": "by object", "compatible_printers": ["Bambu Lab A1 mini 0.4 nozzle"]},
+          open("seq-process.json", "w"), indent=4)
+# The same two printers with extruder clearances, which a by-object plate
+# needs on the Bambu Studio build (BambuStudio.cpp 4819-4836).
+for name, size in (("Roomy Test Printer", 200), ("Mid Test Printer", 60)):
+    json.dump({"type": "machine", "from": "system", "name": name, "instantiation": "true",
+               "printable_area": ["0x0", "%dx0" % size, "%dx%d" % (size, size), "0x%d" % size],
+               "printable_height": str(size), "extruder_clearance_max_radius": "1",
+               "extruder_clearance_height_to_rod": "1000", "extruder_clearance_height_to_lid": "1000",
+               "extruder_clearance_dist_to_rod": "1"},
+              open(name.split()[0].lower() + "-clear.json", "w"), indent=4)
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run dwtp-$e "$bin" --load-assemble-list asm-tower.json --slice 1 --printer-preset "$A1M" \
+        --filament-preset "Bambu PLA Basic @BBL A1M" --filament-preset "Bambu PLA Matte @BBL A1M" \
+        --enable-prime-tower --outputdir dwtp-$e/out --export-3mf tower2.3mf
+    [ "$(rc dwtp-$e)" = 0 ] || { show dwtp-$e; fail "$e: two-plate tower project exit $(rc dwtp-$e)"; }
+    # Two colours, so the Bambu Studio build keeps the tower for the plate
+    # (it turns the tower off when every filament has the same colour).
+    py '
+import json, sys, zipfile
+src = sys.argv[1]; dst = sys.argv[2]
+zin = zipfile.ZipFile(src); zout = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED)
+for item in zin.infolist():
+    data = zin.read(item.filename)
+    if item.filename == "Metadata/project_settings.config":
+        d = json.loads(data); d["filament_colour"] = ["#FF0000", "#0000FF"]; data = json.dumps(d, indent=4).encode()
+    zout.writestr(item, data)
+zout.close()
+' dwtp-$e/out/tower2.3mf tower2-$e.3mf
+    run dwt-$e "$bin" tower2-$e.3mf --slice 1 --downward-check --downward-settings roomy.json \
+        --downward-settings mid.json --outputdir dwt-$e/out
+    [ "$(rc dwt-$e)" = 0 ] || { show dwt-$e; fail "$e: --downward-check on the tower project exit $(rc dwt-$e)"; }
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d.get("downward_compatible_machine") == ["Roomy Test Printer"], d.get("downward_compatible_machine")
+' dwt-$e/out/result.json
+    run dwts-$e "$bin" tower2-$e.3mf --slice 1 --downward-check --downward-settings roomy-clear.json \
+        --downward-settings mid-clear.json --load-settings seq-process.json --outputdir dwts-$e/out
+    [ "$(rc dwts-$e)" = 0 ] || { show dwts-$e; fail "$e: --downward-check with a by-object process exit $(rc dwts-$e)"; }
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d.get("downward_compatible_machine") == ["Roomy Test Printer", "Mid Test Printer"], d.get("downward_compatible_machine")
+' dwts-$e/out/result.json
+    run dwt0-$e "$bin" tower2-$e.3mf --slice 0 --downward-check --downward-settings roomy.json --verbose \
+        --outputdir dwt0-$e/out
+    [ "$(rc dwt0-$e)" = 0 ] || { show dwt0-$e; fail "$e: --downward-check with --slice 0 exit $(rc dwt0-$e)"; }
+    reads=$(grep -c '^--downward-check: read plate' dwt0-$e/stdout || true)
+    [ "$reads" = 1 ] || fail "$e: --slice 0 read the other plates $reads times (want 1)"
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d.get("downward_compatible_machine") == ["Roomy Test Printer"], d.get("downward_compatible_machine")
+assert [p["id"] for p in d["sliced_plates"]] == [1, 2], d["sliced_plates"]
+' dwt0-$e/out/result.json
+done
+echo "PASS: --downward-check measures each plate at its own origin, with the merged print sequence, once per run (both engines)"
+
 # --mtcpp counts every instance inside the bed: three copies of the 12-triangle
 # cube are 36 triangles.
 for e in bambu orca; do
@@ -1020,6 +1092,33 @@ assert d["return_code"] == -59, d
     [ "$(rc mtok-$e)" = 0 ] || { show mtok-$e; fail "$e: --mtcpp 40 on 36 triangles exit $(rc mtok-$e)"; }
 done
 echo "PASS: --mtcpp counts the triangles of every instance (both engines)"
+
+# An instance the user made unprintable still counts (only --skip-objects
+# instances do not; BambuStudio.cpp 6545-6575, OrcaSlicer.cpp 5657-5690):
+# plate 1 of the assemble export holds two cubes, one set unprintable here.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    py '
+import sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+zin = zipfile.ZipFile(src)
+zout = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED)
+for item in zin.infolist():
+    data = zin.read(item.filename)
+    if item.filename == "3D/3dmodel.model":
+        text = data.decode()
+        assert "printable=\"1\"" in text, "no printable item"
+        data = text.replace("printable=\"1\"", "printable=\"0\"", 1).encode()
+    zout.writestr(item, data)
+zout.close()
+' asm-$e.3mf unp-$e.3mf
+    run mtu-$e "$bin" unp-$e.3mf --slice 1 --mtcpp 20 --outputdir mtu-$e/out
+    py '
+import json, sys; d = json.load(open(sys.argv[1]))
+assert d["return_code"] == -59, d
+' mtu-$e/out/result.json
+done
+echo "PASS: --mtcpp counts an unprintable instance inside the bed (both engines)"
 
 # --load-filaments with one filament in every slot turns the prime tower off;
 # two different filaments keep it.
@@ -1071,6 +1170,30 @@ assert len(d["flush_volumes_matrix"]) % 4 == 0, d["flush_volumes_matrix"]
 done
 echo "PASS: one filament in every slot turns the prime tower off (both engines)"
 
+# A printer with more extruders than filaments: OrcaSlicer gives it one
+# filament per extruder (update_multi_material_filament_presets), and every
+# per-filament list of the project has that many values, as the desktop's
+# load_selections sizes them. Bambu Studio adds no filament there; its lists
+# match too.
+for e in bambu orca; do
+    bin=$B; P="Bambu Lab H2D 0.4 nozzle"
+    [ $e = orca ] && { bin=$O; P="Lulzbot Taz Pro Dual 0.5 nozzle"; }
+    run mtl-$e "$bin" cube.stl --slice 1 --printer-preset "$P" --outputdir mtl-$e/out --export-3mf mt.3mf
+    [ "$(rc mtl-$e)" = 0 ] || { show mtl-$e; fail "$e: $P exit $(rc mtl-$e)"; }
+    py '
+import json, sys, zipfile
+d = json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))
+n = len(d["filament_settings_id"])
+if sys.argv[2] == "orca":
+    assert n == len(d["nozzle_diameter"]), (n, d["nozzle_diameter"])
+for k in ("filament_colour", "filament_colour_type", "filament_multi_colour", "filament_is_support",
+          "filament_flow_ratio", "filament_max_volumetric_speed", "filament_type"):
+    if k in d:
+        assert len(d[k]) == n, (k, d[k], n)
+' mtl-$e/out/mt.3mf $e
+done
+echo "PASS: every per-filament list matches the filament count on a multi-extruder printer (both engines)"
+
 # Non-ASCII names: a part named "würfel" in a folder "ü-<engine>" slices, and
 # --export-stls writes it into a non-ASCII folder (boost::filesystem reads
 # UTF-8 paths on Windows too). The export reads the part from the current
@@ -1084,6 +1207,16 @@ for e in bambu orca; do
     run u8-$e "$bin" "ü-$e/würfel.stl" --slice 1 --printer-preset "$A1M" --outputdir "ü-$e/aus"
     [ "$(rc u8-$e)" = 0 ] && [ -s "ü-$e/aus/plate_1.gcode" ] || { show u8-$e; fail "$e: a non-ASCII path exit $(rc u8-$e)"; }
     run u8s-$e "$bin" würfel.stl --export-stls "ü-$e/stls"
+    # A settings file in a non-ASCII folder (--machine reads it through
+    # boost::nowide, as the arguments are UTF-8 on Windows).
+    py '
+import json, sys
+json.dump({"type": "machine", "name": "Test Maschine", "printable_area": ["0x0", "200x0", "200x200", "0x200"],
+           "printable_height": "200", "before_layer_change_gcode": "G92 E0", "layer_change_gcode": "G92 E0"},
+          open(sys.argv[1], "w"))
+' "ü-$e/maschine.json"
+    run u8m-$e "$bin" würfel.stl --machine "ü-$e/maschine.json" -o "ü-$e/maschine.gcode"
+    [ "$(rc u8m-$e)" = 0 ] && [ -s "ü-$e/maschine.gcode" ] || { show u8m-$e; fail "$e: --machine with a non-ASCII path exit $(rc u8m-$e)"; }
     [ "$(rc u8s-$e)" = 0 ] || { show u8s-$e; fail "$e: --export-stls with a non-ASCII name exit $(rc u8s-$e)"; }
     py '
 import os, sys

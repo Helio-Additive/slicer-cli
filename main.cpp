@@ -57,6 +57,8 @@
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/args.hpp>
+#include <boost/nowide/convert.hpp>
+#include <boost/nowide/fstream.hpp>
 // boost::nowide::nowide_filesystem: <boost/nowide/filesystem.hpp> since Boost
 // 1.73 (OrcaSlicer.cpp 44); the older bundled Nowide calls the header
 // integration/filesystem.hpp (BambuStudio.cpp 43).
@@ -643,7 +645,8 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
         std::cout << "Loading config: " << filepath << "\n";
     }
 
-    std::ifstream f(filepath);
+    // The path is UTF-8 (boost::nowide::args on Windows).
+    boost::nowide::ifstream f(filepath);
     if (!f.is_open()) {
         std::cerr << "Error: Cannot open config file: " << filepath << "\n";
         return false;
@@ -3295,6 +3298,16 @@ struct ArrangeSwitches {
 };
 static ArrangeSwitches g_arrange_switches;
 
+/// --downward-check's result: the official checks every plate once per run
+/// (BambuStudio.cpp 4645-4658, 4779-4790), so a --slice 0 run checks on its
+/// first pass and every later pass reports the same.
+struct DownwardRun {
+    bool done = false;
+    std::vector<std::string> printers, failed;
+    bool sequence_plate = false;
+};
+static DownwardRun g_downward_run;
+
 /// --downward-check: the size of the plate's objects with its prime tower,
 /// as the lambda check_plate_wipe_tower measures it (BambuStudio.cpp
 /// 4418-4495; OrcaSlicer.cpp 3819-3884). The model holds only this plate's
@@ -4414,6 +4427,23 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // pins). Without it a two-nozzle printer (X2D, H2D) reads past the
     // matrix in ToolOrdering::reorder_extruders_for_minimum_flush_volume.
     bundle.update_multi_material_filament_presets();
+#ifdef ENGINE_ORCA
+    // OrcaSlicer's update_multi_material_filament_presets gives a printer with
+    // more extruders than filaments one filament per extruder (PresetBundle.cpp
+    // 5120-5131), single_extruder_multi_material or not, and leaves the colour
+    // lists as they were. The desktop never keeps them apart: it sizes
+    // filament_colour, filament_multi_colour and filament_colour_type to the
+    // filament count when it loads the printer (PresetBundle::load_selections
+    // 2780-2795, update_selections 2636-2651, new slots "#26A69A" and type
+    // "1"), and the official CLI refuses a project where they differ (-5,
+    // "filament_is_support's count ... not equal to filament_colour's size").
+    // A slice with them apart reads past the shorter lists. BambuStudio's
+    // update_multi_material_filament_presets adds no filament (PresetBundle.cpp
+    // 5527-5538), so its lists already match.
+    if (const auto* colours = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+        colours && colours->values.size() != bundle.filament_presets.size())
+        bundle.set_num_filaments(unsigned(bundle.filament_presets.size()), "#26A69A");
+#endif
     filaments = bundle.filament_presets;
 
     // What the desktop app sets in the project when the printer is picked:
@@ -4764,6 +4794,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         std::vector<std::string> unknown_values;
         json unknown_items = json::array();
         Slic3r::PlateDataPtrs plate_data;  // hoisted so it is accessible after the 3mf block
+        // Each plate's grid origin in the project (plate_grid_origin), for
+        // the plates --downward-check loads alone; empty when not a project.
+        std::vector<Slic3r::Vec2d> plate_origins;
+        // The project's print_sequence before the sliced plate's own
+        // (plate_N.json is_seq_print) is laid over it; empty when the plate
+        // has none of its own.
+        std::string project_print_sequence_before_plate;
         // What the official CLI reads from a Bambu-made 3MF, and its embedded
         // presets, for --load-settings and friends (cli_load_settings.cpp).
         slicer_cli::ProjectFacts project_facts;
@@ -5099,6 +5136,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // their plate: no snap to the bed corner, no plate_N.json bbox guess
             // (both moved parts, and on beds with an exclusion area the corner
             // snap pushed them into it).
+            if (is_bbl_3mf)
+                for (int index = 0; index < (int)plate_data.size(); ++index)
+                    plate_origins.push_back(plate_grid_origin(config, file_version, index, (int)plate_data.size()));
             if (plate_id > 0 && is_bbl_3mf && !model.objects.empty()) {
                 bool is_seq_print_plate = false;
                 {
@@ -5140,6 +5180,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (is_seq_print_plate) {
                     Slic3r::ConfigSubstitutionContext seq_subst(
                         Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+                    if (const Slic3r::ConfigOption* seq = config.option("print_sequence"))
+                        project_print_sequence_before_plate = seq->serialize();
                     config.set_deserialize("print_sequence", "by object", seq_subst);
                     if (verbose)
                         std::cout << "Plate " << plate_id << " uses sequential (by-object) printing\n";
@@ -5432,6 +5474,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // --load-settings, --load-filaments, --uptodate*: the official
         // settings merge (cli_load_settings.cpp), on the settings loaded so far.
         slicer_cli::SettingsMerge settings_merge;
+        // The project's print_sequence after the merge (the official
+        // m_print_config's), when the merge runs.
+        std::string merged_print_sequence;
 #ifdef ENGINE_BAMBU
         // An assemble list's OBJ colours become filaments in the merge, which
         // needs the filaments loaded (BambuStudio.cpp 2574-2580).
@@ -5450,8 +5495,19 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             std::vector<Slic3r::Preset*> preset_ptrs;
             for (Slic3r::Preset& p : project_presets_kept)
                 preset_ptrs.push_back(&p);
+            // The official merges into m_print_config, which holds the
+            // project's print_sequence, not a plate's own (get_print_sequence
+            // reads the plate's first, BambuStudio.cpp 4403-4416). The sliced
+            // plate's own goes back on top after the merge.
+            Slic3r::ConfigSubstitutionContext seq_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+            if (!project_print_sequence_before_plate.empty())
+                config.set_deserialize("print_sequence", project_print_sequence_before_plate, seq_subst);
             const slicer_cli::StepResult merged =
                 slicer_cli::merge_loaded_settings(o, project_facts, config, extra, preset_ptrs, settings_merge);
+            if (const Slic3r::ConfigOption* seq = config.option("print_sequence"))
+                merged_print_sequence = seq->serialize();
+            if (!project_print_sequence_before_plate.empty())
+                config.set_deserialize("print_sequence", "by object", seq_subst);
             if (merged.code != 0) {
                 emit_event({{"event","config_refused"}, {"tag","SettingsFilesRefused"}, {"message", merged.message}});
                 std::cerr << "Error: " << merged.message << "\n";
@@ -5980,7 +6036,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (BambuStudio.cpp 4669-4914; OrcaSlicer.cpp 4006-4175). The
         // official checks the plates of a project (plate_obj_size_infos
         // exists only then, BambuStudio.cpp 4646-4658), every one of them.
-        if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check")) {
+        if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check") && g_downward_run.done) {
+            // Every plate was checked on the first pass (--slice 0).
+            outcome.downward_checked = true;
+            outcome.downward_printers = g_downward_run.printers;
+            outcome.downward_failed = g_downward_run.failed;
+            outcome.sequence_plate = g_downward_run.sequence_plate;
+        } else if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check")) {
             if (plate_data.empty()) {
                 const std::string why = "--downward-check checks the plates of a 3MF project; this input has none";
                 std::cerr << "Error: " << why << "\n";
@@ -6009,6 +6071,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 std::string project_seq;
                 if (const Slic3r::ConfigOption* opt = extra.option("print_sequence"))
                     project_seq = opt->serialize();
+                else if (!merged_print_sequence.empty())
+                    // --load-settings and friends: the merged settings
+                    // (m_print_config, BambuStudio.cpp 4785).
+                    project_seq = merged_print_sequence;
                 else if (assemble_input) {
                     if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
                         project_seq = seq->serialize();
@@ -6054,6 +6120,20 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         std::cerr << "Error: " << why << "\n";
                         set_outcome_failure(outcome, CLI_DATA_FILE_ERROR, why);
                         return 1;
+                    } else if (verbose) {
+                        std::cout << "--downward-check: read plate " << index + 1 << " from the project\n";
+                    }
+                    if (!assemble_input && index < (int)plate_origins.size()) {
+                        // The plate at its own origin, as the sliced plate is:
+                        // the official adds the plate's origin to its tower
+                        // position instead (plate->get_origin(), BambuStudio.cpp
+                        // 4486-4489; OrcaSlicer.cpp 3875-3878).
+                        const Slic3r::Vec2d origin = plate_origins[index];
+                        for (Slic3r::ModelObject* object : plate.loaded->objects)
+                            for (Slic3r::ModelInstance* inst : object->instances) {
+                                const Slic3r::Vec3d off = inst->get_offset();
+                                inst->set_offset(Slic3r::Vec3d(off.x() - origin.x(), off.y() - origin.y(), off.z()));
+                            }
                     }
                     plate.model = plate.loaded.get();
                     plate.is_sequence = plate_sequence(index);
@@ -6086,6 +6166,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         outcome.downward_failed.end())
                         outcome.downward_failed.push_back(name);
             }
+            g_downward_run.done = true;
+            g_downward_run.printers = outcome.downward_printers;
+            g_downward_run.failed = outcome.downward_failed;
+            g_downward_run.sequence_plate = outcome.sequence_plate;
         }
 
         // The transforms on the command line, in its order, then orient
@@ -7724,7 +7808,8 @@ int main(int argc, char** argv) {
             for (;;) {
                 if (layout_plan::is_cancelled()) { cancelled = true; break; }
 #ifdef _WIN32
-                fd = ::_open(input_file.c_str(), _O_RDONLY | _O_BINARY);  // binary: no Ctrl+Z EOF, no newline translation
+                // The path is UTF-8 (boost::nowide::args): open it by its wide form.
+                fd = ::_wopen(boost::nowide::widen(input_file).c_str(), _O_RDONLY | _O_BINARY);  // binary: no Ctrl+Z EOF, no newline translation
 #else
                 fd = ::open(input_file.c_str(), O_RDONLY);
                 if (fd < 0 && errno == EINTR) {
@@ -7796,7 +7881,7 @@ int main(int argc, char** argv) {
 
     // --layout: headless arrange from the older JSON form
     if (!layout_json_file.empty()) {
-        std::ifstream lf(layout_json_file);
+        boost::nowide::ifstream lf(layout_json_file);
         if (!lf.is_open()) { std::cerr << "Cannot open layout JSON: " << layout_json_file << "\n"; return 1; }
         json lj;
         try { lj = json::parse(lf); } catch (const std::exception& e) {

@@ -4,6 +4,8 @@
 // Also: `layout capabilities --json`.
 #include "layout_plan.hpp"
 
+#include <boost/nowide/convert.hpp>
+
 #include "libslic3r/Arrange.hpp"
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/ExPolygon.hpp"
@@ -83,7 +85,8 @@ static int load_profile_json(const std::string& fp, DynamicPrintConfig& cfg,
 // IS the existence check; no separate probe open that could consume a stream.
 static int slurp_profile_cancellable(const std::string& fp, std::string& out) {
 #ifdef _WIN32
-    int fd = ::_open(fp.c_str(), _O_RDONLY | _O_BINARY);
+    // The path is UTF-8 (boost::nowide::args): open it by its wide form.
+    int fd = ::_wopen(boost::nowide::widen(fp).c_str(), _O_RDONLY | _O_BINARY);
     if (fd < 0) return 2;
     char buf[4096];
     for (;;) {
