@@ -10,6 +10,12 @@
 #
 # Defaults to slicer_cli on PATH; set $1 to an explicit binary path.
 #
+# Runs on both engine binaries (slicer_cli and slicer_cli-orcaslicer). The
+# engine is read from `layout capabilities --json`; each engine slices its own
+# fixtures, because a binary refuses a project made by the other engine's newer
+# desktop app (the cross-engine refusal). A check whose feature exists on one
+# engine only prints SKIP with the reason.
+#
 # Exit code: 0 = all tests passed. Non-zero = one or more failures.
 
 set -euo pipefail
@@ -18,6 +24,7 @@ BINARY="${1:-slicer_cli}"
 
 PASS=0
 FAIL=0
+SKIP=0
 
 check() {
     local LABEL="$1"; shift
@@ -73,7 +80,32 @@ record() {
     else
         FAIL=$((FAIL + 1)); echo "FAIL [$LABEL]"; [ -n "$DETAIL" ] && echo "  $DETAIL"
     fi
+    return 0
 }
+skip() { SKIP=$((SKIP + 1)); echo "SKIP [$1] $2"; }
+
+# The engine of this binary, from its strict-JSON capabilities document.
+ENGINE=$("$BINARY" layout capabilities --json 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["engine"])' 2>/dev/null || true)
+case "$ENGINE" in
+    bambu|orca) echo "Engine: $ENGINE" ;;
+    *) echo "FAIL [engine-detect] 'layout capabilities --json' gave no engine (got '$ENGINE')"; exit 1 ;;
+esac
+
+# Per-engine fixtures. calib_base.3mf / legacy_token.3mf were saved by Bambu
+# Studio 02.05.01.52 (X1 Carbon 0.4, Bambu PLA Basic); slicer_cli-orcaslicer
+# refuses them as newer Bambu Studio files. The _orca twins are the same
+# printer, process and filament, saved by slicer_cli-orcaslicer (engine 31f6803,
+# fb2e6d1 package) from a 20 mm cube:
+#   slicer_cli-orcaslicer cube.stl --slice 1 --arrange 1 \
+#     --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+#     --process-preset "0.20mm Standard @BBL X1C" \
+#     --filament-preset "Bambu PLA Basic @BBL X1C" --export-3mf calib_base_orca.3mf
+# then stripped of the plate G-code (Metadata/plate_1.gcode, its .md5 and rels,
+# the gcode_file key, the slice_info plate block). legacy_token_orca.3mf adds the
+# same two `{initial_no_support_filament_id}` lines as legacy_token.3mf to
+# machine_start_gcode and filament_start_gcode.
+if [ "$ENGINE" = orca ]; then FIXTURE_SUFFIX=_orca; else FIXTURE_SUFFIX=; fi
 
 # ── Binary launches ─────────────────────────────────────────────────────────
 check "binary-launches"           0 "Usage"    --help
@@ -108,8 +140,8 @@ check "no-send-to-printer"    1 ""   --send-to-printer 192.168.1.1 /dev/null
 # the token natively (BambuStudio 862dd5e16), and the opt-out must therefore
 # emit a resolved G-code body without the driver's normalization notice.
 TOKEN="initial_no_support_filament_id"
-TOKEN_3MF="$FIXTURES/legacy_token.3mf"
-BASE_3MF="$FIXTURES/calib_base.3mf"
+TOKEN_3MF="$FIXTURES/legacy_token$FIXTURE_SUFFIX.3mf"
+BASE_3MF="$FIXTURES/calib_base$FIXTURE_SUFFIX.3mf"
 
 if [ -f "$TOKEN_3MF" ]; then
     # (1) Default: slice succeeds, an audit notice is emitted, and the literal
@@ -129,9 +161,23 @@ if [ -f "$TOKEN_3MF" ]; then
     #     the source spelling, produces no aliasing notice, and must not leave
     #     that token unresolved in executable G-code (metadata comments may
     #     faithfully retain the archived source text).
+    #     OrcaSlicer (31f6803) binds only initial_no_support_extruder
+    #     (GCode.cpp:2818, PrintConfig.cpp:10899), so on Orca the opt-out hands the
+    #     engine an unknown variable: its placeholder parser refuses the custom
+    #     G-code and no G-code is written. That is the engine's own behaviour.
     GC=$(mktmp_gcode)
     run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
-    if [ "$LAST_EXIT" -eq 0 ] \
+    if [ "$ENGINE" = orca ]; then
+        if [ "$LAST_EXIT" -ne 0 ] \
+           && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
+           && echo "$LAST_OUTPUT" | grep -q "Not a variable name" \
+           && echo "$LAST_OUTPUT" | grep -q "{$TOKEN}" \
+           && [ ! -s "$GC" ]; then
+            record "legacy-token-unbound-without-normalization-orca" 1
+        else
+            record "legacy-token-unbound-without-normalization-orca" 0 "exit=$LAST_EXIT (want non-zero, placeholder error naming $TOKEN, no G-code, no aliasing notice)"
+        fi
+    elif [ "$LAST_EXIT" -eq 0 ] \
        && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
        && ! awk -v token="$TOKEN" '
             $0 !~ /^[[:space:]]*;/ && index($0, token) { found = 1; exit }
@@ -143,7 +189,7 @@ if [ -f "$TOKEN_3MF" ]; then
     fi
     rm -f "$GC"
 else
-    echo "SKIP [legacy-token-*] fixture missing: $TOKEN_3MF"
+    skip "legacy-token-*" "fixture missing: $TOKEN_3MF"
 fi
 
 if [ -f "$BASE_3MF" ]; then
@@ -160,7 +206,7 @@ if [ -f "$BASE_3MF" ]; then
     fi
     rm -f "$GC"
 else
-    echo "SKIP [legacy-token-absent-untouched] fixture missing: $BASE_3MF"
+    skip "legacy-token-absent-untouched" "fixture missing: $BASE_3MF"
 fi
 
 # ── #5: --calib-mode calibration flags ──────────────────────────────────────
@@ -228,14 +274,32 @@ if [ -f "$BASE_3MF" ]; then
     # pressure_advance_pattern: driver-generated geometry. The loaded model is
     # replaced by the synthesized handle cube; config comes from the 3MF. Look for
     # the pattern layer marker (calib.cpp) + M900.
-    GC=$(mktmp_gcode)
-    run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
-    M=$(total_count "$GC" "start pressure advance pattern for layer")
-    K=$(total_count "$GC" "M900")
-    [ "$LAST_EXIT" -eq 0 ] && [ "${M:-0}" -ge 1 ] && [ "${K:-0}" -ge 1 ] \
-        && record "calib-pa-pattern" 1 \
-        || record "calib-pa-pattern" 0 "exit=$LAST_EXIT pattern-markers=$M M900=$K (want exit 0, both >=1)"
-    rm -f "$GC"
+    # The geometry generator is ported for the Bambu Studio engine only
+    # (docs/cli-reference.md, --calib-mode pressure_advance_pattern: "slicer_cli
+    # only"); slicer_cli-orcaslicer refuses the mode before any input check.
+    PA_PATTERN_SKIP="pressure_advance_pattern is slicer_cli only (docs/cli-reference.md); slicer_cli-orcaslicer refuses the mode"
+    if [ "$ENGINE" = orca ]; then
+        skip "calib-pa-pattern" "$PA_PATTERN_SKIP"
+        GC=$(mktmp_gcode)
+        run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
+        if [ "$LAST_EXIT" -ne 0 ] \
+           && echo "$LAST_OUTPUT" | grep -q "pressure_advance_pattern is not yet supported on the OrcaSlicer engine" \
+           && [ ! -s "$GC" ]; then
+            record "calib-pa-pattern-refused-on-orca" 1
+        else
+            record "calib-pa-pattern-refused-on-orca" 0 "exit=$LAST_EXIT (want non-zero + OrcaSlicer refusal, no G-code)"
+        fi
+        rm -f "$GC"
+    else
+        GC=$(mktmp_gcode)
+        run_slice "$GC" "$BASE_3MF" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
+        M=$(total_count "$GC" "start pressure advance pattern for layer")
+        K=$(total_count "$GC" "M900")
+        [ "$LAST_EXIT" -eq 0 ] && [ "${M:-0}" -ge 1 ] && [ "${K:-0}" -ge 1 ] \
+            && record "calib-pa-pattern" 1 \
+            || record "calib-pa-pattern" 0 "exit=$LAST_EXIT pattern-markers=$M M900=$K (want exit 0, both >=1)"
+        rm -f "$GC"
+    fi
 
     # Negative: a reversed PA sweep (start > end) must be rejected before slicing
     # — the engine's unsigned pattern-count loop would otherwise wrap unbounded.
@@ -283,21 +347,25 @@ if [ -f "$BASE_3MF" ]; then
 
     # pressure_advance_pattern requires a .3mf --input (it discards the model but
     # needs the embedded config + plate setup). An STL must be rejected.
-    STL_TMP=$(mktemp "${TMPDIR:-/tmp}/calib_stl.XXXXXX"); mv "$STL_TMP" "$STL_TMP.stl"; STL_TMP="$STL_TMP.stl"
-    printf 'solid x\nendsolid x\n' > "$STL_TMP"
-    GC=$(mktmp_gcode)
-    run_slice "$GC" "$STL_TMP" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
-    if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "requires a .3mf"; then
-        record "calib-pa-pattern-stl-rejected" 1
+    if [ "$ENGINE" = orca ]; then
+        skip "calib-pa-pattern-stl-rejected" "$PA_PATTERN_SKIP"
     else
-        record "calib-pa-pattern-stl-rejected" 0 "exit=$LAST_EXIT (want non-zero + 3mf-required error)"
+        STL_TMP=$(mktemp "${TMPDIR:-/tmp}/calib_stl.XXXXXX"); mv "$STL_TMP" "$STL_TMP.stl"; STL_TMP="$STL_TMP.stl"
+        printf 'solid x\nendsolid x\n' > "$STL_TMP"
+        GC=$(mktmp_gcode)
+        run_slice "$GC" "$STL_TMP" --calib-mode pressure_advance_pattern --calib-start 0 --calib-end 0.08 --calib-step 0.005
+        if [ "$LAST_EXIT" -ne 0 ] && echo "$LAST_OUTPUT" | grep -q "requires a .3mf"; then
+            record "calib-pa-pattern-stl-rejected" 1
+        else
+            record "calib-pa-pattern-stl-rejected" 0 "exit=$LAST_EXIT (want non-zero + 3mf-required error)"
+        fi
+        rm -f "$GC" "$STL_TMP"
     fi
-    rm -f "$GC" "$STL_TMP"
 else
-    echo "SKIP [calib-*] fixture missing: $BASE_3MF"
+    skip "calib-*" "fixture missing: $BASE_3MF"
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""
-echo "Results: $PASS passed, $FAIL failed"
+echo "Results ($ENGINE): $PASS passed, $FAIL failed, $SKIP skipped"
 [ $FAIL -eq 0 ]   # exit 0 iff all passed

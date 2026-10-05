@@ -19,6 +19,12 @@
 #
 # Defaults to slicer_cli on PATH; set $1 to an explicit binary path.
 #
+# Runs on both engine binaries (slicer_cli and slicer_cli-orcaslicer). The
+# engine is read from `layout capabilities --json`; each engine slices its own
+# fixture (see tests/test_excluded_features.sh for how calib_base_orca.3mf was
+# made), because a binary refuses a project made by the other engine's newer
+# desktop app. The layout checks use that engine's profiles and engine name.
+#
 # Exit code: 0 = all tests passed. Non-zero = one or more failures.
 
 set -euo pipefail
@@ -27,6 +33,7 @@ BINARY="${1:-slicer_cli}"
 
 PASS=0
 FAIL=0
+SKIP=0
 
 record() {
     local LABEL="$1"; local OK="$2"; local DETAIL="${3:-}"
@@ -37,6 +44,7 @@ record() {
     fi
     return 0
 }
+skip() { SKIP=$((SKIP + 1)); echo "SKIP [$1] $2"; }
 
 # Same mktemp caveat as test_excluded_features.sh: the X's must be last on
 # both BSD (macOS) and GNU (Linux).
@@ -44,7 +52,18 @@ mktmp_gcode() { mktemp "${TMPDIR:-/tmp}/diag_cli.XXXXXX"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES="$SCRIPT_DIR/fixtures"
-BASE_3MF="$FIXTURES/calib_base.3mf"
+
+# The engine of this binary, from its strict-JSON capabilities document.
+ENGINE=$("$BINARY" layout capabilities --json 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["engine"])' 2>/dev/null || true)
+case "$ENGINE" in
+    bambu) BASE_3MF="$FIXTURES/calib_base.3mf"
+           DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/BambuStudio/resources/profiles" ;;
+    orca)  BASE_3MF="$FIXTURES/calib_base_orca.3mf"
+           DEFAULT_PROFILES_DIR="$SCRIPT_DIR/../references/OrcaSlicer/resources/profiles" ;;
+    *) echo "FAIL [engine-detect] 'layout capabilities --json' gave no engine (got '$ENGINE')"; exit 1 ;;
+esac
+echo "Engine: $ENGINE"
 
 # run <stdout-file> <stderr-file> <args...> — never aborts the script.
 LAST_EXIT=0
@@ -131,7 +150,7 @@ if [ -f "$BASE_3MF" ]; then
             "exit=$LAST_EXIT (want 1); input_error/PlateOutOfRange not found"
     fi
 else
-    echo "SKIP [slice-path event assertions] fixture missing: $BASE_3MF"
+    skip "slice-path event assertions" "fixture missing: $BASE_3MF"
 fi
 
 # ── Strict-JSON path 1: layout capabilities ─────────────────────────────────
@@ -147,7 +166,9 @@ fi
 
 # ── Strict-JSON path 2: --layout-plan ───────────────────────────────────────
 # Require successful planning and parse the entire stdout, not a matching line.
-PROFILES_DIR="${SLICER_TEST_PROFILES_DIR:-$SCRIPT_DIR/../references/BambuStudio/resources/profiles}"
+# SLICER_TEST_PROFILES_DIR must hold THIS engine's profiles (a package has
+# resources/profiles for slicer_cli and resources/profiles-orca for Orca).
+PROFILES_DIR="${SLICER_TEST_PROFILES_DIR:-$DEFAULT_PROFILES_DIR}"
 MACHINE_PROFILE="BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"
 if [ -f "$PROFILES_DIR/$MACHINE_PROFILE" ]; then
     # The generic layout reader does not import Bambu project components.
@@ -171,7 +192,7 @@ PY
     cat > "$PROBLEM" <<EOF
 {
   "schemaVersion": 1,
-  "engine": "bambu",
+  "engine": "$ENGINE",
   "profilesDir": "$PROFILES_DIR",
   "profiles": { "machine": "$MACHINE_PROFILE" },
   "spacing": { "minObjectDistanceMm": 10.0 },
@@ -197,13 +218,13 @@ EOF
 }
 EOF
     run "$OUT" "$ERR" --layout "$PROBLEM"
-    if [ "$LAST_EXIT" -eq 0 ] && no_events "$OUT" && python3 - "$OUT" <<'PY'
+    if [ "$LAST_EXIT" -eq 0 ] && no_events "$OUT" && python3 - "$OUT" "$ENGINE" <<'PY'
 import json
 import sys
 with open(sys.argv[1]) as f:
     lines = [line for line in f if line.strip()]
 result = json.loads(lines[-1])
-assert result["engine"] == "bambu"
+assert result["engine"] == sys.argv[2]
 assert len(result["placements"]) == 1
 PY
     then
@@ -214,11 +235,13 @@ PY
     fi
     rm -f "$PROBLEM"
 else
-    echo "SKIP [layout-plan-stdout-carries-no-events-while-engine-logs] fixture or profile missing"
+    skip "layout-plan-stdout-stays-one-json-document" "profile missing: $PROFILES_DIR/$MACHINE_PROFILE"
+    skip "legacy-layout-keeps-placement-result-without-events" "profile missing: $PROFILES_DIR/$MACHINE_PROFILE"
 fi
 
 echo
-echo "── diagnostic-event tests ──"
+echo "── diagnostic-event tests ($ENGINE) ──"
 echo "Passed: $PASS"
 echo "Failed: $FAIL"
+echo "Skipped: $SKIP"
 [ "$FAIL" -eq 0 ]
