@@ -183,9 +183,10 @@ command lines do: on a larger bed the plate keeps its place around the bed
 centre; on a smaller one, or one with another exclusion area, the objects and
 the prime tower are centred (event `arranged` / `MovedToNewBed`). The
 OrcaSlicer engine decides this from the two beds alone, as its official command
-line does. A plate printed by
-object whose new printer has other extruder clearances is arranged again
-(`arranged` / `ClearanceArrange`).
+line does. A plate chosen with `--slice N` that is printed by object, and
+whose printer has other extruder clearances, is arranged again (`arranged` /
+`ClearanceArrange`); `--slice 0` is never re-arranged. Works in the BambuStudio
+build only after a printer change; in the OrcaSlicer build with or without one.
 
 ### Every print setting
 
