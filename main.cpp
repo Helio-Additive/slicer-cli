@@ -3382,6 +3382,37 @@ static Slic3r::Vec3d downward_plate_size(const Slic3r::Model& model, const Slic3
     return downward_plate_bbox(model, config, plate_index, is_sequence).size();
 }
 
+/// shrink_to_new_bed alone (BambuStudio.cpp 4280-4310; OrcaSlicer.cpp
+/// 3693-3715): 0 the same bed (or no bed known), 1 a larger one, 2 a smaller
+/// one or another exclusion area.
+static int new_bed_shrink(const slicer_cli::ProjectFacts& facts, const Slic3r::DynamicPrintConfig& config) {
+    using namespace Slic3r;
+    if (!facts.is_bbl_3mf)
+        return 0;
+    const auto* area = config.option<ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 4)
+        return 0;
+    const int current_width  = (int)(area->values[2].x() - area->values[0].x());
+    const int current_depth  = (int)(area->values[2].y() - area->values[0].y());
+    const int current_height = config.has("printable_height") ? (int)config.opt_float("printable_height") : 0;
+    const int old_width  = facts.old_printable_width > 0 ? facts.old_printable_width : current_width;
+    const int old_depth  = facts.old_printable_depth > 0 ? facts.old_printable_depth : current_depth;
+    const int old_height = facts.old_printable_height > 0 ? facts.old_printable_height : current_height;
+    std::vector<Vec2d> current_exclude_area;
+    if (const auto* exclude = config.option<ConfigOptionPoints>("bed_exclude_area"))
+        current_exclude_area = exclude->values;
+    int shrink_to_new_bed = 0;
+    if (old_width > 0 && old_depth > 0 && old_height > 0) {
+        if (old_width > current_width || old_depth > current_depth || old_height > current_height)
+            shrink_to_new_bed = 2;
+        else if (old_width < current_width || old_depth < current_depth)
+            shrink_to_new_bed = 1;
+        else if (!current_exclude_area.empty() && current_exclude_area != facts.old_exclude_area)
+            shrink_to_new_bed = 2;
+    }
+    return shrink_to_new_bed;
+}
+
 /// A project moved onto a printer with another bed: translate_models
 /// (BambuStudio.cpp 4497-4644, called at 4659; OrcaSlicer.cpp 3885-3980), with
 /// shrink_to_new_bed from the file's bed against this printer's
@@ -3406,22 +3437,12 @@ static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_s
         return 0;
     const int current_width  = (int)(area->values[2].x() - area->values[0].x());
     const int current_depth  = (int)(area->values[2].y() - area->values[0].y());
-    const int current_height = config.has("printable_height") ? (int)config.opt_float("printable_height") : 0;
     const int old_width  = facts.old_printable_width > 0 ? facts.old_printable_width : current_width;
     const int old_depth  = facts.old_printable_depth > 0 ? facts.old_printable_depth : current_depth;
-    const int old_height = facts.old_printable_height > 0 ? facts.old_printable_height : current_height;
     std::vector<Vec2d> current_exclude_area;
     if (const auto* exclude = config.option<ConfigOptionPoints>("bed_exclude_area"))
         current_exclude_area = exclude->values;
-    int shrink_to_new_bed = 0;
-    if (old_width > 0 && old_depth > 0 && old_height > 0) {
-        if (old_width > current_width || old_depth > current_depth || old_height > current_height)
-            shrink_to_new_bed = 2;
-        else if (old_width < current_width || old_depth < current_depth)
-            shrink_to_new_bed = 1;
-        else if (!current_exclude_area.empty() && current_exclude_area != facts.old_exclude_area)
-            shrink_to_new_bed = 2;
-    }
+    const int shrink_to_new_bed = new_bed_shrink(facts, config);
 #ifdef ENGINE_ORCA
     (void)machine_switch;
     if (shrink_to_new_bed == 0)
@@ -3510,8 +3531,10 @@ static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_s
         auto* opt = config.option<ConfigOptionFloats>(key);
         if (!opt || opt->values.empty())
             continue;
+        // A short list grows with copies of its first value, as the
+        // official set_at does (Config.hpp 437) and as get_at reads it.
         if ((int)opt->values.size() <= plate_index)
-            opt->values.resize(plate_index + 1, opt->values.back());
+            opt->values.resize(plate_index + 1, opt->values.front());
         opt->values[plate_index] += key[11] == 'x' ? offset.x() : offset.y();
     }
     moved = offset;
@@ -4783,10 +4806,19 @@ static void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
             } else if (key == "nozzle_diameter") {
                 // nozzle_diameter is a list (one value per extruder); a single
                 // Float there fails the type check of every later read
-                // (Config.hpp 403). One value fills the list, as an .ini line
-                // would (the --temp lines below use the same call).
+                // (Config.hpp 403). The printer's extruder count is that
+                // list's size (support_different_extruders), so the value
+                // goes into every entry and the list keeps its size: a
+                // two-nozzle printer stays two nozzles. A value that is
+                // already a list is taken as given.
                 (void)std::stof(value);   // a bad number is refused as before
-                config.set_deserialize_strict(key, value);
+                size_t extruders = 1;
+                if (const auto* nozzles = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(config.option(key)))
+                    extruders = std::max<size_t>(1, nozzles->size());
+                std::string values = value;
+                for (size_t i = 1; i < extruders && value.find(',') == std::string::npos; ++i)
+                    values += "," + value;
+                config.set_deserialize_strict(key, values);
             } else if (key == "fill_density") {
                 config.set_key_value(key, new Slic3r::ConfigOptionPercent(std::stoi(value)));
                 config.set_key_value("sparse_infill_density", new Slic3r::ConfigOptionPercent(std::stoi(value)));
@@ -5690,28 +5722,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 emit_event({{"event","config_normalized"}, {"tag","PrimeTowerOffOneFilament"},
                             {"message","Every filament slot holds the same filament: the prime tower is off"}});
         }
-        // A project on a printer with another bed: the plate's objects and
-        // tower move onto it (move_to_new_bed).
-        int shrink_to_new_bed = 0;
-        std::map<const Slic3r::ModelInstance*, Slic3r::Vec3d> before_new_bed;
-        if (project_facts.is_bbl_3mf && !assemble_input && !model.objects.empty()) {
-            for (const Slic3r::ModelObject* object : model.objects)
-                for (const Slic3r::ModelInstance* inst : object->instances)
-                    before_new_bed[inst] = inst->get_offset();
-            const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
-            Slic3r::Vec3d moved;
-            shrink_to_new_bed = move_to_new_bed(project_facts, settings_merge.machine_switch, model, config,
-                                                plate_id > 0 ? plate_id - 1 : 0,
-                                                seq && seq->value == Slic3r::PrintSequence::ByObject, moved);
-            if (moved.x() != 0. || moved.y() != 0.) {
-                std::ostringstream text;
-                text << std::fixed << std::setprecision(2) << "The plate's objects and prime tower moved by (" << moved.x()
-                     << ", " << moved.y() << ") mm onto this printer's bed";
-                emit_event({{"event","arranged"}, {"tag","MovedToNewBed"}, {"shrink_to_new_bed", shrink_to_new_bed},
-                            {"message", text.str()}});
-            } else
-                before_new_bed.clear();
-        }
         // --load-custom-gcodes, --skip-modified-gcodes (cli_load_settings.cpp).
         {
             const slicer_cli::StepResult g = slicer_cli::apply_custom_gcodes(o, o.slice_mode ? o.slice_plate : plate_id, model);
@@ -5785,6 +5795,31 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence);
                 return 1;
             }
+        }
+
+        // A project on a printer with another bed: the plate's objects and
+        // tower move onto it (move_to_new_bed), after the settings given as
+        // flags apply (BambuStudio.cpp 4091 then 4659; OrcaSlicer.cpp 3542
+        // then 3885), so a flag's tower position or prime tower moves too.
+        int shrink_to_new_bed = 0;
+        std::map<const Slic3r::ModelInstance*, Slic3r::Vec3d> before_new_bed;
+        if (project_facts.is_bbl_3mf && !assemble_input && !model.objects.empty()) {
+            for (const Slic3r::ModelObject* object : model.objects)
+                for (const Slic3r::ModelInstance* inst : object->instances)
+                    before_new_bed[inst] = inst->get_offset();
+            const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
+            Slic3r::Vec3d moved;
+            shrink_to_new_bed = move_to_new_bed(project_facts, settings_merge.machine_switch, model, config,
+                                                plate_id > 0 ? plate_id - 1 : 0,
+                                                seq && seq->value == Slic3r::PrintSequence::ByObject, moved);
+            if (moved.x() != 0. || moved.y() != 0.) {
+                std::ostringstream text;
+                text << std::fixed << std::setprecision(2) << "The plate's objects and prime tower moved by (" << moved.x()
+                     << ", " << moved.y() << ") mm onto this printer's bed";
+                emit_event({{"event","arranged"}, {"tag","MovedToNewBed"}, {"shrink_to_new_bed", shrink_to_new_bed},
+                            {"message", text.str()}});
+            } else
+                before_new_bed.clear();
         }
 
 #ifdef ENGINE_BAMBU
@@ -6472,7 +6507,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     (project_facts.old_height_to_lid != 0.f && project_facts.old_height_to_lid != height_to_lid) ||
                     (project_facts.old_max_radius != 0.f && project_facts.old_max_radius != clearance_radius) ||
                     rod_distance_changed;
-                clearance_arrange = !need_arrange && is_bbl_3mf && shrink_to_new_bed == 0 && plate_id > 0 &&
+                // plate_to_slice > 0: one plate named, never --slice 0.
+                const int plate_to_slice = o.slice_mode ? o.slice_plate : plate_id;
+                clearance_arrange = !need_arrange && is_bbl_3mf && shrink_to_new_bed == 0 && plate_to_slice > 0 &&
                                     printer_changed && clearances_changed && is_seq_print;
                 if (clearance_arrange)
                     emit_event({{"event","arranged"}, {"tag","ClearanceArrange"},
@@ -7360,16 +7397,19 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         // The settings merge and the settings given as flags, as the slice
         // applied them (BambuStudio.cpp 4091, 8156-8157).
         Slic3r::DynamicPrintConfig extra = o.extra_config;
+        // The project's own printer and bed, for the move to a new bed below.
+        slicer_cli::ProjectFacts facts;
+        if (is_bbl_3mf)
+            slicer_cli::read_project_facts(file_config, facts);
+        bool machine_switch = false;
         if (slicer_cli::wants_settings_merge(o)) {
-            slicer_cli::ProjectFacts facts;
-            if (is_bbl_3mf)
-                slicer_cli::read_project_facts(file_config, facts);
             slicer_cli::SettingsMerge merge;
             const slicer_cli::StepResult merged = slicer_cli::merge_loaded_settings(o, facts, config, extra, project_presets, merge);
             if (merged.code != 0) {
                 error = merged.message;
                 return CLI_EXPORT_3MF_ERROR;
             }
+            machine_switch = merge.machine_switch;
             slicer_cli::update_object_configs_after_switch(facts, merge, config, model);
             slicer_cli::disable_tower_after_mapping(o, merge, config, extra);
             // The "(auto)" process the printer change needs (BambuStudio.cpp 3094).
@@ -7445,6 +7485,20 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         // states the same templates. The slice already reported the alias.
         if (o.normalize_legacy_gcode)
             normalize_legacy_gcode_tokens(config, /*report_event=*/false);
+        // A project moved onto a printer with another bed (see below): each
+        // plate's tower entry starts from the value its slice read, so a
+        // short list is filled with its first value (get_at) before any
+        // plate's entry moves.
+#ifdef ENGINE_ORCA
+        const bool new_bed_moves = is_bbl_3mf && new_bed_shrink(facts, config) > 0;
+#else
+        const bool new_bed_moves = is_bbl_3mf && machine_switch;
+#endif
+        if (new_bed_moves)
+            for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+                if (auto* opt = config.option<ConfigOptionFloats>(key))
+                    if (!opt->values.empty() && opt->values.size() < plates.size())
+                        opt->values.resize(plates.size(), opt->values.front());
         for (const PlateOutcome& out : outcomes) {
             if (!out.plate_data) continue;
             const int idx = out.plate_id - 1;
@@ -7516,6 +7570,72 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
                 pd->config.set_deserialize("filament_map_mode", out.derived_filament_map_mode, mode_subst);
             }
 #endif
+        }
+        // A project moved onto a printer with another bed: every plate moves,
+        // sliced or not (translate_models, BambuStudio.cpp 4516-4642 at
+        // 5873b5f; OrcaSlicer.cpp 3901-3977 at 31f6803). Each plate's objects
+        // and tower move on the plate as the slice moves them
+        // (move_to_new_bed), and with a new bed size the plate itself moves
+        // to its place in the grid of that size (compute_origin_using_new_size,
+        // then reset_size). A sliced plate's move on the plate comes from its
+        // slice (out.moved, above); the others are moved here.
+        if (new_bed_moves && !plates.empty()) {
+            std::set<int> sliced;
+            for (const PlateOutcome& out : outcomes)
+                if (out.plate_data)
+                    sliced.insert(out.plate_id - 1);
+            const int count = int(plates.size());
+            const bool regrid = new_bed_shrink(facts, config) > 0;
+            for (int k = 0; k < count; ++k) {
+                PlateData* pd = plates[k];
+                if (pd == nullptr)
+                    continue;
+                const Vec2d old_origin = plate_grid_origin(file_config, file_version, k, count);
+                Vec3d shift = Vec3d::Zero();
+                if (regrid) {
+                    const Vec2d new_origin = plate_grid_origin(config, Semver(), k, count);
+                    shift = Vec3d(new_origin.x() - old_origin.x(), new_origin.y() - old_origin.y(), 0.);
+                }
+                std::vector<ModelInstance*> plate_instances;
+                for (const auto& [oi, ii] : pd->objects_and_instances) {
+                    if (oi < 0 || oi >= int(model.objects.size())) continue;
+                    ModelObject* object = model.objects[oi];
+                    if (ii < 0 || ii >= int(object->instances.size())) continue;
+                    plate_instances.push_back(object->instances[ii]);
+                }
+                Vec3d on_plate = Vec3d::Zero();
+                if (!sliced.count(k) && !plate_instances.empty()) {
+                    // The plate's objects alone at the plate's own origin, as
+                    // the slice holds them.
+                    Model plate_model;
+                    std::map<const ModelObject*, ModelObject*> copies;
+                    for (const ModelInstance* inst : plate_instances) {
+                        ModelObject*& copy = copies[inst->get_object()];
+                        if (copy == nullptr) {
+                            copy = plate_model.add_object(*inst->get_object());
+                            copy->clear_instances();
+                        }
+                        ModelInstance* local = copy->add_instance(*inst);
+                        local->set_offset(local->get_offset() - Vec3d(old_origin.x(), old_origin.y(), 0.));
+                    }
+                    // The plate's own print sequence, else the project's
+                    // (get_print_sequence, BambuStudio.cpp 4403-4416).
+                    bool is_sequence = false;
+                    const auto* own = pd->config.option<ConfigOptionEnum<PrintSequence>>("print_sequence");
+                    if (own && own->value != PrintSequence::ByDefault)
+                        is_sequence = own->value == PrintSequence::ByObject;
+                    else if (const auto* seq = config.option<ConfigOptionEnum<PrintSequence>>("print_sequence"))
+                        is_sequence = seq->value == PrintSequence::ByObject;
+                    DynamicPrintConfig moved_config = config;
+                    move_to_new_bed(facts, machine_switch, plate_model, moved_config, k, is_sequence, on_plate);
+                    for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+                        if (const auto* moved = moved_config.option<ConfigOptionFloats>(key))
+                            config.option<ConfigOptionFloats>(key, true)->values = moved->values;
+                }
+                if (on_plate != Vec3d::Zero() || shift != Vec3d::Zero())
+                    for (ModelInstance* inst : plate_instances)
+                        inst->set_offset(inst->get_offset() + on_plate + shift);
+            }
         }
     }
 
