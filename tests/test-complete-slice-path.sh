@@ -1190,6 +1190,11 @@ for k in ("filament_colour", "filament_colour_type", "filament_multi_colour", "f
           "filament_flow_ratio", "filament_max_volumetric_speed", "filament_type"):
     if k in d:
         assert len(d[k]) == n, (k, d[k], n)
+if sys.argv[2] == "orca":
+    # The added slots take the desktop load_selections values (PresetBundle.cpp 2780-2795).
+    assert d["filament_colour"][1:] == ["#26A69A"] * (n - 1), d["filament_colour"]
+    assert d["filament_multi_colour"][1:] == ["#26A69A"] * (n - 1), d["filament_multi_colour"]
+    assert d["filament_colour_type"][1:] == ["1"] * (n - 1), d["filament_colour_type"]
 ' mtl-$e/out/mt.3mf $e
 done
 echo "PASS: every per-filament list matches the filament count on a multi-extruder printer (both engines)"

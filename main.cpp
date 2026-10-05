@@ -4440,9 +4440,24 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // A slice with them apart reads past the shorter lists. BambuStudio's
     // update_multi_material_filament_presets adds no filament (PresetBundle.cpp
     // 5527-5538), so its lists already match.
+    // set_num_filaments sizes the lists but gives the new slots no colour of
+    // their own here (the filament count has already grown, so its
+    // new-colour branch is skipped, and the lists fill from the first slot);
+    // the new slots then take load_selections' "#26A69A" and type "1".
     if (const auto* colours = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
-        colours && colours->values.size() != bundle.filament_presets.size())
-        bundle.set_num_filaments(unsigned(bundle.filament_presets.size()), "#26A69A");
+        colours && colours->values.size() != bundle.filament_presets.size()) {
+        const size_t old_count = colours->values.size();
+        const size_t count = bundle.filament_presets.size();
+        bundle.set_num_filaments(unsigned(count), std::string());
+        auto& colour      = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour")->values;
+        auto& multi       = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_multi_colour")->values;
+        auto& colour_type = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour_type")->values;
+        for (size_t i = old_count; i < count; ++i) {
+            if (i < colour.size()) colour[i] = "#26A69A";
+            if (i < multi.size()) multi[i] = "#26A69A";
+            if (i < colour_type.size()) colour_type[i] = "1";
+        }
+    }
 #endif
     filaments = bundle.filament_presets;
 
