@@ -1,4 +1,4 @@
-// layout_plan.cpp — headless layout-plan executor for issue #7
+// layout_plan.cpp — headless layout-plan executor
 //
 // Reads LayoutProblemV1, runs arrange, emits PlacementCandidateV1 on stdout.
 // Also: `layout capabilities --json`.

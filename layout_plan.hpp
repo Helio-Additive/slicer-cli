@@ -1,4 +1,4 @@
-// layout_plan.hpp — versioned headless layout-plan contract for issue #7
+// layout_plan.hpp — versioned headless layout-plan contract
 //
 // LayoutProblemV1   (stdin / --input)   → slicer_cli --layout-plan
 // CapabilitiesV1    (--json)            ← slicer_cli layout capabilities
