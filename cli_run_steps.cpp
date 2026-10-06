@@ -216,7 +216,22 @@ StepResult apply_transforms(const CliOptions& o, Slic3r::Model& model,
 #else
         (void)process_config;
 #endif
+        // The official loads model files with their default instance
+        // (read_from_file(..., AddDefaultInstances), BambuStudio.cpp 1880-1889;
+        // OrcaSlicer.cpp 1562-1571), so the object has one when it is
+        // oriented: orient() measures ModelObject::mesh(), the sum of the
+        // object's instances (Model.cpp 1611-1621), which is empty without
+        // one and crashes in AutoOrienter::get_features
+        // (z_projected.minCoeff() of an empty matrix, Orient.cpp 388). Here
+        // model files get their instance from the desktop placement after
+        // the transforms (desktop_place_on_bed), so the orient gets the same
+        // identity instance for its duration only.
+        const bool temporary_instance = obj->instances.empty();
+        if (temporary_instance)
+            obj->add_instance();
         Slic3r::orientation::orient(obj);
+        if (temporary_instance)
+            obj->clear_instances();
         emit({{"event", "model_loaded"}, {"tag", "ObjectOriented"}, {"object", obj->name},
               {"message", "--orient: '" + obj->name + "' was turned to its best printing orientation"}});
     }

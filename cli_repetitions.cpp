@@ -23,12 +23,21 @@ int printable_objects(const Slic3r::Model& model) {
 } // namespace
 
 void duplicate_all_instance(Slic3r::Model& model, unsigned dup_count, const std::set<int>& skip_ids) {
-    const size_t old_count = model.objects.size();
-    for (size_t obj_id = 0; obj_id < old_count; ++obj_id) {
+    // Every instance of the plate in turn (obj_to_instance_set, in (object,
+    // instance) order): a skipped one is made unprintable and not copied, any
+    // other is copied (PartPlate::duplicate_all_instance, PartPlate.cpp
+    // 2820-2855 at 5873b5f; 2739-2775 at 31f6803). The official copies the
+    // instance's whole object, so an object with several instances repeats
+    // its other instances too, skipped ones included; each copy here holds
+    // only the instance it copies, which gives the official result for an
+    // object of one instance and applies --skip-objects per instance.
+    std::vector<std::pair<size_t, size_t>> old_list;
+    for (size_t obj_id = 0; obj_id < model.objects.size(); ++obj_id)
+        for (size_t inst_id = 0; inst_id < model.objects[obj_id]->instances.size(); ++inst_id)
+            old_list.emplace_back(obj_id, inst_id);
+    for (const auto& [obj_id, inst_id] : old_list) {
         Slic3r::ModelObject* object = model.objects[obj_id];
-        if (object->instances.empty())
-            continue;
-        Slic3r::ModelInstance* instance = object->instances.front();
+        Slic3r::ModelInstance* instance = object->instances[inst_id];
         if (!skip_ids.empty() && skip_ids.count(instance->loaded_id)) {
             instance->printable = false;
             continue;
@@ -36,6 +45,9 @@ void duplicate_all_instance(Slic3r::Model& model, unsigned dup_count, const std:
         for (unsigned index = 0; index < dup_count; ++index) {
             Slic3r::ModelObject* copy = model.add_object(*object);
             copy->name = object->name + "_" + std::to_string(index + 1);
+            for (int other = int(copy->instances.size()) - 1; other >= 0; --other)
+                if (size_t(other) != inst_id)
+                    copy->delete_instance(size_t(other));
         }
     }
     for (Slic3r::ModelObject* object : model.objects)

@@ -1693,16 +1693,19 @@ assert d["return_code"] == -63, (d["return_code"], d.get("error_string"))
 done
 echo "PASS: --slice 0 does not arrange a by-object plate again for wider clearances; the clearance check refuses it (-63) (both engines)"
 
-# A printer change moves every plate of the exported project onto the new
-# bed, sliced or not (translate_models, BambuStudio.cpp 4516-4642;
-# OrcaSlicer.cpp 3901-3977): each cube (saved centred at 138, 138) is
-# centred on its plate, a move of -48 mm, and each plate goes to its place in
-# the A1 mini's grid (3 plates: 2 columns, stride 180 * 1.2 = 216 mm). The
+# A printer change moves the sliced plate onto the new bed (translate_models,
+# BambuStudio.cpp 4516-4642; OrcaSlicer.cpp 3901-3977): the cube (saved
+# centred at 138, 138) is centred on its plate, a move of -48 mm, and the
+# plate goes to its place in the A1 mini's grid (3 plates: 2 columns, stride
+# 180 * 1.2 = 216 mm). With --slice N the export holds plate N's objects
+# only, as the official loads only that plate (BambuStudio.cpp 1889). The
 # tower list holds 2 values for 3 plates (given as flags for --slice 2, in
-# the settings file for --slice 3): plate 3's entry is the first value moved
-# (set_at and get_at fill with the first value, Config.hpp 437), here
-# 100 - 48 and 120 - 48. The project keeps the moved tower (the official
-# exports m_print_config).
+# the settings file for --slice 3): plate N's entry moves by -48 (plate 3's
+# is the first value, as set_at and get_at fill with it, Config.hpp 437).
+# The project keeps the moved tower (the official exports m_print_config,
+# which holds the flags, 4091, before the move); the other plates' entries
+# stay as given (the official moves them by the box of a plate it did not
+# load, an empty box).
 py '
 import json
 plate = lambda n: {"plate_name": n, "need_arrange": False,
@@ -1734,13 +1737,14 @@ centres = sorted((round(float(t[9])), round(float(t[10])))
                  for t in (m.split() for m in re.findall(r"<item [^>]*transform=\"([^\"]+)\"", build)))
 d = json.loads(z.read("Metadata/project_settings.config"))
 wx = [round(float(v)) for v in d["wipe_tower_x"]]; wy = [round(float(v)) for v in d["wipe_tower_y"]]
-ok_centres = centres == sorted([(90, 90), (306, 90), (90, -126)])
-ok_tower = wx == [52, 102, 52] and wy == [72, 92, 72]
+p = sys.argv[2]
+ok_centres = centres == ([(306, 90)] if p == "2" else [(90, -126)])
+ok_tower = (wx, wy) == (([100, 102], [120, 92]) if p == "2" else ([100, 150, 52], [120, 140, 72]))
 assert ok_centres and ok_tower, ("centres", centres, "tower", wx, wy)
-' mv$p-$e/out/moved.3mf
+' mv$p-$e/out/moved.3mf $p
     done
 done
-echo "PASS: a printer change moves every plate of the exported project, and a short tower list fills with its first value (both engines)"
+echo "PASS: a printer change moves the sliced plate of the exported project, and a short tower list fills with its first value (both engines)"
 
 # --nozzle on a two-extruder printer keeps both extruders: the value fills
 # the list at its size (the extruder count is that size).
@@ -2019,6 +2023,16 @@ assert close(r["sparse_infill_density"], str(s["sparse_infill_density"]).rstrip(
     done
 done
 echo "PASS: the G-code header, --export-settings, the exported project's settings and result.json agree on the plate's tower, print sequence, filaments and summary (both engines)"
+
+# The PR #35 findings F1-F10 (and F7o), each a check of what the official
+# command line does, on both engines: tests/test-pr35-findings.sh runs every
+# block and lists each result.
+if bash "$SCRIPT_DIR/test-pr35-findings.sh" "$B" "$O" > findings.log 2>&1; then
+    sed -n '/^== summary/,$p' findings.log | grep -E '^(PASS|SKIP)'
+else
+    sed -n '/^== summary/,$p' findings.log
+    fail "PR #35 findings (tests/test-pr35-findings.sh)"
+fi
 
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then

@@ -332,7 +332,10 @@ of either.
 The default call writes the file named by `-o`. `--slice` writes
 `plate_N.gcode` for each plate into `--outputdir`. With `--export-3mf` the
 sliced project goes there too, holding the G-code of each sliced plate and a
-`plate_N.json` with each object's position.
+`plate_N.json` with each object's position. It holds the model as it was
+sliced: transforms, the arrange, `--repetitions` copies and skipped objects
+(written as not printable). With `--slice N` it holds only plate N's objects,
+as the official command line loads only that plate.
 
 `--export-settings`, the exported project's settings and `result.json` all
 state the project's settings, including the towers an arrange placed. Each
