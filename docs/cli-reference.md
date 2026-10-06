@@ -334,6 +334,13 @@ The default call writes the file named by `-o`. `--slice` writes
 sliced project goes there too, holding the G-code of each sliced plate and a
 `plate_N.json` with each object's position.
 
+`--export-settings`, the exported project's settings and `result.json` all
+state the project's settings, including the towers an arrange placed. Each
+G-code header states its plate's own settings. On the Bambu build these can
+also turn the prime tower off when every filament is the same, and fill the
+per-filament lists to the filament count. So those keys may differ between the
+header and the project.
+
 ### result.json
 
 `--slice` always writes `result.json` into `--outputdir`, also when the run

@@ -1974,6 +1974,52 @@ assert e["file_plate_count"] == 1 and e["plate_count"] == 2, e
 done
 echo "PASS: the arrange of a project 3MF with model files adds the plates it needs (both engines)"
 
+# One settings base for the run: the G-code header, --export-settings, the
+# exported project's settings and result.json read the same settings for a
+# plate. The official keeps one m_print_config, which its arrange updates
+# (BambuStudio.cpp 5856; OrcaSlicer.cpp 5112) and which --export-settings
+# (6366-6370; 5499-5503), result.json (6905-6910; 5908-5913) and the export
+# (8156-8157; 6985) read, and slices each plate with a copy that has the
+# plate's own settings on top (6902-6904; 5905-5907). Checked: the tower the
+# arrange placed (--arrange 1, and --repetitions on a printer change, whose
+# copies start the tower at the default corner), the print sequence, the
+# filament list and the summary.
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    for c in "gb:--arrange 1" "gbr:--load-settings a1m-$e.json --repetitions 2"; do
+    n=${c%%:*}; flags=${c#*:}
+    run $n-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 $flags --export-settings $n-$e.json \
+        --outputdir $n-$e/out --export-3mf gb.3mf
+    [ "$(rc $n-$e)" = 0 ] || { show $n-$e; fail "$e: --slice 1 $flags with --export-settings and --export-3mf exit $(rc $n-$e)"; }
+    py '
+import json, re, sys, zipfile
+g = open(sys.argv[1], errors="replace").read().replace("\r", "")
+s = json.load(open(sys.argv[2]))
+z = zipfile.ZipFile(sys.argv[3])
+p = json.loads(z.read("Metadata/project_settings.config"))
+ms = z.read("Metadata/model_settings.config").decode()
+r = json.load(open(sys.argv[4]))
+hv = lambda k: re.search(r"^; " + k + r" = (.*)$", g, re.M).group(1)
+items = lambda v: [x.strip().strip("\"") for x in re.split(r"[;,]", v)] if isinstance(v, str) else [str(x) for x in v]
+close = lambda a, b: abs(float(a) - float(b)) < 0.01
+# The tower the arrange placed (plate 1: entry 0).
+tower = [(items(hv(k))[0], items(s[k])[0], items(p[k])[0]) for k in ("wipe_tower_x", "wipe_tower_y")]
+assert all(close(a, b) and close(a, c) for a, b, c in tower), ("tower: G-code, --export-settings, 3MF", tower)
+# The print sequence: the plate setting, else the project setting.
+own = re.search(r"<plate>(?:(?!</plate>).)*?key=\"print_sequence\" value=\"([^\"]+)\"", ms, re.S)
+want = own.group(1) if own else s["print_sequence"]
+assert hv("print_sequence") == want and p["print_sequence"] == s["print_sequence"], (hv("print_sequence"), want, p["print_sequence"], s["print_sequence"])
+# The filament list.
+for k in ("filament_settings_id", "filament_colour", "filament_type"):
+    assert items(hv(k)) == items(s[k]) == items(p[k]), (k, hv(k), s[k], p[k])
+# The summary result.json states.
+assert close(r["layer_height"], s["layer_height"]) and r["wall_loops"] == int(s["wall_loops"]), (r["layer_height"], r["wall_loops"], s["layer_height"], s["wall_loops"])
+assert close(r["sparse_infill_density"], str(s["sparse_infill_density"]).rstrip("%")), (r["sparse_infill_density"], s["sparse_infill_density"])
+' $n-$e/out/plate_1.gcode $n-$e.json $n-$e/out/gb.3mf $n-$e/out/result.json || { show $n-$e; fail "$e: $flags: the G-code header, --export-settings, the exported project and result.json disagree"; }
+    done
+done
+echo "PASS: the G-code header, --export-settings, the exported project's settings and result.json agree on the plate's tower, print sequence, filaments and summary (both engines)"
+
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
     for e in bambu orca; do

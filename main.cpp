@@ -4069,7 +4069,7 @@ static bool arrange_assemble_plate(Slic3r::Model& model, Slic3r::DynamicPrintCon
 /// object with its bounding box. Orca's statistics carry no per-role times
 /// and name the change count total_filament_changes.
 static void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Model& model,
-                                    const Slic3r::DynamicPrintConfig& config,
+                                    const Slic3r::DynamicPrintConfig& config, const Slic3r::DynamicPrintConfig& project,
                                     const Slic3r::GCodeProcessorResult& result, PlateOutcome& outcome) {
     using Slic3r::PrintEstimatedStatistics;
     const PrintEstimatedStatistics& stat = result.print_statistics;
@@ -4122,9 +4122,11 @@ static void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Mo
             {"bbox", {{"x", box.min.x()}, {"y", box.min.y()}, {"z", box.min.z()},
                       {"width", box.size().x()}, {"depth", box.size().y()}, {"height", box.size().z()}}}});
     }
-    if (config.has("layer_height"))          outcome.layer_height = float(config.opt_float("layer_height"));
-    if (config.has("wall_loops"))            outcome.wall_loops   = config.opt_int("wall_loops");
-    if (const auto* d = config.option<Slic3r::ConfigOptionPercent>("sparse_infill_density"))
+    // The run's summary reads the project's settings, m_print_config, not
+    // the plate's copy (BambuStudio.cpp 6905-6910; OrcaSlicer.cpp 5908-5913).
+    if (project.has("layer_height"))          outcome.layer_height = float(project.opt_float("layer_height"));
+    if (project.has("wall_loops"))            outcome.wall_loops   = project.opt_int("wall_loops");
+    if (const auto* d = project.option<Slic3r::ConfigOptionPercent>("sparse_infill_density"))
         outcome.sparse_infill_density = float(d->value);
     (void)print;
 }
@@ -5415,31 +5417,6 @@ static Slic3r::DynamicPrintConfig plate_own_settings(const Slic3r::PlateDataPtrs
     return plate_config;
 }
 
-/// Metadata/plate_N.json's is_seq_print: whether the plate prints by object.
-static bool plate_json_is_seq_print(const std::string& input_file, int plate_id) {
-    bool is_seq_print_plate = false;
-    mz_zip_archive zip;
-    mz_zip_zero_struct(&zip);
-    if (Slic3r::open_zip_reader(&zip, input_file)) {
-        const std::string plate_json_path = "Metadata/plate_" + std::to_string(plate_id) + ".json";
-        const int file_idx = mz_zip_reader_locate_file(&zip, plate_json_path.c_str(), nullptr, 0);
-        if (file_idx >= 0) {
-            mz_zip_archive_file_stat stat;
-            if (mz_zip_reader_file_stat(&zip, file_idx, &stat)) {
-                std::string content(stat.m_uncomp_size, '\0');
-                mz_zip_reader_extract_to_mem(&zip, file_idx, content.data(), content.size(), 0);
-                try {
-                    auto plate_json = json::parse(content);
-                    if (plate_json.contains("is_seq_print"))
-                        is_seq_print_plate = plate_json["is_seq_print"].get<bool>();
-                } catch (...) {}
-            }
-        }
-        mz_zip_reader_end(&zip);
-    }
-    return is_seq_print_plate;
-}
-
 /// One plate of the run: its grid origin in the scene and its instances in
 /// the run's model (PartPlate's origin and obj_to_instance_set). `members`
 /// empty with `all` set: every instance of the model is on this plate (a
@@ -5494,7 +5471,6 @@ struct RunState {
     std::optional<Slic3r::DynamicPrintConfig> plan_file_config;
     Slic3r::Semver plan_file_version;
     int plan_file_filaments = 0;
-    std::string project_print_sequence_before_plate;
     slicer_cli::ProjectFacts project_facts;
     std::vector<Slic3r::Preset> project_presets_kept;
     Slic3r::DynamicPrintConfig extra;
@@ -5575,12 +5551,23 @@ static void pipe_prepare_slicing(RunState& rs) {
 /// minus the plate's origin. On exit every instance goes back to the scene
 /// with the move the step made (an instance the step did not move keeps its
 /// exact offset), the other instances come back, and instances or objects
-/// the step added (--repetitions) are kept, on the plate.
+/// the step added (--repetitions) are kept, on the plate. Instances are known
+/// by their ObjectID, which a copy of the model keeps (Model::assign_copy), so
+/// a step that puts back a saved copy of the model (the repetitions loop)
+/// finds its instances again. Only a scope that holds the whole model may let
+/// its step replace the model's objects.
 class PlateScope {
 public:
     PlateScope(Slic3r::Model& model, const RunPlate& plate) : m_model(model), m_origin(plate.origin) {
-        m_all_objects = model.objects;
-        if (!plate.all) {
+        m_whole = plate.all;
+        if (!m_whole) {
+            m_whole = true;
+            for (const Slic3r::ModelObject* object : model.objects)
+                for (const Slic3r::ModelInstance* inst : object->instances)
+                    m_whole = m_whole && plate.is_member(inst);
+        }
+        if (!m_whole) {
+            m_all_objects = model.objects;
             std::vector<Slic3r::ModelObject*> kept;
             for (Slic3r::ModelObject* object : model.objects) {
                 std::vector<Slic3r::ModelInstance*> mine;
@@ -5599,8 +5586,9 @@ public:
             for (Slic3r::ModelInstance* inst : object->instances) {
                 const Slic3r::Vec3d scene = inst->get_offset();
                 const Slic3r::Vec3d local = scene - Slic3r::Vec3d(m_origin.x(), m_origin.y(), 0.);
-                m_scene[inst] = scene;
-                m_local[inst] = local;
+                m_scene[inst->id().id] = scene;
+                m_local[inst->id().id] = local;
+                m_members.insert(inst);
                 if (m_origin.x() != 0. || m_origin.y() != 0.)
                     inst->set_offset(local);
             }
@@ -5609,37 +5597,37 @@ public:
         const Slic3r::Vec3d origin(m_origin.x(), m_origin.y(), 0.);
         for (Slic3r::ModelObject* object : m_model.objects) {
             for (Slic3r::ModelInstance* inst : object->instances) {
-                auto it = m_scene.find(inst);
+                const auto it = m_scene.find(inst->id().id);
                 if (it == m_scene.end())
                     inst->set_offset(inst->get_offset() + origin);   // added in the scope
-                else if (inst->get_offset() != m_local[inst])
-                    inst->set_offset(it->second + (inst->get_offset() - m_local[inst]));
+                else if (inst->get_offset() != m_local[it->first])
+                    inst->set_offset(it->second + (inst->get_offset() - m_local[it->first]));
                 else
                     inst->set_offset(it->second);
             }
             object->invalidate_bounding_box();
         }
+        if (m_whole)
+            return;
         // The other plates' instances back in their places, the plate's own
         // (and any the step added) where they were.
         for (auto& [object, all] : m_instances) {
             std::vector<Slic3r::ModelInstance*> now = object->instances;
             std::vector<Slic3r::ModelInstance*> restored;
             for (Slic3r::ModelInstance* inst : all)
-                if (!m_scene.count(inst) || std::find(now.begin(), now.end(), inst) != now.end())
+                if (!m_members.count(inst) || std::find(now.begin(), now.end(), inst) != now.end())
                     restored.push_back(inst);
             for (Slic3r::ModelInstance* inst : now)
                 if (std::find(all.begin(), all.end(), inst) == all.end())
                     restored.push_back(inst);
             object->instances = restored;
         }
-        if (!m_instances.empty() || m_model.objects.size() != m_all_objects.size()) {
-            std::vector<Slic3r::ModelObject*> now = m_model.objects;
-            std::vector<Slic3r::ModelObject*> restored = m_all_objects;
-            for (Slic3r::ModelObject* object : now)
-                if (std::find(m_all_objects.begin(), m_all_objects.end(), object) == m_all_objects.end())
-                    restored.push_back(object);
-            m_model.objects = restored;
-        }
+        std::vector<Slic3r::ModelObject*> now = m_model.objects;
+        std::vector<Slic3r::ModelObject*> restored = m_all_objects;
+        for (Slic3r::ModelObject* object : now)
+            if (std::find(m_all_objects.begin(), m_all_objects.end(), object) == m_all_objects.end())
+                restored.push_back(object);
+        m_model.objects = restored;
     }
     PlateScope(const PlateScope&) = delete;
     PlateScope& operator=(const PlateScope&) = delete;
@@ -5647,9 +5635,11 @@ public:
 private:
     Slic3r::Model& m_model;
     Slic3r::Vec2d m_origin;
+    bool m_whole = true;
     std::vector<Slic3r::ModelObject*> m_all_objects;
     std::map<Slic3r::ModelObject*, std::vector<Slic3r::ModelInstance*>> m_instances;
-    std::map<const Slic3r::ModelInstance*, Slic3r::Vec3d> m_scene, m_local;
+    std::set<const Slic3r::ModelInstance*> m_members;
+    std::map<size_t, Slic3r::Vec3d> m_scene, m_local;
 };
 
 /// --skip-objects on the placed objects (BambuStudio.cpp 6541-6581,
@@ -5748,10 +5738,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         std::optional<Slic3r::DynamicPrintConfig>& plan_file_config = rs.plan_file_config;
         Slic3r::Semver& plan_file_version = rs.plan_file_version;
         int& plan_file_filaments = rs.plan_file_filaments;
-        // The project's print_sequence before the sliced plate's own
-        // (plate_N.json is_seq_print) is laid over it; empty when the plate
-        // has none of its own.
-        std::string& project_print_sequence_before_plate = rs.project_print_sequence_before_plate;
         // What the official CLI reads from a Bambu-made 3MF, and its embedded
         // presets, for --load-settings and friends (cli_load_settings.cpp).
         slicer_cli::ProjectFacts& project_facts = rs.project_facts;
@@ -6185,25 +6171,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (const auto* ids = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id"))
                     plan_file_filaments = (int)ids->values.size();
             }
+            // A plate prints by object when its own print_sequence says so,
+            // else when the project's does (get_print_sequence,
+            // BambuStudio.cpp 4403-4416; the plate's own settings go over the
+            // project's per plate, 6902-6904). plate_N.json's is_seq_print is
+            // what the desktop's last slice found, an output, not a setting.
             if (plate_id > 0 && is_bbl_3mf && !model.objects.empty()) {
-                const bool is_seq_print_plate = plate_json_is_seq_print(input_file, plate_id);
-
                 const Slic3r::Vec2d origin = plate_grid_origin(config, file_version, plate_id - 1, (int)plate_data.size());
                 outcome.plate_origin = origin;
                 if (verbose)
                     std::cout << "Plate " << plate_id << " of " << plate_data.size()
                               << ": grid origin (" << origin.x() << ", " << origin.y() << ")\n";
-
-                // Apply sequential print flag from plate metadata
-                if (is_seq_print_plate) {
-                    Slic3r::ConfigSubstitutionContext seq_subst(
-                        Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-                    if (const Slic3r::ConfigOption* seq = config.option("print_sequence"))
-                        project_print_sequence_before_plate = seq->serialize();
-                    config.set_deserialize("print_sequence", "by object", seq_subst);
-                    if (verbose)
-                        std::cout << "Plate " << plate_id << " uses sequential (by-object) printing\n";
-                }
             }
 
 #ifdef ENGINE_BAMBU
@@ -6517,17 +6495,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 preset_ptrs.push_back(&p);
             // The official merges into m_print_config, which holds the
             // project's print_sequence, not a plate's own (get_print_sequence
-            // reads the plate's first, BambuStudio.cpp 4403-4416). The sliced
-            // plate's own goes back on top after the merge.
-            Slic3r::ConfigSubstitutionContext seq_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-            if (!project_print_sequence_before_plate.empty())
-                config.set_deserialize("print_sequence", project_print_sequence_before_plate, seq_subst);
+            // reads the plate's first, BambuStudio.cpp 4403-4416).
             const slicer_cli::StepResult merged =
                 slicer_cli::merge_loaded_settings(o, project_facts, config, extra, preset_ptrs, settings_merge);
             if (const Slic3r::ConfigOption* seq = config.option("print_sequence"))
                 merged_print_sequence = seq->serialize();
-            if (!project_print_sequence_before_plate.empty())
-                config.set_deserialize("print_sequence", "by object", seq_subst);
             if (merged.code != 0) {
                 emit_event({{"event","config_refused"}, {"tag","SettingsFilesRefused"}, {"message", merged.message}});
                 std::cerr << "Error: " << merged.message << "\n";
@@ -6637,12 +6609,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 const int index = moved_plate - 1;
                 RunPlate& run_plate = rs.plate(moved_plate);
                 // The plate's own print sequence, else the project's
-                // (get_print_sequence, BambuStudio.cpp 4403-4416); the plate
-                // the call names reads the settings as they stand.
+                // (get_print_sequence, BambuStudio.cpp 4403-4416).
                 bool is_sequence = false;
                 if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
                     is_sequence = seq->value == Slic3r::PrintSequence::ByObject;
-                if (plate_id == 0 && index < (int)plate_data.size() && plate_data[index] != nullptr)
+                if (index < (int)plate_data.size() && plate_data[index] != nullptr)
                     if (const auto* own = plate_data[index]->config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
                         own && own->value != Slic3r::PrintSequence::ByDefault)
                         is_sequence = own->value == Slic3r::PrintSequence::ByObject;
@@ -6888,15 +6859,6 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // 6902-6904; OrcaSlicer.cpp 5499-5503 and 5905-5907).
         if (slicer_cli::has_model_actions(o))
             project_settings = rs.base;
-        // A plate the run did not load alone: its plate_N.json by-object flag
-        // (see the load above, which applies it for the plate it loads).
-        if (fresh_plate_config && rs.prepared && plate_id > 0 && is_bbl_3mf && !trailing_port &&
-            plate_json_is_seq_print(input_file, plate_id)) {
-            Slic3r::ConfigSubstitutionContext seq_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-            config.set_deserialize("print_sequence", "by object", seq_subst);
-            if (!extra.empty())
-                config.apply(extra, true);
-        }
         if (fresh_plate_config) {
         // The prepare call of a run of several plates lays no plate's own
         // settings: its settings serve the run-level steps only, and each
@@ -7664,6 +7626,16 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // (BambuStudio.cpp 6188-6194 then 6336; OrcaSlicer.cpp 5443-5455
             // then 5470); --skip-objects stays in the slice step after them.
             slicer_cli::ensure_on_bed_if_asked(o, model);
+            // The towers the arrange placed are the project's from here on:
+            // the official arrange writes them into m_print_config
+            // (BambuStudio.cpp 5693-5700, 5856, 6075; OrcaSlicer.cpp
+            // 4954-4961, 5112, 5335), which --export-settings, result.json and
+            // --export-3mf then read (6366-6370, 6905-6910, 8156-8157).
+            for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+                if (const Slic3r::ConfigOption* placed = config.option(key))
+                    rs.base.set_key_value(key, placed->clone());
+            if (slicer_cli::has_model_actions(o))
+                project_settings = rs.base;
             if (slicer_cli::has_model_actions(o) && !rs.actions_done) {
                 rs.actions_done = true;
                 if (!run_model_action_step(slicer_cli::ActionPhase::BeforeSlice))
@@ -7818,18 +7790,22 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         }
 #endif
 
-        // The plate's Print in the plate's own frame. The official CLI hands
-        // each plate a Print whose origin is the plate's (PartPlate::get_print,
+        // The plate's Print in the plate's own frame. The official CLI slices
+        // each plate of the scene model with a Print whose origin is the
+        // plate's (PartPlate::get_print and the plate's BuildVolume,
+        // BambuStudio.cpp 6506-6529; OrcaSlicer.cpp 5623-5646; the origin from
         // set_plate_origin, PartPlate.cpp 2376/2517 at 5873b5f, 2311/2433 at
-        // 31f6803; BambuStudio.cpp 6506, OrcaSlicer.cpp 5623) over the scene
-        // model. Here the Print's model is the plate's instances moved by minus
-        // the plate's origin (PlateScope at print.apply below) and the Print's
-        // origin stays 0: the same placement, and the G-code this command line
-        // has always written. The two are not the same bytes for a plate past
-        // the first: the engine fits arcs and picks the first layer's entry
-        // point from (0,0) in the Print's own coordinates, so a scene-frame
-        // Print rounds some arc centres and orders some first moves
-        // differently (measured on the product corpus, PR #35).
+        // 31f6803). Here the Print's model is the plate's instances moved by
+        // minus the plate's origin (PlateScope at print.apply below) and the
+        // Print's origin stays 0: the same placement, and the G-code this
+        // command line has always written, which the product relies on. The
+        // two differ in bytes on a plate past the first: the engine fits arcs
+        // on the Print's own coordinates (arc centres round differently) and
+        // starts the first layer's moves from (0,0) of that frame (the first
+        // moves and the object order change). Measured on the product corpus
+        // for PR #35 with the scene-frame build kept as pkg-origin: object
+        // order changed on 11 of 50 plates past the first, moves on 16 beyond
+        // the engine's run-to-run noise; extents and settings unchanged.
         const Slic3r::Vec2d plate_origin = Slic3r::Vec2d::Zero();   // the Print's origin
         print.set_plate_origin(Slic3r::Vec3d(0.0, 0.0, 0.0));
         // The plate's own per-plate values (wipe_tower_x/y are one entry per
@@ -8148,7 +8124,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // toolpath conflicts or printable-area failures.
                 emit_gcode_result_diagnostics(gcode_result);
                 if (o.slice_mode) {
-                    record_plate_statistics(print, model, config, gcode_result, outcome);
+                    record_plate_statistics(print, model, config, rs.base, gcode_result, outcome);
                     outcome.sliced_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - plate_started).count();
                     // --mstpp: a plate that took longer ends the run, listed with
@@ -8449,7 +8425,8 @@ static int run_info(const std::string& argv0, const std::string& path, const std
 /// with. No thumbnails are rendered (the CLI has no OpenGL), so a project
 /// keeps the plate pictures it came with.
 static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path& outdir,
-                             std::vector<PlateOutcome>& outcomes, std::string& error) {
+                             std::vector<PlateOutcome>& outcomes, const Slic3r::DynamicPrintConfig& project,
+                             std::string& error) {
     using namespace Slic3r;
     const std::string path = (outdir / o.export_3mf).string();
     Model model;
@@ -8826,6 +8803,25 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
         }
     }
 
+    // The project's settings are the run's, m_print_config (the official
+    // export_project(..., &m_print_config, ...), BambuStudio.cpp 8156-8157;
+    // OrcaSlicer.cpp 6985), the ones --export-settings writes and
+    // result.json reads, with each plate's tower where its slice put it. A
+    // plate's own settings stay the plate's (its PlateData config). The
+    // G-code header reads the plate's copy, which also holds this command
+    // line's own per-plate adjustments (the prime tower turned off when
+    // every filament is the same, the per-filament lists filled to the
+    // filament count on the Bambu build): those keys can differ from the
+    // project's, as the official app never writes them.
+    {
+        Slic3r::DynamicPrintConfig exported = project;
+        for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+            if (const Slic3r::ConfigOption* tower = config.option(key))
+                exported.set_key_value(key, tower->clone());
+        if (!geometry_input && !g_assemble && o.normalize_legacy_gcode)
+            normalize_legacy_gcode_tokens(exported, /*report_event=*/false);
+        config = std::move(exported);
+    }
     // Each sliced plate's Metadata/plate_N.json; an empty box for the others
     // (BambuStudio.cpp 7976-7988).
     std::vector<std::unique_ptr<PlateBBoxData>> bbox_storage;
@@ -9175,7 +9171,9 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         slicer_cli::pipe_update(97, "Exporting 3mf");   // BambuStudio.cpp 8128-8133
         std::string export_error;
         try {
-            code = export_sliced_3mf(o, outdir, outcomes, export_error);
+            Slic3r::DynamicPrintConfig project = rs.base;
+            apply_command_line_overrides(project, o.overrides, /*report_rejections=*/false);
+            code = export_sliced_3mf(o, outdir, outcomes, project, export_error);
         } catch (const std::exception& e) {
             code = CLI_EXPORT_3MF_ERROR;
             export_error = e.what();
