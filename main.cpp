@@ -7894,9 +7894,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // filament lands on the master extruder. The official CLI gives each
         // extruder one estimated 4-slot AMS ("1#0|4#1") holding the project's
         // filament colours and types in turn (BambuStudio.cpp 6911-6950 at
-        // 5873b5f; estimate_mode is off on this path). OrcaSlicer.cpp
-        // 5914-5951 has the same block; the Orca build is left as it is here,
-        // since its toolchanger grouping (U1) is matched without it.
+        // 5873b5f; estimate_mode is off on this path). The Orca build runs
+        // OrcaSlicer.cpp's own version of the block below.
         {
             const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
             const int extruder_count = nozzles ? int(nozzles->values.size()) : 1;
@@ -7925,6 +7924,50 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             }
         }
 #endif // ENGINE_BAMBU
+#ifdef ENGINE_ORCA
+        // The same step as the official OrcaSlicer CLI runs it before
+        // automatic grouping (OrcaSlicer.cpp 5914-5951 at 31f6803): on a
+        // printer with more than one extruder and a filament map mode before
+        // Manual (AutoForFlush when the setting is missing), each extruder
+        // gets one estimated 4-slot AMS ("1#0|4#1") whose slots take the
+        // project's filament types in turn. Unlike BambuStudio, Orca leaves
+        // every slot white (its colour copy is commented out) and names no
+        // tray. The types are the project's (m_print_config's; a plate's own
+        // settings do not change them).
+        {
+            const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
+            const int new_extruder_count = nozzles ? int(nozzles->values.size()) : 1;
+            if (new_extruder_count > 1) {
+                Slic3r::FilamentMapMode map_mode = Slic3r::fmmAutoForFlush;
+                if (const auto* mode = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode"))
+                    map_mode = mode->value;
+                if (map_mode < Slic3r::fmmManual) {
+                    std::vector<std::string> extruder_ams_count(new_extruder_count, "");
+                    std::vector<std::vector<Slic3r::DynamicPrintConfig>> extruder_filament_info(new_extruder_count);
+                    int color_count = 0;
+                    const auto* filament_type = dynamic_cast<const Slic3r::ConfigOptionStrings*>(config.option("filament_type"));
+                    std::vector<std::string> types = filament_type ? filament_type->vserialize() : std::vector<std::string>{"PLA"};
+                    for (int e_index = 0; e_index < new_extruder_count; e_index++) {
+                        extruder_ams_count[e_index] = "1#0|4#1";
+                        for (int color_index = 0; color_index < 4; color_index++) {
+                            Slic3r::DynamicPrintConfig temp_config;
+                            std::vector<std::string> temp_colors(1, "#FFFFFFFF");
+                            std::vector<std::string> temp_types(1, "PLA");
+                            if (filament_type && !types.empty())
+                                temp_types[0] = types[color_count % types.size()];
+                            temp_config.option<Slic3r::ConfigOptionStrings>("filament_colour", true)->values = temp_colors;
+                            temp_config.option<Slic3r::ConfigOptionStrings>("filament_type", true)->values = temp_types;
+                            temp_config.option<Slic3r::ConfigOptionBools>("filament_is_support", true)->values = {0};
+                            extruder_filament_info[e_index].push_back(std::move(temp_config));
+                            color_count++;
+                        }
+                    }
+                    config.option<Slic3r::ConfigOptionStrings>("extruder_ams_count", true)->values = extruder_ams_count;
+                    print.set_extruder_filament_info(extruder_filament_info);
+                }
+            }
+        }
+#endif // ENGINE_ORCA
 
         try {
             std::cout << "Applying configuration...\n";
