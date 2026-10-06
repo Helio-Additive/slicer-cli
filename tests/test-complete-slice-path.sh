@@ -190,10 +190,13 @@ assert abs(o["x"] - 115.2) < 0.5 and abs(o["y"] - 115.2) < 0.5, o
 ' slice/out/result.json
 run plate2 "$B" two-plates.3mf --slice 2 --outputdir plate2/out
 [ "$(rc plate2)" = 0 ] || { show plate2; fail "plate 2 of a two-plate file exit $(rc plate2)"; }
+# result.json states each object's box in the scene, as the official
+# sliced_info does (object->bounding_box(), BambuStudio.cpp 7353): plate 2 of
+# two 256 mm plates sits at (256 * 1.2, 0).
 py '
 import json, sys
 o = json.load(open(sys.argv[1]))["sliced_plates"][0]["objects"][0]["bbox"]
-assert abs(o["x"] - 115.2) < 0.5 and abs(o["y"] - 115.2) < 0.5, o
+assert abs(o["x"] - (115.2 + 307.2)) < 0.5 and abs(o["y"] - 115.2) < 0.5, o
 ' plate2/out/result.json
 echo "PASS: plates keep the maker's positions (plate grid origin, no corner snap)"
 
@@ -1141,8 +1144,9 @@ assert [p["id"] for p in plates] == [1, 2], plates
 assert len(plates[0]["objects"]) == 2, plates[0]["objects"]
 assert [o["name"] for o in plates[1]["objects"]] == ["assemble_1"], plates[1]["objects"]
 box = plates[1]["objects"][0]["bbox"]
-# The copies stay where the list puts them: x 60..110, y 60..140.
-assert abs(box["x"] - 60) < 0.5 and abs(box["width"] - 50) < 0.5, box
+# The copies stay where the list puts them: x 60..110, y 60..140 on plate 2,
+# which sits at (180 * 1.2, 0) in the scene result.json states.
+assert abs(box["x"] - (60 + 216)) < 0.5 and abs(box["width"] - 50) < 0.5, box
 assert abs(box["y"] - 60) < 0.5 and abs(box["depth"] - 80) < 0.5, box
 z = zipfile.ZipFile(sys.argv[2])
 model = z.read("Metadata/model_settings.config").decode()
@@ -1245,8 +1249,9 @@ echo "PASS: --downward-check checks every plate of the project (both engines)"
 # OrcaSlicer.cpp 3875-3878), so the 200 mm printer fits every plate. The
 # merged settings decide the other plates' print sequence: with a process
 # that prints by object, plate 2 (two objects) has no tower, so the 60 mm
-# printer fits too (BambuStudio.cpp 4785). With --slice 0 each plate is read
-# from the project once per run.
+# printer fits too (BambuStudio.cpp 4785). With --slice 0 every plate is in
+# the run's one model (the official loads the whole project once,
+# BambuStudio.cpp 1889), so no plate is read from the project again.
 py '
 import json
 json.dump({"plates": [
@@ -1303,7 +1308,7 @@ assert d.get("downward_compatible_machine") == ["Roomy Test Printer", "Mid Test 
         --outputdir dwt0-$e/out
     [ "$(rc dwt0-$e)" = 0 ] || { show dwt0-$e; fail "$e: --downward-check with --slice 0 exit $(rc dwt0-$e)"; }
     reads=$(grep -c '^--downward-check: read plate' dwt0-$e/stdout || true)
-    [ "$reads" = 1 ] || fail "$e: --slice 0 read the other plates $reads times (want 1)"
+    [ "$reads" = 0 ] || fail "$e: --slice 0 read the other plates $reads times (want 0)"
     py '
 import json, sys; d = json.load(open(sys.argv[1]))
 assert d.get("downward_compatible_machine") == ["Roomy Test Printer"], d.get("downward_compatible_machine")
@@ -1859,8 +1864,10 @@ assert b == [], ("--export-stls after --slice", b)
 done
 echo "PASS: --export-stls before --slice runs before the bed checks, after --slice only once every plate has sliced; --slice 0 checks every plate before slicing any (both engines)"
 
-# --slice 0's check pass sends no event of its own: each plate's settings
-# events come once, from its slice (two plates, so twice in all).
+# --slice 0's check pass sends no event of its own: the run's settings
+# events come once (the settings merge builds m_print_config once,
+# BambuStudio.cpp 3246, 3384), each plate's own once, from its slice (two
+# plates, so twice in all).
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
     run ev2-$e "$bin" far2-$e/out/far2.3mf --slice 0 --load-settings a1m-$e.json --outputdir ev2-$e/out
@@ -1869,7 +1876,8 @@ for e in bambu orca; do
     py '
 import collections, json, sys
 c = collections.Counter(json.loads(l)["tag"] for l in open(sys.argv[1]) if l.strip())
-assert c.get("SettingsFilesMerged") == 2 and set(c.values()) == {2}, dict(c)
+assert c.get("SettingsFilesMerged") == 1 and c.get("PlateSettingsApplied") == 2, dict(c)
+assert all(n == 2 for t, n in c.items() if t != "SettingsFilesMerged"), dict(c)
 ' ev2-$e/normalized.jsonl || { show ev2-$e; fail "$e: --slice 0 sent a settings event more than once per plate"; }
 done
 echo "PASS: --slice 0's check pass sends no event twice (both engines)"

@@ -409,7 +409,7 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `sliced_plates[].total_predication`, `main_predication` | Estimated print time, seconds |
 | `sliced_plates[].filament_change_times` | Filament changes |
 | `sliced_plates[].feature_type_times` | Seconds per feature (walls, infill, ...) |
-| `sliced_plates[].objects[]` | `id`, `name`, `triangle_count`, `bbox` (`x`, `y`, `z`, `width`, `depth`, `height`) |
+| `sliced_plates[].objects[]` | `id`, `name`, `triangle_count`, `bbox` (`x`, `y`, `z`, `width`, `depth`, `height`). The box is in the project's scene, as the official result file states it: an object on plate 2 or later sits at that plate's place in the plate grid, not at the bed's origin |
 | `sliced_plates[].filaments[]` | `id`, `filament_id`, `total_used_g`, `main_used_g` |
 | `sliced_plates[].warning_message` | The last slicing warning |
 | `sliced_plates[].warnings` | Every slicing warning |
