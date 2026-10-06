@@ -4691,7 +4691,27 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     bundle.project_config.set_key_value("curr_bed_type", new Slic3r::ConfigOptionEnum<Slic3r::BedType>(bed.type));
     g_preset_printer_model_id = bundle.printers.get_edited_preset().get_printer_type(&bundle);
     slicer_cli::apply_printer_pick(bundle);
+#ifdef ENGINE_ORCA
+    // The settings the desktop slices with: full_config(false), every
+    // filament's own values for each extruder variant with
+    // filament_self_index (OrcaSlicer Plater.cpp 7959-7963), which the Print
+    // maps onto the extruders. full_config(true) maps them already and
+    // writes no filament_self_index (PresetBundle.cpp 4005-4060 at 31f6803),
+    // so on a printer with several extruders the Print mapped every
+    // filament to filament 1's values (H2D, 4 filaments: nozzle_temperature
+    // 220,220,220,220 for 220,220,245,270). The official CLI's own merge of
+    // --load-filaments files writes some of these lists differently (one
+    // value, or the first filament's value followed by 0s); named presets
+    // follow the desktop's full_fff_config, one value per filament from
+    // each filament's own preset.
+    out = bundle.full_config(false);
+#else
+    // BambuStudio's full_config(true) keeps each filament's own values and
+    // its filament_self_index (PresetBundle.cpp 3400-3460 at 5873b5f), and
+    // the Print maps them as for full_config(false); false would also write
+    // the AMS drying lists per variant, unlike a desktop project.
     out = bundle.full_config();
+#endif
     // full_config() writes each filament's own colour; a slot without one
     // keeps the engine default.
     emit_event({{"event","presets_resolved"},

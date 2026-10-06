@@ -2024,6 +2024,28 @@ assert close(r["sparse_infill_density"], str(s["sparse_infill_density"]).rstrip(
 done
 echo "PASS: the G-code header, --export-settings, the exported project's settings and result.json agree on the plate's tower, print sequence, filaments and summary (both engines)"
 
+# Named presets give each filament its own preset's values, as the desktop's
+# full_fff_config does (OrcaSlicer Plater.cpp 7959-7963 slices with
+# full_config(false)): an H2D with four named filaments prints each with its
+# own nozzle temperature. Each filament's value comes from a run of that
+# filament alone.
+F4N=("Bambu PLA Basic @BBL H2D" "Bambu PLA Matte @BBL H2D" "Bambu PETG HF @BBL H2D 0.4 nozzle" "Bambu ABS @BBL H2D")
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    want=""
+    for f in "${F4N[@]}"; do
+        run e1one-$e "$bin" cube.stl --printer-preset "Bambu Lab H2D 0.4 nozzle" --filament-preset "$f" --export-settings e1one-$e.json
+        want="$want,$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["nozzle_temperature"][0])' e1one-$e.json)"
+    done
+    want=${want#,}
+    args=(); for f in "${F4N[@]}"; do args+=(--filament-preset "$f"); done
+    run e1four-$e "$bin" cube.stl --slice 1 --printer-preset "Bambu Lab H2D 0.4 nozzle" "${args[@]}" --outputdir e1four-$e/out
+    [ "$(rc e1four-$e)" = 0 ] || { show e1four-$e; fail "$e: H2D with four named filaments exit $(rc e1four-$e)"; }
+    got=$(sed -n 's/^; nozzle_temperature = //p' e1four-$e/out/plate_1.gcode)
+    [ "$got" = "$want" ] || fail "$e: four named filaments: nozzle_temperature $got, each filament's own $want"
+done
+echo "PASS: named filament presets keep each filament's own values on a two-extruder printer (both engines)"
+
 # The PR #35 findings F1-F10 (and F7o), each a check of what the official
 # command line does, on both engines: tests/test-pr35-findings.sh runs every
 # block and lists each result.
