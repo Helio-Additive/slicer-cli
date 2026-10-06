@@ -36,6 +36,12 @@ run() {
     echo $? > "$name/rc"
 }
 rc() { cat "$1/rc"; }
+# native PATH: the path as the engine's own loader must see it. Git Bash
+# converts MSYS paths (/d/..., /tmp/...) in command-line arguments only, never
+# inside a file, so a path written into a request JSON has to be converted by
+# hand (cygpath -m gives D:/..., which the Windows binary opens; the argument
+# form was already proven by the orcaswitch checks). Elsewhere: unchanged.
+native() { if command -v cygpath > /dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 one_json() { python3 -c 'import json,sys; json.loads(open(sys.argv[1]).read())' "$1" 2>/dev/null; }
 
 python3 - <<'PY'
@@ -66,10 +72,10 @@ for e in bambu orca; do
 {
   "schemaVersion": 1,
   "engine": "$e",
-  "profilesDir": "$prof",
+  "profilesDir": "$(native "$prof")",
   "profiles": { "machine": "$machine" },
   "spacing": { "minObjectDistanceMm": 10.0 },
-  "models": [ { "id": "a", "path": "$WORKDIR/$2" } ]
+  "models": [ { "id": "a", "path": "$(native "$WORKDIR/$2")" } ]
 }
 EOF
     }

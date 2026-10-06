@@ -2273,7 +2273,12 @@ fi
 # Differences from the desktop app, each checked on both engines. Settings
 # files are the engine's own system presets, flattened (inherits walked) from
 # the package's resources, as the official CLIs read them.
-RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
+# The package's resources: beside the binary (the macOS and Windows release
+# packages, slicer_cli and resources/ side by side) or one level up (a bin/
+# layout, the box packages and the Linux release package). Same resolution as
+# test-pr35-findings.sh and test-product-invariants.sh.
+RES="$(cd "$(dirname "$B")" && pwd -P)/resources"
+[ -d "$RES/profiles" ] || RES="$(cd "$(dirname "$B")/.." && pwd -P)/resources"
 # flat_presets ENGINE TAG PRINTER: TAG-ENGINE-machine.json, -process.json and
 # -filament.json (the printer's default process and filament).
 flat_presets() {
