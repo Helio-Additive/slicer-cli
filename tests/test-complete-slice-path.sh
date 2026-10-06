@@ -2287,3 +2287,59 @@ run d4k "$B" d4keep.3mf --plate 1 -o d4k.gcode
 got=$(hdr d4k.gcode extruder_nozzle_stats)
 [ "$(rc d4k)" = 0 ] && [ "$got" = "Standard#1|High Flow#0;Standard#1" ] || { show d4k; fail "D4 bambu: a 3MF's own extruder_nozzle_stats became '$got' (exit $(rc d4k))"; d4_ok=0; }
 [ $d4_ok = 1 ] && echo "PASS: D4 input without extruder_nozzle_stats gets the official CLI's value, a 3MF keeps its own (Bambu build)"
+
+# D5: each plate prints its own per-layer custom G-code. The loader keys
+# them by plate (bbs_3mf.cpp 3446/3474) and the Print reads the model's
+# current plate (Print.cpp 517-518), which the official CLI sets per plate
+# (BambuStudio.cpp 6493; OrcaSlicer.cpp 5617). A two-plate project with a
+# custom line on each plate: the product's call (--plate N -o) and --slice 0
+# print plate N's line on plate N only (on 2a12432 plate 2 printed plate 1's).
+d5_ok=1
+py '
+import json
+P = lambda n: {"plate_name": n, "need_arrange": False,
+               "objects": [{"path": "cube.stl", "count": 1, "filaments": [1], "pos_x": [118], "pos_y": [118]}]}
+json.dump({"plates": [P("p"), P("q")]}, open("d5.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run d5mk-$e "$bin" --load-assemble-list d5.json --slice 0 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --outputdir d5mk-$e/out --export-3mf d5.3mf
+    [ "$(rc d5mk-$e)" = 0 ] || { show d5mk-$e; fail "D5 $e: two-plate project exit $(rc d5mk-$e)"; d5_ok=0; continue; }
+    py '
+import sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+xml = """<?xml version="1.0" encoding="utf-8"?>
+<custom_gcodes_per_layer>
+<plate>
+<plate_info id="1"/>
+<layer top_z="5" type="4" extruder="1" color="" extra="M117 D5 plate one" gcode="custom"/>
+<mode value="SingleExtruder"/>
+</plate>
+<plate>
+<plate_info id="2"/>
+<layer top_z="10" type="4" extruder="1" color="" extra="M117 D5 plate two" gcode="custom"/>
+<mode value="SingleExtruder"/>
+</plate>
+</custom_gcodes_per_layer>
+"""
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        if item.filename == "Metadata/custom_gcode_per_layer.xml":
+            continue
+        zout.writestr(item, zin.read(item.filename))
+    zout.writestr("Metadata/custom_gcode_per_layer.xml", xml)
+' d5mk-$e/out/d5.3mf d5-$e.3mf
+    for p in 1 2; do
+        run d5p$p-$e "$bin" d5-$e.3mf --plate $p -o d5p$p-$e.gcode
+    done
+    run d5s-$e "$bin" d5-$e.3mf --slice 0 --outputdir d5s-$e/out
+    for g in d5p1-$e.gcode:1 d5p2-$e.gcode:2 d5s-$e/out/plate_1.gcode:1 d5s-$e/out/plate_2.gcode:2; do
+        f=${g%:*}; p=${g##*:}
+        [ -s $f ] || { fail "D5 $e: no G-code $f"; d5_ok=0; continue; }
+        own=one; other=two; [ $p = 2 ] && { own=two; other=one; }
+        grep -q "^M117 D5 plate $own" $f || { fail "D5 $e: $f lacks plate $p's own custom G-code"; d5_ok=0; }
+        ! grep -q "^M117 D5 plate $other" $f || { fail "D5 $e: $f prints the other plate's custom G-code"; d5_ok=0; }
+    done
+done
+[ $d5_ok = 1 ] && echo "PASS: D5 each plate prints its own per-layer custom G-code, with --plate N and --slice 0 (both engines)"

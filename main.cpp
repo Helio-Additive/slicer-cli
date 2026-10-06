@@ -7845,6 +7845,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         std::cout << "\nInitializing print...\n";
         Slic3r::Print print;
 
+        // The plate's own per-layer custom G-code (pauses, colour changes,
+        // custom lines): the loader keys them by plate (plate_id - 1,
+        // bbs_3mf.cpp 3446/3474), --load-custom-gcodes by the plate sliced,
+        // and the Print reads the entry of the model's current plate
+        // (Print.cpp 517-518; PrintApply.cpp 1558-1569 copies the index), so
+        // the official CLI sets it per plate before slicing it
+        // (BambuStudio.cpp 6493; OrcaSlicer.cpp 5617). Left at 0, every plate
+        // took plate 1's. The pressure-advance pattern writes its entry at
+        // the same index (calib.cpp 655).
+        model.curr_plate_index = std::max(0, plate_id - 1);
+
         // Enable BBL printer features (M981 spaghetti detector, M1003 powerlost
         // recovery, etc.) for a printer of the Bambu Lab vendor.
 #ifdef ENGINE_BAMBU
