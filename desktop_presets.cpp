@@ -2,8 +2,16 @@
 #include "desktop_presets.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <map>
+#include <string>
 #include <vector>
 
+#include <boost/filesystem.hpp>
+#include <boost/nowide/fstream.hpp>
+#include <nlohmann/json.hpp>
+
+#include "libslic3r/Config.hpp"
 #include "libslic3r/Preset.hpp"
 
 namespace slicer_cli {
@@ -45,6 +53,82 @@ std::vector<Slic3r::BedType> offered_bed_types(const Slic3r::VendorProfile::Prin
 
 bool offered(const std::vector<Slic3r::BedType>& list, Slic3r::BedType type) {
     return std::find(list.begin(), list.end(), type) != list.end();
+}
+
+/// A system preset's settings over its whole "inherits" chain: the parent's
+/// flattened config, then the file's own keys on top
+/// (load_vendor_configs_from_json: `config = *default_config;
+/// config.apply(config_src)`, OrcaSlicer PresetBundle.cpp 4932-4936 at
+/// 31f6803). `meta` takes the file's own key-values (name, type, from,
+/// instantiation): load_from_json keeps those out of the config
+/// (ConfigBase::load_from_json, Config.cpp 885-922).
+bool load_flat_preset(const boost::filesystem::path& folder, const std::string& name,
+                      Slic3r::DynamicPrintConfig& out, std::map<std::string, std::string>& meta, int depth = 0) {
+    if (depth > 16 || name.empty())
+        return false;
+    const boost::filesystem::path file = folder / (name + ".json");
+    if (!boost::filesystem::exists(file))
+        return false;
+    Slic3r::DynamicPrintConfig own;
+    std::map<std::string, std::string> key_values;
+    std::string                        reason;
+    try {
+        own.load_from_json(file.string(), Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent, key_values, reason);
+    } catch (...) {
+        return false;
+    }
+    if (!reason.empty())
+        return false;
+    const auto inherits = key_values.find("inherits");
+    if (inherits != key_values.end() && !inherits->second.empty()) {
+        Slic3r::DynamicPrintConfig parent;
+        std::map<std::string, std::string> parent_meta;
+        if (!load_flat_preset(folder, inherits->second, parent, parent_meta, depth + 1))
+            return false;
+        out = std::move(parent);
+        out += own;   // the file's own keys win (DynamicConfig::operator+=)
+    } else {
+        out = std::move(own);
+    }
+    meta = std::move(key_values);
+    return true;
+}
+
+/// The vendor's system process presets in the desktop's own order: the list in
+/// the vendor profile beside the tree, each entry's sub_path under the vendor
+/// folder (load_vendor_configs_from_json, OrcaSlicer PresetBundle.cpp
+/// 4606-4632 and 4805-4812 at 31f6803). A tree without that list falls back to
+/// the folder's own files.
+std::vector<boost::filesystem::path>
+vendor_process_files(const boost::filesystem::path& profiles_dir, const std::string& vendor) {
+    namespace fs = boost::filesystem;
+    const fs::path vendor_dir = profiles_dir / vendor;
+    std::vector<fs::path> out;
+    try {
+        nlohmann::json j;
+        boost::nowide::ifstream ifs((profiles_dir / (vendor + ".json")).string());
+        ifs >> j;
+        for (const auto& entry : j.at("process_list"))
+            out.push_back(vendor_dir / entry.at("sub_path").get<std::string>());
+    } catch (...) {
+        out.clear();
+    }
+    if (!out.empty())
+        return out;
+    try {
+        for (fs::recursive_directory_iterator it(vendor_dir / "process"), end; it != end; ++it)
+            if (it->path().extension() == ".json")
+                out.push_back(it->path());
+    } catch (...) {
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<std::string> compatible_printers_of(const Slic3r::DynamicPrintConfig& config) {
+    if (const auto* list = dynamic_cast<const Slic3r::ConfigOptionStrings*>(config.option("compatible_printers")))
+        return list->values;
+    return {};
 }
 
 } // namespace
@@ -137,6 +221,64 @@ std::string apply_printer_pick(Slic3r::PresetBundle& bundle) {
     bundle.extruder_nozzle_stat.on_printer_model_change(&bundle);
     return "extruder nozzle statistics set from the printer model";
 #endif
+}
+
+DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_dir, const std::string& vendor,
+                                                    const std::string& printer_preset_name,
+                                                    const std::string& declared_default,
+                                                    const Slic3r::DynamicPrintConfig& current_process) {
+    namespace fs = boost::filesystem;
+    DesktopProcessSwitch out;
+    // PresetBundle::update_compatible(select_other_print_if_incompatible)
+    // (OrcaSlicer PresetBundle.cpp 5295-5330 at 31f6803) is called
+    // SelectCompatibleType::Always when the printer was picked on another page
+    // (Tab::select_preset, Tab.cpp 6130-6140), so the current process is
+    // dropped when the new printer is not among the printers it says it suits
+    // (Preset::is_compatible_with_printer, Preset.cpp 803-813: the printer
+    // preset's own name in compatible_printers, no list meaning all of them)
+    // and kept otherwise.
+    const std::vector<std::string> current_compatible = compatible_printers_of(current_process);
+    if (printer_preset_name.empty() || current_compatible.empty() ||
+        std::find(current_compatible.begin(), current_compatible.end(), printer_preset_name) !=
+            current_compatible.end())
+        return out;   // kept: the desktop reselects nothing
+
+    // first_compatible_idx over the compatible, visible presets, scored by
+    // PreferedPrintProfileMatch(current preset, the printer's
+    // default_print_profile) (Preset.hpp 686-709, PresetBundle.cpp 5215-5240
+    // at 31f6803): the default's name, +1 for a listed preset and +1 for a
+    // visible one, x10 when the layer height is the current process's. Ties
+    // keep the earlier preset in collection order. A template
+    // (instantiation "false") is no preset at all, only a parent
+    // (load_vendor_configs_from_json, PresetBundle.cpp 4893-4898).
+    const double current_layer_height = current_process.opt_float("layer_height");
+    int            best_quality       = -1;
+    for (const fs::path& file : vendor_process_files(profiles_dir, vendor)) {
+        Slic3r::DynamicPrintConfig      config;
+        std::map<std::string, std::string> meta;
+        if (!load_flat_preset(file.parent_path(), file.stem().string(), config, meta))
+            continue;
+        const std::string name = meta["name"];
+        if (name.empty() || meta["type"] != "process" || meta["from"] != "system" || meta["instantiation"] == "false")
+            continue;
+        const std::vector<std::string> compatible = compatible_printers_of(config);
+        if (std::find(compatible.begin(), compatible.end(), printer_preset_name) == compatible.end())
+            continue;
+        int quality = (name == declared_default ? 1 : 0) + 2;   // listed and visible
+        if (current_layer_height > 0. && std::abs(config.opt_float("layer_height") - current_layer_height) < 0.0005)
+            quality *= 10;
+        if (quality > best_quality) {
+            best_quality = quality;
+            out.name     = name;
+            out.config   = std::move(config);
+        }
+    }
+    out.replaced = best_quality >= 0;
+    // With no compatible system preset the desktop falls back to its built-in
+    // "- default -" preset (first_compatible_idx returns index 0, Preset.hpp
+    // 703-708); this command line keeps the project's own settings instead,
+    // which is not that preset.
+    return out;
 }
 
 } // namespace slicer_cli

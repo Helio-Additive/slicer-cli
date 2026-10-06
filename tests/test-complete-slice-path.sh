@@ -1555,6 +1555,52 @@ assert len(o) == 2 and abs(x0 - 65) < 0.5 and abs(x1 - 115) < 0.5 and abs(y0 - 8
 done
 echo "PASS: a printer change moves the plate after the setting flags apply (both engines)"
 
+# The Orca build's printer change takes the process the DESKTOP selects for the
+# new printer, not the project's own: OrcaSlicer ships no process_full folder
+# for the branch the official CLI takes here (OrcaSlicer.cpp 3003-3011 reads
+# resources/orca/profiles/BBL/process_full/), while the desktop switches
+# printers from the presets its package ships (PresetBundle::update_compatible,
+# PresetBundle.cpp 5295-5330; Tab::select_preset, Tab.cpp 6130-6140 at
+# 31f6803). The process values the slice ran with are therefore the A1 mini's
+# default process, flattened the way the package ships it, not the X1 Carbon
+# project's. The Bambu build keeps the official path: its package ships
+# process_full and no value of its run is checked here.
+ORCA_PROFILES="$(cd "$(dirname "$O")" && pwd -P)/resources/profiles-orca"
+[ -d "$ORCA_PROFILES/BBL/process" ] || ORCA_PROFILES="$(cd "$(dirname "$O")/.." && pwd -P)/resources/profiles-orca"
+py '
+import json, os, re, sys
+vendor, gcode, process = sys.argv[1:4]
+presets = {}
+for root, _, files in os.walk(os.path.join(vendor, "process")):
+    for f in files:
+        if f.endswith(".json"):
+            try:
+                d = json.load(open(os.path.join(root, f), encoding="utf-8"))
+            except Exception:
+                continue
+            presets[d.get("name", f[:-5])] = d
+def resolve(name, seen=()):
+    d = presets[name]
+    r = resolve(d["inherits"], seen + (name,)) if d.get("inherits") and name not in seen else {}
+    r.update(d); r.pop("inherits", None)
+    return r
+want = resolve(process)
+g = open(gcode, errors="replace").read()
+def got(k):
+    m = re.search(r"^; " + k + r" = (.*)$", g, re.M)
+    return None if m is None else m.group(1).split(",")[0].strip()
+def first(v):
+    return re.sub(r"\"", "", str(v[0] if isinstance(v, list) else v))
+bad = []
+# layer height, walls, infill and speeds: the process the desktop picks.
+for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed",
+          "default_acceleration", "bridge_speed", "elefant_foot_compensation"):
+    if got(k) != first(want[k]):
+        bad.append("%s: G-code %r, %s %r" % (k, got(k), process, first(want[k])))
+assert not bad, "; ".join(bad)
+' "$ORCA_PROFILES/BBL" sw-orca/out/plate_1.gcode "$A1M_PROCESS" || fail "orca: the printer change did not slice with the A1 mini process settings the package ships"
+echo "PASS: the Orca printer change slices with the process the desktop selects for the new printer"
+
 # A refusal before anything loads still leaves result.json under --slice:
 # named presets on a project 3MF, and --plate with --slice (CLI_INVALID_PARAMS).
 for e in bambu orca; do
