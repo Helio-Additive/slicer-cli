@@ -2034,6 +2034,15 @@ else
     fail "PR #35 findings (tests/test-pr35-findings.sh)"
 fi
 
+# The product's contracts a G-code compare cannot see (--layout-plan exit
+# codes and JSON, the by-object collision line): tests/test-product-invariants.sh.
+if bash "$SCRIPT_DIR/test-product-invariants.sh" "$B" "$O" > invariants.log 2>&1; then
+    grep -E '^(PASS|SKIP)' invariants.log
+else
+    cat invariants.log
+    fail "product invariants (tests/test-product-invariants.sh)"
+fi
+
 # --pipe (Linux only): one JSON line per progress step into the named pipe.
 if [ "$(uname -s)" = Linux ]; then
     for e in bambu orca; do
