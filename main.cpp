@@ -6786,6 +6786,27 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // is refused by the official command line's normative check
                 // (BambuStudio.cpp 1948-1956).
                 "post_process",
+
+                // Not one value per extruder either; the official CLI leaves
+                // each as the settings give it, and a padded 0 is read:
+                //  - wipe_tower_x / wipe_tower_y: one entry per plate, read
+                //    with get_at(plate index) (Print.cpp 998, 2213, 2662),
+                //    which falls back to the first entry (Config.hpp 681-685). A 0 put plate
+                //    2's tower at (0, 0).
+                //  - flush_multiplier / flush_multiplier_fast: one per nozzle;
+                //    when the official sizes them it fills 1.0 / 1.2
+                //    (BambuStudio.cpp 3864-3868; OrcaSlicer.cpp 3360-3361),
+                //    and get_at() gives a short list's first value. A 0 is no
+                //    flush on the second nozzle.
+                //  - first_layer_print_sequence / other_layers_print_sequence:
+                //    filament orders; more than one entry is read as a custom
+                //    first-layer order (ToolOrdering.cpp 467-468, 597-610).
+                "wipe_tower_x",
+                "wipe_tower_y",
+                "flush_multiplier",
+                "flush_multiplier_fast",
+                "first_layer_print_sequence",
+                "other_layers_print_sequence",
             };
 
             // Per-filament arrays are excluded from this padding altogether: the

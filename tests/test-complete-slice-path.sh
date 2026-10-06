@@ -2366,3 +2366,48 @@ with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED
     done
 done
 [ $d5_ok = 1 ] && echo "PASS: D5 each plate prints its own per-layer custom G-code, with --plate N and --slice 0 (both engines)"
+
+# ---------------------------------------------------------------- Stage E
+# E4: a setting with one value per plate or per nozzle is not padded with a 0
+# to the extruder count (the official leaves each as given; get_at() reads a
+# short list's first value, Config.hpp 681-685). A two-plate, two-filament H2D
+# project whose wipe_tower_x/y hold one value: plate 2's tower stands where
+# the official CLI puts it, not at (0, 0) (on 933ff72: wipe_tower_x = 165,0
+# and the tower's first move near X21 Y20; the official near X40 Y244).
+e4_ok=1
+py '
+import json
+P = lambda n: {"plate_name": n, "need_arrange": True, "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2]}]}
+json.dump({"plates": [P("p"), P("q")]}, open("e4.json", "w"))
+'
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run e4mk-$e "$bin" --load-assemble-list e4.json --slice 0 --printer-preset "Bambu Lab H2D 0.4 nozzle" \
+        --filament-preset "Bambu PLA Basic @BBL H2D" --filament-preset "Bambu PLA Matte @BBL H2D" \
+        --filament-colour "#FF0000;#00FF00" --outputdir e4mk-$e/out --export-3mf e4.3mf
+    [ "$(rc e4mk-$e)" = 0 ] && [ -s e4mk-$e/out/e4.3mf ] || { show e4mk-$e; fail "E4 $e: two-plate H2D project exit $(rc e4mk-$e)"; e4_ok=0; continue; }
+    py '
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d.update({"wipe_tower_x": ["165"], "wipe_tower_y": ["250"]})
+            data = json.dumps(d, indent=4).encode()
+        if item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
+            continue
+        zout.writestr(item, data)
+' e4mk-$e/out/e4.3mf e4-$e.3mf
+    run e4p2-$e "$bin" e4-$e.3mf --plate 2 -o e4p2-$e.gcode
+    [ "$(rc e4p2-$e)" = 0 ] && [ -s e4p2-$e.gcode ] || { show e4p2-$e; fail "E4 $e: plate 2 exit $(rc e4p2-$e)"; e4_ok=0; continue; }
+    py '
+import re, sys
+g = open(sys.argv[1], errors="replace").read()
+for k in ("wipe_tower_x", "wipe_tower_y"):
+    for v in re.findall(r"^; " + k + r" = (.*)$", g, re.M):
+        assert "," not in v, (k, v)
+m = re.search(r"; FEATURE: (?:Prime|Wipe) tower\n(?:.*\n)*?G1 +X([0-9.]+) Y([0-9.]+)", g)
+assert m and float(m.group(2)) > 100, ("tower first point", m.groups() if m else None)
+' e4p2-$e.gcode || { fail "E4 $e: plate 2 tower or padded header (one value per plate)"; e4_ok=0; }
+done
+[ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; plate 2 tower stands where the official CLI puts it (both engines)"
